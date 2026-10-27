@@ -198,8 +198,8 @@ which:
 
 ```fren
 pub const RESERVED: Set<String> := {
-    "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "comp", "expect", "impl",
-    "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
+    "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "expect", "impl", "interp",
+    "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
     "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table",
 }
 
@@ -241,15 +241,10 @@ These *contextual keywords* have special meaning at the start of a
 construct, and are otherwise ordinary identifiers:
 
 ```
-when  unless  not  true  false  det  out  call  assume  ensure  cover  inst
+when  unless  not  true  false  det  out  call  assume  ensure  cover
 ```
 
 `unless` is a keyword of Lean's too, so it cannot be declared.
-
-`req`, which a guarantee was written with before `ensure`, is not a
-keyword of any kind, so it can be a name. Where a member of a procedure
-is expected, though, `req` is an error (`F0142`) that says to write
-`ensure`.
 
 `true` and `false` are the exception: they are the literals of type
 `Bool` wherever an expression is expected, at the start of one or not, so
@@ -257,12 +252,10 @@ in `x = true` the `true` is a literal. Nothing could then mention a
 declaration named `true` or `false`, so declaring either, as any kind of
 name, is an error (`F0220`).
 
-`in` is both the [membership operator](Expressions.md#sets) and the
-keyword that started an input as components declared them, which is an
-error now whose fix makes it a parameter (`F0159`; see
-[Migration](Procedures.md#migration)). The `in` of a membership must be on
-the same line as the end of its left operand: an `in` at the start of a
-line starts a member. It is also the keyword that ends the definitions of a
+`in` is the [membership operator](Expressions.md#sets). The `in` of a
+membership must be on the same line as the end of its left operand: an
+`in` at the start of a line does not continue the expression before it.
+It is also the keyword that ends the definitions of a
 [`let`](Let.md), so within them, outside brackets, `in` is never a
 membership. Likewise, `mod` is both the keyword of a module and the
 [remainder](Expressions.md#division-and-remainder) operator, and the `mod`

@@ -842,17 +842,9 @@ pub proc fn_definitions(
 }
 ```
 
-So a function written with a block means what the function written with
-its body after `:=` and its contract's clauses after its signature means,
-each with those definitions as a `where` clause, as functions were written
-before they had blocks. That form, with clauses, is now an error
-(`F0164`), whose fix `fren fix` makes: it writes the block, with the body
-as the `out` member after the preconditions, and, in a postcondition of a
-function that is not generic, the function applied to its parameters as
-the result, but under no binder that hides a parameter, where the
-application is another. The meaning is unchanged. In a generic function's
-postcondition, the application is kept, since it may be at another
-instance than the result's.
+So a function written with a block means what a function with its body
+and a contract of those clauses means, each with those definitions as a
+`where` clause.
 
 ## Constants
 

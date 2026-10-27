@@ -1,4 +1,0 @@
--- An enumeration's type parameters in parentheses (`F0156`).
-pub enum Option!(T) { None, Some(T) }
---~^ error: type parameters are written in angle brackets
---@ exit: 2

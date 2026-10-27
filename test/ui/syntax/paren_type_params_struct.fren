@@ -1,5 +1,0 @@
--- A record's type parameters in parentheses (`F0156`): the `{` after them
--- tells them apart from a newtype's types.
-pub struct Pair(A, B) { fst: A, snd: B }
---~^ error: type parameters are written in angle brackets
---@ exit: 2

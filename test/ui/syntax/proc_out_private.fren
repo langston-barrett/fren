@@ -1,0 +1,7 @@
+-- In a procedure without results, `out` defines nothing (`F0444`): a value
+-- of the block's own is a `let`.
+proc c(x: Int) {
+    out big? := x > 9   --~ error: `big?` is not a result of the procedure
+    assume a: big?
+}
+--@ exit: 2

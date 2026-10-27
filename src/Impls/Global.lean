@@ -4,7 +4,7 @@ import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
 
-/-! # Global expectations, and the migration from `forall` (`Reqs/Lang/Global`) -/
+/-! # Global expectations (`Reqs/Lang/Global`) -/
 
 namespace Fren.Impls
 

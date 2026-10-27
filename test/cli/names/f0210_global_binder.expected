@@ -1,8 +1,10 @@
-error[F0210]: expected a procedure or a type, but `LIMIT` is a constant
+error[F0210]: expected a type, but `LIMIT` is a constant
  --> test/cli/names/f0210_global_binder.fren:4:22
   |
 4 | expect e: forall (a: LIMIT), true
-  |                      ^^^^^ not a procedure or a type
+  |                      ^^^^^ not a type
+  |
+  = note: types are `Bool`, `Int`, `Nat`, enums, records and abstract types
 
 error: could not check due to previous errors
 

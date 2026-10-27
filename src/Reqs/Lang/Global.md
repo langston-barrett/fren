@@ -139,33 +139,3 @@ confirm it: they are a procedure's, but for those of what it does not
 have. Its assumptions must be satisfiable, as a procedure's must, or every
 expectation would hold vacuously: the realizability check reports
 contradictory ones (`F0602`).
-
-## Migration
-
-Global expectations were written with a leading `forall` before, whose
-binders ranged over procedures' behaviours as well as over values: `expect
-n: forall (a b: c) (m: M), E`. Each binder over a procedure stood for a
-behaviour of it with inputs of its own, and the procedure's assumptions
-were hypotheses. A binder over a procedure is an error now (`F0416`),
-reported once each binder's type is resolved, as a procedure or a type, so
-it is a static error, as an [instance](Procedures.md#migration) is. It has
-no fix: Fren's own specs were migrated once, by a script, and the error
-says how to write it, which means what it did:
-
-- each binder `a: c` over a procedure becomes a parameter for each
-  parameter `x` of `c`, such as `a_x`, of `x`'s type, and the call `call
-  a := c(a_x, ...)`;
-- each binder `m: M` over values becomes the parameter `m: M`;
-- each assumption of `c` becomes, for each binder `a` of `c`, an
-  assumption over `a`'s parameters, so that the call checks hold;
-- `E`, with any `where` clause, becomes the block's expectation, `expect
-  n: E`, which reads `a`'s variables as `a.x`, as before.
-
-The meaning is unchanged: the call `a` binds `a.x` to `a_x`, so the
-parameters stand for the behaviour's inputs, which were quantified before;
-the assumptions are the procedure's, which were hypotheses before; and the
-types written with the parameters bring what they brought. Merging
-parameters that a condition ties together, such as `a_target` and
-`b_target` under `when a.target = b.target`, is left to the author. A
-leading `forall` with binders over values alone is no error: it is the
-short form's quantifier.

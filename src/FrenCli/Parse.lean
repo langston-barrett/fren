@@ -300,11 +300,9 @@ inductive Member where
   /-- `out r := e`, the definition of the result `r`. -/
   | define (name : Ident) (e : Expr)
   /-- `call name := comp(a, b)`, whose bindings are its arguments, each
-  named after its position until the callee's parameters are known
-  (`named` false); or the instance `inst name: comp { x := e, y }`, as
-  calls were written before (`F0420`), whose bindings are named, and a
-  binding without `:= e` is `none`. `span` is the whole member's. -/
-  | inst (name : Ident) (comp : Array Ident) (bindings : Array (Ident × Option Expr)) (named : Bool) (span : Span)
+  named after its position until the callee's parameters are known. `span`
+  is the whole member's. -/
+  | inst (name : Ident) (comp : Array Ident) (bindings : Array (Ident × Option Expr)) (span : Span)
   /-- `use a::b` or `use a::E::*`, with the span of the whole member. -/
   | use (span : Span) (path : Array Ident) (glob : Bool)
   /-- `use pre::{a, b::c}`: each path is appended to `pre`. -/
@@ -366,9 +364,8 @@ its lowering (`Reqs/Lang/Items#function-blocks`). -/
   span of each member, and where its `{` ends. -/
   | comp (isPub : Bool) (name : Ident) (header : Array Member) (members : Array Member) (close : Span) (spans : Array Span)
       (openStop : Nat)
-  /-- `expect n: e`, or `expect n: forall (a b: c) ..., e` as global
-  expectations were written before (`F0416`), whose binders each name a
-  procedure or a type. -/
+  /-- `expect n: e`, or `expect n: forall (a b: T) ..., e`, whose binders
+  are a quantifier around `e`. -/
   | global (name : Ident) (binders : Array Binder) (body : Expr)
   /-- `expect n(x: T) { members }`, a global expectation written with a
   block (`Reqs/Lang/Global`): as a procedure's, its parameters, and any
@@ -424,26 +421,14 @@ structure Layout where
   closureOpens : Array Nat := #[]
   closureCloses : Array Nat := #[]
 
-/-- What the fixes that move a member into a procedure's header need of it:
-where its parameters' and results' `)` start, whether each list is empty
-or one element to a line, its results' names, and where its block's `{`
-and its first line start. -/
+/-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
-  paramsClose : Nat
-  paramsEmpty : Bool
-  paramsVertical : Bool
-  resultsClose? : Option Nat
-  resultsVertical : Bool
   results : Array String
-  /-- Its parameters' names. -/
-  params : Array String := #[]
-  openBrace : Nat
-  indent : Nat
   deriving Inhabited
 
 structure PState where
   toks : Array Token
-  /-- The source, which a suggestion copies as written (`F0155`, `F0156`). -/
+  /-- The source. -/
   src : Array Char
   pos : Nat := 0
   layout : Layout := {}
@@ -455,20 +440,12 @@ structure PState where
   /-- In a definition of a `let`, outside brackets, where `in` ends the
   definitions rather than starting a membership (`Reqs/Lang/Let#parentheses`). -/
   noIn : Bool := false
-  /-- Within a type written with its type arguments in parentheses
-  (`F0155`): the indices of the tokens of those parentheses, and of those
-  of the types within it, which the suggestion writes as `<` and `>`. -/
-  parens : Option (Array Nat) := none
-  /-- In a procedure's block: its header, for the fixes that move a member
-  into it (`F0159`, `F0160`). -/
+  /-- In a procedure's block: its header, whose results `out` defines
+  (`F0444`). -/
   proc? : Option ProcHeader := none
   /-- In a function's block: its result's name, which `out` defines
   (`F0444`). -/
   fnResult? : Option String := none
-  /-- In a component's members, for its migration (`F0158`): for each
-  variable, where its name starts, where its name and type end, and where
-  its `:=` starts. -/
-  varMarks : Array (Nat × Nat × Option Nat) := #[]
 
 abbrev P := StateT PState (Except ParseError)
 
@@ -605,13 +582,6 @@ def spacedAngle (name what : String) : P α := do
   err (← peek).span "F0144" s!"a space before the `<` of {what}" (some "after a space")
     #["note: the `<` that opens a type's arguments or a declaration's type parameters follows the name directly",
       s!"help: remove the space: `{name}<`"]
-
-/-- The source from `start` to `stop`, with the parentheses at the offsets
-`parens` written as angle brackets (`Fren.Core.angleText`). -/
-def angleSource (start stop : Nat) (parens : Array Nat) : P String := do
-  let src := (← get).src
-  return Fren.Core.angleText ((List.range (stop - start)).toArray.map fun i =>
-    (src[start + i]?.getD ' ', parens.contains (start + i)))
 
 /-- The `>` that closes type arguments or type parameters, recorded for
 the formatter as a call's `)` is. -/
@@ -877,7 +847,6 @@ partial def typeExpr : P (Array Ident) := do
 types and type arguments may be pattern types. -/
 partial def baseType : P (Array Ident) := do
   let t ← peek
-  let start := (← get).pos
   -- A function type (`Reqs/Lang/HigherOrder#function-types`).
   if isKw t "fn" then
     discard bump
@@ -905,7 +874,6 @@ partial def baseType : P (Array Ident) := do
       | "Rel" => "`Rel`'s element types"
       | _ => s!"the type arguments of `{pathName}`"
     spacedAngle pathName what
-  | .parenthesized => return ← parenArgs start p
   | .opens => pure ()
   markCall
   let o ← bump
@@ -927,26 +895,6 @@ partial def baseType : P (Array Ident) := do
   let close ← closeAngle
   return out.push { name := argsClose, span := close.span }
 
-/-- A type written with its type arguments in parentheses, `G(A, B)`, as
-types were before they were written in angle brackets: read as if it were
-`G<A, B>`, so that the error (`F0155`) suggests the whole type, with the
-parentheses of each type within it that is written so too. `start` is the
-index of its first token, and `p` its path. -/
-partial def parenArgs (start : Nat) (p : Array Ident) : P (Array Ident) := do
-  let outer := (← get).parens.isNone
-  if outer then modify fun s => { s with parens := some #[] }
-  let openAt := (← get).pos
-  discard bump
-  discard typeExpr
-  while (← eatKw ",").isSome do discard typeExpr
-  let close ← expectKw ")"
-  let closeAt := (← get).pos - 1
-  modify fun s => { s with parens := s.parens.map (·.push openAt |>.push closeAt) }
-  unless outer do return p
-  let s ← get
-  let parens := (s.parens.getD #[]).map (s.toks[·]!.span.start)
-  let span := s.toks[start]!.span.to close.span
-  throw { span, msg := Fren.Core.parenTypeArgsMsg (← angleSource span.start span.stop parens) }
 
 end
 
@@ -1377,31 +1325,6 @@ def useRest (t : Token) (first : Nat) : P (Span × Array Ident × Bool × Option
   return (t.span.to (← lastSpan), segs, false, some paths)
 
 
-/-- Whether the next tokens are an enumeration's or a record's type
-parameters written in parentheses, as they were before they were written
-in angle brackets: `(`, up to the matching `)`, followed by `{`, which a
-newtype's types are not. -/
-def generic : P Bool := do
-  let s ← get
-  unless (s.toks[s.pos]?).any (isKw · "(") do return false
-  let mut depth := 0
-  let mut i := s.pos
-  while h : i < s.toks.size do
-    let t := s.toks[i]
-    if isKw t "(" then depth := depth + 1
-    else if isKw t ")" then
-      depth := depth - 1
-      if depth == 0 then return (s.toks[i + 1]?).any (isKw · "{")
-    i := i + 1
-  return false
-
-/-- Reports the type parameters of the declaration of `name`, written in
-parentheses, `(A, B)`, from `openSpan` to `close`, as they were before
-they were written in angle brackets (`F0156`). -/
-def parenParams (name : Ident) (openSpan close : Span) : P α := do
-  let span := name.span.to close
-  throw { span, msg := Fren.Core.parenTypeParamsMsg (← angleSource span.start span.stop #[openSpan.start, close.start]) }
-
 /-- The type parameters of an enumeration or record named `name`, `<A, B>`,
 if any. -/
 def typeParams (name : Ident) : P (Array Ident) := do
@@ -1409,13 +1332,6 @@ def typeParams (name : Ident) : P (Array Ident) := do
   match Fren.Core.afterName b adjacent with
   | .ends => return #[]
   | .spaced => spacedAngle name.name s!"the type parameters of `{name.name}`"
-  | .parenthesized =>
-    -- A newtype's types, unless a `{` follows them.
-    unless ← generic do return #[]
-    let o ← bump
-    discard ident
-    while (← eatKw ",").isSome do discard ident
-    parenParams name o.span (← expectKw ")").span
   | .opens => pure ()
   markCall
   discard bump
@@ -1449,59 +1365,8 @@ def unbanged (s : String) : String := if s.endsWith "!" then (s.dropEnd 1).toStr
 /-- The text of `src` from `a` to `b`. -/
 def srcText (a b : Nat) : P String := return String.ofList (((← get).src).extract a b).toList
 
-/-- A fix that moves a member of a procedure, at `r`, into its header:
-`insert` is written at `at_`, before the block, and the member is replaced
-by `replacement`, or, if that is empty, removed with its line if it is
-alone on it (`Fren.Core.memberRemoval`). -/
-def moveFix (h : ProcHeader) (at_ : Nat) (insert : String) (r : Fren.Core.Range) (replacement : String) :
-    P (Fren.Core.Range × String) := do
-  let src := (← get).src
-  let removal := if replacement.isEmpty then Fren.Core.memberRemoval src h.openBrace r else r
-  return ({ start := at_, stop := removal.stop }, insert ++ (← srcText at_ removal.start) ++ replacement)
-
-/-- Where to insert an element `text` into a list whose `)` starts at
-`close`, and what: after the last element, or, in a list one to a line,
-on a line of its own. -/
-def listInsert (h : ProcHeader) (close : Nat) (empty vertical : Bool) (text : String) : P (Nat × String) := do
-  if vertical then
-    let src := (← get).src
-    let mut ls := close
-    while ls > 0 && src[ls - 1]! != '\n' do ls := ls - 1
-    return (ls, String.ofList (List.replicate (h.indent + 4) ' ') ++ text ++ ",\n")
-  return (close, if empty then text else ", " ++ text)
-
-/-- An output written as components wrote them, `[pub] [det] out x [: T]
-[:= e]`, in a procedure (`F0160`), from `first` to the end of its name
-and type, `declStop`, with its definition `defn?`: a public one is a
-result, defined in its place if it has a definition, and a private one is
-`exists`, or `let` if it is defined. -/
-def outputMember (first : Span) (isPub isDet : Bool) (kw : Span) (x : Ident) (declStop : Nat) (defn? : Option (Span × Expr)) :
-    P Member := do
-  let stop := (← lastSpan).stop
-  let fix? ← match (← get).proc? with
-    | none => pure none
-    -- A name that the signature already declares would be declared twice.
-    | some h =>
-      if h.params.contains (unbanged x.name) || h.results.contains (unbanged x.name) then pure none
-      else if isPub then
-        let decl := (if isDet then "det " else "") ++ (← srcText x.span.start declStop)
-        let (at_, insert) ← match h.resultsClose? with
-          | some c => listInsert h c false h.resultsVertical decl
-          | none => pure (h.paramsClose + 1, s!": ({decl})")
-        let replacement ← match defn? with
-          | some (d, _) => pure s!"out {unbanged x.name} {← srcText d.start stop}"
-          | none => pure ""
-        some <$> moveFix h at_ insert { start := first.start, stop } replacement
-      else
-        let kw' := (if isDet then "det " else "") ++ (if defn?.isSome then "let " else "exists ")
-        pure (some ({ start := first.start, stop := x.span.start }, kw'))
-  let _ := kw
-  throw { span := first.to x.span, msg := Fren.Core.outputMemberMsg isPub defn?.isSome fix? }
-
-/-- A member of a procedure's block, or with `legacy`, of a component, as
-components were written before procedures (`F0158`), whose variables are
-all members: `in x: T` and `[pub] [det] out x: T [:= e]`. -/
-def member (legacy : Bool := false) : P Member := do
+/-- A member of a procedure's block. -/
+def member : P Member := do
   markStart
   let first := (← get).pos
   if isWord (← peek) "set_option" then
@@ -1522,81 +1387,44 @@ def member (legacy : Bool := false) : P Member := do
       | (span, segs, _, some paths) => .useGroup span segs paths
   let start := (← peek).span
   let pub? ← eatKw "pub"
-  let isPub := pub?.isSome
   let t ← peek
-  if isKw t "in" then
-    discard bump
-    let x ← ident
-    let ty ← type?
-    let declStop := (← lastSpan).stop
-    if let some d ← eatKw ":=" then
-      throw { span := d.span, msg := Fren.Core.inputDefinitionMsg }
-    if legacy then
-      modify fun s => { s with varMarks := s.varMarks.push (x.span.start, declStop, none) }
-      return .var true true false x ty none
-    let fix? ← match (← get).proc? with
-      | none => pure none
-      | some h =>
-        let (at_, insert) ← listInsert h h.paramsClose h.paramsEmpty h.paramsVertical (← srcText x.span.start declStop)
-        some <$> moveFix h at_ insert { start := start.start, stop := declStop } ""
-    throw { span := start.to x.span, msg := Fren.Core.inputMemberMsg fix? }
   let det? := if isWord t "det" then some t else none
   let isDet := det?.isSome
   if isDet then discard bump
   let t ← peek
-  if isWord t "out" then
+  -- `out r := e` defines the result `r`, of a function's block or of a
+  -- procedure's (`F0444`).
+  if isWord t "out" && pub?.isNone && !isDet then
     discard bump
     let x ← ident
-    let ty ← type?
-    let declStop := (← lastSpan).stop
-    let d? ← eatKw ":="
-    let defn ← if d?.isSome then some <$> top else pure none
-    if legacy then
-      modify fun s => { s with varMarks := s.varMarks.push (x.span.start, declStop, d?.map (·.span.start)) }
-      return .var false isPub isDet x ty defn
-    -- In a function's block, `out r := e` defines its result `r`
-    -- (`F0444`).
+    discard (expectKw ":=")
+    let e ← top
     if let some rn := (← get).fnResult? then
-      if !isPub && !isDet && ty.isNone then
-        if let some e := defn then
-          if x.name == rn then return .define x e
-          throw { span := t.span.to x.span, msg := Fren.Core.fnOutMsg x.name rn }
-    -- `out r := e` defines the result `r`; anything else is an output as
-    -- components declared them.
+      if x.name == rn then return .define x e
+      throw { span := t.span.to x.span, msg := Fren.Core.fnOutMsg x.name rn }
     let results := ((← get).proc?.map (·.results)).getD #[]
-    if !isPub && !isDet && ty.isNone && results.contains x.name then
-      if let some e := defn then return .define x e
-    return ← outputMember start isPub isDet t.span x declStop (d?.map fun d => (d.span, defn.get!))
-  -- In a component too, as a merge may leave it half migrated.
+    if results.contains x.name then return .define x e
+    throw { span := t.span.to x.span, msg := Fren.Core.procOutMsg x.name }
   if (isKw t "exists" || isKw t "let") && pub?.isNone then
     discard bump
     let x ← ident
     let ty ← type?
-    let declStop := (← lastSpan).stop
     let d? ← if isKw t "exists" then pure none else some <$> expectKw ":="
-    if legacy then
-      modify fun s => { s with varMarks := s.varMarks.push (x.span.start, declStop, d?.map (·.span.start)) }
     match d? with
     | none => return .var false false isDet x ty none
     | some _ => return .var false false isDet x ty (some (← top))
   if let some m := det? <|> pub? then
     let mod := if isDet then "det" else "pub"
-    let what := if isKw t "in" then "an input"
-      else if isWord t "inst" || isWord t "call" then "a call"
+    let what := if isWord t "call" then "a call"
       else if isWord t "assume" || isWord t "ensure" || isKw t "expect" || isWord t "cover" then "a constraint"
+      else if isWord t "out" then "`out`"
       else if isKw t "exists" then "`exists`" else if isKw t "let" then "`let`"
       else t.tok.describe
-    let applies := if legacy then "outputs" else if isDet then "results, `exists` and `let`" else "items"
+    let applies := if isDet then "results, `exists` and `let`" else "items"
     err m.span "F0113" s!"`{mod}` applies only to {applies}, not to {what}" (some s!"`{mod}` is not allowed here")
       #[if isDet then "note: `det` is written on a result, `det r: T`, or on `det exists x: T` or `det let x: T := e`"
         else "note: a procedure's public outputs are its results, and its other members are private"]
       #[{ msg := s!"remove `{mod}`", replacement := "", range? := some { start := m.span.start, stop := t.span.start } }]
-  if isWord t "inst" then
-    discard bump
-    let x ← ident
-    discard (expectKw ":")
-    let (comp, _) ← path false
-    return .inst x comp (← bindings) true (start.to (← lastSpan))
   if isWord t "call" then
     discard bump
     let x ← ident
@@ -1614,7 +1442,7 @@ def member (legacy : Bool := false) : P Member := do
       args := args.push (({ name := "", span := e.span } : Ident), some e)
       if (← eatKw ",").isNone then break
     discard (expectKw ")")
-    return .inst x comp args false (start.to (← lastSpan))
+    return .inst x comp args (start.to (← lastSpan))
   let kind? := if isWord t "assume" then some PropKind.assume
     else if isWord t "ensure" then some .ensure
     else if isKw t "expect" then some .expect
@@ -1623,17 +1451,9 @@ def member (legacy : Bool := false) : P Member := do
   if isKw t "," then
     err t.span "F0104" "expected a member or `}`, found `,`" (some "unexpected `,`")
       #["note: the members of a procedure are not separated by commas"] #[{ msg := "remove it", replacement := "" }]
-  if isWord t "req" then
-    err t.span "F0142" "`req` is now written `ensure`" (some "not a keyword")
-      #["note: a guarantee is written `ensure name: e`, as an assumption is `assume name: e`"]
-      #[{ msg := "write `ensure`", replacement := "ensure" }]
   let some kind := kind?
-    | if legacy then
-        fail t "a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`"
-          #["in", "out", "pub", "det", "inst", "assume", "ensure", "expect", "cover", "use"]
-      else
-        fail t "a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`"
-          #["use", "assume", "exists", "let", "out", "call", "det", "ensure", "expect", "cover"]
+    | fail t "a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`"
+        #["use", "assume", "exists", "let", "out", "call", "det", "ensure", "expect", "cover"]
   discard bump
   let x ← ident
   discard (expectKw ":")
@@ -1783,152 +1603,12 @@ partial def isNames : Expr → Array String
   | .chain _ es _ => es.flatMap isNames
   | _ => #[]
 
-/-- The spans of the applications in `e` of the function `f` to its
-parameters `params`, each written as its name, in order, outside every
-binder that hides a parameter: a quantifier's, a `let`'s or `where`'s, a
-`match` arm's pattern's, a closure's, or a pattern test's, over a `when`'s
-body, the later operands of an `and` and an `if`'s `then` branch. Each is the function's value, its
-result in a block (`F0164`). An application within one is left alone. -/
-partial def selfApps (f : String) (params : Array String) (e : Expr) : Array Span :=
-  let go := selfApps f params
-  let hides (ns : Array String) : Bool := ns.any fun n => params.contains (unbanged n)
-  match e with
-  | .app sp fn args =>
-    let own := fn.size == 1 && fn[0]!.name == f && args.size == params.size &&
-      (args.zip params).all fun (a, p) => match a with | .path _ #[x] => x.name == p | _ => false
-    if own then #[sp] else args.flatMap go
-  | .quant _ _ bs body => if hides (bs.flatMap (·.names.map (·.name))) then #[] else go body
-  | .closure _ ps body => if hides (ps.map (·.1.name)) then #[] else go body
-  | .«let» _ defs body _ => if hides (defs.map (·.1.name)) then #[] else defs.flatMap (go ·.2.2) ++ go body
-  | .match _ sc arms _ => arms.foldl (init := go sc) fun acc (p, g?, b) =>
-      if hides (patternNames p) then acc else acc ++ (g?.map go).getD #[] ++ go b
-  | .when _ _ c d => go c ++ (if hides (isNames c) then #[] else go d)
-  | .bin _ "and" c d => go c ++ (if hides (isNames c) then #[] else go d)
-  | .ite _ c a b => go c ++ (if hides (isNames c) then #[] else go a) ++ go b
-  | .bin _ _ c d | .pair _ c d | .index _ c d => go c ++ go d
-  | .not _ a | .neg _ a | .field _ a _ | .is _ a _ => go a
-  | .set _ args | .seq _ args | .chain _ args _ => args.flatMap go
-  | .method _ r _ args => go r ++ args.flatMap go
-  | .record _ _ fs => fs.flatMap fun (_, e?) => (e?.map go).getD #[]
-  | .update _ r fs => go r ++ fs.flatMap fun (_, e?) => (e?.map go).getD #[]
-  | .table _ rows => (tableParts rows).flatMap go
-  | .num .. | .bool .. | .path .. | .str .. => #[]
-
-/-- The fix of a function whose contract is written after its signature
-(`F0164`): the function from `itemStart` to its last clause, written with
-a result and a block, `fn f(x: T): (r: U) { assume ... out r := e ensure
-... }`. Its header is kept to the end of its parameters, `paramsStop`; its
-result type, if written, ends at `headerStop`, and its body, if it has
-one, runs from `assignStop?` to `bodyStop`. The clauses, at `clauseSpans`
-with whether each is a postcondition, are kept as written when each
-starts a line and the preconditions come first, and the `out` member
-follows the preconditions; otherwise each is written on a line of its own.
-Each of `ownApps`, the function applied to its parameters in a
-postcondition, is written as the result. -/
-def fnBlockText (itemStart : Nat) (name : Ident)
-    (paramsStop headerStop : Nat) (result : Option (Array Ident)) (assignStop? : Option Nat) (bodyStop : Nat)
-    (clauseSpans : Array (Span × Bool)) (ownApps : Array Span) : P (Fren.Core.Range × String) := do
-  let src := (← get).src
-  let clauseStop := (clauseSpans.back?.map (·.1.stop)).getD bodyStop
-  -- A comment after the last clause, to the end of its line, moves with it.
-  let lineEnd (p : Nat) : Nat := Id.run do
-    let mut le := p
-    while le < src.size && src[le]! != '\n' do le := le + 1
-    return le
-  let after := (String.ofList (src.extract clauseStop (lineEnd clauseStop)).toList).trimAscii.toString
-  let lastStop := if after.startsWith "--" then lineEnd clauseStop else clauseStop
-  let lineStart (p : Nat) : Nat := Id.run do
-    let mut ls := p
-    while ls > 0 && src[ls - 1]! != '\n' do ls := ls - 1
-    return ls
-  let indentOf (p : Nat) : String := String.ofList (List.replicate (p - lineStart p) ' ')
-  let startsLine (p : Nat) : Bool := (src.extract (lineStart p) p).all (· == ' ')
-  let taken ← mentionsIn { start := itemStart, stop := lastStop }
-  -- A function without a result type is a `Bool` if its name says so.
-  let bool := match result with
-    | none => name.name.endsWith "?"
-    | some ty => ty.size == 1 && ty[0]!.name == "Bool"
-  let rn := Fren.Core.fnResultName bool taken
-  let resultText ← match result with
-    | some ty => if bool then pure rn else pure s!"{rn}: {(← srcText ty[0]!.span.start headerStop).trimAscii}"
-    | none => pure rn
-  let base := indentOf itemStart
-  let inner := base ++ "    "
-  -- Each of `ownApps` within a clause is the result.
-  let clauseText (sp : Span) (_isEnsure : Bool) : P String := do
-    let mut out := ""
-    let mut at_ := sp.start
-    for a in ownApps.qsort (·.start < ·.start) do
-      if a.start >= at_ && a.stop <= sp.stop && a.start >= sp.start then
-        out := out ++ (← srcText at_ a.start) ++ rn
-        at_ := a.stop
-    return out ++ (← srcText at_ sp.stop)
-  -- The body, with its continuation lines indented one level more.
-  -- And so does a comment between the body, or the header, and the first
-  -- clause.
-  let headStop := if assignStop?.isSome then bodyStop else headerStop
-  let raw ← srcText headStop ((clauseSpans[0]?.map (·.1.start)).getD headStop)
-  let lead := String.ofList (raw.toList.takeWhile (· == ' '))
-  let rest := (raw.drop lead.length).trimAsciiEnd.toString
-  let between := if rest.startsWith "--" then (if lead.isEmpty then " " else lead) ++ rest
-    else if raw.trimAscii.toString.startsWith "--" then " " ++ raw.trimAscii.toString else ""
-  let outLine ← match assignStop? with
-    | some a =>
-      let b := (← srcText a bodyStop).trimAscii.toString
-      pure (some s!"out {rn} := {b.replace "\n" "\n    "}{between}")
-    | none => pure none
-  let openComment := if assignStop?.isSome then "" else between
-  let nPre := (clauseSpans.takeWhile fun (_, e) => !e).size
-  let inOrder := (clauseSpans.extract nPre clauseSpans.size).all (·.2)
-  let verbatim := inOrder && clauseSpans.all fun (sp, _) => startsLine sp.start
-  let mut body := ""
-  if verbatim then
-    let firstStart := clauseSpans[0]!.1.start
-    let mut at_ := lineStart firstStart
-    let insertAt := if nPre == 0 then none else some clauseSpans[nPre - 1]!.1.stop
-    if nPre == 0 then
-      if let some o := outLine then body := body ++ inner ++ o ++ "\n"
-    for (sp, e) in clauseSpans do
-      body := body ++ (← srcText at_ sp.start) ++ (← clauseText sp e)
-      at_ := sp.stop
-      if sp.stop == clauseStop then body := body ++ (← srcText clauseStop lastStop)
-      if insertAt == some sp.stop then
-        -- After the clause's comment, if it has one on its line.
-        let rest := (String.ofList (src.extract sp.stop (lineEnd sp.stop)).toList).trimAscii.toString
-        if rest.startsWith "--" && sp.stop != clauseStop then
-          body := body ++ (← srcText sp.stop (lineEnd sp.stop))
-          at_ := lineEnd sp.stop
-        if let some o := outLine then body := body ++ "\n" ++ inner ++ o
-    body := body ++ "\n"
-  else
-    let pre := clauseSpans.filter (!·.2)
-    let post := clauseSpans.filter (·.2)
-    for (sp, e) in pre do body := body ++ inner ++ (← clauseText sp e) ++ "\n"
-    if let some o := outLine then body := body ++ inner ++ o ++ "\n"
-    for (sp, e) in post do body := body ++ inner ++ (← clauseText sp e) ++ "\n"
-    -- The last clause's comment, after the clauses.
-    if lastStop != clauseStop then
-      body := body.dropEnd 1 |>.toString
-      body := body ++ (← srcText clauseStop lastStop) ++ "\n"
-  let text := (← srcText itemStart paramsStop) ++  s!": ({resultText}) \{{openComment}\n" ++ body ++ base ++ "}"
-  return ({ start := itemStart, stop := lastStop }, text)
-
-
 /-- The rest of a procedure, or of a global expectation written with a
 block, after its name: its parameters, as inputs, and its results, as
 public outputs, each after any evidence setting (`header`); its block's
 members, the span of its closing `}`, the span of each member, and where
-its `{` ends. `first` is the position of its first token. -/
-def procRest (name : Ident) (first : Nat) : P (Array Member × Array Member × Span × Array Span × Nat) := do
-  let src := (← get).src
-  let itemStart := (← get).toks[first]!.span.start
-  let mut ls := itemStart
-  while ls > 0 && src[ls - 1]! != '\n' do ls := ls - 1
-  -- Whether the token before the one at `s` ends on an earlier line.
-  let broken (s : Span) : P Bool := do
-    let st ← get
-    let prev := st.toks[st.pos - 2]!.span.stop
-    return (src.extract prev s.start).any (· == '\n')
+its `{` ends. -/
+def procRest (name : Ident) : P (Array Member × Array Member × Span × Array Span × Nat) := do
   noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
   markCall
   markList
@@ -1949,13 +1629,8 @@ def procRest (name : Ident) (first : Nat) : P (Array Member × Array Member × S
       throw { span := d.span, msg := Fren.Core.inputDefinitionMsg }
     header := header.push (.var true true false x ty none)
     if (← eatKw ",").isNone then break
-  let pc ← expectKw ")"
-  let paramsVertical ← broken pc.span
-  let paramsEmpty := header.isEmpty
-  let paramNames := header.filterMap fun | .var _ _ _ x _ _ => some (unbanged x.name) | _ => none
+  discard (expectKw ")")
   let mut results := #[]
-  let mut resultsClose? := none
-  let mut resultsVertical := false
   if (← eatKw ":").isSome then
     markList
     discard (expectKw "(")
@@ -1970,14 +1645,10 @@ def procRest (name : Ident) (first : Nat) : P (Array Member × Array Member × S
       results := results.push (unbanged x.name)
       if (← eatKw ",").isNone then break
       if isKw (← peek) ")" then break
-    let rc ← expectKw ")"
-    resultsClose? := some rc.span.start
-    resultsVertical ← broken rc.span
+    discard (expectKw ")")
   let ob ← expectKw "{"
   let saved := (← get).proc?
-  modify fun s => { s with proc? := some {
-    paramsClose := pc.span.start, paramsEmpty, paramsVertical, resultsClose?, resultsVertical, results, params := paramNames
-    openBrace := ob.span.start, indent := itemStart - ls } }
+  modify fun s => { s with proc? := some { results } }
   let mut ms := #[]
   let mut spans := #[]
   repeat
@@ -2074,7 +1745,7 @@ partial def item : P Item := do
     let name ← ident
     -- Written with parameters and a block (`Reqs/Lang/Global`).
     if isKw (← peek) "(" then
-      let (header, ms, close, spans, openStop) ← procRest name first
+      let (header, ms, close, spans, openStop) ← procRest name
       return .globalBlock name header ms close spans openStop
     discard (expectKw ":")
     let bs ← match ← eatKw "forall" with
@@ -2093,7 +1764,7 @@ partial def item : P Item := do
         err o.span "F0130" "`ordered` is written after `pub`" (some "before `pub`")
           #["note: an ordered enum or struct is declared `pub ordered enum E { ... }` or `pub ordered struct R { ... }`"]
       let what := match t.tok with
-        | .kw "proc" | .kw "comp" => "procedures" | .kw "type" => "types"
+        | .kw "proc" => "procedures" | .kw "type" => "types"
         | .kw "fn" => "functions" | .kw "const" => "constants" | .kw "mod" => "modules"
         | tok => tok.describe
       err o.span "F0130" s!"`ordered` applies only to enums and structs, not to {what}" (some "`ordered` must be followed by `enum` or `struct`")
@@ -2178,7 +1849,7 @@ partial def item : P Item := do
     | _ => pure ()
     noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
     markCall
-    let firstOpen ← expectKw "("
+    discard (expectKw "(")
     let param : P (Array Ident × Option (Array Ident)) := do
       let p ← typeExpr
       return (p, ← type?)
@@ -2188,56 +1859,13 @@ partial def item : P Item := do
       discard (expectKw ")")
       return params
     let params ← group
-    -- A second `(` right after the first group, each of whose parameters
-    -- is a name: that group is type parameters, written in parentheses as
-    -- they were before they were written in angle brackets.
-    let s ← get
-    if typeParams.isEmpty && (s.toks[s.pos]?).any (isKw · "(") && (s.toks[s.pos - 1]?).any (·.span.stop == s.toks[s.pos]!.span.start)
-        && params.all fun (p, ty?) => p.size == 1 && ty?.isNone then
-      parenParams name firstOpen.span (← lastSpan)
     -- A named result and a block (`Reqs/Lang/Items#function-blocks`).
     let s ← get
     if (s.toks[s.pos]?).any (isKw · ":") && (s.toks[s.pos + 1]?).any (isKw · "(") then
       return ← fnBlock isPub name typeParams params
-    let paramsStop := (← lastSpan).stop
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
-    let headerStop := (← lastSpan).stop
-    let assign? ← eatKw ":="
-    let body ← if assign?.isSome then some <$> top else pure none
-    let bodyStop := (← lastSpan).stop
-    -- Its contract, as functions were written before blocks (`F0164`):
-    -- each clause continuing it.
-    let mut clauses := #[]
-    let mut clauseSpans : Array (Span × Bool) := #[]
-    repeat
-      let c ← peek
-      unless isWord c "assume" || isWord c "ensure" do break
-      discard bump
-      let x ← ident
-      discard (expectKw ":")
-      clauses := clauses.push (isWord c "ensure", x, ← top)
-      clauseSpans := clauseSpans.push (c.span.to (← lastSpan), isWord c "ensure")
-    -- Reported once the item has parsed: a clause that stops at a token
-    -- that does not start a line is followed by a parse error.
-    if let some (firstClause, _) := clauseSpans[0]? then
-      let t ← peek
-      if (t.tok == .eof || t.nlBefore) && !isKw t ":=" then
-        -- The function applied to its parameters, in a postcondition of a
-        -- function that is not generic: in a generic one, the application
-        -- may be at another instance than the result's.
-        let pnames := params.map fun (p, _) => unbanged p[0]!.name
-        let ownApps := if typeParams.isEmpty then
-            clauses.flatMap fun (isEnsure, _, e) => if isEnsure then selfApps name.name pnames e else #[]
-          else #[]
-        let fixed ← fnBlockText (← get).toks[first]!.span.start name paramsStop headerStop result
-          (assign?.map (·.span.stop)) bodyStop clauseSpans ownApps
-        throw { span := firstClause, msg := Fren.Core.fnClausesMsg (some fixed) }
-    let t ← peek
-    if !clauses.isEmpty && isKw t ":=" then
-      err t.span "F0143" "a function's body is written after its contract" (some "after the contract")
-        #["note: a function with a contract is written with a block, as in `fn f(x: Int): (r: Int) { assume pos: x > 0 out r := x + 1 }`",
-          "help: write the function with a block, its body the `out` member after the preconditions"]
-    return .function isPub name typeParams params result body clauses (← lastSpan)
+    let body ← if (← eatKw ":=").isSome then some <$> top else pure none
+    return .function isPub name typeParams params result body #[] (← lastSpan)
   if isKw t "const" then
     discard bump
     let name ← ident
@@ -2248,39 +1876,8 @@ partial def item : P Item := do
   if isKw t "proc" then
     discard bump
     let name ← ident
-    let (header, ms, close, spans, openStop) ← procRest name first
+    let (header, ms, close, spans, openStop) ← procRest name
     return .comp isPub name header ms close spans openStop
-  -- A component, as procedures were written before (`F0158`): its fix
-  -- writes it as a procedure.
-  if isKw t "comp" then
-    discard bump
-    let name ← ident
-    let ob ← expectKw "{"
-    modify fun s => { s with varMarks := #[] }
-    let mut ms := #[]
-    let mut spans := #[]
-    repeat
-      let t ← peek
-      if isKw t "}" then break
-      if t.tok == .eof then fail t "`}`"
-      ms := ms.push (← member (legacy := true))
-      spans := spans.push { t.span with stop := (← lastSpan).stop }
-    let close ← bump
-    let _ := name
-    let marks := (← get).varMarks
-    let mut vars := #[]
-    let mut k := 0
-    for m in ms, sp in spans, i in [0:ms.size] do
-      let .var isIn isPub' isDet x _ _ := m | continue
-      let some (nameStart, declStop, defnStart?) := marks[k]? | continue
-      k := k + 1
-      let rangeStart := if i > 0 && ms[i - 1]! matches .evidence .. then spans[i - 1]!.start else sp.start
-      vars := vars.push { isIn, isPub := isPub', isDet, range := { start := rangeStart, stop := sp.stop }, kwStart := sp.start
-                          nameStart, declStop, defnStart?, name := unbanged x.name : Fren.Core.OldVar }
-    let itemStart := (← get).toks[first]!.span.start
-    let text := Fren.Core.procText (← get).src itemStart (range t.span) ob.span.start close.span.stop vars
-    let msg := Fren.Core.compSyntaxMsg (some text)
-    throw { span := t.span, msg := { msg with fixes := msg.fixes.map ({ · with range? := some { start := itemStart, stop := close.span.stop } }) } }
   match t.tok with
   | .ident w | .kw w =>
     if leanCommands.contains w then

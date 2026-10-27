@@ -1,0 +1,9 @@
+-- A function's contract is written in its block: a clause after its
+-- signature is a parse error. (The type after it keeps Lean's recovery
+-- from reaching the test's `#fren_check`.)
+pub fn pred(n: Int): Int := n - 1
+    assume positive: n > 0
+--~^[cli] error: expected an item
+--~^^[hosted] error: unexpected identifier; expected command
+pub type T
+--@ exit: 2

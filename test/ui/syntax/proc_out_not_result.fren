@@ -1,0 +1,7 @@
+-- In a procedure, `out` defines one of its results alone (`F0444`): a
+-- parameter is none.
+proc c(x: Int): (y: Int) {
+    out x := 1   --~ error: `x` is not a result of the procedure
+    ensure r: y = x
+}
+--@ exit: 2

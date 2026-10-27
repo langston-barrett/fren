@@ -13,7 +13,6 @@ enum E { A }
 
 proc missing(y?) { call s := sub(y?) }                     --~ error: too few arguments: `sub` takes 2 arguments
 proc extra(y?) { call s := sub(1, y?, 2) }                 --~ error: too many arguments: `sub` takes 2 arguments
-proc old(y?) { inst s: sub { y?, x := 1 } }                --~ error: instances are written as calls
 proc not_comp() { call s := E() }                             --~ error: expected a procedure, but `E` is an enum
 proc q_name(y?) { call s? := sub(1, y?) }          --~ error: call names cannot end in `?`
 proc dup_name(y?) { call y? := sub(1, y?) }        --~ error: `y?` is defined multiple times in this procedure

@@ -1,5 +1,0 @@
--- An uninterpreted function's contract (F0164): its block has no `out`,
--- and its `Bool` result is `r?`.
-pub type Name
-pub fn named?(n: Name)
-    ensure total: named?(n) or not named?(n)

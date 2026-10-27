@@ -1307,48 +1307,6 @@ to `--skip` (`lint::fix_selected`). -/
 def fixSelected (only skip : Array Lint) (l : Lint) : Bool :=
   (only.isEmpty || only.contains l) && !skip.contains l
 
-/-- The parse errors whose fixes `fren fix` makes, which migrate a spec from
-an earlier syntax: types and declarations written with parentheses for
-their type arguments and type parameters, components and their members,
-and functions' contracts written after their signatures
-(`lint::migration_step`). -/
-def migrationCodes : List String := ["F0155", "F0156", "F0158", "F0159", "F0160", "F0164"]
-
-/-- The most migration fixes that `fren fix` makes in a file. Each makes
-the file's earlier syntax shorter, so this bounds only a bug. -/
-def maxMigrations : Nat := 1000
-
-/-- The code of the static error whose fix writes an instance as a call
-(`lint::call_migration_round`). -/
-def callMigrationCode : String := "F0420"
-
-/-- Whether `fren fix` makes another round of the fixes of the instances
-(`F0420`), which need name resolution: whether there are any (`fixes`),
-and how many rounds it has made (`lint::call_migration_round`). -/
-def callMigrationApplies (fixes : Bool) (round : Nat) : Bool := fixes && round < maxMigrations
-
-/-- The fixes that the round `round` of the instances' fixes makes, from
-whether each `F0420` of the files, as elaborated before it, has a fix
-(`offered`): the positions of those that do, all at once; `none` once no
-round is left to make (`lint::call_migration_round`). -/
-def callMigrationRound (offered : Array Bool) (round : Nat) : Option (Array Nat) :=
-  if callMigrationApplies (offered.any id) round then some ((List.range offered.size).filter (offered[·]!)).toArray
-  else none
-
-/-- What `fren fix` does next to migrate a file (`lint::migration_step`). -/
-inductive MigrationStep where
-  | parsed
-  | apply
-  | stop
-  deriving BEq, DecidableEq, Repr
-
-/-- What `fren fix` does next to migrate a file: whether it does not parse
-(`parseError`), whether its parse error is a migration's with a fix
-(`migration`), and how many fixes it has made (`round`)
-(`lint::migration_step`). -/
-def migrationStep (parseError migration : Bool) (round : Nat) : MigrationStep :=
-  if !parseError then .parsed else if migration && round < maxMigrations then .apply else .stop
-
 /-- The exit status of `fren fix` (`lint::fix_exit`). -/
 def fixExit (check loaded allFixed : Bool) : UInt32 :=
   if !loaded then 2 else if check && !allFixed then 1 else 0

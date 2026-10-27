@@ -524,44 +524,22 @@ proc c(n: Int is 0..=9) {}
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
-  { code := "F0142", explanation := r#"`req`, where a member of a procedure is expected.
+  { code := "F0142", explanation := r#"A removed code: `req` where a member is expected.
 
-Erroneous code example:
+`F0142` was the error for `req` where a member of a procedure was
+expected: `req` was the keyword of a guarantee before `ensure`. Every spec
+now writes `ensure`, and `req` is an ordinary identifier, so a member that
+starts with it is a parse error like any other. Nothing reports `F0142`,
+and the code is not reused.
+"#, args := none },
+  { code := "F0155", explanation := r#"A removed code: a type with its type arguments in parentheses.
 
-```fren
-proc c(x: Int): (y?) { req r: y? iff x > 0 }
-```
-
-A guarantee, what a procedure says the system must do, is written with
-`ensure`, as an assumption is written with `assume`. `req` was its keyword
-before, and is no longer a keyword: write `ensure` instead.
-
-```fren
-proc c(x: Int): (y?) { ensure r: y? iff x > 0 }
-```
-
-In Lean, Lean's own parser reports this, as a syntax error.
-"# },
-  { code := "F0155", explanation := r#"A type with its type arguments in parentheses.
-
-Erroneous code example:
-
-```fren
-proc c(x: Option(Int)) {}
-```
-
-A type's arguments are written in angle brackets right after its name, as
-in `Set<Int>`, `Rel<Int, Bool>` and `Option<Int>`. They were written in
-parentheses before. The fix writes the whole type with angle brackets,
-those of the types within it too:
-
-```fren
-proc c(x: Option<Int>) {}
-```
-
-A newtype's and a variant's parentheses hold a payload's types, not type
-arguments, and stay parentheses, as in `struct Ms(Int)`.
-"# },
+`F0155` was the error for a type written with its type arguments in
+parentheses, such as `Option(Int)`, as they were written before angle
+brackets, and its fix wrote them in angle brackets. Every spec now writes
+`Option<Int>`, and a `(` after a type's name is a parse error like any
+other. Nothing reports `F0155`, and the code is not reused.
+"#, args := none },
   { code := "F0161", explanation := r#"A closure without parameters.
 
 Erroneous code example:
@@ -598,32 +576,15 @@ result's type after `->`:
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 ```
 "# },
-  { code := "F0164", explanation := r#"A function's contract written after its signature.
+  { code := "F0164", explanation := r#"A removed code: a function's contract written after its signature.
 
-Erroneous code example:
-
-```fren
-pub fn inc(x: Int): Int := x + 1
-    assume positive: x > 0
-    ensure bigger: inc(x) > x
-```
-
-A function with a contract is written with its result named in its
-signature and a block, as a procedure is: its body is the `out` member
-that defines the result, and its preconditions and postconditions are its
-`assume` and `ensure` members, which may mention its `let`s, and its
-postconditions the result. The meaning is unchanged. `fren fix` writes the
-function with a block, the function applied to its parameters as the
-result:
-
-```fren
-pub fn inc(x: Int): (r: Int) {
-    assume positive: x > 0
-    out r := x + 1
-    ensure bigger: r > x
-}
-```
-"# },
+`F0164` was the error for a function's contract written as clauses after
+its signature, `fn f(x: Int): Int := e assume ... ensure ...`, as
+functions were written before they had blocks, and its fix wrote the
+function with a block. Every spec writes its functions' contracts in
+their blocks, and a clause after a signature is a parse error like any
+other. Nothing reports `F0164`, and the code is not reused.
+"#, args := none },
   { code := "F0165", explanation := r#"A function's precondition or body that mentions its result.
 
 Erroneous code example:
@@ -649,89 +610,40 @@ pub fn half(x: Int): (r: Int) {
 }
 ```
 "# },
-  { code := "F0156", explanation := r#"Type parameters in parentheses.
+  { code := "F0156", explanation := r#"A removed code: type parameters in parentheses.
 
-Erroneous code example:
+`F0156` was the error for a declaration's type parameters written in
+parentheses, such as `enum Tree(T) { ... }` or `fn f(T)(x: T)`, as they
+were written before angle brackets, and its fix wrote them in angle
+brackets. Every spec now writes `enum Tree<T>`, and the old form is a
+parse error like any other. Nothing reports `F0156`, and the code is not
+reused.
+"#, args := none },
+  { code := "F0158", explanation := r#"A removed code: a component, as procedures were written before.
 
-```fren
-pub enum Tree(T) { Leaf, Node(T) }
-```
+`F0158` was the error for a component, `comp c { in x: T pub out y: U
+... }`, as procedures were written before they were procedures, and its
+fix wrote the component as a procedure. Every spec is now written with
+`proc`, and `comp` is no longer a keyword, so a component is a parse error
+like any other. Nothing reports `F0158`, and the code is not reused.
+"#, args := none },
+  { code := "F0159", explanation := r#"A removed code: an `in` member of a procedure.
 
-A generic enumeration's, record's or function's type parameters are
-written in angle brackets right after its name, as in `enum Option<T>`,
-`struct Pair<A, B> { ... }` and `fn f<T>(x: T): T`. They were written in
-parentheses before:
+`F0159` was the error for an input declared as a member, `in x: T`, as
+components declared them, and its fix made it a parameter. Every spec
+declares its inputs as parameters, and a member that starts with `in` is a
+parse error like any other. Nothing reports `F0159`, and the code is not
+reused.
+"#, args := none },
+  { code := "F0160", explanation := r#"A removed code: an output declared as components declared them.
 
-```fren
-pub enum Tree<T> { Leaf, Node(T) }
-```
-"# },
-  { code := "F0158", explanation := r#"A component, as procedures were written before.
-
-Erroneous code example:
-
-```fren
-pub comp c {
-    in x: Int
-    pub out y: Int
-    ensure r: y = x + 1
-}
-```
-
-Components are now procedures, written like functions: the inputs are
-the parameters, the public outputs are named results in the signature,
-and the private outputs are `exists` and `let` members. Their meaning is
-unchanged. `fren fix` writes a component as a procedure:
-
-```fren
-pub proc c(x: Int): (y: Int) {
-    ensure r: y = x + 1
-}
-```
-"# },
-  { code := "F0159", explanation := r#"An `in` member of a procedure.
-
-Erroneous code example:
-
-```fren
-proc c() {
-    in x: Int
-    assume a: x > 0
-}
-```
-
-A procedure's inputs are its parameters, in its signature, in the order
-that calls give its arguments. `fren fix` moves the input there:
-
-```fren
-proc c(x: Int) {
-    assume a: x > 0
-}
-```
-"# },
-  { code := "F0160", explanation := r#"An output declared as components declared them.
-
-Erroneous code example:
-
-```fren
-proc c(x: Int) {
-    pub out y: Int
-    ensure r: y = x
-}
-```
-
-A procedure's public outputs are named results, in its signature, as in
-`proc c(x: Int): (y: Int)`. A result with a definition is defined by the
-member `out y := e`, which declares nothing. A private output is `exists
-z: T`, which the system chooses, or `let z: T := e`, which stands for its
-definition. `fren fix` writes each so:
-
-```fren
-proc c(x: Int): (y: Int) {
-    ensure r: y = x
-}
-```
-"# },
+`F0160` was the error for an output declared as components declared
+them, `[pub] [det] out x: T [:= e]`, and its fix wrote it as a result, an
+`exists` or a `let`. Every spec declares its outputs so, and `out` is only
+`out r := e`, which defines a result: any other form is a parse error, and
+`out x := e` of a name that is not a result is `F0444`. Nothing reports
+`F0160`, and the code is not reused.
+"#, args := none },
   { code := "F0152", explanation := r#"A generic function's type parameter that is not a name.
 
 Erroneous code example:
@@ -769,29 +681,15 @@ proc c(x: Int): (y: Int) { ensure r: y = f(x) }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
-  { code := "F0143", explanation := r#"A function's body is written after its contract.
+  { code := "F0143", explanation := r#"A removed code: a function's body written after its contract.
 
-Erroneous code example:
-
-```fren
-fn pred(n: Int): Int
-    assume positive: n > 0
-    := n - 1
-```
-
-A function with a contract is written with its result named in its
-signature and a block (see `F0164`), its body the `out` member that
-defines the result, after the preconditions:
-
-```fren
-fn pred(n: Int): (r: Int) {
-    assume positive: n > 0
-    out r := n - 1
-}
-```
-
-In Lean, Lean's own parser reports this, as a syntax error.
-"# },
+`F0143` was the error for a function whose body, `:= e`, followed the
+clauses of a contract written after its signature, as functions were
+written before they had blocks. A function's contract is now written in
+its block, and the clauses after a signature are no longer parsed, so the
+first is a parse error like any other. Nothing reports `F0143`, and the
+code is not reused.
+"#, args := none },
   { code := "F0140", explanation := r#"A pattern test has a guard.
 
 Erroneous code example:
@@ -2725,17 +2623,16 @@ proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.b }
 `F0406` was an instance that bound the same input twice. Instances are now
 calls, whose arguments are positional, one for each of the called
 procedure's parameters, in order, so none can be given twice: too many
-arguments is `F0408`, and too few `F0409`. An instance written as
-instances were is `F0420`. Nothing reports `F0406`, and the code is not
-reused.
+arguments is `F0408`, and too few `F0409`. Nothing reports `F0406`, and
+the code is not reused.
 "#, args := none },
   { code := "F0407", explanation := r#"A removed code: an instance that binds an output.
 
 `F0407` was an instance that bound an `out` of its component. Instances
 are now calls, whose arguments are positional and give only the called
 procedure's parameters, so none can give a result: too many arguments is
-`F0408`, and too few `F0409`. An instance written as instances were is
-`F0420`. Nothing reports `F0407`, and the code is not reused.
+`F0408`, and too few `F0409`. Nothing reports `F0407`, and the code is
+not reused.
 "#, args := none },
   { code := "F0408", explanation := r#"A call with too many arguments.
 
@@ -3007,43 +2904,15 @@ at an argument:
 fn same_at?(f: fn(Int) -> Int, g: fn(Int) -> Int, x: Int) := f(x) = g(x)
 ```
 "# },
-  { code := "F0416", explanation := r#"A global expectation, as global expectations were written before.
+  { code := "F0416", explanation := r#"A removed code: a global expectation in the form before parameters.
 
-Erroneous code example:
-
-```fren
-proc double(x: Int): (y: Int) {
-    assume small: x < 100
-    ensure r: y = 2 * x
-}
-
-expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y
-```
-
-A global expectation takes parameters, and relates procedures by calling
-them, as a procedure does; a binder of its leading `forall` no longer
-ranges over a procedure's behaviours. Write it by hand with a parameter for
-each input of each binder, a call for each binder, and the procedures'
-assumptions as its own, so that it means what it did:
-
-```fren
-proc double(x: Int): (y: Int) {
-    assume small: x < 100
-    ensure r: y = 2 * x
-}
-
-expect monotone(a_x: Int, b_x: Int) {
-    assume a_small: a_x < 100
-    assume b_small: b_x < 100
-    call a := double(a_x)
-    call b := double(b_x)
-    expect monotone: when a.x <= b.x, a.y <= b.y
-}
-```
-
-A binder over values, such as `forall (m: Method)`, is no error: it is a
-quantifier.
-"# },
+`F0416` was the error for a global expectation whose leading `forall`
+had a binder over a procedure's behaviours, `expect n: forall (a: p),
+E`, as global expectations were written before they had parameters and
+calls. Every spec now writes them with parameters and calls, and a
+binder over a procedure is `F0210`, as it is in any quantifier. Nothing
+reports `F0416`, and the code is not reused.
+"#, args := none },
   { code := "F0417", explanation := r#"A member that a global expectation does not have.
 
 Erroneous code example:
@@ -3073,27 +2942,14 @@ expect even(x: Int) {
 }
 ```
 "# },
-  { code := "F0420", explanation := r#"An instance, as calls were written before.
+  { code := "F0420", explanation := r#"A removed code: an instance, as calls were written before.
 
-Erroneous code example:
-
-```fren
-proc sub(a: Int, b?) {}
-proc c(x: Int) { inst s: sub { b? := x > 0, a := x } }
-```
-
-Instances are now calls, whose arguments are positional: `call w := p(e1,
-e2)` gives one argument for each of `p`'s parameters, in the order that
-`p` declares them. The meaning is unchanged. Writing an instance as a call
-needs that order, so this is reported once the called procedure is known,
-and `fren fix` makes the fix then, if the instance binds each parameter
-exactly once:
-
-```fren
-proc sub(a: Int, b?) {}
-proc c(x: Int) { call s := sub(x, x > 0) }
-```
-"# },
+`F0420` was the error for an instance, `inst w: p { x := e }`, as calls
+were written before they were calls, and its fix wrote it as a call,
+`call w := p(e)`. Every spec now writes calls, and `inst` is no longer a
+keyword, so an instance is a parse error like any other. Nothing reports
+`F0420`, and the code is not reused.
+"#, args := none },
   { code := "F0421", explanation := r#"A result defined more than once.
 
 Erroneous code example:
@@ -3163,7 +3019,7 @@ pub fn f(x: Int): (r: Int) {
 }
 ```
 "# },
-  { code := "F0444", explanation := r#"`out` of a name other than a function's result.
+  { code := "F0444", explanation := r#"`out` of a name other than a result.
 
 Erroneous code example:
 
@@ -3174,7 +3030,9 @@ pub fn f(x: Int): (r: Int) {
 ```
 
 In a function's block, `out r := e` defines its result `r`, its value,
-and nothing else. A value of the block's own is a `let`:
+and nothing else; in a procedure's block, it defines one of the
+procedure's results, those in its signature, and a parameter or any other
+name is no result. A value of the block's own is a `let`:
 
 ```fren
 pub fn f(x: Int): (r: Int) {

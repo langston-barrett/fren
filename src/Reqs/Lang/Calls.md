@@ -90,10 +90,6 @@ pub proc arguments(
 }
 ```
 
-Before calls, an instance bound its component's inputs by name, as `inst
-w: c { x := e, y }`; that is an error now, whose fix writes it as a call
-(see [Migration](Procedures.md#migration)).
-
 ## Call variables
 
 Within the procedure, `w.x` refers to the variable `x` of the call `w`.

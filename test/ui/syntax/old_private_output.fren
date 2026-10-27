@@ -1,8 +1,0 @@
--- A private defined output, `out x := e`, where `x` is no result (F0160):
--- it is a `let`.
-proc c(x: Int): (y?) {
-    out big? := x > 9
-    --~^ error: a private output with a definition is written `let`
-    ensure r: y? iff big?
-}
---@ exit: 2

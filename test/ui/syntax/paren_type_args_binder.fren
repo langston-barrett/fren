@@ -1,4 +1,0 @@
--- Type arguments in parentheses in a quantifier's binder (`F0155`).
-proc c(s: Set<Int>): (p?) { ensure r: p? iff (forall (t: Set(Int)), t = s) }
---~^ error: type arguments are written in angle brackets
---@ exit: 2

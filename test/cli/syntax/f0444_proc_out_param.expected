@@ -1,0 +1,12 @@
+error[F0444]: `x` is not a result of the procedure
+ --> test/cli/syntax/f0444_proc_out_param.fren:4:5
+  |
+4 |     out x := 1
+  |     ^^^^^ not a result
+  |
+  = note: `out` defines a result of the procedure, one in its signature; a local definition is written `let x := e`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0444`.
+exit=2

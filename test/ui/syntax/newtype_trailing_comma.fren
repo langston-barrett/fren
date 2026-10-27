@@ -2,5 +2,5 @@
 -- trailing one.
 struct Ms(Int,)
 --~^[cli] error: expected a name, found `)`
---~^^[hosted] error: expected fren_type or identifier
+--~^^[hosted] error: expected fren_type
 --@ exit: 2

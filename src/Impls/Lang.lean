@@ -1096,14 +1096,12 @@ def toBinderTarget : lang.BinderTarget → Fren.Core.BinderTarget
   | .Component => .component
 
 -- For every binder, by what its type names.
-impl quantifier_binder: lang::quantifier_binder for (t : lang.BinderTarget) (g : Bool) {
+impl quantifier_binder: lang::quantifier_binder for (t : lang.BinderTarget) {
   target := t,
-  global? := g,
-  accepted? := (Fren.Core.quantifierBinder (toBinderTarget t) g).1,
-  migrated? := (Fren.Core.quantifierBinder (toBinderTarget t) g).2,
+  accepted? := Fren.Core.quantifierBinder (toBinderTarget t),
 } by
-  intro t g _
-  cases t <;> cases g <;> simp [fren_spec, toBinderTarget, Fren.Core.quantifierBinder]
+  intro t _
+  cases t <;> simp [fren_spec, toBinderTarget, Fren.Core.quantifierBinder]
 
 def toGuardOperand : lang.GuardOperand → Fren.Core.GuardOperand
   | .Name => .name
@@ -1437,7 +1435,6 @@ def toBracket : lang.Bracket → Fren.Core.Bracket
 /-- What a bracket after a name does, as the spec writes it. -/
 def ofAfterName : Fren.Core.AfterName → lang.AfterName
   | .opens => .Opens
-  | .parenthesized => .Parenthesized
   | .spaced => .Spaced
   | .ends => .Ends
 
@@ -1450,16 +1447,6 @@ impl type_bracket: lang::type_bracket for (b : lang.Bracket) (a : Bool) {
 } by
   intro b a _
   cases b <;> cases a <;> simp [fren_spec, toBracket, ofAfterName, Fren.Core.afterName]
-
--- For every character: how both front ends write it in a suggestion.
-impl angle_char: lang::angle_char for (s : String) (b : Bool) {
-  ch := s,
-  swapped? := b,
-  text := Fren.Core.angleChar s b,
-} by
-  intro s b _
-  simp only [fren_spec, Fren.Core.angleChar, Fren.Str.lit]
-  cases b <;> by_cases h1 : s = "(" <;> by_cases h2 : s = ")" <;> simp_all
 
 namespace Lexical
 

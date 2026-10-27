@@ -5302,44 +5302,10 @@ structure PendingInst where
   /-- A call's arguments, rather than bindings written by name. -/
   positional : Bool := true
 
-/-- The call that the instance `inst x: p { bs }`, of `c`, at `span`, is
-written as (`F0420`), if its bindings bind each of `c`'s parameters
-`params` once (`lang::argument_order`). -/
-def instCallText (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (params : Array Name) (span : Span) :
-    M (Option String) := do
-  let src := (← get).src
-  let isSpace (c : Char) := c == ' ' || c == '\t'
-  let vertical := (src.extract span.start span.stop).any (· == '\n')
-  -- Each argument's text, as written after `:=`, comments and all, and in
-  -- a call written one argument to a line, the comment after its binding.
-  let args ← bs.mapM fun (b, e?) => do
-    let stop := match e? with
-      | some e => (Fren.Core.withParensIn src (toRange span) (toRange (e.writtenSpan src))).stop
-      | none => b.span.stop
-    let text := match e? with
-      | some _ =>
-        let after := (String.ofList (src.extract b.span.stop stop).toList).trimAsciiStart.toString
-        ((after.drop 2).trimAsciiStart).toString
-      | none => b.name
-    let mut i := stop
-    while i < span.stop && (isSpace src[i]! || src[i]! == ',') do i := i + 1
-    let comment? := if vertical && src[i]? == some '-' && src[i + 1]? == some '-' then Id.run do
-        let mut j := i
-        while j < src.size && src[j]! != '\n' do j := j + 1
-        return some (String.ofList (src.extract i j).toList).trimAsciiEnd.toString
-      else none
-    return (b.name, (text, comment?))
-  let some ordered := Fren.Core.argumentOrder (params.toList.map Fren.Core.nameText) args.toList | return none
-  let (_, ls, _) := Fren.Core.lineAt src span.start
-  return some (Fren.Core.callText (span.start - ls) (← srcAt x.span) (← srcAt (p[0]!.span.to p.back!.span)) ordered vertical)
-
-/-- Resolves the call `call x := p(args)`, or the instance `inst x: p { bs
-}` (`named`), at `span`: the called procedure and the call's variables,
-with each argument bound to the parameter in its position (`F0408`,
-`F0409`). An instance is an error (`F0420`), whose fix writes it as a
-call. -/
-def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (named : Bool) (span : Span)
-    (written : Ident := x) : M (PendingInst × Array CVar) := do
+/-- Resolves the call `call x := p(args)`: the called procedure and the
+call's variables, with each argument bound to the parameter in its
+position (`F0408`, `F0409`). -/
+def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) : M (PendingInst × Array CVar) := do
   let w := Name.mkSimple x.name
   let path ← match ← resolve p with
     | .item { kind := .compItem, path, .. } => pure path
@@ -5352,10 +5318,6 @@ def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)
   noteCounts c (p[0]!.span.to p.back!.span)
   let params := c.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (·.name)
   let callee := showPath path
-  if named then
-    let fixed? ← instCallText written p bs params span
-    let msg := Fren.Core.instSyntaxMsg callee fixed?
-    err { span with stop := x.span.stop } { msg with fixes := msg.fixes.map ({ · with range? := some (toRange span) }) }
   let some bound := Fren.Core.callBindings (params.map Fren.Core.nameText) bs
     | let at_ := if bs.size > params.size then bs[params.size]!.1.span.to bs.back!.1.span else p[0]!.span.to p.back!.span
       err at_ (Fren.Core.callArityMsg callee (params.map Fren.Core.nameText) bs.size)
@@ -5588,9 +5550,7 @@ def elabCompInsts (members : Array Member) (vars : Array CVar) : M (Array Pendin
   let mut vars := vars
   let mut pending := #[]
   for m in members do
-    let .inst x p bs named span := m | continue
-    -- The name as written, with any `!`, for `F0420`'s fix.
-    let written := x
+    let .inst x p bs _ := m | continue
     -- Its name is checked once, whether or not it shadows.
     let x := (← attempt do
         let x ← declare x
@@ -5598,7 +5558,7 @@ def elabCompInsts (members : Array Member) (vars : Array CVar) : M (Array Pendin
         return x).getD (declaredIdent x).1
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
-    let some (pi, ivars) ← attempt (resolveInst x p bs named span written) | continue
+    let some (pi, ivars) ← attempt (resolveInst x p bs) | continue
     pending := pending.push pi
     vars := vars ++ ivars
     -- Its bindings give each input of its procedure a value, and the
@@ -6100,22 +6060,6 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
                                         relational, counts, tested, enumerated, enumSize := s.enumSize, natApps
                                         guarded := afterBindings.guardedUsed } }
 
-/-- The procedure that a global expectation's binder of type `segs` ranges
-over the behaviours of, or `none` if it ranges over the values of a type
-(`lang::quantifier_binder`), which a quantifier checks. A path that names
-neither is an error. -/
-def globalBinderComp? (segs : Array Ident) : M (Option Name) := do
-  -- An instance of a generic type, or a pattern type, is a type
-  -- (`Reqs/Lang/Generics`).
-  if [Parser.setSeg, Parser.seqSeg, Parser.relSeg].contains segs[0]!.name
-      || (segs.size == 1 && ["Bool", "Int", "Nat", "String"].contains segs[0]!.name)
-      || segs.any (·.name == Parser.argsOpen) || segs.any (·.isPatternSeg) then
-    return none
-  match ← resolve segs with
-  | .item { kind := .compItem, path, .. } => return some path
-  | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
-  | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a type" r)
-
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
@@ -6145,15 +6089,8 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   let declared := binderIds.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err binderIds[k]!.span (Fren.Core.dupBinderMsg declared[k]!)
-  -- A binder over a procedure's behaviours is the form that global
-  -- expectations were written in before (`F0416`), and the binders over
-  -- values alone a quantifier around the body (`lang::quantifier_binder`).
-  let resolved ← binders.mapM fun b => return (b, ← globalBinderComp? b.ty)
-  if let some (b, _) := resolved.find? fun (_, p?) =>
-      (Fren.Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
-    err (b.ty[0]!.span.to b.ty.back!.span) Fren.Core.oldGlobalMsg
-  -- Without a binder over behaviours, it mentions no variables
-  -- (`Reqs/Lang/Global#the-short-form`).
+  -- Its binders are a quantifier around the body, and it mentions no
+  -- variables (`Reqs/Lang/Global#the-short-form`).
   let valueBinders := binders
   let cx : ExprCtx := { vars := #[], place := .prop }
   discard takeIndexes
