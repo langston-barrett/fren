@@ -1,0 +1,22 @@
+error[F0714]: this is outside the decidable core: an operation on sequences other than indexing, `len` and `update` makes a word equation, which may be undecidable
+ --> test/cli/lints/decidability/f0714_element_index.fren:6:37
+  |
+6 |     ensure a: forall (i: Int), when i in q, r[i] > 0
+  |                                     ^^^^^^ outside the decidable core
+  |
+  = help: index at positions, or compare with a literal, as in `x in [a, b]` or `q.starts_with?([a])`
+  = note: `undecidable` is `deny` by default
+  = help: to allow it, `set_option fren.lint.undecidable "allow"`
+
+error[F0714]: this is outside the decidable core: its bound name is used as an index, which is outside the array property fragment
+ --> test/cli/lints/decidability/f0714_element_index.fren:6:22
+  |
+6 |     ensure a: forall (i: Int), when i in q, r[i] > 0
+  |                      ^^^^^^^^ outside the decidable core
+  |
+  = help: use the element only as a value, or quantify over the positions and opt out
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0714`.
+exit=2

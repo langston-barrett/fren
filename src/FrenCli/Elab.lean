@@ -14,6 +14,7 @@ import FrenCore.Patterns
 import FrenCore.Quantifier
 import FrenCore.Refine
 import FrenCore.Regex
+import FrenCore.SeqElems
 import FrenCore.Trace
 import FrenCore.Ty
 import FrenCore.Typing
@@ -806,6 +807,11 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   /-- Some quantifier is unbounded, so every query may quantify
   (`cli::logic`). -/
   quantified : Bool := false
+  /-- The memberships `x in e` of the guards of the quantifiers over elements
+  being elaborated (`ExprCtx.elemGuards`), by the span of `e`: whether `e`
+  is a sequence, and the `undecidable` report that `in` defers until the
+  quantifier is known to be outside the core, if it has one. -/
+  elemMembers : Array (Span × Bool × Option (Span × Fren.Core.Msg)) := #[]
   /-- The current item has an unbounded quantifier with a bound name that
   has a domain, directly, through an instance or through a defined
   function, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
@@ -1119,6 +1125,18 @@ structure ExprCtx where
   /-- For an operand of a chain of `and`, its position in the chain and the
   chain's number of operands. -/
   testAt? : Option (Nat × Nat) := none
+  /-- The members' expressions of the guards of the quantifiers over
+  elements around this expression, by span (`State.elemMembers`). -/
+  elemGuards : Array Span := #[]
+  /-- Within the body of a quantifier over elements: whether it is a
+  `forall`; and the quantifiers that are directly its body, or the body
+  of one of those, by span (`Fren.Core.ElementNesting`). -/
+  elemKind? : Option Bool := none
+  elemDirect : Array Span := #[]
+  /-- The bound names of the quantifiers over elements, of the same kind,
+  that this expression is directly the body of, which its quantifier may
+  mention (`Fren.Core.ElementVerdict.mentionsBound`). -/
+  elemChain : Array Name := #[]
 
 /-- What the binder `b` is, for a declaration that hides it (`Fren.Core.bindingLocals`). -/
 def CBinder.what (b : CBinder) : Name × String :=
@@ -1492,6 +1510,87 @@ def checkCore (cx : ExprCtx) (span : Span) (c : Fren.Core.Construct) (constantAr
   unless Fren.Core.inCore c constantArgs comparable infinite ground infiniteElems finiteRange literalOperand do
     modify fun s => { s with outsideCore := true }
     lint .undecidable span (Fren.Core.undecidableMsg c infinite)
+
+/-- Whether `e` mentions an output that is not defined, directly, through a
+definition or through a binder: one that the realizability check
+quantifies over (`lang::ElementBinder`). -/
+partial def mentionsOutput (cx : ExprCtx) (e : Expr) : M Bool := do
+  for n in mentions e do
+    if let some b := cx.binder? n then
+      if let some sc := b.scrutinee then
+        if ← mentionsOutput (cx.at b) sc then return true
+      continue
+    let some v := cx.vars.find? (·.name == n) | continue
+    if (defDeps cx.vars v).any fun u => u.role == .output && u.defn?.isNone then return true
+  return false
+
+/-- Whether the body of the defined function `path` has a quantifier over a
+type that is not listed, directly or through another defined function that
+it applies, to a depth of `fuel`, beyond which it is taken to have one: its
+`define-fun` has the solver's quantifier, or a quantifier over elements
+(`Fren.Core.ElementUse.quantifiedArgument`). -/
+partial def fnQuantifies (st : State) (fuel : Nat) (path : Name) : Bool :=
+  if fuel == 0 then true else
+  let body? := ((st.genericFns.find? path).map (·.body)).orElse fun _ =>
+    (st.defs.find? (·.1 == path)).map (·.2.2.2)
+  match body? with
+  | none => false
+  | some body =>
+    let quantified := ["(forall (", "(exists (", "(fren.forall (", "(fren.exists ("].any fun h => (body.splitOn h).length > 1
+    quantified || st.defs.any fun (p, _, _, _) =>
+      p != path && (body.splitOn ((st.instSyms.find? p).getD (itemSym p))).length > 1 && fnQuantifies st (fuel - 1) p
+
+/-- How an application of `segs` uses an argument that mentions a bound
+name (`elementUses`): a defined function with a parameter that has a
+sequence within it, or an uninterpreted function whose applications bring
+facts. -/
+def appElementUse (cx : ExprCtx) (segs : Array Ident) : M (Array Fren.Core.ElementUse) := do
+  let st ← get
+  let .ok (.item { kind := .fnItem, path, .. }) := st.table.resolvePath st.scope (segNames segs) cx.shadowing | return #[]
+  let declared : Option (Array Ty) := match st.genericFns.find? path, st.defs.find? (·.1 == path) with
+    | some g, _ => some g.declared
+    | none, some d => some (d.2.1.map (·.2))
+    | none, none => none
+  if let some ps := declared then
+    if ps.any (Fren.Core.hasSeqWithin st.shapeOf 8) then return #[.seqArgument]
+    return if fnQuantifies st 8 path then #[.quantifiedArgument] else #[]
+  let facts : Bool := match st.funs.find? (·.1 == path) with
+    | some f => f.2.2 == .nat || (st.contracts.find? path).isSome || st.funFacts.contains (itemSym path)
+    | none => false
+  return cond facts #[.factArgument] #[]
+
+/-- How the expression `e`, within the body of a quantifier, uses the bound
+name `x`, where `inner` are the names that the body declares, which may
+stand for `x` (`Fren.Core.ElementUse`): as an index, or an `update`'s
+position, of a sequence that is not a constant; in an argument of a
+defined function with a parameter that has a sequence within it, or of an
+uninterpreted function whose applications bring facts; or in the members of
+a quantifier's guard. -/
+partial def elementUses (cx : ExprCtx) (x : Name) (inner : Array Name) (e : Expr) : M (Array Fren.Core.ElementUse) := do
+  let names (e : Expr) : Bool := (mentions e).any fun n => n.getRoot == x || inner.contains n.getRoot
+  let own : Array Fren.Core.ElementUse ← match e with
+    | .index _ r i => pure <| if names i && !(← isConstant cx r) then #[.index] else #[]
+    | .method _ r m args =>
+      let positions := match m.name with | "update" | "at" => 1 | "slice" => 2 | _ => 0
+      pure <| if (args.extract 0 positions).any names && !(← isConstant cx r) then #[.index] else #[]
+    | .app _ segs args => if args.any names then appElementUse cx segs else pure #[]
+    | .quant _ all _ b =>
+      let receivers := (guardConjuncts all b).filterMap fun
+        | some (_, .mem, r) => some r
+        | _ => none
+      pure <| if receivers.any names then #[.receiver] else #[]
+    | _ => pure #[]
+  return own ++ (← e.children.flatMapM (elementUses cx x inner))
+
+/-- The quantifier that is directly the body `e` of a quantifier over
+elements, a `forall` if `all`, if any, by its span: under a `forall`'s
+`when`s, or as the last conjunct of an `exists`'s body, of the same kind
+(`Fren.Core.ElementNesting`). -/
+partial def elementSpine (all : Bool) : Expr → Option Span
+  | .when _ false _ d => if all then elementSpine all d else none
+  | .bin _ "and" _ b => if all then none else elementSpine all b
+  | .quant sp a _ _ => if a == all then some sp else none
+  | _ => none
 
 /-- The expressions directly within `e`, in order. -/
 def Expr.operands : Expr → Array Expr
@@ -2915,8 +3014,12 @@ when they shadow (`lang::shadowing`), and the combinations be at most
 listed type has a symbol that no variable has, which each instance
 replaces; one of another type, the symbol `x'k`, with `k` its position
 among the binders in scope, which the solver's quantifier binds, and which
-`undecidable` reports at its binder (`lang::in_core`). -/
-def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array (Array String) × Array FreeBound) := do
+`undecidable` reports at its binder (`lang::in_core`), unless `defer`,
+for its caller to report at the spans returned last, once it knows whether
+the quantifier is one over elements in the core
+(`lang::element_quantifier`). -/
+def quantBinders (cx : ExprCtx) (bs : Array Binder) (defer : Bool := false) :
+    M (Array CBinder × Array (Array String) × Array FreeBound × Array Span) := do
   -- Distinct names (`lang::distinct_names`), by the names they declare.
   let ids := bs.flatMap (·.names)
   let declared := ids.map fun x => Name.mkSimple (declaredIdent x).1.name
@@ -2925,13 +3028,16 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array 
   let mut sizes := #[]
   let mut listed := #[]
   let mut free := #[]
+  let mut unlisted := #[]
   for b in bs do
     let pt ← binderTy b.ty
     let t := pt.ty
     let values? ← binderValues pt
     if values?.isNone then
-      modify fun s => { s with quantified := true }
-      checkCore cx b.span .quantifier true true #[]
+      unlisted := unlisted.push b.span
+      unless defer do
+        modify fun s => { s with quantified := true }
+        checkCore cx b.span .quantifier true true #[]
     for x in b.names do
       let locals := Fren.Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
         ((cx.binders ++ out).map (·.what)) cx.selfFn.isSome cx.inGlobal
@@ -2953,17 +3059,19 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) : M (Array CBinder × Array 
   let n := cx.instances * Fren.Core.instanceCount sizes
   unless Fren.Core.quantifierSizeAccepted n do
     err (bs[0]!.span.to bs.back!.span) (Fren.Core.quantifierSizeMsg n (cx.instances > 1))
-  return (out, listed.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]], free)
+  return (out, listed.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]], free, unlisted)
 
 /-- `body` under the solver's quantifier over `free`, a `forall` if `all`,
 or `body` if there are none: what their types bring is a hypothesis of a
-`forall`'s body, and a conjunct of an `exists`'s. -/
-def bindFree (free : Array FreeBound) (all : Bool) (body : String) : String :=
+`forall`'s body, and a conjunct of an `exists`'s. A quantifier over
+elements in the core (`elem`) is written with the head `fren.forall` or
+`fren.exists`, which each query expands (`FrenCli.SeqElems`). -/
+def bindFree (free : Array FreeBound) (all : Bool) (body : String) (elem : Bool := false) : String :=
   if free.isEmpty then body else
   let decls := " ".intercalate (free.toList.map fun u => s!"({u.sym} {u.sort})")
   let cons := free.filterMap (·.cons?)
   let body := if cons.isEmpty then body else if all then s!"(=> {conj cons} {body})" else s!"(and {conj cons} {body})"
-  s!"({if all then "forall" else "exists"} ({decls}) {body})"
+  s!"({if elem then "fren." else ""}{if all then "forall" else "exists"} ({decls}) {body})"
 
 /-- What one operand expects of the other: its type, but a `Nat` only where
 one is expected of both. -/
@@ -3220,27 +3328,83 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
   -- every instance. The other bound names are the solver's quantifier's,
   -- around the expansion, and around those goals as a `forall`, whatever
   -- the quantifier (`Reqs/Lang/Quantifiers#unbounded-quantifiers`).
-  let (new, combos, free) ← quantBinders cx bs
-  -- A bound name of a type that is not listed, with a domain, makes the
-  -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`).
+  let (new, combos, free, unlisted) ← quantBinders cx bs (defer := true)
   let names := new.map (·.name.getString!)
-  if new.zipIdx.any (fun (c, k) => c.unbounded && (domainOf all names body k (c.ty == Ty.nat)).1 != .unbounded) then
-    modify fun s => { s with guardedUsed := true }
+  -- A quantifier over a sequence's elements (`lang::element_quantifier`):
+  -- each bound name of a type that is not listed has the members of `x in
+  -- e` as its domain, by the first conjunct of the guard that names it.
+  let parts := Fren.Core.guardPartsBy guardNode whenOf? all body
+  let members : Array (Option Expr) := new.zipIdx.filterMap fun (c, k) =>
+    if !c.unbounded then none else some <|
+      match domainOf all names body k (c.ty == Ty.nat) with
+      | (.members j, bounds) =>
+        if (parts.extract 0 j).any (·.any (·.names names[k]!)) then none else bounds[j]?.bind (·.map (·.1))
+      | _ => none
+  let candidate := !members.isEmpty && members.all Option.isSome
+  let nesting : Fren.Core.ElementNesting := match cx.elemKind? with
+    | none => .top
+    | some k => if k == all && cx.elemDirect.contains span then .direct else .other
+  let bodyCx := if candidate then
+      { cx with elemGuards := cx.elemGuards ++ members.filterMap (·.map (·.span)), elemKind? := some all
+                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray
+                elemChain := (if nesting == .direct then cx.elemChain else #[]) ++ (new.filter (·.unbounded)).map (·.name) }
+    else cx
   let outer ← takeIndexes
   let outerTables ← takeTables
   let natBefore := (← get).natApps.size
   let mark := (← get).boundMentions.size
-  let (b, tb) ← elabExpr { cx with binders := cx.binders ++ new, instances := cx.instances * combos.size } body
+  let (b, tb) ← elabExpr { bodyCx with binders := cx.binders ++ new, instances := cx.instances * combos.size } body
   if cx.noteIndexes then lintQuant span all bs new body mark
   let kw := if all then "forall" else "exists"
   unless tb == .bool do mismatch body .bool tb (some s!"note: the body of `{kw}` is a `Bool`")
+  -- Its verdict, from its bound names of types that are not listed, in order.
+  let verdict ← if !candidate then pure Fren.Core.ElementVerdict.notMembers else do
+    let recorded := (← get).elemMembers
+    let inner := body.declaredNames.map Name.mkSimple
+    let unbounded := new.filter (·.unbounded)
+    let mut infos := #[]
+    for c in unbounded, e? in members, k in [0:unbounded.size] do
+      let some e := e? | continue
+      let seq := (recorded.find? (·.1 == e.span)).any (·.2.1)
+      let earlier := (unbounded.extract 0 k).map (·.name) ++ (cx.binders.filter (·.unbounded)).map (·.name)
+      infos := infos.push
+        { members := if seq then .seq else .set
+          receiverBound := (mentions e).any (earlier.contains ·.getRoot)
+          uses := (← elementUses cx c.name inner body).toList : Fren.Core.ElementBinder }
+    -- What the quantifier mentions, once its own bound names are not.
+    let whole := Expr.quant span all bs body
+    let chain := if nesting == .direct then cx.elemChain else #[]
+    let bound := (mentions whole).any fun n =>
+      let r := n.getRoot
+      !chain.contains r && (cx.binder? r).any (·.unbounded)
+    pure (Fren.Core.elementVerdict nesting (← mentionsOutput cx whole) bound infos.toList)
+  let inCore := verdict == .inCore
+  -- The reports that its guard's memberships deferred, and its binders'.
+  let spans := members.filterMap (·.map (·.span))
+  let deferred := (← get).elemMembers.filter (spans.contains ·.1)
+  modify fun s => { s with elemMembers := s.elemMembers.filter (!spans.contains ·.1) }
+  unless inCore do
+    modify fun s => { s with quantified := true }
+    for (_, _, r?) in deferred do
+      if let some (sp, msg) := r? then
+        modify fun s => { s with outsideCore := true }
+        lint .undecidable sp msg
+    unless cx.unmentioned do
+      for sp in unlisted do
+        modify fun s => { s with outsideCore := true }
+        lint .undecidable sp ((Fren.Core.elementUndecidableMsg verdict).getD (Fren.Core.undecidableMsg .quantifier false))
+  -- A bound name of a type that is not listed, with a domain, makes the
+  -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`), unless the
+  -- quantifier is expanded.
+  if !inCore && new.zipIdx.any (fun (c, k) => c.unbounded && (domainOf all names body k (c.ty == Ty.nat)).1 != .unbounded) then
+    modify fun s => { s with guardedUsed := true }
   let syms := new.filterMap fun c => if c.unbounded then none else some c.smt
   let inst (smt : String) (vals : Array String) : String :=
     substQuoted (fun p => match syms.idxOf? (quote p) with | some i => vals[i]! | none => quote p) smt
   let inner ← takeIndexes
   let innerTables ← takeTables
-  modify fun s => { s with indexes := outer ++ inner.map (fun (sp, g, t) => (sp, bindFree free true (conj (combos.map (inst g))), t)),
-                           tables := outerTables ++ innerTables.map fun (sp, q, g) => (sp, q, bindFree free true (conj (combos.map (inst g)))) }
+  modify fun s => { s with indexes := outer ++ inner.map (fun (sp, g, t) => (sp, bindFree free true (conj (combos.map (inst g))) inCore, t)),
+                           tables := outerTables ++ innerTables.map fun (sp, q, g) => (sp, q, bindFree free true (conj (combos.map (inst g))) inCore) }
   -- The `Nat` applications in the body, at each instance, as the solver
   -- sees them (`natFacts`); one whose arguments mention a bound name of a
   -- type that is not listed brings its facts for every value of the bound
@@ -3255,7 +3419,7 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
     ++ ((s.natApps.extract natBefore).map close |>.flatMap fun app => combos.map (inst app)).toList.eraseDups.toArray }
   let instances := combos.map (inst b)
   let expanded := if all then conj instances else if instances.size == 1 then instances[0]! else s!"(or {" ".intercalate instances.toList})"
-  return (bindFree free all expanded, .bool)
+  return (bindFree free all expanded inCore, .bool)
 
 /-- `elabExpr` on an `if`. -/
 partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inElse : Bool) (span : Span) (c : Expr) (a : Expr) (b : Expr) : M (String × Ty) := do
@@ -3684,6 +3848,16 @@ partial def elabInExpr (cx : ExprCtx) (e : Expr) (span : Span) (a : Expr) (b : E
   -- The right is checked against a set or sequence of the left's type, as
   -- it is written (`lang::checked`).
   let (y, ty) ← elabExpr { cx with expected? := some (if seqShaped b then .seq tx else .set tx) } b
+  -- The membership of a quantifier over elements' guard: its report waits
+  -- for the quantifier's verdict (`elabQuantExpr`).
+  if cx.elemGuards.contains b.span then
+    let infinite ← #[a, b].anyM (mentionsInfiniteOutput cx)
+    let ground ← isConstant cx e
+    let report := if ty != .seq tx || cx.unmentioned
+        || Fren.Core.inCore .seqWord true true infinite ground (literalOperand := b matches .seq ..)
+      then none else some (span, Fren.Core.undecidableMsg .seqWord infinite)
+    modify fun s => { s with elemMembers := s.elemMembers.push (b.span, ty == .seq tx, report) }
+    if ty == .seq tx then return (s!"(seq.contains {y} (seq.unit {x}))", .bool)
   if ty == .seq tx then
     checkCore cx span .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := b matches .seq ..)
     return (s!"(seq.contains {y} (seq.unit {x}))", .bool)
