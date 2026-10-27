@@ -94,9 +94,10 @@ says only its type. The cardinality operators are built-in functions. See
 function, `fn(T) -> U`. See [Higher-order
 functions](Lang/HigherOrder.md#function-types).
 
-**Generic function.** A defined function with type parameters, as
-`fn id<T>(x: T): T := x`, whose type arguments are inferred at each
-application, where it is unfolded at that instance. See [Generic
+**Generic function.** A function with type parameters, as `fn id<T>(x:
+T): T := x`, whose type arguments are inferred at each application: a
+defined one is unfolded at that instance, and each instance of one without
+a body is an unknown function of its own. See [Generic
 functions](Lang/GenericFunctions.md).
 
 **Higher-order function.** A defined function with a parameter of a
@@ -233,6 +234,10 @@ preconditions. See [Items](Lang/Items.md#contracts).
 **Precondition.** A clause of a function's contract, declared with
 `assume`: what each application's arguments must meet. See
 [Items](Lang/Items.md#contracts).
+
+**Prelude.** The items that every spec can use without declaring or
+importing them, `Option<T>` and `Result<T, E>` and their variants, which
+both front ends load before every spec. See [The prelude](Lang/Prelude.md).
 
 **Quantifier.** An expression, `forall (x: T), e` or `exists (x: T), e`,
 that says that `e` holds for every value, or for some value, of the type

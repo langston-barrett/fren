@@ -1741,8 +1741,10 @@ instance's input, which the instance check asks of its binding, ranges
 over its type without patterns. A component, or a global expectation,
 with a variable of another type, that applies an uninterpreted function
 with a [contract](Lang/Items.md#contracts), whose postconditions constrain
-its interpretations, or that has an unbounded quantifier is not
-enumerated: it is the error `F0645`, at it, and none of its checks set to
+its interpretations, or a [generic
+one](Lang/GenericFunctions.md#uninterpreted-generic-functions), each of
+whose instances is a function of its own, or that has an unbounded
+quantifier is not enumerated: it is the error `F0645`, at it, and none of its checks set to
 enumeration is run.
 
 ### Sizes and order

@@ -1,0 +1,11 @@
+-- A component that cannot be enumerated, for a generic function without a
+-- body, each of whose instances is a function of its own (F0645).
+fn pick<T>(T, T): T
+
+set_option fren.evidence "enumerated" in
+comp c {
+    in x: Int is 0..=3
+    in y: Int is 0..=3
+    pub det out z: Int := pick(x, y)
+    expect congruent: when x = y, z = pick(y, x)
+}

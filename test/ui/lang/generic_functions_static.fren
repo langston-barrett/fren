@@ -4,16 +4,14 @@ set_option fren.lint.dead_code "allow"
 
 mod generic_functions_static
 
-pub enum Option<T> { None, Some(T) }
-
 fn id<T>(x: T): T := x
 fn is_none?<T>(o: Option<T>) := o = Option::None
 fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
 
--- Only a defined function is generic.
-fn pick<T>(a: T, b: T): T  --~ error: the generic function `pick` must be defined
-fn choose<T>(a: T, b: T): T  --~ error: the generic function `choose` must be defined
-    ensure first: choose(a, b) = a
+-- A generic function without a body is uninterpreted: its parameters have
+-- no names, unless it has a contract (`Reqs/Lang/GenericFunctions`,
+-- "Uninterpreted generic functions").
+fn pick<T>(a: T, b: T): T  --~ error: the parameters of uninterpreted function `generic_functions_static::pick` have no names
 
 -- Each type parameter is inferred from the signature.
 fn unused<T, U>(x: T): T := x  --~ error: type parameter `U` of `unused` cannot be inferred

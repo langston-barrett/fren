@@ -828,10 +828,14 @@ prefix `-` (`F0362`): the field is read and the result built again, as in
 `Ms(elapsed.0 * 2)`. An operator whose operands are a newtype and any
 other type, including the underlying type, is an error (`F0363`), and a
 newtype written where another type is expected is a type mismatch
-(`F0304`). `lang::newtype_operator` states which operators a newtype has,
-from the operator, its underlying type, whether it is ordered, and
-whether its underlying type, if that is a newtype, has the operator
-itself, and `lang::operator_type` types them:
+(`F0304`). A newtype's underlying type may be a newtype in turn. The
+newtype's *chain* is its underlying type and every type that the closure
+of the underlying-type relation, `(n, under(n))` for each newtype `n`,
+reaches from it, as `lang::chain` gives. The one type of the chain that is
+not a newtype is its *base*, and `+` and `-` are those of the base.
+`lang::newtype_operator` states which operators a newtype has, from the
+operator, its chain and whether it is ordered, and `lang::operator_type`
+types them:
 
 ```fren
 -- `Order` is `<`, `<=`, `>` and `>=`; `Addition` is `+`; `Subtraction`
@@ -839,23 +843,32 @@ itself, and `lang::operator_type` types them:
 -- `!=`, such as `*`, `div`, `mod`, `++` or a prefix `-`.
 pub enum NewtypeOp { Equality, Order, Addition, Subtraction, Other }
 
+-- The chain of a newtype whose underlying type is `underlying`, where
+-- `(n, u)` is in `unders` when `u` is the underlying type of the newtype `n`.
+set_option fren.lint.undecidable "allow" in
+pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> := unders.closure.image({underlying}) union {underlying}
+
+set_option fren.lint.undecidable "allow" in
 pub comp newtype_operator {
     use self::NewtypeOp::{Addition, Equality, Order, Other, Subtraction}
-    use self::ValueType::{IntTy, NatTy, StringTy}
+    use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
     in op: NewtypeOp
     in underlying: Ty            -- the newtype's underlying type
     in ordered?                  -- the newtype is ordered (`ordered_type`): declared `ordered`
-    in inner_has?                -- the underlying type is a newtype that has `op` itself
+    in unders: Rel<Ty, Ty>       -- (n, under(n)): the underlying type of a newtype `n`
 
-    -- A newtype is a record.
-    assume inner_newtypes: when inner_has?, newtype?(underlying) and kind(underlying) = ValueType::RecordTy
+    -- A newtype is a record, and only a newtype has an underlying type.
+    assume records: when newtype?(underlying), kind(underlying) = RecordTy
+    assume base: unless newtype?(underlying), unders.image({underlying}) = {}
     pub det out accepted?
 
     ensure rule: accepted? iff match op {
         Equality => true,
         Order => ordered?,
-        Addition => kind(underlying) in {IntTy, NatTy} or inner_has?,
-        Subtraction => kind(underlying) = IntTy or inner_has?,
+        Addition => (exists (b: Ty), b in chain(underlying, unders) and not newtype?(b)
+            and kind(b) in {IntTy, NatTy}),
+        Subtraction => (exists (b: Ty), b in chain(underlying, unders) and not newtype?(b)
+            and kind(b) = IntTy),
         Other => false,
     }
 
@@ -864,6 +877,14 @@ pub comp newtype_operator {
     expect integers_sum: when kind(underlying) = IntTy and op in {Addition, Subtraction}, accepted?
     expect naturals_add: when kind(underlying) = NatTy and op in {Addition, Subtraction}, accepted? iff op = Addition
     expect strings_never_sum: when kind(underlying) = StringTy and op in {Addition, Subtraction}, not accepted?
+    -- A newtype of a newtype has the operators of the inner newtype's underlying type.
+    expect inner_integers: when newtype?(underlying) and unders = {(underlying, under(underlying))}
+        and kind(under(underlying)) = IntTy and not newtype?(under(underlying)) and op in {Addition, Subtraction},
+        accepted?
+    expect inner_strings: when newtype?(underlying) and unders = {(underlying, under(underlying))}
+        and kind(under(underlying)) = StringTy and op in {Addition, Subtraction}, not accepted?
+    expect inner_naturals: when newtype?(underlying) and unders = {(underlying, under(underlying))}
+        and kind(under(underlying)) = NatTy and not newtype?(under(underlying)) and op = Subtraction, not accepted?
     expect nothing_else: when op = Other, not accepted?
 }
 ```
@@ -2230,6 +2251,7 @@ pub enum Operator {
     Conditional,
 }
 
+set_option fren.lint.undecidable "allow" in
 pub comp operator_type {
     use self::Operator::{
         Addition,
@@ -2261,14 +2283,15 @@ pub comp operator_type {
     in a: Ty
     in b: Ty
     in cond: Ty
-    in inner_has?            -- for `+` or `-` of a newtype `a`: its underlying type is a newtype that has it itself
+    in unders: Rel<Ty, Ty>   -- (n, under(n)): the underlying type of a newtype `n`, for the chain of `a`
     in ordered_items: Set<TypeName>  -- the enumerations, records and newtypes declared `ordered`
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
     -- A newtype is a record.
     assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
-    assume inner_newtypes: when inner_has?, newtype?(under(a)) and kind(under(a)) = RecordTy
+    assume records: when newtype?(under(a)), kind(under(a)) = RecordTy
+    assume base: unless newtype?(under(a)), unders.image({under(a)}) = {}
     pub out accepted?
     pub out result: ValueType
 
@@ -2278,7 +2301,7 @@ pub comp operator_type {
         op := if op = Subtraction then NewtypeOp::Subtraction else NewtypeOp::Addition,
         underlying := under(a),
         ordered? := order.ordered?,
-        inner_has?,
+        unders,
     }
 
     ensure accepted: accepted? iff match op {

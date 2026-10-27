@@ -159,16 +159,17 @@ earlier declarations, so its value is well-founded on the order of the
 declarations. Recursion in defined functions (#279) would break that
 order, and the evaluation would need another measure.
 
-Two features would each add one case here. A parameter of a function type
-(#305) is bound to a closure, whose body is substituted for its
-applications, rather than to a value: `definition_value` then takes such
-an argument as a closure, and the environment of the body binds it in
-the program, not as a variable. A body then reads more than its
-parameters, which is the premise of `frame` for a definition, so the
-closure's own mentions join the application's. An uninterpreted function with type
-parameters (#300) is one unknown function for each instance of them: its
-`Uninterpreted(f)` head names the instance in `f`, so that `meaning`, which
-is read at that name, is one function for each.
+A parameter of a function type (#305) would add one case here: it is
+bound to a closure, whose body is substituted for its applications, rather
+than to a value: `definition_value` then takes such an argument as a
+closure, and the environment of the body binds it in the program, not as a
+variable. A body then reads more than its parameters, which is the premise
+of `frame` for a definition, so the closure's own mentions join the
+application's. An [uninterpreted function with type
+parameters](GenericFunctions.md#uninterpreted-generic-functions) is one
+unknown function for each instance of them: its `Uninterpreted(f)` head
+names the instance in `f`, as `pick<Int>`, so that `meaning`, which is read
+at that name, is one function for each.
 
 Their [interpretation](../Impl.md#interpretations) in Lean,
 `Fren.Core.Meaning`'s, takes a program to be its declarations in order,

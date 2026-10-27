@@ -1,5 +1,5 @@
 -- Static rules for records, payloads and `match`.
--- fren-covers: lang::unbounded
+-- fren-covers: lang::type_facts
 set_option fren.lint.dead_code "allow"
 
 type Name

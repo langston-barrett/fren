@@ -11,6 +11,7 @@
   - [Generic types](Lang/Generics.md)
   - [Generic functions](Lang/GenericFunctions.md)
   - [Higher-order functions](Lang/HigherOrder.md)
+  - [The prelude](Lang/Prelude.md)
 - [Components](Lang/Components.md)
 - [Meaning](Lang/Meaning.md)
   - [Laws of meaning](Lang/MeaningLaws.md)

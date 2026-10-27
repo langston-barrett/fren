@@ -10,6 +10,10 @@ pub struct Pair<A, B> { fst: A, snd: B }
 pub enum List<T> { Nil, Cons(T, List<T>) }
 ```
 
+`Option` is the [prelude's](Prelude.md), declared as above, so a spec uses
+it without declaring it, and one that declares its own writes
+`Option!` (see [Shadowing the prelude](Modules.md#shadowing-the-prelude)).
+
 Such a type is *generic*. It is used with a *type argument* for each of
 its parameters, in the same `<...>` style as `Set<T>`: `Option<Int>` is
 an *instance* of `Option`, whose values are those of the enumeration with
@@ -747,7 +751,7 @@ exactly when its arguments are. Whether an enumeration is
 arguments, since a payload of its own type is one whatever they are.
 
 `lang::instance_values` states this for the three generic types of this
-chapter's examples, declared as above:
+chapter's examples, declared as above, `Option` as the prelude declares it:
 
 ```text
 enum Option<T> { None, Some(T) }
@@ -783,8 +787,8 @@ pub comp instance_values {
 A generic type means one type for each of its instances, without a copy of
 its declaration for each: each front end gives the solver one SMT-LIB 2.6
 *parametric datatype* for it, as in
-`(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))`,
-and each instance is a sort application, as `(|Option| Int)`. Both front
+`(declare-datatypes ((|List| 1)) ((par (|T|) ((List~Nil) (List~Cons (|List::Cons::0| |T|) (|List::Cons::1| (|List| |T|)))))))`,
+and each instance is a sort application, as `(|List| Int)`. Both front
 ends give the same declarations, up to the names of their symbols, which
 each front end writes its own way: one parametric datatype for each
 generic type, with the same constructors and selectors, and the same sort
@@ -794,12 +798,15 @@ parameter (see [Generated Lean](../Generated.md#generic-types)), which
 lean-smt gives the solver as a parametric datatype.
 
 `lang::smt_encoding` states what the `fren` command gives the solver for
-the examples above, from the sorts of the arguments `a` and `b`. A type's
-symbol is its path between `|`s, and a payload's selector's or a field's
+the examples above, from the sorts of the arguments `a` and `b`, with
+`Option` a user's, declared `Option!` at the root module, rather than the
+[prelude's](Prelude.md#meaning), whose symbols are lean-smt's. A type's
+symbol is its path between `|`s, or after `::` if its path is the name of
+one of the Lean types that the prelude's types are, as `Option` is, and a payload's selector's or a field's
 is named after the variant or field, as for any enumeration or record. A
 constructor's symbol is its path with `~` for `::`, and a record's ends in
 `~`: a constructor of a parametric datatype is qualified by its sort,
-`(as Option~None (|Option| Int))`, and cvc5 finds a qualified constructor
+`(as List~Nil (|List| Int))`, and cvc5 finds a qualified constructor
 only by a symbol without `|`s, which `~` keeps apart from every
 variable's. An instance is its generic type's symbol applied to its
 arguments' sorts, and every instance of a generic type has the one
@@ -813,10 +820,10 @@ set_option fren.lint.constant_output "allow" in
 pub comp smt_encoding {
     in a: String                   -- the sort of the first argument
     in b: String                   -- of the second, for `Pair`
-    pub det out option_sort: String := "(|Option| " ++ a ++ ")"
+    pub det out option_sort: String := "(|::Option| " ++ a ++ ")"
     pub det out pair_sort: String := "(|Pair| " ++ a ++ " " ++ b ++ ")"
     pub det out option_declaration: String :=
-        "(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))\n"
+        "(declare-datatypes ((|::Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))\n"
     pub det out pair_declaration: String :=
         "(declare-datatypes ((|Pair| 2)) ((par (|A| |B|) ((Pair~ (|Pair::fst| |A|) (|Pair::snd| |B|))))))\n"
     pub det out list_declaration: String :=

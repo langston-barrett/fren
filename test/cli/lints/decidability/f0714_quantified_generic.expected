@@ -1,7 +1,7 @@
 error[F0714]: this is outside the decidable core: a quantifier over a type whose values cannot be listed is not expanded, but given to the solver
- --> test/cli/lints/decidability/f0714_quantified_generic.fren:5:48
+ --> test/cli/lints/decidability/f0714_quantified_generic.fren:4:48
   |
-5 | comp c { pub out ok? ensure r: ok? iff (forall (o: Option<Int>), o != Option::Some(1)) }
+4 | comp c { pub out ok? ensure r: ok? iff (forall (o: Option<Int>), o != Option::Some(1)) }
   |                                                ^^^^^^^^^^^^^^^^ outside the decidable core
   |
   = help: quantify over a listed type, such as `Bool` or an enum, or opt out, and guard it, as in `forall (x: T), when x in s, ...`, so that it can be tested

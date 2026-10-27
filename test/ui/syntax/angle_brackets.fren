@@ -2,7 +2,6 @@
 -- closed by Lean's `>>` and `>>>` tokens, which are read one `>` at a time
 -- (`Reqs/Lang/Generics#angle-brackets`).
 mod m
-pub enum Option<T> { None, Some(T) }
 pub struct Pair<A, B> { fst: A, snd: B }
 
 fn size<T>(o: Option<T>): Int := if o = Option::None then 0 else 1

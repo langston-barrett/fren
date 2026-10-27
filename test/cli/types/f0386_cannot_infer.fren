@@ -1,4 +1,3 @@
 -- A variant of a generic type, whose type arguments nothing gives.
-pub enum Option<T> { None, Some(T) }
 
 comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }

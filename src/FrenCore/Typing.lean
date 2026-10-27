@@ -26,8 +26,9 @@ def typeMismatchMsg (expected found : Ty) (why : Option String := none) : Msg :=
     | .nat, .int => #[narrowingNote]
     | .bool, .enum p _ | .int, .enum p _ => #[s!"help: compare it with a variant to make a `Bool`, e.g. `x = {p.getString!}::Variant`"]
     | _, _ => #[]
-  { code? := some "F0304", headline := s!"type mismatch: expected `{expected.show}`, found `{found.show}`"
-    label? := some s!"expected `{expected.show}`, found `{found.show}`"
+  let (e, f) := Ty.showApart expected found
+  { code? := some "F0304", headline := s!"type mismatch: expected `{e}`, found `{f}`"
+    label? := some s!"expected `{e}`, found `{f}`"
     notes := why.toArray ++ hint }
 
 /-- Checks that an expression of type `found` may stand where one of type
@@ -64,8 +65,9 @@ def checkComparable (op : String) (tx ty : Ty) : Except Msg Unit := do
     | .enum p _, .int | .int, .enum p _ => #[s!"note: enums are not numbers", s!"help: compare with a variant, e.g. `{p.getString!}::Variant`"]
     | .bool, .int | .int, .bool => #["note: `Bool`s are not numbers: `true` and `false` are `Bool`s"]
     | _, _ => #[]
-  throw { code? := some "F0305", headline := s!"cannot compare `{tx.show}` with `{ty.show}`"
-          label? := some s!"`{tx.show}` and `{ty.show}`"
+  let (x, y) := Ty.showApart tx ty
+  throw { code? := some "F0305", headline := s!"cannot compare `{x}` with `{y}`"
+          label? := some s!"`{x}` and `{y}`"
           notes := #[s!"note: both sides of `{op}` must have the same type"] ++ hint }
 
 /-- The type of the operands of the ordering `op`, from the type `tx` of
