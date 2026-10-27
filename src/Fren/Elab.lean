@@ -1791,6 +1791,9 @@ partial def typeShape (cx : ExprCtx) (e : Syntax) : TermElabM Core.TypeShape := 
     if let .ok (.item { kind := .fnItem, path, .. }) := st.table.resolvePath cx.modName ((pathSegs e[0]).map (·.getId)) cx.shadowing then
       if let some d := (st.defined.get? path).filter (!·.typeParams.isEmpty) then
         return Core.callShape d.typeParams.size d.declared d.result (← e[2].getSepArgs.mapM go)
+      -- One without a body, as the `fren` command has it.
+      if let some a := (st.abstracts.get? path).filter (!·.typeParams.isEmpty) then
+        return Core.callShape a.typeParams.size a.declared a.result (← e[2].getSepArgs.mapM go)
   if e.isOfKind ``Lang.setExpr || e.isOfKind ``Lang.seqExpr then
     let elems := e[1].getSepArgs
     if elems.isEmpty then return .emptyLiteral else return .anyPart (← elems.toList.mapM go)

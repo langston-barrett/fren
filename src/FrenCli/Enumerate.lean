@@ -93,7 +93,10 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   -- Nor of a generic function without a body, whose instances are
   -- functions of their own, the first in declaration order.
   let generics := fnNames.filterMap fun f => (sp.instanceOf.find? f).orElse fun _ =>
-    if sp.generics.any (·.1 == f) then some f else none
+    let g := match f with
+      | .str p "<?>" => p
+      | f => f
+    if sp.generics.any (·.1 == g) then some g else none
   if let some (g, _, _, _) := sp.generics.find? (generics.contains ·.1) then
     throw (notEnumerableMsg subject (genericNotEnumerable g))
   if let some f := fnNames.find? (sp.contracts.contains ·) then

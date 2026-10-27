@@ -1735,13 +1735,14 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       -- A generic function without a body, at the instance that its
       -- arguments' types give it, a function of its own.
       if let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) then
-        let targs ← (List.range tps.size).mapM fun k =>
-          match (declared.zip typed).findSome? fun (d, (_, t)) => d.matchParam k t with
-          | some t => pure t.widen
-          -- Not known here, as a construction's may not be: an instance
-          -- of its own, which no model gives a value.
-          | none => pure (.param k)
+        let found := (List.range tps.size).map fun k =>
+          (declared.zip typed).findSome? fun (d, (_, t)) => d.matchParam k t
+        let targs := found.mapIdx fun k t? => (t?.map VTy.widen).getD (.param k)
         let r := result.subst targs
+        -- Its type arguments not known here, as the type expected of it
+        -- may give them: a function that has no value, which the
+        -- evaluator does not know (`Reqs/Eval#searching-for-behaviours`).
+        if found.any (·.isNone) then return (← withPres (.app (Name.str path "<?>") args), r)
         -- At its own type parameters, in its contract, the function itself.
         let own := (List.range tps.size).map fun k => VTy.abstract (Fren.Core.typeParamPath path k tps[k]!)
         if targs == own then return (← withPres (.app path args), r)

@@ -60,6 +60,16 @@ comp payloads {
     pub det out v: Int := get(o)  --~ error: the precondition `present` of `generic_uninterpreted::get` may not hold
 }
 
+-- A component that applies one is not enumerated: each instance is a
+-- function of its own.
+set_option fren.evidence "enumerated" in
+comp enumerated {  --~ error: cannot be enumerated: it applies the generic function `generic_uninterpreted::pick`, which has no body
+    in x: Int is 0..=3
+    pub det out y: Int := pick(x, 0)
+
+    expect congruent: y = pick(x, 0)
+}
+
 -- Within a generic defined function's contract, at its own type
 -- parameter, for every type.
 fn same<T>(a: T, b: T): T := a
