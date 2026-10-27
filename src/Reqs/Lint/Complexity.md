@@ -252,7 +252,7 @@ gives it:
 ```fren
 pub comp output_lints {
     in defined?                       -- the output is defined
-    in mentioned: Set(lang::Mention)  -- what its definition mentions, if defined, and `{}` if not
+    in mentioned: Set<lang::Mention>  -- what its definition mentions, if defined, and `{}` if not
     in n_guarantees: Nat              -- guarantees that mention it, if not defined
     in equation?                      -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
     pub det out constant?             -- `constant_output` fires

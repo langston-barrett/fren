@@ -69,23 +69,23 @@ pub fn shared_op(head: lang::Head): SharedOp := match lang::operator(head) {
 
 pub comp branches_sharing_code {
     use self::SharedOp::{Div, Mod, OtherOp, Times}
-    in binders: Set(lang::Id)              -- the binders of the pattern tests in the conditional
+    in binders: Set<lang::Id>              -- the binders of the pattern tests in the conditional
     in then_head: lang::Head               -- the head of the `then` branch's root layer
     in else_head: lang::Head               -- the `else` branch's
     in then_left: Scoped                   -- the operands of the `then` branch, as written in their scopes
     in then_right: Scoped
     in else_left: Scoped                   -- the operands of the `else` branch
     in else_right: Scoped
-    in condition_mentioned: Set(lang::Mention)  -- what `C` mentions
-    in a_mentioned: Set(lang::Mention)     -- what `A` mentions
-    in b_mentioned: Set(lang::Mention)     -- what `B` mentions
-    in shared_mentioned: Set(lang::Mention)  -- what `X` mentions
+    in condition_mentioned: Set<lang::Mention>  -- what `C` mentions
+    in a_mentioned: Set<lang::Mention>     -- what `A` mentions
+    in b_mentioned: Set<lang::Mention>     -- what `B` mentions
+    in shared_mentioned: Set<lang::Mention>  -- what `X` mentions
     pub det out op: SharedOp := shared_op(then_head)
     pub det out same_op? := then_head = else_head and lang::operator(then_head) != ""
     pub det out shared_left? := then_left = else_left
     pub det out shared_right? := then_right = else_right
     -- What the `if` that the fix moves out, `if C then A else B`, mentions.
-    pub det out moved_mentioned: Set(lang::Mention) :=
+    pub det out moved_mentioned: Set<lang::Mention> :=
         lang::mentioned_by(lang::Head::Op("if", ""), condition_mentioned union a_mentioned union b_mentioned)
     pub det out fires?
 

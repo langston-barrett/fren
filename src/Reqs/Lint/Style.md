@@ -628,7 +628,7 @@ gives it:
 
 ```fren
 pub comp assertions_on_constants {
-    in mentioned: Set(lang::Mention)  -- what the expression mentions
+    in mentioned: Set<lang::Mention>  -- what the expression mentions
     pub det out fires?
 
     ensure rule: fires? iff mentioned = {}

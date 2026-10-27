@@ -85,7 +85,7 @@ pub comp eq_op_values {
     in op: InfixOp
     in x: Int
     in a?
-    in s: Set(Int)
+    in s: Set<Int>
 
     inst e: eq_op { op, left := Scoped { text := Operand::P, scope := {} }, right := Scoped { text := Operand::P, scope := {} } }
 
@@ -329,7 +329,7 @@ of those names, rather than compare what they mention:
 
 ```fren
 pub comp same_branches {
-    in binders: Set(lang::Id)  -- the binders of the condition's pattern tests
+    in binders: Set<lang::Id>  -- the binders of the condition's pattern tests
     in then_branch: Scoped     -- the branches, as written in their scopes
     in else_branch: Scoped
     pub det out fires?
