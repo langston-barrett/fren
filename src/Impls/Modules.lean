@@ -35,20 +35,20 @@ def toResolution : Resolution → modules.Resolution
   | .ambiguous => .Ambiguous
   | .unbound => .Unbound
 
--- For every scope of items and imports and every first segment: what it
--- resolves to, by `lookup`, read as `resolution`, both of which
--- `Table.resolvePath` calls.
-impl resolve: modules::resolve for (l : List (Binding String String)) (n : String) {
-  bindings := Fren.FinSet.ofList (l.map toBinding),
+-- For every context and every first segment: what it resolves to among the
+-- items and imports that `Context.bindings` lists, by `lookup`, read as
+-- `resolution`, all of which `Table.resolvePath` calls.
+impl resolve: modules::resolve for (cx : Fren.Core.Context String) (n : String) {
+  bindings := Fren.FinSet.ofList (cx.itemScope.bindings.map toBinding),
   name := n,
-  lookup := toLookup (lookup l n),
-  result := toResolution (resolution (lookup l n)),
+  lookup := toLookup (lookup cx.itemScope.bindings n),
+  result := toResolution (resolution (lookup cx.itemScope.bindings n)),
 } by
-  intro l n _
-  obtain ⟨hd, he⟩ := scope l n (fun _ _ => Nat.zero_le _)
+  intro cx n _
+  obtain ⟨hd, he⟩ := scope cx.itemScope.bindings n (fun _ _ => Nat.zero_le _)
   refine ⟨_, _, _, _, ⟨rfl, ?_⟩, trivial, ⟨⟨rfl, rfl⟩, hd, fun _ _ => Nat.zero_le _, he⟩⟩
   simp only [modules.resolve.def.result]
-  cases h : lookup l n with
+  cases h : lookup cx.itemScope.bindings n with
   | found b => cases b with | mk _ k _ _ => cases k <;> simp [toLookup, toBindingKind, resolution, toResolution, lang.Lookup.Found.x0]
   | _ => simp [toLookup, resolution, toResolution, lang.Lookup.Found.x0]
 
@@ -59,24 +59,11 @@ def toKind : Parent → modules.Kind
   | .enum => .Enum
   | .other => .Other
 
--- For every segment after the first, and the members of what the one
--- before it resolved to, which `Table.walk` lists, by `resolves`.
-impl member: modules::member for (p : Parent) (l : List (Binding String String)) (n : String) (visible : Bool) {
+impl member: modules::member for (p : Parent) (found visible : Bool) {
   parent := toKind p,
-  members := Fren.FinSet.ofList (l.map toBinding),
-  name := n,
+  found? := found,
   visible? := visible,
-  found? := Fren.Core.resolves l n,
-  accepted? := memberAccepted p (Fren.Core.resolves l n) visible,
-} by
-  intro p l n visible _
-  obtain ⟨hd, he⟩ := scope l n (fun _ _ => Nat.zero_le _)
-  refine ⟨_, _, _, _, ?_, ?_, ⟨⟨rfl, rfl⟩, hd, fun _ _ => Nat.zero_le _, he⟩⟩
-  · simp only [modules.member.defs, modules.member.def.found?]
-    unfold Fren.Core.resolves
-    cases lookup l n <;> simp [toLookup, lang.Lookup.Found.x0]
-  · simp only [modules.member.ensures, modules.member.ensure.rule]
-    generalize Fren.Core.resolves l n = f
-    cases p <;> cases f <;> cases visible <;> simp [toKind, memberAccepted]
+  accepted? := memberAccepted p found visible,
+}
 
 end Fren.Impls

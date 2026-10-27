@@ -140,14 +140,14 @@ resolves as follows:
    name is used.
 4. Otherwise, the name is unbound, which is an error.
 
-These are the scopes 4 and 5 of [Scopes](Scope.md#scopes), read by
-[`lang::scope`](Scope.md#resolution): an item declared in the module and a
-name imported by name are bindings of one scope, so at most one of a name,
-and the variants that the glob imports open are bindings of the scope
-just outside it, where two distinct variants of a name are ambiguous. A
-component's own imports are two scopes further in. `modules::resolve`
-states the rule, from the items and imports in scope where the path is
-written and its first segment:
+These are the scopes 3 and 4 of [Scopes](Scope.md#scopes), `item_scope`,
+read by [`lang::scope`](Scope.md#resolution): an item declared before the
+path in the module and a name imported by name are bindings of one depth,
+so at most one of a name, and the variants that the glob imports open are
+bindings of the depth just outside it, where two distinct variants of a
+name are ambiguous. A component's own imports are two depths further in.
+`modules::resolve` states the rule, from where the path is written and
+its first segment:
 
 ```fren
 pub enum Resolution { Local, Glob, Ambiguous, Unbound }
@@ -158,7 +158,7 @@ use self::Resolution::{Ambiguous, Glob, Local, Unbound}
 set_option fren.lint.undecidable "allow" in
 pub comp resolve {
     use lang::BindingKind::Opened
-    in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
+    in bindings: Set<lang::Binding>  -- the scope where it is written, `item_scope` of its context
     in name: lang::Id                -- its first segment
 
     pub det out lookup: lang::Lookup := first.result
@@ -217,28 +217,23 @@ pub fn kind_of(k: lang::BindingKind): Kind := match k {
 ```
 
 `modules::member` gives whether one later segment is accepted, from what
-the previous segment resolved to and its members, as a scope of one
-depth: a module's items, or an enumeration's variants.
+the previous segment resolved to. Whether it has a member of that name,
+`found?`, is looked up in the module's items or the enumeration's
+variants directly, not through a scope: they are all declared, and their
+names are distinct.
 
 ```fren
--- It instantiates `lang::scope`, which quantifies over bindings.
-set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
 pub comp member {
-    in parent: Kind                  -- what the previous segment resolved to
-    in members: Set<lang::Binding>   -- its members
-    in name: lang::Id                -- the segment
-    in visible?                      -- for a module: that member is visible from here (`item_visible`)
-
-    pub det out found? := segment.result is lang::Lookup::Found(_)  -- it has a member of this name
-    pub det out accepted?
-
-    inst segment: lang::scope { bindings := members, name }
+    in parent: Kind      -- what the previous segment resolved to
+    in found?            -- it has a member of this name
+    in visible?          -- for a module: that member is visible from here (`item_visible`)
+    pub out accepted?
 
     ensure rule: accepted? iff (found? and (if parent = Module then visible? else parent = Enum))
 
     expect only_modules_hide: when parent = Enum and found?, accepted?
     expect others_empty: when parent = Other, not accepted?
-    expect no_members: when members = {}, not accepted?
 }
 ```
 
@@ -250,8 +245,7 @@ set_option fren.lint.undecidable "allow" in
 pub comp two_segments {
     in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
     in a: lang::Id
-    in members: Set<lang::Binding>   -- the members of what `a` resolves to
-    in b: lang::Id
+    in b_found?                      -- `a` has a member named `b`
     in b_pub?                        -- that member is `pub`
     in b_owner: ModuleName           -- the module declaring `b`: `a`, if `a` is a module
     in here: ModuleName              -- the module where the path is written
@@ -265,7 +259,7 @@ pub comp two_segments {
 
     inst first: resolve { bindings, name := a }
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
-    inst second: member { parent := a_kind, members, name := b, visible? := seen.visible? }
+    inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
 
     ensure rule: accepted? iff second.accepted?
 
@@ -273,9 +267,8 @@ pub comp two_segments {
     expect private_member: when a_kind = Module and not b_pub? and here != b_owner and not descends?(here, b_owner),
         not accepted?
     -- The variants of an enumeration that `a` names are its members, wherever they are written.
-    expect variants_visible: when first.lookup = lang::Lookup::Found(lang::BindingKind::Enumeration) and second.found?,
+    expect variants_visible: when first.lookup = lang::Lookup::Found(lang::BindingKind::Enumeration) and b_found?,
         accepted?
-    expect unbound: when bindings = {}, not accepted?
 }
 
 #fren_check

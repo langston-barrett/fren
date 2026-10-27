@@ -345,13 +345,9 @@ def Table.walk (t : Table) (from_ : Name) (cur : Resolved) (segs : Array Name) (
           code? := some "F0204", headline := s!"`{showPath r.path}` is {r.describe} and has no members"
           label? := some "nothing can follow this"
           notes := #["note: only modules (their items) and enums (their variants) have members"] : Msg })
-    -- The members of this name, as a scope of one depth (`modules::member`).
-    let members : List (Binding Name Name) := match next? with
-      | some r => [{ name := n, kind := r.bindingKind, target := r.path, depth := 0 }]
-      | none => []
     match next? with
-    | some next => if memberAccepted parent (resolves members n) visible then cur := next else throw { seg := i, msg := err }
-    | none => if memberAccepted parent (resolves members n) visible then pure () else throw { seg := i, msg := err }
+    | some next => if memberAccepted parent true visible then cur := next else throw { seg := i, msg := err }
+    | none => if memberAccepted parent false visible then pure () else throw { seg := i, msg := err }
   return cur
 
 /-- The item or variant a named `use` brought into scope. -/
@@ -385,29 +381,43 @@ def resolution {ν τ : Type} : Lookup ν τ → Resolution
   | .ambiguous => .ambiguous
   | .unbound => .unbound
 
-/-- The bindings of `n` among the items and imports in the scope `from_`, a
-module or a component, from `depth` out (`Reqs/Lang/Scope#scopes`, scopes
-4 and 5): a component's imports by name, then its glob imports, then its
-module's items and imports by name, then the module's glob imports. -/
-def Table.itemBindings (t : Table) (from_ : Name) (n : Name) (depth : Nat := 0) : List (Binding Name Name) :=
-  let named (uses : Array UseDef) (d : Nat) : List (Binding Name Name) :=
+/-- The local declarations in scope where a name is written, innermost
+last, each with its kind: what a declaration may hide besides items. -/
+abbrev Locals := Array (Name × BindingKind)
+
+/-- Where `n` is written in the scope `from_`, a module or a component,
+with the local declarations `locals` (`lang::Context`), and with the
+built-in function `n` if `builtin`, as far as `n` goes: the items and imports of other names are left out, which changes
+no depth, and so nothing that `n` resolves to (`lookup_congr_named`). Every
+item in the table is declared before `n`, since the table holds only
+those declared so far. A glob import is listed once for each variant of
+`n` that it opens. A local's target is its name: what is read of a
+local is only that it hides, and a binder's position is not known here. -/
+def Table.contextOf (t : Table) (from_ : Name) (locals : Locals) (n : Name) (builtin : Bool) : Context Name :=
+  let named (uses : Array UseDef) : List (Import Name) :=
     uses.toList.filterMap fun u =>
       if !u.glob && u.target.getString! == n.toString then
-        some { name := n, kind := ((t.resolveTarget u.target).map (·.bindingKind)).getD .item, target := u.target, depth := d }
+        some ⟨⟨n, ((t.resolveTarget u.target).map (·.bindingKind)).getD .item, u.target⟩, false⟩
       else none
-  let opened (uses : Array UseDef) (d : Nat) : List (Binding Name Name) :=
+  let opened (uses : Array UseDef) : List (Import Name) :=
     uses.toList.filterMap fun u => do
       let e ← if u.glob then t.enums.get? u.target else none
-      if e.variants.contains n then some { name := n, kind := .opened, target := e.path ++ n, depth := d } else none
+      if e.variants.contains n then some ⟨⟨n, .opened, e.path ++ n⟩, true⟩ else none
   let m := t.moduleOf from_
-  let compScopes := if t.isComp from_ then
-      let uses := t.uses.getD from_ #[]
-      named uses depth ++ opened uses (depth + 1)
-    else []
-  let base := if t.isComp from_ then depth + 2 else depth
-  let declared := (t.declared? m n).toList.map fun i => { name := n, kind := i.kind.bindingKind, target := i.path, depth := base }
+  let items := (t.declared? m n).toList.map fun i => ⟨n, i.kind.bindingKind, i.path⟩
+  let comp := t.uses.getD from_ #[]
   let uses := t.uses.getD m #[]
-  compScopes ++ declared ++ named uses base ++ opened uses (base + 1)
+  { locals := locals.toList.map fun (x, k) => ⟨⟨x, k, x⟩, true⟩
+    builtins := if builtin then [n] else []
+    component := t.isComp from_
+    componentImports := if t.isComp from_ then named comp ++ opened comp else []
+    items, declared := items.length
+    moduleImports := named uses ++ opened uses }
+
+/-- The bindings of `n` among the items and imports in the scope `from_`
+(`Reqs/Lang/Scope#scopes`, scopes 3 and 4). -/
+def Table.itemBindings (t : Table) (from_ : Name) (n : Name) : List (Binding Name Name) :=
+  (t.contextOf from_ #[] n false).itemScope.bindings
 
 /-- Resolves a path in an expression or type in the scope `from_`, a
 module or a component. `extra` are other names in scope, such as
@@ -712,21 +722,10 @@ def checkVarName (n : Name) (isBool? : Option Bool) : Except Msg Unit :=
 name hides a name in scope and whether it is written with `!`. -/
 def shadowingAccepted (hides bang : Bool) : Bool := hides == bang
 
-/-- The local declarations in scope where a name is written, innermost
-last, each with its kind: what a declaration may hide besides items. -/
-abbrev Locals := Array (Name × BindingKind)
-
 /-- The bindings of `n` in the scope `scope` with the local declarations
-`locals` (`Reqs/Lang/Scope#scopes`): the locals, the innermost at depth 0,
-then the built-in function of that name, then the items and imports. A
-local's target is its name: what is read of a local is only that it
-hides, and a binder's position (`lang::Binding`) is not known here. -/
+`locals` (`Reqs/Lang/Scope#scopes`). -/
 def Table.bindingsOf (t : Table) (scope : Name) (locals : Locals) (n : Name) : List (Binding Name Name) :=
-  let ls := locals.toList.reverse
-  let own := ls.zipIdx.filterMap fun ((m, k), i) =>
-    if m == n then some { name := m, kind := k, target := m, depth := i } else none
-  let builtin := if (builtinFunction? n).isSome then [{ name := n, kind := .builtin, target := n, depth := ls.length }] else []
-  own ++ builtin ++ t.itemBindings scope n (ls.length + 1)
+  (t.contextOf scope locals n (builtinFunction? n).isSome).bindings
 
 /-- What a declaration of `n` in the scope `scope` hides, if anything
 (`hiddenBy`): the innermost of `locals`, a built-in function, or the

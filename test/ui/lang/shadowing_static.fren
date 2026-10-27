@@ -155,3 +155,9 @@ comp ambiguous_bang { use self::Hue::* use self::Tone::* in Red!: Int pub out y:
 --~^^^ warning: unused import `Tone::*`
 --~^^^^ warning: `use Hue::*` imports every variant of `Hue`
 --~^^^^^ warning: `use Tone::*` imports every variant of `Tone`
+
+-- A later item is not in scope (`Reqs/Lang/Scope#scopes`): a declaration
+-- named like one hides nothing, so it takes no `!`.
+fn before_later(later_fn: Int): Int := later_fn + 1
+fn before_later_bang(later_fn!: Int): Int := later_fn + 1  --~ error: `later_fn!` shadows nothing
+fn later_fn(Int): Int

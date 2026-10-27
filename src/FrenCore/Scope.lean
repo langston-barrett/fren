@@ -5,8 +5,8 @@ The bindings in scope where a name is written, and the one it resolves to:
 the innermost of that name, or none if several distinct ones are, as
 variants that glob imports open may be. Both front ends resolve names that
 a declaration may hide (`Table.hidden?`), the first segment of a path
-(`Table.resolvePath`) and the members of a module or enumeration
-(`Table.walk`) with `lookup`.
+(`Table.resolvePath`) and an identifier in a pattern (`Table.namesVariant?`)
+with `lookup`, over the bindings that `Context.bindings` lists.
 
 A binding is generic in its name and target, so that the front ends'
 `Name`s and the spec's `String`s are both read by the same function.
@@ -71,6 +71,67 @@ structure Binding (ν τ : Type) where
   depth : Nat
   deriving Inhabited, DecidableEq, Repr
 
+/-- A declaration (`lang::Declared`): its name, kind and target. -/
+structure Declared (α : Type) where
+  name : α
+  kind : BindingKind
+  target : α
+  deriving Inhabited, Repr
+
+/-- A local declaration, and whether it is in scope where the name is
+written (`lang::Local`). -/
+structure Local (α : Type) where
+  declaration : Declared α
+  visible : Bool
+  deriving Inhabited, Repr
+
+/-- What a `use` brings into scope, and whether by a glob (`lang::Import`). -/
+structure Import (α : Type) where
+  declaration : Declared α
+  glob : Bool
+  deriving Inhabited, Repr
+
+/-- Where a name is written (`lang::Context`): the locals, outermost
+first, the built-in functions, the component's and the module's imports,
+and the module's items in their declaration's order, of which `declared`
+are declared before the name. -/
+structure Context (α : Type) where
+  locals : List (Local α)
+  builtins : List α
+  component : Bool
+  componentImports : List (Import α)
+  items : List (Declared α)
+  declared : Nat
+  moduleImports : List (Import α)
+  deriving Inhabited, Repr
+
+/-- The binding of `d` at depth `k`. -/
+def Declared.at {α : Type} (d : Declared α) (k : Nat) : Binding α α := ⟨d.name, d.kind, d.target, k⟩
+
+/-- The bindings of `imports` at depth `k`, and a glob's at `k + 1`. -/
+def importBindings {α : Type} (imports : List (Import α)) (k : Nat) : List (Binding α α) :=
+  imports.map fun i => i.declaration.at (if i.glob then k + 1 else k)
+
+/-- The depth of the module's items (`lang::module_depth`). -/
+def Context.moduleDepth {α : Type} (cx : Context α) : Nat := cx.locals.length + if cx.component then 3 else 1
+
+/-- The bindings of the scope where a name is written
+(`lang::context_scope`): each local, visible, at its depth, the last
+innermost; the built-in functions; the component's imports; and the
+module's items declared before the name and its imports. -/
+def Context.bindings {α : Type} (cx : Context α) : List (Binding α α) :=
+  let n := cx.locals.length
+  ((List.finRange n).filterMap fun i =>
+      if cx.locals[i].visible then some (cx.locals[i].declaration.at (n - 1 - i)) else none)
+    ++ cx.builtins.map (fun b => ⟨b, .builtin, b, n⟩)
+    ++ (if cx.component then importBindings cx.componentImports (n + 1) else [])
+    ++ ((List.finRange cx.items.length).filterMap fun i =>
+      if i.val < cx.declared then some (cx.items[i].at cx.moduleDepth) else none)
+    ++ importBindings cx.moduleImports cx.moduleDepth
+
+/-- The items and imports alone (`lang::item_scope`). -/
+def Context.itemScope {α : Type} (cx : Context α) : Context α := { cx with locals := [], builtins := [] }
+
 /-- What a name resolves to (`lang::Lookup`), with its binding. -/
 inductive Lookup (ν τ : Type) where
   | found (b : Binding ν τ)
@@ -98,9 +159,6 @@ def lookup (bs : List (Binding ν τ)) (n : ν) : Lookup ν τ :=
   match innermost bs n with
   | [] => .unbound
   | b :: rest => if rest.all (· == b) then .found b else .ambiguous
-
-/-- Whether `n` resolves to a binding in `bs` (`modules::member`'s `found?`). -/
-def resolves (bs : List (Binding ν τ)) (n : ν) : Bool := lookup bs n matches .found _
 
 /-- What a declaration of `n` would hide in the scope `bs`, if anything
 (`lang::shadowing`): what `n` resolves to, if it names a value. -/
@@ -237,11 +295,18 @@ theorem exists_innermost (bs : List (Binding ν τ)) (n : ν) (h : ∃ b ∈ bs,
   refine ⟨c, hc'.1, hcn, fun d hd hdn => ?_⟩
   have := hle d (List.mem_filter.2 ⟨hd, by simp [hdn]⟩); omega
 
-/-- What a name resolves to depends only on the members of the scope. -/
-theorem lookup_congr (l₁ l₂ : List (Binding ν τ)) (n : ν) (h : ∀ x, x ∈ l₁ ↔ x ∈ l₂) :
+/-- What `n` resolves to depends only on the members of the scope that are
+of `n`: the bindings of other names do not matter. -/
+theorem lookup_congr_named (l₁ l₂ : List (Binding ν τ)) (n : ν) (h : ∀ x, x.name = n → (x ∈ l₁ ↔ x ∈ l₂)) :
     lookup l₁ n = lookup l₂ n := by
   have hi : ∀ b, Innermost l₁ b n ↔ Innermost l₂ b n := by
-    intro b; simp only [Innermost, h]
+    intro b
+    simp only [Innermost]
+    constructor
+    · rintro ⟨hb, hn, hle⟩
+      exact ⟨(h b hn).1 hb, hn, fun c hc hcn => hle c ((h c hcn).2 hc) hcn⟩
+    · rintro ⟨hb, hn, hle⟩
+      exact ⟨(h b hn).2 hb, hn, fun c hc hcn => hle c ((h c hcn).1 hc) hcn⟩
   by_cases hu : ∃ b, Innermost l₁ b n ∧ ∀ c, Innermost l₁ c n → c = b
   · obtain ⟨b, hb, hc⟩ := hu
     rw [lookup_found _ _ b hb hc, lookup_found _ _ b ((hi b).1 hb) (fun c h' => hc c ((hi c).2 h'))]
@@ -252,7 +317,12 @@ theorem lookup_congr (l₁ l₂ : List (Binding ν τ)) (n : ν) (h : ∀ x, x �
         intro b hb hn
         obtain ⟨c, hc⟩ := exists_innermost l₁ n ⟨b, hb, hn⟩
         exact hu ⟨c, hc, fun d hd => Classical.byContradiction fun hne => ha ⟨d, c, hd, hc, hne⟩⟩
-      rw [lookup_unbound _ _ hnone, lookup_unbound _ _ (fun b hb => hnone b ((h b).2 hb))]
+      rw [lookup_unbound _ _ hnone, lookup_unbound _ _ (fun b hb hn => hnone b ((h b hn).2 hb) hn)]
+
+/-- What a name resolves to depends only on the members of the scope. -/
+theorem lookup_congr (l₁ l₂ : List (Binding ν τ)) (n : ν) (h : ∀ x, x ∈ l₁ ↔ x ∈ l₂) :
+    lookup l₁ n = lookup l₂ n :=
+  lookup_congr_named l₁ l₂ n fun x _ => h x
 
 end
 

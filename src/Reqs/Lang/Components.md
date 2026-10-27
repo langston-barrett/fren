@@ -192,7 +192,9 @@ the same unknown name.
 
 `lang::shadowing` states when a declaration is accepted, from the
 [scope](Scope.md#scopes) where it is declared and whether it is written
-with `!`. It *hides* a name in scope when, in that scope, its name
+with `!`. Its scope is the one where it is declared, without itself: a
+later declaration, of the same construct or one within it, is not in it,
+and nor is a later item. It *hides* a name in scope when, in that scope, its name
 resolves to a value: anything but a module, an enumeration or another
 item that is not a value, and not an ambiguous name. Shadowing without
 `!` is an error, and so is `!` where nothing is shadowed. This replaces
@@ -206,7 +208,7 @@ pub mod lang
 set_option fren.lint.undecidable "allow" in
 pub comp shadowing {
     use self::BindingKind::{Enumeration, Input, Item, Module, Output}
-    in bindings: Set<Binding>    -- the scope where it is declared, without it
+    in bindings: Set<Binding>    -- its scope, where it is declared, without it (`context_scope`)
     in name: Id                  -- the name it declares
     in bang?                     -- it is written with `!`
 
@@ -226,7 +228,8 @@ pub comp shadowing {
     expect unbound: when bindings = {}, accepted? iff not bang?
     -- A declaration named like the component's variable, in its innermost scope, hides it.
     expect variable_hidden: forall (b: Binding), when b in bindings and b.name = name and b.depth = 0
-        and b.kind in {Input, Output} and (forall (c: Binding), when c in bindings and c.name = name and c.depth = 0, c = b),
+        and b.kind in {Input, Output}
+        and (forall (c: Binding), when c in bindings and c.name = name and c.depth = 0, c = b),
         accepted? iff bang?
 
     cover explicit_accepted: hides? and bang? and accepted?

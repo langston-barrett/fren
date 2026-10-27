@@ -6,8 +6,8 @@ Which declarations are in scope, and which one a name resolves to, is
 stated once, in this chapter, as a model that the other chapters
 [instantiate](Instances.md): [shadowing](Components.md#shadowing), what an
 identifier is in a [pattern](Patterns.md#kinds-of-pattern), [module
-resolution](Modules.md#resolution), and the [layer](Meaning.md#layers) that
-a name is in the core of meaning.
+resolution](Modules.md#resolution), and the [layer](ScopeLaws.md#names-as-layers)
+that a name is in the core of meaning.
 
 ```fren
 pub mod lang
@@ -82,31 +82,152 @@ pub fn names_variant?(k: BindingKind) := k in {BindingKind::Variant, BindingKind
 
 ## Scopes
 
-The *scope* where a name is written is the set of the bindings there.
-From the innermost, at depth 0, out:
+The *scope* where a name is written is the set of the bindings there,
+which `lang::context_scope` lists from a `lang::Context`: the declarations around
+the name, by where they are declared. From the innermost, at depth 0, out:
 
-1. The names that the constructs around it declare, each construct one
-   scope further out than the one within it: the binders of the `match`
-   arms it is in, and of the pattern tests whose names are in scope there
-   (see [`lang::test_scope`](Expressions.md#pattern-tests)); the bound names
-   of the quantifiers it is in; and the names of the `let`s and `where`
-   clauses it is in, of which a definition sees those before it in its
-   own clause, and not itself.
-2. The variables and instances of its component, the parameters of its
-   function, or the binders of its global expectation. A function is not
-   in scope in its own body.
-3. The built-in functions, which are in every scope.
-4. Within a component, the names its own `use` declarations import by
-   name, and, one scope further out, those that its glob imports bring in.
-5. The items declared in its module and the names the module imports by
-   name, and, one scope further out, those that the module's glob imports
-   bring in. A module's scope does not include its parent's.
+1. The *locals*, one depth each, the last declared innermost. In order,
+   from the outermost: the variables and instances of its component, the
+   parameters of its function, or the binders of its global expectation;
+   then the names that the constructs around it declare, each in the order
+   that it is written: the binders of the `match` arms it is in, the bound
+   names of the quantifiers it is in, the names of the `let`s and `where`
+   clauses it is in, of which a definition sees those before it in its own
+   clause and not itself, and the binders of the pattern tests around it.
+   A pattern test's binder is in scope only where
+   [`lang::test_scope`](Expressions.md#pattern-tests) says, which its
+   `Local`'s `visible?` records, as [`lang::test_local`](ScopeLaws.md)
+   states. A function is not in scope in its own body.
+2. The built-in functions, which are in every scope.
+3. Within a component, the names its own `use` declarations import by
+   name, and, one depth further out, those that its glob imports bring in.
+4. The module's items declared before the name, and the names the module
+   imports by name, and, one depth further out, those that the module's
+   glob imports bring in. The items are in their declaration's order, and
+   `declared` of them are declared before the name: those before the item
+   it is written in, as [`lang::declared_before`](Items.md#items) orders
+   them, and that item itself where it may contain itself, as a recursive
+   enumeration does. So a later item is not in scope, and a declaration
+   named like one hides nothing. A module's scope does not include its
+   parent's.
 
-The names of one scope are distinct, as their declarations are checked to
-be (see [Distinct names](Items.md#distinct-names)), except for those that
-glob imports bring in: two enumerations opened in one scope may each have
-a variant of one name. Opening one enumeration twice brings in each of its
-variants twice, as one binding, since a scope is a set.
+A declaration written `x!` enters the scope as `x`, one depth further in
+than what it hides, which is why it hides it (see
+[Shadowing](Components.md#shadowing)). The names of one depth are
+distinct, as their declarations are checked to be (see [Distinct
+names](Items.md#distinct-names)), except for those that glob imports bring
+in: two enumerations opened in one scope may each have a variant of one
+name. Opening one enumeration twice brings in each of its variants twice,
+as one binding, since a scope is a set.
+
+```fren
+-- A declaration: its name, its kind and what it declares.
+pub struct Declared { name: Id, kind: BindingKind, target: Id }
+
+-- A local declaration, and whether it is in scope where the name is
+-- written: `false` only for a pattern test's binder that `lang::test_scope`
+-- does not show there.
+pub struct Local { declaration: Declared, visible? }
+
+-- What a `use` brings into scope, and whether by a glob.
+pub struct Import { declaration: Declared, glob? }
+
+pub struct Context {
+    locals: Seq<Local>,              -- the locals, outermost first
+    builtins: Seq<Id>,               -- the built-in functions
+    component?,                -- it is written in a component
+    component_imports: Seq<Import>,  -- what the component's `use`s bring in
+    items: Seq<Declared>,         -- the module's items, in their declaration's order
+    declared: Nat,                   -- how many of them are declared before the name
+    module_imports: Seq<Import>,     -- what the module's `use`s bring in
+}
+
+-- `b` is the binding of the declaration `d` at depth `k`.
+pub fn binding_of?(d: Declared, k: Int, b: Binding) := b.name = d.name and b.kind = d.kind and b.target = d.target
+    and b.depth = k
+
+-- `b` is the binding of one of `imports`, at depth `k`, or `k + 1` for a glob's.
+set_option fren.lint.undecidable "allow" in
+pub fn imported?(imports: Seq<Import>, k: Int, b: Binding) := exists (i: Int), 0 <= i < imports.len
+    and binding_of?(imports[i].declaration, if imports[i].glob? then k + 1 else k, b)
+
+-- The depth of the module's items.
+pub fn module_depth(cx: Context): Int := cx.locals.len + (if cx.component? then 3 else 1)
+
+-- `b` is a binding of the scope `cx`.
+set_option fren.lint.undecidable "allow" in
+pub fn in_scope?(cx: Context, b: Binding) := (exists (i: Int), 0 <= i < cx.locals.len and cx.locals[i].visible?
+    and binding_of?(cx.locals[i].declaration, cx.locals.len - 1 - i, b))
+    or (exists (i: Int), 0 <= i < cx.builtins.len and b.kind = BindingKind::Builtin and b.name = cx.builtins[i]
+    and b.target = cx.builtins[i] and b.depth = cx.locals.len)
+    or (cx.component? and imported?(cx.component_imports, cx.locals.len + 1, b))
+    or (exists (i: Int), 0 <= i < cx.items.len and i < cx.declared and binding_of?(cx.items[i], module_depth(cx), b))
+    or imported?(cx.module_imports, module_depth(cx), b)
+
+-- The items and imports alone, without the locals and the built-in functions.
+pub fn item_scope(cx: Context): Context := { cx with locals := [], builtins := [] }
+```
+
+`lang::context_scope` says which bindings the scope where a name is
+written has, one binding at a time: it is the set of those for which
+`listed?` holds, and the order it keeps is that of the context. An item
+at the module's depth is one declared before the name, so a later item is
+in no scope before it:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub comp context_scope {
+    in context: Context
+    in binding: Binding
+
+    pub det out listed? := in_scope?(context, binding)
+
+    -- An item at the module's depth is one declared before the name.
+    expect declared_items: when listed? and binding.depth = module_depth(context)
+        and not imported?(context.module_imports, module_depth(context), binding),
+        exists (i: Int), 0 <= i < context.declared and i < context.items.len
+        and binding_of?(context.items[i], binding.depth, binding)
+    -- A binding further in than the built-in functions is the local at its
+    -- depth, which is visible there.
+    expect locals_exact: when listed? and binding.depth < context.locals.len,
+        context.locals[context.locals.len - 1 - binding.depth].visible?
+        and binding.name = context.locals[context.locals.len - 1 - binding.depth].declaration.name
+        and binding.kind = context.locals[context.locals.len - 1 - binding.depth].declaration.kind
+        and binding.target = context.locals[context.locals.len - 1 - binding.depth].declaration.target
+    -- A binding at the built-in functions' depth is one of them.
+    expect builtins_exact: when listed? and binding.depth = context.locals.len,
+        binding.kind = BindingKind::Builtin and binding.name = binding.target and binding.name in context.builtins
+    -- The last local declared, if visible, is the innermost binding, and
+    -- the first declared the outermost of the locals.
+    expect last_local: when context.locals != [] and context.locals[context.locals.len - 1].visible?
+        and binding.name = context.locals[context.locals.len - 1].declaration.name
+        and binding.kind = context.locals[context.locals.len - 1].declaration.kind
+        and binding.target = context.locals[context.locals.len - 1].declaration.target and binding.depth = 0,
+        listed?
+    expect first_local: when context.locals != [] and context.locals[0].visible?
+        and binding_of?(context.locals[0].declaration, context.locals.len - 1, binding), listed?
+    -- A glob import's variants are one depth further out than the module's items.
+    expect glob_import: when context.module_imports != [] and context.module_imports[0].glob?
+        and binding_of?(context.module_imports[0].declaration, module_depth(context) + 1, binding), listed?
+    expect module_depths: module_depth(context) = context.locals.len + (if context.component? then 3 else 1)
+    -- Nothing is in an empty scope, and the items and imports alone have no locals.
+    expect empty: when context.locals = [] and context.builtins = [] and context.component_imports = []
+        and context.items = [] and context.module_imports = [], not listed?
+    expect items_alone: item_scope(context).locals = [] and item_scope(context).builtins = []
+        and item_scope(context).items = context.items
+    -- The built-in functions are in every scope, just outside the locals.
+    expect builtins: when binding.kind = BindingKind::Builtin and binding.name = binding.target
+        and binding.depth = context.locals.len
+        and (exists (i: Int), 0 <= i < context.builtins.len and context.builtins[i] = binding.name),
+        listed?
+}
+```
+
+The components below take a scope as the set of its bindings, which
+`context_scope` lists from where they are written: each one's `impl`
+builds its scope from a `Context` by the code that both front ends call,
+`Context.bindings`, proved to list exactly the bindings for which
+`listed?` holds.
 
 ## Resolution
 
@@ -182,9 +303,11 @@ pub comp scope {
 
 `lint::Scoped`, an expression as the lints compare it (see [Expressions
 as written](../Lint/Meaning.md#expressions-as-written)), has the binders
-of pattern tests in scope where it is written, by their targets. In this
-model, that set is the targets of its scope's bindings of kind
-`PatternBinder` whose pattern is a test's rather than a `match` arm's:
-the slice of a `lang::scope`'s `bindings` that may differ between two
-places in one component, since every other binding is the same throughout
-it.
+of pattern tests in scope where it is written, by their targets: the
+slice of a scope that may differ between two places in one component.
+Two things stand between it and this model. A `Binding` does not tell a
+test's binder from a `match` arm's, both being `PatternBinder`s, so the
+slice needs a kind of its own, or the `Local`'s place. And the front ends
+give a local binding its name as its target, not where its pattern
+declares it, since resolution reads only that it hides, so a `Scoped`'s
+`scope` would need the front ends to record the pattern path.

@@ -59,7 +59,7 @@ Each part of a pattern is read as a variant, a literal or a binder from what
 it is: a path of more than one segment, or one that is applied, names a
 variant. An identifier of one segment, not applied, is the literal `true`
 or `false`, a variant if it resolves to one among the items and imports in
-scope (scopes 4 and 5 of [Scopes](Scope.md#scopes)), as `V` does after
+scope (scopes 3 and 4 of [Scopes](Scope.md#scopes)), as `V` does after
 `use E::*`, and a binder otherwise. The names that the constructs around
 the pattern declare, and the component's variables, are not looked up, so
 a binder or a variable named like a variant does not stop the identifier
@@ -70,7 +70,8 @@ a variant; `true!` and `false!` are binders too, which, as declarations of
 `true` and `false`, are errors. So `MAX` in a pattern, where `MAX` is a constant, is an error
 unless written `MAX!`: it would be a binder, not a comparison with the
 constant. `lang::pattern_name` states this, with an instance of
-[`lang::scope`](Scope.md#resolution) over the items and imports in scope:
+[`lang::scope`](Scope.md#resolution) over the items and imports in scope,
+`item_scope`:
 
 ```fren
 pub mod lang
@@ -81,7 +82,7 @@ pub enum PatternName { BoolLiteral, Variant, Binder }
 -- It instantiates `lang::scope`, which quantifies over bindings.
 set_option fren.lint.undecidable "allow" in
 pub comp pattern_name {
-    in items: Set<Binding>   -- the items and imports in scope where it is written
+    in items: Set<Binding>   -- the scope where it is written, `item_scope` of its context
     in name: Id              -- the identifier, without its `!`
     in bang?                 -- it ends in `!`
 
