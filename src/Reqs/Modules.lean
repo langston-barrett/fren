@@ -8,6 +8,7 @@ import Fren.Literate
 import Fren.Spec
 import Fren.Trace
 import Fren.View
+import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
 

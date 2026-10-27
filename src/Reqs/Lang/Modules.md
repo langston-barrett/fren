@@ -5,6 +5,8 @@ independent of Lean's namespaces and files.
 
 ```fren
 pub mod modules
+
+use lang
 ```
 
 ## Module declarations
@@ -138,26 +140,50 @@ resolves as follows:
    name is used.
 4. Otherwise, the name is unbound, which is an error.
 
-`modules::resolve` states this rule, given whether an item of that name is
-declared or imported by name (`local?`) and how many distinct variants of
-that name are opened (`n_glob`):
+These are the scopes 4 and 5 of [Scopes](Scope.md#scopes), read by
+[`lang::scope`](Scope.md#resolution): an item declared in the module and a
+name imported by name are bindings of one scope, so at most one of a name,
+and the variants that the glob imports open are bindings of the scope
+just outside it, where two distinct variants of a name are ambiguous. A
+component's own imports are two scopes further in. `modules::resolve`
+states the rule, from the items and imports in scope where the path is
+written and its first segment:
 
 ```fren
 pub enum Resolution { Local, Glob, Ambiguous, Unbound }
 
 use self::Resolution::{Ambiguous, Glob, Local, Unbound}
 
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
 pub comp resolve {
-    in local?
-    in n_glob: Nat       -- distinct items of this name opened by `use ...::*`
-    pub out result: Resolution
+    use lang::BindingKind::Opened
+    in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
+    in name: lang::Id                -- its first segment
 
-    ensure local_wins: when local?, result = Local
-    ensure glob: unless local?, when n_glob = 1, result = Glob
-    ensure ambiguous: unless local?, when n_glob > 1, result = Ambiguous
-    ensure unbound: unless local?, when n_glob = 0, result = Unbound
+    pub det out lookup: lang::Lookup := first.result
+    pub det out result: Resolution := match lookup {
+        lang::Lookup::Found(Opened) => Glob,
+        lang::Lookup::Found(_) => Local,
+        lang::Lookup::Ambiguous => Ambiguous,
+        lang::Lookup::Unbound => Unbound,
+    }
 
-    expect glob_is_unique: when result = Glob, n_glob = 1
+    inst first: lang::scope { bindings, name }
+
+    expect nothing_in_scope: when bindings = {}, result = Unbound
+    -- A variant that only a glob import opens resolves through it.
+    expect only_glob: forall (b: lang::Binding), when lang::resolves_to?(bindings, b, name) and b.kind = Opened,
+        result = Glob
+    -- An item or a name imported by name wins over the variants that glob imports open further out.
+    expect local_wins: forall (b c: lang::Binding), when b in bindings and c in bindings and b.name = name
+        and c.name = name and b.kind != Opened and c.kind = Opened and b.depth < c.depth
+        and (forall (d: lang::Binding), when d in bindings and d.name = name, d = b or d = c),
+        result = Local
+    -- Two variants of one name, opened in the innermost scope that has it, are ambiguous.
+    expect two_globs: forall (b c: lang::Binding), when lang::innermost?(bindings, b, name)
+        and lang::innermost?(bindings, c, name) and b.kind = Opened and c.kind = Opened and b.target != c.target,
+        result = Ambiguous
 }
 ```
 
@@ -171,57 +197,79 @@ variant brought into scope by `use E::*` has no members.
 
 `Kind` classifies what a segment resolves to when it is an item: `Other`
 covers records, abstract types, functions, constants, components, global
-expectations, and variants imported by name.
+expectations, and variants imported by name. `kind_of` is the `Kind` of
+a binding's kind.
 
 ```fren
 pub enum Kind { Module, Enum, Other }
 
 use self::Kind::{Enum, Module, Other}
+
+pub fn kind_of(k: lang::BindingKind): Kind := match k {
+    lang::BindingKind::Module => Module,
+    lang::BindingKind::Enumeration => Enum,
+    _ => Other,
+}
 ```
 
 `modules::member` gives whether one later segment is accepted, from what
-the previous segment resolved to.
+the previous segment resolved to and its members, as a scope of one
+depth: a module's items, or an enumeration's variants.
 
 ```fren
-set_option fren.evidence "enumerated" in
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
 pub comp member {
-    in parent: Kind      -- what the previous segment resolved to
-    in found?            -- it has a member of this name
-    in visible?          -- for a module: that member is visible from here (`item_visible`)
-    pub out accepted?
+    in parent: Kind                  -- what the previous segment resolved to
+    in members: Set<lang::Binding>   -- its members
+    in name: lang::Id                -- the segment
+    in visible?                      -- for a module: that member is visible from here (`item_visible`)
+
+    pub det out found? := segment.result is lang::Lookup::Found(_)  -- it has a member of this name
+    pub det out accepted?
+
+    inst segment: lang::scope { bindings := members, name }
 
     ensure rule: accepted? iff (found? and (if parent = Module then visible? else parent = Enum))
 
     expect only_modules_hide: when parent = Enum and found?, accepted?
     expect others_empty: when parent = Other, not accepted?
+    expect no_members: when members = {}, not accepted?
 }
 ```
 
 `modules::two_segments` puts the two rules together for a path `a::b`.
 
 ```fren
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
 pub comp two_segments {
-    in a_local?             -- `a` is declared in, or imported by name into, this module
-    in a_globs: Nat         -- distinct variants named `a` opened by `use ...::*`
-    in a_kind: Kind         -- what `a` is, when it is declared or imported by name
-    in b_found?             -- `a` has a member named `b`
-    in b_pub?               -- that member is `pub`
-    in b_owner: ModuleName  -- the module declaring `b`: `a`, if `a` is a module
-    in here: ModuleName     -- the module where the path is written
-    pub out accepted?
+    in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
+    in a: lang::Id
+    in members: Set<lang::Binding>   -- the members of what `a` resolves to
+    in b: lang::Id
+    in b_pub?                        -- that member is `pub`
+    in b_owner: ModuleName           -- the module declaring `b`: `a`, if `a` is a module
+    in here: ModuleName              -- the module where the path is written
 
-    inst first: resolve { local? := a_local?, n_glob := a_globs }
+    -- What `a` is, when it is declared or imported by name.
+    pub det out a_kind: Kind := match first.lookup {
+        lang::Lookup::Found(k) => kind_of(k),
+        _ => Other,
+    }
+    pub det out accepted?
+
+    inst first: resolve { bindings, name := a }
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
-    inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
+    inst second: member { parent := a_kind, members, name := b, visible? := seen.visible? }
 
     ensure rule: accepted? iff (first.result = Local and second.accepted?)
 
-    expect variants_have_no_members: unless a_local?, not accepted?
+    expect variants_have_no_members: when first.result != Local, not accepted?
     expect private_member: when a_kind = Module and not b_pub? and here != b_owner and not descends?(here, b_owner),
         not accepted?
-    expect variants_visible: when a_local? and a_kind = Enum and b_found?, accepted?
-    expect owner_sees_members: when a_local? and a_kind = Module and b_found? and here = b_owner, accepted?
-    expect no_globs_needed: when a_local? and a_globs = 0 and a_kind = Enum and b_found?, accepted?
+    expect variants_visible: when a_kind = Enum and second.found?, accepted?
+    expect unbound: when bindings = {}, not accepted?
 }
 
 #fren_check

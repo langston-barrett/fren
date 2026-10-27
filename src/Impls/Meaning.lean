@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Meaning
 import Impls.Lang
+import Impls.Scope
 -- keep-sorted end
 open Fren.Lang
 
@@ -287,6 +288,18 @@ interp lang::step := fun h (e : Fren.Core.Meaning.Env) vs =>
   all_goals simp [Meaning.toHead, Fren.Core.Meaning.step, lang.Head.Literal.x0, lang.Head.Bound.x0,
     lang.Head.Variable.x0, lang.Head.Definition.x0, lang.Head.Construction.x0, lang.Head.Construction.x1,
     lang.Head.Uninterpreted.x0, apply_ite Meaning.toValue]
+
+-- For every binding: a name written alone is a variable or a constant, and
+-- so on, by the kind of its binding.
+impl named: lang::named for (b : Fren.Core.Binding String String) {
+  binding := toBinding b,
+  head := Meaning.toHead (Fren.Core.Meaning.namedHead b),
+} by
+  intro b _
+  refine ⟨?_, trivial⟩
+  rcases b with ⟨_, k, _, _⟩
+  cases k <;> simp [lang.named.defs, lang.named.def.head, Fren.Core.Meaning.namedHead, lang.named_head, toBinding,
+    toBindingKind, Meaning.toHead]
 
 -- For every layer and parts' values: which arms of a choice are open and
 -- fire, and which of their guards and bodies are not evaluated, by

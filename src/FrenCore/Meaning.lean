@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Guards
 import FrenCore.Mentions
+import FrenCore.Scope
 -- keep-sorted end
 
 /-!
@@ -83,6 +84,19 @@ structure Env where
   meaning : String → List Value → Value
   unspecified : Head → List Value → Value
   deriving Inhabited
+
+/-- The layer that a name written alone is, from the binding it resolves to
+(`lang::named_head`): a variable, a parameter, an instance, a global
+expectation's binder or a bound name is read from the environment, a name
+of a `let` or `where` is its definition, a binder is named by where its
+pattern declares it, and anything else, a constant or a variant above
+all, is a constant by its full path. -/
+def namedHead (b : Binding String String) : Head :=
+  match b.kind with
+  | .input | .output | .parameter | .inst | .expectBinder | .boundName => .variable b.name
+  | .definition => .definition b.name
+  | .patternBinder => .binder b.target
+  | _ => .constant b.target
 
 /-! ## Parts and connectives -/
 

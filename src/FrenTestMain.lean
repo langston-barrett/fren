@@ -235,7 +235,7 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Quantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions",
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Scope", "Lang/Components", "Lang/Decidability", "Lang/Let", "Lang/Quantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions",
     "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
     "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",

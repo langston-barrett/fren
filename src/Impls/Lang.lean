@@ -855,22 +855,6 @@ impl variable_type: lang::variable_type for (o u d : Bool) {
   accepted? := Fren.Core.variableTypeAccepted o u d,
 }
 
--- For every declaration: its name `n`, what it hides if anything (`w`, when
--- `h`), and whether it has `!`, through the check that both front ends call.
--- This proves the rule, given `hides?`, not that `hides?` is computed
--- correctly: `Table.hidden?`, `bindingLocals`, and a function's absence from
--- the table while its parameters are declared, which `o` stands for, are
--- tested (`test/ui/lang/shadowing_static.fren`), not proved.
-impl shadowing: lang::shadowing for (n : Lean.Name) (w : String) (h b o : Bool) {
-  hides? := h,
-  bang? := b,
-  own_function? := o,
-  accepted? := (Fren.Core.checkShadowing n (if h then some w else none) b).isOk,
-} by
-  intro n w h b o _
-  cases h <;> cases b <;>
-    simp [fren_spec, Fren.Core.checkShadowing, Fren.Core.shadowingAccepted, Except.isOk, Except.toBool] <;> rfl
-
 impl field_init: lang::field_init for (f : Bool) (n : Nat) {
   field? := f,
   n := n,
@@ -935,23 +919,6 @@ impl test_scope: lang::test_scope for (c : Fren.Core.TestContext) (n t : Nat) (s
       Fren.Core.TestContext.bodySees] <;> omega
 
 /-! ## Patterns (`Reqs/Lang/Patterns`) -/
-
-/-- A pattern of `lang::pattern_overlap` as the front ends resolve it. -/
-def toPatternName : Fren.Core.PatternName → lang.PatternName
-  | .boolLiteral => .BoolLiteral
-  | .variant => .Variant
-  | .binder => .Binder
-
--- For every identifier of one segment, not applied, in a pattern: both
--- front ends and the evaluator read it with `patternName`.
-impl pattern_name: lang::pattern_name for (w b v : Bool) {
-  bool_word? := w,
-  bang? := b,
-  variant? := v,
-  reading := toPatternName (Fren.Core.patternName w b v),
-} by
-  intro w b v _
-  cases w <;> cases b <;> cases v <;> simp [fren_spec, toPatternName, Fren.Core.patternName]
 
 -- For every range and integer: the bounds as `Option`s, as both front ends
 -- and the evaluator read them.

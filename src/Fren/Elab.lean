@@ -528,8 +528,8 @@ structure ExprCtx where
   testAt? : Option (Nat × Nat) := none
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
-def MatchBinder.what (b : MatchBinder) : Name × String :=
-  (b.name, if b.scrutinee.isNone then "the bound name" else if b.isDef then "the definition" else "the binder")
+def MatchBinder.what (b : MatchBinder) : Name × Core.BindingKind :=
+  (b.name, if b.scrutinee.isNone then .boundName else if b.isDef then .definition else .patternBinder)
 
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option MatchBinder := cx.binders.reverse.find? (·.name == n)
 
@@ -1222,15 +1222,15 @@ def cardinalityApp? (e : Syntax) : Option Core.Cardinality := do
   guard (segs.size == 1)
   Core.builtinFunction? segs[0]!.getId
 
-/-- What the identifier `x`, the only segment of the path `p`, not applied,
-is in a pattern (`lang::pattern_name`). -/
-def patternName (cx : ExprCtx) (p x : Syntax) : TermElabM Core.PatternName := do
+/-- What the identifier `x` of one segment, not applied, is in a pattern
+(`lang::pattern_name`). -/
+def patternName (cx : ExprCtx) (x : Syntax) : TermElabM Core.PatternName := do
   let (n, bang) := Core.declaredName x.getId
-  return Core.patternName (n == `true || n == `false) bang (← isVariant cx p)
+  return Core.patternName (n == `true || n == `false) bang ((← getState).table.namesVariant? cx.modName n)
 
 /-- The binders of the pattern `top` of `match` or `is`, in preorder. -/
 def topBinders (cx : ExprCtx) (top : Syntax) : TermElabM (Array Syntax) :=
-  (topNames top).filterM fun x => return (← patternName cx (mkNode ``Lang.fren_path #[mkNullNode #[x]]) x) == .binder
+  (topNames top).filterM fun x => return (← patternName cx x) == .binder
 
 /-- Whether a pattern test of the chain of `and` `c` binds names. -/
 def chainBinds (cx : ExprCtx) (c : Syntax) : TermElabM Bool :=
@@ -1596,7 +1596,7 @@ partial def lastTailPos (e : Syntax) : String.Pos.Raw :=
 
 /-- Whether a name declared in `cx`, or among `extra`, would hide
 something in scope (`lang::shadowing`). -/
-def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : TermElabM (String → Bool) := do
+def hidesIn (cx : ExprCtx) (extra : Core.Locals := #[]) : TermElabM (String → Bool) := do
   let table := (← getState).table
   let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
     (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
@@ -2210,7 +2210,7 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
   -- A variant, a binder, `true` or `false`.
   let segs := pathSegs p[0]
   if segs.size == 1 && p[1].isNone then
-    match ← patternName cx p[0] segs[0]! with
+    match ← patternName cx segs[0]! with
     | .boolLiteral =>
       unless pty == .bool do wrong "a pattern of `Bool`"
       let b := (Core.declaredName segs[0]!.getId).1 == `true
@@ -4786,7 +4786,7 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if values?.isNone then checkCore cx b .quantifier true true #[]
     for x in b[1].getArgs do
       let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
-        (cx.binders.map (·.what) ++ bound.map (·.1, "the bound name")) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
       let x ← declare x cx.modName locals
       let bn := x.getId
       liftMsg x (Core.checkVarName bn (some (ty.isConstOf ``Bool)))
@@ -6230,7 +6230,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     let indexes := (← takeIndexes fvs).map fun (r, q, g) => (n, Core.IndexPlace.prop, r, q, g)
     -- The body is in the scope of the binders over values too.
     lintBools body (← hidesIn cx (valueBinders.flatMap (·[1].getArgs) |>.map fun x =>
-      ((declaredIdent x).1.getId, "the bound name")))
+      ((declaredIdent x).1.getId, Core.BindingKind.boundName)))
     lintConstant cx "expect" body
     for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
       recordLint .unusedVariables ref (Core.unusedVariableMsg w true false)

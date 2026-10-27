@@ -17,6 +17,7 @@ import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTypes
 import Impls.Refine
+import Impls.Scope
 import Impls.Trace
 import Impls.View
 import Reqs

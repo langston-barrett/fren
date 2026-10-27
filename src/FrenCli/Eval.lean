@@ -1403,7 +1403,7 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy �
     if segs.size == 1 && args?.isNone then
       let (n, bang) := Fren.Core.declaredName (Name.mkSimple segs[0]!.name)
       let st ← get
-      let variant := st.table.resolvePath st.scope #[Name.mkSimple segs[0]!.name] matches .ok (.variant ..)
+      let variant := st.table.namesVariant? st.scope n
       match Fren.Core.patternName (n == `true || n == `false) bang variant with
       | .boolLiteral => return (.bool (n == `true), [])
       | .binder =>
@@ -1546,7 +1546,7 @@ def bindingTest (e : Expr) : L Bool := do
   let st ← get
   return p.names.any fun x =>
     let (n, bang) := Fren.Core.declaredName (Name.mkSimple x.name)
-    let variant := st.table.resolvePath st.scope #[Name.mkSimple x.name] matches .ok (.variant ..)
+    let variant := st.table.namesVariant? st.scope n
     Fren.Core.patternName (n == `true || n == `false) bang variant == .binder
 
 mutual

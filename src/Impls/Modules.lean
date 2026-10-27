@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Impls.Check
+import Impls.Scope
 import Reqs.Modules
 -- keep-sorted end
 open Fren.Lang
@@ -8,7 +9,7 @@ open Fren.Lang
 
 namespace Fren.Impls
 
-open Fren.Core (Resolution resolution visibleFrom Parent memberAccepted)
+open Fren.Core (Binding Resolution resolution visibleFrom Parent memberAccepted lookup)
 
 -- A module is its path, and a descendant of each proper prefix of it.
 interp modules::ModuleName := Lean.Name
@@ -34,14 +35,22 @@ def toResolution : Resolution → modules.Resolution
   | .ambiguous => .Ambiguous
   | .unbound => .Unbound
 
--- Over `Nat`, so `decide` does not apply: a proof by cases.
-impl resolve: modules::resolve for (l : Bool) (k : Nat) {
-  local? := l,
-  n_glob := k,
-  result := toResolution (resolution l k),
+-- For every scope of items and imports and every first segment: what it
+-- resolves to, by `lookup`, read as `resolution`, both of which
+-- `Table.resolvePath` calls.
+impl resolve: modules::resolve for (l : List (Binding String String)) (n : String) {
+  bindings := Fren.FinSet.ofList (l.map toBinding),
+  name := n,
+  lookup := toLookup (lookup l n),
+  result := toResolution (resolution (lookup l n)),
 } by
-  intro l k _
-  cases l <;> rcases k with _ | _ | k <;> simp [fren_spec, resolution, toResolution] <;> omega
+  intro l n _
+  obtain ⟨hd, he⟩ := scope l n (fun _ _ => Nat.zero_le _)
+  refine ⟨_, _, _, _, ⟨rfl, ?_⟩, trivial, ⟨⟨rfl, rfl⟩, hd, fun _ _ => Nat.zero_le _, he⟩⟩
+  simp only [modules.resolve.def.result]
+  cases h : lookup l n with
+  | found b => cases b with | mk _ k _ _ => cases k <;> simp [toLookup, toBindingKind, resolution, toResolution, lang.Lookup.Found.x0]
+  | _ => simp [toLookup, resolution, toResolution, lang.Lookup.Found.x0]
 
 instance : Fren.Finite Parent := ⟨[.module, .enum, .other], by intro x; cases x <;> simp⟩
 
@@ -50,11 +59,24 @@ def toKind : Parent → modules.Kind
   | .enum => .Enum
   | .other => .Other
 
-impl member: modules::member for (p : Parent) (found visible : Bool) {
+-- For every segment after the first, and the members of what the one
+-- before it resolved to, which `Table.walk` lists, by `resolves`.
+impl member: modules::member for (p : Parent) (l : List (Binding String String)) (n : String) (visible : Bool) {
   parent := toKind p,
-  found? := found,
+  members := Fren.FinSet.ofList (l.map toBinding),
+  name := n,
   visible? := visible,
-  accepted? := memberAccepted p found visible,
-}
+  found? := Fren.Core.resolves l n,
+  accepted? := memberAccepted p (Fren.Core.resolves l n) visible,
+} by
+  intro p l n visible _
+  obtain ⟨hd, he⟩ := scope l n (fun _ _ => Nat.zero_le _)
+  refine ⟨_, _, _, _, ?_, ?_, ⟨⟨rfl, rfl⟩, hd, fun _ _ => Nat.zero_le _, he⟩⟩
+  · simp only [modules.member.defs, modules.member.def.found?]
+    unfold Fren.Core.resolves
+    cases lookup l n <;> simp [toLookup, lang.Lookup.Found.x0]
+  · simp only [modules.member.ensures, modules.member.ensure.rule]
+    generalize Fren.Core.resolves l n = f
+    cases p <;> cases f <;> cases visible <;> simp [toKind, memberAccepted]
 
 end Fren.Impls

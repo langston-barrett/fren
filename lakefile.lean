@@ -136,7 +136,7 @@ input_file test_main where
 
 lean_lib ImplsProofs where
   globs := #[`Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated, `Impls.Impl,
-    `Impls.Inst, `Impls.Lang, `Impls.Meaning, `Impls.Modules, `Impls.Mutate, `Impls.PatternTypes, `Impls.Refine,
+    `Impls.Inst, `Impls.Lang, `Impls.Meaning, `Impls.Modules, `Impls.Mutate, `Impls.PatternTypes, `Impls.Refine, `Impls.Scope,
     `Impls.View]
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
