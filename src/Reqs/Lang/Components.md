@@ -380,7 +380,11 @@ The [abstract types](Types.md#abstract-types) and
 [uninterpreted functions](Items.md#uninterpreted-functions) of a spec are
 fixed, but unknown. An *interpretation* gives each abstract type a
 nonempty set of values, and each uninterpreted function a total function
-between the sets of its parameter and result types. A [defined
+between the sets of its parameter and result types. A [generic
+one](GenericFunctions.md#uninterpreted-generic-functions) is given a
+function of its own for each instance, between the sets of its parameter
+and result types at that instance: `pick<Int>` and `pick<Bool>` need not
+be related. A [defined
 function](Items.md#defined-functions) needs no interpretation: its body
 gives its values, from those of its arguments. A component's meaning above is relative to an
 interpretation: `A`, `I` and `R` may apply functions, and the variables

@@ -1,0 +1,13 @@
+error[F0603]: expectation `c::same` does not hold
+  --> test/cli/commands/quickcheck_generic_uninterpreted.fren:21:12
+   |
+21 |     expect same: i = j
+   |            ^^^^ does not follow from the guarantees
+   |
+   = counterexample: x = 0, p? = true, i = 3, j = 2, n = 2
+   = help: strengthen the guarantees so that it follows, or correct the expectation
+
+fren: 5 passed, 1 failed, 0 inconclusive, in 100 tests each
+
+For more information about this error, try `fren --explain F0603`.
+exit=1
