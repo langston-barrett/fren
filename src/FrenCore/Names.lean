@@ -167,14 +167,51 @@ def editDistance (a b : String) : Nat := Id.run do
     d := d.push row
   return d[a.size]![b.size]!
 
+/-- `min (editDistance a b) (cap + 1)`, for `a` and `b` as characters: the
+distance where it is at most `cap`, and `cap + 1` otherwise. The distance is
+at least the difference of the lengths, so a difference over `cap` is not
+looked at further. Each row of the table is at least the smaller of the
+row before's least entry and one more than the least of the row before
+that, so once two rows in a row are over `cap`, every later one is, and the
+last entry is too. -/
+def editDistanceCapped (a b : Array Char) (cap : Nat) : Nat := Id.run do
+  let over := cap + 1
+  if a.size > b.size + cap || b.size > a.size + cap then return over
+  let mut prev2 : Array Nat := #[]
+  let mut prev : Array Nat := Array.range (b.size + 1)
+  -- Whether the row before `prev` and `prev` itself are all over `cap`.
+  let mut prevOver := false
+  for i in [1:a.size + 1] do
+    let mut row : Array Nat := Array.mkEmpty (b.size + 1)
+    row := row.push i
+    let mut least := i
+    for j in [1:b.size + 1] do
+      let cost := if a[i - 1]! == b[j - 1]! then 0 else 1
+      let mut v := min (min (prev[j]! + 1) (row[j - 1]! + 1)) (prev[j - 1]! + cost)
+      if i > 1 && j > 1 && a[i - 1]! == b[j - 2]! && a[i - 2]! == b[j - 1]! then
+        v := min v (prev2[j - 2]! + 1)
+      row := row.push v
+      least := min least v
+    let rowOver := least > cap
+    if rowOver && prevOver then return over
+    prevOver := rowOver
+    prev2 := prev
+    prev := row
+  return min prev[b.size]! over
+
 /-- The candidate closest to `s`, if one is close enough to be a likely
 typo: at most a third of the name's length away, as rustc allows. A
 candidate that differs only in a trailing `?` always counts, and so does one
 of at least three characters that is a prefix of `s` or has `s` as a prefix. -/
 def similarStr (s : String) (cands : Array String) : Option String :=
   let base (x : String) := (x.dropEndWhile (· == '?')).toString
+  let limit := max 1 (s.length / 3)
+  -- A distance over `limit` is counted as `limit + 1`: such a candidate is
+  -- the closest only if every one is over `limit`, and then none is taken.
+  let chars := s.toList.toArray
+  let baseS := base s
   let scored := cands.filter (· != s) |>.map fun c =>
-    let d := if base c == base s then 0 else editDistance s c
+    let d := if base c == baseS then 0 else editDistanceCapped chars c.toList.toArray limit
     (c, d)
   let byPrefix := cands.find? fun c => c != s && min c.length s.length ≥ 3 && (s.startsWith c || c.startsWith s)
   let best := scored.foldl (init := none) fun (acc : Option (String × Nat)) (c, d) =>
@@ -182,7 +219,7 @@ def similarStr (s : String) (cands : Array String) : Option String :=
     | some (_, d') => if d < d' then some (c, d) else acc
     | none => some (c, d)
   match best with
-  | some (c, d) => if d ≤ max 1 (s.length / 3) then some c else byPrefix
+  | some (c, d) => if d ≤ limit then some c else byPrefix
   | none => byPrefix
 
 def similar (n : Name) (cands : Array Name) : Option Name :=

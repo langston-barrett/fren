@@ -130,22 +130,33 @@ def position (src : Array Char) (off : Nat) : Nat × Nat := Id.run do
   return (line, col)
 
 /-- Tabs are shown as four spaces, as rustc does. -/
-def expandTabs (s : String) : String := s.replace "\t" "    "
+def expandTabs (s : String) : String := if s.contains '\t' then s.replace "\t" "    " else s
 
 /-- The display width of the first `n` characters of `s`. -/
 def widthOf (s : String) (n : Nat) : Nat :=
-  (s.toList.take n).foldl (init := 0) fun w c => w + if c == '\t' then 4 else 1
+  (s.foldl (init := (0, 0)) fun (w, k) c => if k < n then (w + if c == '\t' then 4 else 1, k + 1) else (w, k)).1
 
 def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
 
 def repeatChar (c : Char) (n : Nat) : String := String.ofList (List.replicate n c)
 
-/-- The source line containing `off`: its number, starting offset and text. -/
-def lineAt (src : Array Char) (off : Nat) : Nat × Nat × String :=
-  let ls := lines src
-  let idx := (ls.findIdx? fun (s, l) => off ≤ s + l.length).getD (ls.size - 1)
-  let (s, l) := ls[idx]!
-  (idx + 1, s, l)
+/-- The source line containing `off`: its number, starting offset and text.
+Lines end at a newline, which is the last character of its line, and an
+offset past the end is on the last line. Only the text up to the end of that
+line is read, not the rest of `src`. -/
+def lineAt (src : Array Char) (off : Nat) : Nat × Nat × String := Id.run do
+  let off := min off src.size
+  let mut n := 1
+  let mut start := 0
+  for i in [0:off] do
+    if src[i]! == '\n' then
+      n := n + 1
+      start := i + 1
+  let mut text := ""
+  for i in [start:src.size] do
+    if src[i]! == '\n' then break
+    text := text.push src[i]!
+  return (n, start, text)
 
 /-! ### Colour
 
@@ -228,8 +239,8 @@ def renderFix (p : Paint) (src : Array Char) (w : Nat) (r : Range) (f : Fix) : A
 
 /-- The width of the gutter for a diagnostic: that of the largest line
 number it shows. -/
-def Diagnostic.gutterWidth (d : Diagnostic) (src : Array Char) : Nat :=
-  let ns := #[(lineAt src d.range.start).1] ++ d.msg.fixes.map fun f => (lineAt src (f.target d.range).start).1
+def Diagnostic.gutterWidth (d : Diagnostic) (src : Array Char) (line : Nat := (lineAt src d.range.start).1) : Nat :=
+  let ns := #[line] ++ d.msg.fixes.map fun f => (lineAt src (f.target d.range).start).1
   (toString (ns.foldl max 0)).length
 
 /-- A note as rows after `indent`: `= note: text`, and the rest of its
@@ -247,9 +258,12 @@ def header (level : Severity) (msg : Msg) (p : Paint := {}) : String :=
 /-- The text of a diagnostic about the file at `path`. Ranges spanning
 several lines are underlined to the end of the first. -/
 def Diagnostic.render (d : Diagnostic) (path : String) (src : Array Char) (p : Paint := {}) : String := Id.run do
-  let (line, col) := position src d.range.start
-  let (_, lstart, text) := lineAt src d.range.start
-  let w := d.gutterWidth src
+  -- The line's number is `position`'s, and so is the column: the
+  -- characters from the line's start to the offset, which is at most the
+  -- text's end, plus one.
+  let (line, lstart, text) := lineAt src d.range.start
+  let col := min d.range.start src.size - lstart + 1
+  let w := d.gutterWidth src line
   let mut out := #[header d.level d.msg p, s!"{spaces w}{p.blue "-->"} {path}:{line}:{col}", gutter p w,
     srcLine p w line "|" text]
   let startCol := d.range.start - lstart

@@ -457,14 +457,17 @@ where
 /-- `reprStr v`, the key by which `Val.setOf` orders a set's members,
 computed without the pretty-printer when it can be. `reprStr` lays out
 `repr v` in 120 columns, and its line breaks are only those of groups and
-fills that do not fit. When the whole text fits on one line, every group
-fits, so `reprStr v` is that line, which is `Val.reprFlat`. Its length in
-bytes bounds its length in characters, so a text of at most 100 bytes
-fits. A longer one is printed by `reprStr` itself. Either way the key is
-`reprStr v`, so the order of members is unchanged. -/
+fills that do not fit. A group is laid out on one line when that line has
+no newline and is at most 120 characters long (`Std.Format.pushGroup`).
+When the whole text fits, every group within it does, so `reprStr v` is
+that line, which is `Val.reprFlat`. Its length in bytes bounds its length
+in characters, so a text of at most 100 bytes is short enough, and so is
+one of at most 120 characters. Any other text, or one with a newline, is
+printed by `reprStr` itself. Either way the key is `reprStr v`, so the
+order of members is unchanged. -/
 def Val.setKey (v : Val) : String :=
   let flat := v.reprFlat "" false
-  if flat.utf8ByteSize ≤ 100 then flat else reprStr v
+  if flat.utf8ByteSize ≤ 100 || (flat.length ≤ 120 && !flat.contains '\n') then flat else reprStr v
 
 /-- A set of `vs`: sorted by how they print (`Val.setKey`), so that equal
 sets are equal values. Each member is printed once, not at each
@@ -576,15 +579,18 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       | _ => true
     -- A newtype's value is its underlying type's.
     | .newtype p _, v => ((shapes p).bind (·.parts[0]?) |>.bind (·[0]?)).all (typeHolds shapes · v)
-    | .record p _, .ctor _ idx args | .enum p _, .ctor _ idx args =>
+    -- Without a payload there is nothing to check, nor to look up.
+    | .record p _, .ctor _ idx args | .enum p _, .ctor _ idx args => args.isEmpty ||
       ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of a `match` arm as `locals` does, and each
-`slot k` as `slots[k]` does. -/
-partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := []) (slots : Array (Option Val) := #[]) :
-    Ex → Option Val
+`slot k` as `slots[k]` does. Its arguments are borrowed (`@&`), so that a
+call, at each node, neither counts nor uncounts a reference to them. -/
+partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := [])
+    (slots : @& Array (Option Val) := #[]) (e : @& Ex) : Option Val :=
+  match e with
   | .lit v => some v
   | .var n => look n
   | .slot k => if h : k < slots.size then slots[k] else none
@@ -773,12 +779,16 @@ partial def Ex.eval (I : Interp) (look : Look) (locals : List (Name × Val) := [
     let rec go (k : Nat) (locals : List (Name × Val)) : Option Val :=
       if h : k < names.size then
         match doms[k]?.bind id |>.bind (·.eval I look locals slots) with
-        | some (.seq vs) | some (.set vs) =>
-          vs.foldl (init := some (.bool all)) fun acc v =>
-            if acc == some (.bool !all) || !(tys[k]?.all (typeHolds I.shapes · v)) then acc
-            else
+        | some (.seq vs) | some (.set vs) => Id.run do
+          -- Once an instance decides it, the rest would leave it as it is,
+          -- so they are not looked at.
+          let mut acc : Option Val := some (.bool all)
+          for v in vs do
+            if (match acc with | some (.bool b) => b != all | _ => false) then break
+            if tys[k]?.all (typeHolds I.shapes · v) then
               let x := go (k + 1) ((names[k], v) :: locals)
-              if all then kleeneAnd acc x else kleeneOr acc x
+              acc := if all then kleeneAnd acc x else kleeneOr acc x
+          return acc
         | _ => none
       else body.eval I look locals slots
     go 0 locals
