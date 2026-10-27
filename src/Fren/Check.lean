@@ -458,7 +458,8 @@ def instanceContract (hooks : ElabHooks) (c : CompInfo) (f : Name) (targs : Arra
   let indexes := c.indexes.map fun (n, pl, r, q, g) => (n, pl, r, q, atI g)
   let defs := c.defs.map fun (d, e) => (d, atI e)
   let uses ← usesOf (props.map (·.body) ++ indexes.map (·.2.2.2.2) ++ defs.map (·.2))
-  return { c with vars, props, indexes, defs, uses, fn? := some (Core.instanceName f targs) }
+  return { c with vars, props, indexes, defs, uses, fn? := some (Core.instanceName f targs)
+                  finiteModel := targs.any (·.hasTypeParam) }
 
 /-- The placeholders that the checks of `c` use: those of its formulas and
 of its questions' goals, which apply the clauses of contracts to the
@@ -577,7 +578,8 @@ abbrev EnumHook := CompInfo → Core.Comp Expr → Array Expr → Array Expr →
 that its cover goals are met (`coverWitness`), for the caller to add, and
 what enumerating the checks set to enumeration found, by `enumerate`. -/
 partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none)
-    (hooks? : Option ElabHooks := none) (key? : Option Name := none) :
+    (hooks? : Option ElabHooks := none) (own : Array (Array Core.Ty) := #[])
+    (foreign : Array (Name × Array Core.Ty) := #[]) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
   let c := { c with uses := ← checkUses c }
   -- As elaborated, for its contract's instances (`instanceContract`).
@@ -783,7 +785,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map (fun (x, n, _, _) => (x, n))
         ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
       let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
-        (modelOptional := k == .cover) bounded instances (finiteModel := generic)
+        (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel
@@ -798,8 +800,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       | true, some f, some hooks, some r =>
         if r.verdict == .pass then pure results else do
         let mut instResults := #[]
-        for (site, g, targs) in st0.instanceSites (← getMainModule) do
-          unless site == .function && g == f do continue
+        for targs in own do
           let ic ← instanceContract hooks elaborated f targs
           let (rs, _, _) ← checkComp ic #[.realizable] none hooks?
           instResults := instResults ++ rs.filter (·.kind == .realizable)
@@ -812,9 +813,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- pass, reported at the item, without notes at the clauses, which
     -- another file has.
     let mut results := results
-    if let (some key, some hooks) := (key?, hooks?) then
-      for (site, f, targs) in st0.instanceSites (← getMainModule) do
-        unless site == .item 1 key do continue
+    if let some hooks := hooks? then
+      for (f, targs) in foreign do
         let some b := st0.bodies.get? f | continue
         let (rs, _, _) ← checkComp b #[.realizable]
         unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue

@@ -624,6 +624,17 @@ def instanceName (path : Name) (args : Array Ty) : Name :=
   | .str p s => .str p (s ++ instanceText args)
   | p => .str p (instanceText args)
 
+/-- Whether `t` mentions a generic function's type parameter, an abstract
+type of its own (`typeParamPath`): an instance at it is checked with
+finite-model finding, as the function's own check at its type parameters'
+sorts is. -/
+partial def Ty.hasTypeParam : Ty → Bool
+  | .abstract p => (typeParamName? p).isSome
+  | .set t | .seq t => t.hasTypeParam
+  | .rel a b => a.hasTypeParam || b.hasTypeParam
+  | .enum _ as | .record _ as => as.any Ty.hasTypeParam
+  | _ => false
+
 /-- An application of the generic function `callee` at the type arguments
 `targs`, written in the item `item` (a component, global expectation,
 refinement or function, by its path) of the file `file`, and within the
@@ -671,23 +682,31 @@ inductive InstanceSite where
   deriving Inhabited, BEq
 
 /-- Where an instance of a generic function without a body declared in the
-file `functionFile` is checked, from the first item, in order, whose
-checks use it, if one does (`lang::instance_site`): with the function's
-own check if that item is in the function's file, and with that item's
-otherwise, since the function's own check, in its file, does not know of
-it. -/
-def siteOf (functionFile : Nat) : Option (Nat × Name) → Option InstanceSite
+file `functionFile` is checked in a run of checks (`lang::instance_site`):
+nowhere if an earlier run checked it (`done`) or no item that this run
+checks uses it; with the function's own check if this run checks it
+(`functionChecked`) and the first item, in order, that this run checks and
+whose checks use the instance, `first?`, is in the function's file; and
+with that item's otherwise. The `fren` command checks every item in one
+run, so its site is the first item that uses it, or the function's. -/
+def siteOf (functionFile : Nat) (functionChecked done : Bool) : Option (Nat × Name) → Option InstanceSite
   | none => none
-  | some (file, item) => some (if file == functionFile then .function else .item file item)
+  | some (file, item) =>
+    if done then none
+    else some (if functionChecked && file == functionFile then .function else .item file item)
 
-/-- Each instance that the spec's items use, of a generic function that
-`fileOf` gives the file of, but its own, with where its contract is
-checked (`siteOf`): an item's checks use the instances that its
+/-- Each instance that the items that a run checks use, of a generic
+function that `fileOf` gives the file of, but its own, with where the run
+checks its contract (`siteOf`): an item's checks use the instances that its
 applications apply, through the generic functions' (`instancesThrough`).
-The items are taken in the order of their first applications. -/
-def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf : Name → Option Nat) :
+The items are taken in the order of their first applications; `checked`
+says which this run checks, by path, a function's by its own, and `done`
+which instances an earlier run checked. -/
+def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf : Name → Option Nat)
+    (checked : Name → Bool := fun _ => true) (done : Name → Array Ty → Bool := fun _ _ => false) :
     Array (InstanceSite × Name × Array Ty) := Id.run do
-  let items := uses.foldl (init := #[]) fun acc u => if acc.contains (u.file, u.item) then acc else acc.push (u.file, u.item)
+  let items := uses.foldl (init := #[]) fun acc u =>
+    if !checked u.item || acc.contains (u.file, u.item) then acc else acc.push (u.file, u.item)
   let mut out : Array (InstanceSite × Name × Array Ty) := #[]
   let mut seen : Array (Name × Array Ty) := #[]
   for (file, item) in items do
@@ -697,7 +716,7 @@ def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf 
       let own := (tps f).mapIdx fun k p => Ty.abstract (typeParamPath f k p)
       if targs == own || seen.contains (f, targs) then continue
       seen := seen.push (f, targs)
-      if let some site := siteOf ff (some (file, item)) then out := out.push (site, f, targs)
+      if let some site := siteOf ff (checked f) (done f targs) (some (file, item)) then out := out.push (site, f, targs)
   return out
 
 /-- Whether each application of an instance of a generic function without

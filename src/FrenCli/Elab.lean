@@ -370,6 +370,10 @@ structure CComp where
   /-- For the contract of a generic function without a body, checked once,
   at its type parameters (`Fren.Core.Comp.generic`). -/
   generic : Bool := false
+  /-- Its queries use finite-model finding: the contract of an instance of
+  a generic function without a body at another one's type parameters
+  (`Fren.Core.Ty.hasTypeParam`). -/
+  finiteModel : Bool := false
   /-- What each application of a function, or read of a payload, whose
   result brings a constraint brings, by its head symbol, about `factHole`
   (`State.funFacts`). -/
@@ -2246,7 +2250,7 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
         return { v with ty := inst v.ty, ptype, fact? := (ptype.cons st.shapeOf).map (consSmt st.dataOf? · (quote v.name.toString)) }
       let rs (t : String) := replaceSymbols t repl
       let ic : CComp := { b with
-        vars, generic := false, fn? := some (Fren.Core.instanceName path args)
+        vars, generic := false, fn? := some (Fren.Core.instanceName path args), finiteModel := args.any (·.hasTypeParam)
         props := b.props.map fun p => { p with smt := rs p.smt, trigger? := p.trigger?.map rs }
         defs := b.defs.map fun (d, e) => (d, rs e)
         indexes := b.indexes.map fun (n, pl, sp, g, t) => (n, pl, sp, rs g, t)

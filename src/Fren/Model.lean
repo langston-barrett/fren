@@ -428,6 +428,10 @@ structure CompInfo where
   /-- The checks that are decided by enumeration
   (`Reqs/Check#checking-by-enumeration`), and the size bound. -/
   enumerated : Core.Tested := {}
+  /-- Its queries use finite-model finding: the contract of an instance of
+  a generic function without a body at another one's type parameters
+  (`Core.Ty.hasTypeParam`). -/
+  finiteModel : Bool := false
   enumSize : Nat := 3
   /-- For the body and contract of a function, the function: then its
   assumptions are its preconditions, and its guarantees, if it is defined,
@@ -502,6 +506,9 @@ inductive Entry where
   /-- An application of a generic function, in the Lean module `module`
   (`State.genericUses`). -/
   | genericUse (module : Name) (u : Core.GenericUse)
+  /-- A run of checks checked the contract of the instance of the generic
+  function `f` at `targs` (`State.checkedInstances`). -/
+  | instanceChecked (f : Name) (targs : Array Core.Ty)
   deriving Inhabited
 
 /-- Everything declared so far, across all imported Lean files. -/
@@ -546,6 +553,10 @@ structure State where
   from which the instances that the spec applies follow
   (`State.appliedInstances`). -/
   genericUses : Array (Name × Core.GenericUse) := #[]
+  /-- The instances whose contracts a run of checks, in this module or one
+  it imports, has checked, which a later run does not check again
+  (`lang::instance_site`). -/
+  checkedInstances : Array (Name × Array Core.Ty) := #[]
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
@@ -562,6 +573,7 @@ def State.add (s : State) : Entry → State
              placeholders := s.placeholders.insert a.placeholder s.placeholders.size }
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
   | .genericUse m u => { s with genericUses := s.genericUses.push (m, u) }
+  | .instanceChecked f targs => { s with checkedInstances := s.checkedInstances.push (f, targs) }
   | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
@@ -586,11 +598,14 @@ def State.typeParamsOf (s : State) (path : Name) : Array Name :=
 body, with where its contract is checked (`Core.instanceSites`), from the
 Lean module `main` being checked: the modules that it imports are earlier
 files, as the `fren` command's are, and a function declared in one of them
-does not know of the instances that `main` applies. -/
-def State.instanceSites (s : State) (main : Name) : Array (Core.InstanceSite × Name × Array Core.Ty) :=
+does not know of the instances that `main` applies. `checked` says which items the run
+checks, by path, and an instance that an earlier run checked is not checked
+again. -/
+def State.instanceSites (s : State) (main : Name) (checked : Name → Bool) : Array (Core.InstanceSite × Name × Array Core.Ty) :=
   let file (m : Name) : Nat := if m == main then 1 else 0
   Core.instanceSites (s.genericUses.map fun (m, u) => { u with file := file m }) s.typeParamsOf
-    fun g => (s.abstracts.get? g).bind fun a => if a.typeParams.isEmpty then none else some (file a.module)
+    (fun g => (s.abstracts.get? g).bind fun a => if a.typeParams.isEmpty then none else some (file a.module))
+    checked fun f targs => s.checkedInstances.contains (f, targs)
 
 initialize frenExt : SimplePersistentEnvExtension Entry State ←
   registerSimplePersistentEnvExtension {

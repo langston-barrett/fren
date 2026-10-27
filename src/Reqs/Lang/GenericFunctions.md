@@ -387,19 +387,33 @@ An item's checks use the instances that its applications apply: those it
 writes, and, for each instance of a generic function among them, those
 that the function's body and contract apply, at that instance, and so on
 (transitively). A generic function's own items are its body and contract,
-whose applications at its own type parameters are its own. Each instance is
-checked once, with the first item, in the order of the files and of the
-items in each, whose checks use it: with the function's own check, if that
-item is in the function's file, and otherwise with that item's, and
-reported at that item. A file's checks know only of it and the files
-before it, which the Lean-hosted front end's imports are, so a function's
-own check cannot know of an instance that only a later file applies, as
-`other<client::One>` in a module that imports `other`'s and applies it at
-its own `One`: that file's first item that uses it checks it.
-`lang::instance_site` states where an instance's contract is checked, from
-the function's file and the items whose checks use the instance, in order
-(`Core.instanceSites` finds them, through `Core.instancesThrough`, and both
-front ends call it):
+whose applications at its own type parameters are its own. An instance at
+another generic function's type parameters, as `other<g::0::T>` in a
+contract of `g` that applies `other`, is checked with finite-model finding,
+as the check at type parameters' sorts is.
+
+Each instance is checked once, by the first run of checks whose items use
+it: the `fren` command checks every item in one run, and the Lean-hosted
+front end checks those that each `#fren_check` names, or those of its file,
+and records in its environment, which the modules that import it see,
+which instances each run has checked. In a run, an instance that no
+earlier run has checked is checked with the first item, in the order of
+the files and of the items in each, that the run checks and whose checks
+use it: with the function's own check, if the run checks it and that item
+is in the function's file, and otherwise with that item's, and reported at
+that item. A file's runs know only of it and the files before it, which the
+Lean-hosted front end's imports are, so a function's own check cannot know
+of an instance that only a later file applies, as `other<client::One>` in a
+module that imports `other`'s and applies it at its own `One`: that file's
+first checked item that uses it checks it. Where every item of every file
+is checked, by one run or by a run for each file in order, the item is the
+same in both front ends: the first item whose checks use the instance, or
+the function, if that item is in its file. `lang::instance_site` states
+where a run checks an instance's contract, from the function's file,
+whether the run checks the function, whether an earlier run has checked
+the instance, and the items that the run checks and whose checks use it,
+in order (`Core.instanceSites` finds them, through `Core.instancesThrough`,
+and both front ends call it):
 
 ```fren
 pub struct ItemAt { file: Int, item: Int }   -- an item, by its file and its position in it
@@ -409,23 +423,24 @@ pub enum CheckSite { Unchecked, AtFunction, AtItem(ItemAt) }
 set_option fren.lint.length_zero "allow" in
 pub comp instance_site {
     in function_file: Int     -- the file that declares the function
-    in users: Seq<ItemAt>     -- the items whose checks use the instance, in order
-    pub det out site: CheckSite := if users.len < 1 then CheckSite::Unchecked
-        else if users[0].file = function_file then CheckSite::AtFunction
+    in function_checked?      -- the run checks the function's own contract
+    in done?                  -- an earlier run checked the instance
+    in users: Seq<ItemAt>     -- the items that the run checks and whose checks use the instance, in order
+    pub det out site: CheckSite := if done? or users.len < 1 then CheckSite::Unchecked
+        else if function_checked? and users[0].file = function_file then CheckSite::AtFunction
         else CheckSite::AtItem(users[0])
 
-    expect unused: when users.len < 1, site = CheckSite::Unchecked
-    expect later_file: when users.len > 0 and users[0].file != function_file, site = CheckSite::AtItem(users[0])
+    expect once: when done?, site = CheckSite::Unchecked
+    expect later_file: when not done? and users.len > 0 and users[0].file != function_file,
+        site = CheckSite::AtItem(users[0])
+    -- Where the run checks everything, as the `fren` command's does.
+    expect everything: when function_checked? and not done? and users.len > 0 and users[0].file = function_file,
+        site = CheckSite::AtFunction
 }
 ```
 
 The instances checked with the function's own check are those at
 `AtFunction`.
-`lang::generic_contract` states which of the function's own checks are
-reported, from that at the type parameters' sorts and those at the
-instances at `AtFunction`, each as it is decided: an item's are reported
-with its own results, when the check at the type parameters' sorts does
-not pass.
 
 ```fren
 pub enum Decided { Holds, Fails, Undecided }
