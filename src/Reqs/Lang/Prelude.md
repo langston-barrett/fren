@@ -56,7 +56,10 @@ types](Generics.md). `Option<T>` has one more value than `T`, so
 `Result<T, E>` is finite exactly when both its arguments are. A type prints as written,
 `Option<Int>` and `Result<Int, Bool>`, and a value as Fren builds it,
 `Option::Some(3)` and `Result::Err(true)`, in every message, note and
-witness, in both front ends.
+witness, in both front ends. Where a message names two different types
+that would print alike, as a root module's `Option!<Int>` and the
+prelude's `Option<Int>`, it qualifies the prelude's, as
+`prelude::Option<Int>`, which no spec can write.
 
 ## Lean
 
@@ -84,11 +87,25 @@ may declare (`enum Option!<T>`), has the sort `|::Option|` or
 it is apart from the Lean type's. No other symbol of a user's type has a
 `.`, since no Fren name does, so none is one of lean-smt's.
 
-`lang::prelude_smt` states what the `fren` command gives the solver:
+`lang::prelude_sort` states a user's type's sort, from its path as it
+prints:
 
 ```fren
 pub mod lang
 
+set_option fren.lint.undecidable "allow" in
+pub comp prelude_sort {
+    in path: String
+    pub det out sort: String := if path in {"Option", "Except"} then "|::" ++ path ++ "|" else "|" ++ path ++ "|"
+
+    expect apart: not sort is "|Option|" | "|Except|"
+}
+```
+
+`lang::prelude_smt` states what the `fren` command gives the solver for
+the prelude's types:
+
+```fren
 -- The declarations are the same whatever the arguments are, as they should
 -- be: one for every instance.
 set_option fren.lint.undecidable "allow" in
@@ -96,15 +113,11 @@ set_option fren.lint.constant_output "allow" in
 pub comp prelude_smt {
     in a: String                   -- the sort of the first type argument
     in b: String                   -- of the second, for `Result`
-    in path: String                -- a user's type's path, as it prints
     pub det out option_sort: String := "(Option " ++ a ++ ")"
     pub det out result_sort: String := "(Except " ++ b ++ " " ++ a ++ ")"
     pub det out option_declaration: String :=
         "(declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))\n"
     pub det out result_declaration: String :=
         "(declare-datatypes ((Except 2)) ((par (|ε| |α|) ((Except.error (Except.error.field1 |ε|)) (Except.ok (Except.ok.field1 |α|))))))\n"
-    pub det out user_sort: String := if path in {"Option", "Except"} then "|::" ++ path ++ "|" else "|" ++ path ++ "|"
-
-    expect apart: not user_sort is "|Option|" | "|Except|"
 }
 ```

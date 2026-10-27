@@ -2452,23 +2452,16 @@ without type parameters:
 ordered struct Pair { fst: Int, snd: Int }
 ```
 "# },
-  { code := "F0399", explanation := r#"A generic function without a body.
+  { code := "F0399", explanation := r#"A removed code: a generic function without a body.
 
-Erroneous code example:
-
-```fren
-fn pick<T>(a: T, b: T): T
-```
-
-SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function
-cannot have type parameters, for now. A defined function may: each
-application is unfolded at its type arguments, so the solver never sees a
-polymorphic function. Define it:
-
-```fren
-fn pick<T>(a: T, b: T): T := a
-```
-"# },
+`F0399` was the error for a function with type parameters but no body, an
+uninterpreted generic function, which Fren did not have, since SMT-LIB has
+no polymorphic `declare-fun`. A generic function may now be uninterpreted,
+with a contract or without: each instance at which it is applied, such as
+`pick<Int>`, is an unknown function of its own (see
+`Reqs/Lang/GenericFunctions`, "Uninterpreted generic functions"). Nothing
+reports `F0399`, and the code is not reused.
+"#, args := none },
   { code := "F0400", explanation := r#"A generic function's type arguments that cannot be inferred.
 
 Erroneous code example:
@@ -3793,8 +3786,9 @@ Enumeration needs each variable's type to be enumerable: `Bool`, `Int`,
 types and abstract types, with what is within them enumerable too (see
 `Reqs/Check`, "Checking by enumeration"). Strings, sets, relations and
 sequences are not yet, nor can enumeration apply an uninterpreted function
-with a contract, whose postconditions constrain its interpretations, or
-evaluate an unbounded quantifier. None of the component's checks set to
+with a contract, whose postconditions constrain its interpretations, or a
+generic one, each of whose instances is a function of its own, or evaluate
+an unbounded quantifier. None of the component's checks set to
 enumeration is run. Have the solver or testing check it:
 
 ```fren
@@ -3823,6 +3817,35 @@ finitely many values decides it:
 ```fren
 set_option fren.evidence "enumerated" in
 comp c { in x: Int is -3..=3 pub det out y: Int := x + 1 expect e: y > x }
+```
+"# },
+  { code := "F0653", explanation := r#"A generic function's postconditions cannot all hold at some type.
+
+Erroneous code example:
+
+```fren
+fn other<T>(x: T, y: T): T
+    ensure moves: other(x, y) != x
+    ensure stays: other(x, y) = y
+```
+
+An uninterpreted function's postconditions are assumed wherever it is
+applied, so they must be able to hold (`F0631`). A generic function's
+contract is checked first for every type: its type parameters are types of
+which nothing is known but that they have values, so one may have a single
+value, and two arguments may be equal at any type. Where that check does
+not pass, the contract is checked at each instance that the spec applies
+it at instead, as `other<Int>`, as a function without type parameters is
+(`F0631`); this error is for a function that the spec applies at no
+instance. Here, where `x` and `y` are equal, no value of `other` is both
+`y` and not `x`. Add a precondition that rules such arguments out, or
+weaken a postcondition:
+
+```fren
+fn other<T>(x: T, y: T): T
+    assume apart: x != y
+    ensure moves: other(x, y) != x
+    ensure stays: other(x, y) = y
 ```
 "# },
   { code := "F0647", explanation := r#"A check whose quantifiers over sequences' elements would have too many instances.

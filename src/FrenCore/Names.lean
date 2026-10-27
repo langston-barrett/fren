@@ -400,14 +400,11 @@ def Table.preludeName? (t : Table) (n : Name) : Option Resolved :=
   | none => t.enums.foldl (init := none) fun acc p e =>
     acc <|> if inPrelude p then (e.variants.idxOf? n).map (.variant e ·) else none
 
-/-- Resolves a path in an expression or type in the scope `from_`, a
-module or a component. `extra` are other names in scope, such as
-variables, suggested if `segs[0]` is not found. -/
-def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Array Name := #[]) :
-    Except Error Resolved := do
-  if segs[0]! == `self then
-    return ← t.walk from_ (.item (t.moduleItem (t.moduleOf from_))) segs 1
-  let n := segs[0]!
+/-- What each layer of the scope `from_` gives the name `n`, the first
+segment of a path, innermost first (`modules::first_segment`): the item
+declared in, or imported by name into, the scope; the distinct variants
+that `use ...::*` opens; and the prelude's item or variant. -/
+def Table.layers (t : Table) (from_ n : Name) : Except Error (Array Resolved × Array Resolved × Array Resolved) := do
   -- A component's imports shadow its module's scope: they alone are its
   -- scope if they bring in `n`, and its module's scope is otherwise.
   let comp := t.isComp from_ && (t.uses.getD from_ #[]).any (·.brings t n)
@@ -428,8 +425,18 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
     let some idx := e.variants.idxOf? n | return acc
     let r := Resolved.variant e idx
     return if acc.any (·.path == r.path) then acc else acc.push r
-  let prelude := (t.preludeName? n).toArray
-  let start ← match firstSegment local?.toArray hits prelude with
+  return (local?.toArray, hits, (t.preludeName? n).toArray)
+
+/-- Resolves a path in an expression or type in the scope `from_`, a
+module or a component. `extra` are other names in scope, such as
+variables, suggested if `segs[0]` is not found. -/
+def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Array Name := #[]) :
+    Except Error Resolved := do
+  if segs[0]! == `self then
+    return ← t.walk from_ (.item (t.moduleItem (t.moduleOf from_))) segs 1
+  let n := segs[0]!
+  let (declared, hits, prelude) ← t.layers from_ n
+  let start ← match firstSegment declared hits prelude with
     | (.local, some r) | (.glob, some r) | (.prelude, some r) => pure r
     -- The prelude's names last, so that a similar name of the scope's own
     -- is suggested first.
@@ -737,24 +744,34 @@ def checkShadowing (n : Name) (hidden? : Option String) (bang : Bool) : Except M
     | some h => throw (implicitShadowMsg n h)
     | none => throw (needlessBangMsg n)
 
-/-- What an item named `n`, declared in the module `mod`, hides: the
-prelude's item or variant that a path `n` means there, which an item of
-that name would hide (`Reqs/Lang/Prelude#shadowing`). The prelude's own
-items hide nothing. -/
-def Table.itemHides? (t : Table) (mod n : Name) : Option String :=
-  if mod == preludeModule then none else
-  match t.resolvePath mod #[n] with
-  | .ok r@(.item i) => if inPrelude i.path then some s!"the prelude's {(r.describe.splitOn " ").getLast!} `{showPath i.path}`" else none
-  | .ok r@(.variant ..) => if inPrelude r.path then some s!"the prelude's variant `{showPath r.path}`" else none
-  | _ => none
+/-- Whether an item that is fresh, so that no item of its name is declared
+or imported by name, hides a name of the prelude: whether its name resolves
+to the prelude's, from what the other layers of its module's scope give it,
+the variants that `use ...::*` opens and the prelude's item or variant
+(`modules::item_shadowing`). -/
+def itemHidesPrelude (opened prelude : Array α) : Bool := (firstSegment #[] opened prelude).1 == .prelude
+
+/-- Whether that item's declaration, written with `!` if `bang`, is
+accepted: with `!` exactly when it hides a name (`lang::shadowing`). -/
+def itemShadowingAccepted (opened prelude : Array α) (bang : Bool) : Bool :=
+  shadowingAccepted (itemHidesPrelude opened prelude) bang
+
+/-- What a declaration hides, `r`, as `Table.hidden?` describes it: `the
+enum `Option``, `the variant `Option::None``. -/
+def hiddenText (r : Resolved) : String :=
+  match r with
+  | .item i => s!"the {(r.describe.splitOn " ").getLast!} `{showPath i.path}`"
+  | .variant .. => s!"the variant `{showPath r.path}`"
 
 /-- Checks the name of an item declared in the module `mod`, written `n!`
-if `bang`: an item that takes a name that the prelude gives is written
-with `!`, and only such an item (`lang::shadowing`). -/
-def Table.checkItemShadowing (t : Table) (mod n : Name) (bang : Bool) : Except Msg Unit :=
-  match t.itemHides? mod n with
-  | none => if bang then throw (needlessBangMsg n "an item shadows only the prelude's items and variants") else pure ()
-  | hidden? => checkShadowing n hidden? bang
+if `bang`, which is fresh there: an item that takes a name that the prelude
+gives is written with `!`, and only such an item
+(`itemShadowingAccepted`). -/
+def Table.checkItemShadowing (t : Table) (mod n : Name) (bang : Bool) : Except Msg Unit := do
+  let (_, opened, prelude) := (t.layers mod n).toOption.getD (#[], #[], #[])
+  if itemShadowingAccepted opened prelude bang then return
+  if itemHidesPrelude opened prelude then throw (implicitShadowMsg n (hiddenText prelude[0]!))
+  throw (needlessBangMsg n)
 
 /-- Checks the name `n` of an item declared in the module `mod`, written
 `n!` if `bang`: it is fresh (`Table.checkFresh`), and its declaration marks

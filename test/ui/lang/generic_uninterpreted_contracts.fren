@@ -1,0 +1,36 @@
+-- The contract of a generic function without a body is checked once, at
+-- its type parameters, for every type
+-- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`): a type
+-- parameter may have a single value. In a module, since Lean has an
+-- `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_uninterpreted_contracts
+
+-- Not realizable where the two arguments are equal, at any type.
+fn other<T>(x: T, y: T): T  --~ error: the postconditions of `generic_uninterpreted_contracts::other` cannot all hold at some type
+    ensure moves: other(x, y) != x
+    ensure stays: other(x, y) = y  --~ info: conflicts with `moves`
+--~^^ info: conflicts with `stays`
+
+-- Realizable for every type: the precondition gives a second value.
+fn other_than<T>(x: T, y: T): T
+    assume apart: x != y
+    ensure moves: other_than(x, y) != x
+
+-- Postconditions that cannot hold at any type.
+fn wrapped<T>(x: T): Option<T>  --~ error: the postconditions of `generic_uninterpreted_contracts::wrapped` cannot all hold at some type
+    ensure some: wrapped(x) != Option::None  --~ info: conflicts with `none`
+    ensure none: wrapped(x) = Option::None  --~ info: conflicts with `some`
+
+-- At an instance, its postconditions hold of each application.
+comp swapped {
+    in a: Int
+    in b: Int
+    assume apart: a != b
+    pub det out c: Int := other_than(a, b)
+
+    expect moved: c != a
+}
+--@ summary: 6 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

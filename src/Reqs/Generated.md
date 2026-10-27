@@ -284,6 +284,16 @@ application gives its inferred type arguments explicitly, with their
 instances, as `unwrap_or Int x 0`, so that Lean infers nothing that Fren
 does not, and the solver sees the body at that instance.
 
+A generic function without a body, as `fn pick<T>(T, T): T`, generates
+nothing, as any [uninterpreted function](#abstract-types-and-uninterpreted-functions):
+its Lean meaning is a constant whose type takes the type parameters first,
+each with its `Inhabited` instance, `pick : (T : Type) → [Inhabited T] → T
+→ T → T`, which a component that applies it takes as a parameter, and an
+[interpretation](Impl.md#interpretations) gives. An application gives its
+type arguments explicitly, as `pick Int x y`, and the solver sees each
+instance as an unknown function of its own
+(`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+
 ## Contracts
 
 Each clause `n` of a function's [contract](Lang/Items.md#contracts)

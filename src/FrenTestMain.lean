@@ -147,7 +147,7 @@ def codesInSources : IO (Array String) := do
 /-- Codes that no snapshot can report reliably: a solver that gives up
 depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
-def unsnapshotted : List String := ["F0608", "F0713"]
+def unsnapshotted : List String := ["F0399", "F0608", "F0713"]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
 the code: each lint's row gives its name, code, group and default level,
@@ -1454,27 +1454,59 @@ def datatypeDecls (text : String) : Array String :=
   ((text.splitOn "\n").map (·.trimAscii.toString)).filter (·.startsWith "(declare-datatypes") |>.toArray
     |>.foldl (init := #[]) fun acc d => if acc.contains d then acc else acc.push d
 
-/-- That the `fren` command's queries (`--dump-smt`) declare the prelude's
-datatypes exactly as the Lean-hosted front end's do, which lean-smt
-writes: the same datatypes, constructors, selectors and parameters, in
-the same text (`lang::prelude_smt`). -/
+/-- The terms of `text` that start with `pre`, each whole, to its closing
+parenthesis, each once. -/
+def termsFrom (pre : String) (text : String) : Array String := Id.run do
+  let cs := text.toList.toArray
+  let p := pre.toList.toArray
+  let mut out := #[]
+  for i in [0:cs.size] do
+    if cs.extract i (i + p.size) == p then
+      let mut depth := 0
+      let mut j := i
+      while j < cs.size do
+        if cs[j]! == '(' then depth := depth + 1
+        if cs[j]! == ')' then
+          depth := depth - 1
+          if depth == 0 then break
+        j := j + 1
+      let t := String.ofList (cs.extract i (j + 1)).toList
+      unless out.contains t do out := out.push t
+  return out
+
+/-- What both front ends' queries must say alike of the prelude's types,
+in `text`: the datatypes' declarations, as written; and, without `|`s,
+which the binary writes around every other symbol and lean-smt around
+none it need not, the constants of their sorts, their qualified
+constructors and their selectors' applications. -/
+def preludeQueryParts (text : String) : Array String :=
+  let lean (d : String) := d.startsWith "(declare-datatypes ((Option " || d.startsWith "(declare-datatypes ((Except "
+  let plain := text.replace "|" ""
+  let consts := ((plain.splitOn "\n").map (·.trimAscii.toString)).filter (fun l =>
+    l.startsWith "(declare-const " && (l.contains "(Option " || l.contains "(Except ")) |>.toArray
+  (datatypeDecls text).filter lean ++ consts.foldl (fun acc c => if acc.contains c then acc else acc.push c) #[]
+    ++ termsFrom "(as Option." plain ++ termsFrom "(as Except." plain
+    ++ termsFrom "(Option.some.val " plain ++ termsFrom "(Except.ok.field1 " plain ++ termsFrom "(Except.error.field1 " plain
+
+/-- That the `fren` command's queries (`--dump-smt`) say of the prelude's
+types exactly what the Lean-hosted front end's do, which lean-smt writes
+(`preludeQueryParts`): the same datatypes, constructors, selectors and
+parameters, and the same constants of their sorts (`lang::prelude_smt`). -/
 def smtAgreement (env : Environment) : IO (Array String) := do
   let mut failures := #[]
   for path in smtAgreementSpecs do
     let src ← IO.FS.readFile path
     let (out, _) ← runFren ["check", "--dump-smt", path]
-    let cli := datatypeDecls out
     let input := "open Fren.Lang\nset_option trace.smt true\n" ++ src ++ "\n#fren_check\n"
     let (_, log) ← Elab.process input env {} path
-    let hosted := datatypeDecls ("\n".intercalate (← log.toList.mapM fun m => m.data.toString))
-    -- The prelude's, which lean-smt declares by Lean's names.
-    let lean (d : String) := d.startsWith "(declare-datatypes ((Option " || d.startsWith "(declare-datatypes ((Except "
-    let (cli, hosted) := (cli.filter lean, hosted.filter lean)
-    if cli.isEmpty then failures := failures.push s!"{path}: the binary declares none of the prelude's datatypes"
+    let hosted := preludeQueryParts ("\n".intercalate (← log.toList.mapM fun m => m.data.toString))
+    let cli := preludeQueryParts out
+    unless cli.any (·.startsWith "(declare-datatypes") do
+      failures := failures.push s!"{path}: the binary declares none of the prelude's datatypes"
     for d in cli do
-      unless hosted.contains d do failures := failures.push s!"{path}: only the binary declares {d}"
+      unless hosted.contains d do failures := failures.push s!"{path}: only the binary's queries have {d}"
     for d in hosted do
-      unless cli.contains d do failures := failures.push s!"{path}: only Lean declares {d}"
+      unless cli.contains d do failures := failures.push s!"{path}: only Lean's queries have {d}"
   return failures
 
 /-- The jobs, as the arguments of `--job`, the slowest first. -/

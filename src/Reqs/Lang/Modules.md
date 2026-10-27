@@ -243,24 +243,32 @@ the name then means the declared item. Other modules are not affected:
 their scopes have the prelude's.
 
 `modules::item_shadowing` states this over the layers of the module's
-scope where the item is declared, before it is, from `modules::first_segment`:
-the item hides a name exactly when the name resolves to the prelude's.
+scope where the item is declared, before it is: the item is fresh, so no
+item of its name is declared or imported by name, and the name resolves to
+the prelude's, as `modules::first_segment` says, exactly when no variant of
+it is opened and the prelude gives it. The item hides a name exactly then.
 
 ```fren
+-- `hides?` is a `Bool`, which a comparison of sequences of an abstract type,
+-- as `opened = []`, is not in Lean: so `len`.
 set_option fren.lint.undecidable "allow" in
+set_option fren.lint.length_zero "allow" in
 pub comp item_shadowing {
     in opened: Seq<Path>           -- the distinct variants of its name that `use ...::*` opens
     in prelude: Seq<Path>          -- the prelude's item or variant of its name
     in bang?                       -- it is written with `!`
-    -- It is fresh: no item of its name is declared or imported by name.
-    inst before: first_segment { declared := [], opened, prelude }
-    pub det out hides? := before.result = Prelude
+    pub det out hides? := opened.len = 0 and prelude.len > 0
     pub det out accepted? := hides? iff bang?
 
     expect explicit: when prelude != [] and opened = [], accepted? iff bang?
     expect imports_first: when opened.len = 1, accepted? iff not bang?
     expect needless: when prelude = [], accepted? iff not bang?
 }
+
+-- The item hides a name exactly when its name, fresh, resolves to the prelude's.
+set_option fren.lint.undecidable "allow" in
+expect hides_prelude: forall (s: item_shadowing) (f: first_segment),
+    when f.declared = [] and f.opened = s.opened and f.prelude = s.prelude, s.hides? iff f.result = Prelude
 ```
 
 Each later segment names a member of what the previous segment resolved

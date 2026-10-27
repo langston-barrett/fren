@@ -3,17 +3,24 @@
 -- `!`, and only such an item; an import takes precedence over the prelude
 -- without `!`; and in a pattern, a bare `None` or `Some` is the prelude's
 -- variant, as any variant in scope is.
--- fren-covers: modules::item_shadowing
-mod mine
-
 pub enum Option!<T> { Nothing, Just(T) }
 
 -- Within the module, `Option` is its own.
 comp own { in x: Option<Int> pub out y? ensure r: y? iff x = Option::Nothing }
 
+pub const NOTHING: Option<Int> := Option::Nothing
+
+mod mixing
+
+use NOTHING
+
+-- Here `Option` is the prelude's, and the root module's prints alike, so a
+-- message qualifies the prelude's.
+comp mixed { in x: Option<Int> pub out y? ensure r: y? iff x = NOTHING }  --~ error: cannot compare `prelude::Option<Int>` with `Option<Int>`
+
 mod plain
 
-pub enum Result<T, E> { Good(T), Bad(E) }  --~ error: `Result` shadows the prelude's enum `Result`
+pub enum Result<T, E> { Good(T), Bad(E) }  --~ error: `Result` shadows the enum `Result`
 pub enum Maybe!<T> { No, Yes(T) }  --~ error: `Maybe!` shadows nothing
 
 mod opened
@@ -32,4 +39,9 @@ comp nested {
     ensure r: y = match x { Some(None) => 0, Some(Some(n)) => n, None => 1 }
 }
 
+-- A module named like one of the prelude's items is written with `!` too,
+-- and its lints name it without the `!`, in both front ends.
+mod Result!  --~ warning: module `Result` should have a snake case name
+
+comp in_module { in x: Option<Int> pub out y? ensure r: y? iff x = None }
 --@ exit: 2

@@ -29,7 +29,7 @@ def coverageLinkArgs : Array String := match get_config? coverage with
 -- a hygienic field named after its position (`Reqs/Lang/Prelude`). The
 -- commit is on the fork's branch `parametric-datatypes-v3`, on top of
 -- `parametric-datatypes-v2` and `trust-skip-proofs`.
-require smt from git "https://github.com/langston-barrett/lean-smt.git"@"63a1b53ba2c7145a3cd3e8207a1d2aaa26483cf8"
+require smt from git "https://github.com/langston-barrett/lean-smt.git"@"82f3143e407a3008c47069220a2a393410bd9d48"
 
 -- Shared by the Lean library and the binary; depends only on Lean core.
 -- All of its modules, not only those that the module `FrenCore` imports.

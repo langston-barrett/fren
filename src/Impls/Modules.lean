@@ -8,7 +8,8 @@ open Fren.Lang
 
 namespace Fren.Impls
 
-open Fren.Core (Resolution resolution firstSegment visibleFrom Parent memberAccepted)
+open Fren.Core (Resolution resolution firstSegment itemHidesPrelude itemShadowingAccepted shadowingAccepted visibleFrom
+  Parent memberAccepted)
 
 -- A module is its path, and a descendant of each proper prefix of it.
 interp modules::ModuleName := Lean.Name
@@ -78,5 +79,18 @@ impl member: modules::member for (p : Parent) (found visible : Bool) {
   visible? := visible,
   accepted? := memberAccepted p found visible,
 }
+
+-- For every fresh item's layers, with the function that both front ends'
+-- checks of an item's name use (`Fren.Core.Table.checkItemShadowing`).
+impl item_shadowing: modules::item_shadowing for (o p : List Lean.Name) (b : Bool) {
+  opened := Fren.Seq.ofList o,
+  prelude := Fren.Seq.ofList p,
+  bang? := b,
+  hides? := itemHidesPrelude o.toArray p.toArray,
+  accepted? := itemShadowingAccepted o.toArray p.toArray b,
+} by
+  intro o p b _
+  rcases o with _ | ⟨x, _ | ⟨y, o⟩⟩ <;> rcases p with _ | ⟨e, p⟩ <;> cases b <;>
+    simp [fren_spec, itemShadowingAccepted, itemHidesPrelude, firstSegment, resolution, shadowingAccepted] <;> rfl
 
 end Fren.Impls

@@ -87,11 +87,32 @@ def LeanType.variantOf? (l : LeanType) (c : Name) : Option Nat := l.ctors.idxOf?
 /-- The names of the Lean types that the prelude's types are, which are the
 solver's names of their datatypes: a user's type with one of them as its
 path has a symbol apart from it (`FrenCli.dataSortSym`). -/
-def leanSortNames : Array String := leanTypes.map (·.lean.toString)
+def leanSortNames : Array String := leanTypes.map (·.lean.getString!)
+
+/-- The SMT-LIB symbol of a user's enumeration or record, whose path prints
+as `shown`: its path between `|`s, or after `::` if its path is the name of
+one of the Lean types that the prelude's are, so that the two are apart
+(`lang::prelude_sort`). -/
+def userSortSym (shown : String) : String :=
+  if leanSortNames.contains shown then "|::" ++ shown ++ "|" else "|" ++ shown ++ "|"
 
 /-- The symbols that lean-smt gives the solver for the prelude's types,
 without `|`s: the datatypes, their constructors and their selectors. -/
 def leanSymbols : Array String :=
   leanTypes.flatMap fun l => #[l.lean.toString] ++ l.ctors.map (·.toString) ++ l.selectors.flatten
+
+/-- `frenArgs` undoes `leanArgs`, for each of the prelude's types and any
+arguments: an instance's type arguments, from its Lean type's, are its own. -/
+theorem LeanType.frenArgs_leanArgs (l : LeanType) (hl : l ∈ leanTypes) {α} [Inhabited α] (args : Array α) :
+    l.frenArgs (l.leanArgs args) = args := by
+  have h : l = leanTypes[0]! ∨ l = leanTypes[1]! := by
+    simp [leanTypes] at hl ⊢; exact hl
+  have r1 : Array.range 1 = #[0] := rfl
+  have r2 : Array.range 2 = #[0, 1] := rfl
+  have i0 : List.idxOf? 0 [1, 0] = some 1 := rfl
+  have i1 : List.idxOf? 1 [1, 0] = some 0 := rfl
+  rcases args with ⟨xs⟩
+  rcases h with rfl | rfl <;> rcases xs with _ | ⟨a, _ | ⟨b, _ | ⟨c, xs⟩⟩⟩ <;>
+    simp [r1, r2, i0, i1, leanTypes, LeanType.leanArgs, LeanType.frenArgs]
 
 end Fren.Core

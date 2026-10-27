@@ -28,7 +28,6 @@ tested cli::agreement: "src/FrenTestMain.lean"
 tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
-tested modules::item_shadowing: "test/ui/lang/prelude_shadowing.fren"
 -- The sorts and declarations that the `fren` command gives the solver are
 -- strings, which Lean does not reduce far enough to compare: the snapshot of
 -- `--dump-smt` shows them for the examples.

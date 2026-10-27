@@ -4,7 +4,7 @@ error[F0645]: `c` cannot be enumerated: `name` has the type `String`, which is n
 3 | comp c {
   |      ^ not enumerable
   |
-  = note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract, nor unbounded quantifier
+  = note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract or type parameters, nor unbounded quantifier
   = help: have the solver or testing check it
 
 fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
