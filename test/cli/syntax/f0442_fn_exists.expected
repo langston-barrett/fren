@@ -4,7 +4,7 @@ error[F0442]: a function's block takes no `exists`
 3 |     exists y: Int
   |     ^^^^^^ not a function's member
   |
-  = note: a function's value is determined by its arguments: its block takes `assume`, `let`, `out` and `ensure`, and no `exists`, `call` or `det`
+  = note: a function's value is determined by its arguments: its block takes `use`, `assume`, `let`, `out` and `ensure`, and no `exists`, `call` or `det`
 
 error: could not check due to previous errors
 

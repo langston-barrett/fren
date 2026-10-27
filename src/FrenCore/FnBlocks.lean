@@ -46,7 +46,6 @@ none of them `det`, since every value of a function is determined; not yet
 claims. -/
 def fnMemberVerdict (m : FnMember) (det : Bool) : FnVerdict :=
   match m with
-  | .use => .accepted
   | .claim => .notYet
   | .exists | .call | .evidence => .notFunctions
   | _ => if det then .notFunctions else .accepted

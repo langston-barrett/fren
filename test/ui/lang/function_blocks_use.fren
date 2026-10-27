@@ -11,9 +11,9 @@ pub fn red?(c: Color): (r?) {
 }
 
 pub fn green?(c: Color): (r?) {
-    use self::Color::{Green}
+    use self::Color::{Green, Red}
     let g := Green
-    out r? := c = g
+    out r? := c = g and c != Red
 }
 
 -- Not in the module's scope.
