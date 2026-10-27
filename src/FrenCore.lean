@@ -2,6 +2,7 @@
 -- on Lean core.
 -- keep-sorted start
 import FrenCore.Check
+import FrenCore.Closures
 import FrenCore.Codes
 import FrenCore.Diagnostic
 import FrenCore.Evidence

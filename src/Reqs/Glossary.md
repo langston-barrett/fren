@@ -25,6 +25,10 @@ and `at_most_one?`, which hold when exactly one, or at most one, of their
 `0 <= i < n`, which means `0 <= i and i < n`. See
 [Expressions](Lang/Expressions.md#chained-comparisons).
 
+**Closure.** A function written where it is given to a higher-order
+function's function parameter, `|x| e`, whose body may mention what is in
+scope there. See [Higher-order functions](Lang/HigherOrder.md#arguments).
+
 **Complete.** Of a table: some row's condition holds wherever the table is
 evaluated; of a `match` with guards, some arm is taken wherever it is
 evaluated. See [Checks](Check.md#completeness).
@@ -86,10 +90,18 @@ e`, has the value of its body `e`. Of an uninterpreted function, the spec
 says only its type. The cardinality operators are built-in functions. See
 [Items](Lang/Items.md#functions).
 
+**Function type.** The type of a defined function's parameter that is a
+function, `fn(T) -> U`. See [Higher-order
+functions](Lang/HigherOrder.md#function-types).
+
 **Generic function.** A defined function with type parameters, as
 `fn id<T>(x: T): T := x`, whose type arguments are inferred at each
 application, where it is unfolded at that instance. See [Generic
 functions](Lang/GenericFunctions.md).
+
+**Higher-order function.** A defined function with a parameter of a
+function type, whose applications are unfolded with their closures. See
+[Higher-order functions](Lang/HigherOrder.md).
 
 **Generic type.** An enumeration or record with type parameters, as
 `enum Option<T> { None, Some(T) }`, which is a type once given a type

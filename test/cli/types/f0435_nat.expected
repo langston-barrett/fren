@@ -1,0 +1,13 @@
+error[F0435]: a function type's parameter or result cannot be a `Nat`, for now
+ --> test/cli/types/f0435_nat.fren:2:24
+  |
+2 | fn first(f: fn(Int) -> Nat): Int := f(0)
+  |                        ^^^ a `Nat`
+  |
+  = note: a `Nat` or a pattern type brings a fact or an obligation of its values, which would be a contract of the function given, and a function parameter has none
+  = help: use the base type, as `Int`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0435`.
+exit=2

@@ -1,0 +1,8 @@
+--- test/cli/fmt/closures.fren
++++ test/cli/fmt/closures.fren
+@@ -4,2 +4,2 @@
+-pub fn apply(f: fn( Int,Bool )->Int, x: Int): Int := f(x, true)
+-pub fn twice(x: Int): Int := apply(| n ,b?: Bool |  if b? then n else 0, x)
++pub fn apply(f: fn(Int, Bool) -> Int, x: Int): Int := f(x, true)
++pub fn twice(x: Int): Int := apply(|n, b?: Bool| if b? then n else 0, x)
+exit=1

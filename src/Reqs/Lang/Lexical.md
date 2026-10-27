@@ -401,10 +401,20 @@ refine escape_sequence_starts: escape_sequence refines escape_start
 ## Punctuators
 
 ```
-::  ::*  ::{  :  :=  ,  (  )  {  }  [  ]  .  ..  ..=  =>  |  =  !=  <  <=  >  >=  +  ++  -  *
+::  ::*  ::{  :  :=  ,  (  )  {  }  [  ]  .  ..  ..=  =>  |  ->  =  !=  <  <=  >  >=  +  ++  -  *
 ```
 
-`..` and `..=` are written only in a [range pattern](Patterns.md#kinds-of-pattern).
+`..` and `..=` are written only in a [range pattern](Patterns.md#kinds-of-pattern),
+and `->` only in a [function type](HigherOrder.md#function-types).
+
+`|` separates the alternatives of a [pattern](Patterns.md), and the
+parameters of a [closure](HigherOrder.md#arguments) from its body, `|x| e`:
+where an operand is expected, a `|` opens a closure's parameters, and
+after an operand, it would be an operator, which Fren does not have (see
+below). A closure's parameter's type has no pattern, so the `|` after it
+closes the parameters, and a closure has at least one parameter, so a
+closure never starts with `||`, which is one punctuator: `|| e` is an error
+(`F0161`).
 
 A `(` that follows a name directly, with nothing between them, not even a
 space, a line break or a comment, opens what the name takes, as in Lean:
@@ -443,7 +453,7 @@ Operators of other languages are errors, with a message that says what to
 write instead: `==` (write `=`), `&&` (write `and`), `||` (write `or`), `!`
 (write `not`; a `!` directly after an identifier is part of it) and,
 outside a [`match` arm](Expressions.md#matches), `=>`
-(write `when a, b`) and `|` (write `or`), and `/` and `%` (write `div`
+(write `when a, b`) and, after an operand, `|` (write `or`), and `/` and `%` (write `div`
 and `mod`, which [divide by a constant](Expressions.md#division-and-remainder)). The first
 three are lexed as punctuators, so that the message names them as Lean's
 does.
@@ -452,9 +462,10 @@ does.
 Lean is: `x <- 1` is `x`, `<-` and `1`, not `x < -1`. Fren has no operator
 `<-`, so it is an error (F0121), with the fix `< -`. It is the only Lean
 token made of Fren punctuators that could otherwise be read as Fren: the
-others, such as `->`, `<->`, `|>`, `<|`, `>>`, `..` and `.(`, would be
+others, such as `<->`, `|>`, `<|`, `>>`, `..` and `.(`, would be
 punctuators that never follow one another in an expression, so they are
-errors either way. Where `>` closes type arguments, as twice in
+errors either way; and `->` is Fren's own, in a function type, where `-`
+and `>` never follow one another either. Where `>` closes type arguments, as twice in
 `Option<Set<Int>>`, Fren reads Lean's `>>` as two `>`s (see [Angle
 brackets](Generics.md#angle-brackets)).
 
@@ -471,7 +482,7 @@ the rule assumes that `lexeme` is a punctuator:
 ```fren
 -- Longest first, as the lexer tries them.
 pub const PUNCTUATORS: Set<String> := {
-    "::*", "::{", "..=", "::", "..", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}",
+    "::*", "::{", "..=", "::", "..", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", "->", ">=", ":=", "{", "}",
     "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
 }
 
@@ -484,7 +495,7 @@ pub comp punctuator {
     -- The punctuators listed above, the three of other languages, and
     -- Lean's `<-`.
     expect listed: accepted? iff lexeme in {
-        "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "..", "..=", "=>", "|",
+        "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "..", "..=", "=>", "|", "->",
         "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||", "<-",
     }
 }

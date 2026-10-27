@@ -2,6 +2,7 @@
 import Fren.FinSet
 import Fren.Seq
 import FrenCore.Check
+import FrenCore.Closures
 import FrenCore.Enumeration
 import FrenCore.Evidence
 import FrenCore.Lint
@@ -244,6 +245,11 @@ structure DefinedInfo where
   typeParams : Array Name := #[]
   declared : Array Core.Ty := #[]
   result : Core.Ty := .bool
+  /-- Its parameters, if it is higher-order: each a value's type or a
+  function type, as its signature declares them (`Reqs/Lang/HigherOrder`).
+  Its definition takes its value parameters first, then its function
+  parameters. -/
+  hoParams : Array Core.HoParam := #[]
   /-- Its body has an unbounded quantifier with a bound name that has a
   domain, directly or through the functions and constants it applies,
   which sets `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/

@@ -322,6 +322,8 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
         match toks[k]!.tok with
         | .kw "(" => if lay.calls.contains k then .call else .paren
         | .kw ")" => .closeParen
+        -- A closure's parameters, spaced like a call's arguments.
+        | .kw "|" => if lay.closureOpens.contains k then .paren else if lay.closureCloses.contains k then .closeParen else .other
         -- An index's `[` is spaced like a call's `(`, and a literal's like `(`.
         | .kw "[" => if lay.calls.contains k then .call else .paren
         | .kw "]" => .closeParen

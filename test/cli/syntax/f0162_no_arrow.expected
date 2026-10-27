@@ -1,0 +1,12 @@
+error[F0162]: expected `->` after a function type's parameters, found `,`
+ --> test/cli/syntax/f0162_no_arrow.fren:2:20
+  |
+2 | fn apply(f: fn(Int), x: Int): Int := f(x)
+  |                    ^ expected `->`
+  |
+  = note: a function type is written `fn(T) -> U`, with its result's type after `->`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0162`.
+exit=2

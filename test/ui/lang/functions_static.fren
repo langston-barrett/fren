@@ -24,6 +24,8 @@ comp private_out { in x: Name out y: Name ensure r: ok?(if ok?(x) then y else x)
 comp arity_wrong { in x: Name pub out y: Int ensure r: y = arity(x, x) }
 --~^ error: `arity` takes 1 argument, but 2 were given
 comp unapplied { in x: Name pub out y: Int ensure r: y = arity }
+--~^ error: functions cannot be compared with `=`
+comp unapplied_operand { in x: Name pub out y: Int ensure r: y = arity + 1 }
 --~^ error: function `arity` must be applied to arguments
 comp not_fn { in x: Name pub out y: Int ensure r: y = x(x) }
 --~^ error: expected a function, but `x` is a variable

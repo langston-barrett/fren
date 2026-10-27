@@ -1,0 +1,2 @@
+-- A function type within another type.
+fn first(fs: Seq<fn(Int) -> Int>): Int := 0

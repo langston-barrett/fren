@@ -73,7 +73,7 @@ member         := "in" variable
 variable       := DECL [":" type]
 instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
-type           := base ["is" pattern]
+type           := base ["is" pattern] | "fn" "(" type ("," type)* ")" "->" type
 base           := "Bool" | "Int" | "Nat" | "String" | "Set""<" type ">" | "Seq""<" type ">" | "Rel""<" type "," type ">"
                 | path | path"<" type ("," type)* ">"
 path           := IDENT ("::" IDENT)*
@@ -115,6 +115,8 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | "{" expr "with" field-init ("," field-init)* [","] "}"
                 | "[" [expr ("," expr)* [","]] "]"
                 | atom"[" expr "]"
+                | "|" closure-param ("," closure-param)* "|" expr
+closure-param  := DECL [":" base]
 element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
@@ -130,7 +132,10 @@ bound          := ["-"] INT | path
 ```
 
 In a range, there are no spaces around `..=` and `..` (see
-[Patterns](Lang/Patterns.md)).
+[Patterns](Lang/Patterns.md)). A function type is written only as a
+defined function's parameter's type, and a closure only as an argument for
+such a parameter (see [Higher-order functions](Lang/HigherOrder.md)); a
+`|` where an operand is expected opens a closure's parameters.
 
 Where a rule is written with left recursion, the operator is
 left-associative. A `cmp` with more than one operator is a [chained

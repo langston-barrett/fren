@@ -197,6 +197,18 @@ Like a component's definitions, it first takes a parameter for each
 abstract type it uses: those that its parameter and result types, and its
 body, mention.
 
+## Higher-order functions
+
+A [higher-order function](Lang/HigherOrder.md) becomes `def p`, as any
+defined function does, whose function parameters are Lean arrows, `T → U`
+and `T1 → T2 → U`, after its other parameters: `fn twice(f: fn(Int) ->
+Int, x: Int): Int := f(f(x))` becomes `twice : Int → (Int → Int) → Int`.
+An application gives each closure as a Lean `fun`, `fun (x : Int) => x +
+1`, which the solver never sees: each query unfolds the definition and
+reduces the closure's applications. For the function's own checks, each
+function parameter is a placeholder of its own, an uninterpreted function
+of its type, as `p.f`.
+
 ## Generic functions
 
 A [generic function](Lang/GenericFunctions.md) becomes `def p`, as any

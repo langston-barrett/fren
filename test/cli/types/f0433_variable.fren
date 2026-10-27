@@ -1,0 +1,4 @@
+-- A function type as a component's input.
+comp apply {
+    in f: fn(Int) -> Int
+}

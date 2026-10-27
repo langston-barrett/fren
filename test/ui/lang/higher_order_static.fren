@@ -1,0 +1,102 @@
+-- Static rules for higher-order functions (`Reqs/Lang/HigherOrder`), in
+-- both front ends. In a module, since Lean has an `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod higher_order_static
+
+pub enum Option<T> { None, Some(T) }
+
+fn map<T, U>(o: Option<T>, f: fn(T) -> U): Option<U> := match o {
+    Option::Some(x) => Option::Some(f(x)),
+    Option::None => Option::None,
+}
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn both(f: fn(Int, Int) -> Int): Int := f(1, 2)
+fn inc(n: Int): Int := n + 1
+fn hidden(Int): Int
+fn dec(n: Int): Int := n - 1
+
+-- A function type is only a defined function's parameter's
+-- (`lang::function_type_place`).
+struct Holder { f: fn(Int) -> Int }  --~ error: a function type cannot be the type of a field or a payload
+enum Wrapped { W(fn(Int) -> Int) }  --~ error: a function type cannot be the type of a field or a payload
+struct Boxed(fn(Int) -> Int)  --~ error: a function type cannot be the type of a field or a payload
+const K: fn(Int) -> Int := 0  --~ error: a function type is only the type of a defined function's parameter
+fn result(x: Int): fn(Int) -> Int := x  --~ error: a function type is only the type of a defined function's parameter
+fn uninterpreted(fn(Int) -> Int): Int  --~ error: a function type is only the type of a defined function's parameter
+fn nested(s: Set<fn(Int) -> Int>): Int := 0  --~ error: a function type cannot be within another type
+fn returns(f: fn(Int) -> fn(Int) -> Int): Int := 0  --~ error: a function type cannot be within another type
+fn natural(f: fn(Int) -> Nat): Int := 0  --~ error: a function type's parameter or result cannot be a `Nat`, for now
+fn pattern(f: fn(Int is 0..) -> Int): Int := 0  --~ error: a function type's parameter or result cannot be a pattern type, for now
+comp var_type {
+    in f: fn(Int) -> Int  --~ error: a function type cannot be the type of a component's variable
+}
+
+-- An argument for a function parameter is a closure or the name of a
+-- defined function or function parameter (`lang::function_argument`).
+comp arguments {
+    in x: Int
+    pub det out a: Int := apply(x, x)  --~ error: expected a closure or a function's name of type `fn(Int) -> Int`
+}
+comp uninterpreted_name {
+    in x: Int
+    pub det out a: Int := apply(hidden, x)  --~ error: the uninterpreted function `higher_order_static::hidden` cannot be given for a function parameter
+}
+comp arity {
+    in x: Int
+    pub det out a: Int := apply(|y, z| y + z, x)  --~ error: expected a closure of 1 parameter, of type `fn(Int) -> Int`, but it has 2 parameters
+}
+comp written_type {
+    in x: Int
+    pub det out a: Int := apply(|y: Bool| x, x)  --~ error: type mismatch: expected `Int`, found `Bool`
+}
+comp body_type {
+    in x: Int
+    pub det out a: Int := apply(|y| y > 0, x)  --~ error: type mismatch: expected `Int`, found `Bool`
+}
+comp name_type {
+    in x: Int
+    pub det out a: Int := both(inc) + x  --~ error: `higher_order_static::inc` takes 1 argument, but 2 were given
+}
+comp closure_elsewhere {
+    in x: Int
+    pub det out a: Int := let g := |y| y in x  --~ error: a closure is only an argument for a function parameter
+}
+comp name_elsewhere {
+    in x: Int
+    pub det out a: Int := inc + x  --~ error: function `higher_order_static::inc` must be applied to arguments
+}
+comp uninterpreted_in_closure {
+    in x: Int
+    pub det out a: Int := apply(|y| hidden(y), x)  --~ error: a closure's body cannot apply uninterpreted function `higher_order_static::hidden`
+}
+comp duplicate {
+    in x: Int
+    pub det out a: Int := both(|y, y| y)  --~ error: `y` is bound multiple times in this quantifier
+}
+comp unknown {
+    pub out a: Option<Int>
+    ensure r: a = map(Option::None, |x| x)  --~ error: cannot infer the type of this closure's parameter of `higher_order_static::map`
+}
+
+-- A closure's parameter varies, as a variable does: its body is linear.
+comp nonlinear {
+    in x: Int
+    pub det out a: Int := apply(|n| n * x, x)  --~ error: nonlinear arithmetic is not supported
+}
+
+-- A function parameter is applied, or given to another function parameter.
+fn unapplied(f: fn(Int) -> Int): Int := f + 1  --~ error: function `f` must be applied to arguments
+fn arity_param(f: fn(Int) -> Int): Int := f(1, 2)  --~ error: `f` takes 1 argument, but 2 were given
+
+-- Functions are not compared (`lang::function_comparison`).
+fn compared?(f: fn(Int) -> Int, g: fn(Int) -> Int) := f = g  --~ error: functions cannot be compared with `=`
+comp compare_names {
+    pub out a?
+    ensure r: a? iff inc != dec  --~ error: functions cannot be compared with `!=`
+}
+comp compare_closures {
+    pub out a?
+    ensure r: a? iff (|x| x) = (|y| y)  --~ error: functions cannot be compared with `=`
+}
+--@ exit: 2

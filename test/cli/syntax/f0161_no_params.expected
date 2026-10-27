@@ -1,0 +1,12 @@
+error[F0161]: a closure has at least one parameter
+ --> test/cli/syntax/f0161_no_params.fren:5:33
+  |
+5 |     pub det out y: Int := apply(|| x, x)
+  |                                 ^^ no parameters
+  |
+  = note: a closure is written `|x| e`, with the parameters of the function that it is given for
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0161`.
+exit=2
