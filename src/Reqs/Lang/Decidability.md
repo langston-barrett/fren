@@ -41,7 +41,11 @@ each bound name: `forall (m: Method), s.starts_with?(prefix(m))`, with
 `s.starts_with?(prefix(Method::Len))` is. An [unbounded
 quantifier](Quantifiers.md#unbounded-quantifiers), over a type that is
 not listed, is given to the solver as a quantifier, which breaks the first
-rule, so it is outside the core, whatever its body and its guard: a
+rule, so it is outside the core, whatever its body and its guard, unless it
+is a [quantifier over a sequence's elements](ElementQuantifiers.md), such
+as `forall (x: T), when x in q, P`, with `x` used only as a value, which
+each query instantiates at the finitely many positions of the array
+property fragment's index set before anything is asked: a
 quantifier over the integers alone is Presburger arithmetic, which is
 decidable, but not with uninterpreted functions, strings, sets or
 sequences beside it, and a guard that bounds it bounds it by a term, not
@@ -218,7 +222,7 @@ not known to be decidable with length.
 | Construct | In the core when |
 |---|---|
 | sequence literals, `q.len`, `q[i]`, `q.update(i, x)`, `=` and `!=` on sequences | always |
-| `x in L`, `q.starts_with?(L)`, `q.ends_with?(L)` | `L` is a literal: each is then a formula of indexing and length, such as `q.len >= 2 and q[0] = a and q[1] = b` |
+| `x in L`, `q.starts_with?(L)`, `q.ends_with?(L)` | `L` is a literal: each is then a formula of indexing and length, such as `q.len >= 2 and q[0] = a and q[1] = b`; or `x in q` is the membership of the guard of a [quantifier over elements](ElementQuantifiers.md) in the core, which its expansion replaces by a position's being in range |
 | `++`, `q.at(i)`, `q.slice(i, n)`, `q.index_of(t, i)`, `q.contains?(t)`, `q.replace(a, b)`, `q.rev`, and the rest | never, unless every operand is a constant |
 
 
@@ -289,7 +293,8 @@ pub mod lang
 -- `card`, or an instance of a component that counts, where there is one;
 -- `SeqArray` is a sequence's literals, `len`, indexing and `update`; `SeqWord`
 -- is the other operations on sequences; `Quantifier` is an unbounded
--- quantifier's binder of a type that is not listed.
+-- quantifier's binder of a type that is not listed, of a quantifier that
+-- `element_quantifier` does not put in the core.
 pub enum Construct {
     StringCompare, StringAtom, StringIndex, StringSearch, SetAlgebra, SetFunction, Relational, RelationalCard,
     SeqArray, SeqWord, Quantifier,
