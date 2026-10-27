@@ -1,4 +1,4 @@
-error[F0448]: recursive defined functions are not yet supported
+error[F0448]: recursive defined functions are not yet supported: `size` is a catamorphism
  --> test/cli/types/f0448_size.fren:4:74
   |
 4 | fn size(e: Expr): Int := match e { Expr::Lit(_) => 1, Expr::Add(a, b) => size(a) + size(b) }

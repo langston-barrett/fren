@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Names
+import FrenCore.Patterns
 -- keep-sorted end
 
 /-!
@@ -80,6 +81,68 @@ def recursion (n : Nat) (uses : List RecUse) : Recursion :=
       let k := fs.foldl max 0
       .notStructural k (fs.idxOf k)
 
+/-! ## Kinds and encodings (`lang::recursive_encoding`) -/
+
+/-- An occurrence, in a structural recursion's body, of a parameter or of a
+binder bound from a payload of one. -/
+inductive Occurrence where
+  /-- A recursive payload as a recursive application's argument, at the
+  position whose payload it is. -/
+  | recursed
+  /-- The parameter itself, as the scrutinee of a `match`. -/
+  | matched
+  /-- Any other: a recursive payload or the parameter otherwise used, or a
+  `match` on the parameter that looks into a payload with a variant's
+  pattern. -/
+  | other
+  deriving DecidableEq, Repr, Inhabited
+
+/-- An occurrence of the parameter at `pos`, or of a payload of it. -/
+structure PayloadOcc where
+  pos : Nat
+  occ : Occurrence
+  deriving DecidableEq, Repr, Inhabited
+
+/-- How the solver knows a defined function. -/
+inductive Encoding where
+  /-- Not recursive: its body, unfolded at each application. -/
+  | unfolded
+  /-- A catamorphism: SMT-LIB's `define-fun-rec`. -/
+  | defineFunRec
+  /-- A paramorphism: uninterpreted, with one-step unfolding where the
+  constructor is known. -/
+  | opaque
+  deriving DecidableEq, Repr, Inhabited
+
+/-- How the solver knows a defined function whose uses of itself are
+`r`, with the occurrences `occs` (`lang::recursive_encoding`): a structural
+recursion is a catamorphism when no occurrence at its decreasing parameter
+is other than a recursive application's argument or the scrutinee of a
+`match`. -/
+def recursiveEncoding (r : Recursion) (occs : List PayloadOcc) : Encoding :=
+  match r with
+  | .structural i => if occs.any (fun o => o.pos == i && o.occ == .other) then .opaque else .defineFunRec
+  | _ => .unfolded
+
+/-- Whether the pattern `p` is a variant's, or an or-pattern with one. -/
+partial def Pat.hasVariant : Pat → Bool
+  | .ctor .. => true
+  | .or ps => ps.any Pat.hasVariant
+  | _ => false
+
+/-- Whether the pattern `p` looks into a variant's payload with a variant's
+pattern, as `Expr::Add(Expr::Neg(x), y)` does. -/
+partial def Pat.looksIntoPayload : Pat → Bool
+  | .ctor _ ps => ps.any Pat.hasVariant
+  | .or ps => ps.any Pat.looksIntoPayload
+  | _ => false
+
+/-- The kind of a structural recursion, as its message names it. -/
+def Encoding.kindText : Encoding → String
+  | .defineFunRec => "a catamorphism"
+  | .opaque => "a paramorphism"
+  | .unfolded => "not recursive"
+
 /-- A defined function's application of itself that is not structural
 recursion: `f` is the function, `param` the parameter at the position whose
 argument is reported, `arg` that argument's origin, and `form` the use's
@@ -99,8 +162,8 @@ def nonStructuralMsg (f param : Lean.Name) (form : RecForm) (arg : RecArg) : Msg
 
 /-- A defined function that is a structural recursion, which is not yet
 supported (#279). -/
-def structuralUnsupportedMsg (f param : Lean.Name) : Msg :=
-  { code? := some "F0448", headline := s!"recursive defined functions are not yet supported"
+def structuralUnsupportedMsg (f param : Lean.Name) (enc : Encoding) : Msg :=
+  { code? := some "F0448", headline := s!"recursive defined functions are not yet supported: `{showPath f}` is {enc.kindText}"
     label? := some s!"`{showPath f}` recurses structurally on `{param}`"
     notes := #["note: this application is structural recursion, which a later version of Fren will accept",
       "help: state the function's values by quantified equations on an uninterpreted function, or one layer at a time"] }

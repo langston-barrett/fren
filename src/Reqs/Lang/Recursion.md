@@ -101,13 +101,6 @@ Both front ends read the body into these uses as they elaborate it: a use
 when they reach the function's name, before its arguments, so an
 application within another's arguments comes after it.
 
-The Lean-hosted front end checks this chapter's procedure by name, since
-no `#fren_check` of its Lean file comes after it:
-
-```fren
-#fren_check structural_recursion
-```
-
 ## Meaning
 
 A structural recursion denotes the least fixed point of its equations,
@@ -195,32 +188,50 @@ evaluable (an abstract type, an uninterpreted function), the result is
 `Inconclusive`, and the message says that the paramorphism's value was
 not pinned down.
 
-`lang::recursive_encoding` states this, over the kind of a defined
-function, read from its uses:
+`lang::recursive_encoding` states this, over the function's occurrences
+of its parameters and of the binders bound from their payloads, which both
+front ends record as they read the body, each once, by where it is
+written: a recursive payload as a recursive application's argument at its
+own position; a parameter as a `match`'s scrutinee; and any other, which
+is a recursive payload of the parameter's type otherwise used, a parameter
+otherwise used, or a `match` on a parameter or a recursive payload whose
+pattern has a variant's pattern within a payload. That last is
+conservative: a pattern within a payload of another enumeration, such as
+`Option`, makes a paramorphism too, which is encoded soundly, only not
+decided on symbolic arguments.
 
-```text
--- An occurrence of a recursive payload in the body: as the decreasing
--- argument of a recursive application, or any other.
-pub enum Occurrence { Recursed, Other }
+```fren
+-- An occurrence of a parameter, or of a binder bound from a payload of one:
+-- as a recursive application's argument, as a `match`'s scrutinee, or any
+-- other.
+pub enum Occurrence { Recursed, Matched, Other }
+
+-- An occurrence, of the parameter at `pos` or of a payload of it.
+pub struct PayloadOcc { pos: Int, occ: Occurrence }
 
 -- How the solver knows a defined function.
 pub enum Encoding { Unfolded, DefineFunRec, Opaque }
 
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
 pub proc recursive_encoding(
-    recursion: Recursion,       -- `lang::structural_recursion`'s verdict
-    occurrences: Seq<Occurrence>,  -- every recursive payload's, in order
+    recursion: Recursion,          -- `lang::structural_recursion`'s verdict
+    occurrences: Seq<PayloadOcc>,  -- in the order they are written
 ): (det encoding: Encoding) {
-    use self::Recursion::{NotRecursive, Structural}
-    assume accepted: recursion = NotRecursive or recursion is Structural(_)
-    ensure unfolded: when recursion = NotRecursive, encoding = Encoding::Unfolded
-    ensure catamorphism: when recursion is Structural(_)
-        and (forall (k: Int), when 0 <= k < occurrences.len, occurrences[k] = Occurrence::Recursed),
+    ensure unfolded: when not (recursion is Recursion::Structural(_)), encoding = Encoding::Unfolded
+    -- A catamorphism: nothing at the decreasing parameter is other.
+    ensure catamorphism: when recursion is Recursion::Structural(i)
+        and (forall (k: Int), when 0 <= k < occurrences.len and occurrences[k].pos = i,
+        occurrences[k].occ != Occurrence::Other),
         encoding = Encoding::DefineFunRec
-    ensure paramorphism: when recursion is Structural(_)
-        and (exists (k: Int), 0 <= k < occurrences.len and occurrences[k] = Occurrence::Other),
+    ensure paramorphism: when recursion is Recursion::Structural(i)
+        and (exists (k: Int), 0 <= k < occurrences.len and occurrences[k].pos = i
+        and occurrences[k].occ = Occurrence::Other),
         encoding = Encoding::Opaque
 }
 ```
+
+Until structural recursion is accepted, `F0448`'s message names the kind.
 
 ## Decidability
 
@@ -273,3 +284,11 @@ gets its non-negativity without losing `fmf-fun` is open; until then its
 queries that need it are `Inconclusive`. Where cvc5 answers
 `unknown` or runs out of time, the result is `Inconclusive`, never a wrong
 answer.
+
+The Lean-hosted front end checks this chapter's procedures by name, since
+no `#fren_check` of its Lean file comes after it:
+
+```fren
+#fren_check structural_recursion
+#fren_check recursive_encoding
+```

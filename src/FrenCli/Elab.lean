@@ -926,6 +926,10 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   /-- In a defined function's body, its uses of itself so far, each where
   it is written (`lang::structural_recursion`). -/
   recUses : Array (Span × Fren.Core.RecUse) := #[]
+  /-- In a defined function's body, the occurrences so far of its
+  parameters and of the binders bound from their payloads, each by where
+  it starts (`lang::recursive_encoding`). -/
+  recOccs : Array (Nat × Fren.Core.PayloadOcc) := #[]
   /-- The defined functions and constants whose bodies or values have such a
   quantifier, directly or through others. -/
   guardedItems : Std.HashSet Name := {}
@@ -1184,6 +1188,15 @@ def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse)
   if let .notStructural _ i := Fren.Core.recursion ps.size (uses.toList.map (·.2)) then
     -- A function always has a parameter; without one, the message names the function.
     err span (Fren.Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr))
+
+/-- Records the occurrence `o`, starting where `span` does, of a parameter
+or of a binder bound from a payload of one, in a defined function's body
+that may recurse (`lang::recursive_encoding`): once for each place, the
+first recorded, as an expression elaborated again is not another
+occurrence. -/
+def noteRecOcc (span : Span) (o : Fren.Core.PayloadOcc) : M Unit := do
+  if (← get).recOccs.any (·.1 == span.start) then return
+  modify fun s => { s with recOccs := s.recOccs.push (span.start, o) }
 
 structure ExprCtx where
   vars : Array CVar
@@ -4283,6 +4296,11 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
     let span := segs[0]!.span
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
+        -- A binder bound from a payload of a parameter, of the parameter's
+        -- type, used other than as a recursive application's argument
+        -- (`lang::recursive_encoding`).
+        if let some j := b.payloadOf? then
+          if cx.selfRec?.isSome && cx.vars[j]?.any (·.ty == b.ty) then noteRecOcc span { pos := j, occ := .other }
         -- A bound name has no scrutinee: it mentions nothing.
         if let some sc := b.scrutinee then
           if b.isDef then
@@ -4303,6 +4321,10 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
         let ks := (List.range n.components.length).reverse.map (· + 1)
         match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
         | some (v, k) =>
+          -- A parameter, other than as a `match`'s scrutinee
+          -- (`lang::recursive_encoding`).
+          if let some (ps, _, _) := cx.selfRec? then
+            if let some j := ps.idxOf? v.name then noteRecOcc span { pos := j, occ := .other }
           -- A defined output mentions what its definition does.
           for u in if cx.unmentioned then #[] else defDeps cx.vars v do
             let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
@@ -4402,6 +4424,8 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
     unless args.size == ft.params.size do err span (Fren.Core.arityMsg f ft.params.size args.size)
     noteRecUse fnSpan f ps { form := if cx.inClosure then .inClosure else .applied
                              args := args.toList.zipIdx.map fun (a, i) => cx.recArg a i }
+    for a in args, k in [0:args.size] do
+      if cx.recArg a k == .payload then noteRecOcc a.span { pos := k, occ := .recursed }
     let mut smts := #[]
     for a in args, t in ft.params, k in [0:args.size] do
       let (x, ta) ← elabExpr { cx with expected? := some t } a
@@ -4902,12 +4926,20 @@ partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : 
 
 /-- `elabExpr` on a `match`. -/
 partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (parent? : Option Expr) (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (isTable : Bool) : M (String × Ty) := do
+  -- The parameter itself, matched on (`lang::recursive_encoding`).
+  let origin? := cx.recOrigin? scrutinee
+  if let some (j, false) := origin? then noteRecOcc scrutinee.span { pos := j, occ := .matched }
   let (s, ts) ← elabExpr cx scrutinee
   unless ts matches .enum .. | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.scrutineeMsg ts.show)
   -- Each arm's pattern, its binders and its test.
   let mut resolved := #[]
   for (p, _, _) in arms do resolved := resolved.push (← resolvePattern cx ts s false false p)
   let pats := resolved.map (·.1)
+  -- A `match` on a parameter, or on a binder bound from a payload of one,
+  -- that looks into a payload with a variant's pattern
+  -- (`lang::recursive_encoding`).
+  if let some (j, _) := origin? then
+    if pats.any Fren.Core.Pat.looksIntoPayload then noteRecOcc span { pos := j, occ := .other }
   let guarded := arms.map (·.2.1.isSome)
   -- In a table over a scrutinee, only the last arm may be `_` without a
   -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
@@ -6629,11 +6661,13 @@ partial def elabItem (item : Item) : M Unit := do
       let selfRec? := if tps.isEmpty && fnPs.isEmpty then
         some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
       let cx : ExprCtx := { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none, fnParams, selfRec? }
-      modify fun s => { s with recUses := #[] }
+      modify fun s => { s with recUses := #[], recOccs := #[] }
       let (smt, t) ← elabExpr cx body
       let uses := (← get).recUses
-      if let .structural i := Fren.Core.recursion vars.size (uses.toList.map (·.2)) then
-        err uses[0]!.1 (Fren.Core.structuralUnsupportedMsg path vars[i]!.name)
+      let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
+      if let .structural i := recursion then
+        let enc := Fren.Core.recursiveEncoding recursion ((← get).recOccs.toList.map (·.2))
+        err uses[0]!.1 (Fren.Core.structuralUnsupportedMsg path vars[i]!.name enc)
       noteObligation cx .body body.span rp smt
       let bodyTables ← takeTables
       let bodyObligations ← takeIndexes

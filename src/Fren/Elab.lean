@@ -808,6 +808,16 @@ def ExprCtx.recArg (cx : ExprCtx) (a : Syntax) (i : Nat) : Core.RecArg :=
   | some (j, false) => if j == i then .itself else .name
   | none => if (soleName? a).isSome then .name else .expr
 
+/-- Records the occurrence `o`, starting where `ref` does, of a parameter
+or of a binder bound from a payload of one, in a defined function's body
+that may recurse (`lang::recursive_encoding`): once for each place, the
+first recorded, as an expression elaborated again is not another
+occurrence. -/
+def noteRecOcc (ref : Syntax) (o : Core.PayloadOcc) : TermElabM Unit := do
+  let some p := ref.getPos? | return
+  if (← getLocal).recOccs.any (·.1 == p) then return
+  modifyLocal fun l => { l with recOccs := l.recOccs.push (p, o) }
+
 /-- Whether `e` is the binary operator `op`. -/
 def isBinOp (e : Syntax) (op : String) : Bool :=
   e.getNumArgs == 3 && e[1].isAtom && e[1].getAtomVal.trimAscii.toString == op
@@ -3208,6 +3218,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- The scrutinee synthesizes its type, and each body is checked against the
   -- whole's, or another's (`lang::checked`).
   let scrutinee := e[1]
+  -- The parameter itself, matched on (`lang::recursive_encoding`).
+  let origin? := cx.recOrigin? scrutinee
+  if let some (j, false) := origin? then noteRecOcc (unparen scrutinee) { pos := j, occ := .matched }
   let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false } scrutinee
   let ty ← typeOf s
   let pty := patTyOf (← getState) ty
@@ -3217,6 +3230,11 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut resolved := #[]
   for arm in arms do resolved := resolved.push (← resolveTop cx ty s false arm[0])
   let pats := resolved.map (·.1)
+  -- A `match` on a parameter, or on a binder bound from a payload of one,
+  -- that looks into a payload with a variant's pattern
+  -- (`lang::recursive_encoding`).
+  if let some (j, _) := origin? then
+    if pats.any Core.Pat.looksIntoPayload then noteRecOcc e { pos := j, occ := .other }
   let guarded := arms.map (!·[1].isNone)
   let isTable := e.isOfKind ``Lang.tableMatchExpr
   -- In a table over a scrutinee, only the last arm may be `_` without a
@@ -4693,6 +4711,11 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     let n := id.getId
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
+        -- A binder bound from a payload of a parameter, of the parameter's
+        -- type, used other than as a recursive application's argument
+        -- (`lang::recursive_encoding`).
+        if let some j := b.payloadOf? then
+          if cx.selfRec?.isSome && cx.vars[j]?.any (·.type == b.type) then noteRecOcc id { pos := j, occ := .other }
         -- A bound name has no scrutinee: it mentions nothing.
         if let some sc := b.scrutinee then
           if b.isDef then
@@ -4714,6 +4737,10 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
         let ks := (List.range n.components.length).reverse.map (· + 1)
         match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
         | some (v, k) =>
+          -- A parameter, other than as a `match`'s scrutinee
+          -- (`lang::recursive_encoding`).
+          if let some (ps, _, _) := cx.selfRec? then
+            if let some j := ps.idxOf? v.name then noteRecOcc id { pos := j, occ := .other }
           let some t ← varRef? cx id v.name | throwError "internal error: no variable `{v.name}`"
           pure (some ((t, v.type), n.components.drop k))
         | none =>
@@ -4987,6 +5014,8 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     unless args.getElems.size == ft.params.size do throwError (Core.arityMsg f ft.params.size args.getElems.size).text
     noteRecUse p f ps { form := if cx.inClosure then .inClosure else .applied
                         args := args.getElems.toList.zipIdx.map fun (a, i) => cx.recArg a i }
+    for a in args.getElems, k in [0:args.getElems.size] do
+      if cx.recArg a k == .payload then noteRecOcc (unparen a) { pos := k, occ := .recursed }
     let ts ← (args.getElems.zip ft.params).zipIdx.mapM fun ((a, t), k) => do
       let x ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := some t } a
       if let some found ← frenTypeOf? x then
@@ -6339,11 +6368,13 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
                             expected? := if result.isConstOf ``Nat then some .nat else none
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
-      modifyLocal fun l => { l with recUses := #[] }
+      modifyLocal fun l => { l with recUses := #[], recOccs := #[] }
       let t ← if recursive then withLocalDeclD selfName selfTy fun _ => toTerm cx body else toTerm cx body
       let uses := (← getLocal).recUses
-      if let .structural i := Core.recursion vars.size (uses.toList.map (·.2)) then
-        throwErrorAt uses[0]!.1 (Core.structuralUnsupportedMsg path vars[i]!.name).text
+      let recursion := Core.recursion vars.size (uses.toList.map (·.2))
+      if let .structural i := recursion then
+        let enc := Core.recursiveEncoding recursion ((← getLocal).recOccs.toList.map (·.2))
+        throwErrorAt uses[0]!.1 (Core.structuralUnsupportedMsg path vars[i]!.name enc).text
       noteObligation cx .body body rp t
       -- Its tables, the applications of functions with preconditions, and
       -- its pattern types' obligations, for their checks; its indexes are

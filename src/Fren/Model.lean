@@ -868,6 +868,10 @@ structure LocalState where
   /-- In a defined function's body, its uses of itself so far, each where
   it is written (`lang::structural_recursion`). -/
   recUses : Array (Lean.Syntax × Core.RecUse) := #[]
+  /-- In a defined function's body, the occurrences so far of its
+  parameters and of the binders bound from their payloads, each by where
+  it starts (`lang::recursive_encoding`). -/
+  recOccs : Array (String.Pos.Raw × Core.PayloadOcc) := #[]
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated, by where `e` is: whether `e` is a sequence, and the
   `undecidable` report that `in` defers until the quantifier is known to
