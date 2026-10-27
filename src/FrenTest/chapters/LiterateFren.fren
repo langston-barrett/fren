@@ -1,0 +1,8 @@
+-- A spec that `#fren_md` reads whole, as the `fren` command reads it.
+mod lit_fren
+
+proc gate(a?, b?): (c?) {
+    ensure r: c? iff a? and b?
+
+    expect never: not c?
+}

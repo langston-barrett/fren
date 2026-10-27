@@ -32,7 +32,12 @@ spaces. A `fren` block opens at a fence whose info string is exactly
 relative to the current Lean file, as if its `fren` blocks were written in
 place of the command. The spec continues the current Lean file: it starts in
 the current module, and its items are visible to the rest of the file,
-including later `#fren_md` commands.
+including later `#fren_md` commands. As with the `fren` command, a file
+whose name ends in `.md` is a Markdown spec, and any other file, such as
+`rle.fren`, is read whole, as if all of it were one `fren` block, so that
+Lean code can implement a spec written for the `fren` command. What
+follows about a Markdown file read by `#fren_md` holds for such a file
+too.
 
 A Markdown file is named by its path relative to the Lean file, with `.`
 and `..` resolved and `/` between components on every system, so that

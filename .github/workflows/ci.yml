@@ -44,7 +44,8 @@ jobs:
     # check their own output with `#guard_msgs`), Fren's own requirements
     # (`Reqs`, which `#fren_check` checks with the SMT solver), the links from
     # Fren's code to them (`Impls`, whose `#fren_trace` warns about any
-    # requirement without evidence) and the `fren` binary; warnings, including
+    # requirement without evidence), the example specs' Lean implementations
+    # (`Examples`) and the `fren` binary; warnings, including
     # inconclusive checks and untraced requirements, fail it. `lake test` runs
     # the ui, snapshot and agreement tests.
     - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
