@@ -3256,10 +3256,11 @@ def lintEqOp (e : Syntax) : TermElabM Unit := do
   if let some v := Core.eqOp op (Core.writtenSame a (exactText (unparen e[2]))) then
     recordLint .eqOp e (Core.eqOpMsg op v a)
 
-/-- `same_branches` on `e`, `if c then a else b` (`lint::same_branches`). -/
-def lintSameBranches (e a b : Syntax) : TermElabM Unit := do
+/-- `same_branches` on `e`, `if c then a else b`, where `binds` is whether
+`c`'s pattern tests bind names (`lint::same_branches`). -/
+def lintSameBranches (binds : Bool) (e a b : Syntax) : TermElabM Unit := do
   let (a, b) := (unparen a, unparen b)
-  unless Core.sameBranches (Core.writtenSame (exactText a) (exactText b)) do return
+  unless Core.sameBranches binds (Core.writtenSame (exactText a) (exactText b)) do return
   let some sub := e.getSubstring? false false | return
   let .mk kind .. := boolNode "" 0 a
   recordLint .sameBranches e (Core.sameBranchesMsg (exactText a) kind.prec (String.Pos.Raw.extract sub.str 0 sub.startPos)
@@ -4821,8 +4822,8 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   if cx.noteIndexes && !cx.inElse then lintIfChain cx e
   -- Not where the condition's pattern tests bind names, which the `then`
   -- branch sees and the `else` branch does not, so that the same text may
-  -- mean different values (`lang::test_scope`).
-  if cx.noteIndexes && !(← chainBinds cx c') then lintSameBranches e a b
+  -- mean different values (`lang::test_scope`), as `sameBranches` decides.
+  if cx.noteIndexes then lintSameBranches (← chainBinds cx c') e a b
   if cx.noteIndexes then
     let ms ← mentionedNames cx c'
     unless ms.isEmpty do

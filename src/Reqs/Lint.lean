@@ -37,5 +37,6 @@ open Fren.Lang
 #fren_md "Lint/Pedantic/Records.md"
 #fren_md "Lint/Pedantic/Text.md"
 #fren_md "Lint/Pedantic/Comparisons.md"
+#fren_md "Lint/Pedantic/Conditionals.md"
 #fren_md "Lint/Restriction.md"
 #fren_md "Lint/Decidability.md"

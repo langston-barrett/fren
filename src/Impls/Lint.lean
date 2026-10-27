@@ -583,28 +583,30 @@ def toEqOpValue : Fren.Core.EqOpValue → lint.EqOpValue
 
 -- Both front ends decide `eq_op`, and the value its message gives, with
 -- `eqOp`, from whether the operands are written the same (`writtenSame`),
--- which here is whether they are one `lint::Operand`.
-impl eq_op: lint::eq_op for (op : Fren.Core.InfixOp) (l r : lint.Operand) {
+-- which here is whether they are one `lint::Operand`. The operands of one
+-- operator are in one scope `s` here; that their texts' names resolve
+-- alike is not proved of the code, which compares only their texts.
+impl eq_op: lint::eq_op for (op : Fren.Core.InfixOp) (l r : lint.Operand) (s : Fren.FinSet String) {
   op := toInfixOp op,
-  left := l,
-  right := r,
+  left := ⟨l, s⟩,
+  right := ⟨r, s⟩,
   same? := decide (l = r),
   fires? := (Fren.Core.eqOp op (decide (l = r))).isSome,
   value := toEqOpValue ((Fren.Core.eqOp op (decide (l = r))).getD .operand),
 } by
-  intro op l r _
+  intro op l r s _
   by_cases h : l = r <;> cases op <;> simp [fren_spec, toInfixOp, toEqOpValue, Fren.Core.eqOp, h]
 
 -- Both front ends decide `eq_op` on `when` and `unless` with
 -- `eqOpConditional`.
-impl eq_op_conditional: lint::eq_op_conditional for (n : Bool) (c b : lint.Operand) {
+impl eq_op_conditional: lint::eq_op_conditional for (n : Bool) (c b : lint.Operand) (s : Fren.FinSet String) {
   unless? := n,
-  condition := c,
-  body := b,
+  condition := ⟨c, s⟩,
+  body := ⟨b, s⟩,
   fires? := (Fren.Core.eqOpConditional n (decide (c = b))).isSome,
   value := toEqOpValue ((Fren.Core.eqOpConditional n (decide (c = b))).getD .operand),
 } by
-  intro n c b _
+  intro n c b s _
   by_cases h : c = b <;> cases n <;> simp [fren_spec, toEqOpValue, Fren.Core.eqOpConditional, h]
 
 impl ifs_same_cond: lint::ifs_same_cond for (earlier : Bool) {
@@ -612,13 +614,23 @@ impl ifs_same_cond: lint::ifs_same_cond for (earlier : Bool) {
   fires? := Fren.Core.ifsSameCond earlier,
 }
 
-impl same_branches: lint::same_branches for (t e : lint.Operand) {
-  then_branch := t,
-  else_branch := e,
-  fires? := Fren.Core.sameBranches (decide (t = e)),
+theorem mentionSet_append (l m : List Fren.Core.Mention) : mentionSet (l ++ m) = mentionSet l ∪ mentionSet m := by
+  simp [mentionSet, Fren.FinSet.ext_iff]
+
+theorem mentionSet_eq_empty (l : List Fren.Core.Mention) : mentionSet l = ∅ ↔ l = [] := by
+  cases l <;> simp [mentionSet, Fren.FinSet.ext_iff]
+  exact ⟨_, fun h => absurd rfl h⟩
+
+-- The branches are in one scope `s` but for the binders `bs` of the
+-- condition's pattern tests, which the lint leaves.
+impl same_branches: lint::same_branches for (bs : List String) (t e : lint.Operand) (s : Fren.FinSet String) {
+  binders := Fren.FinSet.ofList bs,
+  then_branch := ⟨t, s⟩,
+  else_branch := ⟨e, s⟩,
+  fires? := Fren.Core.sameBranches (!bs.isEmpty) (decide (t = e)),
 } by
-  intro t e _
-  by_cases h : t = e <;> simp [fren_spec, Fren.Core.sameBranches, h]
+  intro bs t e s _
+  by_cases h : t = e <;> cases bs <;> simp [fren_spec, Fren.Core.sameBranches, h]
 
 impl duplicate_elements: lint::duplicate_elements for (n : Nat) {
   n_repeats := n,
@@ -648,16 +660,18 @@ def toConstraintKind : Fren.Core.ConstraintKind → lint.ConstraintKind
 
 -- Both front ends find the repeats with `repeatedConstraints`, and fix one
 -- where `duplicateConstraint` says.
-impl duplicate_constraint: lint::duplicate_constraint for (e l : Fren.Core.ConstraintKind) (et lt : lint.Operand) {
+-- The constraints of one component are in one scope `s`.
+impl duplicate_constraint: lint::duplicate_constraint for (e l : Fren.Core.ConstraintKind) (et lt : lint.Operand)
+    (s : Fren.FinSet String) {
   earlier := toConstraintKind e,
   later := toConstraintKind l,
-  earlier_text := et,
-  later_text := lt,
+  earlier_text := ⟨et, s⟩,
+  later_text := ⟨lt, s⟩,
   same? := decide (et = lt),
   fires? := (Fren.Core.duplicateConstraint e l (decide (et = lt))).1,
   fixed? := (Fren.Core.duplicateConstraint e l (decide (et = lt))).2,
 } by
-  intro e l et lt _
+  intro e l et lt s _
   by_cases h : et = lt <;> cases e <;> cases l <;> simp [fren_spec, toConstraintKind, Fren.Core.duplicateConstraint, h] <;> decide
 
 -- Both front ends find the characters with `invisibleFix?`, which reports
@@ -1593,42 +1607,63 @@ impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Boo
   intro c a n s _
   cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
 
-/-- The operator of the branches, as `lint::branches_sharing_code` tells
-them apart. -/
-def toSharedOp (op : String) : lint.SharedOp :=
-  if op == "*" then .Times else if op == "div" then .Div else if op == "mod" then .Mod else .OtherOp
+theorem op_of (op : String) : lang.operator (.Op op "") = op := by
+  simp [lang.operator, lang.Head.Op.x0, lang.Head.Op.x1]
 
 theorem sharingNonlinear (op : String) (left : Bool) (m x : List Fren.Core.Mention) :
-    Fren.Core.branchesSharingNonlinear op left m x = match toSharedOp op with
+    Fren.Core.branchesSharingNonlinear op left m x = match lint.shared_op (.Op op "") with
       | .Times => !Fren.Core.productAccepted m x
       | .Div | .Mod => left
       | .OtherOp => false := by
-  unfold Fren.Core.branchesSharingNonlinear toSharedOp
-  by_cases h1 : op = "*" <;> by_cases h2 : op = "div" <;> by_cases h3 : op = "mod" <;> simp_all
+  unfold Fren.Core.branchesSharingNonlinear lint.shared_op
+  rw [op_of]
+  simp only [Fren.Str.lit]
+  by_cases h1 : op = "*"
+  · subst h1; simp
+  by_cases h2 : op = "div"
+  · subst h2; simp
+  by_cases h3 : op = "mod"
+  · subst h3; simp
+  simp [h1, h2, h3]
 
--- For every two branches, by their operands as written and what the
--- operands mention: both front ends decide it with `branchesSharingAt?`,
--- which asks `productAccepted`, as `lang::linear_product` states.
-impl branches_sharing_code: lint::branches_sharing_code for (op : String) (o : Bool) (tl tr el er : lint.Operand)
-    (m x : List Fren.Core.Mention) {
-  op := toSharedOp op,
-  same_op? := o,
-  then_left := tl,
-  then_right := tr,
-  else_left := el,
-  else_right := er,
-  moved_mentioned := mentionSet m,
+-- For every two branches of one binary operator, by their operands as
+-- written in one scope `s` and what the operands mention. Both front ends
+-- decide it with `branchesSharingAt?`, which asks `productAccepted`, as
+-- `lang::linear_product` states, and drop every report of `opReports` over
+-- a pattern test that binds names (`keeps`), which `bs.isEmpty` is here.
+impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (op op' : String) (_hop : op ≠ "")
+    (tl tr el er : lint.Operand) (s : Fren.FinSet String) (c a b x : List Fren.Core.Mention) {
+  binders := Fren.FinSet.ofList bs,
+  then_head := .Op op "",
+  else_head := .Op op' "",
+  then_left := ⟨tl, s⟩,
+  then_right := ⟨tr, s⟩,
+  else_left := ⟨el, s⟩,
+  else_right := ⟨er, s⟩,
+  condition_mentioned := mentionSet c,
+  a_mentioned := mentionSet a,
+  b_mentioned := mentionSet b,
   shared_mentioned := mentionSet x,
+  op := lint.shared_op (.Op op ""),
+  same_op? := decide (op = op'),
   shared_left? := decide (tl = el),
   shared_right? := decide (tr = er),
-  fires? := Fren.Core.branchesSharingCode o (decide (tl = el)) (decide (tr = er))
-    (Fren.Core.branchesSharingNonlinear op (decide (tl = el)) m x),
+  moved_mentioned := mentionSet (c ++ a ++ b),
+  fires? := bs.isEmpty && Fren.Core.branchesSharingCode (op == op') (decide (tl = el)) (decide (tr = er))
+    (Fren.Core.branchesSharingNonlinear op (decide (tl = el)) (c ++ a ++ b) x),
 } by
-  intro op o tl tr el er m x _
-  refine ⟨mentionSet m, mentionSet x, Fren.Core.productAccepted m x, ?_⟩
+  intro bs op op' _hop tl tr el er s c a b x _
+  refine ⟨mentionSet (c ++ a ++ b), mentionSet x, Fren.Core.productAccepted (c ++ a ++ b) x, ?_⟩
   rw [sharingNonlinear]
-  cases toSharedOp op <;> cases m <;> cases x <;> by_cases hl : tl = el <;> by_cases hr : tr = er <;> cases o <;>
-    simp [fren_spec, Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet, hl, hr]
+  unfold lint.shared_op
+  simp only [fren_spec, Fren.Str.lit, lang.mentioned_by, lang.Head.Op.x0, lang.Head.Op.x1, reduceCtorEq,
+    lang.Head.Literal.x0, lang.Head.Bound.x0, lang.Head.Constant.x0, lang.Head.Variable.x0, lang.Head.Uninterpreted.x0,
+    or_self, if_false, ite_true]
+  rw [← mentionSet_append, ← mentionSet_append]
+  by_cases h1 : op = "*" <;> by_cases h2 : op = "div" <;> by_cases h3 : op = "mod" <;>
+    by_cases hl : tl = el <;> by_cases hr : tr = er <;> by_cases ho : op = op' <;> cases hb : bs <;>
+    simp_all [Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet_eq_empty, List.append_assoc]
+  all_goals by_cases hc : c = [] <;> by_cases ha : a = [] <;> by_cases hb : b = [] <;> simp_all
 
 impl needless_raw_string_hashes: lint::needless_raw_string_hashes for (h : Nat) (l : Int) {
   hashes := h,

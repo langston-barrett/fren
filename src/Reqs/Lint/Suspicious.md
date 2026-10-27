@@ -48,8 +48,8 @@ pub enum ConstraintKind { Assume, Ensure, Expect, Cover }
 pub comp duplicate_constraint {
     in earlier: ConstraintKind
     in later: ConstraintKind
-    in earlier_text: Operand  -- the earlier's expression, as written
-    in later_text: Operand    -- the later's
+    in earlier_text: Scoped  -- the earlier's expression, as written in its scope
+    in later_text: Scoped    -- the later's
 
     -- A cover goal is compared only with cover goals.
     assume covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)

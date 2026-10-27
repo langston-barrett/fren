@@ -2868,8 +2868,10 @@ def eqOpMsg (op : InfixOp) (v : EqOpValue) (a : String) : Msg :=
     notes := #["note: one of them is probably not the operand meant"] }
 
 /-- Whether `same_branches` fires on `if c then a else b`
-(`lint::same_branches`). -/
-def sameBranches (same : Bool) : Bool := same
+(`lint::same_branches`), from whether the condition's pattern tests bind
+names, which the `then` branch sees and the `else` branch does not
+(`lang::test_scope`), and whether the branches are written the same. -/
+def sameBranches (binds same : Bool) : Bool := !binds && same
 
 /-- The last lexeme of the text whose characters, reversed, are `rev`, after
 any whitespace, and the characters before it, reversed. -/

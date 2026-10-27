@@ -3237,9 +3237,9 @@ partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inEls
   -- pattern tests bind names, which the `then` branch sees and the `else`
   -- branch does not, so that the same text may mean different values
   -- (`lang::test_scope`).
-  if cx.noteIndexes && !(← chainBinds cx c) then
+  if cx.noteIndexes then
     let ta ← srcAt a.span
-    if Fren.Core.sameBranches (Fren.Core.writtenSame ta (← srcAt b.span)) then
+    if Fren.Core.sameBranches (← chainBinds cx c) (Fren.Core.writtenSame ta (← srcAt b.span)) then
       let .mk kind .. := a.boolNode
       lintFix .sameBranches span (Fren.Core.sameBranchesMsg ta kind.prec (← srcAt { start := 0, stop := span.start })
         (← srcAt { start := span.stop, stop := (← get).src.size }))

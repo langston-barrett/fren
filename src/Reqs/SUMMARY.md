@@ -56,6 +56,7 @@
     - [Records and functions](Lint/Pedantic/Records.md)
     - [Source text](Lint/Pedantic/Text.md)
     - [Comparisons](Lint/Pedantic/Comparisons.md)
+    - [Conditionals](Lint/Pedantic/Conditionals.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
 

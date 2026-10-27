@@ -269,7 +269,7 @@ A defined output is the layer `Definition(x)`, whose one part is its
 definition, so its value is its definition's. Where `constant_output`
 fires, that value is the same in every behaviour, by
 [`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where each
-layer of the definition is specified, as the [definedness
+layer of the definition that is evaluated is specified, as the [definedness
 check](../Check.md#definedness) ensures of a spec that passes its checks.
 Here `p` is the root layer of the definition in one behaviour and `q` the
 same layer, with the same parts' values, in any other:

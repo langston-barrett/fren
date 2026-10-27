@@ -1,8 +1,8 @@
 # Source text
 
 These lints of the `pedantic` group look at how a spec is written: the
-code points of its string literals, the `#`s of its raw string literals,
-and the commas of its lists. All are `allow` by default.
+code points of its string literals, and the commas of its lists. Both are
+`allow` by default.
 
 ## Unicode normalization
 
@@ -166,57 +166,4 @@ pub comp trailing_comma_fixed {
 
 refine trailing_comma_sound: trailing_comma_fixed refines trailing_comma_written
 refine trailing_comma_complete: trailing_comma_written refines trailing_comma_fixed
-```
-
-## Raw string literals
-
-`needless_raw_string_hashes` fires on a raw string
-[literal](../../Lang/Lexical.md#literals), `r#"..."#`, with more `#`s than it
-needs. A raw literal with `n` `#`s ends at the first `"` followed by `n`
-`#`s, so it needs one `#` more than the longest run of `#` directly after
-a `"` in its body, and none if its body has no `"`. The fix writes that
-many: `r#"a.*"#` becomes `r"a.*"`, and `r##"say "hi""##` becomes `r#"say
-"hi""#`. The body is the same, so the value is, and a literal has no
-guard of its own. Its level is the one in effect at the item the literal
-is in, as for [`invisible_characters`](../Suspicious/Literals.md#invisible-characters).
-`lint::needless_raw_string_hashes` states when it fires, and how many `#`s
-the fix writes:
-
-```fren
-pub comp needless_raw_string_hashes {
-    in hashes: Int       -- the `#`s around the literal
-    in longest: Int      -- the longest run of `#` after a `"` in its body, or `-1` if it has no `"`
-
-    -- The literal ends where its `#`s say: no `"` in its body is followed by as many.
-    assume counts: -1 <= longest < hashes
-    pub det out fires?
-    pub det out fewest: Int  -- the `#`s that the fix writes
-
-    ensure fewest_rule: fewest = longest + 1
-    ensure rule: fires? iff hashes > fewest
-
-    expect enough: fewest <= hashes
-    expect no_quote: when longest = -1, fewest = 0
-}
-```
-
-The fix is lexical, so the refinements check the examples above, whose
-values are constants:
-
-```fren
-set_option fren.lint.constant_output "allow" in
-set_option fren.lint.needless_raw_string_hashes "allow" in
-pub comp raw_hashes_written {
-    pub det out pattern: String := r#"a.*"#
-    pub det out quote: String := r##"say "hi""##
-}
-
-set_option fren.lint.constant_output "allow" in
-pub comp raw_hashes_fixed {
-    pub det out pattern: String := r"a.*"
-    pub det out quote: String := r#"say "hi""#
-}
-
-refine raw_hashes_sound: raw_hashes_fixed refines raw_hashes_written
-refine raw_hashes_complete: raw_hashes_written refines raw_hashes_fixed
 ```

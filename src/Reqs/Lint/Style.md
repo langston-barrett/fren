@@ -637,7 +637,7 @@ pub comp assertions_on_constants {
 
 What it fires on is the same in every behaviour, by
 [`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where each
-of its layers is specified, as the [definedness
+of its layers that is evaluated is specified, as the [definedness
 check](../Check.md#definedness) ensures of a spec that passes its checks.
 Here `p` is the root layer of the expression in one environment and `q` the
 same layer, with the same parts' values, in any other:

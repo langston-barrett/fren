@@ -35,8 +35,8 @@ pub comp eq_op {
     use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Zero}
     use self::InfixOp::{Add, Concat, Eq, Ge, Gt, Iff, In, Join, Le, Lt, Minus, Mul, Ne, Sub, Subset}
     in op: InfixOp
-    in left: Operand     -- the left operand, as written
-    in right: Operand    -- the right operand
+    in left: Scoped      -- the left operand, as written in its scope
+    in right: Scoped     -- the right operand
     pub det out same? := left = right
     pub det out fires?
     pub out value: EqOpValue  -- what the expression is, where it fires
@@ -55,7 +55,7 @@ pub comp eq_op {
 ```
 
 The message is right because the two operands have the same value: they
-are written the same, in one scope and environment, so by
+are written the same, in the same scope, and in one environment, so by
 [`written_same`](../Meaning.md#expressions-as-written) their root layers
 have the same head and parts' values, and so the same value, specified or
 not. Here `p` and `q` are the operands' root layers:
@@ -83,7 +83,7 @@ pub comp eq_op_values {
     in a?
     in s: Set(Int)
 
-    inst e: eq_op { op, left := Operand::P, right := Operand::P }
+    inst e: eq_op { op, left := Scoped { text := Operand::P, scope := {} }, right := Scoped { text := Operand::P, scope := {} } }
 
     expect said: when e.fires?, match e.value {
         AlwaysTrue => (op = Eq and x = x) or (op = Le and x <= x) or (op = Ge and x >= x)
@@ -107,8 +107,8 @@ consequent was meant. `lint::eq_op_conditional` states this; that `C` and
 pub comp eq_op_conditional {
     use self::EqOpValue::AlwaysTrue
     in unless?           -- `unless`, rather than `when`
-    in condition: Operand  -- the condition, as written
-    in body: Operand       -- the body
+    in condition: Scoped  -- the condition, as written in its scope
+    in body: Scoped       -- the body
     pub det out fires?
     pub out value: EqOpValue  -- what the expression is, where it fires
 
@@ -121,7 +121,11 @@ pub comp eq_op_conditional_values {
     in unless?
     in a?
 
-    inst e: eq_op_conditional { unless?, condition := Operand::P, body := Operand::P }
+    inst e: eq_op_conditional {
+        unless?,
+        condition := Scoped { text := Operand::P, scope := {} },
+        body := Scoped { text := Operand::P, scope := {} },
+    }
 
     -- What the message says `when a?, a?` and `unless a?, a?` are.
     expect said: when e.fires?, if unless? then e.value = EqOpValue::Operand and ((unless a?, a?) iff a?)
@@ -307,15 +311,25 @@ both defined exactly when `a` is defined under the guard of the
 conditional, which is `a`'s guard after the fix, and removing `c` only
 removes something that is evaluated. A `match` whose arms are all written
 the same is left to other lints. `lint::same_branches` states when it
-fires, from the branches as [written](../Meaning.md#expressions-as-written):
+fires, from the branches as [written](../Meaning.md#expressions-as-written)
+in their scopes. It does not fire where the condition's pattern tests bind
+names, which the `then` branch sees and the `else` branch does not (see
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests)): in `if r
+is Reply::Value(v!) then v else v`, the same text means the payload in one
+branch and the variable `v` in the other, so the fix would change the
+value. It leaves such a conditional even where the branches mention none
+of those names, rather than compare what they mention:
 
 ```fren
 pub comp same_branches {
-    in then_branch: Operand
-    in else_branch: Operand
+    in binders: Set(lang::Id)  -- the binders of the condition's pattern tests
+    in then_branch: Scoped     -- the branches, as written in their scopes
+    in else_branch: Scoped
     pub det out fires?
 
-    ensure rule: fires? iff then_branch = else_branch
+    ensure rule: fires? iff (binders = {} and then_branch = else_branch)
+
+    expect no_binders: when fires?, binders = {} and then_branch.scope = else_branch.scope
 }
 ```
 

@@ -27,7 +27,7 @@ use view::Severity
 | `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a component whose members are out of order, such as an `in` after an `ensure` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
 | `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `ensure` or `expect` that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
-| `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic.md#branches-sharing-code)) |
+| `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic/Conditionals.md#branches-sharing-code)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `case_split_guarantees` | `F0729` | `pedantic` | `allow` | two or more guarantees `when T, y = e` of one output, whose tests are of which variant one scrutinee is (see [Variant tests](Lint/Pedantic/Matches.md#variant-tests)) |
 | `chainable_comparison` | `F0804` | `style` | `warn` | two adjacent conjuncts of an `and` that one chained comparison writes, such as `lo <= x and x < hi` (see [Chained comparisons](Lint/Style/Comparisons.md#chained-comparisons)) |
@@ -94,7 +94,7 @@ use view::Severity
 | `modulo_one` | `F0816` | `suspicious` | `warn` | a remainder by `1` or `-1`, which is always `0` (see [Integers](Lint/Suspicious/Integers.md#remainders-and-bounds)) |
 | `needless_bool_assign` | `F0759` | `complexity` | `warn` | `if C then X else not X`, or `if C then not X else X` (see [Conditionals of `Bool`s](Lint/Complexity.md#conditionals-of-bools)) |
 | `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity/Matches.md#matches-that-give-back-the-scrutinee)) |
-| `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic/Text.md#raw-string-literals)) |
+| `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic.md#raw-string-literals)) |
 | `needless_raw_strings` | `F0782` | `restriction` | `allow` | a raw string literal with no `\` and no `"` (see [Literals](Lint/Restriction.md#literals)) |
 | `needless_update` | `F0819` | `complexity` | `warn` | a record update that gives every field (see [Needless updates](Lint/Complexity/Updates.md#needless-updates)) |
 | `neg_multiply` | `F0742` | `style` | `warn` | a product with `-1`, `x * -1` or `-1 * x` (see [Negations](Lint/Style.md#negations)) |
