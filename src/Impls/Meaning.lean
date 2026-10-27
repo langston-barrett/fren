@@ -420,4 +420,10 @@ impl node: lang::node for (h : Fren.Core.Meaning.Head) (e : Fren.Core.Meaning.En
     simpa [Meaning.part_toValues, toGuardedOperand] using
       Meaning.guard_rule .elseBranch (lang.part (Meaning.toValues l) 0)
 
+-- The `impl`s above prove the spec of a layer consistent with
+-- `Fren.Core.Meaning`, which no front end evaluates through yet: that Fren
+-- follows the model is trusted until they do.
+trusted lang::node: "proved of `Fren.Core.Meaning` by `impl node`, but no front end evaluates through `Fren.Core.Meaning` yet, so that Fren's evaluation follows this model is trusted until both do (#281)"
+trusted lang::choice_arms: "proved of `Fren.Core.Meaning` by `impl choice_arms`, but no front end evaluates through `Fren.Core.Meaning` yet, so that Fren's evaluation of a choice follows this model is trusted until both do (#281)"
+
 end Fren.Impls

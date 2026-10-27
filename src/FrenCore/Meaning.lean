@@ -10,8 +10,9 @@ The meaning of one layer of an expression, as total functions: a value
 (`Value`), a layer (`Head`), an environment (`Env`), and `step`, the value
 of a layer from its environment and its parts' values. `Expr.eval` folds
 `step` over a tree of layers, the start of an evaluator that both front
-ends can share. `Impls/Lang` interprets the core's abstract type and
-functions with these definitions, and proves `lang::node` of them.
+ends can share. `Impls/Meaning` interprets the core's abstract type and
+functions with these definitions, and proves `lang::node` of them. No front
+end evaluates through it yet.
 
 The values that the spec fixes (`fixedValue?`) are given for some layers
 and left unspecified for the others, as `lang::fixed_specified?` allows:
@@ -126,10 +127,14 @@ def connectiveValue (o : String) (vs : List Value) : Value :=
 
 The static part of a `match`, `Op("match", s)`, is its arms' patterns, and
 that of a pattern test, `Op("is", s)`, its pattern, written as Fren writes
-patterns, with a binder written `_`, a variant by the name that its
-construction gives it, and the arms' patterns separated by `;`:
-`Some(_); None`. A pattern that `Pattern.decode` does not read, such as a
-range with a constant as its bound, matches nothing. -/
+patterns, with a binder written `_`, a variant by its qualified path, as
+its construction names it, and the arms' patterns separated by `;`:
+`Option::Some(_); Option::None` (`Reqs/Lang/Patterns#patterns-as-text`).
+`Pattern.decode` reads only `_`, `true` and `false`, integer literals,
+ranges with literal bounds, string literals without escapes, qualified
+variants and or-patterns. Any other text, such as a name of one segment,
+which may be a constant, does not decode, and then no arm matches, so the
+choice is unspecified rather than wrong. -/
 
 inductive Pattern where
   /-- `_` or a binder: any value. -/
@@ -182,11 +187,12 @@ def readInt (cs : List Char) : Option (Int × List Char) :=
   if digits.isEmpty then none
   else (String.ofList digits).toNat?.map fun n => (if neg then -(n : Int) else n, rest.drop digits.length)
 
-/-- A string literal's contents and what follows it, after its opening `"`. -/
+/-- A string literal's contents and what follows it, after its opening `"`.
+A literal with an escape does not decode: its text is not its value. -/
 def readString : List Char → List Char → Option (String × List Char)
   | [], _ => none
   | '"' :: rest, acc => some (String.ofList acc.reverse, rest)
-  | '\\' :: c :: rest, acc => readString rest (c :: acc)
+  | '\\' :: _, _ => none
   | c :: rest, acc => readString rest (c :: acc)
 
 /-- The upper bound of a range that starts at `lo`, after its `..`. -/
@@ -238,6 +244,9 @@ def readPrimary : Nat → List Char → Option (Pattern × List Char)
         else if s == "_" then some (.wild, rest)
         else if s == "true" then some (.lit (.b true), rest)
         else if s == "false" then some (.lit (.b false), rest)
+        -- A name of one segment may be a binder or a constant, whose value
+        -- needs the spec's declarations.
+        else if (s.splitOn "::").length ≤ 1 then none
         else match skipWs rest with
           | '(' :: rest => do
             let (ps, rest) ← readArgs fuel rest
@@ -273,6 +282,13 @@ not write patterns as above. -/
 def decode (s : String) : Option (List Pattern) := readList (s.length + 1) s.toList
 
 end Pattern
+
+-- A name of one segment may be a constant: with `const ZERO: Int := 0`,
+-- `match x { ZERO => 1, _ => 2 }` at `x = 0` is unspecified here, not `2`.
+#guard (Pattern.decode "ZERO; _").isNone
+-- An escape is not its text: `"\n"` does not decode, so it matches no `"n"`.
+#guard (Pattern.decode "\"\\n\"").isNone
+#guard (Pattern.decode "Option::Some(_); Option::None | 0..=5; \"a;b\"").isSome
 
 /-! ## Arms -/
 
@@ -700,5 +716,10 @@ decreasing_by
   all_goals simp_wf
   all_goals have := List.sizeOf_lt_of_mem hp'
   all_goals omega
+
+-- The choices whose patterns do not decode are unspecified, not wrong.
+#guard specified (.op "match" "ZERO; _") [.i 0, .b true, .i 1, .b true, .i 2] == false
+#guard armMatches (.op "match" "\"\\n\"") 0 (.s "n") == false
+#guard armMatches (.op "match" "Option::Some(_); Option::None") 1 (.c "Option::None" .nil)
 
 end Fren.Core.Meaning
