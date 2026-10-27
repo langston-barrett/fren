@@ -1,8 +1,8 @@
-error[F0210]: expected a component, but `E` is an enum
- --> test/cli/names/f0210_component.fren:3:18
+error[F0210]: expected a procedure, but `E` is an enum
+ --> test/cli/names/f0210_component.fren:3:22
   |
-3 | comp c { inst s: E {} }
-  |                  ^ not a component
+3 | proc c() { call s := E() }
+  |                      ^ not a procedure
 
 error: could not check due to previous errors
 

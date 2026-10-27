@@ -5,26 +5,19 @@
 -- binding.
 mod exits
 
-pub comp exit_status {
-    in ran?
-    pub out code: Int
+pub proc exit_status(ran?): (code: Int) {
     ensure not_run: code = 2 iff not ran?
     ensure documented: code is 0..=3
 }
 
-pub comp fmt_exit {
-    in all_parsed?
-    in changed?
-    pub out code: Int
+pub proc fmt_exit(all_parsed?, changed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
 }
 
 refine fmt_exit_status: fmt_exit refines exit_status { ran? := all_parsed? }
 
 -- False: `bad_exit` exits with 4 when everything parsed.
-pub comp bad_exit {
-    in all_parsed?
-    pub out code: Int
+pub proc bad_exit(all_parsed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else 4)
 }
 
@@ -35,19 +28,12 @@ pub enum Level { Allow, Warn, Forbid }
 use self::Level::Forbid
 
 -- The abstract view: a flag, rather than a level.
-pub comp forbidding {
-    in forbidden?
-    in count: Int
+pub proc forbidding(forbidden?, count: Int): (stops?) {
     assume some: count > 0
-    pub out stops?
     ensure r: stops? iff forbidden?
 }
 
-pub comp stops {
-    in level: Level
-    in count: Int
-    pub out halted?
-    pub det out failures: Int
+pub proc stops(level: Level, count: Int): (halted?, det failures: Int) {
     ensure r: halted? iff level = Forbid
     ensure f: failures = (if level = Forbid then count else 0)
 }

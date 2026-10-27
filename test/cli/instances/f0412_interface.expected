@@ -4,7 +4,7 @@ error[F0412]: `precise` cannot refine `rough`: it has no variable `z`
 4 | refine fits: precise refines rough
   |                              ^^^^^ `z` does not match
   |
-  = note: each input of `rough` must be an input of `precise`, and each output a public output, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and an input an `Int` for a `Nat`
+  = note: each parameter of `rough` must be a parameter of `precise`, and each output a result, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and a parameter an `Int` for a `Nat`
   = help: or bind it to an expression over the variables of `precise`, as in `{ z := ... }`
 
 error: could not check due to previous errors

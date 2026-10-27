@@ -1,7 +1,7 @@
 warning[F0819]: this update gives every field of `Point`
-  --> test/cli/fix/updates.fren:18:21
+  --> test/cli/fix/updates.fren:10:21
    |
-18 |     ensure r4: q4 = { p with x := n, y := p.y, z := p.z }
+10 |     ensure r4: q4 = { p with x := n, y := p.y, z := p.z }
    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ reads nothing from `p`
    |
    = help: write a record literal, `Point { ... }`, with the same fields
@@ -9,16 +9,16 @@ warning[F0819]: this update gives every field of `Point`
    = help: to allow it, `set_option fren.lint.needless_update "allow"`
 
 warning[F0819]: this update gives every field of `Point`
-  --> test/cli/fix/updates.fren:19:21
+  --> test/cli/fix/updates.fren:11:21
    |
-19 |     ensure r5: q5 = { p with x := p.x, y := p.y, z := n }
+11 |     ensure r5: q5 = { p with x := p.x, y := p.y, z := n }
    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ reads nothing from `p`
    |
    = help: write a record literal, `Point { ... }`, with the same fields
 
 --- test/cli/fix/updates.fren
 +++ test/cli/fix/updates.fren
-@@ -15,5 +15,5 @@
+@@ -7,5 +7,5 @@
 -    ensure r1: q1 = Point { x := n, y := p.y, z := p.z }
 -    ensure r2: q2 = Point { x := p.x, y := n + 1, z := p.z }
 -    ensure r3: q3 = { p with x := p.x, y := n }

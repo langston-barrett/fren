@@ -1,5 +1,5 @@
 -- A range with `..` needs a lower bound.
-comp open_exclusive { in n: Int pub out z: Int ensure q: z = match n { ..9 => 0, _ => 1 } }
+proc open_exclusive(n: Int): (z: Int) { ensure q: z = match n { ..9 => 0, _ => 1 } }
 --~^[cli] error: a range with `..` needs a lower bound
 --~^^[hosted] error: unexpected token
 --@ exit: 2

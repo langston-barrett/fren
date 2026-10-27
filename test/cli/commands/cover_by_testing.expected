@@ -1,7 +1,7 @@
 note: cover goal `heater::overheat` is met
- --> test/cli/commands/cover_by_testing.fren:9:11
+ --> test/cli/commands/cover_by_testing.fren:6:11
   |
-9 |     cover overheat: temp > 100 and alarm?
+6 |     cover overheat: temp > 100 and alarm?
   |           ^^^^^^^^ met
   |
   = witness: temp = 101, alarm? = true

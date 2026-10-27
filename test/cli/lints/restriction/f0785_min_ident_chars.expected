@@ -1,27 +1,27 @@
 warning[F0785]: variable `s` has a name of one character
- --> test/cli/lints/restriction/f0785_min_ident_chars.fren:8:8
+ --> test/cli/lints/restriction/f0785_min_ident_chars.fren:7:11
   |
-8 |     in s: Shape
-  |        ^ too short to say what it is
+7 | proc area(s: Shape): (n: Int) {
+  |           ^ too short to say what it is
   |
   = help: give it a name that says what it is
   = note: `min_ident_chars` is set to `warn`
 
 warning[F0785]: variable `n` has a name of one character
- --> test/cli/lints/restriction/f0785_min_ident_chars.fren:9:13
+ --> test/cli/lints/restriction/f0785_min_ident_chars.fren:7:23
   |
-9 |     pub out n: Int
-  |             ^ too short to say what it is
+7 | proc area(s: Shape): (n: Int) {
+  |                       ^ too short to say what it is
   |
   = help: give it a name that says what it is
 
 warning[F0785]: binder `r` has a name of one character
-  --> test/cli/lints/restriction/f0785_min_ident_chars.fren:11:46
-   |
-11 |     ensure rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
-   |                                              ^ too short to say what it is
-   |
-   = help: give it a name that says what it is
+ --> test/cli/lints/restriction/f0785_min_ident_chars.fren:8:46
+  |
+8 |     ensure rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
+  |                                              ^ too short to say what it is
+  |
+  = help: give it a name that says what it is
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
 

@@ -8,10 +8,7 @@ enum Mode { Off, On(Int) }
 
 -- The issue's example: `x > 0` and `_` of `Mode::On` overlap where
 -- `x > 0`.
-comp overlapping {
-    in m: Mode
-    pub out y: Int
-
+proc overlapping(m: Mode): (y: Int) {
     ensure r: y = table m {
         Mode::Off => 0,
         Mode::On(x) if x > 0 => x,
@@ -20,10 +17,7 @@ comp overlapping {
 }
 
 -- Two guards that both hold at 0, as `>` and `>=` would in a `match`.
-comp both_guarded {
-    in n: Int
-    pub out y: Int
-
+proc both_guarded(n: Int): (y: Int) {
     ensure r: y = table n {
         k if k > 0 => 1,
         k if k >= 0 => 2,   --~ error: arms 1 and 2 of a table in `both_guarded::r` may both be taken
@@ -32,19 +26,13 @@ comp both_guarded {
 }
 
 -- Not complete: no arm is taken at 0.
-comp incomplete {
-    in n: Int
-    pub out s: Int
-
+proc incomplete(n: Int): (s: Int) {
     ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }   --~ error: a table in `incomplete::r` may have no arm that is taken
 }
 
 -- An arm that the hypotheses rule out is never taken.
-comp ruled_out {
-    in n: Int
-
+proc ruled_out(n: Int): (s: Int) {
     assume small: n < 5
-    pub out s: Int
 
     ensure r: s = table n { k if k > 10 => 2, _ => 1 }   --~ error: arm 1 of a table in `ruled_out::r` is never taken
 }
@@ -52,10 +40,7 @@ comp ruled_out {
 -- Disjointness leaves out the constraint that the table is in, as
 -- reachability does: `r` rules out `y > 0`, where both guards hold, only
 -- through the table's own value.
-comp enclosing {
-    in n: Int
-    pub out y: Int
-
+proc enclosing(n: Int): (y: Int) {
     ensure r: y = table n {
         k if y > 0 => 0,
         k if y >= 0 => 0,   --~ error: arms 1 and 2 of a table in `enclosing::r` may both be taken
@@ -64,22 +49,15 @@ comp enclosing {
 }
 
 -- Other hypotheses do make arms disjoint: these overlap only at 0.
-comp hypotheses {
-    in n: Int
-
+proc hypotheses(n: Int): (s: Int) {
     assume nonzero: n != 0
-    pub out s: Int
 
     ensure r: s = table n { k if k >= 0 => 1, k if k <= 0 => 2 }
 }
 
 -- Two arms overlap only where their guards' indexes are in range: the
 -- first guard rules out the empty sequence, which the second reads.
-comp defined {
-    in q: Seq<Int>
-    in m: Mode
-    pub out s: Int
-
+proc defined(q: Seq<Int>, m: Mode): (s: Int) {
     ensure r: s = table m {
         Mode::On(_) if q = [] => 0,
         Mode::On(_) if q != [] and q[0] > 0 => 1,
@@ -89,29 +67,18 @@ comp defined {
 
 -- The order of the arms still matters to the definedness of their guards'
 -- indexes: `q[0]` is defined after `q = []` fails, but not before it.
-comp order_defined {
-    in q: Seq<Int>
-    in m: Mode
-    pub out s: Int
-
+proc order_defined(q: Seq<Int>, m: Mode): (s: Int) {
     ensure r: s = table m { Mode::On(_) if q = [] => 0, Mode::On(_) if q[0] > 0 => 1, _ => 2 }
 }
 
-comp order_undefined {
-    in q: Seq<Int>
-    in m: Mode
-    pub out s: Int
-
+proc order_undefined(q: Seq<Int>, m: Mode): (s: Int) {
     ensure r: s = table m { Mode::On(_) if q[0] > 0 => 1, Mode::On(_) if q = [] => 0, _ => 2 }   --~ error: an index of `order_undefined::r` may be out of range
 }
 
 -- Under a quantifier, each instance's arms are asked about.
 enum Light { Red, Amber, Green }
 
-comp quantified {
-    in n: Int
-    pub out b?
-
+proc quantified(n: Int): (b?) {
     ensure r: b? iff (forall (l: Light), table l { Light::Red if n > 0 => true, Light::Red if n >= 0 => false, _ => true })
     --~^ error: arms 1 and 2 of a table in `quantified::r` may both be taken
 }

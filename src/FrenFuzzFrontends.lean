@@ -349,7 +349,10 @@ def genWide (avoidKnown : Bool := false) : R String := do
   -- Each earlier comp: its name, inputs, and visible variables.
   let mut comps : Array (String × Array (String × WTy) × Array (String × WTy)) := #[]
   for c in [0:(← below 2) + 1] do
-    out := out ++ s!"\npub comp c{c} \{\n"
+    -- Its parameters, results and block, one to a line.
+    let mut params := ""
+    let mut results := ""
+    let mut body := ""
     let mut vars : Array (String × WTy × Bool) := #[]
     let mut shown : Array (String × WTy) := #[]
     for k in [0:(← below 4) + 1] do
@@ -357,14 +360,14 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let n := varName t true k
       vars := vars.push (n, t, true)
       shown := shown.push (n, t)
-      out := out ++ s!"    in {n}{if t == .bool then "" else s!": {t.name relElem}"}\n"
-    -- An instance of an earlier comp, its inputs bound to expressions of
-    -- this one's.
+      params := params ++ s!"    {n}{if t == .bool then "" else s!": {t.name relElem}"},\n"
+    -- A call of an earlier procedure, with expressions of this one's
+    -- parameters as its arguments.
     if !comps.isEmpty && (← chance 50) then
       let (d, ins, vis) ← pick comps
       let isc := { sc with vars, onlyIns := true }
-      let bs ← ins.mapM fun (x, t) => do return s!"{x} := {← gen isc t 1}"
-      out := out ++ s!"    inst w: {d} \{ {", ".intercalate bs.toList} }\n"
+      let args ← ins.mapM fun (_, t) => gen isc t 1
+      body := body ++ s!"    call w := {d}({", ".intercalate args.toList})\n"
       vars := vars ++ vis.map fun (x, t) => (s!"w.{x}", t, false)
     -- Outputs of `P` more often, for clashes of variants.
     let outTys := #[WTy.int, .bool] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms ++ pays ++ pays
@@ -377,8 +380,10 @@ def genWide (avoidKnown : Bool := false) : R String := do
       else
         let isPub ← chance 80
         if isPub then shown := shown.push (n, t)
-        let mods := s!"{if isPub then "pub " else ""}{if ← chance 40 then "det " else ""}out"
-        out := out ++ s!"    {mods} {n}{if t == .bool then "" else s!": {t.name relElem}"}\n"
+        let det := if ← chance 40 then "det " else ""
+        let decl := s!"{n}{if t == .bool then "" else s!": {t.name relElem}"}"
+        if isPub then results := results ++ s!"    {det}{decl},\n"
+        else body := body ++ s!"    {det}exists {decl}\n"
       vars := vars.push (n, t, false)
     let csc := { sc with vars }
     -- A definition may mention any variable, so definitions may form a
@@ -387,23 +392,28 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let others := if ← chance 85 then vars.filter (fun v => v.2.2 || !defs.any (·.1 == v.1)) else vars.filter (·.1 != n)
       let e ← gen { csc with vars := others } t 2
       let isPub ← chance 60
-      if isPub then shown := shown.push (n, t)
-      out := out ++ s!"    {if isPub then "pub " else ""}out {n}{if t == .bool then "" else s!": {t.name relElem}"} := {e}\n"
+      let decl := s!"{n}{if t == .bool then "" else s!": {t.name relElem}"}"
+      if isPub then
+        shown := shown.push (n, t)
+        results := results ++ s!"    {decl},\n"
+        body := body ++ s!"    out {n} := {e}\n"
+      else body := body ++ s!"    let {decl} := {e}\n"
     for k in [0:← below 2] do
-      out := out ++ s!"    assume a{k}: {← gen { csc with onlyIns := true } .bool 2}\n"
+      body := body ++ s!"    assume a{k}: {← gen { csc with onlyIns := true } .bool 2}\n"
     for k in [0:(← below 3) + 1] do
-      out := out ++ s!"    ensure q{k}: {← gen csc .bool 3}\n"
+      body := body ++ s!"    ensure q{k}: {← gen csc .bool 3}\n"
     for k in [0:← below 3] do
       let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
       let e ← if ← chance 50 then pure s!"when {← gen csc .bool 1}, {← gen csc .bool 2}" else gen csc .bool 3
-      out := out ++ s!"    {tested}expect x{k}: {e}\n"
+      body := body ++ s!"    {tested}expect x{k}: {e}\n"
     for k in [0:← below 2] do
       let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
-      out := out ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
-    out := out ++ "}\n"
+      body := body ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
+    let resultList := if results.isEmpty then "" else s!": (\n{results})"
+    out := out ++ s!"\npub proc c{c}(\n{params}){resultList} \{\n{body}}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
   -- Only variables have the type `P`, each declared on a line of its own.
-  return if genericPay then out.replace ": P\n" ": P<Int>\n" else out
+  return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 
 end Wide
 

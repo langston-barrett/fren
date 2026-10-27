@@ -1,8 +1,5 @@
 -- Two rows of a table that may both hold.
-comp grade {
-    in score: Int
-    pub out pass?
-
+proc grade(score: Int): (pass?) {
     ensure r: pass? iff table {
         | score >= 50 => true,
         | score >= 0 => false,

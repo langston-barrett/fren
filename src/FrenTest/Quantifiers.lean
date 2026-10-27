@@ -12,12 +12,7 @@ enum Method { Len, Card, Rev }
 
 struct Pair { a?, b? }
 
-comp c {
-  in x: Method
-  pub out all_other?
-  pub out some_pair?
-  pub out nested?
-
+proc c(x: Method): (all_other?, some_pair?, nested?) {
   ensure all_other: all_other? iff (forall (m: Method), m != x)
   ensure some_pair: some_pair? iff (exists (p: Pair), p.a? and not p.b?)
   ensure nested: nested? iff (forall (a? b?: Bool), a? or b?)

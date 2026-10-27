@@ -2,10 +2,7 @@
 -- A cover goal kills the mutants that rule its scenario out, such as
 -- `temp > 100` changed to `temp > 101`, which no expectation notices, and
 -- the expectations kill the others: every mutant is killed.
-comp heater {
-    in temp: Int
-    pub out alarm?
-
+proc heater(temp: Int): (alarm?) {
     ensure r: alarm? iff temp > 100
 
     expect hot: when temp > 200, alarm?

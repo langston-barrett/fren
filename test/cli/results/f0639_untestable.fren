@@ -5,18 +5,12 @@
 -- quantifier has one, are.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-comp unguarded {
-    in s: Set<Int>
-    pub out pos?
-
+proc unguarded(s: Set<Int>): (pos?) {
     ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
 }
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-comp guarded {
-    in s: Set<Int>
-    pub out pos?
-
+proc guarded(s: Set<Int>): (pos?) {
     ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
 }

@@ -5,11 +5,7 @@
 pub enum Reply { Empty, Value(Int), Pair(Int, Int) }
 
 -- `when x is P(d), D` means `match x { P(d) => D, _ => true }`.
-comp when_body {
-    in r: Reply
-    in limit: Int
-    pub det out bounded?
-
+proc when_body(r: Reply, limit: Int): (det bounded?) {
     ensure rule: bounded? iff (when r is Reply::Value(v), v <= limit)
 
     expect as_match: bounded? iff match r { Reply::Value(v) => v <= limit, _ => true }
@@ -19,12 +15,7 @@ comp when_body {
 
 -- `x is P(d) and E` means `match x { P(d) => E, _ => false }`, and the names
 -- of each test are in scope in the later operands of its chain.
-comp and_chain {
-    in r: Reply
-    in s: Reply
-    pub det out increasing?
-    pub det out big?
-
+proc and_chain(r: Reply, s: Reply): (det increasing?, det big?) {
     ensure increasing: increasing? iff r is Reply::Value(a) and s is Reply::Value(b) and a < b
     ensure big: big? iff (r is Reply::Pair(x, y) and x + y > 10) or r = Reply::Empty
 
@@ -38,10 +29,7 @@ comp and_chain {
 }
 
 -- `if x is P(d) then e1 else e2`: the names are in scope in `e1` only.
-comp if_branch {
-    in r: Reply
-    pub det out n: Int
-
+proc if_branch(r: Reply): (det n: Int) {
     ensure rule: n = (if r is Reply::Value(v) and v > 0 then v else 0)
 
     expect non_negative: n >= 0
@@ -49,11 +37,7 @@ comp if_branch {
 }
 
 -- Nested conditions, and a binder that shadows the input `v` with `!`.
-comp nested {
-    in r: Reply
-    in v: Int
-    pub out w: Int
-
+proc nested(r: Reply, v: Int): (w: Int) {
     ensure rule: when r is Reply::Value(v!), when v > 0, w = v
     ensure other: unless r is Reply::Value(_), w = v
 

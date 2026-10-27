@@ -1,13 +1,13 @@
 error[F0105]: `!` is not an operator in Fren
- --> test/cli/syntax/f0105_bang.fren:2:44
+ --> test/cli/syntax/f0105_bang.fren:2:37
   |
-2 | comp c { in a? pub out d? ensure r: d? iff !a? }
-  |                                            ^ not a Fren operator
+2 | proc c(a?): (d?) { ensure r: d? iff !a? }
+  |                                     ^ not a Fren operator
   |
 help: use `not` for negation
   |
-2 - comp c { in a? pub out d? ensure r: d? iff !a? }
-2 + comp c { in a? pub out d? ensure r: d? iff not a? }
+2 - proc c(a?): (d?) { ensure r: d? iff !a? }
+2 + proc c(a?): (d?) { ensure r: d? iff not a? }
   |
 
 error: could not check due to previous errors

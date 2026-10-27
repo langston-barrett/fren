@@ -6,29 +6,25 @@ set_option fren.lint.dead_code "allow"
 enum Mode { Off, Heat, Cool }
 
 -- Not exhaustive even when the guard is ignored.
-comp missing { in m: Mode in ok? pub out y: Int ensure r: y = match m { Mode::Off if ok? => 0, Mode::Heat => 1 } }
+proc missing(m: Mode, ok?): (y: Int) { ensure r: y = match m { Mode::Off if ok? => 0, Mode::Heat => 1 } }
 --~^ error: non-exhaustive match: `Mode::Cool` not covered
 -- An arm without a guard before it covers the arm, guard or not.
-comp covered { in m: Mode in ok? pub out y: Int ensure r: y = match m { Mode::Off => 0, Mode::Off if ok? => 1, _ => 2 } }
+proc covered(m: Mode, ok?): (y: Int) { ensure r: y = match m { Mode::Off => 0, Mode::Off if ok? => 1, _ => 2 } }
 --~^ error: unreachable arm
 -- An arm with a guard hides nothing: `_` after `_ if ok?` is reachable,
 -- and so is `Mode::Off` after `Mode::Off if ok?`.
-comp hides_nothing {
-    in m: Mode
-    in ok?
-    pub out y: Int
-
+proc hides_nothing(m: Mode, ok?): (y: Int) {
     ensure r: y = match m { Mode::Off if ok? => 0, Mode::Off => 1, _ if ok? => 2, _ => 3 }
 }
 -- The note names only the arms without guards.
-comp after_wild { in m: Mode in ok? pub out y: Int ensure r: y = match m { _ if ok? => 0, _ => 1, Mode::Off => 2 } }
+proc after_wild(m: Mode, ok?): (y: Int) { ensure r: y = match m { _ if ok? => 0, _ => 1, Mode::Off => 2 } }
 --~^ error: unreachable arm
 -- A guard is a `Bool`.
-comp not_bool { in x: Int pub out y: Int ensure r: y = match x { n if n => 1, _ => 0 } }
+proc not_bool(x: Int): (y: Int) { ensure r: y = match x { n if n => 1, _ => 0 } }
 --~^ error: type mismatch: expected `Bool`, found `Int`
 -- A guard sees its arm's binders, and a body sees them too, but not the
 -- binders of another arm.
 enum Shape { Circle(Int), Empty }
-comp other_arm { in s: Shape pub out y: Int ensure r: y = match s { Shape::Circle(r) if r > 0 => r, _ if r > 0 => 1, _ => 0 } }
+proc other_arm(s: Shape): (y: Int) { ensure r: y = match s { Shape::Circle(r) if r > 0 => r, _ if r > 0 => 1, _ => 0 } }
 --~^ error: cannot find `r` in this scope
 --@ exit: 2

@@ -8,12 +8,13 @@ pub struct Pair(A, B) { fst: A, snd: B }
 
 fn size(T)(o: Option(T)): Int := if o = Option::None then 0 else 1
 
-comp c {
-    in x: Option(Set(Int))
-    in p: Pair(Int, Option(Rel(Int, Bool)))
-    in s: Option(String is "a\"b" | r#"c"d"#)
-    in q: Seq(Option( -- a comment
-        Int))
-    pub out y: Int := size(x) + size(p.snd) + size(s) + q.len
+proc c(
+    x: Option(Set(Int)),
+    p: Pair(Int, Option(Rel(Int, Bool))),
+    s: Option(String is "a\"b" | r#"c"d"#),
+    q: Seq(Option( -- a comment
+        Int)),
+): (y: Int) {
+    out y := size(x) + size(p.snd) + size(s) + q.len
     ensure positive: (((y > 0)))
 }

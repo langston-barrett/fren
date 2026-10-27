@@ -1,4 +1,4 @@
 --@ args: fmt --check
 -- A chained comparison that the grammar does not have does not parse, so
 -- the file is not formatted.
-comp c { in x: Int in y: Int pub out ok? ensure r: ok? iff 0 < x > y }
+proc c(x: Int, y: Int): (ok?) { ensure r: ok? iff 0 < x > y }

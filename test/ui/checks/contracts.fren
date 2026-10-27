@@ -7,22 +7,15 @@ set_option fren.lint.dead_code "allow"
 fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
-comp unguarded {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc unguarded(q: Seq<Int>): (y: Int) {
     ensure r: y = nth(q, 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded::r`
 }
 
 -- An assumption's application is checked under the other assumptions.
-comp assumed {
-    in q: Seq<Int>
-    in i: Int
-
+proc assumed(q: Seq<Int>, i: Int): (y: Int) {
     assume valid: 0 <= i < q.len
     assume positive: nth(q, i) > 0
     assume first: nth(q, 1) > 0   --~ error: the precondition `in_range` of `nth` may not hold at this application in `assumed::first`
-    pub out y: Int
 
     ensure r: y = nth(q, i)
 }
@@ -32,12 +25,8 @@ fn ratio(a: Int, b: Int): Int := a + b
     assume nonneg: a >= 0
     assume nonzero: b != 0
 
-comp ratios {
-    in a: Int
-    in b: Int
-
+proc ratios(a: Int, b: Int): (y: Int) {
     assume a_nonneg: a >= 0  --~ warning: `a` is never negative
-    pub out y: Int
     ensure r: y = ratio(a, b)   --~ error: the precondition `nonzero` of `ratio` may not hold at this application in `ratios::r`
 }
 
@@ -61,10 +50,7 @@ fn second(q: Seq<Int>): Int := q[1]
     assume sorted: nth(q, 0) <= nth(q, 1)
 
 -- In a global expectation, and under quantifiers.
-comp holder {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc holder(q: Seq<Int>): (y: Int) {
     ensure r: when q.len > 2, y = nth(q, 2)
 }
 
@@ -73,42 +59,26 @@ expect read: forall (h: holder), when h.q.len > 2, h.y = h.q[2]
 -- Under a quantifier, the question holds in every instance; under `let`
 -- and `where`, an application in a definition is guarded where the name
 -- is mentioned; in a table, by the earlier rows.
-comp quantified {
-    in q: Seq<Int>
-    pub out ok?
-
+proc quantified(q: Seq<Int>): (ok?) {
     ensure r: ok? iff (forall (b?: Bool), nth(q, if b? then 0 else 1) > 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `quantified::r`
 }
 
-comp named {
-    in q: Seq<Int>
-    pub out y: Int
-    pub out z: Int
-
+proc named(q: Seq<Int>): (y: Int, z: Int) {
     ensure guarded: when q != [], y = x where x := nth(q, 0)
     ensure unguarded: z = x where x := nth(q, 1)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `named::unguarded`
 }
 
-comp tabled {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc tabled(q: Seq<Int>): (y: Int) {
     ensure r: y = table { q = [] => 0, _ => nth(q, 0) }
 }
 
 -- An instance's bindings, and a constant's value.
-comp reader {
-    in x: Int
-    pub out y: Int
-
+proc reader(x: Int): (y: Int) {
     ensure r: y = x
 }
 
-comp reading {
-    in q: Seq<Int>
-    pub out y: Int
-
-    inst w: reader { x := nth(q, 0) }   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reading::w`
+proc reading(q: Seq<Int>): (y: Int) {
+    call w := reader(nth(q, 0))   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reading::w`
 
     ensure r: y = w.y
 }
@@ -119,12 +89,8 @@ const NONE: Int := nth([], 0)   --~ error: the precondition `in_range` of `nth` 
 -- In a `match` arm, an application is guarded by the arm's pattern.
 enum Pick { First, Last, Neither }
 
-comp picked {
-    in p: Pick
-    in q: Seq<Int>
-
+proc picked(p: Pick, q: Seq<Int>): (y: Int) {
     assume nonempty: q != []
-    pub out y: Int
     ensure r: y = match p {
         Pick::First => nth(q, 0),
         Pick::Last => nth(q, q.len - 1),
@@ -133,17 +99,11 @@ comp picked {
 }
 
 -- In a refinement's binding, under the concrete component's assumptions.
-comp abstract_reader {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc abstract_reader(q: Seq<Int>): (y: Int) {
     ensure r: when q.len > 3, y = q[3]
 }
 
-comp concrete_reader {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc concrete_reader(q: Seq<Int>): (y: Int) {
     ensure r: when q.len > 3, y = q[3]
 }
 

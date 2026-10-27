@@ -13,10 +13,7 @@ fn double(n: Int): Int := 2 * n
 set_option fren.lint.dead_code "allow" in
 fn same?(a: Key, b: Key) := a = b
 
-comp doubler {
-    in x: Int
-    pub out y: Int
-
+proc doubler(x: Int): (y: Int) {
     ensure r: y = double(x)
 }
 

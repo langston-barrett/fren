@@ -4,11 +4,7 @@ struct P { x: Int, y: Int }
 
 fn cost(Int): Nat
 
-comp c {
-    in a: Nat
-    in p: P
-    pub out b: Int
-
+proc c(a: Nat, p: P): (b: Int) {
     ensure r: b = k + a + w where k: Nat := a + 1, w: Int := a
     expect e: b >= 1
     expect u: let q := { p with x := 1 } in q.x = 1

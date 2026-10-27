@@ -1,16 +1,16 @@
 warning[F0744]: this pattern has no operator but `.*`
- --> test/cli/lints/style/f0744_trivial_pattern.fren:3:55
+ --> test/cli/lints/style/f0744_trivial_pattern.fren:3:48
   |
-3 | pub comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"F0\.1.*") }
-  |                                                       ^^^^^^^^^^^^^^^^^^^^^^ matches the strings that start with one
+3 | pub proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"F0\.1.*") }
+  |                                                ^^^^^^^^^^^^^^^^^^^^^^ matches the strings that start with one
   |
   = help: `fren fix` can fix this
   = note: `trivial_pattern` is `warn` by default
   = help: to allow it, `set_option fren.lint.trivial_pattern "allow"`
 help: write `s.starts_with?("F0.1")`
   |
-3 - pub comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"F0\.1.*") }
-3 + pub comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("F0.1") }
+3 - pub proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"F0\.1.*") }
+3 + pub proc c(s: String): (p?) { ensure r: p? iff s.starts_with?("F0.1") }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

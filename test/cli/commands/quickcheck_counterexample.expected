@@ -1,25 +1,25 @@
 error[F0603]: expectation `climate::thermostat::wrong` does not hold
-  --> test/cli/commands/quickcheck_counterexample.fren:23:12
+  --> test/cli/commands/quickcheck_counterexample.fren:19:12
    |
-23 |     expect wrong: when temp < 60, mode = Heat
+19 |     expect wrong: when temp < 60, mode = Heat
    |            ^^^^^ does not follow from the guarantees
    |
    = counterexample: temp = 59, target = 59, mode = Mode::Off
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0607]: `climate::loose::b?` is not determined by the inputs: for the input a? = false, it can be true or false
-  --> test/cli/commands/quickcheck_counterexample.fren:28:17
+  --> test/cli/commands/quickcheck_counterexample.fren:22:26
    |
-28 |     pub det out b?
-   |                 ^^ not determined
+22 | pub proc loose(a?): (det b?) {
+   |                          ^^ not determined
    |
-   = note: a `det out` must have exactly one value for each input
+   = note: a `det` variable must have exactly one value for each input
    = help: add guarantees that pin it down, or remove `det`
 
 error[F0603]: expectation `climate::same` does not hold
-  --> test/cli/commands/quickcheck_counterexample.fren:33:8
+  --> test/cli/commands/quickcheck_counterexample.fren:26:8
    |
-33 | expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?
+26 | expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?
    |        ^^^^ does not follow from the guarantees
    |
    = counterexample: x.a? = false, x.b? = true, y.a? = false, y.b? = false

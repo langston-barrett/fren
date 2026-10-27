@@ -147,7 +147,7 @@ def codesInSources : IO (Array String) := do
 /-- Codes that no snapshot can report reliably: a solver that gives up
 depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
-def unsnapshotted : List String := ["F0399", "F0608", "F0713"]
+def unsnapshotted : List String := ["F0399", "F0406", "F0407", "F0608", "F0713"]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
 the code: each lint's row gives its name, code, group and default level,
@@ -241,9 +241,9 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Components", "Lang/Decidability",
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Decidability",
     "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/ScopeLaws",
-    "Lang/Modules", "Lang/Instances", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
+    "Lang/Modules", "Lang/Calls", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
     "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
     "Lint/Suspicious/Comparisons", "Lint/Suspicious/Integers", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Pedantic/Conditionals", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Generated", "Trace"].map fun r => s!"src/Reqs/{r}.md"
@@ -319,7 +319,7 @@ def fmtKept (path src : String) : Option (Array String × Array (Array String) �
     if inUse k then continue
     let t := toks[k]
     let trailing := t.tok == .kw "," &&
-      (toks[k + 1]?.any (·.tok == .kw "}") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
+      (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
     if !trailing then kept := kept.push (reprStr t.tok)
   let paths := (lay.uses.flatMap fun (f, l) =>
     let (ps, glob) := FrenCli.Fmt.usePaths toks f l
@@ -348,7 +348,7 @@ def stringCorpus (n : Nat) : String := Id.run do
         s!"{v}.matches?({pick pats 3})", s!"{v}.len <= {i}", s!"{v}.len + 1 >= {i}", s!"{v} = {l}", "s = t",
         "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
         s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
-    out := out ++ s!"comp c{k} \{\n    in s: String\n    in t: String\n    pub out p?\n\n    \
+    out := out ++ s!"proc c{k}(s: String, t: String): (p?) \{\n    \
       assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
@@ -371,8 +371,8 @@ def setCorpus (n : Nat) : String := Id.run do
         s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
         s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
         "s = {}"] 5
-    out := out ++ s!"comp c{k} \{\n    in s: Set<Int>\n    in t: Set<Int>\n    in x: Int\n    in es: Set<E>\n    in e: E\n    \
-      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+    out := out ++ s!"proc c{k}(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
+      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -396,8 +396,8 @@ def relationCorpus (n : Nat) : String := Id.run do
       atoms := atoms.push <| pick #[
         s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
         s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
-    out := out ++ s!"comp c{k} \{\n    in r: Rel<E, E>\n    in q: Rel<E, E>\n    in s: Set<E>\n    in x: E\n    in y: E\n    \
-      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+    out := out ++ s!"proc c{k}(r: Rel<E, E>, q: Rel<E, E>, s: Set<E>, x: E, y: E): (p?) \{\n    \
+      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -419,8 +419,8 @@ def sequenceCorpus (n : Nat) : String := Id.run do
         s!"{a} = {b}", s!"{a} != {b}", s!"{a}.len <= {j}", s!"x in [1, {j}]", s!"q.starts_with?([{j}])",
         s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
         s!"{a}.len + {b}.len >= {j}"] 5
-    out := out ++ s!"comp c{k} \{\n    in q: Seq<Int>\n    in r: Seq<Int>\n    in x: Int\n    in i: Int\n    \
-      pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+    out := out ++ s!"proc c{k}(q: Seq<Int>, r: Seq<Int>, x: Int, i: Int): (p?) \{\n    \
+      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -478,7 +478,7 @@ def fixing : IO (Array String) := do
   let block (body : String) := s!"```fren\n{body}\n```\n"
   let spec (uses : String) :=
     "# Spec\n\nProse with `use`.\n\n" ++ block "pub mod m\n\npub enum Mode { Heat, Cool }" ++
-    "\nMore prose.\n\n" ++ block s!"mod n\n\n{uses}comp c \{\n    in x: Mode\n    pub out h?\n    ensure r: h? iff x = Heat\n}"
+    "\nMore prose.\n\n" ++ block s!"mod n\n\n{uses}proc c(x: Mode): (h?) \{\n    ensure r: h? iff x = Heat\n}"
   IO.FS.writeFile file (spec "use m::Mode\nuse m::Mode::*\nuse m::Mode::Cool\n\n")
   let (out, code) ← runFren ["fix", file]
   let written ← IO.FS.readFile file
@@ -499,14 +499,14 @@ would notice if those drifted. -/
 /-- Modules that import a root module's modules rather than the root, which
 would wait for its own build too: each must import exactly the root's. -/
 def rootCopies : List (String × List String) :=
-  [("Fren", ["Reqs.Check", "Reqs.Inst", "Reqs.Lang", "Reqs.Modules"])]
+  [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang", "Reqs.Modules"])]
 
 /-- The libraries of Reqs that need only some of its specs, as module and
 the specs, relative to `src/Reqs`, that it may read. -/
 def specsRead : List (List String × (String → Bool)) :=
   [(["Reqs.Check", "Reqs.Cli", "Reqs.Eval", "Reqs.Fmt", "Reqs.Generated", "Reqs.Impl", "Reqs.Mutate", "Reqs.Trace", "Reqs.View"],
       fun p => !p.contains '/'),
-    (["Reqs.Inst", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
+    (["Reqs.Calls", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
     (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/")]
 
 /-- The modules of Impls whose library needs the tests. -/
@@ -878,7 +878,7 @@ def expectationsOf (chars : Array Char) : Array (String × FrenCli.Span) :=
     { start, stop }
   match FrenCli.parseText chars with
   | .ok (_, items, _) => items.flatMap fun
-    | .comp _ c members _ spans _ => (members.zip spans).filterMap fun
+    | .comp _ c _ members _ spans _ => (members.zip spans).filterMap fun
       | (.prop k n _, sp) => if k == .expect || k == .cover then some (s!"{c.name}::{n.name}", lines sp) else none
       | _ => none
     | .global n _ body => #[(n.name, lines { start := n.span.start, stop := body.span.stop })]
@@ -1002,7 +1002,7 @@ differs from the original's. -/
 def laterFiles : IO (Array String) := do
   let a := "pub mod a\n\npub type Byte := Int is 0..=255\npub enum Level { Low, Mid, High }\n" ++
     "pub type Loud := Level is Level::Mid | Level::High\n"
-  let b := "pub mod b\n\nuse a::{Byte, Level, Loud}\n\ncomp c {\n    in x: Byte\n    in l: Loud\n    pub out y: Int\n\n" ++
+  let b := "pub mod b\n\nuse a::{Byte, Level, Loud}\n\nproc c(x: Byte, l: Loud): (y: Int) {\n" ++
     "    ensure r: y = (if l = Level::High then x else x + 1)\n}\n"
   let files := #[("a.fren", a.toList.toArray), ("b.fren", b.toList.toArray)]
   let (states, _) := FrenCli.mutantsOf files #[]

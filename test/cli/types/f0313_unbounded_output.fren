@@ -1,3 +1,3 @@
 -- An output of a recursive enum.
 enum List { Nil, Cons(Int, List) }
-comp c { in x: Int pub out l: List ensure r: l = List::Cons(x, List::Nil) }
+proc c(x: Int): (l: List) { ensure r: l = List::Cons(x, List::Nil) }

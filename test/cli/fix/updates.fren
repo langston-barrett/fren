@@ -3,15 +3,7 @@
 -- fields, and removes the fields of an update copied from its updated value.
 struct Point { x: Int, y: Int, z: Int }
 
-pub comp c {
-    in p: Point
-    in n: Int
-    pub out q1: Point
-    pub out q2: Point
-    pub out q3: Point
-    pub out q4: Point
-    pub out q5: Point
-
+pub proc c(p: Point, n: Int): (q1: Point, q2: Point, q3: Point, q4: Point, q5: Point) {
     ensure r1: q1 = Point { x := n, y := p.y, z := p.z }
     ensure r2: q2 = Point { x := p.x, y := n + 1, z := p.z }
     ensure r3: q3 = { p with x := p.x, y := n }

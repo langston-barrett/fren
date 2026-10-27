@@ -59,11 +59,11 @@ structure EnumDef where
   variants : Array Name
   deriving Inhabited, Repr
 
-/-- A `use` in some module, or in a component. -/
+/-- A `use` in some module, or in a procedure. -/
 structure UseDef where
   /-- The module containing the `use`. -/
   module : Name
-  /-- Its scope: the module, or the path of the component containing it. -/
+  /-- Its scope: the module, or the path of the procedure containing it. -/
   scope : Name := module
   /-- The full path of the imported item; for a glob, of the opened enum. -/
   target : Name
@@ -76,7 +76,7 @@ structure Table where
   enums : NameMap EnumDef := {}
   /-- `use`s, by scope. -/
   uses : NameMap (Array UseDef) := {}
-  /-- The module of each component that has `use`s, by its path. -/
+  /-- The module of each procedure that has `use`s, by its path. -/
   scopes : NameMap Name := {}
   deriving Inhabited
 
@@ -86,7 +86,7 @@ def Table.addUse (t : Table) (u : UseDef) : Table :=
   { t with uses := t.uses.insert u.scope ((t.uses.getD u.scope #[]).push u)
            scopes := if u.scope == u.module then t.scopes else t.scopes.insert u.scope u.module }
 
-/-- The module of a scope: a module's is itself, and a component's is the
+/-- The module of a scope: a module's is itself, and a procedure's is the
 module that declares it. -/
 def Table.moduleOf (t : Table) (scope : Name) : Name := t.scopes.getD scope scope
 
@@ -95,7 +95,7 @@ def Table.usesIn (t : Table) (scope : Name) : Array UseDef :=
   let m := t.moduleOf scope
   t.uses.getD scope #[] ++ (if m == scope then #[] else t.uses.getD m #[])
 
-/-- Whether `scope` is a component's, whose imports shadow its module's
+/-- Whether `scope` is a procedure's, whose imports shadow its module's
 scope. -/
 def Table.isComp (t : Table) (scope : Name) : Bool := t.moduleOf scope != scope
 
@@ -115,7 +115,7 @@ def Resolved.describe : Resolved → String
   | .item { kind := .constItem, .. } => "a constant"
   | .item { kind := .typeItem, .. } => "an abstract type"
   | .item { kind := .fnItem, .. } => "a function"
-  | .item { kind := .compItem, .. } => "a component"
+  | .item { kind := .compItem, .. } => "a procedure"
   | .item { kind := .expectItem, .. } => "a global expectation"
   | .variant .. => "an enum variant"
 
@@ -432,7 +432,7 @@ segment of a path, innermost first (`modules::first_segment`): the item
 declared in, or imported by name into, the scope; the distinct variants
 that `use ...::*` opens; and the prelude's item or variant. -/
 def Table.layers (t : Table) (from_ n : Name) : Except Error (Array Resolved × Array Resolved × Array Resolved) := do
-  -- A component's imports shadow its module's scope: they alone are its
+  -- A procedure's imports shadow its module's scope: they alone are its
   -- scope if they bring in `n`, and its module's scope is otherwise.
   let comp := t.isComp from_ && (t.uses.getD from_ #[]).any (·.brings t n)
   let uses := if comp then t.uses.getD from_ #[] else t.uses.getD (t.moduleOf from_) #[]
@@ -497,7 +497,7 @@ def Table.itemBindings (t : Table) (from_ : Name) (n : Name) (prelude := true) :
   (t.contextOf from_ #[] n false prelude).itemScope.bindings
 
 /-- Resolves a path in an expression or type in the scope `from_`, a
-module or a component. `extra` are other names in scope, such as
+module or a procedure. `extra` are other names in scope, such as
 variables, suggested if `segs[0]` is not found. -/
 def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Array Name := #[]) :
     Except Error Resolved := do
@@ -591,7 +591,7 @@ def cardinalityArgMsg (c : Cardinality) (k : Nat) (found : String) : Msg :=
       (if found == "Int" || found == "Nat" then #["help: compare it to make a `Bool`, e.g. `x > 0` or `x != 0`"] else #[]) }
 
 /-- The name that `n` declares, and whether it is written with `!`: `x!`
-declares `x`, and `ready?!` declares `ready?` (`Reqs/Lang/Components#shadowing`). -/
+declares `x`, and `ready?!` declares `ready?` (`Reqs/Lang/Procedures#shadowing`). -/
 def declaredName (n : Name) : Name × Bool :=
   match n with
   | .str p s => if s.endsWith "!" then (.str p (s.dropEnd 1).toString, true) else (n, false)
@@ -689,7 +689,7 @@ def checkNoBang (n : Name) : Except Msg Unit := do
   let (base, bang) := declaredName n
   checkDeclaredName base bang
   if bang then
-    throw (needlessBangMsg base "only variables, parameters, instances and binders shadow")
+    throw (needlessBangMsg base "only variables, parameters, calls and binders shadow")
 
 /-- A name other than a variable's ends in `?`; `what` is, e.g., `enum`. -/
 def questionNameMsg (what : String) (n : Name) : Msg :=
@@ -698,7 +698,7 @@ def questionNameMsg (what : String) (n : Name) : Msg :=
     notes := #["note: only `Bool` variables end in `?`"]
     fixes := #[{ msg := s!"rename it to `{base}`", replacement := base }] }
 
-/-- Checks the name of a module, enum, variant, comp or instance. -/
+/-- Checks the name of a module, enum, variant, procedure or call. -/
 def checkItemName (what : String) (n : Name) : Except Msg Unit := do
   checkNoBang n
   if n.toString.endsWith "?" then
@@ -714,7 +714,7 @@ def checkConstName (n : Name) : Except Msg Unit := do
   if n.toString.endsWith "?" then throw (questionNameMsg "constant" n)
 
 /-- Fails if `n` is already declared or imported by name in the module
-`mod`, or imported by name into the component `mod`. -/
+`mod`, or imported by name into the procedure `mod`. -/
 def Table.checkFresh (t : Table) (mod n : Name) : Except Msg Unit := do
   if let some prev := (if t.isComp mod then none else t.declared? mod n) then
     throw { code? := some "F0206"
@@ -722,13 +722,13 @@ def Table.checkFresh (t : Table) (mod n : Name) : Except Msg Unit := do
             label? := some s!"`{n}` redefined here"
             notes := #[s!"note: `{n}` must be defined only once in {showModule mod}"] }
   if let some u := (t.uses.getD mod #[]).find? (fun u => !u.glob && u.target.getString! == n.toString) then
-    let where_ := if u.scope == u.module then showModule u.module else s!"component `{showPath u.scope}`"
+    let where_ := if u.scope == u.module then showModule u.module else s!"procedure `{showPath u.scope}`"
     throw { code? := some "F0207", headline := s!"the name `{n}` is already imported into {where_}"
             label? := some s!"`{n}` defined or imported again here"
             notes := #[s!"note: a `use` and an item, or two `use`s, of the same name would make `{n}` ambiguous"] }
 
 /-- The import recorded by a `use` in module `mod`, or, with `scope`, in
-the component of that path in `mod`. -/
+the procedure of that path in `mod`. -/
 def Table.declareUse (t : Table) (mod : Name) (segs : Array Name) (glob : Bool) (scope : Name := mod) :
     Except Error UseDef := do
   let t := { t with scopes := if scope == mod then t.scopes else t.scopes.insert scope mod }
@@ -776,7 +776,7 @@ def nameText : Name → String
 def checkVarName (n : Name) (isBool? : Option Bool) : Except Msg Unit :=
   checkVarKind n (Fren.Str.endsWith (nameText n) "?") isBool?
 
-/-! ## Shadowing (`Reqs/Lang/Components#shadowing`) -/
+/-! ## Shadowing (`Reqs/Lang/Procedures#shadowing`) -/
 
 /-- Whether a declaration is accepted (`lang::shadowing`), from whether its
 name hides a name in scope and whether it is written with `!`. -/
@@ -884,22 +884,22 @@ def Table.declareModule (t : Table) (segs : Array Name) (isPub : Bool) :
     path := p
   return (path, new)
 
-/-! ## Instances (`Reqs/Inst`) -/
+/-! ## Calls (`Reqs/Calls`) -/
 
-/-- What a comp variable is. Instance variables are named `w.x`. -/
+/-- What a procedure variable is. Call variables are named `w.x`. -/
 inductive Role where
   | input
   | output
-  /-- An `in` of a direct instance. -/
+  /-- A parameter of a direct call. -/
   | instInput
-  /-- A `pub out` of a direct instance. -/
+  /-- A result of a direct call. -/
   | instOutput
-  /-- A private `out` of an instance, or a variable of an instance's own
-  instances. -/
+  /-- A private variable of a call, or a variable of a call's own
+  calls. -/
   | instHidden
   deriving Inhabited, DecidableEq, Repr
 
-/-- Universally quantified in checks: everything the comp does not choose. -/
+/-- Universally quantified in checks: everything the procedure does not choose. -/
 def Role.isUniversal : Role → Bool
   | .output => false
   | _ => true
@@ -918,7 +918,7 @@ def Symbol.ofRole : Role → Symbol
   | .output => .output
   | _ => .instanceVariable
 
-/-- Whether the second copy renames it (`check::copied`): what the comp
+/-- Whether the second copy renames it (`check::copied`): what the procedure
 does not get from its environment, but not functions, so that both copies
 are under the same interpretation. -/
 def Symbol.copied : Symbol → Bool
@@ -935,8 +935,8 @@ inductive Place where
   | argument
   deriving Inhabited, DecidableEq, Repr
 
-/-- The role, in a comp, of variable `x` of an instance, given its role in
-the instantiated comp. -/
+/-- The role, in a procedure, of variable `x` of a call, given its role in
+the called procedure. -/
 def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
   match inSub with
   | .input => .instInput
@@ -946,14 +946,14 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
 /-- The names in scope that a `match` binder, a quantifier's bound name or
 a definition of a `let` or `where` may hide, innermost last, each with what
 its kind (`Table.hidden?`): the variables of one segment, which are
-parameters in a function's body (`inFn`), the instances, which are binders
+parameters in a function's body (`inFn`), the calls, which are binders
 in a global expectation (`inGlobal`), and the binders of enclosing arms,
 bound names of enclosing quantifiers and names of enclosing `let`s and
 `where` clauses, each with its kind, such as `patternBinder`. -/
 def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Locals) (inFn : Bool)
     (inGlobal := false) : Locals :=
   let kind (r : Role) : BindingKind := if inFn then .parameter else if r == .input then .input else .output
-  -- A global expectation's binders are its instances.
+  -- A global expectation's binders are its calls.
   let instKind : BindingKind := if inGlobal then .expectBinder else .inst
   (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, kind r)) ++ insts.map (·, instKind)
     ++ binders
@@ -991,16 +991,16 @@ def definedLaterMsg (n : Name) (own : Bool) : Msg :=
       else s!"help: move the definition of `{n}` before the one that uses it"] }
 
 def outInAssumeMsg (n : Name) : Msg :=
-  { code? := some "F0401", headline := s!"assumptions may only mention `in` variables, but `{n}` is an `out`"
-    label? := some "an `out`"
+  { code? := some "F0401", headline := s!"assumptions may only mention parameters, but `{n}` is an output"
+    label? := some "an output"
     notes := #["note: assumptions constrain the environment, not the system", "help: if it constrains the outputs, make it an `ensure`"] }
 
-/-- `in x := e`: only outputs can be defined (`lang::modifiers`). -/
+/-- A parameter with a definition: only outputs can be defined (`lang::modifiers`). -/
 def inputDefinitionMsg : Msg :=
-  { code? := some "F0114", headline := "an input cannot have a definition"
-    label? := some "inputs are chosen by the environment"
-    notes := #["note: only an output can be defined, as `out x: T := e`",
-      "help: make it an output, or state what it equals in an `assume`"] }
+  { code? := some "F0114", headline := "a parameter cannot have a definition"
+    label? := some "parameters are chosen by the environment"
+    notes := #["note: only an output can be defined, as `let x: T := e`, or as a result, `out r := e`",
+      "help: make it a `let`, or state what it equals in an `assume`"] }
 
 /-- A definition that mentions its own output, through the definitions
 `cycle`, each mentioning the next. -/
@@ -1009,7 +1009,7 @@ def cyclicDefinitionMsg (cycle : Array Name) : Msg :=
   { code? := some "F0411", headline := s!"the definition of `{cycle[0]!}` mentions itself: {path}"
     label? := some "a cyclic definition"
     notes := #["note: a defined output stands for its definition, so the definitions must not form a cycle",
-      "help: define one of them in terms of the others' inputs, or constrain it with an `ensure` instead"] }
+      "help: define one of them in terms of the parameters, or constrain it with an `ensure` instead"] }
 
 /-- A variable's mention, `msg`, was not allowed because the defined output
 `d` mentions it. -/
@@ -1017,7 +1017,7 @@ def throughDefinition (d : Name) (msg : Msg) : Msg :=
   { msg with notes := #[s!"note: `{d}` is defined, and its definition mentions it"] ++ msg.notes }
 
 /-- Whether variable `n` may be mentioned at `place` (`inst::mention`).
-`earlier` says whether `n`'s instance is declared before the binding being
+`earlier` says whether `n`'s call is declared before the binding being
 elaborated. -/
 def checkMention (place : Place) (role : Role) (earlier : Bool) (n : Name) : Except Msg Unit := do
   let inst := n.getRoot
@@ -1027,43 +1027,43 @@ def checkMention (place : Place) (role : Role) (earlier : Bool) (n : Name) : Exc
   | .output, .assume => throw (outInAssumeMsg n)
   | .output, .argument =>
     throw { code? := some "F0410"
-            headline := s!"the arguments of a function may not mention an `out`, but `{n}` is one"
-            label? := some "an `out`"
+            headline := s!"the arguments of a function may not mention an output, but `{n}` is one"
+            label? := some "an output"
             notes := #["note: a function is applied only to values the system does not choose, so that the checks stay decidable",
-              "help: apply the function to the inputs the output depends on, and relate the output to the result in an `ensure`"] }
+              "help: apply the function to the parameters the output depends on, and relate the output to its value in an `ensure`"] }
   | .output, .binding =>
     throw { code? := some "F0402"
-            headline := s!"bindings may only mention `in` variables and earlier instances, but `{n}` is an `out`"
-            label? := some "an `out`"
-            notes := #["note: an instance's inputs are fixed before the component chooses its outputs",
-              "help: to connect an instance to an output, bind it to an `in` and add an `ensure` relating the two"] }
+            headline := s!"the arguments of a call may only mention parameters and earlier calls, but `{n}` is an output"
+            label? := some "an output"
+            notes := #["note: a call's arguments are fixed before the procedure chooses its outputs",
+              "help: to connect a call to an output, pass it a parameter and add an `ensure` relating the two"] }
   | .instHidden, _ =>
-    throw { code? := some "F0403", headline := s!"`{n}` is private to instance `{inst}`", label? := some "private"
-            notes := #["note: only the `in`s and `pub out`s of an instance can be mentioned",
-              "help: to mention it, declare it `pub out` in the instantiated component"] }
+    throw { code? := some "F0403", headline := s!"`{n}` is private to call `{inst}`", label? := some "private"
+            notes := #["note: only the parameters and results of a call can be mentioned",
+              "help: to mention it, make it a result of the called procedure"] }
   | _, .prop | _, .argument => pure ()
   | _, .assume =>
     throw { code? := some "F0401"
-            headline := s!"assumptions may only mention `in` variables, but `{n}` belongs to instance `{inst}`"
-            label? := some s!"a variable of instance `{inst}`"
-            notes := #["note: assumptions constrain the environment; instances are part of the system",
-              "help: if it constrains the instance, make it an `ensure`"] }
+            headline := s!"assumptions may only mention parameters, but `{n}` belongs to call `{inst}`"
+            label? := some s!"a variable of call `{inst}`"
+            notes := #["note: assumptions constrain the environment; calls are part of the system",
+              "help: if it constrains the call, make it an `ensure`"] }
   | _, .binding =>
     unless earlier do
-      throw { code? := some "F0404", headline := s!"instance `{inst}` is not declared before this binding"
-              label? := some "declared later, or this is its own binding"
-              notes := #["note: bindings may only mention earlier instances, so that instances form no cycles",
-                s!"help: declare `{inst}` before the instance whose binding mentions it"] }
+      throw { code? := some "F0404", headline := s!"call `{inst}` is not declared before these arguments"
+              label? := some "declared later, or these are its own arguments"
+              notes := #["note: arguments may only mention earlier calls, so that calls form no cycles",
+                s!"help: declare `{inst}` before the call whose arguments mention it"] }
 
-/-- A dotted name that is not a variable of an instance. `vars` are the
-names of the instance's visible variables. -/
+/-- A dotted name that is not a variable of a call. `vars` are the
+names of the call's visible variables. -/
 def dottedNameMsg (n : Name) (insts : Array Name) (vars : Array Name := #[]) (inExpr := true) (afterPath := false) :
     Msg :=
   if insts.contains n.getRoot then
     let x := n.replacePrefix n.getRoot .anonymous
     let own := vars.filterMap fun v => if v.getRoot == n.getRoot then some (v.replacePrefix v.getRoot .anonymous) else none
     { code? := some "F0405"
-      headline := s!"instance `{n.getRoot}` has no `in` or `pub out` named `{x}`"
+      headline := s!"call `{n.getRoot}` has no parameter or result named `{x}`"
       label? := some "unknown variable"
       notes := #[s!"note: the variables of `{n.getRoot}` are {showNameList own}"]
       fixes := (similar x own).toArray.map fun v =>
@@ -1071,16 +1071,16 @@ def dottedNameMsg (n : Name) (insts : Array Name) (vars : Array Name := #[]) (in
   else
     let path := "::".intercalate (n.components.map (·.toString))
     { code? := some "F0111", headline := s!"`{n}` is not a single name"
-      label? := some "`.` reads an instance's variable, or a value's field or method"
-      notes := if inExpr then #[s!"note: `{n.getRoot}` is not an instance, a variable or a constant"]
+      label? := some "`.` reads a call's variable, or a value's field or method"
+      notes := if inExpr then #[s!"note: `{n.getRoot}` is not a call, a variable or a constant"]
         -- After a `::`, it may be a constant of another module read with `.`.
         else if afterPath then #[s!"help: to read a field or method of a constant of another module, bring it into \
           scope with `use` and write `{n}`"]
         else #[]
       fixes := #[{ msg := "if it is a path, separate its segments with `::`", replacement := path }] }
 
-/-- Whether a name may be bound `n` times by an instance, given what it is
-in the instantiated component (`inst::binding`): an `in` exactly once,
+/-- Whether a name may be bound `n` times by a call, given what it is
+in the called procedure (`inst::binding`): a parameter exactly once,
 anything else never. -/
 def bindingOk (target : Option Role) (n : Nat) : Bool :=
   if target == some .input then n == 1 else n == 0
@@ -1131,14 +1131,14 @@ theorem repeatsAt_eq_empty {names : Array Name} : repeatsAt names = #[] ↔ name
 def inputsOf (vars : Array (Name × Role)) : Array Name :=
   vars.filterMap fun (n, r) => if r == .input then some n else none
 
-/-- Whether an instance's bindings `bound` are accepted, where `vars` are the
-instantiated component's variables (name and role) (`inst::bindings`):
+/-- Whether a call's bindings `bound` are accepted, where `vars` are the
+called procedure's variables (name and role) (`inst::bindings`):
 it binds only inputs, every input, and nothing twice. -/
 def bindingsAccepted (vars : Array (Name × Role)) (bound : Array Name) : Bool :=
   let target (n : Name) := (vars.find? (·.1 == n)).map (·.2)
   bound.all (target · == some .input) && (inputsOf vars).all bound.contains && repeatsOf bound == 0
 
-/-- Checks the names bound by an instance of `comp` (`bindingsAccepted`),
+/-- Checks the names bound by a call of `comp` (`bindingsAccepted`),
 explaining the first problem. -/
 def checkBindings (comp : Name) (vars : Array (Name × Role)) (bound : Array Name) :
     Except (Option Nat × Msg) Unit := do
@@ -1150,23 +1150,23 @@ def checkBindings (comp : Name) (vars : Array (Name × Role)) (bound : Array Nam
     match vars.find? (·.1 == b) with
     | some (_, .input) =>
       if again.contains i then
-        throw (some i, { code? := some "F0406", headline := s!"input `{b}` is bound multiple times"
-                         label? := some "bound again here", notes := #["note: each input of an instance is bound exactly once"] })
+        throw (some i, { code? := some "F0406", headline := s!"parameter `{b}` is bound multiple times"
+                         label? := some "bound again here", notes := #["note: each parameter is bound exactly once"] })
     | some (_, .output) =>
-      throw (some i, { code? := some "F0407", headline := s!"`{b}` is an `out` of `{c}`", label? := some "an `out`"
-                       notes := #["note: only `in`s are bound; an instance chooses its own outputs",
-                         s!"help: to constrain it, add an `ensure` that mentions `w.{b}`, where `w` is the instance"] })
+      throw (some i, { code? := some "F0407", headline := s!"`{b}` is an output of `{c}`", label? := some "an output"
+                       notes := #["note: only parameters are bound; a call chooses its own outputs",
+                         s!"help: to constrain it, add an `ensure` that mentions `w.{b}`, where `w` is the call"] })
     | _ =>
-      throw (some i, { code? := some "F0408", headline := s!"`{c}` has no input `{b}`", label? := some "unknown input"
-                       notes := #[s!"note: the inputs of `{c}` are {showNameList inputs}"]
-                       fixes := similarFixes "an input with a similar name exists" b inputs })
+      throw (some i, { code? := some "F0408", headline := s!"`{c}` has no parameter `{b}`", label? := some "unknown parameter"
+                       notes := #[s!"note: the parameters of `{c}` are {showNameList inputs}"]
+                       fixes := similarFixes "a parameter with a similar name exists" b inputs })
   let missing := vars.filter fun (n, r) => r == .input && !bound.contains n
   unless missing.isEmpty do
     let names := ", ".intercalate (missing.toList.map fun (n, _) => s!"`{n}`")
     let it := if missing.size == 1 then "it" else "them"
-    throw (none, { code? := some "F0409", headline := s!"missing input{if missing.size == 1 then "" else "s"} {names} of `{c}`"
+    throw (none, { code? := some "F0409", headline := s!"missing parameter{if missing.size == 1 then "" else "s"} {names} of `{c}`"
                    label? := some s!"does not bind {names}"
-                   notes := #["note: an instance binds every input of its component",
+                   notes := #["note: every parameter is bound",
                      s!"help: bind {it}, e.g. `{missing[0]!.1} := ...`, or `{missing[0]!.1}` to bind it to a variable of the same name"] })
   throw (none, Msg.internal s!"the bindings of `{c}` are rejected without a reason")
 
@@ -1175,7 +1175,7 @@ def wrongKindMsg (expected : String) (r : Resolved) (note : Option String := non
   { code? := some "F0210", headline := s!"expected {expected}, but `{showPath r.path}` is {r.describe}"
     label? := some s!"not {expected}", notes := note.toArray }
 
-def notACompMsg (r : Resolved) : Msg := wrongKindMsg "a component" r
+def notACompMsg (r : Resolved) : Msg := wrongKindMsg "a procedure" r
 
 def notAValueMsg (r : Resolved) : Msg :=
   wrongKindMsg "a value" r <| match r with
@@ -1234,7 +1234,7 @@ def unknownConstantMsg (abstract : Bool) : Msg :=
     label? := some (if abstract then "an abstract type" else "applies an uninterpreted function")
     notes := #[if abstract then "note: an abstract type has no literals, so no value of it can be written"
       else "note: an uninterpreted function's value is unknown, so the constant would have no fixed value",
-      "help: make it an input of the components that use it"] }
+      "help: make it a parameter of the procedures that use it"] }
 
 /-! ## Defined functions -/
 
@@ -1299,7 +1299,7 @@ def contractSelfMsg (f : Name) (precondition : Bool) : Msg :=
         "help: apply it to the parameters, or state this where the function is applied"] }
 
 /-- The name of the value of the uninterpreted function `f`, whose
-parameters are `params`, an output of the comp that checks its contract's
+parameters are `params`, an output of the procedure that checks its contract's
 realizability: `f`, or `f'` if a parameter is named `f`
 (`Reqs/Check#contracts-of-uninterpreted-functions`). -/
 def contractValueName (f : Name) (params : Array Name) : Name :=
@@ -1332,7 +1332,7 @@ def appliesUninterpretedMsg (g : Name) : Msg :=
       "help: make the value a parameter, and apply the uninterpreted function where the defined one is applied"] }
 
 /-- Whether an argument is accepted, from whether its function is defined
-and whether it mentions an output of the enclosing component
+and whether it mentions an output of the enclosing procedure
 (`lang::argument`). -/
 def argumentAccepted (defined mentionsOutput : Bool) : Bool := defined || !mentionsOutput
 
@@ -1405,8 +1405,8 @@ def intConstMethod? (m : String) (x : Int) (args : List Int) : Option Int :=
   | _, _ => none
 
 def dupMemberMsg (n : Name) : Msg :=
-  { code? := some "F0213", headline := s!"`{n}` is defined multiple times in this component", label? := some "defined again here"
-    notes := #["note: the variables, instances and constraints of a component share one namespace"] }
+  { code? := some "F0213", headline := s!"`{n}` is defined multiple times in this procedure", label? := some "defined again here"
+    notes := #["note: the variables, calls and constraints of a procedure share one namespace"] }
 
 def dupParamMsg (n : Name) : Msg :=
   { code? := some "F0213", headline := s!"parameter `{n}` is defined multiple times", label? := some "defined again here" }
@@ -1452,7 +1452,7 @@ def abstractFieldMsg (ty : Name) (payload : Bool) (within := false) : Msg :=
       else s!"a {what} cannot have the abstract type `{showPath ty}`"
     label? := some "an abstract type"
     notes := #["note: the values of records and enums are fully described by the spec",
-      "help: make the value an input of the components that use it, or a function of the record"] }
+      "help: make the value a parameter of the procedures that use it, or a function of the record"] }
 
 def recursiveRecordMsg (n : Name) : Msg :=
   { code? := some "F0311", headline := s!"record `{n}` has a field of its own type", label? := some "recursive field"
@@ -1525,7 +1525,7 @@ def unboundedOutputMsg (n : Name) (ty : String) : Msg :=
   { code? := some "F0313", headline := s!"output `{n}` has the unbounded type `{ty}`"
     label? := some "an unbounded type"
     notes := #["note: the realizability check asks whether outputs exist, which the solver cannot decide for values of unbounded size",
-      "help: define it, as `out x: T := e`, make it an input, or describe it by outputs of bounded types"] }
+      "help: define it, as `let x: T := e` or `out r := e`, make it a parameter, or describe it by outputs of bounded types"] }
 
 /-- Whether a record literal may give the name `n` times, from whether it
 is a field of the record (`lang::field_init`). -/
@@ -1895,11 +1895,11 @@ def inCore (c : Construct) (constantArgs comparable infiniteOutput ground : Bool
 def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
   let (why, help) := if infiniteOutput then
       ("an operand mentions an output of an infinite type, which the realizability check would search for",
-        "help: mention the inputs that the output depends on instead, or define the output")
+        "help: mention the parameters that the output depends on instead, or define the output")
     else match c with
       | .stringAtom => ("its argument is not a constant", "help: compare with a literal or a constant")
       | .stringIndex => ("its position is not a constant", "help: index at constant positions")
-      | .setAlgebra => ("it is an operation on sets", "help: mention the inputs that the output depends on")
+      | .setAlgebra => ("it is an operation on sets", "help: mention the parameters that the output depends on")
       | .setFunction => ("a function of sets whose members' type may be finite does not combine with the theory of sets",
         "help: use a set of an infinite type, such as `Int` or `String`")
       | .relational => ("a relational operator over a type that is not finite quantifies over its values",
@@ -1908,7 +1908,7 @@ def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
         "help: say what the members are, with `in` and `subset`, rather than how many there are")
       | .seqWord => ("an operation on sequences other than indexing, `len` and `update` makes a word equation, which may be undecidable",
         "help: index at positions, or compare with a literal, as in `x in [a, b]` or `q.starts_with?([a])`")
-      | .seqArray => ("it is an operation on sequences", "help: mention the inputs that the output depends on")
+      | .seqArray => ("it is an operation on sequences", "help: mention the parameters that the output depends on")
       | .quantifier => ("a quantifier over a type whose values cannot be listed is not expanded, but given to the solver",
         "help: quantify over a listed type, such as `Bool` or an enum, or opt out, and guard it, as in `forall (x: T), when x in s, ...`, so that it can be tested")
       | .stringCompare => ("it compares two strings that are not both variables, and neither is a constant",
@@ -1919,10 +1919,10 @@ def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
     label? := some "outside the decidable core"
     notes := #[help] }
 
-/-- An instance, or a binder of a global expectation, of a component
+/-- A call, or a binder of a global expectation, of a procedure
 outside the decidable core: its constraints are part of the queries. -/
 def undecidableInstMsg (comp : Name) : Msg :=
-  { code? := some "F0714", headline := s!"`{showPath comp}` is outside the decidable core, and so is what instantiates it"
+  { code? := some "F0714", headline := s!"`{showPath comp}` is outside the decidable core, and so is what calls it"
     label? := some "outside the decidable core"
     notes := #[s!"note: `{showPath comp}` opts out of the decidable core, and its constraints are part of these queries"] }
 

@@ -1,6 +1,6 @@
 -- No type is followed by `=`, so `>=` after a type is an error: here,
 -- `:=` was meant.
-comp c { in x: Int pub out y? ensure r: y? iff (let s: Set<Int>= {x} in s.card > 0) }
+proc c(x: Int): (y?) { ensure r: y? iff (let s: Set<Int>= {x} in s.card > 0) }
 --~^[cli] error: expected `>`, found `>=`
 --~^^[hosted] error: unexpected token
 --@ exit: 2

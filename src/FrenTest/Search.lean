@@ -4,7 +4,7 @@ import FrenCli.Search
 
 /-!
 The defined outputs that the inputs alone give (`Comp.earlyDefs`), found
-whatever order they are declared in (`Reqs/Lang/Components#members`).
+whatever order they are declared in (`Reqs/Lang/Procedures#members`).
 -/
 
 open FrenCli.Eval

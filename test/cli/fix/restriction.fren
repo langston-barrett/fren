@@ -9,28 +9,31 @@ set_option fren.lint.unfulfilled_lint_expectations "allow"
 enum Mode { Heat, Cool, Off, Auto }
 enum Shape { Circle(Int), Rect(Int, Int), Dot }
 
-comp fixes {
+proc fixes(
+    mode: Mode,
+    shape: Shape,
+    text: String,
+    spare: Int,
+    first?,
+    second?,
+    third?,
+    left: Set<Int>,
+    right: Set<Int>,
+    other: Set<Int>,
+): (
+    level: Int,
+    size: Int,
+    single: Int,
+    lower?,
+    quoted?,
+    accented?,
+    astral?,
+    loose?,
+    open_ended?,
+    sets: Set<Int>,
+) {
     use self::Mode::{Cool, Heat}
-    in mode: Mode
-    in shape: Shape
-    in text: String
-    in spare: Int
-    in first?
-    in second?
-    in third?
-    in left: Set<Int>
-    in right: Set<Int>
-    in other: Set<Int>
-    pub out level: Int
-    pub out size: Int
-    pub out single: Int
-    pub out lower?
-    pub out quoted?
-    pub out accented?
-    pub out astral?
-    pub out loose?
-    pub out open_ended?
-    pub out sets: Set<Int> := left minus right inter other
+    out sets := left minus right inter other
 
     -- Written as the other arms write their variants.
     ensure wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }

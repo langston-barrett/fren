@@ -1,6 +1,6 @@
 --- test/cli/fix/fix_bool_div_mod.fren
 +++ test/cli/fix/fix_bool_div_mod.fren
-@@ -11,3 +11,3 @@
+@@ -5,3 +5,3 @@
 -    ensure r1: o? iff not (x mod 2 = 0)
 -    ensure r2: p? iff not not (x div -3 < y mod 4 * 2)
 -    ensure r3: q? iff not ((x - y).abs >= x.min(y)) and not (2 * x div 3 != (x + 1) mod 5)

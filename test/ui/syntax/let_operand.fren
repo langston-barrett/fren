@@ -1,7 +1,7 @@
 -- `let` as an operand needs parentheses: its body extends as far right as possible.
 -- fren-covers: lang::definition_form
-comp c { in x: Int pub out y? ensure r: y? iff x > 0 and let z := 1 in x > z }
+proc c(x: Int): (y?) { ensure r: y? iff x > 0 and let z := 1 in x > z }
 --~^[cli] error: `let` must be parenthesized here
 --~^^[hosted] error: unexpected token at this precedence level; consider parenthesizing the term
-comp ok { in x: Int pub out y? ensure r: y? iff (x > 0 and (let z := 1 in x > z)) }
+proc ok(x: Int): (y?) { ensure r: y? iff (x > 0 and (let z := 1 in x > z)) }
 --@ exit: 2

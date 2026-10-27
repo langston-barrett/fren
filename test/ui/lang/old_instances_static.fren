@@ -1,0 +1,12 @@
+-- Instances, as calls were written before (F0420): reported once the
+-- called procedure is known, with a fix if they bind each parameter once.
+proc sub(a: Int, b?) {}
+--~^ warning: unused variable `a`
+--~^^ warning: unused variable `b?`
+proc fixable(x: Int) { inst s: sub { b? := x > 0, a := x } }  --~ error: instances are written as calls
+proc twice(x: Int) { inst s: sub { a := x, a := 1 } }  --~ error: instances are written as calls
+proc defined(x: Int): (y: Int) {
+    out y := x
+    out y := x + 1  --~ error: result `y` is defined more than once
+}
+--@ exit: 2

@@ -1,7 +1,5 @@
 -- A `fren.evidence` value other than "tested" or "solver".
 set_option fren.evidence "testing" in
-comp c {
-    in x?
-    pub det out y?
+proc c(x?): (det y?) {
     ensure r: y? iff x?
 }

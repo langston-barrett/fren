@@ -1,8 +1,8 @@
-error[F0104]: expected a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`, found number `42`
- --> test/cli/syntax/f0104_member.fren:2:20
+error[F0104]: expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`, found number `42`
+ --> test/cli/syntax/f0104_member.fren:2:18
   |
-2 | comp c { in x: Int 42 }
-  |                    ^^ expected a member (`in`, `out`, `inst`, `assume`, `ensure`, `expect`, `cover` or `use`) or `}`
+2 | proc c(x: Int) { 42 }
+  |                  ^^ expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`
 
 error: could not check due to previous errors
 

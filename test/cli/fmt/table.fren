@@ -1,9 +1,7 @@
 --@ args: fmt --check
 -- `fren fmt` starts a table's rows on their lines, each `|` as it starts
 -- its row, and gives the rows of a vertical one a trailing comma.
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure a: y = table {x > 0=>1,_=>0}
     ensure b: y = table {
     | x > 0 => 1,

@@ -1,0 +1,6 @@
+-- `out x := e` where `x` is a parameter (F0160): writing it as a `let`
+-- would declare `x` twice, so it has no fix.
+proc c(x: Int): (y: Int) {
+    out x := 1
+    ensure r: y = x
+}

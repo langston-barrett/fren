@@ -802,7 +802,7 @@ def Comp.earlyDefs (c : Comp) : Array Name := Id.run do
 
 /-- The variables of `c` nested at `pfx` in the order the search chooses
 them (`Reqs/Eval#searching-for-behaviours`): its inputs, the defined
-outputs that they give, each instance's variables, then its other
+outputs that they give, each call's variables, then its other
 outputs. -/
 partial def Spec.order (sp : Spec) (c : Comp) (pfx : Name := .anonymous) : Array (Name × VTy) :=
   let early := c.earlyDefs

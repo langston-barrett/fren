@@ -1,8 +1,6 @@
 -- A counterexample shows the values of public defined outputs.
-comp c {
-    in x: Int
-    pub out next: Int := x + 1
-    pub out y: Int
+proc c(x: Int): (next: Int, y: Int) {
+    out next := x + 1
 
     ensure r: y >= next
 

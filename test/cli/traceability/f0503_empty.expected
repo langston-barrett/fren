@@ -4,7 +4,7 @@ error[F0503]: the justification of a `trusted` claim cannot be empty
 3 | trusted c: "  "
   |            ^^^^ empty justification
   |
-  = note: a `trusted` claim records why the component holds without a proof or a test
+  = note: a `trusted` claim records why the procedure holds without a proof or a test
   = help: say why it can be trusted, e.g. `trusted c: "checked by hand against the datasheet"`
 
 error: could not check due to previous errors

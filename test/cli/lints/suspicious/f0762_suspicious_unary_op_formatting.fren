@@ -1,9 +1,5 @@
 -- `suspicious_unary_op_formatting`.
-pub comp c {
-    in x: Int
-    pub out p?
-    pub out q?
-
+pub proc c(x: Int): (p?, q?) {
     ensure r: p? iff x >- 1
     ensure s: q? iff x <=- 1
 }

@@ -2,6 +2,6 @@
 -- written in angle brackets (`F0155`): the suggestion writes the whole
 -- type, with the types within it written so too.
 mod m
-comp c { in x: Option(Set(Int)) }
+proc c(x: Option(Set(Int))) {}
 --~^ error: type arguments are written in angle brackets
 --@ exit: 2

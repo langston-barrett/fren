@@ -11,9 +11,10 @@ pub struct V { rev: W }
 pub fn even?(Int): Bool  --~ warning: `even?` is a `Bool` by its name
 pub fn pos?(n: Int, big?: Bool) := n > 0 and big?  --~ warning: `big?` is a `Bool` by its name
 
-pub comp vars {
-    in ready?: Bool  --~ warning: `ready?` is a `Bool` by its name
-    pub out done?: Bool := ready?  --~ warning: `done?` is a `Bool` by its name
+pub proc vars(
+    ready?: Bool,    --~ warning: `ready?` is a `Bool` by its name
+): (done?: Bool) {  --~ warning: `done?` is a `Bool` by its name
+    out done? := ready?
 }
 
 -- The chains are in functions' bodies, which no check reads.
@@ -35,13 +36,7 @@ pub fn c5?(r: Rel<E, E>) := r.closure.domain = r.closure.range
 pub fn c6?(q: Seq<Int>, v: V) := v.rev.rev = [1] and q.rev.contains?([1]) and q.rev.rev.contains?([1])
 --~^ warning: this chain of methods has a shorter form
 
-pub comp patterns {
-    in s: String
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-
+pub proc patterns(s: String): (p1?, p2?, p3?, p4?) {
     ensure t1: p1? iff s.matches?("abc")  --~ warning: this pattern has no operator but `.*`
     ensure t2: p2? iff (s.matches?(r"a\.b.*") or s.matches?(".*x") or s.matches?(r".*y\\z.*"))
     --~^ warning: this pattern has no operator but `.*`
@@ -54,14 +49,7 @@ pub comp patterns {
     ensure t4: p4? iff (s.matches?("ab|c") or s.matches?("a.") or s.matches?(".*") or s.matches?("[a-z]"))
 }
 
-pub comp arms {
-    in e: E
-    in u: Lone
-    in x: Int
-    pub out y1: Int
-    pub out y2: Int
-    pub out y3: Int
-
+pub proc arms(e: E, u: Lone, x: Int): (y1: Int, y2: Int, y3: Int) {
     ensure m1: y1 = match e { _ => 1 } + match u { Lone::Only => x + 1 } * 2
     --~^ warning: this `match` has one arm, which binds nothing
     --~^^ warning: this `match` has one arm, which binds nothing

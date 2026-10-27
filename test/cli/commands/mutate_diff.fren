@@ -8,26 +8,17 @@ mod m
 
 const LIMIT: Int := 10
 
-pub comp c {
-    in x: Int
-    pub out y?
-
+pub proc c(x: Int): (y?) {
     ensure r: y? iff x > 1
 
     expect e: when x = 5, y?
 }
 
-pub comp d {
-    in x: Int
-    pub out y?
-
+pub proc d(x: Int): (y?) {
     ensure r: y? iff x < LIMIT
 }
 
-pub comp f {
-    in x: Int
-    pub out y?
-
+pub proc f(x: Int): (y?) {
     ensure r: y? iff x != 3
 }
 

@@ -1,9 +1,6 @@
 --@ args: mutate -A redundant_comparisons
 -- Three mutants survive; five are equivalent, and are not reported.
-comp c {
-    in x: Int
-    pub out pos?
-
+proc c(x: Int): (pos?) {
     ensure r: pos? iff (x > 0 and x >= 1)
     expect e: when x > 1, pos?
 }

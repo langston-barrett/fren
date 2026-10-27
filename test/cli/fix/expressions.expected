@@ -1,6 +1,6 @@
 --- test/cli/fix/expressions.fren
 +++ test/cli/fix/expressions.fren
-@@ -19,6 +19,6 @@
+@@ -6,6 +6,6 @@
 -    ensure r1: p1? iff if a? then b? else not b?
 -    ensure r2: p2? = if a? and b? then not (x > 0 or a?) else (x > 0 or a?)
 -    ensure r3: t = match (s) { Shape::Dot => Shape::Dot, _ => s }
@@ -13,7 +13,7 @@
 +    ensure r4: p3? iff x >= 1
 +    ensure r5: n = 2 * -(x + 1)
 +    ensure r6: p4? iff x > 0 and (a? iff b?)
-@@ -26 +26 @@
+@@ -13 +13 @@
 -    ensure r7: p5? iff (if a? and if c? then b? else a? then b? else not b?)
 +    ensure r7: p5? iff ((a? and if c? then b? else a?) iff b?)
 exit=1

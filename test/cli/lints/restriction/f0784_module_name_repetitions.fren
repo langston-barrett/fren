@@ -5,9 +5,6 @@ mod climate
 
 pub enum ClimateMode { Heat, Cool }
 
-pub comp climate_reading {
-    in mode: ClimateMode
-    pub out heating?
-
+pub proc climate_reading(mode: ClimateMode): (heating?) {
     ensure rule: heating? iff mode = ClimateMode::Heat
 }

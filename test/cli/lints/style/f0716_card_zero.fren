@@ -1,2 +1,2 @@
 -- `card_zero`.
-comp c { in s: Set<Int> pub out p? ensure r: p? iff s.card > 0 }
+proc c(s: Set<Int>): (p?) { ensure r: p? iff s.card > 0 }

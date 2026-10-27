@@ -1,7 +1,7 @@
 warning[F0773]: this `or` has an operand that does not change its value
- --> test/cli/lints/pedantic/f0773_overly_complex_bool_expr.fren:9:24
+ --> test/cli/lints/pedantic/f0773_overly_complex_bool_expr.fren:5:24
   |
-9 |     ensure r1: p? iff (b? and a? or a?)
+5 |     ensure r1: p? iff (b? and a? or a?)
   |                        ^^^^^^^^^^^^^^^ the other operand decides it
   |
   = note: `a or (a and b)` is `a`, and `a and (a or b)` is `a`
@@ -9,23 +9,23 @@ warning[F0773]: this `or` has an operand that does not change its value
   = note: `overly_complex_bool_expr` is set to `warn`
 help: write `a?`
   |
-9 -     ensure r1: p? iff (b? and a? or a?)
-9 +     ensure r1: p? iff a?
+5 -     ensure r1: p? iff (b? and a? or a?)
+5 +     ensure r1: p? iff a?
   |
 
 warning[F0773]: this `and` is always `false`
-  --> test/cli/lints/pedantic/f0773_overly_complex_bool_expr.fren:10:23
-   |
-10 |     ensure r2: q? iff not a? and a?
-   |                       ^^^^^^^^^^^^^ an operand and its negation
-   |
-   = note: one of the operands is probably not the one meant
-   = help: `fren fix` can fix this
+ --> test/cli/lints/pedantic/f0773_overly_complex_bool_expr.fren:6:23
+  |
+6 |     ensure r2: q? iff not a? and a?
+  |                       ^^^^^^^^^^^^^ an operand and its negation
+  |
+  = note: one of the operands is probably not the one meant
+  = help: `fren fix` can fix this
 help: write `false`
-   |
-10 -     ensure r2: q? iff not a? and a?
-10 +     ensure r2: q? iff false
-   |
+  |
+6 -     ensure r2: q? iff not a? and a?
+6 +     ensure r2: q? iff false
+  |
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
 

@@ -1,8 +1,8 @@
 warning[F0754]: this `replace_all` has no effect
- --> test/cli/lints/suspicious/f0754_no_effect_replace.fren:3:64
+ --> test/cli/lints/suspicious/f0754_no_effect_replace.fren:3:55
   |
-3 | comp c { in s: String in a: String pub out p? ensure r: p? iff s.replace_all(a, a) = "x" }
-  |                                                                ^^^^^^^^^^^^^^^^^^^ replaces with what it replaces
+3 | proc c(s: String, a: String): (p?) { ensure r: p? iff s.replace_all(a, a) = "x" }
+  |                                                       ^^^^^^^^^^^^^^^^^^^ replaces with what it replaces
   |
   = note: the two arguments are written the same
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0754]: this `replace_all` has no effect
   = help: to allow it, `set_option fren.lint.no_effect_replace "allow"`
 help: write `s`
   |
-3 - comp c { in s: String in a: String pub out p? ensure r: p? iff s.replace_all(a, a) = "x" }
-3 + comp c { in s: String in a: String pub out p? ensure r: p? iff s = "x" }
+3 - proc c(s: String, a: String): (p?) { ensure r: p? iff s.replace_all(a, a) = "x" }
+3 + proc c(s: String, a: String): (p?) { ensure r: p? iff s = "x" }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

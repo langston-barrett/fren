@@ -12,7 +12,7 @@ of [integers](Complexity/Integers.md) and of [record updates](Complexity/Updates
 ## Simpler `Bool` expressions
 
 `nonminimal_bool` reports a `Bool` expression that has a simpler form with
-the same meaning, in any constraint, binding, constant or global
+the same meaning, in any constraint, argument, binding, constant or global
 expectation:
 
 | Written | Simpler form |
@@ -52,11 +52,12 @@ literal:
 pub mod lint
 
 set_option fren.evidence "enumerated" in
-pub comp literal_comparison {
-    in equal?            -- the operator is `=` or `iff`, rather than `!=`
-    in literal?          -- the literal is `true`
-    pub det out negated?  -- the simpler form is `not A`, rather than `A`
-
+pub proc literal_comparison(
+    equal?,              -- the operator is `=` or `iff`, rather than `!=`
+    literal?,            -- the literal is `true`
+): (
+    det negated?,         -- the simpler form is `not A`, rather than `A`
+) {
     ensure rule: negated? iff (equal? != literal?)
 
     expect equal_true: when equal? and literal?, not negated?
@@ -70,10 +71,8 @@ not:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp complement {
+pub proc complement(op: Comparison): (det result: Comparison) {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
-    in op: Comparison
-    pub det out result: Comparison
 
     ensure rule: result = match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
 
@@ -107,12 +106,7 @@ expression the rules chose.
 
 ```fren
 set_option fren.lint.nonminimal_bool "expect" in
-pub comp nonminimal_bool_keeps_meaning {
-    in a?
-    in c?
-    in x: Int
-    in y: Int
-
+pub proc nonminimal_bool_keeps_meaning(a?, c?, x: Int, y: Int) {
     expect true_literals: ((a? = true) iff a?) and ((a? != false) iff a?) and ((a? iff true) iff a?)
     expect false_literals: ((a? = false) iff not a?) and ((a? != true) iff not a?) and ((a? iff false) iff not a?)
     expect literals_left: ((true = a?) iff a?) and ((true iff a?) iff a?) and ((false = a?) iff not a?)
@@ -151,11 +145,11 @@ pub enum CardinalityFix { Unchanged, Argument, True }
 
 -- Its expectation applies a cardinality operator to one argument.
 set_option fren.lint.nonminimal_bool "allow" in
-pub comp nonminimal_cardinality {
+pub proc nonminimal_cardinality(
+    exactly?,            -- `exactly_one?`, rather than `at_most_one?`
+    args: Seq<Bool>,     -- the values of the arguments, in order
+): (det fix: CardinalityFix) {
     use self::CardinalityFix::{Argument, True, Unchanged}
-    in exactly?          -- `exactly_one?`, rather than `at_most_one?`
-    in args: Seq<Bool>   -- the values of the arguments, in order
-    pub det out fix: CardinalityFix
 
     ensure rule: fix = (if args.len != 1 then Unchanged else if exactly? then Argument else True)
 
@@ -164,20 +158,16 @@ pub comp nonminimal_cardinality {
 }
 
 set_option fren.lint.nonminimal_bool "allow" in
-pub comp nonminimal_cardinality_written {
-    in a?
-    in x: Int
-    pub det out exactly? := exactly_one?(a?)
-    pub det out at_most? := at_most_one?(x > 0)
+pub proc nonminimal_cardinality_written(a?, x: Int): (det exactly?, det at_most?) {
+    out exactly? := exactly_one?(a?)
+    out at_most? := at_most_one?(x > 0)
 }
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.lint.unused_variables "allow" in
-pub comp nonminimal_cardinality_fixed {
-    in a?
-    in x: Int
-    pub det out exactly? := a?
-    pub det out at_most? := true
+pub proc nonminimal_cardinality_fixed(a?, x: Int): (det exactly?, det at_most?) {
+    out exactly? := a?
+    out at_most? := true
 }
 
 refine nonminimal_cardinality_sound: nonminimal_cardinality_fixed refines nonminimal_cardinality_written
@@ -188,7 +178,7 @@ refine nonminimal_cardinality_complete: nonminimal_cardinality_written refines n
 
 `needless_bool_assign` fires on `if C then X else not X` and on `if C
 then not X else X`, where the two `X` are [written the
-same](Suspicious/Expressions.md), in any constraint, binding,
+same](Suspicious/Expressions.md), in any constraint, argument, binding,
 definition, constant or global expectation, and is fixable. The first
 holds exactly when `C` and `X` agree, which is `C iff X`, and the second
 exactly when they differ, which is `C != X`, the exclusive or of two
@@ -205,22 +195,20 @@ operand, which both front ends evaluate under the guard of the operator.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp needless_bool_assign {
-    in else_negates?     -- the `else` branch is `not X`, for an `X` written the same as the `then` branch
-    in then_negates?     -- the `then` branch is `not X`, for an `X` written the same as the `else` branch
-    pub det out fires?
-    pub det out unequal?  -- the fix is `C != X`, rather than `C iff X`
-
+pub proc needless_bool_assign(
+    else_negates?,       -- the `else` branch is `not X`, for an `X` written the same as the `then` branch
+    then_negates?,       -- the `then` branch is `not X`, for an `X` written the same as the `else` branch
+): (
+    det fires?,
+    det unequal?,         -- the fix is `C != X`, rather than `C iff X`
+) {
     ensure rule: fires? iff (else_negates? or then_negates?)
     ensure fix: unequal? iff not else_negates?
 }
 
 set_option fren.lint.needless_bool_assign "allow" in
 set_option fren.evidence "enumerated" in
-comp needless_bool_assign_meaning {
-    in c?
-    in x?
-
+proc needless_bool_assign_meaning(c?, x?) {
     expect agree: (if c? then x? else not x?) iff (c? iff x?)
     expect differ: (if c? then not x? else x?) iff c? != x?
 }
@@ -234,34 +222,32 @@ fixable. `lint::singleton_membership_keeps_meaning` states the fix as a law
 
 ```fren
 set_option fren.lint.singleton_membership "expect" in
-pub comp singleton_membership_keeps_meaning {
-    in x: Int
-    in y: Int
-
+pub proc singleton_membership_keeps_meaning(x: Int, y: Int) {
     expect singleton: (x in {y}) iff x = y
 }
 ```
 
 ## Constant outputs
 
-`constant_output` fires on a [defined output](../Lang/Components.md#defined-outputs)
-whose definition mentions no variable and no uninterpreted function (see
+`constant_output` fires on a result or `let` variable with a
+[definition](../Lang/Procedures.md#definitions) that mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)): it is the same in every behaviour,
 so it is a constant. Its counterpart in the `pedantic` group,
 [`definable_output`](Pedantic.md#definable-outputs), fires on an output
-that is not defined but could be. `lint::output_lints` states both, from
+that has no definition but could have one. `lint::output_lints` states both, from
 what the definition mentions, as [`lang::mentions`](../Lang/Expressions.md#mentions)
 gives it:
 
 ```fren
-pub comp output_lints {
-    in defined?                       -- the output is defined
-    in mentioned: Set<lang::Mention>  -- what its definition mentions, if defined, and `{}` if not
-    in n_guarantees: Nat              -- guarantees that mention it, if not defined
-    in equation?                      -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
-    pub det out constant?             -- `constant_output` fires
-    pub det out definable?            -- `definable_output` fires
-
+pub proc output_lints(
+    defined?,                         -- the output is defined
+    mentioned: Set<lang::Mention>,    -- what its definition mentions, if defined, and `{}` if not
+    n_guarantees: Nat,                -- guarantees that mention it, if not defined
+    equation?,                        -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
+): (
+    det constant?,                    -- `constant_output` fires
+    det definable?,                   -- `definable_output` fires
+) {
     ensure constant: constant? iff (defined? and mentioned = {})
     ensure definable: definable? iff (not defined? and n_guarantees = 1 and equation?)
 
@@ -269,7 +255,7 @@ pub comp output_lints {
 }
 ```
 
-A defined output is the layer `Definition(x)`, whose one part is its
+A defined variable is the layer `Definition(x)`, whose one part is its
 definition, so its value is its definition's. Where `constant_output`
 fires, that value is the same in every behaviour, by
 [`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where each
@@ -292,8 +278,8 @@ r.x, y := r.y }` whose every field reads that field of one `r`, written
 the same each time, where `r` is a value whose type is `S` itself: the
 literal is then `r`. It does not fire where `r` is of another record with
 the same fields, as `Pair { x := p.x, y := p.y }` for a `Point` `p`,
-which converts one to the other, nor where `r` is an instance, as `Point
-{ x := w.x, y := w.y }`, since an instance is not a value. A field without
+which converts one to the other, nor where `r` is a call, as `Point
+{ x := w.x, y := w.y }`, since a call is not a value. A field without
 `:=`, as `x` in `S { x, y := r.y }`, reads the variable `x`. The fix
 replaces the literal with `r` as written: `r` is the receiver of a field
 read, so it needs no parentheses wherever the literal could be. A record is
@@ -303,19 +289,18 @@ wherever its receiver is, and `r` takes the literal's place.
 `lint::unnecessary_struct_initialization` states when it fires:
 
 ```fren
-pub comp unnecessary_struct_initialization {
-    in n_fields: Nat     -- the fields of the literal
-    in reads_own?        -- each field's value reads that field of some `r`, as `r.x` for `x`
-    in same?             -- `r` is written the same in each
-    in value?            -- `r` is a value, rather than an instance
-    in same_type?        -- `r`'s type is the record
-    pub det out fires?
-
+pub proc unnecessary_struct_initialization(
+    n_fields: Nat,       -- the fields of the literal
+    reads_own?,          -- each field's value reads that field of some `r`, as `r.x` for `x`
+    same?,               -- `r` is written the same in each
+    value?,              -- `r` is a value, rather than a call
+    same_type?,          -- `r`'s type is the record
+): (det fires?) {
     ensure rule: fires? iff (n_fields > 0 and reads_own? and same? and value? and same_type?)
 }
 ```
 
-The refinements below check the fix: a component that computes the
+The refinements below check the fix: a procedure that computes the
 literal as written, one that computes the fix, and a
 [refinement](../Lang/Refinement.md) each way, so that the solver checks
 that they agree on every input. An operand of the rewrite is a variable,
@@ -327,14 +312,12 @@ expression.
 struct Point { x: Int, y: Int }
 
 set_option fren.lint.unnecessary_struct_initialization "allow" in
-pub comp struct_initialization_written {
-    in p: Point
-    pub det out v: Point := Point { x := p.x, y := p.y }
+pub proc struct_initialization_written(p: Point): (det v: Point) {
+    out v := Point { x := p.x, y := p.y }
 }
 
-pub comp struct_initialization_fixed {
-    in p: Point
-    pub det out v: Point := p
+pub proc struct_initialization_fixed(p: Point): (det v: Point) {
+    out v := p
 }
 
 refine struct_initialization_sound: struct_initialization_fixed refines struct_initialization_written
@@ -378,12 +361,10 @@ pub enum Roundtrip { Built(Newtype, Inner), Read(Newtype, Inner) }
 
 pub enum RoundtripFix { Unchanged, Reported, Fixed }  -- `Reported` is reported without a fix
 
-pub comp redundant_newtype_roundtrip {
+pub proc redundant_newtype_roundtrip(shape: Roundtrip): (det fix: RoundtripFix) {
     use self::Inner::{FieldOf, Typed, Untyped}
     use self::Roundtrip::{Built, Read}
     use self::RoundtripFix::{Fixed, Reported, Unchanged}
-    in shape: Roundtrip
-    pub det out fix: RoundtripFix
 
     ensure rule: fix = match shape {
         Built(t, FieldOf(u)) => if t = u then Fixed else Unchanged,
@@ -402,20 +383,24 @@ The refinements check both fixes:
 pub struct Ms(Int)
 
 set_option fren.lint.redundant_newtype_roundtrip "allow" in
-pub comp roundtrip_written {
-    in x: Ms
-    in n: Int
-    pub det out built: Ms := Ms(x.0)
-    pub det out read: Int := Ms(n).0
-    pub det out read_parenthesized: Int := (Ms(n + 1)).0 * 2
+pub proc roundtrip_written(x: Ms, n: Int): (
+    det built: Ms,
+    det read: Int,
+    det read_parenthesized: Int,
+) {
+    out built := Ms(x.0)
+    out read := Ms(n).0
+    out read_parenthesized := (Ms(n + 1)).0 * 2
 }
 
-pub comp roundtrip_fixed {
-    in x: Ms
-    in n: Int
-    pub det out built: Ms := x
-    pub det out read: Int := n
-    pub det out read_parenthesized: Int := (n + 1) * 2
+pub proc roundtrip_fixed(x: Ms, n: Int): (
+    det built: Ms,
+    det read: Int,
+    det read_parenthesized: Int,
+) {
+    out built := x
+    out read := n
+    out read_parenthesized := (n + 1) * 2
 }
 
 refine roundtrip_sound: roundtrip_fixed refines roundtrip_written
@@ -427,10 +412,7 @@ fix keeps the meaning:
 
 ```fren
 set_option fren.lint.redundant_newtype_roundtrip "allow" in
-comp roundtrip_keeps_meaning {
-    in x: Ms
-    in n: Int
-
+proc roundtrip_keeps_meaning(x: Ms, n: Int) {
     expect built: Ms(x.0) = x
     expect read: Ms(n).0 = n
 }
@@ -460,14 +442,15 @@ core](../Lang/Decidability.md#strings), so it opts out:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp zero_prefixed_literal {
-    in lexeme: String    -- an integer literal
-    in fixed: String
-
+pub proc zero_prefixed_literal(
+    lexeme: String,      -- an integer literal
+    fixed: String,
+): (
+    det fires?,
+    det is_fix?,         -- the fix of `lexeme` writes `fixed`
+) {
     assume literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
-    out zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
-    pub det out fires?
-    pub det out is_fix?  -- the fix of `lexeme` writes `fixed`
+    let zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
 
     ensure rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
     ensure fix: is_fix? iff (fires? and lexeme.ends_with?(fixed) and zeros.matches?(r"[0_]*")
@@ -480,27 +463,25 @@ pub comp zero_prefixed_literal {
 ```
 
 The [refinements](../Lang/Refinement.md) below check the fix and the
-value the message gives, for each literal above: a component that
+value the message gives, for each literal above: a procedure that
 compares an input with the literal as written, one that compares it with
 the fix, and a refinement each way, so that the solver checks that the
 two agree for every value of the input.
 
 ```fren
 set_option fren.lint.zero_prefixed_literal "allow" in
-pub comp zero_prefixed_written {
-    in x: Int
-    pub det out ten? := x = 010
-    pub det out one? := x = 00_1
-    pub det out thousand? := x = 01_000
-    pub det out zero? := x = 00
+pub proc zero_prefixed_written(x: Int): (det ten?, det one?, det thousand?, det zero?) {
+    out ten? := x = 010
+    out one? := x = 00_1
+    out thousand? := x = 01_000
+    out zero? := x = 00
 }
 
-pub comp zero_prefixed_fixed {
-    in x: Int
-    pub det out ten? := x = 10
-    pub det out one? := x = 1
-    pub det out thousand? := x = 1_000
-    pub det out zero? := x = 0
+pub proc zero_prefixed_fixed(x: Int): (det ten?, det one?, det thousand?, det zero?) {
+    out ten? := x = 10
+    out one? := x = 1
+    out thousand? := x = 1_000
+    out zero? := x = 0
 }
 
 refine zero_prefixed_sound: zero_prefixed_fixed refines zero_prefixed_written
@@ -517,7 +498,7 @@ each value of the other bound names, so the bound name could be its value
 instead. The message is at the binder of the first such name. It is
 fixable where every bound name's type is an enumeration with one variant
 without a payload, `T::V`, and the quantifier is not a global
-expectation's, whose binders over components stay: the fix writes the
+expectation's, whose binders over procedures stay: the fix writes the
 body, with `T::V`, `T` as the binder writes it, in place of each mention
 of a bound name, so `forall (u: Solo), u in s` becomes `Solo::Only in s`.
 That is the quantifier's one instance, so the fix keeps the meaning, and
@@ -528,7 +509,7 @@ means the bound name, and not what an inner binder of that name hides.
 There is no fix where the body declares a bound name again, as in
 `forall (u: Solo), (forall (u!: Solo), u in t) and u in t` or `exists
 (u: Solo), let u! := u in u in t`: without the quantifier, that `u!`
-would hide nothing ([Shadowing](../Lang/Components.md#shadowing)), which
+would hide nothing ([Shadowing](../Lang/Procedures.md#shadowing)), which
 is an error.
 `fren fix` leaves a quantifier with a comment in it, which the fix could
 lose.
@@ -546,17 +527,16 @@ enumeration of one variant without a payload, and its body's tree, in
 which it finds the names declared again:
 
 ```fren
-pub comp trivial_quantifier {
+pub proc trivial_quantifier(
+    names: Set<Local>,             -- the bound names
+    one_value: Set<Local>,         -- those whose types have one value
+    variant: Set<Local>,           -- those whose types are an enumeration of one variant without a payload
+    global?,                       -- a global expectation's leading `forall`
+    body: Tree,
+): (det fires?, det fixed?) {
     use lint::{Local, Tree, scope}
-    in names: Set<Local>           -- the bound names
-    in one_value: Set<Local>       -- those whose types have one value
-    in variant: Set<Local>         -- those whose types are an enumeration of one variant without a payload
-    in global?                     -- a global expectation's leading `forall`
-    in body: Tree
-    pub det out fires?
-    pub det out fixed?
 
-    inst s: scope { t := body }
+    call s := scope(body)
 
     ensure rule: fires? iff (one_value inter names) != {}
     ensure fix: fixed? iff (names != {} and names subset one_value and names subset variant and not global? and (names inter s.declared) = {})
@@ -575,20 +555,20 @@ bound name, of two bound names, and of one mentioned twice:
 pub enum Solo { Only }
 
 set_option fren.lint.trivial_quantifier "allow" in
-pub comp trivial_quantifier_written {
-    in s: Set<Solo>
-    in t: Set<Solo>
-    pub det out every? := forall (u: Solo), u in s
-    pub det out some? := exists (u: Solo), u in s and u in t
-    pub det out pair? := forall (u v: Solo), u in s or v in t
+pub proc trivial_quantifier_written(s: Set<Solo>, t: Set<Solo>): (
+    det every?,
+    det some?,
+    det pair?,
+) {
+    out every? := forall (u: Solo), u in s
+    out some? := exists (u: Solo), u in s and u in t
+    out pair? := forall (u v: Solo), u in s or v in t
 }
 
-pub comp trivial_quantifier_fixed {
-    in s: Set<Solo>
-    in t: Set<Solo>
-    pub det out every? := Solo::Only in s
-    pub det out some? := Solo::Only in s and Solo::Only in t
-    pub det out pair? := Solo::Only in s or Solo::Only in t
+pub proc trivial_quantifier_fixed(s: Set<Solo>, t: Set<Solo>): (det every?, det some?, det pair?) {
+    out every? := Solo::Only in s
+    out some? := Solo::Only in s and Solo::Only in t
+    out pair? := Solo::Only in s or Solo::Only in t
 }
 
 refine trivial_quantifier_sound: trivial_quantifier_fixed refines trivial_quantifier_written

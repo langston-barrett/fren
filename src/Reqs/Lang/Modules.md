@@ -46,31 +46,29 @@ A module's scope consists of the items declared in it and the names it
 imports. It does not include the scope of its parent, so a module that
 uses a name declared elsewhere must import it, even if its parent did.
 
-### `use` in a component
+### `use` in a procedure
 
-A `use` declaration can also be a member of a component. It brings its names into
-scope for that component's members, wherever they are written in it, and
-nowhere else:
+A `use` declaration can also be a member of a procedure. It brings its
+names into scope for that procedure's members, wherever they are written
+in its block, and in its signature's types, and nowhere else:
 
 ```text
-comp methods {
+proc methods(method: Method): (arity: Int) {
     use self::Method::*
-    in method: Method
-    pub out arity: Int
     ensure rule: arity = match method { Len | Card => 0, _ => 1 }
 }
 ```
 
-A component's imports shadow its module's scope. This is a rule of
+A procedure's imports shadow its module's scope. This is a rule of
 resolution, between two scopes, and takes no `!`, unlike a declaration that
-[shadows](Components.md#shadowing) a name. The first segment of a
-path in the component is resolved as in [Resolution](#resolution), first
-among the component's imports alone, and only if it is unbound there,
-in its module's scope. So a component can import `ValueType::BoolTy` even
+[shadows](Procedures.md#shadowing) a name. The first segment of a
+path in the procedure is resolved as in [Resolution](#resolution), first
+among the procedure's imports alone, and only if it is unbound there,
+in its module's scope. So a procedure can import `ValueType::BoolTy` even
 though its module imports another `BoolTy`, or declares one. The names
-that a component imports by name are distinct, as a module's are. The
-component's imports follow the same rules as a module's: a path starts
-from the root module or from `self`, which stands for the component's
+that a procedure imports by name are distinct, as a module's are. The
+procedure's imports follow the same rules as a module's: a path starts
+from the root module or from `self`, which stands for the procedure's
 module, and the [lints](../Lint/Unused.md#unused-imports) on imports apply to them.
 
 ## Visibility
@@ -91,15 +89,14 @@ pub type ModuleName
 
 pub fn descends?(ModuleName, ModuleName)
 
-pub comp item_visible {
-    in is_pub?
-    in owner: ModuleName  -- the module that declares the item
-    in here: ModuleName   -- the module where the path is written
-    in middle: ModuleName  -- any module, for `transitive`
-
+pub proc item_visible(
+    is_pub?,
+    owner: ModuleName,    -- the module that declares the item
+    here: ModuleName,     -- the module where the path is written
+    middle: ModuleName,    -- any module, for `transitive`
+): (visible?) {
     -- A submodule of a submodule is a submodule.
     assume transitive: when descends?(here, middle) and descends?(middle, owner), descends?(here, owner)
-    pub out visible?
 
     ensure rule: visible? iff (is_pub? or here = owner or descends?(here, owner))
 
@@ -126,8 +123,9 @@ absolute: its first segment is looked up in the current module's scope. So
 to write `Mode` in a module other than the one that declares it, first
 `use climate::Mode`.
 
-Within a component, a path whose first segment names one of the component's
-variables or instances refers to it, and likewise within a [global
+Within a procedure, a path whose first segment names one of the
+procedure's parameters, results, variables or calls refers to it, and
+likewise within a [global
 expectation](Global.md), for its binders. Otherwise, the first segment
 resolves as follows:
 
@@ -173,25 +171,26 @@ use self::Resolution::{Ambiguous, Glob, Local, Prelude, Unbound}
 
 -- It instantiates `lang::scope`, which quantifies over bindings.
 set_option fren.lint.undecidable "allow" in
-pub comp resolve {
+pub proc resolve(
+    bindings: Set<lang::Binding>,    -- the scope where it is written, `item_scope` of its context
+    nearer: Set<lang::Binding>,      -- the same scope without the prelude
+    name: lang::Id,                  -- its first segment
+): (det lookup: lang::Lookup, det result: Resolution) {
     use lang::BindingKind::Opened
-    in bindings: Set<lang::Binding>  -- the scope where it is written, `item_scope` of its context
-    in nearer: Set<lang::Binding>    -- the same scope without the prelude
-    in name: lang::Id                -- its first segment
 
     -- The prelude is only added to the scope.
     assume nearer_inside: nearer subset bindings
 
-    pub det out lookup: lang::Lookup := first.result
-    pub det out result: Resolution := match lookup {
+    out lookup := first.result
+    out result := match lookup {
         lang::Lookup::Found(Opened) => Glob,
         lang::Lookup::Found(_) => if inner.result = lang::Lookup::Unbound then Prelude else Local,
         lang::Lookup::Ambiguous => Ambiguous,
         lang::Lookup::Unbound => Unbound,
     }
 
-    inst first: lang::scope { bindings, name }
-    inst inner: lang::scope { bindings := nearer, name }
+    call first := lang::scope(bindings, name)
+    call inner := lang::scope(nearer, name)
 
     expect nothing_in_scope: when bindings = {}, result = Unbound
     -- Rules 2 and 3: only a variant that a glob import opens resolves through it, and
@@ -221,12 +220,11 @@ and whether the prelude gives the name (`prelude?`):
 ```fren
 -- `n_glob` is an `Int`, as a sequence's length is (`first_segment`).
 set_option fren.lint.manual_nat "allow" in
-pub comp resolve_layers {
-    in local?
-    in n_glob: Int       -- distinct items of this name opened by `use ...::*`
-    in prelude?          -- the prelude gives the name
-    pub out result: Resolution
-
+pub proc resolve_layers(
+    local?,
+    n_glob: Int,         -- distinct items of this name opened by `use ...::*`
+    prelude?,            -- the prelude gives the name
+): (result: Resolution) {
     assume counted: n_glob >= 0
 
     ensure local_wins: when local?, result = Local
@@ -252,17 +250,18 @@ outside the [decidable core](Decidability.md), so it opts out:
 pub type Path
 
 set_option fren.lint.undecidable "allow" in
-pub comp first_segment {
-    in declared: Seq<Path>         -- the item declared or imported by name
-    in opened: Seq<Path>           -- the distinct variants that `use ...::*` opens
-    in prelude: Seq<Path>          -- the prelude's item or variant
-    pub det out result: Resolution := if declared != [] then Local
+pub proc first_segment(
+    declared: Seq<Path>,           -- the item declared or imported by name
+    opened: Seq<Path>,             -- the distinct variants that `use ...::*` opens
+    prelude: Seq<Path>,            -- the prelude's item or variant
+): (det result: Resolution, det target: Seq<Path>) {
+    out result := if declared != [] then Local
         else if opened.len = 1 then Glob
         else if opened.len > 1 then Ambiguous
         else if prelude != [] then Prelude
         else Unbound
     -- What it resolves to: none if it is ambiguous or unbound.
-    pub det out target: Seq<Path> := if declared != [] then declared.at(0)
+    out target := if declared != [] then declared.at(0)
         else if opened.len = 1 then opened
         else if opened.len > 1 then []
         else prelude.at(0)
@@ -289,7 +288,7 @@ refine first_resolve: first_segment refines resolve_layers {
 An item declared with a name that the prelude gives, in a module where no
 item declared or imported by name, nor variant opened with `*`, has it,
 hides the prelude's item or variant, and is written with `!` after its
-name, as a [declaration that shadows](Components.md#shadowing) any name
+name, as a [declaration that shadows](Procedures.md#shadowing) any name
 is: `enum Option!<T> { None, Some(T) }`, `const None!: Int := 0` or
 `mod Result!`. Without the `!`, it is an error (`F0217`), and with a `!`
 where it hides nothing, so is the `!` (`F0218`). Where the module imports
@@ -311,12 +310,13 @@ it is opened and the prelude gives it. The item hides a name exactly then.
 -- as `opened = []`, is not in Lean: so `len`.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
-pub comp item_shadowing {
-    in opened: Seq<Path>           -- the distinct variants of its name that `use ...::*` opens
-    in prelude: Seq<Path>          -- the prelude's item or variant of its name
-    in bang?                       -- it is written with `!`
-    pub det out hides? := opened.len = 0 and prelude.len > 0
-    pub det out accepted? := hides? iff bang?
+pub proc item_shadowing(
+    opened: Seq<Path>,             -- the distinct variants of its name that `use ...::*` opens
+    prelude: Seq<Path>,            -- the prelude's item or variant of its name
+    bang?,                         -- it is written with `!`
+): (det hides?, det accepted?) {
+    out hides? := opened.len = 0 and prelude.len > 0
+    out accepted? := hides? iff bang?
 
     expect explicit: when prelude != [] and opened = [], accepted? iff bang?
     expect imports_first: when opened.len = 1, accepted? iff not bang?
@@ -338,7 +338,7 @@ path. Nothing else has members. In particular, a
 variant brought into scope by `use E::*` has no members.
 
 `Kind` classifies what a segment resolves to when it is an item: `Other`
-covers records, abstract types, functions, constants, components, global
+covers records, abstract types, functions, constants, procedures, global
 expectations, and variants imported by name. `kind_of` is the `Kind` of
 a binding's kind.
 
@@ -360,12 +360,11 @@ the previous segment resolved to.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp member {
-    in parent: Kind      -- what the previous segment resolved to
-    in found?            -- it has a member of this name
-    in visible?          -- for a module: that member is visible from here (`item_visible`)
-    pub out accepted?
-
+pub proc member(
+    parent: Kind,        -- what the previous segment resolved to
+    found?,              -- it has a member of this name
+    visible?,            -- for a module: that member is visible from here (`item_visible`)
+): (accepted?) {
     ensure rule: accepted? iff (found? and (if parent = Module then visible? else parent = Enum))
 
     expect only_modules_hide: when parent = Enum and found?, accepted?
@@ -379,27 +378,26 @@ whose `a` may be the prelude's, as in `Option::Some`.
 ```fren
 -- It instantiates `lang::scope`, which quantifies over bindings.
 set_option fren.lint.undecidable "allow" in
-pub comp two_segments {
-    in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
-    in nearer: Set<lang::Binding>    -- the same without the prelude
-    in a: lang::Id
-    in b_found?                      -- `a` has a member named `b`
-    in b_pub?                        -- that member is `pub`
-    in b_owner: ModuleName           -- the module declaring `b`: `a`, if `a` is a module
-    in here: ModuleName              -- the module where the path is written
-
+pub proc two_segments(
+    bindings: Set<lang::Binding>,    -- the items and imports in scope where the path is written
+    nearer: Set<lang::Binding>,      -- the same without the prelude
+    a: lang::Id,
+    b_found?,                        -- `a` has a member named `b`
+    b_pub?,                          -- that member is `pub`
+    b_owner: ModuleName,             -- the module declaring `b`: `a`, if `a` is a module
+    here: ModuleName,                -- the module where the path is written
+): (det a_kind: Kind, det accepted?) {
     assume nearer_inside: nearer subset bindings
 
     -- What `a` is, when it is declared or imported by name.
-    pub det out a_kind: Kind := match first.lookup {
+    out a_kind := match first.lookup {
         lang::Lookup::Found(k) => kind_of(k),
         _ => Other,
     }
-    pub det out accepted?
 
-    inst first: resolve { bindings, nearer, name := a }
-    inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
-    inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
+    call first := resolve(bindings, nearer, a)
+    call seen := item_visible(b_pub?, b_owner, here, here)
+    call second := member(a_kind, b_found?, seen.visible?)
 
     ensure rule: accepted? iff second.accepted?
 

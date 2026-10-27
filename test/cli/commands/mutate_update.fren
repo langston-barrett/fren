@@ -5,11 +5,6 @@ mod m
 
 pub struct S { on?, n: Int }
 
-pub comp c {
-    in s: S
-    in t: S
-    in x: Int
-    pub out o: S
-
+pub proc c(s: S, t: S, x: Int): (o: S) {
     ensure r: o = { if x > 0 then s else t with n := x + 1, on? := true }
 }

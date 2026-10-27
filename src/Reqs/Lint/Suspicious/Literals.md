@@ -24,11 +24,10 @@ point:
 ```fren
 pub mod lint
 
-pub comp invisible_character {
-    in code: Nat         -- the character's code point
-    in comment?          -- it is in a comment, rather than a string literal
-    pub det out fires?
-
+pub proc invisible_character(
+    code: Nat,           -- the character's code point
+    comment?,            -- it is in a comment, rather than a string literal
+): (det fires?) {
     -- U+202A to U+202E, U+2066 to U+2069 and U+FEFF anywhere; U+00AD,
     -- U+200B and U+2060 in a literal.
     ensure rule: fires? iff (8234 <= code <= 8238 or 8294 <= code <= 8297
@@ -79,28 +78,27 @@ the comparison always is, and `lint::const_empty_equation` the same for an
 equation with an empty literal:
 
 ```fren
-pub comp const_is_empty {
-    in op: Comparison
-    in bound: Int        -- the integer literal compared with
-    in left?             -- the length is the left operand, rather than the right
-    in set?              -- the literal is a set's or relation's
-    in n: Nat            -- its characters, or the elements it is written with
-    pub det out fires?
-    pub det out value?   -- what the comparison always is, where it fires
-
-    inst p: length_zero { op, bound, left? }
+pub proc const_is_empty(
+    op: Comparison,
+    bound: Int,          -- the integer literal compared with
+    left?,               -- the length is the left operand, rather than the right
+    set?,                -- the literal is a set's or relation's
+    n: Nat,              -- its characters, or the elements it is written with
+): (
+    det fires?,
+    det value?,          -- what the comparison always is, where it fires
+) {
+    call p := length_zero(op, bound, left?)
 
     ensure rule: fires? iff (not set? or p.fires?)
     ensure value: value? iff (if set? then (p.empty? iff n = 0)
         else compares?(op, if left? then n else bound, if left? then bound else n))
 }
 
-pub comp const_empty_equation {
-    in equal?            -- the operator is `=`, rather than `!=`
-    in n: Nat            -- the characters or elements of the literal that is not `E`
-    pub det out fires?
-    pub det out value?
-
+pub proc const_empty_equation(
+    equal?,              -- the operator is `=`, rather than `!=`
+    n: Nat,              -- the characters or elements of the literal that is not `E`
+): (det fires?, det value?) {
     ensure rule: fires? iff n > 0
     ensure value: value? iff (equal? iff n = 0)
 }
@@ -111,18 +109,18 @@ length that the literal can have, its number of characters or elements, or
 for a set, any `card` from `1` to that number if it is not empty:
 
 ```fren
-comp const_is_empty_exact {
-    in op: Comparison
-    in bound: Int
-    in left?
-    in set?
-    in n: Nat
-    in length: Int       -- the literal's `len` or `card`
-
+proc const_is_empty_exact(
+    op: Comparison,
+    bound: Int,
+    left?,
+    set?,
+    n: Nat,
+    length: Int,         -- the literal's `len` or `card`
+) {
     assume lengths: (if set? then (if n = 0 then length = 0 else 1 <= length <= n)
         else length = n)
 
-    inst p: const_is_empty { op, bound, left?, set?, n }
+    call p := const_is_empty(op, bound, left?, set?, n)
 
     expect exact: when p.fires?,
         compares?(op, if left? then length else bound, if left? then bound else length) iff p.value?
@@ -148,13 +146,14 @@ the characters before and after `-`, as [`lang::char_range`](../../Lang/Expressi
 does: `a` is 97, `A` is 65 and `0` is 48:
 
 ```fren
-pub comp almost_complete_range {
-    in low: Int          -- the code point of the character before `-`
-    in high: Int         -- of the character after it
-    pub det out fires?
-    pub det out whole_low: Int   -- the range of the fix, from this code point
-    pub det out whole_high: Int  -- to this one
-
+pub proc almost_complete_range(
+    low: Int,            -- the code point of the character before `-`
+    high: Int,           -- of the character after it
+): (
+    det fires?,
+    det whole_low: Int,          -- the range of the fix, from this code point
+    det whole_high: Int,         -- to this one
+) {
     ensure rule: fires? iff ((low in {97, 98, 65, 66} and high = low + 24) or (low = 48 and high = 56))
     ensure fix_low: whole_low = (if fires? and low in {98, 66} then low - 1 else low)
     ensure fix_high: whole_high = (if fires? and high in {121, 89, 56} then high + 1 else high)
@@ -187,11 +186,10 @@ when it fires:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp literal_dot_in_pattern {
-    in before?           -- a letter or digit, neither escaped nor in a class, is directly before the `.`
-    in after?            -- one is directly after it
-    pub det out fires?
-
+pub proc literal_dot_in_pattern(
+    before?,             -- a letter or digit, neither escaped nor in a class, is directly before the `.`
+    after?,              -- one is directly after it
+): (det fires?) {
     ensure rule: fires? iff (before? and after?)
 }
 ```
@@ -203,21 +201,18 @@ the pattern as written matches `"v1x2"` too:
 
 ```fren
 set_option fren.lint.literal_dot_in_pattern "allow" in
-pub comp literal_dot_written {
-    in s: String
-    pub det out v? := s.matches?(r"v1.2")
+pub proc literal_dot_written(s: String): (det v?) {
+    out v? := s.matches?(r"v1.2")
 
     expect any_character: when s = "v1x2", v?
 }
 
-pub comp literal_dot_fixed {
-    in s: String
-    pub det out v? := s.matches?(r"v1[.]2")
+pub proc literal_dot_fixed(s: String): (det v?) {
+    out v? := s.matches?(r"v1[.]2")
 }
 
-pub comp literal_dot_value {
-    in s: String
-    pub det out v? := s = "v1.2"
+pub proc literal_dot_value(s: String): (det v?) {
+    out v? := s = "v1.2"
 }
 
 refine literal_dot_sound: literal_dot_value refines literal_dot_fixed

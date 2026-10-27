@@ -1,7 +1,6 @@
 -- Unrealizable because of an instance (F0601).
-comp chooser { pub out b? }
-comp c {
-    pub out x: Int
-    inst pick: chooser {}
+proc chooser(): (b?) {}
+proc c(): (x: Int) {
+    call pick := chooser()
     ensure lucky: pick.b? and x = 0
 }

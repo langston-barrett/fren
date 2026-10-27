@@ -2,7 +2,7 @@
 +++ test/cli/fix/shadowed_import.fren
 @@ -14 +13,0 @@
 -    use self::Color::Green
-@@ -22 +21 @@
+@@ -20 +19 @@
 -    use self::Color::*
 +    use self::Color::{Blue, Red}
 exit=1

@@ -1,8 +1,8 @@
 error[F0385]: `Mode` takes no type arguments, but 1 was given
- --> test/cli/types/f0385_extra_type_arguments.fren:4:16
+ --> test/cli/types/f0385_extra_type_arguments.fren:4:11
   |
-4 | comp c { in m: Mode<Int> }
-  |                ^^^^^^^^^ 1 type argument
+4 | proc c(m: Mode<Int>) {}
+  |           ^^^^^^^^^ 1 type argument
   |
   = note: `Mode` is not generic
 

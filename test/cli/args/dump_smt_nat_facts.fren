@@ -5,31 +5,21 @@
 -- which instantiates it, nor of a string literal written like one.
 fn size(Int): Nat
 
-comp sized {
-    in k: Int
-    pub out pos?
-
+proc sized(k: Int): (pos?) {
     ensure r: pos? iff k > 0
 
     expect sized: size(k) >= 0
 }
 
-comp uses_sized {
-    in m: Int
-    pub out ok?
-
-    inst sz: sized { k := m }
+proc uses_sized(m: Int): (ok?) {
+    call sz := sized(m)
 
     ensure r: ok? iff sz.pos?
 
     cover ok_one: ok? and m = 1
 }
 
-comp quoted {
-    in k: Int
-    in s: String
-    pub out same?
-
+proc quoted(k: Int, s: String): (same?) {
     ensure r: same? iff s = "(|::size| |k|)"
 
     expect sized: size(k) + 1 > 0

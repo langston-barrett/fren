@@ -1,8 +1,8 @@
 error[F0109]: `let` must be parenthesized here
- --> test/cli/syntax/f0109_let.fren:3:58
+ --> test/cli/syntax/f0109_let.fren:3:51
   |
-3 | comp c { in x: Int pub out y? ensure r: y? iff x > 0 and let z := 1 in x > z }
-  |                                                          ^^^ needs parentheses
+3 | proc c(x: Int): (y?) { ensure r: y? iff x > 0 and let z := 1 in x > z }
+  |                                                   ^^^ needs parentheses
   |
   = note: `let` has the lowest precedence, and its body extends as far right as possible
   = help: wrap it in parentheses: `(let x := e in b)`

@@ -3,16 +3,14 @@
 -- (`Reqs/Check#checking-by-enumeration`).
 set_option fren.enumeration.size 100 in  --~ error: enumeration size 100 is too large
 set_option fren.evidence "enumerated" in
-comp c {
-    in x: Int is 0..=3
-    pub det out y: Int := x
+proc c(x: Int is 0..=3): (det y: Int) {
+    out y := x
     expect e: y >= 0
 }
 
 set_option fren.evidence "enumerated+guessed" in  --~ error: invalid evidence `enumerated+guessed`
-comp d {
-    in x?
-    pub det out y? := x?
+proc d(x?): (det y?) {
+    out y? := x?
 }
 
 --@ exit: 2

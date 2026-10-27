@@ -1,8 +1,5 @@
 --@ args: mutate --mutant swap-comparison-c::r-000000000000
 -- A mutant that the spec does not have.
-comp c {
-    in x: Int
-    pub out y?
-
+proc c(x: Int): (y?) {
     ensure r: y? iff x > 1
 }

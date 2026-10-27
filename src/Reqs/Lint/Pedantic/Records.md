@@ -19,32 +19,29 @@ after. `lint::inconsistent_struct_constructor` states when it fires:
 pub mod lint
 
 set_option fren.evidence "enumerated" in
-pub comp inconsistent_struct_constructor {
-    in in_order?         -- the literal's fields are written in the order its record declares them
-    pub det out fires?
-
+pub proc inconsistent_struct_constructor(
+    in_order?,           -- the literal's fields are written in the order its record declares them
+): (det fires?) {
     ensure rule: fires? iff not in_order?
 }
 
 pub struct Cell { row: Int, column: Int }
 
 set_option fren.lint.inconsistent_struct_constructor "allow" in
-pub comp inconsistent_struct_constructor_written {
-    in a: Int
-    in b: Int
-    in row: Int
-    in column: Int
-    pub det out given: Cell := Cell { column := b, row := a }
-    pub det out named: Cell := Cell { column, row }
+pub proc inconsistent_struct_constructor_written(a: Int, b: Int, row: Int, column: Int): (
+    det given: Cell,
+    det named: Cell,
+) {
+    out given := Cell { column := b, row := a }
+    out named := Cell { column, row }
 }
 
-pub comp inconsistent_struct_constructor_fixed {
-    in a: Int
-    in b: Int
-    in row: Int
-    in column: Int
-    pub det out given: Cell := Cell { row := a, column := b }
-    pub det out named: Cell := Cell { row, column }
+pub proc inconsistent_struct_constructor_fixed(a: Int, b: Int, row: Int, column: Int): (
+    det given: Cell,
+    det named: Cell,
+) {
+    out given := Cell { row := a, column := b }
+    out named := Cell { row, column }
 }
 
 refine inconsistent_struct_constructor_sound: inconsistent_struct_constructor_fixed refines inconsistent_struct_constructor_written
@@ -74,21 +71,19 @@ records of three or more fields. `lint::struct_field_names` and
 `lint::field_has_record_name` state when it fires:
 
 ```fren
-pub comp struct_field_names {
-    in n_fields: Nat
-    in shared_first?     -- every field has two or more words, and all have the same first word
-    in shared_last?      -- every field has two or more words, and all have the same last word
-    pub det out fires?
-
+pub proc struct_field_names(
+    n_fields: Nat,
+    shared_first?,       -- every field has two or more words, and all have the same first word
+    shared_last?,        -- every field has two or more words, and all have the same last word
+): (det fires?) {
     ensure rule: fires? iff (n_fields >= 2 and (shared_first? or shared_last?))
 }
 
-pub comp field_has_record_name {
-    in n_words: Nat      -- the words of the field's name
-    in n_record_words: Nat  -- the words of its record's name
-    in contains?         -- the field's words have the record's, one after another
-    pub det out fires?
-
+pub proc field_has_record_name(
+    n_words: Nat,        -- the words of the field's name
+    n_record_words: Nat,    -- the words of its record's name
+    contains?,           -- the field's words have the record's, one after another
+): (det fires?) {
     ensure rule: fires? iff (contains? and n_words > n_record_words)
 
     expect same_name: when n_words = n_record_words, not fires?
@@ -110,17 +105,15 @@ enumeration, or a record of named `Bool` fields. Neither has a fix.
 when they fire:
 
 ```fren
-pub comp struct_excessive_bools {
-    in n_bools: Nat      -- the record's `Bool` fields
-    pub det out fires?
-
+pub proc struct_excessive_bools(
+    n_bools: Nat,        -- the record's `Bool` fields
+): (det fires?) {
     ensure rule: fires? iff n_bools > 3
 }
 
-pub comp fn_params_excessive_bools {
-    in n_bools: Nat      -- the function's `Bool` parameters
-    pub det out fires?
-
+pub proc fn_params_excessive_bools(
+    n_bools: Nat,        -- the function's `Bool` parameters
+): (det fires?) {
     ensure rule: fires? iff n_bools > 3
 }
 ```

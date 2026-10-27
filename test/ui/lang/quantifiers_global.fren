@@ -5,11 +5,7 @@
 
 enum Mode { Off, Heat, Cool }
 
-comp thermostat {
-    in mode: Mode
-    in cold?
-    pub out heating?
-
+proc thermostat(mode: Mode, cold?): (heating?) {
     ensure rule: heating? iff mode = Mode::Heat and cold?
 }
 

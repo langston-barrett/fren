@@ -1,7 +1,7 @@
 warning[F0804]: these comparisons can be chained
- --> test/cli/lints/style/f0810_manual_nat.fren:9:15
+ --> test/cli/lints/style/f0810_manual_nat.fren:5:15
   |
-9 |     ensure r: 0 <= m and m <= n - k
+5 |     ensure r: 0 <= m and m <= n - k
   |               ^^^^^^^^^^^^^^^^^^^^^ comparisons that share an operand
   |
   = help: `fren fix` can fix this
@@ -9,26 +9,26 @@ warning[F0804]: these comparisons can be chained
   = help: to allow it, `set_option fren.lint.chainable_comparison "allow"`
 help: write `0 <= m <= n - k`
   |
-9 -     ensure r: 0 <= m and m <= n - k
-9 +     ensure r: 0 <= m <= n - k
+5 -     ensure r: 0 <= m and m <= n - k
+5 +     ensure r: 0 <= m <= n - k
   |
 
 warning[F0810]: `n` is never negative, so it can be a `Nat`
- --> test/cli/lints/style/f0810_manual_nat.fren:6:20
+ --> test/cli/lints/style/f0810_manual_nat.fren:3:20
   |
-6 |     assume counts: n >= 0 and k < n
+3 |     assume counts: n >= 0 and k < n
   |                    ^^^^^^ `n` is at least 0 by this assumption
   |
-  = note: a `Nat` input brings this assumption with its type
-  = note: an instance must then bind `n` to a `Nat`
+  = note: a `Nat` parameter brings this assumption with its type
+  = note: a call must then pass a `Nat` for `n`
   = help: declare `n: Nat`, and remove `n >= 0` from `counts`, where nothing binds `n` to an `Int`
   = note: `manual_nat` is `warn` by default
   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 
 warning[F0810]: `m` is never negative, so it can be a `Nat`
- --> test/cli/lints/style/f0810_manual_nat.fren:9:15
+ --> test/cli/lints/style/f0810_manual_nat.fren:5:15
   |
-9 |     ensure r: 0 <= m and m <= n - k
+5 |     ensure r: 0 <= m and m <= n - k
   |               ^^^^^^ `m` is at least 0 by this guarantee
   |
   = note: a `Nat` output brings this guarantee with its type

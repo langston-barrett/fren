@@ -1,7 +1,7 @@
 warning[F0766]: these two comparisons cannot both hold
- --> test/cli/results/f0610_untested.fren:4:19
+ --> test/cli/results/f0610_untested.fren:3:19
   |
-4 |     assume never: x > 0 and x < 0
+3 |     assume never: x > 0 and x < 0
   |                   ^^^^^^^^^^^^^^^ always `false`
   |
   = note: `and` and `or` may be swapped, or a value may not be the one meant
@@ -11,7 +11,7 @@ warning[F0766]: these two comparisons cannot both hold
 warning[F0610]: testing found no admissible behaviour of `c` in 100 tests
  --> test/cli/results/f0610_untested.fren:2:6
   |
-2 | comp c {
+2 | proc c(x: Int): (pos?) {
   |      ^ untested
   |
   = note: so none of its checks were tested

@@ -12,11 +12,7 @@ mod record_update_test
 
 pub struct Point { x: Int, y: Int }
 
-comp moves {
-  in p: Point
-  in n: Int
-  pub out q: Point
-
+proc moves(p: Point, n: Int): (q: Point) {
   ensure r: q = { p with x := n }
   ensure s: q = { { p with y := 0 } with x := n }
 }
@@ -48,10 +44,7 @@ fun p n q =>
 
 -- The solver proves an `impl` of a component with a bound update: the
 -- `let` is reduced away before lean-smt, which does not translate it.
-comp resets {
-  in p: Point
-  pub out q: Point
-
+proc resets(p: Point): (q: Point) {
   ensure r: q = { { p with y := 0 } with x := 1 }
 }
 

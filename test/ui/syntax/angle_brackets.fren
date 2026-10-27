@@ -6,13 +6,14 @@ pub struct Pair<A, B> { fst: A, snd: B }
 
 fn size<T>(o: Option<T>): Int := if o = Option::None then 0 else 1
 
-comp c {
-    in x: Option<Set<Int>>
-    in p: Pair<Int, Option<Set<Int>>>
-    in r: Rel<Int, Option<Pair<Int, Bool>>>
-    in q: Seq<Option<Int>>
-    in d: Option<Int is 0..=9>
-    pub det out y: Int := size(x)
+proc c(
+    x: Option<Set<Int>>,
+    p: Pair<Int, Option<Set<Int>>>,
+    r: Rel<Int, Option<Pair<Int, Bool>>>,
+    q: Seq<Option<Int>>,
+    d: Option<Int is 0..=9>,
+): (det y: Int) {
+    out y := size(x)
 
     expect bounded: y<2
     expect binder: forall (b: Option<Bool>), size(b)<=size(x) or size(x)<1

@@ -19,46 +19,28 @@ pub const CLIMATE_LIMIT: Int := 3  --~ warning: constant `CLIMATE_LIMIT` contain
 -- A `use` is never reported, however long its path.
 use self::sensors::Reading
 
-comp wildcards {
-    in mode: Mode
-    pub out level: Int
-    pub out other: Int
-
+proc wildcards(mode: Mode): (level: Int, other: Int) {
     ensure first: level = match mode { Mode::Heat => 1, _ => 2 }  --~ warning: `_` matches `climate::Mode::Cool`, `climate::Mode::Off` and `climate::Mode::Auto`
     ensure second: other = match mode { Mode::Heat => 1, Mode::Cool => 2, Mode::Off => 3, _ => 4 }  --~ warning: `_` matches `climate::Mode::Auto`
 }
 
-comp literals {
-    in text: String
-    pub out raw?
-    pub out quoted?
-    pub out accented?
-    pub out astral?
-
+proc literals(text: String): (raw?, quoted?, accented?, astral?) {
     ensure raw_rule: raw? iff text.matches?(r"[a-z]+")  --~ warning: this raw string literal needs no escapes
     ensure quoted_rule: quoted? iff text.matches?(r#"a"[a-z]+"#)
     ensure accented_rule: accented? iff text = "café"  --~ warning: this string literal contains a non-ASCII character, `U+00E9`
     ensure astral_rule: astral? iff text = "a😀é"  --~ warning: this string literal contains non-ASCII characters: `U+1F600`, `U+00E9`
 }
 
-comp paths {
-    in probe: sensors::Probe
-    pub out inside?
-    pub out side: Int
-
+proc paths(probe: sensors::Probe): (inside?, side: Int) {
     ensure inside_rule: inside? iff probe = sensors::Probe::Inside  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
     ensure side_rule: side = match probe { sensors::Probe::Outside => 1, sensors::Probe::Inside => 2 }  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
     --~^ warning: `sensors::Probe::Inside` is a path of 3 segments
 }
 
 -- `self` is a segment.
-comp more_paths {
-    in far: self::sensors::Probe  --~ warning: `self::sensors::Probe` is a path of 3 segments
-    pub out near: Reading
-    pub out written: sensors::Reading
-    pub out inside?
-    pub out tested?
-
+proc more_paths(
+    far: self::sensors::Probe,    --~ warning: `self::sensors::Probe` is a path of 3 segments
+): (near: Reading, written: sensors::Reading, inside?, tested?) {
     ensure near_rule: near = Reading { value := 1 }
     ensure written_rule: written = self::sensors::Reading { value := 2 }  --~ warning: `self::sensors::Reading` is a path of 3 segments
     ensure far_rule: when far = sensors::Probe::Inside, inside?  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
@@ -66,39 +48,36 @@ comp more_paths {
     --~^ warning: this pattern test is an equation
 }
 
-comp climate_check {  --~ warning: component `climate_check` contains the name of its module `climate`
-    in level: Int
-    pub out high?
-
+proc climate_check(level: Int): (high?) {  --~ warning: procedure `climate_check` contains the name of its module `climate`
     ensure high_rule: high? iff level > CLIMATE_LIMIT
 }
 
 expect climate_holds: forall (check: climate_check), check.high? iff check.level > CLIMATE_LIMIT  --~ warning: global expectation `climate_holds` contains the name of its module `climate`
 
-comp short {
-    in x: Int  --~ warning: variable `x` has a name of one character
-    in ready?
-    pub out y?  --~ warning: variable `y?` has a name of one character
-
+proc short(
+    x: Int,    --~ warning: variable `x` has a name of one character
+    ready?,
+): (
+    y?,         --~ warning: variable `y?` has a name of one character
+) {
     ensure r: y? iff (ready? and x > 0)  --~ warning: constraint `r` has a name of one character
 }
 
-comp grouping {
-    in first?
-    in second?
-    in third?
-    in left: Set<Int>
-    in right: Set<Int>
-    in other: Set<Int>
-    in pairs: Rel<Mode, Mode>
-    in links: Rel<Mode, Mode>
-    in extra: Rel<Mode, Mode>
-    pub out loose?
-    pub out tight?
-    pub out sets: Set<Int> := left minus right inter other  --~ warning: `inter` is an operand of `minus` without parentheses
-    pub out written: Set<Int> := left union (right inter other)
-    pub out joined: Set<Int> := left union right inter other  --~ warning: `inter` is an operand of `union` without parentheses
-    pub out chained: Rel<Mode, Mode> := pairs union links join extra  --~ warning: `join` is an operand of `union` without parentheses
+proc grouping(
+    first?,
+    second?,
+    third?,
+    left: Set<Int>,
+    right: Set<Int>,
+    other: Set<Int>,
+    pairs: Rel<Mode, Mode>,
+    links: Rel<Mode, Mode>,
+    extra: Rel<Mode, Mode>,
+): (loose?, tight?, sets: Set<Int>, written: Set<Int>, joined: Set<Int>, chained: Rel<Mode, Mode>) {
+    out sets := left minus right inter other  --~ warning: `inter` is an operand of `minus` without parentheses
+    out written := left union (right inter other)
+    out joined := left union right inter other  --~ warning: `inter` is an operand of `union` without parentheses
+    out chained := pairs union links join extra  --~ warning: `join` is an operand of `union` without parentheses
 
     ensure loose_rule: loose? iff (first? or second? and third?)  --~ warning: `and` is an operand of `or` without parentheses
     ensure tight_rule: tight? iff (first? or (second? and third?))

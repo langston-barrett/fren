@@ -1,2 +1,2 @@
 -- Spaces around the `..=` of a range.
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0 ..= 9 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0 ..= 9 => 0, _ => 1 } }

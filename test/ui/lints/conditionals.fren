@@ -2,13 +2,9 @@
 -- in both front ends.
 set_option fren.lint.if_not_else "warn"
 
-comp conditionals {
-    in a?
-    in b?
-    in x: Int
-    in y: Int
-    pub out p? := a? and b?
-    pub out n: Int := if a? then x else y
+proc conditionals(a?, b?, x: Int, y: Int): (p?, n: Int) {
+    out p? := a? and b?
+    out n := if a? then x else y
 
     expect e1: unless not a?, a?                --~ warning: this `unless` has a negated condition
     expect e2: unless x != y, x = y             --~ warning: this `unless` has a negated condition

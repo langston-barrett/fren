@@ -1,29 +1,21 @@
 -- Refinement (`Reqs/Lang/Refinement`): both front ends check the
 -- obligation the same way.
 
-comp precise {
-    in x: Int
-    pub out y: Int
+proc precise(x: Int): (y: Int) {
     ensure r: y = x + 1
 }
 
-comp rough {
-    in x: Int
+proc rough(x: Int): (y: Int) {
     assume small: x < 100
-    pub out y: Int
     ensure above: y > x
 }
 
-comp picky {
-    in x: Int
+proc picky(x: Int): (y: Int) {
     assume positive: x > 0
-    pub out y: Int
     ensure r: y = x + 1
 }
 
-comp wrong {
-    in x: Int
-    pub out y: Int
+proc wrong(x: Int): (y: Int) {
     ensure below: y < x
 }
 

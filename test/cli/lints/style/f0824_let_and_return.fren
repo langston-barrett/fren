@@ -1,2 +1,2 @@
 -- A `let` whose body is the name of its last definition.
-comp c { in x: Int pub out y: Int ensure r: y = (let k := 2, d := x * k in d) }
+proc c(x: Int): (y: Int) { ensure r: y = (let k := 2, d := x * k in d) }

@@ -1,8 +1,8 @@
 error[F0210]: expected a value, but `E` is an enum
- --> test/cli/names/f0210_value.fren:3:50
+ --> test/cli/names/f0210_value.fren:3:43
   |
-3 | comp c { in e: E pub out y? ensure r: y? iff e = E }
-  |                                                  ^ not a value
+3 | proc c(e: E): (y?) { ensure r: y? iff e = E }
+  |                                           ^ not a value
   |
   = help: to mean one of its variants, write `E::Variant`
 

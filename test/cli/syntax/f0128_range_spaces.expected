@@ -1,8 +1,8 @@
 error[F0128]: spaces around `..=` in a range pattern
- --> test/cli/syntax/f0128_range_spaces.fren:2:61
+ --> test/cli/syntax/f0128_range_spaces.fren:2:54
   |
-2 | comp c { in n: Int pub out y: Int ensure r: y = match n { 0 ..= 9 => 0, _ => 1 } }
-  |                                                             ^^^ spaced
+2 | proc c(n: Int): (y: Int) { ensure r: y = match n { 0 ..= 9 => 0, _ => 1 } }
+  |                                                      ^^^ spaced
   |
   = note: a range is written without spaces around its `..=` or `..`, as in `0..=9`
 

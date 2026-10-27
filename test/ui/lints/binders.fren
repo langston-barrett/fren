@@ -2,10 +2,7 @@
 -- binders fall into groups that no atom relates. Only an `and` splits an
 -- expectation into atoms.
 
-pub comp c {
-    in x: Int
-    pub out y: Int
-    pub out b?
+pub proc c(x: Int): (y: Int, b?) {
     ensure r: y = x + 1
     ensure s: b? iff x > 0
 }

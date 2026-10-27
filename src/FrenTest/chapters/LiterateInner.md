@@ -4,10 +4,7 @@ It declares an item of its own, and checks it, the outer chapter's item and
 the Lean file's.
 
 ```fren
-pub comp inner_gate {
-    in a?
-    pub out b?
-
+pub proc inner_gate(a?): (b?) {
     ensure same: b? iff a?
     expect never: when a?, not b?
 }

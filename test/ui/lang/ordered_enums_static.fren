@@ -12,27 +12,27 @@ ordered enum Size { Small, Large }
 
 ordered enum Shape { Dot, Circle(Int) }    --~ error: the ordered enum `Shape` cannot have a variant with a payload
 
-comp unordered { in m: Mode pub out p? ensure r: p? iff m < Mode::On }
+proc unordered(m: Mode): (p?) { ensure r: p? iff m < Mode::On }
 --~^ error: `Mode` is not ordered, so its values cannot be compared with `<`
 -- The left operand is checked before the right is elaborated, in both
 -- front ends, so an unknown variant on the right is not reported first.
-comp unordered_first { in m: Mode pub out p? ensure r: p? iff m < Mode::Onn }
+proc unordered_first(m: Mode): (p?) { ensure r: p? iff m < Mode::Onn }
 --~^ error: `Mode` is not ordered, so its values cannot be compared with `<`
-comp unordered_chain { in m: Mode pub out p? ensure r: p? iff Mode::Off <= m < Mode::On }
+proc unordered_chain(m: Mode): (p?) { ensure r: p? iff Mode::Off <= m < Mode::On }
 --~^ error: `Mode` is not ordered, so its values cannot be compared with `<=`
-comp unordered_method { in m: Mode pub out n: Mode ensure r: n = m.max(Mode::On) }
+proc unordered_method(m: Mode): (n: Mode) { ensure r: n = m.max(Mode::On) }
 --~^ error: `Mode` is not ordered, so it has no method `max`
-comp unordered_field { in m: Mode pub out n: Mode ensure r: n = m.min }
+proc unordered_field(m: Mode): (n: Mode) { ensure r: n = m.min }
 --~^ error: `Mode` is not ordered, so it has no method `min`
-comp other_enum { in l: Level pub out p? ensure r: p? iff l < Size::Large }
+proc other_enum(l: Level): (p?) { ensure r: p? iff l < Size::Large }
 --~^ error: type mismatch: expected `Level`, found `Size`
-comp other_chain { in l: Level pub out p? ensure r: p? iff Level::Low <= l < Size::Large }
+proc other_chain(l: Level): (p?) { ensure r: p? iff Level::Low <= l < Size::Large }
 --~^ error: type mismatch: expected `Level`, found `Size`
-comp other_argument { in l: Level pub out n: Level ensure r: n = l.max(Size::Large) }
+proc other_argument(l: Level): (n: Level) { ensure r: n = l.max(Size::Large) }
 --~^ error: type mismatch: expected `Level`, found `Size`
-comp no_arguments { in l: Level pub out n: Level ensure r: n = l.max }
+proc no_arguments(l: Level): (n: Level) { ensure r: n = l.max }
 --~^ error: `max` takes 1 argument, but 0 were given
-comp unknown_method { in l: Level pub out n: Int ensure r: n = l.abs(l) }
+proc unknown_method(l: Level): (n: Int) { ensure r: n = l.abs(l) }
 --~^ error: `Level` has no method `abs`
 
 --@ exit: 2

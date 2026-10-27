@@ -1,7 +1,7 @@
 warning[F0843]: this is always `l`
- --> test/cli/lints/complexity/f0843_unnecessary_min_or_max.fren:8:19
+ --> test/cli/lints/complexity/f0843_unnecessary_min_or_max.fren:5:19
   |
-8 |     ensure r: a = l.max(Level::Low)
+5 |     ensure r: a = l.max(Level::Low)
   |                   ^^^^^^^^^^^^^^^^^ `Level::Low` is the least value of its enumeration
   |
   = help: `fren fix` can fix this
@@ -9,21 +9,21 @@ warning[F0843]: this is always `l`
   = help: to allow it, `set_option fren.lint.unnecessary_min_or_max "allow"`
 help: write `l`
   |
-8 -     ensure r: a = l.max(Level::Low)
-8 +     ensure r: a = l
+5 -     ensure r: a = l.max(Level::Low)
+5 +     ensure r: a = l
   |
 
 warning[F0843]: this is always `l`
- --> test/cli/lints/complexity/f0843_unnecessary_min_or_max.fren:9:19
+ --> test/cli/lints/complexity/f0843_unnecessary_min_or_max.fren:6:19
   |
-9 |     ensure s: b = l.min(Level::High)
+6 |     ensure s: b = l.min(Level::High)
   |                   ^^^^^^^^^^^^^^^^^^ `Level::High` is the greatest value of its enumeration
   |
   = help: `fren fix` can fix this
 help: write `l`
   |
-9 -     ensure s: b = l.min(Level::High)
-9 +     ensure s: b = l
+6 -     ensure s: b = l.min(Level::High)
+6 +     ensure s: b = l
   |
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant

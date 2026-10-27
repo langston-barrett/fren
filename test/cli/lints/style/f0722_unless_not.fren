@@ -1,10 +1,5 @@
 -- `unless_not`, on `not` and on `!=`, but not on another condition.
-comp c {
-    in a?
-    in x: Int
-    in y: Int
-    pub out p?
-
+proc c(a?, x: Int, y: Int): (p?) {
     ensure r1: unless not a?, p?
     ensure r2: unless x != y, p?
     ensure r3: unless x < 3, p?

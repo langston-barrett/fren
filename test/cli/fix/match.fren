@@ -2,16 +2,8 @@
 -- `fren fix` fixes the match lints.
 enum E { A, B, C, D }
 
-comp c {
+proc c(e: E, x: Int): (a: Int, b: Int, c?, d?, f: Int, g: Int) {
     use self::E::{A, B, C}
-    in e: E
-    in x: Int
-    pub out a: Int
-    pub out b: Int
-    pub out c?
-    pub out d?
-    pub out f: Int
-    pub out g: Int
 
     -- Written the same, ignoring whitespace.
     ensure r1: a = match e { A => x  +  1, B => 2, C => x+1, _ => 3 }

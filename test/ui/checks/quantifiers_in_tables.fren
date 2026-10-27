@@ -5,11 +5,7 @@
 enum Mode { Off, On }
 
 set_option fren.lint.undecidable "allow" in
-comp in_tables {
-    in m: Mode
-    in q: Seq<Int>
-    pub out y: Int
-
+proc in_tables(m: Mode, q: Seq<Int>): (y: Int) {
     ensure r: y = table m {
         Mode::Off if (forall (i: Int), when 0 <= i < q.len, q[i] > 0) => 1,
         Mode::Off if not (forall (i: Int), when 0 <= i < q.len, q[i] > 0) => 2,
@@ -24,11 +20,7 @@ comp in_tables {
 -- An index out of range in a guard's quantifier, for some value of its
 -- bound name.
 set_option fren.lint.undecidable "allow" in
-comp out_of_range {
-    in m: Mode
-    in q: Seq<Int>
-    pub out y: Int
-
+proc out_of_range(m: Mode, q: Seq<Int>): (y: Int) {
     ensure r: y = table m {
         Mode::Off if (forall (i: Int), when 0 <= i <= q.len, q[i] > 0) => 1,  --~ error: an index of `out_of_range::r` may be out of range
         _ => 2,

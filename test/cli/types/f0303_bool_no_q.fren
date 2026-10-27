@@ -1,2 +1,2 @@
 -- A `Bool` name not ending in `?` (F0303).
-comp c { in flag: Bool }
+proc c(flag: Bool) {}

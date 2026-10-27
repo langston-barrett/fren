@@ -10,11 +10,7 @@ mod interp_test
 type Nm
 fn q?(Nm)
 
-comp naming {
-    in name: Nm
-    in annotated?
-    pub out accepted?
-
+proc naming(name: Nm, annotated?): (accepted?) {
     ensure rule: accepted? iff (q?(name) or annotated?)
 }
 
@@ -75,10 +71,7 @@ type Key
 fn arity(Key): Int
 
 set_option fren.lint.unused_assumption "allow" in
-comp ranked {
-    in k: Key
-    pub out ok?
-
+proc ranked(k: Key): (ok?) {
     assume nonneg: arity(k) >= 0
     ensure rule: ok?
 }
@@ -107,9 +100,7 @@ fn small(Int): Int is 0..=255
 fn proved(Int): Int is 0..=255
 fn count(Int): Nat is 1..
 
-comp sized {
-    in x: Int
-    pub out y: Int
+proc sized(x: Int): (y: Int) {
     ensure r: y = size(x)
     expect e: y <= 255
 }

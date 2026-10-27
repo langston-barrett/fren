@@ -9,17 +9,15 @@ pub enum Fan {
     High,
 }
 
-pub comp c {
-    in s: String
-    in x: Int
-    pub out a? := s = "café"
-    pub out b? := s = r"café" or s = r#"é"#
-    pub out d? := s = "\u0065́"
-    pub out e: Set<Int> := {x, 1,}
-    pub out f: Seq<Int> := [x, 2, ]
-    pub out g: Seq<Int> := [
+pub proc c(s: String, x: Int): (a?, b?, d?, e: Set<Int>, f: Seq<Int>, g: Seq<Int>, h?) {
+    out a? := s = "café"
+    out b? := s = r"café" or s = r#"é"#
+    out d? := s = "\u0065́"
+    out e := {x, 1,}
+    out f := [x, 2, ]
+    out g := [
         x,
         3,
     ]
-    pub out h? := x.abs >= 0
+    out h? := x.abs >= 0
 }

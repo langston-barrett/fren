@@ -1,23 +1,23 @@
 warning[F0805]: this says that `e` matches one of these patterns
-  --> test/cli/lints/settings/lint_group_flags.fren:10:23
-   |
-10 |     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
-   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
-   |
-   = help: `fren fix` can fix this
-   = note: `manual_pattern_test` is `warn` by default
-   = help: to allow it, `set_option fren.lint.manual_pattern_test "allow"`
+ --> test/cli/lints/settings/lint_group_flags.fren:7:23
+  |
+7 |     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ equations of one expression with values that patterns write
+  |
+  = help: `fren fix` can fix this
+  = note: `manual_pattern_test` is `warn` by default
+  = help: to allow it, `set_option fren.lint.manual_pattern_test "allow"`
 help: write `e is E::A | E::B | E::C`
-   |
-10 -     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
-10 +     ensure r: p? iff e is E::A | E::B | E::C
-   |
+  |
+7 -     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
+7 +     ensure r: p? iff e is E::A | E::B | E::C
+  |
 
 warning[F0720]: `r` could be the definition of `p?`
- --> test/cli/lints/settings/lint_group_flags.fren:8:13
+ --> test/cli/lints/settings/lint_group_flags.fren:6:16
   |
-8 |     pub out p?
-  |             ^^ constrained by one equation
+6 | proc c(e: E): (p?) {
+  |                ^^ constrained by one equation
   |
   = help: write the expression as `p?`'s definition, `out p? := ...`, and remove `r`
   = note: `definable_output` is set to `warn` by its group, `pedantic`

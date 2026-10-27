@@ -5,7 +5,7 @@ error[F0309]: a constant's value cannot apply an uninterpreted function
   |                    ^^^^^^^ applies an uninterpreted function
   |
   = note: an uninterpreted function's value is unknown, so the constant would have no fixed value
-  = help: make it an input of the components that use it
+  = help: make it a parameter of the procedures that use it
 
 error: could not check due to previous errors
 

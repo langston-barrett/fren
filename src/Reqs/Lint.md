@@ -24,7 +24,7 @@ use view::Severity
 | `absurd_extreme_comparisons` | `F0763` | `suspicious` | `warn` | a comparison of a `len` or `card` that is always the same, since a length is never negative, such as `s.len < 0`, or with the first or last variant of an ordered enumeration, such as `s >= Severity::Silent` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `allow_attributes` | `F0780` | `restriction` | `allow` | a `set_option` that sets a lint or a group to `allow` (see [Allowed lints](Lint/Restriction.md#allowed-lints)) |
 | `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious/Literals.md#ranges-of-characters)) |
-| `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a component whose members are out of order, such as an `in` after an `ensure` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
+| `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a procedure whose members are out of order, such as an `exists` after an `ensure` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
 | `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `ensure` or `expect` that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic/Conditionals.md#branches-sharing-code)) |
@@ -34,7 +34,7 @@ use view::Severity
 | `collapsible_match` | `F0832` | `style` | `warn` | a `match` arm whose body is a `match` on one of its binders, which the arm's pattern can match instead (see [Collapsible matches](Lint/Style/Matches.md#collapsible-matches)) |
 | `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `const_is_empty` | `F0755` | `suspicious` | `warn` | a test of a literal whose value the literal fixes, such as `"ab".len = 0` (see [Tests of literals](Lint/Suspicious/Literals.md#tests-of-literals)) |
-| `constant_output` | `F0719` | `complexity` | `warn` | a defined output whose definition mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
+| `constant_output` | `F0719` | `complexity` | `warn` | a definition of a result or `let` variable that mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
 | `contradictory_comparisons` | `F0766` | `suspicious` | `warn` | two comparisons of one operand that cannot both hold, joined by `and`, or of which one always holds, joined by `or`, such as `x < 3 and x > 5`, or in a chained comparison, such as `5 < x < 3` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `dead_code` | `F0711` | `unused` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](Lint/Unused.md#dead-code)) |
 | `definable_output` | `F0720` | `pedantic` | `allow` | an output that one guarantee equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
@@ -81,7 +81,7 @@ use view::Severity
 | `manual_record_update` | `F0818` | `style` | `warn` | a record literal that copies more fields from one value than it gives, such as `Point { x := 1, y := p.y, z := p.z }` (see [Record literals](Lint/Style/Records.md#record-literals)) |
 | `manual_rem_euclid` | `F0815` | `complexity` | `warn` | a remainder made non-negative by hand, `(a mod k + k) mod k` (see [Remainders](Lint/Complexity/Integers.md#remainders)) |
 | `manual_table` | `F0838` | `pedantic` | `allow` | a chain of `if` of two or more tests that are not variant tests of one scrutinee, which a table writes (see [Chains of conditions](Lint/Pedantic/Matches.md#chains-of-conditions)) |
-| `many_single_char_names` | `F0795` | `pedantic` | `allow` | a component, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
+| `many_single_char_names` | `F0795` | `pedantic` | `allow` | a procedure, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_bool` | `F0837` | `pedantic` | `allow` | a `match` on a `Bool` of `true` and `false`, or of one of them and `_` (see [Matches on a `Bool`](Lint/Pedantic/Matches.md#matches-on-a-bool)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_overlapping_arm` | `F0835` | `style` | `warn` | a range of a `match` arm that has an integer in common with an earlier arm's pattern, neither within the other, such as `5..=15` after `0..=10` (see [Overlapping arms](Lint/Style/Matches.md#overlapping-arms)) |
@@ -102,13 +102,13 @@ use view::Severity
 | `no_effect_replace` | `F0754` | `suspicious` | `warn` | `s.replace(a, a)` or `s.replace_all(a, a)` (see [Replacements](Lint/Suspicious/Methods.md#replacements)) |
 | `non_ascii_literal` | `F0783` | `restriction` | `allow` | a string literal with a character beyond ASCII (see [Literals](Lint/Restriction.md#literals)) |
 | `non_camel_case_types` | `F0704` | `nonstandard_style` | `warn` | an enumeration, variant, record or abstract type not named in `CamelCase` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
-| `non_snake_case` | `F0703` | `nonstandard_style` | `warn` | a module, component, variable, function, instance, constraint or global expectation not named in `snake_case` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
+| `non_snake_case` | `F0703` | `nonstandard_style` | `warn` | a module, procedure, variable, function, call, constraint or global expectation not named in `snake_case` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `non_upper_case_constants` | `F0705` | `nonstandard_style` | `warn` | a constant not named in `UPPER_CASE` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` or `exactly_one?(a?)` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
 | `overly_complex_bool_expr` | `F0773` | `pedantic` | `allow` | an `and` or `or` with an operand that can be dropped, such as `a or (a and b)` or `a and not a` (see [Operands that can be dropped](Lint/Pedantic.md#operands-that-can-be-dropped)) |
 | `precedence` | `F0787` | `restriction` | `allow` | an `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses, such as `a? or b? and c?` (see [Precedence](Lint/Restriction.md#precedence)) |
-| `redundant_bindings` | `F0735` | `style` | `warn` | a binding or field `x := x`, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
-| `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in `in ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
+| `redundant_bindings` | `F0735` | `style` | `warn` | a field `x := x` of a record literal, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
+| `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in the parameter `ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Redundant comparisons](Lint/Complexity/Comparisons.md#redundant-comparisons)) |
 | `redundant_locals` | `F0825` | `suspicious` | `warn` | a definition `x! := x` of a `let` or `where` clause (see [Redundant definitions](Lint/Suspicious.md#redundant-definitions)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity/Methods.md#chains-of-methods)) |
@@ -122,7 +122,7 @@ use view::Severity
 | `struct_excessive_bools` | `F0776` | `pedantic` | `allow` | a record with more than 3 `Bool` fields (see [Many `Bool`s](Lint/Pedantic/Records.md#many-bools)) |
 | `struct_field_names` | `F0774` | `pedantic` | `allow` | a record whose fields all start, or all end, with the same word, or a field that contains its record's name (see [Field names](Lint/Pedantic/Records.md#field-names)) |
 | `suspicious_unary_op_formatting` | `F0762` | `suspicious` | `warn` | a binary operator directly followed by a negation and then whitespace, such as `x >=- 1` (see [Negations after operators](Lint/Suspicious.md#negations-after-operators)) |
-| `too_many_lines` | `F0797` | `pedantic` | `allow` | a component or defined function of more than 100 lines (see [Long items](Lint/Pedantic.md#long-items)) |
+| `too_many_lines` | `F0797` | `pedantic` | `allow` | a procedure or defined function of more than 100 lines (see [Long items](Lint/Pedantic.md#long-items)) |
 | `trivial_cover` | `F0820` | `suspicious` | `warn` | a cover goal that has a trigger, or is written the same as an assumption or a guarantee (see [Cover goals](Lint/Suspicious.md#cover-goals)) |
 | `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity/Matches.md#trivial-matches)) |
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
@@ -159,7 +159,7 @@ lints.
 
 No lint is about shadowing. A declaration that hides a name in scope
 without `!`, and one with `!` that hides nothing, are static errors,
-`F0217` and `F0218` (see [Shadowing](Lang/Components.md#shadowing)). They
+`F0217` and `F0218` (see [Shadowing](Lang/Procedures.md#shadowing)). They
 replace the lint `shadowed_constants`, which warned of a variable named
 like a constant, and whose code `F0713` is not reused.
 
@@ -194,10 +194,8 @@ use self::Level::{Allow, Deny, Expect, Forbid, Warn}
 message from its level:
 
 ```fren
-pub comp severity {
+pub proc severity(level: Level): (det result: Severity) {
     use view::Severity::{Error, Info, Silent, Warning}
-    in level: Level
-    pub det out result: Severity
 
     ensure rule: result = match level { Allow | Expect => Silent, Warn => Warning, Deny | Forbid => Error }
 
@@ -265,10 +263,7 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
 ```fren
 pub enum Group { Unused, NonstandardStyle, Style, Complexity, Suspicious, Pedantic, Restriction, Decidability }
 
-pub comp group_default {
-    in group: Group
-    pub det out level: Level
-
+pub proc group_default(group: Group): (det level: Level) {
     ensure rule: level = match group {
         Group::Pedantic | Group::Restriction => Level::Allow,
         Group::Decidability => Level::Deny,
@@ -321,12 +316,10 @@ forbidden lint keeps its level, and trying to change it is an error at the
 states one such setting:
 
 ```fren
-pub comp setting {
-    in current: Level    -- the level in effect before the setting
-    in requested: Level  -- the level the setting asks for
-    pub det out accepted?
-    pub det out level: Level
-
+pub proc setting(
+    current: Level,      -- the level in effect before the setting
+    requested: Level,    -- the level the setting asks for
+): (det accepted?, det level: Level) {
     ensure forbidden: accepted? iff (current != Forbid or requested = Forbid)
     ensure applied: level = if accepted? then requested else current
 
@@ -343,13 +336,11 @@ leaves a forbidden lint as it is, and the others take its level. `lint::group_se
 lint of the group:
 
 ```fren
-pub comp group_setting {
-    in current: Level        -- the lint's level before the setting
-    in n_forbidden: Nat      -- lints of the group at `forbid` before it
-    in requested: Level
-    pub det out accepted?
-    pub det out level: Level
-
+pub proc group_setting(
+    current: Level,          -- the lint's level before the setting
+    n_forbidden: Nat,        -- lints of the group at `forbid` before it
+    requested: Level,
+): (det accepted?, det level: Level) {
     ensure forbidden: accepted? iff (n_forbidden = 0 or requested = Level::Forbid)
     ensure applied: level = if accepted? then requested else current
 
@@ -366,14 +357,13 @@ its group's sets it, so `fren.lint.pedantic` at `forbid` and
 over its group's, whichever is set. `lint::outside_options` states it:
 
 ```fren
-pub comp outside_options {
-    in default_level: Level
-    in own_set?              -- the lint's own option is set
-    in own: Level
-    in group_set?            -- its group's option is set
-    in group: Level
-    pub det out level: Level
-
+pub proc outside_options(
+    default_level: Level,
+    own_set?,                -- the lint's own option is set
+    own: Level,
+    group_set?,              -- its group's option is set
+    group: Level,
+): (det level: Level) {
     ensure rule: level = if default_level = Level::Forbid or (own_set? and own = Level::Forbid)
         or (group_set? and group = Level::Forbid) then Level::Forbid
         else if own_set? then own else if group_set? then group else default_level
@@ -387,18 +377,18 @@ pub comp outside_options {
 `lint::history` states the rule for a whole file's settings of one lint,
 in order: after the first `forbid`, only `forbid`. Naming each other level
 says "every later setting" without a quantifier, over the settings after
-the first `forbid`, `rest`, a private [defined
-output](Lang/Components.md#defined-outputs). `in` on a sequence that is not
+the first `forbid`, `rest`, a `let` variable with a
+[definition](Lang/Procedures.md#definitions). `in` on a sequence that is not
 a literal, and `index_of`, are outside the [decidable
 core](Lang/Decidability.md#sequences), so the rule opts out:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp history {
-    in settings: Seq<Level>      -- the levels a file sets for one lint, in order
+pub proc history(
+    settings: Seq<Level>,        -- the levels a file sets for one lint, in order
+): (det accepted?) {
     -- The settings after the first `forbid`.
-    out rest: Seq<Level> := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
-    pub det out accepted?
+    let rest: Seq<Level> := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
 
     ensure rule: accepted? iff not (Forbid in settings
         and (Allow in rest or Expect in rest or Warn in rest or Deny in rest))
@@ -423,15 +413,12 @@ command line and the settings together. `history` refines it. `history` is outsi
 core, so the refinement is checked by testing:
 
 ```fren
-pub comp stepwise {
-    in settings: Seq<Level>
-
+pub proc stepwise(settings: Seq<Level>): (accepted?) {
     assume three: settings.len = 3
-    pub out accepted?
 
-    inst first: setting { current := Warn, requested := settings[0] }
-    inst second: setting { current := first.level, requested := settings[1] }
-    inst third: setting { current := second.level, requested := settings[2] }
+    call first := setting(Warn, settings[0])
+    call second := setting(first.level, settings[1])
+    call third := setting(second.level, settings[2])
 
     ensure rule: accepted? iff (first.accepted? and second.accepted? and third.accepted?)
 
@@ -447,17 +434,18 @@ a file: its default, then the command line, then the last `set_option`
 before that place that is in effect there. Each step is a `lint::setting`.
 
 ```fren
-pub comp effective {
-    in default_level: Level
-    in cli_set?          -- the command line sets the lint
-    in cli: Level        -- the level it sets
-    in src_set?          -- a `set_option` in the file sets the lint here
-    in src: Level        -- the level it sets
-
+pub proc effective(
+    default_level: Level,
+    cli_set?,            -- the command line sets the lint
+    cli: Level,          -- the level it sets
+    src_set?,            -- a `set_option` in the file sets the lint here
+    src: Level,          -- the level it sets
+): (
+    det after_cli: Level,         -- the level from the default and the command line
+    det level: Level,
+    det error?,          -- the `set_option` tries to change a forbidden lint
+) {
     assume no_cli_expect: cli != Expect
-    pub det out after_cli: Level  -- the level from the default and the command line
-    pub det out level: Level
-    pub det out error?   -- the `set_option` tries to change a forbidden lint
 
     ensure cli_rule: after_cli = if cli_set? and (default_level != Forbid or cli = Forbid)
         then cli else default_level
@@ -474,10 +462,10 @@ pub comp effective {
 The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints
 and `unused_variables`, the item that declares the name, which for a
-member is its component and for a variant its enumeration; for `dead_code`
+member is its procedure and for a variant its enumeration; for `dead_code`
 and `single_call_fn`, the item it is about; for
-`arbitrary_source_item_ordering`, the component; for
-`unused_assumption`, its component; for `unused_lint_setting`, the setting, before it; for
+`arbitrary_source_item_ordering`, the procedure; for
+`unused_assumption`, its procedure; for `unused_lint_setting`, the setting, before it; for
 `invisible_characters`, the item the literal or comment is in (see
 [Invisible characters](Lint/Suspicious/Literals.md#invisible-characters)); for
 `unnecessary_trailing_comma`, the item the comma is in; and
@@ -543,12 +531,10 @@ of `unfulfilled_lint_expectations` is the one in effect at the
 when an expectation is fulfilled:
 
 ```fren
-pub comp expectation {
-    in n_fired: Nat      -- times the lint fires where this expectation is in effect
-    in level: Level      -- of `unfulfilled_lint_expectations`, at the `set_option`
-    pub det out fulfilled?
-    pub det out reported?
-
+pub proc expectation(
+    n_fired: Nat,        -- times the lint fires where this expectation is in effect
+    level: Level,        -- of `unfulfilled_lint_expectations`, at the `set_option`
+): (det fulfilled?, det reported?) {
     ensure fulfilled: fulfilled? iff n_fired > 0
     ensure reported: reported? iff (not fulfilled? and not level in {Allow, Expect})
 
@@ -571,7 +557,7 @@ what the spec means:
 |---|---|
 | `allow_attributes` | sets the lint to `expect` |
 | `almost_complete_range` | replaces the pattern with one that completes each range |
-| `arbitrary_source_item_ordering` | puts the members in order, unless a definition or a binding would then come before what it mentions |
+| `arbitrary_source_item_ordering` | puts the members in order, unless a definition or an argument would then come before what it mentions |
 | `bool_equality` | replaces `a = b` with `a iff b` |
 | `branches_sharing_code` | moves the shared operand out of the `if`, `(if c then a else b) op x` |
 | `card_zero` | compares the set with `{}`, as the message suggests |
@@ -653,17 +639,17 @@ what the spec means:
 Each fix that rewrites an expression keeps what the expression means, for
 every value of what it mentions. For `nonminimal_bool`, `length_zero`,
 `card_zero`, `singleton_membership`, `membership_chain` and
-`manual_pattern_test`, a component
+`manual_pattern_test`, a procedure
 in the lint's section states this as laws, which the solver checks: the
 written form, which the lint fires on, is on the left of each `iff`, and
-the fixed form on the right. Each component expects its lints, so it also
+the fixed form on the right. Each procedure expects its lints, so it also
 checks that each of them fires somewhere in it, though not that it fires
 on every form. `index_after_use` is left out: its fix only swaps the
 operands of `and`, which means the same either way round, and its written
 form has an index that may be out of range, which the
 [definedness](Check.md#definedness) check would report in the law itself. For `manual_abs`,
 `manual_abs_diff`, `manual_min_max`, `manual_clamp` and
-`manual_rem_euclid`, components as written and as fixed, and refinements
+`manual_rem_euclid`, procedures as written and as fixed, and refinements
 between them, in the lint's section, check it instead. To keep the meaning, a fix
 puts parentheses where [Parentheses in fixes](#parentheses-in-fixes)
 says.
@@ -672,8 +658,8 @@ The other lints have no fix. Renaming a declaration, as the naming lints
 and `struct_field_names` would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item, or a function applied once, which
-`single_call_fn` reports. Removing an unused variable, or the inputs of an
-unused assumption, would change its component's interface, and merging the guarantees that `case_split_guarantees`
+`single_call_fn` reports. Removing an unused variable, or the parameters of an
+unused assumption, would change its procedure's interface, and merging the guarantees that `case_split_guarantees`
 reports would change what traces, claims and `impl`s name, and so would
 removing a constraint that `assertions_on_constants` reports. Writing a
 string literal in NFC, as `unicode_not_nfc` suggests, would change its
@@ -705,12 +691,11 @@ lints. A lint given twice is given once:
 ```fren
 pub type Lint
 
-pub comp fix_selected {
-    in lint: Lint
-    in only: Set<Lint>   -- the lints given to `--only`
-    in skip: Set<Lint>   -- the lints given to `--skip`
-    pub det out fixed?
-
+pub proc fix_selected(
+    lint: Lint,
+    only: Set<Lint>,     -- the lints given to `--only`
+    skip: Set<Lint>,     -- the lints given to `--skip`
+): (det fixed?) {
     ensure rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
 
     expect default_all: when only = {} and not lint in skip, fixed?
@@ -737,19 +722,21 @@ leave behind, which may then need formatting, as `--fmt` does.
 
 ### Migrations
 
-Before it fixes lints, `fren fix` makes the fixes of the parse errors that
-mark a spec written in an earlier syntax: `F0155` and `F0156`, a type or a
-declaration written with parentheses for its type arguments or type
-parameters (see [Angle brackets](Lang/Generics.md#angle-brackets)). The
-parser stops at the first, so `fren fix` makes its fix, parses the file
-again, and so on, until the file parses or its parse error is another,
-which it then reports, as `fren check` would, and writes nothing. Each
-fix rewrites one outermost type, the types within it too, so a file with
-`n` of them takes at most `n` rounds; there are at most 1000, which only a
-bug would reach. These fixes are made whatever `--only` and `--skip`
-give, in the files that `--ignore` does not match, and then the lints are
-fixed in the files as migrated. `lint::migration_step` gives what
-`fren fix` does next:
+Before it fixes lints, `fren fix` makes the fixes of the errors that mark
+a spec written in an earlier syntax, in two stages.
+
+First, the parse errors: `F0155` and `F0156`, a type or a declaration
+written with parentheses for its type arguments or type parameters (see
+[Angle brackets](Lang/Generics.md#angle-brackets)), and `F0158`, `F0159`
+and `F0160`, a component, an `in` member and an output declared as
+components declared them (see [Migration](Lang/Procedures.md#migration)).
+The parser stops at the first, so `fren fix` makes its fix, parses the
+file again, and so on, until the file parses or its parse error is
+another, which it then reports, as `fren check` would, and writes nothing.
+Each fix rewrites one outermost type, the types within it too, or one
+component, or one member, so a file with `n` of them takes at most `n`
+rounds; there are at most 1000, which only a bug would reach.
+`lint::migration_step` gives what `fren fix` does next:
 
 ```fren
 pub enum MigrationStep {
@@ -758,12 +745,11 @@ pub enum MigrationStep {
     Stop,        -- report the parse error
 }
 
-pub comp migration_step {
-    in parse_error?      -- the file, as fixed so far, does not parse
-    in migration?        -- its parse error is `F0155` or `F0156`, with a fix
-    in round: Nat        -- how many fixes have been made
-    pub det out step: MigrationStep
-
+pub proc migration_step(
+    parse_error?,        -- the file, as fixed so far, does not parse
+    migration?,          -- its parse error is `F0155`, `F0156`, `F0158`, `F0159` or `F0160`, with a fix
+    round: Nat,          -- how many fixes have been made
+): (det step: MigrationStep) {
     ensure parsed: step = MigrationStep::Parsed iff not parse_error?
     ensure apply: step = MigrationStep::Apply iff (parse_error? and migration? and round < 1000)
 
@@ -771,6 +757,55 @@ pub comp migration_step {
     expect others_reported: when parse_error? and not migration?, step = MigrationStep::Stop
 }
 ```
+
+Then, once every file parses, the instances: `F0420`, an instance
+written as calls were before, whose fix needs the order of the called
+procedure's parameters, which only name resolution gives. So `fren fix`
+elaborates the files, makes the fixes of every `F0420` that has one, all
+at once, since they do not overlap, and elaborates them again, and so on,
+until no `F0420` with a fix is left; an instance whose called procedure is
+itself not yet elaborated, such as one whose own instances are being
+fixed, is fixed in a later round. There are at most 1000 rounds.
+`lint::call_migration_round` gives what one round does, from whether each
+`F0420` of the files, as elaborated before the round, has a fix
+(`offered`, in the order they are reported): while some has one and fewer
+than 1000 rounds have been made, the round makes every offered fix, and
+only those; otherwise `fren fix` goes on to the lints. `k` is any `F0420`,
+so the rule is stated for each. Membership in a sequence of unknown
+length is outside the [decidable core](Lang/Decidability.md#sequences), so
+the procedure opts out, and its checks are tested:
+
+```fren
+pub enum Offer { Fix, NoFix }
+
+set_option fren.evidence "tested" in
+set_option fren.lint.undecidable "allow" in
+pub proc call_migration_round(
+    offered: Seq<Offer>,         -- for each `F0420`, as elaborated before the round, whether it has a fix
+    round: Nat,                  -- how many rounds of these fixes have been made
+    k: Int,                      -- any `F0420`
+): (
+    det continues?,              -- the round is made
+    det applies?,                -- it makes the fix of `k`
+) {
+    ensure continues: continues? iff (round < 1000 and Offer::Fix in offered)
+    ensure applies: applies? iff (continues? and 0 <= k < offered.len and offered[k] = Offer::Fix)
+
+    expect bounded: when round >= 1000, not continues?
+    expect done: when not (Offer::Fix in offered), not continues?
+    expect only_offered: when applies?, offered[k] = Offer::Fix
+    expect all_offered: when continues? and 0 <= k < offered.len and offered[k] = Offer::Fix, applies?
+}
+```
+
+These fixes are made whatever `--only` and `--skip` give, in the files
+that `--ignore` does not match, and then the lints are fixed in the files
+as migrated. A static error other than a denied lint then stops the
+lints' fixes, as it does without migrations, but the migrations are
+written: `fren fix` prints `migrated FILE (N fixes)` for each file it
+migrates, as it does for a file that it only migrates, so that a spec with an error of its own, such as a test of one,
+is migrated too. With `--only L --skip L`, for any lint `L`, `fren fix`
+fixes no lint, and only migrates.
 
 `lint::import_fix` gives the fix of one `use` that is not in a group,
 from the lints that fire at it and whether each is fixed. For a glob that
@@ -780,14 +815,13 @@ is unused is not imported by name, since nothing would use those names.
 ```fren
 pub enum ImportFix { Keep, Remove, ByName }
 
-pub comp import_fix {
-    in unused?           -- `unused_imports` fires at the `use`
-    in glob?             -- `glob_imports` fires at it
-    in fix_unused?       -- `unused_imports` is fixed: `--only` and `--skip` allow it
-    in fix_glob?         -- `glob_imports` is fixed
-    in n_used: Nat       -- distinct variants the file uses through it
-    pub det out fix: ImportFix
-
+pub proc import_fix(
+    unused?,             -- `unused_imports` fires at the `use`
+    glob?,               -- `glob_imports` fires at it
+    fix_unused?,         -- `unused_imports` is fixed: `--only` and `--skip` allow it
+    fix_glob?,           -- `glob_imports` is fixed
+    n_used: Nat,         -- distinct variants the file uses through it
+): (det fix: ImportFix) {
     ensure rule: fix = if unused? and fix_unused? then ImportFix::Remove
         else if glob? and fix_glob? and not unused? and n_used > 0 then ImportFix::ByName
         else ImportFix::Keep
@@ -811,12 +845,11 @@ and if none is left, so is the `use`.
 | 2 | nothing was fixed: an unreadable file, bad arguments, or a static error other than a denied lint |
 
 ```fren
-pub comp fix_exit {
-    in check?            -- `--check` was given
-    in loaded?           -- every file was read, and has no static error but denied lints
-    in unchanged?        -- no file changes: no lint that is fixed fires, and with `--fmt`, every file is formatted
-    pub det out code: Int
-
+pub proc fix_exit(
+    check?,              -- `--check` was given
+    loaded?,             -- every file was read, and has no static error but denied lints
+    unchanged?,          -- no file changes: no lint that is fixed fires, and with `--fmt`, every file is formatted
+): (det code: Int) {
     ensure failed: unless loaded?, code = 2
     ensure pending: when loaded? and check? and not unchanged?, code = 1
     ensure fixed: when loaded? and (not check? or unchanged?), code = 0

@@ -1,8 +1,7 @@
 -- A guarantee that only mentions inputs constrains the environment, so on
 -- its own it is unrealizable.
 -- fren-covers: check::minimal
-comp c {           --~ error: no outputs satisfy `r`
-    in x: Int
+proc c(x: Int) {           --~ error: no outputs satisfy `r`
     ensure r: x > 0   --~ info: is false for this input
 }
 --@ summary: 1 passed, 1 failed, 0 inconclusive, 0 redundant

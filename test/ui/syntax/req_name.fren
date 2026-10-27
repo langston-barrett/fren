@@ -1,7 +1,4 @@
 -- `req` is an ordinary identifier, so it can be a name.
-comp c {
-    in req: Int
-    pub det out y?
-
+proc c(req: Int): (det y?) {
     ensure r: y? iff req > 0
 }

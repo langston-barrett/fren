@@ -1,13 +1,13 @@
 error[F0201]: cannot find `v` in this scope
- --> test/cli/names/f0201_else_binder.fren:3:88
+ --> test/cli/names/f0201_else_binder.fren:3:81
   |
-3 | comp c { in r: Reply pub out w: Int ensure a: w = (if r is Reply::Value(v) then v else v) }
-  |                                                                                        ^ not found in this scope
+3 | proc c(r: Reply): (w: Int) { ensure a: w = (if r is Reply::Value(v) then v else v) }
+  |                                                                                 ^ not found in this scope
   |
 help: a similar name exists: `r`
   |
-3 - comp c { in r: Reply pub out w: Int ensure a: w = (if r is Reply::Value(v) then v else v) }
-3 + comp c { in r: Reply pub out w: Int ensure a: w = (if r is Reply::Value(v) then v else r) }
+3 - proc c(r: Reply): (w: Int) { ensure a: w = (if r is Reply::Value(v) then v else v) }
+3 + proc c(r: Reply): (w: Int) { ensure a: w = (if r is Reply::Value(v) then v else r) }
   |
 
 error: could not check due to previous errors

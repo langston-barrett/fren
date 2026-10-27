@@ -1,0 +1,48 @@
+-- Procedures (`Reqs/Lang/Procedures`): parameters and results in the
+-- signature, private variables as `exists` and `let`, a result defined by
+-- `out`, positional calls, and a `use` member that scopes over the
+-- parameters' types too.
+mod climate
+
+pub enum Mode { Heat, Cool, Off }
+
+pub proc band(
+    temp: Int,      -- the temperature
+    target: Int,    -- the target
+): (too_cold?, too_hot?) {
+    ensure cold: too_cold? iff temp < target - 2
+    ensure hot: too_hot? iff temp > target + 2
+}
+
+pub proc thermostat(temp: Int, target: Int is 50..=90): (det mode: Mode, alarm?) {
+    use self::Mode::{Cool, Heat, Off}
+
+    exists spare: Int
+    det let gap: Int := target - temp
+    out alarm? := temp > 100
+    call range := band(temp, target)
+    call wider := band(temp, target + 1)
+
+    ensure heat: when range.too_cold?, mode = Heat
+    ensure cool: when range.too_hot?, mode = Cool
+    ensure idle: unless range.too_cold? or range.too_hot?, mode = Off
+    ensure spared: spare = gap
+
+    expect wider_colder: when wider.too_cold?, gap > 1
+    cover overheated: alarm? and mode = Cool  --~ info: cover goal `climate::thermostat::overheated` is met
+}
+
+proc nothing() {}
+
+expect colder: forall (a b: band), when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold?
+
+mod climate::levels
+pub enum Level { Low, High }
+
+-- A `use` member scopes over the parameters' and results' types too.
+mod climate::uses
+proc imported(l: Level): (h: Level) {
+    use climate::levels::Level
+
+    ensure r: h = l
+}

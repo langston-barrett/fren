@@ -52,7 +52,7 @@ some part differs, `none` if some part is unknown, else `some true`. -/
 def both (a b : Option Bool) : Option Bool :=
   if a == some false || b == some false then some false else if a.isNone || b.isNone then none else some true
 
-/-- The mutants of a component, or of a constant or function, by
+/-- The mutants of a procedure, or of a constant or function, by
 outcome. -/
 structure Tally where
   killed : Nat := 0

@@ -1,7 +1,7 @@
 error[F0603]: expectation `lexref::word_is_wrong::never` does not hold
-  --> test/cli/commands/refinement.fren:32:8
+  --> test/cli/commands/refinement.fren:26:8
    |
-32 | refine word_is_wrong: word refines wrong
+26 | refine word_is_wrong: word refines wrong
    |        ^^^^^^^^^^^^^ does not follow from the guarantees
    |
    = counterexample: text = "A", word.text = "A", word.accepted? = true

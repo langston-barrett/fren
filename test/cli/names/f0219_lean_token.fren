@@ -1,10 +1,7 @@
 -- Names that, with `!`, are Lean tokens cannot be declared with `!`.
 pub enum Shape { Circle(Int), Square }
 
-pub comp c {
-    in s: Int
-    pub out p?
-
+pub proc c(s: Int): (p?) {
     ensure r: p? iff match Shape::Circle(s) {
         Shape::Circle(s!) => s > 0,
         _ => false,

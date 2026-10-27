@@ -11,12 +11,12 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
 
 ## Repeated constraints
 
-`duplicate_constraint` fires on a constraint of a component that is
-written the same as an earlier one of the component, whatever their
+`duplicate_constraint` fires on a constraint of a procedure that is
+written the same as an earlier one of the procedure, whatever their
 kinds, `assume`, `ensure` or `expect`, and on a global expectation written
 the same as an earlier one of its module in the same file. It fires too
 on a cover goal written the same as an earlier cover goal of the
-component, but a cover goal is not compared with a constraint, since it
+procedure, but a cover goal is not compared with a constraint, since it
 states a scenario rather than what holds in every behaviour. Two
 constraints are written the same if their expressions are (see
 [Written the same](../Lint.md#written-the-same)), and two global
@@ -31,7 +31,7 @@ expectations that say the same are reported by no check. Where the two are
 of one kind, the fix removes the later one, with a `--` comment after it
 on its last line, and for a global expectation any `set_option ... in`
 before it. This keeps the meaning: a constraint
-that repeats one of its kind adds nothing to the component, and an
+that repeats one of its kind adds nothing to the procedure, and an
 expectation that repeats one claims nothing more, and a cover goal that
 repeats one is met exactly when that one is, so it checks nothing more. An `expect` that repeats
 an `ensure` or an `assume` is not fixed: it tests nothing, since it follows
@@ -45,17 +45,19 @@ pub mod lint
 
 pub enum ConstraintKind { Assume, Ensure, Expect, Cover }
 
-pub comp duplicate_constraint {
-    in earlier: ConstraintKind
-    in later: ConstraintKind
-    in earlier_text: Scoped  -- the earlier's expression, as written in its scope
-    in later_text: Scoped    -- the later's
-
+pub proc duplicate_constraint(
+    earlier: ConstraintKind,
+    later: ConstraintKind,
+    earlier_text: Scoped,    -- the earlier's expression, as written in its scope
+    later_text: Scoped,      -- the later's
+): (
+    det same?,
+    det fires?,
+    det fixed?,          -- the fix removes the later
+) {
     -- A cover goal is compared only with cover goals.
     assume covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)
-    pub det out same? := earlier_text = later_text
-    pub det out fires?
-    pub det out fixed?   -- the fix removes the later
+    out same? := earlier_text = later_text
 
     ensure rule: fires? iff same?
     ensure fix: fixed? iff (same? and earlier = later)
@@ -65,7 +67,7 @@ pub comp duplicate_constraint {
 ```
 
 A constraint that repeats one adds nothing because the two have the same
-value in every behaviour: they are written the same, in one component, so
+value in every behaviour: they are written the same, in one procedure, so
 by [`written_same`](Meaning.md#expressions-as-written) they have the same
 value in each environment. A global expectation is not one layer, since
 it is a [quantifier](../Lang/Quantifiers.md), but the bodies of two written
@@ -90,7 +92,7 @@ negation, `-`, that whitespace follows, as in `x >=- 1`, `a =- b` and `a
 `-` itself is never directly followed by a `-`, which starts a comment,
 and `<` never is, since `<-` is one punctuator, an
 [error](../Lang/Lexical.md#punctuators). The lint looks only at the text,
-in any constraint, binding, definition, constant or global expectation,
+in any constraint, argument, binding, definition, constant or global expectation,
 and is fixable. The fix moves the whitespace from after the `-` to before
 it, so `x >=- 1` becomes `x >= -1`, and keeps the rest as it is written;
 before an operand that starts with `-`, it keeps one space after the `-`
@@ -100,12 +102,11 @@ too. `lint::suspicious_unary_op_formatting` states when it fires:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp suspicious_unary_op_formatting {
-    in punctuator?       -- the operator is a punctuator other than `-`
-    in adjacent?         -- the `-` directly follows it
-    in spaced?           -- whitespace directly follows the `-`
-    pub det out fires?
-
+pub proc suspicious_unary_op_formatting(
+    punctuator?,         -- the operator is a punctuator other than `-`
+    adjacent?,           -- the `-` directly follows it
+    spaced?,             -- whitespace directly follows the `-`
+): (det fires?) {
     ensure rule: fires? iff (punctuator? and adjacent? and spaced?)
 }
 ```
@@ -129,10 +130,9 @@ related, by an atom left out, or the claims may be meant to be separate
 expectations. `lint::unrelated_binders` states when it fires:
 
 ```fren
-pub comp unrelated_binders {
-    in n_groups: Nat     -- groups of the binders that atoms mention
-    pub det out fires?
-
+pub proc unrelated_binders(
+    n_groups: Nat,       -- groups of the binders that atoms mention
+): (det fires?) {
     ensure rule: fires? iff n_groups >= 2
 }
 ```
@@ -157,10 +157,9 @@ mistake and hide it. Clippy has no exact analogue; rustc's
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp irrefutable_is {
-    in matches_every?    -- no value of the scrutinee's type is left for `_` after the pattern
-    pub det out fires?
-
+pub proc irrefutable_is(
+    matches_every?,      -- no value of the scrutinee's type is left for `_` after the pattern
+): (det fires?) {
     ensure rule: fires? iff matches_every?
 }
 ```
@@ -170,22 +169,18 @@ a pattern that names every variant of [`Shade`](Style/Comparisons.md#pattern-tes
 
 ```fren
 set_option fren.lint.irrefutable_is "allow" in
-pub comp irrefutable_is_written {
-    in s: Shade
-    in n: Int
-    pub det out wildcard? := s is _
-    pub det out every? := s is Shade::Light | Shade::Dark | Shade::Tinted(_)
-    pub det out ranges? := n is ..=0 | 1..
+pub proc irrefutable_is_written(s: Shade, n: Int): (det wildcard?, det every?, det ranges?) {
+    out wildcard? := s is _
+    out every? := s is Shade::Light | Shade::Dark | Shade::Tinted(_)
+    out ranges? := n is ..=0 | 1..
 }
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.lint.unused_variables "allow" in
-pub comp irrefutable_is_value {
-    in s: Shade
-    in n: Int
-    pub det out wildcard? := true
-    pub det out every? := true
-    pub det out ranges? := true
+pub proc irrefutable_is_value(s: Shade, n: Int): (det wildcard?, det every?, det ranges?) {
+    out wildcard? := true
+    out every? := true
+    out ranges? := true
 }
 
 refine irrefutable_is_sound: irrefutable_is_value refines irrefutable_is_written
@@ -194,7 +189,7 @@ refine irrefutable_is_complete: irrefutable_is_written refines irrefutable_is_va
 
 ## Cover goals
 
-`trivial_cover` fires on a [cover goal](../Lang/Components.md#cover-goals)
+`trivial_cover` fires on a [cover goal](../Lang/Procedures.md#cover-goals)
 that some behaviour meets whatever scenario it was meant to state. Lints
 never ask the solver, so whether a goal can be met at all is the
 [check's](../Check.md#cover-goals) to say: one that the guarantees rule
@@ -202,14 +197,14 @@ out, such as `not y?` beside `ensure r: y?`, is already an error there
 (`F0615`), and a lint would only report it twice. It fires on two
 mistakes that the check passes:
 
-- a goal with a [trigger](../Lang/Components.md#triggers), `when c, d` or
+- a goal with a [trigger](../Lang/Procedures.md#triggers), `when c, d` or
   `unless c, d`: it holds wherever the trigger is false, so a behaviour in
   which the trigger is false meets it. The scenario is meant as a
   conjunction, such as `c and d`;
 - a goal written the same as an assumption or a guarantee of its
-  component, before it or after it, as [written](../Lint.md#written-the-same):
-  every behaviour that meets the component satisfies it, so it is met
-  unless the component allows no behaviour, which the [vacuity
+  procedure, before it or after it, as [written](../Lint.md#written-the-same):
+  every behaviour that meets the procedure satisfies it, so it is met
+  unless the procedure allows no behaviour, which the [vacuity
   check](../Check.md#vacuity) reports.
 
 A goal that mentions no variable is reported by
@@ -222,11 +217,10 @@ fires:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp trivial_cover {
-    in trigger?    -- the goal has a trigger
-    in restates?   -- it is written the same as an assumption or a guarantee
-    pub det out fires?
-
+pub proc trivial_cover(
+    trigger?,      -- the goal has a trigger
+    restates?,     -- it is written the same as an assumption or a guarantee
+): (det fires?) {
     ensure rule: fires? iff (trigger? or restates?)
 }
 ```
@@ -235,7 +229,7 @@ pub comp trivial_cover {
 
 `redundant_locals` fires on a definition of a [`let` or
 `where`](../Lang/Let.md) clause that names again what it
-[hides](../Lang/Components.md#shadowing), `x! := x`, with no type written.
+[hides](../Lang/Procedures.md#shadowing), `x! := x`, with no type written.
 The `x` of the definition means what `x!` hides, so `x` means the same
 with the definition and without it, and the definition was probably meant
 to be another expression, such as `x! := x + 1`, perhaps left unfinished.
@@ -255,20 +249,15 @@ Clippy's `redundant_locals`, of `let x = x;`, is in `correctness`, which
 is denied by default; here it is in `suspicious`, and `warn` (see
 [Groups](../Lint.md#groups)). `x := x` in a binding or a record literal,
 which `x` alone writes, is [`redundant_bindings`](Style.md#bindings)'s.
-The refinements after the component check that the removal the message
+The refinements after the procedure check that the removal the message
 suggests keeps the meaning. `lint::redundant_locals` states when it fires, on the definition in the
 [model of scopes](Unused.md#scopes): its name, whether it is written with
 `!` and with a type, and the tree of its expression, whose root is then a
 path of that one name with no parts:
 
 ```fren
-pub comp redundant_locals {
+pub proc redundant_locals(name: Local, bang?, annotated?, value: Tree): (det fires?) {
     use lint::{Local, Tree}
-    in name: Local
-    in bang?
-    in annotated?
-    in value: Tree
-    pub det out fires?
 
     ensure rule: fires? iff (bang? and not annotated? and (value.root, name) in value.paths
         and value.children.image({value.root}) = {})
@@ -283,22 +272,28 @@ clause:
 
 ```fren
 set_option fren.lint.redundant_locals "allow" in
-pub comp redundant_locals_written {
-    in x: Int
-    in y: Int
-    pub det out only? := let x! := x in x > 0
-    pub det out first: Int := let x! := x, k := 2 in x * k
-    pub det out last: Int := let k := 2, y! := y in y * k
-    pub det out clause: Int := x + y where y! := y
+pub proc redundant_locals_written(x: Int, y: Int): (
+    det only?,
+    det first: Int,
+    det last: Int,
+    det clause: Int,
+) {
+    out only? := let x! := x in x > 0
+    out first := let x! := x, k := 2 in x * k
+    out last := let k := 2, y! := y in y * k
+    out clause := x + y where y! := y
 }
 
-pub comp redundant_locals_fixed {
-    in x: Int
-    in y: Int
-    pub det out only? := x > 0
-    pub det out first: Int := let k := 2 in x * k
-    pub det out last: Int := let k := 2 in y * k
-    pub det out clause: Int := x + y
+pub proc redundant_locals_fixed(x: Int, y: Int): (
+    det only?,
+    det first: Int,
+    det last: Int,
+    det clause: Int,
+) {
+    out only? := x > 0
+    out first := let k := 2 in x * k
+    out last := let k := 2 in y * k
+    out clause := x + y
 }
 
 refine redundant_locals_sound: redundant_locals_fixed refines redundant_locals_written

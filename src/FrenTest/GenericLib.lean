@@ -10,7 +10,7 @@ open Fren.Lang
 mod lib
 pub fn other<T>(x: T): T
     ensure diff: other(x) != x
-comp use_int { in x: Int pub det out y: Int := other(x) expect moved: y != x }
+proc use_int(x: Int): (det y: Int) { out y := other(x) expect moved: y != x }
 
 /-- info: fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in

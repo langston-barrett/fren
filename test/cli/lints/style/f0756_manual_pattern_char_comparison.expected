@@ -1,8 +1,8 @@
 warning[F0756]: this alternation of single characters is a class
- --> test/cli/lints/style/f0756_manual_pattern_char_comparison.fren:2:62
+ --> test/cli/lints/style/f0756_manual_pattern_char_comparison.fren:2:55
   |
-2 | comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"x(a|\^|-)+") }
-  |                                                              ^^^^^^^^^^^^^ matches one of several characters
+2 | proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"x(a|\^|-)+") }
+  |                                                       ^^^^^^^^^^^^^ matches one of several characters
   |
   = note: a class, such as `[abc]`, matches one character of those in it
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0756]: this alternation of single characters is a class
   = help: to allow it, `set_option fren.lint.manual_pattern_char_comparison "allow"`
 help: write `r"x[a\^\-]+"`
   |
-2 - comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"x(a|\^|-)+") }
-2 + comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"x[a\^\-]+") }
+2 - proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"x(a|\^|-)+") }
+2 + proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"x[a\^\-]+") }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

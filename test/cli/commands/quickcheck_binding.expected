@@ -1,20 +1,20 @@
 error[F0603]: expectation `q::chained` does not hold
- --> test/cli/commands/quickcheck_binding.fren:9:12
+ --> test/cli/commands/quickcheck_binding.fren:7:12
   |
-9 |     expect chained: when r is Reply::Value(v) and v = 987654321, w = 1
+7 |     expect chained: when r is Reply::Value(v) and v = 987654321, w = 1
   |            ^^^^^^^ does not follow from the guarantees
   |
   = counterexample: r = Reply::Value(987654321), w = 0
   = help: strengthen the guarantees so that it follows, or correct the expectation
 
 error[F0603]: expectation `q::nested` does not hold
-  --> test/cli/commands/quickcheck_binding.fren:10:12
-   |
-10 |     expect nested: when r is Reply::Value(v), when v = 987654321, w = 1
-   |            ^^^^^^ does not follow from the guarantees
-   |
-   = counterexample: r = Reply::Value(987654321), w = 0
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+ --> test/cli/commands/quickcheck_binding.fren:8:12
+  |
+8 |     expect nested: when r is Reply::Value(v), when v = 987654321, w = 1
+  |            ^^^^^^ does not follow from the guarantees
+  |
+  = counterexample: r = Reply::Value(987654321), w = 0
+  = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 2 passed, 2 failed, 0 inconclusive, in 100 tests each
 

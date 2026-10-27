@@ -6,7 +6,7 @@
 pub enum Option!<T> { Nothing, Just(T) }
 
 -- Within the module, `Option` is its own.
-comp own { in x: Option<Int> pub out y? ensure r: y? iff x = Option::Nothing }
+proc own(x: Option<Int>): (y?) { ensure r: y? iff x = Option::Nothing }
 
 pub const NOTHING: Option<Int> := Option::Nothing
 
@@ -16,7 +16,7 @@ use NOTHING
 
 -- Here `Option` is the prelude's, and the root module's prints alike, so a
 -- message qualifies the prelude's.
-comp mixed { in x: Option<Int> pub out y? ensure r: y? iff x = NOTHING }  --~ error: cannot compare `prelude::Option<Int>` with `Option<Int>`
+proc mixed(x: Option<Int>): (y?) { ensure r: y? iff x = NOTHING }  --~ error: cannot compare `prelude::Option<Int>` with `Option<Int>`
 
 mod plain
 
@@ -29,13 +29,11 @@ pub enum Answer { None, Some(Int) }
 use self::Answer::*  --~ warning: imports every variant of `Answer`
 
 -- The variants opened take precedence over the prelude's, without `!`.
-comp answers { in a: Answer pub out y? ensure r: y? iff a = None }
+proc answers(a: Answer): (y?) { ensure r: y? iff a = None }
 
 mod binders
 
-comp nested {
-    in x: Option<Option<Int>>
-    pub out y: Int
+proc nested(x: Option<Option<Int>>): (y: Int) {
     ensure r: y = match x { Some(None) => 0, Some(Some(n)) => n, None => 1 }
 }
 
@@ -43,5 +41,5 @@ comp nested {
 -- and its lints name it without the `!`, in both front ends.
 mod Result!  --~ warning: module `Result` should have a snake case name
 
-comp in_module { in x: Option<Int> pub out y? ensure r: y? iff x = None }
+proc in_module(x: Option<Int>): (y?) { ensure r: y? iff x = None }
 --@ exit: 2

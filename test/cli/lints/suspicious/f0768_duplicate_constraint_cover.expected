@@ -1,7 +1,7 @@
 warning[F0768]: this is written the same as `low`
- --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:7:11
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:5:11
   |
-7 |     cover high: x < 0 and y < 0
+5 |     cover high: x < 0 and y < 0
   |           ^^^^ the same as `low`
   |
   = help: remove it
@@ -10,17 +10,17 @@ warning[F0768]: this is written the same as `low`
   = help: to allow it, `set_option fren.lint.duplicate_constraint "allow"`
 
 note: cover goal `c::low` is met
- --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:6:11
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:4:11
   |
-6 |     cover low: x < 0 and y < 0
+4 |     cover low: x < 0 and y < 0
   |           ^^^ met
   |
   = witness: x = -2, y = -1
 
 note: cover goal `c::high` is met
- --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:7:11
+ --> test/cli/lints/suspicious/f0768_duplicate_constraint_cover.fren:5:11
   |
-7 |     cover high: x < 0 and y < 0
+5 |     cover high: x < 0 and y < 0
   |           ^^^^ met
   |
   = witness: x = -2, y = -1

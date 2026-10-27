@@ -3,10 +3,7 @@
 -- practice, and passes by testing; `wrong` is false, and testing refutes it.
 mod lex
 
-pub comp word {
-    in text: String
-    pub det out accepted?
-
+pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
 
     expect dotted: when text = "w.x.y?", accepted?
@@ -18,24 +15,19 @@ pub comp word {
 
 -- Set for the whole component, but its `det out` by the solver.
 set_option fren.evidence "tested" in
-pub comp parity {
-    in n: Int
-    set_option fren.evidence "solver" in
-    pub det out even?
+pub proc parity(n: Int): (set_option fren.evidence "solver" in det even?) {
     ensure r: even? iff n is 0 | 2 | 4
     expect zero: when n = 0, even?
 }
 
 -- An instance set to testing: its assumption is tested, and false.
-pub comp positive {
-    in k: Int
+pub proc positive(k: Int) {
     assume pos: k > 0
 }
 
-pub comp caller {
-    in m: Int
+pub proc caller(m: Int) {
     set_option fren.evidence "tested" in
-    inst p: positive { k := m }
+    call p := positive(m)
 }
 
 -- Before an item that is not a component, it sets nothing.
@@ -49,9 +41,7 @@ expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
 
 -- A check set to testing whose trigger never held: the help does not send
 -- the user back to `fren check`.
-pub comp narrow {
-    in x: Int
-    pub out big?
+pub proc narrow(x: Int): (big?) {
     ensure r: big? iff x > 1000
     set_option fren.evidence "tested" in
     expect e: when 7 * x = 123459, big?

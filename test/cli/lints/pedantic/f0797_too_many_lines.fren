@@ -1,107 +1,106 @@
 -- `too_many_lines`: a component of 101 lines, not counting blank lines and comments.
 set_option fren.lint.too_many_lines "warn"
 
-comp c {
-    in x: Int
-
+proc c(x: Int): (
     -- `y0`
-    pub out y0: Int
+    y0: Int,
     -- `y1`
-    pub out y1: Int
+    y1: Int,
     -- `y2`
-    pub out y2: Int
+    y2: Int,
     -- `y3`
-    pub out y3: Int
+    y3: Int,
     -- `y4`
-    pub out y4: Int
+    y4: Int,
     -- `y5`
-    pub out y5: Int
+    y5: Int,
     -- `y6`
-    pub out y6: Int
+    y6: Int,
     -- `y7`
-    pub out y7: Int
+    y7: Int,
     -- `y8`
-    pub out y8: Int
+    y8: Int,
     -- `y9`
-    pub out y9: Int
+    y9: Int,
     -- `y10`
-    pub out y10: Int
+    y10: Int,
     -- `y11`
-    pub out y11: Int
+    y11: Int,
     -- `y12`
-    pub out y12: Int
+    y12: Int,
     -- `y13`
-    pub out y13: Int
+    y13: Int,
     -- `y14`
-    pub out y14: Int
+    y14: Int,
     -- `y15`
-    pub out y15: Int
+    y15: Int,
     -- `y16`
-    pub out y16: Int
+    y16: Int,
     -- `y17`
-    pub out y17: Int
+    y17: Int,
     -- `y18`
-    pub out y18: Int
+    y18: Int,
     -- `y19`
-    pub out y19: Int
+    y19: Int,
     -- `y20`
-    pub out y20: Int
+    y20: Int,
     -- `y21`
-    pub out y21: Int
+    y21: Int,
     -- `y22`
-    pub out y22: Int
+    y22: Int,
     -- `y23`
-    pub out y23: Int
+    y23: Int,
     -- `y24`
-    pub out y24: Int
+    y24: Int,
     -- `y25`
-    pub out y25: Int
+    y25: Int,
     -- `y26`
-    pub out y26: Int
+    y26: Int,
     -- `y27`
-    pub out y27: Int
+    y27: Int,
     -- `y28`
-    pub out y28: Int
+    y28: Int,
     -- `y29`
-    pub out y29: Int
+    y29: Int,
     -- `y30`
-    pub out y30: Int
+    y30: Int,
     -- `y31`
-    pub out y31: Int
+    y31: Int,
     -- `y32`
-    pub out y32: Int
+    y32: Int,
     -- `y33`
-    pub out y33: Int
+    y33: Int,
     -- `y34`
-    pub out y34: Int
+    y34: Int,
     -- `y35`
-    pub out y35: Int
+    y35: Int,
     -- `y36`
-    pub out y36: Int
+    y36: Int,
     -- `y37`
-    pub out y37: Int
+    y37: Int,
     -- `y38`
-    pub out y38: Int
+    y38: Int,
     -- `y39`
-    pub out y39: Int
+    y39: Int,
     -- `y40`
-    pub out y40: Int
+    y40: Int,
     -- `y41`
-    pub out y41: Int
+    y41: Int,
     -- `y42`
-    pub out y42: Int
+    y42: Int,
     -- `y43`
-    pub out y43: Int
+    y43: Int,
     -- `y44`
-    pub out y44: Int
+    y44: Int,
     -- `y45`
-    pub out y45: Int
+    y45: Int,
     -- `y46`
-    pub out y46: Int
+    y46: Int,
     -- `y47`
-    pub out y47: Int
+    y47: Int,
     -- `y48`
-    pub out y48: Int
+    y48: Int,
+) {
     ensure r0: y0 = x + 1
     ensure r1: y1 = x + 2
     ensure r2: y2 = x + 3

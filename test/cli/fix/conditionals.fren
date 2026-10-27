@@ -1,16 +1,7 @@
 --@ args: fix --check -W if_not_else
 -- `fren fix` rewrites conditionals, keeping operands' parentheses only where
 -- they are needed.
-comp c {
-    in a?
-    in b?
-    in x: Int
-    in y: Int
-    pub out p?
-    pub out q?
-    pub out m: Int
-    pub out n: Int
-
+proc c(a?, b?, x: Int, y: Int): (p?, q?, m: Int, n: Int) {
     ensure r1: unless not (a? or b?), p?
     ensure r2: unless x != y, q?
     ensure r3: when a?, when (b? or p?), q?

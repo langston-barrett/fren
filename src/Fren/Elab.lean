@@ -12,6 +12,7 @@ import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Patterns
+import FrenCore.Procedures
 import FrenCore.Quantifier
 import FrenCore.Regex
 import FrenCore.Syntax
@@ -26,7 +27,7 @@ import FrenCore.Typing
 These are the only code that changes the Fren model. Each records Fren's own
 representation of a declaration, then generates ordinary Lean declarations
 from it (an `inductive` per enum; a `def` per constant; a `def` per
-`assume`/`ensure`/`expect`, plus `assumes` and `ensures`, per comp; a `def` per
+`assume`/`ensure`/`expect`, plus `assumes` and `ensures`, per procedure; a `def` per
 global expectation) so that specs can be used from Lean.
 -/
 
@@ -105,7 +106,7 @@ open Lang in
 reports, in source order, before any other check of its item, where Lean's
 grammar accepts it:
 - a name that is not a single segment. A name may be dotted only where it
-  is an expression's whole path, which reads an instance's variable or a
+  is an expression's whole path, which reads a call's variable or a
   value's field or method, or where it follows `.`, or names an option;
 - a member's `set_option` of an option other than `fren.evidence`;
 - an input's definition, `in x := e`, before its expression is read;
@@ -134,10 +135,20 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   | _ =>
     if stx.isIdent then discard (segName stx)
     else if stx.isOfKind ``Lang.fren_path then discard (segNames (pathSegs stx))
+    else if stx.isOfKind ``Lang.fren_result_evidence then
+      unless stx[1].getId == `fren.evidence do
+        throwErrorAt stx[1] (Core.memberOptionMsg stx[1].getId.toString).text
     else if stx.isOfKind ``Lang.evidenceMember then
       unless stx[1].getId == `fren.evidence do
         throwErrorAt stx[1] (Core.memberOptionMsg stx[1].getId.toString).text
       checkParsed stx[4]
+    else if stx.isOfKind ``Lang.fren_proc_param then
+      -- A parameter's modifier or definition, as the `fren` command's
+      -- parser reports it.
+      unless stx[0].isNone do throwErrorAt stx[0] (Core.paramModifierMsg ((stx[0].reprint.getD "").trimAscii.toString)).text
+      checkParsed stx[1]
+      checkParsed stx[2]
+      unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
     else if stx.isOfKind ``Lang.inMember then
       checkParsed stx[1]
       checkParsed stx[2]
@@ -211,7 +222,7 @@ def lintTrailingCommas (stx : Syntax) : CommandElabM Unit := do
   modifyLocal ({ · with currentModule := path })
 
 /-- Imports the path `segs`, written at `ref`, into the current module, or,
-with `scope`, into the component of that path. -/
+with `scope`, into the procedure of that path. -/
 def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Option Name := none) : CommandElabM Unit := do
   let modName := (← getLocal).currentModule
   let u ← liftResolve segs ((← getState).table.declareUse modName (← segNames segs) glob (scope.getD modName))
@@ -473,12 +484,12 @@ structure ContractCx where
 structure ExprCtx where
   modName : Name
   vars : Array Var
-  /-- The comp's instances, in order. -/
+  /-- The procedure's calls, in order. -/
   insts : Array Name
   place : Core.Place
-  /-- For a binding, the index of its instance. -/
+  /-- For a binding, the index of its call. -/
   current : Nat := 0
-  /-- In a refinement's binding, over the concrete comp's variables, which
+  /-- In a refinement's binding, over the concrete procedure's variables, which
   binding it is: its mentions follow `refinement::mention` instead. -/
   refining? : Option Core.RefineBinding := none
   /-- The binders in scope, innermost last. -/
@@ -490,7 +501,7 @@ structure ExprCtx where
   selfFn : Option Name := none
   /-- In a clause of a function's contract, the function. -/
   contract? : Option ContractCx := none
-  /-- In a global expectation, whose instances are its binders. -/
+  /-- In a global expectation, whose calls are its binders. -/
   inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
@@ -709,7 +720,7 @@ through each of their fields: the value that the solver sees. -/
 def unwrapTerm (chain : Array NewtypeInfo) (x : Term) : TermElabM Term :=
   chain.foldlM (fun t n => `($(mkCIdent n.field) $t)) x
 
-/-- The Lean type of the Fren expression `t`, elaborated with the comp's
+/-- The Lean type of the Fren expression `t`, elaborated with the procedure's
 variables in scope. -/
 def typeOf (t : Term) : TermElabM Expr := do
   let e ← withoutErrToSorry <| Term.withSynthesize <| elabTerm (← `(open Classical in $t)) none
@@ -1208,7 +1219,7 @@ partial def defCycle? (vars : Array Var) (start : Name) (path : Array Name := #[
       else if path.contains n then none
       else defCycle? vars n path
 
-/-- A reference to comp variable `n`, if it is one, checking that it may be
+/-- A reference to procedure variable `n`, if it is one, checking that it may be
 mentioned here (`inst::mention`). -/
 def varRef? (cx : ExprCtx) (id : Syntax) (n : Name) : TermElabM (Option Term) := do
   let some v := cx.vars.find? (·.name == n) | return none
@@ -1232,8 +1243,8 @@ def pathExpr (ref : Syntax) (n : Name) : TermElabM Syntax := do
 /-- For `x.m(a)`, an application of a dotted name, the receiver `x` and the
 method `m`. Paths are written with `::`, so an applied dotted name is a
 method call, as the `fren` command parses it: of a value, or of a variable
-read from an instance, as in `w.x.len()`. The only root that is not a
-receiver is an instance without variables (unless a binder shadows it).
+read from a call, as in `w.x.len()`. The only root that is not a
+receiver is a call without variables (unless a binder shadows it).
 
 This does not resolve the root or the method. Elaborating the receiver
 reports a root that is not a value, such as a misspelled name or an
@@ -1444,7 +1455,7 @@ def checkRelational (cx : ExprCtx) (ref : Syntax) (ty : Expr) (m : String) (oper
   modifyLocal fun l => { l with relationalUsed := true }
   checkCore cx ref .relational true true operands (← operands.allM (isConstant cx ·)) finite
 
-/-- Records a `card`, of the receiver `recv` of Lean type `ty`: in a comp
+/-- Records a `card`, of the receiver `recv` of Lean type `ty`: in a procedure
 that applies a relational operator, it is outside the decidable core
 (`Reqs/Lang/Decidability#relations`). -/
 def checkRelationalCard (cx : ExprCtx) (ref : Syntax) (ty : Expr) (m : String) (recv : Syntax) : TermElabM Unit := do
@@ -1452,7 +1463,7 @@ def checkRelationalCard (cx : ExprCtx) (ref : Syntax) (ty : Expr) (m : String) (
   if m == "card" && ty.isAppOfArity ``Fren.FinSet 1 && !(← isConstant cx recv) then
     modifyLocal fun l => { l with countRefs := l.countRefs.push ref }
 
-/-- Reports `undecidable` at each count of the current comp, if it also
+/-- Reports `undecidable` at each count of the current procedure, if it also
 applies a relational operator; gives whether it does and whether it counts. -/
 def checkCounts [Monad m] [MonadEnv m] [MonadOptions m] [MonadLog m] [AddMessageContext m] : m (Bool × Bool) := do
   let l ← getLocal
@@ -1462,8 +1473,8 @@ def checkCounts [Monad m] [MonadEnv m] [MonadOptions m] [MonadLog m] [AddMessage
       recordLint .undecidable r (Core.undecidableMsg .relationalCard false)
   return (l.relationalUsed, !l.countRefs.isEmpty)
 
-/-- Records what an instance of `c`, written at `ref`, brings to the current
-comp's mix of relational operators and counting. -/
+/-- Records what a call of `c`, written at `ref`, brings to the current
+procedure's mix of relational operators and counting. -/
 def noteCounts [Monad m] [MonadEnv m] (c : CompInfo) (ref : Syntax) : m Unit :=
   modifyLocal fun l => { l with relationalUsed := l.relationalUsed || c.relational, guardedUsed := l.guardedUsed || c.guarded
                                 countRefs := if c.counts then l.countRefs.push ref else l.countRefs }
@@ -1922,7 +1933,7 @@ def lintStructInit (go : Syntax → TermElabM Term) (ty : Core.Ty) (e : Syntax) 
     else return
   let some (r, t) := reads[0]? | return
   let same := reads.all (Core.writtenSame ·.2 t)
-  -- A value has a type; an instance is not one.
+  -- A value has a type; a call is not one.
   let saved ← saveState
   let ty? ← try some <$> typeOf (← go r) catch _ => pure none
   let core? ← ty?.bindM coreTy?
@@ -2334,7 +2345,7 @@ def resolveTop (cx : ExprCtx) (ty : Expr) (x : Term) (test : Bool) (top : Syntax
   resolveOr cx ty x false test alts isOr
 
 /-- Elaborates a proposition. Errors are not recovered from with `sorry`: an
-item that does not elaborate makes its comp fail, rather than being checked
+item that does not elaborate makes its procedure fail, rather than being checked
 as `sorry`. -/
 def elabProp (t : Term) (type : Expr := mkSort .zero) : TermElabM Expr := do
   -- Equality on an abstract type has no `Decidable` instance but the
@@ -4751,7 +4762,7 @@ def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
   return t.valueCount (dataSig s)
 
 /-- The Lean type of a quantifier's binder's type `ty`, which must not be a
-component. -/
+procedure. -/
 def binderType (modName : Name) (ty : Syntax) : TermElabM (Expr × Core.PTy) := do
   if let some p := typePath? ty then
     if let .ok (.item { kind := .compItem, path, .. }) := (← getState).table.resolvePath modName (← segNames (pathSegs p)) #[] then
@@ -5381,7 +5392,7 @@ def takeIndexes (fvs : Array Expr) (subst : Expr → Expr := id) :
     ++ (← ts.mapM fun (ref, q, g) => return (ref, some q, ← mkLambdaFVars fvs (subst (← elabProp g))))
 
 /-- Adds the definition `name` of the closed `value`, generalized over the
-placeholders `uses` (`Reqs/Generated#components`). -/
+placeholders `uses` (`Reqs/Generated#procedures`). -/
 def addUsesDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit := do
   let type ← inferType value
   let (type, value) ← withUses uses fun xs => do
@@ -5396,7 +5407,7 @@ def addUsesDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
 /-- Records the questions about the tables and applications of the body
 and contract of the function at `path`, whose parameters are `vars`, or of
 the value of the constant at `path`, `tables`, with its preconditions and
-postconditions, `props`, as a comp for their checks (`Entry.bodyInfo`), if
+postconditions, `props`, as a procedure for their checks (`Entry.bodyInfo`), if
 it has any questions or postconditions to check (`Core.bodyKinds`). -/
 def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
     (tables : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) (props : Array PropInfo := #[])
@@ -5480,7 +5491,7 @@ def lintFnBools (n : Name) (nameStx : Syntax) (params : Array Expr) : TermElabM 
 
 open Lang in
 /-- The parameters `params` of the function `path`, all named, declared like
-a comp's inputs. -/
+a procedure's parameters. -/
 def paramVars (modName path : Name) (params : Array Syntax) : TermElabM (Array Var) := do
   let paramIds ← params.mapM fun p => do
     let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
@@ -5510,7 +5521,7 @@ def resultFact? (result : Expr) (rp : Core.PTy) : TermElabM (Option Expr) := do
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars` and whose definitions are named under `decl`,
 and records the contract (`Reqs/Lang/Items#contracts`). Gives each clause
-as a constraint of the function's body's comp, named after the function
+as a constraint of the function's body's procedure, named after the function
 and the clause, a postcondition only if the function is defined; and the
 questions about the tables and applications in them: a precondition's
 under the other preconditions, a postcondition's under all of them. -/
@@ -5521,7 +5532,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let names := vars.map (·.name) ++ clauses.map fun c => (declaredIdent c[1]).1.getId
   if let some k := (Core.repeatsAt names)[0]? then
     if k ≥ vars.size then throwErrorAt clauses[k - vars.size]![1] (Core.dupClauseMsg names[k]!).text
-  -- An uninterpreted function's value, an output of its contract's comp,
+  -- An uninterpreted function's value, an output of its contract's procedure,
   -- for its realizability (`Reqs/Check#contracts-of-uninterpreted-functions`):
   -- named after the function, unless a parameter is.
   let value? ← if defined then pure none else do
@@ -5668,7 +5679,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     unless isPub do recordItem .function path nameStx
     modifyLocal fun l => { l with fnTypeParams := none }
   liftTermElabM do
-    -- The parameters, declared like a comp's inputs.
+    -- The parameters, declared like a procedure's parameters.
     let vars ← paramVars modName path params
     lintFnBools n nameStx (vars.map (·.type))
     let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
@@ -5713,7 +5724,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   modifyLocal fun l => { l with fnTypeParams := none }
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
-/-- An instance whose comp has been resolved, before its bindings are
+/-- A call whose procedure has been resolved, before its bindings are
 elaborated. -/
 structure PendingInst where
   name : Name
@@ -5721,14 +5732,21 @@ structure PendingInst where
   comp : CompInfo
   /-- `fren_binding`s. -/
   bindings : Array Syntax
-  /-- Where its variables start among the instantiating comp's. -/
+  /-- Where its variables start among the calling procedure's. -/
   offset : Nat
+  /-- A call's arguments, each bound to the parameter in its position,
+  rather than bindings written by name. -/
+  positional : Bool := false
 
-/-- Resolves `inst x: p { bs }`: the instantiated comp, the instance's
-variables, and the names it binds (`inst::binding`). -/
-def resolveInst (modName : Name) (x p : Syntax) (bs : Array Syntax) (offset : Nat) :
+/-- Resolves the call `call x := p(args)`, or with `named`, the instance
+`inst x: p { bs }` (`m`), as calls were written before: the called
+procedure, the call's variables, and its bindings, each argument of a call
+bound to the parameter in its position (`F0408`, `F0409`). An instance is an
+error (`F0420`), whose fix, which the `fren` command makes, writes it as a
+call. -/
+def resolveInst (modName : Name) (m x p : Syntax) (bs : Array Syntax) (offset : Nat) (named : Bool) :
     TermElabM (PendingInst × Array Var) := do
-  liftMsg x (Core.checkItemName "instance" x.getId)
+  liftMsg x (Core.checkItemName "call" x.getId)
   let r ← resolvePath modName (pathSegs p)
   let .item { kind := .compItem, path, .. } := r | throwErrorAt p (Core.notACompMsg r).text
   let some c := (← getState).comps.get? path | throwError "internal error: unknown comp `{path}`"
@@ -5736,25 +5754,30 @@ def resolveInst (modName : Name) (x p : Syntax) (bs : Array Syntax) (offset : Na
     modifyLocal fun l => { l with outsideCore := true }
     recordLint .undecidable p (Core.undecidableInstMsg path)
   noteCounts c p
-  let own := c.vars.filterMap fun v =>
-    if v.role == .input || v.role == .output then some (v.name, v.role) else none
-  match Core.checkBindings path own (bs.map (·[0].getId)) with
-  | .ok () => pure ()
-  | .error (some i, msg) => throwErrorAt bs[i]![0] msg.text
-  | .error (none, msg) => throwErrorAt x msg.text
+  let params := c.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (·.name)
+  let callee := Core.showPath path
+  if named then
+    let fixed? := (Core.argumentOrder (params.toList.map Core.nameText) (bs.toList.map fun b => (Core.nameText b[0].getId, ()))).map fun _ => ""
+    throwErrorAt m (Core.instSyntaxMsg callee fixed?).text
+  let some bound := Core.callBindings (params.map Core.nameText) bs
+    | let ref := if bs.size > params.size then mkNullNode (bs.extract params.size bs.size) else p
+      throwErrorAt ref (Core.callArityMsg callee (params.map Core.nameText) bs.size).text
+  -- Each argument, bound to its parameter, at the argument.
+  let bs := (params.zip bound).map fun (n, (_, a)) =>
+    mkNode ``Lang.fren_binding #[mkIdentFrom a n, mkNullNode #[mkAtom ":=", a]]
   let w := x.getId
-  -- An input's constraint is the instance's obligation, which the instance
-  -- check asks, rather than a fact (`Reqs/Check#instance-assumptions`).
+  -- An input's constraint is the call's obligation, which the call
+  -- check asks, rather than a fact (`Reqs/Check#call-assumptions`).
   let vars := c.vars.map fun v =>
     let role := Core.Role.ofInst v.role v.isPub
     { name := w ++ v.name, role, isPub := role == .instOutput, type := v.type, ref := x, ptype := v.ptype
       fact? := if v.role == .input then none else v.fact? : Var }
-  return ({ name := w, ref := x, comp := c, bindings := bs, offset }, vars)
+  return ({ name := w, ref := x, comp := c, bindings := bs, offset, positional := true }, vars)
 
 /-- The obligations of the inputs of `c`, whose variables are `slice`, an
-instance's among `fvs`, whose types have one: each named after its input,
+call's among `fvs`, whose types have one: each named after its input,
 with its type, as written, and closed over `fvs`
-(`Reqs/Check#instance-assumptions`). -/
+(`Reqs/Check#call-assumptions`). -/
 def typedObligations (c : CompInfo) (slice fvs : Array Expr) : TermElabM (Array (Name × String × Expr)) :=
   (c.vars.zip slice).filterMapM fun (v, x) => do
     unless v.role == .input do return none
@@ -5763,7 +5786,7 @@ def typedObligations (c : CompInfo) (slice fvs : Array Expr) : TermElabM (Array 
     return some (Name.num v.name 0, v.ptype.text, ← mkLambdaFVars fvs (p.beta #[x]))
 
 open Lang in
-/-- The equations made by the bindings of an instance, over the comp's
+/-- The equations made by the bindings of a call, over the procedure's
 variables `fvs`. -/
 def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElabM Expr := do
   let mut eqs := #[]
@@ -5779,12 +5802,12 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
     if cx.vars[idx]!.type.isConstOf ``Int && (← frenTypeOf? t) == some .int then
       modifyLocal fun l => { l with natKept := l.natKept.push (pi.comp.path, Core.nameText x.getId) }
     unless b[1].isNone do lintBools b[1][1] (← hidesIn cx)
-    lintRedundant b false
+    unless pi.positional do lintRedundant b false
     let fv := fvs[idx]!
     eqs := eqs.push (← mkEq fv (← elabProp t (← inferType fv)))
   return mkAndN eqs.toList
 
-/-- Elaborates an instance, and the body over `fvs` of the definition `decl`
+/-- Elaborates a call, and the body over `fvs` of the definition `decl`
 generated for it. -/
 def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) : TermElabM (InstInfo × Expr) := do
   let bindings ← elabBindings cx fvs pi
@@ -5839,8 +5862,8 @@ partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Core.E
   return (inner, set?.getD (b, m))
 
 open Lang in
-/-- The members of a comp without their evidence settings, and the checks
-that those and the comp's setting `all` set to testing. -/
+/-- The members of a procedure without their evidence settings, and the checks
+that those and the procedure's setting `all` set to testing. -/
 def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested × Core.Tested) := do
   let mut members := #[]
   let mut expects := #[]
@@ -5862,13 +5885,14 @@ def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Sy
     -- By the names they declare, without the `!` of shadowing.
     | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
     | _ =>
-      if m.isOfKind ``Lang.outMember then
+      if m.isOfKind ``Lang.callMember then insts := insts.push ((declaredIdent m[1]).1.getId, b?)
+      else if m.isOfKind ``Lang.outMember then
         -- `[pub] [det] out x [: T] [:= e]`
         let y := (declaredIdent m[3]).1.getId
         if !m[1].isNone then dets := dets.push (y, b?)
-        else misplaced "an output that is not `det`"
+        else misplaced "a variable that is not `det`"
         if !m[5].isNone then constraints := constraints.push y
-      else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
+      else misplaced (if m.isOfKind ``Lang.inMember then "a parameter" else "a `use`")
   let by_ (f : Core.Evidence → Bool) :=
     let pick (xs : Array (Name × Option Core.Evidence)) := xs.map fun (n, e?) => (n, e?.map f)
     Core.Tested.ofSettings (f all) constraints (pick expects) (pick insts) (pick dets)
@@ -5883,7 +5907,7 @@ partial def constraintConjuncts (e : Syntax) : Array Syntax :=
   go (unparen e)
 
 open Lang in
-/-- Records `manual_nat` in the component `compPath` of `members`
+/-- Records `manual_nat` in the procedure `compPath` of `members`
 (`lint::manual_nat`): for each variable it fires on, at its first bound,
 reported at the end of the file (`reportLints`). -/
 def lintManualNat (compPath : Name) (members : Array Syntax) : TermElabM Unit := do
@@ -5919,11 +5943,13 @@ def lintManualNat (compPath : Name) (members : Array Syntax) : TermElabM Unit :=
     modifyLocal fun l => { l with natReports := l.natReports.push (compPath, Core.nameText x.getId, report) }
 
 open Lang in
-/-- The name that a member declares, if any: a variable, an instance or a
+/-- The name that a member declares, if any: a variable, a call or a
 constraint, which share one namespace (`lang::distinct_names`). -/
 def memberName? (m : Syntax) : Option Syntax :=
   if m.isOfKind ``Lang.inMember then some m[1]
   else if m.isOfKind ``Lang.outMember then some m[3]
+  else if m.isOfKind ``Lang.existsMember || m.isOfKind ``Lang.letMember then some m[2]
+  else if m.isOfKind ``Lang.callMember then some m[1]
   else if let some (_, x, _) := constraint? m then some x
   else match m with
     | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => some x
@@ -5932,28 +5958,31 @@ def memberName? (m : Syntax) : Option Syntax :=
 open Lang in
 /-- The kind of a member without its evidence setting, for
 `arbitrary_source_item_ordering`, by its syntax kind; `none` for what is
-not one, which a component's members never are. -/
+not one, which a procedure's members never are. -/
 def memberKind? (m : Syntax) : Option Core.MemberKind :=
-  [(``Lang.useMember, .use), (``Lang.useGroupMember, .use), (``Lang.inMember, .input), (``Lang.outMember, .output),
-    (``Lang.assumeMember, .assumption), (``Lang.instMember, .inst), (``Lang.ensureMember, .guarantee),
+  [(``Lang.useMember, .use), (``Lang.useGroupMember, .use), (``Lang.existsMember, .exists), (``Lang.letMember, .let),
+    (``Lang.outMember, .define), (``Lang.assumeMember, .assumption), (``Lang.callMember, .call), (``Lang.instMember, .call),
+    (``Lang.ensureMember, .guarantee),
     (``Lang.expectMember, .expectation), (``Lang.coverMember, .cover)].lookup m.getKind
 
 open Lang in
-/-- The names that a defined output's definition, or an instance's
+/-- The names that a defined output's definition, or a call's
 bindings, mention: a binding `x` without `:= e` mentions `x`. -/
 def memberMentions (m : Syntax) : Array Name :=
   if m.isOfKind ``Lang.outMember then
     if m[5].isNone then #[] else (pathMentions m[5][1]).map (·.getRoot)
+  else if m.isOfKind ``Lang.letMember then (pathMentions m[5]).map (·.getRoot)
+  else if m.isOfKind ``Lang.callMember then m[5].getSepArgs.foldl (init := #[]) fun acc a => acc ++ (pathMentions a).map (·.getRoot)
   else if m.isOfKind ``Lang.instMember then
     -- `inst w: c { b, ... }`
     m[5].getSepArgs.foldl (init := #[]) fun acc b =>
       acc ++ if b[1].isNone then #[(declaredIdent b[0]).1.getId] else (pathMentions b[1][1]).map (·.getRoot)
   else #[]
 
-/-- Records `arbitrary_source_item_ordering` on the component `stx`, whose
+/-- Records `arbitrary_source_item_ordering` on the procedure `stx`, whose
 members, with their evidence settings, are `raw`, and `members` without
 them (`lint::arbitrary_source_item_ordering`). -/
-def lintMemberOrder (stx : Syntax) (raw members : Array Syntax) : CommandElabM Unit := do
+def lintMemberOrder (stx open_ : Syntax) (raw members : Array Syntax) : CommandElabM Unit := do
   let some kinds := members.mapM memberKind? | return
   let some i := Core.firstOutOfOrder? kinds | return
   let msg := Core.memberOrderMsg kinds[i]! kinds[i - 1]!
@@ -5963,7 +5992,7 @@ def lintMemberOrder (stx : Syntax) (raw members : Array Syntax) : CommandElabM U
   let names := members.map fun m => (memberName? m).map fun x => (declaredIdent x).1.getId
   let mentions := members.map fun m => (memberMentions m).filterMap fun n => names.findIdx? (· == some n)
   let ranges := raw.map fun m => ({ start := off m.getPos?, stop := off m.getTailPos? } : Core.Range)
-  let fix? := Core.memberOrderFix? src (off stx[3].getTailPos?) ranges kinds mentions
+  let fix? := Core.memberOrderFix? src (off open_.getTailPos?) ranges kinds mentions
   -- `fren fix` reads Markdown specs, but not Lean files.
   let fixable := (← getLocal).inMarkdown && fix?.isSome
   recordLint .arbitrarySourceItemOrdering raw[i]! (if fixable then msg.note Core.fixHelp else msg)
@@ -5977,12 +6006,12 @@ in parallel. -/
 section
 open Lang
 
-/-- The indexes of a comp's items, and the questions about its tables:
+/-- The indexes of a procedure's items, and the questions about its tables:
 each item's name, where it is, the index's syntax, the question, and the
-goal over the comp's variables. -/
+goal over the procedure's variables. -/
 abbrev CompIndexes := Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)
 
-/-- A comp's variables, the names declared so far, and whether every one
+/-- A procedure's variables, the names declared so far, and whether every one
 was declared without an error, reporting each error, and one cycle of
 definitions, as the `fren` command does. -/
 def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var × NameSet × Bool) := do
@@ -6015,9 +6044,9 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
     logErrorAt v.ref (Core.cyclicDefinitionMsg cycle).text; ok := false
   return (vars, names, ok)
 
-/-- A comp's instances, whose variables follow the comp's own `vars`: the
-instances still to elaborate, all the variables, the names declared so
-far, and whether every instance was resolved. -/
+/-- A procedure's calls, whose variables follow the procedure's own `vars`: the
+calls still to elaborate, all the variables, the names declared so
+far, and whether every call was resolved. -/
 def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (names : NameSet) :
     TermElabM (Array PendingInst × Array Var × NameSet × Bool) := do
   let mut ok := true
@@ -6025,8 +6054,12 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
   let mut names := names
   let mut pending : Array PendingInst := #[]
   for m in members do
-    let `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) := m | continue
-    -- An instance named by a literal is not resolved, which would report
+    let (x, p, bs, named) ← match m with
+      | `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) => pure (x.raw, p.raw, bs.getElems.map (·.raw), true)
+      | _ =>
+        unless m.isOfKind ``Lang.callMember do continue
+        pure (m[1], m[3], m[5].getSepArgs, false)
+    -- A call named by a literal is not resolved, which would report
     -- its name again; the `fren` command stops at the first report too.
     if let .error msg := Core.checkNotLiteral (declaredIdent x).1.getId then
       logErrorAt x msg.text; ok := false; continue
@@ -6035,19 +6068,19 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
     names := names.insert x.getId
     lintName .instance x.getId x
     try
-      let (pi, ivars) ← resolveInst scope x p bs.getElems vars.size
+      let (pi, ivars) ← resolveInst scope m x p bs vars.size named
       pending := pending.push pi
       vars := vars ++ ivars
-      -- Its bindings give each input of its component a value, and the
-      -- instance's assumption check reads them (`unused_assumption`).
+      -- Its bindings give each input of its procedure a value, and the
+      -- call's assumption check reads them (`unused_assumption`).
       let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (pi.comp.path, ·.name)
       modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
     catch ex => logException ex; ok := false
   return (pending, vars, names, ok)
 
-/-- A comp's instances, over its variables `fvs`, and then its definitions,
+/-- A procedure's calls, over its variables `fvs`, and then its definitions,
 each after those it mentions, with the earlier ones substituted, so that
-each value mentions no defined output: the instances, the generated
+each value mentions no defined output: the calls, the generated
 definitions so far, the definitions' values, the variables they define,
 and the indexes, and whether all were elaborated. -/
 def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array PendingInst) (declBase : Name)
@@ -6063,7 +6096,7 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
   for pi in pending, k in [0:pending.size] do
     try
       let cx := { modName := scope, vars, insts := instNames, place := .binding, current := k }
-      let (i, body) ← elabInst cx fvs pi (declBase ++ `inst ++ pi.name)
+      let (i, body) ← elabInst cx fvs pi (declBase ++ `call ++ pi.name)
       insts := insts.push i
       defs := defs.push (i.decl, body)
       indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (pi.name, .binding k, r, q, g)
@@ -6096,7 +6129,7 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
     catch ex => logException ex; good := false
   return (insts, defs, values, defnFvs, indexes, good)
 
-/-- A comp's assumptions, requirements and expectations, over its variables
+/-- A procedure's assumptions, requirements and expectations, over its variables
 `fvs`, where the defined outputs `defnFvs` have the values `values`: the
 constraints, the generated definitions with theirs added, the indexes with
 theirs added, the names declared, and whether all were elaborated. -/
@@ -6140,7 +6173,7 @@ def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Va
     catch ex => logException ex; good := false
   return (props, defs, indexes, names, good)
 
-/-- `duplicate_constraint` (`lint::duplicate_constraint`), of a comp's
+/-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
 constraints. -/
 def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
   let constraints := members.filterMap fun m => match m with
@@ -6159,7 +6192,7 @@ def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
       recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
 
 /-- `constant_output` and `definable_output` (`lint::output_lints`), of a
-comp's outputs. -/
+procedure's outputs. -/
 def lintOutputs (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : TermElabM Unit := do
   let reqs := members.filterMap fun m => match constraint? m with
     | some (.ensure, x, e) => some (x.getId, e)
@@ -6182,7 +6215,7 @@ def lintOutputs (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : Te
     if constant then recordLint .constantOutput v.ref (Core.constantOutputMsg v.name)
     if definable then recordLint .definableOutput v.ref (Core.definableOutputMsg v.name about[0]!.1)
 
-/-- `trivial_cover` (`lint::trivial_cover`), of a comp's cover goals: each
+/-- `trivial_cover` (`lint::trivial_cover`), of a procedure's cover goals: each
 assumption and guarantee as its kind, its name and its written form. -/
 def lintTrivialCover (lcx : ExprCtx) (members : Array Syntax) : TermElabM Unit := do
   let facts := members.filterMap fun m => match m with
@@ -6200,7 +6233,7 @@ def lintTrivialCover (lcx : ExprCtx) (members : Array Syntax) : TermElabM Unit :
     if let some why := Core.trivialCover trigger same? then
       recordLint .trivialCover x (Core.trivialCoverMsg x.getId why)
 
-/-- `case_split_guarantees` (`lint::case_split_guarantees`), of a comp's
+/-- `case_split_guarantees` (`lint::case_split_guarantees`), of a procedure's
 requirements. -/
 def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Syntax) (vars : Array Var) : TermElabM Unit := do
   -- Each requirement `when T, y = e`, as its name, where it is
@@ -6233,7 +6266,7 @@ def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Syntax) (vars : Arr
     if Core.caseSplitGuarantees cs.size (Core.repeatedVariants ts) then
       recordLint .caseSplitGuarantees cases[group[1]!]!.2.1 (Core.caseSplitGuaranteesMsg y op cs (Core.untestedVariants n ts))
 
-/-- Adds a comp's generated definitions `defs` over its variables `fvs`,
+/-- Adds a procedure's generated definitions `defs` over its variables `fvs`,
 with `p.defs`, `p.assumes` and `p.ensures`, and `p.out.d` for each definition
 that mentions only inputs. -/
 def addCompDefs (vars : Array Var) (declBase : Name) (fvs : Array Expr) (uses : Array Name)
@@ -6244,7 +6277,7 @@ def addCompDefs (vars : Array Var) (declBase : Name) (fvs : Array Expr) (uses : 
   unless values.isEmpty do
     defs := defs.push (declBase ++ `defs, mkAndN (values.map fun (d, _) => appD (declBase ++ `def ++ d)).toList)
   -- The constraints of the inputs' and outputs' types first
-  -- (`Reqs/Generated#components`).
+  -- (`Reqs/Generated#procedures`).
   let typeFacts (role : Core.Role) : List Expr := ((vars.zip fvs).filter fun (v, _) =>
       v.name.isAtomic && v.role == role && v.defn?.isNone).toList.filterMap fun (v, x) =>
     v.fact?.map (·.beta #[x])
@@ -6260,9 +6293,9 @@ def addCompDefs (vars : Array Var) (declBase : Name) (fvs : Array Expr) (uses : 
     unless others.any (value.containsFVar ·.fvarId!) do
       addUsesDef uses (declBase ++ `out ++ d) (← mkLambdaFVars inputs value)
 
-/-- A comp's instances, definitions and constraints, elaborated over its
+/-- A procedure's calls, definitions and constraints, elaborated over its
 variables, with its lints of them, and, if all were elaborated, its
-generated definitions added: the constraints, the instances, the
+generated definitions added: the constraints, the calls, the
 placeholders used, the definitions' values over the variables, the
 indexes, and whether all were elaborated. -/
 def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pending : Array PendingInst)
@@ -6287,7 +6320,7 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     return (props, insts, uses, closed, indexes, good)
 
 /-- `unused_variables` and `unused_assumption` (`lint::unused_assumption`)
-of a comp whose items were all elaborated: the latter is recorded, to be
+of a procedure whose items were all elaborated: the latter is recorded, to be
 reported unless the file reads one of the inputs (`reportLints`), or one
 that another assumption ties to a used variable, transitively. -/
 def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name) :
@@ -6299,7 +6332,10 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
       for b in bs.getElems do
         let b := b.raw
         mentioned := mentioned ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-    | _ => if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
+    | _ =>
+      if m.isOfKind ``Lang.callMember then
+        for a in m[5].getSepArgs do mentioned := mentioned ++ pathMentions a
+      if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
   for v in vars do
     if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
   -- A public definition says what the output is, so it is used.
@@ -6313,7 +6349,10 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
       for b in bs.getElems do
         let b := b.raw
         others := others ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-    | _ => if let some (kind, _, e) := constraint? m then
+    | _ =>
+      if m.isOfKind ``Lang.callMember then
+        for a in m[5].getSepArgs do others := others ++ pathMentions a
+      if let some (kind, _, e) := constraint? m then
         unless kind == .assume do others := others ++ pathMentions e
   for v in vars do
     if let some d := v.defn? then others := others ++ pathMentions d
@@ -6331,7 +6370,10 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
     | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
       for b in bs.getElems do
         if !b.raw[1].isNone then others := others ++ (← appliedFns acx b.raw[1][1])
-    | _ => if let some (kind, _, e) := constraint? m then
+    | _ =>
+      if m.isOfKind ``Lang.callMember then
+        for a in m[5].getSepArgs do others := others ++ (← appliedFns acx a)
+      if let some (kind, _, e) := constraint? m then
         unless kind == .assume do others := others ++ (← appliedFns acx e)
   for v in vars do
     if let some d := v.defn? then others := others ++ (← appliedFns acx d)
@@ -6342,7 +6384,7 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
       let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, links := ls, level }
       modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
 
-/-- A comp's members, elaborated, with the comp recorded if all were: whether
+/-- A procedure's members, elaborated, with the procedure recorded if all were: whether
 they were, and the generated declarations. -/
 def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx : Syntax)
     (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3) :
@@ -6351,7 +6393,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   unless ok do return (false, #[])
   let (pending, vars, names, ok) ← elabCompInsts scope members vars names
   let instNames := pending.map (·.name)
-  -- An instance that is not resolved is reported once, not again at each
+  -- A call that is not resolved is reported once, not again at each
   -- use of it, as by the `fren` command (`Reqs/View#static-errors`).
   unless ok do return (false, #[])
   -- Bindings; assumptions, requirements and expectations
@@ -6370,23 +6412,84 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
                         relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed })
   return (ok, generated)
 
+/-- A component, as procedures were written before they were procedures
+(`F0158`): the `fren` command's fix writes it as a procedure. -/
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
+  throwErrorAt stx[1] (Core.compSyntaxMsg (some "")).text
+
+/-- The results of the procedure `stx`: `fren_result`s. -/
+def procResults (stx : Syntax) : Array Syntax := if stx[6].isNone then #[] else stx[6][2].getSepArgs
+
+/-- Whether `m`, an `out` member, is `out r := e`, which defines the result
+`r`, one of `results`, rather than an output as components declared them. -/
+def definesResult (results : Array Name) (m : Syntax) : Bool :=
+  m[0].isNone && m[1].isNone && m[4].isNone && !m[5].isNone && results.contains m[3].getId
+
+/-- Reports a member of the procedure `stx` written as components wrote
+them: an input (`F0159`), or an output that is not `out r := e` defining
+one of its results (`F0160`), as the `fren` command's parser does. -/
+def checkProcMembers (stx : Syntax) : CommandElabM Unit := do
+  let results := (procResults stx).map fun r => (declaredIdent r[2]).1.getId
+  for m0 in stx[8].getArgs do
+    let (m, _) ← unwrapEvidence m0
+    if m.isOfKind ``Lang.inMember then throwErrorAt m (Core.inputMemberMsg none).text
+    if m.isOfKind ``Lang.outMember && !definesResult results m then
+      throwErrorAt m (Core.outputMemberMsg (!m[0].isNone) (!m[5].isNone) none).text
+
+/-- The members of the procedure `stx` as a component's, as the `fren`
+command reads them: its parameters as inputs, its results as public
+outputs, each defined by the `out` member of its block that defines it, at
+most one (`F0421`), and its block's `exists` and `let` members as private
+outputs. Each keeps its evidence setting. -/
+def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
+  let results := procResults stx
+  let resultNames := results.map fun r => (declaredIdent r[2]).1.getId
+  let mut defs : Array (Name × Syntax) := #[]
+  let mut body := #[]
+  for m0 in stx[8].getArgs do
+    let (m, set?) ← unwrapEvidence m0
+    let rewrap (inner : Syntax) : Syntax := match set? with
+      | some (_, ev) => ev.setArg 4 inner
+      | none => inner
+    if m.isOfKind ``Lang.outMember && definesResult resultNames m then
+      if defs.any (·.1 == m[3].getId) then throwErrorAt m[3] (Core.resultDefinedTwiceMsg (Core.nameText m[3].getId)).text
+      defs := defs.push (m[3].getId, m[5])
+    else if m.isOfKind ``Lang.existsMember then
+      body := body.push (rewrap (mkNode ``Lang.outMember #[mkNullNode, m[0], mkAtom "out", m[2], m[3], mkNullNode]))
+    else if m.isOfKind ``Lang.letMember then
+      body := body.push (rewrap (mkNode ``Lang.outMember
+        #[mkNullNode, m[0], mkAtom "out", m[2], m[3], mkNullNode #[m[4], m[5], m[6]]]))
+    else body := body.push m0
+  let params := stx[4].getSepArgs.map fun p => mkNode ``Lang.inMember #[mkAtom "in", p[1], p[2], mkNullNode]
+  let outs := results.map fun r =>
+    let defn := ((defs.find? (·.1 == (declaredIdent r[2]).1.getId)).map (·.2)).getD mkNullNode
+    let out : Syntax := mkNode ``Lang.outMember #[mkNullNode #[mkAtom "pub"], r[1], mkAtom "out", r[2], r[3], defn]
+    if r[0].isNone then out else
+      let e := r[0][0]
+      (mkNode ``Lang.evidenceMember #[e[0], e[1], e[2], e[3], out] : Syntax)
+  return params ++ outs ++ body
+
+@[command_elab Lang.procCmd] def elabProc : CommandElab := recordingErrors fun stx => do
+  checkLexemes stx
+  checkParsed stx
+  checkProcMembers stx
   lintItem stx
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
-  let n ← checkItemName "component" nameStx
+  let n ← checkItemName "procedure" nameStx
   checkFresh modName n nameStx
   lintName .component n nameStx
   startDeclared
   let path := modName ++ n
   modifyLocal fun l => { l with currentItem := path }
   let declBase ← generatedName path
+  let all ← procMembers stx
   -- The evidence settings, apart from the members they set.
-  let (members, tested, enumerated) ← testedOf (← evidenceInEffect) stx[4].getArgs
+  let (members, tested, enumerated) ← testedOf (← evidenceInEffect) all
   let enumSize ← enumSizeInEffect
   -- Its `use`s, and the scope that its paths resolve in.
   for m in members do
@@ -6396,7 +6499,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   let scope := if members.any (fun m => m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember) then path
     else modName
   modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
-  -- Distinct names (`lang::distinct_names`): variables, instances and
+  -- Distinct names (`lang::distinct_names`): variables, calls and
   -- constraints share one namespace.
   let named := members.filterMap memberName?
   for x in named do discard (segName x)
@@ -6404,7 +6507,9 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   let declared := named.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt named[k]! (Core.dupMemberMsg declared[k]!).text
-  lintMemberOrder stx stx[4].getArgs members
+  let raw := stx[8].getArgs
+  let body ← raw.mapM fun m => return (← unwrapEvidence m).1
+  lintMemberOrder stx stx[7] raw body
   let (ok, generated) ← liftTermElabM <| elabCompMembers scope path modName declBase isPub nameStx members tested enumerated enumSize
   lintDeclared .component n nameStx
   lintLines .component n nameStx stx
@@ -6471,7 +6576,7 @@ end
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
-/-- The component that a global expectation's binder of type `ty` ranges
+/-- The procedure that a global expectation's binder of type `ty` ranges
 over the behaviours of, or `none` if it ranges over the values of a type
 (`lang::quantifier_binder`), which a quantifier checks. A path that names
 neither is an error. -/
@@ -6482,9 +6587,9 @@ def globalBinderComp? (modName : Name) (ty : Syntax) : TermElabM (Option Name) :
   match ← resolvePath modName segs with
   | .item { kind := .compItem, path, .. } => return some path
   | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
-  | r => throwErrorAt ty (Core.wrongKindMsg "a component or a type" r).text
+  | r => throwErrorAt ty (Core.wrongKindMsg "a procedure or a type" r).text
 
-/-- A binder of a global expectation: its name and comp, and where its
+/-- A binder of a global expectation: its name and procedure, and where its
 variables start among the expectation's. -/
 structure Binder where
   name : Name
@@ -6518,10 +6623,10 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     for x in b[1].getArgs do
       let w := (declaredIdent x).1.getId
       let x ← declare x modName
-      liftMsg x (Core.checkItemName "instance" w)
+      liftMsg x (Core.checkItemName "binder" w)
       lintName .instance w x
       binders := binders.push { name := w, ref := x, comp := c, offset := vars.size }
-      -- Like an instance's, but its inputs are shown in counterexamples.
+      -- Like a call's, but its inputs are shown in counterexamples.
       vars := vars ++ c.vars.map fun v =>
         let role := Core.Role.ofInst v.role v.isPub
         { name := w ++ v.name, role, isPub := role != .instHidden, type := v.type, ref := x, ptype := v.ptype
@@ -6539,7 +6644,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
     lintConstant cx "expect" body
     for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
       recordLint .unusedVariables ref (Core.unusedVariableMsg w true false)
-    -- What it reads through instances (`unused_assumption`).
+    -- What it reads through calls (`unused_assumption`).
     let reads := (pathMentions body).filterMap fun m => match m.components with
       | [w, x] => (binders.find? (·.name == w)).map fun b => (b.comp.path, x)
       | _ => none
@@ -6621,12 +6726,12 @@ def globalText (stx : Syntax) : String :=
 
 /-! ## Refinements -/
 
-/-- Elaborates `refine r: c refines a { bindings }` into the comp that
+/-- Elaborates `refine r: c refines a { bindings }` into the procedure that
 checks it (`Reqs/Lang/Refinement`): `c`'s inputs, `a`'s assumptions, an
-instance of `c` named as it is, `a`'s instances, and `a`'s requirements
+call of `c` named as it is, `a`'s calls, and `a`'s requirements
 and definitions as expectations, with `a`'s variables read as their
 bindings or as `c`'s of the same names, and `c`'s outputs from the
-instance. With `by`, the tactics prove the obligation, generated as `r`,
+call. With `by`, the tactics prove the obligation, generated as `r`,
 and the solver is asked nothing. -/
 @[command_elab Lang.refineCmd] def elabRefine : CommandElab := recordingErrors fun stx => do
   -- Its proof, after `by`, is Lean.
@@ -6670,9 +6775,9 @@ and the solver is asked nothing. -/
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
         | some cv => if !widens cv then s!"its `{v.name}` has another type"
-          else if input then s!"its `{v.name}` is not an input"
-          else if cv.role == Core.Role.input then s!"its `{v.name}` is an input, not an output"
-          else s!"its output `{v.name}` is not public"
+          else if input then s!"its `{v.name}` is not a parameter"
+          else if cv.role == Core.Role.input then s!"its `{v.name}` is a parameter, not an output"
+          else s!"its output `{v.name}` is not a result"
       throwErrorAt stx[5] (Core.interfaceMsg c.path a.path v.name why).text
     -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
     if let some cv := cv? then
@@ -6691,17 +6796,17 @@ and the solver is asked nothing. -/
   let settings (all : Bool) := Core.Tested.ofSettings all
     -- The bindings too, for the definedness of their indexes.
     (a.assumes.map (·.name) ++ bound) ((a.ensures.map (·.name) ++ a.defs.map (·.1)).map (·, none))
-    -- `a`'s instances too, for the definedness of their bindings.
+    -- `a`'s calls too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   let tested := settings ev.tested
   let enumerated := settings ev.enumerated
   let proof? := if stx[7].isNone then none else some stx[7][1]
   let info ← liftTermElabM do
     -- The bindings, over `c`'s own variables, seen from outside, as the
-    -- instance's: a defined output is an output (`refinement::mention`).
+    -- call's: a defined output is an output (`refinement::mention`).
     let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
       { v with role := if v.role == .input then .input else Core.Role.ofInst v.role v.isPub, defn? := none }
-    -- The mix of relational operators and counting, as in a component
+    -- The mix of relational operators and counting, as in a procedure
     -- (`Reqs/Lang/Decidability#relations`): `c`'s, `a`'s and the bindings'.
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
     noteCounts c stx[3]
@@ -6733,7 +6838,7 @@ and the solver is asked nothing. -/
       match a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains u.name with
       | some u => { v with type := u.type, ptype := u.ptype, fact? := u.fact? }
       | none => { v with fact? := none }
-    -- `c`'s inputs' constraints are its instance's obligations.
+    -- `c`'s inputs' constraints are its call's obligations.
     let vars := inputs ++ c.vars.map (fun v =>
         let role := Core.Role.ofInst v.role v.isPub
         { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none, ref := nameStx
@@ -6741,7 +6846,7 @@ and the solver is asked nothing. -/
       ++ a.vars.filter (!·.name.isAtomic)
     withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let fvOf (x : Name) : Expr := fvs[(vars.findIdx? (·.name == x)).getD 0]!
-      -- `c`'s variables as a binding reads them, its outputs from the instance.
+      -- `c`'s variables as a binding reads them, its outputs from the call.
       -- An input of `a`'s type `Nat`, read where `c`'s `Int` is, is widened.
       let ownC := own.map fun v =>
         let x := fvOf (if v.role == .input then v.name else w ++ v.name)
@@ -6778,7 +6883,7 @@ and the solver is asked nothing. -/
                                 assumes := typed.map (fun (n, _, f) => (n, f))
                                   ++ (← c.assumes.mapM fun p => return (p.name, ← lam (p.body.beta sliceC)))
                                 typed := typed.map fun (n, t, _) => (n, t) }
-      -- `a`'s instances are hypotheses: their assumptions are `a`'s own
+      -- `a`'s calls are hypotheses: their assumptions are `a`'s own
       -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
       let instsA ← a.insts.mapM fun i => return { i with
         bindings := ← lam (i.bindings.beta argsA), behaviour := ← lam (i.behaviour.beta argsA), assumes := #[] }

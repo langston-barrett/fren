@@ -1,8 +1,8 @@
 error[F0144]: a space before the `<` of `Set`'s element type
- --> test/cli/syntax/f0144_angle.fren:2:20
+ --> test/cli/syntax/f0144_angle.fren:2:15
   |
-2 | comp c { in x: Set <Int> }
-  |                    ^ after a space
+2 | proc c(x: Set <Int>) {}
+  |               ^ after a space
   |
   = note: the `<` that opens a type's arguments or a declaration's type parameters follows the name directly
   = help: remove the space: `Set<`

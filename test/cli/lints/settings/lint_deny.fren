@@ -2,4 +2,4 @@
 --@ args: check --deny unused_imports
 pub enum Mode { Off, Heat }
 use Mode::Heat
-comp c { in m: Mode pub out off? ensure r: off? iff m = Mode::Off }
+proc c(m: Mode): (off?) { ensure r: off? iff m = Mode::Off }

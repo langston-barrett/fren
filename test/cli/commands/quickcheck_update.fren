@@ -6,11 +6,7 @@ mod moves
 
 pub struct Point { x: Int, y: Int }
 
-pub comp moved {
-    in p: Point
-    in n: Int
-    pub det out q: Point
-
+pub proc moved(p: Point, n: Int): (det q: Point) {
     ensure r: q = { p with x := n }
 
     expect keeps_y: q.y = p.y

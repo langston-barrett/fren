@@ -865,7 +865,7 @@ def isScrutineeMsg (ty : String) : Msg :=
       "help: for other types, compare with `=` or `in`"] }
 
 /-- The name that a binder `n` or `n!` would declare, as a message names
-it: without its `!` (`Reqs/Lang/Components#shadowing`). -/
+it: without its `!` (`Reqs/Lang/Procedures#shadowing`). -/
 def binderName (n : Name) : Name :=
   match n with
   | .str p s => if s.endsWith "!" && s.length > 1 then .str p (s.dropEnd 1).toString else n

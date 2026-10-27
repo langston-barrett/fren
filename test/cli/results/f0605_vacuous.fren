@@ -1,8 +1,6 @@
 -- A vacuous constraint (F0605).
-comp c {
-    in x: Int
+proc c(x: Int): (y: Int) {
     assume pos: x > 0
-    pub out y: Int
     ensure r: y = x
     ensure never: when x < 0, y = 0
 }

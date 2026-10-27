@@ -22,11 +22,9 @@ fn get<T>(o: Option<T>): T
 
 -- A contract at an instance: its postconditions hold of each application,
 -- and decide the counterexample, which both front ends show alike.
-comp at_int {
-    in x: Int
-    in y: Int
+proc at_int(x: Int, y: Int): (det c: Int) {
     assume pinned: x = 1 and y = 2
-    pub det out c: Int := choose(x, y)
+    out c := choose(x, y)
 
     expect from_inputs: c = x or c = y
     expect first: c = x  --~ error: counterexample: x = 1, y = 2, c = 2
@@ -34,15 +32,11 @@ comp at_int {
 
 -- Two instances in one component, each a function of its own, related
 -- only to itself.
-comp two_instances {
-    in x: Int
-    in y: Int
-    in p?
-    in q?
-    pub det out i: Int := choose(x, y)
-    pub det out b? := choose(p?, q?)
-    pub det out n: Int := size(Option::Some(x))
-    pub det out m: Int := size(Option::Some(p?))
+proc two_instances(x: Int, y: Int, p?, q?): (det i: Int, det b?, det n: Int, det m: Int) {
+    out i := choose(x, y)
+    out b? := choose(p?, q?)
+    out n := size(Option::Some(x))
+    out m := size(Option::Some(p?))
 
     expect int_either: i = x or i = y
     expect bool_either: b? = p? or b? = q?
@@ -53,17 +47,15 @@ comp two_instances {
 }
 
 -- A precondition at an instance.
-comp payloads {
-    in o: Option<Int>
-    pub det out v: Int := get(o)  --~ error: the precondition `present` of `generic_uninterpreted::get` may not hold
+proc payloads(o: Option<Int>): (det v: Int) {
+    out v := get(o)  --~ error: the precondition `present` of `generic_uninterpreted::get` may not hold
 }
 
 -- A component that applies one is not enumerated: each instance is a
 -- function of its own.
 set_option fren.evidence "enumerated" in
-comp enumerated {  --~ error: cannot be enumerated: it applies the generic function `generic_uninterpreted::pick`, which has no body
-    in x: Int is 0..=3
-    pub det out y: Int := pick(x, 0)
+proc enumerated(x: Int is 0..=3): (det y: Int) {  --~ error: cannot be enumerated: it applies the generic function `generic_uninterpreted::pick`, which has no body
+    out y := pick(x, 0)
 
     expect congruent: y = pick(x, 0)
 }

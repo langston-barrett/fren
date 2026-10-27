@@ -31,7 +31,7 @@ inductive MentionKind where
   /-- A constant, a variant without a payload, or another name that is not
   a variable: a path of more than one segment is never one. -/
   | constant
-  /-- A variable `x` of the component or of one of its instances, or a
+  /-- A variable `x` of the procedure or of one of its calls, or a
   field read from one, or the bound name of an unbounded quantifier. -/
   | variable (x : String)
   /-- A defined output, or a name of a `let` or `where`, whose part is its
@@ -41,7 +41,7 @@ inductive MentionKind where
   scrutinee. -/
   | binder
   /-- A quantifier's bound name of a listed type: one value in each
-  instance. -/
+  call. -/
   | bound
   /-- A variant with a payload, a record literal or a newtype built from
   its value, whose parts are its arguments or its fields. -/

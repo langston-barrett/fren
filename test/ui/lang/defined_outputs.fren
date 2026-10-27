@@ -2,12 +2,9 @@
 
 enum IntList { Nil, Cons(Int, IntList) }
 
-comp handle {
-    in length: Int
-    in taken?
+proc handle(length: Int, taken?): (det accepted?) {
     -- A private definition names a condition, like a `let`.
-    out long? := length > 40
-    pub det out accepted?
+    let long? := length > 40
 
     ensure rule: accepted? iff not (long? or taken?)
 
@@ -15,19 +12,17 @@ comp handle {
 }
 
 -- A defined output may have an unbounded type: it is never searched for.
-comp listed {
-    in head: Int
-    pub det out l: IntList := IntList::Cons(head, IntList::Nil)
+proc listed(head: Int): (det l: IntList) {
+    out l := IntList::Cons(head, IntList::Nil)
 
     expect first: match l { IntList::Cons(h, _) => h = head, IntList::Nil => false }
 }
 
 -- Definitions may mention outputs and each other, in any order.
-comp chained {
-    in a: Int
-    out p: Int
-    pub out total: Int := twice + p
-    out twice: Int := 2 * a
+proc chained(a: Int): (total: Int) {
+    exists p: Int
+    out total := twice + p
+    let twice: Int := 2 * a
 
     ensure pos: p >= 0  --~ warning: `p` is never negative
 
@@ -39,14 +34,11 @@ comp chained {
 -- and a function's argument.
 fn f(Int): Int
 
-comp mentions {
-    in x: Int
-
+proc mentions(x: Int): (y: Int) {
     assume positive: k > 0
-    out k: Int := x + 1
-    pub out y: Int
+    let k: Int := x + 1
 
-    inst w: chained { a := k }
+    call w := chained(k)
 
     ensure r: f(k) = y
 
@@ -54,20 +46,16 @@ comp mentions {
 }
 
 -- An instance's defined outputs are determined by its definitions.
-comp determined {
-    in a: Int
-    pub det out h: Int
-    inst w: listed { head := a }
+proc determined(a: Int): (det h: Int) {
+    call w := listed(a)
 
     ensure r: h = match w.l { IntList::Cons(x, _) => x, IntList::Nil => 0 }
 }
 
 -- A definition is not a constraint, so it is never reported as redundant
 -- or conflicting.
-comp conflict {                     --~ error: `conflict` is not realizable
-    in a: Int
-    out d: Int := a
-    pub out o: Int
+proc conflict(a: Int): (o: Int) {                     --~ error: `conflict` is not realizable
+    let d: Int := a
 
     ensure r1: o = d   --~ info: conflicts with `r2`
     ensure r2: o != a   --~ info: conflicts with `r1`

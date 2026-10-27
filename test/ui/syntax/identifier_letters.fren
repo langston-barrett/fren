@@ -1,8 +1,7 @@
 -- fren-covers: lang::identifier
 -- A letter that Lean allows but Fren does not (F0119), in both front ends.
 
-comp c {
-    in xα: Int    --~ error: `xα` is not an identifier in Fren
-    pub out y: Int
+proc c(xα: Int): (y: Int) {
+    --~^ error: `xα` is not an identifier in Fren
     ensure r: y = 1
 }

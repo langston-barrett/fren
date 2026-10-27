@@ -1,7 +1,4 @@
 -- A table over a scrutinee that may take no arm: neither is taken at 0.
-comp sign {
-    in n: Int
-    pub out s: Int
-
+proc sign(n: Int): (s: Int) {
     ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }
 }

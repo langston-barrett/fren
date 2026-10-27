@@ -18,10 +18,9 @@ def contractSrc : String := "fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
     ensure same: nth(q, i) = q[i]
 
-comp c {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc c(
+    q: Seq<Int>,
+): (y: Int) {
     ensure r: when q != [], y = nth(q, 0)
 }
 "

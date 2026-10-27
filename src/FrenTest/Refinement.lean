@@ -7,22 +7,16 @@ open Fren.Lang
 -- to testing, and proved in Lean, without bindings and with them.
 mod refinement_test
 
-pub comp precise {
-    in x: Int
-    pub out y: Int
+pub proc precise(x: Int): (y: Int) {
     ensure r: y = x + 1
 }
 
-pub comp rough {
-    in x: Int
-    pub out y: Int
+pub proc rough(x: Int): (y: Int) {
     assume small: x < 100
     ensure above: y > x
 }
 
-pub comp wrong {
-    in x: Int
-    pub out y: Int
+pub proc wrong(x: Int): (y: Int) {
     ensure below: y < x
 }
 
@@ -41,23 +35,17 @@ refine by_proof: precise refines rough by
 -- Set to testing, with an instance in the abstract component whose binding
 -- has an index: Lean asks the solver nothing about it, not even that
 -- binding's definedness, so it adds nothing to the summary.
-pub comp helper {
-    in v: Int
-    pub out w: Int
+pub proc helper(v: Int): (w: Int) {
     ensure r: w = v
 }
 
-pub comp first {
-    in q: Seq<Int>
-    pub out y: Int
+pub proc first(q: Seq<Int>): (y: Int) {
     assume nonempty: q != []
-    inst h: helper { v := q[0] }
+    call h := helper(q[0])
     ensure r: y = h.w
 }
 
-pub comp exact {
-    in q: Seq<Int>
-    pub out y: Int
+pub proc exact(q: Seq<Int>): (y: Int) {
     assume nonempty: q != []
     ensure r: y = q[0]
 }
@@ -68,9 +56,7 @@ refine same: exact refines first
 -- With bindings (`Reqs/Lang/Refinement#bindings`): `shifted` names its
 -- variables differently, and `stops` refines `forbidding` through an
 -- abstraction function.
-pub comp shifted {
-    in v: Int
-    pub out w: Int
+pub proc shifted(v: Int): (w: Int) {
     ensure r: w = v + 1
 }
 
@@ -87,26 +73,22 @@ refine bound_by_proof: shifted refines rough { x := v, y := w } by
 
 pub enum Level { Allow, Warn, Forbid }
 
-pub comp forbidding {
-    in forbidden?
-    pub out stops?
+pub proc forbidding(forbidden?): (stops?) {
     ensure r: stops? iff forbidden?
 }
 
-pub comp stops {
-    in level: Level
-    pub out failures: Int
+pub proc stops(level: Level): (failures: Int) {
     ensure f: failures = (if level = Level::Forbid then 1 else 0)
 }
 
 refine abstraction: stops refines forbidding { forbidden? := level = Level::Forbid, stops? := failures > 0 }
 
-pub comp other { in x: Int pub out z: Int ensure r: z = x }
+pub proc other(x: Int): (z: Int) { ensure r: z = x }
 
 /--
 error: `refinement_test::other` cannot refine `refinement_test::rough`: it has no variable `y`
 
-note: each input of `refinement_test::rough` must be an input of `refinement_test::other`, and each output a public output, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and an input an `Int` for a `Nat`
+note: each parameter of `refinement_test::rough` must be a parameter of `refinement_test::other`, and each output a result, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and a parameter an `Int` for a `Nat`
 help: or bind it to an expression over the variables of `refinement_test::other`, as in `{ y := ... }`
 -/
 #guard_msgs in
@@ -115,17 +97,17 @@ refine bad: other refines rough
 /--
 error: `refinement_test::rough` has no variable `q`
 
-note: a refinement binds variables of the refined component; those of `refinement_test::rough` are `x` and `y`
+note: a refinement binds variables of the refined procedure; those of `refinement_test::rough` are `x` and `y`
 help: a variable with a similar name exists: `x`
 -/
 #guard_msgs in
 refine bad_name: shifted refines rough { q := v, y := w }
 
 /--
-error: a binding of an input of `refinement_test::rough` may only mention `in` variables of `refinement_test::shifted`, but `w` is an `out`
+error: a binding of a parameter of `refinement_test::rough` may only mention parameters of `refinement_test::shifted`, but `w` is an output
 
-note: the inputs of `refinement_test::rough` are chosen by the environment, before `refinement_test::shifted` chooses its outputs
-help: bind an output of the refined component to it instead
+note: the parameters of `refinement_test::rough` are chosen by the environment, before `refinement_test::shifted` chooses its outputs
+help: bind an output of the refined procedure to it instead
 -/
 #guard_msgs in
 refine bad_mention: shifted refines rough { x := w, y := w }

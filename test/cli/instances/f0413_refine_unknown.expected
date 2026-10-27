@@ -4,7 +4,7 @@ error[F0413]: `rough` has no variable `w`
 4 | refine fits: precise refines rough { w := y }
   |                                      ^ unknown variable
   |
-  = note: a refinement binds variables of the refined component; those of `rough` are `x` and `z`
+  = note: a refinement binds variables of the refined procedure; those of `rough` are `x` and `z`
 help: a variable with a similar name exists: `x`
   |
 4 - refine fits: precise refines rough { w := y }

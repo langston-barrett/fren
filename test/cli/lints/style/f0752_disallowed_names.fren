@@ -1,3 +1,3 @@
 -- `disallowed_names`.
 -- fren-covers: lint::disallowed_names
-pub comp foo { in x: Int pub out y: Int ensure r: y = x + 1 }
+pub proc foo(x: Int): (y: Int) { ensure r: y = x + 1 }

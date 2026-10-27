@@ -1,0 +1,38 @@
+error[F0420]: instances are written as calls
+ --> test/cli/instances/f0420_inst.fren:4:18
+  |
+4 | proc c(x: Int) { inst s: sub { b? := x > 0, a := x } }
+  |                  ^^^^^^ `inst`
+  |
+  = note: a call is written `call w := sub(a, b)`, with an argument for each of `sub`'s parameters, in order
+help: write it as a call, with the arguments in the order of `sub`'s parameters
+  |
+4 - proc c(x: Int) { inst s: sub { b? := x > 0, a := x } }
+4 + proc c(x: Int) { call s := sub(x, x > 0) }
+  |
+
+warning[F0710]: unused variable `a`
+ --> test/cli/instances/f0420_inst.fren:3:10
+  |
+3 | proc sub(a: Int, b?) {}
+  |          ^ never mentioned
+  |
+  = note: nothing in its procedure depends on it
+  = help: remove it, or mention it in a constraint
+  = note: `unused_variables` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+warning[F0710]: unused variable `b?`
+ --> test/cli/instances/f0420_inst.fren:3:18
+  |
+3 | proc sub(a: Int, b?) {}
+  |                  ^^ never mentioned
+  |
+  = note: nothing in its procedure depends on it
+  = help: remove it, or mention it in a constraint
+
+error: could not check due to previous errors
+
+Some errors have detailed explanations: F0420, F0710.
+For more information about an error, try `fren --explain F0420`.
+exit=2

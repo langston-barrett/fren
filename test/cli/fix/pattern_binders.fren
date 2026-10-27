@@ -4,15 +4,7 @@
 -- (`lang::test_scope`), and rewriting it could move the name out of scope.
 -- Elsewhere in the same item, it still fixes what it can.
 enum Reply { Empty, Value(Int) }
-comp c {
-    in r: Reply
-    in v: Int
-    in a?
-    pub out w: Int
-    pub out m: Int
-    pub out o?
-    pub out p?
-
+proc c(r: Reply, v: Int, a?): (w: Int, m: Int, o?, p?) {
     ensure same: w = (if r is Reply::Value(v!) then v else v)
     ensure method: m = (if r is Reply::Value(v!) then v.max(0) else v.max(0))
     ensure bool: o? iff (if r is Reply::Value(v!) then v > 0 else false)

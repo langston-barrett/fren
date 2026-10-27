@@ -1,7 +1,7 @@
 error[F0326]: the members of a set have different types: `Int` and `Bool`
- --> test/cli/types/f0326_set_members.fren:5:30
+ --> test/cli/types/f0326_set_members.fren:2:30
   |
-5 |     ensure r: p? iff s = {1, true}
+2 |     ensure r: p? iff s = {1, true}
   |                              ^^^^ a `Bool`
   |
   = note: the first member is a `Int`, so the literal is a `Set<Int>`

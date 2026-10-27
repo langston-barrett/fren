@@ -1,5 +1,5 @@
 -- `_` is a row's condition alone, not part of an expression.
-comp wild { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ and x > 1 => 0 } }
+proc wild(x: Int): (y: Int) { ensure r: y = table { x > 0 => 1, _ and x > 1 => 0 } }
 --~^[cli] error: expected `=>`, found keyword `and`
 --~^^[hosted] error: unexpected token
 --@ exit: 2

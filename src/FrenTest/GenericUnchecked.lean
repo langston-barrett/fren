@@ -9,10 +9,8 @@ open Fren.Lang
 mod unchecked_client
 use lib::other
 use mid::One
-comp c {
-    in x: One
-    in n: Int
-    pub det out y: One := other(x)
+proc c(x: One, n: Int): (det y: One) {
+    out y := other(x)
     expect anything: n = 42
 }
 

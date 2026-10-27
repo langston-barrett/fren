@@ -1,12 +1,7 @@
 -- A counterexample with relations shows their pairs, sorted.
 enum User { Ann, Bob, Cy }
 
-comp reach {
-    in follows: Rel<User, User>
-    in a: User
-    in b: User
-    pub out reaches?
-
+proc reach(follows: Rel<User, User>, a: User, b: User): (reaches?) {
     ensure rule: reaches? iff (a, b) in follows.closure
 
     expect direct_only: when reaches?, (a, b) in follows

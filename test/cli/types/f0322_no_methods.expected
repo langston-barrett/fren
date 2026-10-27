@@ -1,7 +1,7 @@
 error[F0322]: `Bool` has no methods, so it has no method `contains?`
- --> test/cli/types/f0322_no_methods.fren:5:27
+ --> test/cli/types/f0322_no_methods.fren:2:27
   |
-5 |     ensure r: p? iff (b?).contains?(1)
+2 |     ensure r: p? iff (b?).contains?(1)
   |                           ^^^^^^^^^ no methods
   |
   = note: only `Int`s, `String`s, sets, relations, sequences and the values of a type declared `ordered` have methods

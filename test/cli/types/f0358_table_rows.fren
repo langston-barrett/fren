@@ -1,2 +1,2 @@
 -- The rows of a table have values of different types.
-comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => false } }
+proc c(x: Int): (y: Int) { ensure r: y = table { x > 0 => 1, _ => false } }

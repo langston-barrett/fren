@@ -49,12 +49,12 @@ written on the right:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp manual_abs {
+pub proc manual_abs(
+    compared: Ordered,    -- what the condition compares
+    op: Comparison,      -- the comparison of `x` with `0`, with `x` on its left
+    negated_then?,       -- the `then` branch is `-x` and the `else` branch `x`, rather than the reverse
+): (det fires?) {
     use self::Comparison::{Ge, Gt, Le, Lt}
-    in compared: Ordered  -- what the condition compares
-    in op: Comparison    -- the comparison of `x` with `0`, with `x` on its left
-    in negated_then?     -- the `then` branch is `-x` and the `else` branch `x`, rather than the reverse
-    pub det out fires?
 
     ensure rule: fires? iff (compared = Ordered::Number and (if negated_then? then op in {Lt, Le} else op in {Gt, Ge}))
 }
@@ -63,12 +63,8 @@ pub comp manual_abs {
 It is exact: where it fires, the conditional is `x.abs`, for every `x`:
 
 ```fren
-comp manual_abs_exact {
-    in op: Comparison
-    in negated_then?
-    in x: Int
-
-    inst p: manual_abs { compared := Ordered::Number, op, negated_then? }
+proc manual_abs_exact(op: Comparison, negated_then?, x: Int) {
+    call p := manual_abs(Ordered::Number, op, negated_then?)
 
     expect exact: when p.fires?,
         (if compares?(op, x, 0) then (if negated_then? then -x else x) else (if negated_then? then x else -x)) = x.abs
@@ -93,15 +89,15 @@ each branch's minuend and subtrahend:
 ```fren
 pub struct Difference { minuend: String, subtrahend: String }
 
-pub comp manual_abs_diff {
+pub proc manual_abs_diff(
+    op: Comparison,      -- the comparison of `a` and `b`
+    compared: Ordered,    -- what it compares
+    a: String,           -- the written forms of its operands
+    b: String,
+    then_branch: Difference,
+    else_branch: Difference,
+): (det fires?) {
     use self::Comparison::{Ge, Gt, Le, Lt}
-    in op: Comparison    -- the comparison of `a` and `b`
-    in compared: Ordered  -- what it compares
-    in a: String         -- the written forms of its operands
-    in b: String
-    in then_branch: Difference
-    in else_branch: Difference
-    pub det out fires?
 
     ensure rule: fires? iff (compared = Ordered::Number and a != b
         and ((then_branch = forward and else_branch = backward and op in {Gt, Ge})
@@ -110,19 +106,17 @@ pub comp manual_abs_diff {
         backward := Difference { minuend := b, subtrahend := a }
 }
 
-comp manual_abs_diff_exact {
-    in op: Comparison
-    in then_left_first?
-    in a: Int
-    in b: Int
-
-    inst p: manual_abs_diff {
-        op, compared := Ordered::Number, a := "a", b := "b",
-        then_branch := if then_left_first? then Difference { minuend := "a", subtrahend := "b" }
+proc manual_abs_diff_exact(op: Comparison, then_left_first?, a: Int, b: Int) {
+    call p := manual_abs_diff(
+        op,
+        Ordered::Number,
+        "a",
+        "b",
+        if then_left_first? then Difference { minuend := "a", subtrahend := "b" }
             else Difference { minuend := "b", subtrahend := "a" },
-        else_branch := if then_left_first? then Difference { minuend := "b", subtrahend := "a" }
+        if then_left_first? then Difference { minuend := "b", subtrahend := "a" }
             else Difference { minuend := "a", subtrahend := "b" },
-    }
+    )
 
     expect exact: when p.fires?,
         (if compares?(op, a, b) then (if then_left_first? then a - b else b - a)
@@ -136,28 +130,40 @@ The refinements below check the fixes of both lints, for each form:
 ```fren
 set_option fren.lint.manual_abs "allow" in
 set_option fren.lint.manual_abs_diff "allow" in
-pub comp manual_abs_written {
-    in x: Int
-    in y: Int
-    pub det out below: Int := if x < 0 then -x else x
-    pub det out at_most: Int := if 0 >= x then -x else x
-    pub det out above: Int := if x > 0 then x else -x
-    pub det out at_least: Int := if 0 <= x then x else -x
-    pub det out sum: Int := if x + y < 0 then -(x + y) else x + y
-    pub det out diff_above: Int := if x >= y then x - y else y - x
-    pub det out diff_below: Int := if x < y then y - x else x - y
+pub proc manual_abs_written(x: Int, y: Int): (
+    det below: Int,
+    det at_most: Int,
+    det above: Int,
+    det at_least: Int,
+    det sum: Int,
+    det diff_above: Int,
+    det diff_below: Int,
+) {
+    out below := if x < 0 then -x else x
+    out at_most := if 0 >= x then -x else x
+    out above := if x > 0 then x else -x
+    out at_least := if 0 <= x then x else -x
+    out sum := if x + y < 0 then -(x + y) else x + y
+    out diff_above := if x >= y then x - y else y - x
+    out diff_below := if x < y then y - x else x - y
 }
 
-pub comp manual_abs_fixed {
-    in x: Int
-    in y: Int
-    pub det out below: Int := x.abs
-    pub det out at_most: Int := x.abs
-    pub det out above: Int := x.abs
-    pub det out at_least: Int := x.abs
-    pub det out sum: Int := (x + y).abs
-    pub det out diff_above: Int := (x - y).abs
-    pub det out diff_below: Int := (y - x).abs
+pub proc manual_abs_fixed(x: Int, y: Int): (
+    det below: Int,
+    det at_most: Int,
+    det above: Int,
+    det at_least: Int,
+    det sum: Int,
+    det diff_above: Int,
+    det diff_below: Int,
+) {
+    out below := x.abs
+    out at_most := x.abs
+    out above := x.abs
+    out at_least := x.abs
+    out sum := (x + y).abs
+    out diff_above := (x - y).abs
+    out diff_below := (y - x).abs
 }
 
 refine manual_abs_sound: manual_abs_fixed refines manual_abs_written
@@ -198,18 +204,20 @@ pub enum MinMax { Min, Max }
 -- An operand of the condition: its written form, and whether an integer literal is in it.
 pub struct Written { text: String, literal? }
 
-pub comp manual_min_max {
+pub proc manual_min_max(
+    op: Comparison,
+    compared: Ordered,
+    a: Written,          -- the condition's operands
+    b: Written,
+    then_branch: String,    -- the branches' written forms
+    else_branch: String,
+): (
+    det fires?,
+    method: MinMax,         -- the method of the fix, where it fires
+    receiver_left?,         -- its receiver is `a`, and its argument `b`, rather than the reverse
+) {
     use self::Comparison::{Ge, Gt, Le, Lt}
     use self::MinMax::{Max, Min}
-    in op: Comparison
-    in compared: Ordered
-    in a: Written        -- the condition's operands
-    in b: Written
-    in then_branch: String  -- the branches' written forms
-    in else_branch: String
-    pub det out fires?
-    pub out method: MinMax  -- the method of the fix, where it fires
-    pub out receiver_left?  -- its receiver is `a`, and its argument `b`, rather than the reverse
 
     ensure rule: fires? iff (op in {Lt, Le, Gt, Ge} and compared != Ordered::OtherType and a.text != b.text
         and not (a.literal? and b.literal?)
@@ -218,17 +226,15 @@ pub comp manual_min_max {
     ensure receiver: when fires?, receiver_left? iff not a.literal?
 }
 
-comp manual_min_max_exact {
-    in op: Comparison
-    in then_left?
-    in a: Int
-    in b: Int
-
-    inst p: manual_min_max {
-        op, compared := Ordered::Number, a := Written { text := "a", literal? := false },
-        b := Written { text := "b", literal? := false }, then_branch := if then_left? then "a" else "b",
-        else_branch := if then_left? then "b" else "a",
-    }
+proc manual_min_max_exact(op: Comparison, then_left?, a: Int, b: Int) {
+    call p := manual_min_max(
+        op,
+        Ordered::Number,
+        Written { text := "a", literal? := false },
+        Written { text := "b", literal? := false },
+        if then_left? then "a" else "b",
+        if then_left? then "b" else "a",
+    )
 
     expect exact: when p.fires?,
         (if compares?(op, a, b) then (if then_left? then a else b) else (if then_left? then b else a))
@@ -252,15 +258,17 @@ The fix is `x.max(lo).min(hi)`, whose receiver is `x`, for the reasons
 bound:
 
 ```fren
-pub comp manual_clamp {
+pub proc manual_clamp(
+    compared: Ordered,        -- what the first test compares
+    first_op: Comparison,     -- the first test's comparison, with `x` on its left
+    second_op: Comparison,    -- the second test's
+    first: Int,               -- the first test's bound
+    second: Int,              -- the second test's bound
+): (
+    det fires?,
+    det low_first?,           -- the first test is of the lower bound
+) {
     use self::Comparison::{Ge, Gt, Le, Lt}
-    in compared: Ordered      -- what the first test compares
-    in first_op: Comparison   -- the first test's comparison, with `x` on its left
-    in second_op: Comparison  -- the second test's
-    in first: Int             -- the first test's bound
-    in second: Int            -- the second test's bound
-    pub det out fires?
-    pub det out low_first?    -- the first test is of the lower bound
 
     ensure rule: fires? iff (compared = Ordered::Number
         and ((first_op in {Lt, Le} and second_op in {Gt, Ge} and first <= second)
@@ -268,14 +276,14 @@ pub comp manual_clamp {
     ensure low: low_first? iff first_op in {Lt, Le}
 }
 
-comp manual_clamp_exact {
-    in first_op: Comparison
-    in second_op: Comparison
-    in first: Int
-    in second: Int
-    in x: Int
-
-    inst p: manual_clamp { compared := Ordered::Number, first_op, second_op, first, second }
+proc manual_clamp_exact(
+    first_op: Comparison,
+    second_op: Comparison,
+    first: Int,
+    second: Int,
+    x: Int,
+) {
+    call p := manual_clamp(Ordered::Number, first_op, second_op, first, second)
 
     expect exact: when p.fires?,
         (if compares?(first_op, x, first) then first else if compares?(second_op, x, second) then second else x)
@@ -289,30 +297,40 @@ a `Nat` among them:
 ```fren
 set_option fren.lint.manual_min_max "allow" in
 set_option fren.lint.manual_clamp "allow" in
-pub comp manual_min_max_written {
-    in x: Int
-    in y: Int
-    in n: Nat
-    pub det out lesser: Int := if x < y then x else y
-    pub det out greater: Int := if x <= y then y else x
-    pub det out lesser_above: Int := if x > y then y else x
-    pub det out greater_above: Int := if y >= x then y else x
-    pub det out capped: Nat := if n > 3 then 3 else n
-    pub det out clamped: Int := if x < -2 then -2 else if x > 5 then 5 else x
-    pub det out clamped_above: Int := if 5 <= x then 5 else if -2 >= x then -2 else x
+pub proc manual_min_max_written(x: Int, y: Int, n: Nat): (
+    det lesser: Int,
+    det greater: Int,
+    det lesser_above: Int,
+    det greater_above: Int,
+    det capped: Nat,
+    det clamped: Int,
+    det clamped_above: Int,
+) {
+    out lesser := if x < y then x else y
+    out greater := if x <= y then y else x
+    out lesser_above := if x > y then y else x
+    out greater_above := if y >= x then y else x
+    out capped := if n > 3 then 3 else n
+    out clamped := if x < -2 then -2 else if x > 5 then 5 else x
+    out clamped_above := if 5 <= x then 5 else if -2 >= x then -2 else x
 }
 
-pub comp manual_min_max_fixed {
-    in x: Int
-    in y: Int
-    in n: Nat
-    pub det out lesser: Int := x.min(y)
-    pub det out greater: Int := x.max(y)
-    pub det out lesser_above: Int := x.min(y)
-    pub det out greater_above: Int := y.max(x)
-    pub det out capped: Nat := n.min(3)
-    pub det out clamped: Int := x.max(-2).min(5)
-    pub det out clamped_above: Int := x.max(-2).min(5)
+pub proc manual_min_max_fixed(x: Int, y: Int, n: Nat): (
+    det lesser: Int,
+    det greater: Int,
+    det lesser_above: Int,
+    det greater_above: Int,
+    det capped: Nat,
+    det clamped: Int,
+    det clamped_above: Int,
+) {
+    out lesser := x.min(y)
+    out greater := x.max(y)
+    out lesser_above := x.min(y)
+    out greater_above := y.max(x)
+    out capped := n.min(3)
+    out clamped := x.max(-2).min(5)
+    out clamped_above := x.max(-2).min(5)
 }
 
 refine manual_min_max_sound: manual_min_max_fixed refines manual_min_max_written
@@ -344,12 +362,11 @@ remainder, and the other must be written as `k`:
 -- An operand of `+`: its written form, and, if it is a `mod`, its divisor's.
 pub struct Summand { text: String, remainder?, divisor: String }
 
-pub comp manual_rem_euclid {
-    in p: Summand
-    in q: Summand
-    in k: String         -- the outer divisor's written form
-    pub det out fires?
-
+pub proc manual_rem_euclid(
+    p: Summand,
+    q: Summand,
+    k: String,           -- the outer divisor's written form
+): (det fires?) {
     ensure rule: fires? iff (if p.remainder? then p.divisor = k and q.text = k
         else q.remainder? and q.divisor = k and p.text = k)
 }
@@ -360,20 +377,24 @@ positive divisor, a negative one, and a `Nat` dividend:
 
 ```fren
 set_option fren.lint.manual_rem_euclid "allow" in
-pub comp manual_rem_euclid_written {
-    in x: Int
-    in n: Nat
-    pub det out positive: Int := (x mod 7 + 7) mod 7
-    pub det out negative: Int := (-3 + x mod -3) mod -3
-    pub det out natural: Nat := (n mod 4 + 4) mod 4
+pub proc manual_rem_euclid_written(x: Int, n: Nat): (
+    det positive: Int,
+    det negative: Int,
+    det natural: Nat,
+) {
+    out positive := (x mod 7 + 7) mod 7
+    out negative := (-3 + x mod -3) mod -3
+    out natural := (n mod 4 + 4) mod 4
 }
 
-pub comp manual_rem_euclid_fixed {
-    in x: Int
-    in n: Nat
-    pub det out positive: Int := x mod 7
-    pub det out negative: Int := x mod -3
-    pub det out natural: Nat := n mod 4
+pub proc manual_rem_euclid_fixed(x: Int, n: Nat): (
+    det positive: Int,
+    det negative: Int,
+    det natural: Nat,
+) {
+    out positive := x mod 7
+    out negative := x mod -3
+    out natural := n mod 4
 }
 
 refine manual_rem_euclid_sound: manual_rem_euclid_fixed refines manual_rem_euclid_written

@@ -1,8 +1,8 @@
 warning[F0769]: this string literal contains an invisible character, `U+200B` (zero width space)
- --> test/cli/lints/suspicious/f0769_invisible_characters.fren:2:55
+ --> test/cli/lints/suspicious/f0769_invisible_characters.fren:2:48
   |
-2 | comp c { in s: String pub out p? ensure r: p? iff s = "a​b" }
-  |                                                       ^^^^^ contains what cannot be seen
+2 | proc c(s: String): (p?) { ensure r: p? iff s = "a​b" }
+  |                                                ^^^^^ contains what cannot be seen
   |
   = note: it cannot be seen, so it is probably not meant
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0769]: this string literal contains an invisible character, `U+200B` (z
   = help: to allow it, `set_option fren.lint.invisible_characters "allow"`
 help: write it as an escape
   |
-2 - comp c { in s: String pub out p? ensure r: p? iff s = "a​b" }
-2 + comp c { in s: String pub out p? ensure r: p? iff s = "a\u200Bb" }
+2 - proc c(s: String): (p?) { ensure r: p? iff s = "a​b" }
+2 + proc c(s: String): (p?) { ensure r: p? iff s = "a\u200Bb" }
   |
 
 warning[F0769]: this comment contains an invisible character, `U+202E` (right-to-left override)

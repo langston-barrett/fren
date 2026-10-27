@@ -1,8 +1,8 @@
 error[F0109]: `when` must be parenthesized here
- --> test/cli/syntax/f0109_operand.fren:2:58
+ --> test/cli/syntax/f0109_operand.fren:2:51
   |
-2 | comp c { in x: Int pub out y? ensure r: y? iff x > 0 and when x > 1, x > 2 }
-  |                                                          ^^^^ needs parentheses
+2 | proc c(x: Int): (y?) { ensure r: y? iff x > 0 and when x > 1, x > 2 }
+  |                                                   ^^^^ needs parentheses
   |
   = note: `when` has the lowest precedence, and its body extends as far right as possible
   = help: wrap it in parentheses: `(when c, e)`

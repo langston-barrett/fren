@@ -1,3 +1,0 @@
--- An input bound twice (F0406).
-comp sub { in a: Int }
-comp c { inst s: sub { a := 1, a := 2 } }

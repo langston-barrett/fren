@@ -1,2 +1,2 @@
 -- `double_neg`.
-comp c { in x: Int pub out y: Int ensure r: y = 2 * - -(x + 1) }
+proc c(x: Int): (y: Int) { ensure r: y = 2 * - -(x + 1) }

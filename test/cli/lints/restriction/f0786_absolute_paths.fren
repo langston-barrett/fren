@@ -7,9 +7,6 @@ pub enum Mode { Heat, Cool }
 
 mod house
 
-comp heating {
-    in mode: climate::Mode
-    pub out on?
-
+proc heating(mode: climate::Mode): (on?) {
     ensure rule: on? iff mode = climate::Mode::Heat
 }

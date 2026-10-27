@@ -1,2 +1,2 @@
 -- `true` and `false` are literals, so they cannot be declared.
-comp c { in true: Int pub out y: Int ensure r: y = 1 }
+proc c(true: Int): (y: Int) { ensure r: y = 1 }

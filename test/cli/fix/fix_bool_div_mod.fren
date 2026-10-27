@@ -1,13 +1,7 @@
 --@ args: fix --check
 -- `fren fix` keeps `div`, `mod` and the methods of `Int` as operands of a
 -- comparison without parentheses, as they bind more tightly.
-pub comp c {
-    in x: Int
-    in y: Int
-    pub out o?
-    pub out p?
-    pub out q?
-
+pub proc c(x: Int, y: Int): (o?, p?, q?) {
     ensure r1: o? iff not (x mod 2 = 0)
     ensure r2: p? iff not not (x div -3 < y mod 4 * 2)
     ensure r3: q? iff not ((x - y).abs >= x.min(y)) and not (2 * x div 3 != (x + 1) mod 5)

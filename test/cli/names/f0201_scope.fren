@@ -1,2 +1,2 @@
 -- A name not in scope, with a similar one (F0201).
-comp c { in count: Int pub out y: Int ensure r: y = cuont }
+proc c(count: Int): (y: Int) { ensure r: y = cuont }

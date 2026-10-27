@@ -1,8 +1,6 @@
 -- Contradictory assumptions (F0602).
-comp c {
-    in x: Int
+proc c(x: Int): (y?) {
     assume big: x > 10
     assume small: x < 5
-    pub out y?
     ensure r: y? iff x > 7
 }

@@ -110,13 +110,14 @@ pub mod lang
 set_option fren.lint.enum_variant_names "allow" in
 pub enum Assoc { Left, Right, NonAssoc }
 
-pub comp operand {
-    in outer: Int        -- the precedence of the operator
-    in inner: Int        -- the precedence of its operand's operator
-    in assoc: Assoc      -- the associativity of the operator
-    in right?            -- the operand is on the operator's right
-    pub out bare?        -- the operand can be written without parentheses
-
+pub proc operand(
+    outer: Int,          -- the precedence of the operator
+    inner: Int,          -- the precedence of its operand's operator
+    assoc: Assoc,        -- the associativity of the operator
+    right?,              -- the operand is on the operator's right
+): (
+    bare?,               -- the operand can be written without parentheses
+) {
     ensure tighter: when inner > outer, bare?
     ensure looser: when inner < outer, not bare?
     ensure left: when inner = outer and assoc = Assoc::Left, bare? iff not right?
@@ -162,13 +163,12 @@ many of their operators are of each kind; one operator alone is a
 comparison, not a chain:
 
 ```fren
-pub comp comparison_chain {
-    in n_ascending: Nat     -- operators `<` and `<=`
-    in n_descending: Nat    -- operators `>` and `>=`
-    in n_other: Nat         -- operators `=`, `!=`, `in`, `subset` and `is`
-
+pub proc comparison_chain(
+    n_ascending: Nat,       -- operators `<` and `<=`
+    n_descending: Nat,      -- operators `>` and `>=`
+    n_other: Nat,           -- operators `=`, `!=`, `in`, `subset` and `is`
+): (det accepted?) {
     assume compares: n_ascending + n_descending + n_other >= 1
-    pub det out accepted?
 
     ensure rule: accepted? iff (n_ascending + n_descending + n_other = 1
         or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
@@ -193,13 +193,13 @@ unspecified there, as an index out of range within a constant's value is
 - A literal mentions nothing, and neither does a
   [constant](Items.md#constants), a variant without a payload, or any
   other path of more than one segment, such as `m::RATE`.
-- A variable mentions itself, and so does a variable of an
-  [instance](Instances.md#instance-variables) or a field read from a
+- A variable mentions itself, and so does a variable of a
+  [call](Calls.md#call-variables) or a field read from a
   variable. A variable declared as `RATE!` shadows the constant `RATE`
-  (see [Shadowing](Components.md#shadowing)), so `RATE` is then a
+  (see [Shadowing](Procedures.md#shadowing)), so `RATE` is then a
   variable.
-- A [defined output](Components.md#defined-outputs) mentions what its
-  definition mentions, a [binder](#matches) what its scrutinee
+- A variable with a [definition](Procedures.md#definitions) mentions
+  what its definition mentions, a [binder](#matches) what its scrutinee
   mentions, and a name of a [`let` or `where`](Let.md) what its
   definition mentions. A [quantifier's](Quantifiers.md) bound name of a
   listed type mentions nothing: in each instance, it is one value. A bound
@@ -232,15 +232,16 @@ uninterpreted functions as `Mention`s, given by `mentioned_by`. `lang::mentions`
 it, from the head and what the parts mention together:
 
 ```fren
-pub comp mentions {
+pub proc mentions(
+    head: Head,
+    parts_mentioned: Set<Mention>,    -- what its parts mention, together
+): (det mentioned: Set<Mention>, det mentions?) {
     use self::Head::{Bound, Constant, Construction, Defined, Literal, Method, Uninterpreted, Variable}
-    in head: Head
-    in parts_mentioned: Set<Mention>  -- what its parts mention, together
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out mentioned: Set<Mention> := mentioned_by(head, parts_mentioned)
-    pub det out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
+    out mentioned := mentioned_by(head, parts_mentioned)
+    out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
 
     expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_, _), mentioned = parts_mentioned
     expect unknown: when head is Variable(_) | Uninterpreted(_), mentions?
@@ -261,7 +262,7 @@ Each layer of an expression mentions what `lang::mentions` says, so
 refine layer_mentions: node refines mentions
 ```
 
-The parts of a defined output, of a binder and of a name of a `let` or
+The parts of a defined variable, of a binder and of a name of a `let` or
 `where` are its definition, its scrutinee and its definition. The only
 part of a `let` is its body, so a definition that the body never
 mentions counts for nothing. So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention
@@ -275,18 +276,16 @@ One operand of `*` must mention no variable and no uninterpreted function
 to those, such as `2`, `-RATE`, `2 * 3`, `(MAX - MIN)` or `double(3)`. Its
 value is then fixed, so the product is linear in the other operand, which
 the solver decides. `x * y` is an error, and so is `x * RATE` within a
-component that declares a variable `RATE!`, which shadows the constant
-(see [Shadowing](Components.md#shadowing)). So is `x * rate(1)`,
+procedure that declares a variable `RATE!`, which shadows the constant
+(see [Shadowing](Procedures.md#shadowing)). So is `x * rate(1)`,
 with `rate` uninterpreted: its value is unknown even at a fixed argument.
 `lang::linear_product` states this, from what each operand mentions:
 
 ```fren
-pub comp linear_product {
-    in a_mentioned: Set<Mention>  -- what the left operand mentions (`lang::mentions`)
-    in b_mentioned: Set<Mention>  -- what the right operand mentions
-
-    pub det out accepted?
-
+pub proc linear_product(
+    a_mentioned: Set<Mention>,    -- what the left operand mentions (`lang::mentions`)
+    b_mentioned: Set<Mention>,    -- what the right operand mentions
+): (det accepted?) {
     ensure rule: accepted? iff (a_mentioned = {} or b_mentioned = {})
 
     expect scaling: when a_mentioned = {}, accepted?
@@ -371,11 +370,11 @@ accepted, but with `const N: Int := "abcd".len`, it is an error.
 -- is any other expression, such as a variable or `2 * 3`.
 pub enum DivisorForm { LiteralDivisor, KnownConstant, UnknownConstant, OtherDivisor }
 
-pub comp divisor {
+pub proc divisor(
+    form: DivisorForm,
+    value: Int,              -- its value, for a literal or a known constant
+): (det accepted?) {
     use self::DivisorForm::{KnownConstant, LiteralDivisor, OtherDivisor}
-    in form: DivisorForm
-    in value: Int            -- its value, for a literal or a known constant
-    pub det out accepted?
 
     ensure rule: accepted? iff (form in {LiteralDivisor, KnownConstant} and value != 0)
 
@@ -394,10 +393,7 @@ const NEGATIVE_DIVISOR: Int := -3
 
 set_option fren.lint.identity_op "allow" in
 set_option fren.lint.modulo_one "allow" in
-pub comp division {
-    in x: Int
-    in y: Int
-
+pub proc division(x: Int, y: Int) {
     expect euclidean: x = (x div 3) * 3 + x mod 3
     expect remainder_range: 0 <= x mod 3 < 3
     expect euclidean_negative: x = (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
@@ -424,22 +420,21 @@ of a conditional and the bodies of a `match`'s arms may be a `Nat` and an
 then n else -1` is an `Int`.
 
 An integer literal is a `Nat` where a `Nat` is expected, and an `Int`
-elsewhere. A `Nat` is expected for the definition of a defined output,
-the value of a constant, a binding, an argument, or the body of a defined
+elsewhere. A `Nat` is expected for the definition of a result or `let`
+variable, the value of a constant, an argument, or the body of a defined
 function, whose type is `Nat`; and, where the whole is expected to be a
 `Nat`, for the operands of `+` and `*`, the dividend of `div` and `mod`,
 the argument of `min` and `max` on a `Nat`, the branches of a conditional,
-the bodies of a `match`'s arms, and what is in parentheses. So in `out m:
+the bodies of a `match`'s arms, and what is in parentheses. So in `let m:
 Nat := n + 1`, `1` is a `Nat`, but in `n + 1 > 0` it is an `Int`, and `n`
 is widened. The operand of `-` is never expected to be a `Nat`, so `-1`
 is an `Int`. `lang::literal_type` states the type of a literal:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp literal_type {
-    in nat_expected?         -- a `Nat` is expected where the literal is
-    pub det out result: ValueType
-
+pub proc literal_type(
+    nat_expected?,           -- a `Nat` is expected where the literal is
+): (det result: ValueType) {
     ensure rule: result = (if nat_expected? then ValueType::NatTy else ValueType::IntTy)
 
     expect a_number: result in {ValueType::IntTy, ValueType::NatTy}
@@ -461,22 +456,23 @@ not a `Bool` is reported at the condition, and branches of different types
 at the conditional, with both types. It is
 [`lang::operator_type`](#types-of-operators)'s rule for a conditional,
 stated over the types themselves, which both front ends compare; the
-conditions of `when` and `unless` follow that component's rule for logical
+conditions of `when` and `unless` follow that procedure's rule for logical
 operators. The branches' types are those they have after being checked
 against the conditional's, where it is
 [checked](Types.md#checking-and-synthesis), so `if c? then {} else s` has
 `s`'s type.
 
 ```fren
-pub comp conditional {
-    in condition_bool?       -- the condition is a `Bool`
-    in then_ty: Ty           -- the type of `A`
-    in else_ty: Ty           -- the type of `B`
-    in then_widens?          -- `A`'s type widens to `B`'s (`lang::widening`)
-    in else_widens?          -- `B`'s type widens to `A`'s
-    pub det out accepted?
-    pub det out ty: Ty       -- the conditional's type: the wider of the two
-
+pub proc conditional(
+    condition_bool?,         -- the condition is a `Bool`
+    then_ty: Ty,             -- the type of `A`
+    else_ty: Ty,             -- the type of `B`
+    then_widens?,            -- `A`'s type widens to `B`'s (`lang::widening`)
+    else_widens?,            -- `B`'s type widens to `A`'s
+): (
+    det accepted?,
+    det ty: Ty,              -- the conditional's type: the wider of the two
+) {
     ensure rule: accepted? iff condition_bool? and (then_widens? or else_widens?)
     ensure typed: ty = (if then_widens? then else_ty else then_ty)
 
@@ -505,13 +501,12 @@ types of the parameters and of the arguments, in order, where an argument
 of type `Nat` whose parameter is an `Int` counts as an `Int`:
 
 ```fren
-pub comp application {
-    in params: Seq<Ty>   -- the parameters' types
-    in args: Seq<Ty>     -- the arguments' types
-    in k: Int            -- any position, for `typed`
-
+pub proc application(
+    params: Seq<Ty>,     -- the parameters' types
+    args: Seq<Ty>,       -- the arguments' types
+    k: Int,              -- any position, for `typed`
+): (det accepted?) {
     assume some_param: params != []
-    pub det out accepted?
 
     ensure rule: accepted? iff args = params
 
@@ -521,22 +516,21 @@ pub comp application {
 ```
 
 A function is not a variable, so the rules for which variables an
-expression may mention (see [Instances](Instances.md#instance-variables))
+expression may mention (see [Calls](Calls.md#call-variables))
 apply to its arguments, not to the function. An argument of an
 uninterpreted function may not mention an output of the enclosing
-component, so that the checks stay decidable: in `comp c { in i: Name out
-o: Name ... }`, `f(i)` and `f(w.o)`, for an instance `w`, are accepted, but
+procedure, so that the checks stay decidable: in `proc c(i: Name): (o:
+Name) { ... }`, `f(i)` and `f(w.o)`, for a call `w`, are accepted, but
 `f(o)` is not. A [defined function](Items.md#defined-functions)'s body
 applies no uninterpreted function, so its arguments may mention anything.
 `lang::argument` states this:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp argument {
-    in defined?          -- the function is defined
-    in mentions_output?  -- the argument mentions an output of the enclosing component
-    pub det out accepted?
-
+pub proc argument(
+    defined?,            -- the function is defined
+    mentions_output?,    -- the argument mentions an output of the enclosing procedure
+): (det accepted?) {
     ensure rule: accepted? iff (defined? or not mentions_output?)
 
     expect defined_any: when defined?, accepted?
@@ -566,15 +560,15 @@ from how many of their arguments are `true`:
 ```fren
 pub enum Cardinality { Exactly, AtMost }
 
-pub comp cardinality {
+pub proc cardinality(
+    op: Cardinality,
+    n_args: Nat,             -- how many arguments it has
+    n_true: Nat,             -- how many of them are `true`
+): (det value?) {
     use self::Cardinality::{AtMost, Exactly}
-    in op: Cardinality
-    in n_args: Nat           -- how many arguments it has
-    in n_true: Nat           -- how many of them are `true`
 
     assume some_argument: n_args >= 1
     assume counted: n_true <= n_args
-    pub det out value?
 
     ensure rule: value? iff match op {
         Exactly => n_true = 1,
@@ -597,11 +591,7 @@ set_option fren.lint.eq_op "allow" in
 set_option fren.lint.manual_at_most_one "allow" in
 set_option fren.lint.nonminimal_bool "allow" in
 set_option fren.evidence "enumerated" in
-pub comp cardinality_laws {
-    in a?
-    in b?
-    in c?
-
+pub proc cardinality_laws(a?, b?, c?) {
     expect at_most_one_single: at_most_one?(a?)
     expect exactly_one_single: exactly_one?(a?) = a?
     expect exactly_one_pair: exactly_one?(a?, b?) = (a? != b?)
@@ -621,12 +611,11 @@ states this, from how many arguments it has and how many of them are
 `Bool`s:
 
 ```fren
-pub comp cardinality_args {
-    in n_args: Nat           -- how many arguments it has
-    in n_bool: Nat           -- how many of them are `Bool`s
-
+pub proc cardinality_args(
+    n_args: Nat,             -- how many arguments it has
+    n_bool: Nat,             -- how many of them are `Bool`s
+): (det accepted?) {
     assume counted: n_bool <= n_args
-    pub det out accepted?
 
     ensure rule: accepted? iff (n_args >= 1 and n_bool = n_args)
 
@@ -655,26 +644,25 @@ and no [function](Items.md#functions) may be declared with either name.
 `exactly_one?` alone, without arguments, is an error, as a function that
 is not applied is, and so is a path such as `self::exactly_one?`, which
 names no item. A variable, parameter or binder may
-[shadow](Components.md#shadowing) them, written with `!` as for any other
+[shadow](Procedures.md#shadowing) them, written with `!` as for any other
 function, and is then a variable, which cannot be applied.
 
 ## Records
 
 `Point { x := 1, y := 2 }` builds a value of the [record](Items.md#records)
 `Point`, with `1` for `x` and `2` for `y`. A field `x` alone means `x :=
-x`, as for an instance's [bindings](Instances.md#bindings). The literal
+x`. The literal
 must give each field of the record exactly once, in any order, and
-nothing else, and each value must have its field's type. As in a binding,
+nothing else, and each value must have its field's type. As in an argument of a call,
 a value cannot be a top-level `when`, `unless`, `let` or quantifier. `lang::field_init`
 states this, from what a given name is in the record and how many times
-the literal gives it, as `inst::binding` does for bindings:
+the literal gives it, as `inst::binding` does for a call's arguments:
 
 ```fren
-pub comp field_init {
-    in field?            -- the name is a field of the record
-    in n: Nat            -- times the literal gives the name
-    pub det out accepted?
-
+pub proc field_init(
+    field?,              -- the name is a field of the record
+    n: Nat,              -- times the literal gives the name
+): (det accepted?) {
     ensure rule: accepted? iff ((field? and n = 1) or (not field? and n = 0))
 
     expect each_field_once: when field? and accepted?, n = 1
@@ -688,12 +676,11 @@ name given twice, so repeats are counted:
 ```fren
 pub type FieldName
 
-pub comp record_literal {
-    in fields: Set<FieldName>        -- the record's fields
-    in given: Set<FieldName>         -- the names the literal gives
-    in n_repeated: Nat               -- names given more than once, counting each repeat
-    pub det out accepted?
-
+pub proc record_literal(
+    fields: Set<FieldName>,          -- the record's fields
+    given: Set<FieldName>,           -- the names the literal gives
+    n_repeated: Nat,                 -- names given more than once, counting each repeat
+): (det accepted?) {
     ensure rule: accepted? iff (given = fields and n_repeated = 0)
 
     expect missing_field: when not fields subset given, not accepted?
@@ -702,11 +689,11 @@ pub comp record_literal {
 ```
 
 `e.x` is the field `x` of the record `e`. For a name, `p.x` is the field
-`x` of the variable `p`, `w.p.x` the field `x` of the [instance
-variable](Instances.md#instance-variables) `w.p`, and `p.x.y` the field
+`x` of the variable `p`, `w.p.x` the field `x` of the [call
+variable](Calls.md#call-variables) `w.p`, and `p.x.y` the field
 `y` of `p.x`; `f(p).x`, `(e).x` and `Point { x := 1, y := 2 }.x` read the
-field of any other record value. In `a.b`, `a` is an instance if the
-component has one named `a`, and a variable otherwise. A field read
+field of any other record value. In `a.b`, `a` is a call if the
+procedure has one named `a`, and a variable otherwise. A field read
 mentions the variables that its record mentions: `p.x` mentions `p`.
 
 ## Record updates
@@ -741,14 +728,13 @@ update is an atom, so `{ p with x := 1 }.y` reads a field of it.
 gives, with repeats counted, as for `lang::record_literal`:
 
 ```fren
-pub comp record_update {
-    in record?                       -- `r` has a record type
-    in fields: Set<FieldName>        -- the fields of its record
-    in given: Set<FieldName>         -- the names the update gives
-    in n_repeated: Nat               -- names given more than once, counting each repeat
-
+pub proc record_update(
+    record?,                         -- `r` has a record type
+    fields: Set<FieldName>,          -- the fields of its record
+    given: Set<FieldName>,           -- the names the update gives
+    n_repeated: Nat,                 -- names given more than once, counting each repeat
+): (det accepted?) {
     assume some_given: given != {}
-    pub det out accepted?
 
     ensure rule: accepted? iff (record? and given subset fields and n_repeated = 0)
 
@@ -843,18 +829,18 @@ set_option fren.lint.undecidable "allow" in
 pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> := unders.closure.image({underlying}) union {underlying}
 
 set_option fren.lint.undecidable "allow" in
-pub comp newtype_operator {
+pub proc newtype_operator(
+    op: NewtypeOp,
+    underlying: Ty,              -- the newtype's underlying type
+    ordered?,                    -- the newtype is ordered (`ordered_type`): declared `ordered`
+    unders: Rel<Ty, Ty>,         -- (n, under(n)): the underlying type of a newtype `n`
+): (det accepted?) {
     use self::NewtypeOp::{Addition, Equality, Order, Other, Subtraction}
     use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
-    in op: NewtypeOp
-    in underlying: Ty            -- the newtype's underlying type
-    in ordered?                  -- the newtype is ordered (`ordered_type`): declared `ordered`
-    in unders: Rel<Ty, Ty>       -- (n, under(n)): the underlying type of a newtype `n`
 
     -- A newtype is a record, and only a newtype has an underlying type.
     assume records: when newtype?(underlying), kind(underlying) = RecordTy
     assume base: unless newtype?(underlying), unders.image({underlying}) = {}
-    pub det out accepted?
 
     ensure rule: accepted? iff match op {
         Equality => true,
@@ -902,11 +888,10 @@ match. `lang::variant_mention` states this:
 ```fren
 pub mod lang
 
-pub comp variant_mention {
-    in payload: Nat          -- how many values the variant's payload has
-    in applied?              -- it is written with parentheses, around values or, in a pattern, patterns
-    pub det out accepted?
-
+pub proc variant_mention(
+    payload: Nat,            -- how many values the variant's payload has
+    applied?,                -- it is written with parentheses, around values or, in a pattern, patterns
+): (det accepted?) {
     ensure rule: accepted? iff (applied? iff payload > 0)
 
     expect plain: when payload = 0 and not applied?, accepted?
@@ -988,17 +973,17 @@ binders of a pattern have distinct names, and follow the [Boolean
 names](Types.md#boolean-names) rule for the types of their values. A binder
 is not a variable. Within its arm's guard and body, it may shadow a variable, a
 constant or another name in scope, written with `!`, as in
-`Shape::Circle(r!)` (see [Shadowing](Components.md#shadowing)); a mention
+`Shape::Circle(r!)` (see [Shadowing](Procedures.md#shadowing)); a mention
 of it there is not a mention of what it shadows. Mentioning it counts as
 mentioning everything its scrutinee mentions, whatever its depth, for the
-rules of [Instances](Instances.md#instance-variables), of [function
+rules of [Calls](Calls.md#call-variables), of [function
 applications](#function-applications) and of [linear
-arithmetic](#linear-arithmetic). So in `comp c { out s: Shape ... }`,
+arithmetic](#linear-arithmetic). So in `proc c(): (s: Shape) { ... }`,
 `match s { Shape::Circle(r) => f(r), _ => ... }` mentions the output `s`
 in an argument of `f`, which is an error.
 
 The bodies of all arms have the same type, or are `Nat`s and `Int`s, and
-the `match` has that type, or `Int` if they are mixed. As in a binding, a
+the `match` has that type, or `Int` if they are mixed. As in an argument of a call, a
 body cannot be a top-level `when`, `unless`, `let` or
 [quantifier](Quantifiers.md), which would run on into the next arm, and
 neither can a guard, which would run on into its arm's `=>`: write those
@@ -1016,14 +1001,15 @@ that does not [synthesize](Types.md#checking-and-synthesis) its type, as
 `{}` does, has the type of the arms it is checked against.
 
 ```fren
-pub comp arm_type {
-    in before: Ty            -- the type of the arms before it
-    in arm: Ty               -- the type of its body
-    in arm_widens?           -- `arm` widens to `before` (`lang::widening`)
-    in before_widens?        -- `before` widens to `arm`
-    pub det out accepted?
-    pub det out ty: Ty       -- the type of the arms so far: the wider of the two
-
+pub proc arm_type(
+    before: Ty,              -- the type of the arms before it
+    arm: Ty,                 -- the type of its body
+    arm_widens?,             -- `arm` widens to `before` (`lang::widening`)
+    before_widens?,          -- `before` widens to `arm`
+): (
+    det accepted?,
+    det ty: Ty,              -- the type of the arms so far: the wider of the two
+) {
     ensure rule: accepted? iff (arm_widens? or before_widens?)
     ensure typed: ty = (if before_widens? then arm else before)
 
@@ -1053,12 +1039,11 @@ this, from the numbers of arms and alternatives that are not useful, and
 whether the arms are exhaustive:
 
 ```fren
-pub comp match_arms {
-    in n_useless_arms: Nat           -- arms not useful with respect to the arms before them without guards
-    in n_useless_alternatives: Nat   -- alternatives of the other arms that no useful case of their arm takes
-    in exhaustive?                   -- `_` is not useful with respect to all the arms, guards ignored
-    pub det out accepted?
-
+pub proc match_arms(
+    n_useless_arms: Nat,             -- arms not useful with respect to the arms before them without guards
+    n_useless_alternatives: Nat,     -- alternatives of the other arms that no useful case of their arm takes
+    exhaustive?,                     -- `_` is not useful with respect to all the arms, guards ignored
+): (det accepted?) {
     ensure rule: accepted? iff (n_useless_arms = 0 and n_useless_alternatives = 0 and exhaustive?)
 
     expect exhaustive: when accepted?, exhaustive?
@@ -1102,15 +1087,18 @@ and `-1` where there is none. `k` stands for any position, so
 pub enum ArmAt { NoMatch, GuardFails, Taken }
 
 set_option fren.lint.undecidable "allow" in
-pub comp guarded_match {
+pub proc guarded_match(
+    arms: Seq<ArmAt>,        -- what each arm does at the scrutinee's value, in order
+    bodies: Seq<Int>,        -- each arm's body's value there
+    k: Int,                  -- any position, for `none_before`
+): (
+    first: Int,
+    value: Int,              -- the `match`'s value
+) {
     use self::ArmAt::{GuardFails, NoMatch, Taken}
-    in arms: Seq<ArmAt>      -- what each arm does at the scrutinee's value, in order
-    in bodies: Seq<Int>      -- each arm's body's value there
-    in k: Int                -- any position, for `none_before`
 
     assume aligned: bodies.len = arms.len
-    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
-    pub out value: Int       -- the `match`'s value
+    out first := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
 
     ensure valued: when first >= 0, value = bodies[first]
 
@@ -1216,7 +1204,7 @@ value of the scrutinee, their names are distinct (`F0213`) and follow the
 [Boolean names](Types.md#boolean-names) rule, an or-pattern binds none
 (`F0333`), and one that shadows a name in scope, a binder of an earlier
 test of its chain included, is written with `!` (see
-[Shadowing](Components.md#shadowing)). A binder is not a variable, and
+[Shadowing](Procedures.md#shadowing)). A binder is not a variable, and
 mentioning it counts as mentioning everything its scrutinee mentions.
 
 A guarantee `when x is P(d), D` is one constraint, as a `match` is: the
@@ -1251,14 +1239,15 @@ pub enum Site {
     Outside,           -- anywhere else
 }
 
-pub comp test_scope {
-    in context: TestContext
-    in operands: Nat         -- the chain's operands
-    in test_at: Nat          -- the test's position among them, from 0
-    in site: Site            -- where a name that the test binds is mentioned
-    pub det out visible?     -- the name is in scope there
-    pub det out binds?       -- the test may bind names
-
+pub proc test_scope(
+    context: TestContext,
+    operands: Nat,           -- the chain's operands
+    test_at: Nat,            -- the test's position among them, from 0
+    site: Site,              -- where a name that the test binds is mentioned
+): (
+    det visible?,            -- the name is in scope there
+    det binds?,              -- the test may bind names
+) {
     assume within: test_at < operands
 
     ensure later: when site is Site::Operand(k), visible? iff test_at < k < operands
@@ -1280,13 +1269,11 @@ means the `match` that the rules above give it.
 ```fren
 pub enum Reading { Missing, Value(Int) }
 
-pub comp pattern_binding {
-    in r: Reading
-    in limit: Int
-    pub det out at_most_limit?      -- `when r is Reading::Value(v), v <= limit`
-    pub det out exceeds?       -- `r is Reading::Value(v) and v > limit`
-    pub det out clamped: Int  -- `if r is Reading::Value(v) and v <= limit then v else limit`
-
+pub proc pattern_binding(r: Reading, limit: Int): (
+    det at_most_limit?,             -- `when r is Reading::Value(v), v <= limit`
+    det exceeds?,              -- `r is Reading::Value(v) and v > limit`
+    det clamped: Int,         -- `if r is Reading::Value(v) and v <= limit then v else limit`
+) {
     ensure within_rule: at_most_limit? iff (when r is Reading::Value(v), v <= limit)
     ensure above_rule: exceeds? iff r is Reading::Value(v) and v > limit
     ensure clamped_rule: clamped = (if r is Reading::Value(v) and v <= limit then v else limit)
@@ -1306,13 +1293,12 @@ that are not `_` and of their alternatives that are not reachable, and
 whether they match some value:
 
 ```fren
-pub comp pattern_test {
-    in binds?                        -- the test may bind names (`lang::test_scope`)
-    in n_bound: Nat                  -- binders that are not `_`
-    in n_useless_alternatives: Nat   -- alternatives that no useful case of the pattern takes
-    in matches_some?                 -- some value matches the pattern
-    pub det out accepted?
-
+pub proc pattern_test(
+    binds?,                          -- the test may bind names (`lang::test_scope`)
+    n_bound: Nat,                    -- binders that are not `_`
+    n_useless_alternatives: Nat,     -- alternatives that no useful case of the pattern takes
+    matches_some?,                   -- some value matches the pattern
+): (det accepted?) {
     ensure rule: accepted? iff ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
 
     expect binds_nothing: when accepted? and not binds?, n_bound = 0
@@ -1470,13 +1456,14 @@ guard, and whether one of them is the last arm `_`, which has none:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp table_arm_pair {
-    in overlap?              -- some value matches both patterns (`lang::overlap`)
-    in guarded?              -- one of the arms has a guard
-    in otherwise?            -- one of the arms is the last arm `_`, without a guard
-    pub det out rejected?    -- the static rules reject the table (`F0391`)
-    pub det out asked?       -- the disjointness check asks whether both can be taken at once
-
+pub proc table_arm_pair(
+    overlap?,                -- some value matches both patterns (`lang::overlap`)
+    guarded?,                -- one of the arms has a guard
+    otherwise?,              -- one of the arms is the last arm `_`, without a guard
+): (
+    det rejected?,           -- the static rules reject the table (`F0391`)
+    det asked?,              -- the disjointness check asks whether both can be taken at once
+) {
     ensure static: rejected? iff (overlap? and not guarded? and not otherwise?)
     ensure checked: asked? iff (overlap? and guarded? and not otherwise?)
 
@@ -1507,17 +1494,19 @@ pub enum TableArm { Unguarded, Guarded, Wildcard }
 pub enum Overlap { Apart, Overlapping }
 
 set_option fren.lint.undecidable "allow" in
-pub comp table_arms {
+pub proc table_arms(
+    arms: Seq<TableArm>,         -- each arm, in order: `_` without a guard, or another, with a guard or without
+    overlaps: Seq<Overlap>,      -- whether each arm's pattern overlaps arm `j`'s
+    i: Int,                      -- an arm before `j`
+    j: Int,                      -- an arm
+    earlier_rejected?,           -- the static rules reject a pair before `(i, j)`, in order
+): (
+    rejected?,                   -- the static rules reject arms `i` and `j`
+    asked?,                      -- the disjointness check asks whether both can be taken at once
+    reported?,                   -- the table is reported at arm `j`, naming arm `i` (`F0391`)
+) {
     use self::Overlap::Overlapping
     use self::TableArm::{Guarded, Wildcard}
-    in arms: Seq<TableArm>       -- each arm, in order: `_` without a guard, or another, with a guard or without
-    in overlaps: Seq<Overlap>    -- whether each arm's pattern overlaps arm `j`'s
-    in i: Int                    -- an arm before `j`
-    in j: Int                    -- an arm
-    in earlier_rejected?         -- the static rules reject a pair before `(i, j)`, in order
-    pub out rejected?            -- the static rules reject arms `i` and `j`
-    pub out asked?               -- the disjointness check asks whether both can be taken at once
-    pub out reported?            -- the table is reported at arm `j`, naming arm `i` (`F0391`)
 
     -- Whether arm `i`'s pattern overlaps arm `j`'s, whether one of them
     -- has a guard, and whether arm `j` is the otherwise: the last, `_`
@@ -1557,17 +1546,21 @@ nothing of the value. The position of the arm that holds is found as in
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp table_match {
+pub proc table_match(
+    arms: Seq<ArmAt>,        -- what each arm but `_` does at the scrutinee's value, in order
+    values: Seq<Int>,        -- each arm's body's value there
+    otherwise: Seq<Int>,     -- `[v]` where the table has a last arm `_ => e` and `e`'s value there is `v`, `[]` where it has none
+    k: Int,                  -- any position, for `only` and `none_holds`
+): (
+    one: Int,
+    disjoint?,
+    value: Int,              -- the table's value
+) {
     use self::ArmAt::Taken
-    in arms: Seq<ArmAt>      -- what each arm but `_` does at the scrutinee's value, in order
-    in values: Seq<Int>      -- each arm's body's value there
-    in otherwise: Seq<Int>   -- `[v]` where the table has a last arm `_ => e` and `e`'s value there is `v`, `[]` where it has none
-    in k: Int                -- any position, for `only` and `none_holds`
 
     assume aligned: values.len = arms.len
-    pub out one: Int := arms.index_of([Taken], 0)  -- the arm that holds, `-1` if none does
-    pub out disjoint? := arms.index_of([Taken], one + 1) = -1  -- no two arms hold
-    pub out value: Int       -- the table's value
+    out one := arms.index_of([Taken], 0)  -- the arm that holds, `-1` if none does
+    out disjoint? := arms.index_of([Taken], one + 1) = -1  -- no two arms hold
 
     ensure held: when disjoint? and one >= 0, value = values[one]
     ensure otherwise_held: when one = -1 and otherwise != [], value = otherwise[0]
@@ -1588,15 +1581,18 @@ the arms are disjoint, the first arm that holds is the one that does.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp table_eval {
+pub proc table_eval(
+    arms: Seq<ArmAt>,        -- what each arm but `_` does at the scrutinee's value, in order
+    values: Seq<Int>,        -- each arm's body's value there
+    otherwise: Seq<Int>,     -- the value of the `_` arm's body there, `[]` without one
+): (
+    first: Int,
+    value: Int,              -- the table's value
+) {
     use self::ArmAt::Taken
-    in arms: Seq<ArmAt>      -- what each arm but `_` does at the scrutinee's value, in order
-    in values: Seq<Int>      -- each arm's body's value there
-    in otherwise: Seq<Int>   -- the value of the `_` arm's body there, `[]` without one
 
     assume aligned: values.len = arms.len
-    pub out first: Int := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
-    pub out value: Int       -- the table's value
+    out first := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
 
     ensure first_held: when first >= 0, value = values[first]
     ensure otherwise_held: when first = -1 and otherwise != [], value = otherwise[0]
@@ -1710,13 +1706,13 @@ q join p` is `r union (q join p)`.
 ```fren
 pub enum RelOp { Join, Inverse, Closure, Image, Domain, Range }
 
-pub comp relation_op {
+pub proc relation_op(
+    op: RelOp,
+    r: Ty,               -- the relation
+    s: Ty,               -- the right operand of `join`, or the argument of `image`
+): (det accepted?) {
     use self::RelOp::{Closure, Domain, Image, Inverse, Join, Range}
     use self::ValueType::{RelTy, SetTy}
-    in op: RelOp
-    in r: Ty             -- the relation
-    in s: Ty             -- the right operand of `join`, or the argument of `image`
-    pub det out accepted?
 
     ensure rule: accepted? iff match op {
         Join => kind(r) = RelTy and kind(s) = RelTy and right(r) = left(s),
@@ -1735,12 +1731,11 @@ pub comp relation_op {
     expect image_of_sets_only: when op = Image and kind(s) != SetTy, not accepted?
 }
 
-pub comp pair_membership {
-    in x: Ty             -- the type of the pair's first member
-    in y: Ty             -- of its second
-    in r: Ty             -- the type of the right operand of `in`
-    pub det out accepted?
-
+pub proc pair_membership(
+    x: Ty,               -- the type of the pair's first member
+    y: Ty,               -- of its second
+    r: Ty,               -- the type of the right operand of `in`
+): (det accepted?) {
     ensure rule: accepted? iff (kind(r) = ValueType::RelTy and left(r) = x and right(r) = y)
 
     expect pair_of_relation: when kind(r) = ValueType::RelTy and left(r) = x and right(r) = y, accepted?
@@ -1756,7 +1751,7 @@ pub comp pair_membership {
 receiver. Methods belong to their type, as fields belong to a record: they
 are not items, so they are never imported, and a spec's own `fn len`
 never clashes with one. In `a.b`, `a` is first a binder of a `match`
-arm, then an instance, then a variable, and then a
+arm, then a call, then a variable, and then a
 [constant](Items.md#constants): a record value, whose field `b` it reads,
 or a value of a type with methods. A record has no methods.
 
@@ -1785,10 +1780,7 @@ since those laws are what the lint relies on:
 
 ```fren
 set_option fren.lint.eq_op "allow" in
-pub comp int_methods {
-    in x: Int
-    in y: Int
-
+pub proc int_methods(x: Int, y: Int) {
     expect abs_nonnegative: x.abs >= 0
     expect abs_cases: (x >= 0 and x.abs = x) or (x < 0 and x.abs = -x)
     expect abs_negation: (-x).abs = x.abs
@@ -1819,13 +1811,13 @@ be a `Nat`, but a `Nat`'s `abs` is better written as the `Nat`.
 ```fren
 pub enum NatOp { Div, Mod, Min, Max, Abs }
 
-pub comp nat_result {
+pub proc nat_result(
+    op: NatOp,
+    a_nat?,                  -- the dividend, or the receiver, is a `Nat`
+    b_nat?,                  -- the argument of `min` or `max` is a `Nat`
+    positive?,               -- the divisor of `div` or `mod` is positive
+): (det nat?) {
     use self::NatOp::{Abs, Div, Max, Min, Mod}
-    in op: NatOp
-    in a_nat?                -- the dividend, or the receiver, is a `Nat`
-    in b_nat?                -- the argument of `min` or `max` is a `Nat`
-    in positive?             -- the divisor of `div` or `mod` is positive
-    pub det out nat?
 
     ensure rule: nat? iff match op {
         Div | Mod => a_nat? and positive?,
@@ -1883,12 +1875,7 @@ set_option fren.lint.undecidable "allow" in
 set_option fren.lint.empty_argument "allow" in
 set_option fren.lint.manual_method "allow" in
 set_option fren.lint.redundant_slicing "allow" in
-pub comp string_methods {
-    in s: String
-    in t: String
-    in i: Int
-    in n: Int
-
+pub proc string_methods(s: String, t: String, i: Int, n: Int) {
     expect empty_everywhere: s.contains?("") and s.starts_with?("") and s.ends_with?("")
     expect prefix_occurs: when s.starts_with?(t), s.contains?(t)
     expect suffix_occurs: when s.ends_with?(t), s.contains?(t)
@@ -1953,16 +1940,16 @@ set_option fren.lint.empty_argument "allow" in
 set_option fren.lint.manual_method "allow" in
 set_option fren.lint.redundant_method_chain "allow" in
 set_option fren.lint.redundant_slicing "allow" in
-pub comp collection_methods {
-    in p: Seq<Int>
-    in q: Seq<Int>
-    in i: Int
-    in n: Int
-    in x: Int
-    in s: Set<Int>
-    in t: Set<Int>
-    in r: Rel<Bool, Bool>
-
+pub proc collection_methods(
+    p: Seq<Int>,
+    q: Seq<Int>,
+    i: Int,
+    n: Int,
+    x: Int,
+    s: Set<Int>,
+    t: Set<Int>,
+    r: Rel<Bool, Bool>,
+) {
     expect rev_twice: q.rev.rev = q
     expect rev_length: q.rev.len = q.len
     expect concat_length: (p ++ q).len = p.len + q.len
@@ -2013,7 +2000,11 @@ pub enum Method {
     Inverse, Closure, Image, Domain, Range, Update, Rev, Abs, Min, Max,
 }
 
-pub comp method_type {
+pub proc method_type(method: Method, receiver: ValueType, ordered?): (
+    det accepted?,
+    det result: ValueType,
+    det n_params: Int,
+) {
     use self::Method::{
         Abs,
         At,
@@ -2038,14 +2029,8 @@ pub comp method_type {
         Update,
     }
     use self::ValueType::{BoolTy, EnumTy, IntTy, NatTy, RecordTy, RelTy, SeqTy, SetTy, StringTy}
-    in method: Method
-    in receiver: ValueType
-    in ordered?
 
     assume ordered_kinds: when ordered?, receiver in {StringTy, EnumTy, RecordTy}
-    pub det out accepted?
-    pub det out result: ValueType
-    pub det out n_params: Int
 
     ensure receivers: accepted? iff match method {
         Card => receiver in {SetTy, RelTy},
@@ -2129,11 +2114,10 @@ from the code points of the characters before and after its `-`:
 ```fren
 type CodePoint := Int is 0..=MAX_CHAR
 
-pub comp char_range {
-    in low: CodePoint    -- the code point of the character before `-`
-    in high: CodePoint   -- the code point of the character after it
-    pub det out accepted?
-
+pub proc char_range(
+    low: CodePoint,      -- the code point of the character before `-`
+    high: CodePoint,     -- the code point of the character after it
+): (det accepted?) {
     ensure rule: accepted? iff low <= high
 
     expect singleton_ok: when low = high, accepted?
@@ -2168,18 +2152,19 @@ pub fn plan_of(k: ValueType, wrapper?): Plan := match k {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub comp order_plan {
-    in t: Ty
-    in ordered_items: Set<TypeName>   -- the enumerations, records and newtypes declared `ordered`
-    in fields: Seq<FieldName>         -- for a record: its fields, in the order declared
-    in field_types: Seq<Ty>           -- their types, in the same order
-    in compared: Seq<FieldName>       -- for a record: the fields that its plan compares, in order
-    in field_plans: Seq<Plan>         -- and the kind of each one's plan
-    in k: Int                         -- any position among the fields
-
+pub proc order_plan(
+    t: Ty,
+    ordered_items: Set<TypeName>,     -- the enumerations, records and newtypes declared `ordered`
+    fields: Seq<FieldName>,           -- for a record: its fields, in the order declared
+    field_types: Seq<Ty>,             -- their types, in the same order
+    compared: Seq<FieldName>,         -- for a record: the fields that its plan compares, in order
+    field_plans: Seq<Plan>,           -- and the kind of each one's plan
+    k: Int,                           -- any position among the fields
+): (
+    planned?,                         -- `t` has a plan
+    plan: Plan,
+) {
     assume aligned: field_types.len = fields.len
-    pub out planned?                  -- `t` has a plan
-    pub out plan: Plan
 
     ensure only_ordered: when planned?, ordered_in?(kind(t), type_name(t), ordered_items)
     ensure kind_of_plan: when planned?, plan = plan_of(kind(t), newtype?(t))
@@ -2203,12 +2188,14 @@ checks in both front ends:
 pub enum Comparison { Less, Equal, Greater }
 
 set_option fren.lint.undecidable "allow" in
-pub comp lexicographic {
+pub proc lexicographic(
+    fields: Seq<Comparison>,      -- how each field of one value compares with the other's, in order
+    k: Int,                       -- any position among the fields
+): (
+    decider: Int,                 -- the first field that differs, `-1` if none does
+    result: Comparison,           -- how the values compare
+) {
     use self::Comparison::Equal
-    in fields: Seq<Comparison>    -- how each field of one value compares with the other's, in order
-    in k: Int                     -- any position among the fields
-    pub out decider: Int          -- the first field that differs, `-1` if none does
-    pub out result: Comparison    -- how the values compare
 
     ensure decided: when decider != -1, 0 <= decider < fields.len and fields[decider] != Equal
     ensure earliest: when 0 <= k < fields.len and fields[k] != Equal, 0 <= decider <= k
@@ -2246,7 +2233,14 @@ pub enum Operator {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub comp operator_type {
+pub proc operator_type(
+    op: Operator,
+    a: Ty,
+    b: Ty,
+    cond: Ty,
+    unders: Rel<Ty, Ty>,     -- (n, under(n)): the underlying type of a newtype `n`, for the chain of `a`
+    ordered_items: Set<TypeName>,    -- the enumerations, records and newtypes declared `ordered`
+): (accepted?, result: ValueType) {
     use self::Operator::{
         Addition,
         Concat,
@@ -2273,12 +2267,6 @@ pub comp operator_type {
         SetTy,
         StringTy,
     }
-    in op: Operator
-    in a: Ty
-    in b: Ty
-    in cond: Ty
-    in unders: Rel<Ty, Ty>   -- (n, under(n)): the underlying type of a newtype `n`, for the chain of `a`
-    in ordered_items: Set<TypeName>  -- the enumerations, records and newtypes declared `ordered`
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
@@ -2286,17 +2274,15 @@ pub comp operator_type {
     assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
     assume records: when newtype?(under(a)), kind(under(a)) = RecordTy
     assume base: unless newtype?(under(a)), unders.image({under(a)}) = {}
-    pub out accepted?
-    pub out result: ValueType
 
     -- Whether `a` is ordered, and whether a newtype `a` has `+` or `-`.
-    inst order: ordered_type { base := a, patterned? := false, ordered_items }
-    inst sums: newtype_operator {
-        op := if op = Subtraction then NewtypeOp::Subtraction else NewtypeOp::Addition,
-        underlying := under(a),
-        ordered? := order.ordered?,
+    call order := ordered_type(a, false, ordered_items)
+    call sums := newtype_operator(
+        if op = Subtraction then NewtypeOp::Subtraction else NewtypeOp::Addition,
+        under(a),
+        order.ordered?,
         unders,
-    }
+    )
 
     ensure accepted: accepted? iff match op {
         Logic => kind(a) = BoolTy and kind(b) = BoolTy,
@@ -2374,17 +2360,17 @@ pub comp operator_type {
 
 ## Names
 
-A path names a variable of the enclosing component, a binder of an
+A path names a variable of the enclosing procedure, a binder of an
 enclosing [`match` arm](#matches), a bound name of an enclosing
 [quantifier](Quantifiers.md) or a name of an enclosing [`let` or
 `where`](Let.md) (the innermost, which may
-[shadow](Components.md#shadowing) the others and the variables), a
+[shadow](Procedures.md#shadowing) the others and the variables), a
 [constant](Items.md#constants), a [function](#function-applications) that
 it applies, a record that it builds, or a variant (see [Modules and
 visibility](Modules.md#resolution)). A constant stands for its value. A variant can be written
 with its enumeration's name, `Mode::Heat`, or by its bare name once brought
-into scope by `use`. `w.x` names the variable `x` of the instance `w` (see
-[Instances](Instances.md#instance-variables)), or of the binder `w` of a
+into scope by `use`. `w.x` names the variable `x` of the call `w` (see
+[Calls](Calls.md#call-variables)), or of the binder `w` of a
 [global expectation](Global.md), and otherwise reads the field `x` of
 the value `w`, a variable or a [constant](Items.md#constants) (see
 [Records](#records)), or applies its [method](#methods) `x`.

@@ -3,9 +3,6 @@
 -- warning says so, and no mutant is selected.
 mod m
 
-pub comp c {
-    in x: Int
-    pub out y?
-
+pub proc c(x: Int): (y?) {
     ensure r: y? iff x > 1
 }

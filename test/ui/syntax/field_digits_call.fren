@@ -1,6 +1,6 @@
 -- The field of a newtype is not a method.
 pub struct Ms(Int)
-comp c { in t: Ms pub out d: Int ensure r: d = t.0(1) }
+proc c(t: Ms): (d: Int) { ensure r: d = t.0(1) }
 --~^[cli] error: expected a member
 --~^^[hosted] error: unexpected token '('
 --@ exit: 2

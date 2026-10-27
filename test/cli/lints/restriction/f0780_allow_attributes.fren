@@ -7,9 +7,6 @@ enum Mode { Heat, Cool }
 
 use self::Mode::*
 
-comp heating {
-    in mode: Mode
-    pub out on?
-
+proc heating(mode: Mode): (on?) {
     ensure rule: on? iff mode = Heat
 }

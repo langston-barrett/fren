@@ -1,6 +1,3 @@
-comp c {
-    in b?
-    pub out p?
-
+proc c(b?): (p?) {
     ensure r: p? iff (b?).contains?(1)
 }

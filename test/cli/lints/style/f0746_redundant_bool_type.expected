@@ -1,8 +1,8 @@
 warning[F0746]: `ready?` is a `Bool` by its name
- --> test/cli/lints/style/f0746_redundant_bool_type.fren:2:23
+ --> test/cli/lints/style/f0746_redundant_bool_type.fren:2:18
   |
-2 | pub comp c { in ready?: Bool pub out p? ensure r: p? iff ready? }
-  |                       ^^^^^^ implied by the `?`
+2 | pub proc c(ready?: Bool): (p?) { ensure r: p? iff ready? }
+  |                  ^^^^^^ implied by the `?`
   |
   = note: a name that ends in `?` is a `Bool`, and only such a name is
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0746]: `ready?` is a `Bool` by its name
   = help: to allow it, `set_option fren.lint.redundant_bool_type "allow"`
 help: remove `: Bool`
   |
-2 - pub comp c { in ready?: Bool pub out p? ensure r: p? iff ready? }
-2 + pub comp c { in ready? pub out p? ensure r: p? iff ready? }
+2 - pub proc c(ready?: Bool): (p?) { ensure r: p? iff ready? }
+2 + pub proc c(ready?): (p?) { ensure r: p? iff ready? }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

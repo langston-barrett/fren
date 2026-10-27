@@ -3,12 +3,7 @@
 -- (`lang::test_scope`).
 enum Reply { Empty, Value(Int) }
 
-comp shadowing {
-    in r: Reply
-    in v: Int
-    pub out w: Int
-    pub out m: Int
-
+proc shadowing(r: Reply, v: Int): (w: Int, m: Int) {
     -- The `then` branch's `v` is the payload, and the `else` branch's the input.
     ensure same: w = (if r is Reply::Value(v!) then v else v)
     ensure method: m = (if r is Reply::Value(v!) then v.max(0) else v.max(0))
@@ -18,11 +13,7 @@ comp shadowing {
 }
 
 -- Without a binder, `same_branches` reports it.
-comp plain {
-    in r: Reply
-    in v: Int
-    pub out w: Int
-
+proc plain(r: Reply, v: Int): (w: Int) {
     ensure same: w = (if r is Reply::Value(_) then v else v)   --~ warning: both branches of `if` are written the same
 }
 
@@ -30,12 +21,7 @@ comp plain {
 -- two are the payload and the input (`lint::branches_sharing_code`), nor
 -- `same_branches` compare branches that mention no binder.
 set_option fren.lint.branches_sharing_code "warn" in
-comp shared_binders {
-    in r: Reply
-    in v: Int
-    pub out w: Int
-    pub out u: Int
-
+proc shared_binders(r: Reply, v: Int): (w: Int, u: Int) {
     ensure sum: w = (if r is Reply::Value(v!) then 1 + v else 2 + v)
     ensure constant: u = (if r is Reply::Value(v!) and v > 0 then 1 else 1)
 
@@ -45,23 +31,13 @@ comp shared_binders {
 
 -- Without a binder, `branches_sharing_code` reports it.
 set_option fren.lint.branches_sharing_code "warn" in
-comp shared_plain {
-    in r: Reply
-    in v: Int
-    pub out w: Int
-
+proc shared_plain(r: Reply, v: Int): (w: Int) {
     ensure sum: w = (if r is Reply::Value(_) then 1 + v else 2 + v)   --~ warning: both branches of this `if` end with `+ v`
 }
 
 -- Nor does `eq_op` compare operands that see different binders: the right
 -- operand's first `v` is the left's payload (`lint::eq_op`).
-comp eq_binders {
-    in r: Reply
-    in v: Int
-    pub out w?
-    pub out x?
-    pub out y?
-
+proc eq_binders(r: Reply, v: Int): (w?, x?, y?) {
     ensure both: w? iff ((v > 1 and r is Reply::Value(v!) and v < 3) and (v > 1 and r is Reply::Value(v!) and v < 3))
     ensure one: x? iff (v > 1 and r is Reply::Value(v!) and v < 3)
     -- Without a binder, it fires.

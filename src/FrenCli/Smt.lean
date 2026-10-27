@@ -9,7 +9,7 @@ import cvc5
 # The cvc5 backend
 
 Runs the shared check algorithms (`FrenCore.Check`) with cvc5, linked into the
-binary. Formulas are SMT-LIB text over the comp's variables; each query is a
+binary. Formulas are SMT-LIB text over the procedure's variables; each query is a
 fresh solver, and a query asked again is answered from a cache
 (`QueryCache`).
 -/
@@ -423,13 +423,13 @@ def variantOfValue (dts : Array DataDecl) (ty : Fren.Core.Ty) (v : String) :
     return ({ name := lastTwo head, arity := d.ctors[idx]!.2.size }, idx, d, args)
   | _ => none
 
-/-- The variables of `c` other than its `in`s, renamed to their second
+/-- The variables of `c` other than its parameters, renamed to their second
 copies (`Fren.Core.primed`). -/
 def primes (c : CComp) : Array CVar :=
   c.vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map fun v =>
     { v with name := Fren.Core.primed v.name }
 
-/-- Renames each variable of `c` other than its `in`s to its second copy.
+/-- Renames each variable of `c` other than its parameters to its second copy.
 Like `rename`, relies on variables being quoted symbols. -/
 def prime (c : CComp) (smt : String) : String :=
   -- Functions are not variables, so they are never renamed.
@@ -617,7 +617,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let heads := c.funFacts.toArray.filterMap fun (h, _) => if h.startsWith "|::" then none else some h
     let appsOf (f : String) := (factTermsIn peeled heads f).map fun t => ((peeled.idxOf? t).map (apps[·]!)).getD t
     let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs c.funFacts) hyps goal
-    -- A component whose queries may quantify sets `fmf-bound`
+    -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type

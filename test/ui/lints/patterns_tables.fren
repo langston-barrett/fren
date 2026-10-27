@@ -10,116 +10,133 @@ enum Reply { Ok(Shape), Err(Int) }
 enum Pair { Two(Shape, Int), None }
 
 -- `collapsible_match`.
-comp collapsible {
-    in r: Reply
-    in p: Pair
-    in k: Int
-    pub det out a: Int := match r {
+proc collapsible(r: Reply, p: Pair, k: Int): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+    det i: Int,
+    det j: Int,
+    det h: Int,
+) {
+    out a := match r {
         Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 },
         --~^ warning: this `match` on `s` can be part of the arm's pattern
         _ => 0,
     }
     -- An inner pattern binds a name of its own.
-    pub det out b: Int := match r { Reply::Ok(s) => match s { Shape::Circle(n) => n, _ => 0 }, _ => 0 }
+    out b := match r { Reply::Ok(s) => match s { Shape::Circle(n) => n, _ => 0 }, _ => 0 }
     --~^ warning: this `match` on `s` can be part of the arm's pattern
     -- The binder is mentioned in a body.
-    pub det out c: Int := match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => if s = Shape::Empty then 2 else 3, _ => 0 }, _ => 0 }
+    out c := match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => if s = Shape::Empty then 2 else 3, _ => 0 }, _ => 0 }
     -- The `_` arms differ.
-    pub det out d: Int := match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, _ => 2 }, _ => 0 }
+    out d := match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, _ => 2 }, _ => 0 }
     -- No `_` arm after it: the outer `match` names the other variant.
-    pub det out e: Int := match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, _ => 0 }, Reply::Err(_) => 0 }
+    out e := match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, _ => 0 }, Reply::Err(_) => 0 }
     -- Another binder of the payload, which the bodies may mention.
-    pub det out f: Int := match p {
+    out f := match p {
         Pair::Two(s, n) => match s { Shape::Empty => n, _ => 0 },
         --~^ warning: this `match` on `s` can be part of the arm's pattern
         _ => 0,
     }
     -- The payload's other pattern is not `_` or a binder.
-    pub det out g: Int := match p { Pair::Two(s, 0) => match s { Shape::Empty => 1, _ => 0 }, _ => 0 }
+    out g := match p { Pair::Two(s, 0) => match s { Shape::Empty => 1, _ => 0 }, _ => 0 }
     -- The inner `_` arm's body mentions a binder of the arm's pattern, which
     -- the outer `_` arm's body, written the same, does not.
-    pub det out i: Int := match p {
+    out i := match p {
         Pair::Two(s, k!) => match s { Shape::Empty => 1, _ => k },
         _ => k,
     }
     -- A guard.
-    pub det out j: Int := match r { Reply::Ok(s) => match s { Shape::Circle(_) if k > 0 => 1, _ => 0 }, _ => 0 }
+    out j := match r { Reply::Ok(s) => match s { Shape::Circle(_) if k > 0 => 1, _ => 0 }, _ => 0 }
     -- An inner pattern binds a name that the arm's pattern binds.
-    pub det out h: Int := match p {
+    out h := match p {
         Pair::Two(s, n) => match s { Shape::Circle(n!) => n, _ => 0 },
         _ => 0,
     }
 }
 
 -- The lints of or-patterns.
-comp or_patterns {
-    in n: Int
-    in s: Shape
-    in r: Reply
-    pub det out a: Int := match n { 1 | 2 | 3 => 1, _ => 0 }
+proc or_patterns(n: Int, s: Shape, r: Reply): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g?,
+    det h?,
+) {
+    out a := match n { 1 | 2 | 3 => 1, _ => 0 }
     --~^ warning: this or-pattern matches the range `1..=3`
-    pub det out b: Int := match n { ..=0 | 1 | 2..5 => 1, 5 => 2, _ => 3 }
+    out b := match n { ..=0 | 1 | 2..5 => 1, 5 => 2, _ => 3 }
     --~^ warning: this or-pattern matches the range `..=4`
     -- Two literals, and alternatives with a gap.
-    pub det out c: Int := match n { 1 | 2 => 1, 4 | 6 | 7 => 2, _ => 0 }
-    pub det out d: Int := match s { Shape::Circle(_) => 1, Shape::Square(_) | _ => 0 }
+    out c := match n { 1 | 2 => 1, 4 | 6 | 7 => 2, _ => 0 }
+    out d := match s { Shape::Circle(_) => 1, Shape::Square(_) | _ => 0 }
     --~^ warning: this or-pattern has `_` as an alternative
-    pub det out e: Int := match s { Shape::Circle(1) | Shape::Circle(2) => 1, _ => 0 }
+    out e := match s { Shape::Circle(1) | Shape::Circle(2) => 1, _ => 0 }
     --~^ warning: these alternatives differ only in one value of the payload
     -- Not next to each other.
-    pub det out f: Int := match s { Shape::Circle(1) | Shape::Square(1) | Shape::Circle(2) => 1, _ => 0 }
+    out f := match s { Shape::Circle(1) | Shape::Square(1) | Shape::Circle(2) => 1, _ => 0 }
     -- Nested, and in a pattern test.
-    pub det out g? := r is Reply::Ok(Shape::Circle(1) | Shape::Circle(2) | Shape::Circle(3))
+    out g? := r is Reply::Ok(Shape::Circle(1) | Shape::Circle(2) | Shape::Circle(3))
     --~^ warning: these alternatives differ only in one value of the payload
-    pub det out h? := r is Reply::Err(7 | 8 | 9)
+    out h? := r is Reply::Err(7 | 8 | 9)
     --~^ warning: this or-pattern matches the range `7..=9`
 }
 
 -- `match_overlapping_arm`.
-comp overlapping {
-    in n: Int
-    pub det out a: Int := match n { 0..=10 => 1, 5..=15 => 2, _ => 3 }
+proc overlapping(n: Int): (det a: Int, det b: Int, det c: Int, det d: Int) {
+    out a := match n { 0..=10 => 1, 5..=15 => 2, _ => 3 }
     --~^ warning: this range overlaps `0..=10`, an earlier arm's pattern
     -- An exception first, and ranges that meet only at a bound of neither.
-    pub det out b: Int := match n { 5 => 1, 0..=10 => 2, 11.. => 3, _ => 4 }
-    pub det out c: Int := match n { ..=0 => 1, -5..=5 => 2, _ => 3 }
+    out b := match n { 5 => 1, 0..=10 => 2, 11.. => 3, _ => 4 }
+    out c := match n { ..=0 => 1, -5..=5 => 2, _ => 3 }
     --~^ warning: this range overlaps `..=0`, an earlier arm's pattern
     -- A guard.
-    pub det out d: Int := match n { 0..=10 if n > 3 => 1, 5..=15 => 2, _ => 3 }
+    out d := match n { 0..=10 if n > 3 => 1, 5..=15 => 2, _ => 3 }
 }
 
 -- `match_bool`.
-comp bools {
-    in b?
-    in x: Int
-    pub det out a: Int := match b? { true => x, false => 0 }
+proc bools(b?, x: Int): (det a: Int, det c: Int, det d?, det e: Int, det f: Int) {
+    out a := match b? { true => x, false => 0 }
     --~^ warning: this `match` on a `Bool` is an `if`
-    pub det out c: Int := 2 * match b? { false => x, _ => 1 }
+    out c := 2 * match b? { false => x, _ => 1 }
     --~^ warning: this `match` on a `Bool` is an `if`
     -- `match_like_membership`, and the same bodies.
-    pub det out d? := match b? { true => false, false => true }
+    out d? := match b? { true => false, false => true }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
-    pub det out e: Int := match b? { true => x, false => x }
+    out e := match b? { true => x, false => x }
     -- A guard.
-    pub det out f: Int := match b? { true if x > 0 => x, _ => 0 }
+    out f := match b? { true if x > 0 => x, _ => 0 }
 }
 
 -- `manual_table`, and `same_branches` on tables.
 enum Mode { Heat, Cool, Off }
 
-comp tables {
-    in x: Int
-    in m: Mode
-    pub det out a: Int := if x > 10 then 2 else if x < 0 then 1 else 0
+proc tables(x: Int, m: Mode): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+) {
+    out a := if x > 10 then 2 else if x < 0 then 1 else 0
     --~^ warning: this chain of `if` chooses a value by conditions, as a table does
     -- One test, and variant tests of one scrutinee.
-    pub det out b: Int := if x > 10 then 2 else 0
-    pub det out c: Int := if m = Mode::Heat then 1 else if m = Mode::Cool then 2 else 0
-    pub det out d: Int := table { x > 0 => x + 1, _ => x + 1 }
+    out b := if x > 10 then 2 else 0
+    out c := if m = Mode::Heat then 1 else if m = Mode::Cool then 2 else 0
+    out d := table { x > 0 => x + 1, _ => x + 1 }
     --~^ warning: every row of this table has a value written the same
-    pub det out e: Int := table { x > 0 => 1, x <= 0 => 1 }
+    out e := table { x > 0 => 1, x <= 0 => 1 }
     --~^ warning: every row of this table has a value written the same
-    pub det out f: Int := table { x > 0 => 1, _ => 2 }
-    pub det out g: Int := table { _ => x }
+    out f := table { x > 0 => 1, _ => 2 }
+    out g := table { _ => x }
     --~^ warning: every row of this table has a value written the same
 }

@@ -1,3 +1,3 @@
 -- A cardinality operator without arguments (F0367).
 -- fren-covers: lang::cardinality_args
-comp c { in a? expect e: exactly_one?() or a? }
+proc c(a?) { expect e: exactly_one?() or a? }

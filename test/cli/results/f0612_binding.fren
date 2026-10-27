@@ -2,10 +2,8 @@
 -- An expectation whose condition's pattern test binds a name has a trigger,
 -- as one that binds none does: no behaviour reaches either.
 enum Reply { Empty, Value(Int) }
-comp q {
-    in r: Reply
+proc q(r: Reply): (det w: Int) {
     assume only: r = Reply::Empty
-    pub det out w: Int
     ensure x: w = 0
     expect bound: when r is Reply::Value(v), v = 1
     expect unbound: when r is Reply::Value(_), w = 1

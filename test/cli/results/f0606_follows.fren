@@ -1,7 +1,5 @@
 -- A redundant guarantee (F0606).
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure y_def: y = x + 1
     ensure bigger: y > x
 }

@@ -1,32 +1,24 @@
 -- Components checked at once are reported in order, as one at a time
 -- (`Reqs/Cli#parallel-checking`).
 --@ args: check --jobs 3
-comp a {
-    in x: Int
-    pub out y: Int
+proc a(x: Int): (y: Int) {
     ensure r: y >= x
     expect positive: y > 0
 }
 
-comp b {
-    in x: Int
-    pub det out y: Int
+proc b(x: Int): (det y: Int) {
     ensure above: y >= x
     ensure below: y <= x + 1
 }
 
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
     expect bigger: y > x
     cover equal: y = 0
 }
 
-comp d {
-    in x: Int
+proc d(x: Int): (y: Int) {
     assume small: x < 0
     assume big: x > 0
-    pub out y: Int
     ensure r: y = x
 }

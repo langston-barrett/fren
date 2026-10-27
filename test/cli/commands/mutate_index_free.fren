@@ -2,11 +2,7 @@
 -- Dropping the guarded conjunct leaves `r` with no index. The formula of
 -- its indexes is then `true`, so the solver is asked, and shows that the
 -- mutant means what the spec means: it is equivalent, and not reported.
-comp c {
-    in x: Int
-    in q: Seq<Int>
-    pub out ok?
-
+proc c(x: Int, q: Seq<Int>): (ok?) {
     ensure r: ok? iff (x > 0 and (q = [] or q[0] < q[0] + 1))
 
     expect positive: when ok?, x > 0

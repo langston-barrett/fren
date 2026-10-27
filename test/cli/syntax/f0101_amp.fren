@@ -1,2 +1,2 @@
 -- A lone `&` (F0101).
-comp c { in a? in b? pub out d? ensure r: d? iff a? & b? }
+proc c(a?, b?): (d?) { ensure r: d? iff a? & b? }

@@ -9,7 +9,7 @@ The case of a name says what it names:
 
 | Case | Names | Lint |
 |---|---|---|
-| `snake_case` | modules, components, variables, fields, functions, instances, constraints, global expectations and their binders, the binders of `match` patterns, the bound names of quantifiers, and the names of `let` and `where` clauses | `non_snake_case` |
+| `snake_case` | modules, procedures, variables, fields, functions, calls, constraints, global expectations and their binders, the binders of `match` patterns, the bound names of quantifiers, and the names of `let` and `where` clauses | `non_snake_case` |
 | `CamelCase` | enumerations, variants, records and abstract types | `non_camel_case_types` |
 | `UPPER_CASE` | constants | `non_upper_case_constants` |
 
@@ -24,10 +24,8 @@ pub enum Case { Snake, Camel, Upper }
 use self::Case::{Camel, Snake, Upper}
 
 set_option fren.evidence "enumerated" in
-pub comp naming_case {
+pub proc naming_case(what: Named): (det case: Case) {
     use self::Named::{AbstractType, Constant, Enumeration, Record, TypeAlias, Variant}
-    in what: Named
-    pub det out case: Case
 
     ensure rule: case = match what {
         Enumeration | Variant | Record | AbstractType | TypeAlias => Camel,
@@ -48,11 +46,7 @@ own, though `case_split_guarantees` would suggest merging them:
 
 ```fren
 set_option fren.lint.case_split_guarantees "allow" in
-pub comp in_case {
-    in case: Case
-    in name: String
-    pub det out conventional?
-
+pub proc in_case(case: Case, name: String): (det conventional?) {
     ensure snake: when case = Snake, conventional? iff not name.matches?(r".*[A-Z].*")
     ensure camel: when case = Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
     ensure upper: when case = Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")

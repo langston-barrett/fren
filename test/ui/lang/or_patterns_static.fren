@@ -4,30 +4,30 @@ set_option fren.lint.dead_code "allow"
 enum S { A(Int), B, C(Bool, Int) }
 enum T { X, Y }
 
-comp binds { in s: S pub out z: Int ensure r: z = match s { S::A(n) | S::C(_, n) => n, _ => 0 } }
+proc binds(s: S): (z: Int) { ensure r: z = match s { S::A(n) | S::C(_, n) => n, _ => 0 } }
 --~^ error: an or-pattern cannot bind `n`
-comp repeated { in s: S pub out z: Int ensure r: z = match s { S::B | S::B => 0, _ => 1 } }
+proc repeated(s: S): (z: Int) { ensure r: z = match s { S::B | S::B => 0, _ => 1 } }
 --~^ error: unreachable pattern
-comp earlier { in s: S pub out z: Int ensure r: z = match s { S::B => 0, S::A(_) | S::B => 1, _ => 2 } }
+proc earlier(s: S): (z: Int) { ensure r: z = match s { S::B => 0, S::A(_) | S::B => 1, _ => 2 } }
 --~^ error: unreachable pattern
-comp all_covered { in s: S pub out z: Int ensure r: z = match s { S::A(_) | S::B | S::C(_, _) => 0, _ => 1 } }
+proc all_covered(s: S): (z: Int) { ensure r: z = match s { S::A(_) | S::B | S::C(_, _) => 0, _ => 1 } }
 --~^ error: unreachable arm
-comp missing { in s: S pub out z: Int ensure r: z = match s { S::A(_) | S::B => 0 } }
+proc missing(s: S): (z: Int) { ensure r: z = match s { S::A(_) | S::B => 0 } }
 --~^ error: non-exhaustive match: `S::C(_, _)` not covered
-comp other { in s: S pub out z: Int ensure r: z = match s { S::B | T::X => 0, _ => 1 } }
+proc other(s: S): (z: Int) { ensure r: z = match s { S::B | T::X => 0, _ => 1 } }
 --~^ error: expected a variant of `S`, but this is a variant of `T`
 
 -- A component's `use` is not in scope outside it.
-comp opens { use self::T::* in t: T pub out y? ensure r: y? iff t = X }   --~ warning: `use T::*` imports every variant of `T`
-comp outside { in t: T pub out y? ensure r: y? iff t = X }   --~ error: cannot find `X` in this scope
-comp unused { use self::T::X in t: T pub out y? ensure r: y? iff t = T::Y }
+proc opens(t: T): (y?) { use self::T::* ensure r: y? iff t = X }   --~ warning: `use T::*` imports every variant of `T`
+proc outside(t: T): (y?) { ensure r: y? iff t = X }   --~ error: cannot find `X` in this scope
+proc unused(t: T): (y?) { use self::T::X ensure r: y? iff t = T::Y }
 --~^ warning: unused import `T::X`
 use self::T::Y   --~ warning: unused import `T::Y`
 enum U { Y, Z }
 -- A component's import shadows its module's.
-comp shadows { use self::U::Y in u: U pub out y? ensure r: y? iff u = Y }
-comp twice { use self::T::X use self::T::X in t: T pub out y? ensure r: y? iff t = X }
---~^ error: the name `X` is already imported into component `twice`
+proc shadows(u: U): (y?) { use self::U::Y ensure r: y? iff u = Y }
+proc twice(t: T): (y?) { use self::T::X use self::T::X ensure r: y? iff t = X }
+--~^ error: the name `X` is already imported into procedure `twice`
 --~^^ warning: unused import `T::X`
 
 --@ exit: 2

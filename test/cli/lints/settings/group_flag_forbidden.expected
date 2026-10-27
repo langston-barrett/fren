@@ -1,18 +1,18 @@
 error[F0725]: this arm has the same body as the arm `E::A`
-  --> test/cli/lints/settings/group_flag_forbidden.fren:10:51
-   |
-10 |     ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 }
-   |                                                   ^^^^^^^^^ the same body
-   |
-   = help: merge them into one arm, `E::A | E::C => 1`
-   = help: `fren fix` can fix this
-   = note: `match_same_arms` is set to `forbid`
+ --> test/cli/lints/settings/group_flag_forbidden.fren:7:51
+  |
+7 |     ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 }
+  |                                                   ^^^^^^^^^ the same body
+  |
+  = help: merge them into one arm, `E::A | E::C => 1`
+  = help: `fren fix` can fix this
+  = note: `match_same_arms` is set to `forbid`
 
 warning[F0720]: `r` could be the definition of `n`
- --> test/cli/lints/settings/group_flag_forbidden.fren:8:13
+ --> test/cli/lints/settings/group_flag_forbidden.fren:6:16
   |
-8 |     pub out n: Int
-  |             ^ constrained by one equation
+6 | proc c(e: E): (n: Int) {
+  |                ^ constrained by one equation
   |
   = help: write the expression as `n`'s definition, `out n := ...`, and remove `r`
   = note: `definable_output` is set to `warn` by its group, `pedantic`

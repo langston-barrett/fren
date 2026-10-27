@@ -39,7 +39,7 @@
   `src/FrenTest`, e.g. the shape of generated definitions.
 - **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by
   the `fren` command under `lake test`.
-- **Conformance corpus** (`lake test`): random components whose
+- **Conformance corpus** (`lake test`): random procedures whose
   constraints are all in the [decidable core](../Lang/Decidability.md),
   one corpus each for strings, sets, relations and sequences, from a fixed
   seed, must be checked with no inconclusive result: the core promises
@@ -90,12 +90,12 @@
     must survive, not be shown equivalent: a mutant that some check killed
     means something else than the spec, so this also tests the solver's
     answers about equivalence;
-  - *selection sound*: checking only the components whose fingerprint a
+  - *selection sound*: checking only the procedures whose fingerprint a
     mutant changes (`Mutate.fingerprint`) decides what checking every
-    component does, and every check that kills the mutant then also kills
-    it when every check of every component is run;
+    procedure does, and every check that kills the mutant then also kills
+    it when every check of every procedure is run;
   - *verdicts sound*: each check that kills a mutant, when every check of
-    every component is run, passes under `fren check` of the spec and fails
+    every procedure is run, passes under `fren check` of the spec and fails
     under `fren check` of the mutant's text, and a mutant that is not
     killed fails no check there that passes on the spec.
 
@@ -128,7 +128,7 @@
   that they bound so, abstract types,
   and functions from them to `Bool`s, sets and relations of an enumeration
   or of `Bool`, and sequences of one that `range_*` constraints bound to
-  two elements, with instances, `det out`s, cover goals, global
+  two elements, with calls, `det` outputs, cover goals, global
   expectations, quantifiers over the enumeration and over `Bool`, and
   `Bool` tables, by conditions and over a `Bool` or an `Int`. Each index is guarded, before or after it, so that every
   constraint has a value whatever an index out of range is; a table has
@@ -149,7 +149,7 @@
   written to `DIR` (default `.lake/fuzz`) as a `.fren` file, with what
   differed in a comment. The verdicts of redundancy for `range_*`
   constraints are not compared, since without them brute force is not
-  exact. A component with too many behaviours to enumerate is skipped,
+  exact. A procedure with too many behaviours to enumerate is skipped,
   and counted in the summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--spec-timeout SECONDS]`):
@@ -160,8 +160,8 @@
   and notes on the same lines, the same summary, and the exit status
   that Lean's messages call for: 2 after a static error, else 1 when Lean
   reports an error, 3 when it reports a warning, and 0 otherwise. The specs aim at the
-  analyses that each front end implements on its own: constants, defined
-  outputs, defined and uninterpreted functions, instances, `match`, tables,
+  analyses that each front end implements on its own: constants, definitions
+  of results and `let` variables, defined and uninterpreted functions, calls, `match`, tables,
   string methods and `++`, products, orderings and `min` and `max` of an ordered
   enumeration, a newtype of `Int` and its operators, an enumeration with
   payloads, whose outputs' variants clash notes may give, and sets and

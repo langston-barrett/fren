@@ -1,6 +1,3 @@
-comp c {
-    in s: String
-    pub out n: Int
-
+proc c(s: String): (n: Int) {
     ensure r: n = s.length
 }

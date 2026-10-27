@@ -51,7 +51,7 @@ tested check::pattern_obligation: "test/ui/checks/pattern_obligations.fren", "te
 tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_payload.fren", "test/ui/lang/pattern_types_static.fren",
   "test/ui/lang/pattern_types_meaning.fren", "test/ui/lang/nat_fields.fren",
   "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"
-tested lang::modifiers: "test/cli/syntax/f0110_pub_in.fren", "test/cli/syntax/f0114_input_definition.fren", "test/cli/syntax/f0113_det_in.fren", "test/cli/syntax/f0113_pub_inst.fren"
+tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax/f0110_det_param.fren", "test/cli/syntax/f0113_det_assume.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
 tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",
@@ -78,7 +78,7 @@ tested lang::definition_type: "test/ui/lang/let.fren", "test/ui/lang/let_static.
 tested lang::definition_form: "test/ui/lang/let.fren", "test/ui/lang/quantifiers_let.fren", "test/ui/syntax/let_quantifier.fren",
   "test/ui/syntax/where_quantifier.fren", "test/ui/syntax/let_operand.fren", "test/ui/syntax/let_definition.fren",
   "test/cli/types/f0302_let_membership.fren", "test/cli/syntax/f0109_let.fren"
-tested inst::earlier: "test/ui/lang/instances_static.fren"
+tested call::earlier: "test/ui/lang/instances_static.fren"
 tested lint::history: "test/cli/lints/settings/f0709_forbid.fren", "test/cli/lints/settings/f0709_forbid_in_file.fren"
 tested lint::stepwise: "test/cli/lints/settings/f0709_forbid_in_file.fren"
 tested lang::identifier: "test/ui/syntax/lexical.fren", "test/ui/syntax/identifier.fren",

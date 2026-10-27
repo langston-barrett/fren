@@ -4,16 +4,12 @@
 mod lexref
 
 -- The precise rule, which the solver struggles with.
-pub comp word {
-    in text: String
-    pub det out accepted?
+pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
 }
 
 -- A simpler shape: a word never contains `..`, and never starts with a digit.
-pub comp shape {
-    in text: String
-    pub out accepted?
+pub proc shape(text: String): (accepted?) {
     ensure no_dots: when text.contains?(".."), not accepted?
     ensure no_digit: when text.starts_with?("1"), not accepted?
     expect dots_rejected: when text = "a..b", not accepted?
@@ -23,9 +19,7 @@ set_option fren.evidence "tested" in
 refine word_has_shape: word refines shape
 
 -- False: `word` accepts "ab", which `wrong` rejects.
-pub comp wrong {
-    in text: String
-    pub out accepted?
+pub proc wrong(text: String): (accepted?) {
     ensure never: when text != "", not accepted?
 }
 

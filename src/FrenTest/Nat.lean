@@ -10,12 +10,10 @@ mod nat_test
 
 pub fn count(Int): Nat
 
-pub comp stock {
-    in n: Nat
-    in m: Int
-    pub det out next: Nat := n + 1
-    pub det out prev: Int := n - 1
-    pub det out total: Int := n + m
+pub proc stock(n: Nat, m: Int): (det next: Nat, det prev: Int, det total: Int) {
+    out next := n + 1
+    out prev := n - 1
+    out total := n + m
 
     expect counted: count(m) + next >= 1
 }

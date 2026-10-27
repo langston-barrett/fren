@@ -1,6 +1,6 @@
 -- A `where` clause follows a whole constraint, not a part of one.
-comp c { in x: Int pub out y? ensure r: y? iff (x > z where z := 1) }
+proc c(x: Int): (y?) { ensure r: y? iff (x > z where z := 1) }
 --~^[cli] error: expected `)`, found keyword `where`
 --~^^[hosted] error: unexpected token 'where'; expected ')' or ','
-comp ok { in x: Int pub out y? ensure r: y? iff x > z where z := 1 }
+proc ok(x: Int): (y?) { ensure r: y? iff x > z where z := 1 }
 --@ exit: 2

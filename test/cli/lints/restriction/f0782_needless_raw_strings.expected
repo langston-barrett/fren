@@ -1,7 +1,7 @@
 warning[F0782]: this raw string literal needs no escapes
- --> test/cli/lints/restriction/f0782_needless_raw_strings.fren:8:43
+ --> test/cli/lints/restriction/f0782_needless_raw_strings.fren:5:43
   |
-8 |     ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
+5 |     ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
   |                                           ^^^^^^^^^^^ has no `\` and no `"`
   |
   = note: an ordinary literal of the same characters has the same value
@@ -9,8 +9,8 @@ warning[F0782]: this raw string literal needs no escapes
   = note: `needless_raw_strings` is set to `warn`
 help: write it as an ordinary literal
   |
-8 -     ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
-8 +     ensure rule: lower? iff text.matches?("[a-z]+")
+5 -     ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
+5 +     ensure rule: lower? iff text.matches?("[a-z]+")
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

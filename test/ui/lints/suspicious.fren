@@ -2,21 +2,16 @@
 -- `duplicate_elements` and `empty_argument`.
 set_option fren.lint.undecidable "allow"
 
-comp ops {
-    in x: Int
-    in y: Int
-    in a?
-    in t: Set<Int>
-    in q: Seq<Int>
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out n1: Int
-    pub out n2: Int
-    pub out p5?
-    pub out p6?
-
+proc ops(x: Int, y: Int, a?, t: Set<Int>, q: Seq<Int>): (
+    p1?,
+    p2?,
+    p3?,
+    p4?,
+    n1: Int,
+    n2: Int,
+    p5?,
+    p6?,
+) {
     ensure r1: p1? iff (x = x or y < y)
     --~^ warning: both operands of `=` are written the same
     --~^^ warning: both operands of `<` are written the same
@@ -32,16 +27,7 @@ comp ops {
 
 enum E { A, B }
 
-comp branches {
-    in x: Int
-    in a?
-    in b?
-    in e: E
-    pub out n: Int
-    pub out m: Int
-    pub out p?
-    pub out o?
-
+proc branches(x: Int, a?, b?, e: E): (n: Int, m: Int, p?, o?) {
     ensure r1: n = if a? then x + 1 else x + 1  --~ warning: both branches of `if` are written the same
     ensure r2: m = 2 * if a? then x else (x)  --~ warning: both branches of `if` are written the same
     ensure r3: p? iff b? and if a? then b? or x > 0 else b? or x > 0
@@ -51,30 +37,13 @@ comp branches {
     ensure r4: o? iff match e { E::A => b?, E::B => b? }
 }
 
-comp elements {
-    in x: Int
-    in y: Int
-    in r: Rel<Int, Int>
-    in q: Seq<Int>
-    pub out p?
-    pub out o?
-    pub out k?
-
+proc elements(x: Int, y: Int, r: Rel<Int, Int>, q: Seq<Int>): (p?, o?, k?) {
     ensure r1: p? iff x in {1, y, 1, 2, y}  --~ warning: `1`, `y` are repeated in this literal
     ensure r2: o? iff (x, y) in {(1, 2), (1, 2)}  --~ warning: `(1, 2)` is repeated in this literal
     ensure r3: k? iff q = [x, x] and r != {}
 }
 
-comp methods {
-    in s: String
-    in q: Seq<Int>
-    in i: Int
-    pub out p?
-    pub out o?
-    pub out n: Int
-    pub out k?
-    pub out l?
-
+proc methods(s: String, q: Seq<Int>, i: Int): (p?, o?, n: Int, k?, l?) {
     ensure r1: p? iff s.starts_with?("") or s.ends_with?("") or s.contains?("")
     --~^ warning: every string starts with `""`
     --~^^ warning: every string ends with `""`

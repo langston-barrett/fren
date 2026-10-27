@@ -1,14 +1,11 @@
--- A cover goal constrains nothing (`Reqs/Lang/Components#cover-goals`):
+-- A cover goal constrains nothing (`Reqs/Lang/Procedures#cover-goals`):
 -- an expectation that only a goal could make hold still fails, in the
 -- component and where it is instantiated, and a goal with a trigger has
 -- no vacuity result, even when its trigger can never hold: the summary
 -- counts no vacuity check.
 set_option fren.lint.chainable_comparison "allow"
 
-comp sensor {
-    in x: Int
-    pub out hot?
-
+proc sensor(x: Int): (hot?) {
     ensure r: hot? iff x > 100
     expect only_warm: x = 50                       --~ error: expectation `sensor::only_warm` does not hold
 
@@ -19,11 +16,8 @@ comp sensor {
     --~^^ warning: cover goal `never` has a trigger
 }
 
-comp reader {
-    in y: Int
-    pub out seen?
-
-    inst s: sensor { x := y }
+proc reader(y: Int): (seen?) {
+    call s := sensor(y)
 
     ensure r: seen? iff s.hot?
 

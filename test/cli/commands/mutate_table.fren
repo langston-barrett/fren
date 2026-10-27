@@ -3,10 +3,7 @@
 -- the rows' conditions and values are mutated.
 mod m
 
-pub comp c {
-    in x: Int
-    pub out y: Int
-
+pub proc c(x: Int): (y: Int) {
     ensure r: y = table {
         | x > 0 => 1,
         | x < 0 => 2,

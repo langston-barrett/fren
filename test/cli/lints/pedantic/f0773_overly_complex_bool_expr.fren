@@ -1,11 +1,7 @@
 -- `overly_complex_bool_expr`: absorption, and a contradiction.
 set_option fren.lint.overly_complex_bool_expr "warn"
 
-comp c {
-    in a?
-    in b?
-    pub out p?
-    pub out q?
+proc c(a?, b?): (p?, q?) {
     ensure r1: p? iff (b? and a? or a?)
     ensure r2: q? iff not a? and a?
 }

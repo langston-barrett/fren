@@ -1,6 +1,4 @@
 -- Names that should be in snake_case (F0703).
-comp TempSensor {
-    in tempC: Int
-    pub out hot?
+proc TempSensor(tempC: Int): (hot?) {
     ensure IsHot: hot? iff tempC > 30
 }

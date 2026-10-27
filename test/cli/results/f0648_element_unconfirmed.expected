@@ -1,7 +1,7 @@
 warning[F0648]: could not decide whether `zeros::no_one` holds: the solver's model does not satisfy the quantifiers over sequences' elements, and none does with the same lengths
- --> test/cli/results/f0648_element_unconfirmed.fren:8:12
+ --> test/cli/results/f0648_element_unconfirmed.fren:7:12
   |
-8 |     expect no_one: not (1 in q)
+7 |     expect no_one: not (1 in q)
   |            ^^^^^^ undecided
   |
   = note: the instances at the index set do not hold of every element of the solver's model, and no model has every element satisfy them at the same lengths

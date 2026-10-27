@@ -1,8 +1,6 @@
 --@ args: --color=always check
 -- `--color=WHEN`, before the command; a warning's colours.
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure y_def: y = x + 1
     ensure bigger: y > x
 }

@@ -4,11 +4,7 @@ set_option fren.lint.match_like_membership "allow"
 
 pub enum Shape { Circle(Int), Rect(Int, Int), Empty }
 
-comp kinds {
-    in s: Shape
-    pub det out round?
-    pub det out boxy?
-
+proc kinds(s: Shape): (det round?, det boxy?) {
     ensure round: round? iff s is Shape::Circle(_)
     ensure boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
 
@@ -19,12 +15,7 @@ comp kinds {
 }
 
 -- At the precedence of the comparisons, below `not`, `and` and `or`.
-comp precedence {
-    in s: Shape
-    in t: Shape
-    pub det out n?
-    pub det out both?
-
+proc precedence(s: Shape, t: Shape): (det n?, det both?) {
     ensure n: n? iff not s is Shape::Circle(_)
     ensure both: both? iff s is Shape::Circle(_) and t is | Shape::Rect(_, _) | Shape::Empty
 
@@ -38,10 +29,8 @@ comp precedence {
 }
 
 -- Variants brought into scope by `use`, and patterns that match every value.
-comp imported {
+proc imported(s: Shape): (det sized?) {
     use self::Shape::{Circle, Empty, Rect}
-    in s: Shape
-    pub det out sized?
 
     ensure r: sized? iff s is Circle(_) | Rect(_, _)
 
@@ -57,22 +46,20 @@ fn circle?(s: Shape) := s is Shape::Circle(_)
 
 struct Measure { sides: Int, size: Int }
 
-comp flagged {
-    in round?
-    pub det out sides: Int
-
+proc flagged(round?): (det sides: Int) {
     ensure r: sides = (if round? then 0 else 4)
 }
 
-comp places {
-    in s: Shape
-    pub det out size: Int
-    pub det out doubled: Int
-    pub det out round? := s is Shape::Circle(_)
-    pub det out measure: Measure
-    pub det out by_fn?
+proc places(s: Shape): (
+    det size: Int,
+    det doubled: Int,
+    det round?,
+    det measure: Measure,
+    det by_fn?,
+) {
+    out round? := s is Shape::Circle(_)
 
-    inst f: flagged { round? := s is Shape::Circle(_) }
+    call f := flagged(s is Shape::Circle(_))
 
     ensure size_rule: size = (if s is Shape::Circle(_) then 1 else 2)
     ensure doubled_rule: doubled = match s { Shape::Rect(w, _) => (if s is Shape::Rect(_, _) then w else 0), _ => 0 }
@@ -91,12 +78,7 @@ expect boxy: forall (p: places), p.s is Shape::Rect(_, _) | Shape::Empty iff not
 
 -- `nonminimal_bool` keeps the parentheses that a pattern test needs, since
 -- it binds as a comparison.
-comp simpler {
-    in s: Shape
-    in b?
-    pub det out ok?
-    pub det out z?
-
+proc simpler(s: Shape, b?): (det ok?, det z?) {
     ensure r: ok? = if s is Shape::Circle(_) then true else false  --~ warning: write `(s is Shape::Circle(_))`
     ensure q: z? iff not ((s is Shape::Circle(_)) = b?)  --~ warning: write `(s is Shape::Circle(_)) != b?`
 }

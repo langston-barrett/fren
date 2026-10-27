@@ -51,7 +51,7 @@ inductive BinderTarget where
   | component
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- Whether a binder is accepted, and whether it ranges over a component's
+/-- Whether a binder is accepted, and whether it ranges over a procedure's
 behaviours, from what its type names and whether it is in a global
 expectation's leading `forall` (`lang::quantifier_binder`). -/
 def quantifierBinder (target : BinderTarget) (global : Bool) : Bool × Bool :=
@@ -74,12 +74,12 @@ def quantifierSizeMsg (n : Nat) (nested : Bool := false) : Msg :=
       "help: quantify over a smaller type, or state it of a variable of that type instead"] }
 
 /-- A binder of a quantifier in an expression whose type names the
-component `c`. -/
+procedure `c`. -/
 def quantifiedComponentMsg (c : String) : Msg :=
-  { code? := some "F0210", headline := s!"expected a type, but `{c}` is a component"
+  { code? := some "F0210", headline := s!"expected a type, but `{c}` is a procedure"
     label? := some "not a type"
     notes := #["note: a quantifier in an expression ranges over the values of a type",
-      "help: only a global expectation's leading `forall` ranges over the behaviours of a component"] }
+      "help: only a global expectation's leading `forall` ranges over the behaviours of a procedure"] }
 
 /-- A name bound twice by one quantifier. -/
 def dupBoundMsg (n : Name) : Msg :=

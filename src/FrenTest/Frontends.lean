@@ -170,12 +170,14 @@ def isStoppedTrailer (d : Diagnostic) : Bool := d.line == 0 && headOf d == Fren.
 
 /-- The 1-based line where the top-level item containing each line of
 `text` starts: an item starts at a line that is neither indented, blank, a
-comment nor a closing brace. -/
+comment, a closing brace nor the `)` that closes a procedure's parameters
+or results. -/
 def itemOf (text : String) : Array Nat := Id.run do
   let mut out := #[0]
   let mut item := 0
   for line in text.splitOn "\n", k in [1:text.length + 2] do
-    if !line.isEmpty && !line.startsWith " " && !line.startsWith "}" && !line.startsWith "--" then item := k
+    if !line.isEmpty && !line.startsWith " " && !line.startsWith "}" && !line.startsWith ")" && !line.startsWith "--" then
+      item := k
     out := out.push item
   return out
 

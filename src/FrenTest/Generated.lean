@@ -12,11 +12,7 @@ pub enum Verdict { Pass, Fail, Inconclusive }
 
 use self::Verdict::{Pass, Fail, Inconclusive}
 
-pub comp exit {
-  in ran?
-  in worst: Verdict
-  pub out code: Int
-
+pub proc exit(ran?, worst: Verdict): (code: Int) {
   ensure not_run: unless ran?, code = 2
   ensure failed: when ran? and worst = Fail, code = 1
   ensure inconclusive: when ran? and worst = Inconclusive, code = 3
@@ -49,23 +45,20 @@ fun ran? worst code => True -/
 #print check.exit.assumes
 
 -- An instance's variables follow the comp's own, named `w.x`.
-comp always_runs {
-  in worst: Verdict
-  pub out code: Int
-
-  inst e: exit { ran? := true, worst }
+proc always_runs(worst: Verdict): (code: Int) {
+  call e := exit(true, worst)
 
   ensure same: code = e.code
 }
 
 /--
-info: @[reducible] def Fren.Generated.check.always_runs.inst.e : check.Verdict → Int → Bool → check.Verdict → Int → Prop :=
+info: @[reducible] def Fren.Generated.check.always_runs.call.e : check.Verdict → Int → Bool → check.Verdict → Int → Prop :=
 fun worst code e.ran? e.worst e.code =>
   (e.ran? = true ∧ e.worst = worst) ∧
     check.exit.assumes e.ran? e.worst e.code ∧ check.exit.ensures e.ran? e.worst e.code
 -/
 #guard_msgs in
-#print check.always_runs.inst.e
+#print check.always_runs.call.e
 
 -- A constant is a definition of its type; a global expectation is a
 -- proposition over its binders' variables. Only Lean code uses `FAILED`,
@@ -98,13 +91,7 @@ example : check.FAILED = 1 := by decide
 -- a numeral, and the methods of `Int` are conditionals.
 const STRIDE: Int := 2 * 2
 
-comp arith {
-  in x: Int
-  in y: Int
-  pub out q: Int
-  pub out r: Int
-  pub out a: Int
-
+proc arith(x: Int, y: Int): (q: Int, r: Int, a: Int) {
   ensure quotient: q = x div -STRIDE
   ensure remainder: r = x mod 3
   ensure absolute: a = (x - y).abs.min(y.max(0))
@@ -136,13 +123,7 @@ example (x : Int) (k : Nat) : x / -(k : Int) = -(x / k) ∧ x % -(k : Int) = x %
 -- A chained comparison, which Lean does not have, is the conjunction of
 -- its comparisons, with the same term for each operand between two. On
 -- strings, `>` is written as `Fren.Str.lt` with its operands swapped.
-comp ranged {
-  in i: Int
-  in n: Int
-  in s: String
-  pub out inside?
-  pub out lower?
-
+proc ranged(i: Int, n: Int, s: String): (inside?, lower?) {
   ensure inside: inside? iff 0 <= i < n <= 10
   ensure lower: lower? iff "z" > s >= "a"
 }
@@ -166,12 +147,7 @@ fun i n s inside? lower? => lower? = true ↔ Fren.Str.lt s (Fren.Str.lit "z") �
 -- `min` and `max` are conditionals on the positions.
 pub ordered enum Level { Low, Middle, High }
 
-comp leveled {
-  in a: Level
-  in b: Level
-  pub out above?
-  pub out top: Level
-
+proc leveled(a: Level, b: Level): (above?, top: Level) {
   ensure above: above? iff Level::Low < a <= b
   ensure highest: top = a.max(b)
 }

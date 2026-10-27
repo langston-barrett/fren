@@ -2,10 +2,7 @@
 -- if written alone. The chains that do not parse are in `test/ui/syntax`.
 set_option fren.lint.unused_variables "allow"
 
-comp types {
-    in x: Int
-    pub out ok?
-
+proc types(x: Int): (ok?) {
     ensure r: ok? iff 0 <= x
         < "a"
     --~^ error: type mismatch: expected `Int`, found `String`

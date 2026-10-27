@@ -30,12 +30,10 @@ tokens; across lines, how many blank lines separate them. For example,
 ```text
 use climate::Mode::Heat
 pub enum Mode {Heat,Cool}
-comp   c{
-in t:Int -- the temperature
-      pub out mode:Mode
+proc   c(
+    t:Int,  -- the temperature
+): (mode:Mode) {
   ensure r :mode = if t< 18 then Mode::Heat else Mode::Cool
-
-
 }
 ```
 
@@ -44,9 +42,9 @@ is formatted as
 ```text
 use climate::Mode::Heat
 pub enum Mode { Heat, Cool }
-comp c {
-    in t: Int  -- the temperature
-    pub out mode: Mode
+proc c(
+    t: Int,    -- the temperature
+): (mode: Mode) {
     ensure r: mode = if t < 18 then Mode::Heat else Mode::Cool
 }
 ```
@@ -68,13 +66,14 @@ block imports the same paths, as often; its comments are the same, in the
 same order; and formatting it again changes nothing.
 
 ```fren
-pub comp safe {
-    in parsed?               -- the file lexes and parses
-    pub out same_tokens?     -- the tokens are the same, but for trailing commas and import blocks
-    pub out same_imports?    -- each import block imports the same paths, as often
-    pub out same_comments?   -- the comments are the same, in the same order
-    pub out stable?          -- formatting the result again changes nothing
-
+pub proc safe(
+    parsed?,                 -- the file lexes and parses
+): (
+    same_tokens?,            -- the tokens are the same, but for trailing commas and import blocks
+    same_imports?,           -- each import block imports the same paths, as often
+    same_comments?,          -- the comments are the same, in the same order
+    stable?,                 -- formatting the result again changes nothing
+) {
     ensure tokens: when parsed?, same_tokens?
     ensure imports: when parsed?, same_imports?
     ensure comments: when parsed?, same_comments?
@@ -137,11 +136,7 @@ use self::Kind::{
     RangeTrailing,
 }
 
-pub comp space {
-    in before: Kind
-    in after: Kind
-    pub det out space?
-
+pub proc space(before: Kind, after: Kind): (det space?) {
     ensure comment: when before = Comment or after = Comment, space?
     ensure empty: when before = Brace and after = CloseBrace, not space?
     ensure negations: when before = Negation and after = Negation, space?
@@ -160,17 +155,19 @@ pub comp space {
 ## Indentation
 
 Each line is indented by four spaces for each brace (`{` or `::{`) that is
-open at its start. A line that continues an item, a member or an element
-of a list, rather than starting one, is indented by four more:
+open at its start, and for each `(` of a list that is: a procedure's
+parameters, its results, or a call's arguments. A line that continues an
+item, a member or an element of a list, rather than starting one, is
+indented by four more:
 
 ```text
-comp c {
-    in mode: Mode
+proc c(mode: Mode) {
     ensure r: unless mode = Mode::Off,
         on?
-    inst h: heater {
-        cold? := true,
-    }
+    call h := heater(
+        cold?,
+        true,
+    )
 }
 ```
 
@@ -200,23 +197,23 @@ fn at(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 ```
 
-A line that starts with a closing brace is indented as the line that
-opened it. A comment on a line of its own is indented as the line after
-it, but inside the braces when that line closes them. Parentheses do not
-add indentation. `fmt::indent` gives the indentation, in spaces:
+A line that starts with a closing brace, or with the `)` of such a list,
+is indented as the line that opened it. A comment on a line of its own is
+indented as the line after it, but inside the braces or parentheses when
+that line closes them. Other parentheses do not add indentation.
+`fmt::indent` gives the indentation, in spaces:
 
 ```fren
 pub enum LineStart { Closing, Starting, Continuing }
 
 use self::LineStart::{Closing, Continuing, Starting}
 
-pub comp indent {
-    in depth: Nat            -- braces open at the start of the line
-    in start: LineStart      -- what the line's first token does, or for a comment, the next line's
-    in comment?              -- the line is a comment
-
+pub proc indent(
+    depth: Nat,              -- braces, and `(`s of lists, open at the start of the line
+    start: LineStart,        -- what the line's first token does, or for a comment, the next line's
+    comment?,                -- the line is a comment
+): (det columns: Int) {
     assume closes_open: when start = Closing, depth >= 1
-    pub det out columns: Int
 
     ensure closing: when start = Closing, columns = 4 * (if comment? then depth else depth - 1)
     ensure starting: when start = Starting, columns = 4 * depth
@@ -236,11 +233,10 @@ move the comments of the lines around it. `fmt::comment_column` gives the
 column of the comment's `--`, counted from 0:
 
 ```fren
-pub comp comment_column {
-    in width: Nat            -- the width of the line's code, with its indentation, after formatting
-    in original: Nat         -- the column of the comment before formatting
-    pub det out column: Int
-
+pub proc comment_column(
+    width: Nat,              -- the width of the line's code, with its indentation, after formatting
+    original: Nat,           -- the column of the comment before formatting
+): (det column: Int) {
     ensure kept: when original >= width + 2, column = original
     ensure moved: when original < width + 2, column = width + 2
 
@@ -257,13 +253,12 @@ other than a Markdown spec ends with a single newline. `fmt::blank_lines`
 gives the number of blank lines kept before a line:
 
 ```fren
-pub comp blank_lines {
-    in blank: Nat            -- blank lines before the line in the input
-    in first?                -- the line is the first of its file or block
-    in after_open?           -- the line before it ends with `{` or `::{`
-    in before_close?         -- the line starts with `}`
-    pub det out kept: Int
-
+pub proc blank_lines(
+    blank: Nat,              -- blank lines before the line in the input
+    first?,                  -- the line is the first of its file or block
+    after_open?,             -- the line before it ends with `{` or `::{`
+    before_close?,           -- the line starts with `}`
+): (det kept: Int) {
     ensure kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
 
     expect at_most_one: kept <= 1
@@ -273,37 +268,38 @@ pub comp blank_lines {
 
 ## Trailing commas
 
-A list is *vertical* if its closing brace starts a line, or, for the files
-of a `tested` claim, which have no brace, if the last file is on a later
-line than `tested`. The elements of a vertical list, the bindings of an
-instance, the variants of an enumeration, the fields of a record, of a
+A list is *vertical* if its closing brace, or the `)` of a procedure's
+parameters, its results or a call's arguments, starts a line, or, for the
+files of a `tested` claim, which have no brace, if the last file is on a
+later line than `tested`. The elements of a vertical list, the parameters
+and results of a procedure, the arguments of a call, the variants of an
+enumeration, the fields of a record, of a
 record literal or of a record update, the arms of a `match` or of a
 table over a scrutinee, the rows of a table, the paths of a `use ...::{}` and the files of a `tested` claim,
 each end with a comma, including the last; other lists have no comma after
 their last element:
 
 ```text
-inst h: heater { cold?, on? := true }
-inst h: heater {
+call h := heater(cold?, true)
+call h := heater(
     cold?,
-    on? := true,
-}
+    true,
+)
 tested h:
     "tests/heater.rs",
     "tests/relay.rs",
 ```
 
 So an element is added to a vertical list by adding a line. The members of
-a component are not a list, and have no commas. `fmt::trailing_comma`
+a procedure are not a list, and have no commas. `fmt::trailing_comma`
 decides whether the last element of a list is followed by a comma:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp trailing_comma {
-    in empty?                -- the list has no elements
-    in vertical?
-    pub det out comma?
-
+pub proc trailing_comma(
+    empty?,                  -- the list has no elements
+    vertical?,
+): (det comma?) {
     ensure empty_list: when empty?, not comma?
     ensure vertical_list: when not empty? and vertical?, comma?
     ensure horizontal: when not empty? and not vertical?, not comma?
@@ -312,21 +308,22 @@ pub comp trailing_comma {
 
 The formatter removes each trailing comma that
 [`unnecessary_trailing_comma`](Lint/Pedantic/Text.md#trailing-commas)
-reports in braces: there, the `}` follows the comma on its line, so it
+reports: there, the `}`, `]` or `)` follows the comma on its line, so it
 does not start one, and the list is not vertical.
 `fmt::trailing_comma_lint` states it:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp trailing_comma_lint {
+pub proc trailing_comma_lint(
+    line_break?,             -- a line ends between the last element's comma and the `}`
+    vertical?,
+) {
     use lint::unnecessary_trailing_comma
-    in line_break?           -- a line ends between the last element's comma and the `}`
-    in vertical?
 
     assume closing: unless line_break?, not vertical?
 
-    inst reported: unnecessary_trailing_comma { line_break? }
-    inst format: trailing_comma { empty? := false, vertical? }
+    call reported := unnecessary_trailing_comma(line_break?)
+    call format := trailing_comma(false, vertical?)
 
     expect removed: when reported.fires?, not format.comma?
 }
@@ -370,14 +367,15 @@ line, if any of the imports merged into it spanned several lines, or if on
 one line it would be wider than 100 columns:
 
 ```fren
-pub comp group_layout {
-    in n_paths: Int          -- paths imported from the prefix
-    in was_vertical?         -- some import merged into it spanned several lines
-    in fits?                 -- on one line, it is at most 100 columns wide
-
+pub proc group_layout(
+    n_paths: Int,            -- paths imported from the prefix
+    was_vertical?,           -- some import merged into it spanned several lines
+    fits?,                   -- on one line, it is at most 100 columns wide
+): (
+    det braces?,             -- it is written with braces
+    det vertical?,           -- it is written with one path on each line
+) {
     assume some_path: n_paths >= 1
-    pub det out braces?      -- it is written with braces
-    pub det out vertical?    -- it is written with one path on each line
 
     ensure braced: braces? iff n_paths > 1
     ensure vertical_rule: vertical? iff (braces? and (was_vertical? or not fits?))
@@ -391,11 +389,10 @@ pub comp group_layout {
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp in_block {
-    in alone?                -- it starts and ends its lines, which have no other token and no comment
-    in nested?               -- it is the item of a `set_option ... in`
-    pub det out sorted?
-
+pub proc in_block(
+    alone?,                  -- it starts and ends its lines, which have no other token and no comment
+    nested?,                 -- it is the item of a `set_option ... in`
+): (det sorted?) {
     ensure block_rule: sorted? iff (alone? and not nested?)
 }
 ```
@@ -416,14 +413,15 @@ ignored:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp file {
-    in check?                -- `--check` was given
-    in ignored?              -- the file matches an `--ignore` glob
-    in parsed?               -- the file was read, and lexes and parses
-    in formatted?            -- formatting it changes nothing
-    pub det out written?     -- the file is rewritten
-    pub det out diff?        -- a diff is printed
-
+pub proc file(
+    check?,                  -- `--check` was given
+    ignored?,                -- the file matches an `--ignore` glob
+    parsed?,                 -- the file was read, and lexes and parses
+    formatted?,              -- formatting it changes nothing
+): (
+    det written?,            -- the file is rewritten
+    det diff?,               -- a diff is printed
+) {
     ensure write: written? iff (not ignored? and not check? and parsed? and not formatted?)
     ensure report: diff? iff (not ignored? and check? and parsed? and not formatted?)
 
@@ -432,12 +430,11 @@ pub comp file {
     expect ignored_untouched: when ignored?, not written? and not diff?
 }
 
-pub comp exit {
-    in check?
-    in all_parsed?           -- every file was read, and lexes and parses
-    in all_formatted?        -- every file that parses is already formatted
-    pub det out code: Int
-
+pub proc exit(
+    check?,
+    all_parsed?,             -- every file was read, and lexes and parses
+    all_formatted?,          -- every file that parses is already formatted
+): (det code: Int) {
     ensure failed: unless all_parsed?, code = 2
     ensure unformatted: when all_parsed? and check? and not all_formatted?, code = 1
     ensure formatted: when all_parsed? and (not check? or all_formatted?), code = 0

@@ -1,7 +1,7 @@
 error[F0368]: this pattern stands for 512 cases, more than 256
- --> test/cli/types/f0368_too_many_cases.fren:8:9
+ --> test/cli/types/f0368_too_many_cases.fren:6:9
   |
-8 |         P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
+6 |         P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ too many cases
   |
   = note: or-patterns within several values of a payload multiply: `V(A | B, A | B)` stands for 4 cases

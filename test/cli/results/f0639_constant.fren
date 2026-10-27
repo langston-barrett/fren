@@ -5,9 +5,6 @@ set_option fren.lint.undecidable "allow"
 
 const THREE: Bool := exists (x: Int), x = 3
 
-comp c {
-    in n: Int
-    pub out a?
-
+proc c(n: Int): (a?) {
     ensure r: a? iff THREE and n > 0
 }

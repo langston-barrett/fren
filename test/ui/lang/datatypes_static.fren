@@ -21,7 +21,7 @@ enum Bad9 { Leaf, Node(Set<Bad9>) }  --~ error: `Bad9` cannot be an element type
 struct Bad10 { s: Set<Bad10> }      --~ error: `Bad10` cannot be an element type within itself
 struct Ok1 { s: Set<Int>, t: Set<S> }
 
-comp unbounded { in l: L pub out o: L }   --~ error: output `o` has the unbounded type `L`
+proc unbounded(l: L): (o: L) {}   --~ error: output `o` has the unbounded type `L`
 
 const K1: P := P { x := 1 }                  --~ error: missing field `y` of `P`
 const K2: P := P { x := 1, y := 2, z := 3 }  --~ error: record `P` has no field `z`
@@ -29,46 +29,46 @@ const K3: P := P { x := 1, x := 2, y := 3 }  --~ error: field `x` is given multi
 const K4: S := S::A(1)
 const K5: Int := match K4 { S::A(a) => a, _ => 0 }
 
-comp no_field { in p: P pub out z: Int ensure r: z = p.w }        --~ error: record `P` has no field `w`
-comp not_record { in i: Int pub out z: Int ensure r: z = i.w }    --~ error: `Int` has no method `w`
-comp not_enum { in x: Set<Int> pub out z: Int ensure r: z = match x { _ => 0 } }   --~ error: cannot match on `Set<Int>`
-comp missing_arm { in s: S pub out z: Int ensure r: z = match s { S::A(a) => a, S::B => 0 } }
+proc no_field(p: P): (z: Int) { ensure r: z = p.w }        --~ error: record `P` has no field `w`
+proc not_record(i: Int): (z: Int) { ensure r: z = i.w }    --~ error: `Int` has no method `w`
+proc not_enum(x: Set<Int>): (z: Int) { ensure r: z = match x { _ => 0 } }   --~ error: cannot match on `Set<Int>`
+proc missing_arm(s: S): (z: Int) { ensure r: z = match s { S::A(a) => a, S::B => 0 } }
 --~^ error: non-exhaustive match: `S::C(_, _)` not covered
-comp after_wild { in s: S pub out z: Int ensure r: z = match s { _ => 0, S::B => 1 } }
+proc after_wild(s: S): (z: Int) { ensure r: z = match s { _ => 0, S::B => 1 } }
 --~^ error: unreachable arm
-comp useless_wild { in s: S pub out z: Int ensure r: z = match s { S::A(a) => a, S::B => 0, S::C(b?, n) => n, _ => 0 } }
+proc useless_wild(s: S): (z: Int) { ensure r: z = match s { S::A(a) => a, S::B => 0, S::C(b?, n) => n, _ => 0 } }
 --~^ error: unreachable arm
-comp repeated { in s: S pub out z: Int ensure r: z = match s { S::B => 0, S::B => 1, _ => 2 } }
+proc repeated(s: S): (z: Int) { ensure r: z = match s { S::B => 0, S::B => 1, _ => 2 } }
 --~^ error: unreachable arm
-comp other_enum { in s: S pub out z: Int ensure r: z = match s { L::Nil => 0, _ => 1 } }
+proc other_enum(s: S): (z: Int) { ensure r: z = match s { L::Nil => 0, _ => 1 } }
 --~^ error: expected a variant of `S`, but this is a variant of `L`
-comp arm_types { in s: S pub out z: Int ensure r: z = match s { S::A(a) => a, _ => false } }
+proc arm_types(s: S): (z: Int) { ensure r: z = match s { S::A(a) => a, _ => false } }
 --~^ error: the arms of `match` have different types: `Int` and `Bool`
-comp binders { in s: S pub out z: Int ensure r: z = match s { S::A(a, b) => a, _ => 0 } }
+proc binders(s: S): (z: Int) { ensure r: z = match s { S::A(a, b) => a, _ => 0 } }
 --~^ error: `S::A` takes 1 pattern, but 2 were given
-comp no_binders { in s: S pub out z: Int ensure r: z = match s { S::A => 1, _ => 0 } }
+proc no_binders(s: S): (z: Int) { ensure r: z = match s { S::A => 1, _ => 0 } }
 --~^ error: variant `S::A` must be applied to its payload
-comp unapplied { pub out s: S ensure r: s = S::A }                 --~ error: variant `S::A` must be applied to its payload
-comp no_payload { pub out s: S ensure r: s = S::B(1) }             --~ error: variant `S::B` has no payload
-comp payload_arity { pub out s: S ensure r: s = S::C(true) }       --~ error: `S::C` takes 2 values, but 1 was given
-comp bool_binder { in s: S pub out z: Int ensure r: z = match s { S::C(b, n) => n, _ => 0 } }
+proc unapplied(): (s: S) { ensure r: s = S::A }                 --~ error: variant `S::A` must be applied to its payload
+proc no_payload(): (s: S) { ensure r: s = S::B(1) }             --~ error: variant `S::B` has no payload
+proc payload_arity(): (s: S) { ensure r: s = S::C(true) }       --~ error: `S::C` takes 2 values, but 1 was given
+proc bool_binder(s: S): (z: Int) { ensure r: z = match s { S::C(b, n) => n, _ => 0 } }
 --~^ error: `Bool` variable `b` must end in `?`
-comp dup_binder { in s: S pub out z: Int ensure r: z = match s { S::C(n?, n?) => 0, _ => 0 } }
+proc dup_binder(s: S): (z: Int) { ensure r: z = match s { S::C(n?, n?) => 0, _ => 0 } }
 --~^ error: `n?` is bound multiple times in this pattern
-comp upper_binder { in s: S pub out z: Int ensure r: z = match s { S::A(Big) => Big, _ => 0 } }
+proc upper_binder(s: S): (z: Int) { ensure r: z = match s { S::A(Big) => Big, _ => 0 } }
 --~^ warning: binder `Big` should have a snake case name
 
 -- A binder mentions what its scrutinee mentions.
 fn f(Int): Int
-comp binder_output { in i: Int out s: S pub out z: Int ensure r: z = match s { S::A(a) => f(a), _ => i } }
---~^ error: the arguments of a function may not mention an `out`, but `s` is one
-comp binder_input { in s: S pub out z: Int ensure r: z = match s { S::A(a) => f(a), _ => 0 } }
-comp field_output { in i: Int out p: P pub out z: Int ensure r: z = f(p.x) + i }
---~^ error: the arguments of a function may not mention an `out`, but `p` is one
-comp binder_assume { in i: Int out s: S assume a: match s { S::A(a) => a > 0, _ => true } ensure r: s = S::B }
---~^ error: assumptions may only mention `in` variables, but `s` is an `out`
-comp binder_linear { in s: S in t: S pub out z: Int
+proc binder_output(i: Int): (z: Int) { exists s: S ensure r: z = match s { S::A(a) => f(a), _ => i } }
+--~^ error: the arguments of a function may not mention an output, but `s` is one
+proc binder_input(s: S): (z: Int) { ensure r: z = match s { S::A(a) => f(a), _ => 0 } }
+proc field_output(i: Int): (z: Int) { exists p: P ensure r: z = f(p.x) + i }
+--~^ error: the arguments of a function may not mention an output, but `p` is one
+proc binder_assume(i: Int) { exists s: S assume a: match s { S::A(a) => a > 0, _ => true } ensure r: s = S::B }
+--~^ error: assumptions may only mention parameters, but `s` is an output
+proc binder_linear(s: S, t: S): (z: Int) {
     ensure r: z = (match s { S::A(a) => a, _ => 0 }) * (match t { S::A(b) => b, _ => 0 }) }   --~ error: nonlinear arithmetic is not supported
-comp constant_linear { in s: S pub out z: Int ensure r: z = (match K4 { S::A(a) => a, _ => 1 }) * (match s { S::A(b) => b, _ => 0 }) }
+proc constant_linear(s: S): (z: Int) { ensure r: z = (match K4 { S::A(a) => a, _ => 1 }) * (match s { S::A(b) => b, _ => 0 }) }
 
 --@ exit: 2

@@ -12,22 +12,14 @@ expect escapes: "\x41\u0042\t\\\"\'".len = 6 and "\x41\u0042\t\\\"\'".starts_wit
 expect newlines: "\n\r".len = 2 and "\n" != "n" and "\r" != "r"
 expect raw: r"a\n".len = 3 and r#"say "hi""#.len = 8
 
-comp counter {
-    in x': Int
-    in ready?
-    pub det out y: Int
-
+proc counter(x': Int, ready?): (det y: Int) {
     ensure rule: y = (if ready? then x' + 1 else x')
 }
 
 enum Mode { Off, Low, High }
 
-comp outer {
-    in a: Int
-    in m: Mode
-    pub det out level: Int
-
-    inst c: counter { x' := a, ready? := true }
+proc outer(a: Int, m: Mode): (det level: Int) {
+    call c := counter(a, true)
     ensure level_rule: level = match m { Mode::Off => 0, _ => 1 }
 
     expect dotted: c.y=a+1
@@ -39,11 +31,7 @@ comp outer {
 -- `!` ends an identifier, after its `?` if it has one.
 enum Flag { Set(Bool), Unset }
 
-comp tight {
-    in ready?
-    in f: Flag
-    pub det out go?
-
+proc tight(ready?, f: Flag): (det go?) {
     ensure rule: go? iff match f { Flag::Set(ready?!)=>ready?, _=>ready? }
 
     expect payload: when f=Flag::Set(true), go?

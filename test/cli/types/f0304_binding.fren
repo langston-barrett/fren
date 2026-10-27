@@ -1,3 +1,3 @@
 -- A binding of the wrong type (F0304).
-comp sub { in a: Int }
-comp c { in b? inst s: sub { a := b? } }
+proc sub(a: Int) {}
+proc c(b?) { call s := sub(b?) }

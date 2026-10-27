@@ -40,12 +40,13 @@ fix. `lint::allow_attributes` states this:
 pub mod lint
 
 set_option fren.evidence "enumerated" in
-pub comp allow_attributes {
-    in requested: Level  -- the level that the `set_option` sets
-    in unfulfilled?      -- it sets `unfulfilled_lint_expectations` itself
-    pub det out fires?
-    pub det out fixed?   -- the fix applies
-
+pub proc allow_attributes(
+    requested: Level,    -- the level that the `set_option` sets
+    unfulfilled?,        -- it sets `unfulfilled_lint_expectations` itself
+): (
+    det fires?,
+    det fixed?,          -- the fix applies
+) {
     ensure rule: fires? iff requested = Allow
     ensure fix: fixed? iff (fires? and not unfulfilled?)
 
@@ -85,12 +86,13 @@ Clippy's `wildcard_enum_match_arm` leaves a `_` of one variant to
 states when it fires, and when it has a fix:
 
 ```fren
-pub comp wildcard_enum_match_arm {
-    in wildcard?         -- the arm is `_`
-    in n_unnamed: Nat    -- variants it matches that no pattern names, written as the other arms write theirs, `V` or `E::V`
-    pub det out fires?
-    pub det out fixed?   -- it has a fix
-
+pub proc wildcard_enum_match_arm(
+    wildcard?,           -- the arm is `_`
+    n_unnamed: Nat,      -- variants it matches that no pattern names, written as the other arms write theirs, `V` or `E::V`
+): (
+    det fires?,
+    det fixed?,          -- it has a fix
+) {
     ensure rule: fires? iff wildcard?
     ensure fix: fixed? iff (wildcard? and n_unnamed = 0)
 }
@@ -112,12 +114,11 @@ ends it early (see [Literals](../Lang/Lexical.md#literals)).
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp needless_raw_strings {
-    in raw?              -- the literal is raw
-    in backslash?        -- its contents have a `\`
-    in quote?            -- they have a `"`
-    pub det out fires?
-
+pub proc needless_raw_strings(
+    raw?,                -- the literal is raw
+    backslash?,          -- its contents have a `\`
+    quote?,              -- they have a `"`
+): (det fires?) {
     ensure rule: fires? iff (raw? and not backslash? and not quote?)
 }
 ```
@@ -135,11 +136,12 @@ the message names it. `lint::non_ascii_literal` states which characters it
 reports, and which an escape can write, by code point:
 
 ```fren
-pub comp non_ascii_literal {
-    in code: Nat         -- the code point of a character of the literal
-    pub det out fires?
-    pub det out escapable?  -- `\uHHHH` can write it
-
+pub proc non_ascii_literal(
+    code: Nat,           -- the code point of a character of the literal
+): (
+    det fires?,
+    det escapable?,         -- `\uHHHH` can write it
+) {
     ensure rule: fires? iff code >= 128
     ensure escape: escapable? iff code <= 65535
 
@@ -158,7 +160,7 @@ These lints are reported where the name is declared, at the level in
 effect there, as the [lints on names](Style.md#names) are, and have no
 fix, for the same reason.
 
-`module_name_repetitions` fires on an item, a module, a component, an
+`module_name_repetitions` fires on an item, a module, a procedure, an
 enumeration, a record, an abstract type, a function, a constant or a
 global expectation, whose name's [words](Style.md#names) contain those of
 its module's last segment, one after another, in any case, and others,
@@ -171,12 +173,11 @@ starts or ends with the module's. `lint::module_name_repetitions` states
 when it fires:
 
 ```fren
-pub comp module_name_repetitions {
-    in n_words: Nat      -- the words of the item's name
-    in n_module_words: Nat  -- the words of its module's last segment
-    in contains?         -- the item's words have the module's, one after another, in any case
-    pub det out fires?
-
+pub proc module_name_repetitions(
+    n_words: Nat,        -- the words of the item's name
+    n_module_words: Nat,    -- the words of its module's last segment
+    contains?,           -- the item's words have the module's, one after another, in any case
+): (det fires?) {
     ensure rule: fires? iff (contains? and n_words > n_module_words)
 }
 ```
@@ -189,10 +190,9 @@ default also allows `i`, `j`, `x`, `y`, `z`, `w` and `n`, which Fren does
 not. `lint::min_ident_chars` states when it fires:
 
 ```fren
-pub comp min_ident_chars {
-    in name: String      -- the declared name, without a final `?`
-    pub det out fires?
-
+pub proc min_ident_chars(
+    name: String,        -- the declared name, without a final `?`
+): (det fires?) {
     ensure rule: fires? iff (name.len = 1 and name != "_")
 }
 ```
@@ -209,14 +209,13 @@ module, and how to write the path after it: `use climate::Mode`, then
 `self` counts as a segment, unlike in Clippy, which does not count it:
 `self::sensors::Probe` has three. A path is counted once, where it is
 written, even where it is elaborated again, as the condition of a `when`
-is for its [trigger](../Lang/Components.md#triggers). `lint::absolute_paths` states when it fires:
+is for its [trigger](../Lang/Procedures.md#triggers). `lint::absolute_paths` states when it fires:
 
 ```fren
-pub comp absolute_paths {
-    in n_segments: Int   -- the path's segments
-
+pub proc absolute_paths(
+    n_segments: Int,     -- the path's segments
+): (det fires?) {
     assume counts: n_segments >= 1
-    pub det out fires?
 
     ensure rule: fires? iff n_segments >= 3
 }
@@ -240,12 +239,12 @@ shifts and bits, which Fren does not have, and is in its `complexity`
 group. `lint::precedence` states when it fires:
 
 ```fren
-pub comp precedence {
+pub proc precedence(
+    outer: InfixOp,      -- the operator
+    inner: InfixOp,      -- the outermost operator of its operand
+    parenthesized?,      -- the operand is in parentheses
+): (det fires?) {
     use self::InfixOp::{And, Inter, Join, Minus, Or, Union}
-    in outer: InfixOp    -- the operator
-    in inner: InfixOp    -- the outermost operator of its operand
-    in parenthesized?    -- the operand is in parentheses
-    pub det out fires?
 
     ensure rule: fires? iff (not parenthesized?
         and ((outer = Or and inner = And) or (outer in {Union, Minus} and inner in {Inter, Join})))
@@ -254,41 +253,44 @@ pub comp precedence {
 
 ## The order of members
 
-`arbitrary_source_item_ordering` fires on a component whose members are
-not in this order: `use`, `in`, `assume`, `out`, defined or not, `inst`,
+`arbitrary_source_item_ordering` fires on a procedure whose members are
+not in this order: `use`, `assume`, `exists`, `let` and `out`, `call`,
 `ensure`, `expect`, then `cover`. Only kinds are ordered: the members of
-one kind may be in any order. A `set_option fren.evidence ... in` is part
-of the member after it. The order reads as a contract: what the component
-is given, its inputs, and what it assumes of them, then what it gives,
-its outputs and instances, and what it guarantees and claims of them.
-An `assume` mentions only inputs, so it is written with them, and before
-a definition that relies on it for its definedness, such as `out y :=
-q[i]`. An instance's bindings may mention outputs, and the guarantees its
-variables, so `inst` comes between the two, and cover goals, which claim
+one kind may be in any order, and a `let` and an `out`, which defines a
+result as a `let` defines a private variable, are of one kind. A `set_option
+fren.evidence ... in` is part of the member after it. The order reads as
+a contract, after the signature, which gives the procedure's parameters
+and results: what it assumes of its parameters, then the variables it
+chooses or defines, the procedures it calls, and what it guarantees and
+claims of them. An `assume` mentions only parameters, so it comes first,
+before a definition that relies on it for its definedness, such as `let
+y := q[i]`. A call's arguments may mention a `let`, and the guarantees its
+variables, so `call` comes between the two, and cover goals, which claim
 that a scenario can happen, come last. Like Clippy's lint of the same
 name, which orders the items of a module, it is in `restriction`: Fren
-accepts members in any order, and a component can read better with a
+accepts members in any order, and a procedure can read better with a
 constraint next to the variable it is about. The message is reported once
-for each component, at the first member written after one of a later
+for each procedure, at the first member written after one of a later
 kind, and names both kinds. [`fren fmt`](../Fmt.md) never reorders
 members: it changes only the layout, and ordering them is the lint's. The
-components of these chapters write their members in this order, but for
-`lint::unused_bound`, whose definition reads its instance, and which
-expects the lint.
+procedures of these chapters write their members in this order, but for
+`lint::unused_bound`, whose definition reads its call, and which expects
+the lint.
 
-Order matters to what a component means in one place only: an instance's
-binding may mention another instance's variable only if that instance is
-declared earlier (see [Instance variables](../Lang/Instances.md#instance-variables)).
+Order matters to what a procedure means in one place only: a call's
+argument may mention another call's variable only if that call is
+declared earlier (see [Call variables](../Lang/Calls.md#call-variables)).
 Elsewhere, a member may mention a variable declared after it. The fix
 puts the members in order, and keeps the members of each kind in the order
-they are written in, so it keeps the instances in order, and with them
-what the component means. It rewrites no expression, so it keeps every
-guard. It also never leaves a mention above what it mentions, so that the
-component reads from the top down: it is offered only when, in the new
-order, each variable or instance that a defined output's definition or an
-instance's binding mentions is declared before it. So `inst w` before
-`out y: Int := w.z` is reported, but not fixed, since `out` comes before
-`inst`.
+they are written in, so it keeps the calls in order, and with them what
+the procedure means. It rewrites no expression, so it keeps every guard.
+It also never leaves a mention above what it mentions, so that the
+procedure reads from the top down: it is offered only when, in the new
+order, each variable or call that a definition or a call's argument
+mentions is declared before it. So `call w` before `let y: Int := w.z` is
+reported, but not fixed, since `let` comes before `call`. A parameter or
+a result is declared in the signature, before every member, so a mention
+of one is always kept.
 
 Each member moves with the whole lines it is written on: from the line
 after the previous member, or after the `{`, so with the comments above
@@ -299,8 +301,8 @@ when each member starts its line, and only a comment follows it on its
 last one.
 
 `lint::rank` is a kind's place in the order. `lint::arbitrary_source_item_ordering`
-states the lint over a component's members, as written: their kinds, and
-the mentions of one member by another's definition or bindings, each by
+states the lint over a procedure's members, as written: their kinds, and
+the mentions of one member by another's definition or arguments, each by
 the two members' positions. It gives whether the lint fires, at which
 member, and whether the new order keeps every mention after what it
 mentions. Its quantifiers range over positions, unbounded, so it is
@@ -311,33 +313,35 @@ whether it is realizable, over unbounded sequences, so they are checked by
 [testing](../Check.md#checking-by-testing).
 
 ```fren
-pub enum MemberKind { Use, Input, Assumption, Output, Instance, Guarantee, Expectation, Cover }
+pub enum MemberKind { Use, Assumption, Exists, Let, Define, Call, Guarantee, Expectation, Cover }
 
 pub fn rank(kind: MemberKind): Int := match kind {
     MemberKind::Use => 0,
-    MemberKind::Input => 1,
-    MemberKind::Assumption => 2,
-    MemberKind::Output => 3,
-    MemberKind::Instance => 4,
+    MemberKind::Assumption => 1,
+    MemberKind::Exists => 2,
+    MemberKind::Let | MemberKind::Define => 3,
+    MemberKind::Call => 4,
     MemberKind::Guarantee => 5,
     MemberKind::Expectation => 6,
     MemberKind::Cover => 7,
 }
 
--- The definition or a binding of the member at `mentioner` mentions the
+-- The definition or an argument of the member at `mentioner` mentions the
 -- member at `mentioned`.
 pub struct Mention { mentioner: Int, mentioned: Int }
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp arbitrary_source_item_ordering {
-    in kinds: Seq<MemberKind>    -- the members' kinds, in the order written
-    in mentions: Set<Mention>
+pub proc arbitrary_source_item_ordering(
+    kinds: Seq<MemberKind>,      -- the members' kinds, in the order written
+    mentions: Set<Mention>,
+): (
+    det fires?,
+    det first: Int,              -- where it is reported, or `-1`
+    det keeps_mentions?,         -- in order, each mention comes after what it mentions
+) {
     assume positions: forall (m: Mention), when m in mentions,
         0 <= m.mentioner < kinds.len and 0 <= m.mentioned < kinds.len
-    pub det out fires?
-    pub det out first: Int       -- where it is reported, or `-1`
-    pub det out keeps_mentions?  -- in order, each mention comes after what it mentions
 
     -- Some member is written after one of a later kind.
     ensure rule: fires? iff (exists (i: Int), 0 < i < kinds.len and rank(kinds[i - 1]) > rank(kinds[i]))
@@ -355,32 +359,39 @@ pub comp arbitrary_source_item_ordering {
 ```
 
 The [refinements](../Lang/Refinement.md) below check the fix of a
-component with a member of each kind, an instance among them, in reverse
-order: a component as written, one as fixed, and a refinement each way, so
-that the solver checks that the two meet the same behaviours.
+procedure with a member of each kind, in reverse order: a procedure as
+written, one as fixed, and a refinement each way, so that the solver
+checks that the two meet the same behaviours.
 
 ```fren
 set_option fren.lint.arbitrary_source_item_ordering "allow" in
-pub comp member_order_written {
-    expect never_info: shown != Severity::Info
-    ensure rule: shown = warned.result
-    inst warned: severity { level := Level::Warn }
-    pub det out shown: Severity
+pub proc member_order_written(group: Group): (det shown: Severity, det error?) {
+    cover warns: shown = Warning
+    expect never_info: shown != Info
+    ensure rule: shown = warned.result and (spare? iff error?)
+    call warned := severity(Level::Warn)
+    out error? := is_error?
+    let is_error? := shown = Error
+    exists spare?
     assume known: group != Group::Decidability
-    in group: Group
+    use view::Severity::{Error, Info, Warning}
 }
 
-pub comp member_order_fixed {
-    in group: Group
+pub proc member_order_fixed(group: Group): (det shown: Severity, det error?) {
+    use view::Severity::{Error, Info, Warning}
     assume known: group != Group::Decidability
-    pub det out shown: Severity
-    inst warned: severity { level := Level::Warn }
-    ensure rule: shown = warned.result
-    expect never_info: shown != Severity::Info
+    exists spare?
+    let is_error? := shown = Error
+    out error? := is_error?
+    call warned := severity(Level::Warn)
+    ensure rule: shown = warned.result and (spare? iff error?)
+    expect never_info: shown != Info
+    cover warns: shown = Warning
 }
 
-refine member_order_sound: member_order_fixed refines member_order_written
-refine member_order_complete: member_order_written refines member_order_fixed
+-- `spare?` and `is_error?` are private to each, so each refinement binds them.
+refine member_order_sound: member_order_fixed refines member_order_written { spare? := error?, is_error? := error? }
+refine member_order_complete: member_order_written refines member_order_fixed { spare? := error?, is_error? := error? }
 ```
 
 ## Functions applied once
@@ -402,12 +413,11 @@ may also apply.
 `lint::single_call_fn` states when it fires:
 
 ```fren
-pub comp single_call_fn {
-    in pub?
-    in defined?          -- it has a body, `:= e`
-    in n_uses: Nat       -- paths in its file that resolve to it
-    pub det out fires?
-
+pub proc single_call_fn(
+    pub?,
+    defined?,            -- it has a body, `:= e`
+    n_uses: Nat,         -- paths in its file that resolve to it
+): (det fires?) {
     ensure rule: fires? iff (defined? and not pub? and n_uses = 1)
 
     expect public_never: when pub?, not fires?

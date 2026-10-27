@@ -1,4 +1,4 @@
 -- `unnecessary_struct_initialization`.
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = Point { x := p.x, y := p.y } }
+proc c(p: Point): (q: Point) { ensure r: q = Point { x := p.x, y := p.y } }

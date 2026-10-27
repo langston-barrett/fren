@@ -1,11 +1,8 @@
---@ args: eval --comp c
+--@ args: eval --proc c
 -- The literals of the expectations are candidates too: no other candidate
 -- has five characters, which `five` assumes.
-comp c {
-    in s: String
-
+proc c(s: String): (ok?) {
     assume five: s.len = 5
-    pub out ok?
     ensure r: ok? iff s.starts_with?("h")
 
     expect not_hello: s != "hello"

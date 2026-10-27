@@ -1,9 +1,6 @@
 -- `match_like_membership`.
 enum E { A, B, C }
 
-comp c {
-    in e: E
-    pub out p?
-
+proc c(e: E): (p?) {
     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
 }

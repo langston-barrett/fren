@@ -1,16 +1,16 @@
 warning[F0824]: this `let` only gives back its last definition
- --> test/cli/lints/style/f0824_let_and_return.fren:2:76
+ --> test/cli/lints/style/f0824_let_and_return.fren:2:69
   |
-2 | comp c { in x: Int pub out y: Int ensure r: y = (let k := 2, d := x * k in d) }
-  |                                                                            ^ the body is `d`
+2 | proc c(x: Int): (y: Int) { ensure r: y = (let k := 2, d := x * k in d) }
+  |                                                                     ^ the body is `d`
   |
   = help: `fren fix` can fix this
   = note: `let_and_return` is `warn` by default
   = help: to allow it, `set_option fren.lint.let_and_return "allow"`
 help: write the definition of `d` in place of `d`
   |
-2 - comp c { in x: Int pub out y: Int ensure r: y = (let k := 2, d := x * k in d) }
-2 + comp c { in x: Int pub out y: Int ensure r: y = (let k := 2 in x * k) }
+2 - proc c(x: Int): (y: Int) { ensure r: y = (let k := 2, d := x * k in d) }
+2 + proc c(x: Int): (y: Int) { ensure r: y = (let k := 2 in x * k) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

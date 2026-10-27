@@ -4,18 +4,18 @@ enum Mode { Heat, Cool, Off }
 enum Single { Only }
 enum Pair { One, Two }
 
-comp lets {
-    in x: Int
-    in y: Int
-    pub out a: Int
-    pub out b: Int
-    pub det out c: Int := m where m := x + y     --~ warning: this `where` clause only gives back its last definition
-    pub out d: Int
-    pub out e: Int
-    pub out f: Int
-    pub out g?
-    pub out h: Int
-    pub out i: Int
+proc lets(x: Int, y: Int): (
+    a: Int,
+    b: Int,
+    det c: Int,
+    d: Int,
+    e: Int,
+    f: Int,
+    g?,
+    h: Int,
+    i: Int,
+) {
+    out c := m where m := x + y     --~ warning: this `where` clause only gives back its last definition
 
     ensure r1: a = (let k := x + 1 in k)           --~ warning: this `let` only gives back its last definition
     ensure r2: b = (let k := x + 1, m := k * 2 in m)  --~ warning: this `let` only gives back its last definition
@@ -32,12 +32,7 @@ comp lets {
     --~^^ warning: unused definition `k`
 }
 
-comp unused {
-    in x: Int
-    pub out a: Int
-    pub out b?
-    pub out c?
-
+proc unused(x: Int): (a: Int, b?, c?) {
     -- A name that only a later definition mentions is used.
     ensure r1: a = (let k := x, m := k + 1 in m * 2)
     ensure r2: b? iff (forall (m: Mode), x > 0)        --~ warning: unused bound name `m`
@@ -45,20 +40,16 @@ comp unused {
     --~^ warning: unused bound name `n`
 }
 
-comp quantifiers {
-    in s: Set<Mode>
-    in t: Set<Single>
-    in u: Set<Pair>
-    in mode: Mode
-    pub out a?
-    pub out b?
-    pub out c?
-    pub out d?
-    pub out e?
-    pub out f?
-    pub out g?
-    pub out h?
-
+proc quantifiers(s: Set<Mode>, t: Set<Single>, u: Set<Pair>, mode: Mode): (
+    a?,
+    b?,
+    c?,
+    d?,
+    e?,
+    f?,
+    g?,
+    h?,
+) {
     ensure r1: a? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s
     --~^ warning: these conjuncts are one expression at each variant of `Mode`
     ensure r2: b? iff Mode::Heat in s or Mode::Off in s or Mode::Cool in s
@@ -80,15 +71,7 @@ comp quantifiers {
 fn g?(m: Mode) := m = Mode::Heat
 fn h?(b?) := b?
 
-comp places {
-    in t: Set<Single>
-    in c?
-    in m: Mode
-    pub out w?
-    pub out x?
-    pub out z?
-    pub out v?
-
+proc places(t: Set<Single>, c?, m: Mode): (w?, x?, z?, v?) {
     ensure e2: w? iff match m { Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off), _ => c? }
     --~^ warning: these conjuncts are one expression at each variant of `Mode`
     -- An argument takes it in parentheses too.
@@ -105,20 +88,13 @@ comp places {
 -- A quantifier over an unbounded type has more than one value, and its
 -- bound name is mentioned.
 set_option fren.lint.undecidable "allow" in
-comp unbounded {
-    in x: Int
-    in u: Set<Single>
-    pub out a?
-
+proc unbounded(x: Int, u: Set<Single>): (a?) {
     ensure r1: a? iff (forall (i: Int), when 0 <= i < x, i >= 0) and (exists (k: Single) (j: Int), 0 <= j < x and k in u)
     --~^ warning: this `exists` ranges over one value
 }
 
 -- An index makes the order of the operands matter, so the lint leaves them.
-comp guarded {
-    in q: Seq<Mode>
-    pub out a?
-
+proc guarded(q: Seq<Mode>): (a?) {
     ensure r1: a? iff q != [] and (q[0] = Mode::Heat or q[0] = Mode::Cool or q[0] = Mode::Off)
     --~^ warning: this says that `q[0]` matches one of these patterns
 }

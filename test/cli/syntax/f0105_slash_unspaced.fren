@@ -1,2 +1,2 @@
 -- Division without spaces (F0105): the fix keeps `div` apart from its operands.
-comp c { in x: Int pub out y: Int ensure r: y = x/2 }
+proc c(x: Int): (y: Int) { ensure r: y = x/2 }

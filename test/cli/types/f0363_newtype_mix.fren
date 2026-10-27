@@ -2,4 +2,4 @@
 pub ordered struct Ms(Int)
 pub struct Bytes(Int)
 
-comp c { in t: Ms in n: Bytes pub out late? ensure r: late? iff t > n }
+proc c(t: Ms, n: Bytes): (late?) { ensure r: late? iff t > n }

@@ -1,6 +1,6 @@
 --- test/cli/fix/field_lengths.fren
 +++ test/cli/fix/field_lengths.fren
-@@ -12,3 +12,3 @@
+@@ -7,3 +7,3 @@
 -    ensure r1: p1? iff (r).s.len = 0 or (r).t.card > 0
 -    ensure r2: p2? iff { r with x := 1 }.q.len != 0
 -    ensure r3: p3? iff ("ab" ++ (r).s).len = 0

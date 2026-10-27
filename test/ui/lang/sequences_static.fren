@@ -3,13 +3,13 @@ set_option fren.lint.unused_variables "allow"
 
 type Name
 
-comp not_seq { in s: Set<Int> pub out x: Int ensure r: x = s[0] }
+proc not_seq(s: Set<Int>): (x: Int) { ensure r: x = s[0] }
 --~^ error: cannot index a `Set<Int>`
-comp untyped { in q: Seq<Int> pub out p? ensure r: p? iff [].len = 0 }
+proc untyped(q: Seq<Int>): (p?) { ensure r: p? iff [].len = 0 }
 --~^ error: the type of `[]` cannot be known here
-comp unknown { in q: Seq<Int> pub out n: Int ensure r: n = q.size }
+proc unknown(q: Seq<Int>): (n: Int) { ensure r: n = q.size }
 --~^ error: `Seq<Int>` has no method `size`
-comp unbounded { in x: Int out q: Seq<Int> ensure r: q = [x] }
+proc unbounded(x: Int) { exists q: Seq<Int> ensure r: q = [x] }
 --~^ error: output `q` has the unbounded type `Seq<Int>`
 struct Abstract { names: Seq<Name> }
 --~^ error: a field's type cannot have the abstract type `Name` within it
@@ -17,14 +17,14 @@ enum Tree { Leaf, Node(Seq<Tree>) }
 --~^ error: `Tree` cannot be an element type within itself
 
 -- Outside the decidable core: word equations.
-comp concat { in q: Seq<Int> in r: Seq<Int> pub out p? ensure s: p? iff q ++ r = q }
+proc concat(q: Seq<Int>, r: Seq<Int>): (p?) { ensure s: p? iff q ++ r = q }
 --~^ error: outside the decidable core: an operation on sequences other than indexing
-comp member { in q: Seq<Int> in x: Int pub out p? ensure s: p? iff x in q }
+proc member(q: Seq<Int>, x: Int): (p?) { ensure s: p? iff x in q }
 --~^ error: outside the decidable core: an operation on sequences other than indexing
-comp reversed { in q: Seq<Int> pub out p? ensure s: p? iff q.rev = q }
+proc reversed(q: Seq<Int>): (p?) { ensure s: p? iff q.rev = q }
 --~^ error: outside the decidable core: an operation on sequences other than indexing
 
 -- In the core: indexing, length, update, and literal operands.
-comp array { in q: Seq<Int> in x: Int pub out p? ensure s: p? iff (q.len > 1 and q.update(0, x)[1] = x or x in [1, 2]
+proc array(q: Seq<Int>, x: Int): (p?) { ensure s: p? iff (q.len > 1 and q.update(0, x)[1] = x or x in [1, 2]
         or q.starts_with?([x])) }
 --@ exit: 2

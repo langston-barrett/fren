@@ -1,14 +1,14 @@
 error[F0211]: constraint names cannot end in `?`
- --> test/cli/names/f0211_constraint.fren:2:27
+ --> test/cli/names/f0211_constraint.fren:2:25
   |
-2 | comp c { in x: Int ensure r?: x > 0 }
-  |                           ^^ ends in `?`
+2 | proc c(x: Int) { ensure r?: x > 0 }
+  |                         ^^ ends in `?`
   |
   = note: only `Bool` variables end in `?`
 help: rename it to `r`
   |
-2 - comp c { in x: Int ensure r?: x > 0 }
-2 + comp c { in x: Int ensure r: x > 0 }
+2 - proc c(x: Int) { ensure r?: x > 0 }
+2 + proc c(x: Int) { ensure r: x > 0 }
   |
 
 error: could not check due to previous errors

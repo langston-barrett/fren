@@ -2,13 +2,7 @@
 -- the fix would be a product of two operands that mention variables.
 set_option fren.lint.branches_sharing_code "warn"
 
-comp c {
-    in c?
-    in x: Int
-    pub out y: Int
-    pub out z: Int
-    pub out w: Int
-    pub out v: Int
+proc c(c?, x: Int): (y: Int, z: Int, w: Int, v: Int) {
     ensure r1: y = if c? then 2 * x + 1 else x + 1
     ensure r2: z = if c? then x - 1 else x - 2
     ensure r3: w = if c? then 3 * (x + 1) else 2 * (x + 1)

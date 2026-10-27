@@ -1,7 +1,7 @@
 warning[F0777]: this raw string literal has more `#`s than it needs
- --> test/cli/lints/pedantic/f0777_needless_raw_string_hashes.fren:8:34
+ --> test/cli/lints/pedantic/f0777_needless_raw_string_hashes.fren:5:34
   |
-8 |     ensure r1: p? iff s.matches?(r##"a+b"##)
+5 |     ensure r1: p? iff s.matches?(r##"a+b"##)
   |                                  ^^^^^^^^^^ fewer `#`s would do
   |
   = note: a raw literal needs one `#` more than the longest run of `#` after a `"` in it, and none without a `"`
@@ -9,22 +9,22 @@ warning[F0777]: this raw string literal has more `#`s than it needs
   = note: `needless_raw_string_hashes` is set to `warn`
 help: write `r"a+b"`
   |
-8 -     ensure r1: p? iff s.matches?(r##"a+b"##)
-8 +     ensure r1: p? iff s.matches?(r"a+b")
+5 -     ensure r1: p? iff s.matches?(r##"a+b"##)
+5 +     ensure r1: p? iff s.matches?(r"a+b")
   |
 
 warning[F0777]: this raw string literal has more `#`s than it needs
- --> test/cli/lints/pedantic/f0777_needless_raw_string_hashes.fren:9:27
+ --> test/cli/lints/pedantic/f0777_needless_raw_string_hashes.fren:6:27
   |
-9 |     ensure r2: q? iff s = r###"say "#hi"#"###
+6 |     ensure r2: q? iff s = r###"say "#hi"#"###
   |                           ^^^^^^^^^^^^^^^^^^^ fewer `#`s would do
   |
   = note: a raw literal needs one `#` more than the longest run of `#` after a `"` in it, and none without a `"`
   = help: `fren fix` can fix this
 help: write `r##"say "#hi"#"##`
   |
-9 -     ensure r2: q? iff s = r###"say "#hi"#"###
-9 +     ensure r2: q? iff s = r##"say "#hi"#"##
+6 -     ensure r2: q? iff s = r###"say "#hi"#"###
+6 +     ensure r2: q? iff s = r##"say "#hi"#"##
   |
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant

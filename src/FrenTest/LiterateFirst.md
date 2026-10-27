@@ -6,10 +6,7 @@ message about them must be placed by this chapter's text.
 ```fren
 mod chapters
 
-pub comp gate {
-    in a?
-    pub out b?
-
+pub proc gate(a?): (b?) {
     ensure same: b? iff a?
     expect never: when a?, not b?
 }
@@ -18,10 +15,7 @@ set_option fren.lint.assertions_on_constants "allow" in
 expect arithmetic: 1 + 1 = 3
 
 set_option fren.evidence "tested" in
-pub comp by_testing {
-    in a?
-    pub out b?
-
+pub proc by_testing(a?): (b?) {
     ensure same: b? iff a?
 }
 ```
@@ -29,17 +23,11 @@ pub comp by_testing {
 A refinement that fails, which the second chapter checks too:
 
 ```fren
-pub comp precise {
-    in x: Int
-    pub out y: Int
-
+pub proc precise(x: Int): (y: Int) {
     ensure r: y = x + 1
 }
 
-pub comp lower {
-    in x: Int
-    pub out y: Int
-
+pub proc lower(x: Int): (y: Int) {
     ensure below: y < x
 }
 

@@ -1,0 +1,4 @@
+-- A parameter takes no `det` (F0110), in both front ends.
+proc c(det x: Int) {}
+--~^ error: parameters cannot be declared `det`
+--@ exit: 2

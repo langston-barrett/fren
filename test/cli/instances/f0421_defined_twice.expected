@@ -1,0 +1,12 @@
+error[F0421]: result `y` is defined more than once
+ --> test/cli/instances/f0421_defined_twice.fren:4:9
+  |
+4 |     out y := x + 1
+  |         ^ defined again here
+  |
+  = note: a result is defined by one `out` member at most, or is chosen by the system
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0421`.
+exit=2

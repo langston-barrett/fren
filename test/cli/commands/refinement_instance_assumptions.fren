@@ -1,24 +1,18 @@
 -- A refinement set to testing tests only its obligation: the assumption of
 -- the abstract component's instance `g` is a hypothesis, so it is not
 -- tested, and the summary counts one test, the expectation `r`.
-pub comp guarded {
-    in k: Int
+pub proc guarded(k: Int): (m: Int) {
     assume pos: k > 0
-    pub out m: Int
     ensure r: m = k
 }
 
-pub comp abstract {
-    in x: Int
+pub proc abstract(x: Int): (y: Int) {
     assume pos: x > 0
-    pub out y: Int
-    inst g: guarded { k := x }
+    call g := guarded(x)
     ensure r: y >= g.m
 }
 
-pub comp concrete {
-    in x: Int
-    pub out y: Int
+pub proc concrete(x: Int): (y: Int) {
     ensure r: y = x + 1
 }
 

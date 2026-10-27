@@ -3,12 +3,7 @@
 -- collection, and keeps the receiver's parentheses.
 struct R { s: String, q: Seq<Int>, t: Set<Int>, x: Int }
 
-pub comp c {
-    in r: R
-    pub out p1?
-    pub out p2?
-    pub out p3?
-
+pub proc c(r: R): (p1?, p2?, p3?) {
     ensure r1: p1? iff (r).s.len = 0 or (r).t.card > 0
     ensure r2: p2? iff { r with x := 1 }.q.len != 0
     ensure r3: p3? iff ("ab" ++ (r).s).len = 0

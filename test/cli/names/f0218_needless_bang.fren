@@ -1,15 +1,9 @@
 -- `!` on declarations that hide nothing.
-pub comp c {
-    in x!: Int
-    pub out y: Int
-
+pub proc c(x!: Int): (y: Int) {
     ensure r: y = x
 }
 
-pub comp d {
-    in ready?!
-    pub out go?
-
+pub proc d(ready?!): (go?) {
     ensure r: go? iff ready?
 }
 
