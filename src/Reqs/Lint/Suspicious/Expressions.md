@@ -19,8 +19,12 @@ rewrite can repair. It does not fire on `+`, `*`, `++` or `join`, where `x
 + x` and `r join r` mean something, nor on `in`, nor on the comparisons
 of a [chained comparison](../../Lang/Expressions.md#chained-comparisons),
 such as `x < x < y`, which it leaves to a later lint on chains.
-`lint::eq_op` states this, from the operands as
-[written](../Meaning.md#expressions-as-written):
+Operands are compared in their scopes: the right operand of `and` sees the
+binders of the left's pattern tests, which the left does not, so in `(v > 1
+and r is Reply::Value(v!)) and (v > 1 and r is Reply::Value(v!))` the two
+first `v`s differ, and it does not fire. `lint::eq_op` states this, from the
+operands as [written](../Meaning.md#expressions-as-written) in their
+scopes:
 
 ```fren
 pub mod lint
@@ -100,8 +104,11 @@ pub comp eq_op_values {
 `eq_op` also fires on `when C, D` and `unless C, D` where `C` and `D` are
 written the same. `when C, C` is always `true`, and `unless C, C` is `C`.
 The body is then almost always a copy of the condition, pasted where the
-consequent was meant. `lint::eq_op_conditional` states this; that `C` and
-`D` have the same value is `written_same`, as for `eq_op`:
+consequent was meant. The body of `when` sees the binders of the
+condition's pattern tests, and the condition does not, so they are
+compared in their scopes, as the operands of `and` are.
+`lint::eq_op_conditional` states this; that `C` and `D` have the same
+value is `written_same`, as for `eq_op`:
 
 ```fren
 pub comp eq_op_conditional {

@@ -581,33 +581,42 @@ def toEqOpValue : Fren.Core.EqOpValue → lint.EqOpValue
   | .empty => .Empty
   | .operand => .Operand
 
+theorem ofList_eq_sameScope (sl sr : List String) :
+    Fren.FinSet.ofList sl = Fren.FinSet.ofList sr ↔ Fren.Core.sameScope sl sr = true := by
+  simp only [Fren.FinSet.ext_iff, Fren.FinSet.mem_ofList, Fren.Core.sameScope, Bool.and_eq_true, List.all_eq_true,
+    List.contains_iff_mem]
+  exact ⟨fun h => ⟨fun x hx => (h x).1 hx, fun x hx => (h x).2 hx⟩, fun ⟨h1, h2⟩ x => ⟨h1 x, h2 x⟩⟩
+
 -- Both front ends decide `eq_op`, and the value its message gives, with
--- `eqOp`, from whether the operands are written the same (`writtenSame`),
--- which here is whether they are one `lint::Operand`. The operands of one
--- operator are in one scope `s` here; that their texts' names resolve
--- alike is not proved of the code, which compares only their texts.
-impl eq_op: lint::eq_op for (op : Fren.Core.InfixOp) (l r : lint.Operand) (s : Fren.FinSet String) {
+-- `eqOp`, from whether the operands are written the same in the same scope
+-- (`writtenSameIn`): whether their texts are written the same
+-- (`writtenSame`), which here is whether they are one `lint::Operand`, and
+-- whether they see the same binders of pattern tests (`sameScope`), for
+-- every two scopes.
+impl eq_op: lint::eq_op for (op : Fren.Core.InfixOp) (l r : lint.Operand) (sl sr : List String) {
   op := toInfixOp op,
-  left := ⟨l, s⟩,
-  right := ⟨r, s⟩,
-  same? := decide (l = r),
-  fires? := (Fren.Core.eqOp op (decide (l = r))).isSome,
-  value := toEqOpValue ((Fren.Core.eqOp op (decide (l = r))).getD .operand),
+  left := ⟨l, Fren.FinSet.ofList sl⟩,
+  right := ⟨r, Fren.FinSet.ofList sr⟩,
+  same? := decide (l = r) && Fren.Core.sameScope sl sr,
+  fires? := (Fren.Core.eqOp op (decide (l = r) && Fren.Core.sameScope sl sr)).isSome,
+  value := toEqOpValue ((Fren.Core.eqOp op (decide (l = r) && Fren.Core.sameScope sl sr)).getD .operand),
 } by
-  intro op l r s _
-  by_cases h : l = r <;> cases op <;> simp [fren_spec, toInfixOp, toEqOpValue, Fren.Core.eqOp, h]
+  intro op l r sl sr _
+  by_cases h : l = r <;> by_cases hs : Fren.Core.sameScope sl sr = true <;> cases op <;>
+    simp [fren_spec, toInfixOp, toEqOpValue, Fren.Core.eqOp, h, hs, ofList_eq_sameScope]
 
 -- Both front ends decide `eq_op` on `when` and `unless` with
--- `eqOpConditional`.
-impl eq_op_conditional: lint::eq_op_conditional for (n : Bool) (c b : lint.Operand) (s : Fren.FinSet String) {
+-- `eqOpConditional`, from `writtenSameIn`, for every two scopes.
+impl eq_op_conditional: lint::eq_op_conditional for (n : Bool) (c b : lint.Operand) (sc sb : List String) {
   unless? := n,
-  condition := ⟨c, s⟩,
-  body := ⟨b, s⟩,
-  fires? := (Fren.Core.eqOpConditional n (decide (c = b))).isSome,
-  value := toEqOpValue ((Fren.Core.eqOpConditional n (decide (c = b))).getD .operand),
+  condition := ⟨c, Fren.FinSet.ofList sc⟩,
+  body := ⟨b, Fren.FinSet.ofList sb⟩,
+  fires? := (Fren.Core.eqOpConditional n (decide (c = b) && Fren.Core.sameScope sc sb)).isSome,
+  value := toEqOpValue ((Fren.Core.eqOpConditional n (decide (c = b) && Fren.Core.sameScope sc sb)).getD .operand),
 } by
-  intro n c b s _
-  by_cases h : c = b <;> cases n <;> simp [fren_spec, toEqOpValue, Fren.Core.eqOpConditional, h]
+  intro n c b sc sb _
+  by_cases h : c = b <;> by_cases hs : Fren.Core.sameScope sc sb = true <;> cases n <;>
+    simp [fren_spec, toEqOpValue, Fren.Core.eqOpConditional, h, hs, ofList_eq_sameScope]
 
 impl ifs_same_cond: lint::ifs_same_cond for (earlier : Bool) {
   earlier? := earlier,
