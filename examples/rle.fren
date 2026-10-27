@@ -1,0 +1,30 @@
+-- Run-length encoding, as a streaming encoder. Each step reads one value of
+-- the input: a value equal to the current run's extends it, and any other
+-- value starts a new run and emits the current one.
+mod rle
+
+-- `count` copies of `value`.
+pub struct Run { value: Int, count: Nat is 1.. }
+
+-- The number of values in a run that may not have started.
+fn size(o: Option<Run>): Nat := match o { Some(r) => r.count, None => 0 }
+
+pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>) {
+    ensure extend:
+        when current is Some(r) and r.value = next,
+        run = Run { value := next, count := r.count + 1 } and emitted = None
+    ensure start:
+        unless current is Some(r) and r.value = next,
+        run = Run { value := next, count := 1 } and emitted = current
+
+    -- No value is lost or duplicated.
+    expect conserves: size(emitted) + run.count = size(current) + 1
+    -- A run ends only where the value changes.
+    expect maximal: when emitted is Some(e), e.value != next
+}
+
+-- Two runs emitted one after the other hold different values, so the
+-- encoding never splits a run in two.
+expect adjacent_differ: forall (a b: step),
+    when b.current = Some(a.run) and a.emitted is Some(d) and b.emitted is Some(e),
+    d.value != e.value

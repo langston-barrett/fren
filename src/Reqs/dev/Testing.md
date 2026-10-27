@@ -13,6 +13,9 @@
   note at whichever guarantee the solver's model picks. This is how
   `cli::agreement` is tested. See
   `src/FrenTest/Ui.lean` for the format.
+- **Examples** (`lake test`): each `examples/**/*.fren` is a complete spec
+  for readers, and is checked as a ui test, so its annotations (usually
+  none) must match both front ends' messages.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
