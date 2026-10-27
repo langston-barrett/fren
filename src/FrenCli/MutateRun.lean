@@ -52,7 +52,7 @@ structure Todo where
 /-- What `fren check` checks in the spec `st`, in order. -/
 def todo (st : State) : Array Todo :=
   st.comps.map (⟨·, false, Fren.Core.CheckedItem.component.kinds, false, false⟩)
-    ++ st.globals.map (⟨·, true, Fren.Core.CheckedItem.global.kinds, false, false⟩)
+    ++ st.globals.map (fun g => ⟨g, g.short, Fren.Core.CheckedItem.global.kinds, false, false⟩)
     ++ st.refinements.map (⟨·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true, false⟩)
     -- An uninterpreted function's contract has its value as an output.
     ++ st.bodies.map fun b =>

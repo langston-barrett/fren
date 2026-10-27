@@ -867,7 +867,7 @@ def quickcheck (args : Args) : IO UInt32 := do
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
   let prelude := Prelude.ofDecls st.prelude
-  for (c, global, refinement) in st.comps.map (·, false, false) ++ st.globals.map (·, true, false)
+  for (c, global, refinement) in st.comps.map (·, false, false) ++ st.globals.map (fun g => (g, g.short, false))
       ++ st.refinements.map (·, false, true) do
     let some ec := sp.counterpart? c global
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
@@ -1062,7 +1062,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let mut round := 0
   repeat
     let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
-    let calls := st.diags.filter fun d => d.msg.code? == some Fren.Core.callMigrationCode && !ignored paths[d.file]!
+    let calls := st.diags.filter fun d => d.msg.code?.any (Fren.Core.callMigrationCodes.contains ·) && !ignored paths[d.file]!
     let some ks := Fren.Core.callMigrationRound (calls.map (!·.msg.fixes.isEmpty)) round | break
     let fixes := ks.filterMap fun k => calls[k]? >>= fun d =>
       d.msg.fixes[0]?.map fun f => (d.file, f.range?.getD (toRange d.span), f.replacement)
@@ -1178,7 +1178,7 @@ deriving instance BEq for Fren.Core.LevelInEffect
 deriving instance BEq for Fren.Core.Levels
 deriving instance BEq for Fren.Core.Item, Fren.Core.EnumDef, Fren.Core.UseDef, Fren.Core.Tested, DataDecl
 deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
-deriving instance BEq for CVar, CProp, CInst, CComp
+deriving instance BEq for CVar, CProp, CInst, ProcSource, CComp
 
 instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩
 

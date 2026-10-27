@@ -2649,6 +2649,9 @@ partial def lowerItem : Item → L Unit
       spec.consts := s.spec.consts.insert path (v, t) }
   | .comp isPub name header members .. => lowerComp isPub name header members
   | .global name binders body => lowerGlobal name binders body
+  -- A global expectation with a block is checked as a procedure is, and
+  -- nothing calls it (`Reqs/Lang/Global#meaning`).
+  | .globalBlock name header members .. => lowerComp false name header members
   | .refine name concrete abstract bs => do
     let comp (segs : Array Ident) : L Comp := do
       let some c := (← get).spec.comp? (← resolveComp segs) | throw s!"unknown procedure `{segNames segs}`"

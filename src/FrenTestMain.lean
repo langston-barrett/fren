@@ -862,7 +862,7 @@ def expectationsOf (chars : Array Char) : Array (String × FrenCli.Span) :=
     { start, stop }
   match FrenCli.parseText chars with
   | .ok (_, items, _) => items.flatMap fun
-    | .comp _ c _ members _ spans _ => (members.zip spans).filterMap fun
+    | .comp _ c _ members _ spans _ | .globalBlock c _ members _ spans _ => (members.zip spans).filterMap fun
       | (.prop k n _, sp) => if k == .expect || k == .cover then some (s!"{c.name}::{n.name}", lines sp) else none
       | _ => none
     | .global n _ body => #[(n.name, lines { start := n.span.start, stop := body.span.stop })]

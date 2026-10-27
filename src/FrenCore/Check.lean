@@ -746,11 +746,11 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
-/-- The checks of a global expectation (`Reqs/Lang/Global`), as a `Comp`
-whose path is the expectation's module, with one call per binder (no
-bindings, and no assumptions as obligations) and the expectation itself. -/
+/-- The checks of a global expectation (`check::applies`), as a `Comp`:
+those of a procedure, but for realizability, redundancy and determinism,
+since it constrains nothing (`Reqs/Lang/Global#meaning`). -/
 def globalKinds : Array CheckKind :=
-  #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability]
+  #[.inst, .expect, .cover, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability]
 
 /-- The checks of the tables, `match`es and applications in the body and contract of
 a function or the value of a constant, and of a defined function's

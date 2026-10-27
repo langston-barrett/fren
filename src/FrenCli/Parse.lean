@@ -349,9 +349,15 @@ body, which `body` leaves out. -/
   span of each member, and where its `{` ends. -/
   | comp (isPub : Bool) (name : Ident) (header : Array Member) (members : Array Member) (close : Span) (spans : Array Span)
       (openStop : Nat)
-  /-- `expect n: forall (a b: c) ..., e`: each binder names a procedure or
-  a type. -/
+  /-- `expect n: e`, or `expect n: forall (a b: c) ..., e` as global
+  expectations were written before (`F0416`), whose binders each name a
+  procedure or a type. -/
   | global (name : Ident) (binders : Array Binder) (body : Expr)
+  /-- `expect n(x: T) { members }`, a global expectation written with a
+  block (`Reqs/Lang/Global`): as a procedure's, its parameters, and any
+  results, which are an error (`F0417`), as `header`, then its block. -/
+  | globalBlock (name : Ident) (header : Array Member) (members : Array Member) (close : Span) (spans : Array Span)
+      (openStop : Nat)
   /-- `refine r: c refines a { bindings }` (`Reqs/Lang/Refinement`). -/
   | refine (name : Ident) (concrete abstract : Array Ident) (bindings : Array (Ident × Option Expr))
   /-- `tested c: "file", ...` or `trusted c: "why"`, with each string's span. -/
@@ -1551,6 +1557,82 @@ def member (legacy : Bool := false) : P Member := do
   discard (expectKw ":")
   return .prop kind x (← top)
 
+/-- The rest of a procedure, or of a global expectation written with a
+block, after its name: its parameters, as inputs, and its results, as
+public outputs, each after any evidence setting (`header`); its block's
+members, the span of its closing `}`, the span of each member, and where
+its `{` ends. `first` is the position of its first token. -/
+def procRest (name : Ident) (first : Nat) : P (Array Member × Array Member × Span × Array Span × Nat) := do
+  let src := (← get).src
+  let itemStart := (← get).toks[first]!.span.start
+  let mut ls := itemStart
+  while ls > 0 && src[ls - 1]! != '\n' do ls := ls - 1
+  -- Whether the token before the one at `s` ends on an earlier line.
+  let broken (s : Span) : P Bool := do
+    let st ← get
+    let prev := st.toks[st.pos - 2]!.span.stop
+    return (src.extract prev s.start).any (· == '\n')
+  noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
+  markCall
+  markList
+  discard (expectKw "(")
+  let mut header := #[]
+  repeat
+    if isKw (← peek) ")" then break
+    markStart
+    -- A parameter takes no modifier (`F0110`).
+    let m ← peek
+    if (isKw m "pub" || isWord m "det") && ((← get).toks[(← get).pos + 1]?).any (·.tok matches .ident _) then
+      let mod := if isKw m "pub" then "pub" else "det"
+      let next := (← get).toks[(← get).pos + 1]!
+      throw { span := m.span, msg := Fren.Core.paramModifierMsg mod (some { start := m.span.start, stop := next.span.start }) }
+    let x ← ident
+    let ty ← type?
+    if let some d ← eatKw ":=" then
+      throw { span := d.span, msg := Fren.Core.inputDefinitionMsg }
+    header := header.push (.var true true false x ty none)
+    if (← eatKw ",").isNone then break
+  let pc ← expectKw ")"
+  let paramsVertical ← broken pc.span
+  let paramsEmpty := header.isEmpty
+  let paramNames := header.filterMap fun | .var _ _ _ x _ _ => some (unbanged x.name) | _ => none
+  let mut results := #[]
+  let mut resultsClose? := none
+  let mut resultsVertical := false
+  if (← eatKw ":").isSome then
+    markList
+    discard (expectKw "(")
+    repeat
+      markStart
+      if isWord (← peek) "set_option" then
+        let ev ← member
+        header := header.push ev
+      let det? ← if isWord (← peek) "det" then some <$> bump else pure none
+      let x ← ident
+      header := header.push (.var false true det?.isSome x (← type?) none)
+      results := results.push (unbanged x.name)
+      if (← eatKw ",").isNone then break
+      if isKw (← peek) ")" then break
+    let rc ← expectKw ")"
+    resultsClose? := some rc.span.start
+    resultsVertical ← broken rc.span
+  let ob ← expectKw "{"
+  let saved := (← get).proc?
+  modify fun s => { s with proc? := some {
+    paramsClose := pc.span.start, paramsEmpty, paramsVertical, resultsClose?, resultsVertical, results, params := paramNames
+    openBrace := ob.span.start, indent := itemStart - ls } }
+  let mut ms := #[]
+  let mut spans := #[]
+  repeat
+    let t ← peek
+    if isKw t "}" then break
+    if t.tok == .eof then fail t "`}`"
+    ms := ms.push (← member)
+    spans := spans.push { t.span with stop := (← lastSpan).stop }
+  let close ← bump
+  modify fun s => { s with proc? := saved }
+  return (header, ms, close.span, spans, ob.span.stop)
+
 partial def item : P Item := do
   markStart
   let first := (← get).pos
@@ -1633,6 +1715,10 @@ partial def item : P Item := do
   if isKw t "expect" then
     discard bump
     let name ← ident
+    -- Written with parameters and a block (`Reqs/Lang/Global`).
+    if isKw (← peek) "(" then
+      let (header, ms, close, spans, openStop) ← procRest name first
+      return .globalBlock name header ms close spans openStop
     discard (expectKw ":")
     let bs ← match ← eatKw "forall" with
       | some kw => binders kw
@@ -1779,75 +1865,8 @@ partial def item : P Item := do
   if isKw t "proc" then
     discard bump
     let name ← ident
-    let src := (← get).src
-    let itemStart := (← get).toks[first]!.span.start
-    let mut ls := itemStart
-    while ls > 0 && src[ls - 1]! != '\n' do ls := ls - 1
-    -- Whether the token before the one at `s` ends on an earlier line.
-    let broken (s : Span) : P Bool := do
-      let st ← get
-      let prev := st.toks[st.pos - 2]!.span.stop
-      return (src.extract prev s.start).any (· == '\n')
-    noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
-    markCall
-    markList
-    discard (expectKw "(")
-    let mut header := #[]
-    repeat
-      if isKw (← peek) ")" then break
-      markStart
-      -- A parameter takes no modifier (`F0110`).
-      let m ← peek
-      if (isKw m "pub" || isWord m "det") && ((← get).toks[(← get).pos + 1]?).any (·.tok matches .ident _) then
-        let mod := if isKw m "pub" then "pub" else "det"
-        let next := (← get).toks[(← get).pos + 1]!
-        throw { span := m.span, msg := Fren.Core.paramModifierMsg mod (some { start := m.span.start, stop := next.span.start }) }
-      let x ← ident
-      let ty ← type?
-      if let some d ← eatKw ":=" then
-        throw { span := d.span, msg := Fren.Core.inputDefinitionMsg }
-      header := header.push (.var true true false x ty none)
-      if (← eatKw ",").isNone then break
-    let pc ← expectKw ")"
-    let paramsVertical ← broken pc.span
-    let paramsEmpty := header.isEmpty
-    let paramNames := header.filterMap fun | .var _ _ _ x _ _ => some (unbanged x.name) | _ => none
-    let mut results := #[]
-    let mut resultsClose? := none
-    let mut resultsVertical := false
-    if (← eatKw ":").isSome then
-      markList
-      discard (expectKw "(")
-      repeat
-        markStart
-        if isWord (← peek) "set_option" then
-          let ev ← member
-          header := header.push ev
-        let det? ← if isWord (← peek) "det" then some <$> bump else pure none
-        let x ← ident
-        header := header.push (.var false true det?.isSome x (← type?) none)
-        results := results.push (unbanged x.name)
-        if (← eatKw ",").isNone then break
-        if isKw (← peek) ")" then break
-      let rc ← expectKw ")"
-      resultsClose? := some rc.span.start
-      resultsVertical ← broken rc.span
-    let ob ← expectKw "{"
-    let saved := (← get).proc?
-    modify fun s => { s with proc? := some {
-      paramsClose := pc.span.start, paramsEmpty, paramsVertical, resultsClose?, resultsVertical, results, params := paramNames
-      openBrace := ob.span.start, indent := itemStart - ls } }
-    let mut ms := #[]
-    let mut spans := #[]
-    repeat
-      let t ← peek
-      if isKw t "}" then break
-      if t.tok == .eof then fail t "`}`"
-      ms := ms.push (← member)
-      spans := spans.push { t.span with stop := (← lastSpan).stop }
-    let close ← bump
-    modify fun s => { s with proc? := saved }
-    return .comp isPub name header ms close.span spans ob.span.stop
+    let (header, ms, close, spans, openStop) ← procRest name first
+    return .comp isPub name header ms close spans openStop
   -- A component, as procedures were written before (`F0158`): its fix
   -- writes it as a procedure.
   if isKw t "comp" then

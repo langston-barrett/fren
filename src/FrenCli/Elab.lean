@@ -5,6 +5,7 @@ import FrenCore.Checking
 import FrenCore.Enumeration
 import FrenCore.Evidence
 import FrenCore.Generics
+import FrenCore.Global
 import FrenCore.Guards
 import FrenCore.Lint
 import FrenCore.Mentions
@@ -350,10 +351,30 @@ structure CInst where
   bounded : Bool := false
   deriving Inhabited
 
+/-- What the fix of an old global expectation copies of a procedure
+(`F0416`): each parameter's name, without its `!`, and type, as written,
+or `""` for a `Bool` written without one; each assumption's name and
+text, as written, with its lines after the first without the member's
+indentation, and where in that text it mentions each parameter, and
+whether as a field written without `:=` (`paramSpans`); and what
+says whether it can be copied (`Fren.Core.Callee`). -/
+structure ProcSource where
+  params : Array (String × String) := #[]
+  assumes : Array (String × String × Array (Nat × Nat × String × Bool)) := #[]
+  imports : Bool := false
+  closed : Bool := true
+  deriving Inhabited
+
 structure CComp where
   path : Name
   file : Nat
   span : Span
+  /-- What an old global expectation's fix copies of it (`F0416`). -/
+  source : ProcSource := {}
+  /-- A global expectation in the short form, `expect n: e`, whose path is
+  its module and whose one constraint is named after it, rather than one
+  with a block, which is checked as a procedure is. -/
+  short : Bool := false
   /-- Its own variables in declaration order, then each call's. -/
   vars : Array CVar
   props : Array CProp
@@ -5430,15 +5451,121 @@ def procMembers (header body : Array Member) : M (Array Member) := do
     | m => m
   return header ++ body.filter (!· matches .define ..)
 
-def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+/-- Where the expression `e` mentions each of `params`: the span of the root
+of each of its paths whose root is one, as written, and that parameter,
+and the span of each field of a record literal or update written without
+`:=` that names one, marked so. A name is compared as written, whatever
+shadows it. -/
+partial def paramSpans (params : Array String) (e : Expr) : Array (Span × String × Bool) :=
+  match e with
+  | .path _ #[s] =>
+    let r := rootOf s.name
+    if params.contains r then #[({ s.span with stop := s.span.start + r.length }, r, false)] else #[]
+  | .record _ _ fs | .update _ _ fs =>
+    fs.filterMap (fun (f, e?) => if e?.isNone && params.contains f.name then some (f.span, f.name, true) else none)
+      ++ e.children.flatMap (paramSpans params)
+  | _ => e.children.flatMap (paramSpans params)
+
+/-- Whether `text` declares `x!`, a name that shadows `x`. -/
+def declaresBang (text x : String) : Bool := Id.run do
+  let cs := text.toList.toArray
+  let xs := (x ++ "!").toList.toArray
+  let ident (c : Char) := c.isAlphanum || c == '_' || c == '?'
+  for i in [0:cs.size] do
+    if i + xs.size ≤ cs.size && (cs.extract i (i + xs.size)) == xs && (i == 0 || !ident cs[i - 1]!) then return true
+  return false
+
+/-- What an old global expectation's fix copies of the procedure with the
+parameters `header`, members `body`, at `spans`, and variables `vars`
+(`ProcSource`). -/
+def procSource (header body : Array Member) (spans : Array Span) (vars : Array CVar) (instNames : Array Name) :
+    M ProcSource := do
+  let src := (← get).src
+  let params ← header.filterMapM fun
+    | .var true _ _ x ty? _ => do
+      let ty ← match ty? with
+        | some ty => srcAt (ty[0]!.span.to ty.back!.span)
+        | none => pure ""
+      return some ((declaredIdent x).1.name, ty)
+    | _ => return none
+  let names := params.map (·.1)
+  let mut assumes := #[]
+  let mut closed := true
+  for m in body, sp in spans do
+    let .prop .assume x e := m | continue
+    -- Its text: after the `:` that follows its name, to its end.
+    let mut a := x.span.stop
+    while a < sp.stop && src[a]! != ':' do a := a + 1
+    a := a + 1
+    while a < sp.stop && (src[a]! == ' ' || src[a]! == '\t' || src[a]! == '\n') do a := a + 1
+    let (_, ls, _) := Fren.Core.lineAt src sp.start
+    let col := sp.start - ls
+    let raw := String.ofList (src.extract a sp.stop).toList
+    -- Its lines after the first, without the member's indentation; each
+    -- mention's offsets, in the text as it then is.
+    let lines := raw.splitOn "\n"
+    let text := "\n".intercalate (lines.headD "" :: (lines.drop 1).map fun l =>
+      let lead := (l.takeWhile (· == ' ')).toString.length
+      (l.drop (min lead col)).toString)
+    let shift (i : Nat) : Nat := Id.run do
+      -- The characters removed before source offset `i`.
+      let mut removed := 0
+      let mut j := a
+      let mut lineStart := false
+      let mut lead := 0
+      while j < i do
+        if src[j]! == '\n' then lineStart := true; lead := 0
+        else if lineStart && src[j]! == ' ' && lead < col then removed := removed + 1; lead := lead + 1
+        else lineStart := false
+        j := j + 1
+      return i - a - removed
+    let occ := (paramSpans names e).map fun (r, p, short) => (shift r.start, shift r.stop, p, short)
+    assumes := assumes.push ((declaredIdent x).1.name, text, occ)
+    -- What it mentions resolves alike elsewhere only if it is no variable
+    -- of the procedure but a parameter, and it shadows no parameter.
+    let own := vars.map (·.name) ++ instNames
+    if (mentions e).any (fun n => own.contains n.getRoot && !names.contains n.getRoot.toString)
+        || names.any (declaresBang text ·) then
+      closed := false
+  let imports := body.any fun | .use .. | .useGroup .. => true | _ => false
+  return { params, assumes, imports, closed }
+
+/-- A member of a global expectation's block that it does not accept
+(`lang::block_member`), with where it is reported. -/
+def blockMemberError? (header body : Array Member) (spans : Array Span) : Option (Span × Fren.Core.BlockMember × Bool) :=
+  let results := header.filterMap fun
+    | .var false _ det x _ _ => some (x.span, Fren.Core.BlockMember.result, det)
+    | _ => none
+  let others := (body.zip spans).filterMap fun (m, sp) => match m with
+    | .var _ _ det _ _ none => some (sp, Fren.Core.BlockMember.exists, det)
+    | .var _ _ det _ _ (some _) => some (sp, .let, det)
+    | .define .. => some (sp, .define, false)
+    | .prop .assume .. => some (sp, .assume, false)
+    | .prop .ensure .. => some (sp, .ensure, false)
+    | .prop .expect .. => some (sp, .expect, false)
+    | .prop .cover .. => some (sp, .cover, false)
+    | .inst .. => some (sp, .call, false)
+    | .use .. | .useGroup .. => some (sp, .use, false)
+    | .evidence .. => none
+  (results ++ others).find? fun (_, m, det) => !Fren.Core.blockMemberAccepted m det
+
+def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat)
+    (global : Bool := false) : M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
-  liftMsg name.span (Fren.Core.checkItemName "procedure" n)
+  if global then
+    liftMsg name.span (Fren.Core.checkNoBang n)
+    if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
+  else liftMsg name.span (Fren.Core.checkItemName "procedure" n)
   let module := (← get).module
   liftMsg written ((← get).table.checkFreshItem module n bang)
-  lintName .component n name.span
+  lintName (if global then .global else .component) n name.span
   startDeclared
+  -- What a global expectation's block accepts (`lang::block_member`).
+  if global then
+    if let some (sp, m, det) := blockMemberError? header body spans then
+      err sp (Fren.Core.blockMemberMsg m det)
   let members ← procMembers header body
   declareMemberUses (module ++ n) members
   -- Distinct names (`lang::distinct_names`): variables, calls and
@@ -5477,12 +5604,22 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let path := module ++ n
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts
-  modify fun s => { s with
-    table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
-    scope := s.module
-    comps := s.comps.push { path, file := s.file, span := name.span, vars, props, insts, defs, indexes, tables, decidable := !s.outsideCore
-                            relational, counts, tested, enumerated, enumSize := s.enumSize, natApps := s.natApps
-                            guarded := s.guardedUsed } }
+  let source ← if global then pure {} else procSource header body spans vars instNames
+  let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables
+                     decidable := !(← get).outsideCore, relational, counts, tested, enumerated, enumSize := (← get).enumSize
+                     natApps := (← get).natApps, guarded := (← get).guardedUsed, source }
+  -- A global expectation is an item that nothing calls
+  -- (`Reqs/Lang/Global`).
+  if global then
+    modify fun s => { s with
+      table := s.table.addItem { kind := .expectItem, path, isPub := false, owner := s.module }
+      scope := s.module
+      globals := s.globals.push c }
+  else
+    modify fun s => { s with
+      table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
+      scope := s.module
+      comps := s.comps.push c }
 
 /-- Elaborates `refine name: concrete refines abstract { bindings }` into
 the procedure that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
@@ -5663,6 +5800,73 @@ def globalBinderComp? (segs : Array Ident) : M (Option Name) := do
   | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
   | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a type" r)
 
+/-- The global expectation, written with parameters and calls, that the
+old one `expect name: forall binders, body` migrates to (`F0416`), each
+binder with the procedure it ranges over the behaviours of, if any; or
+`none` if it has no fix (`Reqs/Lang/Global#migration`). -/
+def oldGlobalText (name : Ident) (binders : Array Binder) (resolved : Array (Binder × Option Name)) (body : Expr) :
+    M (Option String) := do
+  let st ← get
+  let src := st.src
+  let module := st.module
+  let mut params : Array String := #[]
+  let mut newParams : Array String := #[]
+  let mut assumes : Array String := #[]
+  let mut calls : Array String := #[]
+  let mut declaredNames : Array String := #[]
+  let mut callees : Array Fren.Core.Callee := #[]
+  for (b, path?) in resolved do
+    let tyText ← srcAt (b.ty[0]!.span.to b.ty.back!.span)
+    match path? with
+    | none =>
+      for x in b.names do
+        params := params.push s!"{← srcAt x.span}: {tyText}"
+        declaredNames := declaredNames.push (declaredIdent x).1.name
+    | some path =>
+      let some c := st.comps.find? (·.path == path) | return none
+      let src' := c.source
+      callees := callees.push { module := module.toString, imports := src'.imports, closed := src'.closed }
+      for x in b.names do
+        let w := (declaredIdent x).1.name
+        declaredNames := declaredNames.push w
+        let ps := src'.params.map fun (p, _) => Fren.Core.migratedParam w p
+        for (p, ty) in src'.params, q in ps do
+          params := params.push (if ty.isEmpty then q else s!"{q}: {ty}")
+          newParams := newParams.push q
+          declaredNames := declaredNames.push q
+        for (an, text, occ) in src'.assumes do
+          let cs := text.toList.toArray
+          let mut out := ""
+          let mut pos := 0
+          for (i, j, p, short) in occ.qsort (fun a b => a.1 < b.1) do
+            let q := Fren.Core.migratedParam w p
+            out := out ++ String.ofList (cs.extract pos i).toList ++ (if short then s!"{p} := {q}" else q)
+            pos := j
+          out := out ++ String.ofList (cs.extract pos cs.size).toList
+          let q := Fren.Core.migratedParam w an
+          declaredNames := declaredNames.push q
+          assumes := assumes.push s!"assume {q}: {out}"
+        calls := calls.push s!"call {← srcAt x.span} := {tyText}({", ".intercalate ps.toList})"
+  let n := name.name
+  declaredNames := declaredNames.push n
+  -- Each name it declares is distinct, and a new parameter hides nothing.
+  let repeats := Fren.Core.repeatsAt (declaredNames.map Name.mkSimple)
+  let fresh := declaredNames.mapIdx (fun i _ => !repeats.contains i)
+    ++ newParams.map fun q => (st.table.hidden? st.scope #[] (Name.mkSimple q)).isNone
+  unless Fren.Core.globalFixOffered module.toString callees fresh do return none
+  -- The body, as written, with its lines after the first without the
+  -- item's indentation.
+  let (_, ls, _) := Fren.Core.lineAt src st.itemStart
+  let col := st.itemStart - ls
+  let written := Fren.Core.withParens src (toRange (body.writtenSpan src))
+  let raw := String.ofList (src.extract written.start written.stop).toList
+  let lines := raw.splitOn "\n"
+  let claim := "\n".intercalate (lines.headD "" :: (lines.drop 1).map fun l =>
+    let lead := (l.takeWhile (· == ' ')).toString.length
+    (l.drop (min lead col)).toString)
+  let head := String.ofList (src.extract st.itemStart name.span.stop).toList
+  return some (Fren.Core.globalBlockText col head params assumes calls s!"expect {n}: {claim}")
+
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
@@ -5686,42 +5890,26 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
     lintEdits .duplicateConstraint name.span (Fren.Core.duplicateConstraintMsg .expect .expect earlier)
       #[(Fren.Core.deletionRange src { start := st.settingStart?.getD st.itemStart, stop }, "")]
   modify fun s => { s with globalTexts := s.globalTexts.push (st.module, name.name, text) }
-  let mut vars : Array CVar := #[]
-  let mut insts : Array CInst := #[]
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binders.flatMap (·.names)
   -- By the names they declare, without the `!` of shadowing.
   let declared := binderIds.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err binderIds[k]!.span (Fren.Core.dupBinderMsg declared[k]!)
-  -- The binders over values, a quantifier around the body (`lang::quantifier_binder`).
-  let mut valueBinders := #[]
-  for b in binders do
-    let p := b.ty
-    let path ← match ← globalBinderComp? p with
-      | some path => pure path
-      | none => valueBinders := valueBinders.push b; continue
-    let xs := b.names
-    let some c := (← get).comps.find? (·.path == path) | internal p[0]!.span s!"unknown comp `{path}`"
-    unless c.decidable do
-      modify fun s => { s with outsideCore := true }
-      lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
-    noteCounts c (p[0]!.span.to p.back!.span)
-    for x in xs do
-      let x ← declare x
-      let w := Name.mkSimple x.name
-      liftMsg x.span (Fren.Core.checkItemName "binder" w)
-      lintName .instance w x.span
-      -- Like a call's, but its inputs are shown in counterexamples.
-      vars := vars ++ c.vars.map fun v =>
-        let role := Role.ofInst v.role v.isPub
-        { name := w ++ v.name, role, isPub := role != .instHidden, ty := v.ty, span := x.span, ptype := v.ptype
-          fact? := v.fact?.map (rename w c.vars) }
-      -- Its assumptions are hypotheses, not obligations.
-      insts := insts.push { name := w, comp := path, span := x.span, bindings := "true",
-                            behaviour := rename w c.vars c.meaning, assumes := #[] }
-      modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
-  let cx : ExprCtx := { vars, insts := insts.map (·.name), place := .prop, inGlobal := true }
+  -- A binder over a procedure's behaviours is the form that global
+  -- expectations were written in before (`F0416`), and the binders over
+  -- values alone a quantifier around the body (`lang::quantifier_binder`).
+  let resolved ← binders.mapM fun b => return (b, ← globalBinderComp? b.ty)
+  if let some (b, _) := resolved.find? (·.2.isSome) then
+    let fixed? ← oldGlobalText name binders resolved body
+    let msg := Fren.Core.oldGlobalMsg fixed?
+    let stop := (Fren.Core.withParens src (toRange (body.writtenSpan src))).stop
+    err (b.ty[0]!.span.to b.ty.back!.span)
+      { msg with fixes := msg.fixes.map ({ · with range? := some { start := st.itemStart, stop } }) }
+  -- Without a binder over behaviours, it mentions no variables
+  -- (`Reqs/Lang/Global#the-short-form`).
+  let valueBinders := binders
+  let cx : ExprCtx := { vars := #[], place := .prop }
   discard takeIndexes
   discard takeTables
   let quantified := if valueBinders.isEmpty then body
@@ -5734,22 +5922,6 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   lintBools body (← hidesIn cx (valueBinders.flatMap (·.names) |>.map fun x =>
     (Name.mkSimple (declaredIdent x).1.name, .boundName)))
   lintConstant cx "expect" body
-  let binders := insts.map fun i => (i.name, i.span)
-  for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do
-    lint .unusedVariables sp (Fren.Core.unusedVariableMsg w true false)
-  -- What it reads through calls (`unused_assumption`).
-  let reads := (mentions body).filterMap fun m => match m.components with
-    | [w, x] => (insts.find? (·.name == w)).map fun i => (i.comp, x)
-    | _ => none
-  -- And the uninterpreted functions it applies, which its binders'
-  -- assumptions may constrain.
-  let fns ← appliedFns cx body
-  let reads := reads ++ insts.flatMap fun i => fns.map (i.comp, ·)
-  modify fun s => { s with globalReads := s.globalReads ++ reads }
-  -- `unrelated_binders` (`lint::unrelated_binders`).
-  let groups := Fren.Core.binderGroups (insts.map (·.name)) ((boolAtoms body).map fun a => (mentions a).map (·.getRoot))
-  if Fren.Core.unrelatedBinders groups.size then
-    lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)
   let trig ← trigger? cx quantified
   lintDeclared .global n name.span
   let prop : CProp := { kind := .expect, name := n, span := name.span, smt
@@ -5757,7 +5929,8 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   discard checkCounts
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
-    globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars, props := #[prop], insts, indexes, tables
+    globals := s.globals.push { path := s.module, file := s.file, span := name.span, vars := #[], props := #[prop], indexes, tables
+                                short := true
                                 decidable := !s.outsideCore, natApps := s.natApps, guarded := s.guardedUsed
                                 tested := Fren.Core.Tested.ofSettings all.tested #[] #[(n, none)] #[] #[]
                                 enumerated := Fren.Core.Tested.ofSettings all.enumerated #[] #[(n, none)] #[] #[]
@@ -6286,6 +6459,19 @@ partial def elabItem (item : Item) : M Unit := do
   | .global name binders body => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabGlobal name binders body
+  | .globalBlock name header members close spans openStop => do
+    let shown := (declaredIdent name).1
+    modify fun s => { s with item := s.module ++ Name.mkSimple shown.name }
+    modify fun s => { s with inCompBody := false }
+    try elabComp false name header members spans openStop (global := true)
+    catch e =>
+      modify (fun s => { s.keepLints e.state with scope := s.module })
+      if e.state.inCompBody then
+        lintDeclared .global (Name.mkSimple shown.name) shown.span
+        lintLines .global (Name.mkSimple shown.name) shown.span close
+      throw { e with state := ← get }
+    lintDeclared .global (Name.mkSimple shown.name) shown.span
+    lintLines .global (Name.mkSimple shown.name) shown.span close
   | .refine name c a bs => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabRefine name c a bs
