@@ -630,7 +630,6 @@ expression mentions, as [`lang::mentions`](../Lang/Expressions.md#mentions)
 gives it:
 
 ```fren
-set_option fren.evidence "enumerated" in
 pub comp assertions_on_constants {
     in mentioned: Set(lang::Mention)  -- what the expression mentions
     pub det out fires?

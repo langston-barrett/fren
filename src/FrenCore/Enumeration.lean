@@ -361,6 +361,8 @@ inductive EF where
   | exOutputs (f : EF)
   /-- The slot `x` holds the value `v`. -/
   | pin (x v : Nat)
+  /-- The slot `x` holds one of the values `vs`: a variant's tester. -/
+  | oneOf (x : Nat) (vs : List Nat)
   /-- `f` over the second copy of the variables. -/
   | primed (f : EF)
   /-- `x = x'`, for the variable `x`. -/
@@ -421,6 +423,7 @@ def EF.slots (sp : Space) (ats : Atoms) : EF → List Nat
   | .conj fs => (fs.attach.toList.map fun ⟨f, _⟩ => f.slots sp ats).flatten
   | .exOutputs f => (f.slots sp ats).filter (!sp.outputs.contains ·)
   | .pin x _ => [x]
+  | .oneOf x _ => [x]
   | .primed f => (f.slots sp ats).map fun x => (sp.primeOf[x]?.join).getD x
   | .same x => match sp.slotOf? x with
     | some s => s :: (sp.primeOf[s]?.join).toList
@@ -507,6 +510,7 @@ def EF.eval (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Bool
     let lims := outs.map fun s => (sp.sizes[s]?.getD #[]).size
     (firstChoice env outs lims [(f.slots sp ats, fun e => f.eval sp ats e)]).isSome
   | .pin x v => env[x]? == some v
+  | .oneOf x vs => (env[x]?.map vs.contains).getD false
   | .primed f => f.eval sp ats (sp.primedEnv env)
   | .same x => match sp.slotOf? x with
     | some s => match sp.primeOf[s]?.join with
@@ -616,7 +620,8 @@ first that does, which gives the slots it reads, but the hidden
 ones, and the defined outputs that its formulas mention, as `render` and
 `defValue` show them. -/
 def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m String)
-    (defValue : Name → Array Nat → m (Option String)) (testing? : Option UInt64 := none) : Backend m EF EV where
+    (defValue : Name → Array Nat → m (Option String)) (testing? : Option UInt64 := none)
+    (variantOf : Nat → Nat → Option Variant := fun _ _ => none) : Backend m EF EV where
   query hyps goal _ := do
     let parts := (hyps.map (·.2)).push (.not goal)
     let found := answerOf ((search sp ats parts).map (·.1)) testing?.isSome fun _ =>
@@ -637,6 +642,13 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
   conj := .conj
   existsOutputs f := pure (.exOutputs f)
   pin _ v := pure (v.at?.map fun (x, j) => .pin x j)
+  -- That the slot holds a value of the same variant: one of those of its
+  -- values that are.
+  pinVariant _ v := pure do
+    let (x, j) ← v.at?
+    let k ← variantOf x j
+    let n := (sp.sizes[x]?.getD #[]).size
+    return (k, .oneOf x ((List.range n).filter fun i => variantOf x i == some k))
   render _ v := pure v.shown
   prime := .primed
   samePrimed := .same

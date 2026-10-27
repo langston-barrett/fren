@@ -29,7 +29,7 @@ partial def Fm.exprs? : Fm → Option (Array (Name × Ex))
   | .defn _ e => some #[(.anonymous, e)]
   | .defined ds f => (fun r => ds.map (fun (_, e) => ((.anonymous : Name), e)) ++ r) <$> f.exprs?
   | .exOutputs _ f => f.exprs?
-  | .pin .. | .same _ => some #[]
+  | .pin .. | .pinVariant .. | .same _ => some #[]
   | .unknown => none
 
 /-- Whether `f` holds, its constraints evaluated with `I` and `look`;
@@ -172,7 +172,16 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[] }
   let render (s j : Nat) : String := ((vals[s]?.bind (·[j]?)).map (·.showAs sp (tyOf space.names[s]!))).getD "?"
   let defValue (d : Name) (env : Array Nat) : Option String := (look env fuel d).map (·.showAs sp (tyOf d))
-  let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e)) (if testing then some (hash c.path) else none)) ecomp ks)
+  -- The variant of each value of a slot whose type is an enumeration, as
+  -- the solver's backend names it (`variantOfValue`).
+  let variantOf (s j : Nat) : Option Fren.Core.Variant := do
+    let .ctor p idx _ ← vals[s]?.bind (·[j]?) | none
+    let .data _ _ := tyOf space.names[s]! | none
+    let d ← sp.data.find? p
+    if d.isRecord then none
+    let k ← d.ctors[idx]?
+    return { name := s!"{p.getString!}::{k.name}", arity := k.fields.size }
+  let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e)) (if testing then some (hash c.path) else none) variantOf) ecomp ks)
   let ownOutputs := space.outputs
   let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
   let outputsExact := exhaustedAll shapes n ownOutputs

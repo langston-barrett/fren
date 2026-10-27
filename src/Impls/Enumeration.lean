@@ -898,17 +898,19 @@ theorem eval_local (sp : Space) (ats : Atoms)
     exact ih _ _ (setAll_outs_agree sp _ _ _ _ c houts (fun s hs => hs) h hr)
   | case8 env x v =>
     intro e' h; simp only [EF.eval]; rw [h.2 x (by simp [EF.slots])]
-  | case9 env f ih =>
+  | case9 env x vs =>
+    intro e' h; simp only [EF.eval]; rw [h.2 x (by simp [EF.slots])]
+  | case10 env f ih =>
     intro e' h
     simp only [EF.slots] at h
     simp only [EF.eval]
     exact ih (sp.primedEnv e') (primed_agree sp _ env e' h)
-  | case10 env x s hs p hp =>
+  | case11 env x s hs p hp =>
     intro e' h
     simp only [EF.eval, hs, hp]
     rw [h.2 s (by simp [EF.slots, hs]), h.2 p (by simp [EF.slots, hs, hp])]
-  | case11 env x s hs hp => intro e' _; simp only [EF.eval, hs, hp]
-  | case12 env x hs =>
+  | case12 env x s hs hp => intro e' _; simp only [EF.eval, hs, hp]
+  | case13 env x hs =>
     intro e' h
     simp only [EF.eval, hs]
     have hsl : (EF.same x).slots sp ats = (ats.defSlots x).toList ++ (ats.defSlots x).toList.filterMap (sp.primeOf[·]?.join) := by

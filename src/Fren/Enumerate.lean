@@ -292,7 +292,16 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       let envE ← mkArrayLit (mkConst ``Nat) (env.toList.map mkNatLit)
       let v ← withTransparency .all <| Meta.reduce (← over envE defExprs[i]!)
       return some (← Fren.render (varTy d) (← normInts v))
-    let raw ← Core.checkComp (fun _ => backend space ats renderSlot defValue (if testing then some (hash c.path) else none)) ecomp ks
+    -- The variant of each value of a slot whose type is an enumeration,
+    -- as the solver's backend names it.
+    let variantOf (s j : Nat) : Option Core.Variant := do
+      let v ← slotVals[s]?.bind (·[j]?)
+      let e ← st.enumOf? (slotTys[s]?.getD (mkConst ``Bool))
+      let .const c _ := v.getAppFn | none
+      let idx ← e.variants.idxOf? (Name.mkSimple c.getString!)
+      return { name := s!"{e.path.getString!}::{c.getString!}", arity := (e.payloads[idx]?.map (·.size)).getD 0 }
+    let raw ← Core.checkComp (fun _ => backend space ats renderSlot defValue (if testing then some (hash c.path) else none)
+      variantOf) ecomp ks
     let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
     let outputsExact := exhaustedAll shapes n space.outputs
     return .ok { results := raw.map (classify n exact outputsExact), bound := n, exact }

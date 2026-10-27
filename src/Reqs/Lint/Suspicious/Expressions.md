@@ -111,7 +111,6 @@ compared in their scopes, as the operands of `and` are.
 value is `written_same`, as for `eq_op`:
 
 ```fren
-set_option fren.evidence "enumerated" in
 pub comp eq_op_conditional {
     use self::EqOpValue::AlwaysTrue
     in unless?           -- `unless`, rather than `when`
@@ -333,7 +332,6 @@ value. It leaves such a conditional even where the branches mention none
 of those names, rather than compare what they mention:
 
 ```fren
-set_option fren.evidence "enumerated" in
 pub comp same_branches {
     in binders: Set(lang::Id)  -- the binders of the condition's pattern tests
     in then_branch: Scoped     -- the branches, as written in their scopes
