@@ -1,10 +1,11 @@
--- Hutton's razor, after Graham Hutton: integers and addition, the smallest
--- language with something to evaluate. Constant folding replaces
--- `Add(Val(x), Val(y))` with `Val(x + y)`, and keeps every expression's value.
+-- Hutton's razor: a minimal language of integers and addition (see Graham
+-- Hutton, "Programming language semantics: it's easy as 1, 2, 3", JFP 2023).
+-- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and
+-- keeps every expression's value.
 --
 -- TODO(#279): evaluation and folding recurse over the tree, which a spec
--- can't do yet. So this spec states one layer, folding a single `Add` whose
--- operands are already folded, and `Arith.lean` lifts it to whole trees by
+-- can't do yet. So this spec states one layer, folding a single `Add` given
+-- its operands' values, and `Arith.lean` lifts it to whole trees by
 -- induction.
 mod arith
 
@@ -17,17 +18,20 @@ pub fn layer(e: Expr, va: Int, vb: Int): Int := match e {
     Expr::Add(_, _) => va + vb,
 }
 
--- Folding `Add(a, b)`, where `a` and `b` are folded, and have the values `va`
--- and `vb`. The result is described by whether it is a value, and what
--- its value is.
-pub proc fold_add(a: Expr, b: Expr, va: Int, vb: Int): (folded?, value: Int) {
+-- Folding `Add(a, b)`, whose operands have the values `va` and `vb`. An
+-- `Expr` output would be unbounded, so the result is described by bounded
+-- outputs: whether it is a value, whether it is `Add(a, b)` itself, and its
+-- value by `layer`, given `va` and `vb`.
+pub proc fold_add(a: Expr, b: Expr, va: Int, vb: Int): (val?, kept?, value: Int) {
     use arith::Expr::Val
 
     assume a_value: when a is Val(x), va = x
     assume b_value: when b is Val(y), vb = y
 
     -- The result is a value exactly when both operands are.
-    ensure folds: folded? iff (a is Val(_) and b is Val(_))
+    ensure folds: val? iff (a is Val(_) and b is Val(_))
+    -- Otherwise it is `Add(a, b)` itself.
+    ensure keeps: kept? iff not val?
     -- Folding keeps the value.
     ensure keeps_value: value = va + vb
 
