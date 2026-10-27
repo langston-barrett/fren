@@ -1,0 +1,61 @@
+-- A defined function's applications of itself (`lang::structural_recursion`):
+-- structural recursion is recognized, and not yet supported; any other
+-- recursion is an error that names the application, in both front ends.
+-- fren-covers: lang::structural_recursion
+set_option fren.lint.dead_code "allow"
+
+mod structural_recursion_static
+
+pub enum Expr { Lit(Int), Var(Int), Add(Expr, Expr), Neg(Expr) }
+
+fn twice(g: fn(Expr) -> Int, e: Expr): Int := g(e) + g(e)
+
+-- Structural: on a payload of the matched parameter.
+fn size(e: Expr): Int := match e {
+    Expr::Add(a, b) => size(a) + size(b),  --~ error: recursive defined functions are not yet supported
+    _ => 1,
+}
+
+-- Structural: on a payload of a payload, and on a binder of the whole of
+-- a payload, at the second parameter, with the first unrestricted.
+fn depth(d: Int, e: Expr): Int := match e {
+    Expr::Neg(n) => match n {
+        Expr::Add(Expr::Neg(x), y) => depth(d + 1, x) + depth(0, y),  --~ error: recursive defined functions are not yet supported
+        m => depth(d, m),
+    },
+    _ => d,
+}
+
+-- Structural at the second parameter, though the first is an `Expr` too.
+fn both(f: Expr, e: Expr): Int := match e {
+    Expr::Add(a, b) => both(f, a) + both(a, b),  --~ error: recursive defined functions are not yet supported
+    _ => 0,
+}
+
+-- Not structural: on the parameter itself.
+fn again(e: Expr): Int := again(e)  --~ error: defined function `structural_recursion_static::again` is not structurally recursive
+
+-- Not structural: on a name that is not a payload of the parameter there.
+fn swapped(e: Expr, d: Expr): Int := match e {
+    Expr::Add(a, b) => swapped(d, a),  --~ error: defined function `structural_recursion_static::swapped` is not structurally recursive
+    _ => 0,
+}
+
+-- Not structural: on an arithmetic expression.
+fn count(n: Int): Int := if n > 0 then count(n - 1) else 0  --~ error: defined function `structural_recursion_static::count` is not structurally recursive
+
+-- Not structural: the second application is on the parameter itself.
+fn mixed(e: Expr): Int := match e {
+    Expr::Add(a, b) => mixed(a) + mixed(e),  --~ error: defined function `structural_recursion_static::mixed` is not structurally recursive
+    _ => 0,
+}
+
+-- Not structural: through a closure, or passed as a function.
+fn closed(e: Expr): Int := match e {
+    Expr::Add(a, b) => twice(|x| closed(x), a),  --~ error: defined function `structural_recursion_static::closed` is not structurally recursive
+    _ => 0,
+}
+fn passed(e: Expr): Int := match e {
+    Expr::Add(a, b) => twice(passed, a),  --~ error: defined function `structural_recursion_static::passed` is not structurally recursive
+    _ => 0,
+}

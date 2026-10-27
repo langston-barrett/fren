@@ -8,6 +8,7 @@ import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
 import FrenCore.PatternTypes
+import FrenCore.Recursion
 import FrenCore.Refine
 import Lean
 -- keep-sorted end
@@ -860,6 +861,9 @@ structure LocalState where
   has a domain, directly, through a call or through a defined function
   or constant, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guardedUsed : Bool := false
+  /-- In a defined function's body, its uses of itself so far, each where
+  it is written (`lang::structural_recursion`). -/
+  recUses : Array (Lean.Syntax × Core.RecUse) := #[]
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated, by where `e` is: whether `e` is a sequence, and the
   `undecidable` report that `in` defers until the quantifier is known to

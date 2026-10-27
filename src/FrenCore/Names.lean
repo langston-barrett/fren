@@ -1317,7 +1317,7 @@ def functionBodyAccepted (typed appliesSelf appliesUninterpreted : Bool) : Bool 
 def recursiveMsg (f : Name) : Msg :=
   { code? := some "F0331", headline := s!"defined function `{showPath f}` applies itself"
     label? := some "applied in its own body"
-    notes := #["note: defined functions are not recursive, so that every application has a value",
+    notes := #["note: a generic or higher-order defined function is not recursive, so that every application has a value",
       "help: use an earlier defined function, or a `match` on the argument"] }
 
 /-- A defined function's body applies an uninterpreted function. -/

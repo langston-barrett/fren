@@ -1,0 +1,3 @@
+-- A defined function that applies itself to other than a payload (F0447).
+-- fren-covers: lang::structural_recursion
+fn count(n: Int): Int := if n > 0 then count(n - 1) + 1 else 0
