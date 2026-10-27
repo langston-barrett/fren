@@ -604,8 +604,18 @@ pub proc ordered_type(
     expect by_base: when patterned?, ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
 }
 
-expect patterns_by_base: forall (a b: ordered_type),
-    when a.base = b.base and a.ordered_items = b.ordered_items, a.ordered? iff b.ordered?
+expect patterns_by_base(
+    a_base: Ty,
+    a_patterned?,
+    a_ordered_items: Set<TypeName>,
+    b_base: Ty,
+    b_patterned?,
+    b_ordered_items: Set<TypeName>,
+) {
+    call a := ordered_type(a_base, a_patterned?, a_ordered_items)
+    call b := ordered_type(b_base, b_patterned?, b_ordered_items)
+    expect patterns_by_base: when a.base = b.base and a.ordered_items = b.ordered_items, a.ordered? iff b.ordered?
+}
 ```
 
 ## Strings

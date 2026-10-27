@@ -82,17 +82,19 @@ proc pick(a: Name, b: Name): (w: Name) {
     out w := table { same?(a, b) => a }   --~ error: a table in `pick::w` may have no row that holds
 }
 
--- In a global expectation, under the meanings of its binders.
+-- In a global expectation, under its assumptions and calls.
 proc counter(n: Int): (m: Int) {
     ensure r: m = n + 1
 }
 
 -- Where no row holds, the table's value is unknown, so the expectation
 -- does not follow either.
-expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true }
---~^ error: a table in `positive` may have no row that holds
---~^^ error: expectation `positive` does not hold
---~^^^ warning: every row of this table has a value written the same
+expect positive(c_n: Int) {
+    call c := counter(c_n)
+    expect positive: table { c.m > 0 => true, c.n < -1 => true }  --~ warning: every row of this table has a value written the same
+    --~^ error: a table in `positive::positive` may have no row that holds
+    --~^^ error: expectation `positive::positive` does not hold
+}
 
 -- Disjointness leaves out the constraint that the table is in, as
 -- reachability does: `r` rules out `y > 0`, where both rows hold, only
@@ -105,5 +107,5 @@ proc enclosing(): (y: Int) {
     }
 }
 
---@ summary: 57 passed, 20 failed, 0 inconclusive, 0 redundant
+--@ summary: 58 passed, 20 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

@@ -52,11 +52,12 @@ def toCheckKind : CheckKind → check.Kind
   | .postcondition => .Postcondition
   | .reachability => .Reachability
 
-instance : Fren.Finite Fren.Core.CheckedItem := ⟨[.component, .global, .body, .contract], by intro x; cases x <;> simp⟩
+instance : Fren.Finite Fren.Core.CheckedItem := ⟨[.component, .global, .shortGlobal, .body, .contract], by intro x; cases x <;> simp⟩
 
 def toCheckedItem : Fren.Core.CheckedItem → check.CheckedItem
   | .component => .Component
   | .global => .GlobalExpectation
+  | .shortGlobal => .ShortExpectation
   | .body => .Body
   | .contract => .Contract
 

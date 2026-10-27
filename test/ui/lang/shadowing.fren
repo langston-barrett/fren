@@ -48,6 +48,9 @@ proc sub(v: Int): (w: Int) {
     ensure r: w = v + scale(v)
 }
 
-expect binder: forall (RATE!: sub), RATE.w = RATE.v + scale(RATE.v)
+expect binder(RATE_v: Int) {
+    call RATE! := sub(RATE_v)
+    expect binder: RATE.w = RATE.v + scale(RATE.v)
+}
 
---@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 2 failed, 0 inconclusive, 0 redundant

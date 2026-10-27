@@ -1100,7 +1100,7 @@ impl quantifier_binder: lang::quantifier_binder for (t : lang.BinderTarget) (g :
   target := t,
   global? := g,
   accepted? := (Fren.Core.quantifierBinder (toBinderTarget t) g).1,
-  behaviours? := (Fren.Core.quantifierBinder (toBinderTarget t) g).2,
+  migrated? := (Fren.Core.quantifierBinder (toBinderTarget t) g).2,
 } by
   intro t g _
   cases t <;> cases g <;> simp [fren_spec, toBinderTarget, Fren.Core.quantifierBinder]

@@ -197,18 +197,56 @@ stronger own evidence, or stronger evidence for its calls, never
 lowers what is reported:
 
 ```fren
-expect more_evidence_never_lower: forall (a b: direct) (ra rb: rank),
-    when (not a.proved? or b.proved?) and (not a.solver? or b.solver?)
-    and (not a.tested? or b.tested?) and (not a.trusted? or b.trusted?)
-    and ra.level = a.level and rb.level = b.level,
-    ra.r <= rb.r
+expect more_evidence_never_lower(
+    a_proved?,
+    a_solver?,
+    a_tested?,
+    a_trusted?,
+    b_proved?,
+    b_solver?,
+    b_tested?,
+    b_trusted?,
+    ra_level: Level,
+    rb_level: Level,
+) {
+    call a := direct(a_proved?, a_solver?, a_tested?, a_trusted?)
+    call b := direct(b_proved?, b_solver?, b_tested?, b_trusted?)
+    call ra := rank(ra_level)
+    call rb := rank(rb_level)
+    expect more_evidence_never_lower: when (not a.proved? or b.proved?) and (not a.solver? or b.solver?)
+        and (not a.tested? or b.tested?) and (not a.trusted? or b.trusted?)
+        and ra.level = a.level and rb.level = b.level,
+        ra.r <= rb.r
+}
 
-expect stronger_parts_never_lower: forall (a b: evidence) (oa ob wa wb ra rb: rank),
-    when a.has_outputs? = b.has_outputs?
-    and oa.level = a.own and ob.level = b.own and oa.r <= ob.r
-    and wa.level = a.weakest and wb.level = b.weakest and wa.r <= wb.r
-    and ra.level = a.level and rb.level = b.level,
-    ra.r <= rb.r
+expect stronger_parts_never_lower(
+    a_own: Level,
+    a_has_outputs?,
+    a_weakest: Level,
+    b_own: Level,
+    b_has_outputs?,
+    b_weakest: Level,
+    oa_level: Level,
+    ob_level: Level,
+    wa_level: Level,
+    wb_level: Level,
+    ra_level: Level,
+    rb_level: Level,
+) {
+    call a := evidence(a_own, a_has_outputs?, a_weakest)
+    call b := evidence(b_own, b_has_outputs?, b_weakest)
+    call oa := rank(oa_level)
+    call ob := rank(ob_level)
+    call wa := rank(wa_level)
+    call wb := rank(wb_level)
+    call ra := rank(ra_level)
+    call rb := rank(rb_level)
+    expect stronger_parts_never_lower: when a.has_outputs? = b.has_outputs?
+        and oa.level = a.own and ob.level = b.own and oa.r <= ob.r
+        and wa.level = a.weakest and wb.level = b.weakest and wa.r <= wb.r
+        and ra.level = a.level and rb.level = b.level,
+        ra.r <= rb.r
+}
 ```
 
 ## The report
@@ -240,10 +278,24 @@ pub proc required(
     expect proved_always_enough: when level = Proved, severity = Silent
 }
 
-expect stronger_never_warns: forall (a b: required) (ra rb: rank),
-    when a.threshold = b.threshold and a.enforced? = b.enforced?
-    and ra.level = a.level and rb.level = b.level and ra.r <= rb.r and b.severity = Warning,
-    a.severity = Warning
+expect stronger_never_warns(
+    a_level: Level,
+    a_threshold: Level,
+    a_enforced?,
+    b_level: Level,
+    b_threshold: Level,
+    b_enforced?,
+    ra_level: Level,
+    rb_level: Level,
+) {
+    call a := required(a_level, a_threshold, a_enforced?)
+    call b := required(b_level, b_threshold, b_enforced?)
+    call ra := rank(ra_level)
+    call rb := rank(rb_level)
+    expect stronger_never_warns: when a.threshold = b.threshold and a.enforced? = b.enforced?
+        and ra.level = a.level and rb.level = b.level and ra.r <= rb.r and b.severity = Warning,
+        a.severity = Warning
+}
 ```
 
 ## Claims

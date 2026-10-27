@@ -221,7 +221,7 @@ partial def allExprs (items : Array Item) : Array Expr :=
   let rec sub (e : Expr) : Array Expr := #[e] ++ (exprChildren e).flatMap sub
   let rec ofItem : Item → Array Expr
     | .const _ _ _ v | .global _ _ v | .function _ _ _ _ _ (some v) _ _ _ => #[v]
-    | .comp _ _ _ members .. => members.flatMap fun
+    | .comp _ _ _ members .. | .globalBlock _ _ members .. => members.flatMap fun
       | .prop _ _ e | .var _ _ _ _ _ (some e) | .define _ e => #[e]
       | .inst _ _ bs .. => bs.filterMap (·.2)
       | _ => #[]

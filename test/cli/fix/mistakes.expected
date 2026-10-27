@@ -20,8 +20,8 @@ warning[F0768]: this is written the same as `r1`
 -        p?  -- a repeat
 -    -- a ⁦comment⁩
 +    -- a comment
-@@ -19,2 +15,0 @@
--set_option fren.lint.eq_op "allow" in
--expect g2: forall (x: c), when x.a?, x.p?
+@@ -22,2 +18,0 @@
+-set_option fren.lint.assertions_on_constants "allow" in
+-expect g2: K > 0
 For more information about this error, try `fren --explain F0768`.
 exit=1

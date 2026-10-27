@@ -28,7 +28,6 @@ def toBindingKind : BindingKind → lang.BindingKind
   | .output => .Output
   | .parameter => .Parameter
   | .inst => .Instance
-  | .expectBinder => .ExpectBinder
   | .patternBinder => .PatternBinder
   | .boundName => .BoundName
   | .definition => .Definition
@@ -46,7 +45,6 @@ def ofBindingKind : lang.BindingKind → BindingKind
   | .Output => .output
   | .Parameter => .parameter
   | .Instance => .inst
-  | .ExpectBinder => .expectBinder
   | .PatternBinder => .patternBinder
   | .BoundName => .boundName
   | .Definition => .definition

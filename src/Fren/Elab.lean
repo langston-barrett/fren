@@ -10,6 +10,7 @@ import FrenCore.Checking
 import FrenCore.Closures
 import FrenCore.FnBlocks
 import FrenCore.Generics
+import FrenCore.Global
 import FrenCore.Guards
 import FrenCore.Lexical
 import FrenCore.Mentions
@@ -529,8 +530,6 @@ structure ExprCtx where
   inClosure : Bool := false
   /-- In a clause of a function's contract, the function. -/
   contract? : Option ContractCx := none
-  /-- In a global expectation, whose calls are its binders. -/
-  inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
   concatOk : Bool := false
@@ -1703,7 +1702,7 @@ something in scope (`lang::shadowing`). -/
 def hidesIn (cx : ExprCtx) (extra : Core.Locals := #[]) : TermElabM (String → Bool) := do
   let table := (← getState).table
   let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
+    (cx.binders.map (·.what)) cx.selfFn.isSome ++ extra
   return fun n => (table.hidden? cx.modName locals (Name.mkSimple n)).isSome
 
 /-- The names that `e` declares, without their `!`: those of its `let`s and
@@ -3125,7 +3124,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let mut new : Array MatchBinder := #[]
     for b in bs do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
@@ -3220,7 +3219,7 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
     let mut new := #[]
     for b in bs do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what)) cx.selfFn.isSome
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
@@ -4289,7 +4288,7 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
     (binds : Array (Ident × Term × Term) := #[]) : TermElabM α := do
   let some d := defs[k]? | body cx binds
   let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-    (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
+    (cx.binders.map (·.what)) cx.selfFn.isSome
   let x ← declare d[0] cx.modName locals
   let n := x.getId
   -- This name and the later ones that hide nothing are not in scope yet.
@@ -4659,7 +4658,7 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   for (x, t) in params, i in [0:params.size] do
     let bn ← if synthetic then pure x.getId else do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what) ++ named.map fun (bn, _) => (bn, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what) ++ named.map fun (bn, _) => (bn, Core.BindingKind.boundName)) cx.selfFn.isSome
       let y ← declare x cx.modName locals
       liftMsg y (Core.checkVarName y.getId (some (t == .bool)))
       lintName .binder y.getId y
@@ -5246,7 +5245,7 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if values?.isNone then unlisted := unlisted.push b
     for x in b[1].getArgs do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
-        (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
+        (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome
       let x ← declare x cx.modName locals
       let bn := x.getId
       liftMsg x (Core.checkVarName bn (some (ty.isConstOf ``Bool)))
@@ -6885,8 +6884,8 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
 of a procedure whose items were all elaborated: the latter is recorded, to be
 reported unless the file reads one of the inputs (`reportLints`), or one
 that another assumption ties to a used variable, transitively. -/
-def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name) :
-    TermElabM Unit := do
+def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name)
+    (global : Bool := false) : TermElabM Unit := do
   let mut mentioned := #[]
   for m in members do
     match m with
@@ -6903,7 +6902,7 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   -- A public definition says what the output is, so it is used.
   let own := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
   for (x, v) in Core.unmentioned (own.map fun v => (v.name, v)) mentioned do
-    recordLint .unusedVariables v.ref (Core.unusedVariableMsg x false (v.role == .output))
+    recordLint .unusedVariables v.ref (Core.unusedVariableMsg x global (v.role == .output))
   let mut others := #[]
   for m in members do
     match m with
@@ -6946,10 +6945,36 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
       let r : Core.AssumptionRecord := { component := path, name := x.getId, inputs := ms, links := ls, level }
       modifyLocal fun l => { l with assumptions := l.assumptions.push (r, x) }
 
+/-- `unrelated_binders` (`lint::unrelated_binders`) of the global
+expectation `n` with the members `members`: whether its calls fall into
+groups that nothing relates. An atom of a constraint relates the calls it
+mentions and those whose arguments mention a parameter it mentions; a call
+relates itself to the calls its arguments mention; and a parameter
+relates the calls whose arguments mention it. -/
+def lintUnrelatedCalls (nameStx : Syntax) (n : String) (members : Array Syntax) : TermElabM Unit := do
+  let calls := members.filterMap fun m =>
+    if m.isOfKind ``Lang.callMember then
+      some ((declaredIdent m[1]).1.getId, m[5].getSepArgs.flatMap fun a => (pathMentions a).map (·.getRoot))
+    else none
+  let params := members.filterMap fun m =>
+    if m.isOfKind ``Lang.inMember then some (declaredIdent m[1]).1.getId else none
+  let names := calls.map (·.1)
+  let reading (p : Name) := (calls.filter (·.2.contains p)).map (·.1)
+  let expand (roots : Array Name) := roots.filter names.contains ++ (roots.filter params.contains).flatMap reading
+  let atoms := members.flatMap (fun m => match constraint? m with
+      | some (_, _, e) => (boolNode "" 0 (unparen e)).atoms.map fun a => expand ((pathMentions a.ref).map (·.getRoot))
+      | none => #[])
+    -- A relation of one call alone puts it in no group.
+    ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
+  let groups := Core.binderGroups names atoms
+  if Core.unrelatedBinders groups.size then
+    recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n groups)
+
 /-- A procedure's members, elaborated, with the procedure recorded if all were: whether
 they were, and the generated declarations. -/
 def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx : Syntax)
-    (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3) :
+    (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3)
+    (global : Bool := false) :
     TermElabM (Bool × Array Name) := do
   let (vars, names, ok) ← elabCompVars scope members
   unless ok do return (false, #[])
@@ -6958,20 +6983,29 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   -- A call that is not resolved is reported once, not again at each
   -- use of it, as by the `fren` command (`Reqs/View#static-errors`).
   unless ok do return (false, #[])
+  if global then lintUnrelatedCalls nameStx path.getString! members
   -- Bindings; assumptions, requirements and expectations
   let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names
   lintManualNat path members
-  if ok then lintCompUnused scope path members vars instNames
+  if ok then lintCompUnused scope path members vars instNames global
   let mut generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
     ++ values.map (declBase ++ `def ++ ·.1) ++ (if values.isEmpty then #[] else #[declBase ++ `defs])
   let env ← getEnv
   generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
   if ok then
-    record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
     let (relational, counts) ← checkCounts
-    record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
-                        decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
-                        relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed })
+    let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
+                             decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
+                             relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed
+                             global }
+    -- A global expectation is an item that nothing calls
+    -- (`Reqs/Lang/Global`).
+    if global then
+      record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
+      record (.globalInfo path info)
+    else
+      record (.item { item := { kind := .compItem, path, isPub, owner := modName }, ref := nameStx })
+      record (.compInfo info)
   return (ok, generated)
 
 /-- A component, as procedures were written before they were procedures
@@ -7080,6 +7114,79 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
       elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
     modifyLocal fun l => { l with comps := l.comps.push path }.declared path
 
+/-- The first member of the global expectation `stx`, aligned as a
+procedure's, that its block does not accept (`lang::block_member`), with
+where it is reported. -/
+def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.BlockMember × Bool)) := do
+  for r in procResults stx do
+    unless Core.blockMemberAccepted .result !r[1].isNone do return some (r[2], .result, !r[1].isNone)
+  for m0 in stx[8].getArgs do
+    let (m, _) ← unwrapEvidence m0
+    let (kind, det) : Core.BlockMember × Bool :=
+      if m.isOfKind ``Lang.existsMember then (.exists, !m[0].isNone)
+      else if m.isOfKind ``Lang.letMember then (.let, !m[0].isNone)
+      else if m.isOfKind ``Lang.outMember then (.define, false)
+      else if m.isOfKind ``Lang.assumeMember then (.assume, false)
+      else if m.isOfKind ``Lang.ensureMember then (.ensure, false)
+      else if m.isOfKind ``Lang.expectMember then (.expect, false)
+      else if m.isOfKind ``Lang.coverMember then (.cover, false)
+      else if m.isOfKind ``Lang.callMember || m.isOfKind ``Lang.instMember then (.call, false)
+      else (.use, false)
+    unless Core.blockMemberAccepted kind det do return some (m, kind, det)
+  return none
+
+/-- `expect n(x: T) { members }`, a global expectation with a block
+(`Reqs/Lang/Global`): elaborated as a procedure is, but for the members it
+does not accept (`F0417`), and recorded as a global expectation, which
+nothing calls. -/
+@[command_elab Lang.globalBlockCmd] def elabGlobalBlock : CommandElab := recordingErrors fun stx0 => do
+  checkLexemes stx0
+  checkParsed stx0
+  -- Aligned as a procedure's, after a `pub` that it does not have.
+  let stx : Syntax := mkNode ``Lang.procCmd (#[mkNullNode] ++ stx0.getArgs)
+  checkProcMembers stx
+  lintItem stx0
+  lintTrailingCommas stx0
+  let modName := (← getLocal).currentModule
+  let nameStx := stx[2]
+  let n ← itemSegName nameStx
+  liftMsg nameStx (Core.checkNoBang n)
+  if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
+  checkFresh modName n nameStx
+  lintName .global n nameStx
+  if let some (ref, m, det) ← blockMemberError? stx then
+    throwErrorAt ref (Core.blockMemberMsg m det).text
+  startDeclared
+  let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
+  let declBase ← generatedName path
+  let all ← procMembers stx
+  let (members, tested, enumerated) ← testedOf (← evidenceInEffect) all
+  let enumSize ← enumSizeInEffect
+  for m in members do
+    if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
+    else if m.isOfKind ``Lang.useGroupMember then
+      for p in m[3].getSepArgs do declareUse (pathSegs m[1] ++ pathSegs p) false p (some path)
+  let scope := if members.any (fun m => m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember) then path
+    else modName
+  modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+  let named := members.filterMap memberName?
+  for x in named do discard (segName x)
+  let declared := named.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt named[k]! (Core.dupMemberMsg declared[k]! (global := true)).text
+  let raw := stx[8].getArgs
+  let body ← raw.mapM fun m => return (← unwrapEvidence m).1
+  lintMemberOrder stx stx[7] raw body
+  let (ok, generated) ← liftTermElabM <|
+    elabCompMembers scope path modName declBase false nameStx members tested enumerated enumSize (global := true)
+  lintDeclared .global n nameStx
+  lintLines .global n nameStx stx0
+  if ok = true then
+    for d in generated do
+      elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
+    modifyLocal fun l => { l with globals := l.globals.push path }.declared path
+
 end
 
 /-! ## Constants and global expectations -/
@@ -7151,20 +7258,13 @@ def globalBinderComp? (modName : Name) (ty : Syntax) : TermElabM (Option Name) :
   | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
   | r => throwErrorAt ty (Core.wrongKindMsg "a procedure or a type" r).text
 
-/-- A binder of a global expectation: its name and procedure, and where its
-variables start among the expectation's. -/
-structure Binder where
-  name : Name
-  ref : Syntax
-  comp : CompInfo
-  offset : Nat
-
-/-- Elaborates a global expectation into a `CompInfo` whose path is its
-module (`Model.Entry.globalInfo`), generating `decl` for it. -/
+/-- Elaborates a global expectation in its short form, `expect n: e`, into
+a `CompInfo` whose path is its module (`Model.Entry.globalInfo`),
+generating `decl` for it. Binders over values, `forall (m: M), e`, are a
+quantifier around `e`; one over a procedure's behaviours is the form that
+global expectations were written in before (`F0416`). -/
 def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syntax) (body : Syntax)
     (decl : Name) : TermElabM CompInfo := do
-  let mut vars : Array Var := #[]
-  let mut binders : Array Binder := #[]
   modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
   -- Distinct names (`lang::distinct_names`).
   let binderIds := binderStxs.flatMap (·[1].getArgs)
@@ -7173,74 +7273,34 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let declared := binderIds.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt binderIds[k]! (Core.dupBinderMsg declared[k]!).text
-  -- The binders over values, a quantifier around the body (`lang::quantifier_binder`).
-  let mut valueBinders := #[]
-  for b in binderStxs do
-    let some path ← globalBinderComp? modName b[3] | valueBinders := valueBinders.push b; continue
-    let some c := (← getState).comps.get? path | throwError "internal error: unknown comp `{path}`"
-    unless c.decidable do
-      modifyLocal fun l => { l with outsideCore := true }
-      recordLint .undecidable b[3] (Core.undecidableInstMsg path)
-    noteCounts c b[3]
-    for x in b[1].getArgs do
-      let w := (declaredIdent x).1.getId
-      let x ← declare x modName
-      liftMsg x (Core.checkItemName "binder" w)
-      lintName .instance w x
-      binders := binders.push { name := w, ref := x, comp := c, offset := vars.size }
-      -- Like a call's, but its inputs are shown in counterexamples.
-      vars := vars ++ c.vars.map fun v =>
-        let role := Core.Role.ofInst v.role v.isPub
-        { name := w ++ v.name, role, isPub := role != .instHidden, type := v.type, ref := x, ptype := v.ptype
-          fact? := v.fact? : Var }
-  withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
-    let cx : ExprCtx := { modName, vars, insts := binders.map (·.name), place := .prop, inGlobal := true }
-    discard (takeIndexes fvs)
-    let t ← if valueBinders.isEmpty then toTerm cx body else quantTerm toTerm cx body true valueBinders body
-    checkDeclared body t (mkConst ``Bool) fun _ => "note: an expectation is a `Bool`"
-    let e ← elabProp t
-    let indexes := (← takeIndexes fvs).map fun (r, q, g) => (n, Core.IndexPlace.prop, r, q, g)
-    -- The body is in the scope of the binders over values too.
-    lintBools body (← hidesIn cx (valueBinders.flatMap (·[1].getArgs) |>.map fun x =>
-      ((declaredIdent x).1.getId, Core.BindingKind.boundName)))
-    lintConstant cx "expect" body
-    for (w, ref) in Core.unmentioned (binders.map fun b => (b.name, b.ref)) ((pathMentions body).map (·.getRoot)) do
-      recordLint .unusedVariables ref (Core.unusedVariableMsg w true false)
-    -- What it reads through calls (`unused_assumption`).
-    let reads := (pathMentions body).filterMap fun m => match m.components with
-      | [w, x] => (binders.find? (·.name == w)).map fun b => (b.comp.path, x)
-      | _ => none
-    -- And the uninterpreted functions it applies, which its binders'
-    -- assumptions may constrain.
-    let fns ← appliedFns cx body
-    let reads := reads ++ binders.flatMap fun b => fns.map (b.comp.path, ·)
-    modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
-    -- `unrelated_binders` (`lint::unrelated_binders`).
-    let atoms := (boolNode "" 0 (unparen body)).atoms.map fun a => (pathMentions a.ref).map (·.getRoot)
-    let groups := Core.binderGroups (binders.map (·.name)) atoms
-    if Core.unrelatedBinders groups.size then
-      recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n.toString groups)
-    -- A quantifier leaves it without a trigger.
-    let trig ← if valueBinders.isEmpty then triggerOf cx body else pure none
-    let trigger? ← trig.mapM fun (t, _) => do mkLambdaFVars fvs (← elabProp t)
-    let slice (b : Binder) := fvs.extract b.offset (b.offset + b.comp.vars.size)
-    let hyps := mkAndN (binders.map fun b => b.comp.meaningDecl (slice b)).toList
-    let value ← mkForallFVars fvs (← mkArrow hyps e)
-    let uses ← usesOf #[value]
-    addUsesDef uses decl value
-    let insts ← binders.mapM fun b => do
-      return { name := b.name, comp := b.comp.path, ref := b.ref, decl
-               bindings := ← mkLambdaFVars fvs (mkConst ``True)
-               behaviour := ← mkLambdaFVars fvs (b.comp.meaning (slice b))
-               -- Hypotheses, not obligations (`Reqs/Lang/Global`).
-               assumes := #[] : InstInfo }
-    let prop : PropInfo := {
-      kind := .expect, name := n, ref := nameStx, body := ← mkLambdaFVars fvs e
-      trigger?, triggerRef? := trig.map (·.2), decl }
-    discard checkCounts
-    return { path := modName, vars, props := #[prop], insts, ref := nameStx, decl, uses
-             decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes
-             guarded := (← getLocal).guardedUsed }
+  let resolved ← binderStxs.mapM fun b => return (b, ← globalBinderComp? modName b[3])
+  if let some (b, _) := resolved.find? fun (_, p?) =>
+      (Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
+    throwErrorAt b[3] Core.oldGlobalMsg.text
+  let valueBinders := binderStxs
+  let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop }
+  discard (takeIndexes #[])
+  let t ← if valueBinders.isEmpty then toTerm cx body else quantTerm toTerm cx body true valueBinders body
+  checkDeclared body t (mkConst ``Bool) fun _ => "note: an expectation is a `Bool`"
+  let e ← elabProp t
+  let indexes := (← takeIndexes #[]).map fun (r, q, g) => (n, Core.IndexPlace.prop, r, q, g)
+  -- The body is in the scope of the binders over values too.
+  lintBools body (← hidesIn cx (valueBinders.flatMap (·[1].getArgs) |>.map fun x =>
+    ((declaredIdent x).1.getId, Core.BindingKind.boundName)))
+  lintConstant cx "expect" body
+  -- A quantifier leaves it without a trigger.
+  let trig ← if valueBinders.isEmpty then triggerOf cx body else pure none
+  let trigger? ← trig.mapM fun (t, _) => elabProp t
+  let value ← mkArrow (mkAndN []) e
+  let uses ← usesOf #[value]
+  addUsesDef uses decl value
+  let prop : PropInfo := {
+    kind := .expect, name := n, ref := nameStx, body := e
+    trigger?, triggerRef? := trig.map (·.2), decl }
+  discard checkCounts
+  return { path := modName, vars := #[], props := #[prop], ref := nameStx, decl, uses
+           decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied, indexes
+           guarded := (← getLocal).guardedUsed }
 
 /-- The text of the global expectation `stx` that `duplicate_constraint`
 compares: after its name, without the parentheses around its body. -/

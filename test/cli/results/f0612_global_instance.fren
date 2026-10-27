@@ -7,7 +7,10 @@ pub proc c(x: Int): (big?) {
     ensure r: big? iff x > 1000
 }
 
-expect g: forall (a: c), when 7 * a.x = 123459, a.big?
+expect g(a_x: Int) {
+    call a := c(a_x)
+    expect g: when 7 * a.x = 123459, a.big?
+}
 
 pub proc guarded(y: Int) {
     assume narrow: when 7 * y = 123459, y > 0

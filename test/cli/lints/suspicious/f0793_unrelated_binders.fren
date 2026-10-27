@@ -1,4 +1,8 @@
 -- `unrelated_binders`, which has no fix.
 proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 
-expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
+expect e(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect e: (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
+}

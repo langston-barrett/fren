@@ -40,7 +40,9 @@ function       := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
 constant       := ["pub"] "const" IDENT ":" type ":=" top
 procedure      := ["pub"] "proc" IDENT"(" [variable ("," variable)* [","]] ")"
                   [":" "(" result ("," result)* [","] ")"] "{" member* "}"
-expectation    := "expect" IDENT ":" ["forall" binder+ ","] top
+expectation    := "expect" IDENT"(" [variable ("," variable)* [","]] ")"
+                  [":" "(" result ("," result)* [","] ")"] "{" member* "}"
+                | "expect" IDENT ":" ["forall" binder+ ","] top
 refinement     := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 check          := "#fren_check" [path] | "#fren_trace"
 claim          := "tested" path ":" STRING ("," STRING)* [","]
@@ -153,9 +155,14 @@ comparison](Lang/Expressions.md#chained-comparisons). For precedence and typing,
 membership (an `else` branch keeps that restriction), and a nested `let` ends its own definitions with its own `in`
 (see [Local definitions](Lang/Let.md#parentheses)). A `binder` of a
 quantifier names a type, and one of a global expectation's leading
-`forall` a type or a procedure (see [Quantifiers](Lang/Quantifiers.md)).
+`forall` a type, or a procedure, as global expectations were written
+before, which is an error (see [Global
+expectations](Lang/Global.md#migration)). A global expectation's results,
+and the members of its block other than `assume`, `use`, `let`, `call`,
+`expect` and `cover`, are parsed as a procedure's, and are errors (see
+[Global expectations](Lang/Global.md)).
 `exists` and `let` start a member where a `member` starts, and an `expr`
-within one: a member starts after the `{` of a procedure's block, and
+within one: a member starts after the `{` of a procedure's or a global expectation's block, and
 after the end of the member before it, so an `exists` or a `let` there is
 a member, and one within an expression is a quantifier or a local
 definition. A `top` ends at the first token that cannot continue it,

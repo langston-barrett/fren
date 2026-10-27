@@ -53,8 +53,11 @@ proc lints(a?, b?, c?): (t?) {
     ensure q: t? iff not not at_most_one?(a?, b? and c?)   --~ warning: write `at_most_one?(a?, b? and c?)`
 }
 
--- Global expectations relate the behaviours of components.
-expect global_exclusive: forall (m: modes), at_most_one?(m.heating?, m.cooling?)
+-- Global expectations relate the behaviours of procedures.
+expect global_exclusive(m_mode: Mode, m_t: Int, m_q: Seq<Int>) {
+    call m := modes(m_mode, m_t, m_q)
+    expect global_exclusive: at_most_one?(m.heating?, m.cooling?)
+}
 
 -- A defined function's body may apply them.
 fn one_of?(a?, b?, c?) := exactly_one?(a?, b?, c?)
@@ -63,5 +66,5 @@ proc functions(a?, b?) {
     expect defined: one_of?(a?, b?, false) = (a? != b?)
 }
 
---@ summary: 36 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 37 passed, 2 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

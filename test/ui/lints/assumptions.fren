@@ -60,7 +60,11 @@ proc read_globally(z: Int): (y: Int) {
     ensure r: y = 1
 }
 
-expect g: forall (a: read_globally), a.z > 0
+expect g(a_z: Int) {
+    assume a_pos: a_z > 0
+    call a := read_globally(a_z)
+    expect g: a.z > 0
+}
 
 -- A refinement of it in the file reads its inputs, bound or by name, under
 -- its assumptions, which here guard the binding of `x`.
@@ -95,7 +99,12 @@ proc read_through(k: Int, z: Int): (y: Int) {
     ensure r: y = 1
 }
 
-expect h: forall (a: read_through), a.z > 1
+expect h(a_k: Int, a_z: Int) {
+    assume a_a: a_k > 0
+    assume a_b: a_z = a_k + 1
+    call a := read_through(a_k, a_z)
+    expect h: a.z > 1
+}
 
 -- A function ties the assumption to the guarantee: `a` says that
 -- `gain(3) > 0`.

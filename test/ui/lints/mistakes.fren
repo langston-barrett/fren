@@ -20,11 +20,21 @@ proc repeats(a?, b?, x: Int): (p?, q?) {
     expect e6: q? iff a? and (b?)
 }
 
-expect g1: forall (r: repeats), when r.a? and r.b?, r.q?
-expect g2: forall (r: repeats),
-    when r.a? and r.b?, r.q?
---~^^ warning: this is written the same as `g1`
-expect g3: forall (s: repeats), when s.a? and s.b?, s.q?
+expect g1(r_a?, r_b?, r_x: Int) {
+    assume r_pos: r_x > 0
+    call r := repeats(r_a?, r_b?, r_x)
+    expect g1: when r.a? and r.b?, r.q?
+}
+expect g2(r_a?, r_b?, r_x: Int) {
+    assume r_pos: r_x > 0
+    call r := repeats(r_a?, r_b?, r_x)
+    expect g2: when r.a? and r.b?, r.q?
+}
+expect g3(s_a?, s_b?, s_x: Int) {
+    assume s_pos: s_x > 0
+    call s := repeats(s_a?, s_b?, s_x)
+    expect g3: when s.a? and s.b?, s.q?
+}
 
 proc characters(s: String): (p?, o?, n?) {
     ensure r1: p? iff s = "a​b" or s = "c­d"

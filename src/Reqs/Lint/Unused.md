@@ -55,13 +55,12 @@ suggests removing the `use`.
 ## Unused variables
 
 `unused_variables` reports a variable of a procedure that nothing in the
-procedure mentions, a binder of a global expectation over a procedure's
-behaviours that its body never mentions, a parameter of a defined
+procedure, or of a global expectation, mentions, a parameter of a defined
 function that neither its body nor its [contract](../Lang/Items.md#contracts)
 mentions, a
 [quantifier's](../Lang/Quantifiers.md) bound name that its body never
-mentions, including a binder of a global expectation over a type's
-values, and a name of a [`let` or `where`](../Lang/Let.md) clause that
+mentions, including a binder of a global expectation's leading `forall`,
+and a name of a [`let` or `where`](../Lang/Let.md) clause that
 neither its body nor a later definition of the clause mentions. An input
 that nothing mentions does not affect the procedure, and an output that
 nothing mentions can take any value. A quantifier over a name that its
@@ -75,8 +74,8 @@ c(x)` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
 true }`, the `x` of the arm is the binder that
 [shadows](../Lang/Procedures.md#shadowing) the variable, so it does not
 mention the variable, and neither does the `x` of the body of `forall
-(x!: Mode), x = Mode::Off`. A binder `w` is mentioned by a path `w.x`, and a
-parameter as a variable is. A path in a definition of a `let` or
+(x!: Mode), x = Mode::Off`. A parameter of a defined function is
+mentioned as a variable is. A path in a definition of a `let` or
 `where` counts, whether or not the name defined is mentioned, and so does
 a later definition's mention of an earlier name of its clause: in `let k
 := x, m := k + 1 in x`, `m` is reported, but `k` is not, since `m`'s
@@ -86,7 +85,7 @@ Mentions elsewhere, such as
 through a call of the procedure in another one, do not count: they
 cannot constrain the variable. The variables of the procedure's own
 calls are not reported, and neither are the variables of a procedure,
-or the binders of a global expectation, with a static error.
+or of a global expectation, with a static error.
 
 The message is reported at the variable's declaration, in the order of
 declaration. A name of a clause, or a bound name, has no fix, as a

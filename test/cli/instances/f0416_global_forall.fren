@@ -1,0 +1,9 @@
+-- A global expectation written with a `forall` over a procedure's
+-- behaviours, as global expectations were written before (F0416), which
+-- has no fix: the help says how to write it with parameters and calls.
+proc double(x: Int): (y: Int) {
+    assume small: x < 100
+    ensure r: y = 2 * x
+}
+
+expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y

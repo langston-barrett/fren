@@ -2,7 +2,7 @@
 
 The lints of the `suspicious` group find what is probably not what the
 writer meant. This chapter has the lints of names, of constraints, of
-the spacing of negations, of the binders of global expectations and of
+the spacing of negations, of the calls of global expectations and of
 definitions, and
 its subchapters the others: those of
 [expressions](Suspicious/Expressions.md), of [methods and
@@ -13,14 +13,18 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
 
 `duplicate_constraint` fires on a constraint of a procedure that is
 written the same as an earlier one of the procedure, whatever their
-kinds, `assume`, `ensure` or `expect`, and on a global expectation written
-the same as an earlier one of its module in the same file. It fires too
+kinds, `assume`, `ensure` or `expect`, and on a global expectation in the
+[short form](../Lang/Global.md#the-short-form) written the same as an
+earlier one of its module in the same file. A global expectation with a
+block is checked as a procedure is: its constraints are compared with each
+other. It fires too
 on a cover goal written the same as an earlier cover goal of the
 procedure, but a cover goal is not compared with a constraint, since it
 states a scenario rather than what holds in every behaviour. Two
 constraints are written the same if their expressions are (see
 [Written the same](../Lint.md#written-the-same)), and two global
-expectations if all they say after their names is, binders included. It is
+expectations in the short form if all they say after their names is, a
+leading `forall`'s binders included. It is
 reported at the later one's name, and the message names the first one it
 repeats.
 
@@ -76,11 +80,37 @@ binders, and so the two do.
 Here `p` and `q` are the constraints' root layers:
 
 ```fren
-expect duplicate_constraint_value: forall (d: duplicate_constraint) (p q: lang::node),
-    when d.fires? and p.env = q.env and p.program = q.program and p.head = written_head(d.earlier_text)
-    and p.values = written_values(p.env, d.earlier_text) and q.head = written_head(d.later_text)
-    and q.values = written_values(q.env, d.later_text),
-    p.value = q.value
+expect duplicate_constraint_value(
+    d_earlier: ConstraintKind,
+    d_later: ConstraintKind,
+    d_earlier_text: Scoped,
+    d_later_text: Scoped,
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume d_covers_apart: (d_earlier = ConstraintKind::Cover) iff (d_later = ConstraintKind::Cover)
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call d := duplicate_constraint(d_earlier, d_later, d_earlier_text, d_later_text)
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect duplicate_constraint_value: when d.fires? and p.env = q.env and p.program = q.program and p.head = written_head(d.earlier_text)
+        and p.values = written_values(p.env, d.earlier_text) and q.head = written_head(d.later_text)
+        and q.values = written_values(q.env, d.later_text),
+        p.value = q.value
+}
 ```
 
 ## Negations after operators
@@ -114,24 +144,28 @@ pub proc suspicious_unary_op_formatting(
 ## Unrelated binders
 
 `unrelated_binders` fires on a [global expectation](../Lang/Global.md)
-whose binders fall into two or more groups that no single atom mentions
-across. The *atoms* of an expression are its operands through `and`,
-which are separate claims. Anything else is one atom, `or`, `not`, `when`,
-`unless`, `iff`, `match` and `if` among them, since a connective relates
-every binder it mentions: in `p.c? or q.c?`, two expectations would make
-the disjunction a conjunction. Two binders are in one group when an atom
-mentions both, or each is in one group with a third; a binder that no atom
-mentions is left to [`unused_variables`](Unused.md#unused-variables). Such
-an expectation is several independent claims run together: in `forall (a
-b: c), a.y = a.x + 1 and b.y = b.x + 1`, nothing relates `a` to `b`, and a
+whose calls fall into two or more groups that nothing relates. The *atoms*
+of an expression are its operands through `and`, which are separate
+claims. Anything else is one atom, `or`, `not`, `when`, `unless`, `iff`,
+`match` and `if` among them, since a connective relates every call it
+mentions: in `p.c? or q.c?`, two expectations would make the disjunction
+a conjunction. Two calls are in one group when an atom of one of the
+global expectation's constraints relates both, by mentioning each or a
+parameter that its arguments mention; when one's arguments mention the
+other, or a parameter that the other's arguments mention too; or when
+each is in one group with a third. A call that no atom mentions, and that
+no argument or parameter relates to another, is in no group, and is left
+to [`unused_variables`](Unused.md#unused-variables). Such an expectation is several independent claims run together:
+in `expect e(x: Int, z: Int) { call a := c(x) call b := c(z) expect e:
+a.y = x + 1 and b.y = z + 1 }`, nothing relates `a` to `b`, and a
 counterexample to the claim about one names the other too. The message
-names two of the groups. It has no fix: the binders may be meant to be
-related, by an atom left out, or the claims may be meant to be separate
-expectations. `lint::unrelated_binders` states when it fires:
+names two of the groups. It has no fix: the calls may be meant to be
+related, by an atom or an argument left out, or the claims may be meant
+to be separate global expectations. `lint::unrelated_binders` states when it fires:
 
 ```fren
 pub proc unrelated_binders(
-    n_groups: Nat,       -- groups of the binders that atoms mention
+    n_groups: Nat,       -- groups of the calls that atoms, arguments and parameters relate
 ): (det fires?) {
     ensure rule: fires? iff n_groups >= 2
 }

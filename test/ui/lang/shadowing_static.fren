@@ -80,14 +80,24 @@ proc inst_const(): (y: Int) { call ORIGIN := sub(1) ensure r: y = ORIGIN.w }
 proc inst_const_ok(): (y: Int) { call ORIGIN! := sub(1) ensure r: y = ORIGIN.w }
 proc inst_bang(): (y: Int) { call u! := sub(1) ensure r: y = u.w }  --~ error: `u!` shadows nothing
 
--- The binders of a global expectation over a constant, and a binder of
--- its body over them.
-expect global_const: forall (ORIGIN: sub), ORIGIN.w = ORIGIN.v
---~^ error: `ORIGIN` shadows the constant `ORIGIN`
-expect global_const_ok: forall (ORIGIN!: sub), ORIGIN.w = ORIGIN.v
-expect global_bang: forall (a!: sub), a.w = a.v  --~ error: `a!` shadows nothing
-expect global_bind: forall (a: sub), match Shape::Circle(a.v) { Shape::Circle(a) => a = a, _ => true }
---~^ error: `a` shadows the global expectation's binder `a`
+-- The calls of a global expectation named like a constant, and a binder of
+-- its expectation named like a call.
+expect global_const(ORIGIN_v: Int) {
+    call ORIGIN := sub(ORIGIN_v)  --~ error: `ORIGIN` shadows the constant `ORIGIN`
+    expect global_const: ORIGIN.w = ORIGIN.v
+}
+expect global_const_ok(ORIGIN_v: Int) {
+    call ORIGIN! := sub(ORIGIN_v)
+    expect global_const_ok: ORIGIN.w = ORIGIN.v
+}
+expect global_bang(a_v: Int) {
+    call a! := sub(a_v)  --~ error: `a!` shadows nothing
+    expect global_bang: a.w = a.v
+}
+expect global_bind(a_v: Int) {
+    call a := sub(a_v)
+    expect global_bind: match Shape::Circle(a.v) { Shape::Circle(a) => a = a, _ => true }  --~ error: `a` shadows the call `a`
+}
 
 -- `!` on a `Bool` follows its `?`.
 proc bool_bang(ready?!): (go?) { ensure r: go? iff ready? }  --~ error: `ready?!` shadows nothing
@@ -115,8 +125,17 @@ proc token_bind(m: Int, t: Shape): (p?) { ensure r: p? iff match t { Shape::Circ
 --~^ error: `m!` is a Lean token, so it cannot be declared
 fn token_param(f!: Int): Int := f + 1    --~ error: `f!` is a Lean token, so it cannot be declared
 const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so it cannot be declared
-expect token_global: forall (using!: sub), true
---~^ error: `using!` is a Lean token, so it cannot be declared
+expect token_global(using!: Int) {  --~ error: `using!` is a Lean token, so it cannot be declared
+    expect token_global: true
+}
+-- A call named so: the Lean front end also reports the name without its
+-- `!` as a keyword, as it does for a procedure's call, a known difference
+-- between the front ends.
+expect token_call(v: Int) {
+    call using! := sub(v)  --~ error: `using!` is a Lean token, so it cannot be declared
+    --~^[hosted] error: `using` is a Lean keyword, so it cannot be declared
+    expect token_call: true
+}
 proc token_use(s: Int): (y: Int) { ensure r: y = s! }  --~ error: cannot find `s!` in this scope
 -- A refinement's name, and a field read, take the tokens as identifiers too.
 refine s!: sub refines sub               --~ error: `s!` is a Lean token, so it cannot be declared
