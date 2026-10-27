@@ -594,7 +594,9 @@ function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
 procedure, its calls, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an
-[interpretation](Procedures.md#interpretations).
+[interpretation](Procedures.md#interpretations). A [generic
+one](GenericFunctions.md#uninterpreted-generic-functions) is an unknown
+function of its own at each instance.
 
 ### Contracts
 

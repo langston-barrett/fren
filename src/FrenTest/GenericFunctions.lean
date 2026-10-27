@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Impl
 import Fren.View
 -- keep-sorted end
 open Fren.Lang
@@ -32,5 +33,35 @@ fun T [Inhabited T] o d =>
 example : generic_functions.unwrap_or Int (.Some 3) 0 = 3 := by simp [generic_functions.unwrap_or, generic_functions.Opt.Some.x0]
 
 /-- info: fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant -/
+#guard_msgs in
+#fren_check
+
+-- A generic function without a body (`Reqs/Generated#generic-functions`):
+-- a constant that takes each type parameter, and its `Inhabited`
+-- instance, first, which a component that applies it takes as a parameter,
+-- at the instance, and an interpretation gives, with each instance a
+-- function of its own (`Reqs/Impl#interpretations`).
+mod generic_uninterpreted
+
+fn choose<T>(a: T, b: T): T
+    ensure either: choose(a, b) = a or choose(a, b) = b
+
+proc at_int(x: Int): (det y: Int) {
+  out y := choose(x, 0)
+
+  expect either: y = x or y = 0
+}
+
+/--
+info: generic_uninterpreted.at_int.ensures : ((T : Type) → [#inhabited : Inhabited T] → T → T → T) → Int → Int → Prop
+-/
+#guard_msgs in #check @generic_uninterpreted.at_int.ensures
+
+-- Its interpretation proves the postcondition at every instance.
+interp choose := fun _ _ a _ => a by
+  intro _ _ a b
+  simp [generic_uninterpreted.choose.either]
+
+/-- info: fren: 8 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in
 #fren_check

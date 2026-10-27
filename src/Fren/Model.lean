@@ -171,6 +171,20 @@ structure AbstractInfo where
   /-- What each application of a function brings, as a predicate of its
   result, if its result's type brings a constraint (`Reqs/Check`). -/
   fact? : Option Expr := none
+  /-- A generic function's type parameters, whose placeholder takes a
+  `Type` and its `Inhabited` instance for each, before its parameters, and
+  its parameters' and result's types, which mention them as
+  `Core.Ty.param` (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  Its signature's own types, `ptys` and `fact?`, mention the placeholders
+  of the type parameters (`Core.typeParamPath`). -/
+  typeParams : Array Name := #[]
+  declared : Array Core.Ty := #[]
+  result : Core.Ty := .bool
+  /-- And its result's declared type, with its patterns, which mentions the
+  type parameters as `Core.Ty.param`. -/
+  resultP : Core.PTy := default
+  /-- The Lean module that declares it. -/
+  module : Name := .anonymous
   deriving Inhabited
 
 /-- The Lean namespace, under the current one, of every declaration generated
@@ -216,6 +230,15 @@ that imports a spec names its items' declarations by their paths, as
   let before := (← getOpenDecls).filter isLang |>.length
   elabOpen stx
   if ((← getOpenDecls).filter isLang |>.length) > before then openGenerated
+
+/-- What the checks need of the elaborator, which runs them: the Lean type
+of a type, the constraint that a value of a declared type brings as a
+predicate, over an `Int` for a `Nat` if asked, as `resultFact?` gives it,
+and the type that a Lean type stands for, if one does. -/
+structure ElabHooks where
+  leanType : Core.Ty → MetaM Expr
+  fact : Core.PTy → Bool → MetaM (Option Expr)
+  coreTy : Expr → MetaM (Option Core.Ty)
 
 /-- The placeholder for the item at `path`. -/
 def placeholderName (path : Name) : Name := `Fren.Abstract ++ path
@@ -279,6 +302,26 @@ def replaceUses (uses : Array Name) (xs : Array Expr) (e : Expr) : Expr :=
   e.replace fun
     | .const c _ => (uses.idxOf? c).map (xs[·]!)
     | _ => none
+
+/-- The placeholders of the type parameters `tps` of the generic function
+at `path`, each followed by that of its `Inhabited` instance: what its
+placeholder, or a definition of it, takes first
+(`Reqs/Generated#generic-functions`). -/
+def typeParamPlaceholders (path : Name) (tps : Array Name) : Array Name :=
+  tps.mapIdx (fun k p => placeholderName (Core.typeParamPath path k p)) |>.flatMap fun ph => #[ph, inhabitedName ph]
+
+/-- `e`, of the generic function at `path` with the type parameters `tps`,
+at the instance whose type arguments and `Inhabited` instances are
+`targs`, in the order of `typeParamPlaceholders`: each placeholder of a
+type parameter, or of its instance, replaced. -/
+def atInstance (path : Name) (tps : Array Name) (targs : Array Expr) (e : Expr) : Expr :=
+  replaceUses (typeParamPlaceholders path tps) targs e
+
+/-- The clause `k`, of the generic function at `path` with the type
+parameters `tps`, at the instance `targs` (`atInstance`), at the arguments
+`args`. -/
+def ClauseInfo.atInst (k : ClauseInfo) (path : Name) (tps : Array Name) (targs args : Array Expr) : Expr :=
+  atInstance path tps targs (k.at args)
 
 /-- A procedure variable: one of its own, or one of a call's (`w.x`). -/
 structure Var where
@@ -385,6 +428,10 @@ structure CompInfo where
   /-- The checks that are decided by enumeration
   (`Reqs/Check#checking-by-enumeration`), and the size bound. -/
   enumerated : Core.Tested := {}
+  /-- Its queries use finite-model finding: the contract of an instance of
+  a generic function without a body at another one's type parameters
+  (`Core.Ty.hasTypeParam`). -/
+  finiteModel : Bool := false
   enumSize : Nat := 3
   /-- For the body and contract of a function, the function: then its
   assumptions are its preconditions, and its guarantees, if it is defined,
@@ -456,6 +503,12 @@ inductive Entry where
   | aliasInfo (path : Name) (ty : Expr) (pty : Core.PTy)
   | implInfo (i : ImplInfo)
   | claimInfo (c : ClaimInfo)
+  /-- An application of a generic function, in the Lean module `module`
+  (`State.genericUses`). -/
+  | genericUse (module : Name) (u : Core.GenericUse)
+  /-- A run of checks checked the contract of the instance of the generic
+  function `f` at `targs` (`State.checkedInstances`). -/
+  | instanceChecked (f : Name) (targs : Array Core.Ty)
   deriving Inhabited
 
 /-- Everything declared so far, across all imported Lean files. -/
@@ -496,6 +549,14 @@ structure State where
   tested : NameMap (Array String) := {}
   /-- The justifications of each procedure's `trusted` claims. -/
   trusted : NameMap (Array String) := {}
+  /-- The applications of generic functions, in order (`Entry.genericUse`),
+  from which the instances that the spec applies follow
+  (`State.appliedInstances`). -/
+  genericUses : Array (Name × Core.GenericUse) := #[]
+  /-- The instances whose contracts a run of checks, in this module or one
+  it imports, has checked, which a later run does not check again
+  (`lang::instance_site`). -/
+  checkedInstances : Array (Name × Array Core.Ty) := #[]
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
@@ -511,6 +572,8 @@ def State.add (s : State) : Entry → State
     { s with abstracts := s.abstracts.insert a.path a
              placeholders := s.placeholders.insert a.placeholder s.placeholders.size }
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
+  | .genericUse m u => { s with genericUses := s.genericUses.push (m, u) }
+  | .instanceChecked f targs => { s with checkedInstances := s.checkedInstances.push (f, targs) }
   | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
@@ -523,6 +586,26 @@ def State.add (s : State) : Entry → State
   | .claimInfo c =>
     if c.tested then { s with tested := s.tested.insert c.comp (s.tested.getD c.comp #[] ++ c.texts) }
     else { s with trusted := s.trusted.insert c.comp (s.trusted.getD c.comp #[] ++ c.texts) }
+
+/-- The type parameters of the generic function at `path`, defined or not. -/
+def State.typeParamsOf (s : State) (path : Name) : Array Name :=
+  match s.defined.get? path, s.abstracts.get? path with
+  | some d, _ => d.typeParams
+  | none, some a => a.typeParams
+  | none, none => #[]
+
+/-- Each instance that the spec's items use of a generic function without a
+body, with where its contract is checked (`Core.instanceSites`), from the
+Lean module `main` being checked: the modules that it imports are earlier
+files, as the `fren` command's are, and a function declared in one of them
+does not know of the instances that `main` applies. `checked` says which items the run
+checks, by path, and an instance that an earlier run checked is not checked
+again. -/
+def State.instanceSites (s : State) (main : Name) (checked : Name → Bool) : Array (Core.InstanceSite × Name × Array Core.Ty) :=
+  let file (m : Name) : Nat := if m == main then 1 else 0
+  Core.instanceSites (s.genericUses.map fun (m, u) => { u with file := file m }) s.typeParamsOf
+    (fun g => (s.abstracts.get? g).bind fun a => if a.typeParams.isEmpty then none else some (file a.module))
+    checked fun f targs => s.checkedInstances.contains (f, targs)
 
 initialize frenExt : SimplePersistentEnvExtension Entry State ←
   registerSimplePersistentEnvExtension {
@@ -607,6 +690,9 @@ structure LocalState where
   /-- The generic function being declared, with its type parameters, which
   are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   fnTypeParams : Option (Name × Array Name) := none
+  /-- The item being elaborated, by its path, which an application is in
+  (`Core.GenericUse`). -/
+  currentItem : Name := .anonymous
   /-- Comps declared in this file, in order. -/
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/

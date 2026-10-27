@@ -199,7 +199,13 @@ function's [preconditions](Lang/Items.md#contracts), the value is the first
 of a few random values that meets its postconditions; if none does, the
 application has no value that the evaluator knows, as an index out of
 range has none, since a value that does not meet them is no
-interpretation of the spec. So is the value of each type that
+interpretation of the spec. A [generic
+function](Lang/GenericFunctions.md#uninterpreted-generic-functions)
+without a body has a function of its own at each instance, the one that
+the types of an application's arguments give it, with its result type at
+that instance. Where they do not give each of its type arguments, as the
+type expected of an application may instead, the application has no value
+that the evaluator knows. So is the value of each type that
 a [table](Lang/Expressions.md#tables) without a `_` row has where no row
 holds, and a [`match`](Lang/Expressions.md#matches) where no arm is taken,
 which the interpretation gives, as the solver's does: one value of

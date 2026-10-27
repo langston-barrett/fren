@@ -67,6 +67,28 @@ partial def VTy.subst (args : List VTy) : VTy → VTy
   | .data p as => .data p (as.map (·.subst args))
   | t => t
 
+/-- What matching the type `f` of an argument against the declared type `d`
+gives the type parameter `k`, as `Fren.Core.matchParam` matches them. -/
+partial def VTy.matchParam (k : Nat) : VTy → VTy → Option VTy
+  | .param j, f => if j == k then some f else none
+  | .set d, .set f | .seq d, .seq f => d.matchParam k f
+  | .rel a b, .rel c e => a.matchParam k c <|> b.matchParam k e
+  | .data p ds, .data q fs => if p == q then (ds.zip fs).findSome? fun (d, f) => d.matchParam k f else none
+  | _, _ => none
+
+/-- `t`, with the type parameter `k` for each abstract type that is the
+`k`th type parameter of the generic function at `fn`
+(`Fren.Core.typeParamPath`), as `Fren.Core.Ty.asParams` has it. -/
+partial def VTy.asParams (fn : Name) (tps : Array Name) : VTy → VTy
+  | .abstract p => match (List.range tps.size).find? fun k => Fren.Core.typeParamPath fn k tps[k]! == p with
+    | some k => .param k
+    | none => .abstract p
+  | .set t => .set (t.asParams fn tps)
+  | .rel a b => .rel (a.asParams fn tps) (b.asParams fn tps)
+  | .seq t => .seq (t.asParams fn tps)
+  | .data p as => .data p (as.map (·.asParams fn tps))
+  | t => t
+
 /-- `t`, as an element type: a `Nat` is widened to an `Int`. -/
 def VTy.widen : VTy → VTy
   | .nat => .int
@@ -101,6 +123,24 @@ structure DataDef where
   isRecord : Bool
   ctors : Array Ctor
   deriving Inhabited
+
+/-- The type of a construction of the variant or record `idx` of `d` from
+values of the types `tys`: with the type arguments that matching them
+against the declared types gives (`VTy.matchParam`), as the elaborator
+infers them from values that synthesize their types, or with none if
+some type parameter has none. -/
+def DataDef.constructed (d : DataDef) (idx : Nat) (tys : Array VTy) : VTy :=
+  let rec params : VTy → Nat
+    | .param k => k + 1
+    | .set t | .seq t => params t
+    | .rel a b => max (params a) (params b)
+    | .data _ as => as.foldl (fun n a => max n (params a)) 0
+    | _ => 0
+  let n := d.ctors.foldl (fun n c => c.fields.foldl (fun n (_, t) => max n (params t)) n) 0
+  let fields := ((d.ctors[idx]?.map (·.fields)).getD #[]).map (·.2)
+  match (List.range n).mapM fun k => (fields.zip tys).findSome? fun (f, t) => f.matchParam k t with
+  | some args => .data d.path (args.map VTy.widen)
+  | none => .data d.path []
 
 inductive Op where
   | and | or | iff | eq | ne | lt | le | gt | ge | add | sub | mul | div | mod | concat
@@ -359,6 +399,16 @@ structure Spec where
   shapes : NameMap Fren.Core.DataShape := {}
   /-- The result type of each uninterpreted function, as declared. -/
   results : NameMap Fren.Core.PTy := {}
+  /-- Each generic function without a body, in declaration order: its type
+  parameters, and its parameters' and result's types, which mention them as
+  `VTy.param` (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  Each instance that an application uses is a function of its own in
+  `funs`, named after the function and its type arguments, as the solver
+  names it (`Fren.Core.instanceText`). -/
+  generics : Array (Name × Array Name × Array VTy × VTy) := #[]
+  /-- The generic function of each such instance, whose `results` and
+  `contracts` are the instance's. -/
+  instanceOf : NameMap Name := {}
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -2110,8 +2160,9 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let some (v, t) := (← get).spec.consts.find? path | throw s!"unknown constant `{showPath path}`"
       return (v, t)
     | r => throw s!"`{showPath r.path}` is not a value"
-  | .app _ segs args => do
-    let args ← args.mapM fun a => (·.1) <$> lowerExpr cx a
+  | .app _ segs written => do
+    let typed ← written.mapM (lowerExpr cx)
+    let args := typed.map (·.1)
     -- The spec has been checked, so no variable shadows a built-in
     -- function here.
     if let some c := (if segs.size == 1 then Fren.Core.builtinFunction? (.mkSimple segs[0]!.name) else none) then
@@ -2127,9 +2178,31 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       -- arguments.
       if let some (ps, body, r) := (← get).spec.defs.find? path then
         return (← withPres (body.subst (ps.zip args).toList), r)
+      -- A generic function without a body, at the instance that its
+      -- arguments' types give it, a function of its own.
+      if let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) then
+        let found := (List.range tps.size).map fun k =>
+          (declared.zip typed).findSome? fun (d, (_, t)) => d.matchParam k t
+        let targs := found.mapIdx fun k t? => (t?.map VTy.widen).getD (.param k)
+        let r := result.subst targs
+        -- Its type arguments not known here, as the type expected of it
+        -- may give them: a function that has no value, which the
+        -- evaluator does not know (`Reqs/Eval#searching-for-behaviours`).
+        if found.any (·.isNone) then return (← withPres (.app (Name.str path "<?>") args), r)
+        -- At its own type parameters, in its contract, the function itself.
+        let own := (List.range tps.size).map fun k => VTy.abstract (Fren.Core.typeParamPath path k tps[k]!)
+        if targs == own then return (← withPres (.app path args), r)
+        let sp := (← get).spec
+        let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText (targs.toArray.map (·.core sp)))
+        modify fun s => { s with
+          spec.funs := s.spec.funs.insert inst (declared.map (·.subst targs), r)
+          spec.instanceOf := s.spec.instanceOf.insert inst path }
+        return (← withPres (.app inst args), r)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
       return (← withPres (.app path args), r)
-    | .variant en idx => return (.ctor en.path idx args, .data en.path [])
+    | .variant en idx =>
+      let d ← dataDef en.path
+      return (.ctor en.path idx args, d.constructed idx (typed.map (·.2)))
     -- A newtype, erased to its value.
     | .item { kind := .recordItem, path, .. } => do
       let some u := (← get).spec.newtypes.find? path | throw s!"`{showPath path}` is not a newtype"
@@ -2143,10 +2216,13 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let d ← dataDef path
     let some c := d.ctors[0]? | throw s!"`{showPath path}` has no constructor"
     let mut vals := #[]
+    let mut tys := #[]
     for (f, _) in c.fields do
       let some (x, e?) := fields.find? (fun (x, _) => Name.mkSimple x.name == f) | throw s!"no value for field `{f}`"
-      vals := vals.push (← lowerExpr cx (e?.getD (.path span #[x]))).1
-    return (.ctor path 0 vals, .data path [])
+      let (v, t) ← lowerExpr cx (e?.getD (.path span #[x]))
+      vals := vals.push v
+      tys := tys.push t
+    return (.ctor path 0 vals, d.constructed 0 tys)
   | .update _ base fields => do
     let (r, t) ← lowerExpr cx base
     let .data path targs := t | throw "an updated value is not a record"
@@ -2515,11 +2591,19 @@ partial def lowerItem : Item → L Unit
         | none => pure (.plain .bool)
       let constrained := (rt.cons (← get).spec.shapes.find?).isSome
       modify fun s => { s with spec.results := if constrained then s.spec.results.insert path rt else s.spec.results }
+      -- A generic one's instances are functions of their own, made at the
+      -- applications that use them.
+      let generic (ps : Array VTy) : L Unit := do
+        unless tps.isEmpty do
+          modify fun s => { s with
+            spec.generics := s.spec.generics.push (path, tps, ps.map (·.asParams path tps), r.asParams path tps) }
       if !contract then
         let ps ← params.mapM (lowerTy ·.1)
+        generic ps
         modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
       else
         let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
+        generic (ps.map (·.2))
         modify fun s => { s with
           spec.funs := s.spec.funs.insert path (ps.map (·.2), r)
           table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }

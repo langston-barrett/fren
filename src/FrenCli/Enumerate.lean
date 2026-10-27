@@ -90,6 +90,15 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   -- The uninterpreted functions, whose interpretations are enumerated, but
   -- not of one with a contract, which constrains them.
   let fnNames := apps.foldl (init := #[]) fun acc f => if isUnspecified f || acc.contains f then acc else acc.push f
+  -- Nor of a generic function without a body, whose instances are
+  -- functions of their own, the first in declaration order.
+  let generics := fnNames.filterMap fun f => (sp.instanceOf.find? f).orElse fun _ =>
+    let g := match f with
+      | .str p "<?>" => p
+      | f => f
+    if sp.generics.any (·.1 == g) then some g else none
+  if let some (g, _, _, _) := sp.generics.find? (generics.contains ·.1) then
+    throw (notEnumerableMsg subject (genericNotEnumerable g))
   if let some f := fnNames.find? (sp.contracts.contains ·) then
     throw (notEnumerableMsg subject s!"it applies the uninterpreted function `{Fren.Core.showComp f}`, which has a contract")
   let funs : Array FunVar := fnNames.filterMap fun f => (sp.funs.find? f).map fun (ps, r) =>

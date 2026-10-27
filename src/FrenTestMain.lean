@@ -147,7 +147,7 @@ def codesInSources : IO (Array String) := do
 /-- Codes that no snapshot can report reliably: a solver that gives up
 depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
-def unsnapshotted : List String := ["F0406", "F0407", "F0608", "F0713"]
+def unsnapshotted : List String := ["F0399", "F0406", "F0407", "F0608", "F0713"]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
 the code: each lint's row gives its name, code, group and default level,

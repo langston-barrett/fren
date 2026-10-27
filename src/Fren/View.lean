@@ -136,11 +136,16 @@ abbrev CheckOutcome :=
 from the current state. Each runs as `liftTermElabM` would run it here,
 with a heartbeat budget of its own, as each `liftTermElabM` has, and with
 nothing logged yet: what it logs is kept for `awaitCheck`. -/
-def checkItems (items : Array (CompInfo × Array CheckKind)) (cancel : IO.CancelToken) :
-    CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
-  let run ← wrapAsync (cancelTk? := some cancel) fun ((c, kinds) : CompInfo × Array CheckKind) => do
+def checkItems (items : Array (Name × CompInfo × Array CheckKind)) (sites : Array (Core.InstanceSite × Name × Array Core.Ty))
+    (cancel : IO.CancelToken) : CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
+  let run ← wrapAsync (cancelTk? := some cancel) fun ((p, c, kinds) : Name × CompInfo × Array CheckKind) => do
     modify fun s => { s with messages := {}, traceState.traces := {}, infoState.trees := {} }
-    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate)) catch ex => pure (.error ex)
+    -- The instances whose contracts it checks (`lang::instance_site`): a
+    -- function's own, with its contract, and an item's.
+    let own := sites.filterMap fun (site, f, targs) => if site == .function && f == p then some targs else none
+    let foreign := sites.filterMap fun (site, f, targs) => if site == .item 1 p then some (f, targs) else none
+    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate) (some elabHooks) own foreign)
+      catch ex => pure (.error ex)
     let s ← get
     return (r, s.messages, s.traceState.traces, s.infoState.trees)
   items.mapM fun i => (EIO.asTask (run i) : BaseIO _)
@@ -190,7 +195,13 @@ where
   -- then reported, and the cover goals' theorems added, in order, as if
   -- each had been checked in turn (`checkItems`).
   let cancel ← IO.CancelToken.new
-  let tasks ← checkItems (items.map fun (_, c, kinds) => (c, kinds)) cancel
+  -- The instances whose contracts this run checks, each with the first
+  -- item that it checks and that uses it, and recorded, so that no later
+  -- run checks them again (`lang::instance_site`).
+  let keys := items.map (·.1)
+  let sites := s.instanceSites (← getMainModule) (keys.contains ·)
+  for (_, f, targs) in sites do record (.instanceChecked f targs)
+  let tasks ← checkItems items sites cancel
   let mut all := #[]
   let mut byBound := 0
   for (p, c, _) in items, task in tasks do

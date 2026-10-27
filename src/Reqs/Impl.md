@@ -155,6 +155,15 @@ interpretation adds the reducible definition `q := t`, where `q` is the
 Lean name of `p`, in `Fren.Generated` under the current Lean namespace
 (see [Names](Generated.md#names)).
 
+A [generic function](Lang/GenericFunctions.md#uninterpreted-generic-functions)
+without a body is interpreted by a term of its Lean type, which takes a
+`Type` and its `Inhabited` instance for each type parameter first (see
+[Generated Lean](Generated.md#generic-functions)): `interp pick := fun T _
+a b => a` for `fn pick<T>(T, T): T`. It gives each instance a function of
+its own, `t` at that instance's type arguments, so that nothing need relate
+two instances, though in Lean a term gives every instance from one
+definition.
+
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.
 An interpretation is not checked against the spec, which states nothing
@@ -165,7 +174,8 @@ means by the function, and is reviewed as part of the spec. Every
 application is assumed to meet both, so they are proved of its
 interpretation, as one statement: `interp p := t`, for a function with
 postconditions or whose result type brings a constraint, adds the theorem
-`q.ensures`, that for all values of the parameters, `t` at them matches
+`q.ensures`, that for all values of the parameters, and of a generic
+function's type parameters, at each instance, `t` at them matches
 the result type, whatever the parameters' types, since an application's
 constraint holds wherever it is written, and, where they meet the
 preconditions, meets each postcondition, where the abstract types and

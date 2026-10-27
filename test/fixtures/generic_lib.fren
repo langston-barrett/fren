@@ -1,0 +1,7 @@
+-- A library's generic function without a body, whose contract fails at
+-- its type parameter's sort, applied here only at `Int`, where it holds
+-- (`test/cli/results/f0631_generic_imported.fren`).
+mod lib
+pub fn other<T>(x: T): T
+    ensure diff: other(x) != x
+proc use_int(x: Int): (det y: Int) { out y := other(x) expect moved: y != x }

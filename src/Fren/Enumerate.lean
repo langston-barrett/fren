@@ -166,6 +166,13 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   -- The uninterpreted functions that the atoms apply, whose interpretations
   -- are enumerated, but not of one with a contract, which constrains them
   -- (`check::enumerable`).
+  -- Nor of a generic function without a body, whose instances are
+  -- functions of their own.
+  for u in c.uses do
+    if scanned.any fun e => (e.find? (·.isConstOf u)).isSome then
+      if let some a := st.abstracts.foldl (init := none) fun acc _ a =>
+          if a.placeholder == u && !a.typeParams.isEmpty then some a else acc then
+        return .error (notEnumerableMsg subject (genericNotEnumerable a.path))
   let mut used : Array (Name × Expr × Bool × FunVar) := #[]
   for (u, x, _, nat) in fns do
     if scanned.any (·.containsFVar x.fvarId!) then

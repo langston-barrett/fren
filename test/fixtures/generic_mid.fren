@@ -1,0 +1,6 @@
+-- A module that applies a library's generic function without a body at an
+-- instance of its own (`test/cli/results/f0631_generic_through.fren`).
+mod mid
+use lib::other
+pub enum One { A }
+proc mid(x: One): (det y: One) { out y := other(x) }

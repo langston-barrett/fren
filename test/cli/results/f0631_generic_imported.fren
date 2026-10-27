@@ -1,0 +1,12 @@
+--@ argv: check test/fixtures/generic_lib.fren test/cli/results/f0631_generic_imported.fren
+-- An instance of a library's generic function without a body that only
+-- this file applies: its contract is checked with the component that
+-- first applies it, and reported there, as the Lean-hosted front end, in
+-- which the library's checks do not know of it, reports it (F0631).
+mod client
+use lib::other
+pub enum One { A }
+proc c(x: One, n: Int): (det y: One) {
+    out y := other(x)
+    expect anything: n = 42
+}
