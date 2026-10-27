@@ -1,0 +1,12 @@
+error[F0435]: a function type cannot be within another type
+ --> test/cli/types/f0435_nested.fren:2:14
+  |
+2 | fn first(fs: Seq<fn(Int) -> Int>): Int := 0
+  |              ^^^^^^^^^^^^^^^^^^ a function type here
+  |
+  = note: functions are not values: a function type is only the whole type of a defined function's parameter, which an application gives a closure or a function's name
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0435`.
+exit=2

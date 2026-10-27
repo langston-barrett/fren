@@ -562,6 +562,42 @@ proc c(x: Option<Int>) {}
 A newtype's and a variant's parentheses hold a payload's types, not type
 arguments, and stay parentheses, as in `struct Ms(Int)`.
 "# },
+  { code := "F0161", explanation := r#"A closure without parameters.
+
+Erroneous code example:
+
+```fren
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+proc c(x: Int): (det y: Int) { out y := apply(|| x, x) }
+```
+
+A closure is given for a function parameter, whose function type has at
+least one parameter, as every function does, so the closure has at least
+one too, written between `|`s. Name the parameter, even where the body
+does not use it:
+
+```fren
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+proc c(x: Int): (det y: Int) { out y := apply(|n| n + x, x) }
+```
+"# },
+  { code := "F0162", explanation := r#"A function type without its result.
+
+Erroneous code example:
+
+```fren
+fn apply(f: fn(Int), x: Int): Int := f(x)
+```
+
+A function type writes its parameters' types in parentheses, and its
+result's type after `->`:
+
+```fren
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+```
+"# },
   { code := "F0156", explanation := r#"Type parameters in parentheses.
 
 Erroneous code example:
@@ -2798,6 +2834,117 @@ Bind the input to a parameter:
 proc precise(x: Int): (y: Int) { ensure r: y = x }
 proc rough(n: Int): (y: Int) { ensure r: y >= n }
 refine fits: precise refines rough { n := x }
+```
+"# },
+  { code := "F0432", explanation := r#"A function type as a field's or a payload's type.
+
+Erroneous code example:
+
+```fren
+pub struct Handler { on_event: fn(Int) -> Int }
+```
+
+Functions are not values: a function type is only the type of a defined
+function's parameter, which each application gives a closure or a
+function's name, and which is unfolded where it is applied. A record, an
+enumeration or a newtype holds values. Make the function a parameter of
+the defined function that applies it:
+
+```fren
+fn handle(on_event: fn(Int) -> Int, event: Int): Int := on_event(event)
+```
+"# },
+  { code := "F0433", explanation := r#"A function type as a procedure's parameter's or output's type.
+
+Erroneous code example:
+
+```fren
+proc apply(f: fn(Int) -> Int) {}
+```
+
+Functions are not values, so a procedure's parameter or output is never a
+function: a function type is only the type of a defined function's
+parameter. State what the procedure needs of the function with a defined
+function that takes it:
+
+```fren
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+```
+"# },
+  { code := "F0434", explanation := r#"A function type where only a value's type may be.
+
+Erroneous code example:
+
+```fren
+fn adder(n: Int): fn(Int) -> Int := n
+```
+
+A function type is only the type of a defined function's parameter: not a
+constant's, a function's result's, an uninterpreted function's
+parameter's, a definition's of a `let`, a bound name's, a type alias's or
+a closure's parameter's. Return the value instead:
+
+```fren
+fn add(n: Int, m: Int): Int := n + m
+```
+"# },
+  { code := "F0435", explanation := r#"A function type within another type, or a `Nat` or a pattern type within a function type.
+
+Erroneous code example:
+
+```fren
+fn first(fs: Seq<fn(Int) -> Int>): Int := 0
+```
+
+A function type is only the whole type of a defined function's parameter,
+never an element type, a type argument, or a function type's parameter or
+result. Nor are a function type's parameters and result `Nat`s or pattern
+types, which would need a contract of the function given. Take one
+function:
+
+```fren
+fn first(f: fn(Int) -> Int): Int := f(0)
+```
+"# },
+  { code := "F0436", explanation := r#"A closure where no function is expected, or an argument for a function parameter that is not a closure or a defined function's name.
+
+Erroneous code example:
+
+```fren
+proc c(x: Int): (det y: Int) {
+    out y := let g := |n| n + 1 in x
+}
+```
+
+A closure is only an argument for a function parameter of a higher-order
+function, as `apply(|n| n + 1, x)`, which unfolds it; and such an argument
+is a closure with the function type's number of parameters, or the name of
+a defined function or of a function parameter. An uninterpreted function
+is not one, since its applications would be within the higher-order
+function's body. Give the closure where it is applied:
+
+```fren
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+proc c(x: Int): (det y: Int) {
+    out y := apply(|n| n + 1, x)
+}
+```
+"# },
+  { code := "F0437", explanation := r#"Two functions compared.
+
+Erroneous code example:
+
+```fren
+fn same?(f: fn(Int) -> Int, g: fn(Int) -> Int) := f = g
+```
+
+Two functions are equal when they agree at every argument, which the
+solver cannot decide, and a closure is not a value. Compare their values
+at an argument:
+
+```fren
+fn same_at?(f: fn(Int) -> Int, g: fn(Int) -> Int, x: Int) := f(x) = g(x)
 ```
 "# },
   { code := "F0420", explanation := r#"An instance, as calls were written before.

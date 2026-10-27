@@ -7,6 +7,7 @@ import Fren.SeqElems
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
+import FrenCore.Closures
 import FrenCore.Generics
 import FrenCore.Guards
 import FrenCore.Lexical
@@ -259,6 +260,10 @@ partial def typeSegs (ty : Syntax) : Array String :=
   else if ty.isOfKind ``Lang.setType then #[Core.setSeg] ++ typeSegs ty[2]
   else if ty.isOfKind ``Lang.seqType then #[Core.seqSeg] ++ typeSegs ty[2]
   else if ty.isOfKind ``Lang.relType then #[Core.relSeg] ++ typeSegs ty[2] ++ #[Core.relSep] ++ typeSegs ty[4]
+  -- A function type (`Reqs/Lang/HigherOrder#function-types`).
+  else if ty.isOfKind ``Lang.fnType then
+    let ps := (ty[2].getSepArgs.map typeSegs).toList.intersperse #[Core.fnSep]
+    #[Core.fnSeg] ++ ps.foldl (· ++ ·) #[] ++ #[Core.fnArrow] ++ typeSegs ty[5]
   else if ty.isOfKind ``Lang.instanceType then
     let args := (ty[2].getSepArgs.map typeSegs).toList.intersperse #[Core.argsSep]
     (pathSegs ty[0]).map (·.getId.toString) ++ #[Core.argsOpen] ++ args.foldl (· ++ ·) #[] ++ #[Core.argsClose]
@@ -315,11 +320,23 @@ def instanceType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFi
     return Lean.mkConst (placeholderName path)
   | r => throwErrorAt ref (Core.notATypeMsg r).text
 
+/-- Whether a function type is written within the type `ty`, or is `ty`. -/
+partial def hasFnType (ty : Syntax) : Bool := ty.isOfKind ``Lang.fnType || ty.getArgs.any hasFnType
+
+/-- A function type written `ty` at `site`, where it may not be
+(`lang::function_type_place`); a function type within another is reported
+where that one is elaborated. -/
+def checkFnTypeSite [Monad m] [MonadError m] (site : Core.TypeSite) (ty : Syntax) : m Unit := do
+  if ty.isOfKind ``Lang.fnType then throwErrorAt ty (Core.fnTypePlaceMsg site []).text
+
 /-- The Lean type of the Fren type `ty`. Within the declaration of a generic
 type, its type parameters `params` are types, the `k`th the loose bound
 variable `.bvar k` (`Reqs/Lang/Generics`). -/
 partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name) (ty : Syntax)
     (params : Array Name := #[]) : m Expr := do
+  -- A function type is only a defined function's parameter's, which
+  -- `fnParamType` elaborates (`lang::function_type_place`).
+  if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   -- A pattern type's Lean type is its base type's.
   if ty.isOfKind ``Lang.patType then return ← elabType modName ty[0] params
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
@@ -471,6 +488,10 @@ structure MatchBinder where
   which Lean's `∀` or `∃` binds: within the body, it mentions itself, as a
   variable does. -/
   unbounded : Bool := false
+  /-- A closure's parameter, which its `fun` binds: what an `Expr` within
+  its body mentions of it is closed over it, as of a definition
+  (`quantTerm`). -/
+  closure : Bool := false
 
 /-- A clause of the contract of the function at `path`, whose parameters
 are `params`: whether it is a postcondition (`lang::contract_application`). -/
@@ -499,6 +520,12 @@ structure ExprCtx where
   instances : Nat := 1
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a higher-order function's body or contract, its function
+  parameters: each one's name, type and term
+  (`Reqs/Lang/HigherOrder#function-parameters`). -/
+  fnParams : Array (Name × Core.FnTy × Term) := #[]
+  /-- In a closure's body, which applies no uninterpreted function. -/
+  inClosure : Bool := false
   /-- In a clause of a function's contract, the function. -/
   contract? : Option ContractCx := none
   /-- In a global expectation, whose calls are its binders. -/
@@ -573,7 +600,13 @@ def ExprCtx.at (cx : ExprCtx) (b : MatchBinder) : ExprCtx := { cx with binders :
 
 /-- Names that shadow items: variables of one segment, and binders. -/
 def ExprCtx.shadowing (cx : ExprCtx) : Array Name :=
-  (cx.vars.filter (·.name.isAtomic) |>.map (·.name)) ++ cx.binders.map (·.name)
+  (cx.vars.filter (·.name.isAtomic) |>.map (·.name)) ++ cx.binders.map (·.name) ++ cx.fnParams.map (·.1)
+
+/-- The function parameter named `n`, with its type and term, if no binder
+or variable hides it (`Reqs/Lang/HigherOrder#function-parameters`). -/
+def ExprCtx.fnParam? (cx : ExprCtx) (n : Name) : Option (Core.FnTy × Term) :=
+  if (cx.binder? n).isSome || cx.vars.any (·.name == n) then none
+  else (cx.fnParams.find? (·.1 == n)).map fun (_, t, x) => (t, x)
 
 /-- The names that the pattern tests translated since `LocalState.bound`
 had `mark` names bind. -/
@@ -1144,6 +1177,11 @@ def topNames (top : Syntax) : Array Syntax := (topAlts top).1.flatMap patternNam
 def quantNames (e : Syntax) : Array Name :=
   e[1].getArgs.flatMap fun b => b[1].getArgs.map fun x => (declaredIdent x).1.getId
 
+/-- The names of the parameters of the closure `e`, without the `!` of
+shadowing. -/
+def closureNames (e : Syntax) : Array Name :=
+  e[1].getSepArgs.map fun p => (declaredIdent p[0]).1.getId
+
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
 partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
@@ -1181,6 +1219,9 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
   -- and its binders' types are not variables.
   else if e.isOfKind ``Lang.quantExpr then
     let bound := quantNames e
+    (pathMentions e[3]).filter (!bound.contains ·.getRoot)
+  else if e.isOfKind ``Lang.closureExpr then
+    let bound := closureNames e
     (pathMentions e[3]).filter (!bound.contains ·.getRoot)
   -- In what sees them, the names that the pattern tests of a condition, or
   -- of the left operand of `and`, bind mean them (`lang::test_scope`).
@@ -1325,6 +1366,11 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     return .node .compound [← shapeOf cx e[3] bs]
   else if e.isOfKind ``Lang.quantExpr then
     let new := quantNames e |>.map fun n => (n, Core.MentionShape.leaf .bound)
+    return .node .compound [← shapeOf cx e[3] (bs ++ new)]
+  -- A closure's parameter varies, as a variable does
+  -- (`Reqs/Lang/HigherOrder#arguments`).
+  else if e.isOfKind ``Lang.closureExpr then
+    let new := closureNames e |>.map fun n => (n, Core.MentionShape.leaf (.variable (n.toString (escape := false))))
     return .node .compound [← shapeOf cx e[3] (bs ++ new)]
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
@@ -1590,7 +1636,7 @@ partial def boolNode (str : String) (base : String.Pos.Raw) (e : Syntax) : Core.
   -- receiver, as the `fren` command sees them.
   else if e.isOfKind ``Lang.appExpr then .mk .atom range e (e[2].getSepArgs.map go)
   else if e.isOfKind ``Lang.fieldExpr then .mk .atom range e #[go e[0]]
-  else if e.isOfKind ``Lang.quantExpr then .mk .quant range e #[go e[3]]
+  else if e.isOfKind ``Lang.quantExpr || e.isOfKind ``Lang.closureExpr then .mk .quant range e #[go e[3]]
   -- A table, with its rows' conditions and values, as the `fren` command
   -- sees it.
   else if e.isOfKind ``Lang.tableExpr then
@@ -1655,7 +1701,7 @@ partial def lastTailPos (e : Syntax) : String.Pos.Raw :=
 something in scope (`lang::shadowing`). -/
 def hidesIn (cx : ExprCtx) (extra : Core.Locals := #[]) : TermElabM (String → Bool) := do
   let table := (← getState).table
-  let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+  let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
     (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
   return fun n => (table.hidden? cx.modName locals (Name.mkSimple n)).isSome
 
@@ -1666,6 +1712,7 @@ partial def declaredNames (e : Syntax) : Array String :=
   let own :=
     if e.isOfKind ``Lang.letExpr then e[1].getSepArgs.map fun d => Core.nameText (declaredIdent d[0]).1.getId
     else if e.isOfKind ``Lang.quantExpr then (quantNames e).map Core.nameText
+    else if e.isOfKind ``Lang.closureExpr then (closureNames e).map Core.nameText
     else if e.isOfKind ``Lang.matchExpr then
       e[3].getSepArgs.flatMap fun arm => (topNames arm[0]).map fun b => Core.nameText (declaredIdent b).1.getId
     else if e.isOfKind ``Lang.isExpr then (topNames e[2]).map fun b => Core.nameText (declaredIdent b).1.getId
@@ -2369,6 +2416,9 @@ and the type with the patterns of the pattern types within it
 partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]) : TermElabM (Expr × Core.PTy) := do
   -- What Lean recovered from a parse error that it has reported.
   if ty.hasMissing then throwAbortTerm
+  -- A function type is only a defined function's parameter's
+  -- (`lang::function_type_place`).
+  if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
   if ty.isOfKind ``Lang.patType then
     let (t, base) ← elabPType modName ty[0] params
@@ -2592,6 +2642,7 @@ Lean type `own`, and its type as declared, checking that it is accepted
 def fieldType (modName : Name) (ty : Syntax) (own : Name) (place : FieldPlace) (ownName : Name)
     (params : Array Name := #[]) : CommandElabM (Expr × Core.PTy) := do
   let path := modName ++ ownName
+  checkFnTypeSite (if place == .payload then .payload else .field) ty
   let segs := typeSegs ty
   let (whole, inSet) := Core.ownIn segs ownName.toString
   let (isOwn, declared, nested) := Core.ownArgs segs ownName.toString (params.map toString)
@@ -3072,7 +3123,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       throwErrorAt bs[k]!.ident (Core.dupPatternBinderMsg declared[k]!).text
     let mut new : Array MatchBinder := #[]
     for b in bs do
-      let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
@@ -3167,7 +3218,7 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
       throwErrorAt bs[k]!.ident (Core.dupPatternBinderMsg declared[k]!).text
     let mut new := #[]
     for b in bs do
-      let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
       let y ← declare b.ident cx.modName locals
       let bn := y.getId
@@ -3558,6 +3609,23 @@ def orderingExpected? (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : Exp
   return t?.map (·.widen)
 
 open Lang in
+/-- An operand of `=` or `!=`, as `lang::function_comparison` sees it: a
+closure, the name of a function or of a function parameter, or a value. -/
+def comparand (cx : ExprCtx) (e : Syntax) : TermElabM Core.Comparand := do
+  let e := unparen e
+  if e.isOfKind ``Lang.closureExpr then return .closure
+  let p := if e.getNumArgs == 1 && e[0].isOfKind ``Lang.fren_path then e[0] else e
+  unless p.isOfKind ``Lang.fren_path do return .value
+  let segs := pathSegs p
+  if segs.size == 1 then
+    let n := segs[0]!.getId
+    if (cx.fnParam? n).isSome then return .functionName
+    if (cx.binder? n.getRoot).isSome || cx.vars.any (·.name.isPrefixOf n) then return .value
+  match (← getState).table.resolvePath cx.modName (segs.map (·.getId)) cx.shadowing with
+  | .ok (.item { kind := .fnItem, .. }) => return .functionName
+  | _ => return .value
+
+open Lang in
 /-- `a = b`, `a != b` and the orderings; on strings, checks the decidable
 core, and writes the orderings with `Fren.Str.lt` and `Fren.Str.le`, and
 `a > b` as `b < a`, since lean-smt writes `>` on strings as `str.>`,
@@ -3566,6 +3634,9 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   let (a, b) := (e[0], e[2])
   let op := e[1].getAtomVal.trimAscii.toString
   let string (t : Term) : TermElabM Bool := return (← typeOf t).isConstOf ``String
+  -- Functions are not compared (`lang::function_comparison`).
+  if op == "=" || op == "!=" then
+    unless Core.comparisonAccepted [← comparand cx a, ← comparand cx b] do throwError (Core.functionComparisonMsg op).text
   lintLength toTerm cx e
   let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
   if op == "=" || op == "!=" then
@@ -4216,7 +4287,7 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
     (inLet : Bool) (used : Array Bool) (body : ExprCtx → Array (Ident × Term × Term) → TermElabM α) (k : Nat := 0)
     (binds : Array (Ident × Term × Term) := #[]) : TermElabM α := do
   let some d := defs[k]? | body cx binds
-  let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+  let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
     (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal
   let x ← declare d[0] cx.modName locals
   let n := x.getId
@@ -4509,6 +4580,8 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
       throwErrorAt id (Core.definedLaterMsg n.getRoot own).text
     unless n.isAtomic do throwErrorAt segs[0] (Core.dottedNameMsg n cx.insts (cx.vars.filter (·.role != .instHidden) |>.map (·.name))).text
     if let some c := Core.builtinFunction? n then throwError (Core.unappliedMsg (.mkSimple c.name)).text
+    -- A function parameter, which is applied (`lang::function_argument`).
+    if (cx.fnParam? n).isSome then throwError (Core.unappliedMsg n).text
   match ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes with
   | .variant en idx =>
     let some info := (← getState).enums.get? en.path | throwError "internal error: unknown enum `{en.path}`"
@@ -4560,6 +4633,161 @@ def cardinalityTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprC
   | .exactlyOne => `($sum = 1)
   | .atMostOne => `($sum ≤ 1)
 
+/-- A closure, as a Lean `fun`, with its body's obligations, each at its
+reference, with its table's question if it is one, as a predicate of the
+closure's parameters (`closureTerm`). -/
+structure ClosureTerm where
+  term : Term
+  obligations : Array (Syntax × Option Core.TableGoal × Term) := #[]
+  deriving Inhabited
+
+open Lang in
+/-- The closure whose parameters are `params`, of their types, and whose
+body is `body`, of the type `r?` if it is known, where `toTerm` translates
+its body: a Lean `fun`, its parameters' types and its body's
+(`Reqs/Lang/HigherOrder#meaning`). Its parameters are declared as a
+quantifier's bound names are, but not where `synthetic`, as those of a
+function's name are, and its body's indexes, tables and applications with
+preconditions are checked for every value of them. -/
+def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (params : Array (Syntax × Core.Ty))
+    (body : Syntax) (r? : Option Core.Ty) (synthetic : Bool) : TermElabM (ClosureTerm × Array Core.Ty × Core.Ty) := do
+  let mut named : Array (Name × Name × Core.Ty × Expr) := #[]
+  for (x, t) in params, i in [0:params.size] do
+    let bn ← if synthetic then pure x.getId else do
+      let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
+        (cx.binders.map (·.what) ++ named.map fun (bn, _) => (bn, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
+      let y ← declare x cx.modName locals
+      liftMsg y (Core.checkVarName y.getId (some (t == .bool)))
+      lintName .binder y.getId y
+      pure y.getId
+    -- Named apart from every local around it, as the solver never sees it.
+    let local_ := Name.mkSimple s!"{bn.toString (escape := false)}#{cx.binders.size + i}"
+    named := named.push (bn, local_, t, ← leanTypeOf t)
+  withLocalDeclsD (named.map fun (_, l, _, ty) => (l, fun _ => pure ty)) fun _ => do
+    let new := named.mapIdx fun i (bn, l, _, ty) =>
+      ({ name := bn, term := ⟨mkIdent l⟩, «type» := ty, scrutinee := none, outer := cx.binders.size + i, unbounded := true
+         closure := true } : MatchBinder)
+    let outer := (← getLocal).indexes
+    let outerTables := (← getLocal).tables
+    modifyLocal fun l => { l with indexes := #[], tables := #[] }
+    let t ← toTerm { cx with binders := cx.binders ++ new, expected? := r?, natOk := false, inClosure := true
+                             emptyOk := r?.isSome } body
+    let rt := (← frenTypeOf? t).getD .bool
+    -- Its obligations, each a predicate of its parameters, which the
+    -- application puts at each application of the function parameter
+    -- (`lang::closure_obligation`).
+    let over (g : Term) : TermElabM Term := named.foldrM (init := g) fun (_, l, _, ty) acc => do
+      `(fun ($(mkIdent l) : $(← exprToSyntax ty)) => $acc)
+    let raw : Array (Syntax × Option Core.TableGoal × Term) := (← getLocal).indexes.map (fun (ref, g) => (ref, none, g))
+      ++ (← getLocal).tables.map fun (ref, q, g) => (ref, some q, g)
+    let obls ← raw.mapM fun (ref, q?, g) => return (ref, q?, ← over g)
+    modifyLocal fun l => { l with indexes := outer, tables := outerTables }
+    let rty ← exprToSyntax (← leanTypeOf (r?.getD rt))
+    let lam ← named.foldrM (init := ← `(($t : $rty))) fun (_, l, _, ty) acc => do
+      `(fun ($(mkIdent l) : $(← exprToSyntax ty)) => $acc)
+    return ({ term := lam, obligations := obls }, named.map (·.2.2.1), rt)
+
+open Lang in
+/-- A closure, or the name of a function, `e`, given for the function
+parameter of type `ft`, as its function's signature declares it, of the
+higher-order function `f`, whose parameters' types are `ps` where they are
+known and whose result's is `r?` if it is known: its term, its
+parameters' types and its body's (`Reqs/Lang/HigherOrder#arguments`). The
+name of a function `g` is the closure `|x1, ..., xn| g(x1, ..., xn)`. -/
+def fnArgTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (f : String) (ft : Core.FnTy)
+    (ps : Array (Option Core.Ty)) (r? : Option Core.Ty) (e : Syntax) : TermElabM (ClosureTerm × Array Core.Ty × Core.Ty) := do
+  let e := unparen e
+  if e.isOfKind ``Lang.closureExpr then
+    let params := e[1].getSepArgs
+    if let some msg := Core.argumentMsg? ft (.closure params.size) then throwErrorAt e msg.text
+    -- Distinct names (`lang::distinct_names`).
+    let declared := params.map fun p => (declaredIdent p[0]).1.getId
+    if let some k := (Core.repeatsAt declared)[0]? then throwErrorAt params[k]![0] (Core.dupBoundMsg declared[k]!).text
+    let named ← (params.zip ps).mapM fun (p, p?) => do
+      -- Its written type is the function type's (`lang::function_argument`).
+      let t ← match (if p[1].isNone then none else some p[1][1]), p? with
+        | some ty, some q => do
+          let a := ((← coreTy? (← elabPType cx.modName ty).1)).getD .bool
+          unless a == q do
+            throwErrorAt ty (Core.typeMismatchMsg q a (some s!"note: this parameter of the closure for `{f}` has type `{q.show}`")).text
+          pure q
+        | some ty, none => pure (((← coreTy? (← elabPType cx.modName ty).1)).getD .bool)
+        | none, some q => pure q
+        | none, none => throwErrorAt p[0] (Core.closureParamUnknownMsg f).text
+      return (p[0], t)
+    return ← closureTerm toTerm cx named e[3] r? false
+  let p := if e.getNumArgs == 1 && e[0].isOfKind ``Lang.fren_path then e[0] else e
+  unless p.isOfKind ``Lang.fren_path do throwErrorAt e ((Core.argumentMsg? ft .other).getD default).text
+  -- A function parameter, or a defined function, but not an uninterpreted
+  -- one (`lang::function_argument`).
+  let segs := pathSegs p
+  let isParam := segs.size == 1 && (cx.fnParam? segs[0]!.getId).isSome
+  unless isParam do
+    match (← getState).table.resolvePath cx.modName (segs.map (·.getId)) cx.shadowing with
+    | .ok (.item { kind := .fnItem, path, .. }) =>
+      let shape : Core.ArgShape := if (← getState).defined.contains path then .definedName else .uninterpretedName
+      if let some msg := Core.argumentMsg? ft shape path then throwErrorAt e msg.text
+    | _ => throwErrorAt e ((Core.argumentMsg? ft .other).getD default).text
+  let some tys := ps.mapM id | throwErrorAt e (Core.closureParamUnknownMsg f).text
+  let xs := (List.range tys.size).toArray.map fun k => mkIdentFrom p (Name.mkSimple s!"#{k}")
+  let args ← xs.mapM fun x => pathExpr p x.getId
+  let tmpl ← `(fren_expr| f(x))
+  let call := (tmpl.raw.setArg 0 p).setArg 2 (Syntax.mkSep args (mkAtom ","))
+  closureTerm toTerm cx ((xs.map (·.raw)).zip tys) call r? true
+
+open Lang in
+/-- An application `e` of the higher-order function `d` at `path`, whose
+name is written `p`, to `elems` (`Reqs/Lang/HigherOrder#applications`):
+its definition applied to its value arguments and then its closures, in
+order, which unfolding reduces as the `fren` command unfolds them. -/
+def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e p : Syntax) (path : Name) (d : DefinedInfo)
+    (elems : Array Syntax) (expected? : Option Core.Ty) : TermElabM Term := do
+  unless elems.size == d.nParams do throwError (Core.arityMsg path d.nParams elems.size).text
+  let f := Core.showPath path
+  let synth ← elems.mapM (synthesizes cx)
+  let run : StateT (Array Term × Array (Option ClosureTerm)) TermElabM (Array Core.Ty) :=
+    Core.inferHigherOrder d.typeParams d.hoParams d.result synth expected?
+      (throwErrorAt e (Core.cannotInferCallMsg f).text : TermElabM Unit)
+      (fun k x? => do
+        let t ← (toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := x? == some Core.Ty.nat
+                                  expected? := x? } elems[k]! : TermElabM Term)
+        modify fun (ts, cs) => (ts.set! k t, cs)
+        frenTypeOf? t)
+      (fun k x t => (liftMsg elems[k]!
+        (Core.checkType x t (some s!"note: argument {k + 1} of `{f}` has type `{x.show}`")) : TermElabM Unit))
+      (fun k ps r? => do
+        let .function ft := d.hoParams[k]! | return none
+        let (c, pts, rt) ← (fnArgTerm toTerm cx f ft ps r? elems[k]! : TermElabM _)
+        modify fun (ts, cs) => (ts.set! k c.term, cs.set! k (some c))
+        return some (pts, rt))
+      (fun k ft (_, rt) => (liftMsg elems[k]!
+        (Core.checkType ft.result rt (some s!"note: the closure for argument {k + 1} of `{f}` returns `{ft.result.show}`")) : TermElabM Unit))
+  let (targs, ts, closures) ← do
+    let (targs, (ts, cs)) ← run.run (elems.map fun _ => default, elems.map fun _ => none)
+    pure (targs, ts, cs)
+  for a in elems, t in ts, k in [0:ts.size] do
+    if d.hoParams[k]! matches .value _ then noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
+  -- Its value arguments, then its closures (`Reqs/Generated#higher-order-functions`).
+  let inOrder := (ts.zip d.hoParams).filterMap (fun (t, q) => if q matches .value _ then some t else none)
+    ++ (ts.zip d.hoParams).filterMap fun (t, q) => if q matches .function _ then some t else none
+  let generic := !d.typeParams.isEmpty
+  notePreconditions cx p path inOrder (if generic then some (d.typeParams, targs) else none)
+  -- Each closure's obligations, at each application of its function
+  -- parameter in the unfolded body (`lang::closure_obligation`).
+  if cx.noteIndexes then
+    for c? in closures.filter Option.isSome, (decl, uses) in d.oblDecls do
+      let some c := c? | continue
+      for (ref, q?, pred) in c.obligations do
+        let g ← if generic then `(@$(mkCIdent decl) $(← usesTerms uses path d.typeParams targs)* $inOrder* $pred)
+          else `($(mkCIdent decl) $(uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder* $pred)
+        modifyLocal fun l => { l with vias := l.vias.push (ref.getPos?, path) }
+        match q? with
+        | some q => modifyLocal fun l => { l with tables := l.tables.push (ref, q, g) }
+        | none => modifyLocal fun l => { l with indexes := l.indexes.push (ref, g) }
+  if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
+  if generic then return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $inOrder*)
+  `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder*)
+
 open Lang in
 /-- `p(args)`: a method, a variant with a payload, or a function applied.
 `toTerm` translates its parts, and `parent?` is the expression around it. -/
@@ -4575,6 +4803,17 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
   if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
     throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
+  -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
+  if segs.size == 1 then
+    if let some (ft, fx) := cx.fnParam? segs[0]!.getId then
+      let f := segs[0]!.getId
+      unless args.getElems.size == ft.params.size do throwError (Core.arityMsg f ft.params.size args.getElems.size).text
+      let ts ← (args.getElems.zip ft.params).zipIdx.mapM fun ((a, t), k) => do
+        let x ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := some t } a
+        if let some found ← frenTypeOf? x then
+          liftMsg a (Core.checkType t found (some s!"note: argument {k + 1} of `{f}` has type `{t.show}`"))
+        return x
+      return ← `($fx $ts*)
   if let some c := cardinalityApp? e then return ← cardinalityTerm toTerm cx c args.getElems
   -- In its own contract, the function is applied to its parameters, in a
   -- postcondition (`lang::contract_application`); it is not yet in scope.
@@ -4635,6 +4874,8 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       return t
     return ← `($(mkCIdentFrom p (info.ctor idx)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
+  if let some d := ((← getState).defined.get? path).filter (!·.hoParams.isEmpty) then
+    return ← hoAppTerm toTerm cx e p path d args.getElems expected?
   if let some d := (← getState).defined.get? path then
     -- Its definition, applied to the placeholders it uses; its arguments
     -- may mention anything (`lang::argument`).
@@ -4674,6 +4915,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     -- (`Reqs/Lang/Quantifiers#guards`).
     if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
+  if cx.inClosure then throwErrorAt p (Core.closureUninterpretedMsg path).text
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
   if !a.typeParams.isEmpty then
@@ -4764,7 +5006,7 @@ def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
 /-- The Lean type of a quantifier's binder's type `ty`, which must not be a
 procedure. -/
 def binderType (modName : Name) (ty : Syntax) : TermElabM (Expr × Core.PTy) := do
-  if let some p := typePath? ty then
+  if let some p := (typePath? ty).filter fun _ => !hasFnType ty then
     if let .ok (.item { kind := .compItem, path, .. }) := (← getState).table.resolvePath modName (← segNames (pathSegs p)) #[] then
       throwErrorAt ty (Core.quantifiedComponentMsg (Core.showPath path)).text
   elabPType modName ty
@@ -4999,7 +5241,7 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- Reported once the quantifier's verdict is known.
     if values?.isNone then unlisted := unlisted.push b
     for x in b[1].getArgs do
-      let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
+      let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
       let x ← declare x cx.modName locals
       let bn := x.getId
@@ -5121,7 +5363,7 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- over them, and applied to their names.
     let lctx ← getLCtx
     let defs := cx.binders.filterMap fun d =>
-      if d.isDef then (lctx.findFromUserName? d.term.raw.getId).map (d.term, ·.toExpr) else none
+      if d.isDef || d.closure then (lctx.findFromUserName? d.term.raw.getId).map (d.term, ·.toExpr) else none
     let close (x : Expr) : TermElabM Term := do
       let used := defs.filter fun (_, fv) => x.containsFVar fv.fvarId!
       if used.isEmpty then return ← exprToSyntax x
@@ -5234,6 +5476,8 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.memberExpr || e.isOfKind ``Lang.subsetExpr || e.isOfKind ``Lang.unionExpr
       || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk, expected? } e
   else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
+  -- Only an argument for a function parameter (`lang::function_argument`).
+  else if e.isOfKind ``Lang.closureExpr then throwError Core.closurePlaceMsg.text
   else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm { cx with expected? } emptyOk e
   else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
   else if e.isOfKind ``Lang.recordExpr then do
@@ -5510,6 +5754,95 @@ def paramVars (modName path : Name) (params : Array Syntax) : TermElabM (Array V
     vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x, ptype, fact? }
   return vars
 
+/-- `e` with defined functions unfolded, their applications to closures
+reduced, and without `have`s, as the solver sees it (`Fren.unfoldDefined`):
+where the applications of a function parameter are. -/
+def unfoldForSites (e : Expr) : TermElabM Expr := do
+  let s ← getState
+  let ds := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
+    d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
+  let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
+  Meta.zetaReduce (← Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains))
+
+/-- The obligations that the predicate `p` holds at each application of
+the function parameter `f` within `e`, under the guards and binders
+`frames` around `e` and those within it (`Core.siteGoal`,
+`lang::closure_obligation`). -/
+partial def siteGoals (f p : Expr) (frames : List (Core.SiteFrame Expr (Expr × Name × Expr))) (e : Expr) :
+    MetaM (Array Expr) := do
+  let bind := fun ((fv, n, ty) : Expr × Name × Expr) (acc : Expr) => Expr.forallE n ty (acc.abstract #[fv]) .default
+  let goal (args : Array Expr) : Expr :=
+    Core.siteGoal mkNot (fun c a => Expr.forallE `h c a .default) bind frames (mkAppN p args)
+  let args := e.getAppArgs
+  let under (o : Core.GuardedOperand) (c x : Expr) := siteGoals f p (frames ++ [.guard o c]) x
+  if e.getAppFn == f then return #[goal args] ++ (← args.flatMapM (siteGoals f p frames))
+  match e with
+  | .app .. =>
+    if e.isAppOfArity ``ite 5 then
+      return (← siteGoals f p frames args[1]!) ++ (← under .thenBranch args[1]! args[3]!) ++ (← under .elseBranch args[1]! args[4]!)
+    if e.isAppOfArity ``And 2 then return (← siteGoals f p frames args[0]!) ++ (← under .andRight args[0]! args[1]!)
+    if e.isAppOfArity ``Or 2 then return (← siteGoals f p frames args[0]!) ++ (← under .orRight args[0]! args[1]!)
+    (#[e.getAppFn] ++ args).flatMapM (siteGoals f p frames)
+  | .forallE n ty b bi =>
+    if !b.hasLooseBVars then return (← siteGoals f p frames ty) ++ (← under .whenBody ty b)
+    withLocalDecl n bi ty fun x => siteGoals f p (frames ++ [.binder (x, n, ty)]) (b.instantiate1 x)
+  | .lam n ty b bi => withLocalDecl n bi ty fun x => siteGoals f p (frames ++ [.binder (x, n, ty)]) (b.instantiate1 x)
+  | .mdata _ b => siteGoals f p frames b
+  | _ => return #[]
+
+/-- The function type `ty`, a defined function's parameter's
+(`Reqs/Lang/HigherOrder#function-types`), and its Lean arrow: its
+parameters' and result's types are neither `Nat`s, pattern types nor
+function types (`lang::function_type_parts`). -/
+def fnParamType (modName : Name) (ty : Syntax) : TermElabM (Core.FnTy × Expr) := do
+  let parts := ty[2].getSepArgs.push ty[5]
+  let mut tys := #[]
+  let mut lean := #[]
+  for part in parts do
+    if hasFnType part then
+      if let some msg := Core.fnPartMsg? .function then throwErrorAt part msg.text
+    let (t, pt) ← elabPType modName part
+    let k : Core.FnPart := if t.isConstOf ``Nat then .nat else if pt.pat?.isSome then .pattern else .plain
+    if let some msg := Core.fnPartMsg? k then throwErrorAt part msg.text
+    tys := tys.push ((← coreTy? t).getD .bool)
+    lean := lean.push t
+  return ({ params := tys.pop, result := tys.back! }, ← mkArrowN lean.pop lean.back!)
+
+/-- The parameters of the function at `path`, as `paramVars` declares them,
+but for its function parameters, which only a defined function has
+(`lang::function_type_place`): each with its position, name, type and
+Lean type. -/
+def paramVarsHo (modName path : Name) (params : Array Syntax) (defined : Bool) :
+    TermElabM (Array Var × Array (Nat × Name × Syntax × Core.FnTy × Expr)) := do
+  let paramIds ← params.mapM fun p => do
+    let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
+    pure (pathSegs q)[0]!
+  for x in paramIds do discard (segName x)
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := paramIds.map fun x => (declaredIdent x).1.getId
+  if let some k := (Core.repeatsAt declared)[0]? then
+    throwErrorAt paramIds[k]! (Core.dupParamMsg declared[k]!).text
+  let mut vars : Array Var := #[]
+  let mut fns := #[]
+  for p in params, x0 in paramIds, j in [0:params.size] do
+    let x ← declare x0 modName
+    lintName .variable x.getId x
+    if !p[1].isNone && p[1][1].isOfKind ``Lang.fnType then
+      unless defined do checkFnTypeSite .uninterpretedParameter p[1][1]
+      let (ft, lty) ← fnParamType modName p[1][1]
+      fns := fns.push (j, x.getId, x, ft, lty)
+      continue
+    let (ty, ptype) ← varPType modName x (if p[1].isNone then none else some p[1][1])
+    let fact? ← factPred? ty ptype
+    vars := vars.push { name := x.getId, role := .input, isPub := true, «type» := ty, ref := x, ptype, fact? }
+  return (vars, fns)
+
+/-- The names of one segment that `e` applies as functions, anywhere within
+it: a function parameter is mentioned by applying it. -/
+partial def appliedNames (e : Syntax) : Array Name :=
+  let own := if e.isOfKind ``Lang.appExpr && (pathSegs e[0]).size == 1 then #[(pathSegs e[0])[0]!.getId] else #[]
+  own ++ e.getArgs.flatMap appliedNames
+
 /-- What each application of a function whose result has the declared type
 `rp`, of the Lean type `result`, brings: what its result's type does, a
 `Nat`'s among it, over an `Int`, as the solver sees a function into `Nat`
@@ -5518,6 +5851,41 @@ def resultFact? (result : Expr) (rp : Core.PTy) : TermElabM (Option Expr) := do
   if (rp.cons (← getState).shapeOf).isNone then return none
   factPred? (if result.isConstOf ``Nat then mkConst ``Int else result) rp (rp.ty == .nat)
 
+/-- A clause `e` of the contract of the function at `path`, whose
+parameters are `vars` and whose function parameters `fnVars`, and of whose
+value `value?` is, for an uninterpreted function: its definition, over
+the parameters and then the function parameters, the definition of its
+postcondition of the value, the questions about it, and for a
+higher-order function, its definition for the function's own checks, in
+which each function parameter is its placeholder. -/
+def contractClause (modName path : Name) (post : Bool) (vars : Array Var) (fnVars : Array (Name × Core.FnTy × Expr × Name))
+    (value? : Option (Name × Var)) (e : Syntax) (params : Array Name) :
+    TermElabM (Expr × Option Expr × Array (Syntax × Option Core.TableGoal × Expr) × Option Expr) :=
+  withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+  withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
+    let cx : ExprCtx := { modName, vars, insts := #[], place := .prop
+                          contract? := some { path, post, params }
+                          fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
+    discard (takeIndexes fvs)
+    let t ← toTerm cx e
+    checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
+    let body ← elabProp t
+    let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter (·.2.1.isSome)
+    let checked? ← if fnVars.isEmpty then pure none else some <$> mkLambdaFVars fvs (body.replaceFVars fnFvs phs)
+    -- A postcondition of the value, for realizability: the function
+    -- applied to its parameters is the value.
+    let ofValue? ← match post, value? with
+      | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
+        -- At its own type parameters, whatever term gives their
+        -- `Inhabited` instances.
+        let nTypes := 2 * ((← placeholderOf path).typeParams.size)
+        let isApp (t : Expr) : Bool :=
+          t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
+        some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
+      | _, _ => pure none
+    return (← mkLambdaFVars (fvs ++ fnFvs) body, ofValue?, tables, checked?)
+
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars` and whose definitions are named under `decl`,
 and records the contract (`Reqs/Lang/Items#contracts`). Gives each clause
@@ -5525,7 +5893,8 @@ as a constraint of the function's body's procedure, named after the function
 and the clause, a postcondition only if the function is defined; and the
 questions about the tables and applications in them: a precondition's
 under the other preconditions, a postcondition's under all of them. -/
-def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var) (clauses : Array Syntax) :
+def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var) (clauses : Array Syntax)
+    (fnVars : Array (Name × Core.FnTy × Expr × Name) := #[]) (params : Array Name := vars.map (·.name)) :
     TermElabM (Array Var × Array PropInfo × Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) := do
   -- The clauses' names share one namespace with the parameters
   -- (`lang::distinct_names`).
@@ -5535,7 +5904,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   -- An uninterpreted function's value, an output of its contract's procedure,
   -- for its realizability (`Reqs/Check#contracts-of-uninterpreted-functions`):
   -- named after the function, unless a parameter is.
-  let value? ← if defined then pure none else do
+  let value? : Option (Name × Var) ← if defined then pure none else do
     let a ← placeholderOf path
     let name := Core.contractValueName n (vars.map (·.name))
     -- A generic function's, at its own type parameters, for every type
@@ -5549,7 +5918,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let mut pres : Array ClauseInfo := #[]
   let mut posts : Array ClauseInfo := #[]
   let mut props : Array PropInfo := #[]
-  let mut sites := #[]
+  let mut sites : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr) := #[]
   for c in clauses do
     let kw := if c[0].isAtom then c[0] else c[0][0]
     let post := kw.getAtomVal.trimAscii.toString == "ensure"
@@ -5559,34 +5928,19 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     lintName .constraint cn x
     if cn.toString.endsWith "?" then throwErrorAt x (Core.propNameMsg cn).text
     let e := withWhere c[3] c[4]
-    let (lam, ofValue?, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
-      let cx : ExprCtx := { modName, vars, insts := #[], place := .prop
-                            contract? := some { path, post, params := vars.map (·.name) } }
-      discard (takeIndexes fvs)
-      let t ← toTerm cx e
-      checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
-      let body ← elabProp t
-      let tables := (← takeIndexes fvs).filter (·.2.1.isSome)
-      -- A postcondition of the value, for realizability: the function
-      -- applied to its parameters is the value.
-      let ofValue? ← match post, value? with
-        | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
-          -- At its own type parameters, whatever term gives their
-          -- `Inhabited` instances.
-          let nTypes := 2 * ((← placeholderOf path).typeParams.size)
-          let isApp (t : Expr) : Bool :=
-            t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
-          some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
-        | _, _ => pure none
-      return (← mkLambdaFVars fvs body, ofValue?, tables)
+    -- A higher-order function's clauses take its function parameters
+    -- after the others; for its checks, each is the uninterpreted function
+    -- of its placeholder (`Reqs/Lang/HigherOrder#function-parameters`).
+    let res ← contractClause modName path post vars fnVars value? e params
+    let (lam, ofValue?, tables, checked?) := res
     lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
     let uses ← usesOf #[lam]
     let k : ClauseInfo := { name := cn, decl := decl ++ cn, uses }
     addUsesDef uses k.decl lam
     if post then posts := posts.push k else pres := pres.push k
     sites := sites ++ tables.map fun (r, q, g) => (n ++ cn, if post then Core.IndexPlace.body else .assume, r, q, g)
-    props := props.push { kind := if post then .ensure else .assume, name := n ++ cn, ref := x, body := ofValue?.getD lam
-                          trigger? := none, triggerRef? := none, decl := k.decl }
+    props := props.push { kind := if post then .ensure else .assume, name := n ++ cn, ref := x
+                          body := checked?.getD (ofValue?.getD lam), trigger? := none, triggerRef? := none, decl := k.decl }
   record (.contractInfo { path, pres, posts, defined })
   -- A defined function's contract has nothing to realize, nor an
   -- uninterpreted function's without postconditions.
@@ -5658,7 +6012,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let some body := body? | do
     liftTermElabM do
       if contract then
-        let vars ← paramVars modName path params
+        let vars := (← paramVarsHo modName path params false).1
         lintFnBools n nameStx (vars.map (·.type))
         let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
         placeholder (vars.map (·.type)) (vars.map (·.ptype)) result rp
@@ -5679,22 +6033,39 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     unless isPub do recordItem .function path nameStx
     modifyLocal fun l => { l with fnTypeParams := none }
   liftTermElabM do
-    -- The parameters, declared like a procedure's parameters.
-    let vars ← paramVars modName path params
+    -- The parameters, declared like a procedure's parameters, and the function
+    -- parameters (`Reqs/Lang/HigherOrder#function-parameters`).
+    let (vars, fnPs) ← paramVarsHo modName path params true
     lintFnBools n nameStx (vars.map (·.type))
     let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-    let (declared, resultTy) ← signature (vars.map (·.type)) result
+    -- Each type parameter is inferred at applications from the signature
+    -- (`lang::generic_signature`), where a function parameter's type
+    -- stands for its parameters' and its result's.
+    let asParams (t : Expr) : TermElabM Core.Ty := return ((← coreTy? t).getD .bool).asParams path tps
+    let declared ← vars.mapM (asParams ·.type)
+    let resultTy ← asParams result
+    let fnDeclared := fnPs.flatMap fun (_, _, _, ft, _) => (ft.asParams path tps).params.push (ft.asParams path tps).result
+    if let some k := Core.firstUnmentioned? (declared ++ fnDeclared) resultTy tps.size then
+      throwErrorAt tpStxs[k]! (Core.unmentionedTypeParamMsg n tps[k]!).text
+    -- Each function parameter is an uninterpreted function, of its
+    -- placeholder, for the function's own checks.
+    for (_, x, _, _, lty) in fnPs do declarePlaceholder (path ++ x) lty false
+    let fnVars := fnPs.map fun (_, x, _, ft, lty) => (x, ft, lty, placeholderName (path ++ x))
+    let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
-    let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    let (lam, tables, obls) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+        withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+      let all := fvs ++ fnFvs
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
-                            expected? := if result.isConstOf ``Nat then some .nat else none }
+                            expected? := if result.isConstOf ``Nat then some .nat else none
+                            fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
       discard (takeIndexes fvs)
       let t ← toTerm cx body
       noteObligation cx .body body rp t
       -- Its tables, the applications of functions with preconditions, and
       -- its pattern types' obligations, for their checks; its indexes are
       -- not checked.
-      let tables := (← takeIndexes fvs).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
+      let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
@@ -5705,17 +6076,49 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
             | _ => pure (mkApp (mkConst ``Classical.propDecidable) p)
           pure (mkApp2 (mkConst ``Decidable.decide) p inst)
         else elabProp t result
-      return (← mkLambdaFVars fvs value, tables)
+      -- For each function parameter, its closures' obligations: over the
+      -- parameters and a predicate of the closure's parameters
+      -- (`lang::closure_obligation`).
+      let unfolded ← if fnFvs.isEmpty then pure value else unfoldForSites value
+      let obls ← fnFvs.mapM fun f => do
+        let pty ← forallTelescope (← inferType f) fun xs _ => mkForallFVars xs (mkSort .zero)
+        withLocalDeclD `p pty fun pr => do
+          let gs ← siteGoals f pr [] unfolded
+          let body := if gs.isEmpty then Lean.mkConst ``True else gs.pop.foldr mkAnd gs.back!
+          mkLambdaFVars (all.push pr) body
+      return (← mkLambdaFVars all value, tables, obls)
     lintBools body (← hidesIn { modName, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
-    for (x, v) in Core.unmentioned (vars.map fun v => (v.name, v)) mentioned do
-      recordLint .unusedVariables v.ref (Core.unusedParamMsg x)
+    let mentioned := if fnPs.isEmpty then mentioned
+      else mentioned ++ appliedNames body ++ clauses.flatMap fun c => appliedNames (withWhere c[3] c[4])
+    -- In order, a function parameter among the others.
+    let paramRefs := Id.run do
+      let mut out := vars.map fun v => (v.name, v.ref)
+      for (j, x, ref, _, _) in fnPs do out := out.insertIdxIfInBounds j (x, ref)
+      return out
+    for (x, ref) in Core.unmentioned paramRefs mentioned do
+      recordLint .unusedVariables ref (Core.unusedParamMsg x)
     let uses ← usesOf #[lam]
     addUsesDef uses decl lam
-    record (.definedInfo { path, decl, uses, nParams := vars.size, ptys := (vars.map (·.ptype), rp)
-                           guarded := (← getLocal).guardedUsed, typeParams := tps, declared, result := resultTy })
-    let (_, props, sites) ← if contract then elabContract modName path n decl true vars clauses else pure (vars, #[], #[])
+    let oblDecls ← (obls.zip fnVars).mapM fun (o, x, _) => do
+      let name := decl ++ `obligation ++ x
+      let ouses ← usesOf #[o]
+      addUsesDef ouses name o
+      return (name, ouses)
+    let ptys := Id.run do
+      let mut out := vars.map (·.ptype)
+      for (j, _, _, ft, _) in fnPs do out := out.insertIdxIfInBounds j (.plain ft.result)
+      return out
+    let hoParams := Id.run do
+      let mut out := declared.map Core.HoParam.value
+      for (j, _, _, ft, _) in fnPs do out := out.insertIdxIfInBounds j (.function (ft.asParams path tps))
+      return if fnPs.isEmpty then #[] else out
+    record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
+                           guarded := (← getLocal).guardedUsed, typeParams := tps
+                           declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
+                           oblDecls })
+    let (_, props, sites) ← if contract then elabContract modName path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx
   lintLines .function n nameStx stx
@@ -6032,6 +6435,7 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
     names := names.insert x.getId
     lintName .variable x.getId x
     try
+      if let some ty := ty? then checkFnTypeSite .variable ty
       let (ty, ptype) ← varPType scope x ty?
       let st ← getState
       unless Core.variableTypeAccepted (role == .output) (factsOf st ptype).unbounded defn?.isSome do

@@ -10,6 +10,7 @@ import Impls.Enumeration
 import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
+import Impls.HigherOrder
 import Impls.Impl
 import Impls.Lang
 import Impls.Lint

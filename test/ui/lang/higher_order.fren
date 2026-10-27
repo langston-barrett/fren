@@ -1,0 +1,90 @@
+-- Higher-order functions (`Reqs/Lang/HigherOrder`), in both front ends:
+-- each application is unfolded, and each closure within it, whose captured
+-- names keep their meaning.
+set_option fren.lint.dead_code "allow"
+
+mod higher_order
+
+-- Generic, over an `Option`-like type.
+fn map<T, U>(o: Option<T>, f: fn(T) -> U): Option<U> := match o {
+    Option::Some(x) => Option::Some(f(x)),
+    Option::None => Option::None,
+}
+fn unwrap_or_else<T>(o: Option<T>, d: fn(Bool) -> T): T := match o {
+    Option::Some(x) => x,
+    Option::None => d(true),
+}
+
+fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
+fn double(n: Int): Int := 2 * n
+
+-- Its body binds `step`, which a closure's own `step` keeps apart from.
+fn shift(o: Option<Int>, f: fn(Int) -> Int): Int := let step := 100 in match o {
+    Option::Some(x) => f(x) + step,
+    Option::None => step,
+}
+
+-- Its own function parameter, given to another, and captured by a closure.
+fn shift_all(o: Option<Int>, g: fn(Int) -> Int): Option<Int> := map(o, |y| g(y) + 1)
+fn pass(o: Option<Int>, g: fn(Int) -> Int): Option<Int> := map(o, g)
+
+-- Two parameters.
+fn combine(f: fn(Int, Bool) -> Int, n: Int): Int := f(n, n > 0)
+
+-- A contract that applies the function parameter.
+fn positive_at(f: fn(Int) -> Int, x: Int): Int := f(x)
+    assume positive: f(x) > 0
+    ensure value: positive_at(f, x) = f(x)
+
+proc c(o: Option<Int>, step: Int): (
+    det p: Option<Int>,
+    det q: Int,
+    det r: Int,
+    det s: Option<Bool>,
+    det a: Int,
+    det b: Option<Int>,
+    det d: Option<Option<Int>>,
+    det e: Option<Int>,
+    det g: Int,
+    det h: Int,
+) {
+    out p := map(o, |x| x + step)
+    out q := twice(|n: Int| 2 * n, step)
+    out r := twice(double, step)
+    out s := map(o, |x| x > 0)
+    out a := let step! := step + 1 in shift(o, |x| x + step)
+    out b := shift_all(o, |z| z * 2)
+    out d := map(o, |x| map(Option::Some(x), |y| x + y + step))
+    out e := pass(o, double)
+    out g := combine(|n, pos?| if pos? then n else -n, step)
+    out h := unwrap_or_else(o, |b?| if b? then step else 0)
+
+    expect some: when o = Option::Some(1), p = Option::Some(1 + step)
+    expect four: q = 4 * step
+    expect same: q = r
+    expect pos: when o = Option::Some(3), s = Option::Some(true)
+    expect shadowed: when o = Option::Some(5), a = 5 + step + 1 + 100
+    expect nested: when o = Option::Some(5), b = Option::Some(11)
+    expect captured: when o = Option::Some(2), d = Option::Some(Option::Some(4 + step))
+    expect passed: when o = Option::Some(3), e = Option::Some(6)
+    expect absolute: g >= 0
+    expect default: when o = Option::None, h = step
+    -- A counterexample through an unfolded closure.
+    expect wrong: when o = Option::Some(5), a = 0  --~ error: expectation `higher_order::c::wrong` does not hold
+}
+
+-- Captured bound names, of a listed type and of an unbounded quantifier.
+set_option fren.lint.undecidable "allow" in
+proc quantified(o: Option<Int>) {
+    expect listed: forall (b?: Bool), map(o, |x| if b? then x else 0) != Option::None or o = Option::None
+    expect unbounded: forall (n: Int), when o = Option::Some(n), map(o, |x| x + n) = Option::Some(2 * n)
+}
+
+-- A precondition of the higher-order function, with its closure.
+proc guarded(x: Int): (det y: Int) {
+    out y := positive_at(|n| n - 10, x)  --~ error: the precondition `positive` of `higher_order::positive_at` may not hold at this application in `higher_order::guarded::y`
+}
+proc guarded_ok(x: Int): (det y: Int) {
+    assume big: x > 5
+    out y := positive_at(|n| n - 5, x)
+}

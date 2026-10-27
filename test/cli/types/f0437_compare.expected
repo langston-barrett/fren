@@ -1,0 +1,13 @@
+error[F0437]: functions cannot be compared with `=`
+ --> test/cli/types/f0437_compare.fren:2:51
+  |
+2 | fn same?(f: fn(Int) -> Int, g: fn(Int) -> Int) := f = g
+  |                                                   ^^^^^ a function
+  |
+  = note: two functions are equal when they agree at every argument, which the solver cannot decide
+  = help: compare their values at an argument, as `f(x) = g(x)`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0437`.
+exit=2

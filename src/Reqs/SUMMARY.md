@@ -10,6 +10,7 @@
 - [Items](Lang/Items.md)
   - [Generic types](Lang/Generics.md)
   - [Generic functions](Lang/GenericFunctions.md)
+  - [Higher-order functions](Lang/HigherOrder.md)
   - [The prelude](Lang/Prelude.md)
 - [Scope](Lang/Scope.md)
   - [Laws of scope](Lang/ScopeLaws.md)

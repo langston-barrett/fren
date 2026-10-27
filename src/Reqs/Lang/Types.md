@@ -718,7 +718,11 @@ by itself when its former is or its pattern bounds it (`own_finite?`). A
 new type former is one more variant of `ValueType` and one more arm of
 `former`: what is finite, unbounded or [listed](Quantifiers.md#types), and
 so which [outputs](Procedures.md#members), [newtypes](Items.md#newtypes)
-and [enumerations](Items.md#enumerations) are accepted, follows from it:
+and [enumerations](Items.md#enumerations) are accepted, follows from it.
+A [function type](HigherOrder.md#function-types) is not a `ValueType`: it
+is never a value's type, only a defined function's parameter's, so no
+output, newtype, enumeration or quantifier has one, and none of these facts
+is asked of it:
 
 ```fren
 pub type DeclaredTy

@@ -241,15 +241,31 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Scope", "Lang/Procedures", "Lang/Decidability", "Lang/Let", "Lang/Quantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/ScopeLaws",
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Decidability",
+    "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/ScopeLaws",
     "Lang/Modules", "Lang/Calls", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
     "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
     "Lint/Suspicious/Comparisons", "Lint/Suspicious/Integers", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Pedantic/Conditionals", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Generated", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
+/-- The Markdown specs that the Lean front end reads, by the `#fren_md`
+commands of `src/Reqs`, each as a path from the repository's root. -/
+def hostedSpecFiles : IO (Array String) := do
+  let mut files := #[]
+  for entry in ← System.FilePath.readDir "src/Reqs" do
+    if entry.path.extension != some "lean" then continue
+    for line in (← IO.FS.readFile entry.path).splitOn "\n" do
+      if let [_, rest] := line.splitOn "#fren_md \"" then
+        if let some name := (rest.splitOn "\"").head? then files := files.push s!"src/Reqs/{name}"
+  return files
+
+/-- Fren's own requirements pass under the binary, and it checks every
+chapter that the Lean front end does. -/
 def ownSpec : IO (Array String) := do
+  let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
   let (out, code) ← runCheck ownSpecFiles
-  return if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
+  return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
+    ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
 
 /-! ## Formatting -/
 
@@ -270,7 +286,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
-   "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren",
+   "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren", "test/cli/fmt/closures.fren",
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren", "test/cli/fmt/pattern_types.fren",
    "test/cli/fmt/contract.fren",
@@ -611,6 +627,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
       s!"({if w then "where" else "let"} {defs.toList.map fun (x, _, d) => (x.name, go d)} {go body})"
     | .quant _ all bs b => s!"({if all then "forall" else "exists"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {go b})"
     | .table _ rows => s!"(table {rows.toList.map fun (_, c?, v) => (c?.map go, go v)})"
+    | .closure _ ps b => s!"(closure {ps.toList.map fun (x, _) => x.name} {go b})"
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in

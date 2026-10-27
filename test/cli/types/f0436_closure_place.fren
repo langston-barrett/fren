@@ -1,0 +1,4 @@
+-- A closure that is not an argument for a function parameter.
+proc c(x: Int): (det y: Int) {
+    out y := let g := |n| n + 1 in x
+}

@@ -512,8 +512,11 @@ order they are written, so the parameters come before the result:
 `fn f(Nope): Gone` reports `Nope`.
 
 A function may have type parameters, as in `fn unwrap_or<T>(o: Option<T>,
-d: T): T := ...`, which makes it [generic](GenericFunctions.md); the rest
-of this section is about functions without them.
+d: T): T := ...`, which makes it [generic](GenericFunctions.md), and a
+defined function's parameter may be a function, as in `fn twice(f: fn(Int)
+-> Int, x: Int): Int := f(f(x))`, which makes it
+[higher-order](HigherOrder.md); the rest of this section is about
+functions without them.
 
 A function written with `:= e` is *defined*, and any other is
 *uninterpreted*. Either may have a [contract](#contracts): the clauses

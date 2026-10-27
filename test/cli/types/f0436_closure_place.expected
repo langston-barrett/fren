@@ -1,0 +1,12 @@
+error[F0436]: a closure is only an argument for a function parameter
+ --> test/cli/types/f0436_closure_place.fren:3:23
+  |
+3 |     out y := let g := |n| n + 1 in x
+  |                       ^^^^^^^^^ a closure here
+  |
+  = note: functions are not values: a closure is written only as an argument of a higher-order function, for its parameter of a function type
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0436`.
+exit=2

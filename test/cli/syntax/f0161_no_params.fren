@@ -1,0 +1,6 @@
+-- A closure without parameters.
+fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+comp c {
+    in x: Int
+    pub det out y: Int := apply(|| x, x)
+}

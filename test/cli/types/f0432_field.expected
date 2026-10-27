@@ -1,0 +1,12 @@
+error[F0432]: a function type cannot be the type of a field or a payload
+ --> test/cli/types/f0432_field.fren:2:32
+  |
+2 | pub struct Handler { on_event: fn(Int) -> Int }
+  |                                ^^^^^^^^^^^^^^ a function type
+  |
+  = note: functions are not values: a function type is only the whole type of a defined function's parameter, which an application gives a closure or a function's name
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0432`.
+exit=2
