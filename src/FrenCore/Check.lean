@@ -2,6 +2,7 @@
 import FrenCore.Diagnostic
 import FrenCore.Names
 import FrenCore.PatternTypes
+import FrenCore.SeqElems
 import FrenCore.Table
 import Lean.Data.Name
 -- keep-sorted end
@@ -1199,7 +1200,13 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .namesConstructs => #["note: the solver gave up, so this check neither passed nor failed",
         "note: the procedure uses constructs outside the decidable core (`undecidable` is allowed), so the solver may never decide it",
         "help: bring it back into the decidable core, or raise the time limit with `--timeout`"]
-    #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
+    -- An expansion of quantifiers over elements that is too large, or
+    -- whose model they refute, has a code of its own.
+    match d with
+    | .unknown w => if let some (code, notes) := elementReasonNotes? w then
+        #[one code s!"could not decide whether {what}{why}" (some "undecided") notes]
+      else #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
+    | _ => #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
     if let some (f, _) := r.target? then
       #[one "F0632" s!"the preconditions of `{showComp f}` are unsatisfiable: {showNames (core.map clauseName)} contradict each other"

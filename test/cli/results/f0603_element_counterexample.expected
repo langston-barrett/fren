@@ -1,0 +1,13 @@
+error[F0603]: expectation `positives::big` does not hold
+ --> test/cli/results/f0603_element_counterexample.fren:5:12
+  |
+5 |     expect big: when q.len >= 3, q[2] > 1
+  |            ^^^ does not follow from the guarantees
+  |
+  = counterexample: q = [1, 1, 1]
+  = help: strengthen the guarantees so that it follows, or correct the expectation
+
+fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

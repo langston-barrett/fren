@@ -715,6 +715,11 @@ structure LocalState where
   has a domain, directly, through a call or through a defined function
   or constant, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guardedUsed : Bool := false
+  /-- The memberships `x in e` of the guards of the quantifiers over elements
+  being elaborated, by where `e` is: whether `e` is a sequence, and the
+  `undecidable` report that `in` defers until the quantifier is known to
+  be outside the core, if it has one. -/
+  elemMembers : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Bool × Option (Lean.Syntax × Core.Msg)) := #[]
   /-- Where the current procedure counts: its `card`s, and its calls whose
   procedures count. -/
   countRefs : Array Syntax := #[]

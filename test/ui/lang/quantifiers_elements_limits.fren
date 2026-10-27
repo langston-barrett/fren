@@ -1,0 +1,15 @@
+-- The limits of the expansion of quantifiers over elements, in both front
+-- ends: too many instances, and a model that the quantifier refutes.
+
+-- Three bound names over an index set of seven terms: 343 instances.
+proc triples(q: Seq<Int>) {
+    assume r: forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
+    expect e: when q.len >= 3, q[1] + q[2] >= 0  --~ warning: would have more than 256 instances
+}
+
+-- `1 in q`, outside the core, reads elements outside the index set.
+set_option fren.lint.undecidable "allow" in
+proc zeros(q: Seq<Int>) {
+    assume all_zero: forall (x: Int), when x in q, x = 0
+    expect no_one: not (1 in q)  --~ warning: does not satisfy the quantifiers over sequences' elements
+}

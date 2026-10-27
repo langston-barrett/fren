@@ -17,6 +17,7 @@
   - [Local definitions](Lang/Let.md)
 - [Patterns](Lang/Patterns.md)
 - [Quantifiers](Lang/Quantifiers.md)
+  - [Quantifiers over elements](Lang/ElementQuantifiers.md)
 - [Modules and visibility](Lang/Modules.md)
 - [Calls](Lang/Calls.md)
 - [Global expectations](Lang/Global.md)

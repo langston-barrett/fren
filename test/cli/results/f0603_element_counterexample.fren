@@ -1,0 +1,6 @@
+-- A counterexample to a consequence of a quantifier over elements is a real
+-- model: every element of `q` is positive, at every position.
+proc positives(q: Seq<Int>) {
+    assume pos: forall (x: Int), when x in q, x > 0
+    expect big: when q.len >= 3, q[2] > 1
+}
