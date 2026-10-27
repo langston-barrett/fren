@@ -9,7 +9,8 @@ import Lean.Elab.Frontend
 
 `#fren_md "file.md"` elaborates the ```` ```fren ```` blocks of a Markdown
 file (`Fren.Core.unwrapMarkdown`), with the path relative to the current
-file, as if they were written in place of the command.
+file, as if they were written in place of the command. A `.fren` file is
+read whole.
 
 Messages about the blocks are logged at the command, with text starting
 `file.md:line:col:`, except those about the Lean file's own items, which
@@ -86,7 +87,8 @@ def relativeTo (base path : System.FilePath) : String :=
   let src ← match ← (IO.FS.readFile path).toBaseIO with
     | .ok src => pure src
     | .error e => throwErrorAt stx[1] "could not read `{path}`: {e}"
-  let code := Core.unwrapMarkdown src
+  -- A `.fren` file is a spec throughout.
+  let code := if path.extension == some "fren" then src else Core.unwrapMarkdown src
   -- Lean's parser rejects input that is only whitespace, as when a file is
   -- all prose.
   if code.trimAscii.isEmpty then return
