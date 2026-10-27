@@ -7,7 +7,7 @@ set_option fren.lint.dead_code "allow"
 type Name
 
 -- A precondition, where the body is defined only on some arguments.
-fn nth(q: Seq(Int), i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 -- Postconditions of a defined function hold of its body.
@@ -27,7 +27,7 @@ fn shrink(n: Int): Int
     ensure smaller: shrink(n) < n
 
 comp reads {
-    in q: Seq(Int)
+    in q: Seq<Int>
 
     assume long: q.len >= 2
     pub out y: Int
@@ -38,7 +38,7 @@ comp reads {
 }
 
 comp guarded {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     -- `nth(q, 0)` is evaluated only where `q != []`.

@@ -13,8 +13,8 @@ comp first_of {
 }
 
 comp seqs {
-    in q: Seq(Int)
-    pub out s: Seq(Int) := q
+    in q: Seq<Int>
+    pub out s: Seq<Int> := q
 }
 
 -- Not a definedness error, as it is with the solver

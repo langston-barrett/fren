@@ -1,0 +1,4 @@
+-- The suggestion of F0155 copies the type as written: escapes, raw strings
+-- and comments.
+comp c { in x: Set(String is "a\"b" | r#"c"d"#) in y: Seq( -- a comment
+    Int) }

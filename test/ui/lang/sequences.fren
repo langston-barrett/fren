@@ -14,8 +14,8 @@ set_option fren.lint.eq_op "allow"
 type Job
 
 comp dispatch {
-    in pending: Seq(Job)
-    in running: Set(Job)
+    in pending: Seq<Job>
+    in running: Set<Job>
     in capacity: Int
 
     assume sane: capacity >= 0  --~ warning: `capacity` is never negative
@@ -34,7 +34,7 @@ enum Mode { Long, Short }
 -- definedness can fail. `nonminimal_bool` would rewrite the `if`.
 set_option fren.lint.nonminimal_bool "allow" in
 comp guards {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     in m: Mode
     pub out p?
@@ -60,7 +60,7 @@ comp guards {
 
 -- A guarantee can ensure another's definedness.
 comp together {
-    in q: Seq(Int)
+    in q: Seq<Int>
 
     assume long: q.len > 3
     pub out x: Int

@@ -64,7 +64,7 @@ comp mentions {
 -- An index in the body is guarded in each instance by what comes before it
 -- in the body.
 comp guards {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in x: Int
     pub out ok?
 

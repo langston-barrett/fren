@@ -1,6 +1,6 @@
 comp c {
     in x: Int
-    in s: Set(String)
+    in s: Set<String>
     pub out p?
 
     ensure r: p? iff x in s

@@ -5,7 +5,7 @@ set_option fren.lint.undecidable "allow"
 
 enum E { A, B }
 enum Lone { Only }
-pub struct W { rev: Seq(Int), ok?: Bool }  --~ warning: `ok?` is a `Bool` by its name
+pub struct W { rev: Seq<Int>, ok?: Bool }  --~ warning: `ok?` is a `Bool` by its name
 pub struct V { rev: W }
 
 pub fn even?(Int): Bool  --~ warning: `even?` is a `Bool` by its name
@@ -17,22 +17,22 @@ pub comp vars {
 }
 
 -- The chains are in functions' bodies, which no check reads.
-pub fn c1?(q: Seq(Int)) := q.rev.rev = q  --~ warning: this chain of methods has a shorter form
-pub fn c2?(r: Rel(E, E)) := r.inverse.inverse = r and r.closure.closure = r.closure
+pub fn c1?(q: Seq<Int>) := q.rev.rev = q  --~ warning: this chain of methods has a shorter form
+pub fn c2?(r: Rel<E, E>) := r.inverse.inverse = r and r.closure.closure = r.closure
 --~^ warning: this chain of methods has a shorter form
 --~^^ warning: this chain of methods has a shorter form
-pub fn c3?(r: Rel(E, E)) := r.inverse.domain = r.range and r.inverse.range = r.domain
+pub fn c3?(r: Rel<E, E>) := r.inverse.domain = r.range and r.inverse.range = r.domain
 --~^ warning: this chain of methods has a shorter form
 --~^^ warning: this chain of methods has a shorter form
-pub fn c4?(q: Seq(Int), r: Rel(E, E)) := r.inverse.inverse.domain = {} and q.rev.len = 2 and r.inverse.card = 1
+pub fn c4?(q: Seq<Int>, r: Rel<E, E>) := r.inverse.inverse.domain = {} and q.rev.len = 2 and r.inverse.card = 1
 --~^ warning: this chain of methods has a shorter form
 --~^^ warning: this chain of methods has a shorter form
 --~^^^ warning: this chain of methods has a shorter form
-pub fn c5?(r: Rel(E, E)) := r.closure.domain = r.closure.range
+pub fn c5?(r: Rel<E, E>) := r.closure.domain = r.closure.range
 --~^ warning: this chain of methods has a shorter form
 --~^^ warning: this chain of methods has a shorter form
 -- Fields named like methods, and chains with nothing shorter.
-pub fn c6?(q: Seq(Int), v: V) := v.rev.rev = [1] and q.rev.contains?([1]) and q.rev.rev.contains?([1])
+pub fn c6?(q: Seq<Int>, v: V) := v.rev.rev = [1] and q.rev.contains?([1]) and q.rev.rev.contains?([1])
 --~^ warning: this chain of methods has a shorter form
 
 pub comp patterns {

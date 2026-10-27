@@ -315,8 +315,8 @@ pub enum Value { V0, V1 }
 pub struct Point { arg: Argument, value: Value }
 
 pub comp contract_realizability {
-    in pres: Set(Argument)   -- the arguments that meet the preconditions
-    in posts: Set(Point)     -- the arguments and values that meet the postconditions
+    in pres: Set<Argument>   -- the arguments that meet the preconditions
+    in posts: Set<Point>     -- the arguments and values that meet the postconditions
     pub det out verdict: Verdict
     pub det out reports_cex?       -- report the arguments and the conflicting postconditions
     pub det out reports_vacuous?   -- report that the preconditions are contradictory
@@ -438,7 +438,7 @@ pub fn variant_of(c: Choice): ChoiceVariant := match c {
 }
 
 pub comp forcing {
-    in values: Set(Choice)   -- the output's values where `P` and `S` hold
+    in values: Set<Choice>   -- the output's values where `P` and `S` hold
     in model: Choice         -- its value in the model of `P` and `S`
     in pin_q: Outcome        -- can `o = model` be proved from `P` and `S`?
     in variant_q: Outcome    -- can `o` being of `model`'s variant be proved from `P` and `S`?
@@ -532,33 +532,33 @@ pub enum Budget { All, AtMost(Int) }   -- `all`, or a count, at least 0
 pub enum MemberNote { ClashNote, ConflictsWith, FalseOnInput, NotInCore }
 
 -- `g` forces `o` to one value, and the rest of the core to another.
-pub fn value_clashes?(alone: Set(Forcing), rest: Set(Forcing), g: Guarantee, o: Output) :=
+pub fn value_clashes?(alone: Set<Forcing>, rest: Set<Forcing>, g: Guarantee, o: Output) :=
     exists (a b: Choice), a != b and Forcing { guarantee := g, output := o, value := a } in alone
     and Forcing { guarantee := g, output := o, value := b } in rest
 
 -- `g` forces `o` to one variant, and the rest of the core to another.
-pub fn variant_clashes?(alone: Set(VariantForcing), rest: Set(VariantForcing), g: Guarantee, o: Output) :=
+pub fn variant_clashes?(alone: Set<VariantForcing>, rest: Set<VariantForcing>, g: Guarantee, o: Output) :=
     exists (k l: ChoiceVariant), k != l and VariantForcing { guarantee := g, output := o, variant := k } in alone
     and VariantForcing { guarantee := g, output := o, variant := l } in rest
 
 -- `g` forces `o` to one value or variant, and the rest of the core to another.
-pub fn clashes?(alone: Set(Forcing), alone_variants: Set(VariantForcing), rest: Set(Forcing),
-    rest_variants: Set(VariantForcing), g: Guarantee, o: Output) :=
+pub fn clashes?(alone: Set<Forcing>, alone_variants: Set<VariantForcing>, rest: Set<Forcing>,
+    rest_variants: Set<VariantForcing>, g: Guarantee, o: Output) :=
     value_clashes?(alone, rest, g, o) or variant_clashes?(alone_variants, rest_variants, g, o)
 
 -- A set of guarantees forces `o` to a whole value, for the guarantee `g`.
-pub fn forces_value?(forced: Set(Forcing), g: Guarantee, o: Output) :=
+pub fn forces_value?(forced: Set<Forcing>, g: Guarantee, o: Output) :=
     exists (v: Choice), Forcing { guarantee := g, output := o, value := v } in forced
 
 -- A set of guarantees forces each output to one value, at most.
-pub fn single_valued?(forced: Set(Forcing)) :=
+pub fn single_valued?(forced: Set<Forcing>) :=
     forall (h: Guarantee) (o: Output) (a b: Choice),
     when Forcing { guarantee := h, output := o, value := a } in forced
     and Forcing { guarantee := h, output := o, value := b } in forced, a = b
 
 -- A set of guarantees forces each output to one variant, at most, and to
 -- the variant of each value that it forces it to.
-pub fn variants_of?(forced: Set(Forcing), variants: Set(VariantForcing)) :=
+pub fn variants_of?(forced: Set<Forcing>, variants: Set<VariantForcing>) :=
     (forall (h: Guarantee) (o: Output) (k l: ChoiceVariant),
     when VariantForcing { guarantee := h, output := o, variant := k } in variants
     and VariantForcing { guarantee := h, output := o, variant := l } in variants, k = l)
@@ -566,16 +566,16 @@ pub fn variants_of?(forced: Set(Forcing), variants: Set(VariantForcing)) :=
     VariantForcing { guarantee := h, output := o, variant := variant_of(v) } in variants)
 
 pub comp clash_notes {
-    in core: Set(Guarantee)
-    in alone: Set(Forcing)                   -- the values that each guarantee forces on its own
-    in alone_variants: Set(VariantForcing)   -- the variants that each guarantee forces on its own
-    in rest: Set(Forcing)                    -- the values that the rest of the core forces, for each guarantee
-    in rest_variants: Set(VariantForcing)    -- the variants that the rest of the core forces
+    in core: Set<Guarantee>
+    in alone: Set<Forcing>                   -- the values that each guarantee forces on its own
+    in alone_variants: Set<VariantForcing>   -- the variants that each guarantee forces on its own
+    in rest: Set<Forcing>                    -- the values that the rest of the core forces, for each guarantee
+    in rest_variants: Set<VariantForcing>    -- the variants that the rest of the core forces
     in examples: Budget                      -- `--examples`
     in interpreted?                          -- the notes' values would depend on an interpretation
     in unpinned?                             -- some variable of the input cannot be pinned
     in g: Guarantee                          -- a guarantee, for the rules of each
-    in earlier: Set(Guarantee)
+    in earlier: Set<Guarantee>
 
     -- What the queries find of the guarantees of the core: one value and
     -- one variant, at most, for each output, and nothing of the empty rest
@@ -952,7 +952,7 @@ pub enum FlatArm { Wild, A, B, C, GuardedWild, GuardedA, GuardedB, GuardedC }
 set_option fren.lint.undecidable "allow" in
 pub comp flat_completeness_asked {
     use self::FlatArm::{A, B, C, Wild}
-    in arms: Seq(FlatArm)    -- the arms, in order
+    in arms: Seq<FlatArm>    -- the arms, in order
     pub out asked?
 
     ensure rule: asked? iff not (Wild in arms or (A in arms and B in arms and C in arms))
@@ -1061,8 +1061,8 @@ set_option fren.lint.undecidable "allow" in
 pub comp disjoint_question {
     use self::ArmAt::Taken
     use self::Indexes::Defined
-    in arms: Seq(ArmAt)          -- what each case does here, in order
-    in defined: Seq(Indexes)     -- whether the indexes in each case's guard are in range here
+    in arms: Seq<ArmAt>          -- what each case does here, in order
+    in defined: Seq<Indexes>     -- whether the indexes in each case's guard are in range here
     in i: Int                    -- the earlier case
     in j: Int                    -- the later case
 
@@ -1124,7 +1124,7 @@ pub enum GuardOf { Unguarded, Guarded }
 set_option fren.lint.undecidable "allow" in
 pub comp arms_asked {
     use self::GuardOf::Guarded
-    in guards: Seq(GuardOf)  -- whether each arm has a guard, in order
+    in guards: Seq<GuardOf>  -- whether each arm has a guard, in order
     in j: Int                -- the arm asked about, by its position
     pub out asked?
 
@@ -1190,7 +1190,7 @@ position, as there:
 set_option fren.lint.undecidable "allow" in
 pub comp split_questions {
     use self::ArmAt::Taken
-    in arms: Seq(ArmAt)      -- what each arm does here, in order
+    in arms: Seq<ArmAt>      -- what each arm does here, in order
     in j: Int                -- the arm whose reachability is asked about
     in k: Int                -- any position, for `none_before`
 
@@ -1251,7 +1251,7 @@ pub enum HypAt { Definedness, Enclosing, Other }
 
 pub comp reach_hypotheses {
     use self::HypAt::Definedness
-    in hyps: Seq(HypAt)      -- the hypotheses, in order
+    in hyps: Seq<HypAt>      -- the hypotheses, in order
     in k: Int                -- a hypothesis, by its position
     pub out used?            -- reachability asks under hypothesis `k`
 
@@ -1309,8 +1309,8 @@ precondition:
 
 ```fren
 pub comp precondition_at {
-    in pres: Set(Argument)      -- the arguments that meet the precondition
-    in guarded: Set(Argument)   -- the arguments where the application's guard holds
+    in pres: Set<Argument>      -- the arguments that meet the precondition
+    in guarded: Set<Argument>   -- the arguments where the application's guard holds
     pub det out verdict: Verdict
     pub det out reports_cex?
 
@@ -1344,8 +1344,8 @@ so the component opts out:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp application_contract {
-    in pres: Seq(Bool)     -- the function's preconditions, in order, at the arguments
-    in posts: Seq(Bool)    -- its postconditions, in order, at the arguments and the application's value
+    in pres: Seq<Bool>     -- the function's preconditions, in order, at the arguments
+    in posts: Seq<Bool>    -- its postconditions, in order, at the arguments and the application's value
     in guarded?            -- the application's guard holds
     in k: Int              -- any clause
     pub det out asks?      -- the application asks a question of precondition `k`
@@ -1400,8 +1400,8 @@ that tries every argument. It refines `check::postcondition`:
 
 ```fren
 pub comp postcondition_at {
-    in pres: Set(Argument)    -- the arguments that meet the preconditions
-    in posts: Set(Argument)   -- the arguments where the postcondition holds
+    in pres: Set<Argument>    -- the arguments that meet the preconditions
+    in posts: Set<Argument>   -- the arguments where the postcondition holds
     pub det out verdict: Verdict
     pub det out reports_cex?
 
@@ -1429,12 +1429,12 @@ of them, which is what quantifying over the core's members means:
 ```fren
 pub type ConstraintName
 
-pub fn refutes?(Set(ConstraintName))   -- the constraints entail the failure
+pub fn refutes?(Set<ConstraintName>)   -- the constraints entail the failure
 
 set_option fren.lint.undecidable "allow" in
 pub comp minimal {
-    in candidates: Set(ConstraintName)
-    in core: Set(ConstraintName)
+    in candidates: Set<ConstraintName>
+    in core: Set<ConstraintName>
     in dropped: ConstraintName          -- any one constraint, for the minimality condition
     pub det out minimal?
 

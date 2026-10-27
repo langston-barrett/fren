@@ -414,7 +414,7 @@ def elabText (st : State) (file : Nat) (chars : Array Char) (fixing : Array Fren
   match lexWithComments chars with
   | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
   | .ok (toks, comments) =>
-    match parseItems toks with
+    match parseItems toks chars with
     | .error e => { st with diags := st.diags.push { file, span := e.span, msg := e.msg } }
     | .ok (items, starts) =>
       (elabFile file chars items starts (trailingCommas toks) (literalLints chars toks comments) fixing |>.run st).2
@@ -428,7 +428,7 @@ abbrev Parsed := Except (Span × Msg) (Array Token × Array Item × Array Nat ×
 def parseText (chars : Array Char) : Parsed :=
   match lexWithComments chars with
   | .error e => .error (e.span, e.msg)
-  | .ok (toks, comments) => match parseItems toks with
+  | .ok (toks, comments) => match parseItems toks chars with
     | .error e => .error (e.span, e.msg)
     | .ok (items, starts) => .ok (toks, items, starts, literalLints chars toks comments)
 
@@ -985,6 +985,26 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     let some src ← readSpec args.paint path | return Fren.Core.fixExit args.diffOnly false false
     srcs := srcs.push src
   let original := srcs
+  -- Migrations: the fixes of the parse errors of an earlier syntax, one at
+  -- a time, parsing again after each (`lint::migration_step`).
+  let mut migrated := paths.map fun _ => 0
+  for i in [0:srcs.size] do
+    if ignored paths[i]! then continue
+    let mut round := 0
+    repeat
+      let chars := (Fmt.parsedText paths[i]! srcs[i]!).toList.toArray
+      let err? := match parseText chars with
+        | .error e => some e
+        | .ok _ => none
+      let fix? := err?.bind fun (span, msg) =>
+        if msg.code?.any (Fren.Core.migrationCodes.contains ·) then msg.fixes[0]?.map (span, ·) else none
+      match Fren.Core.migrationStep err?.isSome fix?.isSome round, fix? with
+      | .apply, some (span, f) =>
+        let r := f.range?.getD { start := span.start, stop := span.stop }
+        srcs := srcs.set! i (applyFileEdits srcs[i]! chars #[(r, f.replacement)])
+        round := round + 1
+      | _, _ => break
+    migrated := migrated.set! i round
   let (files, st) ← elaborateSources paths srcs args.lints fixing ignored
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
@@ -995,7 +1015,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   -- One fix can overlap another, or leave something that another lint
   -- fixes, so the passes go on until no edit is left (`Reqs/Lint#fixing-lints`).
   let mut pass := (files, st)
-  let mut nFixed := paths.map fun _ => 0
+  let mut nFixed := migrated
   -- Whether the first pass's fixes were kept.
   let mut firstKept := false
   for k in [0:maxFixPasses] do

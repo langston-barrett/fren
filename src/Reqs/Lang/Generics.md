@@ -1,41 +1,139 @@
 # Generic types
 
-An enumeration or a record may have *type parameters*, written in
-parentheses after its name, which stand for types within its
+An enumeration or a record may have *type parameters*, written in angle
+brackets after its name, which stand for types within its
 declaration:
 
 ```text
-pub enum Option(T) { None, Some(T) }
-pub struct Pair(A, B) { fst: A, snd: B }
-pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
+pub enum List<T> { Nil, Cons(T, List<T>) }
 ```
 
 Such a type is *generic*. It is used with a *type argument* for each of
-its parameters, in the same `(...)` style as `Set(T)`: `Option(Int)` is
+its parameters, in the same `<...>` style as `Set<T>`: `Option<Int>` is
 an *instance* of `Option`, whose values are those of the enumeration with
 `Int` for `T`, that is `Option::None` and `Option::Some(n)` for every
 `Int` `n`. Two instances are the same type exactly when their arguments
-are, so `Option(Int)` and `Option(Bool)` are different types, and neither
+are, so `Option<Int>` and `Option<Bool>` are different types, and neither
 is `Option` itself, which is not a type until it has its arguments.
 
 ```
 enumeration   := ["pub"] ["ordered"] "enum" declared-type "{" variant ("," variant)* [","] "}"
 record        := ["pub"] ["ordered"] "struct" declared-type "{" field ("," field)* [","] "}"
                | ...
-declared-type := IDENT | IDENT"(" IDENT ("," IDENT)* ")"
-type          := ... | path ["(" type ("," type)* ")"]
+declared-type := IDENT | IDENT"<" IDENT ("," IDENT)* ">"
+type          := ... | path ["<" type ("," type)* ">"]
 ```
+
+The `<` follows the name directly, and so does its `<` in an instance
+(see [Angle brackets](#angle-brackets)).
 
 A record with type parameters always has named fields: `struct P(A, B)`
 without braces is a [newtype](Items.md#newtypes) of two types, which is an
 error, and Fren does not yet have a newtype with type parameters.
+
+## Angle brackets
+
+Type parameters and type arguments are written in angle brackets, `<`
+and `>`, as in Rust: `enum Option<T>`, `fn unwrap_or<T>(...)`,
+`Option<Int>`, `Set<Int>`, `Seq<Int>` and `Rel<A, B>`. A newtype's
+parentheses, `struct Ms(Int)`, and a variant's, `Some(T)`, hold a
+payload's types, not type arguments, and stay parentheses.
+
+**Where a type is written.** A type is written only after the `:` of an
+input, an output, a field, a parameter, a function's result, a constant,
+a quantifier's binder, as in `forall (x: Set<Int>), e`, or a definition
+of a `let` or a `where` clause, as in `let s: Set<Int> := {} in e`; after
+the `:=` of a type alias; as a type argument; and in a variant's or a
+newtype's parentheses. An expression never writes a type, nor type
+arguments, which are [inferred](#type-arguments), even those of a
+[generic function](GenericFunctions.md#applications). So a `<` within an
+expression is always a comparison, and a `<` within a type always opens
+type arguments: `forall (x: Set<Int>), x.card < 3` has both.
+
+**The bracket after a name.** The `<` that opens type arguments or type
+parameters follows the name directly, with no space, line break or
+comment between them, as a call's `(` does
+([Lexical structure](Lexical.md#punctuators)): `Set <Int>` is an error
+(`F0144`). Within the brackets, spaces are allowed, and `fren fmt` removes
+them. A type's or a declaration's name followed directly by `(` is how
+type arguments and type parameters were written before, as `Option(Int)`
+and `enum Option(T) { ... }`: each is an error, `F0155` for type arguments
+and `F0156` for type parameters, whose fix writes the angle brackets. A
+newtype's parentheses are told apart by what follows them: a record's
+type parameters are followed by `{`, as before. `lang::type_bracket`
+states what the bracket after the name does:
+
+```fren
+-- The punctuator right after a type's name, or after a generic
+-- declaration's name.
+pub enum Bracket { Angle, Paren, Other }
+
+-- What it does.
+pub enum AfterName {
+    Opens,          -- opens the type arguments or type parameters
+    Parenthesized,  -- a `(` that would have opened them before: `F0155` or `F0156`
+    Spaced,         -- a `<` after a space: `F0144`
+    Ends,           -- not the type's: the type or the name ends before it
+}
+
+pub comp type_bracket {
+    in bracket: Bracket
+    in adjacent?                 -- it follows the name directly
+    pub det out reading: AfterName
+
+    ensure opens: reading = AfterName::Opens iff (bracket = Bracket::Angle and adjacent?)
+    ensure spaced: reading = AfterName::Spaced iff (bracket = Bracket::Angle and not adjacent?)
+    ensure parenthesized: reading = AfterName::Parenthesized iff (bracket = Bracket::Paren and adjacent?)
+
+    -- After a type's name, a `<` is never a comparison.
+    expect never_compared: when bracket = Bracket::Angle, reading != AfterName::Ends
+    -- A `(` after a space is not the type's, as in a function's parameter
+    -- list after a variant's type.
+    expect spaced_paren: when bracket = Bracket::Paren and not adjacent?, reading = AfterName::Ends
+}
+```
+
+**The closing `>`.** Fren's lexer has no `>>`, so `Option<Set<Int>>`
+ends with two `>`s. Lean lexes `>>` as one token, so the hosted front end
+reads the `>` that closes type arguments or type parameters one character
+at a time, and `>>` closes two. No type is followed by `=`, so a `>=`
+after a type, as in `x: Set<Int>= e` for `x: Set<Int> := e`, is an error
+in both front ends; `x: Set<Int>:= e` is `>` and `:=`, as it is in Lean.
+
+**The suggestion.** The fix of `F0155` writes the whole type, with the
+parentheses of each type within it that is written so too made angle
+brackets, as `Option<Set<Int>>` for `Option(Set(Int))`; that of `F0156`
+writes the declaration's name with its type parameters, as `Option<T>`.
+Both front ends copy the source as written, so that a string literal keeps
+its escapes and its `r` and `#`s, and a comment within the type is kept,
+and change only those parentheses, as `lang::angle_char` states of each
+character:
+
+```fren
+pub comp angle_char {
+    in ch: String                -- a character of the type or declaration as written
+    in swapped?                  -- whether it opens or closes type arguments or type parameters
+    pub det out text: String := match ch {
+        "(" if swapped? => "<",
+        ")" if swapped? => ">",
+        _ => ch,
+    }
+
+    expect copied: unless swapped?, text = ch
+}
+```
+
+`fren fix` makes these fixes, so that it migrates a spec written with
+parentheses (see [Fixing lints](../Lint.md#fixing-lints)).
 
 ## Ordered records
 
 A record with type parameters cannot be declared [`ordered`](Items.md#ordered-declarations)
 for now (`F0390`): an ordered record's fields must be of ordered types, and
 a type parameter's type is not known until an instance gives it, so
-whether `Pair(A, B)` is ordered would depend on its instance. An ordered
+whether `Pair<A, B>` is ordered would depend on its instance. An ordered
 enumeration may have type parameters, since it has no payloads, and is
 ordered by its variants whatever its arguments.
 
@@ -60,7 +158,7 @@ pub comp ordered_generic {
 
 A type parameter is a type only within its declaration, as the type of a
 payload or field, or as an argument of an instance there, as in
-`Cons(T, List(T))` or `Some(Pair(A, B))`. The names of the type
+`Cons(T, List<T>)` or `Some(Pair<A, B>)`. The names of the type
 parameters of a declaration are [distinct](Items.md#distinct-names). A type parameter cannot have the name of a built-in type, such
 as `Int` or `Set`, or of an item that a path of one segment names where
 the declaration is, so that within the declaration, a name always means
@@ -70,11 +168,11 @@ right: a generic type's parametric datatype declares its parameters with
 would capture the sort `Int`, so that a payload of type `Int` would mean
 the parameter instead.
 
-For now, a type parameter is not an element type, as in `Set(T)`,
-`Seq(T)` or `Rel(T, Int)`, and a generic enumeration's payload of its own
-type gives it its own parameters, in order, as `List(T)` does within
-`List(T)`, rather than other arguments, as in
-`enum Nested(T) { Leaf(T), Node(Nested(Pair(T, T))) }` (`F0387`). Each of
+For now, a type parameter is not an element type, as in `Set<T>`,
+`Seq<T>` or `Rel<T, Int>`, and a generic enumeration's payload of its own
+type gives it its own parameters, in order, as `List<T>` does within
+`List<T>`, rather than other arguments, as in
+`enum Nested<T> { Leaf(T), Node(Nested<Pair<T, T>>) }` (`F0387`). Each of
 these needs more of the solver or of Lean than an enumeration's parameters
 being types. `lang::type_parameter_place` states where a type parameter
 is accepted, from where it is written:
@@ -104,8 +202,8 @@ pub comp type_parameter_place {
 `lang::recursive_payload` states where a recursive payload writes the
 enumeration's own type over what is written: the arguments it is written
 with, each one of the enumeration's type parameters or another type, and
-whether it is within an argument of an instance, as in `Option(List(T))`
-within `List(T)`. Both front ends read a payload's type alike into these
+whether it is within an argument of an instance, as in `Option<List<T>>`
+within `List<T>`. Both front ends read a payload's type alike into these
 (`Core.ownArgs`), as `lang::own_type` below states. The type parameters are
 three at most here, and the rule is the same for more. It refines `lang::type_parameter_place`, whose place
 is `OwnParameter` exactly when the payload is the type with its own type
@@ -117,8 +215,8 @@ pub enum Arg { P0, P1, P2, Other }   -- a type argument, as written: one of the 
 
 set_option fren.lint.undecidable "allow" in
 pub comp recursive_payload {
-    in params: Seq(Arg)    -- the enumeration's type parameters, in order: `P0`, `P1`, ..., never `Other`
-    in args: Seq(Arg)      -- the arguments that its own type is written with
+    in params: Seq<Arg>    -- the enumeration's type parameters, in order: `P0`, `P1`, ..., never `Other`
+    in args: Seq<Arg>      -- the arguments that its own type is written with
     in nested?             -- it is within an argument of an instance
     pub det out accepted?
 
@@ -141,12 +239,12 @@ field's type as it is written, which `lang::recursive_payload` takes as
 given. Each front end reads the type into its *segments*
 (`Core.ownArgs`, `Core.ownIn`): each segment of a path, in turn, with
 markers for the rest, which no segment of a path can be. An instance
-`G(A, B)` is `G`'s segments, a marker that opens its type arguments,
+`G<A, B>` is `G`'s segments, a marker that opens its type arguments,
 `A`'s, a marker that separates them, `B`'s and a marker that closes them;
-`Set(T)` and `Seq(T)` are a marker of their own and `T`'s, and
-`Rel(A, B)` its marker, `A`'s, a separator of its own and `B`'s. A
-pattern's segments are left out first, so `List(T) is ...` reads as
-`List(T)`. Here a segment that is not a marker is the declaration's own
+`Set<T>` and `Seq<T>` are a marker of their own and `T`'s, and
+`Rel<A, B>` its marker, `A`'s, a separator of its own and `B`'s. A
+pattern's segments are left out first, so `List<T> is ...` reads as
+`List<T>`. Here a segment that is not a marker is the declaration's own
 name, `Own`, or another identifier, `Ident(a)`, which is one of the
 declaration's type parameters, `P0`, `P1` or `P2`, or another name,
 `Other`. From the segments it states:
@@ -168,8 +266,8 @@ declaration's type parameters, `P0`, `P1` or `P2`, or another name,
   nested never is, and one that is the own type is exactly when it is
   written as declared.
 
-A type whose own name is within an element type, as `Set(List(T))` in
-`List(T)`, is accepted here, and rejected by the check of a recursive set.
+A type whose own name is within an element type, as `Set<List<T>>` in
+`List<T>`, is accepted here, and rejected by the check of a recursive set.
 The segments may be as many as a type has, and the declaration has at most
 three type parameters here: the rule is the same for more. It refines
 `lang::type_parameter_place`, whose place is `OwnParameter` for the own
@@ -186,9 +284,9 @@ apart from it:
 pub enum Segment { Own, Ident(Arg), ArgsOpen, ArgsSep, ArgsClose, SetOf, SeqOf, RelOf, RelSep }
 
 -- The declaration's own type, with its type parameters, in order: `G`,
--- `G(P0)`, `G(P0, P1)` or `G(P0, P1, P2)`.
+-- `G<P0>`, `G<P0, P1>` or `G<P0, P1, P2>`.
 set_option fren.lint.undecidable "allow" in
-pub fn own_written(params: Nat): Seq(Segment) :=
+pub fn own_written(params: Nat): Seq<Segment> :=
     if params = 0 then [Segment::Own]
     else if params = 1 then [Segment::Own, Segment::ArgsOpen, Segment::Ident(Arg::P0), Segment::ArgsClose]
     else if params = 2 then [Segment::Own, Segment::ArgsOpen, Segment::Ident(Arg::P0), Segment::ArgsSep,
@@ -197,13 +295,13 @@ Segment::Ident(Arg::P1), Segment::ArgsClose]
 Segment::ArgsSep, Segment::Ident(Arg::P2), Segment::ArgsClose]
 
 -- The type is the declaration's own type, with type arguments or without.
-pub fn own_whole?(segs: Seq(Segment)) := segs != [] and segs[0] = Segment::Own
+pub fn own_whole?(segs: Seq<Segment>) := segs != [] and segs[0] = Segment::Own
     and (segs.len = 1 or segs[1] = Segment::ArgsOpen)
 
 -- The own name is within the type's arguments, if it is the own type, or
 -- anywhere in it, if not, and the type is not a set, sequence or relation.
 set_option fren.lint.undecidable "allow" in
-pub fn own_nested?(segs: Seq(Segment)) :=
+pub fn own_nested?(segs: Seq<Segment>) :=
     not (segs != [] and segs[0] in {Segment::SetOf, Segment::SeqOf, Segment::RelOf})
     and Segment::Own in segs.slice(if own_whole?(segs) then 1 else 0, segs.len)
 
@@ -212,7 +310,7 @@ pub comp own_type {
     use self::Arg::{Other, P0, P1}
     use self::Segment::{ArgsClose, ArgsOpen, ArgsSep, Ident, Own, RelOf, RelSep, SeqOf, SetOf}
     in params: Nat               -- how many type parameters the declaration has: `P0`, `P1`, ...
-    in segs: Seq(Segment)        -- a payload's or field's type, as written, without its patterns
+    in segs: Seq<Segment>        -- a payload's or field's type, as written, without its patterns
     pub det out own? := own_whole?(segs)
     pub det out as_declared? := own? and params <= 3 and segs = own_written(params)
     pub det out nested? := own_nested?(segs)
@@ -255,8 +353,8 @@ payloads and fields have the types declared with its arguments
 *instantiated* for the parameters: the `k`th argument for each mention of
 parameter `k`, however deeply within an instance or a set, relation or
 sequence type it is, and anything else left as it is. So `Some(T)` of an
-`Option(Int)` has an `Int`, and `Cons(T, List(T))` of a `List(Bool)` a
-`Bool` and a `List(Bool)`. Instantiating the payloads' types is how each
+`Option<Int>` has an `Int`, and `Cons(T, List<T>)` of a `List<Bool>` a
+`Bool` and a `List<Bool>`. Instantiating the payloads' types is how each
 front end finds the types of a construction's values, a pattern's binders,
 a field read and a record update's values, and how both find an
 instance's values (see [below](#recursive-unbounded-and-finite-instances)).
@@ -273,8 +371,8 @@ pub mod lang
 
 pub fn param?(Ty)                     -- a type parameter, within its declaration
 pub fn param_index(Ty): Nat           -- a type parameter's position among its declaration's
-pub fn parts(Ty): Seq(Ty)
-pub fn with_parts(Ty, Seq(Ty)): Ty
+pub fn parts(Ty): Seq<Ty>
+pub fn with_parts(Ty, Seq<Ty>): Ty
 ```
 
 `lang::instantiation` states what instantiating a type `ty` with the
@@ -286,8 +384,8 @@ without parts is left as it is:
 ```fren
 pub comp instantiation {
     in ty: Ty
-    in arguments: Seq(Ty)
-    in instantiated: Seq(Ty)       -- each of the parts of `ty`, instantiated in turn
+    in arguments: Seq<Ty>
+    in instantiated: Seq<Ty>       -- each of the parts of `ty`, instantiated in turn
     pub det out result: Ty := if param?(ty) then
         (if param_index(ty) < arguments.len then arguments[param_index(ty)] else ty)
         else with_parts(ty, instantiated)
@@ -300,7 +398,7 @@ pub comp instantiation {
 
 Wherever a type is written, a generic type has exactly as many type
 arguments as it has parameters, and any other type has none, so `Option`,
-`Option(Int, Int)` and `Int(Bool)` are errors (`F0385`).
+`Option<Int, Int>` and `Int(Bool)` are errors (`F0385`).
 `lang::type_arguments` states this, from how many parameters the type has
 and how many arguments it is written with:
 
@@ -331,8 +429,8 @@ pub enum Named { Builtin, Parameter, Data, OtherItem }
 set_option fren.lint.undecidable "allow" in
 pub comp written_type_arguments {
     in named: Named
-    in params: Seq(Arg)    -- an enumeration's or record's type parameters, in order
-    in args: Seq(Arg)      -- the type arguments, as written
+    in params: Seq<Arg>    -- an enumeration's or record's type parameters, in order
+    in args: Seq<Arg>      -- the type arguments, as written
     pub det out accepted?
 
     ensure rule: accepted? iff args.len = (if named = Named::Data then params.len else 0)
@@ -356,7 +454,7 @@ other, and its type arguments are *inferred*:
 - **From what is expected.** If a type is [expected](Types.md#checking-and-synthesis)
   of the construction, and that type is an instance of the construction's
   generic type, its arguments are that instance's. So with `x:
-  Option(Int)`, `x = Option::None` is accepted.
+  Option<Int>`, `x = Option::None` is accepted.
 - **From its payload or fields.** Otherwise, each type parameter takes
   its argument from the first value of the payload, or the first field in
   the order of the declaration, whose declared type mentions the
@@ -364,8 +462,8 @@ other, and its type arguments are *inferred*:
   type: the parameter's argument is what stands for it when that value's
   type is matched against the declared type. A `Nat` is widened to an
   `Int` first, since an argument is never `Nat`. So `Option::Some(3)` is
-  an `Option(Int)`, and `Pair { fst := 1, snd := "a" }` a `Pair(Int,
-  String)`.
+  an `Option<Int>`, and `Pair { fst := 1, snd := "a" }` a `Pair<Int,
+  String>`.
 
 A construction with no expected instance, some of whose parameters no
 such value gives an argument, has a type that cannot be known, as
@@ -373,7 +471,7 @@ such value gives an argument, has a type that cannot be known, as
 (`F0386`). Once its arguments are known, each value of its payload, or
 each field, is checked against its declared type, with the arguments for
 the parameters, as for any other variant or record. So
-`Pair { fst := 1, snd := 2 }` where a `Pair(Int, Bool)` is expected
+`Pair { fst := 1, snd := 2 }` where a `Pair<Int, Bool>` is expected
 reports the `2`.
 
 `lang::type_argument_inference` states this for one type parameter of a
@@ -383,12 +481,12 @@ mentions the parameter, or `-1` if none does, and `lang::widened` a type
 with a `Nat` widened to an `Int`:
 
 ```fren
-pub fn first_giver(Seq(Ty), Seq(Bool), Nat): Int
+pub fn first_giver(Seq<Ty>, Seq<Bool>, Nat): Int
 pub fn widened(Ty): Ty
 
 pub comp type_argument_inference {
-    in declared: Seq(Ty)           -- the declared types of the construction's values, in order
-    in synthesizes: Seq(Bool)      -- which values synthesize their types
+    in declared: Seq<Ty>           -- the declared types of the construction's values, in order
+    in synthesizes: Seq<Bool>      -- which values synthesize their types
     in k: Nat                      -- the type parameter
     in expected?                   -- an instance of the construction's type is expected of it
     in expected_arg: Ty            -- that instance's argument for `k`
@@ -411,8 +509,8 @@ where the declared type is `k`, and nothing where it is another parameter.
 Otherwise, if the two have the same shape, that is the same kind, the same
 generic type and as many parts, it is what matching the first of the
 declared type's parts that mentions `k` against the part of the found type
-in its place gives, and if they do not, nothing. So matching `Option(Int)`
-against `Option(T)` gives `T` the argument `Int`, and matching `Int`
+in its place gives, and if they do not, nothing. So matching `Option<Int>`
+against `Option<T>` gives `T` the argument `Int`, and matching `Int`
 against it gives `T` none, which leaves the construction's type unknown,
 and its value a type mismatch. `lang::same_shape?` says whether two types
 have the same shape:
@@ -461,7 +559,7 @@ set_option fren.lint.undecidable "allow" in
 pub comp construction_synthesis {
     use self::Arg::{P0, P1, P2}
     in params: Nat           -- how many type parameters the generic type has: `P0`, `P1`, ...
-    in values: Seq(ArgMode)    -- the construction's values, in order
+    in values: Seq<ArgMode>    -- the construction's values, in order
     pub det out synthesizes?
 
     ensure rule: synthesizes? iff (params <= 3 and (params < 1 or ArgMode::Gives(P0) in values)
@@ -517,7 +615,7 @@ pub fn within?(a: Arg, params: Nat) := match a {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub fn waits?(values: Seq(ArgMode), expected?, j: Int) := not expected? and 0 <= j < values.len
+pub fn waits?(values: Seq<ArgMode>, expected?, j: Int) := not expected? and 0 <= j < values.len
     and match values[j] {
     ArgMode::Waits(a) => a != Arg::Other and not ArgMode::Gives(a) in values.slice(0, j),
     ArgMode::Gives(_) => false,
@@ -526,7 +624,7 @@ pub fn waits?(values: Seq(ArgMode), expected?, j: Int) := not expected? and 0 <=
 -- Value `j`'s position, if it is among the values and waits, or does not,
 -- as `waiting?` says.
 set_option fren.lint.undecidable "allow" in
-pub fn position_if(values: Seq(ArgMode), expected?, waiting?, j: Int): Seq(Int) :=
+pub fn position_if(values: Seq<ArgMode>, expected?, waiting?, j: Int): Seq<Int> :=
     if 0 <= j < values.len and waits?(values, expected?, j) = waiting? then [j] else []
 
 set_option fren.lint.undecidable "allow" in
@@ -534,16 +632,16 @@ pub comp construction_order {
     use self::Arg::{P0, P1, P2}
     use self::ArgMode::{Gives, Waits}
     in params: Nat                 -- how many type parameters the generic type has: `P0`, `P1`, ...
-    in values: Seq(ArgMode)          -- the construction's values, in order
+    in values: Seq<ArgMode>          -- the construction's values, in order
     in expected?                   -- an instance of the construction's type is expected of it
     -- The values' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
-    pub det out order: Seq(Int) :=
+    pub det out order: Seq<Int> :=
         position_if(values, expected?, false, 0) ++ position_if(values, expected?, false, 1)
         ++ position_if(values, expected?, false, 2) ++ position_if(values, expected?, true, 0)
         ++ position_if(values, expected?, true, 1) ++ position_if(values, expected?, true, 2)
     -- For each type parameter, whether it ends with an argument.
-    pub det out given: Seq(Bool) := (if params >= 1 then [expected? or Gives(P0) in values] else [])
+    pub det out given: Seq<Bool> := (if params >= 1 then [expected? or Gives(P0) in values] else [])
         ++ (if params >= 2 then [expected? or Gives(P1) in values] else [])
         ++ (if params >= 3 then [expected? or Gives(P2) in values] else [])
     pub det out unknown? := false in given
@@ -565,70 +663,70 @@ pub comp construction_order {
 A pattern of a variant of a generic type matches values of every instance
 of it, and its payload's patterns, binders included, have the payload's
 types with the scrutinee's arguments for the parameters, so in `match x {
-Option::Some(n) => n > 0, Option::None => false }` with `x: Option(Int)`,
-`n` is an `Int`. So does a field read, as `p.fst` of a `Pair(Int, Bool)`
+Option::Some(n) => n > 0, Option::None => false }` with `x: Option<Int>`,
+`n` is an `Int`. So does a field read, as `p.fst` of a `Pair<Int, Bool>`
 is an `Int`, and a record update, whose values are checked against the
 fields' types with the record's arguments.
 
 ## Printing
 
-A type prints as it is written, with its arguments, as in `Option(Int)`
-and `Set(Pair(Int, Bool))`, in every message, note and witness, the same
+A type prints as it is written, with its arguments, as in `Option<Int>`
+and `Set<Pair<Int, Bool>>`, in every message, note and witness, the same
 in both front ends. A value of a generic type prints as any other value of
 an enumeration or record, without type arguments, as in `Option::Some(3)`.
 
 ## Pattern types as type arguments
 
 A type argument may be a [pattern type](Types.md#pattern-types), or a
-[type alias](Items.md#type-aliases) of one, as in `Option(Int is 0..=9)`
-or `Option(Byte)` with `type Byte := Int is 0..=255`, or a type whose
-values bring a constraint, as `Option(Byte)` is in `Pair(Option(Byte),
-Int)`. A type argument stands for its parameter with its pattern, so a
+[type alias](Items.md#type-aliases) of one, as in `Option<Int is 0..=9>`
+or `Option<Byte>` with `type Byte := Int is 0..=255`, or a type whose
+values bring a constraint, as `Option<Byte>` is in `Pair<Option<Byte>,
+Int>`. A type argument stands for its parameter with its pattern, so a
 payload or field whose declared type is the parameter has the argument's
 type as declared:
 
 - A value of the instance brings the constraints of its payloads and
   fields with the arguments' types, as a value of any enumeration or record
   brings those of its own (see [Pattern types](Types.md#meaning)): a value `x` of
-  `Option(Byte)` brings that when `x` is `Option::Some(b)`, `b` is in
+  `Option<Byte>` brings that when `x` is `Option::Some(b)`, `b` is in
   `0..=255`. A constraint of an element type within an argument, as in
-  `Option(Set(Int is 0..=9))`, quantifies over the elements, as it does
+  `Option<Set<Int is 0..=9>>`, quantifies over the elements, as it does
   anywhere (`lang::pattern_place`).
 - A value given where an instance is declared has the obligation
   (`lang::obligation`) of each payload or field whose declared type
   mentions a type parameter, with the arguments, guarded by its variant:
   the value was built from values of the parameters' types, which have no
   patterns, so nothing else ensures them. `Option::Some(300)` given where an
-  `Option(Byte)` is declared is an error (`F0622`), as `300` is where a
+  `Option<Byte>` is declared is an error (`F0622`), as `300` is where a
   `Byte` is. A payload or field whose declared type mentions no parameter
   has its own obligation where its value is given, as in any enumeration or
   record.
 - A quantifier ranges over the values of the instance that meet its
-  constraint (`lang::pattern_finite`): `forall (o: Option(Int is 0..=2))`
+  constraint (`lang::pattern_finite`): `forall (o: Option<Int is 0..=2>)`
   ranges over `Option::None` and three `Option::Some`s.
 
 A type argument of a recursive enumeration whose values bring a
 constraint is an error (`F0389`), for now: the constraint would hold of
 every payload, at every depth, which the constraints of a recursive
 enumeration's payloads, brought where each is read, do not say for a type
-parameter. So `List(Int is 0..=9)` and `List(Option(Byte))` are errors,
-and `List(Option(Int))` is not. This is stricter than for a recursive
+parameter. So `List<Int is 0..=9>` and `List<Option<Byte>>` are errors,
+and `List<Option<Int>>` is not. This is stricter than for a recursive
 enumeration that is not generic, whose payload of a pattern type is
 allowed, under the [`undecidable` lint](../Lint/Decidability.md#undecidable-constructs)
 (see [Pattern types](Types.md#meaning)). It reaches records too: with
-`struct R { b: Byte }`, `List(R)` is an error, since a value of `R` brings
+`struct R { b: Byte }`, `List<R>` is an error, since a value of `R` brings
 that its field is in range, though `R` itself is not a pattern type. It
 reaches through instances too, once their arguments stand for their
-parameters: with `enum Wrap(T) { W(List(T)) }`, `Wrap(Byte)` is an error,
-and so is `S(Byte)`, with `struct S(T) { s: Set(List(T)) }`, through a
+parameters: with `enum Wrap<T> { W(List<T>) }`, `Wrap<Byte>` is an error,
+and so is `S<Byte>`, with `struct S<T> { s: Set<List<T>> }`, through a
 set's, sequence's or relation's element types. A
 recursive generic enumeration's payload of a declared pattern type that
 mentions no parameter, as `Int is 0..=9` in
-`enum Tree(T) { Leaf, Node(Int is 0..=9, T, Tree(T)) }`, brings its
+`enum Tree<T> { Leaf, Node(Int is 0..=9, T, Tree<T>) }`, brings its
 constraint where it is read, as for any recursive enumeration.
 
 A pattern type's base type may be an instance, as in `type Present :=
-Option(Int) is Option::Some(_)`, whose pattern is a pattern of the
+Option<Int> is Option::Some(_)`, whose pattern is a pattern of the
 instance (see [Patterns](Patterns.md)).
 
 ## Recursive, unbounded and finite instances
@@ -637,10 +735,10 @@ An instance's payloads and fields have the types declared, with the
 instance's arguments for the parameters, and it is
 [recursive, unbounded](Types.md#recursive-and-unbounded-types) or
 [finite](Types.md#finite-types) by those types, as any enumeration or
-record is by its own. So `Option(Int)` is bounded and `Option(String)`
+record is by its own. So `Option<Int>` is bounded and `Option<String>`
 unbounded, every instance of `List` is recursive and so unbounded, and
-`Option(Bool)` is finite, so that a [quantifier](Quantifiers.md) over it
-is expanded into its instances, while one over `Option(Int)`, which is
+`Option<Bool>` is finite, so that a [quantifier](Quantifiers.md) over it
+is expanded into its instances, while one over `Option<Int>`, which is
 not, is outside the [decidable core](Decidability.md) and given to the
 solver. Since every parameter of `Option` and
 `Pair` is a payload's or field's type, an instance of either is finite
@@ -652,9 +750,9 @@ arguments, since a payload of its own type is one whatever they are.
 chapter's examples, declared as above:
 
 ```text
-enum Option(T) { None, Some(T) }
-struct Pair(A, B) { fst: A, snd: B }
-enum List(T) { Nil, Cons(T, List(T)) }
+enum Option<T> { None, Some(T) }
+struct Pair<A, B> { fst: A, snd: B }
+enum List<T> { Nil, Cons(T, List<T>) }
 ```
 
 `lang::instance_values` states how many values a quantifier ranges over

@@ -1,7 +1,7 @@
 error[F0400]: type parameter `U` of `first` cannot be inferred
  --> test/cli/types/f0400_unmentioned.fren:3:17
   |
-3 | pub fn first(T, U)(x: T): T := x
+3 | pub fn first<T, U>(x: T): T := x
   |                 ^ not in the signature
   |
   = note: a type parameter's argument is inferred at each application from the parameters' and the result's types, and none of them mentions `U`

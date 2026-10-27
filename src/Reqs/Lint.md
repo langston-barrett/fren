@@ -145,7 +145,7 @@ use view::Severity
 | `wildcard_in_or_patterns` | `F0834` | `complexity` | `warn` | an or-pattern with `_` among its alternatives, such as `E::A \| _` (see [Wildcards in or-patterns](Lint/Complexity/Patterns.md#wildcards-in-or-patterns)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Arms](Lint/Pedantic/Matches.md#arms)) |
 | `zero_prefixed_literal` | `F0758` | `complexity` | `warn` | a decimal integer literal with a leading `0`, such as `010` (see [Leading zeros](Lint/Complexity.md#leading-zeros)) |
-| `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
+| `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel<A, B>` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
 The lints' codes run from `F0701` to `F0843`, and each group's codes start
@@ -395,9 +395,9 @@ core](Lang/Decidability.md#sequences), so the rule opts out:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp history {
-    in settings: Seq(Level)      -- the levels a file sets for one lint, in order
+    in settings: Seq<Level>      -- the levels a file sets for one lint, in order
     -- The settings after the first `forbid`.
-    out rest: Seq(Level) := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
+    out rest: Seq<Level> := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
     pub det out accepted?
 
     ensure rule: accepted? iff not (Forbid in settings
@@ -424,7 +424,7 @@ core, so the refinement is checked by testing:
 
 ```fren
 pub comp stepwise {
-    in settings: Seq(Level)
+    in settings: Seq<Level>
 
     assume three: settings.len = 3
     pub out accepted?
@@ -707,8 +707,8 @@ pub type Lint
 
 pub comp fix_selected {
     in lint: Lint
-    in only: Set(Lint)   -- the lints given to `--only`
-    in skip: Set(Lint)   -- the lints given to `--skip`
+    in only: Set<Lint>   -- the lints given to `--only`
+    in skip: Set<Lint>   -- the lints given to `--skip`
     pub det out fixed?
 
     ensure rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
@@ -734,6 +734,43 @@ fixes would make a static error is not kept. The lints reported are those left
 in the files as fixed, or with `--check`, which writes nothing, those that
 the first pass does not fix, in the files as given. The fixes do not change the layout of what they
 leave behind, which may then need formatting, as `--fmt` does.
+
+### Migrations
+
+Before it fixes lints, `fren fix` makes the fixes of the parse errors that
+mark a spec written in an earlier syntax: `F0155` and `F0156`, a type or a
+declaration written with parentheses for its type arguments or type
+parameters (see [Angle brackets](Lang/Generics.md#angle-brackets)). The
+parser stops at the first, so `fren fix` makes its fix, parses the file
+again, and so on, until the file parses or its parse error is another,
+which it then reports, as `fren check` would, and writes nothing. Each
+fix rewrites one outermost type, the types within it too, so a file with
+`n` of them takes at most `n` rounds; there are at most 1000, which only a
+bug would reach. These fixes are made whatever `--only` and `--skip`
+give, in the files that `--ignore` does not match, and then the lints are
+fixed in the files as migrated. `lint::migration_step` gives what
+`fren fix` does next:
+
+```fren
+pub enum MigrationStep {
+    Parsed,      -- the file parses: its lints are fixed next
+    Apply,       -- make the parse error's fix, and parse again
+    Stop,        -- report the parse error
+}
+
+pub comp migration_step {
+    in parse_error?      -- the file, as fixed so far, does not parse
+    in migration?        -- its parse error is `F0155` or `F0156`, with a fix
+    in round: Nat        -- how many fixes have been made
+    pub det out step: MigrationStep
+
+    ensure parsed: step = MigrationStep::Parsed iff not parse_error?
+    ensure apply: step = MigrationStep::Apply iff (parse_error? and migration? and round < 1000)
+
+    expect bounded: when round >= 1000, step != MigrationStep::Apply
+    expect others_reported: when parse_error? and not migration?, step = MigrationStep::Stop
+}
+```
 
 `lint::import_fix` gives the fix of one `use` that is not in a group,
 from the lints that fire at it and whether each is fixed. For a glob that

@@ -286,7 +286,7 @@ pub comp disjoint_alternatives {
 }
 
 pub comp manual_pattern_test {
-    in alts: Seq(Alt)        -- the alternatives of the fix, in order: each equation's value, and each test's alternatives
+    in alts: Seq<Alt>        -- the alternatives of the fix, in order: each equation's value, and each test's alternatives
     in n_operands: Nat       -- the operands of the run
     in n_equations: Nat      -- those that are equations, or disequations for `and`
     in chain?                -- `membership_chain` reads the chain the run is in
@@ -331,7 +331,7 @@ pub comp manual_pattern_test_written {
     in s: Shade
     in n: Int
     in t: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub det out plain? := s = Shade::Light or s = Shade::Dark
     pub det out tinted? := s = Shade::Light or s is Shade::Tinted(_)
     pub det out dim? := s is Shade::Tinted(1..=3) or s = Shade::Dark
@@ -344,7 +344,7 @@ pub comp manual_pattern_test_fixed {
     in s: Shade
     in n: Int
     in t: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub det out plain? := s is Shade::Light | Shade::Dark
     pub det out tinted? := s is Shade::Light | Shade::Tinted(_)
     pub det out dim? := s is Shade::Tinted(1..=3) | Shade::Dark

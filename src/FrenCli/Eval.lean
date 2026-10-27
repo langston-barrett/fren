@@ -1123,7 +1123,7 @@ def dotted (parts : List String) : Name := parts.foldl Name.mkStr .anonymous
 partial def lowerTy (segs : Array Ident) : L VTy := do
   -- A pattern type has its base type's values, to the evaluator.
   let segs := (splitPatternType segs).1
-  -- An instance of a generic type, `G(A, B)`.
+  -- An instance of a generic type, `G<A, B>`.
   if let some i := segs.findIdx? (·.name == Parser.argsOpen) then
     if i > 0 && segs[0]!.name != Parser.setSeg && segs[0]!.name != Parser.seqSeg && segs[0]!.name != Parser.relSeg then
       let args ← (Parser.splitArgs (segs.extract (i + 1) (segs.size - 1))).mapM lowerTy
@@ -2151,11 +2151,11 @@ def VTy.show : VTy → String
   | .int => "Int"
   | .nat => "Nat"
   | .string => "String"
-  | .set t => s!"Set({t.show})"
-  | .rel a b => s!"Rel({a.show}, {b.show})"
-  | .seq t => s!"Seq({t.show})"
+  | .set t => s!"Set<{t.show}>"
+  | .rel a b => s!"Rel<{a.show}, {b.show}>"
+  | .seq t => s!"Seq<{t.show}>"
   | .data p [] | .abstract p | .newtype p _ => showPath p
-  | .data p args => s!"{showPath p}({", ".intercalate (args.map VTy.show)})"
+  | .data p args => s!"{showPath p}<{", ".intercalate (args.map VTy.show)}>"
   | .param k => s!"#{k}"
 
 /-- Whether `e` is a `Nat` where one is expected (`lang::literal_type`,
@@ -2195,7 +2195,7 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
   let toks ← match lex text.toList.toArray with
     | .ok toks => pure toks
     | .error e => throw e.msg.headline
-  let (e, ps) ← match (Parser.expr).run { toks } with
+  let (e, ps) ← match (Parser.expr).run { toks, src := text.toList.toArray } with
     | .ok r => pure r
     | .error e => throw e.msg.headline
   unless ps.toks[ps.pos]?.any (·.tok == .eof) do throw s!"`{text}` is not a value"

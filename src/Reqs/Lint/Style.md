@@ -163,9 +163,9 @@ set_option fren.lint.length_zero "expect" in
 set_option fren.lint.card_zero "expect" in
 pub comp length_zero_keeps_meaning {
     in s: String
-    in q: Seq(Int)
-    in t: Set(Int)
-    in r: Rel(Bool, Bool)
+    in q: Seq<Int>
+    in t: Set<Int>
+    in r: Rel<Bool, Bool>
 
     expect string_length_zero: ((s.len = 0) iff s = "") and ((s.len <= 0) iff s = "") and ((s.len > 0) iff s != "")
     expect sequence_length_zero: ((q.len = 0) iff q = []) and ((q.len <= 0) iff q = []) and ((q.len > 0) iff q != [])
@@ -631,7 +631,7 @@ gives it:
 
 ```fren
 pub comp assertions_on_constants {
-    in mentioned: Set(lang::Mention)  -- what the expression mentions
+    in mentioned: Set<lang::Mention>  -- what the expression mentions
     pub det out fires?
 
     ensure rule: fires? iff mentioned = {}

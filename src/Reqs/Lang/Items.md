@@ -20,7 +20,7 @@ pub mod lang
 pub type ItemName
 
 pub comp declared_before {
-    in items: Seq(ItemName)      -- the items of the file and its imports, in order
+    in items: Seq<ItemName>      -- the items of the file and its imports, in order
     in used: ItemName            -- the item a path names
     in user: ItemName            -- the item the path is written in
     in k_used: Nat               -- the position of `used` in `items`
@@ -87,7 +87,7 @@ but no names. A payload may have the type of its own enumeration, which
 makes the enumeration [recursive](Types.md#recursive-and-unbounded-types),
 as in `enum List { Nil, Cons(Int, List) }`; this is the one exception to
 an item being declared before it is used. An enumeration with type
-parameters, as `enum Option(T) { None, Some(T) }`, is
+parameters, as `enum Option<T> { None, Some(T) }`, is
 [generic](Generics.md).
 
 An enumeration declared with the modifier `ordered`, after `pub` if it
@@ -153,7 +153,7 @@ the record would have no values. So records are never recursive
 themselves, though a field may have an [unbounded
 type](Types.md#recursive-and-unbounded-types).
 
-A record with type parameters, as `struct Pair(A, B) { fst: A, snd: B }`,
+A record with type parameters, as `struct Pair<A, B> { fst: A, snd: B }`,
 is [generic](Generics.md); it cannot be declared `ordered` (`F0390`). A
 record declared `ordered`, as `ordered struct Version { major: Nat,
 minor: Nat }`, orders its values by their fields (see [Ordered
@@ -225,7 +225,7 @@ pub comp newtype {
 ```
 
 Fren does not yet have a newtype over a type parameter, as in `struct
-Id(T)`.
+Id<T>(T)`.
 
 ## Ordered declarations
 
@@ -280,8 +280,8 @@ pub comp ordered_declaration {
     in declaration: Declaration
     in ordered?                       -- declared with `ordered`
     in n_payloads: Nat                -- for an enumeration: its variants with a payload
-    in fields: Seq(Ty)                -- a record's fields' types, in order, or a newtype's underlying type, without patterns
-    in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
+    in fields: Seq<Ty>                -- a record's fields' types, in order, or a newtype's underlying type, without patterns
+    in ordered_items: Set<TypeName>   -- the enumerations, records and newtypes declared `ordered`
     in k: Int                         -- any position among the fields
 
     assume enumerations_without_fields: when declaration = Enumeration, fields = []
@@ -336,7 +336,7 @@ pub type DeclaredName
 
 pub comp distinct_names {
     in count: Int                  -- how many names the list declares
-    in names: Set(DeclaredName)    -- the names it declares
+    in names: Set<DeclaredName>    -- the names it declares
 
     assume counted: names.card <= count
     pub det out accepted?
@@ -376,9 +376,9 @@ A field or a payload may have any type in which no abstract type occurs,
 including a [pattern type](Types.md#pattern-types) and a `Nat`, but not a
 `Nat` within an element type, nor as a payload of a recursive enumeration
 (see [Natural numbers](Types.md#natural-numbers)): the values of a record or
-enumeration are fully described by the spec, and `Set(Name)` is as
+enumeration are fully described by the spec, and `Set<Name>` is as
 abstract as `Name`. Nor may the item being declared
-occur within a set's element type, as in `enum Tree { Node(Set(Tree)) }`:
+occur within a set's element type, as in `enum Tree { Node(Set<Tree>) }`:
 a set is a value up to its members' order, and a type cannot be built from
 sets of itself. `lang::field_type` states which types are accepted, from
 the kind of the type, whether an abstract type or the item being declared
@@ -430,8 +430,8 @@ variants and those with a payload of the enumeration's own type:
 pub type VariantName
 
 pub comp well_founded {
-    in variants: Set(VariantName)
-    in recursive: Set(VariantName)   -- variants with a payload of the enumeration's own type
+    in variants: Set<VariantName>
+    in recursive: Set<VariantName>   -- variants with a payload of the enumeration's own type
 
     assume some_variant: variants != {}
     assume among: recursive subset variants
@@ -499,7 +499,7 @@ written, and any other function must have its result type written (see
 order they are written, so the parameters come before the result:
 `fn f(Nope): Gone` reports `Nope`.
 
-A function may have type parameters, as in `fn unwrap_or(T)(o: Option(T),
+A function may have type parameters, as in `fn unwrap_or<T>(o: Option<T>,
 d: T): T := ...`, which makes it [generic](GenericFunctions.md); the rest
 of this section is about functions without them.
 
@@ -616,7 +616,7 @@ declares the *precondition* `n`, and `ensure n: e` the *postcondition*
 clause](Let.md):
 
 ```text
-fn at(q: Seq(Int), i: Int): Int := q[i]
+fn at(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 pub type Name
@@ -675,8 +675,8 @@ set_option fren.lint.undecidable "allow" in
 pub comp contract_arguments {
     in clause: ClauseKind
     in own?                  -- it applies the function whose contract the clause is in
-    in params: Seq(Written)  -- the function's parameters, each as its name, never `Other`
-    in args: Seq(Written)    -- the application's arguments, as written
+    in params: Seq<Written>  -- the function's parameters, each as its name, never `Other`
+    in args: Seq<Written>    -- the application's arguments, as written
     pub det out accepted?
 
     ensure rule: accepted? iff (not own? or (clause = ClauseKind::Postcondition and args = params

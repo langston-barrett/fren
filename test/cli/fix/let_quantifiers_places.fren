@@ -10,7 +10,7 @@ fn g?(m: Mode) := m = Mode::Heat
 fn h?(b?) := b?
 
 pub comp c {
-    in t: Set(Solo)
+    in t: Set<Solo>
     in c?
     in m: Mode
     pub out r: R

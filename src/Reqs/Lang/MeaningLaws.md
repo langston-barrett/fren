@@ -102,7 +102,7 @@ written in one behaviour. The rules that an operand of `*` mention nothing
 (see [Linear arithmetic](Expressions.md#linear-arithmetic)) and that the
 operands of a string operation be constants (see
 [Strings](Decidability.md#strings)) rest on the first. Where a layer is
-not specified, as `get([1], 5)` is with `fn get(q: Seq(Int), i: Int): Int
+not specified, as `get([1], 5)` is with `fn get(q: Seq<Int>, i: Int): Int
 := q[i]`, its value is read from the environment, so it need not be the
 same in every behaviour, though it mentions nothing.
 

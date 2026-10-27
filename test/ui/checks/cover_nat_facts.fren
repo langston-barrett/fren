@@ -28,7 +28,7 @@ comp other_goal {
 }
 
 -- An abstract type reached only through a defined function's parameter is.
-fn unnamed?(s: Set(Name)) := s = {}
+fn unnamed?(s: Set<Name>) := s = {}
 
 comp through_defined {
     in x: Int

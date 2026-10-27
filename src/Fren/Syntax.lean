@@ -83,18 +83,39 @@ open Lean PrettyPrinter in
 /-- A `::`-separated path, e.g. `check::Verdict::Pass` or `self::Outcome`. -/
 syntax fren_path := sepBy1(frenIdent, "::")
 
+open Lean Parser in
+/-- The `>` that closes type arguments or type parameters: one character,
+so that in `Option<Set<Int>>` the `>>` that Lean lexes as one token closes
+both (`Reqs/Lang/Generics#angle-brackets`). -/
+def closeAngle : Parser where
+  fn := fun c s =>
+    if c.atEnd s.pos || c.get s.pos != '>' then s.mkErrorAt "'>'" s.pos
+    else (rawCh '>' (trailingWs := true)).fn c s
+  info := (rawCh '>' (trailingWs := true)).info
+
+open Lean PrettyPrinter in
+@[combinator_formatter closeAngle] def closeAngle.formatter : Formatter := Formatter.symbolNoAntiquot.formatter ">"
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer closeAngle] def closeAngle.parenthesizer : Parenthesizer :=
+  Parenthesizer.symbolNoAntiquot.parenthesizer ">"
+
 declare_syntax_cat fren_type (behavior := both)
 /-- A type named by a path: `Bool`, `Int`, `String`, or an item. -/
 syntax fren_path : fren_type
-/-- `Set(T)`. -/
-syntax (name := setType) &"Set" noWs "(" fren_type ")" : fren_type
-/-- `Seq(T)`. -/
-syntax (name := seqType) &"Seq" noWs "(" fren_type ")" : fren_type
-/-- `Rel(A, B)`. -/
-syntax (name := relType) &"Rel" noWs "(" fren_type ", " fren_type ")" : fren_type
-/-- `G(A, B)`, an instance of a generic type (`Reqs/Lang/Generics`). Below
-`Set(T)`, `Seq(T)` and `Rel(A, B)`, which it would also read. -/
-syntax (name := instanceType) (priority := low) fren_path noWs "(" sepBy1(fren_type, ", ") ")" : fren_type
+/-- `Set<T>`. -/
+syntax (name := setType) &"Set" noWs "<" fren_type closeAngle : fren_type
+/-- `Seq<T>`. -/
+syntax (name := seqType) &"Seq" noWs "<" fren_type closeAngle : fren_type
+/-- `Rel<A, B>`. -/
+syntax (name := relType) &"Rel" noWs "<" fren_type ", " fren_type closeAngle : fren_type
+/-- `G<A, B>`, an instance of a generic type (`Reqs/Lang/Generics`). Below
+`Set<T>`, `Seq<T>` and `Rel<A, B>`, which it would also read. -/
+syntax (name := instanceType) (priority := low) fren_path noWs "<" sepBy1(fren_type, ", ") closeAngle : fren_type
+/-- `G(A, B)`, a type with its type arguments in parentheses, as they were
+written before they were written in angle brackets: parsed only so that
+the elaborator reports it, as the `fren` command does (`F0155`). -/
+syntax (name := parenType) (priority := low) fren_path noWs "(" sepBy1(fren_type, ", ") ")" : fren_type
 
 open Lean Parser in
 /-- The expression of a definition of a `let`: below `when`, which would
@@ -375,23 +396,28 @@ scoped syntax (name := useGroupCmd) "use " fren_path "::{" sepBy1(fren_path, ", 
 /-- `V` or `V(T, U)`, a variant with a payload. -/
 syntax fren_variant := frenIdent (noWs "(" sepBy1(fren_type, ", ") ")")?
 
-/-- `(A, B)`, the type parameters of an enumeration or record
+/-- `<A, B>`, the type parameters of an enumeration, a record or a function
 (`Reqs/Lang/Generics`). -/
-syntax fren_type_params := "(" sepBy1(frenIdent, ", ") ")"
+syntax fren_type_params := "<" sepBy1(frenIdent, ", ") closeAngle
+
+/-- `(A, B)`, type parameters in parentheses, as they were written before
+they were written in angle brackets: parsed only so that the elaborator
+reports them, as the `fren` command does (`F0156`). -/
+syntax fren_paren_type_params := "(" sepBy1(frenIdent, ", ") ")"
 
 /-- `[pub] [ordered] enum E { A, B }`: `ordered` orders the variants as they
 are declared (`Reqs/Lang/Items#enumerations`); with type parameters,
-`enum E(T) { ... }`. -/
-scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent (noWs fren_type_params)? " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
+`enum E<T> { ... }`. -/
+scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent (noWs (fren_type_params <|> fren_paren_type_params))? " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `x: T`, or `x?` for a `Bool`. -/
 syntax fren_field := frenIdent (" : " fren_type)?
 
 /-- `[pub] [ordered] struct R { x: T, ... }`, a record; `ordered` orders its
 values by their fields (`Reqs/Lang/Items#ordered-declarations`). With type
-parameters, `struct R(A, B) { ... }`, which the `{` tells apart from a
+parameters, `struct R<A, B> { ... }`, which the `{` tells apart from a
 newtype. -/
-scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent (noWs fren_type_params)? " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
+scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent (noWs (fren_type_params <|> fren_paren_type_params))? " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `[pub] [ordered] struct N(T)`, a newtype; its parentheses must hold one
 type (`lang::newtype`), which the elaborator checks. -/
@@ -413,9 +439,13 @@ syntax fren_clause := (&"assume " <|> &"ensure ") frenIdent " : " fren_expr (fre
 
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
 defined one, either followed by its contract's clauses. With type
-parameters, `fn f(A, B)(x: A): B := e` (`Reqs/Lang/GenericFunctions`): a
-second `(` tells them apart from the parameters. -/
-scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent (atomic(noWs fren_type_params noWs lookahead("(")))?
+parameters, `fn f<A, B>(x: A): B := e` (`Reqs/Lang/GenericFunctions`).
+Type parameters in parentheses, `fn f(A, B)(x: A)`, as they were written
+before they were written in angle brackets, are parsed so that the
+elaborator reports them (`F0156`): a second `(` tells them apart from
+the parameters. -/
+scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent
+  (noWs fren_type_params <|> atomic(noWs fren_paren_type_params noWs lookahead("(")))?
   noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
   (" := " fren_expr (fren_where)?)? fren_clause* : command
 

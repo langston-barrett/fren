@@ -8,7 +8,7 @@ Fren has eight kinds of type:
 - `Nat`, the natural numbers: the integers that are at least 0 (see
   [Natural numbers](#natural-numbers)).
 - `String`, finite sequences of characters (see [Strings](#strings)).
-- `Set(T)`, finite sets of values of `T` (see [Sets](#sets)).
+- `Set<T>`, finite sets of values of `T` (see [Sets](#sets)).
 - Enumerations, declared with `enum` (see [Items](Items.md#enumerations)).
   Each value of an enumeration is one of its variants, together with the
   values of the variant's payload, if it has one. An enumeration declared
@@ -28,14 +28,14 @@ of a type of one of these kinds that match a pattern, and a [type
 alias](Items.md#type-aliases) names a type, so that `type Byte := Int is
 0..=255` is written once.
 
-An enumeration or record may have type parameters, as in `enum Option(T)
+An enumeration or record may have type parameters, as in `enum Option<T>
 { None, Some(T) }`: it is then [generic](Generics.md), and each of its
-instances, such as `Option(Int)`, is a type of its own kind.
+instances, such as `Option<Int>`, is a type of its own kind.
 
 ```
 type := base ["is" pattern]
-base := "Bool" | "Int" | "Nat" | "String" | "Set" "(" type ")" | "Seq" "(" type ")"
-      | "Rel" "(" type "," type ")" | path ["(" type ("," type)* ")"]
+base := "Bool" | "Int" | "Nat" | "String" | "Set""<" type ">" | "Seq""<" type ">"
+      | "Rel""<" type "," type ">" | path ["<" type ("," type)* ">"]
 ```
 
 A type written as a path must name an enumeration, a record, an abstract
@@ -101,7 +101,7 @@ pub fn under(Ty): Ty     -- the underlying type of a newtype
 An enumeration is *recursive* if the payload of one of its variants has
 the enumeration's own type, as in `enum List { Nil, Cons(Int, List) }`.
 An instance of a generic enumeration whose payload has the enumeration's
-type, as `List(T)` within `enum List(T) { Nil, Cons(T, List(T)) }`, is
+type, as `List<T>` within `enum List<T> { Nil, Cons(T, List<T>) }`, is
 recursive too, whatever its arguments (see [Generic
 types](Generics.md#recursive-unbounded-and-finite-instances)).
 A type is *unbounded* if its values can be arbitrarily large: it is
@@ -175,7 +175,7 @@ types](#pattern-types)), with two exceptions for now: it is not the
 element type of a set, relation or sequence, nor the type of a payload of a
 recursive enumeration, where an `Int` and a constraint serve instead. Nor
 is it a [type argument](Generics.md#type-arguments), which a construction
-infers widened, so that `Option(Int)` serves.
+infers widened, so that `Option<Int>` serves.
 There its constraint would hold of every element, which quantifies, as
 a pattern type's does there, and Fren does not yet carry it there for
 `Nat`, whose values Lean and the solver represent differently: `Int is
@@ -247,8 +247,8 @@ with the solver, where the type is declared:
   component assumes what its input's pattern type brings.
 
 Two types are compared with their patterns left out, wherever they are
-compared: so `Set(Int is 1..)` is accepted where a `Set(Int)` is
-expected, and where a `Set(Int is 0..)` is, with the obligation that each
+compared: so `Set<Int is 1..>` is accepted where a `Set<Int>` is
+expected, and where a `Set<Int is 0..>` is, with the obligation that each
 member matches `0..`. The obligation is asked wherever the declared type has
 a pattern, at the top or in an element type, even where the value is a
 variable of the same pattern type, whose constraint then proves it.
@@ -439,7 +439,7 @@ core, so it opts out:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp pattern_member {
-    in alts: Seq(Alternative)    -- the pattern's alternatives, in order
+    in alts: Seq<Alternative>    -- the pattern's alternatives, in order
     in x: Int
     in k: Int                    -- any position among the alternatives
     pub out member?
@@ -470,7 +470,7 @@ pub fn bounded?(a: Alternative) := a.lo != Bound::Open and a.hi != Bound::Open
 pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bound_value(a.hi) then bound_value(a.hi) - bound_value(a.lo) + 1 else 0
 
 pub comp pattern_count {
-    in alts: Seq(Alternative)
+    in alts: Seq<Alternative>
 
     assume few: alts.len <= 2
     pub det out finite?
@@ -500,8 +500,8 @@ and so does its refinement:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp pattern_bounds {
-    in los: Seq(Bound)       -- the alternatives' lower bounds, in order
-    in his: Seq(Bound)       -- their upper bounds, in the same order
+    in los: Seq<Bound>       -- the alternatives' lower bounds, in order
+    in his: Seq<Bound>       -- their upper bounds, in the same order
     pub det out finite?      -- the pattern matches finitely many integers
     pub det out counted?     -- how many integers it matches is counted from the bounds
 
@@ -567,7 +567,7 @@ pub fn type_name(Ty): TypeName  -- the path of an enumeration, record or newtype
 
 -- Whether a type of the kind `k`, named `name` if it is an enumeration, a
 -- record or a newtype, is ordered.
-pub fn ordered_in?(k: ValueType, name: TypeName, ordered_items: Set(TypeName)) := match k {
+pub fn ordered_in?(k: ValueType, name: TypeName, ordered_items: Set<TypeName>) := match k {
     ValueType::IntTy | ValueType::NatTy | ValueType::StringTy => true,
     ValueType::EnumTy | ValueType::RecordTy => name in ordered_items,
     _ => false,
@@ -588,7 +588,7 @@ pub comp ordered_type {
     }
     in base: Ty                       -- the type without its pattern: a pattern type's base, an alias's type
     in patterned?                     -- written `T is P`, directly or through an alias
-    in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
+    in ordered_items: Set<TypeName>   -- the enumerations, records and newtypes declared `ordered`
     pub det out ordered?
 
     ensure rule: ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
@@ -637,7 +637,7 @@ pub comp string_char {
 
 ## Sets
 
-A value of `Set(T)` is a finite set of values of `T`. Two sets are equal
+A value of `Set<T>` is a finite set of values of `T`. Two sets are equal
 if they have the same members. The element type may be any type,
 including another set type. Sets are written as
 [literals](Expressions.md#sets), such as `{1, 2}` and `{}`, and combined
@@ -653,7 +653,7 @@ enumeration may not contain itself within a set.
 
 ## Relations
 
-A value of `Rel(A, B)` is a finite set of pairs `(a, b)`, with `a` of type
+A value of `Rel<A, B>` is a finite set of pairs `(a, b)`, with `a` of type
 `A` and `b` of type `B`. Two relations are equal if they have the same
 pairs. A relation is not a set of any type, since there is no type of
 pairs, but every operator on sets applies to relations, and the
@@ -664,7 +664,7 @@ payloads.
 
 ## Sequences
 
-A value of `Seq(T)` is a finite sequence of values of `T`, indexed from
+A value of `Seq<T>` is a finite sequence of values of `T`, indexed from
 `0`. Two sequences are equal if they have the same length and equal
 elements at each index. Sequences are written as
 [literals](Expressions.md#sequences), such as `[1, 2]` and `[]`, joined
@@ -696,9 +696,9 @@ and `lang::unbounded` state the two notions by that reachability:
 set_option fren.lint.undecidable "allow" in
 pub comp finite {
     in ty: Ty
-    in parts: Rel(Ty, Ty)    -- (t, u): t has a field, payload or element of type u
-    in infinite: Set(Ty)     -- `Int`, `Nat`, `String`, every sequence type and every abstract type
-    in recursive: Set(Ty)    -- the recursive enumerations
+    in parts: Rel<Ty, Ty>    -- (t, u): t has a field, payload or element of type u
+    in infinite: Set<Ty>     -- `Int`, `Nat`, `String`, every sequence type and every abstract type
+    in recursive: Set<Ty>    -- the recursive enumerations
     in part: Ty              -- any type, for `finite_parts`
     pub det out finite?
 
@@ -712,8 +712,8 @@ pub comp finite {
 set_option fren.lint.undecidable "allow" in
 pub comp unbounded {
     in ty: Ty
-    in parts: Rel(Ty, Ty)
-    in growing: Set(Ty)      -- `String`, every recursive enumeration, and every set, relation or sequence type
+    in parts: Rel<Ty, Ty>
+    in growing: Set<Ty>      -- `String`, every recursive enumeration, and every set, relation or sequence type
     pub det out unbounded?
 
     ensure rule: unbounded? iff ((parts.closure.image({ty}) union {ty}) inter growing) != {}

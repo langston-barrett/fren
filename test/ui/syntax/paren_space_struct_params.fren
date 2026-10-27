@@ -1,5 +1,5 @@
 -- A generic record's parameters follow its name directly, with no space.
-pub struct Pair (A, B) { fst: A, snd: B }
---~^[cli] error: a space before the `(` of the type parameters of `Pair`
+pub struct Pair <A, B> { fst: A, snd: B }
+--~^[cli] error: a space before the `<` of the type parameters of `Pair`
 --~^^[hosted] error: no space before
 --@ exit: 2

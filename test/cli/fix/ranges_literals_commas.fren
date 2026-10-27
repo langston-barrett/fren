@@ -15,9 +15,9 @@ pub comp c {
     pub out a? := s = "café"
     pub out b? := s = r"café" or s = r#"é"#
     pub out d? := s = "\u0065́"
-    pub out e: Set(Int) := {x, 1,}
-    pub out f: Seq(Int) := [x, 2, ]
-    pub out g: Seq(Int) := [
+    pub out e: Set<Int> := {x, 1,}
+    pub out f: Seq<Int> := [x, 2, ]
+    pub out g: Seq<Int> := [
         x,
         3,
     ]

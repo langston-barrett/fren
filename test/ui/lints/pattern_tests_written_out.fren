@@ -10,7 +10,7 @@ comp fires {
     in s: Shade
     in x: Int
     in t: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     in p?
     in r?
     pub out a?

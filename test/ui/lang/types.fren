@@ -30,14 +30,14 @@ comp neg_bool { in b? pub out y: Int ensure r: y = -b? }
 --~^ error: type mismatch: expected `Int`, found `Bool`
 comp lt_bool { in b? pub out p? ensure r: p? iff b? < 1 }
 --~^ error: type mismatch: expected `Int`, found `Bool`
-comp set_branches { in c? in s: Set(Int) in t: Set(String) pub out y: Int ensure r: y = (if c? then s else t).card }
---~^ error: the branches of `if` have different types: `Set(Int)` and `Set(String)`
-comp union_int { in x: Int in s: Set(Int) pub out p? ensure r: p? iff s = x union s }
---~^ error: type mismatch: expected `Set(Int)`, found `Int`
-comp subset_types { in s: Set(Int) in t: Set(String) pub out p? ensure r: p? iff s subset t }
---~^ error: type mismatch: expected `Set(Int)`, found `Set(String)`
-comp concat_types { in q: Seq(Int) in u: Seq(String) pub out y: Int ensure r: y = (q ++ u).len }
---~^ error: type mismatch: expected `Seq(Int)`, found `Seq(String)`
+comp set_branches { in c? in s: Set<Int> in t: Set<String> pub out y: Int ensure r: y = (if c? then s else t).card }
+--~^ error: the branches of `if` have different types: `Set<Int>` and `Set<String>`
+comp union_int { in x: Int in s: Set<Int> pub out p? ensure r: p? iff s = x union s }
+--~^ error: type mismatch: expected `Set<Int>`, found `Int`
+comp subset_types { in s: Set<Int> in t: Set<String> pub out p? ensure r: p? iff s subset t }
+--~^ error: type mismatch: expected `Set<Int>`, found `Set<String>`
+comp concat_types { in q: Seq<Int> in u: Seq<String> pub out y: Int ensure r: y = (q ++ u).len }
+--~^ error: type mismatch: expected `Seq<Int>`, found `Seq<String>`
 comp chain_bool { in b? pub out p? ensure r: p? iff 0 <= b? < 3 }
 --~^ error: type mismatch: expected `Int`, found `Bool`
 comp div_bool { in b? pub out y: Int ensure r: y = b? div 2 }

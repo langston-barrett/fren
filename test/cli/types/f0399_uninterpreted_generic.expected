@@ -1,7 +1,7 @@
 error[F0399]: the generic function `pick` must be defined
  --> test/cli/types/f0399_uninterpreted_generic.fren:3:8
   |
-3 | pub fn pick(T)(a: T, b: T): T
+3 | pub fn pick<T>(a: T, b: T): T
   |        ^^^^ type parameters, but no body
   |
   = note: SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function cannot have type parameters, for now

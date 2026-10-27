@@ -536,22 +536,61 @@ comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0155", explanation := r#"A type with its type arguments in parentheses.
+
+Erroneous code example:
+
+```fren
+pub enum Option<T> { None, Some(T) }
+comp c { in x: Option(Int) }
+```
+
+A type's arguments are written in angle brackets right after its name, as
+in `Set<Int>`, `Rel<Int, Bool>` and `Option<Int>`. They were written in
+parentheses before. The fix writes the whole type with angle brackets,
+those of the types within it too:
+
+```fren
+pub enum Option<T> { None, Some(T) }
+comp c { in x: Option<Int> }
+```
+
+A newtype's and a variant's parentheses hold a payload's types, not type
+arguments, and stay parentheses, as in `struct Ms(Int)`.
+"# },
+  { code := "F0156", explanation := r#"Type parameters in parentheses.
+
+Erroneous code example:
+
+```fren
+pub enum Option(T) { None, Some(T) }
+```
+
+A generic enumeration's, record's or function's type parameters are
+written in angle brackets right after its name, as in `enum Option<T>`,
+`struct Pair<A, B> { ... }` and `fn f<T>(x: T): T`. They were written in
+parentheses before:
+
+```fren
+pub enum Option<T> { None, Some(T) }
+```
+"# },
   { code := "F0152", explanation := r#"A generic function's type parameter that is not a name.
 
 Erroneous code example:
 
 ```fren
-fn first(Set(T))(s: Int): Int := s
+fn first<Set<T>>(s: Int): Int := s
 ```
 
-A generic function's type parameters are names, written in parentheses
-right after its name and before its parameters, as in `fn f(T)(x: T): T`:
+A generic function's type parameters are names, written in angle brackets
+right after its name and before its parameters, as in `fn f<T>(x: T): T`:
 
 ```fren
-fn first(T)(x: T): T := x
+fn first<T>(x: T): T := x
 ```
 "# },
-  { code := "F0144", explanation := r#"A space before the `(` that opens what a name takes.
+  { code := "F0144", explanation := r#"A space before the `(` or `<` that opens what a name takes.
 
 Erroneous code example:
 
@@ -561,9 +600,10 @@ comp c { in x: Int pub out y: Int ensure r: y = f (x) }
 ```
 
 The `(` that opens a function's or a variant's arguments, a pattern's
-binders, a declaration's parameters or types, or the element types of
-`Set`, `Seq` and `Rel`, follows the name directly, with no space, as in
-Lean. Remove the space:
+binders, or a declaration's parameters or types, follows the name
+directly, with no space, as in Lean, and so does the `<` that opens a
+type's arguments, as in `Set<Int>` and `Option<Int>`, or a declaration's
+type parameters, as in `enum Option<T>`. Remove the space:
 
 ```fren
 fn f(Int): Int
@@ -1249,7 +1289,7 @@ type User
 fn age(User): Int
 ```
 
-`Set(Name)` is as abstract as `Name`, so a field of that type is an error too.
+`Set<Name>` is as abstract as `Name`, so a field of that type is an error too.
 "# },
   { code := "F0311", explanation := r#"A record has a field of its own type.
 
@@ -1345,14 +1385,14 @@ comp c { in p: Point pub out z: Int ensure r: z = p.x }
 Erroneous code example:
 
 ```fren
-comp c { in s: Set(Int) pub out y: Int ensure r: y = match s { _ => 0 } }
+comp c { in s: Set<Int> pub out y: Int ensure r: y = match s { _ => 0 } }
 ```
 
 `match` reads a value of an enum, a `Bool`, an `Int`, a `Nat` or a
 `String`. For other types, use `if`:
 
 ```fren
-comp c { in s: Set(Int) pub out y: Int ensure r: y = if s = {} then 0 else 1 }
+comp c { in s: Set<Int> pub out y: Int ensure r: y = if s = {} then 0 else 1 }
 ```
 "# },
   { code := "F0317", explanation := r#"A `match` does not cover every value.
@@ -1536,7 +1576,7 @@ expression must synthesize its own type, as a receiver must, they are an
 error. Write them where their type is known:
 
 ```fren
-comp c { in s: Set(Int) pub out e? ensure r: e? iff s = {} }
+comp c { in s: Set<Int> pub out e? ensure r: e? iff s = {} }
 ```
 "# },
   { code := "F0325", explanation := r#"The right of `in` is not a set of the left's type.
@@ -1544,14 +1584,14 @@ comp c { in s: Set(Int) pub out e? ensure r: e? iff s = {} }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int in s: Set(String) pub out p? ensure r: p? iff x in s }
+comp c { in x: Int in s: Set<String> pub out p? ensure r: p? iff x in s }
 ```
 
-`x in s` is membership: `s` must be a `Set(T)`, where `T` is the type of
+`x in s` is membership: `s` must be a `Set<T>`, where `T` is the type of
 `x`:
 
 ```fren
-comp c { in x: Int in s: Set(Int) pub out p? ensure r: p? iff x in s }
+comp c { in x: Int in s: Set<Int> pub out p? ensure r: p? iff x in s }
 ```
 "# },
   { code := "F0326", explanation := r#"The members of a set literal have different types.
@@ -1559,13 +1599,13 @@ comp c { in x: Int in s: Set(Int) pub out p? ensure r: p? iff x in s }
 Erroneous code example:
 
 ```fren
-comp c { in s: Set(Int) pub out p? ensure r: p? iff s = {1, true} }
+comp c { in s: Set<Int> pub out p? ensure r: p? iff s = {1, true} }
 ```
 
 A set's members all have its element type, which the first member gives:
 
 ```fren
-comp c { in s: Set(Int) pub out p? ensure r: p? iff s = {1, 2} }
+comp c { in s: Set<Int> pub out p? ensure r: p? iff s = {1, 2} }
 ```
 "# },
   { code := "F0327", explanation := r#"A record or enum is the element type of a set within one of its own fields or payloads.
@@ -1573,7 +1613,7 @@ comp c { in s: Set(Int) pub out p? ensure r: p? iff s = {1, 2} }
 Erroneous code example:
 
 ```fren
-enum Tree { Leaf, Node(Set(Tree)) }
+enum Tree { Leaf, Node(Set<Tree>) }
 ```
 
 A set's members have no order, so a value cannot be built from sets of
@@ -1592,19 +1632,19 @@ enum U { A, B }
 
 enum R { X, Y }
 
-comp c { in r: Rel(U, R) pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
+comp c { in r: Rel<U, R> pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
 ```
 
 `r.closure` chains pairs `(a, b)`, `(b, c)`, so it needs a relation of a type
-with itself, `Rel(A, A)`. `r join q` composes `r: Rel(A, B)` with
-`q: Rel(B, C)`: the second type of `r` must be the first of `q`:
+with itself, `Rel<A, A>`. `r join q` composes `r: Rel<A, B>` with
+`q: Rel<B, C>`: the second type of `r` must be the first of `q`:
 
 ```fren
 enum U { A, B }
 
 enum R { X, Y }
 
-comp c { in r: Rel(U, U) pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
+comp c { in r: Rel<U, U> pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
 ```
 "# },
   { code := "F0329", explanation := r#"A pair is written outside a relation literal and the left of `in`.
@@ -1627,14 +1667,14 @@ comp c { in x: Int pub out p? ensure q: p? iff (x, 1) in {(1, x)} }
 Erroneous code example:
 
 ```fren
-comp c { in s: Set(Int) pub out x: Int ensure r: x = s[0] }
+comp c { in s: Set<Int> pub out x: Int ensure r: x = s[0] }
 ```
 
-Only a sequence, `Seq(T)`, has positions. A set has no order, so it has no
+Only a sequence, `Seq<T>`, has positions. A set has no order, so it has no
 first member:
 
 ```fren
-comp c { in s: Seq(Int) pub out x: Int ensure r: s.len > 0 and x = s[0] or s.len = 0 }
+comp c { in s: Seq<Int> pub out x: Int ensure r: s.len > 0 and x = s[0] or s.len = 0 }
 ```
 "# },
   { code := "F0333", explanation := r#"An alternative of an or-pattern binds a name.
@@ -1687,14 +1727,14 @@ comp c { in s: Shape pub out round? pub out big? ensure r: round? iff s is Shape
 Erroneous code example:
 
 ```fren
-comp c { in s: Set(Int) pub out empty? ensure r: empty? iff s is _ }
+comp c { in s: Set<Int> pub out empty? ensure r: empty? iff s is _ }
 ```
 
 `is` tests a value of an enum, a `Bool`, an `Int`, a `Nat` or a `String`
 against a pattern. For other types, compare values with `=` or `in`:
 
 ```fren
-comp c { in s: Set(Int) pub out empty? ensure r: empty? iff s = {} }
+comp c { in s: Set<Int> pub out empty? ensure r: empty? iff s = {} }
 ```
 "# },
   { code := "F0348", explanation := r#"A pattern of another type than the value it matches.
@@ -2052,7 +2092,7 @@ comp grade {
 Erroneous code example:
 
 ```fren
-struct Stock { counts: Set(Nat) }
+struct Stock { counts: Set<Nat> }
 ```
 
 A `Nat` brings the constraint that it is at least 0. Within a set,
@@ -2063,7 +2103,7 @@ use the pattern type `Int is 0..`, which may be an element type outside
 the decidable core:
 
 ```fren
-struct Stock { counts: Set(Int) }
+struct Stock { counts: Set<Int> }
 
 comp restock {
     in stock: Stock
@@ -2287,7 +2327,7 @@ type Digit := Int is 0..=MAX
 Erroneous code example:
 
 ```fren
-ordered struct Entry { key: Int, tags: Set(Int) }
+ordered struct Entry { key: Int, tags: Set<Int> }
 ```
 
 An ordered struct orders its values by their fields, in the order
@@ -2307,20 +2347,20 @@ ordered struct Entry { key: Int, size: Nat }
 Erroneous code example:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
 comp c { in x: Option }
 ```
 
-A generic type, declared with type parameters as `enum Option(T)`, is a
-type only with a type argument for each parameter, as in `Option(Int)`.
+A generic type, declared with type parameters as `enum Option<T>`, is a
+type only with a type argument for each parameter, as in `Option<Int>`.
 Any other type, `Int` or an enumeration without type parameters, takes
 none:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-comp c { in x: Option(Int) }
+comp c { in x: Option<Int> }
 ```
 "# },
   { code := "F0386", explanation := r#"A variant or record of a generic type whose type arguments cannot be inferred.
@@ -2328,7 +2368,7 @@ comp c { in x: Option(Int) }
 Erroneous code example:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
 comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
 ```
@@ -2339,9 +2379,9 @@ or fields. Here neither side says which `Option` is meant. Write it where
 an instance is expected, as of a variable of that type:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-comp c { in x: Option(Int) pub out ok? ensure r: ok? iff x = Option::None }
+comp c { in x: Option<Int> pub out ok? ensure r: ok? iff x = Option::None }
 ```
 "# },
   { code := "F0387", explanation := r#"A type parameter written where it may not be.
@@ -2349,17 +2389,17 @@ comp c { in x: Option(Int) pub out ok? ensure r: ok? iff x = Option::None }
 Erroneous code example:
 
 ```fren
-enum Bag(T) { Empty, Many(Set(T)) }
+enum Bag<T> { Empty, Many(Set<T>) }
 ```
 
 For now, a type parameter is a payload's or field's whole type, or an
-argument of a generic type, as in `Option(T)`, but not an element type of
+argument of a generic type, as in `Option<T>`, but not an element type of
 a set, relation or sequence. And a generic enumeration's payload of its own
-type gives it its own type parameters, in order, as `List(T)` does within
-`enum List(T) { Nil, Cons(T, List(T)) }`:
+type gives it its own type parameters, in order, as `List<T>` does within
+`enum List<T> { Nil, Cons(T, List<T>) }`:
 
 ```fren
-enum Bag(T) { Empty, One(T) }
+enum Bag<T> { Empty, One(T) }
 ```
 "# },
   { code := "F0388", explanation := r#"A type parameter with the name of a type or an item.
@@ -2369,7 +2409,7 @@ Erroneous code example:
 ```fren
 pub enum Mode { Off, On }
 
-pub enum Option(Mode) { None, Some(Mode) }
+pub enum Option<Mode> { None, Some(Mode) }
 ```
 
 Within its declaration, a type parameter's name must mean only the
@@ -2379,7 +2419,7 @@ of an item in scope. Rename it:
 ```fren
 pub enum Mode { Off, On }
 
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 ```
 "# },
   { code := "F0389", explanation := r#"A type argument of a recursive enumeration whose values bring a constraint.
@@ -2387,9 +2427,9 @@ pub enum Option(T) { None, Some(T) }
 Erroneous code example:
 
 ```fren
-pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum List<T> { Nil, Cons(T, List<T>) }
 
-comp c { in xs: List(Int is 0..=9) }
+comp c { in xs: List<Int is 0..=9> }
 ```
 
 A pattern type's constraint, or a constraint that a value of a record or
@@ -2399,9 +2439,9 @@ Give the argument no pattern, and say of the payloads that the spec reads
 what it needs:
 
 ```fren
-pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum List<T> { Nil, Cons(T, List<T>) }
 
-comp c { in xs: List(Int) }
+comp c { in xs: List<Int> }
 ```
 "# },
   { code := "F0390", explanation := r#"An ordered struct with type parameters.
@@ -2409,12 +2449,12 @@ comp c { in xs: List(Int) }
 Erroneous code example:
 
 ```fren
-ordered struct Pair(A, B) { fst: A, snd: B }
+ordered struct Pair<A, B> { fst: A, snd: B }
 ```
 
 An ordered struct orders its values by their fields, so each field's type
 must be ordered. A type parameter's type is not known until an instance
-gives it, as `Pair(Int, Int)` does, so for now a struct with type
+gives it, as `Pair<Int, Int>` does, so for now a struct with type
 parameters cannot be declared `ordered`. Declare it without `ordered`, or
 without type parameters:
 
@@ -2427,7 +2467,7 @@ ordered struct Pair { fst: Int, snd: Int }
 Erroneous code example:
 
 ```fren
-fn pick(T)(a: T, b: T): T
+fn pick<T>(a: T, b: T): T
 ```
 
 SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function
@@ -2436,7 +2476,7 @@ application is unfolded at its type arguments, so the solver never sees a
 polymorphic function. Define it:
 
 ```fren
-fn pick(T)(a: T, b: T): T := a
+fn pick<T>(a: T, b: T): T := a
 ```
 "# },
   { code := "F0400", explanation := r#"A generic function's type arguments that cannot be inferred.
@@ -2444,9 +2484,9 @@ fn pick(T)(a: T, b: T): T := a
 Erroneous code example:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-fn is_none?(T)(o: Option(T)) := o = Option::None
+fn is_none?<T>(o: Option<T>) := o = Option::None
 
 comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
 ```
@@ -2457,11 +2497,11 @@ says which `Option` is meant. Give it an argument whose type is known, as
 a variable's:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-fn is_none?(T)(o: Option(T)) := o = Option::None
+fn is_none?<T>(o: Option<T>) := o = Option::None
 
-comp c { in x: Option(Int) pub out ok? ensure r: ok? iff is_none?(x) }
+comp c { in x: Option<Int> pub out ok? ensure r: ok? iff is_none?(x) }
 ```
 
 A type parameter that no parameter's type nor the result's mentions could
@@ -3089,7 +3129,7 @@ Erroneous code example:
 
 ```fren
 comp first {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out x: Int
 
     ensure r: x = q[0]
@@ -3104,7 +3144,7 @@ to right through `when`, `if`, `and`, `or` and `match`. Guard the index:
 
 ```fren
 comp first {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out x: Int
 
     ensure r: when q != [], x = q[0]
@@ -3173,10 +3213,10 @@ comp grade {
 Erroneous code example:
 
 ```fren
-fn nth(q: Seq(Int), i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
-comp c { in q: Seq(Int) pub out y: Int ensure r: y = nth(q, 0) }
+comp c { in q: Seq<Int> pub out y: Int ensure r: y = nth(q, 0) }
 ```
 
 A function's preconditions say what its arguments must meet. At each
@@ -3188,11 +3228,11 @@ says nothing useful there. Guard the application, or assume what the
 precondition needs:
 
 ```fren
-fn nth(q: Seq(Int), i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: when q != [], y = nth(q, 0)
@@ -3552,7 +3592,7 @@ Erroneous code example:
 
 ```fren
 comp c {
-  in xs: Seq(Int)
+  in xs: Seq<Int>
   pub out big?
   ensure r: big? iff xs.len > 4
   expect e: when xs.len = 5, big?
@@ -3696,7 +3736,7 @@ Erroneous code example:
 ```fren
 set_option fren.lint.undecidable "allow" in
 comp c {
-  in s: Set(Int)
+  in s: Set<Int>
   pub out pos?
   ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
 }
@@ -3714,7 +3754,7 @@ it, or leave the check to the solver:
 ```fren
 set_option fren.lint.undecidable "allow" in
 comp c {
-  in s: Set(Int)
+  in s: Set<Int>
   pub out pos?
   ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
 }
@@ -4076,14 +4116,14 @@ comp c { in s: String pub out p? ensure r: p? iff s = "" }
 Example:
 
 ```fren
-comp c { in s: Set(Int) pub out p? ensure r: p? iff s.card > 0 }
+comp c { in s: Set<Int> pub out p? ensure r: p? iff s.card > 0 }
 ```
 
 That a set is empty says it more plainly: `s = {}`, or `s != {}` for
 `s.card > 0`, and so on, as for `len` (F0715). `fren fix` can fix this:
 
 ```fren
-comp c { in s: Set(Int) pub out p? ensure r: p? iff s != {} }
+comp c { in s: Set<Int> pub out p? ensure r: p? iff s != {} }
 ```
 "# },
   { code := "F0717", explanation := r#"Membership in a set of one member (a warning, `singleton_membership`).
@@ -4161,7 +4201,7 @@ comp c { in x: Int pub out y: Int := x + 1 }
 Example:
 
 ```fren
-comp c { in q: Seq(Int) pub out p? ensure r: p? iff (q[0] = 1 and q.len > 0) }
+comp c { in q: Seq<Int> pub out p? ensure r: p? iff (q[0] = 1 and q.len > 0) }
 ```
 
 In `a and b`, `b` is guarded by `a`, so the index is evaluated whether or
@@ -4169,7 +4209,7 @@ not the bound holds, and the definedness check fails. Swapping the operands
 does not change the meaning. `fren fix` can fix this:
 
 ```fren
-comp c { in q: Seq(Int) pub out p? ensure r: p? iff (q.len > 0 and q[0] = 1) }
+comp c { in q: Seq<Int> pub out p? ensure r: p? iff (q.len > 0 and q[0] = 1) }
 ```
 "# },
   { code := "F0722", explanation := r#"An `unless` whose condition is a negation (a warning, `unless_not`).
@@ -4610,7 +4650,7 @@ Example:
 ```fren
 enum E { A, B }
 
-comp c { in r: Rel(E, E) pub out p? ensure d: p? iff r.inverse.inverse.domain = {} }
+comp c { in r: Rel<E, E> pub out p? ensure d: p? iff r.inverse.inverse.domain = {} }
 ```
 
 The inverse of the inverse is the relation itself, and the domain of a
@@ -4620,7 +4660,7 @@ relation is the range of its inverse. The shorter chain means the same.
 ```fren
 enum E { A, B }
 
-comp c { in r: Rel(E, E) pub out p? ensure d: p? iff r.domain = {} }
+comp c { in r: Rel<E, E> pub out p? ensure d: p? iff r.domain = {} }
 ```
 "# },
   { code := "F0744", explanation := r#"A pattern with no operator but `.*` at its ends (a warning, `trivial_pattern`).
@@ -4979,7 +5019,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.at(s.len - 1) = "." }
 Example:
 
 ```fren
-comp c { in q: Seq(Int) pub out p? ensure r: p? iff q.len < 0 }
+comp c { in q: Seq<Int> pub out p? ensure r: p? iff q.len < 0 }
 ```
 
 A `len` or `card` is never negative, so `q.len < 0` is always `false`, and
@@ -4988,7 +5028,7 @@ is probably not the one meant, which no rewrite can know, so there is no
 fix. Write the comparison meant:
 
 ```fren
-comp c { in q: Seq(Int) pub out p? ensure r: p? iff q.len < 3 }
+comp c { in q: Seq<Int> pub out p? ensure r: p? iff q.len < 3 }
 ```
 
 The comparisons that say whether a collection is empty, such as `q.len >
@@ -5431,7 +5471,7 @@ set_option fren.lint.zero_sized_map_values "warn"
 
 enum Mark { Marked }
 
-comp c { in r: Rel(Int, Mark) pub out p? ensure q: p? iff (1, Mark::Marked) in r }
+comp c { in r: Rel<Int, Mark> pub out p? ensure q: p? iff (1, Mark::Marked) in r }
 ```
 
 `Mark` has one value, so `r` pairs each `Int` it relates with
@@ -5439,7 +5479,7 @@ comp c { in r: Rel(Int, Mark) pub out p? ensure q: p? iff (1, Mark::Marked) in r
 same:
 
 ```fren
-comp c { in s: Set(Int) pub out p? ensure q: p? iff 1 in s }
+comp c { in s: Set<Int> pub out p? ensure q: p? iff 1 in s }
 ```
 "# },
   { code := "F0790", explanation := r#"A record literal that copies each field of a value of its record (a warning, `unnecessary_struct_initialization`).
@@ -6279,7 +6319,7 @@ Example:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in s: Set(Mode) pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
+comp c { in s: Set<Mode> pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
 ```
 
 A `forall` over the enumeration says the same once, and an `exists` for
@@ -6290,7 +6330,7 @@ quantifier might change. `fren fix` can fix this:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in s: Set(Mode) pub out p? ensure r: p? iff (forall (mode: Mode), mode in s) }
+comp c { in s: Set<Mode> pub out p? ensure r: p? iff (forall (mode: Mode), mode in s) }
 ```
 "# },
   { code := "F0827", explanation := r#"A quantifier over a type of one value (a warning, `trivial_quantifier`).
@@ -6300,7 +6340,7 @@ Example:
 ```fren
 enum Solo { Only }
 
-comp c { in s: Set(Solo) pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
+comp c { in s: Set<Solo> pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
 ```
 
 A `forall` or an `exists` over a type of one value is its body at that
@@ -6310,7 +6350,7 @@ fix` can fix this, for a variant without a payload:
 ```fren
 enum Solo { Only }
 
-comp c { in s: Set(Solo) pub out p? ensure r: p? iff Solo::Only in s }
+comp c { in s: Set<Solo> pub out p? ensure r: p? iff Solo::Only in s }
 ```
 "# }
 ]

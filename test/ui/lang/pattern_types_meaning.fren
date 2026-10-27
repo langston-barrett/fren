@@ -45,8 +45,8 @@ comp digits {
 -- decidable core.
 set_option fren.lint.undecidable "allow" in
 comp collections {
-    in s: Set(Digit)
-    in q: Seq(Digit)
+    in s: Set<Digit>
+    in q: Seq<Digit>
 
     expect members: 12 in s or s != {}   --~ error: expectation `collections::members` does not hold
     expect index: when q != [], q[0] <= 9

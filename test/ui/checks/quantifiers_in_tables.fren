@@ -7,7 +7,7 @@ enum Mode { Off, On }
 set_option fren.lint.undecidable "allow" in
 comp in_tables {
     in m: Mode
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: y = table m {
@@ -26,7 +26,7 @@ comp in_tables {
 set_option fren.lint.undecidable "allow" in
 comp out_of_range {
     in m: Mode
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: y = table m {

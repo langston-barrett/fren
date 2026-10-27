@@ -99,9 +99,9 @@ comp first_of {
 }
 
 comp heads {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in m: Int
-    pub out s: Seq(Int) := q
+    pub out s: Seq<Int> := q
     pub out t: Int := m
 }
 
@@ -204,7 +204,7 @@ comp keyed {
 -- defined, and each message names the other.
 comp guarded_pair {
     in n: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume a: n >= 0 and n < q.len  --~ warning: it is linked to `b`, reported too, which may need it: remove them together
     --~^ warning: these comparisons can be chained
     --~^^ warning: `n` is never negative, so it can be a `Nat`

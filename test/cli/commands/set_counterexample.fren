@@ -1,6 +1,6 @@
 -- A counterexample shows sets as literals, their members sorted.
 comp c {
-    in s: Set(Int)
+    in s: Set<Int>
     pub out n: Int
 
     ensure r: n = s.card

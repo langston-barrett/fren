@@ -181,16 +181,16 @@ drawn from the values chosen before it. A variable's candidates are:
   them; a few random strings that match each pattern of a `matches?` in
   the component, each also followed by `"a"`; and the value of any
   expression that a constraint equates the variable with;
-- for a `Set(T)`, the empty set, singletons of the candidates of `T`, a
+- for a `Set<T>`, the empty set, singletons of the candidates of `T`, a
   few random sets of two, three and four of them, and the value of any
   expression that a constraint equates the variable with;
-- for a `Seq(T)`, the empty sequence, and sequences of one and two of the
+- for a `Seq<T>`, the empty sequence, and sequences of one and two of the
   candidates of `T`; for each integer candidate from 3 to 4, such as the
   `3` of `q.len = 3`, a few random sequences of that length; and the value
   of any expression that a constraint equates the variable with. An index
   out of range has no value that the evaluator knows, since it is part of
   the interpretation;
-- for a `Rel(A, B)`, the empty relation, single pairs of candidates of `A`
+- for a `Rel<A, B>`, the empty relation, single pairs of candidates of `A`
   and `B`, and, if `A` is `B`, a chain of two pairs, so that `closure` has
   something to close.
 
@@ -241,7 +241,7 @@ pub comp conflict {
     in position: Int            -- the variable's position among those the search chooses
     in earlier: Int             -- another variable's position
     in equated?                 -- an expression that the variable is equated with reads `earlier`
-    in rejections: Seq(Bool)    -- for each candidate tried, whether what rejected it reads `earlier`
+    in rejections: Seq<Bool>    -- for each candidate tried, whether what rejected it reads `earlier`
     pub det out member?         -- `earlier` is in the variable's conflict set
 
     ensure rule: member? iff (0 <= earlier < position and (equated? or true in rejections))
@@ -261,7 +261,7 @@ states where it resumes:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp backjump {
-    in conflict: Seq(Bool)   -- for each earlier variable, in order, whether it is in the conflict set
+    in conflict: Seq<Bool>   -- for each earlier variable, in order, whether it is in the conflict set
     in k: Int                -- an earlier variable's position
     pub det out resumes?     -- the search resumes at `k`
 

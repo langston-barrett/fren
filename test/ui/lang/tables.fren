@@ -52,8 +52,8 @@ comp operands {
     in n: Nat
     pub det out y: Int
     pub det out b?
-    pub out s: Set(Int) := table { x > 0 => {}, _ => {x} }
-    pub out q: Seq(Int) := table { x > 0 => [x], _ => [] }
+    pub out s: Set<Int> := table { x > 0 => {}, _ => {x} }
+    pub out q: Seq<Int> := table { x > 0 => [x], _ => [] }
 
     ensure ry: y = 1 + table { x > 0 => n, _ => x }
     ensure rb: b? iff not table { x > 0 => true, _ => false }
@@ -99,7 +99,7 @@ comp naturals {
 -- An index in a row is guarded by the earlier rows' not holding, and in a
 -- value by its own condition too.
 comp indexes {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub det out y: Int
 
     ensure r: y = table { q = [] => 0, q != [] and q[0] > 0 => q[0], _ => -q[0] }

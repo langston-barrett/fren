@@ -8,8 +8,8 @@ enum Solo { Only }
 
 pub comp c {
     in x: Int
-    in s: Set(Mode)
-    in t: Set(Solo)
+    in s: Set<Mode>
+    in t: Set<Solo>
     in mode: Mode
     pub out a: Int
     pub out b: Int

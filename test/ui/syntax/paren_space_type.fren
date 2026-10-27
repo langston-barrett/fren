@@ -1,5 +1,5 @@
--- `Set(`, `Seq(` and `Rel(` are written with no space.
-comp c { in s: Set (Int) }
---~^[cli] error: a space before the `(` of `Set`'s element type
---~^^[hosted] error: unexpected token '('; expected '}'
+-- `Set<`, `Seq<` and `Rel<` are written with no space.
+comp c { in s: Set <Int> }
+--~^[cli] error: a space before the `<` of `Set`'s element type
+--~^^[hosted] error: unexpected token '<'; expected '}'
 --@ exit: 2

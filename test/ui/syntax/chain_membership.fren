@@ -1,4 +1,4 @@
 -- `in` does not chain (`lang::comparison_chain`).
-comp membership { in x: Int in s: Set(Int) in t: Set(Bool) pub out ok? ensure r: ok? iff x in s in t }
+comp membership { in x: Int in s: Set<Int> in t: Set<Bool> pub out ok? ensure r: ok? iff x in s in t }
 --~^ error: `in` cannot be chained
 --@ exit: 2

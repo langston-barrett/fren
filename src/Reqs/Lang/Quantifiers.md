@@ -45,7 +45,7 @@ the [decidable core](Decidability.md). Any other type is not listed:
 `Int`, `Nat`, `String` and abstract types have infinitely many values, a
 recursive enumeration has values of every size, and a set, relation or
 sequence type is unbounded, even where its element type is finite, as in
-`Set(Bool)`. A bound name of such a type makes the quantifier *unbounded*
+`Set<Bool>`. A bound name of such a type makes the quantifier *unbounded*
 (see [Unbounded quantifiers](#unbounded-quantifiers)), which is outside
 the decidable core. A binder's type is written and resolved as a
 variable's is, so a path that names no type is an error, and so is one
@@ -116,7 +116,7 @@ values of the instances:
 ```fren
 pub comp quantifier {
     in all?                  -- `forall`, rather than `exists`
-    in values: Set(Bool)     -- the values of its instances
+    in values: Set<Bool>     -- the values of its instances
 
     assume some_instance: values != {}
     pub det out holds?
@@ -326,7 +326,7 @@ are named by their positions, from 0:
 -- A side of a conjunct: the position of the bound name that it is, written
 -- alone, or -1 if it is none; and the positions of the bound names that it
 -- names.
-pub struct GuardSide { alone: Int, names: Seq(Int) }
+pub struct GuardSide { alone: Int, names: Seq<Int> }
 
 -- A conjunct of a guard: a comparison or membership, or `Other`.
 pub struct GuardConjunct { lhs: GuardSide, relation: GuardRelation, rhs: GuardSide }
@@ -346,13 +346,13 @@ fn conjunct_bound(c: GuardConjunct, k: Int): GuardBound :=
 -- No conjunct of `cs` before position `n` gives the bound name at `k` the
 -- bound `b`.
 set_option fren.lint.undecidable "allow" in
-fn none_before?(cs: Seq(GuardConjunct), k: Int, b: GuardBound, n: Int) :=
+fn none_before?(cs: Seq<GuardConjunct>, k: Int, b: GuardBound, n: Int) :=
     forall (j: Int), when 0 <= j < n, conjunct_bound(cs[j], k) != b
 
 -- The conjunct at position `j` gives the bound name at `k` the bound `b`,
 -- and none before it does.
 set_option fren.lint.undecidable "allow" in
-fn first_at?(cs: Seq(GuardConjunct), k: Int, b: GuardBound, j: Int) :=
+fn first_at?(cs: Seq<GuardConjunct>, k: Int, b: GuardBound, j: Int) :=
     conjunct_bound(cs[j], k) = b and none_before?(cs, k, b, j)
 
 -- `Members`: the members of the conjunct at `lo`. `Range`: from the lower
@@ -364,7 +364,7 @@ set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp guard_domain {
     use self::GuardBound::{Lower, Members, Upper}
-    in conjuncts: Seq(GuardConjunct)  -- the conjuncts of the guard, in order
+    in conjuncts: Seq<GuardConjunct>  -- the conjuncts of the guard, in order
     in k: Nat                         -- the position of the bound name
     in nat?                           -- the bound name is a `Nat`
     pub det out shape: DomainShape

@@ -9,8 +9,8 @@ use self::Mode::Heat
 
 comp lengths {
     in s: String
-    in q: Seq(Int)
-    in t: Set(Mode)
+    in q: Seq<Int>
+    in t: Set<Mode>
     in n: Int
     pub out p1?
     pub out p2?
@@ -64,8 +64,8 @@ comp parenthesized_bounds {
 
 comp erasing {
     in x: Int
-    in t: Set(Mode)
-    in r: Rel(Mode, Mode)
+    in t: Set<Mode>
+    in r: Rel<Mode, Mode>
     pub out n1: Int
     pub out p1?
     pub out p2?
@@ -152,7 +152,7 @@ comp redundant {
 
 -- A length read through a field of a receiver in parentheses, or of a
 -- record update, as in `(r).s.len`.
-struct Holder { s: String, q: Seq(Int), t: Set(Int), x: Int }
+struct Holder { s: String, q: Seq<Int>, t: Set<Int>, x: Int }
 
 comp field_lengths {
     in r: Holder

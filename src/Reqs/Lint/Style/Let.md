@@ -41,14 +41,14 @@ pub mod lint
 
 pub comp let_and_return {
     use lint::{DefIndex, Local, Tree}
-    in names: Rel(DefIndex, Local)   -- the name each definition declares
+    in names: Rel<DefIndex, Local>   -- the name each definition declares
     in last: DefIndex                -- the position of the last definition
-    in annotated: Set(DefIndex)      -- the definitions whose types are written
+    in annotated: Set<DefIndex>      -- the definitions whose types are written
     in body: Tree
     pub det out fires?
 
     -- The positions up to `last`.
-    out upto: Set(DefIndex) := match last {
+    out upto: Set<DefIndex> := match last {
         DefIndex::P0 => {DefIndex::P0},
         DefIndex::P1 => {DefIndex::P0, DefIndex::P1},
         DefIndex::P2 => {DefIndex::P0, DefIndex::P1, DefIndex::P2},
@@ -74,7 +74,7 @@ operands holds for every expression.
 set_option fren.lint.let_and_return "allow" in
 pub comp let_and_return_written {
     in x: Int
-    in s: Set(Int)
+    in s: Set<Int>
     in a?
     pub det out one: Int := let d := x + 1 in d
     pub det out two: Int := let k := 2, d := x * k in d
@@ -84,7 +84,7 @@ pub comp let_and_return_written {
 
 pub comp let_and_return_fixed {
     in x: Int
-    in s: Set(Int)
+    in s: Set<Int>
     in a?
     pub det out one: Int := x + 1
     pub det out two: Int := let k := 2 in x * k
@@ -172,7 +172,7 @@ pub enum Hue { Red, Green, Blue }
 
 pub comp manual_forall {
     use lint::DefIndex
-    in variant_of: Rel(DefIndex, Hue)  -- the variant each operand is an instance at
+    in variant_of: Rel<DefIndex, Hue>  -- the variant each operand is an instance at
     in instances?                    -- the operands are one expression at those variants, the same places in each
     pub det out fires?
 
@@ -215,8 +215,8 @@ quantifier only in parentheses:
 ```fren
 set_option fren.lint.manual_forall "allow" in
 pub comp manual_forall_written {
-    in s: Set(Hue)
-    in t: Set(Hue)
+    in s: Set<Hue>
+    in t: Set<Hue>
     in hue: Hue
     in a?
     pub det out every? := Hue::Red in s and Hue::Green in s and Hue::Blue in s
@@ -227,8 +227,8 @@ pub comp manual_forall_written {
 }
 
 pub comp manual_forall_fixed {
-    in s: Set(Hue)
-    in t: Set(Hue)
+    in s: Set<Hue>
+    in t: Set<Hue>
     in hue: Hue
     in a?
     pub det out every? := forall (hue!: Hue), hue in s

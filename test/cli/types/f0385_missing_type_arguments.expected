@@ -5,7 +5,7 @@ error[F0385]: `Option` takes 1 type argument, but none was given
   |                ^^^^^^ no type arguments
   |
   = note: `Option` is generic, with the type parameter `T`
-  = help: write it with its argument, as in `Option(Int)`
+  = help: write it with its argument, as in `Option<Int>`
 
 error: could not check due to previous errors
 

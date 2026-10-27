@@ -1,2 +1,2 @@
 -- A field of an ordered struct, whose type is not ordered (F0371).
-ordered struct Entry { key: Int, tags: Set(Int) }
+ordered struct Entry { key: Int, tags: Set<Int> }

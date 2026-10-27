@@ -4,8 +4,8 @@ set_option fren.lint.bool_equality "warn"
 comp comparisons {
     in a: Int
     in b: Int
-    in u: Set(Int)
-    in v: Set(Int)
+    in u: Set<Int>
+    in v: Set<Int>
     pub out p?
     pub out q?
     pub out w?
@@ -40,7 +40,7 @@ set_option fren.lint.undecidable "allow" in
 comp searches {
     in s: String
     in t: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out a?
     pub out b?
     pub out c?
@@ -83,14 +83,14 @@ comp identities {
     in x: Int
     in y: Int
     in s: String
-    in q: Seq(Int)
-    in u: Set(Int)
+    in q: Seq<Int>
+    in u: Set<Int>
     pub out a: Int
     pub out b: Int
     pub out c: Int
     pub out d: String := "" ++ s             --~ warning: this operation has no effect
-    pub out e: Seq(Int) := q ++ []           --~ warning: this operation has no effect
-    pub out f: Set(Int) := u minus {}        --~ warning: this operation has no effect
+    pub out e: Seq<Int> := q ++ []           --~ warning: this operation has no effect
+    pub out f: Set<Int> := u minus {}        --~ warning: this operation has no effect
 
     ensure r1: a = (x - y) * 1                  --~ warning: this operation has no effect
     ensure r2: b = 0 + x                        --~ warning: this operation has no effect

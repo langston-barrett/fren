@@ -103,7 +103,7 @@ comp nested {
 -- An index in a guard is guarded by the arm's pattern's matching where no
 -- earlier arm is taken, and one in a body by its guard too.
 comp indexes {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in n: Nat
     pub det out y: Int
 
@@ -119,7 +119,7 @@ enum Mode { Off, Heat, Cool }
 
 comp quantified {
     in m: Mode
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub det out y: Int
 
     ensure r: y = match m {

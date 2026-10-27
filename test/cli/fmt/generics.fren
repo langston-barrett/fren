@@ -1,10 +1,14 @@
 --@ args: fmt --check
--- `fren fmt` writes type parameters and type arguments as a call's
--- parentheses, directly after the name.
-pub enum Option(  T ) { None, Some( T ) }
-pub struct Pair( A,B ) { fst: A, snd: B }
+-- `fren fmt` writes type parameters and type arguments in angle brackets
+-- spaced as a call's parentheses, directly after the name, and a
+-- comparison's `<` and `>` with spaces.
+pub enum Option<  T > { None, Some( T ) }
+pub struct Pair< A,B > { fst: A, snd: B }
 comp c {
-    in x: Option(Pair( Int,Bool ))
-    pub out y: Option(Int)
+    in x: Option<Pair< Int,Bool >>
+    in s: Set< Option< Set<Int> > >
+    in n: Int
+    pub out y: Option<Int>
     ensure r: y = Option::None
+    ensure q: forall (t: Set< Int >), n<3 or n>t.card
 }

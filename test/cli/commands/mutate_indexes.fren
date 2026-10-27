@@ -6,7 +6,7 @@
 -- range kills the mutant. In `e`, the second `q[0]` is out of range on the
 -- spec, so dropping the guarded one kills nothing.
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
 
     assume one: q.len >= 1
     pub out ok?
@@ -14,7 +14,7 @@ comp c {
 }
 
 comp d {
-    in q: Seq(Int)
+    in q: Seq<Int>
 
     assume one: q.len >= 1
     pub out ok?
@@ -22,7 +22,7 @@ comp d {
 }
 
 comp e {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out ok?
 
     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)

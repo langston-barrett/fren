@@ -22,7 +22,7 @@ comp concat_paren {
 
 -- Methods without arguments chained after a parenthesized receiver (#97).
 comp chained_paren {
-    in r: Rel(Int, Int)
+    in r: Rel<Int, Int>
     pub out y?
     ensure q: y? iff (r).range.card = 1
     --~^ error: a relational operator over a type that is not finite quantifies over its values
@@ -34,13 +34,13 @@ comp chained_paren {
 -- not even `mixed`, which has none.
 comp mixed {
     in n: Int
-    in t: Set(Int)
+    in t: Set<Int>
     ensure q: ((t inter {0, 3}) union t) = (({(0, 0), (1, 2)}).range inter {3, n})
 }
 
 comp counts_mixed {
-    in r: Rel(Int, Int)
-    in t: Set(Int)
+    in r: Rel<Int, Int>
+    in t: Set<Int>
     inst w: mixed { n := r.card, t }
     --~^ error: the solver does not reliably combine counting with relational operators
     pub out y?

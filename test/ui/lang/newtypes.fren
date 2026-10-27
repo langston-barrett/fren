@@ -12,7 +12,7 @@ pub struct Flag(Bool)
 pub enum Mode { Idle, Busy }
 
 pub struct Tagged(Mode)
-pub struct Tags(Set(Int))
+pub struct Tags(Set<Int>)
 
 comp timer {
     in elapsed: Ms
@@ -74,8 +74,8 @@ fn cost(Ms): Ms
 fn half(m: Ms): Ms := Ms(m.0 div 2)
 
 comp collections {
-    in times: Set(Ms)
-    in queue: Seq(Ms)
+    in times: Set<Ms>
+    in queue: Seq<Ms>
     in job: Job
 
     assume some: queue.len = 1 and queue[0] in times
@@ -102,7 +102,7 @@ comp uses {
 }
 
 -- A counterexample shows newtypes as Fren builds them, in both front ends.
-pub struct Slot { start: Ms, tags: Set(Ms) }
+pub struct Slot { start: Ms, tags: Set<Ms> }
 
 comp shown {
     in t: Ms
@@ -117,16 +117,16 @@ comp shown {
 
 -- A newtype of a finite type is finite: the domain of a relation into one
 -- is in the decidable core.
-pub struct Bits(Set(Bool))
+pub struct Bits(Set<Bool>)
 pub struct B2(Bits)
 
 comp finite {
-    in r: Rel(Int, Flag)
-    in q: Rel(Int, Bits)
-    in p: Rel(Int, B2)
-    pub det out d: Set(Int) := r.domain
-    pub det out e: Set(Int) := q.domain
-    pub det out f: Set(Int) := p.domain
+    in r: Rel<Int, Flag>
+    in q: Rel<Int, Bits>
+    in p: Rel<Int, B2>
+    pub det out d: Set<Int> := r.domain
+    pub det out e: Set<Int> := q.domain
+    pub det out f: Set<Int> := p.domain
 
     expect domain: 1 in d iff ((1, Flag(true)) in r or (1, Flag(false)) in r)
     expect of_sets: when q = {}, e = {}
@@ -136,7 +136,7 @@ comp finite {
 -- The value of a newtype is checked against its underlying type, so `{}`
 -- may be one.
 comp empty_value {
-    in s: Set(Int)
+    in s: Set<Int>
     pub det out t: Tags := if s = {} then Tags({}) else Tags(s)
 
     expect same: t.0 = s

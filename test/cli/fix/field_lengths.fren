@@ -1,7 +1,7 @@
 --@ args: fix --check -A undecidable
 -- `fren fix` compares a length read through a field with an empty
 -- collection, and keeps the receiver's parentheses.
-struct R { s: String, q: Seq(Int), t: Set(Int), x: Int }
+struct R { s: String, q: Seq<Int>, t: Set<Int>, x: Int }
 
 pub comp c {
     in r: R

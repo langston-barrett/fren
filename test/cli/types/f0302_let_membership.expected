@@ -1,7 +1,7 @@
 error[F0302]: `b?` ends in `?` but is not a `Bool`
  --> test/cli/types/f0302_let_membership.fren:4:60
   |
-4 | comp c { in x: Int in s: Set(Int) pub out y? ensure r: let b? := x in s in y? iff b? }
+4 | comp c { in x: Int in s: Set<Int> pub out y? ensure r: let b? := x in s in y? iff b? }
   |                                                            ^^ ends in `?`
   |
   = note: a variable's name ends in `?` if and only if it is a `Bool`

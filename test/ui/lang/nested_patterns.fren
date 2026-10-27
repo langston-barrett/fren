@@ -80,7 +80,7 @@ pub enum Request { Read(Size), Stop }
 
 comp guarded {
     in r: Request
-    in q: Seq(Int)
+    in q: Seq<Int>
 
     assume long: match r { Request::Read(Size::Fixed(n)) => q.len > n and n >= 0, _ => q != [] }
     pub det out first: Int

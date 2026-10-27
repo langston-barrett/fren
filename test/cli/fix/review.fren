@@ -6,7 +6,7 @@
 comp c {
     in a?
     in x: Int
-    in t: Set(Int)
+    in t: Set<Int>
     pub out p1?
     pub out p2?
     pub out n: Int

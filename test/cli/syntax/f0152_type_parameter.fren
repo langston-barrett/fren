@@ -1,2 +1,2 @@
 -- A generic function's type parameter that is not a name.
-pub fn first(Set(T))(x: Int): Int := x
+pub fn first<Set<T>>(x: Int): Int := x

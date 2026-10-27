@@ -4,7 +4,7 @@ error[F0326]: the members of a set have different types: `Int` and `Bool`
 5 |     ensure r: p? iff s = {1, true}
   |                              ^^^^ a `Bool`
   |
-  = note: the first member is a `Int`, so the literal is a `Set(Int)`
+  = note: the first member is a `Int`, so the literal is a `Set<Int>`
 
 error: could not check due to previous errors
 

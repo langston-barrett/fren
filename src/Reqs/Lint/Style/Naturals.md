@@ -90,8 +90,8 @@ set_option fren.evidence "tested" in
 set_option fren.lint.undecidable "allow" in
 pub comp manual_nat {
     in var: NatVariable
-    in conjuncts: Seq(NatConjunct)  -- the conjuncts of the assumptions and guarantees, in order
-    in uses: Seq(Given)  -- the types that the file's instances, refinements and `impl`s give it
+    in conjuncts: Seq<NatConjunct>  -- the conjuncts of the assumptions and guarantees, in order
+    in uses: Seq<Given>  -- the types that the file's instances, refinements and `impl`s give it
     in k: Int            -- any position in `conjuncts`
     pub out position: Int  -- of the bound it is reported at, or -1 where it does not fire
 

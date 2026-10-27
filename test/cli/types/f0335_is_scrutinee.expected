@@ -1,7 +1,7 @@
-error[F0335]: cannot test `Set(Int)` against a pattern
+error[F0335]: cannot test `Set<Int>` against a pattern
  --> test/cli/types/f0335_is_scrutinee.fren:2:61
   |
-2 | comp c { in s: Set(Int) pub out empty? ensure r: empty? iff s is _ }
+2 | comp c { in s: Set<Int> pub out empty? ensure r: empty? iff s is _ }
   |                                                             ^ no patterns of this type
   |
   = note: `is` tests a value of an enum, `Bool`, `Int`, `Nat` or `String`

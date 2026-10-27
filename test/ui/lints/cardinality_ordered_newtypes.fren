@@ -8,15 +8,15 @@ pub enum Mode { Off, Heat, Cool }
 pub ordered struct Ms(Int)
 pub struct Bytes(Int)
 pub ordered struct Grade(Severity)
-pub struct Qs(Seq(Int))
-pub struct Ss(Set(Int))
+pub struct Qs(Seq<Int>)
+pub struct Ss(Set<Int>)
 
 comp cardinality {
     in a?
     in b?
     in c?
     in d?
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out o1?
     pub out o2?
     pub out o3?
@@ -153,7 +153,7 @@ comp newtypes {
 
 -- An operand whose definition indexes, or is a table, keeps its guard.
 comp guarded {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     in x: Int
     in z?
@@ -169,7 +169,7 @@ comp guarded {
 -- An empty literal takes its type from the newtype, so there is no fix;
 -- a round trip inside another is reported once.
 comp untyped {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in x: Ms
     pub out p1?
     pub out p2?

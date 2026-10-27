@@ -36,7 +36,7 @@ enum Mode { Off, Heat, Cool, Fan }
 comp modes {
     in mode: Mode
     in t: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out heating?
     pub out cooling?
     pub out idle?

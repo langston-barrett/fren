@@ -16,15 +16,15 @@ help: remove the comma
 warning[F0801]: unnecessary trailing comma before `]`
   --> test/cli/lints/pedantic/f0801_unnecessary_trailing_comma.fren:12:48
    |
-12 | comp c { in x: Int pub out q: Seq(Int) := [x, 1, ] }
+12 | comp c { in x: Int pub out q: Seq<Int> := [x, 1, ] }
    |                                                ^ trailing comma
    |
    = note: a list ends with a comma only where its `]` starts a line, so that an element is added by adding a line
    = help: `fren fix` can fix this
 help: remove the comma
    |
-12 - comp c { in x: Int pub out q: Seq(Int) := [x, 1, ] }
-12 + comp c { in x: Int pub out q: Seq(Int) := [x, 1 ] }
+12 - comp c { in x: Int pub out q: Seq<Int> := [x, 1, ] }
+12 + comp c { in x: Int pub out q: Seq<Int> := [x, 1 ] }
    |
 
 fren: 1 passed, 0 failed, 0 inconclusive, 0 redundant

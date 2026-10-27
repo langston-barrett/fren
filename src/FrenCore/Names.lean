@@ -1492,7 +1492,7 @@ def unknownSetMethodMsg (m : String) (ty : String) : Msg :=
 /-- `r.closure`, where `r`, of type `ty`, relates two different types. -/
 def closureTypeMsg (ty : String) : Msg :=
   { code? := some "F0328", headline := s!"`closure` needs a relation of a type with itself, found `{ty}`"
-    label? := some "not `Rel(A, A)`"
+    label? := some "not `Rel<A, A>`"
     notes := #["note: a chain of pairs `(a, b)`, `(b, c)` needs the second members to be of the first members' type"
       ] }
 
@@ -1502,11 +1502,11 @@ def joinTypeMsg (ty : String) (q? : Option String) : Msg :=
   match q? with
   | none =>
     { code? := some "F0328", headline := s!"`join` needs relations, found `{ty}`", label? := some "not a relation"
-      notes := #["note: `r join q` composes the relations `r: Rel(A, B)` and `q: Rel(B, C)`"] }
+      notes := #["note: `r join q` composes the relations `r: Rel<A, B>` and `q: Rel<B, C>`"] }
   | some q =>
     { code? := some "F0328", headline := s!"cannot join `{ty}` with `{q}`"
       label? := some "the middle types differ"
-      notes := #["note: `r join q` composes `r: Rel(A, B)` with `q: Rel(B, C)`: the second type of `r` is the first of `q`"] }
+      notes := #["note: `r join q` composes `r: Rel<A, B>` with `q: Rel<B, C>`: the second type of `r` is the first of `q`"] }
 
 /-- `x in s`, where `s` has type `found` rather than `expected`, the set or
 relation of `x`'s type; `pair` if `x` is a pair. -/
@@ -1525,7 +1525,7 @@ def emptySeqTypeMsg : Msg :=
 /-- `q[i]`, where `q`, of type `ty`, is not a sequence. -/
 def notIndexableMsg (ty : String) : Msg :=
   { code? := some "F0332", headline := s!"cannot index a `{ty}`", label? := some "not a sequence"
-    notes := #["note: only a sequence, `Seq(T)`, is indexed, as `q[i]`"] }
+    notes := #["note: only a sequence, `Seq<T>`, is indexed, as `q[i]`"] }
 
 /-- A pair outside a relation literal and the left of `in`. -/
 def pairPlaceMsg : Msg :=

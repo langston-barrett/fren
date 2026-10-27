@@ -83,6 +83,13 @@ partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
     else args.forM checkLexemes
   | _ => pure ()
 
+/-- The tokens of `stx`, in order: its atoms and identifiers. -/
+partial def tokensOf (stx : Syntax) : Array Syntax :=
+  match stx with
+  | .node _ _ args => args.flatMap tokensOf
+  | .missing => #[]
+  | _ => #[stx]
+
 open Lang in
 /-- Reports the first problem of `stx` that the `fren` command's parser
 reports, in source order, before any other check of its item, where Lean's
@@ -95,7 +102,10 @@ grammar accepts it:
 - an operator of another language, `==`, `&&`, `||` or `|`, after its
   left operand;
 - `table` as a name: it is a reserved word, which Lean reads as a name
-  where an expression starts, as it reads `when`. -/
+  where an expression starts, as it reads `when`;
+- a type with its type arguments in parentheses, and type parameters in
+  parentheses, as they were written before they were written in angle
+  brackets (`Reqs/Lang/Generics#angle-brackets`). -/
 partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   let reserved (p : Syntax) : CommandElabM Unit := do
     let id := (pathSegs p)[0]!
@@ -124,14 +134,39 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
     else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr then
       stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
+    else if stx.isOfKind ``Lang.parenType then
+      -- The parentheses of it and of each type within it written so too,
+      -- written `<` and `>` in the suggestion, as the `fren` command does.
+      let parens := (parenTypes stx).flatMap fun t => #[t[1].getPos?, t[3].getPos?]
+      throwErrorAt stx (Core.parenTypeArgsMsg (← angleSource stx parens)).text
+    else if stx.isOfKind ``Lang.enumCmd || stx.isOfKind ``Lang.structCmd || stx.isOfKind ``Lang.fnCmd then
+      -- Its type parameters follow its name.
+      let k := if stx.isOfKind ``Lang.fnCmd then 3 else 4
+      for i in [0:stx.getNumArgs] do
+        let ps := stx[k]
+        if i == k && !ps.isNone && ps[0].isOfKind ``Lang.fren_paren_type_params then
+          let ref := mkNullNode #[stx[k - 1], ps]
+          let written ← angleSource ref #[ps[0][0].getPos?, ps[0][2].getPos?]
+          throwErrorAt ref (Core.parenTypeParamsMsg written).text
+        checkParsed stx[i]
     else stx.getArgs.forM checkParsed
-
-/-- The tokens of `stx`, in order: its atoms and identifiers. -/
-partial def tokensOf (stx : Syntax) : Array Syntax :=
-  match stx with
-  | .node _ _ args => args.flatMap tokensOf
-  | .missing => #[]
-  | _ => #[stx]
+where
+  /-- The types within `stx` written with their type arguments in
+  parentheses. -/
+  parenTypes (stx : Syntax) : Array Syntax :=
+    (if stx.isOfKind ``Lang.parenType then #[stx] else #[]) ++ stx.getArgs.flatMap parenTypes
+  /-- The source of `ref`, as written, comments and all, with the
+  parentheses at `parens` written as angle brackets, as the `fren` command
+  writes it (`Core.angleText`). -/
+  angleSource (ref : Syntax) (parens : Array (Option String.Pos.Raw)) : CommandElabM String := do
+    let src := (← getFileMap).source
+    let (some a, some b) := (ref.getPos?, ref.getTailPos?) | return ""
+    let mut out := #[]
+    let mut p := a
+    while p < b do
+      out := out.push (p.get src, parens.contains (some p))
+      p := p.next src
+    return Core.angleText out
 
 /-- Records `unnecessary_trailing_comma` on the commas of the command `stx`
 that end a list on the line of its `}` or `]`
@@ -187,7 +222,7 @@ def declareUse (segs : Array Syntax) (glob : Bool) (ref : Syntax) (scope : Optio
   for p in stx[3].getSepArgs do
     declareUse (pathSegs stx[1] ++ pathSegs p) false p
 
-/-- The path of a type written as one, or `none` for `Set(T)`, `Rel(A, B)`
+/-- The path of a type written as one, or `none` for `Set<T>`, `Rel<A, B>`
 and an instance of a generic type. -/
 def typePath? (ty : Syntax) : Option Syntax :=
   if ty.isOfKind ``Lang.fren_path then some ty
@@ -265,7 +300,7 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
     (params : Array Name := #[]) : m Expr := do
   -- A pattern type's Lean type is its base type's.
   if ty.isOfKind ``Lang.patType then return ← elabType modName ty[0] params
-  -- `Set(T)`: `"Set" "(" T ")"`; `Rel(A, B)`: `"Rel" "(" A "," B ")"`.
+  -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
   -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
   -- parameter (`lang::type_parameter_place`).
   let elem (e : Syntax) : m Expr := do
@@ -275,7 +310,7 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
     if let some n := t.constName?.bind (Core.typeParamName? ·) then
       throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
     return t
-  -- An instance of a generic type, `G(A, B)`, whose arguments are payloads'
+  -- An instance of a generic type, `G<A, B>`, whose arguments are payloads'
   -- types (`Reqs/Lang/Generics#type-parameters`).
   if ty.isOfKind ``Lang.instanceType then
     let segs := pathSegs ty[0]
@@ -285,7 +320,7 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
     if segs.size == 1 && [`Set, `Seq, `Rel].contains segs[0]!.getId then
       let n := if segs[0]!.getId == `Rel then 2 else 1
       let at_ := if given.size > n then ty[2].getArgs[2 * n - 1]! else ty[3]
-      throwErrorAt at_ s!"expected `{if given.size > n then ")" else ","}`"
+      throwErrorAt at_ s!"expected `{if given.size > n then ">" else ","}`"
     let mut args := #[]
     for a in given do
       let t ← elabType modName a params
@@ -313,11 +348,11 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   if segs.size == 1 && segs[0]!.getId == `String then return Lean.mkConst ``String
   instanceType modName segs #[] params p
 
-/-- The `Rel(A, B)`s within the type `ty`. -/
+/-- The `Rel<A, B>`s within the type `ty`. -/
 partial def relTypes (ty : Syntax) : Array Syntax :=
   (if ty.isOfKind ``Lang.relType then #[ty] else #[]) ++ ty.getArgs.flatMap relTypes
 
-/-- Records `zero_sized_map_values` on each `Rel(A, B)` within the type
+/-- Records `zero_sized_map_values` on each `Rel<A, B>` within the type
 `ty` whose `B` is an enumeration of one variant without a payload
 (`lint::zero_sized_map_values`). -/
 def lintRelTypes [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFileMap m] (modName : Name)
@@ -599,11 +634,11 @@ partial def typeName (t : Expr) : TermElabM String := do
   if t.isConstOf ``Int then return "Int"
   if t.isConstOf ``Nat then return "Nat"
   if t.isConstOf ``String then return "String"
-  if t.isAppOfArity ``Fren.Seq 1 then return s!"Seq({← typeName t.appArg!})"
+  if t.isAppOfArity ``Fren.Seq 1 then return s!"Seq<{← typeName t.appArg!}>"
   if t.isAppOfArity ``Fren.FinSet 1 then
     let e := t.appArg!
-    if e.isAppOfArity ``Prod 2 then return s!"Rel({← typeName e.appFn!.appArg!}, {← typeName e.appArg!})"
-    return s!"Set({← typeName e})"
+    if e.isAppOfArity ``Prod 2 then return s!"Rel<{← typeName e.appFn!.appArg!}, {← typeName e.appArg!}>"
+    return s!"Set<{← typeName e}>"
   let s ← getState
   -- An instance of a generic type, with its arguments (`Reqs/Lang/Generics#printing`).
   if let some e := s.enumOf? t then return ((coreTyOf s t).map (·.show)).getD (Core.showPath e.path)
@@ -2294,7 +2329,7 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   if ty.isOfKind ``Lang.setType then
     let (a, pa) ← elem ty[2]
     return (mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) a, { ty := .set pa.ty, elems := #[pa], text })
-  -- An instance of a generic type, `G(A, B)`, whose arguments are declared
+  -- An instance of a generic type, `G<A, B>`, whose arguments are declared
   -- types, with their patterns, as the `fren` command's `elabBasePTy` checks
   -- them (`Reqs/Lang/Generics#type-parameters`).
   if ty.isOfKind ``Lang.instanceType then
@@ -2305,7 +2340,7 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
     if segs.size == 1 && [`Set, `Seq, `Rel].contains segs[0]!.getId then
       let n := if segs[0]!.getId == `Rel then 2 else 1
       let at_ := if given.size > n then ty[2].getArgs[2 * n - 1]! else ty[3]
-      throwErrorAt at_ s!"expected `{if given.size > n then ")" else ","}`"
+      throwErrorAt at_ s!"expected `{if given.size > n then ">" else ","}`"
     let mut args := #[]
     let mut pts := #[]
     for a in given do
@@ -3675,7 +3710,7 @@ def checkNewtypeMembers (cx : ExprCtx) (seq : Bool) (elems : Array Syntax) (xs :
   for (e, t) in typed do
     unless ← isDefEq t t0 do
       let name ← typeName t0
-      let lit := if seq then s!"Seq({name})" else s!"Set({name})"
+      let lit := if seq then s!"Seq<{name}>" else s!"Set<{name}>"
       throwErrorAt e (Core.membersMsg seq (← typeName t0) (← typeName t) lit).text
 
 /-- `t`, a `Bool` if it is a condition, a `Prop`: a member of a set is a

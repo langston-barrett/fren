@@ -289,7 +289,7 @@ def fmtKept (path src : String) : Option (Array String × Array (Array String) �
   let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
   let chars := src.toList.toArray
   let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
-  let lay ← (FrenCli.parseLayout toks).toOption
+  let lay ← (FrenCli.parseLayout toks chars).toOption
   let inUse (k : Nat) : Bool := lay.uses.any fun (f, l) => f ≤ k && k ≤ l
   let isStr (k : Nat) : Bool := toks[k]?.any (·.tok matches .str _)
   let mut kept := #[]
@@ -349,7 +349,7 @@ def setCorpus (n : Nat) : String := Id.run do
         s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
         s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
         "s = {}"] 5
-    out := out ++ s!"comp c{k} \{\n    in s: Set(Int)\n    in t: Set(Int)\n    in x: Int\n    in es: Set(E)\n    in e: E\n    \
+    out := out ++ s!"comp c{k} \{\n    in s: Set<Int>\n    in t: Set<Int>\n    in x: Int\n    in es: Set<E>\n    in e: E\n    \
       pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
@@ -374,7 +374,7 @@ def relationCorpus (n : Nat) : String := Id.run do
       atoms := atoms.push <| pick #[
         s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
         s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
-    out := out ++ s!"comp c{k} \{\n    in r: Rel(E, E)\n    in q: Rel(E, E)\n    in s: Set(E)\n    in x: E\n    in y: E\n    \
+    out := out ++ s!"comp c{k} \{\n    in r: Rel<E, E>\n    in q: Rel<E, E>\n    in s: Set<E>\n    in x: E\n    in y: E\n    \
       pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
@@ -397,7 +397,7 @@ def sequenceCorpus (n : Nat) : String := Id.run do
         s!"{a} = {b}", s!"{a} != {b}", s!"{a}.len <= {j}", s!"x in [1, {j}]", s!"q.starts_with?([{j}])",
         s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
         s!"{a}.len + {b}.len >= {j}"] 5
-    out := out ++ s!"comp c{k} \{\n    in q: Seq(Int)\n    in r: Seq(Int)\n    in x: Int\n    in i: Int\n    \
+    out := out ++ s!"comp c{k} \{\n    in q: Seq<Int>\n    in r: Seq<Int>\n    in x: Int\n    in i: Int\n    \
       pub out p?\n\n    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out

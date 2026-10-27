@@ -7,28 +7,28 @@ set_option fren.lint.dead_code "allow"
 
 mod generics_guards_contracts
 
-pub enum Option(T) { None, Some(T) }
-pub struct Pair(A, B) { fst: A, snd: B }
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
 
 -- The payload, or `fallback` where there is none.
-fn unwrap_or(o: Option(Int), fallback: Int): Int
+fn unwrap_or(o: Option<Int>, fallback: Int): Int
     ensure some: when o = Option::Some(3), unwrap_or(o, fallback) = 3
     ensure none: when o = Option::None, unwrap_or(o, fallback) = fallback
 
 -- Defined only on a `Some`.
-fn get(o: Option(Int)): Int := match o { Option::Some(n) => n, Option::None => 0 }
+fn get(o: Option<Int>): Int := match o { Option::Some(n) => n, Option::None => 0 }
     assume present: o != Option::None
 
 -- A result that is an instance.
-fn half(n: Int): Option(Int)
+fn half(n: Int): Option<Int>
     ensure even: when n mod 2 = 0, half(n) = Option::Some(n div 2)
     ensure odd: when n mod 2 != 0, half(n) = Option::None
 
-fn swap(p: Pair(Int, Bool)): Pair(Bool, Int) := Pair { fst := p.snd, snd := p.fst }
+fn swap(p: Pair<Int, Bool>): Pair<Bool, Int> := Pair { fst := p.snd, snd := p.fst }
     ensure swapped: swap(p).snd = p.fst
 
 comp sign {
-    in x: Option(Int)
+    in x: Option<Int>
     pub det out s: Int := match x {
         Option::Some(n) if n > 0 => 1,
         Option::Some(n) if n < 0 => -1,
@@ -44,9 +44,9 @@ comp sign {
 }
 
 comp users {
-    in o: Option(Int)
+    in o: Option<Int>
     in n: Int
-    in p: Pair(Int, Bool)
+    in p: Pair<Int, Bool>
 
     expect three: unwrap_or(Option::Some(3), n) = 3
     expect fallback: unwrap_or(Option::None, n) = n

@@ -5,9 +5,9 @@
 enum E { A, B }
 
 comp related {
-    in r: Rel(E, E)
-    in s: Set(E)
-    pub out t: Rel(E, E) := r join r
+    in r: Rel<E, E>
+    in s: Set<E>
+    pub out t: Rel<E, E> := r join r
     pub out size: Int
     ensure c: size = 0 iff s = {}
 }

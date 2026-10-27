@@ -1,0 +1,19 @@
+--@ args: fix --check
+-- `fren fix` migrates types and declarations written with parentheses to
+-- angle brackets (`lint::migration_step`), one fix at a time, nested types
+-- too, keeping string patterns and comments as written, and then fixes the
+-- lints of the file as migrated.
+pub enum Option(T) { None, Some(T) }
+pub struct Pair(A, B) { fst: A, snd: B }
+
+fn size(T)(o: Option(T)): Int := if o = Option::None then 0 else 1
+
+comp c {
+    in x: Option(Set(Int))
+    in p: Pair(Int, Option(Rel(Int, Bool)))
+    in s: Option(String is "a\"b" | r#"c"d"#)
+    in q: Seq(Option( -- a comment
+        Int))
+    pub out y: Int := size(x) + size(p.snd) + size(s) + q.len
+    ensure positive: (((y > 0)))
+}

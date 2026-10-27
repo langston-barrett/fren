@@ -9,12 +9,12 @@ open Fren.Lang
 -- instance.
 mod generic_functions
 
-pub enum Opt(T) { None, Some(T) }
+pub enum Opt<T> { None, Some(T) }
 
-fn unwrap_or(T)(o: Opt(T), d: T): T := match o { Opt::Some(x) => x, Opt::None => d }
+fn unwrap_or<T>(o: Opt<T>, d: T): T := match o { Opt::Some(x) => x, Opt::None => d }
 
 comp c {
-  in x: Opt(Int)
+  in x: Opt<Int>
   pub det out y: Int := unwrap_or(x, 0)
 
   expect missing: when x = Opt::None, y = 0

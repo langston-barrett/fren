@@ -13,10 +13,10 @@ type Id
 struct Pair(Int, Int)  --~ error: newtype `Pair` has 2 fields, but a newtype has exactly one
 struct Empty()  --~ error: newtype `Empty` has 0 fields, but a newtype has exactly one
 struct Abstract(Id)  --~ error: a field cannot have the abstract type `Id`
-struct Ids(Set(Id))  --~ error: a field's type cannot have the abstract type `Id` within it
+struct Ids(Set<Id>)  --~ error: a field's type cannot have the abstract type `Id` within it
 struct Count(Nat)
 struct Loop(Loop)  --~ error: record `Loop` has a field of its own type
-struct Sets(Set(Sets))  --~ error: `Sets` cannot be an element type within itself
+struct Sets(Set<Sets>)  --~ error: `Sets` cannot be an element type within itself
 
 -- The operators that each newtype has.
 comp product { in a: Ms in b: Ms pub out c: Ms ensure r: c = a * Ms(2) }
@@ -91,12 +91,12 @@ comp members { in a: Ms in b: Bytes pub out d? ensure r: d? iff {a, b} = {a} }
 --~^ error: the members of a set have different types: `Ms` and `Bytes`
 comp elements { in a: Ms in b: Bytes pub out d? ensure r: d? iff [a, b] = [a] }
 --~^ error: the elements of a sequence have different types: `Ms` and `Bytes`
-comp member { in a: Ms in s: Set(Bytes) pub out d? ensure r: d? iff a in s }
---~^ error: `in` needs a `Set(Ms)` on its right, found `Set(Bytes)`
+comp member { in a: Ms in s: Set<Bytes> pub out d? ensure r: d? iff a in s }
+--~^ error: `in` needs a `Set<Ms>` on its right, found `Set<Bytes>`
 
 -- A newtype is unbounded exactly when its underlying type is.
-struct Tags(Set(Int))
+struct Tags(Set<Int>)
 comp unbounded { pub out t: Tags }  --~ error: output `t` has the unbounded type `Tags`
-comp defined { in s: Set(Int) pub out t: Tags := Tags(s) }
+comp defined { in s: Set<Int> pub out t: Tags := Tags(s) }
 
 --@ exit: 2

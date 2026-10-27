@@ -311,12 +311,12 @@ inductive Item where
   | useGroup (span : Span) (pre : Array Ident) (paths : Array (Array Ident))
   /-- `enum E { A, B(T, U) }`: each variant with its payload's types, if
   it has a payload; `ordered enum E { A, B }` if `isOrdered`; with type
-  parameters, `enum E(T) { ... }`. -/
+  parameters, `enum E<T> { ... }`. -/
   | enum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool)
       (params : Array Ident)
   /-- `struct R { x: T, y? }`: each field with its type, if written;
   `ordered struct R { ... }` if `isOrdered`; with type parameters,
-  `struct R(A, B) { ... }`. -/
+  `struct R<A, B> { ... }`. -/
   | record (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident))) (isOrdered : Bool)
       (params : Array Ident)
   /-- `struct N(T)`: a newtype, with the types in its parentheses, which
@@ -327,7 +327,7 @@ inductive Item where
   /-- `type T := U`, a type alias. -/
   | typeAlias (isPub : Bool) (name : Ident) (ty : Array Ident)
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`, or with type parameters
-`fn f(A, B)(x: A): B := e`: each parameter's path,
+`fn f<A, B>(x: A): B := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
 written, and the body if the function is uninterpreted. Then the clauses
 of its contract: whether each is a postcondition, its name and its
@@ -378,7 +378,8 @@ structure Layout where
   claims : Array (Nat × Nat) := #[]
   /-- `use` items: their first and last tokens. -/
   uses : Array (Nat × Nat) := #[]
-  /-- The `(` after a function's name, opening its parameters or arguments. -/
+  /-- The `(` after a function's name, opening its parameters or arguments,
+  and the `<` and `>` of type arguments and type parameters. -/
   calls : Array Nat := #[]
   /-- The `{` of a set literal, spaced like `(`. -/
   sets : Array Nat := #[]
@@ -389,6 +390,8 @@ structure Layout where
 
 structure PState where
   toks : Array Token
+  /-- The source, which a suggestion copies as written (`F0155`, `F0156`). -/
+  src : Array Char
   pos : Nat := 0
   layout : Layout := {}
   /-- In a `match`'s scrutinee, where `R {` starts the arms rather than a
@@ -399,6 +402,10 @@ structure PState where
   /-- In a definition of a `let`, outside brackets, where `in` ends the
   definitions rather than starting a membership (`Reqs/Lang/Let#parentheses`). -/
   noIn : Bool := false
+  /-- Within a type written with its type arguments in parentheses
+  (`F0155`): the indices of the tokens of those parentheses, and of those
+  of the types within it, which the suggestion writes as `<` and `>`. -/
+  parens : Option (Array Nat) := none
 
 abbrev P := StateT PState (Except ParseError)
 
@@ -519,6 +526,35 @@ def noSpaceBeforeParen (name what : String) : P Unit := do
   err t.span "F0144" s!"a space before the `(` of {what}" (some "after a space")
     #["note: the `(` that opens what a name takes follows the name directly, as in Lean",
       s!"help: remove the space: `{name}(`"]
+
+/-- The bracket after the last token, and whether it follows it directly
+(`Fren.Core.afterName`). -/
+def bracketAfter : P (Fren.Core.Bracket × Bool) := do
+  let s ← get
+  let some t := s.toks[s.pos]? | return (.other, false)
+  let b := match t.tok with | .kw p => Fren.Core.Bracket.of p | _ => .other
+  let adjacent := s.pos > 0 && (s.toks[s.pos - 1]?).any (·.span.stop == t.span.start)
+  return (b, adjacent)
+
+/-- Reports a `<` after a space where it would open what the name `name`
+takes, `what` (`F0144`), as `noSpaceBeforeParen` does a `(`. -/
+def spacedAngle (name what : String) : P α := do
+  err (← peek).span "F0144" s!"a space before the `<` of {what}" (some "after a space")
+    #["note: the `<` that opens a type's arguments or a declaration's type parameters follows the name directly",
+      s!"help: remove the space: `{name}<`"]
+
+/-- The source from `start` to `stop`, with the parentheses at the offsets
+`parens` written as angle brackets (`Fren.Core.angleText`). -/
+def angleSource (start stop : Nat) (parens : Array Nat) : P String := do
+  let src := (← get).src
+  return Fren.Core.angleText ((List.range (stop - start)).toArray.map fun i =>
+    (src[start + i]?.getD ' ', parens.contains (start + i)))
+
+/-- The `>` that closes type arguments or type parameters, recorded for
+the formatter as a call's `)` is. -/
+def closeAngle : P Token := do
+  markCall
+  expectKw ">"
 
 /-- `.x` reading a field of `e`, an atom that ends in `)` or `}`; the `.`
 touches both. After `.`, `x.y` is one (dotted) identifier. If `(` follows
@@ -697,17 +733,18 @@ def pattern (arm := true) : P Pattern := do
   if alts.size == 1 && lead.isNone then return first
   return .or (← spanFrom ((lead.map (·.span)).getD first.span)) alts
 
-/-- The segment that starts `Set(T)` in a type, which no identifier can
-be: a type is a path, `Set(` followed by its element type, or `Rel(`
-followed by its two element types, separated by `relSep`. -/
+/-- The segment that starts `Set<T>` in a type, which no identifier can
+be: a type's segments are a path, `setSeg` followed by its element
+type's, or `relSeg` followed by its two element types', separated by
+`relSep`. -/
 def setSeg : String := Fren.Core.setSeg
 
 def relSeg : String := Fren.Core.relSeg
 
 def relSep : String := Fren.Core.relSep
 
-/-- The two element types of the segments of `Rel(A, B)` after `Rel(`: each
-`Rel(` within `A` is matched by a separator of its own. -/
+/-- The two element types of the segments of `Rel<A, B>` after `relSeg`:
+each `relSeg` within `A` is matched by a separator of its own. -/
 def splitRel (segs : Array Ident) : Array Ident × Array Ident := Id.run do
   let mut depth := 0
   for s in segs, i in [0:segs.size] do
@@ -720,7 +757,7 @@ def splitRel (segs : Array Ident) : Array Ident × Array Ident := Id.run do
 def seqSeg : String := Fren.Core.seqSeg
 
 /-- The segments around and between the type arguments of an instance of a
-generic type, `G(A, B)`, written as `G`'s path, `argsOpen`, `A`, `argsSep`,
+generic type, `G<A, B>`, written as `G`'s path, `argsOpen`, `A`, `argsSep`,
 `B` and `argsClose`, none of which an identifier can be. `argsSep` is not
 `relSep`, so that `splitRel` never splits at it. -/
 def argsOpen : String := Fren.Core.argsOpen
@@ -747,8 +784,8 @@ def splitArgs (segs : Array Ident) : Array (Array Ident) := Id.run do
   return if cur.isEmpty && out.isEmpty then #[] else out.push cur
 
 mutual
-/-- A type: a path, `Set(T)`, `Seq(T)`, `Rel(A, B)`, or an instance of a
-generic type, `G(A, B)`, optionally followed by `is` and a pattern, for a
+/-- A type: a path, `Set<T>`, `Seq<T>`, `Rel<A, B>`, or an instance of a
+generic type, `G<A, B>`, optionally followed by `is` and a pattern, for a
 pattern type. -/
 partial def typeExpr : P (Array Ident) := do
   let base ← baseType
@@ -759,50 +796,65 @@ partial def typeExpr : P (Array Ident) := do
   let outer := base[0]?.any fun s => s.name == setSeg || s.name == seqSeg || s.name == relSeg
   return if outer then #[p.seg true] ++ base else base.push (p.seg false)
 
-/-- A type without a pattern of its own: a path, `Set(T)`, `Seq(T)`,
-`Rel(A, B)` or an instance of a generic type, `G(A, B)`, whose element
+/-- A type without a pattern of its own: a path, `Set<T>`, `Seq<T>`,
+`Rel<A, B>` or an instance of a generic type, `G<A, B>`, whose element
 types and type arguments may be pattern types. -/
 partial def baseType : P (Array Ident) := do
   let t ← peek
-  let s ← get
-  if t.tok == .ident "Set" && (s.toks[s.pos + 1]?).any (isKw · "(") then
-    discard bump
-    noSpaceBeforeParen "Set" "`Set`'s element type"
-    markCall
-    discard bump
-    let inner ← typeExpr
-    discard (expectKw ")")
-    return #[{ name := setSeg, span := t.span }] ++ inner
-  if t.tok == .ident "Seq" && (s.toks[s.pos + 1]?).any (isKw · "(") then
-    discard bump
-    noSpaceBeforeParen "Seq" "`Seq`'s element type"
-    markCall
-    discard bump
-    let inner ← typeExpr
-    discard (expectKw ")")
-    return #[{ name := seqSeg, span := t.span }] ++ inner
-  if t.tok == .ident "Rel" && (s.toks[s.pos + 1]?).any (isKw · "(") then
-    discard bump
-    noSpaceBeforeParen "Rel" "`Rel`'s element types"
-    markCall
-    discard bump
-    let a ← typeExpr
-    let c ← expectKw ","
-    let b ← typeExpr
-    discard (expectKw ")")
-    return #[{ name := relSeg, span := t.span }] ++ a ++ #[{ name := relSep, span := c.span }] ++ b
+  let start := (← get).pos
   let p := (← path false).1
   let pathName := "::".intercalate (p.map (·.name)).toList
-  noSpaceBeforeParen pathName s!"the type arguments of `{pathName}`"
-  unless isKw (← peek) "(" do return p
+  let (b, adjacent) ← bracketAfter
+  match Fren.Core.afterName b adjacent with
+  | .ends => return p
+  | .spaced =>
+    let what := match pathName with
+      | "Set" | "Seq" => s!"`{pathName}`'s element type"
+      | "Rel" => "`Rel`'s element types"
+      | _ => s!"the type arguments of `{pathName}`"
+    spacedAngle pathName what
+  | .parenthesized => return ← parenArgs start p
+  | .opens => pure ()
   markCall
   let o ← bump
+  let builtin := p.size == 1 && (pathName == "Set" || pathName == "Seq" || pathName == "Rel")
+  if builtin then
+    if pathName == "Rel" then
+      let a ← typeExpr
+      let c ← expectKw ","
+      let b ← typeExpr
+      discard closeAngle
+      return #[{ name := relSeg, span := t.span }] ++ a ++ #[{ name := relSep, span := c.span }] ++ b
+    let inner ← typeExpr
+    discard closeAngle
+    return #[{ name := if pathName == "Set" then setSeg else seqSeg, span := t.span }] ++ inner
   let mut out := p ++ #[{ name := argsOpen, span := o.span }] ++ (← typeExpr)
   while isKw (← peek) "," do
     let c ← bump
     out := out ++ #[{ name := argsSep, span := c.span }] ++ (← typeExpr)
-  let close ← expectKw ")"
+  let close ← closeAngle
   return out.push { name := argsClose, span := close.span }
+
+/-- A type written with its type arguments in parentheses, `G(A, B)`, as
+types were before they were written in angle brackets: read as if it were
+`G<A, B>`, so that the error (`F0155`) suggests the whole type, with the
+parentheses of each type within it that is written so too. `start` is the
+index of its first token, and `p` its path. -/
+partial def parenArgs (start : Nat) (p : Array Ident) : P (Array Ident) := do
+  let outer := (← get).parens.isNone
+  if outer then modify fun s => { s with parens := some #[] }
+  let openAt := (← get).pos
+  discard bump
+  discard typeExpr
+  while (← eatKw ",").isSome do discard typeExpr
+  let close ← expectKw ")"
+  let closeAt := (← get).pos - 1
+  modify fun s => { s with parens := s.parens.map (·.push openAt |>.push closeAt) }
+  unless outer do return p
+  let s ← get
+  let parens := (s.parens.getD #[]).map (s.toks[·]!.span.start)
+  let span := s.toks[start]!.span.to close.span
+  throw { span, msg := Fren.Core.parenTypeArgsMsg (← angleSource span.start span.stop parens) }
 
 end
 
@@ -1210,8 +1262,10 @@ def useRest (t : Token) (first : Nat) : P (Span × Array Ident × Bool × Option
   return (t.span.to (← lastSpan), segs, false, some paths)
 
 
-/-- Whether the next tokens are a record's type parameters: `(`, up to the
-matching `)`, followed by `{`, which a newtype's types are not. -/
+/-- Whether the next tokens are an enumeration's or a record's type
+parameters written in parentheses, as they were before they were written
+in angle brackets: `(`, up to the matching `)`, followed by `{`, which a
+newtype's types are not. -/
 def generic : P Bool := do
   let s ← get
   unless (s.toks[s.pos]?).any (isKw · "(") do return false
@@ -1226,14 +1280,33 @@ def generic : P Bool := do
     i := i + 1
   return false
 
-/-- The type parameters of an enumeration or record, `(A, B)`, if any. -/
-def typeParams : P (Array Ident) := do
-  unless isKw (← peek) "(" do return #[]
+/-- Reports the type parameters of the declaration of `name`, written in
+parentheses, `(A, B)`, from `openSpan` to `close`, as they were before
+they were written in angle brackets (`F0156`). -/
+def parenParams (name : Ident) (openSpan close : Span) : P α := do
+  let span := name.span.to close
+  throw { span, msg := Fren.Core.parenTypeParamsMsg (← angleSource span.start span.stop #[openSpan.start, close.start]) }
+
+/-- The type parameters of an enumeration or record named `name`, `<A, B>`,
+if any. -/
+def typeParams (name : Ident) : P (Array Ident) := do
+  let (b, adjacent) ← bracketAfter
+  match Fren.Core.afterName b adjacent with
+  | .ends => return #[]
+  | .spaced => spacedAngle name.name s!"the type parameters of `{name.name}`"
+  | .parenthesized =>
+    -- A newtype's types, unless a `{` follows them.
+    unless ← generic do return #[]
+    let o ← bump
+    discard ident
+    while (← eatKw ",").isSome do discard ident
+    parenParams name o.span (← expectKw ")").span
+  | .opens => pure ()
   markCall
   discard bump
   let mut ps := #[← ident]
   while (← eatKw ",").isSome do ps := ps.push (← ident)
-  discard (expectKw ")")
+  discard closeAngle
   return ps
 
 /-- `{ x := e, y, ... }`: the bindings of an instance or a refinement. -/
@@ -1444,8 +1517,7 @@ partial def item : P Item := do
   if isKw t "enum" then
     discard bump
     let name ← ident
-    noSpaceBeforeParen name.name s!"the type parameters of `{name.name}`"
-    let params ← typeParams
+    let params ← typeParams name
     markList
     discard (expectKw "{")
     let variant : P (Ident × Option (Array (Array Ident))) := do
@@ -1468,14 +1540,8 @@ partial def item : P Item := do
   if isKw t "struct" then
     discard bump
     let name ← ident
-    -- Type parameters are followed by the fields' `{`; a newtype's types
-    -- are not.
-    let params ← if ← generic then do
-        noSpaceBeforeParen name.name s!"the type parameters of `{name.name}`"
-        typeParams
-      else do
-        noSpaceBeforeParen name.name s!"the types of `{name.name}`"
-        pure #[]
+    let params ← typeParams name
+    if params.isEmpty then noSpaceBeforeParen name.name s!"the types of `{name.name}`"
     if params.isEmpty && isKw (← peek) "(" then
       -- A newtype: its types, in parentheses.
       markCall
@@ -1506,9 +1572,26 @@ partial def item : P Item := do
   if isKw t "fn" then
     discard bump
     let name ← ident
+    -- Its type parameters, `<A, B>`, if any (`Reqs/Lang/GenericFunctions`).
+    let mut typeParams := #[]
+    let (b, adjacent) ← bracketAfter
+    match Fren.Core.afterName b adjacent with
+    | .spaced => spacedAngle name.name s!"the type parameters of `{name.name}`"
+    | .opens =>
+      markCall
+      discard bump
+      let mut ps := #[← typeExpr]
+      while (← eatKw ",").isSome do ps := ps.push (← typeExpr)
+      discard closeAngle
+      for p in ps do
+        if p.size != 1 || p[0]!.name.any fun c => !(c.isAlphanum || c == '_' || c == '?' || c == '!') then
+          err p[0]!.span "F0152" "a type parameter is a name" (some "not a name")
+            #["note: a generic function's type parameters are names, written in angle brackets before its parameters, as in `fn f<T>(x: T): T`"]
+        typeParams := typeParams.push p[0]!
+    | _ => pure ()
     noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
     markCall
-    discard (expectKw "(")
+    let firstOpen ← expectKw "("
     let param : P (Array Ident × Option (Array Ident)) := do
       let p ← typeExpr
       return (p, ← type?)
@@ -1517,20 +1600,14 @@ partial def item : P Item := do
       while (← eatKw ",").isSome do params := params.push (← param)
       discard (expectKw ")")
       return params
-    let mut params ← group
-    -- A second `(` right after the first group: that group was the type
-    -- parameters (`Reqs/Lang/GenericFunctions`), each a name.
-    let mut typeParams := #[]
-    if isKw (← peek) "(" then
-      for (p, ty?) in params do
-        if p.size != 1 || ty?.isSome || p[0]!.name.any fun c => !(c.isAlphanum || c == '_' || c == '?' || c == '!') then
-          err p[0]!.span "F0152" "a type parameter is a name" (some "not a name")
-            #["note: a generic function's type parameters are names, written in parentheses before its parameters, as in `fn f(T)(x: T): T`"]
-        typeParams := typeParams.push p[0]!
-      noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
-      markCall
-      discard (expectKw "(")
-      params ← group
+    let params ← group
+    -- A second `(` right after the first group, each of whose parameters
+    -- is a name: that group is type parameters, written in parentheses as
+    -- they were before they were written in angle brackets.
+    let s ← get
+    if typeParams.isEmpty && (s.toks[s.pos]?).any (isKw · "(") && (s.toks[s.pos - 1]?).any (·.span.stop == s.toks[s.pos]!.span.start)
+        && params.all fun (p, ty?) => p.size == 1 && ty?.isNone then
+      parenParams name firstOpen.span (← lastSpan)
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
     let body ← if (← eatKw ":=").isSome then some <$> top else pure none
     -- Its contract (`Reqs/Lang/Items#contracts`), each clause continuing it.
@@ -1604,15 +1681,15 @@ def file : P (Array Item) := do
 
 end Parser
 
-def parse (toks : Array Token) : Except ParseError (Array Item) :=
-  (Parser.file).run' { toks }
+def parse (toks : Array Token) (src : Array Char) : Except ParseError (Array Item) :=
+  (Parser.file).run' { toks, src }
 
 /-- The items of a file, with where each starts in the source. -/
-def parseItems (toks : Array Token) : Except ParseError (Array Item × Array Nat) :=
-  (fun (items, s) => (items, s.itemStarts)) <$> (Parser.file).run { toks }
+def parseItems (toks : Array Token) (src : Array Char) : Except ParseError (Array Item × Array Nat) :=
+  (fun (items, s) => (items, s.itemStarts)) <$> (Parser.file).run { toks, src }
 
 /-- The layout of a file that parses. -/
-def parseLayout (toks : Array Token) : Except ParseError Layout :=
-  (·.2.layout) <$> (Parser.file).run { toks }
+def parseLayout (toks : Array Token) (src : Array Char) : Except ParseError Layout :=
+  (·.2.layout) <$> (Parser.file).run { toks, src }
 
 end FrenCli

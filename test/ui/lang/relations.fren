@@ -16,9 +16,9 @@ enum User { Ann, Bob, Cy }
 
 comp grant {
     in user: User
-    in roles: Rel(User, Role)        -- who holds which role
-    in delegates: Rel(User, User)    -- (a, b): a acts for b
-    in requested: Set(Role)
+    in roles: Rel<User, Role>        -- who holds which role
+    in delegates: Rel<User, User>    -- (a, b): a acts for b
+    in requested: Set<Role>
     in b: User
     in c: User
 
@@ -37,8 +37,8 @@ comp grant {
 -- Without the closure, acting for someone who acts for an admin is not enough.
 comp direct {
     in user: User
-    in roles: Rel(User, Role)
-    in delegates: Rel(User, User)
+    in roles: Rel<User, Role>
+    in delegates: Rel<User, User>
     in b: User
     in c: User
     pub out admin?
@@ -50,7 +50,7 @@ comp direct {
 }
 
 comp shapes {
-    in r: Rel(User, Role)
+    in r: Rel<User, Role>
     in u: User
     pub out held?
 
@@ -65,7 +65,7 @@ comp shapes {
 -- the decidable core, in higher-order logic in both front ends.
 set_option fren.lint.undecidable "allow" in
 comp ids {
-    in r: Rel(Int, Int)
+    in r: Rel<Int, Int>
 
     assume one: (1, 2) in r
     pub out p?

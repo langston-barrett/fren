@@ -88,9 +88,9 @@ bound twice, so repeats are counted:
 pub type VarName
 
 pub comp bindings {
-    in inputs: Set(VarName)          -- the instantiated component's inputs
-    in outputs: Set(VarName)         -- its other variables: its outputs
-    in bound: Set(VarName)           -- the names the instance binds
+    in inputs: Set<VarName>          -- the instantiated component's inputs
+    in outputs: Set<VarName>         -- its other variables: its outputs
+    in bound: Set<VarName>           -- the names the instance binds
     in n_repeated: Nat               -- bindings of a name bound earlier in the instance
 
     assume disjoint: (inputs inter outputs) = {}
@@ -145,7 +145,7 @@ component's instances, in order, which `inst::earlier` states:
 pub type InstName
 
 pub comp earlier {
-    in order: Seq(InstName)      -- the component's instances, in declaration order
+    in order: Seq<InstName>      -- the component's instances, in declaration order
     in owner: InstName           -- the instance whose variable is mentioned
     in binder: InstName          -- the instance whose binding mentions it
     in k_owner: Nat              -- the position of `owner` in `order`

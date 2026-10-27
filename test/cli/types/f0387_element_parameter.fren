@@ -1,2 +1,2 @@
 -- A type parameter as an element type.
-enum Bag(T) { Empty, Many(Set(T)) }
+enum Bag<T> { Empty, Many(Set<T>) }

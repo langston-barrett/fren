@@ -158,12 +158,12 @@ the comma of a list in braces, so only the sequence keeps it here:
 set_option fren.lint.unnecessary_trailing_comma "allow" in
 pub comp trailing_comma_written {
     in x: Int
-    pub det out q: Seq(Int) := [x, 1,]
+    pub det out q: Seq<Int> := [x, 1,]
 }
 
 pub comp trailing_comma_fixed {
     in x: Int
-    pub det out q: Seq(Int) := [x, 1]
+    pub det out q: Seq<Int> := [x, 1]
 }
 
 refine trailing_comma_sound: trailing_comma_fixed refines trailing_comma_written

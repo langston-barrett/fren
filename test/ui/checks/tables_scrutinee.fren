@@ -76,7 +76,7 @@ comp hypotheses {
 -- Two arms overlap only where their guards' indexes are in range: the
 -- first guard rules out the empty sequence, which the second reads.
 comp defined {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in m: Mode
     pub out s: Int
 
@@ -90,7 +90,7 @@ comp defined {
 -- The order of the arms still matters to the definedness of their guards'
 -- indexes: `q[0]` is defined after `q = []` fails, but not before it.
 comp order_defined {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in m: Mode
     pub out s: Int
 
@@ -98,7 +98,7 @@ comp order_defined {
 }
 
 comp order_undefined {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in m: Mode
     pub out s: Int
 

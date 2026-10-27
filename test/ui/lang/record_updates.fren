@@ -2,7 +2,7 @@
 
 pub struct Point { x: Int, y: Int }
 
-pub struct State { count: Int, on?, tags: Set(Bool) }
+pub struct State { count: Int, on?, tags: Set<Bool> }
 
 comp moves {
     in p: Point
@@ -70,7 +70,7 @@ comp through_function {
 
 -- An index in an updated value that is bound once.
 comp guarded_base {
-    in ps: Seq(Point)
+    in ps: Seq<Point>
     pub det out a: Point
     pub det out b: Point
 
@@ -92,8 +92,8 @@ comp atoms {
 
 -- An index within an update is guarded as anywhere else.
 comp guarded {
-    in q: Seq(Int)
-    in ps: Seq(Point)
+    in q: Seq<Int>
+    in ps: Seq<Point>
     in p: Point
     pub det out a: Point
     pub det out b: Point

@@ -13,7 +13,7 @@ set_option fren.lint.undecidable "allow" in
 comp sized {
     in b: Byte
     in p: Packet
-    in s: Set(Byte)
+    in s: Set<Byte>
     in n: Int
     pub out y: Byte
 

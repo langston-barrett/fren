@@ -4,7 +4,7 @@
 -- mutant means what the spec means: it is equivalent, and not reported.
 comp c {
     in x: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out ok?
 
     ensure r: ok? iff (x > 0 and (q = [] or q[0] < q[0] + 1))

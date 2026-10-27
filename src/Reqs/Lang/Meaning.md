@@ -165,15 +165,15 @@ language's.
 pub type Env
 
 pub fn lookup(Env, Id): Value
-pub fn meaning(Env, Id, Seq(Value)): Value
-pub fn unspecified(Env, Head, Seq(Value)): Value
+pub fn meaning(Env, Id, Seq<Value>): Value
+pub fn unspecified(Env, Head, Seq<Value>): Value
 
-pub fn fixed_value(Head, Seq(Value)): Value
-pub fn fixed_specified?(Head, Seq(Value))
+pub fn fixed_value(Head, Seq<Value>): Value
+pub fn fixed_specified?(Head, Seq<Value>)
 
 -- The value of the variant, record or newtype `c` built from its parts'
 -- values: `C(c, l)`, with `l` the list of them.
-pub fn construct(Id, Seq(Value)): Value
+pub fn construct(Id, Seq<Value>): Value
 ```
 
 ## Guards
@@ -236,7 +236,7 @@ and so on.
 
 ```fren
 -- The value of the part at position `k`, and `Nil` where there is none.
-pub fn part(values: Seq(Value), k: Int): Value := if 0 <= k < values.len then values[k] else Value::Nil
+pub fn part(values: Seq<Value>, k: Int): Value := if 0 <= k < values.len then values[k] else Value::Nil
 
 -- The operator of a layer, and `""` for a layer that is not an operator.
 pub fn operator(head: Head): Id := match head {
@@ -258,7 +258,7 @@ pub fn second_guard(o: Id): GuardedOperand := if o = "or" then GuardedOperand::O
     else GuardedOperand::AndRight
 
 -- The value of the connective `o` at its parts' values.
-pub fn connective_value(o: Id, values: Seq(Value)): Value := let c? := part(values, 0) = Value::B(true),
+pub fn connective_value(o: Id, values: Seq<Value>): Value := let c? := part(values, 0) = Value::B(true),
     second := part(values, 1)
     in if o = "and" then (if c? then second else Value::B(false))
     else if o = "or" then (if c? then Value::B(true) else second)
@@ -310,11 +310,11 @@ pub fn guard_at(i: Int): Int := 1 + 2 * i
 
 -- Arm `i`'s guard's and body's values, and whether it exists, for the
 -- arms that the model states.
-pub fn arm_guard(values: Seq(Value), i: Int): Value := part(values, guard_at(i))
+pub fn arm_guard(values: Seq<Value>, i: Int): Value := part(values, guard_at(i))
 
-pub fn arm_body(values: Seq(Value), i: Int): Value := part(values, guard_at(i) + 1)
+pub fn arm_body(values: Seq<Value>, i: Int): Value := part(values, guard_at(i) + 1)
 
-pub fn arm_present?(values: Seq(Value), i: Int) := guard_at(i) + 1 < values.len
+pub fn arm_present?(values: Seq<Value>, i: Int) := guard_at(i) + 1 < values.len
 
 -- The arms that the model states, and the positions of their parts.
 pub type ArmIndex := Int is 0..=2
@@ -325,24 +325,24 @@ pub fn arm_matches?(Head, Int, Value)
 
 -- Arm `i` exists and is open: its pattern matches the scrutinee's value,
 -- as `matched?` says.
-pub fn arm_open?(head: Head, values: Seq(Value), i: Int, matched?) := choice?(operator(head)) and arm_present?(values, i)
+pub fn arm_open?(head: Head, values: Seq<Value>, i: Int, matched?) := choice?(operator(head)) and arm_present?(values, i)
     and (operator(head) = "table" or matched?)
 
 -- Arm `i` fires, from whether each of the first three arms is open: it is
 -- open, its guard holds, and no earlier arm fires.
-pub fn fires_at?(values: Seq(Value), open0?, open1?, open2?, i: Int) := let holds0? := open0? and arm_guard(values, 0) = Value::B(true),
+pub fn fires_at?(values: Seq<Value>, open0?, open1?, open2?, i: Int) := let holds0? := open0? and arm_guard(values, 0) = Value::B(true),
     holds1? := open1? and arm_guard(values, 1) = Value::B(true),
     holds2? := open2? and arm_guard(values, 2) = Value::B(true)
     in if i = 0 then holds0? else if i = 1 then not holds0? and holds1? else not holds0? and not holds1? and holds2?
 
 -- The choice has an arm after the third, and the positions of the guards
 -- and bodies of those arms that it does not evaluate.
-pub fn more_arms?(head: Head, values: Seq(Value)) := choice?(operator(head)) and values.len > 7
+pub fn more_arms?(head: Head, values: Seq<Value>) := choice?(operator(head)) and values.len > 7
 
-pub fn later_unevaluated(Head, Seq(Value)): Set(Int)
+pub fn later_unevaluated(Head, Seq<Value>): Set<Int>
 
 -- The positions of arm `i`'s guard and body that are not evaluated.
-pub fn unevaluated_arm(i: Int, guard?, body?): Set(Int) :=
+pub fn unevaluated_arm(i: Int, guard?, body?): Set<Int> :=
     (if guard? then {} else {guard_at(i)}) union (if body? then {} else {guard_at(i) + 1})
 ```
 
@@ -363,7 +363,7 @@ defined function applies no uninterpreted function (see [Defined
 functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
-pub fn step(head: Head, env: Env, values: Seq(Value)): Value
+pub fn step(head: Head, env: Env, values: Seq<Value>): Value
     ensure layer: step(head, env, values) = match head {
     Head::Literal(v) => v,
     Head::Bound(v) => v,
@@ -395,7 +395,7 @@ constant nothing, and every other layer what its parts mention, since its
 meaning is fixed:
 
 ```fren
-pub fn mentioned_by(head: Head, parts_mentioned: Set(Mention)): Set(Mention) := match head {
+pub fn mentioned_by(head: Head, parts_mentioned: Set<Mention>): Set<Mention> := match head {
     Head::Literal(_) | Head::Bound(_) | Head::Constant(_) => {},
     Head::Variable(x) => {Mention::Var(x)},
     Head::Uninterpreted(f) => parts_mentioned union {Mention::Fn(f)},
@@ -410,7 +410,7 @@ and which of their guards and bodies are evaluated, with an instance of
 ```fren
 pub comp choice_arms {
     in head: Head
-    in values: Seq(Value)      -- the choice's parts' values
+    in values: Seq<Value>      -- the choice's parts' values
 
     pub det out open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0)))
     pub det out open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0)))
@@ -422,10 +422,10 @@ pub comp choice_arms {
     pub det out specified? := fired0? or fired1? or fired2? or (more_arms?(head, values) and fixed_specified?(head, values))
     -- The first three arms' guards and bodies that are not evaluated, and
     -- those of every arm.
-    pub det out stated: Set(Int) := unevaluated_arm(0, guard0.evaluated?, body0.evaluated?)
+    pub det out stated: Set<Int> := unevaluated_arm(0, guard0.evaluated?, body0.evaluated?)
         union unevaluated_arm(1, guard1.evaluated?, body1.evaluated?)
         union unevaluated_arm(2, guard2.evaluated?, body2.evaluated?)
-    pub det out unevaluated: Set(Int) := stated
+    pub det out unevaluated: Set<Int> := stated
         union (if more_arms?(head, values) then later_unevaluated(head, values) minus {0, 1, 2, 3, 4, 5, 6} else {})
 
     inst guard0: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open0?) }
@@ -471,14 +471,14 @@ pub comp node {
     use self::Head::{Bound, Constant, Construction, Definition, Literal, Op, Uninterpreted, Variable}
     in head: Head
     in env: Env
-    in values: Seq(Value)              -- its parts' values, in order
-    in parts_mentioned: Set(Mention)  -- what its parts mention, together
-    in undefined_parts: Set(Int)     -- the positions of its parts that are not defined
+    in values: Seq<Value>              -- its parts' values, in order
+    in parts_mentioned: Set<Mention>  -- what its parts mention, together
+    in undefined_parts: Set<Int>     -- the positions of its parts that are not defined
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
     pub det out value: Value := step(head, env, values)
-    pub det out mentioned: Set(Mention) := mentioned_by(head, parts_mentioned)
+    pub det out mentioned: Set<Mention> := mentioned_by(head, parts_mentioned)
     pub det out mentions? := mentioned != {}
     pub det out read: Value := match head {
         Variable(x) => lookup(env, x),
@@ -490,7 +490,7 @@ pub comp node {
         Op(o, _) => if choice?(o) then arms.specified? else total?(o) or fixed_specified?(head, values),
         _ => fixed_specified?(head, values),
     }
-    pub det out unevaluated: Set(Int) := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
+    pub det out unevaluated: Set<Int> := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
         union (if operator(head) = "if" and not third.evaluated? then {2} else {})
         union (if choice?(operator(head)) then arms.unevaluated else {})
     pub det out defined? := specified? and undefined_parts subset unevaluated

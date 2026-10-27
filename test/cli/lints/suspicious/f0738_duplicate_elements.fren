@@ -1,2 +1,2 @@
 -- `duplicate_elements`, which removes each repeat.
-comp c { in t: Set(Int) pub out p? ensure r: p? iff t = {1, 2, 1} }
+comp c { in t: Set<Int> pub out p? ensure r: p? iff t = {1, 2, 1} }

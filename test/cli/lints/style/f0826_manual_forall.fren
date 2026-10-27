@@ -1,4 +1,4 @@
 -- A conjunction of one expression at each variant.
 enum Mode { Heat, Cool, Off }
 
-comp c { in s: Set(Mode) pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
+comp c { in s: Set<Mode> pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }

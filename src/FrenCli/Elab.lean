@@ -64,24 +64,24 @@ partial def _root_.Fren.Core.Ty.sort : Ty → String
 parameter by its whole path, so that two functions' are told apart: the key
 of an instance of a generic function. -/
 partial def tyKey : Ty → String
-  | .set t => s!"Set({tyKey t})"
-  | .rel a b => s!"Rel({tyKey a}, {tyKey b})"
-  | .seq t => s!"Seq({tyKey t})"
+  | .set t => s!"Set<{tyKey t}>"
+  | .rel a b => s!"Rel<{tyKey a}, {tyKey b}>"
+  | .seq t => s!"Seq<{tyKey t}>"
   | .enum p [] | .record p [] => showPath p
-  | .enum p as | .record p as => s!"{showPath p}({", ".intercalate (as.map tyKey)})"
+  | .enum p as | .record p as => s!"{showPath p}<{", ".intercalate (as.map tyKey)}>"
   | .abstract p => showPath p
   | t => t.show
 
 /-- The name under which `State.defs` holds the instance of the generic
 function at `path` with the type arguments `args`: not a path, whose
-segments have no `(`. -/
+segments have no `<`. -/
 def instName (path : Name) (args : Array Ty) : Name :=
-  Name.mkStr path s!"({", ".intercalate (args.toList.map tyKey)})"
+  Name.mkStr path s!"<{", ".intercalate (args.toList.map tyKey)}>"
 
 /-- The SMT-LIB symbol of that instance, as its type arguments print, such
-as `|::unwrap_or(Int)|` (`Reqs/Lang/GenericFunctions#meaning`). -/
+as `|::unwrap_or<Int>|` (`Reqs/Lang/GenericFunctions#meaning`). -/
 def instSym (path : Name) (args : Array Ty) : String :=
-  quote s!"::{showPath path}({", ".intercalate (args.toList.map tyKey)})"
+  quote s!"::{showPath path}<{", ".intercalate (args.toList.map tyKey)}>"
 
 /-- `smt` with each quoted symbol that `repl` maps replaced, but within
 string literals. -/
@@ -2699,16 +2699,16 @@ def factOf (t : Fren.Core.PTy) (x : String) : M (Option String) := do
   return (t.cons s.shapeOf).map (consSmt s.dataOf? · x)
 
 /-- The span of the type written `segs`, as `typeSpan` gives it, with the
-`)` of each `Set(`, `Seq(` and `Rel(` within it that it leaves out. -/
+`>` of each `Set<`, `Seq<` and `Rel<` within it that it leaves out. -/
 def writtenTypeSpan (segs : Array Ident) : M Span := do
   let src := (← get).src
   let sp := typeSpan segs
   let mut depth : Int := 0
   for c in src.extract sp.start sp.stop do
-    if c == '(' then depth := depth + 1 else if c == ')' then depth := depth - 1
+    if c == '<' then depth := depth + 1 else if c == '>' then depth := depth - 1
   let mut stop := sp.stop
   while depth > 0 && stop < src.size do
-    if src[stop]! == ')' then depth := depth - 1
+    if src[stop]! == '>' then depth := depth - 1
     stop := stop + 1
   return { sp with stop }
 
@@ -2758,7 +2758,7 @@ partial def elabPTy (segs : Array Ident) : M Fren.Core.PTy := do
 
 /-- The declared type `segs`, which has no pattern of its own: a type
 parameter, within the declaration of a generic type, or an instance of one,
-`G(A, B)` (`Reqs/Lang/Generics#type-arguments`), whose type arguments are
+`G<A, B>` (`Reqs/Lang/Generics#type-arguments`), whose type arguments are
 declared types, with their patterns. -/
 partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
   let span := segs[0]!.span.to segs.back!.span
@@ -2837,9 +2837,9 @@ partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
           let text (xs : Array Ident) (stop : Nat) :=
             (String.ofList (s.src.extract (typeSpan xs).start stop).toList).trimAscii.toString
           let sep := segs[a.size + 1]!.span
-          -- To the `)` after `B`.
+          -- To the `>` after `B`.
           let mut stop := (typeSpan b).stop
-          while stop < s.src.size && s.src[stop]! != ')' do stop := stop + 1
+          while stop < s.src.size && s.src[stop]! != '>' do stop := stop + 1
           lint .zeroSizedMapValues { start := segs[0]!.span.start, stop := stop + 1 }
             (Fren.Core.zeroSizedMapValuesMsg (text a sep.start) (text b (typeSpan b).stop) d.ctors[0]!.1.toString)
     return { ty := .rel ta tb, elems := #[pa, pb] }
@@ -3678,7 +3678,7 @@ partial def elabInExpr (cx : ExprCtx) (e : Expr) (span : Span) (a : Expr) (b : E
     checkCore cx span .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := b matches .seq ..)
     return (s!"(seq.contains {y} (seq.unit {x}))", .bool)
   unless ty == .set tx do
-    err span { code? := some "F0325", headline := s!"`in` needs a `Set({tx.show})` on its right, found `{ty.show}`"
+    err span { code? := some "F0325", headline := s!"`in` needs a `Set<{tx.show}>` on its right, found `{ty.show}`"
                label? := some s!"`{tx.show}` and `{ty.show}`"
                notes := #["note: `x in s` is membership: `s` is a set of values of `x`'s type"] }
   return (s!"(set.member (tuple {x}) {y})", .bool)

@@ -32,12 +32,12 @@ comp nats {
 
 -- A precondition is asked where the application is, for every value of the
 -- bound name where its guard holds.
-fn nth(q: Seq(Int), i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 set_option fren.lint.undecidable "allow" in
 comp preconditions {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out pos?
 
     ensure r: pos? iff (forall (i: Int), when 0 <= i < q.len, nth(q, i) > 0)

@@ -1,7 +1,7 @@
 /-!
 # Finite sets
 
-`Fren.FinSet α`, the Lean type of Fren's `Set(T)` (`Reqs/Generated`): a list
+`Fren.FinSet α`, the Lean type of Fren's `Set<T>` (`Reqs/Generated`): a list
 up to having the same members. It needs no instance on `α` to exist, so an
 abstract type's interpretation, which need only be inhabited, can be the
 element type. Intersection, difference, `card` and decidable membership
@@ -163,7 +163,7 @@ instance [DecidableEq α] (s t : FinSet α) : Decidable (s ⊆ t) :=
 
 /-! ## Relations
 
-A relation `Rel(A, B)` is a `FinSet (A × B)`. -/
+A relation `Rel<A, B>` is a `FinSet (A × B)`. -/
 
 section Relations
 

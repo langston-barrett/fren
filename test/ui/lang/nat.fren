@@ -54,7 +54,7 @@ comp user {
 fn half(Int): Int
 
 comp widened {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in k: Nat
 
     assume in_range: k < q.len
@@ -156,7 +156,7 @@ comp divided {
 -- A chained comparison widens a `Nat`.
 comp chained_nat {
     in n: Nat
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out inside?
 
     ensure r: inside? iff 0 <= n < q.len
@@ -167,9 +167,9 @@ comp chained_nat {
 -- `{}` takes its type from the other branch, as without `Nat`s.
 comp empty_branch {
     in c?
-    in s: Set(Int)
+    in s: Set<Int>
     in n: Nat
-    pub out t: Set(Int) := if c? then {} else s
+    pub out t: Set<Int> := if c? then {} else s
 
     expect member: when not c? and n in s, n in t
 }

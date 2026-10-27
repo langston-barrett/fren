@@ -111,8 +111,8 @@ this:
 pub type ItemName
 
 pub comp interpreted {
-    in used: Set(ItemName)           -- abstract types and functions the component uses
-    in interpreted: Set(ItemName)    -- those interpreted earlier, in the file and its imports
+    in used: Set<ItemName>           -- abstract types and functions the component uses
+    in interpreted: Set<ItemName>    -- those interpreted earlier, in the file and its imports
     pub det out accepted?
 
     ensure rule: accepted? iff used subset interpreted
@@ -252,8 +252,8 @@ proves with the real decision. It refines
 use check::{Argument, Point, Value}
 
 pub comp interpretation_at {
-    in pres: Set(Argument)   -- the arguments that meet the preconditions
-    in posts: Set(Point)     -- the arguments and values that meet the postconditions
+    in pres: Set<Argument>   -- the arguments that meet the preconditions
+    in posts: Set<Point>     -- the arguments and values that meet the postconditions
     in at_a0: Value          -- the interpretation's value at `A0`
     in at_a1: Value          -- at `A1`
     pub det out recorded?

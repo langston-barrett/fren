@@ -291,7 +291,75 @@ def typeArgsMsg (ty : String) (params : Array Name) (n : Nat) : Msg :=
     label? := some (if n == 0 then "no type arguments" else args n)
     notes := if k == 0 then #[s!"note: `{ty}` is not generic"] else
       #[s!"note: `{ty}` is generic, with the type {if k == 1 then "parameter" else "parameters"} {", ".intercalate (params.toList.map fun p => s!"`{p}`")}",
-        s!"help: write it with {if k == 1 then "its argument" else "one argument for each"}, as in `{ty}({", ".intercalate (List.replicate k "Int")})`"] }
+        s!"help: write it with {if k == 1 then "its argument" else "one argument for each"}, as in `{ty}<{", ".intercalate (List.replicate k "Int")}>`"] }
+
+/-! ## Angle brackets (`Reqs/Lang/Generics#angle-brackets`) -/
+
+/-- The bracket after a type's name, or after the name of a generic
+declaration, as the parser reads it (`lang::Bracket`). -/
+inductive Bracket where
+  | angle
+  | paren
+  | other
+  deriving BEq, DecidableEq, Repr
+
+/-- What the bracket after a type's name, or after a declaration's name,
+does (`lang::AfterName`). -/
+inductive AfterName where
+  /-- Opens its type arguments or type parameters. -/
+  | opens
+  /-- Is a `(` that would have opened them before they were written in
+  angle brackets (`F0155`, `F0156`). -/
+  | parenthesized
+  /-- Is a `<` after a space (`F0144`). -/
+  | spaced
+  /-- Is not the type's: the type, or the name, ends before it. -/
+  | ends
+  deriving BEq, DecidableEq, Repr
+
+/-- The bracket that the punctuator `p` is. -/
+def Bracket.of (p : String) : Bracket :=
+  if p == "<" then .angle else if p == "(" then .paren else .other
+
+/-- What the bracket `b` after a type's name does, if it follows the name
+directly (`adjacent`) or after a space, a line break or a comment
+(`lang::type_bracket`). -/
+def afterName (b : Bracket) (adjacent : Bool) : AfterName :=
+  match b with
+  | .angle => if adjacent then .opens else .spaced
+  | .paren => if adjacent then .parenthesized else .ends
+  | .other => .ends
+
+/-- A character of a type or a declaration written with parentheses, as
+both front ends write it in the suggestion that replaces it
+(`lang::angle_char`): a parenthesis that opened or closed type arguments or
+type parameters (`swapped`) is an angle bracket, and any other character,
+comments' and string literals' included, is copied. -/
+def angleChar (ch : String) (swapped : Bool) : String :=
+  if swapped && ch == "(" then "<" else if swapped && ch == ")" then ">" else ch
+
+/-- The text of a type or a declaration, from its source's characters, each
+with whether it is one of the parentheses to write as an angle bracket. -/
+def angleText (chars : Array (Char × Bool)) : String :=
+  chars.foldl (fun out (c, b) => out ++ angleChar (String.singleton c) b) ""
+
+/-- A type written with its type arguments in parentheses, as `Option(Int)`
+was before they were written in angle brackets: `written` is the type
+with each of its type arguments' parentheses made `<` and `>`. -/
+def parenTypeArgsMsg (written : String) : Msg :=
+  { code? := some "F0155", headline := "type arguments are written in angle brackets"
+    label? := some "type arguments in parentheses"
+    notes := #["note: a type's arguments follow its name in `<` and `>`, as in `Set<Int>` and `Option<Int>`"]
+    fixes := #[{ msg := s!"write `{written}`", replacement := written }] }
+
+/-- A generic type's or function's type parameters, written in parentheses
+as `enum Option(T)` and `fn f(T)(x: T)` were: `written` is its name with
+them in angle brackets. -/
+def parenTypeParamsMsg (written : String) : Msg :=
+  { code? := some "F0156", headline := "type parameters are written in angle brackets"
+    label? := some "type parameters in parentheses"
+    notes := #["note: a generic type's or function's type parameters follow its name in `<` and `>`, as in `enum Option<T>` and `fn f<T>(x: T): T`"]
+    fixes := #[{ msg := s!"write `{written}`", replacement := written }] }
 
 /-- A construction, written `what`, of the generic type `ty`, whose type
 arguments cannot be inferred (`Reqs/Lang/Generics#type-arguments`). -/
@@ -329,7 +397,7 @@ def typeParamPlaceMsg (p : Name) (place : ParamPlace) (own : String) (generic : 
   if place == .element then
     { code? := some "F0387", headline := s!"type parameter `{p}` cannot be an element type, for now"
       label? := some "an element type"
-      notes := #["note: a type parameter is a payload's or field's type, or an argument of a generic type, as in `Option(T)`"] }
+      notes := #["note: a type parameter is a payload's or field's type, or an argument of a generic type, as in `Option<T>`"] }
   else
     { code? := some "F0387", headline := s!"a recursive payload must be `{own}`"
       label? := some s!"not `{own}`"
@@ -356,17 +424,17 @@ def dupTypeParamMsg (p : Name) : Msg :=
   { code? := some "F0213", headline := s!"type parameter `{p}` is defined multiple times", label? := some "defined again here" }
 
 /-- How a recursive payload of the generic enumeration `ty` with the type
-parameters `params` is written: `List(T)`. -/
+parameters `params` is written: `List<T>`. -/
 def ownWritten (ty : Name) (params : Array Name) : String :=
-  showPath ty ++ (if params.isEmpty then "" else "(" ++ ", ".intercalate (params.toList.map toString) ++ ")")
+  showPath ty ++ (if params.isEmpty then "" else "<" ++ ", ".intercalate (params.toList.map toString) ++ ">")
 
 /-! ## Types as segments
 
 A type, as both front ends see it for the checks of a declaration's own
 type: the segments of its paths, with markers that no identifier can be
-for the rest. `Set(T)` is `setSeg` and `T`'s segments, `Seq(T)` likewise,
-`Rel(A, B)` is `relSeg`, `A`'s, `relSep` and `B`'s, and an instance
-`G(A, B)` is `G`'s path, `argsOpen`, `A`'s, `argsSep`, `B`'s and
+for the rest. `Set<T>` is `setSeg` and `T`'s segments, `Seq<T>` likewise,
+`Rel<A, B>` is `relSeg`, `A`'s, `relSep` and `B`'s, and an instance
+`G<A, B>` is `G`'s path, `argsOpen`, `A`'s, `argsSep`, `B`'s and
 `argsClose`. -/
 
 def setSeg : String := "Set("

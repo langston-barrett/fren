@@ -1,0 +1,25 @@
+--- test/cli/fix/migrate_angle_brackets.fren
++++ test/cli/fix/migrate_angle_brackets.fren
+@@ -6,2 +6,2 @@
+-pub enum Option(T) { None, Some(T) }
+-pub struct Pair(A, B) { fst: A, snd: B }
++pub enum Option<T> { None, Some(T) }
++pub struct Pair<A, B> { fst: A, snd: B }
+@@ -9 +9 @@
+-fn size(T)(o: Option(T)): Int := if o = Option::None then 0 else 1
++fn size<T>(o: Option<T>): Int := if o = Option::None then 0 else 1
+@@ -12,5 +12,5 @@
+-    in x: Option(Set(Int))
+-    in p: Pair(Int, Option(Rel(Int, Bool)))
+-    in s: Option(String is "a\"b" | r#"c"d"#)
+-    in q: Seq(Option( -- a comment
+-        Int))
++    in x: Option<Set<Int>>
++    in p: Pair<Int, Option<Rel<Int, Bool>>>
++    in s: Option<String is "a\"b" | r#"c"d"#>
++    in q: Seq<Option< -- a comment
++        Int>>
+@@ -18 +18 @@
+-    ensure positive: (((y > 0)))
++    ensure positive: (y > 0)
+exit=1

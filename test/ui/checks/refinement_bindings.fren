@@ -54,8 +54,8 @@ comp first_of {
 }
 
 comp seqs {
-    in q: Seq(Int)
-    pub out s: Seq(Int) := q
+    in q: Seq<Int>
+    pub out s: Seq<Int> := q
 }
 
 refine guarded: seqs refines first_of { n := q.len, x := if q != [] then q[0] else 0, y := s[0] }

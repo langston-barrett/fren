@@ -66,17 +66,17 @@ equally tightly:
 | 5 | `not A` | negation | `Bool` | `Bool` | |
 | 6 | `A = B`, `A != B` | equality, disequality | any, both the same, or `Int` and `Nat` | `Bool` | none |
 | 6 | `A < B`, `A <= B`, `A > B`, `A >= B` | ordering | `Int` or `Nat`, or both of one other [ordered type](Types.md#ordered-types): `String`, or an enumeration, record or newtype declared [`ordered`](Items.md#ordered-declarations) | `Bool` | [chains](#chained-comparisons) |
-| 6 | `A in S` | membership | `T` and `Set(T)` or `Seq(T)`, or a pair `(a, b)` and `Rel(A, B)` | `Bool` | none |
-| 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set(T)`, or `Rel(A, B)` | `Bool` | none |
+| 6 | `A in S` | membership | `T` and `Set<T>` or `Seq<T>`, or a pair `(a, b)` and `Rel<A, B>` | `Bool` | none |
+| 6 | `S subset T` | `S` is a subset of `T`, not necessarily strict | `Set<T>`, or `Rel<A, B>` | `Bool` | none |
 | 6 | `A is P` | [pattern test](#pattern-tests): the pattern `P` matches `A` | an enumeration, `Bool`, `Int`, `Nat` or `String`, and a pattern | `Bool` | none |
 | 7 | `A + B` | addition | `Int` or `Nat`, or one newtype of `Int` or `Nat` | the newtype if both are one, `Nat` if both are, else `Int` | left |
 | 7 | `A - B` | subtraction | `Int` or `Nat`, or one newtype of `Int` | the newtype if both are one, else `Int` | left |
-| 7 | `A ++ B` | concatenation | `String`, or `Seq(T)` | the same | left |
-| 7 | `S union T`, `S minus T` | union, difference | `Set(T)`, or `Rel(A, B)` | the same | left |
+| 7 | `A ++ B` | concatenation | `String`, or `Seq<T>` | the same | left |
+| 7 | `S union T`, `S minus T` | union, difference | `Set<T>`, or `Rel<A, B>` | the same | left |
 | 8 | `A * B` | multiplication | `Int` or `Nat` | `Nat` if both are, else `Int` | left |
 | 8 | `A div K`, `A mod K` | [division and remainder](#division-and-remainder) by a constant | `Int` or `Nat` | `Nat` if `A` is one and `K` is positive, else `Int` | left |
-| 8 | `S inter T` | intersection | `Set(T)`, or `Rel(A, B)` | the same | left |
-| 8 | `R join Q` | composition | `Rel(A, B)` and `Rel(B, C)` | `Rel(A, C)` | left |
+| 8 | `S inter T` | intersection | `Set<T>`, or `Rel<A, B>` | the same | left |
+| 8 | `R join Q` | composition | `Rel<A, B>` and `Rel<B, C>` | `Rel<A, C>` | left |
 | 9 | `-A` | negation | `Int` or `Nat` | `Int` | |
 
 - In `when C, D` and `unless C, D`, `C` ends at the first top-level `,`, and
@@ -235,11 +235,11 @@ it, from the head and what the parts mention together:
 pub comp mentions {
     use self::Head::{Bound, Constant, Construction, Defined, Literal, Method, Uninterpreted, Variable}
     in head: Head
-    in parts_mentioned: Set(Mention)  -- what its parts mention, together
+    in parts_mentioned: Set<Mention>  -- what its parts mention, together
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out mentioned: Set(Mention) := mentioned_by(head, parts_mentioned)
+    pub det out mentioned: Set<Mention> := mentioned_by(head, parts_mentioned)
     pub det out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
 
     expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_, _), mentioned = parts_mentioned
@@ -282,8 +282,8 @@ with `rate` uninterpreted: its value is unknown even at a fixed argument.
 
 ```fren
 pub comp linear_product {
-    in a_mentioned: Set(Mention)  -- what the left operand mentions (`lang::mentions`)
-    in b_mentioned: Set(Mention)  -- what the right operand mentions
+    in a_mentioned: Set<Mention>  -- what the left operand mentions (`lang::mentions`)
+    in b_mentioned: Set<Mention>  -- what the right operand mentions
 
     pub det out accepted?
 
@@ -313,7 +313,7 @@ expect defined_scales: forall (m: node) (p: linear_product),
 The rule is what makes the product linear: of an accepted product, one
 operand is a *fixed factor*, with the same value in every environment
 where it is specified, and so where it is defined, by the [laws of a
-layer](MeaningLaws.md). Where it is not, as `get([1], 5)` with `fn get(q: Seq(Int), i: Int): Int := q[i]`,
+layer](MeaningLaws.md). Where it is not, as `get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`,
 a check reports why: the [definedness check](../Check.md#definedness)
 reports the index in `get`'s body, as the [precondition
 check](../Check.md#preconditions) reports an application outside a
@@ -506,8 +506,8 @@ of type `Nat` whose parameter is an `Int` counts as an `Int`:
 
 ```fren
 pub comp application {
-    in params: Seq(Ty)   -- the parameters' types
-    in args: Seq(Ty)     -- the arguments' types
+    in params: Seq<Ty>   -- the parameters' types
+    in args: Seq<Ty>     -- the arguments' types
     in k: Int            -- any position, for `typed`
 
     assume some_param: params != []
@@ -689,8 +689,8 @@ name given twice, so repeats are counted:
 pub type FieldName
 
 pub comp record_literal {
-    in fields: Set(FieldName)        -- the record's fields
-    in given: Set(FieldName)         -- the names the literal gives
+    in fields: Set<FieldName>        -- the record's fields
+    in given: Set<FieldName>         -- the names the literal gives
     in n_repeated: Nat               -- names given more than once, counting each repeat
     pub det out accepted?
 
@@ -743,8 +743,8 @@ gives, with repeats counted, as for `lang::record_literal`:
 ```fren
 pub comp record_update {
     in record?                       -- `r` has a record type
-    in fields: Set(FieldName)        -- the fields of its record
-    in given: Set(FieldName)         -- the names the update gives
+    in fields: Set<FieldName>        -- the fields of its record
+    in given: Set<FieldName>         -- the names the update gives
     in n_repeated: Nat               -- names given more than once, counting each repeat
 
     assume some_given: given != {}
@@ -787,7 +787,7 @@ budget - elapsed
 `Ms(e)` builds the value of the [newtype](Items.md#newtypes) `Ms` whose
 field is `e`, which must have `Ms`'s underlying type, or be a `Nat`
 where it is an `Int` (`F0304`). `e` is [checked](Types.md#checking-and-synthesis)
-against the underlying type, so with `struct Tags(Set(Int))`, `Tags({})`
+against the underlying type, so with `struct Tags(Set<Int>)`, `Tags({})`
 is the newtype's empty set. It is written as an application of one
 argument (`F0308`). A newtype is never built as a record literal, `Ms {
 ... }`, nor a record with named fields as a newtype, `Point(1, 2)`
@@ -1083,8 +1083,8 @@ pub enum ArmAt { NoMatch, GuardFails, Taken }
 set_option fren.lint.undecidable "allow" in
 pub comp guarded_match {
     use self::ArmAt::{GuardFails, NoMatch, Taken}
-    in arms: Seq(ArmAt)      -- what each arm does at the scrutinee's value, in order
-    in bodies: Seq(Int)      -- each arm's body's value there
+    in arms: Seq<ArmAt>      -- what each arm does at the scrutinee's value, in order
+    in bodies: Seq<Int>      -- each arm's body's value there
     in k: Int                -- any position, for `none_before`
 
     assume aligned: bodies.len = arms.len
@@ -1489,8 +1489,8 @@ set_option fren.lint.undecidable "allow" in
 pub comp table_arms {
     use self::Overlap::Overlapping
     use self::TableArm::{Guarded, Wildcard}
-    in arms: Seq(TableArm)       -- each arm, in order: `_` without a guard, or another, with a guard or without
-    in overlaps: Seq(Overlap)    -- whether each arm's pattern overlaps arm `j`'s
+    in arms: Seq<TableArm>       -- each arm, in order: `_` without a guard, or another, with a guard or without
+    in overlaps: Seq<Overlap>    -- whether each arm's pattern overlaps arm `j`'s
     in i: Int                    -- an arm before `j`
     in j: Int                    -- an arm
     in earlier_rejected?         -- the static rules reject a pair before `(i, j)`, in order
@@ -1538,9 +1538,9 @@ nothing of the value. The position of the arm that holds is found as in
 set_option fren.lint.undecidable "allow" in
 pub comp table_match {
     use self::ArmAt::Taken
-    in arms: Seq(ArmAt)      -- what each arm but `_` does at the scrutinee's value, in order
-    in values: Seq(Int)      -- each arm's body's value there
-    in otherwise: Seq(Int)   -- `[v]` where the table has a last arm `_ => e` and `e`'s value there is `v`, `[]` where it has none
+    in arms: Seq<ArmAt>      -- what each arm but `_` does at the scrutinee's value, in order
+    in values: Seq<Int>      -- each arm's body's value there
+    in otherwise: Seq<Int>   -- `[v]` where the table has a last arm `_ => e` and `e`'s value there is `v`, `[]` where it has none
     in k: Int                -- any position, for `only` and `none_holds`
 
     assume aligned: values.len = arms.len
@@ -1569,9 +1569,9 @@ the arms are disjoint, the first arm that holds is the one that does.
 set_option fren.lint.undecidable "allow" in
 pub comp table_eval {
     use self::ArmAt::Taken
-    in arms: Seq(ArmAt)      -- what each arm but `_` does at the scrutinee's value, in order
-    in values: Seq(Int)      -- each arm's body's value there
-    in otherwise: Seq(Int)   -- the value of the `_` arm's body there, `[]` without one
+    in arms: Seq<ArmAt>      -- what each arm but `_` does at the scrutinee's value, in order
+    in values: Seq<Int>      -- each arm's body's value there
+    in otherwise: Seq<Int>   -- the value of the `_` arm's body there, `[]` without one
 
     assume aligned: values.len = arms.len
     pub out first: Int := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
@@ -1667,16 +1667,16 @@ definedness check asks for an index's range only under its guard.
 
 ## Relations
 
-The relational operators, where `r` is a `Rel(A, B)`:
+The relational operators, where `r` is a `Rel<A, B>`:
 
 | Form | Meaning | Operands | Result |
 |---|---|---|---|
-| `r join q` | `(a, c)` for each `(a, b)` in `r` and `(b, c)` in `q` | `q: Rel(B, C)` | `Rel(A, C)` |
-| `r.inverse` | `(b, a)` for each `(a, b)` in `r` | | `Rel(B, A)` |
-| `r.closure` | the transitive closure: `(a, c)` if a chain of pairs of `r` leads from `a` to `c` | `A` and `B` the same | `Rel(A, A)` |
-| `r.image(s)` | `b` for each `(a, b)` in `r` with `a` in `s` | `s: Set(A)` | `Set(B)` |
-| `r.domain` | the first members of the pairs | | `Set(A)` |
-| `r.range` | the second members of the pairs | | `Set(B)` |
+| `r join q` | `(a, c)` for each `(a, b)` in `r` and `(b, c)` in `q` | `q: Rel<B, C>` | `Rel<A, C>` |
+| `r.inverse` | `(b, a)` for each `(a, b)` in `r` | | `Rel<B, A>` |
+| `r.closure` | the transitive closure: `(a, c)` if a chain of pairs of `r` leads from `a` to `c` | `A` and `B` the same | `Rel<A, A>` |
+| `r.image(s)` | `b` for each `(a, b)` in `r` with `a` in `s` | `s: Set<A>` | `Set<B>` |
+| `r.domain` | the first members of the pairs | | `Set<A>` |
+| `r.range` | the second members of the pairs | | `Set<B>` |
 | `r.card` | the number of pairs | | `Int` |
 
 The closure is not reflexive: `(a, a)` is in `r.closure` only if a chain
@@ -1889,7 +1889,7 @@ pub comp string_methods {
 }
 ```
 
-The methods of `Set(T)`:
+The methods of `Set<T>`:
 
 | Method | Meaning | Result |
 |---|---|---|
@@ -1898,23 +1898,23 @@ The methods of `Set(T)`:
 A relation has the method `card` and the [relational](#relations) methods
 `inverse`, `closure`, `image`, `domain` and `range`.
 
-The methods of `Seq(T)` are those of `String` but `matches?` and
+The methods of `Seq<T>` are those of `String` but `matches?` and
 `replace_all`, with the same meanings and values at the edges: an argument
-that is a `String` for a string is a `Seq(T)` here, `q.at(i)` is `[q[i]]`
+that is a `String` for a string is a `Seq<T>` here, `q.at(i)` is `[q[i]]`
 or `[]`, and `q.len` is the number of elements. Two more are a sequence's
 only:
 
 | Method | Meaning | Result |
 |---|---|---|
-| `q.update(i, x)` | `q` with `x` at position `i`; `q` itself unless `0 <= i < q.len` | `Seq(T)` |
-| `q.rev` | `q` reversed | `Seq(T)` |
+| `q.update(i, x)` | `q` with `x` at position `i`; `q` itself unless `0 <= i < q.len` | `Seq<T>` |
+| `q.rev` | `q` reversed | `Seq<T>` |
 
 Every method is total: its value at the edges, such as `"abc".at(5)`, is the
 one the solver's theory of strings gives it, so that Lean and the solver
 agree.
 
 `lang::collection_methods` states laws of the methods and operators of
-sequences, sets and relations: the methods of `Seq(T)` that it shares
+sequences, sets and relations: the methods of `Seq<T>` that it shares
 with `String`, with the same meanings, and those of its own; the set
 operators `union`, `inter`, `minus` and `subset`, and `card`; and the
 relational methods and `join`, which a relation over a finite type keeps
@@ -1933,14 +1933,14 @@ set_option fren.lint.manual_method "allow" in
 set_option fren.lint.redundant_method_chain "allow" in
 set_option fren.lint.redundant_slicing "allow" in
 pub comp collection_methods {
-    in p: Seq(Int)
-    in q: Seq(Int)
+    in p: Seq<Int>
+    in q: Seq<Int>
     in i: Int
     in n: Int
     in x: Int
-    in s: Set(Int)
-    in t: Set(Int)
-    in r: Rel(Bool, Bool)
+    in s: Set<Int>
+    in t: Set<Int>
+    in r: Rel<Bool, Bool>
 
     expect rev_twice: q.rev.rev = q
     expect rev_length: q.rev.len = q.len
@@ -2149,11 +2149,11 @@ pub fn plan_of(k: ValueType, wrapper?): Plan := match k {
 set_option fren.lint.undecidable "allow" in
 pub comp order_plan {
     in t: Ty
-    in ordered_items: Set(TypeName)   -- the enumerations, records and newtypes declared `ordered`
-    in fields: Seq(FieldName)         -- for a record: its fields, in the order declared
-    in field_types: Seq(Ty)           -- their types, in the same order
-    in compared: Seq(FieldName)       -- for a record: the fields that its plan compares, in order
-    in field_plans: Seq(Plan)         -- and the kind of each one's plan
+    in ordered_items: Set<TypeName>   -- the enumerations, records and newtypes declared `ordered`
+    in fields: Seq<FieldName>         -- for a record: its fields, in the order declared
+    in field_types: Seq<Ty>           -- their types, in the same order
+    in compared: Seq<FieldName>       -- for a record: the fields that its plan compares, in order
+    in field_plans: Seq<Plan>         -- and the kind of each one's plan
     in k: Int                         -- any position among the fields
 
     assume aligned: field_types.len = fields.len
@@ -2184,7 +2184,7 @@ pub enum Comparison { Less, Equal, Greater }
 set_option fren.lint.undecidable "allow" in
 pub comp lexicographic {
     use self::Comparison::Equal
-    in fields: Seq(Comparison)    -- how each field of one value compares with the other's, in order
+    in fields: Seq<Comparison>    -- how each field of one value compares with the other's, in order
     in k: Int                     -- any position among the fields
     pub out decider: Int          -- the first field that differs, `-1` if none does
     pub out result: Comparison    -- how the values compare
@@ -2256,7 +2256,7 @@ pub comp operator_type {
     in b: Ty
     in cond: Ty
     in inner_has?            -- for `+` or `-` of a newtype `a`: its underlying type is a newtype that has it itself
-    in ordered_items: Set(TypeName)  -- the enumerations, records and newtypes declared `ordered`
+    in ordered_items: Set<TypeName>  -- the enumerations, records and newtypes declared `ordered`
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b

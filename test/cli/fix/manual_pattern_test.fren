@@ -10,7 +10,7 @@ pub comp c {
     in s: Shade
     in x: Int
     in t: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     in p?
     pub out a? := x = 429 or 503 = x
     pub out b? := x = 429 or x is 500..=599

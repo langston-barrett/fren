@@ -85,7 +85,7 @@ pub comp eq_op_values {
     in op: InfixOp
     in x: Int
     in a?
-    in s: Set(Int)
+    in s: Set<Int>
 
     inst e: eq_op { op, left := Scoped { text := Operand::P, scope := {} }, right := Scoped { text := Operand::P, scope := {} } }
 
@@ -159,7 +159,7 @@ says, on a call with the repeated argument written once:
 pub enum Argument { Literal(Bool), Written(Operand) }
 
 pub comp eq_op_cardinality {
-    in earlier: Set(Operand)  -- the arguments before it that are not literals
+    in earlier: Set<Operand>  -- the arguments before it that are not literals
     in argument: Argument
     pub det out fires?
 
@@ -257,14 +257,14 @@ refine empty_membership_complete: empty_membership_written refines empty_members
 
 set_option fren.lint.erasing_op "allow" in
 pub comp empty_subset_written {
-    in s: Set(Int)
+    in s: Set<Int>
     pub det out v? := {} subset s
 }
 
 set_option fren.lint.unused_variables "allow" in
 set_option fren.lint.constant_output "allow" in
 pub comp empty_subset_value {
-    in s: Set(Int)
+    in s: Set<Int>
     pub det out v? := true
 }
 
@@ -333,7 +333,7 @@ of those names, rather than compare what they mention:
 
 ```fren
 pub comp same_branches {
-    in binders: Set(lang::Id)  -- the binders of the condition's pattern tests
+    in binders: Set<lang::Id>  -- the binders of the condition's pattern tests
     in then_branch: Scoped     -- the branches, as written in their scopes
     in else_branch: Scoped
     pub det out fires?
@@ -397,7 +397,7 @@ pub fn row_holds?(r: Row) := r.holds?
 pub fn row_value(r: Row): Body := r.value
 
 pub comp same_rows {
-    in rows: Seq(Row)
+    in rows: Seq<Row>
     in wildcard?             -- the last row is `_`
     in o: Int
 

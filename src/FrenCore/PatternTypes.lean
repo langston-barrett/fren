@@ -242,9 +242,9 @@ def Ty.dataPath? : Ty → Option Name
 declared type arguments `args`, once they stand for its type parameters,
 the first type argument of an instance of a recursive enumeration whose
 values bring a constraint (`recursiveArgumentMsg`), with that enumeration:
-as `Byte` of `List(Byte)` within `Wrap(Byte)`, for
-`enum Wrap(T) { W(List(T)) }`. A set's, sequence's or relation's element
-types are looked into too, as `List(Byte)` within `Set(List(Byte))`. Each
+as `Byte` of `List<Byte>` within `Wrap<Byte>`, for
+`enum Wrap<T> { W(List<T>) }`. A set's, sequence's or relation's element
+types are looked into too, as `List<Byte>` within `Set<List<Byte>>`. Each
 instance is looked into once. -/
 partial def recursiveArgumentWithin? (shapes : Name → Option DataShape) (p : Name) (args : Array PTy)
     (seen : List Name := []) : Option (PTy × Name) := do

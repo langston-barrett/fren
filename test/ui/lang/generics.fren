@@ -1,4 +1,4 @@
--- Generic types, `enum Option(T)` and `struct Pair(A, B)`, in both front
+-- Generic types, `enum Option<T>` and `struct Pair<A, B>`, in both front
 -- ends: instances as types, constructions whose type arguments are
 -- inferred, `match`, `is`, field reads and record updates on instances, and
 -- quantifiers over finite instances. In a module, since Lean has an
@@ -6,24 +6,24 @@
 
 mod generics
 
-pub enum Option(T) { None, Some(T) }
-pub struct Pair(A, B) { fst: A, snd: B }
-pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
+pub enum List<T> { Nil, Cons(T, List<T>) }
 pub enum Mode { Idle, Busy }
 
 comp options {
-    in x: Option(Int)
-    in p: Pair(Int, Bool)
-    in l: List(Int)
-    in m: Option(Mode)
+    in x: Option<Int>
+    in p: Pair<Int, Bool>
+    in l: List<Int>
+    in m: Option<Mode>
     pub det out value: Int := match x { Option::Some(n) => n, Option::None => 0 }
     pub det out first: Int := p.fst
     pub det out head: Int := match l { List::Cons(h, _) => h, List::Nil => 0 }
-    pub det out wrapped: Option(Int) := Option::Some(value + 1)
-    pub det out pair: Pair(Int, Bool) := { p with fst := value }
-    pub det out nested: Option(Pair(Int, Bool)) := Option::Some(p)
+    pub det out wrapped: Option<Int> := Option::Some(value + 1)
+    pub det out pair: Pair<Int, Bool> := { p with fst := value }
+    pub det out nested: Option<Pair<Int, Bool>> := Option::Some(p)
     pub det out busy? := m = Option::Some(Mode::Busy)
-    pub det out made: Pair(Int, Option(Int)) := Pair { fst := first, snd := Option::None }
+    pub det out made: Pair<Int, Option<Int>> := Pair { fst := first, snd := Option::None }
 
     expect some_value: when x = Option::Some(3), value = 3
     expect none_value: when x = Option::None, value = 0
@@ -38,16 +38,16 @@ comp options {
 
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.lint.manual_pattern_test "allow" in
-expect bools: forall (o: Option(Bool)), o = Option::None or o is Option::Some(_)
+expect bools: forall (o: Option<Bool>), o = Option::None or o is Option::Some(_)
 
 -- An ordered enumeration with type parameters, which has no payloads, is
 -- ordered by its variants, in an ordered struct's field too.
-pub ordered enum Level(T) { Low, Mid, High }
-pub ordered struct Rank { level: Level(Int), n: Int }
+pub ordered enum Level<T> { Low, Mid, High }
+pub ordered struct Rank { level: Level<Int>, n: Int }
 
 comp ranks {
-    in x: Level(Int)
-    in y: Level(Int)
+    in x: Level<Int>
+    in y: Level<Int>
     in r: Rank
     in s: Rank
     expect lt: when x = Level::Low and y = Level::High, x < y

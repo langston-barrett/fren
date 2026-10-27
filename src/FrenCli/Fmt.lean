@@ -325,6 +325,10 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
         -- An index's `[` is spaced like a call's `(`, and a literal's like `(`.
         | .kw "[" => if lay.calls.contains k then .call else .paren
         | .kw "]" => .closeParen
+        -- Type arguments' and type parameters' `<` and `>` are spaced like
+        -- a call's `(` and `)`; a comparison's are not.
+        | .kw "<" => if lay.calls.contains k then .call else .other
+        | .kw ">" => if lay.calls.contains k then .closeParen else .other
         -- A set literal's braces are spaced like parentheses.
         | .kw "{" => if lay.sets.contains k then .paren else .brace
         | .kw "::{" => .group
@@ -377,7 +381,7 @@ abbrev Error := Span × Msg
 
 def parseAll (src : Array Char) : Except Error (Array Token × Array Span × Layout) := do
   let (toks, comments) ← (lexWithComments src).mapError fun e => (e.span, e.msg)
-  let lay ← (parseLayout toks).mapError fun e => (e.span, e.msg)
+  let lay ← (parseLayout toks src).mapError fun e => (e.span, e.msg)
   return (toks, comments, lay)
 
 /-- Formats Fren source, as lines, each with the line of `src` it comes

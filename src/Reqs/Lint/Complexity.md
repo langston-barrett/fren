@@ -154,7 +154,7 @@ set_option fren.lint.nonminimal_bool "allow" in
 pub comp nonminimal_cardinality {
     use self::CardinalityFix::{Argument, True, Unchanged}
     in exactly?          -- `exactly_one?`, rather than `at_most_one?`
-    in args: Seq(Bool)   -- the values of the arguments, in order
+    in args: Seq<Bool>   -- the values of the arguments, in order
     pub det out fix: CardinalityFix
 
     ensure rule: fix = (if args.len != 1 then Unchanged else if exactly? then Argument else True)
@@ -256,7 +256,7 @@ gives it:
 ```fren
 pub comp output_lints {
     in defined?                       -- the output is defined
-    in mentioned: Set(lang::Mention)  -- what its definition mentions, if defined, and `{}` if not
+    in mentioned: Set<lang::Mention>  -- what its definition mentions, if defined, and `{}` if not
     in n_guarantees: Nat              -- guarantees that mention it, if not defined
     in equation?                      -- the only one is `x = e` or `x? iff e`, with `e` not mentioning `x`
     pub det out constant?             -- `constant_output` fires
@@ -350,7 +350,7 @@ is fixable: the fix is `x` or `n`, with its text, in parentheses where
 parentheses, as in `(Ms(n)).0`. There is no fix where `n` takes its type
 from the newtype, as `[]` and `{}` do ([Checking and
 synthesis](../Lang/Types.md#checking-and-synthesis)): with `struct
-Qs(Seq(Int))`, `Qs([]).0.len` would become `[].len`, which is an error,
+Qs(Seq<Int>)`, `Qs([]).0.len` would become `[].len`, which is an error,
 so the message says why and suggests nothing. `Ms(x.0).0` is reported
 once, at `Ms(x.0)`, whose fix leaves `x.0`. It does not fire where the newtypes
 differ, as in `Ms(b.0)` for `b: Bytes`, which converts a `Bytes` to an
@@ -547,9 +547,9 @@ which it finds the names declared again:
 ```fren
 pub comp trivial_quantifier {
     use lint::{Local, Tree, scope}
-    in names: Set(Local)           -- the bound names
-    in one_value: Set(Local)       -- those whose types have one value
-    in variant: Set(Local)         -- those whose types are an enumeration of one variant without a payload
+    in names: Set<Local>           -- the bound names
+    in one_value: Set<Local>       -- those whose types have one value
+    in variant: Set<Local>         -- those whose types are an enumeration of one variant without a payload
     in global?                     -- a global expectation's leading `forall`
     in body: Tree
     pub det out fires?
@@ -575,16 +575,16 @@ pub enum Solo { Only }
 
 set_option fren.lint.trivial_quantifier "allow" in
 pub comp trivial_quantifier_written {
-    in s: Set(Solo)
-    in t: Set(Solo)
+    in s: Set<Solo>
+    in t: Set<Solo>
     pub det out every? := forall (u: Solo), u in s
     pub det out some? := exists (u: Solo), u in s and u in t
     pub det out pair? := forall (u v: Solo), u in s or v in t
 }
 
 pub comp trivial_quantifier_fixed {
-    in s: Set(Solo)
-    in t: Set(Solo)
+    in s: Set<Solo>
+    in t: Set<Solo>
     pub det out every? := Solo::Only in s
     pub det out some? := Solo::Only in s and Solo::Only in t
     pub det out pair? := Solo::Only in s or Solo::Only in t

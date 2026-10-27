@@ -226,8 +226,8 @@ a bound name that has a [domain](Lang/Quantifiers.md#guards): in its
 own constraints, definitions and bindings, those of its instances'
 components, and the bodies of the defined functions that they apply. Its queries are still in the
 [decidable core](Lang/Decidability.md), unless it opts out. A spec uses
-sets if it writes a `Set(…)` or `Rel(…)` type, or a set or relation
-literal such as `{1, 2}`, and sequences if it writes a `Seq(…)` type, a
+sets if it writes a `Set<…>` or `Rel<…>` type, or a set or relation
+literal such as `{1, 2}`, and sequences if it writes a `Seq<…>` type, a
 sequence literal such as `[x]`, a [table](Lang/Expressions.md#tables)
 without a `_` row, whose value where no row holds is an index out of range
 of the empty sequence, or a [`match`](Lang/Expressions.md#matches) whose
@@ -246,7 +246,7 @@ pub comp logic {
     use self::Logic::{All, HigherOrder, Quantified, QuantifierFree}
     use self::Theory::{Sequences, Sets, Strings}
     in kind: Kind
-    in theories: Set(Theory)     -- beyond uninterpreted functions, datatypes and linear integer arithmetic
+    in theories: Set<Theory>     -- beyond uninterpreted functions, datatypes and linear integer arithmetic
     in projection?               -- the spec takes the domain or range of a relation over a type that is not finite
     in quantified?               -- the spec has an unbounded quantifier
 
@@ -415,7 +415,7 @@ lints of a run, from the levels present among them:
 
 ```fren
 pub comp worst_severity {
-    in present: Set(Severity)    -- the levels of the run's results and lints
+    in present: Set<Severity>    -- the levels of the run's results and lints
     pub det out worst: Severity
 
     -- The last row includes runs with no checks at all.
@@ -437,7 +437,7 @@ pub comp worst_severity {
 ```fren
 pub comp run {
     in ran?
-    in present: Set(Severity)
+    in present: Set<Severity>
     pub det out code: Int
 
     inst counted: worst_severity { present }

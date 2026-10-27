@@ -161,16 +161,16 @@ the conjuncts do, for every set of operands that hold:
 pub struct PairNegation { first: Operand, second: Operand, obligation? }
 
 -- Some conjunct is `not (x and y)`.
-fn pair_negated?(pairs: Set(PairNegation), x: Operand, y: Operand) :=
+fn pair_negated?(pairs: Set<PairNegation>, x: Operand, y: Operand) :=
     PairNegation { first := x, second := y, obligation? := true } in pairs
     or PairNegation { first := x, second := y, obligation? := false } in pairs
 
 -- `x` is an operand of some conjunct.
-fn named?(pairs: Set(PairNegation), x: Operand) := exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
+fn named?(pairs: Set<PairNegation>, x: Operand) := exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
 
 pub comp manual_at_most_one {
-    in pairs: Set(PairNegation)   -- the run of conjuncts `not (a and b)`
-    in disjunction: Set(Operand)  -- the operands of the disjunction beside them; `{}` if there is none
+    in pairs: Set<PairNegation>   -- the run of conjuncts `not (a and b)`
+    in disjunction: Set<Operand>  -- the operands of the disjunction beside them; `{}` if there is none
     pub det out fires?
     pub det out exactly?          -- the fix is `exactly_one?`, rather than `at_most_one?`
 
@@ -190,9 +190,9 @@ operand does, and with the disjunction, exactly where one does:
 
 ```fren
 comp manual_at_most_one_meaning {
-    in pairs: Set(PairNegation)
-    in disjunction: Set(Operand)
-    in holds: Set(Operand)
+    in pairs: Set<PairNegation>
+    in disjunction: Set<Operand>
+    in holds: Set<Operand>
 
     inst m: manual_at_most_one { pairs, disjunction }
 
@@ -226,18 +226,18 @@ lint's spec: the precise one proved of the code, and the bounded one a
 pub struct WrittenNegation { first: String, second: String, obligation? }
 
 -- Some conjunct is `not (x and y)`.
-fn written_negated?(pairs: Set(WrittenNegation), x: String, y: String) :=
+fn written_negated?(pairs: Set<WrittenNegation>, x: String, y: String) :=
     exists (o?: Bool), WrittenNegation { first := x, second := y, obligation? := o? } in pairs
 
 -- `x` is an operand of some conjunct.
 set_option fren.lint.undecidable "allow" in
-fn written_named?(pairs: Set(WrittenNegation), x: String) :=
+fn written_named?(pairs: Set<WrittenNegation>, x: String) :=
     exists (p: WrittenNegation), p in pairs and (p.first = x or p.second = x)
 
 set_option fren.lint.undecidable "allow" in
 pub comp manual_at_most_one_any {
-    in pairs: Set(WrittenNegation)    -- the run of conjuncts `not (a and b)`
-    in disjunction: Set(String)       -- the operands of the disjunction beside them; `{}` if there is none
+    in pairs: Set<WrittenNegation>    -- the run of conjuncts `not (a and b)`
+    in disjunction: Set<String>       -- the operands of the disjunction beside them; `{}` if there is none
     pub det out fires?
     pub det out exactly?              -- the fix is `exactly_one?`, rather than `at_most_one?`
 
@@ -294,7 +294,7 @@ table:
 ```fren
 set_option fren.lint.manual_at_most_one "deny" in
 pub comp manual_at_most_one_guarded {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     in x: Int
     in z?
@@ -334,7 +334,7 @@ comp manual_at_most_one_defined {
     in env: Env
     in a: Value                      -- the operands' values
     in b: Value
-    in undefined_parts: Set(Int)     -- which operands, `0` and `1`, are not defined
+    in undefined_parts: Set<Int>     -- which operands, `0` and `1`, are not defined
     in obligation?                   -- the `and` gives a definedness obligation
 
     assume no_obligation: unless obligation?, undefined_parts = {}

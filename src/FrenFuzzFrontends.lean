@@ -58,8 +58,8 @@ inductive WTy where
   deriving BEq, Inhabited
 
 def WTy.name (relElem : String) : WTy → String
-  | .int => "Int" | .bool => "Bool" | .str => "String" | .set => "Set(Int)"
-  | .rel => s!"Rel({relElem}, {relElem})" | .enum => "E" | .ms => "Ms" | .pay => "P"
+  | .int => "Int" | .bool => "Bool" | .str => "String" | .set => "Set<Int>"
+  | .rel => s!"Rel<{relElem}, {relElem}>" | .enum => "E" | .ms => "Ms" | .pay => "P"
 
 structure WScope where
   /-- A variable's text, type, and whether it is an input (so that an
@@ -315,11 +315,11 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if hasMs then out := out ++ "pub ordered struct Ms(Int)\n"
   let ms := if hasMs then #[WTy.ms] else #[]
   let hasPay ← chance 40
-  -- Sometimes generic, as `P(Int)`, whose variables' types are written so
+  -- Sometimes generic, as `P<Int>`, whose variables' types are written so
   -- below.
   let genericPay ← chance 50
   if hasPay then
-    out := out ++ (if genericPay then "pub enum P(X) { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Int), C(Bool) }\n")
+    out := out ++ (if genericPay then "pub enum P<X> { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Int), C(Bool) }\n")
   let pays := if hasPay then #[WTy.pay] else #[]
   let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs, hasPay }
   -- Constants, each over the earlier ones.
@@ -403,7 +403,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     out := out ++ "}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
   -- Only variables have the type `P`, each declared on a line of its own.
-  return if genericPay then out.replace ": P\n" ": P(Int)\n" else out
+  return if genericPay then out.replace ": P\n" ": P<Int>\n" else out
 
 end Wide
 

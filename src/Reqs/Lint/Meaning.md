@@ -41,7 +41,7 @@ texts, with `writtenSameIn`, or leave the expressions whose scopes may
 differ.
 
 ```fren
-pub struct Scoped { text: Operand, scope: Set(lang::Id) }
+pub struct Scoped { text: Operand, scope: Set<lang::Id> }
 ```
 
 An expression as written is one [layer](../Lang/Meaning.md#layers) at its
@@ -56,7 +56,7 @@ parts' values, in one environment, and so the same value.
 
 ```fren
 pub fn written_head(Scoped): lang::Head
-pub fn written_values(lang::Env, Scoped): Seq(lang::Value)
+pub fn written_values(lang::Env, Scoped): Seq<lang::Value>
 ```
 
 So, by `same_written` of the roots, two expressions written the same in
@@ -110,7 +110,7 @@ layers that is evaluated is specified: by [`own_mentioned`](../Lang/MeaningLaws.
 root reads the same in every environment, and by `frame` it then has the
 same value, given the same parts' values, which by induction it has (see
 [The whole tree](../Lang/MeaningLaws.md#the-whole-tree)). Where an evaluated layer is not
-specified, as in `get([1], 5)` with `fn get(q: Seq(Int), i: Int): Int :=
+specified, as in `get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int :=
 q[i]`, its value is the environment's to choose, so it may differ between
 behaviours; the [definedness check](../Check.md#definedness) reports that
 index, so in a spec that passes its checks the value is the same. Here `p`

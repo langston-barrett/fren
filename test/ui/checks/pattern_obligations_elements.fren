@@ -5,19 +5,19 @@ set_option fren.lint.undecidable "allow"
 
 type Byte := Int is 0..=255
 
-fn total(Set(Byte)): Int
+fn total(Set<Byte>): Int
 
 enum Mode { A, B }
 
 comp c {
     in x: Int
-    in s: Set(Int)
-    in q: Seq(Byte)
+    in s: Set<Int>
+    in q: Seq<Byte>
     pub out y: Int
-    pub det out d: Set(Byte) := {x}   --~ error: a value in `c::d` may not have the type `Set(Byte)`
-    pub det out e: Seq(Byte) := q
+    pub det out d: Set<Byte> := {x}   --~ error: a value in `c::d` may not have the type `Set<Byte>`
+    pub det out e: Seq<Byte> := q
 
-    ensure r: y = total(s)   --~ error: a value in `c::r` may not have the type `Set(Byte)`
+    ensure r: y = total(s)   --~ error: a value in `c::r` may not have the type `Set<Byte>`
 
     expect w: z >= 0 or x < 0 where z: Byte := x   --~ error: a value in `c::w` may not have the type `Byte`
     expect qu: forall (m: Mode), (let b: Byte := if m = Mode::A then x else 0 in b) >= 0 or x < 0   --~ error: a value in `c::qu` may not have the type `Byte`

@@ -5,17 +5,17 @@ set_option fren.lint.undecidable "allow"
 
 mod generics_pattern_elements
 
-pub enum Option(T) { None, Some(T) }
-pub struct Pair(A, B) { fst: A, snd: B }
-pub enum Tree(T) { Leaf, Node(Int is 0..=9, T, Tree(T)) }
-pub enum Bag(T) { Empty, More(Pair(Int is 0..=9, T), Bag(T)) }
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
+pub enum Tree<T> { Leaf, Node(Int is 0..=9, T, Tree<T>) }
+pub enum Bag<T> { Empty, More(Pair<Int is 0..=9, T>, Bag<T>) }
 type Byte := Int is 0..=255
 
 comp c {
-    in x: Option(Set(Int is 0..=9))
-    in q: Option(Seq(Byte))
-    in t: Tree(Int)
-    in b: Bag(Bool)
+    in x: Option<Set<Int is 0..=9>>
+    in q: Option<Seq<Byte>>
+    in t: Tree<Int>
+    in b: Bag<Bool>
     in k: Int
 
     expect member: match x { Option::Some(s) => not (k in s) or k <= 9, Option::None => true }

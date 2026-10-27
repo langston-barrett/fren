@@ -8,8 +8,8 @@ const LIMIT: Int := 0100   --~ warning: `0100` is 100; for octal write `0o100`
 
 comp literals {
     in x: Int
-    in s: Set(Int)
-    in q: Seq(Int)
+    in s: Set<Int>
+    in q: Seq<Int>
     in n: Nat
     pub out a?
     pub out b?

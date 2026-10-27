@@ -15,11 +15,11 @@ struct Bad5 { x: Int, x: Int }      --~ error: field `x` is defined multiple tim
 struct Bad6 { ok: Bool }            --~ error: `Bool` variable `ok` must end in `?`
 struct point { x: Int }             --~ warning: record `point` should have a camel case name
 struct Q { Big: Int }               --~ warning: field `Big` should have a snake case name
-struct Bad7 { ns: Set(Name) }       --~ error: a field's type cannot have the abstract type `Name` within it
-enum Bad8 { A(Set(Set(Name))) }     --~ error: a payload's type cannot have the abstract type `Name` within it
-enum Bad9 { Leaf, Node(Set(Bad9)) }  --~ error: `Bad9` cannot be an element type within itself
-struct Bad10 { s: Set(Bad10) }      --~ error: `Bad10` cannot be an element type within itself
-struct Ok1 { s: Set(Int), t: Set(S) }
+struct Bad7 { ns: Set<Name> }       --~ error: a field's type cannot have the abstract type `Name` within it
+enum Bad8 { A(Set<Set<Name>>) }     --~ error: a payload's type cannot have the abstract type `Name` within it
+enum Bad9 { Leaf, Node(Set<Bad9>) }  --~ error: `Bad9` cannot be an element type within itself
+struct Bad10 { s: Set<Bad10> }      --~ error: `Bad10` cannot be an element type within itself
+struct Ok1 { s: Set<Int>, t: Set<S> }
 
 comp unbounded { in l: L pub out o: L }   --~ error: output `o` has the unbounded type `L`
 
@@ -31,7 +31,7 @@ const K5: Int := match K4 { S::A(a) => a, _ => 0 }
 
 comp no_field { in p: P pub out z: Int ensure r: z = p.w }        --~ error: record `P` has no field `w`
 comp not_record { in i: Int pub out z: Int ensure r: z = i.w }    --~ error: `Int` has no method `w`
-comp not_enum { in x: Set(Int) pub out z: Int ensure r: z = match x { _ => 0 } }   --~ error: cannot match on `Set(Int)`
+comp not_enum { in x: Set<Int> pub out z: Int ensure r: z = match x { _ => 0 } }   --~ error: cannot match on `Set<Int>`
 comp missing_arm { in s: S pub out z: Int ensure r: z = match s { S::A(a) => a, S::B => 0 } }
 --~^ error: non-exhaustive match: `S::C(_, _)` not covered
 comp after_wild { in s: S pub out z: Int ensure r: z = match s { _ => 0, S::B => 1 } }

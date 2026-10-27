@@ -1,2 +1,2 @@
 -- An ordered struct with type parameters (F0390).
-ordered struct Pair(A, B) { fst: A, snd: B }
+ordered struct Pair<A, B> { fst: A, snd: B }
