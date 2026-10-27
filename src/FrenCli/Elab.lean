@@ -1133,6 +1133,10 @@ structure ExprCtx where
   of one of those, by span (`Fren.Core.ElementNesting`). -/
   elemKind? : Option Bool := none
   elemDirect : Array Span := #[]
+  /-- The bound names of the quantifiers over elements, of the same kind,
+  that this expression is directly the body of, which its quantifier may
+  mention (`Fren.Core.ElementVerdict.mentionsBound`). -/
+  elemChain : Array Name := #[]
 
 /-- What the binder `b` is, for a declaration that hides it (`Fren.Core.bindingLocals`). -/
 def CBinder.what (b : CBinder) : Name × String :=
@@ -1520,6 +1524,22 @@ partial def mentionsOutput (cx : ExprCtx) (e : Expr) : M Bool := do
     if (defDeps cx.vars v).any fun u => u.role == .output && u.defn?.isNone then return true
   return false
 
+/-- Whether the body of the defined function `path` has a quantifier over a
+type that is not listed, directly or through another defined function that
+it applies, to a depth of `fuel`, beyond which it is taken to have one: its
+`define-fun` has the solver's quantifier, or a quantifier over elements
+(`Fren.Core.ElementUse.quantifiedArgument`). -/
+partial def fnQuantifies (st : State) (fuel : Nat) (path : Name) : Bool :=
+  if fuel == 0 then true else
+  let body? := ((st.genericFns.find? path).map (·.body)).orElse fun _ =>
+    (st.defs.find? (·.1 == path)).map (·.2.2.2)
+  match body? with
+  | none => false
+  | some body =>
+    let quantified := ["(forall (", "(exists (", "(fren.forall (", "(fren.exists ("].any fun h => (body.splitOn h).length > 1
+    quantified || st.defs.any fun (p, _, _, _) =>
+      p != path && (body.splitOn ((st.instSyms.find? p).getD (itemSym p))).length > 1 && fnQuantifies st (fuel - 1) p
+
 /-- How an application of `segs` uses an argument that mentions a bound
 name (`elementUses`): a defined function with a parameter that has a
 sequence within it, or an uninterpreted function whose applications bring
@@ -1532,7 +1552,8 @@ def appElementUse (cx : ExprCtx) (segs : Array Ident) : M (Array Fren.Core.Eleme
     | none, some d => some (d.2.1.map (·.2))
     | none, none => none
   if let some ps := declared then
-    return if ps.any (Fren.Core.hasSeqWithin st.shapeOf 8) then #[.seqArgument] else #[]
+    if ps.any (Fren.Core.hasSeqWithin st.shapeOf 8) then return #[.seqArgument]
+    return if fnQuantifies st 8 path then #[.quantifiedArgument] else #[]
   let facts : Bool := match st.funs.find? (·.1 == path) with
     | some f => f.2.2 == .nat || (st.contracts.find? path).isSome || st.funFacts.contains (itemSym path)
     | none => false
@@ -3325,7 +3346,8 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
     | some k => if k == all && cx.elemDirect.contains span then .direct else .other
   let bodyCx := if candidate then
       { cx with elemGuards := cx.elemGuards ++ members.filterMap (·.map (·.span)), elemKind? := some all
-                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray }
+                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray
+                elemChain := (if nesting == .direct then cx.elemChain else #[]) ++ (new.filter (·.unbounded)).map (·.name) }
     else cx
   let outer ← takeIndexes
   let outerTables ← takeTables
@@ -3348,9 +3370,14 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
       infos := infos.push
         { members := if seq then .seq else .set
           receiverBound := (mentions e).any (earlier.contains ·.getRoot)
-          receiverOutput := ← mentionsOutput cx e
           uses := (← elementUses cx c.name inner body).toList : Fren.Core.ElementBinder }
-    pure (Fren.Core.elementVerdict nesting infos.toList)
+    -- What the quantifier mentions, once its own bound names are not.
+    let whole := Expr.quant span all bs body
+    let chain := if nesting == .direct then cx.elemChain else #[]
+    let bound := (mentions whole).any fun n =>
+      let r := n.getRoot
+      !chain.contains r && (cx.binder? r).any (·.unbounded)
+    pure (Fren.Core.elementVerdict nesting (← mentionsOutput cx whole) bound infos.toList)
   let inCore := verdict == .inCore
   -- The reports that its guard's memberships deferred, and its binders'.
   let spans := members.filterMap (·.map (·.span))

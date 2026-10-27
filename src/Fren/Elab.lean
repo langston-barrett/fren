@@ -536,6 +536,10 @@ structure ExprCtx where
   one of those (`Core.ElementNesting`). -/
   elemKind? : Option Bool := none
   elemDirect : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- The bound names of the quantifiers over elements, of the same kind,
+  that this expression is directly the body of, which its quantifier may
+  mention (`Core.ElementVerdict.mentionsBound`). -/
+  elemChain : Array Name := #[]
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × String :=
@@ -1386,18 +1390,22 @@ def elemKey (e : Syntax) : Option String.Pos.Raw × Option String.Pos.Raw :=
   let e := unparen e
   (e.getPos?, e.getTailPos?)
 
-/-- Whether `e` mentions an output that is not defined, directly, through a
-definition or through a binder: one that the realizability check
-quantifies over, as the `fren` command's `mentionsOutput`. -/
-partial def mentionsOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool := do
-  for n in pathMentions e do
+/-- Whether the names `ns`, as mentioned, are an output that is not
+defined, or mention one, through a definition or through a binder: one
+that the realizability check quantifies over, as the `fren` command's
+`mentionsOutput`. -/
+partial def mentionsOutputOf (cx : ExprCtx) (ns : Array Name) : TermElabM Bool := do
+  for n in ns do
     if let some b := cx.binder? n then
       if let some sc := b.scrutinee then
-        if ← mentionsOutput (cx.at b) sc then return true
+        if ← mentionsOutputOf (cx.at b) (pathMentions sc) then return true
       continue
     let some v := cx.vars.find? (·.name == n) | continue
     if (defDeps cx.vars v).any fun u => u.role == .output && u.defn?.isNone then return true
   return false
+
+/-- `mentionsOutputOf` of the names that `e` mentions. -/
+def mentionsOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool := mentionsOutputOf cx (pathMentions e)
 
 /-- Reports `undecidable` if construct `c`, with `operands` other than of
 `=` and `!=`, is outside the decidable core (`lang::in_core`). -/
@@ -4803,6 +4811,23 @@ def lintQuant (e : Syntax) (all : Bool) (binders ids : Array Syntax) (bound : Ar
   let msg := Core.trivialQuantifierMsg all bound[i]!.1 (exactText bs[i]![3]) values[i]! quant fixed?
   recordLint .trivialQuantifier bs[i]! (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
 
+/-- Whether the declaration `decl` of a defined function has a quantifier
+over a type that is not listed, Lean's `∀` over a value or `∃`, directly or
+through another defined function that it applies, to a depth of `fuel`,
+beyond which it is taken to have one, as the `fren` command's
+`fnQuantifies` (`Core.ElementUse.quantifiedArgument`). -/
+partial def defQuantifies (env : Environment) (s : State) (fuel : Nat) (decl : Name) : Bool :=
+  if fuel == 0 then true else
+  match (env.find? decl).bind (·.value?) with
+  | none => false
+  | some v =>
+    let dependent : Expr → Bool
+      | .forallE _ _ b _ => b.hasLooseBVars
+      | _ => false
+    let quantified := (v.find? fun x => x.isAppOf ``Exists || dependent x).isSome
+    let decls := s.defined.foldl (init := #[]) fun acc _ d => if d.decl != decl then acc.push d.decl else acc
+    quantified || decls.any fun d => (v.find? (·.isConstOf d)).isSome && defQuantifies env s (fuel - 1) d
+
 /-- How the expression `e`, within the body of a quantifier, uses the bound
 name `x`, where `inner` are the names that the body declares, which may
 stand for `x` (`Core.ElementUse`), as the `fren` command's `elementUses`. -/
@@ -4829,7 +4854,8 @@ partial def elementUses (cx : ExprCtx) (x : Name) (inner : Array Name) (e : Synt
         | .ok (.item { kind := .fnItem, path, .. }) =>
           if let some d := st.defined.get? path then
             let ps := if d.typeParams.isEmpty then d.ptys.1.map (·.ty) else d.declared
-            pure (if ps.any (Core.hasSeqWithin st.shapeOf 8) then #[.seqArgument] else #[])
+            if ps.any (Core.hasSeqWithin st.shapeOf 8) then pure #[.seqArgument]
+            else pure (if defQuantifies (← getEnv) st 8 d.decl then #[.quantifiedArgument] else #[])
           else
             let facts := (st.abstracts.get? path).any fun a =>
               a.ptys.2.ty == .nat || a.fact?.isSome || st.contracts.contains path
@@ -4921,7 +4947,9 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     | some k => if k == all && cx.elemDirect.contains (elemKey e) then .direct else .other
   let bodyCx := if candidate then
       { cx with elemGuards := cx.elemGuards ++ members.filterMap (·.map elemKey), elemKind? := some all
-                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray }
+                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray
+                elemChain := (if nesting == .direct then cx.elemChain else #[])
+                  ++ (bound.filter (·.2.2.2.isNone)).map (·.1) }
     else cx
   let values ← bound.filterMapM fun (_, ty, _, vs?) => vs?.mapM (·.mapM (elabProp · ty))
   let combos := values.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]]
@@ -4952,9 +4980,15 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         infos := infos.push
           { members := if seq then .seq else .set
             receiverBound := (pathMentions m).any (earlier.contains ·.getRoot)
-            receiverOutput := ← mentionsOutput cx m
             uses := (← elementUses cx bn inner body).toList : Core.ElementBinder }
-      pure (Core.elementVerdict nesting infos.toList)
+      -- What the quantifier mentions, once its own bound names are not.
+      let chain := if nesting == .direct then cx.elemChain else #[]
+      let bodyNames := (pathMentions body).filter fun n => !names.contains n.getRoot
+      let boundNames := bodyNames.any fun n =>
+        let r := n.getRoot
+        !chain.contains r && (cx.binder? r).any (·.unbounded)
+      let output ← mentionsOutputOf cx bodyNames
+      pure (Core.elementVerdict nesting output boundNames infos.toList)
     let inCore := verdict == .inCore
     -- The reports that its guard's memberships deferred, and its binders'.
     let keys := members.filterMap (·.map elemKey)

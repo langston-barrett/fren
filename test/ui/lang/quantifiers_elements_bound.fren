@@ -1,0 +1,46 @@
+-- A quantifier over elements whose body mentions a name bound around it is
+-- not expanded: its witness would depend on that name. These checks fail,
+-- as without the expansion.
+
+const R: Seq<Int> := [0, 0, 0, 1, 2, 3, 0]
+
+-- `y` is bound within, once `in_r?` is unfolded where it is applied.
+fn in_r?(x: Int) := exists (y: Int), y in R and y = x
+
+-- The realizability check's `∃` over the output `o`.
+set_option fren.lint.undecidable "allow" in
+comp realize {  --~ error: is not realizable
+    in q: Seq<Int>
+    pub out o: Int
+    assume ends: q != [] and q[0] = 5 and q[q.len - 1] = 5
+    ensure range: 0 <= o <= 1  --~? info: is false for this input
+    --~^? info: conflicts with
+    ensure avoid: forall (x: Int), when x in q, x != o  --~? info: is false for this input
+    --~^? info: conflicts with
+}
+
+-- An enclosing quantifier, through a defined function.
+set_option fren.lint.undecidable "allow" in
+comp through_function {
+    in q: Seq<Int>
+    assume qs: q.len = 3 and q[0] = 1 and q[1] = 2 and q[2] = 3
+    -- The solver need not decide it, but it does not pass.
+    expect wrong: not (forall (x: Int), when x in q, in_r?(x))  --~ warning: could not decide whether `through_function::wrong` holds
+    expect right: forall (x: Int), when x in q, in_r?(x)
+}
+
+-- An enclosing unbounded quantifier.
+set_option fren.lint.undecidable "allow" in
+comp under_unbounded {
+    in q: Seq<Int>
+    assume ends: q != [] and q[0] = 0 and q[q.len - 1] = 0
+    expect wrong: not (forall (n: Int), when 1 <= n <= 2, exists (x: Int), x in q and x = n)  --~ error: under_unbounded::wrong` does not hold
+}
+
+-- The witness of an equation is a position of the sequence.
+comp equation {
+    in q: Seq<Int>
+    assume zeros: forall (x: Int), when x in q, x = 0
+    assume three: q.len = 3
+    expect same: q = [0, 0, 0]
+}

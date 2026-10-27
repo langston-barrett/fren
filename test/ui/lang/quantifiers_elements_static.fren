@@ -55,3 +55,17 @@ comp concatenated {
     in b: Seq<Int>
     ensure c: forall (x: Int), when x in a ++ b, x > 0  --~ error: an operation on sequences other than indexing
 }
+
+-- A quantifier that mentions an output, or that a defined function's
+-- quantifier would be nested in.
+const R: Seq<Int> := [0, 1, 2]
+fn in_r?(x: Int) := exists (y: Int), y in R and y = x
+
+comp reported {
+    in q: Seq<Int>
+    pub out o: Int
+    ensure avoid: forall (x: Int), when x in q, x != o  --~ error: it mentions an output
+    --~^ error: an operation on sequences other than indexing
+    expect through: forall (x: Int), when x in q, in_r?(x)  --~ error: an argument of a function with a quantifier within it
+    --~^ error: an operation on sequences other than indexing
+}

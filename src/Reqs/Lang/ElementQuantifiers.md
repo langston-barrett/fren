@@ -71,9 +71,6 @@ name it, and after it. It is in the decidable core when, besides:
 - `e` mentions no bound name of the same quantifier, nor one of an
   enclosing quantifier of a type that is not listed: a sequence within the
   element is a nested array, outside the fragment;
-- `e` mentions no output that is not [defined](Components.md#defined-outputs),
-  directly or through a definition: the realizability check quantifies over
-  such outputs, and the quantifier would be within that quantifier;
 - the body uses `x` only as a value. A *use* of `x` is a place where the
   body mentions it, or a name that the body declares, which may stand for
   it: as the index `r[i]`, or the position of `r.update(i, v)`, `r.at(i)` or
@@ -84,12 +81,23 @@ name it, and after it. It is in the decidable core when, besides:
   of a quantifier within the body (`Receiver`); or in an argument of an
   uninterpreted function whose applications bring
   [facts](Quantifiers.md#unbounded-quantifiers), which would be stated for
-  every element (`FactArgument`). Any other mention is a `Value`;
+  every element (`FactArgument`); or in an argument of a defined function
+  whose body has a quantifier over a type that is not listed, directly or
+  through another, which once the body is unfolded is within this one
+  (`QuantifiedArgument`). Any other mention is a `Value`;
+- neither `e` nor the body mentions an output that is not
+  [defined](Components.md#defined-outputs), directly or through a
+  definition: the realizability check quantifies over such outputs, and
+  this quantifier would alternate with that one;
 - it is within no quantifier over elements, or is directly the body of one
   of the same kind: the body of a `forall` under its `when`s, or the last
   conjunct of an `exists`'s body. Elsewhere within one, the two may
   alternate, as `forall` and `exists` do in `forall (x: T), when x in q,
-  exists (y: T), y in r and x = y`, which is outside the fragment.
+  exists (y: T), y in r and x = y`, which is outside the fragment;
+- its body mentions no bound name of a quantifier around it, other than
+  of the quantifiers of the same kind that it is directly the body of: a
+  witness of the quantifier is one name for the whole query, which must not
+  depend on such a name.
 
 Two bound names, `forall (x y: Int), when x in q and y in r, x < y`, and
 two quantifiers one directly within the other, `forall (x: Int), when x in
@@ -100,13 +108,14 @@ where it is written.
 
 `lang::element_quantifier` states the verdict, from what both front ends
 read of each bound name of a type that is not listed, in order, and from
-where the quantifier is. It is in the core if every bound name is, and it
-is not nested otherwise; else the verdict is the first bound name's reason,
-in this order, or `Nested`:
+where the quantifier is and what it mentions. It is in the core if every
+bound name is and none of the rest holds; else the verdict is the first
+bound name's reason, in this order, or else `MentionsOutput`, `Nested` or
+`MentionsBound`, in that order:
 
 ```fren
 -- How the body uses a bound name, at one place.
-pub enum ElementUse { Value, Index, SeqArgument, Receiver, FactArgument }
+pub enum ElementUse { Value, Index, SeqArgument, Receiver, FactArgument, QuantifiedArgument }
 
 -- What a bound name's domain is: a sequence's elements, a set's members, or neither.
 pub enum ElementMembers { Sequence, SetOrRelation, Neither }
@@ -114,14 +123,15 @@ pub enum ElementMembers { Sequence, SetOrRelation, Neither }
 pub struct ElementBinder {
     members: ElementMembers,
     receiver_bound?,             -- its sequence mentions a bound name
-    receiver_output?,            -- its sequence mentions an output that is not defined
     uses: Set<ElementUse>,       -- how the body uses it
 }
 
 -- Within no quantifier over elements, directly the body of one of the same kind, or elsewhere within one.
 pub enum ElementNesting { Top, Direct, Other }
 
-pub enum ElementVerdict { InCore, NotMembers, SetMembers, ReceiverBound, ReceiverOutput, Used(ElementUse), Nested }
+pub enum ElementVerdict {
+    InCore, NotMembers, SetMembers, ReceiverBound, MentionsOutput, MentionsBound, Used(ElementUse), Nested,
+}
 
 -- The verdict of one bound name.
 fn binder_verdict(b: ElementBinder): ElementVerdict := match b.members {
@@ -129,27 +139,30 @@ fn binder_verdict(b: ElementBinder): ElementVerdict := match b.members {
     ElementMembers::SetOrRelation => ElementVerdict::SetMembers,
     ElementMembers::Sequence =>
         if b.receiver_bound? then ElementVerdict::ReceiverBound
-        else if b.receiver_output? then ElementVerdict::ReceiverOutput
         else if ElementUse::Index in b.uses then ElementVerdict::Used(ElementUse::Index)
         else if ElementUse::SeqArgument in b.uses then ElementVerdict::Used(ElementUse::SeqArgument)
         else if ElementUse::Receiver in b.uses then ElementVerdict::Used(ElementUse::Receiver)
         else if ElementUse::FactArgument in b.uses then ElementVerdict::Used(ElementUse::FactArgument)
+        else if ElementUse::QuantifiedArgument in b.uses then ElementVerdict::Used(ElementUse::QuantifiedArgument)
         else ElementVerdict::InCore,
 }
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp element_quantifier {
-    use self::ElementVerdict::{InCore, Nested}
+    use self::ElementVerdict::{InCore, MentionsBound, MentionsOutput, Nested}
     in binders: Seq<ElementBinder>  -- its bound names of types that are not listed, in order
     in nesting: ElementNesting
+    in output?                      -- its sequences or its body mention an output that is not defined
+    in bound?                       -- its body mentions a bound name around it, but of the quantifiers it is directly the body of
     pub det out verdict: ElementVerdict
 
     ensure first: forall (j: Int), when 0 <= j < binders.len and binder_verdict(binders[j]) != InCore
         and (forall (i: Int), when 0 <= i < j, binder_verdict(binders[i]) = InCore),
         verdict = binder_verdict(binders[j])
-    ensure nested: when (forall (b: ElementBinder), when b in binders, binder_verdict(b) = InCore),
-        verdict = (if nesting = ElementNesting::Other then Nested else InCore)
+    ensure rest: when (forall (b: ElementBinder), when b in binders, binder_verdict(b) = InCore),
+        verdict = (if output? then MentionsOutput else if nesting = ElementNesting::Other then Nested
+        else if bound? then MentionsBound else InCore)
 }
 ```
 
@@ -284,10 +297,83 @@ completeness, it is satisfiable whenever the first is. If it is not, the
 check is inconclusive (`F0648`): an equation between sequences of which
 neither is a quantifier's can make it so.
 
-A sequence of a quantifier that mentions a name bound around it, as an
-output in the realizability check's `∃` may be, is not expanded: the
-quantifier is given to the solver as written. Such a quantifier is outside
-the core, by `ReceiverOutput`.
+A quantifier is expanded only where its witnesses may be names of the
+whole query: where nothing bound around it is mentioned by its sequences,
+nor by its body, other than the bound names of the expanded quantifiers of
+its kind that it is directly within, on their *spine*: the consequent of an
+implication, or a conjunct, where it has their polarity. One that is not
+expanded, as a quantifier within the realizability check's `∃` whose body
+mentions an output may be, or one within an unbounded quantifier whose
+body mentions its bound name, or one unfolded from a defined function
+within another quantifier, is given to the solver as written. Each such
+quantifier is outside the core, by the rules of [the shape](#the-shape),
+once defined functions are unfolded. `lang::site_expanded` states which
+are expanded, from the binders around one, outermost first, and which of
+them its body mentions:
+
+```fren
+-- A binder around a quantifier in a query: an expanded quantifier over
+-- elements, whether it is a `forall` and whether what is within it is on its
+-- spine; or any other.
+pub enum Frame { Element(Bool, Bool), Other }
+
+-- The binders from position `j` to the innermost are expanded quantifiers of
+-- the kind `all?`, each with what is within it on its spine.
+set_option fren.lint.undecidable "allow" in
+fn in_chain?(frames: Seq<Frame>, all?, j: Int) :=
+    forall (k: Int), when j <= k < frames.len, frames[k] = Frame::Element(all?, true)
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub comp site_expanded {
+    in frames: Seq<Frame>        -- the binders around it, outermost first
+    in all?                      -- it is a `forall`
+    in receivers_closed?         -- its sequences mention no name bound around it
+    in mentioned: Seq<Int>       -- the positions of the binders whose names its body mentions
+    pub det out expanded?
+
+    ensure rule: expanded? iff (receivers_closed?
+        and (forall (j: Int), when j in mentioned, 0 <= j < frames.len and in_chain?(frames, all?, j)))
+}
+```
+
+Each expanded quantifier is replaced by its instances at the index set
+with its witnesses, and `lang::element_witness` states the law that makes
+that right: a quantifier over a sequence's positions holds exactly where
+its instances hold at the terms `ix` together with a witness `w`, for every
+value of `w`. A witness is a fresh name of the query, so the solver may
+take it to be a position where the quantifier fails, if there is one: the
+instances then fail exactly where the quantifier does. The names that the
+quantifier's value depends on are the free names of the query and, by the
+rule above, those of the quantifiers of its kind that it is directly within,
+for whose instances one value of the witness, a failing position in the
+instance that fails, serves:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub comp element_witness {
+    in q: Seq<Int>
+    in good: Set<Int>            -- the elements at which the body holds
+    in ix: Seq<Int>              -- the values of the other terms of the index set
+    in w: Int                    -- a value of the witness
+    pub det out all?             -- the quantifier holds
+    pub det out instances?       -- its instances at `w` and `ix` hold
+    pub det out failing: Int     -- a position where the body fails, if there is one
+
+    ensure meaning: all? iff (forall (x: Int), when x in q, x in good)
+    ensure instances_rule: instances? iff ((when 0 <= w < q.len, q[w] in good)
+        and (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good))
+    ensure sound: when all?, instances?
+    ensure witness: when not all?, 0 <= failing < q.len and not (q[failing] in good)
+}
+```
+
+What is proved is this law, the rule of which quantifiers are expanded,
+the index set and the projection, each of the code that both front ends
+call. That the whole expanded query is unsatisfiable exactly where the
+quantified one is follows from them by an induction over the query's
+terms, which is argued here and not proved in Lean.
 
 Both front ends expand the same quantifiers over the same index set: the
 binary on the SMT-LIB of each query, and the Lean-hosted front end on the

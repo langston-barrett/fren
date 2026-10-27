@@ -193,10 +193,23 @@ def numeral (k : Int) : SExpr := if k < 0 then .list #[.atom "-", .atom (toStrin
 
 def plus (t : SExpr) (k : Int) : SExpr := .list #[.atom (if k < 0 then "-" else "+"), t, .atom (toString k.natAbs)]
 
-/-- `e`, within the names `bound`, with each marked quantifier numbered, as
-`fren.forall#k`, and recorded with its sequences; and its reads, updates
-and equations at terms that mention no bound name. -/
-partial def scan (bound : Array String) (e : SExpr) : StateM Scan SExpr := do
+/-- The binders around a term of a query, outermost first, each with the
+names that it binds (`Fren.Core.Frame`). -/
+abbrev Frames := Array (Array String × Fren.Core.Frame)
+
+/-- `frames` for a part of the term within them: still on the innermost
+quantifier's spine only if `keep` (`Fren.Core.Frame`). -/
+def Frames.within (frames : Frames) (keep : Bool) : Frames :=
+  match frames.back? with
+  | some (xs, .element all spine) => frames.pop.push (xs, .element all (spine && keep))
+  | _ => frames
+
+/-- `e`, within `frames`, with each marked quantifier numbered, as
+`fren.forall#k`, and recorded with its sequences if it is expanded
+(`Fren.Core.siteExpanded`); and its reads, updates and equations at terms
+that mention no bound name. -/
+partial def scan (frames : Frames) (e : SExpr) : StateM Scan SExpr := do
+  let bound := frames.flatMap (·.1)
   match e with
   | .atom _ => return e
   | .list ts =>
@@ -207,20 +220,23 @@ partial def scan (bound : Array String) (e : SExpr) : StateM Scan SExpr := do
         let receivers := xs.map fun x =>
           if !body.mentions #[x] then some none
           else ((spineMembers all x body).find? (!·.mentions (bound ++ xs))).map some
+        let mentioned := (List.range frames.size).filter fun j => body.mentions frames[j]!.1
+        let expanded := Fren.Core.siteExpanded (frames.toList.map (·.2)) all (receivers.all Option.isSome) mentioned
         let k := (← get).sites.size
         let site : Site := { all := all, vars := xs
-                             receivers? := if receivers.all Option.isSome then some (receivers.map (·.join)) else none }
+                             receivers? := if expanded then some (receivers.map (·.join)) else none }
         modify fun s => { s with sites := s.sites.push site }
         let head := s!"{if all then "fren.forall" else "fren.exists"}#{k}"
-        return .list #[.atom head, decls, ← scan (bound ++ xs) body]
+        let frame : Fren.Core.Frame := if expanded then .element all true else .other
+        return .list #[.atom head, decls, ← scan (frames.push (xs, frame)) body]
       -- A `let`'s definitions are outside its scope.
       let decls ← if h == "let" then match decls with
           | .list ds => pure (.list (← ds.mapM fun
-              | .list #[x, d] => return .list #[x, ← scan bound d]
+              | .list #[x, d] => return .list #[x, ← scan (frames.within false) d]
               | d => pure d))
           | d => pure d
         else pure decls
-      return .list #[.atom h, decls, ← scan (bound ++ xs) body]
+      return .list #[.atom h, decls, ← scan (frames.push (xs, .other)) body]
     match ts.toList with
     | [.atom "seq.nth", _, i] =>
       if !i.mentions bound then modify fun s => { s with reads := s.reads.push i }
@@ -229,7 +245,12 @@ partial def scan (bound : Array String) (e : SExpr) : StateM Scan SExpr := do
     | [.atom "=", a, b] =>
       if !a.mentions bound && !b.mentions bound then modify fun s => { s with equations := s.equations.push (a, b) }
     | _ => pure ()
-    return .list (← ts.mapM (scan bound))
+    -- The consequent of an implication, and the conjuncts of `and`, are on
+    -- the innermost quantifier's spine; nothing else is.
+    let head := ts[0]?
+    let keepAt (i : Nat) : Bool :=
+      head == some (.atom "and") || (head == some (.atom "=>") && i == 2)
+    return .list (← ts.zipIdx.mapM fun (t, i) => scan (frames.within (keepAt i)) t)
 
 /-- The terms at which the bound name `k` of the site `i`, whose sequence
 is `q`, is instantiated. -/
@@ -337,7 +358,7 @@ def expandQuery (defs : Std.HashMap String (Array String × SExpr)) (hyps : Arra
   let extra := match pins? with
     | some pins => pins.map fun (q, n) => (`elementLength, s!"(= (seq.len {q}) {n})")
     | none => lengths.map (fun (l, q) => (`elementLength, s!"(= {l} (seq.len {q}))")) ++ ds.map fun (a, b, d) =>
-      (`elementWitness, s!"(or (= {a} {b}) (not (= (seq.len {a}) (seq.len {b}))) (not (= (seq.nth {a} {d}) (seq.nth {b} {d}))))")
+      (`elementWitness, s!"(or (= {a} {b}) (not (= (seq.len {a}) (seq.len {b}))) (and (<= 0 {d}) (< {d} (seq.len {a})) (not (= (seq.nth {a} {d}) (seq.nth {b} {d})))))")
   return { hyps := hs.map (fun (n, h) => (n, toString h)) ++ extra, goal := toString g
            consts := if pins?.isSome then #[] else ws ++ ds.map (·.2.2) ++ lengths.map (·.1)
            lengths := if pins?.isSome then #[] else lengths }

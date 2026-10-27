@@ -41,6 +41,10 @@ inductive ElementUse where
   /-- In an argument of an application of an uninterpreted function that
   brings facts: a `Nat` or a pattern type as its result, or a contract. -/
   | factArgument
+  /-- In an argument of a defined function whose body has a quantifier over
+  a type that is not listed, directly or through another: once the body is
+  unfolded, that quantifier is within this one. -/
+  | quantifiedArgument
   deriving Inhabited, DecidableEq, Repr
 
 /-- What a bound name's domain is (`lang::ElementMembers`). -/
@@ -61,9 +65,6 @@ structure ElementBinder where
   quantifier, or one of an enclosing quantifier of a type that is not
   listed. -/
   receiverBound : Bool
-  /-- The members' expression mentions an output that is not defined,
-  directly or through a definition. -/
-  receiverOutput : Bool
   /-- How the body mentions it. -/
   uses : List ElementUse
   deriving Inhabited, BEq, Repr
@@ -89,7 +90,12 @@ inductive ElementVerdict where
   | notMembers
   | setMembers
   | receiverBound
-  | receiverOutput
+  /-- Its sequence or its body mentions an output that is not defined,
+  which the realizability check quantifies over. -/
+  | mentionsOutput
+  /-- Its body mentions a bound name of a quantifier around it, other than
+  of those of the same kind that it is directly the body of. -/
+  | mentionsBound
   | used (u : ElementUse)
   | nested
   deriving Inhabited, DecidableEq, Repr
@@ -136,7 +142,7 @@ def ElementVerdict.isInCore : ElementVerdict → Bool
 
 /-- The uses that keep a quantifier out of the core, in the order in which
 they are reported. -/
-def ElementUse.outside : List ElementUse := [.index, .seqArgument, .receiver, .factArgument]
+def ElementUse.outside : List ElementUse := [.index, .seqArgument, .receiver, .factArgument, .quantifiedArgument]
 
 /-- The verdict of one bound name (`lang::binder_verdict`). -/
 def ElementBinder.verdict (b : ElementBinder) : ElementVerdict :=
@@ -145,21 +151,24 @@ def ElementBinder.verdict (b : ElementBinder) : ElementVerdict :=
   | .set => .setMembers
   | .seq =>
     if b.receiverBound then .receiverBound
-    else if b.receiverOutput then .receiverOutput
     else match ElementUse.outside.find? (fun u => decide (u ∈ b.uses)) with
       | some u => .used u
       | none => .inCore
 
 /-- Whether a quantifier with the bound names `bs` of types that are not
 listed, in order, at `nesting`, is in the decidable core, or the first
-reason that it is not: its first bound name's that is not, else its
-nesting (`lang::element_quantifier`). Both front ends decide by it. -/
-def elementVerdict (nesting : ElementNesting) (bs : List ElementBinder) : ElementVerdict :=
+reason that it is not: its first bound name's that is not; else that it
+mentions an output (`output`); else its nesting; else that it mentions a
+bound name of a quantifier around it other than of those that it is
+directly the body of (`bound`) (`lang::element_quantifier`). Both front ends decide by it. -/
+def elementVerdict (nesting : ElementNesting) (output bound : Bool) (bs : List ElementBinder) : ElementVerdict :=
   match bs.find? (!·.verdict.isInCore) with
   | some b => b.verdict
-  | none => match nesting with
-    | .other => .nested
-    | _ => .inCore
+  | none =>
+    if output then .mentionsOutput
+    else match nesting with
+      | .other => .nested
+      | _ => if bound then .mentionsBound else .inCore
 
 /-- Why a quantifier over elements is outside the core (`F0714`), unless it
 is #259's unbounded quantifier, whose message is `undecidableMsg`. -/
@@ -171,8 +180,12 @@ def elementUndecidableMsg : ElementVerdict → Option Msg
           "help: quantify over a sequence's elements, or over a listed type, or opt out")
       | .receiverBound => ("its members' sequence mentions a bound name, so the solver would quantify over sequences' elements within each other",
           "help: quantify over a sequence that mentions no bound name")
-      | .receiverOutput => ("its members' sequence mentions an output, which the realizability check would quantify over",
+      | .mentionsOutput => ("it mentions an output, which the realizability check quantifies over, so the quantifiers would alternate",
           "help: mention the inputs that the output depends on instead, or define the output")
+      | .mentionsBound => ("its body mentions a bound name of a quantifier around it, so its witness would depend on that name",
+          "help: bind both names in one quantifier over elements, or make it directly the body of the other")
+      | .used .quantifiedArgument => ("its bound name is an argument of a function with a quantifier within it, which would be nested in this one",
+          "help: state the function's quantifier here, as directly the body of this one, or opt out")
       | .used .index => ("its bound name is used as an index, which is outside the array property fragment",
           "help: use the element only as a value, or quantify over the positions and opt out")
       | .used .seqArgument => ("its bound name is an argument of a function of a sequence, which may use it as an index",
@@ -296,6 +309,52 @@ quantifier over listed types orders its instances. -/
 def elementTuples (ts : List τ) : Nat → List (List τ)
   | 0 => [[]]
   | n + 1 => (elementTuples ts n).flatMap fun pre => ts.map (pre ++ [·])
+
+/-! ## The quantifiers that a query expands (`lang::site_expanded`) -/
+
+/-- A binder around a marked quantifier in a query, outermost first
+(`lang::Frame`): a marked quantifier that is expanded, whether it is a
+`forall`, and whether what is within it is on its *spine*, where it has the
+quantifier's polarity: the consequent of an implication or a conjunct; or
+any other binder: the solver's quantifier, the realizability check's `∃`
+over outputs, a marked quantifier that is not expanded. -/
+inductive Frame where
+  | element (all spine : Bool)
+  | other
+  deriving Inhabited, DecidableEq, Repr
+
+/-- Whether the frames from position `j` to the innermost are a chain of
+expanded quantifiers of the kind `all`, each with what is within it on its
+spine (`lang::in_chain?`). -/
+def inChain (frames : List Frame) (all : Bool) (j : Nat) : Bool :=
+  (frames.drop j).all (· == .element all true)
+
+/-- Whether a marked quantifier, a `forall` if `all`, within `frames`, is
+expanded (`lang::site_expanded`): its sequences mention no name bound
+around it (`receiversClosed`), and every frame whose names its body
+mentions, by position, is in the chain of quantifiers of its kind that it is
+directly within. Its witnesses are then fresh names of the whole query: no
+name that its value could depend on is bound around it, but those of that
+chain, whose instances share them soundly. Otherwise the solver is given
+the quantifier as written. Both front ends decide by it. -/
+def siteExpanded (frames : List Frame) (all receiversClosed : Bool) (mentioned : List Nat) : Bool :=
+  receiversClosed && mentioned.all fun j => j < frames.length && inChain frames all j
+
+/-- The per-quantifier law of the expansion: a quantifier over the
+positions of `q` holds exactly when its instances hold at the terms `ix`
+and at every value of a witness `w`. So, since a witness is a fresh name of
+the query, the instances at `w :: ix` hold in some interpretation of `w`
+exactly where they do in all, and exactly where the quantifier does, when
+`w` is taken to be a position where it fails, if there is one. -/
+theorem all_iff_instances (q : List α) (p : α → Prop) (ix : List Int) :
+    (∀ x ∈ q, p x) ↔ ∀ w : Int, ∀ t ∈ w :: ix, (h : 0 ≤ t ∧ t < q.length) → p (q[t.toNat]'(by omega)) := by
+  constructor
+  · intro h w t _ ht
+    exact h _ (List.getElem_mem _)
+  · intro h x hx
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    have := h i i (List.mem_cons_self) ⟨by omega, by omega⟩
+    simpa using this
 
 /-! ## The size of the expansion (`lang::element_size`) -/
 

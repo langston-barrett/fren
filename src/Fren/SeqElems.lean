@@ -116,34 +116,75 @@ def plus (t : Expr) (k : Int) : MetaM Expr := do
   if k < 0 then mkAppM ``HSub.hSub #[t, ← mkNumeral int k.natAbs]
   else mkAppM ``HAdd.hAdd #[t, ← mkNumeral int k.natAbs]
 
-/-- `e` with each marked quantifier numbered, and recorded with its
-sequences, which mention only the locals of `ctx`; and its reads, updates
-and equations between sequences, at terms that mention only those. -/
-def scan (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (e : Expr) : MetaM Expr :=
-  Meta.transform e (pre := fun x => do
-    if let some (n, none, q) := marked? x then
-      let all := isAll q
-      let receivers ← withBound all n q fun xs b => do
-        return xs.map fun x =>
-          if !(b.containsFVar x.fvarId!) then some none
-          else ((spineMembers all x b).find? (closedIn ctx)).map some
-      let receivers? := receivers.bind fun rs => if rs.all Option.isSome then some (rs.map (·.join)) else none
-      let k := (← ref.get).sites.size
-      ref.modify fun s => { s with sites := s.sites.push { all, n, receivers? } }
-      let .mdata d _ := x | return .continue
-      return .visit (.mdata (d.insert siteKey (.ofNat k)) q)
-    if x.isAppOfArity ``Fren.Seq.nth 4 then
-      let i := x.appArg!
-      if closedIn ctx i then ref.modify fun s => { s with reads := s.reads.push i }
-    if x.isAppOfArity ``Fren.Seq.update 4 then
-      let i := x.appFn!.appArg!
-      if closedIn ctx i then
-        let u := (← plus i (-1), i, ← plus i 1)
-        ref.modify fun s => { s with updates := s.updates.push u }
-    if x.isAppOfArity ``Eq 3 && x.appFn!.appFn!.appArg!.isAppOfArity ``Fren.Seq 1 then
-      let (a, b) := (x.appFn!.appArg!, x.appArg!)
-      if closedIn ctx a && closedIn ctx b then ref.modify fun s => { s with equations := s.equations.push (a, b) }
-    return .continue)
+/-- The binders around a term of a query, outermost first, each with the
+locals that stand for its bound names (`Fren.Core.Frame`). -/
+abbrev Frames := Array (Array Expr × Core.Frame)
+
+/-- `frames` for a part of the term within them: still on the innermost
+quantifier's spine only if `keep`, as the binary's `Frames.within`. -/
+def Frames.within (frames : Frames) (keep : Bool) : Frames :=
+  match frames.back? with
+  | some (xs, .element all spine) => frames.pop.push (xs, .element all (spine && keep))
+  | _ => frames
+
+/-- Records the reads, updates and equations between sequences of the
+application `x`, at terms that mention only the locals of `ctx`. -/
+def noteApp (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (x : Expr) : MetaM Unit := do
+  if x.isAppOfArity ``Fren.Seq.nth 4 then
+    let i := x.appArg!
+    if closedIn ctx i then ref.modify fun s => { s with reads := s.reads.push i }
+  if x.isAppOfArity ``Fren.Seq.update 4 then
+    let i := x.appFn!.appArg!
+    if closedIn ctx i then
+      let u := (← plus i (-1), i, ← plus i 1)
+      ref.modify fun s => { s with updates := s.updates.push u }
+  if x.isAppOfArity ``Eq 3 && x.appFn!.appFn!.appArg!.isAppOfArity ``Fren.Seq 1 then
+    let (a, b) := (x.appFn!.appArg!, x.appArg!)
+    if closedIn ctx a && closedIn ctx b then ref.modify fun s => { s with equations := s.equations.push (a, b) }
+
+/-- `e`, within `frames`, with each marked quantifier numbered, and recorded
+with its sequences if it is expanded (`Fren.Core.siteExpanded`), as the
+binary's `scan`; and its reads, updates and equations between sequences,
+at terms that mention only the locals of `ctx`, which no binder of the
+query binds. The consequent of an implication and the conjuncts of `∧`
+are on the innermost quantifier's spine; nothing else is. -/
+partial def scan (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (frames : Frames) (e : Expr) : MetaM Expr := do
+  if let some (n, none, q) := marked? e then
+    let .mdata d _ := e | return e
+    let all := isAll q
+    let k := (← ref.get).sites.size
+    ref.modify fun s => { s with sites := s.sites.push { all, n, receivers? := none } }
+    let r ← withBound all n q fun xs b => do
+      let receivers := xs.map fun x =>
+        if !(b.containsFVar x.fvarId!) then some none
+        else ((spineMembers all x b).find? (closedIn ctx)).map some
+      let mentioned := (List.range frames.size).filter fun j => frames[j]!.1.any (b.containsFVar ·.fvarId!)
+      let expanded := Core.siteExpanded (frames.toList.map (·.2)) all (receivers.all Option.isSome) mentioned
+      if expanded then
+        ref.modify fun s => { s with sites := s.sites.set! k { all, n, receivers? := some (receivers.map (·.join)) } }
+      let frame : Core.Frame := if expanded then .element all true else .other
+      let b ← scan ctx ref (frames.push (xs, frame)) b
+      if all then mkForallFVars xs b
+      else xs.foldrM (init := b) fun x acc => do mkAppM ``Exists #[← mkLambdaFVars #[x] acc]
+    let some q := r | return e
+    return .mdata (d.insert siteKey (.ofNat k)) q
+  match e with
+  | .mdata d b => return .mdata d (← scan ctx ref frames b)
+  | .forallE n t b bi =>
+    if b.hasLooseBVars then
+      withLocalDecl n bi t fun fv => do
+        mkForallFVars #[fv] (← scan ctx ref (frames.push (#[fv], .other)) (b.instantiate1 fv))
+    else return .forallE n (← scan ctx ref (frames.within false) t) (← scan ctx ref (frames.within true) b) bi
+  | .lam n t b bi =>
+    withLocalDecl n bi t fun fv => do
+      mkLambdaFVars #[fv] (← scan ctx ref (frames.push (#[fv], .other)) (b.instantiate1 fv))
+  | .app .. =>
+    noteApp ctx ref e
+    let keep := e.isAppOfArity ``And 2
+    let f := e.getAppFn
+    let args ← e.getAppArgs.mapM (scan ctx ref (frames.within keep))
+    return mkAppN f args
+  | _ => return e
 
 /-- A query whose quantifiers would have more instances than
 `Fren.Core.maxElementInstances`: how many. -/
@@ -203,8 +244,8 @@ def withExpanded (hyps : Array (Name × Expr)) (goal : Expr) (pins? : Option (Ar
     (k : Expanded → MetaM α) : MetaM (Except Nat α) := do
   let ctx : Std.HashSet FVarId := .ofList (← getLCtx).getFVarIds.toList
   let ref ← IO.mkRef ({} : Scan)
-  let hyps ← hyps.mapM fun (n, h) => return (n, ← scan ctx ref h)
-  let goal ← scan ctx ref goal
+  let hyps ← hyps.mapM fun (n, h) => return (n, ← scan ctx ref #[] h)
+  let goal ← scan ctx ref #[] goal
   let sc ← ref.get
   let expanded := sc.sites.filter (·.receivers?.isSome)
   let receivers := (expanded.flatMap fun s => (s.receivers?.getD #[]).filterMap id).foldl
@@ -242,7 +283,8 @@ def withExpanded (hyps : Array (Name × Expr)) (goal : Expr) (pins? : Option (Ar
       let exts ← (eqs.zip ds).mapM fun ((a, b), d) => do
         let lenNe := mkNot (← mkEq (← mkAppM ``Fren.Seq.len #[a]) (← mkAppM ``Fren.Seq.len #[b]))
         let atNe := mkNot (← mkEq (← mkAppM ``Fren.Seq.nth #[a, d]) (← mkAppM ``Fren.Seq.nth #[b, d]))
-        return (`elementWitness, mkOr (← mkEq a b) (mkOr lenNe atNe))
+        let inRange ← mkAppM ``And #[← mkAppM ``LE.le #[← mkNumeral int 0, d], ← mkAppM ``LT.lt #[d, ← mkAppM ``Fren.Seq.len #[a]]]
+        return (`elementWitness, mkOr (← mkEq a b) (mkOr lenNe (mkAnd inRange atNe)))
       pure (lens ++ exts)
   return .ok (← k { hyps := hs ++ extra, goal := g, locals := fvs, lengths := ls.zip receivers })
 

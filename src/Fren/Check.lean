@@ -239,6 +239,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         let k ← v.int?
         guard (0 ≤ k)
         pure (q, k.toNat)
+      -- A length that the model does not give, as the binary answers it.
+      unless pins.size == ex.lengths.size do return ((.unknown Core.elementUnconfirmedReason, c), none)
       return ((.sat model, c), some pins)
     match first with
     | .error n => return (.unknown (Core.elementLimitReason n), true)
