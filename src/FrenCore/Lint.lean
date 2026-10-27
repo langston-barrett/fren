@@ -907,6 +907,15 @@ def writtenSame (a b : String) : Bool :=
   if !mayHaveComments as && !mayHaveComments bs && !sameNonWhitespace as bs then false
   else writtenForm a == writtenForm b
 
+/-- Whether two expressions see the same binders of pattern tests, `sa` and
+`sb`, as sets (`lint::Scoped`). -/
+def sameScope (sa sb : List String) : Bool := sa.all (sb.contains ·) && sb.all (sa.contains ·)
+
+/-- Whether two expressions are written the same in the same scope: their
+texts `a` and `b` are written the same, and they see the same binders of
+pattern tests, `sa` and `sb` (`lint::Scoped`). -/
+def writtenSameIn (a b : String) (sa sb : List String) : Bool := writtenSame a b && sameScope sa sb
+
 /-! ## Tests of variants -/
 
 /-- A test of which variant a scrutinee is, as `if_chain_match` and
