@@ -74,7 +74,10 @@ proc places(s: Shape): (
     expect sides: measure.sides = 0 iff round?
 }
 
-expect boxy: forall (p: places), p.s is Shape::Rect(_, _) | Shape::Empty iff not p.round?
+expect boxy(p_s: Shape) {
+    call p := places(p_s)
+    expect boxy: p.s is Shape::Rect(_, _) | Shape::Empty iff not p.round?
+}
 
 -- `nonminimal_bool` keeps the parentheses that a pattern test needs, since
 -- it binds as a comparison.

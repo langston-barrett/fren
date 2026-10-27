@@ -34,7 +34,11 @@ pub proc thermostat(temp: Int, target: Int is 50..=90): (det mode: Mode, alarm?)
 
 proc nothing() {}
 
-expect colder: forall (a b: band), when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold?
+expect colder(a_temp: Int, a_target: Int, b_temp: Int, b_target: Int) {
+    call a := band(a_temp, a_target)
+    call b := band(b_temp, b_target)
+    expect colder: when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold?
+}
 
 mod climate::levels
 pub enum Level { Low, High }

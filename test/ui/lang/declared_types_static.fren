@@ -37,7 +37,10 @@ const K: Int := true
 --~^ error: `K` has type `Int`
 fn result?(n: Int) := n
 --~^ error: `result?` returns `Bool`
-expect global: forall (w: sub), w.z
+expect global(w_x: Int) {
+    call w := sub(w_x)
+    expect global: w.z
+}
 --~^ error: an expectation is a `Bool`
 
 -- A `Nat` widens to an `Int` wherever one is declared, as in a record

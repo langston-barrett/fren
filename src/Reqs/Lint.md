@@ -135,7 +135,7 @@ use view::Severity
 | `unnecessary_struct_initialization` | `F0790` | `complexity` | `warn` | a record literal that copies each field of a value of its record, such as `Point { x := p.x, y := p.y }` (see [Copied records](Lint/Complexity.md#copied-records)) |
 | `unnecessary_trailing_comma` | `F0801` | `pedantic` | `allow` | a trailing comma on the line of the `}` or `]` that closes its list, as in `{a, b,}` (see [Trailing commas](Lint/Pedantic/Text.md#trailing-commas)) |
 | `unnested_or_patterns` | `F0836` | `pedantic` | `allow` | alternatives next to each other that name one variant and differ in one value of its payload, such as `E::V(1) \| E::V(2)` (see [Nested or-patterns](Lint/Pedantic/Matches.md#nested-or-patterns)) |
-| `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose binders fall into two or more groups that no atom relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
+| `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose calls fall into two or more groups that nothing relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
 | `unused_assumption` | `F0792` | `unused` | `warn` | an assumption that mentions only inputs that nothing uses, even through other assumptions (see [Unused assumptions](Lint/Unused.md#unused-assumptions)) |
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
 | `unused_lint_setting` | `F0791` | `unused` | `warn` | a lint setting that is in effect at no item (see [Unused lint settings](Lint/Unused.md#unused-lint-settings)) |
@@ -704,8 +704,18 @@ pub proc fix_selected(
 }
 
 -- Skipping more never fixes more.
-expect skip_monotone: forall (a b: fix_selected),
-    when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
+expect skip_monotone(
+    a_lint: Lint,
+    a_only: Set<Lint>,
+    a_skip: Set<Lint>,
+    b_lint: Lint,
+    b_only: Set<Lint>,
+    b_skip: Set<Lint>,
+) {
+    call a := fix_selected(a_lint, a_only, a_skip)
+    call b := fix_selected(b_lint, b_only, b_skip)
+    expect skip_monotone: when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
+}
 ```
 
 The lints that are not fixed are reported as `fren check` reports them. A
@@ -758,20 +768,22 @@ pub proc migration_step(
 }
 ```
 
-Then, once every file parses, the instances: `F0420`, an instance
-written as calls were before, whose fix needs the order of the called
-procedure's parameters, which only name resolution gives. So `fren fix`
-elaborates the files, makes the fixes of every `F0420` that has one, all
-at once, since they do not overlap, and elaborates them again, and so on,
-until no `F0420` with a fix is left; an instance whose called procedure is
-itself not yet elaborated, such as one whose own instances are being
-fixed, is fixed in a later round. There are at most 1000 rounds.
-`lint::call_migration_round` gives what one round does, from whether each
-`F0420` of the files, as elaborated before the round, has a fix
-(`offered`, in the order they are reported): while some has one and fewer
-than 1000 rounds have been made, the round makes every offered fix, and
-only those; otherwise `fren fix` goes on to the lints. `k` is any `F0420`,
-so the rule is stated for each. Membership in a sequence of unknown
+Then, once every file parses, the errors whose fixes need name
+resolution: `F0420`, an instance written as calls were before, whose fix
+needs the order of the called procedure's parameters, and `F0416`, a
+global expectation written with a `forall` over procedures' behaviours,
+whose fix needs their parameters and assumptions (see [Global
+expectations](Lang/Global.md#migration)). So `fren fix` elaborates the
+files, makes the fixes of every one that has one, all at once, since they
+do not overlap, and elaborates them again, and so on, until none with a
+fix is left; one whose procedure is itself not yet elaborated, such as one
+whose own instances are being fixed, is fixed in a later round. There are
+at most 1000 rounds. `lint::call_migration_round` gives what one round
+does, from whether each of them, as elaborated before the round, has a
+fix (`offered`, in the order they are reported): while some has one and
+fewer than 1000 rounds have been made, the round makes every offered fix,
+and only those; otherwise `fren fix` goes on to the lints. `k` is any of
+them, so the rule is stated for each. Membership in a sequence of unknown
 length is outside the [decidable core](Lang/Decidability.md#sequences), so
 the procedure opts out, and its checks are tested:
 
@@ -781,9 +793,9 @@ pub enum Offer { Fix, NoFix }
 set_option fren.evidence "tested" in
 set_option fren.lint.undecidable "allow" in
 pub proc call_migration_round(
-    offered: Seq<Offer>,         -- for each `F0420`, as elaborated before the round, whether it has a fix
+    offered: Seq<Offer>,         -- for each `F0420` and `F0416`, as elaborated before the round, whether it has a fix
     round: Nat,                  -- how many rounds of these fixes have been made
-    k: Int,                      -- any `F0420`
+    k: Int,                      -- any `F0420` or `F0416`
 ): (
     det continues?,              -- the round is made
     det applies?,                -- it makes the fix of `k`

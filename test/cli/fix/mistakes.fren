@@ -15,6 +15,12 @@ proc c(a?, b?, s: String): (p?, q?, o?) {
     -- a ⁦comment⁩
 }
 
-expect g1: forall (x: c), when x.a?, x.p?
+expect g1(x_a?, x_b?, x_s: String) {
+    call x := c(x_a?, x_b?, x_s)
+    expect g1: when x.a?, x.p?
+}
 set_option fren.lint.eq_op "allow" in
-expect g2: forall (x: c), when x.a?, x.p?
+expect g2(x_a?, x_b?, x_s: String) {
+    call x := c(x_a?, x_b?, x_s)
+    expect g2: when x.a?, x.p?
+}

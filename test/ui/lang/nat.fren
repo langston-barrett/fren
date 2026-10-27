@@ -69,7 +69,10 @@ proc determined(n: Nat): (det y: Nat) {
     expect same: y = n
 }
 
-expect outputs_grow: forall (a: counted), a.y >= a.n
+expect outputs_grow(a_n: Nat, a_m: Int) {
+    call a := counted(a_n, a_m)
+    expect outputs_grow: a.y >= a.n
+}
 
 -- A refinement widens in the direction values flow. An `Int` input of the
 -- concrete component serves for a `Nat` of the abstract one, and is at

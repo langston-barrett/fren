@@ -7,4 +7,7 @@ pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[a-z]+")
 }
 
-expect no_zz: forall (a: word), when a.text.contains?("zz"), not a.accepted?
+expect no_zz(a_text: String) {
+    call a := word(a_text)
+    expect no_zz: when a.text.contains?("zz"), not a.accepted?
+}

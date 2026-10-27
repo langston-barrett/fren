@@ -296,17 +296,39 @@ pub proc linear_product(
 An operand that mentions less never makes a product nonlinear:
 
 ```fren
-expect fewer_mentions: forall (p q: linear_product),
-    when q.a_mentioned subset p.a_mentioned and q.b_mentioned subset p.b_mentioned and p.accepted?,
-    q.accepted?
+expect fewer_mentions(
+    p_a_mentioned: Set<Mention>,
+    p_b_mentioned: Set<Mention>,
+    q_a_mentioned: Set<Mention>,
+    q_b_mentioned: Set<Mention>,
+) {
+    call p := linear_product(p_a_mentioned, p_b_mentioned)
+    call q := linear_product(q_a_mentioned, q_b_mentioned)
+    expect fewer_mentions: when q.a_mentioned subset p.a_mentioned and q.b_mentioned subset p.b_mentioned and p.accepted?,
+        q.accepted?
+}
 ```
 
 A defined function applied to constants scales a product like a literal,
 whatever the other operand:
 
 ```fren
-expect defined_scales: forall (m: node) (p: linear_product),
-    when m.head is Head::Defined(_) and m.parts_mentioned = {} and p.a_mentioned = m.mentioned, p.accepted?
+expect defined_scales(
+    m_program: Program,
+    m_head: Head,
+    m_env: Env,
+    m_values: Seq<Value>,
+    m_parts_mentioned: Set<Mention>,
+    m_undefined_parts: Set<Int>,
+    p_a_mentioned: Set<Mention>,
+    p_b_mentioned: Set<Mention>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume m_leaves: when m_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), m_parts_mentioned = {}
+    call m := node(m_program, m_head, m_env, m_values, m_parts_mentioned, m_undefined_parts)
+    call p := linear_product(p_a_mentioned, p_b_mentioned)
+    expect defined_scales: when m.head is Head::Defined(_) and m.parts_mentioned = {} and p.a_mentioned = m.mentioned, p.accepted?
+}
 ```
 
 The rule is what makes the product linear: of an accepted product, one
@@ -323,15 +345,59 @@ environment; that the parts' values are the same follows by induction
 (see [The whole tree](MeaningLaws.md#the-whole-tree)):
 
 ```fren
-expect fixed_factor: forall (p: linear_product) (a a2: node),
-    when p.accepted? and p.b_mentioned != {} and p.a_mentioned = a.mentioned
-    and a2.program = a.program and a2.head = a.head and a2.values = a.values and a.specified?,
-    a2.value = a.value
+expect fixed_factor(
+    p_a_mentioned: Set<Mention>,
+    p_b_mentioned: Set<Mention>,
+    a_program: Program,
+    a_head: Head,
+    a_env: Env,
+    a_values: Seq<Value>,
+    a_parts_mentioned: Set<Mention>,
+    a_undefined_parts: Set<Int>,
+    a2_program: Program,
+    a2_head: Head,
+    a2_env: Env,
+    a2_values: Seq<Value>,
+    a2_parts_mentioned: Set<Mention>,
+    a2_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume a_leaves: when a_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), a_parts_mentioned = {}
+    assume a2_leaves: when a2_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), a2_parts_mentioned = {}
+    call p := linear_product(p_a_mentioned, p_b_mentioned)
+    call a := node(a_program, a_head, a_env, a_values, a_parts_mentioned, a_undefined_parts)
+    call a2 := node(a2_program, a2_head, a2_env, a2_values, a2_parts_mentioned, a2_undefined_parts)
+    expect fixed_factor: when p.accepted? and p.b_mentioned != {} and p.a_mentioned = a.mentioned
+        and a2.program = a.program and a2.head = a.head and a2.values = a.values and a.specified?,
+        a2.value = a.value
+}
 
-expect fixed_factor_right: forall (p: linear_product) (b b2: node),
-    when p.accepted? and p.a_mentioned != {} and p.b_mentioned = b.mentioned
-    and b2.program = b.program and b2.head = b.head and b2.values = b.values and b.specified?,
-    b2.value = b.value
+expect fixed_factor_right(
+    p_a_mentioned: Set<Mention>,
+    p_b_mentioned: Set<Mention>,
+    b_program: Program,
+    b_head: Head,
+    b_env: Env,
+    b_values: Seq<Value>,
+    b_parts_mentioned: Set<Mention>,
+    b_undefined_parts: Set<Int>,
+    b2_program: Program,
+    b2_head: Head,
+    b2_env: Env,
+    b2_values: Seq<Value>,
+    b2_parts_mentioned: Set<Mention>,
+    b2_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume b_leaves: when b_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), b_parts_mentioned = {}
+    assume b2_leaves: when b2_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), b2_parts_mentioned = {}
+    call p := linear_product(p_a_mentioned, p_b_mentioned)
+    call b := node(b_program, b_head, b_env, b_values, b_parts_mentioned, b_undefined_parts)
+    call b2 := node(b2_program, b2_head, b2_env, b2_values, b2_parts_mentioned, b2_undefined_parts)
+    expect fixed_factor_right: when p.accepted? and p.a_mentioned != {} and p.b_mentioned = b.mentioned
+        and b2.program = b.program and b2.head = b.head and b2.values = b.values and b.specified?,
+        b2.value = b.value
+}
 ```
 
 ## Division and remainder
@@ -757,15 +823,39 @@ and then the two rules agree. Where they differ is in fields not named,
 which only an update may leave out:
 
 ```fren
-expect every_field: forall (l: record_literal) (u: record_update),
-    when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
-    and u.given = u.fields,
-    u.accepted? iff l.accepted?
+expect every_field(
+    l_fields: Set<FieldName>,
+    l_given: Set<FieldName>,
+    l_n_repeated: Nat,
+    u_record?,
+    u_fields: Set<FieldName>,
+    u_given: Set<FieldName>,
+    u_n_repeated: Nat,
+) {
+    assume u_some_given: u_given != {}
+    call l := record_literal(l_fields, l_given, l_n_repeated)
+    call u := record_update(u_record?, u_fields, u_given, u_n_repeated)
+    expect every_field: when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
+        and u.given = u.fields,
+        u.accepted? iff l.accepted?
+}
 
-expect fields_left_out: forall (l: record_literal) (u: record_update),
-    when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
-    and u.given subset u.fields and u.given != u.fields and u.n_repeated = 0,
-    u.accepted? and not l.accepted?
+expect fields_left_out(
+    l_fields: Set<FieldName>,
+    l_given: Set<FieldName>,
+    l_n_repeated: Nat,
+    u_record?,
+    u_fields: Set<FieldName>,
+    u_given: Set<FieldName>,
+    u_n_repeated: Nat,
+) {
+    assume u_some_given: u_given != {}
+    call l := record_literal(l_fields, l_given, l_n_repeated)
+    call u := record_update(u_record?, u_fields, u_given, u_n_repeated)
+    expect fields_left_out: when u.record? and u.fields = l.fields and u.given = l.given and u.n_repeated = l.n_repeated
+        and u.given subset u.fields and u.given != u.fields and u.n_repeated = 0,
+        u.accepted? and not l.accepted?
+}
 ```
 
 ## Newtypes

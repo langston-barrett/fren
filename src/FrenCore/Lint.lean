@@ -6917,10 +6917,10 @@ def unrelatedBinders (nGroups : Nat) : Bool := nGroups ≥ 2
 def unrelatedBindersMsg (name : String) (groups : Array (Array Name)) : Msg :=
   let show_ (g : Array Name) := ", ".intercalate (g.toList.map (s!"`{·}`"))
   { code? := some Lint.unrelatedBinders.code
-    headline := s!"the binders of `{name}` fall into {groups.size} groups that nothing relates"
+    headline := s!"the calls of `{name}` fall into {groups.size} groups that nothing relates"
     label? := some s!"{groups.size} claims in one"
-    notes := #[s!"note: no atom mentions both a binder of {show_ groups[0]!} and one of {show_ groups[1]!}",
-      "help: relate the binders, or write one expectation for each group"] }
+    notes := #[s!"note: no atom, argument or parameter relates a call of {show_ groups[0]!} and one of {show_ groups[1]!}",
+      "help: relate the calls, or write one global expectation for each group"] }
 
 /-! ## Record literals -/
 

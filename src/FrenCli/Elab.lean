@@ -362,7 +362,8 @@ says whether it can be copied (`Fren.Core.Callee`). -/
 structure ProcSource where
   params : Array (String × String) := #[]
   assumes : Array (String × String × Array (Nat × Nat × String × Bool)) := #[]
-  imports : Bool := false
+  /-- Its `use` members, as written. -/
+  uses : Array String := #[]
   closed : Bool := true
   deriving Inhabited
 
@@ -5781,6 +5782,29 @@ def declaresBang (text x : String) : Bool := Id.run do
     if i + xs.size ≤ cs.size && (cs.extract i (i + xs.size)) == xs && (i == 0 || !ident cs[i - 1]!) then return true
   return false
 
+/-- The text of a type that starts at `start`, as written: up to the `,`
+or `)` that ends it, or a comment, outside brackets and strings, without
+the spaces before them. -/
+def typeTextFrom (src : Array Char) (start : Nat) : String := Id.run do
+  let mut i := start
+  let mut depth : Nat := 0
+  while i < src.size do
+    let c := src[i]!
+    if c == '"' then
+      i := i + 1
+      while i < src.size && src[i]! != '"' do
+        if src[i]! == '\\' then i := i + 1
+        i := i + 1
+    else if c == '(' || c == '[' || c == '{' || c == '<' then depth := depth + 1
+    else if c == ']' || c == '}' || c == '>' then depth := depth - 1
+    else if c == ')' then
+      if depth == 0 then break
+      depth := depth - 1
+    else if (c == ',' || c == '\n') && depth == 0 then break
+    else if c == '-' && src[i + 1]? == some '-' then break
+    i := i + 1
+  return (String.ofList (src.extract start i).toList).trimAsciiEnd.toString
+
 /-- What an old global expectation's fix copies of the procedure with the
 parameters `header`, members `body`, at `spans`, and variables `vars`
 (`ProcSource`). -/
@@ -5789,9 +5813,9 @@ def procSource (header body : Array Member) (spans : Array Span) (vars : Array C
   let src := (← get).src
   let params ← header.filterMapM fun
     | .var true _ _ x ty? _ => do
-      let ty ← match ty? with
-        | some ty => srcAt (ty[0]!.span.to ty.back!.span)
-        | none => pure ""
+      let ty := match ty? with
+        | some ty => typeTextFrom src ty[0]!.span.start
+        | none => ""
       return some ((declaredIdent x).1.name, ty)
     | _ => return none
   let names := params.map (·.1)
@@ -5833,8 +5857,38 @@ def procSource (header body : Array Member) (spans : Array Span) (vars : Array C
     if (mentions e).any (fun n => own.contains n.getRoot && !names.contains n.getRoot.toString)
         || names.any (declaresBang text ·) then
       closed := false
-  let imports := body.any fun | .use .. | .useGroup .. => true | _ => false
-  return { params, assumes, imports, closed }
+  let uses ← (body.zip spans).filterMapM fun
+    | (.use .., sp) | (.useGroup .., sp) => some <$> srcAt sp
+    | _ => pure none
+  return { params, assumes, uses, closed }
+
+/-- `unrelated_binders` (`lint::unrelated_binders`) of the global
+expectation `name` with the members `members`: whether its calls fall
+into groups that nothing relates. An atom of a constraint relates the
+calls it mentions and those whose arguments mention a parameter it
+mentions; a call relates itself to the calls its arguments mention; and a
+parameter relates the calls whose arguments mention it. -/
+def lintUnrelatedCalls (name : Ident) (members : Array Member) : M Unit := do
+  let calls := members.filterMap fun
+    | .inst x _ bs .. => some (Name.mkSimple (declaredIdent x).1.name, bs.flatMap fun (b, e?) =>
+        match e? with
+        | some e => (mentions e).map (·.getRoot)
+        | none => #[Name.mkSimple b.name])
+    | _ => none
+  let params := members.filterMap fun
+    | .var true _ _ x _ _ => some (Name.mkSimple (declaredIdent x).1.name)
+    | _ => none
+  let names := calls.map (·.1)
+  let reading (p : Name) := (calls.filter (·.2.contains p)).map (·.1)
+  let expand (roots : Array Name) := roots.filter names.contains ++ (roots.filter params.contains).flatMap reading
+  let atoms := members.flatMap (fun
+      | .prop _ _ e => (boolAtoms e).map fun a => expand ((mentions a).map (·.getRoot))
+      | _ => #[])
+    ++ calls.map (fun (w, roots) => #[w] ++ roots.filter names.contains)
+    ++ params.map reading
+  let groups := Fren.Core.binderGroups names atoms
+  if Fren.Core.unrelatedBinders groups.size then
+    lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)
 
 /-- A member of a global expectation's block that it does not accept
 (`lang::block_member`), with where it is reported. -/
@@ -5903,6 +5957,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   lintOutputs lcx members vars
   lintTrivialCover lcx members
   lintCaseSplitGuarantees lcx members vars
+  if global then lintUnrelatedCalls name members
   -- The lints above are found despite a constraint's static error, as in
   -- Lean; `unused_variables`, and the rest, only without one.
   stopIfErrors
@@ -6107,22 +6162,23 @@ def globalBinderComp? (segs : Array Ident) : M (Option Name) := do
   | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a type" r)
 
 /-- The global expectation, written with parameters and calls, that the
-old one `expect name: forall binders, body` migrates to (`F0416`), each
-binder with the procedure it ranges over the behaviours of, if any; or
+old one `expect name: forall binders, body` migrates to (`F0416`), its
+binders `resolved`, each with the procedure it ranges over the behaviours of, if any; or
 `none` if it has no fix (`Reqs/Lang/Global#migration`). -/
-def oldGlobalText (name : Ident) (binders : Array Binder) (resolved : Array (Binder × Option Name)) (body : Expr) :
+def oldGlobalText (name : Ident) (resolved : Array (Binder × Option Name)) (body : Expr) :
     M (Option String) := do
   let st ← get
   let src := st.src
   let module := st.module
   let mut params : Array String := #[]
   let mut newParams : Array String := #[]
+  let mut uses : Array String := #[]
   let mut assumes : Array String := #[]
   let mut calls : Array String := #[]
   let mut declaredNames : Array String := #[]
   let mut callees : Array Fren.Core.Callee := #[]
   for (b, path?) in resolved do
-    let tyText ← srcAt (b.ty[0]!.span.to b.ty.back!.span)
+    let tyText := typeTextFrom src b.ty[0]!.span.start
     match path? with
     | none =>
       for x in b.names do
@@ -6131,12 +6187,16 @@ def oldGlobalText (name : Ident) (binders : Array Binder) (resolved : Array (Bin
     | some path =>
       let some c := st.comps.find? (·.path == path) | return none
       let src' := c.source
-      callees := callees.push { module := module.toString, imports := src'.imports, closed := src'.closed }
+      callees := callees.push { module := path.getPrefix.toString, closed := src'.closed }
+      -- Its imports, for its assumptions' names, once each.
+      unless src'.assumes.isEmpty do
+        for u in src'.uses do
+          unless uses.contains u do uses := uses.push u
       for x in b.names do
         let w := (declaredIdent x).1.name
         declaredNames := declaredNames.push w
         let ps := src'.params.map fun (p, _) => Fren.Core.migratedParam w p
-        for (p, ty) in src'.params, q in ps do
+        for (_, ty) in src'.params, q in ps do
           params := params.push (if ty.isEmpty then q else s!"{q}: {ty}")
           newParams := newParams.push q
           declaredNames := declaredNames.push q
@@ -6165,13 +6225,24 @@ def oldGlobalText (name : Ident) (binders : Array Binder) (resolved : Array (Bin
   let (_, ls, _) := Fren.Core.lineAt src st.itemStart
   let col := st.itemStart - ls
   let written := Fren.Core.withParens src (toRange (body.writtenSpan src))
-  let raw := String.ofList (src.extract written.start written.stop).toList
+  -- With the comment after it, on its last line, which stays there.
+  let raw := String.ofList (src.extract written.start (withLineComment src written.stop)).toList
   let lines := raw.splitOn "\n"
-  let claim := "\n".intercalate (lines.headD "" :: (lines.drop 1).map fun l =>
+  -- And a comment between the binders and the body, at the end of its
+  -- first line.
+  let lastBinder := (resolved.back?.map (·.1.span.stop)).getD written.start
+  let between := String.ofList (src.extract lastBinder written.start).toList
+  let comment? := match between.splitOn "--" with
+    | _ :: c :: rest => some (("--" ++ "--".intercalate (c :: rest)).splitOn "\n").head!.trimAsciiEnd.toString
+    | _ => none
+  let first := match comment? with
+    | some c => (lines.headD "") ++ "  " ++ c
+    | none => lines.headD ""
+  let claim := "\n".intercalate (first :: (lines.drop 1).map fun l =>
     let lead := (l.takeWhile (· == ' ')).toString.length
     (l.drop (min lead col)).toString)
   let head := String.ofList (src.extract st.itemStart name.span.stop).toList
-  return some (Fren.Core.globalBlockText col head params assumes calls s!"expect {n}: {claim}")
+  return some (Fren.Core.globalBlockText col head params uses assumes calls s!"expect {n}: {claim}")
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
@@ -6206,10 +6277,11 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   -- expectations were written in before (`F0416`), and the binders over
   -- values alone a quantifier around the body (`lang::quantifier_binder`).
   let resolved ← binders.mapM fun b => return (b, ← globalBinderComp? b.ty)
-  if let some (b, _) := resolved.find? (·.2.isSome) then
-    let fixed? ← oldGlobalText name binders resolved body
+  if let some (b, _) := resolved.find? fun (_, p?) =>
+      (Fren.Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
+    let fixed? ← oldGlobalText name resolved body
     let msg := Fren.Core.oldGlobalMsg fixed?
-    let stop := (Fren.Core.withParens src (toRange (body.writtenSpan src))).stop
+    let stop := withLineComment src (Fren.Core.withParens src (toRange (body.writtenSpan src))).stop
     err (b.ty[0]!.span.to b.ty.back!.span)
       { msg with fixes := msg.fixes.map ({ · with range? := some { start := st.itemStart, stop } }) }
   -- Without a binder over behaviours, it mentions no variables

@@ -41,7 +41,9 @@ inductive BlockMember where
 with `det` if `det` (`lang::block_member`): it constrains nothing and has
 no outputs, so only assumptions, definitions, calls, claims and imports. -/
 def blockMemberAccepted (m : BlockMember) (det : Bool) : Bool :=
-  !det && (m == .let || m == .assume || m == .expect || m == .cover || m == .call || m == .use)
+  !det && match m with
+    | .let | .assume | .expect | .cover | .call | .use => true
+    | .result | .exists | .define | .ensure => false
 
 /-- How a message names the member `m`. -/
 def BlockMember.text : BlockMember → String
@@ -70,19 +72,18 @@ def blockMemberMsg (m : BlockMember) (det : Bool) : Msg :=
 
 /-- What the fix of an old global expectation needs to know of the
 procedure of one of its binders over behaviours (`lang::Callee`): its
-module, whether it has `use` members, and whether its assumptions mention
-none of its own variables but its parameters, and declare no name that a
-parameter has. -/
+module, and whether its assumptions mention none of its own variables but
+its parameters, and declare no name that a parameter has. -/
 structure Callee where
   module : String
-  imports : Bool
   closed : Bool
   deriving Inhabited, BEq, Repr
 
 /-- Whether the fix can copy the parameters' types and the assumptions of
-`c` into a global expectation in `module` (`lang::callee_fix`): what they
-mention then resolves there as it does in `c`. -/
-def calleeFixable (module : String) (c : Callee) : Bool := c.module == module && !c.imports && c.closed
+`c`, with its `use` members, into a global expectation in `module`
+(`lang::callee_fix`): what they mention then resolves there as it does in
+`c`. -/
+def calleeFixable (module : String) (c : Callee) : Bool := c.module == module && c.closed
 
 /-- The name of the parameter that the fix declares for the parameter `x`
 of a binder `w` (`lang::migrated_param`): `w_x`, so `a_ready?` for `a`'s
@@ -98,20 +99,22 @@ def globalFixOffered (module : String) (callees : Array Callee) (fresh : Array B
 /-- The text of the global expectation that an old one migrates to: `head`
 (`expect n`), the parameters `params`, each as written, on one line if it
 fits in 100 characters and otherwise one to a line, then a block, indented
-by `indent` plus 4, of the assumptions, the calls, and `expect n: body`,
+by `indent` plus 4, of the imports, the assumptions, the calls, and
+`expect n: body`,
 whose lines after its first keep their indentation relative to it. -/
-def globalBlockText (indent : Nat) (head : String) (params : Array String) (assumes calls : Array String)
+def globalBlockText (indent : Nat) (head : String) (params : Array String) (uses assumes calls : Array String)
     (claim : String) : String :=
   let pad := String.ofList (List.replicate indent ' ')
   let inner := pad ++ "    "
   let flat := head ++ "(" ++ ", ".intercalate params.toList ++ ") {"
   let sig := if (pad ++ flat).length ≤ 100 || params.isEmpty then flat
     else head ++ "(\n" ++ String.join (params.toList.map (inner ++ · ++ ",\n")) ++ pad ++ ") {"
-  -- Each member's lines after its first, indented 4 more, as in the block.
+  -- Each member's lines after its first keep their indentation relative
+  -- to it.
   let member (m : String) : String :=
     let ls := m.splitOn "\n"
-    "\n".intercalate (ls.headD "" :: (ls.drop 1).map fun l => if l.trimAscii.isEmpty then "" else "    " ++ l)
-  let lines := (assumes ++ calls ++ #[claim]).toList.map fun m => inner ++ member m ++ "\n"
+    "\n".intercalate (ls.headD "" :: (ls.drop 1).map fun l => if l.trimAscii.isEmpty then "" else inner ++ l)
+  let lines := (uses ++ assumes ++ calls ++ #[claim]).toList.map fun m => inner ++ member m ++ "\n"
   sig ++ "\n" ++ String.join lines ++ pad ++ "}"
 
 /-- An old global expectation, which quantified over behaviours with
@@ -121,8 +124,8 @@ def oldGlobalMsg (fixed? : Option String) : Msg :=
     label? := some "a binder over the behaviours of a procedure"
     notes := #["note: a global expectation takes parameters, and relates procedures by calling them, as in \
       `expect n(x: T) { call a := p(x) ... }`"]
-      ++ (if fixed?.isNone then #["note: its procedures' assumptions or types mention names that may not resolve \
-        here, or a name it would declare is taken, so it has no fix"] else #[])
+      ++ (if fixed?.isNone then #["note: a procedure it binds is in another module, or its assumptions mention \
+        variables other than its parameters, or a name the fix would declare is taken, so it has no fix"] else #[])
     fixes := fixed?.toArray.map fun replacement =>
       { msg := "write it with parameters and calls, assuming what its procedures assume", replacement } }
 

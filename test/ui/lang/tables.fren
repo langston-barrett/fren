@@ -137,7 +137,10 @@ proc uses(x: Int): (det y: Int) {
 }
 
 -- In a global expectation.
-expect exit_codes: forall (e: exit), table { e.ran? => e.code != 2, not e.ran? => e.code = 2 }
+expect exit_codes(e_ran?, e_worst: Severity) {
+    call e := exit(e_ran?, e_worst)
+    expect exit_codes: table { e.ran? => e.code != 2, not e.ran? => e.code = 2 }
+}
 
 --@ summary: 166 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 0

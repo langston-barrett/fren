@@ -60,8 +60,9 @@ fun worst code e.ran? e.worst e.code =>
 #guard_msgs in
 #print check.always_runs.call.e
 
--- A constant is a definition of its type; a global expectation is a
--- proposition over its binders' variables. Only Lean code uses `FAILED`,
+-- A constant is a definition of its type; a global expectation's
+-- expectation is a proposition over its parameters and calls' variables, as
+-- a procedure's is. Only Lean code uses `FAILED`,
 -- which `dead_code` does not see.
 set_option fren.lint.dead_code "allow" in
 const FAILED: Int := 2 - 1
@@ -71,18 +72,20 @@ const FAILED: Int := 2 - 1
 #guard_msgs in
 #print check.FAILED
 
-expect deterministic: forall (a b: exit),
-  when a.ran? = b.ran? and a.worst = b.worst, a.code = b.code
+expect deterministic(a_ran?, a_worst: Verdict, b_ran?, b_worst: Verdict) {
+  call a := exit(a_ran?, a_worst)
+  call b := exit(b_ran?, b_worst)
+  expect deterministic: when a.ran? = b.ran? and a.worst = b.worst, a.code = b.code
+}
 
 /--
-info: @[reducible] def Fren.Generated.check.deterministic : Prop :=
-∀ (a.ran? : Bool) (a.worst : check.Verdict) (a.code : Int) (b.ran? : Bool) (b.worst : check.Verdict) (b.code : Int),
-  (check.exit.assumes a.ran? a.worst a.code ∧ check.exit.ensures a.ran? a.worst a.code) ∧
-      check.exit.assumes b.ran? b.worst b.code ∧ check.exit.ensures b.ran? b.worst b.code →
-    a.ran? = b.ran? ∧ a.worst = b.worst → a.code = b.code
+info: @[reducible] def Fren.Generated.check.deterministic.expect.deterministic : Bool →
+  check.Verdict → Bool → check.Verdict → Bool → check.Verdict → Int → Bool → check.Verdict → Int → Prop :=
+fun a_ran? a_worst b_ran? b_worst a.ran? a.worst a.code b.ran? b.worst b.code =>
+  a.ran? = b.ran? ∧ a.worst = b.worst → a.code = b.code
 -/
 #guard_msgs in
-#print check.deterministic
+#print check.deterministic.expect.deterministic
 
 -- The definition reduces to the value.
 example : check.FAILED = 1 := by decide

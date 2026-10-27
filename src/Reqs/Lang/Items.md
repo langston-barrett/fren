@@ -421,9 +421,30 @@ as any field's may:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-expect newtype_not_abstract: forall (n: newtype) (f: field_type),
-    when n.n_fields = 1 and (n.field_accepted? iff f.accepted?) and f.abstract_within? and not f.payload?,
-    not n.accepted?
+expect newtype_not_abstract(
+    n_n_fields: Nat,
+    n_field_accepted?,
+    n_ty: DeclaredTy,
+    n_underlying: DeclaredTy,
+    n_constituents: Rel<DeclaredTy, DeclaredTy>,
+    f_kind: ValueType,
+    f_abstract_within?,
+    f_own?,
+    f_own_in_set?,
+    f_payload?,
+) {
+    assume n_record: declared_kind(n_ty) = ValueType::RecordTy
+    assume n_one_constituent: n_constituents.image({n_ty}) = {n_underlying}
+    assume n_not_recursive: not (n_ty, n_ty) in n_constituents.closure
+    assume f_own_enum: when f_own? and f_payload?, f_kind = ValueType::EnumTy
+    assume f_own_record: when f_own? and not f_payload?, f_kind = ValueType::RecordTy
+    assume f_abstract_kind: when f_kind = ValueType::AbstractTy, f_abstract_within?
+    assume f_in_set: when f_own_in_set?, f_kind = ValueType::SetTy and not f_own?
+    call n := newtype(n_n_fields, n_field_accepted?, n_ty, n_underlying, n_constituents)
+    call f := field_type(f_kind, f_abstract_within?, f_own?, f_own_in_set?, f_payload?)
+    expect newtype_not_abstract: when n.n_fields = 1 and (n.field_accepted? iff f.accepted?) and f.abstract_within? and not f.payload?,
+        not n.accepted?
+}
 ```
 
 Every value of a recursive enumeration is built from finitely many

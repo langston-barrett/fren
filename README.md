@@ -50,10 +50,22 @@ proc retry(
 }
 
 -- Once the client gives up, a later attempt doesn't start retrying again.
-expect gives_up_for_good: forall (a b: retry),
-    when a.method = b.method and a.status = b.status and a.retry_after = b.retry_after
-    and a.attempt <= b.attempt and b.decision is Decision::RetryAfter(_),
-    a.decision is Decision::RetryAfter(_)
+expect gives_up_for_good(
+    a_method: Method,
+    a_status: Status,
+    a_attempt: Nat is 1..,
+    a_retry_after: Seconds,
+    b_method: Method,
+    b_status: Status,
+    b_attempt: Nat is 1..,
+    b_retry_after: Seconds,
+) {
+    call a := retry(a_method, a_status, a_attempt, a_retry_after)
+    call b := retry(b_method, b_status, b_attempt, b_retry_after)
+    expect gives_up_for_good: when a.method = b.method and a.status = b.status and a.retry_after = b.retry_after
+        and a.attempt <= b.attempt and b.decision is Decision::RetryAfter(_),
+        a.decision is Decision::RetryAfter(_)
+}
 ```
 
 Each requirement looks reasonable on its own, but together they're infeasible:

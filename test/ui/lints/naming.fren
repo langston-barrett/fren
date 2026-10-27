@@ -31,7 +31,10 @@ pub enum LitShape { Circle(Int), Square }
 proc lit_match(s: LitShape): (p?) { ensure r: p? iff match s { LitShape::Circle(true!) => p?, _ => false } }
 --~^ error: `true` is a literal, so it cannot be declared
 pub proc lit_sub(x: Int): (y: Int) { ensure r: y = x }
-expect lit_global: forall (false: lit_sub), false.y = 1  --~ error: `false` is a literal, so it cannot be declared
+expect lit_global(false_x: Int) {
+    call false := lit_sub(false_x)
+    expect lit_global: false.y = 1  --~ error: `false` is a literal, so it cannot be declared
+}
 proc lit_inst(a: Int) { call true := lit_sub(a) }  --~ error: `true` is a literal, so it cannot be declared
 proc true_q(true?): (y?) { ensure r: y? iff true? }
 

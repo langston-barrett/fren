@@ -543,12 +543,21 @@ with `r` and then a double quote or `#`, which no identifier or punctuator
 starts with, so its first two characters tell it apart:
 
 ```fren
-expect reserved_are_identifiers: forall (r: reserved_word) (i: identifier),
-    when r.lexeme = i.lexeme and r.reserved?, i.accepted?
+expect reserved_are_identifiers(r_lexeme: String, i_lexeme: String) {
+    call r := reserved_word(r_lexeme)
+    call i := identifier(i_lexeme)
+    expect reserved_are_identifiers: when r.lexeme = i.lexeme and r.reserved?, i.accepted?
+}
 
-expect punctuators_not_identifiers: forall (p: punctuator) (i: identifier),
-    when p.lexeme = i.lexeme and p.accepted?, not i.accepted?
+expect punctuators_not_identifiers(p_lexeme: String, i_lexeme: String) {
+    call p := punctuator(p_lexeme)
+    call i := identifier(i_lexeme)
+    expect punctuators_not_identifiers: when p.lexeme = i.lexeme and p.accepted?, not i.accepted?
+}
 
-expect punctuators_not_reserved: forall (p: punctuator) (r: reserved_word),
-    when p.lexeme = r.lexeme and p.accepted?, not r.reserved?
+expect punctuators_not_reserved(p_lexeme: String, r_lexeme: String) {
+    call p := punctuator(p_lexeme)
+    call r := reserved_word(r_lexeme)
+    expect punctuators_not_reserved: when p.lexeme = r.lexeme and p.accepted?, not r.reserved?
+}
 ```

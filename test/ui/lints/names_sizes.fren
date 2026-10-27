@@ -58,7 +58,25 @@ proc with_binder(a: Int, b: Int, c: Int, x: Boxed): (total: Int) {  --~ warning:
 
 pub fn sum(a: Int, b: Int, c: Int, d: Int, e: Int): Int := a + b + c + d + e  --~ warning: function `sum` declares 5 single-character names
 
-expect all_small: forall (a b c d e: three), a.s + b.s + c.s + d.s + e.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b + e.a + e.b  --~ warning: global expectation `all_small` declares 5 single-character names
+expect all_small(
+    a_a: Int,
+    a_b: Int,
+    b_a: Int,
+    b_b: Int,
+    c_a: Int,
+    c_b: Int,
+    d_a: Int,
+    d_b: Int,
+    e_a: Int,
+    e_b: Int,
+) {
+    call a := three(a_a, a_b)
+    call b := three(b_a, b_b)
+    call c := three(c_a, c_b)
+    call d := three(d_a, d_b)
+    call e := three(e_a, e_b)
+    expect all_small: a.s + b.s + c.s + d.s + e.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b + e.a + e.b  --~ warning: global expectation `all_small` declares 5 single-character names
+}
 
 proc similar(
     level: Int,

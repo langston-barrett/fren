@@ -82,11 +82,23 @@ proc inst_bang(): (y: Int) { call u! := sub(1) ensure r: y = u.w }  --~ error: `
 
 -- The binders of a global expectation over a constant, and a binder of
 -- its body over them.
-expect global_const: forall (ORIGIN: sub), ORIGIN.w = ORIGIN.v
+expect global_const(ORIGIN_v: Int) {
+    call ORIGIN := sub(ORIGIN_v)
+    expect global_const: ORIGIN.w = ORIGIN.v
+}
 --~^ error: `ORIGIN` shadows the constant `ORIGIN`
-expect global_const_ok: forall (ORIGIN!: sub), ORIGIN.w = ORIGIN.v
-expect global_bang: forall (a!: sub), a.w = a.v  --~ error: `a!` shadows nothing
-expect global_bind: forall (a: sub), match Shape::Circle(a.v) { Shape::Circle(a) => a = a, _ => true }
+expect global_const_ok(ORIGIN_v: Int) {
+    call ORIGIN! := sub(ORIGIN_v)
+    expect global_const_ok: ORIGIN.w = ORIGIN.v
+}
+expect global_bang(a_v: Int) {
+    call a! := sub(a_v)
+    expect global_bang: a.w = a.v  --~ error: `a!` shadows nothing
+}
+expect global_bind(a_v: Int) {
+    call a := sub(a_v)
+    expect global_bind: match Shape::Circle(a.v) { Shape::Circle(a) => a = a, _ => true }
+}
 --~^ error: `a` shadows the global expectation's binder `a`
 
 -- `!` on a `Bool` follows its `?`.
@@ -115,7 +127,10 @@ proc token_bind(m: Int, t: Shape): (p?) { ensure r: p? iff match t { Shape::Circ
 --~^ error: `m!` is a Lean token, so it cannot be declared
 fn token_param(f!: Int): Int := f + 1    --~ error: `f!` is a Lean token, so it cannot be declared
 const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so it cannot be declared
-expect token_global: forall (using!: sub), true
+expect token_global(using_v: Int) {
+    call using! := sub(using_v)
+    expect token_global: true
+}
 --~^ error: `using!` is a Lean token, so it cannot be declared
 proc token_use(s: Int): (y: Int) { ensure r: y = s! }  --~ error: cannot find `s!` in this scope
 -- A refinement's name, and a field read, take the tokens as identifiers too.

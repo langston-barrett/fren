@@ -23,7 +23,10 @@ pub proc all_tested(n: Int): (big?) {
 }
 
 set_option fren.evidence "tested" in
-expect global_tested: forall (a: all_tested), when a.n = 4, a.big?
+expect global_tested(a_n: Int) {
+    call a := all_tested(a_n)
+    expect global_tested: when a.n = 4, a.big?
+}
 
 /--
 info: the checks of `evidence_test::word` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)

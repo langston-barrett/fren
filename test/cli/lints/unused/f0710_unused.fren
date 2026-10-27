@@ -9,4 +9,8 @@ pub proc c(x: Int, spare: Int): (y: Int, loose?) {
     ensure r: y = x
 }
 
-expect g: forall (p q: c), p.y = p.x
+expect g(p_x: Int, p_spare: Int, q_x: Int, q_spare: Int) {
+    call p := c(p_x, p_spare)
+    call q := c(q_x, q_spare)
+    expect g: p.y = p.x
+}

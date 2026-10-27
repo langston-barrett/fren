@@ -79,7 +79,11 @@ pub proc complement(op: Comparison): (det result: Comparison) {
     expect changes: result != op
 }
 
-expect complement_involutive: forall (p q: complement), when q.op = p.result, q.result = p.op
+expect complement_involutive(p_op: Comparison, q_op: Comparison) {
+    call p := complement(p_op)
+    call q := complement(q_op)
+    expect complement_involutive: when q.op = p.result, q.result = p.op
+}
 ```
 
 The message is reported at the expression, and suggests the simpler form,
@@ -265,10 +269,35 @@ Here `p` is the root layer of the definition in one behaviour and `q` the
 same layer, with the same parts' values, in any other:
 
 ```fren
-expect constant_output_fixed: forall (o: output_lints) (p q: lang::node),
-    when o.constant? and p.mentioned = o.mentioned and p.specified? and q.program = p.program and q.head = p.head
-    and q.values = p.values,
-    q.value = p.value
+expect constant_output_fixed(
+    o_defined?,
+    o_mentioned: Set<lang::Mention>,
+    o_n_guarantees: Nat,
+    o_equation?,
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call o := output_lints(o_defined?, o_mentioned, o_n_guarantees, o_equation?)
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect constant_output_fixed: when o.constant? and p.mentioned = o.mentioned and p.specified? and q.program = p.program and q.head = p.head
+        and q.values = p.values,
+        q.value = p.value
+}
 ```
 
 ## Copied records

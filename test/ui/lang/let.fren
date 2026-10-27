@@ -46,8 +46,12 @@ proc defined(a: Int): (b: Int) {
     expect limit: b + LIMIT >= 10
 }
 
-expect same_mode: forall (p q: thermostat), when same?, p.mode = q.mode
-    where same? := p.temp = q.temp and p.target = q.target
+expect same_mode(p_temp: Int, p_target: Int, q_temp: Int, q_target: Int) {
+    call p := thermostat(p_temp, p_target)
+    call q := thermostat(q_temp, q_target)
+    expect same_mode: when same?, p.mode = q.mode
+        where same? := p.temp = q.temp and p.target = q.target
+}
 
 -- An index in a definition is guarded where its name is mentioned, as if
 -- the definition were written there.

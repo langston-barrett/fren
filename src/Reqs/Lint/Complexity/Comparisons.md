@@ -85,10 +85,25 @@ pub proc double_comparison(
         else (if first != Eq and second != Eq then Ne else if Lt in {first, second} then Le else Ge)
 }
 
-expect double_comparison_meaning: forall (d: double_comparison) (x y z: comparison_holds),
-    when d.fires? and x.op = d.first and y.op = d.second and z.op = d.result
-    and x.order = z.order and y.order = z.order,
-    z.holds? iff (if d.conjunction? then x.holds? and y.holds? else x.holds? or y.holds?)
+expect double_comparison_meaning(
+    d_conjunction?,
+    d_first: Comparison,
+    d_second: Comparison,
+    x_op: Comparison,
+    x_order: Order,
+    y_op: Comparison,
+    y_order: Order,
+    z_op: Comparison,
+    z_order: Order,
+) {
+    call d := double_comparison(d_conjunction?, d_first, d_second)
+    call x := comparison_holds(x_op, x_order)
+    call y := comparison_holds(y_op, y_order)
+    call z := comparison_holds(z_op, z_order)
+    expect double_comparison_meaning: when d.fires? and x.op = d.first and y.op = d.second and z.op = d.result
+        and x.order = z.order and y.order = z.order,
+        z.holds? iff (if d.conjunction? then x.holds? and y.holds? else x.holds? or y.holds?)
+}
 ```
 
 ## Redundant comparisons
@@ -138,7 +153,10 @@ fn both?(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) := compares?(
 
 fn complement_of(op: Comparison): Comparison := match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
 
-expect complement_of_agrees: forall (c: complement), c.result = complement_of(c.op)
+expect complement_of_agrees(c_op: Comparison) {
+    call c := complement(c_op)
+    expect complement_of_agrees: c.result = complement_of(c.op)
+}
 
 proc disjoint(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) {
     expect sound: when disjoint?(op1, a, op2, b), not both?(op1, a, op2, b, x)
@@ -182,10 +200,22 @@ proc redundant_comparisons_exact(
         iff (if p.keep_first? then compares?(first, x, first_bound) else compares?(second, x, second_bound))
 }
 
-expect redundant_not_double: forall (r: redundant_comparisons) (d: double_comparison),
-    when r.first_bound = r.second_bound and r.conjunction? = d.conjunction?
-    and r.first = d.first and r.second = d.second,
-    not (r.fires? and d.fires?)
+expect redundant_not_double(
+    r_conjunction?,
+    r_first: Comparison,
+    r_first_bound: Int,
+    r_second: Comparison,
+    r_second_bound: Int,
+    d_conjunction?,
+    d_first: Comparison,
+    d_second: Comparison,
+) {
+    call r := redundant_comparisons(r_conjunction?, r_first, r_first_bound, r_second, r_second_bound)
+    call d := double_comparison(d_conjunction?, d_first, d_second)
+    expect redundant_not_double: when r.first_bound = r.second_bound and r.conjunction? = d.conjunction?
+        and r.first = d.first and r.second = d.second,
+        not (r.fires? and d.fires?)
+}
 ```
 
 ## Off-by-one comparisons

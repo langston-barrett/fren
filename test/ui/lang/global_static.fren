@@ -8,20 +8,35 @@ proc sub(x: Int): (z: Int) {
 enum E { A }
 const LIMIT: Int := 3
 
-expect hides: forall (a: sub), a.hidden = a.x  --~ error: `a.hidden` is private to call `a`
-expect no_var: forall (a: sub), a.nope = 0     --~ error: call `a` has no parameter or result named `nope`
+expect hides(a_x: Int) {
+    call a := sub(a_x)
+    expect hides: a.hidden = a.x  --~ error: `a.hidden` is private to call `a`
+}
+expect no_var(a_x: Int) {
+    call a := sub(a_x)
+    expect no_var: a.nope = 0     --~ error: call `a` has no parameter or result named `nope`
+}
 expect not_comp: forall (a: LIMIT), true       --~ error: expected a procedure or a type, but `LIMIT` is a constant
 expect over_values: forall (a: E), a = E::A  --~ warning: this expectation mentions no variable
 --~^ warning: this `forall` ranges over one value
 expect twice: forall (a: sub) (a: sub), true   --~ error: `a` is bound multiple times in this expectation
 expect twice2: forall (a a: sub), true         --~ error: `a` is bound multiple times in this expectation
 expect q?: forall (a: sub), true               --~ error: constraint names cannot end in `?`
-expect q_binder: forall (a?: sub), true        --~ error: binder names cannot end in `?`
+expect q_binder(a?_x: Int) {
+    call a? := sub(a?_x)
+    expect q_binder: true        --~ error: binder names cannot end in `?`
+}
 expect no_binder: x = 0                        --~ error: cannot find `x` in this scope
-expect not_bool: forall (a: sub), a.z
+expect not_bool(a_x: Int) {
+    call a := sub(a_x)
+    expect not_bool: a.z
+}
 --~^ error: type mismatch: expected `Bool`, found `Int`
 expect sub: true                               --~ error: the name `sub` is already defined in the root module
-expect ok: forall (a: sub), a.z = a.x
+expect ok(a_x: Int) {
+    call a := sub(a_x)
+    expect ok: a.z = a.x
+}
 expect ok: true                                --~ error: the name `ok` is already defined in the root module
 expect unknown: forall (a: nothing), true      --~ error: cannot find `nothing` in this scope
 proc uses(): (y: Int) { ensure r: y = ok }     --~ error: expected a value, but `ok` is a global expectation

@@ -63,9 +63,12 @@ starts with an uppercase letter has one.
 So a name in `snake_case` is in no other case:
 
 ```fren
-expect snake_apart: forall (a b: in_case),
-    when a.name = b.name and a.case = Snake and b.case != Snake and a.conventional?,
-    not b.conventional?
+expect snake_apart(a_case: Case, a_name: String, b_case: Case, b_name: String) {
+    call a := in_case(a_case, a_name)
+    call b := in_case(b_case, b_name)
+    expect snake_apart: when a.name = b.name and a.case = Snake and b.case != Snake and a.conventional?,
+        not b.conventional?
+}
 ```
 
 A name in the wrong case is reported where it is declared, with the name

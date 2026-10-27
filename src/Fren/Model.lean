@@ -503,11 +503,9 @@ structure CompInfo where
   assumptions are its preconditions, and its guarantees, if it is defined,
   its postconditions, each named after the function and the clause. -/
   fn? : Option Name := none
-  /-- It has `use` members, and its assumptions mention none of its own
-  variables but its parameters, and declare no name that a parameter has:
-  what an old global expectation's fix needs to copy them
-  (`Core.Callee`, `F0416`). -/
-  imports : Bool := false
+  /-- Its assumptions mention none of its own variables but its
+  parameters, and declare no name that a parameter has: what an old global
+  expectation's fix needs to copy them (`Core.Callee`, `F0416`). -/
   closed : Bool := true
   deriving Inhabited
 

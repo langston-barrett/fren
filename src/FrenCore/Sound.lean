@@ -1107,7 +1107,8 @@ theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckK
 /-- What `fren` runs for a global expectation, and for a procedure
 (`check::applies`). -/
 theorem kindsFor_spec :
-    kindsFor true = #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability] ∧
+    kindsFor true = #[.inst, .expect, .cover, .vacuity, .definedness, .completeness, .disjointness, .precondition,
+      .reachability] ∧
       kindsFor false = CheckKind.all :=
   ⟨rfl, rfl⟩
 

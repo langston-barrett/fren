@@ -89,7 +89,10 @@ proc counter(n: Int): (m: Int) {
 
 -- Where no row holds, the table's value is unknown, so the expectation
 -- does not follow either.
-expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true }
+expect positive(c_n: Int) {
+    call c := counter(c_n)
+    expect positive: table { c.m > 0 => true, c.n < -1 => true }
+}
 --~^ error: a table in `positive` may have no row that holds
 --~^^ error: expectation `positive` does not hold
 --~^^^ warning: every row of this table has a value written the same

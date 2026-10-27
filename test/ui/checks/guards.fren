@@ -125,7 +125,10 @@ proc counter(n: Int): (m: Int) {
     ensure r: m = n + 1
 }
 
-expect bigger: forall (c: counter), match c.m { k if k > c.n => true, _ => false }
+expect bigger(c_n: Int) {
+    call c := counter(c_n)
+    expect bigger: match c.m { k if k > c.n => true, _ => false }
+}
 --~^ error: arm 2 of a `match` in `bigger` is never taken
 
 --@ summary: 71 passed, 16 failed, 0 inconclusive, 0 redundant
