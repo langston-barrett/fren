@@ -315,7 +315,16 @@ environment, so the two layers are defined alike, whatever the operands'
 values: the guard that the fix drops was not needed.
 `lint::manual_at_most_one_defined` states this over `lang::node`; with an
 obligation, the `and` can be defined where the call is not, which is why
-the lint does not fire there:
+the lint does not fire there.
+
+`lint::manual_at_most_one` and `lint::manual_at_most_one_any` are tied to
+this only by the assumption `no_obligation`: their `obligation?` is a
+field of each conjunct, an input that the lint computes from the
+conjunct's syntax, and their implementations read it as one, so it cannot
+be defined as `node`'s `defined?`. That the lint's syntactic test gives
+`obligation?` wherever an operand may not be defined, as `no_obligation`
+assumes, is tested, by `lint::manual_at_most_one_guarded` above and the ui
+tests, not proved:
 
 ```fren
 comp manual_at_most_one_defined {
@@ -331,23 +340,20 @@ comp manual_at_most_one_defined {
     inst conjunct: node {
         head := Head::Op("and", ""),
         env,
-        values := Val::Cons(a, Val::Cons(b, Val::Nil)),
+        values := [a, b],
         parts_mentioned := {},
         undefined_parts,
     }
     inst call: node {
         head := Head::Op("at_most_one?", ""),
         env,
-        values := Val::Cons(a, Val::Cons(b, Val::Nil)),
+        values := [a, b],
         parts_mentioned := {},
         undefined_parts,
     }
 
     expect kept: unless obligation?, conjunct.defined? and call.defined?
-    -- Where `a` is false, `b` is not evaluated, so the `and` is defined
-    -- though `b` is not.
-    expect guarded: when a = Val::B(false) and undefined_parts = {1}, conjunct.defined? and not call.defined?
-
+    -- With an obligation, the `and`'s guard can be what makes it defined.
     cover guard_needed: obligation? and conjunct.defined? and not call.defined?
 }
 ```

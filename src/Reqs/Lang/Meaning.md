@@ -151,11 +151,15 @@ language's.
 pub type Env
 
 pub fn lookup(Env, Id): Val
-pub fn meaning(Env, Id, Val): Val
-pub fn unspecified(Env, Head, Val): Val
+pub fn meaning(Env, Id, Seq(Val)): Val
+pub fn unspecified(Env, Head, Seq(Val)): Val
 
-pub fn fixed_value(Head, Val): Val
-pub fn fixed_specified?(Head, Val)
+pub fn fixed_value(Head, Seq(Val)): Val
+pub fn fixed_specified?(Head, Seq(Val))
+
+-- The value of the variant, record or newtype `c` built from its parts'
+-- values: `C(c, l)`, with `l` the list of them.
+pub fn construct(Id, Seq(Val)): Val
 ```
 
 ## Guards
@@ -214,21 +218,11 @@ whatever `C`. A connective's second part is guarded by its condition as
 `second_guard` says, and a conditional's third by the condition's
 negation, and its value is that of the parts it evaluates:
 `a and b` is `false` where `a` is, `when C, D` is `true` where `C` is not,
-and so on. A `match` or a table evaluates its arms as
-`lang::guarded_match` says, which a later slice of the model states as
-their layers' `step`.
+and so on.
 
 ```fren
--- The first part's value, and the rest of the parts' values.
-pub fn only_part(values: Val): Val := match values {
-    Val::Cons(v, _) => v,
-    _ => values,
-}
-
-pub fn rest(values: Val): Val := match values {
-    Val::Cons(_, r) => r,
-    _ => Val::Nil,
-}
+-- The value of the part at position `k`, and `Nil` where there is none.
+pub fn part(values: Seq(Val), k: Int): Val := if 0 <= k < values.len then values[k] else Val::Nil
 
 -- The operator of a layer, and `""` for a layer that is not an operator.
 pub fn operator(head: Head): Id := match head {
@@ -238,7 +232,8 @@ pub fn operator(head: Head): Id := match head {
 
 pub fn connective?(o: Id) := o in {"and", "or", "when", "unless", "if"}
 
--- The operators whose value is always specified.
+-- The operators whose value is always specified. The cardinality operators
+-- are listed by name; a later slice derives this from their meaning.
 pub fn total?(o: Id) := connective?(o) or o in {"at_most_one?", "exactly_one?"}
 
 -- What guards a connective's second part.
@@ -249,14 +244,91 @@ pub fn second_guard(o: Id): GuardedOperand := if o = "or" then GuardedOperand::O
     else GuardedOperand::AndRight
 
 -- The value of the connective `o` at its parts' values.
-pub fn connective_value(o: Id, values: Val): Val := let c? := only_part(values) = Val::B(true),
-    second := only_part(rest(values))
+pub fn connective_value(o: Id, values: Seq(Val)): Val := let c? := part(values, 0) = Val::B(true),
+    second := part(values, 1)
     in if o = "and" then (if c? then second else Val::B(false))
     else if o = "or" then (if c? then Val::B(true) else second)
     else if o = "when" then (if c? then second else Val::B(true))
     else if o = "unless" then (if c? then Val::B(true) else second)
     else if c? then second
-    else only_part(rest(rest(values)))
+    else part(values, 2)
+```
+
+### Arms
+
+A *choice* is a `match` or a [table](Expressions.md#tables), as
+`Op("match", s)` and `Op("table", s)`. A `match`'s parts are its
+scrutinee and then each arm's guard and body. A table is a `match` whose
+arms' patterns are all `_` (see [Tables](Expressions.md#tables)), and its
+parts are, after a first part that stands for no scrutinee, each row's
+condition and value. So arm `i`'s guard is at position `guard_at(i)`, and
+its body just after it. An arm without a guard has
+the literal `true` as its guard, and a row `_` the literal `true` as its
+condition. Arm `i` is *open* where its pattern matches the scrutinee's
+value, and every row is: `arm_matches?(head, i, v)` says that the pattern
+of arm `i` of the choice `head` matches the value `v`, which a later slice
+ties to the model of [Patterns](Patterns.md). An arm *fires* where it is
+open, its guard holds and no earlier arm fires, as
+[`lang::guarded_match`](Expressions.md#matches) states with `Taken`. Arm
+`i`'s guard is evaluated where it is open and no earlier arm fires, and
+its body where it fires, as `guard` states for `ArmGuard` and `ArmBody`.
+The choice has the value of the body of the arm that fires, and is
+unspecified where none does, with a value that does not depend on its
+parts, as the language's is that of `[][0]` of its type. The rows of a table are disjoint where the
+[disjointness check](../Check.md#disjointness) passes, so their order
+does not matter there.
+
+Fren has no recursion over lists, so the model reads the parts at fixed
+positions, and states the first three arms of a choice. A choice with
+more is evaluated by the same rule, arm by arm, which the model does not
+spell out: where none of the first three fires, its value is the one the
+spec fixes, `fixed_value`, where that is specified, and
+`later_unevaluated(head, values)` are the positions of the later arms'
+guards and bodies that it does not evaluate. The laws are stated of
+choices of at most three arms.
+
+```fren
+pub fn choice?(o: Id) := o in {"match", "table"}
+
+-- The positions of arm `i`'s guard and body, after the scrutinee.
+pub fn guard_at(i: Int): Int := 1 + 2 * i
+
+-- Arm `i`'s guard's and body's values, and whether it exists, for the
+-- arms that the model states.
+pub fn arm_guard(values: Seq(Val), i: Int): Val := part(values, guard_at(i))
+
+pub fn arm_body(values: Seq(Val), i: Int): Val := part(values, guard_at(i) + 1)
+
+pub fn arm_present?(values: Seq(Val), i: Int) := guard_at(i) + 1 < values.len
+
+-- The arms that the model states, and the positions of their parts.
+pub type ArmIndex := Int is 0..=2
+
+pub type PartAt := Int is 0..=6
+
+pub fn arm_matches?(Head, Int, Val)
+
+-- Arm `i` exists and is open: its pattern matches the scrutinee's value,
+-- as `matched?` says.
+pub fn arm_open?(head: Head, values: Seq(Val), i: Int, matched?) := choice?(operator(head)) and arm_present?(values, i)
+    and (operator(head) = "table" or matched?)
+
+-- Arm `i` fires, from whether each of the first three arms is open: it is
+-- open, its guard holds, and no earlier arm fires.
+pub fn fires_at?(values: Seq(Val), open0?, open1?, open2?, i: Int) := let holds0? := open0? and arm_guard(values, 0) = Val::B(true),
+    holds1? := open1? and arm_guard(values, 1) = Val::B(true),
+    holds2? := open2? and arm_guard(values, 2) = Val::B(true)
+    in if i = 0 then holds0? else if i = 1 then not holds0? and holds1? else not holds0? and not holds1? and holds2?
+
+-- The choice has an arm after the third, and the positions of the guards
+-- and bodies of those arms that it does not evaluate.
+pub fn more_arms?(head: Head, values: Seq(Val)) := choice?(operator(head)) and values.len > 7
+
+pub fn later_unevaluated(Head, Seq(Val)): Set(Int)
+
+-- The positions of arm `i`'s guard and body that are not evaluated.
+pub fn unevaluated_arm(i: Int, guard?, body?): Set(Int) :=
+    (if guard? then {} else {guard_at(i)}) union (if body? then {} else {guard_at(i) + 1})
 ```
 
 ## One layer
@@ -266,7 +338,8 @@ parts' values: a literal is its value, a variable is read from the
 environment, a definition has its one part's value, a construction is its
 variant and its parts, an application of an uninterpreted function is
 read from the environment at the function and its arguments, a
-[connective](#guards) has the value of the parts it evaluates, and every
+[connective](#guards) has the value of the parts it evaluates, a
+[choice](#arms) the value of the body of the arm that fires, and every
 other layer has the value the spec fixes where that is specified, and the
 unspecified one elsewhere. A connective, and a [cardinality
 operator](Expressions.md#cardinality), is always specified. `step` is a function with a contract, rather
@@ -275,19 +348,27 @@ defined function applies no uninterpreted function (see [Defined
 functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
-pub fn step(head: Head, env: Env, values: Val): Val
+pub fn step(head: Head, env: Env, values: Seq(Val)): Val
     ensure layer: step(head, env, values) = match head {
     Head::Literal(v) => v,
     Head::Bound(v) => v,
     Head::Variable(x) => lookup(env, x),
-    Head::Definition(_) => only_part(values),
-    Head::Construction(c, _) => Val::C(c, values),
+    Head::Definition(_) => part(values, 0),
+    Head::Construction(c, _) => construct(c, values),
     Head::Uninterpreted(f) => meaning(env, f, values),
     Head::Op(o, _) => if connective?(o) then connective_value(o, values)
+        else if choice?(o) then (if fires_at?(values, open0?, open1?, open2?, 0) then arm_body(values, 0)
+        else if fires_at?(values, open0?, open1?, open2?, 1) then arm_body(values, 1)
+        else if fires_at?(values, open0?, open1?, open2?, 2) then arm_body(values, 2)
+        else if more_arms?(head, values) and fixed_specified?(head, values) then fixed_value(head, values)
+        else unspecified(env, head, []))
         else if total?(o) or fixed_specified?(head, values) then fixed_value(head, values)
         else unspecified(env, head, values),
     _ => if fixed_specified?(head, values) then fixed_value(head, values) else unspecified(env, head, values),
 }
+    where open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0))),
+    open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0))),
+    open2? := arm_open?(head, values, 2, arm_matches?(head, 2, part(values, 0)))
 ```
 
 What a layer *mentions* is the set of the variables and uninterpreted
@@ -307,8 +388,52 @@ pub fn mentioned_by(head: Head, parts_mentioned: Set(Mention)): Set(Mention) := 
 }
 ```
 
+`lang::choice_arms` states which arms of a choice are open, which fires,
+and which of their guards and bodies are evaluated, with an instance of
+`guard` for each:
+
+```fren
+pub comp choice_arms {
+    in head: Head
+    in values: Seq(Val)      -- the choice's parts' values
+
+    pub det out open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0)))
+    pub det out open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0)))
+    pub det out open2? := arm_open?(head, values, 2, arm_matches?(head, 2, part(values, 0)))
+    pub det out fired0? := fires_at?(values, open0?, open1?, open2?, 0)
+    pub det out fired1? := fires_at?(values, open0?, open1?, open2?, 1)
+    pub det out fired2? := fires_at?(values, open0?, open1?, open2?, 2)
+    -- Some arm fires, or, of a choice of more arms, the value the spec fixes is specified.
+    pub det out specified? := fired0? or fired1? or fired2? or (more_arms?(head, values) and fixed_specified?(head, values))
+    -- The first three arms' guards and bodies that are not evaluated, and
+    -- those of every arm.
+    pub det out stated: Set(Int) := unevaluated_arm(0, guard0.evaluated?, body0.evaluated?)
+        union unevaluated_arm(1, guard1.evaluated?, body1.evaluated?)
+        union unevaluated_arm(2, guard2.evaluated?, body2.evaluated?)
+    pub det out unevaluated: Set(Int) := stated
+        union (if more_arms?(head, values) then later_unevaluated(head, values) minus {0, 1, 2, 3, 4, 5, 6} else {})
+
+    inst guard0: guard { operand := GuardedOperand::ArmGuard, condition := Val::B(open0?) }
+    inst body0: guard { operand := GuardedOperand::ArmBody, condition := Val::B(fired0?) }
+    inst guard1: guard { operand := GuardedOperand::ArmGuard, condition := Val::B(open1? and not fired0?) }
+    inst body1: guard { operand := GuardedOperand::ArmBody, condition := Val::B(fired1?) }
+    inst guard2: guard { operand := GuardedOperand::ArmGuard, condition := Val::B(open2? and not fired0? and not fired1?) }
+    inst body2: guard { operand := GuardedOperand::ArmBody, condition := Val::B(fired2?) }
+
+    -- At most one arm fires, and the first three arms are evaluated alike,
+    -- whatever arms come after them.
+    expect one_fires: at_most_one?(fired0?, fired1?, fired2?)
+    expect first_three: forall (k: PartAt), k in unevaluated iff k in stated
+    -- An arm without a body is no arm, and every row of a table is open.
+    expect absent_arms: forall (i: ArmIndex), when values.len <= guard_at(i) + 1,
+        not (if i = 0 then open0? else if i = 1 then open1? else open2?)
+    expect table_rows: forall (i: ArmIndex), when operator(head) = "table" and guard_at(i) + 1 < values.len,
+        if i = 0 then open0? else if i = 1 then open1? else open2?
+}
+```
+
 `lang::node` is one layer. Its inputs are its head, its environment, its
-parts' values as a list, and what its parts mention, together; a literal,
+parts' values in order, and what its parts mention, together; a literal,
 a bound name, a constant and a variable have no parts, so theirs mention
 nothing. Its `value` is its `step`, and `mentioned` what it mentions.
 `read` is what it reads of the environment at its own name: a variable's
@@ -317,8 +442,8 @@ a layer that has no name of its own to read at. `specified?` says that its
 value is not the unspecified one. `undefined_parts` are the positions,
 from 0, of its parts that are not [defined](../Check.md#definedness), and
 `unevaluated` those that it does not evaluate: a connective's second part
-where its guard fails, and a conditional's third where the condition
-holds. The layer is `defined?` where it is specified and every part it
+where its guard fails, a conditional's third where the condition holds,
+and a choice's arms' guards and bodies where `guard` says they are not. The layer is `defined?` where it is specified and every part it
 evaluates is defined. Guards nest by conjunction: a part is evaluated
 where its layer is and its own guard holds. A definition of a `let` or
 `where` is not a part of the `let`, whose only part is its body, but of
@@ -331,7 +456,7 @@ pub comp node {
     use self::Head::{Bound, Constant, Construction, Definition, Literal, Op, Uninterpreted, Variable}
     in head: Head
     in env: Env
-    in values: Val                   -- its parts' values, in order, as a list
+    in values: Seq(Val)              -- its parts' values, in order
     in parts_mentioned: Set(Mention)  -- what its parts mention, together
     in undefined_parts: Set(Int)     -- the positions of its parts that are not defined
 
@@ -347,15 +472,17 @@ pub comp node {
     }
     pub det out specified? := match head {
         Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _) | Uninterpreted(_) => true,
-        Op(o, _) => total?(o) or fixed_specified?(head, values),
+        Op(o, _) => if choice?(o) then arms.specified? else total?(o) or fixed_specified?(head, values),
         _ => fixed_specified?(head, values),
     }
     pub det out unevaluated: Set(Int) := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
         union (if operator(head) = "if" and not third.evaluated? then {2} else {})
+        union (if choice?(operator(head)) then arms.unevaluated else {})
     pub det out defined? := specified? and undefined_parts subset unevaluated
 
-    inst second: guard { operand := second_guard(operator(head)), condition := only_part(values) }
-    inst third: guard { operand := GuardedOperand::ElseBranch, condition := only_part(values) }
+    inst second: guard { operand := second_guard(operator(head)), condition := part(values, 0) }
+    inst third: guard { operand := GuardedOperand::ElseBranch, condition := part(values, 0) }
+    inst arms: choice_arms { head, values }
 
     -- What a part mentions, the whole does, and so does a layer's own name.
     expect parts_kept: parts_mentioned subset mentioned
@@ -364,131 +491,49 @@ pub comp node {
         Uninterpreted(f) => Mention::Fn(f) in mentioned,
         _ => true,
     }
+    -- Where a layer is not specified, its value is the unspecified one.
+    expect unspecified_value: unless specified?,
+        value = unspecified(env, head, if choice?(operator(head)) then [] else values)
     -- Only a layer whose value the spec fixes can be unspecified.
     expect fixed_only: when head is Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _)
         | Uninterpreted(_), specified?
-    -- Only a connective leaves a part unevaluated, and never its condition.
-    expect evaluates_condition: not 0 in unevaluated
-    expect all_evaluated: unless connective?(operator(head)), unevaluated = {}
+    -- Only a connective or a choice leaves a part unevaluated, and never
+    -- its first: a connective's condition, or a choice's scrutinee.
+    expect evaluates_first: not 0 in unevaluated
+    expect all_evaluated: unless connective?(operator(head)) or choice?(operator(head)), unevaluated = {}
+    -- Of a conditional, exactly one branch is evaluated.
+    expect branches: when operator(head) = "if",
+        (1 in unevaluated iff part(values, 0) != Val::B(true)) and (2 in unevaluated iff part(values, 0) = Val::B(true))
+    -- Of a choice of at most three arms: the body of the arm that fires is
+    -- evaluated, and no other body; an arm whose pattern does not match is not
+    -- evaluated; an open arm's guard is evaluated where no earlier arm fires,
+    -- and no arm after the one that fires is.
+    expect bodies: forall (i: ArmIndex), when choice?(operator(head)) and not more_arms?(head, values),
+        guard_at(i) + 1 in unevaluated iff not fires_at?(values, arms.open0?, arms.open1?, arms.open2?, i)
+    -- A choice has the value of the body of the arm that fires, as
+    -- `lang::guarded_match`'s `valued` states.
+    expect fired_value: forall (i: ArmIndex), when choice?(operator(head)) and fires_at?(values, arms.open0?, arms.open1?, arms.open2?, i),
+        value = arm_body(values, i)
+    expect closed_arms: forall (i: ArmIndex),
+        when choice?(operator(head)) and not more_arms?(head, values) and not (if i = 0 then arms.open0? else if i = 1 then arms.open1? else arms.open2?),
+        guard_at(i) in unevaluated
+    expect open_guards: forall (i: ArmIndex), when choice?(operator(head)) and not more_arms?(head, values)
+        and (if i = 0 then arms.open0? else if i = 1 then arms.open1? else arms.open2?) and (forall (j: ArmIndex), when j < i, not fires_at?(values, arms.open0?, arms.open1?, arms.open2?, j)),
+        not guard_at(i) in unevaluated
+    expect after_firing: forall (i j: ArmIndex),
+        when choice?(operator(head)) and not more_arms?(head, values) and i < j and fires_at?(values, arms.open0?, arms.open1?, arms.open2?, i),
+        guard_at(j) in unevaluated
+    -- A choice where no arm fires is not defined.
+    expect none_fires: when choice?(operator(head)) and not specified?, not defined?
     -- A layer whose parts are all defined is defined where it is specified.
     expect parts_defined: when undefined_parts = {}, defined? iff specified?
-    -- Its first part is always evaluated, so it must be defined.
+    -- Its first part is evaluated where it is, so it must be defined.
     expect first_evaluated: when 0 in undefined_parts, not defined?
 
     cover guarded: defined? and undefined_parts != {}
+    cover arm_guarded: choice?(operator(head)) and defined? and undefined_parts != {}
 }
 ```
 
-## Laws
-
-Six laws relate behaviours of `node`. Each is about one layer, so the
-solver decides it.
-
-`frame`: a specified layer reads its environment only at its own name. Two
-layers with the same head and parts' values that read the same there have
-the same value, whatever else their environments hold:
-
-```fren
-expect frame: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.specified? and p.read = q.read, p.value = q.value
-```
-
-`own_mentioned`: the name a layer reads at is one that it mentions, so a
-layer that mentions nothing reads the same in every environment:
-
-```fren
-expect own_mentioned: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.mentioned = {}, p.read = q.read
-```
-
-`same_written`: the same head and parts' values in the same environment
-give the same value, specified or not:
-
-```fren
-expect same_written: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.env = q.env, p.value = q.value
-```
-
-`unevaluated`: a part that a layer does not evaluate changes neither its
-value nor its definedness. Two layers with the same head and environment
-whose parts differ only at an unevaluated position, in their values and
-in whether they are defined, have the same value, and are defined alike.
-This is the law behind the [definedness check](../Check.md#definedness),
-which asks whether an index is in range only under its guard. The second
-and third positions are the only ones a layer leaves unevaluated:
-
-```fren
-expect unevaluated: forall (p q: node),
-    when p.head = q.head and p.env = q.env and 1 in p.unevaluated and only_part(p.values) = only_part(q.values)
-    and rest(rest(p.values)) = rest(rest(q.values)) and p.undefined_parts minus {1} = q.undefined_parts minus {1},
-    p.value = q.value and (p.defined? iff q.defined?)
-
-expect unevaluated_third: forall (p q: node),
-    when p.head = q.head and p.env = q.env and 2 in p.unevaluated and only_part(p.values) = only_part(q.values)
-    and only_part(rest(p.values)) = only_part(rest(q.values))
-    and rest(rest(rest(p.values))) = rest(rest(rest(q.values)))
-    and p.undefined_parts minus {2} = q.undefined_parts minus {2},
-    p.value = q.value and (p.defined? iff q.defined?)
-```
-
-`frame_mentioned`: environments that agree on what a defined layer
-mentions give it the same value, so a defined layer that mentions nothing
-has the same value in every environment. It is stated the other way
-round: where two environments give a defined layer different values, they
-differ at something that it mentions, a variable, or a function at the
-layer's parts' values, its arguments. Its unbounded quantifiers range over
-the names at which they differ, so it is outside the [decidable
-core](Decidability.md#what-is-promised); the solver proves it by
-instantiating them at the layer's own name:
-
-```fren
-set_option fren.lint.undecidable "allow" in
-expect frame_mentioned: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.defined? and p.value != q.value,
-    (exists (x: Id), Mention::Var(x) in p.mentioned and lookup(p.env, x) != lookup(q.env, x))
-    or (exists (f: Id), Mention::Fn(f) in p.mentioned and meaning(p.env, f, p.values) != meaning(q.env, f, p.values))
-```
-
-`field_order`: a construction's value does not depend on the order in
-which its fields are written, only on what it builds and its parts' values,
-which are in the order of the declaration:
-
-```fren
--- What a construction builds, and whether a head is a construction.
-pub fn built(head: Head): Id := match head {
-    Head::Construction(c, _) => c,
-    _ => "",
-}
-
-pub fn construction?(head: Head) := head is Head::Construction(_, _)
-
-expect field_order: forall (p q: node),
-    when construction?(p.head) and construction?(q.head) and built(p.head) = built(q.head) and p.values = q.values,
-    p.value = q.value
-```
-
-## The whole tree
-
-The laws hold of whole expressions by induction on the tree: what holds
-of every layer, given that it holds of the layer's parts, holds of every
-expression. For example, an expression that mentions nothing has the same
-value in every environment, where each of its layers is specified. Its
-root mentions nothing, so by `parts_kept` none of its parts does, and by
-induction each part has the same value in every environment. With the
-same parts' values, by `own_mentioned`, the root reads the same in every
-environment, and so by `frame` it has the same value. Likewise, by
-`same_written`, the same expression has the same value wherever it is
-written in one behaviour. The rules that an operand of `*` mention nothing
-(see [Linear arithmetic](Expressions.md#linear-arithmetic)) and that the
-operands of a string operation be constants (see
-[Strings](Decidability.md#strings)) rest on the first. Where a layer is
-not specified, as `get([1], 5)` is with `fn get(q: Seq(Int), i: Int): Int
-:= q[i]`, its value is read from the environment, so it need not be the
-same in every behaviour, though it mentions nothing.
-
-A function in Fren is not recursive (see [Defined
-functions](Items.md#defined-functions)), so the tree is not a value here:
-each fact is stated of one layer, and the induction is stated in prose.
-FrenCore's walks over expressions are bound to the layers by
-[implementations](../Impl.md) proved in Lean for every tree, as
-`lang::mentions` is.
+The laws that relate behaviours of `node` are in [Laws of
+meaning](MeaningLaws.md).
