@@ -112,14 +112,12 @@ grammar accepts it:
   is an expression's whole path, which reads a call's variable or a
   value's field or method, or where it follows `.`, or names an option;
 - a member's `set_option` of an option other than `fren.evidence`;
-- an input's definition, `in x := e`, before its expression is read;
+- a parameter's modifier, or its definition, `x := e`, before its
+  expression is read;
 - an operator of another language, `==`, `&&`, `||` or `|`, after its
   left operand;
 - `table` as a name: it is a reserved word, which Lean reads as a name
-  where an expression starts, as it reads `when`;
-- a type with its type arguments in parentheses, and type parameters in
-  parentheses, as they were written before they were written in angle
-  brackets (`Reqs/Lang/Generics#angle-brackets`). -/
+  where an expression starts, as it reads `when`. -/
 partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   let reserved (p : Syntax) : CommandElabM Unit := do
     let id := (pathSegs p)[0]!
@@ -152,45 +150,9 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       checkParsed stx[1]
       checkParsed stx[2]
       unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
-    else if stx.isOfKind ``Lang.inMember then
-      checkParsed stx[1]
-      checkParsed stx[2]
-      unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
     else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr then
       stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
-    else if stx.isOfKind ``Lang.parenType then
-      -- The parentheses of it and of each type within it written so too,
-      -- written `<` and `>` in the suggestion, as the `fren` command does.
-      let parens := (parenTypes stx).flatMap fun t => #[t[1].getPos?, t[3].getPos?]
-      throwErrorAt stx (Core.parenTypeArgsMsg (← angleSource stx parens)).text
-    else if stx.isOfKind ``Lang.enumCmd || stx.isOfKind ``Lang.structCmd || stx.isOfKind ``Lang.fnCmd then
-      -- Its type parameters follow its name.
-      let k := if stx.isOfKind ``Lang.fnCmd then 3 else 4
-      for i in [0:stx.getNumArgs] do
-        let ps := stx[k]
-        if i == k && !ps.isNone && ps[0].isOfKind ``Lang.fren_paren_type_params then
-          let ref := mkNullNode #[stx[k - 1], ps]
-          let written ← angleSource ref #[ps[0][0].getPos?, ps[0][2].getPos?]
-          throwErrorAt ref (Core.parenTypeParamsMsg written).text
-        checkParsed stx[i]
     else stx.getArgs.forM checkParsed
-where
-  /-- The types within `stx` written with their type arguments in
-  parentheses. -/
-  parenTypes (stx : Syntax) : Array Syntax :=
-    (if stx.isOfKind ``Lang.parenType then #[stx] else #[]) ++ stx.getArgs.flatMap parenTypes
-  /-- The source of `ref`, as written, comments and all, with the
-  parentheses at `parens` written as angle brackets, as the `fren` command
-  writes it (`Core.angleText`). -/
-  angleSource (ref : Syntax) (parens : Array (Option String.Pos.Raw)) : CommandElabM String := do
-    let src := (← getFileMap).source
-    let (some a, some b) := (ref.getPos?, ref.getTailPos?) | return ""
-    let mut out := #[]
-    let mut p := a
-    while p < b do
-      out := out.push (p.get src, parens.contains (some p))
-      p := p.next src
-    return Core.angleText out
 
 /-- Records `unnecessary_trailing_comma` on the commas of the command `stx`
 that end a list on the line of its `}` or `]`
@@ -6140,14 +6102,10 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
 
-/-- A function, as written before functions had blocks: its contract after
-its signature is an error (`F0164`), whose fix, which the `fren` command
-makes, writes it with a block. -/
+/-- A function without a block: uninterpreted, or with a body. -/
 @[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   checkParsed stx
-  if let some c := stx[9].getArgs[0]? then
-    throwErrorAt c (Core.fnClausesMsg (some ({ start := 0, stop := 0 }, ""))).text
   elabFunctionCore stx stx
 
 /-- The names that the identifiers within `e` mention, as the `fren`
@@ -6214,7 +6172,7 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
     let kind? : Option (Core.FnMember × Bool × String × Syntax) :=
       if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then some (.use, false, "use", m)
       else if m.isOfKind ``Lang.evidenceMember then some (.evidence, false, "set_option", mkNullNode #[m[0], m[3]])
-      else if m.isOfKind ``Lang.callMember || m.isOfKind ``Lang.instMember then some (.call, false, "call", m[0])
+      else if m.isOfKind ``Lang.callMember then some (.call, false, "call", m[0])
       else if m.isOfKind ``Lang.existsMember then some (.exists, !m[0].isNone, "exists", if m[0].isNone then m[1] else m[0])
       else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone, "let", if m[0].isNone then m[1] else m[0])
       else match constraint? m with
@@ -6227,15 +6185,11 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
     else if m.isOfKind ``Lang.letMember then
       let x := (declaredIdent m[2]).1
       lets := lets.push (Core.nameText x.getId, (mkNode ``Lang.fren_def #[m[2], m[3], m[4], withWhere m[5] m[6]] : Syntax))
-    else if m.isOfKind ``Lang.outMember then
-      unless m[0].isNone && m[1].isNone && m[4].isNone && !m[5].isNone do
-        throwErrorAt m (Core.outputMemberMsg (!m[0].isNone) (!m[5].isNone) none).text
-      let x := Core.nameText m[3].getId
-      unless x == rn do throwErrorAt (mkNullNode #[m[2], m[3]]) (Core.fnOutMsg x rn).text
-      if out?.isSome then throwErrorAt m[3] (Core.resultDefinedTwiceMsg x).text
-      out? := some m[5]
-    else if m.isOfKind ``Lang.inMember then
-      throwErrorAt m (Core.inputMemberMsg none).text
+    else if m.isOfKind ``Lang.defineMember then
+      let x := Core.nameText m[1].getId
+      unless x == rn do throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.fnOutMsg x rn).text
+      if out?.isSome then throwErrorAt m[1] (Core.resultDefinedTwiceMsg x).text
+      out? := some (mkNullNode #[m[2], m[3], m[4]])
     else if (constraint? m).isSome then clauses := clauses.push m
   -- The result, the function applied to its parameters, at the result's
   -- name.
@@ -6298,13 +6252,10 @@ structure PendingInst where
   rather than bindings written by name. -/
   positional : Bool := false
 
-/-- Resolves the call `call x := p(args)`, or with `named`, the instance
-`inst x: p { bs }` (`m`), as calls were written before: the called
-procedure, the call's variables, and its bindings, each argument of a call
-bound to the parameter in its position (`F0408`, `F0409`). An instance is an
-error (`F0420`), whose fix, which the `fren` command makes, writes it as a
-call. -/
-def resolveInst (modName : Name) (m x p : Syntax) (bs : Array Syntax) (offset : Nat) (named : Bool) :
+/-- Resolves the call `call x := p(args)`: the called procedure, the
+call's variables, and its bindings, each argument bound to the parameter
+in its position (`F0408`, `F0409`). -/
+def resolveInst (modName : Name) (x p : Syntax) (bs : Array Syntax) (offset : Nat) :
     TermElabM (PendingInst × Array Var) := do
   liftMsg x (Core.checkItemName "call" x.getId)
   let r ← resolvePath modName (pathSegs p)
@@ -6316,9 +6267,6 @@ def resolveInst (modName : Name) (m x p : Syntax) (bs : Array Syntax) (offset : 
   noteCounts c p
   let params := c.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (·.name)
   let callee := Core.showPath path
-  if named then
-    let fixed? := (Core.argumentOrder (params.toList.map Core.nameText) (bs.toList.map fun b => (Core.nameText b[0].getId, ()))).map fun _ => ""
-    throwErrorAt m (Core.instSyntaxMsg callee fixed?).text
   let some bound := Core.callBindings (params.map Core.nameText) bs
     | let ref := if bs.size > params.size then mkNullNode (bs.extract params.size bs.size) else p
       throwErrorAt ref (Core.callArityMsg callee (params.map Core.nameText) bs.size).text
@@ -6441,18 +6389,15 @@ def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Sy
       | .expect | .cover => expects := expects.push (x.getId, b?)
       | .assume => misplaced "an assumption"; constraints := constraints.push x.getId
       | .ensure => misplaced "a guarantee"; constraints := constraints.push x.getId
-    else match m with
     -- By the names they declare, without the `!` of shadowing.
-    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => insts := insts.push ((declaredIdent x).1.getId, b?)
-    | _ =>
-      if m.isOfKind ``Lang.callMember then insts := insts.push ((declaredIdent m[1]).1.getId, b?)
-      else if m.isOfKind ``Lang.outMember then
-        -- `[pub] [det] out x [: T] [:= e]`
-        let y := (declaredIdent m[3]).1.getId
-        if !m[1].isNone then dets := dets.push (y, b?)
-        else misplaced "a variable that is not `det`"
-        if !m[5].isNone then constraints := constraints.push y
-      else misplaced (if m.isOfKind ``Lang.inMember then "a parameter" else "a `use`")
+    else if m.isOfKind ``Lang.callMember then insts := insts.push ((declaredIdent m[1]).1.getId, b?)
+    else if m.isOfKind ``Lang.outMember then
+      -- `[pub] [det] out x [: T] [:= e]`
+      let y := (declaredIdent m[3]).1.getId
+      if !m[1].isNone then dets := dets.push (y, b?)
+      else misplaced "a variable that is not `det`"
+      if !m[5].isNone then constraints := constraints.push y
+    else misplaced (if m.isOfKind ``Lang.inMember then "a parameter" else "a `use`")
   let by_ (f : Core.Evidence → Bool) :=
     let pick (xs : Array (Name × Option Core.Evidence)) := xs.map fun (n, e?) => (n, e?.map f)
     Core.Tested.ofSettings (f all) constraints (pick expects) (pick insts) (pick dets)
@@ -6508,12 +6453,11 @@ constraint, which share one namespace (`lang::distinct_names`). -/
 def memberName? (m : Syntax) : Option Syntax :=
   if m.isOfKind ``Lang.inMember then some m[1]
   else if m.isOfKind ``Lang.outMember then some m[3]
+  else if m.isOfKind ``Lang.defineMember then some m[1]
   else if m.isOfKind ``Lang.existsMember || m.isOfKind ``Lang.letMember then some m[2]
   else if m.isOfKind ``Lang.callMember then some m[1]
   else if let some (_, x, _) := constraint? m then some x
-  else match m with
-    | `(fren_member| inst $x:ident : $_:fren_path { $_,* }) => some x
-    | _ => none
+  else none
 
 open Lang in
 /-- The kind of a member without its evidence setting, for
@@ -6521,7 +6465,7 @@ open Lang in
 not one, which a procedure's members never are. -/
 def memberKind? (m : Syntax) : Option Core.MemberKind :=
   [(``Lang.useMember, .use), (``Lang.useGroupMember, .use), (``Lang.existsMember, .exists), (``Lang.letMember, .let),
-    (``Lang.outMember, .define), (``Lang.assumeMember, .assumption), (``Lang.callMember, .call), (``Lang.instMember, .call),
+    (``Lang.defineMember, .define), (``Lang.assumeMember, .assumption), (``Lang.callMember, .call),
     (``Lang.ensureMember, .guarantee),
     (``Lang.expectMember, .expectation), (``Lang.coverMember, .cover)].lookup m.getKind
 
@@ -6529,14 +6473,9 @@ open Lang in
 /-- The names that a defined output's definition, or a call's
 bindings, mention: a binding `x` without `:= e` mentions `x`. -/
 def memberMentions (m : Syntax) : Array Name :=
-  if m.isOfKind ``Lang.outMember then
-    if m[5].isNone then #[] else (pathMentions m[5][1]).map (·.getRoot)
+  if m.isOfKind ``Lang.defineMember then (pathMentions m[3]).map (·.getRoot)
   else if m.isOfKind ``Lang.letMember then (pathMentions m[5]).map (·.getRoot)
   else if m.isOfKind ``Lang.callMember then m[5].getSepArgs.foldl (init := #[]) fun acc a => acc ++ (pathMentions a).map (·.getRoot)
-  else if m.isOfKind ``Lang.instMember then
-    -- `inst w: c { b, ... }`
-    m[5].getSepArgs.foldl (init := #[]) fun acc b =>
-      acc ++ if b[1].isNone then #[(declaredIdent b[0]).1.getId] else (pathMentions b[1][1]).map (·.getRoot)
   else #[]
 
 /-- Records `arbitrary_source_item_ordering` on the procedure `stx`, whose
@@ -6615,11 +6554,8 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
   let mut names := names
   let mut pending : Array PendingInst := #[]
   for m in members do
-    let (x, p, bs, named) ← match m with
-      | `(fren_member| inst $x:ident : $p:fren_path { $bs,* }) => pure (x.raw, p.raw, bs.getElems.map (·.raw), true)
-      | _ =>
-        unless m.isOfKind ``Lang.callMember do continue
-        pure (m[1], m[3], m[5].getSepArgs, false)
+    unless m.isOfKind ``Lang.callMember do continue
+    let (x, p, bs) := (m[1], m[3], m[5].getSepArgs)
     -- A call named by a literal is not resolved, which would report
     -- its name again; the `fren` command stops at the first report too.
     if let .error msg := Core.checkNotLiteral (declaredIdent x).1.getId then
@@ -6629,7 +6565,7 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
     names := names.insert x.getId
     lintName .instance x.getId x
     try
-      let (pi, ivars) ← resolveInst scope m x p bs vars.size named
+      let (pi, ivars) ← resolveInst scope x p bs vars.size
       pending := pending.push pi
       vars := vars ++ ivars
       -- Its bindings give each input of its procedure a value, and the
@@ -6888,15 +6824,9 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
     (global : Bool := false) : TermElabM Unit := do
   let mut mentioned := #[]
   for m in members do
-    match m with
-    | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
-      for b in bs.getElems do
-        let b := b.raw
-        mentioned := mentioned ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-    | _ =>
-      if m.isOfKind ``Lang.callMember then
-        for a in m[5].getSepArgs do mentioned := mentioned ++ pathMentions a
-      if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
+    if m.isOfKind ``Lang.callMember then
+      for a in m[5].getSepArgs do mentioned := mentioned ++ pathMentions a
+    if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
   for v in vars do
     if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
   -- A public definition says what the output is, so it is used.
@@ -6905,16 +6835,10 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
     recordLint .unusedVariables v.ref (Core.unusedVariableMsg x global (v.role == .output))
   let mut others := #[]
   for m in members do
-    match m with
-    | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
-      for b in bs.getElems do
-        let b := b.raw
-        others := others ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-    | _ =>
-      if m.isOfKind ``Lang.callMember then
-        for a in m[5].getSepArgs do others := others ++ pathMentions a
-      if let some (kind, _, e) := constraint? m then
-        unless kind == .assume do others := others ++ pathMentions e
+    if m.isOfKind ``Lang.callMember then
+      for a in m[5].getSepArgs do others := others ++ pathMentions a
+    if let some (kind, _, e) := constraint? m then
+      unless kind == .assume do others := others ++ pathMentions e
   for v in vars do
     if let some d := v.defn? then others := others ++ pathMentions d
   let inputs := vars.filter (·.role == .input) |>.map (·.name)
@@ -6927,15 +6851,10 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   -- The uninterpreted functions that they apply link too.
   let acx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
   for m in members do
-    match m with
-    | `(fren_member| inst $_:ident : $_:fren_path { $bs,* }) =>
-      for b in bs.getElems do
-        if !b.raw[1].isNone then others := others ++ (← appliedFns acx b.raw[1][1])
-    | _ =>
-      if m.isOfKind ``Lang.callMember then
-        for a in m[5].getSepArgs do others := others ++ (← appliedFns acx a)
-      if let some (kind, _, e) := constraint? m then
-        unless kind == .assume do others := others ++ (← appliedFns acx e)
+    if m.isOfKind ``Lang.callMember then
+      for a in m[5].getSepArgs do others := others ++ (← appliedFns acx a)
+    if let some (kind, _, e) := constraint? m then
+      unless kind == .assume do others := others ++ (← appliedFns acx e)
   for v in vars do
     if let some d := v.defn? then others := others ++ (← appliedFns acx d)
   let links ← assumed.mapIdxM fun i (_, e) => return mss[i]! ++ (← appliedFns acx e)
@@ -7008,31 +6927,17 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
       record (.compInfo info)
   return (ok, generated)
 
-/-- A component, as procedures were written before they were procedures
-(`F0158`): the `fren` command's fix writes it as a procedure. -/
-@[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
-  checkLexemes stx
-  checkParsed stx
-  throwErrorAt stx[1] (Core.compSyntaxMsg (some "")).text
-
 /-- The results of the procedure `stx`: `fren_result`s. -/
 def procResults (stx : Syntax) : Array Syntax := if stx[6].isNone then #[] else stx[6][2].getSepArgs
 
-/-- Whether `m`, an `out` member, is `out r := e`, which defines the result
-`r`, one of `results`, rather than an output as components declared them. -/
-def definesResult (results : Array Name) (m : Syntax) : Bool :=
-  m[0].isNone && m[1].isNone && m[4].isNone && !m[5].isNone && results.contains m[3].getId
-
-/-- Reports a member of the procedure `stx` written as components wrote
-them: an input (`F0159`), or an output that is not `out r := e` defining
-one of its results (`F0160`), as the `fren` command's parser does. -/
+/-- Reports an `out` member of the procedure `stx` whose name is not one of
+its results (`F0444`), as the `fren` command's parser does. -/
 def checkProcMembers (stx : Syntax) : CommandElabM Unit := do
   let results := (procResults stx).map fun r => (declaredIdent r[2]).1.getId
   for m0 in stx[8].getArgs do
     let (m, _) ← unwrapEvidence m0
-    if m.isOfKind ``Lang.inMember then throwErrorAt m (Core.inputMemberMsg none).text
-    if m.isOfKind ``Lang.outMember && !definesResult results m then
-      throwErrorAt m (Core.outputMemberMsg (!m[0].isNone) (!m[5].isNone) none).text
+    if m.isOfKind ``Lang.defineMember && !results.contains m[1].getId then
+      throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.procOutMsg (Core.nameText m[1].getId)).text
 
 /-- The members of the procedure `stx` as a component's, as the `fren`
 command reads them: its parameters as inputs, its results as public
@@ -7049,9 +6954,9 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
     let rewrap (inner : Syntax) : Syntax := match set? with
       | some (_, ev) => ev.setArg 4 inner
       | none => inner
-    if m.isOfKind ``Lang.outMember && definesResult resultNames m then
-      if defs.any (·.1 == m[3].getId) then throwErrorAt m[3] (Core.resultDefinedTwiceMsg (Core.nameText m[3].getId)).text
-      defs := defs.push (m[3].getId, m[5])
+    if m.isOfKind ``Lang.defineMember && resultNames.contains m[1].getId then
+      if defs.any (·.1 == m[1].getId) then throwErrorAt m[1] (Core.resultDefinedTwiceMsg (Core.nameText m[1].getId)).text
+      defs := defs.push (m[1].getId, mkNullNode #[m[2], m[3], m[4]])
     else if m.isOfKind ``Lang.existsMember then
       body := body.push (rewrap (mkNode ``Lang.outMember #[mkNullNode, m[0], mkAtom "out", m[2], m[3], mkNullNode]))
     else if m.isOfKind ``Lang.letMember then
@@ -7125,12 +7030,12 @@ def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Bloc
     let (kind, det) : Core.BlockMember × Bool :=
       if m.isOfKind ``Lang.existsMember then (.exists, !m[0].isNone)
       else if m.isOfKind ``Lang.letMember then (.let, !m[0].isNone)
-      else if m.isOfKind ``Lang.outMember then (.define, false)
+      else if m.isOfKind ``Lang.defineMember then (.define, false)
       else if m.isOfKind ``Lang.assumeMember then (.assume, false)
       else if m.isOfKind ``Lang.ensureMember then (.ensure, false)
       else if m.isOfKind ``Lang.expectMember then (.expect, false)
       else if m.isOfKind ``Lang.coverMember then (.cover, false)
-      else if m.isOfKind ``Lang.callMember || m.isOfKind ``Lang.instMember then (.call, false)
+      else if m.isOfKind ``Lang.callMember then (.call, false)
       else (.use, false)
     unless Core.blockMemberAccepted kind det do return some (m, kind, det)
   return none
@@ -7245,24 +7150,10 @@ end
     unless isPub do recordItem .constant path nameStx
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
-/-- The procedure that a global expectation's binder of type `ty` ranges
-over the behaviours of, or `none` if it ranges over the values of a type
-(`lang::quantifier_binder`), which a quantifier checks. A path that names
-neither is an error. -/
-def globalBinderComp? (modName : Name) (ty : Syntax) : TermElabM (Option Name) := do
-  let some p := typePath? ty | return none
-  let segs := pathSegs p
-  if segs.size == 1 && [`Bool, `Int, `Nat, `String].contains segs[0]!.getId then return none
-  match ← resolvePath modName segs with
-  | .item { kind := .compItem, path, .. } => return some path
-  | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
-  | r => throwErrorAt ty (Core.wrongKindMsg "a procedure or a type" r).text
-
 /-- Elaborates a global expectation in its short form, `expect n: e`, into
 a `CompInfo` whose path is its module (`Model.Entry.globalInfo`),
 generating `decl` for it. Binders over values, `forall (m: M), e`, are a
-quantifier around `e`; one over a procedure's behaviours is the form that
-global expectations were written in before (`F0416`). -/
+quantifier around `e`. -/
 def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syntax) (body : Syntax)
     (decl : Name) : TermElabM CompInfo := do
   modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
@@ -7273,10 +7164,6 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let declared := binderIds.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt binderIds[k]! (Core.dupBinderMsg declared[k]!).text
-  let resolved ← binderStxs.mapM fun b => return (b, ← globalBinderComp? modName b[3])
-  if let some (b, _) := resolved.find? fun (_, p?) =>
-      (Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
-    throwErrorAt b[3] Core.oldGlobalMsg.text
   let valueBinders := binderStxs
   let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop }
   discard (takeIndexes #[])

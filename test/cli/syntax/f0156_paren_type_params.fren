@@ -1,2 +1,0 @@
--- Type parameters in parentheses, as they were written before (F0156).
-pub struct Pair(A, B) { fst: A, snd: B }

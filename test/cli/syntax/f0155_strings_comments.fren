@@ -1,4 +1,0 @@
--- The suggestion of F0155 copies the type as written: escapes, raw strings
--- and comments.
-proc c(x: Set(String is "a\"b" | r#"c"d"#), y: Seq( -- a comment
-    Int)) {}

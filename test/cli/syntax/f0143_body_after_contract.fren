@@ -1,4 +1,0 @@
--- A function's body after its contract (F0143).
-fn pred(n: Int): Int
-    assume positive: n > 0
-    := n - 1

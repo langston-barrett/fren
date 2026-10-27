@@ -154,10 +154,8 @@ comparison](Lang/Expressions.md#chained-comparisons). For precedence and typing,
 `match`'s or a table's scrutinee ends the last definition rather than starting a
 membership (an `else` branch keeps that restriction), and a nested `let` ends its own definitions with its own `in`
 (see [Local definitions](Lang/Let.md#parentheses)). A `binder` of a
-quantifier names a type, and one of a global expectation's leading
-`forall` a type, or a procedure, as global expectations were written
-before, which is an error (see [Global
-expectations](Lang/Global.md#migration)). A global expectation's results,
+quantifier names a type, as one of a global expectation's leading
+`forall` does. A global expectation's results,
 and the members of its block other than `assume`, `use`, `let`, `call`,
 `expect` and `cover`, are parsed as a procedure's, and are errors (see
 [Global expectations](Lang/Global.md)).
@@ -169,9 +167,6 @@ definition. A `top` ends at the first token that cannot continue it,
 where the next member, or the `}` of the block, starts. `call`, `out` and
 `det` are not reserved: where a member starts, they are its keyword, and
 anywhere else, names.
-Components, `in` and `out x: T` members and instances, as components were
-written before procedures, are errors whose fixes write them as procedures
-(see [Migration](Lang/Procedures.md#migration)).
 A `type` is written only where the rules above say, never within an
 expression, so a `<` in an expression is a comparison, and the `<` of a
 `base` or a `declared-type` opens type arguments or type parameters; the

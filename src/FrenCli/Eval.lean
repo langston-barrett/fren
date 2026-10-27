@@ -2553,16 +2553,15 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
     vars := vars.push { name := declName x, ty := ← varTy ty?, role := if isIn then .input else .output, isPub, isDet }
   let mut pending := #[]
   for m in members do
-    let .inst x p bs named _ := m | continue
+    let .inst x p bs _ := m | continue
     let cpath ← match ← resolve p with
       | .item { kind := .compItem, path, .. } => pure path
       | r => throw s!"`{showPath r.path}` is not a procedure"
     -- A call's arguments, in the order of the callee's parameters.
-    let bs ← if named then pure bs else do
-      let some callee := (← get).spec.comp? cpath | throw s!"unknown procedure `{showPath cpath}`"
-      let params := callee.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (Fren.Core.nameText ·.name)
-      let some bound := Fren.Core.callBindings params bs | throw s!"wrong number of arguments to `{showPath cpath}`"
-      pure (bound.map fun (n, (a, e?)) => ({ a with name := n }, e?))
+    let some callee := (← get).spec.comp? cpath | throw s!"unknown procedure `{showPath cpath}`"
+    let params := callee.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (Fren.Core.nameText ·.name)
+    let some bound := Fren.Core.callBindings params bs | throw s!"wrong number of arguments to `{showPath cpath}`"
+    let bs := bound.map fun (n, (a, e?)) => ({ a with name := n }, e?)
     pending := pending.push (declName x, cpath, bs)
   let shell : Comp := { path, vars, constraints := #[], insts := pending.map fun (w, c, _) => { name := w, comp := c, bindings := #[] } }
   let cx : Cx := { vars := st.spec.flatVars shell }

@@ -17,15 +17,14 @@ parameters, which stand for types there, so that `unwrap_or` is a function
 from an `Option<T>` and a `T` to a `T`, for every type `T`. A function with
 no type parameters is written as before, and `fn f(T)` declares the
 uninterpreted function `f` of one parameter of type `T`, not a type
-parameter: type parameters are written only in angle brackets. `fn f(T)(x:
-T)`, a group of names right before a second `(`, is how they were written
-before, and is an error (`F0156`), whose fix is `fn f<T>(x: T)` (see
+parameter: type parameters are written only in angle brackets (see
 [Angle brackets](Generics.md#angle-brackets)).
 
 ```
 function      := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
-               | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] [":=" top] clause+
                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] ":=" top
+               | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" ":" "(" variable [","] ")"
+                 "{" member* "}"
 declared-type := IDENT | IDENT"<" IDENT ("," IDENT)* ">"
 ```
 

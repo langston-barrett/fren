@@ -1,7 +1,0 @@
--- Type arguments in parentheses, as they were written before they were
--- written in angle brackets (`F0155`): the suggestion writes the whole
--- type, with the types within it written so too.
-mod m
-proc c(x: Option(Set(Int))) {}
---~^ error: type arguments are written in angle brackets
---@ exit: 2

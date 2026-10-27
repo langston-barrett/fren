@@ -11,8 +11,7 @@ assume ...; let ...; out r := e; ensure ... }`. Both front ends lower it to
 a function with a body and a contract: its `out` member's expression is the
 body, its `assume`s and `ensure`s the contract, and its result and `let`s
 local definitions, `r := f(x)` and `y := e`, of each expression that
-mentions them. The contract written after the signature, as functions were
-written before blocks, is an error whose fix writes the block (`F0164`).
+mentions them.
 -/
 
 namespace Fren.Core
@@ -65,22 +64,6 @@ def neededDefs {α : Type} (defs : Array (String × α)) (mentions : α → Arra
           if !need.contains m then need := need.push m
   return (defs.mapIdx fun i (n, _) => (i, n)).filterMap fun (i, n) => if need.contains n then some i else none
 
-/-- A name for the result of a function migrated to a block, that `taken`
-does not have: `r`, or `r?` for a `Bool`, then `result`, `value`, … -/
-def fnResultName (bool : Bool) (taken : Array String) : String :=
-  let base := ["r", "result", "value", "out_value"].find? (fun n => !taken.contains n && !taken.contains (n ++ "?"))
-  (base.getD "fn_result") ++ (if bool then "?" else "")
-
-/-- A function's contract written after its signature, as functions were
-written before blocks (`F0164`): `fixed` is the function written with a
-block, if it is known. -/
-def fnClausesMsg (fixed? : Option (Range × String)) : Msg :=
-  { code? := some "F0164", headline := "a function's contract is written in its block"
-    label? := some "a clause after the signature"
-    notes := #["note: a function with a contract is written `fn f(x: T): (r: U) { assume ... out r := e ensure ... }`, \
-      its body the `out` member that defines its result"]
-    fixes := fixed?.toArray.map fun (r, replacement) => { msg := "write it with a block", replacement, range? := some r } }
-
 /-- A member that a function's block does not take (`F0442`): `what` is
 its kind, such as "`exists`". -/
 def fnMemberMsg (what : String) : Msg :=
@@ -111,6 +94,13 @@ def fnOutMsg (x r : String) : Msg :=
   { code? := some "F0444", headline := s!"`{x}` is not the function's result"
     label? := some "not the result"
     notes := #[s!"note: `out` defines the function's result, `{r}`; a local definition is written `let {x} := e`"] }
+
+/-- `out x := e` in a procedure's block, where `x` is not one of its
+results (`F0444`). -/
+def procOutMsg (x : String) : Msg :=
+  { code? := some "F0444", headline := s!"`{x}` is not a result of the procedure"
+    label? := some "not a result"
+    notes := #[s!"note: `out` defines a result of the procedure, one in its signature; a local definition is written `let {x} := e`"] }
 
 /-- A function with more than one result (`F0445`), which Fren does not
 take yet. -/

@@ -51,14 +51,12 @@ inductive BinderTarget where
   | component
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- Whether a binder is accepted, and whether it is one of the form that
-global expectations were written in before (`F0416`), from what its type
-names and whether it is in a global expectation's leading `forall`
+/-- Whether a binder is accepted, from what its type names
 (`lang::quantifier_binder`). -/
-def quantifierBinder (target : BinderTarget) (global : Bool) : Bool × Bool :=
+def quantifierBinder (target : BinderTarget) : Bool :=
   match target with
-  | .typeName => (true, false)
-  | .component => (false, global)
+  | .typeName => true
+  | .component => false
 
 /-- The number of instances of a quantifier whose bound names have types of
 `sizes` values each. -/

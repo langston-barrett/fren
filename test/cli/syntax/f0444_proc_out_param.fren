@@ -1,0 +1,6 @@
+-- `out x := e` where `x` is a parameter, not a result of the procedure
+-- (F0444).
+proc c(x: Int): (y: Int) {
+    out x := 1
+    ensure r: y = x
+}

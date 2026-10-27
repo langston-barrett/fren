@@ -61,13 +61,10 @@ parameters follows the name directly, with no space, line break or
 comment between them, as a call's `(` does
 ([Lexical structure](Lexical.md#punctuators)): `Set <Int>` is an error
 (`F0144`). Within the brackets, spaces are allowed, and `fren fmt` removes
-them. A type's or a declaration's name followed directly by `(` is how
-type arguments and type parameters were written before, as `Option(Int)`
-and `enum Option(T) { ... }`: each is an error, `F0155` for type arguments
-and `F0156` for type parameters, whose fix writes the angle brackets. A
-newtype's parentheses are told apart by what follows them: a record's
-type parameters are followed by `{`, as before. `lang::type_bracket`
-states what the bracket after the name does:
+them. A `(` after a type's name is not the type's: the type ends before
+it, so `Option(Int)` is a parse error, and after a declaration's name, it
+opens a newtype's types or a function's parameters, not type parameters.
+`lang::type_bracket` states what the bracket after the name does:
 
 ```fren
 -- The punctuator right after a type's name, or after a generic
@@ -77,7 +74,6 @@ pub enum Bracket { Angle, Paren, Other }
 -- What it does.
 pub enum AfterName {
     Opens,          -- opens the type arguments or type parameters
-    Parenthesized,  -- a `(` that would have opened them before: `F0155` or `F0156`
     Spaced,         -- a `<` after a space: `F0144`
     Ends,           -- not the type's: the type or the name ends before it
 }
@@ -86,15 +82,14 @@ pub proc type_bracket(
     bracket: Bracket,
     adjacent?,                   -- it follows the name directly
 ): (det reading: AfterName) {
-    ensure opens: reading = AfterName::Opens iff (bracket = Bracket::Angle and adjacent?)
-    ensure spaced: reading = AfterName::Spaced iff (bracket = Bracket::Angle and not adjacent?)
-    ensure parenthesized: reading = AfterName::Parenthesized iff (bracket = Bracket::Paren and adjacent?)
+    out reading := if bracket = Bracket::Angle then (if adjacent? then AfterName::Opens else AfterName::Spaced)
+        else AfterName::Ends
 
     -- After a type's name, a `<` is never a comparison.
     expect never_compared: when bracket = Bracket::Angle, reading != AfterName::Ends
-    -- A `(` after a space is not the type's, as in a function's parameter
-    -- list after a variant's type.
-    expect spaced_paren: when bracket = Bracket::Paren and not adjacent?, reading = AfterName::Ends
+    -- A `(` is not the type's, as in a function's parameter list after a
+    -- variant's type.
+    expect paren_ends: when bracket = Bracket::Paren, reading = AfterName::Ends
 }
 ```
 
@@ -104,33 +99,6 @@ reads the `>` that closes type arguments or type parameters one character
 at a time, and `>>` closes two. No type is followed by `=`, so a `>=`
 after a type, as in `x: Set<Int>= e` for `x: Set<Int> := e`, is an error
 in both front ends; `x: Set<Int>:= e` is `>` and `:=`, as it is in Lean.
-
-**The suggestion.** The fix of `F0155` writes the whole type, with the
-parentheses of each type within it that is written so too made angle
-brackets, as `Option<Set<Int>>` for `Option(Set(Int))`; that of `F0156`
-writes the declaration's name with its type parameters, as `Option<T>`.
-Both front ends copy the source as written, so that a string literal keeps
-its escapes and its `r` and `#`s, and a comment within the type is kept,
-and change only those parentheses, as `lang::angle_char` states of each
-character:
-
-```fren
-pub proc angle_char(
-    ch: String,                  -- a character of the type or declaration as written
-    swapped?,                    -- whether it opens or closes type arguments or type parameters
-): (det text: String) {
-    out text := match ch {
-        "(" if swapped? => "<",
-        ")" if swapped? => ">",
-        _ => ch,
-    }
-
-    expect copied: unless swapped?, text = ch
-}
-```
-
-`fren fix` makes these fixes, so that it migrates a spec written with
-parentheses (see [Fixing lints](../Lint.md#fixing-lints)).
 
 ## Ordered records
 

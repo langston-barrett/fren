@@ -112,10 +112,6 @@ syntax (name := relType) &"Rel" noWs "<" fren_type ", " fren_type closeAngle : f
 /-- `G<A, B>`, an instance of a generic type (`Reqs/Lang/Generics`). Below
 `Set<T>`, `Seq<T>` and `Rel<A, B>`, which it would also read. -/
 syntax (name := instanceType) (priority := low) fren_path noWs "<" sepBy1(fren_type, ", ") closeAngle : fren_type
-/-- `G(A, B)`, a type with its type arguments in parentheses, as they were
-written before they were written in angle brackets: parsed only so that
-the elaborator reports it, as the `fren` command does (`F0155`). -/
-syntax (name := parenType) (priority := low) fren_path noWs "(" sepBy1(fren_type, ", ") ")" : fren_type
 /-- `fn(A, B) -> R`, a function type, the type of a defined function's
 parameter (`Reqs/Lang/HigherOrder#function-types`). -/
 scoped syntax (name := fnType) "fn" "(" sepBy1(fren_type, ", ") ")" " -> " fren_type : fren_type
@@ -373,14 +369,20 @@ scoped syntax:10 (name := patType) fren_type:11 " is " fren_top_pattern : fren_t
 
 declare_syntax_cat fren_member (behavior := both)
 
-/-- `in x: T`, an input as components declared them, parsed only so that
-the elaborator reports it (`F0159`); a definition, `:= e`, is parsed only
-to report that inputs cannot have one. -/
-scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_member
-/-- `out r := e`, the definition of the result `r`; any other form, `[pub]
-[det] out x: T [:= e]`, is an output as components declared them, which the
-elaborator reports (`F0160`). -/
-scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr (fren_where)?)? : fren_member
+/-- The variables of a procedure as the elaborator reads them, each a
+member: its parameters as inputs, and its results and its block's
+`exists` and `let` members as outputs. No source is parsed as one of
+these: the elaborator builds them from a procedure's syntax. -/
+declare_syntax_cat fren_var_member (behavior := both)
+
+/-- `in x: T`, an input: a parameter, as the elaborator reads it. -/
+scoped syntax (name := inMember) "in " frenIdent (" : " fren_type)? (" := " fren_expr)? : fren_var_member
+/-- `[pub] [det] out x: T [:= e]`, an output: a result, or an `exists` or
+`let` member, as the elaborator reads it. -/
+scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " fren_type)? (" := " fren_expr (fren_where)?)? : fren_var_member
+
+/-- `out r := e`, the definition of the result `r` (`F0444`). -/
+scoped syntax (name := defineMember) &"out " frenIdent " := " fren_expr (fren_where)? : fren_member
 scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := ensureMember) &"ensure " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
@@ -396,9 +398,6 @@ scoped syntax (name := letMember) (&"det ")? "let " frenIdent (" : " fren_type)?
 for each of its parameters, in order. -/
 scoped syntax (name := callMember) &"call " frenIdent " := " fren_path noWs "("
   withoutForbidden(sepBy(fren_expr, ", ", ", ", allowTrailingSep)) ")" : fren_member
-/-- `inst w: c { x := e, ... }`: an instance, as calls were written before
-they were calls, parsed only so that the elaborator reports it (`F0420`). -/
-scoped syntax (name := instMember) &"inst " frenIdent " : " fren_path " { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }" : fren_member
 /-- `use`, as a member: its names are in scope in the procedure only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member
@@ -424,15 +423,10 @@ syntax fren_variant := frenIdent (noWs "(" sepBy1(fren_type, ", ") ")")?
 (`Reqs/Lang/Generics`). -/
 syntax fren_type_params := "<" sepBy1(frenIdent, ", ") closeAngle
 
-/-- `(A, B)`, type parameters in parentheses, as they were written before
-they were written in angle brackets: parsed only so that the elaborator
-reports them, as the `fren` command does (`F0156`). -/
-syntax fren_paren_type_params := "(" sepBy1(frenIdent, ", ") ")"
-
 /-- `[pub] [ordered] enum E { A, B }`: `ordered` orders the variants as they
 are declared (`Reqs/Lang/Items#enumerations`); with type parameters,
 `enum E<T> { ... }`. -/
-scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent (noWs (fren_type_params <|> fren_paren_type_params))? " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
+scoped syntax (name := enumCmd) ("pub ")? ("ordered ")? "enum " frenIdent (noWs fren_type_params)? " { " sepBy1(fren_variant, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `x: T`, or `x?` for a `Bool`. -/
 syntax fren_field := frenIdent (" : " fren_type)?
@@ -441,16 +435,11 @@ syntax fren_field := frenIdent (" : " fren_type)?
 values by their fields (`Reqs/Lang/Items#ordered-declarations`). With type
 parameters, `struct R<A, B> { ... }`, which the `{` tells apart from a
 newtype. -/
-scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent (noWs (fren_type_params <|> fren_paren_type_params))? " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
+scoped syntax (name := structCmd) ("pub ")? ("ordered ")? "struct " frenIdent (noWs fren_type_params)? " { " sepBy1(fren_field, ", ", ", ", allowTrailingSep) " }" : command
 
 /-- `[pub] [ordered] struct N(T)`, a newtype; its parentheses must hold one
 type (`lang::newtype`), which the elaborator checks. -/
 scoped syntax (name := newtypeCmd) ("pub ")? ("ordered ")? "struct " frenIdent noWs "(" sepBy(fren_type, ", ") ")" : command
-
-/-- `comp c { members }`, a component, as procedures were written before
-they were procedures, parsed only so that the elaborator reports it
-(`F0158`). -/
-scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 
 /-- `x: T`, or `x?` for a `Bool`: a parameter of a procedure. A modifier,
 `pub` or `det`, and a definition, `:= e`, are parsed only so that the
@@ -480,22 +469,19 @@ body (`lang::function_params`). -/
 syntax fren_param := fren_type (" : " fren_type)?
 
 /-- A clause of a function's contract: `assume n: e`, a precondition, or
-`ensure n: e`, a postcondition (`Reqs/Lang/Items#contracts`). -/
+`ensure n: e`, a postcondition (`Reqs/Lang/Items#contracts`), as the
+elaborator reads a function's block. No source is parsed as one: the
+elaborator builds them from the block's members. -/
 syntax fren_clause := (&"assume " <|> &"ensure ") frenIdent " : " fren_expr (fren_where)?
 
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
-defined one. Its contract's clauses after it, as functions were written
-before they had blocks, are parsed so that the elaborator reports them
-(`F0164`). With type
-parameters, `fn f<A, B>(x: A): B := e` (`Reqs/Lang/GenericFunctions`).
-Type parameters in parentheses, `fn f(A, B)(x: A)`, as they were written
-before they were written in angle brackets, are parsed so that the
-elaborator reports them (`F0156`): a second `(` tells them apart from
-the parameters. -/
-scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent
-  (noWs fren_type_params <|> atomic(noWs fren_paren_type_params noWs lookahead("(")))?
+defined one. With type parameters, `fn f<A, B>(x: A): B := e`
+(`Reqs/Lang/GenericFunctions`). The elaborator reads a function's block
+as this, with its contract's clauses as a last argument, which no source
+gives it. -/
+scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent (noWs fren_type_params)?
   noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
-  (" := " fren_expr (fren_where)?)? fren_clause* : command
+  (" := " fren_expr (fren_where)?)? : command
 
 /-- `fn f(x: T): (r: U) { members }`, a function written with its result
 and a block (`Reqs/Lang/Items#function-blocks`): `use`, `assume`, `let`,
@@ -510,9 +496,8 @@ scoped syntax (name := fnBlockCmd) ("pub ")? "fn " frenIdent (noWs fren_type_par
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command
 
 
-/-- `expect n: e`, a global expectation in its short form, or `expect n:
-forall (a b: c), e`, as global expectations were written before, which
-the elaborator reports (`F0416`). -/
+/-- `expect n: e`, a global expectation in its short form, with a leading
+`forall (m: M) ..., e` over values (`Reqs/Lang/Global#the-short-form`). -/
 scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_binder+ ", ")? fren_expr (fren_where)? : command
 
 /-- `expect n(x: T, ...) { members }`, a global expectation

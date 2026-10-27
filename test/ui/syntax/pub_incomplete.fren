@@ -3,5 +3,5 @@
 pub x
 pub type T
 --~^^[cli] error: expected an item
---~^^^[hosted] error: unexpected identifier; expected 'comp'
+--~^^^[hosted] error: unexpected identifier; expected 'const', 'enum', 'fn', 'mod', 'proc', 'struct' or 'type'
 --@ exit: 2

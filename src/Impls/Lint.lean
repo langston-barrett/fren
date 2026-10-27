@@ -10,8 +10,7 @@ open Fren.Lang
 namespace Fren.Impls
 
 open Fren.Core (LintLevel Group Case Named ImportFix setLevel effectiveLevel groupAccepted outsideLevel unusedImport
-  inCase expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated Head
-  MigrationStep callMigrationApplies callMigrationRound migrationStep maxMigrations)
+  inCase expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated Head)
 
 instance : Fren.Finite LintLevel :=
   ⟨[.allow, .expect, .warn, .deny, .forbid], by intro x; cases x <;> simp⟩
@@ -296,68 +295,6 @@ impl lint_import_fix: lint::import_fix for (u g fu fg : Bool) (n : Nat) {
 } by
   intro u g fu fg n _
   cases u <;> cases g <;> cases fu <;> cases fg <;> rcases n with _ | n <;> simp [fren_spec, importFix, toImportFix]
-
-/-- A migration step, as the spec writes it. -/
-def toMigrationStep : MigrationStep → lint.MigrationStep
-  | .parsed => .Parsed
-  | .apply => .Apply
-  | .stop => .Stop
-
--- For every file's state: what `fren fix` does next to migrate it.
-impl lint_migration_step: lint::migration_step for (e m : Bool) (r : Nat) {
-  parse_error? := e,
-  migration? := m,
-  round := r,
-  step := toMigrationStep (migrationStep e m r),
-} by
-  intro e m r _
-  cases e <;> cases m <;> by_cases h : r < 1000 <;>
-    simp [fren_spec, migrationStep, toMigrationStep, maxMigrations, h] <;> omega
-
--- For every round of the instances' fixes, and every `F0420`: whether the
--- round is made, and makes its fix.
-/-- Whether an `F0420` has a fix, as the spec writes it. -/
-def toOffer (b : Bool) : lint.Offer := if b then .Fix else .NoFix
-
-impl lint_call_migration_round: lint::call_migration_round for (os : List Bool) (r : Nat) (k : Int) {
-  offered := Fren.Seq.ofList (os.map toOffer),
-  round := r,
-  k := k,
-  continues? := (callMigrationRound os.toArray r).isSome,
-  applies? := ((callMigrationRound os.toArray r).getD #[]).contains k.toNat && 0 ≤ k,
-} by
-  intro os r k _
-  have hfix : ∀ b, toOffer b = .Fix ↔ b = true := by intro b; cases b <;> simp [toOffer]
-  have hmem : lint.Offer.Fix ∈ Fren.Seq.ofList (os.map toOffer) ↔ true ∈ os := by
-    simp only [Fren.Seq.mem_iff, Fren.Seq.toList_ofList, List.mem_map, hfix]; simp
-  -- A position is offered just when the list holds `true` there.
-  have hin : (k.toNat ∈ ((List.range os.length).filter (os.toArray[·]!)).toArray ∧ 0 ≤ k) ↔
-      ((0 ≤ k ∧ k < os.length) ∧ (Fren.Seq.ofList (os.map toOffer)).nth k = .Fix) := by
-    by_cases h0 : 0 ≤ k
-    · by_cases h1 : k < os.length
-      · have h1' : k.toNat < os.length := by omega
-        rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
-        simp [h0, h1, h1', hfix]
-      · have : ¬ k.toNat < os.length := by omega
-        simp [h0, h1, this]
-    · simp [h0]
-  unfold callMigrationRound callMigrationApplies
-  by_cases hr : r < maxMigrations <;> by_cases ht : true ∈ os
-  · have hs : (os.toArray.any id && decide (r < maxMigrations)) = true := by simp [hr, ht]
-    simp only [hs, if_true, Option.isSome_some, Option.getD_some]
-    simp only [maxMigrations] at hr
-    have hr' : (r : Int) < 1000 := by omega
-    simp only [fren_spec, hmem]
-    constructor
-    · simp [hr', ht]
-    · simpa [hr', ht] using hin
-  all_goals
-    have hs : (os.toArray.any id && decide (r < maxMigrations)) = false := by simp_all
-    simp only [hs, Bool.false_eq_true, if_false, Option.isSome_none, Option.getD_none]
-    simp only [maxMigrations] at hr
-    simp only [fren_spec, hmem]
-    simp_all
-    try omega
 
 impl lint_fix_exit: lint::fix_exit for (c l f : Bool) {
   check? := c,

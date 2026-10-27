@@ -1,2 +1,0 @@
--- Type arguments in parentheses, as they were written before (F0155).
-proc c(x: Option(Set(Int is 0..=3))) {}

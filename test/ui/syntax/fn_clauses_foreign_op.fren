@@ -1,5 +1,0 @@
--- A clause that stops at a token that is not Fren's: that is the error,
--- and no block is written for the function (`F0164`).
-pub fn f(x: Int, y: Int): Int := x + y
-    ensure a: f(x, y) == f(y, x)   --~ error: `==` is not an operator in Fren
---@ exit: 2

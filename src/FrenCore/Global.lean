@@ -3,14 +3,12 @@ import FrenCore.Diagnostic
 -- keep-sorted end
 
 /-!
-# Global expectations, and the form before parameters
+# Global expectations
 
 A global expectation (`Reqs/Lang/Global`) is written like a procedure: its
 parameters, then a block of `assume`, `use`, `let`, `call`, `expect` and
-`cover` members. The form that quantified over behaviours, `expect n:
-forall (a: c) (m: M), E`, is an error (`F0416`)
-(`Reqs/Lang/Global#migration`). The members that a block accepts are a
-pure function over plain data, so that the requirements can state it
+`cover` members. The members that a block accepts are a pure function
+over plain data, so that the requirements can state it
 (`lang::block_member`).
 -/
 
@@ -64,17 +62,5 @@ def blockMemberMsg (m : BlockMember) (det : Bool) : Msg :=
     notes := #["note: a global expectation constrains nothing: its block has `assume`, `use`, `let`, `call`, \
       `expect` and `cover` members only",
       "help: state what the procedures guarantee in the procedures, and claim what follows with `expect`"] }
-
-/-! ## The form before parameters -/
-
-/-- A global expectation written as before global expectations had
-parameters, with a binder of its leading `forall` over the behaviours of a
-procedure (`F0416`). -/
-def oldGlobalMsg : Msg :=
-  { code? := some "F0416", headline := "global expectations are written with parameters and calls"
-    label? := some "a binder over the behaviours of a procedure"
-    notes := #["note: a global expectation takes parameters, and relates procedures by calling them",
-      "help: write each binder `a: p` as parameters for `p`'s parameters and a call of `p`, and assume what `p` assumes, \
-        as in `expect n(a_x: Int) { assume a_ok: a_x > 0  call a := p(a_x)  expect n: a.y > 0 }`"] }
 
 end Fren.Core

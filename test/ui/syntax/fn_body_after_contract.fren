@@ -1,0 +1,11 @@
+-- A function's body is the `out` member of its block: a clause after its
+-- signature, with a body after the clause, is a parse error, at the
+-- clause. (The type after it keeps Lean's recovery from reaching the
+-- test's `#fren_check`.)
+pub fn pred(Int): Int
+    assume positive: n > 0
+    := n - 1
+--~^^[cli] error: expected an item
+--~^^^[hosted] error: unexpected identifier; expected command
+pub type T
+--@ exit: 2

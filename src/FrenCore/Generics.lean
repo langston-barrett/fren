@@ -310,9 +310,6 @@ does (`lang::AfterName`). -/
 inductive AfterName where
   /-- Opens its type arguments or type parameters. -/
   | opens
-  /-- Is a `(` that would have opened them before they were written in
-  angle brackets (`F0155`, `F0156`). -/
-  | parenthesized
   /-- Is a `<` after a space (`F0144`). -/
   | spaced
   /-- Is not the type's: the type, or the name, ends before it. -/
@@ -329,39 +326,7 @@ directly (`adjacent`) or after a space, a line break or a comment
 def afterName (b : Bracket) (adjacent : Bool) : AfterName :=
   match b with
   | .angle => if adjacent then .opens else .spaced
-  | .paren => if adjacent then .parenthesized else .ends
-  | .other => .ends
-
-/-- A character of a type or a declaration written with parentheses, as
-both front ends write it in the suggestion that replaces it
-(`lang::angle_char`): a parenthesis that opened or closed type arguments or
-type parameters (`swapped`) is an angle bracket, and any other character,
-comments' and string literals' included, is copied. -/
-def angleChar (ch : String) (swapped : Bool) : String :=
-  if swapped && ch == "(" then "<" else if swapped && ch == ")" then ">" else ch
-
-/-- The text of a type or a declaration, from its source's characters, each
-with whether it is one of the parentheses to write as an angle bracket. -/
-def angleText (chars : Array (Char × Bool)) : String :=
-  chars.foldl (fun out (c, b) => out ++ angleChar (String.singleton c) b) ""
-
-/-- A type written with its type arguments in parentheses, as `Option(Int)`
-was before they were written in angle brackets: `written` is the type
-with each of its type arguments' parentheses made `<` and `>`. -/
-def parenTypeArgsMsg (written : String) : Msg :=
-  { code? := some "F0155", headline := "type arguments are written in angle brackets"
-    label? := some "type arguments in parentheses"
-    notes := #["note: a type's arguments follow its name in `<` and `>`, as in `Set<Int>` and `Option<Int>`"]
-    fixes := #[{ msg := s!"write `{written}`", replacement := written }] }
-
-/-- A generic type's or function's type parameters, written in parentheses
-as `enum Option(T)` and `fn f(T)(x: T)` were: `written` is its name with
-them in angle brackets. -/
-def parenTypeParamsMsg (written : String) : Msg :=
-  { code? := some "F0156", headline := "type parameters are written in angle brackets"
-    label? := some "type parameters in parentheses"
-    notes := #["note: a generic type's or function's type parameters follow its name in `<` and `>`, as in `enum Option<T>` and `fn f<T>(x: T): T`"]
-    fixes := #[{ msg := s!"write `{written}`", replacement := written }] }
+  | .paren | .other => .ends
 
 /-- A construction, written `what`, of the generic type `ty`, whose type
 arguments cannot be inferred (`Reqs/Lang/Generics#type-arguments`). -/

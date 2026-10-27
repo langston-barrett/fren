@@ -1,5 +1,0 @@
--- The suggestion of `F0155` copies string patterns as written, escapes and
--- raw strings included.
-proc c(x: Set(String is "a\"b" | r#"c"d"#)) {}
---~^ error: type arguments are written in angle brackets
---@ exit: 2

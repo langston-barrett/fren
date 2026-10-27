@@ -1,7 +1,0 @@
--- An output declared as components declared them, in a procedure (F0160).
-proc c(x: Int): (y: Int) {
-    pub out z: Int
-    --~^ error: public outputs are written as results
-    ensure r: y = x
-}
---@ exit: 2

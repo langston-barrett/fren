@@ -1,5 +1,0 @@
--- A private output declared as components declared them (F0160).
-proc c(x: Int): (y: Int) {
-    out z: Int
-    ensure r: y = z + x
-}

@@ -1039,59 +1039,18 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     let some src ← readSpec args.paint path | return Fren.Core.fixExit args.diffOnly false false
     srcs := srcs.push src
   let original := srcs
-  -- Migrations: the fixes of the parse errors of an earlier syntax, one at
-  -- a time, parsing again after each (`lint::migration_step`).
-  let mut migrated := paths.map fun _ => 0
-  for i in [0:srcs.size] do
-    if ignored paths[i]! then continue
-    let mut round := 0
-    repeat
-      let chars := (Fmt.parsedText paths[i]! srcs[i]!).toList.toArray
-      let err? := match parseText chars with
-        | .error e => some e
-        | .ok _ => none
-      let fix? := err?.bind fun (span, msg) =>
-        if msg.code?.any (Fren.Core.migrationCodes.contains ·) then msg.fixes[0]?.map (span, ·) else none
-      match Fren.Core.migrationStep err?.isSome fix?.isSome round, fix? with
-      | .apply, some (span, f) =>
-        let r := f.range?.getD { start := span.start, stop := span.stop }
-        srcs := srcs.set! i (applyFileEdits srcs[i]! chars #[(r, f.replacement)])
-        round := round + 1
-      | _, _ => break
-    migrated := migrated.set! i round
-  -- Then the instances, whose fixes write them as calls, which need the
-  -- order of the callees' parameters: after name resolution, all of a
-  -- round's at once, elaborating again after each round
-  -- (`lint::call_migration_round`).
-  let mut round := 0
-  repeat
-    let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
-    let calls := st.diags.filter fun d => d.msg.code? == some Fren.Core.callMigrationCode && !ignored paths[d.file]!
-    let some ks := Fren.Core.callMigrationRound (calls.map (!·.msg.fixes.isEmpty)) round | break
-    let fixes := ks.filterMap fun k => calls[k]? >>= fun d =>
-      d.msg.fixes[0]?.map fun f => (d.file, f.range?.getD (toRange d.span), f.replacement)
-    srcs := srcs.mapIdx fun i src =>
-      applyFileEdits src files[i]!.2 (fixes.filterMap fun (f, r, t) => if f == i then some (r, t) else none)
-    migrated := migrated.mapIdx fun i n => n + (fixes.filter (·.1 == i)).size
-    round := round + 1
   let (files, st) ← elaborateSources paths srcs args.lints fixing ignored
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
-    -- No lint is fixed, but the migrations are made.
+    -- No lint is fixed.
     let starts := linesOf files
     for d in st.diags do printDiag args.paint files d starts
     printStopped args.paint st.diags "fix"
-    for path in paths, src in original, fixed in srcs, n in migrated do
-      if n == 0 || fixed == src then continue
-      if args.diffOnly then IO.print (Fmt.diff out path src fixed)
-      else
-        IO.FS.writeFile path fixed
-        IO.eprintln s!"migrated {path} ({n} fix{if n == 1 then "" else "es"})"
     return Fren.Core.fixExit args.diffOnly false false
   -- One fix can overlap another, or leave something that another lint
   -- fixes, so the passes go on until no edit is left (`Reqs/Lint#fixing-lints`).
   let mut pass := (files, st)
-  let mut nFixed := migrated
+  let mut nFixed := paths.map fun _ => 0
   -- Whether the first pass's fixes were kept.
   let mut firstKept := false
   for k in [0:maxFixPasses] do
@@ -1119,7 +1078,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let starts := linesOf files
   for d in left do printDiag args.paint files d starts
   let mut unchanged := true
-  for path in paths, src in original, fixed in srcs, n in nFixed, m in migrated do
+  for path in paths, src in original, fixed in srcs, n in nFixed do
     let format := args.fmtAfter && !ignored path
     -- The file parsed, and fixing it keeps it parsing.
     let new := if format then (Fmt.formatFile path fixed).toOption.getD fixed else fixed
@@ -1128,13 +1087,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     if args.diffOnly then IO.print (Fmt.diff out path src new)
     else
       IO.FS.writeFile path new
-      -- The migrations' fixes are counted apart from the lints'.
-      let lints := n - m
-      let plural (k : Nat) (w : String) := s!"{k} {w}{if k == 1 then "" else if w == "fix" then "es" else "s"}"
-      IO.eprintln <| if n == 0 then s!"formatted {path}"
-        else if lints == 0 then s!"migrated {path} ({plural m "fix"})"
-        else if m == 0 then s!"fixed {path} ({plural lints "lint"})"
-        else s!"migrated and fixed {path} ({plural m "fix"}, {plural lints "lint"})"
+      IO.eprintln <| if n == 0 then s!"formatted {path}" else s!"fixed {path} ({n} lint{if n == 1 then "" else "s"})"
   printExplainHint (left.map (·.msg))
   return Fren.Core.fixExit args.diffOnly true unchanged
 

@@ -1,5 +1,0 @@
--- The suggestion of `F0155` keeps a comment within the type.
-proc c(x: Set( -- the element type
-    Int)) {}
---~^^ error: type arguments are written in angle brackets
---@ exit: 2

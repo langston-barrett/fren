@@ -463,32 +463,21 @@ so the constraint has no [trigger](Procedures.md#triggers).
 
 A [global expectation's](Global.md) short form, `expect n: forall (m:
 Method), E`, is a quantifier like any other, around `E` with any `where`
-clause. Before global expectations had parameters, a binder of their
-leading `forall` could name a procedure, and range over its behaviours:
-that is an error now (`F0416`), whose help says how to write the global
-expectation with parameters and calls (see [Migration](Global.md#migration)).
-Everywhere, a quantifier ranges over values only. `lang::quantifier_binder`
-states this, from what a binder's type names and whether it is in a global
-expectation's leading `forall`:
+clause. Everywhere, a quantifier ranges over values only: a binder whose
+type names a procedure is an error (`F0210`), whose help says to call the
+procedure in a global expectation instead. `lang::quantifier_binder`
+states this, from what a binder's type names:
 
 ```fren
 -- `TypeName` is a type, listed or not, and `Component` a procedure.
 pub enum BinderTarget { TypeName, Component }
 
 set_option fren.evidence "enumerated" in
-pub proc quantifier_binder(
-    target: BinderTarget,
-    global?,                 -- it is in a global expectation's leading `forall`
-): (
-    det accepted?,
-    det migrated?,           -- it is of the form that global expectations were written in before (`F0416`)
-) {
+pub proc quantifier_binder(target: BinderTarget): (det accepted?) {
     use self::BinderTarget::{Component, TypeName}
 
     ensure rule: accepted? iff target = TypeName
-    ensure old: migrated? iff (global? and target = Component)
 
-    expect values_anywhere: when target = TypeName, accepted? and not migrated?
-    expect migrated_globally: when migrated?, not accepted?
+    expect values_only: when target = Component, not accepted?
 }
 ```
