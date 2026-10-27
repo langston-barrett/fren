@@ -80,11 +80,6 @@ impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Co
   all_goals cases Fren.Core.MentionShape.allMentioned ps <;> simp [Fren.FinSet.ext_iff]
   all_goals exact ⟨_, fun h => absurd rfl h⟩
 
--- What a layer mentions is proved of the code through `lang::mentions`,
--- which `lang::node` refines; its value has no code to be proved of yet.
-trusted lang::node: "one layer's meaning, the model of evaluation that the rules of the language are stated over; no code in Fren evaluates an expression one layer at a time, so its value is not proved of code, and what it mentions is `lang::mentions`, which is proved of `Fren.Core.MentionShape` (#281)"
-trusted lang::choice_arms: "which arms of a `match` or table one layer evaluates, part of `lang::node`'s meaning; no code in Fren evaluates a choice one layer at a time, so it is not proved of code (#281)"
-
 def toGuardedOperand : Fren.Core.GuardedOperand → lang.GuardedOperand
   | .whenBody => .WhenBody
   | .unlessBody => .UnlessBody
