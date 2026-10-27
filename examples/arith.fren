@@ -3,37 +3,37 @@
 -- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and
 -- keeps every expression's value.
 --
--- TODO(#279): evaluation and folding recurse over the tree, which a spec
--- can't do yet. So this spec states one layer, folding a single `Add` given
--- its operands' values, and `Arith.lean` lifts it to whole trees by
--- induction.
+-- TODO(#279): expressions, evaluation and folding are recursive, which a
+-- spec can't be yet. So this spec states one layer of each, over `Expr<E>`,
+-- an expression whose operands have the type `E`, and `Arith.lean` ties the
+-- knot: its expressions are the fixed point of `Expr`.
 mod arith
 
-pub enum Expr { Val(Int), Add(Expr, Expr) }
+-- One layer of an expression, whose operands have the type `E`.
+pub enum Expr<E> { Val(Int), Add(E, E) }
 
--- An expression's value, given the values of its operands, if it has any:
--- one layer of evaluation.
-pub fn layer(e: Expr, va: Int, vb: Int): Int := match e {
+-- One layer of evaluation: the value of an expression whose operands are
+-- values already.
+pub fn eval(e: Expr<Int>): Int := match e {
     Expr::Val(n) => n,
-    Expr::Add(_, _) => va + vb,
+    Expr::Add(a, b) => a + b,
 }
 
--- Folding `Add(a, b)`, whose operands have the values `va` and `vb`. An
--- `Expr` output would be unbounded, so the result is described by bounded
--- outputs: whether it is a value, whether it is `Add(a, b)` itself, and its
--- value by `layer`, given `va` and `vb`.
-pub proc fold_add(a: Expr, b: Expr, va: Int, vb: Int): (val?, kept?, value: Int) {
-    use arith::Expr::Val
+-- Folding `Add(a, b)`, given the top layers of its operands: a value when
+-- both are values, and otherwise `Add` of the operands, each rebuilt from
+-- its top layer by `roll`.
+pub fn fold_add<T>(a: Expr<T>, b: Expr<T>, roll: fn(Expr<T>) -> T): Expr<T> := match a {
+    Expr::Val(x) => match b {
+        Expr::Val(y) => Expr::Val(x + y),
+        Expr::Add(_, _) => Expr::Add(roll(a), roll(b)),
+    },
+    Expr::Add(_, _) => Expr::Add(roll(a), roll(b)),
+}
 
-    assume a_value: when a is Val(x), va = x
-    assume b_value: when b is Val(y), vb = y
-
-    -- The result is a value exactly when both operands are.
-    ensure folds: val? iff (a is Val(_) and b is Val(_))
-    -- Otherwise it is `Add(a, b)` itself.
-    ensure keeps: kept? iff not val?
-    -- Folding keeps the value.
-    ensure keeps_value: value = va + vb
-
-    expect adds_values: when a is Val(x) and b is Val(y), value = x + y
+-- Folding keeps the value, where an expression is its value: `T` is `Int`,
+-- and `roll` is `eval`.
+-- TODO(#313): an expectation of `fold_add` itself, once functions can have
+-- `expect` clauses.
+proc folding(a: Expr<Int>, b: Expr<Int>) {
+    expect keeps_value: eval(fold_add(a, b, eval)) = eval(a) + eval(b)
 }

@@ -80,3 +80,12 @@ pub proc named(
     expect definition: when binding.kind = BindingKind::Definition, head = Head::Definition(binding.name)
 }
 ```
+
+The Lean-hosted front end checks this chapter's procedures by name, since no
+`#fren_check` of its Lean file comes after it, and one without a path would
+check every earlier chapter again:
+
+```fren
+#fren_check test_local
+#fren_check named
+```

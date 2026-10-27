@@ -6,12 +6,12 @@ import Fren.Literate
 /-!
 # Constant folding for Hutton's razor, in Lean
 
-Evaluation and constant folding over whole expressions, by recursion, which
-the spec can't state yet. An `impl` proves that `foldAdd` meets the spec's
-`arith::fold_add`: folding one `Add` gives a value with the operands' sum
-when both are values, and `Add a b` itself otherwise. Induction lifts that
-to the whole tree: folding keeps every expression's value, and leaves no
-`Add` of two values.
+The spec gives one layer of everything: `arith.Expr E`, an expression whose
+operands have the type `E`; `arith.eval`, one layer of evaluation; and
+`arith.fold_add`, folding one `Add`. Here, expressions are the fixed point
+of `arith.Expr`, and evaluation and folding recurse over them, using the
+spec's own definitions at each layer. Folding keeps every expression's
+value.
 -/
 
 open Fren.Lang
@@ -23,77 +23,63 @@ namespace Arith
 
 open arith
 
-/-- An expression's value. -/
-def eval : Expr → Int
-  | .Val n => n
-  | .Add a b => eval a + eval b
+/-- Expressions: the fixed point of `Expr`, each with a top layer whose
+operands are expressions. -/
+inductive Tree where
+  | roll : Expr Tree → Tree
 
-/-- `Add(a, b)`, folded to a value when both operands are values. -/
-def foldAdd : Expr → Expr → Expr
-  | .Val x, .Val y => .Val (x + y)
-  | a, b => .Add a b
+instance : Inhabited Tree := ⟨.roll (.Val 0)⟩
 
-/-- Constant folding, from the leaves up. -/
-def cfold : Expr → Expr
-  | .Val n => .Val n
-  | .Add a b => foldAdd (cfold a) (cfold b)
+/-- An expression's top layer. -/
+def Tree.top : Tree → Expr Tree
+  | .roll e => e
 
-/-- Whether an expression is a value. -/
-def isVal : Expr → Bool
+/-- An expression's value, by `eval` at each layer. The spec's definitions
+are for proofs, not compiled, hence `noncomputable`. -/
+noncomputable def value : Tree → Int
+  | .roll (.Val n) => eval (.Val n)
+  | .roll (.Add a b) => eval (.Add (value a) (value b))
+
+/-- Constant folding, from the leaves up, by `fold_add` at each `Add`. -/
+noncomputable def cfold : Tree → Tree
+  | .roll (.Val n) => .roll (.Val n)
+  | .roll (.Add a b) => .roll (fold_add Tree (cfold a).top (cfold b).top .roll)
+
+/-- An expression is rebuilt from its top layer. -/
+theorem roll_top (t : Tree) : Tree.roll t.top = t := by
+  cases t; rfl
+
+/-- Folding one `Add` keeps its value. -/
+theorem value_fold_add (a b : Expr Tree) :
+    value (.roll (fold_add Tree a b .roll)) = value (.roll a) + value (.roll b) := by
+  cases a <;> cases b <;> simp [fold_add, value, eval, Expr.Val.x0, Expr.Add.x0, Expr.Add.x1] <;> omega
+
+/-- Folding keeps every expression's value. -/
+theorem value_cfold (t : Tree) : value (cfold t) = value t := by
+  induction t using cfold.induct with
+  | case1 n => rfl
+  | case2 a b iha ihb =>
+    rw [cfold, value_fold_add, roll_top, roll_top, iha, ihb]
+    simp [value, eval, Expr.Add.x0, Expr.Add.x1]
+
+/-- Whether a layer is a value. -/
+def isVal : Expr Tree → Bool
   | .Val _ => true
   | .Add _ _ => false
 
--- `fold_add` is the spec's procedure, resolved from the spec's module, `arith`.
-impl foldAdd_meets: fold_add for (a b : Expr) (va vb : Int) {
-  a := a, b := b, va := va, vb := vb,
-  val? := isVal (foldAdd a b), kept? := decide (foldAdd a b = .Add a b),
-  value := layer (foldAdd a b) va vb
-} by
-  intro a b va vb h
-  simp only [fren_spec] at h ⊢
-  cases a <;> cases b <;> simp [foldAdd, isVal, Expr.Val.x0] at h ⊢ <;> omega
-
-/-- Folding keeps every expression's value, by induction, with `foldAdd_meets`
-as the step. -/
-theorem eval_cfold (e : Expr) : eval (cfold e) = eval e := by
-  induction e with
-  | Val n => rfl
-  | Add a b iha ihb =>
-    have h := foldAdd_meets (cfold a) (cfold b) (eval (cfold a)) (eval (cfold b)) (by
-      simp only [fren_spec]
-      constructor <;> intro hv <;> rw [hv] <;> simp [eval, Expr.Val.x0])
-    rw [cfold]
-    cases hr : foldAdd (cfold a) (cfold b) with
-    | Val n =>
-      -- `keeps_value`: the value is the operands' sum.
-      rw [hr] at h
-      simp only [fren_spec] at h
-      obtain ⟨-, -, hval⟩ := h
-      simp [Expr.Val.x0] at hval
-      simp [eval, hval, iha, ihb]
-    | Add c d =>
-      -- `keeps`: an `Add` is `Add (cfold a) (cfold b)` itself.
-      rw [hr] at h
-      simp only [fren_spec] at h
-      obtain ⟨-, hkept, -⟩ := h
-      simp [isVal] at hkept
-      obtain ⟨rfl, rfl⟩ := hkept
-      simp [eval, iha, ihb]
-
 /-- An expression has no `Add` of two values. -/
-def fullyFolded : Expr → Prop
-  | .Val _ => True
-  | .Add a b => ¬(isVal a ∧ isVal b) ∧ fullyFolded a ∧ fullyFolded b
+def fullyFolded : Tree → Prop
+  | .roll (.Val _) => True
+  | .roll (.Add a b) => ¬(isVal a.top ∧ isVal b.top) ∧ fullyFolded a ∧ fullyFolded b
 
 /-- Folding leaves no `Add` of two values. -/
-theorem fullyFolded_cfold (e : Expr) : fullyFolded (cfold e) := by
-  induction e with
-  | Val n => trivial
-  | Add a b iha ihb =>
-    simp only [cfold]
-    cases ha : cfold a <;> cases hb : cfold b <;> rw [ha] at iha <;> rw [hb] at ihb <;>
-      simp_all [foldAdd, fullyFolded, isVal]
-
-example : cfold (.Add (.Add (.Val 1) (.Val 2)) (.Add (.Val 3) (.Val 4))) = .Val 10 := by decide
+theorem fullyFolded_cfold (t : Tree) : fullyFolded (cfold t) := by
+  induction t using cfold.induct with
+  | case1 n => trivial
+  | case2 a b iha ihb =>
+    rw [cfold]
+    revert iha ihb
+    cases cfold a with | roll ea => cases cfold b with | roll eb =>
+    cases ea <;> cases eb <;> simp_all [fold_add, fullyFolded, isVal, Tree.top, Expr.Val.x0]
 
 end Arith

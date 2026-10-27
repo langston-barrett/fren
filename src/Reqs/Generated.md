@@ -511,3 +511,10 @@ instance.
 
 These declarations need only `import Fren.Spec` (see [Lean
 embedding](Lean.md#libraries)).
+
+The Lean-hosted front end checks this chapter's procedures, which its Lean
+file reads alone:
+
+```fren
+#fren_check
+```
