@@ -3,4 +3,4 @@ set_option fren.lint.inconsistent_struct_constructor "warn"
 
 struct Cell { row: Int, column: Int, layer: Int }
 
-comp c { in row: Int in x: Int pub out cell: Cell ensure r: cell = Cell { layer := 0, column := (x + 1), row } }
+proc c(row: Int, x: Int): (cell: Cell) { ensure r: cell = Cell { layer := 0, column := (x + 1), row } }

@@ -2,9 +2,7 @@
 -- `fren fmt` spaces a quantifier's binders as a global expectation's, and
 -- indents a body that continues on the next line.
 enum Mode { Off, Heat }
-comp c {
-  in m: Mode
-  pub out o?
+proc c(m: Mode): (o?) {
   ensure r:o? iff(forall(k   j:Mode)  ( n :Mode),k=m or j = n)
   ensure s: o? iff (exists (k: Mode),
   k = m)

@@ -1,0 +1,3 @@
+-- An instance that binds a parameter twice (F0420): it has no fix.
+proc sub(a: Int, b?) {}
+proc c(x: Int) { inst s: sub { a := x, a := 1 } }

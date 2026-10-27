@@ -1,3 +1,3 @@
 -- The binders of a quantifier, not in parentheses (F0131).
 enum Mode { Off, Heat }
-comp c { in x: Mode pub out ok? ensure r: ok? iff (forall m: Mode, m = x) }
+proc c(x: Mode): (ok?) { ensure r: ok? iff (forall m: Mode, m = x) }

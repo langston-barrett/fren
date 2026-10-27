@@ -8,9 +8,7 @@ open Fren.Lang
 set_option fren.timeout 0
 set_option fren.resourceLimit 1
 
-comp limited {
-    in x: Int
-    pub out y: Int
+proc limited(x: Int): (y: Int) {
     ensure r: y = x + 1
     expect bigger: y > x
 }

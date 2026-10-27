@@ -20,8 +20,8 @@ A `let` is an [expression](Expressions.md), at the level of `when`: its
 body extends as far right as possible, and a `let` that is the operand of
 an operator is written in parentheses. A `where` clause is not an
 expression: it follows the whole expression of an assumption, guarantee,
-expectation or [cover goal](Components.md#cover-goals), a [global expectation](Global.md) (after its `forall`), a
-[defined output's](Components.md#defined-outputs) definition, a
+expectation or [cover goal](Procedures.md#cover-goals), a [global expectation](Global.md) (after its `forall`), a
+[definition](Procedures.md#definitions) of a result or `let` variable, a
 [function's](Items.md#defined-functions) body or a
 [constant's](Items.md#constants) value, and nothing else. It binds most
 loosely, so in `when C, D where x := e`, `x` is in scope in both `C` and
@@ -47,13 +47,14 @@ type, as a binder of a pattern does: `cold? := temp < 40`, and `n := 3`.
 ```fren
 pub mod lang
 
-pub comp definition_type {
-    in annotated?        -- written `x: T := e`
-    in annotation: Ty    -- `T`, if written
-    in value: Ty         -- the type of `e`
-    pub det out accepted?
-    pub det out ty: Ty   -- the type of the name
-
+pub proc definition_type(
+    annotated?,          -- written `x: T := e`
+    annotation: Ty,      -- `T`, if written
+    value: Ty,           -- the type of `e`
+): (
+    det accepted?,
+    det ty: Ty,          -- the type of the name
+) {
     ensure rule: accepted? iff (not annotated? or annotation = value)
     ensure typed: ty = value
 
@@ -73,13 +74,14 @@ clause, from the definition's position and that of the definition the
 name is written in, or the number of definitions for the body:
 
 ```fren
-pub comp definition_order {
-    in n: Int            -- the number of definitions of the clause
-    in k_def: Nat        -- the position of the definition named
-    in k_use: Nat        -- the position of the definition the name is in, or `n` in the body
-
+pub proc definition_order(
+    n: Int,              -- the number of definitions of the clause
+    k_def: Nat,          -- the position of the definition named
+    k_use: Nat,          -- the position of the definition the name is in, or `n` in the body
+): (
+    det means?,          -- the name means the definition
+) {
     assume positions: k_def < n and k_use <= n
-    pub det out means?   -- the name means the definition
 
     ensure rule: means? iff k_def < k_use
 
@@ -95,7 +97,7 @@ definition is the variable that `x!` hides. A name that would otherwise
 mean nothing, but is defined by this or a later definition, is reported as
 used before its definition.
 
-A definition's name may [shadow](Components.md#shadowing) another,
+A definition's name may [shadow](Procedures.md#shadowing) another,
 written with `!`: a variable, a parameter, a binder, a constant, a
 function, a variant, a name of an enclosing `let` or `where`, or an
 earlier name of the same clause, as in `let x := 1, x! := x + 1 in x`. A
@@ -130,11 +132,11 @@ take at its top level:
 pub enum DefinitionForm { Plain, Membership, OpenEnded }
 
 set_option fren.evidence "enumerated" in
-pub comp definition_form {
+pub proc definition_form(
+    form: DefinitionForm,
+    in_let?,             -- a definition of a `let`, rather than of a `where` clause
+): (det accepted?) {
     use self::DefinitionForm::{Membership, OpenEnded, Plain}
-    in form: DefinitionForm
-    in in_let?           -- a definition of a `let`, rather than of a `where` clause
-    pub det out accepted?
 
     ensure rule: accepted? iff (form = Plain or (form = Membership and not in_let?))
 
@@ -146,7 +148,7 @@ pub comp definition_form {
 ```
 
 For the same reason as a `when`, a `let` is not the top-level body of a
-`match` arm, nor the expression of an instance's binding or of a record
+`match` arm, nor an argument of a call or the expression of a record
 literal's field.
 
 ## Meaning
@@ -159,7 +161,7 @@ conditions where the name is mentioned, not where it is defined.
 
 Mentioning a name counts as mentioning everything its definition
 mentions, as for a [`match` binder](Expressions.md#matches), for the rules
-of [Instances](Instances.md#instance-variables), of [function
+of [Calls](Calls.md#call-variables), of [function
 applications](Expressions.md#function-applications), of [linear
 arithmetic](Expressions.md#linear-arithmetic) and of the [decidable
 core](Decidability.md). A definition that nothing mentions, directly or
@@ -170,11 +172,11 @@ and a divisor in it must still be a constant, since its value is needed
 to translate the definition. A `++` in a definition is checked against
 the decidable core in the definition, as if the definition were written
 alone, not where the name is mentioned.
-For the cycles of [defined outputs](Components.md#defined-outputs), the
+For the cycles of [definitions](Procedures.md#definitions), the
 paths of every definition count, mentioned or not, as for unused
 variables: whether definitions are acyclic is decided from what is
 written. A
-[trigger](Components.md#triggers) is read through a `let` or `where` at
+[trigger](Procedures.md#triggers) is read through a `let` or `where` at
 the top of a constraint: the trigger of `when C, D where x := e` is `C`,
 with `x` standing for `e`.
 

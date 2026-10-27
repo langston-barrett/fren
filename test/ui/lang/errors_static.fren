@@ -3,9 +3,7 @@
 -- only follows from an earlier error is not reported again.
 
 -- Independent errors in several constraints.
-comp several {
-    in x: Int
-    pub out y?
+proc several(x: Int): (y?) {
     ensure r: y? iff x * x = 1
     --~^ error: nonlinear arithmetic is not supported
     ensure s: y? iff nope = 1
@@ -16,28 +14,22 @@ comp several {
 }
 
 -- An error in a definition is not reported again where it is used.
-comp defined {
-    in x: Int
-    out d: Int := x * x
+proc defined(x: Int): (y?) {
+    let d: Int := x * x
     --~^ error: nonlinear arithmetic is not supported
-    pub out y?
     ensure r: y? iff d = 1
     ensure s: y? iff d = nope
     --~^ error: cannot find `nope` in this scope
 }
 
-comp source {
-    in x: Int
-    pub out y: Int
+proc source(x: Int): (y: Int) {
     ensure q: y = x
 }
 
 -- An error in an instance's bindings, and one in a constraint.
-comp bound {
-    in x: Int
-    inst w: source { x := x * x }
+proc bound(x: Int): (z?) {
+    call w := source(x * x)
     --~^ error: nonlinear arithmetic is not supported
-    pub out z?
     ensure r: z? iff w.y = 1
     ensure s: z? iff nope = 1
     --~^ error: cannot find `nope` in this scope
@@ -45,23 +37,18 @@ comp bound {
 
 -- Errors in two variables' declarations: then the component stops, so the
 -- constraints that mention them are not reported.
-comp declared {
-    in a: Nope
+proc declared(a: Nope, b: Nada): (y?) {
     --~^ error: cannot find `Nope` in this scope
-    in b: Nada
     --~^ error: cannot find `Nada` in this scope
-    pub out y?
     ensure r: y? iff a = b and x * x = 1
 }
 
 -- Errors in two instances: then the component stops.
-comp instances {
-    in x: Int
-    inst v: nope { x }
+proc instances(x: Int): (z?) {
+    call v := nope(x)
     --~^ error: cannot find `nope` in this scope
-    inst w: nada { x }
+    call w := nada(x)
     --~^ error: cannot find `nada` in this scope
-    pub out z?
     ensure r: z? iff v.y = w.y and x * x = 1
 }
 

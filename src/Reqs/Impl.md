@@ -1,6 +1,6 @@
 # Implementations
 
-An implementation states, in Lean, that Lean code meets a component, and
+An implementation states, in Lean, that Lean code meets a procedure, and
 proves it.
 
 ```
@@ -46,56 +46,55 @@ choose_mode_thermostat : ∀ (t g : Int),
 ## Meaning
 
 `impl n: c for (x : T) ... { v := e, ... }` interprets each variable `v` of
-the component `c` as the Lean term `e`. The binders after `for` must be
-explicit binders, and are universally quantified. The component path is
+the procedure `c` as the Lean term `e`. The binders after `for` must be
+explicit binders, and are universally quantified. The procedure path is
 resolved, and its visibility checked, from the current Fren module. The name
 `n` is a Lean declaration name, in the current Lean namespace.
 
-An implementation must give a term for each input and each public output of
-the component, of its [Lean type](Generated.md), and for nothing else.
-Private outputs and the variables of the component's instances are internal
+An implementation must give a term for each parameter and each result of
+the procedure, of its [Lean type](Generated.md), and for nothing else.
+Its `exists` and `let` variables and the variables of its calls are internal
 to it, so the implementation need not compute them.
 
 The implementation's *obligation* is a theorem named `n`, stated with the
-component's [generated definitions](Generated.md):
+procedure's [generated definitions](Generated.md):
 
 ```
-∀ binders, c.assumes ι⃗ v⃗ d⃗ → ∃ h⃗, c.defs ι⃗ v⃗ h⃗ ∧ c.ensures ι⃗ v⃗ h⃗ ∧ c.inst.w₁ ι⃗ v⃗ h⃗ ∧ … ∧ c.inst.wₖ ι⃗ v⃗ h⃗
+∀ binders, c.assumes ι⃗ v⃗ d⃗ → ∃ h⃗, c.defs ι⃗ v⃗ h⃗ ∧ c.ensures ι⃗ v⃗ h⃗ ∧ c.call.w₁ ι⃗ v⃗ h⃗ ∧ … ∧ c.call.wₖ ι⃗ v⃗ h⃗
 ```
 
-`c.defs` is there only when `c` has [defined
-outputs](Lang/Components.md#defined-outputs). A public defined output is
-given a term like any public output, and the obligation proves it equal
-to the definition; a private one is among `h⃗`, and its witness is its
-definition.
+`c.defs` is there only when `c` has
+[definitions](Lang/Procedures.md#definitions). A result with a
+definition is given a term like any result, and the obligation proves it
+equal to the definition; a `let` variable is among `h⃗`, and its witness
+is its definition.
 
 where `ι⃗` are the [interpretations](#interpretations) of the abstract
-types and functions that `c` uses, if any, `v⃗` are the given terms, `h⃗` are the private outputs and instance
+types and functions that `c` uses, if any, `v⃗` are the given terms, `h⃗` are the `exists` and `let` variables and call
 variables, and `d⃗` are `default` values for them, which the assumptions
-never mention. When there are no private outputs or instances, as in the
+never mention. When there are no such variables, as in the
 example, the obligation is `∀ binders, c.assumes v⃗ → c.ensures v⃗`. So an
-implementation meets the component for every input that the component's
+implementation meets the procedure for every input that the procedure's
 assumptions allow. Expectations and [cover
-goals](Lang/Components.md#cover-goals) are not part of the obligation.
+goals](Lang/Procedures.md#cover-goals) are not part of the obligation.
 
 `impls::mapping` states which variables must be given terms. `Role` is the
-classification from [Instances](Lang/Instances.md#instance-variables):
+classification from [Calls](Lang/Calls.md#call-variables):
 
 ```fren
 pub mod impls
 
+use call::Role
+use call::Role::{Input, Output}
 use check::{Outcome, Verdict}
 use check::Outcome::{Sat, Unknown, Unsat}
 use check::Verdict::{Fail, Inconclusive, Pass}
-use inst::Role
-use inst::Role::{Input, Output}
 
-pub comp mapping {
-    in role: Role
-    in is_pub?
-    in n: Nat            -- terms given for this variable
-    pub out accepted?
-
+pub proc mapping(
+    role: Role,
+    is_pub?,
+    n: Nat,              -- terms given for this variable
+): (accepted?) {
     ensure rule: accepted? iff n = (if role = Input or (role = Output and is_pub?) then 1 else 0)
 
     expect private_not_mapped: when role = Output and not is_pub? and accepted?, n = 0
@@ -103,18 +102,17 @@ pub comp mapping {
 }
 ```
 
-An implementation of a component that uses abstract types or functions
+An implementation of a procedure that uses abstract types or functions
 must come after an interpretation of each. `impls::interpreted` states
 this:
 
 ```fren
 pub type ItemName
 
-pub comp interpreted {
-    in used: Set<ItemName>           -- abstract types and functions the component uses
-    in interpreted: Set<ItemName>    -- those interpreted earlier, in the file and its imports
-    pub det out accepted?
-
+pub proc interpreted(
+    used: Set<ItemName>,             -- abstract types and functions the procedure uses
+    interpreted: Set<ItemName>,      -- those interpreted earlier, in the file and its imports
+): (det accepted?) {
     ensure rule: accepted? iff used subset interpreted
 
     expect concrete_specs: when used = {}, accepted?
@@ -130,7 +128,7 @@ interpretation := "interp" path ":=" TERM ["by" TACTICS]
 An interpretation gives the Lean meaning of an [abstract
 type](Lang/Types.md#abstract-types) or a [function](Lang/Items.md#functions),
 which a spec leaves open (see
-[Interpretations](Lang/Components.md#interpretations)). For example, for
+[Interpretations](Lang/Procedures.md#interpretations)). For example, for
 
 ```
 type Name
@@ -180,7 +178,7 @@ nothing, so the function can be interpreted again; a proof that uses
 `sorry` proves nothing. So with `fn size(Int): Int is 0..=255`, `interp
 size := fun _ => 300` is rejected, and no implementation can rely on it.
 An interpretation is what makes an
-implementation a claim about the code: the implementation of a component
+implementation a claim about the code: the implementation of a procedure
 that applies `ends_in_q?` is proved against the interpretation, not
 against what the code computes. `impls::interpretation` decides whether an
 interpretation is accepted:
@@ -188,13 +186,12 @@ interpretation is accepted:
 ```fren
 pub enum Interpreted { AbstractType, Function, Other }
 
-pub comp interpretation {
-    in what: Interpreted       -- what the path names; a defined function is `Other`
-    in earlier: Nat            -- interpretations of it in the file and its imports
-    in typed?                  -- the term has the required type, and an `Inhabited` instance for a type
-    in types_interpreted?      -- for a function: each abstract type in its signature is interpreted
-    pub det out accepted?
-
+pub proc interpretation(
+    what: Interpreted,         -- what the path names; a defined function is `Other`
+    earlier: Nat,              -- interpretations of it in the file and its imports
+    typed?,                    -- the term has the required type, and an `Inhabited` instance for a type
+    types_interpreted?,        -- for a function: each abstract type in its signature is interpreted
+): (det accepted?) {
     ensure rule: accepted? iff (what != Interpreted::Other and earlier = 0 and typed?
         and (what != Interpreted::Function or types_interpreted?))
 
@@ -211,17 +208,19 @@ solver, which are asked in turn only when the earlier ones prove nothing:
 ```fren
 pub enum ContractProof { NotNeeded, Theorem, Axiom, Unproved }
 
-pub comp interpretation_contract {
+pub proc interpretation_contract(
+    obligated?,          -- the function has postconditions, or its result type brings a constraint
+    written?,            -- the interpretation has tactics after `by`
+    written_ok?,         -- they elaborate without an error
+    uses_sorry?,         -- the proof they give uses `sorry`
+    decide_q: Outcome,    -- `Unsat` if `decide` proves the statement, `Sat` if it evaluates it to false
+    smt_q: Outcome,      -- can the solver prove the statement?
+): (
+    det proof: ContractProof,
+    det recorded?,           -- the interpretation, and its theorem, are added
+    det error?,              -- an error is reported
+) {
     use self::ContractProof::{Axiom, NotNeeded, Theorem, Unproved}
-    in obligated?        -- the function has postconditions, or its result type brings a constraint
-    in written?          -- the interpretation has tactics after `by`
-    in written_ok?       -- they elaborate without an error
-    in uses_sorry?       -- the proof they give uses `sorry`
-    in decide_q: Outcome  -- `Unsat` if `decide` proves the statement, `Sat` if it evaluates it to false
-    in smt_q: Outcome    -- can the solver prove the statement?
-    pub det out proof: ContractProof
-    pub det out recorded?    -- the interpretation, and its theorem, are added
-    pub det out error?       -- an error is reported
 
     ensure rule: proof = table {
         | not obligated? => NotNeeded,
@@ -251,13 +250,12 @@ proves with the real decision. It refines
 ```fren
 use check::{Argument, Point, Value}
 
-pub comp interpretation_at {
-    in pres: Set<Argument>   -- the arguments that meet the preconditions
-    in posts: Set<Point>     -- the arguments and values that meet the postconditions
-    in at_a0: Value          -- the interpretation's value at `A0`
-    in at_a1: Value          -- at `A1`
-    pub det out recorded?
-
+pub proc interpretation_at(
+    pres: Set<Argument>,     -- the arguments that meet the preconditions
+    posts: Set<Point>,       -- the arguments and values that meet the postconditions
+    at_a0: Value,            -- the interpretation's value at `A0`
+    at_a1: Value,            -- at `A1`
+): (det recorded?) {
     ensure rule: recorded? iff ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
         and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
 
@@ -282,7 +280,7 @@ refine interpretation_detail: interpretation_at refines interpretation_contract 
 The obligation is proved in one of three ways:
 
 1. By the tactics after `by`, if there are any. In a proof, `simp
-   [fren_spec]` unfolds the component's definitions.
+   [fren_spec]` unfolds the procedure's definitions.
 2. Otherwise by `decide`, evaluated by Lean's kernel. This applies when
    every binder's type has a `Fren.Finite` instance (see [Generated Lean
    declarations](Generated.md)). If `decide` finds that the obligation is
@@ -301,15 +299,16 @@ accepted, and the outcomes of `decide` and the solver:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp obligation {
-    in written?          -- a proof is written with `by`
-    in written_ok?       -- Lean accepts it
-    in decide_q: Outcome  -- `Unsat`: `decide` proves it; `Sat`: it evaluates to false; `Unknown`: it does not apply
-    in smt_q: Outcome    -- the solver, asked only if `decide_q` is `Unknown`
-    pub out verdict: Verdict
-    pub out names_failures?  -- report a counterexample and the guarantees it falsifies
-    pub out axiom?         -- the statement is added as an axiom, on the solver's word
-
+pub proc obligation(
+    written?,            -- a proof is written with `by`
+    written_ok?,         -- Lean accepts it
+    decide_q: Outcome,    -- `Unsat`: `decide` proves it; `Sat`: it evaluates to false; `Unknown`: it does not apply
+    smt_q: Outcome,      -- the solver, asked only if `decide_q` is `Unknown`
+): (
+    verdict: Verdict,
+    names_failures?,         -- report a counterexample and the guarantees it falsifies
+    axiom?,                -- the statement is added as an axiom, on the solver's word
+) {
     ensure written_proof: when written?, verdict = (if written_ok? then Pass else Fail)
     ensure decided: unless written?, when decide_q != Unknown, verdict = (if decide_q = Unsat then Pass else Fail)
     ensure solver: unless written?, when decide_q = Unknown, verdict = (if smt_q = Unsat then Pass else Inconclusive)
@@ -323,7 +322,7 @@ pub comp obligation {
 
 ## Vacuous implementations
 
-The obligation assumes the component's assumptions, of the terms given to
+The obligation assumes the procedure's assumptions, of the terms given to
 the inputs. If no values of the binders satisfy them, the obligation holds
 whatever the code computes, and says nothing about it. This can happen
 because of the terms, such as `temp := 1000` when an assumption bounds
@@ -341,17 +340,18 @@ implementation's definitions left uninterpreted. Whatever the solver
 assumes of those definitions, a proof holds of them too, so only a proof
 counts. If none do, the theorem is still added, since it is true, but Fren
 warns, and the implementation is not [evidence](Trace.md) for its
-component. `impls::vacuity` states this:
+procedure. `impls::vacuity` states this:
 
 ```fren
-pub comp vacuity {
-    in added?            -- the theorem or axiom is added (`statement`)
-    in finite?           -- the binders' values are tried, as above
-    in found?            -- trying them finds values that satisfy the assumptions
-    in smt_q: Outcome    -- the solver, asked only if not `finite?`, on "no values satisfy them"
-    pub det out vacuous?     -- warn that the implementation holds vacuously
-    pub det out evidence?    -- the implementation is evidence for its component
-
+pub proc vacuity(
+    added?,              -- the theorem or axiom is added (`statement`)
+    finite?,             -- the binders' values are tried, as above
+    found?,              -- trying them finds values that satisfy the assumptions
+    smt_q: Outcome,      -- the solver, asked only if not `finite?`, on "no values satisfy them"
+): (
+    det vacuous?,            -- warn that the implementation holds vacuously
+    det evidence?,           -- the implementation is evidence for its procedure
+) {
     ensure vacuous: vacuous? iff (added? and (if finite? then not found? else smt_q = Unsat))
     ensure evidence: evidence? iff (added? and not vacuous?)
 
@@ -364,20 +364,16 @@ pub comp vacuity {
 
 A passing implementation's theorem, or axiom, is added to the environment,
 so Lean code can rely on it. In particular, it can be used to prove an
-implementation of a component that instantiates the component. A failing
+implementation of a procedure that calls the procedure. A failing
 or inconclusive implementation adds nothing.
 
 `impls::statement` states this:
 
 ```fren
-pub comp statement {
-    in written?
-    in written_ok?
-    in decide_q: Outcome
-    in smt_q: Outcome
-    pub out added?       -- the theorem or axiom is added to the environment
-
-    inst o: obligation { written?, written_ok?, decide_q, smt_q }
+pub proc statement(written?, written_ok?, decide_q: Outcome, smt_q: Outcome): (
+    added?,              -- the theorem or axiom is added to the environment
+) {
+    call o := obligation(written?, written_ok?, decide_q, smt_q)
 
     ensure added_iff_pass: added? iff o.verdict = Pass
 
@@ -385,7 +381,7 @@ pub comp statement {
 }
 ```
 
-A passing implementation is also evidence for its component: see
+A passing implementation is also evidence for its procedure: see
 [Traceability](Trace.md).
 
 ```fren

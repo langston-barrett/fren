@@ -23,12 +23,11 @@ without guards:
 ```fren
 pub mod lint
 
-pub comp trivial_match {
-    in n_arms: Int
-    in binds?            -- the first arm's pattern binds a name
-
+pub proc trivial_match(
+    n_arms: Int,
+    binds?,              -- the first arm's pattern binds a name
+): (det fires?) {
     assume counts: n_arms >= 1
-    pub det out fires?
 
     ensure rule: fires? iff (n_arms = 1 and not binds?)
 }
@@ -63,13 +62,12 @@ only drops the bodies, which index nothing, so no guard is weaker.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp needless_match {
-    in given_back?       -- each arm but `_` gives back the variant it matches, with its binders in order
-    in wildcard?         -- there is a `_` arm
-    in scrutinee_back?   -- the `_` arm's body is written the same as the scrutinee
-    in trivial?          -- `trivial_match` fires on the `match`
-    pub det out fires?
-
+pub proc needless_match(
+    given_back?,         -- each arm but `_` gives back the variant it matches, with its binders in order
+    wildcard?,           -- there is a `_` arm
+    scrutinee_back?,     -- the `_` arm's body is written the same as the scrutinee
+    trivial?,            -- `trivial_match` fires on the `match`
+): (det fires?) {
     ensure rule: fires? iff (given_back? and (not wildcard? or scrutinee_back?) and not trivial?)
 }
 ```

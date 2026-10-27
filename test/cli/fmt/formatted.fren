@@ -2,8 +2,8 @@
 -- `fren fmt --check` on a formatted file: no output.
 pub enum Mode { Heat, Cool }
 
-comp c {
-    in t: Int  -- the temperature
-    pub out mode: Mode
+proc c(
+    t: Int,    -- the temperature
+): (mode: Mode) {
     ensure r: mode = if t < 18 then Mode::Heat else Mode::Cool
 }

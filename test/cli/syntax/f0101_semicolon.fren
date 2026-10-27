@@ -1,2 +1,2 @@
 -- A `;` (F0101).
-comp c { in x: Int; }
+proc c(x: Int) { assume a: x > 0; }

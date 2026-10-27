@@ -1,0 +1,6 @@
+-- A public output declared as components declared them (F0160): the fix
+-- makes it a result, and in its place defines it.
+proc c(x: Int): (y: Int) {
+    pub out z: Int := x + 1
+    ensure r: y = z
+}

@@ -6,24 +6,18 @@ enum Shade { Light, Dark, Tinted(Int) }
 
 const LIMIT: Int := 5
 
-comp fires {
-    in s: Shade
-    in x: Int
-    in t: String
-    in q: Seq<Int>
-    in p?
-    in r?
-    pub out a?
-    pub out b?
-    pub out c?
-    pub out d?
-    pub out e?
-    pub out f?
-    pub out g?
-    pub out h?
-    pub out j?
-    pub out k?
-
+proc fires(s: Shade, x: Int, t: String, q: Seq<Int>, p?, r?): (
+    a?,
+    b?,
+    c?,
+    d?,
+    e?,
+    f?,
+    g?,
+    h?,
+    j?,
+    k?,
+) {
     ensure r1: a? iff x = 429 or x = 503         --~ warning: this says that `x` matches one of these patterns
     ensure r2: b? iff 429 = x or x = 503         --~ warning: this says that `x` matches one of these patterns
     ensure r3: c? iff x = 429 or x is 500..=599  --~ warning: this says that `x` matches one of these patterns
@@ -44,15 +38,7 @@ fn count(b?): Int := if b? then 1 else 0
 
 -- Where the run is not an operand of an operator: a `match`'s scrutinee, a
 -- table's condition and an argument, and a payload's range.
-comp places {
-    in s: Shade
-    in x: Int
-    in p?
-    pub out a?
-    pub out b: Int
-    pub out c: Int
-    pub out d?
-
+proc places(s: Shade, x: Int, p?): (a?, b: Int, c: Int, d?) {
     ensure r1: a? iff match (x = 1 or x = 2) { true => p?, false => false }
     --~^ warning: this says that `x` matches one of these patterns
     ensure r2: b = table { (x = 1 or x = 2) => 0, x > 5 => 1, _ => 2 }
@@ -62,18 +48,7 @@ comp places {
     --~^ warning: this says that `s` matches one of these patterns
 }
 
-comp stays {
-    in x: Int
-    in y: Int
-    in n: Nat
-    pub out a?
-    pub out c?
-    pub out d?
-    pub out e?
-    pub out f?
-    pub out g?
-    pub out h?
-
+proc stays(x: Int, y: Int, n: Nat): (a?, c?, d?, e?, f?, g?, h?) {
     -- An alternative that a later one repeats or overlaps.
     ensure r1: a? iff x = 1 or x = 1             --~ warning: both operands of `or` are written the same
     ensure r2: c? iff x is 0..=9 or x = 5

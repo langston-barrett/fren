@@ -7,11 +7,8 @@ fn inc(n: Nat): Nat := n + 1
 const ZERO: Nat := 0
 
 -- An input is at least 0 by assumption; an output by guarantee.
-comp counted {
-    in n: Nat
-    in m: Int
-    pub out y: Nat
-    out hidden: Nat
+proc counted(n: Nat, m: Int): (y: Nat) {
+    exists hidden: Nat
 
     ensure r: y = n + hidden
 
@@ -23,11 +20,10 @@ comp counted {
 }
 
 -- A defined output is a `Nat` by its definition; `-` gives an `Int`.
-comp defined {
-    in n: Nat
-    pub det out next: Nat := inc(n)
-    pub det out prev: Int := n - 1
-    pub det out mixed: Int := if n > 0 then n else -1
+proc defined(n: Nat): (det next: Nat, det prev: Int, det mixed: Int) {
+    out next := inc(n)
+    out prev := n - 1
+    out mixed := if n > 0 then n else -1
 
     expect next_positive: next >= 1
     expect prev_at_least: prev >= -1
@@ -36,16 +32,14 @@ comp defined {
 }
 
 -- No output is a `Nat` below 0.
-comp unreal {   --~ error: no outputs satisfy `r`
-    in n: Nat
-    out y: Nat
+proc unreal(n: Nat) {   --~ error: no outputs satisfy `r`
+    exists y: Nat
     ensure r: y = n - 1   --~ info: is false for this input
 }
 
 -- An instance's variables are at least 0, as its component's own are.
-comp user {
-    in k: Nat
-    inst w: counted { n := k + 1, m := 3 }
+proc user(k: Nat) {
+    call w := counted(k + 1, 3)
 
     expect positive: w.y >= 1
 }
@@ -53,33 +47,23 @@ comp user {
 -- A `Nat` widens where an `Int` is expected: an index, an argument, a member.
 fn half(Int): Int
 
-comp widened {
-    in q: Seq<Int>
-    in k: Nat
-
+proc widened(q: Seq<Int>, k: Nat): (x: Int) {
     assume in_range: k < q.len
-    pub out x: Int
     ensure r: x = q[k] + half(k)
 
     expect member: when q = [3, 4], q[k] in {3, 4} and k in {0, 1}
 }
 
 -- An assumption that a `Nat` is at least 0 always holds.
-comp redundant {
-    in n: Nat
-
+proc redundant(n: Nat): (y?) {
     assume nonneg: n >= 0   --~ warning: `redundant::nonneg` is redundant: it always holds
-    pub out y?
     ensure r: y? iff n > 0
 
     expect zero: when n < 1, not y?
 }
 
 -- A determined `Nat` output.
-comp determined {
-    in n: Nat
-    pub det out y: Nat
-
+proc determined(n: Nat): (det y: Nat) {
     ensure r: y + y = n + n
 
     expect same: y = n
@@ -90,45 +74,38 @@ expect outputs_grow: forall (a: counted), a.y >= a.n
 -- A refinement widens in the direction values flow. An `Int` input of the
 -- concrete component serves for a `Nat` of the abstract one, and is at
 -- least 0 by the abstract one's type: for `n < 0`, `shifted` breaks `floor`.
-comp floor { in n: Nat pub out c: Int ensure r: c >= n }
-comp shifted { in n: Int pub out c: Int ensure r: c = if n >= 0 then n else n - 1 }
+proc floor(n: Nat): (c: Int) { ensure r: c >= n }
+proc shifted(n: Int): (c: Int) { ensure r: c = if n >= 0 then n else n - 1 }
 refine nat_input: shifted refines floor
 
 -- A `Nat` output of the concrete component serves for an `Int`, and is at
 -- least 0 by its type, as is each application of a function into `Nat`.
-comp above { pub out c: Int ensure r: c >= -1 }
-comp counted_out { in n: Int pub out c: Nat ensure r: c = count(n) }
-comp hidden_out { pub out c: Nat ensure r: c != 5 }
+proc above(): (c: Int) { ensure r: c >= -1 }
+proc counted_out(n: Int): (c: Nat) { ensure r: c = count(n) }
+proc hidden_out(): (c: Nat) { ensure r: c != 5 }
 refine nat_output: counted_out refines above
 refine nat_output_typed: hidden_out refines above
 
 -- Determinism over an instance's variable, applied to a function into `Nat`:
 -- `z` is 0 only because both `z` and `count(w.y)` are at least 0, in the
 -- second copy of the behaviour as in the first.
-comp applied_to_instance {
-    in k: Nat
-    pub det out z: Nat
-    inst w: counted { n := k, m := 1 }
+proc applied_to_instance(k: Nat): (det z: Nat) {
+    call w := counted(k, 1)
 
     ensure r: z = 0 or z + count(w.y) < 0
 }
 
 -- A conflict that depends on an instance's `Nat` output.
-comp below_instance {   --~ error: `below_instance` is not realizable
-    in k: Nat
-    out x: Int
-    inst w: counted { n := k, m := 0 }
+proc below_instance(k: Nat) {   --~ error: `below_instance` is not realizable
+    exists x: Int
+    call w := counted(k, 0)
 
     ensure r: x < 0 and x = w.y   --~ info: is false for this input
 }
 
 -- A pattern test beside a `Nat`.
 enum Size { Small, Big(Int) }
-comp sized {
-    in n: Nat
-    in s: Size
-    pub out big?
-
+proc sized(n: Nat, s: Size): (big?) {
     ensure r: big? iff (n > 0 and s is Size::Big(_))
 
     expect positive: when big?, n >= 1
@@ -137,16 +114,20 @@ comp sized {
 -- `div` and `mod` of a `Nat` by a positive constant are `Nat`s, as are `min`
 -- and `max` of `Nat`s; by a negative constant, and `abs`, they are `Int`s.
 const HALF: Nat := 2
-comp divided {
-    in n: Nat
-    in m: Nat
-    in x: Int
-    pub out halved_n: Nat := n div HALF
-    pub out rest: Nat := n mod 3
-    pub out low: Nat := n.min(m)
-    pub out high: Nat := n.max(7)
-    pub out neg: Int := n div -2
-    pub out size: Int := n.abs + x.min(n)
+proc divided(n: Nat, m: Nat, x: Int): (
+    halved_n: Nat,
+    rest: Nat,
+    low: Nat,
+    high: Nat,
+    neg: Int,
+    size: Int,
+) {
+    out halved_n := n div HALF
+    out rest := n mod 3
+    out low := n.min(m)
+    out high := n.max(7)
+    out neg := n div -2
+    out size := n.abs + x.min(n)
 
     expect bounded: rest < 3 and low <= m and high >= 7 and neg <= 0
     expect halved: halved_n + halved_n <= n
@@ -154,22 +135,15 @@ comp divided {
 }
 
 -- A chained comparison widens a `Nat`.
-comp chained_nat {
-    in n: Nat
-    in q: Seq<Int>
-    pub out inside?
-
+proc chained_nat(n: Nat, q: Seq<Int>): (inside?) {
     ensure r: inside? iff 0 <= n < q.len
 
     expect nonempty: when inside?, q != []
 }
 
 -- `{}` takes its type from the other branch, as without `Nat`s.
-comp empty_branch {
-    in c?
-    in s: Set<Int>
-    in n: Nat
-    pub out t: Set<Int> := if c? then {} else s
+proc empty_branch(c?, s: Set<Int>, n: Nat): (t: Set<Int>) {
+    out t := if c? then {} else s
 
     expect member: when not c? and n in s, n in t
 }

@@ -1,7 +1,3 @@
-comp c {
-    in s: String
-    in pat: String
-    pub out p?
-
+proc c(s: String, pat: String): (p?) {
     ensure r: p? iff s.matches?(pat)
 }

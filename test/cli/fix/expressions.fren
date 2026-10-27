@@ -2,20 +2,7 @@
 -- `fren fix` fixes the expression lints.
 enum Shape { Dot, Circle(Int) }
 
-comp c {
-    in a?
-    in b?
-    in c?
-    in x: Int
-    in s: Shape
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p5?
-    pub out t: Shape
-    pub out n: Int
-
+proc c(a?, b?, c?, x: Int, s: Shape): (p1?, p2?, p3?, p4?, p5?, t: Shape, n: Int) {
     ensure r1: p1? iff if a? then b? else not b?
     ensure r2: p2? = if a? and b? then not (x > 0 or a?) else (x > 0 or a?)
     ensure r3: t = match (s) { Shape::Dot => Shape::Dot, _ => s }

@@ -10,12 +10,12 @@ import FrenCore.PatternTypes
 A size-ordered enumerator of values, in the style of SmallCheck: each type
 is unfolded, for a size bound `n`, into a `Shape`, a finite tree, whose
 values of size at most `n` `Shape.vals` lists, each once, and `Shape.ordered`
-lists smallest first. A component's checks are then decided by the shared
+lists smallest first. A procedure's checks are then decided by the shared
 check algorithms (`Fren.Core.checkComp`) with a backend (`backend`) that
 answers each query by searching the assignments of its variables, smallest
 first and fairly (`search`): by the largest size of a variable's value, then
 in the order of the variables and of each one's values. The formulas are
-`EF`s, over *atoms*, the formulas of the component, which each front end
+`EF`s, over *atoms*, the formulas of the procedure, which each front end
 evaluates in its own terms: the `fren` command with its evaluator, and the
 Lean-hosted front end by Lean's evaluation of the generated propositions.
 So the two front ends ask the same queries, search them in the same order
@@ -346,17 +346,17 @@ def extrasOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) (count : N
 /-! ## Formulas -/
 
 /-- A formula of the check algorithms, as enumeration evaluates it: over
-the component's formulas, its *atoms*, which a front end evaluates, and
+the procedure's formulas, its *atoms*, which a front end evaluates, and
 over its variables' *slots*, each holding the position of its value in its
 slot's values (`Space`). -/
 inductive EF where
-  /-- The component's `k`th atom. -/
+  /-- The procedure's `k`th atom. -/
   | atom (k : Nat)
   | tt
   | ff
   | not (f : EF)
   | conj (fs : Array EF)
-  /-- `∃ outputs, f`, over the component's own outputs that are not
+  /-- `∃ outputs, f`, over the procedure's own outputs that are not
   defined. -/
   | exOutputs (f : EF)
   /-- The slot `x` holds the value `v`. -/
@@ -370,7 +370,7 @@ inductive EF where
   deriving Inhabited, BEq, Hashable
 
 /-- Where enumeration searches: a slot for each variable whose value is
-enumerated, the component's own and its instances' that are not defined
+enumerated, the procedure's own and its calls' that are not defined
 outputs, in their order, then one for the second copy of each that
 determinism copies, and last one for each type whose unspecified value
 some atom reads, which an interpretation gives
@@ -382,7 +382,7 @@ structure Space where
   sizes : Array (Array Nat)
   /-- The second copy of each slot, if determinism copies it. -/
   primeOf : Array (Option Nat)
-  /-- The slots of the component's own outputs that are not defined, which
+  /-- The slots of the procedure's own outputs that are not defined, which
   `∃ outputs` ranges over. -/
   outputs : Array Nat
   /-- How many of the slots, at the end, are hidden: an interpretation's,
@@ -779,13 +779,13 @@ def classify (n : Nat) (exact outputsExact : Bool) (r : CheckResult) : CheckResu
     { r with verdict, detail := .unknown why, bounded? := some n }
   else { r with verdict, bounded? := some n }
 
-/-! ## The space of a component -/
+/-! ## The space of a procedure -/
 
-/-- The most assignments that enumeration searches for a component
+/-- The most assignments that enumeration searches for a procedure
 (`check::enumeration_limit`). -/
 def maxBehaviours : Nat := 65536
 
-/-- Whether a component whose enumeration would search `count` assignments
+/-- Whether a procedure whose enumeration would search `count` assignments
 is enumerated (`check::enumeration_limit`). -/
 def withinLimit (count : Nat) : Bool := count ≤ maxBehaviours
 
@@ -846,7 +846,7 @@ def tablesBySize (domain : Nat) (sizes : Array Nat) (limit : Nat) : Option (Arra
     (j, (List.range domain).foldl (init := 0) fun m p => max m (sizes[tableEntry r j p]!))
   some (tables.qsort fun a b => a.2 < b.2 || (a.2 == b.2 && a.1 < b.1))
 
-/-- The space of a component for the bound `n` (`Space`), with each slot's
+/-- The space of a procedure for the bound `n` (`Space`), with each slot's
 values, smallest first, then, if `tests` is not 0, as many random values
 beyond the bound (`extrasOf`), and its shape, and the slots of its
 uninterpreted functions `funs`, after the others; or the variable whose type is not
@@ -899,7 +899,7 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
                       primeOf, outputs, hidden := hidden.size + funs.size, bound := n }
   return (sp, ordered.map (·.toArray.map (·.1)), shapesOf, fslots)
 
-/-- How many assignments the enumeration of a component searches, at
+/-- How many assignments the enumeration of a procedure searches, at
 most: the product of its variables' and hidden slots' counts, its
 functions' interpretations among them, and, if determinism is checked,
 of their second copies' too
@@ -918,7 +918,7 @@ bound. -/
 def exhaustedAll (shapes : Array Shape) (n : Nat) (slots : Array Nat) : Bool :=
   slots.all fun i => (shapes[i]?.map (·.exhausted n)).getD true
 
-/-- What enumerating a component found: its results, each marked bounded
+/-- What enumerating a procedure found: its results, each marked bounded
 as `classify` says, and the bound. -/
 structure Enumerated where
   results : Array CheckResult := #[]
@@ -940,7 +940,7 @@ def Enumerated.merge (n : Nat) (alone both : Option Enumerated) (keep : CheckRes
 
 /-! ## Messages -/
 
-/-- A component, or a global expectation, `subject`, written as it is shown,
+/-- A procedure, or a global expectation, `subject`, written as it is shown,
 whose enumeration would search more than `maxBehaviours` assignments
 (`F0644`). -/
 def tooManyMsg (subject : String) (count n : Nat) : Msg :=
@@ -975,7 +975,7 @@ def notEnumerableWhy (x? : Option Name) (why : String) : String :=
   | some x => s!"`{x}` has the type {why}, which is not enumerable"
 
 /-- The message about the checks that hold up to the bound, if any
-(`F0646`), of `e`'s results, of a component shown as `subject`, whose
+(`F0646`), of `e`'s results, of a procedure shown as `subject`, whose
 checks of `tested` were tested beyond the bound too. -/
 def Enumerated.boundedMsg? (e : Enumerated) (subject : String) (tested : Tested) : Option Msg :=
   let bounded := e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome

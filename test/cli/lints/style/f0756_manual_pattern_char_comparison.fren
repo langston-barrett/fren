@@ -1,2 +1,2 @@
 -- `manual_pattern_char_comparison`.
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"x(a|\^|-)+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"x(a|\^|-)+") }

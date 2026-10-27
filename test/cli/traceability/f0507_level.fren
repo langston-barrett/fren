@@ -1,3 +1,3 @@
 -- An unknown evidence level (F0507).
 --@ args: trace --require tests
-comp c {}
+proc c() {}

@@ -25,22 +25,19 @@ fn get_any<T>(o: Option<T>, d: T): T := get(o, d)  --~ error: counterexample: o 
 fn nothing<T>(n: Int): Option<T> := let r: Option<T> := Option::None in r
     ensure empty: let r: Option<Bool> := nothing(n) in r = Option::None
 
-comp guarded {
-    in x: Option<Int>
+proc guarded(x: Option<Int>): (det y: Int) {
     assume some: x != Option::None
-    pub det out y: Int := get(x, 0)
+    out y := get(x, 0)
 
     expect payload: Option::Some(y) = x
 }
 
-comp unguarded {
-    in x: Option<Bool>
-    pub det out y? := get(x, false)  --~ error: counterexample: x = Option::None, y? = false
+proc unguarded(x: Option<Bool>): (det y?) {
+    out y? := get(x, false)  --~ error: counterexample: x = Option::None, y? = false
 }
 
-comp other_instance {
-    in n: Int
-    pub det out o: Option<Int> := nothing(n)
+proc other_instance(n: Int): (det o: Option<Int>) {
+    out o := nothing(n)
 
     expect none: o = Option::None
 }

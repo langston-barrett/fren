@@ -1,13 +1,13 @@
 # Evaluation and testing
 
 ```
-fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
 ```
 
-The [checks](Check.md) ask a solver about every behaviour of a component
+The [checks](Check.md) ask a solver about every behaviour of a procedure
 at once. Fren can also evaluate a spec on one behaviour at a time, without
-the solver: `fren eval` evaluates the constraints of a component on a
+the solver: `fren eval` evaluates the constraints of a procedure on a
 behaviour, and `fren quickcheck` tests a spec on random behaviours, as
 Cryptol's `:check` does, before the solver is asked anything. The same
 evaluator confirms each model that the solver returns to `fren check` (see
@@ -22,11 +22,11 @@ use check::Verdict::{Fail, Inconclusive, Pass}
 
 ## Behaviours
 
-A *behaviour* of a component is an
-[interpretation](Lang/Components.md#interpretations), together with a value
-for each of the component's variables: its inputs and outputs, and the
-variables of its instances, including those that are hidden (see
-[Instances](Lang/Instances.md#instance-variables)). A behaviour of a
+A *behaviour* of a procedure is an
+[interpretation](Lang/Procedures.md#interpretations), together with a value
+for each of the procedure's variables: its inputs and outputs, and the
+variables of its calls, including those that are hidden (see
+[Calls](Lang/Calls.md#call-variables)). A behaviour of a
 [global expectation](Lang/Global.md) is a behaviour of each of its
 binders, all under one interpretation.
 
@@ -47,16 +47,16 @@ independent statement of what a spec means. A name of a
 [`let` or `where`](Lang/Let.md) is read as its definition, so it is not
 part of a behaviour, and counterexamples show variables only. What a
 variable's [pattern type](Lang/Types.md#pattern-types) brings is a
-constraint of its component, as for the solver: an input's among the
-assumptions, an output's among the guarantees, and an instance's input's
-among the assumptions of the instantiated component, which the instance
-check asks of the bindings. A value is of a type if it matches the
+constraint of its procedure, as for the solver: an input's among the
+assumptions, an output's among the guarantees, and a call's input's
+among the assumptions of the called procedure, which the call
+check asks of the arguments. A value is of a type if it matches the
 type's pattern, and so do all its fields, payloads and elements, at every
 depth, and each `Nat` within it is at least 0. An uninterpreted function's
 values are of its result type. In `fren eval`, such a constraint is shown
 as `type x`, after the variable it is about. In the notation of
-[Components](Lang/Components.md#meaning), a behaviour is *admissible* if
-`A` and `I` hold in it, and it *meets* the component if `R` holds as well.
+[Procedures](Lang/Procedures.md#meaning), a behaviour is *admissible* if
+`A` and `I` hold in it, and it *meets* the procedure if `R` holds as well.
 `eval::status` gives the status of a behaviour:
 
 ```fren
@@ -65,12 +65,11 @@ pub enum Status { Inadmissible, Violates, Meets }
 use self::Status::{Inadmissible, Meets, Violates}
 
 set_option fren.evidence "enumerated" in
-pub comp status {
-    in assumes?          -- every assumption holds
-    in insts?            -- every instance's constraint `I_w` holds
-    in guarantees?      -- every guarantee holds
-    pub det out status: Status
-
+pub proc status(
+    assumes?,            -- every assumption holds
+    insts?,              -- every call's constraint `I_w` holds
+    guarantees?,        -- every guarantee holds
+): (det status: Status) {
     ensure inadmissible: unless assumes? and insts?, status = Inadmissible
     ensure violates: when assumes? and insts? and not guarantees?, status = Violates
     ensure meets: when assumes? and insts? and guarantees?, status = Meets
@@ -139,10 +138,10 @@ models](#confirming-models)). `fren eval` then shows the constraints that
 read it as `unknown`. A check
 that needs it cannot be tested: when `fren check` [tests a
 check](Check.md#checking-by-testing), and when `fren quickcheck` tests a
-component, global expectation or refinement, a quantifier without a domain
+procedure, global expectation or refinement, a quantifier without a domain
 in what the test evaluates is an error (`F0639`), at the quantifier, and
 the tests of what reads it are not run: its constraints, its definitions,
-its instances' components, and the bodies of the functions and values of
+its calls' procedures, and the bodies of the functions and values of
 the constants that those apply, read directly or through others. The
 solver decides such a check, or a `trusted` claim stands for it. A domain
 that has no value, or too many, in one behaviour only leaves that
@@ -152,11 +151,10 @@ does, so the test that finds it reaches nothing.
 ## Searching for behaviours
 
 Both commands search for behaviours. The search chooses the variables in
-order: the inputs, then the [defined
-outputs](Lang/Components.md#defined-outputs) whose definitions mention
-only inputs and such outputs, computed from them, then each instance's
-variables, the instance's inputs being its bindings' values, then the
-other outputs. It tries each variable's
+order: the inputs, then the variables whose
+[definitions](Lang/Procedures.md#definitions) mention only inputs and
+such variables, computed from them, then each call's variables, the
+call's inputs being its arguments' values, then the other outputs. It tries each variable's
 candidates in a random order, and goes back when a constraint that can
 already be evaluated is false (see [Backjumping](#backjumping)). The
 values that the constraints equate a variable with come first. The others,
@@ -168,18 +166,18 @@ drawn from the values chosen before it. A variable's candidates are:
   from the candidates of its types, to a bounded depth, taking a few of
   each variant's in turn where there are many;
 - for an `Int`, small integers, the integer literals and constants of the
-  component, its expectations included, and their neighbours, random integers, and the value of
+  procedure, its expectations included, and their neighbours, random integers, and the value of
   any expression that a constraint equates the variable with, such as `x
   + 1` in `y = x + 1`;
 - for a `Nat`, those of an `Int` that are at least 0;
 - for an abstract type `T`, `T#0` up to a random bound;
 - for a `String`, `""`, `"a"` and `"b"`; the string literals and constants
-  of the component, its expectations included, each also with `"a"` before
+  of the procedure, its expectations included, each also with `"a"` before
   and after it, and, for those of up to six characters, what remains after
   each of their first characters, such as the `:*` of `::*`, so that
   `s.contains?("..")` and `s.starts_with?("x")` have strings that satisfy
   them; a few random strings that match each pattern of a `matches?` in
-  the component, each also followed by `"a"`; and the value of any
+  the procedure, each also followed by `"a"`; and the value of any
   expression that a constraint equates the variable with;
 - for a `Set<T>`, the empty set, singletons of the candidates of `T`, a
   few random sets of two, three and four of them, and the value of any
@@ -209,7 +207,7 @@ each type, the same for every such table and `match`.
 
 The search may miss a behaviour that exists, since it tries only some
 values, but every behaviour it reports is genuine: it is a behaviour of the
-component, with the status that the evaluator gives it.
+procedure, with the status that the evaluator gives it.
 
 ### Backjumping
 
@@ -233,17 +231,18 @@ is in it if:
 
 `eval::conflict` states this for one earlier variable. Membership in a
 sequence of unknown length is outside the [decidable
-core](Lang/Decidability.md), so the component opts out:
+core](Lang/Decidability.md), so the procedure opts out:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp conflict {
-    in position: Int            -- the variable's position among those the search chooses
-    in earlier: Int             -- another variable's position
-    in equated?                 -- an expression that the variable is equated with reads `earlier`
-    in rejections: Seq<Bool>    -- for each candidate tried, whether what rejected it reads `earlier`
-    pub det out member?         -- `earlier` is in the variable's conflict set
-
+pub proc conflict(
+    position: Int,              -- the variable's position among those the search chooses
+    earlier: Int,               -- another variable's position
+    equated?,                   -- an expression that the variable is equated with reads `earlier`
+    rejections: Seq<Bool>,      -- for each candidate tried, whether what rejected it reads `earlier`
+): (
+    det member?,                -- `earlier` is in the variable's conflict set
+) {
     ensure rule: member? iff (0 <= earlier < position and (equated? or true in rejections))
 
     expect earlier_only: when earlier >= position, not member?
@@ -260,11 +259,12 @@ states where it resumes:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp backjump {
-    in conflict: Seq<Bool>   -- for each earlier variable, in order, whether it is in the conflict set
-    in k: Int                -- an earlier variable's position
-    pub det out resumes?     -- the search resumes at `k`
-
+pub proc backjump(
+    conflict: Seq<Bool>,     -- for each earlier variable, in order, whether it is in the conflict set
+    k: Int,                  -- an earlier variable's position
+): (
+    det resumes?,            -- the search resumes at `k`
+) {
     ensure rule: resumes? iff (0 <= k < conflict.len and conflict[k] and not (true in conflict.slice(k + 1, conflict.len)))
 
     expect members_only: when resumes?, 0 <= k and conflict[k]
@@ -281,15 +281,16 @@ it reaches candidates that backtracking would have run out of budget
 before. `eval::backjumping` states this:
 
 ```fren
-pub comp backjumping {
-    in by_backtracking?          -- backtracking over the same candidates finds a behaviour within the budget
-    in exhausted?                -- backtracking tries every candidate within the budget, and finds none
-    in backtracking_steps: Nat   -- the candidates that backtracking tries
-
+pub proc backjumping(
+    by_backtracking?,            -- backtracking over the same candidates finds a behaviour within the budget
+    exhausted?,                  -- backtracking tries every candidate within the budget, and finds none
+    backtracking_steps: Nat,     -- the candidates that backtracking tries
+): (
+    found?,                      -- the search finds a behaviour
+    same?,                       -- it is the behaviour that backtracking finds
+    steps: Nat,                  -- the candidates that the search tries
+) {
     assume one_outcome: not (by_backtracking? and exhausted?)
-    pub out found?               -- the search finds a behaviour
-    pub out same?                -- it is the behaviour that backtracking finds
-    pub out steps: Nat           -- the candidates that the search tries
 
     ensure finds: when by_backtracking?, found? and same? and steps <= backtracking_steps
     ensure fails: when exhausted?, not found? and steps <= backtracking_steps
@@ -298,31 +299,30 @@ pub comp backjumping {
 
 ## `fren eval`
 
-`fren eval --comp PATH FILE...` evaluates a behaviour of the component
+`fren eval --proc PATH FILE...` evaluates a behaviour of the procedure
 `PATH` of the spec in the files. `--set x=VALUE` gives the variable `x` a
-value, as does `--set w.x=VALUE` for a variable of the instance `w`.
-`VALUE` is typed as a binding of `x` would be: a `Nat` is widened to an
+value, as does `--set w.x=VALUE` for a variable of the call `w`.
+`VALUE` is typed as an argument for `x` would be: a `Nat` is widened to an
 `Int`, and an `Int`, such as `5 - 3`, is not accepted for a `Nat`. The
 variables that are not set, and the interpretation, are chosen by
 [searching](#searching-for-behaviours) for a behaviour that meets the
-component, starting from `--seed` (default 0). If the search finds none,
+procedure, starting from `--seed` (default 0). If the search finds none,
 the variables not set have no value, and nor does any constraint that
 depends on them.
 
 The command writes to standard output the value of each variable and of
 each constraint (`true`, `false` or `unknown`), and the behaviour's
 status. A value that is not of its variable's type, or a variable that
-the component does not have, is an error in the arguments.
+the procedure does not have, is an error in the arguments.
 `eval::eval_exit` gives the exit status:
 
 ```fren
-pub comp eval_exit {
-    in ran?              -- the spec and the arguments have no errors
-    in complete?         -- every variable has a value
-    in status: Status
-    in expect_false?     -- some expectation is false
-    pub det out code: Int
-
+pub proc eval_exit(
+    ran?,                -- the spec and the arguments have no errors
+    complete?,           -- every variable has a value
+    status: Status,
+    expect_false?,       -- some expectation is false
+): (det code: Int) {
     ensure not_run: unless ran?, code = 2
     ensure incomplete: when ran? and not complete?, code = 3
     ensure fails: when ran? and complete? and (status != Meets or expect_false?), code = 1
@@ -338,27 +338,27 @@ refine eval_exit_status: eval_exit refines exit_status
 
 ## `fren quickcheck`
 
-`fren quickcheck FILE...` tests every component, global expectation and
+`fren quickcheck FILE...` tests every procedure, global expectation and
 [refinement](Lang/Refinement.md) of the spec on random behaviours: a
-refinement as the component that checks it, for the checks that run on it. For each, it runs `--tests` tests (default
+refinement as the procedure that checks it, for the checks that run on it. For each, it runs `--tests` tests (default
 100), starting from `--seed` (default 0), so a run can be repeated. Each
 test chooses a random interpretation and searches for an admissible input.
-For each instance in turn, it confirms the instance's assumptions on the
-instance's inputs, then searches for the instance's behaviour. Last, it
-searches for outputs that meet the component. A global expectation's
-test searches for a behaviour that meets each binder's component.
+For each call in turn, it confirms the called procedure's assumptions on the
+call's inputs, then searches for the call's behaviour. Last, it
+searches for outputs that meet the procedure. A global expectation's
+test searches for a behaviour that meets each binder's procedure.
 
 Testing reports what it finds as the checks report it, at the same
 positions (see [Check results](View.md#check-results)):
 
 | Check | Testing reports |
 |---|---|
-| Expectations | a behaviour that meets the component, in which the expectation is false |
-| Cover goals | a behaviour that meets the component, in which the goal holds: a witness, which passes it |
+| Expectations | a behaviour that meets the procedure, in which the expectation is false |
+| Cover goals | a behaviour that meets the procedure, in which the goal holds: a witness, which passes it |
 | Global expectations | behaviours of the binders in which the body is false |
-| Instance assumptions | an admissible input, with behaviours of the earlier instances, on which an assumption of the instance's component is false |
-| Determinism | two behaviours on the same input, with different values of the `det out` |
-| Realizability | an admissible input, with behaviours of the instances, for which the search found no outputs |
+| Call assumptions | an admissible input, with behaviours of the earlier calls, on which an assumption of the called procedure is false |
+| Determinism | two behaviours on the same input, with different values of the `det` output |
+| Realizability | an admissible input, with behaviours of the calls, for which the search found no outputs |
 
 Vacuity and redundancy are not tested: they ask whether something can
 hold at all, which a failed search does not refute. A [cover
@@ -369,27 +369,27 @@ completeness, disjointness and reachability (see [Checking by
 testing](Check.md#checking-by-testing)).
 
 A test *reaches* a check when it finds what the check is about, as in the
-table: a behaviour that meets the component, for an expectation; an
-admissible input with behaviours of the earlier instances, for an
-instance assumption; and so on. For an expectation, a global expectation
-or an instance assumption with a [trigger](Lang/Components.md#triggers),
+table: a behaviour that meets the procedure, for an expectation; an
+admissible input with behaviours of the earlier calls, for a
+call assumption; and so on. For an expectation, a global expectation
+or a call assumption with a [trigger](Lang/Procedures.md#triggers),
 the trigger must also hold: where it is false, the constraint holds by its
 trigger alone, so the test says nothing about it. Since a random behaviour
 seldom satisfies a narrow trigger, testing searches for one that does:
 
 - for an expectation with a trigger, each test whose behaviour does not
   reach it searches again, from a new input, for a behaviour that meets the
-  component and in which the trigger holds;
+  procedure and in which the trigger holds;
 - a global expectation's test searches for behaviours of the binders in
   which the body's trigger holds;
 - for a cover goal without a witness yet, each test searches, from a new
-  input, for a behaviour that meets the component and in which the goal
+  input, for a behaviour that meets the procedure and in which the goal
   holds. A cover goal is reached by a test that finds a witness: it is
   `reaches` with the goal as its trigger.
 
 Testing also searches for counterexamples directly: for an expectation or
 a global expectation not yet refuted, each test that finds what the
-expectation is about (a behaviour that meets the component, or behaviours
+expectation is about (a behaviour that meets the procedure, or behaviours
 of the binders in which the body's trigger holds, if it has one) also
 searches for one in which it is false. Backtracking then tries combinations of candidates that random
 behaviours seldom reach, such as a lexeme and the input after it that
@@ -398,20 +398,19 @@ none found says nothing.
 
 So a trigger that no search satisfies costs one more search in each test,
 for each expectation that has it, and each expectation not yet refuted
-costs one more, the direct search for a counterexample. An instance
-assumption's trigger gets no such search: it is about an instance's
-inputs, which its bindings give.
+costs one more, the direct search for a counterexample. A call
+assumption's trigger gets no such search: it is about a call's
+inputs, which its arguments give.
 
 `eval::reaches` states when a test reaches a check:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp reaches {
-    in found?            -- the test found what the check is about
-    in has_trigger?
-    in trigger?          -- the trigger holds in what the test found
-    pub det out reached?
-
+pub proc reaches(
+    found?,              -- the test found what the check is about
+    has_trigger?,
+    trigger?,            -- the trigger holds in what the test found
+): (det reached?) {
     ensure rule: reached? iff (found? and (not has_trigger? or trigger?))
 
     expect false_trigger_never: when has_trigger? and not trigger?, not reached?
@@ -420,27 +419,26 @@ pub comp reaches {
 
 A counterexample from testing is genuine, so it fails the check. But
 the search can miss outputs, so an input for which none were found
-suggests that the component is not realizable, without showing it. That
+suggests that the procedure is not realizable, without showing it. That
 gives a warning, `F0609`, and an inconclusive result. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
 with the warning `F0610`. A check with a trigger that no test reached,
 though some found what it is about, is inconclusive with the warning
-`F0612`, at the check, unless the component already has `F0610`. A
+`F0612`, at the check, unless the procedure already has `F0610`. A
 cover goal for which no test found a witness, though some found a
-behaviour that meets the component, is inconclusive with the warning
+behaviour that meets the procedure, is inconclusive with the warning
 `F0616`, at the goal, likewise. `eval::test_verdict` gives the verdict of testing one
 check, from whether some test refuted it and how many tests reached it:
 
 ```fren
-pub comp test_verdict {
-    in kind: Kind
-    in refuted?          -- some test is a counterexample, or an input without outputs
-    in n_tests: Nat      -- the tests that reached the check (`reaches`)
-
+pub proc test_verdict(
+    kind: Kind,
+    refuted?,            -- some test is a counterexample, or an input without outputs
+    n_tests: Nat,        -- the tests that reached the check (`reaches`)
+): (det verdict: Verdict) {
     assume testable: not kind is Kind::Vacuity | Kind::Redundancy
     -- A cover goal is reached by its witnesses, which refute nothing.
     assume witnesses: when kind = Kind::Cover, not refuted?
-    pub det out verdict: Verdict
 
     ensure definite: when refuted? and kind != Kind::Realizability, verdict = Fail
     ensure not_found: when refuted? and kind = Kind::Realizability, verdict = Inconclusive
@@ -459,10 +457,11 @@ check on the same spec, unless the solver gives no answer.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp sound {
-    in by_testing: Verdict   -- the verdict of testing a check
-    pub out checked: Verdict  -- the verdict of `fren check` for it
-
+pub proc sound(
+    by_testing: Verdict,     -- the verdict of testing a check
+): (
+    checked: Verdict,         -- the verdict of `fren check` for it
+) {
     ensure no_false_pass: when by_testing = Fail, checked != Pass
 }
 ```
@@ -489,7 +488,7 @@ search finds no outputs, or a value it cannot read, leaves the answer
 
 The goal of a [definedness](Check.md#definedness) check is that an index
 is in range wherever its guard holds. The evaluator finds the guard itself,
-from the constraint, definition or binding that has the index, by the same
+from the constraint, definition or argument that has the index, by the same
 left-to-right reading, and pairs it with the solver's by the index's
 position in the source. An index out of range in the guard has no value
 that the evaluator knows, so it leaves the goal undecided unless the rest
@@ -517,12 +516,11 @@ pub enum Confirmation { Confirmed, Refuted, Undecided }
 use self::Confirmation::{Confirmed, Refuted, Undecided}
 
 set_option fren.evidence "enumerated" in
-pub comp confirm {
-    in hyp_false?        -- some hypothesis is false in the model
-    in goal_true?        -- the goal is true in the model
-    in all_known?        -- the hypotheses and the goal all have values
-    pub det out result: Confirmation
-
+pub proc confirm(
+    hyp_false?,          -- some hypothesis is false in the model
+    goal_true?,          -- the goal is true in the model
+    all_known?,          -- the hypotheses and the goal all have values
+): (det result: Confirmation) {
     ensure refuted: when hyp_false? or goal_true?, result = Refuted
     ensure confirmed: when not hyp_false? and not goal_true? and all_known?, result = Confirmed
     ensure undecided: when not hyp_false? and not goal_true? and not all_known?, result = Undecided
@@ -538,11 +536,10 @@ check used:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp confirmed_verdict {
-    in solver: Verdict       -- from the solver's answers
-    in result: Confirmation  -- the least confirmed of the check's models
-    pub det out verdict: Verdict
-
+pub proc confirmed_verdict(
+    solver: Verdict,         -- from the solver's answers
+    result: Confirmation,    -- the least confirmed of the check's models
+): (det verdict: Verdict) {
     ensure refuted: when result = Refuted, verdict = Inconclusive
     ensure kept: when result != Refuted, verdict = solver
 

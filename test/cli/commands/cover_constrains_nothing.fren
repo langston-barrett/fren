@@ -3,10 +3,7 @@
 -- expectation that only the goal could make hold fails, and the goal with
 -- a trigger that never holds has no vacuity result.
 set_option fren.lint.chainable_comparison "allow"
-comp sensor {
-    in x: Int
-    pub out hot?
-
+proc sensor(x: Int): (hot?) {
     ensure r: hot? iff x > 100
     expect only_warm: x = 50
 

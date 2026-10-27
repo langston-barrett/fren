@@ -10,10 +10,7 @@ struct Reading { level: Level, valid?: Bool }
 enum Option<T> { None, Some(T) }
 
 set_option fren.evidence "enumerated" in
-comp thermostat {
-    in mode: Mode
-    in hot?
-    pub det out on?
+proc thermostat(mode: Mode, hot?): (det on?) {
     ensure r: on? iff (mode = Mode::Heat and not hot?)
     expect heats: when on?, mode = Mode::Heat
     expect cools: when mode = Mode::Cool, on?  --~ error: expectation `thermostat::cools` does not hold
@@ -22,11 +19,7 @@ comp thermostat {
 
 -- A record, a generic instance and a finite integer pattern type.
 set_option fren.evidence "enumerated" in
-comp sensor {
-    in r: Reading
-    in o: Option<Bool>
-    in k: Int is 0..=2
-    pub det out alarm?
+proc sensor(r: Reading, o: Option<Bool>, k: Int is 0..=2): (det alarm?) {
     ensure a: alarm? iff (r.valid? and r.level = Level::High and k > 0)
     expect needs_valid: when alarm?, r.valid?
     expect missing: when k = 2, o != Option::None  --~ error: expectation `sensor::missing` does not hold
@@ -34,18 +27,16 @@ comp sensor {
 
 -- Not determined, vacuous, redundant and unrealizable, as the solver finds.
 set_option fren.evidence "enumerated" in
-comp loose {
-    in a?
-    pub det out b?  --~ error: `loose::b?` is not determined by the inputs
+proc loose(a?): (
+    det b?,         --~ error: `loose::b?` is not determined by the inputs
+) {
     ensure r: when a?, b?  --~ warning: `loose::r` is redundant
     ensure never: when a? and not a?, b?  --~ error: `loose::never` is vacuous
     ensure weaker: b? or not a?  --~ warning: `loose::weaker` is redundant
 }
 
 set_option fren.evidence "enumerated" in
-comp stuck {  --~ error: `stuck` is not realizable
-    in a?
-    pub out b?
+proc stuck(a?): (b?) {  --~ error: `stuck` is not realizable
     ensure up: when a?, b?  --~ info: `up` forces b? = true
     --~^ error: `stuck::up` is vacuous
     ensure down: when a?, not b?  --~ info: conflicts with `up`
@@ -54,16 +45,14 @@ comp stuck {  --~ error: `stuck` is not realizable
 
 -- An instance's assumption, and a table without `_` whose unspecified
 -- value, a `Bool`, is enumerated too.
-comp gate {
-    in m: Mode
+proc gate(m: Mode): (det open?: Bool) {
     assume on: m != Mode::Off
-    pub det out open?: Bool := table { | m = Mode::Heat => true, | m = Mode::Cool => false }
+    out open? := table { | m = Mode::Heat => true, | m = Mode::Cool => false }
 }
 
 set_option fren.evidence "enumerated" in
-comp user {
-    in m: Mode
-    inst g: gate { m }  --~ error: the assumption `on` of `gate` may not hold for instance `user::g`
+proc user(m: Mode) {
+    call g := gate(m)  --~ error: the assumption `on` of `gate` may not hold for instance `user::g`
     expect follows: when m = Mode::Heat, g.open?
 }
 
@@ -73,19 +62,16 @@ expect same_input: forall (x y: thermostat), when x.mode = y.mode and x.hot? = y
 -- A `det out` defined from an output that is not determined is not
 -- determined either: its definition's slots are searched.
 set_option fren.evidence "enumerated" in
-comp nd {
-    in a?
-    pub out o?
+proc nd(a?): (o?, det d?) {
     ensure r: when a?, o?
-    pub det out d? := o?  --~ error: `nd::d?` is not determined by the inputs
+    out d? := o?  --~ error: `nd::d?` is not determined by the inputs
 }
 
 -- A quantifier over a listed type of many values, and a global
 -- expectation, shown by its name.
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
-comp wide_quantifier {
-    in x?
+proc wide_quantifier(x?) {
     expect e: forall (k: Int is 0..=63), k < 63 or x?  --~ error: expectation `wide_quantifier::e` does not hold
 }
 

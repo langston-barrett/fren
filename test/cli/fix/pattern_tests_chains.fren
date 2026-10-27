@@ -3,22 +3,7 @@
 -- `chainable_comparison`, and `int_plus_one` within a chain.
 enum Shade { Light, Dark, Tinted(Int) }
 
-pub comp c {
-    in s: Shade
-    in i: Int
-    in n: Int
-    in m: Int
-    in p?
-    pub out a?
-    pub out b?
-    pub out d?
-    pub out e?
-    pub out f?
-    pub out g?
-    pub out h?
-    pub out j?
-    pub out k?
-
+pub proc c(s: Shade, i: Int, n: Int, m: Int, p?): (a?, b?, d?, e?, f?, g?, h?, j?, k?) {
     ensure r1: a? iff s is Shade::Light
     ensure r2: b? iff not (s) is Shade::Light | Shade::Dark
     ensure r3: d? iff match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }

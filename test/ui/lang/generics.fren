@@ -11,19 +11,24 @@ pub struct Pair<A, B> { fst: A, snd: B }
 pub enum List<T> { Nil, Cons(T, List<T>) }
 pub enum Mode { Idle, Busy }
 
-comp options {
-    in x: Option<Int>
-    in p: Pair<Int, Bool>
-    in l: List<Int>
-    in m: Option<Mode>
-    pub det out value: Int := match x { Option::Some(n) => n, Option::None => 0 }
-    pub det out first: Int := p.fst
-    pub det out head: Int := match l { List::Cons(h, _) => h, List::Nil => 0 }
-    pub det out wrapped: Option<Int> := Option::Some(value + 1)
-    pub det out pair: Pair<Int, Bool> := { p with fst := value }
-    pub det out nested: Option<Pair<Int, Bool>> := Option::Some(p)
-    pub det out busy? := m = Option::Some(Mode::Busy)
-    pub det out made: Pair<Int, Option<Int>> := Pair { fst := first, snd := Option::None }
+proc options(x: Option<Int>, p: Pair<Int, Bool>, l: List<Int>, m: Option<Mode>): (
+    det value: Int,
+    det first: Int,
+    det head: Int,
+    det wrapped: Option<Int>,
+    det pair: Pair<Int, Bool>,
+    det nested: Option<Pair<Int, Bool>>,
+    det busy?,
+    det made: Pair<Int, Option<Int>>,
+) {
+    out value := match x { Option::Some(n) => n, Option::None => 0 }
+    out first := p.fst
+    out head := match l { List::Cons(h, _) => h, List::Nil => 0 }
+    out wrapped := Option::Some(value + 1)
+    out pair := { p with fst := value }
+    out nested := Option::Some(p)
+    out busy? := m = Option::Some(Mode::Busy)
+    out made := Pair { fst := first, snd := Option::None }
 
     expect some_value: when x = Option::Some(3), value = 3
     expect none_value: when x = Option::None, value = 0
@@ -45,11 +50,7 @@ expect bools: forall (o: Option<Bool>), o = Option::None or o is Option::Some(_)
 pub ordered enum Level<T> { Low, Mid, High }
 pub ordered struct Rank { level: Level<Int>, n: Int }
 
-comp ranks {
-    in x: Level<Int>
-    in y: Level<Int>
-    in r: Rank
-    in s: Rank
+proc ranks(x: Level<Int>, y: Level<Int>, r: Rank, s: Rank) {
     expect lt: when x = Level::Low and y = Level::High, x < y
     expect max: x.max(y) >= x
     expect by_level: when r.level < s.level, r < s

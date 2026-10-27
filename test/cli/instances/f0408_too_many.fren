@@ -1,0 +1,3 @@
+-- A call with too many arguments (F0408).
+proc sub(count: Int) {}
+proc c() { call s := sub(1, 2) }

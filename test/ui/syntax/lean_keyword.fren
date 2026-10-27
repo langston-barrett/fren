@@ -2,7 +2,7 @@
 -- front end accepts one as a declared name (F0221), and a use of one
 -- finds no declaration (`Lexical.md#keywords`).
 
-comp c0 { in at: Int pub out z? ensure r: z? iff at = 1 }
+proc c0(at: Int): (z?) { ensure r: z? iff at = 1 }
 --~^ error: `at` is a Lean keyword, so it cannot be declared
 
 struct Slot { at: Int }
@@ -11,29 +11,29 @@ struct Slot { at: Int }
 enum Way { by, Through }
 --~^ error: `by` is a Lean keyword, so it cannot be declared
 
-comp fun { in x: Int pub out y: Int ensure r: y = x }
+proc fun(x: Int): (y: Int) { ensure r: y = x }
 --~^ error: `fun` is a Lean keyword, so it cannot be declared
 
 const for: Int := 1
 --~^ error: `for` is a Lean keyword, so it cannot be declared
 
-comp c1 { in x: Int pub out y: Int ensure from: y = x }
+proc c1(x: Int): (y: Int) { ensure from: y = x }
 --~^ error: `from` is a Lean keyword, so it cannot be declared
 
 -- `at` is still a method.
-comp c2 { in s: String pub out y: String := s.at(0) }
+proc c2(s: String): (y: String) { out y := s.at(0) }
 
 -- A use of one finds no declaration.
-comp c3 { in x: Int pub out y: Int ensure r: y = do }
+proc c3(x: Int): (y: Int) { ensure r: y = do }
 --~^ error: cannot find `do` in this scope
 
 fn twice(for: Int): Int := for + for
 --~^ error: `for` is a Lean keyword, so it cannot be declared
 
-comp c4 { in x: Int pub out p? ensure r: p? iff match x { Type => Type > 0 } }
+proc c4(x: Int): (p?) { ensure r: p? iff match x { Type => Type > 0 } }
 --~^ error: `Type` is a Lean keyword, so it cannot be declared
 
-comp c5 { in x: Int pub out y: Int := let have := x in have }
+proc c5(x: Int): (y: Int) { out y := let have := x in have }
 --~^ error: `have` is a Lean keyword, so it cannot be declared
 
 expect e: forall (show: Bool), show = show

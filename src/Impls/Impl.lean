@@ -1,6 +1,6 @@
 -- keep-sorted start
+import Impls.Calls
 import Impls.Check
-import Impls.Inst
 import Impls.View
 import Reqs.Impl
 -- keep-sorted end

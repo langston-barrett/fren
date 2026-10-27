@@ -8,7 +8,7 @@ import FrenCore.Enumeration
 # Checking by enumeration in Lean (`Reqs/Check#checking-by-enumeration`)
 
 The Lean-hosted front end's side of `Fren.Core.Enumeration`: each atom, a
-proposition over the component's variables, is compiled, with Lean's
+proposition over the procedure's variables, is compiled, with Lean's
 evaluator, into a function of an assignment of the slots, which reads each
 variable's value from its slot's values and decides the proposition. The
 defined outputs are replaced by their definitions, the abstract types by
@@ -139,7 +139,7 @@ instance : Inhabited (Array Nat → Array Nat → Bool) := ⟨fun _ _ => false�
 
 /-- Enumerates the checks of `c` set to enumeration
 (`Reqs/Check#checking-by-enumeration`), as `checkComp`'s hook
-(`EnumHook`): `full` is its comp, over the locals `fvs` of its variables
+(`EnumHook`): `full` is its procedure, over the locals `fvs` of its variables
 and `ufs` of the abstract types and functions it uses, of which `fns` are
 the functions. -/
 def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns : Array (Name × Expr × Nat × Bool))

@@ -15,12 +15,7 @@ mod guard_test
 
 enum Mode { Off, Heat }
 
-comp pick {
-  in m: Mode
-  in t: Int
-  pub out y: Int
-  pub out z: Int
-
+proc pick(m: Mode, t: Int): (y: Int, z: Int) {
   ensure r: y = match m { Mode::Off if t > 0 => 1, Mode::Off => 2, Mode::Heat => 3 }
   ensure s: z = match t { n if n > 0 => 1, n if n <= 0 => 2 }
 }

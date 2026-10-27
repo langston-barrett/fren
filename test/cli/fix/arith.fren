@@ -6,15 +6,11 @@ set_option fren.lint.membership_chain "warn"
 
 fn f(Int): Int
 
-pub comp c {
-    in x: Int
-    in y: Int
-    in s: String
-    in q: Seq<Int>
-    pub out a? := (((x > 0))) and f(((y))) > 0
-    pub out b: Int := - -(x + y) * 2 + f(-(-(x))) + f(- - -y)
-    pub out d: Int := (x + y) * -1 + -1 * f(x) + x * (-1) * -1
-    pub out e? := x >= y + 1 and 1 + y <= x and x - 1 >= y and y <= x - 1 and x - 1 >= y + 1
-    pub out g? := 0 < s.len or 1 <= q.len or s.len != 0 or q.len < 1 or 0 = s.len
-    pub out h? := (x != 1 and x != 2 and x != y) or (q != [] and (y = 1 or y = q[0] or y = 2))
+pub proc c(x: Int, y: Int, s: String, q: Seq<Int>): (a?, b: Int, d: Int, e?, g?, h?) {
+    out a? := (((x > 0))) and f(((y))) > 0
+    out b := - -(x + y) * 2 + f(-(-(x))) + f(- - -y)
+    out d := (x + y) * -1 + -1 * f(x) + x * (-1) * -1
+    out e? := x >= y + 1 and 1 + y <= x and x - 1 >= y and y <= x - 1 and x - 1 >= y + 1
+    out g? := 0 < s.len or 1 <= q.len or s.len != 0 or q.len < 1 or 0 = s.len
+    out h? := (x != 1 and x != 2 and x != y) or (q != [] and (y = 1 or y = q[0] or y = 2))
 }

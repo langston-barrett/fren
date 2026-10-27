@@ -1,8 +1,6 @@
 -- The `mod` of a remainder is on the line of its left operand: at the
 -- start of a line, `mod` starts a module, so this is not `x mod 2`.
-comp c {
-    in x: Int
-    pub out r: Int
+proc c(x: Int): (r: Int) {
 
     ensure e: r = x
     --~^[hosted] error: unexpected token 'mod'; expected '}'

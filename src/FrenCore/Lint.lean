@@ -750,7 +750,7 @@ def outputLints (defined : Bool) (mentioned : List Mention) (nReqs : Nat) (equat
 def constantOutputMsg (x : Name) : Msg :=
   { code? := some "F0719", headline := s!"defined output `{x}` is the same in every behaviour"
     label? := some "mentions no variable"
-    notes := #["help: make it a `const`, which is shared by every component"] }
+    notes := #["help: make it a `const`, which is shared by every procedure"] }
 
 def definableOutputMsg (x : Name) (req : Name) : Msg :=
   { code? := some "F0720", headline := s!"`{req}` could be the definition of `{x}`"
@@ -1076,8 +1076,8 @@ def trivialCoverMsg (goal : Name) : TrivialCover → Msg
       notes := #["help: write the scenario as a conjunction, such as `c? and d?` for `when c?, d?`"] }
   | .restates k n =>
     { code? := some "F0820", headline := s!"cover goal `{goal}` is written the same as the {k} `{n}`"
-      label? := some "holds in every behaviour that meets the component"
-      notes := #["note: it is met unless the component allows no behaviour, which the vacuity check reports"] }
+      label? := some "holds in every behaviour that meets the procedure"
+      notes := #["note: it is met unless the procedure allows no behaviour, which the vacuity check reports"] }
 
 /-! ## Settings -/
 
@@ -1182,7 +1182,7 @@ def finishReports (rs : Array (LintReport α)) : Array (LintReport α × Severit
 
 /-- A `use` declared in the file being elaborated. -/
 structure UseRecord where
-  /-- Its scope: the module, or the path of the component containing it. -/
+  /-- Its scope: the module, or the path of the procedure containing it. -/
   module : Name
   /-- The full path of the imported item; for a glob, of the opened enum. -/
   target : Name
@@ -1204,7 +1204,7 @@ structure UsedName where
 /-- The import that the first segment of a path in the scope `from_`
 resolves through (`modules::resolve`), if it resolves through one: a named
 import, or the enum opened by `*`. The `module` of the result is the scope
-of that import: a component's imports shadow its module's scope. -/
+of that import: a procedure's imports shadow its module's scope. -/
 def Table.importVia (t : Table) (from_ : Name) (segs : Array Name) : Option UsedName := do
   let n ← segs[0]?
   let comp := t.isComp from_ && (t.uses.getD from_ #[]).any (·.brings t n)
@@ -1310,11 +1310,20 @@ def fixSelected (only skip : Array Lint) (l : Lint) : Bool :=
 /-- The parse errors whose fixes `fren fix` makes, which migrate a spec from
 an earlier syntax: types and declarations written with parentheses for
 their type arguments and type parameters (`lint::migration_step`). -/
-def migrationCodes : List String := ["F0155", "F0156"]
+def migrationCodes : List String := ["F0155", "F0156", "F0158", "F0159", "F0160"]
 
 /-- The most migration fixes that `fren fix` makes in a file. Each makes
 the file's earlier syntax shorter, so this bounds only a bug. -/
 def maxMigrations : Nat := 1000
+
+/-- The code of the static error whose fix writes an instance as a call
+(`lint::call_migration_step`). -/
+def callMigrationCode : String := "F0420"
+
+/-- Whether `fren fix` makes another round of the fixes of the instances
+(`F0420`), which need name resolution: whether there are any (`fixes`),
+and how many rounds it has made (`lint::call_migration_step`). -/
+def callMigrationApplies (fixes : Bool) (round : Nat) : Bool := fixes && round < maxMigrations
 
 /-- What `fren fix` does next to migrate a file (`lint::migration_step`). -/
 inductive MigrationStep where
@@ -1393,12 +1402,12 @@ inductive Named where
 
 def Named.describe : Named → String
   | .module => "module"
-  | .component => "component"
+  | .component => "procedure"
   | .variable => "variable"
   | .field => "field"
   | .binder => "binder"
   | .function => "function"
-  | .instance => "instance"
+  | .instance => "call"
   | .constraint => "constraint"
   | .global => "global expectation"
   | .enumeration => "enum"
@@ -1732,13 +1741,13 @@ def moduleNameMsg? (what : Named) (mod n : Name) : Option Msg := do
 
 /-! ## Unused variables -/
 
-/-- The message of `unused_variables` for a variable of a component
+/-- The message of `unused_variables` for a variable of a procedure
 (`binder` false) or a binder of a global expectation. -/
 def unusedVariableMsg (n : Name) (binder : Bool) (output : Bool) : Msg :=
   { code? := some Lint.unusedVariables.code
     headline := s!"unused {if binder then "binder" else "variable"} `{n}`", label? := some "never mentioned"
     notes := (if binder then #[] else if output then #["note: nothing constrains it, so it can take any value"]
-        else #["note: nothing in its component depends on it"])
+        else #["note: nothing in its procedure depends on it"])
       ++ #[s!"help: remove it, or mention it in {if binder then "the expectation" else "a constraint"}"] }
 
 /-- A parameter of a defined function that its body never mentions. -/
@@ -6183,7 +6192,7 @@ def redundantBoolTypeMsg (n : Name) : Msg :=
     notes := #["note: a name that ends in `?` is a `Bool`, and only such a name is"]
     fixes := #[{ msg := "remove `: Bool`", replacement := "" }] }
 
-/-- What a variable of a component is, as `manual_nat` sees it
+/-- What a variable of a procedure is, as `manual_nat` sees it
 (`lint::NatRole`). -/
 inductive NatRole where
   | input
@@ -6191,7 +6200,7 @@ inductive NatRole where
   | definedOutput
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- A variable of a component, as `manual_nat` sees it
+/-- A variable of a procedure, as `manual_nat` sees it
 (`lint::NatVariable`): its name, what it is, and whether it is declared an
 `Int`. -/
 structure NatVariable where
@@ -6238,14 +6247,14 @@ def natBounds (v : NatVariable) (c : NatConjunct) : Bool :=
       | .output => !c.assumption
       | .definedOutput => false)
 
-/-- The position in `cs`, the conjuncts of a component's assumptions and
+/-- The position in `cs`, the conjuncts of a procedure's assumptions and
 guarantees in order, of the bound of `v` that `manual_nat` reports, if it
-fires, where `kept` says that an instance, a refinement or an `impl` in
+fires, where `kept` says that a call, a refinement or an `impl` in
 the file gives `v` an `Int` (`lint::manual_nat`). -/
 def manualNatAt (v : NatVariable) (cs : List NatConjunct) (kept : Bool) : Option Nat :=
   if kept then none else cs.findIdx? (natBounds v)
 
-/-- Where `manual_nat` fires in a component, given its own variables and
+/-- Where `manual_nat` fires in a procedure, given its own variables and
 the conjuncts of each of its assumptions and guarantees, before the end of
 the file shows which variables are kept `Int`s: for each variable it
 fires on, its position, and the constraint and conjunct of its bound. -/
@@ -6256,7 +6265,7 @@ def manualNatBounds (vars : Array NatVariable) (props : Array (Array NatConjunct
     let (_, p, k) ← flat[j]?
     return (i, p, k)
 
-/-- A type that a file gives a variable of a component, by an instance's,
+/-- A type that a file gives a variable of a procedure, by a call's,
 a refinement's or an `impl`'s binding, or a refinement that reads it by
 name (`lint::Given`). -/
 inductive Given where
@@ -6264,11 +6273,11 @@ inductive Given where
   | givenNat
   deriving Inhabited, DecidableEq, Repr
 
-/-- Which component a refinement reading a variable by name gives a value,
+/-- Which procedure a refinement reading a variable by name gives a value,
 the concrete one if `true`, and the type it gives, from whether the
-variable is an input of the abstract component and the types of the
-abstract and the concrete component's variables: an input's value flows
-from the abstract component to the concrete one, and an output's back
+variable is a parameter of the abstract procedure and the types of the
+abstract and the concrete procedure's variables: a parameter's value flows
+from the abstract procedure to the concrete one, and an output's back
 (`lint::refinement_given`). -/
 def refinementGiven (input : Bool) (abstractTy concreteTy : Given) : Bool × Given :=
   if input then (true, abstractTy) else (false, concreteTy)
@@ -6279,8 +6288,8 @@ def manualNatMsg (x : String) (input : Bool) (prop bound : String) : Msg :=
   let kind := if input then "assumption" else "guarantee"
   { code? := some Lint.manualNat.code, headline := s!"`{x}` is never negative, so it can be a `Nat`"
     label? := some s!"`{x}` is at least 0 by this {kind}"
-    notes := #[s!"note: a `Nat` {if input then "input" else "output"} brings this {kind} with its type"]
-      ++ (if input then #[s!"note: an instance must then bind `{x}` to a `Nat`"] else #[])
+    notes := #[s!"note: a `Nat` {if input then "parameter" else "output"} brings this {kind} with its type"]
+      ++ (if input then #[s!"note: a call must then pass a `Nat` for `{x}`"] else #[])
       ++ #[s!"help: declare `{x}: Nat`, and remove `{bound}` from `{prop}`, where nothing binds `{x}` to an `Int`"] }
 
 /-- Whether `trivial_match` fires on a `match` of `nArms` arms, whose first
@@ -6427,7 +6436,7 @@ def tooManyLinesMsg (what : Named) (n : Name) (lines : Nat) : Msg :=
     label? := some "longer than 100 lines"
     notes := #["note: blank lines and comments are not counted",
       if what == .function then "help: move parts of it into smaller functions, and apply them"
-      else "help: move parts of it into smaller components, and make them its instances"] }
+      else "help: move parts of it into smaller procedures, and call them"] }
 
 /-- Whether an arm that matches one variant gives it back, where
 `sameVariant` says that its body builds that variant, `binders` are the
@@ -6470,7 +6479,7 @@ def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
     | some true, "ensure" => ("always `true`", "it constrains nothing")
     | some true, _ => ("always `true`", "it claims nothing")
     | some false, "assume" => ("always `false`", "no input meets it, so every guarantee holds vacuously")
-    | some false, "ensure" => ("always `false`", "no behaviour meets it, so the component is not realizable")
+    | some false, "ensure" => ("always `false`", "no behaviour meets it, so the procedure is not realizable")
     | some false, _ => ("always `false`", "it always fails")
     | none, _ => ("the same in every behaviour",
       "it is either always true, and says nothing, or always false")
@@ -6523,7 +6532,7 @@ Each token is its text, and whether a line ends before it. -/
 def trailingCommas (toks : Array (String × Bool)) : Array Nat :=
   (Array.range toks.size).filter fun i =>
     toks[i]!.1 == "," && toks[i + 1]?.any fun (t, lineBreak) =>
-      (t == "}" || t == "]") && unnecessaryTrailingComma lineBreak
+      (t == "}" || t == "]" || t == ")") && unnecessaryTrailingComma lineBreak
 
 /-- A trailing comma on the line of the `closer` of its list. -/
 def unnecessaryTrailingCommaMsg (closer : String) : Msg :=
@@ -6570,15 +6579,17 @@ def inconsistentStructConstructorMsg (r : Name) (declared : Array Name) (fixed? 
 
 /-! ## The order of members -/
 
-/-- A member of a component, by its place in the order that
+/-- A member of a procedure's block, by its place in the order that
 `arbitrary_source_item_ordering` asks for (`lint::MemberKind`). A
 `set_option fren.evidence ... in` is part of the member after it. -/
 inductive MemberKind where
   | use
-  | input
   | assumption
-  | output
-  | inst
+  | «exists»
+  | «let»
+  /-- `out r := e`, the definition of a result, in the place of `let`. -/
+  | define
+  | call
   | guarantee
   | expectation
   | cover
@@ -6587,20 +6598,22 @@ inductive MemberKind where
 /-- Its place in the order (`lint::rank`). -/
 def MemberKind.rank : MemberKind → Nat
   | .use => 0
-  | .input => 1
-  | .assumption => 2
-  | .output => 3
-  | .inst => 4
+  | .assumption => 1
+  | .exists => 2
+  | .let => 3
+  | .define => 3
+  | .call => 4
   | .guarantee => 5
   | .expectation => 6
   | .cover => 7
 
 def MemberKind.describe : MemberKind → String
   | .use => "a `use`"
-  | .input => "an input"
-  | .output => "an output"
   | .assumption => "an assumption"
-  | .inst => "an instance"
+  | .exists => "an `exists`"
+  | .let => "a `let`"
+  | .define => "a result's definition"
+  | .call => "a call"
   | .guarantee => "a guarantee"
   | .expectation => "an expectation"
   | .cover => "a cover goal"
@@ -6631,7 +6644,7 @@ def keepsMentions (kinds : Array MemberKind) (mentions : List (Nat × Nat)) : Bo
     | some a, some b => mentionKept a b (j < i)
     | _, _ => false
 
-/-- The members of a component in order, as indices: by kind, and as written
+/-- The members of a procedure in order, as indices: by kind, and as written
 within a kind. -/
 def canonicalOrder (kinds : Array MemberKind) : Array Nat :=
   let rank (i : Nat) := (kinds[i]?.map (·.rank)).getD 0
@@ -6645,7 +6658,7 @@ def lineRestEnd? (src : Array Char) (i : Nat) : Option Nat := do
   if rest.isEmpty || rest.startsWith "--" then some (nl + 1) else none
 
 /-- The whole lines that each member is written on, from the line after the
-`{` of its component, or after the previous member's last line, to the end
+`{` of its procedure, or after the previous member's last line, to the end
 of its own last line: the comments above it are its own. `none` unless
 each member starts its line, and only a comment follows it on its last
 one. `openStop` is just after the `{`. -/
@@ -6692,7 +6705,7 @@ def memberOrderFix? (src : Array Char) (openStop : Nat) (members : Array Range) 
 def memberOrderMsg (member before : MemberKind) : Msg :=
   { code? := some Lint.arbitrarySourceItemOrdering.code, headline := s!"{member.describe} after {before.describe}"
     label? := some "out of order"
-    notes := #["note: the members of a component are written `use`, `in`, `assume`, `out`, `inst`, `ensure`, `expect`, then `cover`"] }
+    notes := #["note: the members of a procedure are written `use`, `assume`, `exists`, `let` and `out`, `call`, `ensure`, `expect`, then `cover`"] }
 
 /-! ## Expectations -/
 
@@ -6797,7 +6810,7 @@ def SettingRecord.replace (settings : Array (SettingRecord × α)) (before : Lin
 
 /-- Whether `unused_assumption` fires on an assumption, from the number of
 variables it mentions, whether all are inputs, whether one of them, or an
-uninterpreted function it applies, is used in the component, and whether
+uninterpreted function it applies, is used in the procedure, and whether
 one is read in the file (`lint::unused_assumption`). -/
 def unusedAssumption (nMentioned : Nat) (allInputs mentioned read : Bool) : Bool :=
   nMentioned > 0 && allInputs && !mentioned && !read
@@ -6822,11 +6835,11 @@ def usedAssumptions (mentions : Array (Array Name)) (used : Array Name) : Array 
     used := used ++ mentions[i]!
   return out
 
-/-- An assumption that `unused_assumption` may fire on: its component, its
+/-- An assumption that `unused_assumption` may fire on: its procedure, its
 name, the inputs it mentions, those and the uninterpreted functions it
-applies (`fnLink`), and the level of the lint at the component. It fires
+applies (`fnLink`), and the level of the lint at the procedure. It fires
 unless the file reads one of its links, or one that a used assumption of
-the component mentions. -/
+the procedure mentions. -/
 structure AssumptionRecord where
   component : Name
   name : Name
@@ -6840,17 +6853,17 @@ def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
   let together := if linked.isEmpty then #[] else
     #[s!"note: it is linked to {show_ linked}, reported too, which may need it: remove them together"]
   { code? := some Lint.unusedAssumption.code
-    headline := s!"the assumption `{name}` constrains only inputs that nothing uses"
-    label? := some "constrains only unused inputs"
-    notes := #[s!"note: no guarantee, expectation, definition or binding mentions {show_ inputs}, \
+    headline := s!"the assumption `{name}` constrains only parameters that nothing uses"
+    label? := some "constrains only unused parameters"
+    notes := #[s!"note: no guarantee, expectation, definition, argument or binding mentions {show_ inputs}, \
         nor does another assumption tie them to a used variable"] ++ together ++
-      #["help: remove the assumption and its inputs, or use them"] }
+      #["help: remove the assumption and its parameters, or use them"] }
 
 /-- The messages of `unused_assumption`, given what the file's global
-expectations read through instances, or apply (`fnLink`), its instances
-bind, and its refinements read of their abstractions: each read's
-component and input or function. An assumption is read when it mentions a
-read input, or one that a read assumption of its component mentions. Each
+expectations read through calls, or apply (`fnLink`), its calls
+pass, and its refinements read of their abstractions: each read's
+procedure and parameter or function. An assumption is read when it mentions a
+read parameter, or one that a read assumption of its procedure mentions. Each
 message names the other reported assumptions linked to it. -/
 def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
     Array (LintReport α) :=
@@ -6903,7 +6916,7 @@ def unrelatedBindersMsg (name : String) (groups : Array (Array Name)) : Msg :=
 
 /-- Whether `unnecessary_struct_initialization` fires on a record literal
 of `n` fields, from whether each field's value reads that field of some
-`r`, `r` is written the same in each, is a value rather than an instance,
+`r`, `r` is written the same in each, is a value rather than a call,
 and has the record's type (`lint::unnecessary_struct_initialization`). -/
 def unnecessaryStructInit (n : Nat) (readsOwn same value sameType : Bool) : Bool :=
   n > 0 && readsOwn && same && value && sameType

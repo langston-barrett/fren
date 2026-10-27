@@ -5,8 +5,7 @@ mod generics_newtype_counterexample
 struct Ms(Int)
 enum Opt<T> { None, Some(T) }
 
-comp c {
-    in m: Opt<Ms>
+proc c(m: Opt<Ms>) {
     expect e: m = Opt::None
     --~^ error: counterexample: m = Opt::Some(Ms(0))
 }

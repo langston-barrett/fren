@@ -11,11 +11,7 @@ pub enum Tree { Leaf, Node(Tree, Int) }
 pub struct List { x: Int }
 pub fn max(a: Int, b: Int): Int := a.max(b)
 
-comp c {
-    in x: Option
-    in t: Tree
-    in l: List
-    pub out y: Int
+proc c(x: Option, t: Tree, l: List): (y: Int) {
     ensure r: y = max(l.x, 0)
     expect some: when x = Option::Some(3), x != Option::None
     expect tree: when t = Tree::Node(Tree::Leaf, 1), t != Tree::Leaf

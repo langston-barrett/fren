@@ -31,20 +31,16 @@ fn mismatch<T>(x: T): Int := x  --~ error: type mismatch: expected `Int`, found 
 fn ordered?<T>(a: T, b: T) := a < b  --~ error: type mismatch: expected `Int`, found `T`
 
 -- Type arguments are inferred at each application.
-comp unknown {
-    pub out c?
+proc unknown(): (c?) {
     ensure r: c? iff is_none?(Option::None)  --~ error: cannot infer the type arguments of `generic_functions_static::is_none?`
 }
-comp argument {
-    in x: Option<Int>
-    pub det out y: Int := unwrap_or(x, true)  --~ error: type mismatch: expected `Int`, found `Bool`
+proc argument(x: Option<Int>): (det y: Int) {
+    out y := unwrap_or(x, true)  --~ error: type mismatch: expected `Int`, found `Bool`
 }
-comp from_expected {
-    in x: Int
-    pub det out y? := id(x)  --~ error: type mismatch: expected `Bool`, found `Int`
+proc from_expected(x: Int): (det y?) {
+    out y? := id(x)  --~ error: type mismatch: expected `Bool`, found `Int`
 }
-comp arity {
-    in x: Int
-    pub det out y: Int := id(x, 2)  --~ error: `generic_functions_static::id` takes 1 argument, but 2 were given
+proc arity(x: Int): (det y: Int) {
+    out y := id(x, 2)  --~ error: `generic_functions_static::id` takes 1 argument, but 2 were given
 }
 --@ exit: 2

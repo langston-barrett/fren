@@ -7,25 +7,15 @@ set_option fren.lint.assertions_on_constants "allow"
 const LOW: Int := 0
 const HIGH: Int := 10
 
-comp band {
-    in temp: Int
-    in target: Int
-
+proc band(temp: Int, target: Int): (too_cold?, too_hot?) {
     assume sane: LOW <= target and target <= HIGH
-    pub out too_cold?
-    pub out too_hot?
-    out secret: Int
+    exists secret: Int
     ensure cold: too_cold? iff temp < target - 2
     ensure hot: too_hot? iff temp > target + 2
     ensure s: secret = temp
 }
 
-comp fast_band {
-    in temp: Int
-    in target: Int
-    pub out too_cold?
-    pub out too_hot?
-
+proc fast_band(temp: Int, target: Int): (too_cold?, too_hot?) {
     ensure cold: too_cold? iff temp + 2 < target
     ensure hot: too_hot? iff temp - 2 > target
 }

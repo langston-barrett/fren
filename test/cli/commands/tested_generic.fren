@@ -5,10 +5,8 @@ pub enum Option<T> { None, Some(T) }
 pub struct Pair<A, B> { fst: A, snd: B }
 
 set_option fren.evidence "tested" in
-pub comp picks {
-    in x: Option<Int>
-    in p: Pair<Option<Bool>, Int>
-    pub det out got: Int := match x { Option::Some(n) => n, Option::None => p.snd }
+pub proc picks(x: Option<Int>, p: Pair<Option<Bool>, Int>): (det got: Int) {
+    out got := match x { Option::Some(n) => n, Option::None => p.snd }
 
     expect positive: got > 0
     expect flag: p.fst != Option::Some(false)

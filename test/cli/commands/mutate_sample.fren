@@ -1,18 +1,12 @@
---@ args: mutate --list --sample 3 --seed 1 --comp m::c
+--@ args: mutate --list --sample 3 --seed 1 --proc m::c
 -- Three of `m::c`'s mutants, chosen by the seed; `m::d`'s are not listed.
 set_option fren.lint.chainable_comparison "allow"
 mod m
 
-pub comp c {
-    in x: Int
-    pub out y?
-
+pub proc c(x: Int): (y?) {
     ensure r: y? iff (x > 1 and x < 9 and x != 5)
 }
 
-pub comp d {
-    in x: Int
-    pub out y?
-
+pub proc d(x: Int): (y?) {
     ensure r: y? iff x > 1
 }

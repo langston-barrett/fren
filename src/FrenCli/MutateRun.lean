@@ -13,8 +13,8 @@ What `fren mutate` (`FrenCli.mutate`) decides about each mutant, from the
 results of its checks (`Reqs/Mutate`): whether it is killed, whether the
 solver shows it equivalent to the original, and how it is reported.
 
-A mutant's checks are those of the components whose formulas it changes:
-the checks of any other component read the same formulas, so give the
+A mutant's checks are those of the procedures whose formulas it changes:
+the checks of any other procedure read the same formulas, so give the
 same results.
 -/
 
@@ -39,7 +39,7 @@ def By.ofName? : String → Option By
 def By.solves (b : By) : Bool := b != .testing
 def By.tests (b : By) : Bool := b != .solver
 
-/-- A component, global expectation, refinement, or body of a function or
+/-- A procedure, global expectation, refinement, or body of a function or
 value of a constant with tables, with the checks that `fren check` runs on
 it. -/
 structure Todo where
@@ -64,7 +64,7 @@ def Todo.key (t : Todo) : String :=
   else if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
   else if t.refinement then s!"refine {t.comp.path}" else s!"comp {t.comp.path}"
 
-/-- The results of a component, each with the key of its check. The
+/-- The results of a procedure, each with the key of its check. The
 definedness checks of a constraint are one check, which passes when every
 index in it is in range: an index is named only by its position, which a
 mutant that adds or drops an index changes. So are its completeness
@@ -152,7 +152,7 @@ def equivalenceTimeout : Nat := 1
 
 /-- Whether the solver shows that the spec `st'` of a mutant means what the
 original `st` means (`Reqs/Mutate#equivalent-mutants`): each defined function, and each
-formula of each component, global expectation and refinement, is equivalent to the
+formula of each procedure, global expectation and refinement, is equivalent to the
 original's. `prelude` is `st`'s, indexed, and `cache` holds the answers to
 the queries asked before. -/
 def equivalent (st : State) (prelude : Prelude) (st' : State) (timeout : Nat) (cache : QueryCache) : IO (Option Bool) := do
@@ -188,7 +188,7 @@ def equivalent (st : State) (prelude : Prelude) (st' : State) (timeout : Nat) (c
   return result
 
 /-- The mutants to run (`Reqs/Mutate#selecting-mutants`): those of the
-component `comp?`, if any; those named by `ids`, if any; and those that
+procedure `comp?`, if any; those named by `ids`, if any; and those that
 `touched` keeps, such as those of the items that a patch touches. Of
 those, `sample?` of them, if given, chosen by `seed`; and of those, the
 shard `k` of `n`, if `shard?` is `(k, n)`. A mutant is sampled, and
@@ -226,7 +226,7 @@ def survivedMsg (m : Mutant) (mayBeEquivalent inconclusive : Bool) : Msg :=
 def missedMsg (m : Mutant) (tests : Nat) : Msg :=
   { code? := some "F0614", headline := s!"testing does not reject this change to `{Fren.Core.showComp m.item}`, which the checks do"
     label? := some m.change
-    notes := #[s!"note: the mutant is `{m.id}`", s!"note: none of {tests} tests per component found a behaviour that tells it apart"]
+    notes := #[s!"note: the mutant is `{m.id}`", s!"note: none of {tests} tests per procedure found a behaviour that tells it apart"]
     fixes := #[{ msg := "the mutant", replacement := m.after }] }
 
 def plural (n : Nat) (w : String) : String := s!"{n} {w}{if n == 1 then "" else "s"}"

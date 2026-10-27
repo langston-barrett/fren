@@ -1,2 +1,2 @@
 -- `manual_rem_euclid`.
-comp c { in x: Int pub out n: Int ensure r: n = (x mod 12 + 12) mod 12 }
+proc c(x: Int): (n: Int) { ensure r: n = (x mod 12 + 12) mod 12 }

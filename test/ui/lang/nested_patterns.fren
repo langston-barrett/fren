@@ -6,11 +6,7 @@ pub enum Shape { Circle(Int), Square(Int), Empty }
 pub enum Reply { Ok(Shape), Err(Int) }
 pub enum Pair { Both(Shape, Shape) }
 
-comp nested {
-    in r: Reply
-    pub det out size: Int
-    pub det out round?
-
+proc nested(r: Reply): (det size: Int, det round?) {
     ensure sized_def: size = match r {
         Reply::Ok(Shape::Circle(radius)) => 3 * radius,
         Reply::Ok(Shape::Square(side)) => side,
@@ -26,10 +22,7 @@ comp nested {
 }
 
 -- Or-patterns within a payload, and arms that overlap earlier ones only in part.
-comp inner_or {
-    in r: Reply
-    pub det out kind: Int
-
+proc inner_or(r: Reply): (det kind: Int) {
     ensure kinds_def: kind = match r {
         Reply::Ok(Shape::Circle(_) | Shape::Square(_)) => 1,
         Reply::Ok(_) => 2,
@@ -41,10 +34,7 @@ comp inner_or {
 }
 
 -- Two payloads, each matched: the arms cover every pair together.
-comp pairs {
-    in p: Pair
-    pub det out same?
-
+proc pairs(p: Pair): (det same?) {
     ensure same_def: same? iff match p {
         Pair::Both(Shape::Empty, Shape::Empty) => true,
         Pair::Both(Shape::Circle(a), Shape::Circle(b)) => a = b,
@@ -57,11 +47,7 @@ comp pairs {
 }
 
 -- A binder at any depth, and one for the whole scrutinee, shadowing with `!`.
-comp binders {
-    in r: Reply
-    in radius: Int
-    pub det out x: Int
-
+proc binders(r: Reply, radius: Int): (det x: Int) {
     ensure xs_def: x = match r {
         Reply::Ok(Shape::Circle(radius!)) => radius,
         Reply::Ok(other) => match other { Shape::Square(s) => s, _ => radius },
@@ -78,12 +64,8 @@ comp binders {
 pub enum Size { Fixed(Int), Any }
 pub enum Request { Read(Size), Stop }
 
-comp guarded {
-    in r: Request
-    in q: Seq<Int>
-
+proc guarded(r: Request, q: Seq<Int>): (det first: Int) {
     assume long: match r { Request::Read(Size::Fixed(n)) => q.len > n and n >= 0, _ => q != [] }
-    pub det out first: Int
 
     ensure first_def: first = match r {
         Request::Read(Size::Fixed(n)) => q[n],

@@ -5,24 +5,19 @@ struct P { x: Int, y: Int }
 struct T { a: Int, b: Int, c: Int }
 struct Q { a: Int, b: Int, c: Int }
 
-comp records {
-    in p: P
-    in t: T
-    in u: T
-    in q: Q
-    in n: Int
-    pub out o1: P
-    pub out o2: T
-    pub out o3: T
-    pub out o4: T
-    pub out o5: T
-    pub out o6: T
-    pub out o7: P
-    pub out o8: T
-    pub out o9: T
-    pub out o10: T
-    pub out o11: T
-
+proc records(p: P, t: T, u: T, q: Q, n: Int): (
+    o1: P,
+    o2: T,
+    o3: T,
+    o4: T,
+    o5: T,
+    o6: T,
+    o7: P,
+    o8: T,
+    o9: T,
+    o10: T,
+    o11: T,
+) {
     -- Copies more than it gives.
     ensure m2: o2 = T { a := t.a, b := n + 1, c := t.c }      --~ warning: write `{ t with b := n + 1 }`
     -- From the value with the most copies.
@@ -46,22 +41,13 @@ comp records {
 }
 
 -- Not: every field a copy, or a value read from another record.
-comp records_not {
-    in t: T
-    in u: T
-    pub out o1: T
-    pub out o2: T
-
+proc records_not(t: T, u: T): (o1: T, o2: T) {
     ensure r1: o1 = { t with a := t.a }
     ensure r2: o2 = { t with a := u.a }
 }
 
-comp covers {
-    in x: Int
-
+proc covers(x: Int): (y: Int, z?) {
     assume positive: x > 0
-    pub out y: Int
-    pub out z?
 
     ensure r: y = x + 1
     ensure s: z? iff y > 5

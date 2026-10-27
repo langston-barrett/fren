@@ -1,6 +1,6 @@
 -- A type within angle brackets, written with parentheses (`F0155`).
 mod m
 pub enum Option<T> { None, Some(T) }
-comp c { in x: Option<Rel(Int, Bool)> }
+proc c(x: Option<Rel(Int, Bool)>) {}
 --~^ error: type arguments are written in angle brackets
 --@ exit: 2

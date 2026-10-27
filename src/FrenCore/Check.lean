@@ -55,7 +55,7 @@ abbrev Assignment := Array (Name × String)
 /-- Why a check failed or was inconclusive. -/
 inductive Detail where
   | none
-  /-- The comp's assumptions contradict each other. -/
+  /-- The procedure's assumptions contradict each other. -/
   | vacuousAssumptions (core : Array Name)
   /-- No outputs satisfy `core` on input `input`. -/
   | conflict (input : Assignment) (core : Array Name)
@@ -106,10 +106,10 @@ structure Clash where
 structure CheckResult where
   kind : CheckKind
   comp : Name
-  /-- The constraint checked, the instance, or the `det out`; `none` for
+  /-- The constraint checked, the call, or the `det` variable; `none` for
   checks of a whole comp. -/
   prop? : Option Name
-  /-- For `inst`: the instantiated comp, and its assumption checked; for
+  /-- For `inst`: the called procedure, and its assumption checked; for
   `precondition`, the applied function and its precondition; for
   `postcondition`, the function and its postcondition. -/
   target? : Option (Name × Name) := none
@@ -220,7 +220,7 @@ structure Backend (m : Type → Type) (F V : Type) where
   falseF : F
   notF : F → F
   conj : Array F → F
-  /-- `∃ outputs, f`, over the comp's `out`s. -/
+  /-- `∃ outputs, f`, over the procedure's outputs. -/
   existsOutputs : F → m F
   /-- `x = v` for variable `x`, if `v` can be used in a formula. -/
   pin : Name → V → m (Option F)
@@ -231,7 +231,7 @@ structure Backend (m : Type → Type) (F V : Type) where
   pinVariant : Name → V → m (Option (Variant × F))
   /-- `v`, written the way Fren writes values. -/
   render : Name → V → m String
-  /-- `f` with each variable `x` that is not an own `in` (instance variables
+  /-- `f` with each variable `x` that is not an own parameter (call variables
   too) replaced by `primed x`, a second copy of it. -/
   prime : F → F
   /-- `x = primed x`. -/
@@ -246,26 +246,26 @@ structure VarSig where
   role : Role
   /-- Shown in counterexamples. -/
   isPub : Bool
-  /-- A `det out`. -/
+  /-- A `det` variable. -/
   isDet : Bool := false
   deriving Inhabited
 
-/-- Universally quantified: not chosen by the comp (`Role.isUniversal`). -/
+/-- Universally quantified: not chosen by the procedure (`Role.isUniversal`). -/
 def VarSig.isIn (v : VarSig) : Bool := v.role.isUniversal
 
 /-- The name of the second copy of variable `n`, for `determinism`. Never a
 Fren identifier, so it cannot clash. -/
 def primed (n : Name) : Name := n.appendAfter "'"
 
-/-- An instance, with formulas over the instantiating comp's variables. -/
+/-- A call, with formulas over the calling procedure's variables. -/
 structure Inst (F : Type) where
   name : Name
   comp : Name
   bindings : F
-  /-- The instantiated comp's assumptions, requirements and instances. -/
+  /-- The called procedure's assumptions, requirements and calls. -/
   behaviour : F
-  /-- The instantiated comp's assumptions, each an obligation, after the
-  constraints of its inputs' types (`Reqs/Check#instance-assumptions`). -/
+  /-- The called procedure's assumptions, each an obligation, after the
+  constraints of its inputs' types (`Reqs/Check#call-assumptions`). -/
   assumes : Array (Name × F)
   /-- Which of `assumes` are its inputs' types' constraints, each with its
   type, as written. -/
@@ -278,7 +278,7 @@ inductive IndexPlace where
   | assume
   /-- A requirement, expectation, cover goal or definition. -/
   | prop
-  /-- A binding of the instance at this position. -/
+  /-- A binding of the call at this position. -/
   | binding (k : Nat)
   /-- The body or a postcondition of a function, or the value of a
   constant: the function's preconditions, and the conditions around it,
@@ -289,7 +289,7 @@ inductive IndexPlace where
 /-- An index `q[i]` of a constraint, with the formula that it is in range
 where it is evaluated: its guard implies its bounds. -/
 structure IndexSite (F : Type) where
-  /-- The constraint, the defined output, or the instance whose binding it is in. -/
+  /-- The constraint, the defined output, or the call whose binding it is in. -/
   prop : Name
   /-- Which index of it, in order. -/
   k : Nat
@@ -328,7 +328,7 @@ def TableGoal.target? : TableGoal → Option (Name × Name)
   | .precondition f p => some (f, p)
   | _ => none
 
-/-- A comp, with its items as backend formulas over its variables. -/
+/-- A procedure, with its items as backend formulas over its variables. -/
 structure Comp (F : Type) where
   path : Name
   vars : Array VarSig
@@ -343,7 +343,7 @@ structure Comp (F : Type) where
   `e`, each mentioning only earlier ones (`check::definitions`). -/
   defs : Array (Name × F × F) := #[]
   indexes : Array (IndexSite F) := #[]
-  /-- Some variable's type, its own or an instance's, is or contains an
+  /-- Some variable's type, its own or a call's, is or contains an
   abstract type. -/
   typesInterpreted : Bool := false
   /-- The questions about the cases of its tables and `match`es, and about
@@ -453,7 +453,7 @@ def renderModel (vars : Array VarSig) (model : Array (Name × V)) (keep : VarSig
     return some (v.name, ← b.render v.name val)
 
 /-- The variables of `model` that are universally quantified, and not also
-`out`s, for a realizability conflict. -/
+outputs, for a realizability conflict. -/
 def conflictInput (vars : Array VarSig) (model : Array (Name × V)) : Array (Name × V) :=
   model.filter fun (n, _) =>
     vars.any (fun v => v.name == n && v.isIn) && !vars.any fun v => v.name == n && v.role == .output
@@ -487,7 +487,7 @@ realizability. -/
 def Comp.substHyps (c : Comp F) (b : Backend m F V) (hs : Array (Name × F)) : Array (Name × F) :=
   hs.map fun (n, f) => (n, c.subst b .realizable f)
 
-/-- The assumptions, then what each instance contributes (`I`). -/
+/-- The assumptions, then what each call contributes (`I`). -/
 def Comp.hyps (c : Comp F) (b : Backend m F V) (upTo : Nat := c.insts.size) : Array (Name × F) :=
   c.assumes ++ (c.insts.extract 0 upTo).map fun i => (i.name, b.conj #[i.bindings, i.behaviour])
 
@@ -517,7 +517,7 @@ def conflictClashes (c : Comp F) (pinned : Array (Name × F)) (allPinned : Bool)
   else clashesOf b pinned ((c.substHyps b c.reqs).filter (core.contains ·.1)) c.clashOutputs examples
 
 /-- `realizable`: every input allowed by the assumptions has outputs
-satisfying the requirements, whatever the instances do
+satisfying the requirements, whatever the calls do
 (`check::realizability`). Defined outputs are replaced by their
 definitions, so that they are never under `∃` (`check::definitions`). A
 conflict comes with at most `examples` clashes of forced outputs
@@ -547,8 +547,8 @@ def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets :
     return result verdict (.unknown (if cexQ.reason.isEmpty then assumeQ.reason else cexQ.reason))
   return result verdict
 
-/-- `inst`: an assumption of instance `k`'s comp follows from the
-assumptions, `k`'s bindings and the earlier instances
+/-- `inst`: an assumption of call `k`'s procedure follows from the
+assumptions, `k`'s bindings and the earlier calls
 (`check::instance_assumption`). -/
 def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
@@ -557,14 +557,14 @@ def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResul
   let q ← b.query (c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)) a.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    -- Inputs and earlier instances; later ones (and `i`) are unconstrained.
+    -- Inputs and earlier calls; later ones (and `i`) are unconstrained.
     let later := (c.insts.extract k).map (·.name)
     let shown v := v.isIn && v.isPub && !later.contains v.name.getRoot
     return result verdict (.counterexample (← renderModel b c.vars model shown))
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
-/-- `expect`: the expectation follows from the assumptions, instances and
+/-- `expect`: the expectation follows from the assumptions, calls and
 requirements (`check::expectation`). -/
 def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
@@ -576,7 +576,7 @@ def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
-/-- `cover`: some behaviour satisfying the assumptions, instances and
+/-- `cover`: some behaviour satisfying the assumptions, calls and
 requirements satisfies the cover goal, which a model of the negated goal
 witnesses (`check::cover_goal`). -/
 def checkCover (c : Comp F) (g : Name × F) : m CheckResult := do
@@ -603,8 +603,8 @@ def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array 
 
 /-- `definedness`: the index is in range wherever it is evaluated, given the
 hypotheses of its place (`check::definedness`): for an assumption, the
-other assumptions; for a binding, the assumptions and earlier instances;
-otherwise the assumptions, instances and requirements. -/
+other assumptions; for a binding, the assumptions and earlier calls;
+otherwise the assumptions, calls and requirements. -/
 def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .definedness, comp := c.path, prop? := some site.prop, index? := some site.k, verdict, detail
@@ -637,7 +637,7 @@ def Comp.caseHyps (c : Comp F) (b : Backend m F V) (kind : CheckKind) (site : In
 or binding that it is in, which may rule out the behaviours that take the
 case only because the case is written in it, as in `ensure r: match k { A
 if ok? => true, _ => false }`, or in the definition of `y` beside `ensure
-q: y = 1` (`check::reachability`). A binding's own instance is never
+q: y = 1` (`check::reachability`). A binding's own call is never
 among them. -/
 def Comp.reachHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
   c.caseHyps b .reachability site
@@ -711,7 +711,7 @@ def checkVacuity (c : Comp F) (t : Name × F) : m CheckResult := do
 
 /-- `redundancy`: the assumption or requirement `p` does not follow from
 `others`: for an assumption, the other assumptions; for a requirement, the
-assumptions, instances and other requirements (`check::non_redundancy`). -/
+assumptions, calls and other requirements (`check::non_redundancy`). -/
 def checkRedundant (c : Comp F) (others : Array (Name × F)) (p : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .redundancy, comp := c.path, prop? := some p.1, verdict, detail }
@@ -721,8 +721,8 @@ def checkRedundant (c : Comp F) (others : Array (Name × F)) (p : Name × F) : m
   | .inconclusive => return result .inconclusive (.unknown q.reason)
   | .pass => return result .pass
 
-/-- `determinism`: any two behaviours satisfying the assumptions, instances
-and requirements on the same input agree on the `det out` `x`
+/-- `determinism`: any two behaviours satisfying the assumptions, calls
+and requirements on the same input agree on the `det` variable `x`
 (`check::determinism`). -/
 def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
@@ -739,7 +739,7 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
   | (verdict, _), _ => return result verdict
 
 /-- The checks of a global expectation (`Reqs/Lang/Global`), as a `Comp`
-whose path is the expectation's module, with one instance per binder (no
+whose path is the expectation's module, with one call per binder (no
 bindings, and no assumptions as obligations) and the expectation itself. -/
 def globalKinds : Array CheckKind :=
   #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability]
@@ -758,7 +758,7 @@ guarantees: whether they can hold together, and the tables and
 applications in its clauses. -/
 def contractKinds : Array CheckKind := #[.realizable, .completeness, .disjointness, .precondition, .reachability]
 
-/-- The checks run on a global expectation if `global`, else on a component
+/-- The checks run on a global expectation if `global`, else on a procedure
 (`check::applies`). -/
 def kindsFor (global : Bool) : Array CheckKind :=
   if global then globalKinds else CheckKind.all
@@ -847,7 +847,7 @@ elements, which a pattern type within an element type brings
 quantifiers that membership bounds. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
 
-/-- `inst` for each assumption of each instance, in order. -/
+/-- `inst` for each assumption of each call, in order. -/
 def checkInsts (c : Comp F) : m (Array CheckResult) := do
   return (← c.insts.zipIdx.mapM fun (i, k) => i.assumes.mapM (checkInst b c k i)).flatten
 
@@ -886,7 +886,7 @@ def checkRedundancies (c : Comp F) (vacuous : Array Name) (satisfied : Bool := f
     return none
   return assumes ++ reqs
 
-/-- `determinism` for each `det out`. -/
+/-- `determinism` for each `det` variable. -/
 def checkDets (c : Comp F) : m (Array CheckResult) :=
   c.vars.filterMapM fun v => do
     if v.isDet then return some (← checkDeterminism b c v.name)
@@ -895,7 +895,7 @@ def checkDets (c : Comp F) : m (Array CheckResult) :=
 /-- The results of `x` if `selected`, else none. -/
 def ifSelected (selected : Bool) (x : m (Array α)) : m (Array α) := if selected then x else pure #[]
 
-/-- All selected checks for one comp, in reporting order, each with the
+/-- All selected checks for one procedure, in reporting order, each with the
 backend `bk` gives for its kind. A realizability conflict has at most
 `examples` clash notes, `none` for no limit, and none where `interprets`
 says that their queries depend on an interpretation
@@ -934,7 +934,7 @@ formula that meets an application before its arguments and the arguments
 from left to right; and of each application, in the order `factsOf`
 gives. Both front ends give a query these and no others, so that they
 depend only on its formulas: a query never has a fact about an
-application that it does not mention, as of an instantiated component's
+application that it does not mention, as of a called procedure's
 expectation, and the formulas that `coverInterpreted` reads are all it
 uses. -/
 def appFacts [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F))) (hyps : Array (Name × F))
@@ -959,13 +959,13 @@ Both front ends' `factsOf` give these, after the application's `nat`. -/
 def postconditionFacts (implies : Array F → F → F) (pres : Array F) (posts : Array (Name × F)) : Array (Name × F) :=
   posts.map fun (n, q) => (n, implies pres q)
 
-/-- The component that checks the realizability of the contract of the
+/-- The procedure that checks the realizability of the contract of the
 uninterpreted function `f` (`Reqs/Check#contracts-of-uninterpreted-functions`),
 whose path is its module `path`: its parameters `params` as inputs, its
 value `value` as its one output, and its preconditions `pres` and
 postconditions `posts`, of the value, as its assumptions and guarantees,
 with `sites`, the questions about the tables and applications in its
-clauses. Both front ends check this component. -/
+clauses. Both front ends check this procedure. -/
 def contractComp (path f : Name) (params : Array Name) (value : Name) (pres posts : Array (Name × F))
     (sites : Array (TableSite F) := #[]) : Comp F :=
   { path, vars := params.map (fun x => { name := x, role := .input, isPub := true }) |>.push
@@ -973,8 +973,8 @@ def contractComp (path f : Name) (params : Array Name) (value : Name) (pres post
     assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f }
 
 /-- The formulas of the query of the cover goal `g` (`checkCover`): the
-definitions, the assumptions, each instance's bindings and the meaning of
-its component, the requirements, and the goal. No expectation or other
+definitions, the assumptions, each call's bindings and the meaning of
+its procedure, the requirements, and the goal. No expectation or other
 cover goal is among them. -/
 def Comp.coverFormulas (c : Comp F) (g : F) : Array F :=
   c.defs.map (·.2.1) ++ c.assumes.map (·.2) ++ c.insts.flatMap (fun i => #[i.bindings, i.behaviour])
@@ -1017,7 +1017,7 @@ def worst (sevs : Array Severity) : Option Severity :=
 
 structure Message where
   severity : Severity
-  /-- The comp item the message is about, or `none` for the comp itself. -/
+  /-- The procedure item the message is about, or `none` for the procedure itself. -/
   item? : Option Name
   /-- Point at the item's `when`/`unless` condition rather than its name. -/
   atTrigger : Bool := false
@@ -1138,7 +1138,7 @@ def inconclusiveAdvice (decidable : Bool) : Advice :=
   if decidable then .raiseTimeout else .namesConstructs
 
 /-- The messages for one result. Passing checks produce none, but for a
-cover goal's witness. `decidable` says whether the component is in the
+cover goal's witness. `decidable` says whether the procedure is in the
 decidable core: whether no construct of it opted out. A witness whose query
 depends on an interpretation (`CheckResult.interpreted`) is shown without
 its values. -/
@@ -1151,7 +1151,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       (atTrigger := false) (item? := r.prop?) : Message :=
     { severity := sev, item?, atTrigger, atIndex? := r.index?, atSite? := r.site?
       msg := { code? := some code, headline, label?, notes } }
-  let priv := if hasPrivateOuts then #["note: private `out`s are not shown"] else #[]
+  let priv := if hasPrivateOuts then #["note: private variables are not shown"] else #[]
   match r.verdict, r.detail with
   -- A cover goal's witness is information; the pass itself is silent
   -- (`Reqs/View#check-results`). Its values are shown only where they mean
@@ -1168,8 +1168,8 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .realizable, some (f, _) => s!"the postconditions of `{showComp f}` can hold"
       | .realizable, _ => s!"{subject} is realizable"
       | .inst, some (sub, a) => match r.patTy? with
-        | some ty => s!"the input `{a.getPrefix}` of `{showComp sub}` has its type `{ty}` for instance {subject}"
-        | none => s!"the assumption `{a}` of `{showComp sub}` holds for instance {subject}"
+        | some ty => s!"the parameter `{a.getPrefix}` of `{showComp sub}` has its type `{ty}` for call {subject}"
+        | none => s!"the assumption `{a}` of `{showComp sub}` holds for call {subject}"
       | .inst, none => s!"{subject} holds"
       | .expect, _ => s!"{subject} holds"
       | .cover, _ => s!"{subject} can be met"
@@ -1197,7 +1197,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .raiseTimeout => #["note: the solver gave up, so this check neither passed nor failed",
         "help: raise the time limit with `--timeout`, or simplify the constraints involved"]
       | .namesConstructs => #["note: the solver gave up, so this check neither passed nor failed",
-        "note: the component uses constructs outside the decidable core (`undecidable` is allowed), so the solver may never decide it",
+        "note: the procedure uses constructs outside the decidable core (`undecidable` is allowed), so the solver may never decide it",
         "help: bring it back into the decidable core, or raise the time limit with `--timeout`"]
     #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
@@ -1223,10 +1223,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
           "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
       ++ clashNotes
     else
-    -- Instance variables (`w.x`) cannot be assumed about.
+    -- Call variables (`w.x`) cannot be assumed about.
     let help := if input.all (·.1.isAtomic) then #["help: weaken one of them, or add an `assume` that rules this input out"]
       else #["help: weaken one of them",
-        "note: instance variables are part of the system: whatever the instances do, the component must cope"]
+        "note: call variables are part of the system: whatever the calls do, the procedure must cope"]
     #[one "F0601" s!"{subject} is not realizable" (some "not realizable")
       (#[conflictNote "input" input s!"no outputs satisfy {showNamesAnd names}"] ++ help) (item? := none)]
     ++ clashNotes
@@ -1288,10 +1288,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
           "help: correct the body or the postcondition, or add a precondition that rules this case out"]]
     else
     if let (.inst, some (sub, a)) := (r.kind, r.target?) then
-      #[one "F0604" s!"the assumption `{a}` of `{showComp sub}` may not hold for instance {subject}"
+      #[one "F0604" s!"the assumption `{a}` of `{showComp sub}` may not hold for call {subject}"
         (some s!"may violate `{showComp sub}::{a}`")
         #[s!"counterexample: {showAssignment vals}",
-          "help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it"]]
+          "help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it"]]
     else
     #[one "F0603" s!"expectation {subject} does not hold" (some "does not follow from the guarantees")
       (#[s!"counterexample: {showAssignment vals}"] ++ priv ++
@@ -1299,7 +1299,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .fail, .vacuous core =>
     if r.kind == .cover then
       let why := if core.isEmpty then "no behaviour satisfies it" else s!"it is ruled out by {showNames core}"
-      #[one "F0615" s!"cover goal {subject} cannot be met: {why}" (some "no behaviour that meets the component satisfies this")
+      #[one "F0615" s!"cover goal {subject} cannot be met: {why}" (some "no behaviour that meets the procedure satisfies this")
         #["note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow",
           "help: weaken the constraints that rule it out, or correct the goal"]]
     else
@@ -1314,7 +1314,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       #["help: if it is meant as a consequence, make it an `expect`, so that it is checked"]]
   | .fail, .nondeterministic input v₁ v₂ =>
     #[one "F0607" s!"{subject} is not determined by the inputs: for the input {showAssignment input}, it can be {v₁} or {v₂}"
-      (some "not determined") #["note: a `det out` must have exactly one value for each input",
+      (some "not determined") #["note: a `det` variable must have exactly one value for each input",
         "help: add guarantees that pin it down, or remove `det`"]]
   | .fail, _ =>
     match r.kind, r.goal? with
@@ -1345,7 +1345,7 @@ def noOutputsMsg (subject : String) (input : Assignment) (byCheck : Bool := fals
     notes := #["note: the search tries only some values, so outputs may still exist",
       if byCheck then testingHelp true "" else "help: run `fren check` to decide whether it is realizable"] }
 
-/-- No test reached a component's checks (`eval::test_verdict`). -/
+/-- No test reached a procedure's checks (`eval::test_verdict`). -/
 def untestedMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
   { code? := some "F0610", headline := s!"testing found no admissible behaviour of {subject} in {tests} tests"
     label? := some "untested"

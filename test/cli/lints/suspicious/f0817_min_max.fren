@@ -1,2 +1,2 @@
 -- `min_max`.
-comp c { in x: Int pub out n: Int ensure r: n = x.min(0).max(100) }
+proc c(x: Int): (n: Int) { ensure r: n = x.min(0).max(100) }

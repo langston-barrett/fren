@@ -1,4 +1,4 @@
 -- `definable_output`, which is allowed by default.
 set_option fren.lint.definable_output "warn"
 
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }

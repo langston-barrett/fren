@@ -469,15 +469,20 @@ def genSpec : R GSpec := do
   for i in [0:(← below 2) + 1] do
     comps := comps.push (← genComp i comps useEnum useAbs useWrap usePay nVariants ordered collections)
   for c in comps do
-    out := out ++ s!"\npub comp {c.name} \{\n"
-    for v in c.vars do
+    let decl (v : GVar) : String :=
       let ty := if v.ty == .bool then "" else if v.ty == .pay && genericPay then ": P<Bool>"
         else s!": {tyName (elemTy useEnum) v.ty}"
-      let mods := if v.isIn then "in" else s!"{if v.isPub then "pub " else ""}{if v.isDet then "det " else ""}out"
-      out := out ++ s!"    {mods} {v.name}{ty}\n"
+      s!"{v.name}{ty}"
+    let params := c.vars.filter (·.isIn) |>.map decl
+    let results := c.vars.filter (fun v => !v.isIn && v.isPub) |>.map fun v => s!"{if v.isDet then "det " else ""}{decl v}"
+    let resultList := if results.isEmpty then "" else s!": ({", ".intercalate results.toList})"
+    out := out ++ s!"\npub proc {c.name}({", ".intercalate params.toList}){resultList} \{\n"
+    for v in c.vars do
+      if !v.isIn && !v.isPub then out := out ++ s!"    {if v.isDet then "det " else ""}exists {decl v}\n"
     if let some i := c.inst? then
-      let bs := ", ".intercalate (i.bindings.toList.map fun (x, e) => s!"{x} := {e}")
-      out := out ++ s!"    inst {i.name}: {comps[i.comp]!.name} \{ {bs} }\n"
+      -- Its bindings are in the order of the callee's parameters.
+      let args := ", ".intercalate (i.bindings.toList.map (·.2))
+      out := out ++ s!"    call {i.name} := {comps[i.comp]!.name}({args})\n"
     for (n, e) in c.assumes do out := out ++ s!"    assume {n}: {e}\n"
     for (n, e) in c.reqs do out := out ++ s!"    ensure {n}: {e}\n"
     for (n, e) in c.expects do out := out ++ s!"    expect {n}: {e}\n"

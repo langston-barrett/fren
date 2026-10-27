@@ -7,10 +7,6 @@
 pub enum Option<T> { None, Some(T) }
 pub struct Pair<A, B> { fst: A, snd: B }
 pub enum List<T> { Nil, Cons(T, List<T>) }
-comp c {
-    in x: Option<Int>
-    in p: Pair<Int, Bool>
-    in l: List<Int>
-    pub out y: Option<Bool>
+proc c(x: Option<Int>, p: Pair<Int, Bool>, l: List<Int>): (y: Option<Bool>) {
     ensure r: y = (if x = Option::None and l = List::Nil then Option::None else Option::Some(p.snd))
 }

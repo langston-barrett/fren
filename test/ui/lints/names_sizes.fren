@@ -2,15 +2,7 @@
 -- `zero_sized_map_values`, `many_single_char_names`, `similar_names` and
 -- `too_many_lines`. All are allowed by default.
 
-comp quiet {
-    in a: Int
-    in b: Int
-    in c: Int
-    in d: Int
-    in level: Int
-    in levels: Int
-    pub out p?
-
+proc quiet(a: Int, b: Int, c: Int, d: Int, level: Int, levels: Int): (p?) {
     ensure r: p? iff a + b + c + d + level + levels > 0
 }
 
@@ -31,67 +23,36 @@ const MARKED: Rel<Int, Mark> := {(1, Mark::Marked)}  --~ warning: `Rel<Int, Mark
 
 fn marked?(r: Rel<Int, Mark>) := (1, Mark::Marked) in r  --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
 
-comp relations {
-    in r: Rel<Int, Mark>          --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
-    in nested: Set<Rel<Int, Mark>>  --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
-    in two: Rel<Int, Two>
-    in boxed: Rel<Int, Boxed>
-    in flipped: Rel<Mark, Int>
-    pub out p?
-
+proc relations(
+    r: Rel<Int, Mark>,            --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
+    nested: Set<Rel<Int, Mark>>,    --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
+    two: Rel<Int, Two>,
+    boxed: Rel<Int, Boxed>,
+    flipped: Rel<Mark, Int>,
+): (p?) {
     ensure q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
 }
 
-comp singles {  --~ warning: component `singles` declares 5 single-character names
-    in a: Int
-    in b: Int
-    in c?
-    in e: Two
-    in f: Int
-    pub out total: Int
-
+proc singles(a: Int, b: Int, c?, e: Two, f: Int): (total: Int) {  --~ warning: component `singles` declares 5 single-character names
     ensure r: total = if c? then a + b + f else match e { Two::A => 0, Two::B => 1 }
 }
 
 -- Four is not too many.
-comp four {
-    in a: Int
-    in b: Int
-    in c?
-    in e: Two
-    pub out total: Int
-
+proc four(a: Int, b: Int, c?, e: Two): (total: Int) {
     ensure r: total = if c? then a + b else match e { Two::A => 0, Two::B => 1 }
 }
 
 -- A name declared again with `!` is one name: `a`, `b`, `c` and `d`.
-comp shadowed {
-    in a: Int
-    in b: Int
-    in c: Int
-    in d: Int
-    in boxed: Boxed
-    pub out total: Int
-
+proc shadowed(a: Int, b: Int, c: Int, d: Int, boxed: Boxed): (total: Int) {
     ensure r: total = a + b + c + d + match boxed { Boxed::Box(a!) => a }
 }
 
-comp three {
-    in a: Int
-    in b: Int
-    pub out s: Int
-
+proc three(a: Int, b: Int): (s: Int) {
     ensure r: s = a + b
 }
 
 -- A `match` binder counts.
-comp with_binder {  --~ warning: component `with_binder` declares 5 single-character names
-    in a: Int
-    in b: Int
-    in c: Int
-    in x: Boxed
-    pub out total: Int
-
+proc with_binder(a: Int, b: Int, c: Int, x: Boxed): (total: Int) {  --~ warning: component `with_binder` declares 5 single-character names
     ensure r: total = a + b + c + match x { Boxed::Box(n) => n }
 }
 
@@ -99,260 +60,255 @@ pub fn sum(a: Int, b: Int, c: Int, d: Int, e: Int): Int := a + b + c + d + e  --
 
 expect all_small: forall (a b c d e: three), a.s + b.s + c.s + d.s + e.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b + e.a + e.b  --~ warning: global expectation `all_small` declares 5 single-character names
 
-comp similar {
-    in level: Int
-    in levels: Int    --~ warning: `levels` differs from `level` by one character
-    in count: Int
-    in counts: Int    --~ warning: `counts` differs from `count` by one character
-    in user: Int
-    in used: Int      --~ warning: `used` differs from `user` by one character
-    in item: Boxed
-    pub out p?
-
+proc similar(
+    level: Int,
+    levels: Int,      --~ warning: `levels` differs from `level` by one character
+    count: Int,
+    counts: Int,      --~ warning: `counts` differs from `count` by one character
+    user: Int,
+    used: Int,        --~ warning: `used` differs from `user` by one character
+    item: Boxed,
+): (p?) {
     ensure r: p? iff level + levels + count + counts + user + used > match item { Boxed::Box(items) => items }  --~ warning: `items` differs from `item` by one character
 }
 
 -- Not similar: shorter than 3 characters, differing in a digit, in a
 -- character that is a word of its own, only in a final `?`, or a pair
 -- that Clippy allows.
-comp series {
-    in ab: Int
-    in ac: Int
-    in x1: Int
-    in x2: Int
-    in level1: Int
-    in level2: Int
-    in a_len: Int
-    in b_len: Int
-    in len_a: Int
-    in len_b: Int
-    in ready: Int
-    in lhs: Int
-    in rhs: Int
-    in set: Int
-    in get: Int
-    in args: Int
-    in arms: Int
-    in lit: Int
-    in lint: Int
-    pub out ready?
-
+proc series(
+    ab: Int,
+    ac: Int,
+    x1: Int,
+    x2: Int,
+    level1: Int,
+    level2: Int,
+    a_len: Int,
+    b_len: Int,
+    len_a: Int,
+    len_b: Int,
+    ready: Int,
+    lhs: Int,
+    rhs: Int,
+    set: Int,
+    get: Int,
+    args: Int,
+    arms: Int,
+    lit: Int,
+    lint: Int,
+): (ready?) {
     ensure r: ready? iff ab + ac + x1 + x2 + level1 + level2 + a_len + b_len + len_a + len_b + ready
         + lhs + rhs + set + get + args + arms + lit + lint > 0
 }
 
 -- 101 lines: blank lines and comments do not count.
-comp long {  --~ warning: component `long` has 101 lines
-    in x: Int
-    in w: Int
-    in text: String
-
+proc long(x: Int, w: Int, text: String): (
     -- A comment alone on its line.
-    pub out ok?  -- a comment after code
+    ok?,         -- a comment after code
+    echo: Int,
+    y0: Int,
+    y1: Int,
+    y2: Int,
+    y3: Int,
+    y4: Int,
+    y5: Int,
+    y6: Int,
+    y7: Int,
+    y8: Int,
+    y9: Int,
+    y10: Int,
+    y11: Int,
+    y12: Int,
+    y13: Int,
+    y14: Int,
+    y15: Int,
+    y16: Int,
+    y17: Int,
+    y18: Int,
+    y19: Int,
+    y20: Int,
+    y21: Int,
+    y22: Int,
+    y23: Int,
+    y24: Int,
+    y25: Int,
+    y26: Int,
+    y27: Int,
+    y28: Int,
+    y29: Int,
+    y30: Int,
+    y31: Int,
+    y32: Int,
+    y33: Int,
+    y34: Int,
+    y35: Int,
+    y36: Int,
+    y37: Int,
+    y38: Int,
+    y39: Int,
+    y40: Int,
+    y41: Int,
+    y42: Int,
+    y43: Int,
+    y44: Int,
+    y45: Int,
+) {  --~ warning: component `long` has 101 lines
     -- `/-` and `--` in a string start no comment.
     ensure st: ok? iff text = "/- -- not a comment"
     /- a block comment /- nested -/ still in it
-       and on its last line -/ pub out echo: Int
+       and on its last line -/
     ensure ru: echo = x + w
-    pub out y0: Int
     ensure r0: y0 = x + 1
-    pub out y1: Int
     ensure r1: y1 = x + 2
-    pub out y2: Int
     ensure r2: y2 = x + 3
-    pub out y3: Int
     ensure r3: y3 = x + 4
-    pub out y4: Int
     ensure r4: y4 = x + 5
-    pub out y5: Int
     ensure r5: y5 = x + 6
-    pub out y6: Int
     ensure r6: y6 = x + 7
-    pub out y7: Int
     ensure r7: y7 = x + 8
-    pub out y8: Int
     ensure r8: y8 = x + 9
-    pub out y9: Int
     ensure r9: y9 = x + 10
-    pub out y10: Int
     ensure r10: y10 = x + 11
-    pub out y11: Int
     ensure r11: y11 = x + 12
-    pub out y12: Int
     ensure r12: y12 = x + 13
-    pub out y13: Int
     ensure r13: y13 = x + 14
-    pub out y14: Int
     ensure r14: y14 = x + 15
-    pub out y15: Int
     ensure r15: y15 = x + 16
-    pub out y16: Int
     ensure r16: y16 = x + 17
-    pub out y17: Int
     ensure r17: y17 = x + 18
-    pub out y18: Int
     ensure r18: y18 = x + 19
-    pub out y19: Int
     ensure r19: y19 = x + 20
-    pub out y20: Int
     ensure r20: y20 = x + 21
-    pub out y21: Int
     ensure r21: y21 = x + 22
-    pub out y22: Int
     ensure r22: y22 = x + 23
-    pub out y23: Int
     ensure r23: y23 = x + 24
-    pub out y24: Int
     ensure r24: y24 = x + 25
-    pub out y25: Int
     ensure r25: y25 = x + 26
-    pub out y26: Int
     ensure r26: y26 = x + 27
-    pub out y27: Int
     ensure r27: y27 = x + 28
-    pub out y28: Int
     ensure r28: y28 = x + 29
-    pub out y29: Int
     ensure r29: y29 = x + 30
-    pub out y30: Int
     ensure r30: y30 = x + 31
-    pub out y31: Int
     ensure r31: y31 = x + 32
-    pub out y32: Int
     ensure r32: y32 = x + 33
-    pub out y33: Int
     ensure r33: y33 = x + 34
-    pub out y34: Int
     ensure r34: y34 = x + 35
-    pub out y35: Int
     ensure r35: y35 = x + 36
-    pub out y36: Int
     ensure r36: y36 = x + 37
-    pub out y37: Int
     ensure r37: y37 = x + 38
-    pub out y38: Int
     ensure r38: y38 = x + 39
-    pub out y39: Int
     ensure r39: y39 = x + 40
-    pub out y40: Int
     ensure r40: y40 = x + 41
-    pub out y41: Int
     ensure r41: y41 = x + 42
-    pub out y42: Int
     ensure r42: y42 = x + 43
-    pub out y43: Int
     ensure r43: y43 = x + 44
-    pub out y44: Int
     ensure r44: y44 = x + 45
-    pub out y45: Int
     ensure r45: y45 = x + 46
     /- a block comment
        of two lines -/
 }
 
 -- 100 lines, which is not too many: blank lines and comments do not count.
-comp long_enough {
-    in x: Int
-    in text: String
-
+proc long_enough(x: Int, text: String): (
     -- A comment alone on its line.
-    pub out ok?  -- a comment after code
+    ok?,         -- a comment after code
+    echo: Int,
+    y0: Int,
+    y1: Int,
+    y2: Int,
+    y3: Int,
+    y4: Int,
+    y5: Int,
+    y6: Int,
+    y7: Int,
+    y8: Int,
+    y9: Int,
+    y10: Int,
+    y11: Int,
+    y12: Int,
+    y13: Int,
+    y14: Int,
+    y15: Int,
+    y16: Int,
+    y17: Int,
+    y18: Int,
+    y19: Int,
+    y20: Int,
+    y21: Int,
+    y22: Int,
+    y23: Int,
+    y24: Int,
+    y25: Int,
+    y26: Int,
+    y27: Int,
+    y28: Int,
+    y29: Int,
+    y30: Int,
+    y31: Int,
+    y32: Int,
+    y33: Int,
+    y34: Int,
+    y35: Int,
+    y36: Int,
+    y37: Int,
+    y38: Int,
+    y39: Int,
+    y40: Int,
+    y41: Int,
+    y42: Int,
+    y43: Int,
+    y44: Int,
+    y45: Int,
+) {
     -- `/-` and `--` in a string start no comment.
     ensure st: ok? iff text = "/- -- not a comment"
     /- a block comment /- nested -/ still in it
-       and on its last line -/ pub out echo: Int
+       and on its last line -/
     ensure ru: echo = x
-    pub out y0: Int
     ensure r0: y0 = x + 1
-    pub out y1: Int
     ensure r1: y1 = x + 2
-    pub out y2: Int
     ensure r2: y2 = x + 3
-    pub out y3: Int
     ensure r3: y3 = x + 4
-    pub out y4: Int
     ensure r4: y4 = x + 5
-    pub out y5: Int
     ensure r5: y5 = x + 6
-    pub out y6: Int
     ensure r6: y6 = x + 7
-    pub out y7: Int
     ensure r7: y7 = x + 8
-    pub out y8: Int
     ensure r8: y8 = x + 9
-    pub out y9: Int
     ensure r9: y9 = x + 10
-    pub out y10: Int
     ensure r10: y10 = x + 11
-    pub out y11: Int
     ensure r11: y11 = x + 12
-    pub out y12: Int
     ensure r12: y12 = x + 13
-    pub out y13: Int
     ensure r13: y13 = x + 14
-    pub out y14: Int
     ensure r14: y14 = x + 15
-    pub out y15: Int
     ensure r15: y15 = x + 16
-    pub out y16: Int
     ensure r16: y16 = x + 17
-    pub out y17: Int
     ensure r17: y17 = x + 18
-    pub out y18: Int
     ensure r18: y18 = x + 19
-    pub out y19: Int
     ensure r19: y19 = x + 20
-    pub out y20: Int
     ensure r20: y20 = x + 21
-    pub out y21: Int
     ensure r21: y21 = x + 22
-    pub out y22: Int
     ensure r22: y22 = x + 23
-    pub out y23: Int
     ensure r23: y23 = x + 24
-    pub out y24: Int
     ensure r24: y24 = x + 25
-    pub out y25: Int
     ensure r25: y25 = x + 26
-    pub out y26: Int
     ensure r26: y26 = x + 27
-    pub out y27: Int
     ensure r27: y27 = x + 28
-    pub out y28: Int
     ensure r28: y28 = x + 29
-    pub out y29: Int
     ensure r29: y29 = x + 30
-    pub out y30: Int
     ensure r30: y30 = x + 31
-    pub out y31: Int
     ensure r31: y31 = x + 32
-    pub out y32: Int
     ensure r32: y32 = x + 33
-    pub out y33: Int
     ensure r33: y33 = x + 34
-    pub out y34: Int
     ensure r34: y34 = x + 35
-    pub out y35: Int
     ensure r35: y35 = x + 36
-    pub out y36: Int
     ensure r36: y36 = x + 37
-    pub out y37: Int
     ensure r37: y37 = x + 38
-    pub out y38: Int
     ensure r38: y38 = x + 39
-    pub out y39: Int
     ensure r39: y39 = x + 40
-    pub out y40: Int
     ensure r40: y40 = x + 41
-    pub out y41: Int
     ensure r41: y41 = x + 42
-    pub out y42: Int
     ensure r42: y42 = x + 43
-    pub out y43: Int
     ensure r43: y43 = x + 44
-    pub out y44: Int
     ensure r44: y44 = x + 45
-    pub out y45: Int
     ensure r45: y45 = x + 46
     /- a block comment
        of two lines -/

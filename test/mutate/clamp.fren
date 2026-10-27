@@ -7,10 +7,8 @@ const HIGH: Int := 10
 set_option fren.lint.manual_min_max "allow" in
 fn clamp(x: Int): Int := if x < LOW then LOW else if x > HIGH then HIGH else x
 
-pub comp mixer {
-    in left: Int
-    in right: Int
-    pub det out level: Int := clamp(left + right)
+pub proc mixer(left: Int, right: Int): (det level: Int) {
+    out level := clamp(left + right)
 
     expect below: when left = -1 and right = 0, level = 0
     expect inside: when left = 2 and right = 3, level = 5

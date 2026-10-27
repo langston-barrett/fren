@@ -17,24 +17,24 @@ const N: Name := 1                  --~ error: a constant cannot have an abstrac
 fn rate(Int): Int
 const R: Int := rate(1)             --~ error: a constant's value cannot apply an uninterpreted function
 
-comp outputs { in x: Name pub out y: Name ensure r: ok?(y) }
+proc outputs(x: Name): (y: Name) { ensure r: ok?(y) }
 --~^ error: the arguments of a function may not mention an `out`, but `y` is one
-comp private_out { in x: Name out y: Name ensure r: ok?(if ok?(x) then y else x) }
+proc private_out(x: Name) { exists y: Name ensure r: ok?(if ok?(x) then y else x) }
 --~^ error: the arguments of a function may not mention an `out`, but `y` is one
-comp arity_wrong { in x: Name pub out y: Int ensure r: y = arity(x, x) }
+proc arity_wrong(x: Name): (y: Int) { ensure r: y = arity(x, x) }
 --~^ error: `arity` takes 1 argument, but 2 were given
-comp unapplied { in x: Name pub out y: Int ensure r: y = arity }
+proc unapplied(x: Name): (y: Int) { ensure r: y = arity }
 --~^ error: function `arity` must be applied to arguments
-comp not_fn { in x: Name pub out y: Int ensure r: y = x(x) }
+proc not_fn(x: Name): (y: Int) { ensure r: y = x(x) }
 --~^ error: expected a function, but `x` is a variable
-comp abstract_order { in x: Name in z: Name pub out y? ensure r: y? iff x < z }
+proc abstract_order(x: Name, z: Name): (y?) { ensure r: y? iff x < z }
 --~^ error: type mismatch: expected `Int`, found `Name`
-comp nonlinear { in x: Int pub out y: Int ensure r: y = x * rate(1) }
+proc nonlinear(x: Int): (y: Int) { ensure r: y = x * rate(1) }
 --~^ error: nonlinear arithmetic is not supported
 
 -- Inputs and instances' outputs may be arguments.
-comp inner { in a: Name pub out b: Name ensure r: b = a }
-comp fine { in x: Name pub out y? inst w: inner { a := x } ensure r: y? iff ok?(w.b) and ok?(x) }
+proc inner(a: Name): (b: Name) { ensure r: b = a }
+proc fine(x: Name): (y?) { call w := inner(x) ensure r: y? iff ok?(w.b) and ok?(x) }
 
 -- A function's parameters are checked before its result type, in source
 -- order, in both front ends.

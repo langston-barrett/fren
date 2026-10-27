@@ -2,4 +2,4 @@
 -- that the Lean front end gives (`src/FrenTest/Newtypes.lean`).
 pub struct Ms(Int)
 
-comp wrong_value { pub out c: Ms ensure r: c = Ms(true) }
+proc wrong_value(): (c: Ms) { ensure r: c = Ms(true) }

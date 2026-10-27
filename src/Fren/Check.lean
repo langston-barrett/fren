@@ -10,9 +10,9 @@ import Smt
 /-!
 # Checks (the controller)
 
-Runs the shared check algorithms (`FrenCore.Check`) on a comp from the model,
+Runs the shared check algorithms (`FrenCore.Check`) on a procedure from the model,
 with lean-smt (cvc5) as the backend. Formulas are Lean propositions over free
-variables standing for the comp's variables. Nothing here logs messages or
+variables standing for the procedure's variables. Nothing here logs messages or
 changes the model; `Fren.View` presents the results. Results are trusted from
 the solver (`trust := true`).
 -/
@@ -30,7 +30,7 @@ register_option fren.timeout : Nat := {
 
 register_option fren.examples : Nat := {
   defValue := 1
-  descr := "the most notes of guarantees that force an output to different values that Fren shows for each unrealizable component"
+  descr := "the most notes of guarantees that force an output to different values that Fren shows for each unrealizable procedure"
 }
 
 register_option fren.resourceLimit : Nat := {
@@ -123,8 +123,8 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
   Meta.zetaReduce (← Lean.Core.betaReduce (← Meta.deltaExpand e ds.contains))
 
-/-- The answers to a component's queries so far, by hypotheses, goal and
-whether a model was wanted: some checks of a component ask the same
+/-- The answers to a procedure's queries so far, by hypotheses, goal and
+whether a model was wanted: some checks of a procedure ask the same
 query, which is answered once, as in the binary (`Reqs/Cli#solver-queries`). -/
 abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outcome Expr))
 
@@ -148,8 +148,8 @@ def smtBinders (e : Expr) : MetaM Expr :=
     | .letE n t v b nd => return .done (.letE (smtUserName n) t v b nd)
     | e => return .done e)
 
-/-- The lean-smt backend, for a comp whose variables are the free variables
-`fvs`, and whose variables other than its `in`s have second copies `primes`
+/-- The lean-smt backend, for a procedure whose variables are the free variables
+`fvs`, and whose variables other than its parameters have second copies `primes`
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
 what its `Nat` variables bring, of both copies, which every query assumes,
 and `outFacts` those of its outputs, which realizability's `∃` asserts too;
@@ -195,7 +195,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- lean-smt reads an unsat core of every `unsat`, so it keeps those.
       let cvc5Defaults := [("simplification", "batch"), ("enum-inst", "false"), ("enum-inst-interleave", "false"),
         ("cegqi-midpoint", "false")]
-      -- A component whose queries may quantify over a collection's
+      -- A procedure whose queries may quantify over a collection's
       -- elements sets `fmf-bound` (`Core.boundedOptions`).
       let bounded := if bounded then Core.boundedOptions else []
       -- Each attempt on a goal of its own.
@@ -235,7 +235,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     notF := mkNot
     conj := fun ps => mkAndN ps.toList
     existsOutputs := fun body =>
-      -- The comp's own outputs, not their second copies.
+      -- The procedure's own outputs, not their second copies.
       -- Defined outputs are substituted, never searched for.
       -- The outputs' `Nat`s are at least 0, with the requirements.
       ((c.vars.zip fvs).filter fun (v, _) => v.role == .output && v.defn?.isNone).foldrM (init := mkAndN (outFacts.toList ++ [body]))
@@ -395,10 +395,10 @@ partial def proveExists (xs vs : List Expr) (body : Expr) : MetaM (Option Expr) 
 
 /-- `p.cover.n.met`, that some behaviour of `c` meets the cover goal `g`,
 proved by `decide` from the witness `model` of its query
-(`Reqs/Generated#cover-goals`): only for a comp that uses no abstract types
+(`Reqs/Generated#cover-goals`): only for a procedure that uses no abstract types
 or functions, and when every value is a closed term of its variable's
 type. A variable that the model leaves out is `default`. The caller adds
-it (`addCoverWitness`), so that comps can be checked in parallel. -/
+it (`addCoverWitness`), so that procedures can be checked in parallel. -/
 def coverWitness (c : CompInfo) (fvs : Array Expr) (g : PropInfo) (model : Array (Name × Expr)) :
     MetaM (Option Declaration) := do
   let name := g.decl ++ `met
@@ -424,15 +424,15 @@ there is no theorem. -/
 def addCoverWitness (d : Declaration) : CoreM Unit :=
   tryCatchRuntimeEx (addDecl d) fun _ => pure ()
 
-/-- What enumerates the checks of a comp set to enumeration
-(`Reqs/Check#checking-by-enumeration`), given the comp, its formulas, the
+/-- What enumerates the checks of a procedure set to enumeration
+(`Reqs/Check#checking-by-enumeration`), given the procedure, its formulas, the
 locals of its variables, and of the abstract types and functions that it
 uses, with the functions among them, and the kinds of check to run:
 `Fren.Enumerate`'s, which needs the elaborator. -/
 abbrev EnumHook := CompInfo → Core.Comp Expr → Array Expr → Array Expr → Array (Name × Expr × Nat × Bool) →
   Array CheckKind → MetaM (Except Core.Msg Core.Enumeration.Enumerated)
 
-/-- All selected checks for one comp, in reporting order, with the theorems
+/-- All selected checks for one procedure, in reporting order, with the theorems
 that its cover goals are met (`coverWitness`), for the caller to add, and
 what enumerating the checks set to enumeration found, by `enumerate`. -/
 def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none) :

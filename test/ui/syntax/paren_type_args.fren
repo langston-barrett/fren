@@ -3,6 +3,6 @@
 -- type, with the types within it written so too.
 mod m
 pub enum Option<T> { None, Some(T) }
-comp c { in x: Option(Set(Int)) }
+proc c(x: Option(Set(Int))) {}
 --~^ error: type arguments are written in angle brackets
 --@ exit: 2

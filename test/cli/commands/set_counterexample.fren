@@ -1,8 +1,5 @@
 -- A counterexample shows sets as literals, their members sorted.
-comp c {
-    in s: Set<Int>
-    pub out n: Int
-
+proc c(s: Set<Int>): (n: Int) {
     ensure r: n = s.card
 
     expect e: n < 2

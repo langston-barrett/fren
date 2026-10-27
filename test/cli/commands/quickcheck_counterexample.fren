@@ -8,12 +8,8 @@ pub enum Mode { Off, Heat, Cool }
 
 use self::Mode::{Cool, Heat, Off}
 
-pub comp thermostat {
-    in temp: Int
-    in target: Int
-
+pub proc thermostat(temp: Int, target: Int): (mode: Mode) {
     assume sane_target: 50 <= target and target <= 90
-    pub out mode: Mode
 
     ensure heat: when temp < target - 2, mode = Heat
     ensure cool: when temp > target + 2, mode = Cool
@@ -23,10 +19,7 @@ pub comp thermostat {
     expect wrong: when temp < 60, mode = Heat
 }
 
-pub comp loose {
-    in a?
-    pub det out b?
-
+pub proc loose(a?): (det b?) {
     ensure r: when a?, b?
 }
 

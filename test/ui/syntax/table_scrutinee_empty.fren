@@ -1,5 +1,5 @@
 -- A table over a scrutinee has at least one arm.
-comp empty { in x: Int pub out y: Int ensure r: y = table x {} }
+proc empty(x: Int): (y: Int) { ensure r: y = table x {} }
 --~^[cli] error: expected a pattern, found `}`
 --~^^[hosted] error: unexpected token '}'
 --@ exit: 2

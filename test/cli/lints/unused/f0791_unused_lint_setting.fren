@@ -3,6 +3,6 @@
 set_option fren.lint.disallowed_names "deny"
 set_option fren.lint.style "allow"
 
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 
 set_option fren.lint.style "warn"

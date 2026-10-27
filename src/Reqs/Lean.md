@@ -10,7 +10,7 @@ open Fren.Lang
 
 mod climate
 
-pub comp thermostat { ... }
+pub proc thermostat() { ... }
 
 #fren_check
 ```
@@ -30,15 +30,15 @@ need `Fren`.
 
 | Command | Meaning |
 |---|---|
-| `#fren_check` | runs the [checks](Check.md) on every component and global expectation declared earlier in the current Lean file |
-| `#fren_check p` | runs the checks on `p` only; `p` must name a component or a global expectation |
+| `#fren_check` | runs the [checks](Check.md) on every procedure and global expectation declared earlier in the current Lean file |
+| `#fren_check p` | runs the checks on `p` only; `p` must name a procedure or a global expectation |
 | `#fren_md "file.md"` | reads a [Markdown spec](Markdown.md) |
-| `impl` | states and proves that Lean code meets a component (see [Implementations](Impl.md)) |
+| `impl` | states and proves that Lean code meets a procedure (see [Implementations](Impl.md)) |
 | `interp` | gives the Lean meaning of an abstract type or a function (see [Interpretations](Impl.md#interpretations)) |
-| `tested`, `trusted` | claim evidence for a component (see [Traceability](Trace.md)) |
-| `#fren_trace` | reports the evidence for every component (see [Traceability](Trace.md)) |
+| `tested`, `trusted` | claim evidence for a procedure (see [Traceability](Trace.md)) |
+| `#fren_trace` | reports the evidence for every procedure (see [Traceability](Trace.md)) |
 
-A component or global expectation is checked only where a `#fren_check`
+A procedure or global expectation is checked only where a `#fren_check`
 follows it, in the same Lean file, and only if no static error comes
 before the `#fren_check` (see [Static errors](View.md#static-errors)). The results are reported as Lean messages (see
 [Diagnostics](View.md)), so a failing check fails `lake build`.
@@ -51,8 +51,8 @@ Set with `set_option`:
 |---|---|---|---|
 | `fren.timeout` | `Nat` | `10` | time limit in seconds for each solver query; 0 means none |
 | `fren.resourceLimit` | `Nat` | `0` | limit on the solver's work for each query, in cvc5's resource units; 0 means none (see [Limits](Cli.md#limits)) |
-| `fren.examples` | `Nat` | `1` | the most notes of [forced outputs](Check.md#forced-outputs) shown for each unrealizable component, as `fren check --examples` (see [Forced outputs](Cli.md#forced-outputs)); there is no `all`, but a number at least the number of guarantees shows them all |
-| `fren.requireEvidence` | `String` | `""` | warn about components with weaker evidence than this (see [Traceability](Trace.md)) |
+| `fren.examples` | `Nat` | `1` | the most notes of [forced outputs](Check.md#forced-outputs) shown for each unrealizable procedure, as `fren check --examples` (see [Forced outputs](Cli.md#forced-outputs)); there is no `all`, but a number at least the number of guarantees shows them all |
+| `fren.requireEvidence` | `String` | `""` | warn about procedures with weaker evidence than this (see [Traceability](Trace.md)) |
 | `fren.testGlobs` | `String` | `""` | space-separated globs of tests that `#fren_trace` scans for `fren-covers:` markers (see [Traceability](Trace.md)) |
 | `fren.lint.LINT` | `String` | the lint's | the level of the [lint](Lint.md) `LINT`: `"allow"`, `"expect"`, `"warn"`, `"deny"` or `"forbid"` |
 

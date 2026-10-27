@@ -1,7 +1,5 @@
 -- A guarantee that always holds (F0606).
-comp c {
-    in x: Int
-    pub out y?
+proc c(x: Int): (y?) {
     ensure y_def: y? iff x > 0
     ensure trivial: y? or not y?
 }

@@ -1,5 +1,5 @@
 -- `ordered` is a reserved word, so it is not a name.
-comp ordered { in x: Int pub out y: Int ensure r: y = x }
+proc ordered(x: Int): (y: Int) { ensure r: y = x }
 --~^[cli] error: expected a name, found keyword `ordered`
 --~^^[hosted] error: expected identifier
 --~^^^[hosted] error: unexpected token '{'; expected 'enum'

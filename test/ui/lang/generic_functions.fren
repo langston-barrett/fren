@@ -31,13 +31,16 @@ fn nothing<T>(n: Int): Option<T> := let r: Option<T> := Option::None in r
     assume positive: n > 0
     ensure empty: let r: Option<T> := nothing(n) in r = Option::None
 
-comp options {
-    in x: Option<Int>
-    in b?
-    pub det out y: Int := unwrap_or(x, id(3))
-    pub det out q: Pair<Bool, Int> := swap(Pair { fst := y, snd := b? })
-    pub det out s? := is_some?(x)
-    pub det out n: Option<Bool> := if b? then nothing(1) else Option::Some(b?)
+proc options(x: Option<Int>, b?): (
+    det y: Int,
+    det q: Pair<Bool, Int>,
+    det s?,
+    det n: Option<Bool>,
+) {
+    out y := unwrap_or(x, id(3))
+    out q := swap(Pair { fst := y, snd := b? })
+    out s? := is_some?(x)
+    out n := if b? then nothing(1) else Option::Some(b?)
 
     expect missing: when x = Option::None, y = 3
     expect present: when x = Option::Some(5), y = 5 and s?
@@ -45,19 +48,16 @@ comp options {
     expect from_result: n != Option::Some(true)
 }
 
-comp nested {
-    in p: Pair<Option<Bool>, Bool>
-    pub det out r? := first_or(p)
+proc nested(p: Pair<Option<Bool>, Bool>): (det r?) {
+    out r? := first_or(p)
 
     expect fallback: when p.fst = Option::None, r? = p.snd
     expect inner: when p.fst = Option::Some(true), r?
 }
 
-comp lists {
-    in l: List<Int>
-    in b?
-    pub det out h: Option<Int> := head(l)
-    pub det out k: Option<Bool> := head(List::Cons(b?, List::Nil))
+proc lists(l: List<Int>, b?): (det h: Option<Int>, det k: Option<Bool>) {
+    out h := head(l)
+    out k := head(List::Cons(b?, List::Nil))
 
     expect empty: when l = List::Nil, h = Option::None
     expect cons: when l = List::Cons(4, List::Nil), h = Option::Some(4)
@@ -65,9 +65,8 @@ comp lists {
 }
 
 -- A wrong expectation, at an instance: the counterexample is of `Int`s.
-comp wrong {
-    in x: Option<Int>
-    pub det out y: Int := unwrap_or(x, 0)
+proc wrong(x: Option<Int>): (det y: Int) {
+    out y := unwrap_or(x, 0)
 
     expect positive: y > 0  --~ error: expectation `generic_functions::wrong::positive` does not hold
 }

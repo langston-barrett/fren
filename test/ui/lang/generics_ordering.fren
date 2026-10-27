@@ -8,9 +8,7 @@ mod generics_ordering
 
 pub ordered enum Level<T> { Low, Mid, High }
 
-comp c {
-    in x: Level<Int>
-    in y: Level<Int>
+proc c(x: Level<Int>, y: Level<Int>) {
     expect lt: when x = Level::Low, x < Level::High
     expect le: when x != Level::High, x < Level::High
     expect left: when x = Level::High, Level::Mid < x

@@ -1,3 +1,3 @@
 -- A binding that mentions an `out` (F0402).
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { pub out o: Int inst s: sub { a := o } ensure r: o = 0 }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(): (o: Int) { call s := sub(o) ensure r: o = 0 }

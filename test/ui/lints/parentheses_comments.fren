@@ -5,26 +5,15 @@ set_option fren.lint.definable_output "allow"
 
 struct P { x: Int, y: Int }
 
-comp sub {
-    in x: Int
-    pub out o?
-
+proc sub(x: Int): (o?) {
     ensure r: o? iff x > 0
 }
 
-comp lints {
-    in x: Int
-    in y: Int
-    in s: String
-    in q: Seq<Int>
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-
-    inst w: sub { x := x,  --~ warning: `x := x` is `x`
-    }
-    inst v: sub { x := /- a comment -/ x }  --~ warning: `x := x` is `x`
+proc lints(x: Int, y: Int, s: String, q: Seq<Int>): (p1?, p2?, p3?, p4?) {
+    call w := sub(
+        x,
+    )
+    call v := sub(x)  --~ warning: `x := x` is `x`
 
     ensure r1: p1? iff x in {(1), 1}  --~ warning: `1` is repeated in this literal
     ensure r2: p2? iff x in {1, (1)}  --~ warning: `(1)` is repeated in this literal

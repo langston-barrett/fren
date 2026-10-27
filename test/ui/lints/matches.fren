@@ -6,16 +6,7 @@ enum E { A, B, C, D }
 
 enum Shape { Circle(Int), Rect(Int, Int), Dot }
 
-comp same_arms {
-    in e: E
-    in s: Shape
-    in x: Int
-    pub out a: Int
-    pub out b: Int
-    pub out c?
-    pub out d: Int
-    pub out f: Int
-
+proc same_arms(e: E, s: Shape, x: Int): (a: Int, b: Int, c?, d: Int, f: Int) {
     ensure r1: a = match e { E::A => x + 1, E::B => 2, E::C => x + 1, E::D => x + 1 }
     --~^ warning: this arm has the same body as the arm `E::A`
     ensure r2: b = match e { E::A => 1, E::B | E::C => 2, _ => 1 }
@@ -31,13 +22,8 @@ comp same_arms {
     --~^^ warning: `_` matches only `Shape::Dot`
 }
 
-comp membership {
+proc membership(e: E): (p?, q?, r?, t?) {
     use self::E::{A, B, C, D}
-    in e: E
-    pub out p?
-    pub out q?
-    pub out r?
-    pub out t?
 
     ensure r1: p? iff match e { A => true, B => false, C => true, D => false }
     --~^ warning: this `match` only tests which of its patterns its scrutinee matches
@@ -52,13 +38,8 @@ comp membership {
     --~^ warning: this arm has the same body as the arm `A | B`
 }
 
-comp wildcard {
+proc wildcard(e: E, s: Shape): (a: Int, b: Int, c: Int) {
     use self::E::{A, B, C}
-    in e: E
-    in s: Shape
-    pub out a: Int
-    pub out b: Int
-    pub out c: Int
 
     ensure r1: a = match e { A => 1, B => 2, C => 3, _ => 4 }  --~ warning: `_` matches only `E::D`
     ensure r2: b = match s { Shape::Circle(n) => n, Shape::Dot => 0, _ => 1 }
@@ -70,15 +51,7 @@ comp wildcard {
 -- with a guard alone, and `_` matches the variants that only arms with
 -- guards name (`Reqs/Lint/Pedantic/Matches#arms`).
 set_option fren.lint.single_match_else "warn" in
-comp guarded {
-    in e: E
-    in x: Int
-    pub out a: Int
-    pub out b?
-    pub out c: Int
-    pub out d: E
-    pub out f: Int
-
+proc guarded(e: E, x: Int): (a: Int, b?, c: Int, d: E, f: Int) {
     -- `_` matches `E::A` too, where `x <= 0`.
     ensure r1: a = match e { E::A if x > 0 => 1, E::B => 2, E::C => 3, _ => 4 }
     ensure r2: b? iff match e { E::A if x > 0 => true, _ => false }

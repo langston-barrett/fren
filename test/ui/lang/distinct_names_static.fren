@@ -2,25 +2,23 @@
 -- order, whatever kind of member comes first; `_` declares no name.
 set_option fren.lint.match_like_membership "allow"
 
-comp constraint_first {
+proc constraint_first(
+    x: Int,       --~ error: `x` is defined multiple times in this component
+) {
     ensure x: true
-    in x: Int     --~ error: `x` is defined multiple times in this component
 }
 
 enum Shape { Pair(Int, Int), Empty }
 
-comp wildcards {
-    in s: Shape
-    pub out paired?
-
+proc wildcards(s: Shape): (paired?) {
     ensure r: paired? iff match s { Shape::Pair(_, _) => true, Shape::Empty => false }
 }
 
 -- A component reports only its first repeat, before any other problem of
 -- its members, in both front ends.
-comp first_only {
-    in x: Int
-    in x: Int     --~ error: `x` is defined multiple times in this component
-    in y: Nope
-    in y: Int
-}
+proc first_only(
+    x: Int,
+    x: Int,       --~ error: `x` is defined multiple times in this component
+    y: Nope,
+    y: Int,
+) {}

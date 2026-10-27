@@ -18,12 +18,7 @@ expect negated_constant: 17 div -EIGHT = -2 and 17 mod (-EIGHT) = 1
 expect derived: DERIVED = 2 and 5 mod DERIVED = 1
 expect precedence: 2 * 7 div 3 = 4 and 7 div 3 * 2 = 4 and 1 + 7 mod 3 = 2 and -7 div 2 = (-7) div 2
 
-comp parity {
-    in x: Int
-    pub out even?
-    pub out half: Int
-    pub out rest: Int
-
+proc parity(x: Int): (even?, half: Int, rest: Int) {
     ensure e: even? iff x mod 2 = 0
     ensure h: half = x div 2
     ensure r: rest = x mod -4

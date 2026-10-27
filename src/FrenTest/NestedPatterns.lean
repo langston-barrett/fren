@@ -14,14 +14,7 @@ pub enum Reply { Ok(Shape), Err(Int) }
 
 const MAX: Int := 2 * 5
 
-comp tests {
-  in r: Reply
-  in n: Int
-  in s: String
-  pub out x: Int
-  pub out y: Int
-  pub out z: Int
-
+proc tests(r: Reply, n: Int, s: String): (x: Int, y: Int, z: Int) {
   ensure nested: x = match r {
     Reply::Ok(Shape::Circle(radius)) => radius,
     Reply::Err(0) => 1,

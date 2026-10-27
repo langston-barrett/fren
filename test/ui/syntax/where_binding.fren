@@ -1,7 +1,7 @@
--- An instance's binding takes no `where` clause.
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { in x: Int inst s: sub { a := z where z := x } }
---~^[cli] error: expected `}`, found keyword `where`
---~^^[hosted] error: unexpected token 'where'; expected '}'
-comp ok { in x: Int inst s: sub { a := x + 1 } }
+-- An argument of a call takes no `where` clause.
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(x: Int) { call s := sub(z where z := x) }
+--~^[cli] error: expected `)`, found keyword `where`
+--~^^[hosted] error:
+proc ok(x: Int) { call s := sub(x + 1) }
 --@ exit: 2

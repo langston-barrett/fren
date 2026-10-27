@@ -2,4 +2,4 @@
 -- listed, since its argument's cannot, is outside the decidable core.
 pub enum Option<T> { None, Some(T) }
 
-comp c { pub out ok? ensure r: ok? iff (forall (o: Option<Int>), o != Option::Some(1)) }
+proc c(): (ok?) { ensure r: ok? iff (forall (o: Option<Int>), o != Option::Some(1)) }

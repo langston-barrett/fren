@@ -4,23 +4,16 @@
 -- expectations, local and global, pin down its rule.
 mod alarm
 
-pub comp threshold {
-    in x: Int
-    in limit: Int
-
+pub proc threshold(x: Int, limit: Int): (det over?) {
     assume positive: limit > 0
-    pub det out over?
     ensure rule: over? iff x > limit
 
     expect small: when x <= 1, not over?
     cover lowest: limit = 1
 }
 
-pub comp alarm {
-    in temp: Int
-    pub det out ring?
-
-    inst t: threshold { x := temp, limit := 40 }
+pub proc alarm(temp: Int): (det ring?) {
+    call t := threshold(temp, 40)
     ensure rings: ring? iff t.over?
 
     expect hot: when temp = 41, ring?

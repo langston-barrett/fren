@@ -4,19 +4,16 @@
 
 enum E { A, B }
 
-comp related {
-    in r: Rel<E, E>
-    in s: Set<E>
-    pub out t: Rel<E, E> := r join r
-    pub out size: Int
+proc related(r: Rel<E, E>, s: Set<E>): (t: Rel<E, E>, size: Int) {
+    out t := r join r
     ensure c: size = 0 iff s = {}
 }
 
-comp counted { in n: Int pub out size: Int assume pos: n >= 0 ensure r: size = 0 or n > 0 }
+proc counted(n: Int): (size: Int) { assume pos: n >= 0 ensure r: size = 0 or n > 0 }
 
 refine counts: related refines counted { n := s.card }
 
 -- Without counting, the same refinement is in the core.
-comp membered { in has_a? pub out size: Int ensure r: when has_a?, size != 0 }
+proc membered(has_a?): (size: Int) { ensure r: when has_a?, size != 0 }
 
 refine members: related refines membered { has_a? := E::A in s }

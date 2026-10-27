@@ -11,15 +11,11 @@ ordered struct Seconds(Int)
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
-comp retry {
-    in method: Method
-    in status: Nat
-    in attempt: Nat
-    in retry_after: Seconds
-
+proc retry(method: Method, status: Nat, attempt: Nat, retry_after: Seconds): (
+    det retry?,
+    delay: Seconds,
+) {
     assume sane: attempt >= 1 and retry_after >= Seconds(0)
-    pub det out retry?
-    pub out delay: Seconds
 
     ensure transient: retry? iff status is 429 | 503
         and method != Method::Post and attempt < MAX_ATTEMPTS
@@ -28,9 +24,7 @@ comp retry {
     ensure latency_budget: delay <= MAX_DELAY
 }
 
-comp pinned {
-    in x: Int
-    pub out y: Int
+proc pinned(x: Int): (y: Int) {
     ensure low: y = x
     ensure high: y = x + 1
 }

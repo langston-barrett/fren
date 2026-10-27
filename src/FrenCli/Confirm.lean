@@ -11,7 +11,7 @@ Each formula given to the solver is paired with what it means to the
 evaluator (`Fm`), by the same operations of the check algorithms
 (`Fren.Core.Backend`), so that each `sat` answer's model can be evaluated:
 every hypothesis must be `true` in it, and the goal `false`. The pairing is
-by name, from the elaborator's comp (`toCore`) and the evaluator's
+by name, from the elaborator's procedure (`toCore`) and the evaluator's
 (`Eval.Comp`), so the solver's side is exactly what `fren check` asks.
 -/
 
@@ -28,7 +28,7 @@ inductive Fm where
   | falsity
   | not (f : Fm)
   | conj (fs : Array Fm)
-  /-- `∃ outputs, f`, over the comp's `out`s. -/
+  /-- `∃ outputs, f`, over the procedure's outputs. -/
   | exOutputs (outs : Array (Name × VTy)) (f : Fm)
   /-- `x = v`, for a value as the solver writes it. -/
   | pin (x : Name) (v : String)
@@ -340,7 +340,7 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
       (b.subst (ds.map fun (d, e) => (d, e.1)) f.1,
         .defined (ds.filterMap fun (_, _, fm) => match fm with | .defn d e => some (d, e) | _ => none) f.2) }
 
-/-- `core`, the elaborator's comp, with each formula paired with the
+/-- `core`, the elaborator's procedure, with each formula paired with the
 meaning of the constraint of `ec` of the same name. Each index's
 definedness is paired by its position, one of `positions`, in order, the
 `n`th of the item's indexes at a position with the `n`th goal there, and
@@ -349,7 +349,7 @@ of `tablePositions`, and the question. -/
 def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat)
     (tablePositions : Array Nat := #[]) : Fren.Core.Comp (String × Fm) :=
   -- The expressions an index or a table can be in: the constraint, the
-  -- definition, the instance's bindings or the body that it names, or, in
+  -- definition, the call's bindings or the body that it names, or, in
   -- a refinement, the binding of the variable that it names.
   let exsOf (n : Name) : Array Ex :=
     (ec.constraints.filter (·.name == n)).map (·.e)
@@ -373,7 +373,7 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, expects := props core.expects
     -- An uninterpreted function's postconditions, of its value, which the
-    -- evaluator's comp of its contract does not have: undecided.
+    -- evaluator's procedure of its contract does not have: undecided.
     reqs := if core.fn?.isSome then core.reqs.map fun (n, s) => (n, (s, .unknown)) else props core.reqs
     posts := props core.posts, fn? := core.fn?
     covers := props core.covers
@@ -436,7 +436,7 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
       | _, none, _ => true
 
 def kindName : Fren.Core.CheckKind → String
-  | .realizable => "realizability" | .inst => "instance" | .expect => "expectation" | .cover => "cover"
+  | .realizable => "realizability" | .inst => "call" | .expect => "expectation" | .cover => "cover"
   | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
   | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
   | .precondition => "precondition" | .postcondition => "postcondition"
@@ -479,7 +479,7 @@ def specStateOf (files : Array (String × Array Char)) : Except String LState :=
 
 def specOf (files : Array (String × Array Char)) : Except String Spec := (·.spec) <$> specStateOf files
 
-/-- The evaluator's comp for the elaborator's, matched by path, for a
+/-- The evaluator's procedure for the elaborator's, matched by path, for a
 global expectation by its module and name, or for the body of a function
 or the value of a constant (`body`) by its module and the item. -/
 def Eval.Spec.counterpart? (sp : Spec) (c : CComp) (global : Bool) (body : Bool := false) : Option Comp :=

@@ -1,11 +1,7 @@
 -- `non_ascii_literal`, allowed by default.
 set_option fren.lint.non_ascii_literal "warn"
 
-comp greeting {
-    in text: String
-    pub out french?
-    pub out smiling?
-
+proc greeting(text: String): (french?, smiling?) {
     ensure french_rule: french? iff text = "café crème"
     ensure smiling_rule: smiling? iff text.contains?("😀")
 }

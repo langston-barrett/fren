@@ -1,2 +1,2 @@
 -- Equations of one expression with values that patterns write.
-comp c { in status: Int pub out retry? ensure r: retry? iff status = 429 or status = 503 }
+proc c(status: Int): (retry?) { ensure r: retry? iff status = 429 or status = 503 }

@@ -3,12 +3,7 @@
 -- pattern test needs as an operand, since it binds as a comparison.
 pub enum Shape { Circle(Int), Empty }
 
-pub comp c {
-    in s: Shape
-    in b?
-    pub out ok?
-    pub out z?
-
+pub proc c(s: Shape, b?): (ok?, z?) {
     ensure r: ok? = if s is Shape::Circle(_) then true else false
     ensure q: z? iff not ((s is Shape::Circle(_)) = b?)
 }

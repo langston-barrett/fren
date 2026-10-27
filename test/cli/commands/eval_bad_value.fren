@@ -1,7 +1,4 @@
---@ args: eval --comp c --set x=true
-comp c {
-    in x: Int
-    pub out y: Int
-
+--@ args: eval --proc c --set x=true
+proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
 }

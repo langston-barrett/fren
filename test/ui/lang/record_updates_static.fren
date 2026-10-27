@@ -4,38 +4,38 @@ set_option fren.lint.dead_code "allow"
 struct P { x: Int, y: Int }
 struct Q { on?, n: Int }
 
-comp unknown { in p: P pub out o: P ensure r: o = { p with z := 1 } }   --~ error: record `P` has no field `z`
-comp repeated { in p: P pub out o: P ensure r: o = { p with x := 1, x := 2 } }
+proc unknown(p: P): (o: P) { ensure r: o = { p with z := 1 } }   --~ error: record `P` has no field `z`
+proc repeated(p: P): (o: P) { ensure r: o = { p with x := 1, x := 2 } }
 --~^ error: field `x` is given multiple times
-comp not_record { in i: Int pub out o: Int ensure r: o = { i with x := 1 } }
+proc not_record(i: Int): (o: Int) { ensure r: o = { i with x := 1 } }
 --~^ error: cannot update the fields of `Int`
-comp not_record_set { in s: Set<Bool> pub out o? ensure r: o? iff { s with x := 1 } = s }
+proc not_record_set(s: Set<Bool>): (o?) { ensure r: o? iff { s with x := 1 } = s }
 --~^ error: cannot update the fields of `Set<Bool>`
-comp not_record_bool { in i: Int pub out o? ensure r: o? iff { i = 1 with x := 1 } }
+proc not_record_bool(i: Int): (o?) { ensure r: o? iff { i = 1 with x := 1 } }
 --~^ error: cannot update the fields of `Bool`
-comp field_of_bool { in i: Int pub out o: Int ensure r: o = (i = 1).w }
+proc field_of_bool(i: Int): (o: Int) { ensure r: o = (i = 1).w }
 --~^ error: `Bool` is not a record, so it has no field `w`
-comp other_record { in p: P in q: Q pub out o: P ensure r: o = { q with x := 1 } }
+proc other_record(p: P, q: Q): (o: P) { ensure r: o = { q with x := 1 } }
 --~^ error: record `Q` has no field `x`
-comp typed { in p: P pub out o: P ensure r: o = { p with x := true } }
+proc typed(p: P): (o: P) { ensure r: o = { p with x := true } }
 --~^ error: type mismatch: expected `Int`, found `Bool`
-comp result_typed { in p: P in q: Q pub out o: P ensure r: o = { q with n := 1 } }
+proc result_typed(p: P, q: Q): (o: P) { ensure r: o = { q with n := 1 } }
 --~^ error: cannot compare `P` with `Q`
-comp unknown_short { in p: P pub out o: P ensure r: o = { p with w } }  --~ error: record `P` has no field `w`
-comp unbound_short { in p: P pub out o: P ensure r: o = { p with x } }  --~ error: cannot find `x` in this scope
-comp empty_base { pub out o: P ensure r: o = { {} with x := 1 } }
+proc unknown_short(p: P): (o: P) { ensure r: o = { p with w } }  --~ error: record `P` has no field `w`
+proc unbound_short(p: P): (o: P) { ensure r: o = { p with x } }  --~ error: cannot find `x` in this scope
+proc empty_base(): (o: P) { ensure r: o = { {} with x := 1 } }
 --~^ error: the type of `{}` cannot be known here
 -- An update mentions what its updated value and new values mention.
 fn big?(P)
-comp output_base { in n: Int pub out o: P ensure r: big?({ o with x := n }) }
+proc output_base(n: Int): (o: P) { ensure r: big?({ o with x := n }) }
 --~^ error: the arguments of a function may not mention an `out`, but `o` is one
-comp output_value { in p: P pub out n: Int ensure r: big?({ p with x := n }) }
+proc output_value(p: P): (n: Int) { ensure r: big?({ p with x := n }) }
 --~^ error: the arguments of a function may not mention an `out`, but `n` is one
-comp output_short { in p: P pub out x: Int ensure r: big?({ p with x }) }
+proc output_short(p: P): (x: Int) { ensure r: big?({ p with x }) }
 --~^ error: the arguments of a function may not mention an `out`, but `x` is one
-comp input_only { in p: P in n: Int pub out b? ensure r: b? iff big?({ p with x := n }) }
+proc input_only(p: P, n: Int): (b?) { ensure r: b? iff big?({ p with x := n }) }
 -- The updated value is checked before the fields.
-comp base_first { in i: Int pub out o: Int ensure r: o = { i with i := 1, i := 2 } }
+proc base_first(i: Int): (o: Int) { ensure r: o = { i with i := 1, i := 2 } }
 --~^ error: cannot update the fields of `Int`
 
 --@ exit: 2

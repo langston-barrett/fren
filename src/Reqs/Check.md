@@ -1,16 +1,16 @@
 # Checks
 
-Fren checks each component seven ways:
+Fren checks each procedure seven ways:
 
 | Check | Reported as | Confirms |
 |---|---|---|
 | [Realizability](#realizability) | `realizable` | some system can meet the guarantees, for every admissible input |
 | [Expectations](#expectations) | `expect` | each expectation follows from the assumptions and guarantees |
 | [Cover goals](#cover-goals) | `cover` | some behaviour that meets the assumptions and guarantees satisfies each cover goal |
-| [Instance assumptions](#instance-assumptions) | `instance` | each instance's bindings satisfy the instantiated component's assumptions |
+| [Call assumptions](#call-assumptions) | `instance` | each call's arguments satisfy the called procedure's assumptions |
 | [Vacuity](#vacuity) | `vacuity` | the trigger of each guarantee and expectation can hold |
 | [Redundancy](#redundancy) | `redundancy` | no assumption or guarantee follows from the others |
-| [Determinism](#determinism) | `determinism` | each `det out` is determined by the inputs |
+| [Determinism](#determinism) | `determinism` | each `det` output is determined by the inputs |
 
 and checks how its constraints are written six more ways, wherever they
 have an index, a [table](Lang/Expressions.md#tables), a
@@ -38,17 +38,18 @@ disjointness, reachability and preconditions too, a defined function's
 body or a value given where pattern types are declared, including the body
 or value itself, are checked for their patterns.
 
-The formulas below use the notation of [Components](Lang/Components.md#meaning):
-`A` is the conjunction of the component's assumptions, `R` of its
-guarantees, and `I` of its instances, over the inputs `i`, the instances'
+The formulas below use the notation of [Procedures](Lang/Procedures.md#meaning):
+`A` is the conjunction of the procedure's assumptions, `R` of its
+guarantees, and `I` of its calls, over the inputs `i`, the calls'
 variables `y` and the outputs `o`.
-`D` is the equations `d = e` of the component's [defined
-outputs](Lang/Components.md#defined-outputs), and `o` excludes them.
+`D` is the equations `d = e` of the procedure's
+[definitions](Lang/Procedures.md#definitions), and `o` excludes the
+variables they define.
 `N` is the constraints that [natural
-numbers](Lang/Components.md#natural-numbers), [pattern
-types](Lang/Components.md#pattern-types) and the
+numbers](Lang/Procedures.md#natural-numbers), [pattern
+types](Lang/Procedures.md#pattern-types) and the
 [postconditions](Lang/Items.md#contracts) of uninterpreted functions
-bring: `N(i, y)` that each `Nat` input and instance variable, and each
+bring: `N(i, y)` that each `Nat` input and call variable, and each
 application of an uninterpreted function whose result is a `Nat` that the
 query's own hypotheses or goal mention, is at least 0, and that each such
 application of an uninterpreted function with postconditions meets each
@@ -61,7 +62,7 @@ Each variable's constraints come in the order of the variables, after its
 `Nat`'s, and each application's or payload's in the order in which the
 query mentions them, one application's as one fact each: its `Nat`'s, its
 type's, then its postconditions'. So a query's facts about applications depend only on its
-formulas: an instance's query has none about its component's
+formulas: a call's query has none about its procedure's
 expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
 puts `N(o)` under its `∃`, with the guarantees. Like `D`, they are never
@@ -79,10 +80,10 @@ to the solver as sorts and uninterpreted functions. A [defined
 function](Lang/Items.md#defined-functions) is given with its body, so the
 solver knows its values. So the solver proves a goal from hypotheses when
 the goal holds wherever the hypotheses do, under every
-[interpretation](Lang/Components.md#interpretations), and a model gives an
+[interpretation](Lang/Procedures.md#interpretations), and a model gives an
 interpretation as well as values for the variables. Hence:
 
-- Realizability, expectations, instance assumptions and determinism pass
+- Realizability, expectations, call assumptions and determinism pass
   only if they hold under every interpretation.
 - A trigger is not vacuous, and a constraint not redundant, if that is so
   under some interpretation. Likewise, the assumptions are contradictory
@@ -148,10 +149,9 @@ and each check below [refines](Lang/Refinement.md) one of them (see
 [Verdict families](#verdict-families)):
 
 ```fren
-pub comp proved {
-    in q: Outcome          -- can the goal be proved?
-    pub det out verdict: Verdict
-
+pub proc proved(
+    q: Outcome,            -- can the goal be proved?
+): (det verdict: Verdict) {
     ensure proof: verdict = Pass iff q = Unsat
     ensure counterexample: verdict = Fail iff q = Sat
 
@@ -159,10 +159,9 @@ pub comp proved {
 }
 
 set_option fren.evidence "enumerated" in
-pub comp satisfiable {
-    in q: Outcome          -- can the negation of the goal be proved?
-    pub det out verdict: Verdict
-
+pub proc satisfiable(
+    q: Outcome,            -- can the negation of the goal be proved?
+): (det verdict: Verdict) {
     ensure witness: verdict = Pass iff q = Sat
     ensure refuted: verdict = Fail iff q = Unsat
 
@@ -179,18 +178,18 @@ it, and its values given where pattern types are declared are checked, and
 the function's postconditions. The [pattern-type check](#pattern-types) is
 part of definedness: its results are definedness results, and it runs
 where definedness does, though in a body or a value, definedness asks
-nothing of its indexes. A component has no postconditions, so their check
+nothing of its indexes. A procedure has no postconditions, so their check
 has no results there. The contract of an uninterpreted function with
 postconditions is checked for [realizability](#realizability) too, as a
-component whose inputs are the function's parameters, whose one `det out`
-is its value, and whose assumptions and guarantees are its preconditions
+procedure whose parameters are the function's parameters, whose one `det`
+result is its value, and whose assumptions and guarantees are its preconditions
 and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 
 ```fren
 pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
 
 set_option fren.evidence "enumerated" in
-pub comp applies {
+pub proc applies(item: CheckedItem, kind: Kind): (det runs?) {
     use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
     use self::Kind::{
         Completeness,
@@ -204,9 +203,6 @@ pub comp applies {
         Realizability,
         Vacuity,
     }
-    in item: CheckedItem
-    in kind: Kind
-    pub det out runs?
 
     ensure rule: runs? iff match item {
         Component => true,
@@ -222,12 +218,12 @@ pub comp applies {
 
 ## Realizability
 
-A component is realizable if some system can respond to every admissible
-input, whatever its instances do:
+A procedure is realizable if some system can respond to every admissible
+input, whatever its calls do:
 
   ∀ i y. A(i) ∧ I(i, y) ⇒ ∃ o. R(i, y, o)
 
-with each defined output replaced by its definition (see
+with each variable that has a definition replaced by it (see
 [Definitions](#definitions)), and `N(o)` a conjunct of `R`, so that the
 outputs that `∃` ranges over are `Nat`s where their types say so.
 
@@ -238,8 +234,8 @@ Fren asks two queries:
   fails rather than passing. Fren reports a minimal set of contradictory
   assumptions.
 - **Counterexample.** Can `∃ o. R(i, y, o)` be proved from `A` and `I`, with
-  the inputs and instance variables free? A model is an input, together
-  with a behaviour of the instances, that no system could answer. Fren
+  the inputs and call variables free? A model is an input, together
+  with a behaviour of the calls, that no system could answer. Fren
   reports it, with a [minimal](#minimal-sets) set of guarantees that
   conflict on it, its *core*, and notes at the guarantees of the core that
   force an output to a value that the rest of the core rules out (see
@@ -253,13 +249,14 @@ confirm:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp realizability {
-    in assume_q: Outcome   -- can `False` be proved from A?
-    in cex_q: Outcome      -- can `exists outputs, R` be proved from A and I?
-    pub det out verdict: Verdict
-    pub det out reports_cex?   -- report the input and the conflicting guarantees
-    pub det out reports_vacuous?  -- report that the assumptions are contradictory
-
+pub proc realizability(
+    assume_q: Outcome,     -- can `False` be proved from A?
+    cex_q: Outcome,        -- can `exists outputs, R` be proved from A and I?
+): (
+    det verdict: Verdict,
+    det reports_cex?,          -- report the input and the conflicting guarantees
+    det reports_vacuous?,         -- report that the assumptions are contradictory
+) {
     ensure verdict_rule: verdict = table {
         | assume_q = Unsat => Fail,
         | assume_q != Unsat and cex_q = Sat => Fail,
@@ -280,7 +277,7 @@ pub comp realizability {
 An uninterpreted function's [postconditions](Lang/Items.md#contracts)
 are assumed at each of its applications, so if they cannot hold together,
 every check that applies the function holds vacuously. So its contract is
-checked as a component is: the inputs are its parameters `x`, the one
+checked as a procedure is: the inputs are its parameters `x`, the one
 output is its value `v`, `A` is its preconditions, and `R` its
 postconditions, with `v` for each application of the function to its
 parameters:
@@ -293,7 +290,7 @@ can be false, as `ensure c: n > 0` of `fn other(n: Int): Int`, fails. The
 functions that a contract applies are declared before it, so each
 function's contract is checked once all of theirs have been: an
 interpretation of each in turn meets them all. The two queries are those
-of a component, and so are the verdicts, but the failures are reported at
+of a procedure, and so are the verdicts, but the failures are reported at
 the function's name: contradictory preconditions (`F0632`), and arguments
 for which no value meets the postconditions (`F0631`), with a minimal set
 of postconditions that conflicts on them, and notes at those that force
@@ -305,7 +302,7 @@ two arguments and two values, where the preconditions hold at the
 arguments `pres`, and the postconditions at the pairs `posts`. Where no
 argument meets the preconditions, they contradict each other, and the
 check fails. Its
-implementation builds the contract's component as both front ends do,
+implementation builds the contract's procedure as both front ends do,
 and runs the realizability check on it, with a solver that decides by
 trying every argument and value:
 
@@ -314,13 +311,14 @@ pub enum Argument { A0, A1 }
 pub enum Value { V0, V1 }
 pub struct Point { arg: Argument, value: Value }
 
-pub comp contract_realizability {
-    in pres: Set<Argument>   -- the arguments that meet the preconditions
-    in posts: Set<Point>     -- the arguments and values that meet the postconditions
-    pub det out verdict: Verdict
-    pub det out reports_cex?       -- report the arguments and the conflicting postconditions
-    pub det out reports_vacuous?   -- report that the preconditions are contradictory
-
+pub proc contract_realizability(
+    pres: Set<Argument>,     -- the arguments that meet the preconditions
+    posts: Set<Point>,       -- the arguments and values that meet the postconditions
+): (
+    det verdict: Verdict,
+    det reports_cex?,              -- report the arguments and the conflicting postconditions
+    det reports_vacuous?,          -- report that the preconditions are contradictory
+) {
     ensure rule: verdict = (if pres != {}
         and (forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts)
         then Pass else Fail)
@@ -334,7 +332,7 @@ pub comp contract_realizability {
 }
 ```
 
-It refines `check::realizability`, the check of a component, whose
+It refines `check::realizability`, the check of a procedure, whose
 queries' answers are those of the contract over this domain: the
 preconditions are contradictory exactly when no argument meets them, and
 the postconditions can be proved satisfiable exactly when every argument
@@ -393,17 +391,17 @@ that holds of every value of it:
 note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
 ```
 
-The outputs are the component's public ones that are not
-[defined](#definitions): a defined output is replaced by its definition,
-so what forces it forces the outputs that it is defined by. For an
+The outputs are the procedure's results that have no
+[definition](#definitions): a result that has one is replaced by its
+definition, so what forces it forces the outputs that it is defined by. For an
 uninterpreted function's [contract](#contracts-of-uninterpreted-functions),
 the one output is its value. The input is pinned as the core was found
 (see [Minimal sets](#minimal-sets)): `P` is the equation `x = v` of each
 variable `x` of the input and its value `v`, where `v` can be written in a
 formula. If the value of some variable of the input cannot be written so,
 `P` is about more inputs than the one the error shows, so there are no
-clash notes. For a set of guarantees `S`, with the defined outputs replaced by
-their definitions, Fren asks three kinds of query:
+clash notes. For a set of guarantees `S`, with the variables that have
+definitions replaced by them, Fren asks three kinds of query:
 
 - **Model.** Can `False` be proved from `P` and `S`? A model gives each
   output that they mention a value. On the input of a minimal core, a
@@ -437,20 +435,21 @@ pub fn variant_of(c: Choice): ChoiceVariant := match c {
     Choice::C1(_) => ChoiceVariant::K1,
 }
 
-pub comp forcing {
-    in values: Set<Choice>   -- the output's values where `P` and `S` hold
-    in model: Choice         -- its value in the model of `P` and `S`
-    in pin_q: Outcome        -- can `o = model` be proved from `P` and `S`?
-    in variant_q: Outcome    -- can `o` being of `model`'s variant be proved from `P` and `S`?
-
+pub proc forcing(
+    values: Set<Choice>,     -- the output's values where `P` and `S` hold
+    model: Choice,           -- its value in the model of `P` and `S`
+    pin_q: Outcome,          -- can `o = model` be proved from `P` and `S`?
+    variant_q: Outcome,      -- can `o` being of `model`'s variant be proved from `P` and `S`?
+): (
+    det forced?,                  -- `S` forces the output on the input
+    det found?,                   -- Fren finds that `S` forces it to `model`
+    det variant_forced?,          -- `S` forces the output to a variant on the input
+    det variant_found?,           -- Fren finds that `S` forces it to `model`'s variant
+) {
     assume modelled: model in values
     assume decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
     assume variant_decided:
         variant_q = (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
-    pub det out forced?           -- `S` forces the output on the input
-    pub det out found?            -- Fren finds that `S` forces it to `model`
-    pub det out variant_forced?   -- `S` forces the output to a variant on the input
-    pub det out variant_found?    -- Fren finds that `S` forces it to `model`'s variant
 
     ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
     ensure query: found? iff pin_q = Unsat
@@ -466,7 +465,7 @@ pub comp forcing {
 
 For each guarantee `E` of the core, in the core's order, Fren asks the
 model query of `{E}` and of the rest of the core, and then, for each
-output in the order of the component's variables whose values in the two
+output in the order of the procedure's variables whose values in the two
 models differ, what each side forces of it: the pin query of `{E}` and,
 if it forces the output, of the rest. Where the two values are of
 different variants, a side that does not force the output's value is
@@ -486,8 +485,8 @@ outputs](Cli.md#forced-outputs)), and asks no more of these queries once
 it has them all.
 
 A note's values would depend on an
-[interpretation](Lang/Components.md#interpretations) where some variable
-of the component, its own or an instance's, has a type that is or contains
+[interpretation](Lang/Procedures.md#interpretations) where some variable
+of the procedure, its own or a call's, has a type that is or contains
 an [abstract type](Lang/Types.md#abstract-types), or where a guarantee or
 a definition substituted into one uses an abstract type or an
 [uninterpreted function](Lang/Items.md#uninterpreted-functions), directly
@@ -565,18 +564,24 @@ pub fn variants_of?(forced: Set<Forcing>, variants: Set<VariantForcing>) :=
     and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing { guarantee := h, output := o, value := v } in forced,
     VariantForcing { guarantee := h, output := o, variant := variant_of(v) } in variants)
 
-pub comp clash_notes {
-    in core: Set<Guarantee>
-    in alone: Set<Forcing>                   -- the values that each guarantee forces on its own
-    in alone_variants: Set<VariantForcing>   -- the variants that each guarantee forces on its own
-    in rest: Set<Forcing>                    -- the values that the rest of the core forces, for each guarantee
-    in rest_variants: Set<VariantForcing>    -- the variants that the rest of the core forces
-    in examples: Budget                      -- `--examples`
-    in interpreted?                          -- the notes' values would depend on an interpretation
-    in unpinned?                             -- some variable of the input cannot be pinned
-    in g: Guarantee                          -- a guarantee, for the rules of each
-    in earlier: Set<Guarantee>
-
+pub proc clash_notes(
+    core: Set<Guarantee>,
+    alone: Set<Forcing>,                     -- the values that each guarantee forces on its own
+    alone_variants: Set<VariantForcing>,     -- the variants that each guarantee forces on its own
+    rest: Set<Forcing>,                      -- the values that the rest of the core forces, for each guarantee
+    rest_variants: Set<VariantForcing>,      -- the variants that the rest of the core forces
+    examples: Budget,                        -- `--examples`
+    interpreted?,                            -- the notes' values would depend on an interpretation
+    unpinned?,                               -- some variable of the input cannot be pinned
+    g: Guarantee,                            -- a guarantee, for the rules of each
+    earlier: Set<Guarantee>,
+): (
+    det noted?,                -- a clash note is at `g`
+    output: Output,            -- the output that it names
+    shows_value?,
+    rest_shows_value?,
+    det note: MemberNote,
+) {
     -- What the queries find of the guarantees of the core: one value and
     -- one variant, at most, for each output, and nothing of the empty rest
     -- of a core of one.
@@ -587,13 +592,10 @@ pub comp clash_notes {
     assume earlier_clashes: forall (h: Guarantee),
         h in earlier iff (h in core and h < g
         and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, h, o)))
-    pub det out noted?         -- a clash note is at `g`
-    pub out output: Output     -- the output that it names
     -- The note gives what `g` forces of `output` as a whole value, not a
     -- variant, where it forces one, and so of what the rest of the core forces.
-    pub out shows_value? := forces_value?(alone, g, output)
-    pub out rest_shows_value? := forces_value?(rest, g, output)
-    pub det out note: MemberNote
+    out shows_value? := forces_value?(alone, g, output)
+    out rest_shows_value? := forces_value?(rest, g, output)
 
     ensure rule: noted? iff (not interpreted? and not unpinned? and g in core
         and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
@@ -618,19 +620,19 @@ pub comp clash_notes {
 
 ## Definitions
 
-A defined output is not a constraint, and the checks never search for its
-value. Realizability replaces each defined output by its definition, so
-that the `∃` ranges over the other outputs only, whose types are bounded.
-Every other check adds `D` to its hypotheses, as equations, so each
-defined output is a variable of the query and its value appears in models.
+A definition, of a result or a `let` variable, is not a constraint, and
+the checks never search for the value of the variable it defines.
+Realizability replaces each such variable by its definition, so that the
+`∃` ranges over the other outputs only, whose types are bounded. Every
+other check adds `D` to its hypotheses, as equations, so each defined
+variable is a variable of the query and its value appears in models.
 A definition is never a candidate for redundancy, nor reported in a
 minimal set. `check::definitions` states the choice:
 
 ```fren
-pub comp definitions {
-    in kind: Kind
-    pub det out substituted?     -- replaced by their definitions, rather than assumed as equations
-
+pub proc definitions(kind: Kind): (
+    det substituted?,            -- replaced by their definitions, rather than assumed as equations
+) {
     ensure rule: substituted? iff kind = Kind::Realizability
 
     expect never_searched: when kind = Kind::Realizability, substituted?
@@ -638,27 +640,25 @@ pub comp definitions {
 ```
 
 Both forms mean the same, since every definition determines its output.
-Substituting everywhere would lose defined outputs' values in models;
-using the equations in realizability would put defined outputs under `∃`.
+Substituting everywhere would lose defined variables' values in models;
+using the equations in realizability would put defined variables under `∃`.
 
 ## Expectations
 
 For each expectation `e`, Fren asks whether `e` can be proved from `A`, `I`
 and `R`. A model is a counterexample: Fren reports the values of the inputs
-and public outputs in it.
+and results in it.
 
 If `A ∧ I ∧ R` is unsatisfiable, every expectation passes vacuously. The
-realizability check then fails for the same component.
+realizability check then fails for the same procedure.
 
 `check::expectation` gives the verdict, from the outcome `q` of the query:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp expectation {
-    in q: Outcome          -- can `e` be proved from A, I and R?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
+pub proc expectation(
+    q: Outcome,            -- can `e` be proved from A, I and R?
+): (det verdict: Verdict, det reports_cex?) {
     ensure holds: when q = Unsat, verdict = Pass
     ensure refuted: when q = Sat, verdict = Fail
     ensure unknown: when q = Unknown, verdict = Inconclusive
@@ -668,14 +668,14 @@ pub comp expectation {
 
 ## Cover goals
 
-A [cover goal](Lang/Components.md#cover-goals) `cover n: e` claims that
-some behaviour meets the component and satisfies `e`: that
+A [cover goal](Lang/Procedures.md#cover-goals) `cover n: e` claims that
+some behaviour meets the procedure and satisfies `e`: that
 
   A ∧ I ∧ R ∧ e
 
 is satisfiable, with `D` among the hypotheses. Fren asks whether `not e`
 can be proved from `A`, `I` and `R`. A model is a *witness*: a behaviour
-that meets the component, in which the goal holds, and the goal passes.
+that meets the procedure, in which the goal holds, and the goal passes.
 If `not e` is proved, no behaviour meets the goal, and it fails
 (`F0615`): Fren
 reports a minimal set of assumptions and guarantees that rule it out,
@@ -686,19 +686,20 @@ So a cover goal is the converse of an expectation: an expectation holds if
 its negation is impossible, a cover goal if it is possible. And the
 vacuity check of a guarantee or expectation with the trigger `C` is the
 cover goal `C`, with the same query. A cover goal is checked only in its
-own component: an instance of the component does not check it again.
+own procedure: a call of the procedure does not check it again.
 
 `check::cover_goal` gives the verdict and what is reported, from the outcome
 `q` of the query:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp cover_goal {
-    in q: Outcome          -- can `not e` be proved from A, I and R?
-    pub det out verdict: Verdict
-    pub det out reports_witness?  -- report the model, in which the goal holds
-    pub det out reports_core?     -- report the constraints that rule the goal out
-
+pub proc cover_goal(
+    q: Outcome,            -- can `not e` be proved from A, I and R?
+): (
+    det verdict: Verdict,
+    det reports_witness?,         -- report the model, in which the goal holds
+    det reports_core?,            -- report the constraints that rule the goal out
+) {
     ensure met: when q = Sat, verdict = Pass
     ensure unmet: when q = Unsat, verdict = Fail
     ensure unknown: when q = Unknown, verdict = Inconclusive
@@ -720,33 +721,31 @@ returns `Unsat`: its queries ask for no model.
 
 For a global expectation with binders `w_1: c_1`, ..., `w_n: c_n` and body
 `E`, Fren asks whether `E` can be proved from the meanings `M_c_k(y_k)` of
-the binders' components (see [Global expectations](Lang/Global.md#meaning)).
+the binders' procedures (see [Global expectations](Lang/Global.md#meaning)).
 A model is a counterexample: Fren reports the values of the inputs and
-public outputs of each binder, as `w_k.x`. `check::expectation` gives the
-verdict, as for an expectation of a component.
+results of each binder, as `w_k.x`. `check::expectation` gives the
+verdict, as for an expectation of a procedure.
 
 If some `M_c_k` is unsatisfiable, the global expectation passes vacuously.
 The realizability check then fails for `c_k`.
 
-## Instance assumptions
+## Call assumptions
 
-For each instance `w` of a component `c`, and each assumption `a` of `c`,
-and each input `x` of `c` whose type brings a constraint (see [Pattern
-types](Lang/Components.md#pattern-types)), before its assumptions,
-Fren asks whether `a`, or `x`'s constraint, with `w`'s bindings substituted, can be proved from
-`A`, the bindings of `w`, and the constraints `I_v` of the instances `v`
+For each call `w` of a procedure `c`, and each assumption `a` of `c`,
+and each parameter `x` of `c` whose type brings a constraint (see [Pattern
+types](Lang/Procedures.md#pattern-types)), before its assumptions,
+Fren asks whether `a`, or `x`'s constraint, with `w`'s arguments substituted, can be proved from
+`A`, the arguments of `w`, and the constraints `I_v` of the calls `v`
 declared before `w`. A model is a counterexample: Fren reports the values of
-the inputs, and of the public outputs of the earlier instances.
+the inputs, and of the results of the earlier calls.
 
 `check::instance_assumption` decides each such query like an expectation:
 
 ```fren
-pub comp instance_assumption {
-    in q: Outcome          -- can it be proved from A, the bindings and earlier instances?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc instance_assumption(
+    q: Outcome,            -- can it be proved from A, the arguments and earlier calls?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 
@@ -756,11 +755,11 @@ pub comp instance_assumption {
 
 ## Vacuity
 
-A guarantee or expectation whose [trigger](Lang/Components.md#triggers)
+A guarantee or expectation whose [trigger](Lang/Procedures.md#triggers)
 can never hold is satisfied vacuously, which usually indicates a mistake.
 For each guarantee and expectation with a trigger, Fren asks whether `not
 trigger` can be proved from `A`, `I` and `R`. For a global expectation, the
-hypotheses are the meanings of its binders' components instead. If it can, the check fails,
+hypotheses are the meanings of its binders' procedures instead. If it can, the check fails,
 and Fren reports a minimal set of assumptions and guarantees that rule
 the trigger out. Constraints without a trigger, and assumptions, are not
 checked.
@@ -769,10 +768,9 @@ checked.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp non_vacuity {
-    in q: Outcome          -- can `not trigger` be proved from A, I and R?
-    pub det out verdict: Verdict
-
+pub proc non_vacuity(
+    q: Outcome,            -- can `not trigger` be proved from A, I and R?
+): (det verdict: Verdict) {
     ensure fires: when q = Sat, verdict = Pass
     ensure vacuous: when q = Unsat, verdict = Fail
     ensure unknown: when q = Unknown, verdict = Inconclusive
@@ -781,7 +779,7 @@ pub comp non_vacuity {
 
 ## Redundancy
 
-An assumption or guarantee that follows from the component's other
+An assumption or guarantee that follows from the procedure's other
 constraints adds nothing to its meaning. If it is meant as a consequence,
 it is better declared as an expectation, which the checks confirm rather
 than take for granted.
@@ -793,10 +791,10 @@ reports a minimal set of constraints it follows from. A redundant
 constraint is not a mistake in itself, so the failure is a
 [warning](View.md#severity), not an error.
 
-An assumption is not compared with `I`, even though an instantiated
-component's assumptions, through the instance's bindings, can constrain the
-inputs: removing such an assumption would make the [instance
-check](#instance-assumptions) fail.
+An assumption is not compared with `I`, even though a called
+procedure's assumptions, through the call's arguments, can constrain the
+inputs: removing such an assumption would make the [call
+check](#call-assumptions) fail.
 
 Contradictory constraints entail everything, so the assumptions are not
 checked if `A` is unsatisfiable, and the guarantees are not checked if
@@ -806,17 +804,16 @@ applies always follows from the others. `check::redundancy_asked` gives
 when a constraint is checked, from the outcome of asking whether `False`
 can be proved from the constraints it would be compared with and itself
 (`consistent_q`). That question is not asked once a vacuity query of the
-component has answered `Sat`. That query's hypotheses are `A`, `I`, `R` and
+procedure has answered `Sat`. That query's hypotheses are `A`, `I`, `R` and
 a trigger, so `A ∧ I ∧ R`, and `A` with it, are satisfiable, and
 `consistent_q` is `Sat` for both.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp redundancy_asked {
-    in consistent_q: Outcome
-    in vacuous?            -- it failed the vacuity check
-    pub det out asked?
-
+pub proc redundancy_asked(
+    consistent_q: Outcome,
+    vacuous?,              -- it failed the vacuity check
+): (det asked?) {
     ensure asked: asked? iff (consistent_q != Unsat and not vacuous?)
 }
 ```
@@ -826,10 +823,9 @@ query:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp non_redundancy {
-    in q: Outcome          -- can the constraint be proved from the others?
-    pub det out verdict: Verdict
-
+pub proc non_redundancy(
+    q: Outcome,            -- can the constraint be proved from the others?
+): (det verdict: Verdict) {
     ensure independent: when q = Sat, verdict = Pass
     ensure redundant: when q = Unsat, verdict = Fail
     ensure unknown: when q = Unknown, verdict = Inconclusive
@@ -842,7 +838,7 @@ An index `q[i]` is unspecified unless `0 <= i < q.len` (see
 [Expressions](Lang/Expressions.md#sequences)): the checks hold for every
 value it could have, so an out-of-range index is sound, but the constraint
 then says nothing useful there, which is almost always a mistake. For each
-index in a constraint, a definition or a binding, with its guard `G`, Fren
+index in a constraint, a definition or an argument of a call, with its guard `G`, Fren
 asks whether `0 <= i < q.len` can be proved from `G` and the
 hypotheses of where it is written:
 
@@ -850,8 +846,8 @@ hypotheses of where it is written:
 |---|---|
 | an assumption | the other assumptions |
 | a guarantee, expectation, cover goal or definition | `A`, `I` and `R`, as for vacuity |
-| a binding of an instance | `A`, and the instances declared before it |
-| a global expectation | the meanings of its binders' components |
+| an argument of a call | `A`, and the calls declared before it |
+| a global expectation | the meanings of its binders' procedures |
 | a precondition of a function | the function's other preconditions |
 | a function's body or postcondition | the function's preconditions |
 | the value of a constant | none |
@@ -859,17 +855,15 @@ hypotheses of where it is written:
 A guarantee's own `R` is among its hypotheses, so a guarantee can
 ensure its own definedness through another, such as `ensure long: q.len >
 3` beside `ensure third: q[3] = x`: the system meets both or neither. A
-component with no index has no definedness results. `check::definedness`
+procedure with no index has no definedness results. `check::definedness`
 decides each query like an expectation, and a model is a counterexample,
 reported at the `[` of the index:
 
 ```fren
-pub comp definedness {
-    in q: Outcome          -- can `0 <= i < q.len` be proved from the guard and the hypotheses?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc definedness(
+    q: Outcome,            -- can `0 <= i < q.len` be proved from the guard and the hypotheses?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
@@ -889,19 +883,17 @@ element type, whether each element does, can be proved from `G` and the
 hypotheses of where it is written, as for [definedness](#definedness): in
 the body of a defined function or the value of a constant, `G` and `N`
 over the function's parameters, which assumes that the parameters match
-their own pattern types. An instance's binding is checked instead by the
-[instance check](#instance-assumptions). A component or item with no
+their own pattern types. A call's argument is checked instead by the
+[call check](#call-assumptions). A procedure or item with no
 such value has no pattern-type results. `check::pattern_obligation`
 decides each query like an expectation, and a model is a counterexample,
 reported at the value:
 
 ```fren
-pub comp pattern_obligation {
-    in q: Outcome          -- can `e is P` be proved from the guard and the hypotheses?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc pattern_obligation(
+    q: Outcome,            -- can `e is P` be proved from the guard and the hypotheses?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
@@ -922,10 +914,9 @@ about:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp completeness_asked {
-    in unguarded_exhaustive?  -- its arms without guards are exhaustive
-    pub det out asked?
-
+pub proc completeness_asked(
+    unguarded_exhaustive?,    -- its arms without guards are exhaustive
+): (det asked?) {
     ensure rule: asked? iff not unguarded_exhaustive?
 
     -- A `match` without guards, or a table with a `_` row, is never asked about.
@@ -950,10 +941,10 @@ core, though the solver decides these:
 pub enum FlatArm { Wild, A, B, C, GuardedWild, GuardedA, GuardedB, GuardedC }
 
 set_option fren.lint.undecidable "allow" in
-pub comp flat_completeness_asked {
+pub proc flat_completeness_asked(
+    arms: Seq<FlatArm>,      -- the arms, in order
+): (asked?) {
     use self::FlatArm::{A, B, C, Wild}
-    in arms: Seq<FlatArm>    -- the arms, in order
-    pub out asked?
 
     ensure rule: asked? iff not (Wild in arms or (A in arms and B in arms and C in arms))
 
@@ -977,7 +968,7 @@ where the `match` is written, as for [definedness](#definedness). In the
 body of a defined function, there are no hypotheses but `G`, `N` and
 the function's preconditions, over its parameters, and in the value of a
 constant only `G` and `N`: a function's body is checked for every argument
-that meets its preconditions, not only those that a component passes it. `check::completeness` decides each query like an expectation, and a
+that meets its preconditions, not only those that a procedure passes it. `check::completeness` decides each query like an expectation, and a
 model is a counterexample, a value of the variables for which no arm is
 taken, reported at the `match`'s `match` (`F0625`), at the table's
 `table` (`F0618`), or at the `table` of a [table over a
@@ -985,12 +976,10 @@ scrutinee](Lang/Expressions.md#tables-over-a-scrutinee), which is asked
 about as the `match` it means is (`F0637`):
 
 ```fren
-pub comp completeness {
-    in q: Outcome          -- can `(P_1 and C_1) or ... or (P_n and C_n)` be proved from the guard and the hypotheses?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc completeness(
+    q: Outcome,            -- can `(P_1 and C_1) or ... or (P_n and C_n)` be proved from the guard and the hypotheses?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
@@ -1005,7 +994,7 @@ conditions `C_i` and `C_j` and the table's guard `G`, Fren asks whether
 `not (D_i and D_j and C_i and C_j)` can be proved from `G` and the
 hypotheses of where the table is written, as for
 [reachability](#reachability), without the constraint, definition or
-binding that the table is in. `D_i` says that the indexes in `C_i` are in
+argument that the table is in. `D_i` says that the indexes in `C_i` are in
 range where `C_i` evaluates them, under the guards within `C_i` alone (see
 [Sequences](Lang/Expressions.md#sequences)), and is `true` if it has none.
 A row's condition is evaluated only where the earlier rows' fail, so an
@@ -1034,12 +1023,10 @@ which both rows hold, reported at the condition of the later row
 arm (`F0636`):
 
 ```fren
-pub comp disjointness {
-    in q: Outcome          -- can `not (D_i and D_j and C_i and C_j)` be proved from the guard and the hypotheses?
-    pub det out verdict: Verdict
-    pub det out reports_witness?
-
-    inst as_expect: expectation { q }
+pub proc disjointness(
+    q: Outcome,            -- can `not (D_i and D_j and C_i and C_j)` be proved from the guard and the hypotheses?
+): (det verdict: Verdict, det reports_witness?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_witness? iff as_expect.reports_cex?)
 }
@@ -1058,16 +1045,18 @@ pub enum ArmAt { NoMatch, GuardFails, Taken }
 pub enum Indexes { Defined, Undefined }
 
 set_option fren.lint.undecidable "allow" in
-pub comp disjoint_question {
+pub proc disjoint_question(
+    arms: Seq<ArmAt>,            -- what each case does here, in order
+    defined: Seq<Indexes>,       -- whether the indexes in each case's guard are in range here
+    i: Int,                      -- the earlier case
+    j: Int,                      -- the later case
+): (
+    goal?,                       -- the goal of the question about `i` and `j` here
+) {
     use self::ArmAt::Taken
     use self::Indexes::Defined
-    in arms: Seq<ArmAt>          -- what each case does here, in order
-    in defined: Seq<Indexes>     -- whether the indexes in each case's guard are in range here
-    in i: Int                    -- the earlier case
-    in j: Int                    -- the later case
 
     assume pair: 0 <= i < j < arms.len and defined.len = arms.len
-    pub out goal?                -- the goal of the question about `i` and `j` here
 
     ensure rule: goal? iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
 
@@ -1099,11 +1088,10 @@ arms are asked about:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp reachability_asked {
-    in guarded?              -- the arm has a guard
-    in after_guard?          -- some arm before it has a guard
-    pub det out asked?
-
+pub proc reachability_asked(
+    guarded?,                -- the arm has a guard
+    after_guard?,            -- some arm before it has a guard
+): (det asked?) {
     ensure rule: asked? iff (guarded? or after_guard?)
 
     -- An arm of a `match` without guards is never asked about.
@@ -1122,11 +1110,11 @@ first arm with a guard is at or before it:
 pub enum GuardOf { Unguarded, Guarded }
 
 set_option fren.lint.undecidable "allow" in
-pub comp arms_asked {
+pub proc arms_asked(
+    guards: Seq<GuardOf>,    -- whether each arm has a guard, in order
+    j: Int,                  -- the arm asked about, by its position
+): (asked?) {
     use self::GuardOf::Guarded
-    in guards: Seq<GuardOf>  -- whether each arm has a guard, in order
-    in j: Int                -- the arm asked about, by its position
-    pub out asked?
 
     ensure rule: asked? iff 0 <= guards.index_of([Guarded], 0) <= j
 }
@@ -1144,7 +1132,7 @@ For arm `j`, with `P_k` and `C_k` as for [completeness](#completeness),
 Fren asks whether `not (F_j and T_j)` can be proved from `G` and the
 hypotheses of where the `match` is written, as for
 [completeness](#completeness), but without the constraint, definition
-or binding that the `match` is in. That constraint holds of a behaviour
+or argument that the `match` is in. That constraint holds of a behaviour
 only where its `match` has the value it needs, so it would rule out the
 arms whose values it does not need: in `ensure r: match k { Kind::A if
 ok? => true, _ => false }`, `r` holds only where the first arm is taken,
@@ -1162,11 +1150,10 @@ one always holds. `check::reachability` decides each query like
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp reachability {
-    in q: Outcome          -- can `not (F_j and T_j)` be proved from the guard and the hypotheses?
-    pub det out verdict: Verdict
-
-    inst as_vacuity: non_vacuity { q }
+pub proc reachability(
+    q: Outcome,            -- can `not (F_j and T_j)` be proved from the guard and the hypotheses?
+): (det verdict: Verdict) {
+    call as_vacuity := non_vacuity(q)
 
     ensure like_vacuity: verdict = as_vacuity.verdict
 }
@@ -1188,16 +1175,19 @@ position, as there:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp split_questions {
+pub proc split_questions(
+    arms: Seq<ArmAt>,        -- what each arm does here, in order
+    j: Int,                  -- the arm whose reachability is asked about
+    k: Int,                  -- any position, for `none_before`
+): (
+    first: Int,
+    reach_goal?,             -- the goal of arm `j`'s reachability question here
+    complete_goal?,          -- the goal of the completeness question here
+) {
     use self::ArmAt::Taken
-    in arms: Seq<ArmAt>      -- what each arm does here, in order
-    in j: Int                -- the arm whose reachability is asked about
-    in k: Int                -- any position, for `none_before`
 
     assume an_arm: 0 <= j < arms.len
-    pub out first: Int := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
-    pub out reach_goal?      -- the goal of arm `j`'s reachability question here
-    pub out complete_goal?   -- the goal of the completeness question here
+    out first := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
 
     ensure reach: reach_goal? iff first != j
     ensure complete: complete_goal? iff first >= 0
@@ -1219,22 +1209,21 @@ guarantee's own `R` is among its hypotheses, so a table or a `match` in a
 guarantee may be complete only because another guarantee rules out
 the cases it leaves out, and an arm of one may be unreachable because
 another guarantee rules out every behaviour that takes it. Reachability
-and disjointness leave out the constraint, definition or binding that the
+and disjointness leave out the constraint, definition or argument that the
 `match` or table is in, as above: a definition's equation in `D` too, so that in
-`out y: Int := match x { n if n > 0 => 1, _ => 2 }` beside `ensure q: y =
+`let y: Int := match x { n if n > 0 => 1, _ => 2 }` beside `ensure q: y =
 1`, the last arm is reachable, as it would be in an `ensure`. For an
-assumption, and a binding, whose instance is not among its hypotheses,
+assumption, and an argument, whose call is not among its hypotheses,
 that is already so.
 `check::reach_hypothesis` states which of the hypotheses of definedness
 reachability and disjointness ask under:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp reach_hypothesis {
-    in definedness?          -- the hypothesis is one of the definedness check's at the `match`
-    in enclosing?            -- it is the constraint, definition or binding that the `match` is in
-    pub det out used?
-
+pub proc reach_hypothesis(
+    definedness?,            -- the hypothesis is one of the definedness check's at the `match`
+    enclosing?,              -- it is the constraint, definition or argument that the `match` is in
+): (det used?) {
     ensure rule: used? iff (definedness? and not enclosing?)
 }
 ```
@@ -1249,11 +1238,13 @@ under the hypotheses at the positions where `used?` holds, and
 ```fren
 pub enum HypAt { Definedness, Enclosing, Other }
 
-pub comp reach_hypotheses {
+pub proc reach_hypotheses(
+    hyps: Seq<HypAt>,        -- the hypotheses, in order
+    k: Int,                  -- a hypothesis, by its position
+): (
+    used?,                   -- reachability asks under hypothesis `k`
+) {
     use self::HypAt::Definedness
-    in hyps: Seq<HypAt>      -- the hypotheses, in order
-    in k: Int                -- a hypothesis, by its position
-    pub out used?            -- reachability asks under hypothesis `k`
 
     ensure rule: used? iff (0 <= k < hyps.len and hyps[k] = Definedness)
 
@@ -1274,7 +1265,7 @@ For each application `f(a_1, ..., a_n)` of a function `f` with
 precondition `P` of `f`, Fren asks whether `P`, with the arguments for the
 parameters, can be proved from `G` and the hypotheses of where the
 application is written, as for [definedness](#definedness): this is the
-[instance check](#instance-assumptions) for a function. The guard is read
+[call check](#call-assumptions) for a function. The guard is read
 as an index's is (see [Sequences](Lang/Expressions.md#sequences)), so in
 `kind(t) = SetTy and elem(t) = u`, `elem(t)` is evaluated only where
 `kind(t) = SetTy`. An application in a precondition of another function
@@ -1286,12 +1277,10 @@ query like an expectation, and a model is a counterexample, reported at
 the name of the applied function:
 
 ```fren
-pub comp precondition {
-    in q: Outcome          -- can `P(a_1, ..., a_n)` be proved from the guard and the hypotheses?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc precondition(
+    q: Outcome,            -- can `P(a_1, ..., a_n)` be proved from the guard and the hypotheses?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
@@ -1308,12 +1297,10 @@ query is proved exactly when every guarded argument meets the
 precondition:
 
 ```fren
-pub comp precondition_at {
-    in pres: Set<Argument>      -- the arguments that meet the precondition
-    in guarded: Set<Argument>   -- the arguments where the application's guard holds
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
+pub proc precondition_at(
+    pres: Set<Argument>,        -- the arguments that meet the precondition
+    guarded: Set<Argument>,     -- the arguments where the application's guard holds
+): (det verdict: Verdict, det reports_cex?) {
     ensure rule: verdict = (if guarded subset pres then Pass else Fail)
     ensure cex: reports_cex? iff verdict = Fail
 
@@ -1339,20 +1326,21 @@ fails or the postcondition holds (see [Postconditions](#postconditions)).
 the questions and facts with the same functions, which its implementation
 runs on these values. Membership in a sequence of unknown length, as
 `false in pres`, is outside the [decidable core](Lang/Decidability.md),
-so the component opts out:
+so the procedure opts out:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp application_contract {
-    in pres: Seq<Bool>     -- the function's preconditions, in order, at the arguments
-    in posts: Seq<Bool>    -- its postconditions, in order, at the arguments and the application's value
-    in guarded?            -- the application's guard holds
-    in k: Int              -- any clause
-    pub det out asks?      -- the application asks a question of precondition `k`
-    pub det out question?  -- the question's goal holds
-    pub det out brings?    -- the application brings a fact of postcondition `k`
-    pub det out fact?      -- the fact holds
-
+pub proc application_contract(
+    pres: Seq<Bool>,       -- the function's preconditions, in order, at the arguments
+    posts: Seq<Bool>,      -- its postconditions, in order, at the arguments and the application's value
+    guarded?,              -- the application's guard holds
+    k: Int,                -- any clause
+): (
+    det asks?,             -- the application asks a question of precondition `k`
+    det question?,         -- the question's goal holds
+    det brings?,           -- the application brings a fact of postcondition `k`
+    det fact?,             -- the fact holds
+) {
     ensure asked: asks? iff 0 <= k < pres.len
     ensure question: question? iff (asks? and (not guarded? or pres[k]))
     ensure brought: brings? iff 0 <= k < posts.len
@@ -1370,7 +1358,7 @@ For each postcondition `Q` of a [defined
 function](Lang/Items.md#defined-functions), Fren asks whether `Q` can be
 proved from the function's preconditions, with its parameters free: a
 claim about the body, which the solver sees through the function's
-definition, as an expectation is a claim about a component. The query
+definition, as an expectation is a claim about a procedure. The query
 has no quantifier, since the parameters are its variables. A model is a
 counterexample, the values of the parameters, reported at the
 postcondition's name. An uninterpreted function's postconditions are not
@@ -1380,12 +1368,10 @@ its queries as `N` (see [above](#checks)), and an
 `check::postcondition` decides each query like an expectation:
 
 ```fren
-pub comp postcondition {
-    in q: Outcome          -- can `Q` be proved from the function's preconditions?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc postcondition(
+    q: Outcome,            -- can `Q` be proved from the function's preconditions?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
@@ -1394,17 +1380,15 @@ pub comp postcondition {
 `check::postcondition_at` states it in detail, over the same domain: a
 defined function whose preconditions hold at the arguments `pres`, and
 whose postcondition holds, of the body's value, at the arguments `posts`.
-Its implementation builds the body's component with the function's
+Its implementation builds the body's procedure with the function's
 preconditions and postcondition, and runs the real check, with a solver
 that tries every argument. It refines `check::postcondition`:
 
 ```fren
-pub comp postcondition_at {
-    in pres: Set<Argument>    -- the arguments that meet the preconditions
-    in posts: Set<Argument>   -- the arguments where the postcondition holds
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
+pub proc postcondition_at(
+    pres: Set<Argument>,      -- the arguments that meet the preconditions
+    posts: Set<Argument>,     -- the arguments where the postcondition holds
+): (det verdict: Verdict, det reports_cex?) {
     ensure rule: verdict = (if pres subset posts then Pass else Fail)
     ensure cex: reports_cex? iff verdict = Fail
 
@@ -1432,12 +1416,11 @@ pub type ConstraintName
 pub fn refutes?(Set<ConstraintName>)   -- the constraints entail the failure
 
 set_option fren.lint.undecidable "allow" in
-pub comp minimal {
-    in candidates: Set<ConstraintName>
-    in core: Set<ConstraintName>
-    in dropped: ConstraintName          -- any one constraint, for the minimality condition
-    pub det out minimal?
-
+pub proc minimal(
+    candidates: Set<ConstraintName>,
+    core: Set<ConstraintName>,
+    dropped: ConstraintName,            -- any one constraint, for the minimality condition
+): (det minimal?) {
     ensure rule: minimal? iff (core subset candidates and refutes?(core)
         and (when dropped in core, not refutes?(core minus {dropped})))
 
@@ -1455,16 +1438,17 @@ constraint, so the set may then not be minimal.
 
 ## Determinism
 
-An output declared with `det out` (see [Components](Lang/Components.md#members))
-must be determined by the component's inputs: any two behaviours that
-satisfy `I` and `R` on the same admissible input agree on it. For each `det
-out` `x`, Fren takes a second copy `y'`, `o'` of the instance variables and
-outputs, and asks whether `x = x'` can be proved from
+An output declared with `det`, a result or an `exists` or `let` variable
+(see [Procedures](Lang/Procedures.md#members)), must be determined by the
+procedure's inputs: any two behaviours that satisfy `I` and `R` on the
+same admissible input agree on it. For each `det` output `x`, Fren takes a
+second copy `y'`, `o'` of the call variables and outputs, and asks whether
+`x = x'` can be proved from
 
   A(i) ∧ I(i, y) ∧ R(i, y, o) ∧ I(i, y') ∧ R(i, y', o')
 
-The instance variables are copied too, so an output that depends on an
-instance's output which is not itself determined is not determined either.
+The call variables are copied too, so an output that depends on a
+call's output which is not itself determined is not determined either.
 The functions are not copied: both copies are under the same
 [interpretation](#interpretations), so an output that is a function of the
 inputs, as in `ensure r: x = f(i)`, is determined. `check::copied` gives what
@@ -1474,10 +1458,7 @@ the second copy renames:
 pub enum Symbol { Input, InstanceVariable, Output, Function }
 
 set_option fren.evidence "enumerated" in
-pub comp copied {
-    in symbol: Symbol
-    pub det out copied?
-
+pub proc copied(symbol: Symbol): (det copied?) {
     ensure rule: copied? iff symbol is Symbol::InstanceVariable | Symbol::Output
 
     expect shared_interpretation: when symbol = Symbol::Function, not copied?
@@ -1490,12 +1471,10 @@ A model is a counterexample: Fren reports the inputs, and the two values of
 `check::determinism` decides each query like an expectation:
 
 ```fren
-pub comp determinism {
-    in q: Outcome          -- can `x = x'` be proved from both copies?
-    pub det out verdict: Verdict
-    pub det out reports_cex?
-
-    inst as_expect: expectation { q }
+pub proc determinism(
+    q: Outcome,            -- can `x = x'` be proved from both copies?
+): (det verdict: Verdict, det reports_cex?) {
+    call as_expect := expectation(q)
 
     ensure like_expect: verdict = as_expect.verdict and (reports_cex? iff as_expect.reports_cex?)
 }
@@ -1514,26 +1493,26 @@ member := evidence-setting "in" member | ...
 evidence-setting := "set_option" "fren.evidence" STRING
 ```
 
-`set_option fren.evidence "tested" in` before a component, an expectation
-or global expectation, an instance or a `det out` sets the evidence of its
+`set_option fren.evidence "tested" in` before a procedure, an expectation
+or global expectation, a call or a `det` output sets the evidence of its
 checks to *testing*; `"solver"`, the default, sets it back. Before a
-component, it sets that of all the component's checks, and before a member,
-that of the member's checks, which takes precedence:
+procedure, it sets that of all the procedure's checks, and before a member
+or result, that of its checks, which takes precedence:
 
 | Before | Its checks |
 |---|---|
 | an expectation | the expectation, its vacuity, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
 | a cover goal | the cover goal, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
-| an instance | the instance's assumptions, and the definedness, completeness, disjointness, reachability and preconditions of its bindings |
-| a `det out` | its determinism |
-| a component | all of the component's checks |
+| a call | the call's assumptions, and the definedness, completeness, disjointness, reachability and preconditions of its arguments |
+| a `det` output | its determinism |
+| a procedure | all of the procedure's checks |
 | a global expectation | its expectation, its vacuity, and the definedness, completeness, disjointness, reachability and preconditions of what it reads |
-| a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the bindings of the abstract component's instances |
+| a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the arguments of the abstract procedure's calls |
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
-evidence of every later component, global expectation and
+evidence of every later procedure, global expectation and
 [refinement](Lang/Refinement.md) in the file, and
-before any other item it sets nothing. Within a component, the setting must
+before any other item it sets nothing. Within a procedure, the setting must
 be followed by `in` and by a member whose checks it sets: before anything
 else, such as a guarantee, it is an error (`F0215`), and so is a
 `set_option` of any other option before a member (`F0216`). The setting is a
@@ -1571,7 +1550,7 @@ failure leaves the application's value unknown. A test that reaches
 an expectation shows that its trigger can hold, which is what its vacuity
 check would show. A cover goal asks whether something can hold too, but
 testing can pass it: a test that finds a behaviour that meets the
-component, in which the goal holds, is a witness, and passes it. Testing
+procedure, in which the goal holds, is a witness, and passes it. Testing
 that finds none leaves the goal inconclusive, with a warning (`F0616`),
 since a failed search does not show that no behaviour exists; it never
 fails a goal. The summary counts the passes that came from testing:
@@ -1589,7 +1568,10 @@ check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 ```fren
 pub enum Run { BySolver, ByTesting, Skipped }
 
-pub comp by_testing {
+pub proc by_testing(
+    kind: Kind,
+    tested?,               -- the check's evidence is testing
+): (det run: Run) {
     use self::Kind::{
         Completeness,
         Definedness,
@@ -1600,9 +1582,6 @@ pub comp by_testing {
         Vacuity,
     }
     use self::Run::{BySolver, ByTesting, Skipped}
-    in kind: Kind
-    in tested?             -- the check's evidence is testing
-    pub det out run: Run
 
     ensure rule: run = table {
         | not tested? => BySolver,
@@ -1641,7 +1620,7 @@ size-setting     := "set_option" "fren.enumeration.size" NUMBER ["in" item]
   testing](#enumeration-then-testing)).
 
 Any other value but `"solver"` and `"tested"` is the error `F0214`. A value
-sets the same checks as `"tested"` does, before a component or a member.
+sets the same checks as `"tested"` does, before a procedure or a member.
 `set_option fren.enumeration.size N`, before an item with `in`, or alone,
 for the rest of the file, as `fren.evidence` is, sets the size bound of
 the checks that the later items set to enumeration; the default is 3. A
@@ -1658,12 +1637,8 @@ pub enum EvidenceValue { Solver, Tested, Enumerated, EnumeratedTested, Other }
 pub enum Method { Solver, Testing, Enumeration, EnumerationThenTesting, Skipped }
 
 set_option fren.evidence "enumerated" in
-pub comp evidence_value {
+pub proc evidence_value(value: EvidenceValue): (det valid?, det tested?, det enumerated?) {
     use self::EvidenceValue::{Enumerated, EnumeratedTested, Other, Tested}
-    in value: EvidenceValue
-    pub det out valid?
-    pub det out tested?
-    pub det out enumerated?
 
     ensure valid: valid? iff value != Other
     ensure testing: tested? iff value in {Tested, EnumeratedTested}
@@ -1680,15 +1655,15 @@ pub fn testable?(kind: Kind) :=
 -- only sequences have, and postconditions, which only bodies have.
 pub fn enumerable?(kind: Kind) := not kind in {Kind::Definedness, Kind::Postcondition}
 
-pub comp by_evidence {
+pub proc by_evidence(
+    kind: Kind,
+    tested?,               -- the check's evidence includes testing
+    enumerated?,           -- the check's evidence includes enumeration
+    obligation?,           -- a definedness check of a value given where a pattern type is declared
+): (det method: Method) {
     use self::Kind::{Definedness, Redundancy, Vacuity}
     use self::Method::{Enumeration, EnumerationThenTesting, Skipped, Solver, Testing}
-    in kind: Kind
-    in tested?             -- the check's evidence includes testing
-    in enumerated?         -- the check's evidence includes enumeration
-    in obligation?         -- a definedness check of a value given where a pattern type is declared
     assume obligation_definedness: when obligation?, kind = Definedness
-    pub det out method: Method
 
     ensure rule: method = table {
         | obligation? => Solver,
@@ -1731,9 +1706,9 @@ Enumeration needs every variable's type to be *enumerable*: `Bool`, `Int`
 and `Nat`, an enumeration, recursive or not, a record, a newtype, an
 instance of a generic type, a pattern type, and an abstract type, with the
 types within it enumerable too. `String`, sets, relations and sequences
-are not yet. A variable whose type brings no constraint, such as an
-instance's input, which the instance check asks of its binding, ranges
-over its type without patterns. A component, or a global expectation,
+are not yet. A variable whose type brings no constraint, such as a
+call's input, which the call check asks of its argument, ranges
+over its type without patterns. A procedure, or a global expectation,
 with a variable of another type, that applies an uninterpreted function
 with a [contract](Lang/Items.md#contracts), whose postconditions constrain
 its interpretations, or that has an unbounded quantifier is not
@@ -1766,13 +1741,13 @@ parts:
 ```fren
 pub enum Sized { Boolean, Integer, Natural, FiniteInteger, AbstractValue, Nullary, WithPayload, Record }
 
-pub comp value_size {
+pub proc value_size(
+    kind: Sized,
+    value: Int,          -- an integer's value, or the position of an abstract type's value
+    largest: Nat,        -- the largest size of its payload's or fields' values, 0 if it has none
+): (det size: Nat) {
     use self::Sized::{AbstractValue, Integer, Natural, Record, WithPayload}
-    in kind: Sized
-    in value: Int        -- an integer's value, or the position of an abstract type's value
-    in largest: Nat      -- the largest size of its payload's or fields' values, 0 if it has none
     assume natural: when kind in {Natural, AbstractValue}, value >= 0
-    pub det out size: Nat
 
     ensure rule: size = match kind {
         Integer => value.abs,
@@ -1794,12 +1769,13 @@ enumeration lists the pair. It is proved of the enumerator
 (`Shape.vals` in `FrenCore.Enumeration`) for every shape:
 
 ```fren
-pub comp listed {
-    in value?            -- the value, with the size, is one of the shape's
-    in size: Nat
-    in bound: Nat
-    pub det out times: Nat   -- how many times the enumeration lists it
-
+pub proc listed(
+    value?,              -- the value, with the size, is one of the shape's
+    size: Nat,
+    bound: Nat,
+): (
+    det times: Nat,          -- how many times the enumeration lists it
+) {
     ensure exactly_once: times = if value? and size <= bound then 1 else 0
 
     expect complete: when value? and size <= bound, times = 1
@@ -1821,12 +1797,11 @@ values' order, the first varying slowest; integers `0, 1, -1, 2, -2, ...`;
 a finite integer pattern type's in increasing order. `check::smallest_first`:
 
 ```fren
-pub comp smallest_first {
-    in earlier?          -- the first value is listed before the second
-    in first: Nat        -- the first value's size
-    in second: Nat       -- the second value's size
-    pub det out ordered?
-
+pub proc smallest_first(
+    earlier?,            -- the first value is listed before the second
+    first: Nat,          -- the first value's size
+    second: Nat,         -- the second value's size
+): (det ordered?) {
     ensure rule: ordered? iff (not earlier? or first <= second)
 
     expect sorted: when earlier?, ordered? iff first <= second
@@ -1837,8 +1812,8 @@ and the enumerator meets it with `ordered?` always true.
 
 ### Searching
 
-A component's *slots* are its variables whose values are enumerated: its
-own and its instances', but not its defined outputs, which are computed
+A procedure's *slots* are its variables whose values are enumerated: its
+own and its calls', but not those with definitions, which are computed
 from their definitions, then a second copy of each that determinism
 copies, and last, a *hidden* slot for each type whose unspecified value
 some constraint reads, where no row of a table holds: the interpretation's
@@ -1863,7 +1838,7 @@ order of the slots and of each slot's values, the last slot varying
 fastest. So no slot starves the others, and the model is the smallest:
 of the least level, and the first of that level. A model gives the slots
 that the query reads, as a solver's gives the variables that it mentions,
-and the defined outputs that it mentions, by their definitions. Each
+and the defined variables that it mentions, by their definitions. Each
 hypothesis is evaluated as soon as the slots it reads are set, which
 changes how fast the search is, not which model it finds. `∃ outputs`
 searches every value of the outputs up to the bound.
@@ -1878,9 +1853,9 @@ functions of `FrenCore.Enumeration` (in `Impls/Enumeration.lean`):
 
 - *The slots suffice* (`check::slots_suffice`): a formula's value depends
   only on the slots that `EF.slots` gives it, given that each constraint's
-  depends only on the slots it reads, and each defined output's on those
+  depends only on the slots it reads, and each defined variable's on those
   of its definition, through the definitions it mentions. So every slot
-  that a check's outcome depends on is searched, a defined output's
+  that a check's outcome depends on is searched, a defined variable's
   definition's too.
 - *Pruning is conservative* (`check::pruning`): trying each part as soon as
   the slots it reads are chosen, and not extending a choice that fails
@@ -1897,57 +1872,62 @@ A shape *exhausted* at the bound has no value beyond it
 (`check::shape_bound`), so an exhausted search sees every behaviour.
 
 ```fren
-pub comp slots_suffice {
-    in atoms_local?          -- each constraint's value depends only on the slots it reads
-    in definitions_local?    -- each defined output's on those of its definition
-    in outputs_distinct?     -- no output has two slots
-    in agree?                -- two assignments agree on the formula's slots
-    pub out same_value?      -- the formula has the same value in both
-
+pub proc slots_suffice(
+    atoms_local?,            -- each constraint's value depends only on the slots it reads
+    definitions_local?,      -- each defined variable's on those of its definition
+    outputs_distinct?,       -- no output has two slots
+    agree?,                  -- two assignments agree on the formula's slots
+): (
+    same_value?,             -- the formula has the same value in both
+) {
     ensure suffice: when atoms_local? and definitions_local? and outputs_distinct? and agree?, same_value?
 }
 
-pub comp pruning {
-    in local?                -- each part's value depends only on the slots it reads
-    in distinct?             -- the slots chosen are distinct
-    pub out first?           -- the choice found is the first of the order that makes every part true
-
+pub proc pruning(
+    local?,                  -- each part's value depends only on the slots it reads
+    distinct?,               -- the slots chosen are distinct
+): (
+    first?,                  -- the choice found is the first of the order that makes every part true
+) {
     ensure conservative: when local? and distinct?, first?
 }
 
-pub comp fair_order {
-    in ordered?              -- each slot's values up to a size are its first ones
-    in within?               -- an assignment chooses, for each slot, one of its values up to the bound
-    in earlier?              -- one assignment of the order comes before another
-    pub out listed?          -- the order lists the first assignment
-    pub out times: Nat       -- how many times it does
-    pub out first_level: Nat     -- the level of the earlier assignment
-    pub out second_level: Nat    -- the level of the later one
-
+pub proc fair_order(
+    ordered?,                -- each slot's values up to a size are its first ones
+    within?,                 -- an assignment chooses, for each slot, one of its values up to the bound
+    earlier?,                -- one assignment of the order comes before another
+): (
+    listed?,                 -- the order lists the first assignment
+    times: Nat,              -- how many times it does
+    first_level: Nat,            -- the level of the earlier assignment
+    second_level: Nat,           -- the level of the later one
+) {
     ensure complete: when ordered? and within?, listed?
     ensure once: when ordered?, times = if listed? then 1 else 0
     ensure smallest_first: when ordered? and earlier?, first_level <= second_level
 }
 
-pub comp search_first {
-    in local?                -- each part's value depends only on the slots it reads
-    in reads?                -- the parts read some slot
-    pub out first?           -- the search's model is the first assignment of the fair order that makes every part true
-
+pub proc search_first(
+    local?,                  -- each part's value depends only on the slots it reads
+    reads?,                  -- the parts read some slot
+): (
+    first?,                  -- the search's model is the first assignment of the fair order that makes every part true
+) {
     ensure finds_first: when local? and reads?, first?
 }
 
-pub comp shape_bound {
-    in exhausted?            -- the shape is exhausted at the bound
-    in bound: Nat
-    pub out value?           -- a value, with a size, is one of the shape's
-    pub out size: Nat
-
+pub proc shape_bound(
+    exhausted?,              -- the shape is exhausted at the bound
+    bound: Nat,
+): (
+    value?,                  -- a value, with a size, is one of the shape's
+    size: Nat,
+) {
     ensure within: when exhausted? and value?, size <= bound
 }
 ```
 
-The number of assignments a component's enumeration searches is the
+The number of assignments a procedure's enumeration searches is the
 product of its slots' numbers of values, its second copies' too if
 determinism is enumerated. Above 65,536, it is the error `F0644`, which
 gives the number, and none of its checks set to enumeration is run
@@ -1956,10 +1936,9 @@ gives the number, and none of its checks set to enumeration is run
 ```fren
 pub const MAX_BEHAVIOURS: Int := 65536
 
-pub comp enumeration_limit {
-    in count: Nat        -- the assignments that its enumeration would search
-    pub det out runs?
-
+pub proc enumeration_limit(
+    count: Nat,          -- the assignments that its enumeration would search
+): (det runs?) {
     ensure rule: runs? iff count <= MAX_BEHAVIOURS
 }
 ```
@@ -1979,7 +1958,16 @@ values are pinned by the input, and its contradictory assumptions rest on
 `unsat`. `check::enumerated_verdict`:
 
 ```fren
-pub comp enumerated_verdict {
+pub proc enumerated_verdict(
+    kind: Kind,
+    verdict: Verdict,        -- what the check algorithm reaches from the search's answers
+    conflict?,               -- realizability failed on a conflict, rather than contradictory assumptions
+    exact?,                  -- every slot is exhausted
+    outputs_exact?,          -- every slot of an output is exhausted
+): (
+    det reported: Verdict,
+    det bounded?,            -- it holds only up to the bound
+) {
     use self::Kind::{
         Completeness,
         Determinism,
@@ -1990,13 +1978,6 @@ pub comp enumerated_verdict {
         Realizability,
     }
     use self::Verdict::{Fail, Inconclusive, Pass}
-    in kind: Kind
-    in verdict: Verdict      -- what the check algorithm reaches from the search's answers
-    in conflict?             -- realizability failed on a conflict, rather than contradictory assumptions
-    in exact?                -- every slot is exhausted
-    in outputs_exact?        -- every slot of an output is exhausted
-    pub det out reported: Verdict
-    pub det out bounded?     -- it holds only up to the bound
 
     ensure reported_rule: reported = table {
         | exact? => verdict,
@@ -2021,7 +2002,7 @@ The verdict family is that of [Verdict families](#verdict-families), for
 the kinds that enumeration decides. A bounded inconclusive result says
 that enumeration searched every behaviour up to the bound (`F0608`).
 Where some checks pass only up to the bound, each front end says how many
-at the component, as information (`F0646`), and the summary counts them:
+at the procedure, as information (`F0646`), and the summary counts them:
 
 ```text
 fren: 30 passed (3 by bounded enumeration), 0 failed, 0 inconclusive, 0 redundant
@@ -2035,7 +2016,7 @@ bound, each query draws 100 random assignments of the slots it reads, the
 `t`th taking, for each slot, its `t`th random value of a size above the
 bound, at most `10 * (n + 1)` for the bound `n`, a second copy another,
 and, for a slot whose values are all within the bound, one of them at
-random. The random values come from a seed of the component's path, so
+random. The random values come from a seed of the procedure's path, so
 both front ends draw the same ones, whatever `--seed` and `--tests` are.
 Where every slot is exhausted there is nothing beyond the bound, and the
 verdict is decided as with `"enumerated"`. A model that testing finds is
@@ -2048,13 +2029,15 @@ the bound, and the information `F0646` then counts the tests.
 ```fren
 pub enum Found { Model, NoModel }
 
-pub comp enumerated_answer {
+pub proc enumerated_answer(
+    search: Found,           -- what the search up to the bound found
+    testing?,                -- the check is set to `"enumerated+tested"`
+    test: Found,             -- what testing beyond the bound found, if asked
+): (
+    det answer: Outcome,
+    det from_test?,          -- the model is testing's
+) {
     use self::Found::{Model, NoModel}
-    in search: Found         -- what the search up to the bound found
-    in testing?              -- the check is set to `"enumerated+tested"`
-    in test: Found           -- what testing beyond the bound found, if asked
-    pub det out answer: Outcome
-    pub det out from_test?   -- the model is testing's
 
     ensure answer_rule: (answer = Outcome::Sat) iff (search = Model or (testing? and test = Model))
     ensure no_unknown: answer != Outcome::Unknown
@@ -2068,9 +2051,9 @@ pub comp enumerated_answer {
 ### Agreement
 
 Lean decides the checks set to enumeration itself, by evaluation: each
-constraint of the component is compiled by Lean's evaluator into a
+constraint of the procedure is compiled by Lean's evaluator into a
 function of an assignment of the slots, which reads each variable's value
-from its slot, with the defined outputs replaced by their definitions,
+from its slot, with the defined variables replaced by their definitions,
 the abstract types by `Nat`, whose `k` is the `k`th value, and each
 unspecified value by its hidden slot's, and decides the constraint. The
 search, the order, the counts and the verdicts are `FrenCore`'s, shared

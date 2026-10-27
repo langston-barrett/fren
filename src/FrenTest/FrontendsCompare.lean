@@ -66,7 +66,7 @@ def expectationDiff : Array String :=
 
 -- Both report the lints of an item with a static error (`Reqs/View`), and
 -- each of Lean's errors on other lines of it is compared.
-def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    ensure q: y = x * x\n    ensure r: y = K\n}\n"
+def item : String := "proc c(\n    x: Int,\n): (y: Int) {\n    ensure q: y = x * x\n    ensure r: y = K\n}\n"
 
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported", warn 2 "unused variable `x`"] }
@@ -97,7 +97,7 @@ def item : String := "comp c {\n    in x: Int\n    pub out y: Int\n    ensure q:
 
 /-! ## The binary cannot parse what Lean accepts -/
 
-def parse : String := "comp c {\n    in x: Int\n    ensure q: x = 1\n}\n\ncomp d {\n    in y: Int\n    ensure q: y = 1\n}\n"
+def parse : String := "proc c(\n    x: Int,\n) {\n    ensure q: x = 1\n}\n\nproc d(\n    y: Int,\n) {\n    ensure q: y = 1\n}\n"
 
 -- Lean's only error is a failed check in another item.
 #guard differs parse { diags := #[err 3 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
@@ -105,7 +105,7 @@ def parse : String := "comp c {\n    in x: Int\n    ensure q: x = 1\n}\n\ncomp d
 
 -- Lean's other errors in the item, before the binary's parse error: Lean
 -- parsed the whole item, the line that the binary rejects included.
-def parseLate : String := "comp c {\n    in x: Int\n    expect x0: x = 1\n    ensure q: x =\n}\n"
+def parseLate : String := "proc c(\n    x: Int,\n) {\n    expect x0: x = 1\n    ensure q: x =\n}\n"
 
 #guard differs parseLate { diags := #[err 4 "expected an expression, found `}`" "F0104"], exit? := some 2 }
   { diags := #[err 3 "expectation `c::x0` does not hold"] }
@@ -115,13 +115,13 @@ def parseLate : String := "comp c {\n    in x: Int\n    expect x0: x = 1\n    en
 
 -- Lean's parse error two lines before the binary's: the binary parsed
 -- that line, so this is a difference of its own.
-def parseEarly : String := "comp c {\n    in x: Int\n    expect e: {(1, 2)}.range.card = 1\n    ensure q: x =\n}\n"
+def parseEarly : String := "proc c(\n    x: Int,\n) {\n    expect e: {(1, 2)}.range.card = 1\n    ensure q: x =\n}\n"
 
 #guard differs parseEarly { diags := #[err 5 "expected an expression, found `}`" "F0104"], exit? := some 2 }
   { diags := #[err 3 "unexpected token '.'; expected fren_expr"] }
 
 -- The same, across a blank line and a comment, which the binary skips.
-def parseGap : String := "comp c {\n    ensure q: x =\n\n    -- a comment\n    expect e: x = 1\n}\n"
+def parseGap : String := "proc c() {\n    ensure q: x =\n\n    -- a comment\n    expect e: x = 1\n}\n"
 
 #guard agrees parseGap { diags := #[err 5 "expected an expression, found keyword `expect`" "F0104"], exit? := some 2 }
   { diags := #[err 2 "unexpected token 'expect'; expected fren_expr"] }
@@ -135,7 +135,7 @@ def parseGap : String := "comp c {\n    ensure q: x =\n\n    -- a comment\n    e
 
 /-! ## Summaries and exit codes -/
 
-def checked : String := "comp c {\n    in x: Int\n    pub out y?\n    ensure q: y? iff x = 1\n}\n"
+def checked : String := "proc c(\n    x: Int,\n): (y?) {\n    ensure q: y? iff x = 1\n}\n"
 
 -- A summary that differs with no undecided check to explain it.
 #guard differs checked { diags := #[], summary? := "2 passed, 0 failed, 0 inconclusive, 0 redundant", exit? := some 0 }
@@ -213,7 +213,7 @@ def unrealizable (input : Array String) (core : String) (hosted : Bool := false)
 /-! ## Realizability failures (#99) -/
 
 def conflict : String :=
-  "comp c {\n    in s: String\n    inst w: d { b? := s != \"\" }\n    ensure q0: w.b?\n    ensure q1: not w.b?\n}\n"
+  "proc c(s: String) {\n    call w := d(s != \"\")\n\n    ensure q0: w.b?\n    ensure q1: not w.b?\n}\n"
 
 -- Different inputs, so different requirements and notes, each minimal for
 -- its input: they agree.

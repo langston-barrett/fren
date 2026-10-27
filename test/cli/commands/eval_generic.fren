@@ -1,11 +1,8 @@
---@ args: eval --comp c --set x=Option::Some(3)
+--@ args: eval --proc c --set x=Option::Some(3)
 -- A value of a generic type is given and shown as Fren builds it.
 pub enum Option<T> { None, Some(T) }
 
-comp c {
-    in x: Option<Int>
-    pub out y: Option<Int>
-
+proc c(x: Option<Int>): (y: Option<Int>) {
     ensure r: y = (match x { Option::Some(n) => Option::Some(n + 1), Option::None => Option::None })
     expect grows: y != Option::None
 }

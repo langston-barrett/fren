@@ -9,12 +9,9 @@ enum Comparison { Eq, Ne, Lt, Le, Gt, Ge }
 enum IndexTest { Found, Absent, AtStart, Other }
 
 -- The issue's example: each case is stated once, and `Other` once.
-comp index_test {
+proc index_test(op: Comparison, bound: Int): (det test: IndexTest) {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
     use self::IndexTest::{Absent, AtStart, Found, Other}
-    in op: Comparison
-    in bound: Int
-    pub det out test: IndexTest
 
     ensure rule: test = match op {
         Ge if bound = 0 => Found,
@@ -36,10 +33,7 @@ comp index_test {
 -- The binders of an arm's pattern are in scope in its guard, at any depth.
 enum Shape { Circle(Int), Rect(Int, Int), Empty }
 
-comp area {
-    in s: Shape
-    pub det out big?
-
+proc area(s: Shape): (det big?) {
     ensure r: big? iff match s {
         Shape::Circle(r) if r > 10 => true,
         Shape::Rect(w, h) if w * 2 > 20 and h > 0 => true,
@@ -53,11 +47,7 @@ comp area {
 -- An arm with a guard hides nothing from the arms after it, so the arms
 -- without guards make the `match` exhaustive, and the last arm takes
 -- whatever is left.
-comp hides_nothing {
-    in b?
-    in x: Int
-    pub det out y: Int
-
+proc hides_nothing(b?, x: Int): (det y: Int) {
     ensure r: y = match b? {
         true if x > 0 => 2,
         true => 1,
@@ -69,10 +59,7 @@ comp hides_nothing {
 
 -- Every arm may have a guard, if the guards cover every case: the `match`
 -- is checked for completeness, as a table without `_` is.
-comp all_guarded {
-    in x: Int
-    pub det out s: Int
-
+proc all_guarded(x: Int): (det s: Int) {
     ensure r: s = match x {
         n if n > 0 => 1,
         n if n < 0 => -1,
@@ -85,11 +72,7 @@ comp all_guarded {
 -- Literal, range and nested patterns take guards too.
 enum Reply { Ok(Shape), Err(Int) }
 
-comp nested {
-    in r: Reply
-    in limit: Int
-    pub det out y: Int
-
+proc nested(r: Reply, limit: Int): (det y: Int) {
     ensure rule: y = match r {
         Reply::Ok(Shape::Circle(radius)) if radius > limit => 2,
         Reply::Ok(_) => 1,
@@ -102,11 +85,7 @@ comp nested {
 
 -- An index in a guard is guarded by the arm's pattern's matching where no
 -- earlier arm is taken, and one in a body by its guard too.
-comp indexes {
-    in q: Seq<Int>
-    in n: Nat
-    pub det out y: Int
-
+proc indexes(q: Seq<Int>, n: Nat): (det y: Int) {
     ensure r: y = match n {
         0 => 0,
         k if k < q.len and q[k] > 0 => q[k],
@@ -117,11 +96,7 @@ comp indexes {
 -- A guard may be a quantifier or a `let`, in parentheses.
 enum Mode { Off, Heat, Cool }
 
-comp quantified {
-    in m: Mode
-    in q: Seq<Int>
-    pub det out y: Int
-
+proc quantified(m: Mode, q: Seq<Int>): (det y: Int) {
     ensure r: y = match m {
         Mode::Off if (forall (o: Mode), o = Mode::Off or q != []) => 0,
         Mode::Off => 3,
@@ -134,20 +109,14 @@ comp quantified {
 }
 
 -- A guard is a `Bool`, so a `Nat` or `Int` comparison makes one.
-comp in_body {
-    in x: Int
-    pub det out y?
-
+proc in_body(x: Int): (det y?) {
     ensure r: y? iff match x { 0 => false, k if k mod 2 = 0 => true, _ => false }
 }
 
 -- The body of a defined function takes guards, checked for every argument.
 fn clamp(x: Int): Int := match x { n if n > 10 => 10, n if n < 0 => 0, n => n }
 
-comp clamped {
-    in x: Int
-    pub det out y: Int
-
+proc clamped(x: Int): (det y: Int) {
     ensure r: y = clamp(x)
 
     expect bounds: 0 <= y <= 10

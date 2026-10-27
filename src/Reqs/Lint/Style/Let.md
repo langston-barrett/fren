@@ -39,16 +39,16 @@ body's tree, whose root is then a path of the last name with no parts:
 ```fren
 pub mod lint
 
-pub comp let_and_return {
+pub proc let_and_return(
+    names: Rel<DefIndex, Local>,     -- the name each definition declares
+    last: DefIndex,                  -- the position of the last definition
+    annotated: Set<DefIndex>,        -- the definitions whose types are written
+    body: Tree,
+): (det fires?) {
     use lint::{DefIndex, Local, Tree}
-    in names: Rel<DefIndex, Local>   -- the name each definition declares
-    in last: DefIndex                -- the position of the last definition
-    in annotated: Set<DefIndex>      -- the definitions whose types are written
-    in body: Tree
-    pub det out fires?
 
     -- The positions up to `last`.
-    out upto: Set<DefIndex> := match last {
+    let upto: Set<DefIndex> := match last {
         DefIndex::P0 => {DefIndex::P0},
         DefIndex::P1 => {DefIndex::P0, DefIndex::P1},
         DefIndex::P2 => {DefIndex::P0, DefIndex::P1, DefIndex::P2},
@@ -72,24 +72,28 @@ operands holds for every expression.
 
 ```fren
 set_option fren.lint.let_and_return "allow" in
-pub comp let_and_return_written {
-    in x: Int
-    in s: Set<Int>
-    in a?
-    pub det out one: Int := let d := x + 1 in d
-    pub det out two: Int := let k := 2, d := x * k in d
-    pub det out member? := let b? := (x in s) in b?
-    pub det out clause? := ok? where k := 3, ok? := a? and x > k
+pub proc let_and_return_written(x: Int, s: Set<Int>, a?): (
+    det one: Int,
+    det two: Int,
+    det member?,
+    det clause?,
+) {
+    out one := let d := x + 1 in d
+    out two := let k := 2, d := x * k in d
+    out member? := let b? := (x in s) in b?
+    out clause? := ok? where k := 3, ok? := a? and x > k
 }
 
-pub comp let_and_return_fixed {
-    in x: Int
-    in s: Set<Int>
-    in a?
-    pub det out one: Int := x + 1
-    pub det out two: Int := let k := 2 in x * k
-    pub det out member? := (x in s)
-    pub det out clause? := a? and x > k where k := 3
+pub proc let_and_return_fixed(x: Int, s: Set<Int>, a?): (
+    det one: Int,
+    det two: Int,
+    det member?,
+    det clause?,
+) {
+    out one := x + 1
+    out two := let k := 2 in x * k
+    out member? := (x in s)
+    out clause? := a? and x > k where k := 3
 }
 
 refine let_and_return_sound: let_and_return_fixed refines let_and_return_written
@@ -161,7 +165,7 @@ operand is an instance at, here of an enumeration of three variants,
 `Hue`, at up to four positions: the operands cover the enumeration, each
 variant once. Whether they are instances, the same lexemes but at the
 places of those variants, is a fact of their text, which `Reqs/Lint#written-the-same`
-states and the component takes as given.
+states and the procedure takes as given.
 `lint::quantifier_parentheses` states where the fix is in parentheses,
 from where the run is, `RunPlace`: a quantifier is open-ended, so it is in
 parentheses wherever an open-ended form is not written bare, and where
@@ -170,14 +174,14 @@ something follows it:
 ```fren
 pub enum Hue { Red, Green, Blue }
 
-pub comp manual_forall {
+pub proc manual_forall(
+    variant_of: Rel<DefIndex, Hue>,    -- the variant each operand is an instance at
+    instances?,                      -- the operands are one expression at those variants, the same places in each
+): (det fires?) {
     use lint::DefIndex
-    in variant_of: Rel<DefIndex, Hue>  -- the variant each operand is an instance at
-    in instances?                    -- the operands are one expression at those variants, the same places in each
-    pub det out fires?
 
     -- Every variant, and no two operands at one.
-    out covers? := variant_of.range = {Hue::Red, Hue::Green, Hue::Blue}
+    let covers? := variant_of.range = {Hue::Red, Hue::Green, Hue::Blue}
         and (variant_of join variant_of.inverse) subset {(DefIndex::P0, DefIndex::P0), (DefIndex::P1, DefIndex::P1), (DefIndex::P2, DefIndex::P2), (DefIndex::P3, DefIndex::P3)}
 
     ensure rule: fires? iff (instances? and covers?)
@@ -192,13 +196,12 @@ pub comp manual_forall {
 -- take an operand alike; an operand of an operator; or a receiver.
 pub enum RunPlace { Free, Body, Condition, Operand, Receiver }
 
-pub comp quantifier_parentheses {
-    in place: RunPlace
-    in followed?                     -- an operator or a `.` follows the run
-    in whole?                        -- the fix replaces the whole run, not some of its operands
-    in enclosed?                     -- the whole run is in parentheses of its own, not an application's
-    pub det out parenthesized?
-
+pub proc quantifier_parentheses(
+    place: RunPlace,
+    followed?,                       -- an operator or a `.` follows the run
+    whole?,                          -- the fix replaces the whole run, not some of its operands
+    enclosed?,                       -- the whole run is in parentheses of its own, not an application's
+): (det parenthesized?) {
     ensure rule: parenthesized? iff (not enclosed? and (not whole? or followed?
         or place in {RunPlace::Condition, RunPlace::Operand, RunPlace::Receiver}))
 
@@ -214,28 +217,32 @@ quantifier only in parentheses:
 
 ```fren
 set_option fren.lint.manual_forall "allow" in
-pub comp manual_forall_written {
-    in s: Set<Hue>
-    in t: Set<Hue>
-    in hue: Hue
-    in a?
-    pub det out every? := Hue::Red in s and Hue::Green in s and Hue::Blue in s
-    pub det out some? := Hue::Red in s or Hue::Green in s or Hue::Blue in s
-    pub det out within? := a? and Hue::Blue in t and Hue::Red in t and Hue::Green in t
-    pub det out beside? := hue in s and Hue::Red in s and Hue::Green in s and Hue::Blue in s
-    pub det out arm? := match hue { Hue::Red => Hue::Red in s and Hue::Green in s and Hue::Blue in s, _ => a? }
+pub proc manual_forall_written(s: Set<Hue>, t: Set<Hue>, hue: Hue, a?): (
+    det every?,
+    det some?,
+    det within?,
+    det beside?,
+    det arm?,
+) {
+    out every? := Hue::Red in s and Hue::Green in s and Hue::Blue in s
+    out some? := Hue::Red in s or Hue::Green in s or Hue::Blue in s
+    out within? := a? and Hue::Blue in t and Hue::Red in t and Hue::Green in t
+    out beside? := hue in s and Hue::Red in s and Hue::Green in s and Hue::Blue in s
+    out arm? := match hue { Hue::Red => Hue::Red in s and Hue::Green in s and Hue::Blue in s, _ => a? }
 }
 
-pub comp manual_forall_fixed {
-    in s: Set<Hue>
-    in t: Set<Hue>
-    in hue: Hue
-    in a?
-    pub det out every? := forall (hue!: Hue), hue in s
-    pub det out some? := exists (hue!: Hue), hue in s
-    pub det out within? := a? and (forall (hue!: Hue), hue in t)
-    pub det out beside? := hue in s and (forall (hue!: Hue), hue in s)
-    pub det out arm? := match hue { Hue::Red => (forall (hue!: Hue), hue in s), _ => a? }
+pub proc manual_forall_fixed(s: Set<Hue>, t: Set<Hue>, hue: Hue, a?): (
+    det every?,
+    det some?,
+    det within?,
+    det beside?,
+    det arm?,
+) {
+    out every? := forall (hue!: Hue), hue in s
+    out some? := exists (hue!: Hue), hue in s
+    out within? := a? and (forall (hue!: Hue), hue in t)
+    out beside? := hue in s and (forall (hue!: Hue), hue in s)
+    out arm? := match hue { Hue::Red => (forall (hue!: Hue), hue in s), _ => a? }
 }
 
 refine manual_forall_sound: manual_forall_fixed refines manual_forall_written

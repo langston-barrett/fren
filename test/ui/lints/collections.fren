@@ -4,16 +4,13 @@ set_option fren.lint.definable_output "warn"
 
 enum E { A, B, C }
 
-comp lints {
-    in s: String
-    in t: Set<Int>
-    in q: Seq<Int>
-    in e: E
-    in x: Int
-    pub out p?                   --~ warning: `r1` could be the definition of `p?`
-    pub out k: Int := 3          --~ warning: defined output `k` is the same in every behaviour
-    pub out y: Int               --~ warning: `r3` could be the definition of `y`
-    pub out z?                   --~ warning: `r2` could be the definition of `z?`
+proc lints(s: String, t: Set<Int>, q: Seq<Int>, e: E, x: Int): (
+    p?,                          --~ warning: `r1` could be the definition of `p?`
+    k: Int,
+    y: Int,                      --~ warning: `r3` could be the definition of `y`
+    z?,                          --~ warning: `r2` could be the definition of `z?`
+) {
+    out k := 3          --~ warning: defined output `k` is the same in every behaviour
 
     ensure r1: p? iff s.len = 0     --~ warning: say whether it is empty with `""`, not `len`
     ensure r2: z? iff (t.card > 0 or e = E::A or e = E::B or e = E::C)

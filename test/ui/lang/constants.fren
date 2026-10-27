@@ -12,13 +12,8 @@ const NEG: Int := -3
 const STRICT: Bool := MAX_T > 80            -- a `Bool` constant has no `?`
 pub const DEFAULT: Mode := Mode::Off
 
-pub comp band {
-    in temp: Int
-    in target: Int
-
+pub proc band(temp: Int, target: Int): (too_cold?, mode: Mode) {
     assume sane: MIN_T <= target and target <= MAX_T  -- constants in assumptions
-    pub out too_cold?
-    pub out mode: Mode
     ensure cold: too_cold? iff temp < target + NEG
     ensure off: unless too_cold?, mode = DEFAULT
     ensure heat: when too_cold?, mode = Mode::Heat
@@ -27,9 +22,7 @@ pub comp band {
     expect lowest: when target = MIN_T and temp < 47, too_cold?
 }
 
-comp scaled {
-    in t: Int
-    pub out y: Int
+proc scaled(t: Int): (y: Int) {
     ensure r: y = (MAX_T - MIN_T) * t + 2 * 3 * t  -- operands with no variables
     expect at_one: when t = 1, y = 46
 }
@@ -37,18 +30,16 @@ comp scaled {
 mod other
 use climate::{MAX_T, band}
 
-comp user {
-    in t: Int
-    pub out cold?
-    inst b: band { temp := t, target := MAX_T }  -- a constant in a binding
+proc user(t: Int): (cold?) {
+    call b := band(t, MAX_T)  -- a constant in a binding
     ensure r: cold? iff b.too_cold?
     expect at_max: when t < MAX_T - 3, cold?
 }
 
-comp shadow {
-    in MAX_T!: Int                            -- a variable shadows the constant, with `!`
+proc shadow(
+    MAX_T!: Int,                              -- a variable shadows the constant, with `!`
+): (y: Int) {
     --~^ warning: variable `MAX_T` should have a snake case name
-    pub out y: Int
     ensure r: y = MAX_T
     expect same: y = MAX_T  --~ warning: this is written the same as `r`
 }

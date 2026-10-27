@@ -20,9 +20,9 @@ fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [-
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
-fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
+fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
     [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
 fren --explain CODE
@@ -36,8 +36,8 @@ Every form also takes `--color WHEN`, as rustc does: `always`, `never`, or
 environment variable `NO_COLOR` is set or `TERM` is `dumb`.
 
 Files are processed in order, sharing one set of modules. `check` then
-checks every component and global expectation; `trace` reports the
-evidence for every component (`Reqs/Trace`). Messages are rendered as rustc
+checks every procedure and global expectation; `trace` reports the
+evidence for every procedure (`Reqs/Trace`). Messages are rendered as rustc
 renders its own (`Fren.Core.Diagnostic`), with the text shared with the
 Lean-hosted front end, on stderr. Exit codes are `cli::exit` and
 `trace::trace_exit`. `fmt` formats the files (`FrenCli.Fmt`), and `fix`
@@ -61,9 +61,9 @@ def usage : String :=
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
-  fren eval --comp PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
-  fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]\n              \
+  fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]\n              \
   [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]\n              \
   [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren --explain CODE\n\n\
@@ -78,7 +78,7 @@ def usage : String :=
   `--examples N` shows at most N notes of guarantees that force an output\n\
   to different values, for each unrealizable component (default 1), or\n\
   all of them with `all`.\n\
-  `--jobs N` checks N components at once (default: the number of cores),\n\
+  `--jobs N` checks N procedures at once (default: the number of cores),\n\
   with the same output as one at a time.\n\n\
   `trace` reports the evidence for every component, and scans the tests for\n\
   `fren-covers:` markers. LEVEL is trusted, tested, solver or proved. Exit\n\
@@ -107,7 +107,7 @@ def usage : String :=
   `mutate` makes small changes to the spec's constraints and definitions,\n\
   checks each changed spec (a mutant), and reports the mutants that no check\n\
   rejects. `--by` checks them with the solver (the default), by testing, or\n\
-  both. `--comp PATH` and `--mutant ID` select mutants, and `--diff PATCH`\n\
+  both. `--proc PATH` and `--mutant ID` select mutants, and `--diff PATCH`\n\
   those of the items whose lines a unified diff (`-` for stdin), such as\n\
   `git diff -U0`, adds or changes. `--sample N` takes N of them, chosen by\n\
   `--seed`, and `--shard K/N` the Kth of N parts of those, from 0.\n\
@@ -175,7 +175,7 @@ structure Args where
   lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel) := #[]
   files : Array String := #[]
   paint : Paint := {}
-  /-- `eval --comp` and `mutate --comp`. -/
+  /-- `eval --proc` and `mutate --proc`. -/
   comp? : Option String := none
   /-- `eval --set`, as written. -/
   sets : Array String := #[]
@@ -200,7 +200,7 @@ def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quick
 
 def options : Array String :=
   #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
-    "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--comp", "--set", "--seed", "--tests",
+    "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
 def unknownLint (n : String) : Msg :=
@@ -267,8 +267,8 @@ where
       | _ => .error (argError p {
           code? := none, headline := s!"invalid number of jobs `{n}`",
           notes := #["note: the number of jobs is a whole number of at least 1, such as `--jobs 4`"] })
-    | "--comp" :: c :: rest, a =>
-      if a.command == .eval || a.command == .mutate then go rest { a with comp? := some c } else only "--comp" "eval` and `fren mutate"
+    | "--proc" :: c :: rest, a =>
+      if a.command == .eval || a.command == .mutate then go rest { a with comp? := some c } else only "--proc" "eval` and `fren mutate"
     | "--set" :: x :: rest, a =>
       if a.command != .eval then only "--set" "eval"
       else if x.contains '=' then go rest { a with sets := a.sets.push x }
@@ -354,7 +354,7 @@ where
     | opt@"-F" :: n :: rest, a | opt@"--forbid" :: n :: rest, a => do go rest (← addLint opt .forbid n a)
     | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--examples"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
-    | [opt@"--comp"], _ | [opt@"--set"], _ | [opt@"--seed"], _
+    | [opt@"--proc"], _ | [opt@"--set"], _ | [opt@"--seed"], _
     | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _ | [opt@"--diff"], _ | [opt@"--shard"], _
     | [opt@"-A"], _ | [opt@"-W"], _ | [opt@"-D"], _ | [opt@"-F"], _
     | [opt@"--allow"], _ | [opt@"--warn"], _ | [opt@"--deny"], _ | [opt@"--forbid"], _ =>
@@ -535,11 +535,11 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
 /-- Tests `c`, the evaluator's `ec`, on `n` random behaviours from `seed`
 (`Reqs/Eval#fren-quickcheck`). -/
 def testReport (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (seed n : Nat) : Eval.Report :=
-  -- Each comp has its own stream, so a run does not depend on the others.
+  -- Each procedure has its own stream, so a run does not depend on the others.
   let rng : Eval.Rng := ⟨Eval.mix seed.toUInt64 (hash c.path)⟩
   (if global then sp.quickGlobal ec n else sp.quickComp ec n).run' rng
 
-/-- Tests the comp or global expectation `c`, whose counterpart is `ec`
+/-- Tests the procedure or global expectation `c`, whose counterpart is `ec`
 (`Reqs/Eval#fren-quickcheck`), and prints what testing found about the
 checks that `keep` selects: their results, and those that are not run
 are dropped. Returns the results and the messages printed, and whether
@@ -557,7 +557,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     -- At its keyword, `forall` or `exists`.
     printDiag args.paint files { file, span := { start := pos, stop := pos + 6 }, msg }
     return (#[], #[msg], true)
-  -- An instance's binding of an input of a pattern type, with that type, as
+  -- A call's binding of an input of a pattern type, with that type, as
   -- the solver's check has it (`Fren.Core.Inst.typed`).
   let typedOf (r : Fren.Core.CheckResult) : Fren.Core.CheckResult :=
     match r.kind, r.prop?, r.target? with
@@ -566,7 +566,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
   let results := markInterpreted prelude c ((rep.results.filter keep).map typedOf)
   let mut shown := #[]
   for r in results do
-    -- Inconclusive results are reported below, once for the comp; a
+    -- Inconclusive results are reported below, once for the procedure; a
     -- cover goal's pass shows its witness.
     if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
       shown := shown ++ (← printResult args.paint files c r)
@@ -586,7 +586,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     let some n := r.prop? | continue
     let (what, span) := match r.kind, r.target? with
       | .inst, some (d, a) =>
-        (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of instance `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
+        (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of call `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
       | _, _ =>
         let p? := c.props.find? (·.name == n)
         (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
@@ -603,9 +603,9 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
   return (results, shown, false)
 
 /-- Whether the result `r` of testing the refinement `c` is about its
-obligation (`Reqs/Lang/Refinement#the-obligation`): of the instances, only
-the instance of the concrete component, since the abstract component's
-instances are hypotheses there. -/
+obligation (`Reqs/Lang/Refinement#the-obligation`): of the calls, only
+the call of the concrete procedure, since the abstract procedure's
+calls are hypotheses there. -/
 def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
   Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name))
 
@@ -702,7 +702,7 @@ def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) : I
     discard <| IO.asTask worker .dedicated
   return promises.map fun p => IO.ofExcept p.result!.get
 
-/-- How many components `fren check` checks at once without `--jobs`: as
+/-- How many procedures `fren check` checks at once without `--jobs`: as
 many as the machine has cores (`Reqs/Cli#parallel-checking`). -/
 def jobsDefault : BaseIO Nat :=
   return max 1 (System.Platform.Internal.getHardwareConcurrency ()).toNat
@@ -716,11 +716,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
-  -- Each comp, global expectation and refinement (`Reqs/Lang/Refinement`),
+  -- Each procedure, global expectation and refinement (`Reqs/Lang/Refinement`),
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement, t.body, t.key)
   let prelude := Prelude.ofDecls st.prelude
-  -- A query asked again, as some checks of a component share one, is
+  -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`).
   let cache : QueryCache ← IO.mkRef {}
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
@@ -841,7 +841,7 @@ stdout; returns the exit code (`eval::eval_exit`). -/
 def evalCmd (args : Args) : IO UInt32 := do
   let fail (msg : Msg) : IO UInt32 := do IO.eprint (argError args.paint msg); return 2
   let some (files, _) ← load args.paint args.files args.lints | return 2
-  let some compText := args.comp? | fail { code? := none, headline := "`fren eval` needs `--comp PATH`" }
+  let some compText := args.comp? | fail { code? := none, headline := "`fren eval` needs `--proc PATH`" }
   let lst ← match specStateOf files with
     | .ok s => pure s
     | .error e =>
@@ -850,8 +850,8 @@ def evalCmd (args : Args) : IO UInt32 := do
   let sp := lst.spec
   let path := (compText.splitOn "::").foldl Lean.Name.mkStr .anonymous
   let some c := sp.comp? path
-    | fail { code? := none, headline := s!"no component `{compText}`"
-             notes := #[s!"note: the components are {Fren.Core.showNameList (sp.comps.map (·.path))}"] }
+    | fail { code? := none, headline := s!"no procedure `{compText}`"
+             notes := #[s!"note: the procedures are {Fren.Core.showNameList (sp.comps.map (·.path))}"] }
   let vars := sp.flatVars c
   let mut given : Eval.Env := {}
   for set in args.sets do
@@ -1005,12 +1005,32 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
         round := round + 1
       | _, _ => break
     migrated := migrated.set! i round
+  -- Then the instances, whose fixes write them as calls, which need the
+  -- order of the callees' parameters: after name resolution, all of a
+  -- round's at once, elaborating again after each round
+  -- (`lint::call_migration_step`).
+  let mut round := 0
+  repeat
+    let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
+    let calls := st.diags.filter fun d => d.msg.code? == some Fren.Core.callMigrationCode && !ignored paths[d.file]!
+    let fixes := calls.filterMap fun d => d.msg.fixes[0]?.map fun f => (d.file, f.range?.getD (toRange d.span), f.replacement)
+    unless Fren.Core.callMigrationApplies (!fixes.isEmpty) round do break
+    srcs := srcs.mapIdx fun i src =>
+      applyFileEdits src files[i]!.2 (fixes.filterMap fun (f, r, t) => if f == i then some (r, t) else none)
+    migrated := migrated.mapIdx fun i n => n + (fixes.filter (·.1 == i)).size
+    round := round + 1
   let (files, st) ← elaborateSources paths srcs args.lints fixing ignored
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
-    -- Nothing is fixed.
+    -- No lint is fixed, but the migrations are made.
     for d in st.diags do printDiag args.paint files d
     printStopped args.paint st.diags "fix"
+    for path in paths, src in original, fixed in srcs, n in migrated do
+      if n == 0 || fixed == src then continue
+      if args.diffOnly then IO.print (Fmt.diff out path src fixed)
+      else
+        IO.FS.writeFile path fixed
+        IO.eprintln s!"migrated {path} ({n} fix{if n == 1 then "" else "es"})"
     return Fren.Core.fixExit args.diffOnly false false
   -- One fix can overlap another, or leave something that another lint
   -- fixes, so the passes go on until no edit is left (`Reqs/Lint#fixing-lints`).
@@ -1055,7 +1075,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   printExplainHint (left.map (·.msg))
   return Fren.Core.fixExit args.diffOnly true unchanged
 
-/-- The results of one way of checking (`--by`) the spec's components,
+/-- The results of one way of checking (`--by`) the spec's procedures,
 global expectations and refinements, by `Mutate.Todo.key`, as far as they
 have been needed. -/
 abbrev Baseline := IO.Ref (Std.HashMap String (Array Fren.Core.CheckResult))
@@ -1177,8 +1197,8 @@ def State.withPerFileOf (s t : State) : State :=
            itemStart := t.itemStart, literals := t.literals, itemSpan := t.itemSpan }
 
 /-- How a mutant's state after a file differs from the original's
-(`mutantState`): the paths of the components, and the constants, whose
-entries differ, and whether both have as many components and agree on what
+(`mutantState`): the paths of the procedures, and the constants, whose
+entries differ, and whether both have as many procedures and agree on what
 `sameForLater` compares. -/
 structure Drift where
   comps : Array Lean.Name := #[]
@@ -1191,7 +1211,7 @@ structure Drift where
 def Drift.next (d : Drift) (orig mine orig' mine' : State) : Drift :=
   let aligned := d.aligned && mine.comps.size == orig.comps.size && mine'.comps.size == orig'.comps.size
     && sameForLater orig' mine'
-  -- The components that the file added; those before it are unchanged.
+  -- The procedures that the file added; those before it are unchanged.
   let added := (orig'.comps.extract orig.comps.size).zip (mine'.comps.extract mine.comps.size)
   { comps := d.comps ++ added.filterMap fun (c, c') => if c == c' then none else some c.path
     consts := changedKeys orig'.consts mine'.consts, constInts := changedKeys orig'.constInts mine'.constInts, aligned }
@@ -1205,10 +1225,10 @@ item.
 
 Then `elabFile` and the first item set the fields that `sameForLater` does
 not compare before they read them. If `mine` and `orig` agree on the
-fields that it compares, and file `j` writes the name of no component or
+fields that it compares, and file `j` writes the name of no procedure or
 constant whose entry differs, its elaboration reads the same values after
 either, and so does the same:
-- `comps` is read by a component's path, and `consts` and `constInts` by a
+- `comps` is read by a procedure's path, and `consts` and `constInts` by a
   constant's, each resolved from a path written in the file, which ends in
   the item's name (`Table.resolvePath`); the latter two are otherwise only
   extended;
@@ -1309,7 +1329,7 @@ structure Decision where
 
 /-- What the tests of `fren mutate` see of a run. -/
 structure Probe where
-  /-- Checks every component, global expectation and refinement of a
+  /-- Checks every procedure, global expectation and refinement of a
   mutant, not only those whose fingerprint it changes, and every one of
   their checks, rather than stopping at the first that kills it. -/
   exhaustive : Bool := false
@@ -1331,8 +1351,8 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   let comp? := args.comp?.map fun t => (t.splitOn "::").foldl Lean.Name.mkStr .anonymous
   if let some c := comp? then
     unless st.comps.any (·.path == c) do
-      return ← fail { code? := none, headline := s!"no component `{Fren.Core.showComp c}`"
-                      notes := #[s!"note: the components are {Fren.Core.showNameList (st.comps.map (·.path))}"] }
+      return ← fail { code? := none, headline := s!"no procedure `{Fren.Core.showComp c}`"
+                      notes := #[s!"note: the procedures are {Fren.Core.showNameList (st.comps.map (·.path))}"] }
   for id in args.mutantIds do
     unless all.any (·.id == id) do
       return ← fail { code? := none, headline := s!"no mutant `{id}`"
@@ -1388,7 +1408,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- testing by testing; with the internal errors, each at its place in `c`.
   let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
-    -- A component's checks share the symbols of its spec.
+    -- A procedure's checks share the symbols of its spec.
     let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
       (examples := args.examples)
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
@@ -1404,8 +1424,8 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   let spec? := specOfParsed parsed prefixes
   if let .error e := spec? then
     printDiag p files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
-  -- What each component's checks read in the spec. The spec's own results
-  -- are computed only for components that some mutant changes.
+  -- What each procedure's checks read in the spec. The spec's own results
+  -- are computed only for procedures that some mutant changes.
   let preludeText := st.preludeText
   let originals : Std.HashMap String (Mutate.Todo × String) :=
     (Mutate.todo st).foldl (init := {}) fun m t => m.insert t.key (t, Mutate.fingerprint preludeText t.comp)
@@ -1415,7 +1435,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   let sevs ← IO.mkRef (if spec?.toOption.isNone then #[Fren.Core.Severity.error] else #[])
   -- The checks of one way of checking that kill the mutant `st'`, and
   -- whether some check was inconclusive on it, checking only the
-  -- components it changes, and stopping at the first that kills it,
+  -- procedures it changes, and stopping at the first that kills it,
   -- unless `probe?` is exhaustive;
   -- `run s prelude spec? t` checks `t` of the spec `s`, whose prelude,
   -- indexed, is `prelude`, and whose prelude's text is `preludeText'`.

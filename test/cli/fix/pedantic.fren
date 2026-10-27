@@ -7,26 +7,21 @@ struct Cell { row: Int, column: Int }
 
 fn scale(Int): Int
 
-comp c {
-    in m: Mode
-    in a?
-    in b?
-    in x: Int
-    in row: Int
-    pub out y: Int
-    pub out p?
-    pub out q?
-    pub out cell: Cell
-    pub out z: Int
-    pub out t?
-    pub out w: Int
-    pub out v: Int
-    pub out u: Int
-    pub out other: Cell
-    pub out s: Int
-    pub out d: Int
-    pub out e: Int
-
+proc c(m: Mode, a?, b?, x: Int, row: Int): (
+    y: Int,
+    p?,
+    q?,
+    cell: Cell,
+    z: Int,
+    t?,
+    w: Int,
+    v: Int,
+    u: Int,
+    other: Cell,
+    s: Int,
+    d: Int,
+    e: Int,
+) {
     ensure r1: y = 2 * match m { Mode::Heat => x + 1, _ => x }
     ensure r2: p? iff ((a? or b?) and a?) or not b?
     ensure r3: q? iff a? or not a?

@@ -2,23 +2,16 @@
 -- ends read the abstract component's variables through the bindings the
 -- same way.
 
-comp exit_status {
-    in ran?
-    pub out code: Int
+proc exit_status(ran?): (code: Int) {
     ensure not_run: code = 2 iff not ran?
     ensure documented: code is 0..=3
 }
 
-comp fmt_exit {
-    in all_parsed?
-    in changed?
-    pub out code: Int
+proc fmt_exit(all_parsed?, changed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
 }
 
-comp bad_exit {
-    in all_parsed?
-    pub out code: Int
+proc bad_exit(all_parsed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else 4)
 }
 
@@ -29,15 +22,11 @@ refine fails: bad_exit refines exit_status { ran? := all_parsed? }  --~ error: e
 enum Level { Allow, Warn, Forbid }
 
 -- An abstraction function, and an output read through an expression.
-comp forbidding {
-    in forbidden?
-    pub out stops?
+proc forbidding(forbidden?): (stops?) {
     ensure r: stops? iff forbidden?
 }
 
-comp stops {
-    in level: Level
-    pub out failures: Int
+proc stops(level: Level): (failures: Int) {
     ensure f: failures = (if level = Level::Forbid then 1 else 0)
 }
 
@@ -45,17 +34,13 @@ refine abstraction: stops refines forbidding { forbidden? := level = Level::Forb
 
 -- The indexes of a binding are checked where it is read: an input's under
 -- the assumptions, an output's under the assumptions and the instances.
-comp first_of {
-    in n: Int
-    in x: Int
+proc first_of(n: Int, x: Int): (y: Int) {
     assume pos: n > 0
-    pub out y: Int
     ensure r: y = x
 }
 
-comp seqs {
-    in q: Seq<Int>
-    pub out s: Seq<Int> := q
+proc seqs(q: Seq<Int>): (s: Seq<Int>) {
+    out s := q
 }
 
 refine guarded: seqs refines first_of { n := q.len, x := if q != [] then q[0] else 0, y := s[0] }
@@ -63,8 +48,8 @@ refine unguarded: seqs refines first_of { n := 1, x := q[0], y := s[0] }  --~ er
 --~^ error: an index of `unguarded::y` may be out of range
 
 -- Swapped bindings: each input of `a` is read as the other input of `c`.
-comp difference { in x: Int in y: Int pub out d: Int ensure r: d = x - y }
-comp reversed { in x: Int in y: Int pub out d: Int ensure r: d = y - x }
+proc difference(x: Int, y: Int): (d: Int) { ensure r: d = x - y }
+proc reversed(x: Int, y: Int): (d: Int) { ensure r: d = y - x }
 
 refine swapped: reversed refines difference { x := y, y := x }
 refine unswapped: reversed refines difference  --~ error: expectation `unswapped::r` does not hold

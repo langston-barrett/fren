@@ -27,9 +27,8 @@ fn half(n: Int): Option<Int>
 fn swap(p: Pair<Int, Bool>): Pair<Bool, Int> := Pair { fst := p.snd, snd := p.fst }
     ensure swapped: swap(p).snd = p.fst
 
-comp sign {
-    in x: Option<Int>
-    pub det out s: Int := match x {
+proc sign(x: Option<Int>): (det s: Int) {
+    out s := match x {
         Option::Some(n) if n > 0 => 1,
         Option::Some(n) if n < 0 => -1,
         Option::Some(_) => 0,
@@ -43,11 +42,7 @@ comp sign {
     expect always_one: s = 1   --~ error: expectation `generics_guards_contracts::sign::always_one` does not hold
 }
 
-comp users {
-    in o: Option<Int>
-    in n: Int
-    in p: Pair<Int, Bool>
-
+proc users(o: Option<Int>, n: Int, p: Pair<Int, Bool>) {
     expect three: unwrap_or(Option::Some(3), n) = 3
     expect fallback: unwrap_or(Option::None, n) = n
     expect halved: half(4) = Option::Some(2)

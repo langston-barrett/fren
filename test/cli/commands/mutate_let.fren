@@ -1,10 +1,7 @@
 --@ args: mutate --list
 -- The definitions of `let`s and `where` clauses are mutated like any other
 -- expression, and so is what they belong to.
-pub comp c {
-    in x: Int
-    pub out y?
-
+pub proc c(x: Int): (y?) {
     ensure r: y? iff big? where limit := 10, big? := x > limit and x < 2 * limit
     ensure s: let k := x + 1 in when k > 0, y?
 }

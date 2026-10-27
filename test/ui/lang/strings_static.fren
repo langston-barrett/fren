@@ -1,39 +1,39 @@
 -- Static rules for strings: methods, types, and the decidable core.
 set_option fren.lint.unused_variables "allow"
 
-comp unknown { in s: String pub out n: Int ensure r: n = s.length }
+proc unknown(s: String): (n: Int) { ensure r: n = s.length }
 --~^ error: `String` has no method `length`
-comp no_methods { in b? pub out p? ensure r: p? iff (b?).contains?(1) }
+proc no_methods(b?): (p?) { ensure r: p? iff (b?).contains?(1) }
 --~^ error: `Bool` has no methods, so it has no method `contains?`
-comp arity { in s: String pub out p? ensure r: p? iff s.starts_with?("a", "b") }
+proc arity(s: String): (p?) { ensure r: p? iff s.starts_with?("a", "b") }
 --~^ error: `starts_with?` takes 1 argument, but 2 were given
-comp arg_type { in s: String pub out t: String := s.at("1") }
+proc arg_type(s: String): (t: String) { out t := s.at("1") }
 --~^ error: type mismatch: expected `Int`, found `String`
-comp unbounded { in s: String out t: String ensure r: t = s }
+proc unbounded(s: String) { exists t: String ensure r: t = s }
 --~^ error: output `t` has the unbounded type `String`
-comp concat_type { in s: String pub out n: Int := (s ++ 1).len }
+proc concat_type(s: String): (n: Int) { out n := (s ++ 1).len }
 --~^ error: type mismatch: expected `String`, found `Int`
 
 -- Outside the decidable core.
-comp search { in s: String pub out i: Int ensure r: i = s.index_of("x", 0) }
+proc search(s: String): (i: Int) { ensure r: i = s.index_of("x", 0) }
 --~^ error: outside the decidable core: searching a string
-comp argument { in s: String in t: String pub out p? ensure r: p? iff s.starts_with?(t) }
+proc argument(s: String, t: String): (p?) { ensure r: p? iff s.starts_with?(t) }
 --~^ error: outside the decidable core: its argument is not a constant
-comp position { in s: String in i: Int pub out t: String := s.at(i) }
+proc position(s: String, i: Int): (t: String) { out t := s.at(i) }
 --~^ error: outside the decidable core: its position is not a constant
-comp words { in a: String in b: String pub out p? ensure r: p? iff a ++ b = b ++ a }
+proc words(a: String, b: String): (p?) { ensure r: p? iff a ++ b = b ++ a }
 --~^ error: outside the decidable core: searching a string, or `++` here
 --~^^ error: outside the decidable core: searching a string, or `++` here
-comp named_words { in a: String in b: String pub out ab: String := a ++ b pub out p? ensure r: p? iff ab = b }
+proc named_words(a: String, b: String): (ab: String, p?) { out ab := a ++ b ensure r: p? iff ab = b }
 --~^ error: outside the decidable core: searching a string, or `++` here
-comp compare { in a: String in b: String pub out p? ensure r: p? iff a < b }
+proc compare(a: String, b: String): (p?) { ensure r: p? iff a < b }
 --~^ error: outside the decidable core: it compares two strings
-comp output { in x: Int out o: Int out s: String := if o > x then "a" else "b" pub out n: Int ensure r: n = s.len }
+proc output(x: Int): (n: Int) { exists o: Int let s: String := if o > x then "a" else "b" ensure r: n = s.len }
 --~^ error: outside the decidable core: an operand mentions an output of an infinite type
 
 -- Opting out.
 set_option fren.lint.undecidable "allow" in
-comp opted { in a: String in b: String pub out p? ensure r: p? iff a.starts_with?(b) }
-comp uses { in x: String inst w: opted { a := x, b := x } }
+proc opted(a: String, b: String): (p?) { ensure r: p? iff a.starts_with?(b) }
+proc uses(x: String) { call w := opted(x, x) }
 --~^ error: `opted` is outside the decidable core, and so is what instantiates it
 --@ exit: 2

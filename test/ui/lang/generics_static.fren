@@ -10,23 +10,23 @@ pub enum List<T> { Nil, Cons(T, List<T>) }
 type Id
 
 -- As many type arguments as type parameters.
-comp missing { in x: Option }  --~ error: `generics_static::Option` takes 1 type argument, but none was given
-comp extra { in x: Option<Int, Int> }  --~ error: `generics_static::Option` takes 1 type argument, but 2 were given
-comp builtin { in x: Int<Bool> }  --~ error: `Int` takes no type arguments, but 1 was given
-comp plain { in x: Id<Int> }  --~ error: `generics_static::Id` takes no type arguments, but 1 was given
+proc missing(x: Option) {}  --~ error: `generics_static::Option` takes 1 type argument, but none was given
+proc extra(x: Option<Int, Int>) {}  --~ error: `generics_static::Option` takes 1 type argument, but 2 were given
+proc builtin(x: Int<Bool>) {}  --~ error: `Int` takes no type arguments, but 1 was given
+proc plain(x: Id<Int>) {}  --~ error: `generics_static::Id` takes no type arguments, but 1 was given
 
 -- An argument is a payload's type.
-comp nat_argument { in x: Option<Nat> }  --~ error: `Nat` cannot be a type argument
-comp abstract_argument { in x: Option<Id> }  --~ error: a payload cannot have the abstract type `generics_static::Id`
-comp abstract_within { in x: Option<Set<Id>> }  --~ error: a payload's type cannot have the abstract type `generics_static::Id` within it
+proc nat_argument(x: Option<Nat>) {}  --~ error: `Nat` cannot be a type argument
+proc abstract_argument(x: Option<Id>) {}  --~ error: a payload cannot have the abstract type `generics_static::Id`
+proc abstract_within(x: Option<Set<Id>>) {}  --~ error: a payload's type cannot have the abstract type `generics_static::Id` within it
 
 -- A recursive enumeration's type arguments bring no constraints, which would
 -- hold of every payload, at every depth.
 type Digit := Int is 0..=9
-comp recursive_pattern { in x: List<Int is 0..=9> }  --~ error: `Int is 0..=9` cannot be a type argument of the recursive enumeration `generics_static::List`
-comp recursive_alias { in x: List<Digit> }  --~ error: `Digit` cannot be a type argument of the recursive enumeration `generics_static::List`
-comp recursive_within { in x: List<Option<Digit>> }  --~ error: `Option<Digit>` cannot be a type argument of the recursive enumeration `generics_static::List`
-comp not_recursive { in x: Option<Digit> in y: List<Option<Int>> expect e: x != Option::Some(10) or y = List::Nil }
+proc recursive_pattern(x: List<Int is 0..=9>) {}  --~ error: `Int is 0..=9` cannot be a type argument of the recursive enumeration `generics_static::List`
+proc recursive_alias(x: List<Digit>) {}  --~ error: `Digit` cannot be a type argument of the recursive enumeration `generics_static::List`
+proc recursive_within(x: List<Option<Digit>>) {}  --~ error: `Option<Digit>` cannot be a type argument of the recursive enumeration `generics_static::List`
+proc not_recursive(x: Option<Digit>, y: List<Option<Int>>) { expect e: x != Option::Some(10) or y = List::Nil }
 
 -- Type parameters: distinct, named apart from types and items, and where
 -- they may be written.
@@ -41,17 +41,17 @@ struct Loop<T> { next: Option<Loop<T>> }  --~ error: record `Loop` has a field o
 enum Inner { A, B(Option<Inner>) }  --~ error: a recursive payload must be `generics_static::Inner`
 
 -- Type arguments are inferred, from what is expected or the values.
-comp unknown { pub out c? ensure r: c? iff Option::None = Option::None }  --~ error: cannot infer the type arguments of `generics_static::Option::None`
+proc unknown(): (c?) { ensure r: c? iff Option::None = Option::None }  --~ error: cannot infer the type arguments of `generics_static::Option::None`
 --~^ warning: both operands of `=` are written the same
-comp unknown_empty { pub out c? ensure r: c? iff Option::Some({}) = Option::None }  --~ error: cannot infer the type arguments of `generics_static::Option::Some`
-comp unknown_record { pub out c? ensure r: c? iff Pair { fst := 1, snd := Option::None }.fst = 1 }  --~ error: cannot infer the type arguments of `generics_static::Pair`
-comp payload { in x: Option<Int> pub out c? ensure r: c? iff x = Option::Some(true) }  --~ error: type mismatch: expected `Int`, found `Bool`
-comp field_value { pub out p: Pair<Int, Bool> ensure r: p = Pair { fst := 1, snd := 2 } }  --~ error: type mismatch: expected `Bool`, found `Int`
-comp inferred { in x: Option<Bool> pub out c? ensure r: c? iff x = Option::Some(3) }  --~ error: type mismatch: expected `Bool`, found `Int`
-comp field_read { in p: Pair<Int, Bool> pub out c: Int ensure r: c = p.snd }  --~ error: cannot compare `Int` with `Bool`
-comp pattern { in x: Option<Bool> pub out c: Int ensure r: c = match x { Option::Some(n) => n, Option::None => 0 } }  --~ error: `Bool` variable `n` must end in `?`
-comp update { in p: Pair<Int, Bool> pub out q: Pair<Int, Bool> ensure r: q = { p with snd := 1 } }  --~ error: type mismatch: expected `Bool`, found `Int`
-comp other_instance { in x: Option<Int> in y: Option<Bool> pub out c? ensure r: c? iff x = y }  --~ error: cannot compare `generics_static::Option<Int>` with `generics_static::Option<Bool>`
+proc unknown_empty(): (c?) { ensure r: c? iff Option::Some({}) = Option::None }  --~ error: cannot infer the type arguments of `generics_static::Option::Some`
+proc unknown_record(): (c?) { ensure r: c? iff Pair { fst := 1, snd := Option::None }.fst = 1 }  --~ error: cannot infer the type arguments of `generics_static::Pair`
+proc payload(x: Option<Int>): (c?) { ensure r: c? iff x = Option::Some(true) }  --~ error: type mismatch: expected `Int`, found `Bool`
+proc field_value(): (p: Pair<Int, Bool>) { ensure r: p = Pair { fst := 1, snd := 2 } }  --~ error: type mismatch: expected `Bool`, found `Int`
+proc inferred(x: Option<Bool>): (c?) { ensure r: c? iff x = Option::Some(3) }  --~ error: type mismatch: expected `Bool`, found `Int`
+proc field_read(p: Pair<Int, Bool>): (c: Int) { ensure r: c = p.snd }  --~ error: cannot compare `Int` with `Bool`
+proc pattern(x: Option<Bool>): (c: Int) { ensure r: c = match x { Option::Some(n) => n, Option::None => 0 } }  --~ error: `Bool` variable `n` must end in `?`
+proc update(p: Pair<Int, Bool>): (q: Pair<Int, Bool>) { ensure r: q = { p with snd := 1 } }  --~ error: type mismatch: expected `Bool`, found `Int`
+proc other_instance(x: Option<Int>, y: Option<Bool>): (c?) { ensure r: c? iff x = y }  --~ error: cannot compare `generics_static::Option<Int>` with `generics_static::Option<Bool>`
 
 -- A struct with type parameters is not ordered, for now: its fields' types
 -- are not known to be ordered until an instance gives them.
@@ -59,10 +59,10 @@ ordered struct OrderedPair<A, B> { fst: A, snd: B }  --~ error: the ordered stru
 
 -- An ordering of two variants says nothing of their type arguments.
 pub ordered enum Level<T> { Low, High }
-comp ordering { pub out c? ensure r: c? iff Level::Low < Level::High }  --~ error: cannot infer the type arguments of `generics_static::Level::Low`
+proc ordering(): (c?) { ensure r: c? iff Level::Low < Level::High }  --~ error: cannot infer the type arguments of `generics_static::Level::Low`
 
 -- A quantifier over an infinite instance is outside the decidable core, as
 -- one over any type whose values cannot be listed is.
-comp quantified { pub out c? ensure r: c? iff (forall (o: Option<Int>), o != Option::Some(1)) }  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
-comp quantified_list { pub out c? ensure r: c? iff (forall (l: List<Bool>), l != List::Nil) }  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
+proc quantified(): (c?) { ensure r: c? iff (forall (o: Option<Int>), o != Option::Some(1)) }  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
+proc quantified_list(): (c?) { ensure r: c? iff (forall (l: List<Bool>), l != List::Nil) }  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 --@ exit: 2

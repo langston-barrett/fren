@@ -78,11 +78,10 @@ pub enum AfterName {
     Ends,           -- not the type's: the type or the name ends before it
 }
 
-pub comp type_bracket {
-    in bracket: Bracket
-    in adjacent?                 -- it follows the name directly
-    pub det out reading: AfterName
-
+pub proc type_bracket(
+    bracket: Bracket,
+    adjacent?,                   -- it follows the name directly
+): (det reading: AfterName) {
     ensure opens: reading = AfterName::Opens iff (bracket = Bracket::Angle and adjacent?)
     ensure spaced: reading = AfterName::Spaced iff (bracket = Bracket::Angle and not adjacent?)
     ensure parenthesized: reading = AfterName::Parenthesized iff (bracket = Bracket::Paren and adjacent?)
@@ -112,10 +111,11 @@ and change only those parentheses, as `lang::angle_char` states of each
 character:
 
 ```fren
-pub comp angle_char {
-    in ch: String                -- a character of the type or declaration as written
-    in swapped?                  -- whether it opens or closes type arguments or type parameters
-    pub det out text: String := match ch {
+pub proc angle_char(
+    ch: String,                  -- a character of the type or declaration as written
+    swapped?,                    -- whether it opens or closes type arguments or type parameters
+): (det text: String) {
+    out text := match ch {
         "(" if swapped? => "<",
         ")" if swapped? => ">",
         _ => ch,
@@ -141,11 +141,10 @@ ordered by its variants whatever its arguments.
 from whether one is and how many type parameters it has:
 
 ```fren
-pub comp ordered_generic {
-    in ordered?        -- the record is declared `ordered`
-    in params: Nat     -- how many type parameters it has
-    pub det out accepted?
-
+pub proc ordered_generic(
+    ordered?,          -- the record is declared `ordered`
+    params: Nat,       -- how many type parameters it has
+): (det accepted?) {
     ensure rule: accepted? iff not ordered? or params = 0
 
     expect plain: when params = 0, accepted?
@@ -187,10 +186,8 @@ pub mod lang
 -- element type of a set, relation or sequence.
 pub enum ParamPlace { Whole, Argument, OwnParameter, OwnOther, Element }
 
-pub comp type_parameter_place {
+pub proc type_parameter_place(place: ParamPlace): (det accepted?) {
     use self::ParamPlace::{Argument, Element, OwnOther, OwnParameter, Whole}
-    in place: ParamPlace
-    pub det out accepted?
 
     ensure rule: accepted? iff place is Whole | Argument | OwnParameter
 
@@ -214,12 +211,11 @@ core](Decidability.md), so both opt out:
 pub enum Arg { P0, P1, P2, Other }   -- a type argument, as written: one of the type parameters, or another type
 
 set_option fren.lint.undecidable "allow" in
-pub comp recursive_payload {
-    in params: Seq<Arg>    -- the enumeration's type parameters, in order: `P0`, `P1`, ..., never `Other`
-    in args: Seq<Arg>      -- the arguments that its own type is written with
-    in nested?             -- it is within an argument of an instance
-    pub det out accepted?
-
+pub proc recursive_payload(
+    params: Seq<Arg>,      -- the enumeration's type parameters, in order: `P0`, `P1`, ..., never `Other`
+    args: Seq<Arg>,        -- the arguments that its own type is written with
+    nested?,               -- it is within an argument of an instance
+): (det accepted?) {
     ensure rule: accepted? iff (not nested? and args = params and not Arg::Other in params)
 
     expect nested: when nested?, not accepted?
@@ -306,17 +302,17 @@ pub fn own_nested?(segs: Seq<Segment>) :=
     and Segment::Own in segs.slice(if own_whole?(segs) then 1 else 0, segs.len)
 
 set_option fren.lint.undecidable "allow" in
-pub comp own_type {
+pub proc own_type(
+    params: Nat,                 -- how many type parameters the declaration has: `P0`, `P1`, ...
+    segs: Seq<Segment>,          -- a payload's or field's type, as written, without its patterns
+): (det own?, det as_declared?, det nested?, det bare?, det in_element?, det accepted?) {
     use self::Arg::{Other, P0, P1}
     use self::Segment::{ArgsClose, ArgsOpen, ArgsSep, Ident, Own, RelOf, RelSep, SeqOf, SetOf}
-    in params: Nat               -- how many type parameters the declaration has: `P0`, `P1`, ...
-    in segs: Seq<Segment>        -- a payload's or field's type, as written, without its patterns
-    pub det out own? := own_whole?(segs)
-    pub det out as_declared? := own? and params <= 3 and segs = own_written(params)
-    pub det out nested? := own_nested?(segs)
-    pub det out bare? := segs = [Own]
-    pub det out in_element? := (SetOf in segs or SeqOf in segs or RelOf in segs or RelSep in segs) and Own in segs
-    pub det out accepted?
+    out own? := own_whole?(segs)
+    out as_declared? := own? and params <= 3 and segs = own_written(params)
+    out nested? := own_nested?(segs)
+    out bare? := segs = [Own]
+    out in_element? := (SetOf in segs or SeqOf in segs or RelOf in segs or RelSep in segs) and Own in segs
 
     ensure rule: accepted? iff (not nested? and (not own? or as_declared?))
 
@@ -382,11 +378,12 @@ other type is the same type with its parts instantiated, so that a type
 without parts is left as it is:
 
 ```fren
-pub comp instantiation {
-    in ty: Ty
-    in arguments: Seq<Ty>
-    in instantiated: Seq<Ty>       -- each of the parts of `ty`, instantiated in turn
-    pub det out result: Ty := if param?(ty) then
+pub proc instantiation(
+    ty: Ty,
+    arguments: Seq<Ty>,
+    instantiated: Seq<Ty>,         -- each of the parts of `ty`, instantiated in turn
+): (det result: Ty) {
+    out result := if param?(ty) then
         (if param_index(ty) < arguments.len then arguments[param_index(ty)] else ty)
         else with_parts(ty, instantiated)
 
@@ -403,11 +400,10 @@ arguments as it has parameters, and any other type has none, so `Option`,
 and how many arguments it is written with:
 
 ```fren
-pub comp type_arguments {
-    in params: Int     -- how many type parameters the type has: none if it is not generic
-    in args: Int       -- how many arguments it is written with
-    pub det out accepted?
-
+pub proc type_arguments(
+    params: Int,       -- how many type parameters the type has: none if it is not generic
+    args: Int,         -- how many arguments it is written with
+): (det accepted?) {
     ensure rule: accepted? iff args = params
 
     expect plain: when params = 0 and args = 0, accepted?
@@ -427,12 +423,11 @@ refines `lang::type_arguments`:
 pub enum Named { Builtin, Parameter, Data, OtherItem }
 
 set_option fren.lint.undecidable "allow" in
-pub comp written_type_arguments {
-    in named: Named
-    in params: Seq<Arg>    -- an enumeration's or record's type parameters, in order
-    in args: Seq<Arg>      -- the type arguments, as written
-    pub det out accepted?
-
+pub proc written_type_arguments(
+    named: Named,
+    params: Seq<Arg>,      -- an enumeration's or record's type parameters, in order
+    args: Seq<Arg>,        -- the type arguments, as written
+): (det accepted?) {
     ensure rule: accepted? iff args.len = (if named = Named::Data then params.len else 0)
 
     expect builtin: when named = Named::Builtin and args != [], not accepted?
@@ -484,17 +479,18 @@ with a `Nat` widened to an `Int`:
 pub fn first_giver(Seq<Ty>, Seq<Bool>, Nat): Int
 pub fn widened(Ty): Ty
 
-pub comp type_argument_inference {
-    in declared: Seq<Ty>           -- the declared types of the construction's values, in order
-    in synthesizes: Seq<Bool>      -- which values synthesize their types
-    in k: Nat                      -- the type parameter
-    in expected?                   -- an instance of the construction's type is expected of it
-    in expected_arg: Ty            -- that instance's argument for `k`
-    in matched?                    -- matching the first giver's type against its declared type gives `k` an argument
-    in matched: Ty                 -- that argument
-    pub det out giver: Int := first_giver(declared, synthesizes, k)
-    pub det out known? := expected? or (giver >= 0 and matched?)
-    pub det out argument: Ty := if expected? then expected_arg else widened(matched)
+pub proc type_argument_inference(
+    declared: Seq<Ty>,             -- the declared types of the construction's values, in order
+    synthesizes: Seq<Bool>,        -- which values synthesize their types
+    k: Nat,                        -- the type parameter
+    expected?,                     -- an instance of the construction's type is expected of it
+    expected_arg: Ty,              -- that instance's argument for `k`
+    matched?,                      -- matching the first giver's type against its declared type gives `k` an argument
+    matched: Ty,                   -- that argument
+): (det giver: Int, det known?, det argument: Ty) {
+    out giver := first_giver(declared, synthesizes, k)
+    out known? := expected? or (giver >= 0 and matched?)
+    out argument := if expected? then expected_arg else widened(matched)
 
     assume as_many: synthesizes.len = declared.len
 
@@ -518,16 +514,17 @@ have the same shape:
 ```fren
 pub fn same_shape?(Ty, Ty)
 
-pub comp parameter_matching {
-    in declared: Ty
-    in found: Ty
-    in k: Nat
-    in first: Int                  -- the position of the first of the declared type's parts that mentions `k`, or -1
-    in part_matched?               -- matching the part of `found` there against that part gives `k` an argument
-    in part_argument: Ty           -- that argument
-    pub det out matched? := if param?(declared) then param_index(declared) = k
+pub proc parameter_matching(
+    declared: Ty,
+    found: Ty,
+    k: Nat,
+    first: Int,                    -- the position of the first of the declared type's parts that mentions `k`, or -1
+    part_matched?,                 -- matching the part of `found` there against that part gives `k` an argument
+    part_argument: Ty,             -- that argument
+): (det matched?, det argument: Ty) {
+    out matched? := if param?(declared) then param_index(declared) = k
         else same_shape?(declared, found) and first >= 0 and part_matched?
-    pub det out argument: Ty := if param?(declared) then found else part_argument
+    out argument := if param?(declared) then found else part_argument
 
     expect itself: when param?(declared) and param_index(declared) = k, matched? and argument = found
     expect other_shape: when not param?(declared) and not same_shape?(declared, found), not matched?
@@ -556,11 +553,11 @@ parameters and whose synthesizing parts are those given an argument:
 pub enum ArgMode { Gives(Arg), Waits(Arg) }
 
 set_option fren.lint.undecidable "allow" in
-pub comp construction_synthesis {
+pub proc construction_synthesis(
+    params: Nat,             -- how many type parameters the generic type has: `P0`, `P1`, ...
+    values: Seq<ArgMode>,      -- the construction's values, in order
+): (det synthesizes?) {
     use self::Arg::{P0, P1, P2}
-    in params: Nat           -- how many type parameters the generic type has: `P0`, `P1`, ...
-    in values: Seq<ArgMode>    -- the construction's values, in order
-    pub det out synthesizes?
 
     ensure rule: synthesizes? iff (params <= 3 and (params < 1 or ArgMode::Gives(P0) in values)
         and (params < 2 or ArgMode::Gives(P1) in values)
@@ -628,23 +625,24 @@ pub fn position_if(values: Seq<ArgMode>, expected?, waiting?, j: Int): Seq<Int> 
     if 0 <= j < values.len and waits?(values, expected?, j) = waiting? then [j] else []
 
 set_option fren.lint.undecidable "allow" in
-pub comp construction_order {
+pub proc construction_order(
+    params: Nat,                   -- how many type parameters the generic type has: `P0`, `P1`, ...
+    values: Seq<ArgMode>,            -- the construction's values, in order
+    expected?,                     -- an instance of the construction's type is expected of it
+): (det order: Seq<Int>, det given: Seq<Bool>, det unknown?) {
     use self::Arg::{P0, P1, P2}
     use self::ArgMode::{Gives, Waits}
-    in params: Nat                 -- how many type parameters the generic type has: `P0`, `P1`, ...
-    in values: Seq<ArgMode>          -- the construction's values, in order
-    in expected?                   -- an instance of the construction's type is expected of it
     -- The values' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
-    pub det out order: Seq<Int> :=
+    out order :=
         position_if(values, expected?, false, 0) ++ position_if(values, expected?, false, 1)
         ++ position_if(values, expected?, false, 2) ++ position_if(values, expected?, true, 0)
         ++ position_if(values, expected?, true, 1) ++ position_if(values, expected?, true, 2)
     -- For each type parameter, whether it ends with an argument.
-    pub det out given: Seq<Bool> := (if params >= 1 then [expected? or Gives(P0) in values] else [])
+    out given := (if params >= 1 then [expected? or Gives(P0) in values] else [])
         ++ (if params >= 2 then [expected? or Gives(P1) in values] else [])
         ++ (if params >= 3 then [expected? or Gives(P2) in values] else [])
-    pub det out unknown? := false in given
+    out unknown? := false in given
 
     assume few: values.len <= 3 and params <= 3
     assume own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
@@ -764,12 +762,13 @@ argument, a `Pair` is finite exactly when both its arguments are, and a
 ```fren
 -- A `List`'s count is the same whatever its argument's, as it should be.
 set_option fren.lint.constant_output "allow" in
-pub comp instance_values {
-    in a: Int                      -- the values of the first argument, or -1
-    in b: Int                      -- of the second, for `Pair`
-    pub det out option: Int := if a >= 0 then a + 1 else -1
-    pub det out pair_finite? := a >= 0 and b >= 0
-    pub det out list: Int := -1
+pub proc instance_values(
+    a: Int,                        -- the values of the first argument, or -1
+    b: Int,                        -- of the second, for `Pair`
+): (det option: Int, det pair_finite?, det list: Int) {
+    out option := if a >= 0 then a + 1 else -1
+    out pair_finite? := a >= 0 and b >= 0
+    out list := -1
 
     assume counts: a >= -1 and b >= -1
 
@@ -810,16 +809,23 @@ declaration, whatever its arguments:
 -- be: one for every instance.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.constant_output "allow" in
-pub comp smt_encoding {
-    in a: String                   -- the sort of the first argument
-    in b: String                   -- of the second, for `Pair`
-    pub det out option_sort: String := "(|Option| " ++ a ++ ")"
-    pub det out pair_sort: String := "(|Pair| " ++ a ++ " " ++ b ++ ")"
-    pub det out option_declaration: String :=
+pub proc smt_encoding(
+    a: String,                     -- the sort of the first argument
+    b: String,                     -- of the second, for `Pair`
+): (
+    det option_sort: String,
+    det pair_sort: String,
+    det option_declaration: String,
+    det pair_declaration: String,
+    det list_declaration: String,
+) {
+    out option_sort := "(|Option| " ++ a ++ ")"
+    out pair_sort := "(|Pair| " ++ a ++ " " ++ b ++ ")"
+    out option_declaration :=
         "(declare-datatypes ((|Option| 1)) ((par (|T|) ((Option~None) (Option~Some (|Option::Some::0| |T|))))))\n"
-    pub det out pair_declaration: String :=
+    out pair_declaration :=
         "(declare-datatypes ((|Pair| 2)) ((par (|A| |B|) ((Pair~ (|Pair::fst| |A|) (|Pair::snd| |B|))))))\n"
-    pub det out list_declaration: String :=
+    out list_declaration :=
         "(declare-datatypes ((|List| 1)) ((par (|T|) ((List~Nil) (List~Cons (|List::Cons::0| |T|) (|List::Cons::1| (|List| |T|)))))))\n"
 }
 ```

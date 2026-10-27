@@ -1,16 +1,7 @@
 -- The operator and method lints, in both front ends.
 set_option fren.lint.bool_equality "warn"
 
-comp comparisons {
-    in a: Int
-    in b: Int
-    in u: Set<Int>
-    in v: Set<Int>
-    pub out p?
-    pub out q?
-    pub out w?
-    pub out z?
-
+proc comparisons(a: Int, b: Int, u: Set<Int>, v: Set<Int>): (p?, q?, w?, z?) {
     ensure r1: p? iff (a < b or a = b)          --~ warning: these two comparisons are `a <= b`
     ensure r2: q? iff (a <= b and b <= a)       --~ warning: these two comparisons are `a = b`
     ensure r3: w? iff (a + 1 >= b and b != a + 1)  --~ warning: these two comparisons are `a + 1 > b`
@@ -22,12 +13,7 @@ comp comparisons {
     expect e4: when u subset v or v subset u, true
 }
 
-comp bools {
-    in x?
-    in y?
-    pub out p?
-    pub out q?
-
+proc bools(x?, y?): (p?, q?) {
     ensure r1: p? iff (x? = y?) and x?          --~ warning: equality of `Bool`s is `iff`
     ensure r2: q? = (x? or y?)                  --~ warning: equality of `Bool`s is `iff`
     -- `!=`, literals and other types are left alone.
@@ -37,16 +23,7 @@ comp bools {
 }
 
 set_option fren.lint.undecidable "allow" in
-comp searches {
-    in s: String
-    in t: String
-    in q: Seq<Int>
-    pub out a?
-    pub out b?
-    pub out c?
-    pub out d?
-    pub out e?
-
+proc searches(s: String, t: String, q: Seq<Int>): (a?, b?, c?, d?, e?) {
     ensure r1: a? iff s.index_of(t, 0) != -1     --~ warning: this is a call of `contains?`
     ensure r2: b? iff -1 = s.index_of(t, 0)      --~ warning: this is a call of `contains?`
     ensure r3: c? iff s.index_of(t, 0) = 0       --~ warning: this is a call of `starts_with?`
@@ -58,15 +35,7 @@ comp searches {
     --~^ warning: this slice is the whole of its receiver
 }
 
-comp conditionals {
-    in c?
-    in x: Int
-    in y: Int
-    pub out n: Int
-    pub out m: Int
-    pub out k: Int
-    pub out p?
-
+proc conditionals(c?, x: Int, y: Int): (n: Int, m: Int, k: Int, p?) {
     ensure r1: n = 2 * if c? then x else y + 1  --~ warning: the `else` branch extends past the operator
     ensure r2: m = 2 * if c? then x else if c? then y else y + 1
     --~^ warning: the `else` branch extends past the operator
@@ -79,18 +48,17 @@ comp conditionals {
 }
 
 set_option fren.lint.undecidable "allow" in
-comp identities {
-    in x: Int
-    in y: Int
-    in s: String
-    in q: Seq<Int>
-    in u: Set<Int>
-    pub out a: Int
-    pub out b: Int
-    pub out c: Int
-    pub out d: String := "" ++ s             --~ warning: this operation has no effect
-    pub out e: Seq<Int> := q ++ []           --~ warning: this operation has no effect
-    pub out f: Set<Int> := u minus {}        --~ warning: this operation has no effect
+proc identities(x: Int, y: Int, s: String, q: Seq<Int>, u: Set<Int>): (
+    a: Int,
+    b: Int,
+    c: Int,
+    d: String,
+    e: Seq<Int>,
+    f: Set<Int>,
+) {
+    out d := "" ++ s             --~ warning: this operation has no effect
+    out e := q ++ []           --~ warning: this operation has no effect
+    out f := u minus {}        --~ warning: this operation has no effect
 
     ensure r1: a = (x - y) * 1                  --~ warning: this operation has no effect
     ensure r2: b = 0 + x                        --~ warning: this operation has no effect

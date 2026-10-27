@@ -7,26 +7,21 @@ pub fn y(Int): Int
 pub fn p(Int): Int
 pub fn d(Int): Int
 
-pub comp positive {
-    in k: Int
+pub proc positive(k: Int) {
     assume pos: k > 0
 }
 
-pub comp members {
-    in n: Int
+pub proc members(n: Int): (set_option fren.evidence "tested" in det y!: Int) {
     set_option fren.evidence "tested" in
-    pub det out y!: Int
-    set_option fren.evidence "tested" in
-    inst p!: positive { k := 1 }
+    call p := positive(1)
 
     ensure r: y = n + p.k
 }
 
 set_option fren.evidence "tested" in
-pub comp defined {
-    in q: Seq<Int>
+pub proc defined(q: Seq<Int>): (d!: Int) {
     assume nonempty: q != []
-    pub out d!: Int := q[0]
+    out d := q[0]
 }
 
 --@ summary: 7 passed (3 by testing), 0 failed, 0 inconclusive, 0 redundant

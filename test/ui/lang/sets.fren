@@ -10,12 +10,7 @@ set_option fren.lint.duplicate_elements "allow"
 
 enum Lint { Unused, Glob, Naming }
 
-comp fix_selected {
-    in lint: Lint
-    in only: Set<Lint>
-    in skip: Set<Lint>
-    pub det out fixed?
-
+proc fix_selected(lint: Lint, only: Set<Lint>, skip: Set<Lint>): (det fixed?) {
     ensure rule: fixed? iff ((only = {} or lint in only) and not lint in skip)
 
     expect default_all: when only = {} and not lint in skip, fixed?
@@ -27,11 +22,8 @@ comp fix_selected {
 expect skip_monotone: forall (a b: fix_selected),
     when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
 
-comp counts {
-    in s: Set<Int>
-    in t: Set<Int>
-    pub out n: Int
-    pub det out both: Set<Int> := s union t
+proc counts(s: Set<Int>, t: Set<Int>): (n: Int, det both: Set<Int>) {
+    out both := s union t
 
     ensure r: n = (s union t).card
 
@@ -44,11 +36,11 @@ expect literals: {1, 1, 2}.card = 2 and ({} union {1}).card = 1 and 3 in ({1, 2,
 expect precedence: {1} union {2} inter {3} = {1}
 
 -- An `in` at the start of a line starts an input, so `s` ends `r`.
-comp lines {
-    in x: Int
-    in s: Set<Int>
-    in y: Int                                             --~ warning: unused variable `y`
-    pub out ok?
+proc lines(
+    x: Int,
+    s: Set<Int>,
+    y: Int,                                               --~ warning: unused variable `y`
+): (ok?) {
     ensure r: ok? iff x in s
 }
 --@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant

@@ -11,13 +11,7 @@ pub enum Tree<T> { Leaf, Node(Int is 0..=9, T, Tree<T>) }
 pub enum Bag<T> { Empty, More(Pair<Int is 0..=9, T>, Bag<T>) }
 type Byte := Int is 0..=255
 
-comp c {
-    in x: Option<Set<Int is 0..=9>>
-    in q: Option<Seq<Byte>>
-    in t: Tree<Int>
-    in b: Bag<Bool>
-    in k: Int
-
+proc c(x: Option<Set<Int is 0..=9>>, q: Option<Seq<Byte>>, t: Tree<Int>, b: Bag<Bool>, k: Int) {
     expect member: match x { Option::Some(s) => not (k in s) or k <= 9, Option::None => true }
     expect nth: match q { Option::Some(s) => s = [] or s[0] <= 255, Option::None => true }
     expect tag: match t { Tree::Node(d, _, _) => d <= 9, Tree::Leaf => true }

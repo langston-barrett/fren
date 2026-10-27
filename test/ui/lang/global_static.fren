@@ -1,9 +1,7 @@
 -- Static rules for global expectations.
 
-comp sub {
-    in x: Int
-    pub out z: Int
-    out hidden: Int
+proc sub(x: Int): (z: Int) {
+    exists hidden: Int
     ensure r: z = x
     ensure h: hidden = x
 }
@@ -26,4 +24,4 @@ expect sub: true                               --~ error: the name `sub` is alre
 expect ok: forall (a: sub), a.z = a.x
 expect ok: true                                --~ error: the name `ok` is already defined in the root module
 expect unknown: forall (a: nothing), true      --~ error: cannot find `nothing` in this scope
-comp uses { pub out y: Int ensure r: y = ok }     --~ error: expected a value, but `ok` is a global expectation
+proc uses(): (y: Int) { ensure r: y = ok }     --~ error: expected a value, but `ok` is a global expectation

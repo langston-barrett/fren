@@ -1,3 +1,3 @@
 -- A path through something without members (F0204).
 enum Mode { Off, Heat }
-comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Heat::On }
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat::On }

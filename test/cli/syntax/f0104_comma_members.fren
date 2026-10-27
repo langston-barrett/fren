@@ -1,2 +1,2 @@
 -- Members separated by commas (F0104).
-comp c { in x: Int, in y: Int }
+proc c(x: Int) { assume a: x > 0, assume b: x < 9 }

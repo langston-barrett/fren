@@ -6,19 +6,12 @@ set_option fren.lint.chainable_comparison "allow"
 
 enum E { A, B }
 
-comp counting {
-    in r: Rel<E, E>
-    in s: Set<E>
-    pub out n: Int
-    pub out has_aa?
+proc counting(r: Rel<E, E>, s: Set<E>): (n: Int, has_aa?) {
     ensure c: n = s.card
     ensure h: has_aa? iff (E::A, E::A) in r
 }
 
-comp relating {
-    in r: Rel<E, E>
-    in s: Set<E>
-    pub out n: Int
+proc relating(r: Rel<E, E>, s: Set<E>): (n: Int) {
     ensure j: when (r join r) = r, n >= 0
     ensure k: when E::A in s, n >= 0
 }
@@ -26,14 +19,9 @@ comp relating {
 refine counts_relates: counting refines relating
 --~^ error: the solver does not reliably combine counting with relational operators
 
-comp bounded { in s: Set<E> pub out n: Int ensure c: n <= s.card }
+proc bounded(s: Set<E>): (n: Int) { ensure c: n <= s.card }
 
-comp joined {
-    in r: Rel<E, E>
-    in s: Set<E>
-    pub out n: Int
-    pub out closed?
-    pub out has_a?
+proc joined(r: Rel<E, E>, s: Set<E>): (n: Int, closed?, has_a?) {
     ensure z: n < 1 and n > -1
     ensure j: closed? iff (r join r) = r
     ensure h: has_a? iff E::A in s

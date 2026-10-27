@@ -12,23 +12,17 @@ expect sliced: "ab".slice(0, 1).len = 1 and ("a").len = 1
 expect counted_literal: {1, 2}.card = 2
 --~^ warning: this expectation mentions no variable
 
-comp counted {
-    in x: Int
-    pub out y?
+proc counted(x: Int): (y?) {
     ensure q: y? iff {x}.card = 1
 }
 
 -- A member of a set literal read from an instance.
-comp source {
-    in x: Int
-    pub out y: Int
+proc source(x: Int): (y: Int) {
     ensure q: y = x
 }
 
-comp member {
-    in x: Int
-    pub out z?
-    inst w: source { x }
+proc member(x: Int): (z?) {
+    call w := source(x)
     ensure q: z? iff x in {w.y, 0}
 }
 
@@ -39,22 +33,13 @@ expect chained_literal: {(1, 2)}.range.card = 1 and {(1, 2)}.inverse.image({2}) 
 
 enum Dir { Up, Down }
 
-comp chained_paren {
-    in r: Rel<Dir, Dir>
-    pub out y?
+proc chained_paren(r: Rel<Dir, Dir>): (y?) {
     ensure q: y? iff Dir::Up in (r).inverse.range
     --~^ warning: this chain of methods has a shorter form
 }
 
 -- Parentheses never change how an operand is classified (#98).
-comp parenthesized {
-    in s: String
-    in x: Int
-    in t: Set<Int>
-    pub out a?
-    pub out b?
-    pub out c?
-    pub out d?
+proc parenthesized(s: String, x: Int, t: Set<Int>): (a?, b?, c?, d?) {
     ensure qa: a? iff (s.len) = (0)
     --~^ warning: say whether it is empty with `""`, not `len`
     ensure qb: b? iff x in ({1})

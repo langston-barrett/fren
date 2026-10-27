@@ -10,12 +10,7 @@ struct Point { x: Int, y: Int }
 
 set_option fren.lint.non_snake_case "allow" in
 set_option fren.lint.non_snake_case "warn" in
-comp copies {
-    in p: Point
-    in s: String
-    pub out q: Point
-    pub out ok?
-
+proc copies(p: Point, s: String): (q: Point, ok?) {
     ensure r: q = Point { x := p.x, y := p.y }
     ensure m: ok? iff s.matches?(r"v1.2") and s.matches?(".*file.txt")
 }

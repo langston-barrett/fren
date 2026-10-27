@@ -4,10 +4,7 @@ It declares an item, reads a chapter through `..`, and then checks its own
 item, that chapter's, and an imported one.
 
 ```fren
-pub comp deep_gate {
-    in a?
-    pub out b?
-
+pub proc deep_gate(a?): (b?) {
     ensure same: b? iff a?
     expect never: when a?, not b?
 }

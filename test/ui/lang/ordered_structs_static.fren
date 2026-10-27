@@ -24,30 +24,30 @@ ordered struct Fine { key: Int, level: Level, name: String, size: Nat }
 -- Without `ordered`, no orderings, even of an ordered underlying type.
 struct Point { x: Int, y: Int }
 struct Count(Nat)
-comp newtype_order { in a: Ms in b: Ms pub out c? ensure r: c? iff a < b }
+proc newtype_order(a: Ms, b: Ms): (c?) { ensure r: c? iff a < b }
 --~^ error: `Ms` is not ordered, so its values cannot be compared with `<`
-comp newtype_chain { in a: Ms in b: Ms pub out c? ensure r: c? iff Ms(0) <= a < b }
+proc newtype_chain(a: Ms, b: Ms): (c?) { ensure r: c? iff Ms(0) <= a < b }
 --~^ error: `Ms` is not ordered, so its values cannot be compared with `<=`
-comp nat_order { in a: Count in b: Count pub out c? ensure r: c? iff a >= b }
+proc nat_order(a: Count, b: Count): (c?) { ensure r: c? iff a >= b }
 --~^ error: `Count` is not ordered, so its values cannot be compared with `>=`
-comp record_order { in a: Point in b: Point pub out c? ensure r: c? iff a > b }
+proc record_order(a: Point, b: Point): (c?) { ensure r: c? iff a > b }
 --~^ error: `Point` is not ordered, so its values cannot be compared with `>`
-comp record_min { in a: Point in b: Point pub out c: Point := a.min(b) }
+proc record_min(a: Point, b: Point): (c: Point) { out c := a.min(b) }
 --~^ error: `Point` is not ordered, so it has no method `min`
-comp newtype_max { in a: Ms in b: Ms pub out c: Ms := a.max(b) }
+proc newtype_max(a: Ms, b: Ms): (c: Ms) { out c := a.max(b) }
 --~^ error: `Ms` is not ordered, so it has no method `max`
 
 -- An ordered struct has `min` and `max`, of its own type, and no other
 -- methods.
-comp record_len { in a: Fine pub out n: Int := a.len }  --~ error: record `Fine` has no field `len`
-comp other_argument { in a: Fine in p: Point pub out c: Fine := a.min(p) }
+proc record_len(a: Fine): (n: Int) { out n := a.len }  --~ error: record `Fine` has no field `len`
+proc other_argument(a: Fine, p: Point): (c: Fine) { out c := a.min(p) }
 --~^ error: type mismatch: expected `Fine`, found `Point`
 
 -- `+` of a newtype of `Nat`, but not `-`, whose `a.0 - b.0` is an `Int`.
 ordered struct Seconds(Nat)
-comp nat_sum { in a: Seconds in b: Seconds pub out c: Seconds := a + b }
-comp nat_difference { in a: Seconds in b: Seconds pub out c: Seconds := a - b }
+proc nat_sum(a: Seconds, b: Seconds): (c: Seconds) { out c := a + b }
+proc nat_difference(a: Seconds, b: Seconds): (c: Seconds) { out c := a - b }
 --~^ error: newtype `Seconds` has no operator `-`
-comp nat_count { in a: Count in b: Count pub out c: Count := a + b }
+proc nat_count(a: Count, b: Count): (c: Count) { out c := a + b }
 
 --@ exit: 2

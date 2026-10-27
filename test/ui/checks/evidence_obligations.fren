@@ -4,14 +4,12 @@
 type Small := Int is 0..=3
 
 set_option fren.evidence "enumerated" in
-comp by_enumeration {
-    in b?
-    pub det out bad: Small := if b? then 7 else 1  --~ error: a value in `by_enumeration::bad` may not have the type `Small`
+proc by_enumeration(b?): (det bad: Small) {
+    out bad := if b? then 7 else 1  --~ error: a value in `by_enumeration::bad` may not have the type `Small`
 }
 
 set_option fren.evidence "tested" in
-comp by_testing {
-    in b?
-    pub det out bad: Small := if b? then 7 else 1  --~ error: a value in `by_testing::bad` may not have the type `Small`
+proc by_testing(b?): (det bad: Small) {
+    out bad := if b? then 7 else 1  --~ error: a value in `by_testing::bad` may not have the type `Small`
 }
 --~^^^^[hosted] info: the checks of `by_testing` set to testing are run by `fren check`, not in Lean

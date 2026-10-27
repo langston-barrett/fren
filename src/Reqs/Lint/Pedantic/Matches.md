@@ -66,14 +66,12 @@ pub mod lint
 pub enum ArmsFix { Merge, Remove, Replace }
 
 set_option fren.evidence "enumerated" in
-pub comp match_same_arms {
-    in same_body?        -- the bodies are written the same
-    in binds?            -- the pattern of either binds a name
-    in wildcard?         -- one of the group is `_`
-    in all?              -- the group is every arm of the `match`
-    pub det out fires?
-    pub det out fix: ArmsFix
-
+pub proc match_same_arms(
+    same_body?,          -- the bodies are written the same
+    binds?,              -- the pattern of either binds a name
+    wildcard?,           -- one of the group is `_`
+    all?,                -- the group is every arm of the `match`
+): (det fires?, det fix: ArmsFix) {
     ensure rule: fires? iff (same_body? and not binds?)
     ensure group_fix: fix = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
 }
@@ -94,11 +92,10 @@ removes an arm of the `match` that has the body of the `_` arm
 states when it fires:
 
 ```fren
-pub comp wildcard_single_variant {
-    in n_matched: Int    -- variants that no other arm names
-
+pub proc wildcard_single_variant(
+    n_matched: Int,      -- variants that no other arm names
+): (det fires?) {
     assume reachable: n_matched >= 1
-    pub det out fires?
 
     ensure rule: fires? iff n_matched = 1
 }
@@ -135,22 +132,23 @@ would start the arms. `lint::if_chain_match` states when it fires and
 whether the fix has a `_` arm:
 
 ```fren
-pub comp if_chain_match {
-    in n_tests: Int      -- tests in the chain
-    in variant_tests?    -- each is a variant test of the same scrutinee
-    in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
-    in n_untested: Nat   -- variants of the enumeration that no test names
-
+pub proc if_chain_match(
+    n_tests: Int,        -- tests in the chain
+    variant_tests?,      -- each is a variant test of the same scrutinee
+    n_repeated: Nat,     -- times a test names a variant that it, or an earlier test, names before
+    n_untested: Nat,     -- variants of the enumeration that no test names
+): (
+    det fires?,
+    det wildcard?,         -- the fix keeps the final `else`, as the `_` arm
+) {
     assume counts: n_tests >= 1
-    pub det out fires?
-    pub det out wildcard?  -- the fix keeps the final `else`, as the `_` arm
 
     ensure rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
     ensure fix: wildcard? iff n_untested > 0
 }
 ```
 
-`case_split_guarantees`, `allow` by default, fires on a component with two or
+`case_split_guarantees`, `allow` by default, fires on a procedure with two or
 more guarantees `when T, y = e`, or `when T, y? iff e`, of one output
 `y`, whose conditions `T` are variant tests of one scrutinee `x`, naming no
 variant twice. Together they say what one guarantee `y = match x { ...
@@ -164,11 +162,10 @@ name, so merging them changes the structure of the spec, not only its text.
 `lint::case_split_guarantees` states when it fires:
 
 ```fren
-pub comp case_split_guarantees {
-    in n_cases: Nat      -- guarantees `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
-    in n_repeated: Nat   -- times a test names a variant that it, or an earlier test, names before
-    pub det out fires?
-
+pub proc case_split_guarantees(
+    n_cases: Nat,        -- guarantees `when T, y = e` of one output, whose `T` are variant tests of one scrutinee
+    n_repeated: Nat,     -- times a test names a variant that it, or an earlier test, names before
+): (det fires?) {
     ensure rule: fires? iff (n_cases >= 2 and n_repeated = 0)
 }
 ```
@@ -216,28 +213,28 @@ pub enum Light { Red, Amber, Green }
 pub enum Lamp { Lit(Light), Dark }
 
 set_option fren.lint.single_match_else "allow" in
-pub comp single_match_else_written {
-    in light: Light
-    in lamp: Lamp
-    in n: Int
-    in a: Int
-    in b: Int
-    pub det out v: Int := match light { Light::Red => a, _ => b }
-    pub det out w: Int := match lamp { Lamp::Lit(Light::Red | Light::Amber) => a, _ => b }
-    pub det out x: Int := match n { 0..=9 => a, _ => b }
-    pub det out y: Int := match n { 1 | 3 => a, _ => b }
+pub proc single_match_else_written(light: Light, lamp: Lamp, n: Int, a: Int, b: Int): (
+    det v: Int,
+    det w: Int,
+    det x: Int,
+    det y: Int,
+) {
+    out v := match light { Light::Red => a, _ => b }
+    out w := match lamp { Lamp::Lit(Light::Red | Light::Amber) => a, _ => b }
+    out x := match n { 0..=9 => a, _ => b }
+    out y := match n { 1 | 3 => a, _ => b }
 }
 
-pub comp single_match_else_fixed {
-    in light: Light
-    in lamp: Lamp
-    in n: Int
-    in a: Int
-    in b: Int
-    pub det out v: Int := if light = Light::Red then a else b
-    pub det out w: Int := if lamp is Lamp::Lit(Light::Red | Light::Amber) then a else b
-    pub det out x: Int := if n is 0..=9 then a else b
-    pub det out y: Int := if n in {1, 3} then a else b
+pub proc single_match_else_fixed(light: Light, lamp: Lamp, n: Int, a: Int, b: Int): (
+    det v: Int,
+    det w: Int,
+    det x: Int,
+    det y: Int,
+) {
+    out v := if light = Light::Red then a else b
+    out w := if lamp is Lamp::Lit(Light::Red | Light::Amber) then a else b
+    out x := if n is 0..=9 then a else b
+    out y := if n in {1, 3} then a else b
 }
 
 refine single_match_else_sound: single_match_else_fixed refines single_match_else_written
@@ -261,24 +258,22 @@ pub fn pat_binds?(p: Pat) := match p {
 -- The test of the fix of `single_match_else` on the pattern `p`.
 pub fn fix_test?(p: Pat, x: Val) := match p { Pat::Lit(k) => x.n = k, Pat::Tag(t) => x.tag = t, _ => pat_matches?(p, x) }
 
-pub comp single_match_else {
-    in first: Pat            -- the first arm's pattern
-    in second: Pat           -- the second's
-    in a: Body               -- the first arm's body
-    in b: Body               -- the second's
-    in bool?                 -- the scrutinee is a `Bool`
-    in others?               -- `match_like_membership`, `needless_match` or `trivial_match` fires on the `match`
-    in x: Val
-    in o: Int
-
-    pub det out fires?
-
+pub proc single_match_else(
+    first: Pat,              -- the first arm's pattern
+    second: Pat,             -- the second's
+    a: Body,                 -- the first arm's body
+    b: Body,                 -- the second's
+    bool?,                   -- the scrutinee is a `Bool`
+    others?,                 -- `match_like_membership`, `needless_match` or `trivial_match` fires on the `match`
+    x: Val,
+    o: Int,
+): (det fires?) {
     -- the first arm's pattern is not `_`, binds nothing, and the scrutinee is not a `Bool`
-    det out test? := first != Pat::Wild and not pat_binds?(first) and not bool?
+    det let test? := first != Pat::Wild and not pat_binds?(first) and not bool?
     -- the second arm is `_`
-    det out wildcard? := second = Pat::Wild
+    det let wildcard? := second = Pat::Wild
     -- another match lint fires on it: those, or `match_same_arms`, where the bodies are written the same
-    det out other? := others? or a = b
+    det let other? := others? or a = b
 
     ensure rule: fires? iff (test? and wildcard? and not other?)
 
@@ -306,20 +301,14 @@ also in `pedantic`. The refinements below check the fix on one example:
 
 ```fren
 set_option fren.lint.match_bool "allow" in
-pub comp match_bool_written {
-    in c?
-    in a: Int
-    in b: Int
-    pub det out v: Int := match c? { true => a, false => b }
-    pub det out w: Int := match c? { false => a, _ => b }
+pub proc match_bool_written(c?, a: Int, b: Int): (det v: Int, det w: Int) {
+    out v := match c? { true => a, false => b }
+    out w := match c? { false => a, _ => b }
 }
 
-pub comp match_bool_fixed {
-    in c?
-    in a: Int
-    in b: Int
-    pub det out v: Int := if c? then a else b
-    pub det out w: Int := if c? then b else a
+pub proc match_bool_fixed(c?, a: Int, b: Int): (det v: Int, det w: Int) {
+    out v := if c? then a else b
+    out w := if c? then b else a
 }
 
 refine match_bool_sound: match_bool_fixed refines match_bool_written
@@ -334,24 +323,22 @@ pub enum BoolPat { True, False, Wild }
 
 pub fn bool_matches?(p: BoolPat, c?) := match p { BoolPat::True => c?, BoolPat::False => not c?, BoolPat::Wild => true }
 
-pub comp match_bool {
-    in first: BoolPat
-    in second: BoolPat
-    in a: Body               -- the first arm's body
-    in b: Body               -- the second's
-    in others?               -- `match_like_membership` or `trivial_match` fires on the `match`
-    in c?                    -- the scrutinee's value
-    in o: Int
-
+pub proc match_bool(
+    first: BoolPat,
+    second: BoolPat,
+    a: Body,                 -- the first arm's body
+    b: Body,                 -- the second's
+    others?,                 -- `match_like_membership` or `trivial_match` fires on the `match`
+    c?,                      -- the scrutinee's value
+    o: Int,
+): (det fires?) {
     -- The `match` is exhaustive, and its second arm is reachable.
     assume accepted: first = BoolPat::Wild or second = BoolPat::Wild or first != second
 
-    pub det out fires?
-
     -- the first arm is `true` or `false`, and the second the other or `_`
-    det out literals? := first != BoolPat::Wild and (second = BoolPat::Wild or second != first)
+    det let literals? := first != BoolPat::Wild and (second = BoolPat::Wild or second != first)
     -- another match lint fires on it: those, or `match_same_arms`, where the bodies are written the same
-    det out other? := others? or a = b
+    det let other? := others? or a = b
 
     ensure rule: fires? iff (literals? and not other?)
 
@@ -382,15 +369,13 @@ The refinements below check the fix on one example:
 ```fren
 set_option fren.lint.unnested_or_patterns "allow" in
 set_option fren.evidence "enumerated" in
-pub comp unnested_or_written {
-    in lamp: Lamp
-    pub det out v: Int := match lamp { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 }
+pub proc unnested_or_written(lamp: Lamp): (det v: Int) {
+    out v := match lamp { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 }
 }
 
 set_option fren.evidence "enumerated" in
-pub comp unnested_or_fixed {
-    in lamp: Lamp
-    pub det out v: Int := match lamp { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 }
+pub proc unnested_or_fixed(lamp: Lamp): (det v: Int) {
+    out v := match lamp { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 }
 }
 
 refine unnested_or_sound: unnested_or_fixed refines unnested_or_written
@@ -409,18 +394,12 @@ pub fn first_leaf(p: Pat): Leaf := match p { Pat::Variant(_, l, _) => l, _ => Le
 
 pub fn second_leaf(p: Pat): Leaf := match p { Pat::Variant(_, _, m) => m, _ => Leaf::Wild }
 
-pub comp unnested_or_patterns {
-    in first: Pat
-    in second: Pat
-    in x: Val
-
-    pub det out fires?
-
+pub proc unnested_or_patterns(first: Pat, second: Pat, x: Val): (det fires?) {
     -- they name the same variant
-    det out same_variant? := first is Pat::Variant(_, _, _) and second is Pat::Variant(_, _, _)
+    det let same_variant? := first is Pat::Variant(_, _, _) and second is Pat::Variant(_, _, _)
         and variant_tag(first) = variant_tag(second)
     -- values of its payload whose patterns are not written the same
-    det out n_differ: Int := (if first_leaf(first) = first_leaf(second) then 0 else 1)
+    det let n_differ: Int := (if first_leaf(first) = first_leaf(second) then 0 else 1)
         + (if second_leaf(first) = second_leaf(second) then 0 else 1)
 
     ensure rule: fires? iff (same_variant? and n_differ = 1)
@@ -454,14 +433,12 @@ below check the table that the message suggests, on one example:
 
 ```fren
 set_option fren.lint.manual_table "allow" in
-pub comp manual_table_written {
-    in n: Int
-    pub det out v: Int := if n > 10 then 2 else if n < 0 then 1 else 0
+pub proc manual_table_written(n: Int): (det v: Int) {
+    out v := if n > 10 then 2 else if n < 0 then 1 else 0
 }
 
-pub comp manual_table_fixed {
-    in n: Int
-    pub det out v: Int := table { n > 10 => 2, n < 0 => 1, _ => 0 }
+pub proc manual_table_fixed(n: Int): (det v: Int) {
+    out v := table { n > 10 => 2, n < 0 => 1, _ => 0 }
 }
 
 refine manual_table_sound: manual_table_fixed refines manual_table_written
@@ -487,20 +464,18 @@ pub fn chain_value(h: Seq<Bool>, v: Seq<Int>, z: Int): Int :=
     else if h.len > 3 and v.len > 3 and h[3] then v[3]
     else z
 
-pub comp manual_table {
-    in tests: Seq<Test>
-    in holds: Seq<Bool>      -- whether each test holds
-    in branches: Seq<Int>    -- the value of each branch
-    in z: Int                -- the final `else`
-
+pub proc manual_table(
+    tests: Seq<Test>,
+    holds: Seq<Bool>,        -- whether each test holds
+    branches: Seq<Int>,      -- the value of each branch
+    z: Int,                  -- the final `else`
+): (det fires?) {
     assume sizes: 1 <= tests.len <= 4 and holds.len = tests.len and branches.len = tests.len
 
-    pub det out fires?
-
     -- tests in the chain
-    det out n_tests: Int := tests.len
+    det let n_tests: Int := tests.len
     -- each is a variant test of the same scrutinee
-    det out variant_tests? := (forall (s: Slot), when pos(s) < tests.len, tests[pos(s)] is Test::VariantOf(_, _)
+    det let variant_tests? := (forall (s: Slot), when pos(s) < tests.len, tests[pos(s)] is Test::VariantOf(_, _)
         and scrutinee_of(tests[pos(s)]) = scrutinee_of(tests[0]))
 
     ensure rule: fires? iff (n_tests >= 2 and not variant_tests?)

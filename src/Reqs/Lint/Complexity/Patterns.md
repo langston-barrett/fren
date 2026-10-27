@@ -26,15 +26,13 @@ pub enum Signal { Stop, Slow, Go }
 
 set_option fren.lint.wildcard_in_or_patterns "allow" in
 set_option fren.evidence "enumerated" in
-pub comp wildcard_in_or_written {
-    in s: Signal
-    pub det out v: Int := match s { Signal::Stop => 0, Signal::Slow | _ => 1 }
+pub proc wildcard_in_or_written(s: Signal): (det v: Int) {
+    out v := match s { Signal::Stop => 0, Signal::Slow | _ => 1 }
 }
 
 set_option fren.evidence "enumerated" in
-pub comp wildcard_in_or_fixed {
-    in s: Signal
-    pub det out v: Int := match s { Signal::Stop => 0, _ => 1 }
+pub proc wildcard_in_or_fixed(s: Signal): (det v: Int) {
+    out v := match s { Signal::Stop => 0, _ => 1 }
 }
 
 refine wildcard_in_or_sound: wildcard_in_or_fixed refines wildcard_in_or_written
@@ -46,16 +44,11 @@ refine wildcard_in_or_complete: wildcard_in_or_written refines wildcard_in_or_fi
 that `_`, the fix, matches what the or-pattern does:
 
 ```fren
-pub comp wildcard_in_or_patterns {
-    in alts: Seq<Pat>
-    in x: Val
-
+pub proc wildcard_in_or_patterns(alts: Seq<Pat>, x: Val): (det fires?) {
     assume size: 2 <= alts.len <= 4
 
-    pub det out fires?
-
     -- an alternative is `_`
-    det out wildcard? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] = Pat::Wild)
+    det let wildcard? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] = Pat::Wild)
 
     ensure rule: fires? iff wildcard?
 
@@ -79,16 +72,14 @@ alternatives. The refinements below check the fix on one example:
 
 ```fren
 set_option fren.lint.manual_range_patterns "allow" in
-pub comp manual_range_written {
-    in n: Int
-    pub det out small: Int := match n { 1 | 2 | 3 => n, _ => 0 }
-    pub det out low: Int := match n { ..=0 | 1 | 2..5 => 1, 5 => 2, _ => 3 }
+pub proc manual_range_written(n: Int): (det small: Int, det low: Int) {
+    out small := match n { 1 | 2 | 3 => n, _ => 0 }
+    out low := match n { ..=0 | 1 | 2..5 => 1, 5 => 2, _ => 3 }
 }
 
-pub comp manual_range_fixed {
-    in n: Int
-    pub det out small: Int := match n { 1..=3 => n, _ => 0 }
-    pub det out low: Int := match n { ..=4 => 1, 5 => 2, _ => 3 }
+pub proc manual_range_fixed(n: Int): (det small: Int, det low: Int) {
+    out small := match n { 1..=3 => n, _ => 0 }
+    out low := match n { ..=4 => 1, 5 => 2, _ => 3 }
 }
 
 refine manual_range_sound: manual_range_fixed refines manual_range_written
@@ -117,24 +108,19 @@ pub fn gap_after?(alts: Seq<Pat>, s: Slot) := pos(s) < alts.len and match upper_
     Bound::Open => false,
 }
 
-pub comp manual_range_patterns {
-    in alts: Seq<Pat>
-    in v: Int
-
+pub proc manual_range_patterns(alts: Seq<Pat>, v: Int): (det fires?) {
     assume size: 2 <= alts.len <= 4
     -- A range matches some integer (`F0349`).
     assume ranges: forall (s: Slot), when pos(s) < alts.len,
         reaches?(lower_of(alts[pos(s)]), upper_of(alts[pos(s)]))
 
-    pub det out fires?
-
-    det out n_alternatives: Int := alts.len
+    det let n_alternatives: Int := alts.len
     -- each alternative is an integer literal or a range whose bounds are literals
-    det out integers? := (forall (s: Slot), when pos(s) < alts.len, alts[pos(s)] is Pat::Lit(_) | Pat::Range(_, _))
+    det let integers? := (forall (s: Slot), when pos(s) < alts.len, alts[pos(s)] is Pat::Lit(_) | Pat::Range(_, _))
     -- one of them is a range
-    det out range? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] is Pat::Range(_, _))
+    det let range? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] is Pat::Range(_, _))
     -- together they match the integers of one range, bounded on some side
-    det out interval? := not (exists (s: Slot), gap_after?(alts, s))
+    det let interval? := not (exists (s: Slot), gap_after?(alts, s))
         and not ((exists (s: Slot), pos(s) < alts.len and lower_of(alts[pos(s)]) = Bound::Open)
         and (exists (s: Slot), pos(s) < alts.len and upper_of(alts[pos(s)]) = Bound::Open))
 
@@ -153,16 +139,17 @@ starting no later than the second, as `unionInterval?` decides it, step by
 step:
 
 ```fren
-pub comp range_union {
-    in lo1: Int
-    in hi1: Int
-    in lo2: Int
-    in hi2: Int
-    in n: Int            -- an integer between the lowest and the highest bound
-
+pub proc range_union(
+    lo1: Int,
+    hi1: Int,
+    lo2: Int,
+    hi2: Int,
+    n: Int,              -- an integer between the lowest and the highest bound
+): (
+    det joined?,         -- they leave no gap
+) {
     assume sorted: lo1 <= lo2 <= hi2 and lo1 <= hi1
     assume between: lo1 <= n <= hi1.max(hi2)
-    pub det out joined?  -- they leave no gap
 
     ensure rule: joined? iff lo2 <= hi1 + 1
 

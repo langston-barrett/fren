@@ -11,12 +11,8 @@ set_option fren.lint.assertions_on_constants "allow"
 
 const PREFIX: String := "user-"
 
-comp handle {
-    in name: String
-    in taken?
-
+proc handle(name: String, taken?): (accepted?) {
     assume nonempty: name != ""
-    pub out accepted?
 
     ensure shape: accepted? iff (name.len <= 20 and not taken? and not name.contains?(" ")
         and name.starts_with?("a"))
@@ -35,9 +31,8 @@ expect concat: ("ab" ++ "c").len = 3 and "x" ++ "" = "x"  --~ warning: this oper
 
 -- A definition may concatenate, and its output then be compared with a
 -- constant or be the receiver of a method.
-comp keyed {
-    in name: String
-    pub det out key: String := PREFIX ++ name ++ "!"
+proc keyed(name: String): (det key: String) {
+    out key := PREFIX ++ name ++ "!"
 
     expect prefixed: key.starts_with?(PREFIX) and key.len = name.len + 6
     expect not_bare: key != "user-"
@@ -45,11 +40,7 @@ comp keyed {
 }
 
 -- A method call is linear in its receiver.
-comp lengths {
-    in s: String
-    in t: String
-    pub out total: Int
-
+proc lengths(s: String, t: String): (total: Int) {
     ensure r: total = 2 * s.len + t.len
 
     expect non_negative: total >= 0
@@ -59,28 +50,22 @@ comp lengths {
 -- `String`.
 struct User { name: String, admin? }
 
-comp greeting {
-    in u: User
-    pub det out text: String := if u.admin? then "admin" else u.name
+proc greeting(u: User): (det text: String) {
+    out text := if u.admin? then "admin" else u.name
 
     expect named: when not u.admin?, text = u.name
     expect short: when u.admin?, text.len = 5
 }
 
 -- Counterexamples show strings as literals, escaped.
-comp shown {
-    in s: String
-    pub out q?
-
+proc shown(s: String): (q?) {
     ensure r: q? iff s = "a\nb"
 
     expect never: not q?                                  --~ error: expectation `shown::never` does not hold
 }
 -- A comparison with a literal is a match of the strings below it, which
 -- the solver decides even when the string's length is unbounded.
-comp ordering {
-    in s: String
-
+proc ordering(s: String) {
     expect between: when s.starts_with?("a"), s >= "a" and s < "b"
     expect least: s >= "" and "" <= s
     expect below_nul: when s < "\x00", s = ""

@@ -11,10 +11,10 @@ A `use` is *used* if a path in the same file and module resolves through
 it: the path's first segment resolves (see
 [Resolution](../Lang/Modules.md#resolution)) to the item it imports by name,
 or to a variant of the enumeration it opens. Paths in expressions, types,
-instances, global expectations, claims and `#fren_check` count. The paths of
+calls, global expectations, claims and `#fren_check` count. The paths of
 `use` declarations do not, since they are absolute.
 
-A declaration written with `!` that [shadows](../Lang/Components.md#shadowing)
+A declaration written with `!` that [shadows](../Lang/Procedures.md#shadowing)
 a name the `use` brings in counts as such a path, since the `!` depends on
 the import: without the `use`, the `!` would hide nothing, and be an error.
 So `use self::Shape::Square` with `in Square!: Int` is used, `fren fix`
@@ -37,12 +37,11 @@ a `use` is unused:
 ```fren
 pub mod lint
 
-pub comp unused_import {
-    in glob?             -- it is `use ...::*`
-    in n_paths: Nat      -- paths in its file and module whose first segment resolves to a name it brings into scope
-    in first?            -- no earlier `use` in its file and module opens the same enumeration
-    pub det out unused?
-
+pub proc unused_import(
+    glob?,               -- it is `use ...::*`
+    n_paths: Nat,        -- paths in its file and module whose first segment resolves to a name it brings into scope
+    first?,              -- no earlier `use` in its file and module opens the same enumeration
+): (det unused?) {
     ensure rule: unused? iff (n_paths = 0 or (glob? and not first?))
 
     expect named_used: when not glob? and n_paths > 0, not unused?
@@ -55,8 +54,8 @@ suggests removing the `use`.
 
 ## Unused variables
 
-`unused_variables` reports a variable of a component that nothing in the
-component mentions, a binder of a global expectation over a component's
+`unused_variables` reports a variable of a procedure that nothing in the
+procedure mentions, a binder of a global expectation over a procedure's
 behaviours that its body never mentions, a parameter of a defined
 function that neither its body nor its [contract](../Lang/Items.md#contracts)
 mentions, a
@@ -64,17 +63,17 @@ mentions, a
 mentions, including a binder of a global expectation over a type's
 values, and a name of a [`let` or `where`](../Lang/Let.md) clause that
 neither its body nor a later definition of the clause mentions. An input
-that nothing mentions does not affect the component, and an output that
+that nothing mentions does not affect the procedure, and an output that
 nothing mentions can take any value. A quantifier over a name that its
 body does not mention is its body, since every type has a value, and a
 definition that nothing mentions has no effect.
 
-A variable is mentioned by a path in one of the component's constraints,
-or in a binding of one of its instances, whose only segment is the
-variable's name and that resolves to it: the binding `x` in `inst w: c {
-x }` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
+A variable is mentioned by a path in one of the procedure's constraints,
+or in an argument of one of its calls, whose only segment is the
+variable's name and that resolves to it: the argument `x` in `call w :=
+c(x)` mentions `x`, but in `match s { Shape::Circle(x!) => x > 0, _ =>
 true }`, the `x` of the arm is the binder that
-[shadows](../Lang/Components.md#shadowing) the variable, so it does not
+[shadows](../Lang/Procedures.md#shadowing) the variable, so it does not
 mention the variable, and neither does the `x` of the body of `forall
 (x!: Mode), x = Mode::Off`. A binder `w` is mentioned by a path `w.x`, and a
 parameter as a variable is. A path in a definition of a `let` or
@@ -84,9 +83,9 @@ a later definition's mention of an earlier name of its clause: in `let k
 definition mentions it. A name of a clause, or a bound name, is mentioned as a
 variable is, so in `let k := 1, k! := 2 in k`, the first `k` is reported.
 Mentions elsewhere, such as
-through an instance of the component in another one, do not count: they
-cannot constrain the variable. The variables of the component's own
-instances are not reported, and neither are the variables of a component,
+through a call of the procedure in another one, do not count: they
+cannot constrain the variable. The variables of the procedure's own
+calls are not reported, and neither are the variables of a procedure,
 or the binders of a global expectation, with a static error.
 
 The message is reported at the variable's declaration, in the order of
@@ -129,13 +128,12 @@ the tree. A mention below a node that declares its name means that
 declaration, as the body's `x` does in `forall (x!: Mode), x = Mode::Off`:
 
 ```fren
-pub comp scope {
-    in t: Tree
+pub proc scope(t: Tree): (det nodes: Set<Node>, det declared: Set<Local>, det free: Set<Local>) {
     -- The mentions in or below a node that declares their names.
-    out hidden: Rel<Node, Local> := (t.children.closure.inverse join t.declares) union t.declares
-    pub det out nodes: Set<Node> := t.children.closure.image({t.root}) union {t.root}
-    pub det out declared: Set<Local> := t.declares.image(nodes)
-    pub det out free: Set<Local> := (t.mentions minus hidden).image(nodes)
+    let hidden: Rel<Node, Local> := (t.children.closure.inverse join t.declares) union t.declares
+    out nodes := t.children.closure.image({t.root}) union {t.root}
+    out declared := t.declares.image(nodes)
+    out free := (t.mentions minus hidden).image(nodes)
 
     expect mentioned: free subset t.mentions.range
     expect declared_hides: free inter t.declares.image({t.root}) = {}
@@ -144,19 +142,16 @@ pub comp scope {
 
 A quantifier's bound name is unused if its body's tree does not have it
 free. `lint::unused_bound` states this, for the bound names `names`. Its
-definition reads its instance, so the instance is written first, against
+definition reads its call, so the call is written first, against
 [the order of members](Restriction.md#the-order-of-members), and the
-component expects that lint:
+procedure expects that lint:
 
 ```fren
 set_option fren.lint.arbitrary_source_item_ordering "expect" in
-pub comp unused_bound {
-    in names: Set<Local>
-    in body: Tree
+pub proc unused_bound(names: Set<Local>, body: Tree): (det unused: Set<Local>) {
+    call s := scope(body)
 
-    inst s: scope { t := body }
-
-    pub det out unused: Set<Local> := names minus s.free
+    out unused := names minus s.free
 
     expect shadowed: when body.children = {(Node::N0, Node::N1)} and body.root = Node::N0
         and body.declares = {(Node::N1, Local::A)} and body.mentions = {(Node::N1, Local::A)},
@@ -175,15 +170,14 @@ since a mention means the last declaration before it.
 ```fren
 pub ordered enum DefIndex { P0, P1, P2, P3 }
 
-pub comp unused_definitions {
-    in names: Rel<DefIndex, Local>       -- the name each definition declares
-    in uses: Rel<DefIndex, Local>        -- the names free in each definition's expression
-    in body: Set<Local>                  -- the names free in the body
-    in k: DefIndex
-
+pub proc unused_definitions(
+    names: Rel<DefIndex, Local>,         -- the name each definition declares
+    uses: Rel<DefIndex, Local>,          -- the names free in each definition's expression
+    body: Set<Local>,                    -- the names free in the body
+    k: DefIndex,
+): (det unused?) {
     assume one_name: forall (p: DefIndex) (a b: Local), when (p, a) in names and (p, b) in names, a = b
     assume earlier: uses.domain subset names.domain
-    pub det out unused?
 
     ensure rule: unused? iff (k in names.domain and not (exists (x: Local),
         (k, x) in names and ((x in body and not (exists (m: DefIndex), k < m and (m, x) in names))
@@ -199,13 +193,13 @@ pub comp unused_definitions {
 
 Both front ends compute these from their syntax trees, as their mentions
 (`Reqs/Lang/Expressions#mentions`) are, and decide a clause's with
-`clauseMentions`. The components of these chapters over trees are
+`clauseMentions`. The procedures of these chapters over trees are
 `tested` against the ui tests of local definitions and quantifiers, not
 proved against the code: the functions in `FrenCore` that decide the
 lints take facts that each front end reads from its own syntax tree, not
 a tree of this model, so no `impl` can relate the two until expressions
 are modelled in Fren itself; and a tree's relations have too many values
-for `decide`. Where a component is over finite data that the code takes
+for `decide`. Where a procedure is over finite data that the code takes
 as it is, as [where a quantifier goes in
 parentheses](Style/Let.md#operands-at-each-variant) is, it is proved.
 
@@ -223,7 +217,7 @@ from its module's descendants, which later files may enter. Uses in Lean
 code do not count either. A use counts even when it is in an item that is
 itself unused.
 
-Components and global expectations are never dead: each is a guarantee,
+Procedures and global expectations are never dead: each is a guarantee,
 or a claim about guarantees, in its own right, and is checked and
 [traced](../Trace.md) whether or not anything uses it. `pub` items may be used
 by other files. `lint::Named` is what a name can name, which the
@@ -251,12 +245,11 @@ pub enum Named {
 
 use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Record, TypeAlias}
 
-pub comp dead_item {
-    in what: Named
-    in pub?
-    in n_uses: Nat       -- paths in its file that resolve to it, to one of its variants, or through it
-    pub det out dead?
-
+pub proc dead_item(
+    what: Named,
+    pub?,
+    n_uses: Nat,         -- paths in its file that resolve to it, to one of its variants, or through it
+): (det dead?) {
     ensure rule: dead? iff (what in {Enumeration, Record, AbstractType, TypeAlias, Function, Constant} and not pub? and n_uses = 0)
 
     expect public_lives: when pub?, not dead?
@@ -268,16 +261,16 @@ The message is reported at the item's name, at the end of the file.
 
 ## Unused assumptions
 
-`unused_assumption` reports an assumption of a component that mentions
+`unused_assumption` reports an assumption of a procedure that mentions
 only inputs, one or more, none of them used. An input is *used* when
 something mentions it: a constraint other than an assumption, cover goals
 among them, as for an [unused variable](#unused-variables); a definition;
-a binding of one of the component's instances; a global expectation in
-the same file that reads it through an instance of the component, as `a.x` with
-the binder `a`; an [instance](../Lang/Instances.md) of the component in
-the same file, which binds each of its inputs, and whose assumption check
+an argument of one of the procedure's calls; a global expectation in
+the same file that reads it through a binder over the procedure, as `a.x` with
+the binder `a`; a [call](../Lang/Calls.md) of the procedure in
+the same file, which gives each of its parameters, and whose assumption check
 checks the assumption; or a [refinement](../Lang/Refinement.md) in the
-same file of which the component is the abstraction. Such a refinement
+same file of which the procedure is the abstraction. Such a refinement
 reads every input of the abstraction, through its binding or by name, and
 the abstraction's assumptions are its hypotheses, so an assumption can
 guard a binding: with `n := q.len` and `assume pos: n > 0`, `x := q[0]` is
@@ -297,7 +290,7 @@ it may: with `assume a: n >= 0 and n < q.len` and `assume b: q[n] > 0`,
 both are reported, but `a` guards the index in `b`, so `b` without `a` is
 not defined (`F0611`). So the message names the reported assumptions
 linked to it. The variables `V` and functions of such a group are
-mentioned by nothing else, so a check over the component is `forall U V,
+mentioned by nothing else, so a check over the procedure is `forall U V,
 A(V) and B(U) implies C(U)`, with `A` the group's assumptions, which is
 `(exists V, A(V)) implies (forall U, B(U) implies C(U))`, for every
 interpretation of the functions. Since `B` and `C` apply none of `A`'s
@@ -309,22 +302,21 @@ is safe too: given a counterexample to a check without it, add a fresh
 value to the type, extend each uninterpreted function to it, and give
 `k1` an old value and `k2` the new one. Nothing else mentions them, so
 the counterexample still fails, and the assumption now holds. An unused
-input does not affect the component, as for an [unused variable](#unused-variables), but
+input does not affect the procedure, as for an [unused variable](#unused-variables), but
 `unused_variables` does not report it, since the assumption mentions it:
 this is what is left after the last guarantee that used the input is
 removed. As for [dead code](#dead-code), only the file's global
-expectations, instances and refinements count. There is no fix: removing
-the inputs would change the component's interface.
+expectations, calls and refinements count. There is no fix: removing
+the inputs would change the procedure's interface.
 `lint::unused_assumption` states when it fires:
 
 ```fren
-pub comp unused_assumption {
-    in n_mentioned: Nat  -- variables the assumption mentions
-    in all_inputs?       -- each of them is an input
-    in mentioned?        -- one of them, or a function it applies, is used in the component, through its other assumptions too
-    in read?             -- one of them, or a function it applies, is read in the file, by a global expectation, an instance or a refinement, through the component's other assumptions too
-    pub det out fires?
-
+pub proc unused_assumption(
+    n_mentioned: Nat,    -- variables the assumption mentions
+    all_inputs?,         -- each of them is an input
+    mentioned?,          -- one of them, or a function it applies, is used in the procedure, through its other assumptions too
+    read?,               -- one of them, or a function it applies, is read in the file, by a global expectation, a call or a refinement, through the procedure's other assumptions too
+): (det fires?) {
     ensure rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
 }
 ```
@@ -366,11 +358,10 @@ either, every setting keeps its messages and is accepted or not as
 before. `lint::unused_lint_setting` states when it fires:
 
 ```fren
-pub comp unused_lint_setting {
-    in n_places: Nat     -- items and later settings where it is in effect for a lint it sets
-    in expect?           -- it is to `expect`
-    pub det out fires?
-
+pub proc unused_lint_setting(
+    n_places: Nat,       -- items and later settings where it is in effect for a lint it sets
+    expect?,             -- it is to `expect`
+): (det fires?) {
     ensure rule: fires? iff (n_places = 0 and not expect?)
 }
 ```

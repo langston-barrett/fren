@@ -17,10 +17,7 @@ fn quadruple(n: Int): Int := double(double(n))
 
 const TWICE: Int := double(21)
 
-comp doubler {
-    in x: Int
-    pub det out y: Int
-
+proc doubler(x: Int): (det y: Int) {
     ensure r: y = double(x)
 
     expect even: y = x + x
@@ -28,10 +25,7 @@ comp doubler {
     expect nested: quadruple(x) = 2 * y
 }
 
-comp clamped {
-    in x: Int
-    pub out y: Int
-
+proc clamped(x: Int): (y: Int) {
     ensure r: y = clamp(x, 0, 10)
 
     expect low: y >= 0
@@ -40,10 +34,8 @@ comp clamped {
 }
 
 -- A defined function's arguments may mention outputs.
-comp from_output {
-    in m: Mode
-    out h?
-    pub out on?
+proc from_output(m: Mode): (on?) {
+    exists h?
 
     ensure h: h? iff m = Heat
     ensure on: on? iff both?(h?, heating?(m))
@@ -55,10 +47,7 @@ comp from_output {
 type Name
 fn same?(a: Name, b: Name) := a = b
 
-comp names {
-    in a: Name
-    pub out s?
-
+proc names(a: Name): (s?) {
     ensure r: s? iff same?(a, a)
 
     expect refl: s?

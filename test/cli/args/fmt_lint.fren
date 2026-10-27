@@ -1,3 +1,3 @@
 --@ args: fmt -A unused_imports
 -- Lint options are not options of `fren fmt`.
-comp c {}
+proc c() {}

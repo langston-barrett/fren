@@ -1,7 +1,6 @@
 -- Checks that hold for every behaviour up to the size bound (F0646).
 set_option fren.evidence "enumerated" in
-comp c {
-    in x: Int
-    pub det out y: Int := x + 1
+proc c(x: Int): (det y: Int) {
+    out y := x + 1
     expect e: y > x
 }

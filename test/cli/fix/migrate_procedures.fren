@@ -1,0 +1,42 @@
+--@ args: fix --check
+-- `fren fix` migrates components to procedures (`lint::migration_step`):
+-- first each component, as it parses, then its instances, as calls, once
+-- the order of the called procedures' parameters is known
+-- (`lint::call_migration_step`), and then fixes the lints of the file as
+-- migrated.
+mod m
+
+pub enum Mode { Heat, Cool, Off }
+
+pub comp band {
+    in temp: Int    -- the temperature
+    in target: Int  -- the target
+    pub out too_cold?
+    pub out too_hot?
+
+    ensure cold: too_cold? iff temp < target - 2
+    ensure hot: too_hot? iff temp > target + 2
+}
+
+pub comp thermostat {
+    use self::Mode::*
+
+    in temp: Int
+    in target: Int
+    out aux: Int
+    pub det out mode: Mode
+    pub out alarm? := temp > 100
+
+    inst range: band {
+        target,
+        temp := temp,
+    }
+    inst again: band { target := target + 1, temp }
+
+    ensure heat: when range.too_cold?, mode = Heat
+    ensure cool: when range.too_hot? and again.too_hot?, mode = Cool
+    ensure idle: unless range.too_cold? or range.too_hot?, mode = Off
+    ensure a: aux = 0
+}
+
+expect colder: forall (a b: band), when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold?

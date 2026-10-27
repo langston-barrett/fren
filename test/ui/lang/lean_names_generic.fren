@@ -7,9 +7,7 @@
 pub enum Option<T> { None, Some(T) }
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-comp c {
-    in x: Option<Int>
-    in l: List<Int>
+proc c(x: Option<Int>, l: List<Int>) {
     expect some: when x = Option::Some(3), x != Option::None
     expect cons: l != List::Cons(1, List::Nil) or l = List::Cons(1, List::Nil)
 }

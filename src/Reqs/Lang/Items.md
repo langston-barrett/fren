@@ -5,7 +5,7 @@ items can be mixed with Lean code.
 
 ```
 item := module | use | enumeration | record | abstract-type | type-alias | function | constant
-      | component | expectation | check | claim | lint-setting | lean-item
+      | procedure | expectation | check | claim | lint-setting | lean-item
 ```
 
 Items are processed in order: an item must be declared before it is used,
@@ -19,17 +19,16 @@ pub mod lang
 
 pub type ItemName
 
-pub comp declared_before {
-    in items: Seq<ItemName>      -- the items of the file and its imports, in order
-    in used: ItemName            -- the item a path names
-    in user: ItemName            -- the item the path is written in
-    in k_used: Nat               -- the position of `used` in `items`
-    in k_user: Nat               -- the position of `user`
-
+pub proc declared_before(
+    items: Seq<ItemName>,        -- the items of the file and its imports, in order
+    used: ItemName,              -- the item a path names
+    user: ItemName,              -- the item the path is written in
+    k_used: Nat,                 -- the position of `used` in `items`
+    k_user: Nat,                 -- the position of `user`
+): (det accepted?) {
     assume positions: k_used < items.len and items[k_used] = used
         and k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
-    pub det out accepted?
 
     ensure rule: accepted? iff (used = user or k_used < k_user)
 
@@ -41,8 +40,8 @@ pub comp declared_before {
 ```
 
 `used = user` is a recursive enumeration naming itself. Self-reference by
-any other item is rejected elsewhere: a component instantiating itself
-([Instances](Instances.md)), or a constant mentioning itself
+any other item is rejected elsewhere: a procedure calling itself
+([Calls](Calls.md)), or a constant mentioning itself
 ([constants](#constants)).
 
 ## Modules
@@ -111,11 +110,8 @@ pub ordered enum Level { Low, Middle, High }
 
 set_option fren.lint.unnecessary_min_or_max "allow" in
 set_option fren.evidence "enumerated" in
-pub comp enumeration_order {
+pub proc enumeration_order(a: Level, b: Level, c: Level) {
     use self::Level::{High, Low, Middle}
-    in a: Level
-    in b: Level
-    in c: Level
 
     expect declared: when a = Middle, Low < a < High
     expect bounded: Low <= a <= High
@@ -179,9 +175,7 @@ mistake:
 pub struct Ms(Int)
 pub struct Bytes(Int)
 
-comp timer {
-    in elapsed: Ms
-    in size: Bytes
+proc timer(elapsed: Ms, size: Bytes) {
     expect bad: elapsed < size   -- error: cannot compare `Ms` with `Bytes`
 }
 ```
@@ -209,13 +203,11 @@ record's field's, and when it is unbounded:
 ```fren
 pub mod lang
 
-pub comp newtype {
-    in n_fields: Nat             -- the types in its parentheses
-    in field_accepted?           -- the first's type is accepted as a record's field's (`field_type`)
-    in underlying_unbounded?     -- its underlying type is unbounded
-    pub det out accepted?
-    pub det out unbounded?
-
+pub proc newtype(
+    n_fields: Nat,               -- the types in its parentheses
+    field_accepted?,             -- the first's type is accepted as a record's field's (`field_type`)
+    underlying_unbounded?,       -- its underlying type is unbounded
+): (det accepted?, det unbounded?) {
     ensure rule: accepted? iff (n_fields = 1 and field_accepted?)
     ensure bounds: unbounded? iff underlying_unbounded?
 
@@ -275,19 +267,21 @@ pub mod lang
 pub enum Declaration { Enumeration, Record, Newtype }
 
 set_option fren.lint.undecidable "allow" in
-pub comp ordered_declaration {
+pub proc ordered_declaration(
+    declaration: Declaration,
+    ordered?,                         -- declared with `ordered`
+    n_payloads: Nat,                  -- for an enumeration: its variants with a payload
+    fields: Seq<Ty>,                  -- a record's fields' types, in order, or a newtype's underlying type, without patterns
+    ordered_items: Set<TypeName>,     -- the enumerations, records and newtypes declared `ordered`
+    k: Int,                           -- any position among the fields
+): (
+    first_unordered: Int,             -- the field reported: the first whose type is not ordered, `-1` if none is
+    accepted?,
+) {
     use self::Declaration::Enumeration
-    in declaration: Declaration
-    in ordered?                       -- declared with `ordered`
-    in n_payloads: Nat                -- for an enumeration: its variants with a payload
-    in fields: Seq<Ty>                -- a record's fields' types, in order, or a newtype's underlying type, without patterns
-    in ordered_items: Set<TypeName>   -- the enumerations, records and newtypes declared `ordered`
-    in k: Int                         -- any position among the fields
 
     assume enumerations_without_fields: when declaration = Enumeration, fields = []
     assume structs_without_payloads: when declaration != Enumeration, n_payloads = 0
-    pub out first_unordered: Int      -- the field reported: the first whose type is not ordered, `-1` if none is
-    pub out accepted?
 
     ensure in_range: -1 <= first_unordered < fields.len
     ensure reported: when k = first_unordered and k != -1,
@@ -312,18 +306,18 @@ The names of a list of declarations are distinct: the variants of an
 enumeration, the fields of a record, the [type
 parameters](Generics.md#type-parameters) of either, the parameters and contract clauses
 of a function, which share one namespace,
-the variables, instances and constraints of a component, which share one
+the variables, calls and constraints of a procedure, which share one
 namespace, and the binders of a global expectation, of a pattern or of a
 [quantifier](Quantifiers.md#names), across all of its binders. A
 pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
 written, whatever their kinds. In every list, only the first such name is
-reported, and the rest of its item is not checked, so a component with two
+reported, and the rest of its item is not checked, so a procedure with two
 repeated names and an unknown type reports the first repeat alone. The
-names of a component's members, of a function's parameters and of binders
-are compared without their `!` of [shadowing](Components.md#shadowing), so
-`in x: Int` and `in x!: Int` declare the same name, and so do `in x: Int`
-and `ensure x!: true`, even though a constraint never shadows. The names of
+names of a procedure's parameters, results and members, of a function's parameters and of binders
+are compared without their `!` of [shadowing](Procedures.md#shadowing), so
+the parameters `x: Int` and `x!: Int` declare the same name, and so do the
+parameter `x: Int` and `ensure x!: true`, even though a constraint never shadows. The names of
 variants and fields are compared as written: neither ever shadows, and a
 `!` on one is an error of its own, and so is one on a type parameter.
 `lang::distinct_names` states this, from how many names a list declares
@@ -334,12 +328,11 @@ pub mod lang
 
 pub type DeclaredName
 
-pub comp distinct_names {
-    in count: Int                  -- how many names the list declares
-    in names: Set<DeclaredName>    -- the names it declares
-
+pub proc distinct_names(
+    count: Int,                    -- how many names the list declares
+    names: Set<DeclaredName>,      -- the names it declares
+): (det accepted?) {
     assume counted: names.card <= count
-    pub det out accepted?
 
     ensure rule: accepted? iff names.card = count
 
@@ -349,7 +342,7 @@ pub comp distinct_names {
 ```
 
 Each name in an item must be a single segment, except where an expression
-reads an instance's variable, a value's field or a method with `.`. This
+reads a call's variable, a value's field or a method with `.`. This
 is checked as the item is parsed, and a name is reported with its `!` if
 it has one.
 
@@ -360,13 +353,13 @@ reported:
    identifier or integer literal that is not Fren's, such as `xα`, or a
    prefix `!`.
 2. Its problems found as it is parsed, in source order: a name that is not
-   a single segment, an input's definition (`in x: Int := 3`), a member's
+   a single segment, a parameter's definition (`proc c(x: Int := 3)`), a member's
    `set_option` of an option other than `fren.evidence`, and an operator
    of another language, `==`, `&&`, `||` or `|`.
 3. Everything else about it.
 
 So `A(x.y)` reports `x.y`, even in a pattern with the wrong number of
-binders or in an or-pattern, but `in s.t: S`, `in a: Int := 3` or
+binders or in an or-pattern, but a parameter `s.t: S` or `a: Int := 3`, or
 `ensure q: x == 1` before it is reported instead, and so is `!x?` anywhere in
 the item.
 
@@ -389,18 +382,17 @@ record's field:
 pub mod lang
 
 set_option fren.evidence "enumerated" in
-pub comp field_type {
-    in kind!: ValueType   -- the kind of the field's or payload's type
-    in abstract_within?  -- an abstract type is the type, or a set's element type within it
-    in own?              -- the type is the item being declared
-    in own_in_set?       -- the item being declared is a set's element type within the type
-    in payload?          -- a variant's payload, rather than a record's field
-
+pub proc field_type(
+    kind!: ValueType,     -- the kind of the field's or payload's type
+    abstract_within?,    -- an abstract type is the type, or a set's element type within it
+    own?,                -- the type is the item being declared
+    own_in_set?,         -- the item being declared is a set's element type within the type
+    payload?,            -- a variant's payload, rather than a record's field
+): (det accepted?) {
     assume own_enum: when own? and payload?, kind = ValueType::EnumTy
     assume own_record: when own? and not payload?, kind = ValueType::RecordTy
     assume abstract_kind: when kind = ValueType::AbstractTy, abstract_within?
     assume in_set: when own_in_set?, kind = ValueType::SetTy and not own?
-    pub det out accepted?
 
     ensure rule: accepted? iff (not abstract_within? and not own_in_set? and (payload? or not own?))
 
@@ -429,13 +421,12 @@ variants and those with a payload of the enumeration's own type:
 ```fren
 pub type VariantName
 
-pub comp well_founded {
-    in variants: Set<VariantName>
-    in recursive: Set<VariantName>   -- variants with a payload of the enumeration's own type
-
+pub proc well_founded(
+    variants: Set<VariantName>,
+    recursive: Set<VariantName>,     -- variants with a payload of the enumeration's own type
+): (det accepted?) {
     assume some_variant: variants != {}
     assume among: recursive subset variants
-    pub det out accepted?
 
     ensure rule: accepted? iff recursive != variants
 
@@ -516,7 +507,7 @@ name of a built-in type: `fn exactly_one?(n: Int) := n = 1` is an error.
 
 `fn double(n: Int): Int := 2 * n` declares the function `double`, whose
 value at any `Int` `n` is `2 * n`. A defined function's parameters are
-declared like a component's variables, `n: Int` or `ready?` for a `Bool`,
+declared like a procedure's parameters, `n: Int` or `ready?` for a `Bool`,
 and its *body* `e` is an [expression](Expressions.md) of its result type,
 optionally followed by a [`where` clause](Let.md).
 An uninterpreted function's parameters have types but no names, unless
@@ -525,14 +516,13 @@ body and the contract can mention them. `lang::function_params` states
 this, from the number of parameters and of those written with a name:
 
 ```fren
-pub comp function_params {
-    in defined?          -- written with `:= e`
-    in contract?         -- it has a contract: an `assume` or an `ensure` clause
-    in n_params: Nat is 1..
-    in n_named: Nat      -- parameters written with a name
-
+pub proc function_params(
+    defined?,            -- written with `:= e`
+    contract?,           -- it has a contract: an `assume` or an `ensure` clause
+    n_params: Nat is 1..,
+    n_named: Nat,        -- parameters written with a name
+): (det accepted?) {
     assume counts: n_named <= n_params
-    pub det out accepted?
 
     ensure rule: accepted? iff n_named = (if defined? or contract? then n_params else 0)
 
@@ -542,9 +532,9 @@ pub comp function_params {
 ```
 
 The parameters' names must be distinct, and may
-[shadow](Components.md#shadowing) the constants, functions and variants
+[shadow](Procedures.md#shadowing) the constants, functions and variants
 of the function's module, written with `!`. The body mentions no
-component's variables: only the parameters, binders of its own [`match`
+procedure's variables: only the parameters, binders of its own [`match`
 arms](Expressions.md#matches), names of its own [`let`s and `where`
 clauses](Let.md), constants, variants, and defined functions
 declared before the function.
@@ -555,12 +545,11 @@ known. `lang::function_body` states when a body is accepted:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp function_body {
-    in typed?                -- the body has the function's result type
-    in applies_self?         -- the body applies the function being declared
-    in applies_uninterpreted?  -- the body applies an uninterpreted function
-    pub det out accepted?
-
+pub proc function_body(
+    typed?,                  -- the body has the function's result type
+    applies_self?,           -- the body applies the function being declared
+    applies_uninterpreted?,    -- the body applies an uninterpreted function
+): (det accepted?) {
     ensure rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)
 
     expect not_recursive: when applies_self?, not accepted?
@@ -574,10 +563,10 @@ parameter standing for the value of its argument (see [Function
 applications](Expressions.md#function-applications)). The body has a value
 for every argument, so there is nothing about the function itself to
 check but its [contract](#contracts): a defined function is like a
-component with an input for each parameter, and one `det out` that a
-single guarantee makes equal to the body, which always meets its checks.
-Unlike a component, it is applied in expressions rather than
-instantiated. Otherwise only how the body is written is checked: the
+procedure with a parameter for each of its parameters, and one `det`
+result that a single guarantee makes equal to the body, which always
+meets its checks. Unlike a procedure, it is applied in expressions rather
+than called with `call`. Otherwise only how the body is written is checked: the
 [completeness](../Check.md#completeness),
 [disjointness](../Check.md#disjointness) and
 [reachability](../Check.md#reachability) of its
@@ -596,16 +585,16 @@ argument. All that is known of it is that it is a function: applied
 to equal arguments, it gives equal results, of its result type, and
 that it meets its [postconditions](#contracts). So an
 application of a function whose result is a `Nat` is at least 0, as a
-`Nat` variable is (see [Components](Components.md#natural-numbers)), one
+`Nat` variable is (see [Procedures](Procedures.md#natural-numbers)), one
 whose result is a [pattern type](Types.md#pattern-types) matches its
 pattern, and an application of a function with postconditions meets each
 of them wherever it meets the preconditions: each application brings these
 constraints where it is written, and no constraint quantifies over the
 function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
-component, its instances, and the behaviours of a [global
+procedure, its calls, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an
-[interpretation](Components.md#interpretations).
+[interpretation](Procedures.md#interpretations).
 
 ### Contracts
 
@@ -625,12 +614,12 @@ pub fn arity(n: Name): Nat
 ```
 
 A contract states what a function needs of its arguments and what it
-gives, as a component's [assumptions and
-guarantees](Components.md#meaning) do of its inputs and outputs: a
-function is like a component with an input for each parameter and one
-`det out`, its value. The names of the clauses share one namespace with
+gives, as a procedure's [assumptions and
+guarantees](Procedures.md#meaning) do of its inputs and outputs: a
+function is like a procedure with a parameter for each of its parameters
+and one `det` result, its value. The names of the clauses share one namespace with
 the parameters (see [Distinct names](#distinct-names)). A clause mentions
-what a component's constraint may, but for variables: the parameters,
+what a procedure's constraint may, but for variables: the parameters,
 binders and names of its own, constants, variants, and functions declared
 before the function, so that a precondition of `elem` can say what `kind`
 its argument has. A postcondition may also mention the function's value, by
@@ -644,12 +633,11 @@ applications of the function itself a clause may have:
 pub enum ClauseKind { Precondition, Postcondition }
 
 set_option fren.evidence "enumerated" in
-pub comp contract_application {
-    in clause: ClauseKind
-    in own?                  -- it applies the function whose contract the clause is in
-    in to_params?            -- its arguments are the parameters, each written as its name, in order
-    pub det out accepted?
-
+pub proc contract_application(
+    clause: ClauseKind,
+    own?,                    -- it applies the function whose contract the clause is in
+    to_params?,              -- its arguments are the parameters, each written as its name, in order
+): (det accepted?) {
     ensure rule: accepted? iff (not own? or (clause = ClauseKind::Postcondition and to_params?))
 
     expect others: when not own?, accepted?
@@ -672,13 +660,12 @@ pub enum Param { P0, P1, P2 }
 pub enum Written { Name(Param), Other }   -- an argument, as written
 
 set_option fren.lint.undecidable "allow" in
-pub comp contract_arguments {
-    in clause: ClauseKind
-    in own?                  -- it applies the function whose contract the clause is in
-    in params: Seq<Written>  -- the function's parameters, each as its name, never `Other`
-    in args: Seq<Written>    -- the application's arguments, as written
-    pub det out accepted?
-
+pub proc contract_arguments(
+    clause: ClauseKind,
+    own?,                    -- it applies the function whose contract the clause is in
+    params: Seq<Written>,    -- the function's parameters, each as its name, never `Other`
+    args: Seq<Written>,      -- the application's arguments, as written
+): (det accepted?) {
     ensure rule: accepted? iff (not own? or (clause = ClauseKind::Postcondition and args = params
         and not Written::Other in params))
 
@@ -695,8 +682,8 @@ refine arguments_detail: contract_arguments refines contract_application {
 At each application of a function, its arguments must meet its
 preconditions: the [precondition check](../Check.md#preconditions)
 confirms that each holds where the application is evaluated, as the
-[instance check](../Check.md#instance-assumptions) confirms an instance's
-bindings meet its component's assumptions. Where one fails, the
+[call check](../Check.md#call-assumptions) confirms that a call's
+arguments meet its procedure's assumptions. Where one fails, the
 application's value is still what the body gives, for a defined function,
 or unknown, for an uninterpreted one: the failure is reported, never
 assumed away. A defined function's body, and its postconditions, are
@@ -718,8 +705,8 @@ confirms. Postconditions that contradict each other, as `bad(n) > 0` and
 `bad(n) < 0`, or one that says nothing of the function's value and can be
 false, as `n > 0`, fail it. In Lean, an
 [interpretation](../Impl.md#interpretations) of the function proves them.
-Contracts on constants, and contracts on components beyond what
-components already state, are not part of Fren.
+Contracts on constants, and contracts on procedures beyond what
+procedures already state, are not part of Fren.
 
 Every function is used by [applying it](Expressions.md#function-applications),
 as in `arity(n) > 0`. Like any other item, a function or abstract type is
@@ -751,11 +738,10 @@ states this:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp constant {
-    in ty: ValueType     -- the constant's type
-    in applies?          -- its value applies an uninterpreted function
-    pub det out accepted?
-
+pub proc constant(
+    ty: ValueType,       -- the constant's type
+    applies?,            -- its value applies an uninterpreted function
+): (det accepted?) {
     ensure rule: accepted? iff (ty != ValueType::AbstractTy and not applies?)
 
     expect no_abstract_constants: when ty = ValueType::AbstractTy, not accepted?
@@ -763,7 +749,7 @@ pub comp constant {
 ```
 
 A constant stands for its value wherever it is mentioned: in assumptions,
-guarantees, expectations, bindings, and the values of other constants,
+guarantees, expectations, arguments, bindings, and the values of other constants,
 and as a record whose field is read or the receiver of a
 [method](Expressions.md#methods), as in `LOBBY.floor` or `GREETING.len`.
 There it is named by one identifier, since `a.b` is never a path (see
@@ -771,18 +757,15 @@ There it is named by one identifier, since `a.b` is never a path (see
 module is first brought into scope with `use`, and `places::LOBBY.floor`
 is an error.
 It is not a variable, so the rules for which variables an expression may
-mention (see [Instances](Instances.md#instance-variables)) do not apply to
+mention (see [Calls](Calls.md#call-variables)) do not apply to
 it. Like any other item, a constant is visible according to `pub`, and can
 be brought into scope with `use` (see [Modules and
 visibility](Modules.md)).
 
-## Components
+## Procedures
 
-```
-component := ["pub"] "comp" IDENT "{" member* "}"
-```
-
-See [Components](Components.md).
+A procedure is declared with `proc`, as `procedure`: see
+[Procedures](Procedures.md) for its grammar and meaning.
 
 ## Global expectations
 
@@ -791,9 +774,9 @@ expectation := "expect" IDENT ":" ["forall" binder+ ","] expr
 binder      := "(" DECL+ ":" path ")"
 ```
 
-A global expectation is an expectation about components as a whole rather
-than about one of their behaviours, such as two components agreeing, or one
-component being monotone. See [Global expectations](Global.md).
+A global expectation is an expectation about procedures as a whole rather
+than about one of their behaviours, such as two procedures agreeing, or one
+procedure being monotone. See [Global expectations](Global.md).
 
 ## Refinements
 
@@ -801,8 +784,8 @@ component being monotone. See [Global expectations](Global.md).
 refinement := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 ```
 
-`refine r: c refines a` states that component `c` refines component `a`,
-and has Fren check it. Its bindings, written as an instance's, give
+`refine r: c refines a` states that procedure `c` refines procedure `a`,
+and has Fren check it. Its bindings, written `x := e`, separated by commas, in braces, give
 variables of `a` as expressions over `c`'s. See [Refinement](Refinement.md).
 
 ## Checks
@@ -812,8 +795,8 @@ check := "#fren_check" [path] | "#fren_trace"
 ```
 
 `#fren_check` runs the [checks](../Check.md) in Lean, and `#fren_trace`
-reports the [evidence](../Trace.md) for every component. The `fren` command
-accepts and ignores both: `fren check` checks every component and global
+reports the [evidence](../Trace.md) for every procedure. The `fren` command
+accepts and ignores both: `fren check` checks every procedure and global
 expectation, and `fren trace` reports the evidence. See [Lean embedding](../Lean.md#commands).
 
 ## Claims
@@ -822,7 +805,7 @@ expectation, and `fren trace` reports the evidence. See [Lean embedding](../Lean
 claim := "tested" path ":" STRING ("," STRING)* [","] | "trusted" path ":" STRING
 ```
 
-A claim records evidence for a component that is not an implementation: a
+A claim records evidence for a procedure that is not an implementation: a
 `tested` claim names test files that exercise it, and a `trusted` claim
 gives a justification. Both Lean and the `fren` command accept claims. See
 [Traceability](../Trace.md).

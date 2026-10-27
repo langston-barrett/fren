@@ -1,6 +1,6 @@
 -- A variant's binders follow it directly, with no space.
 pub enum S { A(Int), B }
-comp c { in s: S pub out p? ensure r: p? iff match s { S::A (_) => true, S::B => false } }
+proc c(s: S): (p?) { ensure r: p? iff match s { S::A (_) => true, S::B => false } }
 --~^[cli] error: a space before the `(` of the binders of `S::A`
 --~^^[hosted] error: unexpected token '('; expected '=>'
 --@ exit: 2

@@ -1,21 +1,11 @@
 --@ args: fix --check
 -- `fren fix` simplifies `Bool` expressions, operands too.
-pub comp sub {
-    in i?
-    pub out j?
-
+pub proc sub(i?): (j?) {
     ensure r: j? iff i?
 }
 
-pub comp c {
-    in a?
-    in b?
-    in x: Int
-    pub out o?
-    pub out p?
-    pub out q?
-    pub out w?
-    inst s: sub { i? := if a? then true else false }
+pub proc c(a?, b?, x: Int): (o?, p?, q?, w?) {
+    call s := sub(if a? then true else false)
 
     ensure r1: o? iff a? = true
     ensure r2: when not not (a? or b?), w? or not (x < 3)

@@ -1,8 +1,5 @@
 -- A cover goal that the guarantees rule out (F0615).
-comp heater {
-    in temp: Int
-    pub out alarm?
-
+proc heater(temp: Int): (alarm?) {
     ensure r: alarm? iff temp > 100
 
     cover silent_overheat: temp > 100 and not alarm?

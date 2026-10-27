@@ -6,20 +6,13 @@
 type Name
 fn long?(Name)
 
-comp names {
-    in a: Name
-    in b: Name
-    pub out same?
-
+proc names(a: Name, b: Name): (same?) {
     ensure r: same? iff a = b
 
     cover distinct: not same?                      --~ info: the witness is not shown, since its query uses abstract types or functions
 }
 
-comp flags {
-    in n: Name
-    pub out flagged?
-
+proc flags(n: Name): (flagged?) {
     ensure r: flagged? iff long?(n)
 
     cover flagged_long: flagged?                   --~ info: the witness is not shown, since its query uses abstract types or functions
@@ -29,20 +22,14 @@ comp flags {
 -- function used only there leaves the witness shown.
 fn odd?(Int)
 
-comp checker {
-    in k: Int
-    pub out pos?
-
+proc checker(k: Int): (pos?) {
     ensure r: pos? iff k > 0
 
     expect odd_pos: when odd?(k) and k > 0, pos?
 }
 
-comp uses_checker {
-    in m: Int
-    pub out ok?
-
-    inst ch: checker { k := m }
+proc uses_checker(m: Int): (ok?) {
+    call ch := checker(m)
 
     ensure r: ok? iff ch.pos?
 
@@ -51,18 +38,12 @@ comp uses_checker {
 
 -- An instantiated component's guarantee is: a function used there
 -- hides the witness.
-comp odd_checker {
-    in k: Int
-    pub out is_odd?
-
+proc odd_checker(k: Int): (is_odd?) {
     ensure r: is_odd? iff odd?(k)
 }
 
-comp uses_odd {
-    in m: Int
-    pub out ok?
-
-    inst ch: odd_checker { k := m }
+proc uses_odd(m: Int): (ok?) {
+    call ch := odd_checker(m)
 
     ensure r: ok? iff ch.is_odd?
 
@@ -70,10 +51,7 @@ comp uses_odd {
 }
 
 -- Without them, the values are shown.
-comp plain {
-    in x: Int
-    pub out big?
-
+proc plain(x: Int): (big?) {
     ensure r: big? iff x > 10
 
     cover big_one: big?                            --~ info: witness: x =

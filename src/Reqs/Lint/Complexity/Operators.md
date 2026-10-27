@@ -18,14 +18,13 @@ pub mod lint
 
 use lang::{Assoc, operand}
 
-pub comp else_extends {
-    in outer: Int        -- the precedence of the operator
-    in inner: Int        -- the precedence of the `else` branch's operator
-    in assoc: Assoc      -- the associativity of the operator
-    in right?            -- the conditional is the operator's right operand
-    pub det out fires?
-
-    inst place: operand { outer, inner, assoc, right? }
+pub proc else_extends(
+    outer: Int,          -- the precedence of the operator
+    inner: Int,          -- the precedence of the `else` branch's operator
+    assoc: Assoc,        -- the associativity of the operator
+    right?,              -- the conditional is the operator's right operand
+): (det fires?) {
+    call place := operand(outer, inner, assoc, right?)
 
     ensure rule: fires? iff not place.bare?
 }
@@ -61,14 +60,12 @@ pub enum IdentityOperand { Zero, One, Empty, Negation, Other }
 
 pub enum Rewrite { KeepLeft, KeepRight, Flip, Unchanged }
 
-pub comp identity_op {
+pub proc identity_op(op: IdentityOperator, left: IdentityOperand, right: IdentityOperand): (
+    det rewrite: Rewrite,         -- `Flip` is `x - y` for `x + -y`, and `x + y` for `x - -y`
+) {
     use self::IdentityOperand::{Empty, Negation, One, Zero}
     use self::IdentityOperator::{Add, Concat, Div, Minus, Mul, Sub, Union}
     use self::Rewrite::{Flip, KeepLeft, KeepRight, Unchanged}
-    in op: IdentityOperator
-    in left: IdentityOperand
-    in right: IdentityOperand
-    pub det out rewrite: Rewrite  -- `Flip` is `x - y` for `x + -y`, and `x + y` for `x - -y`
 
     ensure rule: rewrite = match op {
         Add | Sub if right = Zero => KeepLeft,
@@ -101,11 +98,10 @@ changes neither the meaning nor the guards. `lint::double_parens` states
 when it fires:
 
 ```fren
-pub comp double_parens {
-    in depth: Int        -- pairs of parentheses, each directly around the next
-
+pub proc double_parens(
+    depth: Int,          -- pairs of parentheses, each directly around the next
+): (det fires?) {
     assume counts: depth >= 1
-    pub det out fires?
 
     ensure rule: fires? iff depth >= 2
 }
@@ -151,7 +147,7 @@ under any guard. Clippy has no counterpart.
 definedness obligation, and the operands of the disjunction just before or
 after it, if there is one. Operands are the four of
 [`lint::Operand`](../Meaning.md#expressions-as-written), enough to
-tell every case of the rule apart. The component states when
+tell every case of the rule apart. The procedure states when
 the lint fires, which call the fix is, and that the fix holds exactly where
 the conjuncts do, for every set of operands that hold:
 
@@ -168,12 +164,13 @@ fn pair_negated?(pairs: Set<PairNegation>, x: Operand, y: Operand) :=
 -- `x` is an operand of some conjunct.
 fn named?(pairs: Set<PairNegation>, x: Operand) := exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
 
-pub comp manual_at_most_one {
-    in pairs: Set<PairNegation>   -- the run of conjuncts `not (a and b)`
-    in disjunction: Set<Operand>  -- the operands of the disjunction beside them; `{}` if there is none
-    pub det out fires?
-    pub det out exactly?          -- the fix is `exactly_one?`, rather than `at_most_one?`
-
+pub proc manual_at_most_one(
+    pairs: Set<PairNegation>,     -- the run of conjuncts `not (a and b)`
+    disjunction: Set<Operand>,    -- the operands of the disjunction beside them; `{}` if there is none
+): (
+    det fires?,
+    det exactly?,                 -- the fix is `exactly_one?`, rather than `at_most_one?`
+) {
     ensure rule: fires? iff ((exists (x y z: Operand), x != y and x != z and y != z
         and named?(pairs, x) and named?(pairs, y) and named?(pairs, z))
         and (forall (x: Operand), not pair_negated?(pairs, x, x))
@@ -189,12 +186,12 @@ where the lint fires, the conjuncts hold exactly where at most one named
 operand does, and with the disjunction, exactly where one does:
 
 ```fren
-comp manual_at_most_one_meaning {
-    in pairs: Set<PairNegation>
-    in disjunction: Set<Operand>
-    in holds: Set<Operand>
-
-    inst m: manual_at_most_one { pairs, disjunction }
+proc manual_at_most_one_meaning(
+    pairs: Set<PairNegation>,
+    disjunction: Set<Operand>,
+    holds: Set<Operand>,
+) {
+    call m := manual_at_most_one(pairs, disjunction)
 
     expect at_most: when m.fires?,
         (forall (x y: Operand), when pair_negated?(pairs, x, y), not (x in holds and y in holds))
@@ -209,7 +206,7 @@ comp manual_at_most_one_meaning {
 
 `lint::manual_at_most_one` names the operands by the four of
 `lint::Operand`, which is enough to tell the cases of the rule apart and
-keeps the component in the decidable core, so that `decide` checks its
+keeps the procedure in the decidable core, so that `decide` checks its
 implementation over every list of conjuncts. `lint::manual_at_most_one_any`
 states the same rule precisely, over any number of operands, each a
 string, as written, since the lint compares operands as written, with
@@ -235,12 +232,13 @@ fn written_named?(pairs: Set<WrittenNegation>, x: String) :=
     exists (p: WrittenNegation), p in pairs and (p.first = x or p.second = x)
 
 set_option fren.lint.undecidable "allow" in
-pub comp manual_at_most_one_any {
-    in pairs: Set<WrittenNegation>    -- the run of conjuncts `not (a and b)`
-    in disjunction: Set<String>       -- the operands of the disjunction beside them; `{}` if there is none
-    pub det out fires?
-    pub det out exactly?              -- the fix is `exactly_one?`, rather than `at_most_one?`
-
+pub proc manual_at_most_one_any(
+    pairs: Set<WrittenNegation>,      -- the run of conjuncts `not (a and b)`
+    disjunction: Set<String>,         -- the operands of the disjunction beside them; `{}` if there is none
+): (
+    det fires?,
+    det exactly?,                     -- the fix is `exactly_one?`, rather than `at_most_one?`
+) {
     ensure rule: fires? iff ((exists (x y z: String), x != y and x != z and y != z
         and written_named?(pairs, x) and written_named?(pairs, y) and written_named?(pairs, z))
         and (forall (p: WrittenNegation), when p in pairs, p.first != p.second)
@@ -257,30 +255,34 @@ way round:
 ```fren
 set_option fren.lint.manual_at_most_one "allow" in
 set_option fren.evidence "enumerated" in
-pub comp manual_at_most_one_written {
-    in a?
-    in b?
-    in c?
-    in d?
-    pub det out three? := not (a? and b?) and not (a? and c?) and not (b? and c?)
-    pub det out turned? := not (b? and a?) and not (c? and b?) and not (c? and a?)
-    pub det out four? := not (a? and b?) and not (a? and c?) and not (a? and d?) and not (b? and c?)
+pub proc manual_at_most_one_written(a?, b?, c?, d?): (
+    det three?,
+    det turned?,
+    det four?,
+    det exactly?,
+    det after?,
+) {
+    out three? := not (a? and b?) and not (a? and c?) and not (b? and c?)
+    out turned? := not (b? and a?) and not (c? and b?) and not (c? and a?)
+    out four? := not (a? and b?) and not (a? and c?) and not (a? and d?) and not (b? and c?)
         and not (b? and d?) and not (c? and d?)
-    pub det out exactly? := (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
-    pub det out after? := not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or a? or b?)
+    out exactly? := (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
+    out after? := not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or a? or b?)
 }
 
 set_option fren.evidence "enumerated" in
-pub comp manual_at_most_one_fixed {
-    in a?
-    in b?
-    in c?
-    in d?
-    pub det out three? := at_most_one?(a?, b?, c?)
-    pub det out turned? := at_most_one?(b?, a?, c?)
-    pub det out four? := at_most_one?(a?, b?, c?, d?)
-    pub det out exactly? := exactly_one?(a?, b?, c?)
-    pub det out after? := exactly_one?(c?, a?, b?)
+pub proc manual_at_most_one_fixed(a?, b?, c?, d?): (
+    det three?,
+    det turned?,
+    det four?,
+    det exactly?,
+    det after?,
+) {
+    out three? := at_most_one?(a?, b?, c?)
+    out turned? := at_most_one?(b?, a?, c?)
+    out four? := at_most_one?(a?, b?, c?, d?)
+    out exactly? := exactly_one?(a?, b?, c?)
+    out after? := exactly_one?(c?, a?, b?)
 }
 
 refine manual_at_most_one_sound: manual_at_most_one_fixed refines manual_at_most_one_written
@@ -293,14 +295,7 @@ table:
 
 ```fren
 set_option fren.lint.manual_at_most_one "deny" in
-pub comp manual_at_most_one_guarded {
-    in q: Seq<Int>
-    in i: Int
-    in x: Int
-    in z?
-    pub out indexed?
-    pub out tabled?
-
+pub proc manual_at_most_one_guarded(q: Seq<Int>, i: Int, x: Int, z?): (indexed?, tabled?) {
     ensure indexes: indexed? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
         where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and z?, big? := q[i] > 0
     ensure tables: tabled? iff not (pos? and t?) and not (pos2? and t?) and not (pos? and pos2?)
@@ -329,30 +324,31 @@ assumes, is tested, by `lint::manual_at_most_one_guarded` above and the ui
 tests, not proved:
 
 ```fren
-comp manual_at_most_one_defined {
+proc manual_at_most_one_defined(
+    env: Env,
+    a: Value,                        -- the operands' values
+    b: Value,
+    undefined_parts: Set<Int>,       -- which operands, `0` and `1`, are not defined
+    obligation?,                     -- the `and` gives a definedness obligation
+) {
     use lang::{Env, Head, Value, node}
-    in env: Env
-    in a: Value                      -- the operands' values
-    in b: Value
-    in undefined_parts: Set<Int>     -- which operands, `0` and `1`, are not defined
-    in obligation?                   -- the `and` gives a definedness obligation
 
     assume no_obligation: unless obligation?, undefined_parts = {}
 
-    inst conjunct: node {
-        head := Head::Op("and", ""),
+    call conjunct := node(
+        Head::Op("and", ""),
         env,
-        values := [a, b],
-        parts_mentioned := {},
+        [a, b],
+        {},
         undefined_parts,
-    }
-    inst call: node {
-        head := Head::Op("at_most_one?", ""),
+    )
+    call call := node(
+        Head::Op("at_most_one?", ""),
         env,
-        values := [a, b],
-        parts_mentioned := {},
+        [a, b],
+        {},
         undefined_parts,
-    }
+    )
 
     expect kept: unless obligation?, conjunct.defined? and call.defined?
     -- With an obligation, the `and`'s guard can be what makes it defined.

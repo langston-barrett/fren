@@ -4,15 +4,15 @@ import Fren.Elab
 -- keep-sorted end
 
 /-!
-# `impl`: linking comps to Lean code
+# `impl`: linking procedures to Lean code
 
-`impl n: c for (xs) { x := t, ... }` interprets each `in` and `pub out` of
-comp `c` as a Lean term over the binders `xs`, and adds a theorem `n`
+`impl n: c for (xs) { x := t, ... }` interprets each parameter and result
+of procedure `c` as a Lean term over the binders `xs`, and adds a theorem `n`
 stating that the interpretation satisfies `c` (`Reqs/Impl`, module `impls`):
 
-  `∀ xs, c.assumes ins outs default → ∃ hidden, c.defs ins outs hidden ∧ c.ensures ins outs hidden ∧ c.inst.w ... ∧ ...`
+  `∀ xs, c.assumes ins outs default → ∃ hidden, c.defs ins outs hidden ∧ c.ensures ins outs hidden ∧ c.call.w ... ∧ ...`
 
-where `hidden` are `c`'s private `out`s and its instances' variables, which
+where `hidden` are `c`'s private variables and its calls' variables, which
 assumptions never mention, and `c.defs` is there only if `c` has defined
 outputs. The proof is the one written after `by`; without
 one, `decide` (evaluated by the kernel), then the solver, whose success adds
@@ -36,7 +36,7 @@ syntax fren_impl_map := ident " := " term
 /-- `(x y : T)`. Only explicit binders: `{` starts the terms. -/
 syntax fren_impl_binder := "(" ident+ " : " term ")"
 
-/-- `impl n: c for (xs) { x := t, ... } [by tac]`: the terms satisfy comp `c`. -/
+/-- `impl n: c for (xs) { x := t, ... } [by tac]`: the terms satisfy procedure `c`. -/
 scoped syntax (name := implCmd) "impl " ident " : " fren_path (" for " fren_impl_binder+)?
   " { " sepBy(fren_impl_map, ", ", ", ", allowTrailingSep) " }" (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
@@ -62,7 +62,7 @@ def interpAccepted (what : Interpreted) (earlier : Nat) (typed typesInterpreted 
   what != .other && earlier == 0 && typed && (what != .function || typesInterpreted)
 
 /-- Whether an `impl` is accepted, from the abstract types and functions its
-component uses, and those interpreted (`impls::interpreted`). -/
+procedure uses, and those interpreted (`impls::interpreted`). -/
 def interpretedAccepted (used interpreted : Array Name) : Bool := used.all interpreted.contains
 
 /-- The interpretations of the placeholders `uses`, as constants, or the
@@ -104,23 +104,23 @@ def implVerdict (written writtenOk : Bool) (decideQ smtQ : Core.Answer) : Core.V
 def implAdded (verdict : Core.Verdict) : Bool := verdict == .pass
 
 /-- Whether an added `impl` holds only because no values of its binders
-satisfy its component's assumptions (`impls::vacuity`). `found` is whether
+satisfy its procedure's assumptions (`impls::vacuity`). `found` is whether
 trying every value of finite binders (`finite`) finds some that do, and
 `smtQ` is the solver's answer to whether none do, asked otherwise. -/
 def implVacuous (added finite found : Bool) (smtQ : Core.Answer) : Bool :=
   added && (if finite then !found else smtQ == .unsat)
 
-/-- Whether an `impl` is evidence for its component (`impls::vacuity`). -/
+/-- Whether an `impl` is evidence for its procedure (`impls::vacuity`). -/
 def implEvidence (added vacuous : Bool) : Bool := added && !vacuous
 
 /-- Whether a variable may be given `n` terms by an `impl`
-(`impls::mapping`): each `in` and `pub out` exactly once, anything else
+(`impls::mapping`): each parameter and result exactly once, anything else
 never. -/
 def mappingOk (role : Core.Role) (isPub : Bool) (n : Nat) : Bool :=
   n == if role == .input || (role == .output && isPub) then 1 else 0
 
 /-- Whether an `impl` that gives terms for `names` is accepted, where `vars`
-are the component's variables (name, role and visibility). -/
+are the procedure's variables (name, role and visibility). -/
 def mappingAccepted (vars : Array (Name × Core.Role × Bool)) (names : Array Name) : Bool :=
   names.all (fun n => vars.any (·.1 == n)) && vars.all fun (v, r, p) => mappingOk r p (names.count v)
 
@@ -135,15 +135,15 @@ def checkMapping (c : CompInfo) (names : Array Name) : Except (Option Nat × Str
     | none => throw (some i, s!"`{comp}` has no variable `{n}`")
     | some v =>
       if v.role == .output && !v.isPub then
-        throw (some i, s!"`{n}` is a private `out` of `{comp}`\n\nnote: private `out`s are internal: the obligation only says they exist")
+        throw (some i, s!"`{n}` is a private variable of `{comp}`\n\nnote: private variables are internal: the obligation only says they exist")
       if v.role != .input && v.role != .output then
-        throw (some i, s!"`{n}` belongs to instance `{n.getRoot}` of `{comp}`\n\nnote: instances are internal: the obligation only says their variables exist")
+        throw (some i, s!"`{n}` belongs to call `{n.getRoot}` of `{comp}`\n\nnote: calls are internal: the obligation only says their variables exist")
       if again.contains i then throw (some i, s!"`{n}` is mapped multiple times")
   let missing := c.vars.filter fun v =>
     (v.role == .input || (v.role == .output && v.isPub)) && !names.contains v.name
   unless missing.isEmpty do
     let ns := ", ".intercalate (missing.toList.map fun v => s!"`{v.name}`")
-    throw (none, s!"missing {ns} of `{comp}`\n\nnote: every `in` and `pub out` is given a term")
+    throw (none, s!"missing {ns} of `{comp}`\n\nnote: every parameter and result is given a term")
   throw (none, s!"internal error: the terms for `{comp}` are rejected without a reason")
 
 /-- `decide p`, evaluated: `some (true | false)`, or `none` if `p` is not
@@ -204,7 +204,7 @@ structure Obligation where
   deriving Inhabited
 
 open Lang in
-/-- Builds the obligation of `impl` for comp `c` with binders `binders`
+/-- Builds the obligation of `impl` for procedure `c` with binders `binders`
 and maps `maps`, and, unless the `impl` has a written proof (`written`),
 evaluates it with `decide` if possible. -/
 def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (written : Bool) :
@@ -216,7 +216,7 @@ def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (
         help: give it one with `interp {Core.showComp p} := ...` before this `impl`"
   let c : CompInfo := { c with vars := c.vars.map fun (v : Var) => { v with «type» := replaceUses c.uses ι v.type } }
   elabBinders binders fun xs => do
-    -- The comp's variables: mapped terms, or bound below
+    -- The procedure's variables: mapped terms, or bound below
     let mut args : Array (Option Expr) := #[]
     for v in c.vars do
       match maps.find? (·[0].getId == v.name) with

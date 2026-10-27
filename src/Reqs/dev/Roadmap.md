@@ -8,8 +8,8 @@ Roughly in order, to be specified in Fren as each is started:
   (`lean-smt`) or by an explicit trust axiom, and accept user-written proofs
   when the solver gives up.
 - Checks: conflict enumeration, model minimisation.
-- Bindings that mention the component's own outputs (needs a check that the
-  instance's inputs do not depend on its outputs).
+- Arguments that mention the calling procedure's own outputs (needs a check
+  that the call's inputs do not depend on its outputs).
 - Time: discrete steps and past-time operators.
 - Newtypes: over a type parameter, `struct Id(T)` (#56).
 - Ordered enumerations with payloads, ordered by their variants and then
@@ -17,9 +17,9 @@ Roughly in order, to be specified in Fren as each is started:
 
 ## Open questions
 
-- `when C, D` uses a comma, and so do instance bindings. A binding cannot be
+- `when C, D` uses a comma, and so do a call's arguments. An argument cannot be
   a bare `when`, so parsing is unambiguous; readability is untested.
 - Should `x in {A, B}` membership exist? `in` is already a keyword.
 - `super::`, if relative paths beyond `self` turn out to be needed.
-- Does a component with no assumptions, guarantees or expectations deserve a
+- Does a procedure with no assumptions, guarantees or expectations deserve a
   warning?

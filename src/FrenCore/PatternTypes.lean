@@ -276,7 +276,7 @@ inductive ValuePlace where
   /-- A defined function's body. -/
   | body
   | constant
-  /-- An instance's binding, which the instance check asks instead. -/
+  /-- A call's binding, which the call check asks instead. -/
   | binding
   deriving Inhabited, DecidableEq, Repr
 
@@ -385,14 +385,14 @@ def obligationMsg (subject ty cex : String) (priv : Array String) : Msg :=
       #["note: a value given where a pattern type is declared must match its pattern",
         "help: guard the value with a condition that makes it match, or add an assumption that ensures it"] }
 
-/-- The message of an instance's binding of the input `x` of `sub`, whose
+/-- The message of a call's argument for the parameter `x` of `sub`, whose
 type `ty` its value may not have, with the counterexample `cex`. -/
 def instanceTypeMsg (subject sub x ty cex : String) : Msg :=
-  { code? := some "F0623", headline := s!"the input `{x}` of `{sub}` may not have its type `{ty}` for instance {subject}"
+  { code? := some "F0623", headline := s!"the parameter `{x}` of `{sub}` may not have its type `{ty}` for call {subject}"
     label? := some s!"may not have the type `{ty}`"
     notes := #[s!"counterexample: {cex}",
       s!"note: `{sub}` assumes that `{x}` has the type `{ty}`",
-      "help: bind the input to a value of its type, or add an `assume` that guarantees it"] }
+      "help: pass the parameter a value of its type, or add an `assume` that guarantees it"] }
 
 end Fren.Core
 

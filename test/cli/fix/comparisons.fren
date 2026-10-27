@@ -1,14 +1,7 @@
 --@ args: fix --check
 -- `fren fix` fixes `redundant_comparisons`, in parentheses where they are needed.
 
-pub comp c {
-    in x: Int
-    in y?
-    pub out p?
-    pub out q?
-    pub out w?
-    pub out z?
-
+pub proc c(x: Int, y?): (p?, q?, w?, z?) {
     ensure r1: p? iff x < 3 and x < 5
     ensure r2: q? iff (x = 3 or x >= 0) = y?
     ensure r3: w? iff y? and (3 > x or x != 4)

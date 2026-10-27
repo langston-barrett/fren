@@ -2,9 +2,6 @@
 -- suggested where it has no escape sequence, and no fix.
 set_option fren.lint.unicode_not_nfc "warn"
 
-comp c {
-    in s: String
-    pub out p?
-
+proc c(s: String): (p?) {
     ensure r: p? iff (s = "café" or s = r#"é"# or s = "\u0065́" or s = "café")
 }

@@ -1,0 +1,3 @@
+-- A parameter declared `det` (F0110).
+proc c(det x: Int) {}
+-- fren-covers: lang::modifiers

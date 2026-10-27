@@ -1,7 +1,6 @@
 -- A defined output's value that may not match its pattern type (F0622).
 type Byte := Int is 0..=255
 
-comp c {
-    in x: Int
-    pub det out b: Byte := x
+proc c(x: Int): (det b: Byte) {
+    out b := x
 }

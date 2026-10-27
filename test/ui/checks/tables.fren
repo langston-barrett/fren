@@ -3,17 +3,11 @@
 -- witness, at the table or at the later row.
 set_option fren.lint.dead_code "allow"
 
-comp incomplete {
-    in x: Int
-    pub out y: Int
-
+proc incomplete(x: Int): (y: Int) {
     ensure r: y = table { x > 0 => 1, x < 0 => -1 }   --~ error: a table in `incomplete::r` may have no row that holds
 }
 
-comp overlapping {
-    in x: Int
-    pub out y: Int
-
+proc overlapping(x: Int): (y: Int) {
     ensure r: y = table {
         | x >= 0 => 1,
         | x <= 0 => -1,   --~ error: rows 1 and 2 of a table in `overlapping::r` may both hold
@@ -23,10 +17,7 @@ comp overlapping {
 
 -- Each pair of rows is its own check; rows with the same value still
 -- overlap.
-comp pairs {
-    in x: Int
-    pub out y: Int
-
+proc pairs(x: Int): (y: Int) {
     ensure r: y = table { x > 0 => 1, x > 1 => 1, x > 2 => 2, _ => 0 }
     --~^ error: rows 1 and 2 of a table in `pairs::r` may both hold
     --~^^ error: rows 1 and 3 of a table in `pairs::r` may both hold
@@ -37,31 +28,21 @@ comp pairs {
 
 -- Rows overlap only where both conditions have values: `q[0] > 0` is
 -- evaluated only where `q != []`, so it does not overlap the first row.
-comp guarded_rows {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc guarded_rows(q: Seq<Int>): (y: Int) {
     ensure r: y = table { q = [] => 0, q[0] > 0 => 1, _ => 2 }
 }
 
 -- The guard of a table is that of an index: here, only `x > 0`.
-comp guarded {
-    in x: Int
-    pub out y: Int
-
+proc guarded(x: Int): (y: Int) {
     ensure r: when x > 0, y = table { x > 5 => 2, x < 3 => 1 }   --~ error: a table in `guarded::r` may have no row that holds
 }
 
 -- An assumption's table is checked under the other assumptions only.
-comp assumed {
-    in x: Int
-    in y: Int
-
+proc assumed(x: Int, y: Int): (o: Int) {
     assume nonneg: y >= 0
     --~^ warning: `y` is never negative, so it can be a `Nat`
     assume r: table { y = 0 => x < 0, y > 0 => x >= 0 }
     assume s: table { x > 5 => y > 5 }   --~ error: a table in `assumed::s` may have no row that holds
-    pub out o: Int
 
     ensure uses: o = x + y
 }
@@ -69,10 +50,7 @@ comp assumed {
 -- In a quantifier's body, a table is checked at each instance.
 enum Side { Left, Right }
 
-comp sides {
-    in x: Int
-    pub out y?
-
+proc sides(x: Int): (y?) {
     ensure r: y? iff (forall (s: Side), table { s = Side::Left => x > 0 })   --~ error: a table in `sides::r` may have no row that holds
 }
 
@@ -89,11 +67,7 @@ const B: Bool := table { 1 > 2 => true }   --~ error: a table in `B` may have no
 --~^ error: row 1 of a table in `B` is never the first that holds
 const OUT: Int := [1, 2][5]
 
-comp mentions_unknown {
-    in x: Int
-    pub out y?
-    pub out z: Int
-
+proc mentions_unknown(x: Int): (y?, z: Int) {
     ensure r: y? iff (B or x > 0)
     ensure s: z = OUT + x
 }
@@ -104,17 +78,12 @@ type Name
 
 fn same?(Name, Name)
 
-comp pick {
-    in a: Name
-    in b: Name
-    pub out w: Name := table { same?(a, b) => a }   --~ error: a table in `pick::w` may have no row that holds
+proc pick(a: Name, b: Name): (w: Name) {
+    out w := table { same?(a, b) => a }   --~ error: a table in `pick::w` may have no row that holds
 }
 
 -- In a global expectation, under the meanings of its binders.
-comp counter {
-    in n: Int
-    pub out m: Int
-
+proc counter(n: Int): (m: Int) {
     ensure r: m = n + 1
 }
 
@@ -128,9 +97,7 @@ expect positive: forall (c: counter), table { c.m > 0 => true, c.n < -1 => true 
 -- Disjointness leaves out the constraint that the table is in, as
 -- reachability does: `r` rules out `y > 0`, where both rows hold, only
 -- through the table's own value.
-comp enclosing {
-    pub out y: Int
-
+proc enclosing(): (y: Int) {
     ensure r: y = table {
         y > 0 => 0,
         y >= 0 => 0,   --~ error: rows 1 and 2 of a table in `enclosing::r` may both hold

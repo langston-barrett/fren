@@ -1,7 +1,7 @@
 # Mutation testing
 
 ```
-fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
+fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
     [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
 ```
@@ -9,7 +9,7 @@ fren mutate [--by solver|testing|both] [--comp PATH] [--mutant ID]... [--diff PA
 `fren mutate` makes small changes to a spec's constraints and definitions,
 checks each changed spec, a *mutant*, and reports the mutants that no
 check rejects. A surviving mutant points at something that the
-expectations, cover goals, refinements and instance assumptions do not
+expectations, cover goals, refinements and call assumptions do not
 pin down: either the spec says less than intended, or an expectation or a
 cover goal is missing. This is a
 cousin of the [vacuity](Check.md#vacuity) and
@@ -96,11 +96,11 @@ taken somewhere, is killed by the [reachability](Check.md#reachability) or
 [completeness](Check.md#completeness) check.
 
 Mutants change what a spec asserts: the expressions of `assume`s, `ensure`s,
-defined outputs, instance bindings, constants and defined functions,
+definitions of results and `let` variables, arguments of calls, constants and defined functions,
 including the definitions of their [`let`s and `where`
 clauses](Lang/Let.md), which are changed like any other expression. The
-expectations, both of components and [global](Lang/Global.md), and the
-[cover goals](Lang/Components.md#cover-goals) are what rejects mutants,
+expectations, both of procedures and [global](Lang/Global.md), and the
+[cover goals](Lang/Procedures.md#cover-goals) are what rejects mutants,
 and their text is not changed; nor is that of a function's
 [contract](Lang/Items.md#contracts), which a defined function's body is
 checked against. An expectation rejects a mutant that
@@ -111,17 +111,17 @@ expectation both say `x <= LIMIT`, changing `LIMIT` moves both, and no
 check rejects it. Such a survivor says that nothing pins the constant down
 independently, such as an expectation with its value written out; its
 warning says so. Mutating an assumption checks the
-[instance assumption](Check.md#instance-assumptions) checks and
+[call assumption](Check.md#call-assumptions) checks and
 refinements that rely on it.
 
 ## Identifiers
 
 Each mutant has an identifier, `ORIGIN-ITEM-HASH`, such as
 `swap-comparison-cli::exit::code_rule-0a1b2c3d4e5f`. `ITEM` is the path of
-the item changed: a constraint, defined output or instance as
-`module::component::name`, or a constant or function as `module::name`,
+the item changed: a constraint, defined variable or call as
+`module::procedure::name`, or a constant or function as `module::name`,
 where `name` is the name declared, without the `!` of a
-[shadowing](Lang/Components.md#shadowing) declaration (so `y!` is named
+[shadowing](Lang/Procedures.md#shadowing) declaration (so `y!` is named
 `y`), with each run of characters other than ASCII letters, digits, `_` and `:`
 made one `_`, and `_` trimmed next to `::` and at both ends. `HASH` is 12
 hexadecimal digits of the 64-bit FNV-1a hash, the same on every machine
@@ -137,7 +137,7 @@ names the same mutant across runs.
 A mutant is checked as `fren check` checks the spec, including the checks
 set to [testing](Check.md#checking-by-testing) and the
 [refinements](Lang/Refinement.md), or with `--by testing`, as `fren
-quickcheck` tests it. Only the components, global expectations and
+quickcheck` tests it. Only the procedures, global expectations and
 refinements whose formulas the mutant changes are checked, and the spec's
 own: the others' results cannot change. A check *kills* a mutant if it
 passes on the spec and fails on the mutant. A check that does not pass on
@@ -150,11 +150,10 @@ this:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp kill {
-    in before: Verdict    -- the check's verdict on the spec
-    in after: Verdict     -- its verdict on the mutant
-    pub det out kills?
-
+pub proc kill(
+    before: Verdict,      -- the check's verdict on the spec
+    after: Verdict,       -- its verdict on the mutant
+): (det kills?) {
     ensure rule: kills? iff (before = Pass and after = Fail)
 
     expect failing_kills_nothing: when before = Fail, not kills?
@@ -165,7 +164,7 @@ pub comp kill {
 A mutant on which a check that passes on the spec is only inconclusive is
 not killed: if nothing else kills it, it survives, and its warning says
 that some check was inconclusive. The checks of the spec and of a mutant are matched by their kind, and the
-constraint, instance or variable that they are about. The
+constraint, call or variable that they are about. The
 [definedness](Check.md#definedness) checks of one constraint are one
 check, which passes when every index in it is in range: an index has no
 name but its position, which a mutant that adds or drops one changes.
@@ -176,22 +175,23 @@ mutant that drops a row renumbers the rows. A
 redundancy counts as a failure: a mutant that makes a constraint
 redundant is killed by that check.
 
-A component, global expectation or refinement is checked again only if
+A procedure, global expectation or refinement is checked again only if
 the mutant changes what its checks read: its formulas, its variables, and
 the spec's declarations (its *fingerprint*). Skipping the others loses no
 kill, since a check's verdict depends only on what it reads, up to the
 solver's time limit. `mutate::skip` states this:
 
 ```fren
-pub comp skip {
-    in changed?         -- the mutant changes the fingerprint of the check's item
-    in before: Verdict  -- the check's verdict on the spec
-    in after: Verdict   -- its verdict on the mutant
-
+pub proc skip(
+    changed?,           -- the mutant changes the fingerprint of the check's item
+    before: Verdict,    -- the check's verdict on the spec
+    after: Verdict,     -- its verdict on the mutant
+): (
+    det run?,           -- the check runs on the mutant
+) {
     assume determined: unless changed?, after = before
-    pub det out run?    -- the check runs on the mutant
 
-    inst k: kill { before, after }
+    call k := kill(before, after)
 
     ensure rule: run? iff changed?
     expect skipped_kill_nothing: unless run?, not k.kills?
@@ -209,9 +209,9 @@ that cannot read a mutant is an internal error as well.
 Some mutants mean what the spec means, such as `x > 0` changed to
 `x >= 1`, and no check can kill them. For a mutant that survives, the
 solver is asked whether each formula that the mutant changes, in each
-component and global expectation, and each defined function that it
+procedure and global expectation, and each defined function that it
 changes, equals the spec's for all values of the variables and every
-[interpretation](Lang/Components.md#interpretations). The formula of an
+[interpretation](Lang/Procedures.md#interpretations). The formula of an
 item's indexes says that each is in range, and is `true` for an item
 with none, such as after a mutant drops its last index. If each is equal,
 the mutant is *equivalent*, and is not reported. If the solver cannot
@@ -227,11 +227,7 @@ pub enum Answer { Equal, Differs, Unknown }
 use self::Answer::{Differs, Equal, Unknown}
 
 set_option fren.evidence "enumerated" in
-pub comp combine {
-    in a: Answer
-    in b: Answer
-    pub det out both: Answer
-
+pub proc combine(a: Answer, b: Answer): (det both: Answer) {
     ensure differs: when a = Differs or b = Differs, both = Differs
     ensure unknown: when a != Differs and b != Differs and (a = Unknown or b = Unknown), both = Unknown
     ensure equal: when a = Equal and b = Equal, both = Equal
@@ -250,12 +246,11 @@ pub enum Outcome { Killed, Survived, Equivalent, Unviable }
 use self::Outcome::{Equivalent, Killed, Survived, Unviable}
 
 set_option fren.evidence "enumerated" in
-pub comp outcome {
-    in viable?          -- the mutant has no static errors
-    in killed?          -- some check kills it
-    in equivalent?      -- the solver shows that it means what the spec means
-    pub det out outcome: Outcome
-
+pub proc outcome(
+    viable?,            -- the mutant has no static errors
+    killed?,            -- some check kills it
+    equivalent?,        -- the solver shows that it means what the spec means
+): (det outcome: Outcome) {
     ensure unviable: unless viable?, outcome = Unviable
     ensure killed: when viable? and killed?, outcome = Killed
     ensure equivalent: when viable? and not killed? and equivalent?, outcome = Equivalent
@@ -277,21 +272,20 @@ also a query of the spec, or of an earlier mutant, word for word, such as
 the consistency of assumptions that the mutant leaves alone, gets the
 answer that it got first, without the solver
 ([Solver queries](Cli.md#solver-queries)). `--by testing` tests them,
-as `fren quickcheck` does, with `--tests` tests per component (default
+as `fren quickcheck` does, with `--tests` tests per procedure (default
 100) from `--seed`. `--by both` does both, and a mutant is killed if
 either kills it. A mutant that the solver's checks kill but testing does
 not is *missed by testing* (`F0614`): testing's search does not find the
 behaviours that tell it apart from the spec. The solver's side includes the
-checks set to testing, as `fren check` runs them, so a component whose
+checks set to testing, as `fren check` runs them, so a procedure whose
 checks are all set to testing has no mutant missed by testing. `mutate::missed` states
 this:
 
 ```fren
-pub comp missed {
-    in by_solver?       -- the solver's checks kill the mutant
-    in by_testing?      -- testing kills it
-    pub det out missed?
-
+pub proc missed(
+    by_solver?,         -- the solver's checks kill the mutant
+    by_testing?,        -- testing kills it
+): (det missed?) {
     ensure rule: missed? iff (by_solver? and not by_testing?)
 
     expect killed_by_testing: when by_testing?, not missed?
@@ -302,11 +296,11 @@ pub comp missed {
 
 ## Selecting mutants
 
-`--comp PATH` selects the mutants of the component `PATH`; `--mutant ID`
+`--proc PATH` selects the mutants of the procedure `PATH`; `--mutant ID`
 selects the mutant `ID`, and may be repeated. `--diff PATCH` selects the
 mutants of the items that the patch `PATCH` touches (see below), and
 reads it from standard input if `PATCH` is `-`. Given several, a mutant must
-meet each. A `--comp` or `--mutant` that the spec does not have, and a
+meet each. A `--proc` or `--mutant` that the spec does not have, and a
 `PATCH` that cannot be read or is not a unified diff, are errors in the
 arguments, and `fren mutate` exits with 2. `--sample N` then
 takes `N` of the selected mutants, chosen by
@@ -324,14 +318,13 @@ swap-comparison-c::r-0a1b2c3d4e5f spec.fren:4:21 `>` changed to `>=`
 `mutate::selection` puts the filters together:
 
 ```fren
-pub comp selection {
-    in of_comp?         -- `--comp` names the mutant's component, or is not given
-    in named?           -- `--mutant` names the mutant, or is not given
-    in touched?         -- `--diff` touches the mutant's item, or is not given
-    in sampled?         -- `--sample` takes the mutant, or is not given
-    in sharded?         -- `--shard` takes the mutant, or is not given
-    pub det out selected?
-
+pub proc selection(
+    of_comp?,           -- `--proc` names the mutant's procedure, or is not given
+    named?,             -- `--mutant` names the mutant, or is not given
+    touched?,           -- `--diff` touches the mutant's item, or is not given
+    sampled?,           -- `--sample` takes the mutant, or is not given
+    sharded?,           -- `--shard` takes the mutant, or is not given
+): (det selected?) {
     ensure rule: selected? iff (of_comp? and named? and touched? and sampled? and sharded?)
 
     expect each_narrows: when selected?, of_comp? and named? and touched? and sampled? and sharded?
@@ -343,9 +336,9 @@ pub comp selection {
 
 `--diff PATCH` reads a unified diff, such as `git diff -U0 REV -- FILE...`
 writes, and selects the mutants of each *item* of which it adds or
-changes some line of the new text: the component, constant or function
+changes some line of the new text: the procedure, constant or function
 whose text holds the mutant's change, from its first token to its last. A
-component is touched by a change to any of its lines, an expectation's or
+procedure is touched by a change to any of its lines, an expectation's or
 a cover goal's too, since they decide what kills its mutants. Lines that
 the patch removes touch the item whose line they followed, if any: lines
 removed between two of its lines, and lines removed after its last, such
@@ -353,7 +346,7 @@ as the end of a definition that runs over several lines. So removing a
 whole item that directly follows another touches that other: selecting
 too many mutants only checks more of them, but selecting too few would
 miss what the change leaves unchecked. A line between items, such as a blank
-line, or a comment outside a component, touches nothing, and nor does a
+line, or a comment outside a procedure, touches nothing, and nor does a
 change to a global expectation, which has no mutants of its own.
 
 A patch's file is the path after `+++`, without the date that `diff -u`
@@ -372,12 +365,11 @@ text is not empty but has no `diff`, `---` or `+++` line at all.
 `mutate::touches` says which lines touch an item:
 
 ```fren
-pub comp touches {
-    in first: Nat       -- the item's first line, counted from 1
-    in last: Nat        -- its last line
-    in line: Nat        -- a line that the patch adds, or after which it removes lines (0 if before the first)
-    pub det out touched?
-
+pub proc touches(
+    first: Nat,         -- the item's first line, counted from 1
+    last: Nat,          -- its last line
+    line: Nat,          -- a line that the patch adds, or after which it removes lines (0 if before the first)
+): (det touched?) {
     ensure rule: touched? iff first <= line <= last
 
     expect outside: when line < first or line > last, not touched?
@@ -393,11 +385,10 @@ the seed: the selected mutants are ordered by the 64-bit FNV-1a hash of
 the seed and the identifier, and the sample takes the first `N`.
 
 ```fren
-pub comp sample {
-    in rank: Nat        -- how many selected mutants come before it in that order
-    in size: Nat        -- `N` of `--sample N`
-    pub det out taken?
-
+pub proc sample(
+    rank: Nat,          -- how many selected mutants come before it in that order
+    size: Nat,          -- `N` of `--sample N`
+): (det taken?) {
     ensure rule: taken? iff rank < size
 
     -- Ranks from 0, so a sample of `size` stops before the rank `size`.
@@ -408,15 +399,11 @@ pub comp sample {
 So a larger sample contains a smaller one, with the same seed:
 
 ```fren
-pub comp samples_nest {
-    in rank: Nat
-    in smaller: Nat
-    in larger: Nat
-
+pub proc samples_nest(rank: Nat, smaller: Nat, larger: Nat) {
     assume nested: smaller <= larger
 
-    inst small: sample { rank, size := smaller }
-    inst large: sample { rank, size := larger }
+    call small := sample(rank, smaller)
+    call large := sample(rank, larger)
 
     expect contains: when small.taken?, large.taken?
     cover same_size: smaller = larger and small.taken?
@@ -431,22 +418,17 @@ run, each mutant in exactly one of them. The remainder is below `N`, so
 it names one of the shards, the one that takes the mutant.
 
 ```fren
-pub comp shard {
-    in remainder: Nat   -- the hash of the mutant's identifier, modulo `N` of `--shard K/N`
-    in k: Nat           -- `K`
-    pub det out taken?
-
+pub proc shard(
+    remainder: Nat,     -- the hash of the mutant's identifier, modulo `N` of `--shard K/N`
+    k: Nat,             -- `K`
+): (det taken?) {
     ensure rule: taken? iff remainder = k
 }
 
-pub comp shards_partition {
-    in remainder: Nat
-    in j: Nat
-    in k: Nat
-
-    inst first: shard { remainder, k := j }
-    inst second: shard { remainder, k }
-    inst own: shard { remainder, k := remainder }
+pub proc shards_partition(remainder: Nat, j: Nat, k: Nat) {
+    call first := shard(remainder, j)
+    call second := shard(remainder, k)
+    call own := shard(remainder, remainder)
 
     expect disjoint: when first.taken? and second.taken?, j = k
     expect covered: own.taken?
@@ -466,7 +448,7 @@ fren: 12 mutants: 9 killed, 2 survived, 1 equivalent, 0 unviable
 With `--by both`, it ends with the number missed by testing, as
 `, 1 missed by testing`.
 
-Standard output holds the kill rate of each component, and of each
+Standard output holds the kill rate of each procedure, and of each
 constant and function, sorted by path: the share of its mutants that were
 killed, out of those killed or surviving, rounded down to a whole
 percentage.
@@ -483,17 +465,12 @@ says of adding one to the counts so far, so that the counts add up to the
 number of mutants selected:
 
 ```fren
-pub comp count {
-    in outcome: Outcome
-    in killed: Nat
-    in survived: Nat
-    in equivalent: Nat
-    in unviable: Nat
-    pub det out killed_after: Nat
-    pub det out survived_after: Nat
-    pub det out equivalent_after: Nat
-    pub det out unviable_after: Nat
-
+pub proc count(outcome: Outcome, killed: Nat, survived: Nat, equivalent: Nat, unviable: Nat): (
+    det killed_after: Nat,
+    det survived_after: Nat,
+    det equivalent_after: Nat,
+    det unviable_after: Nat,
+) {
     ensure killed_rule: killed_after = killed + (if outcome = Killed then 1 else 0)
     ensure survived_rule: survived_after = survived + (if outcome = Survived then 1 else 0)
     ensure equivalent_rule: equivalent_after = equivalent + (if outcome = Equivalent then 1 else 0)
@@ -509,18 +486,16 @@ pub comp count {
 The kill rate is `mutate::rate`: a percentage, absent when no mutant
 could be killed, that is 100 exactly when every one that could be was. The
 rate divides by the number of mutants, which the solver cannot (see
-[Decidability](Lang/Decidability.md)), so the component says what the
+[Decidability](Lang/Decidability.md)), so the procedure says what the
 rate is like rather than how it is computed, and leaves it
 undetermined. `Impls/Mutate` proves that the code's
 `100 * killed / (killed + survived)` has these properties:
 
 ```fren
-pub comp rate {
-    in killed: Nat
-    in survived: Nat
-    pub det out rated?      -- some mutant could be killed
-    pub out rate: Nat       -- 0 when not rated
-
+pub proc rate(killed: Nat, survived: Nat): (
+    det rated?,             -- some mutant could be killed
+    rate: Nat,              -- 0 when not rated
+) {
     ensure rated: rated? iff killed + survived > 0
     ensure percentage: rate <= 100
     ensure all_killed: when rated?, rate = 100 iff survived = 0
@@ -540,14 +515,13 @@ internal error an error, and so it follows the convention of every command
 (`cli::exit_status`):
 
 ```fren
-pub comp exit {
-    in ran?             -- the spec and the arguments have no errors
-    in survived?        -- some mutant survived, or was missed by testing
-    in internal?        -- some internal error was reported
-    pub det out code: Int
-
-    out worst: Severity := if internal? then Error else if survived? then Warning else Silent
-    inst ends: cli::exit { ran?, worst }
+pub proc exit(
+    ran?,               -- the spec and the arguments have no errors
+    survived?,          -- some mutant survived, or was missed by testing
+    internal?,          -- some internal error was reported
+): (det code: Int) {
+    let worst: Severity := if internal? then Error else if survived? then Warning else Silent
+    call ends := cli::exit(ran?, worst)
     ensure as_check: code = ends.code
 
     expect not_run: unless ran?, code = 2

@@ -1,9 +1,6 @@
 --@ args: fix --check
 -- `fren fix` removes a cover goal written the same as an earlier one.
-pub comp c {
-    in x: Int
-    pub out y: Int
-
+pub proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
 
     cover low: x < 0 and y < 0

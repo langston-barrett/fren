@@ -1,6 +1,6 @@
--- A variable with no type is a parse error, and only that: Lean does not
--- elaborate what it recovered of its component.
-pub comp c { in x: }
---~^[cli] error: expected a name, found `}`
---~^^[hosted] error: unexpected token '}'; expected fren_type
+-- A parameter with no type after its `:` is a parse error, and only that:
+-- Lean does not elaborate what it recovered of its procedure.
+pub proc c(x:) {}
+--~^[cli] error: expected a name, found `)`
+--~^^[hosted] error:
 --@ exit: 2

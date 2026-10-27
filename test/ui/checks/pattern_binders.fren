@@ -9,10 +9,7 @@ const MAX_DELAY: Seconds := Seconds(30)
 -- The README's retry policy, with its outcome as a `Decision`: the conflict
 -- names the guarantees apart, though they read the same payload, and
 -- `transient` forces the variant that the others rule out (`check::clash_notes`).
-comp retry {   --~ error: no outputs satisfy `transient`, `honor_server` and `latency_budget`
-    in transient?
-    in retry_after: Seconds
-    pub out decision: Decision
+proc retry(transient?, retry_after: Seconds): (decision: Decision) {   --~ error: no outputs satisfy `transient`, `honor_server` and `latency_budget`
     ensure transient: decision != Decision::GiveUp iff transient?   --~ info: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
     ensure honor_server: when decision is Decision::RetryAfter(d), d >= retry_after   --~ info: conflicts with `transient` and `latency_budget`
     ensure latency_budget: when decision is Decision::RetryAfter(d), d <= MAX_DELAY   --~ info: conflicts with `transient` and `honor_server`
@@ -20,21 +17,18 @@ comp retry {   --~ error: no outputs satisfy `transient`, `honor_server` and `la
 
 -- The trigger is the condition with `_` for the binder, and a nested
 -- condition reads the payload.
-comp vacuous {
-    pub out decision: Decision
+proc vacuous(): (decision: Decision) {
     ensure gives_up: decision = Decision::GiveUp
     ensure never: when decision is Decision::RetryAfter(d), d >= Seconds(1)   --~ error: `vacuous::never` is vacuous: its condition can never hold, given `gives_up`
 }
 
-comp nested_vacuous {
-    pub out decision: Decision
+proc nested_vacuous(): (decision: Decision) {
     ensure short: when decision is Decision::RetryAfter(d), d <= Seconds(5)
     ensure never: when decision is Decision::RetryAfter(d) and d > Seconds(10), d = Seconds(11)   --~ error: `nested_vacuous::never` is vacuous: its condition can never hold, given `short`
 }
 
 -- One such guarantee follows from another.
-comp redundant {
-    pub out decision: Decision
+proc redundant(): (decision: Decision) {
     ensure tight: when decision is Decision::RetryAfter(d), d <= Seconds(5)
     ensure loose: when decision is Decision::RetryAfter(d), d <= Seconds(10)   --~ warning: `redundant::loose` is redundant: it follows from `tight`
 }

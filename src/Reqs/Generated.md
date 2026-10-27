@@ -1,6 +1,6 @@
 # Generated Lean declarations
 
-In Lean, each enumeration, record, defined function, constant, component and
+In Lean, each enumeration, record, defined function, constant, procedure and
 global expectation becomes ordinary Lean declarations,
 so that Lean code can use a spec. An item at the Fren path `a::b::c` gets
 the Lean name `Fren.Generated.a.b.c`, prefixed by the current Lean
@@ -13,7 +13,7 @@ The declarations generated for an item are in a namespace of their own,
 `Fren.Generated`, under the current Lean namespace: the item at the path
 `a::b::c`, declared where the current Lean namespace is `N`, gets the
 Lean name `N.Fren.Generated.a.b.c`, and every other declaration generated
-for it, such as a variant's constructor or a component's guarantee, a name
+for it, such as a variant's constructor or a procedure's guarantee, a name
 under that one. Lean declares nothing else in `Fren.Generated`, so no
 item's Lean name is one of Lean's own: `enum Option` at the root module is
 `Fren.Generated.Option`, apart from Lean's `Option`, and both front ends
@@ -34,12 +34,12 @@ pub mod generated
 pub const NAMESPACE: Seq<String> := ["Fren", "Generated"]
 
 set_option fren.lint.undecidable "allow" in
-pub comp lean_name {
-    in current: Seq<String>      -- the current Lean namespace's components, [] at the root
-    in path: Seq<String>         -- the item's path's segments
-
+pub proc lean_name(
+    current: Seq<String>,        -- the current Lean namespace's components, [] at the root
+    path: Seq<String>,           -- the item's path's segments
+): (name: Seq<String>) {
     assume item: path != []
-    pub out name: Seq<String> := current ++ NAMESPACE ++ path
+    out name := current ++ NAMESPACE ++ path
 
     expect length: name.len = current.len + 2 + path.len
     expect starts_in_namespace: name.starts_with?(current ++ NAMESPACE)
@@ -80,7 +80,7 @@ variant, deriving `DecidableEq`, `Repr` and `Inhabited`. For example,
 
 A variant with a payload becomes a constructor with one explicit
 parameter for each value of its payload, of the Lean type of the
-payload's type (see [Components](#components)): `enum Shape { Circle(Int),
+payload's type (see [Procedures](#procedures)): `enum Shape { Circle(Int),
 Empty }` gives `Shape.Circle : Int → Shape`. A recursive enumeration
 becomes a recursive inductive type. The `k`th value of a payload, counted
 from 0, is the constructor's parameter `xk`, and is read by the selector
@@ -182,7 +182,7 @@ An [abstract type](Lang/Types.md#abstract-types) or
 [uninterpreted function](Lang/Items.md#uninterpreted-functions) generates nothing: its Lean meaning is
 given by an [interpretation](Impl.md#interpretations), which may come
 later, so the definitions that use it take it as a parameter (see
-[Components](#components)). An interpretation generates the definition `p`,
+[Procedures](#procedures)). An interpretation generates the definition `p`,
 and, for a function with postconditions or whose result type brings a
 constraint, the theorem `p.ensures` (see [Contracts](#contracts) and
 [Interpretations](Impl.md#interpretations)).
@@ -193,7 +193,7 @@ A [defined function](Lang/Items.md#defined-functions) becomes `def p`, with
 one explicit parameter for each of its parameters, of the same name and of
 its Lean type, as for variables below, and its body as its value. For
 example, `fn double(n: Int): Int := 2 * n` becomes `double : Int → Int`.
-Like a component's definitions, it first takes a parameter for each
+Like a procedure's definitions, it first takes a parameter for each
 abstract type it uses: those that its parameter and result types, and its
 body, mention.
 
@@ -215,7 +215,7 @@ does not, and the solver sees the body at that instance.
 Each clause `n` of a function's [contract](Lang/Items.md#contracts)
 becomes `def p.n : Prop`, with one explicit parameter for each of the
 function's parameters, as for a defined function, and the clause as its
-value. Like a component's definitions, it first takes a parameter for
+value. Like a procedure's definitions, it first takes a parameter for
 each abstract type and function it uses: those that the function's
 parameter and result types, and the clause, mention, the function itself
 among them if the clause applies it. The checks state a precondition's
@@ -235,31 +235,31 @@ for variables below. For example, `climate::MAX_TARGET` becomes
 `climate.MAX_TARGET : Int`. Fren uses the constant's value directly, so
 this definition is only for Lean code that uses the spec.
 
-## Components
+## Procedures
 
-A component becomes a family of definitions, each a proposition over the
-component's variables:
+A procedure becomes a family of definitions, each a proposition over the
+procedure's variables:
 
 | Definition | Meaning |
 |---|---|
 | `p.assume.n`, `p.ensure.n`, `p.expect.n`, `p.cover.n` | the assumption, guarantee, expectation or cover goal `n` |
-| `p.inst.w` | the instance `w`: its bindings, and the [meaning](Lang/Components.md#meaning) of the instantiated component |
+| `p.call.w` | the call `w`: its arguments, and the [meaning](Lang/Procedures.md#meaning) of the called procedure |
 | `p.assumes` | the conjunction of the assumptions |
 | `p.ensures` | the conjunction of the guarantees |
-| `p.def.d` | the definition of the [defined output](Lang/Components.md#defined-outputs) `d`, as the proposition `d = e` |
+| `p.def.d` | the [definition](Lang/Procedures.md#definitions) of the result or `let` variable `d`, as the proposition `d = e` |
 | `p.defs` | the conjunction of the definitions |
 | `p.out.d` | when the definition of `d` mentions only inputs: its value, as a function of the inputs |
 
-In the assumptions, each defined output is replaced by its definition, so
+In the assumptions, each variable with a definition is replaced by it, so
 `p.assumes` never depends on the outputs' parameters. `p.out.d` takes the
 parameters for abstract types and functions, as below, and then only the
-component's inputs, in order. For example, with `in a: Int` and `out
-double: Int := 2 * a`, `p.out.double : Int → Int`, which an implementation
-can use as the term for `double`.
+procedure's inputs, in order. For example, with the parameter `a: Int`,
+the result `double: Int` and `out double := 2 * a`, `p.out.double : Int →
+Int`, which an implementation can use as the term for `double`.
 
-The parameters of every definition are the component's variables, in the
-order of their declarations, followed by the variables of each instance in
-order: those of the instantiated component, including its own instances',
+The parameters of every definition are the procedure's variables, in the
+order of their declarations, followed by the variables of each call in
+order: those of the called procedure, including its own calls',
 named `w.x`. A variable of type `Bool`, `Int`, `Nat`, `String`, an
 enumeration `E` or a record `R`, a newtype among them, has the Lean type
 `Bool`, `Int`, `Nat`, `String`, or the inductive or structure for `E` or
@@ -269,8 +269,8 @@ type](Lang/Types.md#pattern-types) has its base type's Lean type, and a
 type alias that of the type it names, and a field or payload of type `Nat`
 is Lean's `Nat`. What pattern types bring is part of the definitions: `p.assumes` starts
 with the constraints of the inputs whose types bring one (see
-[Components](Lang/Components.md#pattern-types)), in order, and `p.ensures`
-with those of the outputs that are not defined, before the assumptions
+[Procedures](Lang/Procedures.md#pattern-types)), in order, and `p.ensures`
+with those of the outputs that have no definition, before the assumptions
 and guarantees that the spec writes, so that an implementation's
 obligation assumes them and proves them. A variable of type `Set<T>` has the
 Lean type `Fren.FinSet T'`, where `T'` is that of `T`: a list up to having
@@ -335,10 +335,10 @@ equality on an abstract type has none; that is why the definitions that
 need one are not computable. The checks and implementations read the
 propositions, which need no `Decidable` instance.
 
-A component *uses* the abstract types and uninterpreted functions that its
-variables' types, its constraints and its bindings mention, those that its
-instances' components and the defined functions it applies use, and the
-parameter and result types of the functions it uses. Before its variables, every definition of the component takes one
+A procedure *uses* the abstract types and uninterpreted functions that its
+variables' types, its constraints and its calls' arguments mention, those that its
+calls' procedures and the defined functions it applies use, and the
+parameter and result types of the functions it uses. Before its variables, every definition of the procedure takes one
 explicit parameter for each abstract type and function it uses, in the
 order of their declarations: `(T : Type)` for an abstract type `T`, and for
 a function, a Lean function from its parameter types to its result type,
@@ -349,7 +349,7 @@ abstract type has the parameter for it as its Lean type. For example, with
 type Name
 fn ends_in_q?(Name)
 
-comp c { in n: Name pub out q? ensure r: q? iff ends_in_q?(n) }
+proc c(n: Name): (q?) { ensure r: q? iff ends_in_q?(n) }
 ```
 
 `c.ensures` has type `(Name : Type) → (Name → Bool) → Name → Bool → Prop`.
@@ -359,24 +359,24 @@ Prop`, for `temp`, `target` and `mode`.
 
 ## Cover goals
 
-A [cover goal](Lang/Components.md#cover-goals) `n` of a component claims
-that some behaviour meets the component and satisfies `p.cover.n`. When
-`#fren_check` finds a witness of it, and the component uses no abstract
+A [cover goal](Lang/Procedures.md#cover-goals) `n` of a procedure claims
+that some behaviour meets the procedure and satisfies `p.cover.n`. When
+`#fren_check` finds a witness of it, and the procedure uses no abstract
 types or functions, it adds the theorem
 
 ```
 p.cover.n.met : ∃ x₁ … xₖ, M x⃗ ∧ p.cover.n x⃗
 ```
 
-where `x⃗` are the parameters of the component's definitions, as above,
+where `x⃗` are the parameters of the procedure's definitions, as above,
 and `M` is what an implementation's obligation assumes and proves of
-them: `p.defs` (if there are defined outputs), `p.assumes`, `p.ensures` and
-`p.inst.w` for each instance `w`. Its proof gives the witness's values
+them: `p.defs` (if there are definitions), `p.assumes`, `p.ensures` and
+`p.call.w` for each call `w`. Its proof gives the witness's values
 for `x⃗`, and `decide` proves the rest, in Lean's kernel. A variable
 whose value the model leaves out is given `default`. If a value cannot be
 written as a Lean term, or `decide` does not prove the statement, no
 theorem is added, and the goal still passes, on the solver's word, as the
-other checks do. A component that uses abstract types or functions gets no
+other checks do. A procedure that uses abstract types or functions gets no
 theorem: the check finds a witness under *some* interpretation, which an
 `∃` over the variables alone cannot state.
 
@@ -384,10 +384,10 @@ theorem: the check finds a witness under *some* interpretation, which an
 
 A global expectation becomes `def p : Prop`: for all values of the
 binders' variables, if the [meaning](Lang/Global.md#meaning) of each
-binder's component holds, then so does the body. Each binder's variables
-are named `w.x`. Like a component's definitions, it first takes a
+binder's procedure holds, then so does the body. Each binder's variables
+are named `w.x`. Like a procedure's definitions, it first takes a
 parameter for each abstract type and function it uses: those that its
-body mentions and that its binders' components use.
+body mentions and that its binders' procedures use.
 
 ## Proofs
 

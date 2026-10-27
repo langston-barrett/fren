@@ -4,4 +4,4 @@ pub enum Option<T> { None, Some(T) }
 
 pub fn is_none?<T>(o: Option<T>) := o = Option::None
 
-comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
+proc c(): (ok?) { ensure r: ok? iff is_none?(Option::None) }

@@ -3,5 +3,5 @@
 
 pub enum S { A(Int), B }
 
-comp alternatives { in s: S pub out z: Int ensure r: z = match s { S::A(a.b) | S::B => 0, _ => 1 } }
+proc alternatives(s: S): (z: Int) { ensure r: z = match s { S::A(a.b) | S::B => 0, _ => 1 } }
 --~^ error: `a.b` is not a single name

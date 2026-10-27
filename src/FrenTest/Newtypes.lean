@@ -38,13 +38,10 @@ but is expected to have type
 #guard_msgs in
 example (a : newtype_test.Ms) (b : newtype_test.Bytes) : Prop := a = b
 
-comp timer {
-    in elapsed: Ms
-    in budget: Ms
-    in n: Name
-    pub det out left: Ms := budget - elapsed
-    pub det out late? := elapsed > budget
-    pub det out early? := n < Name("m")
+proc timer(elapsed: Ms, budget: Ms, n: Name): (det left: Ms, det late?, det early?) {
+    out left := budget - elapsed
+    out late? := elapsed > budget
+    out early? := n < Name("m")
 }
 
 /--
@@ -64,10 +61,7 @@ fun elapsed budget n left late? early? => late? = decide (elapsed.«0» > budget
 #print newtype_test.timer.def.late?
 
 -- The solver proves an `impl` whose values are built with the constructor.
-comp spare {
-    in budget: Ms
-    pub out left: Ms
-
+proc spare(budget: Ms): (left: Ms) {
     ensure r: left = budget + Ms(1)
 }
 
@@ -83,16 +77,14 @@ note: the value of `newtype_test::Ms` has type `Int`
 help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 -/
 #guard_msgs in
-comp wrong_value { pub out c: Ms ensure r: c = Ms(true) }
+proc wrong_value(): (c: Ms) { ensure r: c = Ms(true) }
 
 -- A counterexample shows newtypes as Fren builds them, as the `fren`
 -- command does (`test/cli/commands/counterexample_newtype.fren`).
 pub struct Slot { start: Ms, tags: Set<Ms> }
 
-comp shown {
-    in t: Ms
-    in s: Slot
-    pub det out next: Ms := t + Ms(1)
+proc shown(t: Ms, s: Slot): (det next: Ms) {
+    out next := t + Ms(1)
 
     assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
 

@@ -1,10 +1,9 @@
--- A binding cannot be a bare `when`, which would swallow the bindings after it.
-comp sub { in a? in b? }
---~^[hosted] warning: unused variable `a?`
---~^^[hosted] warning: unused variable `b?`
-comp c { in x? inst s: sub { a? := when x?, x?, b? := x? } }
+-- A binding of a refinement cannot be a bare `when`, which would swallow
+-- the bindings after it.
+proc a(p?, q?) {}
+proc c(x?) {}
+refine r: c refines a { p? := when x?, x?, q? := x? }
 --~^[cli] error: `when` must be parenthesized here
---~^^[hosted] error: unexpected identifier; expected
-comp ok { in x? inst s: sub { a? := (when x?, x?), b? := x? } }
---~^[hosted] warning: the condition and the body of `when` are written the same
+--~^^[hosted] error:
+refine ok: c refines a { p? := (when x?, x?), q? := x? }
 --@ exit: 2

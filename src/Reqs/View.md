@@ -40,40 +40,40 @@ checked ([Decidability lints](Lint/Decidability.md#undecidable-constructs)).
 
 ### How many are reported
 
-In a component, the parts below are checked on their own, in this order,
+In a procedure, the parts below are checked on their own, in this order,
 and each reports its first static error; an error in one does not stop the
 others:
 
 1. its name, and that its members' names are distinct: an error here stops
-   the component;
+   the procedure;
 2. each variable's declaration: its name, then its type (an error in its
-   name, such as in [shadowing](Lang/Components.md#shadowing), still
+   name, such as in [shadowing](Lang/Procedures.md#shadowing), still
    leaves its type to be checked); then one cycle of definitions, if any;
-3. each instance: its name, then its component and the names it binds;
-4. the bindings of each instance, together;
+3. each call: its name, then its procedure and its arguments;
+4. the arguments of each call, together;
 5. each definition, each after those it mentions;
 6. each assumption, guarantee and expectation, in order.
 
 An error that would only follow from an earlier one is not reported. After
-an error in a variable's declaration or in an instance, the component
+an error in a variable's declaration or in a call, the procedure
 stops once the parts of the same step are checked, at the end of step 2
-or step 3, since what mentions the variable or the instance would only
-repeat it; a cycle of definitions stops it at the end of step 2 too: so an instance whose component cannot be found, or has a static error
-itself, is reported once, at the instance, and not at each use. A
-definition, or an instance's bindings, with an error still declare their
+or step 3, since what mentions the variable or the call would only
+repeat it; a cycle of definitions stops it at the end of step 2 too: so a call whose procedure cannot be found, or has a static error
+itself, is reported once, at the call, and not at each use. A
+definition, or a call's arguments, with an error still declare their
 variable, with its declared type, so what mentions them is checked as
 usual, and reports only its own errors.
 
 Any other item, including a global expectation and a refinement (whose
 bindings are checked together), reports its first static error only. A
-component or other item with a static error is not checked.
+procedure or other item with a static error is not checked.
 
 An item with a static error still reports its [lints](Lint.md), with
 either front end: those found in each part before its error. A part checks
 its constructs before their operands, so an error in an operand does not
 hide them: a set literal, `in`, `union`, `inter`, `minus` and `subset`, and
 membership in a set of one member; a method call is checked after it is
-typed, and a constraint's name before its `?` error. A component with an
+typed, and a constraint's name before its `?` error. A procedure with an
 error in its members (after step 1 above) still reports
 `constant_output`, `definable_output` and `case_split_guarantees`, and its
 declaration and line lints (`many_single_char_names`, `similar_names` and
@@ -92,7 +92,7 @@ with an erroneous example and its fix. The codes are grouped:
 | `F01xx` | syntax |
 | `F02xx` | names, modules and items |
 | `F03xx` | types |
-| `F04xx` | instances, and where variables may be mentioned |
+| `F04xx` | calls, and where variables may be mentioned |
 | `F05xx` | traceability |
 | `F06xx` | the results of checks |
 | `F07xx` | lints, and setting their levels |
@@ -103,14 +103,12 @@ with an erroneous example and its fix. The codes are grouped:
 ```fren
 pub enum Group { Syntax, Names, Types, Instances, Traceability, Results, Lints }
 
-pub comp code_group {
+pub proc code_group(code: String): (det group: Group) {
     use self::Group::{Instances, Lints, Names, Results, Syntax, Traceability, Types}
-    in code: String
 
     assume well_formed: code.len = 5 and (code.starts_with?("F01") or code.starts_with?("F02")
         or code.starts_with?("F03") or code.starts_with?("F04") or code.starts_with?("F05")
         or code.starts_with?("F06") or code.starts_with?("F07") or code.starts_with?("F08"))
-    pub det out group: Group
 
     ensure syntax_codes: when code.starts_with?("F01"), group = Syntax
     ensure names: when code.starts_with?("F02"), group = Names
@@ -136,13 +134,13 @@ Each check yields one result for each thing it checks:
 
 | Check | One result for each |
 |---|---|
-| Realizability | component, and contract of an uninterpreted function with postconditions |
+| Realizability | procedure, and contract of an uninterpreted function with postconditions |
 | Expectations | expectation |
 | Cover goals | cover goal |
-| Instance assumptions | instance and assumption of the instantiated component |
+| Call assumptions | call and assumption of the called procedure |
 | Vacuity | guarantee or expectation with a trigger |
 | Redundancy | assumption and guarantee |
-| Determinism | `det out` |
+| Determinism | `det` output |
 | Definedness | index |
 | Completeness | table without a `_` row, and `match` whose arms without guards are not exhaustive |
 | Disjointness | two rows of a table, other than `_` |
@@ -157,41 +155,41 @@ failure is reported at:
 
 | Failure | Position | Details |
 |---|---|---|
-| Unrealizable | the component's name | a note: the input, one variable to a line, and the guarantees that conflict on it; and a note at each of those: the output that it forces to a value that the others rule out, for at most `--examples` of them, else whom it conflicts with |
-| Contradictory assumptions | the component's name | the contradictory assumptions |
-| Expectation does not hold | the expectation's name | a counterexample: the inputs and public outputs |
+| Unrealizable | the procedure's name | a note: the input, one variable to a line, and the guarantees that conflict on it; and a note at each of those: the output that it forces to a value that the others rule out, for at most `--examples` of them, else whom it conflicts with |
+| Contradictory assumptions | the procedure's name | the contradictory assumptions |
+| Expectation does not hold | the expectation's name | a counterexample: the inputs and results |
 | Cover goal cannot be met | the goal's name | the assumptions and guarantees that rule it out |
-| Instance assumption may not hold | the instance's name | a counterexample: the inputs and earlier instances' public outputs |
+| Call assumption may not hold | the call's name | a counterexample: the inputs and earlier calls' results |
 | Vacuous | the constraint's trigger | the assumptions and guarantees that rule it out |
 | Redundant | the constraint's name | the constraints it follows from |
 | Not determined | the output's name | an input, and two values of the output for it |
-| Index may be out of range | the index's `[` | a counterexample: the public variables |
-| Table may have no row that holds | the table's `table` | a counterexample: the public variables, for which no row holds |
-| Rows may both hold | the later row's condition | the two rows, by their numbers from 1, and a witness: the public variables, for which both hold |
-| Precondition may not hold | the applied function's name | the precondition, and a counterexample: the public variables |
+| Index may be out of range | the index's `[` | a counterexample: the parameters and results |
+| Table may have no row that holds | the table's `table` | a counterexample: the parameters and results, for which no row holds |
+| Rows may both hold | the later row's condition | the two rows, by their numbers from 1, and a witness: the parameters and results, for which both hold |
+| Precondition may not hold | the applied function's name | the precondition, and a counterexample: the parameters and results |
 | Postcondition does not hold | the postcondition's name | a counterexample: the function's parameters |
 | Postconditions cannot all hold | the function's name | a note: the arguments, one to a line, and the postconditions that conflict on them; and a note at each of those: the value of the function that it forces to one that the others rule out, for at most `--examples` of them, else whom it conflicts with |
 | Contradictory preconditions | the function's name | the contradictory preconditions |
-| `match` may have no arm that is taken | the `match`'s `match` | a counterexample: the public variables, for which no arm is taken |
+| `match` may have no arm that is taken | the `match`'s `match` | a counterexample: the parameters and results, for which no arm is taken |
 | Arm never taken | the arm's pattern | the arm, by its number from 1 |
 | Row never the first that holds | the row's condition, or its `_` | the row, by its number from 1 |
 
 A passing [cover goal](Check.md#cover-goals) is reported with its
 witness, the behaviour in which it holds, as a note at the goal's name:
-the inputs and public outputs, shown as a counterexample shows them. The
+the inputs and results, shown as a counterexample shows them. The
 note is information, like the notes at the guarantees of an
-unrealizable component: the result itself is silent, so the note changes
+unrealizable procedure: the result itself is silent, so the note changes
 neither the summary's counts nor the exit status. A witness's values
 are not shown, and the note says so instead, when they depend on an
-[interpretation](Lang/Components.md#interpretations), which the note
-cannot show: when some variable of the component, its own or an
-instance's, has a type that is or contains an [abstract
+[interpretation](Lang/Procedures.md#interpretations), which the note
+cannot show: when some variable of the procedure, its own or a
+call's, has a type that is or contains an [abstract
 type](Lang/Types.md#abstract-types), or when a formula of the goal's
 [query](Check.md#cover-goals) uses an abstract type or an [uninterpreted
 function](Lang/Items.md#uninterpreted-functions), directly or through a
-defined function. Those formulas are the component's definitions,
-assumptions and guarantees, each instance's bindings and the meaning of
-its component (its assumptions, guarantees, definitions and instances,
+defined function. Those formulas are the procedure's definitions,
+assumptions and guarantees, each call's arguments and the meaning of
+its procedure (its assumptions, guarantees, definitions and calls,
 recursively), and the goal; no expectation or other cover goal is among
 them. Both front ends decide this by the same rule, and the Lean front
 end cannot read every such model.
@@ -206,7 +204,7 @@ note: cover goal `heater::overheat` is met
   = witness: temp = 101, alarm? = true
 ```
 
-An unrealizable component's error has a note that spans several lines:
+An unrealizable procedure's error has a note that spans several lines:
 `for the input`, then each variable of the input and its value, one to a
 line and indented, and then the guarantees that conflict on it, in their
 order, named as a list (`` `a` ``, `` `a` and `b` ``, `` `a`, `b` and `c` ``).
@@ -238,10 +236,11 @@ these:
 ```fren
 -- `replace_all` is outside the decidable core, and no other method states the shape.
 set_option fren.lint.undecidable "allow" in
-pub comp wildcards {
-    in arity: Nat
-    in text: String   -- the wildcards
-    pub det out shaped? := (if arity = 0 then text = ""
+pub proc wildcards(
+    arity: Nat,
+    text: String,     -- the wildcards
+): (det shaped?) {
+    out shaped? := (if arity = 0 then text = ""
         else text.starts_with?("_") and text.len = 3 * arity - 2 and text.replace_all(", _", "") = "_")
 
     expect two: when arity = 2 and text = "_, _", shaped?
@@ -261,26 +260,26 @@ pub enum Forced { Value(String), Variant(String, Nat) }
 
 -- `++` in a `match` arm makes a word equation; flattening `Forced` into flags would avoid it.
 set_option fren.lint.undecidable "allow" in
-pub comp clash_text {
-    in guarantee: String     -- the guarantee's name
-    in output: String        -- the output's name
-    in forced: Forced        -- what the guarantee forces of the output
-    in blanks: String        -- the wildcards of its variant, if it is one
-    in others: String        -- the other guarantees of the conflict, named as a list
-    in count: Int            -- how many others there are
-    in other_forced: Forced  -- what they force of the output
-    in other_blanks: String  -- the wildcards of its variant, if it is one
-
+pub proc clash_text(
+    guarantee: String,       -- the guarantee's name
+    output: String,          -- the output's name
+    forced: Forced,          -- what the guarantee forces of the output
+    blanks: String,          -- the wildcards of its variant, if it is one
+    others: String,          -- the other guarantees of the conflict, named as a list
+    count: Int,              -- how many others there are
+    other_forced: Forced,    -- what they force of the output
+    other_blanks: String,    -- the wildcards of its variant, if it is one
+): (said: String, other_said: String, text: String) {
     assume some_other: count >= 1
-    pub out said: String := match forced {   -- what the guarantee forces, as the note says it
+    out said := match forced {   -- what the guarantee forces, as the note says it
         Forced::Value(v) => output ++ " = " ++ v,
         Forced::Variant(c, n) => output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ blanks ++ ")"),
     }
-    pub out other_said: String := match other_forced {   -- what the others force
+    out other_said := match other_forced {   -- what the others force
         Forced::Value(v) => output ++ " = " ++ v,
         Forced::Variant(c, n) => output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ other_blanks ++ ")"),
     }
-    pub out text: String := "`" ++ guarantee ++ "` forces " ++ said ++ ", but " ++ others
+    out text := "`" ++ guarantee ++ "` forces " ++ said ++ ", but " ++ others
         ++ (if count = 1 then " forces " else " force ") ++ other_said
 
     expect one_other: when guarantee = "low" and output = "y" and forced = Forced::Value("0") and others = "`high`"
@@ -338,7 +337,7 @@ not mentioned by being given to it. That a `Nat` variable is at least
 so a `Nat` is shown even when nothing else mentions it. In
 
 ```text
-comp c { in a: Int in b: Int pub out p? ensure r: p? iff a > 0 expect e: p? }
+proc c(a: Int, b: Int): (p?) { ensure r: p? iff a > 0 expect e: p? }
 ```
 
 the counterexample of `e` is `a = 0, p? = false`, without `b`. Both front
@@ -360,7 +359,7 @@ though the solver sees only its underlying type's value.
 
 An inconclusive result is reported at the position of the corresponding
 failure, saying what could not be decided and why. What it advises
-depends on whether the component is in the [decidable
+depends on whether the procedure is in the [decidable
 core](Lang/Decidability.md): if it is, the solver ran out of time, so the
 advice is to raise the time limit; if some construct of it opted out of
 the core, the solver may have given up, so the advice names that.
@@ -369,10 +368,9 @@ the core, the solver may have given up, so the advice names that.
 ```fren
 pub enum Advice { RaiseTimeout, NamesConstructs }
 
-pub comp inconclusive_advice {
-    in decidable?            -- no construct of the component is outside the core
-    pub det out advice: Advice
-
+pub proc inconclusive_advice(
+    decidable?,              -- no construct of the procedure is outside the core
+): (det advice: Advice) {
     ensure rule: advice = (if decidable? then Advice::RaiseTimeout else Advice::NamesConstructs)
 }
 ```
@@ -407,11 +405,7 @@ use check::Kind::Redundancy
 use check::Verdict::{Fail, Inconclusive, Pass}
 use self::Severity::{Error, Info, Silent, Warning}
 
-pub comp severity {
-    in kind: Kind
-    in verdict: Verdict
-    pub det out level: Severity
-
+pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
     ensure pass: when verdict = Pass, level = Silent
     ensure fail: when verdict = Fail and kind != Redundancy, level = Error
     ensure redundant: when verdict = Fail and kind = Redundancy, level = Warning
@@ -428,11 +422,10 @@ the results of a `#fren_check`:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp build {
-    in worst: Severity
-    pub det out fails?     -- `lake build` fails
-    pub det out fails_wfail?  -- `lake build --wfail` fails
-
+pub proc build(worst: Severity): (
+    det fails?,            -- `lake build` fails
+    det fails_wfail?,         -- `lake build --wfail` fails
+) {
     ensure errors: fails? iff worst = Error
     ensure warnings: fails_wfail? iff worst >= Warning
 
@@ -445,9 +438,7 @@ counts, so it has none as inputs:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp summary {
-    pub det out level: Severity
-
+pub proc summary(): (det level: Severity) {
     ensure always_info: level = Info
 }
 ```
@@ -465,11 +456,8 @@ contains its enumeration's name:
 set_option fren.lint.enum_variant_names "allow" in
 pub enum Bucket { Passed, Failed, InconclusiveBucket, Redundant }
 
-pub comp counted {
+pub proc counted(kind: Kind, verdict: Verdict): (det bucket: Bucket) {
     use self::Bucket::{Failed, InconclusiveBucket, Passed, Redundant}
-    in kind: Kind
-    in verdict: Verdict
-    pub det out bucket: Bucket
 
     ensure redundant: when kind = Redundancy and verdict = Fail, bucket = Redundant
     ensure by_verdict: unless kind = Redundancy and verdict = Fail,

@@ -1,0 +1,5 @@
+-- A component, as procedures were written before (F0158): both front ends
+-- report it, and `fren fix` writes it as a procedure.
+comp c { in x: Int pub out y: Int ensure r: y = x }
+--~^ error: components are written as procedures
+--@ exit: 2

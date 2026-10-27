@@ -10,13 +10,7 @@ expect min_values: (-3).min(2) = -3 and (2).min(-3) = -3 and LOW.min(LOW) = LOW 
 expect max_values: (-3).max(2) = 2 and (2).max(-3) = 2 and LOW.max(0) = 0
 expect chained: LOW.abs.min(3) = 3 and (LOW - 2).abs.max(1) = 7
 
-comp tolerance {
-    in a: Int
-    in b: Int
-    pub out close?
-    pub out low: Int
-    pub out high: Int
-
+proc tolerance(a: Int, b: Int): (close?, low: Int, high: Int) {
     ensure c: close? iff (a - b).abs <= 2
     ensure l: low = a.min(b)
     ensure h: high = a.max(b)
@@ -29,18 +23,12 @@ comp tolerance {
 }
 
 -- `nonminimal_bool` keeps the operands of a comparison bare.
-comp simpler {
-    in a: Int
-    pub out s?
-
+proc simpler(a: Int): (s?) {
     ensure r: s? iff not ((a - 1).abs > a.max(0) mod 4)  --~ warning: write `(a - 1).abs <= a.max(0) mod 4`
 }
 
 -- `identity_op` keeps the operands of `div` and `mod` bound as written.
-comp identity {
-    in a: Int
-    pub out t: Int
-
+proc identity(a: Int): (t: Int) {
     ensure r: t = 1 * (a + 1) mod 3                       --~ warning: write `(a + 1)`
 }
 

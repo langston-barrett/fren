@@ -67,30 +67,37 @@ pub fn shared_op(head: lang::Head): SharedOp := match lang::operator(head) {
     _ => SharedOp::OtherOp,
 }
 
-pub comp branches_sharing_code {
+pub proc branches_sharing_code(
+    binders: Set<lang::Id>,                -- the binders of the pattern tests in the conditional
+    then_head: lang::Head,                 -- the head of the `then` branch's root layer
+    else_head: lang::Head,                 -- the `else` branch's
+    then_left: Scoped,                     -- the operands of the `then` branch, as written in their scopes
+    then_right: Scoped,
+    else_left: Scoped,                     -- the operands of the `else` branch
+    else_right: Scoped,
+    condition_mentioned: Set<lang::Mention>,    -- what `C` mentions
+    a_mentioned: Set<lang::Mention>,       -- what `A` mentions
+    b_mentioned: Set<lang::Mention>,       -- what `B` mentions
+    shared_mentioned: Set<lang::Mention>,    -- what `X` mentions
+): (
+    det op: SharedOp,
+    det same_op?,
+    det shared_left?,
+    det shared_right?,
+    det moved_mentioned: Set<lang::Mention>,
+    det fires?,
+) {
     use self::SharedOp::{Div, Mod, OtherOp, Times}
-    in binders: Set<lang::Id>              -- the binders of the pattern tests in the conditional
-    in then_head: lang::Head               -- the head of the `then` branch's root layer
-    in else_head: lang::Head               -- the `else` branch's
-    in then_left: Scoped                   -- the operands of the `then` branch, as written in their scopes
-    in then_right: Scoped
-    in else_left: Scoped                   -- the operands of the `else` branch
-    in else_right: Scoped
-    in condition_mentioned: Set<lang::Mention>  -- what `C` mentions
-    in a_mentioned: Set<lang::Mention>     -- what `A` mentions
-    in b_mentioned: Set<lang::Mention>     -- what `B` mentions
-    in shared_mentioned: Set<lang::Mention>  -- what `X` mentions
-    pub det out op: SharedOp := shared_op(then_head)
-    pub det out same_op? := then_head = else_head and lang::operator(then_head) != ""
-    pub det out shared_left? := then_left = else_left
-    pub det out shared_right? := then_right = else_right
+    out op := shared_op(then_head)
+    out same_op? := then_head = else_head and lang::operator(then_head) != ""
+    out shared_left? := then_left = else_left
+    out shared_right? := then_right = else_right
     -- What the `if` that the fix moves out, `if C then A else B`, mentions.
-    pub det out moved_mentioned: Set<lang::Mention> :=
+    out moved_mentioned :=
         lang::mentioned_by(lang::Head::Op("if", ""), condition_mentioned union a_mentioned union b_mentioned)
-    pub det out fires?
 
     -- The product the fix would write, for `*`.
-    inst product: lang::linear_product { a_mentioned := moved_mentioned, b_mentioned := shared_mentioned }
+    call product := lang::linear_product(moved_mentioned, shared_mentioned)
 
     ensure rule: fires? iff (binders = {} and same_op? and shared_left? != shared_right? and not match op {
         Times => not product.accepted?,
@@ -130,32 +137,28 @@ guarded:
 
 ```fren
 set_option fren.lint.branches_sharing_code "allow" in
-pub comp branches_sharing_code_written {
-    in c?
-    in a: Int
-    in b: Int
-    in x: Int
-    in p?
-    in q?
-    in y?
-    pub det out right: Int := if c? then a - x else b - x
-    pub det out left: Int := if c? then x - a else x - b
-    pub det out right_and? := if c? then p? and y? else q? and y?
-    pub det out left_or? := if c? then y? or p? else y? or q?
+pub proc branches_sharing_code_written(c?, a: Int, b: Int, x: Int, p?, q?, y?): (
+    det right: Int,
+    det left: Int,
+    det right_and?,
+    det left_or?,
+) {
+    out right := if c? then a - x else b - x
+    out left := if c? then x - a else x - b
+    out right_and? := if c? then p? and y? else q? and y?
+    out left_or? := if c? then y? or p? else y? or q?
 }
 
-pub comp branches_sharing_code_fixed {
-    in c?
-    in a: Int
-    in b: Int
-    in x: Int
-    in p?
-    in q?
-    in y?
-    pub det out right: Int := (if c? then a else b) - x
-    pub det out left: Int := x - (if c? then a else b)
-    pub det out right_and? := (if c? then p? else q?) and y?
-    pub det out left_or? := y? or (if c? then p? else q?)
+pub proc branches_sharing_code_fixed(c?, a: Int, b: Int, x: Int, p?, q?, y?): (
+    det right: Int,
+    det left: Int,
+    det right_and?,
+    det left_or?,
+) {
+    out right := (if c? then a else b) - x
+    out left := x - (if c? then a else b)
+    out right_and? := (if c? then p? else q?) and y?
+    out left_or? := y? or (if c? then p? else q?)
 }
 
 refine branches_sharing_code_sound: branches_sharing_code_fixed refines branches_sharing_code_written

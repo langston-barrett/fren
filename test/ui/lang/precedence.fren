@@ -2,12 +2,7 @@
 -- guarantee parses as the manual says.
 -- fren-covers: lang::operand
 
-comp arith {
-    in x: Int
-    in y: Int
-    in z: Int
-    pub out a: Int
-    pub out b: Int
+proc arith(x: Int, y: Int, z: Int): (a: Int, b: Int) {
     ensure left: a = x - y - z
     ensure tighter: b = x + y * 2
     expect left_assoc: a = (x - y) - z
@@ -16,13 +11,7 @@ comp arith {
 
 -- `collapsible_when` would collapse the nested `when`.
 set_option fren.lint.collapsible_when "allow" in
-comp logic {
-    in p?
-    in q?
-    in r?
-    pub out o?
-    pub out n?
-    pub out e?
+proc logic(p?, q?, r?): (o?, n?, e?) {
     ensure unary: o? iff not p? and q? or r?
     ensure nested: n? iff (when p?, when q?, r?)
     ensure loose: e? iff (p? iff q? = r?)

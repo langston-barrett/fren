@@ -3,15 +3,10 @@
 -- fren-covers: check::minimal
 set_option fren.lint.chainable_comparison "allow"
 
-comp thermostat {
-    in temp: Int
-    in target: Int
-
+proc thermostat(temp: Int, target: Int): (heat?, cool?) {
     assume sane: target >= 5 and target <= 30
     assume warm: target >= 0             --~ warning: `thermostat::warm` is redundant: it follows from `sane`
     --~^ warning: `target` is never negative
-    pub out heat?
-    pub out cool?
 
     ensure heats: heat? iff temp < target - 2
     ensure cools: cool? iff temp > target + 2
@@ -20,20 +15,15 @@ comp thermostat {
 }
 
 -- A vacuous guarantee is reported once, by the vacuity check.
-comp vacuous {
-    in x: Int
-
+proc vacuous(x: Int): (y: Int) {
     assume pos: x > 0
-    pub out y: Int
 
     ensure y_def: y = x
     ensure never: when x < 0, y = x         --~ error: `vacuous::never` is vacuous: its condition can never hold, given `pos`
 }
 
 -- Contradictory constraints entail everything: only realizability fails.
-comp contradictory {  --~ error: note: no outputs satisfy `up` and `down`
-    pub out y: Int
-
+proc contradictory(): (y: Int) {  --~ error: note: no outputs satisfy `up` and `down`
     ensure up: y > 0   --~ info: conflicts with `down`
     ensure down: y < 0   --~ info: conflicts with `up`
 }

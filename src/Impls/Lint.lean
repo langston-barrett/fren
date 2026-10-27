@@ -11,7 +11,7 @@ namespace Fren.Impls
 
 open Fren.Core (LintLevel Group Case Named ImportFix setLevel effectiveLevel groupAccepted outsideLevel unusedImport
   inCase expectationFulfilled expectationReported importFix fixExit fixSelected Comparison deadItem literalNegated Head
-  MigrationStep migrationStep maxMigrations)
+  MigrationStep callMigrationApplies migrationStep maxMigrations)
 
 instance : Fren.Finite LintLevel :=
   ⟨[.allow, .expect, .warn, .deny, .forbid], by intro x; cases x <;> simp⟩
@@ -30,7 +30,7 @@ instance : Fren.Finite Comparison := ⟨Comparison.all.toList, by intro x; cases
 instance : Fren.Finite Head := ⟨[.not, .unequal, .ite, .when, .unless, .other], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Fren.Core.MemberKind :=
-  ⟨[.use, .input, .assumption, .output, .inst, .guarantee, .expectation, .cover], by intro x; cases x <;> simp⟩
+  ⟨[.use, .assumption, .exists, .let, .define, .call, .guarantee, .expectation, .cover], by intro x; cases x <;> simp⟩
 
 def toComparison : Comparison → lint.Comparison
   | .eq => .Eq
@@ -82,10 +82,11 @@ def toGroup : Group → lint.Group
 
 def toMemberKind : Fren.Core.MemberKind → lint.MemberKind
   | .use => .Use
-  | .input => .Input
   | .assumption => .Assumption
-  | .output => .Output
-  | .inst => .Instance
+  | .exists => .Exists
+  | .let => .Let
+  | .define => .Define
+  | .call => .Call
   | .guarantee => .Guarantee
   | .expectation => .Expectation
   | .cover => .Cover
@@ -312,6 +313,15 @@ impl lint_migration_step: lint::migration_step for (e m : Bool) (r : Nat) {
   intro e m r _
   cases e <;> cases m <;> by_cases h : r < 1000 <;>
     simp [fren_spec, migrationStep, toMigrationStep, maxMigrations, h] <;> omega
+
+-- For every round of the instances' fixes: whether `fren fix` makes another.
+impl lint_call_migration_step: lint::call_migration_step for (f : Bool) (r : Nat) {
+  fixes? := f,
+  round := r,
+  applies? := callMigrationApplies f r,
+} by
+  intro f r _
+  cases f <;> by_cases h : r < 1000 <;> simp [fren_spec, callMigrationApplies, maxMigrations, h] <;> omega
 
 impl lint_fix_exit: lint::fix_exit for (c l f : Bool) {
   check? := c,
@@ -1927,8 +1937,8 @@ impl single_call_fn: lint::single_call_fn for (p d : Bool) (n : Nat) {
 
 trusted lint::zero_prefixed_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"
-trusted lint::member_order_written: "a model of a component, checked by the refinements in its section"
-trusted lint::member_order_fixed: "a model of a component, checked by the refinements in its section"
+trusted lint::member_order_written: "a model of a procedure, checked by the refinements in its section"
+trusted lint::member_order_fixed: "a model of a procedure, checked by the refinements in its section"
 
 /-! ## Cardinality, ordered enumerations and newtypes -/
 
@@ -2532,8 +2542,8 @@ impl eq_op_method: lint::eq_op_method for (r a : String) {
   intro r a _
   simp [fren_spec, Fren.Core.eqOpMethod]
 
-trusted lint::manual_nat_input_written: "a model of a component, checked by the refinements in its section"
-trusted lint::manual_nat_input_fixed: "a model of a component, checked by the refinements in its section"
+trusted lint::manual_nat_input_written: "a model of a procedure, checked by the refinements in its section"
+trusted lint::manual_nat_input_fixed: "a model of a procedure, checked by the refinements in its section"
 trusted lint::manual_nat_output_written: "a model of a component, checked by the refinement in its section"
 trusted lint::manual_nat_output_fixed: "a model of a component, checked by the refinement in its section"
 trusted lint::manual_abs_written: "a model of an expression, checked by the refinements in its section"

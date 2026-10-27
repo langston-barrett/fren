@@ -3,13 +3,13 @@
 -- fren-covers: lang::operator_type
 set_option fren.lint.unused_variables "allow"
 
-comp bool_right { in s: Int in y? pub out ok? ensure r: ok? iff s in y? }
+proc bool_right(s: Int, y?): (ok?) { ensure r: ok? iff s in y? }
 --~^ error: `in` needs a `Set<Int>` on its right, found `Bool`
-comp condition_right { in s: Int pub out ok? ensure r: ok? iff s in (s < 3) }
+proc condition_right(s: Int): (ok?) { ensure r: ok? iff s in (s < 3) }
 --~^ error: `in` needs a `Set<Int>` on its right, found `Bool`
-comp int_right { in s: Int in t: Int pub out ok? ensure r: ok? iff s in t }
+proc int_right(s: Int, t: Int): (ok?) { ensure r: ok? iff s in t }
 --~^ error: `in` needs a `Set<Int>` on its right, found `Int`
-comp bool_left { in y? in t: Int pub out ok? ensure r: ok? iff y? in t }
+proc bool_left(y?, t: Int): (ok?) { ensure r: ok? iff y? in t }
 --~^ error: `in` needs a `Set<Bool>` on its right, found `Int`
-comp string_right { in s: Int in t: String pub out ok? ensure r: ok? iff s in t }
+proc string_right(s: Int, t: String): (ok?) { ensure r: ok? iff s in t }
 --~^ error: `in` needs a `Set<Int>` on its right, found `String`

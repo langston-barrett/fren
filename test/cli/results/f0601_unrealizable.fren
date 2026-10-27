@@ -1,7 +1,5 @@
 -- A component that is not realizable (F0601).
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure big: y > x
     ensure small: y < 0
 }

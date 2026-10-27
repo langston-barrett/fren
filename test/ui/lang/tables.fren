@@ -6,11 +6,7 @@ enum Severity { Silent, Info, Warning, Error }
 
 use Severity::{Error, Info, Silent, Warning}
 
-comp exit {
-    in ran?
-    in worst: Severity
-    pub det out code: Int
-
+proc exit(ran?, worst: Severity): (det code: Int) {
     ensure rule: code = table {
         | not ran? => 2,
         | ran? and worst = Error => 1,
@@ -24,10 +20,7 @@ comp exit {
 
 -- A last `_` row holds wherever no earlier row does: the table is
 -- complete, and `_` overlaps no row.
-comp wild {
-    in x: Int
-    pub det out y: Int
-
+proc wild(x: Int): (det y: Int) {
     ensure r: y = table { x > 10 => 2, 0 < x <= 10 => 1, _ => 0 }
 
     expect zero: when x <= 0, y = 0
@@ -36,10 +29,7 @@ comp wild {
 
 -- Only `_`, which `same_branches` reports.
 set_option fren.lint.same_branches "allow" in
-comp only_wild {
-    in x: Int
-    pub det out y: Int
-
+proc only_wild(x: Int): (det y: Int) {
     ensure r: y = table { _ => x }
 
     expect same: y = x
@@ -47,13 +37,9 @@ comp only_wild {
 
 -- A table is an atom: it can be an operand without parentheses, and its
 -- values can be `Bool`s, sets or sequences, with a `Nat` and an `Int` an `Int`.
-comp operands {
-    in x: Int
-    in n: Nat
-    pub det out y: Int
-    pub det out b?
-    pub out s: Set<Int> := table { x > 0 => {}, _ => {x} }
-    pub out q: Seq<Int> := table { x > 0 => [x], _ => [] }
+proc operands(x: Int, n: Nat): (det y: Int, det b?, s: Set<Int>, q: Seq<Int>) {
+    out s := table { x > 0 => {}, _ => {x} }
+    out q := table { x > 0 => [x], _ => [] }
 
     ensure ry: y = 1 + table { x > 0 => n, _ => x }
     ensure rb: b? iff not table { x > 0 => true, _ => false }
@@ -64,10 +50,7 @@ comp operands {
 
 -- Under `when`, a table need only be complete and disjoint where it is
 -- evaluated.
-comp guarded {
-    in x: Int
-    pub out y: Int
-
+proc guarded(x: Int): (y: Int) {
     ensure r: when x >= 0, y = table { x = 0 => 0, x > 0 => 1 }
     ensure s: when x < 0, y = -1
 
@@ -75,11 +58,8 @@ comp guarded {
 }
 
 -- A guarantee's own hypotheses make the table complete.
-comp hypotheses {
-    in x: Int
-
+proc hypotheses(x: Int): (y: Int) {
     assume small: 0 <= x <= 2
-    pub out y: Int
 
     ensure r: y = table { x = 0 => 10, x = 1 => 11, x = 2 => 12 }
 
@@ -87,10 +67,7 @@ comp hypotheses {
 }
 
 -- A `Nat` is at least 0, which every check assumes.
-comp naturals {
-    in n: Nat
-    pub det out y: Int
-
+proc naturals(n: Nat): (det y: Int) {
     ensure r: y = table { n = 0 => 0, n > 0 => 1 }
 
     expect bit: y is 0 | 1
@@ -98,21 +75,14 @@ comp naturals {
 
 -- An index in a row is guarded by the earlier rows' not holding, and in a
 -- value by its own condition too.
-comp indexes {
-    in q: Seq<Int>
-    pub det out y: Int
-
+proc indexes(q: Seq<Int>): (det y: Int) {
     ensure r: y = table { q = [] => 0, q != [] and q[0] > 0 => q[0], _ => -q[0] }
 
     expect non_negative: y >= 0
 }
 
 -- Nested tables, each checked under the conditions around it.
-comp nested {
-    in a?
-    in b?
-    pub det out y: Int
-
+proc nested(a?, b?): (det y: Int) {
     ensure r: y = table {
         | a? => table { b? => 3, not b? => 2 },
         | not a? => table { b? => 1, _ => 0 },
@@ -124,10 +94,9 @@ comp nested {
 -- Rows whose values are newtypes, with and without a `_` row.
 pub ordered struct Ms(Int)
 
-comp delays {
-    in fast?
-    pub det out wait: Ms := table { fast? => Ms(1), _ => Ms(10) }
-    pub det out pause: Ms := table { fast? => Ms(2), not fast? => Ms(20) }
+proc delays(fast?): (det wait: Ms, det pause: Ms) {
+    out wait := table { fast? => Ms(1), _ => Ms(10) }
+    out pause := table { fast? => Ms(2), not fast? => Ms(20) }
 
     expect short: when fast?, wait < pause
 }
@@ -136,11 +105,7 @@ comp delays {
 -- quantifier in a row's condition.
 enum Level { Low, High }
 
-comp quantified {
-    in x: Int
-    pub det out y: Int
-    pub det out all?
-
+proc quantified(x: Int): (det y: Int, det all?) {
     ensure r: y = table { (forall (l: Level), l = Level::Low or x > 0) => 1, _ => 0 }
     ensure s: all? iff (forall (l: Level), table { l = Level::Low => x >= 0, l = Level::High => x >= 1 })
 
@@ -149,11 +114,7 @@ comp quantified {
 
 -- A table in a `let`, or whose rows read its names, is checked where the
 -- names mean their definitions.
-comp lets {
-    in x: Int
-    pub det out y: Int
-    pub det out z: Int
-
+proc lets(x: Int): (det y: Int, det z: Int) {
     ensure r: y = (let k := table { x > 0 => 1, x <= 0 => 0 } in k + k)
     ensure s: z = table { a > 0 => a, a <= 0 => 0 } where a := x - 1
 
@@ -169,10 +130,7 @@ const LIMIT: Int := table { 1 < 2 => 10 }
 -- A `Nat` parameter is at least 0, which the checks of a body assume too.
 fn bit(n: Nat): Int := table { n = 0 => 0, n > 0 => 1 }
 
-comp uses {
-    in x: Int
-    pub det out y: Int
-
+proc uses(x: Int): (det y: Int) {
     ensure r: y = sign(x) * LIMIT
 
     expect positive: when x > 0, y = 10

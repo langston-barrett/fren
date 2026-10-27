@@ -43,12 +43,14 @@ use lang::Method
 
 pub enum ChainFix { Keep, Receiver, Single }
 
-pub comp method_chain {
+pub proc method_chain(
+    inner: Method,       -- the method of `e.inner`
+    outer: Method,       -- the method called on `e.inner`
+): (
+    det fix: ChainFix,
+    det single: Method,         -- for `Single`, the method of the shorter form
+) {
     use lang::Method::{Card, Closure, Domain, Inverse, Len, Range, Rev}
-    in inner: Method     -- the method of `e.inner`
-    in outer: Method     -- the method called on `e.inner`
-    pub det out fix: ChainFix
-    pub det out single: Method  -- for `Single`, the method of the shorter form
 
     ensure rule: fix = if inner = outer and inner in {Rev, Inverse} then ChainFix::Receiver
         else if (inner = Inverse and outer in {Domain, Range, Card}) or (inner = Rev and outer = Len)
@@ -118,16 +120,17 @@ proves for strings from the meaning of the methods in Lean:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp one_character {
-    in s: String
-    in t: String         -- a string of one character
-    in i: Int
-    in u: String         -- any string
-
+pub proc one_character(
+    s: String,
+    t: String,           -- a string of one character
+    i: Int,
+    u: String,           -- any string
+): (
+    det first?,          -- `s.at(0) = t`
+    det last?,           -- `s.at(s.len - 1) = t`
+    det slice?,          -- `s.slice(i, 1) = u`
+) {
     assume one: t.len = 1
-    pub det out first?   -- `s.at(0) = t`
-    pub det out last?    -- `s.at(s.len - 1) = t`
-    pub det out slice?   -- `s.slice(i, 1) = u`
 
     ensure first: first? iff s.starts_with?(t)
     ensure last: last? iff s.ends_with?(t)
@@ -142,15 +145,15 @@ every value that the call can take:
 ```fren
 pub enum IndexTest { Found, Absent, AtStart, Other }
 
-pub comp index_test {
+pub proc index_test(
+    op: Comparison,
+    bound: Int,
+    position: Int,       -- any value of `s.index_of(t, 0)`
+): (det test: IndexTest) {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
     use self::IndexTest::{Absent, AtStart, Found, Other}
-    in op: Comparison
-    in bound: Int
-    in position: Int     -- any value of `s.index_of(t, 0)`
 
     assume positions: position >= -1
-    pub det out test: IndexTest
 
     ensure rule: test = match op {
         Ge if bound = 0 => Found,
@@ -201,16 +204,17 @@ for strings:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp redundant_slicing {
-    in whole?            -- it is written `s.slice(0, s.len)`, the receivers written the same
-    in s: String
-    in i: Int            -- the position
-    in n: Int            -- the length
-    in u: String         -- any string
-
+pub proc redundant_slicing(
+    whole?,              -- it is written `s.slice(0, s.len)`, the receivers written the same
+    s: String,
+    i: Int,              -- the position
+    n: Int,              -- the length
+    u: String,           -- any string
+): (
+    det fires?,
+    slice?,              -- `s.slice(i, n) = u`
+) {
     assume written: when whole?, i = 0 and n = s.len
-    pub det out fires?
-    pub out slice?       -- `s.slice(i, n) = u`
 
     ensure rule: fires? iff whole?
     ensure value: when fires?, slice? iff s = u
@@ -253,14 +257,14 @@ pub fn orders?(op: Comparison, x: Position, y: Position) := match op {
 pub enum MinMaxFix { Unchanged, Receiver, Argument }
 
 set_option fren.evidence "enumerated" in
-pub comp unnecessary_min_or_max {
+pub proc unnecessary_min_or_max(
+    max?,                -- `max`, rather than `min`
+    argument: Position,    -- the variant that is the argument
+    last: Position,      -- the last variant of its enumeration
+): (det fix: MinMaxFix) {
     use self::MinMaxFix::{Argument, Receiver, Unchanged}
-    in max?              -- `max`, rather than `min`
-    in argument: Position  -- the variant that is the argument
-    in last: Position    -- the last variant of its enumeration
 
     assume within: argument <= last
-    pub det out fix: MinMaxFix
 
     ensure rule: fix = (if argument = Position::V0 then (if max? then Receiver else Argument)
         else if argument = last then (if max? then Argument else Receiver) else Unchanged)
@@ -277,22 +281,30 @@ pub ordered enum Tier { Low, Mid, High }
 
 set_option fren.lint.unnecessary_min_or_max "allow" in
 set_option fren.evidence "enumerated" in
-pub comp min_or_max_written {
-    in x: Tier
-    pub det out max_first: Tier := x.max(Tier::Low)
-    pub det out min_first: Tier := x.min(Tier::Low)
-    pub det out min_last: Tier := x.min(Tier::High)
-    pub det out max_last: Tier := x.max(Tier::High)
+pub proc min_or_max_written(x: Tier): (
+    det max_first: Tier,
+    det min_first: Tier,
+    det min_last: Tier,
+    det max_last: Tier,
+) {
+    out max_first := x.max(Tier::Low)
+    out min_first := x.min(Tier::Low)
+    out min_last := x.min(Tier::High)
+    out max_last := x.max(Tier::High)
 }
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.evidence "enumerated" in
-pub comp min_or_max_fixed {
-    in x: Tier
-    pub det out max_first: Tier := x
-    pub det out min_first: Tier := Tier::Low
-    pub det out min_last: Tier := x
-    pub det out max_last: Tier := Tier::High
+pub proc min_or_max_fixed(x: Tier): (
+    det max_first: Tier,
+    det min_first: Tier,
+    det min_last: Tier,
+    det max_last: Tier,
+) {
+    out max_first := x
+    out min_first := Tier::Low
+    out min_last := x
+    out max_last := Tier::High
 }
 
 refine min_or_max_sound: min_or_max_fixed refines min_or_max_written

@@ -4,21 +4,12 @@ enum Mode { Heat, Cool, Off }
 
 struct Point { x: Int, y: Int }
 
-comp sub {
-    in x: Int
-    pub out p?
-
+proc sub(x: Int): (p?) {
     ensure r: p? iff x > 0
 }
 
-pub comp c {
-    in m: Mode
-    in x: Int
-    in a?
-    pub out y: Int
-    pub out z: Int
-    pub out q?
-    inst s: sub { x := x }
+pub proc c(m: Mode, x: Int, a?): (y: Int, z: Int, q?) {
+    call s := sub(x)
 
     ensure r1: y = if m = Mode::Heat then 1 else if m in {Mode::Cool, Mode::Off} then 2 else 0
     ensure r2: q? iff if m = Mode::Heat then a? else if m = Mode::Cool then (when x > 0, a?) else not a?

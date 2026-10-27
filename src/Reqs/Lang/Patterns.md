@@ -60,7 +60,7 @@ it is: a path of more than one segment, or one that is applied, names a
 variant. An identifier of one segment, not applied, is the literal `true`
 or `false`, a variant if it resolves to one in scope, as `V` does after
 `use E::*`, and a binder otherwise. A binder that shadows a name in scope is
-written with `!` (see [Shadowing](Components.md#shadowing)), and an
+written with `!` (see [Shadowing](Procedures.md#shadowing)), and an
 identifier with `!` is always a binder, even if, without it, it would name
 a variant; `true!` and `false!` are binders too, which, as declarations of
 `true` and `false`, are errors. So `MAX` in a pattern, where `MAX` is a constant, is an error
@@ -73,12 +73,11 @@ pub mod lang
 -- What an identifier of one segment, not applied, is in a pattern.
 pub enum PatternName { BoolLiteral, Variant, Binder }
 
-pub comp pattern_name {
-    in bool_word?            -- it is `true` or `false`
-    in bang?                 -- it ends in `!`
-    in variant?              -- without the `!`, it resolves to a variant in scope
-    pub det out reading: PatternName
-
+pub proc pattern_name(
+    bool_word?,              -- it is `true` or `false`
+    bang?,                   -- it ends in `!`
+    variant?,                -- without the `!`, it resolves to a variant in scope
+): (det reading: PatternName) {
     ensure rule: reading = if bool_word? and not bang? then PatternName::BoolLiteral
         else if variant? and not bang? then PatternName::Variant else PatternName::Binder
 
@@ -91,16 +90,17 @@ pub comp pattern_name {
 matches none, from its bounds:
 
 ```fren
-pub comp range_pattern {
-    in has_lower?            -- it has a lower bound
-    in lower: Int
-    in has_upper?            -- it has an upper bound
-    in upper: Int
-    in inclusive?            -- its upper bound is included: written `..=` rather than `..`
-    in value: Int            -- an integer it is tested against
-    pub det out matches?
-    pub det out empty?       -- it matches no integer
-
+pub proc range_pattern(
+    has_lower?,              -- it has a lower bound
+    lower: Int,
+    has_upper?,              -- it has an upper bound
+    upper: Int,
+    inclusive?,              -- its upper bound is included: written `..=` rather than `..`
+    value: Int,              -- an integer it is tested against
+): (
+    det matches?,
+    det empty?,              -- it matches no integer
+) {
     ensure matching: matches? iff ((not has_lower? or lower <= value)
         and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
     ensure empty: empty? iff (has_lower? and has_upper? and (if inclusive? then upper < lower else upper <= lower))
@@ -163,17 +163,16 @@ exactly when the matrix has no rows, and otherwise, by its head:
 -- The kinds of pattern, at the head of a vector or a row.
 pub enum HeadKind { Constructor, Wildcard, Or }
 
-pub comp usefulness {
-    in columns: Nat          -- the patterns of the vector
-    in rows: Nat             -- the rows of the matrix
-    in head: HeadKind        -- the vector's head, if it has patterns
-    in complete?             -- the heads of the rows are complete for the first column's type
-    in specialized?          -- for a constructor, the vector specialized by it is useful with respect to the matrix specialized by it
-    in some_specialized?     -- the same holds for the vector of wildcards and some constructor of the type
-    in default?              -- the rest of the vector is useful with respect to the default matrix
-    in some_alternative?     -- for an or-pattern, the vector with one of its alternatives as its head is useful
-    pub det out useful?
-
+pub proc usefulness(
+    columns: Nat,            -- the patterns of the vector
+    rows: Nat,               -- the rows of the matrix
+    head: HeadKind,          -- the vector's head, if it has patterns
+    complete?,               -- the heads of the rows are complete for the first column's type
+    specialized?,            -- for a constructor, the vector specialized by it is useful with respect to the matrix specialized by it
+    some_specialized?,       -- the same holds for the vector of wildcards and some constructor of the type
+    default?,                -- the rest of the vector is useful with respect to the default matrix
+    some_alternative?,       -- for an or-pattern, the vector with one of its alternatives as its head is useful
+): (det useful?) {
     ensure no_columns: when columns = 0, useful? iff rows = 0
     ensure constructor: when columns > 0 and head = HeadKind::Constructor, useful? iff specialized?
     ensure wildcard: when columns > 0 and head = HeadKind::Wildcard,
@@ -191,14 +190,15 @@ or literal, or a range that contains `c`), the arity of `c` and the number
 of the head's arguments:
 
 ```fren
-pub comp specialize {
-    in head: HeadKind        -- the row's head
-    in same?                 -- the head is the constructor
-    in arity: Nat            -- the arity of the constructor
-    in n_args: Nat           -- the head's arguments, for a variant
-    pub det out kept?        -- the row is in the specialized matrix
-    pub det out added: Nat   -- the patterns that replace the head in it
-
+pub proc specialize(
+    head: HeadKind,          -- the row's head
+    same?,                   -- the head is the constructor
+    arity: Nat,              -- the arity of the constructor
+    n_args: Nat,             -- the head's arguments, for a variant
+): (
+    det kept?,               -- the row is in the specialized matrix
+    det added: Nat,          -- the patterns that replace the head in it
+) {
     ensure wildcard: when head = HeadKind::Wildcard, kept? and added = arity
     ensure constructor: when head = HeadKind::Constructor, (kept? iff same?) and added = (if same? then n_args else 0)
     -- An or-pattern is split into rows before.
@@ -231,15 +231,14 @@ cannot be named after a built-in type, as for `lang::ValueType`.
 set_option fren.lint.enum_variant_names "allow" in
 pub enum ColumnType { EnumType, BoolType, IntType, StringType, OtherType }
 
-pub comp signature_complete {
-    in column: ColumnType
-    in n_variants: Nat       -- the variants of the enumeration
-    in n_named: Nat          -- those that a head names
-    in has_true?             -- a head is `true`
-    in has_false?            -- a head is `false`
-    in covers_integers?      -- the heads' literals and ranges together match every value: every integer, or every one at least 0 for a `Nat`
-    pub det out complete?
-
+pub proc signature_complete(
+    column: ColumnType,
+    n_variants: Nat,         -- the variants of the enumeration
+    n_named: Nat,            -- those that a head names
+    has_true?,               -- a head is `true`
+    has_false?,              -- a head is `false`
+    covers_integers?,        -- the heads' literals and ranges together match every value: every integer, or every one at least 0 for a `Nat`
+): (det complete?) {
     assume counted: n_variants > 0 and n_named <= n_variants
 
     ensure rule: complete? iff match column {
@@ -296,16 +295,15 @@ alone, one pair at a time, from their heads, as they decide usefulness:
 `lang::overlap` states this for two patterns, from their heads:
 
 ```fren
-pub comp overlap {
-    in first: HeadKind       -- the first pattern's head
-    in second: HeadKind      -- the second's
-    in same?                 -- for two constructors, they are the same
-    in args_overlap?         -- for two constructors, the patterns of each value of their payloads overlap
-    in first_matches?        -- the first pattern matches some value
-    in second_matches?       -- the second does
-    in some_alternative?     -- for an or-pattern, an alternative of one overlaps the other
-    pub det out overlap?
-
+pub proc overlap(
+    first: HeadKind,         -- the first pattern's head
+    second: HeadKind,        -- the second's
+    same?,                   -- for two constructors, they are the same
+    args_overlap?,           -- for two constructors, the patterns of each value of their payloads overlap
+    first_matches?,          -- the first pattern matches some value
+    second_matches?,         -- the second does
+    some_alternative?,       -- for an or-pattern, an alternative of one overlaps the other
+): (det overlap?) {
     ensure alternatives: when first = HeadKind::Or or second = HeadKind::Or, overlap? iff some_alternative?
     ensure wildcard_first: when first = HeadKind::Wildcard and second != HeadKind::Or, overlap? iff second_matches?
     ensure wildcard_second: when first = HeadKind::Constructor and second = HeadKind::Wildcard, overlap? iff first_matches?
@@ -352,14 +350,15 @@ fn matches?(p: SimplePattern, v: SimpleValue) := match p.shape {
     PatternShape::Variant => v.variant = p.variant and in_range?(p.payload, v.number),
 }
 
-pub comp pattern_overlap {
-    in first: SimplePattern
-    in second: SimplePattern
-    in nat?                  -- the integers are `Nat`s: the value's, or its payload's
-    in v: SimpleValue              -- any value
-    pub out overlap?
-    pub out witness: SimpleValue   -- a value that both match, where they overlap
-
+pub proc pattern_overlap(
+    first: SimplePattern,
+    second: SimplePattern,
+    nat?,                    -- the integers are `Nat`s: the value's, or its payload's
+    v: SimpleValue,                -- any value
+): (
+    overlap?,
+    witness: SimpleValue,          -- a value that both match, where they overlap
+) {
     -- Both are patterns of one type: of integers, or of an enumeration.
     assume typed: not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
         and not (first.shape = PatternShape::Variant and second.shape = PatternShape::Integers)

@@ -11,5 +11,5 @@ import Fren.View
 -- keep-sorted end
 open Fren.Lang
 
--- The requirements are in Lang/Instances.md, which is also a chapter of the manual.
-#fren_md "Lang/Instances.md"
+-- The requirements are in Lang/Calls.md, which is also a chapter of the manual.
+#fren_md "Lang/Calls.md"

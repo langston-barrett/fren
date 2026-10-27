@@ -1,0 +1,5 @@
+-- An `in` member of a procedure (F0159): the fix makes it a parameter.
+proc c(x: Int) {
+    in y: Int
+    ensure r: x = y
+}

@@ -56,13 +56,14 @@ suggests a literal:
 pub mod lint
 
 set_option fren.evidence "enumerated" in
-pub comp unicode_not_nfc {
-    in nfc?              -- the literal's value is in NFC
-    in assigned?         -- Unicode 15.0 assigns each of its code points
-    in escapes?          -- it is not raw, and has an escape sequence
-    pub det out fires?
-    pub det out suggested?  -- the message suggests the literal in NFC
-
+pub proc unicode_not_nfc(
+    nfc?,                -- the literal's value is in NFC
+    assigned?,           -- Unicode 15.0 assigns each of its code points
+    escapes?,            -- it is not raw, and has an escape sequence
+): (
+    det fires?,
+    det suggested?,         -- the message suggests the literal in NFC
+) {
     ensure rule: fires? iff (assigned? and not nfc?)
     ensure suggestion: suggested? iff (fires? and not escapes?)
 
@@ -86,22 +87,18 @@ core](../../Lang/Decidability.md#strings), so both opt out:
 ```fren
 set_option fren.lint.unicode_not_nfc "allow" in
 set_option fren.lint.undecidable "allow" in
-pub comp nfc_written {
-    in s: String
-
+pub proc nfc_written(s: String): (det cafe?) {
     assume composed: not s.contains?("e\u0301")
-    pub det out cafe? := s.replace_all("\u00e9", "e\u0301") = "café"
+    out cafe? := s.replace_all("\u00e9", "e\u0301") = "café"
 
     expect never_equal: s != "café"
 }
 
 set_option fren.lint.unicode_not_nfc "allow" in
 set_option fren.lint.undecidable "allow" in
-pub comp nfc_fixed {
-    in s: String
-
+pub proc nfc_fixed(s: String): (det cafe?) {
     assume composed: not s.contains?("e\u0301")
-    pub det out cafe? := s = "café"
+    out cafe? := s = "café"
 }
 
 refine nfc_sound: nfc_fixed refines nfc_written
@@ -111,23 +108,25 @@ refine nfc_complete: nfc_written refines nfc_fixed
 ## Trailing commas
 
 `unnecessary_trailing_comma` fires on a comma after the last element of a
-list, where no line ends between the comma and the `}` or `]` that closes
-the list, as in `{a, b,}` or `[a, b, ]`. A trailing comma is for a list
-whose `}` or `]` starts a line, as [`fren fmt`](../../Fmt.md#trailing-commas)
+list, where no line ends between the comma and the `}`, `]` or `)` that
+closes the list, as in `{a, b,}`, `[a, b, ]` or `p(a, b,)`. A trailing
+comma is for a list whose closing token starts a line, as [`fren fmt`](../../Fmt.md#trailing-commas)
 writes it, so that an element is added by adding a line; on the line of
-the `}` or `]`, it adds nothing. It is `pedantic`, as Clippy's lint of the
+its closing token, it adds nothing. It is `pedantic`, as Clippy's lint of the
 same name is. A line comment after the comma ends its line, as in `[a, b,
 -- c` with the `]` on the next line, which is left as it is.
 
 The lists that may end with a comma are those in braces, the elements of
-a set literal, the bindings of an instance or a refinement, the variants
+a set literal, the bindings of a refinement, the variants
 of an enumeration, the fields of a record, of a record literal or of a
 record update, the arms of a `match` and the paths of a `use ...::{}`,
-and those in brackets, the elements of a sequence literal. A list in
-parentheses, such as the arguments of an application or the parameters of
-a function, may not end with a comma, which is an error (`F0104`), and the
-files of a `tested` claim have no closing token. So a comma followed by a
-`}` or `]` is a trailing comma, and both front ends find it from the
+those in brackets, the elements of a sequence literal, and three in
+parentheses: the parameters and the results of a procedure and the
+arguments of a call. Any other list in parentheses, such as the arguments
+of an application or the parameters of a function, may not end with a
+comma, which is an error (`F0104`), and the files of a `tested` claim have
+no closing token. So a comma followed by a `}`, `]` or `)` is a trailing
+comma, and both front ends find it from the
 tokens: the binary from the tokens of the item, and Lean from those of the
 command.
 
@@ -142,28 +141,25 @@ that `fren fmt` removes what it reports in braces:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp unnecessary_trailing_comma {
-    in line_break?       -- a line ends between the trailing comma and the `}` or `]`
-    pub det out fires?
-
+pub proc unnecessary_trailing_comma(
+    line_break?,         -- a line ends between the trailing comma and the `}` or `]`
+): (det fires?) {
     ensure rule: fires? iff not line_break?
 }
 ```
 
-The refinements below check the fix of a sequence literal: a component as
+The refinements below check the fix of a sequence literal: a procedure as
 written, one as fixed, and a refinement each way. `fren fmt` would remove
 the comma of a list in braces, so only the sequence keeps it here:
 
 ```fren
 set_option fren.lint.unnecessary_trailing_comma "allow" in
-pub comp trailing_comma_written {
-    in x: Int
-    pub det out q: Seq<Int> := [x, 1,]
+pub proc trailing_comma_written(x: Int): (det q: Seq<Int>) {
+    out q := [x, 1,]
 }
 
-pub comp trailing_comma_fixed {
-    in x: Int
-    pub det out q: Seq<Int> := [x, 1]
+pub proc trailing_comma_fixed(x: Int): (det q: Seq<Int>) {
+    out q := [x, 1]
 }
 
 refine trailing_comma_sound: trailing_comma_fixed refines trailing_comma_written

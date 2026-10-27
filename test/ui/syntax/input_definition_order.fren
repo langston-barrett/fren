@@ -1,11 +1,14 @@
--- An input's definition is reported as it is parsed, before a dotted
--- pattern binder after it, in both front ends.
+-- A parameter's definition is reported as it is parsed, before a dotted
+-- pattern binder after it.
 
 pub enum S { A(Int), B }
 
-comp c {
-    in s: S
-    in a: Int := 3   --~ error: an input cannot have a definition
-    pub out z: Int
+proc c(
+    s: S,
+    a: Int := 3,
+    --~^[cli] error: an input cannot have a definition
+    --~^^[hosted] error:
+): (z: Int) {
     ensure r: z = match s { S::A(x.y) => a, _ => 1 }
 }
+--@ exit: 2

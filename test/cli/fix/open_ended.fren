@@ -4,33 +4,21 @@
 -- parentheses, so its last operand does not take what follows.
 enum E { A, B }
 
-comp c {
-    in d?
-    in p?
-    in q?
-    in r?
-    in s?
-    in t?
-    in e: E
-    in x: Int
-    in y: Int
-    in z: Int
-    in w: String
-    in v: String
-    pub out o1?
-    pub out o2?
-    pub out o3?
-    pub out o4?
-    pub out o5?
-    pub out o6?
-    pub out o7?
-    pub out o8?
-    pub out o9?
-    pub out o10?
-    pub out o11?
-    pub out o12?
-    pub out o13?
-
+proc c(d?, p?, q?, r?, s?, t?, e: E, x: Int, y: Int, z: Int, w: String, v: String): (
+    o1?,
+    o2?,
+    o3?,
+    o4?,
+    o5?,
+    o6?,
+    o7?,
+    o8?,
+    o9?,
+    o10?,
+    o11?,
+    o12?,
+    o13?,
+) {
     ensure collapsible: o1? iff (unless (p? or if q? then r? else s?), unless t?, d?)
     ensure bool_eq: o2? iff ((p? or if q? then r? else s?) = t?)
     ensure identity: o3? iff (if (x + if p? then 1 else 2) + 0 = y then q? else r?)

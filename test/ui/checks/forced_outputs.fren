@@ -3,24 +3,18 @@
 -- fren-covers: check::clash_notes
 
 -- Each guarantee forces `y`, to a different value: one note, at the first.
-comp pinned {   --~ error: no outputs satisfy `low` and `high`
-    in x: Int
-    pub out y: Int
+proc pinned(x: Int): (y: Int) {   --~ error: no outputs satisfy `low` and `high`
     ensure low: y = x      --~ info: `low` forces y = 0, but `high` forces y = 1
     ensure high: y = x + 1   --~ info: conflicts with `low`
 }
 
 -- A conflict of one guarantee: the rest of it is empty, and forces nothing.
-comp alone {   --~ error: no outputs satisfy `r`
-    in x: Int
-    pub out y: Int
+proc alone(x: Int): (y: Int) {   --~ error: no outputs satisfy `r`
     ensure r: x > 0 and y = x   --~ info: is false for this input
 }
 
 -- Neither guarantee forces `y`.
-comp loose {   --~ error: no outputs satisfy `up` and `down`
-    in x: Int
-    pub out y: Int
+proc loose(x: Int): (y: Int) {   --~ error: no outputs satisfy `up` and `down`
     ensure up: y > x   --~ info: conflicts with `down`
     ensure down: y < x   --~ info: conflicts with `up`
 }
@@ -29,10 +23,7 @@ comp loose {   --~ error: no outputs satisfy `up` and `down`
 -- interpretation, so no note.
 type Token
 
-comp abstract {   --~ error: no outputs satisfy `low` and `high`
-    in t: Token
-    in u: Token
-    pub out same?
+proc abstract(t: Token, u: Token): (same?) {   --~ error: no outputs satisfy `low` and `high`
     ensure low: same? iff t = u   --~ info: conflicts with `high`
     ensure high: same? iff t != u   --~ info: conflicts with `low`
 }
@@ -41,19 +32,15 @@ comp abstract {   --~ error: no outputs satisfy `low` and `high`
 -- `low` forces `y` whatever `weight` is.
 fn weight(Int): Int
 
-comp weighed {   --~ error: no outputs satisfy `low` and `high`
-    in x: Int
-    pub out y: Int
+proc weighed(x: Int): (y: Int) {   --~ error: no outputs satisfy `low` and `high`
     ensure low: y = 0 and weight(x) > 0   --~ info: conflicts with `high`
     ensure high: y = 1   --~ info: conflicts with `low`
 }
 
 -- A defined output is not an output that a note names: its definition
 -- stands for it. The output it is defined by is.
-comp defined {   --~ error: no outputs satisfy `low` and `high`
-    in x: Int
-    pub out y: Int
-    pub out z: Int := y + 1
+proc defined(x: Int): (y: Int, z: Int) {   --~ error: no outputs satisfy `low` and `high`
+    out z := y + 1
     ensure low: z = x + 1    --~ info: `low` forces y =
     ensure high: y = x + 1   --~ info: conflicts with `low`
 }

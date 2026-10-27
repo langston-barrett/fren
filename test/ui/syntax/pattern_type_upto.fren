@@ -1,6 +1,6 @@
 -- A range with `..` and no lower bound, in a pattern type, as in a
 -- pattern: Lean reads no more of the item after it.
-comp c { in n: Int is ..0 }
+proc c(n: Int is ..0) {}
 --~^[cli] error: a range with `..` needs a lower bound
 --~^^[hosted] error: unexpected token '..'; expected fren_bound
 --@ exit: 2

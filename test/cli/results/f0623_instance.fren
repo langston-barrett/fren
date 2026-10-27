@@ -1,9 +1,8 @@
 -- An instance's binding of an input of a pattern type (F0623).
 type Byte := Int is 0..=255
 
-comp sub { in b: Byte pub out y: Int ensure r: y = b }
+proc sub(b: Byte): (y: Int) { ensure r: y = b }
 
-comp c {
-    in x: Int
-    inst w: sub { b := x }
+proc c(x: Int) {
+    call w := sub(x)
 }

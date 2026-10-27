@@ -6,7 +6,7 @@ value in every behaviour, where it is specified, which is why `2 * x` is
 linear; the same expression has the same value wherever it is written,
 which is what a lint such as `eq_op` relies on. This chapter states that
 meaning once, as a model that the other chapters
-[instantiate](Instances.md) or [refine](Refinement.md), so that the rules
+[call](Calls.md) or [refine](Refinement.md), so that the rules
 are stated over it rather than over facts given as inputs.
 
 ```fren
@@ -47,13 +47,14 @@ the layer `Op("+", "")` with parts `x` and `f(y)`, and `f(y)` is the layer
   value `v` in one instance of the quantifier.
 - `Constant(c)` is a [constant](Items.md#constants), a variant without a
   payload, or another path of more than one segment.
-- `Variable(x)` is a variable of the component or of one of its
-  [instances](Instances.md#instance-variables), or a field read from one,
+- `Variable(x)` is a variable of the procedure or of one of its
+  [calls](Calls.md#call-variables), or a field read from one,
   as `x` or `w.x`, or the bound name of an [unbounded
   quantifier](Quantifiers.md#unbounded-quantifiers), which stands for
   every value of its type at once.
-- `Definition(x)` is a [defined output](Components.md#defined-outputs) or
-  a name of a [`let` or `where`](Let.md), whose one part is its
+- `Definition(x)` is a variable with a
+  [definition](Procedures.md#definitions), a result or a `let`
+  variable, or a name of a [`let` or `where`](Let.md), whose one part is its
   definition.
 - `Binder(b)` is a binder of a [`match` arm](Expressions.md#matches) or of
   a [pattern test](Expressions.md#pattern-tests), whose one part is its
@@ -114,7 +115,7 @@ pub enum Mention { Var(Id), Fn(Id) }
 
 ## Environments
 
-An `Env` is a behaviour together with an [interpretation](Components.md#interpretations)
+An `Env` is a behaviour together with an [interpretation](Procedures.md#interpretations)
 of the spec's abstract types and functions: everything that the spec
 does not fix, including the values of the bound names of unbounded
 quantifiers. It is read in three ways: `lookup(env, x)` is the value of
@@ -196,7 +197,13 @@ evaluated whenever the expression it is in is.
 -- The operands evaluated only under a condition.
 pub enum GuardedOperand { WhenBody, UnlessBody, ThenBranch, ElseBranch, AndRight, OrRight, ArmGuard, ArmBody }
 
-pub comp guard {
+pub proc guard(
+    operand: GuardedOperand,
+    condition: Value,          -- the condition's value
+): (
+    det holds?,
+    det evaluated?,          -- it is evaluated: its guard holds
+) {
     use self::GuardedOperand::{
         AndRight,
         ArmBody,
@@ -207,11 +214,8 @@ pub comp guard {
         UnlessBody,
         WhenBody,
     }
-    in operand: GuardedOperand
-    in condition: Value        -- the condition's value
 
-    pub det out holds? := condition = Value::B(true)
-    pub det out evaluated?   -- it is evaluated: its guard holds
+    out holds? := condition = Value::B(true)
 
     ensure rule: evaluated? iff match operand {
         WhenBody | ThenBranch | AndRight | ArmGuard | ArmBody => holds?,
@@ -404,36 +408,46 @@ pub fn mentioned_by(head: Head, parts_mentioned: Set<Mention>): Set<Mention> := 
 ```
 
 `lang::choice_arms` states which arms of a choice are open, which fires,
-and which of their guards and bodies are evaluated, with an instance of
+and which of their guards and bodies are evaluated, with a call of
 `guard` for each:
 
 ```fren
-pub comp choice_arms {
-    in head: Head
-    in values: Seq<Value>      -- the choice's parts' values
-
-    pub det out open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0)))
-    pub det out open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0)))
-    pub det out open2? := arm_open?(head, values, 2, arm_matches?(head, 2, part(values, 0)))
-    pub det out fired0? := fires_at?(values, open0?, open1?, open2?, 0)
-    pub det out fired1? := fires_at?(values, open0?, open1?, open2?, 1)
-    pub det out fired2? := fires_at?(values, open0?, open1?, open2?, 2)
+pub proc choice_arms(
+    head: Head,
+    values: Seq<Value>,        -- the choice's parts' values
+): (
+    det open0?,
+    det open1?,
+    det open2?,
+    det fired0?,
+    det fired1?,
+    det fired2?,
+    det specified?,
+    det stated: Set<Int>,
+    det unevaluated: Set<Int>,
+) {
+    out open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0)))
+    out open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0)))
+    out open2? := arm_open?(head, values, 2, arm_matches?(head, 2, part(values, 0)))
+    out fired0? := fires_at?(values, open0?, open1?, open2?, 0)
+    out fired1? := fires_at?(values, open0?, open1?, open2?, 1)
+    out fired2? := fires_at?(values, open0?, open1?, open2?, 2)
     -- Some arm fires, or, of a choice of more arms, the value the spec fixes is specified.
-    pub det out specified? := fired0? or fired1? or fired2? or (more_arms?(head, values) and fixed_specified?(head, values))
+    out specified? := fired0? or fired1? or fired2? or (more_arms?(head, values) and fixed_specified?(head, values))
     -- The first three arms' guards and bodies that are not evaluated, and
     -- those of every arm.
-    pub det out stated: Set<Int> := unevaluated_arm(0, guard0.evaluated?, body0.evaluated?)
+    out stated := unevaluated_arm(0, guard0.evaluated?, body0.evaluated?)
         union unevaluated_arm(1, guard1.evaluated?, body1.evaluated?)
         union unevaluated_arm(2, guard2.evaluated?, body2.evaluated?)
-    pub det out unevaluated: Set<Int> := stated
+    out unevaluated := stated
         union (if more_arms?(head, values) then later_unevaluated(head, values) minus {0, 1, 2, 3, 4, 5, 6} else {})
 
-    inst guard0: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open0?) }
-    inst body0: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired0?) }
-    inst guard1: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open1? and not fired0?) }
-    inst body1: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired1?) }
-    inst guard2: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open2? and not fired0? and not fired1?) }
-    inst body2: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired2?) }
+    call guard0 := guard(GuardedOperand::ArmGuard, Value::B(open0?))
+    call body0 := guard(GuardedOperand::ArmBody, Value::B(fired0?))
+    call guard1 := guard(GuardedOperand::ArmGuard, Value::B(open1? and not fired0?))
+    call body1 := guard(GuardedOperand::ArmBody, Value::B(fired1?))
+    call guard2 := guard(GuardedOperand::ArmGuard, Value::B(open2? and not fired0? and not fired1?))
+    call body2 := guard(GuardedOperand::ArmBody, Value::B(fired2?))
 
     -- At most one arm fires, and the first three arms are evaluated alike,
     -- whatever arms come after them.
@@ -467,37 +481,46 @@ is mentioned, as if written there, and not at all where it is never
 mentioned:
 
 ```fren
-pub comp node {
+pub proc node(
+    head: Head,
+    env: Env,
+    values: Seq<Value>,                -- its parts' values, in order
+    parts_mentioned: Set<Mention>,    -- what its parts mention, together
+    undefined_parts: Set<Int>,       -- the positions of its parts that are not defined
+): (
+    det value: Value,
+    det mentioned: Set<Mention>,
+    det mentions?,
+    det read: Value,
+    det specified?,
+    det unevaluated: Set<Int>,
+    det defined?,
+) {
     use self::Head::{Bound, Constant, Construction, Definition, Literal, Op, Uninterpreted, Variable}
-    in head: Head
-    in env: Env
-    in values: Seq<Value>              -- its parts' values, in order
-    in parts_mentioned: Set<Mention>  -- what its parts mention, together
-    in undefined_parts: Set<Int>     -- the positions of its parts that are not defined
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out value: Value := step(head, env, values)
-    pub det out mentioned: Set<Mention> := mentioned_by(head, parts_mentioned)
-    pub det out mentions? := mentioned != {}
-    pub det out read: Value := match head {
+    out value := step(head, env, values)
+    out mentioned := mentioned_by(head, parts_mentioned)
+    out mentions? := mentioned != {}
+    out read := match head {
         Variable(x) => lookup(env, x),
         Uninterpreted(f) => meaning(env, f, values),
         _ => Value::Nil,
     }
-    pub det out specified? := match head {
+    out specified? := match head {
         Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _) | Uninterpreted(_) => true,
         Op(o, _) => if choice?(o) then arms.specified? else total?(o) or fixed_specified?(head, values),
         _ => fixed_specified?(head, values),
     }
-    pub det out unevaluated: Set<Int> := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
+    out unevaluated := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
         union (if operator(head) = "if" and not third.evaluated? then {2} else {})
         union (if choice?(operator(head)) then arms.unevaluated else {})
-    pub det out defined? := specified? and undefined_parts subset unevaluated
+    out defined? := specified? and undefined_parts subset unevaluated
 
-    inst second: guard { operand := second_guard(operator(head)), condition := part(values, 0) }
-    inst third: guard { operand := GuardedOperand::ElseBranch, condition := part(values, 0) }
-    inst arms: choice_arms { head, values }
+    call second := guard(second_guard(operator(head)), part(values, 0))
+    call third := guard(GuardedOperand::ElseBranch, part(values, 0))
+    call arms := choice_arms(head, values)
 
     -- What a part mentions, the whole does, and so does a layer's own name.
     expect parts_kept: parts_mentioned subset mentioned

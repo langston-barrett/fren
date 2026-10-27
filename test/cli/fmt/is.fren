@@ -2,9 +2,7 @@
 -- `fren fmt` spaces `is` as a comparison, and the `|` of its pattern as in
 -- an arm, and lines up the alternatives written one per line.
 enum Shape { Circle(Int), Rect(Int, Int), Empty }
-comp c {
-in s: Shape
-  pub out o?
+proc c(s: Shape): (o?) {
   ensure r :o? iff s is   Shape::Circle(_)|Shape::Rect(_,_)
   ensure l: o? iff s is
   | Shape::Circle(_)

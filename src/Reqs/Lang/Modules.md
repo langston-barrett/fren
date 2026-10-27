@@ -44,31 +44,29 @@ A module's scope consists of the items declared in it and the names it
 imports. It does not include the scope of its parent, so a module that
 uses a name declared elsewhere must import it, even if its parent did.
 
-### `use` in a component
+### `use` in a procedure
 
-A `use` declaration can also be a member of a component. It brings its names into
-scope for that component's members, wherever they are written in it, and
-nowhere else:
+A `use` declaration can also be a member of a procedure. It brings its
+names into scope for that procedure's members, wherever they are written
+in its block, and in its signature's types, and nowhere else:
 
 ```text
-comp methods {
+proc methods(method: Method): (arity: Int) {
     use self::Method::*
-    in method: Method
-    pub out arity: Int
     ensure rule: arity = match method { Len | Card => 0, _ => 1 }
 }
 ```
 
-A component's imports shadow its module's scope. This is a rule of
+A procedure's imports shadow its module's scope. This is a rule of
 resolution, between two scopes, and takes no `!`, unlike a declaration that
-[shadows](Components.md#shadowing) a name. The first segment of a
-path in the component is resolved as in [Resolution](#resolution), first
-among the component's imports alone, and only if it is unbound there,
-in its module's scope. So a component can import `ValueType::BoolTy` even
+[shadows](Procedures.md#shadowing) a name. The first segment of a
+path in the procedure is resolved as in [Resolution](#resolution), first
+among the procedure's imports alone, and only if it is unbound there,
+in its module's scope. So a procedure can import `ValueType::BoolTy` even
 though its module imports another `BoolTy`, or declares one. The names
-that a component imports by name are distinct, as a module's are. The
-component's imports follow the same rules as a module's: a path starts
-from the root module or from `self`, which stands for the component's
+that a procedure imports by name are distinct, as a module's are. The
+procedure's imports follow the same rules as a module's: a path starts
+from the root module or from `self`, which stands for the procedure's
 module, and the [lints](../Lint/Unused.md#unused-imports) on imports apply to them.
 
 ## Visibility
@@ -89,15 +87,14 @@ pub type ModuleName
 
 pub fn descends?(ModuleName, ModuleName)
 
-pub comp item_visible {
-    in is_pub?
-    in owner: ModuleName  -- the module that declares the item
-    in here: ModuleName   -- the module where the path is written
-    in middle: ModuleName  -- any module, for `transitive`
-
+pub proc item_visible(
+    is_pub?,
+    owner: ModuleName,    -- the module that declares the item
+    here: ModuleName,     -- the module where the path is written
+    middle: ModuleName,    -- any module, for `transitive`
+): (visible?) {
     -- A submodule of a submodule is a submodule.
     assume transitive: when descends?(here, middle) and descends?(middle, owner), descends?(here, owner)
-    pub out visible?
 
     ensure rule: visible? iff (is_pub? or here = owner or descends?(here, owner))
 
@@ -124,8 +121,9 @@ absolute: its first segment is looked up in the current module's scope. So
 to write `Mode` in a module other than the one that declares it, first
 `use climate::Mode`.
 
-Within a component, a path whose first segment names one of the component's
-variables or instances refers to it, and likewise within a [global
+Within a procedure, a path whose first segment names one of the
+procedure's parameters, results, variables or calls refers to it, and
+likewise within a [global
 expectation](Global.md), for its binders. Otherwise, the first segment
 resolves as follows:
 
@@ -147,11 +145,10 @@ pub enum Resolution { Local, Glob, Ambiguous, Unbound }
 
 use self::Resolution::{Ambiguous, Glob, Local, Unbound}
 
-pub comp resolve {
-    in local?
-    in n_glob: Nat       -- distinct items of this name opened by `use ...::*`
-    pub out result: Resolution
-
+pub proc resolve(
+    local?,
+    n_glob: Nat,         -- distinct items of this name opened by `use ...::*`
+): (result: Resolution) {
     ensure local_wins: when local?, result = Local
     ensure glob: unless local?, when n_glob = 1, result = Glob
     ensure ambiguous: unless local?, when n_glob > 1, result = Ambiguous
@@ -170,7 +167,7 @@ path. Nothing else has members. In particular, a
 variant brought into scope by `use E::*` has no members.
 
 `Kind` classifies what a segment resolves to when it is an item: `Other`
-covers records, abstract types, functions, constants, components, global
+covers records, abstract types, functions, constants, procedures, global
 expectations, and variants imported by name.
 
 ```fren
@@ -184,12 +181,11 @@ the previous segment resolved to.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp member {
-    in parent: Kind      -- what the previous segment resolved to
-    in found?            -- it has a member of this name
-    in visible?          -- for a module: that member is visible from here (`item_visible`)
-    pub out accepted?
-
+pub proc member(
+    parent: Kind,        -- what the previous segment resolved to
+    found?,              -- it has a member of this name
+    visible?,            -- for a module: that member is visible from here (`item_visible`)
+): (accepted?) {
     ensure rule: accepted? iff (found? and (if parent = Module then visible? else parent = Enum))
 
     expect only_modules_hide: when parent = Enum and found?, accepted?
@@ -200,19 +196,18 @@ pub comp member {
 `modules::two_segments` puts the two rules together for a path `a::b`.
 
 ```fren
-pub comp two_segments {
-    in a_local?             -- `a` is declared in, or imported by name into, this module
-    in a_globs: Nat         -- distinct variants named `a` opened by `use ...::*`
-    in a_kind: Kind         -- what `a` is, when it is declared or imported by name
-    in b_found?             -- `a` has a member named `b`
-    in b_pub?               -- that member is `pub`
-    in b_owner: ModuleName  -- the module declaring `b`: `a`, if `a` is a module
-    in here: ModuleName     -- the module where the path is written
-    pub out accepted?
-
-    inst first: resolve { local? := a_local?, n_glob := a_globs }
-    inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
-    inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
+pub proc two_segments(
+    a_local?,               -- `a` is declared in, or imported by name into, this module
+    a_globs: Nat,           -- distinct variants named `a` opened by `use ...::*`
+    a_kind: Kind,           -- what `a` is, when it is declared or imported by name
+    b_found?,               -- `a` has a member named `b`
+    b_pub?,                 -- that member is `pub`
+    b_owner: ModuleName,    -- the module declaring `b`: `a`, if `a` is a module
+    here: ModuleName,       -- the module where the path is written
+): (accepted?) {
+    call first := resolve(a_local?, a_globs)
+    call seen := item_visible(b_pub?, b_owner, here, here)
+    call second := member(a_kind, b_found?, seen.visible?)
 
     ensure rule: accepted? iff (first.result = Local and second.accepted?)
 

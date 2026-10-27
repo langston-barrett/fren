@@ -16,25 +16,18 @@ fn cost(m: Mode): Nat := match m { Mode::Off => 0, Mode::Heat => 2, Mode::Cool =
 -- A function's body.
 fn some_costly?(limit: Nat) := exists (m: Mode), cost(m) > limit
 
-comp sub {
-    in ok?
-    pub out same?
-
+proc sub(ok?): (same?) {
     ensure r: same? iff ok?
 }
 
-comp places {
-    in mode: Mode
-    in limit: Nat
-
+proc places(mode: Mode, limit: Nat): (free?, costly?, all_cheap?) {
     assume affordable: exists (m: Mode), m = mode and cost(m) <= limit
-    pub out free?
-    pub out costly? := some_costly?(limit)
+    out costly? := some_costly?(limit)
     -- A defined output.
-    pub out all_cheap? := forall (m: Mode), cost(m) <= limit
+    out all_cheap? := forall (m: Mode), cost(m) <= limit
 
     -- An instance's binding.
-    inst w: sub { ok? := (exists (m: Mode), m = mode) }
+    call w := sub((exists (m: Mode), m = mode))
     ensure r: free? iff (forall (m: Mode), when m = mode, cost(m) = 0)
 
     -- A `Nat` function applied to a bound name.
