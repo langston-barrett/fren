@@ -28,6 +28,22 @@ pub fn clamp(o: Opt<Int>): Int := match o {
 -- A literal within a pattern test: `if`s, as the solver's.
 pub fn is_zero?(o: Opt<Int>) := o is Opt::Some(0)
 
+-- An `impl`'s check unfolds a defined function to the solver's form, which
+-- lean-smt translates, not to its Lean `match`.
+pub enum O { N, S(Int) }
+
+pub fn get_or(o: O, d: Int): Int := match o { O::S(x) => x, O::N => d }
+
+pub proc p(o: O, d: Int): (det y: Int) {
+    out y := get_or(o, d)
+}
+
+impl p_meets: p for (o : lean_match.O) (d : Int) {
+  o := o,
+  d := d,
+  y := if o = .N then d else lean_match.O.S.x0 o,
+}
+
 /--
 info: @[reducible] def Fren.Generated.lean_match.first_or : (T : Type) →
   [#inhabited : Inhabited T] → lean_match.Opt T → lean_match.Opt T → T → T :=
@@ -50,6 +66,6 @@ fun T [Inhabited T] a b d =>
 example (x : Int) : lean_match.first_or Int (.Some x) .None 0 = x := by simp [lean_match.first_or]
 example : lean_match.clamp (.Some 12) = 10 := by decide
 
-/-- info: fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant -/
+/-- info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in
 #fren_check
