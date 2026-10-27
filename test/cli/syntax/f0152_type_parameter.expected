@@ -1,0 +1,12 @@
+error[F0152]: a type parameter is a name
+ --> test/cli/syntax/f0152_type_parameter.fren:2:14
+  |
+2 | pub fn first(Set(T))(x: Int): Int := x
+  |              ^^^ not a name
+  |
+  = note: a generic function's type parameters are names, written in parentheses before its parameters, as in `fn f(T)(x: T): T`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0152`.
+exit=2

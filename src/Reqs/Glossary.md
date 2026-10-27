@@ -86,6 +86,11 @@ e`, has the value of its body `e`. Of an uninterpreted function, the spec
 says only its type. The cardinality operators are built-in functions. See
 [Items](Lang/Items.md#functions).
 
+**Generic function.** A defined function with type parameters, as
+`fn id(T)(x: T): T := x`, whose type arguments are inferred at each
+application, where it is unfolded at that instance. See [Generic
+functions](Lang/GenericFunctions.md).
+
 **Generic type.** An enumeration or record with type parameters, as
 `enum Option(T) { None, Some(T) }`, which is a type once given a type
 argument for each parameter, as in `Option(Int)`. See [Generic

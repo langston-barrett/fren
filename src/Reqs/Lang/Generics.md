@@ -455,20 +455,20 @@ parameters and whose synthesizing parts are those given an argument:
 ```fren
 -- A construction's value: `Gives(p)` if its declared type mentions `p` and it
 -- synthesizes its type, `Waits(p)` if it mentions `p` and does not.
-pub enum Value { Gives(Arg), Waits(Arg) }
+pub enum ArgMode { Gives(Arg), Waits(Arg) }
 
 set_option fren.lint.undecidable "allow" in
 pub comp construction_synthesis {
     use self::Arg::{P0, P1, P2}
     in params: Nat           -- how many type parameters the generic type has: `P0`, `P1`, ...
-    in values: Seq(Value)    -- the construction's values, in order
+    in values: Seq(ArgMode)    -- the construction's values, in order
     pub det out synthesizes?
 
-    ensure rule: synthesizes? iff (params <= 3 and (params < 1 or Value::Gives(P0) in values)
-        and (params < 2 or Value::Gives(P1) in values)
-        and (params < 3 or Value::Gives(P2) in values))
+    ensure rule: synthesizes? iff (params <= 3 and (params < 1 or ArgMode::Gives(P0) in values)
+        and (params < 2 or ArgMode::Gives(P1) in values)
+        and (params < 3 or ArgMode::Gives(P2) in values))
 
-    expect waiting: when params = 1 and not Value::Gives(P0) in values, not synthesizes?
+    expect waiting: when params = 1 and not ArgMode::Gives(P0) in values, not synthesizes?
     expect plain: when params = 0, synthesizes?
 }
 
@@ -476,9 +476,9 @@ set_option fren.lint.undecidable "allow" in
 refine construction_shape: construction_synthesis refines synthesizes {
     shape := Shape::Construction,
     parts := params,
-    synthesizing := (if params >= 1 and Value::Gives(Arg::P0) in values then 1 else 0)
-        + (if params >= 2 and Value::Gives(Arg::P1) in values then 1 else 0)
-        + (if params >= 3 and Value::Gives(Arg::P2) in values then 1 else 0),
+    synthesizing := (if params >= 1 and ArgMode::Gives(Arg::P0) in values then 1 else 0)
+        + (if params >= 2 and ArgMode::Gives(Arg::P1) in values then 1 else 0)
+        + (if params >= 3 and ArgMode::Gives(Arg::P2) in values then 1 else 0),
 }
 ```
 
@@ -497,7 +497,7 @@ it, and otherwise the construction's type arguments are reported unknown
 (`F0386`).
 
 `lang::construction_order` states this over a construction's values,
-`lang::Value`s as for `lang::construction_synthesis`, each of whose
+`lang::ArgMode`s as for `lang::construction_synthesis`, each of whose
 declared type mentions one of the generic type's parameters or none, with
 the order in which they are elaborated, by their positions, which type
 parameters end with an argument, and whether the arguments are reported
@@ -517,24 +517,24 @@ pub fn within?(a: Arg, params: Nat) := match a {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub fn waits?(values: Seq(Value), expected?, j: Int) := not expected? and 0 <= j < values.len
+pub fn waits?(values: Seq(ArgMode), expected?, j: Int) := not expected? and 0 <= j < values.len
     and match values[j] {
-    Value::Waits(a) => a != Arg::Other and not Value::Gives(a) in values.slice(0, j),
-    Value::Gives(_) => false,
+    ArgMode::Waits(a) => a != Arg::Other and not ArgMode::Gives(a) in values.slice(0, j),
+    ArgMode::Gives(_) => false,
 }
 
 -- Value `j`'s position, if it is among the values and waits, or does not,
 -- as `waiting?` says.
 set_option fren.lint.undecidable "allow" in
-pub fn position_if(values: Seq(Value), expected?, waiting?, j: Int): Seq(Int) :=
+pub fn position_if(values: Seq(ArgMode), expected?, waiting?, j: Int): Seq(Int) :=
     if 0 <= j < values.len and waits?(values, expected?, j) = waiting? then [j] else []
 
 set_option fren.lint.undecidable "allow" in
 pub comp construction_order {
     use self::Arg::{P0, P1, P2}
-    use self::Value::{Gives, Waits}
+    use self::ArgMode::{Gives, Waits}
     in params: Nat                 -- how many type parameters the generic type has: `P0`, `P1`, ...
-    in values: Seq(Value)          -- the construction's values, in order
+    in values: Seq(ArgMode)          -- the construction's values, in order
     in expected?                   -- an instance of the construction's type is expected of it
     -- The values' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.

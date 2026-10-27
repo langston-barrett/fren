@@ -330,7 +330,10 @@ note: conflicts with `transient` and `honor_server`
 A counterexample, or a witness, gives the values of the variables that
 the check's [query](Check.md) mentions, those that occur in one of its
 formulas, and of no others: a variable that none mentions could have any
-value, so showing one would say nothing. That a `Nat` variable is at least
+value, so showing one would say nothing. A formula mentions what it does
+once the defined functions and clauses that it applies are unfolded and its
+`let`s substituted, so an argument that a function's body does not read is
+not mentioned by being given to it. That a `Nat` variable is at least
 0 is one of the formulas (see [Natural numbers](Lang/Types.md#natural-numbers)),
 so a `Nat` is shown even when nothing else mentions it. In
 

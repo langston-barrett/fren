@@ -1,0 +1,13 @@
+error[F0400]: cannot infer the type arguments of `is_none?`
+ --> test/cli/types/f0400_cannot_infer_call.fren:7:40
+  |
+7 | comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
+  |                                        ^^^^^^^^^^^^^^^^^^^^^^ which instance of `is_none?`?
+  |
+  = note: `is_none?` is generic, and neither what is expected here nor its arguments say what its type arguments are
+  = help: write it where its result's type is expected, as where it is compared with a variable, or give it a type with `let`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0400`.
+exit=2

@@ -412,8 +412,11 @@ syntax fren_param := fren_type (" : " fren_type)?
 syntax fren_clause := (&"assume " <|> &"ensure ") frenIdent " : " fren_expr (fren_where)?
 
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
-defined one, either followed by its contract's clauses. -/
-scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
+defined one, either followed by its contract's clauses. With type
+parameters, `fn f(A, B)(x: A): B := e` (`Reqs/Lang/GenericFunctions`): a
+second `(` tells them apart from the parameters. -/
+scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent (atomic(noWs fren_type_params noWs lookahead("(")))?
+  noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
   (" := " fren_expr (fren_where)?)? fren_clause* : command
 
 /-- `const N: T := e`. -/

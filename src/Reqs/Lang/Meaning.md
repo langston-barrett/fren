@@ -15,7 +15,7 @@ pub mod lang
 
 ## Values
 
-`lang::Val` is the value of an expression, of any type: a `Bool`, an
+`lang::Value` is the value of an expression, of any type: a `Bool`, an
 `Int` (a `Nat` too), a `String`, a list, or a value of an enumeration,
 record or newtype, by its variant, record or newtype and its payload's or
 fields' values as a list, a record's in the order the record declares its
@@ -31,7 +31,7 @@ hold them:
 ```fren
 pub type Id := String
 
-pub enum Val { B(Bool), I(Int), S(String), Nil, Cons(Val, Val), C(Id, Val) }
+pub enum Value { B(Bool), I(Int), S(String), Nil, Cons(Value, Value), C(Id, Value) }
 ```
 
 ## Layers
@@ -91,8 +91,8 @@ states quantifiers.
 
 ```fren
 pub enum Head {
-    Literal(Val),
-    Bound(Val),
+    Literal(Value),
+    Bound(Value),
     Constant(Id),
     Variable(Id),
     Definition(Id),
@@ -150,16 +150,16 @@ language's.
 ```fren
 pub type Env
 
-pub fn lookup(Env, Id): Val
-pub fn meaning(Env, Id, Seq(Val)): Val
-pub fn unspecified(Env, Head, Seq(Val)): Val
+pub fn lookup(Env, Id): Value
+pub fn meaning(Env, Id, Seq(Value)): Value
+pub fn unspecified(Env, Head, Seq(Value)): Value
 
-pub fn fixed_value(Head, Seq(Val)): Val
-pub fn fixed_specified?(Head, Seq(Val))
+pub fn fixed_value(Head, Seq(Value)): Value
+pub fn fixed_specified?(Head, Seq(Value))
 
 -- The value of the variant, record or newtype `c` built from its parts'
 -- values: `C(c, l)`, with `l` the list of them.
-pub fn construct(Id, Seq(Val)): Val
+pub fn construct(Id, Seq(Value)): Value
 ```
 
 ## Guards
@@ -194,9 +194,9 @@ pub comp guard {
         WhenBody,
     }
     in operand: GuardedOperand
-    in condition: Val        -- the condition's value
+    in condition: Value        -- the condition's value
 
-    pub det out holds? := condition = Val::B(true)
+    pub det out holds? := condition = Value::B(true)
     pub det out evaluated?   -- it is evaluated: its guard holds
 
     ensure rule: evaluated? iff match operand {
@@ -222,7 +222,7 @@ and so on.
 
 ```fren
 -- The value of the part at position `k`, and `Nil` where there is none.
-pub fn part(values: Seq(Val), k: Int): Val := if 0 <= k < values.len then values[k] else Val::Nil
+pub fn part(values: Seq(Value), k: Int): Value := if 0 <= k < values.len then values[k] else Value::Nil
 
 -- The operator of a layer, and `""` for a layer that is not an operator.
 pub fn operator(head: Head): Id := match head {
@@ -244,12 +244,12 @@ pub fn second_guard(o: Id): GuardedOperand := if o = "or" then GuardedOperand::O
     else GuardedOperand::AndRight
 
 -- The value of the connective `o` at its parts' values.
-pub fn connective_value(o: Id, values: Seq(Val)): Val := let c? := part(values, 0) = Val::B(true),
+pub fn connective_value(o: Id, values: Seq(Value)): Value := let c? := part(values, 0) = Value::B(true),
     second := part(values, 1)
-    in if o = "and" then (if c? then second else Val::B(false))
-    else if o = "or" then (if c? then Val::B(true) else second)
-    else if o = "when" then (if c? then second else Val::B(true))
-    else if o = "unless" then (if c? then Val::B(true) else second)
+    in if o = "and" then (if c? then second else Value::B(false))
+    else if o = "or" then (if c? then Value::B(true) else second)
+    else if o = "when" then (if c? then second else Value::B(true))
+    else if o = "unless" then (if c? then Value::B(true) else second)
     else if c? then second
     else part(values, 2)
 ```
@@ -295,36 +295,36 @@ pub fn guard_at(i: Int): Int := 1 + 2 * i
 
 -- Arm `i`'s guard's and body's values, and whether it exists, for the
 -- arms that the model states.
-pub fn arm_guard(values: Seq(Val), i: Int): Val := part(values, guard_at(i))
+pub fn arm_guard(values: Seq(Value), i: Int): Value := part(values, guard_at(i))
 
-pub fn arm_body(values: Seq(Val), i: Int): Val := part(values, guard_at(i) + 1)
+pub fn arm_body(values: Seq(Value), i: Int): Value := part(values, guard_at(i) + 1)
 
-pub fn arm_present?(values: Seq(Val), i: Int) := guard_at(i) + 1 < values.len
+pub fn arm_present?(values: Seq(Value), i: Int) := guard_at(i) + 1 < values.len
 
 -- The arms that the model states, and the positions of their parts.
 pub type ArmIndex := Int is 0..=2
 
 pub type PartAt := Int is 0..=6
 
-pub fn arm_matches?(Head, Int, Val)
+pub fn arm_matches?(Head, Int, Value)
 
 -- Arm `i` exists and is open: its pattern matches the scrutinee's value,
 -- as `matched?` says.
-pub fn arm_open?(head: Head, values: Seq(Val), i: Int, matched?) := choice?(operator(head)) and arm_present?(values, i)
+pub fn arm_open?(head: Head, values: Seq(Value), i: Int, matched?) := choice?(operator(head)) and arm_present?(values, i)
     and (operator(head) = "table" or matched?)
 
 -- Arm `i` fires, from whether each of the first three arms is open: it is
 -- open, its guard holds, and no earlier arm fires.
-pub fn fires_at?(values: Seq(Val), open0?, open1?, open2?, i: Int) := let holds0? := open0? and arm_guard(values, 0) = Val::B(true),
-    holds1? := open1? and arm_guard(values, 1) = Val::B(true),
-    holds2? := open2? and arm_guard(values, 2) = Val::B(true)
+pub fn fires_at?(values: Seq(Value), open0?, open1?, open2?, i: Int) := let holds0? := open0? and arm_guard(values, 0) = Value::B(true),
+    holds1? := open1? and arm_guard(values, 1) = Value::B(true),
+    holds2? := open2? and arm_guard(values, 2) = Value::B(true)
     in if i = 0 then holds0? else if i = 1 then not holds0? and holds1? else not holds0? and not holds1? and holds2?
 
 -- The choice has an arm after the third, and the positions of the guards
 -- and bodies of those arms that it does not evaluate.
-pub fn more_arms?(head: Head, values: Seq(Val)) := choice?(operator(head)) and values.len > 7
+pub fn more_arms?(head: Head, values: Seq(Value)) := choice?(operator(head)) and values.len > 7
 
-pub fn later_unevaluated(Head, Seq(Val)): Set(Int)
+pub fn later_unevaluated(Head, Seq(Value)): Set(Int)
 
 -- The positions of arm `i`'s guard and body that are not evaluated.
 pub fn unevaluated_arm(i: Int, guard?, body?): Set(Int) :=
@@ -348,7 +348,7 @@ defined function applies no uninterpreted function (see [Defined
 functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
-pub fn step(head: Head, env: Env, values: Seq(Val)): Val
+pub fn step(head: Head, env: Env, values: Seq(Value)): Value
     ensure layer: step(head, env, values) = match head {
     Head::Literal(v) => v,
     Head::Bound(v) => v,
@@ -395,7 +395,7 @@ and which of their guards and bodies are evaluated, with an instance of
 ```fren
 pub comp choice_arms {
     in head: Head
-    in values: Seq(Val)      -- the choice's parts' values
+    in values: Seq(Value)      -- the choice's parts' values
 
     pub det out open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0)))
     pub det out open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0)))
@@ -413,12 +413,12 @@ pub comp choice_arms {
     pub det out unevaluated: Set(Int) := stated
         union (if more_arms?(head, values) then later_unevaluated(head, values) minus {0, 1, 2, 3, 4, 5, 6} else {})
 
-    inst guard0: guard { operand := GuardedOperand::ArmGuard, condition := Val::B(open0?) }
-    inst body0: guard { operand := GuardedOperand::ArmBody, condition := Val::B(fired0?) }
-    inst guard1: guard { operand := GuardedOperand::ArmGuard, condition := Val::B(open1? and not fired0?) }
-    inst body1: guard { operand := GuardedOperand::ArmBody, condition := Val::B(fired1?) }
-    inst guard2: guard { operand := GuardedOperand::ArmGuard, condition := Val::B(open2? and not fired0? and not fired1?) }
-    inst body2: guard { operand := GuardedOperand::ArmBody, condition := Val::B(fired2?) }
+    inst guard0: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open0?) }
+    inst body0: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired0?) }
+    inst guard1: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open1? and not fired0?) }
+    inst body1: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired1?) }
+    inst guard2: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open2? and not fired0? and not fired1?) }
+    inst body2: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired2?) }
 
     -- At most one arm fires, and the first three arms are evaluated alike,
     -- whatever arms come after them.
@@ -456,19 +456,19 @@ pub comp node {
     use self::Head::{Bound, Constant, Construction, Definition, Literal, Op, Uninterpreted, Variable}
     in head: Head
     in env: Env
-    in values: Seq(Val)              -- its parts' values, in order
+    in values: Seq(Value)              -- its parts' values, in order
     in parts_mentioned: Set(Mention)  -- what its parts mention, together
     in undefined_parts: Set(Int)     -- the positions of its parts that are not defined
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out value: Val := step(head, env, values)
+    pub det out value: Value := step(head, env, values)
     pub det out mentioned: Set(Mention) := mentioned_by(head, parts_mentioned)
     pub det out mentions? := mentioned != {}
-    pub det out read: Val := match head {
+    pub det out read: Value := match head {
         Variable(x) => lookup(env, x),
         Uninterpreted(f) => meaning(env, f, values),
-        _ => Val::Nil,
+        _ => Value::Nil,
     }
     pub det out specified? := match head {
         Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _) | Uninterpreted(_) => true,
@@ -503,7 +503,7 @@ pub comp node {
     expect all_evaluated: unless connective?(operator(head)) or choice?(operator(head)), unevaluated = {}
     -- Of a conditional, exactly one branch is evaluated.
     expect branches: when operator(head) = "if",
-        (1 in unevaluated iff part(values, 0) != Val::B(true)) and (2 in unevaluated iff part(values, 0) = Val::B(true))
+        (1 in unevaluated iff part(values, 0) != Value::B(true)) and (2 in unevaluated iff part(values, 0) = Value::B(true))
     -- Of a choice of at most three arms: the body of the arm that fires is
     -- evaluated, and no other body; an arm whose pattern does not match is not
     -- evaluated; an open arm's guard is evaluated where no earlier arm fires,

@@ -1,0 +1,50 @@
+-- Static rules for generic functions (`Reqs/Lang/GenericFunctions`), in
+-- both front ends. In a module, since Lean has an `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_functions_static
+
+pub enum Option(T) { None, Some(T) }
+
+fn id(T)(x: T): T := x
+fn is_none?(T)(o: Option(T)) := o = Option::None
+fn unwrap_or(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => d }
+
+-- Only a defined function is generic.
+fn pick(T)(a: T, b: T): T  --~ error: the generic function `pick` must be defined
+fn choose(T)(a: T, b: T): T  --~ error: the generic function `choose` must be defined
+    ensure first: choose(a, b) = a
+
+-- Each type parameter is inferred from the signature.
+fn unused(T, U)(x: T): T := x  --~ error: type parameter `U` of `unused` cannot be inferred
+
+-- Type parameters: distinct, named apart from types and items, and not
+-- element types.
+fn twice(T, T)(x: T): T := x  --~ error: type parameter `T` is defined multiple times
+fn builtin(Int)(x: Int): Int := x  --~ error: type parameter `Int` has the name of the built-in type `Int`
+fn item(Option)(x: Option): Option := x  --~ error: type parameter `Option` has the name of an enum
+fn elements(T)(s: Set(T)): Int := s.card  --~ error: type parameter `T` cannot be an element type, for now
+fn arguments(T)(x: T(Int)): Int := 0  --~ error: `T` takes no type arguments, but 1 was given
+
+-- Within the function, a type parameter is a type of its own.
+fn mismatch(T)(x: T): Int := x  --~ error: type mismatch: expected `Int`, found `T`
+fn ordered?(T)(a: T, b: T) := a < b  --~ error: type mismatch: expected `Int`, found `T`
+
+-- Type arguments are inferred at each application.
+comp unknown {
+    pub out c?
+    ensure r: c? iff is_none?(Option::None)  --~ error: cannot infer the type arguments of `generic_functions_static::is_none?`
+}
+comp argument {
+    in x: Option(Int)
+    pub det out y: Int := unwrap_or(x, true)  --~ error: type mismatch: expected `Int`, found `Bool`
+}
+comp from_expected {
+    in x: Int
+    pub det out y? := id(x)  --~ error: type mismatch: expected `Bool`, found `Int`
+}
+comp arity {
+    in x: Int
+    pub det out y: Int := id(x, 2)  --~ error: `generic_functions_static::id` takes 1 argument, but 2 were given
+}
+--@ exit: 2

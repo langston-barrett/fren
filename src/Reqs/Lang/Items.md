@@ -481,9 +481,9 @@ since pattern types are not nested (`F0369`).
 ## Functions
 
 ```
-function := ["pub"] "fn" IDENT "(" type ("," type)* ")" [":" type]
-          | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
-          | ["pub"] "fn" IDENT "(" variable ("," variable)* ")" [":" type] ":=" top
+function := ["pub"] "fn" declared-type "(" type ("," type)* ")" [":" type]
+          | ["pub"] "fn" declared-type "(" variable ("," variable)* ")" [":" type] [":=" top] clause+
+          | ["pub"] "fn" declared-type "(" variable ("," variable)* ")" [":" type] ":=" top
 clause   := ("assume" | "ensure") IDENT ":" top
 ```
 
@@ -496,6 +496,10 @@ written, and any other function must have its result type written (see
 [Boolean names](Types.md#boolean-names)). The types are checked in the
 order they are written, so the parameters come before the result:
 `fn f(Nope): Gone` reports `Nope`.
+
+A function may have type parameters, as in `fn unwrap_or(T)(o: Option(T),
+d: T): T := ...`, which makes it [generic](GenericFunctions.md); the rest
+of this section is about functions without them.
 
 A function written with `:= e` is *defined*, and any other is
 *uninterpreted*. Either may have a [contract](#contracts): the clauses

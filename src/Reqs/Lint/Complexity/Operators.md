@@ -328,10 +328,10 @@ tests, not proved:
 
 ```fren
 comp manual_at_most_one_defined {
-    use lang::{Env, Head, Val, node}
+    use lang::{Env, Head, Value, node}
     in env: Env
-    in a: Val                        -- the operands' values
-    in b: Val
+    in a: Value                      -- the operands' values
+    in b: Value
     in undefined_parts: Set(Int)     -- which operands, `0` and `1`, are not defined
     in obligation?                   -- the `and` gives a definedness obligation
 

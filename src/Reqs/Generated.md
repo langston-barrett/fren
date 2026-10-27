@@ -197,6 +197,19 @@ Like a component's definitions, it first takes a parameter for each
 abstract type it uses: those that its parameter and result types, and its
 body, mention.
 
+## Generic functions
+
+A [generic function](Lang/GenericFunctions.md) becomes `def p`, as any
+defined function does, whose type parameters are among the abstract types
+it uses: each is an explicit parameter of type `Type`, named as the type
+parameter, followed by an instance-implicit `Inhabited` instance of it, as
+an abstract type's is, after the abstract types declared before the
+function. For example, `fn unwrap_or(T)(o: Option(T), d: T): T := ...`
+becomes `unwrap_or : (T : Type) → [Inhabited T] → Option T → T → T`. An
+application gives its inferred type arguments explicitly, with their
+instances, as `unwrap_or Int x 0`, so that Lean infers nothing that Fren
+does not, and the solver sees the body at that instance.
+
 ## Contracts
 
 Each clause `n` of a function's [contract](Lang/Items.md#contracts)

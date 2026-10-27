@@ -1,0 +1,13 @@
+error[F0400]: type parameter `U` of `first` cannot be inferred
+ --> test/cli/types/f0400_unmentioned.fren:3:17
+  |
+3 | pub fn first(T, U)(x: T): T := x
+  |                 ^ not in the signature
+  |
+  = note: a type parameter's argument is inferred at each application from the parameters' and the result's types, and none of them mentions `U`
+  = help: mention `U` in a parameter's type or the result's, or remove it
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0400`.
+exit=2

@@ -1097,6 +1097,9 @@ structure LState where
   declaredAliases : NameMap Fren.Core.PTy := {}
   /-- The type parameters of the generic type being declared. -/
   typeParams : Array Name := #[]
+  /-- The generic function being lowered, with its type parameters, which
+  are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
+  fnTypeParams : Option (Name × Array Name) := none
 
 abbrev L := StateT LState (Except String)
 
@@ -1129,6 +1132,9 @@ partial def lowerTy (segs : Array Ident) : L VTy := do
         | r => .data r.path args.toList
   if let some k := (← get).typeParams.idxOf? (Name.mkSimple segs[0]!.name) then
     if segs.size == 1 then return .param k
+  if let some (fn, ps) := (← get).fnTypeParams then
+    if let some k := ps.idxOf? (Name.mkSimple segs[0]!.name) then
+      if segs.size == 1 then return .abstract (Fren.Core.typeParamPath fn k ps[k]!)
   if segs.size == 1 && segs[0]!.name == "Bool" then return .bool
   if segs.size == 1 && segs[0]!.name == "Int" then return .int
   if segs.size == 1 && segs[0]!.name == "Nat" then return .nat
@@ -1482,7 +1488,8 @@ where
       let sp := (← get).spec
       return { ty := (← lowerTy segs).core sp, elems := #[← lowerPTy a, ← lowerPTy b] }
     if segs.size == 1 && (["Bool", "Int", "Nat", "String"].contains segs[0]!.name
-        || (← get).typeParams.contains (Name.mkSimple segs[0]!.name)) then
+        || (← get).typeParams.contains (Name.mkSimple segs[0]!.name)
+        || (← get).fnTypeParams.any (·.2.contains (Name.mkSimple segs[0]!.name))) then
       return .plain ((← lowerTy segs).core (← get).spec)
     -- An instance of a generic type, with its type arguments as declared.
     if let some i := segs.findIdx? (·.name == Parser.argsOpen) then
@@ -2037,8 +2044,10 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
-  | .function isPub name params result body clauses _ => do
+  | .function isPub name typeParams params result body clauses _ => do
     let path := (← get).module ++ Name.mkSimple name.name
+    let tps := typeParams.map (Name.mkSimple ·.name)
+    modify fun s => { s with fnTypeParams := if tps.isEmpty then none else some (path, tps) }
     let r ← varTy result
     let contract := !clauses.isEmpty
     match body with
@@ -2076,7 +2085,8 @@ partial def lowerItem : Item → L Unit
       modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
       let cs ← lowerContract path (Name.mkSimple name.name) true ps vars clauses
       noteBody (Name.mkSimple name.name) vars e cs
-    modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+    modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }
+                             fnTypeParams := none }
   | .const isPub name ty value => do
     let path := (← get).module ++ Name.mkSimple name.name
     let t ← lowerTy ty

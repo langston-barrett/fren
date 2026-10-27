@@ -1,0 +1,48 @@
+-- Contracts on generic functions (`Reqs/Lang/GenericFunctions`): a
+-- generic function's postconditions are checked once, for every type, and
+-- its preconditions at each application, at its instance. In a module,
+-- since Lean has an `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_functions_contracts
+
+pub enum Option(T) { None, Some(T) }
+
+-- Defined only on a `Some`.
+fn get(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => d }
+    assume present: o != Option::None
+    ensure from_some: Option::Some(get(o, d)) = o
+
+-- A postcondition that does not hold, whatever the type.
+fn pick(T)(a: T, b: T): T := a
+    ensure second: pick(a, b) = b  --~ error: counterexample: a = T#0, b = T#1
+
+-- A generic body that applies `get` without its precondition: a value of a
+-- type parameter is shown by its name.
+fn get_any(T)(o: Option(T), d: T): T := get(o, d)  --~ error: counterexample: o = Option::None
+
+-- A guarantee that applies the function at another instance than its own.
+fn nothing(T)(n: Int): Option(T) := let r: Option(T) := Option::None in r
+    ensure empty: let r: Option(Bool) := nothing(n) in r = Option::None
+
+comp guarded {
+    in x: Option(Int)
+    assume some: x != Option::None
+    pub det out y: Int := get(x, 0)
+
+    expect payload: Option::Some(y) = x
+}
+
+comp unguarded {
+    in x: Option(Bool)
+    pub det out y? := get(x, false)  --~ error: counterexample: x = Option::None, y? = false
+}
+
+comp other_instance {
+    in n: Int
+    pub det out o: Option(Int) := nothing(n)
+
+    expect none: o = Option::None
+}
+--@ summary: 12 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

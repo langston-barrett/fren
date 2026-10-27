@@ -1,0 +1,6 @@
+x = Option::Some(3)
+y = 3
+b? = true
+expect grows: true
+status: meets
+exit=0
