@@ -1,3 +1,0 @@
--- A generic function without a body: SMT-LIB has no polymorphic
--- `declare-fun`.
-pub fn pick<T>(a: T, b: T): T

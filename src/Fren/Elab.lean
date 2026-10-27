@@ -4564,6 +4564,35 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
+  if !a.typeParams.isEmpty then
+    -- A generic function without a body, at the instance whose type
+    -- arguments are inferred, as for a defined one: its placeholder applied
+    -- to them and their `Inhabited` instances
+    -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). Outputs
+    -- may not occur in its arguments (`inst::mention`).
+    let acx := if cx.place == .prop then { cx with place := .argument } else cx
+    let elems := args.getElems
+    unless elems.size == a.declared.size do throwError (Core.arityMsg path a.declared.size elems.size).text
+    let synth ← elems.mapM (synthesizes acx)
+    let run : StateT (Array Term) TermElabM (Array Core.Ty) :=
+      Core.inferCall a.typeParams a.declared a.result synth expected?
+        (throwErrorAt e (Core.cannotInferCallMsg (Core.showPath path)).text : TermElabM Unit)
+        (fun k x? => do
+          let natOk := x? == some Core.Ty.nat
+          let t ← (toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk, expected? := x? }
+            elems[k]! : TermElabM Term)
+          modify (·.set! k t)
+          frenTypeOf? t)
+        (fun k x f => (liftMsg elems[k]!
+          (Core.checkType x f (some s!"note: argument {k + 1} of `{Core.showPath path}` has type `{x.show}`")) : TermElabM Unit))
+    let (targs, ts) ← run.run (elems.map fun _ => default)
+    for x in elems, t in ts, k in [0:ts.size] do
+      noteObligation acx .argument x (a.ptys.1[k]?.getD default) t
+    notePreconditions cx p path ts (some (a.typeParams, targs))
+    let tyArgs ← targs.flatMapM fun t => do
+      let ty := typeSyntax (← leanTypeOf t)
+      return #[ty, ← `((inferInstance : Inhabited $ty))]
+    return ← `(@$(mkCIdentFrom p a.placeholder) $tyArgs* $ts*)
   let a' := a
   let nParams := (← getConstInfo a.placeholder).type.getForallArity
   unless args.getElems.size == nParams do throwError (Core.arityMsg path nParams args.getElems.size).text
@@ -5144,12 +5173,13 @@ def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
 /-- Declares the placeholder for the abstract type or function at `path`
 (`AbstractInfo`). -/
 def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) (ptys : Array Core.PTy × Core.PTy := (#[], default))
-    (fact? : Option Expr := none) : TermElabM Unit := do
+    (fact? : Option Expr := none) (typeParams : Array Name := #[]) (declared : Array Core.Ty := #[])
+    (result : Core.Ty := .bool) : TermElabM Unit := do
   let placeholder := placeholderName path
   addDecl (.axiomDecl { name := placeholder, levelParams := [], type, isUnsafe := false })
   let s ← getState
   let deps := type.foldConsts #[] fun c acc => if s.placeholders.contains c && !acc.contains c then acc.push c else acc
-  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact? })
+  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact?, typeParams, declared, result })
   -- An abstract type has a value, so its placeholder has an `Inhabited`
   -- instance, itself a placeholder, which an index of a sequence of it
   -- needs; an implementation gives the interpretation's own.
@@ -5159,6 +5189,21 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) (ptys : Array
     addDecl (.axiomDecl { name := inst, levelParams := [], type := instType, isUnsafe := false })
     addInstance inst .global 1000
     record (.abstractInfo { path := inhabitedName path, placeholder := inst, isType := false, deps := #[placeholder] })
+
+/-- `t`, over the placeholders of the type parameters `tps` of the generic
+function at `path` and of their `Inhabited` instances, as a type that takes
+a `Type` and an instance of it for each, first (`typeParamPlaceholders`):
+the type of the placeholder of a generic function without a body
+(`Reqs/Generated#generic-functions`). -/
+def withTypeParams (path : Name) (tps : Array Name) (t : Expr) : TermElabM Expr :=
+  go 0 #[]
+where
+  go (k : Nat) (xs : Array Expr) : TermElabM Expr := do
+    if h : k < tps.size then
+      withLocalDeclD (Name.mkSimple tps[k].toString) (mkSort Level.one) fun x =>
+        withLocalDecl (Name.mkSimple "#inhabited") .instImplicit (mkApp (Lean.mkConst ``Inhabited [Level.one]) x) fun i =>
+          go (k + 1) (xs ++ #[x, i])
+    else mkForallFVars xs (atInstance path tps xs t)
 
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
@@ -5242,7 +5287,10 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let value? ← if defined then pure none else do
     let a ← placeholderOf path
     let name := Core.contractValueName n (vars.map (·.name))
-    let ty ← forallTelescope (← getConstInfo a.placeholder).type fun _ r => pure r
+    -- A generic function's, at its own type parameters, for every type
+    -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+    let own := (typeParamPlaceholders path a.typeParams).map (Lean.mkConst ·)
+    let ty ← forallTelescope (← instantiateForall (← getConstInfo a.placeholder).type own) fun _ r => pure r
     -- With its result's type, which it is realized in.
     let fact? ← factPred? ty a.ptys.2
     pure (some (a.placeholder, ({ name, role := .output, isPub := true, «type» := ty, ref := mkIdent name
@@ -5272,8 +5320,12 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
       -- applied to its parameters is the value.
       let ofValue? ← match post, value? with
         | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
-          let app := mkAppN (mkConst ph) fvs
-          some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if t == app then some x else none)
+          -- At its own type parameters, whatever term gives their
+          -- `Inhabited` instances.
+          let nTypes := 2 * ((← placeholderOf path).typeParams.size)
+          let isApp (t : Expr) : Bool :=
+            t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
+          some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
         | _, _ => pure none
       return (← mkLambdaFVars fvs body, ofValue?, tables)
     lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
@@ -5315,12 +5367,10 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let params := stx[5].getSepArgs
   let body? := if stx[8].isNone then none else some (withWhere stx[8][1] stx[8][2])
   let clauses := stx[9].getArgs
-  -- Its type parameters, which are abstract types within it, and which
-  -- only a defined function has (`lang::generic_function`).
+  -- Its type parameters, which are abstract types within it, whether it
+  -- is defined or not (`lang::generic_function`).
   let tpStxs := if stx[3].isNone then #[] else stx[3][0][1].getSepArgs
   let tps ← elabTypeParams modName tpStxs
-  unless Core.genericFunctionAccepted body?.isSome tps.size false do
-    throwErrorAt nameStx (Core.uninterpretedGenericMsg n).text
   if !tps.isEmpty then
     liftTermElabM do
       for p in tps, k in [0:tps.size] do declarePlaceholder (Core.typeParamPath path k p) (mkSort Level.one) true
@@ -5335,13 +5385,31 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     let bad := params.find? (named · != (body?.isSome || contract)) |>.getD nameStx
     throwErrorAt bad (Core.functionParamsMsg path body?.isSome contract).text
   let decl ← generatedName path
+  -- A generic function's signature, with its type parameters as
+  -- `Core.Ty.param`, each inferred at applications from it
+  -- (`lang::generic_signature`).
+  let signature (params : Array Expr) (result : Expr) : TermElabM (Array Core.Ty × Core.Ty) := do
+    let asParams (t : Expr) : TermElabM Core.Ty := return ((← coreTy? t).getD .bool).asParams path tps
+    let declared ← params.mapM asParams
+    let resultTy ← asParams result
+    if let some k := Core.firstUnmentioned? declared resultTy tps.size then
+      throwErrorAt tpStxs[k]! (Core.unmentionedTypeParamMsg n tps[k]!).text
+    return (declared, resultTy)
+  -- Without a body, a placeholder, which takes a `Type` and its `Inhabited`
+  -- instance for each type parameter first, if it is generic: each
+  -- instance is an unknown function of its own
+  -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  let placeholder (params : Array Expr) (ptys : Array Core.PTy) (result : Expr) (rp : Core.PTy) : TermElabM Unit := do
+    let (declared, resultTy) ← signature params result
+    let type ← withTypeParams path tps (← mkArrowN params result)
+    declarePlaceholder path type false (ptys, rp) (← resultFact? result rp) tps declared resultTy
   let some body := body? | do
     liftTermElabM do
       if contract then
         let vars ← paramVars modName path params
         lintFnBools n nameStx (vars.map (·.type))
         let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-        declarePlaceholder path (← mkArrowN (vars.map (·.type)) result) false (vars.map (·.ptype), rp) (← resultFact? result rp)
+        placeholder (vars.map (·.type)) (vars.map (·.ptype)) result rp
         modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
         let (vars, props, sites) ← elabContract modName path n decl false vars clauses
         recordBody path nameStx decl vars sites props path
@@ -5351,24 +5419,19 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
         lintFnBools n nameStx params
         -- As for a variable, with the result type (`lang::bool_naming`).
         let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-        declarePlaceholder path (← mkArrowN params result) false (pps.map (·.2), rp) (← resultFact? result rp)
+        placeholder params (pps.map (·.2)) result rp
     if contract then
       lintDeclared .function n nameStx
       lintLines .function n nameStx stx
     record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
     unless isPub do recordItem .function path nameStx
+    modifyLocal fun l => { l with fnTypeParams := none }
   liftTermElabM do
     -- The parameters, declared like a comp's inputs.
     let vars ← paramVars modName path params
     lintFnBools n nameStx (vars.map (·.type))
     let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-    -- Each type parameter is inferred at applications from the signature
-    -- (`lang::generic_signature`).
-    let asParams (t : Expr) : TermElabM Core.Ty := return ((← coreTy? t).getD .bool).asParams path tps
-    let declared ← vars.mapM (asParams ·.type)
-    let resultTy ← asParams result
-    if let some k := Core.firstUnmentioned? declared resultTy tps.size then
-      throwErrorAt tpStxs[k]! (Core.unmentionedTypeParamMsg n tps[k]!).text
+    let (declared, resultTy) ← signature (vars.map (·.type)) result
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
     let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat

@@ -1,0 +1,116 @@
+; c: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-fun |::choose<Int>| (Int Int) Int)
+(declare-fun |::choose<Bool>| (Bool Bool) Bool)
+(define-fun |::choose<Int>#either| ((|a| Int) (|b| Int)) Bool (or (= (|::choose<Int>| |a| |b|) |a|) (= (|::choose<Int>| |a| |b|) |b|)))
+(define-fun |::choose<Bool>#either| ((|a| Bool) (|b| Bool)) Bool (or (= (|::choose<Bool>| |a| |b|) |a|) (= (|::choose<Bool>| |a| |b|) |b|)))
+(declare-const |x| Int)
+(declare-const |p?| Bool)
+(declare-const |y| Int)
+(declare-const |q?| Bool)
+(assert (|::choose<Int>#either| |x| 0)) ; either
+(assert (|::choose<Bool>#either| |p?| true)) ; either
+(assert (not (let ((|y| (|::choose<Int>| |x| 0))) (let ((|q?| (|::choose<Bool>| |p?| true))) true))))
+(check-sat)
+(reset)
+
+; c: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-fun |::choose<Int>| (Int Int) Int)
+(declare-fun |::choose<Bool>| (Bool Bool) Bool)
+(define-fun |::choose<Int>#either| ((|a| Int) (|b| Int)) Bool (or (= (|::choose<Int>| |a| |b|) |a|) (= (|::choose<Int>| |a| |b|) |b|)))
+(define-fun |::choose<Bool>#either| ((|a| Bool) (|b| Bool)) Bool (or (= (|::choose<Bool>| |a| |b|) |a|) (= (|::choose<Bool>| |a| |b|) |b|)))
+(declare-const |x| Int)
+(declare-const |p?| Bool)
+(declare-const |y| Int)
+(declare-const |q?| Bool)
+(assert (|::choose<Int>#either| |x| 0)) ; either
+(assert (|::choose<Bool>#either| |p?| true)) ; either
+(assert (= |y| (|::choose<Int>| |x| 0))) ; y
+(assert (= |q?| (|::choose<Bool>| |p?| true))) ; q?
+(assert (not false))
+(check-sat)
+(reset)
+
+; c: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-fun |::choose<Int>| (Int Int) Int)
+(declare-fun |::choose<Bool>| (Bool Bool) Bool)
+(define-fun |::choose<Int>#either| ((|a| Int) (|b| Int)) Bool (or (= (|::choose<Int>| |a| |b|) |a|) (= (|::choose<Int>| |a| |b|) |b|)))
+(define-fun |::choose<Bool>#either| ((|a| Bool) (|b| Bool)) Bool (or (= (|::choose<Bool>| |a| |b|) |a|) (= (|::choose<Bool>| |a| |b|) |b|)))
+(declare-const |x| Int)
+(declare-const |p?| Bool)
+(declare-const |y| Int)
+(declare-const |q?| Bool)
+(declare-const |y'| Int)
+(declare-const |q?'| Bool)
+(assert (|::choose<Int>#either| |x| 0)) ; either
+(assert (|::choose<Bool>#either| |p?| true)) ; either
+(assert (= |y| (|::choose<Int>| |x| 0))) ; y
+(assert (= |q?| (|::choose<Bool>| |p?| true))) ; q?
+(assert (= |y'| (|::choose<Int>| |x| 0))) ; y'
+(assert (= |q?'| (|::choose<Bool>| |p?| true))) ; q?'
+(assert (not (= |y| |y'|)))
+(check-sat)
+(reset)
+
+; c: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-fun |::choose<Int>| (Int Int) Int)
+(declare-fun |::choose<Bool>| (Bool Bool) Bool)
+(define-fun |::choose<Int>#either| ((|a| Int) (|b| Int)) Bool (or (= (|::choose<Int>| |a| |b|) |a|) (= (|::choose<Int>| |a| |b|) |b|)))
+(define-fun |::choose<Bool>#either| ((|a| Bool) (|b| Bool)) Bool (or (= (|::choose<Bool>| |a| |b|) |a|) (= (|::choose<Bool>| |a| |b|) |b|)))
+(declare-const |x| Int)
+(declare-const |p?| Bool)
+(declare-const |y| Int)
+(declare-const |q?| Bool)
+(declare-const |y'| Int)
+(declare-const |q?'| Bool)
+(assert (|::choose<Int>#either| |x| 0)) ; either
+(assert (|::choose<Bool>#either| |p?| true)) ; either
+(assert (= |y| (|::choose<Int>| |x| 0))) ; y
+(assert (= |q?| (|::choose<Bool>| |p?| true))) ; q?
+(assert (= |y'| (|::choose<Int>| |x| 0))) ; y'
+(assert (= |q?'| (|::choose<Bool>| |p?| true))) ; q?'
+(assert (not (= |q?| |q?'|)))
+(check-sat)
+(reset)
+
+; [anonymous]: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; [anonymous]: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-sort |::choose::0::T| 0)
+(declare-const |a| |::choose::0::T|)
+(declare-const |b| |::choose::0::T|)
+(declare-const |choose| |::choose::0::T|)
+(assert (not (exists ((|choose| |::choose::0::T|)) (or (= |choose| |a|) (= |choose| |b|)))))
+(check-sat)
+(reset)
+
+fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

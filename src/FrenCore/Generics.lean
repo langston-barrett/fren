@@ -526,10 +526,10 @@ def Ty.asAbstract (fn : Name) (params : Array Name) (t : Ty) : Ty :=
   t.subst (params.mapIdx fun k n => .abstract (typeParamPath fn k n))
 
 /-- Whether a function may have `params` type parameters
-(`lang::generic_function`): if it has any, it is defined, and each is
-mentioned by its signature. -/
-def genericFunctionAccepted (defined : Bool) (params : Nat) (unmentioned : Bool) : Bool :=
-  params == 0 || (defined && !unmentioned)
+(`lang::generic_function`): if it has any, each is mentioned by its
+signature, whether the function is defined or not. -/
+def genericFunctionAccepted (params : Nat) (unmentioned : Bool) : Bool :=
+  params == 0 || !unmentioned
 
 /-- Whether the type parameter `k` is mentioned by one of the parameters'
 declared types `declared` or by the result's, `result`. -/
@@ -591,12 +591,37 @@ def callShape (n : Nat) (declared : Array Ty) (result : Ty) (shapes : Array Type
 type is `result`, with the type arguments `args` (`lang::call_instance`). -/
 def callType (result : Ty) (args : Array Ty) : Ty := result.subst args
 
-/-- The generic function `f`, which has no body (`lang::generic_function`). -/
-def uninterpretedGenericMsg (f : Name) : Msg :=
-  { code? := some "F0399", headline := s!"the generic function `{f}` must be defined"
-    label? := some "type parameters, but no body"
-    notes := #["note: SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function cannot have type parameters, for now",
-      "help: define it with `:= e`, or remove its type parameters"] }
+/-- The parameters' and result's types of the instance of a generic
+function whose parameters and result have the declared types `declared`
+and `result`, at the type arguments `args` (`lang::uninterpreted_instance`):
+each declared type instantiated with them. Of a generic function without a
+body, it is the signature of the unknown function that the solver sees for
+that instance. -/
+def instanceSig (declared : Array Ty) (result : Ty) (args : Array Ty) : Array Ty × Ty :=
+  (declared.map (·.subst args), result.subst args)
+
+/-- A type as it is written, but with each generic function's type
+parameter by its whole path, so that two functions' are told apart: the key
+of an instance of a generic function. -/
+partial def Ty.instKey : Ty → String
+  | .set t => s!"Set<{t.instKey}>"
+  | .rel a b => s!"Rel<{a.instKey}, {b.instKey}>"
+  | .seq t => s!"Seq<{t.instKey}>"
+  | .enum p [] | .record p [] => showPath p
+  | .enum p as | .record p as => s!"{showPath p}<{", ".intercalate (as.map Ty.instKey)}>"
+  | .abstract p => showPath p
+  | t => t.show
+
+/-- The type arguments `args` of an instance of a generic function, as its
+name has them after the function's (`Ty.instKey`), as in `<Int>`
+(`Reqs/Lang/GenericFunctions#meaning`). -/
+def instanceText (args : Array Ty) : String := s!"<{", ".intercalate (args.toList.map Ty.instKey)}>"
+
+/-- Whether each application of an instance of a generic function without
+a body, whose declared result type is `result`, brings that it is at least
+0 (`lang::uninterpreted_instance`): exactly when `result` is `Nat`, since a
+type argument is never a `Nat` (`expectedArgs`, `inferArg`). -/
+def instanceNat (result : Ty) : Bool := result == .nat
 
 /-- The type parameter `p` of the generic function `f`, which its signature
 does not mention (`lang::generic_function`). -/

@@ -604,7 +604,8 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
   -- An uninterpreted function's contract, as both front ends build it
   -- (`Fren.Core.contractComp`).
   match contract, c.fn?, c.vars.back? with
-  | true, some f, some v => Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables
+  | true, some f, some v =>
+    Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables c.generic
   | _, _, _ => core
 
 /-- `rs`, results of `c`, with each cover goal's marked if its query uses

@@ -137,6 +137,9 @@ structure CheckResult where
   /-- Decided by enumeration only up to this size bound, not for every
   behaviour (`check::enumerated_verdict`). -/
   bounded? : Option Nat := none
+  /-- For `realizable`, of the contract of a generic function without a
+  body, checked for every type (`Comp.generic`). -/
+  generic : Bool := false
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -356,6 +359,9 @@ structure Comp (F : Type) where
   /-- For the body or contract of a function: the function, which the
   results of `postcondition` name. -/
   fn? : Option Name := none
+  /-- For the contract of a generic function without a body: it is checked
+  once, at its type parameters, for every type (`F0653`). -/
+  generic : Bool := false
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -526,7 +532,8 @@ interpretation, as `interprets` says of a formula. -/
 def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
     m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail }
+    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
+      generic := c.generic }
   let sub := c.substHyps b
   let assumes := sub c.assumes
   let assumeQ ← b.query assumes b.falseF false
@@ -967,10 +974,10 @@ postconditions `posts`, of the value, as its assumptions and guarantees,
 with `sites`, the questions about the tables and applications in its
 clauses. Both front ends check this component. -/
 def contractComp (path f : Name) (params : Array Name) (value : Name) (pres posts : Array (Name × F))
-    (sites : Array (TableSite F) := #[]) : Comp F :=
+    (sites : Array (TableSite F) := #[]) (generic : Bool := false) : Comp F :=
   { path, vars := params.map (fun x => { name := x, role := .input, isPub := true }) |>.push
       { name := value, role := .output, isPub := true }
-    assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f }
+    assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f, generic }
 
 /-- The formulas of the query of the cover goal `g` (`checkCover`): the
 definitions, the assumptions, each instance's bindings and the meaning of
@@ -1216,6 +1223,13 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       let short (ns : Array Name) := if contract.isSome then ns.map clauseName else ns
       let headline := memberText (r.clashes.find? (·.guarantee == n)) (short (core.filter (· != n))) fun cl => short cl.rest
       { severity := .info, item? := some n, msg := { code? := none, headline } }
+    if let (some f, true) := (contract, r.generic) then
+      #[one "F0653" s!"the postconditions of `{showComp f}` cannot all hold at some type" (some "unrealizable contract")
+        #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",
+          "note: a generic function's contract is checked once, for every type: nothing is known of a type parameter but that it has values, so it may have a single one",
+          "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
+      ++ clashNotes
+    else
     if let some f := contract then
       #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold" (some "unrealizable contract")
         #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",

@@ -171,6 +171,15 @@ structure AbstractInfo where
   /-- What each application of a function brings, as a predicate of its
   result, if its result's type brings a constraint (`Reqs/Check`). -/
   fact? : Option Expr := none
+  /-- A generic function's type parameters, whose placeholder takes a
+  `Type` and its `Inhabited` instance for each, before its parameters, and
+  its parameters' and result's types, which mention them as
+  `Core.Ty.param` (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  Its signature's own types, `ptys` and `fact?`, mention the placeholders
+  of the type parameters (`Core.typeParamPath`). -/
+  typeParams : Array Name := #[]
+  declared : Array Core.Ty := #[]
+  result : Core.Ty := .bool
   deriving Inhabited
 
 /-- The Lean namespace, under the current one, of every declaration generated
@@ -279,6 +288,26 @@ def replaceUses (uses : Array Name) (xs : Array Expr) (e : Expr) : Expr :=
   e.replace fun
     | .const c _ => (uses.idxOf? c).map (xs[·]!)
     | _ => none
+
+/-- The placeholders of the type parameters `tps` of the generic function
+at `path`, each followed by that of its `Inhabited` instance: what its
+placeholder, or a definition of it, takes first
+(`Reqs/Generated#generic-functions`). -/
+def typeParamPlaceholders (path : Name) (tps : Array Name) : Array Name :=
+  tps.mapIdx (fun k p => placeholderName (Core.typeParamPath path k p)) |>.flatMap fun ph => #[ph, inhabitedName ph]
+
+/-- `e`, of the generic function at `path` with the type parameters `tps`,
+at the instance whose type arguments and `Inhabited` instances are
+`targs`, in the order of `typeParamPlaceholders`: each placeholder of a
+type parameter, or of its instance, replaced. -/
+def atInstance (path : Name) (tps : Array Name) (targs : Array Expr) (e : Expr) : Expr :=
+  replaceUses (typeParamPlaceholders path tps) targs e
+
+/-- The clause `k`, of the generic function at `path` with the type
+parameters `tps`, at the instance `targs` (`atInstance`), at the arguments
+`args`. -/
+def ClauseInfo.atInst (k : ClauseInfo) (path : Name) (tps : Array Name) (targs args : Array Expr) : Expr :=
+  atInstance path tps targs (k.at args)
 
 /-- A comp variable: one of its own, or one of an instance's (`w.x`). -/
 structure Var where

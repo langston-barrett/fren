@@ -1,6 +1,7 @@
 # Generic functions
 
-A [defined function](Items.md#defined-functions) may have *type
+A [function](Items.md#functions), [defined](Items.md#defined-functions)
+or [uninterpreted](Items.md#uninterpreted-functions), may have *type
 parameters*, written in angle brackets right after its name, before its
 parameters, as a [generic type's](Generics.md) are after its name:
 
@@ -9,6 +10,7 @@ pub enum Option<T> { None, Some(T) }
 
 fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
 fn swap<A, B>(p: Pair<A, B>): Pair<B, A> := Pair { fst := p.snd, snd := p.fst }
+fn pick<T>(T, T): T
 ```
 
 Such a function is *generic*. Its parameters' and result's types, and the
@@ -60,32 +62,31 @@ type parameter, or over a type that mentions one, is outside the
 the function at is finite: the body is checked once, for every type, which
 is conservative.
 
-A generic function is defined: SMT-LIB has no polymorphic `declare-fun`,
-so an uninterpreted function cannot be generic, for now (`F0399`), with a
-contract or without. A defined generic function needs no polymorphic
-function in SMT-LIB, since its applications are
-[unfolded](#meaning). Its type parameters are inferred at each
+A generic function may be defined or not, with a contract or without: a
+defined one's applications are [unfolded](#meaning), and each instance of
+one without a body is an [unknown function of its
+own](#uninterpreted-generic-functions), so the solver never needs a
+polymorphic function. Its type parameters are inferred at each
 application from its parameters' and result's types, so each must be
 mentioned by one of them (`F0400`): `fn f<T, U>(x: T): T` has no place
-where a `U` could be inferred from.
+where a `U` could be inferred from. A generic function without a body was
+an error before (`F0399`), which nothing reports now.
 
 `lang::generic_function` states which functions may have type parameters,
-from whether the function is defined, how many type parameters it has, and
-whether one of them is mentioned by no parameter's type nor the result's:
+from how many it has, and whether one of them is mentioned by no
+parameter's type nor the result's, whether the function is defined or not:
 
 ```fren
 pub mod lang
 
 pub comp generic_function {
-    in defined?           -- written with `:= e`
     in params: Nat        -- how many type parameters it has
     in unmentioned?       -- one of them is mentioned by no parameter's type nor the result's
     pub det out accepted?
 
-    ensure rule: accepted? iff (params = 0 or (defined? and not unmentioned?))
+    ensure rule: accepted? iff (params = 0 or not unmentioned?)
 
     expect plain: when params = 0, accepted?
-    expect uninterpreted: when params > 0 and not defined?, not accepted?
     expect inferable: when params > 0 and unmentioned?, not accepted?
 }
 ```
@@ -106,7 +107,6 @@ pub fn ty_mentions?(Ty, Nat)   -- a type mentions the type parameter at that pos
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
 pub comp generic_signature {
-    in defined?
     in params: Nat               -- how many type parameters it has
     in declared: Seq<Ty>         -- its parameters' declared types, in order
     in result: Ty                -- its result's declared type
@@ -122,10 +122,10 @@ pub comp generic_signature {
     pub det out unmentioned? := (params > 0 and not in0?) or (params > 1 and not in1?) or (params > 2 and not in2?)
     pub det out accepted?
 
-    ensure rule: accepted? iff (params = 0 or (defined? and not unmentioned?))
+    ensure rule: accepted? iff (params = 0 or not unmentioned?)
 
     expect plain: when params = 0, accepted?
-    expect in_result: when params = 1 and defined? and ty_mentions?(result, 0), accepted?
+    expect in_result: when params = 1 and ty_mentions?(result, 0), accepted?
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -284,6 +284,100 @@ shape `Construction` whose parts are the type parameters that its result
 type mentions: it synthesizes exactly when an argument that synthesizes
 its type gives each of them an argument.
 
+## Uninterpreted generic functions
+
+A generic function without a body is
+[uninterpreted](Items.md#uninterpreted-functions) at each instance, and
+each instance is an unknown function of its own: `pick<Int>` and
+`pick<Bool>` are two functions, which nothing relates. That is sound, since
+all that is known of an uninterpreted function is that it is a function,
+applied to equal arguments it gives equal results, and equal arguments
+have the same type, so that this never relates two instances. Nothing in
+Fren relies on two instances being related, as parametricity would relate
+them. So with
+
+```text
+fn pick<T>(T, T): T
+fn choose<T>(a: T, b: T): T
+    ensure either: choose(a, b) = a or choose(a, b) = b
+```
+
+`pick(x, y) = pick(x, y)` holds at any instance, and `choose(1, 2)` is `1`
+or `2`, but nothing says whether `pick(1, 2) = 1` when `pick(true, false)`
+is `true`.
+
+An application of an instance is an application of an uninterpreted
+function, and brings what one does: at least 0, if its result is a `Nat`,
+that it matches its result type, if that type brings a constraint, and
+each postcondition wherever its arguments meet the preconditions, all at
+its instance, with its type arguments for the type parameters. At each
+application, its arguments must meet its preconditions, at its instance,
+which the [precondition check](../Check.md#preconditions) confirms, as for
+a defined generic function.
+
+`lang::uninterpreted_instance` states the instance that an application of a
+generic function without a body applies: its parameters' and result's
+declared types, instantiated with the application's type arguments
+(`lang::instantiation`), which are the sorts of its unknown function, and
+whether each of its applications is at least 0. A type argument is never a
+`Nat`, since an inferred one is widened (see [Applications](#applications)),
+so it is at least 0 exactly when the declared result type is `Nat`. Here a
+function has three parameters at most, and an application three type
+arguments, and the rule is the same for more:
+
+```fren
+-- `arguments.len < 1` rather than `arguments = []`, which compares
+-- sequences of an abstract type, whose equality Lean does not decide.
+set_option fren.lint.undecidable "allow" in
+set_option fren.lint.length_zero "allow" in
+pub comp uninterpreted_instance {
+    in declared: Seq<Ty>         -- its parameters' declared types, in order
+    in result: Ty                -- its result's declared type
+    in arguments: Seq<Ty>        -- the application's type arguments
+
+    assume few: declared.len <= 3 and arguments.len <= 3
+    -- Each inferred type argument is widened.
+    assume widened: (arguments.len < 1 or kind(arguments[0]) != ValueType::NatTy)
+        and (arguments.len < 2 or kind(arguments[1]) != ValueType::NatTy)
+        and (arguments.len < 3 or kind(arguments[2]) != ValueType::NatTy)
+
+    -- The sorts of the instance's unknown function.
+    pub det out params: Seq<Ty> := (if declared.len > 0 then [instantiated(declared[0], arguments)] else [])
+        ++ (if declared.len > 1 then [instantiated(declared[1], arguments)] else [])
+        ++ (if declared.len > 2 then [instantiated(declared[2], arguments)] else [])
+    pub det out result_type: Ty := instantiated(result, arguments)
+    pub det out nat?             -- each of its applications is at least 0
+
+    ensure nat_rule: nat? iff kind(result_type) = ValueType::NatTy
+
+    expect each_param: params.len = declared.len
+}
+```
+
+Its contract is checked once, for every type, at its type parameters,
+each a sort of which nothing is known, as a defined generic function's
+body and contract are: the [contract
+realizability](../Check.md#contracts-of-uninterpreted-functions) check,
+whose two queries ask whether its preconditions can hold and whether, for
+all arguments that meet them, some value meets every postcondition. A
+formula that holds over a sort of which nothing is known holds at every
+instance, since it cannot use any type's structure. So a contract that
+passes holds at every instance, and one that fails may fail only where a
+type has a single value, or two arguments are equal, which every type
+allows: its postconditions that cannot all hold are the error `F0653`, not
+`F0631`, whose note says so. So `fn other<T>(x: T, y: T): T` with `ensure
+moves: other(x, y) != x` and `ensure stays: other(x, y) = y` fails, where
+`x = y`, until a precondition rules that out.
+
+A generic defined function's body applies no uninterpreted function,
+generic or not (`F0331`), so that its values are fully known (see
+[Defined functions](Items.md#defined-functions)), but its contract may
+apply one: there, at its own type parameters, the generic function is the
+instance at their sorts, for the checks of the contract, and at each of
+its instances, at that instance. A component that applies a generic
+function without a body is not [enumerated](../Check.md#enumerable-types)
+(`F0645`).
+
 ## Meaning
 
 An application of a generic function has the value of its body, with each
@@ -308,3 +402,24 @@ the solver never sees a polymorphic function:
 Each type parameter is, for the checks of the function's body and
 contract, a sort of its own, of which the solver knows nothing: both front
 ends check the body and the contract once, for every type.
+
+An application of a generic function without a body is of its instance's
+unknown function:
+
+- The `fren` command gives the solver one `declare-fun` for each instance
+  that an application uses, named as a defined function's instance is, as
+  `|::pick<Int>|`, whose sorts are `lang::uninterpreted_instance`'s, and
+  one for the function itself, `|::pick|`, over its type parameters'
+  sorts, for the checks of its contract and of the bodies and contracts
+  that apply it at their own type parameters. Each clause of its contract
+  is a `define-fun` at each instance too, as `|::choose<Int>#either|`.
+- The Lean-hosted front end gives it an opaque constant, whose type takes
+  a `Type` and its `Inhabited` instance for each type parameter first (see
+  [Generated Lean](../Generated.md#generic-functions)), applied to the type
+  arguments. Each check gives each instance that its formulas apply, once
+  the definitions and clauses that they apply are unfolded, a local of its
+  own, declared before the variables, as the `fren` command declares it,
+  so that the solver sees the same unknown functions.
+
+A counterexample shows the values of the variables, as it does for any
+uninterpreted function.

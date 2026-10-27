@@ -2574,17 +2574,16 @@ impl instance_values: lang::instance_values for (a b : Fren.Core.Ty) {
 
 /-! ## Generic functions (`Reqs/Lang/GenericFunctions`) -/
 
--- For whether a function is defined, every number of type parameters, and
--- whether one of them is not in the signature: the check that both front
--- ends make of its declaration (`Core.genericFunctionAccepted`).
-impl generic_function: lang::generic_function for (d : Bool) (params : Nat) (u : Bool) {
-  defined? := d,
+-- For every number of type parameters, and whether one of them is not in
+-- the signature: the check that both front ends make of a function's
+-- declaration, defined or not (`Core.genericFunctionAccepted`).
+impl generic_function: lang::generic_function for (params : Nat) (u : Bool) {
   params := params,
   unmentioned? := u,
-  accepted? := Fren.Core.genericFunctionAccepted d params u,
+  accepted? := Fren.Core.genericFunctionAccepted params u,
 } by
-  intro d params u _
-  cases d <;> cases u <;> simp [fren_spec, Fren.Core.genericFunctionAccepted]
+  intro params u _
+  cases u <;> simp [fren_spec, Fren.Core.genericFunctionAccepted]
 
 interp lang::ty_mentions? := fun (t : Fren.Core.Ty) (k : Nat) => t.mentions k
 
@@ -2615,8 +2614,7 @@ theorem unmentioned_eq (decl : Array Fren.Core.Ty) (r : Fren.Core.Ty) (n : Fin 4
 -- parameters, and every signature: the check that both front ends make of
 -- its declaration (`Core.genericFunctionAccepted`, `Core.firstUnmentioned?`).
 impl generic_signature: lang::generic_signature
-    for (defined : Bool) (n : Fin 4) (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (r : Fren.Core.Ty) {
-  defined? := defined,
+    for (n : Fin 4) (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (r : Fren.Core.Ty) {
   params := (n : Nat),
   declared := Fren.Seq.ofList (firstTys d ts),
   result := r,
@@ -2624,13 +2622,13 @@ impl generic_signature: lang::generic_signature
   in1? := Fren.Core.inSignature (firstTys d ts).toArray r 1,
   in2? := Fren.Core.inSignature (firstTys d ts).toArray r 2,
   unmentioned? := (Fren.Core.firstUnmentioned? (firstTys d ts).toArray r n).isSome,
-  accepted? := Fren.Core.genericFunctionAccepted defined n (Fren.Core.firstUnmentioned? (firstTys d ts).toArray r n).isSome,
+  accepted? := Fren.Core.genericFunctionAccepted n (Fren.Core.firstUnmentioned? (firstTys d ts).toArray r n).isSome,
 } by
-  intro defined n d ts r _
+  intro n d ts r _
   simp only [unmentioned_eq, inSignature_eq]
   obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
   all_goals obtain ⟨_ | _ | _ | _ | n, hn⟩ := n <;> first | omega | skip
-  all_goals cases defined <;>
+  all_goals
     simp [fren_spec, firstTys, List.ofFn_succ, Fren.Core.genericFunctionAccepted, Fren.Seq.nth_of_lt, Bool.or_assoc] <;>
     grind
 
@@ -2784,6 +2782,49 @@ impl call_instance: lang::call_instance for (result : Fren.Core.Ty) (args : List
 } by
   intro result args _
   simp [fren_spec, Fren.Core.callType]
+
+/-- At type arguments none of which is a `Nat`, as inferred ones are
+widened, an instance's result type is a `Nat` exactly when the declared
+one is (`Core.instanceNat`). -/
+theorem subst_nat_iff (args : Array Fren.Core.Ty) (h : ∀ a ∈ args, a ≠ .nat) (t : Fren.Core.Ty) :
+    t.subst args = .nat ↔ t = .nat := by
+  cases t with
+  | param k n =>
+    simp only [Fren.Core.Ty.subst, reduceCtorEq, iff_false]
+    cases ha : args[k]? with
+    | none => simp
+    | some a => exact h a (Array.mem_of_getElem? ha)
+  | _ => simp [Fren.Core.Ty.subst]
+
+/-- The first `d` of `ts`, an application's type arguments or a function's
+parameters' declared types (`firstTys`), as an array. -/
+abbrev firstArr (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) : Array Fren.Core.Ty := (firstTys d ts).toArray
+
+-- For every function with at most three parameters, every declared result
+-- type, and every application of it with at most three type arguments:
+-- the sorts of the instance's unknown function, and whether its
+-- applications are at least 0, as both front ends give them
+-- (`Core.instanceSig`, `Core.instanceNat`).
+impl uninterpreted_instance: lang::uninterpreted_instance
+    for (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (r : Fren.Core.Ty) (na : Fin 4) (as : Fin 3 → Fren.Core.Ty) {
+  declared := Fren.Seq.ofList (firstTys d ts),
+  result := r,
+  arguments := Fren.Seq.ofList (firstTys na as),
+  params := Fren.Seq.ofList (Fren.Core.instanceSig (firstArr d ts) r (firstArr na as)).1.toList,
+  result_type := (Fren.Core.instanceSig (firstArr d ts) r (firstArr na as)).2,
+  nat? := Fren.Core.instanceNat r,
+} by
+  intro d ts r na as hw
+  have hk (t : Fren.Core.Ty) : kindOf t = lang.ValueType.NatTy ↔ t = .nat := by cases t <;> simp [kindOf]
+  simp only [fren_spec, Fren.Seq.ext_iff, hk] at hw ⊢
+  -- The type arguments are not `Nat`s, as the assumption says.
+  have hargs : ∀ a ∈ firstArr na as, a ≠ .nat := by
+    obtain ⟨_ | _ | _ | _ | na, hna⟩ := na <;> first | omega | skip
+    all_goals simp_all [firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+  refine ⟨⟨?_, by simp [Fren.Core.instanceSig, firstArr]⟩, ?_⟩
+  · obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
+    all_goals simp [Fren.Core.instanceSig, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+  · simp only [Fren.Core.instanceSig, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
 
 /-! ## The overlap of patterns -/
 
