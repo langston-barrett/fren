@@ -1,0 +1,23 @@
+error[F0381]: a postcondition of `f` applies `f` to other than its parameters
+ --> test/cli/fix/migrate_functions_binders.fren:9:33
+  |
+9 |     ensure d: forall (x!: Int), f(x, y) = x + y
+  |                                 ^ not its parameters
+  |
+  = note: a postcondition states what the function gives at its own arguments, written as its parameters' names, in order
+  = help: apply it to the parameters, or state this where the function is applied
+
+error: could not fix due to previous errors
+
+For more information about this error, try `fren --explain F0381`.
+--- test/cli/fix/migrate_functions_binders.fren
++++ test/cli/fix/migrate_functions_binders.fren
+@@ -6,2 +6,3 @@
+-pub fn f(x: Int, y: Int): Int := x + y
+-    ensure sum: f(x, y) = x + y
++pub fn f(x: Int, y: Int): (r: Int) {
++    out r := x + y
++    ensure sum: r = x + y
+@@ -9,0 +11 @@
++}
+exit=2

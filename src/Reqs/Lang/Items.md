@@ -793,7 +793,9 @@ to its parameters. Each member's expression has, before its own `where`
 clause, the definitions that it needs, in the order they are written,
 the result's first: those it mentions, and those that they mention, and
 so on. So the `let`s are read in order, as a `where` clause's definitions
-are. The body and the preconditions do not need the result
+are, and a `let` that no expression needs is unused, as a procedure's is
+(`unused_variables`). The lints of `where` clauses read the block as
+written, not these clauses. The body and the preconditions do not need the result
 (`F0165`): the body defines it, and a precondition cannot depend on it.
 `lang::fn_definitions` states which definitions an expression is rightly
 given:
@@ -822,7 +824,8 @@ before they had blocks. That form, with clauses, is now an error
 (`F0164`), whose fix `fren fix` makes: it writes the block, with the body
 as the `out` member after the preconditions, and, in a postcondition of a
 function that is not generic, the function applied to its parameters as
-the result. The meaning is unchanged. In a generic function's
+the result, but under no binder that hides a parameter, where the
+application is another. The meaning is unchanged. In a generic function's
 postcondition, the application is kept, since it may be at another
 instance than the result's.
 

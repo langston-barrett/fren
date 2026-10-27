@@ -5076,7 +5076,10 @@ partial def elabLetExpr (cx : ExprCtx) (span : Span) (concatOk : Bool) (expected
   -- which are asserted to be at least 0 outside it.
   modify fun s => { s with natApps := s.natApps.extract 0 appMark ++
     (s.natApps.extract appMark s.natApps.size).map (wrapLets binds) }
-  if cx.noteIndexes then lintClause span defs body isWhere
+  -- Not of what a function's block lowers to, whose definitions are
+  -- written outside it (`Reqs/Lang/Items#function-blocks`).
+  let lowered := defs.any fun (x, _, _) => x.span.start < span.start || x.span.stop > span.stop
+  if cx.noteIndexes && !lowered then lintClause span defs body isWhere
   return (wrapLets binds b, t)
 
 /-- Elaborates the definitions of a `let` (`inLet`) or `where` clause, in
@@ -6432,7 +6435,10 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       sorts := s.sorts.push path }
-  | .function isPub name typeParams params result body clauses last uses => do
+  | .function isPub name typeParams params result body clauses last block => do
+    -- A precondition or body of its block that mentions the result
+    -- (`F0165`).
+    if let some (sp, r) := block.resultMention? then err sp (Fren.Core.fnResultMentionMsg r)
     let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
@@ -6445,7 +6451,11 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with item := path }
     -- The `use`s of its block, in its scope, as a procedure's
     -- (`Reqs/Lang/Items#function-blocks`).
-    declareMemberUses path uses
+    declareMemberUses path block.uses
+    -- Its block's `let`s that nothing needs, as a procedure's
+    -- (`unused_variables`).
+    for x in block.unusedLets do
+      lint .unusedVariables x.span (Fren.Core.unusedVariableMsg (Name.mkSimple (declaredIdent x).1.name) false true)
     -- Its type parameters, which are abstract types within it, whether it
     -- is defined or not (`lang::generic_function`).
     let tps ← elabTypeParams typeParams

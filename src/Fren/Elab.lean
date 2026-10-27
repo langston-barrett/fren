@@ -4356,7 +4356,10 @@ def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
       unless inLet && e[3].isOfKind ``Lang.memberExpr do throw ex
       let text ← msg.toString
       throw (.error ref m!"{text}{if (text.splitOn "\n\n").length > 1 then "\n" else "\n\n"}{Core.membershipNoteText}")
-    if cx.noteIndexes then lintClause e defs !inLet
+    -- Not of what a function's block lowers to, whose `where` is written
+    -- nowhere (`Reqs/Lang/Items#function-blocks`).
+    let lowered := e[2].getPos?.isNone
+    if cx.noteIndexes && !lowered then lintClause e defs !inLet
     -- The indexes of the body, and of the names it mentions, are within the
     -- `have`s.
     let xs := (← getLocal).indexes
@@ -6171,17 +6174,20 @@ def parseAt (cat : Name) (text : String) (ref : Syntax) : CommandElabM Syntax :=
   | .ok s => return withInfoOf ref s
   | .error e => throwErrorAt ref e
 
-/-- The `where` clause, a `fren_where` if any, of an expression `e` whose
-own clause is `w?`, with the definitions of `defs`, `fren_def`s with their
-names, that it needs first (`Core.neededDefs`). -/
-def whereWith (defs : Array (String × Syntax)) (e w? : Syntax) : Syntax :=
-  let needed := Core.neededDefs defs (fun d => identRoots d[3]) (identRoots e ++ identRoots w?)
-  if needed.isEmpty then w? else
-  let ours := needed.map fun i => defs[i]!.2
-  let theirs := if w?.isNone then #[] else w?[0][1].getArgs
-  let args := ours.foldl (init := #[]) fun acc d => (if acc.isEmpty then acc else acc.push (mkAtom ",")).push d
-  let args := if theirs.isEmpty then args else (args.push (mkAtom ",")) ++ theirs
-  mkNullNode #[(mkNode ``Lang.fren_where #[mkAtom "where", mkNullNode args] : Syntax)]
+/-- The indices of the definitions of `defs`, `fren_def`s with their
+names, that an expression `e` with its own `where` clause `w?` needs
+(`Core.neededDefs`). -/
+def neededOf (defs : Array (String × Syntax)) (e w? : Syntax) : Array Nat :=
+  Core.neededDefs defs (fun d => identRoots d[3]) (identRoots e ++ identRoots w?)
+
+/-- An expression `e` with its own `where` clause `w?`, as an expression
+and a `where` clause: the definitions of `defs` that it needs, around it
+with its own clause within. -/
+def withNeeded (defs : Array (String × Syntax)) (e w? : Syntax) : Syntax × Syntax :=
+  let needed := neededOf defs e w?
+  if needed.isEmpty then (e, w?) else
+  let args := needed.foldl (init := #[]) fun acc i => (if acc.isEmpty then acc else acc.push (mkAtom ",")).push defs[i]!.2
+  (withWhere e w?, mkNullNode #[(mkNode ``Lang.fren_where #[mkAtom "where", mkNullNode args] : Syntax)])
 
 /-- A function written with its result and a block
 (`Reqs/Lang/Items#function-blocks`), as the `fren` command reads it: the
@@ -6251,14 +6257,26 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
     let all := identRoots e ++ identRoots w? ++ needed.flatMap fun i => identRoots lets[i]!.2[3]
     if all.contains rn then throwErrorAt (mkNullNode #[e, w?]) (Core.fnResultMentionMsg rn).text
   let mut clauses' := #[]
+  -- And the `let`s that some expression needs, the others unused.
+  let mut used : Array Nat := #[]
   for c in clauses do
     let isEnsure := c[0].getAtomVal.trimAscii.toString == "ensure"
     unless isEnsure do check c[3] c[4]
+    used := used ++ (neededOf defs c[3] c[4]).filterMap fun i => if i == 0 then none else some (i - 1)
     let kw := mkAtomFrom c[0] (if isEnsure then "ensure " else "assume ")
-    clauses' := clauses'.push (mkNode ``Lang.fren_clause #[kw, c[1], c[2], c[3], whereWith defs c[3] c[4]])
+    let (e, w) := withNeeded defs c[3] c[4]
+    clauses' := clauses'.push (mkNode ``Lang.fren_clause #[kw, c[1], c[2], e, w])
   let body ← match out? with
-    | some d => do check d[1] d[2]; pure (mkNullNode #[d[0], d[1], whereWith lets d[1] d[2]])
+    | some d => do
+      check d[1] d[2]
+      used := used ++ neededOf lets d[1] d[2]
+      let (e, w) := withNeeded lets d[1] d[2]
+      pure (mkNullNode #[d[0], e, w])
     | none => pure mkNullNode
+  -- Its `let`s that nothing needs, as a procedure's (`unused_variables`).
+  for (n, d) in lets, i in [0:lets.size] do
+    unless used.contains i do
+      recordLint .unusedVariables (declaredIdent d[0]).1 (Core.unusedVariableMsg (Name.mkSimple n) false true)
   -- A result `r?` without a type is a `Bool`, as is the function's
   -- value if its name ends in `?` too.
   let result ← if !r[3].isNone then pure r[3]

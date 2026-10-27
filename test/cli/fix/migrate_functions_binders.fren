@@ -1,0 +1,9 @@
+--@ args: fix --check
+-- `fren fix` writes a function's contract in its block (`F0164`), with the
+-- function applied to its parameters as the result, but not under a
+-- binder that hides a parameter: there the application is another, which
+-- `F0381` then reports.
+pub fn f(x: Int, y: Int): Int := x + y
+    ensure sum: f(x, y) = x + y
+    ensure d: forall (x!: Int), f(x, y) = x + y
+    ensure e: z = x + y where x! := 3, z := f(x, y)

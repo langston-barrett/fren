@@ -2715,10 +2715,10 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
-  | .function isPub name typeParams params result body clauses _ uses => do
+  | .function isPub name typeParams params result body clauses _ block => do
     let path := (← get).module ++ itemName name
     -- The `use`s of its block, in its scope.
-    for m in uses do
+    for m in block.uses do
       match m with
       | .use _ segs glob => declareUseIn segs glob (some path)
       | .useGroup _ pre paths => for p in paths do declareUseIn (pre ++ p) false (some path)
