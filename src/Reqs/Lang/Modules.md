@@ -172,6 +172,10 @@ pub comp resolve {
     inst first: lang::scope { bindings, name }
 
     expect nothing_in_scope: when bindings = {}, result = Unbound
+    -- Rules 2 and 3: only a variant that a glob import opens resolves through it, and
+    -- several are ambiguous.
+    expect glob_opened: result = Glob iff lookup = lang::Lookup::Found(Opened)
+    expect ambiguous_globs: result = Ambiguous iff lookup = lang::Lookup::Ambiguous
     -- A variant that only a glob import opens resolves through it.
     expect only_glob: forall (b: lang::Binding), when lang::resolves_to?(bindings, b, name) and b.kind = Opened,
         result = Glob
@@ -263,12 +267,14 @@ pub comp two_segments {
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
     inst second: member { parent := a_kind, members, name := b, visible? := seen.visible? }
 
-    ensure rule: accepted? iff (first.result = Local and second.accepted?)
+    ensure rule: accepted? iff second.accepted?
 
     expect variants_have_no_members: when first.result != Local, not accepted?
     expect private_member: when a_kind = Module and not b_pub? and here != b_owner and not descends?(here, b_owner),
         not accepted?
-    expect variants_visible: when a_kind = Enum and second.found?, accepted?
+    -- The variants of an enumeration that `a` names are its members, wherever they are written.
+    expect variants_visible: when first.lookup = lang::Lookup::Found(lang::BindingKind::Enumeration) and second.found?,
+        accepted?
     expect unbound: when bindings = {}, not accepted?
 }
 
