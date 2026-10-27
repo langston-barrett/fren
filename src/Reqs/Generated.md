@@ -31,15 +31,15 @@ core](Lang/Decidability.md#sequences), so they opt out:
 pub mod generated
 
 -- The namespace, under the current Lean namespace, of every generated declaration.
-pub const NAMESPACE: Seq(String) := ["Fren", "Generated"]
+pub const NAMESPACE: Seq<String> := ["Fren", "Generated"]
 
 set_option fren.lint.undecidable "allow" in
 pub comp lean_name {
-    in current: Seq(String)      -- the current Lean namespace's components, [] at the root
-    in path: Seq(String)         -- the item's path's segments
+    in current: Seq<String>      -- the current Lean namespace's components, [] at the root
+    in path: Seq<String>         -- the item's path's segments
 
     assume item: path != []
-    pub out name: Seq(String) := current ++ NAMESPACE ++ path
+    pub out name: Seq<String> := current ++ NAMESPACE ++ path
 
     expect length: name.len = current.len + 2 + path.len
     expect starts_in_namespace: name.starts_with?(current ++ NAMESPACE)
@@ -126,7 +126,7 @@ of a type.
 A [generic type](Lang/Generics.md) becomes an inductive type or structure,
 as above, with one explicit parameter of type `Type` for each type
 parameter, of the same name, and named as any other item's declarations
-are (see [Names](#names)): `enum Option(T) { None, Some(T) }` becomes
+are (see [Names](#names)): `enum Option<T> { None, Some(T) }` becomes
 `inductive Option (T : Type)`, which at the root module is
 `Fren.Generated.Option`, apart from Lean's `Option`, with `Option.Some :
 {T : Type} → T → Option T`. Deriving `DecidableEq`, `Repr` and `Inhabited` asks the same of
@@ -204,7 +204,7 @@ defined function does, whose type parameters are among the abstract types
 it uses: each is an explicit parameter of type `Type`, named as the type
 parameter, followed by an instance-implicit `Inhabited` instance of it, as
 an abstract type's is, after the abstract types declared before the
-function. For example, `fn unwrap_or(T)(o: Option(T), d: T): T := ...`
+function. For example, `fn unwrap_or<T>(o: Option<T>, d: T): T := ...`
 becomes `unwrap_or : (T : Type) → [Inhabited T] → Option T → T → T`. An
 application gives its inferred type arguments explicitly, with their
 instances, as `unwrap_or Int x 0`, so that Lean infers nothing that Fren
@@ -272,18 +272,18 @@ with the constraints of the inputs whose types bring one (see
 [Components](Lang/Components.md#pattern-types)), in order, and `p.ensures`
 with those of the outputs that are not defined, before the assumptions
 and guarantees that the spec writes, so that an implementation's
-obligation assumes them and proves them. A variable of type `Set(T)` has the
+obligation assumes them and proves them. A variable of type `Set<T>` has the
 Lean type `Fren.FinSet T'`, where `T'` is that of `T`: a list up to having
 the same members, with `∈`, `∪`, `∩`, `\`, `⊆`, `∅`, `{a, b}` and
 `Fren.FinSet.card`, each with a `simp` lemma stating it by membership. A
-variable of type `Rel(A, B)` has the Lean type `Fren.FinSet (A' × B')`, and
+variable of type `Rel<A, B>` has the Lean type `Fren.FinSet (A' × B')`, and
 `r join q`, `r.inverse`, `r.closure`, `r.image(s)`, `r.domain` and
 `r.range` are `Fren.FinSet.join r q`, `Fren.FinSet.inverse r`, and so on,
 each with a `simp` lemma stating it by membership, except `closure`, whose
 lemma `Fren.FinSet.mem_closure` states it by `Relation.TransGen`. Where the
 type it ranges over is finite, `r.domain` is the image of `r.inverse` under
 the set of every value of `B`, and `r.range` the image of `r` under every
-value of `A`. A variable of type `Seq(T)` has the Lean type `Fren.Seq T'`,
+value of `A`. A variable of type `Seq<T>` has the Lean type `Fren.Seq T'`,
 a wrapper around `List T'`; `[]`, `[a, b]`, `q ++ r` and `x in q` are `∅`,
 `Fren.Seq.unit a ++ Fren.Seq.unit b`, `++` and `∈`, `q[i]` is
 `Fren.Seq.nth q i`, which is `default` out of range, and each method is the

@@ -22,21 +22,21 @@ enum Two { A, B }
 enum Boxed { Box(Int) }
 
 pub struct Marks {
-    marks: Rel(Int, Mark),  --~ warning: `Rel(Int, Mark)` relates to `Mark`, which has one value
+    marks: Rel<Int, Mark>,  --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
 }
 
-pub enum Holder { Holds(Rel(String, Mark)) }  --~ warning: `Rel(String, Mark)` relates to `Mark`, which has one value
+pub enum Holder { Holds(Rel<String, Mark>) }  --~ warning: `Rel<String, Mark>` relates to `Mark`, which has one value
 
-const MARKED: Rel(Int, Mark) := {(1, Mark::Marked)}  --~ warning: `Rel(Int, Mark)` relates to `Mark`, which has one value
+const MARKED: Rel<Int, Mark> := {(1, Mark::Marked)}  --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
 
-fn marked?(r: Rel(Int, Mark)) := (1, Mark::Marked) in r  --~ warning: `Rel(Int, Mark)` relates to `Mark`, which has one value
+fn marked?(r: Rel<Int, Mark>) := (1, Mark::Marked) in r  --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
 
 comp relations {
-    in r: Rel(Int, Mark)          --~ warning: `Rel(Int, Mark)` relates to `Mark`, which has one value
-    in nested: Set(Rel(Int, Mark))  --~ warning: `Rel(Int, Mark)` relates to `Mark`, which has one value
-    in two: Rel(Int, Two)
-    in boxed: Rel(Int, Boxed)
-    in flipped: Rel(Mark, Int)
+    in r: Rel<Int, Mark>          --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
+    in nested: Set<Rel<Int, Mark>>  --~ warning: `Rel<Int, Mark>` relates to `Mark`, which has one value
+    in two: Rel<Int, Two>
+    in boxed: Rel<Int, Boxed>
+    in flipped: Rel<Mark, Int>
     pub out p?
 
     ensure q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))

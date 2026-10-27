@@ -1,7 +1,7 @@
-error[F0316]: cannot match on `Set(Int)`
+error[F0316]: cannot match on `Set<Int>`
  --> test/cli/types/f0316_scrutinee.fren:2:60
   |
-2 | comp c { in s: Set(Int) pub out y: Int ensure r: y = match s { _ => 0 } }
+2 | comp c { in s: Set<Int> pub out y: Int ensure r: y = match s { _ => 0 } }
   |                                                            ^ no patterns of this type
   |
   = note: `match` reads a value of an enum, `Bool`, `Int`, `Nat` or `String`

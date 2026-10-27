@@ -21,11 +21,11 @@ inductive Ty where
   /-- `Nat`, which widens to `Int` (`lang::widening`). -/
   | nat
   | string
-  /-- `Set(T)`. -/
+  /-- `Set<T>`. -/
   | set (elem : Ty)
-  /-- `Rel(A, B)`. -/
+  /-- `Rel<A, B>`. -/
   | rel (a b : Ty)
-  /-- `Seq(T)`. -/
+  /-- `Seq<T>`. -/
   | seq (elem : Ty)
   /-- An enumeration, with its type arguments if it is generic
   (`Reqs/Lang/Generics`). -/
@@ -155,11 +155,11 @@ def Ty.show : Ty → String
   | .int => "Int"
   | .nat => "Nat"
   | .string => "String"
-  | .set t => s!"Set({t.show})"
-  | .rel a b => s!"Rel({a.show}, {b.show})"
-  | .seq t => s!"Seq({t.show})"
+  | .set t => s!"Set<{t.show}>"
+  | .rel a b => s!"Rel<{a.show}, {b.show}>"
+  | .seq t => s!"Seq<{t.show}>"
   | .enum p args | .record p args =>
-    showPath p ++ (if args.isEmpty then "" else "(" ++ ", ".intercalate (Ty.showAll args) ++ ")")
+    showPath p ++ (if args.isEmpty then "" else "<" ++ ", ".intercalate (Ty.showAll args) ++ ">")
   | .abstract p => (typeParamName? p).getD (showPath p)
   | .newtype p _ => showPath p
   | .param _ n => n.toString

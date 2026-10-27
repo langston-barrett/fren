@@ -6,8 +6,8 @@ comp ops {
     in x: Int
     in y: Int
     in a?
-    in t: Set(Int)
-    in q: Seq(Int)
+    in t: Set<Int>
+    in q: Seq<Int>
     pub out p1?
     pub out p2?
     pub out p3?
@@ -54,8 +54,8 @@ comp branches {
 comp elements {
     in x: Int
     in y: Int
-    in r: Rel(Int, Int)
-    in q: Seq(Int)
+    in r: Rel<Int, Int>
+    in q: Seq<Int>
     pub out p?
     pub out o?
     pub out k?
@@ -67,7 +67,7 @@ comp elements {
 
 comp methods {
     in s: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     pub out p?
     pub out o?

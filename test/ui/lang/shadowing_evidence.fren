@@ -24,7 +24,7 @@ pub comp members {
 
 set_option fren.evidence "tested" in
 pub comp defined {
-    in q: Seq(Int)
+    in q: Seq<Int>
     assume nonempty: q != []
     pub out d!: Int := q[0]
 }

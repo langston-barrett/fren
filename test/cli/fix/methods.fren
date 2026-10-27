@@ -2,8 +2,8 @@
 -- `fren fix` shortens chains of methods, receivers in parentheses too.
 pub enum E { A, B }
 pub comp c {
-    in q: Seq(Int)
-    in r: Rel(E, E)
+    in q: Seq<Int>
+    in r: Rel<E, E>
     pub out p?
 
     ensure r1: p? iff (q ++ q).rev.rev = q and r.inverse.inverse.domain = {} and (q.rev).rev.len = 1

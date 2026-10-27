@@ -4,7 +4,7 @@
 pub comp c {
     in s: String
     in t: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     in b?
     pub out p?

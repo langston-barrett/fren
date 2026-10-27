@@ -6,8 +6,8 @@ comp c {
     in a?
     in b?
     in x: Int
-    in t: Set(Int)
-    in r: Rel(Int, Int)
+    in t: Set<Int>
+    in r: Rel<Int, Int>
     in s: String
     pub out p1?
     pub out p2?

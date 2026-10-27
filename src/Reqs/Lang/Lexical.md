@@ -187,7 +187,7 @@ pub mod lang
 
 set_option fren.lint.undecidable "allow" in
 pub comp path_shape {
-    in segs: Seq(String)         -- a path's segments
+    in segs: Seq<String>         -- a path's segments
 
     assume nonempty: segs != []
     assume identifiers: not "" in segs
@@ -207,7 +207,7 @@ and the keywords of Lean that Fren uses. `lang::reserved_word` states
 which:
 
 ```fren
-pub const RESERVED: Set(String) := {
+pub const RESERVED: Set<String> := {
     "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "comp", "expect", "impl",
     "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
     "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table",
@@ -417,13 +417,22 @@ space, a line break or a comment, opens what the name takes, as in Lean:
 | a function's name, where it is declared | its parameters | `fn f(Int): Int` |
 | a variant's name, where it is declared | its payload's types | `enum S { A(Int) }` |
 | a newtype's name, where it is declared | its types | `struct Ms(Int)` |
-| a generic type's name, where it is declared | its type parameters | `enum Option(T) { None, Some(T) }` |
-| `Set`, `Seq` and `Rel` | their element types | `Set(Int)` |
-| a generic type, in a type | its type arguments | `Option(Int)` |
 
-A `(` after a space in one of these places is an error (`F0144`), in both
-front ends: `f (x)`, `S::A (_)`, `struct Ms (Int)`, `Set (Int)`,
-`enum Option (T)` and `Option (Int)` do not parse. A `(` that does not
+The same holds of a `<` after a type's name, or after a generic
+declaration's name, which opens its type arguments or type parameters
+(see [Angle brackets](Generics.md#angle-brackets)):
+
+| After | The `<` opens | Example |
+|---|---|---|
+| a generic type's or function's name, where it is declared | its type parameters | `enum Option<T> { None, Some(T) }`, `fn f<T>(x: T): T` |
+| `Set`, `Seq` and `Rel` | their element types | `Set<Int>` |
+| a generic type, in a type | its type arguments | `Option<Int>` |
+
+A `(` or a `<` after a space in one of these places is an error
+(`F0144`), in both front ends: `f (x)`, `S::A (_)`, `struct Ms (Int)`,
+`Set <Int>`, `enum Option <T>` and `Option <Int>` do not parse. A `<`
+within an expression is a comparison, which may follow a space or not,
+since an expression never writes a type. A `(` that does not
 follow a name, such as one that groups an expression or opens a
 quantifier's binders (`forall (x: T), e`), may follow a space. The `[` of an [index](Expressions.md#sequences) is written so too.
 
@@ -445,7 +454,9 @@ Lean is: `x <- 1` is `x`, `<-` and `1`, not `x < -1`. Fren has no operator
 token made of Fren punctuators that could otherwise be read as Fren: the
 others, such as `->`, `<->`, `|>`, `<|`, `>>`, `..` and `.(`, would be
 punctuators that never follow one another in an expression, so they are
-errors either way.
+errors either way. Where `>` closes type arguments, as twice in
+`Option<Set<Int>>`, Fren reads Lean's `>>` as two `>`s (see [Angle
+brackets](Generics.md#angle-brackets)).
 
 Punctuators follow maximal munch too, so `::*` is one punctuator and not
 `::` followed by `*`. A punctuator that extends a shorter one does so one
@@ -459,7 +470,7 @@ the rule assumes that `lexeme` is a punctuator:
 
 ```fren
 -- Longest first, as the lexer tries them.
-pub const PUNCTUATORS: Set(String) := {
+pub const PUNCTUATORS: Set<String> := {
     "::*", "::{", "..=", "::", "..", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", ">=", ":=", "{", "}",
     "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
 }

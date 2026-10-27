@@ -26,7 +26,7 @@ comp unknown { in s: S pub out z? ensure r: z? iff s is S::D(_) }
 --~^ error: no variant `D` in enum `S`
 comp not_variant { in s: S in i: Int pub out z? ensure r: z? iff s is i }
 --~^ error: a pattern test cannot bind `i`
-comp not_matched { in s: Set(Int) pub out z? ensure r: z? iff s is _ }
---~^ error: cannot test `Set(Int)` against a pattern
+comp not_matched { in s: Set<Int> pub out z? ensure r: z? iff s is _ }
+--~^ error: cannot test `Set<Int>` against a pattern
 
 --@ exit: 2

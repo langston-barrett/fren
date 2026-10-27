@@ -3,10 +3,10 @@
 -- `Option` of its own.
 mod generics_newtype_counterexample
 struct Ms(Int)
-enum Opt(T) { None, Some(T) }
+enum Opt<T> { None, Some(T) }
 
 comp c {
-    in m: Opt(Ms)
+    in m: Opt<Ms>
     expect e: m = Opt::None
     --~^ error: counterexample: m = Opt::Some(Ms(0))
 }

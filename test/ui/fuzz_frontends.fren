@@ -40,7 +40,7 @@ expect chained_literal: {(1, 2)}.range.card = 1 and {(1, 2)}.inverse.image({2}) 
 enum Dir { Up, Down }
 
 comp chained_paren {
-    in r: Rel(Dir, Dir)
+    in r: Rel<Dir, Dir>
     pub out y?
     ensure q: y? iff Dir::Up in (r).inverse.range
     --~^ warning: this chain of methods has a shorter form
@@ -50,7 +50,7 @@ comp chained_paren {
 comp parenthesized {
     in s: String
     in x: Int
-    in t: Set(Int)
+    in t: Set<Int>
     pub out a?
     pub out b?
     pub out c?

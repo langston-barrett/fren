@@ -141,10 +141,10 @@ pub comp bool_equality {
 ## Relations to one value
 
 `zero_sized_map_values`, `allow` by default, fires on a relation type
-`Rel(A, B)`, wherever a type is written, whose `B` is an enumeration with
+`Rel<A, B>`, wherever a type is written, whose `B` is an enumeration with
 one variant and no payload, and so has exactly one value. Such a relation
 pairs each `A` it relates with that one value, so it says only which `A`s it
-relates, as `Set(A)` does, which the message suggests. It has no fix: the
+relates, as `Set<A>` does, which the message suggests. It has no fix: the
 expressions that build and read the relation would change too.
 `lint::zero_sized_map_values` states when it fires:
 

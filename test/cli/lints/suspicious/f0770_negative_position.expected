@@ -1,7 +1,7 @@
 warning[F0770]: a negative position does not count from the end
  --> test/cli/lints/suspicious/f0770_negative_position.fren:2:66
   |
-2 | comp c { in s: String in q: Seq(Int) pub out p? ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
+2 | comp c { in s: String in q: Seq<Int> pub out p? ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
   |                                                                  ^^^^^^^^ always `""`
   |
   = note: Fren has no negative indexing
@@ -12,7 +12,7 @@ warning[F0770]: a negative position does not count from the end
 warning[F0770]: a negative position does not count from the end
  --> test/cli/lints/suspicious/f0770_negative_position.fren:2:85
   |
-2 | comp c { in s: String in q: Seq(Int) pub out p? ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
+2 | comp c { in s: String in q: Seq<Int> pub out p? ensure r: p? iff s.at(-1) = "." and q.update(-1, 0) = q }
   |                                                                                     ^^^^^^^^^^^^^^^ always `q`
   |
   = note: Fren has no negative indexing

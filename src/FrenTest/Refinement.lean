@@ -48,7 +48,7 @@ pub comp helper {
 }
 
 pub comp first {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
     assume nonempty: q != []
     inst h: helper { v := q[0] }
@@ -56,7 +56,7 @@ pub comp first {
 }
 
 pub comp exact {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
     assume nonempty: q != []
     ensure r: y = q[0]

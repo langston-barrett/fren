@@ -1,9 +1,9 @@
 -- A quantifier ranges over an instance of a generic type whose values are
--- finite: `Option(Bool)` has three (`Reqs/Lang/Generics`).
-pub enum Option(T) { None, Some(T) }
+-- finite: `Option<Bool>` has three (`Reqs/Lang/Generics`).
+pub enum Option<T> { None, Some(T) }
 
 comp c {
-    in x: Option(Bool)
-    expect each: exists (o: Option(Bool)), o = x
-    expect three: when x != Option::None, forall (o: Option(Bool)), o = Option::None or o = x or o = Option::Some(x != Option::Some(true))
+    in x: Option<Bool>
+    expect each: exists (o: Option<Bool>), o = x
+    expect three: when x != Option::None, forall (o: Option<Bool>), o = Option::None or o = x or o = Option::Some(x != Option::Some(true))
 }

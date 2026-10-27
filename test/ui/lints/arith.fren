@@ -8,9 +8,9 @@ comp arith {
     in x: Int
     in y: Int
     in s: String
-    in t: Set(Int)
-    in q: Seq(Int)
-    in r: Rel(Int, Int)
+    in t: Set<Int>
+    in q: Seq<Int>
+    in r: Rel<Int, Int>
 
     pub out a1? := ((x > 0))            --~ warning: parentheses directly around parentheses
     pub out a2? := (((x > 1)))          --~ warning: parentheses directly around parentheses

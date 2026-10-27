@@ -6,7 +6,7 @@
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 comp unguarded {
-    in s: Set(Int)
+    in s: Set<Int>
     pub out pos?
 
     ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
@@ -15,7 +15,7 @@ comp unguarded {
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 comp guarded {
-    in s: Set(Int)
+    in s: Set<Int>
     pub out pos?
 
     ensure r: pos? iff (forall (x: Int), when x in s, x > 0)

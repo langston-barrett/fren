@@ -46,9 +46,9 @@ comp unused {
 }
 
 comp quantifiers {
-    in s: Set(Mode)
-    in t: Set(Single)
-    in u: Set(Pair)
+    in s: Set<Mode>
+    in t: Set<Single>
+    in u: Set<Pair>
     in mode: Mode
     pub out a?
     pub out b?
@@ -81,7 +81,7 @@ fn g?(m: Mode) := m = Mode::Heat
 fn h?(b?) := b?
 
 comp places {
-    in t: Set(Single)
+    in t: Set<Single>
     in c?
     in m: Mode
     pub out w?
@@ -107,7 +107,7 @@ comp places {
 set_option fren.lint.undecidable "allow" in
 comp unbounded {
     in x: Int
-    in u: Set(Single)
+    in u: Set<Single>
     pub out a?
 
     ensure r1: a? iff (forall (i: Int), when 0 <= i < x, i >= 0) and (exists (k: Single) (j: Int), 0 <= j < x and k in u)
@@ -116,7 +116,7 @@ comp unbounded {
 
 -- An index makes the order of the operands matter, so the lint leaves them.
 comp guarded {
-    in q: Seq(Mode)
+    in q: Seq<Mode>
     pub out a?
 
     ensure r1: a? iff q != [] and (q[0] = Mode::Heat or q[0] = Mode::Cool or q[0] = Mode::Off)

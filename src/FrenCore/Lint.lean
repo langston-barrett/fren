@@ -6258,18 +6258,18 @@ def trivialMatchMsg (fixed : String) : Msg :=
 
 /-! ## Names and sizes -/
 
-/-- Whether `zero_sized_map_values` fires on `Rel(A, B)`, where `B` is an
+/-- Whether `zero_sized_map_values` fires on `Rel<A, B>`, where `B` is an
 enumeration of `nVariants` if `enum`, of which some has a payload if
 `payload` (`lint::zero_sized_map_values`). -/
 def zeroSizedMapValues (enum : Bool) (nVariants : Nat) (payload : Bool) : Bool :=
   enum && nVariants == 1 && !payload
 
-/-- `Rel(a, b)`, where `v` is the one variant of `b`. -/
+/-- `Rel<a, b>`, where `v` is the one variant of `b`. -/
 def zeroSizedMapValuesMsg (a b v : String) : Msg :=
-  { code? := some "F0789", headline := s!"`Rel({a}, {b})` relates to `{b}`, which has one value"
+  { code? := some "F0789", headline := s!"`Rel<{a}, {b}>` relates to `{b}`, which has one value"
     label? := some s!"`{b}` has only `{b}::{v}`"
     notes := #[s!"note: such a relation says only which `{a}`s it relates, as a set does",
-      s!"help: write `Set({a})`"] }
+      s!"help: write `Set<{a}>`"] }
 
 /-- `a`, `b` and `c`. -/
 def andList (xs : Array String) : String :=

@@ -87,13 +87,13 @@ says only its type. The cardinality operators are built-in functions. See
 [Items](Lang/Items.md#functions).
 
 **Generic function.** A defined function with type parameters, as
-`fn id(T)(x: T): T := x`, whose type arguments are inferred at each
+`fn id<T>(x: T): T := x`, whose type arguments are inferred at each
 application, where it is unfolded at that instance. See [Generic
 functions](Lang/GenericFunctions.md).
 
 **Generic type.** An enumeration or record with type parameters, as
-`enum Option(T) { None, Some(T) }`, which is a type once given a type
-argument for each parameter, as in `Option(Int)`. See [Generic
+`enum Option<T> { None, Some(T) }`, which is a type once given a type
+argument for each parameter, as in `Option<Int>`. See [Generic
 types](Lang/Generics.md).
 
 **Global expectation.** A claim about one or more components as a whole,
@@ -134,7 +134,7 @@ with `in`.
 See [Instances](Lang/Instances.md).
 
 **Instance of a generic type.** A generic type with its type arguments,
-such as `Option(Int)`. See [Generic types](Lang/Generics.md).
+such as `Option<Int>`. See [Generic types](Lang/Generics.md).
 
 **Instance of a quantifier.** The body of a quantifier over listed types
 with each bound name standing for one value; such a quantifier means the
@@ -269,12 +269,12 @@ are disjoint, so that its value does not depend on their order. See
 [Expressions](Lang/Expressions.md#tables).
 
 **Type argument.** A type that stands for a type parameter in an
-instance of a generic type, as `Int` in `Option(Int)`. Expressions never
+instance of a generic type, as `Int` in `Option<Int>`. Expressions never
 write them: they are inferred. See [Generic
 types](Lang/Generics.md#type-arguments).
 
 **Type parameter.** A name that stands for a type within the declaration
-of a generic type, as `T` in `enum Option(T) { None, Some(T) }`. See
+of a generic type, as `T` in `enum Option<T> { None, Some(T) }`. See
 [Generic types](Lang/Generics.md#type-parameters).
 
 **Trigger.** The condition under which a `when` or `unless` constraint

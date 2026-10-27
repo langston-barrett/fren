@@ -329,8 +329,8 @@ pub struct Mention { mentioner: Int, mentioned: Int }
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub comp arbitrary_source_item_ordering {
-    in kinds: Seq(MemberKind)    -- the members' kinds, in the order written
-    in mentions: Set(Mention)
+    in kinds: Seq<MemberKind>    -- the members' kinds, in the order written
+    in mentions: Set<Mention>
     assume positions: forall (m: Mention), when m in mentions,
         0 <= m.mentioner < kinds.len and 0 <= m.mentioned < kinds.len
     pub det out fires?

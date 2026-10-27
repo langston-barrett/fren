@@ -4,7 +4,7 @@ set_option fren.lint.chainable_comparison "allow"
 
 comp bounds {
     in i: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out inside?
 
     ensure rule: inside? iff 0 <= i < q.len
@@ -52,7 +52,7 @@ comp precedence {
 -- `and`.
 comp later {
     in i: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out ok?
 
     ensure rule: ok? iff 0 <= i < q.len < q[i]
@@ -63,7 +63,7 @@ comp later {
 -- A chain guards the operands of an `and` after it.
 comp then_index {
     in i: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out ok?
 
     ensure rule: ok? iff 0 <= i < q.len and q[i] > 0

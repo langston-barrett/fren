@@ -1,5 +1,6 @@
 --@ args: fmt --check
--- `fren fmt` writes a generic function's type parameters as a call's
--- parentheses, directly after its name and before its parameters.
-pub fn id(  T )(x: T): T := x
-pub fn swap( A,B )( a: A, b: B ): B := b
+-- `fren fmt` writes a generic function's type parameters in angle brackets
+-- spaced as a call's parentheses, directly after its name and before its
+-- parameters.
+pub fn id<  T >(x: T): T := x
+pub fn swap< A,B >( a: A, b: B ): B := b

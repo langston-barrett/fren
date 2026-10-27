@@ -87,7 +87,7 @@ comp wrong_value { pub out c: Ms ensure r: c = Ms(true) }
 
 -- A counterexample shows newtypes as Fren builds them, as the `fren`
 -- command does (`test/cli/commands/counterexample_newtype.fren`).
-pub struct Slot { start: Ms, tags: Set(Ms) }
+pub struct Slot { start: Ms, tags: Set<Ms> }
 
 comp shown {
     in t: Ms

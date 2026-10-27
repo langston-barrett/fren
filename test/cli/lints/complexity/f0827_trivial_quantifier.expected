@@ -1,7 +1,7 @@
 warning[F0827]: this `forall` ranges over one value
  --> test/cli/lints/complexity/f0827_trivial_quantifier.fren:4:62
   |
-4 | comp c { in s: Set(Solo) pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
+4 | comp c { in s: Set<Solo> pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
   |                                                              ^^^^^^^^^ `Solo` has one value
   |
   = note: a `forall` over a type of one value is its body at that value
@@ -10,8 +10,8 @@ warning[F0827]: this `forall` ranges over one value
   = help: to allow it, `set_option fren.lint.trivial_quantifier "allow"`
 help: write the body with `Solo::Only` in place of `u`
   |
-4 - comp c { in s: Set(Solo) pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
-4 + comp c { in s: Set(Solo) pub out p? ensure r: p? iff (Solo::Only in s) }
+4 - comp c { in s: Set<Solo> pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
+4 + comp c { in s: Set<Solo> pub out p? ensure r: p? iff (Solo::Only in s) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

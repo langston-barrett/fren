@@ -1513,6 +1513,40 @@ impl punctuator: lang::punctuator for (s : String) {
   intro s _
   simp [fren_spec, FrenCli.punctuators]
 
+/-! ## Angle brackets (`Reqs/Lang/Generics#angle-brackets`) -/
+
+/-- A bracket, as the spec writes it. -/
+def toBracket : lang.Bracket → Fren.Core.Bracket
+  | .Angle => .angle
+  | .Paren => .paren
+  | .Other => .other
+
+/-- What a bracket after a name does, as the spec writes it. -/
+def ofAfterName : Fren.Core.AfterName → lang.AfterName
+  | .opens => .Opens
+  | .parenthesized => .Parenthesized
+  | .spaced => .Spaced
+  | .ends => .Ends
+
+-- For every bracket after a type's name: what the `fren` command's parser
+-- does with it.
+impl type_bracket: lang::type_bracket for (b : lang.Bracket) (a : Bool) {
+  bracket := b,
+  adjacent? := a,
+  reading := ofAfterName (Fren.Core.afterName (toBracket b) a),
+} by
+  intro b a _
+  cases b <;> cases a <;> simp [fren_spec, toBracket, ofAfterName, Fren.Core.afterName]
+
+-- For every lexeme: how both front ends write it in a suggested type.
+impl lexeme_text: lang::lexeme_text for (s : String) {
+  lexeme := s,
+  text := Fren.Core.lexemeText s,
+} by
+  intro s _
+  simp only [fren_spec, Fren.Core.lexemeText, Fren.Str.lit]
+  by_cases h1 : s = "," <;> by_cases h2 : s = "is" <;> by_cases h3 : s = "|" <;> simp_all
+
 namespace Lexical
 
 open Fren.Core (inRanges isIdStart isIdRest Re)
@@ -2487,7 +2521,7 @@ impl construction_order: lang::construction_order for (n : Fin 4) (vs : List lan
   simp only [List.all_eq_true, decide_eq_true_eq] at this
   exact this n (by simp) e (by cases e <;> simp) vs (mem_argModeLists 3 vs hl) h
 
-/-- The declarations of `Option(T)`, `Pair(A, B)` and `List(T)`, which is
+/-- The declarations of `Option<T>`, `Pair<A, B>` and `List<T>`, which is
 recursive, as both front ends give them to `Core.countIn`
 (`lang::instance_values`). -/
 def exampleSigs (p : Lean.Name) : Option Fren.Core.DataSig :=

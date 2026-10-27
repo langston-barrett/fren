@@ -9,14 +9,14 @@ enum Shade { Light, Dark }
 ordered enum Level { Low, High }
 
 -- Every field's type, and a newtype's underlying type, must be ordered.
-ordered struct Entry { key: Int, tags: Set(Int) }
---~^ error: the field `tags` of the ordered struct `Entry` has the type `Set(Int)`, which is not ordered
+ordered struct Entry { key: Int, tags: Set<Int> }
+--~^ error: the field `tags` of the ordered struct `Entry` has the type `Set<Int>`, which is not ordered
 ordered struct Flagged { key: Int, on? }
 --~^ error: the field `on?` of the ordered struct `Flagged` has the type `Bool`, which is not ordered
 ordered struct Painted { shade: Shade }
 --~^ error: the field `shade` of the ordered struct `Painted` has the type `Shade`, which is not ordered
 ordered struct Flag(Bool)  --~ error: the ordered newtype `Flag` has the underlying type `Bool`, which is not ordered
-ordered struct Ids(Set(Int))  --~ error: the ordered newtype `Ids` has the underlying type `Set(Int)`, which is not ordered
+ordered struct Ids(Set<Int>)  --~ error: the ordered newtype `Ids` has the underlying type `Set<Int>`, which is not ordered
 struct Ms(Int)
 ordered struct Wrapped(Ms)  --~ error: the ordered newtype `Wrapped` has the underlying type `Ms`, which is not ordered
 ordered struct Fine { key: Int, level: Level, name: String, size: Nat }

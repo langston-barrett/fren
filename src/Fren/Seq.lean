@@ -5,7 +5,7 @@ import FrenCore.Str
 /-!
 # Finite sequences
 
-`Fren.Seq α`, the Lean type of Fren's `Seq(T)`: a list, wrapped so that the
+`Fren.Seq α`, the Lean type of Fren's `Seq<T>`: a list, wrapped so that the
 SMT translation has a head symbol to match. Positions are `Int`s, as in
 Fren, and each operation is total, with SMT-LIB's `seq.*` values at the
 edges, which are those of its `str.*` operations: the methods that strings

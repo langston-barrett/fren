@@ -6,7 +6,7 @@ comp quiet {
     in x: Int
     in s: String
     pub out p?
-    pub out m: Set(Int) := {x, 1,}
+    pub out m: Set<Int> := {x, 1,}
 
     ensure r: p? iff (x.abs >= 0 or s = "café")
 }
@@ -58,7 +58,7 @@ comp searches {
     in s: String
     in t: String
     in i: Int
-    in u: Seq(Int)
+    in u: Seq<Int>
     pub out a? := s.index_of(t, i) >= -1     --~ warning: this comparison is always `true`
     pub out b? := s.index_of(t, i) < -1      --~ warning: this comparison is always `false`
     pub out c? := -3 > u.index_of([1], i)    --~ warning: this comparison is always `false`
@@ -95,18 +95,18 @@ comp lists {
     in mode: Mode
     in fan: Fan
     in vent: Vent
-    pub out a: Set(Int) := {x, 1,}          --~ warning: unnecessary trailing comma before `}`
-    pub out b: Seq(Int) := [x, 2, ]         --~ warning: unnecessary trailing comma before `]`
-    pub out c: Seq(Int) := [
+    pub out a: Set<Int> := {x, 1,}          --~ warning: unnecessary trailing comma before `}`
+    pub out b: Seq<Int> := [x, 2, ]         --~ warning: unnecessary trailing comma before `]`
+    pub out c: Seq<Int> := [
         x,
         3,
     ]
     pub out d: Int := match mode { Heat => 1, Cool => 2, }  --~ warning: unnecessary trailing comma before `}`
     pub out e: Reading := Reading { value := x, mode := Mode::Heat, }  --~ warning: unnecessary trailing comma before `}`
     -- A comment after the comma: a line ends before the `]`.
-    pub out f: Seq(Int) := [x, 4, -- four
+    pub out f: Seq<Int> := [x, 4, -- four
     ]
-    pub out g: Seq(Int) := [x, 5]
+    pub out g: Seq<Int> := [x, 5]
 
     inst w: quiet { x, s := "a", }         --~ warning: unnecessary trailing comma before `}`
     expect used: fan != Fan::Low or vent != Vent::Open or mode in {Heat, Cool}

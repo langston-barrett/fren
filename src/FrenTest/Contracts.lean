@@ -8,7 +8,7 @@ open Fren.Lang
 -- interpretation proves the function's postconditions.
 mod contract_test
 
-pub fn nth(q: Seq(Int), i: Int): Int := q[i]
+pub fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 /-- info: contract_test.nth.in_range : Fren.Seq Int → Int → Prop -/

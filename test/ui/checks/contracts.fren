@@ -4,11 +4,11 @@
 -- applied function's name or at the postcondition's.
 set_option fren.lint.dead_code "allow"
 
-fn nth(q: Seq(Int), i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 comp unguarded {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: y = nth(q, 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `unguarded::r`
@@ -16,7 +16,7 @@ comp unguarded {
 
 -- An assumption's application is checked under the other assumptions.
 comp assumed {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
 
     assume valid: 0 <= i < q.len
@@ -49,20 +49,20 @@ fn decrement(n: Int): Int := n - 1
 
 -- An application in a function's body is checked under its preconditions,
 -- and so is one in its postconditions.
-fn head(q: Seq(Int)): Int := nth(q, 0)
+fn head(q: Seq<Int>): Int := nth(q, 0)
     assume nonempty: q != []
     ensure at_zero: head(q) = nth(q, 0)
 
-fn careless(q: Seq(Int)): Int := nth(q, 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `careless`
+fn careless(q: Seq<Int>): Int := nth(q, 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `careless`
 
 -- A precondition's application is checked under the other preconditions.
-fn second(q: Seq(Int)): Int := q[1]
+fn second(q: Seq<Int>): Int := q[1]
     assume long: q.len > 1
     assume sorted: nth(q, 0) <= nth(q, 1)
 
 -- In a global expectation, and under quantifiers.
 comp holder {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: when q.len > 2, y = nth(q, 2)
@@ -74,14 +74,14 @@ expect read: forall (h: holder), when h.q.len > 2, h.y = h.q[2]
 -- and `where`, an application in a definition is guarded where the name
 -- is mentioned; in a table, by the earlier rows.
 comp quantified {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out ok?
 
     ensure r: ok? iff (forall (b?: Bool), nth(q, if b? then 0 else 1) > 0)   --~ error: the precondition `in_range` of `nth` may not hold at this application in `quantified::r`
 }
 
 comp named {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
     pub out z: Int
 
@@ -90,7 +90,7 @@ comp named {
 }
 
 comp tabled {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: y = table { q = [] => 0, _ => nth(q, 0) }
@@ -105,7 +105,7 @@ comp reader {
 }
 
 comp reading {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     inst w: reader { x := nth(q, 0) }   --~ error: the precondition `in_range` of `nth` may not hold at this application in `reading::w`
@@ -121,7 +121,7 @@ enum Pick { First, Last, Neither }
 
 comp picked {
     in p: Pick
-    in q: Seq(Int)
+    in q: Seq<Int>
 
     assume nonempty: q != []
     pub out y: Int
@@ -134,14 +134,14 @@ comp picked {
 
 -- In a refinement's binding, under the concrete component's assumptions.
 comp abstract_reader {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: when q.len > 3, y = q[3]
 }
 
 comp concrete_reader {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: when q.len > 3, y = q[3]

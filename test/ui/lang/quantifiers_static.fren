@@ -37,7 +37,7 @@ comp names {
 
 comp sets {
     pub out ok?
-    ensure r: ok? iff (exists (s: Set(Bool)), s = {})  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
+    ensure r: ok? iff (exists (s: Set<Bool>), s = {})  --~ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
 }
 
 comp recursive {
@@ -67,7 +67,7 @@ comp too_many_nested {
 }
 
 -- A payload of a set type, which is unbounded.
-enum Holder { Holds(Set(Bool)) }
+enum Holder { Holds(Set<Bool>) }
 
 comp set_payload {
     pub out ok?

@@ -1,4 +1,4 @@
 -- A quantifier over a type of one value.
 enum Solo { Only }
 
-comp c { in s: Set(Solo) pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
+comp c { in s: Set<Solo> pub out p? ensure r: p? iff (forall (u: Solo), u in s) }

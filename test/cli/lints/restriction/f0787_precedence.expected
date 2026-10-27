@@ -1,7 +1,7 @@
 warning[F0787]: `inter` is an operand of `minus` without parentheses
   --> test/cli/lints/restriction/f0787_precedence.fren:12:43
    |
-12 |     pub out loud: Set(Int) := zones minus quiet inter tripped
+12 |     pub out loud: Set<Int> := zones minus quiet inter tripped
    |                                           ^^^^^^^^^^^^^^^^^^^ binds more tightly than `minus`
    |
    = note: `inter` binds more tightly than `minus`, so this is `(quiet inter tripped)` already
@@ -9,8 +9,8 @@ warning[F0787]: `inter` is an operand of `minus` without parentheses
    = note: `precedence` is set to `warn`
 help: add the parentheses, which keep the meaning
    |
-12 -     pub out loud: Set(Int) := zones minus quiet inter tripped
-12 +     pub out loud: Set(Int) := zones minus (quiet inter tripped)
+12 -     pub out loud: Set<Int> := zones minus quiet inter tripped
+12 +     pub out loud: Set<Int> := zones minus (quiet inter tripped)
    |
 
 warning[F0787]: `and` is an operand of `or` without parentheses

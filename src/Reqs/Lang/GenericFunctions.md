@@ -1,29 +1,32 @@
 # Generic functions
 
 A [defined function](Items.md#defined-functions) may have *type
-parameters*, written in parentheses right after its name, before its
+parameters*, written in angle brackets right after its name, before its
 parameters, as a [generic type's](Generics.md) are after its name:
 
 ```text
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-fn unwrap_or(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => d }
-fn swap(A, B)(p: Pair(A, B)): Pair(B, A) := Pair { fst := p.snd, snd := p.fst }
+fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
+fn swap<A, B>(p: Pair<A, B>): Pair<B, A> := Pair { fst := p.snd, snd := p.fst }
 ```
 
 Such a function is *generic*. Its parameters' and result's types, and the
 types written in its body and its contract, may mention its type
 parameters, which stand for types there, so that `unwrap_or` is a function
-from an `Option(T)` and a `T` to a `T`, for every type `T`. A function with
+from an `Option<T>` and a `T` to a `T`, for every type `T`. A function with
 no type parameters is written as before, and `fn f(T)` declares the
 uninterpreted function `f` of one parameter of type `T`, not a type
-parameter: type parameters are written only before a second `(`.
+parameter: type parameters are written only in angle brackets. `fn f(T)(x:
+T)`, a group of names right before a second `(`, is how they were written
+before, and is an error (`F0156`), whose fix is `fn f<T>(x: T)` (see
+[Angle brackets](Generics.md#angle-brackets)).
 
 ```
 function      := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] [":=" top] clause+
                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] ":=" top
-declared-type := IDENT | IDENT"(" IDENT ("," IDENT)* ")"
+declared-type := IDENT | IDENT"<" IDENT ("," IDENT)* ">"
 ```
 
 ## Type parameters
@@ -32,8 +35,8 @@ A function's type parameters follow the [rules of a generic
 type's](Generics.md#type-parameters): their names are distinct (`F0213`),
 none has the name of a built-in type or of an item that a path of one
 segment names where the function is declared (`F0388`), and none is an
-element type, as in `Set(T)`, for now (`F0387`). A type parameter may be
-an argument of an instance, as in `Option(T)`, and the whole type of a
+element type, as in `Set<T>`, for now (`F0387`). A type parameter may be
+an argument of an instance, as in `Option<T>`, and the whole type of a
 parameter or the result, as `d` and the result of `unwrap_or` are.
 
 Within the function, a type parameter is a type of its own, of which
@@ -48,7 +51,7 @@ hold for a type of which nothing is known.
 The rules that a type gives a name are of the type as declared: a
 parameter or result of type `T` is not named with `?`, though an
 application at `Bool` has a `Bool` (see [Boolean
-names](Types.md#boolean-names)), as `id(b?)` does with `fn id(T)(x: T): T`.
+names](Types.md#boolean-names)), as `id(b?)` does with `fn id<T>(x: T): T`.
 
 Since nothing is known of a type parameter's values, a quantifier over a
 type parameter, or over a type that mentions one, is outside the
@@ -63,7 +66,7 @@ contract or without. A defined generic function needs no polymorphic
 function in SMT-LIB, since its applications are
 [unfolded](#meaning). Its type parameters are inferred at each
 application from its parameters' and result's types, so each must be
-mentioned by one of them (`F0400`): `fn f(T, U)(x: T): T` has no place
+mentioned by one of them (`F0400`): `fn f<T, U>(x: T): T` has no place
 where a `U` could be inferred from.
 
 `lang::generic_function` states which functions may have type parameters,
@@ -105,7 +108,7 @@ set_option fren.lint.length_zero "allow" in
 pub comp generic_signature {
     in defined?
     in params: Nat               -- how many type parameters it has
-    in declared: Seq(Ty)         -- its parameters' declared types, in order
+    in declared: Seq<Ty>         -- its parameters' declared types, in order
     in result: Ty                -- its result's declared type
 
     -- Whether the type parameters `0`, `1` and `2` are in the signature: the
@@ -154,7 +157,7 @@ for the construction's type:
 - **From its arguments.** Otherwise, each type parameter takes its argument
   from the first argument whose parameter's declared type mentions it, and
   which synthesizes its type, as a construction's parameter does from its
-  values: so `unwrap_or(x, 0)` with `x: Option(Bool)` gives `T` the
+  values: so `unwrap_or(x, 0)` with `x: Option<Bool>` gives `T` the
   argument `Bool`, and then `0` is a type mismatch.
 
 An application some of whose type parameters neither gives an argument has
@@ -179,8 +182,8 @@ instance:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp call_type_argument {
-    in declared: Seq(Ty)           -- the declared types of the function's parameters, in order
-    in synthesizes: Seq(Bool)      -- which arguments synthesize their types
+    in declared: Seq<Ty>           -- the declared types of the function's parameters, in order
+    in synthesizes: Seq<Bool>      -- which arguments synthesize their types
     in k: Nat                      -- the type parameter
     in result_matched?             -- a type is expected of the application, and matching it against the result gives `k` an argument
     in result_arg: Ty              -- that argument
@@ -213,7 +216,7 @@ type gives no argument:
 -- `waiting?` says, where `from_result` gives the type parameters that the
 -- expected type gives an argument.
 set_option fren.lint.undecidable "allow" in
-pub fn call_waits?(values: Seq(ArgMode), from_result: Seq(Bool), j: Int) := 0 <= j < values.len
+pub fn call_waits?(values: Seq<ArgMode>, from_result: Seq<Bool>, j: Int) := 0 <= j < values.len
     and match values[j] {
     ArgMode::Waits(Arg::P0) => not ArgMode::Gives(Arg::P0) in values.slice(0, j) and not (from_result != [] and from_result[0]),
     ArgMode::Waits(Arg::P1) => not ArgMode::Gives(Arg::P1) in values.slice(0, j) and not (from_result.len > 1 and from_result[1]),
@@ -223,7 +226,7 @@ pub fn call_waits?(values: Seq(ArgMode), from_result: Seq(Bool), j: Int) := 0 <=
 }
 
 set_option fren.lint.undecidable "allow" in
-pub fn call_position_if(values: Seq(ArgMode), from_result: Seq(Bool), waiting?, j: Int): Seq(Int) :=
+pub fn call_position_if(values: Seq<ArgMode>, from_result: Seq<Bool>, waiting?, j: Int): Seq<Int> :=
     if 0 <= j < values.len and call_waits?(values, from_result, j) = waiting? then [j] else []
 
 set_option fren.lint.undecidable "allow" in
@@ -231,20 +234,20 @@ pub comp call_order {
     use self::Arg::{P0, P1, P2}
     use self::ArgMode::{Gives, Waits}
     in params: Nat                 -- how many type parameters the function has: `P0`, `P1`, ...
-    in values: Seq(ArgMode)          -- the application's arguments, in order
-    in from_result: Seq(Bool)      -- for each type parameter, whether the expected type gives it an argument
+    in values: Seq<ArgMode>          -- the application's arguments, in order
+    in from_result: Seq<Bool>      -- for each type parameter, whether the expected type gives it an argument
 
     assume few: values.len <= 2 and params <= 3 and from_result.len = params
     assume own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
 
     -- The arguments' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
-    pub det out order: Seq(Int) :=
+    pub det out order: Seq<Int> :=
         call_position_if(values, from_result, false, 0) ++ call_position_if(values, from_result, false, 1)
         ++ call_position_if(values, from_result, false, 2) ++ call_position_if(values, from_result, true, 0)
         ++ call_position_if(values, from_result, true, 1) ++ call_position_if(values, from_result, true, 2)
     -- For each type parameter, whether it ends with an argument.
-    pub det out given: Seq(Bool) := (if params >= 1 then [from_result[0] or Gives(P0) in values] else [])
+    pub det out given: Seq<Bool> := (if params >= 1 then [from_result[0] or Gives(P0) in values] else [])
         ++ (if params >= 2 then [from_result[1] or Gives(P1) in values] else [])
         ++ (if params >= 3 then [from_result[2] or Gives(P2) in values] else [])
     pub det out unknown? := false in given
@@ -266,11 +269,11 @@ checked against its parameter's declared type instantiated so too, as
 `lang::call_order`'s elaboration has it:
 
 ```fren
-pub fn instantiated(Ty, Seq(Ty)): Ty   -- `lang::instantiation`'s result
+pub fn instantiated(Ty, Seq<Ty>): Ty   -- `lang::instantiation`'s result
 
 pub comp call_instance {
     in result: Ty                  -- the function's declared result type
-    in arguments: Seq(Ty)          -- the application's type arguments
+    in arguments: Seq<Ty>          -- the application's type arguments
     pub det out result_type: Ty := instantiated(result, arguments)   -- the application's type
 }
 ```
@@ -292,7 +295,7 @@ the solver never sees a polymorphic function:
 
 - The `fren` command gives the solver one `define-fun` for each instance
   that an application uses, named after the function and its type
-  arguments as they print, as `|::unwrap_or(Int)|`, whose sorts are the
+  arguments as they print, as `|::unwrap_or<Int>|`, whose sorts are the
   arguments', and one for the function itself, `|::unwrap_or|`, over a sort
   of its own for each type parameter, `|::unwrap_or::0::T|`, for the checks
   of its body and its contract.

@@ -5,13 +5,13 @@
 -- uses, with the instance's sorts, in which an application of another
 -- generic function is at its own instance
 -- (`Reqs/Lang/GenericFunctions#meaning`).
-pub enum Option(T) { None, Some(T) }
-pub fn id(T)(x: T): T := x
-pub fn unwrap_or(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => id(d) }
+pub enum Option<T> { None, Some(T) }
+pub fn id<T>(x: T): T := x
+pub fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => id(d) }
     assume known: o != Option::None
     ensure payload: Option::Some(unwrap_or(o, d)) = o
 comp c {
-    in x: Option(Int)
+    in x: Option<Int>
     assume some: x != Option::None
     pub det out y: Int := unwrap_or(x, 0)
 }

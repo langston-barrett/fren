@@ -6,38 +6,38 @@ set_option fren.lint.dead_code "allow"
 
 mod generic_functions
 
-pub enum Option(T) { None, Some(T) }
-pub struct Pair(A, B) { fst: A, snd: B }
-pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
+pub enum List<T> { Nil, Cons(T, List<T>) }
 
 -- The identity, at any type.
-fn id(T)(x: T): T := x
+fn id<T>(x: T): T := x
 
 -- Over an `Option`-like type.
-fn unwrap_or(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => d }
-fn is_some?(T)(o: Option(T)) := o != Option::None
+fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
+fn is_some?<T>(o: Option<T>) := o != Option::None
 
 -- Two type parameters.
-fn swap(A, B)(p: Pair(A, B)): Pair(B, A) := Pair { fst := p.snd, snd := p.fst }
+fn swap<A, B>(p: Pair<A, B>): Pair<B, A> := Pair { fst := p.snd, snd := p.fst }
 
 -- Nested applications of generic functions, within a generic one.
-fn first_or(T)(p: Pair(Option(T), T)): T := id(unwrap_or(p.fst, id(p.snd)))
+fn first_or<T>(p: Pair<Option<T>, T>): T := id(unwrap_or(p.fst, id(p.snd)))
 
 -- Through a recursive generic type: the head of a list, if it has one.
-fn head(T)(l: List(T)): Option(T) := match l { List::Cons(x, _) => Option::Some(x), List::Nil => Option::None }
+fn head<T>(l: List<T>): Option<T> := match l { List::Cons(x, _) => Option::Some(x), List::Nil => Option::None }
 
 -- A result that only the expected type gives an argument, with a contract.
-fn nothing(T)(n: Int): Option(T) := let r: Option(T) := Option::None in r
+fn nothing<T>(n: Int): Option<T> := let r: Option<T> := Option::None in r
     assume positive: n > 0
-    ensure empty: let r: Option(T) := nothing(n) in r = Option::None
+    ensure empty: let r: Option<T> := nothing(n) in r = Option::None
 
 comp options {
-    in x: Option(Int)
+    in x: Option<Int>
     in b?
     pub det out y: Int := unwrap_or(x, id(3))
-    pub det out q: Pair(Bool, Int) := swap(Pair { fst := y, snd := b? })
+    pub det out q: Pair<Bool, Int> := swap(Pair { fst := y, snd := b? })
     pub det out s? := is_some?(x)
-    pub det out n: Option(Bool) := if b? then nothing(1) else Option::Some(b?)
+    pub det out n: Option<Bool> := if b? then nothing(1) else Option::Some(b?)
 
     expect missing: when x = Option::None, y = 3
     expect present: when x = Option::Some(5), y = 5 and s?
@@ -46,7 +46,7 @@ comp options {
 }
 
 comp nested {
-    in p: Pair(Option(Bool), Bool)
+    in p: Pair<Option<Bool>, Bool>
     pub det out r? := first_or(p)
 
     expect fallback: when p.fst = Option::None, r? = p.snd
@@ -54,10 +54,10 @@ comp nested {
 }
 
 comp lists {
-    in l: List(Int)
+    in l: List<Int>
     in b?
-    pub det out h: Option(Int) := head(l)
-    pub det out k: Option(Bool) := head(List::Cons(b?, List::Nil))
+    pub det out h: Option<Int> := head(l)
+    pub det out k: Option<Bool> := head(List::Cons(b?, List::Nil))
 
     expect empty: when l = List::Nil, h = Option::None
     expect cons: when l = List::Cons(4, List::Nil), h = Option::Some(4)
@@ -66,7 +66,7 @@ comp lists {
 
 -- A wrong expectation, at an instance: the counterexample is of `Int`s.
 comp wrong {
-    in x: Option(Int)
+    in x: Option<Int>
     pub det out y: Int := unwrap_or(x, 0)
 
     expect positive: y > 0  --~ error: expectation `generic_functions::wrong::positive` does not hold

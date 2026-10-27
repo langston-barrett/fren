@@ -1,10 +1,10 @@
 -- An application that may not meet a precondition is reported at the
 -- function's name, with the precondition (F0629).
-fn nth(q: Seq(Int), i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
 comp first {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out x: Int
 
     ensure r: x = nth(q, 0)

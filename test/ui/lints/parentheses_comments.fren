@@ -16,7 +16,7 @@ comp lints {
     in x: Int
     in y: Int
     in s: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out p1?
     pub out p2?
     pub out p3?

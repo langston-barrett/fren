@@ -6,8 +6,8 @@ enum E { A, B, C }
 
 comp lints {
     in s: String
-    in t: Set(Int)
-    in q: Seq(Int)
+    in t: Set<Int>
+    in q: Seq<Int>
     in e: E
     in x: Int
     pub out p?                   --~ warning: `r1` could be the definition of `p?`

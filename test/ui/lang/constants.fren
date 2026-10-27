@@ -55,7 +55,7 @@ comp shadow {
 
 -- A method applied to a constant reads its value.
 const GREETING: String := "hello"
-const PRIMES: Seq(Int) := [2, 3, 5]
+const PRIMES: Seq<Int> := [2, 3, 5]
 expect constant_methods: GREETING.len = 5 and GREETING.starts_with?("he") and PRIMES.len = 3
 
 -- A field of a constant record, and a method applied to a field.

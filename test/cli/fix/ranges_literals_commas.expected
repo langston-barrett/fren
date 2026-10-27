@@ -61,10 +61,10 @@ warning[F0798]: this comparison is always `true`
 -    pub out b? := s = r"café" or s = r#"é"#
 +    pub out b? := s = r"café" or s = r"é"
 @@ -18,2 +18,2 @@
--    pub out e: Set(Int) := {x, 1,}
--    pub out f: Seq(Int) := [x, 2, ]
-+    pub out e: Set(Int) := {x, 1}
-+    pub out f: Seq(Int) := [x, 2 ]
+-    pub out e: Set<Int> := {x, 1,}
+-    pub out f: Seq<Int> := [x, 2, ]
++    pub out e: Set<Int> := {x, 1}
++    pub out f: Seq<Int> := [x, 2 ]
 Some errors have detailed explanations: F0798, F0799.
 For more information about an error, try `fren --explain F0798`.
 exit=1

@@ -1,5 +1,5 @@
 comp c {
-    in s: Set(Int)
+    in s: Set<Int>
     pub out p?
 
     ensure r: p? iff s = {1, true}

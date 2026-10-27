@@ -1,7 +1,7 @@
 warning[F0764]: this `*` is always `0`
  --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:77
   |
-4 | comp c { in x: Int in r: Rel(E, E) pub out y: Int pub out p? ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
+4 | comp c { in x: Int in r: Rel<E, E> pub out y: Int pub out p? ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
   |                                                                             ^^^^^ ignores its other operand
   |
   = note: the literal is probably not the operand meant
@@ -11,7 +11,7 @@ warning[F0764]: this `*` is always `0`
 warning[F0764]: this `inter` is always `{}`
  --> test/cli/lints/suspicious/f0764_erasing_op.fren:4:105
   |
-4 | comp c { in x: Int in r: Rel(E, E) pub out y: Int pub out p? ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
+4 | comp c { in x: Int in r: Rel<E, E> pub out y: Int pub out p? ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
   |                                                                                                         ^^^^^^^^^^ ignores its other operand
   |
   = note: the literal is probably not the operand meant

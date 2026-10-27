@@ -59,10 +59,10 @@ comp patterned {   --~ error: no outputs satisfy `round` and `boxy`
 }
 -- A generic enumeration: its constructors and selectors take the type's
 -- arguments.
-enum Opt(T) { Nothing, Just(T) }
+enum Opt<T> { Nothing, Just(T) }
 
 comp generic {   --~ error: no outputs satisfy `one` and `two`
-    pub out g: Opt(Int)
+    pub out g: Opt<Int>
     ensure one: g is Opt::Just(_)   --~ info: `one` forces g is Opt::Just(_), but `two` forces g = Opt::Nothing
     ensure two: not (g is Opt::Just(_))   --~ info: conflicts with `one`
 }

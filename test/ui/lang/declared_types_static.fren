@@ -54,10 +54,10 @@ comp arms_note { in s: S pub out y: Int ensure r: y = match s { S::A(a) => a, S:
 --~^ error: so all must have the same type, or be `Nat`s and `Int`s
 
 -- A branch `{}` takes its type from the other branch.
-comp empty_set { in c? in t: Set(Int) pub out s: Set(Int) := if c? then {} else t }
-comp empty_branch_set { in c? in t: Set(Int) pub out y: Int := if c? then {} else t }
---~^ error: type mismatch: expected `Int`, found `Set(Int)`
-comp empty_branch_and { in b? in c? in t: Set(Int) pub out p? ensure r: p? iff b? and (if c? then {} else t) }
---~^ error: type mismatch: expected `Bool`, found `Set(Int)`
+comp empty_set { in c? in t: Set<Int> pub out s: Set<Int> := if c? then {} else t }
+comp empty_branch_set { in c? in t: Set<Int> pub out y: Int := if c? then {} else t }
+--~^ error: type mismatch: expected `Int`, found `Set<Int>`
+comp empty_branch_and { in b? in c? in t: Set<Int> pub out p? ensure r: p? iff b? and (if c? then {} else t) }
+--~^ error: type mismatch: expected `Bool`, found `Set<Int>`
 
 --@ exit: 2

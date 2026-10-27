@@ -1,11 +1,11 @@
 --@ args: eval --comp c --set x=Option::Some(3)
 -- A generic function is unfolded at its instance by the evaluator too.
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-pub fn unwrap_or(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => d }
+pub fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
 
 comp c {
-    in x: Option(Int)
+    in x: Option<Int>
     pub det out y: Int := unwrap_or(x, 0)
     pub det out b? := unwrap_or(Option::Some(y > 2), false)
 

@@ -90,8 +90,8 @@ Within a line, two tokens are separated by one space or by none.
 | Kind | Tokens |
 |---|---|
 | `Open` | `(`, except one opening a call, and the `{` of a set literal |
-| `Call` | the `(` after a function's, method's, variant's or newtype's name, opening its parameters, payload or field, an application's or method call's arguments, a newtype's value, or a variant pattern's patterns |
-| `Close` | `)`, the `}` of a set literal, and `::*`, which ends a path |
+| `Call` | the `(` after a function's, method's, variant's or newtype's name, opening its parameters, payload or field, an application's or method call's arguments, a newtype's value, or a variant pattern's patterns; and the `<` that opens a type's arguments or a declaration's type parameters |
+| `Close` | `)`, the `}` of a set literal, `::*`, which ends a path, and the `>` that closes a type's arguments or a declaration's type parameters |
 | `Brace` | `{`, except a set literal's |
 | `CloseBrace` | `}`, except one closing a `::{` or a set literal |
 | `Group` | `::{` |
@@ -103,12 +103,13 @@ Within a line, two tokens are separated by one space or by none.
 | `Colon` | `:` |
 | `Negation` | `-` as a unary operator, as in `-1` |
 | `Comment` | a comment |
-| `Other` | any other token: names, literals, keywords and operators, including `-` as a binary operator |
+| `Other` | any other token: names, literals, keywords and operators, including `-` as a binary operator, and `<` and `>` as comparisons |
 
 There is no space after an opening bracket or a unary `-`, and none before a
 closing bracket, a separator, a `:` or the `(` of a call, nor between a
 range's `..=` or `..` and its bounds. So `x: Int`,
-`a::b`, `use a::{b, c}`, `(a or b)`, `f(x, y)`, `f(p).x`, `-1` and `-5..=MAX`, but `{ a, b }`, as braces other than
+`a::b`, `use a::{b, c}`, `(a or b)`, `f(x, y)`, `f(p).x`, `-1`, `-5..=MAX`,
+`Option<Set<Int>>` and `fn f<T>(x: T): T`, but `a < b` and `{ a, b }`, as braces other than
 `::{` have spaces inside. Empty braces are written `{}`. A comment always
 has a space on both sides, unless it starts or ends the line, and so does a
 unary `-` before another, `- -1`, since `--` starts a comment.
@@ -195,7 +196,7 @@ A function's [contract](Lang/Items.md#contracts) clause continues its
 function, so a clause on its own line is indented by four spaces:
 
 ```text
-fn at(q: Seq(Int), i: Int): Int := q[i]
+fn at(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 ```
 

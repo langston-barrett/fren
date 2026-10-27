@@ -10,7 +10,7 @@
 | `[a]` | `a`, optionally |
 | `a*`, `a+` | zero or more, one or more `a` |
 | `( ... )` | grouping |
-| `a"("` | `a` and then `(`, with nothing between them, not even a space (see [Punctuators](Lang/Lexical.md#punctuators)); the same for `[` |
+| `a"("` | `a` and then `(`, with nothing between them, not even a space (see [Punctuators](Lang/Lexical.md#punctuators)); the same for `[` and `<` |
 | `IDENT`, `INT`, `STRING` | an identifier, an integer literal, a string literal, raw or not (see [Lexical structure](Lang/Lexical.md)) |
 | `DIGITS` | decimal digits, which name a field after `.`, as in `x.0` (see [Newtypes](Lang/Expressions.md#newtypes)) |
 | `DECL` | an identifier that declares a name, which ends in `!` if it shadows another (see [Shadowing](Lang/Components.md#shadowing)); no other `IDENT` ends in `!` |
@@ -27,7 +27,7 @@ module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
 enumeration    := ["pub"] ["ordered"] "enum" declared-type "{" variant ("," variant)* [","] "}"
 variant        := IDENT | IDENT"(" type ("," type)* ")"
-declared-type  := IDENT | IDENT"(" IDENT ("," IDENT)* ")"
+declared-type  := IDENT | IDENT"<" IDENT ("," IDENT)* ">"
 record         := ["pub"] ["ordered"] "struct" declared-type "{" field ("," field)* [","] "}"
                 | ["pub"] ["ordered"] "struct" IDENT"(" [type ("," type)*] ")"
 field          := IDENT [":" type]
@@ -74,8 +74,8 @@ variable       := DECL [":" type]
 instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
 binding        := IDENT [":=" expr]
 type           := base ["is" pattern]
-base           := "Bool" | "Int" | "Nat" | "String" | "Set""(" type ")" | "Seq""(" type ")" | "Rel""(" type "," type ")"
-                | path | path"(" type ("," type)* ")"
+base           := "Bool" | "Int" | "Nat" | "String" | "Set""<" type ">" | "Seq""<" type ">" | "Rel""<" type "," type ">"
+                | path | path"<" type ("," type)* ">"
 path           := IDENT ("::" IDENT)*
 ```
 
@@ -142,3 +142,8 @@ membership (an `else` branch keeps that restriction), and a nested `let` ends it
 (see [Local definitions](Lang/Let.md#parentheses)). A `binder` of a
 quantifier names a type, and one of a global expectation's leading
 `forall` a type or a component (see [Quantifiers](Lang/Quantifiers.md)).
+A `type` is written only where the rules above say, never within an
+expression, so a `<` in an expression is a comparison, and the `<` of a
+`base` or a `declared-type` opens type arguments or type parameters; the
+`>` that closes them is one character, even where Lean lexes `>>` (see
+[Angle brackets](Lang/Generics.md#angle-brackets)).

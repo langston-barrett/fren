@@ -54,8 +54,8 @@ comp characters {
 
 comp positions {
     in s: String
-    in q: Seq(Int)
-    in t: Seq(Int)
+    in q: Seq<Int>
+    in t: Seq<Int>
     pub out p?
     pub out o?
     pub out n?

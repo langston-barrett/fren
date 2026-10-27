@@ -4,7 +4,7 @@
 pub comp c {
     in x: Int
     in y: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     pub out o?
     pub out p?

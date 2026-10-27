@@ -8,7 +8,7 @@ set_option fren.lint.undecidable "allow"
 pub fn m1?(s: String) := s.at(0) = "a" and "\n" != s.at(s.len - 1)
 --~^ warning: this is a call of `starts_with?`
 --~^^ warning: this is a call of `ends_with?`
-pub fn m2?(q: Seq(Int), x: Int) := q.at(0) = [x] or q.at(q.len - 1) = [1]
+pub fn m2?(q: Seq<Int>, x: Int) := q.at(0) = [x] or q.at(q.len - 1) = [1]
 --~^ warning: this is a call of `starts_with?`
 --~^^ warning: this is a call of `ends_with?`
 pub fn m3(s: String, i: Int): String := s.slice(i, 1) ++ (s ++ s).slice(-1, 1)
@@ -19,13 +19,13 @@ pub fn m3(s: String, i: Int): String := s.slice(i, 1) ++ (s ++ s).slice(-1, 1)
 pub fn m4?(s: String, t: String) := s.at(0) = "ab" or s.at(1) = "a" or s.at(t.len - 1) = "a" or s.at(0) = t
 pub fn m5(s: String): String := s.slice(0, 2) ++ s.slice(1, 2)
 
-pub fn z1?(s: String, q: Seq(Int)) := s.at(0) = "" and q.at(0) != [] and "" = (s ++ s).at(0)
+pub fn z1?(s: String, q: Seq<Int>) := s.at(0) = "" and q.at(0) != [] and "" = (s ++ s).at(0)
 --~^ warning: say whether it is empty with `""`, not `at`
 --~^^ warning: say whether it is empty with `[]`, not `at`
 --~^^^ warning: say whether it is empty with `""`, not `at`
 pub fn z2?(s: String) := s.at(1) = "" or s.at(0) = " "  --~ warning: this is a call of `starts_with?`
 
-pub fn w1(s: String, q: Seq(Int)): Int := s.slice(0, s.len).len + (q ++ q).slice(0, (q ++ q).len).len
+pub fn w1(s: String, q: Seq<Int>): Int := s.slice(0, s.len).len + (q ++ q).slice(0, (q ++ q).len).len
 --~^ warning: this slice is the whole of its receiver
 --~^^ warning: this slice is the whole of its receiver
 pub fn w2(s: String, t: String): String := s.slice(0, t.len) ++ s.slice(1, s.len) ++ (s ++ t).slice(0, s.len)
@@ -33,7 +33,7 @@ pub fn w2(s: String, t: String): String := s.slice(0, t.len) ++ s.slice(1, s.len
 pub fn r1(s: String, a: String): String := s.replace(a, a) ++ s.replace_all(a ++ "x", (a ++ "x"))
 --~^ warning: this `replace` has no effect
 --~^^ warning: this `replace_all` has no effect
-pub fn r2(q: Seq(Int)): Seq(Int) := q.replace([1], [1])  --~ warning: this `replace` has no effect
+pub fn r2(q: Seq<Int>): Seq<Int> := q.replace([1], [1])  --~ warning: this `replace` has no effect
 pub fn r3(s: String, a: String): String := s.replace(a, "b") ++ s.replace_all("a", "A")
 
 pub fn c1?(x: Int) := "ab".len = 0 or 0 < [1, 2].len or {x}.card = 0 or {(x, x)}.card >= 1

@@ -84,9 +84,9 @@ def tyName (elem : GTy) (t : GTy) : String :=
   let base : GTy → String
     | .int => "Int" | .enum => "E" | .abs => "T" | .wrap => "W" | .pay => "P" | _ => "Bool"
   match t with
-  | .set => s!"Set({base elem})"
-  | .rel => s!"Rel({base elem}, {base elem})"
-  | .seq => s!"Seq({base elem})"
+  | .set => s!"Set<{base elem}>"
+  | .rel => s!"Rel<{base elem}, {base elem}>"
+  | .seq => s!"Seq<{base elem}>"
   | t => base t
 
 /-- A variable in scope: its text, type, and whether it may be a
@@ -462,16 +462,16 @@ def genSpec : R GSpec := do
     out := out ++ s!"pub {if ordered then "ordered " else ""}enum E \{ {", ".intercalate ((List.range nVariants).map (s!"V{·}"))} }\n"
   if useAbs then out := out ++ "pub type T\npub fn p?(T)\n"
   if useWrap then out := out ++ "pub ordered struct W(Int)\n"
-  -- Sometimes generic, declared as `P(Bool)`, whose values are the same.
+  -- Sometimes generic, declared as `P<Bool>`, whose values are the same.
   if usePay then
-    out := out ++ (if genericPay then "pub enum P(X) { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Bool), C(Bool) }\n")
+    out := out ++ (if genericPay then "pub enum P<X> { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Bool), C(Bool) }\n")
   let mut comps : Array GComp := #[]
   for i in [0:(← below 2) + 1] do
     comps := comps.push (← genComp i comps useEnum useAbs useWrap usePay nVariants ordered collections)
   for c in comps do
     out := out ++ s!"\npub comp {c.name} \{\n"
     for v in c.vars do
-      let ty := if v.ty == .bool then "" else if v.ty == .pay && genericPay then ": P(Bool)"
+      let ty := if v.ty == .bool then "" else if v.ty == .pay && genericPay then ": P<Bool>"
         else s!": {tyName (elemTy useEnum) v.ty}"
       let mods := if v.isIn then "in" else s!"{if v.isPub then "pub " else ""}{if v.isDet then "det " else ""}out"
       out := out ++ s!"    {mods} {v.name}{ty}\n"

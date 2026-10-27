@@ -1,7 +1,7 @@
 -- A string literal that looks like how an obligation might be marked is a
 -- string, and its index's definedness is reported as an index's.
 comp c {
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     in x: String
     pub out o?

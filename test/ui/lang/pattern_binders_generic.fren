@@ -3,13 +3,13 @@
 -- an `Option` of its own.
 mod pattern_binders_generic
 
-enum Opt(T) { None, Some(T) }
+enum Opt<T> { None, Some(T) }
 struct Ms(Int)
 
 comp c {
-    in o: Opt(Int)
-    in b: Opt(Bool)
-    in m: Opt(Ms)
+    in o: Opt<Int>
+    in b: Opt<Bool>
+    in m: Opt<Ms>
     pub det out positive?
     pub det out set?
     pub det out ms: Int

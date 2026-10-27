@@ -10,7 +10,7 @@ pub comp c {
     in x: Int
     in y: Int
     in s: String
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out a? := (((x > 0))) and f(((y))) > 0
     pub out b: Int := - -(x + y) * 2 + f(-(-(x))) + f(- - -y)
     pub out d: Int := (x + y) * -1 + -1 * f(x) + x * (-1) * -1

@@ -26,18 +26,18 @@ comp narrowed { in a: Nat pub out b: Int ensure r: b = k where k: Nat := a - 1 }
 -- Without its type written, a definition synthesizes its type.
 comp empty { pub out y? ensure r: let s := {} in y? iff s = s }
 --~^ error: the type of `{}` cannot be known here
-comp empty_typed { in t: Set(Int) pub out y? ensure r: let s: Set(Int) := {} in y? iff s = t }
+comp empty_typed { in t: Set<Int> pub out y? ensure r: let s: Set<Int> := {} in y? iff s = t }
 -- `in` ends the last definition, so the membership must be in parentheses.
-comp membership { in x: Int in s: Set(Int) pub out y? ensure r: let b? := x in s in y? iff b? }
+comp membership { in x: Int in s: Set<Int> pub out y? ensure r: let b? := x in s in y? iff b? }
 --~^ error: `in` ends the last definition of a `let`
 
 -- A membership right after the `in` of a body that does not type: the
 -- same note.
-comp body_membership { in x? in s: Set(Int) in t: Set(Int) pub out y? ensure r: y? iff (let b? := x? in s in t) }
+comp body_membership { in x? in s: Set<Int> in t: Set<Int> pub out y? ensure r: y? iff (let b? := x? in s in t) }
 --~^ error: `in` ends the last definition of a `let`
 
 -- A comment after the `in` does not change that.
-comp body_comment { in x? in s: Set(Int) in t: Set(Int) pub out y? ensure r: y? iff (let b? := x? in /- s -/ s in t) }
+comp body_comment { in x? in s: Set<Int> in t: Set<Int> pub out y? ensure r: y? iff (let b? := x? in /- s -/ s in t) }
 --~^ error: `in` ends the last definition of a `let`
 
 -- Shadowing is explicit, as for any other declaration.

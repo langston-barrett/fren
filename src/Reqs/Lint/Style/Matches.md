@@ -62,9 +62,9 @@ pub fn pat_matches?(p: Pat, x: Val) := match p {
 }
 
 -- Whether the alternative in slot `s` of `alts` is there and matches `x`.
-pub fn slot_matches?(alts: Seq(Pat), s: Slot, x: Val) := pos(s) < alts.len and pat_matches?(alts[pos(s)], x)
+pub fn slot_matches?(alts: Seq<Pat>, s: Slot, x: Val) := pos(s) < alts.len and pat_matches?(alts[pos(s)], x)
 
-pub fn or_matches?(alts: Seq(Pat), x: Val) := exists (s: Slot), slot_matches?(alts, s, x)
+pub fn or_matches?(alts: Seq<Pat>, x: Val) := exists (s: Slot), slot_matches?(alts, s, x)
 
 -- The name that a leaf binds, `-1` for none; names are not negative.
 pub fn leaf_name(l: Leaf): Int := match l { Leaf::Binder(k, _) => k, _ => -1 }
@@ -155,7 +155,7 @@ pub fn leaf_arm_pat(a: LeafArm): Leaf := a.pat
 pub fn leaf_arm_body(a: LeafArm): Body := a.body
 
 -- Whether `s` is the first arm of `arms` whose pattern matches `v`.
-pub fn first_leaf?(arms: Seq(LeafArm), s: Slot, v: Int) := pos(s) < arms.len
+pub fn first_leaf?(arms: Seq<LeafArm>, s: Slot, v: Int) := pos(s) < arms.len
     and leaf_matches?(leaf_arm_pat(arms[pos(s)]), v)
     and (forall (r: Slot), when pos(r) < pos(s), not leaf_matches?(leaf_arm_pat(arms[pos(r)]), v))
 ```
@@ -177,7 +177,7 @@ pub comp collapsible_match {
     in tag: Int              -- the variant of the arm's pattern
     in first: Leaf           -- its pattern of the first value of the payload, which the inner `match` reads
     in second: Leaf          -- of the second
-    in inner: Seq(LeafArm)   -- the arms of the inner `match`
+    in inner: Seq<LeafArm>   -- the arms of the inner `match`
     in outer: Body           -- the body of the outer `_` arm, the first later arm that matches the variant
     in x: Val                -- a value of the scrutinee
     in o: Int                -- the value of a name outside the patterns

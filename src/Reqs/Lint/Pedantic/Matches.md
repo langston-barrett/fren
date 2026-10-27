@@ -477,7 +477,7 @@ pub enum Test { VariantOf(Int, Int), Other(Int) }
 
 pub fn scrutinee_of(t: Test): Int := match t { Test::VariantOf(x, _) => x, Test::Other(_) => -1 }
 
-pub fn chain_value(h: Seq(Bool), v: Seq(Int), z: Int): Int :=
+pub fn chain_value(h: Seq<Bool>, v: Seq<Int>, z: Int): Int :=
     if h != [] and v != [] and h[0] then v[0]
     else if h.len > 1 and v.len > 1 and h[1] then v[1]
     else if h.len > 2 and v.len > 2 and h[2] then v[2]
@@ -485,9 +485,9 @@ pub fn chain_value(h: Seq(Bool), v: Seq(Int), z: Int): Int :=
     else z
 
 pub comp manual_table {
-    in tests: Seq(Test)
-    in holds: Seq(Bool)      -- whether each test holds
-    in branches: Seq(Int)    -- the value of each branch
+    in tests: Seq<Test>
+    in holds: Seq<Bool>      -- whether each test holds
+    in branches: Seq<Int>    -- the value of each branch
     in z: Int                -- the final `else`
 
     assume sizes: 1 <= tests.len <= 4 and holds.len = tests.len and branches.len = tests.len

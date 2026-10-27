@@ -45,7 +45,7 @@ that `_`, the fix, matches what the or-pattern does:
 
 ```fren
 pub comp wildcard_in_or_patterns {
-    in alts: Seq(Pat)
+    in alts: Seq<Pat>
     in x: Val
 
     assume size: 2 <= alts.len <= 4
@@ -103,20 +103,20 @@ does:
 
 ```fren
 -- Whether some alternative of `alts` matches the integer `v`.
-pub fn covers?(alts: Seq(Pat), v: Int) := exists (s: Slot), pos(s) < alts.len and int_matches?(alts[pos(s)], v)
+pub fn covers?(alts: Seq<Pat>, v: Int) := exists (s: Slot), pos(s) < alts.len and int_matches?(alts[pos(s)], v)
 
 -- Whether some alternative of `alts` matches an integer above `h`.
-pub fn past?(alts: Seq(Pat), h: Int) :=
+pub fn past?(alts: Seq<Pat>, h: Int) :=
     exists (s: Slot), pos(s) < alts.len and not upper_le?(upper_of(alts[pos(s)]), Bound::At(h))
 
 -- Whether the alternatives leave a gap after the one in slot `s`.
-pub fn gap_after?(alts: Seq(Pat), s: Slot) := pos(s) < alts.len and match upper_of(alts[pos(s)]) {
+pub fn gap_after?(alts: Seq<Pat>, s: Slot) := pos(s) < alts.len and match upper_of(alts[pos(s)]) {
     Bound::At(h) => past?(alts, h) and not covers?(alts, h + 1),
     Bound::Open => false,
 }
 
 pub comp manual_range_patterns {
-    in alts: Seq(Pat)
+    in alts: Seq<Pat>
     in v: Int
 
     assume size: 2 <= alts.len <= 4

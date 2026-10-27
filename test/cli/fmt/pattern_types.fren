@@ -5,7 +5,7 @@ type   Byte:=Int   is  0..=255
 pub enum Level { Low, High }
 type Loud :=Level is Level::High|Level::Low
 comp c {
-    in b: Set( Byte )
+    in b: Set< Byte >
     in n:Int is 1..
     pub out l: Loud
     ensure r: l = Level::High

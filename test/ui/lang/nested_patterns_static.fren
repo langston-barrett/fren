@@ -61,14 +61,14 @@ comp is_nothing { in k: Nat pub out z? ensure q: z? iff k is -5..=-1 }
 --~^ error: unreachable pattern
 comp is_nothing_or { in k: Nat pub out z? ensure q: z? iff k is -1 | -2 }
 --~^ error: unreachable pattern
-comp not_matched { in s: Set(Int) pub out z: Int ensure q: z = match s { _ => 0 } }
---~^ error: cannot match on `Set(Int)`
+comp not_matched { in s: Set<Int> pub out z: Int ensure q: z = match s { _ => 0 } }
+--~^ error: cannot match on `Set<Int>`
 comp is_binder { in r: Reply pub out z? ensure q: z? iff r is Reply::Ok(Shape::Circle(n)) }
 --~^ error: a pattern test cannot bind `n`
 comp is_alternative { in n: Int pub out z? ensure q: z? iff n is 0..=9 | 5 }
 --~^ error: unreachable pattern
-comp is_set { in s: Set(Int) pub out z? ensure q: z? iff s is _ }
---~^ error: cannot test `Set(Int)` against a pattern
+comp is_set { in s: Set<Int> pub out z? ensure q: z? iff s is _ }
+--~^ error: cannot test `Set<Int>` against a pattern
 
 comp too_many {
     in w: Wide

@@ -1,12 +1,12 @@
 -- A refinement's definedness failures are reported at the refinement, not
 -- at the abstract component's index, as its other checks are.
 pub comp first {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
     ensure r: y = q[0]
 }
 pub comp exact {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
     ensure r: when q != [], y = q[0]
 }

@@ -38,7 +38,7 @@ comp pairs {
 -- Rows overlap only where both conditions have values: `q[0] > 0` is
 -- evaluated only where `q != []`, so it does not overlap the first row.
 comp guarded_rows {
-    in q: Seq(Int)
+    in q: Seq<Int>
     pub out y: Int
 
     ensure r: y = table { q = [] => 0, q[0] > 0 => 1, _ => 2 }

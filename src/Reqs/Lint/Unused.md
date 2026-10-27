@@ -115,10 +115,10 @@ pub enum Local { A, B, C }
 
 pub struct Tree {
     root: Node,
-    children: Rel(Node, Node),
-    declares: Rel(Node, Local),
-    mentions: Rel(Node, Local),
-    paths: Rel(Node, Local),
+    children: Rel<Node, Node>,
+    declares: Rel<Node, Local>,
+    mentions: Rel<Node, Local>,
+    paths: Rel<Node, Local>,
 }
 ```
 
@@ -132,10 +132,10 @@ declaration, as the body's `x` does in `forall (x!: Mode), x = Mode::Off`:
 pub comp scope {
     in t: Tree
     -- The mentions in or below a node that declares their names.
-    out hidden: Rel(Node, Local) := (t.children.closure.inverse join t.declares) union t.declares
-    pub det out nodes: Set(Node) := t.children.closure.image({t.root}) union {t.root}
-    pub det out declared: Set(Local) := t.declares.image(nodes)
-    pub det out free: Set(Local) := (t.mentions minus hidden).image(nodes)
+    out hidden: Rel<Node, Local> := (t.children.closure.inverse join t.declares) union t.declares
+    pub det out nodes: Set<Node> := t.children.closure.image({t.root}) union {t.root}
+    pub det out declared: Set<Local> := t.declares.image(nodes)
+    pub det out free: Set<Local> := (t.mentions minus hidden).image(nodes)
 
     expect mentioned: free subset t.mentions.range
     expect declared_hides: free inter t.declares.image({t.root}) = {}
@@ -151,12 +151,12 @@ component expects that lint:
 ```fren
 set_option fren.lint.arbitrary_source_item_ordering "expect" in
 pub comp unused_bound {
-    in names: Set(Local)
+    in names: Set<Local>
     in body: Tree
 
     inst s: scope { t := body }
 
-    pub det out unused: Set(Local) := names minus s.free
+    pub det out unused: Set<Local> := names minus s.free
 
     expect shadowed: when body.children = {(Node::N0, Node::N1)} and body.root = Node::N0
         and body.declares = {(Node::N1, Local::A)} and body.mentions = {(Node::N1, Local::A)},
@@ -176,9 +176,9 @@ since a mention means the last declaration before it.
 pub ordered enum DefIndex { P0, P1, P2, P3 }
 
 pub comp unused_definitions {
-    in names: Rel(DefIndex, Local)       -- the name each definition declares
-    in uses: Rel(DefIndex, Local)        -- the names free in each definition's expression
-    in body: Set(Local)                  -- the names free in the body
+    in names: Rel<DefIndex, Local>       -- the name each definition declares
+    in uses: Rel<DefIndex, Local>        -- the names free in each definition's expression
+    in body: Set<Local>                  -- the names free in the body
     in k: DefIndex
 
     assume one_name: forall (p: DefIndex) (a b: Local), when (p, a) in names and (p, b) in names, a = b

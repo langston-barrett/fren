@@ -71,7 +71,7 @@ comp conditional { in x: Int pub out y: Int ensure r: y = (if true then 1 else 2
 comp conditional_variable { in c? in x: Int pub out y: Int ensure r: y = (if c? then 1 else 2) * x }
 --~^ error: nonlinear arithmetic is not supported
 comp index { in x: Int pub out y: Int ensure r: y = [1, 2][0] * x }
-comp index_variable { in q: Seq(Int) in x: Int pub out y: Int ensure r: y = q[0] * x }
+comp index_variable { in q: Seq<Int> in x: Int pub out y: Int ensure r: y = q[0] * x }
 --~^ error: nonlinear arithmetic is not supported
 comp collections { in x: Int pub out y: Int ensure r: y = {1, 2}.card * x + [1, 2].len * x }
 comp sequence_variable { in z: Int in x: Int pub out y: Int ensure r: y = [z].len * x }

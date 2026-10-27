@@ -1,7 +1,7 @@
 error[F0338]: `Nat` cannot be the element type of a set, relation or sequence
  --> test/cli/types/f0338_element.fren:3:20
   |
-3 | comp c { in s: Set(Nat) }
+3 | comp c { in s: Set<Nat> }
   |                    ^^^ a `Nat`
   |
   = note: for now, a `Nat` is never inside a collection, nor a payload of a recursive enumeration, where its constraint would hold of every element

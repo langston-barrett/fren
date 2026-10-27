@@ -1,2 +1,2 @@
 -- `absurd_extreme_comparisons`, with the length on the right; it has no fix.
-comp c { in q: Seq(Int) pub out p? ensure r: p? iff -1 < q.len }
+comp c { in q: Seq<Int> pub out p? ensure r: p? iff -1 < q.len }

@@ -1,0 +1,23 @@
+-- Type arguments in angle brackets, nested, next to comparisons, and
+-- closed by Lean's `>>` and `>>>` tokens, which are read one `>` at a time
+-- (`Reqs/Lang/Generics#angle-brackets`).
+mod m
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
+
+fn size<T>(o: Option<T>): Int := if o = Option::None then 0 else 1
+
+comp c {
+    in x: Option<Set<Int>>
+    in p: Pair<Int, Option<Set<Int>>>
+    in r: Rel<Int, Option<Pair<Int, Bool>>>
+    in q: Seq<Option<Int>>
+    in d: Option<Int is 0..=9>
+    pub det out y: Int := size(x)
+
+    expect bounded: y<2
+    expect binder: forall (b: Option<Bool>), size(b)<=size(x) or size(x)<1
+    expect tight: let s: Set<Int>:= {y, y + 1} in s.card>1
+    expect related: (p.fst, Option::Some(Pair { fst := y, snd := true })) in r or q.len>1 or d = Option::None  --~ error: does not hold
+}
+--@ exit: 1

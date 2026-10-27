@@ -5,17 +5,17 @@ set_option fren.lint.single_call_fn "warn"
 
 mod generic_functions_unused
 
-pub enum Option(T) { None, Some(T) }
+pub enum Option<T> { None, Some(T) }
 
-fn unwrap_or(T)(o: Option(T), d: T): T := match o { Option::Some(x) => x, Option::None => d }  --~ warning: function `unwrap_or` is applied only once
-fn never(T)(o: Option(T)): Option(T) := o  --~ warning: function `never` is never used
-fn first(T)(o: Option(T), d: T): Option(T) := o  --~ warning: unused parameter `d`
+fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }  --~ warning: function `unwrap_or` is applied only once
+fn never<T>(o: Option<T>): Option<T> := o  --~ warning: function `never` is never used
+fn first<T>(o: Option<T>, d: T): Option<T> := o  --~ warning: unused parameter `d`
 --~^ warning: function `first` is applied only once
-pub fn twice(T)(o: Option(T)): Option(T) := o
+pub fn twice<T>(o: Option<T>): Option<T> := o
 
 pub comp c {
-    in x: Option(Int)
+    in x: Option<Int>
     pub det out y: Int := unwrap_or(x, 0)
-    pub det out z: Option(Int) := twice(twice(x))
-    pub det out w: Option(Int) := first(x, 1)
+    pub det out z: Option<Int> := twice(twice(x))
+    pub det out w: Option<Int> := first(x, 1)
 }

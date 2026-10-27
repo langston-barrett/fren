@@ -13,6 +13,6 @@ comp values { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => tr
 comp typed { in x: Int pub out y? ensure r: y? iff table { x > 0 => 1, _ => 0 } }
 --~^ error: type mismatch: expected `Bool`, found `Int`
 -- A value of `{}` takes its type from another row's.
-comp empty_value { in x: Int pub out s: Set(Int) := table { x > 0 => {}, _ => {x} } }
+comp empty_value { in x: Int pub out s: Set<Int> := table { x > 0 => {}, _ => {x} } }
 comp empty_only { in x: Int pub out n: Int := table { x > 0 => {}, _ => {} }.card }
 --~^ error: the type of `{}` cannot be known here

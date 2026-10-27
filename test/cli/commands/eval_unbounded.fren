@@ -6,8 +6,8 @@
 -- search would find no behaviour.
 set_option fren.lint.undecidable "allow" in
 comp c {
-    in q: Seq(Int)
-    in s: Set(Int)
+    in q: Seq<Int>
+    in s: Set<Int>
     pub out sorted?
     pub out pos?
     pub out any?

@@ -23,8 +23,8 @@ warning[F0783]: this string literal contains non-ASCII characters: `U+1F600`, `U
 -set_option fren.lint.unused_variables "allow"
 +set_option fren.lint.unused_variables "expect"
 @@ -33 +32 @@
--    pub out sets: Set(Int) := left minus right inter other
-+    pub out sets: Set(Int) := left minus (right inter other)
+-    pub out sets: Set<Int> := left minus right inter other
++    pub out sets: Set<Int> := left minus (right inter other)
 @@ -36 +35 @@
 -    ensure wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }
 +    ensure wildcard: level = match mode { Heat => 1, Cool => 2, Mode::Off | Mode::Auto => 3 }

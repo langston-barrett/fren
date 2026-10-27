@@ -170,12 +170,12 @@ solver for sets with cardinality is a decision procedure for it.
 | Construct | In the core when |
 |---|---|
 | set literals, `in`, `union`, `inter`, `minus`, `subset`, `card`, `=` and `!=` on sets | always |
-| a function with a parameter or result of type `Set(T)` | `T` is infinite (see below) |
+| a function with a parameter or result of type `Set<T>` | `T` is infinite (see below) |
 
 A function of sets combines with the theory of sets only if the set sort
 has infinitely many values, which it has when `T` does: `Int`, `String`
 and sets of those. An abstract type may have a single value, and an
-enumeration finitely many, so `fn f(Set(Name)): Int` is outside the core.
+enumeration finitely many, so `fn f(Set<Name>): Int` is outside the core.
 A relation's sort is infinite when either of its element types is.
 
 ## Relations
@@ -188,7 +188,7 @@ the core when the types it ranges over are [finite](Types.md#finite-types),
 since a quantifier over a finite type is a finite formula of the theory of
 sets, and outside it otherwise:
 
-| Construct | Ranges over, for `r: Rel(A, B)` |
+| Construct | Ranges over, for `r: Rel<A, B>` |
 |---|---|
 | `r join q` | `B` |
 | `r.image(s)` | `A` |

@@ -7,9 +7,9 @@ set_option fren.lint.dead_code "allow"
 struct Stock { item: Int, count: Nat }
 enum Order { Placed(Nat), Cancelled }
 enum Counts { Last, More(Nat, Counts) }  --~ error: `Nat` cannot be the type of a payload of a recursive enumeration
-comp sets { in s: Set(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
-comp seqs { in q: Seq(Nat) }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
-comp rels { in r: Rel(Int, Nat) }        --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp sets { in s: Set<Nat> }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp seqs { in q: Seq<Nat> }             --~ error: `Nat` cannot be the element type of a set, relation or sequence
+comp rels { in r: Rel<Int, Nat> }        --~ error: `Nat` cannot be the element type of a set, relation or sequence
 enum Nat { Zero }                        --~ error: `Nat` is a built-in type and cannot be redefined
 
 fn halve(Nat): Nat

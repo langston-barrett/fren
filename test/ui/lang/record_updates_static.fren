@@ -9,8 +9,8 @@ comp repeated { in p: P pub out o: P ensure r: o = { p with x := 1, x := 2 } }
 --~^ error: field `x` is given multiple times
 comp not_record { in i: Int pub out o: Int ensure r: o = { i with x := 1 } }
 --~^ error: cannot update the fields of `Int`
-comp not_record_set { in s: Set(Bool) pub out o? ensure r: o? iff { s with x := 1 } = s }
---~^ error: cannot update the fields of `Set(Bool)`
+comp not_record_set { in s: Set<Bool> pub out o? ensure r: o? iff { s with x := 1 } = s }
+--~^ error: cannot update the fields of `Set<Bool>`
 comp not_record_bool { in i: Int pub out o? ensure r: o? iff { i = 1 with x := 1 } }
 --~^ error: cannot update the fields of `Bool`
 comp field_of_bool { in i: Int pub out o: Int ensure r: o = (i = 1).w }

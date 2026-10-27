@@ -38,7 +38,7 @@ def constant : String := "pub const K: Int := {(1, 2)}.range.card\n"
 
 -- No exit code, so that only the messages can tell the reports apart.
 #guard differs constant { diags := #[], summary? := none0 }
-  { diags := #[err 1 "`Rel(Int, Int)` has no method `range.card`"], summary? := none0 }
+  { diags := #[err 1 "`Rel<Int, Int>` has no method `range.card`"], summary? := none0 }
 
 -- One of Lean's own errors with no error of the binary on its line.
 #guard differs constant { diags := #[], summary? := none0 }

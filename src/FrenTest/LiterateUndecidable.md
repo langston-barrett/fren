@@ -7,7 +7,7 @@ default: cvc5 may abort on it, so it must never reach the solver.
 mod undecidable_md
 
 comp mixed {
-    in r: Rel(Int, Int)
+    in r: Rel<Int, Int>
     pub out y?
     ensure q: y? iff r.range.card = 1
 }

@@ -1,0 +1,17 @@
+error[F0155]: type arguments are written in angle brackets
+ --> test/cli/syntax/f0155_paren_type_args.fren:3:16
+  |
+3 | comp c { in x: Option(Set(Int is 0..=3)) }
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^ type arguments in parentheses
+  |
+  = note: a type's arguments follow its name in `<` and `>`, as in `Set<Int>` and `Option<Int>`
+help: write `Option<Set<Int is 0..=3>>`
+  |
+3 - comp c { in x: Option(Set(Int is 0..=3)) }
+3 + comp c { in x: Option<Set<Int is 0..=3>> }
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0155`.
+exit=2

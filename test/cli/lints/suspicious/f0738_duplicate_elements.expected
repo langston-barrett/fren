@@ -1,7 +1,7 @@
 warning[F0738]: `1` is repeated in this literal
  --> test/cli/lints/suspicious/f0738_duplicate_elements.fren:2:57
   |
-2 | comp c { in t: Set(Int) pub out p? ensure r: p? iff t = {1, 2, 1} }
+2 | comp c { in t: Set<Int> pub out p? ensure r: p? iff t = {1, 2, 1} }
   |                                                         ^^^^^^^^^ a literal with repeats
   |
   = note: a set has no repeats: `{a, a}` is `{a}`
@@ -10,8 +10,8 @@ warning[F0738]: `1` is repeated in this literal
   = help: to allow it, `set_option fren.lint.duplicate_elements "allow"`
 help: remove the repeats
   |
-2 - comp c { in t: Set(Int) pub out p? ensure r: p? iff t = {1, 2, 1} }
-2 + comp c { in t: Set(Int) pub out p? ensure r: p? iff t = {1, 2} }
+2 - comp c { in t: Set<Int> pub out p? ensure r: p? iff t = {1, 2, 1} }
+2 + comp c { in t: Set<Int> pub out p? ensure r: p? iff t = {1, 2} }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

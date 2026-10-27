@@ -4,7 +4,7 @@
 pub type Name
 pub fn arity(n:Name):Nat
 ensure positive :arity(n)>0
-pub fn nth(q: Seq(Int), i: Int): Int := q[i]
+pub fn nth(q: Seq<Int>, i: Int): Int := q[i]
         assume in_range: 0 <= i < q.len
     ensure same: nth(q, i) = q[i]
         where j := i

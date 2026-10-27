@@ -87,18 +87,18 @@ comp grouping {
     in first?
     in second?
     in third?
-    in left: Set(Int)
-    in right: Set(Int)
-    in other: Set(Int)
-    in pairs: Rel(Mode, Mode)
-    in links: Rel(Mode, Mode)
-    in extra: Rel(Mode, Mode)
+    in left: Set<Int>
+    in right: Set<Int>
+    in other: Set<Int>
+    in pairs: Rel<Mode, Mode>
+    in links: Rel<Mode, Mode>
+    in extra: Rel<Mode, Mode>
     pub out loose?
     pub out tight?
-    pub out sets: Set(Int) := left minus right inter other  --~ warning: `inter` is an operand of `minus` without parentheses
-    pub out written: Set(Int) := left union (right inter other)
-    pub out joined: Set(Int) := left union right inter other  --~ warning: `inter` is an operand of `union` without parentheses
-    pub out chained: Rel(Mode, Mode) := pairs union links join extra  --~ warning: `join` is an operand of `union` without parentheses
+    pub out sets: Set<Int> := left minus right inter other  --~ warning: `inter` is an operand of `minus` without parentheses
+    pub out written: Set<Int> := left union (right inter other)
+    pub out joined: Set<Int> := left union right inter other  --~ warning: `inter` is an operand of `union` without parentheses
+    pub out chained: Rel<Mode, Mode> := pairs union links join extra  --~ warning: `join` is an operand of `union` without parentheses
 
     ensure loose_rule: loose? iff (first? or second? and third?)  --~ warning: `and` is an operand of `or` without parentheses
     ensure tight_rule: tight? iff (first? or (second? and third?))

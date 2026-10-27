@@ -4,7 +4,7 @@
 -- `nonminimal_bool` on a cardinality operator of one argument.
 pub ordered enum Level { Low, Mid, High, Top }
 pub struct Ms(Int)
-pub struct Qs(Seq(Int))
+pub struct Qs(Seq<Int>)
 
 pub comp c {
     in a?
@@ -14,7 +14,7 @@ pub comp c {
     in l: Level
     in x: Ms
     in n: Int
-    in q: Seq(Int)
+    in q: Seq<Int>
     in i: Int
     pub out p1?
     pub out p2?

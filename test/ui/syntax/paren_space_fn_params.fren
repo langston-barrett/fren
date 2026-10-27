@@ -1,0 +1,6 @@
+-- A generic function's type parameters follow its name directly, with no
+-- space.
+pub fn id <T>(x: T): T := x
+--~^[cli] error: a space before the `<` of the type parameters of `id`
+--~^^[hosted] error: no space before
+--@ exit: 2

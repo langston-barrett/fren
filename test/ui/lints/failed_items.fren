@@ -23,7 +23,7 @@ comp in_part {
 
 -- A denied `undecidable`, as by default, and an error elsewhere.
 comp mixed {
-    in r: Rel(Int, Int)
+    in r: Rel<Int, Int>
     in n: Int
     pub out p?
     ensure a: p? iff r.range.card = 1

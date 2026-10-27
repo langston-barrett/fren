@@ -145,7 +145,7 @@ use view::Severity
 | `wildcard_in_or_patterns` | `F0834` | `complexity` | `warn` | an or-pattern with `_` among its alternatives, such as `E::A \| _` (see [Wildcards in or-patterns](Lint/Complexity/Patterns.md#wildcards-in-or-patterns)) |
 | `wildcard_single_variant` | `F0728` | `pedantic` | `allow` | a `_` arm that matches only one variant (see [Arms](Lint/Pedantic/Matches.md#arms)) |
 | `zero_prefixed_literal` | `F0758` | `complexity` | `warn` | a decimal integer literal with a leading `0`, such as `010` (see [Leading zeros](Lint/Complexity.md#leading-zeros)) |
-| `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel(A, B)` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
+| `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel<A, B>` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
 The lints' codes run from `F0701` to `F0843`, and each group's codes start
@@ -395,9 +395,9 @@ core](Lang/Decidability.md#sequences), so the rule opts out:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp history {
-    in settings: Seq(Level)      -- the levels a file sets for one lint, in order
+    in settings: Seq<Level>      -- the levels a file sets for one lint, in order
     -- The settings after the first `forbid`.
-    out rest: Seq(Level) := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
+    out rest: Seq<Level> := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
     pub det out accepted?
 
     ensure rule: accepted? iff not (Forbid in settings
@@ -424,7 +424,7 @@ core, so the refinement is checked by testing:
 
 ```fren
 pub comp stepwise {
-    in settings: Seq(Level)
+    in settings: Seq<Level>
 
     assume three: settings.len = 3
     pub out accepted?
@@ -707,8 +707,8 @@ pub type Lint
 
 pub comp fix_selected {
     in lint: Lint
-    in only: Set(Lint)   -- the lints given to `--only`
-    in skip: Set(Lint)   -- the lints given to `--skip`
+    in only: Set<Lint>   -- the lints given to `--only`
+    in skip: Set<Lint>   -- the lints given to `--skip`
     pub det out fixed?
 
     ensure rule: fixed? iff ((only = {} or lint in only) and not lint in skip)

@@ -1,7 +1,7 @@
 warning[F0826]: these conjuncts are one expression at each variant of `Mode`
  --> test/cli/lints/style/f0826_manual_forall.fren:4:54
   |
-4 | comp c { in s: Set(Mode) pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
+4 | comp c { in s: Set<Mode> pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
   |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ one for each variant
   |
   = note: `forall` says this once, and says it of a variant added later too
@@ -10,8 +10,8 @@ warning[F0826]: these conjuncts are one expression at each variant of `Mode`
   = help: to allow it, `set_option fren.lint.manual_forall "allow"`
 help: write it with `forall`
   |
-4 - comp c { in s: Set(Mode) pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
-4 + comp c { in s: Set(Mode) pub out p? ensure r: p? iff (forall (mode: Mode), mode in s) }
+4 - comp c { in s: Set<Mode> pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
+4 + comp c { in s: Set<Mode> pub out p? ensure r: p? iff (forall (mode: Mode), mode in s) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

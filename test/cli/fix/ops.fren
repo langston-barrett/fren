@@ -10,7 +10,7 @@ pub comp c {
     in y?
     in s: String
     in t: String
-    in u: Set(Int)
+    in u: Set<Int>
     pub out n: Int
     pub out m: Int
     pub out p?

@@ -7,7 +7,7 @@ set_option fren.lint.constant_output "allow"
 
 comp c {
     --~^ error: `c` is not realizable
-    out s: Set(Int) := {1, 2}
+    out s: Set<Int> := {1, 2}
     pub det out g?
 
     ensure r: {(0, 0), (1, 2)}.image(s inter {1}).card = 2   --~ info: is false for this input

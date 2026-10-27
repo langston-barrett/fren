@@ -10,7 +10,7 @@ enum S { Dot, Line(Int) }
 struct P { x: Int, y: Int }
 
 -- A set type, for the solver's logic.
-pub const ALL: Set(E) := {E::A, E::B, E::C, E::D}
+pub const ALL: Set<E> := {E::A, E::B, E::C, E::D}
 
 comp sub {
     in x: Int

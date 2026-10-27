@@ -1,8 +1,8 @@
 --- test/cli/fmt/generic_functions.fren
 +++ test/cli/fmt/generic_functions.fren
-@@ -4,2 +4,2 @@
--pub fn id(  T )(x: T): T := x
--pub fn swap( A,B )( a: A, b: B ): B := b
-+pub fn id(T)(x: T): T := x
-+pub fn swap(A, B)(a: A, b: B): B := b
+@@ -5,2 +5,2 @@
+-pub fn id<  T >(x: T): T := x
+-pub fn swap< A,B >( a: A, b: B ): B := b
++pub fn id<T>(x: T): T := x
++pub fn swap<A, B>(a: A, b: B): B := b
 exit=1

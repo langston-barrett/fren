@@ -4,13 +4,13 @@
 -- qualified by their sorts (`Reqs/Lang/Generics#meaning`), as
 -- `lang::smt_encoding` states for these examples.
 -- fren-covers: lang::smt_encoding
-pub enum Option(T) { None, Some(T) }
-pub struct Pair(A, B) { fst: A, snd: B }
-pub enum List(T) { Nil, Cons(T, List(T)) }
+pub enum Option<T> { None, Some(T) }
+pub struct Pair<A, B> { fst: A, snd: B }
+pub enum List<T> { Nil, Cons(T, List<T>) }
 comp c {
-    in x: Option(Int)
-    in p: Pair(Int, Bool)
-    in l: List(Int)
-    pub out y: Option(Bool)
+    in x: Option<Int>
+    in p: Pair<Int, Bool>
+    in l: List<Int>
+    pub out y: Option<Bool>
     ensure r: y = (if x = Option::None and l = List::Nil then Option::None else Option::Some(p.snd))
 }
