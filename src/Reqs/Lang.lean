@@ -32,4 +32,5 @@ open Fren.Lang
 #fren_md "Lang/MeaningLaws.md"
 #fren_md "Lang/Expressions.md"
 #fren_md "Lang/HigherOrder.md"
+#fren_md "Lang/Recursion.md"
 #fren_md "Lang/ScopeLaws.md"

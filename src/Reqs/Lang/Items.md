@@ -584,16 +584,19 @@ procedure's variables: only the parameters, binders of its own [`match`
 arms](Expressions.md#matches), names of its own [`let`s and `where`
 clauses](Let.md), constants, variants, and defined functions
 declared before the function.
-So a function is not in scope in its own body, and defined functions are
-never recursive, directly or through each other. Nor does the body apply
-an uninterpreted function, so a defined function's values are fully
-known. `lang::function_body` states when a body is accepted:
+So a function is not in scope in the bodies of those declared before it,
+and defined functions are never recursive through each other. A function's
+own name in its body is an application of itself, which is only ever a
+[structural recursion](Recursion.md), and that is not yet supported. Nor
+does the body apply an uninterpreted function, so a defined function's
+values are fully known. `lang::function_body` states when a body is
+accepted:
 
 ```fren
 set_option fren.evidence "enumerated" in
 pub proc function_body(
     typed?,                  -- the body has the function's result type
-    applies_self?,           -- the body applies the function being declared
+    applies_self?,           -- the body applies the function being declared (`lang::structural_recursion`)
     applies_uninterpreted?,    -- the body applies an uninterpreted function
 ): (det accepted?) {
     ensure rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)

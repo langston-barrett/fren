@@ -7,7 +7,7 @@ fn arity(Name): Int
 
 fn named(n: Int): Int               --~ error: the parameters of uninterpreted function `named` have no names
 fn unnamed(Int): Int := 1           --~ error: the parameters of defined function `unnamed` must be named
-fn again(n: Int): Int := again(n)   --~ error: defined function `again` applies itself
+fn again(n: Int): Int := again(n)   --~ error: defined function `again` is not structurally recursive
 fn wraps(n: Name): Int := arity(n)  --~ error: a defined function's body cannot apply uninterpreted function `arity`
 fn typed(n: Int): Int := n > 0
 --~^ error: type mismatch: expected `Int`, found `Bool`

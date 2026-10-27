@@ -494,6 +494,10 @@ structure MatchBinder where
   its body mentions of it is closed over it, as of a definition
   (`quantTerm`). -/
   closure : Bool := false
+  /-- For a binder in a defined function's body, the position of the
+  parameter that it is bound from a payload of, directly or nested
+  (`lang::structural_recursion`). -/
+  payloadOf? : Option Nat := none
 
 /-- A clause of the contract of the function at `path`, whose parameters
 are `params`: whether it is a postcondition (`lang::contract_application`). -/
@@ -522,6 +526,10 @@ structure ExprCtx where
   instances : Nat := 1
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a defined function's body, if it may recurse
+  (`lang::structural_recursion`): its parameters' names, its type, and the
+  local that stands for it. -/
+  selfRec? : Option (Array Name × Core.FnTy × Term) := none
   /-- In a higher-order function's body or contract, its function
   parameters: each one's name, type and term
   (`Reqs/Lang/HigherOrder#function-parameters`). -/
@@ -809,6 +817,34 @@ def paramTypes : Expr → Array Expr
 /-- Strips parentheses from `e`. -/
 partial def unparen (e : Syntax) : Syntax :=
   if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
+
+/-- The single name that the expression `a` is, without parentheses, if it
+is one. -/
+def soleName? (a : Syntax) : Option Name :=
+  let a := unparen a
+  let a := if a.getNumArgs == 1 then a[0] else a
+  if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 then some (pathSegs a)[0]!.getId else none
+
+/-- In a defined function's body that may recurse, where the expression `a`
+comes from (`lang::structural_recursion`): the position of the parameter
+that it is, or that it is bound from a payload of, with whether it is a
+payload. -/
+def ExprCtx.recOrigin? (cx : ExprCtx) (a : Syntax) : Option (Nat × Bool) := do
+  let (ps, _, _) ← cx.selfRec?
+  let n ← soleName? a
+  match cx.binder? n with
+  | some b => return (← b.payloadOf?, true)
+  | none =>
+    guard (cx.vars.any (·.name == n))
+    return (← ps.idxOf? n, false)
+
+/-- Where the argument `a` at position `i` of a recursive application comes
+from, relative to the parameter there (`lang::structural_recursion`). -/
+def ExprCtx.recArg (cx : ExprCtx) (a : Syntax) (i : Nat) : Core.RecArg :=
+  match cx.recOrigin? a with
+  | some (j, true) => if j == i then .payload else .name
+  | some (j, false) => if j == i then .itself else .name
+  | none => if (soleName? a).isSome then .name else .expr
 
 /-- Whether `e` is the binary operator `op`. -/
 def isBinOp (e : Syntax) (op : String) : Bool :=
@@ -2240,6 +2276,9 @@ structure PatBinder where
   ident : Syntax
   type : Expr
   term : Term
+  /-- Bound from a payload of the scrutinee, directly or nested, rather
+  than to the whole scrutinee. -/
+  payload : Bool := false
   deriving Inhabited
 
 /-- The type of a value of the Lean type `t`, as patterns see it. -/
@@ -2375,7 +2414,7 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
   for a in args, t in tys, sel in sels do
     let (q, qbs, qt) ← resolveOr cx t sel inOr test a[0].getSepArgs false
     pats := pats.push q
-    bs := bs ++ qbs
+    bs := bs ++ qbs.map ({ · with payload := true })
     tests := tests ++ qt.toArray
   return (.ctor idx pats, bs, ← conjTerm tests)
 
@@ -3270,7 +3309,10 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let bn := y.getId
       liftMsg y (Core.checkVarName bn (some (b.type.isConstOf ``Bool || b.type.isProp)))
       lintName .binder bn y
-      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size }
+      -- A payload of a parameter, or of a binder bound from one, is bound
+      -- from a payload of that parameter; so is the whole of such a binder.
+      let payloadOf? := cx.recOrigin? scrutinee |>.bind fun (j, p) => if b.payload || p then some j else none
+      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size, payloadOf? }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let (g?, d?) ← if arm[1].isNone then pure (none, none) else if !isTable then do
@@ -4842,6 +4884,15 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       `(fun ($(mkIdent l) : $(← exprToSyntax ty)) => $acc)
     return ({ term := lam, obligations := obls }, named.map (·.2.2.1), rt)
 
+/-- Records the use `u`, written at `ref`, of the defined function `f`, whose
+parameters are `ps`, in its own body; an error if with it the uses are not a
+structural recursion (`lang::structural_recursion`). -/
+def noteRecUse (ref : Syntax) (f : Name) (ps : Array Name) (u : Core.RecUse) : TermElabM Unit := do
+  modifyLocal fun l => { l with recUses := l.recUses.push (ref, u) }
+  let uses := (← getLocal).recUses
+  if let .notStructural _ i := Core.recursion ps.size (uses.toList.map (·.2)) then
+    throwErrorAt ref (Core.nonStructuralMsg f ps[i]! u.form (u.args[i]?.getD .expr)).text
+
 open Lang in
 /-- A closure, or the name of a function, `e`, given for the function
 parameter of type `ft`, as its function's signature declares it, of the
@@ -4876,6 +4927,10 @@ def fnArgTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (f
   -- A function parameter, or a defined function, but not an uninterpreted
   -- one (`lang::function_argument`).
   let segs := pathSegs p
+  -- The function itself, in its own body, not applied.
+  if let some (ps, _, _) := cx.selfRec? then
+    if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
+      noteRecUse p (cx.modName ++ segs[0]!.getId) ps { form := .passed }
   let isParam := segs.size == 1 && (cx.fnParam? segs[0]!.getId).isSome
   unless isParam do
     match (← getState).table.resolvePath cx.modName (segs.map (·.getId)) cx.shadowing with
@@ -4957,7 +5012,19 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if segs.size == 1 && (cx.vars.any (·.name == segs[0]!.getId) || (cx.binder? segs[0]!.getId).isSome) then
     throwErrorAt p (Core.varNotAFunctionMsg segs[0]!.getId).text
   if segs.size == 1 && cx.selfFn == some segs[0]!.getId then
-    throwErrorAt p (Core.recursiveMsg (cx.modName ++ segs[0]!.getId)).text
+    let f := cx.modName ++ segs[0]!.getId
+    let some (ps, ft, fx) := cx.selfRec? | throwErrorAt p (Core.recursiveMsg f).text
+    -- An application of itself, which must be structural recursion
+    -- (`lang::structural_recursion`), typed as a function parameter's.
+    unless args.getElems.size == ft.params.size do throwError (Core.arityMsg f ft.params.size args.getElems.size).text
+    noteRecUse p f ps { form := if cx.inClosure then .inClosure else .applied
+                        args := args.getElems.toList.zipIdx.map fun (a, i) => cx.recArg a i }
+    let ts ← (args.getElems.zip ft.params).zipIdx.mapM fun ((a, t), k) => do
+      let x ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := some t } a
+      if let some found ← frenTypeOf? x then
+        liftMsg a (Core.checkType t found (some s!"note: argument {k + 1} of `{Core.showPath f}` has type `{t.show}`"))
+      return x
+    return ← `($fx $ts*)
   -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
   if segs.size == 1 then
     if let some (ft, fx) := cx.fnParam? segs[0]!.getId then
@@ -6292,11 +6359,23 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let (lam, tables, obls, leanLam?) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
         withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
+      -- A first-order function that is not generic may apply itself, in a
+      -- structural recursion (`lang::structural_recursion`): within the
+      -- body, a local of its type stands for it.
+      let selfName := n.appendAfter "#self"
+      let recursive := tps.isEmpty && fnPs.isEmpty
+      let selfRec? := if recursive then some (vars.map (·.name), ({ params := declared, result := resultTy } : Core.FnTy),
+        (⟨(mkIdent selfName).raw⟩ : Term)) else none
+      let selfTy := vars.foldr (fun v acc => .forallE `x v.type acc .default) result
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
                             expected? := if result.isConstOf ``Nat then some .nat else none
-                            fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
+                            fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
-      let t ← toTerm cx body
+      modifyLocal fun l => { l with recUses := #[] }
+      let t ← if recursive then withLocalDeclD selfName selfTy fun _ => toTerm cx body else toTerm cx body
+      let uses := (← getLocal).recUses
+      if let .structural i := Core.recursion vars.size (uses.toList.map (·.2)) then
+        throwErrorAt uses[0]!.1 (Core.structuralUnsupportedMsg path vars[i]!.name).text
       noteObligation cx .body body rp t
       -- Its tables, the applications of functions with preconditions, and
       -- its pattern types' obligations, for their checks; its indexes are

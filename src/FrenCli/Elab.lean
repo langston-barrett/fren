@@ -14,6 +14,7 @@ import FrenCore.Names
 import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Quantifier
+import FrenCore.Recursion
 import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.SeqElems
@@ -651,6 +652,10 @@ structure CBinder where
   whose symbol the solver's quantifier binds: within the body, it mentions
   itself, as a variable does. -/
   unbounded : Bool := false
+  /-- For a binder in a defined function's body, the position of the
+  parameter that it is bound from a payload of, directly or nested
+  (`lang::structural_recursion`). -/
+  payloadOf? : Option Nat := none
 
 /-- A generic defined function (`Reqs/Lang/GenericFunctions`): what its
 applications need to infer their type arguments, and to unfold it at its
@@ -918,6 +923,9 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   has a domain, directly, through a call or through a defined
   function, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guardedUsed : Bool := false
+  /-- In a defined function's body, its uses of itself so far, each where
+  it is written (`lang::structural_recursion`). -/
+  recUses : Array (Span × Fren.Core.RecUse) := #[]
   /-- The defined functions and constants whose bodies or values have such a
   quantifier, directly or through others. -/
   guardedItems : Std.HashSet Name := {}
@@ -1163,6 +1171,15 @@ def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Ran
 
 /-! ## Expressions -/
 
+/-- Records the use `u`, written at `span`, of the defined function `f`,
+whose parameters are `ps`, in its own body; an error if with it the uses are
+not a structural recursion (`lang::structural_recursion`). -/
+def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse) : M Unit := do
+  modify fun s => { s with recUses := s.recUses.push (span, u) }
+  let uses := (← get).recUses
+  if let .notStructural _ i := Fren.Core.recursion ps.size (uses.toList.map (·.2)) then
+    err span (Fren.Core.nonStructuralMsg f ps[i]! u.form (u.args[i]?.getD .expr))
+
 structure ExprCtx where
   vars : Array CVar
   /-- The procedure's calls, in order. -/
@@ -1180,6 +1197,10 @@ structure ExprCtx where
   instances : Nat := 1
   /-- In a defined function's body, the function's name. -/
   selfFn : Option Name := none
+  /-- In a defined function's body, if it may recurse
+  (`lang::structural_recursion`): its parameters' names, its type, and its
+  symbol. -/
+  selfRec? : Option (Array Name × Fren.Core.FnTy × String) := none
   /-- In a higher-order function's body or contract, its function
   parameters: each one's name, type and symbol (`Reqs/Lang/HigherOrder#function-parameters`). -/
   fnParams : Array (Name × Fren.Core.FnTy × String) := #[]
@@ -1257,6 +1278,32 @@ binder or variable hides it (`Reqs/Lang/HigherOrder#function-parameters`). -/
 def ExprCtx.fnParam? (cx : ExprCtx) (n : Name) : Option (Fren.Core.FnTy × String) :=
   if (cx.binder? n).isSome || cx.vars.any (·.name == n) then none
   else (cx.fnParams.find? (·.1 == n)).map fun (_, t, sym) => (t, sym)
+
+/-- The single name that the expression `a` is, if it is one. -/
+def soleName? : Expr → Option Name
+  | .path _ #[x] => some (identName x.name)
+  | _ => none
+
+/-- In a defined function's body that may recurse, where the expression `a`
+comes from (`lang::structural_recursion`): the position of the parameter
+that it is, or that it is bound from a payload of, with whether it is a
+payload. -/
+def ExprCtx.recOrigin? (cx : ExprCtx) (a : Expr) : Option (Nat × Bool) := do
+  let (ps, _, _) ← cx.selfRec?
+  let n ← soleName? a
+  match cx.binder? n with
+  | some b => return (← b.payloadOf?, true)
+  | none =>
+    guard (cx.vars.any (·.name == n))
+    return (← ps.idxOf? n, false)
+
+/-- Where the argument `a` at position `i` of a recursive application comes
+from, relative to the parameter there (`lang::structural_recursion`). -/
+def ExprCtx.recArg (cx : ExprCtx) (a : Expr) (i : Nat) : Fren.Core.RecArg :=
+  match cx.recOrigin? a with
+  | some (j, true) => if j == i then .payload else .name
+  | some (j, false) => if j == i then .itself else .name
+  | none => if (soleName? a).isSome then .name else .expr
 
 
 /-- The constant that `segs` names, without recording its use. -/
@@ -2712,6 +2759,9 @@ structure PBinder where
   ident : Ident
   ty : Ty
   smt : String
+  /-- Bound from a payload of the scrutinee, directly or nested, rather
+  than to the whole scrutinee. -/
+  payload : Bool := false
   deriving Inhabited
 
 /-- The variants of each enumeration, with their payloads' types, as
@@ -2800,7 +2850,7 @@ partial def resolvePattern (cx : ExprCtx) (ty : Ty) (x : String) (inOr test : Bo
     for a in args, (_, t) in fs, k in [0:args.size] do
       let (q, qbs, qt) ← resolvePattern cx t s!"({d.selSym c k} {x})" inOr test a
       pats := pats.push q
-      bs := bs ++ qbs
+      bs := bs ++ qbs.map ({ · with payload := true })
       tests := tests ++ qt.toArray
     return (.ctor idx pats, bs, smtConj tests)
   | .or _ alts =>
@@ -4340,7 +4390,19 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
   if segs.size == 1 && (cx.vars.any (·.name == identName segs[0]!.name) || (cx.binder? (identName segs[0]!.name)).isSome) then
     err fnSpan (Fren.Core.varNotAFunctionMsg (identName segs[0]!.name))
   if segs.size == 1 && cx.selfFn == some (Name.mkSimple segs[0]!.name) then
-    err fnSpan (Fren.Core.recursiveMsg ((← get).module ++ Name.mkSimple segs[0]!.name))
+    let f := (← get).module ++ Name.mkSimple segs[0]!.name
+    let some (ps, ft, sym) := cx.selfRec? | err fnSpan (Fren.Core.recursiveMsg f)
+    -- An application of itself, which must be structural recursion
+    -- (`lang::structural_recursion`), typed as a function parameter's.
+    unless args.size == ft.params.size do err span (Fren.Core.arityMsg f ft.params.size args.size)
+    noteRecUse fnSpan f ps { form := if cx.inClosure then .inClosure else .applied
+                             args := args.toList.zipIdx.map fun (a, i) => cx.recArg a i }
+    let mut smts := #[]
+    for a in args, t in ft.params, k in [0:args.size] do
+      let (x, ta) ← elabExpr { cx with expected? := some t } a
+      liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath f}` has type `{t.show}`"))
+      smts := smts.push x
+    return (s!"({sym} {" ".intercalate smts.toList})", ft.result)
   -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
   if segs.size == 1 then
     if let some (ft, sym) := cx.fnParam? (identName segs[0]!.name) then
@@ -4545,6 +4607,10 @@ partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Ar
       return (x, t)
     elabClosure cx named body r? false
   | .path span segs =>
+    -- The function itself, in its own body, not applied.
+    if let some (ps, _, _) := cx.selfRec? then
+      if segs.size == 1 && cx.selfFn == some (Name.mkSimple segs[0]!.name) then
+        noteRecUse span ((← get).module ++ Name.mkSimple segs[0]!.name) ps { form := .passed }
     -- A function parameter, or a defined function, but not an
     -- uninterpreted one (`lang::function_argument`).
     let isParam := segs.size == 1 && (cx.fnParam? (identName segs[0]!.name)).isSome
@@ -4882,7 +4948,10 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
       let bn := Name.mkSimple x.name
       liftMsg x.span (Fren.Core.checkVarName bn (some (b.ty == .bool)))
       lintName .binder bn x.span
-      new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size }
+      -- A payload of a parameter, or of a binder bound from one, is bound
+      -- from a payload of that parameter; so is the whole of such a binder.
+      let payloadOf? := cx.recOrigin? scrutinee |>.bind fun (j, p) => if b.payload || p then some j else none
+      new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size, payloadOf? }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let guardOf (g : Expr) : M (String × Option String) := do
@@ -6613,8 +6682,16 @@ partial def elabItem (item : Item) : M Unit := do
       discard takeTables
       discard takeIndexes
       modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
-      let cx : ExprCtx := { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none, fnParams }
+      -- A first-order function that is not generic may apply itself, in a
+      -- structural recursion (`lang::structural_recursion`).
+      let selfRec? := if tps.isEmpty && fnPs.isEmpty then
+        some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
+      let cx : ExprCtx := { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none, fnParams, selfRec? }
+      modify fun s => { s with recUses := #[] }
       let (smt, t) ← elabExpr cx body
+      let uses := (← get).recUses
+      if let .structural i := Fren.Core.recursion vars.size (uses.toList.map (·.2)) then
+        err uses[0]!.1 (Fren.Core.structuralUnsupportedMsg path vars[i]!.name)
       noteObligation cx .body body.span rp smt
       let bodyTables ← takeTables
       let bodyObligations ← takeIndexes

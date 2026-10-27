@@ -11,6 +11,7 @@
   - [Generic types](Lang/Generics.md)
   - [Generic functions](Lang/GenericFunctions.md)
   - [Higher-order functions](Lang/HigherOrder.md)
+  - [Structural recursion](Lang/Recursion.md)
   - [The prelude](Lang/Prelude.md)
 - [Scope](Lang/Scope.md)
   - [Laws of scope](Lang/ScopeLaws.md)

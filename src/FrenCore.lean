@@ -18,6 +18,7 @@ import FrenCore.Patterns
 import FrenCore.Prelude
 import FrenCore.Procedures
 import FrenCore.Quantifier
+import FrenCore.Recursion
 import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.SeqElems

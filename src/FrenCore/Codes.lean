@@ -2140,14 +2140,15 @@ Erroneous code examples:
 type Name
 fn arity(Name): Int
 
-fn again(n: Int): Int := again(n)
+fn first<T>(o: Option<T>, d: T): T := first(o, d)
 fn rank(n: Name): Int := arity(n) + 1
 ```
 
 A defined function's values are fully known, from those of its arguments,
-so its body applies only defined functions declared before it. It cannot
-apply itself, and it cannot apply an uninterpreted function, whose values
-are unknown. Make such a value a parameter, and apply the uninterpreted
+so its body applies only defined functions declared before it. A generic
+or higher-order function cannot apply itself (a first-order one may, in a
+structural recursion: see `F0447`), and no defined function can apply an
+uninterpreted function, whose values are unknown. Make such a value a parameter, and apply the uninterpreted
 function where the defined one is applied:
 
 ```fren
@@ -3201,6 +3202,52 @@ pub struct Bounds { lo: Int, hi: Int }
 
 pub fn f(x: Int): (r: Bounds) {
     out r := Bounds { lo := x - 1, hi := x + 1 }
+}
+```
+"# },
+  { code := "F0447", explanation := r#"A defined function applies itself, but not in a structural recursion.
+
+Erroneous code example:
+
+```fren
+pub fn count(n: Int): Int := if n > 0 then count(n - 1) + 1 else 0
+```
+
+A defined function may apply itself only to a smaller value of a
+recursive enumeration: at one parameter, the same in every application,
+the argument must be a binder that a `match` arm bound from a payload of
+that parameter, directly or nested. So every application has a value.
+Recursion on an integer, on the parameter itself, within a closure, or by
+passing the function as an argument, is not structural. Define the value
+without recursion, or give it as an uninterpreted function's postcondition:
+
+```fren
+pub fn count(n: Int): Int := if n > 0 then n else 0
+```
+"# },
+  { code := "F0448", explanation := r#"A defined function is a structural recursion, which is not yet supported.
+
+Erroneous code example:
+
+```fren
+pub enum Expr { Lit(Int), Add(Expr, Expr) }
+
+pub fn size(e: Expr): Int := match e {
+    Expr::Lit(_) => 1,
+    Expr::Add(a, b) => size(a) + size(b),
+}
+```
+
+The function applies itself only to payloads of its parameter, which is a
+structural recursion, and Fren will accept it: until then, state what is
+needed of one layer at a time, with the operands' values as a parameter:
+
+```fren
+pub enum Expr<E> { Lit(Int), Add(E, E) }
+
+pub fn size(e: Expr<Int>): Int := match e {
+    Expr::Lit(_) => 1,
+    Expr::Add(a, b) => a + b,
 }
 ```
 "# },
