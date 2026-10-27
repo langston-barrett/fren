@@ -749,6 +749,9 @@ signature and a *block* of members, as a
 [procedure](Procedures.md) is: `fn f(x: T): (r: U) { ... }`, or `(r?)` for
 a `Bool` result. Its members are, in this order, as a procedure's are:
 
+- `use a::b`, which imports into the function alone, as a procedure's
+  `use` does into the procedure (see [Modules](Modules.md)), so that its
+  signature and its block may mention what it brings in;
 - `assume n: e`, a precondition;
 - `let y := e`, or `let y: T := e`, a local definition;
 - `out r := e`, which defines the result: `e` is the function's body, and
@@ -757,7 +760,7 @@ a `Bool` result. Its members are, in this order, as a procedure's are:
 
 A function's value is determined by its arguments, so its block takes
 no `exists`, no `call`, no `det`, which every value of a function is, and
-no evidence settings (`F0442`); nor yet a `use`, an `expect` or a `cover`
+no evidence settings (`F0442`); nor yet an `expect` or a `cover`
 (`F0443`). In it, `out` defines the result alone (`F0444`), at most once
 (`F0421`), and a function has one result (`F0445`). `lang::fn_member`
 states which members a function's block takes:
@@ -775,7 +778,7 @@ pub proc fn_member(
     member: FnMemberKind,
     det?,                    -- it is written `det`
 ): (det verdict: FnVerdict) {
-    ensure rule: verdict = (if member in {FnMemberKind::Use, FnMemberKind::Claim} then FnVerdict::NotYet
+    ensure rule: verdict = (if member = FnMemberKind::Claim then FnVerdict::NotYet
         else if det? or member in {FnMemberKind::Exists, FnMemberKind::Call, FnMemberKind::Evidence}
         then FnVerdict::NotFunctions else FnVerdict::Accepted)
 

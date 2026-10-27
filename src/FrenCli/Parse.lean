@@ -344,9 +344,11 @@ and its type after `:` if written. The result type is `none` if it is not
 written, and the body if the function is uninterpreted. Then the clauses
 of its contract: whether each is a postcondition, its name and its
 expression. `last` is the span of its last token, such as a `)` around the
-body, which `body` leaves out. -/
+body, which `body` leaves out. `uses` are the `use` members of its block
+(`Reqs/Lang/Items#function-blocks`). -/
   | function (isPub : Bool) (name : Ident) (typeParams : Array Ident) (params : Array (Array Ident × Option (Array Ident)))
       (result : Option (Array Ident)) (body : Option Expr) (clauses : Array (Bool × Ident × Expr)) (last : Span)
+      (uses : Array Member := #[])
   | const (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr)
   /-- `proc p(x: T): (y: U) { members }`: its parameters, as inputs, and
   its results, as public outputs, each after any evidence setting
@@ -1679,6 +1681,7 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
   let mut lets : Array (Ident × Option (Array Ident) × Expr) := #[]
   let mut body : Option Expr := none
   let mut clauses : Array (Bool × Ident × Expr) := #[]
+  let mut uses : Array Member := #[]
   repeat
     let t ← peek
     if isKw t "}" then break
@@ -1700,6 +1703,7 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
     if let some (k, det, kw, at_) := kind? then
       if let some msg := Fren.Core.fnMemberMsg? k det kw then throw { span := at_, msg }
     match mem with
+    | .use .. | .useGroup .. => uses := uses.push mem
     | .var _ _ _ x ty (some e) => lets := lets.push (x, ty, e)
     | .define x e =>
       if body.isSome then throw { span := x.span, msg := Fren.Core.resultDefinedTwiceMsg x.name }
@@ -1730,7 +1734,7 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
   let body' ← match body with
     | some e => check e; some <$> withDefs lets e
     | none => pure none
-  return .function isPub name typeParams params result body' clauses' close.span
+  return .function isPub name typeParams params result body' clauses' close.span uses
 
 /-- The fix of a function whose contract is written after its signature
 (`F0164`): the function from `itemStart` to its last clause, written with

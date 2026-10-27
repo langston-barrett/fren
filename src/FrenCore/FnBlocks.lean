@@ -41,12 +41,13 @@ inductive FnVerdict where
   deriving Inhabited, DecidableEq, Repr
 
 /-- Whether a function's block takes the member `m`, written `det` if
-`det` (`lang::fn_member`): `assume`, `let`, `out` and `ensure`, none of
-them `det`, since every value of a function is determined; not yet `use`
-and claims. -/
+`det` (`lang::fn_member`): `use`, `assume`, `let`, `out` and `ensure`,
+none of them `det`, since every value of a function is determined; not yet
+claims. -/
 def fnMemberVerdict (m : FnMember) (det : Bool) : FnVerdict :=
   match m with
-  | .use | .claim => .notYet
+  | .use => .accepted
+  | .claim => .notYet
   | .exists | .call | .evidence => .notFunctions
   | _ => if det then .notFunctions else .accepted
 
@@ -86,16 +87,15 @@ its kind, such as "`exists`". -/
 def fnMemberMsg (what : String) : Msg :=
   { code? := some "F0442", headline := s!"a function's block takes no {what}"
     label? := some "not a function's member"
-    notes := #["note: a function's value is determined by its arguments: its block takes `assume`, `let`, `out` \
-      and `ensure`, and no `exists`, `call` or `det`"] }
+    notes := #["note: a function's value is determined by its arguments: its block takes `use`, `assume`, `let`, \
+      `out` and `ensure`, and no `exists`, `call` or `det`"] }
 
-/-- A `use`, an `expect` or a `cover` in a function's block (`F0443`):
-`kw` is its keyword. -/
+/-- An `expect` or a `cover` in a function's block (`F0443`): `kw` is its
+keyword. -/
 def fnClaimMsg (kw : String) : Msg :=
   { code? := some "F0443", headline := s!"a function's block takes no `{kw}` yet"
     label? := some "not yet a function's member"
-    notes := #[if kw == "use" then "note: write the `use` in the function's module"
-      else "note: a function's claims are not checked yet; state it of a procedure that applies the function"] }
+    notes := #["note: a function's claims are not checked yet; state it of a procedure that applies the function"] }
 
 /-- The error of the member `m` of a function's block, written `det` if
 `det` and with the keyword `kw`, if the block does not take it

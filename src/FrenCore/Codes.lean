@@ -3064,7 +3064,7 @@ A function's value is determined by its arguments, so its block takes
 none of what a procedure has for what is chosen or called: no `exists`,
 no `call`, no `det`, which every value of a function is, and no evidence
 settings, which set how a procedure's checks are made. A function's block
-takes `assume`, `let`, `out` and `ensure` members, and not `use` yet.
+takes `use`, `assume`, `let`, `out` and `ensure` members.
 Define each value with `let`, or apply a function:
 
 ```fren

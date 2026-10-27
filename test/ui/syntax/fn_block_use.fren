@@ -1,8 +1,0 @@
--- A function's block takes no `use` yet (`F0442`).
-pub enum E { A, B }
-
-pub fn f(x: Int): (r: Int) {
-    use E::*   --~ error: a function's block takes no `use` yet
-    out r := x
-}
---@ exit: 2

@@ -6193,6 +6193,9 @@ def noteSettingsSeen (lints : Array Lint := Lint.all) : M Unit :=
     | none => acc }
 
 partial def elabItem (item : Item) : M Unit := do
+  -- Paths resolve in the module, but in a procedure's or a function's
+  -- block with `use`s, which sets its own scope.
+  modify fun s => { s with scope := s.module }
   -- A `set_option` leaves them to the item after it.
   unless item matches .lintSetting .. do
     lintLiterals
@@ -6429,7 +6432,7 @@ partial def elabItem (item : Item) : M Unit := do
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       sorts := s.sorts.push path }
-  | .function isPub name typeParams params result body clauses last => do
+  | .function isPub name typeParams params result body clauses last uses => do
     let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
@@ -6440,6 +6443,9 @@ partial def elabItem (item : Item) : M Unit := do
     startDeclared
     let path := module ++ n
     modify fun s => { s with item := path }
+    -- The `use`s of its block, in its scope, as a procedure's
+    -- (`Reqs/Lang/Items#function-blocks`).
+    declareMemberUses path uses
     -- Its type parameters, which are abstract types within it, whether it
     -- is defined or not (`lang::generic_function`).
     let tps ← elabTypeParams typeParams
