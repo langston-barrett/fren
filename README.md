@@ -21,10 +21,10 @@ Consider the following specification of the retry policy of an HTTP client:
 ```fren
 mod http
 
-ordered struct Seconds(Nat)          -- a newtype with derived ordering
+ordered struct Seconds(Nat)                    -- newtype with derived ordering
 enum Decision { GiveUp, RetryAfter(Seconds) }  -- Rust-style enums
+type Status := Nat is 100..=599                -- a pattern type
 enum Method { Get, Put, Post, Delete }
-type Status := Nat is 100..=599      -- a pattern type
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
@@ -50,7 +50,13 @@ proc retry(
 }
 
 -- Once the client gives up, a later attempt doesn't start retrying again.
-expect gives_up_for_good(method: Method, status: Status, retry_after: Seconds, early: Nat is 1.., late: Nat is 1..) {
+expect gives_up_for_good(
+    method: Method,
+    status: Status,
+    retry_after: Seconds,
+    early: Nat is 1..,
+    late: Nat is 1..,
+) {
     use http::Decision::RetryAfter
 
     assume later: early <= late
@@ -58,7 +64,8 @@ expect gives_up_for_good(method: Method, status: Status, retry_after: Seconds, e
     call a := retry(method, status, early, retry_after)
     call b := retry(method, status, late, retry_after)
 
-    expect stays_given_up: when b.decision is RetryAfter(_), a.decision is RetryAfter(_)
+    expect stays_given_up:
+        when b.decision is RetryAfter(_), a.decision is RetryAfter(_)
 }
 ```
 
@@ -107,18 +114,62 @@ right fix is a nontrivial design question.
 - Composition: build procedures from others, using rely/guarantee reasoning
 - Extensive tooling: a formatter, linter with auto-fixes, and mutation testing tool
 
-## Why Fren?
+## Design philosophy and comparison to other tools
 
-- Automation via a decidable logic (`QF_UFDTLIA`)
+We believe that Fren sits in a unique niche among formal methods tools.
+This niche stems from two factors:
+
+1. It is a language for reasoning about *requirements* (i.e., *specifications*),
+   not implementations. This is "lightweight formal methods".
+2. It is relentlessly focused on good UX.
+
+In particular, it is designed to avoid certain UX pitfalls of existing formal
+methods tooling.
+
+**Opacity**: If your [Verus] or [Dafny] proof fails, you are expected to
+fix it with very limited feedback. Fixing it can involve proving, importing,
+or instantiating additional lemmas. A variation of Greenspun's tenth rule
+applies to the proof languages of such tools: "Any sufficiently complicated
+formal methods tool contains an ad hoc, informally-specified, bug-ridden, slow
+implementation of half of a proof assistant". Fren avoids this by eschewing
+*any* form of user-aided proof. It instead sticks to a decidable subset of
+SMT by default, with principled, built-in escape hatches to Lean proofs or
+randomized testing where desired.
+
+[Verus]: https://github.com/verus-lang/verus
+[Dafny]: http://dafny.org/
+
+**Unpredictability**: Tools like Dafny produce quantified axioms that [slow
+down solvers]. In contrast, Fren sticks to a decidable subset of SMT. Tools
+like [SAW] also use a decidable subset of SMT, but because they reason about
+implementations, their queries are so hairy that solvers still struggle. Fren's
+queries stay small and fast from reasoning at the specification level.
+
+[slow down solvers]: https://arxiv.org/abs/2512.03926
+[SAW]: https://github.com/GaloisInc/saw-script
+
+**Unmooredness**: Other light-weight formal methods tools like [Alloy] and
+[TLA+], while excellent at what they do, are disconnected from implementations
+*by design*. Fren can be used this way, but you can also *prove* that your Lean
+implementation satisfies your requirements.
+
+[Alloy]: https://alloytools.org/
+[TLA+]: https://lamport.azurewebsites.net/tla/tla.html
+
+**Complexity**: Proof assistants such as [Rocq] and [Agda] have incredibly
+rich languages, with implicit arguments, typeclasses, metaprogramming, ML-style
+module systems, type-level computation, and more. Fren is a simple first-order
+language with a straightforward lowering into Lean and SMT.
+
+[Rocq]: https://rocq-prover.org/
+[Agda]: https://github.com/agda/agda
+
+Fren is abstract, compositional, simple, fast, and predictable. If you need more
+power or expressivity, you can easily drop into Lean.
 
 ## Documentation
 
 TODO
-
-## Comparison to other tools
-
-- FRET
-- Alloy
 
 ## TODO
 
