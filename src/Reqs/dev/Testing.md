@@ -13,6 +13,13 @@
   note at whichever guarantee the solver's model picks. This is how
   `cli::agreement` is tested. See
   `src/FrenTest/Ui.lean` for the format.
+- **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
+  spec for readers, and is checked as a ui test, so its annotations
+  (usually none) must match both front ends' messages. The example specs
+  are also in the ui tests' backjumping and enumeration corpora.
+  An example's Lean implementation, such as `examples/Rle.lean`, reads its
+  spec with `#fren_md` and proves it meets the spec; `lake build` checks
+  the proofs of those listed in the `Examples` library.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
@@ -24,7 +31,8 @@
   lints by lint group (`lints/style/` and so on, and `lints/settings/` for
   setting levels), and the others by command (`args/`, `fix/`, `fmt/`,
   `commands/`). Under `test/ui/`, they are `lang/`, `checks/`, `lints/`,
-  `syntax/` and `lean/`.
+  `syntax/` and `lean/`. The example specs are in `examples/`, outside
+  `test/`.
 - **Error codes** (`lake test`): every code used in the sources must be
   explained in `src/FrenCore/Codes.lean` and reported by some snapshot.
   Each explanation's first ```` ```fren ```` block must report its code,
