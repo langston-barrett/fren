@@ -1,0 +1,5 @@
+-- A function's result is not written `det` (`F0442`).
+pub fn f(x: Int): (det r: Int) {   --~ error: a function's block takes no `det`
+    out r := x
+}
+--@ exit: 2

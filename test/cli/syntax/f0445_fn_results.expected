@@ -1,0 +1,12 @@
+error[F0445]: a function has one result for now
+ --> test/cli/syntax/f0445_fn_results.fren:2:28
+  |
+2 | pub fn f(x: Int): (r: Int, s: Int) {
+  |                            ^ a second result
+  |
+  = note: a function with several results is not supported yet; return a record instead
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0445`.
+exit=2

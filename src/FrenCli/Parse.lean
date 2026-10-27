@@ -2,6 +2,7 @@
 import FrenCli.Lex
 import FrenCore.Closures
 import FrenCore.Evidence
+import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Names
 import FrenCore.PatternTypes
@@ -443,6 +444,9 @@ structure PState where
   /-- In a procedure's block: its header, for the fixes that move a member
   into it (`F0159`, `F0160`). -/
   proc? : Option ProcHeader := none
+  /-- In a function's block: its result's name, which `out` defines
+  (`F0444`). -/
+  fnResult? : Option String := none
   /-- In a component's members, for its migration (`F0158`): for each
   variable, where its name starts, where its name and type end, and where
   its `:=` starts. -/
@@ -1532,6 +1536,13 @@ def member (legacy : Bool := false) : P Member := do
     if legacy then
       modify fun s => { s with varMarks := s.varMarks.push (x.span.start, declStop, d?.map (·.span.start)) }
       return .var false isPub isDet x ty defn
+    -- In a function's block, `out r := e` defines its result `r`
+    -- (`F0444`).
+    if let some rn := (← get).fnResult? then
+      if !isPub && !isDet && ty.isNone then
+        if let some e := defn then
+          if x.name == rn then return .define x e
+          throw { span := t.span.to x.span, msg := Fren.Core.fnOutMsg x.name rn }
     -- `out r := e` defines the result `r`; anything else is an output as
     -- components declared them.
     let results := ((← get).proc?.map (·.results)).getD #[]
@@ -1609,6 +1620,222 @@ def member (legacy : Bool := false) : P Member := do
   let x ← ident
   discard (expectKw ":")
   return .prop kind x (← top)
+
+/-- The names that the tokens within `sp` mention: each identifier's
+first segment, without the `!` of shadowing. -/
+def mentionsIn (sp : Span) : P (Array String) := do
+  let mut out := #[]
+  for t in (← get).toks do
+    if t.span.start >= sp.stop then break
+    if t.span.start < sp.start then continue
+    if let .ident s := t.tok then
+      let n := unbanged ((s.splitOn ".").headD s)
+      unless out.contains n do out := out.push n
+  return out
+
+/-- `e`, with the local definitions of `defs` that it needs, in order, as a
+`where` clause (`Fren.Core.neededDefs`): the result's and the `let`s' of a
+function's block. A `where` of its own follows them. -/
+def withDefs (defs : Array (Ident × Option (Array Ident) × Expr)) (e : Expr) : P Expr := do
+  let mut ms := #[]
+  for (_, _, d) in defs do ms := ms.push (← mentionsIn d.span)
+  let needed := Fren.Core.neededDefs ((defs.zip ms).map fun ((x, _), m) => (unbanged x.name, m)) id (← mentionsIn e.span)
+  if needed.isEmpty then return e
+  let ours := needed.map (defs[·]!)
+  return match e with
+    | .«let» sp ds b true => .«let» sp (ours ++ ds) b true
+    | _ => .«let» e.span ours e true
+
+/-- A function written with a result and a block, after its parameters
+(`Reqs/Lang/Items#function-blocks`): `: (r: T) { members }`. It is the
+function whose body is its `out` member's expression and whose contract is
+its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
+`let`s it needs as a `where` clause (`F0442`–`F0445`, `F0165`). -/
+def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
+    (params : Array (Array Ident × Option (Array Ident))) : P Item := do
+  discard (expectKw ":")
+  markList
+  discard (expectKw "(")
+  markStart
+  let m ← peek
+  if isWord m "set_option" then
+    throw { span := m.span, msg := (Fren.Core.fnMemberMsg? .evidence false "set_option").get! }
+  if isWord m "det" then
+    throw { span := m.span, msg := (Fren.Core.fnMemberMsg? .define true "det").get! }
+  let r ← ident
+  let ty ← type?
+  if (← eatKw ",").isSome && !isKw (← peek) ")" then
+    let t ← peek
+    throw { span := t.span, msg := Fren.Core.fnResultsMsg }
+  discard (expectKw ")")
+  -- A result `r?` without a type is a `Bool`, as is the function's
+  -- value if its name ends in `?` too.
+  let result := if ty.isNone && (unbanged r.name).endsWith "?" && !name.name.endsWith "?" then
+      some #[{ name := "Bool", span := r.span : Ident }]
+    else ty
+  discard (expectKw "{")
+  let saved := ((← get).fnResult?, (← get).proc?)
+  modify fun s => { s with fnResult? := some (unbanged r.name), proc? := none }
+  let mut lets : Array (Ident × Option (Array Ident) × Expr) := #[]
+  let mut body : Option Expr := none
+  let mut clauses : Array (Bool × Ident × Expr) := #[]
+  repeat
+    let t ← peek
+    if isKw t "}" then break
+    if t.tok == .eof then fail t "`}`"
+    let mem ← member
+    let sp := t.span.to (← lastSpan)
+    -- Each member that a function's block does not take (`F0442`,
+    -- `F0443`), at its first token, or a `use`'s or an evidence
+    -- setting's whole.
+    let kind? : Option (Fren.Core.FnMember × Bool × String × Span) := match mem with
+      | .use .. | .useGroup .. => some (.use, false, "use", sp)
+      | .evidence .. => some (.evidence, false, "set_option", sp)
+      | .inst .. => some (.call, false, "call", t.span)
+      | .var _ _ det _ _ none => some (.exists, det, "exists", t.span)
+      | .var _ _ det _ _ (some _) => some (.let, det, "let", t.span)
+      | .prop .expect .. => some (.claim, false, "expect", t.span)
+      | .prop .cover .. => some (.claim, false, "cover", t.span)
+      | _ => none
+    if let some (k, det, kw, at_) := kind? then
+      if let some msg := Fren.Core.fnMemberMsg? k det kw then throw { span := at_, msg }
+    match mem with
+    | .var _ _ _ x ty (some e) => lets := lets.push (x, ty, e)
+    | .define x e =>
+      if body.isSome then throw { span := x.span, msg := Fren.Core.resultDefinedTwiceMsg x.name }
+      body := some e
+    | .prop k x e => clauses := clauses.push (k == .ensure, x, e)
+    | _ => pure ()
+  let close ← bump
+  modify fun s => { s with fnResult? := saved.1, proc? := saved.2 }
+  -- The function applied to its parameters, at the result's name.
+  let args := params.map fun (p, _) => Expr.path r.span #[{ name := unbanged p[0]!.name, span := r.span }]
+  let value := Expr.app r.span #[{ name with span := r.span }] args
+  let defs := #[(r, none, value)] ++ lets
+  -- The result is the function's value: neither its body nor its
+  -- preconditions mention it (`F0165`).
+  let rn := unbanged r.name
+  let check (e : Expr) : P Unit := do
+    let mut ms := #[]
+    for (_, _, d) in lets do ms := ms.push (← mentionsIn d.span)
+    let needed := Fren.Core.neededDefs ((lets.zip ms).map fun ((x, _), m) => (unbanged x.name, m)) id (← mentionsIn e.span)
+    let all := (← mentionsIn e.span) ++ needed.flatMap (ms[·]!)
+    if all.contains rn then throw { span := e.span, msg := Fren.Core.fnResultMentionMsg rn }
+  let mut clauses' := #[]
+  for (isEnsure, x, e) in clauses do
+    unless isEnsure do check e
+    clauses' := clauses'.push (isEnsure, x, ← withDefs defs e)
+  let body' ← match body with
+    | some e => check e; some <$> withDefs lets e
+    | none => pure none
+  return .function isPub name typeParams params result body' clauses' close.span
+
+/-- The fix of a function whose contract is written after its signature
+(`F0164`): the function from `itemStart` to its last clause, written with
+a result and a block, `fn f(x: T): (r: U) { assume ... out r := e ensure
+... }`. Its header is kept to the end of its parameters, `paramsStop`; its
+result type, if written, ends at `headerStop`, and its body, if it has
+one, runs from `assignStop?` to `bodyStop`. The clauses, at `clauseSpans`
+with whether each is a postcondition, are kept as written when each
+starts a line and the preconditions come first, and the `out` member
+follows the preconditions; otherwise each is written on a line of its own.
+In a postcondition, the function applied to its parameters is the result. -/
+def fnBlockText (itemStart : Nat) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
+    (paramsStop headerStop : Nat) (result : Option (Array Ident)) (assignStop? : Option Nat) (bodyStop : Nat)
+    (clauseSpans : Array (Span × Bool)) : P (Fren.Core.Range × String) := do
+  let src := (← get).src
+  let toks := (← get).toks
+  let clauseStop := (clauseSpans.back?.map (·.1.stop)).getD bodyStop
+  -- A comment after the last clause, to the end of its line, moves with it.
+  let lineEnd (p : Nat) : Nat := Id.run do
+    let mut le := p
+    while le < src.size && src[le]! != '\n' do le := le + 1
+    return le
+  let after := (String.ofList (src.extract clauseStop (lineEnd clauseStop)).toList).trimAscii.toString
+  let lastStop := if after.startsWith "--" then lineEnd clauseStop else clauseStop
+  let lineStart (p : Nat) : Nat := Id.run do
+    let mut ls := p
+    while ls > 0 && src[ls - 1]! != '\n' do ls := ls - 1
+    return ls
+  let indentOf (p : Nat) : String := String.ofList (List.replicate (p - lineStart p) ' ')
+  let startsLine (p : Nat) : Bool := (src.extract (lineStart p) p).all (· == ' ')
+  let taken ← mentionsIn { start := itemStart, stop := lastStop }
+  let bool := match result with
+    | none => true
+    | some ty => ty.size == 1 && ty[0]!.name == "Bool"
+  let rn := Fren.Core.fnResultName bool taken
+  let resultText ← match result with
+    | some ty => if bool then pure rn else pure s!"{rn}: {(← srcText ty[0]!.span.start headerStop).trimAscii}"
+    | none => pure rn
+  let base := indentOf itemStart
+  let inner := base ++ "    "
+  -- The function applied to its parameters, in a postcondition, is the
+  -- result: each `name(p, q)` whose arguments are the parameters.
+  let pnames := params.map fun (p, _) => p[0]!.name
+  let clauseText (sp : Span) (isEnsure : Bool) : P String := do
+    if !isEnsure then return ← srcText sp.start sp.stop
+    let mut out := ""
+    let mut at_ := sp.start
+    let mut i := 0
+    while i < toks.size do
+      let t := toks[i]!
+      if t.span.start >= sp.stop then break
+      if t.span.start >= at_ && t.tok matches .ident _ && isWord t name.name then
+        let mut j := i + 1
+        let mut ok := (toks[j]?).any (fun u => isKw u "(" && u.span.start == t.span.stop)
+        j := j + 1
+        for p in pnames, k in [0:pnames.size] do
+          if k > 0 then
+            ok := ok && (toks[j]?).any (isKw · ","); j := j + 1
+          ok := ok && (toks[j]?).any (isWord · p); j := j + 1
+        ok := ok && (toks[j]?).any (isKw · ")")
+        if ok then
+          out := out ++ (← srcText at_ t.span.start) ++ rn
+          at_ := toks[j]!.span.stop
+          i := j + 1
+          continue
+      i := i + 1
+    return out ++ (← srcText at_ sp.stop)
+  -- The body, with its continuation lines indented one level more.
+  -- And so does a comment between the body, or the header, and the first
+  -- clause.
+  let headStop := if assignStop?.isSome then bodyStop else headerStop
+  let raw ← srcText headStop ((clauseSpans[0]?.map (·.1.start)).getD headStop)
+  let lead := String.ofList (raw.toList.takeWhile (· == ' '))
+  let rest := (raw.drop lead.length).trimAsciiEnd.toString
+  let between := if rest.startsWith "--" then (if lead.isEmpty then " " else lead) ++ rest
+    else if raw.trimAscii.toString.startsWith "--" then " " ++ raw.trimAscii.toString else ""
+  let outLine ← match assignStop? with
+    | some a =>
+      let b := (← srcText a bodyStop).trimAscii.toString
+      pure (some s!"out {rn} := {b.replace "\n" "\n    "}{between}")
+    | none => pure none
+  let openComment := if assignStop?.isSome then "" else between
+  let nPre := (clauseSpans.takeWhile fun (_, e) => !e).size
+  let inOrder := (clauseSpans.extract nPre clauseSpans.size).all (·.2)
+  let verbatim := inOrder && clauseSpans.all fun (sp, _) => startsLine sp.start
+  let mut body := ""
+  if verbatim then
+    let firstStart := clauseSpans[0]!.1.start
+    let mut at_ := lineStart firstStart
+    let insertAt := if nPre == 0 then none else some clauseSpans[nPre - 1]!.1.stop
+    if nPre == 0 then
+      if let some o := outLine then body := body ++ inner ++ o ++ "\n"
+    for (sp, e) in clauseSpans do
+      body := body ++ (← srcText at_ sp.start) ++ (← clauseText sp e)
+      at_ := sp.stop
+      if sp.stop == clauseStop then body := body ++ (← srcText clauseStop lastStop)
+      if insertAt == some sp.stop then
+        if let some o := outLine then body := body ++ "\n" ++ inner ++ o
+    body := body ++ "\n"
+  else
+    let pre := clauseSpans.filter (!·.2)
+    let post := clauseSpans.filter (·.2)
+    for (sp, e) in pre do body := body ++ inner ++ (← clauseText sp e) ++ "\n"
+    if let some o := outLine then body := body ++ inner ++ o ++ "\n"
+    for (sp, e) in post do body := body ++ inner ++ (← clauseText sp e) ++ "\n"
+  let text := (← srcText itemStart paramsStop) ++  s!": ({resultText}) \{{openComment}\n" ++ body ++ base ++ "}"
+  return ({ start := itemStart, stop := lastStop }, text)
 
 partial def item : P Item := do
   markStart
@@ -1811,10 +2038,20 @@ partial def item : P Item := do
     if typeParams.isEmpty && (s.toks[s.pos]?).any (isKw · "(") && (s.toks[s.pos - 1]?).any (·.span.stop == s.toks[s.pos]!.span.start)
         && params.all fun (p, ty?) => p.size == 1 && ty?.isNone then
       parenParams name firstOpen.span (← lastSpan)
+    -- A named result and a block (`Reqs/Lang/Items#function-blocks`).
+    let s ← get
+    if (s.toks[s.pos]?).any (isKw · ":") && (s.toks[s.pos + 1]?).any (isKw · "(") then
+      return ← fnBlock isPub name typeParams params
+    let paramsStop := (← lastSpan).stop
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
-    let body ← if (← eatKw ":=").isSome then some <$> top else pure none
-    -- Its contract (`Reqs/Lang/Items#contracts`), each clause continuing it.
+    let headerStop := (← lastSpan).stop
+    let assign? ← eatKw ":="
+    let body ← if assign?.isSome then some <$> top else pure none
+    let bodyStop := (← lastSpan).stop
+    -- Its contract, as functions were written before blocks (`F0164`):
+    -- each clause continuing it.
     let mut clauses := #[]
+    let mut clauseSpans : Array (Span × Bool) := #[]
     repeat
       let c ← peek
       unless isWord c "assume" || isWord c "ensure" do break
@@ -1822,6 +2059,13 @@ partial def item : P Item := do
       let x ← ident
       discard (expectKw ":")
       clauses := clauses.push (isWord c "ensure", x, ← top)
+      clauseSpans := clauseSpans.push (c.span.to (← lastSpan), isWord c "ensure")
+    if let some (firstClause, _) := clauseSpans[0]? then
+      let t ← peek
+      unless !clauses.isEmpty && isKw t ":=" do
+        let fixed ← fnBlockText (← get).toks[first]!.span.start name params paramsStop headerStop result
+          (assign?.map (·.span.stop)) bodyStop clauseSpans
+        throw { span := firstClause, msg := Fren.Core.fnClausesMsg (some fixed) }
     let t ← peek
     if !clauses.isEmpty && isKw t ":=" then
       err t.span "F0143" "a function's body is written after its contract" (some "after the contract")

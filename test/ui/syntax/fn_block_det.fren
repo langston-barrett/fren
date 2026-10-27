@@ -1,0 +1,7 @@
+-- A function's block takes no `det`: all of its values are determined
+-- (`F0442`).
+pub fn f(x: Int): (r: Int) {
+    det let y := x   --~ error: a function's block takes no `det`
+    out r := y
+}
+--@ exit: 2

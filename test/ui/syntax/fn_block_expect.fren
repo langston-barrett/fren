@@ -1,0 +1,6 @@
+-- A function's block takes no `expect` yet (`F0443`).
+pub fn f(x: Int): (r: Int) {
+    out r := x
+    expect same: r = x   --~ error: a function's block takes no `expect` yet
+}
+--@ exit: 2

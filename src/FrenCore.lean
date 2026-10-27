@@ -6,6 +6,7 @@ import FrenCore.Closures
 import FrenCore.Codes
 import FrenCore.Diagnostic
 import FrenCore.Evidence
+import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Lexical
 import FrenCore.Lint

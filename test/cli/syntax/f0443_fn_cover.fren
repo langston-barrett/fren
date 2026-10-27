@@ -1,0 +1,5 @@
+-- A function's block takes no `cover` yet (F0443).
+pub fn f(x: Int): (r: Int) {
+    out r := x
+    cover big: r > 9
+}

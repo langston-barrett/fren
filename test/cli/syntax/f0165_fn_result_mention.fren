@@ -1,0 +1,6 @@
+-- A precondition that mentions the result, through a `let` (F0165).
+pub fn f(x: Int): (r: Int) {
+    assume a: d > 0
+    let d := r - x
+    out r := x + 1
+}

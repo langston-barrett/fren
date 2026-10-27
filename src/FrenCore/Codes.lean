@@ -598,6 +598,57 @@ result's type after `->`:
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 ```
 "# },
+  { code := "F0164", explanation := r#"A function's contract written after its signature.
+
+Erroneous code example:
+
+```fren
+pub fn inc(x: Int): Int := x + 1
+    assume positive: x > 0
+    ensure bigger: inc(x) > x
+```
+
+A function with a contract is written with its result named in its
+signature and a block, as a procedure is: its body is the `out` member
+that defines the result, and its preconditions and postconditions are its
+`assume` and `ensure` members, which may mention its `let`s, and its
+postconditions the result. The meaning is unchanged. `fren fix` writes the
+function with a block, the function applied to its parameters as the
+result:
+
+```fren
+pub fn inc(x: Int): (r: Int) {
+    assume positive: x > 0
+    out r := x + 1
+    ensure bigger: r > x
+}
+```
+"# },
+  { code := "F0165", explanation := r#"A function's precondition or body that mentions its result.
+
+Erroneous code example:
+
+```fren
+pub fn half(x: Int): (r: Int) {
+    assume even: r * 2 = x
+    out r := x div 2
+}
+```
+
+A function's result is its value. Its body defines the result, and its
+postconditions state what the result is, but its preconditions say where
+the function may be applied, which cannot depend on its value; nor can
+the body, which would define the result by itself. Neither mentions the
+result, nor a `let` that does. State the precondition of the arguments:
+
+```fren
+pub fn half(x: Int): (r: Int) {
+    assume even: x mod 2 = 0
+    out r := x div 2
+    ensure doubled: r * 2 = x
+}
+```
+"# },
   { code := "F0156", explanation := r#"Type parameters in parentheses.
 
 Erroneous code example:
@@ -2987,6 +3038,95 @@ definition, and state anything else about the result in an `ensure`:
 ```fren
 proc c(x: Int): (y: Int) {
     out y := x
+}
+```
+"# },
+  { code := "F0442", explanation := r#"A member that a function's block does not take.
+
+Erroneous code example:
+
+```fren
+pub fn f(x: Int): (r: Int) {
+    exists y: Int
+    out r := x
+}
+```
+
+A function's value is determined by its arguments, so its block takes
+none of what a procedure has for what is chosen or called: no `exists`,
+no `call`, no `det`, which every value of a function is, and no evidence
+settings, which set how a procedure's checks are made. A function's block
+takes `assume`, `let`, `out` and `ensure` members, and not `use` yet.
+Define each value with `let`, or apply a function:
+
+```fren
+pub fn f(x: Int): (r: Int) {
+    let y := x + 1
+    out r := y
+}
+```
+"# },
+  { code := "F0443", explanation := r#"An `expect` or a `cover` in a function's block.
+
+Erroneous code example:
+
+```fren
+pub fn f(x: Int): (r: Int) {
+    out r := x + 1
+    expect bigger: r > x
+}
+```
+
+A function's block does not take claims yet. State one of a procedure
+that applies the function, or, if it is what the function guarantees, as
+a postcondition, which its body is checked to meet:
+
+```fren
+pub fn f(x: Int): (r: Int) {
+    out r := x + 1
+    ensure bigger: r > x
+}
+```
+"# },
+  { code := "F0444", explanation := r#"`out` of a name other than a function's result.
+
+Erroneous code example:
+
+```fren
+pub fn f(x: Int): (r: Int) {
+    out y := x + 1
+}
+```
+
+In a function's block, `out r := e` defines its result `r`, its value,
+and nothing else. A value of the block's own is a `let`:
+
+```fren
+pub fn f(x: Int): (r: Int) {
+    let y := x + 1
+    out r := y
+}
+```
+"# },
+  { code := "F0445", explanation := r#"A function with more than one result.
+
+Erroneous code example:
+
+```fren
+pub fn f(x: Int): (lo: Int, hi: Int) {
+    out lo := x - 1
+    out hi := x + 1
+}
+```
+
+A function has one result for now. Give each value a function of its
+own, or return a record:
+
+```fren
+pub struct Bounds { lo: Int, hi: Int }
+
+pub fn f(x: Int): (r: Bounds) {
+    out r := Bounds { lo := x - 1, hi := x + 1 }
 }
 ```
 "# },

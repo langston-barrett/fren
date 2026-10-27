@@ -1,0 +1,5 @@
+-- A function's block takes no `exists` (F0442).
+pub fn f(x: Int): (r: Int) {
+    exists y: Int
+    out r := x
+}

@@ -1,0 +1,12 @@
+error[F0165]: `r` is the function's value, which this does not mention
+ --> test/cli/syntax/f0165_fn_result_mention.fren:3:15
+  |
+3 |     assume a: d > 0
+  |               ^^^^^ mentions the result
+  |
+  = note: `r` is what the function gives: its body defines it, and its postconditions state what it is; its preconditions, which say where it may be applied, and its body do not mention it
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0165`.
+exit=2

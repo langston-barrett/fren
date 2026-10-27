@@ -495,6 +495,15 @@ scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent
   noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
   (" := " fren_expr (fren_where)?)? fren_clause* : command
 
+/-- `fn f(x: T): (r: U) { members }`, a function written with its result
+and a block (`Reqs/Lang/Items#function-blocks`): `use`, `assume`, `let`,
+`out r := e` and `ensure` members, as a procedure's are. Other members, and
+more than one result, are parsed so that the elaborator reports them
+(`F0442`–`F0445`). -/
+scoped syntax (name := fnBlockCmd) ("pub ")? "fn " frenIdent (noWs fren_type_params)?
+  noWs "(" sepBy1(fren_param, ", ") ")" " : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")"
+  " { " fren_member* " }" : command
+
 /-- `const N: T := e`. -/
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command
 

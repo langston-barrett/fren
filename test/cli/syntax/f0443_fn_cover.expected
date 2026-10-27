@@ -1,0 +1,12 @@
+error[F0443]: a function's block takes no `cover` yet
+ --> test/cli/syntax/f0443_fn_cover.fren:4:5
+  |
+4 |     cover big: r > 9
+  |     ^^^^^ not yet a function's member
+  |
+  = note: a function's claims are not checked yet; state it of a procedure that applies the function
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0443`.
+exit=2

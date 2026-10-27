@@ -1,0 +1,10 @@
+-- A function's block takes no `call` (`F0442`).
+pub proc p(x: Int): (det y: Int) {
+    out y := x
+}
+
+pub fn f(x: Int): (r: Int) {
+    call c := p(x)   --~ error: a function's block takes no `call`
+    out r := c.y
+}
+--@ exit: 2
