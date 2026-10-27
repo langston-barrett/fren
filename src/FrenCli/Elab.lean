@@ -1064,7 +1064,7 @@ def declaredIdent (x : Ident) : Ident × Bool :=
 exactly when it hides something in the current scope or among `locals`
 (`lang::shadowing`). An import that brings in what it hides counts as
 used. -/
-def declare (x : Ident) (locals : Array (Name × String) := #[]) : M Ident := do
+def declare (x : Ident) (locals : Fren.Core.Locals := #[]) : M Ident := do
   let (y, bang) := declaredIdent x
   let n := Name.mkSimple y.name
   let st ← get
@@ -1230,8 +1230,8 @@ structure ExprCtx where
   elemChain : Array Name := #[]
 
 /-- What the binder `b` is, for a declaration that hides it (`Fren.Core.bindingLocals`). -/
-def CBinder.what (b : CBinder) : Name × String :=
-  (b.name, if b.scrutinee.isNone then "the bound name" else if b.isDef then "the definition" else "the binder")
+def CBinder.what (b : CBinder) : Name × Fren.Core.BindingKind :=
+  (b.name, if b.scrutinee.isNone then .boundName else if b.isDef then .definition else .patternBinder)
 
 /-- The binder named `n` in scope, if any. -/
 def ExprCtx.binder? (cx : ExprCtx) (n : Name) : Option CBinder := cx.binders.reverse.find? (·.name == n)
@@ -1337,9 +1337,10 @@ def isDefined (cx : ExprCtx) (segs : Array Ident) : M Bool := do
 
 /-- What the identifier `x` of one segment, not applied, is in a pattern
 (`lang::pattern_name`). -/
-def patternName (cx : ExprCtx) (x : Ident) : M Fren.Core.PatternName := do
+def patternName (_cx : ExprCtx) (x : Ident) : M Fren.Core.PatternName := do
   let (d, bang) := declaredIdent x
-  return Fren.Core.patternName (d.name == "true" || d.name == "false") bang (← isVariant cx #[x])
+  return Fren.Core.patternName (d.name == "true" || d.name == "false") bang
+    ((← get).table.namesVariant? (← get).scope (Name.mkSimple d.name))
 
 /-- The binders of the pattern `p`, in preorder. -/
 def patternBinders (cx : ExprCtx) (p : Pattern) : M (Array Ident) :=
@@ -1851,7 +1852,7 @@ def Expr.text (src : Array Char) (e : Expr) : Fren.Core.BText :=
 
 /-- Whether a name declared in `cx`, or among `extra`, would hide
 something in scope (`lang::shadowing`). -/
-def hidesIn (cx : ExprCtx) (extra : Array (Name × String) := #[]) : M (String → Bool) := do
+def hidesIn (cx : ExprCtx) (extra : Fren.Core.Locals := #[]) : M (String → Bool) := do
   let st ← get
   let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
     (cx.binders.map (·.what)) cx.selfFn.isSome cx.inGlobal ++ extra
@@ -5975,7 +5976,7 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   liftMsg body.span (Fren.Core.checkType .bool t (some "note: an expectation is a `Bool`"))
   -- The body is in the scope of the binders over values too.
   lintBools body (← hidesIn cx (valueBinders.flatMap (·.names) |>.map fun x =>
-    (Name.mkSimple (declaredIdent x).1.name, "the bound name")))
+    (Name.mkSimple (declaredIdent x).1.name, .boundName)))
   lintConstant cx "expect" body
   let binders := insts.map fun i => (i.name, i.span)
   for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do

@@ -1053,7 +1053,7 @@ def declaredIdent (x : Syntax) : Syntax × Bool :=
 with `!` exactly when it hides something there or among `locals`
 (`lang::shadowing`). An import that brings in what it hides counts as
 used. -/
-def declare (x : Syntax) (scope : Name) (locals : Array (Name × String) := #[]) : m Syntax := do
+def declare (x : Syntax) (scope : Name) (locals : Core.Locals := #[]) : m Syntax := do
   let (y, bang) := declaredIdent x
   let table := (← getState).table
   liftMsg x (Core.checkDeclaredName y.getId bang)

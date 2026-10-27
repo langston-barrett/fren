@@ -24,13 +24,9 @@ of its members, in an order the spec does not fix. A list is `Nil` or
 `Cons(v, rest)`, since an enumeration may not contain itself within a
 sequence (see [Sequences](Types.md#sequences)). A value of an abstract
 type is not one of these: it is read from the environment, and compared
-only with `=`. Names, of variables, functions, constants, variants and
-operators, are `Id`s, `String`s as they are written, so that a payload can
-hold them:
+only with `=`. Names are `Id`s (see [Bindings](Scope.md#bindings)):
 
 ```fren
-pub type Id := String
-
 pub enum Value { B(Bool), I(Int), S(String), Nil, Cons(Value, Value), C(Id, Value) }
 ```
 
@@ -110,6 +106,9 @@ pub enum Head {
     Op(Id, Id),
 }
 ```
+
+A name written alone is the layer that its binding says (see [Laws of
+scope](ScopeLaws.md#names-as-layers)).
 
 What an expression mentions is named apart, so that a variable and a
 function of the same name are two mentions:

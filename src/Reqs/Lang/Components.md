@@ -196,30 +196,47 @@ Lean front end reads these tokens as identifiers where Fren expects one,
 so that it reports the same error as the `fren` command, and, at a use,
 the same unknown name.
 
-`lang::shadowing` states when a declaration is accepted, from whether its
-name hides a name in scope and whether it is written with `!`. Shadowing
-without `!` is an error, and so is `!` where nothing is shadowed. This
-replaces the lint `shadowed_constants`, which warned of a variable named
-like a constant, and whose code `F0713` is not reused.
+`lang::shadowing` states when a declaration is accepted, from the
+[scope](Scope.md#scopes) where it is declared and whether it is written
+with `!`. Its scope is the one where it is declared, without itself: a
+later declaration, of the same construct or one within it, is not in it,
+and nor is a later item. It *hides* a name in scope when, in that scope, its name
+resolves to a value: anything but a module, an enumeration or another
+item that is not a value, and not an ambiguous name. Shadowing without
+`!` is an error, and so is `!` where nothing is shadowed. This replaces
+the lint `shadowed_constants`, which warned of a variable named like a
+constant, and whose code `F0713` is not reused.
 
 ```fren
 pub mod lang
 
-set_option fren.evidence "enumerated" in
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
 pub comp shadowing {
-    in hides?            -- the declared name hides a name in scope
-    in bang?             -- the declaration is written with `!`
-    in own_function?     -- it is a parameter named like its own function
+    use self::BindingKind::{Enumeration, Input, Item, Module, Output}
+    in bindings: Set<Binding>    -- its scope, where it is declared, without it (`context_scope`)
+    in name: Id                  -- the name it declares
+    in bang?                     -- it is written with `!`
 
-    assume not_in_own_body: when own_function?, not hides?
+    pub det out hides? := hidden.value?
     pub det out accepted?
+
+    inst hidden: scope { bindings, name }
 
     ensure rule: accepted? iff (hides? iff bang?)
 
     expect explicit: when hides? and bang?, accepted?
     expect implicit: when hides? and not bang?, not accepted?
     expect needless: when bang? and not hides?, not accepted?
-    expect own_function: when own_function?, accepted? iff not bang?
+    -- An item that is not a value, and a name that glob imports make ambiguous, are not hidden.
+    expect items_not_hidden: when hidden.result is Lookup::Found(Module | Enumeration | Item) | Lookup::Ambiguous,
+        accepted? iff not bang?
+    expect unbound: when bindings = {}, accepted? iff not bang?
+    -- A declaration named like the component's variable, in its innermost scope, hides it.
+    expect variable_hidden: forall (b: Binding), when b in bindings and b.name = name and b.depth = 0
+        and b.kind in {Input, Output}
+        and (forall (c: Binding), when c in bindings and c.name = name and c.depth = 0, c = b),
+        accepted? iff bang?
 
     cover explicit_accepted: hides? and bang? and accepted?
 }
