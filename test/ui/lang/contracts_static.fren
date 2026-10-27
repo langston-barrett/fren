@@ -6,37 +6,53 @@ set_option fren.lint.dead_code "allow"
 
 type Name
 
-fn unnamed(Int): Int   --~ error: the parameters of uninterpreted function `unnamed` must be named
+fn unnamed(Int): (r: Int) {   --~ error: the parameters of uninterpreted function `unnamed` must be named
     ensure pos: true
+}
 
-fn typed(n: Int): Int := n
+fn typed(n: Int): (r: Int) {
     assume big: n + 1   --~ error: type mismatch: expected `Bool`, found `Int`
+    out r := n
+}
 
-fn clash(n: Int): Int := n
+fn clash(n: Int): (r: Int) {
     assume n: n > 0     --~ error: `n` is defined multiple times
+    out r := n
+}
 
-fn twice(n: Int): Int := n
+fn twice(n: Int): (r: Int) {
     assume p: n > 0
-    ensure p: twice(n) > 0   --~ error: `p` is defined multiple times
+    out r := n
+    ensure p: r > 0   --~ error: `p` is defined multiple times
+}
 
-fn circular(n: Int): Int
+fn circular(n: Int): (r: Int) {
     assume small: circular(n) < 10   --~ error: a precondition of `circular` cannot apply `circular`
+}
 
-fn other_args(n: Int): Int
+fn other_args(n: Int): (r: Int) {
     ensure next: other_args(n + 1) > 0   --~ error: a postcondition of `other_args` applies `other_args` to other than its parameters
+}
 
-fn swapped(a: Int, b: Int): Int := a - b
-    ensure anti: swapped(b, a) = -swapped(a, b)   --~ error: a postcondition of `swapped` applies `swapped` to other than its parameters
+fn swapped(a: Int, b: Int): (r: Int) {
+    out r := a - b
+    ensure anti: swapped(b, a) = -r   --~ error: a postcondition of `swapped` applies `swapped` to other than its parameters
+}
 
-fn questioned(n: Int): Int := n
+fn questioned(n: Int): (r: Int) {
+    out r := n
     ensure big?: n > 0   --~ error: constraint names cannot end in `?`
+}
 
-fn outside(n: Int): Int := n
+fn outside(n: Int): (r: Int) {
     assume known: m > 0   --~ error: cannot find `m` in this scope
+    out r := n
+}
 
 -- A clause may apply uninterpreted functions declared before, unlike a
 -- body, and the function itself in a postcondition, to its parameters.
 fn arity(Name): Nat
-fn positive_arity(n: Name): Nat
+fn positive_arity(n: Name): (r: Nat) {
     assume some_arity: arity(n) > 0
-    ensure bounded: positive_arity(n) <= arity(n)
+    ensure bounded: r <= arity(n)
+}

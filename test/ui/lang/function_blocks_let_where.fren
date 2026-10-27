@@ -1,0 +1,8 @@
+-- A `let` of a function's block with its own `where`, which each
+-- expression that needs it is given, is linted once.
+pub fn g(x: Int): (r: Int) {
+    let a := b where b := x + 1   --~ warning: this `where` clause only gives back its last definition
+    out r := a
+    ensure p: r > x and a > x
+    ensure q: r >= a
+}

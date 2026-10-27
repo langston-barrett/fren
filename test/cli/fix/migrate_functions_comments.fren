@@ -1,0 +1,8 @@
+--@ args: fix --check
+-- `fren fix` keeps the comments of a function whose contract it writes in
+-- its block (`F0164`): after the body, and after the last clause.
+pub fn f(x: Int): Int := x + 1   -- the body
+    assume pos: x > 0   -- positive
+    ensure bigger: f(x) > x   -- the last clause
+
+pub fn g(x: Int): Int := x + 1 assume pos: x > 0 ensure bigger: g(x) > x   -- on one line

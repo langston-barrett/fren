@@ -1,0 +1,18 @@
+--- test/cli/fix/migrate_functions_comments.fren
++++ test/cli/fix/migrate_functions_comments.fren
+@@ -4 +4 @@
+-pub fn f(x: Int): Int := x + 1   -- the body
++pub fn f(x: Int): (r: Int) {
+@@ -6 +6,3 @@
+-    ensure bigger: f(x) > x   -- the last clause
++    out r := x + 1   -- the body
++    ensure bigger: r > x   -- the last clause
++}
+@@ -8 +10,5 @@
+-pub fn g(x: Int): Int := x + 1 assume pos: x > 0 ensure bigger: g(x) > x   -- on one line
++pub fn g(x: Int): (r: Int) {
++    assume pos: x > 0
++    out r := x + 1
++    ensure bigger: r > x   -- on one line
++}
+exit=1

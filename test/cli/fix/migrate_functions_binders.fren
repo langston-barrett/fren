@@ -1,0 +1,18 @@
+--@ args: fix --check
+-- `fren fix` writes a function's contract in its block (`F0164`), with the
+-- function applied to its parameters as the result, but not under a
+-- binder that hides a parameter: there the application is another, which
+-- `F0381` then reports, or under a pattern test's binder, where it is
+-- another too.
+pub fn f(x: Int, y: Int): Int := x + y
+    ensure sum: f(x, y) = x + y
+    ensure d: forall (x!: Int), f(x, y) = x + y
+    ensure e: z = x + y where x! := 3, z := f(x, y)
+
+pub enum Opt { No, Yes(Int) }
+
+pub fn g(x: Opt, y: Int): Int := y
+    ensure a: when x is Opt::Yes(y!), g(x, y) = y
+    ensure b: x is Opt::Yes(y!) and g(x, y) = y
+    ensure c: if x is Opt::Yes(y!) then g(x, y) = y else true
+    ensure own: g(x, y) = y

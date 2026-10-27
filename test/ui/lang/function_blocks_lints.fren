@@ -1,0 +1,27 @@
+-- The `where` clauses that a function's block lowers to are not the
+-- block's own: `let_and_return` does not read them, nor does
+-- `unused_variables` report the result where a binder hides it. A `let`
+-- that nothing needs is unused, as a procedure's is.
+pub fn f(x: Int): (r: Int) {
+    let a := x + 1
+    let b := a * 2
+    out r := b
+    ensure q: r = 2 * x + 2
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn g(x: Int): (r: Int) {
+    out r := x + 1
+    ensure all: forall (r!: Int), when r > x, x < r
+}
+
+pub fn h(x: Int): (r: Int) {
+    let spare := x * 3   --~ warning: unused variable `spare`
+    out r := x
+}
+
+-- A clause's own `where` is still the clause's.
+pub fn k(x: Int): (r: Int) {
+    out r := x + 1
+    ensure q: s? where s? := r > x   --~ warning: this `where` clause only gives back its last definition
+}

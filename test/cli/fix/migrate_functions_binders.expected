@@ -1,0 +1,40 @@
+error[F0381]: a postcondition of `f` applies `f` to other than its parameters
+  --> test/cli/fix/migrate_functions_binders.fren:10:33
+   |
+10 |     ensure d: forall (x!: Int), f(x, y) = x + y
+   |                                 ^ not its parameters
+   |
+   = note: a postcondition states what the function gives at its own arguments, written as its parameters' names, in order
+   = help: apply it to the parameters, or state this where the function is applied
+
+error[F0381]: a postcondition of `g` applies `g` to other than its parameters
+  --> test/cli/fix/migrate_functions_binders.fren:18:39
+   |
+18 |     ensure a: when x is Opt::Yes(y!), g(x, y) = y
+   |                                       ^ not its parameters
+   |
+   = note: a postcondition states what the function gives at its own arguments, written as its parameters' names, in order
+   = help: apply it to the parameters, or state this where the function is applied
+
+error: could not fix due to previous errors
+
+For more information about this error, try `fren --explain F0381`.
+--- test/cli/fix/migrate_functions_binders.fren
++++ test/cli/fix/migrate_functions_binders.fren
+@@ -7,2 +7,3 @@
+-pub fn f(x: Int, y: Int): Int := x + y
+-    ensure sum: f(x, y) = x + y
++pub fn f(x: Int, y: Int): (r: Int) {
++    out r := x + y
++    ensure sum: r = x + y
+@@ -10,0 +12 @@
++}
+@@ -14 +16,2 @@
+-pub fn g(x: Opt, y: Int): Int := y
++pub fn g(x: Opt, y: Int): (r: Int) {
++    out r := y
+@@ -18 +21,2 @@
+-    ensure own: g(x, y) = y
++    ensure own: r = y
++}
+exit=2

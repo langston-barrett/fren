@@ -143,9 +143,10 @@ interp count := fun (_ : Int) => (3 : Nat)
 -- adds nothing, so the function can be interpreted again.
 mod interp_typed_contract
 
-fn capped(n: Int): Int is 0..=255
+fn capped(n: Int): (r: Int is 0..=255) {
     assume nonneg: n >= 0
-    ensure within: capped(n) <= n
+    ensure within: r <= n
+}
 
 /--
 error: could not prove that the interpretation of `interp_typed_contract::capped` gives values of its result type `Int is 0..=255` and meets its postconditions

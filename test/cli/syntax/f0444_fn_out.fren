@@ -1,0 +1,4 @@
+-- `out` defines the function's result alone (F0444).
+pub fn f(x: Int): (r: Int) {
+    out y := x
+}

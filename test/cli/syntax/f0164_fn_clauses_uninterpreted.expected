@@ -1,0 +1,19 @@
+error[F0164]: a function's contract is written in its block
+ --> test/cli/syntax/f0164_fn_clauses_uninterpreted.fren:5:5
+  |
+5 |     ensure total: named?(n) or not named?(n)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a clause after the signature
+  |
+  = note: a function with a contract is written `fn f(x: T): (r: U) { assume ... out r := e ensure ... }`, its body the `out` member that defines its result
+help: write it with a block
+  |
+4 - pub fn named?(n: Name)
+4 + pub fn named?(n: Name): (r?) {
+    ensure total: r? or not r?
+}
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0164`.
+exit=2

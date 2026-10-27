@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.FnBlocks
 import FrenCore.Procedures
 import Impls.Check
 import Reqs.Lang
@@ -277,5 +278,33 @@ impl argument_order: lang::argument_order for (ps bs : List String) {
     rw [hA]
     simp only [Option.isSome_none, Option.getD_none, Bool.false_eq_true, false_iff, if_false]
     exact ⟨fun h => hP ((fixed_iff ps bs).2 h), rfl⟩
+
+/-! ## Function blocks (`Reqs/Lang/Items#function-blocks`) -/
+
+def toFnMemberKind : Fren.Core.FnMember → lang.FnMemberKind
+  | .use => .Use
+  | .assumption => .Assumption
+  | .exists => .Exists
+  | .let => .Let
+  | .define => .Define
+  | .call => .Call
+  | .guarantee => .Guarantee
+  | .claim => .Claim
+  | .evidence => .Evidence
+
+def toFnVerdict : Fren.Core.FnVerdict → lang.FnVerdict
+  | .accepted => .Accepted
+  | .notFunctions => .NotFunctions
+  | .notYet => .NotYet
+
+-- For every member of a function's block, written `det` or not: whether
+-- the block takes it, as both front ends decide it.
+impl fn_member: lang::fn_member for (m : Fren.Core.FnMember) (d : Bool) {
+  member := toFnMemberKind m,
+  det? := d,
+  verdict := toFnVerdict (Fren.Core.fnMemberVerdict m d),
+} by
+  intro m d _
+  cases m <;> cases d <;> simp [fren_spec, toFnMemberKind, toFnVerdict, Fren.Core.fnMemberVerdict]
 
 end Fren.Impls

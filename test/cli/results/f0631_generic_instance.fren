@@ -5,8 +5,9 @@
 -- parameters (F0631).
 pub enum One { A }
 
-pub fn other<T>(x: T): T
+pub fn other<T>(x: T): (r: T) {
     ensure diff: other(x) != x
+}
 
 proc c(x: One, p?): (det y: One, det q?) {
     out y := other(x)

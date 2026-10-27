@@ -2715,8 +2715,14 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
-  | .function isPub name typeParams params result body clauses _ => do
+  | .function isPub name typeParams params result body clauses _ block => do
     let path := (← get).module ++ itemName name
+    -- The `use`s of its block, in its scope.
+    for m in block.uses do
+      match m with
+      | .use _ segs glob => declareUseIn segs glob (some path)
+      | .useGroup _ pre paths => for p in paths do declareUseIn (pre ++ p) false (some path)
+      | _ => pure ()
     let tps := typeParams.map (Name.mkSimple ·.name)
     modify fun s => { s with fnTypeParams := if tps.isEmpty then none else some (path, tps) }
     let r ← varTy result
@@ -2840,7 +2846,8 @@ def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState 
   for items in files do
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
-      st := (← (lowerItem item).run st).2
+      -- Paths resolve in the module, but in a block with `use`s.
+      st := (← (lowerItem item).run { st with scope := st.module }).2
     st := { st with file := st.file + 1 }
   return st
 
@@ -2855,7 +2862,8 @@ def preludeState : Except String LState := do
       | .ok items => pure items
   let mut st : LState := { module := Fren.Core.preludeModule, scope := Fren.Core.preludeModule }
   for item in items do
-    st := (← (lowerItem item).run st).2
+    -- Paths resolve in the module, but in a block with `use`s.
+    st := (← (lowerItem item).run { st with scope := st.module }).2
   return { st with module := .anonymous, scope := .anonymous }
 
 /-- The spec of the files' items, which the elaborator accepted, with the

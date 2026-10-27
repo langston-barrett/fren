@@ -189,12 +189,14 @@ ensure sized: sized? iff s is
     | Shape::Rect(_, _)
 ```
 
-A function's [contract](Lang/Items.md#contracts) clause continues its
-function, so a clause on its own line is indented by four spaces:
+A member of a function's [block](Lang/Items.md#function-blocks) is
+inside its braces, as a procedure's is, so it is indented by four spaces:
 
 ```text
-fn at(q: Seq<Int>, i: Int): Int := q[i]
+fn at(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 ```
 
 A line that starts with a closing brace, or with the `)` of such a list,

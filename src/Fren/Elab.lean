@@ -8,6 +8,7 @@ import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
 import FrenCore.Closures
+import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Global
 import FrenCore.Guards
@@ -4354,7 +4355,10 @@ def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
       unless inLet && e[3].isOfKind ``Lang.memberExpr do throw ex
       let text ← msg.toString
       throw (.error ref m!"{text}{if (text.splitOn "\n\n").length > 1 then "\n" else "\n\n"}{Core.membershipNoteText}")
-    if cx.noteIndexes then lintClause e defs !inLet
+    -- Not of what a function's block lowers to, whose `where` is written
+    -- nowhere (`Reqs/Lang/Items#function-blocks`).
+    let lowered := e[2].getPos?.isNone
+    if cx.noteIndexes && !lowered then lintClause e defs !inLet
     -- The indexes of the body, and of the names it mentions, are within the
     -- `have`s.
     let xs := (← getLocal).indexes
@@ -5953,11 +5957,14 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let sites' ← sites.mapM fun (n, place, r, q, g) => return (n, place, r, q, ← withValue g)
   return (vars.push v, props', sites')
 
-@[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
-  checkLexemes stx
-  checkParsed stx
-  lintItem stx
-  lintTrailingCommas stx
+/-- Elaborates the function `stx`, a `fnCmd`, as written or as a function
+written with a block lowers to (`elabFnBlock`): `orig` is the command as
+written, whose lexemes, layout and lines are checked. -/
+def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandElabM Unit := do
+  checkLexemes orig
+  checkParsed orig
+  lintItem orig
+  lintTrailingCommas orig
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
@@ -5969,13 +5976,19 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   startDeclared
   let path := modName ++ n
   modifyLocal fun l => { l with currentItem := path }
+  -- The `use`s of its block, and the scope that its paths resolve in, as
+  -- a procedure's (`Reqs/Lang/Items#function-blocks`).
+  for m in uses do
+    if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
+    else for p in m[3].getSepArgs do declareUse (pathSegs m[1] ++ pathSegs p) false p (some path)
+  let scope := if uses.isEmpty then modName else path
   let params := stx[5].getSepArgs
   let body? := if stx[8].isNone then none else some (withWhere stx[8][1] stx[8][2])
   let clauses := stx[9].getArgs
   -- Its type parameters, which are abstract types within it, whether it
   -- is defined or not (`lang::generic_function`).
   let tpStxs := if stx[3].isNone then #[] else stx[3][0][1].getSepArgs
-  let tps ← elabTypeParams modName tpStxs
+  let tps ← elabTypeParams scope tpStxs
   if !tps.isEmpty then
     liftTermElabM do
       for p in tps, k in [0:tps.size] do declarePlaceholder (Core.typeParamPath path k p) (mkSort Level.one) true
@@ -6011,32 +6024,32 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let some body := body? | do
     liftTermElabM do
       if contract then
-        let vars := (← paramVarsHo modName path params false).1
+        let vars := (← paramVarsHo scope path params false).1
         lintFnBools n nameStx (vars.map (·.type))
-        let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
+        let (result, rp) ← varPType scope nameStx (if stx[7].isNone then none else some stx[7][1])
         placeholder (vars.map (·.type)) (vars.map (·.ptype)) result rp
         modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
-        let (vars, props, sites) ← elabContract modName path n decl false vars clauses
+        let (vars, props, sites) ← elabContract scope path n decl false vars clauses
         recordBody path nameStx decl vars sites props path
       else
-        let pps ← params.mapM fun p => do lintRelTypes modName p[0]; elabPType modName p[0]
+        let pps ← params.mapM fun p => do lintRelTypes scope p[0]; elabPType scope p[0]
         let params := pps.map (·.1)
         lintFnBools n nameStx params
         -- As for a variable, with the result type (`lang::bool_naming`).
-        let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
+        let (result, rp) ← varPType scope nameStx (if stx[7].isNone then none else some stx[7][1])
         placeholder params (pps.map (·.2)) result rp
     if contract then
       lintDeclared .function n nameStx
-      lintLines .function n nameStx stx
+      lintLines .function n nameStx orig
     record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
     unless isPub do recordItem .function path nameStx
     modifyLocal fun l => { l with fnTypeParams := none }
   liftTermElabM do
     -- The parameters, declared like a procedure's parameters, and the function
     -- parameters (`Reqs/Lang/HigherOrder#function-parameters`).
-    let (vars, fnPs) ← paramVarsHo modName path params true
+    let (vars, fnPs) ← paramVarsHo scope path params true
     lintFnBools n nameStx (vars.map (·.type))
-    let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
+    let (result, rp) ← varPType scope nameStx (if stx[7].isNone then none else some stx[7][1])
     -- Each type parameter is inferred at applications from the signature
     -- (`lang::generic_signature`), where a function parameter's type
     -- stands for its parameters' and its result's.
@@ -6055,7 +6068,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     let (lam, tables, obls) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
         withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
-      let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
+      let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
                             expected? := if result.isConstOf ``Nat then some .nat else none
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
       discard (takeIndexes fvs)
@@ -6086,7 +6099,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
           let body := if gs.isEmpty then Lean.mkConst ``True else gs.pop.foldr mkAnd gs.back!
           mkLambdaFVars (all.push pr) body
       return (← mkLambdaFVars all value, tables, obls)
-    lintBools body (← hidesIn { modName, vars, insts := #[], place := .prop, selfFn := some n })
+    lintBools body (← hidesIn { modName := scope, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
     let mentioned := if fnPs.isEmpty then mentioned
@@ -6117,14 +6130,159 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
                            oblDecls })
-    let (_, props, sites) ← if contract then elabContract modName path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
+    let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx
-  lintLines .function n nameStx stx
+  lintLines .function n nameStx orig
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
   unless isPub do recordItem .function path nameStx (defined := true)
   modifyLocal fun l => { l with fnTypeParams := none }
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
+
+
+/-- A function, as written before functions had blocks: its contract after
+its signature is an error (`F0164`), whose fix, which the `fren` command
+makes, writes it with a block. -/
+@[command_elab Lang.fnCmd] def elabFunction : CommandElab := recordingErrors fun stx => do
+  checkLexemes stx
+  checkParsed stx
+  if let some c := stx[9].getArgs[0]? then
+    throwErrorAt c (Core.fnClausesMsg (some ({ start := 0, stop := 0 }, ""))).text
+  elabFunctionCore stx stx
+
+/-- The names that the identifiers within `e` mention, as the `fren`
+command reads them from its tokens: each one's first segment, without the
+`!` of shadowing. -/
+partial def identRoots (e : Syntax) : Array String :=
+  if e.isIdent then
+    let s := Core.nameText e.getId.getRoot
+    #[if s.endsWith "!" then (s.dropEnd 1).toString else s]
+  else e.getArgs.foldl (init := #[]) fun acc a =>
+    (identRoots a).foldl (init := acc) fun acc n => if acc.contains n then acc else acc.push n
+
+/-- `stx`, everything within it at the position of `ref`. -/
+partial def withInfoOf (ref : Syntax) : Syntax → Syntax
+  | .node _ k args => .node (SourceInfo.fromRef ref) k (args.map (withInfoOf ref))
+  | .atom _ v => .atom (SourceInfo.fromRef ref) v
+  | .ident _ raw v pre => .ident (SourceInfo.fromRef ref) raw v pre
+  | s => s
+
+/-- `text`, parsed as a `cat`, at the position of `ref`. -/
+def parseAt (cat : Name) (text : String) (ref : Syntax) : CommandElabM Syntax := do
+  match Parser.runParserCategory (← getEnv) cat text with
+  | .ok s => return withInfoOf ref s
+  | .error e => throwErrorAt ref e
+
+/-- The indices of the definitions of `defs`, `fren_def`s with their
+names, that an expression `e` with its own `where` clause `w?` needs
+(`Core.neededDefs`). -/
+def neededOf (defs : Array (String × Syntax)) (e w? : Syntax) : Array Nat :=
+  Core.neededDefs defs (fun d => identRoots d[3]) (identRoots e ++ identRoots w?)
+
+/-- An expression `e` with its own `where` clause `w?`, as an expression
+and a `where` clause: the definitions of `defs` that it needs, around it
+with its own clause within. -/
+def withNeeded (defs : Array (String × Syntax)) (e w? : Syntax) : Syntax × Syntax :=
+  let needed := neededOf defs e w?
+  if needed.isEmpty then (e, w?) else
+  let args := needed.foldl (init := #[]) fun acc i => (if acc.isEmpty then acc else acc.push (mkAtom ",")).push defs[i]!.2
+  (withWhere e w?, mkNullNode #[(mkNode ``Lang.fren_where #[mkAtom "where", mkNullNode args] : Syntax)])
+
+/-- A function written with its result and a block
+(`Reqs/Lang/Items#function-blocks`), as the `fren` command reads it: the
+function whose body is its `out` member's expression and whose contract is
+its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
+`let`s that it needs as a `where` clause (`F0442`–`F0445`, `F0165`). -/
+@[command_elab Lang.fnBlockCmd] def elabFnBlock : CommandElab := recordingErrors fun stx => do
+  checkLexemes stx
+  checkParsed stx
+  let results := stx[9].getSepArgs
+  let r := results[0]!
+  unless r[0].isNone do throwErrorAt r[0][0][0] (Core.fnMemberMsg? .evidence false "set_option").get!.text
+  unless r[1].isNone do throwErrorAt r[1] (Core.fnMemberMsg? .define true "det").get!.text
+  if let some r2 := results[1]? then throwErrorAt (r2.getHead?.getD r2) Core.fnResultsMsg.text
+  let rx := (declaredIdent r[2]).1
+  let rn := Core.nameText rx.getId
+  let mut lets : Array (String × Syntax) := #[]
+  let mut out? : Option Syntax := none
+  let mut clauses := #[]
+  let mut uses := #[]
+  for m in stx[12].getArgs do
+    -- Each member that a function's block does not take (`F0442`,
+    -- `F0443`), at its first token, or a `use`'s or an evidence
+    -- setting's whole, as the `fren` command reports it.
+    let kind? : Option (Core.FnMember × Bool × String × Syntax) :=
+      if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then some (.use, false, "use", m)
+      else if m.isOfKind ``Lang.evidenceMember then some (.evidence, false, "set_option", mkNullNode #[m[0], m[3]])
+      else if m.isOfKind ``Lang.callMember || m.isOfKind ``Lang.instMember then some (.call, false, "call", m[0])
+      else if m.isOfKind ``Lang.existsMember then some (.exists, !m[0].isNone, "exists", if m[0].isNone then m[1] else m[0])
+      else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone, "let", if m[0].isNone then m[1] else m[0])
+      else match constraint? m with
+        | some (.expect, _, _) => some (.claim, false, "expect", m[0])
+        | some (.cover, _, _) => some (.claim, false, "cover", m[0])
+        | _ => none
+    if let some (k, det, kw, ref) := kind? then
+      if let some msg := Core.fnMemberMsg? k det kw then throwErrorAt ref msg.text
+    if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then uses := uses.push m
+    else if m.isOfKind ``Lang.letMember then
+      let x := (declaredIdent m[2]).1
+      lets := lets.push (Core.nameText x.getId, (mkNode ``Lang.fren_def #[m[2], m[3], m[4], withWhere m[5] m[6]] : Syntax))
+    else if m.isOfKind ``Lang.outMember then
+      unless m[0].isNone && m[1].isNone && m[4].isNone && !m[5].isNone do
+        throwErrorAt m (Core.outputMemberMsg (!m[0].isNone) (!m[5].isNone) none).text
+      let x := Core.nameText m[3].getId
+      unless x == rn do throwErrorAt (mkNullNode #[m[2], m[3]]) (Core.fnOutMsg x rn).text
+      if out?.isSome then throwErrorAt m[3] (Core.resultDefinedTwiceMsg x).text
+      out? := some m[5]
+    else if m.isOfKind ``Lang.inMember then
+      throwErrorAt m (Core.inputMemberMsg none).text
+    else if (constraint? m).isSome then clauses := clauses.push m
+  -- The result, the function applied to its parameters, at the result's
+  -- name.
+  let fname := Core.nameText (declaredIdent stx[2]).1.getId
+  let pnames := stx[5].getSepArgs.map fun p =>
+    match typePath? p[0] with
+    | some q => Core.nameText (declaredIdent (pathSegs q)[0]!).1.getId
+    | none => ""
+  let value ← parseAt `fren_expr s!"{fname}({", ".intercalate pnames.toList})" rx
+  -- With the result's type, if written, which a generic function's
+  -- application may need.
+  let rDef : Syntax := mkNode ``Lang.fren_def #[withInfoOf rx (mkIdent rx.getId), r[3], mkAtom ":=", value]
+  let defs := #[(rn, rDef)] ++ lets
+  -- The result is the function's value: neither its body nor its
+  -- preconditions mention it (`F0165`).
+  let check (e w? : Syntax) : CommandElabM Unit := do
+    let needed := Core.neededDefs lets (fun d => identRoots d[3]) (identRoots e ++ identRoots w?)
+    let all := identRoots e ++ identRoots w? ++ needed.flatMap fun i => identRoots lets[i]!.2[3]
+    if all.contains rn then throwErrorAt (mkNullNode #[e, w?]) (Core.fnResultMentionMsg rn).text
+  let mut clauses' := #[]
+  -- And the `let`s that some expression needs, the others unused.
+  let mut used : Array Nat := #[]
+  for c in clauses do
+    let isEnsure := c[0].getAtomVal.trimAscii.toString == "ensure"
+    unless isEnsure do check c[3] c[4]
+    used := used ++ (neededOf defs c[3] c[4]).filterMap fun i => if i == 0 then none else some (i - 1)
+    let kw := mkAtomFrom c[0] (if isEnsure then "ensure " else "assume ")
+    let (e, w) := withNeeded defs c[3] c[4]
+    clauses' := clauses'.push (mkNode ``Lang.fren_clause #[kw, c[1], c[2], e, w])
+  let body ← match out? with
+    | some d => do
+      check d[1] d[2]
+      used := used ++ neededOf lets d[1] d[2]
+      let (e, w) := withNeeded lets d[1] d[2]
+      pure (mkNullNode #[d[0], e, w])
+    | none => pure mkNullNode
+  -- Its `let`s that nothing needs, as a procedure's (`unused_variables`).
+  for (n, d) in lets, i in [0:lets.size] do
+    unless used.contains i do
+      recordLint .unusedVariables (declaredIdent d[0]).1 (Core.unusedVariableMsg (Name.mkSimple n) false true)
+  -- A result `r?` without a type is a `Bool`, as is the function's
+  -- value if its name ends in `?` too.
+  let result ← if !r[3].isNone then pure r[3]
+    else if rn.endsWith "?" && !fname.endsWith "?" then pure (mkNullNode #[mkAtom ":", ← parseAt `fren_type "Bool" rx])
+    else pure mkNullNode
+  let fn := mkNode ``Lang.fnCmd #[stx[0], stx[1], stx[2], stx[3], stx[4], stx[5], stx[6], result, body, mkNullNode clauses']
+  elabFunctionCore fn stx uses
 
 /-- A call whose procedure has been resolved, before its bindings are
 elaborated. -/

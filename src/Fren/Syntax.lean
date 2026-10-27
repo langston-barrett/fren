@@ -484,7 +484,9 @@ syntax fren_param := fren_type (" : " fren_type)?
 syntax fren_clause := (&"assume " <|> &"ensure ") frenIdent " : " fren_expr (fren_where)?
 
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
-defined one, either followed by its contract's clauses. With type
+defined one. Its contract's clauses after it, as functions were written
+before they had blocks, are parsed so that the elaborator reports them
+(`F0164`). With type
 parameters, `fn f<A, B>(x: A): B := e` (`Reqs/Lang/GenericFunctions`).
 Type parameters in parentheses, `fn f(A, B)(x: A)`, as they were written
 before they were written in angle brackets, are parsed so that the
@@ -494,6 +496,15 @@ scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent
   (noWs fren_type_params <|> atomic(noWs fren_paren_type_params noWs lookahead("(")))?
   noWs "(" sepBy1(fren_param, ", ") ")" (" : " fren_type)?
   (" := " fren_expr (fren_where)?)? fren_clause* : command
+
+/-- `fn f(x: T): (r: U) { members }`, a function written with its result
+and a block (`Reqs/Lang/Items#function-blocks`): `use`, `assume`, `let`,
+`out r := e` and `ensure` members, as a procedure's are. Other members, and
+more than one result, are parsed so that the elaborator reports them
+(`F0442`–`F0445`). -/
+scoped syntax (name := fnBlockCmd) ("pub ")? "fn " frenIdent (noWs fren_type_params)?
+  noWs "(" sepBy1(fren_param, ", ") ")" " : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")"
+  " { " fren_member* " }" : command
 
 /-- `const N: T := e`. -/
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command

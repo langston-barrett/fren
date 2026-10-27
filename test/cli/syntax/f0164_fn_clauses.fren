@@ -1,0 +1,9 @@
+-- A function's contract written after its signature (F0164): the fix
+-- writes it with a block, its body the `out` member between the
+-- preconditions and the postconditions, and the function applied to its
+-- parameters the result.
+pub fn inc(x: Int): Int := x + 1   -- the body's comment, kept
+    assume pos: x > 0
+
+    ensure bigger: inc(x) > x
+    ensure positive: inc(x) > 1   -- kept too

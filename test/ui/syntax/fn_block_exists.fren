@@ -1,0 +1,7 @@
+-- A function's block takes no `exists`: its value is determined by its
+-- arguments (`F0442`).
+pub fn f(x: Int): (r: Int) {
+    exists y: Int   --~ error: a function's block takes no `exists`
+    out r := x
+}
+--@ exit: 2

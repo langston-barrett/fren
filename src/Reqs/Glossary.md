@@ -43,7 +43,7 @@ evaluated. See [Checks](Check.md#completeness).
 **Constraint.** An assumption, guarantee, expectation or cover goal.
 
 **Contract.** The preconditions and postconditions of a function, written
-after its signature with `assume` and `ensure`. See
+in its block with `assume` and `ensure`. See
 [Items](Lang/Items.md#contracts).
 
 **Counterexample.** Values of a procedure's variables that satisfy the

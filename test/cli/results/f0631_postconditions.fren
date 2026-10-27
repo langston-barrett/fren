@@ -1,5 +1,6 @@
 -- Postconditions of an uninterpreted function that cannot all hold, at
 -- the function's name, with a note at each (F0631).
-pub fn rate(n: Int): Int
-    ensure positive: rate(n) > 0
-    ensure negative: rate(n) < n
+pub fn rate(n: Int): (r: Int) {
+    ensure positive: r > 0
+    ensure negative: r < n
+}

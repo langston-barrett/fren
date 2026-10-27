@@ -8,15 +8,18 @@ open Fren.Lang
 -- interpretation proves the function's postconditions.
 mod contract_test
 
-pub fn nth(q: Seq<Int>, i: Int): Int := q[i]
+pub fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 /-- info: contract_test.nth.in_range : Fren.Seq Int → Int → Prop -/
 #guard_msgs in #check @contract_test.nth.in_range
 
 type Key
-fn rank(k: Key): Nat
-    ensure positive: rank(k) > 0
+fn rank(k: Key): (r: Nat) {
+    ensure positive: r > 0
+}
 
 -- The clause applies the function, so it takes it, after its types.
 /-- info: contract_test.rank.positive : (Key : Type) → (Key → Nat) → Key → Prop -/
@@ -41,9 +44,10 @@ info: contract_test.rank.ensures : ∀ (x : contract_test.Key),
 #guard_msgs in #check @contract_test.rank.ensures
 
 -- `decide` proves it, under the preconditions.
-fn level(k: Key, on?): Nat
+fn level(k: Key, on?): (r: Nat) {
     assume chosen: on?
-    ensure positive: level(k, on?) > 0
+    ensure positive: r > 0
+}
 
 interp level := fun b on => if on then (if b then 1 else 2) else 0
 
@@ -55,16 +59,18 @@ info: contract_test.level.ensures : ∀ (x : contract_test.Key) (x_1 : Bool),
 #guard_msgs in #check @contract_test.level.ensures
 
 -- Over `Int`, a proof after `by`, or the solver, whose answer is an axiom.
-fn succ_of(n: Int): Int
-    ensure greater: succ_of(n) > n
+fn succ_of(n: Int): (r: Int) {
+    ensure greater: r > n
+}
 
 interp succ_of := fun n => n + 1 by
   intro n
   show n + 1 > n
   omega
 
-fn grows(n: Int): Int
-    ensure bigger: grows(n) > n
+fn grows(n: Int): (r: Int) {
+    ensure bigger: r > n
+}
 
 interp grows := fun n => n + 2
 
@@ -73,8 +79,9 @@ interp grows := fun n => n + 2
 
 -- A proof that uses `sorry` proves nothing, and neither does a statement
 -- that the solver does not prove: both add nothing.
-fn shifted(n: Int): Int
-    ensure greater: shifted(n) > n
+fn shifted(n: Int): (r: Int) {
+    ensure greater: r > n
+}
 
 /--
 error: the proof that the interpretation of `contract_test::shifted` meets its postconditions uses `sorry`

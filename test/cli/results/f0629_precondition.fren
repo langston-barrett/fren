@@ -1,7 +1,9 @@
 -- An application that may not meet a precondition is reported at the
 -- function's name, with the precondition (F0629).
-fn nth(q: Seq<Int>, i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 proc first(q: Seq<Int>): (x: Int) {
     ensure r: x = nth(q, 0)

@@ -1,0 +1,9 @@
+--@ args: fix --check
+-- A function's block lowers to `where` clauses, which `let_and_return`
+-- does not read: there is nothing to fix.
+pub fn f(x: Int): (r: Int) {
+    let a := x + 1
+    let b := a * 2
+    out r := b
+    ensure q: r = 2 * x + 2
+}

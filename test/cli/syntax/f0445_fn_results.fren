@@ -1,0 +1,4 @@
+-- A function has one result for now (F0445).
+pub fn f(x: Int): (r: Int, s: Int) {
+    out r := x
+}

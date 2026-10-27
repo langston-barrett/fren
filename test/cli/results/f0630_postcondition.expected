@@ -1,7 +1,7 @@
 error[F0630]: the postcondition `positive_result` of `pred` does not hold
- --> test/cli/results/f0630_postcondition.fren:5:12
+ --> test/cli/results/f0630_postcondition.fren:6:12
   |
-5 |     ensure positive_result: pred(n) > 0
+6 |     ensure positive_result: r > 0
   |            ^^^^^^^^^^^^^^^ does not follow from the body
   |
   = counterexample: n = 1

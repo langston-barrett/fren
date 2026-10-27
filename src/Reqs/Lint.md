@@ -739,12 +739,14 @@ First, the parse errors: `F0155` and `F0156`, a type or a declaration
 written with parentheses for its type arguments or type parameters (see
 [Angle brackets](Lang/Generics.md#angle-brackets)), and `F0158`, `F0159`
 and `F0160`, a component, an `in` member and an output declared as
-components declared them (see [Migration](Lang/Procedures.md#migration)).
+components declared them (see [Migration](Lang/Procedures.md#migration)),
+and `F0164`, a function's contract written after its signature (see
+[Function blocks](Lang/Items.md#function-blocks)).
 The parser stops at the first, so `fren fix` makes its fix, parses the
 file again, and so on, until the file parses or its parse error is
 another, which it then reports, as `fren check` would, and writes nothing.
 Each fix rewrites one outermost type, the types within it too, or one
-component, or one member, so a file with `n` of them takes at most `n`
+component, one member or one function, so a file with `n` of them takes at most `n`
 rounds; there are at most 1000, which only a bug would reach.
 `lint::migration_step` gives what `fren fix` does next:
 
@@ -757,7 +759,7 @@ pub enum MigrationStep {
 
 pub proc migration_step(
     parse_error?,        -- the file, as fixed so far, does not parse
-    migration?,          -- its parse error is `F0155`, `F0156`, `F0158`, `F0159` or `F0160`, with a fix
+    migration?,          -- its parse error is `F0155`, `F0156`, `F0158`, `F0159`, `F0160` or `F0164`, with a fix
     round: Nat,          -- how many fixes have been made
 ): (det step: MigrationStep) {
     ensure parsed: step = MigrationStep::Parsed iff not parse_error?
