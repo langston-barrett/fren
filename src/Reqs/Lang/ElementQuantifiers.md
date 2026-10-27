@@ -232,7 +232,7 @@ pub comp index_set {
         and (forall (t: IndexTerm), when t in witnesses, t in terms)
         and (forall (t: IndexTerm), when t in terms, t = zero or t in lasts or t in reads or t in positions or t in before
         or t in after or t in witnesses)
-        and (forall (i j: Int), when 0 <= i < j < terms.len, terms[i] != terms[j]))
+        and (forall (i j: Int), when 0 <= i < terms.len and 0 <= j < terms.len and i != j, terms[i] != terms[j]))
 }
 ```
 
@@ -359,13 +359,15 @@ pub comp element_witness {
     in w: Int                    -- a value of the witness
     pub det out all?             -- the quantifier holds
     pub det out instances?       -- its instances at `w` and `ix` hold
-    pub det out failing: Int     -- a position where the body fails, if there is one
+    pub det out failing: Int     -- the first position where the body fails, and 0 where there is none
 
     ensure meaning: all? iff (forall (x: Int), when x in q, x in good)
     ensure instances_rule: instances? iff ((when 0 <= w < q.len, q[w] in good)
         and (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good))
     ensure sound: when all?, instances?
     ensure witness: when not all?, 0 <= failing < q.len and not (q[failing] in good)
+    ensure first: forall (i: Int), when 0 <= i < failing, q[i] in good
+    ensure none_fails: when all?, failing = 0
 }
 ```
 
