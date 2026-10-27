@@ -6232,7 +6232,9 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
     | some q => Core.nameText (declaredIdent (pathSegs q)[0]!).1.getId
     | none => ""
   let value ← parseAt `fren_expr s!"{fname}({", ".intercalate pnames.toList})" rx
-  let rDef : Syntax := mkNode ``Lang.fren_def #[withInfoOf rx (mkIdent rx.getId), mkNullNode, mkAtom ":=", value]
+  -- With the result's type, if written, which a generic function's
+  -- application may need.
+  let rDef : Syntax := mkNode ``Lang.fren_def #[withInfoOf rx (mkIdent rx.getId), r[3], mkAtom ":=", value]
   let defs := #[(rn, rDef)] ++ lets
   -- The result is the function's value: neither its body nor its
   -- preconditions mention it (`F0165`).

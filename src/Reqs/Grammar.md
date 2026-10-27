@@ -34,9 +34,9 @@ field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 type-alias     := ["pub"] "type" IDENT ":=" type
 function       := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
-                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] [":=" top] clause+
                 | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] ":=" top
-clause         := ("assume" | "ensure") IDENT ":" top
+                | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" ":" "(" variable [","] ")"
+                  "{" member* "}"
 constant       := ["pub"] "const" IDENT ":" type ":=" top
 procedure      := ["pub"] "proc" IDENT"(" [variable ("," variable)* [","]] ")"
                   [":" "(" result ("," result)* [","] ")"] "{" member* "}"
@@ -81,6 +81,10 @@ base           := "Bool" | "Int" | "Nat" | "String" | "Set""<" type ">" | "Seq""
                 | path | path"<" type ("," type)* ">"
 path           := IDENT ("::" IDENT)*
 ```
+
+A function's block takes members too: those that are not `det`, of
+`assume`, `let`, `out` and `ensure`, and the others parse to be reported
+(see [Function blocks](Lang/Items.md#function-blocks)).
 
 ## Expressions
 

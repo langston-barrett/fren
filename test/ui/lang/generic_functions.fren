@@ -26,9 +26,11 @@ fn first_or<T>(p: Pair<Option<T>, T>): T := id(unwrap_or(p.fst, id(p.snd)))
 fn head<T>(l: List<T>): Option<T> := match l { List::Cons(x, _) => Option::Some(x), List::Nil => Option::None }
 
 -- A result that only the expected type gives an argument, with a contract.
-fn nothing<T>(n: Int): Option<T> := let r: Option<T> := Option::None in r
+fn nothing<T>(n: Int): (result: Option<T>) {
     assume positive: n > 0
+    out result := let r: Option<T> := Option::None in r
     ensure empty: let r: Option<T> := nothing(n) in r = Option::None
+}
 
 proc options(x: Option<Int>, b?): (
     det y: Int,

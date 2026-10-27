@@ -1,4 +1,5 @@
 -- A postcondition that applies its function to other than its parameters
 -- (F0381).
-fn rate(n: Int): Int
-    ensure grows: rate(n + 1) > rate(n)
+fn rate(n: Int): (r: Int) {
+    ensure grows: rate(n + 1) > r
+}

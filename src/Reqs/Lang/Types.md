@@ -79,12 +79,15 @@ which types have element types:
 pub type Ty
 
 pub fn kind(Ty): ValueType
-pub fn elem(t: Ty): Ty
+pub fn elem(t: Ty): (r: Ty) {
     assume collection: kind(t) in {ValueType::SetTy, ValueType::SeqTy}
-pub fn left(t: Ty): Ty
+}
+pub fn left(t: Ty): (r: Ty) {
     assume relation: kind(t) = ValueType::RelTy
-pub fn right(t: Ty): Ty
+}
+pub fn right(t: Ty): (r: Ty) {
     assume relation: kind(t) = ValueType::RelTy
+}
 ```
 
 `lang::newtype?` says whether a type is a [newtype](Items.md#newtypes),

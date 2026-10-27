@@ -8,20 +8,23 @@ set_option fren.lint.dead_code "allow"
 mod generic_uninterpreted_contracts
 
 -- Not realizable where the two arguments are equal, at any type.
-fn other<T>(x: T, y: T): T  --~ error: the postconditions of `generic_uninterpreted_contracts::other` cannot all hold at some type
+fn other<T>(x: T, y: T): (r: T) {  --~ error: the postconditions of `generic_uninterpreted_contracts::other` cannot all hold at some type
     ensure moves: other(x, y) != x
     ensure stays: other(x, y) = y  --~ info: conflicts with `moves`
 --~^^ info: conflicts with `stays`
+}
 
 -- Realizable for every type: the precondition gives a second value.
-fn other_than<T>(x: T, y: T): T
+fn other_than<T>(x: T, y: T): (r: T) {
     assume apart: x != y
     ensure moves: other_than(x, y) != x
+}
 
 -- Postconditions that cannot hold at any type.
-fn wrapped<T>(x: T): Option<T>  --~ error: the postconditions of `generic_uninterpreted_contracts::wrapped` cannot all hold at some type
+fn wrapped<T>(x: T): (r: Option<T>) {  --~ error: the postconditions of `generic_uninterpreted_contracts::wrapped` cannot all hold at some type
     ensure some: wrapped(x) != Option::None  --~ info: conflicts with `none`
     ensure none: wrapped(x) = Option::None  --~ info: conflicts with `some`
+}
 
 -- At an instance, its postconditions hold of each application.
 proc swapped(a: Int, b: Int): (det c: Int) {

@@ -1,6 +1,7 @@
 -- Functions written with a result and a block (`Reqs/Lang/Items#function-blocks`):
 -- the `out` member is the body, the `assume`s and `ensure`s the contract,
 -- and the result and the `let`s are definitions of each that mentions them.
+-- fren-covers: lang::fn_definitions
 
 pub fn get(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len

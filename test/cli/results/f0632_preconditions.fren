@@ -1,5 +1,6 @@
 -- Contradictory preconditions of an uninterpreted function (F0632).
-pub fn rate(n: Int): Int
+pub fn rate(n: Int): (r: Int) {
     assume positive: n > 0
     assume negative: n < 0
-    ensure bounded: rate(n) < n
+    ensure bounded: r < n
+}

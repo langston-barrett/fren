@@ -242,7 +242,7 @@ def errorCodes : IO (Array String) := do
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
   #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Decidability",
-    "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/ScopeLaws",
+    "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/HigherOrder", "Lang/ScopeLaws",
     "Lang/Modules", "Lang/Calls", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
     "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",

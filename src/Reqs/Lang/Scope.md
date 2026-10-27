@@ -261,11 +261,12 @@ pub fn resolves_to?(bindings: Set<Binding>, b: Binding, n: Id) := innermost?(bin
     and (forall (c: Binding), when innermost?(bindings, c, n), c = b)
 
 set_option fren.lint.undecidable "allow" in
-pub fn resolve(bindings: Set<Binding>, n: Id): Lookup
-    ensure found: forall (b: Binding), when resolves_to?(bindings, b, n), resolve(bindings, n) = Lookup::Found(b.kind)
+pub fn resolve(bindings: Set<Binding>, n: Id): (r: Lookup) {
+    ensure found: forall (b: Binding), when resolves_to?(bindings, b, n), r = Lookup::Found(b.kind)
     ensure ambiguous: when (exists (b c: Binding), innermost?(bindings, b, n) and innermost?(bindings, c, n) and b != c),
-    resolve(bindings, n) = Lookup::Ambiguous
-    ensure unbound: unless declared?(bindings, n), resolve(bindings, n) = Lookup::Unbound
+        r = Lookup::Ambiguous
+    ensure unbound: unless declared?(bindings, n), r = Lookup::Unbound
+}
 ```
 
 `lang::scope` is one name written in one scope, and what it resolves to.

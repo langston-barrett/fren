@@ -10,21 +10,27 @@ mod generics_guards_contracts
 pub struct Pair<A, B> { fst: A, snd: B }
 
 -- The payload, or `fallback` where there is none.
-fn unwrap_or(o: Option<Int>, fallback: Int): Int
-    ensure some: when o = Option::Some(3), unwrap_or(o, fallback) = 3
-    ensure none: when o = Option::None, unwrap_or(o, fallback) = fallback
+fn unwrap_or(o: Option<Int>, fallback: Int): (r: Int) {
+    ensure some: when o = Option::Some(3), r = 3
+    ensure none: when o = Option::None, r = fallback
+}
 
 -- Defined only on a `Some`.
-fn get(o: Option<Int>): Int := match o { Option::Some(n) => n, Option::None => 0 }
+fn get(o: Option<Int>): (r: Int) {
     assume present: o != Option::None
+    out r := match o { Option::Some(n) => n, Option::None => 0 }
+}
 
 -- A result that is an instance.
-fn half(n: Int): Option<Int>
-    ensure even: when n mod 2 = 0, half(n) = Option::Some(n div 2)
-    ensure odd: when n mod 2 != 0, half(n) = Option::None
+fn half(n: Int): (r: Option<Int>) {
+    ensure even: when n mod 2 = 0, r = Option::Some(n div 2)
+    ensure odd: when n mod 2 != 0, r = Option::None
+}
 
-fn swap(p: Pair<Int, Bool>): Pair<Bool, Int> := Pair { fst := p.snd, snd := p.fst }
-    ensure swapped: swap(p).snd = p.fst
+fn swap(p: Pair<Int, Bool>): (r: Pair<Bool, Int>) {
+    out r := Pair { fst := p.snd, snd := p.fst }
+    ensure swapped: r.snd = p.fst
+}
 
 proc sign(x: Option<Int>): (det s: Int) {
     out s := match x {

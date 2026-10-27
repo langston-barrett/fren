@@ -2,8 +2,9 @@
 -- with a contract (F0645).
 type Id
 
-fn rank(i: Id): Int
-    ensure positive: rank(i) > 0
+fn rank(i: Id): (r: Int) {
+    ensure positive: r > 0
+}
 
 set_option fren.evidence "enumerated" in
 proc c(x: Id): (det top?) {

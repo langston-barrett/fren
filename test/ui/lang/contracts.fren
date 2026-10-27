@@ -7,24 +7,30 @@ set_option fren.lint.dead_code "allow"
 type Name
 
 -- A precondition, where the body is defined only on some arguments.
-fn nth(q: Seq<Int>, i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 -- Postconditions of a defined function hold of its body.
-fn double(n: Int): Int := 2 * n
-    ensure twice: double(n) - n = n
-    ensure grows: when n > 0, double(n) > n
+fn double(n: Int): (r: Int) {
+    out r := 2 * n
+    ensure twice: r - n = n
+    ensure grows: when n > 0, r > n
+}
 
 -- An uninterpreted function's postconditions are facts about each of its
 -- applications.
-fn arity(n: Name): Nat
-    ensure positive: arity(n) > 0
+fn arity(n: Name): (r: Nat) {
+    ensure positive: r > 0
+}
 
 -- A precondition qualifies the postconditions: where it fails, nothing is
 -- known.
-fn shrink(n: Int): Int
+fn shrink(n: Int): (r: Int) {
     assume big: n > 10
-    ensure smaller: shrink(n) < n
+    ensure smaller: r < n
+}
 
 proc reads(q: Seq<Int>): (y: Int) {
     assume long: q.len >= 2
@@ -56,8 +62,9 @@ proc shrinking(n: Int) {
 -- values everywhere, including under quantifiers and `let`.
 enum Mode { Off, Low, High }
 
-fn level(m: Mode): Int
-    ensure bounded: 0 <= level(m) <= 10
+fn level(m: Mode): (r: Int) {
+    ensure bounded: 0 <= r <= 10
+}
 
 proc quantified() {
     expect all_bounded: forall (m: Mode), level(m) <= 10

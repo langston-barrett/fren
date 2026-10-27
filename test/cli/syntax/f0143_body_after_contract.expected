@@ -4,8 +4,8 @@ error[F0143]: a function's body is written after its contract
 4 |     := n - 1
   |     ^^ after the contract
   |
-  = note: the clauses of a contract follow the signature and the body, as in `fn f(x: Int): Int := x + 1` and then `assume pos: x > 0`
-  = help: move the body, with its `:=`, before the first `assume` or `ensure`
+  = note: a function with a contract is written with a block, as in `fn f(x: Int): (r: Int) { assume pos: x > 0 out r := x + 1 }`
+  = help: write the function with a block, its body the `out` member after the preconditions
 
 error: could not check due to previous errors
 

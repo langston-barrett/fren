@@ -10,8 +10,10 @@ fn guarded(q: Seq<Int>, f: fn(Int) -> Int): Int := if q.len > 0 then f(0) else 0
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
 fn never(f: fn(Int) -> Int, x: Int): Int := x  --~ warning: unused parameter `f`
-fn pos(n: Int): Int := n
+fn pos(n: Int): (r: Int) {
     assume p: n > 0
+    out r := n
+}
 
 -- Each holds where the closure is applied, though not for every argument.
 proc holds(q: Seq<Int>, k: Int): (det a: Int, det b: Int, det c: Int, det d: Int) {

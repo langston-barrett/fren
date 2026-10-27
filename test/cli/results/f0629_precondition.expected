@@ -1,7 +1,7 @@
 error[F0629]: the precondition `in_range` of `nth` may not hold at this application in `first::r`
- --> test/cli/results/f0629_precondition.fren:7:19
+ --> test/cli/results/f0629_precondition.fren:9:19
   |
-7 |     ensure r: x = nth(q, 0)
+9 |     ensure r: x = nth(q, 0)
   |                   ^^^ may violate `nth::in_range`
   |
   = counterexample: q = [], x = 0

@@ -46,7 +46,8 @@ proc defined(x: Int): (y: Int, z: Int) {   --~ error: no outputs satisfy `low` a
 }
 
 -- The postconditions of an uninterpreted function, of its value.
-pub fn level(n: Int): Int   --~ error: no value of `level` satisfies `zero` and `one`
-    ensure zero: level(n) = 0   --~ info: `zero` forces level = 0, but `one` forces level = 1
-    ensure one: level(n) = 1   --~ info: conflicts with `zero`
+pub fn level(n: Int): (r: Int) {   --~ error: no value of `level` satisfies `zero` and `one`
+    ensure zero: r = 0   --~ info: `zero` forces level = 0, but `one` forces level = 1
+    ensure one: r = 1   --~ info: conflicts with `zero`
+}
 --@ exit: 1

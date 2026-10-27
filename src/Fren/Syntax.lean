@@ -484,7 +484,9 @@ syntax fren_param := fren_type (" : " fren_type)?
 syntax fren_clause := (&"assume " <|> &"ensure ") frenIdent " : " fren_expr (fren_where)?
 
 /-- `fn f(T, U): R`, an uninterpreted function, or `fn f(x: T): R := e`, a
-defined one, either followed by its contract's clauses. With type
+defined one. Its contract's clauses after it, as functions were written
+before they had blocks, are parsed so that the elaborator reports them
+(`F0164`). With type
 parameters, `fn f<A, B>(x: A): B := e` (`Reqs/Lang/GenericFunctions`).
 Type parameters in parentheses, `fn f(A, B)(x: A)`, as they were written
 before they were written in angle brackets, are parsed so that the

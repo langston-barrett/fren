@@ -6,8 +6,9 @@ set_option fren.lint.dead_code "allow"
 mod generic_uninterpreted_static
 
 fn pick<T>(T, T): T
-fn first<T>(o: Option<T>): T
+fn first<T>(o: Option<T>): (r: T) {
     assume present: o != Option::None
+}
 
 -- Each type parameter is inferred from the signature, as a defined one's.
 fn unused<T, U>(T): T  --~ error: type parameter `U` of `unused` cannot be inferred

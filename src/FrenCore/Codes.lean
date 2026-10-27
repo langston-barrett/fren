@@ -779,13 +779,15 @@ fn pred(n: Int): Int
     := n - 1
 ```
 
-A function's contract follows its signature and, for a defined function,
-its body: write the body, with its `:=`, before the first `assume` or
-`ensure`.
+A function with a contract is written with its result named in its
+signature and a block (see `F0164`), its body the `out` member that
+defines the result, after the preconditions:
 
 ```fren
-fn pred(n: Int): Int := n - 1
+fn pred(n: Int): (r: Int) {
     assume positive: n > 0
+    out r := n - 1
+}
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -2112,8 +2114,9 @@ Erroneous code examples:
 ```fren
 fn rate(n: Int): Int
 fn double(Int): Int := 1
-fn half(Int): Int
+fn half(Int): (r: Int) {
     assume even: true
+}
 ```
 
 An uninterpreted function without a contract has parameters with types but
@@ -2124,8 +2127,9 @@ named, like a procedure's variable: `x: T`, or `x?` for a `Bool`.
 ```fren
 fn rate(Int): Int
 fn double(n: Int): Int := 2 * n
-fn half(n: Int): Int
+fn half(n: Int): (r: Int) {
     assume even: n mod 2 = 0
+}
 ```
 "# },
   { code := "F0331", explanation := r#"A defined function's body applies the function itself, or an uninterpreted function.
@@ -2160,8 +2164,9 @@ proc c(n: Name): (r: Int) { ensure ranked: r = rank(arity(n)) }
 Erroneous code example:
 
 ```fren
-fn rate(n: Int): Int
+fn rate(n: Int): (r: Int) {
     assume small: rate(n) < 10
+}
 ```
 
 A precondition says where the function may be applied, so it cannot
@@ -2169,8 +2174,9 @@ depend on the function's value. What the value gives is a postcondition,
 written with `ensure`:
 
 ```fren
-fn rate(n: Int): Int
-    ensure small: rate(n) < 10
+fn rate(n: Int): (r: Int) {
+    ensure small: r < 10
+}
 ```
 "# },
   { code := "F0381", explanation := r#"A postcondition applies the function whose contract it is in to other than its parameters.
@@ -2178,8 +2184,9 @@ fn rate(n: Int): Int
 Erroneous code example:
 
 ```fren
-fn rate(n: Int): Int
-    ensure grows: rate(n + 1) > rate(n)
+fn rate(n: Int): (r: Int) {
+    ensure grows: rate(n + 1) > r
+}
 ```
 
 A postcondition states what the function gives at its own arguments: the
@@ -2189,8 +2196,9 @@ arguments is stated where the function is applied, as an assumption of a
 procedure:
 
 ```fren
-fn rate(n: Int): Int
-    ensure positive: rate(n) > 0
+fn rate(n: Int): (r: Int) {
+    ensure positive: r > 0
+}
 
 proc c(n: Int): (r: Int) {
     assume grows: rate(n + 1) > rate(n)
@@ -3512,8 +3520,10 @@ proc grade(score: Int): (pass?) {
 Erroneous code example:
 
 ```fren
-fn nth(q: Seq<Int>, i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 proc c(q: Seq<Int>): (y: Int) { ensure r: y = nth(q, 0) }
 ```
@@ -3527,8 +3537,10 @@ says nothing useful there. Guard the application, or assume what the
 precondition needs:
 
 ```fren
-fn nth(q: Seq<Int>, i: Int): Int := q[i]
+fn nth(q: Seq<Int>, i: Int): (r: Int) {
     assume in_range: 0 <= i < q.len
+    out r := q[i]
+}
 
 proc c(q: Seq<Int>): (y: Int) {
     ensure r: when q != [], y = nth(q, 0)
@@ -3541,9 +3553,11 @@ proc c(q: Seq<Int>): (y: Int) {
 Erroneous code example:
 
 ```fren
-fn pred(n: Int): Int := n - 1
+fn pred(n: Int): (r: Int) {
     assume positive: n > 0
-    ensure positive_result: pred(n) > 0
+    out r := n - 1
+    ensure positive_result: r > 0
+}
 ```
 
 A defined function's postconditions are claims about its body, which Fren
@@ -3552,9 +3566,11 @@ here, `pred(1)` is 0. Correct the body or the postcondition, or add a
 precondition that rules the case out:
 
 ```fren
-fn pred(n: Int): Int := n - 1
+fn pred(n: Int): (r: Int) {
     assume positive: n > 0
-    ensure natural: pred(n) >= 0
+    out r := n - 1
+    ensure natural: r >= 0
+}
 ```
 "# },
   { code := "F0631", explanation := r#"An uninterpreted function's postconditions cannot all hold.
@@ -3562,9 +3578,10 @@ fn pred(n: Int): Int := n - 1
 Erroneous code example:
 
 ```fren
-fn rate(n: Int): Int
-    ensure positive: rate(n) > 0
-    ensure negative: rate(n) < 0
+fn rate(n: Int): (r: Int) {
+    ensure positive: r > 0
+    ensure negative: r < 0
+}
 ```
 
 An uninterpreted function's postconditions are what is known of it, and
@@ -3575,8 +3592,9 @@ postcondition that says nothing of the function's value and can be false.
 Weaken one of them, or add a precondition that rules those arguments out:
 
 ```fren
-fn rate(n: Int): Int
-    ensure positive: rate(n) > 0
+fn rate(n: Int): (r: Int) {
+    ensure positive: r > 0
+}
 ```
 "# },
   { code := "F0632", explanation := r#"An uninterpreted function's preconditions contradict each other.
@@ -3584,10 +3602,11 @@ fn rate(n: Int): Int
 Erroneous code example:
 
 ```fren
-fn rate(n: Int): Int
+fn rate(n: Int): (r: Int) {
     assume positive: n > 0
     assume negative: n < 0
-    ensure bounded: rate(n) < n
+    ensure bounded: r < n
+}
 ```
 
 No arguments meet the preconditions, so the postconditions say nothing,
@@ -3595,9 +3614,10 @@ and no application of the function can meet its preconditions. Weaken or
 remove one of them:
 
 ```fren
-fn rate(n: Int): Int
+fn rate(n: Int): (r: Int) {
     assume positive: n > 0
-    ensure bounded: rate(n) < n
+    ensure bounded: r < n
+}
 ```
 "# },
   { code := "F0625", explanation := r#"A `match` may have no arm that is taken where it is evaluated.
@@ -4069,9 +4089,10 @@ proc c(x: Int is -3..=3): (det y: Int) { out y := x + 1 expect e: y > x }
 Erroneous code example:
 
 ```fren
-fn other<T>(x: T, y: T): T
-    ensure moves: other(x, y) != x
-    ensure stays: other(x, y) = y
+fn other<T>(x: T, y: T): (r: T) {
+    ensure moves: r != x
+    ensure stays: r = y
+}
 ```
 
 An uninterpreted function's postconditions are assumed wherever it is
@@ -4087,10 +4108,11 @@ instance. Here, where `x` and `y` are equal, no value of `other` is both
 weaken a postcondition:
 
 ```fren
-fn other<T>(x: T, y: T): T
+fn other<T>(x: T, y: T): (r: T) {
     assume apart: x != y
-    ensure moves: other(x, y) != x
-    ensure stays: other(x, y) = y
+    ensure moves: r != x
+    ensure stays: r = y
+}
 ```
 "# },
   { code := "F0647", explanation := r#"A check whose quantifiers over sequences' elements would have too many instances.

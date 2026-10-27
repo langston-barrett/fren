@@ -1711,7 +1711,9 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
   -- The function applied to its parameters, at the result's name.
   let args := params.map fun (p, _) => Expr.path r.span #[{ name := unbanged p[0]!.name, span := r.span }]
   let value := Expr.app r.span #[{ name with span := r.span }] args
-  let defs := #[(r, none, value)] ++ lets
+  -- With the result's type, if written, which a generic function's
+  -- application may need.
+  let defs := #[(r, ty, value)] ++ lets
   -- The result is the function's value: neither its body nor its
   -- preconditions mention it (`F0165`).
   let rn := unbanged r.name
@@ -1739,10 +1741,11 @@ one, runs from `assignStop?` to `bodyStop`. The clauses, at `clauseSpans`
 with whether each is a postcondition, are kept as written when each
 starts a line and the preconditions come first, and the `out` member
 follows the preconditions; otherwise each is written on a line of its own.
-In a postcondition, the function applied to its parameters is the result. -/
+In a postcondition of a function that is not generic, the function
+applied to its parameters is the result. -/
 def fnBlockText (itemStart : Nat) (name : Ident) (params : Array (Array Ident × Option (Array Ident)))
     (paramsStop headerStop : Nat) (result : Option (Array Ident)) (assignStop? : Option Nat) (bodyStop : Nat)
-    (clauseSpans : Array (Span × Bool)) : P (Fren.Core.Range × String) := do
+    (clauseSpans : Array (Span × Bool)) (generic : Bool) : P (Fren.Core.Range × String) := do
   let src := (← get).src
   let toks := (← get).toks
   let clauseStop := (clauseSpans.back?.map (·.1.stop)).getD bodyStop
@@ -1770,10 +1773,12 @@ def fnBlockText (itemStart : Nat) (name : Ident) (params : Array (Array Ident ×
   let base := indentOf itemStart
   let inner := base ++ "    "
   -- The function applied to its parameters, in a postcondition, is the
-  -- result: each `name(p, q)` whose arguments are the parameters.
+  -- result: each `name(p, q)` whose arguments are the parameters. Not in a
+  -- generic function's, where the application may be at another
+  -- instance than the result's.
   let pnames := params.map fun (p, _) => p[0]!.name
   let clauseText (sp : Span) (isEnsure : Bool) : P String := do
-    if !isEnsure then return ← srcText sp.start sp.stop
+    if !isEnsure || generic then return ← srcText sp.start sp.stop
     let mut out := ""
     let mut at_ := sp.start
     let mut i := 0
@@ -2064,13 +2069,13 @@ partial def item : P Item := do
       let t ← peek
       unless !clauses.isEmpty && isKw t ":=" do
         let fixed ← fnBlockText (← get).toks[first]!.span.start name params paramsStop headerStop result
-          (assign?.map (·.span.stop)) bodyStop clauseSpans
+          (assign?.map (·.span.stop)) bodyStop clauseSpans !typeParams.isEmpty
         throw { span := firstClause, msg := Fren.Core.fnClausesMsg (some fixed) }
     let t ← peek
     if !clauses.isEmpty && isKw t ":=" then
       err t.span "F0143" "a function's body is written after its contract" (some "after the contract")
-        #["note: the clauses of a contract follow the signature and the body, as in `fn f(x: Int): Int := x + 1` and then `assume pos: x > 0`",
-          "help: move the body, with its `:=`, before the first `assume` or `ensure`"]
+        #["note: a function with a contract is written with a block, as in `fn f(x: Int): (r: Int) { assume pos: x > 0 out r := x + 1 }`",
+          "help: write the function with a block, its body the `out` member after the preconditions"]
     return .function isPub name typeParams params result body clauses (← lastSpan)
   if isKw t "const" then
     discard bump

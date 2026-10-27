@@ -1,7 +1,7 @@
 error[F0632]: the preconditions of `rate` are unsatisfiable: `positive`, `negative` contradict each other
  --> test/cli/results/f0632_preconditions.fren:2:8
   |
-2 | pub fn rate(n: Int): Int
+2 | pub fn rate(n: Int): (r: Int) {
   |        ^^^^ no arguments meet its preconditions
   |
   = note: the function could never be applied where its contract says anything
