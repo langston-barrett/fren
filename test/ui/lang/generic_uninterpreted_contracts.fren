@@ -11,7 +11,7 @@ mod generic_uninterpreted_contracts
 fn other<T>(x: T, y: T): (r: T) {  --~ error: the postconditions of `generic_uninterpreted_contracts::other` cannot all hold at some type
     ensure moves: other(x, y) != x
     ensure stays: other(x, y) = y  --~ info: conflicts with `moves`
---~^^ info: conflicts with `stays`
+    --~^^ info: conflicts with `stays`
 }
 
 -- Realizable for every type: the precondition gives a second value.
