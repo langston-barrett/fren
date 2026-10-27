@@ -108,6 +108,7 @@ The refinements check each test:
 pub ordered enum Rank { Low, Mid, High, Top }
 
 set_option fren.lint.manual_pattern_test "allow" in
+set_option fren.evidence "enumerated" in
 pub comp manual_ordering_written {
     in l: Rank
     pub det out low? := l in {Rank::Mid, Rank::Low}
@@ -117,6 +118,7 @@ pub comp manual_ordering_written {
     pub det out none_low? := l != Rank::Low and l != Rank::Mid
 }
 
+set_option fren.evidence "enumerated" in
 pub comp manual_ordering_fixed {
     in l: Rank
     pub det out low? := l <= Rank::Mid

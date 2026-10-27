@@ -4,6 +4,7 @@
 -- keep-sorted start
 import Impls.Check
 import Impls.Cli
+import Impls.Enumeration
 import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
@@ -11,6 +12,7 @@ import Impls.Impl
 import Impls.Inst
 import Impls.Lang
 import Impls.Lint
+import Impls.Meaning
 import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTypes

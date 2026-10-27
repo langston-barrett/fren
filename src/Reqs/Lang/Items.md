@@ -110,6 +110,7 @@ is the order of declaration, and it is total:
 pub ordered enum Level { Low, Middle, High }
 
 set_option fren.lint.unnecessary_min_or_max "allow" in
+set_option fren.evidence "enumerated" in
 pub comp enumeration_order {
     use self::Level::{High, Low, Middle}
     in a: Level
@@ -387,6 +388,7 @@ record's field:
 ```fren
 pub mod lang
 
+set_option fren.evidence "enumerated" in
 pub comp field_type {
     in kind!: ValueType   -- the kind of the field's or payload's type
     in abstract_within?  -- an abstract type is the type, or a set's element type within it
@@ -552,6 +554,7 @@ an uninterpreted function, so a defined function's values are fully
 known. `lang::function_body` states when a body is accepted:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp function_body {
     in typed?                -- the body has the function's result type
     in applies_self?         -- the body applies the function being declared
@@ -640,6 +643,7 @@ applications of the function itself a clause may have:
 ```fren
 pub enum ClauseKind { Precondition, Postcondition }
 
+set_option fren.evidence "enumerated" in
 pub comp contract_application {
     in clause: ClauseKind
     in own?                  -- it applies the function whose contract the clause is in
@@ -746,6 +750,7 @@ match it, as a defined function's body is. `lang::constant`
 states this:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp constant {
     in ty: ValueType     -- the constant's type
     in applies?          -- its value applies an uninterpreted function

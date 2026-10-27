@@ -39,6 +39,7 @@ fix. `lint::allow_attributes` states this:
 ```fren
 pub mod lint
 
+set_option fren.evidence "enumerated" in
 pub comp allow_attributes {
     in requested: Level  -- the level that the `set_option` sets
     in unfulfilled?      -- it sets `unfulfilled_lint_expectations` itself
@@ -110,6 +111,7 @@ ends it early (see [Literals](../Lang/Lexical.md#literals)).
 `lint::needless_raw_strings` states when it fires:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp needless_raw_strings {
     in raw?              -- the literal is raw
     in backslash?        -- its contents have a `\`

@@ -25,11 +25,13 @@ pub mod lint
 pub enum Signal { Stop, Slow, Go }
 
 set_option fren.lint.wildcard_in_or_patterns "allow" in
+set_option fren.evidence "enumerated" in
 pub comp wildcard_in_or_written {
     in s: Signal
     pub det out v: Int := match s { Signal::Stop => 0, Signal::Slow | _ => 1 }
 }
 
+set_option fren.evidence "enumerated" in
 pub comp wildcard_in_or_fixed {
     in s: Signal
     pub det out v: Int := match s { Signal::Stop => 0, _ => 1 }

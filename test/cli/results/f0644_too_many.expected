@@ -1,0 +1,13 @@
+error[F0644]: `c` has 1000000 behaviours up to size 3, too many to enumerate
+ --> test/cli/results/f0644_too_many.fren:3:6
+  |
+3 | comp c {
+  |      ^ too many behaviours
+  |
+  = note: enumeration searches at most 65536 behaviours, counting a second copy of each for determinism
+  = help: lower `fren.enumeration.size`, or have the solver check it
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0644`.
+exit=1

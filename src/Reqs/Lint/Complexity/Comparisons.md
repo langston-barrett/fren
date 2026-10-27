@@ -50,6 +50,7 @@ pub mod lint
 
 pub enum Order { Below, Same, Above }
 
+set_option fren.evidence "enumerated" in
 pub comp comparison_holds {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
     in op: Comparison

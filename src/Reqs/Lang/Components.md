@@ -90,6 +90,7 @@ searched for. `lang::variable_type` states this; `only_outputs` is an
 assumption because `lang::modifiers` rejects a defined input first:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp variable_type {
     in output?           -- the variable is an output, public or private
     in unbounded?        -- its type is unbounded
@@ -198,6 +199,7 @@ like a constant, and whose code `F0713` is not reused.
 ```fren
 pub mod lang
 
+set_option fren.evidence "enumerated" in
 pub comp shadowing {
     in hides?            -- the declared name hides a name in scope
     in bang?             -- the declaration is written with `!`

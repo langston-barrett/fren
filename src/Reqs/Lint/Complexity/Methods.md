@@ -252,6 +252,7 @@ pub fn orders?(op: Comparison, x: Position, y: Position) := match op {
 
 pub enum MinMaxFix { Unchanged, Receiver, Argument }
 
+set_option fren.evidence "enumerated" in
 pub comp unnecessary_min_or_max {
     use self::MinMaxFix::{Argument, Receiver, Unchanged}
     in max?              -- `max`, rather than `min`
@@ -275,6 +276,7 @@ The refinements check each fix:
 pub ordered enum Tier { Low, Mid, High }
 
 set_option fren.lint.unnecessary_min_or_max "allow" in
+set_option fren.evidence "enumerated" in
 pub comp min_or_max_written {
     in x: Tier
     pub det out max_first: Tier := x.max(Tier::Low)
@@ -284,6 +286,7 @@ pub comp min_or_max_written {
 }
 
 set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "enumerated" in
 pub comp min_or_max_fixed {
     in x: Tier
     pub det out max_first: Tier := x

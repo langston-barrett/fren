@@ -111,4 +111,9 @@ functions](Items.md#defined-functions)), so the tree is not a value here:
 each fact is stated of one layer, and the induction is stated in prose.
 FrenCore's walks over expressions are bound to the layers by
 [implementations](../Impl.md) proved in Lean for every tree, as
-`lang::mentions` is.
+`lang::mentions` is. `lang::node` is proved of FrenCore's evaluation of
+one layer, which its evaluator folds over a tree, and the first induction
+above is proved in Lean of that evaluator, for an expression each of
+whose layers is specified there: one with no constants, defined
+functions, indexing or field reads. No front end evaluates through it
+yet, so that Fren follows the model is trusted until they do.

@@ -653,6 +653,28 @@ comp c { in s: Shape in ok? pub out y? ensure r: y? iff (s is Shape::Circle(_) a
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
+  { code := "F0154", explanation := r#"A size bound of enumeration that is too large.
+
+Erroneous code example:
+
+```fren
+set_option fren.enumeration.size 100 in
+set_option fren.evidence "enumerated" in
+comp c { in x: Int pub det out y: Int ensure r: y = x }
+```
+
+`fren.enumeration.size` bounds the size of the values that the checks set
+to `"enumerated"` enumerate (see `Reqs/Check`, "Checking by
+enumeration"). It is at most 64; the default, 3, is used instead. The
+number of behaviours grows quickly with the bound, so a small one is
+usually enough:
+
+```fren
+set_option fren.enumeration.size 5 in
+set_option fren.evidence "enumerated" in
+comp c { in x: Int pub det out y: Int ensure r: y = x }
+```
+"# },
   { code := "F0201", explanation := r#"A name that is not in scope.
 
 Erroneous code example:
@@ -905,8 +927,10 @@ comp c { in x? pub det out y? ensure r: y? iff x? }
 ```
 
 The evidence of a check is `"tested"`, to have it tested instead of asked of
-the solver, or `"solver"`, the default (see `Reqs/Check`, "Checking by
-testing").
+the solver, `"enumerated"`, to have it decided by enumerating behaviours,
+smallest first, `"enumerated+tested"`, to have it tested too where
+enumeration is not complete, or `"solver"`, the default (see `Reqs/Check`,
+"Checking by testing" and "Checking by enumeration").
 
 ```fren
 set_option fren.evidence "tested" in
@@ -3734,6 +3758,85 @@ comp c {
   pub out pos?
   ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
 }
+```
+"# },
+  { code := "F0644", explanation := r#"A component with too many behaviours to enumerate.
+
+Erroneous code example:
+
+```fren
+set_option fren.evidence "enumerated" in
+comp c {
+  in a: Int is 0..=99
+  in b: Int is 0..=99
+  in d: Int is 0..=99
+  pub det out sum: Int := a + b + d
+  expect e: sum >= 0
+}
+```
+
+Enumeration searches every assignment of the component's variables up to
+the size bound, smallest first (see `Reqs/Check`, "Checking by
+enumeration"). The number of assignments is the product of each
+variable's number of values, and of a second copy's where determinism is
+enumerated; here a million. Above 65,536 none of the component's checks set
+to enumeration is run. Narrow the types, lower `fren.enumeration.size`, or
+have the solver check it:
+
+```fren
+comp c {
+  in a: Int is 0..=99
+  in b: Int is 0..=99
+  in d: Int is 0..=99
+  pub det out sum: Int := a + b + d
+  expect e: sum >= 0
+}
+```
+"# },
+  { code := "F0645", explanation := r#"A component that cannot be enumerated.
+
+Erroneous code example:
+
+```fren
+set_option fren.evidence "enumerated" in
+comp c { in name: String pub out empty? ensure r: empty? iff name = "" }
+```
+
+Enumeration needs each variable's type to be enumerable: `Bool`, `Int`,
+`Nat`, enumerations, records, newtypes, instances of generic types, pattern
+types and abstract types, with what is within them enumerable too (see
+`Reqs/Check`, "Checking by enumeration"). Strings, sets, relations and
+sequences are not yet, nor can enumeration apply an uninterpreted function
+with a contract, whose postconditions constrain its interpretations, or
+evaluate an unbounded quantifier. None of the component's checks set to
+enumeration is run. Have the solver or testing check it:
+
+```fren
+set_option fren.evidence "tested" in
+comp c { in name: String pub out empty? ensure r: empty? iff name = "" }
+```
+"# },
+  { code := "F0646", explanation := r#"Checks that hold for every behaviour up to the size bound.
+
+Example:
+
+```fren
+set_option fren.evidence "enumerated" in
+comp c { in x: Int pub det out y: Int := x + 1 expect e: y > x }
+```
+
+A check set to `"enumerated"` searches every behaviour up to the size
+bound, `fren.enumeration.size` (see `Reqs/Check`, "Checking by
+enumeration"). Where every variable has finitely many values, each within
+the bound, that is every behaviour, and the check is decided. Here `x` is
+an `Int`, so the expectation is only known to hold for `x` between -3
+and 3: weaker than a proof, so it is reported, as information. With
+`"enumerated+tested"`, random tests also look beyond the bound. A type of
+finitely many values decides it:
+
+```fren
+set_option fren.evidence "enumerated" in
+comp c { in x: Int is -3..=3 pub det out y: Int := x + 1 expect e: y > x }
 ```
 "# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).

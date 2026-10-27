@@ -87,15 +87,20 @@ def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F �
       triggers := c.triggers.filter (!t.props.contains ·.1)
       insts := c.insts.map fun i => if t.insts.contains i.name then { i with assumes := #[] } else i
       vars := c.vars.map fun v => if t.dets.contains v.name then { v with isDet := false } else v
-      indexes := c.indexes.filter fun s => !t.props.contains s.prop && !t.insts.contains s.prop
+      -- A value given where a pattern type is declared is the solver's to
+      -- check, whatever the evidence (`check::by_evidence`).
+      indexes := c.indexes.filter fun s => s.patTy?.isSome || (!t.props.contains s.prop && !t.insts.contains s.prop)
       tables := c.tables.filter fun s => !t.props.contains s.site.prop && !t.insts.contains s.site.prop },
     kinds.filter fun k => !(k == .realizable && t.realizable) && !(k == .redundancy && t.redundancy))
 
-/-- `set_option fren.evidence` with a value other than `"tested"` or
-`"solver"`. -/
+/-- `set_option fren.evidence` with a value that is not one of
+`evidenceValues`. -/
 def invalidEvidenceMsg (v : String) : Msg :=
-  { code? := some "F0214", headline := s!"invalid evidence `{v}`", label? := some "not `\"tested\"` or `\"solver\"`"
-    notes := #["note: `\"tested\"` has the checks tested instead of asked of the solver, and `\"solver\"` is the default"] }
+  { code? := some "F0214", headline := s!"invalid evidence `{v}`"
+    label? := some "not `\"solver\"`, `\"tested\"`, `\"enumerated\"` or `\"enumerated+tested\"`"
+    notes := #["note: `\"tested\"` has the checks tested instead of asked of the solver, `\"enumerated\"` has them \
+      decided by enumerating behaviours, smallest first, `\"enumerated+tested\"` tests them too where enumeration is not \
+      complete, and `\"solver\"` is the default"] }
 
 /-- `set_option fren.evidence` before something that has no checks it
 could set. -/
@@ -110,11 +115,46 @@ def memberOptionMsg (option : String) : Msg :=
     label? := some "not `fren.evidence`"
     notes := #["note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component"] }
 
+/-- The evidence of a check (`check::Evidence`): whether it is tested, and
+whether it is enumerated; neither is the solver's. -/
+structure Evidence where
+  tested : Bool := false
+  enumerated : Bool := false
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- The value of `set_option fren.evidence`, or `none` if it is invalid
+(`Reqs/Check#checking-by-enumeration`). -/
+def evidenceOf? : String → Option Evidence
+  | "solver" => some {}
+  | "tested" => some { tested := true }
+  | "enumerated" => some { enumerated := true }
+  | "enumerated+tested" => some { tested := true, enumerated := true }
+  | _ => none
+
 /-- The value of `set_option fren.evidence`: whether it is testing, or
 `none` if the value is invalid. -/
-def evidenceTested? : String → Option Bool
-  | "tested" => some true
-  | "solver" => some false
-  | _ => none
+def evidenceTested? (v : String) : Option Bool := (evidenceOf? v).map (·.tested)
+
+/-- The value of `set_option fren.evidence`: whether it is enumeration, or
+`none` if the value is invalid. -/
+def evidenceEnumerated? (v : String) : Option Bool := (evidenceOf? v).map (·.enumerated)
+
+/-- The checks of both. -/
+def Tested.inter (a b : Tested) : Tested :=
+  { realizable := a.realizable && b.realizable, redundancy := a.redundancy && b.redundancy
+    props := a.props.filter b.props.contains, insts := a.insts.filter b.insts.contains
+    dets := a.dets.filter b.dets.contains }
+
+/-- The checks of `a` but not of `b`. -/
+def Tested.minus (a b : Tested) : Tested :=
+  { realizable := a.realizable && !b.realizable, redundancy := a.redundancy && !b.redundancy
+    props := a.props.filter (!b.props.contains ·), insts := a.insts.filter (!b.insts.contains ·)
+    dets := a.dets.filter (!b.dets.contains ·) }
+
+/-- The checks of either. -/
+def Tested.union (a b : Tested) : Tested :=
+  let merge (xs ys : Array Name) := ys.foldl (fun acc y => if acc.contains y then acc else acc.push y) xs
+  { realizable := a.realizable || b.realizable, redundancy := a.redundancy || b.redundancy
+    props := merge a.props b.props, insts := merge a.insts b.insts, dets := merge a.dets b.dets }
 
 end Fren.Core

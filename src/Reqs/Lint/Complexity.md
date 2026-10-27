@@ -51,6 +51,7 @@ literal:
 ```fren
 pub mod lint
 
+set_option fren.evidence "enumerated" in
 pub comp literal_comparison {
     in equal?            -- the operator is `=` or `iff`, rather than `!=`
     in literal?          -- the literal is `true`
@@ -68,6 +69,7 @@ pub comp literal_comparison {
 not:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp complement {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
     in op: Comparison
@@ -202,6 +204,7 @@ operand, which both front ends evaluate under the guard of the operator.
 `lint::needless_bool_assign_meaning` checks both fixes:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp needless_bool_assign {
     in else_negates?     -- the `else` branch is `not X`, for an `X` written the same as the `then` branch
     in then_negates?     -- the `then` branch is `not X`, for an `X` written the same as the `else` branch
@@ -213,6 +216,7 @@ pub comp needless_bool_assign {
 }
 
 set_option fren.lint.needless_bool_assign "allow" in
+set_option fren.evidence "enumerated" in
 comp needless_bool_assign_meaning {
     in c?
     in x?

@@ -1,0 +1,58 @@
+-- Uninterpreted functions under enumeration
+-- (`Reqs/Check#checking-by-enumeration`): their interpretations, tables
+-- from their arguments up to the size bound to their results, are
+-- enumerated, as an abstract type's values are. Over finite types every
+-- interpretation is, so the checks are decided, as the solver decides
+-- them; a function with a contract is not enumerated.
+type Id
+
+enum Mode { Off, Heat, Cool }
+
+fn allowed?(Mode)
+fn owner(Id): Id
+
+fn positive(i: Id): Int
+    ensure post: positive(i) > 0
+
+set_option fren.evidence "enumerated" in
+comp finite {
+    in m: Mode
+    pub det out on?
+    ensure r: on? iff allowed?(m)
+    expect same: when m = Mode::Heat, on? = allowed?(Mode::Heat)
+    expect always: on?  --~ error: expectation `finite::always` does not hold
+}
+
+set_option fren.evidence "enumerated" in
+comp owners {  --~ info: 3 checks of `owners` hold for every behaviour up to size 3
+    in x: Id
+    pub det out mine?
+    ensure r: mine? iff owner(x) = x
+    expect again: when owner(x) = x, mine?
+    expect never: not mine?  --~ error: expectation `owners::never` does not hold
+}
+
+set_option fren.evidence "enumerated" in
+comp contracted {  --~ error: `contracted` cannot be enumerated: it applies the uninterpreted function `positive`, which has a contract
+    in x: Id
+    pub det out big?
+    ensure r: big? iff positive(x) > 1
+}
+
+-- A defined output's value in a counterexample, through a table's
+-- unspecified value and an interpretation, the same in both front ends.
+fn level(Bool): Int is 0..=2
+
+set_option fren.evidence "enumerated" in
+comp tabled {  --~ info: 2 checks of `tabled` hold for every behaviour up to size 3
+    in a?
+    pub det out y: Int := table { | a? => 5 }  --~ error: a table in `tabled::y` may have no row that holds
+    expect e: y != 1  --~ error: counterexample: a? = false, y = 1
+}
+
+set_option fren.evidence "enumerated" in
+comp applied {
+    in a?
+    pub det out y: Int := level(a?)
+    expect e: y != 2  --~ error: counterexample: a? = false, y = 2
+}

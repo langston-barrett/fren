@@ -1,0 +1,12 @@
+-- A counterexample found by enumeration, the smallest, shown as the
+-- solver's are (`Reqs/Check#checking-by-enumeration`).
+enum Mode { Off, Heat, Cool }
+
+set_option fren.evidence "enumerated" in
+comp thermostat {
+    in mode: Mode
+    in temp: Int is -2..=2
+    pub det out on?
+    ensure r: on? iff (mode = Mode::Heat and temp < 0)
+    expect cold: when mode = Mode::Heat, on?
+}

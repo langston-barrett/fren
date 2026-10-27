@@ -45,7 +45,7 @@ info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 /--
 error: invalid evidence `maybe`
 
-note: `"tested"` has the checks tested instead of asked of the solver, and `"solver"` is the default
+note: `"tested"` has the checks tested instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+tested"` tests them too where enumeration is not complete, and `"solver"` is the default
 -/
 #guard_msgs in
 set_option fren.evidence "maybe" in

@@ -5494,29 +5494,37 @@ def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) 
 
 /-- Whether the evidence `value`, written at `ref`, is testing
 (`Reqs/Check#checking-by-testing`). -/
-def evidenceTested (ref : Syntax) (value : String) : CommandElabM Bool := do
-  let some b := Core.evidenceTested? value | throwErrorAt ref (Core.invalidEvidenceMsg value).text
+def evidenceTested (ref : Syntax) (value : String) : CommandElabM Core.Evidence := do
+  let some b := Core.evidenceOf? value | throwErrorAt ref (Core.invalidEvidenceMsg value).text
   return b
 
 /-- Whether the item-level or file-level `fren.evidence` in effect sets
 checks to testing. An invalid value, reported once where it is set
 (`elabEvidenceOption`), sets nothing. -/
-def evidenceInEffect : CommandElabM Bool :=
-  return (Core.evidenceTested? (fren.evidence.get (← getOptions))).getD false
+def evidenceInEffect : CommandElabM Core.Evidence :=
+  return (Core.evidenceOf? (fren.evidence.get (← getOptions))).getD {}
+
+/-- The size bound of enumeration in effect (`fren.enumeration.size`). -/
+def enumSizeInEffect : CommandElabM Nat := do
+  let n := fren.enumeration.size.get (← getOptions)
+  return if n > Core.Enumeration.maxSize then Core.Enumeration.defaultSize else n
 
 /-- `set_option`, as Lean elaborates it, but for `fren.evidence`, an invalid
 value is reported once, at the value, rather than at each item it would
 set, and does not stop them, as in the `fren` command. -/
 @[command_elab Lean.Parser.Command.set_option] def elabEvidenceOption : CommandElab := recordingErrors fun stx => do
-  unless stx[1].getId.eraseMacroScopes == `fren.evidence do throwUnsupportedSyntax
+  let opt := stx[1].getId.eraseMacroScopes
+  unless opt == `fren.evidence || opt == `fren.enumeration.size do throwUnsupportedSyntax
   if let some v := stx[3].isStrLit? then
     if (Core.evidenceTested? v).isNone then logErrorAt stx[3] (Core.invalidEvidenceMsg v).text
+  if let some n := stx[3].isNatLit? then
+    if n > Core.Enumeration.maxSize then logErrorAt stx[3] (Core.Enumeration.sizeTooLargeMsg n).text
   elabSetOption stx
 
 open Lang in
 /-- A member without its `set_option fren.evidence ... in`, and the
 setting, if it has one: the innermost, if there are several. -/
-partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Bool × Syntax)) := do
+partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Core.Evidence × Syntax)) := do
   unless m.isOfKind ``Lang.evidenceMember do return (m, none)
   -- Its option is `fren.evidence` (`checkParsed`).
   let b ← evidenceTested m[2] (m[2].isStrLit?.getD "")
@@ -5526,7 +5534,7 @@ partial def unwrapEvidence (m : Syntax) : CommandElabM (Syntax × Option (Bool �
 open Lang in
 /-- The members of a comp without their evidence settings, and the checks
 that those and the comp's setting `all` set to testing. -/
-def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested) := do
+def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested × Core.Tested) := do
   let mut members := #[]
   let mut expects := #[]
   let mut insts := #[]
@@ -5554,7 +5562,10 @@ def testedOf (all : Bool) (raw : Array Syntax) : CommandElabM (Array Syntax × C
         else misplaced "an output that is not `det`"
         if !m[5].isNone then constraints := constraints.push y
       else misplaced (if m.isOfKind ``Lang.inMember then "an input" else "a `use`")
-  return (members, Core.Tested.ofSettings all constraints expects insts dets)
+  let by_ (f : Core.Evidence → Bool) :=
+    let pick (xs : Array (Name × Option Core.Evidence)) := xs.map fun (n, e?) => (n, e?.map f)
+    Core.Tested.ofSettings (f all) constraints (pick expects) (pick insts) (pick dets)
+  return (members, by_ (·.tested), by_ (·.enumerated))
 
 open Lang in
 /-- The conjuncts of `e`, a constraint: the operands of its `and`s, not
@@ -6027,7 +6038,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
 /-- A comp's members, elaborated, with the comp recorded if all were: whether
 they were, and the generated declarations. -/
 def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx : Syntax)
-    (members : Array Syntax) (tested : Core.Tested) : TermElabM (Bool × Array Name) := do
+    (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3) :
+    TermElabM (Bool × Array Name) := do
   let (vars, names, ok) ← elabCompVars scope members
   unless ok do return (false, #[])
   let (pending, vars, names, ok) ← elabCompInsts scope members vars names
@@ -6048,7 +6060,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
     let (relational, counts) ← checkCounts
     record (.compInfo { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                         decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
-                        relational, counts, indexes, tested, guarded := (← getLocal).guardedUsed })
+                        relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed })
   return (ok, generated)
 
 @[command_elab Lang.compCmd] def elabComp : CommandElab := recordingErrors fun stx => do
@@ -6066,7 +6078,8 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   let path := modName ++ n
   let declBase ← generatedName path
   -- The evidence settings, apart from the members they set.
-  let (members, tested) ← testedOf (← evidenceInEffect) stx[4].getArgs
+  let (members, tested, enumerated) ← testedOf (← evidenceInEffect) stx[4].getArgs
+  let enumSize ← enumSizeInEffect
   -- Its `use`s, and the scope that its paths resolve in.
   for m in members do
     if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
@@ -6084,7 +6097,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   if let some k := (Core.repeatsAt declared)[0]? then
     throwErrorAt named[k]! (Core.dupMemberMsg declared[k]!).text
   lintMemberOrder stx stx[4].getArgs members
-  let (ok, generated) ← liftTermElabM <| elabCompMembers scope path modName declBase isPub nameStx members tested
+  let (ok, generated) ← liftTermElabM <| elabCompMembers scope path modName declBase isPub nameStx members tested enumerated enumSize
   lintDeclared .component n nameStx
   lintLines .component n nameStx stx
   if ok = true then
@@ -6289,7 +6302,9 @@ def globalText (stx : Syntax) : String :=
   let info ← liftTermElabM <| elabGlobalInfo modName n nameStx binders (withWhere stx[4] stx[5]) decl
   lintDeclared .global n nameStx
   let all ← evidenceInEffect
-  let info := { info with tested := Core.Tested.ofSettings all #[] #[(n, none)] #[] #[] }
+  let info := { info with tested := Core.Tested.ofSettings all.tested #[] #[(n, none)] #[] #[]
+                          enumerated := Core.Tested.ofSettings all.enumerated #[] #[(n, none)] #[] #[]
+                          enumSize := ← enumSizeInEffect }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   record (.globalInfo path info)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
@@ -6361,11 +6376,15 @@ and the solver is asked nothing. -/
   -- through its binding or by name (`unused_assumption`).
   let reads := (a.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (a.path, ·.name)
   modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
-  let tested := Core.Tested.ofSettings (← evidenceInEffect)
+  let ev ← evidenceInEffect
+  let enumSize ← enumSizeInEffect
+  let settings (all : Bool) := Core.Tested.ofSettings all
     -- The bindings too, for the definedness of their indexes.
     (a.assumes.map (·.name) ++ bound) ((a.ensures.map (·.name) ++ a.defs.map (·.1)).map (·, none))
     -- `a`'s instances too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
+  let tested := settings ev.tested
+  let enumerated := settings ev.enumerated
   let proof? := if stx[7].isNone then none else some stx[7][1]
   let info ← liftTermElabM do
     -- The bindings, over `c`'s own variables, seen from outside, as the
@@ -6480,7 +6499,7 @@ and the solver is asked nothing. -/
       return { path, vars, props := assumes ++ reqs ++ defs, insts := #[instC] ++ instsA, ref := nameStx, decl, uses
                decidable := c.decidable && a.decidable && !l.outsideCore
                undecidableDenied := c.undecidableDenied || a.undecidableDenied || l.undecidableDenied
-               relational, counts, indexes, tested, guarded := l.guardedUsed : CompInfo }
+               relational, counts, indexes, tested, enumerated, enumSize, guarded := l.guardedUsed : CompInfo }
   record (.item { item := { kind := .expectItem, path, isPub := false, owner := modName }, ref := nameStx })
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   match proof? with

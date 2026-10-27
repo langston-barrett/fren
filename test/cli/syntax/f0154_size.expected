@@ -1,0 +1,12 @@
+error[F0154]: enumeration size 100 is too large
+ --> test/cli/syntax/f0154_size.fren:2:34
+  |
+2 | set_option fren.enumeration.size 100 in
+  |                                  ^^^ more than 64
+  |
+  = note: `fren.enumeration.size` is at most 64
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0154`.
+exit=2

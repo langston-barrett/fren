@@ -149,6 +149,7 @@ number of failures that `fren check` reports. `mutate::kill` states
 this:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp kill {
     in before: Verdict    -- the check's verdict on the spec
     in after: Verdict     -- its verdict on the mutant
@@ -225,6 +226,7 @@ pub enum Answer { Equal, Differs, Unknown }
 
 use self::Answer::{Differs, Equal, Unknown}
 
+set_option fren.evidence "enumerated" in
 pub comp combine {
     in a: Answer
     in b: Answer
@@ -247,6 +249,7 @@ pub enum Outcome { Killed, Survived, Equivalent, Unviable }
 
 use self::Outcome::{Equivalent, Killed, Survived, Unviable}
 
+set_option fren.evidence "enumerated" in
 pub comp outcome {
     in viable?          -- the mutant has no static errors
     in killed?          -- some check kills it

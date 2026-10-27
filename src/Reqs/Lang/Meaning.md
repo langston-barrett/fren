@@ -135,9 +135,23 @@ not have its variant, and not where a constant's value or a defined
 function's body is unspecified, or applies a function outside its
 [preconditions](Items.md#contracts) (see
 [Definedness](../Check.md#definedness)). Neither function takes an `Env`,
-so neither differs between behaviours. Their values are stated by the
-chapters on each construct; this chapter needs only that they are
+so neither differs between behaviours. Both are relative to the spec
+being read, an implicit parameter of each: a constant's value and a
+defined function's body are its declarations'. Their values are stated by
+the chapters on each construct; this chapter needs only that they are
 functions.
+
+Their [interpretation](../Impl.md#interpretations) in Lean,
+`Fren.Core.Meaning`'s, has no spec to read, so it covers only a fragment,
+and is unspecified elsewhere: the operators `not`, `iff`, `-`, `+`, `*`,
+and `div` and `mod` by a divisor other than `0`; `<`, `<=`, `>` and `>=`
+over integers; `=` and `!=` over two `Bool`s, two integers or two
+strings; `++` over two strings or two sequences; `at_most_one?`,
+`exactly_one?` and the pattern test; the methods `abs`, `min` and `max` of
+integers and `len` of a string or a sequence; a binder; and a choice, by
+the arm that fires. Constants, defined functions, indexing, field reads,
+`=` over other values, `<` over strings, and the operators of sets and
+relations are unspecified there.
 
 `unspecified` is coarser than the language: it may give each head and
 parts' values a value of its own, while the language gives every `match`
@@ -258,10 +272,11 @@ pub fn connective_value(o: Id, values: Seq<Value>): Value := let c? := part(valu
 
 A *choice* is a `match` or a [table](Expressions.md#tables), as
 `Op("match", s)` and `Op("table", s)`. A `match`'s parts are its
-scrutinee and then each arm's guard and body. A table is a `match` whose
-arms' patterns are all `_` (see [Tables](Expressions.md#tables)), and its
-parts are, after a first part that stands for no scrutinee, each row's
-condition and value. So arm `i`'s guard is at position `guard_at(i)`, and
+scrutinee and then each arm's guard and body. A table of rows is
+`Op("table", s)`: its rows have no patterns, and its parts are, after a
+first part that stands for no scrutinee, each row's condition and value. A
+[table over a scrutinee](Expressions.md#tables-over-a-scrutinee), whose
+arms have patterns, is `Op("match", s)`, as a `match` is. So arm `i`'s guard is at position `guard_at(i)`, and
 its body just after it. An arm without a guard has
 the literal `true` as its guard, and a row `_` the literal `true` as its
 condition. Arm `i` is *open* where its pattern matches the scrutinee's

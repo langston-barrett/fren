@@ -64,6 +64,7 @@ pub enum Status { Inadmissible, Violates, Meets }
 
 use self::Status::{Inadmissible, Meets, Violates}
 
+set_option fren.evidence "enumerated" in
 pub comp status {
     in assumes?          -- every assumption holds
     in insts?            -- every instance's constraint `I_w` holds
@@ -404,6 +405,7 @@ inputs, which its bindings give.
 `eval::reaches` states when a test reaches a check:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reaches {
     in found?            -- the test found what the check is about
     in has_trigger?
@@ -456,6 +458,7 @@ check on the same spec, unless the solver gives no answer.
 `eval::sound` states this:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp sound {
     in by_testing: Verdict   -- the verdict of testing a check
     pub out checked: Verdict  -- the verdict of `fren check` for it
@@ -513,6 +516,7 @@ pub enum Confirmation { Confirmed, Refuted, Undecided }
 
 use self::Confirmation::{Confirmed, Refuted, Undecided}
 
+set_option fren.evidence "enumerated" in
 pub comp confirm {
     in hyp_false?        -- some hypothesis is false in the model
     in goal_true?        -- the goal is true in the model
@@ -533,6 +537,7 @@ the solver's answers give and the confirmation of the models that the
 check used:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp confirmed_verdict {
     in solver: Verdict       -- from the solver's answers
     in result: Confirmation  -- the least confirmed of the check's models

@@ -55,6 +55,7 @@ suggests a literal:
 ```fren
 pub mod lint
 
+set_option fren.evidence "enumerated" in
 pub comp unicode_not_nfc {
     in nfc?              -- the literal's value is in NFC
     in assigned?         -- Unicode 15.0 assigns each of its code points
@@ -140,6 +141,7 @@ when it fires, and [`fmt::trailing_comma_lint`](../../Fmt.md#trailing-commas)
 that `fren fmt` removes what it reports in braces:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp unnecessary_trailing_comma {
     in line_break?       -- a line ends between the trailing comma and the `}` or `]`
     pub det out fires?

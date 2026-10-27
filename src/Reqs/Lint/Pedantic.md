@@ -410,6 +410,7 @@ which rule:
 ```fren
 pub enum BoolRule { Absorption, Contradiction, ExcludedMiddle }
 
+set_option fren.evidence "enumerated" in
 pub comp overly_complex_bool_expr {
     in conj?             -- the operator is `and`, rather than `or`
     in absorbs?          -- an operand is `p and q`, in an `or`, or `p or q`, in an `and`, with `p` or `q` written the same as the other operand
@@ -429,6 +430,7 @@ pair of them:
 
 ```fren
 set_option fren.lint.overly_complex_bool_expr "allow" in
+set_option fren.evidence "enumerated" in
 pub comp absorption_written {
     in a?
     in b?
@@ -443,6 +445,7 @@ pub comp absorption_written {
 }
 
 set_option fren.lint.unused_variables "allow" in
+set_option fren.evidence "enumerated" in
 pub comp absorption_fixed {
     in a?
     in b?
@@ -460,6 +463,7 @@ refine absorption_sound: absorption_fixed refines absorption_written
 refine absorption_complete: absorption_written refines absorption_fixed
 
 set_option fren.lint.overly_complex_bool_expr "allow" in
+set_option fren.evidence "enumerated" in
 pub comp contradiction_written {
     in a?
     pub det out first? := a? and not a?
@@ -468,6 +472,7 @@ pub comp contradiction_written {
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.lint.unused_variables "allow" in
+set_option fren.evidence "enumerated" in
 pub comp contradiction_fixed {
     in a?
     pub det out first? := false
@@ -478,6 +483,7 @@ refine contradiction_sound: contradiction_fixed refines contradiction_written
 refine contradiction_complete: contradiction_written refines contradiction_fixed
 
 set_option fren.lint.overly_complex_bool_expr "allow" in
+set_option fren.evidence "enumerated" in
 pub comp excluded_middle_written {
     in a?
     pub det out first? := a? or not a?
@@ -486,6 +492,7 @@ pub comp excluded_middle_written {
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.lint.unused_variables "allow" in
+set_option fren.evidence "enumerated" in
 pub comp excluded_middle_fixed {
     in a?
     pub det out first? := true
@@ -534,12 +541,14 @@ values are constants:
 ```fren
 set_option fren.lint.constant_output "allow" in
 set_option fren.lint.needless_raw_string_hashes "allow" in
+set_option fren.evidence "enumerated" in
 pub comp raw_hashes_written {
     pub det out pattern: String := r#"a.*"#
     pub det out quote: String := r##"say "hi""##
 }
 
 set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "enumerated" in
 pub comp raw_hashes_fixed {
     pub det out pattern: String := r"a.*"
     pub det out quote: String := r#"say "hi""#

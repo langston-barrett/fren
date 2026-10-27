@@ -1,0 +1,50 @@
+-- Components that enumeration does not check, in both front ends
+-- (`Reqs/Check#checking-by-enumeration`): too many behaviours, a type that
+-- is not enumerable, and an unbounded quantifier. Each is an error at the
+-- component, and its checks set to enumeration are not run; its other
+-- checks are.
+set_option fren.lint.undecidable "allow"
+
+set_option fren.evidence "enumerated" in
+comp wide {  --~ error: `wide` has 1000000 behaviours up to size 3, too many to enumerate
+    in a: Int is 0..=99
+    in b: Int is 0..=99
+    in c: Int is 0..=99
+    pub det out sum: Int := a + b + c
+    expect e: sum >= 0
+}
+
+set_option fren.evidence "enumerated" in
+comp named {  --~ error: `named` cannot be enumerated: `name` has the type `String`, which is not enumerable
+    in name: String
+    pub out empty?
+    ensure r: empty? iff name = ""
+}
+
+set_option fren.evidence "enumerated" in
+comp everywhere {  --~ error: `everywhere` cannot be enumerated: it has an unbounded quantifier
+    in k: Int
+    pub out all?
+    ensure r: all? iff (forall (x: Int), x != k)
+}
+
+-- The unspecified value of a table's type that a definition reads is a
+-- slot too, counted alike in both front ends.
+set_option fren.evidence "enumerated" in
+comp hidden {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
+    in x: Int is 0..=255
+    in y: Int is 0..=255
+    pub det out d: Int := table { | x = 0 => 1 }
+    expect e: x + y >= 0
+}
+
+-- Only its expectation is enumerated; the solver checks the rest.
+comp partly {  --~ error: `partly` cannot be enumerated
+    in name: String
+    pub out empty?
+    ensure r: empty? iff name = ""
+    set_option fren.evidence "enumerated" in
+    expect e: when empty?, name = ""
+}
+
+--@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant

@@ -129,6 +129,7 @@ take at its top level:
 -- as far right as possible; `Membership` is `a in s` outside brackets; `Plain` is any other.
 pub enum DefinitionForm { Plain, Membership, OpenEnded }
 
+set_option fren.evidence "enumerated" in
 pub comp definition_form {
     use self::DefinitionForm::{Membership, OpenEnded, Plain}
     in form: DefinitionForm

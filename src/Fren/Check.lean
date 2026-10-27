@@ -424,10 +424,19 @@ there is no theorem. -/
 def addCoverWitness (d : Declaration) : CoreM Unit :=
   tryCatchRuntimeEx (addDecl d) fun _ => pure ()
 
+/-- What enumerates the checks of a comp set to enumeration
+(`Reqs/Check#checking-by-enumeration`), given the comp, its formulas, the
+locals of its variables, and of the abstract types and functions that it
+uses, with the functions among them, and the kinds of check to run:
+`Fren.Enumerate`'s, which needs the elaborator. -/
+abbrev EnumHook := CompInfo → Core.Comp Expr → Array Expr → Array Expr → Array (Name × Expr × Nat × Bool) →
+  Array CheckKind → MetaM (Except Core.Msg Core.Enumeration.Enumerated)
+
 /-- All selected checks for one comp, in reporting order, with the theorems
-that its cover goals are met (`coverWitness`), for the caller to add. -/
-def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
-    MetaM (Array CheckResult × Array Declaration) := do
+that its cover goals are met (`coverWitness`), for the caller to add, and
+what enumerating the checks set to enumeration found, by `enumerate`. -/
+def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none) :
+    MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
   let c := { c with uses := ← checkUses c }
   -- The contract of an uninterpreted function, whose value is an output.
   let contract := c.fn?.isSome && c.vars.any (·.role == .output)
@@ -528,8 +537,10 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
     let useIds := ufs.foldl (fun acc u => (collectFVars acc u)) {} |>.fvarIds
     let interprets (e : Expr) : Bool := e.hasAnyFVar useIds.contains
     let full := { comp with typesInterpreted := c.vars.any fun v => interprets v.type }
-    -- Only the `fren` command runs the checks set to testing (`check::by_testing`).
-    let (comp, kinds) := full.untested c.tested kinds
+    -- Only the `fren` command runs the checks set to testing (`check::by_testing`),
+    -- and enumeration those set to enumeration (`check::by_evidence`).
+    let enumerated ← if c.enumerated.any then (enumerate?.mapM fun f => f c full fvs ufs fns kinds) else pure none
+    let (comp, kinds) := full.untested (c.tested.union c.enumerated) kinds
     let cache : QueryCache ← IO.mkRef {}
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
@@ -573,6 +584,6 @@ def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) :
       if let some (_, model) := (← models.get).find? (·.1 == goal) then
         if passed then
           if let some d ← coverWitness c fvs g model then witnesses := witnesses.push d
-    return (results, witnesses)
+    return (results, witnesses, enumerated)
 
 end Fren

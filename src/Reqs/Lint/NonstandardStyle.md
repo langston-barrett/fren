@@ -23,6 +23,7 @@ pub enum Case { Snake, Camel, Upper }
 
 use self::Case::{Camel, Snake, Upper}
 
+set_option fren.evidence "enumerated" in
 pub comp naming_case {
     use self::Named::{AbstractType, Constant, Enumeration, Record, TypeAlias, Variant}
     in what: Named
