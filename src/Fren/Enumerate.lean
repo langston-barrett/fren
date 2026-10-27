@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Check
 import Fren.Elab
+import Fren.Prelude
 import FrenCore.Enumeration
 -- keep-sorted end
 
@@ -58,13 +59,14 @@ partial def valueExpr (ty : Expr) (v : EVal) : MetaM Expr := do
     let ty ← whnfR ty
     let some d := ty.getAppFn.constName? | throwError "not a datatype: {ty}"
     let targs := ty.getAppArgs
+    -- A prelude type's constructor is at universe 0 (`EnumInfo.ctorConst`).
     let (c, ts) :=
-      if let some e := s.enumOfDecl? d then (e.decl ++ e.variants[idx]!, (e.payloadsAt targs)[idx]?.getD #[])
-      else if let some r := s.recordOfDecl? d then (r.ctor, (r.fieldsAt targs).map (·.2))
-      else if let some n := s.newtypeOfDecl? d then (n.ctor, #[n.under])
-      else (.anonymous, #[])
+      if let some e := s.enumOfDecl? d then (e.ctorConst idx, (e.payloadsAt targs)[idx]?.getD #[])
+      else if let some r := s.recordOfDecl? d then (mkConst r.ctor, (r.fieldsAt targs).map (·.2))
+      else if let some n := s.newtypeOfDecl? d then (mkConst n.ctor, #[n.under])
+      else (mkConst .anonymous, #[])
     let as ← (args.toArray.zip ts).mapM fun (w, t) => valueExpr t w
-    return mkAppN (mkConst c) (targs ++ as)
+    return mkAppN c (targs ++ as)
 
 /-- `e` with its integers written as literals: `Int.ofNat n` and
 `Int.negSucc n`, as reduction leaves them, become `n` and `-(n + 1)`. -/
@@ -305,8 +307,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       let v ← slotVals[s]?.bind (·[j]?)
       let e ← st.enumOf? (slotTys[s]?.getD (mkConst ``Bool))
       let .const c _ := v.getAppFn | none
-      let idx ← e.variants.idxOf? (Name.mkSimple c.getString!)
-      return { name := s!"{e.path.getString!}::{c.getString!}", arity := (e.payloads[idx]?.map (·.size)).getD 0 }
+      let idx ← e.ctorIdx? c
+      return { name := s!"{e.path.getString!}::{e.variants[idx]!}", arity := (e.payloads[idx]?.map (·.size)).getD 0 }
     let raw ← Core.checkComp (fun _ => backend space ats renderSlot defValue (if testing then some (hash c.path) else none)
       variantOf) ecomp ks
     let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)

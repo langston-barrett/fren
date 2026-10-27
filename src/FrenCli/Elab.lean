@@ -41,6 +41,16 @@ def quote (s : String) : String := s!"|{s}|"
 which no variable can be named, so `rename` and `prime` leave it alone. -/
 def itemSym (path : Name) : String := quote s!"::{showPath path}"
 
+/-- The SMT-LIB symbol of the enumeration or record at `p`: its path between
+`|`s, or, for one of the prelude's types, the Lean type's name, as lean-smt
+gives it (`Reqs/Lang/Prelude#smt`). A user's type whose path is a Lean
+type's name, as `Option` declared with `!` at the root module is, has its
+path after `::`, as an abstract type has, so that the two are apart. -/
+def dataSortSym (p : Name) : String :=
+  match Fren.Core.leanTypeOf? p with
+  | some l => quote l.lean.toString
+  | none => Fren.Core.userSortSym (showPath p)
+
 /-- A type's SMT-LIB sort. A set is a unary relation, a set of 1-tuples, so
 that relations need no conversions (`Reqs/Cli`). An instance of a generic
 type is a sort application, and a type parameter, within its declaration,
@@ -54,8 +64,12 @@ partial def _root_.Fren.Core.Ty.sort : Ty → String
   | .set t => s!"(Set (Tuple {t.sort}))"
   | .rel a b => s!"(Set (Tuple {a.sort} {b.sort}))"
   | .seq t => s!"(Seq {t.sort})"
-  | .enum p [] | .record p [] => quote (showPath p)
-  | .enum p args | .record p args => s!"({quote (showPath p)} {" ".intercalate (args.map (·.sort))})"
+  | .enum p [] | .record p [] => dataSortSym p
+  -- A prelude type's instance is the Lean type's, with its arguments in
+  -- the Lean type's order (`Fren.Core.LeanType.leanArgs`).
+  | .enum p args | .record p args =>
+    let args := ((Fren.Core.leanTypeOf? p).map (·.leanArgs args.toArray)).getD args.toArray
+    s!"({dataSortSym p} {" ".intercalate (args.toList.map (·.sort))})"
   | .abstract p => itemSym p
   | .param _ n => quote n.toString
   -- Erased to its underlying type (`Reqs/Lang/Items#newtypes`).
@@ -131,6 +145,9 @@ structure DataDecl where
   `Ty.param` (`Reqs/Lang/Generics`). `unbounded` is whether it is unbounded
   whatever its arguments are. -/
   params : Array Name := #[]
+  /-- The Lean type that it is, if it is one of the prelude's types, whose
+  symbols are lean-smt's (`Reqs/Lang/Prelude#smt`). -/
+  lean? : Option Fren.Core.LeanType := none
   deriving Inhabited
 
 /-- The type of `d`'s instance with the arguments `args`. -/
@@ -143,6 +160,7 @@ def DataDecl.instCtors (d : DataDecl) (args : List Ty) : Array (Name × Array (N
   else d.ctors.map fun (c, fs) => (c, fs.map fun (f, t) => (f, t.subst args.toArray))
 
 def DataDecl.ctorSym (d : DataDecl) (c : Name) : String :=
+  if let some l := d.lean? then quote (l.ctors[(l.variants.idxOf? c).getD 0]!.toString) else
   -- A generic type's constructors are qualified by their sort, as
   -- `(as C (D Int))`, where cvc5 finds only an unquoted symbol: so theirs
   -- are simple symbols, with `~`, which no Fren name has, for `::`.
@@ -151,6 +169,7 @@ def DataDecl.ctorSym (d : DataDecl) (c : Name) : String :=
   else if d.isRecord then recordCtorSym d.path else FrenCli.ctorSym d.path c
 
 def DataDecl.selSym (d : DataDecl) (c : Name) (k : Nat) : String :=
+  if let some l := d.lean? then quote ((l.selectors[(l.variants.idxOf? c).getD 0]!)[k]!) else
   if d.isRecord then fieldSym d.path d.ctors[0]!.2[k]!.1 else payloadSym d.path c k
 
 /-- The constructor `c` of `d`'s instance with the arguments `args`: of a
@@ -184,19 +203,28 @@ def DataDecl.ordinal (d : DataDecl) (smt : String) (args : List Ty := []) : Stri
 `(declare-datatypes ((D n)) ((par (A ...) (...))))`, as lean-smt declares
 the Lean inductive type (`Reqs/Lang/Generics#meaning`). -/
 def DataDecl.decl (d : DataDecl) : String :=
-  let ctors := " ".intercalate <| d.ctors.toList.map fun (c, fs) =>
-    let sels := String.join <| (fs.toList.zipIdx).map fun ((_, t), k) => s!" ({d.selSym c k} {t.sort})"
+  -- A prelude type's is lean-smt's: its constructors in the Lean type's
+  -- order, and its parameters named as the Lean type's.
+  let (order, params) := match d.lean? with
+    | some l => (l.ctorOrder, l.argOrder.zip (l.leanParams.map Name.mkSimple))
+    | none => (Array.range d.ctors.size, d.params.zipIdx.map fun (p, k) => (k, p))
+  let paramSort (t : Ty) : String := match t with
+    | .param k _ => quote (((params.find? (·.1 == k)).map (·.2)).getD (d.params[k]?.getD .anonymous)).toString
+    | t => t.sort
+  let ctors := " ".intercalate <| order.toList.map fun i =>
+    let (c, fs) := d.ctors[i]!
+    let sels := String.join <| (fs.toList.zipIdx).map fun ((_, t), k) => s!" ({d.selSym c k} {paramSort t})"
     s!"({d.ctorSym c}{sels})"
-  if d.params.isEmpty then s!"(declare-datatype {quote (showPath d.path)} ({ctors}))\n" else
-  let ps := " ".intercalate (d.params.toList.map (quote ·.toString))
-  s!"(declare-datatypes (({quote (showPath d.path)} {d.params.size})) ((par ({ps}) ({ctors}))))\n"
+  if d.params.isEmpty then s!"(declare-datatype {dataSortSym d.path} ({ctors}))\n" else
+  let ps := " ".intercalate (params.toList.map (quote ·.2.toString))
+  s!"(declare-datatypes (({dataSortSym d.path} {d.params.size})) ((par ({ps}) ({ctors}))))\n"
 
 /-- `d` with its declaration and the names of the symbols that it declares:
 the datatype, its constructors and its selectors. -/
 def DataDecl.withPrelude (d : DataDecl) : DataDecl :=
   let unquote (sym : String) : String := if sym.startsWith "|" then ((sym.drop 1).dropEnd 1).toString else sym
   let ctors := d.ctors.flatMap fun (c, fs) => #[d.ctorSym c] ++ (List.range fs.size).toArray.map (d.selSym c)
-  { d with text := d.decl, syms := (#[quote (showPath d.path)] ++ ctors).map unquote }
+  { d with text := d.decl, syms := (#[dataSortSym d.path] ++ ctors).map unquote }
 
 /-- The contract of a function: the SMT-LIB symbols of its preconditions
 and postconditions, each with its name, which the prelude defines over the
@@ -447,6 +475,18 @@ def substQuoted (f : String → String) (smt : String) : String :=
 
 /-- Applies `f` to the name of each quoted symbol of `smt`. -/
 def mapQuoted (f : String → String) (smt : String) : String := substQuoted (quote ∘ f) smt
+
+/-- The name `s` of a quoted symbol as the solver is given it
+(`Reqs/Cli#solver-queries`): renamed if it is a theory's symbol
+(`Fren.Core.smtName`), and quoted, but for lean-smt's symbols of the
+prelude's types, which are written as lean-smt writes them, without `|`s
+(`Reqs/Lang/Prelude#smt`). -/
+def solverSym (s : String) : String :=
+  let n := Fren.Core.smtName s
+  if Fren.Core.leanSymbols.contains n then n else quote n
+
+/-- `smt` with each quoted symbol as the solver is given it (`solverSym`). -/
+def solverText (smt : String) : String := substQuoted solverSym smt
 
 /-- The names of the quoted symbols of `smt`, as `mapQuoted` finds them
 (`quotedPieces`), without building the text between them. It reads the
@@ -5335,11 +5375,12 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
       modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }
 
 def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   liftMsg name.span (Fren.Core.checkItemName "component" n)
   let module := (← get).module
-  liftMsg name.span ((← get).table.checkFresh module n)
+  liftMsg written ((← get).table.checkFreshItem module n bang)
   lintName .component n name.span
   startDeclared
   declareMemberUses (module ++ n) members
@@ -5395,10 +5436,11 @@ expectations, with `abstract`'s variables read as their bindings or as
 instance. -/
 def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Array (Ident × Option Expr)) :
     M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
   liftMsg name.span (Fren.Core.checkItemName "refinement" n)
   let module := (← get).module
-  liftMsg name.span ((← get).table.checkFresh module n)
+  liftMsg written ((← get).table.checkFreshItem module n bang)
   let comp (segs : Array Ident) : M CComp := do
     let sp := segs[0]!.span.to segs.back!.span
     let path ← match ← resolve segs with
@@ -5566,13 +5608,14 @@ def globalBinderComp? (segs : Array Ident) : M (Option Name) := do
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
   liftMsg name.span (Fren.Core.checkNoBang n)
   let all ← evidenceOfEffect
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
   let module := (← get).module
-  liftMsg name.span ((← get).table.checkFresh module n)
+  liftMsg written ((← get).table.checkFreshItem module n bang)
   lintName .global n name.span
   startDeclared
   -- `duplicate_constraint` (`lint::duplicate_constraint`): its text after
@@ -5777,9 +5820,11 @@ partial def elabItem (item : Item) : M Unit := do
     let (path, new) ← liftResolve segs ((← get).table.declareModule (segNames segs) isPub)
     for i in new do
       if let some seg := segs[i.path.components.length - 1]? then
-        lintName .module (Name.mkSimple seg.name) seg.span
+        -- Its name, without the `!` of one that shadows the prelude's, as
+        -- the module's path has it.
+        lintName .module (Name.mkSimple i.path.getString!) seg.span
         if let some msg := Fren.Core.moduleInceptionMsg? i.path then lint .moduleInception seg.span msg
-        if let some msg := Fren.Core.moduleNameMsg? .module i.path.getPrefix (Name.mkSimple seg.name) then
+        if let some msg := Fren.Core.moduleNameMsg? .module i.path.getPrefix (Name.mkSimple i.path.getString!) then
           lint .moduleNameRepetitions seg.span msg
     modify fun s => { s with table := new.foldl (·.addItem ·) s.table, module := path, scope := path }
   | .use span segs glob => do
@@ -5791,10 +5836,11 @@ partial def elabItem (item : Item) : M Unit := do
       declareUse (pre ++ p) false
         { item := span, removal, path := p[0]!.span.to p.back!.span, pre? := some (pre[0]!.span.to pre.back!.span) }
   | .enum isPub name variants isOrdered params => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "enum" n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .enumeration n name.span
     let path := module ++ n
     let params ← elabTypeParams params
@@ -5866,7 +5912,8 @@ partial def elabItem (item : Item) : M Unit := do
       modify fun s => { s with items := s.items.push ({ what := .enumeration, path, level := s.levels.get .deadCode }, name.span) }
     modify fun s => { s with
       table := (s.table.addItem { kind := .enumItem, path, isPub, owner := s.module }).addEnum { path, variants := vs }
-      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded, ordered := isOrdered, params : DataDecl }.withPrelude
+      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded, ordered := isOrdered, params
+                                      lean? := Fren.Core.leanTypeOf? path : DataDecl }.withPrelude
       shapes := s.shapes.insert path shape
       typeParams := #[] }
     -- Each read of a recursive enumeration's payload brings the payload's
@@ -5879,10 +5926,11 @@ partial def elabItem (item : Item) : M Unit := do
           if let some c' := Fren.Core.readCons st.shapeOf path v k then
             modify fun s => { s with funFacts := s.funFacts.insert (d.selSym c k) (consSmt st.dataOf? c' factHole) }
   | .record isPub name fields isOrdered params => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .record n name.span
     let path := module ++ n
     let params ← elabTypeParams params
@@ -5935,10 +5983,11 @@ partial def elabItem (item : Item) : M Unit := do
       shapes := s.shapes.insert path { isRecord := true, parts := #[fieldTys] }
       typeParams := #[] }
   | .newtype isPub name fields isOrdered => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "record" n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .record n name.span
     let path := module ++ n
     -- Exactly one field, whose type is accepted as a record's field's
@@ -5964,10 +6013,11 @@ partial def elabItem (item : Item) : M Unit := do
       orderedNewtypes := if isOrdered then s.orderedNewtypes.push path else s.orderedNewtypes
       shapes := s.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
   | .typeAlias isPub name ty => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "type alias" n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .typeAlias n name.span
     let t ← elabPTy ty
     unless isPub do
@@ -5976,10 +6026,11 @@ partial def elabItem (item : Item) : M Unit := do
       table := s.table.addItem { kind := .typeItem, path := module ++ n, isPub, owner := s.module }
       aliases := s.aliases.insert (module ++ n) t }
   | .abstractType isPub name => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkItemName "abstract type" n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .abstractType n name.span
     let path := module ++ n
     unless isPub do
@@ -5988,11 +6039,12 @@ partial def elabItem (item : Item) : M Unit := do
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       sorts := s.sorts.push path }
   | .function isPub name typeParams params result body clauses last => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkNoBang n)
     liftMsg name.span (Fren.Core.checkFnName n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .function n name.span
     startDeclared
     let path := module ++ n
@@ -6122,7 +6174,9 @@ partial def elabItem (item : Item) : M Unit := do
         { s with items := s.items.push (r, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .comp isPub name members close spans openStop => do
-    modify fun s => { s with item := s.module ++ Name.mkSimple name.name }
+    -- Its declaration and line lints are about its name, without its `!`.
+    let shown := (declaredIdent name).1
+    modify fun s => { s with item := s.module ++ Name.mkSimple shown.name }
     -- Its `use`s end with it, even when it has an error.
     modify fun s => { s with inCompBody := false }
     try elabComp isPub name members spans openStop
@@ -6130,16 +6184,17 @@ partial def elabItem (item : Item) : M Unit := do
       modify (fun s => { s.keepLints e.state with scope := s.module })
       -- Its declaration and line lints, after an error in its members.
       if e.state.inCompBody then
-        lintDeclared .component (Name.mkSimple name.name) name.span
-        lintLines .component (Name.mkSimple name.name) name.span close
+        lintDeclared .component (Name.mkSimple shown.name) shown.span
+        lintLines .component (Name.mkSimple shown.name) shown.span close
       throw { e with state := ← get }
-    lintDeclared .component (Name.mkSimple name.name) name.span
-    lintLines .component (Name.mkSimple name.name) name.span close
+    lintDeclared .component (Name.mkSimple shown.name) shown.span
+    lintLines .component (Name.mkSimple shown.name) shown.span close
   | .const isPub name ty value => do
+    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
     let n := Name.mkSimple name.name
     liftMsg name.span (Fren.Core.checkConstName n)
     let module := (← get).module
-    liftMsg name.span ((← get).table.checkFresh module n)
+    liftMsg written ((← get).table.checkFreshItem module n bang)
     lintName .constant n name.span
     let pt ← elabPTy ty
     let t := pt.ty
@@ -6171,10 +6226,10 @@ partial def elabItem (item : Item) : M Unit := do
       guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems
       constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
   | .global name binders body => do
-    modify fun s => { s with item := s.module ++ Name.mkSimple name.name }
+    modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabGlobal name binders body
   | .refine name c a bs => do
-    modify fun s => { s with item := s.module ++ Name.mkSimple name.name }
+    modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabRefine name c a bs
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
@@ -6360,9 +6415,10 @@ at `starts`, collecting an error per failed item, where `trailingCommas`
 are the commas that `unnecessary_trailing_comma` reports, and `found` the
 file's `literalLints`, in order of where each starts. `fren fix` fixes the lints `fixing` in it. -/
 def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Array Nat)
-    (trailingCommas : Array (Span × String)) (found : Array (Lint × Span × Msg)) (fixing : Array Lint := #[]) :
+    (trailingCommas : Array (Span × String)) (found : Array (Lint × Span × Msg)) (fixing : Array Lint := #[])
+    (module : Name := .anonymous) :
     StateM State Unit := do
-  modify fun s => { s with file, src, fixing, module := .anonymous, scope := .anonymous, levels := s.cliLevels, useRecords := #[], evidence? := none,
+  modify fun s => { s with file, src, fixing, module, scope := module, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            enumSize := Fren.Core.Enumeration.defaultSize,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
@@ -6387,6 +6443,28 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
       else set { s.keepLints s' with diags := s.diags ++ s'.itemErrors }
     | .error f => set { s.keepLints f.state with diags := s.diags ++ f.diags }
   finishLints
+
+/-- The file id of the prelude's items: no file that the `fren` command is
+given has it, so that nothing of the prelude's is taken for a spec's. -/
+def preludeFile : Nat := 1000000
+
+/-- `st` with the prelude elaborated into it, before every spec
+(`Reqs/Lang/Prelude`): its items, in the prelude's module, and none of its
+messages. It has none: an error in it, as one that it does not parse, is
+an internal error of every spec. -/
+def State.withPrelude (st : State) : State :=
+  let chars := Fren.Core.preludeSource.toList.toArray
+  let broken (what : String) : State :=
+    { st with diags := st.diags.push { file := 0, span := default, msg := Msg.internal s!"the prelude {what}" } }
+  match lexWithComments chars with
+  | .error e => broken s!"does not lex: {e.msg.headline}"
+  | .ok (toks, _) => match parseItems toks chars with
+    | .error e => broken s!"does not parse: {e.msg.headline}"
+    | .ok (items, starts) =>
+      let st' := (elabFile preludeFile chars items starts #[] #[] (module := Fren.Core.preludeModule) |>.run st).2
+      match (st'.diags.extract st.diags.size st'.diags.size).find? (·.severity == .error) with
+      | some d => broken s!"has an error: {d.msg.headline}"
+      | none => { st' with diags := st.diags, file := 0, module := .anonymous, scope := .anonymous }
 
 /-- Whether the queries of `c` may quantify over a collection's elements,
 as the constraints of its variables' types, the facts of the applications

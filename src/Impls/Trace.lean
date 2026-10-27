@@ -27,11 +27,12 @@ Impls whose library says so, with `Impls` (`lakefile.lean`). -/
 tested cli::agreement: "src/FrenTestMain.lean"
 tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
-tested modules::two_segments: "test/ui/lang/scoping.fren"
+tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
 -- The sorts and declarations that the `fren` command gives the solver are
 -- strings, which Lean does not reduce far enough to compare: the snapshot of
 -- `--dump-smt` shows them for the examples.
 tested lang::smt_encoding: "test/cli/args/dump_smt_generic.fren"
+tested lang::prelude_smt: "test/cli/args/dump_smt_prelude.fren"
 tested lang::operand: "test/ui/lang/precedence.fren", "test/cli/syntax/f0107_iff.fren", "test/cli/syntax/f0109_operand.fren"
 tested lang::operator_type: "test/ui/lang/types.fren", "test/ui/lang/ordered_enums_static.fren",
   "test/cli/types/f0304_arith.fren", "test/cli/types/f0304_operand.fren",

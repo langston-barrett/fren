@@ -4,7 +4,7 @@ set_option fren.lint.dead_code "allow"
 
 mod generics_static
 
-pub enum Option<T> { None, Some(T) }
+pub enum Option!<T> { None, Some(T) }
 pub struct Pair<A, B> { fst: A, snd: B }
 pub enum List<T> { Nil, Cons(T, List<T>) }
 type Id

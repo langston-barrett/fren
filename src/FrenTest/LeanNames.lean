@@ -6,7 +6,7 @@ open Fren.Lang
 -- Items named as Lean's own declarations are, declared apart from them in
 -- `Fren.Generated`, and how Lean code names each (`Reqs/Generated#names`).
 -- The ui test `test/ui/lang/lean_names.fren` checks both front ends.
-pub enum Option { None, Some(Int) }
+pub enum Option! { None, Some(Int) }
 pub enum Tree { Leaf, Node(Tree, Int) }
 pub struct List { x: Int }
 pub fn max(a: Int, b: Int): Int := a.max(b)

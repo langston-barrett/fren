@@ -1,7 +1,7 @@
 error[F0304]: type mismatch: expected `Int`, found `Bool`
- --> test/cli/types/f0304_generic_payload.fren:4:60
+ --> test/cli/types/f0304_generic_payload.fren:3:60
   |
-4 | comp c { pub out x: Option<Int> ensure r: x = Option::Some(true) }
+3 | comp c { pub out x: Option<Int> ensure r: x = Option::Some(true) }
   |                                                            ^^^^ expected `Int`, found `Bool`
   |
   = note: value 1 of the payload of `Option::Some` has type `Int`

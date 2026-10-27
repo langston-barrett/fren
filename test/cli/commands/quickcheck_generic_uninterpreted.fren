@@ -3,7 +3,6 @@
 -- each instance a function of its own, whose values meet its
 -- postconditions at that instance, and are of its result type there
 -- (`Reqs/Eval#searching-for-behaviours`).
-pub enum Option<T> { None, Some(T) }
 
 pub fn rank<T>(x: T): Int
     ensure natural: rank(x) >= 0

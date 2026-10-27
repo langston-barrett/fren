@@ -6,8 +6,6 @@ set_option fren.lint.dead_code "allow"
 
 mod generic_functions_contracts
 
-pub enum Option<T> { None, Some(T) }
-
 -- Defined only on a `Some`.
 fn get<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
     assume present: o != Option::None

@@ -541,7 +541,6 @@ In Lean, Lean's own parser reports this, as a syntax error.
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
 comp c { in x: Option(Int) }
 ```
 
@@ -551,7 +550,6 @@ parentheses before. The fix writes the whole type with angle brackets,
 those of the types within it too:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
 comp c { in x: Option<Int> }
 ```
 
@@ -563,7 +561,7 @@ arguments, and stay parentheses, as in `struct Ms(Int)`.
 Erroneous code example:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Tree(T) { Leaf, Node(T) }
 ```
 
 A generic enumeration's, record's or function's type parameters are
@@ -572,7 +570,7 @@ written in angle brackets right after its name, as in `enum Option<T>`,
 parentheses before:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
+pub enum Tree<T> { Leaf, Node(T) }
 ```
 "# },
   { code := "F0152", explanation := r#"A generic function's type parameter that is not a name.
@@ -2347,8 +2345,6 @@ ordered struct Entry { key: Int, size: Nat }
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { in x: Option }
 ```
 
@@ -2358,8 +2354,6 @@ Any other type, `Int` or an enumeration without type parameters, takes
 none:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { in x: Option<Int> }
 ```
 "# },
@@ -2368,8 +2362,6 @@ comp c { in x: Option<Int> }
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
 ```
 
@@ -2379,8 +2371,6 @@ or fields. Here neither side says which `Option` is meant. Write it where
 an instance is expected, as of a variable of that type:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { in x: Option<Int> pub out ok? ensure r: ok? iff x = Option::None }
 ```
 "# },
@@ -2409,7 +2399,7 @@ Erroneous code example:
 ```fren
 pub enum Mode { Off, On }
 
-pub enum Option<Mode> { None, Some(Mode) }
+pub enum Box<Mode> { Empty, Full(Mode) }
 ```
 
 Within its declaration, a type parameter's name must mean only the
@@ -2419,7 +2409,7 @@ of an item in scope. Rename it:
 ```fren
 pub enum Mode { Off, On }
 
-pub enum Option<T> { None, Some(T) }
+pub enum Box<T> { Empty, Full(T) }
 ```
 "# },
   { code := "F0389", explanation := r#"A type argument of a recursive enumeration whose values bring a constraint.
@@ -2477,8 +2467,6 @@ reports `F0399`, and the code is not reused.
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 fn is_none?<T>(o: Option<T>) := o = Option::None
 
 comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
@@ -2490,8 +2478,6 @@ says which `Option` is meant. Give it an argument whose type is known, as
 a variable's:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 fn is_none?<T>(o: Option<T>) := o = Option::None
 
 comp c { in x: Option<Int> pub out ok? ensure r: ok? iff is_none?(x) }

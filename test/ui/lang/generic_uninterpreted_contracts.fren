@@ -7,8 +7,6 @@ set_option fren.lint.dead_code "allow"
 
 mod generic_uninterpreted_contracts
 
-pub enum Option<T> { None, Some(T) }
-
 -- Not realizable where the two arguments are equal, at any type.
 fn other<T>(x: T, y: T): T  --~ error: the postconditions of `generic_uninterpreted_contracts::other` cannot all hold at some type
     ensure moves: other(x, y) != x

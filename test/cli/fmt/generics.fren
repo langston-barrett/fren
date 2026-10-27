@@ -2,7 +2,7 @@
 -- `fren fmt` writes type parameters and type arguments in angle brackets
 -- spaced as a call's parentheses, directly after the name, and a
 -- comparison's `<` and `>` with spaces.
-pub enum Option<  T > { None, Some( T ) }
+pub enum Option!<  T > { None, Some( T ) }
 pub struct Pair< A,B > { fst: A, snd: B }
 comp c {
     in x: Option<Pair< Int,Bool >>

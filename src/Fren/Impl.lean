@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Check
 import Fren.Elab
+import Fren.Prelude
 -- keep-sorted end
 
 /-!

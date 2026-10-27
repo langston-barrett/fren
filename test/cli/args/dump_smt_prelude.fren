@@ -1,0 +1,26 @@
+--@ args: check --dump-smt
+-- `--dump-smt` of the prelude's types: exactly the declarations that
+-- lean-smt gives the solver for Lean's `Option` and `Except`, with its
+-- symbols, written without `|`s, and `Result<Int, Bool>` as
+-- `(Except Bool Int)`, its arguments swapped (`Reqs/Lang/Prelude#meaning`).
+-- A user's `Option!` at the root module has the sort `|::Option|`, apart
+-- from Lean's. The job `smtAgreement` of `lake test` compares these
+-- declarations with the Lean-hosted front end's queries.
+-- fren-covers: lang::prelude_smt
+pub enum Option!<T> { Nothing, Just(T) }
+
+comp user {
+    in x: Option<Int>
+    pub out y?
+    ensure r: y? iff x = Option::Nothing
+}
+
+mod m
+
+comp prelude {
+    in x: Option<Int>
+    in r: Result<Int, Bool>
+    pub out y: Int
+    ensure a: y = match x { Some(n) => n, None => 0 }
+    expect e: r != Result::Err(true) or y >= 0
+}
