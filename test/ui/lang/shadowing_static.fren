@@ -104,7 +104,8 @@ comp bool_shadow { in ok? in f: Flag pub out go? ensure r: go? iff match f { Fla
 --~^ error: `ok?` shadows the input `ok?`
 comp bool_shadow_ok { in ok? in f: Flag pub out go? ensure r: go? iff match f { Flag::Set(ok?!) => ok?, _ => ok? } }
 
--- Items, constraints and fields never shadow.
+-- Items shadow only the prelude's names, and constraints and fields never
+-- shadow.
 const LIMIT!: Int := 3                   --~ error: `LIMIT!` shadows nothing
 fn twice!(n: Int): Int := 2 * n          --~ error: `twice!` shadows nothing
 enum Mode! { On, Off }                   --~ error: `Mode!` shadows nothing

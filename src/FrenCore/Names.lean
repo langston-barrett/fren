@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
+import FrenCore.Prelude
 import FrenCore.Scope
 import FrenCore.Str
 import Lean.Data.NameMap
@@ -146,13 +147,16 @@ structure Error where
   msg : Thunk Msg
   deriving Inhabited
 
-/-- `a::b`. -/
+/-- `a::b`. A prelude item's path is shown without the prelude's module,
+which no path can write: `Option`, `Option::Some` (`Reqs/Lang/Prelude`). -/
 def showPath (n : Name) : String :=
-  if n.isAnonymous then "the root module" else "::".intercalate (n.components.map (·.toString))
+  if n.isAnonymous then "the root module"
+  else if n == preludeModule then "the prelude"
+  else "::".intercalate ((n.components.filter (· != preludeModule)).map (·.toString))
 
-/-- `module `a::b``, or `the root module`. -/
+/-- `module `a::b``, the prelude, or `the root module`. -/
 def showModule (n : Name) : String :=
-  if n.isAnonymous then "the root module" else s!"module `{showPath n}`"
+  if n.isAnonymous then "the root module" else if n == preludeModule then "the prelude" else s!"module `{showPath n}`"
 
 /-- `a`, `b` and `c`. -/
 def showNameList (ns : Array Name) : String :=
@@ -290,13 +294,18 @@ def Table.membersOf (t : Table) (mod : Name) : Array Name :=
   t.items.foldl (init := #[]) fun acc _ i =>
     if i.owner == mod && i.path.getPrefix == mod && !i.path.isAnonymous then acc.push (Name.mkSimple i.path.getString!) else acc
 
+/-- The names that the prelude gives every scope: its items, and its
+enumerations' variants. -/
+def Table.preludeNames (t : Table) : Array Name :=
+  t.membersOf preludeModule ++ t.enums.foldl (init := #[]) fun acc p e => if inPrelude p then acc ++ e.variants else acc
+
 /-- The names that the first segment of a path can be in the scope `mod`:
 its module's items, its named imports, and the variants it opens. -/
 def Table.scopeOf (t : Table) (mod : Name) : Array Name :=
   let uses := t.usesIn mod
-  t.membersOf (t.moduleOf mod) ++ uses.foldl (init := #[]) fun acc u =>
+  t.membersOf (t.moduleOf mod) ++ (uses.foldl (init := #[]) fun acc u =>
     if u.glob then acc ++ ((t.enums.get? u.target).map (·.variants) |>.getD #[])
-    else acc.push (Name.mkSimple u.target.getString!)
+    else acc.push (Name.mkSimple u.target.getString!))
 
 /-- What a path segment resolved to, as far as its members go
 (`modules::Kind`). -/
@@ -373,13 +382,77 @@ inductive Resolution where
   | local
   | glob
   | ambiguous
+  /-- One of the prelude's items or variants (`Reqs/Lang/Prelude`). -/
+  | prelude
   | unbound
   deriving Inhabited, BEq, DecidableEq, Repr
 
-def resolution {ν τ : Type} : Lookup ν τ → Resolution
-  | .found b => if b.kind = .opened then .glob else .local
+/-- `modules::resolve`: the prelude, which gives the name if `inPrelude`,
+is the outermost layer of every scope. -/
+def resolution (isLocal : Bool) (nGlob : Nat) (inPrelude : Bool := false) : Resolution :=
+  if isLocal then .local
+  else match nGlob with
+    | 0 => if inPrelude then .prelude else .unbound
+    | 1 => .glob
+    | _ => .ambiguous
+
+/-- How the first segment of a path resolves (`modules::resolve`), from
+what it resolves to among the items and imports in scope, `l`, and among
+those without the prelude, `nearer`: to a variant that a glob import
+opens, to the prelude's item or variant where nothing nearer gives the
+name, or to an item or a name imported by name. -/
+def lookupResolution {ν τ : Type} (l nearer : Lookup ν τ) : Resolution :=
+  match l with
+  | .found b => if b.kind = .opened then .glob else (match nearer with | .unbound => .prelude | _ => .local)
   | .ambiguous => .ambiguous
   | .unbound => .unbound
+
+/-- How the first segment of a path resolves, and to what
+(`modules::first_segment`), from what each layer of its scope gives its
+name, innermost first: the item declared in, or imported by name into, the
+scope, at most one; the distinct variants that `use ...::*` opens; and the
+prelude's item or variant, at most one. -/
+def firstSegment (declared opened prelude : Array α) : Resolution × Option α :=
+  match resolution (!declared.isEmpty) opened.size (!prelude.isEmpty) with
+  | .local => (.local, declared[0]?)
+  | .glob => (.glob, opened[0]?)
+  | .prelude => (.prelude, prelude[0]?)
+  | r => (r, none)
+
+/-- The prelude's item or variant named `n` (`Reqs/Lang/Prelude`): its
+items, and its enumerations' variants, as if every scope opened them. -/
+def Table.preludeName? (t : Table) (n : Name) : Option Resolved :=
+  match t.declared? preludeModule n with
+  | some i => some (.item i)
+  | none => t.enums.foldl (init := none) fun acc p e =>
+    acc <|> if inPrelude p then (e.variants.idxOf? n).map (.variant e ·) else none
+
+/-- What each layer of the scope `from_` gives the name `n`, the first
+segment of a path, innermost first (`modules::first_segment`): the item
+declared in, or imported by name into, the scope; the distinct variants
+that `use ...::*` opens; and the prelude's item or variant. -/
+def Table.layers (t : Table) (from_ n : Name) : Except Error (Array Resolved × Array Resolved × Array Resolved) := do
+  -- A component's imports shadow its module's scope: they alone are its
+  -- scope if they bring in `n`, and its module's scope is otherwise.
+  let comp := t.isComp from_ && (t.uses.getD from_ #[]).any (·.brings t n)
+  let uses := if comp then t.uses.getD from_ #[] else t.uses.getD (t.moduleOf from_) #[]
+  let declared := if comp then none else t.declared? (t.moduleOf from_) n
+  let local? ← match declared with
+    | some d => pure (some (.item d))
+    | none =>
+      match uses.find? (fun u => !u.glob && u.target.getString! == n.toString) with
+      | some u =>
+        match t.resolveTarget u.target with
+        | some r => pure (some r)
+        | none => throw { seg := 0, msg := Msg.internal s!"dangling import `{u.target}`" }
+      | none => pure none
+  -- Distinct variants: opening the same enum twice is not ambiguous.
+  let hits := uses.foldl (init := #[]) fun (acc : Array Resolved) u => Id.run do
+    let some e := (if u.glob then t.enums.get? u.target else none) | return acc
+    let some idx := e.variants.idxOf? n | return acc
+    let r := Resolved.variant e idx
+    return if acc.any (·.path == r.path) then acc else acc.push r
+  return (local?.toArray, hits, (t.preludeName? n).toArray)
 
 /-- The local declarations in scope where a name is written, innermost
 last, each with its kind: what a declaration may hide besides items. -/
@@ -392,8 +465,11 @@ no depth, and so nothing that `n` resolves to (`lookup_congr_named`). Every
 item in the table is declared before `n`, since the table holds only
 those declared so far. A glob import is listed once for each variant of
 `n` that it opens. A local's target is its name: what is read of a
-local is only that it hides, and a binder's position is not known here. -/
-def Table.contextOf (t : Table) (from_ : Name) (locals : Locals) (n : Name) (builtin : Bool) : Context Name :=
+local is only that it hides, and a binder's position is not known here.
+The prelude's item or variant of `n` is the outermost, unless not
+`prelude`. -/
+def Table.contextOf (t : Table) (from_ : Name) (locals : Locals) (n : Name) (builtin : Bool) (prelude := true) :
+    Context Name :=
   let named (uses : Array UseDef) : List (Import Name) :=
     uses.toList.filterMap fun u =>
       if !u.glob && u.target.getString! == n.toString then
@@ -412,12 +488,13 @@ def Table.contextOf (t : Table) (from_ : Name) (locals : Locals) (n : Name) (bui
     component := t.isComp from_
     componentImports := if t.isComp from_ then named comp ++ opened comp else []
     items, declared := items.length
-    moduleImports := named uses ++ opened uses }
+    moduleImports := named uses ++ opened uses
+    prelude := if prelude then (t.preludeName? n).toList.map fun r => ⟨n, r.bindingKind, r.path⟩ else [] }
 
 /-- The bindings of `n` among the items and imports in the scope `from_`
 (`Reqs/Lang/Scope#scopes`, scopes 3 and 4). -/
-def Table.itemBindings (t : Table) (from_ : Name) (n : Name) : List (Binding Name Name) :=
-  (t.contextOf from_ #[] n false).itemScope.bindings
+def Table.itemBindings (t : Table) (from_ : Name) (n : Name) (prelude := true) : List (Binding Name Name) :=
+  (t.contextOf from_ #[] n false prelude).itemScope.bindings
 
 /-- Resolves a path in an expression or type in the scope `from_`, a
 module or a component. `extra` are other names in scope, such as
@@ -429,12 +506,14 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
   let n := segs[0]!
   let bs := t.itemBindings from_ n
   let found := lookup bs n
-  let start ← match resolution found, found with
-    | .local, .found b | .glob, .found b =>
+  let start ← match lookupResolution found (lookup (t.itemBindings from_ n (prelude := false)) n), found with
+    | .local, .found b | .glob, .found b | .prelude, .found b =>
       match t.resolveTarget b.target with
       | some r => pure r
       | none => throw { seg := 0, msg := Msg.internal s!"dangling import `{b.target}`" }
-    | .unbound, _ => throw { seg := 0, msg := cannotFindMsg n "this scope" (t.scopeOf from_ ++ extra) }
+    -- The prelude's names last, so that a similar name of the scope's own
+    -- is suggested first.
+    | .unbound, _ => throw { seg := 0, msg := cannotFindMsg n "this scope" (t.scopeOf from_ ++ extra ++ t.preludeNames) }
     | _, _ =>
       -- Distinct variants: opening the same enum twice is not ambiguous.
       let hits := (innermost bs n).eraseDups
@@ -648,25 +727,6 @@ def Table.checkFresh (t : Table) (mod n : Name) : Except Msg Unit := do
             label? := some s!"`{n}` defined or imported again here"
             notes := #[s!"note: a `use` and an item, or two `use`s, of the same name would make `{n}` ambiguous"] }
 
-/-- The modules that `mod a::b` declares, given that segment `i` failed with
-the message, or the new items to record. -/
-def Table.declareModule (t : Table) (segs : Array Name) (isPub : Bool) :
-    Except Error (Name × Array Item) := do
-  let mut path := Name.anonymous
-  let mut new := #[]
-  for n in segs, i in [0:segs.size] do
-    if let .error msg := checkItemName "module" n then throw { seg := i, msg }
-    let p := path ++ n
-    match t.items.get? p with
-    | some { kind := .moduleItem, .. } => pure ()
-    | some prev => throw { seg := i, msg := {
-        code? := some "F0208", headline := s!"`{showPath p}` is {Resolved.describe (.item prev)}, not a module"
-        label? := some "not a module", notes := #["note: modules and other items share one namespace"] : Msg } }
-    | none =>
-      new := new.push { kind := .moduleItem, path := p, isPub := isPub && i + 1 == segs.size, owner := path }
-    path := p
-  return (path, new)
-
 /-- The import recorded by a `use` in module `mod`, or, with `scope`, in
 the component of that path in `mod`. -/
 def Table.declareUse (t : Table) (mod : Name) (segs : Array Name) (glob : Bool) (scope : Name := mod) :
@@ -762,6 +822,67 @@ def checkShadowing (n : Name) (hidden? : Option String) (bang : Bool) : Except M
   else match hidden? with
     | some h => throw (implicitShadowMsg n h)
     | none => throw (needlessBangMsg n)
+
+/-- Whether an item that is fresh, so that no item of its name is declared
+or imported by name, hides a name of the prelude: whether its name resolves
+to the prelude's, from what the other layers of its module's scope give it,
+the variants that `use ...::*` opens and the prelude's item or variant
+(`modules::item_shadowing`). -/
+def itemHidesPrelude (opened prelude : Array α) : Bool := (firstSegment #[] opened prelude).1 == .prelude
+
+/-- Whether that item's declaration, written with `!` if `bang`, is
+accepted: with `!` exactly when it hides a name (`lang::shadowing`). -/
+def itemShadowingAccepted (opened prelude : Array α) (bang : Bool) : Bool :=
+  shadowingAccepted (itemHidesPrelude opened prelude) bang
+
+/-- What a declaration hides, `r`, as `Table.hidden?` describes it: `the
+enum `Option``, `the variant `Option::None``. -/
+def hiddenText (r : Resolved) : String :=
+  match r with
+  | .item i => s!"the {(r.describe.splitOn " ").getLast!} `{showPath i.path}`"
+  | .variant .. => s!"the variant `{showPath r.path}`"
+
+/-- Checks the name of an item declared in the module `mod`, written `n!`
+if `bang`, which is fresh there: an item that takes a name that the prelude
+gives is written with `!`, and only such an item
+(`itemShadowingAccepted`). -/
+def Table.checkItemShadowing (t : Table) (mod n : Name) (bang : Bool) : Except Msg Unit := do
+  let (_, opened, prelude) := (t.layers mod n).toOption.getD (#[], #[], #[])
+  if itemShadowingAccepted opened prelude bang then return
+  if itemHidesPrelude opened prelude then throw (implicitShadowMsg n (hiddenText prelude[0]!))
+  throw (needlessBangMsg n)
+
+/-- Checks the name `n` of an item declared in the module `mod`, written
+`n!` if `bang`: it is fresh (`Table.checkFresh`), and its declaration marks
+that it hides a name of the prelude exactly when it does
+(`Table.checkItemShadowing`). -/
+def Table.checkFreshItem (t : Table) (mod n : Name) (bang : Bool := false) : Except Msg Unit := do
+  checkDeclaredName n bang
+  t.checkFresh mod n
+  t.checkItemShadowing mod n bang
+
+/-- The modules that `mod a::b` declares, given that segment `i` failed with
+the message, or the new items to record. -/
+def Table.declareModule (t : Table) (segs : Array Name) (isPub : Bool) :
+    Except Error (Name × Array Item) := do
+  let mut path := Name.anonymous
+  let mut new := #[]
+  for n in segs, i in [0:segs.size] do
+    -- A new module that takes a name that the prelude gives is written
+    -- with `!`, as any other item is (`Table.checkItemShadowing`).
+    let (n, bang) := declaredName n
+    if let .error msg := checkItemName "module" n then throw { seg := i, msg }
+    let p := path ++ n
+    match t.items.get? p with
+    | some { kind := .moduleItem, .. } => pure ()
+    | none =>
+      if let .error msg := t.checkItemShadowing path n bang then throw { seg := i, msg }
+      new := new.push { kind := .moduleItem, path := p, isPub := isPub && i + 1 == segs.size, owner := path }
+    | some prev => throw { seg := i, msg := {
+        code? := some "F0208", headline := s!"`{showPath p}` is {Resolved.describe (.item prev)}, not a module"
+        label? := some "not a module", notes := #["note: modules and other items share one namespace"] : Msg } }
+    path := p
+  return (path, new)
 
 /-! ## Instances (`Reqs/Inst`) -/
 
@@ -1339,7 +1460,8 @@ def recursiveRecordMsg (n : Name) : Msg :=
       "help: use an enum with a variant whose payload does not contain it, e.g. `enum List { Nil, Cons(Int, List) }`"] }
 
 /-- Whether an enumeration has values, from its number of variants and of
-those with a payload of its own type (`lang::well_founded`). -/
+those with a payload of its own type, the only type of a payload that the
+enumeration can be built from (`lang::well_founded`). -/
 def wellFounded (nVariants nRecursive : Nat) : Bool := nRecursive < nVariants
 
 def illFoundedMsg (n : Name) : Msg :=

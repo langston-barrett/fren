@@ -24,6 +24,14 @@ In Lean, an item where it is denied is never checked, even where its
 error does not stop `#fren_check`, as inside a `#guard_msgs`. The same holds for a global expectation, and for a refinement where it is
 denied, or in either of its components.
 
+An unbounded quantifier is reported at each of its binders of a type that
+is not listed, unless it is a [quantifier over a sequence's
+elements](../Lang/ElementQuantifiers.md#the-shape) in the core; one that has
+the shape but is not in the core is reported there with the reason that
+`lang::element_quantifier` gives, such as a bound name used as an index,
+and its guard's membership `x in q` with it, as any membership of a
+sequence that is not a literal.
+
 A project that wants every check decidable sets `-F undecidable`. Setting
 it to `expect` says that a component is meant to be undecidable, so that
 [`unfulfilled_lint_expectations`](../Lint.md#expecting-lints) reports the opt-out

@@ -204,23 +204,36 @@ ordered, even when its underlying type is.
 
 `lang::newtype` states which newtypes are accepted, from how many types
 its parentheses hold and whether its one field's type is accepted as a
-record's field's, and when it is unbounded:
+record's field's, and when it is unbounded, by the closure of the
+constituent relation (`lang::type_facts`). Its one constituent is its
+underlying type, which is not built from it:
 
 ```fren
 pub mod lang
 
+set_option fren.lint.undecidable "allow" in
 pub comp newtype {
-    in n_fields: Nat             -- the types in its parentheses
-    in field_accepted?           -- the first's type is accepted as a record's field's (`field_type`)
-    in underlying_unbounded?     -- its underlying type is unbounded
+    in n_fields: Nat                                 -- the types in its parentheses
+    in field_accepted?                               -- the first's type is accepted as a record's field's (`field_type`)
+    in ty: DeclaredTy                                -- the newtype
+    in underlying: DeclaredTy                        -- its underlying type
+    in constituents: Rel<DeclaredTy, DeclaredTy>     -- (t, u): t has a field, payload or element of type u
+
+    assume record: declared_kind(ty) = ValueType::RecordTy
+    assume one_constituent: constituents.image({ty}) = {underlying}
+    assume not_recursive: not (ty, ty) in constituents.closure
     pub det out accepted?
     pub det out unbounded?
+    inst facts: type_facts { ty, constituents }
 
     ensure rule: accepted? iff (n_fields = 1 and field_accepted?)
-    ensure bounds: unbounded? iff underlying_unbounded?
+    ensure bounds: unbounded? iff facts.unbounded?
 
     expect one_field: when n_fields != 1, not accepted?
     expect as_records: when not field_accepted?, not accepted?
+    expect growing_underlying: when former(declared_kind(underlying)).growing?, unbounded?
+    expect bounded_underlying: when constituents.image({underlying}) = {} and not former(declared_kind(underlying)).growing?,
+        not unbounded?
 }
 ```
 
@@ -415,32 +428,40 @@ within it either. Its type may be a [pattern type](Types.md#pattern-types),
 as any field's may:
 
 ```fren
+set_option fren.lint.undecidable "allow" in
 expect newtype_not_abstract: forall (n: newtype) (f: field_type),
     when n.n_fields = 1 and (n.field_accepted? iff f.accepted?) and f.abstract_within? and not f.payload?,
     not n.accepted?
 ```
 
 Every value of a recursive enumeration is built from finitely many
-variants, so the enumeration needs at least one variant whose payload
-does not have its own type: `enum Stream { More(Int, Stream) }` has no
-values, and is an error. `lang::well_founded` states this, from the
-variants and those with a payload of the enumeration's own type:
+variants, so the enumeration needs at least one variant none of whose
+payloads has a type built from the enumeration: `enum Stream { More(Int,
+Stream) }` has no values, and is an error. A type is built from the
+enumeration when it is the enumeration, or when the closure of the
+constituent relation reaches the enumeration from it (see
+`lang::built_from`). `lang::well_founded` states this, from the variants and the
+types of their payloads:
 
 ```fren
 pub type VariantName
 
+set_option fren.lint.undecidable "allow" in
 pub comp well_founded {
+    in ty: DeclaredTy                                -- the enumeration
+    in constituents: Rel<DeclaredTy, DeclaredTy>     -- (t, u): t has a field, payload or element of type u
     in variants: Set<VariantName>
-    in recursive: Set<VariantName>   -- variants with a payload of the enumeration's own type
+    in payloads: Rel<VariantName, DeclaredTy>        -- (v, u): a payload of the variant `v` has the type `u`
 
     assume some_variant: variants != {}
-    assume among: recursive subset variants
+    assume among: payloads.domain subset variants
     pub det out accepted?
 
-    ensure rule: accepted? iff recursive != variants
+    ensure rule: accepted? iff (exists (v: VariantName), v in variants
+        and (forall (u: DeclaredTy), when u in payloads.image({v}), not ty in built_from(u, constituents)))
 
-    expect plain_enumerations: when recursive = {}, accepted?
-    expect one_base_case: when (variants minus recursive).card = 1, accepted?
+    expect no_payloads: when payloads = {}, accepted?
+    expect plain_enumerations: when constituents = {} and not ty in payloads.range, accepted?
 }
 ```
 
@@ -605,7 +626,9 @@ function's arguments. So it relates values
 consistently wherever it is applied, across the constraints of a
 component, its instances, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an
-[interpretation](Components.md#interpretations).
+[interpretation](Components.md#interpretations). A [generic
+one](GenericFunctions.md#uninterpreted-generic-functions) is an unknown
+function of its own at each instance.
 
 ### Contracts
 

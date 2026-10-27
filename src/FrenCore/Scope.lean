@@ -94,7 +94,7 @@ structure Import (α : Type) where
 /-- Where a name is written (`lang::Context`): the locals, outermost
 first, the built-in functions, the component's and the module's imports,
 and the module's items in their declaration's order, of which `declared`
-are declared before the name. -/
+are declared before the name, and the prelude's items and variants. -/
 structure Context (α : Type) where
   locals : List (Local α)
   builtins : List α
@@ -103,6 +103,7 @@ structure Context (α : Type) where
   items : List (Declared α)
   declared : Nat
   moduleImports : List (Import α)
+  prelude : List (Declared α)
   deriving Inhabited, Repr
 
 /-- The binding of `d` at depth `k`. -/
@@ -118,7 +119,8 @@ def Context.moduleDepth {α : Type} (cx : Context α) : Nat := cx.locals.length 
 /-- The bindings of the scope where a name is written
 (`lang::context_scope`): each local, visible, at its depth, the last
 innermost; the built-in functions; the component's imports; and the
-module's items declared before the name and its imports. -/
+module's items declared before the name and its imports; and, outermost,
+the prelude. -/
 def Context.bindings {α : Type} (cx : Context α) : List (Binding α α) :=
   let n := cx.locals.length
   ((List.finRange n).filterMap fun i =>
@@ -128,6 +130,7 @@ def Context.bindings {α : Type} (cx : Context α) : List (Binding α α) :=
     ++ ((List.finRange cx.items.length).filterMap fun i =>
       if i.val < cx.declared then some (cx.items[i].at cx.moduleDepth) else none)
     ++ importBindings cx.moduleImports cx.moduleDepth
+    ++ cx.prelude.map (·.at (cx.moduleDepth + 2))
 
 /-- The items and imports alone (`lang::item_scope`). -/
 def Context.itemScope {α : Type} (cx : Context α) : Context α := { cx with locals := [], builtins := [] }

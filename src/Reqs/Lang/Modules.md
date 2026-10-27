@@ -138,38 +138,57 @@ resolves as follows:
 3. Otherwise, a name brought into scope by several `use ...::*` declarations
    for different enumerations is ambiguous. That is an error only where the
    name is used.
-4. Otherwise, the name is unbound, which is an error.
+4. Otherwise, a name that the [prelude](Prelude.md) gives resolves to the
+   prelude's item or variant: `Option` and `Result`, and their variants
+   `None`, `Some`, `Ok` and `Err`, as Rust's prelude gives them.
+5. Otherwise, the name is unbound, which is an error.
 
-These are the scopes 3 and 4 of [Scopes](Scope.md#scopes), `item_scope`,
+The prelude is so the outermost layer of every scope, below the module's
+own items, its imports and the variants it opens, as Rust's is: a path
+`Some(3)` or `Option::Some(3)` means the prelude's variant wherever nothing
+else gives the name. An import, by name or with `*`, that brings in a name
+that the prelude gives takes precedence over the prelude, as a component's
+imports take precedence over its module's scope: a rule of resolution,
+which takes no `!`. A declared item takes precedence too, but is written
+with `!`, as `enum Option!<T> { ... }` is, since it shadows (see
+[Shadowing](#shadowing-the-prelude)).
+
+Over the [scope model](Scope.md), these are the scopes 3 to 5 of
+[Scopes](Scope.md#scopes), `item_scope`,
 read by [`lang::scope`](Scope.md#resolution): an item declared before the
 path in the module and a name imported by name are bindings of one depth,
 so at most one of a name, and the variants that the glob imports open are
 bindings of the depth just outside it, where two distinct variants of a
-name are ambiguous. A component's own imports are two depths further in.
-`modules::resolve` states the rule, from where the path is written and
-its first segment:
+name are ambiguous; the prelude is two depths further out than the items.
+A component's own imports are two depths further in. `modules::resolve`
+states the rule over the scope, from where the path is written and its
+first segment, and the same scope without the prelude, `nearer`, whose
+name resolves to nothing exactly where the prelude's item or variant is
+the one it resolves to:
 
 ```fren
-pub enum Resolution { Local, Glob, Ambiguous, Unbound }
+pub enum Resolution { Local, Glob, Ambiguous, Prelude, Unbound }
 
-use self::Resolution::{Ambiguous, Glob, Local, Unbound}
+use self::Resolution::{Ambiguous, Glob, Local, Prelude, Unbound}
 
 -- It instantiates `lang::scope`, which quantifies over bindings.
 set_option fren.lint.undecidable "allow" in
 pub comp resolve {
     use lang::BindingKind::Opened
     in bindings: Set<lang::Binding>  -- the scope where it is written, `item_scope` of its context
+    in nearer: Set<lang::Binding>    -- the same scope without the prelude
     in name: lang::Id                -- its first segment
 
     pub det out lookup: lang::Lookup := first.result
     pub det out result: Resolution := match lookup {
         lang::Lookup::Found(Opened) => Glob,
-        lang::Lookup::Found(_) => Local,
+        lang::Lookup::Found(_) => if inner.result = lang::Lookup::Unbound then Prelude else Local,
         lang::Lookup::Ambiguous => Ambiguous,
         lang::Lookup::Unbound => Unbound,
     }
 
     inst first: lang::scope { bindings, name }
+    inst inner: lang::scope { bindings := nearer, name }
 
     expect nothing_in_scope: when bindings = {}, result = Unbound
     -- Rules 2 and 3: only a variant that a glob import opens resolves through it, and
@@ -183,12 +202,128 @@ pub comp resolve {
     expect local_wins: forall (b c: lang::Binding), when b in bindings and c in bindings and b.name = name
         and c.name = name and b.kind != Opened and c.kind = Opened and b.depth < c.depth
         and (forall (d: lang::Binding), when d in bindings and d.name = name, d = b or d = c),
-        result = Local
+        result in {Local, Prelude}
     -- Two variants of one name, opened in the innermost scope that has it, are ambiguous.
     expect two_globs: forall (b c: lang::Binding), when lang::innermost?(bindings, b, name)
         and lang::innermost?(bindings, c, name) and b.kind = Opened and c.kind = Opened and b.target != c.target,
         result = Ambiguous
 }
+```
+
+`modules::resolve_layers` states this rule over what each layer gives the
+name: whether an item of that name is declared or imported by name
+(`local?`), how many distinct variants of that name are opened (`n_glob`),
+and whether the prelude gives the name (`prelude?`):
+
+```fren
+-- `n_glob` is an `Int`, as a sequence's length is (`first_segment`).
+set_option fren.lint.manual_nat "allow" in
+pub comp resolve_layers {
+    in local?
+    in n_glob: Int       -- distinct items of this name opened by `use ...::*`
+    in prelude?          -- the prelude gives the name
+    pub out result: Resolution
+
+    assume counted: n_glob >= 0
+
+    ensure local_wins: when local?, result = Local
+    ensure glob: unless local?, when n_glob = 1, result = Glob
+    ensure ambiguous: unless local?, when n_glob > 1, result = Ambiguous
+    ensure prelude: unless local?, when n_glob = 0 and prelude?, result = Prelude
+    ensure unbound: unless local?, when n_glob = 0 and not prelude?, result = Unbound
+
+    expect glob_is_unique: when result = Glob, n_glob = 1
+    expect prelude_is_last: when result = Prelude, not local? and n_glob = 0
+}
+```
+
+`modules::first_segment` states how the first segment resolves, and to
+what, over what each layer of its scope gives the name, innermost first:
+the item declared in, or imported by name into, the scope; the distinct
+variants that `use ...::*` opens; and the prelude's item or variant. Each
+is a sequence of paths (`modules::Path`), of one path at most but for the
+variants opened. It refines `modules::resolve_layers`. Comparing sequences is
+outside the [decidable core](Decidability.md), so it opts out:
+
+```fren
+pub type Path
+
+set_option fren.lint.undecidable "allow" in
+pub comp first_segment {
+    in declared: Seq<Path>         -- the item declared or imported by name
+    in opened: Seq<Path>           -- the distinct variants that `use ...::*` opens
+    in prelude: Seq<Path>          -- the prelude's item or variant
+    pub det out result: Resolution := if declared != [] then Local
+        else if opened.len = 1 then Glob
+        else if opened.len > 1 then Ambiguous
+        else if prelude != [] then Prelude
+        else Unbound
+    -- What it resolves to: none if it is ambiguous or unbound.
+    pub det out target: Seq<Path> := if declared != [] then declared.at(0)
+        else if opened.len = 1 then opened
+        else if opened.len > 1 then []
+        else prelude.at(0)
+
+    expect declared_wins: when declared != [], target = declared.at(0)
+    expect prelude_below_globs: when declared = [] and opened.len = 1, target = opened
+    expect resolved_one: target.len <= 1
+    expect resolved: target != [] iff not result in {Ambiguous, Unbound}
+}
+
+-- `local?` and `prelude?` are `Bool`s, which a comparison of sequences of
+-- an abstract type, as `declared != []`, is not in Lean: so `len`.
+set_option fren.lint.undecidable "allow" in
+set_option fren.lint.length_zero "allow" in
+refine first_resolve: first_segment refines resolve_layers {
+    local? := declared.len > 0,
+    n_glob := opened.len,
+    prelude? := prelude.len > 0,
+}
+```
+
+### Shadowing the prelude
+
+An item declared with a name that the prelude gives, in a module where no
+item declared or imported by name, nor variant opened with `*`, has it,
+hides the prelude's item or variant, and is written with `!` after its
+name, as a [declaration that shadows](Components.md#shadowing) any name
+is: `enum Option!<T> { None, Some(T) }`, `const None!: Int := 0` or
+`mod Result!`. Without the `!`, it is an error (`F0217`), and with a `!`
+where it hides nothing, so is the `!` (`F0218`). Where the module imports
+the name, by name or with `*`, the import is what the declaration
+competes with: a name declared and imported by name is an error
+(`F0207`), and a declared item takes precedence over a variant opened
+with `*`, as before. Uses are written without `!`, and within the module,
+the name then means the declared item. Other modules are not affected:
+their scopes have the prelude's.
+
+`modules::item_shadowing` states this over the layers of the module's
+scope where the item is declared, before it is: the item is fresh, so no
+item of its name is declared or imported by name, and the name resolves to
+the prelude's, as `modules::first_segment` says, exactly when no variant of
+it is opened and the prelude gives it. The item hides a name exactly then.
+
+```fren
+-- `hides?` is a `Bool`, which a comparison of sequences of an abstract type,
+-- as `opened = []`, is not in Lean: so `len`.
+set_option fren.lint.undecidable "allow" in
+set_option fren.lint.length_zero "allow" in
+pub comp item_shadowing {
+    in opened: Seq<Path>           -- the distinct variants of its name that `use ...::*` opens
+    in prelude: Seq<Path>          -- the prelude's item or variant of its name
+    in bang?                       -- it is written with `!`
+    pub det out hides? := opened.len = 0 and prelude.len > 0
+    pub det out accepted? := hides? iff bang?
+
+    expect explicit: when prelude != [] and opened = [], accepted? iff bang?
+    expect imports_first: when opened.len = 1, accepted? iff not bang?
+    expect needless: when prelude = [], accepted? iff not bang?
+}
+
+-- The item hides a name exactly when its name, fresh, resolves to the prelude's.
+set_option fren.lint.undecidable "allow" in
+expect hides_prelude: forall (s: item_shadowing) (f: first_segment),
+    when f.declared = [] and f.opened = s.opened and f.prelude = s.prelude, s.hides? iff f.result = Prelude
 ```
 
 Each later segment names a member of what the previous segment resolved
@@ -216,11 +351,9 @@ pub fn kind_of(k: lang::BindingKind): Kind := match k {
 }
 ```
 
+
 `modules::member` gives whether one later segment is accepted, from what
-the previous segment resolved to. Whether it has a member of that name,
-`found?`, is looked up in the module's items or the enumeration's
-variants directly, not through a scope: they are all declared, and their
-names are distinct.
+the previous segment resolved to.
 
 ```fren
 set_option fren.evidence "enumerated" in
@@ -237,13 +370,15 @@ pub comp member {
 }
 ```
 
-`modules::two_segments` puts the two rules together for a path `a::b`.
+`modules::two_segments` puts the two rules together for a path `a::b`,
+whose `a` may be the prelude's, as in `Option::Some`.
 
 ```fren
 -- It instantiates `lang::scope`, which quantifies over bindings.
 set_option fren.lint.undecidable "allow" in
 pub comp two_segments {
     in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
+    in nearer: Set<lang::Binding>    -- the same without the prelude
     in a: lang::Id
     in b_found?                      -- `a` has a member named `b`
     in b_pub?                        -- that member is `pub`
@@ -257,13 +392,15 @@ pub comp two_segments {
     }
     pub det out accepted?
 
-    inst first: resolve { bindings, name := a }
+    inst first: resolve { bindings, nearer, name := a }
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
     inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
 
     ensure rule: accepted? iff second.accepted?
 
-    expect variants_have_no_members: when first.result != Local, not accepted?
+    expect variants_have_no_members: when first.result = Glob, not accepted?
+    -- The prelude's enumeration has its variants as members: `Option::Some`.
+    expect prelude_variant: when first.result = Prelude and a_kind = Enum and b_found?, accepted?
     expect private_member: when a_kind = Module and not b_pub? and here != b_owner and not descends?(here, b_owner),
         not accepted?
     -- The variants of an enumeration that `a` names are its members, wherever they are written.

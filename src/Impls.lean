@@ -4,6 +4,7 @@
 -- keep-sorted start
 import Impls.Check
 import Impls.Cli
+import Impls.Elements
 import Impls.Enumeration
 import Impls.Eval
 import Impls.Fmt
@@ -19,6 +20,7 @@ import Impls.PatternTypes
 import Impls.Refine
 import Impls.Scope
 import Impls.Trace
+import Impls.TypeFacts
 import Impls.View
 import Reqs
 -- keep-sorted end

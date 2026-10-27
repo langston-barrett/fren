@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Elab
+import FrenCli.SeqElems
 import FrenCore.Check
 import cvc5
 -- keep-sorted end
@@ -110,13 +111,18 @@ structure Prelude where
   /-- Each declaration's text as a query has it, with each quoted symbol
   in the solver's name (`queryScript`), computed once, when first needed. -/
   smtTexts : Array (Thunk String)
+  /-- The `define-fun`s with quantifiers over elements, which each query
+  unfolds (`SeqElems.markedDefs`). -/
+  marked : Std.HashMap String (Array String × SeqElems.SExpr) := {}
   deriving Inhabited
 
 def Prelude.ofDecls (decls : Array PreludeDecl) : Prelude :=
+  let marked := SeqElems.markedDefs (decls.map (·.text))
+  let decls := if marked.isEmpty then decls else decls.map fun d => { d with text := SeqElems.plainText d.text }
   let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
   { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
-    smtTexts := decls.map fun d => Thunk.mk fun _ => mapQuoted Fren.Core.smtName d.text }
+    smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked }
 
 /-- The positions of the declarations that a script whose quoted symbols
 are `syms` needs: those of its symbols, and of theirs in turn, in the
@@ -177,9 +183,9 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
   let head := s!"(set-logic {logic})\n(set-option :produce-models true)\n{limits.options}{options}"
-  mapQuoted Fren.Core.smtName head
+  solverText head
     ++ String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
-    ++ mapQuoted Fren.Core.smtName body
+    ++ solverText body
 
 /-- The answers to the queries asked so far, by script, each with whether
 it has a model: a script asked again gets the same answer without the
@@ -194,6 +200,11 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (O
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
     let solver ← cvc5.Solver.new tm
+    -- cvc5 warns on stderr when a model's value of a quantified formula
+    -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
+    -- model then holds as that formula: the warning is not an outcome, and
+    -- only cvc5's own diagnostics are silenced.
+    solver.setOption "verbosity" "-1"
     let parser ← cvc5.InputParser.new solver
     let sm ← parser.getSymbolManager
     parser.setStringInput script .SMT_LIB_2_6
@@ -292,16 +303,28 @@ generic type's constructor `c`, which is a simple symbol with `~` for `::`
 def genericCtor (c : String) : String :=
   if c.endsWith "~" then ((c.dropEnd 1).toString.replace "~" "::") ++ "{}" else c.replace "~" "::"
 
+/-- The symbol that a variant of one of the prelude's types would have if it
+were a user's, `Option::Some`, for lean-smt's constructor `c` of the Lean
+type that it is, `Option.some` (`Reqs/Lang/Prelude#smt`). -/
+def preludeCtor? (c : String) : Option String :=
+  Fren.Core.leanTypes.findSome? fun l =>
+    (l.ctors.idxOf? c.toName).map fun i => s!"{l.name}::{l.variants[i]!}"
+
 /-- `t`, with a generic type's constructor, which cvc5 writes qualified by
-its sort, `(as C (D Int))`, as a constructor of any other type. -/
+its sort, `(as C (D Int))`, as a constructor of any other type, and a
+prelude type's, which is a Lean constructor, as Fren names it. -/
 def unqualify : Term → Term
-  | .atom c => if !c.startsWith "\"" && c.contains '~' then .atom (genericCtor c) else .atom c
+  | .atom c => if let some f := preludeCtor? c then .atom f
+    else if !c.startsWith "\"" && c.contains '~' then .atom (genericCtor c) else .atom c
   | .list ts => match ts[0]? with
     | some (Term.atom "as") => match ts[1]? with
-      | some (Term.atom c) => if c.contains '~' then .atom (genericCtor c) else .list ts
+      | some (Term.atom c) => if let some f := preludeCtor? c then .atom f
+        else if c.contains '~' then .atom (genericCtor c) else .list ts
       | _ => .list ts
     | some (Term.list #[.atom "as", .atom c, _]) =>
-      if c.contains '~' then .list (#[.atom (genericCtor c)] ++ ts.extract 1) else .list ts
+      if let some f := preludeCtor? c then .list (#[.atom f] ++ ts.extract 1)
+      else if c.contains '~' then .list (#[.atom (genericCtor c)] ++ ts.extract 1) else .list ts
+    | some (Term.atom c) => if let some f := preludeCtor? c then .list (#[.atom f] ++ ts.extract 1) else .list ts
     | _ => .list ts
 
 /-- A value as Fren builds it (`Reqs/View`), where `dts` are the
@@ -520,6 +543,46 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
   let typed := (types.get? head).map fun t => (`type, pre ++ t.replace factHole inner ++ post)
   (if nat then #[(`nat, pre ++ s!"(>= {inner} 0)" ++ post)] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
+/-- Whether a query of the formulas `fs` has a quantifier over elements to
+expand, directly or in a `define-fun` of `marked` that it applies. -/
+def needsExpansion (marked : Std.HashMap String (Array String × SeqElems.SExpr)) (fs : Array String) : Bool :=
+  fs.any fun f => SeqElems.hasMarker f || marked.keys.any fun g => (f.splitOn g).length > 1
+
+/-- The answer to the query of `hyps` and `goal`, with its quantifiers over
+elements expanded (`SeqElems.expandQuery`), asked by `ask` of its
+variables, hypotheses and goal: at the index set, with the fresh constants
+and length constants as variables of their own; and, if that has a model,
+again at every position, with the sequences' lengths pinned to the
+model's, whose model is real. That second query is unsatisfiable only if a
+model of the first is not one of the quantified query at its lengths
+(`Fren.Core.elementUnconfirmedReason`), and either may have more instances
+than `Fren.Core.maxElementInstances` (`Fren.Core.elementLimitReason`): the
+check is then inconclusive (`Reqs/Lang/ElementQuantifiers#expansion`). -/
+def solveExpanded (marked : Std.HashMap String (Array String × SeqElems.SExpr))
+    (ask : Array CVar → Array (Lean.Name × String) → String → Bool → IO (Outcome String)) (vars : Array CVar)
+    (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool) : IO (Outcome String) := do
+  let unquote (c : String) : String := ((c.drop 1).dropEnd 1).toString
+  let fresh (c : String) : CVar := { name := .mkSimple (unquote c), role := .input, isPub := false, ty := .int, span := default }
+  match SeqElems.expandQuery marked hyps goal with
+  | .error n => return .unknown (Fren.Core.elementLimitReason n)
+  | .ok ex =>
+    let o ← ask (vars ++ ex.consts.map fresh) ex.hyps ex.goal (wantModel || !ex.lengths.isEmpty)
+    let .sat m := o | return o
+    let consts := ex.consts.map unquote
+    let model := m.filter fun (n, _) => !consts.contains n.toString
+    if ex.lengths.isEmpty then return .sat model
+    let pins := ex.lengths.filterMap fun (l, q) => do
+      let (_, v) ← m.find? (·.1.toString == unquote l)
+      let k ← (v.replace " " "").toNat?
+      pure (q, k)
+    unless pins.size == ex.lengths.size do return .unknown Fren.Core.elementUnconfirmedReason
+    match SeqElems.expandQuery marked hyps goal (some pins) with
+    | .error n => return .unknown (Fren.Core.elementLimitReason n)
+    | .ok ex =>
+      match ← ask vars ex.hyps ex.goal wantModel with
+      | .unsat => return .unknown Fren.Core.elementUnconfirmedReason
+      | o => return o
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
@@ -557,9 +620,16 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- A component whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
-    let o ← runQuery (Fren.Core.logic kind (strings || sets) projection quantified)
-      (String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n"))
-      prelude vars limits dump? (facts ++ appFacts ++ hyps) goal wantModel cache?
+      -- The contract of a generic function without a body, at its type
+      -- parameters' sorts, with finite-model finding.
+      ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
+    let logic := Fren.Core.logic kind (strings || sets) projection quantified
+    let options := String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n")
+    let hyps := facts ++ appFacts ++ hyps
+    let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
+        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache?) vars hyps goal
+          wantModel
+      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache?
     return match o with
       | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString)
       | o => o
@@ -618,7 +688,8 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
   -- An uninterpreted function's contract, as both front ends build it
   -- (`Fren.Core.contractComp`).
   match contract, c.fn?, c.vars.back? with
-  | true, some f, some v => Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables
+  | true, some f, some v =>
+    Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables c.generic
   | _, _, _ => core
 
 /-- `rs`, results of `c`, with each cover goal's marked if its query uses

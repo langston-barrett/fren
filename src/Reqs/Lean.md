@@ -20,7 +20,7 @@ pub comp thermostat { ... }
 | Import | Provides |
 |---|---|
 | `Fren` | everything below |
-| `Fren.Spec` | the language and its [generated declarations](Generated.md), without the checker or the solver |
+| `Fren.Spec` | the language, its [prelude](Lang/Prelude.md) and its [generated declarations](Generated.md), without the checker or the solver |
 
 Lean code that only uses a spec's types and definitions can import the spec
 from a file that imports only `Fren.Spec`. Checking and implementations

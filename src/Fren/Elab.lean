@@ -3,6 +3,7 @@ import Fren.FinSet
 import Fren.Finite
 import Fren.Lint
 import Fren.Model
+import Fren.SeqElems
 import Fren.SimpSet
 import Fren.Syntax
 import FrenCore.Checking
@@ -15,6 +16,7 @@ import FrenCore.Quantifier
 import FrenCore.Regex
 import FrenCore.Syntax
 import FrenCore.Ty
+import FrenCore.TypeFacts
 import FrenCore.Typing
 -- keep-sorted end
 
@@ -53,15 +55,23 @@ partial def fieldName (s : Syntax) : Name :=
   else if s.getNumArgs == 1 then fieldName s[0]
   else .anonymous
 
-/-- Checks the name of a module, enum, variant or comp. -/
+/-- The name that the item declaration `id` declares, without the `!` that
+marks it as shadowing one of the prelude's names (`Core.declaredName`). -/
+def itemSegName (id : Syntax) : CommandElabM Name := return (Core.declaredName (← segName id)).1
+
+/-- Checks the name of a module, enum, variant or comp; an item's, but a
+variant's, without its `!` (`itemSegName`). -/
 def checkItemName (what : String) (id : Syntax) : CommandElabM Name := do
-  let n ← segName id
+  let n ← if what == "variant" then segName id else itemSegName id
   liftMsg id (Core.checkItemName what n)
   return n
 
-/-- Fails if `n` is already declared or imported by name in module `modName`. -/
+/-- Fails if `n` is already declared or imported by name in module `modName`,
+or if its declaration `ref`, written `n!` if it shadows, does not mark
+that it hides one of the prelude's names exactly when it does
+(`Core.Table.checkFreshItem`). -/
 def checkFresh (modName n : Name) (ref : Syntax) : CommandElabM Unit := do
-  liftMsg ref ((← getState).table.checkFresh modName n)
+  liftMsg ref ((← getState).table.checkFreshItem modName n (Core.declaredName ref.getId).2)
 
 open Lang in
 /-- Reports the first identifier or integer literal of `stx` that Lean read
@@ -278,8 +288,9 @@ def instanceType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [MonadFi
       throwErrorAt ref (Core.typeArgsMsg (Core.showPath path) ps args.size).text
   match ← resolveWritten modName segs with
   | .item { kind := .enumItem, path, .. } =>
-    arity .data path ((((← getState).enums.get? path).map (·.params)).getD #[])
-    return mkAppN (Lean.mkConst (← enumDecl path)) args
+    let some e := (← getState).enums.get? path | throwError "internal error: unknown enum `{path}`"
+    arity .data path e.params
+    return mkAppN e.const (e.leanArgs args)
   | .item { kind := .recordItem, path, .. } =>
     if let some n := (← getState).newtypes.get? path then
       arity .other path #[]
@@ -526,6 +537,19 @@ structure ExprCtx where
   /-- For an operand of a chain of `and`, its position in the chain and the
   chain's number of operands. -/
   testAt? : Option (Nat × Nat) := none
+  /-- The members' expressions of the guards of the quantifiers over
+  elements around this expression, by where they are
+  (`LocalState.elemMembers`). -/
+  elemGuards : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- Within the body of a quantifier over elements: whether it is a
+  `forall`; and the quantifiers that are directly its body, or the body of
+  one of those (`Core.ElementNesting`). -/
+  elemKind? : Option Bool := none
+  elemDirect : Array (Option String.Pos.Raw × Option String.Pos.Raw) := #[]
+  /-- The bound names of the quantifiers over elements, of the same kind,
+  that this expression is directly the body of, which its quantifier may
+  mention (`Core.ElementVerdict.mentionsBound`). -/
+  elemChain : Array Name := #[]
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × Core.BindingKind :=
@@ -608,7 +632,7 @@ partial def coreTyOf (s : State) (t : Expr) (params : Array Name := #[]) : Optio
       return .rel (← go e.appFn!.appArg!) (← go e.appArg!)
     else (go e).map .set
   else if let some e := s.enumOf? t then do
-    return .enum e.path (← t.getAppArgs.toList.mapM go)
+    return .enum e.path (← (e.frenArgs t.getAppArgs).toList.mapM go)
   else if let some r := s.recordOf? t then do
     return .record r.path (← t.getAppArgs.toList.mapM go)
   else match t.constName? with
@@ -626,6 +650,17 @@ def dataSig (s : State) (p : Name) : Option Core.DataSig :=
   | some e, _ => some { isRecord := false, unbounded := e.unbounded, ctors := e.payloads.map (tys e.params) }
   | none, some r => some { isRecord := true, unbounded := r.unbounded, ctors := #[tys r.params (r.fields.map (·.2))] }
   | none, none => none
+
+/-- The facts of the declared type `t` (`lang::type_facts`), from the
+declarations as both front ends give them to `Core.typeFacts`. -/
+def factsOf (s : State) (t : Core.PTy) : Core.TypeFacts := Core.typeFacts s.shapeOf t.node
+
+/-- The facts of the Lean type `ty` (`factsOf`), which accept the least if
+it stands for no Fren type. -/
+def exprFacts (s : State) (ty : Expr) : Core.TypeFacts :=
+  match coreTyOf s ty with
+  | some t => factsOf s (.plain t)
+  | none => .unknown
 
 /-- The Fren name of the type whose Lean type is `t`. -/
 partial def typeName (t : Expr) : TermElabM String := do
@@ -794,11 +829,11 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array T
   let targs := ty.getAppArgs
   let ctors : Array (Name × Array Expr) ←
     if let some e := s.enumOf? ty then
-      if s.unbounded ty then return none
+      if (exprFacts s ty).unbounded then return none
       let ps := e.payloadsAt targs
-      pure (e.variants.mapIdx fun i v => (e.decl ++ v, ps[i]?.getD #[]))
+      pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
     else if let some r := s.recordOf? ty then
-      if s.unbounded ty then return none
+      if (exprFacts s ty).unbounded then return none
       pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
     -- A newtype's values are its underlying type's, as the `fren` command
     -- has them.
@@ -824,7 +859,7 @@ positions without quantifiers. -/
 def ordinalTerm (info : EnumInfo) (s : Term) : TermElabM Term := do
   let last := info.variants.size - 1
   (List.range last).foldrM (init := ← `(($(Syntax.mkNumLit (toString last)) : Int))) fun k acc =>
-    `(if $s = $(mkCIdent (info.decl ++ info.variants[k]!)) then ($(Syntax.mkNumLit (toString k)) : Int) else $acc)
+    `(if $s = $(mkCIdent (info.ctor k)) then ($(Syntax.mkNumLit (toString k)) : Int) else $acc)
 
 /-- `x < y`, or `x ≤ y` if not `strict`, of values compared by `o`, as a
 Lean proposition, as the `fren` command's `orderSmt` writes it: a record's
@@ -1318,21 +1353,9 @@ partial def applications (cx : ExprCtx) (e : Syntax) : TermElabM (Array Syntax) 
   return inner
 
 /-- Whether the Lean type of a Fren type has infinitely many values
-(`Reqs/Lang/Decidability#outputs`): an abstract type may, so it counts. -/
-partial def infiniteType (ty : Expr) : TermElabM Bool := do
-  if ty.isConstOf ``Bool then return false
-  if ty.isAppOfArity ``Fren.FinSet 1 then return ← infiniteType ty.appArg!
-  if ty.isAppOfArity ``Fren.Seq 1 then return true
-  if ty.isAppOfArity ``Prod 2 then return (← infiniteType ty.appFn!.appArg!) || (← infiniteType ty.appArg!)
-  let s ← getState
-  -- An instance, by its payloads' or fields' types (`Reqs/Lang/Generics`).
-  if let some e := s.enumOf? ty then return e.unbounded || (← (e.payloadsAt ty.getAppArgs).anyM (·.anyM infiniteType))
-  if let some r := s.recordOf? ty then return r.unbounded || (← (r.fieldsAt ty.getAppArgs).anyM (infiniteType ·.2))
-  let some d := ty.constName? | return true
-  -- A newtype has its underlying type's values, as the `fren` command has
-  -- it: a newtype of a set of a finite type is finite, though unbounded.
-  if let some n := s.newtypeOfDecl? d then return ← infiniteType n.under
-  return true
+(`Reqs/Lang/Decidability#outputs`): it is not finite (`lang::type_facts`),
+so an abstract type counts. -/
+def infiniteType (ty : Expr) : TermElabM Bool := return !(exprFacts (← getState) ty).finite
 
 /-- Whether `e` mentions an output of an infinite type, directly, through a
 definition or through a binder. -/
@@ -1369,6 +1392,29 @@ partial def isVariable (cx : ExprCtx) (e : Syntax) : Bool :=
   else if e.isOfKind ``Lang.fieldExpr then isVariable cx e[0]
   else if e.isOfKind ``Lang.appExpr then (methodApp? cx e).isNone
   else e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" && isVariable cx e[1]
+
+/-- Where `e` is written, without its parentheses: how the memberships of
+quantifiers over elements are found again (`ExprCtx.elemGuards`). -/
+def elemKey (e : Syntax) : Option String.Pos.Raw × Option String.Pos.Raw :=
+  let e := unparen e
+  (e.getPos?, e.getTailPos?)
+
+/-- Whether the names `ns`, as mentioned, are an output that is not
+defined, or mention one, through a definition or through a binder: one
+that the realizability check quantifies over, as the `fren` command's
+`mentionsOutput`. -/
+partial def mentionsOutputOf (cx : ExprCtx) (ns : Array Name) : TermElabM Bool := do
+  for n in ns do
+    if let some b := cx.binder? n then
+      if let some sc := b.scrutinee then
+        if ← mentionsOutputOf (cx.at b) (pathMentions sc) then return true
+      continue
+    let some v := cx.vars.find? (·.name == n) | continue
+    if (defDeps cx.vars v).any fun u => u.role == .output && u.defn?.isNone then return true
+  return false
+
+/-- `mentionsOutputOf` of the names that `e` mentions. -/
+def mentionsOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool := mentionsOutputOf cx (pathMentions e)
 
 /-- Reports `undecidable` if construct `c`, with `operands` other than of
 `=` and `!=`, is outside the decidable core (`lang::in_core`). -/
@@ -1740,7 +1786,7 @@ partial def leanTypeOf (t : Core.Ty) : TermElabM Expr := do
   | .seq e => return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← leanTypeOf e)
   | .enum p as =>
     let some e := s.enums.get? p | throwError "internal error: unknown enum `{p}`"
-    return mkAppN (Lean.mkConst e.decl) (← as.toArray.mapM leanTypeOf)
+    return mkAppN e.const (e.leanArgs (← as.toArray.mapM leanTypeOf))
   | .record p as =>
     let some r := s.records.get? p | throwError "internal error: unknown record `{p}`"
     return mkAppN (Lean.mkConst r.decl) (← as.toArray.mapM leanTypeOf)
@@ -1803,6 +1849,9 @@ partial def typeShape (cx : ExprCtx) (e : Syntax) : TermElabM Core.TypeShape := 
     if let .ok (.item { kind := .fnItem, path, .. }) := st.table.resolvePath cx.modName ((pathSegs e[0]).map (·.getId)) cx.shadowing then
       if let some d := (st.defined.get? path).filter (!·.typeParams.isEmpty) then
         return Core.callShape d.typeParams.size d.declared d.result (← e[2].getSepArgs.mapM go)
+      -- One without a body, as the `fren` command has it.
+      if let some a := (st.abstracts.get? path).filter (!·.typeParams.isEmpty) then
+        return Core.callShape a.typeParams.size a.declared a.result (← e[2].getSepArgs.mapM go)
   if e.isOfKind ``Lang.setExpr || e.isOfKind ``Lang.seqExpr then
     let elems := e[1].getSepArgs
     if elems.isEmpty then return .emptyLiteral else return .anyPart (← elems.toList.mapM go)
@@ -2140,7 +2189,7 @@ partial def patTyOf (st : State) (t : Expr) : Core.PatTy :=
   -- A type parameter, in a payload's type (`Core.Sigs`).
   else if let .bvar k := t then .param k
   else match st.enumOf? t with
-    | some e => .enum e.path (t.getAppArgs.toList.map (patTyOf st))
+    | some e => .enum e.path ((e.frenArgs t.getAppArgs).toList.map (patTyOf st))
     | none => .other
 
 /-- The variants of each enumeration, with their payloads' types, as
@@ -2245,8 +2294,8 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
   if let some msg := Core.variantMentionMsg? v tys.size (!p[1].isNone) then throwErrorAt p msg.text
   let args := patternArgs p
   unless args.size == tys.size do throwErrorAt p (Core.arityMsg v tys.size args.size "pattern").text
-  let ctor := info.decl ++ info.variants[idx]!
-  let sels ← (Array.range tys.size).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
+  let ctor := info.ctor idx
+  let sels ← (Array.range tys.size).mapM fun k => `($(mkCIdent (info.sel idx k)) $x)
   let mut pats := #[]
   let mut bs := #[]
   let mut tests := #[← `($x = $(← ctorApp ctor ty.getAppArgs sels))]
@@ -2401,10 +2450,10 @@ partial def patTerm (ty : Core.Ty) (p : Core.Pat) (x : Term) : TermElabM Term :=
   | .ctor idx args =>
     let .enum ep targs := ty | `(True)
     let some info := (← getState).enums.get? ep | `(True)
-    let ctor := info.decl ++ info.variants[idx]!
+    let ctor := info.ctor idx
     -- With an instance's arguments for its type parameters.
     let tys := (info.shape.inst (targs.toArray.map .plain)).parts[idx]?.getD #[]
-    let sels ← (Array.range (info.payloads[idx]!.size)).mapM fun k => `($(mkCIdent (selectorName ctor k)) $x)
+    let sels ← (Array.range (info.payloads[idx]!.size)).mapM fun k => `($(mkCIdent (info.sel idx k)) $x)
     let mut tests := #[← `($x = $(mkCIdent ctor) $sels*)]
     for a in args, k in [0:args.size] do
       unless a matches .wild _ do
@@ -2434,8 +2483,8 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
   | .payloads path _ cs =>
     let some info := st.enums.get? path | `(True)
     let ts ← cs.mapM fun (v, k, c) => do
-      let ctor := info.decl ++ info.variants[v]!
-      let sels ← (Array.range (info.payloads[v]!.size)).mapM fun j => `($(mkCIdent (selectorName ctor j)) $x)
+      let ctor := info.ctor v
+      let sels ← (Array.range (info.payloads[v]!.size)).mapM fun j => `($(mkCIdent (info.sel v j)) $x)
       `($x = $(mkCIdent ctor) $sels* → $(← consTerm c sels[k]! depth))
     return (← conjTerm ts).getD (← `(True))
   | .elems seq _ c =>
@@ -2481,6 +2530,18 @@ type `ty`, brings, as a predicate (`Core.PTy.cons`). -/
 def factPred? (ty : Expr) (pt : Core.PTy) (nat : Bool := false) : TermElabM (Option Expr) := do
   let some c := pt.cons (← getState).shapeOf nat | return none
   some <$> predOf ty c
+
+/-- What the checks need of the elaborator (`ElabHooks`): for the instances
+of generic functions without a body, the Lean types of their signatures,
+and the constraints of their result types (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). -/
+def elabHooks : ElabHooks where
+  leanType t := (leanTypeOf t).run'
+  fact pt nat := (do
+    if (pt.cons (← getState).shapeOf).isNone then return none
+    let nat := nat && pt.ty == Core.Ty.nat
+    let ty ← if nat then pure (Lean.mkConst ``Int) else leanTypeOf pt.ty
+    factPred? ty pt nat).run'
+  coreTy e := return coreTyOf (← getState) e
 
 /-- The declared type of the variable, parameter or function `name`,
 written `ty?`, which is `Bool` if it is not written: its Lean type, and the
@@ -2610,9 +2671,13 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     let tys := if v[1].isNone then #[] else v[1][1].getSepArgs
     let tps ← tys.mapM fun t => fieldType modName t decl .payload n params
     let ts := tps.map (·.1)
-    if ts.any (·.getAppFn.isConstOf decl) then nRecursive := nRecursive + 1
     let st ← getState
-    unbounded := unbounded || ts.any fun t => t.getAppFn.isConstOf decl || st.unbounded t
+    -- Recursive if a payload's type is the enumeration or built from it
+    -- (`lang::well_founded`).
+    let own := (Core.PTy.plain (.enum path (params.toList.zipIdx.map fun (p, k) => .param k p))).node
+    let nodes := tps.toList.map fun (t, pt) => if t.getAppFn.isConstOf decl then own else pt.node
+    if Core.recursiveVariant st.shapeOf own nodes then nRecursive := nRecursive + 1
+    unbounded := unbounded || tps.any fun (t, pt) => t.getAppFn.isConstOf decl || (factsOf st pt).unbounded
     payloads := payloads.push ts
     ptys := ptys.push (tps.zip tys |>.map fun ((_, pt), t) => (pt, t))
   unless Core.wellFounded variants.size nRecursive do throwErrorAt nameStx (Core.illFoundedMsg n).text
@@ -2637,6 +2702,12 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
   let withPayload := variantStxs.filter (!·[1].isNone)
   unless Core.orderedDeclAccepted isOrdered withPayload.size none do
     throwErrorAt withPayload[0]![0] (Core.orderedPayloadMsg n withPayload[0]![0].getId).text
+  -- One of the prelude's types is the Lean type that it is, for which
+  -- nothing is generated (`Reqs/Lang/Prelude#lean`).
+  if let some l := Core.leanTypeOf? path then
+    record (.item { item := { kind := .enumItem, path, isPub, owner := modName }, ref := nameStx })
+    record (.enumInfo { path, decl := l.lean, variants, payloads, unbounded, ordered := isOrdered, shape, params, lean? := some l })
+    return
   let own : Term ← if params.isEmpty then pure (mkIdent decl) else `(($(mkIdent decl) $(params.map fun p => (mkIdent p : Term))*))
   let ctors ← (variants.zip payloads).mapM fun (v, ts) => do
     let bs ← ts.mapIdxM fun k t => do
@@ -2737,7 +2808,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     if let some k := first? then
       let f := fieldStxs[k]!
       throwErrorAt (if f[1].isNone then f[0] else f[1][1]) (Core.unorderedFieldMsg .record n fields[k]!.1 ptys[k]!.ty).text
-  let unbounded := fields.any fun (_, t) => st.unbounded t
+  let unbounded := ptys.any fun pt => (factsOf st pt).unbounded
   let bs ← fields.mapM fun (f, t) => `(Lean.Parser.Command.structExplicitBinder| ($(mkIdent f):ident : $(typeSyntax t params)))
   let binders ← paramBinders params false
   elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident $binders:bracketedBinder* where
@@ -2772,7 +2843,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
   -- (`lang::ordered_declaration`).
   unless Core.orderedDeclAccepted isOrdered 0 (Core.PTy.firstUnordered? (← getState).orderedDecl [pt]) do
     throwErrorAt ty (Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") pt.ty).text
-  let unbounded := Core.newtypeUnbounded ((← getState).unbounded under)
+  let unbounded := Core.newtypeUnbounded (factsOf (← getState) pt).unbounded
   -- One field, `«0»`, so that `x.0` in Fren is `x.«0»` in Lean.
   elabCommand (← `(structure $(mkIdentFrom nameStx (leanName .anonymous path)):ident where
     $(mkIdent `mk):ident :: $(mkIdent (Name.mkSimple "0")):ident : $(typeSyntax under)
@@ -3812,6 +3883,16 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- `ts` is taken apart only once it is known to be a `Seq`: a `(← ...)`
     -- after `&&` would run, and panic, for any other type.
     let isSeq ← if ts.isAppOfArity ``Fren.Seq 1 then isDefEq ts.appArg! tx else pure false
+    -- The membership of a quantifier over elements' guard: its report
+    -- waits for the quantifier's verdict (`quantTerm`).
+    if cx.elemGuards.contains (elemKey b) then
+      let infinite ← #[a, b].anyM (mentionsInfiniteOutput cx)
+      let ground ← isConstant cx e
+      let report := if !isSeq || cx.unmentioned || Core.inCore .seqWord true true infinite ground
+          (literalOperand := (unparen b).isOfKind ``Lang.seqExpr) then none
+        else some (e, Core.undecidableMsg .seqWord infinite)
+      modifyLocal fun l => { l with elemMembers := l.elemMembers.push (elemKey b, isSeq, report) }
+      if isSeq then return ← `($x ∈ $s)
     if isSeq then
       checkCore cx e .seqWord true true #[a, b] (← isConstant cx e) (literalOperand := (unparen b).isOfKind ``Lang.seqExpr)
       return ← `($x ∈ $s)
@@ -3963,6 +4044,13 @@ def usesTerms (uses : Array Name) (path : Name) (tps : Array Name) (targs : Arra
       if u == ph then return typeSyntax (← leanTypeOf targs[k]!)
       if u == inhabitedName ph then return ← `((inferInstance : Inhabited $(typeSyntax (← leanTypeOf targs[k]!))))
     return ⟨(mkCIdent u).raw⟩
+
+/-- Records an application of the generic function at `path` at the type
+arguments `targs`, in the current item (`Core.GenericUse`). -/
+def recordGenericUse (path : Name) (targs : Array Core.Ty) : TermElabM Unit := do
+  let l ← getLocal
+  record (.genericUse (← getMainModule)
+    { file := 0, item := l.currentItem, caller? := l.fnTypeParams.map (·.1), callee := path, targs })
 
 /-- Records the questions about the application at `ref` of the function at
 `path` to the arguments `args`, if the function has preconditions, for
@@ -4426,8 +4514,8 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     if let some c ← construction? cx e then
       let (_, targs) ← constructionTerms (fun _ v => toTerm cx v) cx expected? e c #[]
         (Core.showPath (en.path ++ en.variants[idx]!)) fun _ _ => ""
-      return ← ctorApp (info.decl ++ en.variants[idx]!) (← targs.mapM leanTypeOf) #[] e
-    return mkCIdentFrom e (info.decl ++ en.variants[idx]!)
+      return ← ctorApp (info.ctor idx) (info.leanArgs (← targs.mapM leanTypeOf)) #[] e
+    return mkCIdentFrom e (info.ctor idx)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
     -- Its value's quantifiers are part of the queries
@@ -4527,14 +4615,14 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       -- Each value's obligation, of its type with the enumeration's arguments.
       for a in args.getElems, t in ts, k in [0:ts.size] do
         noteObligation cx .payload a (partPType info.shape idx k targs) t
-      return ← ctorApp (info.decl ++ en.variants[idx]!) (← targs.mapM leanTypeOf) ts p
+      return ← ctorApp (info.ctor idx) (info.leanArgs (← targs.mapM leanTypeOf)) ts p
     let args ← args.getElems.zipIdx.mapM fun (a, k) => do
       let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := info.payloads[idx]![k]!.isConstOf ``Nat,
                                 expected? := ← coreTy? info.payloads[idx]![k]! } a
       checkDeclared a t info.payloads[idx]![k]! (note k)
       noteObligation cx .payload a (partPType info.shape idx k) t
       return t
-    return ← `($(mkCIdentFrom p (info.decl ++ en.variants[idx]!)) $args*)
+    return ← `($(mkCIdentFrom p (info.ctor idx)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
   if let some d := (← getState).defined.get? path then
     -- Its definition, applied to the placeholders it uses; its arguments
@@ -4561,6 +4649,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       for a in elems, t in ts, k in [0:ts.size] do
         noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
       notePreconditions cx p path ts (some (d.typeParams, targs))
+      recordGenericUse path targs
       if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
       return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $ts*)
     let tys := paramTypes (← instantiateForall (← getConstInfo d.decl).type (d.uses.map mkConst))
@@ -4576,6 +4665,36 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   let a ← placeholderOf path
+  if !a.typeParams.isEmpty then
+    -- A generic function without a body, at the instance whose type
+    -- arguments are inferred, as for a defined one: its placeholder applied
+    -- to them and their `Inhabited` instances
+    -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). Outputs
+    -- may not occur in its arguments (`inst::mention`).
+    let acx := if cx.place == .prop then { cx with place := .argument } else cx
+    let elems := args.getElems
+    unless elems.size == a.declared.size do throwError (Core.arityMsg path a.declared.size elems.size).text
+    let synth ← elems.mapM (synthesizes acx)
+    let run : StateT (Array Term) TermElabM (Array Core.Ty) :=
+      Core.inferCall a.typeParams a.declared a.result synth expected?
+        (throwErrorAt e (Core.cannotInferCallMsg (Core.showPath path)).text : TermElabM Unit)
+        (fun k x? => do
+          let natOk := x? == some Core.Ty.nat
+          let t ← (toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk, expected? := x? }
+            elems[k]! : TermElabM Term)
+          modify (·.set! k t)
+          frenTypeOf? t)
+        (fun k x f => (liftMsg elems[k]!
+          (Core.checkType x f (some s!"note: argument {k + 1} of `{Core.showPath path}` has type `{x.show}`")) : TermElabM Unit))
+    let (targs, ts) ← run.run (elems.map fun _ => default)
+    for x in elems, t in ts, k in [0:ts.size] do
+      noteObligation acx .argument x (a.ptys.1[k]?.getD default) t
+    notePreconditions cx p path ts (some (a.typeParams, targs))
+    recordGenericUse path targs
+    let tyArgs ← targs.flatMapM fun t => do
+      let ty := typeSyntax (← leanTypeOf t)
+      return #[ty, ← `((inferInstance : Inhabited $ty))]
+    return ← `(@$(mkCIdentFrom p a.placeholder) $tyArgs* $ts*)
   let a' := a
   let nParams := (← getConstInfo a.placeholder).type.getForallArity
   unless args.getElems.size == nParams do throwError (Core.arityMsg path nParams args.getElems.size).text
@@ -4650,7 +4769,7 @@ partial def valueTerm (ty : Expr) (v : Core.PVal) : TermElabM Term := do
     -- With an instance's arguments for its type parameters.
     let targs := ty.getAppArgs
     let (c, ts) :=
-      if let some e := s.enumOfDecl? d then (e.decl ++ e.variants[idx]!, (e.payloadsAt targs)[idx]?.getD #[])
+      if let some e := s.enumOfDecl? d then (e.ctor idx, (e.payloadsAt targs)[idx]?.getD #[])
       else if let some r := s.recordOfDecl? d then (r.ctor, (r.fieldsAt targs).map (·.2))
       else if let some n := s.newtypeOfDecl? d then (n.ctor, #[n.under])
       else (.anonymous, #[])
@@ -4662,6 +4781,8 @@ and how many there are, if a quantifier ranges over it, as the `fren`
 command's `binderValues`. -/
 def binderValues (ty : Expr) (pt : Core.PTy) : TermElabM (Option (Nat × Array Term)) := do
   let st ← getState
+  -- Only a listed type's values are listed (`lang::quantified_type`).
+  unless (factsOf st pt).listed do return none
   if (pt.cons st.shapeOf).isNone then
     let some n ← valueCount? ty | return none
     return some (n, (← valuesOf? ty Core.maxInstances).getD #[])
@@ -4764,6 +4885,74 @@ def lintQuant (e : Syntax) (all : Bool) (binders ids : Array Syntax) (bound : Ar
   let msg := Core.trivialQuantifierMsg all bound[i]!.1 (exactText bs[i]![3]) values[i]! quant fixed?
   recordLint .trivialQuantifier bs[i]! (if (← getLocal).inMarkdown && fixed?.isSome then msg.note Core.fixHelp else msg)
 
+/-- Whether the declaration `decl` of a defined function has a quantifier
+over a type that is not listed, Lean's `∀` over a value or `∃`, directly or
+through another defined function that it applies, to a depth of `fuel`,
+beyond which it is taken to have one, as the `fren` command's
+`fnQuantifies` (`Core.ElementUse.quantifiedArgument`). -/
+partial def defQuantifies (env : Environment) (s : State) (fuel : Nat) (decl : Name) : Bool :=
+  if fuel == 0 then true else
+  match (env.find? decl).bind (·.value?) with
+  | none => false
+  | some v =>
+    let dependent : Expr → Bool
+      | .forallE _ _ b _ => b.hasLooseBVars
+      | _ => false
+    let quantified := (v.find? fun x => x.isAppOf ``Exists || dependent x).isSome
+    let decls := s.defined.foldl (init := #[]) fun acc _ d => if d.decl != decl then acc.push d.decl else acc
+    quantified || decls.any fun d => (v.find? (·.isConstOf d)).isSome && defQuantifies env s (fuel - 1) d
+
+/-- How the expression `e`, within the body of a quantifier, uses the bound
+name `x`, where `inner` are the names that the body declares, which may
+stand for `x` (`Core.ElementUse`), as the `fren` command's `elementUses`. -/
+partial def elementUses (cx : ExprCtx) (x : Name) (inner : Array Name) (e : Syntax) :
+    TermElabM (Array Core.ElementUse) := do
+  let names (e : Syntax) : Bool := (pathMentions e).any fun n => n.getRoot == x || inner.contains n.getRoot
+  let st ← getState
+  let positions (m : String) : Nat := match m with | "update" | "at" => 1 | "slice" => 2 | _ => 0
+  let own : Array Core.ElementUse ← do
+    if e.isOfKind ``Lang.indexExpr then
+      pure (if names e[2] && !(← isConstant cx e[0]) then #[.index] else #[])
+    else if e.isOfKind ``Lang.methodExpr then
+      let n := if e[2].isIdent || e[2].isAtom then e[2] else e[2][0]
+      let m := if n.isIdent then n.getId.toString else n.getAtomVal.trimAscii.toString
+      pure (if (e[4].getSepArgs.extract 0 (positions m)).any names && !(← isConstant cx e[0]) then #[.index] else #[])
+    else if e.isOfKind ``Lang.appExpr then
+      let args := e[2].getSepArgs
+      if !args.any names then pure #[]
+      else if let some (_, m) := methodApp? cx e then
+        pure (if (args.extract 0 (positions m.toString)).any names then #[.index] else #[])
+      else
+        let some names' ← (try some <$> segNames (pathSegs e[0]) catch _ => pure none) | pure #[]
+        match st.table.resolvePath cx.modName names' cx.shadowing with
+        | .ok (.item { kind := .fnItem, path, .. }) =>
+          if let some d := st.defined.get? path then
+            let ps := if d.typeParams.isEmpty then d.ptys.1.map (·.ty) else d.declared
+            if ps.any (Core.hasSeqWithin st.shapeOf 8) then pure #[.seqArgument]
+            else pure (if defQuantifies (← getEnv) st 8 d.decl then #[.quantifiedArgument] else #[])
+          else
+            let facts := (st.abstracts.get? path).any fun a =>
+              a.ptys.2.ty == .nat || a.fact?.isSome || st.contracts.contains path
+            pure (if facts then #[.factArgument] else #[])
+        | _ => pure #[]
+    else if e.isOfKind ``Lang.quantExpr then
+      let receivers := (guardConjuncts (isForall e) e[3]).filterMap fun
+        | some (_, .mem, r) => some r
+        | _ => none
+      pure (if receivers.any names then #[.receiver] else #[])
+    else pure #[]
+  return own ++ (← e.getArgs.flatMapM (elementUses cx x inner))
+
+/-- The quantifier that is directly the body `e` of a quantifier over
+elements, a `forall` if `all`, if any, by where it is (`elemKey`), as the
+`fren` command's `elementSpine`. -/
+partial def elementSpine (all : Bool) (e : Syntax) : Option (Option String.Pos.Raw × Option String.Pos.Raw) :=
+  let e := unparen e
+  if let some (_, d) := whenOf? e then (if all then elementSpine all d else none)
+  else if let .conj _ b := guardNode e then (if all then none else elementSpine all b)
+  else if e.isOfKind ``Lang.quantExpr && isForall e == all then some (elemKey e)
+  else none
+
 open Lang in
 /-- `forall (x: T), e`, or `exists` unless `all`, with the binders
 `binders` and the body `body`: expanded over the bound names of listed
@@ -4792,10 +4981,12 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- its type is listed.
   let mut bound : Array (Name × Expr × Core.PTy × Option (Array Term)) := #[]
   let mut sizes := #[]
+  let mut unlisted := #[]
   for b in binders do
     let (ty, pt) ← binderType cx.modName b[3]
     let values? ← binderValues ty pt
-    if values?.isNone then checkCore cx b .quantifier true true #[]
+    -- Reported once the quantifier's verdict is known.
+    if values?.isNone then unlisted := unlisted.push b
     for x in b[1].getArgs do
       let locals := Core.bindingLocals (cx.vars.map fun v => (v.name, v.role)) cx.insts
         (cx.binders.map (·.what) ++ bound.map (·.1, Core.BindingKind.boundName)) cx.selfFn.isSome cx.inGlobal
@@ -4808,11 +4999,32 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let n := cx.instances * Core.instanceCount sizes
   unless Core.quantifierSizeAccepted n do
     throwErrorAt (mkNullNode binders) (Core.quantifierSizeMsg n (cx.instances > 1)).text
-  -- A bound name of a type that is not listed, with a domain, makes the
-  -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`).
   let names := bound.map (·.1)
-  if bound.zipIdx.any (fun ((_, ty, _, vs?), k) => vs?.isNone && domainOf all names body k (ty.isConstOf ``Nat) != .unbounded) then
-    modifyLocal fun l => { l with guardedUsed := true }
+  -- A quantifier over a sequence's elements (`lang::element_quantifier`):
+  -- each bound name of a type that is not listed has the members of `x in
+  -- e` as its domain, by the first conjunct of the guard that names it, as
+  -- the `fren` command finds them.
+  let conjuncts := guardConjuncts all body
+  let parts := Core.guardPartsBy guardNode whenOf? all body
+  let members : Array (Option Syntax) := bound.zipIdx.filterMap fun ((bn, ty, _, vs?), k) =>
+    if vs?.isSome then none else some <|
+      match domainOf all names body k (ty.isConstOf ``Nat) with
+      | .members j =>
+        if (parts.extract 0 j).any (·.any (namesBound bn)) then none
+        else match conjuncts[j]? with
+          | some (some (_, .mem, m)) => some m
+          | _ => none
+      | _ => none
+  let candidate := !members.isEmpty && members.all Option.isSome
+  let nesting : Core.ElementNesting := match cx.elemKind? with
+    | none => .top
+    | some k => if k == all && cx.elemDirect.contains (elemKey e) then .direct else .other
+  let bodyCx := if candidate then
+      { cx with elemGuards := cx.elemGuards ++ members.filterMap (·.map elemKey), elemKind? := some all
+                elemDirect := cx.elemDirect ++ (elementSpine all body).toArray
+                elemChain := (if nesting == .direct then cx.elemChain else #[])
+                  ++ (bound.filter (·.2.2.2.isNone)).map (·.1) }
+    else cx
   let values ← bound.filterMapM fun (_, ty, _, vs?) => vs?.mapM (·.mapM (elabProp · ty))
   let combos := values.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]]
   let localName (k : Nat) (bn : Name) (listed : Bool) : Name :=
@@ -4827,7 +5039,48 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let outerTables := (← getLocal).tables
     modifyLocal fun l => { l with indexes := #[], tables := #[] }
     let mark := (← getLocal).boundMentions.size
-    let t ← toTerm { cx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
+    let t ← toTerm { bodyCx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
+    -- Its verdict, from its bound names of types that are not listed, in
+    -- order, as the `fren` command decides it.
+    let verdict ← if !candidate then pure Core.ElementVerdict.notMembers else do
+      let recorded := (← getLocal).elemMembers
+      let inner := (declaredNames body).map Name.mkSimple
+      let unbounded := bound.filter (·.2.2.2.isNone)
+      let mut infos := #[]
+      for (bn, _, _, _) in unbounded, m? in members, k in [0:unbounded.size] do
+        let some m := m? | continue
+        let seq := (recorded.find? (·.1 == elemKey m)).any (·.2.1)
+        let earlier := (unbounded.extract 0 k).map (·.1) ++ (cx.binders.filter (·.unbounded)).map (·.name)
+        infos := infos.push
+          { members := if seq then .seq else .set
+            receiverBound := (pathMentions m).any (earlier.contains ·.getRoot)
+            uses := (← elementUses cx bn inner body).toList : Core.ElementBinder }
+      -- What the quantifier mentions, once its own bound names are not.
+      let chain := if nesting == .direct then cx.elemChain else #[]
+      let bodyNames := (pathMentions body).filter fun n => !names.contains n.getRoot
+      let boundNames := bodyNames.any fun n =>
+        let r := n.getRoot
+        !chain.contains r && (cx.binder? r).any (·.unbounded)
+      let output ← mentionsOutputOf cx bodyNames
+      pure (Core.elementVerdict nesting output boundNames infos.toList)
+    let inCore := verdict == .inCore
+    -- The reports that its guard's memberships deferred, and its binders'.
+    let keys := members.filterMap (·.map elemKey)
+    let deferred := (← getLocal).elemMembers.filter (keys.contains ·.1)
+    modifyLocal fun l => { l with elemMembers := l.elemMembers.filter (!keys.contains ·.1) }
+    unless inCore || cx.unmentioned do
+      for (_, _, r?) in deferred do
+        if let some (ref, msg) := r? then
+          modifyLocal fun l => { l with outsideCore := true }
+          recordLint .undecidable ref msg
+      for b in unlisted do
+        modifyLocal fun l => { l with outsideCore := true }
+        recordLint .undecidable b ((Core.elementUndecidableMsg verdict).getD (Core.undecidableMsg .quantifier false))
+    -- A bound name of a type that is not listed, with a domain, makes the
+    -- queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`), unless the
+    -- quantifier is expanded.
+    if !inCore && bound.zipIdx.any (fun ((_, ty, _, vs?), k) => vs?.isNone && domainOf all names body k (ty.isConstOf ``Nat) != .unbounded) then
+      modifyLocal fun l => { l with guardedUsed := true }
     -- Each bound name's number of values, 0 for a type that is not listed.
     if cx.noteIndexes then
       lintQuant e all binders ids (bound.map fun (bn, ty, _, _) => (bn, ty))
@@ -4842,13 +5095,16 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- conjunct, and without `have`s, which lean-smt does not translate.
     let bindFree (forall? : Bool) (x : Expr) : TermElabM Expr := do
       if free.isEmpty then return x
+      -- A quantifier over elements in the core is marked, for each query
+      -- to expand (`Fren.Elems`).
+      let marked (q : Expr) : Expr := if inCore then Elems.mark free.size q else q
       let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
       let x ← zetaReduce x
       if forall? then
-        mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x)
+        return marked (← mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x))
       else
-        free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
-          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc]
+        return marked (← free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
+          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc])
     -- The names of enclosing `let`s and `where`s are locals here, which the
     -- `have`s that define them bind again: what mentions them is closed
     -- over them, and applied to their names.
@@ -5156,12 +5412,14 @@ def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
 /-- Declares the placeholder for the abstract type or function at `path`
 (`AbstractInfo`). -/
 def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) (ptys : Array Core.PTy × Core.PTy := (#[], default))
-    (fact? : Option Expr := none) : TermElabM Unit := do
+    (fact? : Option Expr := none) (typeParams : Array Name := #[]) (declared : Array Core.Ty := #[])
+    (result : Core.Ty := .bool) (resultP : Core.PTy := default) : TermElabM Unit := do
   let placeholder := placeholderName path
   addDecl (.axiomDecl { name := placeholder, levelParams := [], type, isUnsafe := false })
   let s ← getState
   let deps := type.foldConsts #[] fun c acc => if s.placeholders.contains c && !acc.contains c then acc.push c else acc
-  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact? })
+  record (.abstractInfo { path, placeholder, isType, deps, ptys, fact?, typeParams, declared, result, resultP
+                          module := ← getMainModule })
   -- An abstract type has a value, so its placeholder has an `Inhabited`
   -- instance, itself a placeholder, which an index of a sequence of it
   -- needs; an implementation gives the interpretation's own.
@@ -5171,6 +5429,21 @@ def declarePlaceholder (path : Name) (type : Expr) (isType : Bool) (ptys : Array
     addDecl (.axiomDecl { name := inst, levelParams := [], type := instType, isUnsafe := false })
     addInstance inst .global 1000
     record (.abstractInfo { path := inhabitedName path, placeholder := inst, isType := false, deps := #[placeholder] })
+
+/-- `t`, over the placeholders of the type parameters `tps` of the generic
+function at `path` and of their `Inhabited` instances, as a type that takes
+a `Type` and an instance of it for each, first (`typeParamPlaceholders`):
+the type of the placeholder of a generic function without a body
+(`Reqs/Generated#generic-functions`). -/
+def withTypeParams (path : Name) (tps : Array Name) (t : Expr) : TermElabM Expr :=
+  go 0 #[]
+where
+  go (k : Nat) (xs : Array Expr) : TermElabM Expr := do
+    if h : k < tps.size then
+      withLocalDeclD (Name.mkSimple tps[k].toString) (mkSort Level.one) fun x =>
+        withLocalDecl (Name.mkSimple "#inhabited") .instImplicit (mkApp (Lean.mkConst ``Inhabited [Level.one]) x) fun i =>
+          go (k + 1) (xs ++ #[x, i])
+    else mkForallFVars xs (atInstance path tps xs t)
 
 @[command_elab Lang.typeCmd] def elabAbstractType : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
@@ -5254,7 +5527,10 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let value? ← if defined then pure none else do
     let a ← placeholderOf path
     let name := Core.contractValueName n (vars.map (·.name))
-    let ty ← forallTelescope (← getConstInfo a.placeholder).type fun _ r => pure r
+    -- A generic function's, at its own type parameters, for every type
+    -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+    let own := (typeParamPlaceholders path a.typeParams).map (Lean.mkConst ·)
+    let ty ← forallTelescope (← instantiateForall (← getConstInfo a.placeholder).type own) fun _ r => pure r
     -- With its result's type, which it is realized in.
     let fact? ← factPred? ty a.ptys.2
     pure (some (a.placeholder, ({ name, role := .output, isPub := true, «type» := ty, ref := mkIdent name
@@ -5284,8 +5560,12 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
       -- applied to its parameters is the value.
       let ofValue? ← match post, value? with
         | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
-          let app := mkAppN (mkConst ph) fvs
-          some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if t == app then some x else none)
+          -- At its own type parameters, whatever term gives their
+          -- `Inhabited` instances.
+          let nTypes := 2 * ((← placeholderOf path).typeParams.size)
+          let isApp (t : Expr) : Bool :=
+            t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
+          some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
         | _, _ => pure none
       return (← mkLambdaFVars fvs body, ofValue?, tables)
     lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
@@ -5317,22 +5597,21 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
   let modName := (← getLocal).currentModule
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkNoBang n)
   liftMsg nameStx (Core.checkFnName n)
   checkFresh modName n nameStx
   lintName .function n nameStx
   startDeclared
   let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
   let params := stx[5].getSepArgs
   let body? := if stx[8].isNone then none else some (withWhere stx[8][1] stx[8][2])
   let clauses := stx[9].getArgs
-  -- Its type parameters, which are abstract types within it, and which
-  -- only a defined function has (`lang::generic_function`).
+  -- Its type parameters, which are abstract types within it, whether it
+  -- is defined or not (`lang::generic_function`).
   let tpStxs := if stx[3].isNone then #[] else stx[3][0][1].getSepArgs
   let tps ← elabTypeParams modName tpStxs
-  unless Core.genericFunctionAccepted body?.isSome tps.size false do
-    throwErrorAt nameStx (Core.uninterpretedGenericMsg n).text
   if !tps.isEmpty then
     liftTermElabM do
       for p in tps, k in [0:tps.size] do declarePlaceholder (Core.typeParamPath path k p) (mkSort Level.one) true
@@ -5347,13 +5626,31 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     let bad := params.find? (named · != (body?.isSome || contract)) |>.getD nameStx
     throwErrorAt bad (Core.functionParamsMsg path body?.isSome contract).text
   let decl ← generatedName path
+  -- A generic function's signature, with its type parameters as
+  -- `Core.Ty.param`, each inferred at applications from it
+  -- (`lang::generic_signature`).
+  let signature (params : Array Expr) (result : Expr) : TermElabM (Array Core.Ty × Core.Ty) := do
+    let asParams (t : Expr) : TermElabM Core.Ty := return ((← coreTy? t).getD .bool).asParams path tps
+    let declared ← params.mapM asParams
+    let resultTy ← asParams result
+    if let some k := Core.firstUnmentioned? declared resultTy tps.size then
+      throwErrorAt tpStxs[k]! (Core.unmentionedTypeParamMsg n tps[k]!).text
+    return (declared, resultTy)
+  -- Without a body, a placeholder, which takes a `Type` and its `Inhabited`
+  -- instance for each type parameter first, if it is generic: each
+  -- instance is an unknown function of its own
+  -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  let placeholder (params : Array Expr) (ptys : Array Core.PTy) (result : Expr) (rp : Core.PTy) : TermElabM Unit := do
+    let (declared, resultTy) ← signature params result
+    let type ← withTypeParams path tps (← mkArrowN params result)
+    declarePlaceholder path type false (ptys, rp) (← resultFact? result rp) tps declared resultTy (rp.asParams path tps)
   let some body := body? | do
     liftTermElabM do
       if contract then
         let vars ← paramVars modName path params
         lintFnBools n nameStx (vars.map (·.type))
         let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-        declarePlaceholder path (← mkArrowN (vars.map (·.type)) result) false (vars.map (·.ptype), rp) (← resultFact? result rp)
+        placeholder (vars.map (·.type)) (vars.map (·.ptype)) result rp
         modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
         let (vars, props, sites) ← elabContract modName path n decl false vars clauses
         recordBody path nameStx decl vars sites props path
@@ -5363,24 +5660,19 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
         lintFnBools n nameStx params
         -- As for a variable, with the result type (`lang::bool_naming`).
         let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-        declarePlaceholder path (← mkArrowN params result) false (pps.map (·.2), rp) (← resultFact? result rp)
+        placeholder params (pps.map (·.2)) result rp
     if contract then
       lintDeclared .function n nameStx
       lintLines .function n nameStx stx
     record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
     unless isPub do recordItem .function path nameStx
+    modifyLocal fun l => { l with fnTypeParams := none }
   liftTermElabM do
     -- The parameters, declared like a comp's inputs.
     let vars ← paramVars modName path params
     lintFnBools n nameStx (vars.map (·.type))
     let (result, rp) ← varPType modName nameStx (if stx[7].isNone then none else some stx[7][1])
-    -- Each type parameter is inferred at applications from the signature
-    -- (`lang::generic_signature`).
-    let asParams (t : Expr) : TermElabM Core.Ty := return ((← coreTy? t).getD .bool).asParams path tps
-    let declared ← vars.mapM (asParams ·.type)
-    let resultTy ← asParams result
-    if let some k := Core.firstUnmentioned? declared resultTy tps.size then
-      throwErrorAt tpStxs[k]! (Core.unmentionedTypeParamMsg n tps[k]!).text
+    let (declared, resultTy) ← signature (vars.map (·.type)) result
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
     let (lam, tables) ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let cx : ExprCtx := { modName, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
@@ -5713,7 +6005,7 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
     try
       let (ty, ptype) ← varPType scope x ty?
       let st ← getState
-      unless Core.variableTypeAccepted (role == .output) (st.unbounded ty) defn?.isSome do
+      unless Core.variableTypeAccepted (role == .output) (factsOf st ptype).unbounded defn?.isSome do
         throwErrorAt x (Core.unboundedOutputMsg x.getId ptype.text).text
       let fact? ← factPred? ty ptype
       vars := vars.push { name := x.getId, role, isPub, isDet, «type» := ty, ref := x, defn?, ptype, fact? }
@@ -6091,6 +6383,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   lintName .component n nameStx
   startDeclared
   let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
   let declBase ← generatedName path
   -- The evidence settings, apart from the members they set.
   let (members, tested, enumerated) ← testedOf (← evidenceInEffect) stx[4].getArgs
@@ -6133,7 +6426,7 @@ end
   let isPub := !stx[0].isNone
   let nameStx := stx[2]
   let valueStx := withWhere stx[6] stx[7]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkConstName n)
   checkFresh modName n nameStx
   lintName .constant n nameStx
@@ -6297,12 +6590,13 @@ def globalText (stx : Syntax) : String :=
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkNoBang n)
   if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
   checkFresh modName n nameStx
   lintName .global n nameStx
   startDeclared
+  modifyLocal fun l => { l with currentItem := modName ++ n }
   -- `duplicate_constraint` (`lint::duplicate_constraint`), against the
   -- earlier ones of its module.
   let text := globalText stx
@@ -6343,10 +6637,11 @@ and the solver is asked nothing. -/
   lintTrailingCommas (mkNullNode spec)
   let modName := (← getLocal).currentModule
   let nameStx := stx[1]
-  let n ← segName nameStx
+  let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkItemName "refinement" n)
   checkFresh modName n nameStx
   let path := modName ++ n
+  modifyLocal fun l => { l with currentItem := path }
   let decl ← generatedName path
   let compOf (p : Syntax) : CommandElabM CompInfo := do
     let r ← resolvePath modName (pathSegs p)

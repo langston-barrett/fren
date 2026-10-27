@@ -13,9 +13,11 @@ import FrenCore.Mentions
 import FrenCore.Names
 import FrenCore.PatternTypes
 import FrenCore.Patterns
+import FrenCore.Prelude
 import FrenCore.Quantifier
 import FrenCore.Refine
 import FrenCore.Regex
+import FrenCore.SeqElems
 import FrenCore.Sound
 import FrenCore.Str
 import FrenCore.Syntax

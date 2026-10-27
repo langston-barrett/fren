@@ -7,6 +7,7 @@ import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.Table
+import FrenCore.TypeFacts
 -- keep-sorted end
 
 /-!
@@ -67,6 +68,28 @@ partial def VTy.subst (args : List VTy) : VTy → VTy
   | .data p as => .data p (as.map (·.subst args))
   | t => t
 
+/-- What matching the type `f` of an argument against the declared type `d`
+gives the type parameter `k`, as `Fren.Core.matchParam` matches them. -/
+partial def VTy.matchParam (k : Nat) : VTy → VTy → Option VTy
+  | .param j, f => if j == k then some f else none
+  | .set d, .set f | .seq d, .seq f => d.matchParam k f
+  | .rel a b, .rel c e => a.matchParam k c <|> b.matchParam k e
+  | .data p ds, .data q fs => if p == q then (ds.zip fs).findSome? fun (d, f) => d.matchParam k f else none
+  | _, _ => none
+
+/-- `t`, with the type parameter `k` for each abstract type that is the
+`k`th type parameter of the generic function at `fn`
+(`Fren.Core.typeParamPath`), as `Fren.Core.Ty.asParams` has it. -/
+partial def VTy.asParams (fn : Name) (tps : Array Name) : VTy → VTy
+  | .abstract p => match (List.range tps.size).find? fun k => Fren.Core.typeParamPath fn k tps[k]! == p with
+    | some k => .param k
+    | none => .abstract p
+  | .set t => .set (t.asParams fn tps)
+  | .rel a b => .rel (a.asParams fn tps) (b.asParams fn tps)
+  | .seq t => .seq (t.asParams fn tps)
+  | .data p as => .data p (as.map (·.asParams fn tps))
+  | t => t
+
 /-- `t`, as an element type: a `Nat` is widened to an `Int`. -/
 def VTy.widen : VTy → VTy
   | .nat => .int
@@ -101,6 +124,24 @@ structure DataDef where
   isRecord : Bool
   ctors : Array Ctor
   deriving Inhabited
+
+/-- The type of a construction of the variant or record `idx` of `d` from
+values of the types `tys`: with the type arguments that matching them
+against the declared types gives (`VTy.matchParam`), as the elaborator
+infers them from values that synthesize their types, or with none if
+some type parameter has none. -/
+def DataDef.constructed (d : DataDef) (idx : Nat) (tys : Array VTy) : VTy :=
+  let rec params : VTy → Nat
+    | .param k => k + 1
+    | .set t | .seq t => params t
+    | .rel a b => max (params a) (params b)
+    | .data _ as => as.foldl (fun n a => max n (params a)) 0
+    | _ => 0
+  let n := d.ctors.foldl (fun n c => c.fields.foldl (fun n (_, t) => max n (params t)) n) 0
+  let fields := ((d.ctors[idx]?.map (·.fields)).getD #[]).map (·.2)
+  match (List.range n).mapM fun k => (fields.zip tys).findSome? fun (f, t) => f.matchParam k t with
+  | some args => .data d.path (args.map VTy.widen)
+  | none => .data d.path []
 
 inductive Op where
   | and | or | iff | eq | ne | lt | le | gt | ge | add | sub | mul | div | mod | concat
@@ -359,6 +400,16 @@ structure Spec where
   shapes : NameMap Fren.Core.DataShape := {}
   /-- The result type of each uninterpreted function, as declared. -/
   results : NameMap Fren.Core.PTy := {}
+  /-- Each generic function without a body, in declaration order: its type
+  parameters, and its parameters' and result's types, which mention them as
+  `VTy.param` (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  Each instance that an application uses is a function of its own in
+  `funs`, named after the function and its type arguments, as the solver
+  names it (`Fren.Core.instanceText`). -/
+  generics : Array (Name × Array Name × Array VTy × VTy) := #[]
+  /-- The generic function of each such instance, whose `results` and
+  `contracts` are the instance's. -/
+  instanceOf : NameMap Name := {}
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -373,6 +424,8 @@ partial def Spec.values (sp : Spec) : VTy → Array Val
     | some d => (d.ctors.mapIdx fun idx c =>
         (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.subst args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
     | none => #[]
+  -- A newtype's values are its underlying type's, as `Spec.ofPVal` has them.
+  | .newtype _ u => sp.values u
   | _ => #[]
 
 /-- Every variable of `c`: its own, then each instance's, named `w.x`, in
@@ -1957,24 +2010,15 @@ partial def Spec.ofPVal (sp : Spec) : VTy → Fren.Core.PVal → Val
     | none => .ctor p idx #[]
   | _, .ctor idx _ => .ctor .anonymous idx #[]
 
-/-- Whether `t`, a type without patterns, is listed: `Bool`, or an
-enumeration or record that is not recursive and whose payloads and fields
-are listed (`lang::quantified_type`), as the elaborator's
-`State.valueCount` says. -/
-partial def Spec.listedTy (sp : Spec) : VTy → Bool
-  | .bool => true
-  | .data p targs => match sp.shapes.find? p, sp.data.find? p with
-    | some sh, some d => !sh.recursive && d.ctors.all (·.fields.all fun (_, u) => sp.listedTy (u.subst targs))
-    | _, _ => false
-  | _ => false
-
 /-- Every value of the declared type `pt`, of the type `t`, in the order of a
 quantifier's instances, if it is listed, as the elaborator's
 `binderValues` says (`lang::quantified_type`, `lang::pattern_finite`). -/
 def Spec.listedValues (sp : Spec) (t : VTy) (pt : Fren.Core.PTy) : Option (Array Val) :=
   let shapes := sp.shapes.find?
-  if (pt.cons shapes).isNone then
-    if sp.listedTy t then some (sp.values t) else none
+  -- Only a listed type's values are listed, by the facts that the
+  -- elaborator's `binderValues` reads (`Fren.Core.typeFacts`).
+  if !(Fren.Core.typeFacts shapes pt.node).listed then none
+  else if (pt.cons shapes).isNone then some (sp.values t)
   else match pt.count? shapes with
     | some n =>
       if n > Fren.Core.maxInstances then some #[]
@@ -2110,8 +2154,9 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let some (v, t) := (← get).spec.consts.find? path | throw s!"unknown constant `{showPath path}`"
       return (v, t)
     | r => throw s!"`{showPath r.path}` is not a value"
-  | .app _ segs args => do
-    let args ← args.mapM fun a => (·.1) <$> lowerExpr cx a
+  | .app _ segs written => do
+    let typed ← written.mapM (lowerExpr cx)
+    let args := typed.map (·.1)
     -- The spec has been checked, so no variable shadows a built-in
     -- function here.
     if let some c := (if segs.size == 1 then Fren.Core.builtinFunction? (.mkSimple segs[0]!.name) else none) then
@@ -2127,9 +2172,31 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       -- arguments.
       if let some (ps, body, r) := (← get).spec.defs.find? path then
         return (← withPres (body.subst (ps.zip args).toList), r)
+      -- A generic function without a body, at the instance that its
+      -- arguments' types give it, a function of its own.
+      if let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) then
+        let found := (List.range tps.size).map fun k =>
+          (declared.zip typed).findSome? fun (d, (_, t)) => d.matchParam k t
+        let targs := found.mapIdx fun k t? => (t?.map VTy.widen).getD (.param k)
+        let r := result.subst targs
+        -- Its type arguments not known here, as the type expected of it
+        -- may give them: a function that has no value, which the
+        -- evaluator does not know (`Reqs/Eval#searching-for-behaviours`).
+        if found.any (·.isNone) then return (← withPres (.app (Name.str path "<?>") args), r)
+        -- At its own type parameters, in its contract, the function itself.
+        let own := (List.range tps.size).map fun k => VTy.abstract (Fren.Core.typeParamPath path k tps[k]!)
+        if targs == own then return (← withPres (.app path args), r)
+        let sp := (← get).spec
+        let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText (targs.toArray.map (·.core sp)))
+        modify fun s => { s with
+          spec.funs := s.spec.funs.insert inst (declared.map (·.subst targs), r)
+          spec.instanceOf := s.spec.instanceOf.insert inst path }
+        return (← withPres (.app inst args), r)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
       return (← withPres (.app path args), r)
-    | .variant en idx => return (.ctor en.path idx args, .data en.path [])
+    | .variant en idx =>
+      let d ← dataDef en.path
+      return (.ctor en.path idx args, d.constructed idx (typed.map (·.2)))
     -- A newtype, erased to its value.
     | .item { kind := .recordItem, path, .. } => do
       let some u := (← get).spec.newtypes.find? path | throw s!"`{showPath path}` is not a newtype"
@@ -2143,10 +2210,13 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let d ← dataDef path
     let some c := d.ctors[0]? | throw s!"`{showPath path}` has no constructor"
     let mut vals := #[]
+    let mut tys := #[]
     for (f, _) in c.fields do
       let some (x, e?) := fields.find? (fun (x, _) => Name.mkSimple x.name == f) | throw s!"no value for field `{f}`"
-      vals := vals.push (← lowerExpr cx (e?.getD (.path span #[x]))).1
-    return (.ctor path 0 vals, .data path [])
+      let (v, t) ← lowerExpr cx (e?.getD (.path span #[x]))
+      vals := vals.push v
+      tys := tys.push t
+    return (.ctor path 0 vals, d.constructed 0 tys)
   | .update _ base fields => do
     let (r, t) ← lowerExpr cx base
     let .data path targs := t | throw "an updated value is not a record"
@@ -2315,6 +2385,11 @@ def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option 
       own ++ (t.elems ++ parts).flatMap (ints fuel ·)
   return some { kind, name := .num x 0, e := .typed t (ints 8 t) (.var x), typed? := some "" }
 
+
+/-- The name that an item's declaration `x` declares, without the `!` that
+marks it as shadowing one of the prelude's names (`Fren.Core.declaredName`). -/
+def itemName (x : Ident) : Name := (Fren.Core.declaredName (Name.mkSimple x.name)).1
+
 /-- Imports `segs` into the current module, or into the component `scope`. -/
 def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Unit := do
   let st ← get
@@ -2322,7 +2397,7 @@ def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Un
   modify fun s => { s with table := s.table.addUse u, scope := scope.getD s.scope }
 
 def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit := do
-  let path := (← get).module ++ Name.mkSimple name.name
+  let path := (← get).module ++ itemName name
   for m in members do
     match m with
     | .use _ segs glob => declareUseIn segs glob (some path)
@@ -2405,6 +2480,7 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
     modify fun s => { s with spec.contracts := s.spec.contracts.insert path (ps.map (·.1), pres.map (·.2), posts) }
   return constraints
 
+
 /-- The path of the component that `segs` names. -/
 def resolveComp (segs : Array Ident) : L Name := do
   match ← resolve segs with
@@ -2423,7 +2499,7 @@ def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit :
     | _ => values := values.push b
   let st ← get
   let shell : Comp := { path := st.module, vars := #[], constraints := #[], insts, isGlobal := true }
-  let n := Name.mkSimple name.name
+  let n := itemName name
   let body := if values.isEmpty then body else .quant body.span true values body
   let e := (← lowerExpr { vars := st.spec.flatVars shell } body).1
   modify fun s => { s with
@@ -2438,7 +2514,7 @@ partial def lowerItem : Item → L Unit
   | .useGroup _ pre paths => do for p in paths do declareUse (pre ++ p) false
   | .enum isPub name variants _ params => do
     let st ← get
-    let path := st.module ++ Name.mkSimple name.name
+    let path := st.module ++ itemName name
     modify fun s => { s with typeParams := params.map (Name.mkSimple ·.name) }
     let vs := variants.map (Name.mkSimple ·.1.name)
     -- Declared first: a payload may have the enumeration's own type.
@@ -2456,7 +2532,7 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with spec.shapes := s.spec.shapes.insert path { recursive, parts }, typeParams := #[] }
   | .record isPub name fields _ params => do
     let st ← get
-    let path := st.module ++ Name.mkSimple name.name
+    let path := st.module ++ itemName name
     modify fun s => { s with typeParams := params.map (Name.mkSimple ·.name) }
     let mut fs := #[]
     for (f, ty?) in fields do fs := fs.push (Name.mkSimple f.name, ← varTy ty?)
@@ -2469,7 +2545,7 @@ partial def lowerItem : Item → L Unit
       spec.shapes := s.spec.shapes.insert path { isRecord := true, parts := #[parts] }
       typeParams := #[] }
   | .newtype isPub name fields _ => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let some ty := fields[0]? | throw s!"`{showPath path}` has no field"
     let u ← lowerTy ty
     let pt ← lowerPTy ty
@@ -2478,7 +2554,7 @@ partial def lowerItem : Item → L Unit
       spec.newtypes := s.spec.newtypes.insert path u
       spec.shapes := s.spec.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
   | .typeAlias isPub name ty => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let t ← lowerTy ty
     let pt ← lowerPTy ty
     modify fun s => { s with
@@ -2486,12 +2562,12 @@ partial def lowerItem : Item → L Unit
       aliases := s.aliases.insert path t
       declaredAliases := s.declaredAliases.insert path pt }
   | .abstractType isPub name => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
   | .function isPub name typeParams params result body clauses _ => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let tps := typeParams.map (Name.mkSimple ·.name)
     modify fun s => { s with fnTypeParams := if tps.isEmpty then none else some (path, tps) }
     let r ← varTy result
@@ -2504,18 +2580,26 @@ partial def lowerItem : Item → L Unit
         | none => pure (.plain .bool)
       let constrained := (rt.cons (← get).spec.shapes.find?).isSome
       modify fun s => { s with spec.results := if constrained then s.spec.results.insert path rt else s.spec.results }
+      -- A generic one's instances are functions of their own, made at the
+      -- applications that use them.
+      let generic (ps : Array VTy) : L Unit := do
+        unless tps.isEmpty do
+          modify fun s => { s with
+            spec.generics := s.spec.generics.push (path, tps, ps.map (·.asParams path tps), r.asParams path tps) }
       if !contract then
         let ps ← params.mapM (lowerTy ·.1)
+        generic ps
         modify fun s => { s with spec.funs := s.spec.funs.insert path (ps, r) }
       else
         let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
+        generic (ps.map (·.2))
         modify fun s => { s with
           spec.funs := s.spec.funs.insert path (ps.map (·.2), r)
           table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
         -- Over the parameters as inputs, for the checks of its clauses.
         let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
-        let cs ← lowerContract path (Name.mkSimple name.name) false ps vars clauses
-        noteBody (Name.mkSimple name.name) vars (.lit (.bool true)) cs
+        let cs ← lowerContract path (itemName name) false ps vars clauses
+        noteBody (itemName name) vars (.lit (.bool true)) cs
     | some body =>
       let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body
@@ -2529,15 +2613,15 @@ partial def lowerItem : Item → L Unit
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
       let e := (← lowerExpr { vars } body).1
       modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-      let cs ← lowerContract path (Name.mkSimple name.name) true ps vars clauses
-      noteBody (Name.mkSimple name.name) vars e cs
+      let cs ← lowerContract path (itemName name) true ps vars clauses
+      noteBody (itemName name) vars e cs
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }
                              fnTypeParams := none }
   | .const isPub name ty value => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let t ← lowerTy ty
     let (e, _) ← lowerExpr {} value
-    noteBody (Name.mkSimple name.name) #[] e
+    noteBody (itemName name) #[] e
     -- Unknown where it reads an index out of range or a table where no
     -- row holds, which only an interpretation gives a value, or where an
     -- unbounded quantifier has a bound name without a domain, or one too
@@ -2560,7 +2644,7 @@ partial def lowerItem : Item → L Unit
       return c
     let c ← comp concrete
     let a ← comp abstract
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     -- The bindings, over `c`'s own variables.
     let bindings ← bs.mapM fun (b, e?) => do
       return (Name.mkSimple b.name, (← lowerExpr { vars := c.vars } (e?.getD (.path b.span #[b]))).1)
@@ -2584,11 +2668,25 @@ def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState 
     st := { st with file := st.file + 1 }
   return st
 
+/-- The state with the prelude lowered into it, before every spec
+(`Reqs/Lang/Prelude`): its items, in the prelude's module. -/
+def preludeState : Except String LState := do
+  let chars := Fren.Core.preludeSource.toList.toArray
+  let items ← match lex chars with
+    | .error e => throw e.msg.headline
+    | .ok toks => match parse toks chars with
+      | .error e => throw e.msg.headline
+      | .ok items => pure items
+  let mut st : LState := { module := Fren.Core.preludeModule, scope := Fren.Core.preludeModule }
+  for item in items do
+    st := (← (lowerItem item).run st).2
+  return { st with module := .anonymous, scope := .anonymous }
+
 /-- The spec of the files' items, which the elaborator accepted, with the
 names it declares. Lowering files one after another is lowering them
 together: `lowerFrom st (a ++ b)` is `lowerFrom st a >>= (lowerFrom · b)`,
 which `fren mutate` relies on to lower only the files from a mutant's. -/
-def lowerAll (files : Array (Array Item)) : Except String LState := lowerFrom {} files
+def lowerAll (files : Array (Array Item)) : Except String LState := do lowerFrom (← preludeState) files
 
 def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$> lowerAll files
 

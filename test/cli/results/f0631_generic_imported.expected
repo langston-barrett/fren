@@ -1,0 +1,22 @@
+error[F0631]: the postconditions of `lib::other<client::One>` cannot all hold
+ --> test/cli/results/f0631_generic_imported.fren:9:6
+  |
+9 | comp c {
+  |      ^ unrealizable contract
+  |
+  = note: for the arguments
+              x = One::A
+          no value of `lib::other<client::One>` satisfies `diff`
+  = note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass
+  = help: weaken one of them, or add a precondition that rules these arguments out
+
+note: is false for this input
+ --> test/cli/results/f0631_generic_imported.fren:9:6
+  |
+9 | comp c {
+  |      ^
+
+fren: 7 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0631`.
+exit=1

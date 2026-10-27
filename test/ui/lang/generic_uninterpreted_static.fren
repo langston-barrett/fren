@@ -1,0 +1,40 @@
+-- Static rules for generic functions without a body
+-- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`), in both
+-- front ends. In a module, since Lean has an `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_uninterpreted_static
+
+fn pick<T>(T, T): T
+fn first<T>(o: Option<T>): T
+    assume present: o != Option::None
+
+-- Each type parameter is inferred from the signature, as a defined one's.
+fn unused<T, U>(T): T  --~ error: type parameter `U` of `unused` cannot be inferred
+
+-- A generic defined function's body applies no uninterpreted function,
+-- generic or not: its values are fully known.
+fn either<T>(a: T, b: T): T := pick(a, b)  --~ error: a defined function's body cannot apply uninterpreted function `generic_uninterpreted_static::pick`
+
+-- Type arguments are inferred at each application, as a defined one's.
+comp unknown {
+    pub out c?
+    ensure r: c? iff first(Option::None)  --~ error: cannot infer the type arguments of `generic_uninterpreted_static::first`
+}
+comp argument {
+    in x: Int
+    pub det out y: Int := pick(x, true)  --~ error: type mismatch: expected `Int`, found `Bool`
+}
+comp arity {
+    in x: Int
+    pub det out y: Int := pick(x)  --~ error: `generic_uninterpreted_static::pick` takes 2 arguments, but 1 was given
+}
+-- Outputs may not occur in its arguments, as in any uninterpreted
+-- function's.
+comp output {
+    in x: Int
+    pub out y: Int
+    pub out z: Int
+    ensure r: z = pick(x, y)  --~ error: the arguments of a function may not mention an `out`
+}
+--@ exit: 2

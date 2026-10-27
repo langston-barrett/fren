@@ -1,0 +1,16 @@
+-- The postconditions of a generic function without a body that cannot all
+-- hold at a type with a single value: failing at its type parameter's
+-- sort, so checked at each instance that the spec applies, and reported at
+-- the one where they fail, named after it, as for a function without type
+-- parameters (F0631).
+pub enum One { A }
+
+pub fn other<T>(x: T): T
+    ensure diff: other(x) != x
+
+comp c {
+    in x: One
+    in p?
+    pub det out y: One := other(x)
+    pub det out q? := other(p?)
+}

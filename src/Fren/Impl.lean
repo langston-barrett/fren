@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Check
 import Fren.Elab
+import Fren.Prelude
 -- keep-sorted end
 
 /-!
@@ -394,21 +395,32 @@ def contractStatement (path : Name) (placeholder : Name) (interp : Expr) (k : Co
     (typed? : Option (Array Name × Expr) := none) : MetaM Expr := do
   let uses := (k.pres ++ k.posts).foldl (init := (typed?.map (·.1)).getD #[]) fun acc c =>
     c.uses.foldl (fun acc u => if acc.contains u then acc else acc.push u) acc
+  -- A generic function's type parameters are the interpretation's own: it
+  -- gives each instance a function of its own
+  -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+  let a? := (← getState).abstracts.get? path
+  let tps := (a?.map (·.typeParams)).getD #[]
+  let own := typeParamPlaceholders path tps
   -- The function's own interpretation is `interp`, which is not recorded
   -- until it is proved.
-  let others := uses.filter (· != placeholder)
+  let others := uses.filter fun u => u != placeholder && !own.contains u
   let ι ← match ← interpsOf others with
     | .ok ι => pure ι
     | .error p => throwError s!"the contract of `{Core.showComp path}` uses `{Core.showComp p}`, which has no interpretation\n\n\
         help: interpret `{Core.showComp p}` first"
-  let ι := uses.map fun u => if u == placeholder then interp else ((others.idxOf? u).map (ι[·]!)).getD interp
   forallTelescope (← inferType interp) fun xs r => do
-    let atArgs (c : ClauseInfo) := (replaceUses uses ι (c.at xs)).headBeta
+    let targs := xs.extract 0 own.size
+    let ι := uses.map fun u =>
+      if u == placeholder then interp
+      else match own.idxOf? u with
+        | some j => targs[j]!
+        | none => ((others.idxOf? u).map (ι[·]!)).getD interp
+    let atArgs (c : ClauseInfo) := (replaceUses uses ι (c.at (xs.extract own.size))).headBeta
     -- Over an `Int`, as the solver sees a function into `Nat`.
     let typed := typed?.toList.map fun (_, pred) =>
       let app := mkAppN interp xs
       let v := if r.isConstOf ``Nat then mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      (replaceUses uses ι pred).beta #[v]
+      (replaceUses own targs (replaceUses uses ι pred)).beta #[v]
     let post := mkAndN (k.posts.map atArgs).toList
     let posts ← if k.posts.isEmpty then pure [] else
       pure [← k.pres.foldrM (fun c acc => mkArrow (atArgs c) acc) post]

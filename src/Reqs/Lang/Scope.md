@@ -110,6 +110,9 @@ the name, by where they are declared. From the innermost, at depth 0, out:
    enumeration does. So a later item is not in scope, and a declaration
    named like one hides nothing. A module's scope does not include its
    parent's.
+5. The [prelude's](Prelude.md) items and variants, `Option`, `Result`,
+   `None`, `Some`, `Ok` and `Err`, two depths further out than the
+   module's items: below its glob imports, as `modules::resolve` says.
 
 A declaration written `x!` enters the scope as `x`, one depth further in
 than what it hides, which is why it hides it (see
@@ -140,6 +143,7 @@ pub struct Context {
     items: Seq<Declared>,         -- the module's items, in their declaration's order
     declared: Nat,                   -- how many of them are declared before the name
     module_imports: Seq<Import>,     -- what the module's `use`s bring in
+    prelude: Seq<Declared>,          -- the prelude's items and variants
 }
 
 -- `b` is the binding of the declaration `d` at depth `k`.
@@ -163,6 +167,7 @@ pub fn in_scope?(cx: Context, b: Binding) := (exists (i: Int), 0 <= i < cx.local
     or (cx.component? and imported?(cx.component_imports, cx.locals.len + 1, b))
     or (exists (i: Int), 0 <= i < cx.items.len and i < cx.declared and binding_of?(cx.items[i], module_depth(cx), b))
     or imported?(cx.module_imports, module_depth(cx), b)
+    or (exists (i: Int), 0 <= i < cx.prelude.len and binding_of?(cx.prelude[i], module_depth(cx) + 2, b))
 
 -- The items and imports alone, without the locals and the built-in functions.
 pub fn item_scope(cx: Context): Context := { cx with locals := [], builtins := [] }
@@ -212,7 +217,7 @@ pub comp context_scope {
     expect module_depths: module_depth(context) = context.locals.len + (if context.component? then 3 else 1)
     -- Nothing is in an empty scope, and the items and imports alone have no locals.
     expect empty: when context.locals = [] and context.builtins = [] and context.component_imports = []
-        and context.items = [] and context.module_imports = [], not listed?
+        and context.items = [] and context.module_imports = [] and context.prelude = [], not listed?
     expect items_alone: item_scope(context).locals = [] and item_scope(context).builtins = []
         and item_scope(context).items = context.items
     -- The built-in functions are in every scope, just outside the locals.

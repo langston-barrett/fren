@@ -541,7 +541,6 @@ In Lean, Lean's own parser reports this, as a syntax error.
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
 comp c { in x: Option(Int) }
 ```
 
@@ -551,7 +550,6 @@ parentheses before. The fix writes the whole type with angle brackets,
 those of the types within it too:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
 comp c { in x: Option<Int> }
 ```
 
@@ -563,7 +561,7 @@ arguments, and stay parentheses, as in `struct Ms(Int)`.
 Erroneous code example:
 
 ```fren
-pub enum Option(T) { None, Some(T) }
+pub enum Tree(T) { Leaf, Node(T) }
 ```
 
 A generic enumeration's, record's or function's type parameters are
@@ -572,7 +570,7 @@ written in angle brackets right after its name, as in `enum Option<T>`,
 parentheses before:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
+pub enum Tree<T> { Leaf, Node(T) }
 ```
 "# },
   { code := "F0152", explanation := r#"A generic function's type parameter that is not a name.
@@ -2347,8 +2345,6 @@ ordered struct Entry { key: Int, size: Nat }
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { in x: Option }
 ```
 
@@ -2358,8 +2354,6 @@ Any other type, `Int` or an enumeration without type parameters, takes
 none:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { in x: Option<Int> }
 ```
 "# },
@@ -2368,8 +2362,6 @@ comp c { in x: Option<Int> }
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
 ```
 
@@ -2379,8 +2371,6 @@ or fields. Here neither side says which `Option` is meant. Write it where
 an instance is expected, as of a variable of that type:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 comp c { in x: Option<Int> pub out ok? ensure r: ok? iff x = Option::None }
 ```
 "# },
@@ -2409,7 +2399,7 @@ Erroneous code example:
 ```fren
 pub enum Mode { Off, On }
 
-pub enum Option<Mode> { None, Some(Mode) }
+pub enum Box<Mode> { Empty, Full(Mode) }
 ```
 
 Within its declaration, a type parameter's name must mean only the
@@ -2419,7 +2409,7 @@ of an item in scope. Rename it:
 ```fren
 pub enum Mode { Off, On }
 
-pub enum Option<T> { None, Some(T) }
+pub enum Box<T> { Empty, Full(T) }
 ```
 "# },
   { code := "F0389", explanation := r#"A type argument of a recursive enumeration whose values bring a constraint.
@@ -2462,30 +2452,21 @@ without type parameters:
 ordered struct Pair { fst: Int, snd: Int }
 ```
 "# },
-  { code := "F0399", explanation := r#"A generic function without a body.
+  { code := "F0399", explanation := r#"A removed code: a generic function without a body.
 
-Erroneous code example:
-
-```fren
-fn pick<T>(a: T, b: T): T
-```
-
-SMT-LIB has no polymorphic `declare-fun`, so an uninterpreted function
-cannot have type parameters, for now. A defined function may: each
-application is unfolded at its type arguments, so the solver never sees a
-polymorphic function. Define it:
-
-```fren
-fn pick<T>(a: T, b: T): T := a
-```
-"# },
+`F0399` was the error for a function with type parameters but no body, an
+uninterpreted generic function, which Fren did not have, since SMT-LIB has
+no polymorphic `declare-fun`. A generic function may now be uninterpreted,
+with a contract or without: each instance at which it is applied, such as
+`pick<Int>`, is an unknown function of its own (see
+`Reqs/Lang/GenericFunctions`, "Uninterpreted generic functions"). Nothing
+reports `F0399`, and the code is not reused.
+"#, args := none },
   { code := "F0400", explanation := r#"A generic function's type arguments that cannot be inferred.
 
 Erroneous code example:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 fn is_none?<T>(o: Option<T>) := o = Option::None
 
 comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
@@ -2497,8 +2478,6 @@ says which `Option` is meant. Give it an argument whose type is known, as
 a variable's:
 
 ```fren
-pub enum Option<T> { None, Some(T) }
-
 fn is_none?<T>(o: Option<T>) := o = Option::None
 
 comp c { in x: Option<Int> pub out ok? ensure r: ok? iff is_none?(x) }
@@ -3807,8 +3786,9 @@ Enumeration needs each variable's type to be enumerable: `Bool`, `Int`,
 types and abstract types, with what is within them enumerable too (see
 `Reqs/Check`, "Checking by enumeration"). Strings, sets, relations and
 sequences are not yet, nor can enumeration apply an uninterpreted function
-with a contract, whose postconditions constrain its interpretations, or
-evaluate an unbounded quantifier. None of the component's checks set to
+with a contract, whose postconditions constrain its interpretations, or a
+generic one, each of whose instances is a function of its own, or evaluate
+an unbounded quantifier. None of the component's checks set to
 enumeration is run. Have the solver or testing check it:
 
 ```fren
@@ -3837,6 +3817,99 @@ finitely many values decides it:
 ```fren
 set_option fren.evidence "enumerated" in
 comp c { in x: Int is -3..=3 pub det out y: Int := x + 1 expect e: y > x }
+```
+"# },
+  { code := "F0653", explanation := r#"A generic function's postconditions cannot all hold at some type.
+
+Erroneous code example:
+
+```fren
+fn other<T>(x: T, y: T): T
+    ensure moves: other(x, y) != x
+    ensure stays: other(x, y) = y
+```
+
+An uninterpreted function's postconditions are assumed wherever it is
+applied, so they must be able to hold (`F0631`). A generic function's
+contract is checked first for every type: its type parameters are types of
+which nothing is known but that they have values, so one may have a single
+value, and two arguments may be equal at any type. Where that check does
+not pass, the contract is checked at each instance that the spec applies
+it at instead, as `other<Int>`, as a function without type parameters is
+(`F0631`); this error is for a function that the spec applies at no
+instance. Here, where `x` and `y` are equal, no value of `other` is both
+`y` and not `x`. Add a precondition that rules such arguments out, or
+weaken a postcondition:
+
+```fren
+fn other<T>(x: T, y: T): T
+    assume apart: x != y
+    ensure moves: other(x, y) != x
+    ensure stays: other(x, y) = y
+```
+"# },
+  { code := "F0647", explanation := r#"A check whose quantifiers over sequences' elements would have too many instances.
+
+Erroneous code example:
+
+```fren
+comp c {
+    in q: Seq<Int>
+    assume r: forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
+    expect e: when q.len >= 3, q[1] + q[2] >= 0
+}
+```
+
+A quantifier over a sequence's elements, `forall (x: T), when x in q, P`, is
+in the decidable core: each query instantiates it at every term of its
+index set, which has `0`, the last position of each quantifier's sequence,
+each index that the query reads, each position of an `update` and its
+neighbours, and a witness for each bound name. A quantifier of `n` bound
+names has the index set's size to the power `n` instances, and a query has
+at most 256 in all. Here the expectation's query reads `q[1]` and `q[2]`,
+so its index set has seven terms, and the quantifier 343 instances: the
+check is inconclusive. Bind fewer names in one quantifier, or state the
+constraint so that fewer indexes meet it:
+
+```fren
+comp c {
+    in q: Seq<Int>
+    assume r: forall (x: Int), when x in q, x >= 0
+    expect e: when q.len >= 3, q[1] + q[2] >= 0
+}
+```
+"# },
+  { code := "F0648", explanation := r#"A check whose solver's model the quantifiers over sequences' elements refute.
+
+Erroneous code example:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+comp c {
+    in q: Seq<Int>
+    assume zeros: forall (x: Int), when x in q, x = 0
+    expect e: not (1 in q)
+}
+```
+
+A quantifier over a sequence's elements is instantiated at the query's
+index set, which is enough for the constructs of the decidable core: a
+model of the instances is then a model of the quantifier, once each
+element outside the index set is replaced by one inside it. When the
+solver finds a model, the query is asked again with each sequence's length
+pinned to its length in that model, and the quantifier instantiated at
+every position, so that the counterexample is a real one. Where a
+construct outside the core reads the sequence's elements, as `1 in q` does
+here, the model of the instances may not be one of the quantifier at any
+length, and the second query is unsatisfiable: the check is inconclusive.
+State the property in the core, by the elements:
+
+```fren
+comp c {
+    in q: Seq<Int>
+    assume zeros: forall (x: Int), when x in q, x = 0
+    expect e: forall (x: Int), when x in q, x != 1
+}
 ```
 "# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).

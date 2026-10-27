@@ -2,6 +2,7 @@
 import FrenCore.Diagnostic
 import FrenCore.Names
 import FrenCore.PatternTypes
+import FrenCore.SeqElems
 import FrenCore.Table
 import Lean.Data.Name
 -- keep-sorted end
@@ -137,6 +138,9 @@ structure CheckResult where
   /-- Decided by enumeration only up to this size bound, not for every
   behaviour (`check::enumerated_verdict`). -/
   bounded? : Option Nat := none
+  /-- For `realizable`, of the contract of a generic function without a
+  body, checked for every type (`Comp.generic`). -/
+  generic : Bool := false
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -356,6 +360,9 @@ structure Comp (F : Type) where
   /-- For the body or contract of a function: the function, which the
   results of `postcondition` name. -/
   fn? : Option Name := none
+  /-- For the contract of a generic function without a body: it is checked
+  once, at its type parameters, for every type (`F0653`). -/
+  generic : Bool := false
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -526,7 +533,8 @@ interpretation, as `interprets` says of a formula. -/
 def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
     m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
-    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail }
+    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
+      generic := c.generic }
   let sub := c.substHyps b
   let assumes := sub c.assumes
   let assumeQ ← b.query assumes b.falseF false
@@ -847,6 +855,24 @@ elements, which a pattern type within an element type brings
 quantifiers that membership bounds. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
 
+/-- The cvc5 option for the contract of a generic function without a body,
+checked once at its type parameters' sorts
+(`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`):
+`finite-model-find`, with which cvc5 finds the small domains, such as one
+of a single value, on which the contract may fail, rather than giving up. -/
+def finiteModelOptions : List (String × String) := [("finite-model-find", "true")]
+
+/-- The checks reported of the contract of a generic function without a
+body (`lang::generic_contract`), from its check at its type parameters'
+sorts, `atSorts`, and, where that does not pass, its check at each instance
+that the spec applies, `instances`, which `fren` and the hosted front end
+run only then: the opaque check if it passes or the spec applies no
+instance, and otherwise each instance's. -/
+def genericContract {α : Type} (verdict : α → Verdict) (atSorts : α) (instances : Array α) : Array α :=
+  match verdict atSorts with
+  | .pass => #[atSorts]
+  | _ => if instances.isEmpty then #[atSorts] else instances
+
 /-- `inst` for each assumption of each instance, in order. -/
 def checkInsts (c : Comp F) : m (Array CheckResult) := do
   return (← c.insts.zipIdx.mapM fun (i, k) => i.assumes.mapM (checkInst b c k i)).flatten
@@ -967,10 +993,10 @@ postconditions `posts`, of the value, as its assumptions and guarantees,
 with `sites`, the questions about the tables and applications in its
 clauses. Both front ends check this component. -/
 def contractComp (path f : Name) (params : Array Name) (value : Name) (pres posts : Array (Name × F))
-    (sites : Array (TableSite F) := #[]) : Comp F :=
+    (sites : Array (TableSite F) := #[]) (generic : Bool := false) : Comp F :=
   { path, vars := params.map (fun x => { name := x, role := .input, isPub := true }) |>.push
       { name := value, role := .output, isPub := true }
-    assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f }
+    assumes := pres, reqs := posts, expects := #[], triggers := #[], tables := sites, fn? := some f, generic }
 
 /-- The formulas of the query of the cover goal `g` (`checkCover`): the
 definitions, the assumptions, each instance's bindings and the meaning of
@@ -1125,7 +1151,9 @@ def rowsText (rows? : Option (Nat × Nat)) (arms : Bool := false) : String :=
 def clauseName (n : Name) : Name := Name.mkSimple n.getString!
 
 def showComp (path : Name) : String :=
-  "::".intercalate (path.components.map (·.toString))
+  -- Unescaped, so that an instance of a generic function shows as `pick<Int>`
+  -- (`instanceName`).
+  "::".intercalate (path.components.map (·.toString (escape := false)))
 
 inductive Advice where
   | raiseTimeout
@@ -1199,7 +1227,13 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .namesConstructs => #["note: the solver gave up, so this check neither passed nor failed",
         "note: the component uses constructs outside the decidable core (`undecidable` is allowed), so the solver may never decide it",
         "help: bring it back into the decidable core, or raise the time limit with `--timeout`"]
-    #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
+    -- An expansion of quantifiers over elements that is too large, or
+    -- whose model they refute, has a code of its own.
+    match d with
+    | .unknown w => if let some (code, notes) := elementReasonNotes? w then
+        #[one code s!"could not decide whether {what}{why}" (some "undecided") notes]
+      else #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
+    | _ => #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
     if let some (f, _) := r.target? then
       #[one "F0632" s!"the preconditions of `{showComp f}` are unsatisfiable: {showNames (core.map clauseName)} contradict each other"
@@ -1216,6 +1250,14 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       let short (ns : Array Name) := if contract.isSome then ns.map clauseName else ns
       let headline := memberText (r.clashes.find? (·.guarantee == n)) (short (core.filter (· != n))) fun cl => short cl.rest
       { severity := .info, item? := some n, msg := { code? := none, headline } }
+    if let (some f, true) := (contract, r.generic) then
+      #[one "F0653" s!"the postconditions of `{showComp f}` cannot all hold at some type" (some "unrealizable contract")
+        #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",
+          "note: a generic function's contract is checked for every type, where nothing is known of a type parameter's values: they may be equal, and a type may have only one",
+          "note: the spec applies it at no instance, where it would be checked instead",
+          "help: weaken one of them, or add a precondition that rules these arguments out"] (item? := none)]
+      ++ clashNotes
+    else
     if let some f := contract then
       #[one "F0631" s!"the postconditions of `{showComp f}` cannot all hold" (some "unrealizable contract")
         #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",

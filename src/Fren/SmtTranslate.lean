@@ -37,6 +37,17 @@ def selectorApp (ctor : Name) (field : Name) (arg : Expr) : TranslationM (Option
   modify fun st => { st with depConstants := st.depConstants.insert c.induct }
   return some (appT (symbolT s!"{ctor}.{field}") (← applyTranslators! arg))
 
+/-- lean-smt's name of the `k`th field of the constructor `c`: the field's
+own, or `fieldk`, counted from 1, if it has none, as a hygienic binder,
+such as `Except.error`'s, has none (`Reqs/Lang/Prelude#smt`). -/
+def leanSmtField (c : ConstructorVal) (k : Nat) : Name :=
+  let rec binder : Nat → Expr → Name
+    | 0, .forallE n _ _ _ => n
+    | i + 1, .forallE _ _ b _ => binder i b
+    | _, _ => .anonymous
+  let n := binder (c.numParams + k) c.type
+  if n.isAnonymous || n.hasMacroScopes then Name.mkSimple s!"field{k + 1}" else n
+
 @[smt_translate] def translateSelector : Translator := fun e => do
   let env ← getEnv
   match e with
@@ -53,11 +64,15 @@ def selectorApp (ctor : Name) (field : Name) (arg : Expr) : TranslationM (Option
     if let some p := env.getProjectionFnInfo? f then
       if p.fromClass || args.size != p.numParams + 1 then return none
       return ← selectorApp p.ctorName (Name.mkSimple f.getString!) arg
-    -- A payload selector, `ctor.xk` (`Fren.selectorName`).
-    let some (.ctorInfo c) := env.find? f.getPrefix | return none
+    -- A payload selector, `ctor.xk` (`Fren.selectorName`), or of a Lean
+    -- constructor of a prelude type, under `Fren.Prelude`
+    -- (`Fren.preludeSelectors`), with lean-smt's name of the field.
+    let ctor := if (`Fren.Prelude).isPrefixOf f then (f.replacePrefix `Fren.Prelude .anonymous).getPrefix else f.getPrefix
+    let some (.ctorInfo c) := env.find? ctor | return none
     let some (.defnInfo _) := env.find? f | return none
     unless args.size == 2 * c.numParams + 1 do return none
-    selectorApp f.getPrefix (Name.mkSimple f.getString!) arg
+    let some k := (f.getString!.drop 1).toNat? | return none
+    selectorApp ctor (leanSmtField c k) arg
   | _ => return none
 
 /-- The result of an uninterpreted function whose result is a `Nat`, in a

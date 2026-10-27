@@ -1,0 +1,97 @@
+-- Quantifiers over a sequence's elements: in the decidable core, and
+-- expanded at each query over the index set of the array property fragment.
+
+-- `Option` is the prelude's.
+mod quantifiers_elements
+
+enum Mode { Off, On }
+
+fn positive?(x: Int) := x > 0
+fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(v) => v, Option::None => d }
+fn is_some?<T>(o: Option<T>) := o != Option::None
+
+-- A sequence of any length: the solver proves facts at symbolic positions.
+comp all_positive {
+    in q: Seq<Int>
+    in k: Int
+    assume pos: forall (x: Int), when x in q, positive?(x)
+    assume in_range: 0 <= k < q.len
+
+    expect at_k: q[k] > 0
+    expect first_two: when q.len >= 2, q[0] + q[1] >= 2
+    expect big: q != [] and q[0] > 5  --~ error: all_positive::big` does not hold
+}
+
+-- `exists`, and a `forall` under negation, are their witnesses.
+comp some_negative {
+    in q: Seq<Int>
+    pub out neg?
+
+    ensure r: neg? iff (exists (x: Int), x in q and x < 0)
+
+    expect empty: when q = [], not neg?
+    expect pair: when q = [1, -2], neg?
+    expect negated: neg? iff not (forall (x: Int), when x in q, x >= 0)
+    expect head: when neg?, q[0] < 0  --~ error: some_negative::head` does not hold
+}
+
+-- A guard with more conjuncts, and a bound name of a listed type within.
+comp guarded {
+    in q: Seq<Int>
+    in limit: Int
+    pub out ok?
+
+    ensure r: ok? iff (forall (x: Int) (m: Mode), when x in q and x > limit, m = Mode::Off or x != limit)
+
+    expect holds: ok?
+}
+
+-- A generic predicate, over a sequence of a generic type.
+comp options {
+    in q: Seq<Option<Int>>
+    pub out all_some?
+
+    ensure r: all_some? iff (forall (o: Option<Int>), when o in q, is_some?(o))
+
+    expect at_zero: when all_some? and q != [], q[0] != Option::None
+    expect value: when all_some? and q != [], unwrap_or(q[0], 0) = unwrap_or(q[0], 1)
+}
+
+-- Two bound names, and a quantifier that is directly the body of another of
+-- the same kind.
+comp pairs {
+    in q: Seq<Int>
+    in r: Seq<Int>
+    pub out below?
+    pub out nested?
+
+    ensure s: below? iff (forall (x y: Int), when x in q and y in r, x < y)
+    ensure t: nested? iff (forall (x: Int), when x in q, forall (y: Int), when y in r, x < y)
+
+    expect same: below? iff nested?
+    expect ends: when below? and q != [] and r != [], q[0] < r[r.len - 1]
+}
+
+-- An update, and the equations between sequences, give the index set terms of
+-- their own.
+comp updated {
+    in q: Seq<Int>
+    in i: Int
+    pub out p: Seq<Int> := q.update(i, 1)
+
+    assume pos: forall (x: Int), when x in q, x > 0
+
+    expect after: forall (x: Int), when x in p, x > 0
+    expect same: when p = q, forall (x: Int), when x in p, x > 0
+}
+
+-- A defined function's body, unfolded where it is applied.
+fn all_positive?(s: Seq<Int>) := forall (x: Int), when x in s, x > 0
+
+comp through_function {
+    in q: Seq<Int>
+    assume a: all_positive?(q)
+
+    expect tail: when q.len > 3, q[3] > 0
+    expect not_empty: q != []  --~ error: through_function::not_empty` does not hold
+}

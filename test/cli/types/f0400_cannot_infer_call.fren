@@ -1,6 +1,5 @@
 -- An application of a generic function, whose type arguments neither what
 -- is expected nor its arguments give.
-pub enum Option<T> { None, Some(T) }
 
 pub fn is_none?<T>(o: Option<T>) := o = Option::None
 

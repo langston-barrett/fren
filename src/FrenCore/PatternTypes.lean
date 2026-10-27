@@ -63,6 +63,20 @@ partial def PTy.subst (args : Array PTy) (t : PTy) : PTy :=
   | .param k _ => args[k]?.getD t
   | ty => { t with ty := ty.subst (args.map (·.ty)), elems := t.parts.map (·.subst args) }
 
+/-- The declared type `t`, of the generic function at `fn` with the type
+parameters `params`, with each type parameter as `Ty.param`, as
+`Ty.asParams` has it, its patterns kept. -/
+partial def PTy.asParams (fn : Name) (params : Array Name) (t : PTy) : PTy :=
+  { t with ty := t.ty.asParams fn params, elems := t.elems.map (·.asParams fn params) }
+
+/-- The declared result type of the instance of a generic function whose
+declared result type is `result`, with its type parameters as `Ty.param`,
+at the type arguments `args`, with its patterns (`PTy.subst`): what each
+application of the instance of one without a body brings is this type's
+constraint (`lang::uninterpreted_instance`). Its type is `instanceSig`'s. -/
+def instanceResult (result : PTy) (args : Array Ty) : PTy :=
+  { result.subst (args.map PTy.plain) with ty := result.ty.subst args }
+
 /-- Whether the declared type `t` is ordered (`lang::ordered_type`): its
 type without patterns is, a pattern type's base type or the type an alias
 names (`Ty.ordered`). -/

@@ -81,7 +81,7 @@ def toImport (i : Fren.Core.Import String) : lang.Import := ⟨toDeclared i.decl
 def toContext (cx : Fren.Core.Context String) : lang.Context :=
   ⟨Fren.Seq.ofList (cx.locals.map toLocal), Fren.Seq.ofList cx.builtins, cx.component,
     Fren.Seq.ofList (cx.componentImports.map toImport), Fren.Seq.ofList (cx.items.map toDeclared), cx.declared,
-    Fren.Seq.ofList (cx.moduleImports.map toImport)⟩
+    Fren.Seq.ofList (cx.moduleImports.map toImport), Fren.Seq.ofList (cx.prelude.map toDeclared)⟩
 
 theorem exists_nth {β α : Type} [Inhabited α] (l : List β) (f : β → α) (Q : Int → α → Prop) :
     (∃ i : Int, (0 ≤ i ∧ i < (Fren.Seq.ofList (l.map f)).len) ∧ Q i ((Fren.Seq.ofList (l.map f)).nth i)) ↔
@@ -138,14 +138,15 @@ theorem imported_iff (ims : List (Fren.Core.Import String)) (k : Nat) (b : Bindi
 
 theorem in_scope_def (cx : lang.Context) (b : lang.Binding) :
     lang.in_scope? cx b = true ↔
-      ((((∃ i : Int, (0 ≤ i ∧ i < cx.locals.len) ∧ ((cx.locals.nth i).visible? = true ∧
+      (((((∃ i : Int, (0 ≤ i ∧ i < cx.locals.len) ∧ ((cx.locals.nth i).visible? = true ∧
             lang.binding_of? (cx.locals.nth i).declaration (cx.locals.len - 1 - i) b = true)) ∨
           ∃ i : Int, (0 ≤ i ∧ i < cx.builtins.len) ∧ (b.kind = lang.BindingKind.Builtin ∧
             b.name = cx.builtins.nth i ∧ b.target = cx.builtins.nth i ∧ (b.depth : Int) = cx.locals.len)) ∨
         cx.component? = true ∧ lang.imported? cx.component_imports (cx.locals.len + 1) b = true) ∨
       ∃ i : Int, (0 ≤ i ∧ i < cx.items.len) ∧ (i < cx.declared ∧
         lang.binding_of? (cx.items.nth i) (lang.module_depth cx) b = true)) ∨
-      lang.imported? cx.module_imports (lang.module_depth cx) b = true := by
+      lang.imported? cx.module_imports (lang.module_depth cx) b = true) ∨
+      ∃ i : Int, (0 ≤ i ∧ i < cx.prelude.len) ∧ lang.binding_of? (cx.prelude.nth i) (lang.module_depth cx + 2) b = true := by
   unfold lang.in_scope?
   rw [@decide_eq_true_iff _ (Classical.propDecidable _)]
   simp only [and_assoc]
@@ -161,7 +162,7 @@ theorem mem_bindings (cx : Fren.Core.Context String) (b : Binding String String)
     b ∈ cx.bindings ↔ lang.in_scope? (toContext cx) (toBinding b) = true := by
   rw [in_scope_def, module_depth_eq]
   simp only [Fren.Core.Context.bindings, List.mem_append]
-  refine or_congr (or_congr (or_congr (or_congr ?_ ?_) ?_) ?_) ?_
+  refine or_congr (or_congr (or_congr (or_congr (or_congr ?_ ?_) ?_) ?_) ?_) ?_
   · rw [show (toContext cx).locals = Fren.Seq.ofList (cx.locals.map toLocal) from rfl,
       exists_nth cx.locals toLocal (fun i x => x.visible? = true ∧ lang.binding_of? x.declaration
         ((Fren.Seq.ofList (cx.locals.map toLocal)).len - 1 - i) (toBinding b) = true)]
@@ -198,6 +199,12 @@ theorem mem_bindings (cx : Fren.Core.Context String) (b : Binding String String)
     rw [binding_of_iff]
     by_cases h : i.val < cx.declared <;> simp [h, at_eq] <;> omega
   · rw [show (toContext cx).module_imports = Fren.Seq.ofList (cx.moduleImports.map toImport) from rfl, imported_iff]
+  · rw [show (toContext cx).prelude = Fren.Seq.ofList (cx.prelude.map toDeclared) from rfl,
+      exists_nth cx.prelude toDeclared (fun _ x => lang.binding_of? x ((cx.moduleDepth : Int) + 2) (toBinding b) = true),
+      mem_map_fin]
+    refine exists_congr fun i => ?_
+    rw [binding_of_iff, at_eq]
+    constructor <;> rintro ⟨h1, h2, h3, h4⟩ <;> exact ⟨h1, h2, h3, by omega⟩
 
 -- For every context and binding: `Context.bindings`, which both front ends
 -- build their scopes with, lists exactly the bindings that

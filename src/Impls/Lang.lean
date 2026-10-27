@@ -317,7 +317,12 @@ def kindOf : Fren.Core.Ty → lang.ValueType
 
 interp lang::kind := kindOf
 
-interp lang::newtype? := fun (t : Fren.Core.Ty) => t matches .newtype ..
+/-- Whether a type is a newtype (`lang::newtype?`). -/
+def isNewtype : Fren.Core.Ty → Bool
+  | .newtype .. => true
+  | _ => false
+
+interp lang::newtype? := isNewtype
 
 /-- The underlying type of a newtype, and any other type itself. -/
 def underOf : Fren.Core.Ty → Fren.Core.Ty
@@ -436,39 +441,12 @@ impl field_type: lang::field_type for (k : lang.ValueType) (a own s pay : Bool) 
   intro k a own s pay _
   cases a <;> cases own <;> cases s <;> cases pay <;> simp [fren_spec, Fren.Core.fieldTypeAccepted]
 
--- For every newtype, with the check that both front ends use, and how
--- both decide its boundedness.
-impl newtype: lang::newtype for (n : Nat) (f u : Bool) {
-  n_fields := n,
-  field_accepted? := f,
-  underlying_unbounded? := u,
-  accepted? := Fren.Core.newtypeAccepted n f,
-  unbounded? := Fren.Core.newtypeUnbounded u,
-} by
-  intro n f u _
-  simp [fren_spec, Fren.Core.newtypeAccepted, Fren.Core.newtypeUnbounded]
-  omega
-
 def toNewtypeOp : Fren.Core.NewtypeOp → lang.NewtypeOp
   | .equality => .Equality
   | .order => .Order
   | .add => .Addition
   | .sub => .Subtraction
   | .other => .Other
-
--- For every operator, underlying type and whether the newtype is ordered,
--- with the check that both front ends use.
-impl newtype_operator: lang::newtype_operator for (op : Fren.Core.NewtypeOp) (u : Fren.Core.Ty) (o : Bool) {
-  op := toNewtypeOp op,
-  underlying := u,
-  ordered? := o,
-  inner_has? := match u with
-    | .newtype _ v => Fren.Core.newtypeOpAccepted op v false
-    | _ => false,
-  accepted? := Fren.Core.newtypeOpAccepted op u o,
-} by
-  intro op u o _
-  cases op <;> cases u <;> simp [fren_spec, toNewtypeOp, kindOf, Fren.Core.newtypeOpAccepted]
 
 interp lang::TypeName := Lean.Name
 
@@ -604,14 +582,14 @@ def planKind : Fren.Core.OrderPlan → lang.Plan
 gives of it. -/
 theorem plan_kind (od : Lean.Name → Bool) (fieldsOf : Lean.Name → List (Lean.Name × Fren.Core.Ty)) :
     ∀ (m : Nat) (t : Fren.Core.Ty) (p : Fren.Core.OrderPlan), Fren.Core.orderPlanAt od fieldsOf m t = some p →
-      planKind p = lang.plan_of (kindOf t) (t matches .newtype ..) ∧ t.ordered od = true
+      planKind p = lang.plan_of (kindOf t) (isNewtype t) ∧ t.ordered od = true
   | 0, _, _, h => by simp [Fren.Core.orderPlanAt] at h
   | m + 1, t, p, h => by
     cases t <;> simp only [Fren.Core.orderPlanAt] at h <;> try simp at h
     all_goals first
       | (subst h; simp [planKind, lang.plan_of, kindOf, Fren.Core.Ty.ordered])
       | (obtain ⟨hd, rfl⟩ := h; simp [planKind, lang.plan_of, kindOf, Fren.Core.Ty.ordered, hd])
-      | (obtain ⟨hd, _, _, rfl⟩ := h; simp [planKind, lang.plan_of, kindOf, Fren.Core.Ty.ordered, hd])
+      | (obtain ⟨hd, _, _, rfl⟩ := h; simp [planKind, lang.plan_of, kindOf, isNewtype, Fren.Core.Ty.ordered, hd])
 
 /-- A record's plan has its fields' names, in order, and each field's plan
 is its type's. -/
@@ -679,14 +657,14 @@ impl order_plan: lang::order_plan
     · cases t <;> simp_all [kindOf, typeNameOf, Fren.Core.Ty.ordered]
     · intro hf
       obtain ⟨q, as, rfl⟩ : ∃ q as, t = .record q as := by
-        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
+        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, isNewtype, Fren.Core.orderPlanAt] at hf hp
       · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q as p hp
         obtain ⟨hn, _⟩ := fields_plan _ (fieldsOf q) r hr
         have hlen : r.length = (fieldsOf q).length := by simpa using congrArg List.length hn
         exact ⟨by simp [typeNameOf, hn], by simp [typeNameOf, hlen]⟩
     · intro ⟨hf, h0, hkl⟩
       obtain ⟨q, as, rfl⟩ : ∃ q as, t = .record q as := by
-        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, Fren.Core.orderPlanAt] at hf hp
+        cases t <;> first | exact ⟨_, _, rfl⟩ | simp [lang.plan_of, kindOf, isNewtype, Fren.Core.orderPlanAt] at hf hp
       · obtain ⟨r, rfl, hr⟩ := record_plan _ fieldsOf (n + 1) q as p hp
         obtain ⟨_, hi⟩ := fields_plan _ (fieldsOf q) r hr
         have hkl' : k < (fieldsOf q).length := by simp [typeNameOf] at hkl; omega
@@ -807,15 +785,6 @@ theorem ofList_filter_eq (vs : List Lean.Name) (p : Lean.Name → Bool) :
 
 interp lang::VariantName := Lean.Name
 
--- For every enumeration, its variants `vs` and which are recursive, `p`,
--- with the count that both front ends compare.
-impl well_founded: lang::well_founded for (vs : List Lean.Name) (p : Lean.Name → Bool) {
-  variants := Fren.FinSet.ofList vs,
-  recursive := Fren.FinSet.ofList (vs.filter p),
-  accepted? := Fren.Core.wellFounded vs.length (vs.filter p).length,
-} by
-  intro vs p _
-  simp [fren_spec, Fren.Core.wellFounded, ofList_filter_eq]
 
 
 -- For every literal, with the check that both front ends use.
@@ -847,13 +816,6 @@ impl record_update: lang::record_update for (r : Bool) (fields given : Array Lea
   simp only [fren_spec, Fren.Core.recordUpdateAccepted, Fren.FinSet.subset_def, Fren.FinSet.mem_ofArray,
     Bool.and_eq_true, Array.all_eq_true', Array.contains_iff_mem, beq_iff_eq]
   simp
-
-impl variable_type: lang::variable_type for (o u d : Bool) {
-  output? := o,
-  unbounded? := u,
-  defined? := d,
-  accepted? := Fren.Core.variableTypeAccepted o u d,
-}
 
 impl field_init: lang::field_init for (f : Bool) (n : Nat) {
   field? := f,
@@ -1120,17 +1082,6 @@ def toQuantifiedKind : lang.ValueType → Fren.Core.QuantifiedKind
   | .EnumTy => .enum
   | .RecordTy => .record
   | .IntTy | .NatTy | .StringTy | .AbstractTy | .SetTy | .RelTy | .SeqTy => .other
-
--- For every type, by its kind, which both front ends compute from the type
--- they quantify over.
-impl quantified_type: lang::quantified_type for (k : lang.ValueType) (r p : Bool) {
-  type_kind := k,
-  recursive? := r,
-  parts? := p,
-  listed? := Fren.Core.quantifiedTypeAccepted (toQuantifiedKind k) r p,
-} by
-  intro k r p _
-  cases k <;> cases r <;> cases p <;> simp [fren_spec, toQuantifiedKind, Fren.Core.quantifiedTypeAccepted]
 
 -- For every number of instances, which both front ends count.
 impl quantifier_size: lang::quantifier_size for (n : Nat) {
@@ -2541,17 +2492,16 @@ impl instance_values: lang::instance_values for (a b : Fren.Core.Ty) {
 
 /-! ## Generic functions (`Reqs/Lang/GenericFunctions`) -/
 
--- For whether a function is defined, every number of type parameters, and
--- whether one of them is not in the signature: the check that both front
--- ends make of its declaration (`Core.genericFunctionAccepted`).
-impl generic_function: lang::generic_function for (d : Bool) (params : Nat) (u : Bool) {
-  defined? := d,
+-- For every number of type parameters, and whether one of them is not in
+-- the signature: the check that both front ends make of a function's
+-- declaration, defined or not (`Core.genericFunctionAccepted`).
+impl generic_function: lang::generic_function for (params : Nat) (u : Bool) {
   params := params,
   unmentioned? := u,
-  accepted? := Fren.Core.genericFunctionAccepted d params u,
+  accepted? := Fren.Core.genericFunctionAccepted params u,
 } by
-  intro d params u _
-  cases d <;> cases u <;> simp [fren_spec, Fren.Core.genericFunctionAccepted]
+  intro params u _
+  cases u <;> simp [fren_spec, Fren.Core.genericFunctionAccepted]
 
 interp lang::ty_mentions? := fun (t : Fren.Core.Ty) (k : Nat) => t.mentions k
 
@@ -2582,8 +2532,7 @@ theorem unmentioned_eq (decl : Array Fren.Core.Ty) (r : Fren.Core.Ty) (n : Fin 4
 -- parameters, and every signature: the check that both front ends make of
 -- its declaration (`Core.genericFunctionAccepted`, `Core.firstUnmentioned?`).
 impl generic_signature: lang::generic_signature
-    for (defined : Bool) (n : Fin 4) (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (r : Fren.Core.Ty) {
-  defined? := defined,
+    for (n : Fin 4) (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (r : Fren.Core.Ty) {
   params := (n : Nat),
   declared := Fren.Seq.ofList (firstTys d ts),
   result := r,
@@ -2591,13 +2540,13 @@ impl generic_signature: lang::generic_signature
   in1? := Fren.Core.inSignature (firstTys d ts).toArray r 1,
   in2? := Fren.Core.inSignature (firstTys d ts).toArray r 2,
   unmentioned? := (Fren.Core.firstUnmentioned? (firstTys d ts).toArray r n).isSome,
-  accepted? := Fren.Core.genericFunctionAccepted defined n (Fren.Core.firstUnmentioned? (firstTys d ts).toArray r n).isSome,
+  accepted? := Fren.Core.genericFunctionAccepted n (Fren.Core.firstUnmentioned? (firstTys d ts).toArray r n).isSome,
 } by
-  intro defined n d ts r _
+  intro n d ts r _
   simp only [unmentioned_eq, inSignature_eq]
   obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
   all_goals obtain ⟨_ | _ | _ | _ | n, hn⟩ := n <;> first | omega | skip
-  all_goals cases defined <;>
+  all_goals
     simp [fren_spec, firstTys, List.ofFn_succ, Fren.Core.genericFunctionAccepted, Fren.Seq.nth_of_lt, Bool.or_assoc] <;>
     grind
 
@@ -2751,6 +2700,104 @@ impl call_instance: lang::call_instance for (result : Fren.Core.Ty) (args : List
 } by
   intro result args _
   simp [fren_spec, Fren.Core.callType]
+
+/-- At type arguments none of which is a `Nat`, as inferred ones are
+widened, an instance's result type is a `Nat` exactly when the declared
+one is (`Core.instanceNat`). -/
+theorem subst_nat_iff (args : Array Fren.Core.Ty) (h : ∀ a ∈ args, a ≠ .nat) (t : Fren.Core.Ty) :
+    t.subst args = .nat ↔ t = .nat := by
+  cases t with
+  | param k n =>
+    simp only [Fren.Core.Ty.subst, reduceCtorEq, iff_false]
+    cases ha : args[k]? with
+    | none => simp
+    | some a => exact h a (Array.mem_of_getElem? ha)
+  | _ => simp [Fren.Core.Ty.subst]
+
+/-- The first `d` of `ts`, an application's type arguments or a function's
+parameters' declared types (`firstTys`), as an array. -/
+abbrev firstArr (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) : Array Fren.Core.Ty := (firstTys d ts).toArray
+
+-- For every function with at most three parameters, every declared result
+-- type, with its patterns, and every application of it with at most three
+-- type arguments: the sorts of the instance's unknown function, the type
+-- whose constraint its applications bring, and whether they are at least
+-- 0, as both front ends give them (`Core.instanceSig`, `Core.instanceResult`,
+-- `Core.instanceNat`).
+impl uninterpreted_instance: lang::uninterpreted_instance
+    for (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (rp : Fren.Core.PTy) (na : Fin 4) (as : Fin 3 → Fren.Core.Ty) {
+  declared := Fren.Seq.ofList (firstTys d ts),
+  result := rp.ty,
+  arguments := Fren.Seq.ofList (firstTys na as),
+  params := Fren.Seq.ofList (Fren.Core.instanceSig (firstArr d ts) rp.ty (firstArr na as)).1.toList,
+  result_type := (Fren.Core.instanceSig (firstArr d ts) rp.ty (firstArr na as)).2,
+  fact_type := (Fren.Core.instanceResult rp (firstArr na as)).ty,
+  nat? := Fren.Core.instanceNat rp.ty,
+} by
+  intro d ts rp na as hw
+  have hfact : (Fren.Core.instanceResult rp (firstArr na as)).ty = rp.ty.subst (firstArr na as) := rfl
+  have hk (t : Fren.Core.Ty) : kindOf t = lang.ValueType.NatTy ↔ t = .nat := by cases t <;> simp [kindOf]
+  simp only [fren_spec, Fren.Seq.ext_iff, hk] at hw ⊢
+  -- The type arguments are not `Nat`s, as the assumption says.
+  have hargs : ∀ a ∈ firstArr na as, a ≠ .nat := by
+    obtain ⟨_ | _ | _ | _ | na, hna⟩ := na <;> first | omega | skip
+    all_goals simp_all [firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+  refine ⟨⟨?_, by simp [Fren.Core.instanceSig, firstArr]⟩, ?_⟩
+  · obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
+    all_goals simp [Fren.Core.instanceSig, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+  · simp only [hfact, Fren.Core.instanceSig, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
+    simp
+
+/-- A check's verdict, as `lang::generic_contract` has it. -/
+def decidedOf : Fren.Core.Verdict → lang.Decided
+  | .pass => .Holds
+  | .fail => .Fails
+  | .inconclusive => .Undecided
+
+-- For every verdict of the check of a generic function's contract at its
+-- type parameters' sorts, and of its checks at the instances that the spec
+-- applies: the checks that both front ends report (`Core.genericContract`).
+impl generic_contract: lang::generic_contract for (o : Fren.Core.Verdict) (vs : List Fren.Core.Verdict) {
+  at_sorts := decidedOf o,
+  instances := Fren.Seq.ofList (vs.map decidedOf),
+  reported := Fren.Seq.ofList ((Fren.Core.genericContract id o vs.toArray).toList.map decidedOf),
+} by
+  intro o vs _
+  cases o <;> cases vs <;> simp [fren_spec, Fren.Core.genericContract, decidedOf, Fren.Seq.ext_iff]
+
+/-- An item as `lang::instance_site` has it, from a file and the name that
+`Core.siteOf` is given: the position, as a numeric name. -/
+def itemName (i : Nat) : Lean.Name := .num .anonymous i
+
+/-- A site as `lang::instance_site` has it. -/
+def siteOf' : Option Fren.Core.InstanceSite → lang.CheckSite
+  | none => .Unchecked
+  | some .function => .AtFunction
+  | some (.item f (.num _ i)) => .AtItem { file := f, item := i }
+  | some (.item f _) => .AtItem { file := f, item := 0 }
+
+-- For every file of a function, whether a run checks the function and
+-- whether an earlier run checked the instance, and every list of the items
+-- that the run checks and whose checks use an instance of it, in order:
+-- where both front ends check the instance's contract (`Core.siteOf`,
+-- which `Core.instanceSites` gives the first of them).
+impl instance_site: lang::instance_site for (ff : Nat) (fc d : Bool) (us : List (Nat × Nat)) {
+  function_file := ff,
+  function_checked? := fc,
+  done? := d,
+  users := Fren.Seq.ofList (us.map fun (f, i) => ({ file := f, item := i } : lang.ItemAt)),
+  site := siteOf' (Fren.Core.siteOf ff fc d (us.head?.map fun (f, i) => (f, itemName i))),
+} by
+  intro ff fc d us _
+  cases us with
+  | nil => cases fc <;> cases d <;> simp [fren_spec, Fren.Core.siteOf, siteOf']
+  | cons u rest =>
+    obtain ⟨f, i⟩ := u
+    have hl : ¬ ((rest.length : Int) + 1 < 1) := by omega
+    by_cases h : f = ff
+    · cases fc <;> cases d <;> simp [fren_spec, Fren.Core.siteOf, siteOf', itemName, h, Fren.Seq.nth_of_lt, hl]
+    · have h' : ¬ ((f : Int) = ff) := by exact_mod_cast h
+      cases fc <;> cases d <;> simp [fren_spec, Fren.Core.siteOf, siteOf', itemName, h, Fren.Seq.nth_of_lt, hl, h']
 
 /-! ## The overlap of patterns -/
 
@@ -3205,5 +3252,19 @@ impl table_match: lang::table_match for (arms : List (Bool × Bool × Int)) (oth
   rw [← firstTakenIdx_indexOf arms]
   exact ⟨⟨rfl, rfl⟩, fun ⟨_, h0⟩ => evalTable_held arms otherwise h0,
     fun ⟨h1, h2⟩ => evalTable_otherwise arms otherwise h1 h2⟩
+
+/-! ## The prelude (`Reqs/Lang/Prelude#meaning`) -/
+
+-- For every path, with the symbol that the `fren` command gives a user's
+-- type (`FrenCli.dataSortSym`).
+impl prelude_sort: lang::prelude_sort for (s : String) {
+  path := s,
+  sort := Fren.Core.userSortSym s,
+} by
+  intro s _
+  have h : Fren.Core.leanSortNames = #["Option", "Except"] := by
+    simp [Fren.Core.leanSortNames, Fren.Core.leanTypes, Lean.Name.getString!]
+  by_cases ho : s = "Option" <;> by_cases he : s = "Except" <;>
+    simp_all [fren_spec, Fren.Core.userSortSym, Fren.Str.lit]
 
 end Fren.Impls
