@@ -579,18 +579,6 @@ def State.enumOf? (s : State) (ty : Expr) : Option EnumInfo := ty.getAppFn.const
 /-- The record whose Lean type, or an instance of it, is `ty`. -/
 def State.recordOf? (s : State) (ty : Expr) : Option RecordInfo := ty.getAppFn.constName?.bind s.recordOfDecl?
 
-/-- Whether the Lean type of a Fren type is unbounded (`Reqs/Lang/Types`):
-an instance of a generic type by its payloads' or fields' types too
-(`Reqs/Lang/Generics#recursive-unbounded-and-finite-instances`). -/
-partial def State.unbounded (s : State) (ty : Expr) : Bool :=
-  let args := ty.getAppArgs
-  let inst := !args.isEmpty && !ty.isAppOf ``Fren.FinSet && !ty.isAppOf ``Fren.Seq
-  ty.isConstOf ``String || ty.isAppOf ``Fren.FinSet || ty.isAppOf ``Fren.Seq || match ty.getAppFn.constName? with
-  | some d => (s.enumOfDecl? d).any (fun e => e.unbounded || inst && (e.payloadsAt args).any (·.any s.unbounded))
-    || (s.recordOfDecl? d).any (fun r => r.unbounded || inst && (r.fieldsAt args).any (s.unbounded ·.2))
-    || (s.newtypeOfDecl? d).any (·.unbounded)
-  | none => false
-
 /-- Per-file state; not visible to importing files. -/
 structure LocalState where
   /-- The module that items are currently being declared in. -/

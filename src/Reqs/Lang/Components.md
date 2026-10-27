@@ -94,10 +94,10 @@ defined input first:
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub comp variable_type {
-    in output?                      -- the variable is an output, public or private
-    in ty: Ty                       -- its type
-    in constituents: Rel<Ty, Ty>    -- (t, u): t has a field, payload or element of type u
-    in defined?                     -- it is declared with `:= e`
+    in output?                                       -- the variable is an output, public or private
+    in ty: DeclaredTy                                -- its type
+    in constituents: Rel<DeclaredTy, DeclaredTy>     -- (t, u): t has a field, payload or element of type u
+    in defined?                                      -- it is declared with `:= e`
 
     assume only_outputs: when defined?, output?
     pub det out accepted?
@@ -107,8 +107,8 @@ pub comp variable_type {
 
     expect inputs_any_type: unless output?, accepted?
     expect defined_any_type: when defined?, accepted?
-    expect strings_defined: when output? and kind(ty) = ValueType::StringTy, accepted? iff defined?
-    expect bool_outputs: when kind(ty) = ValueType::BoolTy and constituents = {}, accepted?
+    expect strings_defined: when output? and declared_kind(ty) = ValueType::StringTy, accepted? iff defined?
+    expect bool_outputs: when declared_kind(ty) = ValueType::BoolTy and constituents = {}, accepted?
 
     cover unbounded_defined: output? and facts.unbounded? and defined? and accepted?
 }

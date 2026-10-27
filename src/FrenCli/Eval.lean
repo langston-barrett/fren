@@ -7,6 +7,7 @@ import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.Table
+import FrenCore.TypeFacts
 -- keep-sorted end
 
 /-!
@@ -355,6 +356,8 @@ partial def Spec.values (sp : Spec) : VTy → Array Val
     | some d => (d.ctors.mapIdx fun idx c =>
         (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.subst args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
     | none => #[]
+  -- A newtype's values are its underlying type's, as `Spec.ofPVal` has them.
+  | .newtype _ u => sp.values u
   | _ => #[]
 
 /-- Every variable of `c`: its own, then each instance's, named `w.x`, in
@@ -1511,24 +1514,15 @@ partial def Spec.ofPVal (sp : Spec) : VTy → Fren.Core.PVal → Val
     | none => .ctor p idx #[]
   | _, .ctor idx _ => .ctor .anonymous idx #[]
 
-/-- Whether `t`, a type without patterns, is listed: `Bool`, or an
-enumeration or record that is not recursive and whose payloads and fields
-are listed (`lang::quantified_type`), as the elaborator's
-`State.valueCount` says. -/
-partial def Spec.listedTy (sp : Spec) : VTy → Bool
-  | .bool => true
-  | .data p targs => match sp.shapes.find? p, sp.data.find? p with
-    | some sh, some d => !sh.recursive && d.ctors.all (·.fields.all fun (_, u) => sp.listedTy (u.subst targs))
-    | _, _ => false
-  | _ => false
-
 /-- Every value of the declared type `pt`, of the type `t`, in the order of a
 quantifier's instances, if it is listed, as the elaborator's
 `binderValues` says (`lang::quantified_type`, `lang::pattern_finite`). -/
 def Spec.listedValues (sp : Spec) (t : VTy) (pt : Fren.Core.PTy) : Option (Array Val) :=
   let shapes := sp.shapes.find?
-  if (pt.cons shapes).isNone then
-    if sp.listedTy t then some (sp.values t) else none
+  -- Only a listed type's values are listed, by the facts that the
+  -- elaborator's `binderValues` reads (`Fren.Core.typeFacts`).
+  if !(Fren.Core.typeFacts shapes pt.node).listed then none
+  else if (pt.cons shapes).isNone then some (sp.values t)
   else match pt.count? shapes with
     | some n =>
       if n > Fren.Core.maxInstances then some #[]

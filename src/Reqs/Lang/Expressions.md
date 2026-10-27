@@ -825,7 +825,7 @@ newtype written where another type is expected is a type mismatch
 (`F0304`). A newtype's underlying type may be a newtype in turn. The
 newtype's *chain* is its underlying type and every type that the closure
 of the underlying-type relation, `(n, under(n))` for each newtype `n`,
-reaches from it (`lang::built_from`). The one type of the chain that is
+reaches from it, as `lang::chain` gives. The one type of the chain that is
 not a newtype is its *base*, and `+` and `-` are those of the base.
 `lang::newtype_operator` states which operators a newtype has, from the
 operator, its chain and whether it is ordered, and `lang::operator_type`
@@ -836,6 +836,11 @@ types them:
 -- is `-` between two operands; `Other` is any other operator but `=` and
 -- `!=`, such as `*`, `div`, `mod`, `++` or a prefix `-`.
 pub enum NewtypeOp { Equality, Order, Addition, Subtraction, Other }
+
+-- The chain of a newtype whose underlying type is `underlying`, where
+-- `(n, u)` is in `unders` when `u` is the underlying type of the newtype `n`.
+set_option fren.lint.undecidable "allow" in
+pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> := unders.closure.image({underlying}) union {underlying}
 
 set_option fren.lint.undecidable "allow" in
 pub comp newtype_operator {
@@ -854,9 +859,9 @@ pub comp newtype_operator {
     ensure rule: accepted? iff match op {
         Equality => true,
         Order => ordered?,
-        Addition => (exists (b: Ty), b in built_from(underlying, unders) and not newtype?(b)
+        Addition => (exists (b: Ty), b in chain(underlying, unders) and not newtype?(b)
             and kind(b) in {IntTy, NatTy}),
-        Subtraction => (exists (b: Ty), b in built_from(underlying, unders) and not newtype?(b)
+        Subtraction => (exists (b: Ty), b in chain(underlying, unders) and not newtype?(b)
             and kind(b) = IntTy),
         Other => false,
     }

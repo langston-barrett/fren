@@ -213,13 +213,14 @@ pub mod lang
 
 set_option fren.lint.undecidable "allow" in
 pub comp newtype {
-    in n_fields: Nat                -- the types in its parentheses
-    in field_accepted?              -- the first's type is accepted as a record's field's (`field_type`)
-    in ty: Ty                       -- the newtype
-    in constituents: Rel<Ty, Ty>    -- (t, u): t has a field, payload or element of type u
+    in n_fields: Nat                                 -- the types in its parentheses
+    in field_accepted?                               -- the first's type is accepted as a record's field's (`field_type`)
+    in ty: DeclaredTy                                -- the newtype
+    in underlying: DeclaredTy                        -- its underlying type
+    in constituents: Rel<DeclaredTy, DeclaredTy>     -- (t, u): t has a field, payload or element of type u
 
-    assume record: newtype?(ty) and kind(ty) = ValueType::RecordTy
-    assume underlying: constituents.image({ty}) = {under(ty)}
+    assume record: declared_kind(ty) = ValueType::RecordTy
+    assume one_constituent: constituents.image({ty}) = {underlying}
     assume not_recursive: not (ty, ty) in constituents.closure
     pub det out accepted?
     pub det out unbounded?
@@ -230,8 +231,8 @@ pub comp newtype {
 
     expect one_field: when n_fields != 1, not accepted?
     expect as_records: when not field_accepted?, not accepted?
-    expect growing_underlying: when former(kind(under(ty))).growing?, unbounded?
-    expect bounded_underlying: when constituents.image({under(ty)}) = {} and not former(kind(under(ty))).growing?,
+    expect growing_underlying: when former(declared_kind(underlying)).growing?, unbounded?
+    expect bounded_underlying: when constituents.image({underlying}) = {} and not former(declared_kind(underlying)).growing?,
         not unbounded?
 }
 ```
@@ -447,17 +448,17 @@ pub type VariantName
 
 set_option fren.lint.undecidable "allow" in
 pub comp well_founded {
-    in ty: Ty                            -- the enumeration
-    in constituents: Rel<Ty, Ty>         -- (t, u): t has a field, payload or element of type u
+    in ty: DeclaredTy                                -- the enumeration
+    in constituents: Rel<DeclaredTy, DeclaredTy>     -- (t, u): t has a field, payload or element of type u
     in variants: Set<VariantName>
-    in payloads: Rel<VariantName, Ty>    -- (v, u): a payload of the variant `v` has the type `u`
+    in payloads: Rel<VariantName, DeclaredTy>        -- (v, u): a payload of the variant `v` has the type `u`
 
     assume some_variant: variants != {}
     assume among: payloads.domain subset variants
     pub det out accepted?
 
     ensure rule: accepted? iff (exists (v: VariantName), v in variants
-        and (forall (u: Ty), when u in payloads.image({v}), not ty in built_from(u, constituents)))
+        and (forall (u: DeclaredTy), when u in payloads.image({v}), not ty in built_from(u, constituents)))
 
     expect no_payloads: when payloads = {}, accepted?
     expect plain_enumerations: when constituents = {} and not ty in payloads.range, accepted?
