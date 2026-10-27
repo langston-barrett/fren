@@ -1235,6 +1235,14 @@ def chainBinds (cx : ExprCtx) (c : Expr) : M Bool :=
     | .is _ _ p => return !(← patternBinders cx p).isEmpty
     | _ => pure false
 
+/-- The names that the pattern tests of the chain of `and` `c` bind, which
+what follows the chain sees (`lang::test_scope`). -/
+def chainBinders (cx : ExprCtx) (c : Expr) : M (List String) := do
+  let bs ← (chainOperands "and" c).mapM fun
+    | .is _ _ p => patternBinders cx p
+    | _ => pure #[]
+  return bs.toList.flatMap fun xs => xs.toList.map (·.name)
+
 /-- The paths of the functions that `e` applies (`unused_assumption`). -/
 partial def appliedPaths : Expr → Array (Array Ident)
   | .app _ segs args => args.foldl (· ++ appliedPaths ·) #[segs]
@@ -3169,7 +3177,10 @@ partial def elabWhenExpr (cx : ExprCtx) (e : Expr) (span : Span) (neg : Bool) (c
   -- `eq_op` (`lint::eq_op_conditional`).
   if cx.noteIndexes then
     let tc ← srcAt c.span
-    if let some v := Fren.Core.eqOpConditional neg (Fren.Core.writtenSame tc (← srcAt d.span)) then
+    -- The body of `when` sees the names that the condition's pattern tests
+    -- bind (`lang::test_scope`).
+    let seen ← if neg then pure [] else chainBinders cx c
+    if let some v := Fren.Core.eqOpConditional neg (Fren.Core.writtenSameIn tc (← srcAt d.span) [] seen) then
       lint .eqOp span (Fren.Core.eqOpConditionalMsg neg v tc)
   let kw := if neg then "unless" else "when"
   -- The names that the condition's pattern tests bind, which the body of
@@ -3509,7 +3520,11 @@ partial def elabBinExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected? :
     -- Only for an operator that `eqOp` can report, whatever the operands.
     if (Fren.Core.eqOp o true).isSome then
       let ta ← srcAt a.span
-      if let some v := Fren.Core.eqOp o (Fren.Core.writtenSame ta (← srcAt b.span)) then lint .eqOp span (Fren.Core.eqOpMsg o v ta)
+      -- The right operand of `and` sees the names that the left's pattern
+      -- tests bind (`lang::test_scope`).
+      let seen ← if op == "and" then chainBinders cx a else pure []
+      if let some v := Fren.Core.eqOp o (Fren.Core.writtenSameIn ta (← srcAt b.span) [] seen) then
+        lint .eqOp span (Fren.Core.eqOpMsg o v ta)
   match op with
   | "iff" | "or" | "and" => elabBoolOpExpr cx e chain test span op a b
   | "=" | "!=" => elabEqualityExpr cx e span op a b

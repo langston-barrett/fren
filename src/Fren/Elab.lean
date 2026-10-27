@@ -1201,6 +1201,12 @@ def topBinders (cx : ExprCtx) (top : Syntax) : TermElabM (Array Syntax) :=
 def chainBinds (cx : ExprCtx) (c : Syntax) : TermElabM Bool :=
   (chainTests c).anyM fun (_, p) => return !(← topBinders cx p).isEmpty
 
+/-- The names that the pattern tests of the chain of `and` `c` bind, which
+what follows the chain sees (`lang::test_scope`). -/
+def chainBinders (cx : ExprCtx) (c : Syntax) : TermElabM (List String) := do
+  let bs ← (chainTests c).mapM fun (_, p) => topBinders cx p
+  return bs.toList.flatMap fun xs => xs.toList.map fun x => (Core.declaredName x.getId).1.toString
+
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
@@ -3242,18 +3248,22 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   recordLint (if card then .cardZero else .lengthZero) e (Core.lengthZeroMsg card (bareText recv) emptyText empty d)
 
 /-- `eq_op` on `e`, if it is an infix operator (`lint::eq_op`), or `when` or
-`unless` (`lint::eq_op_conditional`). -/
-def lintEqOp (e : Syntax) : TermElabM Unit := do
+`unless` (`lint::eq_op_conditional`). The body of `when`, and the right
+operand of `and`, see the names that the other's pattern tests bind, which
+the other does not (`lang::test_scope`). -/
+def lintEqOp (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   if isConditional e then
     let negated := e[0].getAtomVal.trimAscii.toString == "unless"
     let c := exactText (unparen e[1])
-    if let some v := Core.eqOpConditional negated (Core.writtenSame c (exactText (unparen e[3]))) then
+    let seen ← if negated then pure [] else chainBinders cx e[1]
+    if let some v := Core.eqOpConditional negated (Core.writtenSameIn c (exactText (unparen e[3])) [] seen) then
       recordLint .eqOp e (Core.eqOpConditionalMsg negated v c)
     return
   unless e.getNumArgs == 3 && e[1].isAtom do return
   let some op := Core.InfixOp.ofOp? e[1].getAtomVal.trimAscii.toString | return
   let a := exactText (unparen e[0])
-  if let some v := Core.eqOp op (Core.writtenSame a (exactText (unparen e[2]))) then
+  let seen ← if op matches .and then chainBinders cx e[0] else pure []
+  if let some v := Core.eqOp op (Core.writtenSameIn a (exactText (unparen e[2])) [] seen) then
     recordLint .eqOp e (Core.eqOpMsg op v a)
 
 /-- `same_branches` on `e`, `if c then a else b`, where `binds` is whether
@@ -4955,7 +4965,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
                       testContext := .standalone, testAt? := none }
   let go := toTerm cx
   -- A chained comparison's comparisons are not operators of their own here.
-  if cx.noteIndexes && (chainOf? e).isNone then lintEqOp e
+  if cx.noteIndexes && (chainOf? e).isNone then lintEqOp cx e
   if let some (xs, ops) := chainOf? e then return ← chainTerm toTerm cx e xs ops
   match e with
   | `(fren_expr| when $c, $d) => guardedTerm toTerm cx c d .whenBody

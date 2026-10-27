@@ -52,3 +52,21 @@ comp shared_plain {
 
     ensure sum: w = (if r is Reply::Value(_) then 1 + v else 2 + v)   --~ warning: both branches of this `if` end with `+ v`
 }
+
+-- Nor does `eq_op` compare operands that see different binders: the right
+-- operand's first `v` is the left's payload (`lint::eq_op`).
+comp eq_binders {
+    in r: Reply
+    in v: Int
+    pub out w?
+    pub out x?
+    pub out y?
+
+    ensure both: w? iff ((v > 1 and r is Reply::Value(v!) and v < 3) and (v > 1 and r is Reply::Value(v!) and v < 3))
+    ensure one: x? iff (v > 1 and r is Reply::Value(v!) and v < 3)
+    -- Without a binder, it fires.
+    ensure plain: y? iff ((v > 1 and r is Reply::Value(_)) and (v > 1 and r is Reply::Value(_)))
+    --~^ warning: both operands of `and` are written the same
+
+    expect differ: when r = Reply::Value(0) and v = 5, x? and not w?
+}

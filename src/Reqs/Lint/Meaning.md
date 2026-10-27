@@ -28,13 +28,17 @@ The same text need not mean the same expression: its names resolve in its
 scope, and a pattern test's binders are in scope in some places beside it
 and not others (see [`lang::test_scope`](../Lang/Expressions.md#pattern-tests)).
 In `if r is Reply::Value(v!) then v else v`, the `then` branch's `v` is the
-payload, and the `else` branch's the variable `v`. `lint::Scoped` is an
-expression as written in its scope: its text, and the binders that its
-names resolve to, each by the `Id` of its declaration, as a `Binder` head
-names it (see [Layers](../Lang/Meaning.md#layers)). Names that resolve
-outside every pattern test are the same wherever the lints compare
-expressions, within one component or one global expectation, so they are
-not part of the scope.
+payload, and the `else` branch's the variable `v`; in `(v > 1 and r is
+Reply::Value(v!)) and (v > 1 and r is Reply::Value(v!))`, the right
+operand's first `v` is the left's payload. `lint::Scoped` is an expression
+as written in its scope: its text, and the binders of pattern tests in
+scope where it is written, each by the `Id` of its declaration, as a
+`Binder` head names it (see [Layers](../Lang/Meaning.md#layers)). Names
+declared outside every pattern test are the same wherever the lints
+compare expressions, within one component or one global expectation, so
+they are not part of the scope. Both front ends compare scopes as well as
+texts, with `writtenSameIn`, or leave the expressions whose scopes may
+differ.
 
 ```fren
 pub struct Scoped { text: Operand, scope: Set(lang::Id) }
