@@ -12,25 +12,82 @@ layers of one program with the same head and parts' values that read the
 same there have the same value, whatever else their environments hold:
 
 ```fren
-expect frame: forall (p q: node),
-    when p.program = q.program and p.head = q.head and p.values = q.values and p.specified? and p.read = q.read,
-    p.value = q.value
+expect frame(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect frame: when p.program = q.program and p.head = q.head and p.values = q.values and p.specified? and p.read = q.read,
+        p.value = q.value
+}
 ```
 
 `own_mentioned`: the name a layer reads at is one that it mentions, so a
 layer that mentions nothing reads the same in every environment:
 
 ```fren
-expect own_mentioned: forall (p q: node),
-    when p.head = q.head and p.values = q.values and p.mentioned = {}, p.read = q.read
+expect own_mentioned(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect own_mentioned: when p.head = q.head and p.values = q.values and p.mentioned = {}, p.read = q.read
+}
 ```
 
 `same_written`: the same head and parts' values in the same environment
 give the same value, specified or not:
 
 ```fren
-expect same_written: forall (p q: node),
-    when p.program = q.program and p.head = q.head and p.values = q.values and p.env = q.env, p.value = q.value
+expect same_written(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect same_written: when p.program = q.program and p.head = q.head and p.values = q.values and p.env = q.env, p.value = q.value
+}
 ```
 
 `unevaluated`: the parts that a layer does not evaluate change neither its
@@ -44,12 +101,31 @@ up to 6, which `PartAt` names, so the law is stated of layers with at
 most seven parts:
 
 ```fren
-expect unevaluated: forall (p q: node),
-    when p.program = q.program and p.head = q.head and p.env = q.env and p.values.len = q.values.len
-    and p.values.len <= 7
-    and (forall (j: PartAt), when not j in p.unevaluated, part(p.values, j) = part(q.values, j))
-    and p.undefined_parts minus p.unevaluated = q.undefined_parts minus p.unevaluated,
-    p.value = q.value and (p.defined? iff q.defined?)
+expect unevaluated(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect unevaluated: when p.program = q.program and p.head = q.head and p.env = q.env and p.values.len = q.values.len
+        and p.values.len <= 7
+        and (forall (j: PartAt), when not j in p.unevaluated, part(p.values, j) = part(q.values, j))
+        and p.undefined_parts minus p.unevaluated = q.undefined_parts minus p.unevaluated,
+        p.value = q.value and (p.defined? iff q.defined?)
+}
 ```
 
 `frame_mentioned`: environments that agree on what a specified layer
@@ -65,10 +141,29 @@ instantiating them at the layer's own name:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-expect frame_mentioned: forall (p q: node),
-    when p.program = q.program and p.head = q.head and p.values = q.values and p.specified? and p.value != q.value,
-    (exists (x: Id), Mention::Var(x) in p.mentioned and lookup(p.env, x) != lookup(q.env, x))
-    or (exists (f: Id), Mention::Fn(f) in p.mentioned and meaning(p.env, f, p.values) != meaning(q.env, f, p.values))
+expect frame_mentioned(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect frame_mentioned: when p.program = q.program and p.head = q.head and p.values = q.values and p.specified? and p.value != q.value,
+        (exists (x: Id), Mention::Var(x) in p.mentioned and lookup(p.env, x) != lookup(q.env, x))
+        or (exists (f: Id), Mention::Fn(f) in p.mentioned and meaning(p.env, f, p.values) != meaning(q.env, f, p.values))
+}
 ```
 
 `field_order`: a construction's value does not depend on the order in
@@ -84,9 +179,28 @@ pub fn built(head: Head): Id := match head {
 
 pub fn construction?(head: Head) := head is Head::Construction(_, _)
 
-expect field_order: forall (p q: node),
-    when construction?(p.head) and construction?(q.head) and built(p.head) = built(q.head) and p.values = q.values,
-    p.value = q.value
+expect field_order(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect field_order: when construction?(p.head) and construction?(q.head) and built(p.head) = built(q.head) and p.values = q.values,
+        p.value = q.value
+}
 ```
 
 ## Declarations
@@ -97,10 +211,29 @@ product or a divisor (see [Linear
 arithmetic](Expressions.md#linear-arithmetic)):
 
 ```fren
-expect constant_fixed: forall (p q: node),
-    when p.program = q.program and p.head = q.head and p.head is Head::Constant(_) and p.values = q.values
-    and p.specified?,
-    p.value = q.value
+expect constant_fixed(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: Program,
+    q_head: Head,
+    q_env: Env,
+    q_values: Seq<Value>,
+    q_parts_mentioned: Set<Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    assume q_leaves: when q_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), q_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect constant_fixed: when p.program = q.program and p.head = q.head and p.head is Head::Constant(_) and p.values = q.values
+        and p.specified?,
+        p.value = q.value
+}
 ```
 
 `substitution`: where a constant or an application of a defined function
@@ -114,9 +247,20 @@ a definition's value is its body's in every environment that binds its
 parameters:
 
 ```fren
-expect substitution: forall (p: node),
-    when (p.head is Head::Constant(_) | Head::Defined(_)) and p.specified?,
-    p.value = definition_value(p.program, declared(p.head), p.values)
+expect substitution(
+    p_program: Program,
+    p_head: Head,
+    p_env: Env,
+    p_values: Seq<Value>,
+    p_parts_mentioned: Set<Mention>,
+    p_undefined_parts: Set<Int>,
+) {
+    use self::Head::{Bound, Constant, Literal, Variable}
+    assume p_leaves: when p_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), p_parts_mentioned = {}
+    call p := node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    expect substitution: when (p.head is Head::Constant(_) | Head::Defined(_)) and p.specified?,
+        p.value = definition_value(p.program, declared(p.head), p.values)
+}
 ```
 
 ## The whole tree

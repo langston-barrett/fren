@@ -507,6 +507,8 @@ structure CompInfo where
   assumptions are its preconditions, and its guarantees, if it is defined,
   its postconditions, each named after the function and the clause. -/
   fn? : Option Name := none
+  /-- A global expectation with a block (`Core.Comp.global`). -/
+  global : Bool := false
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)

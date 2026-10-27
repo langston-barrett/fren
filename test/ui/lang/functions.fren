@@ -1,6 +1,6 @@
 -- Abstract types and uninterpreted functions: the checks hold under every
--- interpretation, which instances, both copies of determinism, and the
--- binders of a global expectation share.
+-- interpretation, which calls, both copies of determinism, and the calls
+-- of a global expectation share.
 
 type Name
 fn ends_in_q?(Name)
@@ -37,7 +37,10 @@ proc renamed(n: Name): (ok?) {
     expect same_function: ok? iff ends_in_q?(rename(n))  -- the instance's function is this one
 }
 
-expect consistent: forall (x y: naming),
-    when x.name = y.name and x.annotated? = y.annotated?, x.accepted? = y.accepted?
+expect consistent(x_name: Name, x_annotated?, y_name: Name, y_annotated?) {
+    call x := naming(x_name, x_annotated?)
+    call y := naming(y_name, y_annotated?)
+    expect consistent: when x.name = y.name and x.annotated? = y.annotated?, x.accepted? = y.accepted?
+}
 
---@ summary: 18 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant

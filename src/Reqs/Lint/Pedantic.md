@@ -152,7 +152,7 @@ pub proc zero_sized_map_values(
 
 `many_single_char_names` and `similar_names` look at the names that an
 item declares: the variables and calls of a procedure, the
-parameters of a defined function, the binders of a global expectation, and
+parameters of a defined function, the parameters and calls of a global expectation, and
 the binders of the `match` arms, the bound names of the quantifiers and
 the names of the `let` and `where` clauses in each of them. Each name counts once,
 however many times it is declared: `x` and a later `x!` that

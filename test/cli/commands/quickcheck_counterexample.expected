@@ -16,16 +16,16 @@ error[F0607]: `climate::loose::b?` is not determined by the inputs: for the inpu
    = note: a `det` variable must have exactly one value for each input
    = help: add guarantees that pin it down, or remove `det`
 
-error[F0603]: expectation `climate::same` does not hold
-  --> test/cli/commands/quickcheck_counterexample.fren:26:8
+error[F0603]: expectation `climate::same::same` does not hold
+  --> test/cli/commands/quickcheck_counterexample.fren:29:12
    |
-26 | expect same: forall (x y: loose), when x.a? = y.a?, x.b? = y.b?
-   |        ^^^^ does not follow from the guarantees
+29 |     expect same: when x.a? = y.a?, x.b? = y.b?
+   |            ^^^^ does not follow from the assumptions and calls
    |
-   = counterexample: x.a? = false, x.b? = true, y.a? = false, y.b? = false
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = counterexample: x_a? = false, y_a? = false, x.b? = true, y.b? = false
+   = help: correct the expectation, or assume what it needs
 
-fren: 3 passed, 3 failed, 0 inconclusive, in 100 tests each
+fren: 4 passed, 3 failed, 0 inconclusive, in 100 tests each
 
 Some errors have detailed explanations: F0603, F0607.
 For more information about an error, try `fren --explain F0603`.

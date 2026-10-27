@@ -15,6 +15,9 @@ proc c(a?, b?, s: String): (p?, q?, o?) {
     -- a ⁦comment⁩
 }
 
-expect g1: forall (x: c), when x.a?, x.p?
-set_option fren.lint.eq_op "allow" in
-expect g2: forall (x: c), when x.a?, x.p?
+const K: Int := 1
+
+set_option fren.lint.assertions_on_constants "allow" in
+expect g1: K > 0
+set_option fren.lint.assertions_on_constants "allow" in
+expect g2: K > 0

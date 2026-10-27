@@ -2947,6 +2947,72 @@ at an argument:
 fn same_at?(f: fn(Int) -> Int, g: fn(Int) -> Int, x: Int) := f(x) = g(x)
 ```
 "# },
+  { code := "F0416", explanation := r#"A global expectation, as global expectations were written before.
+
+Erroneous code example:
+
+```fren
+proc double(x: Int): (y: Int) {
+    assume small: x < 100
+    ensure r: y = 2 * x
+}
+
+expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y
+```
+
+A global expectation takes parameters, and relates procedures by calling
+them, as a procedure does; a binder of its leading `forall` no longer
+ranges over a procedure's behaviours. Write it by hand with a parameter for
+each input of each binder, a call for each binder, and the procedures'
+assumptions as its own, so that it means what it did:
+
+```fren
+proc double(x: Int): (y: Int) {
+    assume small: x < 100
+    ensure r: y = 2 * x
+}
+
+expect monotone(a_x: Int, b_x: Int) {
+    assume a_small: a_x < 100
+    assume b_small: b_x < 100
+    call a := double(a_x)
+    call b := double(b_x)
+    expect monotone: when a.x <= b.x, a.y <= b.y
+}
+```
+
+A binder over values, such as `forall (m: Method)`, is no error: it is a
+quantifier.
+"# },
+  { code := "F0417", explanation := r#"A member that a global expectation does not have.
+
+Erroneous code example:
+
+```fren
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    call d := double(x)
+    ensure e: d.y mod 2 = 0
+}
+```
+
+A global expectation constrains nothing: it claims what follows from its
+assumptions and the procedures it calls. So its block has `assume`, `use`,
+`let`, `call`, `expect` and `cover` members only, and it has no results,
+no `exists`, `ensure` or `out` members, and no `det` member. State what a
+procedure guarantees in the procedure, and claim what follows with
+`expect`:
+
+```fren
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    call d := double(x)
+    expect e: d.y mod 2 = 0
+}
+```
+"# },
   { code := "F0420", explanation := r#"An instance, as calls were written before.
 
 Erroneous code example:
@@ -5723,28 +5789,40 @@ Assumptions that are reported and linked, by an input or a function, are removed
 together: one may guard an index in another, which is not defined without
 it. Each message names the others.
 "# },
-  { code := "F0793", explanation := r#"A global expectation whose binders fall into groups that nothing relates (a warning, `unrelated_binders`).
+  { code := "F0793", explanation := r#"A global expectation whose calls fall into groups that nothing relates (a warning, `unrelated_binders`).
 
 Example:
 
 ```fren
 proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 
-expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
+expect e(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect e: (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
+}
 ```
 
-`e` is a conjunction, and neither of its operands mentions both `a` and
-`b`, so `e` is two claims run together, one about each, and a
-counterexample to one names a binder that has nothing to do with it. An
-`or`, a `not`, a `when` and the other connectives relate every binder they
-mention, so only an `and` at the top separates claims. Relate the binders,
-or write one expectation for each claim:
+`e` is a conjunction, neither of its operands mentions both `a` and `b`,
+and the calls share no argument, so `e` is two claims run together, one
+about each, and a counterexample to one names a call that has nothing to
+do with it. An `or`, a `not`, a `when` and the other connectives relate
+every call they mention, so only an `and` at the top separates claims; a
+parameter that two calls' arguments mention relates them too. Relate the
+calls, or write one global expectation for each claim:
 
 ```fren
 proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 
-expect e: forall (a: c), when a.x = 0, a.y = 1
-expect f: forall (b: c), when b.x = 1, b.y = 2
+expect e(x: Int) {
+    call a := c(x)
+    expect e: when a.x = 0, a.y = 1
+}
+
+expect f(x: Int) {
+    call b := c(x)
+    expect f: when b.x = 1, b.y = 2
+}
 ```
 "# },
   { code := "F0794", explanation := r#"A `.` between two letters or digits in a pattern (a warning, `literal_dot_in_pattern`).

@@ -141,6 +141,10 @@ structure CheckResult where
   /-- For `realizable`, of the contract of a generic function without a
   body, checked for every type (`Comp.generic`). -/
   generic : Bool := false
+  /-- Of a global expectation with a block, whose messages speak of its
+  expectations, assumptions and calls rather than of guarantees; set by the
+  front ends where they report it. -/
+  global : Bool := false
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -746,11 +750,13 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
-/-- The checks of a global expectation (`Reqs/Lang/Global`), as a `Comp`
-whose path is the expectation's module, with one call per binder (no
-bindings, and no assumptions as obligations) and the expectation itself. -/
+/-- The checks of a global expectation (`check::applies`), as a `Comp`:
+those of a procedure, but for redundancy and determinism, since it
+constrains nothing; with no outputs, its realizability is that its
+assumptions are satisfiable (`Reqs/Lang/Global#meaning`). -/
 def globalKinds : Array CheckKind :=
-  #[.expect, .vacuity, .definedness, .completeness, .disjointness, .precondition, .reachability]
+  #[.realizable, .inst, .expect, .cover, .vacuity, .definedness, .completeness, .disjointness, .precondition,
+    .reachability]
 
 /-- The checks of the tables, `match`es and applications in the body and contract of
 a function or the value of a constant, and of a defined function's
@@ -775,6 +781,9 @@ def kindsFor (global : Bool) : Array CheckKind :=
 inductive CheckedItem where
   | component
   | global
+  /-- A global expectation in the short form, `expect n: e`, which has no
+  assumptions to satisfy. -/
+  | shortGlobal
   /-- The body and contract of a function, or the value of a constant. -/
   | body
   /-- The contract of an uninterpreted function with postconditions. -/
@@ -785,6 +794,7 @@ inductive CheckedItem where
 def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .component => kindsFor false
   | .global => kindsFor true
+  | .shortGlobal => (kindsFor true).filter (· != .realizable)
   | .body => bodyKinds
   | .contract => contractKinds
 
@@ -1241,7 +1251,8 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
           "help: weaken or remove one of them"] (item? := none)]
     else
     #[one "F0602" s!"the assumptions of {subject} are unsatisfiable: {showNames core} contradict each other"
-      (some "no input satisfies its assumptions") #["note: every guarantee would hold vacuously",
+      (some "no input satisfies its assumptions")
+      #[if r.global then "note: every expectation would hold vacuously" else "note: every guarantee would hold vacuously",
         "help: weaken or remove one of them"] (item? := none)]
   | .fail, .conflict input core =>
     let contract := r.target?.map (·.1)
@@ -1335,13 +1346,16 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #[s!"counterexample: {showAssignment vals}",
           "help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it"]]
     else
-    #[one "F0603" s!"expectation {subject} does not hold" (some "does not follow from the guarantees")
+    #[one "F0603" s!"expectation {subject} does not hold"
+      (some (if r.global then "does not follow from the assumptions and calls" else "does not follow from the guarantees"))
       (#[s!"counterexample: {showAssignment vals}"] ++ priv ++
-        #["help: strengthen the guarantees so that it follows, or correct the expectation"])]
+        #[if r.global then "help: correct the expectation, or assume what it needs"
+          else "help: strengthen the guarantees so that it follows, or correct the expectation"])]
   | .fail, .vacuous core =>
     if r.kind == .cover then
       let why := if core.isEmpty then "no behaviour satisfies it" else s!"it is ruled out by {showNames core}"
-      #[one "F0615" s!"cover goal {subject} cannot be met: {why}" (some "no behaviour that meets the procedure satisfies this")
+      #[one "F0615" s!"cover goal {subject} cannot be met: {why}" (some (if r.global then "no values that meet the assumptions and calls satisfy this"
+        else "no behaviour that meets the procedure satisfies this"))
         #["note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow",
           "help: weaken the constraints that rule it out, or correct the goal"]]
     else

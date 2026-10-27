@@ -499,8 +499,17 @@ scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command
 
 
-/-- `expect n: forall (a b: c), e`, a global expectation. -/
+/-- `expect n: e`, a global expectation in its short form, or `expect n:
+forall (a b: c), e`, as global expectations were written before, which
+the elaborator reports (`F0416`). -/
 scoped syntax (name := globalCmd) "expect " frenIdent " : " ("forall " fren_binder+ ", ")? fren_expr (fren_where)? : command
+
+/-- `expect n(x: T, ...) { members }`, a global expectation
+(`Reqs/Lang/Global`): parameters and a block, as a procedure's. Results
+are parsed only so that the elaborator reports them (`F0417`). -/
+scoped syntax (name := globalBlockCmd) "expect " frenIdent noWs "("
+  sepBy(fren_proc_param, ", ", ", ", allowTrailingSep) ")"
+  (" : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")")? " { " fren_member* " }" : command
 
 /-- `refine r: c refines a [{ bindings }] [by tactics]`, a refinement
 (`Reqs/Lang/Refinement`). -/

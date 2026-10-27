@@ -135,7 +135,7 @@ use view::Severity
 | `unnecessary_struct_initialization` | `F0790` | `complexity` | `warn` | a record literal that copies each field of a value of its record, such as `Point { x := p.x, y := p.y }` (see [Copied records](Lint/Complexity.md#copied-records)) |
 | `unnecessary_trailing_comma` | `F0801` | `pedantic` | `allow` | a trailing comma on the line of the `}` or `]` that closes its list, as in `{a, b,}` (see [Trailing commas](Lint/Pedantic/Text.md#trailing-commas)) |
 | `unnested_or_patterns` | `F0836` | `pedantic` | `allow` | alternatives next to each other that name one variant and differ in one value of its payload, such as `E::V(1) \| E::V(2)` (see [Nested or-patterns](Lint/Pedantic/Matches.md#nested-or-patterns)) |
-| `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose binders fall into two or more groups that no atom relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
+| `unrelated_binders` | `F0793` | `suspicious` | `warn` | a global expectation whose calls fall into two or more groups that nothing relates (see [Unrelated binders](Lint/Suspicious.md#unrelated-binders)) |
 | `unused_assumption` | `F0792` | `unused` | `warn` | an assumption that mentions only inputs that nothing uses, even through other assumptions (see [Unused assumptions](Lint/Unused.md#unused-assumptions)) |
 | `unused_imports` | `F0701` | `unused` | `warn` | a `use` that nothing in its file uses (see [Unused imports](Lint/Unused.md#unused-imports)) |
 | `unused_lint_setting` | `F0791` | `unused` | `warn` | a lint setting that is in effect at no item (see [Unused lint settings](Lint/Unused.md#unused-lint-settings)) |
@@ -704,8 +704,18 @@ pub proc fix_selected(
 }
 
 -- Skipping more never fixes more.
-expect skip_monotone: forall (a b: fix_selected),
-    when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
+expect skip_monotone(
+    a_lint: Lint,
+    a_only: Set<Lint>,
+    a_skip: Set<Lint>,
+    b_lint: Lint,
+    b_only: Set<Lint>,
+    b_skip: Set<Lint>,
+) {
+    call a := fix_selected(a_lint, a_only, a_skip)
+    call b := fix_selected(b_lint, b_only, b_skip)
+    expect skip_monotone: when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
+}
 ```
 
 The lints that are not fixed are reported as `fren check` reports them. A

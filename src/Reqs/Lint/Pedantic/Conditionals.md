@@ -122,13 +122,45 @@ Where it fires, the two copies of `X` have the same value in one
 environment. Here `p` and `q` are their root layers:
 
 ```fren
-expect branches_sharing_value: forall (b: branches_sharing_code) (p q: lang::node),
-    when b.fires? and p.env = q.env and p.program = q.program
-    and p.head = written_head(if b.shared_left? then b.then_left else b.then_right)
-    and p.values = written_values(p.env, if b.shared_left? then b.then_left else b.then_right)
-    and q.head = written_head(if b.shared_left? then b.else_left else b.else_right)
-    and q.values = written_values(q.env, if b.shared_left? then b.else_left else b.else_right),
-    p.value = q.value
+expect branches_sharing_value(
+    b_binders: Set<lang::Id>,
+    b_then_head: lang::Head,
+    b_else_head: lang::Head,
+    b_then_left: Scoped,
+    b_then_right: Scoped,
+    b_else_left: Scoped,
+    b_else_right: Scoped,
+    b_condition_mentioned: Set<lang::Mention>,
+    b_a_mentioned: Set<lang::Mention>,
+    b_b_mentioned: Set<lang::Mention>,
+    b_shared_mentioned: Set<lang::Mention>,
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call b := branches_sharing_code(b_binders, b_then_head, b_else_head, b_then_left, b_then_right, b_else_left, b_else_right, b_condition_mentioned, b_a_mentioned, b_b_mentioned, b_shared_mentioned)
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect branches_sharing_value: when b.fires? and p.env = q.env and p.program = q.program
+        and p.head = written_head(if b.shared_left? then b.then_left else b.then_right)
+        and p.values = written_values(p.env, if b.shared_left? then b.then_left else b.then_right)
+        and q.head = written_head(if b.shared_left? then b.else_left else b.else_right)
+        and q.values = written_values(q.env, if b.shared_left? then b.else_left else b.else_right),
+        p.value = q.value
+}
 ```
 
 The refinements check both forms, on integers, with `-`, which is not

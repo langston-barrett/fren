@@ -204,11 +204,12 @@ These declarations may shadow:
   visibility](Modules.md#use-in-a-procedure));
 - a [defined function's](Items.md#defined-functions) parameter, those of
   the function's module;
-- a [global expectation's](Global.md) binder, those of its module;
+- a [global expectation's](Global.md) parameter, `let` variable or call,
+  those of its module, as a procedure's do;
 - a [`match` arm's](Expressions.md#matches) binder or a
   [quantifier's](Quantifiers.md#names) bound name, those and also the
-  variables (or, in a function's body, the parameters), calls, global
-  expectation binders, binders of enclosing arms, bound names of
+  variables (or, in a function's body, the parameters), calls, binders
+  of enclosing arms, bound names of
   enclosing quantifiers and names of enclosing `let`s and `where` clauses
   in scope;
 - a [`let` or `where`](Let.md) definition's name, those and also the
@@ -438,8 +439,6 @@ these constraints have no names, are never reported in a minimal set, and
 are never checked for redundancy. A call's argument for a parameter of a
 pattern type is checked like any other assumption of the called
 procedure, by the [call assumption check](../Check.md#call-assumptions).
-A [global expectation's](Global.md) binders have no arguments, so their
-parameters bring their constraints, as their assumptions do.
 
 ## Interpretations
 

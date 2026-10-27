@@ -19,8 +19,18 @@ proc fix_selected(lint: Lint, only: Set<Lint>, skip: Set<Lint>): (det fixed?) {
 }
 
 -- Skipping more never fixes more.
-expect skip_monotone: forall (a b: fix_selected),
-    when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
+expect skip_monotone(
+    a_lint: Lint,
+    a_only: Set<Lint>,
+    a_skip: Set<Lint>,
+    b_lint: Lint,
+    b_only: Set<Lint>,
+    b_skip: Set<Lint>,
+) {
+    call a := fix_selected(a_lint, a_only, a_skip)
+    call b := fix_selected(b_lint, b_only, b_skip)
+    expect skip_monotone: when a.lint = b.lint and a.only = b.only and a.skip subset b.skip and b.fixed?, a.fixed?
+}
 
 proc counts(s: Set<Int>, t: Set<Int>): (n: Int, det both: Set<Int>) {
     out both := s union t
@@ -43,5 +53,5 @@ proc lines(
 ): (ok?) {
     ensure r: ok? iff x in s
 }
---@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

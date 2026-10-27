@@ -7,31 +7,79 @@ pub proc c(x: Int): (y: Int, b?) {
     ensure s: b? iff x > 0
 }
 
-expect apart: forall (a b: c), a.y = a.x + 1 and b.y = b.x + 1  --~ warning: the binders of `apart` fall into 2 groups that nothing relates
+expect apart(a_x: Int, b_x: Int) {  --~ warning: the calls of `apart` fall into 2 groups that nothing relates
+    call a := c(a_x)
+    call b := c(b_x)
+    expect apart: a.y = a.x + 1 and b.y = b.x + 1
+}
 
 -- One comparison relates them.
-expect related: forall (a b: c), when a.x = b.x, a.y = b.y
+expect related(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect related: when a.x = b.x, a.y = b.y
+}
 
 -- `a` and `b` through `d`'s comparisons; `e` alone.
-expect chained: forall (a b d e: c), a.y - a.x = d.y - d.x and d.y - d.x = b.y - b.x and e.y = e.x + 1
---~^ warning: the binders of `chained` fall into 2 groups that nothing relates
+expect chained(a_x: Int, b_x: Int, d_x: Int, e_x: Int) {  --~ warning: the calls of `chained` fall into 2 groups that nothing relates
+    call a := c(a_x)
+    call b := c(b_x)
+    call d := c(d_x)
+    call e := c(e_x)
+    expect chained: a.y - a.x = d.y - d.x and d.y - d.x = b.y - b.x and e.y = e.x + 1
+}
 
 -- An `and` in parentheses splits too.
-expect nested: forall (a b: c), (a.y = a.x + 1 and b.y = b.x + 1) and a.y > a.x
---~^ warning: the binders of `nested` fall into 2 groups that nothing relates
+expect nested(a_x: Int, b_x: Int) {  --~ warning: the calls of `nested` fall into 2 groups that nothing relates
+    call a := c(a_x)
+    call b := c(b_x)
+    expect nested: (a.y = a.x + 1 and b.y = b.x + 1) and a.y > a.x
+}
 
 -- A `when` relates its hypothesis to its conclusion, whatever they mention.
-expect monotone: forall (p q: c), when (not q.b? or p.b?) and p.b?, q.b? or q.y = q.x + 1
-expect hypotheses: forall (a b: c), when a.x = 0 and b.x = 1, a.y = 1 and b.y = 2
-expect unless_: forall (a b: c), unless a.x = 0, b.y = b.x + 1
+expect monotone(p_x: Int, q_x: Int) {
+    call p := c(p_x)
+    call q := c(q_x)
+    expect monotone: when (not q.b? or p.b?) and p.b?, q.b? or q.y = q.x + 1
+}
+expect hypotheses(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect hypotheses: when a.x = 0 and b.x = 1, a.y = 1 and b.y = 2
+}
+expect unless_(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect unless_: unless a.x = 0, b.y = b.x + 1
+}
 
 -- A disjunction is one claim: two expectations would make it a conjunction.
-expect either: forall (p q: c), p.y = p.x + 1 or q.b?
-expect neither: forall (p q: c), not (p.y != p.x + 1 and q.b?)
+expect either(p_x: Int, q_x: Int) {
+    call p := c(p_x)
+    call q := c(q_x)
+    expect either: p.y = p.x + 1 or q.b?
+}
+expect neither(p_x: Int, q_x: Int) {
+    call p := c(p_x)
+    call q := c(q_x)
+    expect neither: not (p.y != p.x + 1 and q.b?)
+}
 
 -- An `iff` and an `if` are atoms.
-expect atoms: forall (a b: c), (a.x = 0 iff b.x = 0) or (if a.x = 0 then b.y != 1 else a.y != 1)
-expect conditional: forall (a b: c), if a.b? then a.y = a.x + 1 else b.y = b.x + 1
+expect atoms(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect atoms: (a.x = 0 iff b.x = 0) or (if a.x = 0 then b.y != 1 else a.y != 1)
+}
+expect conditional(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect conditional: if a.b? then a.y = a.x + 1 else b.y = b.x + 1
+}
 
 -- `b` is mentioned nowhere: `unused_variables`'.
-expect unused: forall (a b: c), a.y = a.x + 1  --~ warning: unused binder `b`
+expect unused(a_x: Int, b_x: Int) {
+    call a := c(a_x)
+    call b := c(b_x)
+    expect unused: a.y = a.x + 1
+}

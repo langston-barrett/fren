@@ -73,7 +73,7 @@ def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : Messa
     else logAt (← getRef) text severity
 
 def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
-  for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) r c.decidable do
+  for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) { r with global := c.global } c.decidable do
     let prop? := msg.item?.bind fun n => c.props.find? (·.name == n)
     -- The `k`th index, or question about a table, of the item.
     let site? (k : Nat) (table : Bool) := msg.item?.bind fun n =>
@@ -184,7 +184,7 @@ where
   for p in paths do
     let (c, kinds) ← match s.comps.get? p, s.globals.get? p, s.refinements.get? p with
       | some c, _, _ => pure (c, Core.CheckedItem.component.kinds)
-      | none, some g, _ => pure (g, Core.CheckedItem.global.kinds)
+      | none, some g, _ => pure (g, (if g.global then Core.CheckedItem.global else .shortGlobal).kinds)
       | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
       | none, none, none => match s.bodies.get? p with
         -- An uninterpreted function's contract has its value as an output.

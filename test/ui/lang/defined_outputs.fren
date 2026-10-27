@@ -61,7 +61,10 @@ proc conflict(a: Int): (o: Int) {                     --~ error: `conflict` is n
     ensure r2: o != a   --~ info: conflicts with `r1`
 }
 
-expect defined: forall (u: chained), u.total >= 2 * u.a
+expect defined(u_a: Int) {
+    call u := chained(u_a)
+    expect defined: u.total >= 2 * u.a
+}
 
---@ summary: 19 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 2 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

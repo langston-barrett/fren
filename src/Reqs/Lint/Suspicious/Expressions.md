@@ -68,11 +68,35 @@ have the same head and parts' values, and so the same value, specified or
 not. Here `p` and `q` are the operands' root layers:
 
 ```fren
-expect eq_op_operands: forall (e: eq_op) (p q: lang::node),
-    when e.fires? and p.env = q.env and p.program = q.program and p.head = written_head(e.left)
-    and p.values = written_values(p.env, e.left)
-    and q.head = written_head(e.right) and q.values = written_values(q.env, e.right),
-    p.value = q.value
+expect eq_op_operands(
+    e_op: InfixOp,
+    e_left: Scoped,
+    e_right: Scoped,
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call e := eq_op(e_op, e_left, e_right)
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect eq_op_operands: when e.fires? and p.env = q.env and p.program = q.program and p.head = written_head(e.left)
+        and p.values = written_values(p.env, e.left)
+        and q.head = written_head(e.right) and q.values = written_values(q.env, e.right),
+        p.value = q.value
+}
 ```
 
 What the message says the expression then is, `lint::eq_op_values`
@@ -220,8 +244,20 @@ pub proc erasing_op(
     })
 }
 
-expect erasing_not_eq_op: forall (e: erasing_op) (q: eq_op), when q.op = e.op and q.same? = e.same?,
-    not (e.fires? and q.fires?)
+expect erasing_not_eq_op(
+    e_op: InfixOp,
+    e_left: IdentityOperand,
+    e_right: IdentityOperand,
+    e_same?,
+    q_op: InfixOp,
+    q_left: Scoped,
+    q_right: Scoped,
+) {
+    call e := erasing_op(e_op, e_left, e_right, e_same?)
+    call q := eq_op(q_op, q_left, q_right)
+    expect erasing_not_eq_op: when q.op = e.op and q.same? = e.same?,
+        not (e.fires? and q.fires?)
+}
 ```
 
 The refinements below check the values of `in` and `subset` that the
@@ -337,11 +373,35 @@ value, whichever is taken, by [`written_same`](../Meaning.md#expressions-as-writ
 Here `p` and `q` are their root layers:
 
 ```fren
-expect same_branches_value: forall (b: same_branches) (p q: lang::node),
-    when b.fires? and p.env = q.env and p.program = q.program and p.head = written_head(b.then_branch)
-    and p.values = written_values(p.env, b.then_branch) and q.head = written_head(b.else_branch)
-    and q.values = written_values(q.env, b.else_branch),
-    p.value = q.value
+expect same_branches_value(
+    b_binders: Set<lang::Id>,
+    b_then_branch: Scoped,
+    b_else_branch: Scoped,
+    p_program: lang::Program,
+    p_head: lang::Head,
+    p_env: lang::Env,
+    p_values: Seq<lang::Value>,
+    p_parts_mentioned: Set<lang::Mention>,
+    p_undefined_parts: Set<Int>,
+    q_program: lang::Program,
+    q_head: lang::Head,
+    q_env: lang::Env,
+    q_values: Seq<lang::Value>,
+    q_parts_mentioned: Set<lang::Mention>,
+    q_undefined_parts: Set<Int>,
+) {
+    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        p_parts_mentioned = {}
+    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
+        q_parts_mentioned = {}
+    call b := same_branches(b_binders, b_then_branch, b_else_branch)
+    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
+    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
+    expect same_branches_value: when b.fires? and p.env = q.env and p.program = q.program and p.head = written_head(b.then_branch)
+        and p.values = written_values(p.env, b.then_branch) and q.head = written_head(b.else_branch)
+        and q.values = written_values(q.env, b.else_branch),
+        p.value = q.value
+}
 ```
 
 `same_branches` fires on a [table](../../Lang/Expressions.md#tables)

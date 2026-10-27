@@ -65,4 +65,8 @@ pub proc c(x: Int, s: String, m: Mode, rd: Reading, sp: Span): (ok?, y: Int) {
     expect e: when x = 3, ok?
 }
 
-expect g: forall (p: c), p.x <= 10
+expect g(p_x: Int, p_s: String, p_m: Mode, p_rd: Reading, p_sp: Span) {
+    assume p_bounded: p_x >= 0 and p_x <= LIMIT
+    call p := c(p_x, p_s, p_m, p_rd, p_sp)
+    expect g: p.x <= 10
+}

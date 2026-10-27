@@ -946,16 +946,12 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
 /-- The names in scope that a `match` binder, a quantifier's bound name or
 a definition of a `let` or `where` may hide, innermost last, each with what
 its kind (`Table.hidden?`): the variables of one segment, which are
-parameters in a function's body (`inFn`), the calls, which are binders
-in a global expectation (`inGlobal`), and the binders of enclosing arms,
+parameters in a function's body (`inFn`), the calls, and the binders of enclosing arms,
 bound names of enclosing quantifiers and names of enclosing `let`s and
 `where` clauses, each with its kind, such as `patternBinder`. -/
-def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Locals) (inFn : Bool)
-    (inGlobal := false) : Locals :=
+def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Locals) (inFn : Bool) : Locals :=
   let kind (r : Role) : BindingKind := if inFn then .parameter else if r == .input then .input else .output
-  -- A global expectation's binders are its calls.
-  let instKind : BindingKind := if inGlobal then .expectBinder else .inst
-  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, kind r)) ++ insts.map (·, instKind)
+  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, kind r)) ++ insts.map (·, .inst)
     ++ binders
 
 /-! ## Local definitions (`Reqs/Lang/Let`) -/
@@ -1404,9 +1400,13 @@ def intConstMethod? (m : String) (x : Int) (args : List Int) : Option Int :=
   | "max", [y] => some (if x ≥ y then x else y)
   | _, _ => none
 
-def dupMemberMsg (n : Name) : Msg :=
-  { code? := some "F0213", headline := s!"`{n}` is defined multiple times in this procedure", label? := some "defined again here"
-    notes := #["note: the variables, calls and constraints of a procedure share one namespace"] }
+/-- A name declared twice in a procedure, or with `global`, in a global
+expectation's block. -/
+def dupMemberMsg (n : Name) (global : Bool := false) : Msg :=
+  let what := if global then "global expectation" else "procedure"
+  { code? := some "F0213", headline := s!"`{n}` is defined multiple times in this {what}", label? := some "defined again here"
+    notes := #[if global then "note: the parameters, variables, calls and constraints of a global expectation share one namespace"
+      else "note: the variables, calls and constraints of a procedure share one namespace"] }
 
 def dupParamMsg (n : Name) : Msg :=
   { code? := some "F0213", headline := s!"parameter `{n}` is defined multiple times", label? := some "defined again here" }
