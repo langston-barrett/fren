@@ -76,7 +76,7 @@ impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Co
   intro k ps v x y h
   cases k <;> simp_all [fren_spec, toLayerHead, mentionSet, toMention, Fren.Core.MentionShape.mentions,
     Fren.Core.MentionShape.mentioned, Fren.Core.kindMentioned, lang.Head.Literal.x0, lang.Head.Bound.x0,
-    lang.Head.Constant.x0, lang.Head.Variable.x0, lang.Head.Uninterpreted.x0, Fren.FinSet.ext_iff, or_comm]
+    lang.Head.Constant.x0, lang.Head.Variable.x0, Fren.FinSet.ext_iff, or_comm]
   all_goals cases Fren.Core.MentionShape.allMentioned ps <;> simp [Fren.FinSet.ext_iff]
   all_goals exact ⟨_, fun h => absurd rfl h⟩
 

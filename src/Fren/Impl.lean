@@ -295,7 +295,8 @@ def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
   let mut gen ← generatedDecls
   if interps then
     for (_, d) in (← getState).interps do gen := gen.insert d
-  let stmt ← Meta.deltaExpand stmt gen.contains
+  -- A defined function unfolds to its solver form (`DefinedInfo.solver?`).
+  let stmt ← deltaDefined (← getState) stmt gen.contains
   -- Without the `let`s of record updates and the `have`s of `let`s and
   -- `where` clauses, which lean-smt does not translate.
   let stmt ← Meta.zetaReduce (← Core.betaReduce stmt)

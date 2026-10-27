@@ -24,13 +24,19 @@ proc c(x: Opt<Int>): (det y: Int) {
 info: @[reducible] def Fren.Generated.generic_functions.unwrap_or : (T : Type) →
   [#inhabited : Inhabited T] → generic_functions.Opt T → T → T :=
 fun T [Inhabited T] o d =>
-  if o = generic_functions.Opt.Some (generic_functions.Opt.Some.x0 o) then generic_functions.Opt.Some.x0 o else d
+  match o with
+  | generic_functions.Opt.Some x => x
+  | generic_functions.Opt.None => d
 -/
 #guard_msgs in
 #print generic_functions.unwrap_or
 
 -- An ordinary Lean definition, applied at an instance.
-example : generic_functions.unwrap_or Int (.Some 3) 0 = 3 := by simp [generic_functions.unwrap_or, generic_functions.Opt.Some.x0]
+example : generic_functions.unwrap_or Int (.Some 3) 0 = 3 := by simp [generic_functions.unwrap_or]
+
+-- Compiled, so that compiled code runs it, and `decide` reduces it.
+#guard generic_functions.unwrap_or Int .None 5 == 5
+example : generic_functions.unwrap_or Int (.Some 3) 0 = 3 := by decide
 
 /-- info: fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in

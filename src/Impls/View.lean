@@ -139,7 +139,7 @@ impl clash_text: view::clash_text for (g o r : String) (f f' : Fren.Core.Forced)
   have ts : ∀ s : String, toString s = s := fun _ => rfl
   have hn : (n.toNat = 1) = (n = 1) := by apply propext; omega
   rcases f with v | ⟨c, a⟩ <;> rcases f' with v' | ⟨c', a'⟩ <;>
-    simp only [toForced, view.Forced.Value.x0, view.Forced.Variant.x0, view.Forced.Variant.x1, Fren.Core.forcedText,
+    simp only [toForced, Fren.Core.forcedText,
       Fren.Core.Variant.pattern, Fren.Core.Forced.blanks, ts, hn, reduceCtorEq, if_true, if_false, Int.natCast_eq_zero,
       String.append_assoc, and_true]
   all_goals (repeat' split) <;> first | (exfalso; omega) | simp only [String.append_empty, String.empty_append, String.append_assoc, and_self]

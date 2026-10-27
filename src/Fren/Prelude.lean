@@ -40,6 +40,8 @@ def Except.error.x0 {ε α : Type} [Inhabited ε] [Inhabited α] (v : _root_.Exc
   | .error x => x
   | .ok _ => default
 
+attribute [fren_spec] Option.some.x0 Except.ok.x0 Except.error.x0
+
 /-- `Except`'s values are equal if they are built alike, as every Fren
 enumeration's are (`Reqs/Lang/Types`); Lean has no instance of its own. -/
 instance decEqExcept {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (_root_.Except ε α) := fun a b =>

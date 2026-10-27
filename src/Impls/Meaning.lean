@@ -117,7 +117,7 @@ theorem total_eq (o : String) : lang.total? o = total o := by
   rw [Bool.eq_iff_iff]; simp [lang.total?, total, connective_eq, Fren.Str.lit, or_assoc]
 
 theorem operator_toHead (h : Head) : lang.operator (toHead h) = h.operator := by
-  cases h <;> simp [lang.operator, toHead, Head.operator, Fren.Str.lit, lang.Head.Op.x0, lang.Head.Op.x1]
+  cases h <;> simp [lang.operator, toHead, Head.operator, Fren.Str.lit]
 
 theorem isTrue_iff (v : Value) : v.isTrue = true ↔ v = .b true := by
   simp [Value.isTrue]
@@ -145,7 +145,7 @@ theorem armOpen_op (o s : String) (l : List Value) (k : Nat) :
 theorem moreArms_op (o s : String) (l : List Value) :
     lang.more_arms? (lang.Head.Op o s) (toValues l) = (choice o && decide (l.length > 7)) := by
   rw [Bool.eq_iff_iff]
-  simp [lang.more_arms?, choice_eq, lang.operator, lang.Head.Op.x0, lang.Head.Op.x1, toValues]
+  simp [lang.more_arms?, choice_eq, lang.operator, toValues]
   exact fun _ => by constructor <;> intro <;> omega
 
 theorem moreArms (h : Head) (l : List Value) :
@@ -179,8 +179,8 @@ theorem guard_rule (g : Fren.Core.GuardedOperand) (c : lang.Value) :
 
 theorem mentionedBy_eq (h : Head) (pm : List Fren.Core.Mention) :
     lang.mentioned_by (toHead h) (mentionSet pm) = mentionSet (mentionedBy h pm) := by
-  cases h <;> simp [lang.mentioned_by, toHead, mentionedBy, lang.Head.Variable.x0, lang.Head.Uninterpreted.x0,
-    lang.Head.Literal.x0, lang.Head.Bound.x0, lang.Head.Constant.x0, Fren.Impls.mentionSet, toMention]
+  cases h <;> simp [lang.mentioned_by, toHead, mentionedBy,
+    Fren.Impls.mentionSet, toMention]
   all_goals apply FinSet.ext; intro; simp
 
 theorem read_eq (h : Head) (e : Env) (l : List Value) :
@@ -305,8 +305,10 @@ interp lang::step := fun (p : Fren.Core.Meaning.Program) h (e : Fren.Core.Meanin
     have f2 : lang.fires_at? (Meaning.toValues l) _ _ _ 2 = _ := f 2 (by omega)
     simp only [Meaning.toHead, lang.Head.Op.x0, lang.Head.Op.x1, reduceCtorEq, if_true, if_false,
       o0, o1, o2, f0, f1, f2, Meaning.connective_eq, Meaning.choice_eq, Meaning.total_eq,
-      Meaning.connectiveValue_toValues, Meaning.moreArms_op, Meaning.ofValues_empty, Fren.Core.Meaning.step_op, apply_ite Meaning.toValue]
-    simp [lang.guard_at, Fren.Core.Meaning.armBody, Fren.Core.Meaning.guardAt]
+      Meaning.connectiveValue_toValues, Meaning.ofValues_empty, Fren.Core.Meaning.step_op, apply_ite Meaning.toValue]
+    have hl : (7 : Int) < (l.length : Int) ↔ 7 < l.length := by omega
+    simp [lang.guard_at, Fren.Core.Meaning.armBody, Fren.Core.Meaning.guardAt, lang.operator, Fren.Core.Meaning.choice,
+      Fren.Str.lit, Meaning.toValues, hl]
   case constant c =>
     by_cases hs : fixedSpecified (pctx p) (.constant c) l
     · simp [Meaning.toHead, Fren.Core.Meaning.step, hs, Meaning.fixedValue_constant p c l hs, lang.declared,

@@ -1618,7 +1618,7 @@ impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Boo
   cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
 
 theorem op_of (op : String) : lang.operator (.Op op "") = op := by
-  simp [lang.operator, lang.Head.Op.x0, lang.Head.Op.x1]
+  simp [lang.operator]
 
 theorem sharingNonlinear (op : String) (left : Bool) (m x : List Fren.Core.Mention) :
     Fren.Core.branchesSharingNonlinear op left m x = match lint.shared_op (.Op op "") with
@@ -1666,9 +1666,7 @@ impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (
   refine ⟨mentionSet (c ++ a ++ b), mentionSet x, Fren.Core.productAccepted (c ++ a ++ b) x, ?_⟩
   rw [sharingNonlinear]
   unfold lint.shared_op
-  simp only [fren_spec, Fren.Str.lit, lang.mentioned_by, lang.Head.Op.x0, lang.Head.Op.x1, reduceCtorEq,
-    lang.Head.Literal.x0, lang.Head.Bound.x0, lang.Head.Constant.x0, lang.Head.Variable.x0, lang.Head.Uninterpreted.x0,
-    or_self, if_false, ite_true]
+  simp only [fren_spec, Fren.Str.lit, lang.mentioned_by]
   rw [← mentionSet_append, ← mentionSet_append]
   by_cases h1 : op = "*" <;> by_cases h2 : op = "div" <;> by_cases h3 : op = "mod" <;>
     by_cases hl : tl = el <;> by_cases hr : tr = er <;> by_cases ho : op = op' <;> cases hb : bs <;>
