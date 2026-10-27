@@ -4850,10 +4850,16 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
 parameters are `ps`, in its own body; an error if with it the uses are not a
 structural recursion (`lang::structural_recursion`). -/
 def noteRecUse (ref : Syntax) (f : Name) (ps : Array Name) (u : Core.RecUse) : TermElabM Unit := do
+  -- Once for each use written: an expression elaborated again, such as a
+  -- `match`'s arms for Lean's `match` or a `match`'s scrutinee where a
+  -- closure refers to an arm's binder, is not another use.
+  let range? := ref.getRange?
+  if range?.isSome && (← getLocal).recUses.any (·.1.getRange? == range?) then return
   modifyLocal fun l => { l with recUses := l.recUses.push (ref, u) }
   let uses := (← getLocal).recUses
   if let .notStructural _ i := Core.recursion ps.size (uses.toList.map (·.2)) then
-    throwErrorAt ref (Core.nonStructuralMsg f ps[i]! u.form (u.args[i]?.getD .expr)).text
+    -- A function always has a parameter; without one, the message names the function.
+    throwErrorAt ref (Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr)).text
 
 open Lang in
 /-- A closure, or the name of a function, `e`, given for the function

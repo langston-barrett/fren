@@ -26,6 +26,16 @@ fn depth(d: Int, e: Expr): Int := match e {
     _ => d,
 }
 
+-- Structural: a closure that refers to an arm's binder, of a `match` on a
+-- recursive application, is not another application (#363).
+fn ap1(g: fn(Int) -> Int, x: Int): Int := g(x)
+fn under(e: Expr): Int := match e {
+    Expr::Neg(n) => match under(n) {  --~ error: recursive defined functions are not yet supported
+        k => ap1(|y| y + k, 0),
+    },
+    _ => 0,
+}
+
 -- Structural at the second parameter, though the first is an `Expr` too.
 fn both(f: Expr, e: Expr): Int := match e {
     Expr::Add(a, b) => both(f, a) + both(a, b),  --~ error: recursive defined functions are not yet supported

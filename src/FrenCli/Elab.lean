@@ -1175,10 +1175,15 @@ def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Ran
 whose parameters are `ps`, in its own body; an error if with it the uses are
 not a structural recursion (`lang::structural_recursion`). -/
 def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse) : M Unit := do
+  -- Once for each use written: an expression elaborated again, such as a
+  -- `match`'s scrutinee where a closure refers to an arm's binder, is not
+  -- another use.
+  if (← get).recUses.any (·.1 == span) then return
   modify fun s => { s with recUses := s.recUses.push (span, u) }
   let uses := (← get).recUses
   if let .notStructural _ i := Fren.Core.recursion ps.size (uses.toList.map (·.2)) then
-    err span (Fren.Core.nonStructuralMsg f ps[i]! u.form (u.args[i]?.getD .expr))
+    -- A function always has a parameter; without one, the message names the function.
+    err span (Fren.Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr))
 
 structure ExprCtx where
   vars : Array CVar
