@@ -45,7 +45,7 @@ recursion is accepted, with the meaning, encodings and decidability below
 reported it as not yet supported, is retired.
 
 `lang::structural_recursion` states this, over the function's uses of
-itself in its body, in the order they are written, each with where its
+itself in its body, in the order they are read (below), each with where its
 arguments come from:
 
 ```fren
@@ -99,7 +99,13 @@ pub proc structural_recursion(
 
 Both front ends read the body into these uses as they elaborate it: a use
 when they reach the function's name, before its arguments, so an
-application within another's arguments comes after it.
+application within another's arguments comes after it. That is the order
+they are written but where an operand does not synthesize its type, and
+the other operand is elaborated first, as in `[match f(l) { _ => [] },
+[f(l)]].len`, where the second `f(l)` is read first; both front ends read
+in the same order. Each use is read once, at its place: an expression that
+is elaborated again, such as a `match`'s scrutinee where a closure refers
+to an arm's binder, is not another use.
 
 ## Meaning
 
@@ -203,7 +209,7 @@ set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
 pub proc recursive_kind(
     recursion: Recursion,          -- `lang::structural_recursion`'s verdict
-    occurrences: Seq<PayloadOcc>,  -- in the order they are written
+    occurrences: Seq<PayloadOcc>,  -- in the order they are read
 ): (det rec_kind: RecKind) {
     ensure not_recursive: when not (recursion is Recursion::Structural(_)), rec_kind = RecKind::NotRecursive
     -- A catamorphism: nothing at the decreasing parameter is other.

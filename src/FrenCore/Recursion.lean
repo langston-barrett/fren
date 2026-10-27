@@ -178,8 +178,10 @@ def nonStructuralMsg (f param : Lean.Name) (form : RecForm) (arg : RecArg) : Msg
     | .applied, .expr => s!"the argument is an expression, not a payload of `{param}`"
     | .applied, .payload => s!"the argument is a payload of `{param}`"
   { code? := some "F0447", headline := s!"defined function `{showPath f}` is not structurally recursive"
-    label? := some why
-    notes := #["note: a defined function may apply itself only to a payload of a variant that a `match` on a parameter bound, at the same parameter in every application",
+    label? := some "not on a payload of a matched parameter"
+    -- The reason as a note, which the Lean-hosted front end shows, as it
+    -- does not show labels.
+    notes := #[s!"note: {why}","note: a defined function may apply itself only to a payload of a variant that a `match` on a parameter bound, at the same parameter in every application",
       "help: match on the parameter, and apply the function to a binder of the arm's pattern"] }
 
 end Fren.Core

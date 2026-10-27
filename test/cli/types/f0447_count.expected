@@ -2,8 +2,9 @@ error[F0447]: defined function `count` is not structurally recursive
  --> test/cli/types/f0447_count.fren:3:40
   |
 3 | fn count(n: Int): Int := if n > 0 then count(n - 1) + 1 else 0
-  |                                        ^^^^^ the argument is an expression, not a payload of `n`
+  |                                        ^^^^^ not on a payload of a matched parameter
   |
+  = note: the argument is an expression, not a payload of `n`
   = note: a defined function may apply itself only to a payload of a variant that a `match` on a parameter bound, at the same parameter in every application
   = help: match on the parameter, and apply the function to a binder of the arm's pattern
 
