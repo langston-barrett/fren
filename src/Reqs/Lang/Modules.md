@@ -179,6 +179,9 @@ pub comp resolve {
     in nearer: Set<lang::Binding>    -- the same scope without the prelude
     in name: lang::Id                -- its first segment
 
+    -- The prelude is only added to the scope.
+    assume nearer_inside: nearer subset bindings
+
     pub det out lookup: lang::Lookup := first.result
     pub det out result: Resolution := match lookup {
         lang::Lookup::Found(Opened) => Glob,
@@ -200,9 +203,9 @@ pub comp resolve {
         result = Glob
     -- An item or a name imported by name wins over the variants that glob imports open further out.
     expect local_wins: forall (b c: lang::Binding), when b in bindings and c in bindings and b.name = name
-        and c.name = name and b.kind != Opened and c.kind = Opened and b.depth < c.depth
+        and c.name = name and b.kind != Opened and c.kind = Opened and b.depth < c.depth and b in nearer
         and (forall (d: lang::Binding), when d in bindings and d.name = name, d = b or d = c),
-        result in {Local, Prelude}
+        result = Local
     -- Two variants of one name, opened in the innermost scope that has it, are ambiguous.
     expect two_globs: forall (b c: lang::Binding), when lang::innermost?(bindings, b, name)
         and lang::innermost?(bindings, c, name) and b.kind = Opened and c.kind = Opened and b.target != c.target,
@@ -384,6 +387,8 @@ pub comp two_segments {
     in b_pub?                        -- that member is `pub`
     in b_owner: ModuleName           -- the module declaring `b`: `a`, if `a` is a module
     in here: ModuleName              -- the module where the path is written
+
+    assume nearer_inside: nearer subset bindings
 
     -- What `a` is, when it is declared or imported by name.
     pub det out a_kind: Kind := match first.lookup {
