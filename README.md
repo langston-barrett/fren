@@ -24,34 +24,37 @@ mod http
 enum Method { Get, Put, Post, Delete }   -- Rust-style enums (can have payloads)
 type Status := Nat is 100..=599          -- a pattern type
 ordered struct Seconds(Nat)              -- a newtype with derived ordering
+enum Decision { GiveUp, RetryAfter(Seconds) }
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
 comp retry {
+    use http::Decision::{GiveUp, RetryAfter}
+
     in method: Method
     in status: Status
     in attempt: Nat is 1..     -- attempts made so far
     in retry_after: Seconds    -- the server's `Retry-After`, or 0
-    pub det out retry?         -- boolean variables end in `?`
-    pub out delay: Seconds
+    pub out decision: Decision
 
     ensure transient:
-        retry? iff status is 429 | 503
+        decision is RetryAfter(_)
+        iff status is 429 | 503
         and method != Method::Post
         and attempt < MAX_ATTEMPTS
-    ensure honor_server: when retry?, delay >= retry_after
-    ensure backoff: when retry?, delay >= Seconds(2 * attempt)
-    ensure latency_budget: delay <= MAX_DELAY
+    ensure honor_server: when decision is RetryAfter(d), d >= retry_after
+    ensure backoff: when decision is RetryAfter(d), d >= Seconds(2 * attempt)
+    ensure latency_budget: when decision is RetryAfter(d), d <= MAX_DELAY
 
-    expect not_found_fails: when status = 404, not retry?
+    expect not_found_fails: when status = 404, decision = GiveUp
 }
 
 -- Once the client gives up, a later attempt doesn't start retrying again.
 expect gives_up_for_good: forall (a b: retry),
     when a.method = b.method and a.status = b.status and a.retry_after = b.retry_after
-    and a.attempt <= b.attempt and b.retry?,
-    a.retry?
+    and a.attempt <= b.attempt and b.decision is Decision::RetryAfter(_),
+    a.decision is Decision::RetryAfter(_)
 ```
 
 Each requirement looks reasonable on its own, but together they're infeasible:
@@ -59,9 +62,9 @@ Each requirement looks reasonable on its own, but together they're infeasible:
 ```
 $ fren check retry.fren
 error[F0601]: `http::retry` is not realizable
-  --> retry.fren:10:6
+  --> retry.fren:11:6
    |
-10 | comp retry {
+11 | comp retry {
    |      ^^^^^ not realizable
    |
    = note: for the input
@@ -72,10 +75,10 @@ error[F0601]: `http::retry` is not realizable
            no outputs satisfy `transient`, `honor_server` and `latency_budget`
    = help: weaken one of them, or add an `assume` that rules this input out
 
-note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
-  --> retry.fren:18:12
+note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+  --> retry.fren:20:12
    |
-18 |     ensure transient:
+20 |     ensure transient:
    |            ^^^^^^^^^
 
 ...
