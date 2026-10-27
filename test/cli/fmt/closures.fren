@@ -1,0 +1,5 @@
+--@ args: fmt --check
+-- `fren fmt` writes a function type as `fn(T) -> U`, and a closure's
+-- parameters between `|`s spaced as a call's arguments.
+pub fn apply(f: fn( Int,Bool )->Int, x: Int): Int := f(x, true)
+pub fn twice(x: Int): Int := apply(| n ,b?: Bool |  if b? then n else 0, x)

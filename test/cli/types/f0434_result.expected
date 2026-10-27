@@ -1,0 +1,12 @@
+error[F0434]: a function type is only the type of a defined function's parameter
+ --> test/cli/types/f0434_result.fren:2:19
+  |
+2 | fn adder(n: Int): fn(Int) -> Int := n
+  |                   ^^^^^^^^^^^^^^ a function type
+  |
+  = note: functions are not values: a function type is only the whole type of a defined function's parameter, which an application gives a closure or a function's name
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0434`.
+exit=2

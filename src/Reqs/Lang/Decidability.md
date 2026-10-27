@@ -233,6 +233,13 @@ directly or through a definition: an `Int`, a `String`, an abstract type,
 or an enumeration or record with such a payload or field. An output of a
 finite type is a finite case split, and is always allowed.
 
+A [higher-order function's](HigherOrder.md) applications are unfolded,
+with their closures within them, so nothing of a function type reaches
+the solver: a closure's body is in the core exactly when its expression
+would be, written where the closure is unfolded, and a closure's parameter
+counts as a value that varies, as an unbounded quantifier's bound name
+does, for the rules above.
+
 ## In practice
 
 Fren checks with cvc5 and does not add decision procedures of its own, so

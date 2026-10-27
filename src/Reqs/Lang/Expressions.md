@@ -515,6 +515,12 @@ pub proc application(
 }
 ```
 
+An argument for a parameter of a [higher-order
+function](HigherOrder.md) whose type is a function type is a closure, `|x|
+e`, or the name of a function, and the application is unfolded with the
+closure within it (see [Higher-order
+functions](HigherOrder.md#applications)).
+
 A function is not a variable, so the rules for which variables an
 expression may mention (see [Calls](Calls.md#call-variables))
 apply to its arguments, not to the function. An argument of an

@@ -138,7 +138,7 @@ input_file test_main where
   text := true
 
 lean_lib ImplsProofs where
-  globs := #[`Impls.Calls, `Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated,
+  globs := #[`Impls.Calls, `Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated, `Impls.HigherOrder,
     `Impls.Impl, `Impls.Lang, `Impls.Meaning, `Impls.Modules, `Impls.Mutate, `Impls.PatternTypes, `Impls.Procedures, `Impls.Refine, `Impls.Scope,
     `Impls.TypeFacts, `Impls.View]
 

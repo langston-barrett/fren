@@ -1,0 +1,2 @@
+-- A function type as a function's result: only a parameter has one.
+fn adder(n: Int): fn(Int) -> Int := n

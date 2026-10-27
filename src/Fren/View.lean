@@ -88,7 +88,12 @@ def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit :=
       | .error => MessageSeverity.error
       | .warning => .warning
       | .info => .information
-    logAbout path ref msg.text severity
+    -- A closure's obligation names the function that applies it.
+    let vias := (← getLocal).vias
+    let text := match at?.bind fun r => vias.find? (·.1 == r.getPos?) with
+      | some (_, f) => if msg.severity == .error then (msg.msg.note (Core.viaNote f)).text else msg.text
+      | none => msg.text
+    logAbout path ref text severity
 
 /-- Of the top-level commands of the current file before `stop`, where the
 `#guard_msgs` start, and how many parse errors Lean found, which no

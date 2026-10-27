@@ -91,6 +91,22 @@ name, `#` and a number, such as `Name#0`. Within one behaviour, two values
 of an abstract type written alike are equal, and two written differently
 are not.
 
+## Higher-order functions
+
+The evaluator unfolds an application of a [higher-order
+function](Lang/HigherOrder.md) as the solver's queries do: its body, with
+each parameter standing for its argument, and each application of a
+function parameter replaced by the closure's body, with the closure's
+parameters standing for the application's arguments. A function's name
+given for a function parameter is the closure that applies it. Before each
+unfolding, the names that the body binds are renamed to names of their
+own, and a closure's parameters have names of their own, so that neither
+captures the other's, even where a body is unfolded within a copy of
+itself, as in `map(o, |x| map(p, |y| x + y))`. A closure's preconditions are
+then evaluated where it is applied, as the checks ask them. For the
+function's own checks, each function parameter is an uninterpreted
+function, whose values the interpretation gives.
+
 ## Quantifiers
 
 The evaluator evaluates a [quantifier](Lang/Quantifiers.md) over listed

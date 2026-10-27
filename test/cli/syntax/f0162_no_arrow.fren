@@ -1,0 +1,2 @@
+-- A function type without its result.
+fn apply(f: fn(Int), x: Int): Int := f(x)

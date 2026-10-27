@@ -98,7 +98,8 @@ mean nothing, but is defined by this or a later definition, is reported as
 used before its definition.
 
 A definition's name may [shadow](Procedures.md#shadowing) another,
-written with `!`: a variable, a parameter, a binder, a constant, a
+written with `!`: a variable, a parameter, a binder, a
+[closure's](HigherOrder.md#arguments) parameter, a constant, a
 function, a variant, a name of an enclosing `let` or `where`, or an
 earlier name of the same clause, as in `let x := 1, x! := x + 1 in x`. A
 mention of it in its scope is not a mention of what it shadows.

@@ -118,7 +118,8 @@ defined function's body may have one. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
   let s ← getState
   -- A pattern type's obligation is its proposition (`Fren.typeObligation`).
-  let ds := s.defined.foldl (init := ({} : NameSet).insert ``Fren.typeObligation) fun acc _ d => acc.insert d.decl
+  let ds := s.defined.foldl (init := ({} : NameSet).insert ``Fren.typeObligation) fun acc _ d =>
+    d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
   -- And the clauses of contracts, which the questions about applications
   -- and the facts about them apply.
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc

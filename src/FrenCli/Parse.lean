@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Lex
+import FrenCore.Closures
 import FrenCore.Evidence
 import FrenCore.Generics
 import FrenCore.Names
@@ -266,12 +267,15 @@ inductive Expr where
   /-- `table { C => e, ... }`, a condition table: each row's start, its
   condition, `none` for `_`, and its value. -/
   | table (span : Span) (rows : Array (Span × Option Expr × Expr))
+  /-- `|x, y: T| e`, a closure (`Reqs/Lang/HigherOrder#arguments`): each
+  parameter's name and its type if written, and its body. -/
+  | closure (span : Span) (params : Array (Ident × Option (Array Ident))) (body : Expr)
   deriving Inhabited
 
 def Expr.span : Expr → Span
   | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
   | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
-  | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. | .table s .. => s
+  | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. | .table s .. | .closure s .. => s
 
 /-- The conditions and values of a table's rows, in order. -/
 def tableParts (rows : Array (Span × Option Expr × Expr)) : Array Expr :=
@@ -397,6 +401,9 @@ structure Layout where
   rangeLower : Array Nat := #[]
   /-- The `..=` and `..` of ranges with an upper bound. -/
   rangeUpper : Array Nat := #[]
+  /-- The `|` that open a closure's parameters, and those that close them. -/
+  closureOpens : Array Nat := #[]
+  closureCloses : Array Nat := #[]
 
 /-- What the fixes that move a member into a procedure's header need of it:
 where its parameters' and results' `)` start, whether each list is empty
@@ -817,6 +824,19 @@ def splitArgs (segs : Array Ident) : Array (Array Ident) := Id.run do
     cur := cur.push s
   return if cur.isEmpty && out.isEmpty then #[] else out.push cur
 
+/-- A closure without parameters, `||` or `| |`, at `span`. -/
+def closureNoParams (span : Span) : P α :=
+  err span "F0161" "a closure has at least one parameter" (some "no parameters")
+    #["note: a closure is written `|x| e`, with the parameters of the function that it is given for"]
+
+/-- The segments of a function type, `fn(A, B) -> R`: `fnSeg`, the
+parameters' types separated by `fnSep`, `fnArrow` and the result's type. -/
+def fnSeg : String := Fren.Core.fnSeg
+
+def fnSep : String := Fren.Core.fnSep
+
+def fnArrow : String := Fren.Core.fnArrow
+
 mutual
 /-- A type: a path, `Set<T>`, `Seq<T>`, `Rel<A, B>`, or an instance of a
 generic type, `G<A, B>`, optionally followed by `is` and a pattern, for a
@@ -836,6 +856,22 @@ types and type arguments may be pattern types. -/
 partial def baseType : P (Array Ident) := do
   let t ← peek
   let start := (← get).pos
+  -- A function type (`Reqs/Lang/HigherOrder#function-types`).
+  if isKw t "fn" then
+    discard bump
+    markCall
+    discard (expectKw "(")
+    let mut out := #[{ name := fnSeg, span := t.span : Ident }] ++ (← typeExpr)
+    while isKw (← peek) "," do
+      let c ← bump
+      out := out ++ #[{ name := fnSep, span := c.span : Ident }] ++ (← typeExpr)
+    let close ← expectKw ")"
+    let arrow ← peek
+    unless isKw arrow "->" do
+      err arrow.span "F0162" s!"expected `->` after a function type's parameters, found {arrow.tok.describe}"
+        (some "expected `->`") #["note: a function type is written `fn(T) -> U`, with its result's type after `->`"]
+    discard bump
+    return out ++ #[{ name := fnArrow, span := close.span.to arrow.span : Ident }] ++ (← typeExpr)
   let p := (← path false).1
   let pathName := "::".intercalate (p.map (·.name)).toList
   let (b, adjacent) ← bracketAfter
@@ -1247,6 +1283,29 @@ partial def atom : P Expr := do
     let close ← expectKw ")"
     -- A field read, method call or index of it starts at its `(`.
     fieldReads callArgs indexArg e (some (t.span.to close.span))
+  -- A closure (`Reqs/Lang/HigherOrder#arguments`): where an operand is
+  -- expected, `|` opens its parameters, as it is an operator nowhere.
+  | .kw "|" =>
+    modify fun s => { s with layout.closureOpens := s.layout.closureOpens.push s.pos }
+    discard bump
+    let mut params := #[]
+    repeat
+      let x ← peek
+      unless x.tok matches .ident _ do
+        if params.isEmpty then closureNoParams x.span
+        fail x "a closure's parameter"
+      let x ← ident
+      -- A type without a pattern, whose `|` would be read as a pattern's.
+      let ty ← if (← eatKw ":").isSome then some <$> baseType else pure none
+      params := params.push (x, ty)
+      if (← eatKw ",").isNone then break
+    let close ← peek
+    unless isKw close "|" do fail close "`|`"
+    modify fun s => { s with layout.closureCloses := s.layout.closureCloses.push s.pos }
+    discard bump
+    let body ← expr
+    return .closure (← spanFrom t.span) params body
+  | .kw "||" => closureNoParams t.span
   | _ => fail t "an expression"
 /-- `x := e, y: T := f`, the definitions of a `let` (`inLet`), where `in`
 outside brackets ends the last, or of a `where` clause. Each is below

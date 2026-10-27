@@ -1,0 +1,2 @@
+-- A function type as a field's type: functions are not values.
+pub struct Handler { on_event: fn(Int) -> Int }

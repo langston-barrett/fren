@@ -24,6 +24,8 @@ proc private_out(x: Name) { exists y: Name ensure r: ok?(if ok?(x) then y else x
 proc arity_wrong(x: Name): (y: Int) { ensure r: y = arity(x, x) }
 --~^ error: `arity` takes 1 argument, but 2 were given
 proc unapplied(x: Name): (y: Int) { ensure r: y = arity }
+--~^ error: functions cannot be compared with `=`
+proc unapplied_operand(x: Name): (y: Int) { ensure r: y = arity + 1 }
 --~^ error: function `arity` must be applied to arguments
 proc not_fn(x: Name): (y: Int) { ensure r: y = x(x) }
 --~^ error: expected a function, but `x` is a variable

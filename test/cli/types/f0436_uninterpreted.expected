@@ -1,0 +1,25 @@
+error[F0436]: the uninterpreted function `hidden` cannot be given for a function parameter
+ --> test/cli/types/f0436_uninterpreted.fren:6:20
+  |
+6 |     out y := apply(hidden, x)
+  |                    ^^^^^^ uninterpreted
+  |
+  = note: its applications would be within the higher-order function's body, where their arguments may mention an output of the component
+  = help: give a closure that applies a defined function, or apply the uninterpreted function outside and give its value
+
+warning[F0711]: function `hidden` is never used
+ --> test/cli/types/f0436_uninterpreted.fren:3:4
+  |
+3 | fn hidden(Int): Int
+  |    ^^^^^^ never used
+  |
+  = note: it is private, and nothing in this file uses it
+  = help: remove it, or make it `pub`
+  = note: `dead_code` is `warn` by default
+  = help: to allow it, `set_option fren.lint.dead_code "allow"`
+
+error: could not check due to previous errors
+
+Some errors have detailed explanations: F0436, F0711.
+For more information about an error, try `fren --explain F0436`.
+exit=2

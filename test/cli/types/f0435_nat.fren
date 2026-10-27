@@ -1,0 +1,2 @@
+-- A function type whose result is a `Nat`.
+fn first(f: fn(Int) -> Nat): Int := f(0)

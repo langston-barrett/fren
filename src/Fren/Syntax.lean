@@ -116,6 +116,9 @@ syntax (name := instanceType) (priority := low) fren_path noWs "<" sepBy1(fren_t
 written before they were written in angle brackets: parsed only so that
 the elaborator reports it, as the `fren` command does (`F0155`). -/
 syntax (name := parenType) (priority := low) fren_path noWs "(" sepBy1(fren_type, ", ") ")" : fren_type
+/-- `fn(A, B) -> R`, a function type, the type of a defined function's
+parameter (`Reqs/Lang/HigherOrder#function-types`). -/
+scoped syntax (name := fnType) "fn" "(" sepBy1(fren_type, ", ") ")" " -> " fren_type : fren_type
 
 open Lean Parser in
 /-- The expression of a definition of a `let`: below `when`, which would
@@ -233,6 +236,15 @@ scoped syntax:max str : fren_expr
 scoped syntax:max &"true" : fren_expr
 scoped syntax:max &"false" : fren_expr
 scoped syntax:max fren_path : fren_expr
+/-- A closure's parameter, `x` or `x: T`, whose type has no pattern: its
+`|` would be read as the pattern's. -/
+syntax fren_closure_param := frenIdent (" : " fren_type:11)?
+
+/-- `|x, y: T| e`, a closure, an argument for a function parameter
+(`Reqs/Lang/HigherOrder#arguments`): where an operand is expected, `|`
+opens its parameters, as it is an operator nowhere. -/
+scoped syntax:max (name := closureExpr) "|" sepBy1(fren_closure_param, ", ") "|" fren_expr : fren_expr
+
 /-- `f(a, b)`, a function application. -/
 scoped syntax:max (name := appExpr) fren_path noWs "(" withoutForbidden(sepBy1(fren_expr, ", ")) ")" : fren_expr
 /-- `exactly_one?()` or `at_most_one?()`, a cardinality operator without

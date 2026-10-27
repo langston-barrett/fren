@@ -68,6 +68,26 @@ partial def VTy.subst (args : List VTy) : VTy → VTy
   | .data p as => .data p (as.map (·.subst args))
   | t => t
 
+/-- What matching the type `found` against `decl` gives the abstract types
+of `decl` that a generic function's type parameters are
+(`Fren.Core.typeParamName?`): each with its argument. -/
+partial def VTy.matchAbstract (decl found : VTy) : List (Name × VTy) :=
+  match decl, found with
+  | .abstract p, f => if (Fren.Core.typeParamName? p).isSome then [(p, f)] else []
+  | .set d, .set f | .seq d, .seq f => d.matchAbstract f
+  | .rel a b, .rel c d => a.matchAbstract c ++ b.matchAbstract d
+  | .data _ ds, .data _ fs => (ds.zip fs).flatMap fun (d, f) => d.matchAbstract f
+  | _, _ => []
+
+/-- `t`, with each abstract type of `σ` its argument. -/
+partial def VTy.substAbstract (σ : List (Name × VTy)) : VTy → VTy
+  | .abstract p => (σ.lookup p).getD (.abstract p)
+  | .set t => .set (t.substAbstract σ)
+  | .rel a b => .rel (a.substAbstract σ) (b.substAbstract σ)
+  | .seq t => .seq (t.substAbstract σ)
+  | .data p as => .data p (as.map (·.substAbstract σ))
+  | t => t
+
 /-- What matching the type `f` of an argument against the declared type `d`
 gives the type parameter `k`, as `Fren.Core.matchParam` matches them. -/
 partial def VTy.matchParam (k : Nat) : VTy → VTy → Option VTy
@@ -1577,6 +1597,9 @@ structure LState where
   /-- The generic function being lowered, with its type parameters, which
   are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   fnTypeParams : Option (Name × Array Name) := none
+  /-- The higher-order functions: each parameter's type, or a function
+  parameter's parameters' and result's types (`Reqs/Lang/HigherOrder`). -/
+  hofs : NameMap (Array (VTy ⊕ (Array VTy × VTy))) := {}
 
 abbrev L := StateT LState (Except String)
 
@@ -1646,6 +1669,10 @@ structure Cx where
   first, each with its definition, which a mention of it stands for
   (`Reqs/Lang/Let#meaning`), and its type. A name is never also a binder. -/
   lets : List (Name × Ex × VTy) := []
+  /-- In a higher-order function, its function parameters, each with the
+  name of the uninterpreted function that it is applied as
+  (`Reqs/Lang/HigherOrder#function-parameters`). -/
+  fnParams : List (Name × Name) := []
 
 /-- The type of the method `m` of a receiver of type `t`. -/
 def methodTy (m : Fren.Core.Method) (t : VTy) : VTy :=
@@ -1874,6 +1901,50 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
     let σ' := σ.filter (!ns.contains ·.1)
     .quant file pos all ns (ds.map (·.map (·.subst σ'))) ts (b.subst σ')
   | .range lo hi => .range (lo.subst σ) (hi.subst σ)
+
+/-- `e` with each application of a function of `σ` replaced by its
+closure's body, with the closure's parameters standing for the arguments
+(`Reqs/Lang/HigherOrder#meaning`): the closure's names are unique, and
+those of the body it is unfolded into made unique, so that none captures
+another. -/
+partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
+  | .app g args =>
+    let args := args.map (·.substFns σ)
+    match σ.lookup g with
+    | some (ps, b) => b.subst (ps.zip args).toList
+    | none => .app g args
+  | .lit v => .lit v
+  | .var n => .var n
+  | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .lifted lets q => .lifted (lets.map (·.map (·.substFns σ))) (q.substFns σ)
+  | .memo lets e => .memo (lets.map (·.substFns σ)) (e.substFns σ)
+  | .bound n => .bound n
+  | .not a => .not (a.substFns σ)
+  | .neg a => .neg (a.substFns σ)
+  | .bin op a b => .bin op (a.substFns σ) (b.substFns σ)
+  | .when negated c d => .when negated (c.substFns σ) (d.substFns σ)
+  | .ite c a b => .ite (c.substFns σ) (a.substFns σ) (b.substFns σ)
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.substFns σ)) (e.substFns σ)
+  | .cardinality c args => .cardinality c (args.map (·.substFns σ))
+  | .method m r args => .method m (r.substFns σ) (args.map (·.substFns σ))
+  | .matches r p re => .matches (r.substFns σ) p re
+  | .setLit es => .setLit (es.map (·.substFns σ))
+  | .pair a b => .pair (a.substFns σ) (b.substFns σ)
+  | .seqLit es => .seqLit (es.map (·.substFns σ))
+  | .index q i pos => .index (q.substFns σ) (i.substFns σ) pos
+  | .card e => .card (e.substFns σ)
+  | .ctor ty idx args => .ctor ty idx (args.map (·.substFns σ))
+  | .field e idx => .field (e.substFns σ) idx
+  | .update e fs => .update (e.substFns σ) (fs.map fun (k, x) => (k, x.substFns σ))
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substFns σ), v.substFns σ)) u
+  | .const p e => .const p e
+  | .typed t is a => .typed t is (a.substFns σ)
+  | .match e arms pos ps u t => .match (e.substFns σ) (arms.map fun (p, g?, b) => (p, g?.map (·.substFns σ), b.substFns σ)) pos ps u t
+  | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.substFns σ))) ts (b.substFns σ)
+  | .range lo hi => .range (lo.substFns σ) (hi.substFns σ)
 
 /-- The value of a bound of a range pattern. -/
 def boundValue : Bound → L Int
@@ -2154,7 +2225,23 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let some (v, t) := (← get).spec.consts.find? path | throw s!"unknown constant `{showPath path}`"
       return (v, t)
     | r => throw s!"`{showPath r.path}` is not a value"
-  | .app _ segs written => do
+  -- The elaborator has checked that a closure is an argument for a
+  -- function parameter, which `lowerFnArg` lowers.
+  | .closure .. => throw "a closure is only an argument for a function parameter"
+  | .app span segs written => do
+    -- A function parameter, applied as the uninterpreted function that it
+    -- is in its function's own checks, which an application of the
+    -- function replaces (`Ex.substFns`).
+    if segs.size == 1 then
+      if let some q := cx.fnParams.lookup (Name.mkSimple segs[0]!.name) then
+        unless cx.binders.any (·.1 == Name.mkSimple segs[0]!.name) do
+          let args ← written.mapM fun a => (·.1) <$> lowerExpr cx a
+          let some (_, r) := (← get).spec.funs.find? q | throw s!"unknown function `{showPath q}`"
+          return (.app q args, r)
+    let st ← get
+    if let .ok (.item { kind := .fnItem, path, .. }) := st.table.resolvePath st.scope (segNames segs) then
+      if let some ts := st.hofs.find? path then
+        return ← lowerHigherOrder cx span path ts written
     let typed ← written.mapM (lowerExpr cx)
     let args := typed.map (·.1)
     -- The spec has been checked, so no variable shadows a built-in
@@ -2339,6 +2426,57 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       doms := doms.push dom
     return (.quant (← get).file span.start all (bound.map (·.2.2.2)) doms (bound.map (·.2.2.1)) b, .bool)
 
+/-- An application of the higher-order function at `path`, whose parameters
+have the types `ts`, to `args`: its body, with each parameter standing for
+its argument, and each function parameter for its closure
+(`Reqs/Lang/HigherOrder#meaning`), and its body's names made unique first,
+so that neither captures the other's. -/
+partial def lowerHigherOrder (cx : Cx) (span : Span) (path : Name) (ts : Array (VTy ⊕ (Array VTy × VTy)))
+    (args : Array Expr) : L (Ex × VTy) := do
+  let some (ps, body, r) := (← get).spec.defs.find? path | throw s!"unknown function `{showPath path}`"
+  let k := (← get).fresh
+  modify fun s => { s with fresh := s.fresh + 1 }
+  let ren (n : Name) : Name := Name.mkNum n k
+  -- The value arguments first, whose types give the type parameters'.
+  let mut σ : List (Name × Ex) := []
+  let mut tσ : List (Name × VTy) := []
+  for a in args, t in ts, p in ps do
+    if let .inl d := t then
+      let (x, tx) ← lowerExpr cx a
+      σ := σ ++ [(ren p, x)]
+      tσ := tσ ++ d.matchAbstract tx
+  let mut fσ : List (Name × Array Name × Ex) := []
+  for a in args, t in ts, p in ps do
+    if let .inr (pts, _) := t then
+      fσ := fσ ++ [(p, ← lowerFnArg cx span (pts.map (·.substAbstract tσ)) a)]
+  let x := ((body.renameBound ren).subst σ).substFns fσ
+  -- With its preconditions at its arguments, if it has any.
+  -- Its preconditions are over its value parameters, as its body is.
+  let x := match (← get).spec.pres.find? path with
+    | some (_, pres) => Ex.pre span.start path (pres.map fun (n, g) => (n, ((g.renameBound ren).subst σ).substFns fσ)) x
+    | none => x
+  return (x, r.substAbstract tσ)
+
+/-- A closure, or a function's name `g`, which is the closure `|x1, ...,
+xn| g(x1, ..., xn)`, given for a function parameter whose parameters have
+the types `pts`: its parameters' names, made unique, and its body. -/
+partial def lowerFnArg (cx : Cx) (span : Span) (pts : Array VTy) (a : Expr) : L (Array Name × Ex) := do
+  let (names, body) : Array Name × Expr := match a with
+    | .closure _ params body => (params.map fun (x, _) => declName x, body)
+    | .path s segs =>
+      let xs := (List.range pts.size).toArray.map fun j => ({ name := s!"#{j}", span := s } : Ident)
+      (xs.map (Name.mkSimple ·.name), .app s segs (xs.map fun x => .path s #[x]))
+    | e => (#[], e)
+  let _ := span
+  let mut bound := #[]
+  for n in names, t in pts do
+    let k := (← get).fresh
+    modify fun s => { s with fresh := s.fresh + 1 }
+    bound := bound.push (n, t, Name.mkNum n k)
+  let inner := { cx with binders := bound.toList.reverse ++ cx.binders, lets := cx.lets.filter fun (n, _) => !names.contains n }
+  let (b, _) ← lowerExpr inner body
+  return (bound.map (·.2.2), b)
+
 /-- The chain of `and` `cs`, at the position `pos` for its `match`es
 (`whenPos` for a `when`'s condition), each of whose operands decides whether what
 `last` gives is the value: a pattern test that binds names, as `match x {
@@ -2472,8 +2610,8 @@ inputs `vars`, as the constraints of the function's body, named after the
 function and the clause: the preconditions, and the postconditions if the
 function is `defined` (`Reqs/Eval#confirming-models`). -/
 def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (vars : Array Var)
-    (clauses : Array (Bool × Ident × Expr)) : L (Array Constraint) := do
-  let cx : Cx := { binders := ps.toList.reverse.map fun (x, t) => (x, t, x) }
+    (clauses : Array (Bool × Ident × Expr)) (fnParams : List (Name × Name) := []) : L (Array Constraint) := do
+  let cx : Cx := { binders := ps.toList.reverse.map fun (x, t) => (x, t, x), fnParams }
   let mut pres := #[]
   let mut posts := #[]
   let mut constraints := #[]
@@ -2482,7 +2620,7 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
     let bound := (← lowerExpr cx e).1
     if post then posts := posts.push bound else pres := pres.push (cn, bound)
     if defined || !post then
-      let c := (← lowerExpr { vars } e).1
+      let c := (← lowerExpr { vars, fnParams } e).1
       constraints := constraints.push { kind := (if post then .ensure else .assume), name := n ++ cn, e := c }
   unless pres.isEmpty do
     let entry := (ps.map (path ++ ·.1), pres.map fun (cn, g) => (cn, g.renameBound (path ++ ·)))
@@ -2612,19 +2750,43 @@ partial def lowerItem : Item → L Unit
         let cs ← lowerContract path (itemName name) false ps vars clauses
         noteBody (itemName name) vars (.lit (.bool true)) cs
     | some body =>
-      let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
-      let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body
+      -- Its function parameters, each an uninterpreted function of its
+      -- own for its checks (`Reqs/Lang/HigherOrder#function-parameters`).
+      let mut ts : Array (VTy ⊕ (Array VTy × VTy)) := #[]
+      let mut fnParams : List (Name × Name) := []
+      let mut ps : Array (Name × VTy) := #[]
+      for (p, ty?) in params do
+        let x := declName p[0]!
+        if let some segs := ty?.filter (·[0]?.any (·.name == Parser.fnSeg)) then
+          let some (pss, rs) := Fren.Core.splitFnSegs (segs.map (·.name)) | throw "a function type"
+          let mut i := 1
+          let mut pts := #[]
+          for q in pss do
+            pts := pts.push (← lowerTy (segs.extract i (i + q.size)))
+            i := i + q.size + 1
+          let rt ← lowerTy (segs.extract (segs.size - rs.size) segs.size)
+          modify fun s => { s with spec.funs := s.spec.funs.insert (path ++ x) (pts, rt) }
+          fnParams := fnParams ++ [(x, path ++ x)]
+          ts := ts.push (.inr (pts, rt))
+        else
+          let t ← varTy ty?
+          ps := ps.push (x, t)
+          ts := ts.push (.inl t)
+      if !fnParams.isEmpty then modify fun s => { s with hofs := s.hofs.insert path ts }
+      -- Its parameters in order, for an application.
+      let all := params.map fun (p, _) => declName p[0]!
+      let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body
       -- Binders named after the function, so that substituting arguments
       -- never captures a binder of theirs: theirs are a procedure's or another
       -- function's.
       let b := b.renameBound (path ++ ·)
-      modify fun s => { s with spec.defs := s.spec.defs.insert path (ps.map (path ++ ·.1), b, r) }
+      modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r) }
       -- Over the parameters as inputs, for the checks of its tables, and
       -- its contract's, once it can be applied.
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
-      let e := (← lowerExpr { vars } body).1
+      let e := (← lowerExpr { vars, fnParams } body).1
       modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-      let cs ← lowerContract path (itemName name) true ps vars clauses
+      let cs ← lowerContract path (itemName name) true ps vars clauses fnParams
       noteBody (itemName name) vars e cs
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }
                              fnTypeParams := none }

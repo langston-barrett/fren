@@ -286,7 +286,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
    "test/cli/fmt/cover.fren",
-   "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren",
+   "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren", "test/cli/fmt/closures.fren",
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren", "test/cli/fmt/pattern_types.fren",
    "test/cli/fmt/contract.fren",
@@ -627,6 +627,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
       s!"({if w then "where" else "let"} {defs.toList.map fun (x, _, d) => (x.name, go d)} {go body})"
     | .quant _ all bs b => s!"({if all then "forall" else "exists"} {bs.toList.map fun x => Mutate.idText (s.text x.span)} {go b})"
     | .table _ rows => s!"(table {rows.toList.map fun (_, c?, v) => (c?.map go, go v)})"
+    | .closure _ ps b => s!"(closure {ps.toList.map fun (x, _) => x.name} {go b})"
     | e => Mutate.idText (s.text e.span)
 
 open FrenCli in
