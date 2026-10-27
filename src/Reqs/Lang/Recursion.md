@@ -173,54 +173,10 @@ pub fn left_leaves(t: Tree): Int := match t {
 ```
 
 The kind is decided syntactically, by both front ends, while they read
-the body into its uses (`lang::structural_recursion`): each occurrence of
-a recursive payload is recorded with whether it is a recursive
-application's decreasing argument.
+the body.
 
-## Solver encoding
-
-What a query knows of a defined function depends on its kind:
-
-| Kind | Encoding | On symbolic arguments |
-|---|---|---|
-| Not recursive | its body, unfolded at each application, as today | exact |
-| Catamorphism | an SMT-LIB `define-fun-rec` of its body | exact; decided when sufficiently surjective |
-| Paramorphism | uninterpreted, with one-step unfolding where the constructor is known | opaque |
-
-- **Catamorphism: `define-fun-rec`.** Both front ends give the solver the
-  function's body as a recursive definition, with each recursive
-  application an application of the defined symbol, and do not unfold it
-  themselves. The structural rule makes the definition admissible, so the
-  axiom is consistent (Reynolds et al., IJCAR 2016). A query that applies
-  one sets cvc5's `fmf-fun`, without which cvc5 answers `unknown` where it
-  has a model. For a sufficiently surjective catamorphism into the
-  decidable core, such as a size into `Nat`, or the elements as a set or a
-  multiset, the fragment is decidable (Suter, Dotta and Kuncak, POPL
-  2010), by unfolding (Suter, Köksal and Kuncak, SAS 2011).
-- **Paramorphism: uninterpreted, plus one-step unfolding.** The function
-  is an uninterpreted function. Wherever the query applies it to an
-  argument whose constructor is known, its one-layer equation is added,
-  with the recursive applications left as applications: from a `match`
-  arm's `t = Tree::Node(l, r)`, `left_leaves(t) = (if l is Tree::Leaf(_)
-  then 1 else 0) + left_leaves(l) + left_leaves(r)`. The constructor is
-  known at a ground value, where the equations are added down to the
-  leaves, and at a `match` arm on the argument, where they are added once.
-  The equations are ground and quantifier-free, so the query stays
-  decidable; it is sound and incomplete on symbolic arguments.
-
-A model is a counterexample only if it is genuine (`Reqs/Check`). Under
-`define-fun-rec`, every model gives a catamorphism its real value. Under
-one-step unfolding, a model may give a paramorphism a value at a symbolic
-argument that it never takes; so a `sat` answer to a query that applies a
-paramorphism to an argument whose constructor is not known is confirmed by
-evaluating the formula at the model's values, with the real definitions:
-false there, the counterexample is genuine; true there, or not
-evaluable (an abstract type, an uninterpreted function), the result is
-`Inconclusive`, and the message says that the paramorphism's value was
-not pinned down.
-
-`lang::recursive_encoding` states this, over the function's occurrences
-of its parameters and of the binders bound from their payloads, which both
+`lang::recursive_kind` states this, over the function's occurrences of
+its parameters and of the binders bound from their payloads, which both
 front ends record as they read the body, each once, by where it is
 written: a recursive payload as a recursive application's argument at its
 own position; a parameter as a `match`'s scrutinee; and any other, which
@@ -228,8 +184,8 @@ is a recursive payload of the parameter's type otherwise used, a parameter
 otherwise used, or a `match` on a parameter or a recursive payload whose
 pattern has a variant's pattern within a payload. That last is
 conservative: a pattern within a payload of another enumeration, such as
-`Option`, makes a paramorphism too, which is encoded soundly, only not
-decided on symbolic arguments.
+`Option`, makes a paramorphism too, which is checked as soundly, only not
+in the decidable core.
 
 ```fren
 -- An occurrence of a parameter, or of a binder bound from a payload of one:
@@ -240,55 +196,97 @@ pub enum Occurrence { Recursed, Matched, Other }
 -- An occurrence, of the parameter at `pos` or of a payload of it.
 pub struct PayloadOcc { pos: Int, occ: Occurrence }
 
--- How the solver knows a defined function.
-pub enum Encoding { Unfolded, DefineFunRec, Opaque }
+-- What kind of recursion a defined function is.
+pub enum RecKind { NotRecursive, Catamorphism, Paramorphism }
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub proc recursive_encoding(
+pub proc recursive_kind(
     recursion: Recursion,          -- `lang::structural_recursion`'s verdict
     occurrences: Seq<PayloadOcc>,  -- in the order they are written
-): (det encoding: Encoding) {
-    ensure unfolded: when not (recursion is Recursion::Structural(_)), encoding = Encoding::Unfolded
+): (det rec_kind: RecKind) {
+    ensure not_recursive: when not (recursion is Recursion::Structural(_)), rec_kind = RecKind::NotRecursive
     -- A catamorphism: nothing at the decreasing parameter is other.
     ensure catamorphism: when recursion is Recursion::Structural(i)
         and (forall (k: Int), when 0 <= k < occurrences.len and occurrences[k].pos = i,
         occurrences[k].occ != Occurrence::Other),
-        encoding = Encoding::DefineFunRec
+        rec_kind = RecKind::Catamorphism
     ensure paramorphism: when recursion is Recursion::Structural(i)
         and (exists (k: Int), 0 <= k < occurrences.len and occurrences[k].pos = i
         and occurrences[k].occ = Occurrence::Other),
-        encoding = Encoding::Opaque
+        rec_kind = RecKind::Paramorphism
 }
 ```
 
-Until structural recursion is accepted, `F0448`'s message names the kind.
+## Solver encoding
+
+Every structural recursion, of either kind,
+is given to the solver as an SMT-LIB recursive definition,
+`define-fun-rec`, of its body, with each recursive application an
+application of the defined symbol; neither front end unfolds it itself.
+The structural rule makes the definition admissible, so the axiom is
+consistent (Reynolds et al., IJCAR 2016), and every model gives the
+function its real value at every argument: a counterexample is genuine.
+A defined function that is not recursive is unfolded at each application,
+as before, and so is each that a recursive definition's body applies.
+
+- A query whose formulas apply a structural recursion, directly or through
+  another's definition, sets cvc5's `fmf-fun`, without which cvc5 answers
+  `unknown` where it has a model (see the measurements below). Both front
+  ends set it right after `fmf-bound`.
+- The binary writes the definition from its body as it writes a defined
+  function's `define-fun`. The Lean-hosted front end gives lean-smt the
+  solver's own copy of the definition (`DefinedInfo.recursive`), a Lean
+  structural recursion over the placeholders themselves, as a `let` with
+  an equational definition, from which lean-smt writes `define-fun-rec`;
+  its Lean `match`es become the testers and selectors of the datatype, as
+  the binary's do.
+
+Where cvc5 answers `unknown` or runs out of time, which it may for a
+recursion outside the core, the result is `Inconclusive`, never a wrong
+answer.
+
+The design on #279 encodes a paramorphism instead as an uninterpreted
+function with its one-layer equation where its argument's constructor is
+known, confirming each model against the real definition. That encoding
+is not implemented: `define-fun-rec` is as sound, its models are genuine
+without confirming them, and on the measured paramorphisms cvc5 behaves
+as on the catamorphisms. Which applications are decided is the
+`undecidable` lint's, below, not the encoding's.
 
 ## Decidability
 
-The decidable core ([Decidability](Decidability.md)) holds, of the defined
-functions:
+The decidable core ([Decidability](Decidability.md#recursion)) holds, of
+the defined functions:
 
-- non-recursive ones, which are unfolded;
-- sufficiently surjective catamorphisms into the decidable core, through
-  `define-fun-rec`;
-- a paramorphism applied to a ground argument, which unfolds completely.
+- the non-recursive ones, which are unfolded;
+- a catamorphism into `Bool` or a set, on any arguments: both are
+  sufficiently surjective (Suter, Dotta and Kuncak, POPL 2010), decided
+  by unfolding (Suter, Köksal and Kuncak, SAS 2011);
+- any structural recursion, on constant arguments, which unfolds
+  completely.
 
-In each case every model gives the function its real value. The
-`undecidable` lint reports every other application of a recursive
-function: a paramorphism's on an argument that is not ground, and a
-catamorphism's that is not sufficiently surjective or whose result is
-outside the core, at the application. Allowing it keeps the checks sound:
-a reported counterexample is still confirmed against the real definition,
-or the result is `Inconclusive`.
+The `undecidable` lint reports every other application of a structural
+recursion, at the application (`Construct::Recursion`). A catamorphism
+into `Int` or `Nat`, such as a size, is not in the core: cvc5 does not
+derive that a size is never negative, which needs induction, and the
+quantified fact that would supply it is lost under `fmf-fun` (below).
 
-A future version brings a paramorphism into the core through its
-contract: when its contract is `det` (#366), checked by realizability, by
+```fren
+-- Whether the applications of a function of kind `rec_kind`, whose result is
+-- a `Bool` or a set (`bool_or_set?`), are decided on arguments that vary.
+set_option fren.evidence "tested" in
+pub proc recursive_decided(rec_kind: RecKind, bool_or_set?): (det decided?) {
+    ensure rule: decided? = (rec_kind = RecKind::NotRecursive or (rec_kind = RecKind::Catamorphism and bool_or_set?))
+}
+```
+
+A future version brings more into the core through contracts: a
+paramorphism whose contract is `det` (#366), checked by realizability, by
 determinism, and against the body by Hoare's rule, with recursive
 applications bringing the function's own postconditions as the induction
-hypothesis, and in a fragment that cvc5 decides, the postconditions as
-ground facts at each application pin down its value. Until then, the
-`undecidable` lint reports it as above.
+hypothesis, and in a fragment that cvc5 decides, has its value pinned
+down by the postconditions as ground facts at each application.
 
 ### Measured: cvc5 on `define-fun-rec`
 
@@ -321,6 +319,7 @@ no `#fren_check` of its Lean file comes after it:
 
 ```fren
 #fren_check structural_recursion
-#fren_check recursive_encoding
+#fren_check recursive_kind
+#fren_check recursive_decided
 #fren_check recursive_match
 ```

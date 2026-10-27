@@ -1377,7 +1377,7 @@ impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueTy
 
 instance : Fren.Finite Fren.Core.Construct :=
   ⟨[.stringCompare, .stringAtom, .stringIndex, .stringSearch, .setAlgebra, .setFunction, .relational, .relationalCard, .seqArray, .seqWord,
-    .quantifier], by intro x; cases x <;> simp⟩
+    .quantifier, .recursion], by intro x; cases x <;> simp⟩
 
 def toConstruct : Fren.Core.Construct → lang.Construct
   | .stringCompare => .StringCompare
@@ -1391,6 +1391,7 @@ def toConstruct : Fren.Core.Construct → lang.Construct
   | .seqArray => .SeqArray
   | .seqWord => .SeqWord
   | .quantifier => .Quantifier
+  | .recursion => .Recursion
 
 impl in_core: lang::in_core for (c : Fren.Core.Construct) (a m i g f r l : Bool) {
   construct := toConstruct c,

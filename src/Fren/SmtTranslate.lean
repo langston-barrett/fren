@@ -349,4 +349,61 @@ set of 1-tuples (`Reqs/Cli`). -/
   | .CONST_STRING => return (Fren.Core.parseSmtString? (toString t)).map mkStrLit
   | _ => return none
 
+/-! ## Lean `match`es, of structural recursions
+
+A structural recursion's definition, which the solver is given as a
+recursive definition (`Reqs/Lang/Recursion#solver-encoding`), is a Lean `match`
+(`lang::recursive_match`): its matcher's `casesOn`s are a chain of `ite`s
+on the constructors' testers, each arm with its fields read by the
+selectors. -/
+
+/-- The arm `minor` of a `casesOn`, whose fields are `sels`, the selectors
+applied to the value, each bound by an SMT-LIB `let`. -/
+partial def casesOnArm (minor : Expr) (sels : List Smt.Term) : TranslationM Smt.Term := do
+  match sels, minor with
+  | [], _ => applyTranslators! (← Lean.Core.betaReduce minor)
+  | s :: rest, .lam n t b bi => withScopedName n.eraseMacroScopes b fun n => do
+    let tmB ← Meta.withLocalDecl n bi t fun x => do
+      modify fun st => { st with localFVars := st.localFVars.insert x.fvarId! }
+      let r ← casesOnArm (b.instantiate1 x) rest
+      modify fun st => { st with localFVars := st.localFVars.erase x.fvarId! }
+      return r
+    return letT n.toString s tmB
+  | _, _ => casesOnArm (← Meta.etaExpand minor) sels
+
+/-- `T.casesOn` of an enumeration's value, without indices, as `ite`s on
+its constructors' testers. -/
+@[smt_translate] def translateCasesOn : Translator := fun e => do
+  let .const c _ := e.getAppFn | return none
+  let env ← getEnv
+  unless isCasesOnRecursor env c do return none
+  let some (.inductInfo i) := env.find? c.getPrefix | return none
+  if i.numIndices != 0 then return none
+  let args := e.getAppArgs
+  unless args.size == i.numParams + 2 + i.ctors.length do return none
+  let major := args[i.numParams + 1]!
+  let minors := args.extract (i.numParams + 2) args.size
+  let majorT ← applyTranslators! major
+  let mut out : Option Smt.Term := none
+  for (ctor, minor) in (i.ctors.zip minors.toList).reverse do
+    let some (.ctorInfo cv) := env.find? ctor | return none
+    let mut sels := #[]
+    for k in [0:cv.numFields] do
+      let some s ← selectorApp ctor (leanSmtField cv k) major | return none
+      sels := sels.push s
+    let arm ← casesOnArm minor sels.toList
+    out := some <| match out with
+      | none => arm
+      | some rest => Smt.Term.mkApp3 (symbolT "ite") (appT (literalT s!"(_ is {Smt.Term.quoteSymbol ctor.toString})") majorT) arm rest
+  return out
+
+/-- A matcher's application, a Lean `match`, as the `casesOn`s of its
+definition. -/
+@[smt_translate] def translateMatcher : Translator := fun e => do
+  let .const f _ := e.getAppFn | return none
+  let some info ← Meta.getMatcherInfo? f | return none
+  if e.getAppNumArgs != info.arity then return none
+  let some e' ← Meta.delta? e (· == f) | return none
+  return some (← applyTranslators! (← Lean.Core.betaReduce e'))
+
 end Fren

@@ -238,7 +238,7 @@ def readModel (sp : Spec) (sy : Symbols) (model : Array (Name × String)) : Env 
   let fn (f : Name) (args : Array Val) : Option Val := do
     let (ps, body) ← funs[f]?
     sy.eval (ps.toList.zip args.toList) body
-  let interp : Interp := { fn, shapes := sp.shapes.find? }
+  let interp : Interp := { fn, shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
   return (env, interp)
 
 /-! ## Evaluating formulas in a model -/

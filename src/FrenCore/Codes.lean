@@ -3083,32 +3083,13 @@ without recursion, or give it as an uninterpreted function's postcondition:
 pub fn count(n: Int): Int := if n > 0 then n else 0
 ```
 "# },
-  { code := "F0448", explanation := r#"A defined function is a structural recursion, which is not yet supported.
+  { code := "F0448", explanation := r#"A removed code: a structural recursion, before it was supported.
 
-Erroneous code example:
-
-```fren
-pub enum Expr { Lit(Int), Add(Expr, Expr) }
-
-pub fn size(e: Expr): Int := match e {
-    Expr::Lit(_) => 1,
-    Expr::Add(a, b) => size(a) + size(b),
-}
-```
-
-The function applies itself only to payloads of its parameter, which is a
-structural recursion, and Fren will accept it: until then, state what is
-needed of one layer at a time, with the operands' values as a parameter:
-
-```fren
-pub enum Expr<E> { Lit(Int), Add(E, E) }
-
-pub fn size(e: Expr<Int>): Int := match e {
-    Expr::Lit(_) => 1,
-    Expr::Add(a, b) => a + b,
-}
-```
-"# },
+`F0448` was the error for a defined function that is a structural
+recursion, which Fren recognized but did not yet accept. Structural
+recursion is now accepted (`Reqs/Lang/Recursion`), so nothing reports
+`F0448`, and the code is not reused.
+"#, args := none },
   { code := "F0449", explanation := r#"A structural recursion applies itself under a `match` that its Lean definition cannot have as a Lean `match`.
 
 Erroneous code example:
@@ -3128,10 +3109,9 @@ the parameter, which Lean's structural recursion sees through. A Lean
 `match` has patterns of variants, binders and `_`, with or-patterns only at
 the top; a literal, a range, or an or-pattern within a payload would make it
 a chain of `if`s, which Lean's structural recursion cannot see through.
-Match on the variant, and on the literal in an inner `match` on the binder
-(accepted once structural recursion is, #279):
+Match on the variant, and on the literal in an inner `match` on the binder:
 
-```text
+```fren
 pub enum Expr { Lit(Int), Neg(Expr) }
 
 pub fn depth(e: Expr): Int := match e {

@@ -562,6 +562,11 @@ structure ExprCtx where
   definition, where a `match` is Lean's own where it can be
   (`Reqs/Generated#matches`). -/
   leanMatch : Bool := false
+  /-- Translating a structural recursion's body for its Lean definition,
+  where a `match` whose arms are propositions is a Lean `match` of their
+  `decide`s, so that Lean's structural recursion sees through it
+  (`lang::recursive_match`). -/
+  leanBoolArms : Bool := false
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × Core.BindingKind :=
@@ -810,7 +815,7 @@ def ExprCtx.recArg (cx : ExprCtx) (a : Syntax) (i : Nat) : Core.RecArg :=
 
 /-- Records the occurrence `o`, starting where `ref` does, of a parameter
 or of a binder bound from a payload of one, in a defined function's body
-that may recurse (`lang::recursive_encoding`): once for each place, the
+that may recurse (`lang::recursive_kind`): once for each place, the
 first recorded, as an expression elaborated again is not another
 occurrence. -/
 def noteRecOcc (ref : Syntax) (o : Core.PayloadOcc) : TermElabM Unit := do
@@ -3161,7 +3166,11 @@ def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx
     bodies := bodies.push body
     guards := guards.push g?
     tys := tys.push ty?
-  let armKind : ArmKind := if tys.any (·.any (·.isProp)) then .propositions else .values
+  let mut armKind : ArmKind := if tys.any (·.any (·.isProp)) then .propositions else .values
+  if armKind == .propositions && cx.leanBoolArms then
+    bodies ← (bodies.zip tys).mapM fun (b, t?) => if t?.any (·.isProp) then `(decide $b) else pure b
+    tys := tys.map fun t? => if t?.any (·.isProp) then some (Lean.mkConst ``Bool) else t?
+    armKind := .values
   let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
   unless matchForm scrutineeKind armKind (pats.flatMap patHeads) == .leanMatch do return none
   -- An `Int` where another arm is a `Nat` (`widenMixed`).
@@ -3218,7 +3227,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- The scrutinee synthesizes its type, and each body is checked against the
   -- whole's, or another's (`lang::checked`).
   let scrutinee := e[1]
-  -- The parameter itself, matched on (`lang::recursive_encoding`).
+  -- The parameter itself, matched on (`lang::recursive_kind`).
   let origin? := cx.recOrigin? scrutinee
   if let some (j, false) := origin? then noteRecOcc (unparen scrutinee) { pos := j, occ := .matched }
   let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false } scrutinee
@@ -3232,7 +3241,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let pats := resolved.map (·.1)
   -- A `match` on a parameter, or on a binder bound from a payload of one,
   -- that looks into a payload with a variant's pattern
-  -- (`lang::recursive_encoding`).
+  -- (`lang::recursive_kind`).
   if let some (j, _) := origin? then
     if pats.any Core.Pat.looksIntoPayload then noteRecOcc e { pos := j, occ := .other }
   let usesBefore := (← getLocal).recUses.size
@@ -4720,7 +4729,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     let base? ← if let some b := cx.binder? n.getRoot then do
         -- A binder bound from a payload of a parameter, of the parameter's
         -- type, used other than as a recursive application's argument
-        -- (`lang::recursive_encoding`).
+        -- (`lang::recursive_kind`).
         if let some j := b.payloadOf? then
           if cx.selfRec?.isSome && cx.vars[j]?.any (·.type == b.type) then noteRecOcc id { pos := j, occ := .other }
         -- A bound name has no scrutinee: it mentions nothing.
@@ -4745,7 +4754,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
         match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
         | some (v, k) =>
           -- A parameter, other than as a `match`'s scrutinee
-          -- (`lang::recursive_encoding`).
+          -- (`lang::recursive_kind`).
           if let some (ps, _, _) := cx.selfRec? then
             if let some j := ps.idxOf? v.name then noteRecOcc id { pos := j, occ := .other }
           let some t ← varRef? cx id v.name | throwError "internal error: no variable `{v.name}`"
@@ -5103,6 +5112,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if let some d := ((← getState).defined.get? path).filter (!·.hoParams.isEmpty) then
     return ← hoAppTerm toTerm cx e p path d args.getElems expected?
   if let some d := (← getState).defined.get? path then
+    let argStxs := args.getElems
     -- Its definition, applied to the placeholders it uses; its arguments
     -- may mention anything (`lang::argument`).
     unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
@@ -5137,6 +5147,10 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
       return t
     notePreconditions cx p path args
+    -- A structural recursion that is not decided on arguments that vary
+    -- (`lang::recursive_kind`).
+    unless d.decided do
+      checkCore cx p .recursion false false argStxs (ground := ← argStxs.allM (isConstant cx))
     -- Its body's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
@@ -5944,6 +5958,58 @@ def addLeanDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
       | _ => none
   addUsesDef uses name value
 
+/-- Adds the recursive definition `name` of type `type` and value `value`,
+which mentions `name`, as Lean's `def` adds one, by its structural
+recursion, compiled where `definitionForm` says that it is
+(`Reqs/Generated#computable-definitions`). -/
+def addRecursiveDef (ref : Syntax) (name : Name) (type value : Expr) : TermElabM Unit := do
+  let kind : ValueKind ← forallTelescope type fun _ r => return if r.isProp then .proposition else .data
+  let mentions ← if kind == .proposition then pure #[] else
+    ((value.foldConsts #[] fun c acc => if c == name then acc else acc.push c).mapM (liftM <| mentionOf ·))
+  let computeKind := if definitionForm kind mentions == .compiled then .regular else .noncomputable
+  addPreDefinitions ({}, {}) #[{ ref, kind := .def, levelParams := [], modifiers := { computeKind }, declName := name
+                                 binders := .missing, type, value, termination := .none }]
+
+/-- Adds a structural recursion's two definitions
+(`lang::structural_recursion`), from `recLean`, its Lean definition's value
+over itself first, with the placeholders `uses` as themselves and its
+`match`es Lean's, whose matchers are under `leanDeclName decl`: the
+solver's, `solverName decl`, as it is (`DefinedInfo.recursive`); and
+`decl`, generalized over the placeholders, with the matchers added again
+under `decl`, as `addLeanDef` adds them. Lean's structural recursion
+accepts each. -/
+def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean : Expr) : TermElabM Unit := do
+  let type := recLean.bindingDomain!
+  let solver := solverName decl
+  -- The solver's, with the defined functions that it applies unfolded, as
+  -- a query's are (`Fren.unfoldDefined`), but the structural recursions.
+  let st ← getState
+  let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
+  let sv ← Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st (recLean.beta #[Lean.mkConst solver]) ds.contains))
+  addRecursiveDef ref solver type sv
+  let tmp := leanDeclName decl
+  let ms := recLean.foldConsts #[] fun c acc => if c.getPrefix == tmp && !acc.contains c then acc.push c else acc
+  let args := uses.map (Lean.mkConst ·)
+  let mut value := recLean.beta #[mkAppN (Lean.mkConst decl) args]
+  for m in ms do
+    let some info ← Meta.getMatcherInfo? m | throwError "internal error: `{m}` is not a matcher"
+    let .defnInfo ci ← getConstInfo m | throwError "internal error: `{m}` is not a definition"
+    let m' := decl ++ Name.mkSimple m.getString!
+    let (mty, mval) ← withUses uses fun xs => do
+      return (← mkForallFVars xs (replaceUses uses xs ci.type), ← mkLambdaFVars xs (replaceUses uses xs ci.value))
+    addDecl (.defnDecl { name := m', levelParams := ci.levelParams, type := mty, value := mval, hints := ci.hints, safety := .safe })
+    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + uses.size }
+    setInlineAttribute m'
+    -- Lean's equation lemmas of the recursion are realized from it.
+    enableRealizationsForConst m'
+    value := value.replace fun e => match e with
+      | .const c ls => if c == m then some (mkAppN (.const m' ls) args) else none
+      | _ => none
+  let body := value
+  let (gType, gValue) ← withUses uses fun xs => do
+    return (← mkForallFVars xs (replaceUses uses xs type), ← mkLambdaFVars xs (replaceUses uses xs body))
+  addRecursiveDef ref decl gType gValue
+
 /-! ## Abstract types and functions -/
 
 /-- Records the questions about the tables and applications of the body
@@ -6360,34 +6426,41 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let fnVars := fnPs.map fun (_, x, _, ft, lty) => (x, ft, lty, placeholderName (path ++ x))
     let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
-    let (lam, tables, obls, leanLam?) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
-        withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    -- A first-order function that is not generic may apply itself, in a
+    -- structural recursion (`lang::structural_recursion`): within the
+    -- body, a local of its type stands for it, which its definitions
+    -- replace with themselves.
+    let selfName := n.appendAfter "#self"
+    let recursive := tps.isEmpty && fnPs.isEmpty
+    let selfTy := vars.foldr (fun v acc => .forallE `x v.type acc .default) result
+    let withSelf {α : Type} (k : Option Expr → TermElabM α) : TermElabM α :=
+      if recursive then withLocalDeclD selfName selfTy fun s => k (some s) else k none
+    let (lam, tables, obls, leanLam?, recLeanLam?, decided) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+        withSelf fun self? => withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
-      -- A first-order function that is not generic may apply itself, in a
-      -- structural recursion (`lang::structural_recursion`): within the
-      -- body, a local of its type stands for it.
-      let selfName := n.appendAfter "#self"
-      let recursive := tps.isEmpty && fnPs.isEmpty
       let selfRec? := if recursive then some (vars.map (·.name), ({ params := declared, result := resultTy } : Core.FnTy),
         (⟨(mkIdent selfName).raw⟩ : Term)) else none
-      let selfTy := vars.foldr (fun v acc => .forallE `x v.type acc .default) result
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop, selfFn := some n, natOk := result.isConstOf ``Nat
                             expected? := if result.isConstOf ``Nat then some .nat else none
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
       modifyLocal fun l => { l with recUses := #[], recOccs := #[], recMatches := #[] }
-      let t ← if recursive then withLocalDeclD selfName selfTy fun _ => toTerm cx body else toTerm cx body
+      let t ← toTerm cx body
       let uses := (← getLocal).recUses
       let recursion := Core.recursion vars.size (uses.toList.map (·.2))
-      if let .structural i := recursion then
+      let structural := recursion matches .structural _
+      if structural then
         if let some m := (← getLocal).recMatches[0]? then throwErrorAt m (Core.recursiveMatchMsg path).text
-        let enc := Core.recursiveEncoding recursion ((← getLocal).recOccs.toList.map (·.2))
-        throwErrorAt uses[0]!.1 (Core.structuralUnsupportedMsg path vars[i]!.name enc).text
       noteObligation cx .body body rp t
       -- Its tables, the applications of functions with preconditions, and
       -- its pattern types' obligations, for their checks; its indexes are
       -- not checked.
-      let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
+      -- A structural recursion's applications of itself are of its solver
+      -- form there (`DefinedInfo.recursive`).
+      let selfFor (x : Expr) : Expr := match self? with
+        | some s => x.replaceFVar s (Lean.mkConst (solverName decl))
+        | none => x
+      let tables := (← takeIndexes fvs (fun (x : Expr) => selfFor (x.replaceFVars fnFvs phs))).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
@@ -6405,17 +6478,20 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       -- where it can be (`Reqs/Generated#matches`). What that translation
       -- records and reports is dropped, as the first's stands; where it
       -- fails, the definition is the solver's.
-      let leanValue? ← if (body.find? fun x => isMatchLike x || x.isOfKind ``Lang.isExpr).isNone then pure none else
+      let leanValue? ← if !structural && (body.find? fun x => isMatchLike x || x.isOfKind ``Lang.isExpr).isNone then pure none else
         keepingNames <| withDeclName (leanDeclName decl) do
           let saved ← saveState
           try
-            let t' ← toTerm { cx with leanMatch := true } body
+            let t' ← toTerm { cx with leanMatch := true, leanBoolArms := structural } body
             -- But the metavariables, which the terms of the types that `t'`
             -- is written with stand for (`exprToSyntax`).
             let mctx ← getMCtx
             saved.restore
             setMCtx mctx
-            some <$> (instantiateMVars (← elabValue t'))
+            -- A structural recursion's `Bool` body is a `Bool`, a Lean
+            -- `match` of its arms' `decide`s, rather than decided again.
+            let v ← if structural && result.isConstOf ``Bool then elabProp t' result else elabValue t'
+            some <$> (instantiateMVars v)
           catch _ =>
             saved.restore
             pure none
@@ -6429,7 +6505,15 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
           let gs ← siteGoals f pr [] unfolded
           let body := if gs.isEmpty then Lean.mkConst ``True else gs.pop.foldr mkAnd gs.back!
           mkLambdaFVars (all.push pr) body
-      return (← mkLambdaFVars all value, tables, obls, ← leanValue?.mapM (mkLambdaFVars all ·))
+      -- A structural recursion's Lean definition is a Lean `match`, which
+      -- `lang::recursive_match` makes sure there is: over itself first.
+      let recLean? ← if !structural then pure none else
+        match leanValue?, self? with
+        | some v, some s => pure (some (← mkLambdaFVars #[s] (← mkLambdaFVars all v)))
+        | _, _ => throwErrorAt nameStx s!"internal error: no Lean definition of the structural recursion `{n}`"
+      let kind := Core.recursiveKind recursion ((← getLocal).recOccs.toList.map (·.2))
+      return (selfFor (← mkLambdaFVars all value), tables, obls, ← leanValue?.mapM (mkLambdaFVars all ·), recLean?,
+        kind.decided resultTy || kind == .notRecursive)
     lintBools body (← hidesIn { modName := scope, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
@@ -6445,9 +6529,10 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let uses ← usesOf #[lam]
     -- Where its Lean definition is a Lean `match`, the solver's is beside it
     -- (`DefinedInfo.solver?`).
-    let solver? ← match leanLam? with
-      | none => addUsesDef uses decl lam; pure none
-      | some leanLam =>
+    let solver? ← match recLeanLam?, leanLam? with
+      | some recLean, _ => addRecursiveDefs nameStx uses decl recLean; pure (some (solverName decl))
+      | none, none => addUsesDef uses decl lam; pure none
+      | none, some leanLam =>
         let saved ← saveState
         try
           -- As many names as `addUsesDef uses decl lam` would take.
@@ -6475,7 +6560,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
-                           oblDecls, solver? })
+                           oblDecls, solver?, recursive := recLeanLam?.isSome, decided })
     let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
   lintDeclared .function n nameStx

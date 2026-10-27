@@ -619,13 +619,19 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs c.funFacts) hyps goal
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
+    let hyps := facts ++ appFacts ++ hyps
+    -- A query that applies a structural recursion, a recursive definition,
+    -- sets `fmf-fun` (`Reqs/Lang/Recursion#solver-encoding`).
+    let recursive := (prelude.neededDecls (quotedSymbols (" ".intercalate (goal :: (hyps.map (·.2)).toList)))).any
+      fun i => prelude.decls[i]!.text.startsWith "(define-fun-rec "
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
+      ++ (if recursive then Fren.Core.recursiveOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.
       ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
-    let logic := Fren.Core.logic kind (strings || sets) projection quantified
+    -- A recursive definition needs a logic with quantifiers.
+    let logic := Fren.Core.logic kind (strings || sets) projection (quantified || recursive)
     let options := String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n")
-    let hyps := facts ++ appFacts ++ hyps
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache?) vars hyps goal
           wantModel

@@ -865,6 +865,12 @@ elements, which a pattern type within an element type brings
 quantifiers that membership bounds. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
 
+/-- The cvc5 option for a query that applies a structural recursion, which
+the solver is given as a recursive definition (`define-fun-rec`):
+`fmf-fun`, without which cvc5 answers `unknown` where it has a model
+(`Reqs/Lang/Recursion#solver-encoding`). -/
+def recursiveOptions : List (String × String) := [("fmf-fun", "true")]
+
 /-- The cvc5 option for the contract of a generic function without a body,
 checked once at its type parameters' sorts
 (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`):

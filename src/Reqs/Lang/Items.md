@@ -586,8 +586,8 @@ clauses](Let.md), constants, variants, and defined functions
 declared before the function.
 So a function is not in scope in the bodies of those declared before it,
 and defined functions are never recursive through each other. A function's
-own name in its body is an application of itself, which is only ever a
-[structural recursion](Recursion.md), and that is not yet supported. Nor
+own name in its body is an application of itself, which must be a
+[structural recursion](Recursion.md). Nor
 does the body apply an uninterpreted function, so a defined function's
 values are fully known. `lang::function_body` states when a body is
 accepted:
@@ -596,12 +596,13 @@ accepted:
 set_option fren.evidence "enumerated" in
 pub proc function_body(
     typed?,                  -- the body has the function's result type
-    applies_self?,           -- the body applies the function being declared (`lang::structural_recursion`)
+    applies_self?,           -- the body applies the function being declared
+    structural?,             -- those applications are a structural recursion (`lang::structural_recursion`)
     applies_uninterpreted?,    -- the body applies an uninterpreted function
 ): (det accepted?) {
-    ensure rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)
+    ensure rule: accepted? iff (typed? and (not applies_self? or structural?) and not applies_uninterpreted?)
 
-    expect not_recursive: when applies_self?, not accepted?
+    expect only_structural: when applies_self? and not structural?, not accepted?
     expect well_typed: when not typed?, not accepted?
     expect interpreted_only: when applies_uninterpreted?, not accepted?
 }

@@ -152,7 +152,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     { fn := fun f args => match fvals.find? (·.1.name == f) with
         | some (fs, ps, rs) => apply env fs ps rs args
         | none => slotOf[f]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
-      shapes := sp.shapes.find? }
+      shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
   let rec look (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
     match slotOf[x]? with
     | some i => (vals[i]?.bind (·[env[i]!]?))

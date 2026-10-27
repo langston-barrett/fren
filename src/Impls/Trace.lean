@@ -56,9 +56,9 @@ tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_pa
   "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"
 tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax/f0110_det_param.fren", "test/cli/syntax/f0113_det_assume.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
-tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren",
-  "test/cli/types/f0448_size.fren"
-tested lang::recursive_encoding: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0448_size.fren"
+tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren"
+tested lang::recursive_kind: "test/ui/checks/recursion.fren"
+tested lang::recursive_decided: "test/ui/checks/recursion.fren", "test/ui/checks/recursion_undecidable.fren"
 tested lang::recursive_match: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0449_literal.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
 tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",

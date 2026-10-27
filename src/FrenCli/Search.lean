@@ -149,12 +149,13 @@ partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (d
     | none => valueOf sp w h 2 r
   let some (ps, pres, posts) := sp.contracts.find? base | return valueAt h
   if depth == 0 then return valueAt h
-  let others : Interp := { fn := fun g as => w.value sp g as (depth - 1) }
+  let others : Interp := { fn := fun g as => w.value sp g as (depth - 1), recDefs := sp.recDefs.find? }
   let locals := (ps.zip args).toList
   unless pres.all (·.eval others (fun _ => none) locals == some (.bool true)) do return valueAt h
   let candidates := (List.range 8).map fun k => valueAt (if k == 0 then h else mix h k.toUInt64)
   candidates.find? fun v =>
-    let I : Interp := { fn := fun g as => if (g == f || g == base) && as == args then some v else w.value sp g as (depth - 1) }
+    let I : Interp := { fn := fun g as => if (g == f || g == base) && as == args then some v else w.value sp g as (depth - 1)
+                        recDefs := sp.recDefs.find? }
     posts.all (·.eval I (fun _ => none) locals == some (.bool true))
 
 /-- `sp.shapes`, in a hash map, in which `typeHolds` looks up a type more
@@ -166,6 +167,7 @@ def Spec.shapeMap (sp : Spec) : Std.HashMap Name Fren.Core.DataShape := sp.shape
 it is given, built once for many interpretations. -/
 def World.interp (sp : Spec) (w : World) (shapes? : Option (Std.HashMap Name Fren.Core.DataShape) := none) : Interp where
   fn f args := w.value sp f args
+  recDefs := sp.recDefs.find?
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
   shapes p := match shapes? with
     | some m => m[p]?

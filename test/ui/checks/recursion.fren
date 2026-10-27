@@ -1,0 +1,49 @@
+-- Checks over structural recursions (`Reqs/Lang/Recursion`): each is a
+-- recursive definition for the solver, whose counterexamples are genuine,
+-- and the `undecidable` lint reports the applications outside the core
+-- (`lang::recursive_kind`, `lang::recursive_decided`).
+-- fren-covers: lang::recursive_kind, lang::recursive_decided
+
+pub enum Tree { Leaf, Node(Tree, Int, Tree) }
+
+-- A catamorphism into a set: decided on any arguments.
+pub fn elems(t: Tree): Set<Int> := match t {
+    Tree::Leaf => {},
+    Tree::Node(l, k, r) => elems(l) union {k} union elems(r),
+}
+
+-- A catamorphism into `Bool`.
+pub fn has_zero?(t: Tree) := match t {
+    Tree::Leaf => false,
+    Tree::Node(l, k, r) => k = 0 or has_zero?(l) or has_zero?(r),
+}
+
+-- A catamorphism into `Int`: not in the core on arguments that vary.
+pub fn size(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => size(l) + 1 + size(r),
+}
+
+-- A paramorphism: an arm tests the subterm itself.
+pub fn left_leaves(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => (if l = Tree::Leaf then 1 else 0) + left_leaves(l) + left_leaves(r),
+}
+
+proc decided(t: Tree) {
+    expect empty_is_leaf: when elems(t) = {}, t = Tree::Leaf
+    expect zero_not_leaf: when has_zero?(t), t != Tree::Leaf
+    expect not_all: elems(t) != {1, 2}   --~ error: expectation `decided::not_all` does not hold
+}
+
+-- Constant arguments are in the core, whatever the kind.
+proc constant(t: Tree) {
+    expect sizes: size(Tree::Node(Tree::Leaf, 1, Tree::Node(Tree::Leaf, 2, Tree::Leaf))) = 2 or t = Tree::Leaf
+    expect lefts: left_leaves(Tree::Node(Tree::Node(Tree::Leaf, 1, Tree::Leaf), 2, Tree::Leaf)) = 1 or t = Tree::Leaf
+}
+
+set_option fren.lint.undecidable "allow" in
+proc outside(t: Tree) {
+    expect small: size(t) < 2   --~ error: expectation `outside::small` does not hold
+    expect layer: when t is Tree::Node(l, _, r), size(t) = size(l) + 1 + size(r)
+}

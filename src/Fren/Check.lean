@@ -125,6 +125,53 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
   Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains))
 
+/-- The solver forms of the structural recursions that `es` apply, and of
+those that their definitions apply, in turn: the solver is given each as
+a recursive definition (`Reqs/Lang/Recursion#solver-encoding`), which lean-smt reads
+from its equation, `define-fun-rec`. -/
+def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
+  let s ← getState
+  let recs := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
+    if d.recursive then d.solver?.elim acc acc.insert else acc
+  if recs.isEmpty then return #[]
+  let found (e : Expr) (acc : Array Name) : Array Name := e.foldConsts acc fun c a => if recs.contains c then a.push c else a
+  let mut work := es.foldl (fun acc e => found e acc) #[]
+  let mut out := #[]
+  -- Each is visited once, so this ends.
+  for _ in [0:recs.size + work.size] do
+    let some c := work.back? | break
+    work := work.pop
+    if out.contains c then continue
+    out := out.push c
+    if let some eqn ← getUnfoldEqnFor? c (nonRec := true) then work := found (← getConstInfo eqn).type work
+  return out
+
+/-- Runs `k` with a `let` for each of the structural recursions' solver
+forms `recs`, of that form, and a hypothesis of its equation, named as
+lean-smt reads an equational definition (`Smt.eqnDefName`): lean-smt gives
+the solver a `let` that is a hint as a definition, of that equation, which
+is recursive, `define-fun-rec` (`Reqs/Lang/Recursion#solver-encoding`). A constant
+that is a hint it does not: its preprocessing makes it a hypothesis. `k`
+gets the `let`s, and a function that replaces each of `recs` in a formula
+with its `let`. -/
+partial def withRecursiveDefs {α : Type} [Inhabited α] (recs : Array Name) (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α :=
+  go 0 #[]
+where
+  go (i : Nat) (fs : Array Expr) : MetaM α := do
+    if h : i < recs.size then
+      let c := recs[i]
+      Meta.withLetDecl (Name.mkSimple s!"{c.getPrefix.getString!}#rec") (← getConstInfo c).type (Lean.mkConst c) fun f =>
+        go (i + 1) (fs.push f)
+    else
+      let sub (e : Expr) : Expr := e.replace fun
+        | .const c _ => (recs.idxOf? c).map (fs[·]!)
+        | _ => none
+      let eqns ← (recs.zip fs).mapM fun (c, f) => do
+        let some eqn ← getUnfoldEqnFor? c (nonRec := true) | throwError "internal error: no equation of `{c}`"
+        let ty := sub (← getConstInfo eqn).type
+        return (Smt.eqnDefName (← f.fvarId!.getUserName), fun (_ : Array Expr) => pure ty)
+      Meta.withLocalDeclsD eqns fun _ => k fs sub
+
 /-- The answers to a procedure's queries so far, by hypotheses, goal and
 whether a model was wanted: some checks of a procedure ask the same
 query, which is answered once, as in the binary (`Reqs/Cli#solver-queries`). -/
@@ -249,6 +296,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- could not read.
   let askSmt (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (extra : Array Expr := #[]) :
       MetaM (Core.Outcome Expr × Bool) := do
+    -- The structural recursions, each a recursive definition, with which
+    -- cvc5 needs `fmf-fun` for its models (`Reqs/Lang/Recursion#solver-encoding`).
+    let recs ← recursiveSolvers (hyps.map (·.2) |>.push goal)
+    withRecursiveDefs recs fun recFvs sub => do
+    let hyps := hyps.map fun (n, t) => (n, sub t)
+    let goal := sub goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
     -- The locals named as the solver knows them, as their binders are.
     let lctx := (← getLCtx).foldl (init := ← getLCtx) fun l d => l.setUserName d.fvarId (smtUserName d.userName)
@@ -268,6 +321,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- A procedure whose queries may quantify over a collection's
       -- elements sets `fmf-bound` (`Core.boundedOptions`).
       let bounded := if bounded then Core.boundedOptions else []
+      let recursive := if recs.isEmpty then [] else Core.recursiveOptions
       -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
         let mv ← mkFreshExprMVar goal
@@ -275,13 +329,17 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         -- lean-smt asserts its hints in reverse order, and cvc5's answer
         -- can depend on the order (#173), so they are given reversed, to be
         -- asserted in the binary's order.
-        match ← Smt.smt { trust := true, model, timeout := some timeout
+        -- lean-smt's embeddings, of `Bool`s into propositions and of `Nat`s
+        -- into `Int`s, revert a recursive definition's `let` and give it
+        -- back as a `have`, which they cannot then introduce
+        -- (`withRecursiveDefs`).
+        match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := recs.isEmpty
                           -- `fmf-bound` right after the options both front ends set, as the
                           -- binary sets it.
-                          extraSolverOptions := Core.solverOptions true true ++ bounded
+                          extraSolverOptions := Core.solverOptions true true ++ bounded ++ recursive
                             ++ (if finiteModel then Core.finiteModelOptions else []) ++ logic ++ cvc5Defaults
                             ++ resourceLimitOptions (← getOptions) }
-                  mv.mvarId! hs.reverse with
+                  mv.mvarId! (hs.reverse ++ recFvs) with
         | .sat (some m) =>
           return .sat <| m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with

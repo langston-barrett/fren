@@ -1,8 +1,8 @@
 -- A defined function's applications of itself (`lang::structural_recursion`):
--- structural recursion is recognized, as a catamorphism or a
--- paramorphism (`lang::recursive_encoding`), and not yet supported; any other
--- recursion is an error that names the application, in both front ends.
--- fren-covers: lang::structural_recursion, lang::recursive_encoding, lang::recursive_match
+-- structural recursion is accepted; any other recursion is an error that
+-- names the application, in both front ends, and so is a recursive
+-- application under a `match` that Lean cannot see through.
+-- fren-covers: lang::structural_recursion, lang::recursive_match
 set_option fren.lint.dead_code "allow"
 
 mod structural_recursion_static
@@ -13,7 +13,7 @@ fn twice(g: fn(Expr) -> Int, e: Expr): Int := g(e) + g(e)
 
 -- Structural: on a payload of the matched parameter.
 fn size(e: Expr): Int := match e {
-    Expr::Add(a, b) => size(a) + size(b),  --~ error: recursive defined functions are not yet supported: `structural_recursion_static::size` is a catamorphism
+    Expr::Add(a, b) => size(a) + size(b),
     _ => 1,
 }
 
@@ -21,7 +21,7 @@ fn size(e: Expr): Int := match e {
 -- a payload, at the second parameter, with the first unrestricted.
 fn depth(d: Int, e: Expr): Int := match e {
     Expr::Neg(n) => match n {
-        Expr::Add(Expr::Neg(x), y) => depth(d + 1, x) + depth(0, y),  --~ error: recursive defined functions are not yet supported: `structural_recursion_static::depth` is a paramorphism
+        Expr::Add(Expr::Neg(x), y) => depth(d + 1, x) + depth(0, y),
         m => depth(d, m),
     },
     _ => d,
@@ -31,7 +31,7 @@ fn depth(d: Int, e: Expr): Int := match e {
 -- recursive application, is not another application (#363).
 fn ap1(g: fn(Int) -> Int, x: Int): Int := g(x)
 fn under(e: Expr): Int := match e {
-    Expr::Neg(n) => match under(n) {  --~ error: recursive defined functions are not yet supported: `structural_recursion_static::under` is a catamorphism
+    Expr::Neg(n) => match under(n) {
         k => ap1(|y| y + k, 0),
     },
     _ => 0,
@@ -56,13 +56,13 @@ fn nested_or(e: Expr): Int := match e {
 set_option fren.lint.collapsible_match "allow" in
 fn literal_inside(e: Expr): Int := match e {
     Expr::Lit(n) => match n { 0 => 0, _ => 1 },
-    Expr::Neg(x) => literal_inside(x),  --~ error: recursive defined functions are not yet supported: `structural_recursion_static::literal_inside` is a catamorphism
+    Expr::Neg(x) => literal_inside(x),
     _ => 1,
 }
 
 -- Structural at the second parameter, though the first is an `Expr` too.
 fn both(f: Expr, e: Expr): Int := match e {
-    Expr::Add(a, b) => both(f, a) + both(a, b),  --~ error: recursive defined functions are not yet supported: `structural_recursion_static::both` is a paramorphism
+    Expr::Add(a, b) => both(f, a) + both(a, b),
     _ => 0,
 }
 

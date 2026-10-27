@@ -1712,6 +1712,9 @@ inductive Construct where
   | seqWord
   /-- An unbounded quantifier's binder of a type that is not listed. -/
   | quantifier
+  /-- An application of a structural recursion that is not decided on
+  arguments that vary (`lang::recursive_kind`). -/
+  | recursion
   deriving Inhabited, BEq, DecidableEq, Repr
 
 inductive Method where
@@ -1890,6 +1893,7 @@ def inCore (c : Construct) (constantArgs comparable infiniteOutput ground : Bool
   | .seqArray => core true
   | .seqWord => core literalOperand
   | .quantifier => false
+  | .recursion => core false
 
 /-- Why a construct is outside the core, and how to stay in it. -/
 def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
@@ -1909,6 +1913,8 @@ def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
       | .seqWord => ("an operation on sequences other than indexing, `len` and `update` makes a word equation, which may be undecidable",
         "help: index at positions, or compare with a literal, as in `x in [a, b]` or `q.starts_with?([a])`")
       | .seqArray => ("it is an operation on sequences", "help: mention the parameters that the output depends on")
+      | .recursion => ("a structural recursion that is not a catamorphism into `Bool` or a set is not decided on arguments that vary",
+        "help: apply it to constants, or allow `undecidable` here: its counterexamples are still genuine")
       | .quantifier => ("a quantifier over a type whose values cannot be listed is not expanded, but given to the solver",
         "help: quantify over a listed type, such as `Bool` or an enum, or opt out, and guard it, as in `forall (x: T), when x in s, ...`, so that it can be tested")
       | .stringCompare => ("it compares two strings that are not both variables, and neither is a constant",

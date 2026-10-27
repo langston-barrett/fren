@@ -298,7 +298,8 @@ parameters and bodies: each query unfolds them. -/
 def markedDefs (texts : Array String) : Std.HashMap String (Array String × SExpr) := Id.run do
   let mut out : Std.HashMap String (Array String × SExpr) := {}
   for t in texts do
-    unless t.startsWith "(define-fun" do continue
+    -- Not a recursive definition, `define-fun-rec`, which is not unfolded.
+    unless t.startsWith "(define-fun " do continue
     let .list #[_, .atom f, .list ps, _, body] := parse t | continue
     let calls := out.keys.any fun g => body.mentions #[g]
     unless hasMarker t || calls do continue

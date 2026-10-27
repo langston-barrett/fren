@@ -403,6 +403,10 @@ structure Spec where
   /-- Each defined function's parameters, as binders of its body, the
   body, and its result type. -/
   defs : NameMap (Array Name × Ex × VTy) := {}
+  /-- Each structural recursion's parameters, as binders of its body, and
+  its body, in which its applications of itself are `Ex.app`s of it, which
+  evaluation applies (`Interp.recDefs`). -/
+  recDefs : NameMap (Array Name × Ex) := {}
   /-- Each constant's value, as a literal, or as its expression where the
   value is unknown: an index out of range, or a table where no row holds. -/
   consts : NameMap (Ex × VTy) := {}
@@ -466,6 +470,10 @@ partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
 /-- What the abstract types and functions mean, as far as it is known. -/
 structure Interp where
   fn : Name → Array Val → Option Val := fun _ _ => none
+  /-- Each structural recursion's parameters, as binders of its body, and
+  its body, which an application evaluates, at its arguments' values
+  (`Spec.recDefs`). -/
+  recDefs : Name → Option (Array Name × Ex) := fun _ => none
   /-- Whether the string `s` matches the pattern `p`, if it is known
   without matching it: `Fren.Core.Re.matches` of `p`'s parse, remembered
   (`Spec.withMatchMemo`). It is not part of the meaning. -/
@@ -779,7 +787,13 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
     | _ =>
       let x := a.eval I look locals slots frame memos
       if x.isSome && x == b.eval I look locals slots frame memos then x else none
-  | .app f args => do I.fn f (← args.mapM (·.eval I look locals slots frame memos))
+  | .app f args => do
+    let vs ← args.mapM (·.eval I look locals slots frame memos)
+    -- A structural recursion's body, at the arguments' values, which ends
+    -- (`Reqs/Lang/Recursion#meaning`).
+    match I.recDefs f with
+    | some (ps, body) => body.eval I look (ps.toList.zip vs.toList)
+    | none => I.fn f vs
   | .pre _ _ _ e => e.eval I look locals slots frame memos
   -- Known once the unknown arguments cannot change it: with two `true`,
   -- whatever the rest are.
@@ -1600,6 +1614,10 @@ structure LState where
   /-- The higher-order functions: each parameter's type, or a function
   parameter's parameters' and result's types (`Reqs/Lang/HigherOrder`). -/
   hofs : NameMap (Array (VTy ⊕ (Array VTy × VTy))) := {}
+  /-- The defined function whose body is being lowered, and whether it has
+  applied itself, in a structural recursion (`Spec.recDefs`). -/
+  lowering : Option Name := none
+  selfApplied : Bool := false
 
 abbrev L := StateT LState (Except String)
 
@@ -2258,6 +2276,11 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       -- A defined function's body, with its parameters standing for the
       -- arguments.
       if let some (ps, body, r) := (← get).spec.defs.find? path then
+        -- An application of itself, in a structural recursion: applied
+        -- when evaluated, not unfolded here.
+        if (← get).lowering == some path then
+          modify fun s => { s with selfApplied := true }
+          return (← withPres (.app path args), r)
         return (← withPres (body.subst (ps.zip args).toList), r)
       -- A generic function without a body, at the instance that its
       -- arguments' types give it, a function of its own.
@@ -2780,17 +2803,25 @@ partial def lowerItem : Item → L Unit
       if !fnParams.isEmpty then modify fun s => { s with hofs := s.hofs.insert path ts }
       -- Its parameters in order, for an application.
       let all := params.map fun (p, _) => declName p[0]!
+      -- In scope in its own body, which may apply it in a structural
+      -- recursion (`lang::structural_recursion`), and evaluated by applying
+      -- its body, which ends (`Reqs/Lang/Recursion#meaning`).
+      modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }
+                               spec.defs := s.spec.defs.insert path (all.map (path ++ ·), .lit (.bool true), r)
+                               lowering := some path, selfApplied := false }
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body
+      let recursive := (← get).selfApplied
+      modify fun s => { s with lowering := none, selfApplied := false }
       -- Binders named after the function, so that substituting arguments
       -- never captures a binder of theirs: theirs are a procedure's or another
       -- function's.
       let b := b.renameBound (path ++ ·)
-      modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r) }
+      modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r)
+                               spec.recDefs := if recursive then s.spec.recDefs.insert path (all.map (path ++ ·), b) else s.spec.recDefs }
       -- Over the parameters as inputs, for the checks of its tables, and
       -- its contract's, once it can be applied.
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
       let e := (← lowerExpr { vars, fnParams } body).1
-      modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
       let cs ← lowerContract path (itemName name) true ps vars clauses fnParams
       noteBody (itemName name) vars e cs
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }

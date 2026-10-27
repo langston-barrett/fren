@@ -240,6 +240,13 @@ would be, written where the closure is unfolded, and a closure's parameter
 counts as a value that varies, as an unbounded quantifier's bound name
 does, for the rules above.
 
+## Recursion
+
+An application of a [structural recursion](Recursion.md) is in the core
+on arguments that vary only when the function is a catamorphism into
+`Bool` or a set; on constant arguments, every application is
+(`lang::recursive_kind`, [Recursion](Recursion.md#decidability)).
+
 ## In practice
 
 Fren checks with cvc5 and does not add decision procedures of its own, so
@@ -294,10 +301,12 @@ pub mod lang
 -- `SeqArray` is a sequence's literals, `len`, indexing and `update`; `SeqWord`
 -- is the other operations on sequences; `Quantifier` is an unbounded
 -- quantifier's binder of a type that is not listed, of a quantifier that
--- `element_quantifier` does not put in the core.
+-- `element_quantifier` does not put in the core; `Recursion` is an
+-- application of a structural recursion that `lang::recursive_kind` does
+-- not decide.
 pub enum Construct {
     StringCompare, StringAtom, StringIndex, StringSearch, SetAlgebra, SetFunction, Relational, RelationalCard,
-    SeqArray, SeqWord, Quantifier,
+    SeqArray, SeqWord, Quantifier, Recursion,
 }
 
 pub proc in_core(
@@ -312,6 +321,7 @@ pub proc in_core(
 ): (det decidable?) {
     use self::Construct::{
         Quantifier,
+        Recursion,
         Relational,
         RelationalCard,
         SeqArray,
@@ -331,7 +341,7 @@ pub proc in_core(
         SetFunction => infinite_elems?,
         Relational => finite_range?,
         SeqWord => literal_operand?,
-        StringSearch | RelationalCard | Quantifier => false,
+        StringSearch | RelationalCard | Recursion | Quantifier => false,
     })))
 
     expect outputs_block: when infinite_output? and not ground?, not decidable?
@@ -341,6 +351,7 @@ pub proc in_core(
     expect algebra_always: when construct = SetAlgebra and not infinite_output?, decidable?
     expect relational_finite: when construct = Relational and not ground? and decidable?, finite_range?
     expect relational_card_never: when construct = RelationalCard and not ground?, not decidable?
+    expect recursion_ground: when construct = Recursion, decidable? iff ground?
     expect arrays_always: when construct = SeqArray and not infinite_output?, decidable?
     expect words_literal: when construct = SeqWord and not ground? and decidable?, literal_operand?
 }

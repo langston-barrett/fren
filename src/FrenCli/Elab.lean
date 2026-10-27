@@ -736,6 +736,13 @@ structure State where
   /-- Each defined function's parameters and result type, and its body over
   the parameters, in order. -/
   defs : Array (Name × Array (Name × Ty) × Ty × String) := #[]
+  /-- The defined functions that are structural recursions, which the
+  solver is given as recursive definitions, `define-fun-rec`
+  (`Reqs/Lang/Recursion#solver-encoding`). -/
+  recursiveDefs : Std.HashSet Name := {}
+  /-- The structural recursions whose applications are not decided on
+  arguments that vary (`lang::recursive_kind`). -/
+  undecidedDefs : Std.HashSet Name := {}
   /-- The contracts of the functions that have one, by path
   (`Reqs/Lang/Items#contracts`). -/
   contracts : NameMap Contract := {}
@@ -928,7 +935,7 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   recUses : Array (Span × Fren.Core.RecUse) := #[]
   /-- In a defined function's body, the occurrences so far of its
   parameters and of the binders bound from their payloads, each by where
-  it starts (`lang::recursive_encoding`). -/
+  it starts (`lang::recursive_kind`). -/
   recOccs : Array (Nat × Fren.Core.PayloadOcc) := #[]
   /-- In a defined function's body, the patterns of the `match`es on a
   parameter, or on a binder bound from a payload of one, that are not a Lean
@@ -1196,7 +1203,7 @@ def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse)
 
 /-- Records the occurrence `o`, starting where `span` does, of a parameter
 or of a binder bound from a payload of one, in a defined function's body
-that may recurse (`lang::recursive_encoding`): once for each place, the
+that may recurse (`lang::recursive_kind`): once for each place, the
 first recorded, as an expression elaborated again is not another
 occurrence. -/
 def noteRecOcc (span : Span) (o : Fren.Core.PayloadOcc) : M Unit := do
@@ -4303,7 +4310,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
     let base? ← if let some b := cx.binder? n.getRoot then do
         -- A binder bound from a payload of a parameter, of the parameter's
         -- type, used other than as a recursive application's argument
-        -- (`lang::recursive_encoding`).
+        -- (`lang::recursive_kind`).
         if let some j := b.payloadOf? then
           if cx.selfRec?.isSome && cx.vars[j]?.any (·.ty == b.ty) then noteRecOcc span { pos := j, occ := .other }
         -- A bound name has no scrutinee: it mentions nothing.
@@ -4327,7 +4334,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
         match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
         | some (v, k) =>
           -- A parameter, other than as a `match`'s scrutinee
-          -- (`lang::recursive_encoding`).
+          -- (`lang::recursive_kind`).
           if let some (ps, _, _) := cx.selfRec? then
             if let some j := ps.idxOf? v.name then noteRecOcc span { pos := j, occ := .other }
           -- A defined output mentions what its definition does.
@@ -4580,6 +4587,10 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       noteObligation cx .argument a.span (ptys[k]?.getD default) x
       smts := smts.push x
     notePreconditions cx fnSpan path smts
+    -- A structural recursion that is not decided on arguments that vary
+    -- (`lang::recursive_kind`).
+    if (← get).undecidedDefs.contains path then
+      checkCore cx fnSpan .recursion false false args (ground := ← args.allM (isConstant cx))
     -- Its body's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
@@ -4931,7 +4942,7 @@ partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : 
 
 /-- `elabExpr` on a `match`. -/
 partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (parent? : Option Expr) (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (isTable : Bool) : M (String × Ty) := do
-  -- The parameter itself, matched on (`lang::recursive_encoding`).
+  -- The parameter itself, matched on (`lang::recursive_kind`).
   let origin? := cx.recOrigin? scrutinee
   if let some (j, false) := origin? then noteRecOcc scrutinee.span { pos := j, occ := .matched }
   let (s, ts) ← elabExpr cx scrutinee
@@ -4942,7 +4953,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   let pats := resolved.map (·.1)
   -- A `match` on a parameter, or on a binder bound from a payload of one,
   -- that looks into a payload with a variant's pattern
-  -- (`lang::recursive_encoding`).
+  -- (`lang::recursive_kind`).
   if let some (j, _) := origin? then
     if pats.any Fren.Core.Pat.looksIntoPayload then noteRecOcc span { pos := j, occ := .other }
   let usesBefore := (← get).recUses.size
@@ -6677,10 +6688,11 @@ partial def elabItem (item : Item) : M Unit := do
       let (smt, t) ← elabExpr cx body
       let uses := (← get).recUses
       let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
-      if let .structural i := recursion then
+      if recursion matches .structural _ then
         if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
-        let enc := Fren.Core.recursiveEncoding recursion ((← get).recOccs.toList.map (·.2))
-        err uses[0]!.1 (Fren.Core.structuralUnsupportedMsg path vars[i]!.name enc)
+        let kind := Fren.Core.recursiveKind recursion ((← get).recOccs.toList.map (·.2))
+        modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path
+                                 undecidedDefs := if kind.decided r then s.undecidedDefs else s.undecidedDefs.insert path }
       noteObligation cx .body body.span rp smt
       let bodyTables ← takeTables
       let bodyObligations ← takeIndexes
@@ -7078,7 +7090,9 @@ def State.prelude (s : State) : Array PreludeDecl :=
     let ps := " ".intercalate (ps.toList.map fun (x, t) => s!"({quote x.toString} {t.sort})")
     -- An instance of a generic function has a symbol of its own.
     let sym := (s.instSyms.find? p).getD (itemSym p)
-    { text := s!"(define-fun {sym} ({ps}) {r.sort} {body})\n", syms := #[unquote sym] }
+    -- A structural recursion is a recursive definition (`Reqs/Lang/Recursion#solver-encoding`).
+    let cmd := if s.recursiveDefs.contains p then "define-fun-rec" else "define-fun"
+    { text := s!"({cmd} {sym} ({ps}) {r.sort} {body})\n", syms := #[unquote sym] }
   -- After every function, since a clause may apply its own and those
   -- declared before it.
   let clauses := s.clauseDefs.map fun (sym, ps, body) =>
