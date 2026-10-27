@@ -50,8 +50,8 @@ installation. It is built by `lake build fren`.
 | `-A LINT`, `-W LINT`, `-D LINT`, `-F LINT` | `check`, `trace`, `fix`, `eval`, `quickcheck` and `mutate`: set the level of a [lint](Lint.md), or of each lint of a [group](Lint.md#groups), to `allow`, `warn`, `deny` or `forbid`; may be repeated. The long forms are `--allow`, `--warn`, `--deny` and `--forbid` |
 | `--comp PATH` | `eval`: the component to evaluate; `mutate`: the component whose mutants to check |
 | `--set VAR=VALUE` | `eval`: the value of a variable; may be repeated |
-| `--seed N` | `eval`, `quickcheck`, `mutate`, and `check` for [checks by testing](Check.md#checking-by-testing), and by [enumeration then testing](Check.md#enumeration-then-testing): where the random search starts (default 0); `mutate`: also which mutants `--sample` takes |
-| `--tests N` | `quickcheck` and `mutate`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing), or by [enumeration then testing](Check.md#enumeration-then-testing) (default 100) |
+| `--seed N` | `eval`, `quickcheck`, `mutate`, and `check` for [checks by testing](Check.md#checking-by-testing): where the random search starts (default 0); `mutate`: also which mutants `--sample` takes |
+| `--tests N` | `quickcheck` and `mutate`: tests per component and global expectation; `check`: tests per component or global expectation with [checks by testing](Check.md#checking-by-testing) (default 100) |
 | `--by WHAT` | `mutate`: check mutants with the `solver` (the default), by `testing`, or `both` |
 | `--mutant ID` | `mutate`: check the mutant `ID`; may be repeated |
 | `--diff PATCH` | `mutate`: check the mutants of the items that the unified diff `PATCH` touches, or the one on standard input if `PATCH` is `-`; see [Patches](Mutate.md#patches) |
