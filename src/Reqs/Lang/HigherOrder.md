@@ -87,7 +87,7 @@ pub proc function_type_place(
 
     expect parameter: when site = DefinedParameter and within = [], accepted?
     expect nested: when within != [], not accepted?
-    expect not_in_data: when site in {Field, Payload}, code = "F0432"
+    expect not_in_data: when site in {Field, Payload} and within = [], code = "F0432"
 }
 ```
 
