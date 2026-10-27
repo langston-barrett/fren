@@ -465,8 +465,8 @@ A [global expectation's](Global.md) short form, `expect n: forall (m:
 Method), E`, is a quantifier like any other, around `E` with any `where`
 clause. Before global expectations had parameters, a binder of their
 leading `forall` could name a procedure, and range over its behaviours:
-that is an error now (`F0416`), whose fix writes the global expectation
-with parameters and calls (see [Migration](Global.md#migration)).
+that is an error now (`F0416`), whose help says how to write the global
+expectation with parameters and calls (see [Migration](Global.md#migration)).
 Everywhere, a quantifier ranges over values only. `lang::quantifier_binder`
 states this, from what a binder's type names and whether it is in a global
 expectation's leading `forall`:

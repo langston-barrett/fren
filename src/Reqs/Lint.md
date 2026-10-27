@@ -768,22 +768,20 @@ pub proc migration_step(
 }
 ```
 
-Then, once every file parses, the errors whose fixes need name
-resolution: `F0420`, an instance written as calls were before, whose fix
-needs the order of the called procedure's parameters, and `F0416`, a
-global expectation written with a `forall` over procedures' behaviours,
-whose fix needs their parameters and assumptions (see [Global
-expectations](Lang/Global.md#migration)). So `fren fix` elaborates the
-files, makes the fixes of every one that has one, all at once, since they
-do not overlap, and elaborates them again, and so on, until none with a
-fix is left; one whose procedure is itself not yet elaborated, such as one
-whose own instances are being fixed, is fixed in a later round. There are
-at most 1000 rounds. `lint::call_migration_round` gives what one round
-does, from whether each of them, as elaborated before the round, has a
-fix (`offered`, in the order they are reported): while some has one and
-fewer than 1000 rounds have been made, the round makes every offered fix,
-and only those; otherwise `fren fix` goes on to the lints. `k` is any of
-them, so the rule is stated for each. Membership in a sequence of unknown
+Then, once every file parses, the instances: `F0420`, an instance
+written as calls were before, whose fix needs the order of the called
+procedure's parameters, which only name resolution gives. So `fren fix`
+elaborates the files, makes the fixes of every `F0420` that has one, all
+at once, since they do not overlap, and elaborates them again, and so on,
+until no `F0420` with a fix is left; an instance whose called procedure is
+itself not yet elaborated, such as one whose own instances are being
+fixed, is fixed in a later round. There are at most 1000 rounds.
+`lint::call_migration_round` gives what one round does, from whether each
+`F0420` of the files, as elaborated before the round, has a fix
+(`offered`, in the order they are reported): while some has one and fewer
+than 1000 rounds have been made, the round makes every offered fix, and
+only those; otherwise `fren fix` goes on to the lints. `k` is any `F0420`,
+so the rule is stated for each. Membership in a sequence of unknown
 length is outside the [decidable core](Lang/Decidability.md#sequences), so
 the procedure opts out, and its checks are tested:
 
@@ -793,9 +791,9 @@ pub enum Offer { Fix, NoFix }
 set_option fren.evidence "tested" in
 set_option fren.lint.undecidable "allow" in
 pub proc call_migration_round(
-    offered: Seq<Offer>,         -- for each `F0420` and `F0416`, as elaborated before the round, whether it has a fix
+    offered: Seq<Offer>,         -- for each `F0420`, as elaborated before the round, whether it has a fix
     round: Nat,                  -- how many rounds of these fixes have been made
-    k: Int,                      -- any `F0420` or `F0416`
+    k: Int,                      -- any `F0420`
 ): (
     det continues?,              -- the round is made
     det applies?,                -- it makes the fix of `k`

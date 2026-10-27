@@ -1316,11 +1316,9 @@ def migrationCodes : List String := ["F0155", "F0156", "F0158", "F0159", "F0160"
 the file's earlier syntax shorter, so this bounds only a bug. -/
 def maxMigrations : Nat := 1000
 
-/-- The codes of the static errors whose fixes need name resolution
-(`lint::call_migration_round`): an instance, which the fix writes as a
-call, and a global expectation written with `forall`, which it writes with
-parameters and calls. -/
-def callMigrationCodes : List String := ["F0420", "F0416"]
+/-- The code of the static error whose fix writes an instance as a call
+(`lint::call_migration_round`). -/
+def callMigrationCode : String := "F0420"
 
 /-- Whether `fren fix` makes another round of the fixes of the instances
 (`F0420`), which need name resolution: whether there are any (`fixes`),

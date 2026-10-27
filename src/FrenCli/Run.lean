@@ -1066,7 +1066,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
   let mut round := 0
   repeat
     let (files, st) ← elaborateSources paths srcs args.lints #[] ignored
-    let calls := st.diags.filter fun d => d.msg.code?.any (Fren.Core.callMigrationCodes.contains ·) && !ignored paths[d.file]!
+    let calls := st.diags.filter fun d => d.msg.code? == some Fren.Core.callMigrationCode && !ignored paths[d.file]!
     let some ks := Fren.Core.callMigrationRound (calls.map (!·.msg.fixes.isEmpty)) round | break
     let fixes := ks.filterMap fun k => calls[k]? >>= fun d =>
       d.msg.fixes[0]?.map fun f => (d.file, f.range?.getD (toRange d.span), f.replacement)
@@ -1182,7 +1182,7 @@ deriving instance BEq for Fren.Core.LevelInEffect
 deriving instance BEq for Fren.Core.Levels
 deriving instance BEq for Fren.Core.Item, Fren.Core.EnumDef, Fren.Core.UseDef, Fren.Core.Tested, DataDecl
 deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
-deriving instance BEq for CVar, CProp, CInst, ProcSource, CComp
+deriving instance BEq for CVar, CProp, CInst, CComp
 
 instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩
 

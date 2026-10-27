@@ -152,7 +152,7 @@ membership (an `else` branch keeps that restriction), and a nested `let` ends it
 (see [Local definitions](Lang/Let.md#parentheses)). A `binder` of a
 quantifier names a type, and one of a global expectation's leading
 `forall` a type, or a procedure, as global expectations were written
-before, which is an error whose fix writes it with a block (see [Global
+before, which is an error (see [Global
 expectations](Lang/Global.md#migration)). A global expectation's results,
 and the members of its block other than `assume`, `use`, `let`, `call`,
 `expect` and `cover`, are parsed as a procedure's, and are errors (see

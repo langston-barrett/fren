@@ -1,7 +1,7 @@
 -- Global expectations written with a `forall` over procedures' behaviours,
--- as before they had parameters (F0416), in both front ends: with a fix,
--- and without one, where a procedure is in another module, or its
--- assumptions mention a variable other than its parameters.
+-- as before they had parameters (F0416), in both front ends: an error
+-- whose help says how to write it, and a binder over values alongside,
+-- which alone would be a quantifier.
 mod m
 
 pub proc double(x: Int): (y: Int) {
@@ -9,41 +9,14 @@ pub proc double(x: Int): (y: Int) {
     ensure r: y = 2 * x
 }
 
-proc defined(x: Int): (y: Int) {
-    let big? := x > 10
-    assume big: big?
-    ensure r: y = x
-}
+enum Mode { Off, On }
 
 expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y
---~^ error: assuming what its procedures assume
-expect through_let: forall (d: defined), d.y > 10
---~^ error: so it has no fix
+--~^ error: global expectations are written with parameters and calls
+expect mixed: forall (a: double) (m: Mode), when m = Mode::On, a.y = 2 * a.x
+--~^ error: global expectations are written with parameters and calls
 
 mod n
 use m::double
 expect elsewhere: forall (a: double), a.y = 2 * a.x
---~^ error: so it has no fix
-
-mod p
-const LIM: Int := 5
-
-proc band(target: Int): (y: Int) {
-    assume sane: target > LIM
-    ensure r: y = target
-}
-
-proc shadowed(x: Int): (y: Int) {
-    assume a1: match x { y! => y > 0 }
-    ensure r: y = x
-}
-
--- A binder over values that would hide what an assumption reads.
-expect cap: forall (b: band) (LIM!: Int), when LIM < 0, b.target > 5
---~^ error: would hide, so it has no fix
--- An assumption that declares a variable of its own with `!`.
-expect bang: forall (s: shadowed), s.y > 0
---~^ error: or declares a name that a parameter has, so it has no fix
--- A quantifier in the body over a procedure.
-expect inner: forall (a: band), forall (b: band), a.y = b.y
---~^ error: a quantifier in its body ranges over a procedure
+--~^ error: write each binder `a: p` as parameters for `p`'s parameters and a call of `p`

@@ -2962,10 +2962,9 @@ expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y
 
 A global expectation takes parameters, and relates procedures by calling
 them, as a procedure does; a binder of its leading `forall` no longer
-ranges over a procedure's behaviours. `fren fix` writes it with a
-parameter for each input of each binder, named after the binder, a call
-for each binder, and the procedures' assumptions as its own, so that it
-means what it did:
+ranges over a procedure's behaviours. Write it by hand with a parameter for
+each input of each binder, a call for each binder, and the procedures'
+assumptions as its own, so that it means what it did:
 
 ```fren
 proc double(x: Int): (y: Int) {
@@ -2982,10 +2981,8 @@ expect monotone(a_x: Int, b_x: Int) {
 }
 ```
 
-The fix is offered only where the procedures' assumptions and parameters'
-types can be copied: each procedure is in the global expectation's module,
-and its assumptions mention no variable of its own but its parameters. A binder over values, such as `forall (m: Method)`,
-is no error: it is a quantifier.
+A binder over values, such as `forall (m: Method)`, is no error: it is a
+quantifier.
 "# },
   { code := "F0417", explanation := r#"A member that a global expectation does not have.
 

@@ -6812,27 +6812,6 @@ def lintUnrelatedCalls (nameStx : Syntax) (n : String) (members : Array Syntax) 
   if Core.unrelatedBinders groups.size then
     recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n groups)
 
-/-- The source text from the start of `a` to the end of `b`, as written. -/
-def textBetween (a b : Syntax) : String :=
-  match a.getSubstring? (withLeading := false) (withTrailing := false), b.getTailPos? with
-  | some sub, some stop => String.Pos.Raw.extract sub.str sub.startPos stop
-  | some sub, none => sub.toString
-  | _, _ => ""
-
-/-- What an old global expectation's fix needs of the procedure at `path`
-with the members `members`, as a component's, and variables `vars`
-(`Core.Callee`): its parameters, its other variables and calls, and what
-its parameters' types and its assumptions read and declare, from their
-text, as the `fren` command reads it. -/
-def calleeOf (path : Name) (members : Array Syntax) (vars : Array Var) (instNames : Array Name) : Core.Callee :=
-  let params := (vars.filter fun v => v.role == .input && v.name.isAtomic).map (Core.nameText ·.name)
-  let others := ((vars.map (Core.nameText ·.name.getRoot)) ++ instNames.map Core.nameText).filter (!params.contains ·)
-  let types := members.foldl (init := {}) fun acc m =>
-    if m.isOfKind ``Lang.inMember && !m[2].isNone then acc ++ Core.copiedOf (textBetween m[2][1] m[2][1]) else acc
-  let assumes := members.foldl (init := {}) fun acc m =>
-    if m.isOfKind ``Lang.assumeMember then acc ++ Core.copiedOf (textBetween m[3] m) else acc
-  { module := path.getPrefix.toString, params, others, types, assumes }
-
 /-- A procedure's members, elaborated, with the procedure recorded if all were: whether
 they were, and the generated declarations. -/
 def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx : Syntax)
@@ -6857,11 +6836,10 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
   if ok then
     let (relational, counts) ← checkCounts
-    let source := calleeOf path members vars instNames
     let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
                              relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed
-                             source, global }
+                             global }
     -- A global expectation is an item that nothing calls
     -- (`Reqs/Lang/Global`).
     if global then
@@ -7122,30 +7100,6 @@ def globalBinderComp? (modName : Name) (ty : Syntax) : TermElabM (Option Name) :
   | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
   | r => throwErrorAt ty (Core.wrongKindMsg "a procedure or a type" r).text
 
-/-- Why the old global expectation `expect n: forall binders, e` in
-`modName` has no fix, if it has none (`F0416`): each binder with the
-procedure it ranges over the behaviours of, if any, as the `fren`
-command's fix decides (`Core.globalFix`). -/
-partial def quantBinderTypes (e : Syntax) : Array Syntax :=
-  (if e.isOfKind ``Lang.quantExpr then e[1].getArgs.map (·[3]) else #[]) ++ e.getArgs.flatMap quantBinderTypes
-
-def oldGlobalNoFix (modName n : Name) (binders : Array (Syntax × Option Name)) (body : Syntax) :
-    TermElabM (Option Core.NoFix) := do
-  let st ← getState
-  let mut olds : Array Core.OldBinder := #[]
-  let mut assumeNames : Array (Array String) := #[]
-  for (b, path?) in binders do
-    let c? := path?.bind st.comps.get?
-    for x in b[1].getArgs do
-      olds := olds.push { name := Core.nameText (declaredIdent x).1.getId, callee? := c?.map (·.source) }
-      assumeNames := assumeNames.push ((c?.map fun c => c.assumes.map (Core.nameText ·.name)).getD #[])
-  let hides (q : String) := (st.table.hidden? modName #[] (Name.mkSimple q)).isSome
-  -- A quantifier in the body over a procedure stays an error (`F0210`).
-  let nested ← (quantBinderTypes body).anyM fun ty => do
-    let r ← try globalBinderComp? modName ty catch _ => pure none
-    return r.isSome
-  return Core.globalFix modName.toString (Core.nameText n) olds assumeNames hides nested
-
 /-- Elaborates a global expectation in its short form, `expect n: e`, into
 a `CompInfo` whose path is its module (`Model.Entry.globalInfo`),
 generating `decl` for it. Binders over values, `forall (m: M), e`, are a
@@ -7164,8 +7118,7 @@ def elabGlobalInfo (modName n : Name) (nameStx : Syntax) (binderStxs : Array Syn
   let resolved ← binderStxs.mapM fun b => return (b, ← globalBinderComp? modName b[3])
   if let some (b, _) := resolved.find? fun (_, p?) =>
       (Core.quantifierBinder (if p?.isSome then .component else .typeName) true).2 then
-    let why ← oldGlobalNoFix modName n resolved body
-    throwErrorAt b[3] (Core.oldGlobalMsg (match why with | some w => .error w | none => .ok "")).text
+    throwErrorAt b[3] Core.oldGlobalMsg.text
   let valueBinders := binderStxs
   let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop }
   discard (takeIndexes #[])

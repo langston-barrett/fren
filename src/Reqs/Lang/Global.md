@@ -147,128 +147,25 @@ binders ranged over procedures' behaviours as well as over values: `expect
 n: forall (a b: c) (m: M), E`. Each binder over a procedure stood for a
 behaviour of it with inputs of its own, and the procedure's assumptions
 were hypotheses. A binder over a procedure is an error now (`F0416`),
-whose fix writes the global expectation with a block, and means what it
-did:
+reported once each binder's type is resolved, as a procedure or a type, so
+it is a static error, as an [instance](Procedures.md#migration) is. It has
+no fix: Fren's own specs were migrated once, by a script, and the error
+says how to write it, which means what it did:
 
 - each binder `a: c` over a procedure becomes a parameter for each
-  parameter `x` of `c`, named `a_x` and of `x`'s type as `c` writes it,
-  and the call `call a := c(a_x, ...)`;
+  parameter `x` of `c`, such as `a_x`, of `x`'s type, and the call `call
+  a := c(a_x, ...)`;
 - each binder `m: M` over values becomes the parameter `m: M`;
-- each assumption `s` of `c` becomes, for each binder `a` of `c`, the
-  assumption `assume a_s: S`, where `S` is `s` as `c` writes it, with each
-  parameter `x` of `c` written `a_x`;
-- `E`, with any `where` clause, becomes the block's one expectation,
-  `expect n: E`, which reads `a`'s variables as `a.x`, as before.
-
-The parameters come in the order of the binders, and each binder's in the
-order of its procedure's parameters; then the block has the procedures'
-imports, the assumptions, the calls and the expectation, one to a line, with the comments of the
-expectation's lines. Merging parameters that a condition ties together,
-such as `a_target` and `b_target` under `when a.target = b.target`, is
-left to the author.
+- each assumption of `c` becomes, for each binder `a` of `c`, an
+  assumption over `a`'s parameters, so that the call checks hold;
+- `E`, with any `where` clause, becomes the block's expectation, `expect
+  n: E`, which reads `a`'s variables as `a.x`, as before.
 
 The meaning is unchanged: the call `a` binds `a.x` to `a_x`, so the
 parameters stand for the behaviour's inputs, which were quantified before;
-the assumptions copy the procedure's, which were hypotheses before, and so
-discharge the new call checks; and the types copied with the parameters
-bring what they brought. The error is reported once each binder's type is
-resolved, as a procedure or a type, so it is a static error, as an
-[instance](Procedures.md#migration) is; `fren fix` makes its fix in the
-rounds that need name resolution (see [Migrations](../Lint.md#migrations)).
-A leading `forall` with binders over values alone is no error: it is the
+the assumptions are the procedure's, which were hypotheses before; and the
+types written with the parameters bring what they brought. Merging
+parameters that a condition ties together, such as `a_target` and
+`b_target` under `when a.target = b.target`, is left to the author. A
+leading `forall` with binders over values alone is no error: it is the
 short form's quantifier.
-
-The fix copies text, so it is offered only where what it copies means the
-same at the global expectation as in the procedure. What a text reads is
-taken from its identifiers, as the lexer reads them, outside comments and
-strings, each by its first component, but for those after a `.` or a
-`::`, which name fields, methods and the items of paths; and what it
-declares with `!`, from those written so. Both front ends read the texts
-so, with one function, `Fren.Core.copiedOf`. The fix copies the `use`
-members of each procedure with assumptions too, once each, before the
-assumptions, since they may read the names that those import.
-
-`lang::callee_fix` states, of one binder's procedure, whether its text can
-be copied, and if not, why:
-
-- it must be in the global expectation's module, since elsewhere its
-  names may mean something else;
-- its assumptions must read none of its own variables or calls but its
-  parameters, such as a `let` that they may read, which the global
-  expectation does not have, and must declare with `!` no name that a
-  parameter has, whose uses would not be the parameter's;
-- the names that its types and assumptions read, but its parameters,
-  which the fix renames, must not be among those that the block declares
-  as values, its parameters and its calls, which would hide them: in
-  `forall (b: band) (LIM!: Int)`, a parameter `LIM` would hide the
-  constant `LIM` that `band`'s assumption reads.
-
-A text that declares with `!` a variable of the procedure's own, other
-than a parameter, reads it too, so it is not copied either: at the global
-expectation, the `!` would shadow nothing.
-
-```fren
-pub struct Copied {
-    names: Set<Id>,      -- the identifiers it reads, each by its first component
-    bangs: Set<Id>,      -- the names it declares with `!`
-}
-
-pub struct Callee {
-    module: Id,          -- the procedure's module
-    params: Set<Id>,     -- its parameters
-    others: Set<Id>,     -- its other variables and its calls
-    types: Copied,       -- what its parameters' types read
-    assumes: Copied,     -- what its assumptions read and declare
-}
-
-pub enum CalleeFix { Fixable, OtherModule, NotClosed, Captured }
-
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
-pub proc callee_fix(
-    module: Id,          -- the global expectation's module
-    block: Set<Id>,      -- the values that its block would declare: its parameters and calls
-    callee: Callee,
-): (det fix: CalleeFix) {
-    -- A procedure's names are distinct.
-    assume apart: forall (x: Id), when x in callee.params, not x in callee.others
-
-    ensure rule: fix = (if callee.module != module then CalleeFix::OtherModule
-        else if (exists (x: Id), x in callee.assumes.names and x in callee.others)
-        or (exists (x: Id), x in callee.assumes.bangs and x in callee.params)
-        then CalleeFix::NotClosed
-        else if (exists (x: Id), (x in callee.types.names or x in callee.assumes.names) and not x in callee.params
-        and x in block)
-        then CalleeFix::Captured
-        else CalleeFix::Fixable)
-
-    expect elsewhere: when callee.module != module, fix = CalleeFix::OtherModule
-    expect only_parameters: when callee.module = module and callee.assumes.names subset callee.params
-        and callee.types.names subset callee.params and callee.assumes.bangs = {}, fix = CalleeFix::Fixable
-}
-```
-
-`lang::migrated_param` names what the fix declares for one parameter, or
-one assumption, `x` of the procedure of a binder `w`, and states when the
-name is fresh: when it is not among `taken`, the other names that the
-block declares and, for a parameter, the names in scope that it would
-hide. The fix is offered when every binder's procedure is fixable and
-every name it declares is fresh: the binders' names, the parameters, the
-assumptions and the expectation, which share the block's namespace.
-Otherwise the error has no fix, and its note says why: the first binder
-whose procedure is not fixable, with the reason, or the first name that
-is not fresh. `Fren.Core.globalFix` decides this for both front ends.
-
-```fren
-pub proc migrated_param(
-    binder: Id,          -- the binder, without its `!`
-    param: Id,           -- the procedure's parameter or assumption
-    taken: Set<Id>,      -- the names it must not be
-): (det name: Id, det fresh?) {
-    out name := binder ++ "_" ++ param
-
-    ensure rule: fresh? iff not name in taken
-
-    expect untaken: when taken = {}, fresh?
-}
-```
