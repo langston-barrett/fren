@@ -99,11 +99,6 @@ impl function_comparison: lang::function_comparison for (ops : List Fren.Core.Co
 
 /-! ## Capture -/
 
-interp lang::capture_symbol := fun (k : Int) => Fren.Core.captureSym k.toNat
-interp lang::capture_symbols := fun (next : Nat) (cs : Fren.Seq String) =>
-  Fren.Seq.ofList (Fren.Core.captureNames next cs.toList)
-interp lang::renamed := fun (next : Nat) (cs ps : Fren.Seq String) (x : String) =>
-  Fren.Core.captureRename next cs.toList ps.toList x
 
 /-- Capture symbols are told apart by their numbers. -/
 theorem captureSym_inj {a b : Nat} (h : Fren.Core.captureSym a = Fren.Core.captureSym b) : a = b := by
@@ -154,8 +149,8 @@ theorem idxOf?_of_first (l : List String) (x : String) (k : Nat) (_hk : k < l.le
 -- `Core.captureNames`, and the mention, from `Core.captureRename`.
 impl closure_capture: lang::closure_capture
     for (next : Nat) (captured params values around inner : List String) (x : String) (k j : Int) {
-  next := next,
   captured := Fren.Seq.ofList captured,
+  symbols := (Fren.Seq.ofList (Fren.Core.captureNames next captured) : Fren.Seq String),
   params := Fren.Seq.ofList params,
   values := Fren.Seq.ofList values,
   around := Fren.Seq.ofList around,
@@ -163,78 +158,30 @@ impl closure_capture: lang::closure_capture
   x := x,
   k := k,
   j := j,
-  symbols := (Fren.Seq.ofList (Fren.Core.captureNames next captured) : Fren.Seq String),
   mention := (if x ∈ inner then x else Fren.Core.captureRename next captured params x : String),
-  binders := (Fren.Seq.ofList (Fren.Core.captureNames next captured ++ values ++ around ++ params ++ inner) : Fren.Seq String),
 } by
   intro next captured params values around inner x k j h
   simp only [fren_spec] at h ⊢
-  obtain ⟨hfresh, _, hfirst, hlast, hapart⟩ := h
-  simp only [Fren.Seq.toList_ofList, Fren.Seq.mem_iff, Fren.Seq.len_eq] at hfresh hfirst hlast hapart ⊢
+  obtain ⟨_, _, hfree, hfirst, _, hapart⟩ := h
+  simp only [Fren.Seq.toList_ofList, Fren.Seq.mem_iff, Fren.Seq.len_eq] at hfree hfirst hapart ⊢
+  by_cases hi : x ∈ inner
+  · simp [hi]
+  by_cases hp : x ∈ params
+  · simp [hi, hp, Fren.Core.captureRename]
+  have hc : x ∈ captured := by simp_all
+  obtain ⟨⟨⟨hk0, hkl⟩, hkx⟩, hkb⟩ := hfirst hc
+  rw [Fren.Seq.nth_of_lt (Fren.Seq.ofList captured) k hk0 (by simpa using hkl)] at hkx
+  have hkb' : x ∉ captured.take k.toNat := by
+    intro hm
+    obtain ⟨a, ha, he⟩ := List.mem_take_iff_getElem.mp hm
+    have ha' : a < k.toNat ∧ a < captured.length := ⟨Nat.lt_of_lt_of_le ha (Nat.min_le_left _ _), Nat.lt_of_lt_of_le ha (Nat.min_le_right _ _)⟩
+    have hne := hkb (a : Int)
+    rw [Fren.Seq.nth_of_lt (Fren.Seq.ofList captured) (a : Int) (by omega) (by simp; omega)] at hne
+    exact hne ⟨by omega, by omega⟩ (by simpa using he)
+  have hidx := idxOf?_of_first captured x k.toNat (by omega) hkx hkb'
   have hlen := captureNames_length next captured
-  refine ⟨by simp [Fren.Seq.ext_iff], ⟨by simp [hlen], fun i hi => ?_⟩, fun hx => by simp [hx], ?_, ?_⟩
-  · rw [Fren.Seq.nth_of_lt _ _ hi.1 (by simp [hlen]; omega)]
-    simp only [Fren.Seq.toList_ofList, captureNames_getElem]
-    congr 1
-    omega
-  · rintro ⟨hni, hc⟩
-    obtain ⟨⟨⟨hk0, hkl⟩, hkx⟩, hkb⟩ := hfirst hc
-    have hnp : x ∉ params := fun hp => hapart ⟨hc, hp⟩
-    rw [Fren.Seq.nth_of_lt (Fren.Seq.ofList captured) k hk0 (by simpa using hkl)] at hkx
-    rw [mem_slice_before captured k hk0 hkl] at hkb
-    have hidx := idxOf?_of_first captured x k.toNat (by omega) hkx hkb
-    have hm : (if x ∈ inner then x else Fren.Core.captureRename next captured params x)
-        = Fren.Core.captureSym (next + k.toNat) := by
-      simp [hni, Fren.Core.captureRename, hnp, hidx]
-    rw [hm, decide_eq_true_eq]
-    have hkA : k.toNat < (Fren.Core.captureNames next captured).length := by rw [hlen]; omega
-    refine ⟨⟨⟨hk0, by simp; omega⟩, ?_⟩, ?_⟩
-    · rw [Fren.Seq.nth_of_lt _ _ hk0 (by simp; omega)]
-      simp only [Fren.Seq.toList_ofList]
-      rw [List.getElem_append_left (by simp; omega), List.getElem_append_left (by simp; omega),
-        List.getElem_append_left (by simp; omega), List.getElem_append_left hkA, captureNames_getElem]
-    · rw [mem_slice_after _ k hk0]
-      have hd : (k + 1).toNat ≤ (Fren.Core.captureNames next captured).length := by omega
-      rw [List.append_assoc, List.append_assoc, List.append_assoc, List.drop_append_of_le_length hd]
-      simp only [List.mem_append, not_or]
-      have hf := hfresh (next + k.toNat) (by omega)
-      simp only [Int.toNat_natCast] at hf
-      refine ⟨?_, hf.1.1.1, hf.1.1.2, hf.1.2, hf.2⟩
-      intro hmem
-      obtain ⟨i, hi, heq⟩ := List.mem_drop_iff_getElem.mp hmem
-      rw [captureNames_getElem] at heq
-      have := captureSym_inj heq
-      omega
-  · rintro ⟨hni, hp⟩
-    obtain ⟨⟨⟨hj0, hjl⟩, hjx⟩, hjb⟩ := hlast hp
-    have hm : (if x ∈ inner then x else Fren.Core.captureRename next captured params x) = x := by
-      simp [hni, Fren.Core.captureRename, hp]
-    rw [hm, decide_eq_true_eq]
-    rw [Fren.Seq.nth_of_lt (Fren.Seq.ofList params) j hj0 (by simpa using hjl)] at hjx
-    rw [mem_slice_after params j hj0] at hjb
-    have hpre : ((Fren.Core.captureNames next captured ++ values ++ around).length : Int) =
-        (Fren.Core.captureNames next captured).length + values.length + around.length := by simp; omega
-    refine ⟨⟨⟨by omega, by simp; omega⟩, ?_⟩, ?_⟩
-    · rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]
-      simp only [Fren.Seq.toList_ofList]
-      rw [List.getElem_append_left (by simp; omega), List.getElem_append_right (by simp; omega)]
-      have key : ∀ (m : Nat) (hm : m < params.length), m = j.toNat → params[m] = x := by
-        intro m hm e
-        subst e
-        exact hjx
-      exact key _ _ (by simp; omega)
-    · have h0 : 0 ≤ ((Fren.Core.captureNames next captured).length : Int) + values.length + around.length + j := by omega
-      rw [mem_slice_after _ _ h0]
-      have hd : (Fren.Core.captureNames next captured ++ values ++ around ++ params).length
-          ≥ (((Fren.Core.captureNames next captured).length : Int) + values.length + around.length + j + 1).toNat := by
-        simp; omega
-      rw [List.drop_append_of_le_length hd]
-      simp only [List.mem_append, not_or]
-      refine ⟨?_, hni⟩
-      rw [show (((Fren.Core.captureNames next captured).length : Int) + values.length + around.length + j + 1).toNat
-          = (Fren.Core.captureNames next captured ++ values ++ around).length + (j + 1).toNat by simp; omega]
-      rw [List.drop_append, List.drop_of_length_le (by omega), List.nil_append, Nat.add_sub_cancel_left]
-      exact hjb
+  rw [Fren.Seq.nth_of_lt _ k hk0 (by simp [hlen]; omega)]
+  simp [hi, hp, Fren.Core.captureRename, hidx, captureNames_getElem]
 
 /-! ## Capture, end to end
 
