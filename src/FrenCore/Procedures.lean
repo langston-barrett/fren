@@ -189,12 +189,7 @@ private def moved (src : Array Char) (open_ : Nat) (r : Range) : Moved := Id.run
     return { removal := { start, stop := min src.size (le + 1) }, comment?, above }
   let mut stop := r.stop
   while stop < src.size && (src[stop]! == ' ' || src[stop]! == '\t') do stop := stop + 1
-  -- One that ends its line takes the spaces before it instead.
-  let mut start := r.start
-  if stop == src.size || src[stop]! == '\n' then
-    stop := r.stop
-    while start > 0 && (src[start - 1]! == ' ' || src[start - 1]! == '\t') do start := start - 1
-  return { removal := { start, stop } }
+  return { removal := { start := r.start, stop } }
 
 /-- A parameter or result list: on one line if no element has a comment
 and the line fits, else one element to a line, each indented by `indent`
@@ -303,7 +298,11 @@ def procText (src : Array Char) (start : Nat) (compTok : Range) (openBrace : Nat
   for (r, t) in sorted do
     let a := r.start - openBrace
     if a < pos then continue
-    out := out ++ String.ofList (block.extract pos a).toList ++ t
+    out := out ++ String.ofList (block.extract pos a).toList
+    -- A member removed from the end of its line leaves no spaces there.
+    if t.isEmpty && (src[r.stop]? |>.all (· == '\n')) then
+      out := (out.dropEndWhile (fun c => c == ' ' || c == '\t')).toString
+    out := out ++ t
     pos := r.stop - openBrace
   out := out ++ String.ofList (block.extract pos block.size).toList
   return head ++ paramList ++ resultList ++ " " ++ tidyBlock out
@@ -362,6 +361,14 @@ def instSyntaxMsg (callee : String) (fixed? : Option String) : Msg :=
       ++ (if fixed?.isNone then #[s!"note: it does not bind each parameter of `{callee}` exactly once, so it has no fix"] else #[])
     fixes := fixed?.toArray.map fun replacement =>
       { msg := s!"write it as a call, with the arguments in the order of `{callee}`'s parameters", replacement } }
+
+/-- A parameter declared with the modifier `mod`, `pub` or `det` (`F0110`),
+whose fix removes it at `fix?`. -/
+def paramModifierMsg (mod : String) (fix? : Option Range := none) : Msg :=
+  { code? := some "F0110", headline := s!"parameters cannot be declared `{mod}`"
+    label? := some "not allowed on a parameter"
+    notes := #["note: a parameter is an input: the environment chooses it, sees it, and determines it"]
+    fixes := #[{ msg := s!"remove `{mod}`", replacement := "", range? := fix? }] }
 
 /-- A result defined by more than one `out` member (`F0421`). -/
 def resultDefinedTwiceMsg (r : String) : Msg :=

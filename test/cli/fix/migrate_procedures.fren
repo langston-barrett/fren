@@ -2,7 +2,7 @@
 -- `fren fix` migrates components to procedures (`lint::migration_step`):
 -- first each component, as it parses, then its instances, as calls, once
 -- the order of the called procedures' parameters is known
--- (`lint::call_migration_step`), and then fixes the lints of the file as
+-- (`lint::call_migration_round`), and then fixes the lints of the file as
 -- migrated.
 mod m
 

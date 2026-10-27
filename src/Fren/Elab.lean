@@ -133,6 +133,13 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       unless stx[1].getId == `fren.evidence do
         throwErrorAt stx[1] (Core.memberOptionMsg stx[1].getId.toString).text
       checkParsed stx[4]
+    else if stx.isOfKind ``Lang.fren_proc_param then
+      -- A parameter's modifier or definition, as the `fren` command's
+      -- parser reports it.
+      unless stx[0].isNone do throwErrorAt stx[0] (Core.paramModifierMsg ((stx[0].reprint.getD "").trimAscii.toString)).text
+      checkParsed stx[1]
+      checkParsed stx[2]
+      unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
     else if stx.isOfKind ``Lang.inMember then
       checkParsed stx[1]
       checkParsed stx[2]
@@ -6434,7 +6441,7 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
       body := body.push (rewrap (mkNode ``Lang.outMember
         #[mkNullNode, m[0], mkAtom "out", m[2], m[3], mkNullNode #[m[4], m[5], m[6]]]))
     else body := body.push m0
-  let params := stx[4].getSepArgs.map fun p => mkNode ``Lang.inMember #[mkAtom "in", p[0], p[1], mkNullNode]
+  let params := stx[4].getSepArgs.map fun p => mkNode ``Lang.inMember #[mkAtom "in", p[1], p[2], mkNullNode]
   let outs := results.map fun r =>
     let defn := ((defs.find? (·.1 == (declaredIdent r[2]).1.getId)).map (·.2)).getD mkNullNode
     let out : Syntax := mkNode ``Lang.outMember #[mkNullNode #[mkAtom "pub"], r[1], mkAtom "out", r[2], r[3], defn]

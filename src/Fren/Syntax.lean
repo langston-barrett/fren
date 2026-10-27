@@ -440,8 +440,10 @@ they were procedures, parsed only so that the elaborator reports it
 (`F0158`). -/
 scoped syntax (name := compCmd) ("pub ")? "comp " frenIdent " { " fren_member* " }" : command
 
-/-- `x: T`, or `x?` for a `Bool`: a parameter of a procedure. -/
-syntax fren_proc_param := frenIdent (" : " fren_type)?
+/-- `x: T`, or `x?` for a `Bool`: a parameter of a procedure. A modifier,
+`pub` or `det`, and a definition, `:= e`, are parsed only so that the
+elaborator reports them (`F0110`, `F0114`). -/
+syntax fren_proc_param := ("pub " <|> atomic(&"det " lookahead(frenIdent)))? frenIdent (" : " fren_type)? (" := " fren_expr)?
 
 /-- `set_option fren.evidence "tested" in`, before a result, which sets the
 evidence of its determinism check (`Reqs/Check#checking-by-testing`). -/

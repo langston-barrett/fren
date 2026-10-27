@@ -1,0 +1,4 @@
+-- A parameter takes no `pub` (F0110), in both front ends.
+proc c(pub x: Int) {}
+--~^ error: parameters cannot be declared `pub`
+--@ exit: 2

@@ -409,6 +409,8 @@ structure ProcHeader where
   resultsClose? : Option Nat
   resultsVertical : Bool
   results : Array String
+  /-- Its parameters' names. -/
+  params : Array String := #[]
   openBrace : Nat
   indent : Nat
   deriving Inhabited
@@ -1397,8 +1399,10 @@ def outputMember (first : Span) (isPub isDet : Bool) (kw : Span) (x : Ident) (de
   let stop := (← lastSpan).stop
   let fix? ← match (← get).proc? with
     | none => pure none
+    -- A name that the signature already declares would be declared twice.
     | some h =>
-      if isPub then
+      if h.params.contains (unbanged x.name) || h.results.contains (unbanged x.name) then pure none
+      else if isPub then
         let decl := (if isDet then "det " else "") ++ (← srcText x.span.start declStop)
         let (at_, insert) ← match h.resultsClose? with
           | some c => listInsert h c false h.resultsVertical decl
@@ -1797,9 +1801,7 @@ partial def item : P Item := do
       if (isKw m "pub" || isWord m "det") && ((← get).toks[(← get).pos + 1]?).any (·.tok matches .ident _) then
         let mod := if isKw m "pub" then "pub" else "det"
         let next := (← get).toks[(← get).pos + 1]!
-        err m.span "F0110" s!"parameters cannot be declared `{mod}`" (some "not allowed on a parameter")
-          #["note: a parameter is an input: the environment chooses it, sees it, and determines it"]
-          #[{ msg := s!"remove `{mod}`", replacement := "", range? := some { start := m.span.start, stop := next.span.start } }]
+        throw { span := m.span, msg := Fren.Core.paramModifierMsg mod (some { start := m.span.start, stop := next.span.start }) }
       let x ← ident
       let ty ← type?
       if let some d ← eatKw ":=" then
@@ -1809,6 +1811,7 @@ partial def item : P Item := do
     let pc ← expectKw ")"
     let paramsVertical ← broken pc.span
     let paramsEmpty := header.isEmpty
+    let paramNames := header.filterMap fun | .var _ _ _ x _ _ => some (unbanged x.name) | _ => none
     let mut results := #[]
     let mut resultsClose? := none
     let mut resultsVertical := false
@@ -1832,7 +1835,7 @@ partial def item : P Item := do
     let ob ← expectKw "{"
     let saved := (← get).proc?
     modify fun s => { s with proc? := some {
-      paramsClose := pc.span.start, paramsEmpty, paramsVertical, resultsClose?, resultsVertical, results
+      paramsClose := pc.span.start, paramsEmpty, paramsVertical, resultsClose?, resultsVertical, results, params := paramNames
       openBrace := ob.span.start, indent := itemStart - ls } }
     let mut ms := #[]
     let mut spans := #[]

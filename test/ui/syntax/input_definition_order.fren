@@ -1,13 +1,12 @@
 -- A parameter's definition is reported as it is parsed, before a dotted
--- pattern binder after it.
+-- pattern binder after it, in both front ends.
 
 pub enum S { A(Int), B }
 
 proc c(
     s: S,
     a: Int := 3,
-    --~^[cli] error: a parameter cannot have a definition
-    --~^^[hosted] error: unexpected token ':='; expected ')'
+    --~^ error: a parameter cannot have a definition
 ): (z: Int) {
     ensure r: z = match s { S::A(x.y) => a, _ => 1 }
 }

@@ -1,0 +1,16 @@
+--@ args: fix --check
+-- Members that share a line move into the signature each once, whichever
+-- of them ends the line (`Reqs/Lang/Procedures#migration`).
+mod m
+
+pub struct S { n: Int }
+
+comp c {
+    in a: Int in b: Int
+    pub out o: Int
+    ensure e: o = a + b
+}
+
+comp binder_linear { in s: S in t: S pub out z: Int
+    ensure r: z = s.n + t.n
+}

@@ -766,17 +766,35 @@ at once, since they do not overlap, and elaborates them again, and so on,
 until no `F0420` with a fix is left; an instance whose called procedure is
 itself not yet elaborated, such as one whose own instances are being
 fixed, is fixed in a later round. There are at most 1000 rounds.
-`lint::call_migration_step` gives whether `fren fix` makes another round:
+`lint::call_migration_round` gives what one round does, from whether each
+`F0420` of the files, as elaborated before the round, has a fix
+(`offered`, in the order they are reported): while some has one and fewer
+than 1000 rounds have been made, the round makes every offered fix, and
+only those; otherwise `fren fix` goes on to the lints. `k` is any `F0420`,
+so the rule is stated for each. Membership in a sequence of unknown
+length is outside the [decidable core](Lang/Decidability.md#sequences), so
+the procedure opts out, and its checks are tested:
 
 ```fren
-pub proc call_migration_step(
-    fixes?,              -- the files, as fixed so far, have an `F0420` with a fix
-    round: Nat,          -- how many rounds of these fixes have been made
-): (det applies?) {
-    ensure rule: applies? iff (fixes? and round < 1000)
+pub enum Offer { Fix, NoFix }
 
-    expect bounded: when round >= 1000, not applies?
-    expect done: unless fixes?, not applies?
+set_option fren.evidence "tested" in
+set_option fren.lint.undecidable "allow" in
+pub proc call_migration_round(
+    offered: Seq<Offer>,         -- for each `F0420`, as elaborated before the round, whether it has a fix
+    round: Nat,                  -- how many rounds of these fixes have been made
+    k: Int,                      -- any `F0420`
+): (
+    det continues?,              -- the round is made
+    det applies?,                -- it makes the fix of `k`
+) {
+    ensure continues: continues? iff (round < 1000 and Offer::Fix in offered)
+    ensure applies: applies? iff (continues? and 0 <= k < offered.len and offered[k] = Offer::Fix)
+
+    expect bounded: when round >= 1000, not continues?
+    expect done: when not (Offer::Fix in offered), not continues?
+    expect only_offered: when applies?, offered[k] = Offer::Fix
+    expect all_offered: when continues? and 0 <= k < offered.len and offered[k] = Offer::Fix, applies?
 }
 ```
 
@@ -785,7 +803,7 @@ that `--ignore` does not match, and then the lints are fixed in the files
 as migrated. A static error other than a denied lint then stops the
 lints' fixes, as it does without migrations, but the migrations are
 written: `fren fix` prints `migrated FILE (N fixes)` for each file it
-migrates, so that a spec with an error of its own, such as a test of one,
+migrates, as it does for a file that it only migrates, so that a spec with an error of its own, such as a test of one,
 is migrated too. With `--only L --skip L`, for any lint `L`, `fren fix`
 fixes no lint, and only migrates.
 

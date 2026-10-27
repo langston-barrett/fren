@@ -1317,13 +1317,21 @@ the file's earlier syntax shorter, so this bounds only a bug. -/
 def maxMigrations : Nat := 1000
 
 /-- The code of the static error whose fix writes an instance as a call
-(`lint::call_migration_step`). -/
+(`lint::call_migration_round`). -/
 def callMigrationCode : String := "F0420"
 
 /-- Whether `fren fix` makes another round of the fixes of the instances
 (`F0420`), which need name resolution: whether there are any (`fixes`),
-and how many rounds it has made (`lint::call_migration_step`). -/
+and how many rounds it has made (`lint::call_migration_round`). -/
 def callMigrationApplies (fixes : Bool) (round : Nat) : Bool := fixes && round < maxMigrations
+
+/-- The fixes that the round `round` of the instances' fixes makes, from
+whether each `F0420` of the files, as elaborated before it, has a fix
+(`offered`): the positions of those that do, all at once; `none` once no
+round is left to make (`lint::call_migration_round`). -/
+def callMigrationRound (offered : Array Bool) (round : Nat) : Option (Array Nat) :=
+  if callMigrationApplies (offered.any id) round then some ((List.range offered.size).filter (offered[·]!)).toArray
+  else none
 
 /-- What `fren fix` does next to migrate a file (`lint::migration_step`). -/
 inductive MigrationStep where

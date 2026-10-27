@@ -1,0 +1,2 @@
+-- `det` is a contextual keyword, so a parameter may be named `det`.
+proc c(det: Int): (y: Int) { ensure r: y = det }

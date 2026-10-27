@@ -99,7 +99,11 @@ order.
 or a result: a procedure's results are what callers see. `det` applies
 only to a result, an `exists` or a `let`: a parameter is chosen by the
 environment, and `det` says nothing of a constraint or a call
-(`F0110`, `F0113`). `lang::modifiers` states this:
+(`F0110`, `F0113`). A definition, `:= e`, is written on a `let` and on an
+`out` member, which defines a result, and on nothing else: a parameter
+cannot have one (`F0114`), a result is defined by an `out` member rather
+than in the signature, and an `exists` is chosen by the system.
+`lang::modifiers` states this:
 
 ```fren
 pub mod lang
@@ -110,16 +114,22 @@ pub proc modifiers(
     member: Member,
     pub?,                -- written with `pub`
     det?,                -- written with `det`
+    defined?,            -- written with `:= e`
 ): (accepted?) {
-    ensure rule: accepted? iff (not pub? and (not det? or member is Member::Result | Member::Exists | Member::Let))
+    ensure rule: accepted? iff (not pub? and (not det? or member is Member::Result | Member::Exists | Member::Let)
+        and (defined? iff member is Member::Let | Member::Define))
 
-    expect plain_members: unless pub? or det?, accepted?
+    expect plain_members: when member is Member::Param | Member::Constraint | Member::Call,
+        accepted? iff not (pub? or det? or defined?)
     expect no_pub: when pub?, not accepted?
     expect det_variables: when member is Member::Result | Member::Exists | Member::Let, accepted? iff not pub?
+        and (defined? iff member = Member::Let)
     expect det_nothing_else: when det? and member is Member::Param | Member::Define | Member::Constraint | Member::Call,
         not accepted?
+    expect definitions: when member is Member::Param | Member::Result | Member::Exists and defined?, not accepted?
 
     cover det_result: member = Member::Result and det? and accepted?
+    cover det_let: member = Member::Let and det? and defined? and accepted?
 }
 ```
 
@@ -470,8 +480,9 @@ the component had. `fren fix` makes the fixes (see
 - `inst w: c { ... }` is an error (`F0420`), whose fix writes it as a
   call. It is reported once `c` is resolved, since the fix needs the
   order of `c`'s parameters, so it is a static error rather than a parse
-  error: both front ends parse an instance, and elaborate it as it was,
-  binding by name.
+  error: both front ends parse an instance and resolve `c`, and then
+  report it, so the procedure stops there, as it does at an error in a
+  call.
 
 `lang::migrated_member` gives where each member of a component goes in
 the procedure: an input is a parameter, and a public output a result,
