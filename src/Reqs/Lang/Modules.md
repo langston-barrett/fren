@@ -5,6 +5,8 @@ independent of Lean's namespaces and files.
 
 ```fren
 pub mod modules
+
+use lang
 ```
 
 ## Module declarations
@@ -151,19 +153,75 @@ which takes no `!`. A declared item takes precedence too, but is written
 with `!`, as `enum Option!<T> { ... }` is, since it shadows (see
 [Shadowing](#shadowing-the-prelude)).
 
-`modules::resolve` states this rule, given whether an item of that name is
-declared or imported by name (`local?`), how many distinct variants of
-that name are opened (`n_glob`), and whether the prelude gives the name
-(`prelude?`):
+Over the [scope model](Scope.md), these are the scopes 3 to 5 of
+[Scopes](Scope.md#scopes), `item_scope`,
+read by [`lang::scope`](Scope.md#resolution): an item declared before the
+path in the module and a name imported by name are bindings of one depth,
+so at most one of a name, and the variants that the glob imports open are
+bindings of the depth just outside it, where two distinct variants of a
+name are ambiguous; the prelude is two depths further out than the items.
+A component's own imports are two depths further in. `modules::resolve`
+states the rule over the scope, from where the path is written and its
+first segment, and the same scope without the prelude, `nearer`, whose
+name resolves to nothing exactly where the prelude's item or variant is
+the one it resolves to:
 
 ```fren
 pub enum Resolution { Local, Glob, Ambiguous, Prelude, Unbound }
 
 use self::Resolution::{Ambiguous, Glob, Local, Prelude, Unbound}
 
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
+pub comp resolve {
+    use lang::BindingKind::Opened
+    in bindings: Set<lang::Binding>  -- the scope where it is written, `item_scope` of its context
+    in nearer: Set<lang::Binding>    -- the same scope without the prelude
+    in name: lang::Id                -- its first segment
+
+    -- The prelude is only added to the scope.
+    assume nearer_inside: nearer subset bindings
+
+    pub det out lookup: lang::Lookup := first.result
+    pub det out result: Resolution := match lookup {
+        lang::Lookup::Found(Opened) => Glob,
+        lang::Lookup::Found(_) => if inner.result = lang::Lookup::Unbound then Prelude else Local,
+        lang::Lookup::Ambiguous => Ambiguous,
+        lang::Lookup::Unbound => Unbound,
+    }
+
+    inst first: lang::scope { bindings, name }
+    inst inner: lang::scope { bindings := nearer, name }
+
+    expect nothing_in_scope: when bindings = {}, result = Unbound
+    -- Rules 2 and 3: only a variant that a glob import opens resolves through it, and
+    -- several are ambiguous.
+    expect glob_opened: result = Glob iff lookup = lang::Lookup::Found(Opened)
+    expect ambiguous_globs: result = Ambiguous iff lookup = lang::Lookup::Ambiguous
+    -- A variant that only a glob import opens resolves through it.
+    expect only_glob: forall (b: lang::Binding), when lang::resolves_to?(bindings, b, name) and b.kind = Opened,
+        result = Glob
+    -- An item or a name imported by name wins over the variants that glob imports open further out.
+    expect local_wins: forall (b c: lang::Binding), when b in bindings and c in bindings and b.name = name
+        and c.name = name and b.kind != Opened and c.kind = Opened and b.depth < c.depth and b in nearer
+        and (forall (d: lang::Binding), when d in bindings and d.name = name, d = b or d = c),
+        result = Local
+    -- Two variants of one name, opened in the innermost scope that has it, are ambiguous.
+    expect two_globs: forall (b c: lang::Binding), when lang::innermost?(bindings, b, name)
+        and lang::innermost?(bindings, c, name) and b.kind = Opened and c.kind = Opened and b.target != c.target,
+        result = Ambiguous
+}
+```
+
+`modules::resolve_layers` states this rule over what each layer gives the
+name: whether an item of that name is declared or imported by name
+(`local?`), how many distinct variants of that name are opened (`n_glob`),
+and whether the prelude gives the name (`prelude?`):
+
+```fren
 -- `n_glob` is an `Int`, as a sequence's length is (`first_segment`).
 set_option fren.lint.manual_nat "allow" in
-pub comp resolve {
+pub comp resolve_layers {
     in local?
     in n_glob: Int       -- distinct items of this name opened by `use ...::*`
     in prelude?          -- the prelude gives the name
@@ -187,7 +245,7 @@ what, over what each layer of its scope gives the name, innermost first:
 the item declared in, or imported by name into, the scope; the distinct
 variants that `use ...::*` opens; and the prelude's item or variant. Each
 is a sequence of paths (`modules::Path`), of one path at most but for the
-variants opened. It refines `modules::resolve`. Comparing sequences is
+variants opened. It refines `modules::resolve_layers`. Comparing sequences is
 outside the [decidable core](Decidability.md), so it opts out:
 
 ```fren
@@ -219,7 +277,7 @@ pub comp first_segment {
 -- an abstract type, as `declared != []`, is not in Lean: so `len`.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
-refine first_resolve: first_segment refines resolve {
+refine first_resolve: first_segment refines resolve_layers {
     local? := declared.len > 0,
     n_glob := opened.len,
     prelude? := prelude.len > 0,
@@ -281,13 +339,21 @@ variant brought into scope by `use E::*` has no members.
 
 `Kind` classifies what a segment resolves to when it is an item: `Other`
 covers records, abstract types, functions, constants, components, global
-expectations, and variants imported by name.
+expectations, and variants imported by name. `kind_of` is the `Kind` of
+a binding's kind.
 
 ```fren
 pub enum Kind { Module, Enum, Other }
 
 use self::Kind::{Enum, Module, Other}
+
+pub fn kind_of(k: lang::BindingKind): Kind := match k {
+    lang::BindingKind::Module => Module,
+    lang::BindingKind::Enumeration => Enum,
+    _ => Other,
+}
 ```
+
 
 `modules::member` gives whether one later segment is accepted, from what
 the previous segment resolved to.
@@ -311,30 +377,40 @@ pub comp member {
 whose `a` may be the prelude's, as in `Option::Some`.
 
 ```fren
+-- It instantiates `lang::scope`, which quantifies over bindings.
+set_option fren.lint.undecidable "allow" in
 pub comp two_segments {
-    in a_local?             -- `a` is declared in, or imported by name into, this module
-    in a_globs: Nat         -- distinct variants named `a` opened by `use ...::*`
-    in a_prelude?           -- the prelude gives `a`
-    in a_kind: Kind         -- what `a` is, when it is declared or imported by name
-    in b_found?             -- `a` has a member named `b`
-    in b_pub?               -- that member is `pub`
-    in b_owner: ModuleName  -- the module declaring `b`: `a`, if `a` is a module
-    in here: ModuleName     -- the module where the path is written
-    pub out accepted?
+    in bindings: Set<lang::Binding>  -- the items and imports in scope where the path is written
+    in nearer: Set<lang::Binding>    -- the same without the prelude
+    in a: lang::Id
+    in b_found?                      -- `a` has a member named `b`
+    in b_pub?                        -- that member is `pub`
+    in b_owner: ModuleName           -- the module declaring `b`: `a`, if `a` is a module
+    in here: ModuleName              -- the module where the path is written
 
-    inst first: resolve { local? := a_local?, n_glob := a_globs, prelude? := a_prelude? }
+    assume nearer_inside: nearer subset bindings
+
+    -- What `a` is, when it is declared or imported by name.
+    pub det out a_kind: Kind := match first.lookup {
+        lang::Lookup::Found(k) => kind_of(k),
+        _ => Other,
+    }
+    pub det out accepted?
+
+    inst first: resolve { bindings, nearer, name := a }
     inst seen: item_visible { is_pub? := b_pub?, owner := b_owner, here, middle := here }
     inst second: member { parent := a_kind, found? := b_found?, visible? := seen.visible? }
 
-    ensure rule: accepted? iff (first.result in {Local, Prelude} and second.accepted?)
+    ensure rule: accepted? iff second.accepted?
 
-    expect variants_have_no_members: unless a_local?, when a_globs > 0, not accepted?
-    expect prelude_variant: when not a_local? and a_globs = 0 and a_prelude? and a_kind = Enum and b_found?, accepted?
+    expect variants_have_no_members: when first.result = Glob, not accepted?
+    -- The prelude's enumeration has its variants as members: `Option::Some`.
+    expect prelude_variant: when first.result = Prelude and a_kind = Enum and b_found?, accepted?
     expect private_member: when a_kind = Module and not b_pub? and here != b_owner and not descends?(here, b_owner),
         not accepted?
-    expect variants_visible: when a_local? and a_kind = Enum and b_found?, accepted?
-    expect owner_sees_members: when a_local? and a_kind = Module and b_found? and here = b_owner, accepted?
-    expect no_globs_needed: when a_local? and a_globs = 0 and a_kind = Enum and b_found?, accepted?
+    -- The variants of an enumeration that `a` names are its members, wherever they are written.
+    expect variants_visible: when first.lookup = lang::Lookup::Found(lang::BindingKind::Enumeration) and b_found?,
+        accepted?
 }
 
 #fren_check

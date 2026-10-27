@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Impls.Check
+import Impls.Scope
 import Reqs.Modules
 -- keep-sorted end
 open Fren.Lang
@@ -8,7 +9,7 @@ open Fren.Lang
 
 namespace Fren.Impls
 
-open Fren.Core (Resolution resolution firstSegment itemHidesPrelude itemShadowingAccepted shadowingAccepted visibleFrom
+open Fren.Core (Binding Resolution resolution lookup lookupResolution firstSegment itemHidesPrelude itemShadowingAccepted shadowingAccepted visibleFrom
   Parent memberAccepted)
 
 -- A module is its path, and a descendant of each proper prefix of it.
@@ -37,7 +38,7 @@ def toResolution : Resolution → modules.Resolution
   | .unbound => .Unbound
 
 -- Over `Nat`, so `decide` does not apply: a proof by cases.
-impl resolve: modules::resolve for (l : Bool) (k : Nat) (p : Bool) {
+impl resolve_layers: modules::resolve_layers for (l : Bool) (k : Nat) (p : Bool) {
   local? := l,
   n_glob := k,
   prelude? := p,
@@ -45,6 +46,33 @@ impl resolve: modules::resolve for (l : Bool) (k : Nat) (p : Bool) {
 } by
   intro l k p _
   cases l <;> cases p <;> rcases k with _ | _ | k <;> simp [fren_spec, resolution, toResolution] <;> omega
+
+/-- A context without the prelude, as `Table.resolvePath` reads it. -/
+def withoutPrelude (cx : Fren.Core.Context String) : Fren.Core.Context String := { cx with prelude := [] }
+
+-- For every context and every first segment: what it resolves to among the
+-- items and imports that `Context.bindings` lists, with and without the
+-- prelude, by `lookup`, read as `lookupResolution`, all of which
+-- `Table.resolvePath` calls.
+impl resolve: modules::resolve for (cx : Fren.Core.Context String) (n : String) {
+  bindings := Fren.FinSet.ofList (cx.itemScope.bindings.map toBinding),
+  nearer := Fren.FinSet.ofList ((withoutPrelude cx).itemScope.bindings.map toBinding),
+  name := n,
+  lookup := toLookup (lookup cx.itemScope.bindings n),
+  result := toResolution (lookupResolution (lookup cx.itemScope.bindings n) (lookup (withoutPrelude cx).itemScope.bindings n)),
+} by
+  intro cx n _
+  obtain ⟨hd, he⟩ := scope cx.itemScope.bindings n (fun _ _ => Nat.zero_le _)
+  obtain ⟨hd', he'⟩ := scope (withoutPrelude cx).itemScope.bindings n (fun _ _ => Nat.zero_le _)
+  refine ⟨_, _, _, _, _, _, _, _, ⟨rfl, ?_⟩, trivial, ⟨⟨rfl, rfl⟩, hd, fun _ _ => Nat.zero_le _, he⟩,
+    ⟨⟨rfl, rfl⟩, hd', fun _ _ => Nat.zero_le _, he'⟩⟩
+  simp only [modules.resolve.def.result]
+  cases h : lookup cx.itemScope.bindings n with
+  | found b =>
+    cases h' : lookup (withoutPrelude cx).itemScope.bindings n <;>
+      cases b with | mk _ k _ _ => cases k <;>
+        simp [toLookup, toBindingKind, lookupResolution, toResolution, lang.Lookup.Found.x0]
+  | _ => simp [toLookup, lookupResolution, toResolution, lang.Lookup.Found.x0]
 
 interp modules::Path := Lean.Name
 

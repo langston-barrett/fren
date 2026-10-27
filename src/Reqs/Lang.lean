@@ -20,6 +20,7 @@ open Fren.Lang
 #fren_md "Lang/Generics.md"
 #fren_md "Lang/GenericFunctions.md"
 #fren_md "Lang/Prelude.md"
+#fren_md "Lang/Scope.md"
 #fren_md "Lang/Components.md"
 #fren_md "Lang/Decidability.md"
 #fren_md "Lang/Patterns.md"
@@ -29,3 +30,4 @@ open Fren.Lang
 #fren_md "Lang/Meaning.md"
 #fren_md "Lang/MeaningLaws.md"
 #fren_md "Lang/Expressions.md"
+#fren_md "Lang/ScopeLaws.md"

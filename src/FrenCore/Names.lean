@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
 import FrenCore.Prelude
+import FrenCore.Scope
 import FrenCore.Str
 import Lean.Data.NameMap
 -- keep-sorted end
@@ -122,6 +123,20 @@ def Resolved.describe : Resolved → String
 def Resolved.path : Resolved → Name
   | .item i => i.path
   | .variant e idx => e.path ++ e.variants[idx]!
+
+/-- What an item's binding is (`lang::BindingKind`). -/
+def ItemKind.bindingKind : ItemKind → BindingKind
+  | .moduleItem => .module
+  | .enumItem => .enumeration
+  | .constItem => .constant
+  | .fnItem => .function
+  | .recordItem | .typeItem | .compItem | .expectItem => .item
+
+/-- What a binding of what a path resolved to is: a variant's is
+`variant`, as when it is imported by name. -/
+def Resolved.bindingKind : Resolved → BindingKind
+  | .item i => i.kind.bindingKind
+  | .variant .. => .variant
 
 /-- A resolution error at segment `seg` of the path being resolved. The
 message is built only when it is read: those that suggest a similar name
@@ -360,8 +375,9 @@ def Table.resolveUse (t : Table) (from_ : Name) (segs : Array Name) : Except Err
   else t.walk from_ (.item rootItem) segs 0
 
 /-- How the first segment of a path resolves (`modules::resolve`), from
-whether an item of that name is declared in, or imported by name into, the
-module, and how many distinct variants of that name are opened by `*`. -/
+what it resolves to among the items and imports in scope: to an item or a
+name imported by name, to a variant that a glob import opens, or to
+nothing. -/
 inductive Resolution where
   | local
   | glob
@@ -379,6 +395,17 @@ def resolution (isLocal : Bool) (nGlob : Nat) (inPrelude : Bool := false) : Reso
     | 0 => if inPrelude then .prelude else .unbound
     | 1 => .glob
     | _ => .ambiguous
+
+/-- How the first segment of a path resolves (`modules::resolve`), from
+what it resolves to among the items and imports in scope, `l`, and among
+those without the prelude, `nearer`: to a variant that a glob import
+opens, to the prelude's item or variant where nothing nearer gives the
+name, or to an item or a name imported by name. -/
+def lookupResolution {ν τ : Type} (l nearer : Lookup ν τ) : Resolution :=
+  match l with
+  | .found b => if b.kind = .opened then .glob else (match nearer with | .unbound => .prelude | _ => .local)
+  | .ambiguous => .ambiguous
+  | .unbound => .unbound
 
 /-- How the first segment of a path resolves, and to what
 (`modules::first_segment`), from what each layer of its scope gives its
@@ -427,6 +454,48 @@ def Table.layers (t : Table) (from_ n : Name) : Except Error (Array Resolved × 
     return if acc.any (·.path == r.path) then acc else acc.push r
   return (local?.toArray, hits, (t.preludeName? n).toArray)
 
+/-- The local declarations in scope where a name is written, innermost
+last, each with its kind: what a declaration may hide besides items. -/
+abbrev Locals := Array (Name × BindingKind)
+
+/-- Where `n` is written in the scope `from_`, a module or a component,
+with the local declarations `locals` (`lang::Context`), and with the
+built-in function `n` if `builtin`, as far as `n` goes: the items and imports of other names are left out, which changes
+no depth, and so nothing that `n` resolves to (`lookup_congr_named`). Every
+item in the table is declared before `n`, since the table holds only
+those declared so far. A glob import is listed once for each variant of
+`n` that it opens. A local's target is its name: what is read of a
+local is only that it hides, and a binder's position is not known here.
+The prelude's item or variant of `n` is the outermost, unless not
+`prelude`. -/
+def Table.contextOf (t : Table) (from_ : Name) (locals : Locals) (n : Name) (builtin : Bool) (prelude := true) :
+    Context Name :=
+  let named (uses : Array UseDef) : List (Import Name) :=
+    uses.toList.filterMap fun u =>
+      if !u.glob && u.target.getString! == n.toString then
+        some ⟨⟨n, ((t.resolveTarget u.target).map (·.bindingKind)).getD .item, u.target⟩, false⟩
+      else none
+  let opened (uses : Array UseDef) : List (Import Name) :=
+    uses.toList.filterMap fun u => do
+      let e ← if u.glob then t.enums.get? u.target else none
+      if e.variants.contains n then some ⟨⟨n, .opened, e.path ++ n⟩, true⟩ else none
+  let m := t.moduleOf from_
+  let items := (t.declared? m n).toList.map fun i => ⟨n, i.kind.bindingKind, i.path⟩
+  let comp := t.uses.getD from_ #[]
+  let uses := t.uses.getD m #[]
+  { locals := locals.toList.map fun (x, k) => ⟨⟨x, k, x⟩, true⟩
+    builtins := if builtin then [n] else []
+    component := t.isComp from_
+    componentImports := if t.isComp from_ then named comp ++ opened comp else []
+    items, declared := items.length
+    moduleImports := named uses ++ opened uses
+    prelude := if prelude then (t.preludeName? n).toList.map fun r => ⟨n, r.bindingKind, r.path⟩ else [] }
+
+/-- The bindings of `n` among the items and imports in the scope `from_`
+(`Reqs/Lang/Scope#scopes`, scopes 3 and 4). -/
+def Table.itemBindings (t : Table) (from_ : Name) (n : Name) (prelude := true) : List (Binding Name Name) :=
+  (t.contextOf from_ #[] n false prelude).itemScope.bindings
+
 /-- Resolves a path in an expression or type in the scope `from_`, a
 module or a component. `extra` are other names in scope, such as
 variables, suggested if `segs[0]` is not found. -/
@@ -435,19 +504,25 @@ def Table.resolvePath (t : Table) (from_ : Name) (segs : Array Name) (extra : Ar
   if segs[0]! == `self then
     return ← t.walk from_ (.item (t.moduleItem (t.moduleOf from_))) segs 1
   let n := segs[0]!
-  let (declared, hits, prelude) ← t.layers from_ n
-  let start ← match firstSegment declared hits prelude with
-    | (.local, some r) | (.glob, some r) | (.prelude, some r) => pure r
+  let bs := t.itemBindings from_ n
+  let found := lookup bs n
+  let start ← match lookupResolution found (lookup (t.itemBindings from_ n (prelude := false)) n), found with
+    | .local, .found b | .glob, .found b | .prelude, .found b =>
+      match t.resolveTarget b.target with
+      | some r => pure r
+      | none => throw { seg := 0, msg := Msg.internal s!"dangling import `{b.target}`" }
     -- The prelude's names last, so that a similar name of the scope's own
     -- is suggested first.
-    | (.unbound, _) => throw { seg := 0, msg := cannotFindMsg n "this scope" (t.scopeOf from_ ++ extra ++ t.preludeNames) }
-    | _ =>
-      let alts := ", ".intercalate (hits.toList.map fun r => s!"`{showPath r.path}`")
+    | .unbound, _ => throw { seg := 0, msg := cannotFindMsg n "this scope" (t.scopeOf from_ ++ extra ++ t.preludeNames) }
+    | _, _ =>
+      -- Distinct variants: opening the same enum twice is not ambiguous.
+      let hits := (innermost bs n).eraseDups
+      let alts := ", ".intercalate (hits.map fun b => s!"`{showPath b.target}`")
       throw { seg := 0, msg := {
         code? := some "F0205", headline := s!"`{n}` is ambiguous: it could be any of {alts}"
         label? := some "ambiguous name"
         notes := #[s!"note: each enum opened with `*` here has a variant `{n}`",
-          s!"help: qualify it with its enum's name, e.g. `{hits[0]!.path.getPrefix.getString!}::{n}`"] : Msg } }
+          s!"help: qualify it with its enum's name, e.g. `{(hits.headD default).target.getPrefix.getString!}::{n}`"] : Msg } }
   t.walk from_ start segs 1
 
 /-! ## Declarations -/
@@ -707,21 +782,25 @@ def checkVarName (n : Name) (isBool? : Option Bool) : Except Msg Unit :=
 name hides a name in scope and whether it is written with `!`. -/
 def shadowingAccepted (hides bang : Bool) : Bool := hides == bang
 
-/-- What a declaration of `n` in the scope `scope` hides, if anything: the
-innermost of `locals`, each with what it is (such as "the input"), or
-else the value that the path `n` resolves to, a built-in function, a
-constant, a function or a variant. Other items are never read where a
-variable can be, so nothing hides them. -/
-def Table.hidden? (t : Table) (scope : Name) (locals : Array (Name × String)) (n : Name) : Option String :=
-  match locals.reverse.find? (·.1 == n) with
-  | some (_, what) => some s!"{what} `{n}`"
-  | none =>
-    if let some c := builtinFunction? n then some s!"the built-in function `{c.name}`" else
-    match t.resolvePath scope #[n] with
-    | .ok (.item { kind := .constItem, path, .. }) => some s!"the constant `{showPath path}`"
-    | .ok (.item { kind := .fnItem, path, .. }) => some s!"the function `{showPath path}`"
-    | .ok r@(.variant ..) => some s!"the variant `{showPath r.path}`"
-    | _ => none
+/-- The bindings of `n` in the scope `scope` with the local declarations
+`locals` (`Reqs/Lang/Scope#scopes`). -/
+def Table.bindingsOf (t : Table) (scope : Name) (locals : Locals) (n : Name) : List (Binding Name Name) :=
+  (t.contextOf scope locals n (builtinFunction? n).isSome).bindings
+
+/-- What a declaration of `n` in the scope `scope` hides, if anything
+(`hiddenBy`): the innermost of `locals`, a built-in function, or the
+constant, function or variant that `n` resolves to. Other items are never
+read where a variable can be, so nothing hides them. -/
+def Table.hidden? (t : Table) (scope : Name) (locals : Locals) (n : Name) : Option String :=
+  (hiddenBy (t.bindingsOf scope locals n) n).map fun b => match b.kind with
+    | .builtin => s!"the built-in function `{n}`"
+    | .constant | .function | .variant | .opened => s!"{b.kind.describe} `{showPath b.target}`"
+    | k => s!"{k.describe} `{n}`"
+
+/-- Whether `n`, an identifier of one segment in a pattern, names a variant
+among the items and imports in the scope `scope` (`lang::pattern_name`). -/
+def Table.namesVariant? (t : Table) (scope : Name) (n : Name) : Bool :=
+  namesVariant (t.itemBindings scope n) n
 
 /-- A declaration of `n` hides `hidden`, but has no `!`. -/
 def implicitShadowMsg (n : Name) (hidden : String) : Msg :=
@@ -866,17 +945,17 @@ def Role.ofInst (inSub : Role) (isPub : Bool) : Role :=
 
 /-- The names in scope that a `match` binder, a quantifier's bound name or
 a definition of a `let` or `where` may hide, innermost last, each with what
-it is (`Table.hidden?`): the variables of one segment, which are
+its kind (`Table.hidden?`): the variables of one segment, which are
 parameters in a function's body (`inFn`), the instances, which are binders
 in a global expectation (`inGlobal`), and the binders of enclosing arms,
 bound names of enclosing quantifiers and names of enclosing `let`s and
-`where` clauses, each with what it is, such as "the binder". -/
-def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Array (Name × String)) (inFn : Bool)
-    (inGlobal := false) : Array (Name × String) :=
-  let what (r : Role) := if inFn then "the parameter" else if r == .input then "the input" else "the output"
+`where` clauses, each with its kind, such as `patternBinder`. -/
+def bindingLocals (vars : Array (Name × Role)) (insts : Array Name) (binders : Locals) (inFn : Bool)
+    (inGlobal := false) : Locals :=
+  let kind (r : Role) : BindingKind := if inFn then .parameter else if r == .input then .input else .output
   -- A global expectation's binders are its instances.
-  let inst := if inGlobal then "the global expectation's binder" else "the instance"
-  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, what r)) ++ insts.map (·, inst)
+  let instKind : BindingKind := if inGlobal then .expectBinder else .inst
+  (vars.filter (·.1.isAtomic) |>.map fun (n, r) => (n, kind r)) ++ insts.map (·, instKind)
     ++ binders
 
 /-! ## Local definitions (`Reqs/Lang/Let`) -/
