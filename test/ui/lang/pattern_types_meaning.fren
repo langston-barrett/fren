@@ -49,7 +49,7 @@ proc chained(c: Chain) {
     expect heads: match c { Chain::Link(d, Chain::Link(e, _)) => d + e <= 18, _ => true }
 }
 
--- A global expectation's binders bring their inputs' constraints.
+-- A global expectation's parameters bring their types' constraints.
 expect positive(a_l: Level) {
     call a := levels(a_l)
     expect positive: a.l.0 >= 1

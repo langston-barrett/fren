@@ -1,6 +1,6 @@
--- In a global expectation's leading `forall`, a binder whose type is a
--- component ranges over its behaviours, and one whose type is a type over
--- its values; one `forall` may have both.
+-- A global expectation's leading `forall` ranges over values; one that
+-- ranged over a procedure's behaviours, with values too, is written with
+-- parameters and calls (`lang::quantifier_binder`).
 -- fren-covers: lang::quantifier_binder
 
 enum Mode { Off, Heat, Cool }
@@ -20,7 +20,7 @@ expect values_first(m: Mode, t_mode: Mode, t_cold?) {
 expect values_only: forall (a? b?: Bool), (a? and b?) iff not (not a? or not b?)  --~ warning: this expectation mentions no variable
 expect wrong(t_mode: Mode, t_cold?, m: Mode) {
     call t := thermostat(t_mode, t_cold?)
-    expect wrong: t.mode = m  --~ error: expectation `wrong` does not hold
+    expect wrong: t.mode = m  --~ error: expectation `wrong::wrong` does not hold
 }
 
---@ summary: 5 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 7 passed, 1 failed, 0 inconclusive, 0 redundant

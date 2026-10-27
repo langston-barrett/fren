@@ -1,22 +1,22 @@
 warning[F0612]: testing never reached the assumption `m::guarded::narrow` of call `u` in 100 tests: its trigger held in none of them
-  --> test/cli/results/f0612_global_instance.fren:17:10
+  --> test/cli/results/f0612_global_instance.fren:20:10
    |
-17 |     call u := guarded(z)
+20 |     call u := guarded(z)
    |          ^ never held
    |
    = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
    = help: run `fren check` to decide it, or raise `--tests`
 
-warning[F0612]: testing never reached `m::g` in 100 tests: its trigger held in none of them
-  --> test/cli/results/f0612_global_instance.fren:10:26
+warning[F0612]: testing never reached `m::g::g` in 100 tests: its trigger held in none of them
+  --> test/cli/results/f0612_global_instance.fren:12:15
    |
-10 | expect g: forall (a: c), when 7 * a.x = 123459, a.big?
-   |                          ^^^^^^^^^^^^^^^^^^^^^ never held
+12 |     expect g: when 7 * a.x = 123459, a.big?
+   |               ^^^^^^^^^^^^^^^^^^^^^ never held
    |
    = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
    = help: run `fren check` to decide it, or raise `--tests`
 
-fren: 3 passed, 0 failed, 2 inconclusive, in 100 tests each
+fren: 4 passed, 0 failed, 2 inconclusive, in 100 tests each
 
 For more information about this error, try `fren --explain F0612`.
 exit=3

@@ -7,10 +7,10 @@ pub proc c(x: Int): (y: Int, b?) {
     ensure s: b? iff x > 0
 }
 
-expect apart(a_x: Int, b_x: Int) {
+expect apart(a_x: Int, b_x: Int) {  --~ warning: the calls of `apart` fall into 2 groups that nothing relates
     call a := c(a_x)
     call b := c(b_x)
-    expect apart: a.y = a.x + 1 and b.y = b.x + 1  --~ warning: the binders of `apart` fall into 2 groups that nothing relates
+    expect apart: a.y = a.x + 1 and b.y = b.x + 1
 }
 
 -- One comparison relates them.
@@ -21,22 +21,20 @@ expect related(a_x: Int, b_x: Int) {
 }
 
 -- `a` and `b` through `d`'s comparisons; `e` alone.
-expect chained(a_x: Int, b_x: Int, d_x: Int, e_x: Int) {
+expect chained(a_x: Int, b_x: Int, d_x: Int, e_x: Int) {  --~ warning: the calls of `chained` fall into 2 groups that nothing relates
     call a := c(a_x)
     call b := c(b_x)
     call d := c(d_x)
     call e := c(e_x)
     expect chained: a.y - a.x = d.y - d.x and d.y - d.x = b.y - b.x and e.y = e.x + 1
 }
---~^ warning: the binders of `chained` fall into 2 groups that nothing relates
 
 -- An `and` in parentheses splits too.
-expect nested(a_x: Int, b_x: Int) {
+expect nested(a_x: Int, b_x: Int) {  --~ warning: the calls of `nested` fall into 2 groups that nothing relates
     call a := c(a_x)
     call b := c(b_x)
     expect nested: (a.y = a.x + 1 and b.y = b.x + 1) and a.y > a.x
 }
---~^ warning: the binders of `nested` fall into 2 groups that nothing relates
 
 -- A `when` relates its hypothesis to its conclusion, whatever they mention.
 expect monotone(p_x: Int, q_x: Int) {
@@ -83,5 +81,5 @@ expect conditional(a_x: Int, b_x: Int) {
 expect unused(a_x: Int, b_x: Int) {
     call a := c(a_x)
     call b := c(b_x)
-    expect unused: a.y = a.x + 1  --~ warning: unused binder `b`
+    expect unused: a.y = a.x + 1
 }

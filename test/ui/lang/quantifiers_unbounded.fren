@@ -80,7 +80,7 @@ proc out_of_range(q: Seq<Int>): (ok?) {
     ensure r: ok? iff (forall (i: Int), when 0 <= i <= q.len, q[i] > 0)  --~ error: an index of `out_of_range::r` may be out of range
 }
 
--- A global expectation's leading `forall` ranges over values of any type.
+-- A global expectation's parameters range over values of any type.
 set_option fren.lint.undecidable "allow" in
 expect pairs(s_q: Seq<Int>, i: Int) {
     call s := sorted(s_q)

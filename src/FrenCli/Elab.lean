@@ -5884,8 +5884,8 @@ def lintUnrelatedCalls (name : Ident) (members : Array Member) : M Unit := do
   let atoms := members.flatMap (fun
       | .prop _ _ e => (boolAtoms e).map fun a => expand ((mentions a).map (·.getRoot))
       | _ => #[])
-    ++ calls.map (fun (w, roots) => #[w] ++ roots.filter names.contains)
-    ++ params.map reading
+    -- A relation of one call alone puts it in no group.
+    ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
   let groups := Fren.Core.binderGroups names atoms
   if Fren.Core.unrelatedBinders groups.size then
     lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)

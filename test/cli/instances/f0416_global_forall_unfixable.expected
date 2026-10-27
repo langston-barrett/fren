@@ -1,0 +1,13 @@
+error[F0416]: global expectations are written with parameters and calls
+  --> test/cli/instances/f0416_global_forall_unfixable.fren:12:31
+   |
+12 | expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y
+   |                               ^^^^^^ a binder over the behaviours of a procedure
+   |
+   = note: a global expectation takes parameters, and relates procedures by calling them, as in `expect n(x: T) { call a := p(x) ... }`
+   = note: a procedure it binds is in another module, or its assumptions mention variables other than its parameters, or a name the fix would declare is taken, so it has no fix
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0416`.
+exit=2

@@ -1,0 +1,12 @@
+-- A global expectation written with a `forall` over a procedure in another
+-- module (F0416): its assumptions' names may not resolve here, so it has
+-- no fix.
+mod m
+pub proc double(x: Int): (y: Int) {
+    assume small: x < 100
+    ensure r: y = 2 * x
+}
+
+mod n
+use m::double
+expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y

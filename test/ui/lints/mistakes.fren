@@ -30,7 +30,6 @@ expect g2(r_a?, r_b?, r_x: Int) {
     call r := repeats(r_a?, r_b?, r_x)
     expect g2: when r.a? and r.b?, r.q?
 }
---~^^ warning: this is written the same as `g1`
 expect g3(s_a?, s_b?, s_x: Int) {
     assume s_pos: s_x > 0
     call s := repeats(s_a?, s_b?, s_x)

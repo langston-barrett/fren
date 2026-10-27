@@ -1,6 +1,6 @@
 -- Abstract types and uninterpreted functions: the checks hold under every
--- interpretation, which instances, both copies of determinism, and the
--- binders of a global expectation share.
+-- interpretation, which calls, both copies of determinism, and the calls
+-- of a global expectation share.
 
 type Name
 fn ends_in_q?(Name)

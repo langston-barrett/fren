@@ -1,13 +1,13 @@
-error[F0603]: expectation `words::no_zz` does not hold
-  --> test/cli/commands/quickcheck_global_strings.fren:10:8
+error[F0603]: expectation `words::no_zz::no_zz` does not hold
+  --> test/cli/commands/quickcheck_global_strings.fren:12:12
    |
-10 | expect no_zz: forall (a: word), when a.text.contains?("zz"), not a.accepted?
-   |        ^^^^^ does not follow from the guarantees
+12 |     expect no_zz: when a.text.contains?("zz"), not a.accepted?
+   |            ^^^^^ does not follow from the guarantees
    |
-   = counterexample: a.text = "azz", a.accepted? = true
+   = counterexample: a_text = "zza", a.accepted? = true
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
-fren: 2 passed, 1 failed, 0 inconclusive, in 100 tests each
+fren: 3 passed, 1 failed, 0 inconclusive, in 100 tests each
 
 For more information about this error, try `fren --explain F0603`.
 exit=1

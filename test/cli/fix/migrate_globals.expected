@@ -1,0 +1,50 @@
+warning[F0710]: unused variable `m`
+  --> test/cli/fix/migrate_globals.fren:21:17
+   |
+21 | proc pick(r: R, m: Mode): (y: Int) {
+   |                 ^ never mentioned
+   |
+   = note: nothing in its procedure depends on it
+   = help: remove it, or mention it in a constraint
+   = note: `unused_variables` is `warn` by default
+   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+--- test/cli/fix/migrate_globals.fren
++++ test/cli/fix/migrate_globals.fren
+@@ -26,3 +26,14 @@
+-expect colder_is_cold: forall (a b: band),   -- monotone
+-    when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold? or unused = 1
+-        where unused := 1  -- the `where` goes with it, with its comment
++expect colder_is_cold(
++    a_temp: Int,
++    a_target: Int is 50..=90,
++    b_temp: Int,
++    b_target: Int is 50..=90,
++) {
++    use self::Mode::Heat
++    assume a_sane: a_target != 70 or Heat = Mode::Heat
++    assume b_sane: b_target != 70 or Heat = Mode::Heat
++    call a := band(a_temp, a_target)
++    call b := band(b_temp, b_target)
++    expect colder_is_cold: when a.target = b.target and a.temp <= b.temp and b.too_cold?, a.too_cold? or unused = 1  -- monotone
++            where unused := 1  -- the `where` goes with it, with its comment
++}
+@@ -30 +41,6 @@
+-expect mixed: forall (a: band) (m: Mode), when m = Mode::Heat, a.too_cold? or not a.too_cold?
++expect mixed(a_temp: Int, a_target: Int is 50..=90, m: Mode) {
++    use self::Mode::Heat
++    assume a_sane: a_target != 70 or Heat = Mode::Heat
++    call a := band(a_temp, a_target)
++    expect mixed: when m = Mode::Heat, a.too_cold? or not a.too_cold?
++}
+@@ -32,2 +48,6 @@
+-expect picked: forall (p: pick), p.y > 0 or unused = 1
+-    where unused := 0
++expect picked(p_r: R, p_m: Mode) {
++    assume p_positive: twice(|v| v + p_r.x, 0) > 0 and R { x := 1 } != p_r
++    call p := pick(p_r, p_m)
++    expect picked: p.y > 0 or unused = 1
++        where unused := 0
++}
+For more information about this error, try `fren --explain F0710`.
+exit=1

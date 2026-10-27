@@ -13,14 +13,18 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
 
 `duplicate_constraint` fires on a constraint of a procedure that is
 written the same as an earlier one of the procedure, whatever their
-kinds, `assume`, `ensure` or `expect`, and on a global expectation written
-the same as an earlier one of its module in the same file. It fires too
+kinds, `assume`, `ensure` or `expect`, and on a global expectation in the
+[short form](../Lang/Global.md#the-short-form) written the same as an
+earlier one of its module in the same file. A global expectation with a
+block is checked as a procedure is: its constraints are compared with each
+other. It fires too
 on a cover goal written the same as an earlier cover goal of the
 procedure, but a cover goal is not compared with a constraint, since it
 states a scenario rather than what holds in every behaviour. Two
 constraints are written the same if their expressions are (see
 [Written the same](../Lint.md#written-the-same)), and two global
-expectations if all they say after their names is, binders included. It is
+expectations in the short form if all they say after their names is, a
+leading `forall`'s binders included. It is
 reported at the later one's name, and the message names the first one it
 repeats.
 
@@ -149,8 +153,9 @@ a conjunction. Two calls are in one group when an atom of one of the
 global expectation's constraints relates both, by mentioning each or a
 parameter that its arguments mention; when one's arguments mention the
 other, or a parameter that the other's arguments mention too; or when
-each is in one group with a third. A call that nothing relates is in no
-group. Such an expectation is several independent claims run together:
+each is in one group with a third. A call that no atom mentions, and that
+no argument or parameter relates to another, is in no group, and is left
+to [`unused_variables`](Unused.md#unused-variables). Such an expectation is several independent claims run together:
 in `expect e(x: Int, z: Int) { call a := c(x) call b := c(z) expect e:
 a.y = x + 1 and b.y = z + 1 }`, nothing relates `a` to `b`, and a
 counterexample to the claim about one names the other too. The message

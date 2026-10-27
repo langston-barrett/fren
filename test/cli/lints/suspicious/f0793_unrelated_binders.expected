@@ -1,11 +1,11 @@
-warning[F0793]: the binders of `e` fall into 2 groups that nothing relates
+warning[F0793]: the calls of `e` fall into 2 groups that nothing relates
  --> test/cli/lints/suspicious/f0793_unrelated_binders.fren:4:8
   |
-4 | expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
+4 | expect e(a_x: Int, b_x: Int) {
   |        ^ 2 claims in one
   |
-  = note: no atom mentions both a binder of `a` and one of `b`
-  = help: relate the binders, or write one expectation for each group
+  = note: no atom, argument or parameter relates a call of `a` and one of `b`
+  = help: relate the calls, or write one global expectation for each group
   = note: `unrelated_binders` is `warn` by default
   = help: to allow it, `set_option fren.lint.unrelated_binders "allow"`
 

@@ -120,16 +120,15 @@ proc rows(x: Int): (y: Int, z: Int) {
     --~^^ error: row 2 of a table in `rows::s` is never the first that holds
 }
 
--- In a global expectation, under the meanings of its binders.
+-- In a global expectation, under its assumptions and calls.
 proc counter(n: Int): (m: Int) {
     ensure r: m = n + 1
 }
 
 expect bigger(c_n: Int) {
     call c := counter(c_n)
-    expect bigger: match c.m { k if k > c.n => true, _ => false }
+    expect bigger: match c.m { k if k > c.n => true, _ => false }  --~ error: arm 2 of a `match` in `bigger::bigger` is never taken
 }
---~^ error: arm 2 of a `match` in `bigger` is never taken
 
 --@ summary: 71 passed, 16 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

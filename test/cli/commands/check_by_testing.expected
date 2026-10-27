@@ -17,21 +17,21 @@ error[F0604]: the assumption `pos` of `lex::positive` may not hold for call `lex
    = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
 warning[F0612]: testing never reached `lex::narrow::e` in 100 tests: its trigger held in none of them
-  --> test/cli/commands/check_by_testing.fren:47:15
+  --> test/cli/commands/check_by_testing.fren:50:15
    |
-47 |     expect e: when 7 * x = 123459, big?
+50 |     expect e: when 7 * x = 123459, big?
    |               ^^^^^^^^^^^^^^^^^^^ never held
    |
    = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
    = help: raise `--tests`; the checks set to testing are not asked of the solver
 
-error[F0603]: expectation `lex::global_wrong` does not hold
-  --> test/cli/commands/check_by_testing.fren:40:8
+error[F0603]: expectation `lex::global_wrong::global_wrong` does not hold
+  --> test/cli/commands/check_by_testing.fren:42:12
    |
-40 | expect global_wrong: forall (p: parity), when p.n = 2, not p.even?
-   |        ^^^^^^^^^^^^ does not follow from the guarantees
+42 |     expect global_wrong: when p.n = 2, not p.even?
+   |            ^^^^^^^^^^^^ does not follow from the guarantees
    |
-   = counterexample: p.n = 2, p.even? = true
+   = counterexample: p_n = 2, p.even? = true
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
 fren: 13 passed (4 by testing), 3 failed, 1 inconclusive, 0 redundant

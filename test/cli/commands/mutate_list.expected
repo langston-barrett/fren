@@ -28,15 +28,15 @@ help: write `x > 3`
 56 +     ensure exclusive: at_most_one?(x = 1, x = 2, x = 3) or x > 3
    |
 
-warning[F0810]: `x` is never negative, so it can be a `Nat`
-  --> test/cli/commands/mutate_list.fren:40:21
+warning[F0810]: `p_x` is never negative, so it can be a `Nat`
+  --> test/cli/commands/mutate_list.fren:69:23
    |
-40 |     assume bounded: x >= 0 and x <= LIMIT
-   |                     ^^^^^^ `x` is at least 0 by this assumption
+69 |     assume p_bounded: p_x >= 0 and p_x <= LIMIT
+   |                       ^^^^^^^^ `p_x` is at least 0 by this assumption
    |
    = note: a `Nat` parameter brings this assumption with its type
-   = note: a call must then pass a `Nat` for `x`
-   = help: declare `x: Nat`, and remove `x >= 0` from `bounded`, where nothing binds `x` to an `Int`
+   = note: a call must then pass a `Nat` for `p_x`
+   = help: declare `p_x: Nat`, and remove `p_x >= 0` from `p_bounded`, where nothing binds `p_x` to an `Int`
    = note: `manual_nat` is `warn` by default
    = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 

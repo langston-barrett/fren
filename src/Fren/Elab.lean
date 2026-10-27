@@ -6808,8 +6808,8 @@ def lintUnrelatedCalls (nameStx : Syntax) (n : String) (members : Array Syntax) 
   let atoms := members.flatMap (fun m => match constraint? m with
       | some (_, _, e) => (boolNode "" 0 (unparen e)).atoms.map fun a => expand ((pathMentions a.ref).map (·.getRoot))
       | none => #[])
-    ++ calls.map (fun (w, roots) => #[w] ++ roots.filter names.contains)
-    ++ params.map reading
+    -- A relation of one call alone puts it in no group.
+    ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
   let groups := Core.binderGroups names atoms
   if Core.unrelatedBinders groups.size then
     recordLint .unrelatedBinders nameStx (Core.unrelatedBindersMsg n groups)

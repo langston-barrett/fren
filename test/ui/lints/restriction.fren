@@ -52,9 +52,9 @@ proc climate_check(level: Int): (high?) {  --~ warning: procedure `climate_check
     ensure high_rule: high? iff level > CLIMATE_LIMIT
 }
 
-expect climate_holds(check_level: Int) {
+expect climate_holds(check_level: Int) {  --~ warning: global expectation `climate_holds` contains the name of its module `climate`
     call check := climate_check(check_level)
-    expect climate_holds: check.high? iff check.level > CLIMATE_LIMIT  --~ warning: global expectation `climate_holds` contains the name of its module `climate`
+    expect climate_holds: check.high? iff check.level > CLIMATE_LIMIT
 }
 
 proc short(

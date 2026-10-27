@@ -41,7 +41,7 @@ expect same_band(f_temp: Int, f_target: Int, b_temp: Int, b_target: Int) {
         (f.too_cold? iff b.too_cold?) and (f.too_hot? iff b.too_hot?)
 }
 
--- The assumptions of a binder's component are hypotheses: `target` is in range.
+-- The assumptions, copied from the procedure's, say that `target` is in range.
 expect assumed(b_temp: Int, b_target: Int) {
     assume b_sane: LOW <= b_target and b_target <= HIGH
     call b := band(b_temp, b_target)
@@ -53,24 +53,23 @@ expect wrong(a_temp: Int, a_target: Int, b_temp: Int, b_target: Int) {
     assume b_sane: LOW <= b_target and b_target <= HIGH
     call a := band(a_temp, a_target)
     call b := band(b_temp, b_target)
-    expect wrong: when a.temp <= b.temp, a.too_cold? iff b.too_cold?  --~ error: expectation `wrong` does not hold
+    expect wrong: when a.temp <= b.temp, a.too_cold? iff b.too_cold?  --~ error: expectation `wrong::wrong` does not hold
 }
 expect never(a_temp: Int, a_target: Int) {
     assume a_sane: LOW <= a_target and a_target <= HIGH
     call a := band(a_temp, a_target)
-    expect never: when a.target > HIGH, a.too_hot?
+    expect never: when a.target > HIGH, a.too_hot?  --~ error: `never::never` is vacuous: its condition can never hold, given `a`
 }
---~^ error: `never` is vacuous: its condition can never hold
 expect false_const: HIGH < LOW               --~ error: expectation `false_const` does not hold
 
 mod m
 use band
 expect nested(a_temp: Int, a_target: Int) {
-    use LOW
     use HIGH
+    use LOW
     assume a_sane: LOW <= a_target and a_target <= HIGH
     call a := band(a_temp, a_target)
     expect nested: when a.temp > 100, a.too_hot?
 }
 
---@ summary: 19 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ summary: 28 passed, 3 failed, 0 inconclusive, 0 redundant

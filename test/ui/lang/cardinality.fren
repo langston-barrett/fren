@@ -53,7 +53,7 @@ proc lints(a?, b?, c?): (t?) {
     ensure q: t? iff not not at_most_one?(a?, b? and c?)   --~ warning: write `at_most_one?(a?, b? and c?)`
 }
 
--- Global expectations relate the behaviours of components.
+-- Global expectations relate the behaviours of procedures.
 expect global_exclusive(m_mode: Mode, m_t: Int, m_q: Seq<Int>) {
     call m := modes(m_mode, m_t, m_q)
     expect global_exclusive: at_most_one?(m.heating?, m.cooling?)
