@@ -1863,6 +1863,11 @@ partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
   | .lit v => .lit v
   | .var n => .var n
   | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .lifted lets q => .lifted (lets.map (·.map (·.substFns σ))) (q.substFns σ)
+  | .memo lets e => .memo (lets.map (·.substFns σ)) (e.substFns σ)
   | .bound n => .bound n
   | .not a => .not (a.substFns σ)
   | .neg a => .neg (a.substFns σ)

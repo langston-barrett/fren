@@ -71,6 +71,11 @@ the layer `Op("+", "")` with parts `x` and `f(y)`, and `f(y)` is the layer
   [method](Expressions.md#methods) call, whose parts are its receiver and
   arguments, and applications of an uninterpreted and of a defined
   [function](Items.md#functions), whose parts are the arguments.
+  An application of a [higher-order function](HigherOrder.md) is not
+  one layer: its closures are not values. It is read as its body
+  unfolded (see [Meaning](HigherOrder.md#meaning)), whose applications
+  of a function parameter are `let`s of the closure's parameters, each a
+  `Definition` layer, around the closure's body.
 - `Op(o, s)` is any other expression, named by its operator `o`, with its
   static parts `s`: an operator, `when` and `unless`, a conditional, a
   `match` (whose parts are its scrutinee and its arms' guards and bodies,
