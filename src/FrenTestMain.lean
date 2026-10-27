@@ -1,6 +1,8 @@
 -- keep-sorted start
 import Fren
+import FrenCli.Eval
 import FrenCli.Run
+import FrenCore.Meaning
 import FrenTest.Messages
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -27,6 +29,10 @@ import Lean.Elab.Frontend
   stable and, for a swap, involutive (`mutation`).
 - **Lean's tokens:** the tokens that both front ends read as identifiers,
   and reject as declarations, are Lean's (`leanTokens`).
+- **Evaluation:** the binary's evaluator, `Ex.eval`, and the core's,
+  `Fren.Core.Meaning.Expr.eval`, agree on random expressions of the
+  fragment that both state (`evaluation`), a step toward both front ends
+  evaluating through the core (`Reqs/Lang/Meaning`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -1123,6 +1129,320 @@ runs first, alone. -/
 process that imports `Fren` once. -/
 def uiBatch : Nat := 8
 
+/-! ## Evaluation
+
+The binary's evaluator and the core's agree on random expressions, each
+generated as a pair: the binary's `Ex` and the core's layers, in a random
+behaviour and with a random program. The expressions are over integers,
+`Bool`s, strings, sequences of integers, an enumeration `E { A(Int), B }`
+and a record `R(Int, Bool)`: literals, variables, the operators, the
+connectives, conditionals, cardinality, indexing in and out of range,
+constructions, field reads, `match`es over `E` and over integers, with
+binders, guards and the patterns-as-text encoding, tables, and the
+constant `C0` and the defined function `f(n)` of the program, which the
+binary inlines and the core evaluates by the declarations. Where the core
+finds an expression defined, the binary gives it the same value; where the
+binary does not know it, the core finds it undefined. The binary may know
+more than the core, by its Kleene connectives and its inlined bodies. -/
+
+namespace Evaluation
+
+open FrenCli.Eval (Ex Op Val Pat)
+open Fren.Core.Meaning (Value Head Decl Program)
+
+/-- A pseudo-random state: a linear congruential generator. -/
+abbrev R := StateM Nat
+
+def next (n : Nat) : R Nat := modifyGet fun s =>
+  let s := (s * 6364136223846793005 + 1442695040888963407) % 18446744073709551616
+  ((s / 65536) % n, s)
+
+/-- A small integer, from `-5` to `5`. -/
+def small : R Int := do
+  let n ← next 11
+  return (n : Int) - 5
+
+inductive Ty where
+  | int | bool | str | seq | e | r
+  deriving BEq, Inhabited
+
+/-- What an expression may mention: the behaviour's variables, the
+parameter `n` of `f`, `C0`, `f`, and the binders of the arms around it. -/
+structure Scope where
+  vars : Bool := true
+  param : Bool := false
+  const : Bool := true
+  fn : Bool := true
+  binders : List (Name × Fren.Core.Meaning.Expr) := []
+
+abbrev Pair := Ex × Fren.Core.Meaning.Expr
+
+def leaf (h : Head) : Fren.Core.Meaning.Expr := .node h []
+def opE (o : String) (ps : List Fren.Core.Meaning.Expr) (s : String := "") : Fren.Core.Meaning.Expr := .node (.op o s) ps
+
+def intLit (k : Int) : Pair := (.lit (.int k), leaf (.literal (.i k)))
+def boolLit (b : Bool) : Pair := (.lit (.bool b), leaf (.literal (.b b)))
+
+def opName : Op → String
+  | .and => "and" | .or => "or" | .iff => "iff" | .eq => "=" | .ne => "!=" | .lt => "<" | .le => "<="
+  | .gt => ">" | .ge => ">=" | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "mod"
+  | .concat => "++" | _ => ""
+
+def bin (op : Op) (a b : Pair) : Pair := (.bin op a.1 b.1, opE (opName op) [a.2, b.2])
+
+def pick {α : Type} [Inhabited α] (xs : Array α) : R α := do return xs[← next xs.size]!
+
+/-- `e` with the parameter `n` replaced by `a`: an application of `f`, as the
+binary inlines it. -/
+partial def subst (a : Ex) : Ex → Ex
+  | .var n => if n == `n then a else .var n
+  | .not x => .not (subst a x)
+  | .neg x => .neg (subst a x)
+  | .bin op x y => .bin op (subst a x) (subst a y)
+  | .when g x y => .when g (subst a x) (subst a y)
+  | .ite c x y => .ite (subst a c) (subst a x) (subst a y)
+  | .cardinality c xs => .cardinality c (xs.map (subst a))
+  | .index q i pos => .index (subst a q) (subst a i) pos
+  | .seqLit xs => .seqLit (xs.map (subst a))
+  | .ctor t i xs => .ctor t i (xs.map (subst a))
+  | .field x i => .field (subst a x) i
+  | .match s arms pos armPos u ps =>
+    .match (subst a s) (arms.map fun (p, g, b) => (p, g.map (subst a), subst a b)) pos armPos u ps
+  | .table pos rows u => .table pos (rows.map fun (k, c, v) => (k, c.map (subst a), subst a v)) u
+  | e => e
+
+/-- The program: `C0`'s and `f`'s bodies, as the binary and the core hold them. -/
+structure Prog where
+  c0 : Ex
+  f : Ex
+  decls : Program
+
+mutual
+/-- An expression of type `t`, at most `d` deep. -/
+partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
+  if d = 0 then return ← genLeaf P sc t
+  match t with
+  | .int =>
+    match ← next 12 with
+    | 0 => let a ← gen P sc .int (d - 1); return (.neg a.1, opE "-" [a.2])
+    | 1 => return bin (← pick #[Op.add, .sub, .mul]) (← gen P sc .int (d - 1)) (← gen P sc .int (d - 1))
+    | 2 =>
+      let k ← small
+      return bin (← pick #[Op.div, .mod]) (← gen P sc .int (d - 1)) (intLit (if k = 0 then 4 else k))
+    | 3 => genIte P sc t d
+    | 4 =>
+      let q ← gen P sc .seq (d - 1)
+      let i ← gen P sc .int (d - 1)
+      return (.index q.1 i.1 0, opE "[]" [q.2, i.2])
+    | 5 =>
+      let r ← gen P sc .r (d - 1)
+      return (.field r.1 0, opE "." [r.2] "0")
+    | 6 => genMatch P sc t d
+    | 7 => genIntMatch P sc t d
+    | 8 => genTable P sc t d
+    | 9 =>
+      if sc.fn then
+        let a ← gen P sc .int (d - 1)
+        return (subst a.1 P.f, .node (.defined "f") [a.2])
+      else genLeaf P sc t
+    | _ => genLeaf P sc t
+  | .bool =>
+    match ← next 11 with
+    | 0 => let a ← gen P sc .bool (d - 1); return (.not a.1, opE "not" [a.2])
+    | 1 => return bin (← pick #[Op.and, .or, .iff, .eq, .ne]) (← gen P sc .bool (d - 1)) (← gen P sc .bool (d - 1))
+    | 2 => return bin (← pick #[Op.lt, .le, .gt, .ge, .eq, .ne]) (← gen P sc .int (d - 1)) (← gen P sc .int (d - 1))
+    | 3 => return bin (← pick #[Op.eq, .ne]) (← gen P sc .str (d - 1)) (← gen P sc .str (d - 1))
+    | 4 => return bin (← pick #[Op.eq, .ne]) (← gen P sc .e (d - 1)) (← gen P sc .e (d - 1))
+    | 5 =>
+      let g ← next 2
+      let c ← gen P sc .bool (d - 1)
+      let b ← gen P sc .bool (d - 1)
+      return (.when (g = 0) c.1 b.1, opE (if g = 0 then "unless" else "when") [c.2, b.2])
+    | 6 => genIte P sc t d
+    | 7 =>
+      let c ← pick #[Fren.Core.Cardinality.atMostOne, .exactlyOne]
+      let xs ← [0, 1, 2].mapM fun _ => gen P sc .bool (d - 1)
+      return (.cardinality c (xs.map (·.1)).toArray,
+        opE (if c == .atMostOne then "at_most_one?" else "exactly_one?") (xs.map (·.2)))
+    | 8 => let r ← gen P sc .r (d - 1); return (.field r.1 1, opE "." [r.2] "1")
+    | 9 => genMatch P sc t d
+    | _ => genTable P sc t d
+  | .str =>
+    match ← next 3 with
+    | 0 => return bin .concat (← gen P sc .str (d - 1)) (← gen P sc .str (d - 1))
+    | 1 => genIte P sc t d
+    | _ => genLeaf P sc t
+  | .seq =>
+    let n ← next 4
+    let xs ← (List.range n).mapM fun _ => gen P sc .int (d - 1)
+    return (.seqLit (xs.map (·.1)).toArray, opE "[..]" (xs.map (·.2)))
+  | .e =>
+    if (← next 2) = 0 then
+      let a ← gen P sc .int (d - 1)
+      return (.ctor `E 0 #[a.1], .node (.construction "E::A" "") [a.2])
+    else genLeaf P sc t
+  | .r =>
+    let a ← gen P sc .int (d - 1)
+    let b ← gen P sc .bool (d - 1)
+    return (.ctor `R 0 #[a.1, b.1], .node (.construction "R" "") [a.2, b.2])
+
+partial def genLeaf (P : Prog) (sc : Scope) (t : Ty) : R Pair := do
+  match t with
+  | .int =>
+    let bs := sc.binders
+    let k ← next 5
+    if k = 0 ∧ sc.vars then
+      let x ← pick #["x", "y"]
+      return (.var (.mkSimple x), leaf (.variable x))
+    else if k = 1 ∧ sc.param then return (.var `n, leaf (.variable "n"))
+    else if k = 2 ∧ sc.const then return (.const `C0 P.c0, leaf (.constant "C0"))
+    else if k = 3 ∧ bs.length > 0 then
+      let i ← next bs.length
+      let (n, c) := bs[i]!
+      return (.bound n, c)
+    else return intLit (← small)
+  | .bool =>
+    let k ← next 2
+    if k = 0 ∧ sc.vars then
+      let p ← pick #["p", "q"]
+      return (.var (.mkSimple p), leaf (.variable p))
+    else return boolLit ((← next 2) = 0)
+  | .str =>
+    let s ← pick #["", "a", "b"]
+    return (.lit (.str s), leaf (.literal (.s s)))
+  | .seq => return (.seqLit #[], opE "[..]" [])
+  | .e => return (.ctor `E 1 #[], .node (.construction "E::B" "") [])
+  | .r => return (.ctor `R 0 #[(intLit 0).1, (boolLit true).1], .node (.construction "R" "") [(intLit 0).2, (boolLit true).2])
+
+partial def genIte (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
+  let c ← gen P sc .bool (d - 1)
+  let a ← gen P sc t (d - 1)
+  let b ← gen P sc t (d - 1)
+  return (.ite c.1 a.1 b.1, opE "if" [c.2, a.2, b.2])
+
+/-- A guard, or none, and its layer, `true` where there is none. -/
+partial def genGuard (P : Prog) (sc : Scope) (d : Nat) : R (Option Ex × Fren.Core.Meaning.Expr) := do
+  if (← next 3) = 0 then
+    let g ← gen P sc .bool (d - 1)
+    return (some g.1, g.2)
+  else return (none, (boolLit true).2)
+
+/-- A `match` over `E`, with one to three arms, which may not be exhaustive. -/
+partial def genMatch (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
+  let s ← gen P sc .e (d - 1)
+  let y := Name.mkSimple s!"y{d}"
+  let n ← next 3
+  let arms ← (List.range (n + 1)).mapM fun _ => do
+    match ← next 4 with
+    | 0 =>
+      let sc' := { sc with binders := (y, .node (.binder "E::A.0") [s.2]) :: sc.binders }
+      let g ← genGuard P sc' d
+      let b ← gen P sc' t (d - 1)
+      return ((Pat.ctor 0 #[.bind y], g.1, b.1), "E::A(_)", g.2, b.2)
+    | 1 =>
+      let g ← genGuard P sc d; let b ← gen P sc t (d - 1)
+      return ((Pat.ctor 0 #[.wild], g.1, b.1), "E::A(_)", g.2, b.2)
+    | 2 =>
+      let g ← genGuard P sc d; let b ← gen P sc t (d - 1)
+      return ((Pat.ctor 1 #[], g.1, b.1), "E::B", g.2, b.2)
+    | _ =>
+      let g ← genGuard P sc d; let b ← gen P sc t (d - 1)
+      return ((Pat.wild, g.1, b.1), "_", g.2, b.2)
+  let text := "; ".intercalate (arms.map (·.2.1))
+  return (.match s.1 (arms.map (·.1)).toArray 0 #[] none none,
+    opE "match" (s.2 :: arms.flatMap fun (_, _, g, b) => [g, b]) text)
+
+/-- A `match` over an integer, with literal and range patterns. -/
+partial def genIntMatch (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
+  let s ← gen P sc .int (d - 1)
+  let n ← next 3
+  let arms ← (List.range (n + 1)).mapM fun _ => do
+    let lo ← small
+    let w ← next 3
+    let (p, text) := match (← next 3) with
+      | 0 => (Pat.int (some lo) (some lo), toString lo)
+      | 1 => (Pat.int (some lo) (some (lo + w)), s!"{lo}..={lo + w}")
+      | _ => (Pat.wild, "_")
+    let g ← genGuard P sc d
+    let b ← gen P sc t (d - 1)
+    return ((p, g.1, b.1), text, g.2, b.2)
+  let text := "; ".intercalate (arms.map (·.2.1))
+  return (.match s.1 (arms.map (·.1)).toArray 0 #[] none none,
+    opE "match" (s.2 :: arms.flatMap fun (_, _, g, b) => [g, b]) text)
+
+/-- A table of one to three rows, the last perhaps `_`. -/
+partial def genTable (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
+  let n ← next 3
+  let rows ← (List.range (n + 1)).mapM fun k => do
+    let v ← gen P sc t (d - 1)
+    if k = n && (← next 2) = 0 then return ((k, (none : Option Ex), v.1), (boolLit true).2, v.2)
+    let c ← gen P sc .bool (d - 1)
+    return ((k, some c.1, v.1), c.2, v.2)
+  return (.table 0 (rows.map (·.1)).toArray none, opE "table" ((boolLit true).2 :: rows.flatMap fun (_, c, v) => [c, v]))
+end
+
+/-- A program: `C0`, closed, and `f(n)`, which may apply `C0`. -/
+def genProg : R Prog := do
+  let none : Prog := ⟨.lit (.int 0), .lit (.int 0), []⟩
+  let c0 ← gen none { vars := false, const := false, fn := false } .int 2
+  let P : Prog := ⟨c0.1, .lit (.int 0), [.definition "C0" [] c0.2]⟩
+  let f ← gen P { vars := false, param := true, fn := false } .int 2
+  return ⟨c0.1, f.1, [.definition "C0" [] c0.2, .definition "f" ["n"] f.2, .record "R" ["0", "1"]]⟩
+
+partial def toValue : Val → Option Value
+  | .bool b => some (.b b)
+  | .int i => some (.i i)
+  | .str s => some (.s s)
+  | .seq vs => return Value.ofList (← vs.toList.mapM toValue)
+  | .ctor t i vs => do
+    let name := if t == `E then (if i = 0 then "E::A" else "E::B") else t.toString
+    return .c name (Value.ofList (← vs.toList.mapM toValue))
+  | _ => none
+
+/-- One behaviour: each variable's value. -/
+def behaviour : R (List (String × Val)) := do
+  let ints ← ["x", "y"].mapM fun x => do return (x, Val.int (← small))
+  let bools ← ["p", "q"].mapM fun x => do return (x, Val.bool ((← next 2) = 0))
+  return ints ++ bools
+
+end Evaluation
+
+/-- `Ex.eval` and `Fren.Core.Meaning.Expr.eval` agree on 3000 random
+expressions, each in a random behaviour and program (`evaluation`). -/
+def evaluation : IO (Array String) := do
+  let mut failures := #[]
+  let mut seed := 2026
+  let mut defined := 0
+  let mut unknown := 0
+  for k in [0:3000] do
+    let ((P, e, b), s) := (do
+      let P ← Evaluation.genProg
+      let t := #[Evaluation.Ty.bool, .int, .str, .e][k % 4]!
+      let e ← Evaluation.gen P {} t 4
+      return (P, e, ← Evaluation.behaviour)).run seed
+    seed := s
+    let look : FrenCli.Eval.Look := fun n => b.lookup n.toString
+    let env : Fren.Core.Meaning.Env := ⟨fun x => ((b.lookup x).bind Evaluation.toValue).getD .nil, fun _ _ => .nil,
+      fun _ _ => .nil⟩
+    let ctx := Fren.Core.Meaning.Program.context P.decls
+    let ok := e.2.defined ctx env
+    match e.1.eval {} look with
+    | some v =>
+      if ok then
+        defined := defined + 1
+        let w := e.2.eval ctx env
+        unless Evaluation.toValue v == some w do
+          failures := failures.push
+            s!"evaluation: {repr e.2} in {repr b} is {repr v} by `Ex.eval`, but {repr w} by the core"
+    | none =>
+      unknown := unknown + 1
+      if ok then
+        failures := failures.push s!"evaluation: {repr e.2} in {repr b} is defined by the core, but `Ex.eval` does not know it"
+  -- Each kind of outcome happens, so that the test is not vacuous.
+  if defined < 1000 then failures := failures.push s!"evaluation: only {defined} expressions were defined"
+  if unknown < 50 then failures := failures.push s!"evaluation: only {unknown} expressions were unknown"
+  return failures
+
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
   let ui ← sortedFiles ("test" / "ui") "fren"
@@ -1132,7 +1452,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["evaluation"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -1147,6 +1467,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["leanTokens"] => leanTokens
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
+  | ["evaluation"] => evaluation
   | ["ownSpec"] => ownSpec
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus

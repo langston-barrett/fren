@@ -647,6 +647,7 @@ same layer, with the same parts' values, in any other:
 
 ```fren
 expect constant_constraint: forall (c: assertions_on_constants) (p q: lang::node),
-    when c.fires? and p.mentioned = c.mentioned and p.specified? and q.head = p.head and q.values = p.values,
+    when c.fires? and p.mentioned = c.mentioned and p.specified? and q.program = p.program and q.head = p.head
+    and q.values = p.values,
     q.value = p.value
 ```

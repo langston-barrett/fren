@@ -73,10 +73,11 @@ the layer `Op("+", "")` with parts `x` and `f(y)`, and `f(y)` is the layer
   and whose static parts are its arms' patterns), a
   [table](Expressions.md#tables), a [pattern
   test](Expressions.md#pattern-tests) (with its pattern), a [cardinality
-  operator](Expressions.md#cardinality), indexing, a field read from an
-  expression that is not a name (with the field), a [record
+  operator](Expressions.md#cardinality), indexing, as `Op("[]", "")`, a
+  field read from an expression that is not a name, as `Op(".", f)` with
+  the field `f`, a [record
   update](Expressions.md#record-updates) (with the fields it sets), a
-  literal of a set, pair or sequence, and a `let` (whose only part is its
+  literal of a set, pair or sequence (as `Op("[..]", "")`), and a `let` (whose only part is its
   body).
 
 A [quantifier](Quantifiers.md) is not one layer: its body is evaluated at
@@ -161,34 +162,66 @@ uninterpreted function `f` at the arguments `args`, and
 leaves it unspecified. These three are all an expression reads of its
 environment.
 
-Everything else a spec fixes: `fixed_value(head, parts)` is the value of a
-layer whose meaning the spec states, at its parts' values: the value of a
-constant, the body of a defined function at its arguments, a method, the
-part of a scrutinee's value where a binder is declared, and an operator.
-`fixed_specified?(head, parts)` says that it is specified. It is not where
-the operator is an [index out of range](Expressions.md#sequences), a
-`match` or table where no arm is taken, or a binder whose scrutinee does
+Everything else is fixed by the *program*, the spec being read: its
+declarations, of constants, defined functions, records and the rest. A
+`Program` is the same in every behaviour, so it is apart from the `Env`.
+`fixed_value(program, head, parts)` is the value of a layer whose meaning
+the spec states, at its parts' values: the value of a constant, the body
+of a defined function at its arguments, a method, the part of a
+scrutinee's value where a binder is declared, and an operator.
+`fixed_specified?(program, head, parts)` says that it is specified. It is
+not where the operator is an [index out of range](Expressions.md#sequences),
+a `match` or table where no arm is taken, or a binder whose scrutinee does
 not have its variant, and not where a constant's value or a defined
 function's body is unspecified, or applies a function outside its
 [preconditions](Items.md#contracts) (see
 [Definedness](../Check.md#definedness)). Neither function takes an `Env`,
-so neither differs between behaviours. Both are relative to the spec
-being read, an implicit parameter of each: a constant's value and a
-defined function's body are its declarations'. Their values are stated by
-the chapters on each construct; this chapter needs only that they are
-functions.
+so neither differs between behaviours. Their values are stated by the
+chapters on each construct, and this chapter states those of constants and
+defined functions: `definition_value(program, x, args)` is the value of
+the definition of the constant or defined function `x`, its body, as an
+expression, in every environment that binds its parameters to the
+arguments `args`, none for a constant: a body reads only its parameters,
+so every such environment gives it one value, where it is specified.
+Where `fixed_specified?` holds, `step` gives `Constant(c)` the value of
+`c`'s definition, and `Defined(f)` that of `f`'s body at the parts'
+values: the parameters substituted by the arguments, as [Defined
+functions](Items.md#defined-functions) states. A body applies only
+earlier declarations, so its value is well-founded on the order of the
+declarations. Recursion in defined functions (#279) would break that
+order, and the evaluation would need another measure.
+
+Two features would each add one case here. A parameter of a function type
+(#305) is bound to a closure, whose body is substituted for its
+applications, rather than to a value: `definition_value` then takes such
+an argument as a closure, and the environment of the body binds it in
+the program, not as a variable. A body then reads more than its
+parameters, which is the premise of `frame` for a definition, so the
+closure's own mentions join the application's. An uninterpreted function with type
+parameters (#300) is one unknown function for each instance of them: its
+`Uninterpreted(f)` head names the instance in `f`, so that `meaning`, which
+is read at that name, is one function for each.
 
 Their [interpretation](../Impl.md#interpretations) in Lean,
-`Fren.Core.Meaning`'s, has no spec to read, so it covers only a fragment,
-and is unspecified elsewhere: the operators `not`, `iff`, `-`, `+`, `*`,
-and `div` and `mod` by a divisor other than `0`; `<`, `<=`, `>` and `>=`
-over integers; `=` and `!=` over two `Bool`s, two integers or two
-strings; `++` over two strings or two sequences; `at_most_one?`,
-`exactly_one?` and the pattern test; the methods `abs`, `min` and `max` of
-integers and `len` of a string or a sequence; a binder; and a choice, by
-the arm that fires. Constants, defined functions, indexing, field reads,
-`=` over other values, `<` over strings, and the operators of sets and
-relations are unspecified there.
+`Fren.Core.Meaning`'s, takes a program to be its declarations in order,
+and evaluates each definition with the declarations before it. It covers
+only a fragment, and is unspecified elsewhere: the operators `not`,
+`iff`, `-`, `+`, `*`, and `div` and `mod` by a divisor other than `0`;
+`<`, `<=`, `>` and `>=` over integers; `=` and `!=` over values built
+from `Bool`s, integers and strings by variants, records and newtypes;
+`++` over two strings or two sequences; `at_most_one?`, `exactly_one?` and
+the pattern test; indexing in range, `Op("[]", "")`, and a field read,
+`Op(".", f)`, of a record or a newtype; the methods `abs`, `min` and
+`max` of integers and `len` of a string or a sequence; a binder; a
+choice, by the arm that fires; a sequence literal, `Op("[..]", "")`; and
+constants and defined functions whose definitions are in that fragment.
+It takes a definition to be specified only where each of its body's
+layers is, including those that the body does not evaluate, so it is
+stricter than the language: `fn safe(q: Seq<Int>, i: Int): Int := if 0 <= i
+< q.len then q[i] else 0` is unspecified there where `i` is out of range,
+though the language gives it `0`. `=` over sets, relations and sequences,
+`<` over strings, and the operators of sets and relations are unspecified
+there.
 
 `unspecified` is coarser than the language: it may give each head and
 parts' values a value of its own, while the language gives every `match`
@@ -205,8 +238,21 @@ pub fn lookup(Env, Id): Value
 pub fn meaning(Env, Id, Seq<Value>): Value
 pub fn unspecified(Env, Head, Seq<Value>): Value
 
-pub fn fixed_value(Head, Seq<Value>): Value
-pub fn fixed_specified?(Head, Seq<Value>)
+-- The spec being read: its declarations.
+pub type Program
+
+pub fn definition_value(Program, Id, Seq<Value>): Value
+
+-- The name of a constant or of a defined function, and `""` for any other layer.
+pub fn declared(head: Head): Id := match head {
+    Head::Constant(c) => c,
+    Head::Defined(f) => f,
+    _ => "",
+}
+
+pub fn fixed_specified?(Program, Head, Seq<Value>)
+
+pub fn fixed_value(Program, Head, Seq<Value>): Value
 
 -- The value of the variant, record or newtype `c` built from its parts'
 -- values: `C(c, l)`, with `l` the list of them.
@@ -317,7 +363,7 @@ arms have patterns, is `Op("match", s)`, as a `match` is. So arm `i`'s guard is 
 its body just after it. An arm without a guard has
 the literal `true` as its guard, and a row `_` the literal `true` as its
 condition. Arm `i` is *open* where its pattern matches the scrutinee's
-value, and every row is: `arm_matches?(head, i, v)` says that the pattern
+value, and every row is: `arm_matches?(program, head, i, v)` says that the pattern
 of arm `i` of the choice `head` matches the value `v`, which a later slice
 ties to the model of [Patterns](Patterns.md). An arm *fires* where it is
 open, its guard holds and no earlier arm fires, as
@@ -335,7 +381,7 @@ positions, and states the first three arms of a choice. A choice with
 more is evaluated by the same rule, arm by arm, which the model does not
 spell out: where none of the first three fires, its value is the one the
 spec fixes, `fixed_value`, where that is specified, and
-`later_unevaluated(head, values)` are the positions of the later arms'
+`later_unevaluated(program, head, values)` are the positions of the later arms'
 guards and bodies that it does not evaluate. The laws are stated of
 choices of at most three arms.
 
@@ -358,7 +404,7 @@ pub type ArmIndex := Int is 0..=2
 
 pub type PartAt := Int is 0..=6
 
-pub fn arm_matches?(Head, Int, Value)
+pub fn arm_matches?(Program, Head, Int, Value)
 
 -- Arm `i` exists and is open: its pattern matches the scrutinee's value,
 -- as `matched?` says.
@@ -376,7 +422,7 @@ pub fn fires_at?(values: Seq<Value>, open0?, open1?, open2?, i: Int) := let hold
 -- and bodies of those arms that it does not evaluate.
 pub fn more_arms?(head: Head, values: Seq<Value>) := choice?(operator(head)) and values.len > 7
 
-pub fn later_unevaluated(Head, Seq<Value>): Set<Int>
+pub fn later_unevaluated(Program, Head, Seq<Value>): Set<Int>
 
 -- The positions of arm `i`'s guard and body that are not evaluated.
 pub fn unevaluated_arm(i: Int, guard?, body?): Set<Int> :=
@@ -391,17 +437,19 @@ environment, a definition has its one part's value, a construction is its
 variant and its parts, an application of an uninterpreted function is
 read from the environment at the function and its arguments, a
 [connective](#guards) has the value of the parts it evaluates, a
-[choice](#arms) the value of the body of the arm that fires, and every
-other layer has the value the spec fixes where that is specified, and the
-unspecified one elsewhere. A connective, and a [cardinality
+[choice](#arms) the value of the body of the arm that fires, a constant
+and an application of a defined function the value of its
+[definition](#environments), and every other layer has the value the
+spec fixes, each where that is specified, and the unspecified one
+elsewhere. A connective, and a [cardinality
 operator](Expressions.md#cardinality), is always specified. `step` is a function with a contract, rather
 than a defined function, since it applies the functions above, and a
 defined function applies no uninterpreted function (see [Defined
 functions](Items.md#defined-functions)). Its postcondition determines it:
 
 ```fren
-pub fn step(head: Head, env: Env, values: Seq<Value>): Value
-    ensure layer: step(head, env, values) = match head {
+pub fn step(program: Program, head: Head, env: Env, values: Seq<Value>): Value
+    ensure layer: step(program, head, env, values) = match head {
     Head::Literal(v) => v,
     Head::Bound(v) => v,
     Head::Variable(x) => lookup(env, x),
@@ -412,15 +460,17 @@ pub fn step(head: Head, env: Env, values: Seq<Value>): Value
         else if choice?(o) then (if fires_at?(values, open0?, open1?, open2?, 0) then arm_body(values, 0)
         else if fires_at?(values, open0?, open1?, open2?, 1) then arm_body(values, 1)
         else if fires_at?(values, open0?, open1?, open2?, 2) then arm_body(values, 2)
-        else if more_arms?(head, values) and fixed_specified?(head, values) then fixed_value(head, values)
+        else if more_arms?(head, values) and fixed_specified?(program, head, values) then fixed_value(program, head, values)
         else unspecified(env, head, []))
-        else if total?(o) or fixed_specified?(head, values) then fixed_value(head, values)
+        else if total?(o) or fixed_specified?(program, head, values) then fixed_value(program, head, values)
         else unspecified(env, head, values),
-    _ => if fixed_specified?(head, values) then fixed_value(head, values) else unspecified(env, head, values),
+    Head::Constant(_) | Head::Defined(_) => if fixed_specified?(program, head, values)
+        then definition_value(program, declared(head), values) else unspecified(env, head, values),
+    _ => if fixed_specified?(program, head, values) then fixed_value(program, head, values) else unspecified(env, head, values),
 }
-    where open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0))),
-    open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0))),
-    open2? := arm_open?(head, values, 2, arm_matches?(head, 2, part(values, 0)))
+    where open0? := arm_open?(head, values, 0, arm_matches?(program, head, 0, part(values, 0))),
+    open1? := arm_open?(head, values, 1, arm_matches?(program, head, 1, part(values, 0))),
+    open2? := arm_open?(head, values, 2, arm_matches?(program, head, 2, part(values, 0)))
 ```
 
 What a layer *mentions* is the set of the variables and uninterpreted
@@ -446,24 +496,25 @@ and which of their guards and bodies are evaluated, with an instance of
 
 ```fren
 pub comp choice_arms {
+    in program: Program
     in head: Head
     in values: Seq<Value>      -- the choice's parts' values
 
-    pub det out open0? := arm_open?(head, values, 0, arm_matches?(head, 0, part(values, 0)))
-    pub det out open1? := arm_open?(head, values, 1, arm_matches?(head, 1, part(values, 0)))
-    pub det out open2? := arm_open?(head, values, 2, arm_matches?(head, 2, part(values, 0)))
+    pub det out open0? := arm_open?(head, values, 0, arm_matches?(program, head, 0, part(values, 0)))
+    pub det out open1? := arm_open?(head, values, 1, arm_matches?(program, head, 1, part(values, 0)))
+    pub det out open2? := arm_open?(head, values, 2, arm_matches?(program, head, 2, part(values, 0)))
     pub det out fired0? := fires_at?(values, open0?, open1?, open2?, 0)
     pub det out fired1? := fires_at?(values, open0?, open1?, open2?, 1)
     pub det out fired2? := fires_at?(values, open0?, open1?, open2?, 2)
     -- Some arm fires, or, of a choice of more arms, the value the spec fixes is specified.
-    pub det out specified? := fired0? or fired1? or fired2? or (more_arms?(head, values) and fixed_specified?(head, values))
+    pub det out specified? := fired0? or fired1? or fired2? or (more_arms?(head, values) and fixed_specified?(program, head, values))
     -- The first three arms' guards and bodies that are not evaluated, and
     -- those of every arm.
     pub det out stated: Set<Int> := unevaluated_arm(0, guard0.evaluated?, body0.evaluated?)
         union unevaluated_arm(1, guard1.evaluated?, body1.evaluated?)
         union unevaluated_arm(2, guard2.evaluated?, body2.evaluated?)
     pub det out unevaluated: Set<Int> := stated
-        union (if more_arms?(head, values) then later_unevaluated(head, values) minus {0, 1, 2, 3, 4, 5, 6} else {})
+        union (if more_arms?(head, values) then later_unevaluated(program, head, values) minus {0, 1, 2, 3, 4, 5, 6} else {})
 
     inst guard0: guard { operand := GuardedOperand::ArmGuard, condition := Value::B(open0?) }
     inst body0: guard { operand := GuardedOperand::ArmBody, condition := Value::B(fired0?) }
@@ -484,8 +535,9 @@ pub comp choice_arms {
 }
 ```
 
-`lang::node` is one layer. Its inputs are its head, its environment, its
-parts' values in order, and what its parts mention, together; a literal,
+`lang::node` is one layer. Its inputs are the program, its head, its
+environment, its parts' values in order, and what its parts mention,
+together; a literal,
 a bound name, a constant and a variable have no parts, so theirs mention
 nothing. Its `value` is its `step`, and `mentioned` what it mentions.
 `read` is what it reads of the environment at its own name: a variable's
@@ -506,6 +558,7 @@ mentioned:
 ```fren
 pub comp node {
     use self::Head::{Bound, Constant, Construction, Definition, Literal, Op, Uninterpreted, Variable}
+    in program: Program              -- the spec being read
     in head: Head
     in env: Env
     in values: Seq<Value>              -- its parts' values, in order
@@ -514,7 +567,7 @@ pub comp node {
 
     assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
 
-    pub det out value: Value := step(head, env, values)
+    pub det out value: Value := step(program, head, env, values)
     pub det out mentioned: Set<Mention> := mentioned_by(head, parts_mentioned)
     pub det out mentions? := mentioned != {}
     pub det out read: Value := match head {
@@ -524,8 +577,8 @@ pub comp node {
     }
     pub det out specified? := match head {
         Literal(_) | Bound(_) | Variable(_) | Definition(_) | Construction(_, _) | Uninterpreted(_) => true,
-        Op(o, _) => if choice?(o) then arms.specified? else total?(o) or fixed_specified?(head, values),
-        _ => fixed_specified?(head, values),
+        Op(o, _) => if choice?(o) then arms.specified? else total?(o) or fixed_specified?(program, head, values),
+        _ => fixed_specified?(program, head, values),
     }
     pub det out unevaluated: Set<Int> := (if connective?(operator(head)) and not second.evaluated? then {1} else {})
         union (if operator(head) = "if" and not third.evaluated? then {2} else {})
@@ -534,7 +587,7 @@ pub comp node {
 
     inst second: guard { operand := second_guard(operator(head)), condition := part(values, 0) }
     inst third: guard { operand := GuardedOperand::ElseBranch, condition := part(values, 0) }
-    inst arms: choice_arms { head, values }
+    inst arms: choice_arms { program, head, values }
 
     -- What a part mentions, the whole does, and so does a layer's own name.
     expect parts_kept: parts_mentioned subset mentioned

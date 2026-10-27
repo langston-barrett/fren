@@ -17,6 +17,8 @@ namespace Meaning
 
 open Fren.Core.Meaning
 
+variable {ctx : Ctx}
+
 /-- A value, as the spec writes it. -/
 def toValue : Value → lang.Value
   | .b x => .B x
@@ -129,8 +131,8 @@ theorem connectiveValue_toValues (o : String) (l : List Value) :
     simp [hc, Value.isTrue, apply_ite toValue, toValue]
 
 theorem armOpen_toValues (h : Head) (l : List Value) (k : Nat) :
-    lang.arm_open? (toHead h) (toValues l) k (Fren.Core.Meaning.armMatches h k (ofValue (lang.part (toValues l) 0)))
-      = armOpen h l k := by
+    lang.arm_open? (toHead h) (toValues l) k (armMatches ctx h k (ofValue (lang.part (toValues l) 0)))
+      = armOpen ctx h l k := by
   rw [Bool.eq_iff_iff]
   simp only [lang.arm_open?, armOpen, part_toValues, ofValue_toValue, operator_toHead, choice_eq, lang.arm_present?,
     lang.guard_at, guardAt, len_toValues, Fren.Str.lit, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
@@ -138,7 +140,7 @@ theorem armOpen_toValues (h : Head) (l : List Value) (k : Nat) :
   constructor <;> rintro ⟨⟨a, b⟩, c⟩ <;> exact ⟨⟨a, by omega⟩, c⟩
 
 theorem armOpen_op (o s : String) (l : List Value) (k : Nat) :
-    lang.arm_open? (lang.Head.Op o s) (toValues l) k (armMatches (.op o s) k (part l 0)) = armOpen (.op o s) l k := by
+    lang.arm_open? (lang.Head.Op o s) (toValues l) k (armMatches ctx (.op o s) k (part l 0)) = armOpen ctx (.op o s) l k := by
   simpa [part_toValues, toHead] using armOpen_toValues (.op o s) l k
 
 theorem moreArms_op (o s : String) (l : List Value) :
@@ -157,7 +159,7 @@ theorem ofList_append {α : Type} (a b : List α) : FinSet.ofList (a ++ b) = Fin
   apply FinSet.ext; simp
 
 theorem armUnevaluated_eq (h : Head) (l : List Value) (i : Nat) :
-    FinSet.ofList (armUnevaluated h l i) = lang.unevaluated_arm i (armOpen h l i && noneBefore h l i) (armFires h l i) := by
+    FinSet.ofList (armUnevaluated ctx h l i) = lang.unevaluated_arm i (armOpen ctx h l i && noneBefore ctx h l i) (armFires ctx h l i) := by
   apply FinSet.ext; intro k
   simp only [armUnevaluated, ofList_append, lang.unevaluated_arm, lang.guard_at, guardAt, FinSet.mem_union]
   split <;> split <;> simp <;> omega
@@ -199,9 +201,9 @@ theorem specified_eq (h : Head) (l : List Value) :
                   (lang.Head.Construction.x1 (toHead h)) ∨
                   toHead h = lang.Head.Uninterpreted (lang.Head.Uninterpreted.x0 (toHead h)) then true
       else if toHead h = lang.Head.Op (lang.Head.Op.x0 (toHead h)) (lang.Head.Op.x1 (toHead h)) then
-        if lang.choice? (lang.Head.Op.x0 (toHead h)) = true then (firstFired h l).isSome
-        else decide (lang.total? (lang.Head.Op.x0 (toHead h)) = true ∨ fixedSpecified h l = true)
-      else fixedSpecified h l) = specified h l := by
+        if lang.choice? (lang.Head.Op.x0 (toHead h)) = true then (firstFired ctx h l).isSome
+        else decide (lang.total? (lang.Head.Op.x0 (toHead h)) = true ∨ fixedSpecified ctx h l = true)
+      else fixedSpecified ctx h l) = specified ctx h l := by
   cases h <;> simp [toHead, specified, lang.Head.Literal.x0, lang.Head.Bound.x0, lang.Head.Variable.x0,
     lang.Head.Definition.x0, lang.Head.Construction.x0, lang.Head.Construction.x1, lang.Head.Uninterpreted.x0,
     lang.Head.Op.x0, lang.Head.Op.x1, choice_eq, ← total_eq]
@@ -210,13 +212,24 @@ theorem unevaluated_eq (h : Head) (l : List Value) :
     ((if lang.connective? (lang.operator (toHead h)) = true ∧ ¬evaluated (secondGuard h.operator) (part l 0) = true
         then {1} else ∅) ∪
       (if lang.operator (toHead h) = Fren.Str.lit "if" ∧ ¬evaluated .elseBranch (part l 0) = true then {2} else ∅)) ∪
-      (if lang.choice? (lang.operator (toHead h)) = true then FinSet.ofList (choiceUnevaluated h l) else ∅)
-      = FinSet.ofList (unevaluated h l) := by
+      (if lang.choice? (lang.operator (toHead h)) = true then FinSet.ofList (choiceUnevaluated ctx h l) else ∅)
+      = FinSet.ofList (unevaluated ctx h l) := by
   simp only [operator_toHead, connective_eq, choice_eq, unevaluated, ofList_append, Fren.Str.lit, beq_iff_eq,
     Bool.and_eq_true, Bool.not_eq_true']
   congr 1
   · congr 1 <;> (split <;> split <;> first | rfl | simp_all)
   · split <;> rfl
+
+theorem fixedValue_constant (p : Program) (c : String) (l : List Value)
+    (hs : fixedSpecified (Program.context p) (.constant c) l = true) :
+    fixedValue (Program.context p) (.constant c) l = (Definition.value (Program.definition p c) l).getD .nil := by
+  cases l with
+  | nil => simp [fixedValue, fixedValue?, Program.ctx_value]
+  | cons _ _ => simp [fixedSpecified, fixedValue?] at hs
+
+theorem fixedValue_defined (p : Program) (f : String) (l : List Value) :
+    fixedValue (Program.context p) (.defined f) l = (Definition.value (Program.definition p f) l).getD .nil := by
+  simp [fixedValue, fixedValue?, Program.ctx_value]
 
 theorem armGuard_toValues (l : List Value) (k : Nat) :
     lang.arm_guard (toValues l) k = toValue (Fren.Core.Meaning.armGuard l k) := by
@@ -227,7 +240,7 @@ theorem armBody_toValues (l : List Value) (k : Nat) :
   simp [lang.arm_body, Fren.Core.Meaning.armBody, lang.guard_at, guardAt, part_toValues]
 
 theorem fires_toValues (h : Head) (l : List Value) (k : Nat) (hk : k < 3) :
-    lang.fires_at? (toValues l) (armOpen h l 0) (armOpen h l 1) (armOpen h l 2) k = armFires h l k := by
+    lang.fires_at? (toValues l) (armOpen ctx h l 0) (armOpen ctx h l 1) (armOpen ctx h l 2) k = armFires ctx h l k := by
   have g0 : lang.arm_guard (toValues l) 0 = toValue (armGuard l 0) := by simpa using armGuard_toValues l 0
   have g1 : lang.arm_guard (toValues l) 1 = toValue (armGuard l 1) := by simpa using armGuard_toValues l 1
   have g2 : lang.arm_guard (toValues l) 2 = toValue (armGuard l 2) := by simpa using armGuard_toValues l 2
@@ -239,6 +252,11 @@ theorem fires_toValues (h : Head) (l : List Value) (k : Nat) (hk : k < 3) :
 end Meaning
 
 open Meaning
+open Fren.Core.Meaning (armOpen armFires firstFired statedUnevaluated choiceUnevaluated armMatches laterUnevaluated
+  fixedValue fixedSpecified)
+
+/-- What the program `p` gives a layer. -/
+abbrev pctx (p : Fren.Core.Meaning.Program) : Fren.Core.Meaning.Ctx := Fren.Core.Meaning.Program.context p
 
 -- An environment is any three functions: the values of variables and bound
 -- names, of uninterpreted functions, and of unspecified layers. So what is
@@ -247,18 +265,23 @@ interp lang::Env := Fren.Core.Meaning.Env
 interp lang::lookup := fun (e : Fren.Core.Meaning.Env) x => Meaning.toValue (e.lookup x)
 interp lang::meaning := fun (e : Fren.Core.Meaning.Env) f args => Meaning.toValue (e.meaning f (Meaning.ofValues args))
 interp lang::unspecified := fun (e : Fren.Core.Meaning.Env) h vs => Meaning.toValue (e.unspecified (Meaning.ofHead h) (Meaning.ofValues vs))
--- The values that the spec fixes, where `Fren.Core.Meaning.fixedValue?`
--- states them, and unspecified elsewhere.
-interp lang::fixed_value := fun h vs => Meaning.toValue (Fren.Core.Meaning.fixedValue (Meaning.ofHead h) (Meaning.ofValues vs))
-interp lang::fixed_specified? := fun h vs => Fren.Core.Meaning.fixedSpecified (Meaning.ofHead h) (Meaning.ofValues vs)
+-- A program is its declarations in order, each evaluated with those
+-- before it. The values that the spec fixes are where
+-- `Fren.Core.Meaning.fixedValue?` states them, and unspecified elsewhere.
+interp lang::Program := Fren.Core.Meaning.Program
+interp lang::definition_value := fun (p : Fren.Core.Meaning.Program) x vs =>
+  Meaning.toValue ((Fren.Core.Meaning.Definition.value (Fren.Core.Meaning.Program.definition p x) (Meaning.ofValues vs)).getD .nil)
+interp lang::fixed_specified? := fun (p : Fren.Core.Meaning.Program) h vs =>
+  fixedSpecified (pctx p) (Meaning.ofHead h) (Meaning.ofValues vs)
+interp lang::fixed_value := fun (p : Fren.Core.Meaning.Program) h vs => Meaning.toValue (fixedValue (pctx p) (Meaning.ofHead h) (Meaning.ofValues vs))
 interp lang::construct := fun c vs => Meaning.toValue (Fren.Core.Meaning.construct c (Meaning.ofValues vs))
-interp lang::arm_matches? := fun h i v => Fren.Core.Meaning.armMatches (Meaning.ofHead h) i (Meaning.ofValue v)
-interp lang::later_unevaluated := fun h vs => Fren.FinSet.ofList (Fren.Core.Meaning.laterUnevaluated (Meaning.ofHead h) (Meaning.ofValues vs))
+interp lang::arm_matches? := fun (p : Fren.Core.Meaning.Program) h i v => armMatches (pctx p) (Meaning.ofHead h) i (Meaning.ofValue v)
+interp lang::later_unevaluated := fun (p : Fren.Core.Meaning.Program) h vs => Fren.FinSet.ofList (laterUnevaluated (pctx p) (Meaning.ofHead h) (Meaning.ofValues vs))
 -- The value of one layer, `Fren.Core.Meaning.step`, which its postcondition
 -- determines.
-interp lang::step := fun h (e : Fren.Core.Meaning.Env) vs =>
-    Meaning.toValue (Fren.Core.Meaning.step (Meaning.ofHead h) e (Meaning.ofValues vs)) by
-  intro h e vs
+interp lang::step := fun (p : Fren.Core.Meaning.Program) h (e : Fren.Core.Meaning.Env) vs =>
+    Meaning.toValue (Fren.Core.Meaning.step (pctx p) (Meaning.ofHead h) e (Meaning.ofValues vs)) by
+  intro p h e vs
   rw [← Meaning.toHead_ofHead h, ← Meaning.toValues_ofValues vs]
   generalize Meaning.ofHead h = h
   generalize Meaning.ofValues vs = l
@@ -269,15 +292,15 @@ interp lang::step := fun h (e : Fren.Core.Meaning.Env) vs =>
   cases h
   case op o s =>
     have o2 : lang.arm_open? (lang.Head.Op o s) (Meaning.toValues l) 2
-        (Fren.Core.Meaning.armMatches (.op o s) 2 (Fren.Core.Meaning.part l 0))
-        = Fren.Core.Meaning.armOpen (.op o s) l 2 := Meaning.armOpen_op o s l 2
+        (armMatches (pctx p) (.op o s) 2 (Fren.Core.Meaning.part l 0))
+        = armOpen (pctx p) (.op o s) l 2 := Meaning.armOpen_op o s l 2
     have o1 : lang.arm_open? (lang.Head.Op o s) (Meaning.toValues l) 1
-        (Fren.Core.Meaning.armMatches (.op o s) 1 (Fren.Core.Meaning.part l 0))
-        = Fren.Core.Meaning.armOpen (.op o s) l 1 := Meaning.armOpen_op o s l 1
+        (armMatches (pctx p) (.op o s) 1 (Fren.Core.Meaning.part l 0))
+        = armOpen (pctx p) (.op o s) l 1 := Meaning.armOpen_op o s l 1
     have o0 : lang.arm_open? (lang.Head.Op o s) (Meaning.toValues l) 0
-        (Fren.Core.Meaning.armMatches (.op o s) 0 (Fren.Core.Meaning.part l 0))
-        = Fren.Core.Meaning.armOpen (.op o s) l 0 := Meaning.armOpen_op o s l 0
-    have f := fun (k : Nat) (hk : k < 3) => Meaning.fires_toValues (.op o s) l k hk
+        (armMatches (pctx p) (.op o s) 0 (Fren.Core.Meaning.part l 0))
+        = armOpen (pctx p) (.op o s) l 0 := Meaning.armOpen_op o s l 0
+    have f := fun (k : Nat) (hk : k < 3) => Meaning.fires_toValues (ctx := pctx p) (.op o s) l k hk
     have f0 : lang.fires_at? (Meaning.toValues l) _ _ _ 0 = _ := f 0 (by omega)
     have f1 : lang.fires_at? (Meaning.toValues l) _ _ _ 1 = _ := f 1 (by omega)
     have f2 : lang.fires_at? (Meaning.toValues l) _ _ _ 2 = _ := f 2 (by omega)
@@ -285,6 +308,16 @@ interp lang::step := fun h (e : Fren.Core.Meaning.Env) vs =>
       o0, o1, o2, f0, f1, f2, Meaning.connective_eq, Meaning.choice_eq, Meaning.total_eq,
       Meaning.connectiveValue_toValues, Meaning.moreArms_op, Meaning.ofValues_empty, Fren.Core.Meaning.step_op, apply_ite Meaning.toValue]
     simp [lang.guard_at, Fren.Core.Meaning.armBody, Fren.Core.Meaning.guardAt]
+  case constant c =>
+    by_cases hs : fixedSpecified (pctx p) (.constant c) l
+    · simp [Meaning.toHead, Fren.Core.Meaning.step, hs, Meaning.fixedValue_constant p c l hs, lang.declared,
+        lang.definition_value, lang.Head.Constant.x0]
+    · simp [Meaning.toHead, Fren.Core.Meaning.step, hs, lang.Head.Constant.x0]
+  case defined f =>
+    by_cases hs : fixedSpecified (pctx p) (.defined f) l
+    · simp [Meaning.toHead, Fren.Core.Meaning.step, hs, Meaning.fixedValue_defined p f l, lang.declared,
+        lang.definition_value, lang.Head.Defined.x0, lang.Head.Constant.x0]
+    · simp [Meaning.toHead, Fren.Core.Meaning.step, hs, lang.Head.Defined.x0, lang.Head.Constant.x0]
   all_goals simp [Meaning.toHead, Fren.Core.Meaning.step, lang.Head.Literal.x0, lang.Head.Bound.x0,
     lang.Head.Variable.x0, lang.Head.Definition.x0, lang.Head.Construction.x0, lang.Head.Construction.x1,
     lang.Head.Uninterpreted.x0, apply_ite Meaning.toValue]
@@ -304,40 +337,42 @@ impl named: lang::named for (b : Fren.Core.Binding String String) {
 -- For every layer and parts' values: which arms of a choice are open and
 -- fire, and which of their guards and bodies are not evaluated, by
 -- `Fren.Core.Meaning`'s rule over every arm.
-impl choice_arms: lang::choice_arms for (h : Fren.Core.Meaning.Head) (l : List Fren.Core.Meaning.Value) {
+impl choice_arms: lang::choice_arms for (p : Fren.Core.Meaning.Program) (h : Fren.Core.Meaning.Head)
+    (l : List Fren.Core.Meaning.Value) {
+  program := p,
   head := Meaning.toHead h,
   values := Meaning.toValues l,
-  open0? := Fren.Core.Meaning.armOpen h l 0,
-  open1? := Fren.Core.Meaning.armOpen h l 1,
-  open2? := Fren.Core.Meaning.armOpen h l 2,
-  fired0? := Fren.Core.Meaning.armFires h l 0,
-  fired1? := Fren.Core.Meaning.armFires h l 1,
-  fired2? := Fren.Core.Meaning.armFires h l 2,
-  specified? := (Fren.Core.Meaning.firstFired h l).isSome,
-  stated := Fren.FinSet.ofList (Fren.Core.Meaning.statedUnevaluated h l),
-  unevaluated := Fren.FinSet.ofList (Fren.Core.Meaning.choiceUnevaluated h l),
+  open0? := armOpen (pctx p) h l 0,
+  open1? := armOpen (pctx p) h l 1,
+  open2? := armOpen (pctx p) h l 2,
+  fired0? := armFires (pctx p) h l 0,
+  fired1? := armFires (pctx p) h l 1,
+  fired2? := armFires (pctx p) h l 2,
+  specified? := (firstFired (pctx p) h l).isSome,
+  stated := Fren.FinSet.ofList (statedUnevaluated (pctx p) h l),
+  unevaluated := Fren.FinSet.ofList (choiceUnevaluated (pctx p) h l),
 } by
-  intro h l _
+  intro p h l _
   open Fren.Core.Meaning in
-  refine ⟨.ArmGuard, .B (armOpen h l 0), armOpen h l 0, armOpen h l 0,
-    .ArmBody, .B (armFires h l 0), armFires h l 0, armFires h l 0,
-    .ArmGuard, .B (decide (armOpen h l 1 = true ∧ ¬armFires h l 0 = true)),
-      decide (armOpen h l 1 = true ∧ ¬armFires h l 0 = true), decide (armOpen h l 1 = true ∧ ¬armFires h l 0 = true),
-    .ArmBody, .B (armFires h l 1), armFires h l 1, armFires h l 1,
-    .ArmGuard, .B (decide ((armOpen h l 2 = true ∧ ¬armFires h l 0 = true) ∧ ¬armFires h l 1 = true)),
-      decide ((armOpen h l 2 = true ∧ ¬armFires h l 0 = true) ∧ ¬armFires h l 1 = true),
-      decide ((armOpen h l 2 = true ∧ ¬armFires h l 0 = true) ∧ ¬armFires h l 1 = true),
-    .ArmBody, .B (armFires h l 2), armFires h l 2, armFires h l 2, ?_⟩
+  refine ⟨.ArmGuard, .B (armOpen (pctx p) h l 0), armOpen (pctx p) h l 0, armOpen (pctx p) h l 0,
+    .ArmBody, .B (armFires (pctx p) h l 0), armFires (pctx p) h l 0, armFires (pctx p) h l 0,
+    .ArmGuard, .B (decide (armOpen (pctx p) h l 1 = true ∧ ¬armFires (pctx p) h l 0 = true)),
+      decide (armOpen (pctx p) h l 1 = true ∧ ¬armFires (pctx p) h l 0 = true), decide (armOpen (pctx p) h l 1 = true ∧ ¬armFires (pctx p) h l 0 = true),
+    .ArmBody, .B (armFires (pctx p) h l 1), armFires (pctx p) h l 1, armFires (pctx p) h l 1,
+    .ArmGuard, .B (decide ((armOpen (pctx p) h l 2 = true ∧ ¬armFires (pctx p) h l 0 = true) ∧ ¬armFires (pctx p) h l 1 = true)),
+      decide ((armOpen (pctx p) h l 2 = true ∧ ¬armFires (pctx p) h l 0 = true) ∧ ¬armFires (pctx p) h l 1 = true),
+      decide ((armOpen (pctx p) h l 2 = true ∧ ¬armFires (pctx p) h l 0 = true) ∧ ¬armFires (pctx p) h l 1 = true),
+    .ArmBody, .B (armFires (pctx p) h l 2), armFires (pctx p) h l 2, armFires (pctx p) h l 2, ?_⟩
   have o0 : lang.arm_open? (Meaning.toHead h) (Meaning.toValues l) 0
-      (Fren.Core.Meaning.armMatches h 0 (Fren.Core.Meaning.part l 0)) = Fren.Core.Meaning.armOpen h l 0 := by
+      (armMatches (pctx p) h 0 (Fren.Core.Meaning.part l 0)) = armOpen (pctx p) h l 0 := by
     simpa [Meaning.part_toValues] using Meaning.armOpen_toValues h l 0
   have o1 : lang.arm_open? (Meaning.toHead h) (Meaning.toValues l) 1
-      (Fren.Core.Meaning.armMatches h 1 (Fren.Core.Meaning.part l 0)) = Fren.Core.Meaning.armOpen h l 1 := by
+      (armMatches (pctx p) h 1 (Fren.Core.Meaning.part l 0)) = armOpen (pctx p) h l 1 := by
     simpa [Meaning.part_toValues] using Meaning.armOpen_toValues h l 1
   have o2 : lang.arm_open? (Meaning.toHead h) (Meaning.toValues l) 2
-      (Fren.Core.Meaning.armMatches h 2 (Fren.Core.Meaning.part l 0)) = Fren.Core.Meaning.armOpen h l 2 :=
+      (armMatches (pctx p) h 2 (Fren.Core.Meaning.part l 0)) = armOpen (pctx p) h l 2 :=
     Meaning.armOpen_toValues h l 2 ▸ by simp [Meaning.part_toValues]
-  have f := fun (k : Nat) (hk : k < 3) => Meaning.fires_toValues h l k hk
+  have f := fun (k : Nat) (hk : k < 3) => Meaning.fires_toValues (ctx := pctx p) h l k hk
   have f0 : lang.fires_at? (Meaning.toValues l) _ _ _ 0 = _ := f 0 (by omega)
   have f1 : lang.fires_at? (Meaning.toValues l) _ _ _ 1 = _ := f 1 (by omega)
   have f2 : lang.fires_at? (Meaning.toValues l) _ _ _ 2 = _ := f 2 (by omega)
@@ -351,21 +386,21 @@ impl choice_arms: lang::choice_arms for (h : Fren.Core.Meaning.Head) (l : List F
     lang.later_unevaluated, Meaning.ofHead_toHead, Meaning.ofValues_toValues, Meaning.ofValue_toValue,
     Meaning.part_toValues, o0, o1, o2, f0, f1, f2, Meaning.moreArms, lang.Value.B.injEq, decide_eq_true_eq,
     true_and, and_self, reduceCtorEq]
-  have u0 : FinSet.ofList (Fren.Core.Meaning.armUnevaluated h l 0) = lang.unevaluated_arm 0 _ _ :=
+  have u0 : FinSet.ofList (armUnevaluated (pctx p) h l 0) = lang.unevaluated_arm 0 _ _ :=
     Meaning.armUnevaluated_eq h l 0
-  have u1 : FinSet.ofList (Fren.Core.Meaning.armUnevaluated h l 1) = lang.unevaluated_arm 1 _ _ :=
+  have u1 : FinSet.ofList (armUnevaluated (pctx p) h l 1) = lang.unevaluated_arm 1 _ _ :=
     Meaning.armUnevaluated_eq h l 1
-  have u2 : FinSet.ofList (Fren.Core.Meaning.armUnevaluated h l 2) = lang.unevaluated_arm 2 _ _ :=
+  have u2 : FinSet.ofList (armUnevaluated (pctx p) h l 2) = lang.unevaluated_arm 2 _ _ :=
     Meaning.armUnevaluated_eq h l 2
   simp only [Fren.Core.Meaning.noneBefore_zero, Fren.Core.Meaning.noneBefore_one, Fren.Core.Meaning.noneBefore_two,
     Bool.and_true] at u0 u1 u2
-  have stated : FinSet.ofList (Fren.Core.Meaning.statedUnevaluated h l) =
-      lang.unevaluated_arm 0 (Fren.Core.Meaning.armOpen h l 0) (Fren.Core.Meaning.armFires h l 0)
-        ∪ lang.unevaluated_arm 1 (decide (Fren.Core.Meaning.armOpen h l 1 = true ∧ ¬Fren.Core.Meaning.armFires h l 0 = true))
-          (Fren.Core.Meaning.armFires h l 1)
+  have stated : FinSet.ofList (statedUnevaluated (pctx p) h l) =
+      lang.unevaluated_arm 0 (armOpen (pctx p) h l 0) (armFires (pctx p) h l 0)
+        ∪ lang.unevaluated_arm 1 (decide (armOpen (pctx p) h l 1 = true ∧ ¬armFires (pctx p) h l 0 = true))
+          (armFires (pctx p) h l 1)
         ∪ lang.unevaluated_arm 2
-          (decide ((Fren.Core.Meaning.armOpen h l 2 = true ∧ ¬Fren.Core.Meaning.armFires h l 0 = true)
-            ∧ ¬Fren.Core.Meaning.armFires h l 1 = true)) (Fren.Core.Meaning.armFires h l 2) := by
+          (decide ((armOpen (pctx p) h l 2 = true ∧ ¬armFires (pctx p) h l 0 = true)
+            ∧ ¬armFires (pctx p) h l 1 = true)) (armFires (pctx p) h l 2) := by
     rw [Fren.Core.Meaning.statedUnevaluated, Meaning.ofList_append, Meaning.ofList_append, u0, u1, u2]
     simp [Bool.and_assoc]
   refine ⟨⟨?_, stated, ?_⟩, ?_⟩
@@ -389,39 +424,40 @@ impl choice_arms: lang::choice_arms for (h : Fren.Core.Meaning.Head) (l : List F
 -- whether it is specified, which parts it does not evaluate, and whether it
 -- is defined, all by `Fren.Core.Meaning`. Its instance `arms` is the
 -- implementation of `lang::choice_arms` above.
-impl node: lang::node for (h : Fren.Core.Meaning.Head) (e : Fren.Core.Meaning.Env) (l : List Fren.Core.Meaning.Value)
-    (pm : List Fren.Core.Mention) (up : List Int) {
+impl node: lang::node for (p : Fren.Core.Meaning.Program) (h : Fren.Core.Meaning.Head) (e : Fren.Core.Meaning.Env)
+    (l : List Fren.Core.Meaning.Value) (pm : List Fren.Core.Mention) (up : List Int) {
+  program := p,
   head := Meaning.toHead h,
   env := e,
   values := Meaning.toValues l,
   parts_mentioned := mentionSet pm,
   undefined_parts := Fren.FinSet.ofList up,
-  value := Meaning.toValue (Fren.Core.Meaning.step h e l),
+  value := Meaning.toValue (Fren.Core.Meaning.step (pctx p) h e l),
   mentioned := mentionSet (Fren.Core.Meaning.mentionedBy h pm),
   mentions? := !(Fren.Core.Meaning.mentionedBy h pm).isEmpty,
   read := Meaning.toValue (Fren.Core.Meaning.read h e l),
-  specified? := Fren.Core.Meaning.specified h l,
-  unevaluated := Fren.FinSet.ofList (Fren.Core.Meaning.unevaluated h l),
-  defined? := Fren.Core.Meaning.defined h l up,
+  specified? := Fren.Core.Meaning.specified (pctx p) h l,
+  unevaluated := Fren.FinSet.ofList (Fren.Core.Meaning.unevaluated (pctx p) h l),
+  defined? := Fren.Core.Meaning.defined (pctx p) h l up,
 } by
-  intro h e l pm up _
+  intro p h e l pm up _
   obtain ⟨g0o, g0c, g0h, g0e, b0o, b0c, b0h, b0e, g1o, g1c, g1h, g1e, b1o, b1c, b1h, b1e,
-    g2o, g2c, g2h, g2e, b2o, b2c, b2h, b2e, harms⟩ := choice_arms h l trivial
+    g2o, g2c, g2h, g2e, b2o, b2c, b2h, b2e, harms⟩ := choice_arms p h l trivial
   open Fren.Core.Meaning in
   refine ⟨lang.second_guard (lang.operator (Meaning.toHead h)), lang.part (Meaning.toValues l) 0,
     decide (lang.part (Meaning.toValues l) 0 = .B true), evaluated (secondGuard h.operator) (part l 0),
     .ElseBranch, lang.part (Meaning.toValues l) 0,
     decide (lang.part (Meaning.toValues l) 0 = .B true), evaluated .elseBranch (part l 0),
-    Meaning.toHead h, Meaning.toValues l, armOpen h l 0, armOpen h l 1, armOpen h l 2,
-    armFires h l 0, armFires h l 1, armFires h l 2, (firstFired h l).isSome,
-    Fren.FinSet.ofList (statedUnevaluated h l), Fren.FinSet.ofList (choiceUnevaluated h l),
+    p, Meaning.toHead h, Meaning.toValues l, armOpen (pctx p) h l 0, armOpen (pctx p) h l 1, armOpen (pctx p) h l 2,
+    armFires (pctx p) h l 0, armFires (pctx p) h l 1, armFires (pctx p) h l 2, (firstFired (pctx p) h l).isSome,
+    Fren.FinSet.ofList (statedUnevaluated (pctx p) h l), Fren.FinSet.ofList (choiceUnevaluated (pctx p) h l),
     g0o, g0c, g0h, g0e, b0o, b0c, b0h, b0e, g1o, g1c, g1h, g1e, b1o, b1c, b1h, b1e,
-    g2o, g2c, g2h, g2e, b2o, b2c, b2h, b2e, ?_, trivial, ?_, ?_, ⟨⟨rfl, rfl⟩, harms.1, trivial, harms.2⟩⟩
+    g2o, g2c, g2h, g2e, b2o, b2c, b2h, b2e, ?_, trivial, ?_, ?_, ⟨⟨rfl, rfl, rfl⟩, harms.1, trivial, harms.2⟩⟩
   · simp only [lang.node.defs, lang.node.def.value, lang.node.def.mentioned, lang.node.def.mentions?,
       lang.node.def.read, lang.node.def.specified?, lang.node.def.unevaluated, lang.node.def.defined?, lang.step,
       lang.lookup, lang.meaning, Meaning.ofHead_toHead, Meaning.ofValues_toValues, Meaning.mentionedBy_eq,
       lang.fixed_specified?, Meaning.read_eq, Meaning.specified_eq, Meaning.unevaluated_eq]
-    simp only [mentionSet, Fren.Core.Meaning.defined, Fren.FinSet.subset_def, true_and, Fren.FinSet.mem_ofList,
+    simp only [mentionSet, defined, Fren.FinSet.subset_def, true_and, Fren.FinSet.mem_ofList,
       ne_eq, Fren.FinSet.ofList_eq_empty, List.map_eq_nil_iff]
     refine ⟨?_, ?_⟩
     · cases Fren.Core.Meaning.mentionedBy h pm <;> simp
@@ -436,7 +472,7 @@ impl node: lang::node for (h : Fren.Core.Meaning.Head) (e : Fren.Core.Meaning.En
 -- The `impl`s above prove the spec of a layer consistent with
 -- `Fren.Core.Meaning`, which no front end evaluates through yet: that Fren
 -- follows the model is trusted until they do.
-trusted lang::node: "proved of `Fren.Core.Meaning` by `impl node`, but no front end evaluates through `Fren.Core.Meaning` yet, so that Fren's evaluation follows this model is trusted until both do (#281)"
+trusted lang::node: "proved of `Fren.Core.Meaning` by `impl node`, but no front end evaluates through `Fren.Core.Meaning` yet, so that Fren's evaluation follows this model is trusted until both do; `fren_test`'s `evaluation` job tests the binary's evaluator against it on integers and `Bool`s (#281)"
 trusted lang::choice_arms: "proved of `Fren.Core.Meaning` by `impl choice_arms`, but no front end evaluates through `Fren.Core.Meaning` yet, so that Fren's evaluation of a choice follows this model is trusted until both do (#281)"
 
 end Fren.Impls
