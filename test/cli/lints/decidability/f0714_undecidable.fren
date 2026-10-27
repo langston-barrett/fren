@@ -1,8 +1,4 @@
-comp c {
-    in a: String
-    in b: String
-    pub out p?
-
+proc c(a: String, b: String): (p?) {
     ensure r: p? iff a.starts_with?(b)
     ensure s: a ++ b = b ++ a
 }

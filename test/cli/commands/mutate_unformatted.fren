@@ -2,9 +2,7 @@
 -- Unformatted on purpose: `fren fmt` must leave every identifier alone,
 -- including those of changes that span lines or lists with a trailing comma.
 set_option fren.lint.chainable_comparison "allow"
-comp   c {
-  in x:Int
-  pub out ok?
+proc   c(x:Int): (ok?) {
   ensure r:   ok? iff (x > 0
       and x < 9 and
         x in {1, 2,

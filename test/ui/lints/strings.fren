@@ -49,12 +49,7 @@ pub fn c2?(x: Int) := "ab" = "" or [x] != [] or {} = {x}
 pub fn c3?(x: Int, s: String) := {x, 1}.card = 2 or s.len = 0 or s = ""
 --~^ warning: say whether it is empty with `""`, not `len`
 
-pub comp patterns {
-    in s: String
-    pub out p1?
-    pub out p2?
-    pub out p3?
-
+pub proc patterns(s: String): (p1?, p2?, p3?) {
     ensure t1: p1? iff (s.matches?(r"(a|b)+x") or s.matches?("x|\\.|-") or s.matches?(r#"(\]|\^|")?"#))
     --~^ warning: this alternation of single characters is a class
     --~^^ warning: this alternation of single characters is a class
@@ -69,15 +64,7 @@ pub comp patterns {
 
 -- A receiver that ends in a conditional keeps its parentheses where
 -- something follows it.
-pub comp open_receivers {
-    in s: String
-    in t: String
-    in b?
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-
+pub proc open_receivers(s: String, t: String, b?): (p1?, p2?, p3?, p4?) {
     ensure r1: p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
     --~^ warning: write `(s ++ if b? then t else s)`
     ensure r2: p2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t

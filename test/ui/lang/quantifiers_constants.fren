@@ -9,10 +9,7 @@ const LISTED: Bool := forall (m: Mode), exists (k: Mode), k = m
 const SMALL: Bool := forall (x: Int), when x in {1, 2}, x < 4
 const THREE: Bool := exists (x: Int), x = 3
 
-comp c {
-    in n: Int
-    pub out a?
-
+proc c(n: Int): (a?) {
     ensure r: a? iff LISTED and SMALL and THREE and n > 0
 
     expect same: a? iff n > 0

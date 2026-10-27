@@ -2,23 +2,17 @@
 -- in the spec, still set the logic and options of the queries (`cli::logic`),
 -- so that both front ends decide them.
 
-comp small {
-    in x: Int
-    pub out p?
+proc small(x: Int): (p?) {
     ensure r: p? iff x in {1, 2}
     expect two: when x = 2, p?
 }
 
-comp single {
-    in x: Int
-    pub out p?
+proc single(x: Int): (p?) {
     ensure r: p? iff [x] = [1]
     expect one: when p?, x = 1
 }
 
-comp pair {
-    in x: Int
-    pub out p?
+proc pair(x: Int): (p?) {
     ensure r: p? iff (x, 2) in {(1, 2), (3, 4)}
     expect one: when p?, x = 1
 }

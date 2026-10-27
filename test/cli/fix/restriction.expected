@@ -8,9 +8,9 @@ warning[F0780]: `unfulfilled_lint_expectations` is allowed rather than expected
   = note: for `unfulfilled_lint_expectations`, `"expect"` means `"allow"`, so it is never fulfilled
 
 warning[F0783]: this string literal contains non-ASCII characters: `U+1F600`, `U+00E9`
-  --> test/cli/fix/restriction.fren:46:44
+  --> test/cli/fix/restriction.fren:49:44
    |
-46 |     ensure astral_rule: astral? iff text = "😀é"
+49 |     ensure astral_rule: astral? iff text = "😀é"
    |                                            ^^^^ not ASCII
    |
    = note: `U+1F600` is beyond `U+FFFF`, which `\uHHHH` cannot write, so this has no fix
@@ -22,26 +22,26 @@ warning[F0783]: this string literal contains non-ASCII characters: `U+1F600`, `U
 @@ -6 +5 @@
 -set_option fren.lint.unused_variables "allow"
 +set_option fren.lint.unused_variables "expect"
-@@ -33 +32 @@
--    pub out sets: Set<Int> := left minus right inter other
-+    pub out sets: Set<Int> := left minus (right inter other)
 @@ -36 +35 @@
+-    out sets := left minus right inter other
++    out sets := left minus (right inter other)
+@@ -39 +38 @@
 -    ensure wildcard: level = match mode { Heat => 1, Cool => 2, _ => 3 }
 +    ensure wildcard: level = match mode { Heat => 1, Cool => 2, Mode::Off | Mode::Auto => 3 }
-@@ -38,3 +37,3 @@
+@@ -41,3 +40,3 @@
 -    ensure single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, _ => 4 }
 -    ensure payloads: size = match shape { Shape::Dot => 0, _ => 1 }
 -    ensure raw: lower? iff text.matches?(r"[a-z]+")
 +    ensure single_rule: single = match mode { Heat => 1, Cool => 2, Mode::Off => 3, Mode::Auto => 4 }
 +    ensure payloads: size = match shape { Shape::Dot => 0, Shape::Circle(_) | Shape::Rect(_, _) => 1 }
 +    ensure raw: lower? iff text.matches?("[a-z]+")
-@@ -44 +43 @@
+@@ -47 +46 @@
 -    ensure accented_rule: accented? iff text.matches?(r"caf[éè]\.")
 +    ensure accented_rule: accented? iff text.matches?("caf[\u00E9\u00E8]\\.")
-@@ -47 +46 @@
+@@ -50 +49 @@
 -    ensure loose_rule: loose? iff (first? or second? and third?)
 +    ensure loose_rule: loose? iff (first? or (second? and third?))
-@@ -49 +48 @@
+@@ -52 +51 @@
 -    ensure open_ended_rule: open_ended? iff (first? or second? and if third? then first? else level > 0)
 +    ensure open_ended_rule: open_ended? iff (first? or (second? and if third? then first? else level > 0))
 Some errors have detailed explanations: F0780, F0783.

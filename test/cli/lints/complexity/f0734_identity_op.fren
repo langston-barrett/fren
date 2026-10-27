@@ -1,2 +1,2 @@
 -- `identity_op`, keeping the operand's parentheses.
-comp c { in x: Int in y: Int pub out n: Int ensure r: n = 2 * ((x - y) + 0) - -(x + y) }
+proc c(x: Int, y: Int): (n: Int) { ensure r: n = 2 * ((x - y) + 0) - -(x + y) }

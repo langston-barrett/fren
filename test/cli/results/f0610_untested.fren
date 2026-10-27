@@ -1,7 +1,5 @@
 --@ args: quickcheck
-comp c {
-    in x: Int
+proc c(x: Int): (pos?) {
     assume never: x > 0 and x < 0
-    pub out pos?
     ensure r: pos? iff x > 0
 }

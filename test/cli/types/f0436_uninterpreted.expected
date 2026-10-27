@@ -1,8 +1,8 @@
 error[F0436]: the uninterpreted function `hidden` cannot be given for a function parameter
- --> test/cli/types/f0436_uninterpreted.fren:7:33
+ --> test/cli/types/f0436_uninterpreted.fren:6:20
   |
-7 |     pub det out y: Int := apply(hidden, x)
-  |                                 ^^^^^^ uninterpreted
+6 |     out y := apply(hidden, x)
+  |                    ^^^^^^ uninterpreted
   |
   = note: its applications would be within the higher-order function's body, where their arguments may mention an output of the component
   = help: give a closure that applies a defined function, or apply the uninterpreted function outside and give its value

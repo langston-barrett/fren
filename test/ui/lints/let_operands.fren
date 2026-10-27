@@ -1,12 +1,6 @@
 -- `nonminimal_bool` around and within a `let`, whose simpler forms keep the
 -- parentheses that a `let` needs as an operand.
-comp c {
-    in a?
-    in x: Int
-    pub out o?
-    pub out p?
-    pub out q?
-
+proc c(a?, x: Int): (o?, p?, q?) {
     ensure r1: o? iff not not (let k := 2 in x > k)
     --~^ warning: write `(let k := 2 in x > k)`
     ensure r2: p? iff (let b? := a? in b?) = true

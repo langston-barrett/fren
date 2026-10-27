@@ -1,6 +1,6 @@
 --- test/cli/fix/ops.fren
 +++ test/cli/fix/ops.fren
-@@ -21,6 +21,6 @@
+@@ -14,6 +14,6 @@
 -    ensure r1: p? iff (a > b or b > a) and (x? = y?)
 -    ensure r2: q? iff s.index_of(t, 0) <= -1 or s.slice(0, t.len) = t
 -    ensure r3: n = 1 * a + if x? then b else b + 1

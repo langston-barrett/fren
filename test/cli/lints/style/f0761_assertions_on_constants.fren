@@ -1,9 +1,6 @@
 -- `assertions_on_constants`, with what the message can tell.
 const LIMIT: Int := 10
-pub comp c {
-    in x: Int
-    pub out y: Int
-
+pub proc c(x: Int): (y: Int) {
     ensure r: y = x
     ensure s: true
     expect e: LIMIT > 0

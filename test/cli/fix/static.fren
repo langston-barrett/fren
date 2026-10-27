@@ -3,4 +3,4 @@
 set_option fren.lint.unused_imports "deny"
 pub enum Mode { Heat, Cool }
 use Mode::Cool
-comp c { in m: Mode pub out h? ensure r: h? iff m = Nope }
+proc c(m: Mode): (h?) { ensure r: h? iff m = Nope }

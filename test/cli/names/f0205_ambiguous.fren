@@ -3,4 +3,4 @@ enum E { A, B }
 enum F { A, C }
 use E::*
 use F::*
-comp c { in e: E pub out y? ensure r: y? iff e = A }
+proc c(e: E): (y?) { ensure r: y? iff e = A }

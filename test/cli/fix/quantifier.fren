@@ -4,22 +4,12 @@
 -- that it writes from a quantifier is in parentheses.
 enum Mode { Heat, Cool, Off }
 
-pub comp c {
-    in m: Mode
-    in p?
-    pub out o?
-    pub out w?
-
+pub proc c(m: Mode, p?): (o?, w?) {
     ensure r1: o? iff not not (forall (k: Mode), k = m) and p?
     ensure r2: w? iff (exists (k: Mode), not not (k = m))
 }
 
 set_option fren.lint.if_chain_match "warn" in
-pub comp arms {
-    in m: Mode
-    in p?
-    in q?
-    pub out u?
-
+pub proc arms(m: Mode, p?, q?): (u?) {
     ensure r: u? iff if m = Mode::Heat then (forall (k: Mode), k = m or p?) else if m = Mode::Cool then p? else q?
 }

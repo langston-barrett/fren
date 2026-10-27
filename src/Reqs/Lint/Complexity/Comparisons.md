@@ -5,7 +5,7 @@ comparisons](#redundant-comparisons), of [searches](Methods.md#searches),
 [whole slices](Methods.md#whole-slices) and [conditional
 operands](Operators.md#conditional-operands), and
 [`bool_equality`](../Pedantic.md#boolean-equality), look at the operators
-and method calls of an expression, in any constraint, binding, definition,
+and method calls of an expression, in any constraint, argument, binding, definition,
 constant or global expectation, and are fixable. Like
 [`nonminimal_bool`](../Complexity.md#simpler-bool-expressions), each fix
 puts its operands, and itself, in parentheses where
@@ -51,11 +51,11 @@ pub mod lint
 pub enum Order { Below, Same, Above }
 
 set_option fren.evidence "enumerated" in
-pub comp comparison_holds {
+pub proc comparison_holds(
+    op: Comparison,
+    order: Order,        -- how the left operand compares with the right
+): (det holds?) {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
-    in op: Comparison
-    in order: Order      -- how the left operand compares with the right
-    pub det out holds?
 
     ensure rule: holds? iff match op {
         Eq => order = Order::Same,
@@ -67,13 +67,15 @@ pub comp comparison_holds {
     }
 }
 
-pub comp double_comparison {
+pub proc double_comparison(
+    conjunction?,        -- the comparisons are joined by `and`, rather than `or`
+    first: Comparison,
+    second: Comparison,    -- with its operands in the first's order
+): (
+    det fires?,
+    det result: Comparison,         -- the fix, if it fires; otherwise `first`
+) {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
-    in conjunction?      -- the comparisons are joined by `and`, rather than `or`
-    in first: Comparison
-    in second: Comparison  -- with its operands in the first's order
-    pub det out fires?
-    pub det out result: Comparison  -- the fix, if it fires; otherwise `first`
 
     ensure fires: fires? iff first != second and (if conjunction?
         then first in {Le, Ge, Ne} and second in {Le, Ge, Ne}
@@ -138,13 +140,7 @@ fn complement_of(op: Comparison): Comparison := match op { Eq => Ne, Ne => Eq, L
 
 expect complement_of_agrees: forall (c: complement), c.result = complement_of(c.op)
 
-comp disjoint {
-    in op1: Comparison
-    in a: Int
-    in op2: Comparison
-    in b: Int
-    in x: Int
-
+proc disjoint(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) {
     expect sound: when disjoint?(op1, a, op2, b), not both?(op1, a, op2, b, x)
     -- Each comparison is the same between its literal and the next integer,
     -- so if any integer meets both, one next to `a` or `b` does.
@@ -153,15 +149,16 @@ comp disjoint {
         or both?(op1, a, op2, b, b - 1) or both?(op1, a, op2, b, b) or both?(op1, a, op2, b, b + 1)
 }
 
-pub comp redundant_comparisons {
-    in conjunction?      -- the comparisons are joined by `and`, rather than `or`
-    in first: Comparison  -- `x OP k`, with `x` on the left
-    in first_bound: Int
-    in second: Comparison
-    in second_bound: Int
-    pub det out fires?
-    pub det out keep_first?  -- the fix keeps the first comparison, rather than the second
-
+pub proc redundant_comparisons(
+    conjunction?,        -- the comparisons are joined by `and`, rather than `or`
+    first: Comparison,    -- `x OP k`, with `x` on the left
+    first_bound: Int,
+    second: Comparison,
+    second_bound: Int,
+): (
+    det fires?,
+    det keep_first?,         -- the fix keeps the first comparison, rather than the second
+) {
     ensure fires: fires? iff (disjoint?(first, first_bound, complement_of(second), second_bound)
         or disjoint?(second, second_bound, complement_of(first), first_bound))
     ensure fix: keep_first? iff (if conjunction?
@@ -169,15 +166,15 @@ pub comp redundant_comparisons {
         else disjoint?(second, second_bound, complement_of(first), first_bound))
 }
 
-comp redundant_comparisons_exact {
-    in conjunction?
-    in first: Comparison
-    in first_bound: Int
-    in second: Comparison
-    in second_bound: Int
-    in x: Int
-
-    inst p: redundant_comparisons { conjunction?, first, first_bound, second, second_bound }
+proc redundant_comparisons_exact(
+    conjunction?,
+    first: Comparison,
+    first_bound: Int,
+    second: Comparison,
+    second_bound: Int,
+    x: Int,
+) {
+    call p := redundant_comparisons(conjunction?, first, first_bound, second, second_bound)
 
     expect exact: when p.fires?,
         (if conjunction? then both?(first, first_bound, second, second_bound, x)
@@ -211,14 +208,16 @@ pub enum Offset { Zero, PlusOne, MinusOne }
 
 use self::Offset::{MinusOne, PlusOne, Zero}
 
-pub comp int_plus_one {
+pub proc int_plus_one(
+    op: Comparison,
+    left: Offset,        -- `e + 1` and `1 + e` are `PlusOne`, `e - 1` is `MinusOne`, and any other operand `Zero`
+    right: Offset,
+): (
+    det fires?,
+    det result: Comparison,         -- the comparison of the fix
+    det drop_left?,                 -- the fix drops the offset of the left operand, rather than the right
+) {
     use self::Comparison::{Ge, Gt, Le, Lt}
-    in op: Comparison
-    in left: Offset      -- `e + 1` and `1 + e` are `PlusOne`, `e - 1` is `MinusOne`, and any other operand `Zero`
-    in right: Offset
-    pub det out fires?
-    pub det out result: Comparison  -- the comparison of the fix
-    pub det out drop_left?          -- the fix drops the offset of the left operand, rather than the right
 
     ensure rule: fires? iff ((op = Ge and (right = PlusOne or left = MinusOne))
         or (op = Le and (left = PlusOne or right = MinusOne)))
@@ -234,14 +233,14 @@ fix does:
 ```fren
 fn offset_value(o: Offset): Int := match o { Zero => 0, PlusOne => 1, MinusOne => -1 }
 
-comp int_plus_one_exact {
-    in op: Comparison
-    in left: Offset
-    in right: Offset
-    in a: Int            -- the left operand, without its offset
-    in b: Int            -- the right operand, without its offset
-
-    inst p: int_plus_one { op, left, right }
+proc int_plus_one_exact(
+    op: Comparison,
+    left: Offset,
+    right: Offset,
+    a: Int,              -- the left operand, without its offset
+    b: Int,              -- the right operand, without its offset
+) {
+    call p := int_plus_one(op, left, right)
 
     expect exact: when p.fires?, compares?(op, a + offset_value(left), b + offset_value(right))
         iff compares?(p.result, if p.drop_left? then a else a + offset_value(left),
@@ -263,34 +262,27 @@ i + 1 <= n`, whose other comparison would change. `lint::int_plus_one_in_chain`
 states this, and the refinements check the fixes:
 
 ```fren
-pub comp int_plus_one_in_chain {
-    in comparison: Nat     -- its position in the chain, from 0
-    in n_comparisons: Nat
-    in drop_left?          -- `int_plus_one`'s fix of it alone drops its left operand's offset
-
+pub proc int_plus_one_in_chain(
+    comparison: Nat,       -- its position in the chain, from 0
+    n_comparisons: Nat,
+    drop_left?,            -- `int_plus_one`'s fix of it alone drops its left operand's offset
+): (det fires?) {
     assume position: comparison < n_comparisons
-    pub det out fires?
 
     ensure rule: fires? iff (if drop_left? then comparison = 0 else comparison + 1 = n_comparisons)
 }
 
 set_option fren.lint.int_plus_one "allow" in
-pub comp int_plus_one_chain_written {
-    in i: Int
-    in n: Int
-    in m: Int
-    pub det out last? := 0 <= i <= n - 1
-    pub det out first? := n - 1 >= i >= 0
-    pub det out offset? := i + 1 <= n <= m
+pub proc int_plus_one_chain_written(i: Int, n: Int, m: Int): (det last?, det first?, det offset?) {
+    out last? := 0 <= i <= n - 1
+    out first? := n - 1 >= i >= 0
+    out offset? := i + 1 <= n <= m
 }
 
-pub comp int_plus_one_chain_fixed {
-    in i: Int
-    in n: Int
-    in m: Int
-    pub det out last? := 0 <= i < n
-    pub det out first? := n > i >= 0
-    pub det out offset? := i < n <= m
+pub proc int_plus_one_chain_fixed(i: Int, n: Int, m: Int): (det last?, det first?, det offset?) {
+    out last? := 0 <= i < n
+    out first? := n > i >= 0
+    out offset? := i < n <= m
 }
 
 refine int_plus_one_chain_sound: int_plus_one_chain_fixed refines int_plus_one_chain_written

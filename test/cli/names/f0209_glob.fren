@@ -1,6 +1,6 @@
 -- Opening something other than an enum (F0209).
 mod m
-pub comp c {}
+pub proc c() {}
 
 mod n
 use m::*

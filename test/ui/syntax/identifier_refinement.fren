@@ -1,7 +1,7 @@
 -- A letter that Lean allows but Fren does not (F0119), in a refinement's
 -- binding, in both front ends.
 
-comp c { in x: Int pub out y: Int ensure r: y = x }
-comp a { in n: Int pub out z: Int ensure r: z = n }
+proc c(x: Int): (y: Int) { ensure r: y = x }
+proc a(n: Int): (z: Int) { ensure r: z = n }
 
 refine ok: c refines a { n := xα, z := y }   --~ error: `xα` is not an identifier in Fren

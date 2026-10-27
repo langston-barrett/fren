@@ -1,6 +1,6 @@
 --- test/cli/fix/if_chain_is.fren
 +++ test/cli/fix/if_chain_is.fren
-@@ -14,4 +14,4 @@
+@@ -7,4 +7,4 @@
 -    ensure r1: k = if s is Shade::Tinted(_) then 1 else if s is Shade::Dark | Shade::Light then 2 else 3
 -    ensure r2: a? iff match n { 0 | 1 => true, _ => false }
 -    ensure r3: b? iff match n { 0..=9 => true, _ => false }

@@ -1,11 +1,8 @@
---@ args: eval --comp c --set took=Ms(3)
+--@ args: eval --proc c --set took=Ms(3)
 -- A newtype's value is given and shown as Fren builds it.
 pub ordered struct Ms(Int)
 
-comp c {
-    in took: Ms
-    pub out left: Ms
-
+proc c(took: Ms): (left: Ms) {
     ensure r: left = Ms(10) - took
     expect fits: left > Ms(5)
 }

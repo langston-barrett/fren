@@ -5,11 +5,7 @@ set_option fren.lint.manual_range_patterns "allow"
 
 pub enum Reply { Ok(Int), Err(String) }
 
-comp bools {
-    in a?
-    in b?
-    pub det out x: Int
-
+proc bools(a?, b?): (det x: Int) {
     ensure x_def: x = match (a? and b?) {
         true => 1,
         false => 0,
@@ -19,11 +15,7 @@ comp bools {
     expect not_both_holds: when not a?, x = 0
 }
 
-comp ints {
-    in n: Int
-    pub det out name: Int
-    pub det out small?
-
+proc ints(n: Int): (det name: Int, det small?) {
     ensure name_def: name = match n {
         0 => 0,
         1 | 2 => 1,
@@ -39,12 +31,7 @@ comp ints {
     expect negative_holds: when n = -9, name = -2
 }
 
-comp strings {
-    in s: String
-    in r: Reply
-    pub det out code: Int
-    pub det out fatal?
-
+proc strings(s: String, r: Reply): (det code: Int, det fatal?) {
     ensure code_def: code = match s {
         "ok" => 0,
         "warn" | "warning" => 1,

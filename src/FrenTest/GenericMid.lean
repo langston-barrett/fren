@@ -10,4 +10,4 @@ open Fren.Lang
 mod mid
 use lib::other
 pub enum One { A }
-comp mid { in x: One pub det out y: One := other(x) }
+proc mid(x: One): (det y: One) { out y := other(x) }

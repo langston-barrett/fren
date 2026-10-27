@@ -8,11 +8,7 @@ set_option fren.lint.manual_pattern_char_comparison "allow"
 
 enum Case { Snake, Camel, Upper }
 
-comp in_case {
-    in case: Case
-    in name: String
-    pub det out conventional?
-
+proc in_case(case: Case, name: String): (det conventional?) {
     ensure snake: when case = Case::Snake, conventional? iff not name.matches?(r".*[A-Z].*")
     ensure camel: when case = Case::Camel, conventional? iff name.matches?(r"[A-Z][^_]*")
     ensure upper: when case = Case::Upper, conventional? iff name.matches?(r"[A-Z][^a-z]*")
@@ -23,11 +19,8 @@ comp in_case {
     expect wrong: when case = Case::Camel, conventional?  --~ error: expectation `in_case::wrong` does not hold
 }
 
-comp codes {
-    in code: String
-
+proc codes(code: String): (lint?) {
     assume well_formed: code.matches?(r"F0[1-7][0-9][0-9]")
-    pub out lint?
 
     ensure r: lint? iff code.starts_with?("F07")
 

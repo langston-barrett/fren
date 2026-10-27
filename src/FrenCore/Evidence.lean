@@ -7,7 +7,7 @@ import FrenCore.Check
 
 Which checks a spec has tested rather than asked of the solver, as set by
 `set_option fren.evidence "tested" in`, shared by both front ends. Each
-front end drops these checks from the comp before `checkComp`, so that the
+front end drops these checks from the procedure before `checkComp`, so that the
 solver is asked nothing about them; the `fren` command then tests them.
 -/
 
@@ -37,7 +37,7 @@ def runOf (kind : CheckKind) (tested : Bool) : Run :=
   else if kind.untestable then .skipped
   else .byTesting
 
-/-- The checks of a comp whose evidence is testing, or that are not run
+/-- The checks of a procedure whose evidence is testing, or that are not run
 because of it (`check::by_testing`). -/
 structure Tested where
   realizable : Bool := false
@@ -45,18 +45,18 @@ structure Tested where
   /-- Expectations and cover goals, whose checks are tested, and other
   constraints and definitions, whose vacuity and definedness are not run. -/
   props : Array Name := #[]
-  /-- Instances: their assumptions, and the definedness of their bindings. -/
+  /-- Calls: their assumptions, and the definedness of their arguments. -/
   insts : Array Name := #[]
-  /-- `det out`s: their determinism. -/
+  /-- `det` variables: their determinism. -/
   dets : Array Name := #[]
   deriving Inhabited
 
 def Tested.any (t : Tested) : Bool :=
   t.realizable || t.redundancy || !t.props.isEmpty || !t.insts.isEmpty || !t.dets.isEmpty
 
-/-- The checks set to testing by a comp's setting `all` and its members'
+/-- The checks set to testing by a procedure's setting `all` and its members'
 settings, each `none` if it has none: a member's setting takes precedence
-(`Reqs/Check#checking-by-testing`). `constraints` are the comp's
+(`Reqs/Check#checking-by-testing`). `constraints` are the procedure's
 assumptions, requirements and definitions, and `expects` its expectations
 and cover goals. -/
 def Tested.ofSettings (all : Bool) (constraints : Array Name)
@@ -107,13 +107,13 @@ could set. -/
 def misplacedEvidenceMsg (what : String) : Msg :=
   { code? := some "F0215", headline := s!"`fren.evidence` cannot be set for {what}"
     label? := some "has no checks to test"
-    notes := #["note: it can be set before a component, an expectation or global expectation, a cover goal, an instance or a `det out`"] }
+    notes := #["note: it can be set before a procedure, an expectation or global expectation, a cover goal, a call or a `det` variable"] }
 
 /-- `set_option` before a member, of an option other than `fren.evidence`. -/
 def memberOptionMsg (option : String) : Msg :=
   { code? := some "F0216", headline := s!"`{option}` cannot be set before a member"
     label? := some "not `fren.evidence`"
-    notes := #["note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component"] }
+    notes := #["note: before a member, `set_option` sets only `fren.evidence`; other options are set before the procedure"] }
 
 /-- The evidence of a check (`check::Evidence`): whether it is tested, and
 whether it is enumerated; neither is the solver's. -/

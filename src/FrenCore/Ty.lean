@@ -283,7 +283,7 @@ inductive Brought where
   deriving Inhabited, DecidableEq, Repr
 
 /-- What a `Nat` variable brings, from whether it is an output of the
-component itself and whether it is defined (`lang::nat_variable`). -/
+procedure itself and whether it is defined (`lang::nat_variable`). -/
 def natBrought (ownOutput defined : Bool) : Brought :=
   if defined then .nothing else if ownOutput then .guarantee else .assumption
 

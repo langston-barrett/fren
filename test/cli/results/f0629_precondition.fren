@@ -3,9 +3,6 @@
 fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
-comp first {
-    in q: Seq<Int>
-    pub out x: Int
-
+proc first(q: Seq<Int>): (x: Int) {
     ensure r: x = nth(q, 0)
 }

@@ -8,12 +8,7 @@ use self::Mode::{Cool, Heat, Off}
 
 const BAND: Int := 2
 
-pub comp thermostat {
-    in on?
-    in temp: Int
-    in target: Int
-    pub det out mode: Mode
-
+pub proc thermostat(on?, temp: Int, target: Int): (det mode: Mode) {
     ensure rule: mode = table {
         | on? and temp < target - BAND => Heat,
         | on? and temp > target + BAND => Cool,

@@ -36,7 +36,7 @@ register_option fren.enumeration.size : Nat := {
 
 register_option fren.evidence : String := {
   defValue := "solver"
-  descr := "the evidence of the checks of the next component, global expectation or refinement: \"tested\" to have the `fren` command test them, \"enumerated\" to decide them by enumerating behaviours, \"enumerated+tested\" for both, or \"solver\""
+  descr := "the evidence of the checks of the next procedure, global expectation or refinement: \"tested\" to have the `fren` command test them, \"enumerated\" to decide them by enumerating behaviours, \"enumerated+tested\" for both, or \"solver\""
 }
 
 export Core (ItemKind Item EnumDef UseDef)
@@ -211,7 +211,7 @@ structure ConstInfo where
 
 /-- An abstract type or a function. In the model it is a placeholder: an
 axiom of its type, which every expression that mentions it uses, so that
-instances and global expectations need no plumbing. Where a spec leaves the
+calls and global expectations need no plumbing. Where a spec leaves the
 model, the placeholder is replaced: by a parameter in the generated
 definitions, a local for the solver, and an interpretation in an `impl`. -/
 structure AbstractInfo where
@@ -389,22 +389,22 @@ parameters `tps`, at the instance `targs` (`atInstance`), at the arguments
 def ClauseInfo.atInst (k : ClauseInfo) (path : Name) (tps : Array Name) (targs args : Array Expr) : Expr :=
   atInstance path tps targs (k.at args)
 
-/-- A comp variable: one of its own, or one of an instance's (`w.x`). -/
+/-- A procedure variable: one of its own, or one of a call's (`w.x`). -/
 structure Var where
   name : Name
   role : Core.Role
-  /-- Shown in counterexamples: inputs, `pub out`s and instances' `pub out`s. -/
+  /-- Shown in counterexamples: parameters, results and calls' results. -/
   isPub : Bool
-  /-- A `det out` of the comp itself. -/
+  /-- A `det` variable of the procedure itself. -/
   isDet : Bool := false
   type : Expr
   ref : Syntax
-  /-- The definition of a defined output of the comp itself. -/
+  /-- The definition of a defined output of the procedure itself. -/
   defn? : Option Syntax := none
   /-- Its type as declared, with its patterns. -/
   ptype : Core.PTy := default
   /-- The constraint that its type brings, as a predicate of its value
-  (`Reqs/Lang/Components#pattern-types`). -/
+  (`Reqs/Lang/Procedures#pattern-types`). -/
   fact? : Option Expr := none
   deriving Inhabited
 
@@ -422,7 +422,7 @@ def PropKind.keyword : PropKind → String
   | .cover => "cover"
 
 /-- An `assume`, `ensure`, `expect` or `cover`. Expressions are closed lambdas over all
-of the comp's variables (`CompInfo.vars`). -/
+of the procedure's variables (`CompInfo.vars`). -/
 structure PropInfo where
   kind : PropKind
   name : Name
@@ -435,17 +435,17 @@ structure PropInfo where
   decl : Name
   deriving Inhabited
 
-/-- An instance. Expressions are closed lambdas over all of the
-instantiating comp's variables. -/
+/-- A call. Expressions are closed lambdas over all of the
+calling procedure's variables. -/
 structure InstInfo where
   name : Name
   comp : Name
   ref : Syntax
   bindings : Expr
-  /-- The instantiated comp's meaning (`CompInfo.meaning`) over the instance's
+  /-- The called procedure's meaning (`CompInfo.meaning`) over the call's
   variables. -/
   behaviour : Expr
-  /-- The instantiated comp's assumptions over the instance's variables,
+  /-- The called procedure's assumptions over the call's variables,
   after its inputs' types' obligations (`Core.Inst.typed`). -/
   assumes : Array (Name × Expr)
   /-- Which of `assumes` are its inputs' types' obligations, with those types. -/
@@ -455,7 +455,7 @@ structure InstInfo where
 
 structure CompInfo where
   path : Name
-  /-- Its own variables in declaration order, then each instance's. -/
+  /-- Its own variables in declaration order, then each call's. -/
   vars : Array Var
   props : Array PropInfo
   insts : Array InstInfo := #[]
@@ -466,7 +466,7 @@ structure CompInfo where
   declaration order: its generated definitions take a parameter for each. -/
   uses : Array Name := #[]
   /-- Each defined output and its definition, a closed lambda over all of
-  the comp's variables that mentions no defined output. -/
+  the procedure's variables that mentions no defined output. -/
   defs : Array (Name × Expr) := #[]
   /-- No construct of it is outside the decidable core
   (`view::inconclusive_advice`). -/
@@ -475,12 +475,12 @@ structure CompInfo where
   (`Reqs/Lint/Decidability#undecidable-constructs`), even where the error
   does not stop `#fren_check`, as in a `#guard_msgs`. -/
   undecidableDenied : Bool := false
-  /-- It, or one of its instances, applies a relational operator. -/
+  /-- It, or one of its calls, applies a relational operator. -/
   relational : Bool := false
-  /-- It, or one of its instances, uses `card`. -/
+  /-- It, or one of its calls, uses `card`. -/
   counts : Bool := false
   /-- It has an unbounded quantifier with a bound name that has a domain,
-  directly, through an instance or through a defined function, which sets
+  directly, through a call or through a defined function, which sets
   `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guarded : Bool := false
   /-- Each index and table of its constraints and definitions: the item it
@@ -510,8 +510,8 @@ def CompInfo.ensures (c : CompInfo) : Array PropInfo := c.props.filter (·.kind 
 def CompInfo.expects (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .expect)
 def CompInfo.covers (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .cover)
 
-/-- Everything a comp says about its variables `args`: assumptions,
-requirements and instances. -/
+/-- Everything a procedure says about its variables `args`: assumptions,
+requirements and calls. -/
 def CompInfo.meaning (c : CompInfo) (args : Array Expr) : Expr :=
   let defEq (d : Name) (e : Expr) : Expr := match c.vars.findIdx? (·.name == d) with
     | some i => mkApp3 (mkConst ``Eq [1]) (c.vars[i]!.type) args[i]! (e.beta args)
@@ -557,12 +557,12 @@ inductive Entry where
   /-- An `interp` of the item at `path`, as the definition `decl`. -/
   | interpInfo (path decl : Name)
   /-- A global expectation, as a `CompInfo` whose path is its module, with
-  an instance per binder and the expectation as its only constraint. -/
+  a call per binder and the expectation as its only constraint. -/
   | globalInfo (path : Name) (c : CompInfo)
-  /-- A refinement, as the comp that checks it (`Reqs/Lang/Refinement`). -/
+  /-- A refinement, as the procedure that checks it (`Reqs/Lang/Refinement`). -/
   | refinementInfo (c : CompInfo)
   /-- The body of the defined function, or the value of the constant, at
-  `path`, which has tables, as a comp whose path is its module, with the
+  `path`, which has tables, as a procedure whose path is its module, with the
   function's parameters as inputs, for the checks of its tables. -/
   | bodyInfo (path : Name) (c : CompInfo)
   /-- A type alias, with the Lean type and the declared type it names. -/
@@ -600,7 +600,7 @@ structure State where
   interps : NameMap Name := {}
   /-- Global expectations, by full path. -/
   globals : NameMap CompInfo := {}
-  /-- Refinements, as the comps that check them, by path. -/
+  /-- Refinements, as the procedures that check them, by path. -/
   refinements : NameMap CompInfo := {}
   /-- The bodies of functions and values of constants that have tables, by
   the function's or constant's path (`Entry.bodyInfo`). -/
@@ -611,9 +611,9 @@ structure State where
   impls : NameMap (Array Name) := {}
   /-- The `impl`s proved by the solver, which are axioms. -/
   axiomImpls : NameSet := {}
-  /-- The files of each component's `tested` claims. -/
+  /-- The files of each procedure's `tested` claims. -/
   tested : NameMap (Array String) := {}
-  /-- The justifications of each component's `trusted` claims. -/
+  /-- The justifications of each procedure's `trusted` claims. -/
   trusted : NameMap (Array String) := {}
   /-- The applications of generic functions, in order (`Entry.genericUse`),
   from which the instances that the spec applies follow
@@ -768,14 +768,14 @@ structure LocalState where
   used : Array Core.UsedName := #[]
   expectations : Array (Core.ExpectationRecord × Syntax) := #[]
   lintReports : Array (Core.LintReport Syntax) := #[]
-  /-- The reports of `manual_nat` in the file, by their components and
-  variables, reported at its end unless an instance or a refinement in it
+  /-- The reports of `manual_nat` in the file, by their procedures and
+  variables, reported at its end unless a call or a refinement in it
   keeps the variable an `Int` (`natKept`). -/
   natReports : Array (Name × String × Core.LintReport Syntax) := #[]
-  /-- The variables that an instance or a refinement in the file keeps
-  `Int`s, by their components (`Core.refinementGiven`). -/
+  /-- The variables that a call or a refinement in the file keeps
+  `Int`s, by their procedures (`Core.refinementGiven`). -/
   natKept : Array (Name × String) := #[]
-  /-- The variables, parameters, instances and binders that the item being
+  /-- The variables, parameters, calls and binders that the item being
   elaborated declares (`many_single_char_names`, `similar_names`). -/
   declaredNames : Array (Name × Syntax) := #[]
   /-- The file's private enumerations and constants, and the items that
@@ -796,13 +796,13 @@ structure LocalState where
   this spec's replace: each one's identifier, and what replaces it. -/
   outerReplaced : Array (Nat × Core.LintTarget × Core.LintLevel) := #[]
   /-- Its assumptions that `unused_assumption` may fire on, and what its
-  global expectations read through instances, and its refinements of their
-  abstractions: each read's component and input. -/
+  global expectations read through calls, and its refinements of their
+  abstractions: each read's procedure and input. -/
   assumptions : Array (Core.AssumptionRecord × Syntax) := #[]
   globalReads : Array (Name × Name) := #[]
   /-- Elaborating a Markdown spec (`#fren_md`), which reports its own lints. -/
   inMarkdown : Bool := false
-  /-- For each comp, global expectation and refinement declared in a
+  /-- For each procedure, global expectation and refinement declared in a
   Markdown spec, the spec's name in messages, its path relative to the Lean
   file (`Fren.elabMd`), and its text's line map. Its syntax has positions
   in that text, wherever it is checked. -/
@@ -851,11 +851,11 @@ structure LocalState where
   /-- `undecidable` is reported as an error in the current item, which is
   then not checked (`Reqs/Lint/Decidability#undecidable-constructs`). -/
   undecidableDenied : Bool := false
-  /-- Whether the current comp, or an instance of it, applies a relational
+  /-- Whether the current procedure, or a call of it, applies a relational
   operator; with `card`, it is outside the decidable core. -/
   relationalUsed : Bool := false
   /-- The current item has an unbounded quantifier with a bound name that
-  has a domain, directly, through an instance or through a defined function
+  has a domain, directly, through a call or through a defined function
   or constant, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guardedUsed : Bool := false
   /-- The memberships `x in e` of the guards of the quantifiers over elements
@@ -863,8 +863,8 @@ structure LocalState where
   `undecidable` report that `in` defers until the quantifier is known to
   be outside the core, if it has one. -/
   elemMembers : Array ((Option String.Pos.Raw × Option String.Pos.Raw) × Bool × Option (Lean.Syntax × Core.Msg)) := #[]
-  /-- Where the current comp counts: its `card`s, and its instances whose
-  comps count. -/
+  /-- Where the current procedure counts: its `card`s, and its calls whose
+  procedures count. -/
   countRefs : Array Syntax := #[]
   /-- The indexes of the constraint being elaborated, each with the term
   that it is in range where it is evaluated (`check::definedness`). -/

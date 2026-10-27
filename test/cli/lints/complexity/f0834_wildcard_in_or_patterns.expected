@@ -1,8 +1,8 @@
 warning[F0834]: this or-pattern has `_` as an alternative
- --> test/cli/lints/complexity/f0834_wildcard_in_or_patterns.fren:6:71
+ --> test/cli/lints/complexity/f0834_wildcard_in_or_patterns.fren:6:64
   |
-6 | comp c { in l: Light pub out m: Int ensure r: m = match l { Light::On(Signal::Stop | _) => 1, _ => 0 } }
-  |                                                                       ^^^^^^^^^^^^^^^^ matches every value
+6 | proc c(l: Light): (m: Int) { ensure r: m = match l { Light::On(Signal::Stop | _) => 1, _ => 0 } }
+  |                                                                ^^^^^^^^^^^^^^^^ matches every value
   |
   = note: `_` matches every value, so the other alternatives add nothing
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0834]: this or-pattern has `_` as an alternative
   = help: to allow it, `set_option fren.lint.wildcard_in_or_patterns "allow"`
 help: write `_`
   |
-6 - comp c { in l: Light pub out m: Int ensure r: m = match l { Light::On(Signal::Stop | _) => 1, _ => 0 } }
-6 + comp c { in l: Light pub out m: Int ensure r: m = match l { Light::On(_) => 1, _ => 0 } }
+6 - proc c(l: Light): (m: Int) { ensure r: m = match l { Light::On(Signal::Stop | _) => 1, _ => 0 } }
+6 + proc c(l: Light): (m: Int) { ensure r: m = match l { Light::On(_) => 1, _ => 0 } }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

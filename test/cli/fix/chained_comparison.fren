@@ -3,14 +3,7 @@
 -- operand of a comparison, and those that an operand of a chain needs.
 enum Mode { Heat, Cool }
 
-pub comp c {
-    in m: Mode
-    in x: Int
-    in p?
-    pub out o?
-    pub out w?
-    pub out u?
-
+pub proc c(m: Mode, x: Int, p?): (o?, w?, u?) {
     ensure r1: o? iff not ((0 <= x < 10) = p?)
     ensure r2: w? iff not not (0 <= x < 10)
     ensure r3: u? iff x < match m { _ => if p? then 1 else 2 } <= 3

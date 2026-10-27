@@ -1,4 +1,2 @@
--- A function type as a component's input.
-comp apply {
-    in f: fn(Int) -> Int
-}
+-- A function type as a procedure's parameter.
+proc apply(f: fn(Int) -> Int) {}

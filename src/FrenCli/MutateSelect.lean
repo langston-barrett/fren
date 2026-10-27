@@ -15,7 +15,7 @@ The decisions by which `fren mutate` selects the mutants to run
 namespace FrenCli.Mutate
 
 /-- Whether a mutant is selected, from whether it passes each filter:
-`--comp`, `--mutant`, `--diff`, `--sample` and `--shard`, each `true` if
+`--proc`, `--mutant`, `--diff`, `--sample` and `--shard`, each `true` if
 not given (`mutate::selection`). -/
 def chosen (ofComp named touched sampled sharded : Bool) : Bool := ofComp && named && touched && sampled && sharded
 

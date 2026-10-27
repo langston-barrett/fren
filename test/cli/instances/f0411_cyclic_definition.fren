@@ -1,8 +1,6 @@
-comp c {
-    in x: Int
-    out a: Int := b + x
-    out b: Int := a
-    pub out y: Int
+proc c(x: Int): (y: Int) {
+    let a: Int := b + x
+    let b: Int := a
 
     ensure r: y = a
 }

@@ -1,59 +1,46 @@
 -- Instances: what they contribute to checks, and the `instance` check.
 
-comp counter {
-    in n: Int
-
+proc counter(n: Int): (next: Int) {
     assume nonneg: n >= 0
-    pub out next: Int
-    out scratch: Int
+    exists scratch: Int
 
     ensure inc: next = n + 1
     ensure copy: scratch = n
 }
 
 -- `b`'s assumption follows from `a`'s guarantees.
-comp twice {
-    in n: Int
-
+proc twice(n: Int): (m: Int) {
     assume nonneg: n >= 0  --~ warning: `n` is never negative
-    pub out m: Int
 
-    inst a: counter { n }
-    inst b: counter { n := a.next }
+    call a := counter(n)
+    call b := counter(a.next)
 
     ensure result: m = b.next
 
     expect plus_two: m = n + 2
 }
 
-comp unguarded {
-    in n: Int
-    pub out m: Int
-
-    inst c: counter { n }  --~ error: the assumption `nonneg` of `counter` may not hold for instance `unguarded::c`
+proc unguarded(n: Int): (m: Int) {
+    call c := counter(n)  --~ error: the assumption `nonneg` of `counter` may not hold for call `unguarded::c`
 
     ensure result: m = c.next
 }
 
-comp chooser {
-    pub out b?
+proc chooser(): (b?) {
     --~^ warning: unused variable `b?`
 }
 
 -- Instance variables are not the comp's to choose: whatever `pick` does, the
 -- comp must cope.
-comp hopes {   --~ error: no outputs satisfy `lucky`
-    pub out x: Int
-    inst pick: chooser {}
+proc hopes(): (x: Int) {   --~ error: no outputs satisfy `lucky`
+    call pick := chooser()
     ensure lucky: pick.b? and x = 0   --~ info: is false for this input
 }
 
-comp observes {
-    in n: Int
-
+proc observes(n: Int) {
     assume nonneg: n >= 0  --~ warning: `n` is never negative
 
-    inst c: counter { n }
+    call c := counter(n)
 
     ensure zero: when c.next = 0, n = 0  --~ error: `observes::zero` is vacuous: its condition can never hold, given `c`
     expect big: c.next > 5           --~ error: expectation `observes::big` does not hold

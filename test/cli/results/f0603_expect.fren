@@ -1,8 +1,6 @@
 -- An expectation that does not hold (F0603).
-comp c {
-    in x: Int
-    pub out y: Int
-    out scratch: Int
+proc c(x: Int): (y: Int) {
+    exists scratch: Int
     ensure r: y >= x
     ensure s: scratch = x
     expect positive: y > 0

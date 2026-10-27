@@ -1,8 +1,8 @@
 error[F0362]: newtype `Seconds` has no operator `-`
- --> test/cli/types/f0362_nat_difference.fren:4:71
+ --> test/cli/types/f0362_nat_difference.fren:4:62
   |
-4 | comp c { in a: Seconds in b: Seconds pub out d: Seconds ensure r: d = a - b }
-  |                                                                       ^^^^^ `-` of `Seconds`
+4 | proc c(a: Seconds, b: Seconds): (d: Seconds) { ensure r: d = a - b }
+  |                                                              ^^^^^ `-` of `Seconds`
   |
   = note: a newtype of `Nat` has `=`, `!=`, `<`, `<=`, `>`, `>=`, and `+` of two of them
   = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s

@@ -3,9 +3,6 @@
 -- enumeration's are: each mutant is still well typed.
 mod m
 
-pub comp c {
-    in x: Option<Int>
-    pub out y: Option<Int>
-
+pub proc c(x: Option<Int>): (y: Option<Int>) {
     ensure r: y = (match x { Option::Some(n) => Option::Some(n + 1), Option::None => Option::None })
 }

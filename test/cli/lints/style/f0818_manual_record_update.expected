@@ -1,8 +1,8 @@
 warning[F0818]: this record literal copies 2 fields from `p`
- --> test/cli/lints/style/f0818_manual_record_update.fren:3:53
+ --> test/cli/lints/style/f0818_manual_record_update.fren:3:46
   |
-3 | comp c { in p: Point pub out q: Point ensure r: q = Point { x := 0, y := p.y, z := p.z } }
-  |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same as `{ p with x := 0 }`
+3 | proc c(p: Point): (q: Point) { ensure r: q = Point { x := 0, y := p.y, z := p.z } }
+  |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same as `{ p with x := 0 }`
   |
   = note: an update reads from its updated value every field it does not give, so it stays right when a field is added
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0818]: this record literal copies 2 fields from `p`
   = help: to allow it, `set_option fren.lint.manual_record_update "allow"`
 help: write `{ p with x := 0 }`
   |
-3 - comp c { in p: Point pub out q: Point ensure r: q = Point { x := 0, y := p.y, z := p.z } }
-3 + comp c { in p: Point pub out q: Point ensure r: q = { p with x := 0 } }
+3 - proc c(p: Point): (q: Point) { ensure r: q = Point { x := 0, y := p.y, z := p.z } }
+3 + proc c(p: Point): (q: Point) { ensure r: q = { p with x := 0 } }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

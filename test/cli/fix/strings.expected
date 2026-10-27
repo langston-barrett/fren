@@ -1,6 +1,6 @@
 --- test/cli/fix/strings.fren
 +++ test/cli/fix/strings.fren
-@@ -18,4 +18,4 @@
+@@ -5,4 +5,4 @@
 -    ensure r1: p? iff s.at(0) = "a" and "b" != (s ++ t).at((s ++ t).len - 1) and q.at(0) != [1]
 -    ensure r2: k? iff s.at(0) = "" or not q.at(0) != [] or (s ++ t).at(0) = ""
 -    ensure r3: n = (q ++ q).slice(0, (q ++ q).len).len + s.slice(0, s.len).len
@@ -9,14 +9,14 @@
 +    ensure r2: k? iff s = "" or q = [] or s ++ t = ""
 +    ensure r3: n = (q ++ q).len + s.len
 +    ensure r4: s.at(i) ++ s ++ (s ++ t) ++ s.at(0) = "abc"
-@@ -24,3 +24,3 @@
+@@ -11,3 +11,3 @@
 -    ensure r5: o1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
 -    ensure r6: o2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
 -    ensure r7: o3? iff (s ++ if b? then t else s).at(0) = ""
 +    ensure r5: o1? iff "ab" = (s ++ if b? then t else s) ++ t
 +    ensure r6: o2? iff "ab" = (s ++ if b? then t else s) ++ t
 +    ensure r7: o3? iff (s ++ if b? then t else s) = ""
-@@ -28,2 +28,2 @@
+@@ -15,2 +15,2 @@
 -    ensure r8: o4? iff (s ++ t).at(i).len = 0 or (s ++ if b? then t else s).len != 0 or b?
 -    expect e1: s.matches?(r"(a|b)+") or s.matches?("(\\]|\\^|c)[a-y]") or s.matches?(r#"x|""#)
 +    ensure r8: o4? iff (s ++ t).at(i) = "" or (s ++ if b? then t else s) != "" or b?

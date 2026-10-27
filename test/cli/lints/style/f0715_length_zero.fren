@@ -1,2 +1,2 @@
 -- `length_zero`.
-comp c { in s: String pub out p? ensure r: p? iff s.len = 0 }
+proc c(s: String): (p?) { ensure r: p? iff s.len = 0 }

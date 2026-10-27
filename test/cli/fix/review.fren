@@ -3,14 +3,7 @@
 -- is removed with them, and a comment between an operator and an `if`
 -- whose branches are the same does not hide the operator, so the branch is
 -- still parenthesized.
-comp c {
-    in a?
-    in x: Int
-    in t: Set<Int>
-    pub out p1?
-    pub out p2?
-    pub out n: Int
-
+proc c(a?, x: Int, t: Set<Int>): (p1?, p2?, n: Int) {
     ensure r1: p1? iff t = {(x), x}
     ensure r2: p2? iff t = {x, (x)}
     ensure r3: n = 2 * -- a comment

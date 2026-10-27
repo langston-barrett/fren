@@ -3,16 +3,10 @@
 -- the `!` of explicit shadowing, and its removal.
 pub const LIMIT: Int := 3
 
-pub comp c {
-    in LIMIT: Int
-    pub out p?
-
+pub proc c(LIMIT: Int): (p?) {
     ensure r: p? iff LIMIT > 0
 }
 
-pub comp d {
-    in y!: Int
-    pub out p?
-
+pub proc d(y!: Int): (p?) {
     ensure r: p? iff y < LIMIT
 }

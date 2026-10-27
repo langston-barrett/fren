@@ -79,15 +79,15 @@ fn bounded?(named: NamedVariants, last: Position, m: Position, up?) :=
 fn agrees_at?(named: NamedVariants, last: Position, negated?, op: Comparison, m: Position, x: Position) :=
     when x <= last, (names?(named, x) != negated?) iff orders?(op, x, m)
 
-pub comp manual_ordering {
+pub proc manual_ordering(
+    named: NamedVariants,            -- the variants that the test names
+    last: Position,          -- the last variant of the enumeration
+    negated?,                -- the test is that the operand is none of them
+): (det fix: OrderingFix) {
     use self::Comparison::{Ge, Gt, Le, Lt}
     use self::OrderingFix::{Compare, Unchanged}
-    in named: NamedVariants          -- the variants that the test names
-    in last: Position        -- the last variant of the enumeration
-    in negated?              -- the test is that the operand is none of them
 
     assume within: forall (v: Position), when names?(named, v), v <= last
-    pub det out fix: OrderingFix
 
     ensure first: forall (m: Position), when some_named?(named, last) and bounded?(named, last, m, true),
         fix = Compare(if negated? then Gt else Le, m)
@@ -109,23 +109,33 @@ pub ordered enum Rank { Low, Mid, High, Top }
 
 set_option fren.lint.manual_pattern_test "allow" in
 set_option fren.evidence "enumerated" in
-pub comp manual_ordering_written {
-    in l: Rank
-    pub det out low? := l in {Rank::Mid, Rank::Low}
-    pub det out high? := l in {Rank::Top, Rank::High, Rank::Mid}
-    pub det out equations? := l = Rank::Low or l = Rank::Mid
-    pub det out none_high? := l != Rank::Top and l != Rank::High
-    pub det out none_low? := l != Rank::Low and l != Rank::Mid
+pub proc manual_ordering_written(l: Rank): (
+    det low?,
+    det high?,
+    det equations?,
+    det none_high?,
+    det none_low?,
+) {
+    out low? := l in {Rank::Mid, Rank::Low}
+    out high? := l in {Rank::Top, Rank::High, Rank::Mid}
+    out equations? := l = Rank::Low or l = Rank::Mid
+    out none_high? := l != Rank::Top and l != Rank::High
+    out none_low? := l != Rank::Low and l != Rank::Mid
 }
 
 set_option fren.evidence "enumerated" in
-pub comp manual_ordering_fixed {
-    in l: Rank
-    pub det out low? := l <= Rank::Mid
-    pub det out high? := l >= Rank::Mid
-    pub det out equations? := l <= Rank::Mid
-    pub det out none_high? := l < Rank::High
-    pub det out none_low? := l > Rank::Mid
+pub proc manual_ordering_fixed(l: Rank): (
+    det low?,
+    det high?,
+    det equations?,
+    det none_high?,
+    det none_low?,
+) {
+    out low? := l <= Rank::Mid
+    out high? := l >= Rank::Mid
+    out equations? := l <= Rank::Mid
+    out none_high? := l < Rank::High
+    out none_low? := l > Rank::Mid
 }
 
 refine manual_ordering_sound: manual_ordering_fixed refines manual_ordering_written

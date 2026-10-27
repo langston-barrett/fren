@@ -3,9 +3,6 @@
 --@ args: check -W pedantic -A membership_chain
 enum E { A, B, C }
 
-comp c {
-    in e: E
-    pub out p?
-
+proc c(e: E): (p?) {
     ensure r: p? iff (e = E::A or e = E::B or e = E::C)
 }

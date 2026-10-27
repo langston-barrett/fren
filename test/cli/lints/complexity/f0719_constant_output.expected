@@ -1,17 +1,17 @@
 warning[F0719]: defined output `limit` is the same in every behaviour
- --> test/cli/lints/complexity/f0719_constant_output.fren:2:28
+ --> test/cli/lints/complexity/f0719_constant_output.fren:2:18
   |
-2 | comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
-  |                            ^^^^^ mentions no variable
+2 | proc c(x: Int): (limit: Int) { out limit := 10 ensure r: x < limit }
+  |                  ^^^^^ mentions no variable
   |
-  = help: make it a `const`, which is shared by every component
+  = help: make it a `const`, which is shared by every procedure
   = note: `constant_output` is `warn` by default
   = help: to allow it, `set_option fren.lint.constant_output "allow"`
 
 error[F0601]: `c` is not realizable
  --> test/cli/lints/complexity/f0719_constant_output.fren:2:6
   |
-2 | comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
+2 | proc c(x: Int): (limit: Int) { out limit := 10 ensure r: x < limit }
   |      ^ not realizable
   |
   = note: for the input
@@ -20,10 +20,10 @@ error[F0601]: `c` is not realizable
   = help: weaken one of them, or add an `assume` that rules this input out
 
 note: is false for this input
- --> test/cli/lints/complexity/f0719_constant_output.fren:2:52
+ --> test/cli/lints/complexity/f0719_constant_output.fren:2:55
   |
-2 | comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
-  |                                                    ^
+2 | proc c(x: Int): (limit: Int) { out limit := 10 ensure r: x < limit }
+  |                                                       ^
 
 fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
 

@@ -1,8 +1,5 @@
 -- A pair outside a relation literal and the left of `in`.
 -- fren-covers: lang::pair_membership
-comp c {
-    in x: Int
-    pub out p?
-
+proc c(x: Int): (p?) {
     ensure s: p? iff (x, 1) = (1, x)
 }

@@ -1,2 +1,2 @@
 -- Remainder (F0105).
-comp c { in x: Int pub out y: Int ensure r: y = x % 2 }
+proc c(x: Int): (y: Int) { ensure r: y = x % 2 }

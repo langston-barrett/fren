@@ -2,7 +2,6 @@
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 fn hidden(Int): Int
 
-comp c {
-    in x: Int
-    pub det out y: Int := apply(hidden, x)
+proc c(x: Int): (det y: Int) {
+    out y := apply(hidden, x)
 }

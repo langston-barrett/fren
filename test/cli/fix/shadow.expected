@@ -1,41 +1,41 @@
 error[F0217]: `LIMIT` shadows the constant `LIMIT`
- --> test/cli/fix/shadow.fren:7:8
+ --> test/cli/fix/shadow.fren:6:12
   |
-7 |     in LIMIT: Int
-  |        ^^^^^ shadows without `!`
+6 | pub proc c(LIMIT: Int): (p?) {
+  |            ^^^^^ shadows without `!`
   |
   = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `LIMIT!`
 help: to shadow the constant `LIMIT`, write `LIMIT!`
   |
-7 -     in LIMIT: Int
-7 +     in LIMIT!: Int
+6 - pub proc c(LIMIT: Int): (p?) {
+6 + pub proc c(LIMIT!: Int): (p?) {
   |
 
 error[F0218]: `y!` shadows nothing
-  --> test/cli/fix/shadow.fren:14:8
+  --> test/cli/fix/shadow.fren:10:12
    |
-14 |     in y!: Int
-   |        ^^ nothing to shadow
+10 | pub proc d(y!: Int): (p?) {
+   |            ^^ nothing to shadow
    |
    = note: `!` marks a declaration that hides a name in scope, but no `y` that a use could mean is in scope here
 help: remove the `!`
    |
-14 -     in y!: Int
-14 +     in y: Int
+10 - pub proc d(y!: Int): (p?) {
+10 + pub proc d(y: Int): (p?) {
    |
 
 warning[F0703]: variable `LIMIT` should have a snake case name
- --> test/cli/fix/shadow.fren:7:8
+ --> test/cli/fix/shadow.fren:6:12
   |
-7 |     in LIMIT: Int
-  |        ^^^^^ not in snake_case
+6 | pub proc c(LIMIT: Int): (p?) {
+  |            ^^^^^ not in snake_case
   |
   = note: `non_snake_case` is `warn` by default
   = help: to allow it, `set_option fren.lint.non_snake_case "allow"`
 help: rename it to `limit`
   |
-7 -     in LIMIT: Int
-7 +     in limit: Int
+6 - pub proc c(LIMIT: Int): (p?) {
+6 + pub proc c(limit: Int): (p?) {
   |
 
 error: could not fix due to previous errors

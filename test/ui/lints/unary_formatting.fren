@@ -1,13 +1,7 @@
 -- `suspicious_unary_op_formatting`, in both front ends. Not formatted,
 -- since `fren fmt` writes `x >=- 1` as `x >= -1`.
 
-comp unary {
-    in x: Int
-    pub out p1?
-    pub out p2?
-    pub out n1: Int
-    pub out n2: Int
-
+proc unary(x: Int): (p1?, p2?, n1: Int, n2: Int) {
     ensure r1: p1? iff x >=- 1  --~ warning: `>=-` looks like one operator
     ensure r2: p2? iff x != - 1 and x =- 2
     --~^ warning: `=-` looks like one operator

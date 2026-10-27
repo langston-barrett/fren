@@ -7,11 +7,7 @@ fn scale(Int): Int
 enum Shape { Circle(Int), Square }
 
 -- A binder over an input: in its arm, `x` is the payload.
-comp payload {
-    in x: Int
-    in s: Shape
-    pub out p?
-
+proc payload(x: Int, s: Shape): (p?) {
     ensure r: p? iff match s {
         Shape::Circle(x!) => x > 0,
         _ => x > 0,
@@ -23,21 +19,16 @@ comp payload {
 }
 
 -- A mention of the binder is not one of the input it shadows.
-comp unused_input {
-    in x: Int                       --~ warning: unused variable `x`
-    in s: Shape
-    pub out p?
-
+proc unused_input(
+    x: Int,                         --~ warning: unused variable `x`
+    s: Shape,
+): (p?) {
     ensure r: p? iff match s { Shape::Circle(x!) => x > 0, _ => true }
 }
 
 -- A variable over a constant and over a function, and a parameter over a
 -- constant.
-comp var_over_items {
-    in RATE!: Int
-    in scale!: Int
-    pub out y: Int
-
+proc var_over_items(RATE!: Int, scale!: Int): (y: Int) {
     ensure r: y = RATE + scale
 
     expect own: when RATE = 5 and scale = 1, y = 6
@@ -45,9 +36,7 @@ comp var_over_items {
 
 fn bump(RATE!: Int): Int := RATE + 1
 
-comp param_over_const {
-    pub out y: Int
-
+proc param_over_const(): (y: Int) {
     ensure r: y = bump(10)
 
     expect own: y = 11
@@ -55,10 +44,7 @@ comp param_over_const {
 }
 
 -- A binder of a global expectation over a constant.
-comp sub {
-    in v: Int
-    pub out w: Int
-
+proc sub(v: Int): (w: Int) {
     ensure r: w = v + scale(v)
 }
 

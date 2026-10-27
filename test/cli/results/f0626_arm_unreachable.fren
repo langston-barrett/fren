@@ -1,9 +1,6 @@
 -- An arm of a `match` that is never taken: every value above 20 is above
 -- 10, which the arm before it takes.
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     ensure r: s = match x {
         n if n > 10 => 2,
         n if n > 20 => 3,

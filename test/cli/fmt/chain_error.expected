@@ -1,8 +1,8 @@
 error[F0122]: `<` and `>` cannot be chained together
- --> test/cli/fmt/chain_error.fren:4:66
+ --> test/cli/fmt/chain_error.fren:4:57
   |
-4 | comp c { in x: Int in y: Int pub out ok? ensure r: ok? iff 0 < x > y }
-  |                                                                  ^ orders the other way from `<`
+4 | proc c(x: Int, y: Int): (ok?) { ensure r: ok? iff 0 < x > y }
+  |                                                         ^ orders the other way from `<`
   |
   = note: a chained comparison orders one way: `<` and `<=` chain together, and `>` and `>=`
   = help: split the chain with `and`, e.g. `a < b and b > c`

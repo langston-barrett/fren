@@ -1,8 +1,8 @@
 warning[F0825]: redundant definition of `x`
- --> test/cli/lints/suspicious/f0825_redundant_locals.fren:2:61
+ --> test/cli/lints/suspicious/f0825_redundant_locals.fren:2:54
   |
-2 | comp c { in x: Int pub out y: Int ensure r: y = x + 1 where x! := x }
-  |                                                             ^^ defines `x` as the `x` it hides
+2 | proc c(x: Int): (y: Int) { ensure r: y = x + 1 where x! := x }
+  |                                                      ^^ defines `x` as the `x` it hides
   |
   = note: `x` means the same with the definition and without it
   = help: write the expression meant for `x`, or remove the definition

@@ -1,8 +1,8 @@
 error[F0104]: expected `}`, found end of file
- --> test/cli/syntax/f0104_eof.fren:2:19
+ --> test/cli/syntax/f0104_eof.fren:2:17
   |
-2 | comp c { in x: Int
-  |                   ^ expected `}`
+2 | proc c(x: Int) {
+  |                 ^ expected `}`
 
 error: could not check due to previous errors
 

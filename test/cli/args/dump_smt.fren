@@ -1,11 +1,8 @@
 --@ args: check --dump-smt
 -- `--dump-smt`: each solver query, as SMT-LIB, before the results.
 enum Mode { Off, On }
-comp c {
-    in m: Mode
-    in x: Int
+proc c(m: Mode, x: Int): (y: Int) {
     assume pos: x > 0
-    pub out y: Int
     ensure on: when m = Mode::On, y = x
     ensure off: when m = Mode::Off, y = 0
 }

@@ -1,17 +1,10 @@
 -- Variables and binders that nothing mentions.
-pub comp sub {
-    in a: Int
-    pub out b: Int
-
+pub proc sub(a: Int): (b: Int) {
     ensure r: b = a
 }
 
-pub comp c {
-    in x: Int
-    in spare: Int
-    pub out y: Int
-    pub out loose?
-    inst s: sub { a := x }
+pub proc c(x: Int, spare: Int): (y: Int, loose?) {
+    call s := sub(x)
 
     ensure r: y = x
 }

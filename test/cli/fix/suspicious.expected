@@ -1,7 +1,7 @@
 warning[F0736]: both operands of `=` are written the same
-  --> test/cli/fix/suspicious.fren:34:25
+  --> test/cli/fix/suspicious.fren:28:25
    |
-34 |     ensure r9: p5? iff (x = x) and s.contains?("") and t != {}
+28 |     ensure r9: p5? iff (x = x) and s.contains?("") and t != {}
    |                         ^^^^^ always `true`
    |
    = note: one of them is probably not the operand meant
@@ -9,9 +9,9 @@ warning[F0736]: both operands of `=` are written the same
    = help: to allow it, `set_option fren.lint.eq_op "allow"`
 
 warning[F0745]: every string contains `""`
-  --> test/cli/fix/suspicious.fren:34:36
+  --> test/cli/fix/suspicious.fren:28:36
    |
-34 |     ensure r9: p5? iff (x = x) and s.contains?("") and t != {}
+28 |     ensure r9: p5? iff (x = x) and s.contains?("") and t != {}
    |                                    ^^^^^^^^^^^^^^^ always `true`
    |
    = note: the argument is probably not the one meant
@@ -20,7 +20,7 @@ warning[F0745]: every string contains `""`
 
 --- test/cli/fix/suspicious.fren
 +++ test/cli/fix/suspicious.fren
-@@ -22,7 +22,7 @@
+@@ -16,7 +16,7 @@
 -    ensure r1: n1 = if a? then x+1 else x + 1
 -    ensure r2: n2 = 2 * if a? then x + 1 else (x + 1)
 -    ensure r3: n3 = x - if a? then -x else -x
@@ -35,7 +35,7 @@ warning[F0745]: every string contains `""`
 +    ensure r5: p1? iff b? and (b? or x > 0)
 +    ensure r6: p2? iff not b?
 +    ensure r7: p3? iff t = {1, 2, 3,}
-@@ -32 +31,0 @@
+@@ -26 +25,0 @@
 -        (1,2),
 Some errors have detailed explanations: F0736, F0745.
 For more information about an error, try `fren --explain F0736`.

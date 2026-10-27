@@ -1,8 +1,8 @@
 warning[F0763]: this comparison is always `true`
- --> test/cli/lints/suspicious/f0763_absurd_extreme_comparisons.fren:2:53
+ --> test/cli/lints/suspicious/f0763_absurd_extreme_comparisons.fren:2:46
   |
-2 | comp c { in q: Seq<Int> pub out p? ensure r: p? iff -1 < q.len }
-  |                                                     ^^^^^^^^^^ `len` is never negative
+2 | proc c(q: Seq<Int>): (p?) { ensure r: p? iff -1 < q.len }
+  |                                              ^^^^^^^^^^ `len` is never negative
   |
   = note: the bound or the operator is probably not the one meant
   = note: `absurd_extreme_comparisons` is `warn` by default

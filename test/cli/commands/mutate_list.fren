@@ -32,25 +32,14 @@ const STEP: Int := 1
 
 fn twice(x: Int): Int := x + x
 
-pub comp sub {
-    in a: Int
-    in on?
-    pub out b: Int
-
+pub proc sub(a: Int, on?): (b: Int) {
     ensure r: b = a - 1 or on?
 }
 
-pub comp c {
-    in x: Int
-    in s: String
-    in m: Mode
-    in rd: Reading
-    in sp: Span
-
+pub proc c(x: Int, s: String, m: Mode, rd: Reading, sp: Span): (ok?, y: Int) {
     assume bounded: x >= 0 and x <= LIMIT
-    pub out ok?
-    pub out y: Int := twice(x) + 1
-    inst w: sub { a := x * 2, on? := true }
+    out y := twice(x) + 1
+    call w := sub(x * 2, true)
     ensure r: when x > 2 and x < 5 or not ok?, s.matches?(r"[a-z_]+x*")
     -- `a` is not removed from `[a^b]` or `[a^]`, which would negate them.
     ensure carets: s.matches?(r"[a^b][a^]") or ok?

@@ -1,3 +1,0 @@
--- Not binding every input (F0409).
-comp sub { in a: Int in b? in c: Int }
-comp c { inst s: sub { a := 1 } }

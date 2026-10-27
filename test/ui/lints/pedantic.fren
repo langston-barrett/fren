@@ -11,16 +11,7 @@ set_option fren.lint.chainable_comparison "allow"
 enum Mode { Heat, Cool, Off }
 
 -- `single_match_else`.
-comp one_variant {
-    in m: Mode
-    in x: Int
-    pub out a: Int
-    pub out b: Int
-    pub out c?
-    pub out d: Int
-    pub out e: Int
-    pub out f: Mode
-
+proc one_variant(m: Mode, x: Int): (a: Int, b: Int, c?, d: Int, e: Int, f: Mode) {
     ensure r1: a = match m { Mode::Heat => x + 1, _ => x }
     --~^ warning: this `match` tests for one pattern
     ensure r2: b = 2 * match m { Mode::Cool => x, _ => 0 }
@@ -40,18 +31,7 @@ comp one_variant {
 }
 
 -- `overly_complex_bool_expr`.
-comp drop_operands {
-    in a?
-    in b?
-    in x: Int
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p5?
-    pub out p6?
-    pub out p7?
-
+proc drop_operands(a?, b?, x: Int): (p1?, p2?, p3?, p4?, p5?, p6?, p7?) {
     ensure r1: p1? iff (a? or (a? and b?))
     --~^ warning: write `a?`
     ensure r2: p2? iff ((b? or a?) and a?)
@@ -74,23 +54,20 @@ comp drop_operands {
 const LIMIT: Int := 3
 fn scale(Int): Int
 
-comp shared {
-    in c?
-    in x: Int
-    in y: Int
-    pub out a: Int
-    pub out b: Int
-    pub out d?
-    pub out e: Int
-    pub out f: Int
-    pub out g: Int
-    pub out h: Int
-    pub out i: Int
-    pub out j: Int
-    pub out k: Int
-    pub out m: Int
-    pub out n: Int
-
+proc shared(c?, x: Int, y: Int): (
+    a: Int,
+    b: Int,
+    d?,
+    e: Int,
+    f: Int,
+    g: Int,
+    h: Int,
+    i: Int,
+    j: Int,
+    k: Int,
+    m: Int,
+    n: Int,
+) {
     ensure r1: a = if c? then 2 * x + 1 else x + 1
     --~^ warning: both branches of this `if` end with `+ 1`
     ensure r2: b = 3 * (if c? then y - x else y - 1)
@@ -122,14 +99,9 @@ comp shared {
 -- `inconsistent_struct_constructor`.
 struct Cell { row: Int, column: Int }
 
-comp cells {
-    in row: Int
-    in column: Int
-    in x: Int
-    pub out a: Cell
-    pub out b: Cell
+proc cells(row: Int, column: Int, x: Int): (a: Cell, b: Cell, det c: Cell) {
     -- A field written alone mentions its variable: not `constant_output`.
-    pub det out c: Cell := Cell { row, column }
+    out c := Cell { row, column }
 
     ensure r1: a = Cell { column := x + 1, row }
     --~^ warning: the fields of this literal are not in the order `Cell` declares them
@@ -164,12 +136,7 @@ pub fn chosen(Bool, Bool, Bool, Bool, Int): Int
 pub fn some?(a?, b?, c?) := a? or b? or c?
 
 -- `needless_raw_string_hashes`.
-comp raw {
-    in s: String
-    pub out p?
-    pub out q?
-    pub out t?
-
+proc raw(s: String): (p?, q?, t?) {
     ensure r1: p? iff s.matches?(r#"a+b"#)
     --~^ warning: write `r"a+b"`
     ensure r2: q? iff s = r##"say "hi""##

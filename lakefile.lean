@@ -94,7 +94,7 @@ input_dir reqs_chapters_md where
   filter := .ofFn fun p => p.extension == some "md" && (p.parent.bind (·.fileName)) == some "Reqs"
 
 lean_lib ReqsLang where
-  globs := #[`Reqs.Inst, `Reqs.Lang, `Reqs.Modules, `Reqs.Refine]
+  globs := #[`Reqs.Calls, `Reqs.Lang, `Reqs.Modules, `Reqs.Refine]
   needs := #[`@/reqs_lang_md]
 
 input_dir reqs_lang_md where
@@ -138,8 +138,8 @@ input_file test_main where
   text := true
 
 lean_lib ImplsProofs where
-  globs := #[`Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated, `Impls.HigherOrder,
-    `Impls.Impl, `Impls.Inst, `Impls.Lang, `Impls.Meaning, `Impls.Modules, `Impls.Mutate, `Impls.PatternTypes, `Impls.Refine, `Impls.Scope,
+  globs := #[`Impls.Calls, `Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated, `Impls.HigherOrder,
+    `Impls.Impl, `Impls.Lang, `Impls.Meaning, `Impls.Modules, `Impls.Mutate, `Impls.PatternTypes, `Impls.Procedures, `Impls.Refine, `Impls.Scope,
     `Impls.TypeFacts, `Impls.View]
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.

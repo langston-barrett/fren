@@ -1,8 +1,8 @@
 error[F0350]: a range's bound must be an integer or a constant of `Int` or `Nat`, but this is a variable
- --> test/cli/types/f0350_range_bound.fren:2:73
+ --> test/cli/types/f0350_range_bound.fren:2:64
   |
-2 | comp c { in n: Int in m: Int pub out y: Int ensure r: y = match n { 0..=m => 0, _ => 1 } }
-  |                                                                         ^ not an integer
+2 | proc c(n: Int, m: Int): (y: Int) { ensure r: y = match n { 0..=m => 0, _ => 1 } }
+  |                                                                ^ not an integer
 
 error: could not check due to previous errors
 

@@ -1,6 +1,6 @@
 --- test/cli/fix/conditionals.fren
 +++ test/cli/fix/conditionals.fren
-@@ -14,7 +14,7 @@
+@@ -5,7 +5,7 @@
 -    ensure r1: unless not (a? or b?), p?
 -    ensure r2: unless x != y, q?
 -    ensure r3: when a?, when (b? or p?), q?

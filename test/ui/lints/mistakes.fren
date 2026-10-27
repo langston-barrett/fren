@@ -3,14 +3,8 @@
 -- `unless`.
 set_option fren.lint.undecidable "allow"
 
-comp repeats {
-    in a?
-    in b?
-    in x: Int
-
+proc repeats(a?, b?, x: Int): (p?, q?) {
     assume pos: x > 0
-    pub out p?
-    pub out q?
     ensure r1: p? iff a? or b?
     ensure r2: q? iff a? and b?
     expect e1: p? iff a? or b?
@@ -32,12 +26,7 @@ expect g2: forall (r: repeats),
 --~^^ warning: this is written the same as `g1`
 expect g3: forall (s: repeats), when s.a? and s.b?, s.q?
 
-comp characters {
-    in s: String
-    pub out p?
-    pub out o?
-    pub out n?
-
+proc characters(s: String): (p?, o?, n?) {
     ensure r1: p? iff s = "a​b" or s = "c­d"
     --~^ warning: this string literal contains an invisible character, `U+200B` (zero width space)
     --~^^ warning: this string literal contains an invisible character, `U+00AD` (soft hyphen)
@@ -52,14 +41,7 @@ comp characters {
     ensure r3: n? iff s = "\u200B\u202E"
 }
 
-comp positions {
-    in s: String
-    in q: Seq<Int>
-    in t: Seq<Int>
-    pub out p?
-    pub out o?
-    pub out n?
-
+proc positions(s: String, q: Seq<Int>, t: Seq<Int>): (p?, o?, n?) {
     ensure r1: p? iff s.at(-1) = "." or s.slice(-3, 3) = "abc" or s.index_of("a", -2) = 0
     --~^ warning: a negative position does not count from the end
     --~^^ warning: a negative position does not count from the end
@@ -74,13 +56,7 @@ comp positions {
     --~^^ warning: this is a call of `at`
 }
 
-comp conditionals {
-    in a?
-    in b?
-    pub out p?
-    pub out o?
-    pub out n?
-
+proc conditionals(a?, b?): (p?, o?, n?) {
     ensure r1: p? iff (when a? or b?, (a? or b?))
     --~^ warning: the condition and the body of `when` are written the same
     ensure r2: o? iff (unless (a?), a?)
@@ -89,11 +65,7 @@ comp conditionals {
 }
 
 -- The help writes the receiver with its parentheses.
-comp positions_parenthesized {
-    in a: String
-    in b: String
-    pub out p?
-
+proc positions_parenthesized(a: String, b: String): (p?) {
     ensure r: p? iff (a ++ b).at(-1) = "."
     --~^ warning: write `(a ++ b).at((a ++ b).len - 1)`
 }

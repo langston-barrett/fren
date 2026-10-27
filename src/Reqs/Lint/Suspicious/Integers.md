@@ -20,10 +20,7 @@ literal is left as it is. It follows Clippy's `modulo_one`, in
 from the divisor:
 
 ```fren
-pub comp modulo_one {
-    in divisor: Int
-    pub det out fires?
-
+pub proc modulo_one(divisor: Int): (det fires?) {
     ensure rule: fires? iff divisor is 1 | -1
 }
 ```
@@ -39,13 +36,13 @@ and are left as they are, as Clippy's `min_max` leaves them; it is in
 `correctness` there. `lint::min_max` states when it fires:
 
 ```fren
-pub comp min_max {
+pub proc min_max(
+    inner: MinMax,       -- the method of the inner call, `x.inner(a)`
+    outer: MinMax,       -- the method of the outer call, `.outer(b)`
+    a: Int,
+    b: Int,
+): (det fires?) {
     use self::MinMax::{Max, Min}
-    in inner: MinMax     -- the method of the inner call, `x.inner(a)`
-    in outer: MinMax     -- the method of the outer call, `.outer(b)`
-    in a: Int
-    in b: Int
-    pub det out fires?
 
     ensure rule: fires? iff ((inner = Min and outer = Max and a < b) or (inner = Max and outer = Min and a > b))
 }
@@ -57,22 +54,30 @@ give:
 ```fren
 set_option fren.lint.modulo_one "allow" in
 set_option fren.lint.min_max "allow" in
-pub comp integer_values_written {
-    in x: Int
-    pub det out one: Int := x mod 1
-    pub det out minus_one: Int := x mod -1
-    pub det out floor: Int := x.min(0).max(9)
-    pub det out ceiling: Int := x.max(4).min(-1)
+pub proc integer_values_written(x: Int): (
+    det one: Int,
+    det minus_one: Int,
+    det floor: Int,
+    det ceiling: Int,
+) {
+    out one := x mod 1
+    out minus_one := x mod -1
+    out floor := x.min(0).max(9)
+    out ceiling := x.max(4).min(-1)
 }
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.lint.unused_variables "allow" in
-pub comp integer_values_fixed {
-    in x: Int
-    pub det out one: Int := 0
-    pub det out minus_one: Int := 0
-    pub det out floor: Int := 9
-    pub det out ceiling: Int := -1
+pub proc integer_values_fixed(x: Int): (
+    det one: Int,
+    det minus_one: Int,
+    det floor: Int,
+    det ceiling: Int,
+) {
+    out one := 0
+    out minus_one := 0
+    out floor := 9
+    out ceiling := -1
 }
 
 refine integer_values_sound: integer_values_fixed refines integer_values_written
@@ -90,11 +95,10 @@ looks at what the elaborator calls `min` or `max`. `lint::eq_op_method`
 states when it fires:
 
 ```fren
-pub comp eq_op_method {
-    in receiver: String  -- the receiver's written form
-    in argument: String  -- the argument's
-    pub det out fires?
-
+pub proc eq_op_method(
+    receiver: String,    -- the receiver's written form
+    argument: String,    -- the argument's
+): (det fires?) {
     ensure rule: fires? iff receiver = argument
 }
 ```
@@ -103,16 +107,14 @@ The refinements below check the value that the message gives:
 
 ```fren
 set_option fren.lint.eq_op "allow" in
-pub comp eq_op_method_written {
-    in x: Int
-    pub det out lesser: Int := x.min(x)
-    pub det out greater: Int := (x + 1).max(x + 1)
+pub proc eq_op_method_written(x: Int): (det lesser: Int, det greater: Int) {
+    out lesser := x.min(x)
+    out greater := (x + 1).max(x + 1)
 }
 
-pub comp eq_op_method_fixed {
-    in x: Int
-    pub det out lesser: Int := x
-    pub det out greater: Int := x + 1
+pub proc eq_op_method_fixed(x: Int): (det lesser: Int, det greater: Int) {
+    out lesser := x
+    out greater := x + 1
 }
 
 refine eq_op_method_sound: eq_op_method_fixed refines eq_op_method_written

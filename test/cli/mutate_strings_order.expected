@@ -1,58 +1,58 @@
 warning[F0613]: no check rejects this change to `handle::shape`
-  --> test/cli/mutate_strings_order.fren:10:34
-   |
-10 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `name.len <= 20 and name.starts_with?("a")` changed to `name.starts_with?("a")`
-   |
-   = note: the mutant is `drop-conjunct-handle::shape-4fbf082fcfef`
-   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
+ --> test/cli/mutate_strings_order.fren:7:34
+  |
+7 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+  |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `name.len <= 20 and name.starts_with?("a")` changed to `name.starts_with?("a")`
+  |
+  = note: the mutant is `drop-conjunct-handle::shape-4fbf082fcfef`
+  = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
-   |
-10 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-10 +     ensure shape: accepted? iff (name.starts_with?("a"))
-   |
+  |
+7 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+7 +     ensure shape: accepted? iff (name.starts_with?("a"))
+  |
 
 warning[F0613]: no check rejects this change to `handle::shape`
-  --> test/cli/mutate_strings_order.fren:10:43
-   |
-10 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-   |                                           ^^ `<=` changed to `<`
-   |
-   = note: the mutant is `swap-comparison-handle::shape-7b2e79e24d12`
-   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
+ --> test/cli/mutate_strings_order.fren:7:43
+  |
+7 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+  |                                           ^^ `<=` changed to `<`
+  |
+  = note: the mutant is `swap-comparison-handle::shape-7b2e79e24d12`
+  = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
-   |
-10 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-10 +     ensure shape: accepted? iff (name.len < 20 and name.starts_with?("a"))
-   |
+  |
+7 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+7 +     ensure shape: accepted? iff (name.len < 20 and name.starts_with?("a"))
+  |
 
 warning[F0613]: no check rejects this change to `handle::shape`
-  --> test/cli/mutate_strings_order.fren:10:46
-   |
-10 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-   |                                              ^^ `20` changed to `21`
-   |
-   = note: the mutant is `shift-integer-handle::shape-5b23e07fa451`
-   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
+ --> test/cli/mutate_strings_order.fren:7:46
+  |
+7 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+  |                                              ^^ `20` changed to `21`
+  |
+  = note: the mutant is `shift-integer-handle::shape-5b23e07fa451`
+  = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
-   |
-10 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-10 +     ensure shape: accepted? iff (name.len <= 21 and name.starts_with?("a"))
-   |
+  |
+7 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+7 +     ensure shape: accepted? iff (name.len <= 21 and name.starts_with?("a"))
+  |
 
 warning[F0613]: no check rejects this change to `handle::shape`
-  --> test/cli/mutate_strings_order.fren:10:46
-   |
-10 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-   |                                              ^^ `20` changed to `19`
-   |
-   = note: the mutant is `shift-integer-handle::shape-e11b5939f512`
-   = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
+ --> test/cli/mutate_strings_order.fren:7:46
+  |
+7 |     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+  |                                              ^^ `20` changed to `19`
+  |
+  = note: the mutant is `shift-integer-handle::shape-e11b5939f512`
+  = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
-   |
-10 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
-10 +     ensure shape: accepted? iff (name.len <= 19 and name.starts_with?("a"))
-   |
+  |
+7 -     ensure shape: accepted? iff (name.len <= 20 and name.starts_with?("a"))
+7 +     ensure shape: accepted? iff (name.len <= 19 and name.starts_with?("a"))
+  |
 
 handle: 3 of 7 mutants killed (42%)
 fren: 7 mutants: 3 killed, 4 survived, 0 equivalent, 0 unviable

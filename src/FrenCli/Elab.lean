@@ -26,7 +26,7 @@ import FrenCore.Typing
 # Elaboration for `.fren` files
 
 Resolves names with Fren's shared rules (`FrenCore.Names`), type-checks
-expressions, and translates each comp into SMT-LIB formulas over its
+expressions, and translates each procedure into SMT-LIB formulas over its
 variables. Type rules mirror how the Lean-hosted front end elaborates the same
 expressions.
 -/
@@ -309,21 +309,21 @@ partial def consSmt (dts : Name → Option DataDecl) (c : Fren.Core.Cons) (x : S
 (`State.funFacts`), which no variable can be named. -/
 def factHole : String := quote "#x"
 
-/-- A comp variable: one of its own, or one of an instance's (`w.x`). -/
+/-- A procedure variable: one of its own, or one of a call's (`w.x`). -/
 structure CVar where
   name : Name
   role : Role
   /-- Shown in counterexamples. -/
   isPub : Bool
-  /-- A `det out` of the comp itself. -/
+  /-- A `det` variable of the procedure itself. -/
   isDet : Bool := false
   ty : Ty
   span : Span
-  /-- The definition of a defined output of the comp itself. -/
+  /-- The definition of a defined output of the procedure itself. -/
   defn? : Option Expr := none
   /-- Its type as declared, with its patterns. -/
   ptype : Fren.Core.PTy := default
-  /-- The constraint that its type brings, over it (`Reqs/Lang/Components#pattern-types`). -/
+  /-- The constraint that its type brings, over it (`Reqs/Lang/Procedures#pattern-types`). -/
   fact? : Option String := none
   deriving Inhabited
 
@@ -336,7 +336,7 @@ structure CProp where
   triggerSpan? : Option Span
   deriving Inhabited
 
-/-- An instance, with formulas over the instantiating comp's variables. -/
+/-- A call, with formulas over the calling procedure's variables. -/
 structure CInst where
   name : Name
   comp : Name
@@ -355,7 +355,7 @@ structure CComp where
   path : Name
   file : Nat
   span : Span
-  /-- Its own variables in declaration order, then each instance's. -/
+  /-- Its own variables in declaration order, then each call's. -/
   vars : Array CVar
   props : Array CProp
   insts : Array CInst := #[]
@@ -374,9 +374,9 @@ structure CComp where
   is, where it is reported, the question, and the formula that it holds
   (`check::completeness`, `check::disjointness`, `check::reachability`). -/
   tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) := #[]
-  /-- It, or one of its instances, applies a relational operator. -/
+  /-- It, or one of its calls, applies a relational operator. -/
   relational : Bool := false
-  /-- It, or one of its instances, uses `card`. -/
+  /-- It, or one of its calls, uses `card`. -/
   counts : Bool := false
   /-- The checks that are tested rather than asked of the solver
   (`Reqs/Check#checking-by-testing`). -/
@@ -387,13 +387,13 @@ structure CComp where
   enumSize : Nat := Fren.Core.Enumeration.defaultSize
   /-- The applications of uninterpreted functions whose result is a `Nat`,
   or that have postconditions, in its constraints, definitions, bindings
-  and instances: each brings its facts (`Fren.Core.appFacts`). -/
+  and calls: each brings its facts (`Fren.Core.appFacts`). -/
   natApps : Array String := #[]
   /-- For the body or contract of a function, or the value of a constant:
   its name, which the evaluator's counterpart has (`Eval.Comp.body?`). -/
   bodyOf? : Option Name := none
   /-- For the body and contract of a function: the function, whose
-  preconditions are the comp's assumptions, and, if it is defined, whose
+  preconditions are the procedure's assumptions, and, if it is defined, whose
   postconditions are its guarantees, each named after the function and
   the clause (`check::postcondition`). -/
   fn? : Option Name := none
@@ -412,7 +412,7 @@ structure CComp where
   `fmf-bound` (`CComp.bounded`). -/
   bounded : Bool := false
   /-- It has an unbounded quantifier with a bound name that has a domain,
-  directly, through an instance or through a defined function, which sets
+  directly, through a call or through a defined function, which sets
   `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guarded : Bool := false
   deriving Inhabited
@@ -420,8 +420,8 @@ structure CComp where
 def conj (fs : Array String) : String :=
   if fs.isEmpty then "true" else if fs.size == 1 then fs[0]! else s!"(and {" ".intercalate fs.toList})"
 
-/-- Everything a comp says about its variables: assumptions, requirements
-and instances. -/
+/-- Everything a procedure says about its variables: assumptions, requirements
+and calls. -/
 def CComp.meaning (c : CComp) : String :=
   conj <| c.defs.map (fun (d, e) => s!"(= {quote d.toString} {e})")
     ++ (c.props.filter fun p => p.kind == .assume || p.kind == .ensure).map (·.smt)
@@ -599,8 +599,8 @@ def literalLints (src : Array Char) (toks : Array Token) (comments : Array Span)
     invisible ++ hashes ++ if comment then #[] else (Fren.Core.literalMsgs text).map fun (l, msg) => (l, sp, msg)
 
 /-- A report of `manual_nat`, kept until the end of the file, where an
-instance or a refinement may keep its variable an `Int`
-(`lint::manual_nat`): the component, the variable and the report. -/
+call or a refinement may keep its variable an `Int`
+(`lint::manual_nat`): the procedure, the variable and the report. -/
 structure NatReport where
   comp : Name
   var : String
@@ -708,7 +708,7 @@ structure State where
   claims : Array CClaim := #[]
   module : Name := .anonymous
   /-- The scope that paths resolve in: the current module, or the
-  component being elaborated, if it has `use`s. -/
+  procedure being elaborated, if it has `use`s. -/
   scope : Name := .anonymous
   file : Nat := 0
   comps : Array CComp := #[]
@@ -754,13 +754,13 @@ structure State where
   (`lang::constant`). -/
   applied : Array Span := #[]
   /-- Global expectations, each a `CComp` whose path is its module, with an
-  instance per binder and the expectation as its only constraint. -/
+  call per binder and the expectation as its only constraint. -/
   globals : Array CComp := #[]
   /-- Refinements, each a `CComp` whose path is the refinement's
   (`Reqs/Lang/Refinement`). -/
   refinements : Array CComp := #[]
   /-- The bodies of defined functions and the values of constants that have
-  tables, each as a comp whose path is its module, with the function's
+  tables, each as a procedure whose path is its module, with the function's
   parameters as inputs, for the checks of its tables (`check::applies`). -/
   bodies : Array CComp := #[]
   diags : Array Diag := #[]
@@ -777,7 +777,7 @@ structure State where
   used : Array Fren.Core.UsedName := #[]
   expectations : Array (Fren.Core.ExpectationRecord × Span) := #[]
   lintReports : Array (Fren.Core.LintReport Span) := #[]
-  /-- The variables, parameters, instances and binders that the item being
+  /-- The variables, parameters, calls and binders that the item being
   elaborated declares (`many_single_char_names`, `similar_names`). -/
   declared : Array (Name × Span) := #[]
   /-- For `fren fix`: where each of `useRecords` is written, and what
@@ -820,14 +820,14 @@ structure State where
   settingRemovals : Array Span := #[]
   seenSettings : Array Nat := #[]
   /-- The current file's assumptions that `unused_assumption` may fire on,
-  and what its global expectations read through instances, and its
-  refinements of their abstractions: each read's component and input. -/
+  and what its global expectations read through calls, and its
+  refinements of their abstractions: each read's procedure and input. -/
   assumptions : Array (Fren.Core.AssumptionRecord × Span) := #[]
   globalReads : Array (Name × Name) := #[]
   /-- The reports of `manual_nat` in the file so far. -/
   natReports : Array NatReport := #[]
-  /-- The variables that an instance or a refinement in the file keeps
-  `Int`s, by their components (`Fren.Core.refinementGiven`). -/
+  /-- The variables that a call or a refinement in the file keeps
+  `Int`s, by their procedures (`Fren.Core.refinementGiven`). -/
   natKept : Array (Name × String) := #[]
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
@@ -908,7 +908,7 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   quantifier is known to be outside the core, if it has one. -/
   elemMembers : Array (Span × Bool × Option (Span × Fren.Core.Msg)) := #[]
   /-- The current item has an unbounded quantifier with a bound name that
-  has a domain, directly, through an instance or through a defined
+  has a domain, directly, through a call or through a defined
   function, so its queries set `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guardedUsed : Bool := false
   /-- The defined functions and constants whose bodies or values have such a
@@ -923,11 +923,11 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
-  /-- Whether the current comp, or an instance of it, applies a relational
+  /-- Whether the current procedure, or a call of it, applies a relational
   operator; with `card`, it is outside the decidable core. -/
   relationalUsed : Bool := false
-  /-- Where the current comp counts: its `card`s, and its instances whose
-  comps count. -/
+  /-- Where the current procedure counts: its `card`s, and its calls whose
+  procedures count. -/
   countSpans : Array Span := #[]
   /-- The indexes of the constraint being elaborated, each with the formula
   that it is in range where it is evaluated: its guard implies its bounds. -/
@@ -937,7 +937,7 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   where the table is evaluated: its guard implies it. -/
   tables : Array (Span × Fren.Core.TableGoal × String) := #[]
   /-- The applications of uninterpreted functions whose result is a `Nat`
-  elaborated since the current comp started, its instances' among them. -/
+  elaborated since the current procedure started, its calls' among them. -/
   natApps : Array String := #[]
   /-- Each `+` where a `Nat` is expected, by file, which `fren mutate`
   does not make a `-` (`Reqs/Mutate`). -/
@@ -945,7 +945,7 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   /-- The names of `let` and `where` definitions made so far, which number
   their SMT-LIB symbols. -/
   nLets : Nat := 0
-  /-- Whether the current component's members are being elaborated, past
+  /-- Whether the current procedure's members are being elaborated, past
   its name and the distinctness of its members' names: after a failure
   there, its declaration and line lints still run, as in Lean. -/
   inCompBody : Bool := false
@@ -1154,12 +1154,12 @@ def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Ran
 
 structure ExprCtx where
   vars : Array CVar
-  /-- The comp's instances, in order. -/
+  /-- The procedure's calls, in order. -/
   insts : Array Name := #[]
   place : Place
-  /-- For a binding, the index of its instance. -/
+  /-- For a binding, the index of its call. -/
   current : Nat := 0
-  /-- In a refinement's binding, over the concrete comp's variables, which
+  /-- In a refinement's binding, over the concrete procedure's variables, which
   binding it is: its mentions follow `refinement::mention` instead. -/
   refining? : Option Fren.Core.RefineBinding := none
   /-- The binders in scope, innermost last. -/
@@ -1177,7 +1177,7 @@ structure ExprCtx where
   /-- In a clause of a function's contract: the function, whether the
   clause is a postcondition, and the parameters (`lang::contract_application`). -/
   contract? : Option (Name × Bool × Array Name) := none
-  /-- In a global expectation, whose instances are its binders. -/
+  /-- In a global expectation, whose calls are its binders. -/
   inGlobal : Bool := false
   /-- `++` here is in the decidable core: the receiver of a method, or a
   side of `=` or `!=` whose other side is a constant. -/
@@ -1863,7 +1863,7 @@ def hidesIn (cx : ExprCtx) (extra : Fren.Core.Locals := #[]) : M (String → Boo
 (`nonminimal_bool`), the operator and method lints, the arithmetic lints
 and double parentheses in it, once `e` is elaborated, where `hides` says
 whether a name declared there would hide something in scope. -/
-def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
+def lintBools (e : Expr) (hides : String → Bool) (onlyArg : Bool := false) : M Unit := do
   -- Not a rewrite of an expression with a pattern test that binds names,
   -- which could move what mentions them out of their scope
   -- (`lang::test_scope`).
@@ -1914,7 +1914,9 @@ def lintBools (e : Expr) (hides : String → Bool) : M Unit := do
   for sp in e.integerSpans do
     if let some (r, msg) := Fren.Core.zeroPrefixedReport? full (toRange sp) then
       lintFix .zeroPrefixedLiteral { start := r.start, stop := r.stop } msg
-  lintParens e
+  -- The only argument of a call is in the call's parentheses, as a
+  -- function's is.
+  lintParens e onlyArg
 
 /-- Which enumerations, records and newtypes are declared `ordered`
 (`Reqs/Lang/Items#ordered-declarations`), for `Fren.Core.Ty.ordered`. -/
@@ -2458,7 +2460,7 @@ def noteMatch (cx : ExprCtx) (span : Span) (pats : Array Span) (taken : Array (O
       | _ => { start := span.start, stop := span.start + kw.length }
     modify fun s => { s with tables := s.tables.push (at_, g, guarded cx.guards f) }
 
-/-- Records a `card`, of the receiver `recv` of type `t`: in a comp that
+/-- Records a `card`, of the receiver `recv` of type `t`: in a procedure that
 applies a relational operator, it is outside the decidable core
 (`Reqs/Lang/Decidability#relations`). -/
 def checkRelationalCard (cx : ExprCtx) (span : Span) (t : Ty) (m : String) (recv : Expr) : M Unit := do
@@ -2466,7 +2468,7 @@ def checkRelationalCard (cx : ExprCtx) (span : Span) (t : Ty) (m : String) (recv
   if m == "card" && t matches .set _ | .rel .. && !(← isConstant cx recv) then
     modify fun s => { s with countSpans := s.countSpans.push span }
 
-/-- Reports `undecidable` at each count of the current comp, if it also
+/-- Reports `undecidable` at each count of the current procedure, if it also
 applies a relational operator; gives whether it does and whether it counts. -/
 def checkCounts : M (Bool × Bool) := do
   let st ← get
@@ -3161,7 +3163,7 @@ expressions of it have. -/
 def elabTy (segs : Array Ident) : M Ty := return (← elabPTy segs).ty
 
 /-- The type of a quantifier's binder, written `segs`, which must not be a
-component. -/
+procedure. -/
 def binderTy (segs : Array Ident) : M Fren.Core.PTy := do
   let st ← get
   if let .ok (.item { kind := .compItem, path, .. }) := st.table.resolvePath st.scope (segNames segs) #[] then
@@ -4739,7 +4741,7 @@ partial def elabRecordExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) 
       | _ => none
     if let some (r, t) := reads[0]? then
       let same := reads.all (Fren.Core.writtenSame ·.2 t)
-      -- A value has a type; an instance is not one.
+      -- A value has a type; a call is not one.
       let ty? := match (elabExpr { cx with noteIndexes := false } r).run (← get) with
         | .ok ((_, ty), _) => some ty
         | .error _ => none
@@ -5204,23 +5206,59 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
 
 def varTy (ty? : Option (Array Ident)) (name : Ident) : M Ty := return (← varPTy ty? name).ty
 
-/-- Records what an instance of `c`, written at `span`, brings to the current
-comp's mix of relational operators and counting. -/
+/-- Records what a call of `c`, written at `span`, brings to the current
+procedure's mix of relational operators and counting. -/
 def noteCounts (c : CComp) (span : Span) : M Unit :=
   modify fun s => { s with relationalUsed := s.relationalUsed || c.relational, guardedUsed := s.guardedUsed || c.guarded
                            countSpans := if c.counts then s.countSpans.push span else s.countSpans }
 
-/-- An instance whose comp has been resolved, before its bindings are
+/-- A call whose procedure has been resolved, before its bindings are
 elaborated. -/
 structure PendingInst where
   name : Ident
   comp : CComp
   bindings : Array (Ident × Option Expr)
+  /-- A call's arguments, rather than bindings written by name. -/
+  positional : Bool := true
 
-/-- Resolves `inst x: p { bs }`: the instantiated comp and the instance's
-variables, checking the names it binds (`inst::binding`). -/
-def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) :
-    M (PendingInst × Array CVar) := do
+/-- The call that the instance `inst x: p { bs }`, of `c`, at `span`, is
+written as (`F0420`), if its bindings bind each of `c`'s parameters
+`params` once (`lang::argument_order`). -/
+def instCallText (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (params : Array Name) (span : Span) :
+    M (Option String) := do
+  let src := (← get).src
+  let isSpace (c : Char) := c == ' ' || c == '\t'
+  let vertical := (src.extract span.start span.stop).any (· == '\n')
+  -- Each argument's text, as written after `:=`, comments and all, and in
+  -- a call written one argument to a line, the comment after its binding.
+  let args ← bs.mapM fun (b, e?) => do
+    let stop := match e? with
+      | some e => (Fren.Core.withParensIn src (toRange span) (toRange (e.writtenSpan src))).stop
+      | none => b.span.stop
+    let text := match e? with
+      | some _ =>
+        let after := (String.ofList (src.extract b.span.stop stop).toList).trimAsciiStart.toString
+        ((after.drop 2).trimAsciiStart).toString
+      | none => b.name
+    let mut i := stop
+    while i < span.stop && (isSpace src[i]! || src[i]! == ',') do i := i + 1
+    let comment? := if vertical && src[i]? == some '-' && src[i + 1]? == some '-' then Id.run do
+        let mut j := i
+        while j < src.size && src[j]! != '\n' do j := j + 1
+        return some (String.ofList (src.extract i j).toList).trimAsciiEnd.toString
+      else none
+    return (b.name, (text, comment?))
+  let some ordered := Fren.Core.argumentOrder (params.toList.map Fren.Core.nameText) args.toList | return none
+  let (_, ls, _) := Fren.Core.lineAt src span.start
+  return some (Fren.Core.callText (span.start - ls) (← srcAt x.span) (← srcAt (p[0]!.span.to p.back!.span)) ordered vertical)
+
+/-- Resolves the call `call x := p(args)`, or the instance `inst x: p { bs
+}` (`named`), at `span`: the called procedure and the call's variables,
+with each argument bound to the parameter in its position (`F0408`,
+`F0409`). An instance is an error (`F0420`), whose fix writes it as a
+call. -/
+def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)) (named : Bool) (span : Span)
+    (written : Ident := x) : M (PendingInst × Array CVar) := do
   let w := Name.mkSimple x.name
   let path ← match ← resolve p with
     | .item { kind := .compItem, path, .. } => pure path
@@ -5231,27 +5269,31 @@ def resolveInst (x : Ident) (p : Array Ident) (bs : Array (Ident × Option Expr)
     modify fun s => { s with outsideCore := true }
     lint .undecidable (p[0]!.span.to p.back!.span) (Fren.Core.undecidableInstMsg path)
   noteCounts c (p[0]!.span.to p.back!.span)
-  let own := c.vars.filterMap fun v =>
-    if v.role == .input || v.role == .output then some (v.name, v.role) else none
-  match Fren.Core.checkBindings path own (bs.map (Name.mkSimple ·.1.name)) with
-  | .ok () => pure ()
-  | .error (some i, msg) => err bs[i]!.1.span msg
-  | .error (none, msg) => err x.span msg
+  let params := c.vars.filter (fun v => v.role == .input && v.name.isAtomic) |>.map (·.name)
+  let callee := showPath path
+  if named then
+    let fixed? ← instCallText written p bs params span
+    let msg := Fren.Core.instSyntaxMsg callee fixed?
+    err { span with stop := x.span.stop } { msg with fixes := msg.fixes.map ({ · with range? := some (toRange span) }) }
+  let some bound := Fren.Core.callBindings (params.map Fren.Core.nameText) bs
+    | let at_ := if bs.size > params.size then bs[params.size]!.1.span.to bs.back!.1.span else p[0]!.span.to p.back!.span
+      err at_ (Fren.Core.callArityMsg callee (params.map Fren.Core.nameText) bs.size)
+  let bs := bound.map fun (n, (a, e?)) => ({ a with name := n }, e?)
   let vars := c.vars.map fun v =>
     let role := Role.ofInst v.role v.isPub
-    -- An input's constraint is the instance's obligation, which the
-    -- instance check asks, rather than a fact (`Reqs/Check#instance-assumptions`).
+    -- An input's constraint is the call's obligation, which the
+    -- call check asks, rather than a fact (`Reqs/Check#call-assumptions`).
     { name := w ++ v.name, role, isPub := role == .instOutput, ty := v.ty, span := x.span, ptype := v.ptype
       fact? := if v.role == .input then none else v.fact?.map (rename w c.vars) }
   return ({ name := x, comp := c, bindings := bs }, vars)
 
-/-- Elaborates the bindings of an instance. -/
+/-- Elaborates the bindings of a call. -/
 def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
   let w := Name.mkSimple pi.name.name
   let mut eqs := #[]
   let c := pi.comp
   for (b, e?) in pi.bindings do
-    if let some e := e? then lintRedundant b e false
+    if let some e := e? then if !pi.positional then lintRedundant b e false
     let e := e?.getD (.path b.span #[b])
     let some v := cx.vars.find? (·.name == w ++ Name.mkSimple b.name)
       | internal b.span s!"no variable for `{b.name}`"
@@ -5259,11 +5301,11 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`"))
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
     if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (c.path, b.name) }
-    lintBools e (← hidesIn cx)
+    lintBools e (← hidesIn cx) (pi.positional && pi.bindings.size == 1)
     eqs := eqs.push s!"(= {quote v.name.toString} {smt})"
   modify fun s => { s with natApps := s.natApps ++ c.natApps.map (rename w c.vars) }
   -- Each input whose type has an obligation assumes it, before the
-  -- component's own assumptions (`Reqs/Check#instance-assumptions`).
+  -- procedure's own assumptions (`Reqs/Check#call-assumptions`).
   let st ← get
   let typed := c.vars.filter (·.role == .input) |>.filterMap fun v =>
     (v.ptype.obligation st.shapeOf).map fun o => (Name.num v.name 0, v.ptype.text, rename w c.vars (consSmt st.dataOf? o (quote v.name.toString)))
@@ -5275,7 +5317,7 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
     bounded := c.vars.any fun v => v.role == .input && (v.ptype.obligation st.shapeOf).any (·.quantifies) }
 
 /-- Imports the path `segs`, written at `loc`, into the current module, or,
-with `scope`, into the component of that path. -/
+with `scope`, into the procedure of that path. -/
 def declareUse (segs : Array Ident) (glob : Bool) (loc : UseLoc) (scope : Option Name := none) : M Unit := do
   let st ← get
   let u ← liftResolve segs (st.table.declareUse st.module (segNames segs) glob (scope.getD st.module))
@@ -5285,7 +5327,7 @@ def declareUse (segs : Array Ident) (glob : Bool) (loc : UseLoc) (scope : Option
   modify fun s => { s with table := s.table.addUse u, useRecords := s.useRecords.push (record, loc.path),
                            useLocs := s.useLocs.push loc }
 
-/-- Declares a component's `use`s, in the scope `path`, and makes it the
+/-- Declares a procedure's `use`s, in the scope `path`, and makes it the
 scope that paths resolve in if there are any. -/
 def declareMemberUses (path : Name) (members : Array Member) : M Unit := do
   for m in members do
@@ -5322,7 +5364,7 @@ partial def constraintConjuncts (src : Array Char) (e : Expr) : Array Expr :=
     | _ => #[e]
   go true e
 
-/-- Records `manual_nat` in the component `comp` of `members`
+/-- Records `manual_nat` in the procedure `comp` of `members`
 (`lint::manual_nat`): for each variable it fires on, at its first bound,
 reported at the end of the file (`finishNat`). -/
 def lintManualNat (comp : Name) (members : Array Member) : M Unit := do
@@ -5350,8 +5392,8 @@ def lintManualNat (comp : Name) (members : Array Member) : M Unit := do
     let report := { lint := .manualNat, level := (← get).levels.get .manualNat, ref := cs[k]!.span, msg }
     modify fun s => { s with natReports := s.natReports.push { comp, var := x.name, report } }
 
-/-- The checks of a comp with `members` that are tested
-(`Reqs/Check#checking-by-testing`): `all` if the comp is set to testing,
+/-- The checks of a procedure with `members` that are tested
+(`Reqs/Check#checking-by-testing`): `all` if the procedure is set to testing,
 then each member's own setting. -/
 def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.Tested × Fren.Core.Tested) := do
   let mut pending : Option (Fren.Core.Evidence × Span) := none
@@ -5368,12 +5410,13 @@ def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.
     match m, pending with
     | .prop .expect x _, _ | .prop .cover x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
     -- By the names they declare, without the `!` of shadowing.
-    | .inst x _ _, _ => insts := insts.push (Name.mkSimple (declaredIdent x).1.name, set?)
+    | .inst x .., _ => insts := insts.push (Name.mkSimple (declaredIdent x).1.name, set?)
     | .var false _ true x _ _, _ => dets := dets.push (Name.mkSimple (declaredIdent x).1.name, set?)
     | _, some (_, span) =>
       let what := match m with
         | .prop .assume .. => "an assumption" | .prop .ensure .. => "a guarantee"
-        | .var true .. => "an input" | .var .. => "an output that is not `det`" | _ => "a `use`"
+        | .var true .. => "a parameter" | .var .. => "a variable that is not `det`" | .define .. => "a result's definition"
+        | _ => "a `use`"
       err span (Fren.Core.misplacedEvidenceMsg what)
     | _, none => pure ()
     match m with
@@ -5381,13 +5424,13 @@ def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.
     | .var false _ _ x _ (some _) => constraints := constraints.push (Name.mkSimple (declaredIdent x).1.name)
     | _ => pure ()
     pending := none
-  if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the component")
+  if let some (_, span) := pending then err span (Fren.Core.misplacedEvidenceMsg "the end of the procedure")
   let by_ (f : Fren.Core.Evidence → Bool) :=
     let pick (xs : Array (Name × Option Fren.Core.Evidence)) := xs.map fun (n, e?) => (n, e?.map f)
     Fren.Core.Tested.ofSettings (f all) constraints (pick expects) (pick insts) (pick dets)
   return (by_ (·.tested), by_ (·.enumerated))
 
-/-- Reports `arbitrary_source_item_ordering` on a component whose members,
+/-- Reports `arbitrary_source_item_ordering` on a procedure whose members,
 written at `spans`, are `members`, and whose `{` ends at `openStop`
 (`lint::arbitrary_source_item_ordering`). An evidence setting is part of
 the member after it. -/
@@ -5401,9 +5444,10 @@ def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Na
     let (kind, name?, ms) : Fren.Core.MemberKind × Option Ident × Array Name := match m with
       | .evidence .. => (.use, none, #[])
       | .use .. | .useGroup .. => (.use, none, #[])
-      | .var true _ _ x _ _ => (.input, some x, #[])
-      | .var false _ _ x _ defn? => (.output, some x, ((defn?.map mentions).getD #[]).map (·.getRoot))
-      | .inst x _ bs => (.inst, some x, bs.foldl (init := #[]) fun acc (b, e?) =>
+      | .var _ _ _ x _ none => (.exists, some x, #[])
+      | .var _ _ _ x _ (some d) => (.let, some x, (mentions d).map (·.getRoot))
+      | .define _ d => (.define, none, (mentions d).map (·.getRoot))
+      | .inst x _ bs .. => (.call, some x, bs.foldl (init := #[]) fun acc (b, e?) =>
           acc ++ ((e?.map mentions).getD #[Name.mkSimple (declaredIdent b).1.name]).map (·.getRoot))
       | .prop .assume x _ => (.assumption, some x, #[])
       | .prop .ensure x _ => (.guarantee, some x, #[])
@@ -5431,7 +5475,7 @@ Each part is a definition of its own, so that the compiler, whose time grows
 faster than the length of a `do` block, compiles several short ones, and
 in parallel. -/
 
-/-- A comp's variables, each reporting its own first static error, and one
+/-- A procedure's variables, each reporting its own first static error, and one
 cycle of definitions. -/
 def elabCompVars (members : Array Member) : M (Array CVar) := do
   let mut vars := #[]
@@ -5457,30 +5501,32 @@ def elabCompVars (members : Array Member) : M (Array CVar) := do
     discard <| attempt (err (α := Unit) v.span (Fren.Core.cyclicDefinitionMsg cycle))
   return vars
 
-/-- A comp's instances, whose variables follow the comp's own `vars`: the
-instances still to elaborate, and all the variables. -/
+/-- A procedure's calls, whose variables follow the procedure's own `vars`: the
+calls still to elaborate, and all the variables. -/
 def elabCompInsts (members : Array Member) (vars : Array CVar) : M (Array PendingInst × Array CVar) := do
   let mut vars := vars
   let mut pending := #[]
   for m in members do
-    let .inst x p bs := m | continue
+    let .inst x p bs named span := m | continue
+    -- The name as written, with any `!`, for `F0420`'s fix.
+    let written := x
     -- Its name is checked once, whether or not it shadows.
     let x := (← attempt do
         let x ← declare x
-        liftMsg x.span (Fren.Core.checkItemName "instance" (Name.mkSimple x.name))
+        liftMsg x.span (Fren.Core.checkItemName "call" (Name.mkSimple x.name))
         return x).getD (declaredIdent x).1
     let xn := Name.mkSimple x.name
     lintName .instance xn x.span
-    let some (pi, ivars) ← attempt (resolveInst x p bs) | continue
+    let some (pi, ivars) ← attempt (resolveInst x p bs named span written) | continue
     pending := pending.push pi
     vars := vars ++ ivars
-    -- Its bindings give each input of its component a value, and the
-    -- instance's assumption check reads them (`unused_assumption`).
+    -- Its bindings give each input of its procedure a value, and the
+    -- call's assumption check reads them (`unused_assumption`).
     let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (pi.comp.path, ·.name)
     modify fun s => { s with globalReads := s.globalReads ++ reads }
   return (pending, vars)
 
-/-- The bindings of a comp's instances `pending`, with their indexes and
+/-- The bindings of a procedure's calls `pending`, with their indexes and
 questions about tables. -/
 def elabCompBindings (vars : Array CVar) (instNames : Array Name) (pending : Array PendingInst) :
     M (Array CInst × Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)) × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
@@ -5500,7 +5546,7 @@ def elabCompBindings (vars : Array CVar) (instNames : Array Name) (pending : Arr
     tables := tables ++ mergeReachTables tbl
   return (insts, indexes, tables)
 
-/-- A comp's definitions, each after those it mentions, with their indexes
+/-- A procedure's definitions, each after those it mentions, with their indexes
 and questions about tables added to `indexes` and `tables`. -/
 def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Name) (indexes : Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)))
     (tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) : M (Array (Name × String) × Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)) × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
@@ -5528,7 +5574,7 @@ def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Na
     tables := tables ++ mergeReachTables tbl
   return (defs, indexes, tables)
 
-/-- A comp's assumptions, requirements, expectations and cover goals, with
+/-- A procedure's assumptions, requirements, expectations and cover goals, with
 their indexes and questions about tables added to `indexes` and `tables`. -/
 def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames : Array Name) (indexes : Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)))
     (tables : Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) : M (Array CProp × Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)) × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String)) := do
@@ -5558,7 +5604,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
     tables := tables ++ mergeReachTables tbl
   return (props, indexes, tables)
 
-/-- `duplicate_constraint` (`lint::duplicate_constraint`), of a comp's
+/-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
 constraints. -/
 def lintDuplicateConstraints (members : Array Member) : M Unit := do
   let src := (← get).src
@@ -5575,7 +5621,7 @@ def lintDuplicateConstraints (members : Array Member) : M Unit := do
       else lint .duplicateConstraint x.span msg
 
 /-- `constant_output` and `definable_output` (`lint::output_lints`), of a
-comp's outputs. -/
+procedure's outputs. -/
 def lintOutputs (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M Unit := do
   let reqs := members.filterMap fun | .prop .ensure x e => some (Name.mkSimple x.name, e) | _ => none
   for v in vars.filter (fun v => v.role == .output && v.name.isAtomic) do
@@ -5591,7 +5637,7 @@ def lintOutputs (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M
     if constant then lint .constantOutput v.span (Fren.Core.constantOutputMsg v.name)
     if definable then lint .definableOutput v.span (Fren.Core.definableOutputMsg v.name about[0]!.1)
 
-/-- `trivial_cover` (`lint::trivial_cover`), of a comp's cover goals: each
+/-- `trivial_cover` (`lint::trivial_cover`), of a procedure's cover goals: each
 assumption and guarantee as its kind, its name and its written form. -/
 def lintTrivialCover (lcx : ExprCtx) (members : Array Member) : M Unit := do
   let src := (← get).src
@@ -5610,7 +5656,7 @@ def lintTrivialCover (lcx : ExprCtx) (members : Array Member) : M Unit := do
     if let some why := Fren.Core.trivialCover trigger same? then
       lint .trivialCover x.span (Fren.Core.trivialCoverMsg (Name.mkSimple x.name) why)
 
-/-- `case_split_guarantees` (`lint::case_split_guarantees`), of a comp's
+/-- `case_split_guarantees` (`lint::case_split_guarantees`), of a procedure's
 requirements. -/
 def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Member) (vars : Array CVar) : M Unit := do
   -- `case_split_guarantees` (`lint::case_split_guarantees`): each requirement `when T, y = e`, as its name, where it is
@@ -5634,12 +5680,12 @@ def lintCaseSplitGuarantees (lcx : ExprCtx) (members : Array Member) (vars : Arr
     if Fren.Core.caseSplitGuarantees cs.size (Fren.Core.repeatedVariants ts) then
       lint .caseSplitGuarantees cases[group[1]!]!.2.1 (Fren.Core.caseSplitGuaranteesMsg y op cs (Fren.Core.untestedVariants n ts))
 
-/-- `unused_variables` and `unused_assumption` of the comp `n`, whose
+/-- `unused_variables` and `unused_assumption` of the procedure `n`, whose
 members had no static error. -/
 def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (instNames : Array Name) : M Unit := do
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
-    | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
+    | .inst _ _ bs .. => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
     | _ => acc
   -- A public definition says what the output is, so it is used.
   let candidates := vars.filter fun v => v.role == .input || (v.role == .output && !(v.isPub && v.defn?.isSome))
@@ -5651,14 +5697,14 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
   let others := members.foldl (init := #[]) fun acc m => match m with
     | .prop .assume _ _ => acc
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
-    | .inst _ _ bs => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
+    | .inst _ _ bs .. => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
     | _ => acc
   -- The uninterpreted functions that they apply link too.
   let acx : ExprCtx := { vars, insts := instNames, place := .prop }
   let others ← members.foldlM (init := others) fun acc m => match m with
     | .prop .assume _ _ => pure acc
     | .prop _ _ e | .var _ _ _ _ _ (some e) => return acc ++ (← appliedFns acx e)
-    | .inst _ _ bs => bs.foldlM (init := acc) fun acc (_, e?) => match e? with
+    | .inst _ _ bs .. => bs.foldlM (init := acc) fun acc (_, e?) => match e? with
       | some e => return acc ++ (← appliedFns acx e)
       | none => pure acc
     | _ => pure acc
@@ -5675,30 +5721,46 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
           level := (← get).levels.get .unusedAssumption }
       modify fun s => { s with assumptions := s.assumptions.push (r, x.span) }
 
-def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+/-- A procedure's members as a component's: its parameters and results
+(`header`), each result with the definition that an `out` member of its
+block gives it, at most one (`F0421`), and then its block's other
+members. -/
+def procMembers (header body : Array Member) : M (Array Member) := do
+  let mut defs : Array (String × Expr) := #[]
+  for m in body do
+    if let .define x e := m then
+      if defs.any (·.1 == x.name) then err x.span (Fren.Core.resultDefinedTwiceMsg x.name)
+      defs := defs.push (x.name, e)
+  let header := header.map fun
+    | .var false true det x ty none => .var false true det x ty ((defs.find? (·.1 == (declaredIdent x).1.name)).map (·.2))
+    | m => m
+  return header ++ body.filter (!· matches .define ..)
+
+def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
-  liftMsg name.span (Fren.Core.checkItemName "component" n)
+  liftMsg name.span (Fren.Core.checkItemName "procedure" n)
   let module := (← get).module
   liftMsg written ((← get).table.checkFreshItem module n bang)
   lintName .component n name.span
   startDeclared
+  let members ← procMembers header body
   declareMemberUses (module ++ n) members
-  -- Distinct names (`lang::distinct_names`): variables, instances and
+  -- Distinct names (`lang::distinct_names`): variables, calls and
   -- constraints share one namespace.
   let named := members.filterMap fun
-    | .var _ _ _ x _ _ | .inst x _ _ | .prop _ x _ => some x
+    | .var _ _ _ x _ _ | .inst x .. | .prop _ x _ => some x
     | _ => none
   -- By the names they declare, without the `!` of shadowing.
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]!)
-  lintMemberOrder members spans openStop
+  lintMemberOrder body spans openStop
   modify fun s => { s with inCompBody := true }
-  -- Each variable, instance, binding, definition and constraint reports its
+  -- Each variable, call, binding, definition and constraint reports its
   -- own first static error; after those of the variables, and of the
-  -- instances, the item stops, since what follows would only repeat them
+  -- calls, the item stops, since what follows would only repeat them
   -- (`Reqs/View#static-errors`).
   let vars ← elabCompVars members
   stopIfErrors
@@ -5729,12 +5791,12 @@ def elabComp (isPub : Bool) (name : Ident) (members : Array Member) (spans : Arr
                             guarded := s.guardedUsed } }
 
 /-- Elaborates `refine name: concrete refines abstract { bindings }` into
-the comp that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
-`abstract`'s assumptions, an instance of `concrete` named as it is,
-`abstract`'s instances, and `abstract`'s requirements and definitions as
+the procedure that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
+`abstract`'s assumptions, a call of `concrete` named as it is,
+`abstract`'s calls, and `abstract`'s requirements and definitions as
 expectations, with `abstract`'s variables read as their bindings or as
 `concrete`'s of the same names, and `concrete`'s outputs from the
-instance. -/
+call. -/
 def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Array (Ident × Option Expr)) :
     M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
@@ -5770,9 +5832,9 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
       let why := match cv? with
         | none => s!"it has no variable `{v.name}`"
         | some cv => if !typed cv then s!"its `{v.name}` has another type"
-          else if input then s!"its `{v.name}` is not an input"
-          else if cv.role == Role.input then s!"its `{v.name}` is an input, not an output"
-          else s!"its output `{v.name}` is not public"
+          else if input then s!"its `{v.name}` is not a parameter"
+          else if cv.role == Role.input then s!"its `{v.name}` is a parameter, not an output"
+          else s!"its output `{v.name}` is not a result"
       err aSpan (Fren.Core.interfaceMsg c.path a.path v.name why)
     -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
     if let some cv := cv? then
@@ -5780,7 +5842,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
       if let (concrete, .givenInt) := Fren.Core.refinementGiven input (given v.ty) (given cv.ty) then
         let kept := (if concrete then c.path else a.path, Fren.Core.nameText v.name)
         modify fun s => { s with natKept := s.natKept.push kept }
-  -- The instance of `concrete`, named as it is.
+  -- The call of `concrete`, named as it is.
   let w := Name.mkSimple (c.path.getString!)
   if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
   -- `a`'s assumptions are hypotheses here, so it reads each input of `a`,
@@ -5788,10 +5850,10 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   let reads := (a.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (a.path, ·.name)
   modify fun s => { s with globalReads := s.globalReads ++ reads }
   -- The bindings, over `concrete`'s own variables, seen from outside, as
-  -- the instance's: a defined output is an output (`refinement::mention`).
+  -- the call's: a defined output is an output (`refinement::mention`).
   let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
     { v with role := if v.role == .input then .input else Role.ofInst v.role v.isPub, defn? := none }
-  -- The mix of relational operators and counting, as in a component
+  -- The mix of relational operators and counting, as in a procedure
   -- (`Reqs/Lang/Decidability#relations`): `concrete`'s, `abstract`'s and
   -- the bindings'.
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
@@ -5813,7 +5875,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     bindings := bindings.push (v, smt, ← takeIndexes, ← takeTables)
   let (relational, counts) ← checkCounts
   let afterBindings ← get
-  -- `concrete`'s variables as a binding reads them, its outputs from the instance.
+  -- `concrete`'s variables as a binding reads them, its outputs from the call.
   let ownC (smt : String) := rename w (own.filter (·.role != .input)) smt
   -- `abstract`'s variables: their bindings, or else `concrete`'s of the same names.
   let outs := a.vars.filter fun v => v.name.isAtomic && v.role == .output
@@ -5828,7 +5890,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
     match a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains u.name with
     | some u => { v with ty := u.ty, ptype := u.ptype, fact? := u.fact? }
     | none => { v with fact? := none }
-  -- `c`'s inputs' constraints are its instance's obligations.
+  -- `c`'s inputs' constraints are its call's obligations.
   let vars := inputs ++ c.vars.map (fun v =>
       let role := Role.ofInst v.role v.isPub
       { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none
@@ -5844,7 +5906,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
                            ++ (c.props.filter (·.kind == .assume)).map fun p => (p.name, rename w c.vars p.smt)
                          typed := typed.map fun (n, t, _) => (n, t)
                          bounded := c.vars.any fun v => v.role == .input && (v.ptype.obligation st.shapeOf).any (·.quantifies) }
-  -- `a`'s instances are hypotheses: their assumptions are `a`'s own
+  -- `a`'s calls are hypotheses: their assumptions are `a`'s own
   -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
   let insts := #[instC] ++ a.insts.map fun i =>
     { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := #[] }
@@ -5878,7 +5940,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
   let settings (all : Bool) := Fren.Core.Tested.ofSettings all
     -- The bindings too, for the definedness of their indexes.
     ((a.props.filter (·.kind == .assume)).map (·.name) ++ bound) (props.filter (·.kind == .expect) |>.map (·.name, none))
-    -- `a`'s instances too, for the definedness of their bindings.
+    -- `a`'s calls too, for the definedness of their bindings.
     (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
   let tested := settings ev.tested
   let enumerated := settings ev.enumerated
@@ -5891,7 +5953,7 @@ def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Ar
                                         relational, counts, tested, enumerated, enumSize := s.enumSize, natApps
                                         guarded := afterBindings.guardedUsed } }
 
-/-- The component that a global expectation's binder of type `segs` ranges
+/-- The procedure that a global expectation's binder of type `segs` ranges
 over the behaviours of, or `none` if it ranges over the values of a type
 (`lang::quantifier_binder`), which a quantifier checks. A path that names
 neither is an error. -/
@@ -5905,7 +5967,7 @@ def globalBinderComp? (segs : Array Ident) : M (Option Name) := do
   match ← resolve segs with
   | .item { kind := .compItem, path, .. } => return some path
   | .item { kind := .enumItem, .. } | .item { kind := .recordItem, .. } | .item { kind := .typeItem, .. } => return none
-  | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a component or a type" r)
+  | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a type" r)
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
@@ -5954,9 +6016,9 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
     for x in xs do
       let x ← declare x
       let w := Name.mkSimple x.name
-      liftMsg x.span (Fren.Core.checkItemName "instance" w)
+      liftMsg x.span (Fren.Core.checkItemName "binder" w)
       lintName .instance w x.span
-      -- Like an instance's, but its inputs are shown in counterexamples.
+      -- Like a call's, but its inputs are shown in counterexamples.
       vars := vars ++ c.vars.map fun v =>
         let role := Role.ofInst v.role v.isPub
         { name := w ++ v.name, role, isPub := role != .instHidden, ty := v.ty, span := x.span, ptype := v.ptype
@@ -5981,7 +6043,7 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
   let binders := insts.map fun i => (i.name, i.span)
   for (w, sp) in Fren.Core.unmentioned binders ((mentions body).map (·.getRoot)) do
     lint .unusedVariables sp (Fren.Core.unusedVariableMsg w true false)
-  -- What it reads through instances (`unused_assumption`).
+  -- What it reads through calls (`unused_assumption`).
   let reads := (mentions body).filterMap fun m => match m.components with
     | [w, x] => (insts.find? (·.name == w)).map fun i => (i.comp, x)
     | _ => none
@@ -6010,7 +6072,7 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars`, and records the contract, and each clause's
 definition for the prelude (`Reqs/Lang/Items#contracts`). Gives each
-clause as a constraint of the function's body's comp, named after the
+clause as a constraint of the function's body's procedure, named after the
 function and the clause, a postcondition only if the function is defined;
 and the questions about the tables and applications in them: a
 precondition's under the other preconditions, a postcondition's under all
@@ -6067,7 +6129,7 @@ def noteResultFact (path : Name) (rp : Fren.Core.PTy) : M Unit := noteResultFact
 are `vars`, or of the value of the constant `n`, just elaborated, its
 pattern types' `obligations`, and the questions about the tables and
 applications of the function's contract and its clauses, `contract`, as a
-comp for their checks (`State.bodies`), if it has any questions or
+procedure for their checks (`State.bodies`), if it has any questions or
 postconditions to check. -/
 def noteBody (n : Name) (span : Span) (vars : Array CVar)
     (contract : Array CProp × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) := (#[], #[]))
@@ -6392,7 +6454,7 @@ partial def elabItem (item : Item) : M Unit := do
     unless Fren.Core.functionParamsAccepted body.isSome contract params.size (params.filter named).size do
       let bad := (params.find? (named · != (body.isSome || contract))).map (·.1[0]!.span) |>.getD name.span
       err bad (Fren.Core.functionParamsMsg path body.isSome contract)
-    -- The parameters, declared like a comp's inputs, but for the function
+    -- The parameters, declared like a procedure's parameters, but for the function
     -- parameters, each with its position, which only a defined function
     -- has (`lang::function_type_place`).
     let fnParamsOf : StateT (Array (Nat × Name × Span × Fren.Core.FnTy)) M (Array CVar) := do
@@ -6551,13 +6613,13 @@ partial def elabItem (item : Item) : M Unit := do
           { what := .function, path, level := s.levels.get .deadCode, singleCall? := body.map fun _ => s.levels.get .singleCallFn }
         { s with items := s.items.push (r, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-  | .comp isPub name members close spans openStop => do
+  | .comp isPub name header members close spans openStop => do
     -- Its declaration and line lints are about its name, without its `!`.
     let shown := (declaredIdent name).1
     modify fun s => { s with item := s.module ++ Name.mkSimple shown.name }
     -- Its `use`s end with it, even when it has an error.
     modify fun s => { s with inCompBody := false }
-    try elabComp isPub name members spans openStop
+    try elabComp isPub name header members spans openStop
     catch e =>
       modify (fun s => { s.keepLints e.state with scope := s.module })
       -- Its declaration and line lints, after an error in its members.
@@ -6620,7 +6682,7 @@ partial def elabItem (item : Item) : M Unit := do
   | .check (some segs) => do
     match ← resolve segs with
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
-    | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a component or a global expectation" r)
+    | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => do
     if opt.name == "fren.enumeration.size" then
       -- Like `fren.evidence`: for the item after `in`, or the rest of the
@@ -6742,7 +6804,7 @@ def State.fixes (s : State) (fired : Array (Lint × Span)) :
         fixed := fixed.push (.unusedLintSetting, sp)
   return (edits, fixed)
 
-/-- Records the reports of `manual_nat` in the file that no instance or
+/-- Records the reports of `manual_nat` in the file that no call or
 refinement in it keeps an `Int` (`lint::manual_nat`). Their fix is a
 suggestion, which `fren fix` does not make. -/
 def finishNat : StateM State Unit := do

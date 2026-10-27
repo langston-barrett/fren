@@ -1,28 +1,28 @@
 error[F0601]: `variants` is not realizable
  --> test/cli/results/f0601_forced_variants_both.fren:7:6
   |
-7 | comp variants {
+7 | proc variants(): (s: Shape) {
   |      ^^^^^^^^ not realizable
   |
   = note: no outputs satisfy `round` and `square`
   = help: weaken one of them, or add an `assume` that rules this input out
 
 note: `round` forces s is Shape::Circle(_), but `square` forces s is Shape::Square(_)
- --> test/cli/results/f0601_forced_variants_both.fren:9:12
+ --> test/cli/results/f0601_forced_variants_both.fren:8:12
   |
-9 |     ensure round: s is Shape::Circle(_)
+8 |     ensure round: s is Shape::Circle(_)
   |            ^^^^^
 
 note: conflicts with `round`
-  --> test/cli/results/f0601_forced_variants_both.fren:10:12
-   |
-10 |     ensure square: s is Shape::Square(_)
-   |            ^^^^^^
+ --> test/cli/results/f0601_forced_variants_both.fren:9:12
+  |
+9 |     ensure square: s is Shape::Square(_)
+  |            ^^^^^^
 
 error[F0601]: `mixed` is not realizable
-  --> test/cli/results/f0601_forced_variants_both.fren:13:6
+  --> test/cli/results/f0601_forced_variants_both.fren:12:6
    |
-13 | comp mixed {
+12 | proc mixed(x: Int): (s: Shape) {
    |      ^^^^^ not realizable
    |
    = note: for the input
@@ -31,15 +31,15 @@ error[F0601]: `mixed` is not realizable
    = help: weaken one of them, or add an `assume` that rules this input out
 
 note: `one` forces s = Shape::Circle(0), but `boxy` forces s is Shape::Rect(_, _)
-  --> test/cli/results/f0601_forced_variants_both.fren:16:12
+  --> test/cli/results/f0601_forced_variants_both.fren:13:12
    |
-16 |     ensure one: s = Shape::Circle(x)
+13 |     ensure one: s = Shape::Circle(x)
    |            ^^^
 
 note: conflicts with `one`
-  --> test/cli/results/f0601_forced_variants_both.fren:17:12
+  --> test/cli/results/f0601_forced_variants_both.fren:14:12
    |
-17 |     ensure boxy: s is Shape::Rect(_, _)
+14 |     ensure boxy: s is Shape::Rect(_, _)
    |            ^^^^
 
 fren: 0 passed, 2 failed, 0 inconclusive, 0 redundant

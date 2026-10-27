@@ -4,7 +4,7 @@ error[F0414]: variable `z` of `rough` is bound multiple times
 4 | refine fits: precise refines rough { z := y, z := y + 1 }
   |                                              ^ bound again here
   |
-  = note: a refinement binds each variable of the refined component at most once
+  = note: a refinement binds each variable of the refined procedure at most once
 
 error: could not check due to previous errors
 

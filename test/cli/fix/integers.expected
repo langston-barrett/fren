@@ -1,58 +1,58 @@
 warning[F0810]: `n` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:11:31
-   |
-11 |     assume counts: k >= 0 and n >= 0 and x < y
-   |                               ^^^^^^ `n` is at least 0 by this assumption
-   |
-   = note: a `Nat` input brings this assumption with its type
-   = note: an instance must then bind `n` to a `Nat`
-   = help: declare `n: Nat`, and remove `n >= 0` from `counts`, where nothing binds `n` to an `Int`
-   = note: `manual_nat` is `warn` by default
-   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
+ --> test/cli/fix/integers.fren:5:31
+  |
+5 |     assume counts: k >= 0 and n >= 0 and x < y
+  |                               ^^^^^^ `n` is at least 0 by this assumption
+  |
+  = note: a `Nat` parameter brings this assumption with its type
+  = note: a call must then pass a `Nat` for `n`
+  = help: declare `n: Nat`, and remove `n >= 0` from `counts`, where nothing binds `n` to an `Int`
+  = note: `manual_nat` is `warn` by default
+  = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 
 warning[F0810]: `k` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:11:20
-   |
-11 |     assume counts: k >= 0 and n >= 0 and x < y
-   |                    ^^^^^^ `k` is at least 0 by this assumption
-   |
-   = note: a `Nat` input brings this assumption with its type
-   = note: an instance must then bind `k` to a `Nat`
-   = help: declare `k: Nat`, and remove `k >= 0` from `counts`, where nothing binds `k` to an `Int`
+ --> test/cli/fix/integers.fren:5:20
+  |
+5 |     assume counts: k >= 0 and n >= 0 and x < y
+  |                    ^^^^^^ `k` is at least 0 by this assumption
+  |
+  = note: a `Nat` parameter brings this assumption with its type
+  = note: a call must then pass a `Nat` for `k`
+  = help: declare `k: Nat`, and remove `k >= 0` from `counts`, where nothing binds `k` to an `Int`
 
 warning[F0810]: `j` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:12:19
-   |
-12 |     assume order: j >= 0  -- why
-   |                   ^^^^^^ `j` is at least 0 by this assumption
-   |
-   = note: a `Nat` input brings this assumption with its type
-   = note: an instance must then bind `j` to a `Nat`
-   = help: declare `j: Nat`, and remove `j >= 0` from `order`, where nothing binds `j` to an `Int`
+ --> test/cli/fix/integers.fren:6:19
+  |
+6 |     assume order: j >= 0  -- why
+  |                   ^^^^^^ `j` is at least 0 by this assumption
+  |
+  = note: a `Nat` parameter brings this assumption with its type
+  = note: a call must then pass a `Nat` for `j`
+  = help: declare `j: Nat`, and remove `j >= 0` from `order`, where nothing binds `j` to an `Int`
 
 warning[F0810]: `m` is never negative, so it can be a `Nat`
-  --> test/cli/fix/integers.fren:19:16
-   |
-19 |     ensure rm: m >= 0 and m <= n
-   |                ^^^^^^ `m` is at least 0 by this guarantee
-   |
-   = note: a `Nat` output brings this guarantee with its type
-   = help: declare `m: Nat`, and remove `m >= 0` from `rm`, where nothing binds `m` to an `Int`
+ --> test/cli/fix/integers.fren:8:16
+  |
+8 |     ensure rm: m >= 0 and m <= n
+  |                ^^^^^^ `m` is at least 0 by this guarantee
+  |
+  = note: a `Nat` output brings this guarantee with its type
+  = help: declare `m: Nat`, and remove `m >= 0` from `rm`, where nothing binds `m` to an `Int`
 
-warning[F0792]: the assumption `order` constrains only inputs that nothing uses
-  --> test/cli/fix/integers.fren:12:12
-   |
-12 |     assume order: j >= 0  -- why
-   |            ^^^^^ constrains only unused inputs
-   |
-   = note: no guarantee, expectation, definition or binding mentions `j`, nor does another assumption tie them to a used variable
-   = help: remove the assumption and its inputs, or use them
-   = note: `unused_assumption` is `warn` by default
-   = help: to allow it, `set_option fren.lint.unused_assumption "allow"`
+warning[F0792]: the assumption `order` constrains only parameters that nothing uses
+ --> test/cli/fix/integers.fren:6:12
+  |
+6 |     assume order: j >= 0  -- why
+  |            ^^^^^ constrains only unused parameters
+  |
+  = note: no guarantee, expectation, definition, argument or binding mentions `j`, nor does another assumption tie them to a used variable
+  = help: remove the assumption and its parameters, or use them
+  = note: `unused_assumption` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_assumption "allow"`
 
 --- test/cli/fix/integers.fren
 +++ test/cli/fix/integers.fren
-@@ -19,5 +19,5 @@
+@@ -8,5 +8,5 @@
 -    ensure rm: m >= 0 and m <= n
 -    ensure ra: a = 2 * if x - y > 0 then x - y else -(x - y)
 -    ensure rb: b = if y >= x then y - x else x - y

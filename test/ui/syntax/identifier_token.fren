@@ -4,4 +4,4 @@
 -- front end reads it as one, so both front ends read `s!` then `=`
 -- (`Lexical.md#identifiers`).
 
-comp c { in s: Int pub out z? ensure r: z? iff s!=1 }  --~ error: cannot find `s!` in this scope
+proc c(s: Int): (z?) { ensure r: z? iff s!=1 }  --~ error: cannot find `s!` in this scope

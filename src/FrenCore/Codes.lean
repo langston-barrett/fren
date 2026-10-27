@@ -11,7 +11,7 @@ erroneous example reports the code (with `args`, if they are not `none`),
 and that the fixed versions do not.
 
 Codes are grouped by hundreds: `F01xx` syntax, `F02xx` names and items,
-`F03xx` types, `F04xx` instances and where variables may be mentioned,
+`F03xx` types, `F04xx` calls and where variables may be mentioned,
 `F05xx` traceability, `F06xx` the results of checks, `F07xx` and `F08xx` lints and
 their levels.
 -/
@@ -34,7 +34,7 @@ def errorCodes : Array ErrorCode := #[
 Erroneous code example:
 
 ```fren
-comp c { in x: Int ensure r: x > 0 $ }
+proc c(x: Int) { ensure r: x > 0 $ }
 ```
 
 Fren is lexed as Lean is, but uses only these symbols:
@@ -47,7 +47,7 @@ Comments start with `--`, not `#` or `//`. Remove the character, or replace
 it with the Fren syntax for what you meant:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
+proc c(x: Int): (y?) { ensure r: y? iff x > 0 }
 ```
 "# },
   { code := "F0102", explanation := r#"A block comment is not closed.
@@ -56,7 +56,7 @@ Erroneous code example:
 
 ```fren
 /- A comment that never ends.
-comp c {}
+proc c() {}
 ```
 
 A block comment starts with `/-` and ends with `-/`. Block comments nest,
@@ -64,7 +64,7 @@ so each `/-` inside a comment needs its own `-/`.
 
 ```fren
 /- A comment that ends. -/
-comp c {}
+proc c() {}
 ```
 "# },
   { code := "F0103", explanation := r#"A string literal is not closed.
@@ -72,7 +72,7 @@ comp c {}
 Erroneous code example:
 
 ```fren
-comp c {}
+proc c() {}
 trusted c: "the hardware guarantees it
 ```
 
@@ -80,7 +80,7 @@ A string literal starts and ends with `"` on the same line. Inside it, write
 `\"` for a quote and `\\` for a backslash.
 
 ```fren
-comp c {}
+proc c() {}
 trusted c: "the hardware guarantees it"
 ```
 "# },
@@ -89,14 +89,14 @@ trusted c: "the hardware guarantees it"
 Erroneous code example:
 
 ```fren
-comp c { in x: Int, in y: Int }
+proc c(x: Int,, y: Int) {}
 ```
 
 The message says what was found and what was expected instead. Here, the
-members of a component are not separated by commas.
+parameters of a procedure are separated by one comma, not two.
 
 ```fren
-comp c { in x: Int in y: Int }
+proc c(x: Int, y: Int) {}
 ```
 
 See the grammar in Fren's reference manual (`Grammar.md`).
@@ -106,7 +106,7 @@ See the grammar in Fren's reference manual (`Grammar.md`).
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x == 1 }
+proc c(x: Int): (y?) { ensure r: y? iff x == 1 }
 ```
 
 Fren's operators are words where other languages use symbols:
@@ -118,7 +118,7 @@ Fren's operators are words where other languages use symbols:
 `!=` is inequality, as in other languages. There is no division.
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x = 1 }
+proc c(x: Int): (y?) { ensure r: y? iff x = 1 }
 ```
 "# },
   { code := "F0106", explanation := r#"The condition of `when` or `unless` is not followed by a comma.
@@ -126,14 +126,14 @@ comp c { in x: Int pub out y? ensure r: y? iff x = 1 }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: when x > 1 y = 3 }
+proc c(x: Int): (y: Int) { ensure r: when x > 1 y = 3 }
 ```
 
 `when c, e` says that `e` holds whenever `c` does, and `unless c, e` that
 `e` holds whenever `c` does not. The comma ends the condition.
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: when x > 1, y = 3 }
+proc c(x: Int): (y: Int) { ensure r: when x > 1, y = 3 }
 ```
 "# },
   { code := "F0107", explanation := r#"A chain of `iff`s.
@@ -141,14 +141,14 @@ comp c { in x: Int pub out y: Int ensure r: when x > 1, y = 3 }
 Erroneous code example:
 
 ```fren
-comp c { in a? in b? pub out d? ensure r: d? iff a? iff b? }
+proc c(a?, b?): (d?) { ensure r: d? iff a? iff b? }
 ```
 
 `iff` is not associative, so `a iff b iff c` has no single obvious meaning.
 Add parentheses to say which you mean.
 
 ```fren
-comp c { in a? in b? pub out d? ensure r: d? iff (a? iff b?) }
+proc c(a?, b?): (d?) { ensure r: d? iff (a? iff b?) }
 ```
 "# },
   { code := "F0108", explanation := r#"A chained comparison with an operator that does not chain.
@@ -156,7 +156,7 @@ comp c { in a? in b? pub out d? ensure r: d? iff (a? iff b?) }
 Erroneous code example:
 
 ```fren
-comp c { in a? in b? pub out ok? ensure r: ok? iff a? = b? = true }
+proc c(a?, b?): (ok?) { ensure r: ok? iff a? = b? = true }
 ```
 
 Only orderings chain: `0 <= x < 10` means `0 <= x and x < 10`. `=`,
@@ -166,11 +166,11 @@ obvious meaning: `a? = b? = true` could be `a? = b? and b? = true`, or
 comparison in parentheses to compare its result, as in `(x < y) = p?`.
 
 ```fren
-comp c { in a? in b? pub out ok? ensure r: ok? iff a? = b? and b? = true }
+proc c(a?, b?): (ok?) { ensure r: ok? iff a? = b? and b? = true }
 ```
 
 ```fren
-comp c { in x: Int in y: Int in p? pub out ok? ensure r: ok? iff (x < y) = p? }
+proc c(x: Int, y: Int, p?): (ok?) { ensure r: ok? iff (x < y) = p? }
 ```
 "# },
   { code := "F0109", explanation := r#"`when`, `unless` or `let` is used as an operand without parentheses.
@@ -178,49 +178,52 @@ comp c { in x: Int in y: Int in p? pub out ok? ensure r: ok? iff (x < y) = p? }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x > 0 and when x > 1, x > 2 }
+proc c(x: Int): (y?) { ensure r: y? iff x > 0 and when x > 1, x > 2 }
 ```
 
 `when`, `unless` and `let` have the lowest precedence, and their body
 extends as far right as possible. Inside another expression, or as the
-value of an instance's binding or of a definition (where it would swallow
-the bindings or definitions after it), wrap them in parentheses.
+value of a call's argument or of a definition (where it would swallow
+the arguments or definitions after it), wrap them in parentheses.
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff (x > 0 and (when x > 1, x > 2)) }
+proc c(x: Int): (y?) { ensure r: y? iff (x > 0 and (when x > 1, x > 2)) }
 ```
 "# },
-  { code := "F0110", explanation := r#"An input is declared `pub`.
+  { code := "F0110", explanation := r#"A modifier on a parameter.
 
 Erroneous code example:
 
 ```fren
-comp c { pub in x: Int }
+proc c(pub x: Int) {}
 ```
 
-Inputs are always public: whoever instantiates the component binds them.
-Only outputs are private by default, so only `out` takes `pub`.
+A procedure's parameters are its inputs: they are chosen by its
+environment, which sees them all, and they are always determined. So a
+parameter takes neither `pub` nor `det`; `pub` marks a public item, and
+`det` a result, `exists` or `let` that must be determined by the inputs.
+Remove the modifier:
 
 ```fren
-comp c { in x: Int }
+proc c(x: Int) {}
 ```
 "# },
-  { code := "F0111", explanation := r#"A name with a `.` whose first component is not an instance or a value.
+  { code := "F0111", explanation := r#"A name with a `.` whose first component is not a call or a value.
 
 Erroneous code example:
 
 ```fren
 enum E { A, B }
-comp c { in e: E pub out y? ensure r: y? iff e = E.A }
+proc c(e: E): (y?) { ensure r: y? iff e = E.A }
 ```
 
-`a.b` means the variable `b` of the instance `a`, or the field or method
+`a.b` means the variable `b` of the call `a`, or the field or method
 `b` of the value `a`, a variable or a constant. Paths, such as an item of a
 module or a variant of an enum, are separated by `::`.
 
 ```fren
 enum E { A, B }
-comp c { in e: E pub out y? ensure r: y? iff e = E::A }
+proc c(e: E): (y?) { ensure r: y? iff e = E::A }
 ```
 "# },
   { code := "F0112", explanation := r#"Lean code in a file given to the `fren` command.
@@ -232,12 +235,12 @@ def limit := 10
 ```
 
 The `fren` command checks Fren specs without Lean, so it accepts only Fren
-items: `mod`, `use`, `enum`, `comp`, `tested` and `trusted`. Lean code,
+items: `mod`, `use`, `enum`, `proc`, `tested` and `trusted`. Lean code,
 including `impl`, belongs in a Lean file that opens `Fren.Lang`, checked by
 `lake build`.
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x <= 10 }
+proc c(x: Int): (y?) { ensure r: y? iff x <= 10 }
 ```
 "# },
   { code := "F0113", explanation := r#"A modifier on a member it does not apply to.
@@ -245,32 +248,35 @@ comp c { in x: Int pub out y? ensure r: y? iff x <= 10 }
 Erroneous code example:
 
 ```fren
-comp c { det in x: Int }
+proc c(x: Int) { det assume a: x > 0 }
 ```
 
-`pub` and `det` apply only to outputs: `pub out` is visible to whoever
-instantiates the component, and `det out` must be determined by the
-inputs. Inputs are always public, and always determined.
+`det` applies only to a procedure's results, written in its signature as
+`det r: T`, and to its `exists` and `let` members, which must be
+determined by its parameters. `pub` applies only to items: a procedure's
+public outputs are its results. Remove the modifier, or move it to what it
+applies to:
 
 ```fren
-comp c { in x: Int pub det out y: Int ensure r: y = x }
+proc c(x: Int) { assume a: x > 0 }
 ```
 "# },
-  { code := "F0114", explanation := r#"An input with a definition.
+  { code := "F0114", explanation := r#"A parameter or an input with a definition.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int := 3 }
+proc c(x: Int := 3) {}
 ```
 
-Inputs are chosen by the component's environment, so they cannot be
-defined. Only an output can have a definition, `out x: T := e`, which
-makes it stand for `e`. To say what an input equals, state it in an
-assumption; to name an expression, define an output:
+A procedure's parameters are chosen by its environment, so they cannot be
+defined. Only a result or a private variable can have a definition: `out
+r := e` defines the result `r`, and `let x: T := e` a private variable. To
+say what a parameter equals, state it in an assumption; to name an
+expression, use `let`:
 
 ```fren
-comp c { in x: Int out next: Int := x + 1 pub out y: Int ensure r: y = next }
+proc c(x: Int): (y: Int) { let next: Int := x + 1 ensure r: y = next }
 ```
 "# },
   { code := "F0115", explanation := r#"An unknown escape in a string literal.
@@ -307,7 +313,7 @@ literal without them.
 Erroneous code example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"\d+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"\d+") }
 ```
 
 Patterns are a subset of POSIX extended regular expressions: characters,
@@ -317,7 +323,7 @@ There are no anchors, since the whole string must match, and no classes
 such as `\d`:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[0-9]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[0-9]+") }
 ```
 "# },
   { code := "F0118", explanation := r#"A reversed range in a pattern's class.
@@ -325,14 +331,14 @@ comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[0-9]+") }
 Erroneous code example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[z-a]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[z-a]+") }
 ```
 
 A range is written from the lower character to the higher, by code point,
 so `[z-a]` would match nothing:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[a-z]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[a-z]+") }
 ```
 "# },
   { code := "F0119", explanation := r#"A lexeme that Lean reads as one identifier, but that is not one of Fren's.
@@ -340,7 +346,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[a-z]+") }
 Erroneous code example:
 
 ```fren
-comp c { in y: Int pub out z? ensure r: z? iff y!!=1 }
+proc c(y: Int): (z?) { ensure r: z? iff y!!=1 }
 ```
 
 Fren's identifiers are ASCII letters, digits, `_` and `'`, with `.` between
@@ -352,7 +358,7 @@ in Lean and in the `fren` command, both report what Lean would read
 differently. Here Lean reads `y!!` then `=`, so write spaces around `!=`:
 
 ```fren
-comp c { in y: Int pub out z? ensure r: z? iff y != 1 }
+proc c(y: Int): (z?) { ensure r: z? iff y != 1 }
 ```
 
 An identifier such as `a?b` or `xα` needs another name, such as `a_b` or
@@ -383,14 +389,14 @@ The `fren` command also reports this for other malformed numbers, such as
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x <- 1 }
+proc c(x: Int): (p?) { ensure r: p? iff x <- 1 }
 ```
 
 Fren is lexed as Lean is, and Lean has a token `<-`, so `x <- 1` is not
 `x < -1`. To compare with a negation, write a space between `<` and `-`:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x < -1 }
+proc c(x: Int): (p?) { ensure r: p? iff x < -1 }
 ```
 "# },
   { code := "F0122", explanation := r#"A chained comparison that orders both ways.
@@ -398,7 +404,7 @@ comp c { in x: Int pub out p? ensure r: p? iff x < -1 }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int in y: Int pub out ok? ensure r: ok? iff 0 < x > y }
+proc c(x: Int, y: Int): (ok?) { ensure r: ok? iff 0 < x > y }
 ```
 
 `<` and `<=` chain together, as in `0 <= x < 10`, and so do `>` and `>=`,
@@ -407,7 +413,7 @@ mistake than a way to say that `x` is greater than both. Split it with
 `and`.
 
 ```fren
-comp c { in x: Int in y: Int pub out ok? ensure r: ok? iff 0 < x and x > y }
+proc c(x: Int, y: Int): (ok?) { ensure r: ok? iff 0 < x and x > y }
 ```
 "# },
   { code := "F0128", explanation := r#"Spaces around the `..=` or `..` of a range pattern.
@@ -415,7 +421,7 @@ comp c { in x: Int in y: Int pub out ok? ensure r: ok? iff 0 < x and x > y }
 Erroneous code example:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0 ..= 9 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0 ..= 9 => 0, _ => 1 } }
 ```
 
 A range is written without spaces around its `..=` or `..`, as a field read
@@ -423,7 +429,7 @@ is around its `.`, so that, in `n is 0..`, a bound on the next line is never
 read as part of it:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0..=9 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0..=9 => 0, _ => 1 } }
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -433,7 +439,7 @@ In Lean, Lean's own parser reports this, as a syntax error.
 Erroneous code example:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0..= => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0..= => 0, _ => 1 } }
 ```
 
 The ranges are `a..=b`, `a..b`, `a..` and `..=b`: an inclusive range has
@@ -442,7 +448,7 @@ an upper bound, and an exclusive one a lower bound. For the integers below
 10:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { ..=9 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { ..=9 => 0, _ => 1 } }
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -471,7 +477,7 @@ Erroneous code example:
 
 ```fren
 enum Mode { Off, Heat }
-comp c { pub out ok? ensure r: ok? iff (forall m: Mode, m = m) }
+proc c(): (ok?) { ensure r: ok? iff (forall m: Mode, m = m) }
 ```
 
 A quantifier's binders are written as a global expectation's are: each in
@@ -480,7 +486,7 @@ comma after the last.
 
 ```fren
 enum Mode { Off, Heat }
-comp c { in x: Mode pub out ok? ensure r: ok? iff (forall (m: Mode), m = x) }
+proc c(x: Mode): (ok?) { ensure r: ok? iff (forall (m: Mode), m = x) }
 ```
 "# },
   { code := "F0132", explanation := r#"A comma is missing after the binders of a quantifier.
@@ -489,7 +495,7 @@ Erroneous code example:
 
 ```fren
 enum Mode { Off, Heat }
-comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode) m = x) }
+proc c(x: Mode): (ok?) { ensure r: ok? iff (exists (m: Mode) m = x) }
 ```
 
 The binders of `forall` and `exists` end with a comma, before the body.
@@ -497,7 +503,7 @@ Add one.
 
 ```fren
 enum Mode { Off, Heat }
-comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode), m = x) }
+proc c(x: Mode): (ok?) { ensure r: ok? iff (exists (m: Mode), m = x) }
 ```
 "# },
   { code := "F0137", explanation := r#"A pattern type has a second pattern.
@@ -505,7 +511,7 @@ comp c { in x: Mode pub out ok? ensure r: ok? iff (exists (m: Mode), m = x) }
 Erroneous code example:
 
 ```fren
-comp c { in n: Int is 0.. is ..=9 }
+proc c(n: Int is 0.. is ..=9) {}
 ```
 
 A pattern type `T is P` has the values of `T` that match `P`, and its base
@@ -513,25 +519,25 @@ type `T` is never itself a pattern type, so `is` follows a type at most
 once. Write one pattern that matches what both do:
 
 ```fren
-comp c { in n: Int is 0..=9 }
+proc c(n: Int is 0..=9) {}
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
 "# },
-  { code := "F0142", explanation := r#"`req`, where a member of a component is expected.
+  { code := "F0142", explanation := r#"`req`, where a member of a procedure is expected.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? req r: y? iff x > 0 }
+proc c(x: Int): (y?) { req r: y? iff x > 0 }
 ```
 
-A guarantee, what a component says the system must do, is written with
+A guarantee, what a procedure says the system must do, is written with
 `ensure`, as an assumption is written with `assume`. `req` was its keyword
 before, and is no longer a keyword: write `ensure` instead.
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
+proc c(x: Int): (y?) { ensure r: y? iff x > 0 }
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -541,7 +547,7 @@ In Lean, Lean's own parser reports this, as a syntax error.
 Erroneous code example:
 
 ```fren
-comp c { in x: Option(Int) }
+proc c(x: Option(Int)) {}
 ```
 
 A type's arguments are written in angle brackets right after its name, as
@@ -550,7 +556,7 @@ parentheses before. The fix writes the whole type with angle brackets,
 those of the types within it too:
 
 ```fren
-comp c { in x: Option<Int> }
+proc c(x: Option<Int>) {}
 ```
 
 A newtype's and a variant's parentheses hold a payload's types, not type
@@ -609,6 +615,72 @@ parentheses before:
 pub enum Tree<T> { Leaf, Node(T) }
 ```
 "# },
+  { code := "F0158", explanation := r#"A component, as procedures were written before.
+
+Erroneous code example:
+
+```fren
+pub comp c {
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+}
+```
+
+Components are now procedures, written like functions: the inputs are
+the parameters, the public outputs are named results in the signature,
+and the private outputs are `exists` and `let` members. Their meaning is
+unchanged. `fren fix` writes a component as a procedure:
+
+```fren
+pub proc c(x: Int): (y: Int) {
+    ensure r: y = x + 1
+}
+```
+"# },
+  { code := "F0159", explanation := r#"An `in` member of a procedure.
+
+Erroneous code example:
+
+```fren
+proc c() {
+    in x: Int
+    assume a: x > 0
+}
+```
+
+A procedure's inputs are its parameters, in its signature, in the order
+that calls give its arguments. `fren fix` moves the input there:
+
+```fren
+proc c(x: Int) {
+    assume a: x > 0
+}
+```
+"# },
+  { code := "F0160", explanation := r#"An output declared as components declared them.
+
+Erroneous code example:
+
+```fren
+proc c(x: Int) {
+    pub out y: Int
+    ensure r: y = x
+}
+```
+
+A procedure's public outputs are named results, in its signature, as in
+`proc c(x: Int): (y: Int)`. A result with a definition is defined by the
+member `out y := e`, which declares nothing. A private output is `exists
+z: T`, which the system chooses, or `let z: T := e`, which stands for its
+definition. `fren fix` writes each so:
+
+```fren
+proc c(x: Int): (y: Int) {
+    ensure r: y = x
+}
+```
+"# },
   { code := "F0152", explanation := r#"A generic function's type parameter that is not a name.
 
 Erroneous code example:
@@ -630,7 +702,7 @@ Erroneous code example:
 
 ```fren
 fn f(Int): Int
-comp c { in x: Int pub out y: Int ensure r: y = f (x) }
+proc c(x: Int): (y: Int) { ensure r: y = f (x) }
 ```
 
 The `(` that opens a function's or a variant's arguments, a pattern's
@@ -641,7 +713,7 @@ type parameters, as in `enum Option<T>`. Remove the space:
 
 ```fren
 fn f(Int): Int
-comp c { in x: Int pub out y: Int ensure r: y = f(x) }
+proc c(x: Int): (y: Int) { ensure r: y = f(x) }
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -673,7 +745,7 @@ Erroneous code example:
 
 ```fren
 enum Shape { Circle(Int), Empty }
-comp c { in s: Shape in ok? pub out y? ensure r: y? iff s is Shape::Circle(_) if ok? }
+proc c(s: Shape, ok?): (y?) { ensure r: y? iff s is Shape::Circle(_) if ok? }
 ```
 
 A guard, `if C`, belongs to a `match` arm, which it keeps from being taken
@@ -682,7 +754,7 @@ beside its pattern is a conjunction:
 
 ```fren
 enum Shape { Circle(Int), Empty }
-comp c { in s: Shape in ok? pub out y? ensure r: y? iff (s is Shape::Circle(_) and ok?) }
+proc c(s: Shape, ok?): (y?) { ensure r: y? iff (s is Shape::Circle(_) and ok?) }
 ```
 
 In Lean, Lean's own parser reports this, as a syntax error.
@@ -694,7 +766,7 @@ Erroneous code example:
 ```fren
 set_option fren.enumeration.size 100 in
 set_option fren.evidence "enumerated" in
-comp c { in x: Int pub det out y: Int ensure r: y = x }
+proc c(x: Int): (det y: Int) { ensure r: y = x }
 ```
 
 `fren.enumeration.size` bounds the size of the values that the checks set
@@ -706,7 +778,7 @@ usually enough:
 ```fren
 set_option fren.enumeration.size 5 in
 set_option fren.evidence "enumerated" in
-comp c { in x: Int pub det out y: Int ensure r: y = x }
+proc c(x: Int): (det y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0201", explanation := r#"A name that is not in scope.
@@ -714,15 +786,15 @@ comp c { in x: Int pub det out y: Int ensure r: y = x }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = z }
+proc c(x: Int): (y: Int) { ensure r: y = z }
 ```
 
-A name in an expression is a variable of the component, an item declared
+A name in an expression is a variable of the procedure, an item declared
 in or imported into the current module, or a variant opened with
 `use E::*`. Check the spelling, declare the name, or import it with `use`.
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0202", explanation := r#"An item that is private to another module.
@@ -754,7 +826,7 @@ Erroneous code example:
 
 ```fren
 enum Mode { Off, Heat }
-comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Cool }
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Cool }
 ```
 
 The message lists the enum's variants. Check the spelling, or add the
@@ -762,7 +834,7 @@ variant to the enum.
 
 ```fren
 enum Mode { Off, Heat, Cool }
-comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Cool }
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Cool }
 ```
 "# },
   { code := "F0204", explanation := r#"A path continues after something that has no members.
@@ -771,7 +843,7 @@ Erroneous code example:
 
 ```fren
 enum Mode { Off, Heat }
-comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Heat::On }
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat::On }
 ```
 
 Only modules (whose members are their items) and enums (whose members are
@@ -779,7 +851,7 @@ their variants) can be followed by `::`.
 
 ```fren
 enum Mode { Off, Heat }
-comp c { in m: Mode pub out on? ensure r: on? iff m = Mode::Heat }
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
 ```
 "# },
   { code := "F0205", explanation := r#"A variant name that two enums opened with `*` both have.
@@ -791,7 +863,7 @@ enum E { A, B }
 enum F { A, C }
 use E::*
 use F::*
-comp c { in e: E pub out y? ensure r: y? iff e = A }
+proc c(e: E): (y?) { ensure r: y? iff e = A }
 ```
 
 `use E::*` brings `E`'s variants into scope. When two opened enums have a
@@ -803,7 +875,7 @@ enum E { A, B }
 enum F { A, C }
 use E::*
 use F::*
-comp c { in e: E pub out y? ensure r: y? iff e = E::A }
+proc c(e: E): (y?) { ensure r: y? iff e = E::A }
 ```
 "# },
   { code := "F0206", explanation := r#"A name is defined twice in the same module.
@@ -815,7 +887,7 @@ enum E { A }
 enum E { B }
 ```
 
-Each module has one namespace for its modules, enums and components. Rename
+Each module has one namespace for its modules, enums and procedures. Rename
 one of them, or move it to another module.
 
 ```fren
@@ -870,7 +942,7 @@ Erroneous code example:
 
 ```fren
 mod m
-pub comp c {}
+pub proc c() {}
 
 mod n
 use m::*
@@ -881,7 +953,7 @@ cannot be opened: import their items one by one.
 
 ```fren
 mod m
-pub comp c {}
+pub proc c() {}
 
 mod n
 use m::c
@@ -893,16 +965,16 @@ Erroneous code example:
 
 ```fren
 enum E { A }
-comp c { in e: E pub out y? ensure r: y? iff e = E }
+proc c(e: E): (y?) { ensure r: y? iff e = E }
 ```
 
-The message says what was expected (a value, a type or a component) and what
+The message says what was expected (a value, a type or a procedure) and what
 the name actually is. Here, `E` is an enum, but a value was expected: one of
 its variants.
 
 ```fren
 enum E { A }
-comp c { in e: E pub out y? ensure r: y? iff e = E::A }
+proc c(e: E): (y?) { ensure r: y? iff e = E::A }
 ```
 "# },
   { code := "F0211", explanation := r#"A name that ends in `?` but is not a variable.
@@ -914,7 +986,7 @@ enum Ready? { Yes, No }
 ```
 
 A trailing `?` marks a `Bool` variable, so that conditions read as questions.
-Modules, enums, variants, components, instances and constraints cannot end in
+Modules, enums, variants, procedures, calls and constraints cannot end in
 `?`.
 
 ```fren
@@ -935,20 +1007,20 @@ enum Int { Small, Big }
 enum Size { Small, Big }
 ```
 "# },
-  { code := "F0213", explanation := r#"A name is defined twice in the same component, enum, record, pattern or global expectation.
+  { code := "F0213", explanation := r#"A name is defined twice in the same procedure, enum, record, pattern or global expectation.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out x: Int }
+proc c(x: Int): (x: Int) {}
 ```
 
-A component's variables, instances and constraints share one namespace, an
+A procedure's variables, calls and constraints share one namespace, an
 enum's variants must be distinct, and so must the names a global expectation
 binds. Rename one of them.
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0214", explanation := r#"A `set_option fren.evidence` value that does not exist.
@@ -957,7 +1029,7 @@ Erroneous code example:
 
 ```fren
 set_option fren.evidence "testing" in
-comp c { in x? pub det out y? ensure r: y? iff x? }
+proc c(x?): (det y?) { ensure r: y? iff x? }
 ```
 
 The evidence of a check is `"tested"`, to have it tested instead of asked of
@@ -968,7 +1040,7 @@ enumeration is not complete, or `"solver"`, the default (see `Reqs/Check`,
 
 ```fren
 set_option fren.evidence "tested" in
-comp c { in x? pub det out y? ensure r: y? iff x? }
+proc c(x?): (det y?) { ensure r: y? iff x? }
 ```
 "# },
   { code := "F0215", explanation := r#"A `set_option fren.evidence` before something that has no checks to test.
@@ -976,23 +1048,19 @@ comp c { in x? pub det out y? ensure r: y? iff x? }
 Erroneous code example:
 
 ```fren
-comp c {
-  in x?
-  pub out y?
+proc c(x?): (y?) {
   set_option fren.evidence "tested" in
   ensure r: y? iff x?
 }
 ```
 
-A guarantee is not itself checked: the checks of a component are about
-its expectations, instances, `det out`s and the component as a whole, so
-the setting goes before one of those, or before the component.
+A guarantee is not itself checked: the checks of a procedure are about
+its expectations, calls, `det` outputs and the procedure as a whole, so
+the setting goes before one of those, or before the procedure.
 
 ```fren
 set_option fren.evidence "tested" in
-comp c {
-  in x?
-  pub out y?
+proc c(x?): (y?) {
   ensure r: y? iff x?
 }
 ```
@@ -1002,23 +1070,19 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x?
-  pub out y?
+proc c(x?): (y?) {
   set_option fren.lint.nonminimal_bool "allow" in
   ensure r: y? iff x?
 }
 ```
 
-Within a component, only the evidence of a member's checks can be set
+Within a procedure, only the evidence of a member's checks can be set
 (see `Reqs/Check`, "Checking by testing"). Set other options, such as a
-lint's level, before the component:
+lint's level, before the procedure:
 
 ```fren
 set_option fren.lint.nonminimal_bool "allow" in
-comp c {
-  in x?
-  pub out y?
+proc c(x?): (y?) {
   ensure r: y? iff x?
 }
 ```
@@ -1030,14 +1094,14 @@ Erroneous code example:
 ```fren
 pub const RATE: Int := 2
 set_option fren.lint.non_snake_case "allow" in
-comp c { in RATE: Int pub out y: Int ensure r: y = RATE }
+proc c(RATE: Int): (y: Int) { ensure r: y = RATE }
 ```
 
-Within `c`, `RATE` is the input, not the constant. A component's
-variables and instances, a function's parameters and a global
+Within `c`, `RATE` is the parameter, not the constant. A procedure's
+variables and calls, a function's parameters and a global
 expectation's binders may hide the constants, functions and variants in
 scope, and a `match` arm's binders may hide those and also variables,
-parameters, instances, global expectations' binders and other binders.
+parameters, calls, global expectations' binders and other binders.
 Shadowing is allowed, but must be explicit, so that a
 reader knows which `RATE` a use means: the declaration that hides the name
 is written with `!` directly after it, as `RATE!`, or `ready?!` for a
@@ -1049,14 +1113,14 @@ Write the `!`:
 ```fren
 pub const RATE: Int := 2
 set_option fren.lint.non_snake_case "allow" in
-comp c { in RATE!: Int pub out y: Int ensure r: y = RATE }
+proc c(RATE!: Int): (y: Int) { ensure r: y = RATE }
 ```
 
 Or rename the variable:
 
 ```fren
 pub const RATE: Int := 2
-comp c { in rate: Int pub out y: Int ensure r: y = rate * RATE }
+proc c(rate: Int): (y: Int) { ensure r: y = rate * RATE }
 ```
 "# },
   { code := "F0218", explanation := r#"A declaration is written with `!`, but hides nothing.
@@ -1064,7 +1128,7 @@ comp c { in rate: Int pub out y: Int ensure r: y = rate * RATE }
 Erroneous code example:
 
 ```fren
-comp c { in x!: Int pub out y: Int ensure r: y = x }
+proc c(x!: Int): (y: Int) { ensure r: y = x }
 ```
 
 `!` after a declared name says that it shadows a name in scope (see
@@ -1073,7 +1137,7 @@ nothing to shadow; and items, constraints, fields and variants never
 shadow. Remove the `!`:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0219", explanation := r#"A declaration's name, with its `!`, is one of Lean's tokens.
@@ -1082,7 +1146,7 @@ Erroneous code example:
 
 ```fren
 pub enum Shape { Circle(Int), Square }
-comp c { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(s!) => s > 0, _ => false } }
+proc c(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(s!) => s > 0, _ => false } }
 ```
 
 Fren is lexed as Lean is, and Lean reads `s!` as a token of its own, not
@@ -1095,7 +1159,7 @@ Rename the declaration:
 
 ```fren
 pub enum Shape { Circle(Int), Square }
-comp c { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(r) => r > 0, _ => false } }
+proc c(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(r) => r > 0, _ => false } }
 ```
 "# },
   { code := "F0220", explanation := r#"A declaration is named `true` or `false`.
@@ -1103,7 +1167,7 @@ comp c { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(r) => r
 Erroneous code example:
 
 ```fren
-comp c { in true: Int pub out y: Int ensure r: y = 1 }
+proc c(true: Int): (y: Int) { ensure r: y = 1 }
 ```
 
 `true` and `false` are the literals of type `Bool` wherever an expression
@@ -1111,7 +1175,7 @@ is expected, so nothing could name a variable, item or other declaration
 called `true` or `false`. Rename the declaration:
 
 ```fren
-comp c { in t: Int pub out y: Int ensure r: y = t }
+proc c(t: Int): (y: Int) { ensure r: y = t }
 ```
 "# },
   { code := "F0221", explanation := r#"A declaration is named with one of Lean's keywords.
@@ -1137,7 +1201,7 @@ struct Slot { position: Int }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff big? where big? := x > limit, limit := 10 }
+proc c(x: Int): (y?) { ensure r: y? iff big? where big? := x > limit, limit := 10 }
 ```
 
 The definitions of a clause are read in order: each may mention the ones
@@ -1146,7 +1210,7 @@ them, but no definition mentions itself or a later one, so definitions are
 never recursive. Define what a definition needs before it:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff big? where limit := 10, big? := x > limit }
+proc c(x: Int): (y?) { ensure r: y? iff big? where limit := 10, big? := x > limit }
 ```
 "# },
   { code := "F0301", explanation := r#"A variable has no type.
@@ -1154,14 +1218,14 @@ comp c { in x: Int pub out y? ensure r: y? iff big? where limit := 10, big? := x
 Erroneous code example:
 
 ```fren
-comp c { in count }
+proc c(count) {}
 ```
 
 A variable's type follows a colon. Only a `Bool` may omit it, and a `Bool`'s
 name ends in `?`.
 
 ```fren
-comp c { in count: Int }
+proc c(count: Int) {}
 ```
 "# },
   { code := "F0302", explanation := r#"A variable's name ends in `?`, but it is not a `Bool`.
@@ -1169,14 +1233,14 @@ comp c { in count: Int }
 Erroneous code example:
 
 ```fren
-comp c { in n?: Int }
+proc c(n?: Int) {}
 ```
 
 A variable's name ends in `?` if and only if it is a `Bool`, so that a reader
 can tell conditions from values. Remove the `?`, or make it a `Bool`.
 
 ```fren
-comp c { in n: Int }
+proc c(n: Int) {}
 ```
 "# },
   { code := "F0303", explanation := r#"A `Bool` variable's name does not end in `?`.
@@ -1184,14 +1248,14 @@ comp c { in n: Int }
 Erroneous code example:
 
 ```fren
-comp c { in flag: Bool }
+proc c(flag: Bool) {}
 ```
 
 A variable's name ends in `?` if and only if it is a `Bool`. With the `?`,
 the type can be left out.
 
 ```fren
-comp c { in flag? }
+proc c(flag?) {}
 ```
 "# },
   { code := "F0304", explanation := r#"An expression has the wrong type.
@@ -1199,7 +1263,7 @@ comp c { in flag? }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x }
+proc c(x: Int): (y?) { ensure r: y? iff x }
 ```
 
 Each operator takes operands of particular types: `and`, `or`, `iff`, `not`,
@@ -1210,7 +1274,7 @@ accepted where an `Int` is expected, but an `Int` is never accepted where
 a `Nat` is: `n - 1` is an `Int`, even if `n` is a `Nat`.
 
 ```fren
-comp c { in x: Int pub out y? ensure r: y? iff x > 0 }
+proc c(x: Int): (y?) { ensure r: y? iff x > 0 }
 ```
 "# },
   { code := "F0305", explanation := r#"`=` or `!=` compares values of different types.
@@ -1219,7 +1283,7 @@ Erroneous code example:
 
 ```fren
 enum Mode { Off, On }
-comp c { in m: Mode pub out y? ensure r: y? iff m = 1 }
+proc c(m: Mode): (y?) { ensure r: y? iff m = 1 }
 ```
 
 Both sides of `=` and `!=` must have the same type. Enums are not numbers:
@@ -1227,7 +1291,7 @@ compare an enum with one of its variants.
 
 ```fren
 enum Mode { Off, On }
-comp c { in m: Mode pub out y? ensure r: y? iff m = Mode::On }
+proc c(m: Mode): (y?) { ensure r: y? iff m = Mode::On }
 ```
 "# },
   { code := "F0306", explanation := r#"The branches of `if` have different types.
@@ -1235,14 +1299,14 @@ comp c { in m: Mode pub out y? ensure r: y? iff m = Mode::On }
 Erroneous code example:
 
 ```fren
-comp c { in b? pub out y: Int ensure r: y = if b? then 1 else true }
+proc c(b?): (y: Int) { ensure r: y = if b? then 1 else true }
 ```
 
 `if c then a else b` is `a` or `b`, so both must have the same type, or
 be a `Nat` and an `Int`, when the `Nat` is widened to an `Int`.
 
 ```fren
-comp c { in b? pub out y: Int ensure r: y = if b? then 1 else 0 }
+proc c(b?): (y: Int) { ensure r: y = if b? then 1 else 0 }
 ```
 "# },
   { code := "F0307", explanation := r#"Two variables are multiplied.
@@ -1250,7 +1314,7 @@ comp c { in b? pub out y: Int ensure r: y = if b? then 1 else 0 }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x * x }
+proc c(x: Int): (y: Int) { ensure r: y = x * x }
 ```
 
 Fren's checks are decided by an SMT solver over linear integer arithmetic,
@@ -1259,7 +1323,7 @@ variable and no uninterpreted function: it is built from literals and
 constants, such as `2`, `2 * 3` or `(MAX - MIN)`.
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = 2 * x }
+proc c(x: Int): (y: Int) { ensure r: y = 2 * x }
 ```
 "# },
   { code := "F0308", explanation := r#"A function or variant is applied to the wrong number of arguments, or a pattern has the wrong number of binders.
@@ -1270,7 +1334,7 @@ Erroneous code example:
 type Name
 fn arity(Name): Int
 
-comp c { in x: Name pub out y: Int ensure r: y = arity(x, x) }
+proc c(x: Name): (y: Int) { ensure r: y = arity(x, x) }
 ```
 
 An application gives one argument for each of the function's parameters.
@@ -1279,7 +1343,7 @@ An application gives one argument for each of the function's parameters.
 type Name
 fn arity(Name): Int
 
-comp c { in x: Name pub out y: Int ensure r: y = arity(x) }
+proc c(x: Name): (y: Int) { ensure r: y = arity(x) }
 ```
 "# },
   { code := "F0309", explanation := r#"A constant's value is not known.
@@ -1295,12 +1359,12 @@ const RATE: Int := rate(1)
 A constant stands for a fixed value, but an uninterpreted function's value
 is unknown, even at a fixed argument. A defined function's is known, so a
 constant may apply one. Nor can a constant have an abstract type, which has
-no literals. Make it an input of the components that use it:
+no literals. Make it a parameter of the procedures that use it:
 
 ```fren
 fn rate(Int): Int
 
-comp c { in r: Int pub out y: Int ensure r1: y = rate(r) }
+proc c(r: Int): (y: Int) { ensure r1: y = rate(r) }
 ```
 "# },
   { code := "F0310", explanation := r#"A field or payload has an abstract type, or a set of one.
@@ -1315,7 +1379,7 @@ struct User { name: Name, age: Int }
 
 The values of a record or an enum are fully described by the spec, but an
 abstract type's are not. Describe the value with a function of a type that
-stands for the record instead, or make it an input:
+stands for the record instead, or make it a parameter:
 
 ```fren
 type User
@@ -1363,7 +1427,7 @@ Erroneous code example:
 ```fren
 enum List { Nil, Cons(Int, List) }
 
-comp c { in x: Int pub out l: List ensure r: l = List::Cons(x, List::Nil) }
+proc c(x: Int): (l: List) { ensure r: l = List::Cons(x, List::Nil) }
 ```
 
 A recursive enum, or a type containing one, has values of any size. The
@@ -1374,7 +1438,7 @@ output can describe the value by bounded parts:
 ```fren
 enum List { Nil, Cons(Int, List) }
 
-comp c { in l: List pub out head: Int ensure r: head = match l { List::Cons(h, _) => h, List::Nil => 0 } }
+proc c(l: List): (head: Int) { ensure r: head = match l { List::Cons(h, _) => h, List::Nil => 0 } }
 ```
 "# },
   { code := "F0314", explanation := r#"A record literal does not give each field exactly once.
@@ -1403,7 +1467,7 @@ Erroneous code example:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out z: Int ensure r: z = p.z }
+proc c(p: Point): (z: Int) { ensure r: z = p.z }
 ```
 
 Only records have fields, and only those they declare:
@@ -1411,7 +1475,7 @@ Only records have fields, and only those they declare:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out z: Int ensure r: z = p.x }
+proc c(p: Point): (z: Int) { ensure r: z = p.x }
 ```
 "# },
   { code := "F0316", explanation := r#"A `match` on a value of a type that patterns do not match.
@@ -1419,14 +1483,14 @@ comp c { in p: Point pub out z: Int ensure r: z = p.x }
 Erroneous code example:
 
 ```fren
-comp c { in s: Set<Int> pub out y: Int ensure r: y = match s { _ => 0 } }
+proc c(s: Set<Int>): (y: Int) { ensure r: y = match s { _ => 0 } }
 ```
 
 `match` reads a value of an enum, a `Bool`, an `Int`, a `Nat` or a
 `String`. For other types, use `if`:
 
 ```fren
-comp c { in s: Set<Int> pub out y: Int ensure r: y = if s = {} then 0 else 1 }
+proc c(s: Set<Int>): (y: Int) { ensure r: y = if s = {} then 0 else 1 }
 ```
 "# },
   { code := "F0317", explanation := r#"A `match` does not cover every value.
@@ -1436,7 +1500,7 @@ Erroneous code example:
 ```fren
 enum Shape { Circle(Int), Square(Int), Empty }
 
-comp c { in s: Shape pub out a: Int ensure r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w } }
+proc c(s: Shape): (a: Int) { ensure r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w } }
 ```
 
 A `match` has a value for every value of its scrutinee: an arm for each
@@ -1449,7 +1513,7 @@ integer, and one on a `String` only with a last arm `_` or a binder:
 ```fren
 enum Shape { Circle(Int), Square(Int), Empty }
 
-comp c { in s: Shape pub out a: Int ensure r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w, _ => 0 } }
+proc c(s: Shape): (a: Int) { ensure r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w, _ => 0 } }
 ```
 "# },
   { code := "F0318", explanation := r#"An arm of a `match` that can never be chosen.
@@ -1459,7 +1523,7 @@ Erroneous code example:
 ```fren
 enum Mode { Off, On }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { _ => 0, Mode::On => 1 } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { _ => 0, Mode::On => 1 } }
 ```
 
 The first arm whose pattern matches is chosen, so an arm is never chosen
@@ -1473,7 +1537,7 @@ ones match never matches. Remove the arm, or reorder the arms:
 ```fren
 enum Mode { Off, On }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { Mode::On => 1, _ => 0 } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { Mode::On => 1, _ => 0 } }
 ```
 "# },
   { code := "F0319", explanation := r#"A pattern that is not a variant of the scrutinee's enum.
@@ -1484,7 +1548,7 @@ Erroneous code example:
 enum Mode { Off, On }
 enum Fan { Slow, Fast }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { Fan::Slow => 1, _ => 0 } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { Fan::Slow => 1, _ => 0 } }
 ```
 
 Each pattern names a variant of the enum being matched, or is `_`:
@@ -1493,7 +1557,7 @@ Each pattern names a variant of the enum being matched, or is `_`:
 enum Mode { Off, On }
 enum Fan { Slow, Fast }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { Mode::On => 1, _ => 0 } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { Mode::On => 1, _ => 0 } }
 ```
 "# },
   { code := "F0320", explanation := r#"The arms of a `match` have different types.
@@ -1503,7 +1567,7 @@ Erroneous code example:
 ```fren
 enum Mode { Off, On }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { Mode::On => 1, Mode::Off => false } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { Mode::On => 1, Mode::Off => false } }
 ```
 
 A `match` has the value of one of its arms, so every arm has the same
@@ -1512,7 +1576,7 @@ type:
 ```fren
 enum Mode { Off, On }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { Mode::On => 1, Mode::Off => 0 } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { Mode::On => 1, Mode::Off => 0 } }
 ```
 "# },
   { code := "F0358", explanation := r#"The rows of a table have values of different types.
@@ -1520,14 +1584,14 @@ comp c { in m: Mode pub out y: Int ensure r: y = match m { Mode::On => 1, Mode::
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => false } }
+proc c(x: Int): (y: Int) { ensure r: y = table { x > 0 => 1, _ => false } }
 ```
 
 A table has the value of one of its rows, so every row's value has the
 same type:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => 0 } }
+proc c(x: Int): (y: Int) { ensure r: y = table { x > 0 => 1, _ => 0 } }
 ```
 "# },
   { code := "F0359", explanation := r#"A row of a table, or an arm of a table over a scrutinee, comes after its `_`.
@@ -1535,14 +1599,14 @@ comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => 0 } }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = table { _ => 0, x > 0 => 1 } }
+proc c(x: Int): (y: Int) { ensure r: y = table { _ => 0, x > 0 => 1 } }
 ```
 
 `_` holds wherever no earlier row does, so a row after it could never be
 reached. `_` is the last row:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = table { x > 0 => 1, _ => 0 } }
+proc c(x: Int): (y: Int) { ensure r: y = table { x > 0 => 1, _ => 0 } }
 ```
 
 Likewise, the `_` arm without a guard of a table over a scrutinee is taken
@@ -1553,14 +1617,14 @@ wherever no other arm is, so it is the last arm.
 Erroneous code example:
 
 ```fren
-comp c { in s: String pub out n: Int ensure r: n = s.length }
+proc c(s: String): (n: Int) { ensure r: n = s.length }
 ```
 
 The methods of `String` are `len`, `starts_with?`, `ends_with?` and
 `contains?`. A method that returns a `Bool` ends in `?`:
 
 ```fren
-comp c { in s: String pub out n: Int ensure r: n = s.len }
+proc c(s: String): (n: Int) { ensure r: n = s.len }
 ```
 "# },
   { code := "F0322", explanation := r#"A method call on a value of a type without methods.
@@ -1568,14 +1632,14 @@ comp c { in s: String pub out n: Int ensure r: n = s.len }
 Erroneous code example:
 
 ```fren
-comp c { in b? pub out p? ensure r: p? iff (b?).contains?(1) }
+proc c(b?): (p?) { ensure r: p? iff (b?).contains?(1) }
 ```
 
 Only `Int`s, `String`s, sets, relations, sequences and the values of an
 ordered enum have methods. Use the operators of the type instead:
 
 ```fren
-comp c { in b? pub out p? ensure r: p? iff not b? }
+proc c(b?): (p?) { ensure r: p? iff not b? }
 ```
 "# },
   { code := "F0323", explanation := r#"The argument of `matches?` is not a string literal.
@@ -1583,7 +1647,7 @@ comp c { in b? pub out p? ensure r: p? iff not b? }
 Erroneous code example:
 
 ```fren
-comp c { in s: String in p: String pub out m? ensure r: m? iff s.matches?(p) }
+proc c(s: String, p: String): (m?) { ensure r: m? iff s.matches?(p) }
 ```
 
 A pattern is parsed when the spec is checked, so it is written as a
@@ -1591,7 +1655,7 @@ literal at the call, usually a raw one. Only literals are patterns: a
 variable's value would be matched literally, which no reader would expect.
 
 ```fren
-comp c { in s: String pub out m? ensure r: m? iff s.matches?(r"[a-z]+") }
+proc c(s: String): (m?) { ensure r: m? iff s.matches?(r"[a-z]+") }
 ```
 "# },
   { code := "F0324", explanation := r#"`{}` where nothing gives it a type.
@@ -1599,7 +1663,7 @@ comp c { in s: String pub out m? ensure r: m? iff s.matches?(r"[a-z]+") }
 Erroneous code example:
 
 ```fren
-comp c { pub out n: Int ensure r: n = {}.card }
+proc c(): (n: Int) { ensure r: n = {}.card }
 ```
 
 `{}` and `[]` have no member to give them a type, so they take their type
@@ -1610,7 +1674,7 @@ expression must synthesize its own type, as a receiver must, they are an
 error. Write them where their type is known:
 
 ```fren
-comp c { in s: Set<Int> pub out e? ensure r: e? iff s = {} }
+proc c(s: Set<Int>): (e?) { ensure r: e? iff s = {} }
 ```
 "# },
   { code := "F0325", explanation := r#"The right of `in` is not a set of the left's type.
@@ -1618,14 +1682,14 @@ comp c { in s: Set<Int> pub out e? ensure r: e? iff s = {} }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int in s: Set<String> pub out p? ensure r: p? iff x in s }
+proc c(x: Int, s: Set<String>): (p?) { ensure r: p? iff x in s }
 ```
 
 `x in s` is membership: `s` must be a `Set<T>`, where `T` is the type of
 `x`:
 
 ```fren
-comp c { in x: Int in s: Set<Int> pub out p? ensure r: p? iff x in s }
+proc c(x: Int, s: Set<Int>): (p?) { ensure r: p? iff x in s }
 ```
 "# },
   { code := "F0326", explanation := r#"The members of a set literal have different types.
@@ -1633,13 +1697,13 @@ comp c { in x: Int in s: Set<Int> pub out p? ensure r: p? iff x in s }
 Erroneous code example:
 
 ```fren
-comp c { in s: Set<Int> pub out p? ensure r: p? iff s = {1, true} }
+proc c(s: Set<Int>): (p?) { ensure r: p? iff s = {1, true} }
 ```
 
 A set's members all have its element type, which the first member gives:
 
 ```fren
-comp c { in s: Set<Int> pub out p? ensure r: p? iff s = {1, 2} }
+proc c(s: Set<Int>): (p?) { ensure r: p? iff s = {1, 2} }
 ```
 "# },
   { code := "F0327", explanation := r#"A record or enum is the element type of a set within one of its own fields or payloads.
@@ -1666,7 +1730,7 @@ enum U { A, B }
 
 enum R { X, Y }
 
-comp c { in r: Rel<U, R> pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
+proc c(r: Rel<U, R>): (p?) { ensure q: p? iff (U::A, U::B) in r.closure }
 ```
 
 `r.closure` chains pairs `(a, b)`, `(b, c)`, so it needs a relation of a type
@@ -1678,7 +1742,7 @@ enum U { A, B }
 
 enum R { X, Y }
 
-comp c { in r: Rel<U, U> pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
+proc c(r: Rel<U, U>): (p?) { ensure q: p? iff (U::A, U::B) in r.closure }
 ```
 "# },
   { code := "F0329", explanation := r#"A pair is written outside a relation literal and the left of `in`.
@@ -1686,14 +1750,14 @@ comp c { in r: Rel<U, U> pub out p? ensure q: p? iff (U::A, U::B) in r.closure }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out p? ensure q: p? iff (x, 1) = (1, x) }
+proc c(x: Int): (p?) { ensure q: p? iff (x, 1) = (1, x) }
 ```
 
 There is no type of pairs. A pair is a member of a relation, written in a
 relation literal, `{(a, b)}`, or tested with `(a, b) in r`:
 
 ```fren
-comp c { in x: Int pub out p? ensure q: p? iff (x, 1) in {(1, x)} }
+proc c(x: Int): (p?) { ensure q: p? iff (x, 1) in {(1, x)} }
 ```
 "# },
   { code := "F0332", explanation := r#"A value that is not a sequence is indexed.
@@ -1701,14 +1765,14 @@ comp c { in x: Int pub out p? ensure q: p? iff (x, 1) in {(1, x)} }
 Erroneous code example:
 
 ```fren
-comp c { in s: Set<Int> pub out x: Int ensure r: x = s[0] }
+proc c(s: Set<Int>): (x: Int) { ensure r: x = s[0] }
 ```
 
 Only a sequence, `Seq<T>`, has positions. A set has no order, so it has no
 first member:
 
 ```fren
-comp c { in s: Seq<Int> pub out x: Int ensure r: s.len > 0 and x = s[0] or s.len = 0 }
+proc c(s: Seq<Int>): (x: Int) { ensure r: s.len > 0 and x = s[0] or s.len = 0 }
 ```
 "# },
   { code := "F0333", explanation := r#"An alternative of an or-pattern binds a name.
@@ -1718,7 +1782,7 @@ Erroneous code example:
 ```fren
 enum Shape { Circle(Int), Square(Int), Empty }
 
-comp c { in s: Shape pub out a: Int ensure r: a = match s { Shape::Circle(n) | Shape::Square(n) => n, _ => 0 } }
+proc c(s: Shape): (a: Int) { ensure r: a = match s { Shape::Circle(n) | Shape::Square(n) => n, _ => 0 } }
 ```
 
 An or-pattern matches any of its alternatives, so a name bound by one,
@@ -1728,7 +1792,7 @@ payload with `_`, or give each variant its own arm:
 ```fren
 enum Shape { Circle(Int), Square(Int), Empty }
 
-comp c { in s: Shape pub out a: Int ensure r: a = match s { Shape::Circle(n) => n, Shape::Square(n) => n, _ => 0 } }
+proc c(s: Shape): (a: Int) { ensure r: a = match s { Shape::Circle(n) => n, Shape::Square(n) => n, _ => 0 } }
 ```
 "# },
   { code := "F0334", explanation := r#"A pattern test binds a name where nothing could mention it.
@@ -1738,7 +1802,7 @@ Erroneous code example:
 ```fren
 enum Shape { Circle(Int), Empty }
 
-comp c { in s: Shape pub out big? ensure r: big? iff s is Shape::Circle(n) }
+proc c(s: Shape): (big?) { ensure r: big? iff s is Shape::Circle(n) }
 ```
 
 A pattern test, `e is P`, binds the names of its pattern only for what
@@ -1752,7 +1816,7 @@ read it, bind it where something follows the test:
 ```fren
 enum Shape { Circle(Int), Empty }
 
-comp c { in s: Shape pub out round? pub out big? ensure r: round? iff s is Shape::Circle(_)
+proc c(s: Shape): (round?, big?) { ensure r: round? iff s is Shape::Circle(_)
     ensure b: big? iff s is Shape::Circle(n) and n > 10 }
 ```
 "# },
@@ -1761,14 +1825,14 @@ comp c { in s: Shape pub out round? pub out big? ensure r: round? iff s is Shape
 Erroneous code example:
 
 ```fren
-comp c { in s: Set<Int> pub out empty? ensure r: empty? iff s is _ }
+proc c(s: Set<Int>): (empty?) { ensure r: empty? iff s is _ }
 ```
 
 `is` tests a value of an enum, a `Bool`, an `Int`, a `Nat` or a `String`
 against a pattern. For other types, compare values with `=` or `in`:
 
 ```fren
-comp c { in s: Set<Int> pub out empty? ensure r: empty? iff s = {} }
+proc c(s: Set<Int>): (empty?) { ensure r: empty? iff s = {} }
 ```
 "# },
   { code := "F0348", explanation := r#"A pattern of another type than the value it matches.
@@ -1776,7 +1840,7 @@ comp c { in s: Set<Int> pub out empty? ensure r: empty? iff s = {} }
 Erroneous code example:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { "zero" => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { "zero" => 0, _ => 1 } }
 ```
 
 A literal matches a value of its own type: an integer an `Int` or a `Nat`,
@@ -1785,7 +1849,7 @@ a string a `String`, and `true` and `false` a `Bool`. A range matches an
 type. Write a pattern of the value's type:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0 => 0, _ => 1 } }
 ```
 "# },
   { code := "F0349", explanation := r#"A range pattern that matches no integer.
@@ -1793,7 +1857,7 @@ comp c { in n: Int pub out y: Int ensure r: y = match n { 0 => 0, _ => 1 } }
 Erroneous code example:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { 9..=0 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 9..=0 => 0, _ => 1 } }
 ```
 
 `a..=b` matches the integers from `a` to `b`, and `a..b` those from `a` to
@@ -1801,7 +1865,7 @@ comp c { in n: Int pub out y: Int ensure r: y = match n { 9..=0 => 0, _ => 1 } }
 matches none. Put the smaller bound first:
 
 ```fren
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0..=9 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0..=9 => 0, _ => 1 } }
 ```
 "# },
   { code := "F0350", explanation := r#"A range pattern's bound that is not an integer or a constant of `Int` or `Nat`.
@@ -1809,14 +1873,14 @@ comp c { in n: Int pub out y: Int ensure r: y = match n { 0..=9 => 0, _ => 1 } }
 Erroneous code example:
 
 ```fren
-comp c { in n: Int in m: Int pub out y: Int ensure r: y = match n { 0..=m => 0, _ => 1 } }
+proc c(n: Int, m: Int): (y: Int) { ensure r: y = match n { 0..=m => 0, _ => 1 } }
 ```
 
 The bounds of a range are fixed: an integer literal, possibly negated, or
 a constant of type `Int` or `Nat`. To compare with a variable, use `if`:
 
 ```fren
-comp c { in n: Int in m: Int pub out y: Int ensure r: y = if 0 <= n and n <= m then 0 else 1 }
+proc c(n: Int, m: Int): (y: Int) { ensure r: y = if 0 <= n and n <= m then 0 else 1 }
 ```
 "# },
   { code := "F0351", explanation := r#"A constant as a range pattern's bound, whose value is not known where the range is checked.
@@ -1826,7 +1890,7 @@ Erroneous code example:
 ```fren
 const MAX: Int := "abcde".len
 
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0..=MAX => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0..=MAX => 0, _ => 1 } }
 ```
 
 Ranges are checked before the spec is: an empty range is an error, and
@@ -1838,7 +1902,7 @@ from integer literals and such constants by `+`, `-`, `*`, `div`, `mod`,
 ```fren
 const MAX: Int := 2 * 5
 
-comp c { in n: Int pub out y: Int ensure r: y = match n { 0..=MAX => 0, _ => 1 } }
+proc c(n: Int): (y: Int) { ensure r: y = match n { 0..=MAX => 0, _ => 1 } }
 ```
 "# },
   { code := "F0368", explanation := r#"A pattern that stands for too many cases.
@@ -1849,7 +1913,7 @@ Erroneous code example:
 enum B { X, Y }
 enum P { V(B, B, B, B, B, B, B, B, B) }
 
-comp c { in p: P pub out y: Int ensure r: y = match p {
+proc c(p: P): (y: Int) { ensure r: y = match p {
     P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
     _ => 1,
 } }
@@ -1865,7 +1929,7 @@ in the arm's body:
 enum B { X, Y }
 enum P { V(B, B, B, B, B, B, B, B, B) }
 
-comp c { in p: P pub out y: Int ensure r: y = match p {
+proc c(p: P): (y: Int) { ensure r: y = match p {
     P::V(_, _, _, _, _, _, _, _, B::X) => 0,
     _ => 1,
 } }
@@ -1876,7 +1940,7 @@ comp c { in p: P pub out y: Int ensure r: y = match p {
 Erroneous code example:
 
 ```fren
-comp c { in x: Int in y: Int pub out q: Int := x div y }
+proc c(x: Int, y: Int): (q: Int) { out q := x div y }
 ```
 
 Fren's checks are decided by an SMT solver over linear integer arithmetic,
@@ -1889,7 +1953,7 @@ integer literals and such constants by `+`, `-`, `*`, `div`, `mod`, `abs`,
 ```fren
 const N: Int := 2 * 4
 
-comp c { in x: Int pub out q: Int := x div N }
+proc c(x: Int): (q: Int) { out q := x div N }
 ```
 "# },
   { code := "F0337", explanation := r#"The divisor of `div` or `mod` is `0`.
@@ -1897,7 +1961,7 @@ comp c { in x: Int pub out q: Int := x div N }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out r: Int := x mod 0 }
+proc c(x: Int): (r: Int) { out r := x mod 0 }
 ```
 
 SMT-LIB leaves division by zero unspecified, and Lean makes it `0`, so the
@@ -1905,7 +1969,7 @@ two front ends would give `x mod 0` different meanings. Divide by a
 constant other than `0`:
 
 ```fren
-comp c { in x: Int pub out r: Int := x mod 2 }
+proc c(x: Int): (r: Int) { out r := x mod 2 }
 ```
 "# },
   { code := "F0352", explanation := r#"Values of an enum or struct that is not ordered are compared with `<`, `<=`, `>` or `>=`.
@@ -1915,7 +1979,7 @@ Erroneous code example:
 ```fren
 enum Level { Low, Middle, High }
 
-comp c { in l: Level pub out high? ensure r: high? iff l > Level::Middle }
+proc c(l: Level): (high?) { ensure r: high? iff l > Level::Middle }
 ```
 
 The order in which a plain enum's variants are listed is not part of its
@@ -1925,7 +1989,7 @@ order its variants as they are declared, or compare with `=` or `in`:
 ```fren
 ordered enum Level { Low, Middle, High }
 
-comp c { in l: Level pub out high? ensure r: high? iff l > Level::Middle }
+proc c(l: Level): (high?) { ensure r: high? iff l > Level::Middle }
 ```
 
 Likewise, a struct, a newtype among them, is ordered only if it is
@@ -1958,7 +2022,7 @@ Erroneous code example:
 ```fren
 enum Level { Low, High }
 
-comp c { in a: Level in b: Level pub out m: Level ensure r: m = a.max(b) }
+proc c(a: Level, b: Level): (m: Level) { ensure r: m = a.max(b) }
 ```
 
 Only `Int`s, `Nat`s, `String`s and the values of a type declared
@@ -1969,7 +2033,7 @@ by their fields:
 ```fren
 ordered enum Level { Low, High }
 
-comp c { in a: Level in b: Level pub out m: Level ensure r: m = a.max(b) }
+proc c(a: Level, b: Level): (m: Level) { ensure r: m = a.max(b) }
 ```
 "# },
   { code := "F0356", explanation := r#"A quantifier with more than 256 instances.
@@ -1978,7 +2042,7 @@ Erroneous code example:
 
 ```fren
 enum Nine { N(Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool) }
-comp c { in x: Nine pub out ok? ensure r: ok? iff (exists (n: Nine), n = x) }
+proc c(x: Nine): (ok?) { ensure r: ok? iff (exists (n: Nine), n = x) }
 ```
 
 A quantifier is expanded into one instance for each combination of the
@@ -1987,7 +2051,7 @@ the quantifiers around it: `Nine` has 2^9 = 512 values. Quantify over a smaller 
 
 ```fren
 enum Nine { N(Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool, Bool) }
-comp c { in x: Nine in n: Nine pub out ok? ensure r: ok? iff n = x }
+proc c(x: Nine, n: Nine): (ok?) { ensure r: ok? iff n = x }
 ```
 "# },
   { code := "F0330", explanation := r#"A function's parameters are named, but it has neither a body nor a contract, or it has one, but a parameter has no name.
@@ -2004,7 +2068,7 @@ fn half(Int): Int
 An uninterpreted function without a contract has parameters with types but
 no names, since nothing mentions them. A defined function's body, and the
 clauses of a function's contract, mention its parameters, so each is
-named, like a component's variable: `x: T`, or `x?` for a `Bool`.
+named, like a procedure's variable: `x: T`, or `x?` for a `Bool`.
 
 ```fren
 fn rate(Int): Int
@@ -2037,7 +2101,7 @@ fn arity(Name): Int
 
 fn rank(a: Int): Int := a + 1
 
-comp c { in n: Name pub out r: Int ensure ranked: r = rank(arity(n)) }
+proc c(n: Name): (r: Int) { ensure ranked: r = rank(arity(n)) }
 ```
 "# },
   { code := "F0380", explanation := r#"A precondition applies the function whose contract it is in.
@@ -2071,16 +2135,13 @@ A postcondition states what the function gives at its own arguments: the
 function's value is written by applying it to its parameters, each by its
 name, in order, as `rate(n)`. A relation between its values at different
 arguments is stated where the function is applied, as an assumption of a
-component:
+procedure:
 
 ```fren
 fn rate(n: Int): Int
     ensure positive: rate(n) > 0
 
-comp c {
-    in n: Int
-    pub out r: Int
-
+proc c(n: Int): (r: Int) {
     assume grows: rate(n + 1) > rate(n)
 
     ensure growth: r = rate(n + 1) - rate(n)
@@ -2094,10 +2155,7 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp grade {
-    in n: Int
-    pub out g: Int
-
+proc grade(n: Int): (g: Int) {
     ensure r: g = table n { ..=49 => 0, 50..=100 => 1, 100.. => 2 }
 }
 ```
@@ -2113,10 +2171,7 @@ Narrow one of the patterns, tell the arms apart with guards, or write a
 `match`, which takes the first arm that matches:
 
 ```fren
-comp grade {
-    in n: Int
-    pub out g: Int
-
+proc grade(n: Int): (g: Int) {
     ensure r: g = table n { ..=49 => 0, 50..=99 => 1, 100.. => 2 }
 }
 ```
@@ -2139,10 +2194,7 @@ the decidable core:
 ```fren
 struct Stock { counts: Set<Int> }
 
-comp restock {
-    in stock: Stock
-    pub out more?
-
+proc restock(stock: Stock): (more?) {
     assume counted: not -1 in stock.counts
 
     ensure rule: more? iff 0 in stock.counts
@@ -2154,7 +2206,7 @@ comp restock {
 Erroneous code example:
 
 ```fren
-comp c { in n: Int pub out m: Int ensure r: m = { n with x := 1 } }
+proc c(n: Int): (m: Int) { ensure r: m = { n with x := 1 } }
 ```
 
 `{ r with x := e }` is `r` with a new value for its field `x`, so `r` must
@@ -2162,7 +2214,7 @@ be a record. A value of another type has no fields to update; write the
 new value instead:
 
 ```fren
-comp c { in n: Int pub out m: Int ensure r: m = 1 }
+proc c(n: Int): (m: Int) { ensure r: m = 1 }
 ```
 "# },
   { code := "F0340", explanation := r#"A record update gives a field that its record does not have, or gives a field more than once.
@@ -2172,7 +2224,7 @@ Erroneous code example:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = { p with z := 1, x := 1, x := 2 } }
+proc c(p: Point): (q: Point) { ensure r: q = { p with z := 1, x := 1, x := 2 } }
 ```
 
 An update gives new values to some of the fields of its record, each at
@@ -2182,7 +2234,7 @@ field once, and only the record's fields:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = { p with x := 2 } }
+proc c(p: Point): (q: Point) { ensure r: q = { p with x := 2 } }
 ```
 "# },
   { code := "F0365", explanation := r#"A function is declared with the name of a built-in function.
@@ -2208,7 +2260,7 @@ fn either?(a?, b?) := exactly_one?(a?, b?)
 Erroneous code example:
 
 ```fren
-comp c { in a? in b? expect e: exactly_one?() }
+proc c(a?, b?) { expect e: exactly_one?() }
 ```
 
 `exactly_one?(...)` holds when exactly one of its `Bool` arguments is
@@ -2216,7 +2268,7 @@ comp c { in a? in b? expect e: exactly_one?() }
 arguments, so it needs at least one. Give it the `Bool`s to count:
 
 ```fren
-comp c { in a? in b? expect e: at_most_one?(a?, b?) }
+proc c(a?, b?) { expect e: at_most_one?(a?, b?) }
 ```
 "# },
   { code := "F0342", explanation := r#"The definition of a `let` or `where` name does not have the type written for it.
@@ -2224,7 +2276,7 @@ comp c { in a? in b? expect e: at_most_one?(a?, b?) }
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: let n: Int := x > 0 in y? iff n > 0 }
+proc c(x: Int): (y?) { ensure r: let n: Int := x > 0 in y? iff n > 0 }
 ```
 
 A definition `x: T := e` names the value of `e`, so `e` must have type `T`.
@@ -2234,7 +2286,7 @@ in parentheses, as in `b? := (x in s)`. Write the type of the expression,
 or correct the expression:
 
 ```fren
-comp c { in x: Int pub out y? ensure r: let n: Int := x + 1 in y? iff n > 0 }
+proc c(x: Int): (y?) { ensure r: let n: Int := x + 1 in y? iff n > 0 }
 ```
 "# },
   { code := "F0361", explanation := r#"A newtype that does not have exactly one field.
@@ -2260,7 +2312,7 @@ Erroneous code example:
 ```fren
 struct Ms(Int)
 
-comp c { in t: Ms pub out d: Ms ensure r: d = t * Ms(2) }
+proc c(t: Ms): (d: Ms) { ensure r: d = t * Ms(2) }
 ```
 
 A newtype has `=` and `!=`; the orderings `<`, `<=`, `>` and `>=` when
@@ -2272,7 +2324,7 @@ applies to its value, read with `.0`, and the result is built again:
 ```fren
 struct Ms(Int)
 
-comp c { in t: Ms pub out d: Ms ensure r: d = Ms(t.0 * 2) }
+proc c(t: Ms): (d: Ms) { ensure r: d = Ms(t.0 * 2) }
 ```
 "# },
   { code := "F0363", explanation := r#"An operator whose operands are a newtype and another type.
@@ -2283,7 +2335,7 @@ Erroneous code example:
 ordered struct Ms(Int)
 struct Bytes(Int)
 
-comp c { in t: Ms in n: Bytes pub out late? ensure r: late? iff t > n }
+proc c(t: Ms, n: Bytes): (late?) { ensure r: late? iff t > n }
 ```
 
 A newtype is a type distinct from every other, even from its underlying
@@ -2296,7 +2348,7 @@ be, or compare their values, read with `.0`, if mixing them is meant:
 ordered struct Ms(Int)
 struct Bytes(Int)
 
-comp c { in t: Ms in n: Bytes pub out late? ensure r: late? iff t > Ms(100) }
+proc c(t: Ms, n: Bytes): (late?) { ensure r: late? iff t > Ms(100) }
 ```
 "# },
   { code := "F0364", explanation := r#"A newtype built as a record with named fields, or a record with named fields built as a newtype.
@@ -2306,7 +2358,7 @@ Erroneous code example:
 ```fren
 struct Ms(Int)
 
-comp c { pub out t: Ms ensure r: t = Ms { value := 5 } }
+proc c(): (t: Ms) { ensure r: t = Ms { value := 5 } }
 ```
 
 A newtype, declared `struct Ms(Int)`, has one field, which has no name: it
@@ -2317,7 +2369,7 @@ x := 1, y := 2 }`, not as `Point(1, 2)`:
 ```fren
 struct Ms(Int)
 
-comp c { pub out t: Ms ensure r: t = Ms(5) }
+proc c(): (t: Ms) { ensure r: t = Ms(5) }
 ```
 "# },
   { code := "F0369", explanation := r#"A pattern on a type alias that names a pattern type.
@@ -2326,7 +2378,7 @@ Erroneous code example:
 
 ```fren
 type Byte := Int is 0..=255
-comp c { in n: Byte is ..=9 }
+proc c(n: Byte is ..=9) {}
 ```
 
 Pattern types are not nested: the base type of `T is P` is never itself a
@@ -2335,7 +2387,7 @@ type, whose pattern matches what both patterns do:
 
 ```fren
 type Byte := Int is 0..=255
-comp c { in n: Int is 0..=9 }
+proc c(n: Int is 0..=9) {}
 ```
 "# },
   { code := "F0370", explanation := r#"A pattern type's pattern binds a name.
@@ -2381,7 +2433,7 @@ ordered struct Entry { key: Int, size: Nat }
 Erroneous code example:
 
 ```fren
-comp c { in x: Option }
+proc c(x: Option) {}
 ```
 
 A generic type, declared with type parameters as `enum Option<T>`, is a
@@ -2390,7 +2442,7 @@ Any other type, `Int` or an enumeration without type parameters, takes
 none:
 
 ```fren
-comp c { in x: Option<Int> }
+proc c(x: Option<Int>) {}
 ```
 "# },
   { code := "F0386", explanation := r#"A variant or record of a generic type whose type arguments cannot be inferred.
@@ -2398,7 +2450,7 @@ comp c { in x: Option<Int> }
 Erroneous code example:
 
 ```fren
-comp c { pub out ok? ensure r: ok? iff Option::None = Option::None }
+proc c(): (ok?) { ensure r: ok? iff Option::None = Option::None }
 ```
 
 An expression never writes type arguments: they are inferred from the
@@ -2407,7 +2459,7 @@ or fields. Here neither side says which `Option` is meant. Write it where
 an instance is expected, as of a variable of that type:
 
 ```fren
-comp c { in x: Option<Int> pub out ok? ensure r: ok? iff x = Option::None }
+proc c(x: Option<Int>): (ok?) { ensure r: ok? iff x = Option::None }
 ```
 "# },
   { code := "F0387", explanation := r#"A type parameter written where it may not be.
@@ -2455,7 +2507,7 @@ Erroneous code example:
 ```fren
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-comp c { in xs: List<Int is 0..=9> }
+proc c(xs: List<Int is 0..=9>) {}
 ```
 
 A pattern type's constraint, or a constraint that a value of a record or
@@ -2467,7 +2519,7 @@ what it needs:
 ```fren
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-comp c { in xs: List<Int> }
+proc c(xs: List<Int>) {}
 ```
 "# },
   { code := "F0390", explanation := r#"An ordered struct with type parameters.
@@ -2505,7 +2557,7 @@ Erroneous code example:
 ```fren
 fn is_none?<T>(o: Option<T>) := o = Option::None
 
-comp c { pub out ok? ensure r: ok? iff is_none?(Option::None) }
+proc c(): (ok?) { ensure r: ok? iff is_none?(Option::None) }
 ```
 
 An application never writes type arguments: they are inferred from the
@@ -2516,167 +2568,151 @@ a variable's:
 ```fren
 fn is_none?<T>(o: Option<T>) := o = Option::None
 
-comp c { in x: Option<Int> pub out ok? ensure r: ok? iff is_none?(x) }
+proc c(x: Option<Int>): (ok?) { ensure r: ok? iff is_none?(x) }
 ```
 
 A type parameter that no parameter's type nor the result's mentions could
 never be inferred, and is an error where the function is declared.
 "# },
-  { code := "F0401", explanation := r#"An assumption mentions a variable that is not an `in`.
+  { code := "F0401", explanation := r#"An assumption mentions a variable that is not a parameter.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int pub out y: Int assume a: y > 0 ensure r: y = x }
+proc c(x: Int): (y: Int) { assume a: y > 0 ensure r: y = x }
 ```
 
-Assumptions constrain the environment: the inputs the component may be
-given. Outputs, and the variables of instances, belong to the system, which
+Assumptions constrain the environment: the inputs the procedure may be
+given. Outputs, and the variables of calls, belong to the system, which
 must satisfy the guarantees for every allowed input. To constrain an
 output, use `ensure`.
 
 ```fren
-comp c { in x: Int pub out y: Int assume a: x > 0 ensure r: y = x }
+proc c(x: Int): (y: Int) { assume a: x > 0 ensure r: y = x }
 ```
 "# },
-  { code := "F0402", explanation := r#"An instance's binding mentions an `out` of the component.
+  { code := "F0402", explanation := r#"A call's argument mentions an output of the procedure.
 
 Erroneous code example:
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { pub out o: Int inst s: sub { a := o } ensure r: o = 0 }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(): (o: Int) { call s := sub(o) ensure r: o = 0 }
 ```
 
-An instance's inputs are given by the component's environment: its own
-inputs and the outputs of earlier instances. To relate an instance to an
+A call's inputs are given by the calling procedure's environment: its own
+parameters and the outputs of earlier calls. To relate a call to an
 output, write an `ensure`.
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.b }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.b }
 ```
 "# },
-  { code := "F0403", explanation := r#"A private variable of an instance is mentioned.
+  { code := "F0403", explanation := r#"An `exists` or `let` variable of a call is mentioned.
 
 Erroneous code example:
 
 ```fren
-comp sub { in a: Int out hidden: Int ensure r: hidden = a }
-comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.hidden }
+proc sub(a: Int) { exists hidden: Int ensure r: hidden = a }
+proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.hidden }
 ```
 
-From outside a component, only its `in`s and `pub out`s can be mentioned.
-Make the output `pub` if the component's users need it.
+From outside a procedure, only its parameters and results can be mentioned.
+Make the output a result if the procedure's callers need it.
 
 ```fren
-comp sub { in a: Int pub out shown: Int ensure r: shown = a }
-comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.shown }
+proc sub(a: Int): (shown: Int) { ensure r: shown = a }
+proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.shown }
 ```
 "# },
-  { code := "F0404", explanation := r#"A binding mentions an instance that is not declared before it.
+  { code := "F0404", explanation := r#"An argument mentions a call that is not declared before it.
 
 Erroneous code example:
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { in i: Int inst first: sub { a := second.b } inst second: sub { a := i } }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(i: Int) { call first := sub(second.b) call second := sub(i) }
 ```
 
-A binding may mention only instances declared before its own, so that
-instances form no cycles. Reorder the instances.
+An argument may mention only calls declared before its own, so that
+calls form no cycles. Reorder the calls.
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { in i: Int inst second: sub { a := i } inst first: sub { a := second.b } }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(i: Int) { call second := sub(i) call first := sub(second.b) }
 ```
 "# },
-  { code := "F0405", explanation := r#"An instance has no visible variable of that name.
+  { code := "F0405", explanation := r#"A call has no visible variable of that name.
 
 Erroneous code example:
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.c }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.c }
 ```
 
-`w.x` names the variable `x` of the instance `w`, which must be an `in` or a
-`pub out` of its component. The message lists them.
+`w.x` names the variable `x` of the call `w`, which must be a parameter or a
+result of its procedure. The message lists them.
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { in i: Int pub out o: Int inst s: sub { a := i } ensure r: o = s.b }
+proc sub(a: Int): (b: Int) { ensure r: b = a }
+proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.b }
 ```
 "# },
-  { code := "F0406", explanation := r#"An instance binds the same input twice.
+  { code := "F0406", explanation := r#"A removed code: an instance that binds an input twice.
+
+`F0406` was an instance that bound the same input twice. Instances are now
+calls, whose arguments are positional, one for each of the called
+procedure's parameters, in order, so none can be given twice: too many
+arguments is `F0408`, and too few `F0409`. An instance written as
+instances were is `F0420`. Nothing reports `F0406`, and the code is not
+reused.
+"#, args := none },
+  { code := "F0407", explanation := r#"A removed code: an instance that binds an output.
+
+`F0407` was an instance that bound an `out` of its component. Instances
+are now calls, whose arguments are positional and give only the called
+procedure's parameters, so none can give a result: too many arguments is
+`F0408`, and too few `F0409`. An instance written as instances were is
+`F0420`. Nothing reports `F0407`, and the code is not reused.
+"#, args := none },
+  { code := "F0408", explanation := r#"A call with too many arguments.
 
 Erroneous code example:
 
 ```fren
-comp sub { in a: Int }
-comp c { inst s: sub { a := 1, a := 2 } }
+proc sub(a: Int) {}
+proc c() { call s := sub(1, 2) }
 ```
 
-Each input of an instance is bound exactly once. Remove one of the
-bindings.
+A call gives one argument for each parameter of the called procedure, in
+order. The message lists its parameters. Remove the extra arguments:
 
 ```fren
-comp sub { in a: Int }
-comp c { inst s: sub { a := 1 } }
+proc sub(a: Int) {}
+proc c() { call s := sub(1) }
 ```
 "# },
-  { code := "F0407", explanation := r#"An instance binds an `out` of its component.
+  { code := "F0409", explanation := r#"A call with too few arguments.
 
 Erroneous code example:
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { inst s: sub { a := 1, b := 2 } }
+proc sub(a: Int, b?) {}
+proc c() { call s := sub(1) }
 ```
 
-An instance chooses its own outputs, as its component's guarantees allow;
-only its inputs are bound. To constrain an output, write an `ensure` about it.
+A call gives one argument for each parameter of the called procedure, in
+order. The message lists its parameters, and the help those missing. Add
+them:
 
 ```fren
-comp sub { in a: Int pub out b: Int ensure r: b = a }
-comp c { pub out o: Int inst s: sub { a := 1 } ensure r: o = s.b }
+proc sub(a: Int, b?) {}
+proc c(b?) { call s := sub(1, b?) }
 ```
 "# },
-  { code := "F0408", explanation := r#"An instance binds a name that is not an input of its component.
-
-Erroneous code example:
-
-```fren
-comp sub { in a: Int }
-comp c { inst s: sub { a := 1, z := 2 } }
-```
-
-The message lists the component's inputs. Remove the binding, or correct
-its name.
-
-```fren
-comp sub { in a: Int }
-comp c { inst s: sub { a := 1 } }
-```
-"# },
-  { code := "F0409", explanation := r#"An instance does not bind every input of its component.
-
-Erroneous code example:
-
-```fren
-comp sub { in a: Int in b? }
-comp c { inst s: sub { a := 1 } }
-```
-
-An instance binds each input of its component, with `x := e`, or with `x`
-alone to bind it to the variable `x` of the same name.
-
-```fren
-comp sub { in a: Int in b? }
-comp c { in b? inst s: sub { a := 1, b? } }
-```
-"# },
-  { code := "F0410", explanation := r#"A function is applied to an output of the component.
+  { code := "F0410", explanation := r#"A function is applied to an output of the procedure.
 
 Erroneous code example:
 
@@ -2684,119 +2720,119 @@ Erroneous code example:
 type Name
 fn ok?(Name)
 
-comp c { in x: Name pub out y: Name ensure r: ok?(y) }
+proc c(x: Name): (y: Name) { ensure r: ok?(y) }
 ```
 
 The realizability check asks for outputs that meet the guarantees. If an
 output were a function's argument, that would quantify over the function's
 arguments, which the solver cannot decide in general. So a function is
-applied only to inputs and to the variables of instances. Apply it to the
+applied only to inputs and to the variables of calls. Apply it to the
 inputs that the output depends on, and relate the output to the result:
 
 ```fren
 type Name
 fn ok?(Name)
 
-comp c { in x: Name pub out y: Name pub out good? ensure r: y = x ensure g: good? iff ok?(x) }
+proc c(x: Name): (y: Name, good?) { ensure r: y = x ensure g: good? iff ok?(x) }
 ```
 "# },
-  { code := "F0411", explanation := r#"Defined outputs whose definitions form a cycle.
+  { code := "F0411", explanation := r#"Definitions that form a cycle.
 
 Erroneous code example:
 
 ```fren
-comp c { in x: Int out a: Int := b + x out b: Int := a pub out y: Int ensure r: y = a }
+proc c(x: Int): (y: Int) { let a: Int := b + x let b: Int := a ensure r: y = a }
 ```
 
-A defined output stands for its definition, so the checks replace it by
-its definition. If a definition mentions its own output, directly or
+A variable with a definition stands for it, so the checks replace it by
+its definition. If a definition mentions its own variable, directly or
 through other definitions, the replacement never ends. Define one of them
 from the inputs, or constrain it with a guarantee instead:
 
 ```fren
-comp c { in x: Int out a: Int := b + x out b: Int := x pub out y: Int ensure r: y = a }
+proc c(x: Int): (y: Int) { let a: Int := b + x let b: Int := x ensure r: y = a }
 ```
 "# },
-  { code := "F0412", explanation := r#"A refinement whose components do not share the abstract one's interface.
+  { code := "F0412", explanation := r#"A refinement whose procedures do not share the abstract one's interface.
 
 Erroneous code example:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in x: Int pub out z: Int ensure r: z >= x }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (z: Int) { ensure r: z >= x }
 refine fits: precise refines rough
 ```
 
 `refine r: c refines a` relates `c` and `a` through `a`'s variables: each
-input of `a` must be an input of `c`, and each output of `a` a public
-output of `c`, with the same name and type (see `Reqs/Lang/Refinement`).
-`precise` has no output `z`. Name the outputs alike:
+parameter of `a` must be a parameter of `c`, and each output of `a` a
+result of `c`, with the same name and type (see `Reqs/Lang/Refinement`).
+`precise` has no result `z`. Name the results alike:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in x: Int pub out y: Int ensure r: y >= x }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (y: Int) { ensure r: y >= x }
 refine fits: precise refines rough
 ```
 "# },
-  { code := "F0413", explanation := r#"A refinement binds a name that is not a variable of the refined component.
+  { code := "F0413", explanation := r#"A refinement binds a name that is not a variable of the refined procedure.
 
 Erroneous code example:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in x: Int pub out z: Int ensure r: z >= x }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (z: Int) { ensure r: z >= x }
 refine fits: precise refines rough { w := y }
 ```
 
-A refinement's bindings give variables of the refined component, the one
+A refinement's bindings give variables of the refined procedure, the one
 after `refines`, as expressions over the refining one's (see
 `Reqs/Lang/Refinement`). `rough` has no variable `w`. The message lists
 its variables; correct the name:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in x: Int pub out z: Int ensure r: z >= x }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (z: Int) { ensure r: z >= x }
 refine fits: precise refines rough { z := y }
 ```
 "# },
-  { code := "F0414", explanation := r#"A refinement binds a variable of the refined component more than once.
+  { code := "F0414", explanation := r#"A refinement binds a variable of the refined procedure more than once.
 
 Erroneous code example:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in x: Int pub out z: Int ensure r: z >= x }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (z: Int) { ensure r: z >= x }
 refine fits: precise refines rough { z := y, z := y + 1 }
 ```
 
-Each variable of the refined component is read as one expression, so a
+Each variable of the refined procedure is read as one expression, so a
 refinement binds it at most once. Keep one binding:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in x: Int pub out z: Int ensure r: z >= x }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (z: Int) { ensure r: z >= x }
 refine fits: precise refines rough { z := y }
 ```
 "# },
-  { code := "F0415", explanation := r#"A refinement's binding mentions a variable of the refining component that it cannot see.
+  { code := "F0415", explanation := r#"A refinement's binding mentions a variable of the refining procedure that it cannot see.
 
 Erroneous code example:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in n: Int pub out y: Int ensure r: y >= n }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(n: Int): (y: Int) { ensure r: y >= n }
 refine fits: precise refines rough { n := y }
 ```
 
-A binding sees the refining component from outside: its inputs and public
-outputs, and no private output. A binding of an input of the refined
-component sees only inputs, since the environment chooses the inputs
-before the component chooses its outputs (see `Reqs/Lang/Refinement`).
-Bind the input to an input:
+A binding sees the refining procedure from outside: its parameters and
+results, and no `exists` or `let` variable. A binding of an input of the refined
+procedure sees only inputs, since the environment chooses the inputs
+before the procedure chooses its outputs (see `Reqs/Lang/Refinement`).
+Bind the input to a parameter:
 
 ```fren
-comp precise { in x: Int pub out y: Int ensure r: y = x }
-comp rough { in n: Int pub out y: Int ensure r: y >= n }
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(n: Int): (y: Int) { ensure r: y >= n }
 refine fits: precise refines rough { n := x }
 ```
 "# },
@@ -2818,19 +2854,17 @@ the defined function that applies it:
 fn handle(on_event: fn(Int) -> Int, event: Int): Int := on_event(event)
 ```
 "# },
-  { code := "F0433", explanation := r#"A function type as a component's variable's type.
+  { code := "F0433", explanation := r#"A function type as a procedure's parameter's or output's type.
 
 Erroneous code example:
 
 ```fren
-comp apply {
-    in f: fn(Int) -> Int
-}
+proc apply(f: fn(Int) -> Int) {}
 ```
 
-Functions are not values, so a component's input or output is never a
+Functions are not values, so a procedure's parameter or output is never a
 function: a function type is only the type of a defined function's
-parameter. State what the component needs of the function with a defined
+parameter. State what the procedure needs of the function with a defined
 function that takes it:
 
 ```fren
@@ -2877,9 +2911,8 @@ fn first(f: fn(Int) -> Int): Int := f(0)
 Erroneous code example:
 
 ```fren
-comp c {
-    in x: Int
-    pub det out y: Int := let g := |n| n + 1 in x
+proc c(x: Int): (det y: Int) {
+    out y := let g := |n| n + 1 in x
 }
 ```
 
@@ -2893,9 +2926,8 @@ function's body. Give the closure where it is applied:
 ```fren
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 
-comp c {
-    in x: Int
-    pub det out y: Int := apply(|n| n + 1, x)
+proc c(x: Int): (det y: Int) {
+    out y := apply(|n| n + 1, x)
 }
 ```
 "# },
@@ -2915,28 +2947,71 @@ at an argument:
 fn same_at?(f: fn(Int) -> Int, g: fn(Int) -> Int, x: Int) := f(x) = g(x)
 ```
 "# },
+  { code := "F0420", explanation := r#"An instance, as calls were written before.
+
+Erroneous code example:
+
+```fren
+proc sub(a: Int, b?) {}
+proc c(x: Int) { inst s: sub { b? := x > 0, a := x } }
+```
+
+Instances are now calls, whose arguments are positional: `call w := p(e1,
+e2)` gives one argument for each of `p`'s parameters, in the order that
+`p` declares them. The meaning is unchanged. Writing an instance as a call
+needs that order, so this is reported once the called procedure is known,
+and `fren fix` makes the fix then, if the instance binds each parameter
+exactly once:
+
+```fren
+proc sub(a: Int, b?) {}
+proc c(x: Int) { call s := sub(x, x > 0) }
+```
+"# },
+  { code := "F0421", explanation := r#"A result defined more than once.
+
+Erroneous code example:
+
+```fren
+proc c(x: Int): (y: Int) {
+    out y := x
+    out y := x + 1
+}
+```
+
+`out r := e` defines the result `r`: `r` stands for `e`, as a `let`
+stands for its definition. A result is defined by one `out` member at
+most; without one, the system chooses it, within the guarantees. Keep one
+definition, and state anything else about the result in an `ensure`:
+
+```fren
+proc c(x: Int): (y: Int) {
+    out y := x
+}
+```
+"# },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:
 
 ```fren
-comp c {}
+proc c() {}
 tested c: "tests/no_such_file.rs"
 ```
 
 The files of a `tested` claim are read relative to the directory Fren runs
 in, which is usually the project's root. Correct the path.
 "# },
-  { code := "F0502", explanation := r#"A `tested` claim names a file that does not say that it covers the component.
+  { code := "F0502", explanation := r#"A `tested` claim names a file that does not say that it covers the procedure.
 
 Erroneous code example:
 
 ```fren
-comp c {}
+proc c() {}
 tested c: "README.md"
 ```
 
-A test names the components it covers with a comment containing
+A test names the procedures it covers with a comment containing
 `fren-covers:` and their paths, such as `// fren-covers: climate::thermostat`.
 The claim and the marker together make sure that neither goes stale. Add the
 marker to the test.
@@ -2946,19 +3021,19 @@ marker to the test.
 Erroneous code example:
 
 ```fren
-comp c {}
+proc c() {}
 trusted c: ""
 ```
 
-A `trusted` claim says why a component holds without a proof or a test, so
+A `trusted` claim says why a procedure holds without a proof or a test, so
 that a reader can judge it. Write the reason.
 
 ```fren
-comp c {}
+proc c() {}
 trusted c: "checked by hand against the datasheet"
 ```
 "# },
-  { code := "F0504", args := none, explanation := r#"A `fren-covers:` marker names something that is not a component.
+  { code := "F0504", args := none, explanation := r#"A `fren-covers:` marker names something that is not a procedure.
 
 Erroneous code example, in a test scanned by `fren trace --tests`:
 
@@ -2966,10 +3041,10 @@ Erroneous code example, in a test scanned by `fren trace --tests`:
 // fren-covers: climate::thermostatt
 ```
 
-Markers name components by their full path, such as `climate::thermostat`.
+Markers name procedures by their full path, such as `climate::thermostat`.
 Correct the name, or remove the marker.
 "# },
-  { code := "F0505", args := none, explanation := r#"A `fren-covers:` marker names a component, but no `tested` claim for it names the file.
+  { code := "F0505", args := none, explanation := r#"A `fren-covers:` marker names a procedure, but no `tested` claim for it names the file.
 
 Erroneous code example, in `tests/heat.rs`, scanned by `fren trace --tests`:
 
@@ -2977,31 +3052,31 @@ Erroneous code example, in `tests/heat.rs`, scanned by `fren trace --tests`:
 // fren-covers: climate::thermostat
 ```
 
-A marker says that a test covers a component, but the evidence is the
+A marker says that a test covers a procedure, but the evidence is the
 `tested` claim. Add one:
 
 ```fren
 mod climate
-pub comp thermostat {}
+pub proc thermostat() {}
 tested thermostat: "tests/heat.rs"
 ```
 
 (The claim's file must exist and contain the marker.)
 "# },
-  { code := "F0506", args := some ["trace", "--require", "tested"], explanation := r#"A component's evidence is weaker than required.
+  { code := "F0506", args := some ["trace", "--require", "tested"], explanation := r#"A procedure's evidence is weaker than required.
 
 Erroneous code example, with `fren trace --require tested`:
 
 ```fren
-comp c { in x? pub out y? ensure r: y? iff x? }
+proc c(x?): (y?) { ensure r: y? iff x? }
 ```
 
 `fren trace --require LEVEL`, or the Lean option `fren.requireEvidence`,
-requires every component to have evidence at least `LEVEL`. From weakest to
+requires every procedure to have evidence at least `LEVEL`. From weakest to
 strongest, the levels are `missing`, `trusted`, `tested`, `solver` and
 `proved`: a `trusted` claim, a `tested` claim, an `impl` proved by the
-solver, and an `impl` proved by Lean. A component without outputs has the
-evidence of its weakest instance.
+solver, and an `impl` proved by Lean. A procedure without outputs has the
+evidence of its weakest call.
 "# },
   { code := "F0507", args := none, explanation := r#"An evidence level that does not exist.
 
@@ -3017,20 +3092,18 @@ The levels are `trusted`, `tested`, `solver` and `proved`, weakest first.
 fren trace --require tested spec.fren
 ```
 "# },
-  { code := "F0601", explanation := r#"A component is not realizable: for some input, no outputs satisfy its guarantees.
+  { code := "F0601", explanation := r#"A procedure is not realizable: for some input, no outputs satisfy its guarantees.
 
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   ensure big: y > x
   ensure small: y < 0
 }
 ```
 
-A component must be implementable: for every input that its assumptions
+A procedure must be implementable: for every input that its assumptions
 allow, some outputs satisfy all of its guarantees. The message gives an
 input for which none do, one variable to a line, and the guarantees that
 conflict on it. Here, when `x` is `0`, no `y` is both above `0` and below
@@ -3039,7 +3112,7 @@ conflict on it. Here, when `x` is `0`, no `y` is both above `0` and below
 Each guarantee of the conflict has a note. Where it forces an output to
 one value, and the rest of the conflict forces it to another, the note
 says so, such as "`low` forces y = 0, but `high` forces y = 1". `fren
-check --examples N` gives at most `N` such notes for each component
+check --examples N` gives at most `N` such notes for each procedure
 (default 1), or all of them with `all`. The other guarantees' notes say
 whom they conflict with. Here neither guarantee forces `y`, so the notes
 are "conflicts with `small`" and "conflicts with `big`".
@@ -3048,23 +3121,19 @@ Weaken one of the guarantees, or, if such inputs cannot happen, add an
 assumption that rules them out:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   assume negative: x < -1
   ensure big: y > x
   ensure small: y < 0
 }
 ```
 "# },
-  { code := "F0602", explanation := r#"A component's assumptions contradict each other.
+  { code := "F0602", explanation := r#"A procedure's assumptions contradict each other.
 
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y?
+proc c(x: Int): (y?) {
   assume big: x > 10
   assume small: x < 5
   ensure r: y? iff x > 7
@@ -3072,13 +3141,11 @@ comp c {
 ```
 
 If no input satisfies the assumptions, every guarantee holds vacuously,
-and the component says nothing. The message names a smallest set of
+and the procedure says nothing. The message names a smallest set of
 assumptions that contradict each other. Weaken or remove one of them.
 
 ```fren
-comp c {
-  in x: Int
-  pub out y?
+proc c(x: Int): (y?) {
   assume big: x > 10
   ensure r: y? iff x > 7
 }
@@ -3089,48 +3156,44 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   ensure r: y >= x
   expect positive: y > 0
 }
 ```
 
-An `expect` states a consequence of the assumptions, instances and
+An `expect` states a consequence of the assumptions, calls and
 guarantees, and is checked rather than required. The counterexample shows
-inputs and public outputs that satisfy everything else but not the
+inputs and results that satisfy everything else but not the
 expectation. Here, `x = 0, y = 0`.
 
 Strengthen the guarantees so that it follows, or correct the expectation:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   assume nonneg: x >= 0
   ensure r: y > x
   expect positive: y > 0
 }
 ```
 "# },
-  { code := "F0604", explanation := r#"An instance may be given inputs that its component's assumptions rule out.
+  { code := "F0604", explanation := r#"A call may give inputs that its procedure's assumptions rule out.
 
 Erroneous code example:
 
 ```fren
-comp sub { in n: Int pub out m: Int assume nonneg: n >= 0 ensure r: m = n }
-comp c { in i: Int pub out o: Int inst s: sub { n := i } ensure r: o = s.m }
+proc sub(n: Int): (m: Int) { assume nonneg: n >= 0 ensure r: m = n }
+proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.m }
 ```
 
-A component's assumptions are obligations for whoever instantiates it: they
-must follow from the instantiating component's assumptions, the instance's
-bindings and earlier instances. The counterexample shows inputs for which
+A procedure's assumptions are obligations for whoever calls it: they
+must follow from the calling procedure's assumptions, the call's
+arguments and earlier calls. The counterexample shows inputs for which
 they may not.
 
 ```fren
-comp sub { in n: Int pub out m: Int assume nonneg: n >= 0 ensure r: m = n }
-comp c { in i: Int pub out o: Int assume nonneg: i >= 0 inst s: sub { n := i } ensure r: o = s.m }
+proc sub(n: Int): (m: Int) { assume nonneg: n >= 0 ensure r: m = n }
+proc c(i: Int): (o: Int) { assume nonneg: i >= 0 call s := sub(i) ensure r: o = s.m }
 ```
 "# },
   { code := "F0605", explanation := r#"The condition of a `when` or `unless` can never hold.
@@ -3138,9 +3201,7 @@ comp c { in i: Int pub out o: Int assume nonneg: i >= 0 inst s: sub { n := i } e
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   assume pos: x > 0
   ensure r: y = x
   ensure never: when x < 0, y = 0
@@ -3152,9 +3213,7 @@ nothing: usually a mistake in the condition or in the constraints that rule
 it out, which the message names.
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   assume pos: x > 0
   ensure r: when x > 5, y = x
   ensure small: when x <= 5, y = 0
@@ -3166,49 +3225,41 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   ensure y_def: y = x + 1
   ensure bigger: y > x
 }
 ```
 
-A guarantee that follows from the assumptions, instances and other
+A guarantee that follows from the assumptions, calls and other
 guarantees adds nothing, and an assumption that follows from the other
 assumptions likewise. If it is meant as a consequence, make it an `expect`,
 so that it is checked rather than assumed:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   ensure y_def: y = x + 1
   expect bigger: y > x
 }
 ```
 "# },
-  { code := "F0607", explanation := r#"A `det out` is not determined by the inputs.
+  { code := "F0607", explanation := r#"A `det` output is not determined by the inputs.
 
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub det out y: Int
+proc c(x: Int): (det y: Int) {
   ensure above: y >= x
   ensure below: y <= x + 1
 }
 ```
 
-A `det out` must have exactly one value for each input that the
+A `det` output must have exactly one value for each input that the
 assumptions allow. The message gives an input and two values the output
 could take. Add guarantees that pin it down, or remove `det`.
 
 ```fren
-comp c {
-  in x: Int
-  pub det out y: Int
+proc c(x: Int): (det y: Int) {
   ensure exact: y = x + 1
 }
 ```
@@ -3230,25 +3281,21 @@ queries harder.
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   ensure above: y > x
   ensure below: y < x
 }
 ```
 
 `fren quickcheck` chose an input that the assumptions allow, and behaviours
-of the instances, but its search found no outputs that satisfy the
+of the calls, but its search found no outputs that satisfy the
 guarantees. The search tries only some values, so outputs may still
 exist: run `fren check`, whose realizability check decides it. Here no `y`
 is both above and below `x`, so `fren check` reports `F0601`. Weaken one
 of the guarantees:
 
 ```fren
-comp c {
-  in x: Int
-  pub out y: Int
+proc c(x: Int): (y: Int) {
   ensure above: y > x
 }
 ```
@@ -3258,10 +3305,7 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp first {
-    in q: Seq<Int>
-    pub out x: Int
-
+proc first(q: Seq<Int>): (x: Int) {
     ensure r: x = q[0]
 }
 ```
@@ -3273,10 +3317,7 @@ conditions under which the index is evaluated, its guard, read from left
 to right through `when`, `if`, `and`, `or` and `match`. Guard the index:
 
 ```fren
-comp first {
-    in q: Seq<Int>
-    pub out x: Int
-
+proc first(q: Seq<Int>): (x: Int) {
     ensure r: when q != [], x = q[0]
 }
 ```
@@ -3286,10 +3327,7 @@ comp first {
 Erroneous code example:
 
 ```fren
-comp sign {
-    in x: Int
-    pub out s: Int
-
+proc sign(x: Int): (s: Int) {
     ensure r: s = table { x > 0 => 1, x < 0 => -1 }
 }
 ```
@@ -3302,10 +3340,7 @@ table is evaluated, its guard, and the hypotheses of where it is written.
 Add a row for the case, or end the table with `_ => e`:
 
 ```fren
-comp sign {
-    in x: Int
-    pub out s: Int
-
+proc sign(x: Int): (s: Int) {
     ensure r: s = table { x > 0 => 1, x < 0 => -1, x = 0 => 0 }
 }
 ```
@@ -3315,10 +3350,7 @@ comp sign {
 Erroneous code example:
 
 ```fren
-comp grade {
-    in score: Int
-    pub out pass?
-
+proc grade(score: Int): (pass?) {
     ensure r: pass? iff table { score >= 50 => true, score >= 0 => false, _ => false }
 }
 ```
@@ -3330,10 +3362,7 @@ two conditions can hold together, under the table's guard and the
 hypotheses of where it is written. Make the conditions exclusive:
 
 ```fren
-comp grade {
-    in score: Int
-    pub out pass?
-
+proc grade(score: Int): (pass?) {
     ensure r: pass? iff table { score >= 50 => true, 0 <= score < 50 => false, _ => false }
 }
 ```
@@ -3346,7 +3375,7 @@ Erroneous code example:
 fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
-comp c { in q: Seq<Int> pub out y: Int ensure r: y = nth(q, 0) }
+proc c(q: Seq<Int>): (y: Int) { ensure r: y = nth(q, 0) }
 ```
 
 A function's preconditions say what its arguments must meet. At each
@@ -3361,10 +3390,7 @@ precondition needs:
 fn nth(q: Seq<Int>, i: Int): Int := q[i]
     assume in_range: 0 <= i < q.len
 
-comp c {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc c(q: Seq<Int>): (y: Int) {
     ensure r: when q != [], y = nth(q, 0)
     ensure e: when q = [], y = 0
 }
@@ -3439,10 +3465,7 @@ fn rate(n: Int): Int
 Erroneous code example:
 
 ```fren
-comp sign {
-    in x: Int
-    pub out s: Int
-
+proc sign(x: Int): (s: Int) {
     ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
 }
 ```
@@ -3457,10 +3480,7 @@ evaluated, and the hypotheses of where it is written. Add an arm for the
 case, or end the `match` with an arm without a guard:
 
 ```fren
-comp sign {
-    in x: Int
-    pub out s: Int
-
+proc sign(x: Int): (s: Int) {
     ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1, _ => 0 }
 }
 ```
@@ -3470,10 +3490,7 @@ comp sign {
 Erroneous code example:
 
 ```fren
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     ensure r: s = match x { n if n > 10 => 2, n if n > 20 => 3, _ => 1 }
 }
 ```
@@ -3487,10 +3504,7 @@ above 20 is above 10, so the first arm takes it, and the second arm is
 never taken. Correct the guards, or the order of the arms:
 
 ```fren
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     ensure r: s = match x { n if n > 20 => 3, n if n > 10 => 2, _ => 1 }
 }
 ```
@@ -3500,10 +3514,7 @@ comp size {
 Erroneous code example:
 
 ```fren
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     ensure r: s = table { x >= 0 => 1, x < 0 => 0, _ => 2 }
 }
 ```
@@ -3517,10 +3528,7 @@ first two rows always holds, so the `_` row never gives the table's
 value. Remove the row, or correct the conditions before it:
 
 ```fren
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     ensure r: s = table { x >= 0 => 1, x < 0 => 0 }
 }
 ```
@@ -3532,10 +3540,7 @@ Erroneous code example:
 ```fren
 enum Mode { Off, On(Int) }
 
-comp level {
-    in m: Mode
-    pub out y: Int
-
+proc level(m: Mode): (y: Int) {
     ensure r: y = table m { Mode::Off => 0, Mode::On(x) if x >= 0 => x, Mode::On(x) if x <= 0 => 1 }
 }
 ```
@@ -3553,10 +3558,7 @@ guards exclusive:
 ```fren
 enum Mode { Off, On(Int) }
 
-comp level {
-    in m: Mode
-    pub out y: Int
-
+proc level(m: Mode): (y: Int) {
     ensure r: y = table m { Mode::Off => 0, Mode::On(x) if x > 0 => x, Mode::On(x) if x <= 0 => 1 }
 }
 ```
@@ -3566,10 +3568,7 @@ comp level {
 Erroneous code example:
 
 ```fren
-comp sign {
-    in n: Int
-    pub out s: Int
-
+proc sign(n: Int): (s: Int) {
     ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }
 }
 ```
@@ -3580,10 +3579,7 @@ unknown value, so the constraint says nothing useful there. Here, no arm
 is taken when `n` is 0. Add an arm for it, or end the table with `_ => e`:
 
 ```fren
-comp sign {
-    in n: Int
-    pub out s: Int
-
+proc sign(n: Int): (s: Int) {
     ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1, _ => 0 }
 }
 ```
@@ -3593,10 +3589,7 @@ comp sign {
 Erroneous code example:
 
 ```fren
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     assume small: x < 5
 
     ensure r: s = table x { n if n > 10 => 2, _ => 1 }
@@ -3610,10 +3603,7 @@ constraint that it is in. Here, `x` is below 5, so the first arm is dead.
 Correct its guard, or remove it:
 
 ```fren
-comp size {
-    in x: Int
-    pub out s: Int
-
+proc size(x: Int): (s: Int) {
     assume small: x < 5
 
     ensure r: s = table x { n if n > 3 => 2, _ => 1 }
@@ -3625,25 +3615,21 @@ comp size {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out pos?
+proc c(x: Int): (pos?) {
   assume never: x > 0 and x < 0
   ensure r: pos? iff x > 0
 }
 ```
 
 None of `fren quickcheck`'s tests found an input that the assumptions
-allow, with behaviours of the instances and outputs that meet the
-component, so none of the component's checks were tested. Either the
+allow, with behaviours of the calls and outputs that meet the
+procedure, so none of the procedure's checks were tested. Either the
 assumptions or guarantees cannot hold, as here, where `fren check`
 reports `F0602`, or the search missed the values that satisfy them: then
 raise `--tests`, or rely on `fren check`.
 
 ```fren
-comp c {
-  in x: Int
-  pub out pos?
+proc c(x: Int): (pos?) {
   assume small: x > -10 and x < 10
   ensure r: pos? iff x > 0
 }
@@ -3654,28 +3640,24 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out big?
+proc c(x: Int): (big?) {
   ensure r: big? iff x > 1000
   expect e: when 7 * x = 123459, big?
 }
 ```
 
-`fren quickcheck` found behaviours of the component, but in none of them
+`fren quickcheck` found behaviours of the procedure, but in none of them
 did the trigger of `e`, `7 * x = 123459`, hold: only `x = 17637` satisfies
 it, and the search does not try that value. Where a trigger is false, the
 constraint holds by its trigger alone, so those tests say nothing about
 it, and its result is inconclusive. Testing searches for behaviours in
 which the trigger holds, but tries only some values, and can miss them.
-An instance assumption with a trigger gets no such search, since its
-instance's inputs come from the bindings, so it reports this more often.
+A call assumption with a trigger gets no such search, since its
+call's inputs come from the arguments, so it reports this more often.
 Raise `--tests`, rely on `fren check`, or widen the trigger:
 
 ```fren
-comp c {
-  in x: Int
-  pub out big?
+proc c(x: Int): (big?) {
   ensure r: big? iff x > 1000
   expect e: when x > 2000, big?
 }
@@ -3686,9 +3668,7 @@ comp c {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out pos?
+proc c(x: Int): (pos?) {
   ensure r: pos? iff x > 0
   expect e: when x > 1, pos?
 }
@@ -3702,9 +3682,7 @@ about `x = 0` or `x = 1`, where `x > 0` and its mutants differ. Add
 expectations that pin the boundary down:
 
 ```fren
-comp c {
-  in x: Int
-  pub out pos?
+proc c(x: Int): (pos?) {
   ensure r: pos? iff x > 0
   expect e: when x > 1, pos?
   expect zero: when x = 0, not pos?
@@ -3721,9 +3699,7 @@ reported; when it cannot tell, the warning says so.
 Erroneous code example:
 
 ```fren
-comp c {
-  in xs: Seq<Int>
-  pub out big?
+proc c(xs: Seq<Int>): (big?) {
   ensure r: big? iff xs.len > 4
   expect e: when xs.len = 5, big?
 }
@@ -3734,25 +3710,23 @@ testing, as `fren quickcheck` does. Here the checks reject the mutant
 `xs.len > 5`: the solver finds a sequence of five elements, which breaks
 the expectation. But none of testing's random behaviours has such a
 sequence, so testing passes the mutant. The spec itself may be fine: the
-warning is about testing's search, which a component whose evidence is
+warning is about testing's search, which a procedure whose evidence is
 testing (`fren.evidence "tested"`) relies on. Raising `--tests` can help
 where the search reaches such behaviours rarely; otherwise rely on `fren
-check` for the component.
+check` for the procedure.
 "# },
-  { code := "F0615", explanation := r#"A cover goal cannot be met: no behaviour that meets the component satisfies it.
+  { code := "F0615", explanation := r#"A cover goal cannot be met: no behaviour that meets the procedure satisfies it.
 
 Erroneous code example:
 
 ```fren
-comp heater {
-  in temp: Int
-  pub out alarm?
+proc heater(temp: Int): (alarm?) {
   ensure r: alarm? iff temp > 100
   cover silent_overheat: temp > 100 and not alarm?
 }
 ```
 
-A cover goal states a scenario that the component must allow. Here `r`
+A cover goal states a scenario that the procedure must allow. Here `r`
 sounds the alarm whenever `temp > 100`, so no behaviour has a high
 temperature and a silent alarm, and the goal fails, naming the
 constraints that rule it out. Either the guarantees are too strong,
@@ -3760,9 +3734,7 @@ and should be weakened so that the scenario is possible, or the goal is
 wrong:
 
 ```fren
-comp heater {
-  in temp: Int
-  pub out alarm?
+proc heater(temp: Int): (alarm?) {
   ensure r: alarm? iff temp > 100
   cover overheat: temp > 100 and alarm?
 }
@@ -3773,15 +3745,13 @@ comp heater {
 Erroneous code example:
 
 ```fren
-comp c {
-  in x: Int
-  pub out big?
+proc c(x: Int): (big?) {
   ensure r: big? iff x > 1000
   cover exact: 7 * x = 123459 and big?
 }
 ```
 
-`fren quickcheck` found behaviours of the component, but in none of them
+`fren quickcheck` found behaviours of the procedure, but in none of them
 did the goal hold: only `x = 17637` satisfies it, and the search does not
 try that value. A behaviour found would be a witness, and pass the goal,
 but none found shows nothing, so its result is inconclusive. Raise
@@ -3789,9 +3759,7 @@ but none found shows nothing, so its result is inconclusive. Raise
 goal:
 
 ```fren
-comp c {
-  in x: Int
-  pub out big?
+proc c(x: Int): (big?) {
   ensure r: big? iff x > 1000
   cover large: x > 2000 and big?
 }
@@ -3804,13 +3772,12 @@ Erroneous code example:
 ```fren
 type Byte := Int is 0..=255
 
-comp c {
-    in x: Int
-    pub det out b: Byte := x
+proc c(x: Int): (det b: Byte) {
+    out b := x
 }
 ```
 
-Where a pattern type `T is P` is declared, as the type of a defined output,
+Where a pattern type `T is P` is declared, as the type of a defined variable,
 an argument, a field, a payload, a `let` definition, a function's result or
 a constant, a value of `T` is accepted with the obligation that it matches
 `P`, which the solver checks where the value is written, under the same
@@ -3821,41 +3788,38 @@ an assumption that ensures it:
 ```fren
 type Byte := Int is 0..=255
 
-comp c {
-    in x: Int
-    pub det out b: Byte := if 0 <= x <= 255 then x else 0
+proc c(x: Int): (det b: Byte) {
+    out b := if 0 <= x <= 255 then x else 0
 }
 ```
 "# },
-  { code := "F0623", explanation := r#"An instance binds an input of a pattern type to a value that may not match its pattern.
+  { code := "F0623", explanation := r#"A call gives a parameter of a pattern type a value that may not match its pattern.
 
 Erroneous code example:
 
 ```fren
 type Byte := Int is 0..=255
 
-comp sub { in b: Byte pub out y: Int ensure r: y = b }
+proc sub(b: Byte): (y: Int) { ensure r: y = b }
 
-comp c {
-    in x: Int
-    inst w: sub { b := x }
+proc c(x: Int) {
+    call w := sub(x)
 }
 ```
 
-An input of a pattern type is an assumption of its component, so an
-instance's binding of it is checked, as the component's other assumptions
-are. The counterexample is a behaviour in which the bound value does not
-match. Bind the input to a value of its type, or add an assumption that
+A parameter of a pattern type is an assumption of its procedure, so a
+call's argument for it is checked, as the procedure's other assumptions
+are. The counterexample is a behaviour in which the argument does not
+match. Give the parameter a value of its type, or add an assumption that
 guarantees it:
 
 ```fren
 type Byte := Int is 0..=255
 
-comp sub { in b: Byte pub out y: Int ensure r: y = b }
+proc sub(b: Byte): (y: Int) { ensure r: y = b }
 
-comp c {
-    in x: Byte
-    inst w: sub { b := x }
+proc c(x: Byte) {
+    call w := sub(x)
 }
 ```
 "# },
@@ -3865,9 +3829,7 @@ Erroneous code example:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-comp c {
-  in s: Set<Int>
-  pub out pos?
+proc c(s: Set<Int>): (pos?) {
   ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
 }
 ```
@@ -3883,53 +3845,45 @@ it, or leave the check to the solver:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-comp c {
-  in s: Set<Int>
-  pub out pos?
+proc c(s: Set<Int>): (pos?) {
   ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
 }
 ```
 "# },
-  { code := "F0644", explanation := r#"A component with too many behaviours to enumerate.
+  { code := "F0644", explanation := r#"A procedure with too many behaviours to enumerate.
 
 Erroneous code example:
 
 ```fren
 set_option fren.evidence "enumerated" in
-comp c {
-  in a: Int is 0..=99
-  in b: Int is 0..=99
-  in d: Int is 0..=99
-  pub det out sum: Int := a + b + d
+proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+  out sum := a + b + d
   expect e: sum >= 0
 }
 ```
 
-Enumeration searches every assignment of the component's variables up to
+Enumeration searches every assignment of the procedure's variables up to
 the size bound, smallest first (see `Reqs/Check`, "Checking by
 enumeration"). The number of assignments is the product of each
 variable's number of values, and of a second copy's where determinism is
-enumerated; here a million. Above 65,536 none of the component's checks set
+enumerated; here a million. Above 65,536 none of the procedure's checks set
 to enumeration is run. Narrow the types, lower `fren.enumeration.size`, or
 have the solver check it:
 
 ```fren
-comp c {
-  in a: Int is 0..=99
-  in b: Int is 0..=99
-  in d: Int is 0..=99
-  pub det out sum: Int := a + b + d
+proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+  out sum := a + b + d
   expect e: sum >= 0
 }
 ```
 "# },
-  { code := "F0645", explanation := r#"A component that cannot be enumerated.
+  { code := "F0645", explanation := r#"A procedure that cannot be enumerated.
 
 Erroneous code example:
 
 ```fren
 set_option fren.evidence "enumerated" in
-comp c { in name: String pub out empty? ensure r: empty? iff name = "" }
+proc c(name: String): (empty?) { ensure r: empty? iff name = "" }
 ```
 
 Enumeration needs each variable's type to be enumerable: `Bool`, `Int`,
@@ -3939,12 +3893,12 @@ types and abstract types, with what is within them enumerable too (see
 sequences are not yet, nor can enumeration apply an uninterpreted function
 with a contract, whose postconditions constrain its interpretations, or a
 generic one, each of whose instances is a function of its own, or evaluate
-an unbounded quantifier. None of the component's checks set to
+an unbounded quantifier. None of the procedure's checks set to
 enumeration is run. Have the solver or testing check it:
 
 ```fren
 set_option fren.evidence "tested" in
-comp c { in name: String pub out empty? ensure r: empty? iff name = "" }
+proc c(name: String): (empty?) { ensure r: empty? iff name = "" }
 ```
 "# },
   { code := "F0646", explanation := r#"Checks that hold for every behaviour up to the size bound.
@@ -3953,7 +3907,7 @@ Example:
 
 ```fren
 set_option fren.evidence "enumerated" in
-comp c { in x: Int pub det out y: Int := x + 1 expect e: y > x }
+proc c(x: Int): (det y: Int) { out y := x + 1 expect e: y > x }
 ```
 
 A check set to `"enumerated"` searches every behaviour up to the size
@@ -3967,7 +3921,7 @@ finitely many values decides it:
 
 ```fren
 set_option fren.evidence "enumerated" in
-comp c { in x: Int is -3..=3 pub det out y: Int := x + 1 expect e: y > x }
+proc c(x: Int is -3..=3): (det y: Int) { out y := x + 1 expect e: y > x }
 ```
 "# },
   { code := "F0653", explanation := r#"A generic function's postconditions cannot all hold at some type.
@@ -4004,8 +3958,7 @@ fn other<T>(x: T, y: T): T
 Erroneous code example:
 
 ```fren
-comp c {
-    in q: Seq<Int>
+proc c(q: Seq<Int>) {
     assume r: forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
     expect e: when q.len >= 3, q[1] + q[2] >= 0
 }
@@ -4023,8 +3976,7 @@ check is inconclusive. Bind fewer names in one quantifier, or state the
 constraint so that fewer indexes meet it:
 
 ```fren
-comp c {
-    in q: Seq<Int>
+proc c(q: Seq<Int>) {
     assume r: forall (x: Int), when x in q, x >= 0
     expect e: when q.len >= 3, q[1] + q[2] >= 0
 }
@@ -4036,8 +3988,7 @@ Erroneous code example:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-comp c {
-    in q: Seq<Int>
+proc c(q: Seq<Int>) {
     assume zeros: forall (x: Int), when x in q, x = 0
     expect e: not (1 in q)
 }
@@ -4056,8 +4007,7 @@ length, and the second query is unsatisfiable: the check is inconclusive.
 State the property in the core, by the elements:
 
 ```fren
-comp c {
-    in q: Seq<Int>
+proc c(q: Seq<Int>) {
     assume zeros: forall (x: Int), when x in q, x = 0
     expect e: forall (x: Int), when x in q, x != 1
 }
@@ -4071,7 +4021,7 @@ Erroneous code example:
 mod climate
 pub enum Mode { Off, Heat }
 use self::Mode::Heat
-comp c { in m: Mode pub out off? ensure r: off? iff m = Mode::Off }
+proc c(m: Mode): (off?) { ensure r: off? iff m = Mode::Off }
 ```
 
 No path in the file resolves through the `use`, so it can be removed, as
@@ -4082,7 +4032,7 @@ variants by `*` count once, so a repeated `use E::*` is unused too.
 mod climate
 pub enum Mode { Off, Heat }
 use self::Mode::Off
-comp c { in m: Mode pub out off? ensure r: off? iff m = Off }
+proc c(m: Mode): (off?) { ensure r: off? iff m = Off }
 ```
 
 To keep the `use`, allow the lint for it:
@@ -4095,7 +4045,7 @@ Erroneous code example:
 ```fren
 pub enum Mode { Off, Heat }
 use Mode::*
-comp c { in m: Mode pub out off? ensure r: off? iff m = Off }
+proc c(m: Mode): (off?) { ensure r: off? iff m = Off }
 ```
 
 `use E::*` brings every variant of `E` into scope, including variants added
@@ -4106,12 +4056,12 @@ as `fren fix` does, or write them qualified:
 ```fren
 pub enum Mode { Off, Heat }
 use Mode::{Off}
-comp c { in m: Mode pub out off? ensure r: off? iff m = Off }
+proc c(m: Mode): (off?) { ensure r: off? iff m = Off }
 ```
 
 ```fren
 pub enum Mode { Off, Heat }
-comp c { in m: Mode pub out off? ensure r: off? iff m = Mode::Off }
+proc c(m: Mode): (off?) { ensure r: off? iff m = Mode::Off }
 ```
 "# },
   { code := "F0703", explanation := r#"A name that should be in `snake_case` (the lint `non_snake_case`, a warning by default).
@@ -4119,15 +4069,15 @@ comp c { in m: Mode pub out off? ensure r: off? iff m = Mode::Off }
 Erroneous code example:
 
 ```fren
-comp TempSensor { in t: Int pub out hot? ensure r: hot? iff t > 30 }
+proc TempSensor(t: Int): (hot?) { ensure r: hot? iff t > 30 }
 ```
 
-Modules, components, variables, instances, constraints and global
+Modules, procedures, variables, calls, constraints and global
 expectations are named in `snake_case`: no uppercase letters. A
 variable's final `?` does not count.
 
 ```fren
-comp temp_sensor { in t: Int pub out hot? ensure r: hot? iff t > 30 }
+proc temp_sensor(t: Int): (hot?) { ensure r: hot? iff t > 30 }
 ```
 "# },
   { code := "F0704", explanation := r#"A name that should be in `CamelCase` (the lint `non_camel_case_types`, a warning by default).
@@ -4166,7 +4116,7 @@ Erroneous code example:
 
 ```fren
 set_option fren.lint.glob_imports "expect"
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 
 `set_option fren.lint.LINT "expect"` says that the lint fires where the
@@ -4175,7 +4125,7 @@ setting is a glob import. Remove the setting, as `fren fix` does, or move
 it to where the lint fires:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0707", explanation := r#"A `set_option` names a lint that does not exist.
@@ -4230,7 +4180,7 @@ set_option fren.lint.glob_imports "forbid"
 Erroneous code example:
 
 ```fren
-comp c { in x: Int in spare: Int pub out y: Int ensure r: y = x }
+proc c(x: Int, spare: Int): (y: Int) { ensure r: y = x }
 ```
 
 No constraint of `c` mentions `spare`, so it does not affect `c`. An
@@ -4241,7 +4191,7 @@ mentions, and a quantifier's bound name that its body never mentions.
 Remove the variable, or mention it:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0711", explanation := r#"A private enumeration or constant that nothing in its file uses (the lint `dead_code`, a warning by default).
@@ -4250,7 +4200,7 @@ Erroneous code example:
 
 ```fren
 const LIMIT: Int := 10
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 
 No path in the file resolves to `LIMIT`, and it is private, so no other
@@ -4259,10 +4209,10 @@ code do not. Remove it, use it, or make it `pub`:
 
 ```fren
 const LIMIT: Int := 10
-comp c { in x: Int pub out y: Int ensure r: y = x + LIMIT }
+proc c(x: Int): (y: Int) { ensure r: y = x + LIMIT }
 ```
 
-Components and global expectations are never dead: each is a guarantee
+Procedures and global expectations are never dead: each is a guarantee
 in its own right.
 "# },
   { code := "F0712", explanation := r#"A `Bool` expression with a simpler form (the lint `nonminimal_bool`, a warning by default).
@@ -4270,7 +4220,7 @@ in its own right.
 Erroneous code example:
 
 ```fren
-comp c { in a? pub out b? ensure r: b? iff a? = true }
+proc c(a?): (b?) { ensure r: b? iff a? = true }
 ```
 
 `a? = true` means `a?`. Likewise, `a? = false` means `not a?`, `not not
@@ -4280,7 +4230,7 @@ a?` means `a?`. Write the
 simpler form, as `fren fix` does:
 
 ```fren
-comp c { in a? pub out b? ensure r: b? iff a? }
+proc c(a?): (b?) { ensure r: b? iff a? }
 ```
 "# },
   { code := "F0713", explanation := r#"A removed code: the lint `shadowed_constants`.
@@ -4296,7 +4246,7 @@ code is not reused.
 Erroneous code example:
 
 ```fren
-comp c { in a: String in b: String pub out p? ensure r: p? iff a.starts_with?(b) }
+proc c(a: String, b: String): (p?) { ensure r: p? iff a.starts_with?(b) }
 ```
 
 Unless a spec opts out, every check is decidable: each query is in a
@@ -4308,14 +4258,14 @@ operation but `=` and `!=` mentions an output of an infinite type. A
 construct outside it may make the solver give up. Stay in the core:
 
 ```fren
-comp c { in a: String pub out p? ensure r: p? iff a.starts_with?("x") }
+proc c(a: String): (p?) { ensure r: p? iff a.starts_with?("x") }
 ```
 
 or opt out explicitly, accepting that a check may be inconclusive:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-comp c { in a: String in b: String pub out p? ensure r: p? iff a.starts_with?(b) }
+proc c(a: String, b: String): (p?) { ensure r: p? iff a.starts_with?(b) }
 ```
 "# },
 { code := "F0715", explanation := r#"A string's or sequence's length is compared with 0 (a warning, `length_zero`).
@@ -4323,7 +4273,7 @@ comp c { in a: String in b: String pub out p? ensure r: p? iff a.starts_with?(b)
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.len = 0 }
+proc c(s: String): (p?) { ensure r: p? iff s.len = 0 }
 ```
 
 That a string or sequence is empty says it more plainly: `s = ""`, or
@@ -4332,7 +4282,7 @@ That a string or sequence is empty says it more plainly: `s = ""`, or
 `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "" }
+proc c(s: String): (p?) { ensure r: p? iff s = "" }
 ```
 "# },
   { code := "F0716", explanation := r#"A set's or relation's `card` is compared with 0 (a warning, `card_zero`).
@@ -4340,14 +4290,14 @@ comp c { in s: String pub out p? ensure r: p? iff s = "" }
 Example:
 
 ```fren
-comp c { in s: Set<Int> pub out p? ensure r: p? iff s.card > 0 }
+proc c(s: Set<Int>): (p?) { ensure r: p? iff s.card > 0 }
 ```
 
 That a set is empty says it more plainly: `s = {}`, or `s != {}` for
 `s.card > 0`, and so on, as for `len` (F0715). `fren fix` can fix this:
 
 ```fren
-comp c { in s: Set<Int> pub out p? ensure r: p? iff s != {} }
+proc c(s: Set<Int>): (p?) { ensure r: p? iff s != {} }
 ```
 "# },
   { code := "F0717", explanation := r#"Membership in a set of one member (a warning, `singleton_membership`).
@@ -4355,13 +4305,13 @@ comp c { in s: Set<Int> pub out p? ensure r: p? iff s != {} }
 Example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x in {1} }
+proc c(x: Int): (p?) { ensure r: p? iff x in {1} }
 ```
 
 `x in {a}` is `x = a`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x = 1 }
+proc c(x: Int): (p?) { ensure r: p? iff x = 1 }
 ```
 "# },
   { code := "F0718", explanation := r#"A chain of `or` that equates one expression with three or more others, or of `and` that disequates it (`membership_chain`, allowed by default).
@@ -4371,14 +4321,14 @@ Example:
 ```fren
 set_option fren.lint.membership_chain "warn"
 
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x = 1 or x = 2 or x = y) }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff (x = 1 or x = 2 or x = y) }
 ```
 
 The chain is a membership in a set literal, and `x != 1 and x != 2 and x
 != y` is `not x in {1, 2, y}`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff x in {1, 2, y} }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff x in {1, 2, y} }
 ```
 
 Where every value is one that a pattern writes, a literal or a variant
@@ -4386,21 +4336,21 @@ without a payload, the chain is a pattern test written out, which
 `manual_pattern_test` (`F0805`) reports instead: `x = 1 or x = 2 or x = 3`
 is `x is 1 | 2 | 3`.
 "# },
-  { code := "F0719", explanation := r#"A defined output whose definition mentions no variable (a warning, `constant_output`).
+  { code := "F0719", explanation := r#"A definition that mentions no variable (a warning, `constant_output`).
 
 Example:
 
 ```fren
-comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
+proc c(x: Int): (limit: Int) { out limit := 10 ensure r: x < limit }
 ```
 
-The output is the same in every behaviour, so it is a constant, which every
-component can share:
+The result is the same in every behaviour, so it is a constant, which every
+procedure can share:
 
 ```fren
 const LIMIT: Int := 10
 
-comp c { in x: Int pub out p? ensure r: p? iff x < LIMIT }
+proc c(x: Int): (p?) { ensure r: p? iff x < LIMIT }
 ```
 "# },
   { code := "F0720", explanation := r#"An output that one guarantee equates with other variables (`definable_output`, allowed by default).
@@ -4410,14 +4360,14 @@ Example:
 ```fren
 set_option fren.lint.definable_output "warn"
 
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 
 The guarantee could be the output's definition, which realizability
 then never searches for:
 
 ```fren
-comp c { in x: Int pub out y: Int := x + 1 }
+proc c(x: Int): (y: Int) { out y := x + 1 }
 ```
 "# },
   { code := "F0721", explanation := r#"An index on the left of an `and` whose right operand bounds the sequence (a warning, `index_after_use`).
@@ -4425,7 +4375,7 @@ comp c { in x: Int pub out y: Int := x + 1 }
 Example:
 
 ```fren
-comp c { in q: Seq<Int> pub out p? ensure r: p? iff (q[0] = 1 and q.len > 0) }
+proc c(q: Seq<Int>): (p?) { ensure r: p? iff (q[0] = 1 and q.len > 0) }
 ```
 
 In `a and b`, `b` is guarded by `a`, so the index is evaluated whether or
@@ -4433,7 +4383,7 @@ not the bound holds, and the definedness check fails. Swapping the operands
 does not change the meaning. `fren fix` can fix this:
 
 ```fren
-comp c { in q: Seq<Int> pub out p? ensure r: p? iff (q.len > 0 and q[0] = 1) }
+proc c(q: Seq<Int>): (p?) { ensure r: p? iff (q.len > 0 and q[0] = 1) }
 ```
 "# },
   { code := "F0722", explanation := r#"An `unless` whose condition is a negation (a warning, `unless_not`).
@@ -4441,14 +4391,14 @@ comp c { in q: Seq<Int> pub out p? ensure r: p? iff (q.len > 0 and q[0] = 1) }
 Example:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: unless not a?, p? iff b? }
+proc c(a?, b?): (p?) { ensure r: unless not a?, p? iff b? }
 ```
 
 `unless not A, D` is `when A, D`, and `unless a != b, D` is `when a = b,
 D`. `fren fix` can fix this:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: when a?, p? iff b? }
+proc c(a?, b?): (p?) { ensure r: when a?, p? iff b? }
 ```
 "# },
   { code := "F0723", explanation := r#"A `when` whose body is a `when`, or an `unless` whose body is an `unless` (a warning, `collapsible_when`).
@@ -4456,14 +4406,14 @@ comp c { in a? in b? pub out p? ensure r: when a?, p? iff b? }
 Example:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: when a?, when b?, p? }
+proc c(a?, b?): (p?) { ensure r: when a?, when b?, p? }
 ```
 
 `when A, when B, D` is `when A and B, D`, and `unless A, unless B, D` is
 `unless A or B, D`. `fren fix` can fix this:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: when a? and b?, p? }
+proc c(a?, b?): (p?) { ensure r: when a? and b?, p? }
 ```
 
 A nest of `when` and `unless`, such as `unless A, when B, D`, is not
@@ -4476,14 +4426,14 @@ Example:
 ```fren
 set_option fren.lint.if_not_else "warn"
 
-comp c { in a? in x: Int pub out y: Int ensure r: y = if not a? then x else 0 }
+proc c(a?, x: Int): (y: Int) { ensure r: y = if not a? then x else 0 }
 ```
 
 `if not C then A else B` is `if C then B else A`, and `if a != b then A
 else B` is `if a = b then B else A`. `fren fix` can fix this:
 
 ```fren
-comp c { in a? in x: Int pub out y: Int ensure r: y = if a? then 0 else x }
+proc c(a?, x: Int): (y: Int) { ensure r: y = if a? then 0 else x }
 ```
 
 An `if` whose `else` branch is an `if` is not reported, since swapping its
@@ -4498,7 +4448,7 @@ set_option fren.lint.match_same_arms "warn"
 
 enum E { A, B, C }
 
-comp c { in e: E pub out n: Int ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 } }
+proc c(e: E): (n: Int) { ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 } }
 ```
 
 Arms whose patterns bind no names, and whose bodies are written the same,
@@ -4511,7 +4461,7 @@ set_option fren.lint.match_same_arms "warn"
 
 enum E { A, B, C }
 
-comp c { in e: E pub out n: Int ensure r: n = match e { E::A | E::C => 1, E::B => 2 } }
+proc c(e: E): (n: Int) { ensure r: n = match e { E::A | E::C => 1, E::B => 2 } }
 ```
 "# },
   { code := "F0726", explanation := r#"A `match` whose arms are all `true` or `false` (a warning, `match_like_membership`).
@@ -4521,7 +4471,7 @@ Example:
 ```fren
 enum E { A, B, C }
 
-comp c { in e: E pub out p? ensure r: p? iff match e { E::A => true, E::B => true, E::C => false } }
+proc c(e: E): (p?) { ensure r: p? iff match e { E::A => true, E::B => true, E::C => false } }
 ```
 
 The `match` says whether its scrutinee is one of the variants whose arms
@@ -4530,7 +4480,7 @@ are `true`, which a pattern test says directly. `fren fix` can fix this:
 ```fren
 enum E { A, B, C }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B }
+proc c(e: E): (p?) { ensure r: p? iff e is E::A | E::B }
 ```
 
 Where most variants are `true`, or the `_` arm is, the fix is a negated
@@ -4546,7 +4496,7 @@ set_option fren.lint.wildcard_single_variant "warn"
 
 enum E { A, B, C }
 
-comp c { in e: E pub out n: Int ensure r: n = match e { E::A => 1, E::B => 2, _ => 3 } }
+proc c(e: E): (n: Int) { ensure r: n = match e { E::A => 1, E::B => 2, _ => 3 } }
 ```
 
 A variant added to `E` later would be matched by `_` without notice. Named,
@@ -4558,7 +4508,7 @@ set_option fren.lint.wildcard_single_variant "warn"
 
 enum E { A, B, C }
 
-comp c { in e: E pub out n: Int ensure r: n = match e { E::A => 1, E::B => 2, E::C => 3 } }
+proc c(e: E): (n: Int) { ensure r: n = match e { E::A => 1, E::B => 2, E::C => 3 } }
 ```
 "# },
   { code := "F0727", explanation := r#"A chain of `if` whose tests are of which variant one scrutinee is (`if_chain_match`, allowed by default).
@@ -4570,7 +4520,7 @@ set_option fren.lint.if_chain_match "warn"
 
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode pub out y: Int ensure r: y = if m = Mode::Heat then 1 else if m = Mode::Cool then 2 else 0 }
+proc c(m: Mode): (y: Int) { ensure r: y = if m = Mode::Heat then 1 else if m = Mode::Cool then 2 else 0 }
 ```
 
 The chain is a `match` on the scrutinee, with an arm for each test, and
@@ -4581,7 +4531,7 @@ this:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode pub out y: Int ensure r: y = match m { Mode::Heat => 1, Mode::Cool => 2, _ => 0 } }
+proc c(m: Mode): (y: Int) { ensure r: y = match m { Mode::Heat => 1, Mode::Cool => 2, _ => 0 } }
 ```
 "# },
   { code := "F0729", explanation := r#"Guarantees that constrain one output case by case on which variant one scrutinee is (`case_split_guarantees`, allowed by default).
@@ -4593,9 +4543,7 @@ set_option fren.lint.case_split_guarantees "warn"
 
 enum Mode { Heat, Cool }
 
-comp c {
-    in m: Mode
-    pub out y: Int
+proc c(m: Mode): (y: Int) {
     ensure heat: when m = Mode::Heat, y = 1
     ensure cool: when m = Mode::Cool, y = 2
 }
@@ -4608,30 +4556,28 @@ guarantees by name:
 ```fren
 enum Mode { Heat, Cool }
 
-comp c {
-    in m: Mode
-    pub out y: Int
+proc c(m: Mode): (y: Int) {
     ensure rule: y = match m { Mode::Heat => 1, Mode::Cool => 2 }
 }
 ```
 "# },
-  { code := "F0735", explanation := r#"A binding or field `x := x` (a warning, `redundant_bindings`).
+  { code := "F0735", explanation := r#"A field `x := x` (a warning, `redundant_bindings`).
 
 Example:
 
 ```fren
-comp sub { in x: Int pub out p? ensure r: p? iff x > 0 }
+struct P { x: Int }
 
-comp c { in x: Int inst s: sub { x := x } }
+proc c(x: Int): (p: P) { ensure r: p = P { x := x } }
 ```
 
-A binding of an instance, or a field of a record literal, `x` alone means
-`x := x`. `fren fix` can fix this:
+In a field of a record literal, `x` alone means `x := x`. `fren fix` can
+fix this:
 
 ```fren
-comp sub { in x: Int pub out p? ensure r: p? iff x > 0 }
+struct P { x: Int }
 
-comp c { in x: Int inst s: sub { x } }
+proc c(x: Int): (p: P) { ensure r: p = P { x } }
 ```
 
 In a record update of `r`, the lint also fires on a field `x := r.x`, which
@@ -4643,7 +4589,7 @@ removes the field, when the update gives some other field a new value.
 Example:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x < y or x = x) }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff (x < y or x = x) }
 ```
 
 `x = x` is always `true`, so the guarantee says nothing. One operand is
@@ -4651,7 +4597,7 @@ probably a typo for another expression, which no rewrite can know, so
 there is no fix. Write the operand meant:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x < y or y = 0) }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff (x < y or y = 0) }
 ```
 
 The lint fires on `=`, `!=`, `<`, `<=`, `>`, `>=`, `iff`, `subset`, `and`,
@@ -4668,7 +4614,7 @@ b?, a?)`, which holds only where `a?` is `false`.
 Example:
 
 ```fren
-comp c { in a? in x: Int pub out y: Int ensure r: y = if a? then x + 1 else x + 1 }
+proc c(a?, x: Int): (y: Int) { ensure r: y = if a? then x + 1 else x + 1 }
 ```
 
 The condition decides nothing. Either one branch is not the one meant, or
@@ -4677,7 +4623,7 @@ written the same, as `table { a? => x + 1, _ => x + 1 }`. `fren fix` can
 fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 "# },
   { code := "F0738", explanation := r#"A set or relation literal with an element written the same as an earlier one (a warning, `duplicate_elements`).
@@ -4685,7 +4631,7 @@ comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
 Example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x in {1, 2, 1} }
+proc c(x: Int): (p?) { ensure r: p? iff x in {1, 2, 1} }
 ```
 
 A set has no repeats, so `{1, 2, 1}` is `{1, 2}`. The repeat is probably a
@@ -4693,7 +4639,7 @@ typo for another element. A sequence literal, where a repeat means
 something, is not reported. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x in {1, 2} }
+proc c(x: Int): (p?) { ensure r: p? iff x in {1, 2} }
 ```
 "# },
   { code := "F0745", explanation := r#"A method applied to an empty argument, whose value then does not depend on the receiver as expected (a warning, `empty_argument`).
@@ -4701,7 +4647,7 @@ comp c { in x: Int pub out p? ensure r: p? iff x in {1, 2} }
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("") }
+proc c(s: String): (p?) { ensure r: p? iff s.starts_with?("") }
 ```
 
 Every string starts with `""`, so this is always `true`. The lint fires on
@@ -4712,7 +4658,7 @@ which is `s`; `s.index_of("", i)`, which is `i` or `-1`; and `s.slice(i,
 probably not the one meant:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("/") }
+proc c(s: String): (p?) { ensure r: p? iff s.starts_with?("/") }
 ```
 "# },
   { code := "F0730", explanation := r#"Two comparisons of the same operands that are one comparison (a warning, `double_comparison`).
@@ -4720,7 +4666,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("/") }
 Example:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff (x < y or x = y) }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff (x < y or x = y) }
 ```
 
 The operands may also be the other way around, as in `y > x`. Joined by
@@ -4729,7 +4675,7 @@ of the same operands does, as `a subset b and b subset a` is `a = b`.
 `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff x <= y }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff x <= y }
 ```
 "# },
   { code := "F0731", explanation := r#"An equation of two `Bool`s (`bool_equality`, allowed by default).
@@ -4739,7 +4685,7 @@ Example:
 ```fren
 set_option fren.lint.bool_equality "warn"
 
-comp c { in a? in b? pub out p? ensure r: p? = (a? and b?) }
+proc c(a?, b?): (p?) { ensure r: p? = (a? and b?) }
 ```
 
 On `Bool`s, `=` and `iff` agree, and `iff` says that the two are
@@ -4747,7 +4693,7 @@ equivalent. It binds more loosely, so the fix adds parentheses where they
 are needed, as in `(a? iff b?) and c?`. `fren fix` can fix this:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: p? iff (a? and b?) }
+proc c(a?, b?): (p?) { ensure r: p? iff (a? and b?) }
 ```
 "# },
   { code := "F0732", explanation := r#"A search written with `index_of` or `slice` (a warning, `manual_method`).
@@ -4755,7 +4701,7 @@ comp c { in a? in b? pub out p? ensure r: p? iff (a? and b?) }
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.slice(0, "ab".len) = "ab" }
+proc c(s: String): (p?) { ensure r: p? iff s.slice(0, "ab".len) = "ab" }
 ```
 
 `s.index_of(t, 0) >= 0` and `s.index_of(t, 0) != -1` are `s.contains?(t)`,
@@ -4766,7 +4712,7 @@ argument is a constant, as is `starts_with?` on a sequence when its
 argument is a literal. `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("ab") }
+proc c(s: String): (p?) { ensure r: p? iff s.starts_with?("ab") }
 ```
 "# },
   { code := "F0733", explanation := r#"A conditional operand whose `else` branch extends past the operator (a warning, `else_extends`).
@@ -4774,7 +4720,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("ab") }
 Example:
 
 ```fren
-comp c { in a? in x: Int in y: Int pub out n: Int ensure r: n = 2 * if a? then x else y + 1 }
+proc c(a?, x: Int, y: Int): (n: Int) { ensure r: n = 2 * if a? then x else y + 1 }
 ```
 
 A conditional is an atom, but its `else` branch extends as far right as
@@ -4783,14 +4729,14 @@ then x else y) + 1`. Putting the branch in parentheses keeps the meaning
 and shows where it ends. `fren fix` can fix this:
 
 ```fren
-comp c { in a? in x: Int in y: Int pub out n: Int ensure r: n = 2 * if a? then x else (y + 1) }
+proc c(a?, x: Int, y: Int): (n: Int) { ensure r: n = 2 * if a? then x else (y + 1) }
 ```
 
 If the other meaning was intended, put the conditional in parentheses
 instead:
 
 ```fren
-comp c { in a? in x: Int in y: Int pub out n: Int ensure r: n = (2 * if a? then x else y) + 1 }
+proc c(a?, x: Int, y: Int): (n: Int) { ensure r: n = (2 * if a? then x else y) + 1 }
 ```
 "# },
   { code := "F0734", explanation := r#"An operation that leaves its operand as it is (a warning, `identity_op`).
@@ -4798,7 +4744,7 @@ comp c { in a? in x: Int in y: Int pub out n: Int ensure r: n = (2 * if a? then 
 Example:
 
 ```fren
-comp c { in x: Int pub out n: Int ensure r: n = x * 1 }
+proc c(x: Int): (n: Int) { ensure r: n = x * 1 }
 ```
 
 `x + 0`, `0 + x`, `x - 0`, `x * 1`, `1 * x` and `x div 1` are `x`; `s ++ ""` and
@@ -4807,7 +4753,7 @@ comp c { in x: Int pub out n: Int ensure r: n = x * 1 }
 fix this:
 
 ```fren
-comp c { in x: Int pub out n: Int ensure r: n = x }
+proc c(x: Int): (n: Int) { ensure r: n = x }
 ```
 "# },
   { code := "F0739", explanation := r#"Parentheses directly around parentheses (a warning, `double_parens`).
@@ -4815,13 +4761,13 @@ comp c { in x: Int pub out n: Int ensure r: n = x }
 Example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff ((x > 0)) }
+proc c(x: Int): (p?) { ensure r: p? iff ((x > 0)) }
 ```
 
 One pair groups as well as two. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff (x > 0) }
+proc c(x: Int): (p?) { ensure r: p? iff (x > 0) }
 ```
 "# },
   { code := "F0740", explanation := r#"A negation of a negation (a warning, `double_neg`).
@@ -4829,13 +4775,13 @@ comp c { in x: Int pub out p? ensure r: p? iff (x > 0) }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = -(-x) }
+proc c(x: Int): (y: Int) { ensure r: y = -(-x) }
 ```
 
 `-(-x)` is `x`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 "# },
   { code := "F0741", explanation := r#"A non-strict comparison of integers with an operand off by one (a warning, `int_plus_one`).
@@ -4843,14 +4789,14 @@ comp c { in x: Int pub out y: Int ensure r: y = x }
 Example:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff x >= y + 1 }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff x >= y + 1 }
 ```
 
 Over the integers, `x >= y + 1` is `x > y`, and so are `x - 1 >= y` and
 `y + 1 <= x`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int in y: Int pub out p? ensure r: p? iff x > y }
+proc c(x: Int, y: Int): (p?) { ensure r: p? iff x > y }
 ```
 "# },
   { code := "F0742", explanation := r#"A product with `-1` (a warning, `neg_multiply`).
@@ -4858,13 +4804,13 @@ comp c { in x: Int in y: Int pub out p? ensure r: p? iff x > y }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x * -1 }
+proc c(x: Int): (y: Int) { ensure r: y = x * -1 }
 ```
 
 `x * -1` and `-1 * x` are `-x`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = -x }
+proc c(x: Int): (y: Int) { ensure r: y = -x }
 ```
 "# },
   { code := "F0743", explanation := r#"A chain of methods with a shorter form (a warning, `redundant_method_chain`).
@@ -4874,7 +4820,7 @@ Example:
 ```fren
 enum E { A, B }
 
-comp c { in r: Rel<E, E> pub out p? ensure d: p? iff r.inverse.inverse.domain = {} }
+proc c(r: Rel<E, E>): (p?) { ensure d: p? iff r.inverse.inverse.domain = {} }
 ```
 
 The inverse of the inverse is the relation itself, and the domain of a
@@ -4884,7 +4830,7 @@ relation is the range of its inverse. The shorter chain means the same.
 ```fren
 enum E { A, B }
 
-comp c { in r: Rel<E, E> pub out p? ensure d: p? iff r.domain = {} }
+proc c(r: Rel<E, E>): (p?) { ensure d: p? iff r.domain = {} }
 ```
 "# },
   { code := "F0744", explanation := r#"A pattern with no operator but `.*` at its ends (a warning, `trivial_pattern`).
@@ -4892,14 +4838,14 @@ comp c { in r: Rel<E, E> pub out p? ensure d: p? iff r.domain = {} }
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"F0\.1.*") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"F0\.1.*") }
 ```
 
 The pattern matches the strings that start with `F0.1`, which
 `starts_with?` says plainly. `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("F0.1") }
+proc c(s: String): (p?) { ensure r: p? iff s.starts_with?("F0.1") }
 ```
 "# },
   { code := "F0746", explanation := r#"A `: Bool` that a name ending in `?` implies (a warning, `redundant_bool_type`).
@@ -4907,14 +4853,14 @@ comp c { in s: String pub out p? ensure r: p? iff s.starts_with?("F0.1") }
 Example:
 
 ```fren
-comp c { in ready?: Bool pub out p? ensure r: p? iff ready? }
+proc c(ready?: Bool): (p?) { ensure r: p? iff ready? }
 ```
 
 A name that ends in `?` is a `Bool`, so the type need not be written.
 `fren fix` can fix this:
 
 ```fren
-comp c { in ready? pub out p? ensure r: p? iff ready? }
+proc c(ready?): (p?) { ensure r: p? iff ready? }
 ```
 "# },
   { code := "F0747", explanation := r#"A `match` of one arm that binds nothing (a warning, `trivial_match`).
@@ -4924,14 +4870,14 @@ Example:
 ```fren
 enum E { A, B }
 
-comp c { in e: E in x: Int pub out y: Int ensure r: y = 2 * match e { _ => x + 1 } }
+proc c(e: E, x: Int): (y: Int) { ensure r: y = 2 * match e { _ => x + 1 } }
 ```
 
 The arm matches every value, so the `match` is its body. `fren fix` can
 fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = 2 * (x + 1) }
+proc c(x: Int): (y: Int) { ensure r: y = 2 * (x + 1) }
 ```
 "# },
   { code := "F0748", explanation := r#"A module whose name repeats its parent's (a warning, `module_inception`).
@@ -4941,7 +4887,7 @@ Example:
 ```fren
 pub mod climate::climate
 
-pub comp sensor { in t: Int pub out hot? ensure r: hot? iff t > 30 }
+pub proc sensor(t: Int): (hot?) { ensure r: hot? iff t > 30 }
 ```
 
 Every path to the module, or to an item in it, repeats the name, as in
@@ -4951,7 +4897,7 @@ module a name of its own:
 ```fren
 pub mod climate::sensors
 
-pub comp sensor { in t: Int pub out hot? ensure r: hot? iff t > 30 }
+pub proc sensor(t: Int): (hot?) { ensure r: hot? iff t > 30 }
 ```
 "# },
   { code := "F0749", explanation := r#"Variants named with a word they all share, or with their enumeration's name (a warning, `enum_variant_names`).
@@ -4990,13 +4936,13 @@ pub enum HttpStatus { Ok, NotFound }
 Example:
 
 ```fren
-comp c { in _1: Int pub out y: Int ensure r: y = _1 + 1 }
+proc c(_1: Int): (y: Int) { ensure r: y = _1 + 1 }
 ```
 
 Such a name says nothing of what it names. Give it a name that does:
 
 ```fren
-comp c { in reading: Int pub out y: Int ensure r: y = reading + 1 }
+proc c(reading: Int): (y: Int) { ensure r: y = reading + 1 }
 ```
 "# },
   { code := "F0752", explanation := r#"A placeholder name, such as `foo` (a warning, `disallowed_names`).
@@ -5004,14 +4950,14 @@ comp c { in reading: Int pub out y: Int ensure r: y = reading + 1 }
 Example:
 
 ```fren
-comp foo { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc foo(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 
 `foo`, `baz` and `quux`, in any case, are placeholders, which say nothing
 of what they name. Give it a name that does:
 
 ```fren
-comp successor { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc successor(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 "# },
   { code := "F0759", explanation := r#"A conditional that gives a `Bool` or its negation (a warning, `needless_bool_assign`).
@@ -5019,7 +4965,7 @@ comp successor { in x: Int pub out y: Int ensure r: y = x + 1 }
 Example:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: p? iff if a? then b? else not b? }
+proc c(a?, b?): (p?) { ensure r: p? iff if a? then b? else not b? }
 ```
 
 `if C then X else not X` holds exactly when `C` and `X` agree, which is
@@ -5027,7 +4973,7 @@ comp c { in a? in b? pub out p? ensure r: p? iff if a? then b? else not b? }
 `C != X`. `fren fix` can fix this:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r: p? iff (a? iff b?) }
+proc c(a?, b?): (p?) { ensure r: p? iff (a? iff b?) }
 ```
 "# },
   { code := "F0760", explanation := r#"A `match` that gives back its scrutinee (a warning, `needless_match`).
@@ -5037,7 +4983,7 @@ Example:
 ```fren
 enum Shape { Dot, Circle(Int) }
 
-comp c { in s: Shape pub out t: Shape ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) } }
+proc c(s: Shape): (t: Shape) { ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) } }
 ```
 
 Each arm builds the variant that it matched, with the values of its
@@ -5047,7 +4993,7 @@ this:
 ```fren
 enum Shape { Dot, Circle(Int) }
 
-comp c { in s: Shape pub out t: Shape ensure r: t = s }
+proc c(s: Shape): (t: Shape) { ensure r: t = s }
 ```
 "# },
   { code := "F0761", explanation := r#"A constraint that mentions no variable (a warning, `assertions_on_constants`).
@@ -5057,17 +5003,17 @@ Example:
 ```fren
 const LIMIT: Int := 10
 
-comp c { in x: Int pub out y: Int ensure r: y = x expect e: LIMIT > 0 }
+proc c(x: Int): (y: Int) { ensure r: y = x expect e: LIMIT > 0 }
 ```
 
 The expectation is the same in every behaviour: it is always true, and
-says nothing about the component, or always false, and always fails. A
-guarantee that is always false makes the component unrealizable, and an
+says nothing about the procedure, or always false, and always fails. A
+guarantee that is always false makes the procedure unrealizable, and an
 assumption that is always false makes it vacuous. Say something about the
 variables, or remove the constraint:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x expect e: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x expect e: y = x }
 ```
 
 There is no fix, since removing a constraint changes the checks.
@@ -5077,14 +5023,14 @@ There is no fix, since removing a constraint changes the checks.
 Example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x >=- 1 }
+proc c(x: Int): (p?) { ensure r: p? iff x >=- 1 }
 ```
 
 `>=- 1` reads like one operator `>=-`, but it is `>=`, whose right operand
 is `-1`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x >= -1 }
+proc c(x: Int): (p?) { ensure r: p? iff x >= -1 }
 ```
 "# },
   { code := "F0753", explanation := r#"A slice that is the whole of its receiver (a warning, `redundant_slicing`).
@@ -5094,14 +5040,14 @@ Example:
 ```fren
 set_option fren.lint.undecidable "allow"
 
-comp c { in s: String pub out p? ensure r: p? iff s.slice(0, s.len) = "x" }
+proc c(s: String): (p?) { ensure r: p? iff s.slice(0, s.len) = "x" }
 ```
 
 `s.slice(0, s.len)` is `s`, for every string or sequence `s`, `""` and
 `[]` included. `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "x" }
+proc c(s: String): (p?) { ensure r: p? iff s = "x" }
 ```
 "# },
   { code := "F0754", explanation := r#"A replacement with what it replaces (a warning, `no_effect_replace`).
@@ -5111,14 +5057,14 @@ Example:
 ```fren
 set_option fren.lint.undecidable "allow"
 
-comp c { in s: String in a: String pub out p? ensure r: p? iff s.replace(a, a) = "x" }
+proc c(s: String, a: String): (p?) { ensure r: p? iff s.replace(a, a) = "x" }
 ```
 
 Replacing `a` with `a` leaves `s` as it is, with `replace` or
 `replace_all`, even where `a` is `""`. `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "x" }
+proc c(s: String): (p?) { ensure r: p? iff s = "x" }
 ```
 
 If another replacement was meant, write it:
@@ -5126,7 +5072,7 @@ If another replacement was meant, write it:
 ```fren
 set_option fren.lint.undecidable "allow"
 
-comp c { in s: String in a: String pub out p? ensure r: p? iff s.replace(a, "-") = "x" }
+proc c(s: String, a: String): (p?) { ensure r: p? iff s.replace(a, "-") = "x" }
 ```
 "# },
   { code := "F0755", explanation := r#"A test of a literal whose value the literal fixes (a warning, `const_is_empty`).
@@ -5134,7 +5080,7 @@ comp c { in s: String in a: String pub out p? ensure r: p? iff s.replace(a, "-")
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "x" or "x".len = 0 }
+proc c(s: String): (p?) { ensure r: p? iff s = "x" or "x".len = 0 }
 ```
 
 The length of a string or sequence literal is fixed, and so is whether a
@@ -5142,7 +5088,7 @@ set literal is empty, so the test is always `true` or always `false`. The
 literal is probably not the one meant:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "x" or s.len = 0 }
+proc c(s: String): (p?) { ensure r: p? iff s = "x" or s.len = 0 }
 ```
 "# },
   { code := "F0756", explanation := r#"An alternation of single characters in a pattern (a warning, `manual_pattern_char_comparison`).
@@ -5150,14 +5096,14 @@ comp c { in s: String pub out p? ensure r: p? iff s = "x" or s.len = 0 }
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"(a|b|-)+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"(a|b|-)+") }
 ```
 
 An alternation of single characters matches one of them, as a class does.
 `fren fix` can fix this, escaping `\`, `]`, `^` and `-` in the class:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[ab\-]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[ab\-]+") }
 ```
 "# },
   { code := "F0757", explanation := r#"A range in a pattern one character short of an alphabet (a warning, `almost_complete_range`).
@@ -5165,7 +5111,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[ab\-]+") }
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[a-y]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[a-y]+") }
 ```
 
 A range includes both its ends, so `a-y` leaves out `z`. The lint fires on
@@ -5173,7 +5119,7 @@ A range includes both its ends, so `a-y` leaves out `z`. The lint fires on
 meant. `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[a-z]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[a-z]+") }
 ```
 "# },
   { code := "F0768", explanation := r#"A constraint or global expectation written the same as an earlier one (a warning, `duplicate_constraint`).
@@ -5181,7 +5127,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[a-z]+") }
 Example:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r1: p? iff a? or b? ensure r2: p? iff a?  or  b? }
+proc c(a?, b?): (p?) { ensure r1: p? iff a? or b? ensure r2: p? iff a?  or  b? }
 ```
 
 `r2` says what `r1` says. The redundancy check would report each as
@@ -5189,7 +5135,7 @@ following from the other, which invites removing both. Where the two are
 of one kind, `fren fix` removes the later:
 
 ```fren
-comp c { in a? in b? pub out p? ensure r1: p? iff a? or b? }
+proc c(a?, b?): (p?) { ensure r1: p? iff a? or b? }
 ```
 
 An `expect` that repeats an `ensure` or an `assume` is reported too, but not
@@ -5203,7 +5149,7 @@ constraint.
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "a​b" }
+proc c(s: String): (p?) { ensure r: p? iff s = "a​b" }
 ```
 
 The literal holds a zero width space, U+200B, between `a` and `b`. It
@@ -5216,7 +5162,7 @@ literal as an escape, so that a deliberate use stays and can be seen, and
 removes it from a comment:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "a\u200Bb" }
+proc c(s: String): (p?) { ensure r: p? iff s = "a\u200Bb" }
 ```
 "# },
   { code := "F0770", explanation := r#"A negative integer literal as a position (a warning, `negative_position`).
@@ -5224,7 +5170,7 @@ comp c { in s: String pub out p? ensure r: p? iff s = "a\u200Bb" }
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.at(-1) = "." }
+proc c(s: String): (p?) { ensure r: p? iff s.at(-1) = "." }
 ```
 
 Fren has no negative indexing: `s.at(-1)` is not the last character, but
@@ -5235,7 +5181,7 @@ outside the decidable core:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-comp c { in s: String pub out p? ensure r: p? iff s.at(s.len - 1) = "." }
+proc c(s: String): (p?) { ensure r: p? iff s.at(s.len - 1) = "." }
 ```
 "# },
   { code := "F0763", explanation := r#"A comparison of a length that is always the same (a warning, `absurd_extreme_comparisons`).
@@ -5243,7 +5189,7 @@ comp c { in s: String pub out p? ensure r: p? iff s.at(s.len - 1) = "." }
 Example:
 
 ```fren
-comp c { in q: Seq<Int> pub out p? ensure r: p? iff q.len < 0 }
+proc c(q: Seq<Int>): (p?) { ensure r: p? iff q.len < 0 }
 ```
 
 A `len` or `card` is never negative, so `q.len < 0` is always `false`, and
@@ -5252,7 +5198,7 @@ is probably not the one meant, which no rewrite can know, so there is no
 fix. Write the comparison meant:
 
 ```fren
-comp c { in q: Seq<Int> pub out p? ensure r: p? iff q.len < 3 }
+proc c(q: Seq<Int>): (p?) { ensure r: p? iff q.len < 3 }
 ```
 
 The comparisons that say whether a collection is empty, such as `q.len >
@@ -5268,7 +5214,7 @@ Level::High` always `false`.
 Example:
 
 ```fren
-comp c { in x: Int in y: Int pub out z: Int ensure r: z = x * 0 + y }
+proc c(x: Int, y: Int): (z: Int) { ensure r: z = x * 0 + y }
 ```
 
 `x * 0` is always `0`, whatever `x` is, as `s inter {}` and `{} minus s`
@@ -5277,7 +5223,7 @@ are always `{}`, `x in {}` is always `false`, and `{} subset s` always
 fix. Write the operand meant:
 
 ```fren
-comp c { in x: Int in y: Int pub out z: Int ensure r: z = x * 2 + y }
+proc c(x: Int, y: Int): (z: Int) { ensure r: z = x * 2 + y }
 ```
 "# },
   { code := "F0765", explanation := r#"A test of a chain of `else if` written the same as an earlier one (a warning, `ifs_same_cond`).
@@ -5285,7 +5231,7 @@ comp c { in x: Int in y: Int pub out z: Int ensure r: z = x * 2 + y }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = if x > 0 then 1 else if x > 0 then 2 else 3 }
+proc c(x: Int): (y: Int) { ensure r: y = if x > 0 then 1 else if x > 0 then 2 else 3 }
 ```
 
 The branch of the second test is never taken: wherever the test holds, the
@@ -5293,7 +5239,7 @@ earlier branch is taken. One of the tests is probably not the one meant,
 so there is no fix. Write the test meant:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = if x > 0 then 1 else if x < 0 then 2 else 3 }
+proc c(x: Int): (y: Int) { ensure r: y = if x > 0 then 1 else if x < 0 then 2 else 3 }
 ```
 "# },
   { code := "F0766", explanation := r#"Two comparisons that cannot both hold, or of which one always holds (a warning, `contradictory_comparisons`).
@@ -5303,7 +5249,7 @@ Example:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode pub out on? ensure r: on? iff (m != Mode::Heat or m != Mode::Cool) }
+proc c(m: Mode): (on?) { ensure r: on? iff (m != Mode::Heat or m != Mode::Cool) }
 ```
 
 `m` is never both `Mode::Heat` and `Mode::Cool`, so one of the two
@@ -5314,7 +5260,7 @@ meant, so there is no fix. Write the comparisons meant:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode pub out on? ensure r: on? iff (m != Mode::Heat and m != Mode::Cool) }
+proc c(m: Mode): (on?) { ensure r: on? iff (m != Mode::Heat and m != Mode::Cool) }
 ```
 
 The lint also fires on comparisons of one operand with integers that no
@@ -5326,14 +5272,14 @@ integer meets, joined by `or`, as `x > 3 or x < 5`.
 Example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff (x < 3 and x < 5) }
+proc c(x: Int): (p?) { ensure r: p? iff (x < 3 and x < 5) }
 ```
 
 Every `x` below `3` is below `5`, so the two comparisons are `x < 3`; with
 `or`, they would be `x < 5`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x < 3 }
+proc c(x: Int): (p?) { ensure r: p? iff x < 3 }
 ```
 "# },
   { code := "F0771", explanation := r#"A `match` of one pattern that binds nothing and `_` (`single_match_else`, allowed by default).
@@ -5345,7 +5291,7 @@ set_option fren.lint.single_match_else "warn"
 
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode in x: Int pub out y: Int ensure r: y = match m { Mode::Heat => x + 1, _ => x } }
+proc c(m: Mode, x: Int): (y: Int) { ensure r: y = match m { Mode::Heat => x + 1, _ => x } }
 ```
 
 The `match` tests whether `m` is `Mode::Heat`, which an `if` says
@@ -5356,7 +5302,7 @@ this:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in m: Mode in x: Int pub out y: Int ensure r: y = if m = Mode::Heat then x + 1 else x }
+proc c(m: Mode, x: Int): (y: Int) { ensure r: y = if m = Mode::Heat then x + 1 else x }
 ```
 "# },
   { code := "F0772", explanation := r#"A record literal whose fields are not in the order its record declares them (`inconsistent_struct_constructor`, allowed by default).
@@ -5368,7 +5314,7 @@ set_option fren.lint.inconsistent_struct_constructor "warn"
 
 struct Cell { row: Int, column: Int }
 
-comp c { in x: Int pub out cell: Cell ensure r: cell = Cell { column := x, row := 0 } }
+proc c(x: Int): (cell: Cell) { ensure r: cell = Cell { column := x, row := 0 } }
 ```
 
 The order of the fields does not change the value, but the literal reads
@@ -5377,7 +5323,7 @@ more easily in the order of the declaration. `fren fix` can fix this:
 ```fren
 struct Cell { row: Int, column: Int }
 
-comp c { in x: Int pub out cell: Cell ensure r: cell = Cell { row := 0, column := x } }
+proc c(x: Int): (cell: Cell) { ensure r: cell = Cell { row := 0, column := x } }
 ```
 "# },
   { code := "F0773", explanation := r#"An `and` or `or` with an operand that can be dropped (`overly_complex_bool_expr`, allowed by default).
@@ -5387,7 +5333,7 @@ Example:
 ```fren
 set_option fren.lint.overly_complex_bool_expr "warn"
 
-comp c { in a? in b? pub out p? ensure r: p? iff (a? or (a? and b?)) }
+proc c(a?, b?): (p?) { ensure r: p? iff (a? or (a? and b?)) }
 ```
 
 Wherever `a? and b?` holds, `a?` holds, so the `or` is `a?`. Likewise `a
@@ -5396,7 +5342,7 @@ the last two probably have an operand that is not the one meant. `fren
 fix` can fix this:
 
 ```fren
-comp c { in a? pub out p? ensure r: p? iff a? }
+proc c(a?): (p?) { ensure r: p? iff a? }
 ```
 "# },
   { code := "F0774", explanation := r#"Fields named with a word they all share, or with their record's name (`struct_field_names`, allowed by default).
@@ -5463,7 +5409,7 @@ Example:
 ```fren
 set_option fren.lint.needless_raw_string_hashes "warn"
 
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r#"a+b"#) }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r#"a+b"#) }
 ```
 
 A raw literal needs one `#` more than the longest run of `#` after a `"`
@@ -5471,7 +5417,7 @@ in it, and none without a `"`: `r#"..."#` is needed only for a body with a
 `"`. `fren fix` can fix this:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"a+b") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"a+b") }
 ```
 "## },
   { code := "F0778", explanation := r#"An `if` whose branches share an operand (`branches_sharing_code`, allowed by default).
@@ -5481,14 +5427,14 @@ Example:
 ```fren
 set_option fren.lint.branches_sharing_code "warn"
 
-comp c { in fast? in x: Int pub out y: Int ensure r: y = if fast? then 2 * x + 1 else x + 1 }
+proc c(fast?, x: Int): (y: Int) { ensure r: y = if fast? then 2 * x + 1 else x + 1 }
 ```
 
 Both branches add `1`, whichever is taken, so the `if` can choose the rest
 alone. `fren fix` can fix this:
 
 ```fren
-comp c { in fast? in x: Int pub out y: Int ensure r: y = (if fast? then 2 * x else x) + 1 }
+proc c(fast?, x: Int): (y: Int) { ensure r: y = (if fast? then 2 * x else x) + 1 }
 ```
 "# },
   { code := "F0780", explanation := r#"A `set_option` that sets a lint or a group to `allow` (`allow_attributes`, allowed by default).
@@ -5503,7 +5449,7 @@ enum E { A, B }
 
 use self::E::*
 
-comp c { in e: E pub out p? ensure r: p? iff e = A }
+proc c(e: E): (p?) { ensure r: p? iff e = A }
 ```
 
 `"expect"` silences the lint too, and once nothing where it is in effect
@@ -5518,7 +5464,7 @@ enum E { A, B }
 
 use self::E::*
 
-comp c { in e: E pub out p? ensure r: p? iff e = A }
+proc c(e: E): (p?) { ensure r: p? iff e = A }
 ```
 
 Where the lint never fires, the expectation is unfulfilled, a warning that
@@ -5534,7 +5480,7 @@ set_option fren.lint.wildcard_enum_match_arm "warn"
 
 enum E { A, B, C }
 
-comp c { in e: E pub out n: Int ensure r: n = match e { E::A => 1, _ => 2 } }
+proc c(e: E): (n: Int) { ensure r: n = match e { E::A => 1, _ => 2 } }
 ```
 
 A variant added to `E` later would be matched by `_` without notice. Named,
@@ -5546,7 +5492,7 @@ set_option fren.lint.wildcard_enum_match_arm "warn"
 
 enum E { A, B, C }
 
-comp c { in e: E pub out n: Int ensure r: n = match e { E::A => 1, E::B | E::C => 2 } }
+proc c(e: E): (n: Int) { ensure r: n = match e { E::A => 1, E::B | E::C => 2 } }
 ```
 "# },
   { code := "F0782", explanation := r#"A raw string literal whose contents have no `\` and no `"` (`needless_raw_strings`, allowed by default).
@@ -5556,7 +5502,7 @@ Example:
 ```fren
 set_option fren.lint.needless_raw_strings "warn"
 
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"[a-z]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"[a-z]+") }
 ```
 
 A raw literal is for contents that would need escapes in an ordinary one.
@@ -5566,7 +5512,7 @@ can fix this:
 ```fren
 set_option fren.lint.needless_raw_strings "warn"
 
-comp c { in s: String pub out p? ensure r: p? iff s.matches?("[a-z]+") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?("[a-z]+") }
 ```
 "# },
   { code := "F0783", explanation := r#"A string literal with a character beyond ASCII (`non_ascii_literal`, allowed by default).
@@ -5576,7 +5522,7 @@ Example:
 ```fren
 set_option fren.lint.non_ascii_literal "warn"
 
-comp c { in s: String pub out p? ensure r: p? iff s = "café" }
+proc c(s: String): (p?) { ensure r: p? iff s = "café" }
 ```
 
 A character beyond ASCII may look like another, or not display in every
@@ -5585,7 +5531,7 @@ font. As an escape, it reads the same everywhere. `fren fix` can fix this:
 ```fren
 set_option fren.lint.non_ascii_literal "warn"
 
-comp c { in s: String pub out p? ensure r: p? iff s = "caf\u00E9" }
+proc c(s: String): (p?) { ensure r: p? iff s = "caf\u00E9" }
 ```
 
 A character beyond `U+FFFF` has no escape, since `\uHHHH` has four digits,
@@ -5621,7 +5567,7 @@ Example:
 ```fren
 set_option fren.lint.min_ident_chars "warn"
 
-comp offset { in t: Int pub out level: Int ensure raised: level = t + 1 }
+proc offset(t: Int): (level: Int) { ensure raised: level = t + 1 }
 ```
 
 A name of one character says little of what it names. Give it a name that
@@ -5630,7 +5576,7 @@ says more:
 ```fren
 set_option fren.lint.min_ident_chars "warn"
 
-comp offset { in reading: Int pub out level: Int ensure raised: level = reading + 1 }
+proc offset(reading: Int): (level: Int) { ensure raised: level = reading + 1 }
 ```
 "# },
   { code := "F0786", explanation := r#"A path of three or more segments in an expression, pattern or type (`absolute_paths`, allowed by default).
@@ -5646,7 +5592,7 @@ pub enum Mode { Heat, Cool }
 
 mod house
 
-comp c { in m: climate::Mode pub out p? ensure r: p? iff m = climate::Mode::Heat }
+proc c(m: climate::Mode): (p?) { ensure r: p? iff m = climate::Mode::Heat }
 ```
 
 `climate::Mode::Heat` has three segments. Import the enumeration with
@@ -5663,7 +5609,7 @@ mod house
 
 use self::climate::Mode
 
-comp c { in m: Mode pub out p? ensure r: p? iff m = Mode::Heat }
+proc c(m: Mode): (p?) { ensure r: p? iff m = Mode::Heat }
 ```
 "# },
   { code := "F0787", explanation := r#"An `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses (`precedence`, allowed by default).
@@ -5673,7 +5619,7 @@ Example:
 ```fren
 set_option fren.lint.precedence "warn"
 
-comp c { in a? in b? in d? pub out p? ensure r: p? iff (a? or b? and d?) }
+proc c(a?, b?, d?): (p?) { ensure r: p? iff (a? or b? and d?) }
 ```
 
 `and` binds more tightly than `or`, so this is `a? or (b? and d?)`
@@ -5683,7 +5629,7 @@ precedence. `fren fix` can fix this:
 ```fren
 set_option fren.lint.precedence "warn"
 
-comp c { in a? in b? in d? pub out p? ensure r: p? iff (a? or (b? and d?)) }
+proc c(a?, b?, d?): (p?) { ensure r: p? iff (a? or (b? and d?)) }
 ```
 "# },
   { code := "F0789", explanation := r#"A relation to a type of one value (`zero_sized_map_values`, allowed by default).
@@ -5695,7 +5641,7 @@ set_option fren.lint.zero_sized_map_values "warn"
 
 enum Mark { Marked }
 
-comp c { in r: Rel<Int, Mark> pub out p? ensure q: p? iff (1, Mark::Marked) in r }
+proc c(r: Rel<Int, Mark>): (p?) { ensure q: p? iff (1, Mark::Marked) in r }
 ```
 
 `Mark` has one value, so `r` pairs each `Int` it relates with
@@ -5703,7 +5649,7 @@ comp c { in r: Rel<Int, Mark> pub out p? ensure q: p? iff (1, Mark::Marked) in r
 same:
 
 ```fren
-comp c { in s: Set<Int> pub out p? ensure q: p? iff 1 in s }
+proc c(s: Set<Int>): (p?) { ensure q: p? iff 1 in s }
 ```
 "# },
   { code := "F0790", explanation := r#"A record literal that copies each field of a value of its record (a warning, `unnecessary_struct_initialization`).
@@ -5713,18 +5659,18 @@ Example:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = Point { x := p.x, y := p.y } }
+proc c(p: Point): (q: Point) { ensure r: q = Point { x := p.x, y := p.y } }
 ```
 
 The literal reads each field of `p` into the same field, so it is `p`.
 It fires only where `p` is a value of the record itself: a literal of
-another record with the same fields converts, and an instance is not a
+another record with the same fields converts, and a call is not a
 value. `fren fix` can fix this:
 
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = p }
+proc c(p: Point): (q: Point) { ensure r: q = p }
 ```
 "# },
   { code := "F0791", explanation := r#"A lint setting that is in effect at no item (a warning, `unused_lint_setting`).
@@ -5735,7 +5681,7 @@ Example:
 set_option fren.lint.disallowed_names "deny"
 set_option fren.lint.style "allow"
 
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 
 The second setting sets `disallowed_names`, a lint of `style`, before any
@@ -5746,7 +5692,7 @@ setting, as `fren fix` does, or move it to where it was meant to apply:
 ```fren
 set_option fren.lint.style "allow"
 
-comp c { in x: Int pub out y: Int ensure r: y = x }
+proc c(x: Int): (y: Int) { ensure r: y = x }
 ```
 
 A setting of a lint after its group's is not reported, since it sets that
@@ -5758,19 +5704,19 @@ lint alone, nor is a setting to `expect`, which
 Example:
 
 ```fren
-comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 ensure r: y = x + 1 }
+proc c(x: Int, n: Int): (y: Int) { assume pos: n > 0 ensure r: y = x + 1 }
 ```
 
 `pos` mentions `n`, so `unused_variables` does not report it, but nothing
-else does: no guarantee, expectation, definition or binding, no other
+else does: no guarantee, expectation, definition or argument, no other
 assumption that ties it to a used variable, no global expectation of the
-file that reads it, no instance of `c` in the file, and no refinement of
+file that reads it, no call of `c` in the file, and no refinement of
 the file with `c` as its abstraction. This is what is left after the last
 guarantee about an input is removed. Remove the assumption and the
-input, or use them:
+parameter, or use them:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 
 Assumptions that are reported and linked, by an input or a function, are removed
@@ -5782,7 +5728,7 @@ it. Each message names the others.
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 
 expect e: forall (a b: c), (when a.x = 0, a.y = 1) and (when b.x = 1, b.y = 2)
 ```
@@ -5795,7 +5741,7 @@ mention, so only an `and` at the top separates claims. Relate the binders,
 or write one expectation for each claim:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 
 expect e: forall (a: c), when a.x = 0, a.y = 1
 expect f: forall (b: c), when b.x = 1, b.y = 2
@@ -5806,7 +5752,7 @@ expect f: forall (b: c), when b.x = 1, b.y = 2
 Example:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"v1.2") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"v1.2") }
 ```
 
 In a pattern, `.` matches any one character, so `v1.2` matches `v1x2`
@@ -5815,7 +5761,7 @@ too. Between two letters or digits, it is probably meant as a dot.
 not raw can hold as it is, unlike `\.`:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s.matches?(r"v1[.]2") }
+proc c(s: String): (p?) { ensure r: p? iff s.matches?(r"v1[.]2") }
 ```
 "# },
   { code := "F0795", explanation := r#"An item that declares many single-character names (`many_single_char_names`, allowed by default).
@@ -5825,14 +5771,14 @@ Example:
 ```fren
 set_option fren.lint.many_single_char_names "warn"
 
-comp total { in a: Int in b: Int in c: Int in d: Int pub out s: Int ensure r: s = a + b + c + d }
+proc total(a: Int, b: Int, c: Int, d: Int): (s: Int) { ensure r: s = a + b + c + d }
 ```
 
 More than four names of one character, not counting a final `?`, are hard
 to tell apart. Name them for what they stand for:
 
 ```fren
-comp total { in apples: Int in pears: Int pub out fruit: Int ensure r: fruit = apples + pears }
+proc total(apples: Int, pears: Int): (fruit: Int) { ensure r: fruit = apples + pears }
 ```
 "# },
   { code := "F0796", explanation := r#"Two names that differ by one character (`similar_names`, allowed by default).
@@ -5842,7 +5788,7 @@ Example:
 ```fren
 set_option fren.lint.similar_names "warn"
 
-comp c { in count: Int in counts: Int pub out p? ensure r: p? iff count < counts }
+proc c(count: Int, counts: Int): (p?) { ensure r: p? iff count < counts }
 ```
 
 One is easily written, or read, for the other. Names that differ only in
@@ -5851,28 +5797,28 @@ own, such as `a_len` and `b_len`, are a series on purpose, and are not
 reported. Rename one:
 
 ```fren
-comp c { in count: Int in limit: Int pub out p? ensure r: p? iff count < limit }
+proc c(count: Int, limit: Int): (p?) { ensure r: p? iff count < limit }
 ```
 "# },
-  { code := "F0797", explanation := r#"A component or defined function of more than 100 lines (`too_many_lines`, allowed by default).
+  { code := "F0797", explanation := r#"A procedure or defined function of more than 100 lines (`too_many_lines`, allowed by default).
 
 Example:
 
 ```fren
 set_option fren.lint.too_many_lines "warn"
 
-comp c {
-    in x: Int
-"# ++ String.join ((List.range 50).map fun i => s!"    pub out y{i}: Int\n    ensure r{i}: y{i} = x + {i}\n") ++ r#"}
+proc c(x: Int): (
+"# ++ String.join ((List.range 50).map fun i => s!"    y{i}: Int,\n") ++ r#") {
+"# ++ String.join ((List.range 50).map fun i => s!"    ensure r{i}: y{i} = x + {i}\n") ++ r#"}
 ```
 
 Its lines are counted from its name to its end, but not those that are
-blank or only comments. Split it into smaller components, as instances:
+blank or only comments. Split it into smaller procedures, as calls:
 
 ```fren
-comp part { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc part(x: Int): (y: Int) { ensure r: y = x + 1 }
 
-comp whole { in x: Int pub out y: Int inst p: part { x } ensure r: y = p.y + 1 }
+proc whole(x: Int): (y: Int) { call p := part(x) ensure r: y = p.y + 1 }
 ```
 "# },
   { code := "F0798", explanation := r#"A comparison of a method's call that is always the same (`invalid_upcast_comparisons`, allowed by default).
@@ -5882,7 +5828,7 @@ Example:
 ```fren
 set_option fren.lint.invalid_upcast_comparisons "warn"
 
-comp c { in x: Int pub out p? ensure r: p? iff x.abs >= 0 }
+proc c(x: Int): (p?) { ensure r: p? iff x.abs >= 0 }
 ```
 
 `x.abs` is never below 0, and `s.index_of(t, i)` never below -1, so a
@@ -5891,7 +5837,7 @@ comparison of either with a bound below that is always `true` or always
 operator is probably not the one meant, such as `>=` for `>`:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x.abs > 0 }
+proc c(x: Int): (p?) { ensure r: p? iff x.abs > 0 }
 ```
 "# },
   { code := "F0799", explanation := r#"A string literal that is not in Unicode NFC (`unicode_not_nfc`, allowed by default).
@@ -5901,7 +5847,7 @@ Example, where the `e` is followed by U+0301, a combining acute accent:
 ```fren
 set_option fren.lint.unicode_not_nfc "warn"
 
-comp c { in s: String pub out p? ensure r: p? iff s = "cafe"# ++ "\u0301" ++ r#"" }
+proc c(s: String): (p?) { ensure r: p? iff s = "cafe"# ++ "\u0301" ++ r#"" }
 ```
 
 Strings compare by code point, and text is usually in NFC, where `é` is
@@ -5910,7 +5856,7 @@ NFC, as the message suggests. `fren fix` does not, since that changes the
 literal's value:
 
 ```fren
-comp c { in s: String pub out p? ensure r: p? iff s = "café" }
+proc c(s: String): (p?) { ensure r: p? iff s = "café" }
 ```
 "# },
   { code := "F0801", explanation := r#"A trailing comma on the line of the `}` or `]` that closes its list (`unnecessary_trailing_comma`, allowed by default).
@@ -5943,7 +5889,7 @@ Example:
 ```fren
 enum E { A, B, C(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::A }
+proc c(e: E): (p?) { ensure r: p? iff e is E::A }
 ```
 
 `=` compares with one value, and `is` tests against several, and against
@@ -5953,7 +5899,7 @@ the patterns that `=` cannot write, those with a payload and ranges.
 ```fren
 enum E { A, B, C(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e = E::A }
+proc c(e: E): (p?) { ensure r: p? iff e = E::A }
 ```
 
 A test of several values, or of a pattern with a payload, stays a test:
@@ -5961,7 +5907,7 @@ A test of several values, or of a pattern with a payload, stays a test:
 ```fren
 enum E { A, B, C(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::C(_) }
+proc c(e: E): (p?) { ensure r: p? iff e is E::A | E::C(_) }
 ```
 "# },
   { code := "F0805", explanation := r#"Equations of one expression with values that patterns write, joined by `or` (a warning, `manual_pattern_test`).
@@ -5969,7 +5915,7 @@ comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::C(_) }
 Example:
 
 ```fren
-comp c { in status: Int pub out retry? ensure r: retry? iff status = 429 or status = 503 }
+proc c(status: Int): (retry?) { ensure r: retry? iff status = 429 or status = 503 }
 ```
 
 A pattern test says that `status` is one of these values directly, and
@@ -5978,7 +5924,7 @@ is an integer literal, a string literal or a variant without a payload.
 `fren fix` can fix this:
 
 ```fren
-comp c { in status: Int pub out retry? ensure r: retry? iff status is 429 | 503 }
+proc c(status: Int): (retry?) { ensure r: retry? iff status is 429 | 503 }
 ```
 
 A pattern test of the same expression joins the test, and the dual, `x !=
@@ -5992,7 +5938,7 @@ Example:
 ```fren
 enum E { A, B(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::A | E::B(_) }
+proc c(e: E): (p?) { ensure r: p? iff e is E::A | E::B(_) }
 ```
 
 The pattern names every variant of `E`, so it matches every value of `e`,
@@ -6002,7 +5948,7 @@ variants to test for.
 ```fren
 enum E { A, B(Int) }
 
-comp c { in e: E pub out p? ensure r: p? iff e is E::B(_) }
+proc c(e: E): (p?) { ensure r: p? iff e is E::B(_) }
 ```
 "# },
   { code := "F0804", explanation := r#"Two comparisons that one chained comparison writes (a warning, `chainable_comparison`).
@@ -6010,7 +5956,7 @@ comp c { in e: E pub out p? ensure r: p? iff e is E::B(_) }
 Example:
 
 ```fren
-comp c { in i: Int in n: Int pub out p? ensure r: p? iff 0 <= i and i < n }
+proc c(i: Int, n: Int): (p?) { ensure r: p? iff 0 <= i and i < n }
 ```
 
 `0 <= i < n` means `0 <= i and i < n`, and puts `i` between its bounds. A
@@ -6018,7 +5964,7 @@ comparison is written the other way round to chain, so `i >= 0 and i < n`
 fires too. `fren fix` can fix this:
 
 ```fren
-comp c { in i: Int in n: Int pub out p? ensure r: p? iff 0 <= i < n }
+proc c(i: Int, n: Int): (p?) { ensure r: p? iff 0 <= i < n }
 ```
 "# },
   { code := "F0832", explanation := r#"A `match` on a binder of its arm that the arm's pattern can match instead (a warning, `collapsible_match`).
@@ -6029,9 +5975,7 @@ Example:
 enum Shape { Circle(Int), Square(Int), Empty }
 enum Reply { Ok(Shape), Err(Int) }
 
-comp c {
-    in r: Reply
-    pub out n: Int
+proc c(r: Reply): (n: Int) {
     ensure rule: n = match r { Reply::Ok(s) => match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 }, _ => 0 }
 }
 ```
@@ -6044,9 +5988,7 @@ the body of the outer `_` arm, so a nested pattern says the same in one
 enum Shape { Circle(Int), Square(Int), Empty }
 enum Reply { Ok(Shape), Err(Int) }
 
-comp c {
-    in r: Reply
-    pub out n: Int
+proc c(r: Reply): (n: Int) {
     ensure rule: n = match r { Reply::Ok(Shape::Circle(_)) => 1, Reply::Ok(Shape::Square(_)) => 2, _ => 0 }
 }
 ```
@@ -6056,14 +5998,14 @@ comp c {
 Example:
 
 ```fren
-comp c { in n: Int pub out m: Int ensure r: m = match n { 1 | 2 | 3 => 1, _ => 0 } }
+proc c(n: Int): (m: Int) { ensure r: m = match n { 1 | 2 | 3 => 1, _ => 0 } }
 ```
 
 The alternatives match the integers from 1 to 3, without a gap, which the
 range `1..=3` says at once. `fren fix` can fix this:
 
 ```fren
-comp c { in n: Int pub out m: Int ensure r: m = match n { 1..=3 => 1, _ => 0 } }
+proc c(n: Int): (m: Int) { ensure r: m = match n { 1..=3 => 1, _ => 0 } }
 ```
 "# },
   { code := "F0834", explanation := r#"An or-pattern with `_` among its alternatives (a warning, `wildcard_in_or_patterns`).
@@ -6073,7 +6015,7 @@ Example:
 ```fren
 enum Signal { Stop, Slow, Go }
 
-comp c { in s: Signal pub out m: Int ensure r: m = match s { Signal::Stop => 0, Signal::Slow | _ => 1 } }
+proc c(s: Signal): (m: Int) { ensure r: m = match s { Signal::Stop => 0, Signal::Slow | _ => 1 } }
 ```
 
 `_` matches every value, so the other alternatives add nothing. `fren fix`
@@ -6082,7 +6024,7 @@ can fix this:
 ```fren
 enum Signal { Stop, Slow, Go }
 
-comp c { in s: Signal pub out m: Int ensure r: m = match s { Signal::Stop => 0, _ => 1 } }
+proc c(s: Signal): (m: Int) { ensure r: m = match s { Signal::Stop => 0, _ => 1 } }
 ```
 "# },
   { code := "F0835", explanation := r#"A range of a `match` arm that overlaps an earlier arm's pattern, neither within the other (a warning, `match_overlapping_arm`).
@@ -6090,7 +6032,7 @@ comp c { in s: Signal pub out m: Int ensure r: m = match s { Signal::Stop => 0, 
 Example:
 
 ```fren
-comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
+proc c(n: Int): (m: Int) { ensure r: m = match n { 0..=10 => 1, 5..=15 => 2, _ => 3 } }
 ```
 
 The integers from 5 to 10 are matched by the first arm, so the second
@@ -6099,7 +6041,7 @@ ranges so that they do not overlap, or so that the earlier one is within
 the later:
 
 ```fren
-comp c { in n: Int pub out m: Int ensure r: m = match n { 0..=10 => 1, 11..=15 => 2, _ => 3 } }
+proc c(n: Int): (m: Int) { ensure r: m = match n { 0..=10 => 1, 11..=15 => 2, _ => 3 } }
 ```
 "# },
   { code := "F0836", explanation := r#"Alternatives of one variant that differ in one value of its payload (`unnested_or_patterns`, allowed by default).
@@ -6112,7 +6054,7 @@ set_option fren.lint.unnested_or_patterns "warn"
 enum Light { Red, Amber, Green }
 enum Lamp { Lit(Light), Dark }
 
-comp c { in l: Lamp pub out m: Int ensure r: m = match l { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 } }
+proc c(l: Lamp): (m: Int) { ensure r: m = match l { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 } }
 ```
 
 An or-pattern nested in the payload says the same once. `fren fix` can fix
@@ -6122,7 +6064,7 @@ this:
 enum Light { Red, Amber, Green }
 enum Lamp { Lit(Light), Dark }
 
-comp c { in l: Lamp pub out m: Int ensure r: m = match l { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 } }
+proc c(l: Lamp): (m: Int) { ensure r: m = match l { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 } }
 ```
 "# },
   { code := "F0837", explanation := r#"A `match` on a `Bool` (`match_bool`, allowed by default).
@@ -6132,13 +6074,13 @@ Example:
 ```fren
 set_option fren.lint.match_bool "warn"
 
-comp c { in b? in x: Int pub out m: Int ensure r: m = match b? { true => x, false => 0 } }
+proc c(b?, x: Int): (m: Int) { ensure r: m = match b? { true => x, false => 0 } }
 ```
 
 An `if` says the same. `fren fix` can fix this:
 
 ```fren
-comp c { in b? in x: Int pub out m: Int ensure r: m = if b? then x else 0 }
+proc c(b?, x: Int): (m: Int) { ensure r: m = if b? then x else 0 }
 ```
 "# },
   { code := "F0838", explanation := r#"A chain of `if` that picks a value by conditions, as a table does (`manual_table`, allowed by default).
@@ -6148,7 +6090,7 @@ Example:
 ```fren
 set_option fren.lint.manual_table "warn"
 
-comp c { in x: Int pub out m: Int ensure r: m = if x > 10 then 2 else if x < 0 then 1 else 0 }
+proc c(x: Int): (m: Int) { ensure r: m = if x > 10 then 2 else if x < 0 then 1 else 0 }
 ```
 
 A table lists the cases one row each, and is checked for rows that may
@@ -6156,7 +6098,7 @@ both hold. `fren fix` does not rewrite the chain, since a chain whose tests
 overlap would fail that check:
 
 ```fren
-comp c { in x: Int pub out m: Int ensure r: m = table { x > 10 => 2, x < 0 => 1, _ => 0 } }
+proc c(x: Int): (m: Int) { ensure r: m = table { x > 10 => 2, x < 0 => 1, _ => 0 } }
 ```
 "# },
   { code := "F0758", explanation := r#"A decimal integer literal with a leading `0`, such as `010` (a warning, `zero_prefixed_literal`).
@@ -6164,7 +6106,7 @@ comp c { in x: Int pub out m: Int ensure r: m = table { x > 10 => 2, x < 0 => 1,
 Example:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x < 010 }
+proc c(x: Int): (p?) { ensure r: p? iff x < 010 }
 ```
 
 In C and some other languages, a leading `0` makes a literal octal, so a
@@ -6173,31 +6115,29 @@ it without the leading zeros, or, for octal, with `0o`. `fren fix` can fix
 this:
 
 ```fren
-comp c { in x: Int pub out p? ensure r: p? iff x < 10 }
+proc c(x: Int): (p?) { ensure r: p? iff x < 10 }
 ```
 "# },
-  { code := "F0779", explanation := r#"A member of a component out of order (`arbitrary_source_item_ordering`, allowed by default).
+  { code := "F0779", explanation := r#"A member of a procedure out of order (`arbitrary_source_item_ordering`, allowed by default).
 
 Example:
 
 ```fren
 set_option fren.lint.arbitrary_source_item_ordering "warn"
 
-comp c {
-    pub out p?
-    in x: Int
+proc c(x: Int): (p?) {
     ensure r: p? iff x > 0
+    assume a: x < 10
 }
 ```
 
-The members of a component are written in one order: `use`, `in`,
-`assume`, `out`, `inst`, `ensure`, `expect`, then `cover`. `fren fix` can fix this,
-unless a definition or a binding would then come before what it mentions:
+The members of a procedure are written in one order: `use`, `assume`,
+`exists`, `let` and `out`, `call`, `ensure`, `expect`, then `cover`. `fren fix` can fix this,
+unless a definition or an argument would then come before what it mentions:
 
 ```fren
-comp c {
-    in x: Int
-    pub out p?
+proc c(x: Int): (p?) {
+    assume a: x < 10
     ensure r: p? iff x > 0
 }
 ```
@@ -6211,14 +6151,14 @@ set_option fren.lint.single_call_fn "warn"
 
 fn double(n: Int): Int := 2 * n
 
-comp c { in x: Int pub out y: Int ensure r: y = double(x) }
+proc c(x: Int): (y: Int) { ensure r: y = double(x) }
 ```
 
 A function applied once names nothing that is shared. Write its body in
 place of the application, with the arguments in place of the parameters:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = 2 * x }
+proc c(x: Int): (y: Int) { ensure r: y = 2 * x }
 ```
 "# },
   { code := "F0840", explanation := r#"A conjunction that negates each pair of three or more operands (a warning, `manual_at_most_one`).
@@ -6226,7 +6166,7 @@ comp c { in x: Int pub out y: Int ensure r: y = 2 * x }
 Example:
 
 ```fren
-comp c { in a? in b? in c? pub out p? ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?) }
+proc c(a?, b?, c?): (p?) { ensure r: p? iff not (a? and b?) and not (a? and c?) and not (b? and c?) }
 ```
 
 The conjunction says that at most one of the operands holds, which
@@ -6236,7 +6176,7 @@ among the conjuncts. With the disjunction of the operands as well, as in
 fix this:
 
 ```fren
-comp c { in a? in b? in c? pub out p? ensure r: p? iff at_most_one?(a?, b?, c?) }
+proc c(a?, b?, c?): (p?) { ensure r: p? iff at_most_one?(a?, b?, c?) }
 ```
 "# },
   { code := "F0841", explanation := r#"A membership that names the first or last variants of an ordered enumeration (`manual_ordering`, allowed by default).
@@ -6248,7 +6188,7 @@ set_option fren.lint.manual_ordering "warn"
 
 pub ordered enum Level { Low, Mid, High, Top }
 
-comp c { in l: Level pub out p? ensure r: p? iff l in {Level::Low, Level::Mid} }
+proc c(l: Level): (p?) { ensure r: p? iff l in {Level::Low, Level::Mid} }
 ```
 
 `Level::Low` and `Level::Mid` are the first two variants of `Level`, so the
@@ -6262,7 +6202,7 @@ and the membership does not, which is why the lint is allowed by default.
 ```fren
 pub ordered enum Level { Low, Mid, High, Top }
 
-comp c { in l: Level pub out p? ensure r: p? iff l <= Level::Mid }
+proc c(l: Level): (p?) { ensure r: p? iff l <= Level::Mid }
 ```
 "# },
   { code := "F0842", explanation := r#"A newtype built from the field of one, or the field of a newtype just built (a warning, `redundant_newtype_roundtrip`).
@@ -6272,7 +6212,7 @@ Example:
 ```fren
 pub struct Ms(Int)
 
-comp c { in x: Ms pub out y: Ms ensure r: y = Ms(x.0) }
+proc c(x: Ms): (y: Ms) { ensure r: y = Ms(x.0) }
 ```
 
 `Ms(x.0)` is `x`, when `x` is an `Ms`, and `Ms(n).0` is `n`. Building a
@@ -6283,7 +6223,7 @@ can fix this:
 ```fren
 pub struct Ms(Int)
 
-comp c { in x: Ms pub out y: Ms ensure r: y = x }
+proc c(x: Ms): (y: Ms) { ensure r: y = x }
 ```
 "# },
   { code := "F0843", explanation := r#"A `min` or `max` with the least or greatest value of an ordered enumeration (a warning, `unnecessary_min_or_max`).
@@ -6293,7 +6233,7 @@ Example:
 ```fren
 pub ordered enum Level { Low, Mid, High }
 
-comp c { in l: Level pub out m: Level ensure r: m = l.max(Level::Low) }
+proc c(l: Level): (m: Level) { ensure r: m = l.max(Level::Low) }
 ```
 
 No value is below `Level::Low`, so `l.max(Level::Low)` is always `l`, and
@@ -6304,7 +6244,7 @@ fix this:
 ```fren
 pub ordered enum Level { Low, Mid, High }
 
-comp c { in l: Level pub out m: Level ensure r: m = l }
+proc c(l: Level): (m: Level) { ensure r: m = l }
 ```
 "# },
   { code := "F0810", explanation := r#"An `Int` that a constraint keeps at least 0 (a warning, `manual_nat`).
@@ -6312,21 +6252,21 @@ comp c { in l: Level pub out m: Level ensure r: m = l }
 Example:
 
 ```fren
-comp c { in n: Int pub out m: Int assume counts: n >= 0 ensure r: m = n + 1 }
+proc c(n: Int): (m: Int) { assume counts: n >= 0 ensure r: m = n + 1 }
 ```
 
 A `Nat` input brings the assumption that it is at least 0 with its type,
 and a `Nat` output the guarantee. Declare the variable a `Nat`, and
 remove its bound, or the constraint if nothing else is left of it.
-`fren fix` leaves this to the writer, since an instance or a refinement
+`fren fix` leaves this to the writer, since a call or a refinement
 in another file may need the `Int`:
 
 ```fren
-comp c { in n: Nat pub out m: Int ensure r: m = n + 1 }
+proc c(n: Nat): (m: Int) { ensure r: m = n + 1 }
 ```
 
-An instance must then bind the input to a `Nat`, since an `Int` is never
-narrowed, so the lint does not fire where an instance or a refinement in
+A call must then give the parameter a `Nat`, since an `Int` is never
+narrowed, so the lint does not fire where a call or a refinement in
 the same file keeps the variable an `Int`.
 "# },
   { code := "F0811", explanation := r#"A conditional that is the absolute value (a warning, `manual_abs`).
@@ -6334,14 +6274,14 @@ the same file keeps the variable an `Int`.
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = if x < 0 then -x else x }
+proc c(x: Int): (y: Int) { ensure r: y = if x < 0 then -x else x }
 ```
 
 `if x < 0 then -x else x`, and its forms with `<=`, `>`, `>=` and the
 branches swapped, are `x.abs`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x.abs }
+proc c(x: Int): (y: Int) { ensure r: y = x.abs }
 ```
 "# },
   { code := "F0812", explanation := r#"A conditional that is the absolute value of a difference (a warning, `manual_abs_diff`).
@@ -6349,14 +6289,14 @@ comp c { in x: Int pub out y: Int ensure r: y = x.abs }
 Example:
 
 ```fren
-comp c { in a: Int in b: Int pub out y: Int ensure r: y = if a > b then a - b else b - a }
+proc c(a: Int, b: Int): (y: Int) { ensure r: y = if a > b then a - b else b - a }
 ```
 
 `if a > b then a - b else b - a`, and its forms with `>=`, `<`, `<=` and
 the branches swapped, are `(a - b).abs`. `fren fix` can fix this:
 
 ```fren
-comp c { in a: Int in b: Int pub out y: Int ensure r: y = (a - b).abs }
+proc c(a: Int, b: Int): (y: Int) { ensure r: y = (a - b).abs }
 ```
 "# },
   { code := "F0813", explanation := r#"A conditional that is `min` or `max` (a warning, `manual_min_max`).
@@ -6364,14 +6304,14 @@ comp c { in a: Int in b: Int pub out y: Int ensure r: y = (a - b).abs }
 Example:
 
 ```fren
-comp c { in a: Int in b: Int pub out y: Int ensure r: y = if a < b then a else b }
+proc c(a: Int, b: Int): (y: Int) { ensure r: y = if a < b then a else b }
 ```
 
 `if a < b then a else b` is `a.min(b)`, and `if a < b then b else a` is
 `a.max(b)`, and so with `<=`, `>` and `>=`. `fren fix` can fix this:
 
 ```fren
-comp c { in a: Int in b: Int pub out y: Int ensure r: y = a.min(b) }
+proc c(a: Int, b: Int): (y: Int) { ensure r: y = a.min(b) }
 ```
 "# },
   { code := "F0814", explanation := r#"A conditional that keeps its operand between two bounds (a warning, `manual_clamp`).
@@ -6379,14 +6319,14 @@ comp c { in a: Int in b: Int pub out y: Int ensure r: y = a.min(b) }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = if x < 0 then 0 else if x > 9 then 9 else x }
+proc c(x: Int): (y: Int) { ensure r: y = if x < 0 then 0 else if x > 9 then 9 else x }
 ```
 
 Where the bounds are integer literals, the lower at most the upper, the
 conditional is `x.max(0).min(9)`. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
+proc c(x: Int): (y: Int) { ensure r: y = x.max(0).min(9) }
 ```
 "# },
   { code := "F0815", explanation := r#"A remainder made non-negative by hand (a warning, `manual_rem_euclid`).
@@ -6394,7 +6334,7 @@ comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = (x mod 7 + 7) mod 7 }
+proc c(x: Int): (y: Int) { ensure r: y = (x mod 7 + 7) mod 7 }
 ```
 
 `mod` is Euclidean: `x mod 7` is between 0 and 6 even where `x` is
@@ -6402,7 +6342,7 @@ negative, so adding the divisor and taking the remainder again changes
 nothing. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x mod 7 }
+proc c(x: Int): (y: Int) { ensure r: y = x mod 7 }
 ```
 "# },
   { code := "F0816", explanation := r#"A remainder by `1` or `-1` (a warning, `modulo_one`).
@@ -6410,14 +6350,14 @@ comp c { in x: Int pub out y: Int ensure r: y = x mod 7 }
 Example:
 
 ```fren
-comp c { in x: Int pub out even? ensure r: even? iff x mod 1 = 0 }
+proc c(x: Int): (even?) { ensure r: even? iff x mod 1 = 0 }
 ```
 
 Every integer is a multiple of `1`, so `x mod 1` is always `0`. The
 divisor is probably not the one meant:
 
 ```fren
-comp c { in x: Int pub out even? ensure r: even? iff x mod 2 = 0 }
+proc c(x: Int): (even?) { ensure r: even? iff x mod 2 = 0 }
 ```
 "# },
   { code := "F0817", explanation := r#"A `min` and a `max` whose bounds leave one value (a warning, `min_max`).
@@ -6425,14 +6365,14 @@ comp c { in x: Int pub out even? ensure r: even? iff x mod 2 = 0 }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x.min(0).max(9) }
+proc c(x: Int): (y: Int) { ensure r: y = x.min(0).max(9) }
 ```
 
 `x.min(0)` is at most 0, so its `max` with 9 is always 9; so too
 `x.max(9).min(0)` is always 0. The bounds are probably swapped:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x.max(0).min(9) }
+proc c(x: Int): (y: Int) { ensure r: y = x.max(0).min(9) }
 ```
 "# },
   { code := "F0818", explanation := r#"A record literal that copies most of its fields from one value (a warning, `manual_record_update`).
@@ -6442,7 +6382,7 @@ Example:
 ```fren
 struct Point { x: Int, y: Int, z: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = Point { x := 0, y := p.y, z := p.z } }
+proc c(p: Point): (q: Point) { ensure r: q = Point { x := 0, y := p.y, z := p.z } }
 ```
 
 The literal gives `x` a new value and reads `y` and `z` from `p`. The
@@ -6454,7 +6394,7 @@ fix this:
 ```fren
 struct Point { x: Int, y: Int, z: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = { p with x := 0 } }
+proc c(p: Point): (q: Point) { ensure r: q = { p with x := 0 } }
 ```
 "# },
   { code := "F0819", explanation := r#"A record update that gives every field (a warning, `needless_update`).
@@ -6464,7 +6404,7 @@ Example:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = { p with x := 0, y := 1 } }
+proc c(p: Point): (q: Point) { ensure r: q = { p with x := 0, y := 1 } }
 ```
 
 The update reads nothing from `p`: it is the record literal of the same
@@ -6474,17 +6414,15 @@ values:
 ```fren
 struct Point { x: Int, y: Int }
 
-comp c { in p: Point pub out q: Point ensure r: q = Point { x := 0, y := 1 } }
+proc c(p: Point): (q: Point) { ensure r: q = Point { x := 0, y := 1 } }
 ```
 "# },
-  { code := "F0820", explanation := r#"A cover goal that some behaviour meets whatever the component says (a warning, `trivial_cover`).
+  { code := "F0820", explanation := r#"A cover goal that some behaviour meets whatever the procedure says (a warning, `trivial_cover`).
 
 Example:
 
 ```fren
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
     cover big: when x > 10, y > 11
 }
@@ -6493,12 +6431,10 @@ comp c {
 A cover goal with a trigger holds wherever the trigger is false, so a
 behaviour with `x <= 10` meets it. The lint also fires on a goal written
 the same as an assumption or a guarantee, which every behaviour that
-meets the component satisfies. Write the scenario as a conjunction:
+meets the procedure satisfies. Write the scenario as a conjunction:
 
 ```fren
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
     cover big: x > 10 and y > 11
 }
@@ -6509,7 +6445,7 @@ comp c {
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = (let d := x + 1 in d) }
+proc c(x: Int): (y: Int) { ensure r: y = (let d := x + 1 in d) }
 ```
 
 The name says nothing that its definition does not, since nothing else
@@ -6517,7 +6453,7 @@ mentions it. Write the definition in place of the name, and drop the
 definition, or the clause if it has no other. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 "# },
   { code := "F0825", explanation := r#"A definition `x! := x` of a `let` or `where` clause (a warning, `redundant_locals`).
@@ -6525,7 +6461,7 @@ comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
 Example:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = (let x! := x in x + 1) }
+proc c(x: Int): (y: Int) { ensure r: y = (let x! := x in x + 1) }
 ```
 
 The definition names the value that `x` already has, so `x` means the
@@ -6533,7 +6469,7 @@ same with it and without it; perhaps another expression was meant. Remove
 the definition, or the clause if it has no other. `fren fix` can fix this:
 
 ```fren
-comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
+proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
 ```
 "# },
   { code := "F0826", explanation := r#"A run of `and` or `or` whose operands are one expression at each variant of an enumeration (a warning, `manual_forall`).
@@ -6543,7 +6479,7 @@ Example:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in s: Set<Mode> pub out p? ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
+proc c(s: Set<Mode>): (p?) { ensure r: p? iff Mode::Heat in s and Mode::Cool in s and Mode::Off in s }
 ```
 
 A `forall` over the enumeration says the same once, and an `exists` for
@@ -6554,7 +6490,7 @@ quantifier might change. `fren fix` can fix this:
 ```fren
 enum Mode { Heat, Cool, Off }
 
-comp c { in s: Set<Mode> pub out p? ensure r: p? iff (forall (mode: Mode), mode in s) }
+proc c(s: Set<Mode>): (p?) { ensure r: p? iff (forall (mode: Mode), mode in s) }
 ```
 "# },
   { code := "F0827", explanation := r#"A quantifier over a type of one value (a warning, `trivial_quantifier`).
@@ -6564,7 +6500,7 @@ Example:
 ```fren
 enum Solo { Only }
 
-comp c { in s: Set<Solo> pub out p? ensure r: p? iff (forall (u: Solo), u in s) }
+proc c(s: Set<Solo>): (p?) { ensure r: p? iff (forall (u: Solo), u in s) }
 ```
 
 A `forall` or an `exists` over a type of one value is its body at that
@@ -6574,7 +6510,7 @@ fix` can fix this, for a variant without a payload:
 ```fren
 enum Solo { Only }
 
-comp c { in s: Set<Solo> pub out p? ensure r: p? iff Solo::Only in s }
+proc c(s: Set<Solo>): (p?) { ensure r: p? iff Solo::Only in s }
 ```
 "# }
 ]

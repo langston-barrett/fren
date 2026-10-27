@@ -1,8 +1,8 @@
 error[F0385]: `Option` takes 1 type argument, but none was given
- --> test/cli/types/f0385_missing_type_arguments.fren:3:16
+ --> test/cli/types/f0385_missing_type_arguments.fren:3:11
   |
-3 | comp c { in x: Option }
-  |                ^^^^^^ no type arguments
+3 | proc c(x: Option) {}
+  |           ^^^^^^ no type arguments
   |
   = note: `Option` is generic, with the type parameter `T`
   = help: write it with its argument, as in `Option<Int>`

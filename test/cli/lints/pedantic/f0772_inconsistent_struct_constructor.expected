@@ -1,16 +1,16 @@
 warning[F0772]: the fields of this literal are not in the order `Cell` declares them
- --> test/cli/lints/pedantic/f0772_inconsistent_struct_constructor.fren:6:68
+ --> test/cli/lints/pedantic/f0772_inconsistent_struct_constructor.fren:6:59
   |
-6 | comp c { in row: Int in x: Int pub out cell: Cell ensure r: cell = Cell { layer := 0, column := (x + 1), row } }
-  |                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ fields out of order
+6 | proc c(row: Int, x: Int): (cell: Cell) { ensure r: cell = Cell { layer := 0, column := (x + 1), row } }
+  |                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ fields out of order
   |
   = note: `Cell` declares `row`, `column` and `layer`, in this order
   = help: `fren fix` can fix this
   = note: `inconsistent_struct_constructor` is set to `warn`
 help: write them in that order
   |
-6 - comp c { in row: Int in x: Int pub out cell: Cell ensure r: cell = Cell { layer := 0, column := (x + 1), row } }
-6 + comp c { in row: Int in x: Int pub out cell: Cell ensure r: cell = Cell { row, column := (x + 1), layer := 0 } }
+6 - proc c(row: Int, x: Int): (cell: Cell) { ensure r: cell = Cell { layer := 0, column := (x + 1), row } }
+6 + proc c(row: Int, x: Int): (cell: Cell) { ensure r: cell = Cell { row, column := (x + 1), layer := 0 } }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

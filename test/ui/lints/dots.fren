@@ -1,13 +1,7 @@
 -- `literal_dot_in_pattern`, in both front ends: a `.` between two letters
 -- or digits in a pattern.
 
-comp dots {
-    in s: String
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-
+proc dots(s: String): (p1?, p2?, p3?, p4?) {
     ensure r1: p1? iff s.matches?(r"v1.2")  --~ warning: the `.` in `1.2` matches any character, not only a dot
     ensure r2: p2? iff s.matches?(".*file.txt|v1.2.3")  --~ warning: each of these `.` matches any character, not only a dot
     -- Neither neighbour is a literal, or the `.` is escaped, in a class, or quantified.

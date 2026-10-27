@@ -1,7 +1,7 @@
 error[F0611]: an index of `first::r` may be out of range
- --> test/cli/results/f0611_index.fren:6:19
+ --> test/cli/results/f0611_index.fren:3:19
   |
-6 |     ensure r: x = q[0]
+3 |     ensure r: x = q[0]
   |                   ^^^^ may be out of range
   |
   = counterexample: q = [], x = 0

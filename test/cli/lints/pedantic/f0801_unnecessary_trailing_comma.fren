@@ -9,4 +9,4 @@ pub enum Fan {
     High,
 }
 
-comp c { in x: Int pub out q: Seq<Int> := [x, 1, ] }
+proc c(x: Int): (q: Seq<Int>) { out q := [x, 1, ] }

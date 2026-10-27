@@ -3,36 +3,30 @@
 -- comments and the blank lines before it, but for the first.
 enum Shape { Square, Circle }
 
-comp helper {
-    in x: Int
-    pub out v: Int
+proc helper(x: Int): (v: Int) {
     ensure r: v = x
 }
 
-comp c {
-    ensure first: x >= 0
-
+proc c(x: Int, shape: Shape): (
     -- The result.
-    pub det out y: Int  -- a trailing comment
-    in x: Int
+    det y: Int,         -- a trailing comment
+) {
+    ensure first: x >= 0
 
     ensure r: y = x + w.v
     expect square: shape = Square or y = x + w.v
     set_option fren.evidence "tested" in
-    inst w: helper { x }
+    call w := helper(x)
     use self::Shape::Square
     assume small: x < 100
-    in shape: Shape
 }
 
 -- Not fixed: in order, `z` would come before the instance it mentions.
-comp mentions {
-    in x: Int
-    inst w: helper { x }
-    out z: Int := w.v
-    pub out y: Int
+proc mentions(x: Int): (y: Int) {
+    call w := helper(x)
+    let z: Int := w.v
     ensure r: y = z
 }
 
 -- Not fixed: two members on one line.
-comp one_line { pub out y: Int in x: Int ensure r: y = x }
+proc one_line(x: Int): (y: Int) { ensure r: y = x }

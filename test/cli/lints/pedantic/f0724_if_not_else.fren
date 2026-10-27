@@ -1,13 +1,7 @@
 -- `if_not_else`, which is allowed by default, but not on a chain of `else if`.
 set_option fren.lint.if_not_else "warn"
 
-comp c {
-    in a?
-    in x: Int
-    in y: Int
-    pub out m: Int
-    pub out n: Int
-
+proc c(a?, x: Int, y: Int): (m: Int, n: Int) {
     ensure r1: m = if not a? then x else y
     ensure r2: n = if x != y then x else if a? then y else 0
 }

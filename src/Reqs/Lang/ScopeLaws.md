@@ -15,19 +15,19 @@ local, from where the test is and where the name is mentioned:
 ```fren
 pub mod lang
 
-pub comp test_local {
-    in declaration: Declared  -- a binder of the test
-    in context: TestContext      -- what the test's chain is a part of
-    in operands: Nat             -- the chain's operands
-    in test_at: Nat              -- the test's position among them, from 0
-    in site: Site                -- where the name is mentioned
-
+pub proc test_local(
+    declaration: Declared,    -- a binder of the test
+    context: TestContext,        -- what the test's chain is a part of
+    operands: Nat,               -- the chain's operands
+    test_at: Nat,                -- the test's position among them, from 0
+    site: Site,                  -- where the name is mentioned
+): (det entry: Local) {
     assume within: test_at < operands
     assume binder: declaration.kind = BindingKind::PatternBinder
 
-    pub det out entry: Local := Local { declaration, visible? := visibility.visible? }
+    out entry := Local { declaration, visible? := visibility.visible? }
 
-    inst visibility: test_scope { context, operands, test_at, site }
+    call visibility := test_scope(context, operands, test_at, site)
 
     -- A binder is in scope in a later operand of its chain, and not in an earlier one.
     expect later: when site is Site::Operand(k) and test_at < k < operands, entry.visible?
@@ -63,11 +63,12 @@ pub fn named_head(b: Binding): Head := match b.kind {
 `lang::named` is the layer of one name written alone:
 
 ```fren
-pub comp named {
+pub proc named(
+    binding: Binding,      -- what the name resolves to
+): (det head: Head) {
     use self::BindingKind::{Constant, Input, Opened, Output, Variant}
-    in binding: Binding    -- what the name resolves to
 
-    pub det out head: Head := named_head(binding)
+    out head := named_head(binding)
 
     -- A component's variable is read from the environment, by its name, and
     -- a constant and a variant are not.

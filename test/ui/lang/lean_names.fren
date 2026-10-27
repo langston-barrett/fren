@@ -6,9 +6,7 @@
 pub enum Option! { None, Some(Int) }
 pub struct List { x: Int }
 
-comp c {
-    in x: Option
-    in l: List
+proc c(x: Option, l: List) {
     expect some: when x = Option::Some(3), x != Option::None
     expect field: when l = List { x := 1 }, l.x = 1
 }
@@ -22,13 +20,7 @@ pub type Id
 pub fn max(a: Int, b: Int): Int := a.max(b)
 set_option fren.lint.non_upper_case_constants "allow" in
 pub const Fin: Int := 3
-pub comp id {
-    in a: Array
-    in e: Except
-    in u: Unit
-    in i: Id
-    in j: Id
-    pub out y: Int
+pub proc id(a: Array, e: Except, u: Unit, i: Id, j: Id): (y: Int) {
     ensure r: y = max(u.0, Fin)
     expect bound: y >= 3
     expect kinds: a = Array::Empty or a != Array::Empty
@@ -41,13 +33,10 @@ pub comp id {
 pub enum Ordering { Lt, Eq, Gt }
 pub struct Prod { fst: Int, snd: Int }
 
-comp uses {
-    in x: Option
-    in p: Prod
-    in f?
-    pub out n: Int := match x { Option::Some(k) => k, Option::None => 0 }
-    pub out q: Prod := { p with fst := n }
-    pub out t: Int := table { f? => 1, _ => 2 }
+proc uses(x: Option, p: Prod, f?): (n: Int, q: Prod, t: Int) {
+    out n := match x { Option::Some(k) => k, Option::None => 0 }
+    out q := { p with fst := n }
+    out t := table { f? => 1, _ => 2 }
     expect matched: when x = Option::Some(4), n = 4
     expect updated: q.fst = n and q.snd = p.snd
     expect tabled: t >= 1
@@ -60,9 +49,7 @@ comp uses {
 mod option
 pub enum Option! { None, Some(Int) }
 pub struct List { x: Int }
-comp m {
-    in x: Option
-    in l: List
+proc m(x: Option, l: List) {
     expect some: when x = Option::Some(3), x != Option::None
     expect field: when l = List { x := 1 }, l.x = 1
 }

@@ -6,20 +6,18 @@
 enum Mode { Heat, Cool, Off }
 enum Solo { Only }
 
-pub comp c {
-    in x: Int
-    in s: Set<Mode>
-    in t: Set<Solo>
-    in mode: Mode
-    pub out a: Int
-    pub out b: Int
-    pub out p?
-    pub out q?
-    pub out w?
-    pub out z?
-    pub det out d: Int := m where k := 2, m := x * k
-    pub det out e?
-        := Mode::Heat in s or Mode::Cool in s or Mode::Off in s
+pub proc c(x: Int, s: Set<Mode>, t: Set<Solo>, mode: Mode): (
+    a: Int,
+    b: Int,
+    p?,
+    q?,
+    w?,
+    z?,
+    det d: Int,
+    det e?,
+) {
+    out d := m where k := 2, m := x * k
+    out e? := Mode::Heat in s or Mode::Cool in s or Mode::Off in s
 
     ensure r1: a = (let k := x + 1 in k) * 2
     ensure r2: b = (let x! := x, k := 2 in x * k)

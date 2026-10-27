@@ -1,4 +1,4 @@
 -- `bool_equality`, in parentheses where `iff` needs them.
 set_option fren.lint.bool_equality "warn"
 
-comp c { in a? in b? in c? pub out p? ensure r: p? iff a? = b? and c? }
+proc c(a?, b?, c?): (p?) { ensure r: p? iff a? = b? and c? }

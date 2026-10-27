@@ -1,3 +1,4 @@
--- `=` instead of `:=` in a binding (F0104).
-comp sub { in a: Int }
-comp c { inst s: sub { a = 1 } }
+-- `=` instead of `:=` in a binding of a refinement (F0104).
+proc a(n: Int) {}
+proc c(x: Int) {}
+refine r: c refines a { n = x }

@@ -1,28 +1,28 @@
 warning[F0763]: this comparison is always `true`
-  --> test/cli/lints/suspicious/f0763_absurd_ordered.fren:11:22
-   |
-11 |     ensure r: p? iff l >= Level::Low or Level::High < l
-   |                      ^^^^^^^^^^^^^^^ `Level::Low` is the least value of its type
-   |
-   = note: the bound or the operator is probably not the one meant
-   = note: `absurd_extreme_comparisons` is `warn` by default
-   = help: to allow it, `set_option fren.lint.absurd_extreme_comparisons "allow"`
+ --> test/cli/lints/suspicious/f0763_absurd_ordered.fren:7:22
+  |
+7 |     ensure r: p? iff l >= Level::Low or Level::High < l
+  |                      ^^^^^^^^^^^^^^^ `Level::Low` is the least value of its type
+  |
+  = note: the bound or the operator is probably not the one meant
+  = note: `absurd_extreme_comparisons` is `warn` by default
+  = help: to allow it, `set_option fren.lint.absurd_extreme_comparisons "allow"`
 
 warning[F0763]: this comparison is always `false`
-  --> test/cli/lints/suspicious/f0763_absurd_ordered.fren:11:41
-   |
-11 |     ensure r: p? iff l >= Level::Low or Level::High < l
-   |                                         ^^^^^^^^^^^^^^^ `Level::High` is the greatest value of its type
-   |
-   = note: the bound or the operator is probably not the one meant
+ --> test/cli/lints/suspicious/f0763_absurd_ordered.fren:7:41
+  |
+7 |     ensure r: p? iff l >= Level::Low or Level::High < l
+  |                                         ^^^^^^^^^^^^^^^ `Level::High` is the greatest value of its type
+  |
+  = note: the bound or the operator is probably not the one meant
 
 warning[F0763]: this comparison is always `true`
-  --> test/cli/lints/suspicious/f0763_absurd_ordered.fren:12:22
-   |
-12 |     ensure s: q? iff g <= Grade(Level::High)
-   |                      ^^^^^^^^^^^^^^^^^^^^^^^ `Grade(Level::High)` is the greatest value of its type
-   |
-   = note: the bound or the operator is probably not the one meant
+ --> test/cli/lints/suspicious/f0763_absurd_ordered.fren:8:22
+  |
+8 |     ensure s: q? iff g <= Grade(Level::High)
+  |                      ^^^^^^^^^^^^^^^^^^^^^^^ `Grade(Level::High)` is the greatest value of its type
+  |
+  = note: the bound or the operator is probably not the one meant
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
 

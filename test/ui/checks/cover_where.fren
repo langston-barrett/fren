@@ -1,8 +1,5 @@
 -- A cover goal may end with a `where` clause, as any other constraint.
-comp heater {
-    in temp: Int
-    pub out alarm?
-
+proc heater(temp: Int): (alarm?) {
     ensure r: alarm? iff hot? where limit := 100, hot? := temp > limit
 
     cover overheat: hot? and alarm? where hot? := temp > 100

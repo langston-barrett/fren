@@ -14,15 +14,14 @@ type Present := Option<Int> is Option::Some(_)
 
 fn read(Int): Option<Byte>
 
-comp holder {
-    in x: Option<Byte>
-    in d: Option<Int is 0..=9>
-    in p: Pair<Byte, Option<Int is 1..>>
-    in t: Tagged<Byte>
-    in s: Present
-    in n: Int
-    pub out y: Int
-
+proc holder(
+    x: Option<Byte>,
+    d: Option<Int is 0..=9>,
+    p: Pair<Byte, Option<Int is 1..>>,
+    t: Tagged<Byte>,
+    s: Present,
+    n: Int,
+): (y: Int) {
     ensure r: y = match x { Option::Some(b) => b, Option::None => 0 }
 
     expect byte: match x { Option::Some(b) => 0 <= b <= 255, Option::None => true }
@@ -35,14 +34,19 @@ comp holder {
     expect bounded: y < 255   --~ error: expectation `generics_pattern_types::holder::bounded` does not hold
 }
 
-comp giver {
-    in n: Int
-    pub det out ok: Option<Byte> := if 0 <= n <= 255 then Option::Some(n) else Option::None
-    pub det out bad: Option<Byte> := Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::bad` may not have the type `Option<Byte>`
-    pub det out pair: Pair<Byte, Int> := Pair { fst := n, snd := n }   --~ error: a value in `generics_pattern_types::giver::pair` may not have the type `Pair<Byte, Int>`
-    pub det out marked: Tagged<Int> := Tagged::Marked(n, 0)   --~ error: a value in `generics_pattern_types::giver::marked` may not have the type `Int is 0..=3`
-    pub det out some: Present := if n > 0 then Option::None else Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::some` may not have the type `Present`
-    inst h: holder { x := Option::Some(n), d := Option::None, p := Pair { fst := 0, snd := Option::None }, t := Tagged::Plain(0), s := Option::Some(0), n }   --~ error: the input `x` of `generics_pattern_types::holder` may not have its type `Option<Byte>` for instance `generics_pattern_types::giver::h`
+proc giver(n: Int): (
+    det ok: Option<Byte>,
+    det bad: Option<Byte>,
+    det pair: Pair<Byte, Int>,
+    det marked: Tagged<Int>,
+    det some: Present,
+) {
+    out ok := if 0 <= n <= 255 then Option::Some(n) else Option::None
+    out bad := Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::bad` may not have the type `Option<Byte>`
+    out pair := Pair { fst := n, snd := n }   --~ error: a value in `generics_pattern_types::giver::pair` may not have the type `Pair<Byte, Int>`
+    out marked := Tagged::Marked(n, 0)   --~ error: a value in `generics_pattern_types::giver::marked` may not have the type `Int is 0..=3`
+    out some := if n > 0 then Option::None else Option::Some(n)   --~ error: a value in `generics_pattern_types::giver::some` may not have the type `Present`
+    call h := holder(Option::Some(n), Option::None, Pair { fst := 0, snd := Option::None }, Tagged::Plain(0), Option::Some(0), n)   --~ error: the parameter `x` of `generics_pattern_types::holder` may not have its type `Option<Byte>` for call `generics_pattern_types::giver::h`
 }
 
 -- A quantifier ranges over an instance's values that meet its arguments'

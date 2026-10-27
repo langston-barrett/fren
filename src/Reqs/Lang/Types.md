@@ -113,7 +113,7 @@ not unbounded: an `Int` is arbitrarily large, but it is one value.
 Values of an unbounded type are built from finitely many variants, so
 every recursive enumeration has a variant whose payload does not have its
 own type (see [Items](Items.md#enumerations)). An output may not have an
-unbounded type (see [Components](Components.md#members)), so that the
+unbounded type (see [Procedures](Procedures.md#members)), so that the
 [realizability check](../Check.md#realizability), the only check that asks
 whether outputs exist, never asks for an unbounded value.
 
@@ -130,20 +130,20 @@ an error rather than an obligation. Lean has `Nat`, and the solver has
 is an `Int`, so a `Nat` is accepted wherever an `Int` is expected, as an
 argument, a binding, a definition or an operand: it is *widened* to an
 `Int`. An `Int` is never accepted where a `Nat` is expected, even where it
-happens to be at least 0: there is no conversion that narrows. So with `in
-n: Nat`, `n + 1` is a `Nat`, but `n - 1` is an `Int`, and `out m: Nat := n
-- 1` is an error (see [Natural numbers](Expressions.md#natural-numbers)
+happens to be at least 0: there is no conversion that narrows. So with the
+parameter `n: Nat`, `n + 1` is a `Nat`, but `n - 1` is an `Int`, and `let
+m: Nat := n - 1` is an error (see [Natural numbers](Expressions.md#natural-numbers)
 for the types of the operators and literals). Arithmetic never truncates.
 
 `lang::widening` states when an expression is accepted where a type is
 expected, from the expression's type and the expected type:
 
 ```fren
-pub comp widening {
+pub proc widening(
+    found: Ty,           -- the expression's type
+    expected: Ty,        -- the type its place expects
+): (det accepted?) {
     use self::ValueType::{IntTy, NatTy}
-    in found: Ty         -- the expression's type
-    in expected: Ty      -- the type its place expects
-    pub det out accepted?
 
     ensure rule: accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
 
@@ -155,8 +155,8 @@ pub comp widening {
 
 This is the rule wherever a type is declared: an argument of a function
 application, a value of a variant's payload, a field of a record literal
-or of a record update, a binding of an instance or of a refinement, a
-defined output's definition, a constant's value, and a defined function's
+or of a record update, an argument of a call, a binding of a refinement, a
+definition of a result or `let` variable, a constant's value, and a defined function's
 body. An assumption, guarantee, expectation or cover goal, and a global
 expectation, is declared a `Bool`. An expression that is not accepted is
 reported at the expression (`F0304`), with its type, the declared one, and
@@ -165,7 +165,7 @@ a note that says where the type is declared, as in "`x` of `sub` has type
 same error at the same expression.
 
 A variable of type `Nat` brings the constraint that it is at least 0 (see
-[Components](Components.md#natural-numbers)), and so does each application
+[Procedures](Procedures.md#natural-numbers)), and so does each application
 of an uninterpreted function whose result is a `Nat` (see
 [Items](Items.md#uninterpreted-functions)). In Lean, a `Nat` is Lean's
 `Nat`, and widening is Lean's coercion `↑` to `Int`.
@@ -189,10 +189,10 @@ may be written:
 pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, RecursivePayload, Element, Argument }
 
 set_option fren.evidence "enumerated" in
-pub comp nat_place {
+pub proc nat_place(
+    place: TypePlace,        -- where the type `Nat` is written
+): (det accepted?) {
     use self::TypePlace::{Argument, Element, Field, Payload, RecursivePayload}
-    in place: TypePlace      -- where the type `Nat` is written
-    pub det out accepted?
 
     ensure rule: accepted? iff not place in {RecursivePayload, Element, Argument}
 
@@ -234,7 +234,7 @@ is a `T`, so it is accepted wherever a `T` is expected: it is widened. A
 value must match `P`, which a [check](../Check.md#pattern-types) confirms
 with the solver, where the type is declared:
 
-- a defined output's definition, a defined function's body, a constant's
+- a definition of a result or `let` variable, a defined function's body, a constant's
   value, a field of a record literal or of a record update, a value of a
   variant's payload, a newtype's constructor's argument, the sum or
   difference of a newtype's `+` or `-`, which builds one (see
@@ -242,9 +242,9 @@ with the solver, where the type is declared:
   a [`let` or `where`](Let.md) definition, and an argument of a function
   application, each by the pattern-type check, under the hypotheses of
   where it is written, as an index's definedness is;
-- a binding of an instance, by the [instance
-  check](../Check.md#instance-assumptions), since the instantiated
-  component assumes what its input's pattern type brings.
+- an argument of a call, by the [call
+  check](../Check.md#call-assumptions), since the called
+  procedure assumes what its parameter's pattern type brings.
 
 Two types are compared with their patterns left out, wherever they are
 compared: so `Set<Int is 1..>` is accepted where a `Set<Int>` is
@@ -258,12 +258,13 @@ expected, and whether the declared type has a pattern:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp pattern_widening {
-    in patterned?            -- the declared type has a pattern, at the top or in an element type
-    in widened?              -- `widening` accepts the expression's type, which has no pattern, where the declared type without its patterns is expected
-    pub det out accepted?
-    pub det out obliged?     -- a check confirms that the value matches
-
+pub proc pattern_widening(
+    patterned?,              -- the declared type has a pattern, at the top or in an element type
+    widened?,                -- `widening` accepts the expression's type, which has no pattern, where the declared type without its patterns is expected
+): (
+    det accepted?,
+    det obliged?,            -- a check confirms that the value matches
+) {
     ensure rule: accepted? iff widened?
     ensure obligation: obliged? iff (accepted? and patterned?)
 
@@ -277,8 +278,8 @@ its pattern, if it has one, and for a set, relation or sequence, that each
 element, or each member of each pair, meets the obligation of its element
 type, which is that of an element type alone. A record's, newtype's or
 enumeration's own fields and payloads ask nothing more: its values were
-built to meet them. At an instance's binding, the value asks nothing where
-it is given, since the instance check asks the same of the binding. Where
+built to meet them. At a call's argument, the value asks nothing where
+it is given, since the call check asks the same of the argument. Where
 `lang::ValuePlace` is where a value is given and `lang::Duty` what an
 obligation asks of it, `lang::obligation` states this:
 
@@ -289,13 +290,13 @@ pub enum ValuePlace { Definition, Argument, Field, Payload, Construction, Let, B
 -- its element type's obligation; or both.
 pub enum Duty { Nothing, Matches, Each, MatchesAndEach }
 
-pub comp obligation {
+pub proc obligation(
+    place: ValuePlace,           -- where the value is given
+    type_kind: ValueType,        -- the declared type's kind
+    pattern?,                    -- the declared type has a pattern at the top
+    element: Duty,               -- for a set, relation or sequence, its element type's obligation
+): (det duty: Duty) {
     use self::ValueType::{RelTy, SeqTy, SetTy}
-    in place: ValuePlace         -- where the value is given
-    in type_kind: ValueType      -- the declared type's kind
-    in pattern?                  -- the declared type has a pattern at the top
-    in element: Duty             -- for a set, relation or sequence, its element type's obligation
-    pub det out duty: Duty
 
     ensure rule: duty = (if place = ValuePlace::Binding then Duty::Nothing
         else if pattern? and each? then Duty::MatchesAndEach
@@ -311,8 +312,8 @@ pub comp obligation {
 
 `lang::obligation` is the detailed statement of `lang::pattern_widening`:
 a value has an obligation exactly where its declared type has a pattern,
-at the top or in an element type, and it is not given at an instance's
-binding, which the instance check asks instead:
+at the top or in an element type, and it is not given at a call's
+argument, which the call check asks instead:
 
 ```fren
 refine obligation_widening: obligation refines pattern_widening {
@@ -329,7 +330,7 @@ refine obligation_widening: obligation refines pattern_widening {
 A variable, a parameter or an application of an uninterpreted function
 whose type is a pattern type brings the constraint that its value
 matches the pattern, as a [`Nat`](#natural-numbers) brings that it is at
-least 0 (see [Components](Components.md#pattern-types)). A record whose
+least 0 (see [Procedures](Procedures.md#pattern-types)). A record whose
 field, or an enumeration whose payload, has a pattern type or is a `Nat`
 brings the constraints of those on its fields and payloads, and so on
 within them: a variable `p` of `struct Packet { length: Byte }` brings `p.length
@@ -359,13 +360,13 @@ enumeration is recursive:
 pub enum PatternPlace { Top, Field, Payload, Element }
 
 set_option fren.evidence "enumerated" in
-pub comp pattern_place {
+pub proc pattern_place(
+    place: PatternPlace,         -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
+    recursive?,                  -- for a payload: its enumeration is recursive
+): (det decidable?) {
     use self::PatternPlace::{Element, Payload, Top}
-    in place: PatternPlace       -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
-    in recursive?                -- for a payload: its enumeration is recursive
 
     assume payloads_only: when recursive?, place = Payload
-    pub det out decidable?
 
     ensure rule: decidable? iff not (place = Element or (place = Payload and recursive?))
 
@@ -376,7 +377,7 @@ pub comp pattern_place {
 
 In Lean, a pattern type is its base type, and the constraints are
 hypotheses of the checks, as a `Nat` function's results are (see
-[Generated declarations](../Generated.md#components)). To the solver, it is
+[Generated declarations](../Generated.md#procedures)). To the solver, it is
 its base type, with the constraints among each query's hypotheses and the
 obligations as queries of their own (see [Checks](../Check.md)), so both
 front ends report the same verdicts and minimal sets.
@@ -395,13 +396,12 @@ base type that match, in their order. `lang::pattern_finite` states this:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp pattern_finite {
-    in base_finite?          -- the base type is finite
-    in integers?             -- the base type is `Int` or `Nat`
-    in bounded?              -- every alternative of the pattern is a bounded range or an integer
-
+pub proc pattern_finite(
+    base_finite?,            -- the base type is finite
+    integers?,               -- the base type is `Int` or `Nat`
+    bounded?,                -- every alternative of the pattern is a bounded range or an integer
+): (det finite?) {
     assume not_both: when integers?, not base_finite?
-    pub det out finite?
 
     ensure rule: finite? iff (base_finite? or (integers? and bounded?))
 
@@ -438,13 +438,14 @@ core, so it opts out:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp pattern_member {
-    in alts: Seq<Alternative>    -- the pattern's alternatives, in order
-    in x: Int
-    in k: Int                    -- any position among the alternatives
-    pub out member?
-    pub out witness: Int         -- the position of an alternative that `x` is within, if it matches
-
+pub proc pattern_member(
+    alts: Seq<Alternative>,      -- the pattern's alternatives, in order
+    x: Int,
+    k: Int,                      -- any position among the alternatives
+): (
+    member?,
+    witness: Int,                -- the position of an alternative that `x` is within, if it matches
+) {
     ensure within: when 0 <= k < alts.len and above?(alts[k].lo, x) and below?(alts[k].hi, x), member?
     ensure witnessed: when member?,
         0 <= witness < alts.len and above?(alts[witness].lo, x) and below?(alts[witness].hi, x)
@@ -469,12 +470,11 @@ pub fn bounded?(a: Alternative) := a.lo != Bound::Open and a.hi != Bound::Open
 -- How many integers a bounded alternative has.
 pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bound_value(a.hi) then bound_value(a.hi) - bound_value(a.lo) + 1 else 0
 
-pub comp pattern_count {
-    in alts: Seq<Alternative>
-
+pub proc pattern_count(alts: Seq<Alternative>): (
+    det finite?,
+    count: Nat,                  -- how many integers it matches, when finitely many
+) {
     assume few: alts.len <= 2
-    pub det out finite?
-    pub out count: Nat           -- how many integers it matches, when finitely many
 
     ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
     ensure none: when alts = [], count = 0
@@ -499,12 +499,13 @@ and so does its refinement:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp pattern_bounds {
-    in los: Seq<Bound>       -- the alternatives' lower bounds, in order
-    in his: Seq<Bound>       -- their upper bounds, in the same order
-    pub det out finite?      -- the pattern matches finitely many integers
-    pub det out counted?     -- how many integers it matches is counted from the bounds
-
+pub proc pattern_bounds(
+    los: Seq<Bound>,         -- the alternatives' lower bounds, in order
+    his: Seq<Bound>,         -- their upper bounds, in the same order
+): (
+    det finite?,             -- the pattern matches finitely many integers
+    det counted?,            -- how many integers it matches is counted from the bounds
+) {
     ensure finite: finite? iff not (Bound::Open in los or Bound::Open in his)
     ensure counts: counted? iff finite?
 
@@ -573,7 +574,11 @@ pub fn ordered_in?(k: ValueType, name: TypeName, ordered_items: Set<TypeName>) :
     _ => false,
 }
 
-pub comp ordered_type {
+pub proc ordered_type(
+    base: Ty,                         -- the type without its pattern: a pattern type's base, an alias's type
+    patterned?,                       -- written `T is P`, directly or through an alias
+    ordered_items: Set<TypeName>,     -- the enumerations, records and newtypes declared `ordered`
+): (det ordered?) {
     use self::ValueType::{
         AbstractTy,
         BoolTy,
@@ -586,10 +591,6 @@ pub comp ordered_type {
         SetTy,
         StringTy,
     }
-    in base: Ty                       -- the type without its pattern: a pattern type's base, an alias's type
-    in patterned?                     -- written `T is P`, directly or through an alias
-    in ordered_items: Set<TypeName>   -- the enumerations, records and newtypes declared `ordered`
-    pub det out ordered?
 
     ensure rule: ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
 
@@ -625,10 +626,9 @@ a literal may contain:
 -- U+2FFFF, the last character of the solver's strings.
 pub const MAX_CHAR: Int := 196607
 
-pub comp string_char {
-    in code: Nat         -- the code point of a character of a literal
-    pub det out accepted?
-
+pub proc string_char(
+    code: Nat,           -- the code point of a character of a literal
+): (det accepted?) {
     ensure rule: accepted? iff code <= MAX_CHAR
 
     expect ascii: when code < 128, accepted?
@@ -647,7 +647,7 @@ complement, since the complement of a finite set of an infinite type is
 not finite.
 
 A set type is unbounded, so a set is never an output, unless it is
-[defined](Components.md#defined-outputs). A field or payload may not have
+[defined](Procedures.md#definitions). A field or payload may not have
 a set type whose element type is, or contains, an abstract type, and an
 enumeration may not contain itself within a set.
 
@@ -675,7 +675,7 @@ with `++`, indexed with `q[i]`, and examined with the
 share methods and operators instead.
 
 A sequence type is unbounded, so a sequence is never an output, unless it
-is [defined](Components.md#defined-outputs). A field or payload may have a
+is [defined](Procedures.md#definitions). A field or payload may have a
 sequence type, unless an abstract type occurs within it, and an
 enumeration may not contain itself within a sequence.
 
@@ -717,7 +717,7 @@ constituents (`growing?`), and whether it may have constituents at all
 by itself when its former is or its pattern bounds it (`own_finite?`). A
 new type former is one more variant of `ValueType` and one more arm of
 `former`: what is finite, unbounded or [listed](Quantifiers.md#types), and
-so which [outputs](Components.md#members), [newtypes](Items.md#newtypes)
+so which [outputs](Procedures.md#members), [newtypes](Items.md#newtypes)
 and [enumerations](Items.md#enumerations) are accepted, follows from it.
 A [function type](HigherOrder.md#function-types) is not a `ValueType`: it
 is never a value's type, only a defined function's parameter's, so no
@@ -765,14 +765,10 @@ pub fn built_from(ty: DeclaredTy, constituents: Rel<DeclaredTy, DeclaredTy>): Se
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp type_facts {
-    in ty: DeclaredTy
-    in constituents: Rel<DeclaredTy, DeclaredTy>    -- (t, u): t has a field, payload or element of type u
-
-    pub det out recursive?
-    pub det out finite?
-    pub det out unbounded?
-
+pub proc type_facts(
+    ty: DeclaredTy,
+    constituents: Rel<DeclaredTy, DeclaredTy>,      -- (t, u): t has a field, payload or element of type u
+): (det recursive?, det finite?, det unbounded?) {
     ensure recursion: recursive? iff (ty, ty) in constituents.closure
     ensure finiteness: finite? iff (forall (u: DeclaredTy), when u in built_from(ty, constituents),
         own_finite?(declared_kind(u), pattern_bounded?(u)) and not (u, u) in constituents.closure)
@@ -818,21 +814,21 @@ of a record, nor payload of a variant, has an abstract type (see
 [Items](Items.md#records)).
 
 What the values of an abstract type are is given by an
-[interpretation](Components.md#interpretations). The checks hold for
+[interpretation](Procedures.md#interpretations). The checks hold for
 every interpretation, and in Lean an [implementation](../Impl.md#interpretations)
 fixes one.
 
 ## Boolean names
 
 A variable's name ends in `?` if and only if its type is `Bool`. So a
-`Bool` variable's type need not be written: `in ready?` and `in ready?:
-Bool` declare the same input. Any other variable must have its type written,
+`Bool` variable's type need not be written: the parameters `ready?` and
+`ready?: Bool` are the same. Any other variable must have its type written,
 and its name must not end in `?`. The same goes for a
 [function](Items.md#functions) and its result type. The same goes for a field of a [record](Items.md#records), for a
 binder of a [`match` pattern](Expressions.md#matches) and the payload it
 names, and for a [quantifier's](Quantifiers.md#names) bound name and its
 type. Names of modules, enumerations, records, variants,
-components, constraints and instances never end in `?`, and the names of
+procedures, constraints and calls never end in `?`, and the names of
 [constants](Items.md#constants) are in uppercase, whatever their type.
 
 `lang::bool_naming` decides whether a variable, field or function
@@ -846,12 +842,11 @@ pub enum Annot { Missing, BoolTy, IntTy, NatTy, StringTy, NamedTy }
 
 use self::Annot::{BoolTy, IntTy, Missing, NamedTy, NatTy, StringTy}
 
-pub comp bool_naming {
-    in name: String      -- the declared name
-    in annot: Annot      -- `Missing` when there is no `: type`
-
+pub proc bool_naming(
+    name: String,        -- the declared name
+    annot: Annot,        -- `Missing` when there is no `: type`
+): (accepted?) {
     assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
-    pub out accepted?
 
     ensure q_is_bool: when name.ends_with?("?"), accepted? iff annot is Missing | BoolTy
     ensure bool_is_q: unless name.ends_with?("?"),
@@ -873,8 +868,8 @@ wherever an expression must synthesize its type.
 
 Where an expression is written decides whether it is checked:
 
-- **Declared.** It is checked against a type that is declared: a binding
-  of an instance or of a refinement, a field of a record literal or of a
+- **Declared.** It is checked against a type that is declared: an
+  argument of a call, a binding of a refinement, a field of a record literal or of a
   record update, the value of a [newtype](Items.md#newtypes), as in
   `Ms(e)`, an argument of a function application, a variant's payload,
   an argument of a sequence's method, the argument of an enumeration's or
@@ -918,12 +913,12 @@ not.
 pub enum Position { Declared, Shared, Compared, Synthesized }
 
 set_option fren.evidence "enumerated" in
-pub comp checked {
+pub proc checked(
+    position: Position,
+    expected?,          -- the expression it is a part of is checked against a type
+    sibling?,           -- another part that shares its type synthesizes one
+): (det checked?) {
     use self::Position::{Compared, Declared, Shared, Synthesized}
-    in position: Position
-    in expected?        -- the expression it is a part of is checked against a type
-    in sibling?         -- another part that shares its type synthesizes one
-    pub det out checked?
 
     ensure rule: checked? iff match position {
         Declared => true,
@@ -954,15 +949,15 @@ members, synthesize their types.
 -- or record of a generic type; `Other` is any other.
 pub enum Shape { EmptyLiteral, SharedParts, Pair, Construction, Other }
 
-pub comp synthesizes {
+pub proc synthesizes(
+    shape: Shape,
+    parts: Int,              -- how many shared parts it has, members, for a pair, or type parameters, for a construction
+    synthesizing: Nat,       -- how many of them synthesize their types, or, for a construction, are given an argument
+): (det synthesizes?) {
     use self::Shape::{Construction, EmptyLiteral, Other, Pair, SharedParts}
-    in shape: Shape
-    in parts: Int            -- how many shared parts it has, members, for a pair, or type parameters, for a construction
-    in synthesizing: Nat     -- how many of them synthesize their types, or, for a construction, are given an argument
 
     assume counted: synthesizing <= parts
     assume pair: when shape = Pair, parts = 2
-    pub det out synthesizes?
 
     ensure rule: synthesizes? iff match shape {
         EmptyLiteral => false,
@@ -1009,12 +1004,12 @@ pub enum Expected { NoType, NotCollection, SetOrRelation, Sequence }
 pub enum EmptyOutcome { Typed, Unknown, OtherKind }
 
 set_option fren.evidence "enumerated" in
-pub comp empty_literal {
+pub proc empty_literal(
+    seq?,                    -- it is `[]`, not `{}`
+    expected: Expected,
+): (det outcome: EmptyOutcome) {
     use self::EmptyOutcome::{OtherKind, Typed, Unknown}
     use self::Expected::{NoType, NotCollection, Sequence, SetOrRelation}
-    in seq?                  -- it is `[]`, not `{}`
-    in expected: Expected
-    pub det out outcome: EmptyOutcome
 
     ensure rule: outcome = match expected {
         NoType => Unknown,

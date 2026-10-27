@@ -5,25 +5,16 @@
 -- kills nothing. In `d`, the spec's index is in range, so moving it out of
 -- range kills the mutant. In `e`, the second `q[0]` is out of range on the
 -- spec, so dropping the guarded one kills nothing.
-comp c {
-    in q: Seq<Int>
-
+proc c(q: Seq<Int>): (ok?) {
     assume one: q.len >= 1
-    pub out ok?
     ensure r: ok? iff (q[0] = 1 and q[1] = 2)
 }
 
-comp d {
-    in q: Seq<Int>
-
+proc d(q: Seq<Int>): (ok?) {
     assume one: q.len >= 1
-    pub out ok?
     ensure r: ok? iff q[0] = 1
 }
 
-comp e {
-    in q: Seq<Int>
-    pub out ok?
-
+proc e(q: Seq<Int>): (ok?) {
     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
 }

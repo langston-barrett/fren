@@ -1,8 +1,8 @@
 error[F0304]: type mismatch: expected `Bool`, found `Mode`
- --> test/cli/types/f0304_enum.fren:3:47
+ --> test/cli/types/f0304_enum.fren:3:40
   |
-3 | comp c { in m: Mode pub out y? ensure r: when m, y? }
-  |                                               ^ expected `Bool`, found `Mode`
+3 | proc c(m: Mode): (y?) { ensure r: when m, y? }
+  |                                        ^ expected `Bool`, found `Mode`
   |
   = note: the condition of `when` is a `Bool`
   = help: compare it with a variant to make a `Bool`, e.g. `x = Mode::Variant`

@@ -4,7 +4,7 @@ A name written alone, or as the first segment of a path, *resolves* to a
 declaration in scope where it is written: the innermost of that name.
 Which declarations are in scope, and which one a name resolves to, is
 stated once, in this chapter, as a model that the other chapters
-[instantiate](Instances.md): [shadowing](Components.md#shadowing), what an
+[instantiate](Calls.md): [shadowing](Procedures.md#shadowing), what an
 identifier is in a [pattern](Patterns.md#kinds-of-pattern), [module
 resolution](Modules.md#resolution), and the [layer](ScopeLaws.md#names-as-layers)
 that a name is in the core of meaning.
@@ -27,9 +27,9 @@ it is, what it declares (its *target*), and its *depth*, how many scopes
 out from where the name is written it is declared, from 0. `lang::BindingKind`
 is the kinds:
 
-- `Input` and `Output`, a component's [variables](Components.md#members);
+- `Input` and `Output`, a component's [variables](Procedures.md#members);
   `Parameter`, a [defined function's](Items.md#defined-functions)
-  parameter; `Instance`, a component's [instance](Instances.md); and
+  parameter; `Instance`, a component's [instance](Calls.md); and
   `ExpectBinder`, a [global expectation's](Global.md) binder;
 - `PatternBinder`, a binder of a [`match` arm](Expressions.md#matches) or
   of a [pattern test](Expressions.md#pattern-tests), whose target is where
@@ -116,7 +116,7 @@ the name, by where they are declared. From the innermost, at depth 0, out:
 
 A declaration written `x!` enters the scope as `x`, one depth further in
 than what it hides, which is why it hides it (see
-[Shadowing](Components.md#shadowing)). The names of one depth are
+[Shadowing](Procedures.md#shadowing)). The names of one depth are
 distinct, as their declarations are checked to be (see [Distinct
 names](Items.md#distinct-names)), except for those that glob imports bring
 in: two enumerations opened in one scope may each have a variant of one
@@ -181,11 +181,8 @@ in no scope before it:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp context_scope {
-    in context: Context
-    in binding: Binding
-
-    pub det out listed? := in_scope?(context, binding)
+pub proc context_scope(context: Context, binding: Binding): (det listed?) {
+    out listed? := in_scope?(context, binding)
 
     -- An item at the module's depth is one declared before the name.
     expect declared_items: when listed? and binding.depth = module_depth(context)
@@ -276,13 +273,13 @@ It is what the chapters below instantiate, each with the scope it reads:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp scope {
-    in bindings: Set<Binding>    -- the scope where the name is written
-    in name: Id                  -- the name, without a `!`
-
-    pub det out result: Lookup := resolve(bindings, name)
+pub proc scope(
+    bindings: Set<Binding>,      -- the scope where the name is written
+    name: Id,                    -- the name, without a `!`
+): (det result: Lookup, det value?) {
+    out result := resolve(bindings, name)
     -- It names a value, which a declaration of it would hide.
-    pub det out value? := match result {
+    out value? := match result {
         Lookup::Found(k) => names_value?(k),
         _ => false,
     }

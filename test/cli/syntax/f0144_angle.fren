@@ -1,2 +1,2 @@
 -- A space before the `<` of type arguments (F0144).
-comp c { in x: Set <Int> }
+proc c(x: Set <Int>) {}

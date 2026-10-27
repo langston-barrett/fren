@@ -268,6 +268,10 @@ structure Brace where
   group : Bool
   list : Bool
   tok : Nat
+  /-- For a `(` list: the `(` within it not yet closed, which its own
+  `)` does not close. -/
+  open_ : Nat := 0
+  deriving Inhabited
 
 /-- Lays out the tokens and comments of a file that parses. A line in a
 different `segment` from the line before it is laid out as the first of a
@@ -291,8 +295,13 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   -- `tested` claims: whether each is vertical, by its last string.
   let claimVertical (k : Nat) : Option Bool :=
     (lay.claims.find? (·.2 == k)).map fun (t, _) => tokLine k > tokLine t
+  -- The `(` of a list nests as a `{` does: a procedure's parameters or
+  -- results, or a call's arguments.
+  let parenList (stack : Array Brace) : Bool := stack.back?.any fun b => b.list && isTok b.tok "("
+  let closes (stack : Array Brace) (k : Nat) : Bool :=
+    (isTok k "}" && !stack.isEmpty) || (isTok k ")" && parenList stack && stack.back!.open_ == 0)
   let lineStart (stack : Array Brace) (k : Nat) : LineStart :=
-    if isTok k "}" && !stack.isEmpty then .closing
+    if closes stack k then .closing
     else if lay.starts.contains k then .starting
     else .continuing
   let mut out : Array Line := #[]
@@ -306,7 +315,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       -- The trailing comma of a claim that is not vertical.
       if isTok k "," && k > 0 && claimVertical (k - 1) == some false then continue
       -- Trailing commas, at the `}` that closes a list.
-      if isTok k "}" then
+      if closes stack k then
         if let some o := stack.back? then
           if o.list then
             if let some (li, pi, lk) := last? then
@@ -362,7 +371,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let first := i == 0 || segment p.startLine != segment pieces[i - 1]!.endLine
       let blank := if first then 0 else p.startLine - pieces[i - 1]!.endLine - 1
       let afterOpen := out.back?.any fun l => l.pieces.back?.any (·.1 matches .brace | .group)
-      let beforeClose := p.tok?.any (isTok · "}")
+      let beforeClose := p.tok?.any (closes stack ·)
       let kept := blankLines blank first afterOpen beforeClose
       out := out.push { blank := kept, indent := columns, pieces := #[], line := p.startLine }
     out := out.modify (out.size - 1) fun l =>
@@ -375,6 +384,13 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       | .kw "{" => stack := stack.push { group := false, list := lay.lists.contains k, tok := k }
       | .kw "::{" => stack := stack.push { group := true, list := true, tok := k }
       | .kw "}" => stack := stack.pop
+      | .kw "(" =>
+        if lay.lists.contains k then stack := stack.push { group := false, list := true, tok := k }
+        else if parenList stack then stack := stack.modify (stack.size - 1) fun b => { b with open_ := b.open_ + 1 }
+      | .kw ")" =>
+        if parenList stack then
+          if stack.back!.open_ == 0 then stack := stack.pop
+          else stack := stack.modify (stack.size - 1) fun b => { b with open_ := b.open_ - 1 }
       | _ => pure ()
   return out
 

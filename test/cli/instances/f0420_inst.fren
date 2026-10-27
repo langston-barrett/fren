@@ -1,0 +1,4 @@
+-- An instance, as calls were written before (F0420): the fix writes it as
+-- a call, with its arguments in the order of the parameters.
+proc sub(a: Int, b?) {}
+proc c(x: Int) { inst s: sub { b? := x > 0, a := x } }

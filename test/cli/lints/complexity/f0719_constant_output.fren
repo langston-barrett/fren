@@ -1,2 +1,2 @@
 -- `constant_output`.
-comp c { in x: Int pub out limit: Int := 10 ensure r: x < limit }
+proc c(x: Int): (limit: Int) { out limit := 10 ensure r: x < limit }

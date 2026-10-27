@@ -35,15 +35,18 @@ pub enum InfixOp {
 
 pub enum EqOpValue { AlwaysTrue, AlwaysFalse, Zero, Empty, Operand }
 
-pub comp eq_op {
+pub proc eq_op(
+    op: InfixOp,
+    left: Scoped,        -- the left operand, as written in its scope
+    right: Scoped,       -- the right operand
+): (
+    det same?,
+    det fires?,
+    value: EqOpValue,         -- what the expression is, where it fires
+) {
     use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Zero}
     use self::InfixOp::{Add, Concat, Eq, Ge, Gt, Iff, In, Join, Le, Lt, Minus, Mul, Ne, Sub, Subset}
-    in op: InfixOp
-    in left: Scoped      -- the left operand, as written in its scope
-    in right: Scoped     -- the right operand
-    pub det out same? := left = right
-    pub det out fires?
-    pub out value: EqOpValue  -- what the expression is, where it fires
+    out same? := left = right
 
     ensure rule: fires? iff (same? and not op in {Add, Mul, Concat, Join, In})
     ensure values: when fires?, value = match op {
@@ -80,15 +83,11 @@ the operator applies to:
 -- `nonminimal_bool` would write `not (x < x)` as `x >= x`, another case.
 set_option fren.lint.eq_op "allow" in
 set_option fren.lint.nonminimal_bool "allow" in
-pub comp eq_op_values {
+pub proc eq_op_values(op: InfixOp, x: Int, a?, s: Set<Int>) {
     use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Zero}
     use self::InfixOp::{And, Eq, Ge, Gt, Iff, Inter, Le, Lt, Minus, Ne, Or, Sub, Subset, Union}
-    in op: InfixOp
-    in x: Int
-    in a?
-    in s: Set<Int>
 
-    inst e: eq_op { op, left := Scoped { text := Operand::P, scope := {} }, right := Scoped { text := Operand::P, scope := {} } }
+    call e := eq_op(op, Scoped { text := Operand::P, scope := {} }, Scoped { text := Operand::P, scope := {} })
 
     expect said: when e.fires?, match e.value {
         AlwaysTrue => (op = Eq and x = x) or (op = Le and x <= x) or (op = Ge and x >= x)
@@ -112,28 +111,27 @@ compared in their scopes, as the operands of `and` are.
 value is `written_same`, as for `eq_op`:
 
 ```fren
-pub comp eq_op_conditional {
+pub proc eq_op_conditional(
+    unless?,             -- `unless`, rather than `when`
+    condition: Scoped,    -- the condition, as written in its scope
+    body: Scoped,         -- the body
+): (
+    det fires?,
+    value: EqOpValue,         -- what the expression is, where it fires
+) {
     use self::EqOpValue::AlwaysTrue
-    in unless?           -- `unless`, rather than `when`
-    in condition: Scoped  -- the condition, as written in its scope
-    in body: Scoped       -- the body
-    pub det out fires?
-    pub out value: EqOpValue  -- what the expression is, where it fires
 
     ensure rule: fires? iff condition = body
     ensure values: when fires?, value = if unless? then EqOpValue::Operand else AlwaysTrue
 }
 
 set_option fren.lint.eq_op "allow" in
-pub comp eq_op_conditional_values {
-    in unless?
-    in a?
-
-    inst e: eq_op_conditional {
+pub proc eq_op_conditional_values(unless?, a?) {
+    call e := eq_op_conditional(
         unless?,
-        condition := Scoped { text := Operand::P, scope := {} },
-        body := Scoped { text := Operand::P, scope := {} },
-    }
+        Scoped { text := Operand::P, scope := {} },
+        Scoped { text := Operand::P, scope := {} },
+    )
 
     -- What the message says `when a?, a?` and `unless a?, a?` are.
     expect said: when e.fires?, if unless? then e.value = EqOpValue::Operand and ((unless a?, a?) iff a?)
@@ -159,11 +157,10 @@ says, on a call with the repeated argument written once:
 -- expression, as written.
 pub enum Argument { Literal(Bool), Written(Operand) }
 
-pub comp eq_op_cardinality {
-    in earlier: Set<Operand>  -- the arguments before it that are not literals
-    in argument: Argument
-    pub det out fires?
-
+pub proc eq_op_cardinality(
+    earlier: Set<Operand>,    -- the arguments before it that are not literals
+    argument: Argument,
+): (det fires?) {
     ensure rule: fires? iff match argument {
         Argument::Written(x) => x in earlier,
         Argument::Literal(_) => false,
@@ -172,19 +169,15 @@ pub comp eq_op_cardinality {
 
 set_option fren.lint.eq_op "allow" in
 set_option fren.evidence "enumerated" in
-pub comp eq_op_cardinality_written {
-    in a?
-    in b?
-    pub det out exactly? := exactly_one?(a?, b?, a?)
-    pub det out at_most? := at_most_one?(a?, b?, a?)
+pub proc eq_op_cardinality_written(a?, b?): (det exactly?, det at_most?) {
+    out exactly? := exactly_one?(a?, b?, a?)
+    out at_most? := at_most_one?(a?, b?, a?)
 }
 
 set_option fren.evidence "enumerated" in
-pub comp eq_op_cardinality_value {
-    in a?
-    in b?
-    pub det out exactly? := not a? and b?
-    pub det out at_most? := not a?
+pub proc eq_op_cardinality_value(a?, b?): (det exactly?, det at_most?) {
+    out exactly? := not a? and b?
+    out at_most? := not a?
 }
 
 refine eq_op_cardinality_sound: eq_op_cardinality_value refines eq_op_cardinality_written
@@ -209,14 +202,14 @@ on `s subset {}`, which says that `s` is empty. `lint::erasing_op`
 states this:
 
 ```fren
-pub comp erasing_op {
+pub proc erasing_op(
+    op: InfixOp,
+    left: IdentityOperand,
+    right: IdentityOperand,
+    same?,               -- the operands are written the same
+): (det fires?) {
     use self::IdentityOperand::{Empty, Zero}
     use self::InfixOp::{In, Inter, Join, Minus, Mul, Subset}
-    in op: InfixOp
-    in left: IdentityOperand
-    in right: IdentityOperand
-    in same?             -- the operands are written the same
-    pub det out fires?
 
     ensure rule: fires? iff (not (same? and op in {Inter, Minus, Subset}) and match op {
         Mul => left = Zero or right = Zero,
@@ -232,7 +225,7 @@ expect erasing_not_eq_op: forall (e: erasing_op) (q: eq_op), when q.op = e.op an
 ```
 
 The refinements below check the values of `in` and `subset` that the
-message claims: a component that computes the operation as written, one
+message claims: a procedure that computes the operation as written, one
 whose output is the value, and a [refinement](../../Lang/Refinement.md) each
 way, so that the solver checks that they agree on every input. An operand
 is a variable, standing for any expression of its type: Fren's
@@ -241,32 +234,28 @@ for every expression.
 
 ```fren
 set_option fren.lint.erasing_op "allow" in
-pub comp empty_membership_written {
-    in x: Int
-    pub det out v? := x in {}
+pub proc empty_membership_written(x: Int): (det v?) {
+    out v? := x in {}
 }
 
 set_option fren.lint.unused_variables "allow" in
 set_option fren.lint.constant_output "allow" in
-pub comp empty_membership_value {
-    in x: Int
-    pub det out v? := false
+pub proc empty_membership_value(x: Int): (det v?) {
+    out v? := false
 }
 
 refine empty_membership_sound: empty_membership_value refines empty_membership_written
 refine empty_membership_complete: empty_membership_written refines empty_membership_value
 
 set_option fren.lint.erasing_op "allow" in
-pub comp empty_subset_written {
-    in s: Set<Int>
-    pub det out v? := {} subset s
+pub proc empty_subset_written(s: Set<Int>): (det v?) {
+    out v? := {} subset s
 }
 
 set_option fren.lint.unused_variables "allow" in
 set_option fren.lint.constant_output "allow" in
-pub comp empty_subset_value {
-    in s: Set<Int>
-    pub det out v? := true
+pub proc empty_subset_value(s: Set<Int>): (det v?) {
+    out v? := true
 }
 
 refine empty_subset_sound: empty_subset_value refines empty_subset_written
@@ -282,27 +271,26 @@ multiple of every such `k`. `lint::erasing_division` states this, and the
 positive divisor and a negative one:
 
 ```fren
-pub comp erasing_division {
-    in literal?          -- the dividend is an integer literal, possibly negated
-    in dividend: Int     -- its value, if it is
-    pub det out fires?
-
+pub proc erasing_division(
+    literal?,            -- the dividend is an integer literal, possibly negated
+    dividend: Int,       -- its value, if it is
+): (det fires?) {
     ensure rule: fires? iff (literal? and dividend = 0)
 }
 
 set_option fren.lint.erasing_op "allow" in
 set_option fren.lint.constant_output "allow" in
 set_option fren.evidence "enumerated" in
-pub comp erasing_division_written {
-    pub det out quotient: Int := 0 div 7
-    pub det out remainder: Int := 0 mod -3
+pub proc erasing_division_written(): (det quotient: Int, det remainder: Int) {
+    out quotient := 0 div 7
+    out remainder := 0 mod -3
 }
 
 set_option fren.lint.constant_output "allow" in
 set_option fren.evidence "enumerated" in
-pub comp erasing_division_fixed {
-    pub det out quotient: Int := 0
-    pub det out remainder: Int := 0
+pub proc erasing_division_fixed(): (det quotient: Int, det remainder: Int) {
+    out quotient := 0
+    out remainder := 0
 }
 
 refine erasing_division_sound: erasing_division_fixed refines erasing_division_written
@@ -333,12 +321,11 @@ value. It leaves such a conditional even where the branches mention none
 of those names, rather than compare what they mention:
 
 ```fren
-pub comp same_branches {
-    in binders: Set<lang::Id>  -- the binders of the condition's pattern tests
-    in then_branch: Scoped     -- the branches, as written in their scopes
-    in else_branch: Scoped
-    pub det out fires?
-
+pub proc same_branches(
+    binders: Set<lang::Id>,    -- the binders of the condition's pattern tests
+    then_branch: Scoped,       -- the branches, as written in their scopes
+    else_branch: Scoped,
+): (det fires?) {
     ensure rule: fires? iff (binders = {} and then_branch = else_branch)
 
     expect no_binders: when fires?, binders = {} and then_branch.scope = else_branch.scope
@@ -371,14 +358,12 @@ check the fix on one example:
 
 ```fren
 set_option fren.lint.same_branches "allow" in
-pub comp same_rows_written {
-    in n: Int
-    pub det out v: Int := table { n > 0 => n + 1, n < -5 => n + 1, _ => n + 1 }
+pub proc same_rows_written(n: Int): (det v: Int) {
+    out v := table { n > 0 => n + 1, n < -5 => n + 1, _ => n + 1 }
 }
 
-pub comp same_rows_fixed {
-    in n: Int
-    pub det out v: Int := n + 1
+pub proc same_rows_fixed(n: Int): (det v: Int) {
+    out v := n + 1
 }
 
 refine same_rows_sound: same_rows_fixed refines same_rows_written
@@ -397,19 +382,19 @@ pub fn row_holds?(r: Row) := r.holds?
 
 pub fn row_value(r: Row): Body := r.value
 
-pub comp same_rows {
-    in rows: Seq<Row>
-    in wildcard?             -- the last row is `_`
-    in o: Int
-
+pub proc same_rows(
+    rows: Seq<Row>,
+    wildcard?,               -- the last row is `_`
+    o: Int,
+): (
+    det fires?,
+    det fixed?,          -- it has a fix
+) {
     assume size: 1 <= rows.len <= 4
 
-    pub det out fires?
-    pub det out fixed?   -- it has a fix
-
-    det out n_rows: Int := rows.len
+    det let n_rows: Int := rows.len
     -- the rows' values are written the same
-    det out same? := (forall (s: Slot), when pos(s) < rows.len, row_value(rows[pos(s)]) = row_value(rows[0]))
+    det let same? := (forall (s: Slot), when pos(s) < rows.len, row_value(rows[pos(s)]) = row_value(rows[0]))
 
     ensure rule: fires? iff (same? and (n_rows >= 2 or wildcard?))
     ensure fix: fixed? iff wildcard?
@@ -432,10 +417,9 @@ chain. It has no fix: one of the tests is probably not the one meant.
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub comp ifs_same_cond {
-    in earlier?          -- an earlier test of the chain is written the same
-    pub det out fires?
-
+pub proc ifs_same_cond(
+    earlier?,            -- an earlier test of the chain is written the same
+): (det fires?) {
     ensure rule: fires? iff earlier?
 }
 ```
@@ -451,10 +435,9 @@ literal. It does not fire on a sequence literal, where a repeat means
 something. `lint::duplicate_elements` states when it fires:
 
 ```fren
-pub comp duplicate_elements {
-    in n_repeats: Nat    -- elements written the same as an earlier one
-    pub det out fires?
-
+pub proc duplicate_elements(
+    n_repeats: Nat,      -- elements written the same as an earlier one
+): (det fires?) {
     ensure rule: fires? iff n_repeats > 0
 }
 ```

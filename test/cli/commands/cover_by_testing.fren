@@ -1,8 +1,5 @@
 -- A cover goal set to testing passes on a witness that testing finds.
-comp heater {
-    in temp: Int
-    pub out alarm?
-
+proc heater(temp: Int): (alarm?) {
     ensure r: alarm? iff temp > 100
 
     set_option fren.evidence "tested" in

@@ -1,7 +1,7 @@
 warning[F0609]: testing found no outputs of `c` for the input x = -1
  --> test/cli/results/f0609_no_outputs.fren:2:6
   |
-2 | comp c {
+2 | proc c(x: Int): (y: Int) {
   |      ^ possibly not realizable
   |
   = note: the search tries only some values, so outputs may still exist

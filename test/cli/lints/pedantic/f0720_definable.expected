@@ -1,8 +1,8 @@
 warning[F0720]: `r` could be the definition of `y`
- --> test/cli/lints/pedantic/f0720_definable.fren:4:28
+ --> test/cli/lints/pedantic/f0720_definable.fren:4:18
   |
-4 | comp c { in x: Int pub out y: Int ensure r: y = x + 1 }
-  |                            ^ constrained by one equation
+4 | proc c(x: Int): (y: Int) { ensure r: y = x + 1 }
+  |                  ^ constrained by one equation
   |
   = help: write the expression as `y`'s definition, `out y := ...`, and remove `r`
   = note: `definable_output` is set to `warn`

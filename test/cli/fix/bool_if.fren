@@ -1,13 +1,6 @@
 --@ args: fix --check
 -- `fren fix` writes an `if` with a `Bool` literal branch as `and` or `or`.
-comp c {
-    in a?
-    in b?
-    pub out o?
-    pub out p?
-    pub out q?
-    pub out w?
-
+proc c(a?, b?): (o?, p?, q?, w?) {
     ensure r1: o? iff (if a? then b? else false)
     ensure r2: p? iff (if a? or b? then true else b?)
     ensure r3: q? iff (if a? then false else b? iff a?)

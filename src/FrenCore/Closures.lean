@@ -132,9 +132,9 @@ def fnTypePlaceMsg (site : TypeSite) (within : List Within) : Msg :=
       label? := some "a function type"
       notes := #[note] }
   else if code == "F0433" then
-    { code? := some code, headline := "a function type cannot be the type of a component's variable"
+    { code? := some code, headline := "a function type cannot be the type of a procedure's parameter or output"
       label? := some "a function type"
-      notes := #[note, "help: make the component's requirement a defined function's, with a function parameter"] }
+      notes := #[note, "help: make the procedure's requirement a defined function's, with a function parameter"] }
   else
     { code? := some code, headline := "a function type is only the type of a defined function's parameter"
       label? := some "a function type"

@@ -1,7 +1,7 @@
 warning[F0726]: this `match` only tests which of its patterns its scrutinee matches
- --> test/cli/lints/style/f0726_match_like_membership.fren:8:22
+ --> test/cli/lints/style/f0726_match_like_membership.fren:5:22
   |
-8 |     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
+5 |     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ each arm is `true` or `false`
   |
   = help: `fren fix` can fix this
@@ -9,8 +9,8 @@ warning[F0726]: this `match` only tests which of its patterns its scrutinee matc
   = help: to allow it, `set_option fren.lint.match_like_membership "allow"`
 help: write it as an equation
   |
-8 -     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
-8 +     ensure r: p? iff e != E::B
+5 -     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
+5 +     ensure r: p? iff e != E::B
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

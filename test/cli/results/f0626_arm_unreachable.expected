@@ -1,7 +1,7 @@
 error[F0626]: arm 2 of a `match` in `size::r` is never taken
- --> test/cli/results/f0626_arm_unreachable.fren:9:9
+ --> test/cli/results/f0626_arm_unreachable.fren:6:9
   |
-9 |         n if n > 20 => 3,
+6 |         n if n > 20 => 3,
   |         ^ never taken
   |
   = note: wherever the `match` is evaluated, its pattern or guard fails, or an earlier arm is taken

@@ -1,6 +1,6 @@
 -- A variant's arguments follow it directly, with no space.
 pub enum S { A(Int), B }
-comp c { pub out s: S ensure r: s = S::A (1) }
+proc c(): (s: S) { ensure r: s = S::A (1) }
 --~^[cli] error: a space before the `(` of the arguments of `S::A`
 --~^^[hosted] error: unexpected token '('; expected '}'
 --@ exit: 2

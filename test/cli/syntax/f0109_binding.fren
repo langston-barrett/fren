@@ -1,3 +1,4 @@
--- `unless` as a binding (F0109).
-comp sub { in a? in b? }
-comp c { in x? inst s: sub { a? := unless x?, x?, b? := x? } }
+-- `unless` as a binding of a refinement (F0109).
+proc a(p?, q?) {}
+proc c(x?) {}
+refine r: c refines a { p? := unless x?, x?, q? := x? }

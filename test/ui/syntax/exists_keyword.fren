@@ -1,5 +1,5 @@
 -- `exists` is a reserved word, so it is not a name.
-comp keyword { in exists: Int }
+proc keyword(exists: Int) {}
 --~^[cli] error: expected a name, found keyword `exists`
---~^^[hosted] error: expected identifier
+--~^^[hosted] error: unexpected token 'exists'; expected ')'
 --@ exit: 2

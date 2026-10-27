@@ -20,11 +20,7 @@ pub ordered struct Tag(Label)
 pub ordered struct Timeout(Seconds)
 pub ordered struct Release(Version)
 
-comp versions {
-    in a: Version
-    in b: Version
-    in c: Version
-
+proc versions(a: Version, b: Version, c: Version) {
     -- Lexicographic: the first field that differs decides.
     expect major_first: when a.major < b.major, a < b
     expect minor_next: when a.major = b.major and a.minor < b.minor, a < b
@@ -40,15 +36,10 @@ comp versions {
     expect wrong: a.major <= b.major   --~ error: expectation `versions::wrong` does not hold
 }
 
-comp newtypes {
-    in s: Seconds
-    in p: Pos
-    in st: Status
-    in d: Digit
-    in t: Tag
-    in o: Timeout
-    in r: Release
-    pub det out late? := s > Seconds(3)
+proc newtypes(s: Seconds, p: Pos, st: Status, d: Digit, t: Tag, o: Timeout, r: Release): (
+    det late?,
+) {
+    out late? := s > Seconds(3)
 
     expect seconds: Seconds(0) <= s and (late? iff s.0 > 3) and s.min(Seconds(2)) <= Seconds(2)
     expect seconds_chain: when Seconds(1) < s <= Seconds(5), s >= Seconds(2)
@@ -60,9 +51,8 @@ comp newtypes {
     expect releases: (r < Release(Version { major := 1, minor := 0, level := Level::Low }) iff r.0.major = 0)
 }
 
-comp strings {
-    in a: String
-    pub det out m: String := a.min("m")
+proc strings(a: String): (det m: String) {
+    out m := a.min("m")
     expect below: m <= "m" and (a <= "m" iff m = a)
     expect most: a.max("m") >= "m"
 }
@@ -70,23 +60,21 @@ comp strings {
 -- `+` of a newtype of `Nat` is a `Nat`'s, and gives the newtype; and `+`
 -- and `-` of a newtype of a pattern type have the obligation that
 -- building the newtype from the sum or difference has.
-comp sums {
-    in a: Seconds
-    in b: Seconds
-    in x: Digit
-    in y: Pos
-    pub det out total: Seconds := a + b
-    pub det out twice: Digit := x + x   --~ error: a value in `sums::twice` may not have the type `Small`
-    pub det out fewer: Pos := y - Pos(1)   --~ error: a value in `sums::fewer` may not have the type `Int is 0..`
+proc sums(a: Seconds, b: Seconds, x: Digit, y: Pos): (
+    det total: Seconds,
+    det twice: Digit,
+    det fewer: Pos,
+) {
+    out total := a + b
+    out twice := x + x   --~ error: a value in `sums::twice` may not have the type `Small`
+    out fewer := y - Pos(1)   --~ error: a value in `sums::fewer` may not have the type `Int is 0..`
 
     expect added: total.0 = a.0 + b.0 and total >= a
 }
 
-comp guarded_sums {
-    in x: Digit
-    in y: Pos
-    pub det out next: Digit := if x < Digit(9) then x + Digit(1) else x
-    pub det out fewer: Pos := if y > Pos(0) then y - Pos(1) else y
+proc guarded_sums(x: Digit, y: Pos): (det next: Digit, det fewer: Pos) {
+    out next := if x < Digit(9) then x + Digit(1) else x
+    out fewer := if y > Pos(0) then y - Pos(1) else y
 
     expect bounded: next <= Digit(9) and fewer <= y
 }

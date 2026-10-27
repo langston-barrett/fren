@@ -14,11 +14,9 @@ fn map<T, U>(o: Option<T>, f: fn(T) -> U): Option<U> := match o {
 
 fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
 
-comp c {
-    in o: Option<Int>
-    in step: Int
-    pub det out p: Option<Int> := map(o, |x| x + step)
-    pub det out q: Int := twice(|n: Int| 2 * n, step)
+proc c(o: Option<Int>, step: Int): (det p: Option<Int>, det q: Int) {
+    out p := map(o, |x| x + step)
+    out q := twice(|n: Int| 2 * n, step)
 }
 ```
 
@@ -41,7 +39,7 @@ closure-param := DECL [":" base]
 `fn(T1, T2) -> U` of those of two parameters, and so on: a function type
 has at least one parameter, as a function does. A function type is
 written only as the whole type of a defined function's parameter: not as
-a field's or payload's type (`F0432`), a component's variable's (`F0433`),
+a field's or payload's type (`F0432`), a procedure's parameter's or output's (`F0433`),
 nor a constant's, a function's result's, an uninterpreted function's
 parameter's, a definition's of a `let` or `where`, a bound name's, a type
 alias's or a closure's parameter's (`F0434`), and never within another
@@ -76,13 +74,13 @@ pub enum Within { Element, Argument, FnParameter, FnResult }
 
 -- Comparing sequences is outside the decidable core.
 set_option fren.lint.undecidable "allow" in
-pub comp function_type_place {
+pub proc function_type_place(
+    site: TypeSite,
+    within: Seq<Within>,     -- the steps from the written type down to the function type, outermost first
+): (det accepted?, det code: Id) {
     use self::TypeSite::{DefinedParameter, Field, Payload, Variable}
-    in site: TypeSite
-    in within: Seq<Within>   -- the steps from the written type down to the function type, outermost first
-    pub det out accepted?
     -- The error's code, `""` where it is accepted.
-    pub det out code: Id := if accepted? then "" else if within != [] then "F0435"
+    out code := if accepted? then "" else if within != [] then "F0435"
         else if site in {Field, Payload} then "F0432" else if site = Variable then "F0433" else "F0434"
 
     ensure rule: accepted? iff (site = DefinedParameter and within = [])
@@ -107,10 +105,9 @@ what each of its parameters' types and its result's is:
 pub enum FnPart { Plain, Natural, Patterned, Function }
 
 set_option fren.lint.undecidable "allow" in
-pub comp function_type_parts {
-    in kinds: Seq<FnPart>    -- what its parameters' types are, then its result's
-    pub det out accepted?
-
+pub proc function_type_parts(
+    kinds: Seq<FnPart>,      -- what its parameters' types are, then its result's
+): (det accepted?) {
     ensure rule: accepted? iff not (FnPart::Natural in kinds or FnPart::Patterned in kinds or FnPart::Function in kinds)
 
     expect plain: when kinds = [FnPart::Plain, FnPart::Plain], accepted?
@@ -167,13 +164,10 @@ pub enum ParamKind { Value, Function(Nat) }
 -- function's function parameter, or any other expression.
 pub enum ArgShape { Closure(Nat), DefinedName, UninterpretedName, FnParameterName, Other }
 
-pub comp function_argument {
+pub proc function_argument(param: ParamKind, arg: ArgShape): (det accepted?, det code: Id) {
     use self::ArgShape::{Closure, DefinedName, FnParameterName, Other, UninterpretedName}
-    in param: ParamKind
-    in arg: ArgShape
-    pub det out accepted?
     -- The error's code, `""` where it is accepted.
-    pub det out code: Id := if accepted? then ""
+    out code := if accepted? then ""
         else if param = ParamKind::Value and arg is DefinedName | UninterpretedName | FnParameterName then "F0210"
         else "F0436"
 
@@ -191,7 +185,7 @@ pub comp function_argument {
 A closure's parameters are declared as a quantifier's bound names are:
 their names are distinct (`F0213`), follow the [Boolean
 names](Types.md#boolean-names) rule for their types, and are written with
-`!` exactly when they [shadow](Components.md#shadowing) a name in scope.
+`!` exactly when they [shadow](Procedures.md#shadowing) a name in scope.
 A closure has as many parameters as the function type (`F0436`); a
 parameter's type is the function type's, and if it is written, `|x: T|`,
 it must be that type (`F0304`), which a [generic
@@ -206,7 +200,7 @@ as that application is: `g` takes `n` arguments, of the types `T1` to
 `Tn`, and its result is a `U`.
 
 A closure's body may mention anything in scope where it is written, not
-only its parameters: the component's variables, the enclosing function's
+only its parameters: the procedure's parameters and outputs, the enclosing function's
 parameters, the binders of `match` arms and quantifiers, and the names of
 `let`s and `where`s. It *captures* them, and they keep their meaning
 where its body is unfolded (see [Meaning](#meaning)). Mentioning a
@@ -249,16 +243,18 @@ pub fn guard_holds?(o: GuardedOperand, c?) := match o {
 }
 
 set_option fren.lint.length_zero "allow" in
-pub comp closure_obligation {
-    in frames: Seq<GuardedOperand>   -- the guarded operands around the application, outermost first
-    in conditions: Seq<Bool>         -- their conditions' values, in the same order
-    in at_args?                      -- the obligation holds at the application's arguments
-
+pub proc closure_obligation(
+    frames: Seq<GuardedOperand>,     -- the guarded operands around the application, outermost first
+    conditions: Seq<Bool>,           -- their conditions' values, in the same order
+    at_args?,                        -- the obligation holds at the application's arguments
+): (
+    det evaluated?,
+    det holds?,                      -- the obligation, as it is checked there
+) {
     assume same: frames.len = conditions.len and frames.len <= 3
-    pub det out evaluated? := (frames.len <= 0 or guard_holds?(frames[0], conditions[0]))
+    out evaluated? := (frames.len <= 0 or guard_holds?(frames[0], conditions[0]))
         and (frames.len <= 1 or guard_holds?(frames[1], conditions[1]))
         and (frames.len <= 2 or guard_holds?(frames[2], conditions[2]))
-    pub det out holds?               -- the obligation, as it is checked there
 
     ensure rule: holds? iff (not evaluated? or at_args?)
 
@@ -281,10 +277,7 @@ states this, over the operands of a comparison, or of a chain of them:
 pub enum Comparand { Value, Closure, FunctionName }
 
 set_option fren.lint.undecidable "allow" in
-pub comp function_comparison {
-    in operands: Seq<Comparand>
-    pub det out accepted?
-
+pub proc function_comparison(operands: Seq<Comparand>): (det accepted?) {
     ensure rule: accepted? iff not (Comparand::Closure in operands or Comparand::FunctionName in operands)
 
     expect values: when operands = [Comparand::Value, Comparand::Value], accepted?
@@ -390,17 +383,17 @@ pub fn capture_symbol(Int): Id
 pub fn renamed(Nat, Seq<Id>, Seq<Id>, Id): Id
 
 set_option fren.lint.undecidable "allow" in
-pub comp closure_capture {
-    in next: Nat             -- the first capture symbol that the query does not yet have
-    in captured: Seq<Id>     -- the names that the closure's body mentions free, other than its parameters
-    in params: Seq<Id>       -- the closure's parameters' symbols
-    in values: Seq<Id>       -- the higher-order function's other parameters
-    in around: Seq<Id>       -- the higher-order body's binders around the application, outermost first
-    in inner: Seq<Id>        -- the closure body's binders around the mention, outermost first
-    in x: Id                 -- the name mentioned
-    in k: Int                -- where `x` is first among `captured`, if it is captured
-    in j: Int                -- where `x` is last among `params`, if it is a parameter
-
+pub proc closure_capture(
+    next: Nat,               -- the first capture symbol that the query does not yet have
+    captured: Seq<Id>,       -- the names that the closure's body mentions free, other than its parameters
+    params: Seq<Id>,         -- the closure's parameters' symbols
+    values: Seq<Id>,         -- the higher-order function's other parameters
+    around: Seq<Id>,         -- the higher-order body's binders around the application, outermost first
+    inner: Seq<Id>,          -- the closure body's binders around the mention, outermost first
+    x: Id,                   -- the name mentioned
+    k: Int,                  -- where `x` is first among `captured`, if it is captured
+    j: Int,                  -- where `x` is last among `params`, if it is a parameter
+): (det symbols: Seq<Id>, det mention: Id, det binders: Seq<Id>) {
     -- The capture symbols from `next` on are new: no other binder has one.
     assume fresh: forall (n: Nat), when n >= next,
         not capture_symbol(n) in values and not capture_symbol(n) in around
@@ -412,9 +405,9 @@ pub comp closure_capture {
     -- The parameters and the names captured are told apart.
     assume apart: not (x in captured and x in params)
 
-    pub det out symbols: Seq<Id> := capture_symbols(next, captured)
-    pub det out mention: Id := if x in inner then x else renamed(next, captured, params, x)
-    pub det out binders: Seq<Id> := symbols ++ values ++ around ++ params ++ inner
+    out symbols := capture_symbols(next, captured)
+    out mention := if x in inner then x else renamed(next, captured, params, x)
+    out binders := symbols ++ values ++ around ++ params ++ inner
 
     ensure symbols_named: symbols.len = captured.len
         and (forall (i: Int), when 0 <= i < captured.len, symbols[i] = capture_symbol(next + i))

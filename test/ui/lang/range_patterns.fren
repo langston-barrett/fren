@@ -9,10 +9,7 @@ const LOW: Int := -10
 const HIGH: Int := 2 * LOW + 30          -- 10, from another constant
 const LIMIT: Int := HIGH
 
-comp sign {
-    in n: Int
-    pub det out s: Sign
-
+proc sign(n: Int): (det s: Sign) {
     -- Ranges that together cover every integer need no `_`.
     ensure signs_def: s = match n {
         ..=-1 => Sign::Negative,
@@ -25,13 +22,7 @@ comp sign {
     expect pos_holds: when n = 7, s = Sign::Positive
 }
 
-comp bands {
-    in n: Int
-    in r: Reading
-    pub det out band: Int
-    pub det out digit?
-    pub det out ok?
-
+proc bands(n: Int, r: Reading): (det band: Int, det digit?, det ok?) {
     ensure bands_def: band = match n {
         LOW..0 => 0,
         0..=HIGH => 1,
@@ -52,10 +43,7 @@ comp bands {
 }
 
 -- A `Nat` is at least 0, so `0` and `1..` cover it.
-comp naturals {
-    in k: Nat
-    pub det out first?
-
+proc naturals(k: Nat): (det first?) {
     ensure first_def: first? iff match k {
         0 => true,
         1.. => false,
@@ -66,7 +54,7 @@ comp naturals {
 
 -- An upper bound touches the `..`: here the next member follows on the
 -- line of `1..`.
-comp next_member { in n: Int pub out a? pub out b? ensure ra: a? iff n is 1.. ensure rb: b? iff n is ..=0 }
+proc next_member(n: Int): (a?, b?) { ensure ra: a? iff n is 1.. ensure rb: b? iff n is ..=0 }
 
 --@ summary: 38 passed, 0 failed, 0 inconclusive, 0 redundant
 --@ exit: 0

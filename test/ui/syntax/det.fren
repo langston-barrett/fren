@@ -1,7 +1,7 @@
--- `det` applies only to outputs.
-comp c {
-  det in x: Int
-  --~^[cli] error: `det` applies only to outputs, not to an input
-  --~^^[hosted] error: expected 'out'
+-- `det` applies only to results, `exists` and `let`.
+proc c(x: Int) {
+  det assume a: x > 0
+  --~^[cli] error: `det` applies only to results, `exists` and `let`, not to a constraint
+  --~^^[hosted] error: unexpected identifier; expected 'exists', 'let' or 'out'
 }
 --@ exit: 2

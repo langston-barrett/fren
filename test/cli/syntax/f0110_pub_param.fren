@@ -1,0 +1,3 @@
+-- A parameter declared `pub` (F0110).
+proc c(pub x: Int) {}
+-- fren-covers: lang::modifiers

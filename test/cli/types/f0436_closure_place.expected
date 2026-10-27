@@ -1,8 +1,8 @@
 error[F0436]: a closure is only an argument for a function parameter
- --> test/cli/types/f0436_closure_place.fren:4:36
+ --> test/cli/types/f0436_closure_place.fren:3:23
   |
-4 |     pub det out y: Int := let g := |n| n + 1 in x
-  |                                    ^^^^^^^^^ a closure here
+3 |     out y := let g := |n| n + 1 in x
+  |                       ^^^^^^^^^ a closure here
   |
   = note: functions are not values: a closure is written only as an argument of a higher-order function, for its parameter of a function type
 

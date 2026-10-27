@@ -1,9 +1,6 @@
 -- A redundant constraint is only a warning: with no errors, the `fren`
 -- command exits with 3 (`view::severity`, `cli::exit`).
-comp c {
-    in x: Int
-    pub out y: Int
-
+proc c(x: Int): (y: Int) {
     ensure y_def: y = x + 1
     ensure bigger: y > x  --~ warning: `c::bigger` is redundant: it follows from `y_def`
 }

@@ -17,12 +17,11 @@ message suggests the literal, or leaving out the fields that should keep
 ```fren
 pub mod lint
 
-pub comp needless_update {
-    in n_fields: Nat   -- the fields of `r`'s record
-    in n_given: Nat    -- the fields the update gives, each at most once
-
+pub proc needless_update(
+    n_fields: Nat,     -- the fields of `r`'s record
+    n_given: Nat,      -- the fields the update gives, each at most once
+): (det fires?) {
     assume within: n_given <= n_fields
-    pub det out fires?
 
     ensure rule: fires? iff n_given = n_fields
 }
@@ -33,17 +32,13 @@ fields, is checked by refinement, each way:
 
 ```fren
 set_option fren.lint.needless_update "allow" in
-pub comp needless_update_written {
-    in t: Triple
-    in n: Int
-    pub det out u: Triple := { t with a := n, b := 1, c := n + 1 }
+pub proc needless_update_written(t: Triple, n: Int): (det u: Triple) {
+    out u := { t with a := n, b := 1, c := n + 1 }
 }
 
 set_option fren.lint.unused_variables "allow" in
-pub comp needless_update_fixed {
-    in t: Triple
-    in n: Int
-    pub det out u: Triple := Triple { a := n, b := 1, c := n + 1 }
+pub proc needless_update_fixed(t: Triple, n: Int): (det u: Triple) {
+    out u := Triple { a := n, b := 1, c := n + 1 }
 }
 
 refine needless_update_sound: needless_update_fixed refines needless_update_written

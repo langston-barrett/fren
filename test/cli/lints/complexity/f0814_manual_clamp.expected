@@ -1,16 +1,16 @@
 warning[F0814]: this conditional keeps its operand between two bounds
- --> test/cli/lints/complexity/f0814_manual_clamp.fren:2:49
+ --> test/cli/lints/complexity/f0814_manual_clamp.fren:2:42
   |
-2 | comp c { in x: Int pub out n: Int ensure r: n = if x > 9 then 9 else if x < -9 then -9 else x }
-  |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ gives a bound where the operand is past it
+2 | proc c(x: Int): (n: Int) { ensure r: n = if x > 9 then 9 else if x < -9 then -9 else x }
+  |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ gives a bound where the operand is past it
   |
   = help: `fren fix` can fix this
   = note: `manual_clamp` is `warn` by default
   = help: to allow it, `set_option fren.lint.manual_clamp "allow"`
 help: write `x.max(-9).min(9)`
   |
-2 - comp c { in x: Int pub out n: Int ensure r: n = if x > 9 then 9 else if x < -9 then -9 else x }
-2 + comp c { in x: Int pub out n: Int ensure r: n = x.max(-9).min(9) }
+2 - proc c(x: Int): (n: Int) { ensure r: n = if x > 9 then 9 else if x < -9 then -9 else x }
+2 + proc c(x: Int): (n: Int) { ensure r: n = x.max(-9).min(9) }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

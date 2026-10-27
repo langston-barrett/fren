@@ -1,8 +1,7 @@
 -- A quantifier ranges over an instance of a generic type whose values are
 -- finite: `Option<Bool>` has three (`Reqs/Lang/Generics`).
 
-comp c {
-    in x: Option<Bool>
+proc c(x: Option<Bool>) {
     expect each: exists (o: Option<Bool>), o = x
     expect three: when x != Option::None, forall (o: Option<Bool>), o = Option::None or o = x or o = Option::Some(x != Option::Some(true))
 }

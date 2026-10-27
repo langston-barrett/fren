@@ -16,12 +16,7 @@ mod pattern_test
 pub enum Shape { Circle(Int), Rect(Int, Int), Empty }
 
 set_option fren.lint.irrefutable_is "allow" in
-comp kinds {
-  in s: Shape
-  pub out round?
-  pub out boxy?
-  pub out any?
-
+proc kinds(s: Shape): (round?, boxy?, any?) {
   ensure round: round? iff s is Shape::Circle(_)
   ensure boxy: boxy? iff s is Shape::Rect(_, _) | Shape::Empty
   ensure any: any? iff s is _

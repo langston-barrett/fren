@@ -1,8 +1,8 @@
 warning[F0817]: this `min` and `max` always give `100`
- --> test/cli/lints/suspicious/f0817_min_max.fren:2:49
+ --> test/cli/lints/suspicious/f0817_min_max.fren:2:42
   |
-2 | comp c { in x: Int pub out n: Int ensure r: n = x.min(0).max(100) }
-  |                                                 ^^^^^^^^^^^^^^^^^ always `100`
+2 | proc c(x: Int): (n: Int) { ensure r: n = x.min(0).max(100) }
+  |                                          ^^^^^^^^^^^^^^^^^ always `100`
   |
   = note: the bounds are probably swapped
   = note: `min_max` is `warn` by default

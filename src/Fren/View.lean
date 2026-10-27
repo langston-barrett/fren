@@ -8,7 +8,7 @@ import Fren.Prelude
 /-!
 # `#fren_check` (the view)
 
-Runs the checks on comps from the model and reports the results as Lean
+Runs the checks on procedures from the model and reports the results as Lean
 messages, positioned at the relevant part of the spec. The text comes from
 `Fren.Core.messages`, shared with the standalone binary.
 -/
@@ -19,7 +19,7 @@ namespace Fren
 
 namespace Lang
 
-/-- Run the checks on the comps and global expectations declared in this file
+/-- Run the checks on the procedures and global expectations declared in this file
 (or just the named one) and report the results. Declared here rather than in `Fren.Syntax`, so that
 `Fren.Spec` alone does not accept it. A Lean keyword after it starts the
 next command, though `frenIdent` reads one as a name elsewhere. -/
@@ -166,7 +166,7 @@ def awaitCheck (task : Task (Except Exception CheckOutcome)) :
                            infoState.trees := s.infoState.trees ++ trees }
   ofExcept r
 
-/-- Checks the comps and global expectations `paths`, and reports the
+/-- Checks the procedures and global expectations `paths`, and reports the
 results; after a static error, checks none, as the `fren` command does. -/
 def checkAndReport (paths : Array Name) : CommandElabM Unit := do
   let before ← errorsLogged
@@ -245,6 +245,6 @@ where
     let r ← resolvePath (← getLocal).currentModule (pathSegs stx[1][0])
     match r with
     | .item { kind := .compItem, path, .. } | .item { kind := .expectItem, path, .. } => checkAndReport #[path]
-    | _ => throwErrorAt stx[1] (Core.wrongKindMsg "a component or a global expectation" r).text
+    | _ => throwErrorAt stx[1] (Core.wrongKindMsg "a procedure or a global expectation" r).text
 
 end Fren

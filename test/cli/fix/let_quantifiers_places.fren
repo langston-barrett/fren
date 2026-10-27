@@ -9,17 +9,7 @@ struct R { a? }
 fn g?(m: Mode) := m = Mode::Heat
 fn h?(b?) := b?
 
-pub comp c {
-    in t: Set<Solo>
-    in c?
-    in m: Mode
-    pub out r: R
-    pub out w?
-    pub out x?
-    pub out y?
-    pub out z?
-    pub out v?
-
+pub proc c(t: Set<Solo>, c?, m: Mode): (r: R, w?, x?, y?, z?, v?) {
     ensure e1: r = R { a? := g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off) }
     ensure e2: w? iff match m { Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off), _ => c? }
     ensure e3: x? iff {g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off)} = {c?}

@@ -1,2 +1,2 @@
 -- A built-in type written with a type argument.
-comp c { in n: Int<Bool> }
+proc c(n: Int<Bool>) {}

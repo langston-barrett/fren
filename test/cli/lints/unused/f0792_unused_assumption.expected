@@ -1,11 +1,11 @@
-warning[F0792]: the assumption `pos` constrains only inputs that nothing uses
- --> test/cli/lints/unused/f0792_unused_assumption.fren:2:52
+warning[F0792]: the assumption `pos` constrains only parameters that nothing uses
+ --> test/cli/lints/unused/f0792_unused_assumption.fren:2:43
   |
-2 | comp c { in x: Int in n: Int pub out y: Int assume pos: n > 0 ensure r: y = x + 1 }
-  |                                                    ^^^ constrains only unused inputs
+2 | proc c(x: Int, n: Int): (y: Int) { assume pos: n > 0 ensure r: y = x + 1 }
+  |                                           ^^^ constrains only unused parameters
   |
-  = note: no guarantee, expectation, definition or binding mentions `n`, nor does another assumption tie them to a used variable
-  = help: remove the assumption and its inputs, or use them
+  = note: no guarantee, expectation, definition, argument or binding mentions `n`, nor does another assumption tie them to a used variable
+  = help: remove the assumption and its parameters, or use them
   = note: `unused_assumption` is `warn` by default
   = help: to allow it, `set_option fren.lint.unused_assumption "allow"`
 

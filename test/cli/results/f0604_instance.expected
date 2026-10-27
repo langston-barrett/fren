@@ -1,11 +1,11 @@
-error[F0604]: the assumption `nonneg` of `sub` may not hold for instance `c::s`
- --> test/cli/results/f0604_instance.fren:3:40
+error[F0604]: the assumption `nonneg` of `sub` may not hold for call `c::s`
+ --> test/cli/results/f0604_instance.fren:3:33
   |
-3 | comp c { in i: Int pub out o: Int inst s: sub { n := i } ensure r: o = s.m }
-  |                                        ^ may violate `sub::nonneg`
+3 | proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.m }
+  |                                 ^ may violate `sub::nonneg`
   |
   = counterexample: i = -1
-  = help: bind the instance's inputs so that the assumption holds, or add an `assume` that guarantees it
+  = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
 fren: 5 passed, 1 failed, 0 inconclusive, 0 redundant
 

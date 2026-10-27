@@ -24,11 +24,9 @@ fn wrapped<T>(x: T): Option<T>  --~ error: the postconditions of `generic_uninte
     ensure none: wrapped(x) = Option::None  --~ info: conflicts with `some`
 
 -- At an instance, its postconditions hold of each application.
-comp swapped {
-    in a: Int
-    in b: Int
+proc swapped(a: Int, b: Int): (det c: Int) {
     assume apart: a != b
-    pub det out c: Int := other_than(a, b)
+    out c := other_than(a, b)
 
     expect moved: c != a
 }

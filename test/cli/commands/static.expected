@@ -1,32 +1,32 @@
 error[F0303]: `Bool` variable `flag` must end in `?`
- --> test/cli/commands/static.fren:3:13
+ --> test/cli/commands/static.fren:3:8
   |
-3 | comp c { in flag: Bool }
-  |             ^^^^ does not end in `?`
+3 | proc c(flag: Bool) {}
+  |        ^^^^ does not end in `?`
   |
   = note: a variable's name ends in `?` if and only if it is a `Bool`
 help: rename it to `flag?`
   |
-3 - comp c { in flag: Bool }
-3 + comp c { in flag?: Bool }
+3 - proc c(flag: Bool) {}
+3 + proc c(flag?: Bool) {}
   |
 
 error[F0301]: missing type for `x`
- --> test/cli/commands/static.fren:4:13
+ --> test/cli/commands/static.fren:4:8
   |
-4 | comp d { in x }
-  |             ^ needs a type
+4 | proc d(x) {}
+  |        ^ needs a type
   |
   = note: only variables whose names end in `?` can omit their type, which is `Bool`
 help: add a type
   |
-4 | comp d { in x: Int }
-  |              +++++
+4 | proc d(x: Int) {}
+  |         +++++
   |
 help: if it is a `Bool`, name it `x?`
   |
-4 - comp d { in x }
-4 + comp d { in x? }
+4 - proc d(x) {}
+4 + proc d(x?) {}
   |
 
 error: could not check due to previous errors

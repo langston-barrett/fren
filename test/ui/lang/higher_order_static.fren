@@ -26,61 +26,49 @@ fn nested(s: Set<fn(Int) -> Int>): Int := 0  --~ error: a function type cannot b
 fn returns(f: fn(Int) -> fn(Int) -> Int): Int := 0  --~ error: a function type cannot be within another type
 fn natural(f: fn(Int) -> Nat): Int := 0  --~ error: a function type's parameter or result cannot be a `Nat`, for now
 fn pattern(f: fn(Int is 0..) -> Int): Int := 0  --~ error: a function type's parameter or result cannot be a pattern type, for now
-comp var_type {
-    in f: fn(Int) -> Int  --~ error: a function type cannot be the type of a component's variable
-}
+proc var_type(
+    f: fn(Int) -> Int,    --~ error: a function type cannot be the type of a procedure's parameter or output
+) {}
 
 -- An argument for a function parameter is a closure or the name of a
 -- defined function or function parameter (`lang::function_argument`).
-comp arguments {
-    in x: Int
-    pub det out a: Int := apply(x, x)  --~ error: expected a closure or a function's name of type `fn(Int) -> Int`
+proc arguments(x: Int): (det a: Int) {
+    out a := apply(x, x)  --~ error: expected a closure or a function's name of type `fn(Int) -> Int`
 }
-comp uninterpreted_name {
-    in x: Int
-    pub det out a: Int := apply(hidden, x)  --~ error: the uninterpreted function `higher_order_static::hidden` cannot be given for a function parameter
+proc uninterpreted_name(x: Int): (det a: Int) {
+    out a := apply(hidden, x)  --~ error: the uninterpreted function `higher_order_static::hidden` cannot be given for a function parameter
 }
-comp arity {
-    in x: Int
-    pub det out a: Int := apply(|y, z| y + z, x)  --~ error: expected a closure of 1 parameter, of type `fn(Int) -> Int`, but it has 2 parameters
+proc arity(x: Int): (det a: Int) {
+    out a := apply(|y, z| y + z, x)  --~ error: expected a closure of 1 parameter, of type `fn(Int) -> Int`, but it has 2 parameters
 }
-comp written_type {
-    in x: Int
-    pub det out a: Int := apply(|y: Bool| x, x)  --~ error: type mismatch: expected `Int`, found `Bool`
+proc written_type(x: Int): (det a: Int) {
+    out a := apply(|y: Bool| x, x)  --~ error: type mismatch: expected `Int`, found `Bool`
 }
-comp body_type {
-    in x: Int
-    pub det out a: Int := apply(|y| y > 0, x)  --~ error: type mismatch: expected `Int`, found `Bool`
+proc body_type(x: Int): (det a: Int) {
+    out a := apply(|y| y > 0, x)  --~ error: type mismatch: expected `Int`, found `Bool`
 }
-comp name_type {
-    in x: Int
-    pub det out a: Int := both(inc) + x  --~ error: `higher_order_static::inc` takes 1 argument, but 2 were given
+proc name_type(x: Int): (det a: Int) {
+    out a := both(inc) + x  --~ error: `higher_order_static::inc` takes 1 argument, but 2 were given
 }
-comp closure_elsewhere {
-    in x: Int
-    pub det out a: Int := let g := |y| y in x  --~ error: a closure is only an argument for a function parameter
+proc closure_elsewhere(x: Int): (det a: Int) {
+    out a := let g := |y| y in x  --~ error: a closure is only an argument for a function parameter
 }
-comp name_elsewhere {
-    in x: Int
-    pub det out a: Int := inc + x  --~ error: function `higher_order_static::inc` must be applied to arguments
+proc name_elsewhere(x: Int): (det a: Int) {
+    out a := inc + x  --~ error: function `higher_order_static::inc` must be applied to arguments
 }
-comp uninterpreted_in_closure {
-    in x: Int
-    pub det out a: Int := apply(|y| hidden(y), x)  --~ error: a closure's body cannot apply uninterpreted function `higher_order_static::hidden`
+proc uninterpreted_in_closure(x: Int): (det a: Int) {
+    out a := apply(|y| hidden(y), x)  --~ error: a closure's body cannot apply uninterpreted function `higher_order_static::hidden`
 }
-comp duplicate {
-    in x: Int
-    pub det out a: Int := both(|y, y| y)  --~ error: `y` is bound multiple times in this quantifier
+proc duplicate(x: Int): (det a: Int) {
+    out a := both(|y, y| y)  --~ error: `y` is bound multiple times in this quantifier
 }
-comp unknown {
-    pub out a: Option<Int>
+proc unknown(): (a: Option<Int>) {
     ensure r: a = map(Option::None, |x| x)  --~ error: cannot infer the type of this closure's parameter of `higher_order_static::map`
 }
 
 -- A closure's parameter varies, as a variable does: its body is linear.
-comp nonlinear {
-    in x: Int
-    pub det out a: Int := apply(|n| n * x, x)  --~ error: nonlinear arithmetic is not supported
+proc nonlinear(x: Int): (det a: Int) {
+    out a := apply(|n| n * x, x)  --~ error: nonlinear arithmetic is not supported
 }
 
 -- A function parameter is applied, or given to another function parameter.
@@ -89,12 +77,10 @@ fn arity_param(f: fn(Int) -> Int): Int := f(1, 2)  --~ error: `f` takes 1 argume
 
 -- Functions are not compared (`lang::function_comparison`).
 fn compared?(f: fn(Int) -> Int, g: fn(Int) -> Int) := f = g  --~ error: functions cannot be compared with `=`
-comp compare_names {
-    pub out a?
+proc compare_names(): (a?) {
     ensure r: a? iff inc != dec  --~ error: functions cannot be compared with `!=`
 }
-comp compare_closures {
-    pub out a?
+proc compare_closures(): (a?) {
     ensure r: a? iff (|x| x) = (|y| y)  --~ error: functions cannot be compared with `=`
 }
 
@@ -104,8 +90,7 @@ fn shadow_ok(g: fn(Int) -> Int): Int := apply(|g!| g + 1, 2) + g(0)
 fn no_shadow(g: fn(Int) -> Int): Int := apply(|h!| h + 1, 2) + g(0)  --~ error: `h!` shadows nothing
 
 -- A bound name is never a function.
-comp bound_function {
-    in x: Int
+proc bound_function(x: Int) {
     expect e: forall (h: fn(Int) -> Int), x = x  --~ error: a function type is only the type of a defined function's parameter
 }
 --@ exit: 2

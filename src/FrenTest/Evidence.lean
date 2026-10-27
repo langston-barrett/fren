@@ -8,10 +8,7 @@ open Fren.Lang
 -- them, and asks the solver only about the rest.
 mod evidence_test
 
-pub comp word {
-    in text: String
-    pub det out accepted?
-
+pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[a-z]+")
 
     expect plain: when text = "ab", accepted?
@@ -20,9 +17,7 @@ pub comp word {
 }
 
 set_option fren.evidence "tested" in
-pub comp all_tested {
-    in n: Int
-    pub out big?
+pub proc all_tested(n: Int): (big?) {
     ensure r: big? iff n > 3
     expect wrong: when n = 4, not big?
 }
@@ -49,17 +44,15 @@ note: `"tested"` has the checks tested instead of asked of the solver, `"enumera
 -/
 #guard_msgs in
 set_option fren.evidence "maybe" in
-pub comp bad { in x? pub out y? ensure r: y? iff x? }
+pub proc bad(x?): (y?) { ensure r: y? iff x? }
 
 /--
 error: `fren.evidence` cannot be set for a guarantee
 
-note: it can be set before a component, an expectation or global expectation, a cover goal, an instance or a `det out`
+note: it can be set before a procedure, an expectation or global expectation, a cover goal, a call or a `det` variable
 -/
 #guard_msgs in
-pub comp misplaced {
-    in x?
-    pub out y?
+pub proc misplaced(x?): (y?) {
     set_option fren.evidence "tested" in
     ensure r: y? iff x?
 }
@@ -67,12 +60,10 @@ pub comp misplaced {
 /--
 error: `fren.lint.nonminimal_bool` cannot be set before a member
 
-note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component
+note: before a member, `set_option` sets only `fren.evidence`; other options are set before the procedure
 -/
 #guard_msgs in
-pub comp other_option {
-    in x?
-    pub out y?
+pub proc other_option(x?): (y?) {
     set_option fren.lint.nonminimal_bool "allow" in
     ensure r: y? iff x?
 }

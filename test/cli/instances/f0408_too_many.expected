@@ -1,0 +1,24 @@
+error[F0408]: too many arguments: `sub` takes 1 argument, `count`
+ --> test/cli/instances/f0408_too_many.fren:3:29
+  |
+3 | proc c() { call s := sub(1, 2) }
+  |                             ^ 2 arguments
+  |
+  = note: a call gives one argument for each parameter, in order
+
+warning[F0710]: unused variable `count`
+ --> test/cli/instances/f0408_too_many.fren:2:10
+  |
+2 | proc sub(count: Int) {}
+  |          ^^^^^ never mentioned
+  |
+  = note: nothing in its procedure depends on it
+  = help: remove it, or mention it in a constraint
+  = note: `unused_variables` is `warn` by default
+  = help: to allow it, `set_option fren.lint.unused_variables "allow"`
+
+error: could not check due to previous errors
+
+Some errors have detailed explanations: F0408, F0710.
+For more information about an error, try `fren --explain F0408`.
+exit=2

@@ -1,0 +1,17 @@
+error[F0160]: a private output is written `exists`
+ --> test/cli/syntax/f0160_out.fren:3:5
+  |
+3 |     out z: Int
+  |     ^^^^^ an `out` declaration
+  |
+  = note: a procedure's public outputs are its named results, as in `proc p(x: T): (y: U) { ... }`, defined, if at all, by `out y := e`; a private output is `exists z: V`, or `let z: V := e` with a definition
+help: write `exists`
+  |
+3 -     out z: Int
+3 +     exists z: Int
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0160`.
+exit=2

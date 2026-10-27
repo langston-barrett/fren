@@ -1,14 +1,14 @@
 error[F0106]: expected `,` after the condition of `unless`, found identifier `y`
- --> test/cli/syntax/f0106_unless.fren:2:58
+ --> test/cli/syntax/f0106_unless.fren:2:51
   |
-2 | comp c { in x: Int pub out y: Int ensure r: unless x > 1 y = 3 }
-  |                                                          ^ expected `,`
+2 | proc c(x: Int): (y: Int) { ensure r: unless x > 1 y = 3 }
+  |                                                   ^ expected `,`
   |
   = note: the condition of `unless` ends with a comma
 help: add a comma
   |
-2 | comp c { in x: Int pub out y: Int ensure r: unless x > 1, y = 3 }
-  |                                                         +
+2 | proc c(x: Int): (y: Int) { ensure r: unless x > 1, y = 3 }
+  |                                                  +
   |
 
 error: could not check due to previous errors

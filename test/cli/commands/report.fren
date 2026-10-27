@@ -1,11 +1,8 @@
 -- Snapshot of the binary's full output for failing checks: message layout,
 -- help and notes, counterexample values, the summary and the exit code.
-comp exit {
-    in n_fail: Int
-    in n_inconc: Int
+proc exit(n_fail: Int, n_inconc: Int): (code: Int) {
     assume counts: n_fail >= 0 and n_inconc >= 0
-    pub out code: Int
-    out scratch: Int
+    exists scratch: Int
     ensure failures: when n_fail > 0, code = 1
     ensure inconc: when n_inconc > 0, code = 3
     ensure negative: when n_fail < 0, code = 4
@@ -15,13 +12,11 @@ comp exit {
 
 -- Instances: only earlier instances appear in an instance's counterexample,
 -- and instance variables can't be assumed about.
-comp chooser { pub out b? }
-comp uses {
-    in n_fail: Int
-    pub out ok?
-    inst first: exit { n_fail, n_inconc := 0 }
-    inst second: exit { n_fail := first.code, n_inconc := n_fail }
-    inst pick: chooser {}
+proc chooser(): (b?) {}
+proc uses(n_fail: Int): (ok?) {
+    call first := exit(n_fail, 0)
+    call second := exit(first.code, n_fail)
+    call pick := chooser()
     ensure r: ok? iff pick.b?
     ensure lucky: pick.b?
 }

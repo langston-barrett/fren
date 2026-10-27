@@ -1,10 +1,10 @@
 warning[F0506]: `c` has evidence `missing`, below `trusted` (`--require`)
  --> test/cli/traceability/f0506_below.fren:3:6
   |
-3 | comp c { in x? pub out y? ensure r: y? iff x? }
+3 | proc c(x?): (y?) { ensure r: y? iff x? }
   |      ^ evidence `missing`
   |
-  = note: `--require` requires every component to have evidence `trusted` or stronger
+  = note: `--require` requires every procedure to have evidence `trusted` or stronger
   = help: add an `impl`, a `tested` claim or a `trusted` claim for it
 
 evidence: 0 proved, 0 solver, 0 tested, 0 trusted, 1 missing

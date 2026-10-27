@@ -5,11 +5,7 @@ mod m
 
 pub struct Ms(Int)
 
-pub comp c {
-    in t: Ms
-    in u: Ms
-    pub out d: Ms
-
+pub proc c(t: Ms, u: Ms): (d: Ms) {
     ensure r: d = t + u - Ms(1)
     ensure s: d.0 >= 0
 }

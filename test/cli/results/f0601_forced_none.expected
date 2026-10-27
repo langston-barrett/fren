@@ -1,7 +1,7 @@
 error[F0601]: `http::retry` is not realizable
   --> test/cli/results/f0601_forced_none.fren:12:6
    |
-12 | comp retry {
+12 | proc retry(method: Method, status: Nat, attempt: Nat, retry_after: Seconds): (
    |      ^^^^^ not realizable
    |
    = note: for the input
@@ -13,21 +13,21 @@ error[F0601]: `http::retry` is not realizable
    = help: weaken one of them, or add an `assume` that rules this input out
 
 note: conflicts with `honor_server` and `latency_budget`
-  --> test/cli/results/f0601_forced_none.fren:22:12
+  --> test/cli/results/f0601_forced_none.fren:18:12
    |
-22 |     ensure transient: retry? iff status is 429 | 503
+18 |     ensure transient: retry? iff status is 429 | 503
    |            ^^^^^^^^^
 
 note: conflicts with `transient` and `latency_budget`
-  --> test/cli/results/f0601_forced_none.fren:24:12
+  --> test/cli/results/f0601_forced_none.fren:20:12
    |
-24 |     ensure honor_server: when retry?, delay >= retry_after
+20 |     ensure honor_server: when retry?, delay >= retry_after
    |            ^^^^^^^^^^^^
 
 note: conflicts with `transient` and `honor_server`
-  --> test/cli/results/f0601_forced_none.fren:26:12
+  --> test/cli/results/f0601_forced_none.fren:22:12
    |
-26 |     ensure latency_budget: delay <= MAX_DELAY
+22 |     ensure latency_budget: delay <= MAX_DELAY
    |            ^^^^^^^^^^^^^^
 
 fren: 8 passed, 1 failed, 0 inconclusive, 0 redundant

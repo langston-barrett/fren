@@ -7,26 +7,26 @@ open Fren.Lang
 -- through `..`, are named by their paths from this file, with `..`
 -- resolved. The imported item is placed at the nested chapter's check.
 /--
-error: chapters/deep/LiterateDeep.md:12:11: expectation `deep_gate::never` does not hold
+error: chapters/deep/LiterateDeep.md:9:11: expectation `deep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: chapters/deep/LiterateDeep.md:17:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+info: chapters/deep/LiterateDeep.md:14:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 ---
-error: chapters/LiterateShared.md:9:11: expectation `shared_gate::never` does not hold
+error: chapters/LiterateShared.md:6:11: expectation `shared_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: chapters/deep/LiterateDeep.md:18:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+info: chapters/deep/LiterateDeep.md:15:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 ---
-error: chapters/deep/LiterateDeep.md:19:0: expectation `dep::dep_gate::never` does not hold
+error: chapters/deep/LiterateDeep.md:16:0: expectation `dep::dep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: chapters/deep/LiterateDeep.md:19:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+info: chapters/deep/LiterateDeep.md:16:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_md "chapters/LiterateReader.md"
@@ -34,14 +34,14 @@ info: chapters/deep/LiterateDeep.md:19:0: fren: 3 passed, 1 failed, 0 inconclusi
 -- A top-level chapter that checks the nested chapters' items names each by
 -- the chapter that declares it, and its summaries by itself.
 /--
-error: chapters/deep/LiterateDeep.md:12:11: expectation `deep_gate::never` does not hold
+error: chapters/deep/LiterateDeep.md:9:11: expectation `deep_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: chapters/LiterateSibling.md:4:0: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 ---
-error: chapters/LiterateShared.md:9:11: expectation `shared_gate::never` does not hold
+error: chapters/LiterateShared.md:6:11: expectation `shared_gate::never` does not hold
 
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
@@ -60,7 +60,7 @@ info: chapters/LiterateSibling.md:5:0: fren: 3 passed, 1 failed, 0 inconclusive,
 #guard_msgs in
 run_cmd Fren.logAbout `deep_gate .missing m!"about an item with no position" .information
 
-comp lean_gate { in a? pub out b? ensure same: b? iff a? }
+proc lean_gate(a?): (b?) { ensure same: b? iff a? }
 
 /-- info: about an item with no position -/
 #guard_msgs in

@@ -8,12 +8,10 @@ pub fn rank<T>(x: T): Int
     ensure natural: rank(x) >= 0
 pub fn size<T>(Option<T>): Nat
 
-comp c {
-    in x: Int
-    in p?
-    pub det out i: Int := rank(x)
-    pub det out j: Int := rank(p?)
-    pub det out n: Int := size(Option::Some(x))
+proc c(x: Int, p?): (det i: Int, det j: Int, det n: Int) {
+    out i := rank(x)
+    out j := rank(p?)
+    out n := size(Option::Some(x))
 
     expect natural: i >= 0 and j >= 0 and n >= 0
     -- Nothing relates two instances.

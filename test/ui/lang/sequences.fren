@@ -13,13 +13,10 @@ set_option fren.lint.eq_op "allow"
 
 type Job
 
-comp dispatch {
-    in pending: Seq<Job>
-    in running: Set<Job>
-    in capacity: Int
-
+proc dispatch(pending: Seq<Job>, running: Set<Job>, capacity: Int): (
+    start?,                      -- start the job at the head of the queue
+) {
     assume sane: capacity >= 0  --~ warning: `capacity` is never negative
-    pub out start?               -- start the job at the head of the queue
 
     ensure rule: start? iff (pending != [] and running.card < capacity and not pending[0] in running)
 
@@ -33,12 +30,7 @@ enum Mode { Long, Short }
 -- Each form of guard, in expectations that hold, so that only
 -- definedness can fail. `nonminimal_bool` would rewrite the `if`.
 set_option fren.lint.nonminimal_bool "allow" in
-comp guards {
-    in q: Seq<Int>
-    in i: Int
-    in m: Mode
-    pub out p?
-
+proc guards(q: Seq<Int>, i: Int, m: Mode): (p?) {
     ensure r: p? iff i > 0
 
     expect by_when: when q.len > 2, q[2] = q[2]
@@ -59,11 +51,8 @@ comp guards {
 }
 
 -- A guarantee can ensure another's definedness.
-comp together {
-    in q: Seq<Int>
-
+proc together(q: Seq<Int>): (x: Int) {
     assume long: q.len > 3
-    pub out x: Int
 
     ensure third: x = q[3]
 }

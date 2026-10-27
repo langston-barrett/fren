@@ -1,3 +1,3 @@
 -- Chained `iff` (F0107).
-comp c { in a? in b? pub out d? ensure r: d? iff a? iff b? }
+proc c(a?, b?): (d?) { ensure r: d? iff a? iff b? }
 -- fren-covers: lang::operand

@@ -14,22 +14,18 @@ fn pos(n: Int): Int := n
     assume p: n > 0
 
 -- Each holds where the closure is applied, though not for every argument.
-comp holds {
-    in q: Seq<Int>
-    in k: Int
-    pub det out a: Int := guarded(q, |i| q[i]) + k
-    pub det out b: Int := apply(|n| pos(n), 3) + k
-    pub det out c: Int := apply(pos, 3) + k
-    pub det out d: Int := never(|n| q[n], k)
+proc holds(q: Seq<Int>, k: Int): (det a: Int, det b: Int, det c: Int, det d: Int) {
+    out a := guarded(q, |i| q[i]) + k
+    out b := apply(|n| pos(n), 3) + k
+    out c := apply(pos, 3) + k
+    out d := never(|n| q[n], k)
 }
 
-comp fails {
-    in q: Seq<Int>
-    in k: Int
-    pub det out a: Int := apply(|i| q[i], k)  --~ error: note: in a closure given to `higher_order_obligations::apply`, checked where `higher_order_obligations::apply` applies it
-    pub det out b: Int := apply(pos, k)  --~ error: the precondition `p` of `higher_order_obligations::pos` may not hold at this application in `higher_order_obligations::fails::b`
-    pub det out d: Int := twice(|n| table { n > 100 => n, n < 50 => 0 - n }, k)  --~ error: a table in `higher_order_obligations::fails::d` may have no row that holds
-    pub det out e: Int := apply(|n| table { n > 0 => 1, n <= 0 => 2, _ => 3 }, k)  --~ error: row 3 of a table in `higher_order_obligations::fails::e` is never the first that holds
+proc fails(q: Seq<Int>, k: Int): (det a: Int, det b: Int, det d: Int, det e: Int) {
+    out a := apply(|i| q[i], k)  --~ error: note: in a closure given to `higher_order_obligations::apply`, checked where `higher_order_obligations::apply` applies it
+    out b := apply(pos, k)  --~ error: the precondition `p` of `higher_order_obligations::pos` may not hold at this application in `higher_order_obligations::fails::b`
+    out d := twice(|n| table { n > 100 => n, n < 50 => 0 - n }, k)  --~ error: a table in `higher_order_obligations::fails::d` may have no row that holds
+    out e := apply(|n| table { n > 0 => 1, n <= 0 => 2, _ => 3 }, k)  --~ error: row 3 of a table in `higher_order_obligations::fails::e` is never the first that holds
 }
 --@ summary: 20 passed, 4 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

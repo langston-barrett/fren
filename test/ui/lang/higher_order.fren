@@ -36,19 +36,28 @@ fn positive_at(f: fn(Int) -> Int, x: Int): Int := f(x)
     assume positive: f(x) > 0
     ensure value: positive_at(f, x) = f(x)
 
-comp c {
-    in o: Option<Int>
-    in step: Int
-    pub det out p: Option<Int> := map(o, |x| x + step)
-    pub det out q: Int := twice(|n: Int| 2 * n, step)
-    pub det out r: Int := twice(double, step)
-    pub det out s: Option<Bool> := map(o, |x| x > 0)
-    pub det out a: Int := let step! := step + 1 in shift(o, |x| x + step)
-    pub det out b: Option<Int> := shift_all(o, |z| z * 2)
-    pub det out d: Option<Option<Int>> := map(o, |x| map(Option::Some(x), |y| x + y + step))
-    pub det out e: Option<Int> := pass(o, double)
-    pub det out g: Int := combine(|n, pos?| if pos? then n else -n, step)
-    pub det out h: Int := unwrap_or_else(o, |b?| if b? then step else 0)
+proc c(o: Option<Int>, step: Int): (
+    det p: Option<Int>,
+    det q: Int,
+    det r: Int,
+    det s: Option<Bool>,
+    det a: Int,
+    det b: Option<Int>,
+    det d: Option<Option<Int>>,
+    det e: Option<Int>,
+    det g: Int,
+    det h: Int,
+) {
+    out p := map(o, |x| x + step)
+    out q := twice(|n: Int| 2 * n, step)
+    out r := twice(double, step)
+    out s := map(o, |x| x > 0)
+    out a := let step! := step + 1 in shift(o, |x| x + step)
+    out b := shift_all(o, |z| z * 2)
+    out d := map(o, |x| map(Option::Some(x), |y| x + y + step))
+    out e := pass(o, double)
+    out g := combine(|n, pos?| if pos? then n else -n, step)
+    out h := unwrap_or_else(o, |b?| if b? then step else 0)
 
     expect some: when o = Option::Some(1), p = Option::Some(1 + step)
     expect four: q = 4 * step
@@ -66,19 +75,16 @@ comp c {
 
 -- Captured bound names, of a listed type and of an unbounded quantifier.
 set_option fren.lint.undecidable "allow" in
-comp quantified {
-    in o: Option<Int>
+proc quantified(o: Option<Int>) {
     expect listed: forall (b?: Bool), map(o, |x| if b? then x else 0) != Option::None or o = Option::None
     expect unbounded: forall (n: Int), when o = Option::Some(n), map(o, |x| x + n) = Option::Some(2 * n)
 }
 
 -- A precondition of the higher-order function, with its closure.
-comp guarded {
-    in x: Int
-    pub det out y: Int := positive_at(|n| n - 10, x)  --~ error: the precondition `positive` of `higher_order::positive_at` may not hold at this application in `higher_order::guarded::y`
+proc guarded(x: Int): (det y: Int) {
+    out y := positive_at(|n| n - 10, x)  --~ error: the precondition `positive` of `higher_order::positive_at` may not hold at this application in `higher_order::guarded::y`
 }
-comp guarded_ok {
-    in x: Int
+proc guarded_ok(x: Int): (det y: Int) {
     assume big: x > 5
-    pub det out y: Int := positive_at(|n| n - 5, x)
+    out y := positive_at(|n| n - 5, x)
 }

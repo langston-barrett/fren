@@ -5,91 +5,100 @@ set_option fren.lint.dead_code "allow"
 
 fn twice(n: Int): Int := 2 * n
 enum S { A(Int), B, C }
-comp sub { in x: Int pub out z: Int ensure r: z = x }
+proc sub(x: Int): (z: Int) { ensure r: z = x }
 
 -- Expected to be no collection: its type cannot be known.
-comp argument { pub out y: Int ensure r: y = twice({}) }
+proc argument(): (y: Int) { ensure r: y = twice({}) }
 --~^ error: the type of `{}` cannot be known here
-comp binding { inst w: sub { x := ([]) } }
+proc binding() { call w := sub(([])) }
 --~^ error: the type of `[]` cannot be known here
-comp branch { in c? pub out y: Int := if c? then 1 else {} }
+proc branch(c?): (y: Int) { out y := if c? then 1 else {} }
 --~^ error: the type of `{}` cannot be known here
-comp compared { pub out y: Int ensure r: y = {} }
+proc compared(): (y: Int) { ensure r: y = {} }
 --~^ error: the type of `{}` cannot be known here
-comp arm { in s: S pub out y: Int ensure r: y = match s { S::A(a) => a, S::B => {}, S::C => 0 } }
+proc arm(s: S): (y: Int) { ensure r: y = match s { S::A(a) => a, S::B => {}, S::C => 0 } }
 --~^ error: the type of `{}` cannot be known here
 
 -- A `match` with an expected type checks its arms in order against it, so
 -- an error in a later arm comes after.
-comp first_arm { in s: S pub out y: Int ensure r: y = match s { S::B => {}, S::A(a) => a, S::C => true } }
+proc first_arm(s: S): (y: Int) { ensure r: y = match s { S::B => {}, S::A(a) => a, S::C => true } }
 --~^ error: the type of `{}` cannot be known here
-comp first_arm_later_error { in s: S pub out y: Int ensure r: y = match s { S::B => [], S::A(a) => nope, S::C => 1 } }
+proc first_arm_later_error(s: S): (y: Int) { ensure r: y = match s { S::B => [], S::A(a) => nope, S::C => 1 } }
 --~^ error: the type of `[]` cannot be known here
 
 -- Without one, an arm that does not synthesize its type waits for one that
 -- does, and has the type it is checked against.
-comp waiting { in s: S in t: Set<String> pub out y: Set<Int> := match s { S::B => {}, S::A(a) => t, S::C => {} } }
+proc waiting(s: S, t: Set<String>): (y: Set<Int>) { out y := match s { S::B => {}, S::A(a) => t, S::C => {} } }
 --~^ error: the arms of `match` have different types: `Set<Int>` and `Set<String>`
 
 -- A branch takes the other branch's type first.
-comp sibling { in c? in t: Set<Int> pub out y: Int := if c? then {} else t }
+proc sibling(c?, t: Set<Int>): (y: Int) { out y := if c? then {} else t }
 --~^ error: type mismatch: expected `Int`, found `Set<Int>`
 
 -- Expected to be a collection of the other kind: a type mismatch.
-comp set_for_seq { in c? pub out q: Seq<Int> := if c? then {} else [1] }
+proc set_for_seq(c?): (q: Seq<Int>) { out q := if c? then {} else [1] }
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set
-comp seq_for_set { in t: Set<Int> pub out p? ensure r: p? iff t = [] }
+proc seq_for_set(t: Set<Int>): (p?) { ensure r: p? iff t = [] }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp seq_note { in t: Set<Int> pub out p? ensure r: p? iff [] = t }
+proc seq_note(t: Set<Int>): (p?) { ensure r: p? iff [] = t }
 --~^ error: `[]` is an empty sequence
-comp union_seq { in t: Set<Int> pub out u: Set<Int> := [] union t }
+proc union_seq(t: Set<Int>): (u: Set<Int>) { out u := [] union t }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp subset_seq { in t: Set<Int> pub out p? ensure r: p? iff t subset [] }
+proc subset_seq(t: Set<Int>): (p?) { ensure r: p? iff t subset [] }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp concat_set { in q: Seq<Int> pub out u: Seq<Int> := {} ++ q }
+proc concat_set(q: Seq<Int>): (u: Seq<Int>) { out u := {} ++ q }
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set
-comp concat_set_right { in q: Seq<Int> pub out u: Seq<Int> := q ++ {} }
+proc concat_set_right(q: Seq<Int>): (u: Seq<Int>) { out u := q ++ {} }
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set
-comp pair_in_seq { in x: Int pub out p? ensure r: p? iff (x, x) in [] }
+proc pair_in_seq(x: Int): (p?) { ensure r: p? iff (x, x) in [] }
 --~^ error: type mismatch: expected `Rel<Int, Int>`, found an empty sequence
-comp receiver { in c? pub out y: Int := (if c? then {} else [1]).len }
+proc receiver(c?): (y: Int) { out y := (if c? then {} else [1]).len }
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set
-comp arm_seq { in s: S in t: Set<Int> pub out u: Set<Int> := match s { S::A(a) => [], S::B => t, S::C => t } }
+proc arm_seq(s: S, t: Set<Int>): (u: Set<Int>) { out u := match s { S::A(a) => [], S::B => t, S::C => t } }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
 
 -- A member of a literal expects the literal's element type, or the first
 -- member's that synthesizes one; a pair's members, a relation's types.
-comp member_int { in x: Int pub out n: Int := {x, {}}.card }
+proc member_int(x: Int): (n: Int) { out n := {x, {}}.card }
 --~^ error: the type of `{}` cannot be known here
-comp member_seq { in t: Set<Int> pub out n: Int := {[], t}.card }
+proc member_seq(t: Set<Int>): (n: Int) { out n := {[], t}.card }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp element_set { in q: Seq<Int> pub out n: Int := [{}, q].len }
+proc element_set(q: Seq<Int>): (n: Int) { out n := [{}, q].len }
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set
-comp pair_member { in t: Set<Int> pub out n: Int := {(1, []), (2, t)}.card }
+proc pair_member(t: Set<Int>): (n: Int) { out n := {(1, []), (2, t)}.card }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp declared_member { in t: Set<Int> pub out a: Set<Set<Int>> := {t, []} }
+proc declared_member(t: Set<Int>): (a: Set<Set<Int>>) { out a := {t, []} }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp declared_element { in x: Int pub out q: Seq<Seq<Int>> := [{}, [x]] }
+proc declared_element(x: Int): (q: Seq<Seq<Int>>) { out q := [{}, [x]] }
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set
-comp declared_pair { in x: Int pub out r: Rel<Int, Set<Int>> := {(x, [])} }
+proc declared_pair(x: Int): (r: Rel<Int, Set<Int>>) { out r := {(x, [])} }
 --~^ error: type mismatch: expected `Set<Int>`, found an empty sequence
-comp members { in x: Int pub out n: Int := {x, true}.card }
+proc members(x: Int): (n: Int) { out n := {x, true}.card }
 --~^ error: the members of a set have different types: `Int` and `Bool`
-comp elements { in x: Int pub out n: Int := [x, "a"].len }
+proc elements(x: Int): (n: Int) { out n := [x, "a"].len }
 --~^ error: the elements of a sequence have different types: `Int` and `String`
 
 -- Accepted: the type that is expected of them is theirs.
-comp accepted {
-    in c? in s: S in t: Set<Int> in q: Seq<Int>
-    pub out a: Set<Int> := if c? then {} else t
-    pub out b: Seq<Int> := if c? then [] else q
-    pub out d: Set<Int> := match s { S::B => {}, S::A(n) => t, S::C => t }
-    pub out f: Int := {(1, {}), (2, t)}.card
-    pub out g: Int := {{}, t}.card
-    pub out h: Int := [[], q].len
-    pub out i: Set<Set<Int>> := {{}, t}
-    pub out j: Seq<Seq<Int>> := [[], q]
-    pub out k: Rel<Int, Set<Int>> := {(1, {}), (2, t)}
+proc accepted(c?, s: S, t: Set<Int>, q: Seq<Int>): (
+    a: Set<Int>,
+    b: Seq<Int>,
+    d: Set<Int>,
+    f: Int,
+    g: Int,
+    h: Int,
+    i: Set<Set<Int>>,
+    j: Seq<Seq<Int>>,
+    k: Rel<Int, Set<Int>>,
+) {
+    out a := if c? then {} else t
+    out b := if c? then [] else q
+    out d := match s { S::B => {}, S::A(n) => t, S::C => t }
+    out f := {(1, {}), (2, t)}.card
+    out g := {{}, t}.card
+    out h := [[], q].len
+    out i := {{}, t}
+    out j := [[], q]
+    out k := {(1, {}), (2, t)}
 }
 
 --@ exit: 2

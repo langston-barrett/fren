@@ -1,14 +1,14 @@
 error[F0321]: `String` has no method `length`
- --> test/cli/types/f0321_method.fren:5:21
+ --> test/cli/types/f0321_method.fren:2:21
   |
-5 |     ensure r: n = s.length
+2 |     ensure r: n = s.length
   |                     ^^^^^^ unknown method
   |
   = note: the methods of `String` are `len`, `starts_with?`, `ends_with?`, `contains?`, `matches?`, `at`, `slice`, `index_of`, `replace`, `replace_all`, `min`, `max`
 help: the method is called `len`
   |
-5 -     ensure r: n = s.length
-5 +     ensure r: n = s.len
+2 -     ensure r: n = s.length
+2 +     ensure r: n = s.len
   |
 
 error: could not check due to previous errors

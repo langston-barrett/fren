@@ -5,14 +5,7 @@ ordered struct Ms(Int)
 struct Unused(Int)  --~ warning: record `Unused` is never used
 struct Flag(Bool)
 
-comp c {
-    in a?
-    in t: Ms
-    in u: Ms
-    pub out o?
-    pub out p?
-    pub out q?
-
+proc c(a?, t: Ms, u: Ms): (o?, p?, q?) {
     ensure r1: o? iff not not Flag(a?).0  --~ warning: write `Flag(a?).0`
     --~^ warning: this reads the field of a newtype just built
     ensure r2: p? iff not (t = u)  --~ warning: write `t != u`

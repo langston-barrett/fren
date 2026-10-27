@@ -9,9 +9,7 @@ mod light
 
 pub enum Mode { On, Off }
 
-pub comp switch {
-  in mode: Mode
-  pub out lit?
+pub proc switch(mode: Mode): (lit?) {
   ensure lit: lit? iff mode = Mode::On
 }
 

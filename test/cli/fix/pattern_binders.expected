@@ -1,6 +1,6 @@
 --- test/cli/fix/pattern_binders.fren
 +++ test/cli/fix/pattern_binders.fren
-@@ -19 +19 @@
+@@ -11 +11 @@
 -    ensure other: p? iff (if a? then true else false)
 +    ensure other: p? iff (a?)
 exit=1

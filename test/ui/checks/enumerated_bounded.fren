@@ -7,29 +7,22 @@ type Id
 enum Tree { Leaf, Node(Tree, Bool) }
 
 set_option fren.evidence "enumerated" in
-comp counter {  --~ info: 3 checks of `counter` hold for every behaviour up to size 3
-    in x: Int
-    pub det out y: Int := x + 1
+proc counter(x: Int): (det y: Int) {  --~ info: 3 checks of `counter` hold for every behaviour up to size 3
+    out y := x + 1
     expect grows: y > x
     expect small: y < 3  --~ error: expectation `counter::small` does not hold
 }
 
 -- Larger witnesses may exist, beyond the bound.
 set_option fren.evidence "enumerated" in
-comp far {  --~ warning: could not decide whether `far` is realizable
-    in x: Int
-    pub out y: Int
+proc far(x: Int): (y: Int) {  --~ warning: could not decide whether `far` is realizable
     ensure r: y = x + 1
     cover big: y > 10  --~ warning: could not decide whether `far::big` can be met
 }
 
 -- An abstract type's values, and a recursive enumeration, up to the bound.
 set_option fren.evidence "enumerated" in
-comp nodes {  --~ info: 3 checks of `nodes` hold for every behaviour up to size 3
-    in a: Id
-    in b: Id
-    in t: Tree
-    pub det out same?
+proc nodes(a: Id, b: Id, t: Tree): (det same?) {  --~ info: 3 checks of `nodes` hold for every behaviour up to size 3
     ensure r: same? iff a = b
     expect refl: when a = b, same?
     expect apart: not same?  --~ error: expectation `nodes::apart` does not hold
@@ -39,9 +32,7 @@ comp nodes {  --~ info: 3 checks of `nodes` hold for every behaviour up to size 
 -- A larger bound reaches the witness.
 set_option fren.enumeration.size 11 in
 set_option fren.evidence "enumerated" in
-comp nearer {  --~ warning: could not decide whether `nearer` is realizable
-    in x: Int
-    pub out y: Int
+proc nearer(x: Int): (y: Int) {  --~ warning: could not decide whether `nearer` is realizable
     ensure r: y = x + 1
     cover big: y > 10  --~ info: cover goal `nearer::big` is met
 }

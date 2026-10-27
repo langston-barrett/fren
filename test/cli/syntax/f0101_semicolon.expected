@@ -1,14 +1,14 @@
 error[F0101]: unexpected character `;`
- --> test/cli/syntax/f0101_semicolon.fren:2:19
+ --> test/cli/syntax/f0101_semicolon.fren:2:33
   |
-2 | comp c { in x: Int; }
-  |                   ^ not part of Fren's syntax
+2 | proc c(x: Int) { assume a: x > 0; }
+  |                                 ^ not part of Fren's syntax
   |
   = note: Fren has no statement separators
 help: remove it
   |
-2 - comp c { in x: Int; }
-2 + comp c { in x: Int }
+2 - proc c(x: Int) { assume a: x > 0; }
+2 + proc c(x: Int) { assume a: x > 0 }
   |
 
 error: could not check due to previous errors

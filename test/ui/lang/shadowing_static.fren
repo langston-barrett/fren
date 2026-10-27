@@ -10,20 +10,20 @@ struct Point { x: Int, y: Int }
 const ORIGIN: Point := Point { x := 0, y := 0 }
 
 -- A component's variable over a constant, a function and a variant.
-comp var_const { in RATE: Int pub out y: Int ensure r: y = RATE }
+proc var_const(RATE: Int): (y: Int) { ensure r: y = RATE }
 --~^ error: `RATE` shadows the constant `RATE`
-comp var_const_ok { in RATE!: Int pub out y: Int ensure r: y = RATE }
-comp var_fn { in scale: Int pub out y: Int ensure r: y = scale }
+proc var_const_ok(RATE!: Int): (y: Int) { ensure r: y = RATE }
+proc var_fn(scale: Int): (y: Int) { ensure r: y = scale }
 --~^ error: `scale` shadows the function `scale`
-comp var_fn_ok { in scale!: Int pub out y: Int ensure r: y = scale }
-comp var_variant { use self::Shape::Square in Square: Int pub out y: Int ensure r: y = Square }
+proc var_fn_ok(scale!: Int): (y: Int) { ensure r: y = scale }
+proc var_variant(Square: Int): (y: Int) { use self::Shape::Square ensure r: y = Square }
 --~^ error: `Square` shadows the variant `Shape::Square`
 --~^^ warning: unused import `Shape::Square`
 -- The `use` is used: `Square!` depends on it (`Reqs/Lint#unused-imports`).
-comp var_variant_ok { use self::Shape::Square in Square!: Int pub out y: Int ensure r: y = Square }
+proc var_variant_ok(Square!: Int): (y: Int) { use self::Shape::Square ensure r: y = Square }
 -- Items that are not values are never hidden.
-comp var_type { in Shape: Int pub out y: Int ensure r: y = Shape }
-comp var_type_bang { in Point!: Int pub out y: Int ensure r: y = Point }
+proc var_type(Shape: Int): (y: Int) { ensure r: y = Shape }
+proc var_type_bang(Point!: Int): (y: Int) { ensure r: y = Point }
 --~^ error: `Point!` shadows nothing
 
 -- A defined function's parameter over a constant.
@@ -39,30 +39,24 @@ fn own_binder(s: Shape): Int := match s { Shape::Circle(own_binder) => own_binde
 
 -- A `match` binder over a variable, a constant, a function, another
 -- binder, a parameter and an instance.
-comp bind_var { in x: Int in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(x) => x > 0, _ => x > 0 } }
---~^ error: `x` shadows the input `x`
-comp bind_var_ok { in x: Int in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(x!) => x > 0, _ => x > 0 } }
-comp bind_out { in s: Shape pub out n: Int ensure r: n = match s { Shape::Circle(n) => n, _ => 0 } }
+proc bind_var(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x) => x > 0, _ => x > 0 } }
+--~^ error: `x` shadows the parameter `x`
+proc bind_var_ok(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x!) => x > 0, _ => x > 0 } }
+proc bind_out(s: Shape): (n: Int) { ensure r: n = match s { Shape::Circle(n) => n, _ => 0 } }
 --~^ error: `n` shadows the output `n`
-comp bind_const { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(RATE) => RATE > 0, _ => false } }
+proc bind_const(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(RATE) => RATE > 0, _ => false } }
 --~^ error: `RATE` shadows the constant `RATE`
-comp bind_const_ok { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(RATE!) => RATE > 0, _ => false } }
-comp bind_fn { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(scale) => scale > 0, _ => false } }
+proc bind_const_ok(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(RATE!) => RATE > 0, _ => false } }
+proc bind_fn(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(scale) => scale > 0, _ => false } }
 --~^ error: `scale` shadows the function `scale`
-comp bind_binder {
-    in s: Shape
-    in t: Shape
-    pub out p?
+proc bind_binder(s: Shape, t: Shape): (p?) {
     ensure r: p? iff match s {
         Shape::Circle(k) => match t { Shape::Circle(k) => k > 0, _ => k > 0 },
         --~^ error: `k` shadows the binder `k`
         _ => false,
     }
 }
-comp bind_binder_ok {
-    in s: Shape
-    in t: Shape
-    pub out p?
+proc bind_binder_ok(s: Shape, t: Shape): (p?) {
     ensure r: p? iff match s {
         Shape::Circle(k) => match t { Shape::Circle(k!) => k > 0, _ => k > 0 },
         _ => false,
@@ -71,22 +65,20 @@ comp bind_binder_ok {
 fn bind_param?(n: Int, s: Shape) := match s { Shape::Circle(n) => n > 0, _ => n > 0 }
 --~^ error: `n` shadows the parameter `n`
 fn bind_param_ok?(n: Int, s: Shape) := match s { Shape::Circle(n!) => n > 0, _ => n > 0 }
-comp sub { in v: Int pub out w: Int ensure r: w = v }
-comp bind_inst {
-    in s: Shape
-    inst w: sub { v := 1 }
-    pub out p?
+proc sub(v: Int): (w: Int) { ensure r: w = v }
+proc bind_inst(s: Shape): (p?) {
+    call w := sub(1)
     ensure r: p? iff match s { Shape::Circle(w) => w > 0, _ => w.w > 0 }
-    --~^ error: `w` shadows the instance `w`
+    --~^ error: `w` shadows the call `w`
 }
-comp bind_bang { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(k!) => k > 0, _ => false } }
+proc bind_bang(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(k!) => k > 0, _ => false } }
 --~^ error: `k!` shadows nothing
 
 -- An instance over a constant.
-comp inst_const { inst ORIGIN: sub { v := 1 } pub out y: Int ensure r: y = ORIGIN.w }
+proc inst_const(): (y: Int) { call ORIGIN := sub(1) ensure r: y = ORIGIN.w }
 --~^ error: `ORIGIN` shadows the constant `ORIGIN`
-comp inst_const_ok { inst ORIGIN!: sub { v := 1 } pub out y: Int ensure r: y = ORIGIN.w }
-comp inst_bang { inst u!: sub { v := 1 } pub out y: Int ensure r: y = u.w }  --~ error: `u!` shadows nothing
+proc inst_const_ok(): (y: Int) { call ORIGIN! := sub(1) ensure r: y = ORIGIN.w }
+proc inst_bang(): (y: Int) { call u! := sub(1) ensure r: y = u.w }  --~ error: `u!` shadows nothing
 
 -- The binders of a global expectation over a constant, and a binder of
 -- its body over them.
@@ -98,11 +90,11 @@ expect global_bind: forall (a: sub), match Shape::Circle(a.v) { Shape::Circle(a)
 --~^ error: `a` shadows the global expectation's binder `a`
 
 -- `!` on a `Bool` follows its `?`.
-comp bool_bang { in ready?! pub out go? ensure r: go? iff ready? }  --~ error: `ready?!` shadows nothing
+proc bool_bang(ready?!): (go?) { ensure r: go? iff ready? }  --~ error: `ready?!` shadows nothing
 enum Flag { Set(Bool), Unset }
-comp bool_shadow { in ok? in f: Flag pub out go? ensure r: go? iff match f { Flag::Set(ok?) => ok?, _ => ok? } }
---~^ error: `ok?` shadows the input `ok?`
-comp bool_shadow_ok { in ok? in f: Flag pub out go? ensure r: go? iff match f { Flag::Set(ok?!) => ok?, _ => ok? } }
+proc bool_shadow(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?) => ok?, _ => ok? } }
+--~^ error: `ok?` shadows the parameter `ok?`
+proc bool_shadow_ok(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?!) => ok?, _ => ok? } }
 
 -- Items shadow only the prelude's names, and constraints and fields never
 -- shadow.
@@ -110,47 +102,47 @@ const LIMIT!: Int := 3                   --~ error: `LIMIT!` shadows nothing
 fn twice!(n: Int): Int := 2 * n          --~ error: `twice!` shadows nothing
 enum Mode! { On, Off }                   --~ error: `Mode!` shadows nothing
 struct Pair { a!: Int, b: Int }          --~ error: `a!` shadows nothing
-comp named! { in x: Int pub out y: Int ensure r: y = x }  --~ error: `named!` shadows nothing
-comp constraint { in x: Int pub out y: Int ensure r!: y = x }  --~ error: `r!` shadows nothing
+proc named!(x: Int): (y: Int) { ensure r: y = x }  --~ error: `named!` shadows nothing
+proc constraint(x: Int): (y: Int) { ensure r!: y = x }  --~ error: `r!` shadows nothing
 expect global!: RATE > 0                 --~ error: `global!` shadows nothing
 
 -- `!` marks only the declaration: a use is written without it.
-comp use_bang { in x: Int pub out y: Int ensure r: y = x! }  --~ error: cannot find `x!` in this scope
+proc use_bang(x: Int): (y: Int) { ensure r: y = x! }  --~ error: cannot find `x!` in this scope
 
 -- Names that, with `!`, are Lean tokens cannot be declared with `!`.
-comp token_var { in s!: Int pub out y: Int ensure r: y = s }  --~ error: `s!` is a Lean token, so it cannot be declared
-comp token_bind { in m: Int in t: Shape pub out p? ensure r: p? iff match t { Shape::Circle(m!) => m > 0, _ => m > 0 } }
+proc token_var(s!: Int): (y: Int) { ensure r: y = s }  --~ error: `s!` is a Lean token, so it cannot be declared
+proc token_bind(m: Int, t: Shape): (p?) { ensure r: p? iff match t { Shape::Circle(m!) => m > 0, _ => m > 0 } }
 --~^ error: `m!` is a Lean token, so it cannot be declared
 fn token_param(f!: Int): Int := f + 1    --~ error: `f!` is a Lean token, so it cannot be declared
 const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so it cannot be declared
 expect token_global: forall (using!: sub), true
 --~^ error: `using!` is a Lean token, so it cannot be declared
-comp token_use { in s: Int pub out y: Int ensure r: y = s! }  --~ error: cannot find `s!` in this scope
+proc token_use(s: Int): (y: Int) { ensure r: y = s! }  --~ error: cannot find `s!` in this scope
 -- A refinement's name, and a field read, take the tokens as identifiers too.
 refine s!: sub refines sub               --~ error: `s!` is a Lean token, so it cannot be declared
-comp token_field { pub out y: Int ensure r: y = Point { x := 1, y := 2 }.s! }
+proc token_field(): (y: Int) { ensure r: y = Point { x := 1, y := 2 }.s! }
 --~^ error: no field `s!`
 -- Where the name with `!` is a Lean token, F0217 says to rename it.
-comp token_hint { in s: Shape pub out p? ensure r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }
---~^ error: `s` shadows the input `s`
+proc token_hint(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }
+--~^ error: `s` shadows the parameter `s`
 
 -- A duplicate is reported as such, before what it would hide.
-comp dup_bang { in x: Int in x!: Int pub out y: Int ensure r: y = x }
---~^ error: `x` is defined multiple times in this component
+proc dup_bang(x: Int, x!: Int): (y: Int) { ensure r: y = x }
+--~^ error: `x` is defined multiple times in this procedure
 enum Two { Pair(Int, Int) }
-comp dup_binder { in t: Two pub out y: Int ensure r: y = match t { Two::Pair(a, a!) => a } }
+proc dup_binder(t: Two): (y: Int) { ensure r: y = match t { Two::Pair(a, a!) => a } }
 --~^ error: `a` is bound multiple times in this pattern
 
 -- A name that two globs make ambiguous is not hidden: a use of it would be
 -- an error.
 enum Hue { Red }
 enum Tone { Red }
-comp ambiguous { use self::Hue::* use self::Tone::* in Red: Int pub out y: Int ensure r: y = Red }
+proc ambiguous(Red: Int): (y: Int) { use self::Hue::* use self::Tone::* ensure r: y = Red }
 --~^ warning: unused import `Hue::*`
 --~^^ warning: unused import `Tone::*`
 --~^^^ warning: `use Hue::*` imports every variant of `Hue`
 --~^^^^ warning: `use Tone::*` imports every variant of `Tone`
-comp ambiguous_bang { use self::Hue::* use self::Tone::* in Red!: Int pub out y: Int ensure r: y = Red }
+proc ambiguous_bang(Red!: Int): (y: Int) { use self::Hue::* use self::Tone::* ensure r: y = Red }
 --~^ error: `Red!` shadows nothing
 --~^^ warning: unused import `Hue::*`
 --~^^^ warning: unused import `Tone::*`

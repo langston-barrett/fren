@@ -1,10 +1,10 @@
 error[F0216]: `fren.lint.nonminimal_bool` cannot be set before a member
- --> test/cli/names/f0216_member_option.fren:5:16
+ --> test/cli/names/f0216_member_option.fren:3:16
   |
-5 |     set_option fren.lint.nonminimal_bool "allow" in
+3 |     set_option fren.lint.nonminimal_bool "allow" in
   |                ^^^^^^^^^^^^^^^^^^^^^^^^^ not `fren.evidence`
   |
-  = note: before a member, `set_option` sets only `fren.evidence`; other options are set before the component
+  = note: before a member, `set_option` sets only `fren.evidence`; other options are set before the procedure
 
 error: could not check due to previous errors
 

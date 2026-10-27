@@ -6,8 +6,8 @@ import Fren.Impl
 /-!
 # `#fren_trace` (`Reqs/Trace`)
 
-Reports the evidence for every component: its `impl`s and claims, or, for a
-component without outputs, its instances'. The logic and text are shared
+Reports the evidence for every procedure: its `impl`s and claims, or, for a
+procedure without outputs, its calls'. The logic and text are shared
 with `fren trace` (`FrenCore.Trace`).
 -/
 
@@ -17,14 +17,14 @@ namespace Fren
 
 namespace Lang
 
-/-- Reports the evidence for every component (`trace::required`). -/
+/-- Reports the evidence for every procedure (`trace::required`). -/
 scoped syntax (name := traceCmd) "#fren_trace" : command
 
 end Lang
 
 register_option fren.requireEvidence : String := {
   defValue := ""
-  descr := "make `#fren_trace` warn about components with weaker evidence than this: \
+  descr := "make `#fren_trace` warn about procedures with weaker evidence than this: \
     \"trusted\", \"tested\", \"solver\" or \"proved\""
 }
 

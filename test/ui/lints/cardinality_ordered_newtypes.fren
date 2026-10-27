@@ -11,26 +11,21 @@ pub ordered struct Grade(Severity)
 pub struct Qs(Seq<Int>)
 pub struct Ss(Set<Int>)
 
-comp cardinality {
-    in a?
-    in b?
-    in c?
-    in d?
-    in q: Seq<Int>
-    pub out o1?
-    pub out o2?
-    pub out o3?
-    pub out o4?
-    pub out o5?
-    pub out o6?
-    pub out o6b?
-    pub out o7?
-    pub out o8?
-    pub out o9?
-    pub out o10?
-    pub out o11?
-    pub out o12?
-
+proc cardinality(a?, b?, c?, d?, q: Seq<Int>): (
+    o1?,
+    o2?,
+    o3?,
+    o4?,
+    o5?,
+    o6?,
+    o6b?,
+    o7?,
+    o8?,
+    o9?,
+    o10?,
+    o11?,
+    o12?,
+) {
     ensure r1: o1? iff not (a? and b?) and not (a? and c?) and not (b? and c?)
     --~^ warning: this is `at_most_one?` of 3 operands
     ensure r2: o2? iff (a? or b? or c?) and not (a? and b?) and not (b? and c?) and not (a? and c?)
@@ -55,22 +50,17 @@ comp cardinality {
     ensure r12: o12? iff at_most_one?(a?, b?, c?) and exactly_one?(a?, not a?)
 }
 
-comp orderings {
-    in s: Severity
-    in t: Severity
-    in g: Grade
-    in o: Single
-    in m: Mode
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p5?
-    pub out p6?
-    pub out p7?
-    pub out p8?
-    pub out p9?
-
+proc orderings(s: Severity, t: Severity, g: Grade, o: Single, m: Mode): (
+    p1?,
+    p2?,
+    p3?,
+    p4?,
+    p5?,
+    p6?,
+    p7?,
+    p8?,
+    p9?,
+) {
     ensure r1: p1? iff s >= Severity::Silent       --~ warning: this comparison is always `true`
     ensure r2: p2? iff s < Severity::Silent        --~ warning: this comparison is always `false`
     ensure r3: p3? iff Severity::Error >= s        --~ warning: this comparison is always `true`
@@ -89,19 +79,7 @@ comp orderings {
 -- The equations are left as they are: a pattern test is
 -- `manual_pattern_test`'s fix.
 set_option fren.lint.manual_pattern_test "allow" in
-comp memberships {
-    in s: Severity
-    in m: Mode
-    pub out p1?
-    pub out p2?
-    pub out p3?
-    pub out p4?
-    pub out p4b?
-    pub out p5?
-    pub out p6?
-    pub out p7?
-    pub out p8?
-
+proc memberships(s: Severity, m: Mode): (p1?, p2?, p3?, p4?, p4b?, p5?, p6?, p7?, p8?) {
     ensure r1: p1? iff s in {Severity::Silent, Severity::Info}   --~ warning: this is `s <= Severity::Info`
     ensure r2: p2? iff s in {Severity::Error, Severity::Warning}  --~ warning: this is `s >= Severity::Warning`
     ensure r3: p3? iff s = Severity::Silent or s = Severity::Info   --~ warning: this is `s <= Severity::Info`
@@ -116,15 +94,13 @@ comp memberships {
     ensure r8: p8? iff s = Severity::Silent or s = Severity::Info or s = Severity::Error
 }
 
-comp bounds {
-    in s: Severity
-    in t: Severity
-    pub out v1: Severity
-    pub out v2: Severity
-    pub out v3: Severity
-    pub out v4: Severity
-    pub out v5: Severity
-
+proc bounds(s: Severity, t: Severity): (
+    v1: Severity,
+    v2: Severity,
+    v3: Severity,
+    v4: Severity,
+    v5: Severity,
+) {
     ensure r1: v1 = s.max(Severity::Silent)  --~ warning: this is always `s`
     ensure r2: v2 = s.min(Severity::Silent)  --~ warning: this is always `Severity::Silent`
     ensure r3: v3 = s.max(Severity::Error)   --~ warning: this is always `Severity::Error`
@@ -132,16 +108,7 @@ comp bounds {
     ensure r5: v5 = s.max(t).min(Severity::Info)
 }
 
-comp newtypes {
-    in x: Ms
-    in n: Int
-    in y: Bytes
-    pub out m1: Ms
-    pub out k1: Int
-    pub out m2: Ms
-    pub out k2: Int
-    pub out m3: Ms
-
+proc newtypes(x: Ms, n: Int, y: Bytes): (m1: Ms, k1: Int, m2: Ms, k2: Int, m3: Ms) {
     ensure w1: m1 = Ms(x.0)                 --~ warning: this builds a newtype from the field of one of its own
     ensure w2: k1 = Ms(n + 1).0 * 2         --~ warning: this reads the field of a newtype just built
     ensure w3: k2 = (Ms(n)).0 + 1           --~ warning: this reads the field of a newtype just built
@@ -152,14 +119,7 @@ comp newtypes {
 }
 
 -- An operand whose definition indexes, or is a table, keeps its guard.
-comp guarded {
-    in q: Seq<Int>
-    in i: Int
-    in x: Int
-    in z?
-    pub out o1?
-    pub out o2?
-
+proc guarded(q: Seq<Int>, i: Int, x: Int, z?): (o1?, o2?) {
     ensure r1: o1? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
         where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and z?, big? := q[i] > 0
     ensure r2: o2? iff not (pos? and t?) and not (pos2? and t?) and not (pos? and pos2?)
@@ -168,13 +128,7 @@ comp guarded {
 
 -- An empty literal takes its type from the newtype, so there is no fix;
 -- a round trip inside another is reported once.
-comp untyped {
-    in q: Seq<Int>
-    in x: Ms
-    pub out p1?
-    pub out p2?
-    pub out p3?
-
+proc untyped(q: Seq<Int>, x: Ms): (p1?, p2?, p3?) {
     ensure r1: p1? iff Qs([]).0.len = q.len  --~ warning: this reads the field of a newtype just built
     ensure r2: p2? iff Ss({}).0 = {}         --~ warning: this reads the field of a newtype just built
     ensure r3: p3? iff Ms(x.0).0 = 3         --~ warning: this builds a newtype from the field of one of its own

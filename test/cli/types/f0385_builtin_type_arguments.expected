@@ -1,8 +1,8 @@
 error[F0385]: `Int` takes no type arguments, but 1 was given
- --> test/cli/types/f0385_builtin_type_arguments.fren:2:16
+ --> test/cli/types/f0385_builtin_type_arguments.fren:2:11
   |
-2 | comp c { in n: Int<Bool> }
-  |                ^^^^^^^^^ 1 type argument
+2 | proc c(n: Int<Bool>) {}
+  |           ^^^^^^^^^ 1 type argument
   |
   = note: `Int` is not generic
 

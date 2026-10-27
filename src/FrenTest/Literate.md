@@ -9,16 +9,9 @@ def notFren := 1
 ```fren
 mod lit
 
-pub comp gate {
-    in a?
-    pub out b?
-
+pub proc gate(a?): (b?) {
     ensure same: b? iff a?
-```
 
-Blocks are concatenated, so an item can span them.
-
-```fren
     expect never: when a?, not b?
 }
 

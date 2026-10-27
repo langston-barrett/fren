@@ -2,9 +2,7 @@
 -- `fren fmt` writes a quantifier over any type as one over a listed type,
 -- with its guard as a `when`'s condition.
 set_option fren.lint.undecidable "allow" in
-comp c {
-  in q: Seq<Int>
-  pub out o?
+proc c(q: Seq<Int>): (o?) {
   ensure r:o? iff(forall(i:Int),when 0<=i<q.len,q[i]>0)
   ensure s: o? iff (exists (x : Int),x in q and
   x > 0)

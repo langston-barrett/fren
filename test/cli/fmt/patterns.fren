@@ -4,9 +4,7 @@
 enum Shape { Circle(Int), Empty }
 enum Reply { Ok(Shape), Err(Int) }
 const MAX: Int := 9
-comp c {
-    in r: Reply
-    pub out y: Int
+proc c(r: Reply): (y: Int) {
     ensure q: y = match r {
         Reply::Ok( Shape::Circle(_)|Shape::Empty ) => 0,
         Reply::Err(- 1) => 1,

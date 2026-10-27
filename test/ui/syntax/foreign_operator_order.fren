@@ -3,10 +3,7 @@
 
 pub enum S { A(Int), B }
 
-comp c {
-    in s: S
-    in x: Int
-    pub out z: Int
+proc c(s: S, x: Int): (z: Int) {
     ensure q: x == 1   --~ error: `==` is not an operator in Fren
     ensure r: z = match s { S::A(a.b) => 0, _ => 1 }
 }

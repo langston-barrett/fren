@@ -15,27 +15,21 @@ fn positive(i: Id): Int
     ensure post: positive(i) > 0
 
 set_option fren.evidence "enumerated" in
-comp finite {
-    in m: Mode
-    pub det out on?
+proc finite(m: Mode): (det on?) {
     ensure r: on? iff allowed?(m)
     expect same: when m = Mode::Heat, on? = allowed?(Mode::Heat)
     expect always: on?  --~ error: expectation `finite::always` does not hold
 }
 
 set_option fren.evidence "enumerated" in
-comp owners {  --~ info: 3 checks of `owners` hold for every behaviour up to size 3
-    in x: Id
-    pub det out mine?
+proc owners(x: Id): (det mine?) {  --~ info: 3 checks of `owners` hold for every behaviour up to size 3
     ensure r: mine? iff owner(x) = x
     expect again: when owner(x) = x, mine?
     expect never: not mine?  --~ error: expectation `owners::never` does not hold
 }
 
 set_option fren.evidence "enumerated" in
-comp contracted {  --~ error: `contracted` cannot be enumerated: it applies the uninterpreted function `positive`, which has a contract
-    in x: Id
-    pub det out big?
+proc contracted(x: Id): (det big?) {  --~ error: `contracted` cannot be enumerated: it applies the uninterpreted function `positive`, which has a contract
     ensure r: big? iff positive(x) > 1
 }
 
@@ -44,15 +38,13 @@ comp contracted {  --~ error: `contracted` cannot be enumerated: it applies the 
 fn level(Bool): Int is 0..=2
 
 set_option fren.evidence "enumerated" in
-comp tabled {  --~ info: 2 checks of `tabled` hold for every behaviour up to size 3
-    in a?
-    pub det out y: Int := table { | a? => 5 }  --~ error: a table in `tabled::y` may have no row that holds
+proc tabled(a?): (det y: Int) {  --~ info: 2 checks of `tabled` hold for every behaviour up to size 3
+    out y := table { | a? => 5 }  --~ error: a table in `tabled::y` may have no row that holds
     expect e: y != 1  --~ error: counterexample: a? = false, y = 1
 }
 
 set_option fren.evidence "enumerated" in
-comp applied {
-    in a?
-    pub det out y: Int := level(a?)
+proc applied(a?): (det y: Int) {
+    out y := level(a?)
     expect e: y != 2  --~ error: counterexample: a? = false, y = 2
 }

@@ -17,18 +17,18 @@ namespace Fren
 
 namespace Lang
 
-/-- `tested c: "file", ...`: the files are tests that exercise component `c`.
+/-- `tested c: "file", ...`: the files are tests that exercise procedure `c`.
 A trailing comma is allowed, so that a claim split over several lines
 changes by one line when a file is added. -/
 scoped syntax (name := testedCmd) "tested " fren_path " : " sepBy1(str, ", ", ", ", allowTrailingSep) : command
 
-/-- `trusted c: "justification"`: why component `c` holds without a proof or
+/-- `trusted c: "justification"`: why procedure `c` holds without a proof or
 a test. -/
 scoped syntax (name := trustedCmd) "trusted " fren_path " : " str : command
 
 end Lang
 
-/-- Resolves the component of a claim. -/
+/-- Resolves the procedure of a claim. -/
 def resolveComp (p : Syntax) : CommandElabM Name := do
   let r ← resolvePath (← getLocal).currentModule (pathSegs p)
   let .item { kind := .compItem, path, .. } := r | throwErrorAt p (Core.notACompMsg r).text

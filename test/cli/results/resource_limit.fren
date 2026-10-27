@@ -1,9 +1,7 @@
 -- A query that reaches the resource limit is inconclusive, whatever the
 -- machine's load (`Reqs/Cli#limits`).
 --@ args: check --timeout 0 --resource-limit 1
-comp c {
-    in x: Int
-    pub out y: Int
+proc c(x: Int): (y: Int) {
     ensure r: y = x + 1
     expect bigger: y > x
 }

@@ -1,10 +1,5 @@
 -- `needless_bool_assign`.
-pub comp c {
-    in a?
-    in b?
-    pub out p?
-    pub out q?
-
+pub proc c(a?, b?): (p?, q?) {
     ensure r: p? iff if a? then b? else not b?
     ensure s: q? iff if a? then not b? else b?
 }

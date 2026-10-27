@@ -6,10 +6,7 @@ fn size(Int): Nat
 
 -- A function used only in the component's own expectation is not in a
 -- cover goal's query.
-comp own_expectation {
-    in x: Int
-    pub out big?
-
+proc own_expectation(x: Int): (big?) {
     ensure r: big? iff x > 10
 
     expect sized: size(x) >= 0
@@ -17,10 +14,7 @@ comp own_expectation {
 }
 
 -- Nor is one used only in another cover goal.
-comp other_goal {
-    in x: Int
-    pub out big?
-
+proc other_goal(x: Int): (big?) {
     ensure r: big? iff x > 10
 
     cover sized: big? and size(x) > 3              --~ info: the witness is not shown, since its query uses abstract types or functions
@@ -30,10 +24,7 @@ comp other_goal {
 -- An abstract type reached only through a defined function's parameter is.
 fn unnamed?(s: Set<Name>) := s = {}
 
-comp through_defined {
-    in x: Int
-    pub out big?
-
+proc through_defined(x: Int): (big?) {
     ensure r: big? iff x > 10
 
     cover big_unnamed: big? and unnamed?({})       --~ info: the witness is not shown, since its query uses abstract types or functions
@@ -43,20 +34,14 @@ comp through_defined {
 -- witness shown: the expectation is not part of the instance's queries.
 -- That those queries have no fact about it either is a `--dump-smt`
 -- snapshot's (`test/cli/args/dump_smt_nat_facts.fren`).
-comp sized {
-    in k: Int
-    pub out pos?
-
+proc sized(k: Int): (pos?) {
     ensure r: pos? iff k > 0
 
     expect sized: size(k) >= 0
 }
 
-comp uses_sized {
-    in m: Int
-    pub out ok?
-
-    inst sz: sized { k := m }
+proc uses_sized(m: Int): (ok?) {
+    call sz := sized(m)
 
     ensure r: ok? iff sz.pos?
 

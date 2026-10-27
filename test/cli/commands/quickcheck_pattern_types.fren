@@ -10,13 +10,7 @@ struct Packet { length: Byte }
 fn size(Int): Byte
 
 set_option fren.lint.undecidable "allow" in
-comp sized {
-    in b: Byte
-    in p: Packet
-    in s: Set<Byte>
-    in n: Int
-    pub out y: Byte
-
+proc sized(b: Byte, p: Packet, s: Set<Byte>, n: Int): (y: Byte) {
     ensure r: y = b
 
     expect input: b >= 100

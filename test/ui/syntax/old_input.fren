@@ -1,0 +1,6 @@
+-- An `in` member of a procedure (F0159).
+proc c() {
+    in x: Int
+    --~^ error: inputs are written as parameters
+}
+--@ exit: 2

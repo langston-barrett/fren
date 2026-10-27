@@ -5,10 +5,7 @@
 -- trailing comma.
 enum Mode { Off, Heat, Cool }
 
-comp c {
-    in m: Mode
-    in t: Int
-    pub out y: Int
+proc c(m: Mode, t: Int): (y: Int) {
     ensure a: y = match m {Mode::Off if t>0=>1,_=>0}
     ensure b: y = match m {
     | Mode::Off

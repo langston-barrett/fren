@@ -12,9 +12,6 @@ pub const SHOWN: Int := 2
 set_option fren.lint.dead_code "allow" in
 const ALLOWED: Int := 4
 
-pub comp c {
-    in t: Typed
-    pub out d?
-
+pub proc c(t: Typed): (d?) {
     ensure r: d? iff ByVariant::C = ByVariant::D
 }

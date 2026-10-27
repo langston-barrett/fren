@@ -44,12 +44,13 @@ def BindingKind.namesVariant : BindingKind → Bool
   | .variant | .opened => true
   | _ => false
 
-/-- What a local binding is, in a message: `the input`, and so on. -/
+/-- What a local binding is, in a message: `the parameter`, and so on. A
+procedure's inputs are its parameters, and its instances are calls. -/
 def BindingKind.describe : BindingKind → String
-  | .input => "the input"
+  | .input => "the parameter"
   | .output => "the output"
   | .parameter => "the parameter"
-  | .inst => "the instance"
+  | .inst => "the call"
   | .expectBinder => "the global expectation's binder"
   | .patternBinder => "the binder"
   | .boundName => "the bound name"

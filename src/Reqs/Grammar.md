@@ -13,7 +13,7 @@
 | `a"("` | `a` and then `(`, with nothing between them, not even a space (see [Punctuators](Lang/Lexical.md#punctuators)); the same for `[` and `<` |
 | `IDENT`, `INT`, `STRING` | an identifier, an integer literal, a string literal, raw or not (see [Lexical structure](Lang/Lexical.md)) |
 | `DIGITS` | decimal digits, which name a field after `.`, as in `x.0` (see [Newtypes](Lang/Expressions.md#newtypes)) |
-| `DECL` | an identifier that declares a name, which ends in `!` if it shadows another (see [Shadowing](Lang/Components.md#shadowing)); no other `IDENT` ends in `!` |
+| `DECL` | an identifier that declares a name, which ends in `!` if it shadows another (see [Shadowing](Lang/Procedures.md#shadowing)); no other `IDENT` ends in `!` |
 | `TERM`, `TACTICS` | a Lean term, a Lean tactic sequence |
 
 ## Items
@@ -21,7 +21,7 @@
 ```
 spec           := item*
 item           := module | use | enumeration | record | abstract-type | type-alias | function | constant
-                | component | expectation | refinement | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
+                | procedure | expectation | refinement | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
@@ -38,7 +38,8 @@ function       := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
                 | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] ":=" top
 clause         := ("assume" | "ensure") IDENT ":" top
 constant       := ["pub"] "const" IDENT ":" type ":=" top
-component      := ["pub"] "comp" IDENT "{" member* "}"
+procedure      := ["pub"] "proc" IDENT"(" [variable ("," variable)* [","]] ")"
+                  [":" "(" result ("," result)* [","] ")"] "{" member* "}"
 expectation    := "expect" IDENT ":" ["forall" binder+ ","] top
 refinement     := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
 check          := "#fren_check" [path] | "#fren_trace"
@@ -58,20 +59,22 @@ map            := IDENT ":=" TERM
 interpretation := "interp" path ":=" TERM ["by" TACTICS]
 ```
 
-## Components
+## Procedures
 
 ```
-member         := "in" variable
-                | ["pub"] ["det"] "out" variable [":=" top]
+result         := [evidence-setting "in"] ["det"] variable
+member         := ["det"] "exists" variable
+                | ["det"] "let" variable ":=" top
+                | "out" IDENT ":=" top
                 | "assume" IDENT ":" top
                 | "ensure" IDENT ":" top
                 | "expect" IDENT ":" top
                 | "cover" IDENT ":" top
-                | instance
+                | call
                 | use
                 | evidence-setting "in" member
 variable       := DECL [":" type]
-instance       := "inst" DECL ":" path "{" [binding ("," binding)* [","]] "}"
+call           := "call" DECL ":=" path"(" [expr ("," expr)* [","]] ")"
 binding        := IDENT [":=" expr]
 type           := base ["is" pattern] | "fn" "(" type ("," type)* ")" "->" type
 base           := "Bool" | "Int" | "Nat" | "String" | "Set""<" type ">" | "Seq""<" type ">" | "Rel""<" type "," type ">"
@@ -146,7 +149,18 @@ comparison](Lang/Expressions.md#chained-comparisons). For precedence and typing,
 membership (an `else` branch keeps that restriction), and a nested `let` ends its own definitions with its own `in`
 (see [Local definitions](Lang/Let.md#parentheses)). A `binder` of a
 quantifier names a type, and one of a global expectation's leading
-`forall` a type or a component (see [Quantifiers](Lang/Quantifiers.md)).
+`forall` a type or a procedure (see [Quantifiers](Lang/Quantifiers.md)).
+`exists` and `let` start a member where a `member` starts, and an `expr`
+within one: a member starts after the `{` of a procedure's block, and
+after the end of the member before it, so an `exists` or a `let` there is
+a member, and one within an expression is a quantifier or a local
+definition. A `top` ends at the first token that cannot continue it,
+where the next member, or the `}` of the block, starts. `call`, `out` and
+`det` are not reserved: where a member starts, they are its keyword, and
+anywhere else, names.
+Components, `in` and `out x: T` members and instances, as components were
+written before procedures, are errors whose fixes write them as procedures
+(see [Migration](Lang/Procedures.md#migration)).
 A `type` is written only where the rules above say, never within an
 expression, so a `<` in an expression is a comparison, and the `<` of a
 `base` or a `declared-type` opens type arguments or type parameters; the

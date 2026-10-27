@@ -3,14 +3,7 @@
 -- its kind, writes invisible characters in a literal as escapes, removes
 -- them from a comment, and replaces `when true, D` and `unless false, D`
 -- with `D`. An expectation that repeats a guarantee is kept.
-comp c {
-    in a?
-    in b?
-    in s: String
-    pub out p?
-    pub out q?
-    pub out o?
-
+proc c(a?, b?, s: String): (p?, q?, o?) {
     ensure r1: p? iff a? or b?
     ensure r2: p?  iff  a? or b?
     ensure r3: when true, q? iff a?

@@ -9,19 +9,15 @@ set_option fren.lint.eq_op "allow"
 pub enum Shape { Circle(Int), Square }
 pub enum Color { Red, Green, Blue }
 
-pub comp by_name {
+pub proc by_name(Square!: Int): (y: Int) {
     use self::Shape::Square
     use self::Color::Green
-    in Square!: Int
-    pub out y: Int
 
     ensure r: y = Square
 }
 
-pub comp by_glob {
+pub proc by_glob(Red!: Int): (p?) {
     use self::Color::*
-    in Red!: Int
-    pub out p?
 
     ensure r: p? iff (Red > 0 and Blue = Blue)
 }

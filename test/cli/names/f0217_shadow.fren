@@ -8,18 +8,11 @@ set_option fren.lint.non_snake_case "allow"
 
 pub enum Shape { Circle(Int), Square }
 
-pub comp c {
-    in RATE: Int
-    pub out y: Int
-
+pub proc c(RATE: Int): (y: Int) {
     ensure r: y = RATE
 }
 
-pub comp d {
-    in x: Int
-    in s: Shape
-    pub out p?
-
+pub proc d(x: Int, s: Shape): (p?) {
     ensure r: p? iff match s {
         Shape::Circle(x) => x > 0,
         _ => x > 0,

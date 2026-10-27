@@ -1,2 +1,2 @@
 -- A divisor that is a variable (F0336).
-comp c { in x: Int in y: Int pub out q: Int := x div y }
+proc c(x: Int, y: Int): (q: Int) { out q := x div y }

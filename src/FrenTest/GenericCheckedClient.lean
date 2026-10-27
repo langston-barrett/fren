@@ -8,7 +8,7 @@ open Fren.Lang
 mod checked_again
 use lib::other
 use mid::One
-comp c3 { in x: One pub det out y: One := other(x) }
+proc c3(x: One): (det y: One) { out y := other(x) }
 
 /-- info: fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant -/
 #guard_msgs in

@@ -77,11 +77,10 @@ parameter's type nor the result's, whether the function is defined or not:
 ```fren
 pub mod lang
 
-pub comp generic_function {
-    in params: Nat        -- how many type parameters it has
-    in unmentioned?       -- one of them is mentioned by no parameter's type nor the result's
-    pub det out accepted?
-
+pub proc generic_function(
+    params: Nat,          -- how many type parameters it has
+    unmentioned?,         -- one of them is mentioned by no parameter's type nor the result's
+): (det accepted?) {
     ensure rule: accepted? iff (params = 0 or not unmentioned?)
 
     expect plain: when params = 0, accepted?
@@ -104,21 +103,20 @@ pub fn ty_mentions?(Ty, Nat)   -- a type mentions the type parameter at that pos
 -- of an abstract type, whose equality Lean does not decide.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
-pub comp generic_signature {
-    in params: Nat               -- how many type parameters it has
-    in declared: Seq<Ty>         -- its parameters' declared types, in order
-    in result: Ty                -- its result's declared type
-
+pub proc generic_signature(
+    params: Nat,                 -- how many type parameters it has
+    declared: Seq<Ty>,           -- its parameters' declared types, in order
+    result: Ty,                  -- its result's declared type
+): (det in0?, det in1?, det in2?, det unmentioned?, det accepted?) {
     -- Whether the type parameters `0`, `1` and `2` are in the signature: the
     -- result's type mentions them, or one of the parameters' types does.
-    pub det out in0? := ty_mentions?(result, 0) or (declared.len > 0 and ty_mentions?(declared[0], 0))
+    out in0? := ty_mentions?(result, 0) or (declared.len > 0 and ty_mentions?(declared[0], 0))
         or (declared.len > 1 and ty_mentions?(declared[1], 0)) or (declared.len > 2 and ty_mentions?(declared[2], 0))
-    pub det out in1? := ty_mentions?(result, 1) or (declared.len > 0 and ty_mentions?(declared[0], 1))
+    out in1? := ty_mentions?(result, 1) or (declared.len > 0 and ty_mentions?(declared[0], 1))
         or (declared.len > 1 and ty_mentions?(declared[1], 1)) or (declared.len > 2 and ty_mentions?(declared[2], 1))
-    pub det out in2? := ty_mentions?(result, 2) or (declared.len > 0 and ty_mentions?(declared[0], 2))
+    out in2? := ty_mentions?(result, 2) or (declared.len > 0 and ty_mentions?(declared[0], 2))
         or (declared.len > 1 and ty_mentions?(declared[1], 2)) or (declared.len > 2 and ty_mentions?(declared[2], 2))
-    pub det out unmentioned? := (params > 0 and not in0?) or (params > 1 and not in1?) or (params > 2 and not in2?)
-    pub det out accepted?
+    out unmentioned? := (params > 0 and not in0?) or (params > 1 and not in1?) or (params > 2 and not in2?)
 
     ensure rule: accepted? iff (params = 0 or not unmentioned?)
 
@@ -179,20 +177,20 @@ instance:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub comp call_type_argument {
-    in declared: Seq<Ty>           -- the declared types of the function's parameters, in order
-    in synthesizes: Seq<Bool>      -- which arguments synthesize their types
-    in k: Nat                      -- the type parameter
-    in result_matched?             -- a type is expected of the application, and matching it against the result gives `k` an argument
-    in result_arg: Ty              -- that argument
-    in matched?                    -- matching the first giver's type against its declared type gives `k` an argument
-    in matched: Ty                 -- that argument
-
+pub proc call_type_argument(
+    declared: Seq<Ty>,             -- the declared types of the function's parameters, in order
+    synthesizes: Seq<Bool>,        -- which arguments synthesize their types
+    k: Nat,                        -- the type parameter
+    result_matched?,               -- a type is expected of the application, and matching it against the result gives `k` an argument
+    result_arg: Ty,                -- that argument
+    matched?,                      -- matching the first giver's type against its declared type gives `k` an argument
+    matched: Ty,                   -- that argument
+): (det giver: Int, det known?, det argument: Ty) {
     assume as_many: synthesizes.len = declared.len
 
-    pub det out giver: Int := first_giver(declared, synthesizes, k)
-    pub det out known? := result_matched? or (giver >= 0 and matched?)
-    pub det out argument: Ty := if result_matched? then widened(result_arg) else widened(matched)
+    out giver := first_giver(declared, synthesizes, k)
+    out known? := result_matched? or (giver >= 0 and matched?)
+    out argument := if result_matched? then widened(result_arg) else widened(matched)
 
     expect from_result: when result_matched?, known? and argument = widened(result_arg)
     expect no_giver: when not result_matched? and giver < 0, not known?
@@ -228,27 +226,28 @@ pub fn call_position_if(values: Seq<ArgMode>, from_result: Seq<Bool>, waiting?, 
     if 0 <= j < values.len and call_waits?(values, from_result, j) = waiting? then [j] else []
 
 set_option fren.lint.undecidable "allow" in
-pub comp call_order {
+pub proc call_order(
+    params: Nat,                   -- how many type parameters the function has: `P0`, `P1`, ...
+    values: Seq<ArgMode>,            -- the application's arguments, in order
+    from_result: Seq<Bool>,        -- for each type parameter, whether the expected type gives it an argument
+): (det order: Seq<Int>, det given: Seq<Bool>, det unknown?) {
     use self::Arg::{P0, P1, P2}
     use self::ArgMode::{Gives, Waits}
-    in params: Nat                 -- how many type parameters the function has: `P0`, `P1`, ...
-    in values: Seq<ArgMode>          -- the application's arguments, in order
-    in from_result: Seq<Bool>      -- for each type parameter, whether the expected type gives it an argument
 
     assume few: values.len <= 2 and params <= 3 and from_result.len = params
     assume own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
 
     -- The arguments' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
-    pub det out order: Seq<Int> :=
+    out order :=
         call_position_if(values, from_result, false, 0) ++ call_position_if(values, from_result, false, 1)
         ++ call_position_if(values, from_result, false, 2) ++ call_position_if(values, from_result, true, 0)
         ++ call_position_if(values, from_result, true, 1) ++ call_position_if(values, from_result, true, 2)
     -- For each type parameter, whether it ends with an argument.
-    pub det out given: Seq<Bool> := (if params >= 1 then [from_result[0] or Gives(P0) in values] else [])
+    out given := (if params >= 1 then [from_result[0] or Gives(P0) in values] else [])
         ++ (if params >= 2 then [from_result[1] or Gives(P1) in values] else [])
         ++ (if params >= 3 then [from_result[2] or Gives(P2) in values] else [])
-    pub det out unknown? := false in given
+    out unknown? := false in given
 
     expect each_once: order.len = values.len
     expect from_the_result: when params = 1 and from_result = [true] and values = [Waits(P0), Gives(P0)],
@@ -269,10 +268,11 @@ checked against its parameter's declared type instantiated so too, as
 ```fren
 pub fn instantiated(Ty, Seq<Ty>): Ty   -- `lang::instantiation`'s result
 
-pub comp call_instance {
-    in result: Ty                  -- the function's declared result type
-    in arguments: Seq<Ty>          -- the application's type arguments
-    pub det out result_type: Ty := instantiated(result, arguments)   -- the application's type
+pub proc call_instance(
+    result: Ty,                    -- the function's declared result type
+    arguments: Seq<Ty>,            -- the application's type arguments
+): (det result_type: Ty) {
+    out result_type := instantiated(result, arguments)   -- the application's type
 }
 ```
 
@@ -331,11 +331,16 @@ arguments, and the rule is the same for more:
 -- sequences of an abstract type, whose equality Lean does not decide.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
-pub comp uninterpreted_instance {
-    in declared: Seq<Ty>         -- its parameters' declared types, in order
-    in result: Ty                -- its result's declared type
-    in arguments: Seq<Ty>        -- the application's type arguments
-
+pub proc uninterpreted_instance(
+    declared: Seq<Ty>,           -- its parameters' declared types, in order
+    result: Ty,                  -- its result's declared type
+    arguments: Seq<Ty>,          -- the application's type arguments
+): (
+    det params: Seq<Ty>,
+    det result_type: Ty,
+    det fact_type: Ty,           -- the type whose constraint each of its applications brings
+    det nat?,                    -- each of its applications is at least 0
+) {
     assume few: declared.len <= 3 and arguments.len <= 3
     -- Each inferred type argument is widened.
     assume widened: (arguments.len < 1 or kind(arguments[0]) != ValueType::NatTy)
@@ -343,12 +348,10 @@ pub comp uninterpreted_instance {
         and (arguments.len < 3 or kind(arguments[2]) != ValueType::NatTy)
 
     -- The sorts of the instance's unknown function.
-    pub det out params: Seq<Ty> := (if declared.len > 0 then [instantiated(declared[0], arguments)] else [])
+    out params := (if declared.len > 0 then [instantiated(declared[0], arguments)] else [])
         ++ (if declared.len > 1 then [instantiated(declared[1], arguments)] else [])
         ++ (if declared.len > 2 then [instantiated(declared[2], arguments)] else [])
-    pub det out result_type: Ty := instantiated(result, arguments)
-    pub det out fact_type: Ty    -- the type whose constraint each of its applications brings
-    pub det out nat?             -- each of its applications is at least 0
+    out result_type := instantiated(result, arguments)
 
     ensure facts_at_instance: fact_type = result_type
     ensure nat_rule: nat? iff kind(result_type) = ValueType::NatTy
@@ -419,12 +422,13 @@ pub enum CheckSite { Unchecked, AtFunction, AtItem(ItemAt) }
 
 -- `users.len < 1` rather than `users = []`, which compares sequences.
 set_option fren.lint.length_zero "allow" in
-pub comp instance_site {
-    in function_file: Int     -- the file that declares the function
-    in function_checked?      -- the run checks the function's own contract
-    in done?                  -- an earlier run checked the instance
-    in users: Seq<ItemAt>     -- the items that the run checks and whose checks use the instance, in order
-    pub det out site: CheckSite := if done? or users.len < 1 then CheckSite::Unchecked
+pub proc instance_site(
+    function_file: Int,       -- the file that declares the function
+    function_checked?,        -- the run checks the function's own contract
+    done?,                    -- an earlier run checked the instance
+    users: Seq<ItemAt>,       -- the items that the run checks and whose checks use the instance, in order
+): (det site: CheckSite) {
+    out site := if done? or users.len < 1 then CheckSite::Unchecked
         else if function_checked? and users[0].file = function_file then CheckSite::AtFunction
         else CheckSite::AtItem(users[0])
 
@@ -445,11 +449,12 @@ pub enum Decided { Holds, Fails, Undecided }
 
 -- `in` on a sequence is outside the decidable core.
 set_option fren.lint.undecidable "allow" in
-pub comp generic_contract {
-    in at_sorts: Decided           -- the check at the type parameters' sorts
-    in instances: Seq<Decided>     -- the check at each instance that the spec applies, in order
+pub proc generic_contract(
+    at_sorts: Decided,             -- the check at the type parameters' sorts
+    instances: Seq<Decided>,       -- the check at each instance that the spec applies, in order
+): (det reported: Seq<Decided>) {
     -- The checks reported, in order.
-    pub det out reported: Seq<Decided> := if at_sorts = Decided::Holds or instances = [] then [at_sorts] else instances
+    out reported := if at_sorts = Decided::Holds or instances = [] then [at_sorts] else instances
 
     expect fast: when at_sorts = Decided::Holds, reported = [Decided::Holds]
     expect accepted: when instances = [Decided::Holds, Decided::Holds], not Decided::Fails in reported

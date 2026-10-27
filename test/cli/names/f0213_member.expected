@@ -1,10 +1,10 @@
-error[F0213]: `x` is defined multiple times in this component
- --> test/cli/names/f0213_member.fren:2:28
+error[F0213]: `x` is defined multiple times in this procedure
+ --> test/cli/names/f0213_member.fren:2:18
   |
-2 | comp c { in x: Int pub out x: Int }
-  |                            ^ defined again here
+2 | proc c(x: Int): (x: Int) {}
+  |                  ^ defined again here
   |
-  = note: the variables, instances and constraints of a component share one namespace
+  = note: the variables, calls and constraints of a procedure share one namespace
 
 error: could not check due to previous errors
 

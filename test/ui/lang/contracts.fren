@@ -26,36 +26,26 @@ fn shrink(n: Int): Int
     assume big: n > 10
     ensure smaller: shrink(n) < n
 
-comp reads {
-    in q: Seq<Int>
-
+proc reads(q: Seq<Int>): (y: Int) {
     assume long: q.len >= 2
-    pub out y: Int
 
     ensure first: y = nth(q, 0)
 
     expect same: y = q[0]
 }
 
-comp guarded {
-    in q: Seq<Int>
-    pub out y: Int
-
+proc guarded(q: Seq<Int>): (y: Int) {
     -- `nth(q, 0)` is evaluated only where `q != []`.
     ensure r: when q != [], y = nth(q, 0)
     ensure e: when q = [], y = 0
 }
 
-comp names {
-    in m: Name
-
+proc names(m: Name) {
     expect at_least_one: arity(m) >= 1
     expect not_two: arity(m) >= 2   --~ error: expectation `names::not_two` does not hold
 }
 
-comp shrinking {
-    in n: Int
-
+proc shrinking(n: Int) {
     expect smaller: when n > 10, shrink(n) < n
     -- Below the precondition, `shrink` says nothing.
     expect anywhere: shrink(n) < n   --~ error: expectation `shrinking::anywhere` does not hold
@@ -69,7 +59,7 @@ enum Mode { Off, Low, High }
 fn level(m: Mode): Int
     ensure bounded: 0 <= level(m) <= 10
 
-comp quantified {
+proc quantified() {
     expect all_bounded: forall (m: Mode), level(m) <= 10
     expect named: x <= 10 where x := level(Mode::Low)
 }

@@ -40,17 +40,13 @@ pub mod lang
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp element_meaning {
-    in q: Seq<Int>
-    in good: Set<Int>
-    pub det out holds?
-
+pub proc element_meaning(q: Seq<Int>, good: Set<Int>): (det holds?) {
     ensure by_elements: holds? iff (forall (x: Int), when x in q, x in good)
     ensure by_positions: holds? iff (forall (i: Int), when 0 <= i < q.len, q[i] in good)
 }
 ```
 
-This component, and the others of this chapter, state rules over any
+This procedure, and the others of this chapter, state rules over any
 number of things, with quantifiers that are outside the core, as a precise
 spec does (see [Unbounded quantifiers](Quantifiers.md#unbounded-quantifiers)):
 each is bound by an [implementation](../Impl.md) proved in Lean for every
@@ -86,7 +82,7 @@ name it, and after it. It is in the decidable core when, besides:
   through another, which once the body is unfolded is within this one
   (`QuantifiedArgument`). Any other mention is a `Value`;
 - neither `e` nor the body mentions an output that is not
-  [defined](Components.md#defined-outputs), directly or through a
+  [defined](Procedures.md#definitions), directly or through a
   definition: the realizability check quantifies over such outputs, and
   this quantifier would alternate with that one;
 - it is within no quantifier over elements, or is directly the body of one
@@ -149,13 +145,13 @@ fn binder_verdict(b: ElementBinder): ElementVerdict := match b.members {
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp element_quantifier {
+pub proc element_quantifier(
+    binders: Seq<ElementBinder>,    -- its bound names of types that are not listed, in order
+    nesting: ElementNesting,
+    output?,                        -- its sequences or its body mention an output that is not defined
+    bound?,                         -- its body mentions a bound name around it, but of the quantifiers it is directly the body of
+): (det verdict: ElementVerdict) {
     use self::ElementVerdict::{InCore, MentionsBound, MentionsOutput, Nested}
-    in binders: Seq<ElementBinder>  -- its bound names of types that are not listed, in order
-    in nesting: ElementNesting
-    in output?                      -- its sequences or its body mention an output that is not defined
-    in bound?                       -- its body mentions a bound name around it, but of the quantifiers it is directly the body of
-    pub det out verdict: ElementVerdict
 
     ensure first: forall (j: Int), when 0 <= j < binders.len and binder_verdict(binders[j]) != InCore
         and (forall (i: Int), when 0 <= i < j, binder_verdict(binders[i]) = InCore),
@@ -213,17 +209,19 @@ pub type IndexTerm
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp index_set {
-    in zero: IndexTerm
-    in lasts: Seq<IndexTerm>       -- each quantifier's sequence's last position
-    in reads: Seq<IndexTerm>       -- each index's position
-    in positions: Seq<IndexTerm>   -- each update's position
-    in before: Seq<IndexTerm>      -- each update's position less one
-    in after: Seq<IndexTerm>       -- each update's position plus one
-    in witnesses: Seq<IndexTerm>
-    in terms: Seq<IndexTerm>       -- the index set
+pub proc index_set(
+    zero: IndexTerm,
+    lasts: Seq<IndexTerm>,         -- each quantifier's sequence's last position
+    reads: Seq<IndexTerm>,         -- each index's position
+    positions: Seq<IndexTerm>,     -- each update's position
+    before: Seq<IndexTerm>,        -- each update's position less one
+    after: Seq<IndexTerm>,         -- each update's position plus one
+    witnesses: Seq<IndexTerm>,
+    terms: Seq<IndexTerm>,         -- the index set
+): (
+    det index_set?,                -- `terms` is the index set of the others
+) {
     assume neighbours: before.len = positions.len and after.len = positions.len
-    pub det out index_set?         -- `terms` is the index set of the others
 
     ensure rule: index_set? iff (terms != [] and terms[0] = zero
         and (forall (t: IndexTerm), when t in lasts, t in terms)
@@ -267,16 +265,18 @@ and `updated` are made so:
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp element_projection {
-    in q: Seq<Int>
-    in ix: Seq<Int>             -- the values of the index set's terms
-    in good: Set<Int>           -- the elements at which the body holds
-    in i: Int                   -- the position of an update
-    in v: Int                   -- its value
-    in projected: Seq<Int>      -- each element replaced by the element at the last value of `ix` at or before its position
-    in updated: Seq<Int>        -- the same of `q.update(i, v)`
+pub proc element_projection(
+    q: Seq<Int>,
+    ix: Seq<Int>,               -- the values of the index set's terms
+    good: Set<Int>,             -- the elements at which the body holds
+    i: Int,                     -- the position of an update
+    v: Int,                     -- its value
+    projected: Seq<Int>,        -- each element replaced by the element at the last value of `ix` at or before its position
+    updated: Seq<Int>,          -- the same of `q.update(i, v)`
+): (
+    det projection?,            -- `projected` and `updated` are made so
+) {
     assume zero: 0 in ix
-    pub det out projection?     -- `projected` and `updated` are made so
 
     ensure rule: projection? iff (projected.len = q.len
         and (forall (t: Int), when t in ix and 0 <= t < q.len, projected[t] = q[t])
@@ -325,13 +325,12 @@ fn in_chain?(frames: Seq<Frame>, all?, j: Int) :=
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp site_expanded {
-    in frames: Seq<Frame>        -- the binders around it, outermost first
-    in all?                      -- it is a `forall`
-    in receivers_closed?         -- its sequences mention no name bound around it
-    in mentioned: Seq<Int>       -- the positions of the binders whose names its body mentions
-    pub det out expanded?
-
+pub proc site_expanded(
+    frames: Seq<Frame>,          -- the binders around it, outermost first
+    all?,                        -- it is a `forall`
+    receivers_closed?,           -- its sequences mention no name bound around it
+    mentioned: Seq<Int>,         -- the positions of the binders whose names its body mentions
+): (det expanded?) {
     ensure rule: expanded? iff (receivers_closed?
         and (forall (j: Int), when j in mentioned, 0 <= j < frames.len and in_chain?(frames, all?, j)))
 }
@@ -352,15 +351,16 @@ instance that fails, serves:
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "tested" in
-pub comp element_witness {
-    in q: Seq<Int>
-    in good: Set<Int>            -- the elements at which the body holds
-    in ix: Seq<Int>              -- the values of the other terms of the index set
-    in w: Int                    -- a value of the witness
-    pub det out all?             -- the quantifier holds
-    pub det out instances?       -- its instances at `w` and `ix` hold
-    pub det out failing: Int     -- a position where the body fails, if there is one
-
+pub proc element_witness(
+    q: Seq<Int>,
+    good: Set<Int>,              -- the elements at which the body holds
+    ix: Seq<Int>,                -- the values of the other terms of the index set
+    w: Int,                      -- a value of the witness
+): (
+    det all?,                    -- the quantifier holds
+    det instances?,              -- its instances at `w` and `ix` hold
+    det failing: Int,            -- a position where the body fails, if there is one
+) {
     ensure meaning: all? iff (forall (x: Int), when x in q, x in good)
     ensure instances_rule: instances? iff ((when 0 <= w < q.len, q[w] in good)
         and (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good))
@@ -394,10 +394,9 @@ long sequences. The second query counts its positions instead.
 ```fren
 pub const MAX_ELEMENT_INSTANCES: Int := 256
 
-pub comp element_size {
-    in n_instances: Int      -- the instances of a query's quantifiers over elements
-    pub det out accepted?
-
+pub proc element_size(
+    n_instances: Int,        -- the instances of a query's quantifiers over elements
+): (det accepted?) {
     ensure rule: accepted? iff n_instances <= MAX_ELEMENT_INSTANCES
 
     expect at_limit: when n_instances = MAX_ELEMENT_INSTANCES, accepted?

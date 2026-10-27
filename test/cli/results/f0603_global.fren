@@ -3,11 +3,8 @@
 set_option fren.lint.chainable_comparison "allow"
 const HIGH: Int := 10
 
-comp band {
-    in temp: Int
-    in target: Int
+proc band(temp: Int, target: Int): (too_cold?) {
     assume sane: 0 <= target and target <= HIGH
-    pub out too_cold?
     ensure cold: too_cold? iff temp < target - 2
 }
 

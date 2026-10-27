@@ -1,4 +1,4 @@
 -- `many_single_char_names`: five names of one character, one with a `?`.
 set_option fren.lint.many_single_char_names "warn"
 
-comp total { in a: Int in b: Int in d: Int in c? pub out s: Int ensure r: s = if c? then a + d else b }
+proc total(a: Int, b: Int, d: Int, c?): (s: Int) { ensure r: s = if c? then a + d else b }

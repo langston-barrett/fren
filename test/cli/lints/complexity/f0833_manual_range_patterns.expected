@@ -1,16 +1,16 @@
 warning[F0833]: this or-pattern matches the range `-1..=4`
- --> test/cli/lints/complexity/f0833_manual_range_patterns.fren:3:59
+ --> test/cli/lints/complexity/f0833_manual_range_patterns.fren:3:52
   |
-3 | comp c { in n: Int pub out m: Int ensure r: m = match n { -1 | 0 | 1..5 => 1, _ => 0 } }
-  |                                                           ^^^^^^^^^^^^^ integers without a gap
+3 | proc c(n: Int): (m: Int) { ensure r: m = match n { -1 | 0 | 1..5 => 1, _ => 0 } }
+  |                                                    ^^^^^^^^^^^^^ integers without a gap
   |
   = help: `fren fix` can fix this
   = note: `manual_range_patterns` is `warn` by default
   = help: to allow it, `set_option fren.lint.manual_range_patterns "allow"`
 help: write the range
   |
-3 - comp c { in n: Int pub out m: Int ensure r: m = match n { -1 | 0 | 1..5 => 1, _ => 0 } }
-3 + comp c { in n: Int pub out m: Int ensure r: m = match n { -1..=4 => 1, _ => 0 } }
+3 - proc c(n: Int): (m: Int) { ensure r: m = match n { -1 | 0 | 1..5 => 1, _ => 0 } }
+3 + proc c(n: Int): (m: Int) { ensure r: m = match n { -1..=4 => 1, _ => 0 } }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

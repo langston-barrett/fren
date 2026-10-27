@@ -1,7 +1,7 @@
 warning[F0766]: these two comparisons cannot both hold
-  --> test/cli/commands/cover_constrains_nothing.fren:14:23
+  --> test/cli/commands/cover_constrains_nothing.fren:11:23
    |
-14 |     cover never: when x > 5 and x < 3, hot?
+11 |     cover never: when x > 5 and x < 3, hot?
    |                       ^^^^^^^^^^^^^^^ always `false`
    |
    = note: `and` and `or` may be swapped, or a value may not be the one meant
@@ -9,9 +9,9 @@ warning[F0766]: these two comparisons cannot both hold
    = help: to allow it, `set_option fren.lint.contradictory_comparisons "allow"`
 
 warning[F0820]: cover goal `never` has a trigger
-  --> test/cli/commands/cover_constrains_nothing.fren:14:11
+  --> test/cli/commands/cover_constrains_nothing.fren:11:11
    |
-14 |     cover never: when x > 5 and x < 3, hot?
+11 |     cover never: when x > 5 and x < 3, hot?
    |           ^^^^^ met by any behaviour in which the trigger is false
    |
    = help: write the scenario as a conjunction, such as `c? and d?` for `when c?, d?`
@@ -19,26 +19,26 @@ warning[F0820]: cover goal `never` has a trigger
    = help: to allow it, `set_option fren.lint.trivial_cover "allow"`
 
 error[F0603]: expectation `sensor::only_warm` does not hold
-  --> test/cli/commands/cover_constrains_nothing.fren:11:12
-   |
-11 |     expect only_warm: x = 50
-   |            ^^^^^^^^^ does not follow from the guarantees
-   |
-   = counterexample: x = 0, hot? = false
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+ --> test/cli/commands/cover_constrains_nothing.fren:8:12
+  |
+8 |     expect only_warm: x = 50
+  |            ^^^^^^^^^ does not follow from the guarantees
+  |
+  = counterexample: x = 0, hot? = false
+  = help: strengthen the guarantees so that it follows, or correct the expectation
 
 note: cover goal `sensor::warm` is met
-  --> test/cli/commands/cover_constrains_nothing.fren:13:11
+  --> test/cli/commands/cover_constrains_nothing.fren:10:11
    |
-13 |     cover warm: x = 50 and not hot?
+10 |     cover warm: x = 50 and not hot?
    |           ^^^^ met
    |
    = witness: x = 50, hot? = false
 
 note: cover goal `sensor::never` is met
-  --> test/cli/commands/cover_constrains_nothing.fren:14:11
+  --> test/cli/commands/cover_constrains_nothing.fren:11:11
    |
-14 |     cover never: when x > 5 and x < 3, hot?
+11 |     cover never: when x > 5 and x < 3, hot?
    |           ^^^^^ met
    |
    = witness: x = 2, hot? = false

@@ -1,10 +1,7 @@
 -- `min` and `max` with the first and the last variant.
 pub ordered enum Level { Low, Mid, High }
 
-comp c {
-    in l: Level
-    pub out a: Level
-    pub out b: Level
+proc c(l: Level): (a: Level, b: Level) {
     ensure r: a = l.max(Level::Low)
     ensure s: b = l.min(Level::High)
 }

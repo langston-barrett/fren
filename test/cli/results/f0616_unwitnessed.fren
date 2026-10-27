@@ -1,9 +1,7 @@
 --@ args: quickcheck
 -- Behaviours are found, but none in which the cover goal holds: only
 -- `x = 17637` satisfies it (F0616).
-comp c {
-    in x: Int
-    pub out big?
+proc c(x: Int): (big?) {
     ensure r: big? iff x > 1000
     cover exact: 7 * x = 123459 and big?
 }

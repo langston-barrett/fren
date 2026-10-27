@@ -1,11 +1,11 @@
-error[F0433]: a function type cannot be the type of a component's variable
- --> test/cli/types/f0433_variable.fren:3:11
+error[F0433]: a function type cannot be the type of a procedure's parameter or output
+ --> test/cli/types/f0433_variable.fren:2:15
   |
-3 |     in f: fn(Int) -> Int
-  |           ^^^^^^^^^^^^^^ a function type
+2 | proc apply(f: fn(Int) -> Int) {}
+  |               ^^^^^^^^^^^^^^ a function type
   |
   = note: functions are not values: a function type is only the whole type of a defined function's parameter, which an application gives a closure or a function's name
-  = help: make the component's requirement a defined function's, with a function parameter
+  = help: make the procedure's requirement a defined function's, with a function parameter
 
 error: could not check due to previous errors
 

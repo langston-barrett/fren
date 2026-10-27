@@ -5,16 +5,12 @@
 struct S { n: Nat, m: Int }
 enum E { A(Nat), B }
 
-comp c {
-    in s: S
-    in e: E
-    in k: Nat
-    in x: Int
-    pub det out a: S := S { n := k + 1, m := 0 }
-    pub det out t: S := { s with n := k + 1 }
-    pub det out u: S := S { n := s.n * 2, m := x }
-    pub det out v: E := E::A(k + 1)
-    pub det out z: Nat := s.n + 1
+proc c(s: S, e: E, k: Nat, x: Int): (det a: S, det t: S, det u: S, det v: E, det z: Nat) {
+    out a := S { n := k + 1, m := 0 }
+    out t := { s with n := k + 1 }
+    out u := S { n := s.n * 2, m := x }
+    out v := E::A(k + 1)
+    out z := s.n + 1
 
     expect pos: s.n + x >= x
     expect pay: match e { E::A(p) => p >= 0, E::B => true }

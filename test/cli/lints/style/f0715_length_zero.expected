@@ -1,16 +1,16 @@
 warning[F0715]: say whether it is empty with `""`, not `len`
- --> test/cli/lints/style/f0715_length_zero.fren:2:51
+ --> test/cli/lints/style/f0715_length_zero.fren:2:44
   |
-2 | comp c { in s: String pub out p? ensure r: p? iff s.len = 0 }
-  |                                                   ^^^^^^^^^ compares a length with 0
+2 | proc c(s: String): (p?) { ensure r: p? iff s.len = 0 }
+  |                                            ^^^^^^^^^ compares a length with 0
   |
   = help: `fren fix` can fix this
   = note: `length_zero` is `warn` by default
   = help: to allow it, `set_option fren.lint.length_zero "allow"`
 help: compare with `""`
   |
-2 - comp c { in s: String pub out p? ensure r: p? iff s.len = 0 }
-2 + comp c { in s: String pub out p? ensure r: p? iff s = "" }
+2 - proc c(s: String): (p?) { ensure r: p? iff s.len = 0 }
+2 + proc c(s: String): (p?) { ensure r: p? iff s = "" }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

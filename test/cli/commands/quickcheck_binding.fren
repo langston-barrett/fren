@@ -2,9 +2,7 @@
 -- Testing searches for the trigger of an expectation whose condition's
 -- pattern test binds a name, through a nested condition that reads it.
 enum Reply { Empty, Value(Int) }
-comp q {
-    in r: Reply
-    pub det out w: Int
+proc q(r: Reply): (det w: Int) {
     ensure x: w = 0
     expect chained: when r is Reply::Value(v) and v = 987654321, w = 1
     expect nested: when r is Reply::Value(v), when v = 987654321, w = 1

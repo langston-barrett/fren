@@ -1,3 +1,3 @@
 -- A quantifier as an operand, without parentheses (F0109).
 enum Mode { Off, Heat }
-comp c { in x: Mode in p? pub out ok? ensure r: ok? iff p? and forall (m: Mode), m = x }
+proc c(x: Mode, p?): (ok?) { ensure r: ok? iff p? and forall (m: Mode), m = x }

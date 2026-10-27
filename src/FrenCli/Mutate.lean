@@ -13,7 +13,7 @@ kept by parenthesizing where an operator binds more loosely than the one it
 replaces, and a hoisted operand keeps its own parentheses.
 
 Only what a spec asserts is changed: the expressions of `assume`s, `ensure`s,
-defined outputs, instance bindings, constants and defined functions. The
+defined outputs, call bindings, constants and defined functions. The
 expectations, local and global, are what kills mutants, and are left alone.
 
 Generating mutants is pure; `FrenCli.mutate` runs them.
@@ -86,9 +86,9 @@ structure Mutant where
   origin : Origin
   file : Nat
   /-- The item that it changes: a constraint or defined output, as
-  `module::comp::name`, an instance, a constant or a function. -/
+  `module::proc::name`, a call, a constant or a function. -/
   item : Name
-  /-- The component whose item it changes, if any. -/
+  /-- The procedure whose item it changes, if any. -/
   comp? : Option Name
   /-- The text replaced, in the file as elaborated. -/
   span : Span
@@ -124,7 +124,7 @@ structure Src where
   names, each with the name of its enumeration. -/
   bare : Std.HashMap String String := {}
   /-- The names that the file declares with a `!`, shadowing
-  (`Reqs/Lang/Components#shadowing`): a variant of such a name, written by
+  (`Reqs/Lang/Procedures#shadowing`): a variant of such a name, written by
   its name alone, may mean the binder instead. -/
   shadowed : Std.HashSet String := {}
 
@@ -221,9 +221,9 @@ partial def allExprs (items : Array Item) : Array Expr :=
   let rec sub (e : Expr) : Array Expr := #[e] ++ (exprChildren e).flatMap sub
   let rec ofItem : Item → Array Expr
     | .const _ _ _ v | .global _ _ v | .function _ _ _ _ _ (some v) _ _ => #[v]
-    | .comp _ _ members .. => members.flatMap fun
-      | .prop _ _ e | .var _ _ _ _ _ (some e) => #[e]
-      | .inst _ _ bs => bs.filterMap (·.2)
+    | .comp _ _ _ members .. => members.flatMap fun
+      | .prop _ _ e | .var _ _ _ _ _ (some e) | .define _ e => #[e]
+      | .inst _ _ bs .. => bs.filterMap (·.2)
       | _ => #[]
     | .refine _ _ _ bs => bs.filterMap (·.2)
     | .lintSetting _ _ _ _ _ (some body) => ofItem body
@@ -589,7 +589,7 @@ where
 /-! ## Sites -/
 
 /-- The expressions of `items` that mutants change, each with its item and
-component. -/
+procedure. -/
 partial def sites (items : Array Item) : Array (Name × Option Name × Expr) := Id.run do
   let mut module : Name := .anonymous
   let mut out := #[]
@@ -603,14 +603,14 @@ where
   ofItem (module : Name) : Item → Array (Name × Option Name × Expr)
     | .const _ n _ v => #[(.str module n.name, none, v)]
     | .function _ n _ _ _ (some body) _ _ => #[(.str module n.name, none, body)]
-    | .comp _ n members .. =>
+    | .comp _ n _ members .. =>
       let c := Name.str module n.name
       members.flatMap fun
         -- Expectations and cover goals are what rejects mutants, so they are not mutated.
         | .prop kind p e => if kind == .expect || kind == .cover then #[] else #[(.str c p.name, some c, e)]
         -- By the names they declare, without the `!` of shadowing.
-        | .var _ _ _ x _ (some d) => #[(.str c (declared x), some c, d)]
-        | .inst i _ bs => bs.filterMap fun (_, e?) => e?.map (.str c (declared i), some c, ·)
+        | .var _ _ _ x _ (some d) | .define x d => #[(.str c (declared x), some c, d)]
+        | .inst i _ bs .. => bs.filterMap fun (_, e?) => e?.map (.str c (declared i), some c, ·)
         | _ => #[]
     | .lintSetting _ _ _ _ _ (some body) => ofItem module body
     | _ => #[]
@@ -647,7 +647,7 @@ def ofFile (s : Src) (items : Array Item) (divisors : Std.HashSet String := {}) 
   let enums := (enumsOf items).fold (init := s.enums) fun acc n vs => if acc.contains n then acc else acc.insert n vs
   let s := { s with enums, shadowed := shadowedNames s.toks }
   -- The `use`s of the file, which bring names into scope after them, and
-  -- those of each component, which bring them into its scope
+  -- those of each procedure, which bring them into its scope
   -- (`Reqs/Lang/Modules`).
   let fileUses := items.flatMap fun
     | .use sp path glob => #[(sp, path, glob)]
@@ -657,7 +657,7 @@ def ofFile (s : Src) (items : Array Item) (divisors : Std.HashSet String := {}) 
     let mut module : Name := .anonymous
     let mut out := {}
     let rec comp? : Item → Option (Ident × Array Member)
-      | .comp _ n members .. => some (n, members)
+      | .comp _ n _ members .. => some (n, members)
       | .lintSetting _ _ _ _ _ (some body) => comp? body
       | _ => none
     for item in items do

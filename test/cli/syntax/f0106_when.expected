@@ -1,14 +1,14 @@
 error[F0106]: expected `,` after the condition of `when`, found identifier `y`
- --> test/cli/syntax/f0106_when.fren:2:56
+ --> test/cli/syntax/f0106_when.fren:2:49
   |
-2 | comp c { in x: Int pub out y: Int ensure r: when x > 1 y = 3 }
-  |                                                        ^ expected `,`
+2 | proc c(x: Int): (y: Int) { ensure r: when x > 1 y = 3 }
+  |                                                 ^ expected `,`
   |
   = note: the condition of `when` ends with a comma
 help: add a comma
   |
-2 | comp c { in x: Int pub out y: Int ensure r: when x > 1, y = 3 }
-  |                                                       +
+2 | proc c(x: Int): (y: Int) { ensure r: when x > 1, y = 3 }
+  |                                                +
   |
 
 error: could not check due to previous errors
