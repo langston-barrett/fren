@@ -569,7 +569,7 @@ Erroneous code example:
 ```fren
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 
-comp c { in x: Int pub det out y: Int := apply(|| x, x) }
+proc c(x: Int): (det y: Int) { out y := apply(|| x, x) }
 ```
 
 A closure is given for a function parameter, whose function type has at
@@ -580,7 +580,7 @@ does not use it:
 ```fren
 fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 
-comp c { in x: Int pub det out y: Int := apply(|n| n + x, x) }
+proc c(x: Int): (det y: Int) { out y := apply(|n| n + x, x) }
 ```
 "# },
   { code := "F0162", explanation := r#"A function type without its result.
