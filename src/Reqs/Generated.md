@@ -126,9 +126,10 @@ of a type.
 A [generic type](Lang/Generics.md) becomes an inductive type or structure,
 as above, with one explicit parameter of type `Type` for each type
 parameter, of the same name, and named as any other item's declarations
-are (see [Names](#names)): `enum Option<T> { None, Some(T) }` becomes
-`inductive Option (T : Type)`, which at the root module is
-`Fren.Generated.Option`, apart from Lean's `Option`, with `Option.Some :
+are (see [Names](#names)): `enum Option!<T> { None, Some(T) }`, which shadows the
+[prelude's](Lang/Prelude.md) `Option`, becomes `inductive Option (T :
+Type)`, which at the root module is `Fren.Generated.Option`, apart from
+Lean's `Option`, with `Option.Some :
 {T : Type} → T → Option T`. Deriving `DecidableEq`, `Repr` and `Inhabited` asks the same of
 the arguments, which every Fren type has. Its instances are applications,
 as `Option Int`, and a construction gives its inferred arguments
@@ -142,6 +143,79 @@ constructor only by a symbol that needs no `|`s. A selector takes the parameters
 {T : Type} → [Inhabited T] → Option T → T`. The solver is given the
 inductive type as a parametric datatype (see [Generic
 types](Lang/Generics.md#meaning)).
+
+## The prelude's types
+
+The [prelude's](Lang/Prelude.md) types are Lean's own, as `Int` and `Nat`
+are, and nothing is generated for them: `Option<T>` is Lean's `Option T`,
+and `Result<T, E>` Lean's `Except E T`, whose parameters are `Result`'s
+swapped. Their variants are Lean's constructors: `Option::None` is
+`Option.none`, `Option::Some` `Option.some`, `Result::Ok` `Except.ok` and
+`Result::Err` `Except.error`, so `Result::Ok(3)` of a `Result<Int, Bool>`
+is `@Except.ok Bool Int 3`. Each is at universe 0, so its parameters are of
+type `Type`, as a generic type's are (see [Generic types](#generic-types)).
+A user's generic type is still an inductive type of its own, even one
+named `Option!`, at `Fren.Generated.Option`. Their payloads' selectors, which a
+`match` reads, are `Fren.Prelude.Option.some.x0`, `Fren.Prelude.Except.ok.x0`
+and `Fren.Prelude.Except.error.x0`, with the parameters implicit and an
+`Inhabited` instance of each, as a generic type's are, and `Fren.Prelude`
+gives `Except` the decidable equality that Lean does not.
+
+lean-smt gives the solver Lean's types as it gives it any inductive type
+with type parameters: a parametric datatype named after the Lean type, with
+a constructor named after each Lean constructor, in Lean's order, and a
+selector named after each field, or `fieldk`, counted from 1, for a field
+that has no name of its own, as `Except`'s do not. The `fren` command gives
+it the same declarations, with the same symbols (see
+[Meaning](Lang/Prelude.md#meaning)).
+
+`generated::prelude_type` states the Lean type of an instance of a prelude
+type, from its type arguments' Lean types, and `generated::prelude_variant`
+the Lean constructor of each variant, lean-smt's selector of each value of
+its payload, and its position among the Lean type's constructors:
+
+```fren
+-- The prelude's types, and their variants.
+pub enum PreludeType { Option, Result }
+pub enum PreludeVariant { None, Some, Ok, Err }
+
+set_option fren.lint.undecidable "allow" in
+pub comp prelude_type {
+    in ty: PreludeType
+    in args: Seq<String>           -- the Lean types of its type arguments, as written
+    pub det out lean: String := match ty { PreludeType::Option => "Option", PreludeType::Result => "Except" }
+    -- `Except`'s arguments are `Result`'s, swapped.
+    pub det out lean_args: Seq<String> := if ty = PreludeType::Result and args.len = 2 then [args[1], args[0]]
+        else args
+
+    expect option_same: when ty = PreludeType::Option, lean_args = args
+    expect result_swapped: when ty = PreludeType::Result and args = ["Int", "Bool"], lean_args = ["Bool", "Int"]
+}
+
+set_option fren.lint.undecidable "allow" in
+pub comp prelude_variant {
+    use self::PreludeVariant::{Err, None, Ok, Some}
+    in variant: PreludeVariant
+    pub det out ty: PreludeType := if variant in {None, Some} then PreludeType::Option else PreludeType::Result
+    pub det out ctor: String := match variant {
+        None => "Option.none",
+        Some => "Option.some",
+        Ok => "Except.ok",
+        Err => "Except.error",
+    }
+    pub det out selectors: Seq<String> := match variant {
+        None => [],
+        Some => ["Option.some.val"],
+        Ok => ["Except.ok.field1"],
+        Err => ["Except.error.field1"],
+    }
+    -- Its constructor's position among the Lean type's: `Except.error` is first.
+    pub det out position: Int := match variant { None | Err => 0, Some | Ok => 1 }
+
+    -- A selector is the constructor's, as lean-smt names them.
+    expect named: selectors = [] or selectors[0].starts_with?(ctor ++ ".")
+}
+```
 
 ## Records
 

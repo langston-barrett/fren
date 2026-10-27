@@ -4,7 +4,7 @@
 -- repro of issue #249 with type parameters; `lean_names.fren` has it
 -- without, at its own root module.
 
-pub enum Option<T> { None, Some(T) }
+pub enum Option!<T> { None, Some(T) }
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
 comp c {

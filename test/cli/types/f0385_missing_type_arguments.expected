@@ -1,7 +1,7 @@
 error[F0385]: `Option` takes 1 type argument, but none was given
- --> test/cli/types/f0385_missing_type_arguments.fren:4:16
+ --> test/cli/types/f0385_missing_type_arguments.fren:3:16
   |
-4 | comp c { in x: Option }
+3 | comp c { in x: Option }
   |                ^^^^^^ no type arguments
   |
   = note: `Option` is generic, with the type parameter `T`

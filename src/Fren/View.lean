@@ -2,6 +2,7 @@
 import Fren.Check
 import Fren.Elab
 import Fren.Enumerate
+import Fren.Prelude
 -- keep-sorted end
 
 /-!

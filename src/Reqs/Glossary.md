@@ -222,6 +222,10 @@ preconditions. See [Items](Lang/Items.md#contracts).
 `assume`: what each application's arguments must meet. See
 [Items](Lang/Items.md#contracts).
 
+**Prelude.** The items that every spec can use without declaring or
+importing them, `Option<T>` and `Result<T, E>` and their variants, which
+both front ends load before every spec. See [The prelude](Lang/Prelude.md).
+
 **Quantifier.** An expression, `forall (x: T), e` or `exists (x: T), e`,
 that says that `e` holds for every value, or for some value, of the type
 `T`. See [Quantifiers](Lang/Quantifiers.md).

@@ -2315,6 +2315,11 @@ def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option 
       own ++ (t.elems ++ parts).flatMap (ints fuel ·)
   return some { kind, name := .num x 0, e := .typed t (ints 8 t) (.var x), typed? := some "" }
 
+
+/-- The name that an item's declaration `x` declares, without the `!` that
+marks it as shadowing one of the prelude's names (`Fren.Core.declaredName`). -/
+def itemName (x : Ident) : Name := (Fren.Core.declaredName (Name.mkSimple x.name)).1
+
 /-- Imports `segs` into the current module, or into the component `scope`. -/
 def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Unit := do
   let st ← get
@@ -2322,7 +2327,7 @@ def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Un
   modify fun s => { s with table := s.table.addUse u, scope := scope.getD s.scope }
 
 def lowerComp (isPub : Bool) (name : Ident) (members : Array Member) : L Unit := do
-  let path := (← get).module ++ Name.mkSimple name.name
+  let path := (← get).module ++ itemName name
   for m in members do
     match m with
     | .use _ segs glob => declareUseIn segs glob (some path)
@@ -2405,6 +2410,7 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
     modify fun s => { s with spec.contracts := s.spec.contracts.insert path (ps.map (·.1), pres.map (·.2), posts) }
   return constraints
 
+
 /-- The path of the component that `segs` names. -/
 def resolveComp (segs : Array Ident) : L Name := do
   match ← resolve segs with
@@ -2423,7 +2429,7 @@ def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit :
     | _ => values := values.push b
   let st ← get
   let shell : Comp := { path := st.module, vars := #[], constraints := #[], insts, isGlobal := true }
-  let n := Name.mkSimple name.name
+  let n := itemName name
   let body := if values.isEmpty then body else .quant body.span true values body
   let e := (← lowerExpr { vars := st.spec.flatVars shell } body).1
   modify fun s => { s with
@@ -2438,7 +2444,7 @@ partial def lowerItem : Item → L Unit
   | .useGroup _ pre paths => do for p in paths do declareUse (pre ++ p) false
   | .enum isPub name variants _ params => do
     let st ← get
-    let path := st.module ++ Name.mkSimple name.name
+    let path := st.module ++ itemName name
     modify fun s => { s with typeParams := params.map (Name.mkSimple ·.name) }
     let vs := variants.map (Name.mkSimple ·.1.name)
     -- Declared first: a payload may have the enumeration's own type.
@@ -2456,7 +2462,7 @@ partial def lowerItem : Item → L Unit
     modify fun s => { s with spec.shapes := s.spec.shapes.insert path { recursive, parts }, typeParams := #[] }
   | .record isPub name fields _ params => do
     let st ← get
-    let path := st.module ++ Name.mkSimple name.name
+    let path := st.module ++ itemName name
     modify fun s => { s with typeParams := params.map (Name.mkSimple ·.name) }
     let mut fs := #[]
     for (f, ty?) in fields do fs := fs.push (Name.mkSimple f.name, ← varTy ty?)
@@ -2469,7 +2475,7 @@ partial def lowerItem : Item → L Unit
       spec.shapes := s.spec.shapes.insert path { isRecord := true, parts := #[parts] }
       typeParams := #[] }
   | .newtype isPub name fields _ => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let some ty := fields[0]? | throw s!"`{showPath path}` has no field"
     let u ← lowerTy ty
     let pt ← lowerPTy ty
@@ -2478,7 +2484,7 @@ partial def lowerItem : Item → L Unit
       spec.newtypes := s.spec.newtypes.insert path u
       spec.shapes := s.spec.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
   | .typeAlias isPub name ty => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let t ← lowerTy ty
     let pt ← lowerPTy ty
     modify fun s => { s with
@@ -2486,12 +2492,12 @@ partial def lowerItem : Item → L Unit
       aliases := s.aliases.insert path t
       declaredAliases := s.declaredAliases.insert path pt }
   | .abstractType isPub name => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     modify fun s => { s with
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
   | .function isPub name typeParams params result body clauses _ => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let tps := typeParams.map (Name.mkSimple ·.name)
     modify fun s => { s with fnTypeParams := if tps.isEmpty then none else some (path, tps) }
     let r ← varTy result
@@ -2514,8 +2520,8 @@ partial def lowerItem : Item → L Unit
           table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
         -- Over the parameters as inputs, for the checks of its clauses.
         let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
-        let cs ← lowerContract path (Name.mkSimple name.name) false ps vars clauses
-        noteBody (Name.mkSimple name.name) vars (.lit (.bool true)) cs
+        let cs ← lowerContract path (itemName name) false ps vars clauses
+        noteBody (itemName name) vars (.lit (.bool true)) cs
     | some body =>
       let ps ← params.mapM fun (p, ty?) => return (declName p[0]!, ← varTy ty?)
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n) } body
@@ -2529,15 +2535,15 @@ partial def lowerItem : Item → L Unit
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
       let e := (← lowerExpr { vars } body).1
       modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
-      let cs ← lowerContract path (Name.mkSimple name.name) true ps vars clauses
-      noteBody (Name.mkSimple name.name) vars e cs
+      let cs ← lowerContract path (itemName name) true ps vars clauses
+      noteBody (itemName name) vars e cs
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }
                              fnTypeParams := none }
   | .const isPub name ty value => do
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     let t ← lowerTy ty
     let (e, _) ← lowerExpr {} value
-    noteBody (Name.mkSimple name.name) #[] e
+    noteBody (itemName name) #[] e
     -- Unknown where it reads an index out of range or a table where no
     -- row holds, which only an interpretation gives a value, or where an
     -- unbounded quantifier has a bound name without a domain, or one too
@@ -2560,7 +2566,7 @@ partial def lowerItem : Item → L Unit
       return c
     let c ← comp concrete
     let a ← comp abstract
-    let path := (← get).module ++ Name.mkSimple name.name
+    let path := (← get).module ++ itemName name
     -- The bindings, over `c`'s own variables.
     let bindings ← bs.mapM fun (b, e?) => do
       return (Name.mkSimple b.name, (← lowerExpr { vars := c.vars } (e?.getD (.path b.span #[b]))).1)
@@ -2584,11 +2590,25 @@ def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState 
     st := { st with file := st.file + 1 }
   return st
 
+/-- The state with the prelude lowered into it, before every spec
+(`Reqs/Lang/Prelude`): its items, in the prelude's module. -/
+def preludeState : Except String LState := do
+  let chars := Fren.Core.preludeSource.toList.toArray
+  let items ← match lex chars with
+    | .error e => throw e.msg.headline
+    | .ok toks => match parse toks chars with
+      | .error e => throw e.msg.headline
+      | .ok items => pure items
+  let mut st : LState := { module := Fren.Core.preludeModule, scope := Fren.Core.preludeModule }
+  for item in items do
+    st := (← (lowerItem item).run st).2
+  return { st with module := .anonymous, scope := .anonymous }
+
 /-- The spec of the files' items, which the elaborator accepted, with the
 names it declares. Lowering files one after another is lowering them
 together: `lowerFrom st (a ++ b)` is `lowerFrom st a >>= (lowerFrom · b)`,
 which `fren mutate` relies on to lower only the files from a mutant's. -/
-def lowerAll (files : Array (Array Item)) : Except String LState := lowerFrom {} files
+def lowerAll (files : Array (Array Item)) : Except String LState := do lowerFrom (← preludeState) files
 
 def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$> lowerAll files
 

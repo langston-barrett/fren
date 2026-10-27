@@ -1,0 +1,11 @@
+-- Fren's prelude: the items that every spec can use without declaring them
+-- (`Reqs/Lang/Prelude`). Both front ends load it before every spec, into a
+-- module of its own, which no path names. Its types are Lean's own: an
+-- `Option<T>` is Lean's `Option T`, and a `Result<T, E>` Lean's
+-- `Except E T`.
+
+-- A value, or none.
+pub enum Option<T> { None, Some(T) }
+
+-- A value, or an error.
+pub enum Result<T, E> { Ok(T), Err(E) }

@@ -19,6 +19,7 @@ open Fren.Lang
 #fren_md "Lang/Items.md"
 #fren_md "Lang/Generics.md"
 #fren_md "Lang/GenericFunctions.md"
+#fren_md "Lang/Prelude.md"
 #fren_md "Lang/Components.md"
 #fren_md "Lang/Decidability.md"
 #fren_md "Lang/Patterns.md"
