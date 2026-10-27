@@ -1,0 +1,26 @@
+-- Global expectations written with a `forall` over procedures' behaviours,
+-- as before they had parameters (F0416), in both front ends: with a fix,
+-- and without one, where a procedure is in another module, or its
+-- assumptions mention a variable other than its parameters.
+mod m
+
+pub proc double(x: Int): (y: Int) {
+    assume small: x < 100
+    ensure r: y = 2 * x
+}
+
+proc defined(x: Int): (y: Int) {
+    let big? := x > 10
+    assume big: big?
+    ensure r: y = x
+}
+
+expect monotone: forall (a b: double), when a.x <= b.x, a.y <= b.y
+--~^ error: assuming what its procedures assume
+expect through_let: forall (d: defined), d.y > 10
+--~^ error: so it has no fix
+
+mod n
+use m::double
+expect elsewhere: forall (a: double), a.y = 2 * a.x
+--~^ error: so it has no fix

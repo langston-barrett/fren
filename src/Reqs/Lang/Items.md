@@ -319,8 +319,9 @@ The names of a list of declarations are distinct: the variants of an
 enumeration, the fields of a record, the [type
 parameters](Generics.md#type-parameters) of either, the parameters and contract clauses
 of a function, which share one namespace,
-the variables, calls and constraints of a procedure, which share one
-namespace, and the binders of a global expectation, of a pattern or of a
+the variables, calls and constraints of a procedure or of a [global
+expectation](Global.md), which share one namespace, and the binders of a
+pattern or of a
 [quantifier](Quantifiers.md#names), across all of its binders. A
 pattern's `_` declares no name. A name declared again is an error,
 reported where it is declared again, in the order the declarations are
@@ -817,13 +818,14 @@ A procedure is declared with `proc`, as `procedure`: see
 ## Global expectations
 
 ```
-expectation := "expect" IDENT ":" ["forall" binder+ ","] expr
-binder      := "(" DECL+ ":" path ")"
+expectation := "expect" IDENT"(" [variable ("," variable)* [","]] ")" "{" member* "}"
+             | "expect" IDENT ":" top
 ```
 
 A global expectation is an expectation about procedures as a whole rather
 than about one of their behaviours, such as two procedures agreeing, or one
-procedure being monotone. See [Global expectations](Global.md).
+procedure being monotone: it takes parameters and calls the procedures, as
+a procedure does. See [Global expectations](Global.md).
 
 ## Refinements
 

@@ -2,7 +2,7 @@
 
 The lints of the `suspicious` group find what is probably not what the
 writer meant. This chapter has the lints of names, of constraints, of
-the spacing of negations, of the binders of global expectations and of
+the spacing of negations, of the calls of global expectations and of
 definitions, and
 its subchapters the others: those of
 [expressions](Suspicious/Expressions.md), of [methods and

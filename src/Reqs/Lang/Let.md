@@ -20,7 +20,7 @@ A `let` is an [expression](Expressions.md), at the level of `when`: its
 body extends as far right as possible, and a `let` that is the operand of
 an operator is written in parentheses. A `where` clause is not an
 expression: it follows the whole expression of an assumption, guarantee,
-expectation or [cover goal](Procedures.md#cover-goals), a [global expectation](Global.md) (after its `forall`), a
+expectation or [cover goal](Procedures.md#cover-goals), a [global expectation](Global.md) in the short form, a
 [definition](Procedures.md#definitions) of a result or `let` variable, a
 [function's](Items.md#defined-functions) body or a
 [constant's](Items.md#constants) value, and nothing else. It binds most

@@ -30,7 +30,10 @@ is the kinds:
 - `Input` and `Output`, a component's [variables](Procedures.md#members);
   `Parameter`, a [defined function's](Items.md#defined-functions)
   parameter; `Instance`, a component's [instance](Calls.md); and
-  `ExpectBinder`, a [global expectation's](Global.md) binder;
+  `ExpectBinder`, a binder of a [global expectation](Global.md) as they
+  were written before they had parameters, which none declares now (see
+  [Migration](Global.md#migration)): a global expectation's parameters
+  and calls are `Input` and `Instance`, as a procedure's are;
 - `PatternBinder`, a binder of a [`match` arm](Expressions.md#matches) or
   of a [pattern test](Expressions.md#pattern-tests), whose target is where
   its pattern declares it, as a `Binder` [head](Meaning.md#layers) names
@@ -88,7 +91,7 @@ the name, by where they are declared. From the innermost, at depth 0, out:
 
 1. The *locals*, one depth each, the last declared innermost. In order,
    from the outermost: the variables and instances of its component, the
-   parameters of its function, or the binders of its global expectation;
+   parameters of its function;
    then the names that the constructs around it declare, each in the order
    that it is written: the binders of the `match` arms it is in, the bound
    names of the quantifiers it is in, the names of the `let`s and `where`
