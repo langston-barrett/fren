@@ -328,7 +328,7 @@ pub proc match_form(
     heads: Set<Head>,   -- of the arms' patterns, and of the patterns within them
 ): (det form: MatchForm) {
     out form := if scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values
-            and not (Head::Literal in heads) and not (Head::OrPattern in heads)
+        and not (Head::Literal in heads) and not (Head::OrPattern in heads)
         then MatchForm::LeanMatch else MatchForm::IfChain
 
     expect by_heads: when scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values,
@@ -396,7 +396,7 @@ pub enum DefinitionForm { NotCompiled, Compiled, MarkedNoncomputable }
 pub proc definition_form(value: ValueKind, mentions: Set<Mention>): (det form: DefinitionForm) {
     out form := if value = ValueKind::Proposition then DefinitionForm::NotCompiled
         else if Mention::ClassicalDecision in mentions or Mention::NoncomputableDecl in mentions
-            or Mention::DataAxiom in mentions then DefinitionForm::MarkedNoncomputable
+        or Mention::DataAxiom in mentions then DefinitionForm::MarkedNoncomputable
         else DefinitionForm::Compiled
 
     expect by_mentions: when value = ValueKind::Data,
