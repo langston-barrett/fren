@@ -11,7 +11,8 @@ import Lean.Elab.Frontend
 /-!
 # `lake test`
 
-- **ui tests:** every `test/ui/**/*.fren` is checked by both front ends against
+- **ui tests:** every `test/ui/**/*.fren`, and every example in
+  `examples/**/*.fren`, is checked by both front ends against
   its annotations (`FrenTest.Ui`). The binary's checker runs in-process; the
   Lean front end elaborates the file in an environment that imports `Fren`.
   Passing both is how `cli::agreement` is tested.
@@ -50,6 +51,11 @@ open System Lean FrenTest.Ui
 def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
   let fs ← dir.walkDir
   return (fs.filter (·.extension == some ext)) |>.qsort (·.toString < ·.toString)
+
+/-- The ui tests: `test/ui/**/*.fren`, and the examples, `examples/**/*.fren`,
+which are checked as ui tests too. -/
+def uiFiles : IO (Array FilePath) :=
+  return (← sortedFiles ("test" / "ui") "fren") ++ (← sortedFiles "examples" "fren")
 
 /-! ## Snapshots -/
 
@@ -1073,10 +1079,10 @@ def backjumpingOf (paths : Array String) : IO (Array String × Nat) := do
           failures := failures.push s!"{name}: backjumping finds values where backtracking tries every candidate"
   return (failures, problems)
 
-/-- `backjumpingOf` Fren's own requirements, or each file of `test/ui`. -/
+/-- `backjumpingOf` Fren's own requirements, or each ui test. -/
 def backjumping (corpus : String) : IO (Array String) := do
   let groups : Array (Array String) ← if corpus == "reqs" then pure #[ownSpecFiles] else
-    do pure ((← sortedFiles ("test" / "ui") "fren").map fun f => #[f.toString])
+    do pure ((← uiFiles).map fun f => #[f.toString])
   let mut failures := #[]
   let mut problems := 0
   for g in groups do
@@ -1094,7 +1100,7 @@ def enumeratedText (src : String) : String := "set_option fren.evidence \"enumer
 /-- The ui tests whose checks enumeration is compared with the solver's:
 those that the binary checks, without a static error. -/
 def enumerationCorpus : IO (Array FilePath) := do
-  (← sortedFiles ("test" / "ui") "fren").filterM fun f => do
+  (← uiFiles).filterM fun f => do
     let src ← IO.FS.readFile f
     return !(src.splitOn "--@ only: hosted").length > 1 && (src.splitOn "--@ exit: 2").length == 1
 
@@ -1528,7 +1534,7 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
-  let ui ← sortedFiles ("test" / "ui") "fren"
+  let ui ← uiFiles
   let n := (ui.size + uiBatch - 1) / uiBatch
   -- Every `n`th file, so that the slow ones spread over the batches.
   let batches := (List.range n).toArray.map fun k =>
