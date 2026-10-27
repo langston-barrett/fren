@@ -123,14 +123,17 @@
   one even where no row holds, which is the interpretation's unspecified
   value of its type. Its constraints include
   pattern tests and `match`es with literal and range patterns on `Bool`s
-  and `Int`s; the enumerations have no payloads, so nested patterns are
-  left to the ui tests. Brute force enumerates every behaviour and interpretation
+  and `Int`s, and on the one enumeration with payloads, `P { A, B(Bool),
+  C(Bool) }`, pattern tests of its variants and `match`es that read its
+  payloads; deeper nested patterns are left to the ui tests. Brute force enumerates every behaviour and interpretation
   of that fragment, and decides each check from its definition in
   [Checks](../Check.md). It also confirms that each reported set of
   constraints (a conflict, a vacuity or a redundancy) entails what the
   message says and is minimal, and that each counterexample can be
   completed to a behaviour with the reported values, and each witness of a
-  cover goal to a behaviour in which the goal holds. Each disagreement is
+  cover goal to a behaviour in which the goal holds, and that each clash
+  note's sides [force](../Check.md#forced-outputs) what it says, a whole
+  value or only a variant, and clash. Each disagreement is
   written to `DIR` (default `.lake/fuzz`) as a `.fren` file, with what
   differed in a comment. The verdicts of redundancy for `range_*`
   constraints are not compared, since without them brute force is not
@@ -148,7 +151,8 @@
   analyses that each front end implements on its own: constants, defined
   outputs, defined and uninterpreted functions, instances, `match`, tables,
   string methods and `++`, products, orderings and `min` and `max` of an ordered
-  enumeration, a newtype of `Int` and its operators, and sets and
+  enumeration, a newtype of `Int` and its operators, an enumeration with
+  payloads, whose outputs' variants clash notes may give, and sets and
   relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
   and the lints. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the

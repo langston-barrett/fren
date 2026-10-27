@@ -840,8 +840,13 @@ def hasComment (s : String) : Bool := withoutComments s != s
 /-- The text `s` as the lints compare it, so that two texts are *written the
 same* (`Reqs/Lint#written-the-same`) if these agree: without comments or
 whitespace, but for one space between two characters of names, numbers or
-keywords, and with string literals, raw ones too, as they are. -/
+keywords, and with string literals, raw ones too, as they are. A text
+without whitespace, string literals or the start of a comment is its own
+form, and is returned as it is. -/
 def writtenForm (s : String) : String := Id.run do
+  let plain := (s.foldl (init := (true, ' ')) fun (ok, prev) c =>
+    (ok && !c.isWhitespace && c != '"' && !(c == '-' && (prev == '-' || prev == '/')), c)).1
+  if plain then return s
   let cs := (withoutComments s).toList.toArray
   let mut out : Array Char := #[]
   let mut i := 0
@@ -4143,7 +4148,8 @@ def erasingOpAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
     return { lint := .erasingOp, ref := n.ref, msg := erasingDivisionMsg op }
   let o ← InfixOp.ofOp? op
   let #[a, b] := n.kids | none
-  let same := writtenSame (textOf src a.range) (textOf src b.range)
+  -- `erasingOp` reads `same` only for these operators.
+  let same := (o matches .inter | .minus | .subset) && writtenSame (textOf src a.range) (textOf src b.range)
   unless erasingOp o (identityOperand src a) (identityOperand src b) same do none
   return { lint := .erasingOp, ref := n.ref, msg := erasingOpMsg o }
 
@@ -4313,7 +4319,7 @@ inductive NodeFact where
 
 /-- Whether the text at `i` in `src` starts with `s`. -/
 def startsWithAt (src : Array Char) (i : Nat) (s : String) : Bool :=
-  (s.toList.zipIdx).all fun (c, k) => src[i + k]? == some c
+  (s.foldl (init := (true, i)) fun (ok, k) c => (ok && src[k]? == some c, k + 1)).1
 
 /-- Whether `n` applies a cardinality operator, `some true` for
 `exactly_one?` and `some false` for `at_most_one?`: their names are

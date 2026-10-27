@@ -23,7 +23,8 @@ constants, defined outputs, defined and uninterpreted functions, `match`
 and tables over a scrutinee,
 string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
-enumeration, and sets and relations with `card`, so that it
+enumeration, an enumeration with payloads, whose outputs' variants a
+clash note may give, and sets and relations with `card`, so that it
 reaches `linear_product`, the decidable core and the lints.
 
 What legitimately differs is normalized away by
@@ -51,11 +52,14 @@ inductive WTy where
   | int | bool | str | set | rel | enum
   /-- The newtype `Ms` of `Int`. -/
   | ms
+  /-- The enumeration with payloads `P { A, B(Int), C(Bool) }`, whose
+  variants a clash note may give (`Reqs/Check#forced-outputs`). -/
+  | pay
   deriving BEq, Inhabited
 
 def WTy.name (relElem : String) : WTy → String
   | .int => "Int" | .bool => "Bool" | .str => "String" | .set => "Set(Int)"
-  | .rel => s!"Rel({relElem}, {relElem})" | .enum => "E" | .ms => "Ms"
+  | .rel => s!"Rel({relElem}, {relElem})" | .enum => "E" | .ms => "Ms" | .pay => "P"
 
 structure WScope where
   /-- A variable's text, type, and whether it is an input (so that an
@@ -78,6 +82,8 @@ structure WScope where
   avoidKnown : Bool := false
   /-- The spec declares the newtype `Ms` of `Int`. -/
   hasMs : Bool := false
+  /-- The spec declares the enumeration `P`. -/
+  hasPay : Bool := false
 
 def WScope.varsOf (sc : WScope) (t : WTy) : Array String :=
   sc.vars.filterMap fun (n, t', isIn) => if t' == t && (isIn || !sc.onlyIns) then some n else none
@@ -106,6 +112,7 @@ partial def leaf (sc : WScope) (t : WTy) : R String := do
   | .rel => if sc.relElem == "E" then return s!"\{({← enumLit sc}, {← enumLit sc})}" else pick #["{(1, 2)}", "{(0, 0), (1, 2)}"]
   | .enum => enumLit sc
   | .ms => return s!"Ms({← below 4})"
+  | .pay => pick #["P::A", "P::B(0)", "P::B(2)", "P::C(true)", "P::C(false)"]
 
 /-- An application of a function whose result has type `t`, if there is
 one. The arguments of an uninterpreted one mention only inputs. -/
@@ -187,7 +194,7 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 14 => tableOf sc .int d
     | _ => leaf sc .int
   | .bool =>
-    match ← below 25 with
+    match ← below 28 with
     | 0 => return s!"({← sub .bool} and {← sub .bool})"
     | 1 => return s!"({← sub .bool} or {← sub .bool})"
     | 2 => return s!"not {← sub .bool}"
@@ -230,6 +237,16 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
       let rhs ← if ← chance 5 then sub .int else sub .ms
       return s!"{← sub .ms} {← pick #["=", "!=", "<", "<=", ">", ">="]} {rhs}"
     | 24 => tableOf sc .bool d
+    -- A pattern test of `P`, of a variant, or an equation, or a `match`
+    -- that reads a payload.
+    | 25 | 26 =>
+      unless sc.hasPay do return ← leaf sc .bool
+      let p ← pick #["P::A", "P::B(_)", "P::C(_)", "P::B(_) | P::C(true)", "P::B(1..)", "P::C(false)"]
+      if ← chance 30 then return s!"{← sub .pay} {← pick #["=", "!="]} {← sub .pay}"
+      return s!"{← sub .pay} is {p}"
+    | 27 =>
+      unless sc.hasPay do return ← leaf sc .bool
+      return s!"match {← sub .pay} \{ P::B(y) => y {← pick #["<", ">=", "="]} {← sub .int}, P::C(z?) => z?, _ => {← sub .bool} }"
     | _ => leaf sc .bool
   | .str =>
     match ← below 7 with
@@ -268,12 +285,17 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 4 => if hasEnum then matchOn sc .ms d else leaf sc .ms
     | 5 => return (← app? sc .ms d).getD (← leaf sc .ms)
     | _ => leaf sc .ms
+  | .pay =>
+    match ← below 4 with
+    | 0 => return s!"P::B({← sub .int})"
+    | 1 => return s!"(if {← sub .bool} then {← sub .pay} else {← sub .pay})"
+    | _ => leaf sc .pay
 
 end
 
 def varName (t : WTy) (isIn : Bool) (k : Nat) : String :=
   let base := match t with
-    | .int => "n" | .bool => "b" | .str => "s" | .set => "st" | .rel => "r" | .enum => "m" | .ms => "d"
+    | .int => "n" | .bool => "b" | .str => "s" | .set => "st" | .rel => "r" | .enum => "m" | .ms => "d" | .pay => "p"
   let base := if isIn then base else "o" ++ base
   if t == .bool then s!"{base}{k}?" else s!"{base}{k}"
 
@@ -292,7 +314,14 @@ def genWide (avoidKnown : Bool := false) : R String := do
   let hasMs ← chance 40
   if hasMs then out := out ++ "pub ordered struct Ms(Int)\n"
   let ms := if hasMs then #[WTy.ms] else #[]
-  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs }
+  let hasPay ← chance 40
+  -- Sometimes generic, as `P(Int)`, whose variables' types are written so
+  -- below.
+  let genericPay ← chance 50
+  if hasPay then
+    out := out ++ (if genericPay then "pub enum P(X) { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Int), C(Bool) }\n")
+  let pays := if hasPay then #[WTy.pay] else #[]
+  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs, hasPay }
   -- Constants, each over the earlier ones.
   for k in [0:← below 4] do
     let t ← pick (#[WTy.int, .int, .str, .bool, .set] ++ ms)
@@ -324,7 +353,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     let mut vars : Array (String × WTy × Bool) := #[]
     let mut shown : Array (String × WTy) := #[]
     for k in [0:(← below 4) + 1] do
-      let t ← pick (#[WTy.int, .int, .bool, .str, .set, .rel] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms)
+      let t ← pick (#[WTy.int, .int, .bool, .str, .set, .rel] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms ++ pays)
       let n := varName t true k
       vars := vars.push (n, t, true)
       shown := shown.push (n, t)
@@ -337,7 +366,8 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let bs ← ins.mapM fun (x, t) => do return s!"{x} := {← gen isc t 1}"
       out := out ++ s!"    inst w: {d} \{ {", ".intercalate bs.toList} }\n"
       vars := vars ++ vis.map fun (x, t) => (s!"w.{x}", t, false)
-    let outTys := #[WTy.int, .bool] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms
+    -- Outputs of `P` more often, for clashes of variants.
+    let outTys := #[WTy.int, .bool] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms ++ pays ++ pays
     let mut defs : Array (String × WTy) := #[]
     for k in [0:(← below 3) + 1] do
       let isDef ← chance 40
@@ -372,7 +402,8 @@ def genWide (avoidKnown : Bool := false) : R String := do
       out := out ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
     out := out ++ "}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
-  return out
+  -- Only variables have the type `P`, each declared on a line of its own.
+  return if genericPay then out.replace ": P\n" ": P(Int)\n" else out
 
 end Wide
 

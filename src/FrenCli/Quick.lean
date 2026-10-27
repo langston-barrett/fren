@@ -51,9 +51,10 @@ structure Admitted where
 /-- Searches for an admissible input, then for each instance in turn
 confirms its assumptions on its inputs and searches for its behaviour.
 `ints` and `strs` are the integers and strings to try (`intsOf`,
-`stringsOf`). -/
-def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Array String) : R (Option Admitted) := do
-  let I := w.interp sp
+`stringsOf`); `shapes?` is as for `World.interp`. -/
+def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Array String)
+    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape) := none) : R (Option Admitted) := do
+  let I := w.interp sp shapes?
   let assumes := atomsOf .anonymous (c.ofKind .assume)
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
   let some env ← ({ vars := inputs, atoms := assumes, ints, strs : Problem }.solve sp w I {})
@@ -137,10 +138,11 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let ints := intsOf lits
   let strs ← stringsOf lits
   let sp := sp.withMatchMemo lits strs
+  let shapes := sp.shapeMap
   for _ in [0:tests] do
     let w ← World.random sp
-    let I := w.interp sp
-    let some adm ← sp.admit w c ints strs | continue
+    let I := w.interp sp (some shapes)
+    let some adm ← sp.admit w c ints strs (some shapes) | continue
     for (x, k) in instAssumes.zipIdx do
       let reached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
       if reached then instFound := instFound.modify k (· + 1)
@@ -245,11 +247,12 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let strs ← stringsOf lits
   let ints := intsOf lits
   let sp := sp.withMatchMemo lits strs
+  let shapes := sp.shapeMap
   let mut t : Tally := {}
   let mut found := false
   for _ in [0:tests] do
     let w ← World.random sp
-    let I := w.interp sp
+    let I := w.interp sp (some shapes)
     -- The binders' behaviours, chosen together, so that the body's
     -- trigger can be among the constraints (`eval::reaches`).
     let atoms := match trigger with

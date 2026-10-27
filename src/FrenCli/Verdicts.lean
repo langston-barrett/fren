@@ -79,4 +79,20 @@ of `c`. The search goes back past every variable after it without trying
 their other candidates, and, if `c` is empty, fails. -/
 def resumesAt (c k : Nat) : Bool := c.testBit k && c < 2 ^ (k + 1)
 
+/-! Both as they run: `2 ^ i` is computed with big integers, `1 <<< i`
+by a shift, and they are equal (`Nat.one_shiftLeft`). -/
+
+def conflictOfImpl (i : Nat) (equated : Nat) (rejections : List Nat) : Nat :=
+  rejections.foldl (· ||| ·) equated % (1 <<< i)
+
+@[csimp] theorem conflictOf_eq_impl : @conflictOf = @conflictOfImpl := by
+  funext i equated rejections
+  simp [conflictOf, conflictOfImpl, Nat.one_shiftLeft]
+
+def resumesAtImpl (c k : Nat) : Bool := c.testBit k && c < 1 <<< (k + 1)
+
+@[csimp] theorem resumesAt_eq_impl : @resumesAt = @resumesAtImpl := by
+  funext c k
+  simp [resumesAt, resumesAtImpl, Nat.one_shiftLeft]
+
 end FrenCli.Eval

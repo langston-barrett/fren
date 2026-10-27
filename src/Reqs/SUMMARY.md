@@ -12,6 +12,7 @@
   - [Generic functions](Lang/GenericFunctions.md)
 - [Components](Lang/Components.md)
 - [Meaning](Lang/Meaning.md)
+  - [Laws of meaning](Lang/MeaningLaws.md)
 - [Expressions](Lang/Expressions.md)
   - [Local definitions](Lang/Let.md)
 - [Patterns](Lang/Patterns.md)

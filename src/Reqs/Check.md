@@ -376,6 +376,20 @@ that reason, and a note at `E` says so:
 note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
 ```
 
+An output whose type is an
+[enumeration](Lang/Items.md#enumerations), [generic](Lang/Generics.md) or
+not, may be forced only part of the way: a set of guarantees *forces* the output to a *variant* when every
+assignment that satisfies them gives the output a value of that variant,
+whatever its payload. A side that rules out `Decision::GiveUp` forces
+`Decision::RetryAfter`, without forcing a delay. Where the two sides force
+values of different variants, the note says what each forces, a whole
+value where it forces one, and otherwise the variant, as the pattern test
+that holds of every value of it:
+
+```text
+note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+```
+
 The outputs are the component's public ones that are not
 [defined](#definitions): a defined output is replaced by its definition,
 so what forces it forces the outputs that it is defined by. For an
@@ -386,7 +400,7 @@ variable `x` of the input and its value `v`, where `v` can be written in a
 formula. If the value of some variable of the input cannot be written so,
 `P` is about more inputs than the one the error shows, so there are no
 clash notes. For a set of guarantees `S`, with the defined outputs replaced by
-their definitions, Fren asks two kinds of query:
+their definitions, Fren asks three kinds of query:
 
 - **Model.** Can `False` be proved from `P` and `S`? A model gives each
   output that they mention a value. On the input of a minimal core, a
@@ -394,42 +408,76 @@ their definitions, Fren asks two kinds of query:
   the solver gives up.
 - **Pin.** For an output `o` and its value `v` in the model, can `o = v` be
   proved from `P` and `S`? `Unsat` means that `S` forces `o` to `v`.
+- **Variant.** For an output `o` of an enumeration and its value `v` in
+  the model, of the variant `C`, can `o is C(_)` be proved from `P` and
+  `S`, with a `_` for each value of `C`'s payload? `Unsat` means that `S`
+  forces `o` to `C`. A [newtype](Lang/Items.md#newtypes) of an
+  enumeration is not asked about: no pattern matches its values, so a
+  note could not say what is forced as a pattern test of the output.
 
-`check::forcing` states that the two queries find what forcing means,
-over an output with three values: `values` are its values in the
-assignments that satisfy `S` on the input, the model's is one of them, and
-the solver decides the pin query. A value that cannot be written in a
-formula is not pinned, and so not found to be forced:
+`check::forcing` states that the queries find what forcing means, over
+an output with three values of two variants, `C0` and `C1(b)`: `values`
+are its values in the assignments that satisfy `S` on the input, the
+model's is one of them, and the solver decides the pin and variant
+queries. A value that cannot be written in a formula is not pinned, and
+so not found to be forced, nor is a variant of a type that is not an
+enumeration:
 
 ```fren
-pub enum Choice { C0, C1, C2 }
+pub enum Choice { C0, C1(Bool) }
+
+-- The variants of `Choice`.
+pub enum ChoiceVariant { K0, K1 }
+
+pub fn variant_of(c: Choice): ChoiceVariant := match c {
+    Choice::C0 => ChoiceVariant::K0,
+    Choice::C1(_) => ChoiceVariant::K1,
+}
 
 pub comp forcing {
     in values: Set(Choice)   -- the output's values where `P` and `S` hold
     in model: Choice         -- its value in the model of `P` and `S`
     in pin_q: Outcome        -- can `o = model` be proved from `P` and `S`?
+    in variant_q: Outcome    -- can `o` being of `model`'s variant be proved from `P` and `S`?
 
     assume modelled: model in values
     assume decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
-    pub det out forced?      -- `S` forces the output on the input
-    pub det out found?       -- Fren finds that `S` forces it to `model`
+    assume variant_decided:
+        variant_q = (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
+    pub det out forced?           -- `S` forces the output on the input
+    pub det out found?            -- Fren finds that `S` forces it to `model`
+    pub det out variant_forced?   -- `S` forces the output to a variant on the input
+    pub det out variant_found?    -- Fren finds that `S` forces it to `model`'s variant
 
     ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
     ensure query: found? iff pin_q = Unsat
+    ensure variant_meaning:
+        variant_forced? iff (forall (a b: Choice), when a in values and b in values, variant_of(a) = variant_of(b))
+    ensure variant_query: variant_found? iff variant_q = Unsat
 
     expect computes: found? iff forced?
+    expect variant_computes: variant_found? iff variant_forced?
+    expect value_then_variant: when forced?, variant_forced?
 }
 ```
 
 For each guarantee `E` of the core, in the core's order, Fren asks the
 model query of `{E}` and of the rest of the core, and then, for each
 output in the order of the component's variables whose values in the two
-models differ, the pin query of `{E}` and, if it forces the output, of the
-rest. The clash note is at the first output that both force; outputs whose
-values in the models are the same are not asked about, since two sets
-that force an output give it their forced values in their models. When
-the core has one guarantee, its rest is empty and forces nothing, so no
-clash note is asked for. Fren shows at most `examples` clash notes, `--examples` or
+models differ, what each side forces of it: the pin query of `{E}` and,
+if it forces the output, of the rest. Where the two values are of
+different variants, a side that does not force the output's value is
+asked the variant query too, and forces its variant if the answer is
+`Unsat`; the rest is asked only if `{E}` forces something. The clash note is at
+the first output where the two sides force different values, or values
+of different variants: a whole value where a side forces one, and its
+variant otherwise. So a clash of whole values is preferred, and two
+sides that force only the same variant do not clash. Outputs whose values in the
+models are the same are not asked about, since two sets that force an
+output give it their forced values in their models, and those that force
+its variant give it a value of that variant. When the core has one
+guarantee, its rest is empty and forces nothing, so no clash note is asked
+for. Fren shows at most `examples` clash notes, `--examples` or
 the Lean-hosted front end's `fren.examples` (see [Forced
 outputs](Cli.md#forced-outputs)), and asks no more of these queries once
 it has them all.
@@ -454,11 +502,14 @@ results](View.md#check-results)).
 `check::clash_notes` states which guarantees have a clash note, and which
 note each has, over a core of
 at most three guarantees, in the order of the enumeration, and two
-outputs, in the order of theirs. `alone` holds what each guarantee `g`
-forces on its own, and `rest` what the rest of the core forces, as the
-queries above find them; `earlier` is the guarantees of the core before
-`g` that have a clash. The rules are of the guarantee `g`, so quantifying
-over it states them of the whole core:
+outputs, in the order of theirs, each of type `Choice`. `alone` and
+`alone_variants` hold what each guarantee `g` forces on its own, values
+and variants, and `rest` and `rest_variants` what the rest of the core
+forces, as the queries above find them: a set that forces a value forces
+its variant too, so a clash of whole values or of variants is a clash of
+what the note shows, a whole value where the side forces one; `earlier` is the guarantees of
+the core before `g` that have a clash. The rules are of the guarantee
+`g`, so quantifying over it states them of the whole core:
 
 ```fren
 pub ordered enum Guarantee { G0, G1, G2 }
@@ -468,6 +519,9 @@ pub ordered enum Output { O0, O1 }
 -- that it is, or that it is the rest of.
 pub struct Forcing { guarantee: Guarantee, output: Output, value: Choice }
 
+-- A set of guarantees forces `output` to a value of `variant`.
+pub struct VariantForcing { guarantee: Guarantee, output: Output, variant: ChoiceVariant }
+
 pub enum Budget { All, AtMost(Int) }   -- `all`, or a count, at least 0
 
 -- The note at a guarantee: a clash, whom it conflicts with, or that it is
@@ -475,9 +529,23 @@ pub enum Budget { All, AtMost(Int) }   -- `all`, or a count, at least 0
 pub enum MemberNote { ClashNote, ConflictsWith, FalseOnInput, NotInCore }
 
 -- `g` forces `o` to one value, and the rest of the core to another.
-pub fn clashes?(alone: Set(Forcing), rest: Set(Forcing), g: Guarantee, o: Output) :=
+pub fn value_clashes?(alone: Set(Forcing), rest: Set(Forcing), g: Guarantee, o: Output) :=
     exists (a b: Choice), a != b and Forcing { guarantee := g, output := o, value := a } in alone
     and Forcing { guarantee := g, output := o, value := b } in rest
+
+-- `g` forces `o` to one variant, and the rest of the core to another.
+pub fn variant_clashes?(alone: Set(VariantForcing), rest: Set(VariantForcing), g: Guarantee, o: Output) :=
+    exists (k l: ChoiceVariant), k != l and VariantForcing { guarantee := g, output := o, variant := k } in alone
+    and VariantForcing { guarantee := g, output := o, variant := l } in rest
+
+-- `g` forces `o` to one value or variant, and the rest of the core to another.
+pub fn clashes?(alone: Set(Forcing), alone_variants: Set(VariantForcing), rest: Set(Forcing),
+    rest_variants: Set(VariantForcing), g: Guarantee, o: Output) :=
+    value_clashes?(alone, rest, g, o) or variant_clashes?(alone_variants, rest_variants, g, o)
+
+-- A set of guarantees forces `o` to a whole value, for the guarantee `g`.
+pub fn forces_value?(forced: Set(Forcing), g: Guarantee, o: Output) :=
+    exists (v: Choice), Forcing { guarantee := g, output := o, value := v } in forced
 
 -- A set of guarantees forces each output to one value, at most.
 pub fn single_valued?(forced: Set(Forcing)) :=
@@ -485,31 +553,50 @@ pub fn single_valued?(forced: Set(Forcing)) :=
     when Forcing { guarantee := h, output := o, value := a } in forced
     and Forcing { guarantee := h, output := o, value := b } in forced, a = b
 
+-- A set of guarantees forces each output to one variant, at most, and to
+-- the variant of each value that it forces it to.
+pub fn variants_of?(forced: Set(Forcing), variants: Set(VariantForcing)) :=
+    (forall (h: Guarantee) (o: Output) (k l: ChoiceVariant),
+    when VariantForcing { guarantee := h, output := o, variant := k } in variants
+    and VariantForcing { guarantee := h, output := o, variant := l } in variants, k = l)
+    and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing { guarantee := h, output := o, value := v } in forced,
+    VariantForcing { guarantee := h, output := o, variant := variant_of(v) } in variants)
+
 pub comp clash_notes {
     in core: Set(Guarantee)
-    in alone: Set(Forcing)     -- what each guarantee forces on its own
-    in rest: Set(Forcing)      -- what the rest of the core forces, for each guarantee
-    in examples: Budget        -- `--examples`
-    in interpreted?            -- the notes' values would depend on an interpretation
-    in unpinned?               -- some variable of the input cannot be pinned
-    in g: Guarantee            -- a guarantee, for the rules of each
+    in alone: Set(Forcing)                   -- the values that each guarantee forces on its own
+    in alone_variants: Set(VariantForcing)   -- the variants that each guarantee forces on its own
+    in rest: Set(Forcing)                    -- the values that the rest of the core forces, for each guarantee
+    in rest_variants: Set(VariantForcing)    -- the variants that the rest of the core forces
+    in examples: Budget                      -- `--examples`
+    in interpreted?                          -- the notes' values would depend on an interpretation
+    in unpinned?                             -- some variable of the input cannot be pinned
+    in g: Guarantee                          -- a guarantee, for the rules of each
     in earlier: Set(Guarantee)
 
-    -- What the queries find of the guarantees of the core: one value, at most,
-    -- for each output, and nothing of the empty rest of a core of one.
-    assume of_core: forall (f: Forcing), when f in alone or f in rest, f.guarantee in core
+    -- What the queries find of the guarantees of the core: one value and
+    -- one variant, at most, for each output, and nothing of the empty rest
+    -- of a core of one.
+    assume of_core: forall (f: VariantForcing), when f in alone_variants or f in rest_variants, f.guarantee in core
     assume one_value: single_valued?(alone) and single_valued?(rest)
-    assume empty_rest: forall (f: Forcing), when f in rest, core != {f.guarantee}
+    assume one_variant: variants_of?(alone, alone_variants) and variants_of?(rest, rest_variants)
+    assume empty_rest: forall (f: VariantForcing), when f in rest_variants, core != {f.guarantee}
     assume earlier_clashes: forall (h: Guarantee),
-        h in earlier iff (h in core and h < g and (exists (o: Output), clashes?(alone, rest, h, o)))
+        h in earlier iff (h in core and h < g
+        and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, h, o)))
     pub det out noted?         -- a clash note is at `g`
     pub out output: Output     -- the output that it names
+    -- The note gives what `g` forces of `output` as a whole value, not a
+    -- variant, where it forces one, and so of what the rest of the core forces.
+    pub out shows_value? := forces_value?(alone, g, output)
+    pub out rest_shows_value? := forces_value?(rest, g, output)
     pub det out note: MemberNote
 
-    ensure rule: noted? iff (not interpreted? and not unpinned? and g in core and (exists (o: Output), clashes?(alone, rest, g, o))
+    ensure rule: noted? iff (not interpreted? and not unpinned? and g in core
+        and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
         and match examples { Budget::All => true, Budget::AtMost(n) => earlier.card < n })
-    ensure first: when noted?, clashes?(alone, rest, g, output)
-        and (forall (o: Output), when o < output, not clashes?(alone, rest, g, o))
+    ensure first: when noted?, clashes?(alone, alone_variants, rest, rest_variants, g, output)
+        and (forall (o: Output), when o < output, not clashes?(alone, alone_variants, rest, rest_variants, g, o))
     ensure one_note: note = (if not (g in core) then MemberNote::NotInCore
         else if noted? then MemberNote::ClashNote
         else if core = {g} then MemberNote::FalseOnInput
@@ -521,6 +608,8 @@ pub comp clash_notes {
     expect pinned: when unpinned?, not noted?
     expect marked: when g in core, note != MemberNote::NotInCore
     expect within_budget: when noted? and examples = Budget::AtMost(1), earlier = {}
+    expect variants_differ: when noted? and not (shows_value? and rest_shows_value?),
+        variant_clashes?(alone_variants, rest_variants, g, output)
 }
 ```
 

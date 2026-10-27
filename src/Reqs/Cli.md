@@ -314,11 +314,14 @@ end and not in the other, as a query near a time limit can.
 An unrealizable component's error names the input on which its
 guarantees conflict, and a minimal set of guarantees that conflict on it.
 A note at a guarantee of that set says which output it forces to a value
-that the rest of the set forces to another (see [Forced
-outputs](Check.md#forced-outputs)). `--examples N` shows at most `N` such
+that the rest of the set forces to another, or, for an output of an
+enumeration, to a value of a variant that the rest of the set rules out,
+where a side may force only the variant and not a whole value (see
+[Forced outputs](Check.md#forced-outputs)). `--examples N` shows at most `N` such
 notes for each unrealizable component, and asks the solver no more of
 their questions once it has found them: `--examples 0` asks none, and
-`--examples all` shows a note at every guarantee that has one. The
+`--examples all` shows a note at every guarantee that has one. A note of
+variants counts as one note, as a note of values does. The
 default is 1, since each note costs solver queries. `fren mutate` takes
 it too, as it takes `--timeout`, for the checks of its mutants. The
 Lean-hosted front end has the option `fren.examples` (see

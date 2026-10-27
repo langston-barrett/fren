@@ -249,6 +249,24 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         if let some i := val.int? then
           if 0 ≤ i then return some (← mkEq fv (mkNatLit i.toNat))
       return none
+    -- `x = C (sel₀ x) …`, as a pattern test is (`patTerm`), of a variable
+    -- whose type is an enumeration, as the `fren` command's
+    -- `variantOfValue` decides.
+    pinVariant := fun n val => do
+      let some (v, x) := varOf? n | return none
+      let ty := v.type
+      let some e := (← getState).enumOf? ty | return none
+      let .const c _ := val.getAppFn | return none
+      if c.getPrefix != e.decl then return none
+      let some idx := e.variants.idxOf? (Name.mkSimple c.getString!) | return none
+      -- A generic type's constructor takes its type arguments first, and
+      -- its selectors take them, and an `Inhabited` instance of each,
+      -- implicitly, which `mkAppM` finds.
+      let targs := ty.getAppArgs
+      let arity := (e.payloads[idx]?.map (·.size)).getD 0
+      let sels ← (Array.range arity).mapM fun k => mkAppM (selectorName c k) #[x]
+      let k : Core.Variant := { name := s!"{e.path.getString!}::{c.getString!}", arity }
+      return some (k, ← mkEq x (mkAppN (mkConst c) (targs ++ sels)))
     render := fun n val => do
       let some (v, _) := varOf? n | return toString (← ppExpr val)
       render v.type val

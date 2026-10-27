@@ -305,3 +305,55 @@ pub comp manual_at_most_one_guarded {
         where pos? := x > 0, pos2? := x > 0 and z?, t? := table { x > 0 => true }
 }
 ```
+
+The `obligation?` of a conjunct is what makes the fix keep definedness. In
+the conjunct `not (a and b)`, the `and` is a [layer](../../Lang/Meaning.md#guards),
+`Op("and", "")`, whose second operand is guarded by its first; in the fix,
+the operands are the parts of `Op("at_most_one?", "")`, which guards none.
+An `and` without an obligation is one whose operands are defined in every
+environment, so the two layers are defined alike, whatever the operands'
+values: the guard that the fix drops was not needed.
+`lint::manual_at_most_one_defined` states this over `lang::node`; with an
+obligation, the `and` can be defined where the call is not, which is why
+the lint does not fire there.
+
+`lint::manual_at_most_one` and `lint::manual_at_most_one_any` are tied to
+this only by the assumption `no_obligation`: their `obligation?` is a
+field of each conjunct, an input that the lint computes from the
+conjunct's syntax, and their implementations read it as one, so it cannot
+be defined as `node`'s `defined?`. That the lint's syntactic test gives
+`obligation?` wherever an operand may not be defined, as `no_obligation`
+assumes, is tested, by `lint::manual_at_most_one_guarded` above and the ui
+tests, not proved:
+
+```fren
+comp manual_at_most_one_defined {
+    use lang::{Env, Head, Value, node}
+    in env: Env
+    in a: Value                      -- the operands' values
+    in b: Value
+    in undefined_parts: Set(Int)     -- which operands, `0` and `1`, are not defined
+    in obligation?                   -- the `and` gives a definedness obligation
+
+    assume no_obligation: unless obligation?, undefined_parts = {}
+
+    inst conjunct: node {
+        head := Head::Op("and", ""),
+        env,
+        values := [a, b],
+        parts_mentioned := {},
+        undefined_parts,
+    }
+    inst call: node {
+        head := Head::Op("at_most_one?", ""),
+        env,
+        values := [a, b],
+        parts_mentioned := {},
+        undefined_parts,
+    }
+
+    expect kept: unless obligation?, conjunct.defined? and call.defined?
+    -- With an obligation, the `and`'s guard can be what makes it defined.
+    cover guard_needed: obligation? and conjunct.defined? and not call.defined?
+}
+```
