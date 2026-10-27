@@ -1,3 +1,3 @@
 --@ argv: mutate --list --diff test/cli/commands/mutate_diff_markdown.patch test/cli/commands/mutate_diff_markdown.md
 -- A patch's lines are those of a Markdown spec as written: the change to
--- line 23 is in `m::d`; the prose that it changes touches nothing.
+-- line 17 is in `m::d`; the prose that it changes touches nothing.

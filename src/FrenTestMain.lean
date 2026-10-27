@@ -303,7 +303,7 @@ def fmtKept (path src : String) : Option (Array String × Array (Array String) �
     if inUse k then continue
     let t := toks[k]
     let trailing := t.tok == .kw "," &&
-      (toks[k + 1]?.any (·.tok == .kw "}") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
+      (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
     if !trailing then kept := kept.push (reprStr t.tok)
   let paths := (lay.uses.flatMap fun (f, l) =>
     let (ps, glob) := FrenCli.Fmt.usePaths toks f l
