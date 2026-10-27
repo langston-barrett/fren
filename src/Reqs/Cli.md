@@ -490,6 +490,7 @@ pub enum ColorChoice { Auto, Always, Never }
 
 use self::ColorChoice::{Always, Auto, Never}
 
+set_option fren.evidence "enumerated" in
 pub comp color {
     in choice: ColorChoice
     in tty?        -- standard error is a terminal
@@ -538,6 +539,7 @@ pub enum Construct { Fren, LeanCode }
 
 use self::Construct::Fren
 
+set_option fren.evidence "enumerated" in
 pub comp accepts {
     in construct: Construct
     pub out accepted?
@@ -550,7 +552,9 @@ On a spec that both accept, Lean and the `fren` command give every check
 the same verdict, except a [check by testing](Check.md#checking-by-testing),
 which only the `fren` command runs, and for failures name the same conflicting or ruling-out
 constraints. Counterexample values may differ, since each comes from its
-solver's model. So may the guarantees that a realizability failure
+solver's model, but not those of a [check by
+enumeration](Check.md#checking-by-enumeration), which both search in the
+same order. So may the guarantees that a realizability failure
 names, which are a [minimal](Check.md#minimal-sets) set that conflicts on
 the input it reports: each front end's are minimal for its own input, and
 for the same input they are the same. Its notes of [forced
@@ -560,6 +564,7 @@ with them. `cli::agreement` states this:
 ```fren
 pub enum FrontEnd { Hosted, Standalone }
 
+set_option fren.evidence "enumerated" in
 pub comp agreement {
     in hosted: Verdict
     pub out standalone: Verdict

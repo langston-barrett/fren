@@ -1,0 +1,7 @@
+-- A component that cannot be enumerated, for a variable's type (F0645).
+set_option fren.evidence "enumerated" in
+comp c {
+    in name: String
+    pub out empty?
+    ensure r: empty? iff name = ""
+}

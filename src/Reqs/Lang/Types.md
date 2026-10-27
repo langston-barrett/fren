@@ -188,6 +188,7 @@ may be written:
 ```fren
 pub enum TypePlace { Variable, Parameter, Result, Constant, Definition, Field, Payload, RecursivePayload, Element, Argument }
 
+set_option fren.evidence "enumerated" in
 pub comp nat_place {
     use self::TypePlace::{Argument, Element, Field, Payload, RecursivePayload}
     in place: TypePlace      -- where the type `Nat` is written
@@ -256,6 +257,7 @@ the expression's type where the declared type without its patterns is
 expected, and whether the declared type has a pattern:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp pattern_widening {
     in patterned?            -- the declared type has a pattern, at the top or in an element type
     in widened?              -- `widening` accepts the expression's type, which has no pattern, where the declared type without its patterns is expected
@@ -356,6 +358,7 @@ enumeration is recursive:
 ```fren
 pub enum PatternPlace { Top, Field, Payload, Element }
 
+set_option fren.evidence "enumerated" in
 pub comp pattern_place {
     use self::PatternPlace::{Element, Payload, Top}
     in place: PatternPlace       -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
@@ -391,6 +394,7 @@ pattern type of an enumeration or a record ranges over the values of its
 base type that match, in their order. `lang::pattern_finite` states this:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp pattern_finite {
     in base_finite?          -- the base type is finite
     in integers?             -- the base type is `Int` or `Nat`
@@ -836,6 +840,7 @@ not.
 ```fren
 pub enum Position { Declared, Shared, Compared, Synthesized }
 
+set_option fren.evidence "enumerated" in
 pub comp checked {
     use self::Position::{Compared, Declared, Shared, Synthesized}
     in position: Position
@@ -926,6 +931,7 @@ pub enum Expected { NoType, NotCollection, SetOrRelation, Sequence }
 -- a collection of the other kind.
 pub enum EmptyOutcome { Typed, Unknown, OtherKind }
 
+set_option fren.evidence "enumerated" in
 pub comp empty_literal {
     use self::EmptyOutcome::{OtherKind, Typed, Unknown}
     use self::Expected::{NoType, NotCollection, Sequence, SetOrRelation}

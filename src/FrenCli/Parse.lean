@@ -1353,13 +1353,21 @@ partial def item : P Item := do
     discard bump
     let o ← peek
     let .ident name := o.tok | fail o "an option name"
-    unless name.startsWith "fren.lint." || name == "fren.evidence" do
+    unless name.startsWith "fren.lint." || name == "fren.evidence" || name == "fren.enumeration.size" do
       err o.span "F0112" "Lean code is not supported in .fren files" (some "not a lint option")
-        #["note: the `fren` command accepts `set_option` only for lints, `fren.lint.NAME`, and `fren.evidence`",
+        #["note: the `fren` command accepts `set_option` only for lints, `fren.lint.NAME`, `fren.evidence` and \
+            `fren.enumeration.size`",
           "help: move it to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
     discard bump
     let v ← peek
-    let .str value := v.tok | fail v "a string literal"
+    -- The size bound of enumeration is a number (`Reqs/Check#checking-by-enumeration`).
+    let value ← if name == "fren.enumeration.size" then
+        match v.tok with
+        | .num s _ => pure s
+        | _ => fail v "a number"
+      else match v.tok with
+        | .str value => pure value
+        | _ => fail v "a string literal"
     discard bump
     let span := t.span.to v.span
     if (← eatKw "in").isSome then

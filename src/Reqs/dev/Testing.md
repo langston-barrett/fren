@@ -102,6 +102,18 @@
   The last two are checked on a sample of at most 24 mutants of each
   example. A new origin may need the examples strengthened, or new
   mutants listed.
+- **Enumeration agrees with the solver** (`lake test`): every ui test that
+  the binary checks without a static error is checked again with every
+  check set to enumeration (`set_option fren.evidence "enumerated"` before
+  its first item), and each verdict of enumeration must match the solver's
+  on the same check (see [Verdicts of
+  enumeration](../Check.md#verdicts-of-enumeration)): a failure is genuine,
+  so the solver must not pass the check, and a pass that is not bounded is
+  a decision, so the solver must not fail it; and a value given where a
+  pattern type is declared, which stays the solver's, keeps its result.
+  The ui tests
+  `checks/enumerated*.fren` and `checks/evidence_obligations.fren` cover
+  enumeration in both front ends.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that

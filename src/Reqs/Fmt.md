@@ -297,6 +297,7 @@ a component are not a list, and have no commas. `fmt::trailing_comma`
 decides whether the last element of a list is followed by a comma:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp trailing_comma {
     in empty?                -- the list has no elements
     in vertical?
@@ -315,6 +316,7 @@ does not start one, and the list is not vertical.
 `fmt::trailing_comma_lint` states it:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp trailing_comma_lint {
     use lint::unnecessary_trailing_comma
     in line_break?           -- a line ends between the last element's comma and the `}`
@@ -387,6 +389,7 @@ pub comp group_layout {
 `fmt::in_block` decides whether a `use` is part of a block:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp in_block {
     in alone?                -- it starts and ends its lines, which have no other token and no comment
     in nested?               -- it is the item of a `set_option ... in`
@@ -411,6 +414,7 @@ file, and `fmt::exit` the exit status, over the files that are not
 ignored:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp file {
     in check?                -- `--check` was given
     in ignored?              -- the file matches an `--ignore` glob

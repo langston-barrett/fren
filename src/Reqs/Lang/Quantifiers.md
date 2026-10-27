@@ -65,6 +65,7 @@ its payloads or fields are all listed:
 ```fren
 pub mod lang
 
+set_option fren.evidence "enumerated" in
 pub comp quantified_type {
     use self::ValueType::{
         AbstractTy,
@@ -453,6 +454,7 @@ binder's type names and whether it is in a global expectation's leading
 -- `TypeName` is a type, listed or not, and `Component` a component.
 pub enum BinderTarget { TypeName, Component }
 
+set_option fren.evidence "enumerated" in
 pub comp quantifier_binder {
     use self::BinderTarget::{Component, TypeName}
     in target: BinderTarget

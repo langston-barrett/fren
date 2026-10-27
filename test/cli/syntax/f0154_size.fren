@@ -1,0 +1,8 @@
+-- A size bound of enumeration that is too large (F0154).
+set_option fren.enumeration.size 100 in
+set_option fren.evidence "enumerated" in
+comp c {
+    in x: Int is 0..=3
+    pub det out y: Int := x
+    expect e: y >= 0
+}

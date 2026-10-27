@@ -183,6 +183,7 @@ use self::Kind::{Enum, Module, Other}
 the previous segment resolved to.
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp member {
     in parent: Kind      -- what the previous segment resolved to
     in found?            -- it has a member of this name

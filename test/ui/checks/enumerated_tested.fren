@@ -1,0 +1,35 @@
+-- Enumeration then testing (`Reqs/Check#enumeration-then-testing`): where
+-- enumeration is complete, its verdict stands and there is nothing to
+-- test; elsewhere random tests look beyond the bound, drawn alike in both
+-- front ends, and a counterexample from either fails the check,
+-- enumeration's first.
+
+enum Mode { Off, Heat }
+
+set_option fren.evidence "enumerated+tested" in
+comp finite {
+    in mode: Mode
+    pub det out on?
+    ensure r: on? iff mode = Mode::Heat
+    expect wrong: on?  --~ error: expectation `finite::wrong` does not hold
+}
+
+-- Testing finds what is beyond the bound.
+set_option fren.evidence "enumerated+tested" in
+comp beyond {  --~ info: 3 checks of `beyond` hold for every behaviour up to size 3, and for 100 random tests
+    in x: Int
+    pub det out y: Int := x + 1
+    expect small: y < 6  --~ error: counterexample: x = 10, y = 11
+    expect grows: y > x
+}
+
+-- Enumeration's counterexample comes first, the smallest.
+set_option fren.evidence "enumerated+tested" in
+comp near {  --~ info: 3 checks of `near` hold for every behaviour up to size 3, and for 100 random tests
+    in x: Int
+    pub det out y: Int := x + 1
+    expect small: y < 3  --~ error: counterexample: x = 2, y = 3
+    expect grows: y > x
+}
+
+--@ summary: 9 passed (6 by bounded enumeration), 3 failed, 0 inconclusive, 0 redundant

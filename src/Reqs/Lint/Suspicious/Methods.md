@@ -13,6 +13,7 @@ text, never at the solver:
 ```fren
 pub mod lint
 
+set_option fren.evidence "enumerated" in
 pub comp index_after_use {
     in indexes_left?     -- `a` indexes a sequence `q`
     in bounds_right?     -- `b` mentions `q.len`, or compares `q` with `[]`

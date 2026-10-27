@@ -1,0 +1,49 @@
+-- Checks enumerated up to the size bound, where some variable has more
+-- values than the bound reaches (`Reqs/Check#checking-by-enumeration`): a
+-- counterexample is still genuine, and the smallest, but a pass holds only
+-- up to the bound, and a check that fails on `unsat` is inconclusive.
+type Id
+
+enum Tree { Leaf, Node(Tree, Bool) }
+
+set_option fren.evidence "enumerated" in
+comp counter {  --~ info: 3 checks of `counter` hold for every behaviour up to size 3
+    in x: Int
+    pub det out y: Int := x + 1
+    expect grows: y > x
+    expect small: y < 3  --~ error: expectation `counter::small` does not hold
+}
+
+-- Larger witnesses may exist, beyond the bound.
+set_option fren.evidence "enumerated" in
+comp far {  --~ warning: could not decide whether `far` is realizable
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+    cover big: y > 10  --~ warning: could not decide whether `far::big` can be met
+}
+
+-- An abstract type's values, and a recursive enumeration, up to the bound.
+set_option fren.evidence "enumerated" in
+comp nodes {  --~ info: 3 checks of `nodes` hold for every behaviour up to size 3
+    in a: Id
+    in b: Id
+    in t: Tree
+    pub det out same?
+    ensure r: same? iff a = b
+    expect refl: when a = b, same?
+    expect apart: not same?  --~ error: expectation `nodes::apart` does not hold
+    cover deep: t is Tree::Node(Tree::Node(Tree::Node(_, _), _), _)  --~ info: cover goal `nodes::deep` is met
+}
+
+-- A larger bound reaches the witness.
+set_option fren.enumeration.size 11 in
+set_option fren.evidence "enumerated" in
+comp nearer {  --~ warning: could not decide whether `nearer` is realizable
+    in x: Int
+    pub out y: Int
+    ensure r: y = x + 1
+    cover big: y > 10  --~ info: cover goal `nearer::big` is met
+}
+
+--@ summary: 12 passed (6 by bounded enumeration), 2 failed, 3 inconclusive, 0 redundant

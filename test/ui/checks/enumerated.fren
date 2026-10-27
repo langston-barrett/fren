@@ -1,0 +1,96 @@
+-- Checks decided by enumeration (`Reqs/Check#checking-by-enumeration`):
+-- where every variable has finitely many values, within the size bound,
+-- every behaviour is enumerated, and each verdict is the solver's, with
+-- the smallest counterexample, in both front ends.
+set_option fren.lint.redundant_bool_type "allow"
+
+enum Mode { Off, Heat, Cool }
+enum Level { Low, High }
+struct Reading { level: Level, valid?: Bool }
+enum Option(T) { None, Some(T) }
+
+set_option fren.evidence "enumerated" in
+comp thermostat {
+    in mode: Mode
+    in hot?
+    pub det out on?
+    ensure r: on? iff (mode = Mode::Heat and not hot?)
+    expect heats: when on?, mode = Mode::Heat
+    expect cools: when mode = Mode::Cool, on?  --~ error: expectation `thermostat::cools` does not hold
+    cover lit: on?  --~ info: witness: mode = Mode::Heat, hot? = false, on? = true
+}
+
+-- A record, a generic instance and a finite integer pattern type.
+set_option fren.evidence "enumerated" in
+comp sensor {
+    in r: Reading
+    in o: Option(Bool)
+    in k: Int is 0..=2
+    pub det out alarm?
+    ensure a: alarm? iff (r.valid? and r.level = Level::High and k > 0)
+    expect needs_valid: when alarm?, r.valid?
+    expect missing: when k = 2, o != Option::None  --~ error: expectation `sensor::missing` does not hold
+}
+
+-- Not determined, vacuous, redundant and unrealizable, as the solver finds.
+set_option fren.evidence "enumerated" in
+comp loose {
+    in a?
+    pub det out b?  --~ error: `loose::b?` is not determined by the inputs
+    ensure r: when a?, b?  --~ warning: `loose::r` is redundant
+    ensure never: when a? and not a?, b?  --~ error: `loose::never` is vacuous
+    ensure weaker: b? or not a?  --~ warning: `loose::weaker` is redundant
+}
+
+set_option fren.evidence "enumerated" in
+comp stuck {  --~ error: `stuck` is not realizable
+    in a?
+    pub out b?
+    ensure up: when a?, b?  --~ info: `up` forces b? = true
+    --~^ error: `stuck::up` is vacuous
+    ensure down: when a?, not b?  --~ info: conflicts with `up`
+    --~^ error: `stuck::down` is vacuous
+}
+
+-- An instance's assumption, and a table without `_` whose unspecified
+-- value, a `Bool`, is enumerated too.
+comp gate {
+    in m: Mode
+    assume on: m != Mode::Off
+    pub det out open?: Bool := table { | m = Mode::Heat => true, | m = Mode::Cool => false }
+}
+
+set_option fren.evidence "enumerated" in
+comp user {
+    in m: Mode
+    inst g: gate { m }  --~ error: the assumption `on` of `gate` may not hold for instance `user::g`
+    expect follows: when m = Mode::Heat, g.open?
+}
+
+set_option fren.evidence "enumerated" in
+expect same_input: forall (x y: thermostat), when x.mode = y.mode and x.hot? = y.hot?, x.on? = y.on?
+
+-- A `det out` defined from an output that is not determined is not
+-- determined either: its definition's slots are searched.
+set_option fren.evidence "enumerated" in
+comp nd {
+    in a?
+    pub out o?
+    ensure r: when a?, o?
+    pub det out d? := o?  --~ error: `nd::d?` is not determined by the inputs
+}
+
+-- A quantifier over a listed type of many values, and a global
+-- expectation, shown by its name.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+comp wide_quantifier {
+    in x?
+    expect e: forall (k: Int is 0..=63), k < 63 or x?  --~ error: expectation `wide_quantifier::e` does not hold
+}
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect constant: forall (x: Int is 0..=200), x < 200  --~ error: expectation `constant` does not hold
+
+--@ summary: 31 passed, 11 failed, 0 inconclusive, 2 redundant

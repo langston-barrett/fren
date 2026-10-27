@@ -1,0 +1,12 @@
+note[F0646]: 3 checks of `c` hold for every behaviour up to size 3
+ --> test/cli/results/f0646_bounded.fren:3:6
+  |
+3 | comp c {
+  |      ^
+  |
+  = note: not every behaviour was enumerated, so this is weaker than a proof
+
+fren: 3 passed (3 by bounded enumeration), 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0646`.
+exit=0

@@ -134,6 +134,9 @@ structure CheckResult where
   /-- For `realizable`, failing with a conflict: the clashes of forced
   outputs between its core's guarantees (`clashesOf`). -/
   clashes : Array Clash := #[]
+  /-- Decided by enumeration only up to this size bound, not for every
+  behaviour (`check::enumerated_verdict`). -/
+  bounded? : Option Nat := none
   deriving Inhabited
 
 inductive Outcome (V : Type) where
@@ -1187,7 +1190,10 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
       | .postcondition, some (f, p) => s!"the postcondition `{p}` of `{showComp f}` holds"
       | .postcondition, none => s!"{subject} holds"
       | .reachability, _ => s!"{caseText r.goal?} of {splitText r.goal?} in {subject} can be taken"
-    let advice := match inconclusiveAdvice decidable with
+    let advice := if let some n := r.bounded? then
+        #[s!"note: enumeration searched every behaviour up to size {n}, which does not decide it",
+          "help: raise `fren.enumeration.size`, or have the solver check it"]
+      else match inconclusiveAdvice decidable with
       | .raiseTimeout => #["note: the solver gave up, so this check neither passed nor failed",
         "help: raise the time limit with `--timeout`, or simplify the constraints involved"]
       | .namesConstructs => #["note: the solver gave up, so this check neither passed nor failed",
@@ -1391,9 +1397,11 @@ stops at a parse error, where Lean goes on and may find more. -/
 def couldNotHeadline (what := "check") : String :=
   s!"could not {what} due to previous errors"
 
-def summary (results : Array CheckResult) (byTesting : Nat := 0) : String :=
+def summary (results : Array CheckResult) (byTesting : Nat := 0) (byBound : Nat := 0) : String :=
   let count (b : Bucket) := (results.filter fun r => bucketOf r.kind r.verdict == b).size
-  let tested := if byTesting == 0 then "" else s!" ({byTesting} by testing)"
+  let parts := (if byTesting == 0 then [] else [s!"{byTesting} by testing"])
+    ++ (if byBound == 0 then [] else [s!"{byBound} by bounded enumeration"])
+  let tested := if parts.isEmpty then "" else s!" ({", ".intercalate parts})"
   s!"fren: {count .passed} passed{tested}, {count .failed} failed, {count .inconclusive} inconclusive, \
     {count .redundant} redundant"
 

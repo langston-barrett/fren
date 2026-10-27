@@ -158,6 +158,7 @@ pub comp proved {
     expect conservative: when q = Unknown, verdict = Inconclusive
 }
 
+set_option fren.evidence "enumerated" in
 pub comp satisfiable {
     in q: Outcome          -- can the negation of the goal be proved?
     pub det out verdict: Verdict
@@ -188,6 +189,7 @@ and postconditions (see [Contracts](#contracts-of-uninterpreted-functions)):
 ```fren
 pub enum CheckedItem { Component, GlobalExpectation, Body, Contract }
 
+set_option fren.evidence "enumerated" in
 pub comp applies {
     use self::CheckedItem::{Body, Component, Contract, GlobalExpectation}
     use self::Kind::{
@@ -250,6 +252,7 @@ cover the nine pairs of outcomes, each exactly once, which the
 confirm:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp realizability {
     in assume_q: Outcome   -- can `False` be proved from A?
     in cex_q: Outcome      -- can `exists outputs, R` be proved from A and I?
@@ -650,6 +653,7 @@ realizability check then fails for the same component.
 `check::expectation` gives the verdict, from the outcome `q` of the query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp expectation {
     in q: Outcome          -- can `e` be proved from A, I and R?
     pub det out verdict: Verdict
@@ -688,6 +692,7 @@ own component: an instance of the component does not check it again.
 `q` of the query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp cover_goal {
     in q: Outcome          -- can `not e` be proved from A, I and R?
     pub det out verdict: Verdict
@@ -763,6 +768,7 @@ checked.
 `check::non_vacuity` gives the verdict, from the outcome `q` of the query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp non_vacuity {
     in q: Outcome          -- can `not trigger` be proved from A, I and R?
     pub det out verdict: Verdict
@@ -805,6 +811,7 @@ a trigger, so `A ∧ I ∧ R`, and `A` with it, are satisfiable, and
 `consistent_q` is `Sat` for both.
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp redundancy_asked {
     in consistent_q: Outcome
     in vacuous?            -- it failed the vacuity check
@@ -818,6 +825,7 @@ pub comp redundancy_asked {
 query:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp non_redundancy {
     in q: Outcome          -- can the constraint be proved from the others?
     pub det out verdict: Verdict
@@ -913,6 +921,7 @@ when it has no `_` row. `check::completeness_asked` gives which are asked
 about:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp completeness_asked {
     in unguarded_exhaustive?  -- its arms without guards are exhaustive
     pub det out asked?
@@ -1089,6 +1098,7 @@ but a table whose only row is `_`. `check::reachability_asked` gives which
 arms are asked about:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reachability_asked {
     in guarded?              -- the arm has a guard
     in after_guard?          -- some arm before it has a guard
@@ -1151,6 +1161,7 @@ one always holds. `check::reachability` decides each query like
 [vacuity](#vacuity), whose query also asks whether something can hold:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reachability {
     in q: Outcome          -- can `not (F_j and T_j)` be proved from the guard and the hypotheses?
     pub det out verdict: Verdict
@@ -1218,6 +1229,7 @@ that is already so.
 reachability and disjointness ask under:
 
 ```fren
+set_option fren.evidence "enumerated" in
 pub comp reach_hypothesis {
     in definedness?          -- the hypothesis is one of the definedness check's at the `match`
     in enclosing?            -- it is the constraint, definition or binding that the `match` is in
@@ -1461,6 +1473,7 @@ the second copy renames:
 ```fren
 pub enum Symbol { Input, InstanceVariable, Output, Function }
 
+set_option fren.evidence "enumerated" in
 pub comp copied {
     in symbol: Symbol
     pub det out copied?
@@ -1545,7 +1558,9 @@ checks that testing cannot decide are not run: vacuity and redundancy,
 which ask whether something can hold at all, which a failed search does
 not refute; definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
-so testing can neither pass nor fail it; completeness, disjointness and
+so testing can neither pass nor fail it, though the definedness of a value
+given where a pattern type is declared is still the solver's
+(`check::by_evidence`); completeness, disjointness and
 reachability, which, like definedness, are about where an expression is
 evaluated: a test only reaches behaviours in which the constraints have
 values, and a table or `match` where no row or arm is taken has none, so
@@ -1598,6 +1613,472 @@ pub comp by_testing {
     expect never_both: when tested?, run != BySolver
 }
 ```
+
+## Checking by enumeration
+
+A check can also be decided by *enumerating* behaviours, smallest first,
+instead of asking the solver, in the style of SmallCheck (Runciman, Naylor
+and Lindblad, "SmallCheck and Lazy SmallCheck", Haskell '08) and of fair
+enumeration (New, Fetscher, Findler and McCarthy, "Fair enumeration
+combinators", JFP 2017). Where every variable has finitely many values,
+enumeration sees every behaviour, so its verdict is a decision, as strong
+as the solver's, with no solver and no time limit; elsewhere it sees every
+behaviour up to a size, which is evidence of its own, weaker than a proof
+and unlike testing's.
+
+The evidence setting of [Checking by testing](#checking-by-testing) takes
+two more values:
+
+```
+evidence-setting := "set_option" "fren.evidence" STRING
+size-setting     := "set_option" "fren.enumeration.size" NUMBER ["in" item]
+```
+
+- `"enumerated"` decides the checks by enumeration, up to the size bound;
+- `"enumerated+tested"` decides them by enumeration too, and where
+  enumeration is not complete, also tests them, as `"tested"` does, with
+  random behaviours beyond the bound (see [Enumeration then
+  testing](#enumeration-then-testing)).
+
+Any other value but `"solver"` and `"tested"` is the error `F0214`. A value
+sets the same checks as `"tested"` does, before a component or a member.
+`set_option fren.enumeration.size N`, before an item with `in`, or alone,
+for the rest of the file, as `fren.evidence` is, sets the size bound of
+the checks that the later items set to enumeration; the default is 3. A
+bound above 64 is the error `F0154`, at the number, and the default is
+used instead. Before a member, it is `F0216`, as any option but
+`fren.evidence` is.
+
+`check::evidence_value` gives what each value sets, and `check::by_evidence`
+how each check is run:
+
+```fren
+pub enum EvidenceValue { Solver, Tested, Enumerated, EnumeratedTested, Other }
+
+pub enum Method { Solver, Testing, Enumeration, EnumerationThenTesting, Skipped }
+
+set_option fren.evidence "enumerated" in
+pub comp evidence_value {
+    use self::EvidenceValue::{Enumerated, EnumeratedTested, Other, Tested}
+    in value: EvidenceValue
+    pub det out valid?
+    pub det out tested?
+    pub det out enumerated?
+
+    ensure valid: valid? iff value != Other
+    ensure testing: tested? iff value in {Tested, EnumeratedTested}
+    ensure enumeration: enumerated? iff value in {Enumerated, EnumeratedTested}
+
+    expect invalid_sets_nothing: when not valid?, not tested? and not enumerated?
+}
+
+-- The checks that testing decides (`check::by_testing`).
+pub fn testable?(kind: Kind) :=
+    not kind in {Kind::Vacuity, Kind::Redundancy, Kind::Definedness, Kind::Completeness, Kind::Disjointness, Kind::Precondition, Kind::Reachability}
+
+-- The checks that enumeration decides: all but definedness, whose indexes
+-- only sequences have, and postconditions, which only bodies have.
+pub fn enumerable?(kind: Kind) := not kind in {Kind::Definedness, Kind::Postcondition}
+
+pub comp by_evidence {
+    use self::Kind::{Definedness, Redundancy, Vacuity}
+    use self::Method::{Enumeration, EnumerationThenTesting, Skipped, Solver, Testing}
+    in kind: Kind
+    in tested?             -- the check's evidence includes testing
+    in enumerated?         -- the check's evidence includes enumeration
+    in obligation?         -- a definedness check of a value given where a pattern type is declared
+    assume obligation_definedness: when obligation?, kind = Definedness
+    pub det out method: Method
+
+    ensure rule: method = table {
+        | obligation? => Solver,
+        | not obligation? and not tested? and not enumerated? => Solver,
+        | not obligation? and tested? and not enumerated? and testable?(kind) => Testing,
+        | not obligation? and enumerated? and enumerable?(kind) and not tested? => Enumeration,
+        | not obligation? and enumerated? and enumerable?(kind) and tested? => EnumerationThenTesting,
+        | not obligation? and tested? and not enumerated? and not testable?(kind) => Skipped,
+        | not obligation? and enumerated? and not enumerable?(kind) => Skipped,
+    }
+
+    expect obligations_solved: when obligation?, method = Solver
+    expect never_solver: when (tested? or enumerated?) and not obligation?, method != Solver
+    expect satisfiability_enumerated: when enumerated? and not tested? and kind in {Vacuity, Redundancy}, method = Enumeration
+}
+```
+
+Vacuity and redundancy, which testing cannot decide, enumeration can: it
+sees every behaviour up to the bound, so a witness that it finds is one,
+and finding none is a decision where it sees every behaviour. So can it
+decide completeness, disjointness, reachability and preconditions, which
+are about where an expression is evaluated: where no row of a table holds,
+the table's value is the interpretation's unspecified value of its type,
+which enumeration enumerates too (see [Searching](#searching)), as the
+solver leaves it unconstrained. The definedness of indexes is not run:
+they are of sequences, which are not enumerable. A value given where a
+pattern type is declared is the solver's to check, whatever the evidence,
+for testing too: neither testing nor enumeration decides it, and dropping
+it would leave a value outside its type unreported (`F0622`, `F0623`).
+
+The default stays `"solver"`, and `"tested"` stays testing alone: most
+checks set to testing are about strings, sets and sequences, which are
+not yet enumerable (below), so enumerating them first would make them
+errors; and a spec that sets `"tested"` has chosen evidence that Lean does
+not run, which a combined default would change.
+
+### Enumerable types
+
+Enumeration needs every variable's type to be *enumerable*: `Bool`, `Int`
+and `Nat`, an enumeration, recursive or not, a record, a newtype, an
+instance of a generic type, a pattern type, and an abstract type, with the
+types within it enumerable too. `String`, sets, relations and sequences
+are not yet. A variable whose type brings no constraint, such as an
+instance's input, which the instance check asks of its binding, ranges
+over its type without patterns. A component, or a global expectation,
+with a variable of another type, that applies an uninterpreted function
+with a [contract](Lang/Items.md#contracts), whose postconditions constrain
+its interpretations, or that has an unbounded quantifier is not
+enumerated: it is the error `F0645`, at it, and none of its checks set to
+enumeration is run.
+
+### Sizes and order
+
+The values are the [values](Lang/Meaning.md#values) of `lang::Val`, and
+an abstract type's values those of an interpretation. Each type is
+unfolded, for the size bound `n`, into a *shape*, a finite tree: a recursive enumeration's payloads are unfolded `n` deep, since a
+variant's payload is one smaller than it. Each value has a *size*:
+
+| Value | Size |
+|---|---|
+| `true`, `false` | 0 |
+| an `Int` `i` | `|i|` |
+| a `Nat` `k` | `k` |
+| an integer of a finite integer pattern type | 0 |
+| the `k`th value of an abstract type | `k` |
+| a variant without a payload | 0 |
+| a variant with a payload | one more than the largest size of its payload's values |
+| a record or a newtype | the largest size of its fields, 0 if it has none |
+| a value of any other pattern type | its size in its base type |
+
+`check::value_size` states it, over the kind of value, the integer it is,
+for an integer or an abstract type's value, and the largest size of its
+parts:
+
+```fren
+pub enum Sized { Boolean, Integer, Natural, FiniteInteger, AbstractValue, Nullary, WithPayload, Record }
+
+pub comp value_size {
+    use self::Sized::{AbstractValue, Integer, Natural, Record, WithPayload}
+    in kind: Sized
+    in value: Int        -- an integer's value, or the position of an abstract type's value
+    in largest: Nat      -- the largest size of its payload's or fields' values, 0 if it has none
+    assume natural: when kind in {Natural, AbstractValue}, value >= 0
+    pub det out size: Nat
+
+    ensure rule: size = match kind {
+        Integer => value.abs,
+        Natural | AbstractValue => value,
+        WithPayload => largest + 1,
+        Record => largest,
+        _ => 0,
+    }
+
+    expect payload_larger: when kind = WithPayload, size > largest
+}
+```
+
+The enumeration of a shape lists each of its values of size at most `n`
+exactly once, with its size, and nothing else: `check::listed`, where
+`value?` says that a value, with a size, is the shape's, by the shape's
+typing rules, which mirror the table, and `times` is how many times the
+enumeration lists the pair. It is proved of the enumerator
+(`Shape.vals` in `FrenCore.Enumeration`) for every shape:
+
+```fren
+pub comp listed {
+    in value?            -- the value, with the size, is one of the shape's
+    in size: Nat
+    in bound: Nat
+    pub det out times: Nat   -- how many times the enumeration lists it
+
+    ensure exactly_once: times = if value? and size <= bound then 1 else 0
+
+    expect complete: when value? and size <= bound, times = 1
+    expect nothing_else: when not value?, times = 0
+}
+```
+
+Of these, the values of a type of finitely many values are all of size at
+most some bound; so for a large enough bound the enumeration is *complete*,
+every value of the type, as in FEAT (Duregård, Jansson and Wang, Haskell
+'12), whose finite types the enumeration exhausts. A shape is *exhausted*
+at the bound when every value of the type it stands for has size at most
+it: it is `Bool`, a finite integer pattern type, or built of exhausted
+shapes, and no variant's payload was cut off by the unfolding.
+
+The values are listed smallest first, and in the structural order among
+those of a size: variants in order, and payloads and fields by their
+values' order, the first varying slowest; integers `0, 1, -1, 2, -2, ...`;
+a finite integer pattern type's in increasing order. `check::smallest_first`:
+
+```fren
+pub comp smallest_first {
+    in earlier?          -- the first value is listed before the second
+    in first: Nat        -- the first value's size
+    in second: Nat       -- the second value's size
+    pub det out ordered?
+
+    ensure rule: ordered? iff (not earlier? or first <= second)
+
+    expect sorted: when earlier?, ordered? iff first <= second
+}
+```
+
+and the enumerator meets it with `ordered?` always true.
+
+### Searching
+
+A component's *slots* are its variables whose values are enumerated: its
+own and its instances', but not its defined outputs, which are computed
+from their definitions, then a second copy of each that determinism
+copies, and last, a *hidden* slot for each type whose unspecified value
+some constraint reads, where no row of a table holds: the interpretation's
+value, which an abstract type's values are, as with the solver (see
+[Interpretations](#interpretations)), and then a hidden slot for each
+uninterpreted function that a constraint applies, whose values are its
+interpretations: tables from the tuples of its arguments up to the bound
+to its results up to the bound, each as large as its largest result, so
+that over finite types every interpretation is among them. An argument
+beyond the bound gets the first result, which extends the table to an
+interpretation. Each slot holds the values of its type up to the bound,
+smallest first.
+
+Each query of the [checks](#checks) is answered by searching the
+assignments of the slots that its formulas read, the variables that they
+mention (`lang::node`'s `mentioned`, see [Meaning](Lang/Meaning.md)), for
+one that makes its hypotheses true and its goal false: `sat`, with that assignment as its
+model, or `unsat` if there is none. The assignments are searched fairly,
+by *level*, the largest size of an assignment's values: every assignment
+of level 0, then of level 1, up to the bound, and within a level in the
+order of the slots and of each slot's values, the last slot varying
+fastest. So no slot starves the others, and the model is the smallest:
+of the least level, and the first of that level. A model gives the slots
+that the query reads, as a solver's gives the variables that it mentions,
+and the defined outputs that it mentions, by their definitions. Each
+hypothesis is evaluated as soon as the slots it reads are set, which
+changes how fast the search is, not which model it finds. `∃ outputs`
+searches every value of the outputs up to the bound.
+
+The search is the same in both front ends, over the same slots and values
+in the same order, so they find the same models, and report the same
+counterexamples and minimal sets, which the shared check algorithms
+compute from the answers as they do from the solver's.
+
+The search's soundness rests on four facts, each proved of the real
+functions of `FrenCore.Enumeration` (in `Impls/Enumeration.lean`):
+
+- *The slots suffice* (`check::slots_suffice`): a formula's value depends
+  only on the slots that `EF.slots` gives it, given that each constraint's
+  depends only on the slots it reads, and each defined output's on those
+  of its definition, through the definitions it mentions. So every slot
+  that a check's outcome depends on is searched, a defined output's
+  definition's too.
+- *Pruning is conservative* (`check::pruning`): trying each part as soon as
+  the slots it reads are chosen, and not extending a choice that fails
+  one, finds the first choice of the order that makes every part true.
+- *The order is fair* (`check::fair_order`): it lists every assignment up
+  to the bound, each once, by level, smallest first, so no slot starves
+  the others; given that the values of each slot of size at most `k`, up
+  to the bound, are its first ones, as the order of
+  [values](#sizes-and-order) makes them.
+- *The search finds the first* (`check::search_first`): its model is the
+  first assignment of the fair order that makes every part true.
+
+A shape *exhausted* at the bound has no value beyond it
+(`check::shape_bound`), so an exhausted search sees every behaviour.
+
+```fren
+pub comp slots_suffice {
+    in atoms_local?          -- each constraint's value depends only on the slots it reads
+    in definitions_local?    -- each defined output's on those of its definition
+    in outputs_distinct?     -- no output has two slots
+    in agree?                -- two assignments agree on the formula's slots
+    pub out same_value?      -- the formula has the same value in both
+
+    ensure suffice: when atoms_local? and definitions_local? and outputs_distinct? and agree?, same_value?
+}
+
+pub comp pruning {
+    in local?                -- each part's value depends only on the slots it reads
+    in distinct?             -- the slots chosen are distinct
+    pub out first?           -- the choice found is the first of the order that makes every part true
+
+    ensure conservative: when local? and distinct?, first?
+}
+
+pub comp fair_order {
+    in ordered?              -- each slot's values up to a size are its first ones
+    in within?               -- an assignment chooses, for each slot, one of its values up to the bound
+    in earlier?              -- one assignment of the order comes before another
+    pub out listed?          -- the order lists the first assignment
+    pub out times: Nat       -- how many times it does
+    pub out first_level: Nat     -- the level of the earlier assignment
+    pub out second_level: Nat    -- the level of the later one
+
+    ensure complete: when ordered? and within?, listed?
+    ensure once: when ordered?, times = if listed? then 1 else 0
+    ensure smallest_first: when ordered? and earlier?, first_level <= second_level
+}
+
+pub comp search_first {
+    in local?                -- each part's value depends only on the slots it reads
+    in reads?                -- the parts read some slot
+    pub out first?           -- the search's model is the first assignment of the fair order that makes every part true
+
+    ensure finds_first: when local? and reads?, first?
+}
+
+pub comp shape_bound {
+    in exhausted?            -- the shape is exhausted at the bound
+    in bound: Nat
+    pub out value?           -- a value, with a size, is one of the shape's
+    pub out size: Nat
+
+    ensure within: when exhausted? and value?, size <= bound
+}
+```
+
+The number of assignments a component's enumeration searches is the
+product of its slots' numbers of values, its second copies' too if
+determinism is enumerated. Above 65,536, it is the error `F0644`, which
+gives the number, and none of its checks set to enumeration is run
+(`check::enumeration_limit`):
+
+```fren
+pub const MAX_BEHAVIOURS: Int := 65536
+
+pub comp enumeration_limit {
+    in count: Nat        -- the assignments that its enumeration would search
+    pub det out runs?
+
+    ensure rule: runs? iff count <= MAX_BEHAVIOURS
+}
+```
+
+### Verdicts of enumeration
+
+Where every slot is exhausted, enumeration sees every behaviour, so each
+answer is the solver's and each verdict a decision. Elsewhere, a model is
+still a behaviour, so a `sat` answer is genuine, but an `unsat` answer only
+says that no assignment up to the bound refutes the query. So a check that
+passes on `unsat` (the [proved](#verdict-families) family) then passes *up
+to the bound*, a weaker pass than a proof, and a check that fails on
+`unsat`, such as vacuity, is inconclusive, since a larger witness may
+exist. Realizability's goal has `∃ outputs` within it: its failure, a
+conflict, is genuine only where the outputs are exhausted, since their
+values are pinned by the input, and its contradictory assumptions rest on
+`unsat`. `check::enumerated_verdict`:
+
+```fren
+pub comp enumerated_verdict {
+    use self::Kind::{
+        Completeness,
+        Determinism,
+        Disjointness,
+        Expectation,
+        InstanceAssumption,
+        Precondition,
+        Realizability,
+    }
+    use self::Verdict::{Fail, Inconclusive, Pass}
+    in kind: Kind
+    in verdict: Verdict      -- what the check algorithm reaches from the search's answers
+    in conflict?             -- realizability failed on a conflict, rather than contradictory assumptions
+    in exact?                -- every slot is exhausted
+    in outputs_exact?        -- every slot of an output is exhausted
+    pub det out reported: Verdict
+    pub det out bounded?     -- it holds only up to the bound
+
+    ensure reported_rule: reported = table {
+        | exact? => verdict,
+        | not exact? and verdict = Pass => Pass,
+        | not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? => Fail,
+        | not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) => Inconclusive,
+        | not exact? and verdict = Fail and kind in {Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition} => Fail,
+        | not exact? and verdict = Fail and not kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition} => Inconclusive,
+        | not exact? and verdict = Inconclusive => Inconclusive,
+    }
+    -- What rests on an `unsat` answer that does not see every behaviour.
+    ensure bounded_rule: bounded? iff (not exact? and reported != Fail and verdict != Inconclusive
+        and (verdict = Fail or kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition}))
+
+    expect decided: when exact?, reported = verdict
+    expect failures_genuine: when reported = Fail, verdict = Fail
+    expect bounded_pass_proves: when reported = Pass and bounded?, kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition}
+}
+```
+
+The verdict family is that of [Verdict families](#verdict-families), for
+the kinds that enumeration decides. A bounded inconclusive result says
+that enumeration searched every behaviour up to the bound (`F0608`).
+Where some checks pass only up to the bound, each front end says how many
+at the component, as information (`F0646`), and the summary counts them:
+
+```text
+fren: 30 passed (3 by bounded enumeration), 0 failed, 0 inconclusive, 0 redundant
+```
+
+### Enumeration then testing
+
+With `"enumerated+tested"`, a check is enumerated, and its queries are
+also tested beyond the bound: where the search finds no model up to the
+bound, each query draws 100 random assignments of the slots it reads, the
+`t`th taking, for each slot, its `t`th random value of a size above the
+bound, at most `10 * (n + 1)` for the bound `n`, a second copy another,
+and, for a slot whose values are all within the bound, one of them at
+random. The random values come from a seed of the component's path, so
+both front ends draw the same ones, whatever `--seed` and `--tests` are.
+Where every slot is exhausted there is nothing beyond the bound, and the
+verdict is decided as with `"enumerated"`. A model that testing finds is
+genuine, like the search's: a counterexample fails the check, and a
+witness passes it; testing never decides a pass, which stays one up to
+the bound, and the information `F0646` then counts the tests.
+`check::enumerated_answer` gives a query's answer, bound to
+`answerOf`:
+
+```fren
+pub enum Found { Model, NoModel }
+
+pub comp enumerated_answer {
+    use self::Found::{Model, NoModel}
+    in search: Found         -- what the search up to the bound found
+    in testing?              -- the check is set to `"enumerated+tested"`
+    in test: Found           -- what testing beyond the bound found, if asked
+    pub det out answer: Outcome
+    pub det out from_test?   -- the model is testing's
+
+    ensure answer_rule: (answer = Outcome::Sat) iff (search = Model or (testing? and test = Model))
+    ensure no_unknown: answer != Outcome::Unknown
+    ensure test_rule: from_test? iff (search = NoModel and testing? and test = Model)
+
+    expect search_first: when search = Model, not from_test?
+    expect untested: when not testing?, (answer = Outcome::Sat) iff search = Model
+}
+```
+
+### Agreement
+
+Lean decides the checks set to enumeration itself, by evaluation: each
+constraint of the component is compiled by Lean's evaluator into a
+function of an assignment of the slots, which reads each variable's value
+from its slot, with the defined outputs replaced by their definitions,
+the abstract types by `Nat`, whose `k` is the `k`th value, and each
+unspecified value by its hidden slot's, and decides the constraint. The
+search, the order, the counts and the verdicts are `FrenCore`'s, shared
+with the `fren` command. So both front ends report the same results and
+messages, with the same counterexamples, for the checks set to
+`"enumerated"` and to `"enumerated+tested"`, whose tests both draw alike,
+and are compared like any other (see [Agreement with
+Lean](Cli.md#agreement-with-lean)).
 
 ## Verdict families
 

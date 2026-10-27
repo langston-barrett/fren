@@ -112,6 +112,7 @@ component's variable an `Int` when the other's is one.
 ```fren
 pub enum Side { Concrete, Abstract }
 
+set_option fren.evidence "enumerated" in
 pub comp refinement_given {
     in input?            -- the variable is an input, rather than an output
     in abstract_type: Given  -- the abstract component's variable's type

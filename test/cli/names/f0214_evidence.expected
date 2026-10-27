@@ -2,9 +2,9 @@ error[F0214]: invalid evidence `testing`
  --> test/cli/names/f0214_evidence.fren:2:26
   |
 2 | set_option fren.evidence "testing" in
-  |                          ^^^^^^^^^ not `"tested"` or `"solver"`
+  |                          ^^^^^^^^^ not `"solver"`, `"tested"`, `"enumerated"` or `"enumerated+tested"`
   |
-  = note: `"tested"` has the checks tested instead of asked of the solver, and `"solver"` is the default
+  = note: `"tested"` has the checks tested instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+tested"` tests them too where enumeration is not complete, and `"solver"` is the default
 
 error: could not check due to previous errors
 

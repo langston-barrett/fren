@@ -18,6 +18,7 @@ after. `lint::inconsistent_struct_constructor` states when it fires:
 ```fren
 pub mod lint
 
+set_option fren.evidence "enumerated" in
 pub comp inconsistent_struct_constructor {
     in in_order?         -- the literal's fields are written in the order its record declares them
     pub det out fires?

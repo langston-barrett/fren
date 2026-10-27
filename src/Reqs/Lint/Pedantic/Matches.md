@@ -65,6 +65,7 @@ pub mod lint
 
 pub enum ArmsFix { Merge, Remove, Replace }
 
+set_option fren.evidence "enumerated" in
 pub comp match_same_arms {
     in same_body?        -- the bodies are written the same
     in binds?            -- the pattern of either binds a name
@@ -380,11 +381,13 @@ The refinements below check the fix on one example:
 
 ```fren
 set_option fren.lint.unnested_or_patterns "allow" in
+set_option fren.evidence "enumerated" in
 pub comp unnested_or_written {
     in lamp: Lamp
     pub det out v: Int := match lamp { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 }
 }
 
+set_option fren.evidence "enumerated" in
 pub comp unnested_or_fixed {
     in lamp: Lamp
     pub det out v: Int := match lamp { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 }
