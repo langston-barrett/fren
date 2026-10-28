@@ -643,29 +643,32 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
   return out.toList.eraseDups.toArray
 where
   scan (recs : Array (String × Array String × SeqElems.SExpr)) (e : SeqElems.SExpr)
-      (gs : Array String) (introduced : Bool) (ancestors : Array String) :
+      (gs : Array String) (introduced : Bool) (ancestors : Array String) (bound : Array String := #[]) :
       Array (SeqElems.SExpr × Array String × Bool × Array String) :=
     match e with
     | .atom _ => #[]
     | .list xs => Id.run do
       let own := match xs[0]? with
-        | some (SeqElems.SExpr.atom h) => if recs.any (·.1 == h) then #[(e, gs, introduced, ancestors)] else #[]
+        | some (SeqElems.SExpr.atom h) => if recs.any (·.1 == h) && (Fren.Core.recursiveFacts introduced (e.mentions bound)).1 then
+          #[(e, gs.filter (fun g => !(SeqElems.parse g).mentions bound), introduced, ancestors)] else #[]
         | _ => #[]
+      if let some (names, body) := SeqElems.binderOf? e then
+        return scan recs body gs introduced ancestors (bound ++ names)
       if xs[0]? == some (SeqElems.SExpr.atom "and") || xs[0]? == some (SeqElems.SExpr.atom "or") then
         let mut result := own
         let mut guards := gs
         for x in xs.extract 1 do
-          result := result ++ scan recs x guards introduced ancestors
+          result := result ++ scan recs x guards introduced ancestors bound
           guards := guards.push (if xs[0]? == some (SeqElems.SExpr.atom "and") then toString x else s!"(not {x})")
         return result
       match xs with
       | #[.atom "ite", c, a, b] =>
-        return own ++ scan recs c gs introduced ancestors
-          ++ scan recs a (gs.push (toString c)) introduced ancestors
-          ++ scan recs b (gs.push s!"(not {c})") introduced ancestors
+        return own ++ scan recs c gs introduced ancestors bound
+          ++ scan recs a (gs.push (toString c)) introduced ancestors bound
+          ++ scan recs b (gs.push s!"(not {c})") introduced ancestors bound
       | #[.atom "=>", c, b] =>
-        return own ++ scan recs c gs introduced ancestors ++ scan recs b (gs.push (toString c)) introduced ancestors
-      | _ => return own ++ xs.flatMap fun x => scan recs x gs introduced ancestors
+        return own ++ scan recs c gs introduced ancestors bound ++ scan recs b (gs.push (toString c)) introduced ancestors bound
+      | _ => return own ++ xs.flatMap fun x => scan recs x gs introduced ancestors bound
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a

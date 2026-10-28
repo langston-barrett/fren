@@ -193,11 +193,21 @@ application's own guards, and postconditions also on its preconditions.
 ```fren
 pub enum RecApplication { Written, Reflected }
 pub struct RecFacts { posts?, equation? }
-pub proc recursive_facts(origin: RecApplication): (det facts: RecFacts) {
-    ensure posts: facts.posts?
-    ensure equation: facts.equation? iff origin = RecApplication::Written
+pub proc recursive_facts(origin: RecApplication, bound?): (det facts: RecFacts) {
+    ensure posts: facts.posts? iff not bound?
+    ensure equation: facts.equation? iff not bound? and origin = RecApplication::Written
 }
 ```
+
+An application is ground when its arguments mention no variable bound by
+an enclosing quantifier. Both front ends collect its one-step equations
+and postconditions as top-level facts wherever it appears, including beneath
+quantifiers. An application mentioning a quantifier-bound variable brings
+no top-level facts. Guards mentioning such variables are not exported either;
+ground facts retain only guards independent of those variables. No fact may
+refer to a variable outside its binder. If the remaining facts cannot prove
+a check and evaluation refutes its model, both front ends report Inconclusive
+with the same `F0450` diagnostic.
 
 ## Contracts
 

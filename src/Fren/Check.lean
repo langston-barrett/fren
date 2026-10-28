@@ -340,8 +340,10 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
 where
   scan (recs : Array (Name × DefinedInfo)) (e : Expr) (gs : Array Expr)
       (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
-    if e.hasLooseBVars then return #[]
-    let own := if recs.any (e.getAppFn.isConstOf ·.1) && e.isApp then #[(e, gs, introduced, ancestors)] else #[]
+    -- Descend through binders to find closed applications, but never export
+    -- an application or a guard containing a binder-local variable.
+    let own := if (Core.recursiveFacts introduced e.hasLooseBVars).1 && recs.any (e.getAppFn.isConstOf ·.1) && e.isApp then
+      #[(e, gs.filter (!·.hasLooseBVars), introduced, ancestors)] else #[]
     if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 then
       let args := e.getAppArgs
       let guard := if e.isAppOfArity ``And 2 then args[0]! else mkNot args[0]!
@@ -361,7 +363,10 @@ where
       let args := e.getAppArgs.zipIdx.filter fun (_, i) =>
         !(info.paramInfo[i]?.any fun p => p.isInstance || p.isProp)
       return own ++ (← args.flatMapM fun (arg, _) => scan recs arg gs introduced ancestors)
-    | .forallE _ p q _ => return (← scan recs p gs introduced ancestors) ++ (← scan recs q (gs.push p) introduced ancestors)
+    | .forallE _ p q _ =>
+      let guards := if !p.hasLooseBVars && (← isProp p) then gs.push p else gs
+      return (← scan recs p gs introduced ancestors) ++ (← scan recs q guards introduced ancestors)
+    | .lam _ p q _ => return (← scan recs p gs introduced ancestors) ++ (← scan recs q gs introduced ancestors)
     | .mdata _ b => scan recs b gs introduced ancestors
     | _ => return own
 

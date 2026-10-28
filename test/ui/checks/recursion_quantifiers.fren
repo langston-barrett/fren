@@ -1,0 +1,20 @@
+-- Ground recursion facts survive binders; binder-local facts never escape.
+-- fren-covers: lang::recursive_facts
+set_option fren.lint.undecidable "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+pub enum T { Z, S(T) }
+pub fn size(t: T): Int := match t {
+    T::Z => 0,
+    T::S(a) => 1 + size(a),
+}
+
+proc p() {
+    expect ground: forall (x: Int), size(T::Z) + x = x
+    expect bound: forall (t: T), size(t) >= 0   --~ warning: could not decide whether `p::bound` holds
+    expect guarded: forall (x: Int), when x > 0, size(T::Z) + x = x
+    expect nested: forall (x: Int), exists (y: Int), size(T::Z) + x = x + y
+    expect mixed: forall (t: T), size(t) >= size(T::Z)   --~ warning: could not decide whether `p::mixed` holds
+}
+
+--@ summary: 4 passed, 0 failed, 2 inconclusive, 0 redundant

@@ -3256,13 +3256,14 @@ impl prelude_sort: lang::prelude_sort for (s : String) {
 
 -- The shared policies used when constructing recursive queries and reporting
 -- their results; these bind the structured requirements to the real helpers.
-impl recursive_facts: lang::recursive_facts for (introduced : Bool) {
+impl recursive_facts: lang::recursive_facts for (introduced bound : Bool) {
+  bound? := bound,
   origin := if introduced then lang.RecApplication.Reflected else lang.RecApplication.Written,
-  facts := { posts? := (Fren.Core.recursiveFacts introduced).1,
-             equation? := (Fren.Core.recursiveFacts introduced).2 },
+  facts := { posts? := (Fren.Core.recursiveFacts introduced bound).1,
+             equation? := (Fren.Core.recursiveFacts introduced bound).2 },
 } by
-  intro introduced _
-  cases introduced <;> simp [fren_spec, Fren.Core.recursiveFacts]
+  intro introduced bound _
+  cases introduced <;> cases bound <;> simp [fren_spec, Fren.Core.recursiveFacts]
 
 impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (failed : Bool) {
   result := r,

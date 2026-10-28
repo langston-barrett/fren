@@ -81,9 +81,10 @@ def recursion (n : Nat) (uses : List RecUse) : Recursion :=
       let k := fs.foldl max 0
       .notStructural k (fs.idxOf k)
 
-/-- Whether an application receives a defining equation: introduced applications
-receive postconditions only (`lang::recursive_facts`). -/
-def recursiveFacts (introduced : Bool) : Bool × Bool := (true, !introduced)
+/-- Ground applications receive postconditions and, when written, an equation.
+Binder-dependent applications receive neither (`lang::recursive_facts`). -/
+def recursiveFacts (introduced : Bool) (bound : Bool := false) : Bool × Bool :=
+  (!bound, !bound && !introduced)
 
 /-- A simultaneous induction cannot report a dependent success when another
 postcondition is unproved (`lang::recursive_post_result`). -/
