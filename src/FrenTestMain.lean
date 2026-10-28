@@ -155,7 +155,7 @@ depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
 def unsnapshotted : List String :=
   ["F0142", "F0143", "F0155", "F0156", "F0158", "F0159", "F0160", "F0164", "F0399", "F0406", "F0407", "F0412", "F0413", "F0414", "F0415", "F0416", "F0420",
-   "F0608", "F0713"]
+   "F0448", "F0608", "F0713"]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
 the code: each lint's row gives its name, code, group and default level,

@@ -3064,32 +3064,54 @@ without recursion, or give it as an uninterpreted function's postcondition:
 pub fn count(n: Int): Int := if n > 0 then n else 0
 ```
 "# },
-  { code := "F0448", explanation := r#"A defined function is a structural recursion, which is not yet supported.
+  { code := "F0448", explanation := r#"A removed code: a structural recursion, before it was supported.
+
+`F0448` was the error for a defined function that is a structural
+recursion, which Fren recognized but did not yet accept. Structural
+recursion is now accepted (`Reqs/Lang/Recursion`), so nothing reports
+`F0448`, and the code is not reused.
+"#, args := none },
+  { code := "F0449", explanation := r#"A structural recursion applies itself under a `match` that its Lean definition cannot have as a Lean `match`.
 
 Erroneous code example:
 
 ```fren
-pub enum Expr { Lit(Int), Add(Expr, Expr) }
+pub enum Expr { Lit(Int), Neg(Expr) }
 
-pub fn size(e: Expr): Int := match e {
+pub fn depth(e: Expr): Int := match e {
+    Expr::Lit(0) => 0,
     Expr::Lit(_) => 1,
-    Expr::Add(a, b) => size(a) + size(b),
+    Expr::Neg(x) => depth(x) + 1,
 }
 ```
 
-The function applies itself only to payloads of its parameter, which is a
-structural recursion, and Fren will accept it: until then, state what is
-needed of one layer at a time, with the operands' values as a parameter:
+A structurally recursive function's Lean definition is a Lean `match` on
+the parameter, which Lean's structural recursion sees through. A Lean
+`match` has patterns of variants, binders and `_`, with or-patterns only at
+the top; a literal, a range, or an or-pattern within a payload would make it
+a chain of `if`s, which Lean's structural recursion cannot see through.
+Guarded constructor matches containing recursion are also rejected in both
+front ends; write the conditional inside an unguarded constructor arm.
+Match on the variant, and on the literal in an inner `match` on the binder:
 
 ```fren
-pub enum Expr<E> { Lit(Int), Add(E, E) }
+pub enum Expr { Lit(Int), Neg(Expr) }
 
-pub fn size(e: Expr<Int>): Int := match e {
-    Expr::Lit(_) => 1,
-    Expr::Add(a, b) => a + b,
+pub fn depth(e: Expr): Int := match e {
+    Expr::Lit(n) => match n { 0 => 0, _ => 1 },
+    Expr::Neg(x) => depth(x) + 1,
 }
 ```
 "# },
+  { code := "F0450", explanation := r#"A check fails only under recursive functions' contracts.
+
+Recursive applications are opaque, with one step of their defining equations.
+A solver model may therefore give them values that the real definitions do not
+produce. Fren evaluates the counterexample's inputs before reporting it.
+If evaluation does not confirm the failure, the check is Inconclusive.
+Strengthen the named recursive functions' contracts to make the needed facts
+available (`Reqs/Lang/Recursion#counterexamples-and-completeness`).
+"#, args := none },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:

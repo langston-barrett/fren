@@ -1,39 +1,31 @@
 -- Hutton's razor: a minimal language of integers and addition (see Graham
 -- Hutton, "Programming language semantics: it's easy as 1, 2, 3", JFP 2023).
--- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and
--- keeps every expression's value.
---
--- TODO(#279): expressions, evaluation and folding are recursive, which a
--- spec can't be yet. So this spec states one layer of each, over `Expr<E>`,
--- an expression whose operands have the type `E`, and `Arith.lean` ties the
--- knot: its expressions are the fixed point of `Expr`.
+-- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and keeps
+-- every expression's value.
 mod arith
 
--- One layer of an expression, whose operands have the type `E`.
-pub enum Expr<E> { Val(Int), Add(E, E) }
+-- An expression.
+pub enum Expr { Val(Int), Add(Expr, Expr) }
 
--- One layer of evaluation: the value of an expression whose operands are
--- values already.
-pub fn eval(e: Expr<Int>): Int := match e {
+-- The value of an expression. Checks use one step of its equations.
+-- No contract is needed for the folding proof.
+pub fn eval(e: Expr): Int := match e {
     Expr::Val(n) => n,
-    Expr::Add(a, b) => a + b,
+    Expr::Add(a, b) => eval(a) + eval(b),
 }
 
--- Folding `Add(a, b)`, given the top layers of its operands: a value when
--- both are values, and otherwise `Add` of the operands, each rebuilt from
--- its top layer by `roll`.
-pub fn fold_add<T>(a: Expr<T>, b: Expr<T>, roll: fn(Expr<T>) -> T): Expr<T> := match a {
-    Expr::Val(x) => match b {
-        Expr::Val(y) => Expr::Val(x + y),
-        Expr::Add(_, _) => Expr::Add(roll(a), roll(b)),
-    },
-    Expr::Add(_, _) => Expr::Add(roll(a), roll(b)),
-}
-
--- Folding keeps the value, where an expression is its value: `T` is `Int`,
--- and `roll` is `eval`.
--- TODO(#313): an expectation of `fold_add` itself, once functions can have
--- `expect` clauses.
-proc folding(a: Expr<Int>, b: Expr<Int>) {
-    expect keeps_value: eval(fold_add(a, b, eval)) = eval(a) + eval(b)
+-- Recursively fold `Add(Val(n), Val(m))` to `Val(n + m)`.
+pub fn fold(e: Expr): (r: Expr) {
+    out r := match e {
+        Expr::Val(n) => Expr::Val(n),
+        Expr::Add(a, b) => match fold(a) {
+            Expr::Val(x) => match fold(b) {
+                Expr::Val(y) => Expr::Val(x + y),
+                fb => Expr::Add(Expr::Val(x), fb),
+            },
+            fa => Expr::Add(fa, fold(b)),
+        },
+    }
+    -- Folding keeps the value.
+    ensure keeps_value: eval(r) = eval(e)
 }

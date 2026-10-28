@@ -1909,6 +1909,7 @@ def undecidableMsg (c : Construct) (infiniteOutput : Bool) : Msg :=
       | .seqWord => ("an operation on sequences other than indexing, `len` and `update` makes a word equation, which may be undecidable",
         "help: index at positions, or compare with a literal, as in `x in [a, b]` or `q.starts_with?([a])`")
       | .seqArray => ("it is an operation on sequences", "help: mention the parameters that the output depends on")
+
       | .quantifier => ("a quantifier over a type whose values cannot be listed is not expanded, but given to the solver",
         "help: quantify over a listed type, such as `Bool` or an enum, or opt out, and guard it, as in `forall (x: T), when x in s, ...`, so that it can be tested")
       | .stringCompare => ("it compares two strings that are not both variables, and neither is a constant",

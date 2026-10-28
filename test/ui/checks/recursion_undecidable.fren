@@ -1,0 +1,23 @@
+-- Opaque recursion with finite ground equations and contracts.
+pub enum Tree { Leaf, Node(Tree, Int, Tree) }
+
+pub fn elems(t: Tree): Set<Int> := match t {
+    Tree::Leaf => {},
+    Tree::Node(l, k, r) => elems(l) union {k} union elems(r),
+}
+
+pub fn size(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => size(l) + 1 + size(r),
+}
+
+pub fn left_leaves(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => (if l = Tree::Leaf then 1 else 0) + left_leaves(l) + left_leaves(r),
+}
+
+proc reported(t: Tree) {
+    expect member: when t is Tree::Node(_, 1, _) and 1 in elems(t), t != Tree::Leaf
+    expect sized: size(t) >= 0   --~ warning: could not decide whether `reported::sized` holds
+    expect param: left_leaves(t) >= 0   --~ warning: could not decide whether `reported::param` holds
+}

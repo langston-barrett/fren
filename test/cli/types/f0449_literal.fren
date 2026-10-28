@@ -1,0 +1,5 @@
+-- A structural recursion under a `match` with a literal within a payload,
+-- which its Lean definition cannot have as a Lean `match` (F0449).
+-- fren-covers: lang::recursive_match
+enum Expr { Lit(Int), Neg(Expr) }
+fn depth(e: Expr): Int := match e { Expr::Lit(0) => 0, Expr::Lit(_) => 1, Expr::Neg(x) => depth(x) + 1 }

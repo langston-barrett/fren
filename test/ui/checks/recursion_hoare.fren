@@ -1,0 +1,63 @@
+-- Actual applications, generic instances, and counterexample confirmation.
+-- fren-covers: lang::recursive_facts, lang::recursive_post_result, lang::recursive_counterexample
+pub enum T { Z, S(T) }
+
+pub fn bad(t: T is T::S(_)): (r: Int) {
+    out r := match t {
+        T::Z => 1,
+        T::S(a) => if a is T::S(_) then bad(a) else 1,
+    }
+    ensure zero: r = 0   --~ error: the postcondition `zero` of `bad` does not hold
+}
+
+pub fn size(t: T): (r: Int) {
+    out r := match t { T::Z => 0, T::S(a) => 1 + size(a) }
+    ensure nonnegative: r >= 0
+    -- This clause needs the other clause at recursive applications.
+    ensure not_minus_one: r != -1
+}
+
+pub fn weak_size(t: T): (r: Int) {
+    out r := match t { T::Z => 0, T::S(a) => 1 + weak_size(a) }
+    ensure not_minus_one: r != -1   --~ warning: could not decide whether the postcondition `not_minus_one` of `weak_size` holds
+}
+
+pub fn other_size(t: T): Int := match t {
+    T::Z => 0,
+    T::S(a) => 1 + other_size(a),
+}
+
+-- The induction hypotheses must follow nested payload calls, not just children.
+pub fn skip_two(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => match a { T::Z => 0, T::S(b) => skip_two(b) + 1 },
+    }
+    ensure nonnegative: r >= 0
+}
+
+pub fn append(a: T, b: T): (r: T) {
+    out r := match a { T::Z => b, T::S(x) => T::S(append(x, b)) }
+    ensure right_zero: when b = T::Z, r = a
+}
+
+proc comparisons(t: T) {
+    expect from_contract: size(t) >= 0
+    expect relation: size(t) = other_size(t)   --~ warning: could not decide whether `comparisons::relation` holds
+    expect confirmed: size(t) < 0   --~ error: expectation `comparisons::confirmed` does not hold
+    expect refuted: other_size(t) >= 0   --~ warning: could not decide whether `comparisons::refuted` holds
+    expect two_parameters: when t = T::Z, append(T::S(T::Z), T::Z) = T::S(T::Z)
+}
+
+pub enum Generic<A> { Z, S(A, Generic<A>) }
+
+pub fn count(t: Generic<Int>): (r: Int) {
+    out r := match t { Generic::Z => 0, Generic::S(_, a) => 1 + count(a) }
+    ensure nonnegative: r >= 0
+}
+
+proc generic_instance(t: Generic<Int>) {
+    expect contract: count(t) >= 0
+    expect one_step: when t is Generic::S(_, a), count(t) = 1 + count(a)
+    expect confirmed_generic: when t is Generic::S(_, _), count(t) < 0   --~ error: expectation `generic_instance::confirmed_generic` does not hold
+}

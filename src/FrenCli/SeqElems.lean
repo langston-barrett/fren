@@ -100,21 +100,37 @@ partial def SExpr.mentions (xs : Array String) : SExpr → Bool
   | .atom a => xs.contains a
   | .list ts => ts.any (·.mentions xs)
 
-/-- `e` with each free atom `x` of `σ` replaced by `σ x`, stopping where a
-binder binds it again. -/
+/-- Per-name substitution scope policy (`cli::substitution_scope`). -/
+def substitutionScope (bound mentioned : Bool) : Bool × Bool :=
+  (!bound, bound && mentioned)
+
+/-- Capture-avoiding simultaneous substitution of free atoms. Binder names
+are alpha-renamed before insertion; let definitions remain outside scope. -/
 partial def SExpr.subst (σ : Array (String × SExpr)) (e : SExpr) : SExpr :=
   if σ.isEmpty then e else
   match e with
   | .atom a => (σ.find? (·.1 == a)).map (·.2) |>.getD e
   | .list ts =>
     match binderOf? e, ts with
-    | some (xs, body), #[h, .list decls, _] =>
-      -- A `let`'s definitions are outside its scope.
-      let decls := if h == .atom "let" then decls.map fun
-          | .list #[x, d] => .list #[x, d.subst σ]
-          | d => d
-        else decls
-      .list #[h, .list decls, body.subst (σ.filter (!xs.contains ·.1))]
+    | some (xs, body), #[h, .list decls, _] => Id.run do
+      let active := σ.filter fun (x, _) => (substitutionScope (xs.contains x) false).1
+      let mut renames : Array (String × SExpr) := #[]
+      let mut next := 0
+      for x in xs do
+        if (substitutionScope true (active.any fun (_, v) => v.mentions #[x])).2 then
+          let mut fresh := s!"|fren.subst.{next}|"
+          while e.mentions #[fresh] || σ.any (fun (k, v) => k == fresh || v.mentions #[fresh]) ||
+              renames.any (fun (_, v) => v.mentions #[fresh]) do
+            next := next + 1
+            fresh := s!"|fren.subst.{next}|"
+          renames := renames.push (x, .atom fresh)
+          next := next + 1
+      let decls := decls.map fun
+        | .list #[.atom x, d] =>
+          let name := (renames.find? (·.1 == x)).map (·.2) |>.getD (.atom x)
+          .list #[name, if h == .atom "let" then d.subst σ else d]
+        | d => d
+      return .list #[h, .list decls, (body.subst renames).subst active]
     | _, _ => .list (ts.map (·.subst σ))
 
 /-- `e` without `let`s, their definitions substituted, and with each
@@ -298,7 +314,7 @@ parameters and bodies: each query unfolds them. -/
 def markedDefs (texts : Array String) : Std.HashMap String (Array String × SExpr) := Id.run do
   let mut out : Std.HashMap String (Array String × SExpr) := {}
   for t in texts do
-    unless t.startsWith "(define-fun" do continue
+    unless t.startsWith "(define-fun " do continue
     let .list #[_, .atom f, .list ps, _, body] := parse t | continue
     let calls := out.keys.any fun g => body.mentions #[g]
     unless hasMarker t || calls do continue

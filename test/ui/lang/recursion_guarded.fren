@@ -1,0 +1,8 @@
+-- Guarded constructor recursion is rejected uniformly with F0449.
+-- fren-covers: lang::recursive_match
+pub enum T { Z, S(T) }
+pub fn guarded(t: T): Int := match t {
+    T::S(x) if x = T::Z => guarded(x),   --~ error: recursive defined function `guarded` has a `match` that Lean cannot see through
+    T::S(x) => guarded(x) + 1,
+    T::Z => 0,
+}

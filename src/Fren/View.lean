@@ -3,6 +3,7 @@ import Fren.Check
 import Fren.Elab
 import Fren.Enumerate
 import Fren.Prelude
+import Fren.RecursiveProof
 -- keep-sorted end
 
 /-!
@@ -13,7 +14,7 @@ messages, positioned at the relevant part of the spec. The text comes from
 `Fren.Core.messages`, shared with the standalone binary.
 -/
 
-open Lean Elab Command
+open Lean Meta Elab Command
 
 namespace Fren
 
@@ -138,6 +139,110 @@ abbrev CheckOutcome :=
   Except Exception (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) ×
     MessageLog × PersistentArray TraceElem × PersistentArray InfoTree
 
+/-- Generate a structural induction theorem for the conjunction of the
+postconditions, then expose each clause as a theorem. This is simultaneous
+induction, so no successful clause is published if another failed. -/
+def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : CommandElabM Unit := do
+  let st ← getState
+  let some fn := c.fn? | return
+  let some d := st.defined.get? fn | return
+  let some i := d.decreasing? | return
+  let posts := results.filter (·.kind == .postcondition)
+  if posts.isEmpty || posts.any (·.verdict != .pass) then return
+  let some k := st.contracts.get? fn | return
+  let name := d.decl ++ `contract
+  if (← getEnv).contains name then return
+  liftTermElabM <| withOptions (fun opts => (warn.sorry.set opts false).setBool `linter.unusedSimpArgs false) <| Term.withoutErrToSorry do
+    -- Follow definitions and clauses transitively so unrelated contracts do
+    -- not become theorem assumptions (including functions declared later).
+    let mut pending := #[d.decl] ++ (k.pres ++ k.posts).map (·.decl)
+    let mut reachable : Array Name := #[]
+    while !pending.isEmpty do
+      let n := pending.back!
+      pending := pending.pop
+      if reachable.contains n then continue
+      reachable := reachable.push n
+      if let some info := (← getEnv).find? n then
+        if let some value := info.value? then
+          pending := pending ++ value.getUsedConstants
+    let mut dependencies := #[]
+    for (path, other) in st.defined.toArray do
+      if path == fn || other.decreasing?.isNone || !reachable.contains other.decl then continue
+      let some contract := st.contracts.get? path | continue
+      for p in contract.posts do
+        let type ← recursiveDependencyType path p
+        unless ← hasRecursiveDependencyProof p type do
+          dependencies := dependencies.push (p.decl, type)
+    withLocalDeclsD (dependencies.map fun (n, t) => (n, fun _ => pure t)) fun deps =>
+     withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun xs => do
+      let pres := ((c.vars.zip xs).filterMap fun (v, x) => v.fact?.map (·.beta #[x]))
+        ++ k.pres.map (fun p => p.at xs)
+      let post := mkAndN ((k.posts.map fun p => p.at xs).toList)
+      let ty := pres.foldr (fun p b => mkForall `h .default p b) post
+      let ty ← mkForallFVars deps (← mkForallFVars xs ty)
+      let ids := c.vars.map (·.name.toString)
+      let mut dependencyNames := #[]
+      for j in [:deps.size] do
+        let mut n := s!"dependency_{j}"
+        while ids.contains n || dependencyNames.contains n do n := n ++ "_"
+        dependencyNames := dependencyNames.push n
+      let dependencyIntros := if deps.isEmpty then "" else
+        "\n  intro " ++ " ".intercalate dependencyNames.toList
+      let clauses := (k.pres ++ k.posts).map (·.decl.toString)
+      let generalized := (c.vars.zipIdx.filter (·.2 != i)).map (·.1.name.toString)
+      let suffix := "\n  all_goals intros"
+        ++ "\n  all_goals try simp only [" ++ d.decl.toString ++ "]"
+        ++ "\n  all_goals (repeat' first | split)"
+        ++ "\n  all_goals fren_recursive_case " ++ d.decl.toString
+      let ordinary := "by" ++ dependencyIntros ++ "\n  intro " ++ " ".intercalate ids.toList
+        ++ "\n  induction " ++ ids[i]!
+        ++ (if generalized.isEmpty then "" else " generalizing " ++ " ".intercalate generalized.toList)
+        ++ "\n  all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ suffix
+      let structural := "by" ++ dependencyIntros ++ "\n  intro " ++ " ".intercalate ids.toList
+        ++ "\n  dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *"
+        ++ "\n  fun_induction @" ++ d.decl.toString ++ " "
+        ++ " ".intercalate ((d.uses.map (·.toString) ++ ids).toList) ++ suffix
+      -- Reflection can introduce self-applications below an immediate child.
+      -- Well-founded induction supplies their contracts without reflecting again.
+      let decreasingType := (← ppExpr c.vars[i]!.type).pretty
+      let mut ihName := "recursive_ih"
+      while ids.contains ihName do ihName := ihName ++ "_"
+      let strong := "by" ++ dependencyIntros ++ "\n  intro " ++ " ".intercalate ids.toList
+        ++ (if generalized.isEmpty then "" else "\n  revert " ++ " ".intercalate generalized.toList)
+        ++ "\n  induction " ++ ids[i]! ++ " using (@sizeOfWFRel (" ++ decreasingType ++ ") inferInstance).wf.induction with\n  | h " ++ ids[i]! ++ " " ++ ihName ++ " =>\n    cases " ++ ids[i]!
+        ++ "\n    all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ (suffix ++ " " ++ ihName).replace "\n  " "\n    "
+      let prove (script : String) : TermElabM Expr := do
+        let proof ← match Parser.runParserCategory (← getEnv) `term script with
+          | .ok proof => pure proof
+          | .error error => throwError "could not generate recursive contract proof: {error}"
+        let value ← Term.elabTermEnsuringType proof ty
+        Term.synthesizeSyntheticMVarsNoPostponing
+        let value ← instantiateMVars value
+        if value.hasMVar || value.hasSyntheticSorry then throwError "recursive contract proof has unproved goals"
+        return value
+      let saved ← saveState
+      let value ← try prove ordinary catch _ =>
+        -- A nested payload need not be an immediate child. Lean derives
+        -- this induction principle from the same structural definition.
+        saved.restore
+        try prove structural catch _ =>
+          saved.restore
+          prove strong
+      addDecl (.thmDecl { name, levelParams := [], type := ty, value })
+      -- Each postcondition's theorem follows from the simultaneous theorem.
+      for p in k.posts, j in [0:k.posts.size] do
+        let pty := pres.foldr (fun h b => mkForall `h .default h b) (p.at xs)
+        forallTelescope pty fun hs _ => do
+          let both := mkAppN (mkAppN (mkAppN (mkConst name) deps) xs) hs
+          let selected ← if k.posts.size == 1 then pure both else do
+            let mut selected := both
+            for _ in [0:j] do selected ← mkAppM ``And.right #[selected]
+            if j + 1 < k.posts.size then selected ← mkAppM ``And.left #[selected]
+            pure selected
+          let type ← mkForallFVars deps (← mkForallFVars xs pty)
+          let value ← mkLambdaFVars deps (← mkLambdaFVars xs (← mkLambdaFVars hs selected))
+          addDecl (.thmDecl { name := p.decl ++ `holds, levelParams := [], type, value })
+
 /-- Checks each of `items` in a task of its own (`checkComp`), started now,
 from the current state. Each runs as `liftTermElabM` would run it here,
 with a heartbeat budget of its own, as each `liftTermElabM` has, and with
@@ -212,6 +317,10 @@ where
   let mut byBound := 0
   for (p, c, _) in items, task in tasks do
     let (results, witnesses, enumerated?) ← try awaitCheck task catch ex => cancel.set; throw ex
+    -- Proof artifacts are supplementary: preserve the checker report even
+    -- if generation fails, and discard any partial declarations/messages.
+    let proofState ← get
+    try proveRecursiveContract c results catch _ => set proofState
     for d in witnesses do
       liftCoreM <| addCoverWitness d
     for r in results do

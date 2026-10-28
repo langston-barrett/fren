@@ -1,0 +1,20 @@
+-- Definition expansion must not capture a caller's input, even when an
+-- unrelated recursive definition enables the finite recursive query path.
+-- fren-covers: cli::substitution_scope
+set_option fren.lint.undecidable "allow"
+
+pub enum T { Z, S(T) }
+pub fn size(t: T): Int := match t {
+    T::Z => 0,
+    T::S(a) => 1 + size(a),
+}
+
+pub fn all_equal?(b: Int) := forall (x: Int), x = b
+pub fn some_different?(b: Int) := exists (x: Int), x != b
+pub fn nested?(b: Int) := forall (x: Int), exists (y: Int), x != b or y = b
+
+proc p(x'0: Int) {
+    expect bad: all_equal?(x'0)   --~ error: expectation `p::bad` does not hold
+    expect exists_free: some_different?(x'0)
+    expect nested_free: nested?(x'0)
+}

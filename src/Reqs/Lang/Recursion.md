@@ -39,12 +39,13 @@ which every parameter has failed, saying why its argument is not a payload
 of the parameter there: the parameter itself, another name, or another
 expression. A generic or higher-order function is never recursive
 (`F0331`), and mutual recursion cannot be written, since a function is not
-in scope in the bodies of the functions declared before it. For now, a
-structural recursion is recognized and then reported as not yet supported
-(`F0448`).
+in scope in the bodies of the functions declared before it. A structural
+recursion is accepted, with the meaning, encodings and decidability below
+([Meaning](#meaning), [Solver encoding](#solver-encoding)); `F0448`, which
+reported it as not yet supported, is retired.
 
 `lang::structural_recursion` states this, over the function's uses of
-itself in its body, in the order they are written, each with where its
+itself in its body, in the order they are read (below), each with where its
 arguments come from:
 
 ```fren
@@ -98,11 +99,189 @@ pub proc structural_recursion(
 
 Both front ends read the body into these uses as they elaborate it: a use
 when they reach the function's name, before its arguments, so an
-application within another's arguments comes after it.
+application within another's arguments comes after it. That is the order
+they are written but where an operand does not synthesize its type, and
+the other operand is elaborated first, as in `[match f(l) { _ => [] },
+[f(l)]].len`, where the second `f(l)` is read first; both front ends read
+in the same order. Each use is read once, at its place: an expression that
+is elaborated again, such as a `match`'s scrutinee where a closure refers
+to an arm's binder, is not another use.
 
-The Lean-hosted front end checks this chapter's procedure by name, since
-no `#fren_check` of its Lean file comes after it:
+## Meaning
+
+A structural recursion denotes the least fixed point of its equations,
+which the structural rule makes total: each application is to a value
+smaller than the parameter's, so there is exactly one function that meets
+them (the recursive enumeration is the initial algebra of its base
+functor). Evaluation and generated Lean definitions use these equations; checks
+use the finite Hoare abstraction described below:
+
+- **Evaluation** (testing, quickcheck, and confirming a model) applies
+  the definition, which terminates.
+- **Lean** gets a genuine structural recursion (`def` with a Lean `match`
+  on the decreasing parameter), which Lean accepts as it is, with its
+  equation lemmas and functional induction ([Generated](Generated.md)).
+  A `match` that a recursive application is under must therefore be one
+  that the generator makes a Lean `match` of (`Reqs/Generated#matches`).
+
+`lang::recursive_match` states which `match`es are an error (`F0449`): one
+on a parameter, or on a binder bound from a payload of one, of an
+enumeration, with a recursive application under its arms (in a guard or a
+body), where some arm has a guard, or its pattern has a literal, a range, or an or-pattern
+other than at its top, which would make it a chain of `if`s. Both front
+ends report it, for a structural recursion, at the first such arm of the
+first such `match`, before any other report of the recursion. A
+`match` on another value, such as an `Int` payload, is unrestricted, as
+its arms bind nothing that the recursion decreases on.
 
 ```fren
-#fren_check structural_recursion
+-- What a `match`'s scrutinee is, relative to the function's parameters.
+pub enum MatchedOn { Parameter, Payload, Other }
+
+-- What a pattern has within it, as Lean's `match` sees it
+-- (`generated::Head`), with an or-pattern at its top its alternatives.
+pub enum PatPart { Wildcard, Binder, Variant, Literal, OrPattern }
+
+-- A `match` in a defined function's body.
+pub struct RecMatch {
+    on: MatchedOn,
+    enumeration?,              -- whether its scrutinee is an enumeration
+    arms: Seq<Set<PatPart>>,   -- each arm's pattern's parts
+    guarded?,                 -- some arm has a guard
+    recursion_under?,          -- whether a recursive application is in an arm
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub proc recursive_match(m: RecMatch): (det rejected?) {
+    ensure rule: rejected? = (m.on != MatchedOn::Other and m.enumeration? and m.recursion_under?
+        and (m.guarded? or (exists (k: Int), 0 <= k < m.arms.len
+        and (PatPart::Literal in m.arms[k] or PatPart::OrPattern in m.arms[k]))))
+}
 ```
+
+## Solver encoding
+
+Hoare induction is the only interpretation of recursion in checks. Every
+application of a structural recursion is opaque: an uninterpreted function
+application, including applications on constant arguments. Its parameter
+pattern types and preconditions are obligations, just as for an
+uninterpreted function with a contract. Its postconditions are ground
+facts, under the application's guards and preconditions. No recursive
+SMT definition, quantified recursion axiom, or evaluation on constant
+arguments is used.
+
+Each application also brings one step of its defining equations. For an
+arm `C(xs) => body`, the equation is `t is C(xs) => f(t) = body`, with
+selectors substituted for `xs`. Arm guards are extra conditions and earlier
+arms take precedence, exactly as in `match`. Applications introduced by
+this unfolding bring postconditions only, never another unfolding. Thus a
+query has finitely many ground equations. This holds in every context,
+including a function's own contract check.
+
+The following structured policy is shared by both front ends. `Written`
+means an application in the query; `Reflected` means one
+introduced by the one-step defining equation. Applications found while
+expanding a contract inherit the originating application’s origin, including
+through further contracts. A work queue visits each application, guards and
+origin once; a contract expansion also stops when it revisits an application
+on its ancestry path. Nonrecursive definitions and contract clauses are
+expanded before scanning. This is the CLI’s finite collection policy, shared
+by hosted checks and recursive contract proofs. Facts are conditional on the
+application's own guards, and postconditions also on its preconditions.
+
+```fren
+pub enum RecApplication { Written, Reflected }
+pub struct RecFacts { posts?, equation? }
+pub proc recursive_facts(origin: RecApplication, bound?): (det facts: RecFacts) {
+    ensure posts: facts.posts? iff not bound?
+    ensure equation: facts.equation? iff not bound? and origin = RecApplication::Written
+}
+```
+
+An application is ground when its arguments mention no variable bound by
+an enclosing quantifier. Both front ends collect its one-step equations
+and postconditions as top-level facts wherever it appears, including beneath
+quantifiers. An application mentioning a quantifier-bound variable brings
+no top-level facts. Guards mentioning such variables are not exported either;
+ground facts retain only guards independent of those variables. No fact may
+refer to a variable outside its binder. If the remaining facts cannot prove
+a check and evaluation refutes its model, both front ends report Inconclusive
+with the same `F0450` diagnostic.
+
+## Contracts
+
+A recursive function's contract is checked once against its body by
+Hoare's rule. At actual recursive applications in that body all of the
+function's postconditions may be assumed simultaneously, guarded by the
+application's conditions. No hypotheses are added at arbitrary payloads:
+only the applications actually made bring facts. Structural recursion
+makes the induction sound, because each such application decreases.
+The other arguments are those at the application, not necessarily the
+original parameters. Parameter pattern types and preconditions remain
+obligations there, including constrained input domains.
+
+If any postcondition fails, each other postcondition that passed is
+Inconclusive: its induction may depend on the failing postcondition. The
+same dependency rule applies when another postcondition is Inconclusive: its
+hypotheses have not been established, so a dependent success is not a proof.
+
+```fren
+pub enum RecPost { Passed, Failed, Inconclusive }
+pub proc recursive_post_result(result: RecPost, another_unproved?): (det reported: RecPost) {
+    ensure rule: reported = (if result = RecPost::Passed and another_unproved?
+        then RecPost::Inconclusive else result)
+}
+```
+
+Lean still receives a real structural recursive definition. Each
+postcondition receives a theorem proved by induction on the decreasing
+parameter. For nested payload calls the definition's generated structural
+induction principle supplies hypotheses at those calls as well. The equations for one
+step and each case's facts are given to the solver as guarded formulas,
+without splitting independent applications into constructor combinations. This includes equations at
+self-applications. After adding those equations, applications in their bodies
+receive contracts only. Self-applications introduced there use induction
+hypotheses at smaller descendants, including descendants deeper than the
+immediate children. A caller assumes another function's contract whether or
+not that contract was proved; an unproved contract is reported at its declaration,
+as for uninterpreted functions. Hosted theorems use established unconditional
+contract theorems where available and otherwise take the dependency's contract
+as an explicit hypothesis. This includes dependencies with conditional theorems;
+no axiom is introduced. An internal proof-generation failure cannot suppress
+or alter the checker’s verdicts and diagnostics.
+No equation is added for an application merely because reflection introduced it.
+Recursive applications use the induction hypotheses. As for
+other hosted checks, solver steps use `trust := true`; no goal may be
+left unproved. Constructor matches with guards must preserve structural
+recursion, or be rejected by both front ends with `F0449`.
+
+## Counterexamples and completeness
+
+An opaque function may take any value its contract permits. Before a
+check applying a recursive function reports a counterexample, evaluation
+of the real recursive definitions on the model's inputs must confirm the
+failure. A failure confirmed by evaluation is reported normally. A model
+refuted by evaluation makes the check Inconclusive (`F0450`): it fails
+only under the contracts of the named recursive functions, which may be
+too weak. Both front ends use this rule and diagnostic.
+
+```fren
+pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?):
+    (det report_counterexample?) {
+    ensure rule: report_counterexample? iff (not applies_recursive? or evaluation_confirms?)
+}
+```
+
+Checks are complete modulo recursive functions being opaque. A fact that
+follows from the body beyond one step, but not from the contract, need not
+be provable. Strengthen the function's contract to make such a fact
+available. Recursion itself never raises `undecidable`: its applications,
+ground facts and finite one-step equations add only uninterpreted
+functions to quantifier-free queries.
+
+#fren_check structural_recursion
+#fren_check recursive_match
+#fren_check recursive_facts
+#fren_check recursive_post_result
+#fren_check recursive_counterexample
