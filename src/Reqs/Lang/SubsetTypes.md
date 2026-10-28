@@ -178,6 +178,8 @@ invariant, including constraints checked at a call argument; failures use
 a name still uses `F0661`, identifying its declared type, rather than
 reintroducing a retired code. This does not add implicit narrowing from
 `Int` to `Nat`: such a statically mismatched value remains a type error.
+Retired code numbers remain documented as removed codes and are never
+reused; they do not require live diagnostic snapshots.
 
 ## Decidability, Lean and migration
 
