@@ -171,6 +171,14 @@ subset declaration identified. The obsolete pattern-type errors
 `F0369` and `F0370` are retired. An expression pattern binder remains valid
 where ordinary `is` permits it.
 
+The anonymous pattern-obligation diagnostics `F0622` and `F0623` are
+retired too. Each constraint introduced by a declared subset has a named
+invariant, including constraints checked at a call argument; failures use
+`F0661` and identify that invariant. An internal legacy obligation lacking
+a name still uses `F0661`, identifying its declared type, rather than
+reintroducing a retired code. This does not add implicit narrowing from
+`Int` to `Nat`: such a statically mismatched value remains a type error.
+
 ## Decidability, Lean and migration
 
 A subset constraint at the top of a type or in a record field or
