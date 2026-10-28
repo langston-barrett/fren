@@ -23,7 +23,10 @@ its arguments; see [Colour](#colour).
 reports the [evidence](Trace.md) for every procedure of the spec, and scans
 the tests for `fren-covers:` markers that no claim names; it does not run
 the checks. `fren fmt` [formats](Fmt.md) the files, and `fren fix`
-[fixes](Lint.md#fixing-lints) the lints that it can. `fren eval`
+[fixes](Lint.md#fixing-lints) the lints that it can and migrates the
+removed [global behaviour binders](Lang/Global.md#migration) to parameter
+blocks. Migration runs before lint selection and writes nothing if the
+rewritten spec has a static error. `fren eval`
 evaluates a procedure on one behaviour, and `fren quickcheck` tests the
 spec on random behaviours, both without the solver (see [Evaluation and
 testing](Eval.md)). `fren mutate` checks small changes to the spec, and

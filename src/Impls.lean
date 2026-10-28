@@ -30,6 +30,12 @@ import Reqs
 
 open Fren.Lang
 
+tested lang::global_checks: "test/ui/lang/global.fren", "test/ui/lang/global_preconditions.fren"
+tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
+tested lang::global_migration_shape: "test/cli/fix/migrate_global_types.fren", "test/cli/fix/migrate_global_empty.fren"
+tested lang::global_migration_name: "test/cli/fix/migrate_global.fren", "test/cli/fix/migrate_global_scopes.fren"
+tested lang::global_migration_meaning: "src/FrenTestMain.lean"
+
 -- The evidence for each of Fren's components, and the converse of the
 -- `tested` claims over the tests. Every requirement must be traced somehow:
 -- a component without evidence is a warning, which fails CI's

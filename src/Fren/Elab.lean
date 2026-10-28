@@ -6661,12 +6661,18 @@ def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) 
   let slice := fvs.extract pi.offset (pi.offset + pi.comp.vars.size)
   let behaviour := pi.comp.meaning slice
   let typed ← typedObligations pi.comp slice fvs
+  -- A call's own meaning is not a hypothesis of its precondition check.
+  -- Inline its local definitions into those obligations instead.
+  let mut defined := slice
+  for (name, value) in pi.comp.defs do
+    if let some k := pi.comp.vars.findIdx? (·.name == name) then
+      defined := defined.set! k (value.beta defined)
   return (·, mkAnd bindings (pi.comp.meaningDecl slice)) {
     name := pi.name, comp := pi.comp.path, ref := pi.ref, decl
     bindings := ← mkLambdaFVars fvs bindings
     behaviour := ← mkLambdaFVars fvs behaviour
     assumes := typed.map (fun (n, _, f) => (n, f))
-      ++ (← pi.comp.assumes.mapM fun a => return (a.name, ← mkLambdaFVars fvs (a.body.beta slice)))
+      ++ (← pi.comp.assumes.mapM fun a => return (a.name, ← mkLambdaFVars fvs (a.body.beta defined)))
     typed := typed.map fun (n, t, _) => (n, t) }
 
 /-- Whether the evidence `value`, written at `ref`, is testing

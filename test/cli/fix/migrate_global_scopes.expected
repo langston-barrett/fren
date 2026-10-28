@@ -1,0 +1,10 @@
+--- test/cli/fix/migrate_global_scopes.fren
++++ test/cli/fix/migrate_global_scopes.fren
+@@ -11 +11,5 @@
+-expect same: forall (a: p), a.y = a.x
++expect same(a_x: Int) {
++    assume a_domain: ((a_x + 1) + 1) > 0 and (let x: Int := 1 in x = 1)
++    call a := p(a_x)
++    expect same: a.y = a.x
++}
+exit=1

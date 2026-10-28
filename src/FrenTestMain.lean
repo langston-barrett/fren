@@ -528,6 +528,7 @@ def formatting : IO (Array String) := do
 /-- `fren fix` rewrites a Markdown spec in place, keeping its prose, and
 then has nothing left to fix. -/
 def fixing : IO (Array String) := do
+  -- fren-covers: lang::global_migration_meaning
   let mut failures := #[]
   IO.FS.createDirAll (".lake" / "fix-test")
   let file := ".lake/fix-test/spec.md"
@@ -544,6 +545,39 @@ def fixing : IO (Array String) := do
   let (out, code) ← runFren ["fix", "--check", file]
   if code != 0 || !out.isEmpty then
     failures := failures.push s!"`fren fix --check` reports a fixed file (exit {code}):\n{out}"
+  -- Behaviour-binder migration is transactional, preserves Markdown
+  -- prose, and leaves a spec that checks and is already fully fixed.
+  for fixture in #["migrate_global", "migrate_global_types", "migrate_global_empty", "migrate_global_scopes", "migrate_global_error"] do
+    let original ← IO.FS.readFile s!"test/cli/fix/{fixture}.fren"
+    let text := "# Migration\n\nProse stays byte for byte.\n\n" ++ block original
+    IO.FS.writeFile file text
+    let (out, code) ← runFren ["fix", "--fmt", file]
+    let written ← IO.FS.readFile file
+    if fixture == "migrate_global_error" then
+      if code != 2 || written != text then
+        failures := failures.push s!"failed global migration changed its source (exit {code}):\n{out}"
+    else
+      if code != 0 || written == text || !(written.startsWith "# Migration\n\nProse stays byte for byte.\n\n") then
+        failures := failures.push s!"global migration did not preserve its Markdown document (exit {code}):\n{out}"
+      let (out, code) ← runFren ["fix", "--check", file]
+      if code != 0 || !out.isEmpty then
+        failures := failures.push s!"global migration is not idempotent (exit {code}):\n{out}"
+      let (out, code) ← runFren ["check", file]
+      if code != 0 then
+        failures := failures.push s!"migrated global did not check (exit {code}):\n{out}"
+  let source := ".lake/fix-test/callee.fren"
+  let caller := ".lake/fix-test/caller.fren"
+  let text ← IO.FS.readFile "test/cli/fix/migrate_global_types.fren"
+  let pieces := text.splitOn "mod client"
+  let callee := pieces[0]!
+  IO.FS.writeFile source callee
+  IO.FS.writeFile caller ("mod client" ++ pieces[1]!)
+  let (out, code) ← runFren ["fix", "--fmt", source, caller]
+  if code != 0 || (← IO.FS.readFile source) != callee then
+    failures := failures.push s!"cross-file global migration changed its callee (exit {code}):\n{out}"
+  let (out, code) ← runFren ["check", source, caller]
+  if code != 0 then
+    failures := failures.push s!"cross-file global migration did not check (exit {code}):\n{out}"
   return failures
 
 /-! ## Libraries

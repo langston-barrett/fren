@@ -357,6 +357,10 @@ structure CComp where
   path : Name
   file : Nat
   span : Span
+  /-- Original declarations for the behaviour-binder migration. Keeping
+  source and syntax together also supports callees in another input file. -/
+  migrationSource : Array Char := #[]
+  migrationMembers : Array Member := #[]
   /-- A global expectation in the short form, `expect n: e`, whose path is
   its module and whose one constraint is named after it, rather than one
   with a block, which is checked as a procedure is. -/
@@ -5352,10 +5356,15 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
   let st ← get
   let typed := c.vars.filter (·.role == .input) |>.filterMap fun v =>
     (v.ptype.obligation st.shapeOf).map fun o => (Name.num v.name 0, v.ptype.text, rename w c.vars (consSmt st.dataOf? o (quote v.name.toString)))
+  -- Preconditions may read local definitions. They must be substituted
+  -- before becoming obligations: the call's own behaviour is deliberately
+  -- not a hypothesis of its call check.
+  let unfold (smt : String) := c.defs.foldr (fun (n, value) body =>
+    substQuoted (fun p => if p == n.toString then value else quote p) body) smt
   return {
     name := w, comp := c.path, span := pi.name.span, bindings := conj eqs
     behaviour := rename w c.vars c.meaning
-    assumes := typed.map (fun (n, _, f) => (n, f)) ++ (c.props.filter (·.kind == .assume) |>.map fun a => (a.name, rename w c.vars a.smt))
+    assumes := typed.map (fun (n, _, f) => (n, f)) ++ (c.props.filter (·.kind == .assume) |>.map fun a => (a.name, rename w c.vars (unfold a.smt)))
     typed := typed.map fun (n, t, _) => (n, t)
     bounded := c.vars.any fun v => v.role == .input && (v.ptype.obligation st.shapeOf).any (·.quantifies) }
 
@@ -5882,6 +5891,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts
   let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables
+                     migrationSource := (← get).src, migrationMembers := members
                      decidable := !(← get).outsideCore, relational, counts, tested, enumerated, enumSize := (← get).enumSize
                      natApps := (← get).natApps, guarded := (← get).guardedUsed, global }
   -- A global expectation is an item that nothing calls
