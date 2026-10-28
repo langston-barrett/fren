@@ -18,6 +18,7 @@ namespace FrenCli
 
 /-- The expressions directly within `e`, all of them. -/
 def Expr.children : Expr → Array Expr
+  | .block _ _ members => members.map (·.2)
   | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => #[c, d]
   | .ite _ c a b => #[c, a, b]
   | .not _ a | .neg _ a | .field _ a _ | .is _ a _ => #[a]
@@ -45,7 +46,10 @@ partial def Expr.names (n : String) (e : Expr) : Bool :=
 
 /-- What `Fren.Core.splitConjuncts` sees of a node of a guard. The parser
 drops parentheses, so a node is as written. -/
-def guardNode : Expr → Fren.Core.GuardNode Expr
+instance : Inhabited (Fren.Core.GuardNode Expr) := ⟨.other⟩
+
+partial def guardNode : Expr → Fren.Core.GuardNode Expr
+  | .block sp op members => guardNode (Expr.lowerBlock sp op members)
   | .bin _ "and" a b => .conj a b
   | .bin _ op a b => .compare #[a, b] #[op]
   | .chain _ es ops => .compare es (ops.map (·.1))

@@ -841,10 +841,12 @@ def checkCover (c : Comp F) (g : Name × F) (examples : Option Nat := some 1) : 
 
 /-- The hypotheses of an index's place, for `definedness`. -/
 def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
+  let own (name : Name) := name == site.prop || (site.excludeSelf &&
+    (name.toString (escape := false)).startsWith (site.prop.toString (escape := false) ++ "."))
   match site.place with
-  | .assume => c.assumes.filter (·.1 != site.prop)
+  | .assume => c.assumes.filter (!own ·.1)
   | .binding k => c.hyps b k
-  | .prop => c.hyps b ++ (if site.excludeSelf then c.reqs.filter (·.1 != site.prop) else c.reqs)
+  | .prop => c.hyps b ++ (if site.excludeSelf then c.reqs.filter (!own ·.1) else c.reqs)
   | .body => c.assumes
 
 /-- `definedness`: the index is in range wherever it is evaluated, given the
@@ -1311,14 +1313,14 @@ structure Message where
 def Message.text (m : Message) : String := m.msg.text
 
 def showNames (ns : Array Name) : String :=
-  ", ".intercalate (ns.toList.map fun n => s!"`{n}`")
+  ", ".intercalate (ns.toList.map fun n => s!"`{n.toString (escape := false)}`")
 
 def showAssignment (a : Assignment) : String :=
   if a.isEmpty then "(any values)" else ", ".intercalate (a.toList.map fun (n, v) => s!"{n} = {v}")
 
 /-- `` `a`, `b` and `c` ``: names in prose. -/
 def showNamesAnd (ns : Array Name) : String :=
-  match ns.toList.map (s!"`{·}`") |>.reverse with
+  match ns.toList.map (fun n => s!"`{n.toString (escape := false)}`") |>.reverse with
   | [] => ""
   | [n] => n
   | last :: rest => s!"{", ".intercalate rest.reverse} and {last}"
@@ -1466,9 +1468,9 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
         | _ => s!"some row of a table in {subject} holds"
       | .disjointness, _ =>
         s!"{rowsText r.rows? (r.goal? matches some (.disjointness .tableMatch ..))} of a table in {subject} are disjoint"
-      | .precondition, some (f, p) => s!"the precondition `{p}` of `{showComp f}` holds at an application in {subject}"
+      | .precondition, some (f, p) => s!"the precondition `{p.toString (escape := false)}` of `{showComp f}` holds at an application in {subject}"
       | .precondition, none => s!"a precondition holds at an application in {subject}"
-      | .postcondition, some (f, p) => s!"the postcondition `{p}` of `{showComp f}` holds"
+      | .postcondition, some (f, p) => s!"the postcondition `{p.toString (escape := false)}` of `{showComp f}` holds"
       | .postcondition, none => s!"{subject} holds"
       | .reachability, _ => s!"{caseText r.goal?} of {splitText r.goal?} in {subject} can be taken"
     let advice := if let some n := r.bounded? then
@@ -1572,14 +1574,14 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
           "help: make the conditions exclusive, as in `a => x, not a and b => y`"]]
     else
     if let (.precondition, some (f, p)) := (r.kind, r.target?) then
-      #[one "F0629" s!"the precondition `{p}` of `{showComp f}` may not hold at this application in {subject}"
+      #[one "F0629" s!"the precondition `{p.toString (escape := false)}` of `{showComp f}` may not hold at this application in {subject}"
         (some s!"may violate `{showComp f}::{p}`")
         #[s!"counterexample: {showAssignment vals}",
           "note: where a precondition fails, the application's value is unknown, or not what the function is for",
           "help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs"]]
     else
     if let (.postcondition, some (f, p)) := (r.kind, r.target?) then
-      #[one "F0630" s!"the postcondition `{p}` of `{showComp f}` does not hold" (some "does not follow from the body")
+      #[one "F0630" s!"the postcondition `{p.toString (escape := false)}` of `{showComp f}` does not hold" (some "does not follow from the body")
         #[s!"counterexample: {showAssignment vals}",
           "help: correct the body or the postcondition, or add a precondition that rules this case out"]]
     else

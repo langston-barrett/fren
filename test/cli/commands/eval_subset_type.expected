@@ -1,0 +1,7 @@
+x = 3
+y = 3
+type x: false
+type y: false
+ensure same: true
+status: inadmissible
+exit=1

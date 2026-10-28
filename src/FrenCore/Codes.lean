@@ -506,24 +506,7 @@ enum Mode { Off, Heat }
 proc c(x: Mode): (ok?) { ensure r: ok? iff (exists (m: Mode), m = x) }
 ```
 "# },
-  { code := "F0137", explanation := r#"A pattern type has a second pattern.
 
-Erroneous code example:
-
-```fren
-proc c(n: Int is 0.. is ..=9) {}
-```
-
-A pattern type `T is P` has the values of `T` that match `P`, and its base
-type `T` is never itself a pattern type, so `is` follows a type at most
-once. Write one pattern that matches what both do:
-
-```fren
-proc c(n: Int is 0..=9) {}
-```
-
-In Lean, Lean's own parser reports this, as a syntax error.
-"# },
   { code := "F0142", explanation := r#"A removed code: `req` where a member is expected.
 
 `F0142` was the error for `req` where a member of a procedure was
@@ -2146,8 +2129,8 @@ A `Nat` brings the constraint that it is at least 0. Within a set,
 relation or sequence, or as a payload of a recursive enumeration, that
 constraint would hold of every element, and for now Fren does not carry it
 there. Use an `Int`, and say where it is used that it is at least 0, or
-use the pattern type `Int is 0..`, which may be an element type outside
-the decidable core:
+declare a subset type `type Nonnegative = n: Int where invariant: n >= 0`,
+which may be an element type outside the decidable core:
 
 ```fren
 struct Stock { counts: Set<Int> }
@@ -2330,42 +2313,8 @@ struct Ms(Int)
 proc c(): (t: Ms) { ensure r: t = Ms(5) }
 ```
 "# },
-  { code := "F0369", explanation := r#"A pattern on a type alias that names a pattern type.
 
-Erroneous code example:
 
-```fren
-type Byte := Int is 0..=255
-proc c(n: Byte is ..=9) {}
-```
-
-Pattern types are not nested: the base type of `T is P` is never itself a
-pattern type, and an alias of one is that pattern type. Write one pattern
-type, whose pattern matches what both patterns do:
-
-```fren
-type Byte := Int is 0..=255
-proc c(n: Int is 0..=9) {}
-```
-"# },
-  { code := "F0370", explanation := r#"A pattern type's pattern binds a name.
-
-Erroneous code example:
-
-```fren
-type Any := Int is n
-```
-
-A pattern type's pattern binds no names: a name of one segment that is not
-a variant, `true` or `false` would match every value and name it, which
-means nothing in a type. Write `_` to match every value, or name a variant,
-or a constant as a range's bound:
-
-```fren
-const MAX: Int := 9
-type Digit := Int is 0..=MAX
-```
-"# },
   { code := "F0371", explanation := r#"A field of an ordered struct has a type that is not ordered.
 
 Erroneous code example:
@@ -2377,13 +2326,44 @@ ordered struct Entry { key: Int, tags: Set<Int> }
 An ordered struct orders its values by their fields, in the order
 declared: first by the first field, then, where those are equal, by the
 second, and so on. So each field's type must be ordered: an `Int`, a `Nat`,
-a `String`, a pattern type or alias of one of these, or an enum or struct
+a `String`, a subset type or alias of one of these, or an enum or struct
 declared `ordered`. A newtype's one field is its underlying type, which
 must be ordered too. Declare the field's type `ordered`, if it can be,
 drop the field, or declare the struct without `ordered`:
 
 ```fren
 ordered struct Entry { key: Int, size: Nat }
+```
+"# },
+  { code := "F0372", explanation := r#"A Boolean block or subset declaration repeats a sibling label.
+
+Erroneous code example:
+
+```fren
+type Byte = n: Int where bound: n >= 0 and bound: n <= 255
+```
+
+Sibling labels identify distinct invariant obligations and diagnostic members.
+Give each sibling a different name; names may repeat under different parents.
+
+```fren
+type Byte = n: Int where low: n >= 0 and high: n <= 255
+```
+"# },
+  { code := "F0373", explanation := r#"A subset invariant refers outside its closed declaration scope.
+
+Erroneous code example:
+
+```fren
+type Small = n: Int where invariant: n <= limit
+```
+
+An invariant may use its binder, constants and declared functions. Procedure
+variables and undeclared names are unavailable at a type declaration.
+
+```fren
+const LIMIT: Int := 5
+type Small = n: Int where invariant: n <= LIMIT
 ```
 "# },
   { code := "F0385", explanation := r#"A type written with the wrong number of type arguments.
@@ -2465,13 +2445,14 @@ Erroneous code example:
 ```fren
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-proc c(xs: List<Int is 0..=9>) {}
+type SubsetErrorCodes8 = subset_value: Int  where invariant: subset_value is 0..=9
+proc c(xs: List<SubsetErrorCodes8>) {}
 ```
 
-A pattern type's constraint, or a constraint that a value of a record or
+A subset type's constraint, or a constraint that a value of a record or
 enumeration brings, would hold of every payload of a recursive
 enumeration, at every depth, so for now a type argument of one brings none.
-Give the argument no pattern, and say of the payloads that the spec reads
+Use an unrestricted type argument, and say of the payloads that the spec reads
 what it needs:
 
 ```fren
@@ -2845,7 +2826,7 @@ a closure's parameter's. Return the value instead:
 fn add(n: Int, m: Int): Int := n + m
 ```
 "# },
-  { code := "F0435", explanation := r#"A function type within another type, or a `Nat` or a pattern type within a function type.
+  { code := "F0435", explanation := r#"A function type within another type, or a `Nat` or a subset type within a function type.
 
 Erroneous code example:
 
@@ -3896,62 +3877,38 @@ proc c(x: Int): (big?) {
 }
 ```
 "# },
-  { code := "F0622", explanation := r#"A value given where a pattern type is declared may not match its pattern.
+  { code := "F0622", explanation := r#"A value given for a built-in constrained type may violate its constraint.
 
 Erroneous code example:
 
 ```fren
-type Byte := Int is 0..=255
-
-proc c(x: Int): (det b: Byte) {
-    out b := x
-}
+proc c(x: Int): (b: Nat) { out b := x }
 ```
 
-Where a pattern type `T is P` is declared, as the type of a defined variable,
-an argument, a field, a payload, a `let` definition, a function's result or
-a constant, a value of `T` is accepted with the obligation that it matches
-`P`, which the solver checks where the value is written, under the same
-hypotheses as an index's definedness. The counterexample is a behaviour in
-which the value does not match. Guard the value so that it matches, or add
-an assumption that ensures it:
+An Int supplied for Nat must be nonnegative. Fren checks this where the
+value is written, under the same hypotheses as an index's definedness.
+The counterexample is a behaviour where the value is negative. Named
+subset invariants have their own diagnostic, F0661.
 
 ```fren
-type Byte := Int is 0..=255
-
-proc c(x: Int): (det b: Byte) {
-    out b := if 0 <= x <= 255 then x else 0
-}
+proc c(x: Int): (b: Nat) { out b := if x >= 0 then x else 0 }
 ```
 "# },
-  { code := "F0623", explanation := r#"A call gives a parameter of a pattern type a value that may not match its pattern.
+  { code := "F0623", explanation := r#"A call argument may violate its parameter's built-in type constraint.
 
 Erroneous code example:
 
 ```fren
-type Byte := Int is 0..=255
-
-proc sub(b: Byte): (y: Int) { ensure r: y = b }
-
-proc c(x: Int) {
-    call w := sub(x)
-}
+proc sub(b: Nat): (y: Int) { ensure r: y = b }
+proc c(x: Int) { call w := sub(x) }
 ```
 
-A parameter of a pattern type is an assumption of its procedure, so a
-call's argument for it is checked, as the procedure's other assumptions
-are. The counterexample is a behaviour in which the argument does not
-match. Give the parameter a value of its type, or add an assumption that
-guarantees it:
+A Nat parameter brings a nonnegative assumption. Its caller must establish
+that constraint before the call. Named subset invariants instead use F0661.
 
 ```fren
-type Byte := Int is 0..=255
-
-proc sub(b: Byte): (y: Int) { ensure r: y = b }
-
-proc c(x: Byte) {
-    call w := sub(x)
-}
+proc sub(b: Nat): (y: Int) { ensure r: y = b }
+proc c(x: Nat) { call w := sub(x) }
 ```
 "# },
   { code := "F0639", args := some ["quickcheck"], explanation := r#"A quantifier that testing cannot evaluate.
@@ -3986,8 +3943,11 @@ proc c(s: Set<Int>): (pos?) {
 Erroneous code example:
 
 ```fren
+type SubsetErrorCodes5 = subset_value: Int  where invariant: subset_value is 0..=99
+type SubsetErrorCodes6 = subset_value: Int  where invariant: subset_value is 0..=99
+type SubsetErrorCodes7 = subset_value: Int  where invariant: subset_value is 0..=99
 set_option fren.evidence "enumerated" in
-proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+proc c(a: SubsetErrorCodes5, b: SubsetErrorCodes6, d: SubsetErrorCodes7): (det sum: Int) {
   out sum := a + b + d
   expect e: sum >= 0
 }
@@ -4002,7 +3962,10 @@ to enumeration is run. Narrow the types, lower `fren.enumeration.size`, or
 have the solver check it:
 
 ```fren
-proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+type SubsetErrorCodes2 = subset_value: Int  where invariant: subset_value is 0..=99
+type SubsetErrorCodes3 = subset_value: Int  where invariant: subset_value is 0..=99
+type SubsetErrorCodes4 = subset_value: Int  where invariant: subset_value is 0..=99
+proc c(a: SubsetErrorCodes2, b: SubsetErrorCodes3, d: SubsetErrorCodes4): (det sum: Int) {
   out sum := a + b + d
   expect e: sum >= 0
 }
@@ -4051,8 +4014,9 @@ and 3: weaker than a proof, so it is reported, as information. With
 finitely many values decides it:
 
 ```fren
+type SubsetErrorCodes1 = subset_value: Int  where invariant: subset_value is -3..=3
 set_option fren.evidence "enumerated" in
-proc c(x: Int is -3..=3): (det y: Int) { out y := x + 1 expect e: y > x }
+proc c(x: SubsetErrorCodes1): (det y: Int) { out y := x + 1 expect e: y > x }
 ```
 "# },
   { code := "F0653", explanation := r#"A generic function's postconditions cannot all hold at some type.
@@ -4144,6 +4108,56 @@ proc c(q: Seq<Int>) {
     assume zeros: forall (x: Int), when x in q, x = 0
     expect e: forall (x: Int), when x in q, x != 1
 }
+```
+"# },
+  { code := "F0660", explanation := r#"A declared subset type has no value for some allowed interpretation.
+
+Erroneous code example:
+
+```fren
+type Empty = n: Int where positive: n > 0 and negative: n < 0
+```
+
+Every allowed interpretation of earlier declarations must give the type a
+value satisfying every invariant. Invariants do not constrain an earlier
+uninterpreted function's interpretation. Weaken incompatible invariants.
+
+```fren
+type Positive = n: Int where invariant: n > 0
+```
+"# },
+  { code := "F0661", explanation := r#"A value given for a subset type violates a named invariant.
+
+Erroneous code example:
+
+```fren
+type Byte = n: Int where low: n >= 0 and high: n <= 255
+proc bad(): (r: Byte) { out r := 256 }
+```
+
+Subset types have the representation of their base type. Every assignment,
+argument, field, payload and collection element must meet each invariant.
+The diagnostic names the particular invariant that failed.
+
+```fren
+type Byte = n: Int where low: n >= 0 and high: n <= 255
+proc good(): (r: Byte) { out r := 255 }
+```
+"# },
+  { code := "F0662", explanation := r#"A subset invariant may evaluate an undefined expression or violate a function precondition.
+
+Erroneous code example:
+
+```fren
+type FirstPositive = q: Seq<Int> where positive: q[0] > 0
+```
+
+A declaration validates each invariant under the base type's facts and only
+earlier invariants. A later invariant cannot justify an earlier index.
+Put the necessary guard first or guard the expression itself.
+
+```fren
+type FirstPositive = q: Seq<Int> where nonempty: q.len > 0 and positive: q[0] > 0
 ```
 "# },
   { code := "F0701", explanation := r#"An import that nothing uses (the lint `unused_imports`, a warning by default).

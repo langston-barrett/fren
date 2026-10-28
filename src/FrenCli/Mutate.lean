@@ -204,6 +204,7 @@ def arithmeticSwap? : String → Option String
 
 /-- The operands of `e`. -/
 def exprChildren : Expr → Array Expr
+  | .block _ _ members => members.map (·.2)
   | .when _ _ c b | .bin _ _ c b | .pair _ c b | .index _ c b => #[c, b]
   | .ite _ c a b => #[c, a, b]
   | .not _ e | .neg _ e | .field _ e _ => #[e]
@@ -220,6 +221,7 @@ def exprChildren : Expr → Array Expr
 partial def allExprs (items : Array Item) : Array Expr :=
   let rec sub (e : Expr) : Array Expr := #[e] ++ (exprChildren e).flatMap sub
   let rec ofItem : Item → Array Expr
+    | .subsetType _ _ _ _ invariants => invariants.map (·.2)
     | .const _ _ _ v | .global _ _ v | .function _ _ _ _ _ (some v) _ _ _ => #[v]
     | .comp _ _ _ members .. | .globalBlock _ _ members .. => members.flatMap fun
       | .prop _ _ e | .var _ _ _ _ _ (some e) | .define _ e => #[e]
@@ -565,6 +567,7 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
 where
   children : Expr → Array (Array Edit)
     | .when _ _ c b => #[edits s c, edits s b]
+    | .block _ _ members => members.map fun (_, value) => edits s value
     | .ite _ c a b => #[edits s c, edits s a, edits s b]
     | .bin sp op l r =>
       -- `l` is unparenthesized when its span starts the `and`'s.

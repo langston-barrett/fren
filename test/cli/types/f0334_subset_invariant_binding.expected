@@ -1,0 +1,18 @@
+error[F0334]: a pattern test cannot bind `n` here
+ --> test/cli/types/f0334_subset_invariant_binding.fren:2:49
+  |
+2 | type Any = value: Int where invariant: value is n
+  |                                                 ^ binds a name
+  |
+  = note: a pattern test binds names only for what follows it where it matches: the later operands of its `and`, the body of `when`, or the `then` branch of `if`
+  = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(n), ...`, or write a `match`
+help: ignore the value
+  |
+2 - type Any = value: Int where invariant: value is n
+2 + type Any = value: Int where invariant: value is _
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0334`.
+exit=2

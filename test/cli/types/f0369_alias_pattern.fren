@@ -1,3 +1,0 @@
--- A pattern on an alias of a pattern type (F0369).
-type Byte := Int is 0..=255
-proc c(n: Byte is ..=9) {}

@@ -1,0 +1,1 @@
+type Byte = n: Int where bound: n >= 0 and bound: n <= 255

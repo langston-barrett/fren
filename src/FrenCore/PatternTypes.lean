@@ -21,6 +21,21 @@ namespace Fren.Core
 
 open Lean (Name)
 
+/-- A named subset invariant, represented by its ordinary predicate.
+The logical name is retained independently of the implementation symbol. -/
+structure Invariant where
+  name : Name
+  predicate : Name
+  deriving Inhabited, BEq
+
+/-- Private predicate/check names shared by both front ends. Source offsets
+keep distinct shadowing declarations separate. -/
+def subsetPredicateName (typeName label : String) (position : Nat) : String :=
+  s!"subset_{typeName.toLower}_{label.toLower}_{position}?"
+
+def subsetCheckName (typeName part : String) (position : Nat) : String :=
+  s!"subset_{typeName.toLower}_{part}_{position}"
+
 /-- A type as it is declared: `ty`, the type that the type checker sees,
 without patterns; `pat?`, the pattern of the type itself, if it is a
 pattern type; and `elems`, the same for each of its element types, one
@@ -29,6 +44,7 @@ instance of a generic type (`Reqs/Lang/Generics`), and none otherwise. -/
 structure PTy where
   ty : Ty
   pat? : Option Pat := none
+  invariants : Array Invariant := #[]
   elems : Array PTy := #[]
   /-- The type as written, for messages (`typeText`). -/
   text : String := ""
@@ -91,7 +107,7 @@ def PTy.firstUnordered? (orderedDecl : Name → Bool) : List PTy → Option Nat
 
 /-- Whether `t` has a pattern, at the top or in an element type
 (`lang::pattern_widening`). -/
-partial def PTy.patterned (t : PTy) : Bool := t.pat?.isSome || t.elems.any (·.patterned)
+partial def PTy.patterned (t : PTy) : Bool := t.pat?.isSome || !t.invariants.isEmpty || t.elems.any (·.patterned)
 
 /-- What a front end knows of a record's fields, of an enumeration's
 variants' payloads, or of a newtype's field, for their constraints. -/
@@ -114,6 +130,8 @@ def DataShape.inst (d : DataShape) (args : Array PTy) : DataShape :=
 /-- What a value of a type must satisfy beyond its type, as a formula about
 the value, built from parts (`Reqs/Lang/Types#meaning`). -/
 inductive Cons where
+  /-- A declared subset invariant, as an application of its predicate. -/
+  | predicate (invariant : Invariant)
   /-- The value, of type `base`, matches the pattern. -/
   | pat (base : Ty) (p : Pat)
   /-- The value, a `Nat` within a record or a payload, which is an `Int`
@@ -141,7 +159,7 @@ inductive Cons where
 /-- Whether the constraint quantifies over the elements of a collection
 (`lang::pattern_place`). -/
 partial def Cons.quantifies : Cons → Bool
-  | .pat .. | .atLeast0 => false
+  | .pat .. | .predicate .. | .atLeast0 => false
   | .fields _ _ cs => cs.any (·.2.quantifies)
   | .newtype _ c => c.quantifies
   | .payloads _ _ cs => cs.any (·.2.2.quantifies)
@@ -174,7 +192,7 @@ partial def PTy.cons (shapes : Name → Option DataShape) (t : PTy) (nat : Bool 
       let cb := (t.elems[1]?.getD (PTy.plain b)).cons shapes true
       if ca.isNone && cb.isNone then #[] else #[.pairs a b ca cb]
     | _ => #[]
-  Cons.allOf? (own ++ (t.pat?.map (.pat t.ty)).toArray)
+  Cons.allOf? (own ++ (if t.invariants.isEmpty then (t.pat?.map (.pat t.ty)).toArray else t.invariants.map Cons.predicate))
 
 /-- The constraints of the fields or payloads of the record, newtype or
 enumeration `p`, which is not recursive, with the declared types `args`
@@ -224,10 +242,12 @@ no patterns, so they have the obligations of their types with the
 instance's type arguments (`instanceObligation`). `shapes` gives what is
 known of each record and enumeration. -/
 partial def PTy.obligation (shapes : Name → Option DataShape) (t : PTy) : Option Cons :=
+  let own := if t.invariants.isEmpty then (t.pat?.map (.pat t.ty)).toArray else t.invariants.map Cons.predicate
   match t.ty with
   | .enum p (_ :: _) | .record p (_ :: _) =>
-    Cons.allOf? ((instanceObligation shapes p t.parts).toArray ++ (t.pat?.map (.pat t.ty)).toArray)
-  | _ => obligationCons t.ty t.pat? (t.elems[0]?.bind (·.obligation shapes)) (t.elems[1]?.bind (·.obligation shapes))
+    Cons.allOf? ((instanceObligation shapes p t.parts).toArray ++ own)
+  | _ => Cons.allOf? ((obligationCons t.ty none (t.elems[0]?.bind (·.obligation shapes))
+      (t.elems[1]?.bind (·.obligation shapes))).toArray ++ own)
 
 /-- The obligation of a value of the instance of the generic record or
 enumeration `p` with the declared type arguments `args`
@@ -246,6 +266,20 @@ partial def instanceObligation (shapes : Name → Option DataShape) (p : Name) (
   let tys := args.toList.map (·.ty)
   if d.isRecord then return .fields p tys (cs.map fun (_, k, c) => (k, c)) else return .payloads p tys cs
 end
+
+/-- Separate each named invariant while retaining the projections and
+collection guards needed to state it at the value's actual site. -/
+partial def Cons.namedParts : Cons → Array (Name × Cons)
+  | .predicate i => #[(i.name, .predicate i)]
+  | .all cs => cs.flatMap Cons.namedParts
+  | .fields p args cs => cs.flatMap fun (k, c) => c.namedParts.map fun (n, part) => (n, .fields p args #[(k, part)])
+  | .newtype p c => c.namedParts.map fun (n, part) => (n, .newtype p part)
+  | .payloads p args cs => cs.flatMap fun (v, k, c) => c.namedParts.map fun (n, part) => (n, .payloads p args #[(v, k, part)])
+  | .elems seq e c => c.namedParts.map fun (n, part) => (n, .elems seq e part)
+  | .pairs a b ca cb =>
+    (ca.toArray.flatMap fun c => c.namedParts.map fun (n, part) => (n, .pairs a b (some part) none)) ++
+    (cb.toArray.flatMap fun c => c.namedParts.map fun (n, part) => (n, .pairs a b none (some part)))
+  | c => #[(.anonymous, c)]
 
 /-- The enumeration or record that `t` is an instance of, if it is one. -/
 def Ty.dataPath? : Ty → Option Name
@@ -346,14 +380,14 @@ element (`lang::pattern_place`). -/
 def undecidableElementsMsg : Msg :=
   { code? := some "F0714", headline := "this is outside the decidable core: the constraint of an element type holds of every element, which quantifies over them"
     label? := some "outside the decidable core"
-    notes := #["help: give the element type no pattern, and say of the elements that the spec reads what it needs"] }
+    notes := #["help: use an unrestricted element type, and say of the elements that the spec reads what it needs"] }
 
 /-- A pattern type as a payload of a recursive enumeration, whose
 constraint holds of every payload, at every depth (`lang::pattern_place`). -/
 def undecidableRecursivePayloadMsg : Msg :=
   { code? := some "F0714", headline := "this is outside the decidable core: a recursive enumeration's payload's constraint holds of every payload, at every depth"
     label? := some "outside the decidable core"
-    notes := #["help: give the payload no pattern, and say of the payloads that the spec reads what it needs"] }
+    notes := #["help: use an unrestricted payload type, and say of the payloads that the spec reads what it needs"] }
 
 /-- A type argument `arg` of the recursive generic enumeration `ty` whose
 values bring a constraint, which would hold of every payload, at every
@@ -362,31 +396,7 @@ def recursiveArgumentMsg (arg ty : String) : Msg :=
   { code? := some "F0389", headline := s!"`{arg}` cannot be a type argument of the recursive enumeration `{ty}`"
     label? := some "its values bring a constraint"
     notes := #["note: for now, a type argument of a recursive enumeration brings no constraint, which would hold of every payload, at every depth",
-      "help: give the argument no pattern, and say of the payloads that the spec reads what it needs"] }
-
-/-- A pattern on the type alias `alias`, which names a pattern type
-(`Reqs/Lang/Types#pattern-types`). -/
-def nestedAliasMsg (alias : String) : Msg :=
-  { code? := some "F0369", headline := s!"`{alias}` is a pattern type, so it cannot have a pattern of its own"
-    label? := some "already a pattern type"
-    notes := #["note: pattern types are not nested: the base type of `T is P` is never itself a pattern type",
-      "help: write one pattern type, whose pattern matches what both patterns do"] }
-
-/-- A second `is` after a pattern type, which the grammar excludes. -/
-def nestedPatternMsg : Msg :=
-  { code? := some "F0137", headline := "a pattern type cannot have a second pattern"
-    label? := some "a second `is`"
-    notes := #["note: pattern types are not nested: the base type of `T is P` is never itself a pattern type",
-      "help: write one pattern, which matches what both patterns do"] }
-
-/-- A binder `x` in a pattern type's pattern, which binds no names
-(`Reqs/Lang/Types#pattern-types`). -/
-def patternTypeBinderMsg (x : Name) : Msg :=
-  let x := binderName x
-  { code? := some "F0370", headline := s!"a pattern type's pattern cannot bind `{x}`"
-    label? := some "binds a name"
-    notes := #["note: a pattern type's pattern binds no names, and a name here would match every value",
-      "help: write `_` to match every value, or a variant's or a constant's path"] }
+      "help: use an unrestricted type argument, and say of the payloads that the spec reads what it needs"] }
 
 /-- The headline of a failed obligation: a value in `subject` that may not
 be a value of the declared type `ty`. -/
@@ -396,8 +406,8 @@ def obligationHeadline (subject ty : String) : String := s!"a value in {subject}
 def obligationMsg (subject ty cex : String) (priv : Array String) : Msg :=
   { code? := some "F0622", headline := obligationHeadline subject ty, label? := some s!"may not have the type `{ty}`"
     notes := #[s!"counterexample: {cex}"] ++ priv ++
-      #["note: a value given where a pattern type is declared must match its pattern",
-        "help: guard the value with a condition that makes it match, or add an assumption that ensures it"] }
+      #["note: a value given for a constrained type must satisfy its constraint",
+        "help: guard the value with a condition that satisfies the constraint, or add an assumption that ensures it"] }
 
 /-- The message of a call's argument for the parameter `x` of `sub`, whose
 type `ty` its value may not have, with the counterexample `cex`. -/

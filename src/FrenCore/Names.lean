@@ -152,7 +152,7 @@ which no path can write: `Option`, `Option::Some` (`Reqs/Lang/Prelude`). -/
 def showPath (n : Name) : String :=
   if n.isAnonymous then "the root module"
   else if n == preludeModule then "the prelude"
-  else "::".intercalate ((n.components.filter (· != preludeModule)).map (·.toString))
+  else "::".intercalate ((n.components.filter (· != preludeModule)).map (·.toString (escape := false)))
 
 /-- `module `a::b``, the prelude, or `the root module`. -/
 def showModule (n : Name) : String :=

@@ -58,4 +58,24 @@ private def ensure (holds : Bool) (reason : String) : IO Unit :=
   ensure ((checkRealizable (backend emptyBase) positive).verdict == Verdict.fail)
     "the static satisfiability query must include every base-type fact"
 
+#eval do
+  let fact : Formula := fun _ value => value
+  let base := { declaration #[] with
+    inhabitation := false
+    assumes := #[(Name.mkSimple "claim.predicate@1.invariant", fact)] }
+  let site : IndexSite Formula := {
+    prop := `claim
+    k := 0
+    place := .assume
+    goal := fact
+    excludeSelf := true }
+  ensure ((checkDefinedness backend base site).verdict == Verdict.fail)
+    "a grouping owner's expanded assumptions cannot prove its own argument obligation"
+  let guaranteed := { base with assumes := #[], reqs := base.assumes }
+  ensure ((checkDefinedness backend guaranteed { site with place := .prop }).verdict == Verdict.fail)
+    "a grouping owner's expanded guarantees cannot prove its own argument obligation"
+  let sibling := { base with assumes := base.assumes.push (`independent, fact) }
+  ensure ((checkDefinedness backend sibling site).verdict == Verdict.pass)
+    "an independent assumption remains available to prove membership"
+
 end FrenTest.SubsetInhabitation

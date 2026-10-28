@@ -1,6 +1,6 @@
--- A pattern type's base is never a pattern type, so a second `is` does
--- not parse.
-proc c(n: Int is 0.. is ..=9) {}
---~^[cli] error: a pattern type cannot have a second pattern
+-- A declared subset alias cannot receive an inline pattern modifier.
+type Byte = n: Int where invariant: n is 0..=255
+proc c(n: Byte is ..=9) {}
+--~^[cli] error: expected `)`
 --~^^[hosted] error: unexpected token 'is'
 --@ exit: 2

@@ -1,0 +1,261 @@
+error[F0603]: expectation `members::none` does not hold
+ --> test/cli/results/boolean_block_members.fren:2:20
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: false members: `none.any?@1.first`, `none.any?@1.second`
+ --> test/cli/results/boolean_block_members.fren:2:20
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `none.any?@1.first` is false
+ --> test/cli/results/boolean_block_members.fren:2:25
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                         ^^^^^
+  |
+  = member: x?
+
+note: `none.any?@1.second` is false
+ --> test/cli/results/boolean_block_members.fren:2:36
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                                    ^^^^^^
+  |
+  = member: y?
+
+error[F0603]: expectation `members::held` does not hold
+ --> test/cli/results/boolean_block_members.fren:2:20
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: true members: `held.any?@1.first`
+ --> test/cli/results/boolean_block_members.fren:2:20
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `held.any?@1.first` is true
+ --> test/cli/results/boolean_block_members.fren:2:25
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                         ^^^^^
+  |
+  = member: x?
+
+note: not evaluated members: `held.any?@1.second`
+ --> test/cli/results/boolean_block_members.fren:2:20
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `held.any?@1.second` is not evaluated
+ --> test/cli/results/boolean_block_members.fren:2:36
+  |
+2 | fn any?(x?, y?) := or { first: x?, second: y? }
+  |                                    ^^^^^^
+  |
+  = member: y?
+
+error[F0603]: expectation `members::mismatch` does not hold
+ --> test/cli/results/boolean_block_members.fren:3:21
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: true members: `mismatch.same?@1.first`
+ --> test/cli/results/boolean_block_members.fren:3:21
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `mismatch.same?@1.first` is true
+ --> test/cli/results/boolean_block_members.fren:3:27
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                           ^^^^^
+  |
+  = member: x?
+
+note: false members: `mismatch.same?@1.second`
+ --> test/cli/results/boolean_block_members.fren:3:21
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `mismatch.same?@1.second` is false
+ --> test/cli/results/boolean_block_members.fren:3:38
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                                      ^^^^^^
+  |
+  = member: y?
+
+error[F0603]: expectation `members::agreed` does not hold
+ --> test/cli/results/boolean_block_members.fren:3:21
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: false members: `agreed.same?@1.first`, `agreed.same?@1.second`
+ --> test/cli/results/boolean_block_members.fren:3:21
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `agreed.same?@1.first` is false
+ --> test/cli/results/boolean_block_members.fren:3:27
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                           ^^^^^
+  |
+  = member: x?
+
+note: `agreed.same?@1.second` is false
+ --> test/cli/results/boolean_block_members.fren:3:38
+  |
+3 | fn same?(x?, y?) := iff { first: x?, second: y? }
+  |                                      ^^^^^^
+  |
+  = member: y?
+
+error[F0603]: expectation `members::second_true` does not hold
+ --> test/cli/results/boolean_block_members.fren:4:27
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: true members: `second_true.unique?@1.first`, `second_true.unique?@1.second`
+ --> test/cli/results/boolean_block_members.fren:4:27
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `second_true.unique?@1.first` is true
+ --> test/cli/results/boolean_block_members.fren:4:33
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                                 ^^^^^
+  |
+  = member: x?
+
+note: `second_true.unique?@1.second` is true
+ --> test/cli/results/boolean_block_members.fren:4:44
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                                            ^^^^^^
+  |
+  = member: y?
+
+note: not evaluated members: `second_true.unique?@1.third`
+ --> test/cli/results/boolean_block_members.fren:4:27
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `second_true.unique?@1.third` is not evaluated
+ --> test/cli/results/boolean_block_members.fren:4:56
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                                                        ^^^^^
+  |
+  = member: z?
+
+error[F0603]: expectation `members::single_true` does not hold
+ --> test/cli/results/boolean_block_members.fren:4:27
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: true members: `single_true.unique?@1.second`
+ --> test/cli/results/boolean_block_members.fren:4:27
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `single_true.unique?@1.second` is true
+ --> test/cli/results/boolean_block_members.fren:4:44
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                                            ^^^^^^
+  |
+  = member: y?
+
+note: false members: `single_true.unique?@1.first`, `single_true.unique?@1.third`
+ --> test/cli/results/boolean_block_members.fren:4:27
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `single_true.unique?@1.first` is false
+ --> test/cli/results/boolean_block_members.fren:4:33
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                                 ^^^^^
+  |
+  = member: x?
+
+note: `single_true.unique?@1.third` is false
+ --> test/cli/results/boolean_block_members.fren:4:56
+  |
+4 | fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+  |                                                        ^^^^^
+  |
+  = member: z?
+
+error[F0603]: expectation `members::all_true` does not hold
+ --> test/cli/results/boolean_block_members.fren:5:20
+  |
+5 | fn all?(x?, y?) := and { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: (any values)
+  = help: correct the expectation, or assume what it needs
+
+note: true members: `all_true.all?@1.first`, `all_true.all?@1.second`
+ --> test/cli/results/boolean_block_members.fren:5:20
+  |
+5 | fn all?(x?, y?) := and { first: x?, second: y? }
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: `all_true.all?@1.first` is true
+ --> test/cli/results/boolean_block_members.fren:5:26
+  |
+5 | fn all?(x?, y?) := and { first: x?, second: y? }
+  |                          ^^^^^
+  |
+  = member: x?
+
+note: `all_true.all?@1.second` is true
+ --> test/cli/results/boolean_block_members.fren:5:37
+  |
+5 | fn all?(x?, y?) := and { first: x?, second: y? }
+  |                                     ^^^^^^
+  |
+  = member: y?
+
+fren: 2 passed, 7 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

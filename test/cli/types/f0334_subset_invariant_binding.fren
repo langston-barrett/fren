@@ -1,0 +1,2 @@
+-- An invariant is an expression; its standalone pattern test cannot bind a name.
+type Any = value: Int where invariant: value is n

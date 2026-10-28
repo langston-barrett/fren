@@ -1,0 +1,1 @@
+type Small = n: Int where invariant: n <= limit

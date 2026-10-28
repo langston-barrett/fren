@@ -1,0 +1,10 @@
+error[F0104]: expected `)`, found keyword `is`
+ --> test/cli/syntax/removed_inline_pattern_type.fren:2:15
+  |
+2 | proc c(n: Int is 0..=9) {}
+  |               ^^ expected `)`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0104`.
+exit=2

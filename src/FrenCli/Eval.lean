@@ -366,6 +366,8 @@ structure Inst where
 /-- A procedure, or a global expectation: a procedure whose path is its module, with
 a call per binder and the expectation as its only constraint. -/
 structure Comp where
+  branchGroups : Array (Fren.Core.BranchGroup Ex) := #[]
+  memberGroups : Array (Fren.Core.MemberGroup Ex) := #[]
   path : Name
   /-- Its own variables, in declaration order. -/
   vars : Array Var
@@ -465,6 +467,8 @@ partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
 
 /-- What the abstract types and functions mean, as far as it is known. -/
 structure Interp where
+  /-- Defined predicates used by declared subset invariants. -/
+  defs : Name → Option (Array Name × Ex × VTy) := fun _ => none
   fn : Name → Array Val → Option Val := fun _ _ => none
   /-- Whether the string `s` matches the pattern `p`, if it is known
   without matching it: `Fren.Core.Re.matches` of `p`'s parse, remembered
@@ -902,7 +906,7 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
     | none => I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => e.eval I (fun _ => none)
-  | .typed t _ e => return .bool (typeHolds I.shapes t (← e.eval I look locals slots frame memos))
+  | .typed t _ e => return .bool (← typeV I t (← e.eval I look locals slots frame memos))
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
   -- The first arm that is taken: whose pattern matches and whose guard
@@ -936,6 +940,37 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
     | .quant _ _ all names doms tys body => quantV I look locals slots all names doms tys body lets 0 frame memos
     | q => q.eval I look locals slots frame memos
 where
+  /-- Check actual invariant predicates as well as structural type facts.
+  Every recursive call inspects a contained finite value. -/
+  typeV (I : @& Interp) (t : Fren.Core.PTy) (v : Val) : Option Bool := do
+    unless typeHolds I.shapes t v do return false
+    for invariant in t.invariants do
+      let (params, body, _) ← I.defs invariant.predicate
+      let parameter ← params[0]?
+      let .bool holds ← body.eval I (fun _ => none) [(parameter, v)] | none
+      unless holds do return false
+    match t.ty, v with
+    | .set _, .set values | .seq _, .seq values =>
+      if let some elem := t.elems[0]? then
+        for value in values do
+          unless ← typeV I elem value do return false
+    | .rel .., .set values =>
+      for value in values do
+        if let .pair a b := value then
+          if let some left := t.elems[0]? then
+            unless ← typeV I left a do return false
+          if let some right := t.elems[1]? then
+            unless ← typeV I right b do return false
+    | .newtype path _, value =>
+      if let some underlying := ((I.shapes path).bind (·.parts[0]?) |>.bind (·[0]?)) then
+        unless ← typeV I underlying value do return false
+    | .record path _, .ctor _ ctorIndex args | .enum path _, .ctor _ ctorIndex args =>
+      if let some types := (I.shapes path).bind (·.inst t.parts |>.parts[ctorIndex]?) then
+        for (ty, value) in types.zip args do
+          unless ← typeV I ty value do return false
+    | _, _ => pure ()
+    return true
+
   /-- A quantifier's value, from its `k`th bound name, with those before it
   in `frame`: the conjunction or disjunction of the instances at each of
   the `k`th's values, of its type, given which the next are bound, and
@@ -955,9 +990,11 @@ where
         let mut acc : Option Val := some (.bool all)
         for v in vs do
           if (match acc with | some (.bool b) => b != all | _ => false) then break
-          if tys[k]?.all (typeHolds I.shapes · v) then
+          let membership := (tys[k]?.map (typeV I · v)).getD (some true)
+          if membership == some true then
             let x := quantV I look locals slots all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos
             acc := if all then kleeneAnd acc x else kleeneOr acc x
+          else if membership.isNone then acc := none
         return acc
       | _ => none
     else body.eval I look locals slots frame memos
@@ -1182,7 +1219,7 @@ partial def corePatSame : Fren.Core.Pat → Fren.Core.Pat → Bool
 
 /-- Whether two declared types are the same. -/
 partial def ptySame (t u : Fren.Core.PTy) : Bool :=
-  t.ty == u.ty && sameOpt corePatSame t.pat? u.pat? && sameAll ptySame t.elems u.elems && t.text == u.text
+  t.ty == u.ty && t.invariants == u.invariants && sameOpt corePatSame t.pat? u.pat? && sameAll ptySame t.elems u.elems && t.text == u.text
 
 /-- Whether two expressions are the same, and so have the same value
 wherever both are evaluated in the same environment. -/
@@ -1578,6 +1615,10 @@ partial def Val.showAs (sp : Spec) (ty : VTy) (v : Val) : String :=
 /-! ## Lowering parsed items -/
 
 structure LState where
+  namedPredicates : NameMap (Array (String × Name)) := {}
+  namedWhole : NameMap Name := {}
+  namedBranches : NameMap (Array (Fren.Core.BranchGroup Ex)) := {}
+  namedGroups : NameMap (Array (Fren.Core.MemberGroup Ex)) := {}
   table : Table := {}
   module : Name := .anonymous
   /-- The scope that paths resolve in: the module, or the procedure being
@@ -2098,6 +2139,7 @@ def Spec.listedValues (sp : Spec) (t : VTy) (pt : Fren.Core.PTy) : Option (Array
 
 /-- The operands of the chain of `and` `e`. -/
 partial def andOperands : Expr → Array Expr
+  | .block _ "and" members => members.flatMap fun (_, value) => andOperands value
   | .bin _ "and" a b => andOperands a ++ andOperands b
   | e => #[e]
 
@@ -2112,6 +2154,7 @@ def bindingTest (e : Expr) : L Bool := do
 
 mutual
 partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
+  | .block sp op members => lowerExpr cx (Expr.lowerBlock sp op members)
   -- A condition whose pattern tests bind names: `when x is P, D` is
   -- `match x { P => D, _ => true }`, and `when a and b, D` is `when a, when
   -- b, D` (`Reqs/Lang/Expressions#pattern-tests`).
@@ -2506,6 +2549,47 @@ def varTy (ty? : Option (Array Ident)) : L VTy := do
   | some t => lowerTy t
   | none => return .bool
 
+/-- Definition-site helper bodies preserve lexical resolution and bind
+arguments before body binders; no caller-scope source substitution occurs. -/
+partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunction : Bool := true)
+    (wrap : Expr → Expr := id) (negated : Bool := false) (wrapValue : Expr → Expr := id) :
+    L (Option (Name × Array (String × Ex × Array (Fren.Core.BranchGroup Ex) × Array (Fren.Core.MemberGroup Ex)))) := do
+  match expression with
+  | .when span negative condition body =>
+    lowerPredicateClauses cx body splitConjunction (fun value => wrap (.when span negative condition value)) negated (fun value => wrapValue (.when span negative condition value))
+  | .«let» span definitions body isWhere =>
+    lowerPredicateClauses cx body splitConjunction (fun value => wrap (.«let» span definitions value isWhere)) negated (fun value => wrapValue (.«let» span definitions value isWhere))
+  | .not span body => lowerPredicateClauses cx body false wrap (!negated) (fun value => wrapValue (.not span value))
+  | .app _ segs _ =>
+    let saved ← get
+    let .ok (.item { kind := .fnItem, path, .. }) := saved.table.resolvePath saved.scope (segNames segs) | return none
+    let some members := (if splitConjunction then saved.namedPredicates.find? path else saved.namedWhole.find? path |>.map fun helper => #[("", helper)]) | return none
+    let mut clauses := #[]
+    for (name, helper) in members do
+      let some definition := saved.spec.defs.find? helper | continue
+      let instantiate (body : Ex) (asGuard : Bool := false) (main : Bool := false) : L Ex := do
+        let body := if asGuard then Ex.not body else body
+        set { saved with spec.defs := saved.spec.defs.insert path (definition.1, body, definition.2.2) }
+        let value := (← lowerExpr cx ((if main then wrapValue else wrap) expression)).1
+        return if asGuard then .not value else value
+      let value ← instantiate definition.2.1 false true
+      let branches ← if negated then pure #[] else (saved.namedBranches.find? helper |>.getD #[]).mapM fun group => do
+        let members ← group.members.mapM fun member => do
+          let formula ← instantiate member.formula
+          pure { member with formula }
+        let guard ← instantiate (group.guard?.getD (.lit (.bool true))) true
+        pure { group with members, guard? := some guard }
+      let groups ← (saved.namedGroups.find? helper |>.getD #[]).mapM fun group => do
+        let members ← group.members.mapM fun member => do
+          let formula ← instantiate member.formula
+          let guard ← instantiate (member.evaluationGuard?.getD (.lit (.bool true))) true
+          pure { member with formula, evaluationGuard? := some guard }
+        pure { group with members, wanted := if negated then !group.wanted else group.wanted }
+      clauses := clauses.push (name, value, branches, groups)
+    set saved
+    return some (path, clauses)
+  | _ => return none
+
 /-- `x`'s constraint of its declared type `t`, if it has one: what its
 type brings, as a constraint (`Reqs/Lang/Procedures#pattern-types`). -/
 def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option Constraint) := do
@@ -2535,6 +2619,7 @@ def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Un
   modify fun s => { s with table := s.table.addUse u, scope := scope.getD s.scope }
 
 def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Unit := do
+  let body := splitConjunctionMembers body
   -- Each result with the definition that an `out` member gives it.
   let defs := body.filterMap fun | .define x e => some (x.name, e) | _ => none
   let members := header.map (fun
@@ -2580,14 +2665,55 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
     if defn?.isSome then continue
     if let some c ← typeConstraint (if isIn then .assume else .ensure) (declName x) (← lowerPTy ty) then
       constraints := constraints.push c
+  let mut branchGroups : Array (Fren.Core.BranchGroup Ex) := #[]
+  let mut memberGroups : Array (Fren.Core.MemberGroup Ex) := #[]
+  let mut occurrences : Std.HashMap String Nat := {}
   for m in members do
     let .prop kind x e := m | continue
-    constraints := constraints.push { kind, name := Name.mkSimple x.name, e := (← lowerExpr cx e).1 }
+    let owner := Name.mkSimple x.name
+    if kind != .cover then
+      if let some (path, leaves) ← lowerPredicateClauses cx e then
+        let root := (x.name.splitOn ".").head!
+        let key := root ++ ":" ++ path.toString
+        let occurrence := occurrences.getD key 0 + 1
+        occurrences := occurrences.insert key occurrence
+        for (label, value, branches, groups) in leaves do
+          let namePrefix := x.name ++ "." ++ Fren.Core.showPath path ++ "@" ++ toString occurrence
+          let name := if label.isEmpty then owner else Name.mkSimple (namePrefix ++ "." ++ label)
+          constraints := constraints.push { kind, name, e := value }
+          let memberPrefix := if label.isEmpty then namePrefix else namePrefix ++ "." ++ label
+          branchGroups := branchGroups ++ branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := Name.mkSimple (memberPrefix ++ "." ++ member.name.toString) } }
+          memberGroups := memberGroups ++ groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := Name.mkSimple (memberPrefix ++ "." ++ member.name.toString) } }
+        continue
+    constraints := constraints.push { kind, name := owner, e := (← lowerExpr cx e).1 }
+    if let some (branchKind, guard, branches) := branchMembers e then
+      if branchKind != .equivalence || branches.size > 1 then
+        let leaves ← branches.zipIdx.mapM fun ((label, source, member), i) => do
+          let name := Name.mkSimple (owner.toString ++ "." ++ (label.map (·.name) |>.getD (toString (i + 1))))
+          return ({
+            name := name
+            formula := (← lowerExpr cx member).1
+            range? := some { start := source.start, stop := source.stop }
+          } : Fren.Core.BranchMember Ex)
+        let guard ← guard.mapM fun guard => do pure (← lowerExpr cx guard).1
+        branchGroups := branchGroups.push { owner, kind := branchKind, members := leaves, guard? := guard }
+    if let some group := observedMembers e then
+      let leaves ← group.members.zipIdx.mapM fun ((label, source, member, guard), i) => do
+        let name := Name.mkSimple (owner.toString ++ "." ++ (label.map (·.name) |>.getD (toString (i + 1))))
+        let formula ← if guard matches .bool _ false then pure (Ex.lit (.bool true)) else do pure (← lowerExpr cx member).1
+        return ({
+          name := name
+          formula := formula
+          valueFormula? := some formula
+          evaluationGuard? := some (← lowerExpr cx guard).1
+          range? := some { start := source.start, stop := source.stop }
+        } : Fren.Core.BranchMember Ex)
+      memberGroups := memberGroups.push { owner, op := group.op, wanted := group.wanted, members := leaves }
   let mut defs := #[]
   for m in members do
     let .var _ _ _ x _ (some e) := m | continue
     defs := defs.push (declName x, (← lowerExpr cx e).1)
-  let c : Comp := { path, vars, constraints, insts, defs }
+  let c : Comp := { path, vars, constraints, insts, defs, branchGroups, memberGroups }
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module
@@ -2614,13 +2740,23 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
   let mut pres := #[]
   let mut posts := #[]
   let mut constraints := #[]
+  let mut occurrences : Std.HashMap Name Nat := {}
   for (post, x, e) in clauses do
-    let cn := Name.mkSimple x.name
-    let bound := (← lowerExpr cx e).1
-    if post then posts := posts.push bound else pres := pres.push (cn, bound)
-    if defined || !post then
-      let c := (← lowerExpr { vars, fnParams } e).1
-      constraints := constraints.push { kind := (if post then .ensure else .assume), name := n ++ cn, e := c }
+    let expanded ← lowerPredicateClauses cx e
+    let expandedVars ← lowerPredicateClauses { vars, fnParams } e
+    let entries ← if let some (predicate, leaves) := expanded then do
+        let occurrence := occurrences.getD predicate 0 + 1
+        occurrences := occurrences.insert predicate occurrence
+        pure <| leaves.mapIdx fun i (label, value, _, _) =>
+          let name := if label.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ label
+          let actual := expandedVars.bind (fun (_, leaves) => leaves[i]?.map (·.2.1)) |>.getD value
+          (Name.mkSimple name, value, actual)
+      else do
+        pure #[(Name.mkSimple x.name, (← lowerExpr cx e).1, (← lowerExpr { vars, fnParams } e).1)]
+    for (cn, bound, actual) in entries do
+      if post then posts := posts.push bound else pres := pres.push (cn, bound)
+      if defined || !post then
+        constraints := constraints.push { kind := (if post then .ensure else .assume), name := n ++ cn, e := actual }
   unless pres.isEmpty do
     let entry := (ps.map (path ++ ·.1), pres.map fun (cn, g) => (cn, g.renameBound (path ++ ·)))
     modify fun s => { s with spec.pres := s.spec.pres.insert path entry }
@@ -2636,6 +2772,9 @@ def resolveComp (segs : Array Ident) : L Name := do
   | r => throw s!"`{showPath r.path}` is not a procedure"
 
 def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit := do
+  if binders.isEmpty && (body.blockRoot || (observedMembers body).isSome) then
+    lowerComp false name #[] #[.prop .expect { name := "", span := name.span } body]
+    return
   let mut insts := #[]
   -- The binders over values, a quantifier around the body (`lang::quantifier_binder`).
   let mut values := #[]
@@ -2701,6 +2840,38 @@ partial def lowerItem : Item → L Unit
       table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
       spec.newtypes := s.spec.newtypes.insert path u
       spec.shapes := s.spec.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
+  | .subsetType isPub name binder base clauses => do
+    let module := (← get).module
+    let path := module ++ itemName name
+    let baseTy ← lowerTy base
+    let baseP ← lowerPTy base
+    let mut invariants := baseP.invariants
+    let mut previous : Array Expr := #[]
+    let mut pattern := baseP.pat?
+    for (label, expression) in clauses do
+      let predicate := subsetPredicateIdent name label
+      lowerItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
+      invariants := invariants.push { name := path ++ Name.mkSimple label.name, predicate := module ++ Name.mkSimple predicate.name }
+      if pattern.isNone && clauses.size == 1 then
+        if let .is _ (.path _ #[x]) p := expression then
+          if x.name == binder.name then pattern := some (← lowerPattern baseTy p).1.core
+      let validator := subsetCheckIdent name s!"defined_{label.name.toLower}"
+      let assumptions := previous.mapIdx fun i e => Member.prop .assume { name := s!"earlier_{i}", span := label.span } e
+      let localName : Ident := { name := "subset_predicate?", span := label.span }
+      let header := #[Member.var true true false binder (some base) none]
+      let body := assumptions.push (.var false false false localName none (some expression))
+      lowerItem (.comp true validator header body expression.span (body.map fun _ => expression.span) label.span.stop)
+      previous := previous.push expression
+    modify fun st => { st with
+      table := st.table.addItem { kind := .typeItem, path, isPub, owner := module }
+      aliases := st.aliases.insert path baseTy
+      declaredAliases := st.declaredAliases.insert path { baseP with invariants, pat? := pattern, text := name.name } }
+    let inhabit := subsetCheckIdent name "inhabited"
+    let binderExpr := Expr.path binder.span #[binder]
+    let guarantees := clauses.map fun (label, _) => Member.prop .ensure label
+      (.app label.span #[subsetPredicateIdent name label] #[binderExpr])
+    let header := #[Member.var false true false binder (some base) none]
+    lowerItem (.comp true inhabit header guarantees name.span (guarantees.map fun _ => name.span) name.span.stop)
   | .typeAlias isPub name ty => do
     let path := (← get).module ++ itemName name
     let t ← lowerTy ty
@@ -2715,6 +2886,7 @@ partial def lowerItem : Item → L Unit
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
   | .function isPub name typeParams params result body clauses _ block => do
+    let clauses := splitContractClauses clauses
     let path := (← get).module ++ itemName name
     -- The `use`s of its block, in its scope.
     for m in block.uses do
@@ -2786,6 +2958,63 @@ partial def lowerItem : Item → L Unit
       -- function's.
       let b := b.renameBound (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r) }
+      if body.conjunctionRoot || (observedMembers body).isSome then
+        let mut members := #[]
+        let mut nestedOccurrences : Std.HashMap Name Nat := {}
+        let mut nestedNumber := 0
+        let leaves := if body.conjunctionRoot then body.clauseLeaves { name := "", span := body.span } else #[({ name := "", span := body.span }, body)]
+        for ((label, expression), k) in (leaves.push ({ name := "#whole", span := body.span }, body)).zipIdx do
+          let memberName := Name.num (Name.str path "#member") k
+          let (value, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } expression
+          let value := value.renameBound (path ++ ·)
+          modify fun s => { s with spec.defs := s.spec.defs.insert memberName (all.map (path ++ ·), value, r) }
+          let cx : Cx := { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams }
+          let mut branches := #[]
+          let mut groups := #[]
+          if let some (kind, guard, entries) := branchMembers expression then
+            if kind != .equivalence || entries.size > 1 then
+              let entries ← entries.zipIdx.mapM fun ((label, source, value), i) => do
+                let (value, _) ← lowerExpr cx value
+                return ({
+                  name := Name.mkSimple (label.map (·.name) |>.getD (toString (i + 1)))
+                  formula := value.renameBound (path ++ ·)
+                  range? := some { start := source.start, stop := source.stop }
+                } : Fren.Core.BranchMember Ex)
+              let guard ← guard.mapM fun guard => do pure ((← lowerExpr cx guard).1.renameBound (path ++ ·))
+              branches := #[{ owner := .anonymous, kind, members := entries, guard? := guard }]
+          if let some group := observedMembers expression then
+            let entries ← group.members.zipIdx.mapM fun ((label, source, value, guard), i) => do
+              let value ← if guard matches .bool _ false then pure (Ex.lit (.bool true)) else do pure (← lowerExpr cx value).1
+              let (guard, _) ← lowerExpr cx guard
+              return ({
+                name := Name.mkSimple (label.map (·.name) |>.getD (toString (i + 1)))
+                formula := value.renameBound (path ++ ·)
+                evaluationGuard? := some (guard.renameBound (path ++ ·))
+                range? := some { start := source.start, stop := source.stop }
+              } : Fren.Core.BranchMember Ex)
+            groups := #[{ owner := .anonymous, op := group.op, wanted := group.wanted, members := entries }]
+          modify fun s => { s with namedBranches := s.namedBranches.insert memberName branches, namedGroups := s.namedGroups.insert memberName groups }
+          if label.name == "#whole" then
+            modify fun s => { s with namedWhole := s.namedWhole.insert path memberName }
+          else if let some (nestedPath, nested) ← lowerPredicateClauses cx expression then
+            let occurrence := nestedOccurrences.getD nestedPath 0 + 1
+            nestedOccurrences := nestedOccurrences.insert nestedPath occurrence
+            let nestedPrefix := Fren.Core.showPath nestedPath ++ "@" ++ toString occurrence
+            for (child, value, childBranches, childGroups) in nested do
+              let helper := Name.num (Name.str path "#nested") nestedNumber
+              nestedNumber := nestedNumber + 1
+              let name := label.name ++ (if child.isEmpty then "" else "." ++ nestedPrefix ++ "." ++ child)
+              let rename (n : Name) := if !child.isEmpty then n else Name.mkSimple (nestedPrefix ++ "." ++ n.toString)
+              let mappedBranches := childBranches.map fun group => { (group.map (·.renameBound (path ++ ·))) with members := group.members.map fun member => { (member.map (·.renameBound (path ++ ·))) with name := rename member.name } }
+              let mappedGroups := childGroups.map fun group => { (group.map (·.renameBound (path ++ ·))) with members := group.members.map fun member => { (member.map (·.renameBound (path ++ ·))) with name := rename member.name } }
+              modify fun s => { s with
+                spec.defs := s.spec.defs.insert helper (all.map (path ++ ·), value.renameBound (path ++ ·), r)
+                namedBranches := s.namedBranches.insert helper mappedBranches
+                namedGroups := s.namedGroups.insert helper mappedGroups }
+              members := members.push (name, helper)
+          else members := members.push (label.name, memberName)
+        modify fun s => { s with namedPredicates := s.namedPredicates.insert path members }
+
       -- Over the parameters as inputs, for the checks of its tables, and
       -- its contract's, once it can be applied.
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
