@@ -7,3 +7,4 @@ error[F0104]: expected a nonempty labelled invariant list, found keyword `and`
 error: could not check due to previous errors
 
 For more information about this error, try `fren --explain F0104`.
+exit=2
