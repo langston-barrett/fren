@@ -677,6 +677,7 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
       -- (`check::postcondition`), and the hypotheses of nothing.
       reqs := if c.fn?.isNone || contract then props .ensure else #[]
       posts := if c.fn?.isSome && !contract then props .ensure else #[]
+      induction := c.induction
       fn? := c.fn?
       expects := props .expect
       covers := props .cover

@@ -122,10 +122,12 @@ def recursiveKind (r : Recursion) (occs : List PayloadOcc) : RecKind :=
   | _ => .notRecursive
 
 /-- Whether the solver decides the applications of a function of kind `k`
-and result type `result` on arguments that vary (`lang::recursive_kind`):
-a catamorphism into `Bool` or a set. -/
-def RecKind.decided (k : RecKind) (result : Ty) : Bool :=
-  k == .catamorphism && result matches .bool | .set _
+and result type `result` on arguments that vary (`lang::recursive_decided`):
+a catamorphism into `Bool` or a set, or onto its result type, `onto`: an
+arm of a `match` on a parameter is a payload of that type, so that no
+value of the type is out of its range. -/
+def RecKind.decided (k : RecKind) (result : Ty) (onto : Bool) : Bool :=
+  k == .catamorphism && (onto || result matches .bool | .set _)
 
 /-- Whether the pattern `p` is a variant's, or an or-pattern with one. -/
 partial def Pat.hasVariant : Pat → Bool

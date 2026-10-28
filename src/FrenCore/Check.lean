@@ -361,6 +361,13 @@ structure Comp (F : Type) where
   over its parameters (`check::postcondition`); its preconditions are its
   `assumes`. -/
   posts : Array (Name × F) := #[]
+  /-- For the body of a structural recursion: the induction hypotheses
+  that its postcondition checks assume, and no other check does
+  (`Reqs/Lang/Recursion#contracts`): each of its postconditions at each
+  payload of its decreasing parameter of the parameter's own type, where
+  the parameter is that payload's variant, named under the postcondition,
+  whose check alone assumes it. -/
+  induction : Array (Name × F) := #[]
   /-- For the body or contract of a function: the function, which the
   results of `postcondition` name. -/
   fn? : Option Name := none
@@ -682,12 +689,15 @@ def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
 
 /-- `postcondition`: the postcondition `p` of a defined function, named
 after the function and the clause, follows from its preconditions, its
-parameters free (`check::postcondition`). -/
+parameters free (`check::postcondition`); for a structural recursion, by
+structural induction, with its induction hypotheses (`Comp.induction`). -/
 def checkPostcondition (c : Comp F) (p : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .postcondition, comp := c.path, prop? := some p.1, target? := c.fn?.map (·, Name.mkSimple p.1.getString!),
       verdict, detail }
-  let q ← b.query c.assumes p.2 true
+  -- Its own hypotheses alone, each named under it: a postcondition that
+  -- passes is proved by its own induction, whatever the others are.
+  let q ← b.query (c.assumes ++ c.induction.filter fun (h, _) => p.1.isPrefixOf h) p.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))

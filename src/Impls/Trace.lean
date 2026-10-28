@@ -58,7 +58,9 @@ tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
 tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren"
 tested lang::recursive_kind: "test/ui/checks/recursion.fren"
-tested lang::recursive_decided: "test/ui/checks/recursion.fren", "test/ui/checks/recursion_undecidable.fren"
+tested lang::recursive_decided: "test/ui/checks/recursion.fren", "test/ui/checks/recursion_undecidable.fren",
+  "test/ui/checks/recursion_contracts.fren"
+tested lang::induction_hypotheses: "test/ui/checks/recursion_contracts.fren"
 tested lang::recursive_match: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0449_literal.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
 tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",

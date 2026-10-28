@@ -348,6 +348,11 @@ structure DefinedInfo where
   definition (`define-fun-rec`) rather than unfolded
   (`Reqs/Lang/Recursion#solver-encoding`). -/
   recursive : Bool := false
+  /-- For a structural recursion, its body as the solver reads it: a
+  closed lambda over its parameters, with its `match`es as `if`s and its
+  applications of itself of `solver?`, which the solver is given as that
+  form's equation (`Fren.withRecursiveDefs`). -/
+  recBody? : Option Expr := none
   /-- Its applications are decided on arguments that vary: not a structural
   recursion, or one that `Core.RecKind.decided` decides
   (`lang::recursive_kind`). -/
@@ -473,6 +478,9 @@ structure CompInfo where
   /-- Its own variables in declaration order, then each call's. -/
   vars : Array Var
   props : Array PropInfo
+  /-- For the body of a structural recursion, its induction hypotheses
+  (`Core.Comp.induction`), each a closed lambda over the variables. -/
+  induction : Array PropInfo := #[]
   insts : Array InstInfo := #[]
   ref : Syntax
   /-- The prefix of the Lean definitions generated for it. -/
@@ -887,6 +895,10 @@ structure LocalState where
   `match` and have a recursive application under them, each the first
   pattern that a Lean `match` does not have (`lang::recursive_match`). -/
   recMatches : Array Lean.Syntax := #[]
+  /-- In a defined function's body, whether an arm of a `match` on a
+  parameter, without a guard, is a payload of the result's type
+  (`lang::recursive_decided`). -/
+  recOnto : Bool := false
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated, by where `e` is: whether `e` is a sequence, and the
   `undecidable` report that `in` defers until the quantifier is known to

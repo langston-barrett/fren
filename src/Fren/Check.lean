@@ -128,7 +128,7 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
 /-- The solver forms of the structural recursions that `es` apply, and of
 those that their definitions apply, in turn: the solver is given each as
 a recursive definition (`Reqs/Lang/Recursion#solver-encoding`), which lean-smt reads
-from its equation, `define-fun-rec`. -/
+from the equation of its body (`DefinedInfo.recBody?`), `define-fun-rec`. -/
 def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
   let s ← getState
   let recs := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
@@ -143,7 +143,8 @@ def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
     work := work.pop
     if out.contains c then continue
     out := out.push c
-    if let some eqn ← getUnfoldEqnFor? c (nonRec := true) then work := found (← getConstInfo eqn).type work
+    if let some b := s.defined.foldl (init := none) (fun acc _ d => acc <|> if d.solver? == some c then d.recBody? else none) then
+      work := found b work
   return out
 
 /-- Runs `k` with a `let` for each of the structural recursions' solver
@@ -166,9 +167,13 @@ where
       let sub (e : Expr) : Expr := e.replace fun
         | .const c _ => (recs.idxOf? c).map (fs[·]!)
         | _ => none
+      let s ← getState
       let eqns ← (recs.zip fs).mapM fun (c, f) => do
-        let some eqn ← getUnfoldEqnFor? c (nonRec := true) | throwError "internal error: no equation of `{c}`"
-        let ty := sub (← getConstInfo eqn).type
+        let some body := s.defined.foldl (init := none) fun acc _ d => acc <|> if d.solver? == some c then d.recBody? else none
+          | throwError "internal error: no equation of `{c}`"
+        -- `∀ xs, c xs = body xs`, of the body with its `match`es as `if`s.
+        let ty ← lambdaTelescope body fun xs b => do mkForallFVars xs (← mkEq (mkAppN (Lean.mkConst c) xs) b)
+        let ty := sub ty
         return (Smt.eqnDefName (← f.fvarId!.getUserName), fun (_ : Array Expr) => pure ty)
       Meta.withLocalDeclsD eqns fun _ => k fs sub
 
@@ -711,6 +716,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- (`Reqs/Check#contracts-of-uninterpreted-functions`).
       reqs := ← if c.fn?.isNone || contract then named c.ensures else pure #[]
       posts := ← if c.fn?.isSome && !contract then named c.ensures else pure #[]
+      induction := ← named c.induction
       fn? := c.fn?
       expects := ← named c.expects
       covers := ← named c.covers

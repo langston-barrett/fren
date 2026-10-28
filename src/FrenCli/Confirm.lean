@@ -376,6 +376,8 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     -- evaluator's procedure of its contract does not have: undecided.
     reqs := if core.fn?.isSome then core.reqs.map fun (n, s) => (n, (s, .unknown)) else props core.reqs
     posts := props core.posts, fn? := core.fn?, generic := core.generic
+    -- Hypotheses of the solver's alone, which the evaluator does not read.
+    induction := core.induction.map fun (n, s) => (n, (s, .unknown))
     covers := props core.covers
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))
     indexes := core.indexes.mapIdx fun j x =>

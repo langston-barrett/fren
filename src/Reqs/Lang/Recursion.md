@@ -269,30 +269,103 @@ the defined functions:
 - a catamorphism into `Bool` or a set, on any arguments: both are
   sufficiently surjective (Suter, Dotta and Kuncak, POPL 2010), decided
   by unfolding (Suter, Köksal and Kuncak, SAS 2011);
+- a catamorphism *onto* its result type, on any arguments: one that an arm
+  of a `match` on a parameter, without a guard, gives one of its pattern's
+  payloads of the result's type, as `Expr::Val(n) => n` does. Every value
+  of the type is then in its range, so no constraint on its range, such
+  as a size's being at least 0, is left for the solver to derive by
+  induction, which is what kept a size out of the core; cvc5 answers such
+  queries, sat with models and unsat, by unfolding (measured below);
 - any structural recursion, on constant arguments, which unfolds
   completely.
 
 The `undecidable` lint reports every other application of a structural
 recursion, at the application (`Construct::Recursion`). A catamorphism
-into `Int` or `Nat`, such as a size, is not in the core: cvc5 does not
+into `Int` or `Nat` that is not onto it, such as a size, is not in the core: cvc5 does not
 derive that a size is never negative, which needs induction, and the
 quantified fact that would supply it is lost under `fmf-fun` (below).
 
 ```fren
 -- Whether the applications of a function of kind `rec_kind`, whose result is
--- a `Bool` or a set (`bool_or_set?`), are decided on arguments that vary.
+-- a `Bool` or a set (`bool_or_set?`), or which is onto its result type
+-- (`onto?`), are decided on arguments that vary.
 set_option fren.evidence "tested" in
-pub proc recursive_decided(rec_kind: RecKind, bool_or_set?): (det decided?) {
-    ensure rule: decided? = (rec_kind = RecKind::NotRecursive or (rec_kind = RecKind::Catamorphism and bool_or_set?))
+pub proc recursive_decided(rec_kind: RecKind, bool_or_set?, onto?): (det decided?) {
+    ensure rule: decided? = (rec_kind = RecKind::NotRecursive
+        or (rec_kind = RecKind::Catamorphism and (bool_or_set? or onto?)))
 }
 ```
 
+A function's own value in its own contract, as `r` in `ensure
+keeps_value: eval(r) = eval(e)`, is not reported: the postcondition check
+reads it by induction, below.
+
+## Contracts
+
+A structural recursion's postconditions are checked by structural
+induction on its decreasing parameter, with Hoare's rule for recursive
+procedures (1971): the check of each postcondition assumes, besides the
+preconditions, its *induction hypotheses*: the postcondition itself at
+each payload of the parameter that is of the parameter's own type, with
+the other parameters as they are, where the parameter is that payload's
+variant and the payload meets the preconditions. For `fold` below, they
+are that where `e` is `Expr::Add(a, b)`, `eval(fold(a)) = eval(a)` and
+`eval(fold(b)) = eval(b)`:
+
+```text
+pub fn fold(e: Expr): (r: Expr) {
+    out r := match e { ... }
+    ensure keeps_value: eval(r) = eval(e)
+}
+```
+
+- **Sound.** Under its variant, each payload is a value smaller than the
+  parameter, so the hypotheses are those of an induction on the
+  parameter's structure: a postcondition whose check passes holds for
+  every argument. Each check assumes its own postcondition's hypotheses
+  alone, so that it passes by its own induction, whatever the others are.
+- **Genuine counterexamples.** The function is a recursive definition for
+  the solver, so every model gives it its real value at every argument:
+  a model of the check is an argument at which the postcondition is
+  false. Where the hypotheses are too weak for the step, the solver does
+  not find a model of a true postcondition; it answers `unknown`, and the
+  check is `Inconclusive`. There are no lemmas or hints: a stronger
+  postcondition is a stronger spec, or the proof is Lean's.
+- **Lean.** The generated Lean definition is a structural recursion, so
+  the same induction proves the postcondition there (`examples/Arith.lean`
+  proves `fold`'s). The generated Lean does not yet state or prove a
+  function's postconditions itself.
+
+`lang::induction_hypotheses` states whether there is a hypothesis at a
+value of a variant's payload, over the variants of the decreasing
+parameter's enumeration, each with whether each value of its payload is
+of the enumeration itself:
+
+```fren
+-- A value of a variant's payload: of the enumeration itself, or another type.
+pub enum Slot { Own, Other }
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub proc induction_hypotheses(
+    variants: Seq<Seq<Slot>>,  -- each variant's payload, in order
+    variant: Int,              -- a variant, by its position
+    slot: Int,                 -- a value of its payload, by its position
+): (det hypothesis?) {
+    ensure rule: hypothesis? = (0 <= variant < variants.len and 0 <= slot < variants[variant].len
+        and variants[variant][slot] = Slot::Own)
+}
+```
+
+Callers see a structural recursion through its recursive definition, as
+before; its postconditions are not yet added at its applications as
+facts.
+
 A future version brings more into the core through contracts: a
 paramorphism whose contract is `det` (#366), checked by realizability, by
-determinism, and against the body by Hoare's rule, with recursive
-applications bringing the function's own postconditions as the induction
-hypothesis, and in a fragment that cvc5 decides, has its value pinned
-down by the postconditions as ground facts at each application.
+determinism, and by the induction above, and in a fragment that cvc5
+decides, has its value pinned down by the postconditions as ground facts
+at each application.
 
 ### Measured: cvc5 on `define-fun-rec`
 
@@ -311,6 +384,11 @@ each stopped at 30 seconds, with the options that Fren sets for sets
 | the same, with `forall x, size(x) >= 0` asserted | unsat | timeout |
 | a paramorphism, at a ground tree | unsat | unsat |
 | a paramorphism, `= 2` on a symbolic tree | unknown (right model) | sat, with a model |
+| `eval(e) = 5`, `e` not a `Val` (an `eval` onto `Int`) | | sat, with a model |
+| `eval(Add(e, Val(0))) != eval(e)` | | unsat |
+| `eval(e) > 100` and `eval` of its left operand `< 0` | | sat, with a model |
+| `fold`'s induction step for `keeps_value` | | unsat |
+| the same for `eval(r) = eval(e) + 1` | | sat: `e = Val(0)` |
 
 So `fmf-fun` is needed for models, a count into `Int` is not sufficiently
 surjective (its non-negativity needs induction), and the quantified fact
@@ -328,4 +406,5 @@ no `#fren_check` of its Lean file comes after it:
 #fren_check recursive_kind
 #fren_check recursive_decided
 #fren_check recursive_match
+#fren_check induction_hypotheses
 ```

@@ -359,17 +359,17 @@ selectors. -/
 
 /-- The arm `minor` of a `casesOn`, whose fields are `sels`, the selectors
 applied to the value, each bound by an SMT-LIB `let`. -/
-partial def casesOnArm (minor : Expr) (sels : List Smt.Term) : TranslationM Smt.Term := do
+partial def casesOnArm (minor : Expr) (sels : List Smt.Term) (extra : Array Expr := #[]) : TranslationM Smt.Term := do
   match sels, minor with
-  | [], _ => applyTranslators! (← Lean.Core.betaReduce minor)
+  | [], _ => applyTranslators! (← Lean.Core.betaReduce (mkAppN minor extra))
   | s :: rest, .lam n t b bi => withScopedName n.eraseMacroScopes b fun n => do
     let tmB ← Meta.withLocalDecl n bi t fun x => do
       modify fun st => { st with localFVars := st.localFVars.insert x.fvarId! }
-      let r ← casesOnArm (b.instantiate1 x) rest
+      let r ← casesOnArm (b.instantiate1 x) rest extra
       modify fun st => { st with localFVars := st.localFVars.erase x.fvarId! }
       return r
     return letT n.toString s tmB
-  | _, _ => casesOnArm (← Meta.etaExpand minor) sels
+  | _, _ => casesOnArm (← Meta.etaExpand minor) sels extra
 
 /-- `T.casesOn` of an enumeration's value, without indices, as `ite`s on
 its constructors' testers. -/
@@ -380,9 +380,13 @@ its constructors' testers. -/
   let some (.inductInfo i) := env.find? c.getPrefix | return none
   if i.numIndices != 0 then return none
   let args := e.getAppArgs
-  unless args.size == i.numParams + 2 + i.ctors.length do return none
+  -- With any arguments after the minor premises, where the motive is a
+  -- function's type, applied to each arm.
+  let base := i.numParams + 2 + i.ctors.length
+  unless args.size ≥ base do return none
   let major := args[i.numParams + 1]!
-  let minors := args.extract (i.numParams + 2) args.size
+  let minors := args.extract (i.numParams + 2) base
+  let extra := args.extract base args.size
   let majorT ← applyTranslators! major
   let mut out : Option Smt.Term := none
   for (ctor, minor) in (i.ctors.zip minors.toList).reverse do
@@ -391,11 +395,20 @@ its constructors' testers. -/
     for k in [0:cv.numFields] do
       let some s ← selectorApp ctor (leanSmtField cv k) major | return none
       sels := sels.push s
-    let arm ← casesOnArm minor sels.toList
+    let arm ← casesOnArm minor sels.toList extra
     out := some <| match out with
       | none => arm
       | some rest => Smt.Term.mkApp3 (symbolT "ite") (appT (literalT s!"(_ is {Smt.Term.quoteSymbol ctor.toString})") majorT) arm rest
   return out
+
+/-- A sparse `casesOn`, which a matcher may be of, on some constructors and
+a default for the rest, as the `casesOn` of its definition. -/
+@[smt_translate] def translateSparseCasesOn : Translator := fun e => do
+  let .const f _ := e.getAppFn | return none
+  let .str _ s := f | return none
+  unless s.startsWith "_sparseCasesOn" do return none
+  let some e' ← Meta.delta? e (· == f) | return none
+  return some (← applyTranslators! (← Lean.Core.betaReduce e'))
 
 /-- A matcher's application, a Lean `match`, as the `casesOn`s of its
 definition. -/

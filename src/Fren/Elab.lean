@@ -3303,6 +3303,14 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       -- from a payload of that parameter; so is the whole of such a binder.
       let payloadOf? := cx.recOrigin? scrutinee |>.bind fun (j, p) => if b.payload || p then some j else none
       new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size, payloadOf? }
+    -- An arm of a `match` on a parameter, without a guard, whose value is a
+    -- payload of the result's type: the function is onto that type
+    -- (`lang::recursive_decided`).
+    if let (some (_, false), some (_, ft, _)) := (origin?, cx.selfRec?) then
+      if arm[1].isNone then
+        if let some m := soleName? arm[3] then
+          if let some b := new.find? (fun b => b.name == m && b.payloadOf?.isSome) then
+            if (← coreTy? b.type) == some ft.result then modifyLocal fun l => { l with recOnto := true }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let (g?, d?) ← if arm[1].isNone then pure (none, none) else if !isTable then do
@@ -5149,7 +5157,9 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     notePreconditions cx p path args
     -- A structural recursion that is not decided on arguments that vary
     -- (`lang::recursive_kind`).
-    unless d.decided do
+    -- But its own value in its own contract, which the postcondition check
+    -- reads by induction (`Reqs/Lang/Recursion#contracts`).
+    unless d.decided || cx.contract?.any (·.path == path) do
       checkCore cx p .recursion false false argStxs (ground := ← argStxs.allM (isConstant cx))
     -- Its body's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
@@ -6019,10 +6029,10 @@ postconditions, `props`, as a procedure for their checks (`Entry.bodyInfo`), if
 it has any questions or postconditions to check (`Core.bodyKinds`). -/
 def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
     (tables : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) (props : Array PropInfo := #[])
-    (fn? : Option Name := none) : TermElabM Unit := do
+    (fn? : Option Name := none) (induction : Array PropInfo := #[]) : TermElabM Unit := do
   if tables.isEmpty && !props.any (·.kind == .ensure) then return
-  let uses ← usesOf (tables.map (·.2.2.2.2) ++ props.map (·.body))
-  let info : CompInfo := { path := path.getPrefix, vars, props, ref, decl, uses, fn?
+  let uses ← usesOf (tables.map (·.2.2.2.2) ++ props.map (·.body) ++ induction.map (·.body))
+  let info : CompInfo := { path := path.getPrefix, vars, props, induction, ref, decl, uses, fn?
                            decidable := !(← getLocal).outsideCore, guarded := (← getLocal).guardedUsed
                            indexes := tables }
   record (.bodyInfo path info)
@@ -6435,7 +6445,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let selfTy := vars.foldr (fun v acc => .forallE `x v.type acc .default) result
     let withSelf {α : Type} (k : Option Expr → TermElabM α) : TermElabM α :=
       if recursive then withLocalDeclD selfName selfTy fun s => k (some s) else k none
-    let (lam, tables, obls, leanLam?, recLeanLam?, decided) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+    let (lam, tables, obls, leanLam?, recLeanLam?, decided, recIdx?) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
         withSelf fun self? => withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
       let selfRec? := if recursive then some (vars.map (·.name), ({ params := declared, result := resultTy } : Core.FnTy),
@@ -6444,7 +6454,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
                             expected? := if result.isConstOf ``Nat then some .nat else none
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
-      modifyLocal fun l => { l with recUses := #[], recOccs := #[], recMatches := #[] }
+      modifyLocal fun l => { l with recUses := #[], recOccs := #[], recMatches := #[], recOnto := false }
       let t ← toTerm cx body
       let uses := (← getLocal).recUses
       let recursion := Core.recursion vars.size (uses.toList.map (·.2))
@@ -6513,7 +6523,8 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
         | _, _ => throwErrorAt nameStx s!"internal error: no Lean definition of the structural recursion `{n}`"
       let kind := Core.recursiveKind recursion ((← getLocal).recOccs.toList.map (·.2))
       return (selfFor (← mkLambdaFVars all value), tables, obls, ← leanValue?.mapM (mkLambdaFVars all ·), recLean?,
-        kind.decided resultTy || kind == .notRecursive)
+        kind.decided resultTy (← getLocal).recOnto || kind == .notRecursive,
+        match recursion with | .structural i => some i | _ => none)
     lintBools body (← hidesIn { modName := scope, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
@@ -6529,6 +6540,12 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let uses ← usesOf #[lam]
     -- Where its Lean definition is a Lean `match`, the solver's is beside it
     -- (`DefinedInfo.solver?`).
+    -- A structural recursion's body as the solver reads it, with the
+    -- defined functions it applies unfolded, as a query's are.
+    let recBody? ← if recLeanLam?.isNone then pure none else do
+      let st ← getState
+      let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
+      some <$> Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st lam ds.contains))
     let solver? ← match recLeanLam?, leanLam? with
       | some recLean, _ => addRecursiveDefs nameStx uses decl recLean; pure (some (solverName decl))
       | none, none => addUsesDef uses decl lam; pure none
@@ -6560,9 +6577,37 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
-                           oblDecls, solver?, recursive := recLeanLam?.isSome, decided })
+                           oblDecls, solver?, recursive := recLeanLam?.isSome, recBody?, decided })
     let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
-    recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
+    -- A structural recursion's postconditions are checked by induction on
+    -- its decreasing parameter (`Reqs/Lang/Recursion#contracts`): each at
+    -- each payload of the parameter's own type, where the parameter is
+    -- that payload's variant, as the binary states them.
+    let induction ← match recIdx? with
+      | none => pure #[]
+      | some i => do
+        let st ← getState
+        let some k := st.contracts.get? path | pure #[]
+        let ty := vars[i]!.type
+        let some info := (st.enumOf? ty).filter fun _ => ty.getAppArgs.isEmpty | pure #[]
+        withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+          let p := fvs[i]!
+          let mut out := #[]
+          for idx in [0:info.variants.size] do
+            let tys := (info.payloadsAt #[])[idx]!
+            let sels := (Array.range tys.size).map fun j => mkApp (Lean.mkConst (info.sel idx j)) p
+            let tester ← mkEq p (mkAppN (Lean.mkConst (info.ctor idx)) sels)
+            for t in tys, j in [0:tys.size] do
+              unless t == ty do continue
+              let args := fvs.set! i sels[j]!
+              let at_ (c : ClauseInfo) : Expr := mkAppN (Lean.mkConst c.decl) (c.uses.map (Lean.mkConst ·) ++ args)
+              for post in k.posts do
+                let fact := k.pres.foldr (fun pre acc => mkForall `h .default (at_ pre) acc) (at_ post)
+                out := out.push ({ kind := .assume, name := n ++ post.name ++ info.variants[idx]! ++ Name.mkSimple (toString j)
+                                   ref := nameStx, body := ← mkLambdaFVars fvs (mkForall `h .default tester fact)
+                                   trigger? := none, triggerRef? := none, decl := .anonymous } : PropInfo)
+          pure out
+    recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path induction
   lintDeclared .function n nameStx
   lintLines .function n nameStx orig
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
