@@ -11,6 +11,11 @@ const MAX_DELAY: Seconds := Seconds(30)
 -- `transient` forces the variant that the others rule out (`check::clash_notes`).
 proc retry(transient?, retry_after: Seconds): (decision: Decision) {   --~ error: no outputs satisfy `transient`, `honor_server` and `latency_budget`
     ensure transient: decision != Decision::GiveUp iff transient?   --~ info: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+    --~^? info: all hold: `transient.1` cannot hold, because `honor_server` and `latency_budget` forces it to be false
+    --~^^? info: all hold: `transient.all` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+    --~^^^? info: no branch of `transient` can hold
+    --~^^^^? info: none hold is impossible under the fixed hypotheses
+    --~^^^^^? info: none hold: `transient.2` must hold, because the fixed hypotheses forces it to be true
     ensure honor_server: when decision is Decision::RetryAfter(d), d >= retry_after   --~ info: conflicts with `transient` and `latency_budget`
     ensure latency_budget: when decision is Decision::RetryAfter(d), d <= MAX_DELAY   --~ info: conflicts with `transient` and `honor_server`
 }

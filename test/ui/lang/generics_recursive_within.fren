@@ -5,7 +5,7 @@
 
 mod generics_recursive_within
 
-type Byte := Int is 0..=255
+type Byte = subset_value: Int where invariant: subset_value is 0..=255
 pub enum List<T> { Nil, Cons(T, List<T>) }
 pub enum Wrap<T> { W(List<T>) }
 pub enum Twice<T> { T2(Wrap<T>) }

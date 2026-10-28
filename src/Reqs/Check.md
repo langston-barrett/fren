@@ -16,12 +16,12 @@ and checks how its constraints are written six more ways, wherever they
 have an index, a [table](Lang/Expressions.md#tables), a
 [`match`](Lang/Expressions.md#matches) with guards, an application of a
 function with a [contract](Lang/Items.md#contracts), or a value given
-where a [pattern type](Lang/Types.md#pattern-types) is declared:
+where a [subset type](Lang/SubsetTypes.md) is declared:
 
 | Check | Confirms |
 |---|---|
 | [Definedness](#definedness) | each index is in range where it is evaluated |
-| [Pattern types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
+| [Subset types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
 | [Completeness](#completeness) | some row of each table without a `_` row holds, and some arm of each `match` that needs its guards to be exhaustive is taken, where it is evaluated |
 | [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once, and no two arms of a [table over a scrutinee](Lang/Expressions.md#tables-over-a-scrutinee) are taken at once, where it is evaluated |
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
@@ -49,7 +49,7 @@ variables `y` and the outputs `o`.
 [definitions](Lang/Procedures.md#definitions), and `o` excludes the
 variables they define.
 `N` is the constraints that [natural
-numbers](Lang/Procedures.md#natural-numbers), [pattern
+numbers](Lang/Procedures.md#natural-numbers), [subset
 types](Lang/Procedures.md#pattern-types) and the
 [postconditions](Lang/Items.md#contracts) of uninterpreted functions
 bring: `N(i, y)` that each `Nat` input and call variable, and each
@@ -837,7 +837,7 @@ realizable, by its own checks, so its constraints can hold.
 ## Call assumptions
 
 For each call `w` of a procedure `c`, and each assumption `a` of `c`,
-and each parameter `x` of `c` whose type brings a constraint (see [Pattern
+and each parameter `x` of `c` whose type brings a constraint (see [Subset
 types](Lang/Procedures.md#pattern-types)), before its assumptions,
 Fren asks whether `a`, or `x`'s constraint, with `w`'s arguments substituted, can be proved from
 `A`, the arguments of `w`, and the constraints `I_v` of the calls `v`
@@ -977,7 +977,7 @@ pub proc definedness(
 ## Pattern types
 
 The pattern-type check is part of [definedness](#definedness), whose
-results it gives. A value given where a [pattern type](Lang/Types.md#pattern-types) is
+results it gives. A value given where a [subset type](Lang/SubsetTypes.md) is
 declared has an *obligation*: it must match the pattern. For each value
 given where a pattern type is declared, at the top of the declared type or
 in an element type (a definition, an argument of a function, a field of a

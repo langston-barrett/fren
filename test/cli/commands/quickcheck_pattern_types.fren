@@ -3,7 +3,7 @@
 -- from their pattern types: every expectation here holds of the values of
 -- its types, and testing finds no counterexample, though values of the
 -- base types refute each one.
-type Byte := Int is 100..=200
+type Byte = subset_value: Int where invariant: subset_value is 100..=200
 
 struct Packet { length: Byte }
 

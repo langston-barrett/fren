@@ -37,7 +37,7 @@ pub proc thermostat(temp: Int, target: SubsetOverview1): (mode: Mode) {
 - `MIN_TARGET` and `MAX_TARGET` are [constants](Items.md#constants): each
   stands for its value.
 - `thermostat` has two parameters, `temp` and `target`, and one result,
-  `mode`. `target`'s type is a [pattern type](Types.md#pattern-types): an
+  `mode`. `target`'s type is a [subset type](SubsetTypes.md): an
   `Int` that matches the range `MIN_TARGET..=MAX_TARGET`, so the procedure
   assumes that the environment only ever sets a target between 50 and 90.
 - The guarantees `heat`, `cool` and `idle` say which mode the system must

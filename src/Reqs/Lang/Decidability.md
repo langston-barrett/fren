@@ -89,7 +89,7 @@ over a function's arguments.
 
 ## Pattern types
 
-A [pattern type](Types.md#pattern-types) at the top of a declared type,
+A [subset type](SubsetTypes.md) at the top of a declared type,
 or within a record's fields or the payloads of an enumeration that is not
 recursive, brings constraints that are quantifier-free: a pattern is a
 disjunction of comparisons with constants and tests of variants, one for

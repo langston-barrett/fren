@@ -1,4 +1,5 @@
 -- A pattern type as a type argument of a recursive enumeration.
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-proc c(xs: List<Int is 0..=9>) {}
+type SubsetF0389RecursiveArgument1 = subset_value: Int where invariant: subset_value is 0..=9
+proc c(xs: List<SubsetF0389RecursiveArgument1>) {}

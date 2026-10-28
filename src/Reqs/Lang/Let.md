@@ -34,7 +34,7 @@ A definition `x := e` names the value of `e`. Its type is that of `e`,
 and may be written, `x: T := e`, in which case `e` must have type `T`.
 A written type may be a [`Nat`](Types.md#natural-numbers), and an `Int`
 then accepts a `Nat`, as anywhere an `Int` is expected. It may be a
-[pattern type](Types.md#pattern-types), as in `low: Byte := x - 1`, which
+[subset type](SubsetTypes.md), as in `low: Byte := x - 1`, which
 compares as its base type does, with the obligation that `e` matches its
 pattern, which the [pattern-type check](../Check.md#pattern-types) asks
 where the definition is written. A definition is substituted, so its

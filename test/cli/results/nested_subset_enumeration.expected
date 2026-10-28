@@ -26,3 +26,4 @@ fren: 12 passed, 2 failed, 0 inconclusive, 0 redundant
 
 Some errors have detailed explanations: F0601, F0661.
 For more information about an error, try `fren --explain F0601`.
+exit=1

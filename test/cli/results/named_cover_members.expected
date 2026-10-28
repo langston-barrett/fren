@@ -101,3 +101,4 @@ note: `equivalence.same?@1.also` is true
   = member: true
 
 fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

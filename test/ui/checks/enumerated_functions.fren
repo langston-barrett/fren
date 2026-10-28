@@ -36,7 +36,8 @@ proc contracted(x: Id): (det big?) {  --~ error: `contracted` cannot be enumerat
 
 -- A defined output's value in a counterexample, through a table's
 -- unspecified value and an interpretation, the same in both front ends.
-fn level(Bool): Int is 0..=2
+type SubsetEnumeratedFunctions1 = subset_value: Int where invariant: subset_value is 0..=2
+fn level(Bool): SubsetEnumeratedFunctions1
 
 set_option fren.evidence "enumerated" in
 proc tabled(a?): (det y: Int) {  --~ info: 2 checks of `tabled` hold for every behaviour up to size 3

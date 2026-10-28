@@ -167,8 +167,8 @@ definition.
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.
 An interpretation is not checked against the spec, which states nothing
-about a function beyond its type, including a [pattern
-type](Lang/Types.md#pattern-types) of its result, and its
+about a function beyond its type, including a [subset
+type](Lang/SubsetTypes.md) of its result, and its
 [postconditions](Lang/Items.md#contracts): it says what the spec's author
 means by the function, and is reviewed as part of the spec. Every
 application is assumed to meet both, so they are proved of its

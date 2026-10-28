@@ -1,6 +1,9 @@
 -- A component with too many behaviours to enumerate (F0644).
+type SubsetF0644TooMany1 = subset_value: Int where invariant: subset_value is 0..=99
+type SubsetF0644TooMany2 = subset_value: Int where invariant: subset_value is 0..=99
+type SubsetF0644TooMany3 = subset_value: Int where invariant: subset_value is 0..=99
 set_option fren.evidence "enumerated" in
-proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+proc c(a: SubsetF0644TooMany1, b: SubsetF0644TooMany2, d: SubsetF0644TooMany3): (det sum: Int) {
     out sum := a + b + d
     expect e: sum >= 0
 }

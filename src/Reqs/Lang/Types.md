@@ -46,7 +46,7 @@ redeclared, nor can the built-in functions `exactly_one?` and
 Every expression has exactly one type, and the only conversion between
 types is *widening*: a `Nat` is accepted where an `Int` is expected (see
 [Natural numbers](#natural-numbers)), and a pattern type where its base
-type is (see [Pattern types](#subset-types)). Comparing values of other different
+type is (see [Subset types](#subset-types)). Comparing values of other different
 types, such as an `Int` with an enumeration, is an error. Which operators apply to which types is given in
 [Expressions](Expressions.md). Two values of an enumeration or a record
 are equal if they are built alike: the same variant with equal payloads,
@@ -173,7 +173,7 @@ of an uninterpreted function whose result is a `Nat` (see
 [Items](Items.md#uninterpreted-functions)). In Lean, a `Nat` is Lean's
 `Nat`, and widening is Lean's coercion `↑` to `Int`.
 
-`Nat` may be written where a pattern type may (see [Pattern
+`Nat` may be written where a pattern type may (see [Subset
 types](#subset-types)), with two exceptions for now: it is not the
 element type of a set, relation or sequence, nor the type of a payload of a
 recursive enumeration, where an `Int` and a constraint serve instead. Nor

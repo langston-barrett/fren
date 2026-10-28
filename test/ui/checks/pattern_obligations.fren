@@ -2,11 +2,13 @@
 -- declared is checked to match its pattern, and fails where it may not.
 -- fren-covers: check::pattern_obligation, lang::pattern_widening
 
-type Byte := Int is 0..=255
+type Byte = subset_value: Int where invariant: subset_value is 0..=255
 
 enum Reading { Raw(Byte), Missing }
-struct Packet { length: Byte, ok?: Bool is true }
-struct Level(Int is 0..=9)
+type SubsetPatternObligations1 = subset_value?: Bool where invariant: subset_value?
+struct Packet { length: Byte, ok?: SubsetPatternObligations1 }
+type SubsetPatternObligations2 = subset_value: Int where invariant: subset_value is 0..=9
+struct Level(SubsetPatternObligations2)
 
 fn scale(b: Byte): Int := b * 2
 fn size(Byte): Int
@@ -16,23 +18,23 @@ proc sub(b: Byte): (y: Int) {
 }
 
 proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
-    assume newtype: Level(x) != Level(0)   --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
-    out d := x   --~ error: a value in `values::d` may not have the type `Byte`
+    assume newtype: Level(x) != Level(0)   --~ error: invariant `SubsetPatternObligations2::invariant` does not hold
+    out d := x   --~ error: invariant `Byte::invariant` does not hold
     out guarded := if 0 <= x <= 255 then x else 0
-    call w := sub(x)   --~ error: the parameter `b` of `sub` may not have its type `Byte` for call `values::w`
+    call w := sub(x)   --~ error: invariant `Byte::invariant` does not hold
     call v := sub(guarded)
 
-    ensure args: y = scale(x) + size(x)   --~ error: a value in `values::args` may not have the type `Byte`
-    --~^ error: a value in `values::args` may not have the type `Byte`
+    ensure args: y = scale(x) + size(x)   --~ error: invariant `Byte::invariant` does not hold
+    --~^ error: invariant `Byte::invariant` does not hold
     expect guarded_args: when 0 <= x <= 255, scale(x) = 2 * x
-    expect payload: Reading::Raw(x) != Reading::Missing   --~ error: a value in `values::payload` may not have the type `Byte`
-    expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: a value in `values::field` may not have the type `Bool is true`
-    expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: a value in `values::update` may not have the type `Byte`
-    expect defined: (let b: Byte := x + 1 in b) > x   --~ error: a value in `values::defined` may not have the type `Byte`
+    expect payload: Reading::Raw(x) != Reading::Missing   --~ error: invariant `Byte::invariant` does not hold
+    expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: invariant `SubsetPatternObligations1::invariant` does not hold
+    expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: invariant `Byte::invariant` does not hold
+    expect defined: (let b: Byte := x + 1 in b) > x   --~ error: invariant `Byte::invariant` does not hold
 }
 
 -- A refinement checks what the types of the abstract component's outputs
 -- bring, as it checks its guarantees.
 proc abstract_out(): (y: Byte) { ensure r: y != 7 }
 proc concrete_out(): (y: Int) { ensure r: y = 300 }
-refine wider: concrete_out refines abstract_out   --~ error: a value in `wider::y` may not have the type `Byte`
+refine wider: concrete_out refines abstract_out   --~ error: invariant `Byte::invariant` does not hold

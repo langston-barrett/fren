@@ -8,9 +8,10 @@ comparison](../../Lang/Expressions.md#chained-comparisons) more clearly.
 
 A [pattern test](../../Lang/Expressions.md#pattern-tests), `e is P`, is how
 Fren tests a value against several alternatives, as in `status is 429 |
-503`. It writes them in the syntax of a [pattern
-type](../../Lang/Types.md#pattern-types), as in `type Status := Nat is
-100..=599`, and a range or a payload extends it without rewriting, as in
+503`. The same test can constrain a [subset
+type](../../Lang/SubsetTypes.md), as in
+`type Status = n: Nat where range: n is 100..=599`.
+A range or a payload extends the test without rewriting, as in
 `status is 429 | 500..=599`. Its meaning is a disjunction of equations
 and comparisons, which the solver decides without the theory of sets that
 a membership such as `status in {429, 503}` brings in. So a test of one

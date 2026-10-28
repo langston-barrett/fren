@@ -507,6 +507,12 @@ proc c(x: Mode): (ok?) { ensure r: ok? iff (exists (m: Mode), m = x) }
 ```
 "# },
 
+  { code := "F0137", args := none, explanation := r#"A removed code: multiple inline pattern restrictions on one type.
+
+Inline pattern types have been replaced by declared subset aliases with
+named invariants. Old inline modifiers receive ordinary parse errors.
+Nothing reports F0137, and the number is not reused.
+"# },
   { code := "F0142", explanation := r#"A removed code: `req` where a member is expected.
 
 `F0142` was the error for `req` where a member of a procedure was
@@ -2315,6 +2321,18 @@ proc c(): (t: Ms) { ensure r: t = Ms(5) }
 "# },
 
 
+  { code := "F0369", args := none, explanation := r#"A removed code: a pattern restriction on an already restricted alias.
+
+A declared subset can inherit a base subset's invariants and add its own
+named invariants. Old inline restriction syntax receives ordinary parse
+errors. Nothing reports F0369, and the number is not reused.
+"# },
+  { code := "F0370", args := none, explanation := r#"A removed code: a binder in a pattern type.
+
+Subset aliases declare their binder explicitly. An expression pattern
+test still follows the ordinary rules for pattern binders. Nothing
+reports F0370, and the number is not reused.
+"# },
   { code := "F0371", explanation := r#"A field of an ordered struct has a type that is not ordered.
 
 Erroneous code example:
@@ -3876,6 +3894,16 @@ proc c(x: Int): (big?) {
   cover large: x > 2000 and big?
 }
 ```
+"# },
+  { code := "F0622", args := none, explanation := r#"A removed code: a value outside an anonymous pattern type.
+
+Declared subset obligations now identify the failed invariant with F0661.
+Nothing reports F0622, and the number is not reused.
+"# },
+  { code := "F0623", args := none, explanation := r#"A removed code: a call argument outside its anonymous pattern type.
+
+Call arguments for declared subsets have named invariant obligations,
+reported with F0661. Nothing reports F0623, and the number is not reused.
 "# },
   { code := "F0639", args := some ["quickcheck"], explanation := r#"A quantifier that testing cannot evaluate.
 

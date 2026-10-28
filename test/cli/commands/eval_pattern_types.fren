@@ -1,6 +1,8 @@
 --@ args: eval --proc c --set x=300 --set y=5
 -- A value given outside its pattern type makes the behaviour inadmissible,
 -- if it is an input's, or violate the component, if it is an output's.
-proc c(x: Int is 0..=255): (y: Int is 10..) {
+type SubsetEvalPatternTypes1 = subset_value: Int where invariant: subset_value is 0..=255
+type SubsetEvalPatternTypes2 = subset_value: Int where invariant: subset_value is 10..
+proc c(x: SubsetEvalPatternTypes1): (y: SubsetEvalPatternTypes2) {
     ensure r: y = x - 295
 }

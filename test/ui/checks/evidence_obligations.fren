@@ -1,15 +1,15 @@
 -- A value given where a pattern type is declared is checked by the solver
 -- whatever the evidence, in both front ends (`check::by_evidence`): not
 -- dropped with the checks that testing or enumeration does not run.
-type Small := Int is 0..=3
+type Small = subset_value: Int where invariant: subset_value is 0..=3
 
 set_option fren.evidence "enumerated" in
 proc by_enumeration(b?): (det bad: Small) {
-    out bad := if b? then 7 else 1  --~ error: a value in `by_enumeration::bad` may not have the type `Small`
+    out bad := if b? then 7 else 1  --~ error: invariant `Small::invariant` does not hold
 }
 
 set_option fren.evidence "tested" in
 proc by_testing(b?): (det bad: Small) {
-    out bad := if b? then 7 else 1  --~ error: a value in `by_testing::bad` may not have the type `Small`
+    out bad := if b? then 7 else 1  --~ error: invariant `Small::invariant` does not hold
 }
 --~^^^[hosted] info: the checks of `by_testing` set to testing are run by `fren check`, not in Lean

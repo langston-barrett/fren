@@ -6,6 +6,11 @@ proc heater(temp: Int): (alarm?) {
     exists margin: Int
 
     ensure r: alarm? iff temp > 100
+    --~^? info: all hold is impossible under the fixed hypotheses
+    --~^^? info: all hold: `r.1` cannot hold, because the fixed hypotheses forces it to be false
+    --~^^^? info: no branch of `r` can hold
+    --~^^^^? info: none hold is impossible under the fixed hypotheses
+    --~^^^^^? info: none hold: `r.2` must hold, because the fixed hypotheses forces it to be true
     ensure m: margin = temp - 100
 
     cover overheat: temp > 100 and alarm?          --~ info: cover goal `heater::overheat` is met
@@ -24,6 +29,11 @@ proc panel(t: Int): (lit?) {
     call h := heater(t)
 
     ensure shows: lit? iff h.alarm?
+    --~^? info: all hold: `shows.2` cannot hold, because `h` forces it to be false
+    --~^^? info: all hold: `shows.all` forces h.alarm? = true, but `h` forces h.alarm? = false
+    --~^^^? info: no branch of `shows` can hold
+    --~^^^^? info: none hold is impossible under the fixed hypotheses
+    --~^^^^^? info: none hold: `shows.1` must hold, because the fixed hypotheses forces it to be true
 
     cover lit_when_hot: lit? and t > 500           --~ info: cover goal `panel::lit_when_hot` is met
     cover lit_when_cold: lit? and t < 0            --~ error: cover goal `panel::lit_when_cold` cannot be met

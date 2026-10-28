@@ -6,14 +6,17 @@
 set_option fren.lint.dead_code "allow"
 
 pub ordered enum Level { Low, Mid, High }
-pub ordered struct Version { major: Nat, minor: Int is 0..=99, level: Level }
+type SubsetOrderedStructs1 = subset_value: Int where invariant: subset_value is 0..=99
+pub ordered struct Version { major: Nat, minor: SubsetOrderedStructs1, level: Level }
 
 -- Every newly ordered underlying type: `Nat`, pattern types, type aliases
 -- of ordered types, and an ordered newtype.
 pub ordered struct Seconds(Nat)
-pub ordered struct Pos(Int is 0..)
-pub ordered struct Status(Nat is 100..=599)
-pub type Small := Int is 0..=9
+type SubsetOrderedStructs2 = subset_value: Int where invariant: subset_value is 0..
+pub ordered struct Pos(SubsetOrderedStructs2)
+type SubsetOrderedStructs3 = subset_value: Nat where invariant: subset_value is 100..=599
+pub ordered struct Status(SubsetOrderedStructs3)
+pub type Small = subset_value: Int where invariant: subset_value is 0..=9
 pub ordered struct Digit(Small)
 pub type Label := String
 pub ordered struct Tag(Label)
@@ -66,8 +69,8 @@ proc sums(a: Seconds, b: Seconds, x: Digit, y: Pos): (
     det fewer: Pos,
 ) {
     out total := a + b
-    out twice := x + x   --~ error: a value in `sums::twice` may not have the type `Small`
-    out fewer := y - Pos(1)   --~ error: a value in `sums::fewer` may not have the type `Int is 0..`
+    out twice := x + x   --~ error: invariant `Small::invariant` does not hold
+    out fewer := y - Pos(1)   --~ error: invariant `SubsetOrderedStructs2::invariant` does not hold
 
     expect added: total.0 = a.0 + b.0 and total >= a
 }

@@ -3,19 +3,19 @@
 -- fren-covers: check::pattern_obligation
 set_option fren.lint.undecidable "allow"
 
-type Byte := Int is 0..=255
+type Byte = subset_value: Int where invariant: subset_value is 0..=255
 
 fn total(Set<Byte>): Int
 
 enum Mode { A, B }
 
 proc c(x: Int, s: Set<Int>, q: Seq<Byte>): (y: Int, det d: Set<Byte>, det e: Seq<Byte>) {
-    out d := {x}   --~ error: a value in `c::d` may not have the type `Set<Byte>`
+    out d := {x}   --~ error: invariant `Byte::invariant` does not hold
     out e := q
 
-    ensure r: y = total(s)   --~ error: a value in `c::r` may not have the type `Set<Byte>`
+    ensure r: y = total(s)   --~ error: invariant `Byte::invariant` does not hold
 
-    expect w: z >= 0 or x < 0 where z: Byte := x   --~ error: a value in `c::w` may not have the type `Byte`
-    expect qu: forall (m: Mode), (let b: Byte := if m = Mode::A then x else 0 in b) >= 0 or x < 0   --~ error: a value in `c::qu` may not have the type `Byte`
+    expect w: z >= 0 or x < 0 where z: Byte := x   --~ error: invariant `Byte::invariant` does not hold
+    expect qu: forall (m: Mode), (let b: Byte := if m = Mode::A then x else 0 in b) >= 0 or x < 0   --~ error: invariant `Byte::invariant` does not hold
     expect ok: q = [] or q[0] <= 255
 }

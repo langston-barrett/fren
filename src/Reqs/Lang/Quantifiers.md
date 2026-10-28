@@ -49,7 +49,7 @@ sequence type is unbounded, even where its element type is finite, as in
 the decidable core. A binder's type is written and resolved as a
 variable's is, so a path that names no type is an error, and so is one
 that names a procedure (see [Global expectations](#global-expectations)).
-A [pattern type](Types.md#pattern-types) is listed when it is finite and
+A [subset type](SubsetTypes.md) is listed when it is finite and
 not unbounded, as `lang::pattern_finite` says: `forall (x: Int is
 0..=7), e` has eight instances, for 0 to 7 in increasing order, and
 `forall (s: Severity is Severity::Warning | Severity::Error), e` two, the
@@ -206,8 +206,8 @@ pub proc quantifier_size(
 
 An unbounded quantifier means what it says, as in Lean: `forall (x: T),
 e` is the proposition that `e` holds for every value of `x` of type `T`,
-and `exists (x: T), e` that it holds for some. A bound name of a [pattern
-type](Types.md#pattern-types) ranges over the values that match its
+and `exists (x: T), e` that it holds for some. A bound name of a [subset
+type](SubsetTypes.md) ranges over the values that match its
 pattern, as a variable's does, and one of type `Nat` over the integers at
 least 0: `forall (n: Nat), e` is `forall (n: Int), when n >= 0, e`, and
 `exists (n: Nat), e` is `exists (n: Int), n >= 0 and e`. Its bound names

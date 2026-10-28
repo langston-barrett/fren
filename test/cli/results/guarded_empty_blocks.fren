@@ -1,5 +1,5 @@
-fn empty_or?(g?) := when g?, or { }
-fn empty_one?(g?) := when g?, one { }
+fn empty_or?(g?) := when g?, or {}
+fn empty_one?(g?) := when g?, one {}
 expect empty(g?) {
     assume inactive: not g?
     expect disjunction: empty_or?(g?)

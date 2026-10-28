@@ -154,8 +154,8 @@ def codesInSources : IO (Array String) := do
 depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
 def unsnapshotted : List String :=
-  ["F0142", "F0143", "F0155", "F0156", "F0158", "F0159", "F0160", "F0164", "F0399", "F0406", "F0407", "F0416", "F0420",
-   "F0608", "F0713"]
+  ["F0137", "F0142", "F0143", "F0155", "F0156", "F0158", "F0159", "F0160", "F0164", "F0369", "F0370", "F0399", "F0406", "F0407", "F0416", "F0420",
+   "F0608", "F0622", "F0623", "F0713"]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
 the code: each lint's row gives its name, code, group and default level,
@@ -249,7 +249,7 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Global", "Lang/Decidability",
+  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/SubsetTypes", "Lang/BooleanBlocks", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Global", "Lang/Decidability",
     "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/HigherOrder", "Lang/Recursion", "Lang/ScopeLaws",
     "Lang/Modules", "Lang/Calls", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
     "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
@@ -1057,8 +1057,8 @@ changes a type alias or a pattern type that it uses (`FrenCli.skipFile?`):
 the mutant's state is then that of elaborating every file again, and
 differs from the original's. -/
 def laterFiles : IO (Array String) := do
-  let a := "pub mod a\n\npub type Byte := Int is 0..=255\npub enum Level { Low, Mid, High }\n" ++
-    "pub type Loud := Level is Level::Mid | Level::High\n"
+  let a := "pub mod a\n\npub type Byte = n: Int where range: n is 0..=255\npub enum Level { Low, Mid, High }\n" ++
+    "pub type Loud = level: Level where chosen: level is Level::Mid | Level::High\n"
   let b := "pub mod b\n\nuse a::{Byte, Level, Loud}\n\nproc c(x: Byte, l: Loud): (y: Int) {\n" ++
     "    ensure r: y = (if l = Level::High then x else x + 1)\n}\n"
   let files := #[("a.fren", a.toList.toArray), ("b.fren", b.toList.toArray)]

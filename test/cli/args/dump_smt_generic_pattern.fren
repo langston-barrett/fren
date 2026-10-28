@@ -4,9 +4,10 @@
 -- one of an element type quantifies over the elements, with `fmf-bound`.
 set_option fren.lint.undecidable "allow"
 
-type Byte := Int is 0..=255
+type Byte = subset_value: Int where invariant: subset_value is 0..=255
 
-proc c(x: Option<Byte>, s: Option<Set<Int is 0..=9>>) {
+type SubsetDumpSmtGenericPattern1 = subset_value: Int where invariant: subset_value is 0..=9
+proc c(x: Option<Byte>, s: Option<Set<SubsetDumpSmtGenericPattern1>>) {
     expect byte: match x { Option::Some(b) => b <= 255, Option::None => true }
     expect digits: match s { Option::Some(e) => not (10 in e), Option::None => true }
 }

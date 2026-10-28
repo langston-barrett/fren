@@ -10,3 +10,4 @@ error[F0615]: cover goal `check_cover::impossible` cannot be met: no behaviour s
 fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0615`.
+exit=1

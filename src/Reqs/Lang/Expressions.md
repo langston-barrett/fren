@@ -1250,8 +1250,8 @@ write `x = E::A` and `x is E::A | E::B`, not `x is E::A` or `x = E::A or x
 with `iff` or `not` rather than `is true`, and compare an `Int`, a `Nat` or
 a `String` with a literal with `=`, but test it against several literals or
 a range with `is`, as in `n is 0 | 1` and `n is 0..=9`. A pattern test
-writes its alternatives in the syntax of a [pattern
-type](Types.md#pattern-types), and a range or a payload extends it as it
+writes its alternatives in the syntax of a [subset
+type](SubsetTypes.md), and a range or a payload extends it as it
 is, as in `status is 429 | 500..=599`; `in` is for collections, such as a
 set constant or a set that is computed. A pattern with a payload may still
 have alternatives without one, as in `s is Shape::Rect(_, _) |

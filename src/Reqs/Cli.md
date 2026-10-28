@@ -216,7 +216,7 @@ are cvc5's projections, which it supports only in higher-order logic, so
 such a spec uses `HO_ALL`. The Lean-hosted front end does the same, for
 each query with a projection, by cvc5's option `force-logic`, since
 lean-smt always sets `ALL`. A query with a quantifier over a
-collection's elements, which a [pattern type](Lang/Types.md#meaning)
+collection's elements, which a [subset type](Lang/Types.md#meaning)
 within an element type brings, and which is outside the core, sets
 `fmf-bound`, with which cvc5 finds models of quantifiers bounded by
 membership, as each such quantifier is, rather than giving up; both front

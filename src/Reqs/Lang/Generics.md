@@ -657,7 +657,7 @@ type as declared:
 
 - A value of the instance brings the constraints of its payloads and
   fields with the arguments' types, as a value of any enumeration or record
-  brings those of its own (see [Pattern types](Types.md#meaning)): a value `x` of
+  brings those of its own (see [Subset types](Types.md#meaning)): a value `x` of
   `Option<Byte>` brings that when `x` is `Option::Some(b)`, `b` is in
   `0..=255`. A constraint of an element type within an argument, as in
   `Option<Set<Digit>>` with `type Digit = n: Int where range: n is 0..=9`, quantifies over the elements, as it does
@@ -683,7 +683,7 @@ parameter. So `List<Digit>` and `List<Option<Byte>>` are errors,
 and `List<Option<Int>>` is not. This is stricter than for a recursive
 enumeration that is not generic, whose payload of a pattern type is
 allowed, under the [`undecidable` lint](../Lint/Decidability.md#undecidable-constructs)
-(see [Pattern types](Types.md#meaning)). It reaches records too: with
+(see [Subset types](Types.md#meaning)). It reaches records too: with
 `struct R { b: Byte }`, `List<R>` is an error, since a value of `R` brings
 that its field is in range, though `R` itself is not a pattern type. It
 reaches through instances too, once their arguments stand for their

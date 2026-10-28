@@ -425,7 +425,7 @@ pub proc nat_variable(
 
 ## Pattern types
 
-A variable whose type is a [pattern type](Types.md#pattern-types), or a
+A variable whose type is a [subset type](SubsetTypes.md), or a
 record or an enumeration with a pattern type or a `Nat` within its fields
 and payloads, brings the constraint that its value matches, just as a
 `Nat` variable brings that it is at least 0, and in the same way, which

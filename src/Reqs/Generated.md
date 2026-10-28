@@ -503,8 +503,8 @@ named `w.x`. A variable of type `Bool`, `Int`, `Nat`, `String`, an
 enumeration `E` or a record `R`, a newtype among them, has the Lean type
 `Bool`, `Int`, `Nat`, `String`, or the inductive or structure for `E` or
 `R`, and a `Nat` that
-is widened to an `Int` is Lean's `↑n`. A [pattern
-type](Lang/Types.md#pattern-types) has its base type's Lean type, and a
+is widened to an `Int` is Lean's `↑n`. A [subset
+type](Lang/SubsetTypes.md) has its base type's Lean type, and a
 type alias that of the type it names, and a field or payload of type `Nat`
 is Lean's `Nat`. What pattern types bring is part of the definitions: `p.assumes` starts
 with the constraints of the inputs whose types bring one (see

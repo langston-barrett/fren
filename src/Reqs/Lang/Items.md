@@ -381,7 +381,7 @@ the item.
 ## Fields and payloads
 
 A field or a payload may have any type in which no abstract type occurs,
-including a [pattern type](Types.md#subset-types) and a `Nat`, but not a
+including a [subset type](Types.md#subset-types) and a `Nat`, but not a
 `Nat` within an element type, nor as a payload of a recursive enumeration
 (see [Natural numbers](Types.md#natural-numbers)): the values of a record or
 enumeration are fully described by the spec, and `Set<Name>` is as
@@ -418,7 +418,7 @@ pub proc field_type(
 ```
 
 A [newtype](#newtypes)'s field is a record's field, so no abstract type is
-within it either. Its type may be a [pattern type](Types.md#subset-types),
+within it either. Its type may be a [subset type](Types.md#subset-types),
 as any field's may:
 
 ```fren
@@ -633,7 +633,7 @@ to equal arguments, it gives equal results, of its result type, and
 that it meets its [postconditions](#contracts). So an
 application of a function whose result is a `Nat` is at least 0, as a
 `Nat` variable is (see [Procedures](Procedures.md#natural-numbers)), one
-whose result is a [pattern type](Types.md#subset-types) matches its
+whose result is a [subset type](Types.md#subset-types) matches its
 pattern, and an application of a function with postconditions meets each
 of them wherever it meets the preconditions: each application brings these
 constraints where it is written, and no constraint quantifies over the
@@ -863,7 +863,7 @@ and `where` clauses, and constants declared before it, so constants cannot depen
 apply [defined functions](#defined-functions) declared before it, but no
 uninterpreted function, since its value is unknown. And the constant's
 type is not an abstract type, which has no literals. Its type may be a
-[pattern type](Types.md#subset-types), and its value is then checked to
+[subset type](Types.md#subset-types), and its value is then checked to
 match it, as a defined function's body is. `lang::constant`
 states this:
 

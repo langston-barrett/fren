@@ -1,11 +1,11 @@
-error[F0389]: `Int is 0..=9` cannot be a type argument of the recursive enumeration `List`
- --> test/cli/types/f0389_recursive_argument.fren:4:17
+error[F0389]: `SubsetF0389RecursiveArgument1` cannot be a type argument of the recursive enumeration `List`
+ --> test/cli/types/f0389_recursive_argument.fren:5:17
   |
-4 | proc c(xs: List<Int is 0..=9>) {}
-  |                 ^^^^^^^^^^^^ its values bring a constraint
+5 | proc c(xs: List<SubsetF0389RecursiveArgument1>) {}
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ its values bring a constraint
   |
   = note: for now, a type argument of a recursive enumeration brings no constraint, which would hold of every payload, at every depth
-  = help: give the argument no pattern, and say of the payloads that the spec reads what it needs
+  = help: use an unrestricted type argument, and say of the payloads that the spec reads what it needs
 
 error: could not check due to previous errors
 

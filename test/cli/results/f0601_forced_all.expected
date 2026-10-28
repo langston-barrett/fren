@@ -30,6 +30,45 @@ note: conflicts with `transient` and `honor_server`
 24 |     ensure latency_budget: delay <= MAX_DELAY
    |            ^^^^^^^^^^^^^^
 
+note: no branch of `transient` can hold
+  --> test/cli/results/f0601_forced_all.fren:20:12
+   |
+20 |     ensure transient: retry? iff status is 429 | 503
+   |            ^^^^^^^^^
+
+note: all hold: `transient.all` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
+  --> test/cli/results/f0601_forced_all.fren:20:12
+   |
+20 |     ensure transient: retry? iff status is 429 | 503
+   |            ^^^^^^^^^
+   |
+   = note: conditional core of `transient` under all hold: `honor_server` and `latency_budget`
+
+note: all hold: `transient.1` cannot hold, because `honor_server` and `latency_budget` forces it to be false
+  --> test/cli/results/f0601_forced_all.fren:20:23
+   |
+20 |     ensure transient: retry? iff status is 429 | 503
+   |                       ^^^^^^
+   |
+   = member: retry?
+
+note: none hold is impossible under the fixed hypotheses
+  --> test/cli/results/f0601_forced_all.fren:20:12
+   |
+20 |     ensure transient: retry? iff status is 429 | 503
+   |            ^^^^^^^^^
+   |
+   = note: conditional core of `transient` under none hold: the fixed hypotheses alone
+
+note: none hold: `transient.2` must hold, because the fixed hypotheses forces it to be true
+  --> test/cli/results/f0601_forced_all.fren:20:34
+   |
+20 |     ensure transient: retry? iff status is 429 | 503
+   |                                  ^^^^^^^^^^^^^^^^^^^
+   |
+   = member: status is 429 | 503
+                     and method != Method::Post and attempt < MAX_ATTEMPTS
+
 error[F0601]: `http::pinned` is not realizable
   --> test/cli/results/f0601_forced_all.fren:27:6
    |
