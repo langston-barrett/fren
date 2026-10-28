@@ -1,0 +1,20 @@
+-- fren-covers: lang::recursive_facts
+pub enum T { Z, S(T) }
+
+pub fn size(t: T): (r: Int) {
+    out r := match t { T::Z => 0, T::S(a) => 1 + size(a) }
+    ensure nonnegative: r >= 0
+}
+
+pub fn total(t: T, a: T, b: T, c: T, d: T,
+    e: T, f: T, g: T, h: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(x) => total(x, a, b, c, d, e, f, g, h)
+            + size(a) + size(b) + size(c) + size(d)
+            + size(e) + size(f) + size(g) + size(h),
+    }
+    ensure nonnegative: r >= 0
+}
+
+--@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant

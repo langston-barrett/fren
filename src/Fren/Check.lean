@@ -292,9 +292,11 @@ where
     else k xs
 
 /-- Ground equations and contract facts for recursive applications. The queue
-marks equation-introduced applications, so only its original applications and
-contract applications receive defining equations. -/
-partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr) : MetaM (Array (Name × Expr)) := do
+preserves origin through contracts: equation-introduced applications and their
+contracts receive no further equations. `allowPosts` lets induction proofs
+require evidence for a self-contract before using or expanding it. -/
+partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
+    (allowPosts : DefinedInfo → Expr → Array Expr → MetaM Bool := fun _ _ _ => pure true) : MetaM (Array (Name × Expr)) := do
   let st ← getState
   let recs := st.defined.toArray.filterMap fun (_, d) =>
     if d.recursive then d.solver?.map (·, d) else none
@@ -326,7 +328,7 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr) : Me
     let pres := domain ++ pres
     let posts ← ((k.map (·.posts)).getD #[]).mapM fun c => return (c.name, ← unfoldDefined (c.at args))
     let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
-    for (name, f) in Core.postconditionFacts implies pres posts do
+    for (name, f) in (if ← allowPosts d app gs then Core.postconditionFacts implies pres posts else #[]) do
       out := out.push (name, guarded f)
       work := work ++ (← scan recs f gs introduced ancestors)
     if (Core.recursiveFacts introduced).2 then

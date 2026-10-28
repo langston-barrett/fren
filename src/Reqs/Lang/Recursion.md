@@ -180,8 +180,14 @@ query has finitely many ground equations. This holds in every context,
 including a function's own contract check.
 
 The following structured policy is shared by both front ends. `Written`
-means an application in the query or its contracts; `Reflected` means one
-introduced by the one-step defining equation. Facts are conditional on the
+means an application in the query; `Reflected` means one
+introduced by the one-step defining equation. Applications found while
+expanding a contract inherit the originating application’s origin, including
+through further contracts. A work queue visits each application, guards and
+origin once; a contract expansion also stops when it revisits an application
+on its ancestry path. Nonrecursive definitions and contract clauses are
+expanded before scanning. This is the CLI’s finite collection policy, shared
+by hosted checks and recursive contract proofs. Facts are conditional on the
 application's own guards, and postconditions also on its preconditions.
 
 ```fren
@@ -222,7 +228,8 @@ Lean still receives a real structural recursive definition. Each
 postcondition receives a theorem proved by induction on the decreasing
 parameter. For nested payload calls the definition's generated structural
 induction principle supplies hypotheses at those calls as well. The equations for one
-step and each case's facts are given to the solver. This includes equations at
+step and each case's facts are given to the solver as guarded formulas,
+without splitting independent applications into constructor combinations. This includes equations at
 self-applications. After adding those equations, applications in their bodies
 receive contracts only. Self-applications introduced there use induction
 hypotheses at smaller descendants, including descendants deeper than the

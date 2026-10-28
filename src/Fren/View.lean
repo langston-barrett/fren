@@ -165,7 +165,6 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
       let suffix := "\n  all_goals intros"
         ++ "\n  all_goals try simp only [" ++ d.decl.toString ++ "]"
         ++ "\n  all_goals (repeat' first | split)"
-        ++ "\n  all_goals fren_recursive_equations"
         ++ "\n  all_goals fren_recursive_case " ++ d.decl.toString
       let ordinary := "by\n  intro " ++ " ".intercalate ids.toList
         ++ "\n  induction " ++ ids[i]!
@@ -178,10 +177,12 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
       -- Reflection can introduce self-applications below an immediate child.
       -- Well-founded induction supplies their contracts without reflecting again.
       let decreasingType := (← ppExpr c.vars[i]!.type).pretty
+      let mut ihName := "recursive_ih"
+      while ids.contains ihName do ihName := ihName ++ "_"
       let strong := "by\n  intro " ++ " ".intercalate ids.toList
         ++ (if generalized.isEmpty then "" else "\n  revert " ++ " ".intercalate generalized.toList)
-        ++ "\n  induction " ++ ids[i]! ++ " using (@sizeOfWFRel (" ++ decreasingType ++ ") inferInstance).wf.induction with\n  | h " ++ ids[i]! ++ " recursive_ih =>\n    cases " ++ ids[i]!
-        ++ "\n    all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ suffix.replace "\n  " "\n    "
+        ++ "\n  induction " ++ ids[i]! ++ " using (@sizeOfWFRel (" ++ decreasingType ++ ") inferInstance).wf.induction with\n  | h " ++ ids[i]! ++ " " ++ ihName ++ " =>\n    cases " ++ ids[i]!
+        ++ "\n    all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ (suffix ++ " " ++ ihName).replace "\n  " "\n    "
       let prove (script : String) : TermElabM Expr := do
         let proof ← match Parser.runParserCategory (← getEnv) `term script with
           | .ok proof => pure proof
