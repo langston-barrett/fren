@@ -39,7 +39,7 @@ def bangTokenFn : ParserFn := fun c s =>
   if s.hasError then s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
   else match s.stxStack.back with
     | .atom info val =>
-      if Fren.Core.leanBangTokens.contains val || Fren.Core.leanKeywords.contains val || val == "one" then
+      if Fren.Core.leanBangTokens.contains val || Fren.Core.leanKeywords.contains val then
         s.popSyntax.pushSyntax (.ident info val.toRawSubstring (.mkSimple val) [])
       else s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
     | _ => s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
@@ -49,7 +49,7 @@ open Lean Parser in
 `bangTokenFn`. -/
 def frenIdent : Parser :=
   withAntiquot (mkAntiquot "ident" identKind) (identNoAntiquot <|>
-    { fn := bangTokenFn, info := { firstTokens := .tokens (Fren.Core.leanBangTokens ++ Fren.Core.leanKeywords ++ ["one"]) } })
+    { fn := bangTokenFn, info := { firstTokens := .tokens (Fren.Core.leanBangTokens ++ Fren.Core.leanKeywords) } })
 
 open Lean Parser in
 /-- Fails if the next token is one of `Fren.Core.leanKeywords`, which
@@ -104,10 +104,30 @@ open Lean PrettyPrinter in
 as a sequence of root labels, preserving ordinary expression precedence. -/
 scoped syntax:36 (name := labelledExpr) frenIdent " : " fren_expr:10 : fren_expr
 
+open Lean Parser in
+/-- The contextual exact-one opener does not reserve `one` as a Lean token. -/
+def contextualOne : Parser where
+  fn := fun context state =>
+    let start := state.pos
+    let size := state.stackSize
+    let next := identNoAntiquot.fn context state
+    if next.hasError || next.stxStack.back.getId != `one then
+      next.restore size start |>.mkErrorAt "one" start
+    else next.popSyntax.pushSyntax (.atom next.stxStack.back.getHeadInfo "one")
+  info := identNoAntiquot.info
+
+open Lean PrettyPrinter in
+@[combinator_formatter contextualOne] def contextualOne.formatter : Formatter :=
+  Formatter.symbolNoAntiquot.formatter "one"
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer contextualOne] def contextualOne.parenthesizer : Parenthesizer :=
+  Parenthesizer.symbolNoAntiquot.parenthesizer "one"
+
 declare_syntax_cat fren_bool_member (behavior := both)
 syntax (atomic(frenIdent " : "))? fren_expr : fren_bool_member
 /-- Prefix Boolean blocks keep each source member and optional label. -/
-scoped syntax:arg (name := booleanBlockExpr) atomic(("and" <|> "or" <|> "iff" <|> "one") " { "
+scoped syntax:arg (name := booleanBlockExpr) atomic(("and" <|> "or" <|> "iff" <|> contextualOne) " { "
   sepBy(fren_bool_member, ", ", ", ", allowTrailingSep) " }") : fren_expr
 
 declare_syntax_cat fren_type (behavior := both)
@@ -371,11 +391,6 @@ scoped syntax:max (name := tableMatchExpr) "table " notFollowedBy("{") withoutFo
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
 scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_top_pattern : fren_expr
-
-/-- `T is P`, a pattern type: the values of `T` that match `P`
-(`Reqs/Lang/Types#pattern-types`). Its base type is never itself a pattern
-type, so a second `is` does not parse. -/
-scoped syntax:10 (name := patType) fren_type:11 " is " fren_top_pattern : fren_type
 
 declare_syntax_cat fren_member (behavior := both)
 

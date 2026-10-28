@@ -57,10 +57,16 @@ def fromModel (ty : Expr) (val : Expr) : Expr :=
 /-- Restore Boolean codomains of reconstructed model functions too.
 SMT propositions represent Bool values, including inside lambda bodies. -/
 partial def modelValue (ty value : Expr) : MetaM Expr := do
-  if let .forallE _ _ result _ := ty.consumeMData then
-    if let .lam name domain body _ := value.consumeMData then
-      return ← withLocalDeclD name domain fun x => do
-        let mapped ← modelValue (result.instantiate1 x) (body.instantiate1 x)
+  if let .forallE _ expectedDomain result _ := ty.consumeMData then
+    if let .lam name modelDomain body _ := value.consumeMData then
+      return ← withLocalDeclD name expectedDomain fun x => do
+        -- lean-smt reconstructs Boolean domains as propositions. Restore
+        -- the declared Bool binder and pass its truth proposition to the
+        -- reconstructed body, just as codomains are restored below.
+        let modelArgument := if expectedDomain.isConstOf ``Bool && modelDomain.isSort then
+          mkApp2 (mkConst ``Eq [Level.zero]) (mkConst ``Bool) x |>.app (mkConst ``Bool.true)
+          else x
+        let mapped ← modelValue (result.instantiate1 x) (body.instantiate1 modelArgument)
         mkLambdaFVars #[x] mapped
   if ty.isConstOf ``Bool && (← isProp value) then
     let decision ← match ← trySynthInstance (mkApp (mkConst ``Decidable) value) with
@@ -68,6 +74,13 @@ partial def modelValue (ty value : Expr) : MetaM Expr := do
       | _ => pure (mkApp (mkConst ``Classical.propDecidable) value)
     return mkApp2 (mkConst ``Decidable.decide) value decision
   return fromModel ty value
+
+/-- The total SMT value of a partial source table/match is free at its
+empty-sequence fallback, despite involving no declared uninterpreted function. -/
+partial def hasUnspecifiedRead (formula : Expr) : MetaM Bool := do
+  if formula.isAppOfArity ``Fren.Seq.nth 4 then
+    if (← whnf formula.getAppArgs[2]!).isAppOfArity ``List.nil 1 then return true
+  formula.foldlM (fun found child => if found then pure true else hasUnspecifiedRead child) false
 
 /-- A value of type `ty` as Fren builds it (`Reqs/View`), such as
 `Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`. -/
@@ -382,7 +395,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       try
         return ← captured.ctx.runMetaM do
           let entries ← captured.entries.mapM fun (key, value) => do
-            return (key, ← modelValue (← inferType key) value)
+            let expected ← inferType key
+            let expected := expected.replace fun term => (captured.sorts.find? (·.1 == term)).map (·.2)
+            return (key, ← modelValue expected value)
           let interpreted := formula.replace fun e => (entries.find? (·.1 == e)).map (·.2)
           let value ← reduce interpreted
           if value.isConstOf ``True then return some true
@@ -790,7 +805,16 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- And a generic function without a body, which stays itself.
     let interprets (e : Expr) : Bool :=
       e.hasAnyFVar useIds.contains || generics.any fun (a, _) => (e.find? (·.isConstOf a.placeholder)).isSome
-    let full := { comp with typesInterpreted := c.vars.any fun v => interprets v.type }
+    -- A partial table/match has an unspecified empty-sequence read as
+    -- its fallback. Its interpretation is free even with no declared UF,
+    -- so a SAT witness must not stand in for universal inhabitation.
+    let unspecified ← if c.subset?.isNone then pure false else
+      (comp.reqs.map (·.2) ++ comp.defs.map (·.2.1) ++ facts.map (·.2)).anyM fun formula => do
+        let formula ← unfoldDefined formula
+        hasUnspecifiedRead formula
+    let full := { comp with
+      inhabitation := c.subset?.isSome
+      typesInterpreted := (c.vars.any fun v => interprets v.type) || facts.any (interprets ·.2) || unspecified }
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`),
     -- and enumeration those set to enumeration (`check::by_evidence`).
     let enumerated ← if c.enumerated.any then (enumerate?.mapM fun f => f c full fvs ufs fns kinds) else pure none

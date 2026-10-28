@@ -213,15 +213,13 @@ and an instance of a generic type. -/
 def typePath? (ty : Syntax) : Option Syntax :=
   if ty.isOfKind ``Lang.fren_path then some ty
   else if ty.isOfKind ``Lang.setType || ty.isOfKind ``Lang.relType || ty.isOfKind ``Lang.seqType
-    || ty.isOfKind ``Lang.patType || ty.isOfKind ``Lang.instanceType then none
+    || ty.isOfKind ``Lang.instanceType then none
   else some ty[0]
 
 /-- The type `ty` as its segments, as the `fren` command's parser has it
 (`Core.ownIn`). -/
 partial def typeSegs (ty : Syntax) : Array String :=
-  -- A pattern's segment, which `Core.ownIn` leaves out, is left out here.
-  if ty.isOfKind ``Lang.patType then typeSegs ty[0]
-  else if ty.isOfKind ``Lang.setType then #[Core.setSeg] ++ typeSegs ty[2]
+  if ty.isOfKind ``Lang.setType then #[Core.setSeg] ++ typeSegs ty[2]
   else if ty.isOfKind ``Lang.seqType then #[Core.seqSeg] ++ typeSegs ty[2]
   else if ty.isOfKind ``Lang.relType then #[Core.relSeg] ++ typeSegs ty[2] ++ #[Core.relSep] ++ typeSegs ty[4]
   -- A function type (`Reqs/Lang/HigherOrder#function-types`).
@@ -301,8 +299,6 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   -- A function type is only a defined function's parameter's, which
   -- `fnParamType` elaborates (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
-  -- A pattern type's Lean type is its base type's.
-  if ty.isOfKind ``Lang.patType then return ← elabType modName ty[0] params
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
   -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
   -- parameter (`lang::type_parameter_place`).
@@ -382,8 +378,6 @@ def annotationRef (ty : Syntax) : Syntax := Id.run do
 /-- Records `redundant_bool_type` on the declaration of `n` with the type
 `ty`, if it is `Bool` (`lint::redundant_bool_type`). -/
 def lintBoolType (n : Name) (ty : Syntax) (t : Expr) : TermElabM Unit := do
-  -- Not of a pattern type, whose pattern the annotation holds.
-  if ty.isOfKind ``Lang.patType then return
   if Core.redundantBoolType n (some (t.isConstOf ``Bool)) then
     recordLint .redundantBoolType (annotationRef ty) (Core.redundantBoolTypeMsg n)
 
@@ -2447,14 +2441,6 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   -- (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
-  if ty.isOfKind ``Lang.patType then
-    let (t, base) ← elabPType modName ty[0] params
-    -- Pattern types are not nested, also through an alias.
-    if base.pat?.isSome then throwErrorAt ty[0] (Core.nestedAliasMsg (exactText ty[0])).text
-    let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop }
-    let (q, bs, _) ← resolveTop cx t (mkIdent `x) true ty[2]
-    if let some b := bs[0]? then throwErrorAt b.ident (Core.patternTypeBinderMsg (declaredIdent b.ident).1.getId).text
-    return (t, { base with pat? := some q, text })
   -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
   -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
   -- quantifies over the elements, outside the decidable core
@@ -2642,7 +2628,8 @@ def varPType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM 
   let t ← ty?.mapM (elabPType modName)
   if let some ty := ty? then lintRelTypes modName ty
   liftMsg name (Core.checkVarName n (t.map (·.1.isConstOf ``Bool)))
-  if let (some ty, some (t, _)) := (ty?, t) then lintBoolType n ty t
+  if let (some ty, some (t, pt)) := (ty?, t) then
+    if pt.invariants.isEmpty then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool, .plain .bool)
 
 /-- The declared type of the `k`th field or payload value of the variant
@@ -2892,7 +2879,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
     ptys := ptys.push pt
     -- As for a variable (`lang::bool_naming`).
     liftMsg f[0] (Core.checkVarName fn (if f[1].isNone then none else some (t.isConstOf ``Bool)))
-    unless f[1].isNone do liftTermElabM (lintBoolType fn f[1][1] t)
+    unless f[1].isNone || !pt.invariants.isEmpty do liftTermElabM (lintBoolType fn f[1][1] t)
     fields := fields.push (fn, t)
   -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
   if let some msg := Core.structFieldNamesMsg? n (fields.map (·.1)) then recordLint .structFieldNames nameStx msg
@@ -3606,6 +3593,8 @@ def lintLength (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
 operand of `and`, see the names that the other's pattern tests bind, which
 the other does not (`lang::test_scope`). -/
 def lintEqOp (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
+  -- Generated Boolean lowering has no written operands to compare.
+  if (exactText e).isEmpty then return
   if isConditional e then
     let negated := e[0].getAtomVal.trimAscii.toString == "unless"
     let c := exactText (unparen e[1])
@@ -3616,6 +3605,7 @@ def lintEqOp (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   unless e.getNumArgs == 3 && e[1].isAtom do return
   let some op := Core.InfixOp.ofOp? e[1].getAtomVal.trimAscii.toString | return
   let a := exactText (unparen e[0])
+  if a.isEmpty || (exactText (unparen e[2])).isEmpty then return
   let seen ← if op matches .and then chainBinders cx e[0] else pure []
   if let some v := Core.eqOp op (Core.writtenSameIn a (exactText (unparen e[2])) [] seen) then
     recordLint .eqOp e (Core.eqOpMsg op v a)
@@ -3624,6 +3614,7 @@ def lintEqOp (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
 `c`'s pattern tests bind names (`lint::same_branches`). -/
 def lintSameBranches (binds : Bool) (e a b : Syntax) : TermElabM Unit := do
   let (a, b) := (unparen a, unparen b)
+  if (exactText a).isEmpty || (exactText b).isEmpty then return
   unless Core.sameBranches binds (Core.writtenSame (exactText a) (exactText b)) do return
   let some sub := e.getSubstring? false false | return
   let .mk kind .. := boolNode "" 0 a
@@ -5910,8 +5901,21 @@ def takeIndexes (fvs : Array Expr) (subst : Expr → Expr := id) :
   let xs := (← getLocal).indexes
   let ts := (← getLocal).tables
   modifyLocal fun l => { l with indexes := #[], tables := #[] }
-  return (← xs.mapM fun (ref, g) => return (ref, none, ← mkLambdaFVars fvs (subst (← elabProp g))))
-    ++ (← ts.mapM fun (ref, q, g) => return (ref, some q, ← mkLambdaFVars fvs (subst (← elabProp g))))
+  let sites ← (xs.mapM fun (ref, g) => return (ref, none, subst (← elabProp g)))
+    >>= fun indices => return indices ++ (← ts.mapM fun (ref, q, g) => return (ref, some q, subst (← elabProp g)))
+  let mut unique : Array (Syntax × Option Core.TableGoal × Expr) := #[]
+  for (ref, question, goal) in sites do
+    -- A decision tree may translate one source operation along several
+    -- paths. Their obligations are guard implications: their conjunction
+    -- asks about that source operation under the union of its reach guards.
+    let same := unique.findIdx? fun (previous, previousQuestion, previousGoal) =>
+      ref.getPos?.isSome && ref.getPos? == previous.getPos? && ref.getTailPos? == previous.getTailPos?
+        && question == previousQuestion && obligationTy? goal == obligationTy? previousGoal
+    if let some i := same then
+      let (previous, previousQuestion, previousGoal) := unique[i]!
+      unique := unique.set! i (previous, previousQuestion, mkAnd previousGoal goal)
+    else unique := unique.push (ref, question, goal)
+  unique.mapM fun (ref, question, goal) => return (ref, question, ← mkLambdaFVars fvs goal)
 
 /-- Runs `k`, then puts back the name generators, the macro scopes and the
 metavariables and Lean's caches as they were before it, so that what is elaborated after it
@@ -6201,108 +6205,7 @@ def resultFact? (result : Expr) (rp : Core.PTy) : TermElabM (Option Expr) := do
   if (rp.cons (← getState).shapeOf).isNone then return none
   factPred? (if result.isConstOf ``Nat then mkConst ``Int else result) rp (rp.ty == .nat)
 
-/-- A clause `e` of the contract of the function at `path`, whose
-parameters are `vars` and whose function parameters `fnVars`, and of whose
-value `value?` is, for an uninterpreted function: its definition, over
-the parameters and then the function parameters, the definition of its
-postcondition of the value, the questions about it, and for a
-higher-order function, its definition for the function's own checks, in
-which each function parameter is its placeholder. -/
-def contractClause (modName path : Name) (post : Bool) (vars : Array Var) (fnVars : Array (Name × Core.FnTy × Expr × Name))
-    (value? : Option (Name × Var)) (e : Syntax) (params : Array Name) :
-    TermElabM (Expr × Option Expr × Array (Syntax × Option Core.TableGoal × Expr) × Option Expr) :=
-  withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
-  withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
-    let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
-    let cx : ExprCtx := { modName, vars, insts := #[], place := .prop
-                          contract? := some { path, post, params }
-                          fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
-    discard (takeIndexes fvs)
-    let t ← toTerm cx e
-    checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
-    let body ← elabProp t
-    let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter (·.2.1.isSome)
-    let checked? ← if fnVars.isEmpty then pure none else some <$> mkLambdaFVars fvs (body.replaceFVars fnFvs phs)
-    -- A postcondition of the value, for realizability: the function
-    -- applied to its parameters is the value.
-    let ofValue? ← match post, value? with
-      | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
-        -- At its own type parameters, whatever term gives their
-        -- `Inhabited` instances.
-        let nTypes := 2 * ((← placeholderOf path).typeParams.size)
-        let isApp (t : Expr) : Bool :=
-          t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
-        some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
-      | _, _ => pure none
-    return (← mkLambdaFVars (fvs ++ fnFvs) body, ofValue?, tables, checked?)
-
-/-- Elaborates the clauses of the contract of the function `n` at `path`,
-whose parameters are `vars` and whose definitions are named under `decl`,
-and records the contract (`Reqs/Lang/Items#contracts`). Gives each clause
-as a constraint of the function's body's procedure, named after the function
-and the clause, a postcondition only if the function is defined; and the
-questions about the tables and applications in them: a precondition's
-under the other preconditions, a postcondition's under all of them. -/
-def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var) (clauses : Array Syntax)
-    (fnVars : Array (Name × Core.FnTy × Expr × Name) := #[]) (params : Array Name := vars.map (·.name)) :
-    TermElabM (Array Var × Array PropInfo × Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) := do
-  -- The clauses' names share one namespace with the parameters
-  -- (`lang::distinct_names`).
-  let names := vars.map (·.name) ++ clauses.map fun c => (declaredIdent c[1]).1.getId
-  if let some k := (Core.repeatsAt names)[0]? then
-    if k ≥ vars.size then throwErrorAt clauses[k - vars.size]![1] (Core.dupClauseMsg names[k]!).text
-  -- An uninterpreted function's value, an output of its contract's procedure,
-  -- for its realizability (`Reqs/Check#contracts-of-uninterpreted-functions`):
-  -- named after the function, unless a parameter is.
-  let value? : Option (Name × Var) ← if defined then pure none else do
-    let a ← placeholderOf path
-    let name := Core.contractValueName n (vars.map (·.name))
-    -- A generic function's, at its own type parameters, for every type
-    -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
-    let own := (typeParamPlaceholders path a.typeParams).map (Lean.mkConst ·)
-    let ty ← forallTelescope (← instantiateForall (← getConstInfo a.placeholder).type own) fun _ r => pure r
-    -- With its result's type, which it is realized in.
-    let fact? ← factPred? ty a.ptys.2
-    pure (some (a.placeholder, ({ name, role := .output, isPub := true, «type» := ty, ref := mkIdent name
-                                  ptype := a.ptys.2, fact? } : Var)))
-  let mut pres : Array ClauseInfo := #[]
-  let mut posts : Array ClauseInfo := #[]
-  let mut props : Array PropInfo := #[]
-  let mut sites : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr) := #[]
-  for c in clauses do
-    let kw := if c[0].isAtom then c[0] else c[0][0]
-    let post := kw.getAtomVal.trimAscii.toString == "ensure"
-    let x := c[1]
-    liftMsg x (Core.checkNoBang x.getId)
-    let cn ← segName x
-    lintName .constraint cn x
-    if cn.toString.endsWith "?" then throwErrorAt x (Core.propNameMsg cn).text
-    let e := withWhere c[3] c[4]
-    -- A higher-order function's clauses take its function parameters
-    -- after the others; for its checks, each is the uninterpreted function
-    -- of its placeholder (`Reqs/Lang/HigherOrder#function-parameters`).
-    let res ← contractClause modName path post vars fnVars value? e params
-    let (lam, ofValue?, tables, checked?) := res
-    lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
-    let uses ← usesOf #[lam]
-    let k : ClauseInfo := { name := cn, decl := decl ++ cn, uses }
-    addUsesDef uses k.decl lam
-    if post then posts := posts.push k else pres := pres.push k
-    sites := sites ++ tables.map fun (r, q, g) => (n ++ cn, if post then Core.IndexPlace.body else .assume, r, q, g)
-    props := props.push { kind := if post then .ensure else .assume, name := n ++ cn, ref := x
-                          body := checked?.getD (ofValue?.getD lam), trigger? := none, triggerRef? := none, decl := k.decl }
-  record (.contractInfo { path, pres, posts, defined })
-  -- A defined function's contract has nothing to realize, nor an
-  -- uninterpreted function's without postconditions.
-  let some (_, v) := value?.filter fun _ => !posts.isEmpty
-    | return (vars, props.filter (defined || ·.kind == .assume), sites)
-  -- Every other formula over the parameters is over the value too, which
-  -- it does not mention.
-  let withValue (e : Expr) : TermElabM Expr :=
-    lambdaBoundedTelescope e vars.size fun xs b => withLocalDeclD v.name v.type fun x => mkLambdaFVars (xs.push x) b
-  let props' ← props.mapM fun p => if p.kind == .ensure then pure p else return { p with body := ← withValue p.body }
-  let sites' ← sites.mapM fun (n, place, r, q, g) => return (n, place, r, q, ← withValue g)
-  return (vars.push v, props', sites')
+abbrev CompIndexes := Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)
 
 open Lang in
 /-- Source Boolean alternatives over the same closed variables as a clause.
@@ -6410,6 +6313,12 @@ partial def predicateLeafSources (owner : Name) (source : Syntax) : TermElabM (A
   if isBooleanGuard e || e.isOfKind ``Lang.letExpr then
     return (← predicateLeafSources owner e[3]).map fun (name, ref, body) => (name, ref, e.setArg 3 body)
   if let some ("and", members) := booleanBlockView e then
+    let labels := members.filterMap (·.1)
+    if let some k := (Core.repeatsAt (labels.map (·.getId)))[0]? then
+      throwErrorAt labels[k]! "a Boolean block repeats label `{labels[k]!.getId}`"
+    for label in labels do
+      discard (segName label)
+      liftMsg label (Core.checkNoBang label.getId)
     let mut out := #[]
     for (label, body) in members, i in [0:members.size] do
       let segment := label.map (·.getId.toString) |>.getD (toString (i + 1))
@@ -6446,6 +6355,359 @@ def predicateMetadata (scope : Name) (vars : Array Var)
       let memberGroups ← clauseMemberGroups cx .anonymous body all
       return (members, branchGroups, memberGroups)
   finally modifyLocal fun _ => saved
+
+/-- Source application occurrence identities, before typed expansion. -/
+partial def predicateSourceApps (cx : ExprCtx) (source : Syntax) : TermElabM (Array (Name × Nat)) := do
+  let mut out := #[]
+  if source.isOfKind ``Lang.appExpr then
+    let segs := pathSegs source[0]
+    if !(segs.size == 1 && (cx.fnParam? segs[0]!.getId).isSome) then
+      if let .ok (.item { kind := .fnItem, path, .. }) := (← getState).table.resolvePath cx.modName (segs.map (·.getId)) cx.shadowing then
+        out := out.push (path, (source.getPos?.getD 0).byteIdx)
+  for child in source.getArgs do
+    out := out ++ (← predicateSourceApps cx child)
+  return out
+
+/-- The defined predicate at a typed root, after Bool-to-Prop coercion. -/
+def predicateApplication? (state : State) (e : Expr) : Option (DefinedInfo × Array Expr) := do
+  let e := e.consumeMData
+  let call := if e.isAppOfArity ``Eq 3 && e.getAppArgs[0]!.isConstOf ``Bool && e.getAppArgs[2]!.isConstOf ``Bool.true then
+      e.getAppArgs[1]! else e
+  let declaration ← call.getAppFn.constName?
+  let (_, info) ← state.defined.toList.find? (fun (_, d) => d.decl == declaration && d.result == .bool)
+  if call.getAppNumArgs != info.uses.size + info.nParams then none else
+    some (info, call.getAppArgs)
+
+partial def predicateCallPolarity? (state : State) (body : Expr) (wanted : Bool := true) :
+    Option (DefinedInfo × Array Expr × Bool) :=
+  let body := body.consumeMData
+  if body.isAppOfArity ``Not 1 then predicateCallPolarity? state body.appArg! (!wanted)
+  else (predicateApplication? state body).map fun (info, arguments) => (info, arguments, wanted)
+
+def predicateInstance (info : DefinedInfo) (arguments : Array Expr) (body : Expr) : Expr :=
+  (replaceUses info.uses (arguments.extract 0 info.uses.size) body).beta (arguments.extract info.uses.size)
+
+/-- Typed unfolding of named predicate conjunctions. Free constants keep
+the defining module's meaning, and each call occurrence has its own path. -/
+partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source : Syntax) (fvs : Array Expr) :
+    TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
+  let state ← getState
+  let applications ← predicateSourceApps cx source
+  let wrap (guards : Array Expr) (body : Expr) : Expr :=
+    guards.foldr (fun condition body => .forallE `condition condition body .default) body
+  let rec contains (body : Expr) : MetaM Bool := do
+    let body := body.consumeMData
+    if let some (info, _, _) := predicateCallPolarity? state body then return !info.namedMembers.isEmpty || !info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty
+    if body.isAppOfArity ``And 2 then return (← contains body.getAppArgs[0]!) || (← contains body.getAppArgs[1]!)
+    if let .forallE _ condition tail _ := body then
+      if !tail.hasLooseBVars && (← isProp condition) then return ← contains tail
+    return false
+  let rec expand (body : Expr) (written : Syntax) (owner : Name) (guards : Array Expr) :
+      StateT (Std.TreeMap Name Nat Name.quickCmp) TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
+    let body := body.consumeMData
+    if let .forallE _ condition tail _ := body then
+      if !tail.hasLooseBVars && (← isProp condition) then
+        return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition)
+    if body.isAppOfArity ``And 2 && (← contains body) then
+      let leftSource := if isBinOp (unparen written) "and" then (unparen written)[0] else written
+      let rightSource := if isBinOp (unparen written) "and" then (unparen written)[2] else written
+      let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString ++ ".1")) guards
+      let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString ++ ".2")) guards
+      return (left.1 ++ right.1, left.2.1 ++ right.2.1, left.2.2 ++ right.2.2)
+    if let some (info, arguments, wanted) := predicateCallPolarity? state body then
+      if wanted && !info.namedMembers.isEmpty then
+        let seen : Std.TreeMap Name Nat Name.quickCmp ← get
+        let next := seen.getD info.path 0 + 1
+        set (seen.insert info.path next : Std.TreeMap Name Nat Name.quickCmp)
+        let same := applications.filter (·.1 == info.path)
+        let index := ((same.findIdx? (fun (_, pos) => pos == (written.getPos?.getD 0).byteIdx)).map (· + 1)).getD next
+        let occurrence := Core.showPath info.path ++ (if same.size > 1 then s!"@{index}" else "")
+        let prefixName := owner.toString ++ "." ++ occurrence
+        let mut props := #[]
+        let mut declarations := #[]
+        let mut sites := #[]
+        for member in info.namedMembers do
+          let name := Name.mkSimple (prefixName ++ "::" ++ member.name.toString)
+          let instantiated := wrap guards (predicateInstance info arguments member.body)
+          let decl := prop.decl.getPrefix ++ name
+          let trigger ← liftM <| do
+            let rec top (e : Expr) (conditions : Array Expr) : MetaM (Array Expr) := do
+              if let .forallE _ condition tail _ := e.consumeMData then
+                if !tail.hasLooseBVars && (← isProp condition) then return ← top tail (conditions.push condition)
+              return conditions
+            let conditions ← top instantiated #[]
+            if conditions.isEmpty then pure none else some <$> mkLambdaFVars fvs (mkAndN conditions.toList)
+          let changeName (n : Name) := Name.mkSimple (prefixName ++ "::" ++ n.toString)
+          let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
+            let apply (e : Expr) := predicateInstance info arguments e
+            let formula := apply m.formula
+            let raw := m.valueFormula?.map apply
+            let reach := m.evaluationGuard?.map apply
+            let reach := if guards.isEmpty then reach else some (mkAndN (guards.toList ++ reach.toList))
+            return { m with name := changeName m.name, formula := ← mkLambdaFVars fvs formula
+                            valueFormula? := ← raw.mapM (fun e => liftM (mkLambdaFVars fvs e))
+                            evaluationGuard? := ← reach.mapM (fun e => liftM (mkLambdaFVars fvs e)) }
+          let branches ← member.branchGroups.mapM fun group => do
+            return { group with
+              owner := name, members := ← group.members.mapM (fun m => liftM (mapMember m))
+              guard? := ← (if guards.isEmpty && group.guard?.isNone then pure none else do
+                let conditions := guards.toList ++ (group.guard?.map (predicateInstance info arguments)).toList
+                pure (some (← liftM (mkLambdaFVars fvs (mkAndN conditions))))) }
+          let observations ← member.memberGroups.mapM fun group => do
+            return { group with owner := name, members := ← group.members.mapM (fun m => liftM (mapMember m)) }
+          props := props.push { prop with name, ref := member.ref, body := ← mkLambdaFVars fvs instantiated, decl
+                                          trigger? := trigger, triggerRef? := (if trigger.isSome then some member.ref else none)
+                                          branchGroups := branches, memberGroups := observations
+                                          evidenceOwner? := some prop.name, source? := info.source?, sourceRef := true }
+          declarations := declarations.push (decl, instantiated)
+          for (ref, question, goal) in member.sites do
+            let goal := wrap guards (predicateInstance info arguments goal)
+            let marked := mkApp (mkConst ``Fren.leafObligation) goal
+            sites := sites.push (name, if prop.kind == .assume then .assume else .prop, ref, question, ← mkLambdaFVars fvs marked)
+        return (props, declarations, sites)
+      else if !info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty then
+        let prefixName := owner.toString ++ "." ++ Core.showPath info.path ++ "::"
+        let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
+          let apply (e : Expr) := predicateInstance info arguments e
+          let reach := m.evaluationGuard?.map apply
+          let reach := if guards.isEmpty then reach else some (mkAndN (guards.toList ++ reach.toList))
+          return { m with
+            name := Name.mkSimple (prefixName ++ m.name.toString)
+            formula := ← mkLambdaFVars fvs (apply m.formula)
+            valueFormula? := ← m.valueFormula?.mapM (fun e => liftM (mkLambdaFVars fvs (apply e)))
+            evaluationGuard? := ← reach.mapM (fun e => liftM (mkLambdaFVars fvs e)) }
+        let branches ← (if wanted then info.namedBranchGroups else #[]).mapM fun group => do
+          let conditions := guards.toList ++ (group.guard?.map (predicateInstance info arguments)).toList
+          let guard? ← if conditions.isEmpty then pure none else some <$> mkLambdaFVars fvs (mkAndN conditions)
+          return { group with owner, guard?, members := ← group.members.mapM (fun m => liftM (mapMember m)) }
+        let observations ← info.namedMemberGroups.mapM fun group => do
+          return { group with
+            owner, wanted := (if wanted then group.wanted else !group.wanted)
+            members := ← group.members.mapM (fun m => liftM (mapMember m)) }
+        let body := wrap guards body
+        let decl := prop.decl.getPrefix ++ owner
+        return (#[{ prop with
+          name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl
+          branchGroups := branches, memberGroups := observations, source? := info.source?
+          evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
+    let body := wrap guards body
+    let decl := prop.decl.getPrefix ++ owner
+    return (#[{ prop with name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl,
+                           evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
+  let body ← zetaReduce (prop.body.beta fvs)
+  if let some (info, arguments, wanted) := predicateCallPolarity? state body then
+    if (info.namedMembers.isEmpty || !wanted) && (!info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty) then
+      let prefixName := prop.name.toString ++ "." ++ Core.showPath info.path ++ "::"
+      let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
+        let apply (e : Expr) := mkLambdaFVars fvs (predicateInstance info arguments e)
+        return { m with
+          name := Name.mkSimple (prefixName ++ m.name.toString)
+          formula := ← apply m.formula
+          valueFormula? := ← m.valueFormula?.mapM (fun e => liftM (apply e))
+          evaluationGuard? := ← m.evaluationGuard?.mapM (fun e => liftM (apply e)) }
+      let branches ← (if wanted then info.namedBranchGroups else #[]).mapM fun g => do
+        return { g with
+          owner := prop.name, members := ← g.members.mapM mapMember
+          guard? := ← g.guard?.mapM (fun e => liftM (mkLambdaFVars fvs (predicateInstance info arguments e))) }
+      let observations ← info.namedMemberGroups.mapM fun g => do
+        return { g with
+          owner := prop.name, wanted := (if wanted then g.wanted else !g.wanted)
+          members := ← g.members.mapM mapMember }
+      return (#[{ prop with branchGroups := branches, memberGroups := observations, source? := info.source? }], #[], #[])
+  if !(← contains body) then return (#[prop], #[], #[])
+  return (← (expand body source prop.name #[]).run {}).1
+
+/-- A clause `e` of the contract of the function at `path`, whose
+parameters are `vars` and whose function parameters `fnVars`, and of whose
+value `value?` is, for an uninterpreted function: its definition, over
+the parameters and then the function parameters, the definition of its
+postcondition of the value, the questions about it, and for a
+higher-order function, its definition for the function's own checks, in
+which each function parameter is its placeholder. -/
+structure ContractClauseResult where
+  body : Expr
+  ofValue? : Option Expr
+  sites : Array (Syntax × Option Core.TableGoal × Expr)
+  checked? : Option Expr
+  branchGroups : Array (Core.BranchGroup Expr)
+  memberGroups : Array (Core.MemberGroup Expr)
+  deriving Inhabited
+
+def contractClause (modName path : Name) (post : Bool) (vars : Array Var) (fnVars : Array (Name × Core.FnTy × Expr × Name))
+    (value? : Option (Name × Var)) (e : Syntax) (params : Array Name) :
+    TermElabM ContractClauseResult :=
+  withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+  withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
+    let cx : ExprCtx := { modName, vars, insts := #[], place := .prop
+                          contract? := some { path, post, params }
+                          fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
+    discard (takeIndexes fvs)
+    let t ← toTerm cx e
+    checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
+    let body ← elabProp t
+    let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
+    let checked? ← if fnVars.isEmpty then pure none else some <$> mkLambdaFVars fvs (body.replaceFVars fnFvs phs)
+    -- A postcondition of the value, for realizability: the function
+    -- applied to its parameters is the value.
+    let ofValue? ← match post, value? with
+      | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
+        -- At its own type parameters, whatever term gives their
+        -- `Inhabited` instances.
+        let nTypes := 2 * ((← placeholderOf path).typeParams.size)
+        let isApp (t : Expr) : Bool :=
+          t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
+        some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
+      | _, _ => pure none
+    let branchGroups ← clauseBranchGroups cx .anonymous e (fvs ++ fnFvs)
+    let memberGroups ← clauseMemberGroups cx .anonymous e (fvs ++ fnFvs)
+    return { body := ← mkLambdaFVars (fvs ++ fnFvs) body, ofValue?, sites := tables, checked?, branchGroups, memberGroups }
+
+/-- Elaborates the clauses of the contract of the function `n` at `path`,
+whose parameters are `vars` and whose definitions are named under `decl`,
+and records the contract (`Reqs/Lang/Items#contracts`). Gives each clause
+as a constraint of the function's body's procedure, named after the function
+and the clause, a postcondition only if the function is defined; and the
+questions about the tables and applications in them: a precondition's
+under the other preconditions, a postcondition's under all of them. -/
+def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var) (clauses : Array Syntax)
+    (fnVars : Array (Name × Core.FnTy × Expr × Name) := #[]) (params : Array Name := vars.map (·.name)) :
+    TermElabM (Array Var × Array PropInfo × Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) := do
+  let clauses ← clauses.flatMapM fun clause => do
+    let source := withWhere clause[3] clause[4]
+    if !predicateConjunction source then return #[clause]
+    let leaves ← predicateLeafSources clause[1].getId source
+    return leaves.map fun (name, ref, body) =>
+      mkNode clause.getKind #[clause[0], mkIdentFrom ref name, clause[2], body, mkNullNode]
+  -- The clauses' names share one namespace with the parameters
+  -- (`lang::distinct_names`).
+  let names := vars.map (·.name) ++ clauses.map fun c => (declaredIdent c[1]).1.getId
+  if let some k := (Core.repeatsAt names)[0]? then
+    if k ≥ vars.size then throwErrorAt clauses[k - vars.size]![1] (Core.dupClauseMsg names[k]!).text
+  -- An uninterpreted function's value, an output of its contract's procedure,
+  -- for its realizability (`Reqs/Check#contracts-of-uninterpreted-functions`):
+  -- named after the function, unless a parameter is.
+  let value? : Option (Name × Var) ← if defined then pure none else do
+    let a ← placeholderOf path
+    let name := Core.contractValueName n (vars.map (·.name))
+    -- A generic function's, at its own type parameters, for every type
+    -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
+    let own := (typeParamPlaceholders path a.typeParams).map (Lean.mkConst ·)
+    let ty ← forallTelescope (← instantiateForall (← getConstInfo a.placeholder).type own) fun _ r => pure r
+    -- With its result's type, which it is realized in.
+    let fact? ← factPred? ty a.ptys.2
+    pure (some (a.placeholder, ({ name, role := .output, isPub := true, «type» := ty, ref := mkIdent name
+                                  ptype := a.ptys.2, fact? } : Var)))
+  let mut pres : Array ClauseInfo := #[]
+  let mut posts : Array ClauseInfo := #[]
+  let mut props : Array PropInfo := #[]
+  let mut sites : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr) := #[]
+  for c in clauses do
+    let kw := if c[0].isAtom then c[0] else c[0][0]
+    let post := kw.getAtomVal.trimAscii.toString == "ensure"
+    let x := c[1]
+    liftMsg x (Core.checkNoBang x.getId)
+    let cn ← if let .original .. := x.getHeadInfo then segName x else pure x.getId
+    if let .original .. := x.getHeadInfo then lintName .constraint cn x
+    if cn.toString.endsWith "?" then throwErrorAt x (Core.propNameMsg cn).text
+    let e := withWhere c[3] c[4]
+    -- A higher-order function's clauses take its function parameters
+    -- after the others; for its checks, each is the uninterpreted function
+    -- of its placeholder (`Reqs/Lang/HigherOrder#function-parameters`).
+    let res ← contractClause modName path post vars fnVars value? e params
+    lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
+    -- Expand a named predicate using typed templates twice: once in the
+    -- real contract (which applies the function), and once in its checking
+    -- procedure (which represents the function's value by an output).
+    let (rawLeaves, checkedLeaves, extraSites) ←
+      withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+      withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+        let all := fvs ++ fnFvs
+        let owner := n ++ cn
+        let cx : ExprCtx := {
+          modName, vars, insts := #[], place := .prop
+          contract? := some { path, post, params }
+          fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) }
+        let withNames (member : Core.BranchMember Expr) := { member with name := owner ++ member.name }
+        let branches := res.branchGroups.map fun g => { g with owner, members := g.members.map withNames }
+        let observations := res.memberGroups.map fun g => { g with owner, members := g.members.map withNames }
+        let raw : PropInfo := {
+          kind := if post then .ensure else .assume, name := owner, ref := x
+          body := res.body, trigger? := none, triggerRef? := none, decl := decl ++ cn, branchGroups := branches, memberGroups := observations }
+        let (rawLeaves, _, _) ← expandPredicateConstraint cx raw e all
+        let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
+        let makeChecked (checkFvs : Array Expr) (value : Option Expr) := do
+          let convert (template : Expr) : TermElabM Expr := do
+            let body := (template.beta all).replaceFVars fnFvs phs
+            let body ← match value, value? with
+              | some output, some (placeholder, _) => do
+                let nTypes := 2 * ((← placeholderOf path).typeParams.size)
+                pure <| body.replace fun term =>
+                  if term.isAppOfArity placeholder (nTypes + fvs.size) && term.getAppArgs.extract nTypes == fvs then some output else none
+              | _, _ => pure body
+            mkLambdaFVars checkFvs body
+          let checkedBranches ← branches.mapM fun group => do
+            let members ← group.members.mapM fun member => do
+              return { member with
+                formula := ← convert member.formula
+                valueFormula? := ← member.valueFormula?.mapM convert
+                evaluationGuard? := ← member.evaluationGuard?.mapM convert }
+            return { group with members, guard? := ← group.guard?.mapM convert }
+          let checkedObservations ← observations.mapM fun group => do
+            let members ← group.members.mapM fun member => do
+              return { member with
+                formula := ← convert member.formula
+                valueFormula? := ← member.valueFormula?.mapM convert
+                evaluationGuard? := ← member.evaluationGuard?.mapM convert }
+            return { group with members }
+          let checked : PropInfo := { raw with
+            body := ← convert res.body
+            branchGroups := checkedBranches, memberGroups := checkedObservations }
+          let (leaves, _, sites) ← expandPredicateConstraint cx checked e checkFvs
+          return (rawLeaves, leaves, sites)
+        if post then
+          if let some (_, v) := value? then
+            return ← withLocalDeclD v.name v.type fun output => makeChecked (fvs.push output) (some output)
+        makeChecked fvs none
+    for raw in rawLeaves, checked in checkedLeaves do
+      let ownerPrefix := n.toString ++ "."
+      let name := if raw.name == n ++ cn then cn else
+        Name.mkSimple (((raw.name.toString.dropPrefix? ownerPrefix).map (·.toString)).getD raw.name.toString)
+      let uses ← usesOf #[raw.body]
+      let k : ClauseInfo := { name, decl := decl ++ name, uses }
+      addUsesDef uses k.decl raw.body
+      if post then posts := posts.push k else pres := pres.push k
+      props := props.push { checked with decl := k.decl }
+    sites := sites ++ res.sites.map (fun (r, q, g) => (n ++ cn, if post then Core.IndexPlace.body else .assume, r, q, g))
+      ++ extraSites.map fun (name, _, ref, question, goal) => (name, if post then .body else .assume, ref, question, goal)
+  record (.contractInfo { path, pres, posts, defined })
+  -- A defined function's contract has nothing to realize, nor an
+  -- uninterpreted function's without postconditions.
+  let some (_, v) := value?.filter fun _ => !posts.isEmpty
+    | return (vars, props.filter (defined || ·.kind == .assume), sites)
+  -- Every other formula over the parameters is over the value too, which
+  -- it does not mention.
+  let withValue (e : Expr) : TermElabM Expr :=
+    lambdaBoundedTelescope e vars.size fun xs b => withLocalDeclD v.name v.type fun x => mkLambdaFVars (xs.push x) b
+  let props' ← props.mapM fun p => do
+    if p.kind == .ensure then return p
+    let branches ← p.branchGroups.mapM fun group => do
+      let members ← group.members.mapM fun member => do
+        return { member with
+          formula := ← withValue member.formula
+          valueFormula? := ← member.valueFormula?.mapM withValue
+          evaluationGuard? := ← member.evaluationGuard?.mapM withValue }
+      return { group with members, guard? := ← group.guard?.mapM withValue }
+    let observations ← p.memberGroups.mapM fun group => do
+      let members ← group.members.mapM fun member => do
+        return { member with
+          formula := ← withValue member.formula
+          valueFormula? := ← member.valueFormula?.mapM withValue
+          evaluationGuard? := ← member.evaluationGuard?.mapM withValue }
+      return { group with members }
+    return { p with body := ← withValue p.body, branchGroups := branches, memberGroups := observations }
+  let sites' ← sites.mapM fun (n, place, r, q, g) => return (n, place, r, q, ← withValue g)
+  return (vars.push v, props', sites')
 
 /-- Elaborates the function `stx`, a `fnCmd`, as written or as a function
 written with a block lowers to (`elabFnBlock`): `orig` is the command as
@@ -7091,11 +7353,6 @@ in parallel. -/
 section
 open Lang
 
-/-- The indexes of a procedure's items, and the questions about its tables:
-each item's name, where it is, the index's syntax, the question, and the
-goal over the procedure's variables. -/
-abbrev CompIndexes := Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)
-
 /-- A procedure's variables, the names declared so far, and whether every one
 was declared without an error, reporting each error, and one cycle of
 definitions, as the `fren` command does. -/
@@ -7212,167 +7469,6 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
     catch ex => logException ex; good := false
   return (insts, defs, values, defnFvs, indexes, good)
 
-/-- Source application occurrence identities, before typed expansion. -/
-partial def predicateSourceApps (cx : ExprCtx) (source : Syntax) : TermElabM (Array (Name × Nat)) := do
-  let mut out := #[]
-  if source.isOfKind ``Lang.appExpr then
-    let segs := pathSegs source[0]
-    if !(segs.size == 1 && (cx.fnParam? segs[0]!.getId).isSome) then
-      if let .ok (.item { kind := .fnItem, path, .. }) := (← getState).table.resolvePath cx.modName (segs.map (·.getId)) cx.shadowing then
-        out := out.push (path, (source.getPos?.getD 0).byteIdx)
-  for child in source.getArgs do
-    out := out ++ (← predicateSourceApps cx child)
-  return out
-
-/-- The defined predicate at a typed root, after Bool-to-Prop coercion. -/
-def predicateApplication? (state : State) (e : Expr) : Option (DefinedInfo × Array Expr) := do
-  let e := e.consumeMData
-  let call := if e.isAppOfArity ``Eq 3 && e.getAppArgs[0]!.isConstOf ``Bool && e.getAppArgs[2]!.isConstOf ``Bool.true then
-      e.getAppArgs[1]! else e
-  let declaration ← call.getAppFn.constName?
-  let (_, info) ← state.defined.toList.find? (fun (_, d) => d.decl == declaration && d.result == .bool)
-  if call.getAppNumArgs != info.uses.size + info.nParams then none else
-    some (info, call.getAppArgs)
-
-partial def predicateCallPolarity? (state : State) (body : Expr) (wanted : Bool := true) :
-    Option (DefinedInfo × Array Expr × Bool) :=
-  let body := body.consumeMData
-  if body.isAppOfArity ``Not 1 then predicateCallPolarity? state body.appArg! (!wanted)
-  else (predicateApplication? state body).map fun (info, arguments) => (info, arguments, wanted)
-
-def predicateInstance (info : DefinedInfo) (arguments : Array Expr) (body : Expr) : Expr :=
-  (replaceUses info.uses (arguments.extract 0 info.uses.size) body).beta (arguments.extract info.uses.size)
-
-/-- Typed unfolding of named predicate conjunctions. Free constants keep
-the defining module's meaning, and each call occurrence has its own path. -/
-partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source : Syntax) (fvs : Array Expr) :
-    TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
-  let state ← getState
-  let applications ← predicateSourceApps cx source
-  let wrap (guards : Array Expr) (body : Expr) : Expr :=
-    guards.foldr (fun condition body => .forallE `condition condition body .default) body
-  let rec contains (body : Expr) : MetaM Bool := do
-    let body := body.consumeMData
-    if let some (info, _, _) := predicateCallPolarity? state body then return !info.namedMembers.isEmpty || !info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty
-    if body.isAppOfArity ``And 2 then return (← contains body.getAppArgs[0]!) || (← contains body.getAppArgs[1]!)
-    if let .forallE _ condition tail _ := body then
-      if !tail.hasLooseBVars && (← isProp condition) then return ← contains tail
-    return false
-  let rec expand (body : Expr) (written : Syntax) (owner : Name) (guards : Array Expr) :
-      StateT (Std.TreeMap Name Nat Name.quickCmp) TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
-    let body := body.consumeMData
-    if let .forallE _ condition tail _ := body then
-      if !tail.hasLooseBVars && (← isProp condition) then
-        return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition)
-    if body.isAppOfArity ``And 2 && (← contains body) then
-      let leftSource := if isBinOp (unparen written) "and" then (unparen written)[0] else written
-      let rightSource := if isBinOp (unparen written) "and" then (unparen written)[2] else written
-      let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString ++ ".1")) guards
-      let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString ++ ".2")) guards
-      return (left.1 ++ right.1, left.2.1 ++ right.2.1, left.2.2 ++ right.2.2)
-    if let some (info, arguments, wanted) := predicateCallPolarity? state body then
-      if wanted && !info.namedMembers.isEmpty then
-        let seen : Std.TreeMap Name Nat Name.quickCmp ← get
-        let next := seen.getD info.path 0 + 1
-        set (seen.insert info.path next : Std.TreeMap Name Nat Name.quickCmp)
-        let same := applications.filter (·.1 == info.path)
-        let index := ((same.findIdx? (fun (_, pos) => pos == (written.getPos?.getD 0).byteIdx)).map (· + 1)).getD next
-        let occurrence := Core.showPath info.path ++ (if same.size > 1 then s!"@{index}" else "")
-        let prefixName := owner.toString ++ "." ++ occurrence
-        let mut props := #[]
-        let mut declarations := #[]
-        let mut sites := #[]
-        for member in info.namedMembers do
-          let name := Name.mkSimple (prefixName ++ "::" ++ member.name.toString)
-          let instantiated := wrap guards (predicateInstance info arguments member.body)
-          let decl := prop.decl.getPrefix ++ name
-          let trigger ← liftM <| do
-            let rec top (e : Expr) (conditions : Array Expr) : MetaM (Array Expr) := do
-              if let .forallE _ condition tail _ := e.consumeMData then
-                if !tail.hasLooseBVars && (← isProp condition) then return ← top tail (conditions.push condition)
-              return conditions
-            let conditions ← top instantiated #[]
-            if conditions.isEmpty then pure none else some <$> mkLambdaFVars fvs (mkAndN conditions.toList)
-          let changeName (n : Name) := Name.mkSimple (prefixName ++ "::" ++ n.toString)
-          let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
-            let apply (e : Expr) := predicateInstance info arguments e
-            let formula := apply m.formula
-            let raw := m.valueFormula?.map apply
-            let reach := m.evaluationGuard?.map apply
-            let reach := if guards.isEmpty then reach else some (mkAndN (guards.toList ++ reach.toList))
-            return { m with name := changeName m.name, formula := ← mkLambdaFVars fvs formula
-                            valueFormula? := ← raw.mapM (fun e => liftM (mkLambdaFVars fvs e))
-                            evaluationGuard? := ← reach.mapM (fun e => liftM (mkLambdaFVars fvs e)) }
-          let branches ← member.branchGroups.mapM fun group => do
-            return { group with
-              owner := name, members := ← group.members.mapM (fun m => liftM (mapMember m))
-              guard? := ← (if guards.isEmpty && group.guard?.isNone then pure none else do
-                let conditions := guards.toList ++ (group.guard?.map (predicateInstance info arguments)).toList
-                pure (some (← liftM (mkLambdaFVars fvs (mkAndN conditions))))) }
-          let observations ← member.memberGroups.mapM fun group => do
-            return { group with owner := name, members := ← group.members.mapM (fun m => liftM (mapMember m)) }
-          props := props.push { prop with name, ref := member.ref, body := ← mkLambdaFVars fvs instantiated, decl
-                                          trigger? := trigger, triggerRef? := (if trigger.isSome then some member.ref else none)
-                                          branchGroups := branches, memberGroups := observations
-                                          evidenceOwner? := some prop.name, source? := info.source?, sourceRef := true }
-          declarations := declarations.push (decl, instantiated)
-          for (ref, question, goal) in member.sites do
-            let goal := wrap guards (predicateInstance info arguments goal)
-            let marked := mkApp (mkConst ``Fren.leafObligation) goal
-            sites := sites.push (name, if prop.kind == .assume then .assume else .prop, ref, question, ← mkLambdaFVars fvs marked)
-        return (props, declarations, sites)
-      else if !info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty then
-        let prefixName := owner.toString ++ "." ++ Core.showPath info.path ++ "::"
-        let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
-          let apply (e : Expr) := predicateInstance info arguments e
-          let reach := m.evaluationGuard?.map apply
-          let reach := if guards.isEmpty then reach else some (mkAndN (guards.toList ++ reach.toList))
-          return { m with
-            name := Name.mkSimple (prefixName ++ m.name.toString)
-            formula := ← mkLambdaFVars fvs (apply m.formula)
-            valueFormula? := ← m.valueFormula?.mapM (fun e => liftM (mkLambdaFVars fvs (apply e)))
-            evaluationGuard? := ← reach.mapM (fun e => liftM (mkLambdaFVars fvs e)) }
-        let branches ← (if wanted then info.namedBranchGroups else #[]).mapM fun group => do
-          let conditions := guards.toList ++ (group.guard?.map (predicateInstance info arguments)).toList
-          let guard? ← if conditions.isEmpty then pure none else some <$> mkLambdaFVars fvs (mkAndN conditions)
-          return { group with owner, guard?, members := ← group.members.mapM (fun m => liftM (mapMember m)) }
-        let observations ← info.namedMemberGroups.mapM fun group => do
-          return { group with
-            owner, wanted := (if wanted then group.wanted else !group.wanted)
-            members := ← group.members.mapM (fun m => liftM (mapMember m)) }
-        let body := wrap guards body
-        let decl := prop.decl.getPrefix ++ owner
-        return (#[{ prop with
-          name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl
-          branchGroups := branches, memberGroups := observations, source? := info.source?
-          evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
-    let body := wrap guards body
-    let decl := prop.decl.getPrefix ++ owner
-    return (#[{ prop with name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl,
-                           evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
-  let body ← zetaReduce (prop.body.beta fvs)
-  if let some (info, arguments, wanted) := predicateCallPolarity? state body then
-    if (info.namedMembers.isEmpty || !wanted) && (!info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty) then
-      let prefixName := prop.name.toString ++ "." ++ Core.showPath info.path ++ "::"
-      let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
-        let apply (e : Expr) := mkLambdaFVars fvs (predicateInstance info arguments e)
-        return { m with
-          name := Name.mkSimple (prefixName ++ m.name.toString)
-          formula := ← apply m.formula
-          valueFormula? := ← m.valueFormula?.mapM (fun e => liftM (apply e))
-          evaluationGuard? := ← m.evaluationGuard?.mapM (fun e => liftM (apply e)) }
-      let branches ← (if wanted then info.namedBranchGroups else #[]).mapM fun g => do
-        return { g with
-          owner := prop.name, members := ← g.members.mapM mapMember
-          guard? := ← g.guard?.mapM (fun e => liftM (mkLambdaFVars fvs (predicateInstance info arguments e))) }
-      let observations ← info.namedMemberGroups.mapM fun g => do
-        return { g with
-          owner := prop.name, wanted := (if wanted then g.wanted else !g.wanted)
-          members := ← g.members.mapM mapMember }
-      return (#[{ prop with branchGroups := branches, memberGroups := observations, source? := info.source? }], #[], #[])
-  if !(← contains body) then return (#[prop], #[], #[])
-  return (← (expand body source prop.name #[]).run {}).1
-
 /-- A procedure's assumptions, requirements and expectations, over its variables
 `fvs`, where the defined outputs `defnFvs` have the values `values`: the
 constraints, the generated definitions with theirs added, the indexes with
@@ -7426,6 +7522,11 @@ def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Va
       if name.getId == prop.name then some expression else none).getD prop.ref
     let cx : ExprCtx := { modName := scope, vars, insts := instNames, place := if prop.kind == .assume then .assume else .prop }
     let (leaves, generated, sites) ← expandPredicateConstraint cx prop source fvs
+    if leaves.any (fun leaf => leaf.name != prop.name) then
+      indexes ← indexes.mapM fun (name, place, ref, question, goal) => do
+        if name == prop.name then
+          return (name, place, ref, question, ← mkLambdaFVars fvs (mkApp (mkConst ``Fren.leafObligation) (goal.beta fvs)))
+        else return (name, place, ref, question, goal)
     expanded := expanded ++ leaves
     defs := defs ++ generated
     indexes := indexes ++ sites
@@ -7976,7 +8077,13 @@ shared procedure check protocol, with separate declaration-only checks. -/
       modifyLocal fun l => { l with inSubset := before.inSubset }
     -- Definedness is checked with earlier conjuncts, never unconditionally
     -- as an ordinary function body or using its own membership as a fact.
-    modifyLocal fun l => { l with bodies := before.bodies }
+    let insideInvariant (ref : Syntax) := match ref.getPos?, ref.getTailPos?, expression.getPos?, expression.getTailPos? with
+      | some start, some stop, some first, some last => first <= start && stop <= last
+      | _, _, _, _ => false
+    modifyLocal fun l => { l with
+      bodies := before.bodies
+      lintReports := before.lintReports ++ (l.lintReports.extract before.lintReports.size).filter (insideInvariant ·.ref)
+      natReports := before.natReports ++ (l.natReports.extract before.natReports.size).filter (insideInvariant ·.2.2.ref) }
     invariants := invariants.push { name := path ++ label.getId, predicate := module ++ predicateName }
     let value := unparen expression
     if pattern.isNone && clauses.size == 1 && value.isOfKind ``Lang.isExpr && soleName? value[0] == some binder.getId then
