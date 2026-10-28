@@ -1,0 +1,20 @@
+--@ args: fix --check --fmt
+proc spec(x: Int): (y: Int) {
+    assume domain: x > -1
+    ensure result: y = x * 2 + 2
+}
+proc implementation(z: Int): (y: Int) {
+    assume domain: z > 0
+    ensure result: y = z * 2
+}
+refine shifted: implementation refines spec { x := z - 1 }
+
+proc pair_spec(x: Int): (first: Int, second: Int) {
+    ensure first_value: first = x
+    ensure second_value: second = x + 1
+}
+proc swapped(x: Int): (second: Int, first: Int) {
+    ensure first_value: first = x
+    ensure second_value: second = x + 1
+}
+refine preserves_names: swapped refines pair_spec {}

@@ -4,7 +4,7 @@ error[F0417]: global expectations have no `ensure` members
 7 |     ensure e: d.y mod 2 = 0
   |     ^^^^^^^^^^^^^^^^^^^^^^^ not allowed in a global expectation
   |
-  = note: a global expectation constrains nothing: its block has `assume`, `use`, `let`, `call`, `expect` and `cover` members only
+  = note: a global expectation constrains nothing: its block has `assume`, `use`, `let`, `call`, `expect`, `refines` and `cover` members only
   = help: state what the procedures guarantee in the procedures, and claim what follows with `expect`
 
 error: could not check due to previous errors

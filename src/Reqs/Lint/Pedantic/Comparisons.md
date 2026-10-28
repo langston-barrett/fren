@@ -138,6 +138,14 @@ pub proc manual_ordering_fixed(l: Rank): (
     out none_low? := l > Rank::Mid
 }
 
-refine manual_ordering_sound: manual_ordering_fixed refines manual_ordering_written
-refine manual_ordering_complete: manual_ordering_written refines manual_ordering_fixed
+expect manual_ordering_sound(l: lint::Rank) {
+    use lint
+    call concrete := manual_ordering_fixed(l)
+    refines concrete manual_ordering_written(l)
+}
+expect manual_ordering_complete(l: lint::Rank) {
+    use lint
+    call concrete := manual_ordering_written(l)
+    refines concrete manual_ordering_fixed(l)
+}
 ```

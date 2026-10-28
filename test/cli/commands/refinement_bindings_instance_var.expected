@@ -1,14 +1,14 @@
 error[F0111]: `inner.y` is not a single name
- --> test/cli/commands/refinement_bindings_instance_var.fren:6:37
+ --> test/cli/commands/refinement_bindings_instance_var.fren:8:16
   |
-6 | refine fits: outer refines a { z := inner.y }
-  |                                     ^^^^^^^ `.` reads a call's variable, or a value's field or method
+8 |     expect r: (inner.y) = (x)
+  |                ^^^^^^^ `.` reads a call's variable, or a value's field or method
   |
   = note: `inner` is not a call, a variable or a constant
 help: if it is a path, separate its segments with `::`
   |
-6 - refine fits: outer refines a { z := inner.y }
-6 + refine fits: outer refines a { z := inner::y }
+8 -     expect r: (inner.y) = (x)
+8 +     expect r: (inner::y) = (x)
   |
 
 error: could not check due to previous errors

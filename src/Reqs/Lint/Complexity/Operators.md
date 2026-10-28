@@ -285,8 +285,14 @@ pub proc manual_at_most_one_fixed(a?, b?, c?, d?): (
     out after? := exactly_one?(c?, a?, b?)
 }
 
-refine manual_at_most_one_sound: manual_at_most_one_fixed refines manual_at_most_one_written
-refine manual_at_most_one_complete: manual_at_most_one_written refines manual_at_most_one_fixed
+expect manual_at_most_one_sound(a?, b?, c?, d?) {
+    call concrete := manual_at_most_one_fixed(a?, b?, c?, d?)
+    refines concrete manual_at_most_one_written(a?, b?, c?, d?)
+}
+expect manual_at_most_one_complete(a?, b?, c?, d?) {
+    call concrete := manual_at_most_one_written(a?, b?, c?, d?)
+    refines concrete manual_at_most_one_fixed(a?, b?, c?, d?)
+}
 ```
 
 It does not fire where an operand gives an obligation, which `deny`

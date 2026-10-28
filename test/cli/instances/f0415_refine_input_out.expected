@@ -1,13 +1,12 @@
-error[F0415]: a binding of a parameter of `rough` may only mention parameters of `precise`, but `y` is an output
- --> test/cli/instances/f0415_refine_input_out.fren:5:43
+error[F0304]: type mismatch: expected `Int`, found `Bool`
+ --> test/cli/instances/f0415_refine_input_out.fren:6:21
   |
-5 | refine fits: precise refines rough { n := y }
-  |                                           ^ an output
+6 |     refines c rough(true)
+  |                     ^^^^ expected `Int`, found `Bool`
   |
-  = note: the parameters of `rough` are chosen by the environment, before `precise` chooses its outputs
-  = help: bind an output of the refined procedure to it instead
+  = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0415`.
+For more information about this error, try `fren --explain F0304`.
 exit=2

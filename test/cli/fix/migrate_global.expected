@@ -1,0 +1,12 @@
+--- test/cli/fix/migrate_global.fren
++++ test/cli/fix/migrate_global.fren
+@@ -10 +10,7 @@
+-expect same: forall (a b: p) (a_x: Int) (m?: Bool), when a.x = b.x and m? and a_x = 0, a.y = v where v: Int := b.y
++expect same(a_x_1: Int, b_x: Int, a_x: Int, m?) {
++    assume a_positive: (a_x_1 + 1) > 0
++    assume b_positive: (b_x + 1) > 0
++    call a := p(a_x_1)
++    call b := p(b_x)
++    expect same: when a.x = b.x and m? and a_x = 0, a.y = v where v: Int := b.y
++}
+exit=1

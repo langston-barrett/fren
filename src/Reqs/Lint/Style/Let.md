@@ -96,8 +96,14 @@ pub proc let_and_return_fixed(x: Int, s: Set<Int>, a?): (
     out clause? := a? and x > k where k := 3
 }
 
-refine let_and_return_sound: let_and_return_fixed refines let_and_return_written
-refine let_and_return_complete: let_and_return_written refines let_and_return_fixed
+expect let_and_return_sound(x: Int, s: Set<Int>, a?) {
+    call concrete := let_and_return_fixed(x, s, a?)
+    refines concrete let_and_return_written(x, s, a?)
+}
+expect let_and_return_complete(x: Int, s: Set<Int>, a?) {
+    call concrete := let_and_return_written(x, s, a?)
+    refines concrete let_and_return_fixed(x, s, a?)
+}
 ```
 
 ## Operands at each variant
@@ -245,6 +251,14 @@ pub proc manual_forall_fixed(s: Set<Hue>, t: Set<Hue>, hue: Hue, a?): (
     out arm? := match hue { Hue::Red => (forall (hue!: Hue), hue in s), _ => a? }
 }
 
-refine manual_forall_sound: manual_forall_fixed refines manual_forall_written
-refine manual_forall_complete: manual_forall_written refines manual_forall_fixed
+expect manual_forall_sound(s: Set<lint::Hue>, t: Set<lint::Hue>, hue: lint::Hue, a?) {
+    use lint
+    call concrete := manual_forall_fixed(s, t, hue, a?)
+    refines concrete manual_forall_written(s, t, hue, a?)
+}
+expect manual_forall_complete(s: Set<lint::Hue>, t: Set<lint::Hue>, hue: lint::Hue, a?) {
+    use lint
+    call concrete := manual_forall_written(s, t, hue, a?)
+    refines concrete manual_forall_fixed(s, t, hue, a?)
+}
 ```

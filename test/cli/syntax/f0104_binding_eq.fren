@@ -1,4 +1,3 @@
--- `=` instead of `:=` in a binding of a refinement (F0104).
-proc a(n: Int) {}
-proc c(x: Int) {}
-refine r: c refines a { n = x }
+-- `=` instead of `:=` in a record field binding (F0104).
+struct R { n: Int }
+proc c(x: Int): (r: R) { out r := R { n = x } }

@@ -29,6 +29,7 @@ inductive BlockMember where
   | expect
   | cover
   | call
+  | refines
   | use
   deriving Inhabited, BEq, DecidableEq, Repr
 
@@ -37,7 +38,7 @@ with `det` if `det` (`lang::block_member`): it constrains nothing and has
 no outputs, so only assumptions, definitions, calls, claims and imports. -/
 def blockMemberAccepted (m : BlockMember) (det : Bool) : Bool :=
   !det && match m with
-    | .let | .assume | .expect | .cover | .call | .use => true
+    | .let | .assume | .expect | .cover | .call | .refines | .use => true
     | .result | .exists | .define | .ensure => false
 
 /-- How a message names the member `m`. -/
@@ -51,6 +52,7 @@ def BlockMember.text : BlockMember → String
   | .expect => "`expect` members"
   | .cover => "`cover` members"
   | .call => "calls"
+  | .refines => "refinement claims"
   | .use => "`use` members"
 
 /-- A member that a global expectation's block does not accept (`F0417`):
@@ -60,7 +62,7 @@ def blockMemberMsg (m : BlockMember) (det : Bool) : Msg :=
     headline := if det then "global expectations have no `det` members" else s!"global expectations have no {m.text}"
     label? := some "not allowed in a global expectation"
     notes := #["note: a global expectation constrains nothing: its block has `assume`, `use`, `let`, `call`, \
-      `expect` and `cover` members only",
+      `expect`, `refines` and `cover` members only",
       "help: state what the procedures guarantee in the procedures, and claim what follows with `expect`"] }
 
 end Fren.Core

@@ -398,6 +398,10 @@ scoped syntax (name := letMember) (&"det ")? "let " frenIdent (" : " fren_type)?
 for each of its parameters, in order. -/
 scoped syntax (name := callMember) &"call " frenIdent " := " fren_path noWs "("
   withoutForbidden(sepBy(fren_expr, ", ", ", ", allowTrailingSep)) ")" : fren_member
+/-- A call claims a specification's guarantees, in a global expectation only. -/
+scoped syntax (name := refinesMember) &"refines " frenIdent ppSpace fren_path noWs "("
+  withoutForbidden(sepBy(fren_expr, ", ", ", ", allowTrailingSep)) ")"
+  (" by " Lean.Parser.Tactic.tacticSeq)? : fren_member
 /-- `use`, as a member: its names are in scope in the procedure only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member
@@ -507,8 +511,7 @@ scoped syntax (name := globalBlockCmd) "expect " frenIdent noWs "("
   sepBy(fren_proc_param, ", ", ", ", allowTrailingSep) ")"
   (" : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")")? " { " fren_member* " }" : command
 
-/-- `refine r: c refines a [{ bindings }] [by tactics]`, a refinement
-(`Reqs/Lang/Refinement`). -/
+/-- Legacy top-level refinement syntax, retained only for a migration diagnostic. -/
 scoped syntax (name := refineCmd) "refine " frenIdent " : " fren_path ppSpace &"refines " fren_path
   (" { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }")? (" by " Lean.Parser.Tactic.tacticSeq)? : command
 

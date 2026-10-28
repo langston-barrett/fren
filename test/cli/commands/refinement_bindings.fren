@@ -14,14 +14,20 @@ pub proc fmt_exit(all_parsed?, changed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
 }
 
-refine fmt_exit_status: fmt_exit refines exit_status { ran? := all_parsed? }
+expect fmt_exit_status(all_parsed?, changed?) {
+    call concrete := fmt_exit(all_parsed?, changed?)
+    refines concrete exit_status((all_parsed?))
+}
 
 -- False: `bad_exit` exits with 4 when everything parsed.
 pub proc bad_exit(all_parsed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else 4)
 }
 
-refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
+expect bad_exit_status(all_parsed?) {
+    call concrete := bad_exit(all_parsed?)
+    refines concrete exit_status((all_parsed?))
+}
 
 pub enum Level { Allow, Warn, Forbid }
 
@@ -38,4 +44,9 @@ pub proc stops(level: Level, count: Int): (halted?, det failures: Int) {
     ensure f: failures = (if level = Forbid then count else 0)
 }
 
-refine abstraction: stops refines forbidding { forbidden? := level = Forbid, stops? := failures > 0 }
+expect abstraction(level: exits::Level, count: Int) {
+    use exits
+    assume spec_some: (count) > 0
+    call concrete := stops(level, count)
+    expect r: ((concrete.failures) > 0) iff ((level) = exits::Level::Forbid)
+}

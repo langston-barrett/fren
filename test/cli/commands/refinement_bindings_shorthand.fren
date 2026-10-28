@@ -2,4 +2,7 @@
 -- concrete component.
 proc precise(x: Int): (y: Int) { ensure r: y = x }
 proc rough(k: Int): (z: Int) { ensure r: z >= k }
-refine fits: precise refines rough { z := y, k }
+expect fits(x: Int) {
+    call concrete := precise(x)
+    expect r: ((concrete.y)) >= (k)
+}

@@ -11,11 +11,17 @@ pub proc fmt_exit(all_parsed?, changed?): (code: Int) {
 }
 
 set_option fren.evidence "tested" in
-refine fmt_exit_status: fmt_exit refines exit_status { ran? := all_parsed? }
+expect fmt_exit_status(all_parsed?, changed?) {
+    call concrete := fmt_exit(all_parsed?, changed?)
+    refines concrete exit_status((all_parsed?))
+}
 
 pub proc bad_exit(all_parsed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else 4)
 }
 
 set_option fren.evidence "tested" in
-refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
+expect bad_exit_status(all_parsed?) {
+    call concrete := bad_exit(all_parsed?)
+    refines concrete exit_status((all_parsed?))
+}

@@ -20,17 +20,32 @@ pub proc wrong(x: Int): (y: Int) {
     ensure below: y < x
 }
 
-refine by_solver: precise refines rough
-refine fails: precise refines wrong
+expect by_solver(x: Int) {
+    assume small: x < 100
+    call precise := precise(x)
+    refines precise rough(x)
+}
+expect fails(x: Int) {
+    call precise := precise(x)
+    refines precise wrong(x)
+}
 
 set_option fren.evidence "tested" in
-refine by_testing: precise refines rough
+expect by_testing(x: Int) {
+    assume small: x < 100
+    call precise := precise(x)
+    refines precise rough(x)
+}
 
 -- The proof is Lean, so its names need not be Fren identifiers.
-refine by_proof: precise refines rough by
-  intro x₁ px py _
-  refine ⟨trivial, fun ⟨_, _⟩ => ?_⟩
-  omega
+expect by_proof(x: Int) {
+    assume small: x < 100
+    call precise := precise(x)
+    refines precise rough(x) by
+      intros
+      simp_all
+      omega
+}
 
 -- Set to testing, with an instance in the abstract component whose binding
 -- has an index: Lean asks the solver nothing about it, not even that
@@ -51,7 +66,11 @@ pub proc exact(q: Seq<Int>): (y: Int) {
 }
 
 set_option fren.evidence "tested" in
-refine same: exact refines first
+expect same(q: Seq<Int>) {
+    assume nonempty: q != []
+    call exact := exact(q)
+    refines exact first(q)
+}
 
 -- With bindings (`Reqs/Lang/Refinement#bindings`): `shifted` names its
 -- variables differently, and `stops` refines `forbidding` through an
@@ -60,16 +79,31 @@ pub proc shifted(v: Int): (w: Int) {
     ensure r: w = v + 1
 }
 
-refine bound_by_solver: shifted refines rough { x := v, y := w }
-refine bound_fails: shifted refines wrong { x := v, y := w }
+expect bound_by_solver(v: Int) {
+    assume small: v < 100
+    call shifted := shifted(v)
+    refines shifted rough(v)
+}
+expect bound_fails(v: Int) {
+    call shifted := shifted(v)
+    refines shifted wrong(v)
+}
 
 set_option fren.evidence "tested" in
-refine bound_by_testing: shifted refines rough { x := v, y := w }
+expect bound_by_testing(v: Int) {
+    assume small: v < 100
+    call shifted := shifted(v)
+    refines shifted rough(v)
+}
 
-refine bound_by_proof: shifted refines rough { x := v, y := w } by
-  intro v sv sw _
-  refine ⟨trivial, fun ⟨_, _⟩ => ?_⟩
-  omega
+expect bound_by_proof(v: Int) {
+    assume small: v < 100
+    call shifted := shifted(v)
+    refines shifted rough(v) by
+      intros
+      simp_all
+      omega
+}
 
 pub enum Level { Allow, Warn, Forbid }
 
@@ -81,55 +115,56 @@ pub proc stops(level: Level): (failures: Int) {
     ensure f: failures = (if level = Level::Forbid then 1 else 0)
 }
 
-refine abstraction: stops refines forbidding { forbidden? := level = Level::Forbid, stops? := failures > 0 }
+expect abstraction(level: Level) {
+    call stops := stops(level)
+    expect r: (stops.failures > 0) iff level = Level::Forbid
+}
 
+-- Result names are independent; result types still have to widen.
 pub proc other(x: Int): (z: Int) { ensure r: z = x }
+expect renamed(x: Int) {
+    call other := other(x)
+    refines other rough(x - 1)
+}
+
+pub proc natural(x: Int): (y: Nat) { ensure r: y = (if x > 0 then 1 else 0) }
+/-- error: refinement result type mismatch at `y`: call result `z` cannot flow to the specification result -/
+#guard_msgs in
+expect bad(x: Int) {
+    call other := other(x)
+    refines other natural(x)
+}
 
 /--
-error: `refinement_test::other` cannot refine `refinement_test::rough`: it has no variable `y`
+error: type mismatch: expected `Int`, found `Bool`
 
-note: each parameter of `refinement_test::rough` must be a parameter of `refinement_test::other`, and each output a result, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and a parameter an `Int` for a `Nat`
-help: or bind it to an expression over the variables of `refinement_test::other`, as in `{ y := ... }`
+note: specification parameter `x` has type `Int`
+help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
 -/
 #guard_msgs in
-refine bad: other refines rough
+expect bad_argument(x: Int) {
+    call other := other(x)
+    refines other rough(true)
+}
 
 /--
-error: `refinement_test::rough` has no variable `q`
+error: expectation `refinement_test::fails::refines_1` does not hold
 
-note: a refinement binds variables of the refined procedure; those of `refinement_test::rough` are `x` and `y`
-help: a variable with a similar name exists: `x`
--/
-#guard_msgs in
-refine bad_name: shifted refines rough { q := v, y := w }
-
-/--
-error: a binding of a parameter of `refinement_test::rough` may only mention parameters of `refinement_test::shifted`, but `w` is an output
-
-note: the parameters of `refinement_test::rough` are chosen by the environment, before `refinement_test::shifted` chooses its outputs
-help: bind an output of the refined procedure to it instead
--/
-#guard_msgs in
-refine bad_mention: shifted refines rough { x := w, y := w }
-
-/--
-error: expectation `refinement_test::fails::below` does not hold
-
-counterexample: x = 0, precise.x = 0, precise.y = 1
-help: strengthen the guarantees so that it follows, or correct the expectation
+counterexample: x = -1, precise.y = 0
+help: correct the expectation, or assume what it needs
 ---
 info: the checks of `refinement_test::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: the checks of `refinement_test::same` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-error: expectation `refinement_test::bound_fails::below` does not hold
+error: expectation `refinement_test::bound_fails::refines_1` does not hold
 
-counterexample: v = 0, shifted.v = 0, shifted.w = 1
-help: strengthen the guarantees so that it follows, or correct the expectation
+counterexample: v = -1, shifted.w = 0
+help: correct the expectation, or assume what it needs
 ---
 info: the checks of `refinement_test::bound_by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: fren: 28 passed, 2 failed, 0 inconclusive, 0 redundant
+info: fren: 39 passed, 2 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check

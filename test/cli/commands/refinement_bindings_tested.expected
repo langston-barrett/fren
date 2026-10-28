@@ -1,11 +1,11 @@
-error[F0603]: expectation `bad_exit_status::documented` does not hold
-  --> test/cli/commands/refinement_bindings_tested.fren:21:8
+error[F0603]: expectation `bad_exit_status::refines_1` does not hold
+  --> test/cli/commands/refinement_bindings_tested.fren:26:5
    |
-21 | refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
-   |        ^^^^^^^^^^^^^^^ does not follow from the guarantees
+26 |     refines concrete exit_status((all_parsed?))
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
    |
-   = counterexample: all_parsed? = true, bad_exit.code = 4
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = counterexample: all_parsed? = true, concrete.code = 4
+   = help: correct the expectation, or assume what it needs
 
 fren: 10 passed (3 by testing), 1 failed, 0 inconclusive, 0 redundant
 

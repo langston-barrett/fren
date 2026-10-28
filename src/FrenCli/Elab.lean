@@ -357,6 +357,10 @@ structure CComp where
   path : Name
   file : Nat
   span : Span
+  /-- Original declarations for the behaviour-binder migration. Keeping
+  source and syntax together also supports callees in another input file. -/
+  migrationSource : Array Char := #[]
+  migrationMembers : Array Member := #[]
   /-- A global expectation in the short form, `expect n: e`, whose path is
   its module and whose one constraint is named after it, rather than one
   with a block, which is checked as a procedure is. -/
@@ -5352,10 +5356,15 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
   let st ← get
   let typed := c.vars.filter (·.role == .input) |>.filterMap fun v =>
     (v.ptype.obligation st.shapeOf).map fun o => (Name.num v.name 0, v.ptype.text, rename w c.vars (consSmt st.dataOf? o (quote v.name.toString)))
+  -- Preconditions may read local definitions. They must be substituted
+  -- before becoming obligations: the call's own behaviour is deliberately
+  -- not a hypothesis of its call check.
+  let unfold (smt : String) := c.defs.foldr (fun (n, value) body =>
+    substQuoted (fun p => if p == n.toString then value else quote p) body) smt
   return {
     name := w, comp := c.path, span := pi.name.span, bindings := conj eqs
     behaviour := rename w c.vars c.meaning
-    assumes := typed.map (fun (n, _, f) => (n, f)) ++ (c.props.filter (·.kind == .assume) |>.map fun a => (a.name, rename w c.vars a.smt))
+    assumes := typed.map (fun (n, _, f) => (n, f)) ++ (c.props.filter (·.kind == .assume) |>.map fun a => (a.name, rename w c.vars (unfold a.smt)))
     typed := typed.map fun (n, t, _) => (n, t)
     bounded := c.vars.any fun v => v.role == .input && (v.ptype.obligation st.shapeOf).any (·.quantifies) }
 
@@ -5439,6 +5448,8 @@ def lintManualNat (comp : Name) (members : Array Member) : M Unit := do
 (`Reqs/Check#checking-by-testing`): `all` if the procedure is set to testing,
 then each member's own setting. -/
 def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.Tested × Fren.Core.Tested) := do
+  let reserved := members.filterMap fun | .prop _ x _ => some (Name.mkSimple x.name) | _ => none
+  let mut refinesIndex := 0
   let mut pending : Option (Fren.Core.Evidence × Span) := none
   let mut expects := #[]
   let mut insts := #[]
@@ -5451,6 +5462,10 @@ def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.
       continue
     let set? := pending.map (·.1)
     match m, pending with
+    | .refines .., _ =>
+      refinesIndex := refinesIndex + 1
+      while reserved.contains (Name.mkSimple s!"refines_{refinesIndex}") do refinesIndex := refinesIndex + 1
+      expects := expects.push (Name.mkSimple s!"refines_{refinesIndex}", set?)
     | .prop .expect x _, _ | .prop .cover x _, _ => expects := expects.push (Name.mkSimple x.name, set?)
     -- By the names they declare, without the `!` of shadowing.
     | .inst x .., _ => insts := insts.push (Name.mkSimple (declaredIdent x).1.name, set?)
@@ -5485,6 +5500,7 @@ def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Na
   let mut start? : Option Nat := none
   for m in members, sp in spans do
     let (kind, name?, ms) : Fren.Core.MemberKind × Option Ident × Array Name := match m with
+      | .refines w _ args _ => (.expectation, none, #[Name.mkSimple w.name] ++ args.flatMap (fun e => (mentions e).map (·.getRoot)))
       | .evidence .. => (.use, none, #[])
       | .use .. | .useGroup .. => (.use, none, #[])
       | .var _ _ _ x _ none => (.exists, some x, #[])
@@ -5727,6 +5743,7 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
     (global : Bool := false) : M Unit := do
   let mentioned := members.foldl (init := #[]) fun acc m => match m with
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
+    | .refines w _ args _ => acc.push (Name.mkSimple w.name) ++ args.flatMap mentions
     | .inst _ _ bs .. => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
     | _ => acc
   -- A public definition says what the output is, so it is used.
@@ -5739,6 +5756,7 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
   let others := members.foldl (init := #[]) fun acc m => match m with
     | .prop .assume _ _ => acc
     | .prop _ _ e | .var _ _ _ _ _ (some e) => acc ++ mentions e
+    | .refines w _ args _ => acc.push (Name.mkSimple w.name) ++ args.flatMap mentions
     | .inst _ _ bs .. => bs.foldl (init := acc) fun acc (b, e?) => acc ++ (e?.map mentions).getD #[Name.mkSimple b.name]
     | _ => acc
   -- The uninterpreted functions that they apply link too.
@@ -5746,6 +5764,7 @@ def lintCompUnused (n : Name) (members : Array Member) (vars : Array CVar) (inst
   let others ← members.foldlM (init := others) fun acc m => match m with
     | .prop .assume _ _ => pure acc
     | .prop _ _ e | .var _ _ _ _ _ (some e) => return acc ++ (← appliedFns acx e)
+    | .refines _ _ args _ => args.foldlM (fun acc e => return acc ++ (← appliedFns acx e)) acc
     | .inst _ _ bs .. => bs.foldlM (init := acc) fun acc (_, e?) => match e? with
       | some e => return acc ++ (← appliedFns acx e)
       | none => pure acc
@@ -5799,6 +5818,7 @@ def lintUnrelatedCalls (name : Ident) (members : Array Member) : M Unit := do
   let expand (roots : Array Name) := roots.filter names.contains ++ (roots.filter params.contains).flatMap reading
   let atoms := members.flatMap (fun
       | .prop _ _ e => (boolAtoms e).map fun a => expand ((mentions a).map (·.getRoot))
+      | .refines w _ args _ => #[expand (#[Name.mkSimple w.name] ++ (args.flatMap mentions).map (·.getRoot))]
       | _ => #[])
     -- A relation of one call alone puts it in no group.
     ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
@@ -5822,8 +5842,75 @@ def blockMemberError? (header body : Array Member) (spans : Array Span) : Option
     | .prop .cover .. => some (sp, .cover, false)
     | .inst .. => some (sp, .call, false)
     | .use .. | .useGroup .. => some (sp, .use, false)
+    | .refines .. => some (sp, .refines, false)
     | .evidence .. => none
   (results ++ others).find? fun (_, m, det) => !Fren.Core.blockMemberAccepted m det
+
+/-- Claims an abstract procedure's guarantees with positional inputs and
+results. Abstract local definitions are substituted in dependency order. -/
+def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
+    (w : Ident) (path : Array Ident) (args : Array Expr) (sp : Span) (index : Nat) : M CProp := do
+  let some concrete := pending.find? (fun i => i.name.name == w.name)
+    | err w.span { code? := some "F0201", headline := s!"`{w.name}` is not a call in this global expectation block" }
+  let resolved ← resolve path
+  let .item { kind := .compItem, path := abstractPath, .. } := resolved
+    | err sp (Fren.Core.notACompMsg resolved)
+  let some abstract := (← get).comps.find? (·.path == abstractPath)
+    | internal sp "missing abstract procedure"
+  unless abstract.decidable do modify fun s => { s with outsideCore := true }
+  let params := abstract.vars.filter (fun v => v.name.isAtomic && v.role == .input)
+  unless params.size == args.size do
+    err sp (Fren.Core.callArityMsg (showPath abstractPath) (params.map (Fren.Core.nameText ·.name)) args.size)
+  let actual := concrete.comp.vars.filter (fun v => v.name.isAtomic && v.role == .output && v.isPub)
+  let results := abstract.vars.filter (fun v => v.name.isAtomic && v.role == .output && v.isPub)
+  unless actual.size == results.size do
+    err sp { code? := some "F0408", headline := s!"refinement result count mismatch: specification has {results.size}, call has {actual.size}" }
+  if let some hidden := abstract.vars.find? (fun v => v.name.isAtomic && v.role == .output && !v.isPub && v.defn?.isNone) then
+    err sp { code? := some "F0417", headline := s!"specification `exists` variable `{hidden.name}` is not supported by `refines`"
+             notes := #["help: make it a result of the specification"] }
+  let cx : ExprCtx := { vars, insts := pending.map (Name.mkSimple ·.name.name), place := .prop }
+  let mut substitutions : Array (Name × String) := #[]
+  for param in params, arg in args do
+    let (value, ty) ← elabExpr { cx with expected? := some param.ty } arg
+    liftMsg arg.span (Fren.Core.checkType param.ty ty none)
+    substitutions := substitutions.push (param.name, value)
+  for required in results, given in actual do
+    if let .error msg := Fren.Core.checkType required.ty given.ty none then
+      err sp { msg with headline := s!"refinement result type mismatch at `{required.name}`: call result `{given.name}` cannot flow to the specification result" }
+    substitutions := substitutions.push (required.name, quote (Name.mkSimple w.name ++ given.name).toString)
+  let replace (subs : Array (Name × String)) (text : String) := substQuoted (fun p =>
+    ((subs.find? (fun (n, _) => n.toString == p)).map (·.2)).getD (quote p)) text
+  let internal := abstract.vars.filter (!·.name.isAtomic)
+  for v in internal do
+    substitutions := substitutions.push (v.name, quote s!"#refines{index}.{v.name}")
+  for (name, value) in abstract.defs do
+    unless results.any (·.name == name) do
+      substitutions := substitutions.push (name, replace substitutions value)
+  let claims := (abstract.props.filter (·.kind == .ensure)).map (fun p => replace substitutions p.smt)
+    ++ abstract.defs.filterMap (fun (n, value) => if results.any (·.name == n) then
+      some s!"(= {replace substitutions (quote n.toString)} {replace substitutions value})" else none)
+    ++ (params ++ results).filterMap (fun v => v.fact?.map (replace substitutions))
+  let internalFacts := internal.flatMap fun v =>
+    (if v.ty == .nat then #[s!"(>= {replace substitutions (quote v.name.toString)} 0)"] else #[])
+      ++ v.fact?.toArray.map (replace substitutions)
+  let calls := internalFacts ++ abstract.insts.map fun i => replace substitutions (conj #[i.bindings, i.behaviour])
+  let close (goal : String) :=
+    let goal := if calls.isEmpty then goal else s!"(=> {conj calls} {goal})"
+    if internal.isEmpty then goal else
+      s!"(forall ({" ".intercalate (internal.map fun v => s!"({quote s!"#refines{index}.{v.name}"} {v.ty.sort})").toList}) {goal})"
+  let body := close (conj claims)
+  let defined := (abstract.props.filter (·.kind == .ensure)).map (·.name) ++ abstract.defs.map (·.1)
+  modify fun s => { s with indexes := s.indexes ++ abstract.indexes.filterMap (fun (n, _, _, g, t) =>
+    if defined.contains n then some (sp, close (replace substitutions g), t) else none) }
+  noteCounts abstract sp
+  let closeApp (app : String) :=
+    let app := replace substitutions app
+    let bound := internal.filter fun v => (app.splitOn (quote s!"#refines{index}.{v.name}")).length > 1
+    if bound.isEmpty then app else
+      s!"(forall ({" ".intercalate (bound.map fun v => s!"({quote s!"#refines{index}.{v.name}"} {v.ty.sort})").toList}) {app})"
+  modify fun s => { s with natApps := s.natApps ++ abstract.natApps.map closeApp }
+  return { kind := .expect, name := Name.mkSimple s!"refines_{index}"
+           span := sp, smt := body, trigger? := none, triggerSpan? := none }
 
 def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat)
     (global : Bool := false) : M Unit := do
@@ -5867,6 +5954,22 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let (insts, indexes, tables) ← elabCompBindings vars instNames pending
   let (defs, indexes, tables) ← elabCompDefinitions name vars instNames indexes tables
   let (props, indexes, tables) ← elabCompConstraints members vars instNames indexes tables
+  let mut props := props
+  let mut indexes := indexes
+  let mut tables := tables
+  let mut refinesIndex := 0
+  for m in members do
+    if let .refines w abstract args sp := m then
+      refinesIndex := refinesIndex + 1
+      while props.any (·.name == Name.mkSimple s!"refines_{refinesIndex}") do refinesIndex := refinesIndex + 1
+      unless global do err sp { code? := some "F0417", headline := "`refines` is accepted only in global expectation blocks" }
+      discard takeIndexes
+      discard takeTables
+      if let some p ← attempt (elabRefinesMember vars pending w abstract args sp refinesIndex) then
+        props := props.push p
+        indexes := indexes ++ (← takeIndexes).map (fun (sp, g, t) => (p.name, Fren.Core.IndexPlace.prop, sp, g, t))
+        tables := tables ++ (← takeTables).map (fun (sp, q, g) => (p.name, Fren.Core.IndexPlace.prop, sp, q, g))
+
   lintManualNat (module ++ n) members
   lintDuplicateConstraints members
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
@@ -5882,6 +5985,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts
   let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables
+                     migrationSource := (← get).src, migrationMembers := members
                      decidable := !(← get).outsideCore, relational, counts, tested, enumerated, enumSize := (← get).enumSize
                      natApps := (← get).natApps, guarded := (← get).guardedUsed, global }
   -- A global expectation is an item that nothing calls
@@ -6752,9 +6856,9 @@ partial def elabItem (item : Item) : M Unit := do
       throw { e with state := ← get }
     lintDeclared .global (Name.mkSimple shown.name) shown.span
     lintLines .global (Name.mkSimple shown.name) shown.span close
-  | .refine name c a bs => do
+  | .refine name _ _ _ => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
-    elabRefine name c a bs
+    err name.span { code? := some "F0417", headline := "top-level `refine` has been removed; use `refines c spec(args)` in a global expectation block" }
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path

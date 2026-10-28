@@ -1227,6 +1227,22 @@ a `Nat` is: `n - 1` is an `Int`, even if `n` is a `Nat`.
 ```fren
 proc c(x: Int): (y?) { ensure r: y? iff x > 0 }
 ```
+
+A `refines` argument uses the same type check. Public results flow from the
+implementation to the specification, in declaration order. This rejects
+an `Int` result where the specification requires `Nat`:
+
+```
+proc implementation(x: Int): (actual: Int) { ensure r: actual = x }
+proc specification(x: Int): (required: Nat) { ensure r: required >= x }
+expect result_type(x: Int) {
+    call c := implementation(x)
+    refines c specification(x)
+}
+```
+
+Change the specification result to `Int`, or provide an implementation
+whose result is `Nat`. A `Nat` result can serve for an `Int` result.
 "# },
   { code := "F0305", explanation := r#"`=` or `!=` compares values of different types.
 
@@ -2650,6 +2666,22 @@ order. The message lists its parameters. Remove the extra arguments:
 proc sub(a: Int) {}
 proc c() { call s := sub(1) }
 ```
+
+A `refines c spec(args)` member also gives one argument per specification
+parameter. Its public result count must equal the call's result count;
+result count mismatches also report `F0408`:
+
+```
+proc implementation(x: Int): (actual: Int) { ensure r: actual = x }
+proc specification(x: Int) {}
+expect result_count(x: Int) {
+    call c := implementation(x)
+    refines c specification(x)
+}
+```
+
+Add the missing public specification result, or select a call with the
+required number of results. Names do not need to match.
 "# },
   { code := "F0409", explanation := r#"A call with too few arguments.
 
@@ -2710,88 +2742,37 @@ from the inputs, or constrain it with a guarantee instead:
 proc c(x: Int): (y: Int) { let a: Int := b + x let b: Int := x ensure r: y = a }
 ```
 "# },
-  { code := "F0412", explanation := r#"A refinement whose procedures do not share the abstract one's interface.
+  { code := "F0412", args := none, explanation := r#"Retired code for the removed name-based refinement interface.
 
-Erroneous code example:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough
-```
-
-`refine r: c refines a` relates `c` and `a` through `a`'s variables: each
-parameter of `a` must be a parameter of `c`, and each output of `a` a
-result of `c`, with the same name and type (see `Reqs/Lang/Refinement`).
-`precise` has no result `z`. Name the results alike:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (y: Int) { ensure r: y >= x }
-refine fits: precise refines rough
-```
+Use `refines c spec(args)` in a global expectation block. Arguments use
+ordinary call arity and type checks; public results match positionally
+and may widen from `Nat` to `Int`. Private `let` values are computed;
+specification `exists` values must become public results. See
+`Reqs/Lang/Refinement`.
 "# },
-  { code := "F0413", explanation := r#"A refinement binds a name that is not a variable of the refined procedure.
+  { code := "F0413", args := none, explanation := r#"Retired code for unknown names in removed refinement bindings.
 
-Erroneous code example:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough { w := y }
-```
-
-A refinement's bindings give variables of the refined procedure, the one
-after `refines`, as expressions over the refining one's (see
-`Reqs/Lang/Refinement`). `rough` has no variable `w`. The message lists
-its variables; correct the name:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough { z := y }
-```
+Use `refines c spec(args)` in a global expectation block. Arguments use
+ordinary call arity and type checks; public results match positionally
+and may widen from `Nat` to `Int`. Private `let` values are computed;
+specification `exists` values must become public results. See
+`Reqs/Lang/Refinement`.
 "# },
-  { code := "F0414", explanation := r#"A refinement binds a variable of the refined procedure more than once.
+  { code := "F0414", args := none, explanation := r#"Retired code for duplicate removed refinement bindings.
 
-Erroneous code example:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough { z := y, z := y + 1 }
-```
-
-Each variable of the refined procedure is read as one expression, so a
-refinement binds it at most once. Keep one binding:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough { z := y }
-```
+Use `refines c spec(args)` in a global expectation block. Arguments use
+ordinary call arity and type checks; public results match positionally
+and may widen from `Nat` to `Int`. Private `let` values are computed;
+specification `exists` values must become public results. See
+`Reqs/Lang/Refinement`.
 "# },
-  { code := "F0415", explanation := r#"A refinement's binding mentions a variable of the refining procedure that it cannot see.
+  { code := "F0415", args := none, explanation := r#"Retired code for inaccessible variables in removed refinement bindings.
 
-Erroneous code example:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(n: Int): (y: Int) { ensure r: y >= n }
-refine fits: precise refines rough { n := y }
-```
-
-A binding sees the refining procedure from outside: its parameters and
-results, and no `exists` or `let` variable. A binding of an input of the refined
-procedure sees only inputs, since the environment chooses the inputs
-before the procedure chooses its outputs (see `Reqs/Lang/Refinement`).
-Bind the input to a parameter:
-
-```fren
-proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(n: Int): (y: Int) { ensure r: y >= n }
-refine fits: precise refines rough { n := x }
-```
+Use `refines c spec(args)` in a global expectation block. Arguments use
+ordinary call arity and type checks; public results match positionally
+and may widen from `Nat` to `Int`. Private `let` values are computed;
+specification `exists` values must become public results. See
+`Reqs/Lang/Refinement`.
 "# },
   { code := "F0432", explanation := r#"A function type as a field's or a payload's type.
 
@@ -2928,7 +2909,7 @@ expect even(x: Int) {
 
 A global expectation constrains nothing: it claims what follows from its
 assumptions and the procedures it calls. So its block has `assume`, `use`,
-`let`, `call`, `expect` and `cover` members only, and it has no results,
+`let`, `call`, `refines`, `expect` and `cover` members only, and it has no results,
 no `exists`, `ensure` or `out` members, and no `det` member. State what a
 procedure guarantees in the procedure, and claim what follows with
 `expect`:

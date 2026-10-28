@@ -35,8 +35,16 @@ pub proc wildcard_in_or_fixed(s: Signal): (det v: Int) {
     out v := match s { Signal::Stop => 0, _ => 1 }
 }
 
-refine wildcard_in_or_sound: wildcard_in_or_fixed refines wildcard_in_or_written
-refine wildcard_in_or_complete: wildcard_in_or_written refines wildcard_in_or_fixed
+expect wildcard_in_or_sound(s: lint::Signal) {
+    use lint
+    call concrete := wildcard_in_or_fixed(s)
+    refines concrete wildcard_in_or_written(s)
+}
+expect wildcard_in_or_complete(s: lint::Signal) {
+    use lint
+    call concrete := wildcard_in_or_written(s)
+    refines concrete wildcard_in_or_fixed(s)
+}
 ```
 
 `lint::wildcard_in_or_patterns` computes the fact from an or-pattern of the
@@ -82,8 +90,14 @@ pub proc manual_range_fixed(n: Int): (det small: Int, det low: Int) {
     out low := match n { ..=4 => 1, 5 => 2, _ => 3 }
 }
 
-refine manual_range_sound: manual_range_fixed refines manual_range_written
-refine manual_range_complete: manual_range_written refines manual_range_fixed
+expect manual_range_sound(n: Int) {
+    call concrete := manual_range_fixed(n)
+    refines concrete manual_range_written(n)
+}
+expect manual_range_complete(n: Int) {
+    call concrete := manual_range_written(n)
+    refines concrete manual_range_fixed(n)
+}
 ```
 
 `lint::manual_range_patterns` states when it fires, computing the facts from an or-pattern of the

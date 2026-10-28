@@ -16,8 +16,14 @@ proc bad_exit(all_parsed?): (code: Int) {
 }
 
 -- Holds only through the binding: `fmt_exit` has no `ran?`.
-refine holds: fmt_exit refines exit_status { ran? := all_parsed? }
-refine fails: bad_exit refines exit_status { ran? := all_parsed? }  --~ error: expectation `fails::documented` does not hold
+expect holds(all_parsed?, changed?) {
+    call concrete := fmt_exit(all_parsed?, changed?)
+    refines concrete exit_status((all_parsed?))
+}
+expect fails(all_parsed?) {
+    call concrete := bad_exit(all_parsed?)
+    refines concrete exit_status((all_parsed?))  --~ error: expectation `fails::refines_1` does not hold
+}
 
 enum Level { Allow, Warn, Forbid }
 
@@ -30,12 +36,16 @@ proc stops(level: Level): (failures: Int) {
     ensure f: failures = (if level = Level::Forbid then 1 else 0)
 }
 
-refine abstraction: stops refines forbidding { forbidden? := level = Level::Forbid, stops? := failures > 0 }
+expect abstraction(level: Level) {
+    use Level
+    call concrete := stops(level)
+    expect r: ((concrete.failures) > 0) iff ((level) = Level::Forbid)
+}
 
 -- The indexes of a binding are checked where it is read: an input's under
 -- the assumptions, an output's under the assumptions and the instances.
 proc first_of(n: Int, x: Int): (y: Int) {
-    assume pos: n > 0
+    assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
     ensure r: y = x
 }
 
@@ -43,15 +53,29 @@ proc seqs(q: Seq<Int>): (s: Seq<Int>) {
     out s := q
 }
 
-refine guarded: seqs refines first_of { n := q.len, x := if q != [] then q[0] else 0, y := s[0] }
-refine unguarded: seqs refines first_of { n := 1, x := q[0], y := s[0] }  --~ error: an index of `unguarded::x` may be out of range
---~^ error: an index of `unguarded::y` may be out of range
+expect guarded(q: Seq<Int>) {
+    assume spec_pos: ((q).len) > 0  --~ warning: say whether it is empty with `[]`, not `len`
+    call concrete := seqs(q)
+    expect r: ((concrete.s)[0]) = (if (q) != [] then (q)[0] else 0)
+}
+expect unguarded(q: Seq<Int>) {
+    assume spec_pos: (1) > 0  --~ warning: this assumption mentions no variable
+    call concrete := seqs(q)
+    expect r: ((concrete.s)[0]) = ((q)[0])  --~ error: an index of `unguarded::r` may be out of range
+    --~^ error: an index of `unguarded::r` may be out of range
+}
 
 -- Swapped bindings: each input of `a` is read as the other input of `c`.
 proc difference(x: Int, y: Int): (d: Int) { ensure r: d = x - y }
 proc reversed(x: Int, y: Int): (d: Int) { ensure r: d = y - x }
 
-refine swapped: reversed refines difference { x := y, y := x }
-refine unswapped: reversed refines difference  --~ error: expectation `unswapped::r` does not hold
+expect swapped(x: Int, y: Int) {
+    call concrete := reversed(x, y)
+    refines concrete difference((y), (x))
+}
+expect unswapped(x: Int, y: Int) {
+    call concrete := reversed(x, y)
+    refines concrete difference(x, y)  --~ error: expectation `unswapped::refines_1` does not hold
+}
 
---@ summary: 28 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ summary: 33 passed, 4 failed, 0 inconclusive, 0 redundant

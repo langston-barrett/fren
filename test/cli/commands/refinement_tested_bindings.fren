@@ -17,4 +17,8 @@ pub proc exact(q: Seq<Int>): (y: Int) {
 }
 
 set_option fren.evidence "tested" in
-refine same: exact refines first
+expect same(q: Seq<Int>) {
+    assume spec_nonempty: (q) != []
+    call concrete := exact(q)
+    refines concrete first(q)
+}

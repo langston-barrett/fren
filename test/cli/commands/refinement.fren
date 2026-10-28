@@ -16,11 +16,17 @@ pub proc shape(text: String): (accepted?) {
 }
 
 set_option fren.evidence "tested" in
-refine word_has_shape: word refines shape
+expect word_has_shape(text: String) {
+    call concrete := word(text)
+    refines concrete shape(text)
+}
 
 -- False: `word` accepts "ab", which `wrong` rejects.
 pub proc wrong(text: String): (accepted?) {
     ensure never: when text != "", not accepted?
 }
 
-refine word_is_wrong: word refines wrong
+expect word_is_wrong(text: String) {
+    call concrete := word(text)
+    refines concrete wrong(text)
+}

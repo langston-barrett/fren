@@ -356,10 +356,11 @@ the postconditions can be proved satisfiable exactly when every argument
 that meets the preconditions has a value that meets the postconditions:
 
 ```fren
-refine contract_realizes: contract_realizability refines realizability {
-    assume_q := if pres = {} then Unsat else Sat,
-    cex_q := if forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts
-        then Unsat else Sat,
+expect contract_realizes(pres: Set<check::Argument>, posts: Set<check::Point>) {
+    use check
+    call concrete := contract_realizability(pres, posts)
+    refines concrete realizability(if (pres) = {} then check::Outcome::Unsat else check::Outcome::Sat, if forall (a: check::Argument), when (a) in (pres), exists (v: check::Value), check::Point { arg := (a), value := (v) } in (posts)
+            then check::Outcome::Unsat else check::Outcome::Sat)
 }
 ```
 
@@ -989,8 +990,10 @@ pub proc flat_completeness_asked(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine flat_completeness_refines: flat_completeness_asked refines completeness_asked {
-    unguarded_exhaustive? := FlatArm::Wild in arms or (FlatArm::A in arms and FlatArm::B in arms and FlatArm::C in arms),
+expect flat_completeness_refines(arms: Seq<check::FlatArm>) {
+    use check
+    call concrete := flat_completeness_asked(arms)
+    refines concrete completeness_asked(check::FlatArm::Wild in (arms) or (check::FlatArm::A in (arms) and check::FlatArm::B in (arms) and check::FlatArm::C in (arms)))
 }
 ```
 
@@ -1156,9 +1159,10 @@ pub proc arms_asked(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine arms_asked_refines: arms_asked refines reachability_asked {
-    guarded? := 0 <= j < guards.len and guards[j] = GuardOf::Guarded,
-    after_guard? := 0 <= guards.index_of([GuardOf::Guarded], 0) < j,
+expect arms_asked_refines(guards: Seq<check::GuardOf>, j: Int) {
+    use check
+    call concrete := arms_asked(guards, j)
+    refines concrete reachability_asked(0 <= (j) < (guards).len and (guards)[(j)] = check::GuardOf::Guarded, 0 <= (guards).index_of([check::GuardOf::Guarded], 0) < (j))
 }
 ```
 
@@ -1288,9 +1292,10 @@ pub proc reach_hypotheses(
     expect not_enclosing: when 0 <= k < hyps.len and hyps[k] = HypAt::Enclosing, not used?
 }
 
-refine reach_hypotheses_refines: reach_hypotheses refines reach_hypothesis {
-    definedness? := 0 <= k < hyps.len and hyps[k] != HypAt::Other,
-    enclosing? := 0 <= k < hyps.len and hyps[k] = HypAt::Enclosing,
+expect reach_hypotheses_refines(hyps: Seq<check::HypAt>, k: Int) {
+    use check
+    call concrete := reach_hypotheses(hyps, k)
+    refines concrete reach_hypothesis(0 <= (k) < (hyps).len and (hyps)[(k)] != check::HypAt::Other, 0 <= (k) < (hyps).len and (hyps)[(k)] = check::HypAt::Enclosing)
 }
 ```
 
@@ -1348,7 +1353,11 @@ pub proc precondition_at(
     expect unguarded: when guarded = {}, verdict = Pass
 }
 
-refine precondition_detail: precondition_at refines precondition { q := if guarded subset pres then Unsat else Sat }
+expect precondition_detail(pres: Set<check::Argument>, guarded: Set<check::Argument>) {
+    use check
+    call concrete := precondition_at(pres, guarded)
+    refines concrete precondition(if (guarded) subset (pres) then check::Outcome::Unsat else check::Outcome::Sat)
+}
 ```
 
 A precondition that fails is reported, and nothing more: the
@@ -1436,7 +1445,11 @@ pub proc postcondition_at(
     expect everywhere: when posts = {Argument::A0, Argument::A1}, verdict = Pass
 }
 
-refine postcondition_detail: postcondition_at refines postcondition { q := if pres subset posts then Unsat else Sat }
+expect postcondition_detail(pres: Set<check::Argument>, posts: Set<check::Argument>) {
+    use check
+    call concrete := postcondition_at(pres, posts)
+    refines concrete postcondition(if (pres) subset (posts) then check::Outcome::Unsat else check::Outcome::Sat)
+}
 ```
 
 ## Minimal sets
@@ -2113,18 +2126,75 @@ Each check that reaches its verdict from one outcome refines `proved` or
 whether something can hold.
 
 ```fren
-refine expectation_proves: expectation refines proved
-refine instance_assumption_proves: instance_assumption refines proved
-refine definedness_proves: definedness refines proved
-refine completeness_proves: completeness refines proved
-refine disjointness_proves: disjointness refines proved
-refine precondition_proves: precondition refines proved
-refine postcondition_proves: postcondition refines proved
-refine determinism_proves: determinism refines proved
-refine vacuity_witnesses: non_vacuity refines satisfiable
-refine cover_witnesses: cover_goal refines satisfiable
-refine redundancy_witnesses: non_redundancy refines satisfiable
-refine reachability_witnesses: reachability refines satisfiable
+expect expectation_proves(q: check::Outcome) {
+    use check
+    call concrete := expectation(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect instance_assumption_proves(q: check::Outcome) {
+    use check
+    call concrete := instance_assumption(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect definedness_proves(q: check::Outcome) {
+    use check
+    call concrete := definedness(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect completeness_proves(q: check::Outcome) {
+    use check
+    call concrete := completeness(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect disjointness_proves(q: check::Outcome) {
+    use check
+    call concrete := disjointness(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect precondition_proves(q: check::Outcome) {
+    use check
+    call concrete := precondition(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect postcondition_proves(q: check::Outcome) {
+    use check
+    call concrete := postcondition(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect determinism_proves(q: check::Outcome) {
+    use check
+    call concrete := determinism(q)
+    expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
+    expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
+}
+expect vacuity_witnesses(q: check::Outcome) {
+    use check
+    call concrete := non_vacuity(q)
+    refines concrete satisfiable(q)
+}
+expect cover_witnesses(q: check::Outcome) {
+    use check
+    call concrete := cover_goal(q)
+    expect witness: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Sat
+    expect refuted: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Unsat
+}
+expect redundancy_witnesses(q: check::Outcome) {
+    use check
+    call concrete := non_redundancy(q)
+    refines concrete satisfiable(q)
+}
+expect reachability_witnesses(q: check::Outcome) {
+    use check
+    call concrete := reachability(q)
+    refines concrete satisfiable(q)
+}
 
 #fren_check
 ```
