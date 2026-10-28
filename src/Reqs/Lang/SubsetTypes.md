@@ -276,3 +276,40 @@ Earlier-conjunct guards are directional. For a sequence binder `q`,
 `where first: q[0] > 0 and present: q.len > 0` fails the definedness check
 for `first`, even though their conjunction has the same classical truth.
 The forward order never assumes `first` to justify its own index.
+
+## Fixed interpretations and inhabitation queries
+
+A subset with only fixed interpreted types and operations can check
+inhabitation by satisfiability of the base type facts and every invariant
+at a fresh value. This is an optimization of the same existential question;
+it does not replace the universal interpretation requirement. It applies
+only when the complete base type facts, inherited invariants and new
+invariants contain no abstract sorts or uninterpreted functions, including
+transitive dependencies through defined functions. Include every base fact
+in the satisfiability query. Finding a witness in one interpretation never
+justifies this optimization when an interpretation can vary.
+
+```fren
+pub enum InhabitationWorld { First, Second }
+pub enum InhabitationValue { Zero, One }
+
+pub proc fixed_inhabitation(allowed: Set<InhabitationWorld>,
+    membership: Rel<InhabitationWorld, InhabitationValue>): (det satisfiable?, det inhabited_everywhere?) {
+    assume some_world: allowed != {}
+    assume fixed_meaning: forall (w: InhabitationWorld), forall (other: InhabitationWorld),
+        forall (value: InhabitationValue), when w in allowed and other in allowed,
+        (w, value) in membership iff (other, value) in membership
+    out satisfiable? := exists (w: InhabitationWorld), exists (value: InhabitationValue),
+        w in allowed and (w, value) in membership
+    out inhabited_everywhere? := forall (w: InhabitationWorld), when w in allowed,
+        exists (value: InhabitationValue), (w, value) in membership
+    expect same_question: satisfiable? iff inhabited_everywhere?
+}
+
+pub proc varying_inhabitation(membership: Rel<InhabitationWorld, InhabitationValue>): (det some_witness?, det inhabited_everywhere?) {
+    assume interpretation: membership = {(InhabitationWorld::First, InhabitationValue::Zero)}
+    out some_witness? := exists (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
+    out inhabited_everywhere? := forall (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
+    expect one_world_insufficient: some_witness? and not inhabited_everywhere?
+}
+```
