@@ -185,7 +185,8 @@ any, and otherwise by `decide` or, failing that, by the solver, as an
 [implementation](#proof) is, in which case it is an axiom. An
 interpretation whose statement is not proved is an error, and adds
 nothing, so the function can be interpreted again; a proof that uses
-`sorry` proves nothing. So with `fn size(Int): Int is 0..=255`, `interp
+`sorry` proves nothing. So with `type Byte = n: Int where range: n is 0..=255`
+and `fn size(Int): Byte`, `interp
 size := fun _ => 300` is rejected, and no implementation can rely on it.
 An interpretation is what makes an
 implementation a claim about the code: the implementation of a procedure

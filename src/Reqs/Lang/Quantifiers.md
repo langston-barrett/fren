@@ -62,9 +62,10 @@ finite and not unbounded, so when every type it is built from is finite by
 itself, has a former that is not growing, and is not recursive. A type of
 a former that has no constituents, such as `Bool`, has none. A pattern
 type whose pattern matches finitely many integers is listed, and so is a
-type built from it, such as `struct P { x: Int is 0..=3 }`, `enum Small {
-S(Int is 0..=2), T }`, `Option<Int is 0..=2>` or `Pair<Bool, Int is
-1..=2>`:
+type built from it. With declared subset aliases `Four`, `Three`, and
+`Two` for integer ranges `0..=3`, `0..=2`, and `1..=2`, examples are
+`struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>`
+and `Pair<Bool, Two>`:
 
 ```fren
 pub mod lang
@@ -101,12 +102,12 @@ pub proc quantified_type(
     expect constituents_listed: when listed?, (forall (u: DeclaredTy), when u in constituents.image({ty}),
         own_finite?(declared_kind(u), pattern_bounded?(u)) and not former(declared_kind(u)).growing?
         and not (u, u) in constituents.closure)
-    -- `struct P { x: Int is 0..=3 }`, `enum Small { S(Int is 0..=2), T }` and `Option<Int is 0..=2>`.
+    -- `struct P { x: Four }`, `enum Small { S(Three), T }` and `Option<Three>`.
     expect bounded_field: forall (x: DeclaredTy),
         when declared_kind(ty) in {RecordTy, EnumTy} and constituents = {(ty, x)}
         and declared_kind(x) = IntTy and pattern_bounded?(x),
         listed?
-    -- `Pair<Bool, Int is 1..=2>`.
+    -- `Pair<Bool, Two>`.
     expect bounded_pair: forall (b: DeclaredTy) (x: DeclaredTy),
         when declared_kind(ty) = RecordTy and constituents = {(ty, b), (ty, x)}
         and declared_kind(b) = BoolTy and declared_kind(x) = IntTy and pattern_bounded?(x),

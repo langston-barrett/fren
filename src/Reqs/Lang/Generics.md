@@ -210,9 +210,9 @@ markers for the rest, which no segment of a path can be. An instance
 `G<A, B>` is `G`'s segments, a marker that opens its type arguments,
 `A`'s, a marker that separates them, `B`'s and a marker that closes them;
 `Set<T>` and `Seq<T>` are a marker of their own and `T`'s, and
-`Rel<A, B>` its marker, `A`'s, a separator of its own and `B`'s. A
-pattern's segments are left out first, so `List<T> is ...` reads as
-`List<T>`. Here a segment that is not a marker is the declaration's own
+`Rel<A, B>` its marker, `A`'s, a separator of its own and `B`'s.
+Subset aliases are resolved to their base types; their invariant
+expressions are not type segments. Here a segment that is not a marker is the declaration's own
 name, `Own`, or another identifier, `Ident(a)`, which is one of the
 declaration's type parameters, `P0`, `P1` or `P2`, or another name,
 `Other`. From the segments it states:
@@ -645,11 +645,11 @@ and `Set<Pair<Int, Bool>>`, in every message, note and witness, the same
 in both front ends. A value of a generic type prints as any other value of
 an enumeration or record, without type arguments, as in `Option::Some(3)`.
 
-## Pattern types as type arguments
+## Subset types as type arguments
 
-A type argument may be a [pattern type](Types.md#pattern-types), or a
-[type alias](Items.md#type-aliases) of one, as in `Option<Int is 0..=9>`
-or `Option<Byte>` with `type Byte := Int is 0..=255`, or a type whose
+A type argument may be a [subset type](SubsetTypes.md), as in
+`Option<Byte>` with `type Byte = n: Int where range: n is 0..=255`,
+or a type whose
 values bring a constraint, as `Option<Byte>` is in `Pair<Option<Byte>,
 Int>`. A type argument stands for its parameter with its pattern, so a
 payload or field whose declared type is the parameter has the argument's
@@ -660,26 +660,26 @@ type as declared:
   brings those of its own (see [Pattern types](Types.md#meaning)): a value `x` of
   `Option<Byte>` brings that when `x` is `Option::Some(b)`, `b` is in
   `0..=255`. A constraint of an element type within an argument, as in
-  `Option<Set<Int is 0..=9>>`, quantifies over the elements, as it does
+  `Option<Set<Digit>>` with `type Digit = n: Int where range: n is 0..=9`, quantifies over the elements, as it does
   anywhere (`lang::pattern_place`).
 - A value given where an instance is declared has the obligation
   (`lang::obligation`) of each payload or field whose declared type
   mentions a type parameter, with the arguments, guarded by its variant:
   the value was built from values of the parameters' types, which have no
   patterns, so nothing else ensures them. `Option::Some(300)` given where an
-  `Option<Byte>` is declared is an error (`F0622`), as `300` is where a
+  `Option<Byte>` is declared is an error (`F0661`), as `300` is where a
   `Byte` is. A payload or field whose declared type mentions no parameter
   has its own obligation where its value is given, as in any enumeration or
   record.
 - A quantifier ranges over the values of the instance that meet its
-  constraint (`lang::pattern_finite`): `forall (o: Option<Int is 0..=2>)`
+  constraint (`lang::pattern_finite`): with `type Small = n: Int where range: n is 0..=2`, `forall (o: Option<Small>)`
   ranges over `Option::None` and three `Option::Some`s.
 
 A type argument of a recursive enumeration whose values bring a
 constraint is an error (`F0389`), for now: the constraint would hold of
 every payload, at every depth, which the constraints of a recursive
 enumeration's payloads, brought where each is read, do not say for a type
-parameter. So `List<Int is 0..=9>` and `List<Option<Byte>>` are errors,
+parameter. So `List<Digit>` and `List<Option<Byte>>` are errors,
 and `List<Option<Int>>` is not. This is stricter than for a recursive
 enumeration that is not generic, whose payload of a pattern type is
 allowed, under the [`undecidable` lint](../Lint/Decidability.md#undecidable-constructs)
@@ -691,12 +691,12 @@ parameters: with `enum Wrap<T> { W(List<T>) }`, `Wrap<Byte>` is an error,
 and so is `S<Byte>`, with `struct S<T> { s: Set<List<T>> }`, through a
 set's, sequence's or relation's element types. A
 recursive generic enumeration's payload of a declared pattern type that
-mentions no parameter, as `Int is 0..=9` in
-`enum Tree<T> { Leaf, Node(Int is 0..=9, T, Tree<T>) }`, brings its
+mentions no parameter, as `Digit` in
+`enum Tree<T> { Leaf, Node(Digit, T, Tree<T>) }`, brings its
 constraint where it is read, as for any recursive enumeration.
 
-A pattern type's base type may be an instance, as in `type Present :=
-Option<Int> is Option::Some(_)`, whose pattern is a pattern of the
+A subset type's base type may be an instance, as in
+`type Present = o: Option<Int> where present: o is Option::Some(_)`, whose pattern is a pattern of the
 instance (see [Patterns](Patterns.md)).
 
 ## Recursive, unbounded and finite instances

@@ -34,9 +34,10 @@ line, with a comment after each, and a comma after the last (see
 [Trailing commas](../Fmt.md#trailing-commas)):
 
 ```text
+type Target = n: Int where range: n is 50..=90
 pub proc thermostat(
     temp: Int,               -- the temperature
-    target: Int is 50..=90,  -- the target, which the environment keeps sane
+    target: Target,          -- the target, which the environment keeps sane
 ): (det mode: Mode) {
     ensure heat: when temp < target - 2, mode = Mode::Heat
 }

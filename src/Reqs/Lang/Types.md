@@ -122,11 +122,12 @@ whether outputs exist, never asks for an unbounded value.
 ## Natural numbers
 
 A `Nat` is a natural number: an integer that is at least 0. Its values
-are those of the [pattern type](#subset-types) `Int is 0..`, and it
+are those of the [subset type](#subset-types)
+`type Nonnegative = n: Int where range: n is 0..`, and it
 follows the same rules for what a variable of it brings, and for where it
 may be written, but it is a type of its own, closed under `+` and `*`:
 `n + 1` is a `Nat` where `n` is, while the result of an operator on an
-`Int is 0..` is an `Int`, and an `Int` given where a `Nat` is expected is
+`Nonnegative` is an `Int`, and an `Int` given where a `Nat` is expected is
 an error rather than an obligation. Lean has `Nat`, and the solver has
 `Int`, so it is the one pattern type that both know. Every `Nat`
 is an `Int`, so a `Nat` is accepted wherever an `Int` is expected, as an
@@ -417,7 +418,8 @@ an abstract type, nor an enumeration, record or newtype declared without
 ordered exactly when its base type is, since it is its base type to the
 type checker, and a type alias exactly when the type it names is, since
 it is that type. So `ordered struct Seconds(Nat)`, `ordered struct
-Status(Nat is 100..=599)` and `ordered struct Timeout(Seconds)` are each
+Status(HttpCode)` with `type HttpCode = n: Nat where range: n is 100..=599`,
+and `ordered struct Timeout(Seconds)` are each
 ordered, and `struct Ms(Int)` is not.
 
 Being ordered is a property of the type, and every rule that orders
@@ -572,9 +574,10 @@ record or newtype whose fields have finite types, a set or relation type
 whose element types are finite, and a pattern type whose base type is
 finite or whose pattern matches finitely many integers, as
 `lang::pattern_finite` says. `Int`, `Nat`, `String` and abstract types are
-not finite, and neither is any sequence type. So `struct P { x: Int is
-0..=3 }`, `enum Small { S(Int is 0..=2), T }`, `Option<Int is 0..=2>` and
-`Pair<Bool, Int is 1..=2>` are finite.
+not finite, and neither is any sequence type. With aliases `Four`, `Three`,
+and `Two` restricting integers to `0..=3`, `0..=2`, and `1..=2`, respectively,
+`struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>` and
+`Pair<Bool, Two>` are finite.
 
 These facts are of a type as it is declared, with its patterns, which
 `lang::DeclaredTy` stands for: `lang::declared_kind` gives its kind, that

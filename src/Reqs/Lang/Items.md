@@ -186,8 +186,9 @@ value, and `x.0` reads its field (see
 newtype has). A newtype is a record, so its field follows the rules of
 a record's [fields](#fields-and-payloads): its type has no abstract type
 within it and it does not have the newtype as an element type, and is not
-the newtype itself. It may be a `Nat`, or a [pattern
-type](Types.md#subset-types), as in `struct Byte(Int is 0..=255)`: a value
+the newtype itself. It may be a `Nat`, or a [subset
+type](SubsetTypes.md), as in `struct Byte(ByteValue)` with
+`type ByteValue = n: Int where range: n is 0..=255`: a value
 of it is then in range wherever it is read, and `Byte(e)` has the
 obligation that `e` is. Like any type, a newtype is
 [unbounded](Types.md#recursive-and-unbounded-types) exactly when its
@@ -558,10 +559,11 @@ body and the contract can mention them. `lang::function_params` states
 this, from the number of parameters and of those written with a name:
 
 ```fren
+type SubsetItems1 = subset_value: Nat  where invariant: subset_value is 1..
 pub proc function_params(
     defined?,            -- written with `:= e`
     contract?,           -- it has a contract: an `assume` or an `ensure` clause
-    n_params: Nat is 1..,
+    n_params: SubsetItems1,
     n_named: Nat,        -- parameters written with a name
 ): (det accepted?) {
     assume counts: n_named <= n_params
