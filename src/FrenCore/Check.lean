@@ -104,6 +104,11 @@ structure Clash where
   restForced : Forced
   deriving Inhabited
 
+/-- Source member paths use the language's separators, including dotted
+annotation segments, without Lean identifier escaping. -/
+def showAnnotationPath (name : Name) : String :=
+  "::".intercalate (name.components.map (·.toString (escape := false)))
+
 /-- A Boolean source group whose alternatives are retained for conflict
 explanations, without replacing its owning constraint in a primary core. -/
 inductive BranchKind where
@@ -452,6 +457,9 @@ structure Comp (F : Type) where
   /-- Some variable's type, its own or a call's, is or contains an
   abstract type. -/
   typesInterpreted : Bool := false
+  /-- A declaration checks existence in every interpretation. With no variable
+  interpretation, a direct satisfiability witness answers the same question. -/
+  inhabitation : Bool := false
   /-- The questions about the cases of its tables and `match`es, and about
   the arguments of its applications of functions with preconditions. -/
   tables : Array (TableSite F) := #[]
@@ -646,7 +654,7 @@ def BranchGroup.alternatives (group : BranchGroup F) : Array (BranchAlternative 
   | .exactlyOne => group.members.map fun chosen =>
     { name := chosen.name, formula := b.conj (group.members.map fun member =>
         if member.name == chosen.name then member.formula else b.notF member.formula)
-      label := "only " ++ chosen.name.toString ++ " holds"
+      label := "only " ++ showAnnotationPath chosen.name ++ " holds"
       memberWanted := group.members.map fun member => (member.name, member.name == chosen.name)
       range? := chosen.range?, text := chosen.text }
   | .equivalence =>
@@ -720,6 +728,15 @@ def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets :
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
       generic := c.generic }
+  if c.inhabitation && !c.realizableInterpreted interprets then
+    let fixed := c.defEqs .realizable ++ c.hyps b
+    let q ← b.query (fixed ++ c.reqs) b.falseF true
+    match q with
+    | .sat _ => return result .pass
+    | .unsat =>
+      let core ← minimize b fixed c.reqs b.falseF
+      return result .fail (.conflict #[] core)
+    | .unknown reason => return result .inconclusive (.unknown reason)
   let sub := c.substHyps b
   let assumes := sub c.assumes
   let assumeQ ← b.query assumes b.falseF false
@@ -1626,13 +1643,13 @@ def branchMessages (r : CheckResult) : Array Message := Id.run do
     out := out.push {
       severity := .info
       item? := some group.owner
-      msg := { code? := none, headline := if complete then s!"no branch of `{group.owner}` can hold"
-                           else s!"branches of `{group.owner}` ruled out by the conflict" }
+      msg := { code? := none, headline := if complete then s!"no branch of `{showAnnotationPath group.owner}` can hold"
+                           else s!"branches of `{showAnnotationPath group.owner}` ruled out by the conflict" }
     }
     for alternative in excluded do
-      let branch := if alternative.label.isEmpty then s!"`{alternative.name}`" else alternative.label
+      let branch := if alternative.label.isEmpty then s!"`{showAnnotationPath alternative.name}`" else alternative.label
       let source := if alternative.text.isEmpty then #[] else #[s!"member: {alternative.text}"]
-      let conditional := #[s!"note: conditional core of `{group.owner}` under {branch}: " ++
+      let conditional := #[s!"note: conditional core of `{showAnnotationPath group.owner}` under {branch}: " ++
         (if alternative.core.isEmpty then "the fixed hypotheses alone" else showNamesAnd alternative.core)]
       let headline := if alternative.impossible then
           s!"{branch} is impossible under the fixed hypotheses"
@@ -1648,8 +1665,8 @@ def branchMessages (r : CheckResult) : Array Message := Id.run do
       }
       for opposed in alternative.opposed do
         let rest := if opposed.rest.isEmpty then "the fixed hypotheses" else showNamesAnd opposed.rest
-        let why := if opposed.wanted then s!"`{opposed.member}` cannot hold, because {rest} forces it to be false"
-                   else s!"`{opposed.member}` must hold, because {rest} forces it to be true"
+        let why := if opposed.wanted then s!"`{showAnnotationPath opposed.member}` cannot hold, because {rest} forces it to be false"
+                   else s!"`{showAnnotationPath opposed.member}` must hold, because {rest} forces it to be true"
         out := out.push {
           severity := .info
           item? := some group.owner
@@ -1675,7 +1692,7 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
       out := out.push {
         severity := .info
         item? := some owner
-        msg := { code? := none, headline := s!"{label} members: {showNames (selected.map (·.name))}" }
+        msg := { code? := none, headline := s!"{label} members: {", ".intercalate (selected.toList.map fun value => s!"`{showAnnotationPath value.name}`")}" }
       }
       for value in selected do
         out := out.push {
@@ -1684,7 +1701,7 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
           atRange? := value.range?
           msg := {
             code? := none
-            headline := s!"`{value.name}` is {label}"
+            headline := s!"`{showAnnotationPath value.name}` is {label}"
             notes := if value.text.isEmpty then #[] else #[s!"member: {value.text}"]
           }
         }

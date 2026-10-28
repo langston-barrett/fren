@@ -673,7 +673,7 @@ def _root_.Fren.Core.Comp.atoms (c : Comp F) : Comp EF × Array F := Id.run do
   let mut fs : Array F := #[]
   let mut next := 0
   let mut out : Comp EF := { path := c.path, vars := c.vars, assumes := #[], reqs := #[], expects := #[], triggers := #[]
-                             typesInterpreted := c.typesInterpreted, fn? := c.fn? }
+                             typesInterpreted := c.typesInterpreted, fn? := c.fn?, inhabitation := c.inhabitation }
   let mut named : Array (Array (Name × EF)) := #[]
   for xs in #[c.assumes, c.reqs, c.expects, c.covers, c.triggers, c.posts] do
     let mut ys := #[]
