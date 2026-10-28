@@ -2403,16 +2403,6 @@ impl manual_nat: lint::manual_nat for (v : Fren.Core.NatVariable) (cs : List Fre
       · exact absurd ((hb _).mpr (by simpa using hbk)) (hmin k.toNat hlt)
       · omega
 
--- Both front ends ask `refinementGiven` at each variable that a refinement
--- reads by name.
-impl refinement_given: lint::refinement_given for (i : Bool) (a c : Fren.Core.Given) {
-  input? := i,
-  abstract_type := toGiven a,
-  concrete_type := toGiven c,
-  side := if (Fren.Core.refinementGiven i a c).1 then .Concrete else .Abstract,
-  given := toGiven (Fren.Core.refinementGiven i a c).2,
-}
-
 -- The rest are decided in `opReports`, in both front ends, from the type
 -- that each front end records for each ordering.
 impl manual_abs: lint::manual_abs for (o : Fren.Core.Ordered) (c : Comparison) (t : Bool) {

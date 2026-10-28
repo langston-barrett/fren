@@ -15,7 +15,6 @@ import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Quantifier
 import FrenCore.Recursion
-import FrenCore.Refine
 import FrenCore.Regex
 import FrenCore.SeqElems
 import FrenCore.Trace
@@ -357,10 +356,6 @@ structure CComp where
   path : Name
   file : Nat
   span : Span
-  /-- Original declarations for the behaviour-binder migration. Keeping
-  source and syntax together also supports callees in another input file. -/
-  migrationSource : Array Char := #[]
-  migrationMembers : Array Member := #[]
   /-- A global expectation in the short form, `expect n: e`, whose path is
   its module and whose one constraint is named after it, rather than one
   with a block, which is checked as a procedure is. -/
@@ -776,9 +771,6 @@ structure State where
   /-- Global expectations, each a `CComp` whose path is its module, with an
   call per binder and the expectation as its only constraint. -/
   globals : Array CComp := #[]
-  /-- Refinements, each a `CComp` whose path is the refinement's
-  (`Reqs/Lang/Refinement`). -/
-  refinements : Array CComp := #[]
   /-- The bodies of defined functions and the values of constants that have
   tables, each as a procedure whose path is its module, with the function's
   parameters as inputs, for the checks of its tables (`check::applies`). -/
@@ -846,8 +838,7 @@ structure State where
   globalReads : Array (Name × Name) := #[]
   /-- The reports of `manual_nat` in the file so far. -/
   natReports : Array NatReport := #[]
-  /-- The variables that a call or a refinement in the file keeps
-  `Int`s, by their procedures (`Fren.Core.refinementGiven`). -/
+  /-- The variables that calls in the file keep `Int`s. -/
   natKept : Array (Name × String) := #[]
   /-- Where the comparisons of `Bool`s in the expression being elaborated
   are, for `bool_equality`. -/
@@ -1206,9 +1197,6 @@ structure ExprCtx where
   place : Place
   /-- For a binding, the index of its call. -/
   current : Nat := 0
-  /-- In a refinement's binding, over the concrete procedure's variables, which
-  binding it is: its mentions follow `refinement::mention` instead. -/
-  refining? : Option Fren.Core.RefineBinding := none
   /-- The binders in scope, innermost last. -/
   binders : Array CBinder := #[]
   /-- The instances of the quantifiers around this expression, multiplied
@@ -4318,9 +4306,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
         | some (v, k) =>
           for u in if cx.unmentioned then #[] else defDeps cx.vars v do
             let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
-            let ok := match cx.refining? with
-              | some rb => rb.checkMention u.role u.isPub u.name
-              | none => Fren.Core.checkMention cx.place u.role earlier u.name
+            let ok := Fren.Core.checkMention cx.place u.role earlier u.name
             match ok with
             | .ok () => pure ()
             | .error msg => err span (if u.name == v.name then msg else Fren.Core.throughDefinition v.name msg)
@@ -6010,7 +5996,6 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
   let (relational, counts) ← checkCounts
   let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables
-                     migrationSource := (← get).src, migrationMembers := members
                      decidable := !(← get).outsideCore, relational, counts, tested, enumerated, enumSize := (← get).enumSize
                      natApps := (← get).natApps, guarded := (← get).guardedUsed, global }
   -- A global expectation is an item that nothing calls
@@ -6025,169 +6010,6 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
       table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
       scope := s.module
       comps := s.comps.push c }
-
-/-- Elaborates `refine name: concrete refines abstract { bindings }` into
-the procedure that checks it (`Reqs/Lang/Refinement`): `concrete`'s inputs,
-`abstract`'s assumptions, a call of `concrete` named as it is,
-`abstract`'s calls, and `abstract`'s requirements and definitions as
-expectations, with `abstract`'s variables read as their bindings or as
-`concrete`'s of the same names, and `concrete`'s outputs from the
-call. -/
-def elabRefine (name : Ident) (concreteSegs abstractSegs : Array Ident) (bs : Array (Ident × Option Expr)) :
-    M Unit := do
-  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-  let n := Name.mkSimple name.name
-  liftMsg name.span (Fren.Core.checkItemName "refinement" n)
-  let module := (← get).module
-  liftMsg written ((← get).table.checkFreshItem module n bang)
-  let comp (segs : Array Ident) : M CComp := do
-    let sp := segs[0]!.span.to segs.back!.span
-    let path ← match ← resolve segs with
-      | .item { kind := .compItem, path, .. } => pure path
-      | r => err sp (Fren.Core.notACompMsg r)
-    let some c := (← get).comps.find? (·.path == path) | internal sp s!"unknown comp `{path}`"
-    return c
-  let c ← comp concreteSegs
-  let a ← comp abstractSegs
-  let aSpan := abstractSegs[0]!.span.to abstractSegs.back!.span
-  let bound := bs.map (Name.mkSimple ·.1.name)
-  -- The bindings (`refinement::binding`).
-  match Fren.Core.checkRefineBindings a.path ((a.vars.filter (·.name.isAtomic)).map (·.name)) bound with
-  | .ok () => pure ()
-  | .error (i, msg) => err bs[i]!.1.span msg
-  -- The interface (`refinement::interface`), for the variables not bound.
-  for v in a.vars.filter fun v => v.name.isAtomic && !bound.contains v.name do
-    let cv? := c.vars.find? (·.name == v.name)
-    let input := v.role == Role.input
-    -- Widening in the direction values flow: an input's from `a`, an
-    -- output's from `c`.
-    let typed (cv : CVar) := if input then v.ty.widens cv.ty else cv.ty.widens v.ty
-    let ok := Fren.Core.interfaceAccepted input cv?.isSome (cv?.any (·.role == Role.input))
-      (cv?.any (·.isPub)) (cv?.any (v.ty.widens ·.ty)) (cv?.any (·.ty.widens v.ty))
-    unless ok do
-      let why := match cv? with
-        | none => s!"it has no variable `{v.name}`"
-        | some cv => if !typed cv then s!"its `{v.name}` has another type"
-          else if input then s!"its `{v.name}` is not a parameter"
-          else if cv.role == Role.input then s!"its `{v.name}` is a parameter, not an output"
-          else s!"its output `{v.name}` is not a result"
-      err aSpan (Fren.Core.interfaceMsg c.path a.path v.name why)
-    -- What it reads by name keeps an `Int` one (`lint::manual_nat`).
-    if let some cv := cv? then
-      let given (t : Ty) : Fren.Core.Given := if t == .int then .givenInt else .givenNat
-      if let (concrete, .givenInt) := Fren.Core.refinementGiven input (given v.ty) (given cv.ty) then
-        let kept := (if concrete then c.path else a.path, Fren.Core.nameText v.name)
-        modify fun s => { s with natKept := s.natKept.push kept }
-  -- The call of `concrete`, named as it is.
-  let w := Name.mkSimple (c.path.getString!)
-  if a.insts.any (·.name == w) then err aSpan (Fren.Core.dupMemberMsg w)
-  -- `a`'s assumptions are hypotheses here, so it reads each input of `a`,
-  -- through its binding or by name (`unused_assumption`).
-  let reads := (a.vars.filter fun v => v.name.isAtomic && v.role == Role.input).map (a.path, ·.name)
-  modify fun s => { s with globalReads := s.globalReads ++ reads }
-  -- The bindings, over `concrete`'s own variables, seen from outside, as
-  -- the call's: a defined output is an output (`refinement::mention`).
-  let own := (c.vars.filter (·.name.isAtomic)).map fun v =>
-    { v with role := if v.role == .input then .input else Role.ofInst v.role v.isPub, defn? := none }
-  -- The mix of relational operators and counting, as in a procedure
-  -- (`Reqs/Lang/Decidability#relations`): `concrete`'s, `abstract`'s and
-  -- the bindings'.
-  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
-  noteCounts c (concreteSegs[0]!.span.to concreteSegs.back!.span)
-  noteCounts a aSpan
-  discard takeIndexes
-  discard takeTables
-  let mut bindings := #[]
-  for (b, e?) in bs do
-    let e := e?.getD (.path b.span #[b])
-    let some v := a.vars.find? (·.name == Name.mkSimple b.name) | internal b.span s!"no variable for `{b.name}`"
-    let cx : ExprCtx := { vars := own, place := .prop, expected? := some v.ty
-                          refining? := some { concrete := c.path, abstract := a.path, input := v.role == .input } }
-    let (smt, t) ← elabExpr cx e
-    liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath a.path}` has type `{v.ty.show}`"))
-    -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
-    if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (a.path, b.name) }
-    lintBools e (← hidesIn cx)
-    bindings := bindings.push (v, smt, ← takeIndexes, ← takeTables)
-  let (relational, counts) ← checkCounts
-  let afterBindings ← get
-  -- `concrete`'s variables as a binding reads them, its outputs from the call.
-  let ownC (smt : String) := rename w (own.filter (·.role != .input)) smt
-  -- `abstract`'s variables: their bindings, or else `concrete`'s of the same names.
-  let outs := a.vars.filter fun v => v.name.isAtomic && v.role == .output
-  let ren (smt : String) := substQuoted (fun p => match bindings.find? (·.1.name.toString == p) with
-    | some (_, b, _, _) => ownC b
-    | none => if outs.any (·.name.toString == p) then quote (w ++ identName p).toString else quote p) smt
-  -- An input that `a` reads has `a`'s type, which widens to `c`'s
-  -- (`refinement::interface`).
-  let inputs := (c.vars.filter fun v => v.name.isAtomic && v.role == .input).map fun v =>
-    -- It brings what `a`'s type of it brings, and an input that `a` does
-    -- not read brings nothing (`Reqs/Lang/Refinement#the-interface`).
-    match a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains u.name with
-    | some u => { v with ty := u.ty, ptype := u.ptype, fact? := u.fact? }
-    | none => { v with fact? := none }
-  -- `c`'s inputs' constraints are its call's obligations.
-  let vars := inputs ++ c.vars.map (fun v =>
-      let role := Role.ofInst v.role v.isPub
-      { v with name := w ++ v.name, role, isPub := role != .instHidden, isDet := false, defn? := none
-               fact? := if v.role == .input then none else v.fact?.map (rename w c.vars) })
-    ++ a.vars.filter (!·.name.isAtomic)
-  let st ← get
-  let typed := c.vars.filter (·.role == .input) |>.filterMap fun v =>
-    (v.ptype.obligation st.shapeOf).map fun o => (Name.num v.name 0, v.ptype.text, rename w c.vars (consSmt st.dataOf? o (quote v.name.toString)))
-  let instC : CInst := { name := w, comp := c.path, span := name.span
-                         bindings := conj (inputs.map fun v => s!"(= {quote (w ++ v.name).toString} {quote v.name.toString})")
-                         behaviour := rename w c.vars c.meaning
-                         assumes := typed.map (fun (n, _, f) => (n, f))
-                           ++ (c.props.filter (·.kind == .assume)).map fun p => (p.name, rename w c.vars p.smt)
-                         typed := typed.map fun (n, t, _) => (n, t)
-                         bounded := c.vars.any fun v => v.role == .input && (v.ptype.obligation st.shapeOf).any (·.quantifies) }
-  -- `a`'s calls are hypotheses: their assumptions are `a`'s own
-  -- obligations, checked in `a` (`Reqs/Lang/Refinement#the-obligation`).
-  let insts := #[instC] ++ a.insts.map fun i =>
-    { i with bindings := ren i.bindings, behaviour := ren i.behaviour, assumes := #[] }
-  -- Reported at the refinement (`Reqs/Lang/Refinement#the-obligation`).
-  let props := (a.props.filter (·.kind == .assume)).map (fun p => { p with smt := ren p.smt, span := name.span, triggerSpan? := none })
-    ++ (a.props.filter (·.kind == .ensure)).map (fun p =>
-      -- No triggers, as in Lean: vacuity does not run on a refinement.
-      { p with kind := .expect, smt := ren p.smt, trigger? := none, span := name.span, triggerSpan? := none })
-    ++ a.defs.map fun (d, e) =>
-      { kind := .expect, name := d, span := name.span
-        smt := s!"(= {ren (quote d.toString)} {ren e})", trigger? := none, triggerSpan? := none : CProp }
-  -- Reported at the refinement, as its other checks are.
-  let indexes := a.indexes.map fun (x, place, _, goal, t) =>
-    (x, (match place with | .binding k => .binding (k + 1) | p => p), name.span, ren goal, t)
-  -- A binding's, where it is read (`Reqs/Lang/Refinement#bindings`): an
-  -- input's under the assumptions, an output's as a requirement.
-  let indexes := indexes ++ bindings.flatMap fun (v, _, idx, _) => idx.map fun (sp, g, t) =>
-    (v.name, if v.role == .input then .binding 0 else .prop, sp, ownC g, t)
-  -- What the types of `a`'s outputs bring, checked as its guarantees are
-  -- (`Reqs/Lang/Refinement#the-interface`): an obligation of each.
-  let st ← get
-  let indexes := indexes ++ (a.vars.filter fun v => v.name.isAtomic && v.role == .output && v.defn?.isNone).filterMap fun v =>
-    (v.ptype.obligation st.shapeOf).map fun o =>
-      (v.name, .prop, name.span, ren (consSmt st.dataOf? o (quote v.name.toString)), some (v.ptype.text, o.quantifies))
-  -- And the questions about tables, as the indexes.
-  let tables := a.tables.map fun (x, place, _, q, goal) =>
-    (x, (match place with | .binding k => .binding (k + 1) | p => p), name.span, q, ren goal)
-  let tables := tables ++ bindings.flatMap fun (v, _, _, tbl) => tbl.map fun (sp, q, g) =>
-    (v.name, if v.role == .input then .binding 0 else .prop, sp, q, ownC g)
-  let ev ← evidenceOfEffect
-  let settings (all : Bool) := Fren.Core.Tested.ofSettings all
-    -- The bindings too, for the definedness of their indexes.
-    ((a.props.filter (·.kind == .assume)).map (·.name) ++ bound) (props.filter (·.kind == .expect) |>.map (·.name, none))
-    -- `a`'s calls too, for the definedness of their bindings.
-    (#[(w, none)] ++ a.insts.map (·.name, none)) #[]
-  let tested := settings ev.tested
-  let enumerated := settings ev.enumerated
-  -- The applications in the bindings, `concrete`'s and `abstract`'s.
-  let natApps := afterBindings.natApps.map ownC ++ c.natApps.map (rename w c.vars) ++ a.natApps.map ren
-  modify fun s => { s with
-    table := s.table.addItem { kind := .expectItem, path := module ++ n, isPub := false, owner := s.module }
-    refinements := s.refinements.push { path := module ++ n, file := s.file, span := name.span, vars, props, insts
-                                        indexes, tables, decidable := c.decidable && a.decidable && !afterBindings.outsideCore
-                                        relational, counts, tested, enumerated, enumSize := s.enumSize, natApps
-                                        guarded := afterBindings.guardedUsed } }
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
@@ -6891,9 +6713,6 @@ partial def elabItem (item : Item) : M Unit := do
       throw { e with state := ← get }
     lintDeclared .global (Name.mkSimple shown.name) shown.span
     lintLines .global (Name.mkSimple shown.name) shown.span close
-  | .refine name _ _ _ => do
-    modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
-    err name.span { code? := some "F0417", headline := "top-level `refine` has been removed; use `refines c spec(args)` in a global expectation block" }
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path

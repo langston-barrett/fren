@@ -1,6 +1,0 @@
--- fren-covers: refinement::refinement_result_domain
---@ args: fix --check --fmt
-set_option fren.lint.unused_variables "allow"
-proc concrete(x: Int): (y: Int) { out y := x }
-proc specification(x: Int): (z: Int is 1..) {}
-refine bad: concrete refines specification { z := y }

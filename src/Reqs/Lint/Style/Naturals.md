@@ -103,30 +103,6 @@ pub proc manual_nat(
 }
 ```
 
-A refinement reads a variable by name from both procedures, and gives
-it one of them: an input's value flows from the abstract procedure to
-the concrete one, and an output's from the concrete procedure back. It
-gives the variable the other procedure's type, so it keeps the receiving
-procedure's variable an `Int` when the other's is one.
-`lint::refinement_given` states which procedure it gives, and the type:
-
-```fren
-pub enum Side { Concrete, Abstract }
-
-set_option fren.evidence "enumerated" in
-pub proc refinement_given(
-    input?,              -- the variable is an input, rather than an output
-    abstract_type: Given,    -- the abstract procedure's variable's type
-    concrete_type: Given,    -- the concrete procedure's
-): (
-    det side: Side,          -- the procedure it gives a value
-    det given: Given,         -- the type of that value
-) {
-    ensure flow: side = (if input? then Side::Concrete else Side::Abstract)
-    ensure typed: given = (if input? then abstract_type else concrete_type)
-}
-```
-
 The [refinements](../../Lang/Refinement.md) below check the fix of an input,
 each way, and of an output, one way: procedures as written, as fixed, and
 a refinement between them, so that the solver checks that they agree for

@@ -39,30 +39,28 @@ def By.ofName? : String → Option By
 def By.solves (b : By) : Bool := b != .testing
 def By.tests (b : By) : Bool := b != .solver
 
-/-- A procedure, global expectation, refinement, or body of a function or
+/-- A procedure, global expectation, or body of a function or
 value of a constant with tables, with the checks that `fren check` runs on
 it. -/
 structure Todo where
   comp : CComp
   global : Bool
   kinds : Array Fren.Core.CheckKind
-  refinement : Bool
   body : Bool := false
 
 /-- What `fren check` checks in the spec `st`, in order. -/
 def todo (st : State) : Array Todo :=
-  st.comps.map (⟨·, false, Fren.Core.CheckedItem.component.kinds, false, false⟩)
-    ++ st.globals.map (fun g => ⟨g, g.short, (if g.short then Fren.Core.CheckedItem.shortGlobal else .global).kinds, false, false⟩)
-    ++ st.refinements.map (⟨·, false, Fren.Core.CheckKind.all.filter Fren.Core.refinementRuns, true, false⟩)
+  st.comps.map (⟨·, false, Fren.Core.CheckedItem.component.kinds, false⟩)
+    ++ st.globals.map (fun g => ⟨g, g.short, (if g.short then Fren.Core.CheckedItem.shortGlobal else .global).kinds, false⟩)
     -- An uninterpreted function's contract has its value as an output.
     ++ st.bodies.map fun b =>
-      ⟨b, false, (if b.vars.any (·.role == .output) then Fren.Core.CheckedItem.contract else .body).kinds, false, true⟩
+      ⟨b, false, (if b.vars.any (·.role == .output) then Fren.Core.CheckedItem.contract else .body).kinds, true⟩
 
 /-- The key of its results. -/
 def Todo.key (t : Todo) : String :=
   if t.body then s!"body {t.comp.path}::{t.comp.bodyOf?.getD .anonymous}"
   else if t.global then s!"expect {t.comp.path}::{(t.comp.props[0]?.map (·.name)).getD .anonymous}"
-  else if t.refinement then s!"refine {t.comp.path}" else s!"comp {t.comp.path}"
+  else s!"comp {t.comp.path}"
 
 /-- The results of a procedure, each with the key of its check. The
 definedness checks of a constraint are one check, which passes when every
@@ -152,7 +150,7 @@ def equivalenceTimeout : Nat := 1
 
 /-- Whether the solver shows that the spec `st'` of a mutant means what the
 original `st` means (`Reqs/Mutate#equivalent-mutants`): each defined function, and each
-formula of each procedure, global expectation and refinement, is equivalent to the
+formula of each procedure and global expectation, is equivalent to the
 original's. `prelude` is `st`'s, indexed, and `cache` holds the answers to
 the queries asked before. -/
 def equivalent (st : State) (prelude : Prelude) (st' : State) (timeout : Nat) (cache : QueryCache) : IO (Option Bool) := do

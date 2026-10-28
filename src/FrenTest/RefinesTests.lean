@@ -97,10 +97,6 @@ proc hidden(x: Int): (r: Int) { exists h: Int ensure value: r = h }
 #guard_msgs in
 expect unsupported(n: Nat) { call c := concrete(n) refines c hidden(n) }
 
-/-- error: top-level `refine` has been removed; use `refines c spec(args)` in a global expectation block -/
-#guard_msgs in
-refine old: concrete refines concrete
-
 /-- error: a refinement proof must not contain `sorry` -/
 #guard_msgs in
 expect bogus(n: Nat) { call c := concrete(n) refines c abstract(n) by sorry }

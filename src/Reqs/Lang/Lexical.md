@@ -206,7 +206,7 @@ which:
 pub const RESERVED: Set<String> := {
     "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "expect", "impl", "interp",
     "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "refine", "with", "let", "where", "table",
+    "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "with", "let", "where", "table",
 }
 
 pub proc reserved_word(
