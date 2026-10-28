@@ -1,0 +1,22 @@
+error[F0603]: expectation `nested::output.outer?@1.inner?@1.first` does not hold
+ --> test/cli/results/transparent_predicate.fren:1:28
+  |
+1 | fn inner?(a?, b?) := and { first: a?, second: b? }
+  |                            ^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: a? = false
+  = help: correct the expectation, or assume what it needs
+
+error[F0603]: expectation `nested::output.outer?@1.inner?@1.second` does not hold
+ --> test/cli/results/transparent_predicate.fren:1:39
+  |
+1 | fn inner?(a?, b?) := and { first: a?, second: b? }
+  |                                       ^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: b? = false
+  = help: correct the expectation, or assume what it needs
+
+fren: 1 passed, 2 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1

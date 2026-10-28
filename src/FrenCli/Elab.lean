@@ -5393,7 +5393,7 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
   -- `redundant_bool_type` (`lint::redundant_bool_type`), but not of a
   -- pattern type, whose pattern the annotation holds.
-  if let (some segs, true, false) := (ty?, Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (·.pat?.isSome)) then
+  if let (some segs, true, false) := (ty?, Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
   return pt.getD (.plain .bool)
@@ -7000,7 +7000,7 @@ partial def elabItem (item : Item) : M Unit := do
         err uses[0]!.1 (Fren.Core.structuralUnsupportedMsg path vars[i]!.name)
       -- Keep independently elaborated conjunction leaves at their definition
       -- site, rather than substituting raw source syntax into a caller's scope.
-      if body.conjunctionRoot || (observedMembers body).isSome then
+      if body.conjunctionRoot || (observedMembers body).isSome || (← predicateClauses cx body).isSome then
         let leaves := if body.conjunctionRoot then body.clauseLeaves { name := "", span := body.span } else #[({ name := "", span := body.span }, body)]
         if true then
           let saved ← get
@@ -7029,7 +7029,7 @@ partial def elabItem (item : Item) : M Unit := do
               nestedOccurrences := nestedOccurrences.insert nestedPath occurrence
               let nestedPrefix := Fren.Core.showPath nestedPath ++ "@" ++ toString occurrence
               for clause in nested do
-                let name := label.name ++ (if clause.name.isEmpty then "" else "." ++ nestedPrefix ++ "." ++ clause.name)
+                let name := (if label.name.isEmpty then "" else label.name ++ ".") ++ nestedPrefix ++ (if clause.name.isEmpty then "" else "." ++ clause.name)
                 let rename (n : Name) := if !clause.name.isEmpty then n else Name.mkSimple ("#template." ++ nestedPrefix ++ (n.toString.dropPrefix? "#template" |>.getD ("." ++ n.toString)))
                 templates := templates.push { clause with
                   name := name

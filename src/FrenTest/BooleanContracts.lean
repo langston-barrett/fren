@@ -6,6 +6,7 @@ mod boolean_contract_test
 set_option fren.lint.eq_op "allow"
 set_option fren.lint.dead_code "allow"
 fn healthy?(x?, y?) := and { first: x?, second: y? }
+#guard_msgs in
 fn choose?(x?, y?): (r?) {
  assume inputs: and { first: x?, second: y? }
  ensure result: and { both: healthy?(r?, x?), copy: r? iff y? }

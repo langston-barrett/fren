@@ -2958,7 +2958,7 @@ partial def lowerItem : Item → L Unit
       -- function's.
       let b := b.renameBound (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r) }
-      if body.conjunctionRoot || (observedMembers body).isSome then
+      if body.conjunctionRoot || (observedMembers body).isSome || (← lowerPredicateClauses { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body).isSome then
         let mut members := #[]
         let mut nestedOccurrences : Std.HashMap Name Nat := {}
         let mut nestedNumber := 0
@@ -3003,7 +3003,7 @@ partial def lowerItem : Item → L Unit
             for (child, value, childBranches, childGroups) in nested do
               let helper := Name.num (Name.str path "#nested") nestedNumber
               nestedNumber := nestedNumber + 1
-              let name := label.name ++ (if child.isEmpty then "" else "." ++ nestedPrefix ++ "." ++ child)
+              let name := (if label.name.isEmpty then "" else label.name ++ ".") ++ nestedPrefix ++ (if child.isEmpty then "" else "." ++ child)
               let rename (n : Name) := if !child.isEmpty then n else Name.mkSimple (nestedPrefix ++ "." ++ n.toString)
               let mappedBranches := childBranches.map fun group => { (group.map (·.renameBound (path ++ ·))) with members := group.members.map fun member => { (member.map (·.renameBound (path ++ ·))) with name := rename member.name } }
               let mappedGroups := childGroups.map fun group => { (group.map (·.renameBound (path ++ ·))) with members := group.members.map fun member => { (member.map (·.renameBound (path ++ ·))) with name := rename member.name } }

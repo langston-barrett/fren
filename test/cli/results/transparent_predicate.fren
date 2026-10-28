@@ -1,0 +1,5 @@
+fn inner?(a?, b?) := and { first: a?, second: b? }
+fn outer?(a?, b?) := inner?(a?, b?)
+expect nested(a?, b?) {
+    expect output: outer?(a?, b?)
+}
