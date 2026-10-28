@@ -643,6 +643,74 @@ pub proc clash_notes(
 }
 ```
 
+
+### Conditional branch cores
+
+[Named Boolean blocks](Lang/BooleanBlocks.md#branch-conflict-explanations)
+retain their owning constraint in the unconditional minimal core. Branch
+explanations are conditional: one alternative replaces that owner while
+its other core constraints are minimized. An alternative carries its
+source member name and the original leading guards. The replacement is
+never presented as the unconditional core of the original disjunction.
+For equivalence the alternatives are exactly the conjunction of positive
+members and the conjunction of negative members, including binary `iff`.
+
+The following finite interpretation defines deletion-minimal conditional
+cores using actual assignments (`Choice`) and a relation giving each
+candidate constraint's satisfying assignments. `base` is the pinned
+input and definition hypotheses. An impossible branch can have an empty
+conditional core; that does not let the forcing queries invent a value.
+
+```fren
+pub fn branch_rest_holds?(meaning: Rel<Guarantee, Choice>, selected: Set<Guarantee>, value: Choice) :=
+    forall (g: Guarantee), when g in selected, (g, value) in meaning
+
+pub proc conditional_branch_core(
+    branch: Set<Choice>,
+    base: Set<Choice>,
+    meaning: Rel<Guarantee, Choice>,
+    candidates: Set<Guarantee>,
+    conditional: Set<Guarantee>,
+): (valid?, minimal?) {
+    ensure refutes: valid? iff conditional subset candidates and
+        not (exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional, v))
+    ensure deletion_minimal: minimal? iff valid? and
+        (forall (g: Guarantee), when g in conditional,
+        exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional minus {g}, v))
+    expect within: when valid?, conditional subset candidates
+    expect impossible_empty: when branch inter base = {} and conditional = {}, valid? and minimal?
+    expect no_fake_global_core: when conditional = {} and branch = {} and base != {}, minimal?
+}
+
+pub proc branch_member_polarity(rest: Set<Choice>, positive_values: Set<Choice>, wanted?): (opposite_forced?) {
+    ensure nonvacuous_opposite: opposite_forced? iff rest != {} and
+        (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
+    expect positive_blocked: when wanted?, opposite_forced? iff rest != {} and rest inter positive_values = {}
+    expect negative_blocked: when not wanted?, opposite_forced? iff rest != {} and rest subset positive_values
+    expect no_vacuous_forcing: when rest = {}, not opposite_forced?
+}
+```
+
+A member-polarity note is made only after the rest has a model. For the
+all-hold equivalence branch, each member is asked positively; for the
+none-hold branch, negatively. A successful opposite-polarity proof is
+minimized against the other core constraints, retaining the branch and
+member identity in the result. Unknown answers never produce a forcing
+claim. A branch with no satisfying assignment is described as impossible
+rather than as forcing every value. Whole-value and variant clashes use
+exactly the existing non-vacuous model/pin/variant protocol.
+
+Only groups whose owners occur in the already minimized core are
+inspected. Realizability explanations use the same substituted definitions
+and pinned input as that core. Vacuity explanations use the check's
+definition equations and the triggering condition as fixed hypotheses.
+Unsatisfiable procedure assumptions use their minimal assumption core.
+Unrelated groups cost no branch queries. The examples limit counts groups,
+so selecting an equivalence group retains both of its alternatives; a
+zero limit asks no branch queries. Conditional minimization is additional
+explanatory work and cannot change the primary verdict or its original
+minimal core. Each source member retains its original text and range.
+
 ## Definitions
 
 A definition, of a result or a `let` variable, is not a constraint, and
