@@ -133,6 +133,19 @@ class Migrator:
         while binder_base in self.reserved or binder_base + '?' in self.reserved:
             binder_base += '_'
         t = [token.text for token in ts] + ['']
+        # Generic parameters are types within their declaration even though
+        # they have no standalone type declaration for global discovery.
+        generic_parameters = set()
+        for j in range(len(ts) - 3):
+            if t[j] not in {'enum', 'struct', 'fn', 'proc', 'type'} or t[j + 2] != '<':
+                continue
+            k = j + 3
+            while k < len(ts) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', t[k]):
+                generic_parameters.add(t[k])
+                k += 1
+                if t[k] != ',':
+                    break
+                k += 1
         # Keep actual lowercase type declarations usable without treating
         # prose such as "type this" as declarations during global discovery.
         for j, token in enumerate(ts[:-1]):
@@ -191,7 +204,7 @@ class Migrator:
             while t[i] == '::':
                 name = t[i + 1]
                 i += 2
-            if name not in self.known:
+            if name not in self.known and name not in generic_parameters:
                 return None
             children = []
             if t[i] == '<':
@@ -238,6 +251,8 @@ class Migrator:
             # A wildcard over a type parameter is unrestricted and needs no
             # generated alias that would escape its generic declaration.
             base_name = node.base_name
+            if base_name in generic_parameters and pattern_text != '_':
+                raise ValueError(f'{self.filename}: a restricted generic parameter requires manual migration')
             if pattern_text == '_' and base_name not in {'Bool', 'Int', 'Nat', 'String'}:
                 if alias_name is None:
                     return base

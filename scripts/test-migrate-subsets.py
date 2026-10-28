@@ -41,6 +41,12 @@ class MigrationTests(unittest.TestCase):
         result = self.migrate('fn f(flags::Flag is true): Int\n', aliases={'Flag': 'Bool'})
         self.assertIn('subset_value?: flags::Flag', result)
 
+    def test_generic_wildcard_does_not_escape_declaration(self):
+        result = self.migrate('enum Box<T> { Some(T is _) }\n')
+        self.assertEqual(result, 'enum Box<T> { Some(T) }\n')
+        self.assertEqual(self.migrate('fn identity<T>(x: T is _): T := x\n'),
+                         'fn identity<T>(x: T): T := x\n')
+
     def test_strings_comments_and_prose_are_untouched(self):
         source = 'Prose: Int is 0..3\n```text\nfn f(Int is 0..3): Int\n```\n```fren\n-- Int is 1..\nconst s: String := "Int is 2.."\nfn f(Int is 0..3): Int\n```\n'
         result = self.migrate(source, 'sample.md')
