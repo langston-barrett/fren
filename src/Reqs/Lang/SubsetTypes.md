@@ -323,3 +323,45 @@ pub proc varying_inhabitation(membership: Rel<InhabitationWorld, InhabitationVal
     expect one_world_insufficient: some_witness? and not inhabited_everywhere?
 }
 ```
+
+## Proof boundary of the fixed query
+
+The fixed satisfiability query belongs to a declaration, not an ordinary
+procedure with input-dependent requirements. Its carrier has only fresh
+outputs, no definitions, assumptions or calls. The shared checker validates
+that shape before taking the shortcut. A tagged carrier of another shape
+uses the ordinary universal-input protocol. The witness satisfies the base
+facts and every invariant in one fixed interpretation; the fixed-meaning
+law above is the link from this witness to inhabitation in every allowed
+interpretation. A proof of the query's soundness must preserve that link,
+rather than treating an arbitrary declaration tag as a proof that formulas
+have no varying interpretation.
+
+These two query meanings differ on actual input/output relations:
+
+```fren
+pub enum QueryInput { Accept, Reject }
+pub enum QueryOutput { First, Second }
+pub enum QueryPurpose { Procedure, FixedDeclaration }
+
+pub proc query_purpose(purpose: QueryPurpose, requirements: Rel<QueryInput, QueryOutput>):
+    (det holds?, det some_pair?, det all_inputs?) {
+    out some_pair? := exists (input: QueryInput), exists (output: QueryOutput),
+        (input, output) in requirements
+    out all_inputs? := forall (input: QueryInput), exists (output: QueryOutput),
+        (input, output) in requirements
+    out holds? := if purpose = QueryPurpose::Procedure then all_inputs? else some_pair?
+    expect procedure: when purpose = QueryPurpose::Procedure, holds? iff all_inputs?
+    expect declaration: when purpose = QueryPurpose::FixedDeclaration, holds? iff some_pair?
+    expect input_counterexample: when requirements = {(QueryInput::Accept, QueryOutput::First)},
+        some_pair? and not all_inputs?
+}
+```
+
+The kernel model therefore gives a fixed declaration a typed satisfying
+witness, and an ordinary procedure its universal completion theorem. For
+closed declaration formulas whose truth depends only on the fresh value,
+copying that witness's output into any typed environment proves the usual
+completion property too. Definedness similarly uses its actual place:
+a distributed leaf excludes its owner and descendant clauses, so its proof
+cannot assume the invariant or conjunction it is checking.
