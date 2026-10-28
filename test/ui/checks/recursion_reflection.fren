@@ -1,0 +1,14 @@
+-- Written self-applications get equations; reflected applications get contracts only.
+-- fren-covers: lang::recursive_facts
+pub enum T { Z, S(T) }
+
+pub fn size(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => 1 + size(a),
+    }
+    ensure base: when t = T::Z, r = 0
+    ensure two: when t = T::S(T::S(T::Z)), r = 2
+}
+
+--@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant

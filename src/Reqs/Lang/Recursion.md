@@ -222,7 +222,13 @@ Lean still receives a real structural recursive definition. Each
 postcondition receives a theorem proved by induction on the decreasing
 parameter. For nested payload calls the definition's generated structural
 induction principle supplies hypotheses at those calls as well. The equations for one
-step and each case's facts are given to the solver. Recursive applications use the induction hypotheses. As for
+step and each case's facts are given to the solver. This includes equations at
+self-applications. After adding those equations, applications in their bodies
+receive contracts only. Self-applications introduced there use induction
+hypotheses at smaller descendants, including descendants deeper than the
+immediate children; other functions use their established contract theorems.
+No equation is added for an application merely because reflection introduced it.
+Recursive applications use the induction hypotheses. As for
 other hosted checks, solver steps use `trust := true`; no goal may be
 left unproved. Constructor matches with guards must preserve structural
 recursion, or be rejected by both front ends with `F0449`.

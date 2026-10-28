@@ -152,7 +152,7 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
   let some k := st.contracts.get? fn | return
   let name := d.decl ++ `contract
   if (← getEnv).contains name then return
-  liftTermElabM <| withOptions (warn.sorry.set · false) <| Term.withoutErrToSorry do
+  liftTermElabM <| withOptions (fun opts => (warn.sorry.set opts false).setBool `linter.unusedSimpArgs false) <| Term.withoutErrToSorry do
     withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun xs => do
       let pres := ((c.vars.zip xs).filterMap fun (v, x) => v.fact?.map (·.beta #[x]))
         ++ k.pres.map (fun p => p.at xs)
@@ -165,6 +165,7 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
       let suffix := "\n  all_goals intros"
         ++ "\n  all_goals try simp only [" ++ d.decl.toString ++ "]"
         ++ "\n  all_goals (repeat' first | split)"
+        ++ "\n  all_goals fren_recursive_equations"
         ++ "\n  all_goals fren_recursive_case " ++ d.decl.toString
       let ordinary := "by\n  intro " ++ " ".intercalate ids.toList
         ++ "\n  induction " ++ ids[i]!
@@ -174,6 +175,13 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
         ++ "\n  dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *"
         ++ "\n  fun_induction @" ++ d.decl.toString ++ " "
         ++ " ".intercalate ((d.uses.map (·.toString) ++ ids).toList) ++ suffix
+      -- Reflection can introduce self-applications below an immediate child.
+      -- Well-founded induction supplies their contracts without reflecting again.
+      let decreasingType := (← ppExpr c.vars[i]!.type).pretty
+      let strong := "by\n  intro " ++ " ".intercalate ids.toList
+        ++ (if generalized.isEmpty then "" else "\n  revert " ++ " ".intercalate generalized.toList)
+        ++ "\n  induction " ++ ids[i]! ++ " using (@sizeOfWFRel (" ++ decreasingType ++ ") inferInstance).wf.induction with\n  | h " ++ ids[i]! ++ " recursive_ih =>\n    cases " ++ ids[i]!
+        ++ "\n    all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ suffix.replace "\n  " "\n    "
       let prove (script : String) : TermElabM Expr := do
         let proof ← match Parser.runParserCategory (← getEnv) `term script with
           | .ok proof => pure proof
@@ -188,7 +196,9 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
         -- A nested payload need not be an immediate child. Lean derives
         -- this induction principle from the same structural definition.
         saved.restore
-        prove structural
+        try prove structural catch _ =>
+          saved.restore
+          prove strong
       addDecl (.thmDecl { name, levelParams := [], type := ty, value })
       -- Each postcondition's theorem follows from the simultaneous theorem.
       for p in k.posts, j in [0:k.posts.size] do

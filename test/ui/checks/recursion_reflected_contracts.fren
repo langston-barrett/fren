@@ -1,0 +1,26 @@
+-- One-step equations can introduce applications of another contracted function.
+-- fren-covers: lang::recursive_facts
+pub enum T { Z, S(T) }
+
+pub fn size(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => 1 + size(a),
+    }
+    ensure nonnegative: r >= 0
+}
+
+pub fn helper(t: T): Int := match t {
+    T::Z => 0,
+    T::S(a) => size(a) + helper(a) - helper(a),
+}
+
+pub fn total(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => helper(a) + total(a),
+    }
+    ensure nonnegative: r >= 0
+}
+
+--@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant
