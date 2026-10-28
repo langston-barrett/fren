@@ -570,3 +570,33 @@ pub proc agreement(hosted: Verdict): (standalone: Verdict) {
 
 #fren_check
 ```
+
+## Substitution under binders
+
+Expanding a definition or a simultaneous SMT `let` substitutes only free
+occurrences of its parameters. Quantifiers (`forall`, `exists`, and the
+marked element quantifiers), lambdas, and lets bind their declared names
+in their body. A nested binder shadows substitutions for its own names.
+Before substituting the remaining replacements, rename every body binder
+that occurs in a replacement to a fresh name, consistently throughout its
+scope, respecting nested shadowing. Fresh names must avoid all atoms in
+the original term, all substitution keys and replacements, and names
+already chosen for other binders in the same declaration group. Conservative renaming for an occurrence
+that is itself bound in a replacement is permitted.
+
+A let’s right hand sides are outside its binders’ scope: substitute in
+those using the original substitution, without renaming their occurrences
+of the let’s names. Quantifier and lambda sort annotations are unchanged.
+These rules apply whether or not the query mentions a recursive function.
+The hosted frontend’s Lean substitution and the CLI’s SMT substitution
+must preserve exactly the same free variables and meaning.
+
+The per-name scope decision is bound to the helper used by SMT substitution:
+
+```fren
+pub struct SubstitutionName { bound_here?, mentioned_in_replacement? }
+pub proc substitution_scope(name: SubstitutionName): (det replace?, det rename?) {
+    ensure shadowing: replace? iff not name.bound_here?
+    ensure capture: rename? iff name.bound_here? and name.mentioned_in_replacement?
+}
+```

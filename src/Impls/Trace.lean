@@ -25,6 +25,7 @@ test changes: such claims are only here and in `Impls.Lint`, the modules of
 Impls whose library says so, with `Impls` (`lakefile.lean`). -/
 
 tested cli::agreement: "src/FrenTestMain.lean"
+tested cli::substitution_scope: "test/ui/checks/recursion_capture.fren", "src/FrenTest/SmtSubstitution.lean"
 tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
