@@ -703,7 +703,8 @@ exactly the existing non-vacuous model/pin/variant protocol.
 Only groups whose owners occur in the already minimized core are
 inspected. Realizability explanations use the same substituted definitions
 and pinned input as that core. Vacuity explanations use the check's
-definition equations and the triggering condition as fixed hypotheses.
+definition equations and the triggering condition (or the failed cover
+goal) as fixed hypotheses.
 Unsatisfiable procedure assumptions use their minimal assumption core.
 Unrelated groups cost no branch queries. The examples limit counts groups,
 so selecting an equivalence group retains both of its alternatives; a

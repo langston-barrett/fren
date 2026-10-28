@@ -694,8 +694,18 @@ def _root_.Fren.Core.Comp.atoms (c : Comp F) : Comp EF × Array F := Id.run do
     fs := fs.push t.site.goal
     tables := tables.push { t with site := { t.site with goal := EF.atom next } }
     next := next + 1
+  let mut groups := #[]
+  for group in c.branchGroups do
+    let mut members := #[]
+    for member in group.members do
+      fs := fs.push member.formula
+      members := members.push { name := member.name, formula := EF.atom next
+                                range? := member.range?, text := member.text }
+      next := next + 1
+    groups := groups.push { owner := group.owner, kind := group.kind, members }
   out := { out with assumes := named[0]!, reqs := named[1]!, expects := named[2]!, covers := named[3]!, triggers := named[4]!
-                    posts := named[5]!, insts, tables, defs := c.defs.map fun (d, _, _) => (d, .tt, .tt) }
+                    posts := named[5]!, insts, tables, branchGroups := groups
+                    defs := c.defs.map fun (d, _, _) => (d, .tt, .tt) }
   return (out, fs)
 
 /-! ## Which checks, and their verdicts -/
