@@ -153,24 +153,52 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
   let name := d.decl ++ `contract
   if (← getEnv).contains name then return
   liftTermElabM <| withOptions (fun opts => (warn.sorry.set opts false).setBool `linter.unusedSimpArgs false) <| Term.withoutErrToSorry do
-    withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun xs => do
+    -- Follow definitions and clauses transitively so unrelated contracts do
+    -- not become theorem assumptions (including functions declared later).
+    let mut pending := #[d.decl] ++ (k.pres ++ k.posts).map (·.decl)
+    let mut reachable : Array Name := #[]
+    while !pending.isEmpty do
+      let n := pending.back!
+      pending := pending.pop
+      if reachable.contains n then continue
+      reachable := reachable.push n
+      if let some info := (← getEnv).find? n then
+        if let some value := info.value? then
+          pending := pending ++ value.getUsedConstants
+    let mut dependencies := #[]
+    for (path, other) in st.defined.toArray do
+      if path == fn || other.decreasing?.isNone || !reachable.contains other.decl then continue
+      let some contract := st.contracts.get? path | continue
+      for p in contract.posts do
+        let type ← recursiveDependencyType path p
+        unless ← hasRecursiveDependencyProof p type do
+          dependencies := dependencies.push (p.decl, type)
+    withLocalDeclsD (dependencies.map fun (n, t) => (n, fun _ => pure t)) fun deps =>
+     withLocalDeclsD (c.vars.map fun v => (v.name, fun _ => pure v.type)) fun xs => do
       let pres := ((c.vars.zip xs).filterMap fun (v, x) => v.fact?.map (·.beta #[x]))
         ++ k.pres.map (fun p => p.at xs)
       let post := mkAndN ((k.posts.map fun p => p.at xs).toList)
       let ty := pres.foldr (fun p b => mkForall `h .default p b) post
-      let ty ← mkForallFVars xs ty
+      let ty ← mkForallFVars deps (← mkForallFVars xs ty)
       let ids := c.vars.map (·.name.toString)
+      let mut dependencyNames := #[]
+      for j in [:deps.size] do
+        let mut n := s!"dependency_{j}"
+        while ids.contains n || dependencyNames.contains n do n := n ++ "_"
+        dependencyNames := dependencyNames.push n
+      let dependencyIntros := if deps.isEmpty then "" else
+        "\n  intro " ++ " ".intercalate dependencyNames.toList
       let clauses := (k.pres ++ k.posts).map (·.decl.toString)
       let generalized := (c.vars.zipIdx.filter (·.2 != i)).map (·.1.name.toString)
       let suffix := "\n  all_goals intros"
         ++ "\n  all_goals try simp only [" ++ d.decl.toString ++ "]"
         ++ "\n  all_goals (repeat' first | split)"
         ++ "\n  all_goals fren_recursive_case " ++ d.decl.toString
-      let ordinary := "by\n  intro " ++ " ".intercalate ids.toList
+      let ordinary := "by" ++ dependencyIntros ++ "\n  intro " ++ " ".intercalate ids.toList
         ++ "\n  induction " ++ ids[i]!
         ++ (if generalized.isEmpty then "" else " generalizing " ++ " ".intercalate generalized.toList)
         ++ "\n  all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ suffix
-      let structural := "by\n  intro " ++ " ".intercalate ids.toList
+      let structural := "by" ++ dependencyIntros ++ "\n  intro " ++ " ".intercalate ids.toList
         ++ "\n  dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *"
         ++ "\n  fun_induction @" ++ d.decl.toString ++ " "
         ++ " ".intercalate ((d.uses.map (·.toString) ++ ids).toList) ++ suffix
@@ -179,7 +207,7 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
       let decreasingType := (← ppExpr c.vars[i]!.type).pretty
       let mut ihName := "recursive_ih"
       while ids.contains ihName do ihName := ihName ++ "_"
-      let strong := "by\n  intro " ++ " ".intercalate ids.toList
+      let strong := "by" ++ dependencyIntros ++ "\n  intro " ++ " ".intercalate ids.toList
         ++ (if generalized.isEmpty then "" else "\n  revert " ++ " ".intercalate generalized.toList)
         ++ "\n  induction " ++ ids[i]! ++ " using (@sizeOfWFRel (" ++ decreasingType ++ ") inferInstance).wf.induction with\n  | h " ++ ids[i]! ++ " " ++ ihName ++ " =>\n    cases " ++ ids[i]!
         ++ "\n    all_goals dsimp only [" ++ ", ".intercalate clauses.toList ++ "] at *" ++ (suffix ++ " " ++ ihName).replace "\n  " "\n    "
@@ -205,14 +233,14 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
       for p in k.posts, j in [0:k.posts.size] do
         let pty := pres.foldr (fun h b => mkForall `h .default h b) (p.at xs)
         forallTelescope pty fun hs _ => do
-          let both := mkAppN (mkAppN (mkConst name) xs) hs
+          let both := mkAppN (mkAppN (mkAppN (mkConst name) deps) xs) hs
           let selected ← if k.posts.size == 1 then pure both else do
             let mut selected := both
             for _ in [0:j] do selected ← mkAppM ``And.right #[selected]
             if j + 1 < k.posts.size then selected ← mkAppM ``And.left #[selected]
             pure selected
-          let type ← mkForallFVars xs pty
-          let value ← mkLambdaFVars xs (← mkLambdaFVars hs selected)
+          let type ← mkForallFVars deps (← mkForallFVars xs pty)
+          let value ← mkLambdaFVars deps (← mkLambdaFVars xs (← mkLambdaFVars hs selected))
           addDecl (.thmDecl { name := p.decl ++ `holds, levelParams := [], type, value })
 
 /-- Checks each of `items` in a task of its own (`checkComp`), started now,
@@ -289,7 +317,10 @@ where
   let mut byBound := 0
   for (p, c, _) in items, task in tasks do
     let (results, witnesses, enumerated?) ← try awaitCheck task catch ex => cancel.set; throw ex
-    proveRecursiveContract c results
+    -- Proof artifacts are supplementary: preserve the checker report even
+    -- if generation fails, and discard any partial declarations/messages.
+    let proofState ← get
+    try proveRecursiveContract c results catch _ => set proofState
     for d in witnesses do
       liftCoreM <| addCoverWitness d
     for r in results do

@@ -10,6 +10,21 @@ open Lean Meta Elab Tactic
 
 namespace Fren
 
+/-- The modular assumption for one dependency clause, including its input domain. -/
+def recursiveDependencyType (path : Name) (p : ClauseInfo) : MetaM Expr := do
+  let st ← getState
+  let some b := st.bodies.get? path | throwError "missing recursive dependency body"
+  let some k := st.contracts.get? path | throwError "missing recursive dependency contract"
+  withLocalDeclsD (b.vars.map fun v => (v.name, fun _ => pure v.type)) fun xs => do
+    let pres := ((b.vars.zip xs).filterMap fun (v, x) => v.fact?.map (·.beta #[x]))
+      ++ k.pres.map (·.at xs)
+    mkForallFVars xs (pres.foldr (fun h body => mkForall `h .default h body) (p.at xs))
+
+/-- Only unconditional theorems discharge a modular dependency outright. -/
+def hasRecursiveDependencyProof (p : ClauseInfo) (type : Expr) : MetaM Bool := do
+  let some info := (← getEnv).find? (p.decl ++ `holds) | return false
+  isDefEq info.type type
+
 /-- Add contracts at both written and reflected applications, then discharge
 the case. Self contracts come only from smaller arguments' induction facts. -/
 elab "fren_recursive_case" self:ident ihName:(ident)? : tactic => do
@@ -37,8 +52,15 @@ elab "fren_recursive_case" self:ident ihName:(ident)? : tactic => do
       withLocalDeclsD (guards.map fun p => (`guard, fun _ => pure p)) fun _ => do
         let app := actual solverApp
         if d.decl != self.getId then
-          let env ← getEnv
-          return ((st.contracts.get? d.path).map fun k => k.posts.all fun p => env.contains (p.decl ++ `holds)).getD true
+          let some k := st.contracts.get? d.path | return true
+          for p in k.posts do
+            let type ← recursiveDependencyType d.path p
+            if ← hasRecursiveDependencyProof p type then continue
+            let mut found := false
+            for h in initialHyps do
+              if ← isDefEq (← inferType h) type then found := true; break
+            unless found do return false
+          return true
         let mut names := #[]
         let mut fnType := (← getConstInfo d.decl).type
         while fnType.isForall do

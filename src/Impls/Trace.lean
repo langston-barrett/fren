@@ -61,7 +61,8 @@ tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fre
 tested lang::recursive_facts: "test/ui/checks/recursion_hoare.fren",
   "test/ui/checks/recursion_reflection.fren", "test/ui/checks/recursion_reflected_contracts.fren",
   "test/ui/checks/recursion_independent.fren", "test/ui/checks/recursion_contract_queue.fren",
-  "test/ui/checks/recursion_ih_name.fren", "test/ui/checks/recursion_quantifiers.fren"
+  "test/ui/checks/recursion_ih_name.fren", "test/ui/checks/recursion_quantifiers.fren",
+  "test/ui/checks/recursion_dependency.fren", "src/FrenTest/RecursiveDependency.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursion_hoare.fren"
 tested lang::recursive_counterexample: "test/ui/checks/recursion_hoare.fren"
 tested lang::recursive_match: "test/ui/lang/structural_recursion_static.fren", "test/ui/lang/recursion_guarded.fren", "test/cli/types/f0449_literal.fren"

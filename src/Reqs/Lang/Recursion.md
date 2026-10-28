@@ -243,7 +243,13 @@ without splitting independent applications into constructor combinations. This i
 self-applications. After adding those equations, applications in their bodies
 receive contracts only. Self-applications introduced there use induction
 hypotheses at smaller descendants, including descendants deeper than the
-immediate children; other functions use their established contract theorems.
+immediate children. A caller assumes another function's contract whether or
+not that contract was proved; an unproved contract is reported at its declaration,
+as for uninterpreted functions. Hosted theorems use established unconditional
+contract theorems where available and otherwise take the dependency's contract
+as an explicit hypothesis. This includes dependencies with conditional theorems;
+no axiom is introduced. An internal proof-generation failure cannot suppress
+or alter the checker’s verdicts and diagnostics.
 No equation is added for an application merely because reflection introduced it.
 Recursive applications use the induction hypotheses. As for
 other hosted checks, solver steps use `trust := true`; no goal may be
