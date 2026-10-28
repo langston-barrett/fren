@@ -46,6 +46,19 @@ partial def EVal.toPVal? : EVal → Option PVal
   | .abs _ => none
   | .ctor idx args => do return .ctor idx (← args.mapM EVal.toPVal?).toArray
 
+/-- Whether a declared constraint needs semantic evaluation beyond Shape's
+literal-pattern filters. Function-result tables with such constraints require
+an additional world filter; frontends must not silently use unconstrained tables. -/
+partial def needsSemanticFilter (shapeOf : Name → Option DataShape) (t : PTy) (seen : List Name := []) : Bool :=
+  let own := !t.invariants.isEmpty && (t.invariants.size != 1 || t.pat?.isNone)
+  let nested := t.elems.any (needsSemanticFilter shapeOf · seen)
+  let fields := match t.ty with
+    | .record path _ | .enum path _ | .newtype path _ =>
+      !seen.contains path && ((shapeOf path).any fun shape => (shape.inst t.parts).parts.any
+        (·.any (needsSemanticFilter shapeOf · (path :: seen))))
+    | _ => false
+  own || nested || fields
+
 mutual
 /-- A type, unfolded for a size bound: a finite tree, whose recursive
 enumerations are unfolded as deep as the bound allows
@@ -623,9 +636,12 @@ ones, and the defined outputs that its formulas mention, as `render` and
 `defValue` show them. -/
 def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m String)
     (defValue : Name → Array Nat → m (Option String)) (testing? : Option UInt64 := none)
-    (variantOf : Nat → Nat → Option Variant := fun _ _ => none) : Backend m EF EV where
+    (variantOf : Nat → Nat → Option Variant := fun _ _ => none)
+    (facts : Array EF := #[]) (outputFacts : Array EF := #[]) : Backend m EF EV where
   query hyps goal _ := do
-    let parts := (hyps.map (·.2)).push (.not goal)
+    -- Type-domain facts hold in each copy, independently of named clauses.
+    let domain := facts ++ facts.map EF.primed
+    let parts := (domain ++ hyps.map (·.2)).push (.not goal)
     let found := answerOf ((search sp ats parts).map (·.1)) testing?.isSome fun _ =>
       testSearch sp ats parts (testing?.getD 0)
     match found with
@@ -646,7 +662,7 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
   falseF := .ff
   notF := .not
   conj := .conj
-  existsOutputs f := pure (.exOutputs f)
+  existsOutputs f := pure (.exOutputs (if outputFacts.isEmpty then f else .conj (outputFacts.push f)))
   pin _ v := pure (v.at?.map fun (x, j) => .pin x j)
   -- That the slot holds a value of the same variant: one of those of its
   -- values that are.

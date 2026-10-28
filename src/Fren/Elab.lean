@@ -5793,7 +5793,17 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
     let labels := members.filterMap (·.1)
     if let some k := (Core.repeatsAt (labels.map (·.getId)))[0]? then
       throwErrorAt labels[k]! "a Boolean block repeats label `{labels[k]!.getId}`"
-    return ← toTerm cx (← lowerBooleanBlock op members)
+    let before := (← getLocal).indexes.size
+    let beforeTables := (← getLocal).tables.size
+    let term ← toTerm cx (← lowerBooleanBlock op members)
+    if op == "one" || op == "iff" then
+      -- Only these decision-tree lowerings duplicate a written operation.
+      -- Do not merge ordinary let/table uses elsewhere in a procedure.
+      let marked (ref : Syntax) := if ref.isOfKind `Fren.booleanSiteRef then ref else mkNode `Fren.booleanSiteRef #[ref]
+      modifyLocal fun l => { l with
+        indexes := l.indexes.extract 0 before ++ (l.indexes.extract before).map (fun (ref, goal) => (marked ref, goal))
+        tables := l.tables.extract 0 beforeTables ++ (l.tables.extract beforeTables).map (fun (ref, question, goal) => (marked ref, question, goal)) }
+    return term
   let concatOk := cx.concatOk
   let emptyOk := cx.emptyOk
   let natOk := cx.natOk
@@ -5924,14 +5934,17 @@ def takeIndexes (fvs : Array Expr) (subst : Expr → Expr := id) :
     -- A decision tree may translate one source operation along several
     -- paths. Their obligations are guard implications: their conjunction
     -- asks about that source operation under the union of its reach guards.
-    let same := unique.findIdx? fun (previous, previousQuestion, previousGoal) =>
-      ref.getPos?.isSome && ref.getPos? == previous.getPos? && ref.getTailPos? == previous.getTailPos?
-        && question == previousQuestion && obligationTy? goal == obligationTy? previousGoal
+    let same := if !ref.isOfKind `Fren.booleanSiteRef then none else
+      unique.findIdx? fun (previous, previousQuestion, previousGoal) =>
+        previous.isOfKind `Fren.booleanSiteRef && ref[0].getPos?.isSome
+          && ref[0].getPos? == previous[0].getPos? && ref[0].getTailPos? == previous[0].getTailPos?
+          && question == previousQuestion && obligationTy? goal == obligationTy? previousGoal
     if let some i := same then
       let (previous, previousQuestion, previousGoal) := unique[i]!
       unique := unique.set! i (previous, previousQuestion, mkAnd previousGoal goal)
     else unique := unique.push (ref, question, goal)
-  unique.mapM fun (ref, question, goal) => return (ref, question, ← mkLambdaFVars fvs goal)
+  unique.mapM fun (ref, question, goal) =>
+    return (if ref.isOfKind `Fren.booleanSiteRef then ref[0] else ref, question, ← mkLambdaFVars fvs goal)
 
 /-- Runs `k`, then puts back the name generators, the macro scopes and the
 metavariables and Lean's caches as they were before it, so that what is elaborated after it

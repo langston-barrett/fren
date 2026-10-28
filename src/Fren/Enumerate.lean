@@ -153,7 +153,17 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   let subject := s!"`{Core.showComp (if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path)}`"
   let n := c.enumSize
   let (core, ks) := full.only t kinds
-  let (ecomp, atoms0) := core.atoms
+  let (ecomp, sourceAtoms) := core.atoms
+  -- Enumerated shapes may optimize literal patterns, but are not the
+  -- semantic meaning of arbitrary named subset invariants.
+  let domains ← (c.vars.zip fvs).filterMapM fun (v, x) => do
+    if v.defn?.isSome then return none
+    let some predicate := v.fact? | return none
+    let fact := (replaceUses c.uses ufs predicate).beta #[x]
+    return some (v.role == .output, fact)
+  let atoms0 := sourceAtoms ++ domains.map (·.2)
+  let facts := domains.zipIdx.map fun (_, i) => EF.atom (sourceAtoms.size + i)
+  let outputFacts := domains.zipIdx.filterMap fun ((output, _), i) => if output then some (EF.atom (sourceAtoms.size + i)) else none
   -- The defined outputs, by their definitions, the last first, since each
   -- mentions only earlier ones.
   let varFv (x : Name) : Option Expr := (c.vars.findIdx? (·.name == x)).map (fvs[·]!)
@@ -184,6 +194,9 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
           s!"it applies the uninterpreted function `{Core.showComp a.path}`, which has a contract")
       used := used.push (a.path, x, nat,
         { name := a.path, params := a.ptys.1.map (Core.PTy.plain ·.ty), result := a.ptys.2 })
+  if let some f := used.find? (fun f => needsSemanticFilter st.shapeOf f.2.2.2.result) then
+    return .error (notEnumerableMsg subject
+      s!"the result type of `{Core.showPath f.1}` has a named invariant that cannot be enumerated as an unconstrained function table")
   if ← scanned.anyM hasQuantifier then
     return .error (notEnumerableMsg subject "it has an unbounded quantifier")
   -- The abstract types become `Nat`, and their `Inhabited` instances `Nat`'s.
@@ -309,8 +322,9 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       let .const c _ := v.getAppFn | none
       let idx ← e.ctorIdx? c
       return { name := s!"{e.path.getString!}::{e.variants[idx]!}", arity := (e.payloads[idx]?.map (·.size)).getD 0 }
+    let ecomp := { ecomp with typesInterpreted := ecomp.typesInterpreted || !used.isEmpty || !unspec.isEmpty }
     let raw ← Core.checkComp (fun _ => backend space ats renderSlot defValue (if testing then some (hash c.path) else none)
-      variantOf) ecomp ks
+      variantOf facts outputFacts) ecomp ks
     let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
     let outputsExact := exhaustedAll shapes n space.outputs
     return .ok { results := raw.map (classify n exact outputsExact), bound := n, exact }

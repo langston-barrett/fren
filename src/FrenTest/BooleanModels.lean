@@ -26,6 +26,10 @@ expect one_source(x?, y?, values: Seq<Int>) {
     expect result: one { first: x?, second: y?, third: values[0] = 0 }
 }
 
+expect ordinary_let(values: Seq<Int>) {
+    expect result: let value := values[0] in value + value > 0
+}
+
 fn indexed?(values: Seq<Int>) := and { part: one { first: true, second: false, third: values[0] = 0 } }
 expect repeated_indices(left: Seq<Int>, right: Seq<Int>) {
     expect result: indexed?(left) and indexed?(right)
@@ -54,6 +58,10 @@ elab "#check_boolean_model" : command => do
     let (results, _, _) ← Fren.checkComp oneComp #[.definedness]
     unless results.size == 1 && results[0]?.any (·.verdict == Fren.Core.Verdict.fail) do
       throwError "one source index did not retain its reachable undefinedness obligation"
+    let some ordinary := (← Fren.getState).globals.get? `boolean_model_test.ordinary_let
+      | throwError "missing ordinary let component"
+    unless ordinary.indexes.size == 2 do
+      throwError "Boolean lowering aggregation merged ordinary repeated let sites"
     let some repeated := (← Fren.getState).globals.get? `boolean_model_test.repeated_indices
       | throwError "missing repeated predicate source component"
     unless repeated.indexes.size == 2 && repeated.indexes[0]!.1 != repeated.indexes[1]!.1 do

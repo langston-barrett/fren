@@ -1,0 +1,23 @@
+type Truth = value?: Bool where invariant: value?
+struct Flag { on?: Truth }
+struct Wrapped(Truth)
+enum Payload { Value(Truth) }
+type Positive = value: Int where invariant: value > 0
+fn choose?(Bool)
+type Selected = value?: Bool where invariant: value? iff choose?(false)
+set_option fren.evidence "enumerated" in
+proc records(a: Flag, b: Flag) { expect same: a = b }
+set_option fren.evidence "enumerated" in
+proc shared(a?: Selected, b?: Selected) { expect same: a? = b? }
+set_option fren.evidence "enumerated" in
+proc wrappers(a: Wrapped, b: Wrapped) { expect same: a = b }
+set_option fren.evidence "enumerated" in
+proc payloads(a: Payload, b: Payload) { expect same: a = b }
+set_option fren.evidence "enumerated" in
+proc bad_output(): (r?: Truth) { ensure opposite: not r? }  --~ error: `bad_output` is not realizable
+set_option fren.evidence "enumerated" in
+set_option fren.lint.constant_output "allow" in
+proc bad_definition(): (r: Positive) { out r := 0 }  --~ error: invariant `Positive::invariant` does not hold
+
+--@ summary: 12 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

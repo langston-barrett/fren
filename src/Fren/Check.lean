@@ -530,7 +530,8 @@ uninterpreted functions among them use, which their applications' facts
 state (`Core.appFacts`), in declaration order. -/
 def checkUses (c : CompInfo) : MetaM (Array Name) := do
   let s ← getState
-  let mut uses ← usesOf (c.uses.map (mkConst ·) ++ c.indexes.map (·.2.2.2.2))
+  let mut uses ← usesOf (c.uses.map (mkConst ·) ++ c.indexes.map (·.2.2.2.2)
+    ++ c.vars.filterMap (·.fact?))
   repeat
     let more := uses.foldl (init := uses) fun acc u =>
       let posts := s.abstracts.foldl (init := #[]) fun ps _ a =>
