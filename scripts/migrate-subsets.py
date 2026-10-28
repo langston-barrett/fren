@@ -260,7 +260,10 @@ class Migrator:
             binder = binder_base + ('?' if self.is_bool(base_name) else '')
             before_is = text[ts[node.base_end - 1].end:ts[node.is_token].start]
             after_is = text[ts[node.is_token].end:ts[node.pattern_start].start]
-            declaration = f'{name} = {binder}: {base}{before_is} where invariant: {binder} is{after_is}{pattern_text}'
+            predicate = f'{binder} is{after_is}{pattern_text}'
+            if self.is_bool(base_name) and pattern_text in {'true', 'false'}:
+                predicate = binder if pattern_text == 'true' else f'not {binder}'
+            declaration = f'{name} = {binder}: {base}{before_is} where invariant: {predicate}'
             if alias_name is not None:
                 return declaration[len(name):].lstrip()
             definitions.append('type ' + declaration + '\n')

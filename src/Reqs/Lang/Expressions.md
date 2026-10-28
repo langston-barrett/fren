@@ -2208,7 +2208,7 @@ the literal. A range must not be reversed: `lang::char_range` states this,
 from the code points of the characters before and after its `-`:
 
 ```fren
-type CodePoint = subset_value: Int  where invariant: subset_value is 0..=MAX_CHAR
+type CodePoint = subset_value: Int where invariant: subset_value is 0..=MAX_CHAR
 
 pub proc char_range(
     low: CodePoint,      -- the code point of the character before `-`

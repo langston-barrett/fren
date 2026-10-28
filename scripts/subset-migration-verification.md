@@ -32,9 +32,11 @@ old warning directives remained; this requires fixture cleanup, rather
 than being counted as a preserved result.
 
 The migration leaves expression `is` tests, strings, comments, and non-Fren
-Markdown fences intact. Six executable Python regressions check open-range
+Markdown fences intact. Seven executable Python regressions check open-range
 delimiters, nested type arguments, negative bounds, command wrappers,
-generated-name and binder capture, qualified Bool aliases, and idempotence.
+generated-name and binder capture, qualified Bool aliases, generic wildcard
+parameters, and idempotence. Boolean literal constraints use the binder or
+its negation, preserving their truth without introducing an equality lint.
 Raw string-generated specs and prose outside code fences require manual
 audit. Hosted build validation and the final test suite are recorded
 separately once complete.

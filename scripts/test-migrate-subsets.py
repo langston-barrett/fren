@@ -40,6 +40,9 @@ class MigrationTests(unittest.TestCase):
     def test_qualified_bool_alias_uses_question_binder(self):
         result = self.migrate('fn f(flags::Flag is true): Int\n', aliases={'Flag': 'Bool'})
         self.assertIn('subset_value?: flags::Flag', result)
+        self.assertIn('where invariant: subset_value?\n', result)
+        self.assertIn('where invariant: not subset_value?\n',
+                      self.migrate('fn f(Bool is false): Int\n'))
 
     def test_generic_wildcard_does_not_escape_declaration(self):
         result = self.migrate('enum Box<T> { Some(T is _) }\n')
