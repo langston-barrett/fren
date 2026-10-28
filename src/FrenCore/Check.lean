@@ -109,6 +109,7 @@ explanations, without replacing its owning constraint in a primary core. -/
 inductive BranchKind where
   | disjunction
   | equivalence
+  | exactlyOne
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- A source member's final logical identity and formula. Leading guards
@@ -116,22 +117,50 @@ are already included; a group's formulas exactly reconstruct its owner. -/
 structure BranchMember (F : Type) where
   name : Name
   formula : F
+  valueFormula? : Option F := none
+  evaluationGuard? : Option F := none
   range? : Option Range := none
   text : String := ""
-  deriving Inhabited
+  deriving Inhabited, BEq
 
 structure BranchGroup (F : Type) where
   owner : Name
   kind : BranchKind
   members : Array (BranchMember F)
-  deriving Inhabited
+  deriving Inhabited, BEq
 
 /-- Change the backend formula representation while preserving source identity. -/
 def BranchMember.map (f : F → G) (member : BranchMember F) : BranchMember G :=
-  { name := member.name, formula := f member.formula, range? := member.range?, text := member.text }
+  { name := member.name, formula := f member.formula, valueFormula? := member.valueFormula?.map f,
+    evaluationGuard? := member.evaluationGuard?.map f, range? := member.range?, text := member.text }
 
 def BranchGroup.map (f : F → G) (group : BranchGroup F) : BranchGroup G :=
   { owner := group.owner, kind := group.kind, members := group.members.map (·.map f) }
+
+/-- Source observations are distinct from conflict alternatives: a group
+under negation has observations too, while its alternatives need not be
+those of a positive disjunction. -/
+structure MemberGroup (F : Type) where
+  owner : Name
+  op : String
+  wanted : Bool := true
+  members : Array (BranchMember F)
+  deriving Inhabited, BEq
+
+def MemberGroup.map (f : F → G) (group : MemberGroup F) : MemberGroup G :=
+  { owner := group.owner, op := group.op, wanted := group.wanted, members := group.members.map (·.map f) }
+
+/-- An observation in the actual primary model. None means unknown;
+false evaluation status means the member was deliberately not evaluated. -/
+structure MemberValue where
+  owner : Name
+  op : String
+  name : Name
+  evaluated? : Option Bool := none
+  value? : Option Bool := none
+  range? : Option Range := none
+  text : String := ""
+  deriving Inhabited, BEq
 
 /-- A member whose opposite polarity follows from the other constraints.
 `rest` is minimized under the fixed hypotheses, never under the
@@ -197,6 +226,7 @@ structure CheckResult where
   clashes : Array Clash := #[]
   /-- Conditional explanations for disjunctions in the primary core. -/
   branchConflicts : Array BranchConflict := #[]
+  memberValues : Array MemberValue := #[]
   /-- Decided by enumeration only up to this size bound, not for every
   behaviour (`check::enumerated_verdict`). -/
   bounded? : Option Nat := none
@@ -287,6 +317,9 @@ def Outcome.reason : Outcome V → String
 structure Backend (m : Type → Type) (F V : Type) where
   /-- Can `goal` be proved from the named hypotheses? -/
   query : Array (Name × F) → (goal : F) → (wantModel : Bool) → m (Outcome V)
+  /-- Read a formula from the actual returned model, without a fresh query.
+  An unavailable snapshot reports unknown, never a guessed truth. -/
+  modelBool? : Option (Array (Name × V) → F → m (Option Bool)) := none
   falseF : F
   notF : F → F
   conj : Array F → F
@@ -368,6 +401,8 @@ structure IndexSite (F : Type) where
   /-- For a value given where a pattern type is declared, rather than an
   index: that type, as written (`Reqs/Check#pattern-types`). -/
   patTy? : Option String := none
+  /-- Distributed Boolean clauses cannot justify their own evaluation sites. -/
+  excludeSelf : Bool := false
   deriving Inhabited
 
 /-- A question about the cases of a table or a `match` (`TableGoal`), where
@@ -431,6 +466,7 @@ structure Comp (F : Type) where
   generic : Bool := false
   /-- Source Boolean groups, whose owners match named assumptions or requirements. -/
   branchGroups : Array (BranchGroup F) := #[]
+  memberGroups : Array (MemberGroup F) := #[]
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -598,6 +634,7 @@ structure BranchAlternative (F : Type) where
   formula : F
   label : String := ""
   wanted? : Option Bool := none
+  memberWanted : Array (Name × Bool) := #[]
   range? : Option Range := none
   text : String := ""
 
@@ -605,6 +642,12 @@ def BranchGroup.alternatives (group : BranchGroup F) : Array (BranchAlternative 
   match group.kind with
   | .disjunction => group.members.map fun member =>
     { name := member.name, formula := member.formula, range? := member.range?, text := member.text }
+  | .exactlyOne => group.members.map fun chosen =>
+    { name := chosen.name, formula := b.conj (group.members.map fun member =>
+        if member.name == chosen.name then member.formula else b.notF member.formula)
+      label := "only " ++ chosen.name.toString ++ " holds"
+      memberWanted := group.members.map fun member => (member.name, member.name == chosen.name)
+      range? := chosen.range?, text := chosen.text }
   | .equivalence =>
     #[{ name := .str group.owner "all", formula := b.conj (group.members.map (·.formula))
         label := "all hold", wanted? := some true },
@@ -639,11 +682,12 @@ def branchConflictsOf (groups : Array (BranchGroup F)) (fixed candidates : Array
         if let some clash ← clashAt b fixed (branch ++ rest) outs alternative.name then
           clashes := clashes.push clash
       let mut opposed := #[]
-      if let some wanted := alternative.wanted? then
+      if alternative.wanted?.isSome || !alternative.memberWanted.isEmpty then
         -- The other core constraints must themselves have a model;
         -- otherwise every polarity would follow vacuously.
         if (← b.query (fixed ++ rest) b.falseF true).answer == .sat then
           for member in group.members do
+            let wanted := alternative.wanted?.getD ((alternative.memberWanted.find? (·.1 == member.name)).map (·.2) |>.getD true)
             let opposite := if wanted then b.notF member.formula else member.formula
             if (← b.query (fixed ++ rest) opposite false).isUnsat then
               let because ← minimize b fixed rest opposite
@@ -716,6 +760,28 @@ def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResul
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
+/-- Observe only evaluated members in the primary model. In particular,
+this never substitutes another interpretation via a second solver query. -/
+def captureMembers (c : Comp F) (owner : Name) (model : Array (Name × V)) : m (Array MemberValue) := do
+  let some read := b.modelBool? | return #[]
+  let mut values := #[]
+  for group in c.memberGroups.filter (·.owner == owner) do
+    for member in group.members do
+      let evaluated ← match member.evaluationGuard? with
+        | none => pure (some true)
+        | some guard => read model guard
+      let value ← if evaluated == some true then read model (member.valueFormula?.getD member.formula) else pure none
+      values := values.push {
+        owner := owner
+        op := group.op
+        name := member.name
+        evaluated? := evaluated
+        value? := value
+        range? := member.range?
+        text := member.text
+      }
+  return values
+
 /-- `expect`: the expectation follows from the assumptions, calls and
 requirements (`check::expectation`). -/
 def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
@@ -724,7 +790,8 @@ def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
   let q ← b.query (c.defEqs .expect ++ (c.hyps b ++ c.reqs)) e.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+    return { result verdict (.counterexample (← renderModel b c.vars model (·.isPub))) with
+      memberValues := ← captureMembers b c e.1 model }
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -739,7 +806,8 @@ def checkCover (c : Comp F) (g : Name × F) (examples : Option Nat := some 1) : 
   let q ← b.query (c.defEqs .cover ++ hyps) goal true
   match coverVerdict q.answer, q with
   | (verdict, true, _), .sat model =>
-    return result verdict (.witness (← renderModel b c.vars model (·.isPub)))
+    return { result verdict (.witness (← renderModel b c.vars model (·.isPub))) with
+      memberValues := ← captureMembers b c g.1 model }
   -- The core is sought only on `unsat` (`Reqs/Check#cover-goals`).
   | (verdict, _, true), _ =>
     let core ← minimize b (c.defEqs .cover) hyps goal
@@ -755,7 +823,7 @@ def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array 
   match site.place with
   | .assume => c.assumes.filter (·.1 != site.prop)
   | .binding k => c.hyps b k
-  | .prop => c.hyps b ++ c.reqs
+  | .prop => c.hyps b ++ (if site.excludeSelf then c.reqs.filter (·.1 != site.prop) else c.reqs)
   | .body => c.assumes
 
 /-- `definedness`: the index is in range wherever it is evaluated, given the
@@ -860,7 +928,7 @@ def checkVacuity (c : Comp F) (t : Name × F) (examples : Option Nat := some 1) 
     { kind := .vacuity, comp := c.path, prop? := some t.1, verdict, detail }
   let hyps := c.hyps b ++ c.reqs
   let goal := b.notF t.2
-  let q ← b.query (c.defEqs .vacuity ++ hyps) goal false
+  let q ← b.query (c.defEqs .vacuity ++ hyps) goal (c.memberGroups.any (·.owner == t.1))
   match vacuityVerdict q.answer with
   | .fail =>
     let core ← minimize b (c.defEqs .vacuity) hyps goal
@@ -869,7 +937,9 @@ def checkVacuity (c : Comp F) (t : Name × F) (examples : Option Nat := some 1) 
       ((c.vars.filter (·.isPub)).map (·.name)) examples (!c.typesInterpreted)
     return { result .fail (.vacuous core) with branchConflicts := branches }
   | .inconclusive => return result .inconclusive (.unknown q.reason)
-  | .pass => return result .pass
+  | .pass =>
+    let members ← match q with | .sat model => captureMembers b c t.1 model | _ => pure #[]
+    return { result .pass with memberValues := members }
 
 /-- `redundancy`: the assumption or requirement `p` does not follow from
 `others`: for an assumption, the other assumptions; for a requirement, the
@@ -1585,10 +1655,39 @@ def branchMessages (r : CheckResult) : Array Message := Id.run do
         }
   return out
 
-/-- Primary verdict diagnostics followed by conditional Boolean-branch
-explanations. Supplementary queries never replace the original verdict. -/
+/-- Values and evaluation status of labelled members in a counterexample
+or witness, each at its original source range. Passing expectations have
+no observations and therefore no failed-member messages. -/
+def memberMessages (r : CheckResult) : Array Message := Id.run do
+  let mut out := #[]
+  let owners := r.memberValues.foldl (init := #[]) fun acc value => if acc.contains value.owner then acc else acc.push value.owner
+  for owner in owners do
+    let values := r.memberValues.filter (·.owner == owner)
+    for (label, selected) in #[("true", values.filter (fun v => v.evaluated? == some true && v.value? == some true)),
+        ("false", values.filter (fun v => v.evaluated? == some true && v.value? == some false)),
+        ("not evaluated", values.filter (·.evaluated? == some false)),
+        ("unknown", values.filter (fun v => v.evaluated?.isNone || (v.evaluated? == some true && v.value?.isNone)))] do
+      if selected.isEmpty then continue
+      out := out.push {
+        severity := .info
+        item? := some owner
+        msg := { code? := none, headline := s!"{label} members: {showNames (selected.map (·.name))}" }
+      }
+      for value in selected do
+        out := out.push {
+          severity := .info
+          item? := some owner
+          atRange? := value.range?
+          msg := {
+            code? := none
+            headline := s!"`{value.name}` is {label}"
+            notes := if value.text.isEmpty then #[] else #[s!"member: {value.text}"]
+          }
+        }
+  return out
+
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
-  baseMessages hasPrivateOuts r decidable ++ branchMessages r
+  baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r
 
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/

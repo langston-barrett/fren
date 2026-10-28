@@ -186,4 +186,35 @@ private def variantBackend : Backend (StateM Queries) Formula Nat where
   ensure (clash.output == `x && clash.forced == Forced.variant ⟨"Decision::RetryAfter", 1⟩
     && clash.restForced == Forced.value "Decision::GiveUp") "wrong constructor forcing result"
 
+-- Exactly-one alternatives contain the chosen positive member and every
+-- unchosen negative member, including when three members are true.
+#eval do
+  let group : BranchGroup Formula := {
+    owner := `choice, kind := .exactlyOne,
+    members := #[{name := `choice.x, formula := x}, {name := `choice.y, formula := y},
+                 {name := `choice.always, formula := yes}] }
+  let alternatives := group.alternatives backend
+  ensure (alternatives.size == 3) "exactly-one must retain all n alternatives"
+  for i in List.range 4 do
+    ensure ((alternatives.any fun a => a.formula i) == (!x i && !y i))
+      "exactly-one is not parity when three members hold"
+  ensure ((alternatives.toList.head?.map (fun (a : BranchAlternative Formula) => a.memberWanted)) == some #[(`choice.x, true), (`choice.y, false), (`choice.always, false)])
+    "chosen/unchosen polarities were lost"
+  let singleton : BranchGroup Formula := {
+    owner := `single, kind := .exactlyOne,
+    members := #[{name := `single.x, formula := x}] }
+  for i in List.range 4 do
+    ensure (((singleton.alternatives backend).any (fun a => a.formula i)) == x i)
+      "singleton exactly-one must be identity"
+  let empty : BranchGroup Formula := {owner := `empty, kind := .exactlyOne, members := #[]}
+  ensure ((empty.alternatives backend).isEmpty) "empty exactly-one has no satisfiable branch"
+  let comp := { orComp with
+    branchGroups := #[{ orGroup with kind := .exactlyOne }],
+    reqs := #[(`policy, fun i => x i != y i), (`no_x, fun i => !x i), (`no_y, fun i => !y i)] }
+  let (result, _) := (checkRealizable backend comp).run #[]
+  ensure (result.verdict == Verdict.fail && result.branchConflicts[0]!.cases.size == 2)
+    "exactly-one conflict must explain every chosen member"
+  ensure (result.branchConflicts[0]!.cases[0]!.opposed.any (fun p => p.member == `policy.backoff && p.wanted))
+    "chosen member positive forcing was lost"
+
 end FrenTest.BranchForcing
