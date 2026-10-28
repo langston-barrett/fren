@@ -39,7 +39,7 @@ def bangTokenFn : ParserFn := fun c s =>
   if s.hasError then s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
   else match s.stxStack.back with
     | .atom info val =>
-      if Fren.Core.leanBangTokens.contains val || Fren.Core.leanKeywords.contains val then
+      if Fren.Core.leanBangTokens.contains val || Fren.Core.leanKeywords.contains val || val == "one" then
         s.popSyntax.pushSyntax (.ident info val.toRawSubstring (.mkSimple val) [])
       else s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
     | _ => s.restore iniSz iniPos |>.mkErrorAt "identifier" iniPos
@@ -49,7 +49,7 @@ open Lean Parser in
 `bangTokenFn`. -/
 def frenIdent : Parser :=
   withAntiquot (mkAntiquot "ident" identKind) (identNoAntiquot <|>
-    { fn := bangTokenFn, info := { firstTokens := .tokens (Fren.Core.leanBangTokens ++ Fren.Core.leanKeywords) } })
+    { fn := bangTokenFn, info := { firstTokens := .tokens (Fren.Core.leanBangTokens ++ Fren.Core.leanKeywords ++ ["one"]) } })
 
 open Lean Parser in
 /-- Fails if the next token is one of `Fren.Core.leanKeywords`, which
@@ -99,6 +99,16 @@ open Lean PrettyPrinter in
 open Lean PrettyPrinter in
 @[combinator_parenthesizer closeAngle] def closeAngle.parenthesizer : Parenthesizer :=
   Parenthesizer.symbolNoAntiquot.parenthesizer ">"
+
+/-- A source-labelled Boolean expression. A named conjunction is lowered
+as a sequence of root labels, preserving ordinary expression precedence. -/
+scoped syntax:36 (name := labelledExpr) frenIdent " : " fren_expr:10 : fren_expr
+
+declare_syntax_cat fren_bool_member (behavior := both)
+syntax (atomic(frenIdent " : "))? fren_expr : fren_bool_member
+/-- Prefix Boolean blocks keep each source member and optional label. -/
+scoped syntax:arg (name := booleanBlockExpr) atomic(("and" <|> "or" <|> "iff" <|> "one") " { "
+  sepBy(fren_bool_member, ", ", ", ", allowTrailingSep) " }") : fren_expr
 
 declare_syntax_cat fren_type (behavior := both)
 /-- A type named by a path: `Bool`, `Int`, `String`, or an item. -/
@@ -386,6 +396,10 @@ scoped syntax (name := defineMember) &"out " frenIdent " := " fren_expr (fren_wh
 scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := ensureMember) &"ensure " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
+/-- An omitted outer label is accepted only for an explicit Boolean block. -/
+scoped syntax (name := bareAssumeMember) (priority := low) &"assume " fren_expr (fren_where)? : fren_member
+scoped syntax (name := bareEnsureMember) (priority := low) &"ensure " fren_expr (fren_where)? : fren_member
+scoped syntax (name := bareExpectMember) (priority := low) &"expect " fren_expr (fren_where)? : fren_member
 /-- `cover n: e`, a scenario that the procedure must allow (`Reqs/Lang/Procedures#cover-goals`). -/
 scoped syntax (name := coverMember) &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member
 
@@ -462,6 +476,9 @@ scoped syntax (name := procCmd) ("pub ")? "proc " frenIdent noWs "("
 
 /-- `type T`, an abstract type, or `type T := U`, a type alias. -/
 scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent (" := " fren_type)? : command
+/-- Declared-only subset aliases, with a binder and labelled invariants. -/
+scoped syntax (name := subsetTypeCmd) (priority := high) ("pub ")? "type " frenIdent " = "
+  frenIdent " : " fren_type " where " fren_expr : command
 
 /-- A function's parameter: `T` of an uninterpreted function, `x: T` or
 `x?` of a defined one. Which it is depends on whether the function has a

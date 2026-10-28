@@ -74,6 +74,26 @@ def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : Messa
 
 def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit := do
   for msg in Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) { r with global := c.global } c.decidable do
+    let message := if let some subset := c.subset? then
+        if r.verdict == .fail && msg.severity == .error then
+          { msg.msg with code? := some "F0660", headline := s!"subset type `{Core.showPath subset}` is empty"
+                         label? := some "no value satisfies its invariants"
+                         notes := (msg.msg.notes.filter (!·.startsWith "help:")).map (·.replace "no outputs satisfy" "no value satisfies")
+                           |>.push "help: weaken the invariants or choose a base type with a satisfying value" }
+        else msg.msg
+      else if let some invariant := c.subsetInvariant? then
+        if r.verdict == .fail && msg.severity == .error then
+          { msg.msg with code? := some "F0662", headline := s!"invariant `{Core.showPath invariant}` may not be defined"
+                         label? := some "not defined under the earlier invariants" }
+        else msg.msg
+      else if let some label := r.patTy?.bind (·.dropPrefix? "@invariant:") then
+        if msg.severity == .error then
+          { msg.msg with code? := some "F0661", headline := s!"invariant `{label}` does not hold", label? := some "violates the invariant"
+                         notes := (msg.msg.notes.filter (·.startsWith "counterexample:")).push
+                           "note: a value given for a subset type must satisfy each named invariant" }
+        else msg.msg
+      else msg.msg
+    let msg := { msg with msg := message }
     let prop? := msg.item?.bind fun n => c.props.find? (·.name == n)
     -- The `k`th index, or question about a table, of the item.
     let site? (k : Nat) (table : Bool) := msg.item?.bind fun n =>
@@ -84,6 +104,17 @@ def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit :=
       | none, some n => (c.insts.find? (·.name == n)).map (·.ref)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.ref)) |>.getD c.ref
       | none, none => c.ref
+    let ref ← if let some range := msg.atRange? then do
+        let sourceState ← getLocal
+        let fallback := (← getFileMap).source
+        let source := if let some (_, map) := prop?.bind (·.source?) then map.source else match sourceState.mdSources.find? path, sourceState.leanFile? with
+          | some (_, map), _ => map.source
+          | none, some (_, map) => map.source
+          | _, _ => fallback
+        let start : String.Pos.Raw := ⟨(String.ofList (source.toList.take range.start)).utf8ByteSize⟩
+        let stop : String.Pos.Raw := ⟨(String.ofList (source.toList.take range.stop)).utf8ByteSize⟩
+        pure (Syntax.atom (.synthetic start stop true) "")
+      else pure ref
     let severity := match msg.severity with
       | .error => MessageSeverity.error
       | .warning => .warning
@@ -93,7 +124,9 @@ def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit :=
     let text := match at?.bind fun r => vias.find? (·.1 == r.getPos?) with
       | some (_, f) => if msg.severity == .error then (msg.msg.note (Core.viaNote f)).text else msg.text
       | none => msg.text
-    logAbout path ref text severity
+    if let some (fileName, fileMap) := (prop?.filter fun p => msg.atRange?.isSome || p.sourceRef).bind (·.source?) then
+      withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
+    else logAbout path ref text severity
 
 /-- Of the top-level commands of the current file before `stop`, where the
 `#guard_msgs` start, and how many parse errors Lean found, which no

@@ -54,6 +54,21 @@ def fromModel (ty : Expr) (val : Expr) : Expr :=
     else val
   else val
 
+/-- Restore Boolean codomains of reconstructed model functions too.
+SMT propositions represent Bool values, including inside lambda bodies. -/
+partial def modelValue (ty value : Expr) : MetaM Expr := do
+  if let .forallE _ _ result _ := ty.consumeMData then
+    if let .lam name domain body _ := value.consumeMData then
+      return ← withLocalDeclD name domain fun x => do
+        let mapped ← modelValue (result.instantiate1 x) (body.instantiate1 x)
+        mkLambdaFVars #[x] mapped
+  if ty.isConstOf ``Bool && (← isProp value) then
+    let decision ← match ← trySynthInstance (mkApp (mkConst ``Decidable) value) with
+      | .some found => pure found
+      | _ => pure (mkApp (mkConst ``Classical.propDecidable) value)
+    return mkApp2 (mkConst ``Decidable.decide) value decision
+  return fromModel ty value
+
 /-- A value of type `ty` as Fren builds it (`Reqs/View`), such as
 `Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`. -/
 partial def render (ty : Expr) (val : Expr) : MetaM String := do
@@ -237,7 +252,8 @@ answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array (Name × Expr) := #[])
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
-    (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false) :
+    (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
+    (snapshots? : Option (IO.Ref (Array Smt.Model)) := none) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -283,10 +299,17 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                             ++ resourceLimitOptions (← getOptions) }
                   mv.mvarId! hs.reverse with
         | .sat (some m) =>
-          return .sat <| m.values.filterMap fun (k, v) =>
+          let values := m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with
             | some n => some (n, v)
             | none => if extra.contains k then some (k.fvarId!.name, v) else none
+          let token ← match snapshots? with
+            | none => pure #[]
+            | some snapshots =>
+              let index := (← snapshots.get).size
+              snapshots.modify (·.push m)
+              pure #[((Name.mkSimple "#member_model"), mkNatLit index)]
+          return .sat (values ++ token)
         | .sat none => return .sat #[]
         | .unsat .. => return .unsat
         | .unknown r => return .unknown r
@@ -349,6 +372,30 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let (o, cacheable) ← ask hyps goal wantModel
       if cacheable then cache.modify (·.insert key o)
       return o
+    modelBool? := snapshots?.map fun snapshots => fun model formula => do
+      let some (_, token) := model.find? (·.1 == Name.mkSimple "#member_model") | return none
+      let some index := token.rawNatLit? <|> token.nat? | return none
+      let some captured := (← snapshots.get)[index]? | return none
+      let formula := instances (← unfoldDefined (← zetaReduce formula))
+      -- Interpret the formula using the exact captured sort/function/value
+      -- interpretation. No new solver query or variable-only pinning is used.
+      try
+        return ← captured.ctx.runMetaM do
+          let entries ← captured.entries.mapM fun (key, value) => do
+            return (key, ← modelValue (← inferType key) value)
+          let interpreted := formula.replace fun e => (entries.find? (·.1 == e)).map (·.2)
+          let value ← reduce interpreted
+          if value.isConstOf ``True then return some true
+          if value.isConstOf ``False then return some false
+          if value.hasFVar || value.hasMVar then return none
+          match ← trySynthInstance (mkApp (mkConst ``Decidable) value) with
+          | .some decision =>
+            let decided ← reduce (mkApp2 (mkConst ``Decidable.decide) value decision)
+            if decided.isConstOf ``Bool.true then return some true
+            if decided.isConstOf ``Bool.false then return some false
+            return none
+          | _ => return none
+      catch _ => return none
     falseF := mkConst ``False
     notF := mkNot
     conj := fun ps => mkAndN ps.toList
@@ -581,6 +628,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     (hooks? : Option ElabHooks := none) (own : Array (Array Core.Ty) := #[])
     (foreign : Array (Name × Array Core.Ty) := #[]) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
+  let kinds := if c.subset?.isSome then #[.realizable]
+    else if c.subsetInvariant?.isSome then #[.definedness, .completeness, .disjointness, .precondition] else kinds
   let c := { c with uses := ← checkUses c }
   -- As elaborated, for its contract's instances (`instanceContract`).
   let elaborated := c
@@ -656,6 +705,20 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       fn? := c.fn?
       expects := ← named c.expects
       covers := ← named c.covers
+      branchGroups := ← (c.props.flatMap (·.branchGroups)).mapM fun group => do
+        let members ← group.members.mapM fun member => do
+          return { member with
+            formula := ← beta member.formula
+            valueFormula? := ← member.valueFormula?.mapM beta
+            evaluationGuard? := ← member.evaluationGuard?.mapM beta }
+        return { group with members, guard? := ← group.guard?.mapM beta }
+      memberGroups := ← (c.props.flatMap (·.memberGroups)).mapM fun group => do
+        let members ← group.members.mapM fun member => do
+          return { member with
+            formula := ← beta member.formula
+            valueFormula? := ← member.valueFormula?.mapM beta
+            evaluationGuard? := ← member.evaluationGuard?.mapM beta }
+        return { group with members }
       insts := ← c.insts.mapM fun i => return {
         name := i.name, comp := i.comp, bindings := ← beta i.bindings, behaviour := ← beta i.behaviour
         assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a), typed := i.typed }
@@ -663,10 +726,10 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- Numbered in order within each item.
       indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
         let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
-        return { prop := n, k, place, goal := ← beta goal, patTy? := obligationTy? goal }
+        return { prop := n, k, place, goal := ← beta goal, patTy? := obligationTy? goal, excludeSelf := isLeafObligation goal }
       tables := tables.mapIdx fun j (n, place, q, goal) =>
         let k := (tables.extract 0 j).filter (·.1 == n) |>.size
-        { site := { prop := n, k, place, goal }, goal := q }
+        { site := { prop := n, k, place, goal, excludeSelf := isLeafObligation goal }, goal := q }
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e
@@ -678,7 +741,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let generic := c.fn?.any fun f => ((st0.abstracts.get? f).map (!·.typeParams.isEmpty)).getD false
     let comp : Core.Comp Expr := match contract, c.fn?, c.vars.back? with
       | true, some f, some v =>
-        Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables generic
+        { Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables generic
+          with branchGroups := comp.branchGroups, memberGroups := comp.memberGroups }
       | _, _, _ => comp
     -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
     -- copies, is at least 0. Each query's applications bring their own
@@ -732,6 +796,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let enumerated ← if c.enumerated.any then (enumerate?.mapM fun f => f c full fvs ufs fns kinds) else pure none
     let (comp, kinds) := full.untested (c.tested.union c.enumerated) kinds
     let cache : QueryCache ← IO.mkRef {}
+    let memberModels ← IO.mkRef (#[] : Array Smt.Model)
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
     -- The functions whose applications bring facts: those into `Nat`, and
@@ -786,6 +851,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
       let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
+        (snapshots? := if full.memberGroups.isEmpty then none else some memberModels)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

@@ -45,7 +45,7 @@ register_option fren.testGlobs : String := {
     | some l => pure l
     | none => throwError (Core.unknownLevelMsg opt).text
   let claims : Core.Claims := { tested := s.tested, trusted := s.trusted }
-  let comps := s.comps.toList.map (·.2) |>.toArray.qsort (·.path.toString < ·.path.toString)
+  let comps := s.comps.toList.map (·.2) |>.filter (fun c => c.subset?.isNone && c.subsetInvariant?.isNone) |>.toArray.qsort (·.path.toString < ·.path.toString)
   let traceComps := comps.map fun c =>
     let impls := s.impls.getD c.path #[]
     { path := c.path, hasOutputs := c.vars.any (·.role == .output), insts := c.insts.map (·.comp)

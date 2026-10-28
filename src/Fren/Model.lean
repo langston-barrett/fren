@@ -307,6 +307,17 @@ def inhabitedName (n : Name) : Name := n.str "#inhabited"
 instance. -/
 def isInhabitedName (n : Name) : Bool := n matches .str _ "#inhabited"
 
+/-- One independently checked leaf of a source-labelled predicate body.
+Its expression and obligations are closed over the function's parameters. -/
+structure PredicateMemberInfo where
+  name : Name
+  ref : Syntax
+  body : Expr
+  sites : Array (Syntax × Option Core.TableGoal × Expr) := #[]
+  branchGroups : Array (Core.BranchGroup Expr) := #[]
+  memberGroups : Array (Core.MemberGroup Expr) := #[]
+  deriving Inhabited
+
 /-- A defined function: the generated definition `decl`, which takes a
 parameter for each placeholder of `uses`, then its own parameters, and
 which the solver unfolds. -/
@@ -342,6 +353,11 @@ structure DefinedInfo where
   Lean `match` instead (`Reqs/Generated#matches`): the solver unfolds
   this one (`deltaDefined`). -/
   solver? : Option Name := none
+  /-- Source-labelled predicate leaves, as closed lambdas over its parameters. -/
+  namedMembers : Array PredicateMemberInfo := #[]
+  namedBranchGroups : Array (Core.BranchGroup Expr) := #[]
+  namedMemberGroups : Array (Core.MemberGroup Expr) := #[]
+  source? : Option (String × FileMap) := none
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -438,6 +454,12 @@ structure PropInfo where
   triggerRef? : Option Syntax
   /-- The Lean definition generated for this item. -/
   decl : Name
+  /-- Closed source Boolean groups over the procedure's variables. -/
+  branchGroups : Array (Core.BranchGroup Expr) := #[]
+  memberGroups : Array (Core.MemberGroup Expr) := #[]
+  evidenceOwner? : Option Name := none
+  sourceRef : Bool := false
+  source? : Option (String × FileMap) := none
   deriving Inhabited
 
 /-- A call. Expressions are closed lambdas over all of the
@@ -510,6 +532,9 @@ structure CompInfo where
   fn? : Option Name := none
   /-- A global expectation with a block (`Core.Comp.global`). -/
   global : Bool := false
+  /-- Internal checks generated for a declared subset alias. -/
+  subset? : Option Name := none
+  subsetInvariant? : Option Name := none
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
@@ -722,6 +747,12 @@ definedness goal: `p`, marked with the type, as written, so that the check
 reports it (`Reqs/Check#pattern-types`). -/
 def typeObligation (_ty : String) (p : Prop) : Prop := p
 
+/-- A distributed predicate leaf's obligation cannot assume that leaf. -/
+def leafObligation (p : Prop) : Prop := p
+
+def isLeafObligation (e : Expr) : Bool :=
+  (e.find? (·.isAppOfArity ``Fren.leafObligation 1)).isSome
+
 /-- `ty`, if `e` is marked with it as an obligation (`typeObligation`). -/
 def obligationTy? (e : Expr) : Option String :=
   (e.find? (·.isAppOfArity ``Fren.typeObligation 2)).bind fun m =>
@@ -754,6 +785,8 @@ structure LocalState where
   /-- The item being elaborated, by its path, which an application is in
   (`Core.GenericUse`). -/
   currentItem : Name := .anonymous
+  /-- Internal subset checks may quantify an otherwise unbounded output. -/
+  inSubset : Bool := false
   /-- Where each closure's obligation is checked, by its position, with the
   higher-order function that its closure is given to (`Core.viaNote`). -/
   vias : Array (Option String.Pos.Raw × Name) := #[]
