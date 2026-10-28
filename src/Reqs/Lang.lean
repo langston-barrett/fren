@@ -16,6 +16,7 @@ open Fren.Lang
 #fren_md "Lang/Overview.md"
 #fren_md "Lang/Lexical.md"
 #fren_md "Lang/Types.md"
+#fren_md "Lang/SubsetTypes.md"
 #fren_md "Lang/Items.md"
 #fren_md "Lang/Generics.md"
 #fren_md "Lang/GenericFunctions.md"
