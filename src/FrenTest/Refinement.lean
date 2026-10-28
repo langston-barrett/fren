@@ -17,7 +17,9 @@ pub proc rough(x: Int): (y: Int) {
 }
 
 pub proc wrong(x: Int): (y: Int) {
-    ensure below: y < x
+    -- Keep the failing refinement's witness unique: the diagnostic test
+    -- checks rendered values, independently of the solver's model choice.
+    ensure below: x != 0 or y < x
 }
 
 refine by_solver: precise refines rough
