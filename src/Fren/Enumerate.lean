@@ -271,7 +271,15 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       let vs := slotVals[i]!
       let d ← if h : 0 < vs.size then pure vs[0] else mkAppOptM ``Inhabited.default #[some t, none]
       return mkApp5 (mkConst ``Enum.pick) t (← mkArrayLit t vs.toList) d env (mkNatLit i)
-    return e.replaceFVars slotFvs picks
+    let e := e.replaceFVars slotFvs picks
+    -- Boolean definitions can carry elaboration-time classical decisions.
+    -- Rebuild those decisions after substituting the finite interpretation,
+    -- including decisions nested inside values compared by an outer atom.
+    Meta.transform e (post := fun x => do
+      if x.isAppOfArity ``Decidable.decide 2 then
+        let p := x.getAppArgs[0]!
+        return .done (mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p))
+      return .done x)
   let arrNat := mkApp (mkConst ``Array [0]) (mkConst ``Nat)
   let decideOf (p : Expr) : MetaM Expr := do
     return mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p)
