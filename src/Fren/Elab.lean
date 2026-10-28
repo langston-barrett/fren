@@ -6253,7 +6253,10 @@ partial def clauseBranchGroups (cx : ExprCtx) (owner : Name) (expression : Synta
       -- Recover activation from the already elaborated wrapper, avoiding a
       -- second elaboration of generated contract lets with hygienic binders.
       let guard? ← if !wrappers.any isBooleanGuard then pure none else do
-        let first ← zetaReduce (members[0]!.formula.beta fvs)
+        let wrapped ← if let some first := members[0]? then pure (first.formula.beta fvs) else do
+          let original := wrappers.foldr (fun wrapper body => wrapper.setArg 3 body) e
+          pure (subst (← elabProp (← toTerm { cx with noteIndexes := false } original)))
+        let first ← zetaReduce wrapped
         let rec conditions (remaining : Nat) (body : Expr) : MetaM (List Expr) := do
           if remaining == 0 then return []
           if let .forallE _ condition tail _ := body.consumeMData then
@@ -6437,14 +6440,14 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
     if let .forallE _ condition tail _ := body then
       if !tail.hasLooseBVars && (← isProp condition) then
         return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition)
-    if body.isAppOfArity ``And 2 && (← contains body) then
+    if prop.kind != .cover && body.isAppOfArity ``And 2 && (← contains body) then
       let leftSource := if isBinOp (unparen written) "and" then (unparen written)[0] else written
       let rightSource := if isBinOp (unparen written) "and" then (unparen written)[2] else written
       let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString (escape := false) ++ ".1")) guards
       let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString (escape := false) ++ ".2")) guards
       return (left.1 ++ right.1, left.2.1 ++ right.2.1, left.2.2 ++ right.2.2)
     if let some (info, arguments, wanted) := predicateCallPolarity? state body then
-      if wanted && !info.namedMembers.isEmpty then
+      if prop.kind != .cover && wanted && !info.namedMembers.isEmpty then
         let seen : Std.TreeMap Name Nat Name.quickCmp ← get
         let next := seen.getD info.path 0 + 1
         set (seen.insert info.path next : Std.TreeMap Name Nat Name.quickCmp)
@@ -6535,7 +6538,7 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
                            evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
   let body ← zetaReduce (prop.body.beta fvs)
   if let some (info, arguments, wanted) := predicateCallPolarity? state body then
-    if (info.namedMembers.isEmpty || !wanted) && (!info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty) then
+    if (prop.kind == .cover || info.namedMembers.isEmpty || !wanted) && (!info.namedBranchGroups.isEmpty || !info.namedMemberGroups.isEmpty) then
       let prefixName := prop.name.toString (escape := false) ++ "." ++ Core.showPath info.path ++ "@1."
       let mapMember (m : Core.BranchMember Expr) : TermElabM (Core.BranchMember Expr) := do
         let apply (e : Expr) := mkLambdaFVars fvs (predicateInstance info arguments e)

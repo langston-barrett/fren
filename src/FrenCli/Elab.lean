@@ -352,6 +352,7 @@ structure NamedPredicate where
 
 structure CProp where
   file? : Option Nat := none
+  sourceRef : Bool := true
   kind : PropKind
   name : Name
   span : Span
@@ -5869,37 +5870,37 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
         let place := if kind == .assume then Fren.Core.IndexPlace.assume else .prop
         let originalIndexes ← takeIndexes
         let originalTables ← takeTables
-        if kind != .cover then
-          if let some (path, clauses) ← predicateClauses cx e then
-            if clauses.any (fun clause => !clause.name.isEmpty) then
-              modify fun s => { s with itemExcludeGroups := s.itemExcludeGroups.push xn }
-            let root := (x.name.splitOn ".").head!
-            let key := root ++ ":" ++ path.toString
-            let occurrence := (← get).namedOccurrences.getD key 0 + 1
-            modify fun s => { s with namedOccurrences := s.namedOccurrences.insert key occurrence }
-            let mut expanded := #[]
-            let mut idx := originalIndexes.map fun (sp, g, t) => (xn, place, sp, g, t)
-            let mut tbl := originalTables.map fun (sp, q, g) => (xn, place, sp, q, g)
-            for clause in clauses do
-              let namePrefix := x.name ++ "." ++ Fren.Core.showPath path ++ "@" ++ toString occurrence
-              let name := if clause.name.isEmpty then xn else Name.mkSimple (namePrefix ++ "." ++ clause.name)
-              let memberPrefix := if clause.name.isEmpty then namePrefix else namePrefix ++ "." ++ clause.name
-              let memberName (n : Name) := Name.mkSimple (memberPrefix ++ (n.toString.dropPrefix? "#template" |>.getD n.toString))
-              let branches := clause.branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
-              let groups := clause.groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
-              modify fun s => { s with itemBranches := s.itemBranches ++ branches, itemMemberGroups := s.itemMemberGroups ++ groups }
-              expanded := expanded.push ({
-                file? := some clause.file
-                kind := kind
-                name := name
-                span := clause.span
-                smt := clause.formula
-                trigger? := trig.map (·.1)
-                triggerSpan? := trig.map (·.2)
-              } : CProp)
-              idx := idx ++ clause.indexes.map fun (sp, g, t) => (name, place, sp, g, t)
-              tbl := tbl ++ clause.tables.map fun (sp, q, g) => (name, place, sp, q, g)
-            return (expanded, idx, tbl)
+        if let some (path, clauses) ← predicateClauses cx e (kind != .cover) then
+          if clauses.any (fun clause => !clause.name.isEmpty) then
+            modify fun s => { s with itemExcludeGroups := s.itemExcludeGroups.push xn }
+          let root := (x.name.splitOn ".").head!
+          let key := root ++ ":" ++ path.toString
+          let occurrence := (← get).namedOccurrences.getD key 0 + 1
+          modify fun s => { s with namedOccurrences := s.namedOccurrences.insert key occurrence }
+          let mut expanded := #[]
+          let mut idx := originalIndexes.map fun (sp, g, t) => (xn, place, sp, g, t)
+          let mut tbl := originalTables.map fun (sp, q, g) => (xn, place, sp, q, g)
+          for clause in clauses do
+            let namePrefix := x.name ++ "." ++ Fren.Core.showPath path ++ "@" ++ toString occurrence
+            let name := if clause.name.isEmpty then xn else Name.mkSimple (namePrefix ++ "." ++ clause.name)
+            let memberPrefix := if clause.name.isEmpty then namePrefix else namePrefix ++ "." ++ clause.name
+            let memberName (n : Name) := Name.mkSimple (memberPrefix ++ (n.toString.dropPrefix? "#template" |>.getD n.toString))
+            let branches := clause.branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
+            let groups := clause.groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
+            modify fun s => { s with itemBranches := s.itemBranches ++ branches, itemMemberGroups := s.itemMemberGroups ++ groups }
+            expanded := expanded.push ({
+              file? := some clause.file
+              sourceRef := kind != .cover
+              kind := kind
+              name := name
+              span := if kind == .cover then x.span else clause.span
+              smt := clause.formula
+              trigger? := trig.map (·.1)
+              triggerSpan? := trig.map (·.2)
+            } : CProp)
+            idx := idx ++ clause.indexes.map fun (sp, g, t) => (name, place, sp, g, t)
+            tbl := tbl ++ clause.tables.map fun (sp, q, g) => (name, place, sp, q, g)
+          return (expanded, idx, tbl)
         return (#[{ kind, name := xn, span := x.span, smt, trigger? := trig.map (·.1), triggerSpan? := trig.map (·.2) : CProp }],
           originalIndexes.map fun (sp, g, t) => (xn, place, sp, g, t), originalTables.map fun (sp, q, g) => (xn, place, sp, q, g))
       | continue

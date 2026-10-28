@@ -2671,20 +2671,19 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
   for m in members do
     let .prop kind x e := m | continue
     let owner := Name.mkSimple x.name
-    if kind != .cover then
-      if let some (path, leaves) ← lowerPredicateClauses cx e then
-        let root := (x.name.splitOn ".").head!
-        let key := root ++ ":" ++ path.toString
-        let occurrence := occurrences.getD key 0 + 1
-        occurrences := occurrences.insert key occurrence
-        for (label, value, branches, groups) in leaves do
-          let namePrefix := x.name ++ "." ++ Fren.Core.showPath path ++ "@" ++ toString occurrence
-          let name := if label.isEmpty then owner else Name.mkSimple (namePrefix ++ "." ++ label)
-          constraints := constraints.push { kind, name, e := value }
-          let memberPrefix := if label.isEmpty then namePrefix else namePrefix ++ "." ++ label
-          branchGroups := branchGroups ++ branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := Name.mkSimple (memberPrefix ++ "." ++ member.name.toString) } }
-          memberGroups := memberGroups ++ groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := Name.mkSimple (memberPrefix ++ "." ++ member.name.toString) } }
-        continue
+    if let some (path, leaves) ← lowerPredicateClauses cx e (kind != .cover) then
+      let root := (x.name.splitOn ".").head!
+      let key := root ++ ":" ++ path.toString
+      let occurrence := occurrences.getD key 0 + 1
+      occurrences := occurrences.insert key occurrence
+      for (label, value, branches, groups) in leaves do
+        let namePrefix := x.name ++ "." ++ Fren.Core.showPath path ++ "@" ++ toString occurrence
+        let name := if label.isEmpty then owner else Name.mkSimple (namePrefix ++ "." ++ label)
+        constraints := constraints.push { kind, name, e := value }
+        let memberPrefix := if label.isEmpty then namePrefix else namePrefix ++ "." ++ label
+        branchGroups := branchGroups ++ branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := Name.mkSimple (memberPrefix ++ "." ++ member.name.toString) } }
+        memberGroups := memberGroups ++ groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := Name.mkSimple (memberPrefix ++ "." ++ member.name.toString) } }
+      continue
     constraints := constraints.push { kind, name := owner, e := (← lowerExpr cx e).1 }
     if let some (branchKind, guard, branches) := branchMembers e then
       if branchKind != .equivalence || branches.size > 1 then

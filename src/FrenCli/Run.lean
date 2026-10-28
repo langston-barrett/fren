@@ -574,7 +574,8 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
           }
         else msg
       else msg
-    printDiag p files { file := (prop?.bind (·.file?)).getD c.file, span, severity := m.severity, msg }
+    let file := prop?.bind fun prop => if prop.sourceRef || m.atRange?.isSome then prop.file? else none
+    printDiag p files { file := file.getD c.file, span, severity := m.severity, msg }
     shown := shown.push msg
   return shown
 

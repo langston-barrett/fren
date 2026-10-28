@@ -1,0 +1,12 @@
+error[F0615]: cover goal `check_cover::impossible` cannot be met: no behaviour satisfies it
+ --> test/cli/results/named_conjunction_cover.fren:5:11
+  |
+5 |     cover impossible: both?(x?)   --~ error: cover goal `check_cover::impossible` cannot be met
+  |           ^^^^^^^^^^ no values that meet the assumptions and calls satisfy this
+  |
+  = note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow
+  = help: weaken the constraints that rule it out, or correct the goal
+
+fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0615`.

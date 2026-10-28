@@ -1,0 +1,10 @@
+fn either?(x?) := or { held: x?, skipped: false }
+fn unique?(x?) := one { held: x?, absent: false }
+fn same?(x?) := iff { held: x?, also: true }
+expect observations(x?) {
+    assume input: x?
+    cover disjunction: either?(x?)
+    cover uniqueness: unique?(x?)
+    cover equivalence: same?(x?)
+}
+--@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant

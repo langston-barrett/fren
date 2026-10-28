@@ -1,0 +1,9 @@
+-- Both members need the same witness; separate covers would be unsound.
+fn both?(x?) := and { yes: x?, no: not x? }
+
+expect check_cover(x?) {
+    cover impossible: both?(x?)   --~ error: cover goal `check_cover::impossible` cannot be met
+}
+
+--@ summary: 1 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ exit: 1
