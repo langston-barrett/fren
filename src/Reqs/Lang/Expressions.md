@@ -2470,3 +2470,14 @@ into scope by `use`. `w.x` names the variable `x` of the call `w` (see
 [global expectation](Global.md), and otherwise reads the field `x` of
 the value `w`, a variable or a [constant](Items.md#constants) (see
 [Records](#records)), or applies its [method](#methods) `x`.
+
+## Named Boolean blocks
+
+The prefix expressions `and { ... }`, `or { ... }` and `iff { ... }`,
+with optional member labels and trailing commas, are specified in
+[Named Boolean blocks](BooleanBlocks.md). They are expression forms,
+not set literals. The `iff` block means all members have equal truth;
+it does not associate binary `iff`. Conjunctions used as clauses split
+into independent member checks with guards distributed to their leaves.
+The chapter also specifies member identities, witnesses, counterexamples
+and per-branch conflict/forcing explanations.

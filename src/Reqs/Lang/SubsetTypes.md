@@ -35,19 +35,15 @@ separate lint reports it, without changing the meaning.
 
 ## Conjunctions and interpretation
 
-Named conjuncts in the top conjunction of a predicate body use the same
-`label: expression and label: expression` syntax. Labels do not affect
-Boolean meaning or evaluation guards. Parentheses around a conjunct's
-expression permit an unlabelled `and` inside it; only labels at the
-predicate body's root are exported. A duplicate root label is an error.
-At each application labels are qualified by the function path and the
-application's source position, so two uses of the predicate cannot alias
-one diagnostic identity. Diagnostics name every failed labelled conjunct,
-in declaration order, underneath their enclosing guarantee, expectation
-or invariant. Labels in negative polarity retain the same declaration
-identity; their truth is assessed under that polarity. Both front ends
-report identical names. Subset invariants use these root labels directly,
-so an obligation identifies `Byte::high` rather than only `Byte`.
+Named conjunctions use the prefix blocks and infix labelled expressions
+specified in [Named Boolean blocks](BooleanBlocks.md). Conjunction clauses
+split into independent named checks, with distributed guards and nested
+member identities; disjunction and all-equivalence blocks remain one
+check with per-member result and conflict explanations. Labels are
+optional for general Boolean block members, but every subset invariant
+requires its own label. An obligation identifies `Byte::high`, rather
+than only `Byte`. Repeated predicate applications retain separate source
+occurrences as that chapter specifies.
 
 The following executable fragment interprets actual invariant expressions
 on integers. General expressions use the existing meaning and definedness
