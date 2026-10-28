@@ -1,0 +1,9 @@
+--- test/cli/fix/migrate_global_empty.fren
++++ test/cli/fix/migrate_global_empty.fren
+@@ -8 +8,4 @@
+-expect ready_claim: forall (a: ready), a.ready? and label = "a.ready?" where label: String := "a.ready?"
++expect ready_claim() {
++    call a := ready()
++    expect ready_claim: a.ready? and label = "a.ready?" where label: String := "a.ready?"
++}
+exit=1

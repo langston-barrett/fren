@@ -6,4 +6,7 @@ pub proc first(q: Seq<Int>): (y: Int) {
 pub proc exact(q: Seq<Int>): (y: Int) {
     ensure r: when q != [], y = q[0]
 }
-refine same: exact refines first
+expect same(q: Seq<Int>) {
+    call concrete := exact(q)
+    refines concrete first(q)
+}

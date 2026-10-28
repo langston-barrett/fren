@@ -1,0 +1,14 @@
+--@ args: fix --check --fmt
+-- fren-covers: lang::global_migration_shape
+pub mod source
+pub enum E { A, B }
+pub const LOW: Int := -5
+pub proc p(x: Seq<E>, n: Int is -10..=10): (det y: Int) {
+    use self::E::A
+    assume present: x != [] and x[0] = A
+    assume range: n > LOW
+    ensure value: y = n + x.len
+}
+mod client
+use source::p
+expect same: forall (a b: p), when a.n = b.n and a.x = b.x, a.y = b.y

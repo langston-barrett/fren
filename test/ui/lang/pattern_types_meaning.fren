@@ -36,7 +36,7 @@ proc digits(d: Digit) {
 -- decidable core.
 set_option fren.lint.undecidable "allow" in
 proc collections(s: Set<Digit>, q: Seq<Digit>) {
-    expect members: 12 in s or s != {}   --~ error: expectation `collections::members` does not hold
+    expect members: 12 in s or s != {}  --~ error: expectation `collections::members` does not hold
     expect index: when q != [], q[0] <= 9
     expect no_twelve: not 12 in s
 }
@@ -59,4 +59,7 @@ expect positive(a_l: Level) {
 -- checks what the concrete one's do.
 proc abstract_lvl(n: Int is 0..=9): (y: Int) { ensure r: y >= n }
 proc concrete_lvl(n: Int is 0..): (y: Int) { ensure r: y = n }
-refine narrower: concrete_lvl refines abstract_lvl
+expect narrower(n: Int is 0..=9) {
+    call concrete := concrete_lvl(n)
+    refines concrete abstract_lvl(n)
+}

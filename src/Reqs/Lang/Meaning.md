@@ -6,7 +6,7 @@ value in every behaviour, where it is specified, which is why `2 * x` is
 linear; the same expression has the same value wherever it is written,
 which is what a lint such as `eq_op` relies on. This chapter states that
 meaning once, as a model that the other chapters
-[call](Calls.md) or [refine](Refinement.md), so that the rules
+[call](Calls.md) or [refinement claim](Refinement.md), so that the rules
 are stated over it rather than over facts given as inputs.
 
 ```fren

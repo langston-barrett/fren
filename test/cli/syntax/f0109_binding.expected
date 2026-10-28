@@ -1,8 +1,8 @@
 error[F0109]: `unless` must be parenthesized here
- --> test/cli/syntax/f0109_binding.fren:4:31
+ --> test/cli/syntax/f0109_binding.fren:3:49
   |
-4 | refine r: c refines a { p? := unless x?, x?, q? := x? }
-  |                               ^^^^^^ needs parentheses
+3 | proc c(x?): (r: Flags) { out r := Flags { p? := unless x?, x?, q? := x? } }
+  |                                                 ^^^^^^ needs parentheses
   |
   = note: `unless` has the lowest precedence, and its body extends as far right as possible
   = help: wrap it in parentheses: `(unless c, e)`

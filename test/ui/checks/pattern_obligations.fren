@@ -16,23 +16,26 @@ proc sub(b: Byte): (y: Int) {
 }
 
 proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
-    assume newtype: Level(x) != Level(0)   --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
-    out d := x   --~ error: a value in `values::d` may not have the type `Byte`
+    assume newtype: Level(x) != Level(0)  --~ error: a value in `values::newtype` may not have the type `Int is 0..=9`
+    out d := x  --~ error: a value in `values::d` may not have the type `Byte`
     out guarded := if 0 <= x <= 255 then x else 0
-    call w := sub(x)   --~ error: the parameter `b` of `sub` may not have its type `Byte` for call `values::w`
+    call w := sub(x)  --~ error: the parameter `b` of `sub` may not have its type `Byte` for call `values::w`
     call v := sub(guarded)
 
-    ensure args: y = scale(x) + size(x)   --~ error: a value in `values::args` may not have the type `Byte`
+    ensure args: y = scale(x) + size(x)  --~ error: a value in `values::args` may not have the type `Byte`
     --~^ error: a value in `values::args` may not have the type `Byte`
     expect guarded_args: when 0 <= x <= 255, scale(x) = 2 * x
-    expect payload: Reading::Raw(x) != Reading::Missing   --~ error: a value in `values::payload` may not have the type `Byte`
-    expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: a value in `values::field` may not have the type `Bool is true`
-    expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: a value in `values::update` may not have the type `Byte`
-    expect defined: (let b: Byte := x + 1 in b) > x   --~ error: a value in `values::defined` may not have the type `Byte`
+    expect payload: Reading::Raw(x) != Reading::Missing  --~ error: a value in `values::payload` may not have the type `Byte`
+    expect field: Packet { length := 3, ok? := x > 0 }.length = 3  --~ error: a value in `values::field` may not have the type `Bool is true`
+    expect update: { Packet { length := 3, ok? := true } with length := x }.ok?  --~ error: a value in `values::update` may not have the type `Byte`
+    expect defined: (let b: Byte := x + 1 in b) > x  --~ error: a value in `values::defined` may not have the type `Byte`
 }
 
 -- A refinement checks what the types of the abstract component's outputs
 -- bring, as it checks its guarantees.
 proc abstract_out(): (y: Byte) { ensure r: y != 7 }
 proc concrete_out(): (y: Int) { ensure r: y = 300 }
-refine wider: concrete_out refines abstract_out   --~ error: a value in `wider::y` may not have the type `Byte`
+expect wider() {
+    call concrete := concrete_out()
+    refines concrete abstract_out()  --~ error: expectation `wider::refines_1` does not hold
+}

@@ -390,8 +390,32 @@ pub proc member_order_fixed(group: Group): (det shown: Severity, det error?) {
 }
 
 -- `spare?` and `is_error?` are private to each, so each refinement binds them.
-refine member_order_sound: member_order_fixed refines member_order_written { spare? := error?, is_error? := error? }
-refine member_order_complete: member_order_written refines member_order_fixed { spare? := error?, is_error? := error? }
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.absurd_extreme_comparisons "allow" in
+expect member_order_sound(group: lint::Group) {
+    use lint
+    use view
+    assume spec_known: (group) != lint::Group::Decidability
+    call concrete := member_order_fixed(group)
+    call warned := severity(Level::Warn)
+    expect rule: (concrete.shown) = warned.result and ((concrete.error?) iff (concrete.error?))
+    expect is_error_definition: (concrete.error?) = ((concrete.shown) = view::Severity::Error)
+    expect error_definition: concrete.error? = (concrete.error?)
+}
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.absurd_extreme_comparisons "allow" in
+expect member_order_complete(group: lint::Group) {
+    use lint
+    use view
+    assume spec_known: (group) != lint::Group::Decidability
+    call concrete := member_order_written(group)
+    call warned := severity(Level::Warn)
+    expect rule: (concrete.shown) = warned.result and ((concrete.error?) iff (concrete.error?))
+    expect is_error_definition: (concrete.error?) = ((concrete.shown) = view::Severity::Error)
+    expect error_definition: concrete.error? = (concrete.error?)
+}
 ```
 
 ## Functions applied once

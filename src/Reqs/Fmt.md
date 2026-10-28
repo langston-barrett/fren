@@ -453,7 +453,10 @@ exactly when every file parses:
 ```fren
 use cli::exit_status
 
-refine fmt_exit_status: exit refines exit_status { ran? := all_parsed? }
+expect fmt_exit_status(check?, all_parsed?, all_formatted?) {
+    call concrete := exit(check?, all_parsed?, all_formatted?)
+    refines concrete exit_status((all_parsed?))
+}
 
 #fren_check
 ```

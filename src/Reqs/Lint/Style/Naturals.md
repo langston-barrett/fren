@@ -150,8 +150,16 @@ pub proc manual_nat_input_fixed(n: Nat, k: Int): (m: Int) {
     ensure r: m = n - k
 }
 
-refine manual_nat_input_sound: manual_nat_input_fixed refines manual_nat_input_written { n }
-refine manual_nat_input_complete: manual_nat_input_written refines manual_nat_input_fixed
+expect manual_nat_input_sound(n: Nat, k: Int) {
+    assume spec_counts: (n) >= 0 and (k) < (n)
+    call concrete := manual_nat_input_fixed(n, k)
+    refines concrete manual_nat_input_written(n, k)
+}
+expect manual_nat_input_complete(n: Nat, k: Int) {
+    assume spec_counts: (k) < (n)
+    call concrete := manual_nat_input_written(n, k)
+    refines concrete manual_nat_input_fixed(n, k)
+}
 
 set_option fren.lint.manual_nat "allow" in
 set_option fren.lint.chainable_comparison "allow" in
@@ -163,5 +171,8 @@ pub proc manual_nat_output_fixed(n: Nat): (m: Nat) {
     ensure r: m <= n
 }
 
-refine manual_nat_output_sound: manual_nat_output_fixed refines manual_nat_output_written
+expect manual_nat_output_sound(n: Nat) {
+    call concrete := manual_nat_output_fixed(n)
+    refines concrete manual_nat_output_written(n)
+}
 ```

@@ -1,13 +1,25 @@
-error[F0603]: expectation `exits::bad_exit_status::documented` does not hold
-  --> test/cli/commands/refinement_bindings.fren:24:8
+warning[F0792]: the assumption `some` constrains only parameters that nothing uses
+  --> test/cli/commands/refinement_bindings.fren:38:12
    |
-24 | refine bad_exit_status: bad_exit refines exit_status { ran? := all_parsed? }
-   |        ^^^^^^^^^^^^^^^ does not follow from the guarantees
+38 |     assume some: count > 0
+   |            ^^^^ constrains only unused parameters
    |
-   = counterexample: all_parsed? = true, bad_exit.all_parsed? = true, bad_exit.code = 4
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = note: no guarantee, expectation, definition, argument or binding mentions `count`, nor does another assumption tie them to a used variable
+   = help: remove the assumption and its parameters, or use them
+   = note: `unused_assumption` is `warn` by default
+   = help: to allow it, `set_option fren.lint.unused_assumption "allow"`
 
-fren: 18 passed, 1 failed, 0 inconclusive, 0 redundant
+error[F0603]: expectation `exits::bad_exit_status::refines_1` does not hold
+  --> test/cli/commands/refinement_bindings.fren:29:5
+   |
+29 |     refines concrete exit_status((all_parsed?))
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+   |
+   = counterexample: all_parsed? = true, concrete.code = 4
+   = help: correct the expectation, or assume what it needs
 
-For more information about this error, try `fren --explain F0603`.
+fren: 19 passed, 1 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0603, F0792.
+For more information about an error, try `fren --explain F0603`.
 exit=1

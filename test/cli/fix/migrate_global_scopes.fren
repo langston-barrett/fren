@@ -1,0 +1,11 @@
+--@ args: fix --check --fmt
+-- fren-covers: lang::global_migration_name
+-- Locally bound names mask input substitution; local definitions are
+-- expanded in dependency order even when declared after the assumption.
+proc p(x: Int): (det y: Int) {
+    assume domain: high > 0 and (let x!: Int := 1 in x = 1)
+    let high: Int := low + 1
+    let low: Int := x + 1
+    ensure value: y = x
+}
+expect same: forall (a: p), a.y = a.x

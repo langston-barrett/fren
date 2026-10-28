@@ -23,7 +23,14 @@ proc sorted_pairs(q: Seq<Int>): (sorted?) {
 }
 
 set_option fren.lint.undecidable "allow" in
-refine precise: sorted_any refines sorted3
+expect precise(q: Seq<Int>) {
+    assume spec_short: (q).len <= 3
+    call concrete := sorted_any(q)
+    refines concrete sorted3(q)
+}
 
 set_option fren.lint.undecidable "allow" in
-refine pairs_only: sorted_pairs refines sorted_any
+expect pairs_only(q: Seq<Int>) {
+    call concrete := sorted_pairs(q)
+    refines concrete sorted_any(q)
+}

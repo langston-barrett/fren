@@ -1,0 +1,38 @@
+-- fren-covers: refinement::refinement_singleton_domain
+-- Tested refinement must use computed locals and specification call meanings.
+proc identity(flag?): (out?) {
+    ensure value: out? iff flag?
+}
+proc composed(flag?): (answer?) {
+    call inner := identity(flag?)
+    let computed? := not inner.out?
+    ensure value: answer? iff not computed?
+}
+set_option fren.evidence "tested" in
+expect composed_identity(flag?) {  --~[hosted] info: the checks of `composed_identity` set to testing are run by `fren check`, not in Lean
+    call c := identity(flag?)
+    refines c composed(flag?)
+}
+
+-- Twenty-four internal Bool variables are determined by equations. Exact
+-- evaluation must use those equations rather than enumerate 2^24 worlds.
+proc chain(flag?): (answer?) {
+    call a := identity(flag?)
+    call b := identity(a.out?)
+    call c := identity(b.out?)
+    call d := identity(c.out?)
+    call e := identity(d.out?)
+    call f := identity(e.out?)
+    call g := identity(f.out?)
+    call h := identity(g.out?)
+    call i := identity(h.out?)
+    call j := identity(i.out?)
+    call k := identity(j.out?)
+    call l := identity(k.out?)
+    ensure value: answer? iff l.out?
+}
+set_option fren.evidence "tested" in
+expect exact_determined_calls(flag?) {  --~[hosted] info: the checks of `exact_determined_calls` set to testing are run by `fren check`, not in Lean
+    call c := identity(flag?)
+    refines c chain(flag?)
+}

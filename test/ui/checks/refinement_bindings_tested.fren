@@ -5,7 +5,7 @@
 --@ only: cli
 
 proc first_of(n: Int, x: Int): (y: Int) {
-    assume pos: n > 0
+    assume pos: n > 0  --~[cli] warning: the assumption `pos` constrains only parameters that nothing uses
     ensure r: y = x
 }
 
@@ -16,11 +16,18 @@ proc seqs(q: Seq<Int>): (s: Seq<Int>) {
 -- Not a definedness error, as it is with the solver
 -- (`refinement_bindings.fren`): testing does not check definedness.
 set_option fren.evidence "tested" in
-refine unguarded: seqs refines first_of { n := 1, x := q[0], y := s[0] }
+expect unguarded(q: Seq<Int>) {
+    assume spec_pos: (1) > 0  --~[cli] warning: this assumption mentions no variable
+    call concrete := seqs(q)
+    expect r: ((concrete.s)[0]) = ((q)[0])
+}
 
 -- Testing finds a sequence whose first element is not 0.
 set_option fren.evidence "tested" in
-refine wrong: seqs refines first_of { n := q.len, x := if q != [] then q[0] else 0, y := 0 }
---~^ error: expectation `wrong::r` does not hold
+expect wrong(q: Seq<Int>) {
+    assume spec_pos: ((q).len) > 0  --~[cli] warning: say whether it is empty with `[]`, not `len`
+    call concrete := seqs(q)
+    expect r: (0) = (if (q) != [] then (q)[0] else 0)  --~[cli] error: expectation `wrong::r` does not hold
+}
 
---@ summary: 5 passed (1 by testing), 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 7 passed (3 by testing), 1 failed, 0 inconclusive, 0 redundant

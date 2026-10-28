@@ -193,6 +193,12 @@ pub proc branches_sharing_code_fixed(c?, a: Int, b: Int, x: Int, p?, q?, y?): (
     out left_or? := y? or (if c? then p? else q?)
 }
 
-refine branches_sharing_code_sound: branches_sharing_code_fixed refines branches_sharing_code_written
-refine branches_sharing_code_complete: branches_sharing_code_written refines branches_sharing_code_fixed
+expect branches_sharing_code_sound(c?, a: Int, b: Int, x: Int, p?, q?, y?) {
+    call concrete := branches_sharing_code_fixed(c?, a, b, x, p?, q?, y?)
+    refines concrete branches_sharing_code_written(c?, a, b, x, p?, q?, y?)
+}
+expect branches_sharing_code_complete(c?, a: Int, b: Int, x: Int, p?, q?, y?) {
+    call concrete := branches_sharing_code_written(c?, a, b, x, p?, q?, y?)
+    refines concrete branches_sharing_code_fixed(c?, a, b, x, p?, q?, y?)
+}
 ```

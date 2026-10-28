@@ -315,6 +315,12 @@ pub proc int_plus_one_chain_fixed(i: Int, n: Int, m: Int): (det last?, det first
     out offset? := i < n <= m
 }
 
-refine int_plus_one_chain_sound: int_plus_one_chain_fixed refines int_plus_one_chain_written
-refine int_plus_one_chain_complete: int_plus_one_chain_written refines int_plus_one_chain_fixed
+expect int_plus_one_chain_sound(i: Int, n: Int, m: Int) {
+    call concrete := int_plus_one_chain_fixed(i, n, m)
+    refines concrete int_plus_one_chain_written(i, n, m)
+}
+expect int_plus_one_chain_complete(i: Int, n: Int, m: Int) {
+    call concrete := int_plus_one_chain_written(i, n, m)
+    refines concrete int_plus_one_chain_fixed(i, n, m)
+}
 ```

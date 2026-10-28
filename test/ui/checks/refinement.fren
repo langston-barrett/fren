@@ -19,9 +19,20 @@ proc wrong(x: Int): (y: Int) {
     ensure below: y < x
 }
 
-refine holds: precise refines rough
-refine fails: precise refines wrong        --~ error: expectation `fails::below` does not hold
+expect holds(x: Int) {
+    assume spec_small: (x) < 100
+    call concrete := precise(x)
+    refines concrete rough(x)
+}
+expect fails(x: Int) {
+    call concrete := precise(x)
+    refines concrete wrong(x)  --~ error: expectation `fails::refines_1` does not hold
+}
 -- `picky` assumes more than `rough`, so it does not accept all of its inputs.
-refine narrower: picky refines rough       --~ error: the assumption `positive`
+expect narrower(x: Int) {
+    assume spec_small: (x) < 100
+    call concrete := picky(x)  --~ error: the assumption `positive`
+    refines concrete rough(x)
+}
 
---@ summary: 12 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 15 passed, 2 failed, 0 inconclusive, 0 redundant

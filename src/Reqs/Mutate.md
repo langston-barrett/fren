@@ -532,7 +532,10 @@ pub proc exit(
 
 use cli::exit_status
 
-refine mutate_exit_status: exit refines exit_status
+expect mutate_exit_status(ran?, survived?, internal?) {
+    call concrete := exit(ran?, survived?, internal?)
+    refines concrete exit_status(ran?)
+}
 
 #fren_check
 ```

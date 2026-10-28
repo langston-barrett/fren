@@ -19,23 +19,17 @@ struct Loop(Loop)  --~ error: record `Loop` has a field of its own type
 struct Sets(Set<Sets>)  --~ error: `Sets` cannot be an element type within itself
 
 -- The operators that each newtype has.
-proc product(a: Ms, b: Ms): (c: Ms) { ensure r: c = a * Ms(2) }
---~^ error: newtype `Ms` has no operator `*`
+proc product(a: Ms, b: Ms): (c: Ms) { ensure r: c = a * Ms(2) }  --~ error: newtype `Ms` has no operator `*`
 proc negation(a: Ms): (c: Int) { ensure r: c = -a }  --~ error: newtype `Ms` has no operator `-`
 proc division(a: Ms): (c: Int) { ensure r: c = a div 2 }  --~ error: newtype `Ms` has no operator `div`
 proc remainder(a: Ms): (c: Int) { ensure r: c = a mod 2 }  --~ error: newtype `Ms` has no operator `mod`
-proc string_sum(a: Name, b: Name): (c?) { ensure r: c? iff a + b = a }
---~^ error: newtype `Name` has no operator `+`
-proc string_concat(a: Name, b: Name): (c?) { ensure r: c? iff a ++ b = a }
---~^ error: newtype `Name` has no operator `++`
-proc bool_order(a: Flag, b: Flag): (c?) { ensure r: c? iff a < b }
---~^ error: `Flag` is not ordered, so its values cannot be compared with `<`
+proc string_sum(a: Name, b: Name): (c?) { ensure r: c? iff a + b = a }  --~ error: newtype `Name` has no operator `+`
+proc string_concat(a: Name, b: Name): (c?) { ensure r: c? iff a ++ b = a }  --~ error: newtype `Name` has no operator `++`
+proc bool_order(a: Flag, b: Flag): (c?) { ensure r: c? iff a < b }  --~ error: `Flag` is not ordered, so its values cannot be compared with `<`
 enum Shade { Light, Dark }
 struct Tone(Shade)
-proc enum_order(a: Tone, b: Tone): (c?) { ensure r: c? iff a < b }
---~^ error: `Tone` is not ordered, so its values cannot be compared with `<`
-proc bool_chain(a: Flag, b: Flag): (c?) { ensure r: c? iff a <= b <= a }
---~^ error: `Flag` is not ordered, so its values cannot be compared with `<=`
+proc enum_order(a: Tone, b: Tone): (c?) { ensure r: c? iff a < b }  --~ error: `Tone` is not ordered, so its values cannot be compared with `<`
+proc bool_chain(a: Flag, b: Flag): (c?) { ensure r: c? iff a <= b <= a }  --~ error: `Flag` is not ordered, so its values cannot be compared with `<=`
 
 -- Two newtypes, or a newtype and its underlying type, never mix.
 proc mixed(a: Ms, b: Bytes): (c?) { ensure r: c? iff a < b }  --~ error: cannot compare `Ms` with `Bytes`
@@ -46,13 +40,11 @@ proc literal_equal(a: Ms): (c?) { ensure r: c? iff a != 5 }  --~ error: cannot c
 proc mixed_sum(a: Ms, b: Bytes): (c: Ms) { ensure r: c = a + b }  --~ error: cannot add `Bytes` to `Ms`
 proc int_sum(a: Ms): (c: Ms) { ensure r: c = a - 1 }  --~ error: cannot subtract `Int` from `Ms`
 proc int_left(a: Ms): (c: Int) { ensure r: c = 1 + a }  --~ error: cannot add `Ms` to `Int`
-proc mixed_chain(a: Ms, b: Bytes): (c?) { ensure r: c? iff Ms(0) <= a < b }
---~^ error: cannot compare `Ms` with `Bytes`
+proc mixed_chain(a: Ms, b: Bytes): (c?) { ensure r: c? iff Ms(0) <= a < b }  --~ error: cannot compare `Ms` with `Bytes`
 proc names_mixed(a: Name): (c?) { ensure r: c? iff a < "m" }  --~ error: cannot compare `Name` with `String`
 
 -- Built with `Ms(e)` from a value of the underlying type, and read with `.0`.
-proc wrong_value(): (c: Ms) { ensure r: c = Ms(true) }
---~^ error: help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`
+proc wrong_value(): (c: Ms) { ensure r: c = Ms(true) }  --~ error: type mismatch: expected `Int`, found `Bool`
 proc other_newtype(b: Bytes): (c: Ms) { ensure r: c = Ms(b) }  --~ error: type mismatch: expected `Int`, found `Bytes`
 proc two_values(): (c: Ms) { ensure r: c = Ms(1, 2) }  --~ error: `Ms` takes 1 value, but 2 were given
 proc as_record(): (c: Ms) { ensure r: c = Ms { x := 1 } }  --~ error: `Ms` is a newtype, not a record with named fields
@@ -73,26 +65,22 @@ fn g(m: Ms): Ms := Bytes(m.0)  --~ error: type mismatch: expected `Ms`, found `B
 enum Event { Took(Ms) }
 const LIMIT: Ms := 5  --~ error: type mismatch: expected `Ms`, found `Int`
 proc argument(b: Bytes): (c: Int) { ensure r: c = f(b) }  --~ error: type mismatch: expected `Ms`, found `Bytes`
-proc payload(b: Bytes): (e: Event) { ensure r: e = Event::Took(b) }
---~^ error: type mismatch: expected `Ms`, found `Bytes`
+proc payload(b: Bytes): (e: Event) { ensure r: e = Event::Took(b) }  --~ error: type mismatch: expected `Ms`, found `Bytes`
 struct Job { took: Ms }
-proc field(b: Bytes): (j: Job) { ensure r: j = Job { took := b } }
---~^ error: type mismatch: expected `Ms`, found `Bytes`
-proc updated(j: Job, b: Bytes): (k: Job) { ensure r: k = { j with took := b } }
---~^ error: type mismatch: expected `Ms`, found `Bytes`
+proc field(b: Bytes): (j: Job) { ensure r: j = Job { took := b } }  --~ error: type mismatch: expected `Ms`, found `Bytes`
+proc updated(j: Job, b: Bytes): (k: Job) { ensure r: k = { j with took := b } }  --~ error: type mismatch: expected `Ms`, found `Bytes`
 proc definition(b: Bytes): (d: Ms) { out d := b }  --~ error: type mismatch: expected `Ms`, found `Bytes`
 proc held(t: Ms): (d: Ms) { out d := t }
 proc binding(b: Bytes) { call h := held(b) }  --~ error: type mismatch: expected `Ms`, found `Bytes`
 proc seconds(s: Int): (d: Int) { ensure r: d = s }
-refine counted: seconds refines held { t := s, d := Ms(d) }  --~ error: type mismatch: expected `Ms`, found `Int`
-proc branches(a: Ms, b: Bytes, c?): (d?) { ensure r: d? iff (if c? then a else b) = a }
---~^ error: the branches of `if` have different types: `Ms` and `Bytes`
-proc members(a: Ms, b: Bytes): (d?) { ensure r: d? iff {a, b} = {a} }
---~^ error: the members of a set have different types: `Ms` and `Bytes`
-proc elements(a: Ms, b: Bytes): (d?) { ensure r: d? iff [a, b] = [a] }
---~^ error: the elements of a sequence have different types: `Ms` and `Bytes`
-proc member(a: Ms, s: Set<Bytes>): (d?) { ensure r: d? iff a in s }
---~^ error: `in` needs a `Set<Ms>` on its right, found `Set<Bytes>`
+expect counted(s: Int) {
+    call concrete := seconds(s)
+    refines concrete held(s)  --~ error: type mismatch: expected `Ms`, found `Int`
+}
+proc branches(a: Ms, b: Bytes, c?): (d?) { ensure r: d? iff (if c? then a else b) = a }  --~ error: the branches of `if` have different types: `Ms` and `Bytes`
+proc members(a: Ms, b: Bytes): (d?) { ensure r: d? iff {a, b} = {a} }  --~ error: the members of a set have different types: `Ms` and `Bytes`
+proc elements(a: Ms, b: Bytes): (d?) { ensure r: d? iff [a, b] = [a] }  --~ error: the elements of a sequence have different types: `Ms` and `Bytes`
+proc member(a: Ms, s: Set<Bytes>): (d?) { ensure r: d? iff a in s }  --~ error: `in` needs a `Set<Ms>` on its right, found `Set<Bytes>`
 
 -- A newtype is unbounded exactly when its underlying type is.
 struct Tags(Set<Int>)

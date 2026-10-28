@@ -174,8 +174,14 @@ pub proc nonminimal_cardinality_fixed(a?, x: Int): (det exactly?, det at_most?) 
     out at_most? := true
 }
 
-refine nonminimal_cardinality_sound: nonminimal_cardinality_fixed refines nonminimal_cardinality_written
-refine nonminimal_cardinality_complete: nonminimal_cardinality_written refines nonminimal_cardinality_fixed
+expect nonminimal_cardinality_sound(a?, x: Int) {
+    call concrete := nonminimal_cardinality_fixed(a?, x)
+    refines concrete nonminimal_cardinality_written(a?, x)
+}
+expect nonminimal_cardinality_complete(a?, x: Int) {
+    call concrete := nonminimal_cardinality_written(a?, x)
+    refines concrete nonminimal_cardinality_fixed(a?, x)
+}
 ```
 
 ## Conditionals of `Bool`s
@@ -349,8 +355,16 @@ pub proc struct_initialization_fixed(p: Point): (det v: Point) {
     out v := p
 }
 
-refine struct_initialization_sound: struct_initialization_fixed refines struct_initialization_written
-refine struct_initialization_complete: struct_initialization_written refines struct_initialization_fixed
+expect struct_initialization_sound(p: lint::Point) {
+    use lint
+    call concrete := struct_initialization_fixed(p)
+    refines concrete struct_initialization_written(p)
+}
+expect struct_initialization_complete(p: lint::Point) {
+    use lint
+    call concrete := struct_initialization_written(p)
+    refines concrete struct_initialization_fixed(p)
+}
 ```
 
 ## Newtypes
@@ -432,8 +446,16 @@ pub proc roundtrip_fixed(x: Ms, n: Int): (
     out read_parenthesized := (n + 1) * 2
 }
 
-refine roundtrip_sound: roundtrip_fixed refines roundtrip_written
-refine roundtrip_complete: roundtrip_written refines roundtrip_fixed
+expect roundtrip_sound(x: lint::Ms, n: Int) {
+    use lint
+    call concrete := roundtrip_fixed(x, n)
+    refines concrete roundtrip_written(x, n)
+}
+expect roundtrip_complete(x: lint::Ms, n: Int) {
+    use lint
+    call concrete := roundtrip_written(x, n)
+    refines concrete roundtrip_fixed(x, n)
+}
 ```
 
 The round trip is the identity on the newtype's values, which is why each
@@ -513,8 +535,14 @@ pub proc zero_prefixed_fixed(x: Int): (det ten?, det one?, det thousand?, det ze
     out zero? := x = 0
 }
 
-refine zero_prefixed_sound: zero_prefixed_fixed refines zero_prefixed_written
-refine zero_prefixed_complete: zero_prefixed_written refines zero_prefixed_fixed
+expect zero_prefixed_sound(x: Int) {
+    call concrete := zero_prefixed_fixed(x)
+    refines concrete zero_prefixed_written(x)
+}
+expect zero_prefixed_complete(x: Int) {
+    call concrete := zero_prefixed_written(x)
+    refines concrete zero_prefixed_fixed(x)
+}
 ```
 
 ## Trivial quantifiers
@@ -602,6 +630,14 @@ pub proc trivial_quantifier_fixed(s: Set<Solo>, t: Set<Solo>): (det every?, det 
     out pair? := Solo::Only in s or Solo::Only in t
 }
 
-refine trivial_quantifier_sound: trivial_quantifier_fixed refines trivial_quantifier_written
-refine trivial_quantifier_complete: trivial_quantifier_written refines trivial_quantifier_fixed
+expect trivial_quantifier_sound(s: Set<lint::Solo>, t: Set<lint::Solo>) {
+    use lint
+    call concrete := trivial_quantifier_fixed(s, t)
+    refines concrete trivial_quantifier_written(s, t)
+}
+expect trivial_quantifier_complete(s: Set<lint::Solo>, t: Set<lint::Solo>) {
+    use lint
+    call concrete := trivial_quantifier_written(s, t)
+    refines concrete trivial_quantifier_fixed(s, t)
+}
 ```

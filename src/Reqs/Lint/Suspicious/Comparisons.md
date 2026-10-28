@@ -199,8 +199,14 @@ pub proc contradictory_chain_value(x: Int): (det strict?, det loose?, det descen
     out descending? := false
 }
 
-refine contradictory_chain_sound: contradictory_chain_value refines contradictory_chain_written
-refine contradictory_chain_complete: contradictory_chain_written refines contradictory_chain_value
+expect contradictory_chain_sound(x: Int) {
+    call concrete := contradictory_chain_value(x)
+    refines concrete contradictory_chain_written(x)
+}
+expect contradictory_chain_complete(x: Int) {
+    call concrete := contradictory_chain_written(x)
+    refines concrete contradictory_chain_value(x)
+}
 ```
 
 Where one of two comparisons of an operand with integer literals implies

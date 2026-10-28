@@ -52,8 +52,16 @@ pub proc field_copy_fixed(t: Triple, n: Int): (det u: Triple, det v: Triple) {
     out v := { t with b := n }
 }
 
-refine field_copy_sound: field_copy_fixed refines field_copy_written
-refine field_copy_complete: field_copy_written refines field_copy_fixed
+expect field_copy_sound(t: lint::Triple, n: Int) {
+    use lint
+    call concrete := field_copy_fixed(t, n)
+    refines concrete field_copy_written(t, n)
+}
+expect field_copy_complete(t: lint::Triple, n: Int) {
+    use lint
+    call concrete := field_copy_written(t, n)
+    refines concrete field_copy_fixed(t, n)
+}
 ```
 
 ## Record literals
@@ -114,6 +122,14 @@ pub proc manual_record_update_fixed(t: Triple, n: Int): (det u: Triple, det v: T
     out v := { t with b := n + 1 }
 }
 
-refine manual_record_update_sound: manual_record_update_fixed refines manual_record_update_written
-refine manual_record_update_complete: manual_record_update_written refines manual_record_update_fixed
+expect manual_record_update_sound(t: lint::Triple, n: Int) {
+    use lint
+    call concrete := manual_record_update_fixed(t, n)
+    refines concrete manual_record_update_written(t, n)
+}
+expect manual_record_update_complete(t: lint::Triple, n: Int) {
+    use lint
+    call concrete := manual_record_update_written(t, n)
+    refines concrete manual_record_update_fixed(t, n)
+}
 ```

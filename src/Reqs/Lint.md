@@ -426,7 +426,13 @@ pub proc stepwise(settings: Seq<Level>): (accepted?) {
 }
 
 set_option fren.evidence "tested" in
-refine history_is_stepwise: history refines stepwise
+set_option fren.lint.undecidable "allow" in
+expect history_is_stepwise(settings: Seq<lint::Level>) {
+    use lint
+    assume spec_three: (settings).len = 3
+    call concrete := history(settings)
+    refines concrete stepwise(settings)
+}
 ```
 
 `lint::effective` puts the sources together, for one lint at one place in
@@ -788,7 +794,10 @@ exactly when every file is loaded:
 ```fren
 use cli::exit_status
 
-refine fix_exit_status: fix_exit refines exit_status { ran? := loaded? }
+expect fix_exit_status(check?, loaded?, unchanged?) {
+    call concrete := fix_exit(check?, loaded?, unchanged?)
+    refines concrete exit_status((loaded?))
+}
 ```
 
 ### Parentheses in fixes

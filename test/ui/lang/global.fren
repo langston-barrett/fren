@@ -1,4 +1,5 @@
 -- Global expectations: several behaviours, several components, constants.
+-- fren-covers: lang::global_checks
 set_option fren.lint.chainable_comparison "allow"
 
 -- Expectations about constants test what the language computes.

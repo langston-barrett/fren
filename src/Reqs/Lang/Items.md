@@ -729,8 +729,10 @@ pub proc contract_arguments(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine arguments_detail: contract_arguments refines contract_application {
-    to_params? := args = params and not Written::Other in params,
+expect arguments_detail(clause: lang::ClauseKind, own?, params: Seq<lang::Written>, args: Seq<lang::Written>) {
+    use lang
+    call concrete := contract_arguments(clause, own?, params, args)
+    refines concrete contract_application(clause, own?, (args) = (params) and not lang::Written::Other in (params))
 }
 ```
 
@@ -918,15 +920,17 @@ than about one of their behaviours, such as two procedures agreeing, or one
 procedure being monotone: it takes parameters and calls the procedures, as
 a procedure does. See [Global expectations](Global.md).
 
-## Refinements
+## Refinement claims
 
 ```
-refinement := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
+refinement := "refines" IDENT path "(" [expr ("," expr)* [","]] ")" ["by" TACTICS]
 ```
 
-`refine r: c refines a` states that procedure `c` refines procedure `a`,
-and has Fren check it. Its bindings, written `x := e`, separated by commas, in braces, give
-variables of `a` as expressions over `c`'s. See [Refinement](Refinement.md).
+Inside a global expectation block, `refines c a(args)` claims procedure
+`a`'s guarantees of call `c`. The arguments explicitly supply `a`'s inputs;
+its public results match `c`'s public results positionally. The block must
+state any assumptions it needs. A hosted `by` proof establishes the same
+claim. See [Refinement](Refinement.md#refinement-in-expectation-blocks).
 
 ## Checks
 

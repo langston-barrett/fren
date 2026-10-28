@@ -1,4 +1,3 @@
--- `unless` as a binding of a refinement (F0109).
-proc a(p?, q?) {}
-proc c(x?) {}
-refine r: c refines a { p? := unless x?, x?, q? := x? }
+-- `unless` as a record field binding (F0109).
+struct Flags { p?, q? }
+proc c(x?): (r: Flags) { out r := Flags { p? := unless x?, x?, q? := x? } }

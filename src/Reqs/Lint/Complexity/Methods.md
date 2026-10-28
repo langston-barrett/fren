@@ -307,6 +307,14 @@ pub proc min_or_max_fixed(x: Tier): (
     out max_last := Tier::High
 }
 
-refine min_or_max_sound: min_or_max_fixed refines min_or_max_written
-refine min_or_max_complete: min_or_max_written refines min_or_max_fixed
+expect min_or_max_sound(x: lint::Tier) {
+    use lint
+    call concrete := min_or_max_fixed(x)
+    refines concrete min_or_max_written(x)
+}
+expect min_or_max_complete(x: lint::Tier) {
+    use lint
+    call concrete := min_or_max_written(x)
+    refines concrete min_or_max_fixed(x)
+}
 ```

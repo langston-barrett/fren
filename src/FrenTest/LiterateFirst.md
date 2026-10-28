@@ -31,5 +31,8 @@ pub proc lower(x: Int): (y: Int) {
     ensure below: y < x
 }
 
-refine fails: precise refines lower
+expect fails(x: Int) {
+    call concrete := precise(x)
+    refines concrete lower(x)
+}
 ```

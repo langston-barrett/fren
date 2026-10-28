@@ -370,6 +370,8 @@ structure Comp where
   /-- Its own variables, in declaration order. -/
   vars : Array Var
   constraints : Array Constraint
+  /-- Declared type predicates, including those of defined results, for refinement claims. -/
+  typeConstraints : Array Constraint := #[]
   insts : Array Inst
   isGlobal : Bool := false
   /-- Each defined output, with its definition. -/
@@ -2557,6 +2559,26 @@ def declareUseIn (segs : Array Ident) (glob : Bool) (scope : Option Name) : L Un
   let u ← liftE (st.table.declareUse st.module (segNames segs) glob (scope.getD st.module))
   modify fun s => { s with table := s.table.addUse u, scope := scope.getD s.scope }
 
+/-- Unconditional equalities can determine a quantified call variable.
+All equations remain in the hypothesis; this only narrows that variable's
+enumeration to the one value the equation requires. -/
+partial def refinementEquations : Ex → Array (Name × Ex)
+  | .bin .and a b => refinementEquations a ++ refinementEquations b
+  | .bin op left right =>
+    if op == .eq || op == .iff then
+      (match left with | .var n => #[(n, right)] | _ => #[]) ++
+        (match right with | .var n => #[(n, left)] | _ => #[])
+    else #[]
+  | _ => #[]
+
+/-- Inline only specification locals before substituting call arguments.
+Keeping those steps separate avoids capturing a caller variable that has
+one of the specification's parameter names. -/
+partial def inlineRefinementLocals (locals : Array (Name × Ex)) (e : Ex) : Ex :=
+  e.substVars fun n => match locals.find? (·.1 == n) with
+    | some (_, value) => inlineRefinementLocals locals value
+    | none => .var n
+
 def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Unit := do
   -- Each result with the definition that an `out` member gives it.
   let defs := body.filterMap fun | .define x e => some (x.name, e) | _ => none
@@ -2594,15 +2616,17 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
     for (b, e?) in bs do
       bindings := bindings.push (Name.mkSimple b.name, (← lowerExpr cx (e?.getD (.path b.span #[b]))).1)
     insts := insts.push { name := w, comp := cpath, bindings }
-  -- What each variable's type brings, but a defined output's, first: an
-  -- input's an assumption, an output's a guarantee.
+  -- Retain every declared type for positional refinement, even when a
+  -- result has a definition. Ordinary procedure checks keep their existing
+  -- split between type constraints and definedness obligations.
   let mut constraints := #[]
+  let mut typeConstraints := #[]
   for m in members do
     let .var isIn _ _ x ty? defn? := m | continue
     let some ty := ty? | continue
-    if defn?.isSome then continue
     if let some c ← typeConstraint (if isIn then .assume else .ensure) (declName x) (← lowerPTy ty) then
-      constraints := constraints.push c
+      typeConstraints := typeConstraints.push c
+      if defn?.isNone then constraints := constraints.push c
   for m in members do
     let .prop kind x e := m | continue
     constraints := constraints.push { kind, name := Name.mkSimple x.name, e := (← lowerExpr cx e).1 }
@@ -2610,7 +2634,64 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
   for m in members do
     let .var _ _ _ x _ (some e) := m | continue
     defs := defs.push (declName x, (← lowerExpr cx e).1)
-  let c : Comp := { path, vars, constraints, insts, defs }
+  let mut refinesIndex := 0
+  for m in members do
+    if let .refines w abstract args _ := m then
+      refinesIndex := refinesIndex + 1
+      while constraints.any (·.name == Name.mkSimple s!"refines_{refinesIndex}") do refinesIndex := refinesIndex + 1
+      let r ← resolve abstract
+      let some a := (← get).spec.comp? r.path | throw "unknown refinement specification"
+      let some (_, cpath, _) := pending.find? (fun (n, _, _) => n == declName w) | throw "unknown refinement call"
+      let some concrete := (← get).spec.comp? cpath | throw "unknown concrete procedure"
+      let params := a.vars.filter (·.role == .input)
+      let results := a.vars.filter (fun v => v.role == .output && v.isPub)
+      let actual := concrete.vars.filter (fun v => v.role == .output && v.isPub)
+      let mut subs : Array (Name × Ex) := #[]
+      for v in params, arg in args do subs := subs.push (v.name, (← lowerExpr cx arg).1)
+      for v in results, given in actual do subs := subs.push (v.name, .var (declName w ++ given.name))
+      let replace (ss : Array (Name × Ex)) (e : Ex) := e.substVars fun n =>
+        ((ss.find? (·.1 == n)).map (·.2)).getD (.var n)
+      let sp := (← get).spec
+      let internal := (sp.flatVars a).filter (!·.name.isAtomic)
+      let names := internal.map fun v => Name.mkSimple s!"#refines{refinesIndex}.{v.name}"
+      for v in internal, n in names do subs := subs.push (v.name, .bound n)
+      let locals := a.defs.filter (fun (n, _) => !results.any (·.name == n))
+      let translate (e : Ex) := replace subs (inlineRefinementLocals locals e)
+      let typed := a.typeConstraints.filter fun p => (params ++ results).any (fun v => p.name == Name.num v.name 0)
+      let claims := (a.constraints.filter (fun p => p.kind == .ensure && p.typed?.isNone)).map (fun p => translate p.e)
+        ++ typed.map (fun p => translate p.e)
+        ++ a.defs.filterMap (fun (n, e) => if results.any (·.name == n) then
+          some (.bin .eq (translate (.var n)) (translate e)) else none)
+      let claim := claims.foldl (fun e p => Ex.bin .and e p) (.lit (.bool true))
+      let rawCalls := (sp.insts a).map (fun atom => atom.e.renameVars (atom.pfx ++ ·))
+      let calls := rawCalls.map translate
+      let claim := if calls.isEmpty then claim else
+        Ex.when false (calls.foldl (fun e p => Ex.bin .and e p) (.lit (.bool true))) claim
+      let equations : Array (Name × Ex) := (rawCalls.flatMap refinementEquations).filterMap fun (n, value) => do
+        let k ← internal.findIdx? (·.name == n)
+        return (names[k]!, translate value)
+      let mut remaining : Array (Var × Name) := internal.zip names
+      let mut orderedNames : Array Name := #[]
+      let mut tys : Array Fren.Core.PTy := #[]
+      let mut doms : Array (Option Ex) := #[]
+      while !remaining.isEmpty do
+        let ready : Option (Var × Name × Ex) := remaining.findSome? fun (v, n) =>
+          (equations.find? fun (target, value) => target == n &&
+            (value.freeBound.filter names.contains).all orderedNames.contains).map fun (_, value) => (v, n, value)
+        let (v, n, domain) : Var × Name × Option Ex := match ready with
+          | some (v, n, value) => (v, n, some (Ex.seqLit #[value]))
+          | none =>
+            let (v, n) := remaining[0]!
+            let ty := Fren.Core.PTy.plain (v.ty.core sp)
+            (v, n, (sp.listedValues v.ty ty).map (fun vs => Ex.seqLit (vs.map Ex.lit)))
+        remaining := remaining.filter (·.2 != n)
+        orderedNames := orderedNames.push n
+        tys := tys.push (Fren.Core.PTy.plain (v.ty.core sp))
+        doms := doms.push domain
+      let file := (← get).file
+      let claim := if internal.isEmpty then claim else Ex.quant file 0 true orderedNames doms tys claim
+      constraints := constraints.push { kind := .expect, name := Name.mkSimple s!"refines_{refinesIndex}", e := claim }
+  let c : Comp := { path, vars, constraints, insts, defs, typeConstraints }
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module

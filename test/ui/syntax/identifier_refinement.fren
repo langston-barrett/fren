@@ -4,4 +4,7 @@
 proc c(x: Int): (y: Int) { ensure r: y = x }
 proc a(n: Int): (z: Int) { ensure r: z = n }
 
-refine ok: c refines a { n := xα, z := y }   --~ error: `xα` is not an identifier in Fren
+expect ok(x: Int) {
+    call c := c(x)
+    refines c a(xα)  --~ error: `xα` is not an identifier in Fren
+}

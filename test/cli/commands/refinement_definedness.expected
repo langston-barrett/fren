@@ -8,26 +8,26 @@ error[F0611]: an index of `first::r` may be out of range
   = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
   = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
 
-error[F0603]: expectation `same::r` does not hold
- --> test/cli/commands/refinement_definedness.fren:9:8
-  |
-9 | refine same: exact refines first
-  |        ^^^^ does not follow from the guarantees
-  |
-  = counterexample: q = [], exact.q = [], exact.y = -1
-  = help: strengthen the guarantees so that it follows, or correct the expectation
+error[F0603]: expectation `same::refines_1` does not hold
+  --> test/cli/commands/refinement_definedness.fren:11:5
+   |
+11 |     refines concrete first(q)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+   |
+   = counterexample: q = [], concrete.y = -1
+   = help: correct the expectation, or assume what it needs
 
-error[F0611]: an index of `same::r` may be out of range
- --> test/cli/commands/refinement_definedness.fren:9:8
-  |
-9 | refine same: exact refines first
-  |        ^^^^ may be out of range
-  |
-  = counterexample: q = [], exact.q = [], exact.y = 0
-  = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
-  = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
+error[F0611]: an index of `same::refines_1` may be out of range
+  --> test/cli/commands/refinement_definedness.fren:11:5
+   |
+11 |     refines concrete first(q)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ may be out of range
+   |
+   = counterexample: q = [], concrete.y = 0
+   = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
+   = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
 
-fren: 6 passed, 3 failed, 0 inconclusive, 0 redundant
+fren: 7 passed, 3 failed, 0 inconclusive, 0 redundant
 
 Some errors have detailed explanations: F0603, F0611.
 For more information about an error, try `fren --explain F0603`.

@@ -1,13 +1,13 @@
-error[F0603]: expectation `pairs_only::r` does not hold
-  --> test/cli/commands/quickcheck_unbounded.fren:29:8
+error[F0603]: expectation `pairs_only::refines_1` does not hold
+  --> test/cli/commands/quickcheck_unbounded.fren:35:5
    |
-29 | refine pairs_only: sorted_pairs refines sorted_any
-   |        ^^^^^^^^^^ does not follow from the guarantees
+35 |     refines concrete sorted_any(q)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
    |
-   = counterexample: q = [0, 2, 8, 1], sorted_pairs.sorted? = true
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = counterexample: q = [0, 2, 8, 1], concrete.sorted? = true
+   = help: correct the expectation, or assume what it needs
 
-fren: 4 passed, 1 failed, 0 inconclusive, in 100 tests each
+fren: 6 passed, 1 failed, 0 inconclusive, in 100 tests each
 
 For more information about this error, try `fren --explain F0603`.
 exit=1
