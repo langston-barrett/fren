@@ -81,66 +81,16 @@ def recursion (n : Nat) (uses : List RecUse) : Recursion :=
       let k := fs.foldl max 0
       .notStructural k (fs.idxOf k)
 
-/-! ## Kinds (`lang::recursive_kind`) -/
+/-- Whether an application receives a defining equation: introduced applications
+receive postconditions only (`lang::recursive_facts`). -/
+def recursiveFacts (introduced : Bool) : Bool × Bool := (true, !introduced)
 
-/-- An occurrence, in a structural recursion's body, of a parameter or of a
-binder bound from a payload of one. -/
-inductive Occurrence where
-  /-- A recursive payload as a recursive application's argument, at the
-  position whose payload it is. -/
-  | recursed
-  /-- The parameter itself, as the scrutinee of a `match`. -/
-  | matched
-  /-- Any other: a recursive payload or the parameter otherwise used, or a
-  `match` on the parameter that looks into a payload with a variant's
-  pattern. -/
-  | other
-  deriving DecidableEq, Repr, Inhabited
+/-- A simultaneous induction cannot report a dependent success when another
+postcondition is unproved (`lang::recursive_post_result`). -/
+def recursivePostResult (passed unproved : Bool) : Bool := passed && !unproved
 
-/-- An occurrence of the parameter at `pos`, or of a payload of it. -/
-structure PayloadOcc where
-  pos : Nat
-  occ : Occurrence
-  deriving DecidableEq, Repr, Inhabited
-
-/-- What kind of recursion a defined function is (`lang::recursive_kind`). -/
-inductive RecKind where
-  | notRecursive
-  /-- A structural recursion whose arms use only the recursive results. -/
-  | catamorphism
-  /-- Any other structural recursion: an arm also uses a subterm itself. -/
-  | paramorphism
-  deriving DecidableEq, Repr, Inhabited
-
-/-- The kind of a defined function whose uses of itself are `r`, with the
-occurrences `occs` (`lang::recursive_kind`): a structural recursion is a
-catamorphism when no occurrence at its decreasing parameter is other than
-a recursive application's argument or the scrutinee of a `match`. -/
-def recursiveKind (r : Recursion) (occs : List PayloadOcc) : RecKind :=
-  match r with
-  | .structural i => if occs.any (fun o => o.pos == i && o.occ == .other) then .paramorphism else .catamorphism
-  | _ => .notRecursive
-
-/-- Whether the solver decides the applications of a function of kind `k`
-and result type `result` on arguments that vary (`lang::recursive_decided`):
-a catamorphism into `Bool` or a set, or onto its result type, `onto`: an
-arm of a `match` on a parameter is a payload of that type, so that no
-value of the type is out of its range. -/
-def RecKind.decided (k : RecKind) (result : Ty) (onto : Bool) : Bool :=
-  k == .catamorphism && (onto || result matches .bool | .set _)
-
-/-- Whether the pattern `p` is a variant's, or an or-pattern with one. -/
-partial def Pat.hasVariant : Pat → Bool
-  | .ctor .. => true
-  | .or ps => ps.any Pat.hasVariant
-  | _ => false
-
-/-- Whether the pattern `p` looks into a variant's payload with a variant's
-pattern, as `Expr::Add(Expr::Neg(x), y)` does. -/
-partial def Pat.looksIntoPayload : Pat → Bool
-  | .ctor _ ps => ps.any Pat.hasVariant
-  | .or ps => ps.any Pat.looksIntoPayload
-  | _ => false
+/-- Recursive counterexamples require evaluation (`lang::recursive_counterexample`). -/
+def recursiveCounterexample (recursive confirms : Bool) : Bool := !recursive || confirms
 
 /-! ## Lean `match`es (`lang::recursive_match`) -/
 
@@ -156,16 +106,17 @@ partial def Pat.leanPattern (p : Pat) (top := true) : Bool :=
 
 /-- The first of the patterns `pats` of a `match`'s arms that a Lean
 `match` does not have as it is. -/
-def firstNonLeanPattern? (pats : Array Pat) : Option Nat := pats.findIdx? (!·.leanPattern)
+def firstNonLeanPattern? (pats : Array Pat) (guarded : Array Bool := #[]) : Option Nat :=
+  (pats.zipIdx.find? fun (p, i) => !p.leanPattern || guarded[i]?.getD false).map (·.2)
 
 /-- A structural recursion's application under a `match`, on a parameter or
 a binder bound from a payload of one, that its Lean definition cannot have
 as a Lean `match` (`lang::recursive_match`). -/
 def recursiveMatchMsg (f : Lean.Name) : Msg :=
   { code? := some "F0449", headline := s!"recursive defined function `{showPath f}` has a `match` that Lean cannot see through"
-    label? := some "this pattern has a literal, a range, or an or-pattern within a payload"
-    notes := #["note: a structural recursion's Lean definition is a Lean `match`, which has patterns of variants, binders and `_` only, with or-patterns only at the top",
-      "help: match on the literal, range or alternatives in an inner `match` on the binder, under the arm"] }
+    label? := some "this arm cannot preserve structural recursion"
+    notes := #["note: a structural recursion uses unguarded constructor patterns, binders and `_`, with or-patterns only at the top",
+      "help: move guards, literals, ranges or nested alternatives into the constructor arm"] }
 
 /-- A defined function's application of itself that is not structural
 recursion: `f` is the function, `param` the parameter at the position whose

@@ -1,8 +1,4 @@
--- The `undecidable` lint reports an application of a structural recursion
--- that is not decided on arguments that vary (`lang::recursive_decided`,
--- `Reqs/Lang/Decidability#recursion`), in both front ends.
--- fren-covers: lang::recursive_decided
-
+-- Opaque recursion with finite ground equations and contracts.
 pub enum Tree { Leaf, Node(Tree, Int, Tree) }
 
 pub fn elems(t: Tree): Set<Int> := match t {
@@ -20,9 +16,8 @@ pub fn left_leaves(t: Tree): Int := match t {
     Tree::Node(l, _, r) => (if l = Tree::Leaf then 1 else 0) + left_leaves(l) + left_leaves(r),
 }
 
--- A catamorphism into a set is decided; into `Int`, and a paramorphism, not.
 proc reported(t: Tree) {
-    expect member: when 1 in elems(t), t != Tree::Leaf
-    expect sized: size(t) >= 0   --~ error: this is outside the decidable core
-    expect param: left_leaves(t) >= 0   --~ error: this is outside the decidable core
+    expect member: when t is Tree::Node(_, 1, _) and 1 in elems(t), t != Tree::Leaf
+    expect sized: size(t) >= 0   --~ warning: could not decide whether `reported::sized` holds
+    expect param: left_leaves(t) >= 0   --~ warning: could not decide whether `reported::param` holds
 }

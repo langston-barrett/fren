@@ -343,20 +343,16 @@ structure DefinedInfo where
   this one (`deltaDefined`). -/
   solver? : Option Name := none
   /-- It is a structural recursion (`lang::structural_recursion`): `solver?`
-  is then its recursive definition over the placeholders themselves, not
-  over a local for each, which the solver is given as a recursive
-  definition (`define-fun-rec`) rather than unfolded
+  is then its evaluable definition over the placeholders themselves;
+  queries replace its symbol by an uninterpreted local
   (`Reqs/Lang/Recursion#solver-encoding`). -/
   recursive : Bool := false
   /-- For a structural recursion, its body as the solver reads it: a
   closed lambda over its parameters, with its `match`es as `if`s and its
-  applications of itself of `solver?`, which the solver is given as that
-  form's equation (`Fren.withRecursiveDefs`). -/
+  applications of itself of `solver?`, used only for one-step ground equations. -/
   recBody? : Option Expr := none
-  /-- Its applications are decided on arguments that vary: not a structural
-  recursion, or one that `Core.RecKind.decided` decides
-  (`lang::recursive_kind`). -/
-  decided : Bool := true
+  decreasing? : Option Nat := none
+  fact? : Option Expr := none
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -478,9 +474,6 @@ structure CompInfo where
   /-- Its own variables in declaration order, then each call's. -/
   vars : Array Var
   props : Array PropInfo
-  /-- For the body of a structural recursion, its induction hypotheses
-  (`Core.Comp.induction`), each a closed lambda over the variables. -/
-  induction : Array PropInfo := #[]
   insts : Array InstInfo := #[]
   ref : Syntax
   /-- The prefix of the Lean definitions generated for it. -/
@@ -885,20 +878,13 @@ structure LocalState where
   guardedUsed : Bool := false
   /-- In a defined function's body, its uses of itself so far, each where
   it is written (`lang::structural_recursion`). -/
+  recApps : Array (Syntax × Array Expr × Array Expr) := #[]
   recUses : Array (Lean.Syntax × Core.RecUse) := #[]
-  /-- In a defined function's body, the occurrences so far of its
-  parameters and of the binders bound from their payloads, each by where
-  it starts (`lang::recursive_kind`). -/
-  recOccs : Array (String.Pos.Raw × Core.PayloadOcc) := #[]
   /-- In a defined function's body, the patterns of the `match`es on a
   parameter, or on a binder bound from a payload of one, that are not a Lean
   `match` and have a recursive application under them, each the first
   pattern that a Lean `match` does not have (`lang::recursive_match`). -/
   recMatches : Array Lean.Syntax := #[]
-  /-- In a defined function's body, whether an arm of a `match` on a
-  parameter, without a guard, is a payload of the result's type
-  (`lang::recursive_decided`). -/
-  recOnto : Bool := false
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated, by where `e` is: whether `e` is a sequence, and the
   `undecidable` report that `in` defers until the quantifier is known to

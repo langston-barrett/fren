@@ -7,7 +7,8 @@ mod arith
 -- An expression.
 pub enum Expr { Val(Int), Add(Expr, Expr) }
 
--- The value of an expression.
+-- The value of an expression. Checks use one step of its equations.
+-- No contract is needed for the folding proof.
 pub fn eval(e: Expr): Int := match e {
     Expr::Val(n) => n,
     Expr::Add(a, b) => eval(a) + eval(b),

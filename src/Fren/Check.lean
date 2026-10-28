@@ -110,6 +110,40 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
         return s!"{r.path.getString!} \{ {", ".intercalate fs.toList} }"
   return toString (← ppExpr val)
 
+/-- The compiled Lean evaluation path used by enumeration and model confirmation. -/
+unsafe def compileValuesUnsafe (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α) := do
+  if fs.isEmpty then return #[]
+  let arr ← mkArrayLit ty fs.toList
+  evalExpr (Array α) (mkApp (mkConst ``Array [0]) ty) arr
+
+@[implemented_by compileValuesUnsafe]
+opaque compileValues (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α)
+
+/-- Evaluate a model using real definitions, before reporting a recursive
+counterexample. Failure to evaluate is not confirmation. -/
+def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
+    (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM Bool := do
+  try
+    let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
+    let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
+      ({ v with name := Core.primed v.name }, p)
+    let values ← vars.mapM fun (v, _) => do
+      match model.find? (·.1 == v.name) with
+      | some (_, val) =>
+        let val := fromModel v.type val
+        if v.type.isConstOf ``Nat then
+          if let some i := val.int? then return mkNatLit i.toNat
+        return val
+      | none => mkAppOptM ``Inhabited.default #[some v.type, none]
+    let instantiate (e : Expr) := e.replaceFVars (vars.map (·.2)) values
+    let ps := (hyps.map (instantiate ∘ Prod.snd)).push (mkNot (instantiate goal))
+    let bools ← ps.mapM fun p => do
+      if p.hasFVar || p.hasMVar then throwError "model leaves free values"
+      pure (mkApp2 (mkConst ``Decidable.decide) p (← synthInstance (mkApp (mkConst ``Decidable) p)))
+    let values ← compileValues Bool (mkConst ``Bool) bools
+    return values.all id
+  catch _ => return false
+
 /-- `e` with the definitions of defined functions unfolded, so that the
 solver sees their bodies, and without `let`s and `have`s, which a record
 update binds its updated value with, and `let` and `where` become
@@ -125,10 +159,8 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
   Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains))
 
-/-- The solver forms of the structural recursions that `es` apply, and of
-those that their definitions apply, in turn: the solver is given each as
-a recursive definition (`Reqs/Lang/Recursion#solver-encoding`), which lean-smt reads
-from the equation of its body (`DefinedInfo.recBody?`), `define-fun-rec`. -/
+/-- The recursive symbols a query uses, including dependencies needed by
+its one-step equations. Each becomes an uninterpreted local. -/
 def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
   let s ← getState
   let recs := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
@@ -138,7 +170,7 @@ def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
   let mut work := es.foldl (fun acc e => found e acc) #[]
   let mut out := #[]
   -- Each is visited once, so this ends.
-  for _ in [0:recs.size + work.size] do
+  while !work.isEmpty do
     let some c := work.back? | break
     work := work.pop
     if out.contains c then continue
@@ -146,36 +178,6 @@ def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
     if let some b := s.defined.foldl (init := none) (fun acc _ d => acc <|> if d.solver? == some c then d.recBody? else none) then
       work := found b work
   return out
-
-/-- Runs `k` with a `let` for each of the structural recursions' solver
-forms `recs`, of that form, and a hypothesis of its equation, named as
-lean-smt reads an equational definition (`Smt.eqnDefName`): lean-smt gives
-the solver a `let` that is a hint as a definition, of that equation, which
-is recursive, `define-fun-rec` (`Reqs/Lang/Recursion#solver-encoding`). A constant
-that is a hint it does not: its preprocessing makes it a hypothesis. `k`
-gets the `let`s, and a function that replaces each of `recs` in a formula
-with its `let`. -/
-partial def withRecursiveDefs {α : Type} [Inhabited α] (recs : Array Name) (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α :=
-  go 0 #[]
-where
-  go (i : Nat) (fs : Array Expr) : MetaM α := do
-    if h : i < recs.size then
-      let c := recs[i]
-      Meta.withLetDecl (Name.mkSimple s!"{c.getPrefix.getString!}#rec") (← getConstInfo c).type (Lean.mkConst c) fun f =>
-        go (i + 1) (fs.push f)
-    else
-      let sub (e : Expr) : Expr := e.replace fun
-        | .const c _ => (recs.idxOf? c).map (fs[·]!)
-        | _ => none
-      let s ← getState
-      let eqns ← (recs.zip fs).mapM fun (c, f) => do
-        let some body := s.defined.foldl (init := none) fun acc _ d => acc <|> if d.solver? == some c then d.recBody? else none
-          | throwError "internal error: no equation of `{c}`"
-        -- `∀ xs, c xs = body xs`, of the body with its `match`es as `if`s.
-        let ty ← lambdaTelescope body fun xs b => do mkForallFVars xs (← mkEq (mkAppN (Lean.mkConst c) xs) b)
-        let ty := sub ty
-        return (Smt.eqnDefName (← f.fvarId!.getUserName), fun (_ : Array Expr) => pure ty)
-      Meta.withLocalDeclsD eqns fun _ => k fs sub
 
 /-- The answers to a procedure's queries so far, by hypotheses, goal and
 whether a model was wanted: some checks of a procedure ask the same
@@ -211,6 +213,20 @@ def resultType : Expr → Expr
 def intResult : Expr → Expr
   | .forallE n d b bi => .forallE n d (intResult b) bi
   | _ => mkConst ``Int
+
+/-- Recursive symbols are local uninterpreted functions. A result in Nat
+uses an Int symbol with ground range facts, as other opaque functions do. -/
+partial def withRecursiveDefs {α : Type} [Inhabited α] (recs : Array Name)
+    (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α := go 0 #[] #[]
+where
+  go (i : Nat) (fs reps : Array Expr) : MetaM α := do
+    if h : i < recs.size then
+      let ty := (← getConstInfo recs[i]).type
+      let nat := (resultType ty).isConstOf ``Nat
+      withLocalDeclD (Name.mkSimple recs[i].getPrefix.getString!) (if nat then intResult ty else ty) fun f => do
+        let rep ← if !nat then pure f else Meta.forallTelescope ty (fun xs _ => mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN f xs)))
+        go (i + 1) (fs.push f) (reps.push rep)
+    else k fs (fun e => e.replace fun | .const c _ => (recs.idxOf? c).map (reps[·]!) | _ => none)
 
 /-- The applications in `e` of the generic functions without a body
 `generics`, each by its placeholder, with the number of type arguments and
@@ -275,6 +291,89 @@ where
       Meta.withLocalDeclD name (if nat then intResult ty else ty) fun x => go (i + 1) (xs.push x)
     else k xs
 
+/-- Ground equations and contract facts for recursive applications. The queue
+marks equation-introduced applications, so only its original applications and
+contract applications receive defining equations. -/
+partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr) : MetaM (Array (Name × Expr)) := do
+  let st ← getState
+  let recs := st.defined.toArray.filterMap fun (_, d) =>
+    if d.recursive then d.solver?.map (·, d) else none
+  if recs.isEmpty then return #[]
+  let mut work := #[]
+  for f in hyps.map (·.2) |>.push goal do
+    work := work ++ (← scan recs f #[] false #[])
+  let mut out := #[]
+  let mut seen : Array (Expr × Array Expr × Bool) := #[]
+  let mut done := 0
+  while done < work.size do
+    let (app, gs, introduced, ancestors) := work[done]!
+    done := done + 1
+    let key := (app, gs, introduced)
+    if seen.contains key || ancestors.contains app then continue
+    seen := seen.push key
+    let some (_, d) := recs.find? (app.getAppFn.isConstOf ·.1) | continue
+    let ancestors := ancestors.push app
+    let guarded (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
+    let args := app.getAppArgs
+    if d.result == .nat then out := out.push (`nat, guarded (← atLeast0 app))
+    if let some fact := d.fact? then
+      let value := if d.result == .nat then
+        mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
+      out := out.push (`type, guarded (fact.beta #[value]))
+    let k := st.contracts.get? d.path
+    let domain := ((st.bodies.get? d.path).map fun b => (b.vars.zip args).filterMap fun (v, x) => v.fact?.map (·.beta #[x])).getD #[]
+    let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => unfoldDefined (c.at args)
+    let pres := domain ++ pres
+    let posts ← ((k.map (·.posts)).getD #[]).mapM fun c => return (c.name, ← unfoldDefined (c.at args))
+    let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
+    for (name, f) in Core.postconditionFacts implies pres posts do
+      out := out.push (name, guarded f)
+      work := work ++ (← scan recs f gs introduced ancestors)
+    if (Core.recursiveFacts introduced).2 then
+      if let some body := d.recBody? then
+        let body ← unfoldDefined (body.beta args)
+        out := out.push (`equation, guarded (← mkEq app body))
+        work := work ++ (← scan recs body gs true ancestors)
+  return out.toList.eraseDups.toArray
+where
+  scan (recs : Array (Name × DefinedInfo)) (e : Expr) (gs : Array Expr)
+      (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
+    if e.hasLooseBVars then return #[]
+    let own := if recs.any (e.getAppFn.isConstOf ·.1) && e.isApp then #[(e, gs, introduced, ancestors)] else #[]
+    if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 then
+      let args := e.getAppArgs
+      let guard := if e.isAppOfArity ``And 2 then args[0]! else mkNot args[0]!
+      return own ++ (← scan recs args[0]! gs introduced ancestors)
+        ++ (← scan recs args[1]! (gs.push guard) introduced ancestors)
+    else if e.isAppOfArity ``ite 5 then
+      let args := e.getAppArgs
+      return own ++ (← scan recs args[1]! gs introduced ancestors)
+        ++ (← scan recs args[3]! (gs.push args[1]!) introduced ancestors)
+        ++ (← scan recs args[4]! (gs.push (mkNot args[1]!)) introduced ancestors)
+    else match e with
+    | .app .. =>
+      -- Instance and proof arguments are elaboration artifacts, not
+      -- evaluated applications. In particular, a conditional's Decidable
+      -- instance must not leak branch applications outside their guards.
+      let info ← getFunInfo e.getAppFn
+      let args := e.getAppArgs.zipIdx.filter fun (_, i) =>
+        !(info.paramInfo[i]?.any fun p => p.isInstance || p.isProp)
+      return own ++ (← args.flatMapM fun (arg, _) => scan recs arg gs introduced ancestors)
+    | .forallE _ p q _ => return (← scan recs p gs introduced ancestors) ++ (← scan recs q (gs.push p) introduced ancestors)
+    | .mdata _ b => scan recs b gs introduced ancestors
+    | _ => return own
+
+/-- The value in a function's own contract is its body, once. Applications
+inside that body remain opaque, with their own ground facts. -/
+def contractBody (c : CompInfo) (fvs : Array Expr) (e : Expr) : MetaM Expr := do
+  let st ← getState
+  let some f := c.fn? | return e
+  let some d := st.defined.get? f | return e
+  let some body := d.recBody? | return e
+  let some solver := d.solver? | return e
+  let own := mkAppN (mkConst solver) fvs
+  return e.replace fun t => if t == own then some (body.beta fvs) else none
+
 /-- The lean-smt backend, for a procedure whose variables are the free variables
 `fvs`, and whose variables other than its parameters have second copies `primes`
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
@@ -301,8 +400,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- could not read.
   let askSmt (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (extra : Array Expr := #[]) :
       MetaM (Core.Outcome Expr × Bool) := do
-    -- The structural recursions, each a recursive definition, with which
-    -- cvc5 needs `fmf-fun` for its models (`Reqs/Lang/Recursion#solver-encoding`).
+    -- Each recursive symbol is opaque to the solver.
     let recs ← recursiveSolvers (hyps.map (·.2) |>.push goal)
     withRecursiveDefs recs fun recFvs sub => do
     let hyps := hyps.map fun (n, t) => (n, sub t)
@@ -326,7 +424,6 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- A procedure whose queries may quantify over a collection's
       -- elements sets `fmf-bound` (`Core.boundedOptions`).
       let bounded := if bounded then Core.boundedOptions else []
-      let recursive := if recs.isEmpty then [] else Core.recursiveOptions
       -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
         let mv ← mkFreshExprMVar goal
@@ -338,10 +435,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         -- into `Int`s, revert a recursive definition's `let` and give it
         -- back as a `have`, which they cannot then introduce
         -- (`withRecursiveDefs`).
-        match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := recs.isEmpty
+        match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := true
                           -- `fmf-bound` right after the options both front ends set, as the
                           -- binary sets it.
-                          extraSolverOptions := Core.solverOptions true true ++ bounded ++ recursive
+                          extraSolverOptions := Core.solverOptions true true ++ bounded
                             ++ (if finiteModel then Core.finiteModelOptions else []) ++ logic ++ cvc5Defaults
                             ++ resourceLimitOptions (← getOptions) }
                   mv.mvarId! (hs.reverse ++ recFvs) with
@@ -394,8 +491,11 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- application to a name mentions no bound variable.
     let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
       (← zetaReduce goal)
-    let hyps ← (facts ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← unfoldDefined t)
-    let goal ← smtBinders (← unfoldDefined goal)
+    let hyps ← (facts ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← contractBody c fvs (← unfoldDefined t))
+    let goal ← contractBody c fvs (← unfoldDefined goal)
+    let reflected ← recursiveQueryFacts hyps goal
+    let hyps := reflected ++ hyps
+    let goal ← smtBinders goal
     let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
     -- Each instance of a generic function without a body, a local of its
     -- own (`withInstances`), before any quantifier over elements is
@@ -409,7 +509,22 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- options, are the same query.
       let key := (hyps.map (·.2), goal, wantModel)
       if let some o := (← cache.get)[key]? then return o
-      let (o, cacheable) ← ask hyps goal wantModel
+      let hasRecursion := (← getState).defined.foldl (init := false) fun yes _ d => yes || d.recursive
+      let recs ← if hasRecursion then recursiveSolvers (← (hyps.map (·.2) |>.push goal).mapM unfoldDefined) else pure #[]
+      -- Even a query that needs only sat/unsat must obtain its inputs to
+      -- confirm a recursive model, as the CLI's confirming backend does.
+      let (o, cacheable) ← ask hyps goal (wantModel || !recs.isEmpty)
+      let o ← match o with
+        | .sat model => do
+          if recs.isEmpty then pure o else
+            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) then pure o
+            else do
+              let st ← getState
+              let names := recs.filterMap fun r => st.defined.foldl (init := none) fun acc _ d =>
+                if d.solver? == some r then some d.path else acc
+              pure (.unknown (Core.recursiveReason names))
+        | _ => pure o
+      let o := if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
       if cacheable then cache.modify (·.insert key o)
       return o
     falseF := mkConst ``False
@@ -716,7 +831,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- (`Reqs/Check#contracts-of-uninterpreted-functions`).
       reqs := ← if c.fn?.isNone || contract then named c.ensures else pure #[]
       posts := ← if c.fn?.isSome && !contract then named c.ensures else pure #[]
-      induction := ← named c.induction
+      recursive := c.fn?.any fun f => ((st0.defined.get? f).map (·.recursive)).getD false
       fn? := c.fn?
       expects := ← named c.expects
       covers := ← named c.covers
@@ -856,7 +971,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
           if let .sat model := o then models.modify (·.push (goal, model))
           return o }
     let examples := fren.examples.get (← getOptions)
-    let results := Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets)
+    let results := Core.recursiveResults comp.recursive (Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets))
     -- The contract of a generic function without a body, where its check
     -- at its type parameters' sorts does not pass: its check at each
     -- instance that the spec applies (`lang::generic_contract`).

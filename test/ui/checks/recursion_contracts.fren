@@ -1,10 +1,4 @@
--- A structural recursion's postconditions are checked by induction on its
--- decreasing parameter (`lang::induction_hypotheses`), in both front ends:
--- a true one passes, and a false one fails with a genuine counterexample.
--- A catamorphism onto its result type is in the decidable core
--- (`lang::recursive_decided`).
--- fren-covers: lang::induction_hypotheses, lang::recursive_decided
-
+-- Opaque recursion with finite ground equations and contracts.
 pub enum Expr { Val(Int), Add(Expr, Expr) }
 
 -- Onto `Int`: `Val(n)` gives every value.
@@ -24,11 +18,11 @@ pub fn fold(e: Expr): (r: Expr) {
             fa => Expr::Add(fa, fold(b)),
         },
     }
-    ensure keeps_value: eval(r) = eval(e)
+    ensure keeps_value: eval(r) = eval(e)   --~ warning: could not decide whether the postcondition `keeps_value` of `fold` holds
     ensure off_by_one: eval(r) = eval(e) + 1   --~ error: the postcondition `off_by_one` of `fold` does not hold
 }
 
 proc values(e: Expr) {
-    expect positive_add: when e is Expr::Add(Expr::Val(1), Expr::Val(2)), eval(e) = 3
-    expect not_five: eval(e) != 5   --~ error: expectation `values::not_five` does not hold
+    expect positive_add: when e is Expr::Add(Expr::Val(1), Expr::Val(2)), eval(e) = 3   --~ warning: could not decide whether `values::positive_add` holds
+    expect not_five: when e is Expr::Val(_), eval(e) != 5   --~ error: expectation `values::not_five` does not hold
 }

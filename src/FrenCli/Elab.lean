@@ -423,9 +423,8 @@ structure CComp where
   directly, through a call or through a defined function, which sets
   `fmf-bound` (`Reqs/Lang/Quantifiers#guards`). -/
   guarded : Bool := false
-  /-- For the body of a structural recursion, its induction hypotheses
-  (`Fren.Core.Comp.induction`). -/
-  induction : Array (Lean.Name × String) := #[]
+  /-- This function uses simultaneous Hoare induction. -/
+  recursive : Bool := false
   deriving Inhabited
 
 def conj (fs : Array String) : String :=
@@ -739,13 +738,8 @@ structure State where
   /-- Each defined function's parameters and result type, and its body over
   the parameters, in order. -/
   defs : Array (Name × Array (Name × Ty) × Ty × String) := #[]
-  /-- The defined functions that are structural recursions, which the
-  solver is given as recursive definitions, `define-fun-rec`
-  (`Reqs/Lang/Recursion#solver-encoding`). -/
+  /-- Structural recursions, used opaquely with one-step ground equations. -/
   recursiveDefs : Std.HashSet Name := {}
-  /-- The structural recursions whose applications are not decided on
-  arguments that vary (`lang::recursive_kind`). -/
-  undecidedDefs : Std.HashSet Name := {}
   /-- The contracts of the functions that have one, by path
   (`Reqs/Lang/Items#contracts`). -/
   contracts : NameMap Contract := {}
@@ -935,20 +929,13 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   guardedUsed : Bool := false
   /-- In a defined function's body, its uses of itself so far, each where
   it is written (`lang::structural_recursion`). -/
+  recApps : Array (Span × Array String × Array String) := #[]
   recUses : Array (Span × Fren.Core.RecUse) := #[]
-  /-- In a defined function's body, the occurrences so far of its
-  parameters and of the binders bound from their payloads, each by where
-  it starts (`lang::recursive_kind`). -/
-  recOccs : Array (Nat × Fren.Core.PayloadOcc) := #[]
   /-- In a defined function's body, the patterns of the `match`es on a
   parameter, or on a binder bound from a payload of one, that are not a Lean
   `match` and have a recursive application under them, each the first
   pattern that a Lean `match` does not have (`lang::recursive_match`). -/
   recMatches : Array Span := #[]
-  /-- In a defined function's body, whether an arm of a `match` on a
-  parameter, without a guard, is a payload of the result's type
-  (`lang::recursive_decided`). -/
-  recOnto : Bool := false
   /-- The defined functions and constants whose bodies or values have such a
   quantifier, directly or through others. -/
   guardedItems : Std.HashSet Name := {}
@@ -1207,15 +1194,6 @@ def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse)
   if let .notStructural _ i := Fren.Core.recursion ps.size (uses.toList.map (·.2)) then
     -- A function always has a parameter; without one, the message names the function.
     err span (Fren.Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr))
-
-/-- Records the occurrence `o`, starting where `span` does, of a parameter
-or of a binder bound from a payload of one, in a defined function's body
-that may recurse (`lang::recursive_kind`): once for each place, the
-first recorded, as an expression elaborated again is not another
-occurrence. -/
-def noteRecOcc (span : Span) (o : Fren.Core.PayloadOcc) : M Unit := do
-  if (← get).recOccs.any (·.1 == span.start) then return
-  modify fun s => { s with recOccs := s.recOccs.push (span.start, o) }
 
 structure ExprCtx where
   vars : Array CVar
@@ -4315,12 +4293,6 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
     let span := segs[0]!.span
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
-        -- A binder bound from a payload of a parameter, of the parameter's
-        -- type, used other than as a recursive application's argument
-        -- (`lang::recursive_kind`).
-        if let some j := b.payloadOf? then
-          if cx.selfRec?.isSome && cx.vars[j]?.any (·.ty == b.ty) then noteRecOcc span { pos := j, occ := .other }
-        -- A bound name has no scrutinee: it mentions nothing.
         if let some sc := b.scrutinee then
           if b.isDef then
             -- A name stands for its definition: its indexes are guarded
@@ -4340,11 +4312,6 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
         let ks := (List.range n.components.length).reverse.map (· + 1)
         match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
         | some (v, k) =>
-          -- A parameter, other than as a `match`'s scrutinee
-          -- (`lang::recursive_kind`).
-          if let some (ps, _, _) := cx.selfRec? then
-            if let some j := ps.idxOf? v.name then noteRecOcc span { pos := j, occ := .other }
-          -- A defined output mentions what its definition does.
           for u in if cx.unmentioned then #[] else defDeps cx.vars v do
             let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
             let ok := match cx.refining? with
@@ -4443,13 +4410,15 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
     unless args.size == ft.params.size do err span (Fren.Core.arityMsg f ft.params.size args.size)
     noteRecUse fnSpan f ps { form := if cx.inClosure then .inClosure else .applied
                              args := args.toList.zipIdx.map fun (a, i) => cx.recArg a i }
-    for a in args, k in [0:args.size] do
-      if cx.recArg a k == .payload then noteRecOcc a.span { pos := k, occ := .recursed }
     let mut smts := #[]
     for a in args, t in ft.params, k in [0:args.size] do
       let (x, ta) ← elabExpr { cx with expected? := some t } a
       liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath f}` has type `{t.show}`"))
+      let pt := (((← get).funPTys.find? f).map (·.1[k]?.getD default)).getD default
+      noteObligation cx .argument a.span pt x
       smts := smts.push x
+    if cx.noteIndexes then
+      modify fun s => { s with recApps := s.recApps.push (fnSpan, smts, cx.guards) }
     return (s!"({sym} {" ".intercalate smts.toList})", ft.result)
   -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
   if segs.size == 1 then
@@ -4594,12 +4563,6 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       noteObligation cx .argument a.span (ptys[k]?.getD default) x
       smts := smts.push x
     notePreconditions cx fnSpan path smts
-    -- A structural recursion that is not decided on arguments that vary
-    -- (`lang::recursive_kind`).
-    -- But its own value in its own contract, which the postcondition check
-    -- reads by induction (`Reqs/Lang/Recursion#contracts`).
-    if (← get).undecidedDefs.contains path && cx.contract?.all (·.1 != path) then
-      checkCore cx fnSpan .recursion false false args (ground := ← args.allM (isConstant cx))
     -- Its body's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
@@ -4951,20 +4914,13 @@ partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : 
 
 /-- `elabExpr` on a `match`. -/
 partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (parent? : Option Expr) (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (isTable : Bool) : M (String × Ty) := do
-  -- The parameter itself, matched on (`lang::recursive_kind`).
   let origin? := cx.recOrigin? scrutinee
-  if let some (j, false) := origin? then noteRecOcc scrutinee.span { pos := j, occ := .matched }
   let (s, ts) ← elabExpr cx scrutinee
   unless ts matches .enum .. | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.scrutineeMsg ts.show)
   -- Each arm's pattern, its binders and its test.
   let mut resolved := #[]
   for (p, _, _) in arms do resolved := resolved.push (← resolvePattern cx ts s false false p)
   let pats := resolved.map (·.1)
-  -- A `match` on a parameter, or on a binder bound from a payload of one,
-  -- that looks into a payload with a variant's pattern
-  -- (`lang::recursive_kind`).
-  if let some (j, _) := origin? then
-    if pats.any Fren.Core.Pat.looksIntoPayload then noteRecOcc span { pos := j, occ := .other }
   let usesBefore := (← get).recUses.size
   let guarded := arms.map (·.2.1.isSome)
   -- In a table over a scrutinee, only the last arm may be `_` without a
@@ -5015,12 +4971,6 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
       -- from a payload of that parameter; so is the whole of such a binder.
       let payloadOf? := cx.recOrigin? scrutinee |>.bind fun (j, p) => if b.payload || p then some j else none
       new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size, payloadOf? }
-    -- An arm of a `match` on a parameter, without a guard, whose value is a
-    -- payload of the result's type: the function is onto that type
-    -- (`lang::recursive_decided`).
-    if let (some (_, false), some (_, ft, _)) := (origin?, cx.selfRec?) then
-      if guard?.isNone && (soleName? body).any (fun m => new.any fun b => b.name == m && b.payloadOf?.isSome && b.ty == ft.result) then
-        modify fun s => { s with recOnto := true }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let guardOf (g : Expr) : M (String × Option String) := do
@@ -5069,7 +5019,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   -- A recursive application under a `match` on an enumeration's parameter
   -- or payload that is not a Lean `match` (`lang::recursive_match`).
   if origin?.isSome && ts matches .enum .. then
-    if let some k := Fren.Core.firstNonLeanPattern? pats then
+    if let some k := Fren.Core.firstNonLeanPattern? pats guarded then
       if (← get).recUses.size > usesBefore then
         modify fun s => { s with recMatches := s.recMatches.push arms[k]!.1.span }
   -- The first arm that is taken. Where the arms without guards are
@@ -6259,7 +6209,7 @@ postconditions to check. -/
 def noteBody (n : Name) (span : Span) (vars : Array CVar)
     (contract : Array CProp × Array (Name × Fren.Core.IndexPlace × Span × Fren.Core.TableGoal × String) := (#[], #[]))
     (fn? : Option Name := none) (obligations : Array (Span × String × Option (String × Bool)) := #[])
-    (generic : Bool := false) (induction : Array (Lean.Name × String) := #[]) : M Unit := do
+    (generic : Bool := false) : M Unit := do
   let tables := (← takeTables).map fun (sp, q, g) => (n, Fren.Core.IndexPlace.body, sp, q, g)
   -- The indexes of its contract's clauses are not checked, nor their
   -- values given where pattern types are declared.
@@ -6271,7 +6221,8 @@ def noteBody (n : Name) (span : Span) (vars : Array CVar)
   modify fun s => { s with
     bodies := s.bodies.push { path := s.module, file := s.file, span, vars, props, decidable := !s.outsideCore
                               tables := tables ++ sites, natApps := s.natApps, bodyOf? := some n, fn?, generic, guarded := s.guardedUsed
-                              indexes := obligations.map fun (sp, g, t) => (n, .body, sp, g, t), induction } }
+                              indexes := obligations.map fun (sp, g, t) => (n, .body, sp, g, t)
+                              recursive := fn?.any s.recursiveDefs.contains } }
 
 /-- The function type written `segs`, a defined function's parameter's
 (`Reqs/Lang/HigherOrder#function-types`): its parameters' and result's
@@ -6699,15 +6650,13 @@ partial def elabItem (item : Item) : M Unit := do
       let selfRec? := if tps.isEmpty && fnPs.isEmpty then
         some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
       let cx : ExprCtx := { vars, place := .prop, selfFn := some n, expected? := if r == .nat then some .nat else none, fnParams, selfRec? }
-      modify fun s => { s with recUses := #[], recOccs := #[], recMatches := #[], recOnto := false }
+      modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
       let (smt, t) ← elabExpr cx body
       let uses := (← get).recUses
       let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
       if recursion matches .structural _ then
         if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
-        let kind := Fren.Core.recursiveKind recursion ((← get).recOccs.toList.map (·.2))
-        modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path
-                                 undecidedDefs := if kind.decided r s.recOnto then s.undecidedDefs else s.undecidedDefs.insert path }
+        modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path }
       noteObligation cx .body body.span rp smt
       let bodyTables ← takeTables
       let bodyObligations ← takeIndexes
@@ -6754,31 +6703,14 @@ partial def elabItem (item : Item) : M Unit := do
         for args in (← get).pendingInsts do discard (instantiate path args)
         modify fun s => { s with pendingInsts := #[] }
       modify fun s => { s with tables := bodyTables }
-      -- A structural recursion's postconditions are checked by induction
-      -- on its decreasing parameter (`Reqs/Lang/Recursion#contracts`).
-      let induction ← match recursion with
-        | .structural i => do
-          let st ← get
-          let some k := st.contracts.find? path | pure #[]
-          let dOf : Option DataDecl := match vars[i]!.ty with
-            | .enum p _ => st.dataOf? p
-            | _ => none
-          let some d := dOf | pure #[]
-          let params := vars.map fun v => quote v.name.toString
-          let at_ (args : Array String) (sym : String) : String := s!"({sym} {" ".intercalate args.toList})"
-          let mut out := #[]
-          for (c, fs) in d.ctors, idx in [0:d.ctors.size] do
-            for (_, t) in fs, j in [0:fs.size] do
-              unless t == vars[i]!.ty do continue
-              let args := params.set! i s!"({d.selSym c j} {params[i]!})"
-              let pres := k.pres.map fun (_, p) => at_ args p
-              let tester := d.tester idx params[i]!
-              for (pn, post) in k.posts do
-                let fact := if pres.isEmpty then at_ args post else s!"(=> (and true {" ".intercalate pres.toList}) {at_ args post})"
-                out := out.push (n ++ pn ++ c ++ Name.mkSimple (toString j), s!"(=> {tester} {fact})")
-          pure out
-        | _ => pure #[]
-      noteBody n name.span vars (props, sites) path bodyObligations (induction := induction)
+      let st ← get
+      let pres := ((st.contracts.find? path).map (·.pres)).getD #[]
+      let selfSites := st.recApps.flatMap fun (sp, args, gs) =>
+        pres.map fun (pn, sym) =>
+          let p := s!"({sym} {" ".intercalate args.toList})"
+          (sp, Fren.Core.TableGoal.precondition path pn, if gs.isEmpty then p else s!"(=> {conj gs} {p})")
+      modify fun s => { s with tables := s.tables ++ selfSites }
+      noteBody n name.span vars (props, sites) path bodyObligations
       lintDeclared .function n name.span
       lintLines .function n name.span last
     unless isPub do
@@ -7109,6 +7041,8 @@ quoted symbols that it declares. -/
 structure PreludeDecl where
   text : String
   syms : Array String
+  recursion? : Option (Array String × String) := none
+  domain : Array String := #[]
   deriving Inhabited, BEq
 
 /-- `(declare-sort ...)` for every abstract type, `(declare-datatype ...)`
@@ -7126,12 +7060,15 @@ def State.prelude (s : State) : Array PreludeDecl :=
     let sym := (s.instSyms.find? p).getD (itemSym p)
     { text := s!"(declare-fun {sym} ({" ".intercalate (ps.toList.map (·.sort))}) {r.sort})\n", syms := #[unquote sym] }
   let defs := s.defs.map fun (p, ps, r, body) =>
-    let ps := " ".intercalate (ps.toList.map fun (x, t) => s!"({quote x.toString} {t.sort})")
+    let binders := " ".intercalate (ps.toList.map fun (x, t) => s!"({quote x.toString} {t.sort})")
     -- An instance of a generic function has a symbol of its own.
     let sym := (s.instSyms.find? p).getD (itemSym p)
-    -- A structural recursion is a recursive definition (`Reqs/Lang/Recursion#solver-encoding`).
-    let cmd := if s.recursiveDefs.contains p then "define-fun-rec" else "define-fun"
-    { text := s!"({cmd} {sym} ({ps}) {r.sort} {body})\n", syms := #[unquote sym] }
+    if s.recursiveDefs.contains p then
+      ({ text := s!"(declare-fun {sym} ({" ".intercalate (ps.toList.map (·.2.sort))}) {r.sort})\n"
+         syms := #[unquote sym], recursion? := some (ps.map (quote ∘ toString ∘ Prod.fst), body)
+         domain := ((s.bodies.find? (·.fn? == some p)).map fun b => b.vars.filterMap (·.fact?)).getD #[] } : PreludeDecl)
+    else
+      { text := s!"(define-fun {sym} ({binders}) {r.sort} {body})\n", syms := #[unquote sym] }
   -- After every function, since a clause may apply its own and those
   -- declared before it.
   let clauses := s.clauseDefs.map fun (sym, ps, body) =>
@@ -7143,7 +7080,7 @@ def State.prelude (s : State) : Array PreludeDecl :=
 result is a `Nat`, and its contract, for the facts that its applications
 bring (`appFactsOf`). -/
 def State.appFuns (s : State) : Std.HashMap String (Bool × Contract) :=
-  s.funs.foldl (init := {}) fun m (p, _, r) =>
+  (s.funs ++ s.defs.filterMap (fun (p, ps, r, _) => if s.recursiveDefs.contains p then some (p, ps.map (·.2), r) else none)).foldl (init := {}) fun m (p, _, r) =>
     m.insert ((s.instSyms.find? p).getD (itemSym p)) (r == .nat, (s.contracts.find? p).getD {})
 
 /-- Each instance that the spec's items use of a generic function without a

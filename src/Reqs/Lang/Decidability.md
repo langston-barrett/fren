@@ -17,7 +17,9 @@ fragment is decidable does not mean that the solver decides every query
 in it quickly, or at all: see [In practice](#in-practice) for where it
 does and where it does not. An `Inconclusive` verdict then means that the
 solver ran out of time, and the [message](../View.md#check-results) says
-to raise the time limit. In a procedure that opts out, it may also mean
+to raise the time limit. With recursive functions, it may instead mean that evaluation refuted
+a model allowed by their contracts (`F0450`); strengthen those contracts
+rather than raising the time limit. In a procedure that opts out, it may also mean
 that the solver gave up, and the message says that instead.
 
 The rest of the language is decidable by three rules:
@@ -242,10 +244,14 @@ does, for the rules above.
 
 ## Recursion
 
-An application of a [structural recursion](Recursion.md) is in the core
-on arguments that vary only when the function is a catamorphism into
-`Bool` or a set; on constant arguments, every application is
-(`lang::recursive_kind`, [Recursion](Recursion.md#decidability)).
+Applications of [structural recursions](Recursion.md) are opaque,
+with ground postconditions and one step of defining equations at each
+application. Applications introduced by that step receive postconditions
+only. This is finite and adds no quantifiers, even for constant arguments,
+so recursion never raises `undecidable`. Completeness is modulo this
+opacity: facts requiring more of a recursive body than its one-step
+equations and contract are not promised. Strengthen its contract to prove
+such facts. Models refuted by evaluation are Inconclusive (`F0450`).
 
 ## In practice
 
@@ -301,12 +307,10 @@ pub mod lang
 -- `SeqArray` is a sequence's literals, `len`, indexing and `update`; `SeqWord`
 -- is the other operations on sequences; `Quantifier` is an unbounded
 -- quantifier's binder of a type that is not listed, of a quantifier that
--- `element_quantifier` does not put in the core; `Recursion` is an
--- application of a structural recursion that `lang::recursive_kind` does
--- not decide.
+-- `element_quantifier` does not put in the core.
 pub enum Construct {
     StringCompare, StringAtom, StringIndex, StringSearch, SetAlgebra, SetFunction, Relational, RelationalCard,
-    SeqArray, SeqWord, Quantifier, Recursion,
+    SeqArray, SeqWord, Quantifier,
 }
 
 pub proc in_core(
@@ -321,7 +325,6 @@ pub proc in_core(
 ): (det decidable?) {
     use self::Construct::{
         Quantifier,
-        Recursion,
         Relational,
         RelationalCard,
         SeqArray,
@@ -341,7 +344,7 @@ pub proc in_core(
         SetFunction => infinite_elems?,
         Relational => finite_range?,
         SeqWord => literal_operand?,
-        StringSearch | RelationalCard | Recursion | Quantifier => false,
+        StringSearch | RelationalCard | Quantifier => false,
     })))
 
     expect outputs_block: when infinite_output? and not ground?, not decidable?
@@ -351,7 +354,6 @@ pub proc in_core(
     expect algebra_always: when construct = SetAlgebra and not infinite_output?, decidable?
     expect relational_finite: when construct = Relational and not ground? and decidable?, finite_range?
     expect relational_card_never: when construct = RelationalCard and not ground?, not decidable?
-    expect recursion_ground: when construct = Recursion, decidable? iff ground?
     expect arrays_always: when construct = SeqArray and not infinite_output?, decidable?
     expect words_literal: when construct = SeqWord and not ground? and decidable?, literal_operand?
 }

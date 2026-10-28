@@ -16,7 +16,7 @@ fn get<T>(o: Option<T>, d: T): (r: T) {
 -- A postcondition that does not hold, whatever the type.
 fn pick<T>(a: T, b: T): (r: T) {
     out r := a
-    ensure second: pick(a, b) = b  --~ error: counterexample: a = T#0, b = T#1
+    ensure second: pick(a, b) = b  --~ error: the postcondition `second` of `generic_functions_contracts::pick` does not hold
 }
 
 -- A generic body that applies `get` without its precondition: a value of a

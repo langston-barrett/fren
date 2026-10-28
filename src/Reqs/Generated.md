@@ -463,9 +463,21 @@ definitions: the obligation is `p.n` applied to the arguments, and the
 claim is that `p.n` holds for all values of the parameters for which each
 precondition does. The [postcondition check](Check.md#postconditions) is
 trusted from the solver, as every check is, so a defined function's
-postconditions are not Lean theorems; an uninterpreted function's are,
+nonrecursive postconditions are not Lean theorems; an uninterpreted function's are,
 of its [interpretation](Impl.md#interpretations): a theorem, or an axiom
 where the solver proved them.
+
+For a recursive definition, `#fren_check` also generates `f.contract`,
+proved by structural induction on the decreasing parameter, with all
+postconditions as a simultaneous induction motive. The definition's generated
+structural induction principle is used when ordinary datatype induction
+does not supply the needed hypotheses. This supplies hypotheses at nested payload calls as well as direct
+children. Each clause gets
+`f.clause.holds`, projected from that proof. These theorems are generated
+only when all postcondition checks pass. Induction cases use one-step
+equations, constructor equalities, and induction hypotheses at the actual
+recursive applications. Solver steps use `trust := true`, as other hosted
+checks do; a case that does not close prevents theorem generation.
 
 ## Constants
 

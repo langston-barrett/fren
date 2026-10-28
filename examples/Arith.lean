@@ -18,17 +18,16 @@ open Fren.Lang
 -- The spec, in its module `arith`.
 #fren_md "arith.fren"
 
+-- Also generates the contract theorem by structural induction.
+#fren_check
+
 namespace Arith
 
 open arith
 
 /-- Folding keeps every expression's value: the spec's `keeps_value`. -/
 theorem eval_fold (e : Expr) : eval (fold e) = eval e := by
-  induction e with
-  | Val n => simp [fold, eval]
-  | Add a b iha ihb =>
-    rw [fold, eval, ← iha, ← ihb]
-    split <;> (try split) <;> simp_all [eval] <;> omega
+  exact Fren.Generated.arith.fold.keeps_value.holds e
 
 /-- Whether an expression is a value. -/
 def isVal : Expr → Bool

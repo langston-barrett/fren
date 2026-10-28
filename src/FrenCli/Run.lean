@@ -667,6 +667,7 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
       let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
       pure (← Fren.Core.checkComp bk core ks examples interprets, none)
   let (results, refuted) := applyRefutations raw (← log.get)
+  let results := Fren.Core.recursiveResults c.recursive results
   -- The contract of a generic function without a body, where its check at
   -- its type parameters' sorts does not pass: its check at each instance
   -- that the spec applies, in order of their names (`lang::generic_contract`).

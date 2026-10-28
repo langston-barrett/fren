@@ -143,9 +143,17 @@ def Symbols.of (sp : Spec) : Symbols := Id.run do
       -- A record's constructor is `R{}` (`recordCtorSym`), which no field can be.
       let ctor := if d.isRecord then s!"{shown}\{}" else s!"{shown}::{c.name}"
       ctors := ctors.insert ctor (p, idx)
+      -- Parametric datatype constructors use simple qualified symbols.
+      let generic := "~".intercalate (shown.splitOn "::") ++ (if d.isRecord then "~" else s!"~{c.name}")
+      ctors := ctors.insert generic (p, idx)
+      if let some l := Fren.Core.leanTypeOf? p then
+        if let some ctor := l.ctors[idx]? then ctors := ctors.insert ctor.toString (p, idx)
       for (f, _) in c.fields, k in [0:c.fields.size] do
         let sel := if d.isRecord then s!"{shown}::{f}" else s!"{shown}::{c.name}::{k}"
         selectors := selectors.insert sel (p, idx, k)
+        if let some l := Fren.Core.leanTypeOf? p then
+          if let some sel := (l.selectors[idx]?.getD #[])[k]? then
+            selectors := selectors.insert sel (p, idx, k)
   for p in sp.sorts do sorts := sorts.insert s!"::{Fren.Core.showPath p}" p
   return { ctors, selectors, sorts }
 
@@ -172,6 +180,11 @@ partial def Symbols.eval (sy : Symbols) (env : List (String × Val)) : SExp → 
     else if let some n := a.toNat? then some (.int n)
     else if let some (p, idx) := sy.ctors[a]? then some (.ctor p idx #[])
     else sy.abstract? a
+  | .list #[.atom "let", .list bindings, body] => do
+    let values ← bindings.mapM fun
+      | .list #[.atom name, value] => return (name, ← sy.eval env value)
+      | _ => none
+    sy.eval (values.toList ++ env) body
   | .list #[.atom "as", e, _] => sy.eval env e
   | .list #[.atom "-", e] => match sy.eval env e with
     | some (.int x) => some (.int (-x))
@@ -185,7 +198,10 @@ partial def Symbols.eval (sy : Symbols) (env : List (String × Val)) : SExp → 
     let .bool c ← sy.eval env c | none
     sy.eval env (if c then a else b)
   | .list xs => do
-    let .atom f := xs[0]? |>.getD (.atom "") | none
+    let f ← match xs[0]? with
+      | some (SExp.atom f) => some f
+      | some (SExp.list #[SExp.atom "as", SExp.atom f, _]) => some f
+      | _ => none
     let args ← (xs.extract 1).mapM (sy.eval env)
     match f, args with
     | "not", #[.bool a] => return .bool !a
@@ -304,6 +320,20 @@ structure Refutation where
   model : Array (Name × String)
   deriving Inhabited
 
+/-- Recursive applications in the evaluator's formulas, including those
+inside expanded nonrecursive definitions. -/
+partial def Fm.recursiveNames (sp : Spec) : Fm → Array Name
+  | .atoms as => as.flatMap fun a => names a.e
+  | .not f | .primed _ f | .exOutputs _ f => f.recursiveNames sp
+  | .conj fs => fs.flatMap (·.recursiveNames sp)
+  | .defn _ e => names e
+  | .defined ds f => ds.flatMap (names ∘ Prod.snd) ++ f.recursiveNames sp
+  | _ => #[]
+where
+  names (e : Ex) : Array Name :=
+    (match e with | .app f _ => if sp.recDefs.contains f then #[f] else #[] | _ => #[])
+      ++ e.children.flatMap names
+
 /-- `b`, with each formula paired with its meaning, and each model
 evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
 which the caller builds once for the spec. -/
@@ -320,6 +350,9 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
         let bad := vals.find? (·.2 == some false)
         let g := goal.2.eval sp sy I env tys
+        let recursive := (hyps.flatMap fun (_, f) => f.2.recursiveNames sp) ++ goal.2.recursiveNames sp
+        if !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true)) then
+          return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then
           let hyp? := bad.map (·.1)
@@ -375,9 +408,8 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     -- An uninterpreted function's postconditions, of its value, which the
     -- evaluator's procedure of its contract does not have: undecided.
     reqs := if core.fn?.isSome then core.reqs.map fun (n, s) => (n, (s, .unknown)) else props core.reqs
-    posts := props core.posts, fn? := core.fn?, generic := core.generic
+    posts := props core.posts, fn? := core.fn?, generic := core.generic, recursive := core.recursive
     -- Hypotheses of the solver's alone, which the evaluator does not read.
-    induction := core.induction.map fun (n, s) => (n, (s, .unknown))
     covers := props core.covers
     triggers := core.triggers.map fun (n, s) => (n, (s, trigger n))
     indexes := core.indexes.mapIdx fun j x =>

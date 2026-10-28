@@ -1377,7 +1377,7 @@ impl method_type: lang::method_type for (m : Fren.Core.Method) (k : lang.ValueTy
 
 instance : Fren.Finite Fren.Core.Construct :=
   ⟨[.stringCompare, .stringAtom, .stringIndex, .stringSearch, .setAlgebra, .setFunction, .relational, .relationalCard, .seqArray, .seqWord,
-    .quantifier, .recursion], by intro x; cases x <;> simp⟩
+    .quantifier], by intro x; cases x <;> simp⟩
 
 def toConstruct : Fren.Core.Construct → lang.Construct
   | .stringCompare => .StringCompare
@@ -1391,7 +1391,6 @@ def toConstruct : Fren.Core.Construct → lang.Construct
   | .seqArray => .SeqArray
   | .seqWord => .SeqWord
   | .quantifier => .Quantifier
-  | .recursion => .Recursion
 
 impl in_core: lang::in_core for (c : Fren.Core.Construct) (a m i g f r l : Bool) {
   construct := toConstruct c,
@@ -3254,5 +3253,31 @@ impl prelude_sort: lang::prelude_sort for (s : String) {
     simp [Fren.Core.leanSortNames, Fren.Core.leanTypes, Lean.Name.getString!]
   by_cases ho : s = "Option" <;> by_cases he : s = "Except" <;>
     simp_all [fren_spec, Fren.Core.userSortSym, Fren.Str.lit]
+
+-- The shared policies used when constructing recursive queries and reporting
+-- their results; these bind the structured requirements to the real helpers.
+impl recursive_facts: lang::recursive_facts for (introduced : Bool) {
+  origin := if introduced then lang.RecApplication.Reflected else lang.RecApplication.Written,
+  facts := { posts? := (Fren.Core.recursiveFacts introduced).1,
+             equation? := (Fren.Core.recursiveFacts introduced).2 },
+} by
+  intro introduced _
+  cases introduced <;> simp [fren_spec, Fren.Core.recursiveFacts]
+
+impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (failed : Bool) {
+  result := r,
+  another_unproved? := failed,
+  reported := if r = .Passed ∧ !Fren.Core.recursivePostResult true failed then .Inconclusive else r,
+} by
+  intro r failed _
+  cases r <;> cases failed <;> simp [fren_spec, Fren.Core.recursivePostResult]
+
+impl recursive_counterexample: lang::recursive_counterexample for (recursive confirms : Bool) {
+  applies_recursive? := recursive,
+  evaluation_confirms? := confirms,
+  report_counterexample? := Fren.Core.recursiveCounterexample recursive confirms,
+} by
+  intro recursive confirms _
+  cases recursive <;> cases confirms <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
 
 end Fren.Impls

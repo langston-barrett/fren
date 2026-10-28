@@ -3109,6 +3109,8 @@ the parameter, which Lean's structural recursion sees through. A Lean
 `match` has patterns of variants, binders and `_`, with or-patterns only at
 the top; a literal, a range, or an or-pattern within a payload would make it
 a chain of `if`s, which Lean's structural recursion cannot see through.
+Guarded constructor matches containing recursion are also rejected in both
+front ends; write the conditional inside an unguarded constructor arm.
 Match on the variant, and on the literal in an inner `match` on the binder:
 
 ```fren
@@ -3120,6 +3122,15 @@ pub fn depth(e: Expr): Int := match e {
 }
 ```
 "# },
+  { code := "F0450", explanation := r#"A check fails only under recursive functions' contracts.
+
+Recursive applications are opaque, with one step of their defining equations.
+A solver model may therefore give them values that the real definitions do not
+produce. Fren evaluates the counterexample's inputs before reporting it.
+If evaluation does not confirm the failure, the check is Inconclusive.
+Strengthen the named recursive functions' contracts to make the needed facts
+available (`Reqs/Lang/Recursion#counterexamples-and-completeness`).
+"#, args := none },
   { code := "F0501", explanation := r#"A `tested` claim names a file that cannot be read.
 
 Erroneous code example:

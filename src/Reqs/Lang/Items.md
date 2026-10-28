@@ -744,6 +744,11 @@ or unknown, for an uninterpreted one: the failure is reported, never
 assumed away. A defined function's body, and its postconditions, are
 checked under its preconditions.
 
+A recursive defined function is used opaquely in checks, with the same
+application obligations and postcondition facts as an uninterpreted
+function, plus the finite one-step equations of [Recursion](Recursion.md).
+Its contract is checked by simultaneous Hoare induction against its body.
+
 A defined function's postconditions are claims about its body, which the
 [postcondition check](../Check.md#postconditions) confirms for every
 value of the parameters that meets the preconditions, as the expectation
