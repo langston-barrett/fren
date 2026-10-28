@@ -610,6 +610,8 @@ writes it. -/
 structure EV where
   at? : Option (Nat × Nat)
   shown : String
+  /-- Exact assignment, including hidden function tables, for observations. -/
+  environment? : Option (Array Nat) := none
   deriving Inhabited
 
 /-- The checks' backend over the space `sp`, whose atoms are `ats`
@@ -636,7 +638,11 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
       let defd ← defs.filterMapM fun (d, primed) => do
         let e := if primed then sp.primedEnv env else env
         return (← defValue d e).map fun v => (if primed then primed' d else d, ({ at? := none, shown := v } : EV))
-      return .sat (shown ++ defd)
+      return .sat (shown ++ defd ++ #[(Lean.Name.mkSimple "#member_model", { at? := none, shown := "", environment? := some env })])
+  modelBool? := some fun model formula => pure do
+    let (_, token) ← model.find? (·.1 == Lean.Name.mkSimple "#member_model")
+    let env ← token.environment?
+    return formula.eval sp ats env
   falseF := .ff
   notF := .not
   conj := .conj
@@ -699,12 +705,70 @@ def _root_.Fren.Core.Comp.atoms (c : Comp F) : Comp EF × Array F := Id.run do
     let mut members := #[]
     for member in group.members do
       fs := fs.push member.formula
-      members := members.push { name := member.name, formula := EF.atom next
-                                range? := member.range?, text := member.text }
+      let formula := EF.atom next
       next := next + 1
-    groups := groups.push { owner := group.owner, kind := group.kind, members }
+      let value ← match member.valueFormula? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      let guard ← match member.evaluationGuard? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      members := members.push {
+        name := member.name
+        formula := formula
+        valueFormula? := value
+        evaluationGuard? := guard
+        range? := member.range?
+        text := member.text
+      }
+    let guard ← match group.guard? with
+      | none => pure none
+      | some f => do
+        fs := fs.push f
+        let atom := some (EF.atom next)
+        next := next + 1
+        pure atom
+    groups := groups.push { owner := group.owner, kind := group.kind, members, guard? := guard }
+  let mut observations := #[]
+  for group in c.memberGroups do
+    let mut members := #[]
+    for member in group.members do
+      fs := fs.push member.formula
+      let formula := EF.atom next
+      next := next + 1
+      let value ← match member.valueFormula? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      let guard ← match member.evaluationGuard? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      members := members.push {
+        name := member.name
+        formula := formula
+        valueFormula? := value
+        evaluationGuard? := guard
+        range? := member.range?
+        text := member.text
+      }
+    observations := observations.push { owner := group.owner, op := group.op, wanted := group.wanted, members }
   out := { out with assumes := named[0]!, reqs := named[1]!, expects := named[2]!, covers := named[3]!, triggers := named[4]!
-                    posts := named[5]!, insts, tables, branchGroups := groups
+                    posts := named[5]!, insts, tables, branchGroups := groups, memberGroups := observations
                     defs := c.defs.map fun (d, _, _) => (d, .tt, .tt) }
   return (out, fs)
 

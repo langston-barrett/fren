@@ -200,6 +200,13 @@ private def variantBackend : Backend (StateM Queries) Formula Nat where
       "exactly-one is not parity when three members hold"
   ensure ((alternatives.toList.head?.map (fun (a : BranchAlternative Formula) => a.memberWanted)) == some #[(`choice.x, true), (`choice.y, false), (`choice.always, false)])
     "chosen/unchosen polarities were lost"
+  let inactive := { group with guard? := some no }
+  ensure ((inactive.alternatives backend).all fun alternative => (List.range 4).all alternative.formula)
+    "inactive leading guard must make every completed alternative vacuous"
+  let active := { group with guard? := some x }
+  for i in List.range 4 do
+    ensure (((active.alternatives backend).any fun a => a.formula i) == (!x i || (!x i && !y i)))
+      "leading guard must wrap exactly-one as a whole"
   let singleton : BranchGroup Formula := {
     owner := `single, kind := .exactlyOne,
     members := #[{name := `single.x, formula := x}] }

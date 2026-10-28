@@ -126,6 +126,7 @@ structure BranchMember (F : Type) where
 structure BranchGroup (F : Type) where
   owner : Name
   kind : BranchKind
+  guard? : Option F := none
   members : Array (BranchMember F)
   deriving Inhabited, BEq
 
@@ -135,7 +136,7 @@ def BranchMember.map (f : F → G) (member : BranchMember F) : BranchMember G :=
     evaluationGuard? := member.evaluationGuard?.map f, range? := member.range?, text := member.text }
 
 def BranchGroup.map (f : F → G) (group : BranchGroup F) : BranchGroup G :=
-  { owner := group.owner, kind := group.kind, members := group.members.map (·.map f) }
+  { owner := group.owner, kind := group.kind, members := group.members.map (·.map f), guard? := group.guard?.map f }
 
 /-- Source observations are distinct from conflict alternatives: a group
 under negation has observations too, while its alternatives need not be
@@ -639,7 +640,7 @@ structure BranchAlternative (F : Type) where
   text : String := ""
 
 def BranchGroup.alternatives (group : BranchGroup F) : Array (BranchAlternative F) :=
-  match group.kind with
+  let cases : Array (BranchAlternative F) := match group.kind with
   | .disjunction => group.members.map fun member =>
     { name := member.name, formula := member.formula, range? := member.range?, text := member.text }
   | .exactlyOne => group.members.map fun chosen =>
@@ -653,6 +654,9 @@ def BranchGroup.alternatives (group : BranchGroup F) : Array (BranchAlternative 
         label := "all hold", wanted? := some true },
       { name := .str group.owner "none", formula := b.conj (group.members.map (b.notF ·.formula))
         label := "none hold", wanted? := some false }]
+  cases.map fun alternative =>
+    { alternative with formula := group.guard?.map (fun guard =>
+        b.notF (b.conj #[guard, b.notF alternative.formula])) |>.getD alternative.formula }
 
 /-- Explain only owners in an already minimized core. Conditional cores
 keep the selected alternative as a fixed hypothesis, so dropping other
