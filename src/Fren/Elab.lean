@@ -3596,6 +3596,7 @@ def lintEqOp (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
   -- Generated Boolean lowering has no written operands to compare.
   if (exactText e).isEmpty then return
   if isConditional e then
+    unless e[0].getHeadInfo matches .original .. do return
     let negated := e[0].getAtomVal.trimAscii.toString == "unless"
     let c := exactText (unparen e[1])
     let seen ← if negated then pure [] else chainBinders cx e[1]
@@ -3603,6 +3604,9 @@ def lintEqOp (cx : ExprCtx) (e : Syntax) : TermElabM Unit := do
       recordLint .eqOp e (Core.eqOpConditionalMsg negated v c)
     return
   unless e.getNumArgs == 3 && e[1].isAtom do return
+  -- The lowering may retain written member spans on synthetic parents.
+  -- Only a written operator has operands that the user wrote together.
+  unless e[1].getHeadInfo matches .original .. do return
   let some op := Core.InfixOp.ofOp? e[1].getAtomVal.trimAscii.toString | return
   let a := exactText (unparen e[0])
   if a.isEmpty || (exactText (unparen e[2])).isEmpty then return
