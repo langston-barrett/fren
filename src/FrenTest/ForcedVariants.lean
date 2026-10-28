@@ -9,13 +9,14 @@ open Fren.Lang
 -- (`test/cli/results/f0601_forced_variant.fren`).
 
 enum Method { Get, Put, Post, Delete }
-type Status := Nat is 100..=599
+type Status = subset_value: Nat  where invariant: subset_value is 100..=599
 ordered struct Seconds(Nat)
 enum Decision { GiveUp, RetryAfter(Seconds) }
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
-proc retry(method: Method, status: Status, attempt: Nat is 1.., retry_after: Seconds): (
+type SubsetForcedVariants1 = subset_value: Nat  where invariant: subset_value is 1..
+proc retry(method: Method, status: Status, attempt: SubsetForcedVariants1, retry_after: Seconds): (
     decision: Decision,
 ) {
     ensure transient:
@@ -44,7 +45,27 @@ info: conflicts with `transient` and `latency_budget`
 ---
 info: conflicts with `transient` and `honor_server`
 ---
-info: fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+info: no branch of `transient` can hold
+---
+info: all hold: `transient.all` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+
+note: conditional core of `transient` under all hold: `honor_server` and `latency_budget`
+---
+info: all hold: `transient.1` cannot hold, because `honor_server` and `latency_budget` forces it to be false
+
+member: decision != Decision::GiveUp
+---
+info: none hold is impossible under the fixed hypotheses
+
+note: conditional core of `transient` under none hold: the fixed hypotheses alone
+---
+info: none hold: `transient.2` must hold, because the fixed hypotheses forces it to be true
+
+member: status is 429 | 503
+                and method != Method::Post
+                and attempt < MAX_ATTEMPTS
+---
+info: fren: 6 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check
@@ -68,7 +89,7 @@ info: conflicts with `transient` and `latency_budget`
 ---
 info: conflicts with `transient` and `honor_server`
 ---
-info: fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+info: fren: 6 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 set_option fren.examples 0 in
