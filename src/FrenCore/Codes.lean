@@ -3877,40 +3877,6 @@ proc c(x: Int): (big?) {
 }
 ```
 "# },
-  { code := "F0622", explanation := r#"A value given for a built-in constrained type may violate its constraint.
-
-Erroneous code example:
-
-```fren
-proc c(x: Int): (b: Nat) { out b := x }
-```
-
-An Int supplied for Nat must be nonnegative. Fren checks this where the
-value is written, under the same hypotheses as an index's definedness.
-The counterexample is a behaviour where the value is negative. Named
-subset invariants have their own diagnostic, F0661.
-
-```fren
-proc c(x: Int): (b: Nat) { out b := if x >= 0 then x else 0 }
-```
-"# },
-  { code := "F0623", explanation := r#"A call argument may violate its parameter's built-in type constraint.
-
-Erroneous code example:
-
-```fren
-proc sub(b: Nat): (y: Int) { ensure r: y = b }
-proc c(x: Int) { call w := sub(x) }
-```
-
-A Nat parameter brings a nonnegative assumption. Its caller must establish
-that constraint before the call. Named subset invariants instead use F0661.
-
-```fren
-proc sub(b: Nat): (y: Int) { ensure r: y = b }
-proc c(x: Nat) { call w := sub(x) }
-```
-"# },
   { code := "F0639", args := some ["quickcheck"], explanation := r#"A quantifier that testing cannot evaluate.
 
 Erroneous code example:

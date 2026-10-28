@@ -400,11 +400,11 @@ def recursiveArgumentMsg (arg ty : String) : Msg :=
 
 /-- The headline of a failed obligation: a value in `subject` that may not
 be a value of the declared type `ty`. -/
-def obligationHeadline (subject ty : String) : String := s!"a value in {subject} may not have the type `{ty}`"
+def obligationHeadline (subject ty : String) : String := s!"the invariant of type `{ty}` does not hold for a value in {subject}"
 
 /-- The messages of a failed obligation, with the counterexample `cex`. -/
 def obligationMsg (subject ty cex : String) (priv : Array String) : Msg :=
-  { code? := some "F0622", headline := obligationHeadline subject ty, label? := some s!"may not have the type `{ty}`"
+  { code? := some "F0661", headline := obligationHeadline subject ty, label? := some s!"may not satisfy the invariant of `{ty}`"
     notes := #[s!"counterexample: {cex}"] ++ priv ++
       #["note: a value given for a constrained type must satisfy its constraint",
         "help: guard the value with a condition that satisfies the constraint, or add an assumption that ensures it"] }
@@ -412,7 +412,7 @@ def obligationMsg (subject ty cex : String) (priv : Array String) : Msg :=
 /-- The message of a call's argument for the parameter `x` of `sub`, whose
 type `ty` its value may not have, with the counterexample `cex`. -/
 def instanceTypeMsg (subject sub x ty cex : String) : Msg :=
-  { code? := some "F0623", headline := s!"the parameter `{x}` of `{sub}` may not have its type `{ty}` for call {subject}"
+  { code? := some "F0661", headline := s!"the invariant of type `{ty}` does not hold for parameter `{x}` of `{sub}` in call {subject}"
     label? := some s!"may not have the type `{ty}`"
     notes := #[s!"counterexample: {cex}",
       s!"note: `{sub}` assumes that `{x}` has the type `{ty}`",

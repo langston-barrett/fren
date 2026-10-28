@@ -1531,11 +1531,11 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
   | .fail, .counterexample vals =>
     if let (.definedness, some ty) := (r.kind, r.patTy?) then
       let m := obligationMsg subject ty (showAssignment vals) priv
-      #[one "F0622" m.headline m.label? m.notes]
+      #[one "F0661" m.headline m.label? m.notes]
     else
     if let (.inst, some (sub, a), some ty) := (r.kind, r.target?, r.patTy?) then
       let m := instanceTypeMsg subject (showComp sub) (a.getPrefix.toString) ty (showAssignment vals)
-      #[one "F0623" m.headline m.label? m.notes]
+      #[one "F0661" m.headline m.label? m.notes]
     else
     if r.kind == .definedness then
       #[one "F0611" s!"an index of {subject} may be out of range" (some "may be out of range")

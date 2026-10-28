@@ -1802,7 +1802,7 @@ solver leaves it unconstrained. The definedness of indexes is not run:
 they are of sequences, which are not enumerable. A value given where a
 pattern type is declared is the solver's to check, whatever the evidence,
 for testing too: neither testing nor enumeration decides it, and dropping
-it would leave a value outside its type unreported (`F0622`, `F0623`).
+it would leave a value outside its type unreported (`F0661`).
 
 The default stays `"solver"`, and `"tested"` stays testing alone: most
 checks set to testing are about strings, sets and sequences, which are
