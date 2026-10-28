@@ -1,0 +1,9 @@
+error[F0104]: expected a nonempty labelled invariant list, found keyword `and`
+ --> test/cli/syntax/empty_subset_invariants.fren:1:33
+  |
+1 | type Missing = value: Int where and {}
+  |                                 ^^^ expected a nonempty labelled invariant list
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0104`.

@@ -2014,8 +2014,10 @@ partial def item : P Item := do
       discard (expectKw ":")
       let base ← typeExpr
       discard (expectKw "where")
+      let invariantStart ← peek
       let labelled ← expr
       let .block _ "and" members := labelled | fail (← peek) "a labelled invariant"
+      if members.isEmpty then fail invariantStart "a nonempty labelled invariant list"
       let invariants ← members.mapM fun (label, body) => do
         let some label := label | fail (← peek) "an invariant label"
         pure (label, body)
