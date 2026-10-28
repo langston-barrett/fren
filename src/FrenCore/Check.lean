@@ -625,6 +625,13 @@ uninterpreted function, as `interprets` says of a formula. -/
 def Comp.realizableInterpreted (c : Comp F) (interprets : F → Bool) : Bool :=
   c.typesInterpreted || (c.defs.map (·.2.1) ++ c.reqs.map (·.2)).any interprets
 
+/-- The SAT shortcut is only a fresh-output declaration carrier, never a
+procedure whose inputs, definitions, assumptions or calls need the ordinary
+universal-completion protocol. Interpretation freedom is checked separately. -/
+def Comp.fixedInhabitation (c : Comp F) (interprets : F → Bool := fun _ => false) : Bool :=
+  c.inhabitation && !c.realizableInterpreted interprets && c.defs.isEmpty &&
+    c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
+
 /-- The clashes of a realizability conflict on the input that `pinned`
 pins, with the minimal core `core` (`clashesOf`): none if they would depend
 on an interpretation (`Comp.realizableInterpreted`), or if some variable
@@ -723,20 +730,11 @@ definitions, so that they are never under `∃` (`check::definitions`). A
 conflict comes with at most `examples` clashes of forced outputs
 (`clashesOf`), `none` for no limit, and none if they would depend on an
 interpretation, as `interprets` says of a formula. -/
-def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
+def checkRealizableUniversal (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
     m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
       generic := c.generic }
-  if c.inhabitation && !c.realizableInterpreted interprets then
-    let fixed := c.defEqs .realizable ++ c.hyps b
-    let q ← b.query (fixed ++ c.reqs) b.falseF true
-    match q with
-    | .sat _ => return result .pass
-    | .unsat =>
-      let core ← minimize b fixed c.reqs b.falseF
-      return result .fail (.conflict #[] core)
-    | .unknown reason => return result .inconclusive (.unknown reason)
   let sub := c.substHyps b
   let assumes := sub c.assumes
   let assumeQ ← b.query assumes b.falseF false
@@ -763,6 +761,24 @@ def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets :
   if verdict == .inconclusive then
     return result verdict (.unknown (if cexQ.reason.isEmpty then assumeQ.reason else cexQ.reason))
   return result verdict
+
+/-- Declaration inhabitation uses SAT only for the validated fixed carrier;
+all other shapes keep the universal-input realizability protocol. -/
+def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
+    m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
+      generic := c.generic }
+  if c.fixedInhabitation interprets then
+    let fixed := c.defEqs .realizable ++ c.hyps b
+    let q ← b.query (fixed ++ c.reqs) b.falseF true
+    match q with
+    | .sat _ => return result .pass
+    | .unsat =>
+      let core ← minimize b fixed c.reqs b.falseF
+      return result .fail (.conflict #[] core)
+    | .unknown reason => return result .inconclusive (.unknown reason)
+  checkRealizableUniversal b c examples interprets
 
 /-- `inst`: an assumption of call `k`'s procedure follows from the
 assumptions, `k`'s bindings and the earlier calls

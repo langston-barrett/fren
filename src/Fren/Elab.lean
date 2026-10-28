@@ -2421,7 +2421,9 @@ def elabProp (t : Term) (type : Expr := mkSort .zero) : TermElabM Expr := do
       if type.isProp && found.isConstOf ``Bool then
         return ← mkEq value (mkConst ``Bool.true)
       if type.isConstOf ``Bool && (← isProp value) then
-        let decision := mkApp (mkConst ``Classical.propDecidable) value
+        let decision ← match ← trySynthInstance (mkApp (mkConst ``Decidable) value) with
+          | .some decision => pure decision
+          | _ => pure (mkApp (mkConst ``Classical.propDecidable) value)
         return mkApp2 (mkConst ``Decidable.decide) value decision
     elabTermEnsuringType t type
   let e ← instantiateMVars e
