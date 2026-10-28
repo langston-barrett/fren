@@ -1,6 +1,6 @@
 # Named Boolean blocks
 
-Prefix `and { ... }`, `or { ... }` and `iff { ... }` expressions contain
+Prefix `and { ... }`, `or { ... }`, `iff { ... }` and `one { ... }` expressions contain
 comma-separated members and permit a trailing comma. Members may start
 with `label:`; an unlabelled member is identified by its position, starting
 at 1. The existing infix named conjunction spelling remains accepted.
@@ -10,11 +10,13 @@ invariants remain the exception: their labels are required by the subset
 declaration grammar.
 
 ```
-block := ("and" | "or" | "iff") "{" [member ("," member)* [","]] "}"
+block := ("and" | "or" | "iff" | "one") "{" [member ("," member)* [","]] "}"
 member := [IDENT ":"] expression
 ```
 
-The block keyword distinguishes these from set and record literals.
+The block keyword distinguishes these from set and record literals. `one`
+is contextual: it starts a block only when followed by `{`; existing
+identifiers, labels and function names `one` remain valid elsewhere.
 Members are ordinary Boolean expressions and may be guarded or contain
 nested blocks. A named infix conjunction has the same meaning as the
 corresponding `and` block. A block label need not be `invariant` outside
@@ -34,7 +36,7 @@ pub mod lang
 
 set_option fren.lint.undecidable "allow"
 
-pub enum BoolBlockKind { Conjunction, Disjunction, Equivalence }
+pub enum BoolBlockKind { Conjunction, Disjunction, Equivalence, ExactlyOne }
 pub enum BoolBlockLabel { Named(String), Index(Nat) }
 pub struct BoolBlockMember { label: BoolBlockLabel, value? }
 
@@ -46,7 +48,10 @@ pub proc boolean_block(block_kind: BoolBlockKind, members: Seq<BoolBlockMember>)
     ensure equivalence: when block_kind = BoolBlockKind::Equivalence,
         holds? iff (forall (i: Int), forall (j: Int), when 0 <= i < members.len and 0 <= j < members.len,
         members[i].value? iff members[j].value?)
-    expect empty: when members = [], holds? iff block_kind != BoolBlockKind::Disjunction
+    ensure exactly_one: when block_kind = BoolBlockKind::ExactlyOne,
+        holds? iff (exists (i: Int), 0 <= i < members.len and members[i].value? and
+        (forall (j: Int), when 0 <= j < members.len and j != i, not members[j].value?))
+    expect empty: when members = [], holds? iff block_kind is BoolBlockKind::Conjunction | BoolBlockKind::Equivalence
 }
 
 pub proc equivalence_three(first?, second?, third?): (equivalent?) {
@@ -64,6 +69,11 @@ pub proc equivalence_branches(members: Seq<BoolBlockMember>): (all_hold?, none_h
 }
 ```
 
+`one` means exactly one member holds. Three true members make it false;
+it is not odd parity. The empty block is false and a singleton has its
+member's truth. It uses the same optional labels, sibling uniqueness,
+source identities and 1-based index paths as other Boolean blocks.
+
 ## Evaluation order
 
 These evaluation rules apply to unsplit Boolean expressions. A root
@@ -76,7 +86,10 @@ it evaluates the first member and each later member until the first
 value differs from the first. After such a mismatch, later members are
 not evaluated. Thus `iff { q[0] > 0 }` needs no definedness check for the
 index, and `iff { false, true, q[0] > 0 }` never reads it either. Ordinary
-binary `iff` evaluates both operands. A member's preconditions and
+binary `iff` evaluates both operands. `one` evaluates left to right until
+the second true member, then returns false without evaluating later
+members. If fewer than two are true it evaluates every member, including
+a singleton. A member's preconditions and
 definedness are obligations only under the guard that reaches it.
 Diagnostic inspection never evaluates a skipped member solely to fill a
 truth table: it reports that member as not evaluated.
@@ -91,6 +104,9 @@ pub proc block_evaluation(block_kind: BoolBlockKind, values: Seq<Bool>, position
     ensure equivalence: when 0 <= position < values.len and block_kind = BoolBlockKind::Equivalence,
         evaluated? iff values.len > 1 and
         (position = 0 or (forall (j: Int), when 1 <= j < position, values[j] = values[0]))
+    ensure exactly_one: when 0 <= position < values.len and block_kind = BoolBlockKind::ExactlyOne,
+        evaluated? iff not (exists (i: Int), exists (j: Int),
+        0 <= i < j < position and values[i] and values[j])
     expect singleton_iff: when values = [false] and block_kind = BoolBlockKind::Equivalence, not evaluated?
     expect mismatch_stops: when values = [false, true, true] and position = 2 and block_kind = BoolBlockKind::Equivalence,
         not evaluated?
@@ -104,7 +120,7 @@ for separate clauses: each member gets its own name, vacuity, redundancy,
 realizability role, and source span. This includes a nonrecursive defined
 predicate's labelled conjunction after unfolding it at an application.
 The original enclosing clause is a grouping name, not an additional
-assertion or check. Members of `or` and `iff` blocks stay within one
+assertion or check. Members of `or`, `iff` and `one` blocks stay within one
 clause and one check, and their labels annotate diagnostics.
 
 A leading `when` or `unless` distributes across an `and` block, including
@@ -128,13 +144,13 @@ span covering unrelated members.
 
 ```fren
 pub proc distributed_guard(ancestor_guards: Seq<Bool>, member?, inactive: Int): (guarded?) {
-    ensure implication: guarded? iff (when (forall (i: Int), when 0 <= i < ancestor_guards.len, ancestor_guards[i] = true), member?)
+    ensure implication: guarded? iff (when (forall (i: Int), when 0 <= i < ancestor_guards.len, ancestor_guards[i]), member?)
     expect no_guards: when ancestor_guards = [], guarded? iff member?
     expect inactive_parent: when 0 <= inactive < ancestor_guards.len and not ancestor_guards[inactive], guarded?
     expect nested: when ancestor_guards = [true, true], guarded? iff member?
 }
 
-pub enum ClauseAncestor { Conjunct(BoolBlockLabel), When(Bool), Unless(Bool), Disjunct(BoolBlockLabel), Equivalent(BoolBlockLabel), Negated }
+pub enum ClauseAncestor { Conjunct(BoolBlockLabel), When(Bool), Unless(Bool), Disjunct(BoolBlockLabel), Equivalent(BoolBlockLabel), ExactlyOne(BoolBlockLabel), Negated }
 
 pub fn clause_splits?(step: ClauseAncestor) := step is ClauseAncestor::Conjunct(_) | ClauseAncestor::When(_) | ClauseAncestor::Unless(_)
 
@@ -160,6 +176,7 @@ pub proc clause_partition(block_kind: BoolBlockKind, members: Seq<BoolBlockMembe
     expect and_is_not_extra: when block_kind = BoolBlockKind::Conjunction and members.len = 2, checks = 2
     expect or_one: when block_kind = BoolBlockKind::Disjunction, checks = 1
     expect iff_one: when block_kind = BoolBlockKind::Equivalence, checks = 1
+    expect exactly_one_check: when block_kind = BoolBlockKind::ExactlyOne, checks = 1
 }
 ```
 
@@ -182,7 +199,13 @@ A cover or vacuity witness for an `or` reports the members that hold in
 that witness. A failed positive `iff` divides evaluated members into true
 and false groups; both groups are nonempty. A failed negative `iff` has
 only a true group or only a false group: all members agreed. It does
-not report a three-member parity result. A passing enclosing expression
+not report a three-member parity result. A failed positive `one` reports either no true evaluated members (all
+members evaluated false), or the two true members that caused failure,
+with any later members marked not evaluated. A failed negative `one`
+reports the single true member and all other evaluated false members.
+A cover or vacuity witness for positive `one` identifies the unique true
+member; a negative witness identifies zero or at least two truths using
+only evaluated members. A passing enclosing expression
 has no failed-member diagnostics, even if some subexpressions are false.
 Negating a predicate preserves its labels while reversing the truth
 needed from the application. Source spans and occurrence identities are
@@ -218,6 +241,38 @@ pub proc block_result(actual?, wanted?, member_value?, evaluated?): (det failed?
 }
 ```
 
+```fren
+pub proc exactly_one_result(values: Seq<Bool>, wanted?): (det actual?, det failed?, det no_true?, det multiple?) {
+    out actual? := exists (i: Int), 0 <= i < values.len and values[i] and
+        (forall (j: Int), when 0 <= j < values.len and j != i, not values[j])
+    out failed? := actual? != wanted?
+    out no_true? := not (exists (i: Int), 0 <= i < values.len and values[i])
+    out multiple? := exists (i: Int), exists (j: Int), 0 <= i < j < values.len and values[i] and values[j]
+    expect failure_partition: when wanted? and failed?, no_true? iff not multiple?
+    expect negative_witness: when not wanted? and failed?, actual? and not no_true? and not multiple?
+    expect empty_false: when values = [], not actual? and no_true?
+    expect singleton: when values = [true], actual?
+    expect three_not_parity: when values = [true, true, true], not actual? and multiple?
+}
+
+pub proc exactly_one_reach(values: Seq<Bool>, position: Int): (det reached?) {
+    out reached? := 0 <= position < values.len and not (exists (i: Int), exists (j: Int),
+        0 <= i < j < position and values[i] and values[j])
+    expect second_truth_read: when values = [true, false, true, true] and position = 2, reached?
+    expect after_second_skipped: when values.len >= 2 and values[0] and values[1] and position >= 2, not reached?
+    expect singleton_read: when values = [true] and position = 0, reached?
+    expect no_truth_reads_all: when values = [false, false, false] and 0 <= position < 3, reached?
+}
+
+pub proc exactly_one_branch(values: Seq<Bool>, chosen: Int): (det branch?) {
+    out branch? := 0 <= chosen < values.len and values[chosen] and
+        (forall (j: Int), when 0 <= j < values.len and j != chosen, not values[j])
+    expect unique_chosen: when branch?, forall (j: Int), when 0 <= j < values.len, values[j] iff j = chosen
+    expect empty_no_branch: when values = [], not branch?
+    expect positive_singleton: when values = [true] and chosen = 0, branch?
+}
+```
+
 ## Branch conflict explanations
 
 Only a disjunction that occurs in the minimized conflict core triggers
@@ -228,6 +283,15 @@ of the rest of the core, and name the other guarantees that rule out the
 branch. This applies to realizability and to vacuity of an assumption,
 with the corresponding hypotheses. An unlabelled branch is named by its
 1-based index. Branches not in the core incur no additional queries.
+
+A `one` block with n members has exactly n explanation branches: branch
+i requires member i true and every other member false, under the same
+leading guards and interpretation as the owner. An empty block has zero
+branches and is false. Each branch uses the existing whole-value and
+variant forcing family, and names any member whose required polarity is
+forced oppositely by the rest of its conditional core. Conditional
+member minimization retains the branch assumption and owning block;
+branches outside the minimized owner core incur no queries.
 
 An `iff` has exactly two explanation branches, regardless of member count:
 all members hold and none holds. In the first branch, query each member
@@ -273,6 +337,7 @@ pub proc branch_query_count(block_kind: BoolBlockKind, members: Nat, in_core?): 
     ensure alternatives: branches = if not in_core? or block_kind = BoolBlockKind::Conjunction then 0
         else if block_kind = BoolBlockKind::Equivalence then 2 else members
     expect unrelated_free: when not in_core?, branches = 0
+    expect one_per_member: when in_core? and block_kind = BoolBlockKind::ExactlyOne, branches = members
     expect iff_two: when in_core? and block_kind = BoolBlockKind::Equivalence, branches = 2
 }
 
@@ -293,6 +358,6 @@ necessary within that branch's minimized core; deletion is rechecked.
 The displayed explanation retains the owning disjunction and branch
 assumption so a conditional core cannot be mistaken for an unconditional
 one. Query cost is one existing pin/variant query family per disjunct
-under consideration, or two families for equivalence, with the
+under consideration, or two families for equivalence, or one family per member for `one`, with the
 per-member polarity questions inside those equivalence families. It
 never scans unrelated disjunctions merely to enrich a diagnostic.
