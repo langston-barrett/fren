@@ -16,7 +16,7 @@ proc counted(n: Nat, m: Int): (y: Nat) {
     expect outputs: y >= n
     -- Each application of a function into `Nat` is at least 0.
     expect applied: count(m) >= ZERO and count(m - 1) + count(m) >= 0
-    expect bad_widening: n > m   --~ error: expectation `counted::bad_widening` does not hold
+    expect bad_widening: n > m  --~ error: expectation `counted::bad_widening` does not hold
 }
 
 -- A defined output is a `Nat` by its definition; `-` gives an `Int`.
@@ -28,13 +28,13 @@ proc defined(n: Nat): (det next: Nat, det prev: Int, det mixed: Int) {
     expect next_positive: next >= 1
     expect prev_at_least: prev >= -1
     expect mixed_at_least: mixed >= -1
-    expect prev_negative: prev >= 0   --~ error: expectation `defined::prev_negative` does not hold
+    expect prev_negative: prev >= 0  --~ error: expectation `defined::prev_negative` does not hold
 }
 
 -- No output is a `Nat` below 0.
-proc unreal(n: Nat) {   --~ error: no outputs satisfy `r`
+proc unreal(n: Nat) {  --~ error: `unreal` is not realizable
     exists y: Nat
-    ensure r: y = n - 1   --~ info: is false for this input
+    ensure r: y = n - 1  --~ info: is false for this input
 }
 
 -- An instance's variables are at least 0, as its component's own are.
@@ -56,7 +56,7 @@ proc widened(q: Seq<Int>, k: Nat): (x: Int) {
 
 -- An assumption that a `Nat` is at least 0 always holds.
 proc redundant(n: Nat): (y?) {
-    assume nonneg: n >= 0   --~ warning: `redundant::nonneg` is redundant: it always holds
+    assume nonneg: n >= 0  --~ warning: `redundant::nonneg` is redundant: it always holds
     ensure r: y? iff n > 0
 
     expect zero: when n < 1, not y?
@@ -79,15 +79,24 @@ expect outputs_grow(a_n: Nat, a_m: Int) {
 -- least 0 by the abstract one's type: for `n < 0`, `shifted` breaks `floor`.
 proc floor(n: Nat): (c: Int) { ensure r: c >= n }
 proc shifted(n: Int): (c: Int) { ensure r: c = if n >= 0 then n else n - 1 }
-refine nat_input: shifted refines floor
+expect nat_input(n: Nat) {
+    call concrete := shifted(n)
+    refines concrete floor(n)
+}
 
 -- A `Nat` output of the concrete component serves for an `Int`, and is at
 -- least 0 by its type, as is each application of a function into `Nat`.
 proc above(): (c: Int) { ensure r: c >= -1 }
 proc counted_out(n: Int): (c: Nat) { ensure r: c = count(n) }
 proc hidden_out(): (c: Nat) { ensure r: c != 5 }
-refine nat_output: counted_out refines above
-refine nat_output_typed: hidden_out refines above
+expect nat_output(n: Int) {
+    call concrete := counted_out(n)
+    refines concrete above()
+}
+expect nat_output_typed() {
+    call concrete := hidden_out()
+    refines concrete above()
+}
 
 -- Determinism over an instance's variable, applied to a function into `Nat`:
 -- `z` is 0 only because both `z` and `count(w.y)` are at least 0, in the
@@ -99,11 +108,11 @@ proc applied_to_instance(k: Nat): (det z: Nat) {
 }
 
 -- A conflict that depends on an instance's `Nat` output.
-proc below_instance(k: Nat) {   --~ error: `below_instance` is not realizable
+proc below_instance(k: Nat) {  --~ error: `below_instance` is not realizable
     exists x: Int
     call w := counted(k, 0)
 
-    ensure r: x < 0 and x = w.y   --~ info: is false for this input
+    ensure r: x < 0 and x = w.y  --~ info: is false for this input
 }
 
 -- A pattern test beside a `Nat`.
@@ -151,5 +160,5 @@ proc empty_branch(c?, s: Set<Int>, n: Nat): (t: Set<Int>) {
     expect member: when not c? and n in s, n in t
 }
 
---@ summary: 63 passed, 4 failed, 0 inconclusive, 1 redundant
+--@ summary: 66 passed, 4 failed, 0 inconclusive, 1 redundant
 --@ exit: 1

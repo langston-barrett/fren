@@ -41,6 +41,14 @@ pub proc needless_update_fixed(t: Triple, n: Int): (det u: Triple) {
     out u := Triple { a := n, b := 1, c := n + 1 }
 }
 
-refine needless_update_sound: needless_update_fixed refines needless_update_written
-refine needless_update_complete: needless_update_written refines needless_update_fixed
+expect needless_update_sound(t: lint::Triple, n: Int) {
+    use lint
+    call concrete := needless_update_fixed(t, n)
+    refines concrete needless_update_written(t, n)
+}
+expect needless_update_complete(t: lint::Triple, n: Int) {
+    use lint
+    call concrete := needless_update_written(t, n)
+    refines concrete needless_update_fixed(t, n)
+}
 ```

@@ -93,8 +93,7 @@ proc shown(t: Ms, s: Slot): (det next: Ms) {
     assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
     out next := t + Ms(1)
 
-    expect small: next < Ms(4)
-    --~^ error: counterexample: t = Ms(3), s = Slot { start := Ms(2), tags := {Ms(10), Ms(9)} }, next = Ms(4)
+    expect small: next < Ms(4)  --~ error: expectation `shown::small` does not hold
 }
 
 -- A newtype of a finite type is finite: the domain of a relation into one
@@ -137,9 +136,20 @@ proc seconds(s: Int): (d: Int) {
     ensure r: d = s + 1
 }
 
-refine ticks: next_tick refines deadline
-refine counted: seconds refines deadline { t := Ms(s), d := Ms(d) }
-refine late: deadline refines next_tick  --~ error: expectation `late::r` does not hold
+expect ticks(t: Ms) {
+    use Ms
+    call concrete := next_tick(t)
+    refines concrete deadline(t)
+}
+expect counted(s: Int) {
+    call concrete := seconds(s)
+    expect r: (Ms((concrete.d))) >= (Ms((s)))
+}
+expect late(t: Ms) {
+    use Ms
+    call concrete := deadline(t)
+    refines concrete next_tick(t)  --~ error: expectation `late::refines_1` does not hold
+}
 
---@ summary: 62 passed, 4 failed, 0 inconclusive, 0 redundant
+--@ summary: 65 passed, 4 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

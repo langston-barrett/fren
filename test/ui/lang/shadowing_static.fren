@@ -10,27 +10,22 @@ struct Point { x: Int, y: Int }
 const ORIGIN: Point := Point { x := 0, y := 0 }
 
 -- A component's variable over a constant, a function and a variant.
-proc var_const(RATE: Int): (y: Int) { ensure r: y = RATE }
---~^ error: `RATE` shadows the constant `RATE`
+proc var_const(RATE: Int): (y: Int) { ensure r: y = RATE }  --~ error: `RATE` shadows the constant `RATE`
 proc var_const_ok(RATE!: Int): (y: Int) { ensure r: y = RATE }
-proc var_fn(scale: Int): (y: Int) { ensure r: y = scale }
---~^ error: `scale` shadows the function `scale`
+proc var_fn(scale: Int): (y: Int) { ensure r: y = scale }  --~ error: `scale` shadows the function `scale`
 proc var_fn_ok(scale!: Int): (y: Int) { ensure r: y = scale }
-proc var_variant(Square: Int): (y: Int) { use self::Shape::Square ensure r: y = Square }
---~^ error: `Square` shadows the variant `Shape::Square`
---~^^ warning: unused import `Shape::Square`
+proc var_variant(Square: Int): (y: Int) { use self::Shape::Square ensure r: y = Square }  --~ error: `Square` shadows the variant `Shape::Square`
+--~^ warning: unused import `Shape::Square`
 -- The `use` is used: `Square!` depends on it (`Reqs/Lint#unused-imports`).
 proc var_variant_ok(Square!: Int): (y: Int) { use self::Shape::Square ensure r: y = Square }
 -- Items that are not values are never hidden.
 proc var_type(Shape: Int): (y: Int) { ensure r: y = Shape }
-proc var_type_bang(Point!: Int): (y: Int) { ensure r: y = Point }
---~^ error: `Point!` shadows nothing
+proc var_type_bang(Point!: Int): (y: Int) { ensure r: y = Point }  --~ error: `Point!` shadows nothing
 
 -- A defined function's parameter over a constant.
-fn param(RATE: Int): Int := RATE + 1
---~^ error: `RATE` shadows the constant `RATE`
+fn param(RATE: Int): Int := RATE + 1  --~ error: `RATE` shadows the constant `RATE`
 fn param_ok(RATE!: Int): Int := RATE + 1
-fn param_bang(n!: Int): Int := n + 1     --~ error: `n!` shadows nothing
+fn param_bang(n!: Int): Int := n + 1  --~ error: `n!` shadows nothing
 -- A function is not in scope in its own body, so a parameter or binder
 -- named like it hides nothing.
 fn own(own: Int): Int := own + 1
@@ -39,20 +34,15 @@ fn own_binder(s: Shape): Int := match s { Shape::Circle(own_binder) => own_binde
 
 -- A `match` binder over a variable, a constant, a function, another
 -- binder, a parameter and an instance.
-proc bind_var(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x) => x > 0, _ => x > 0 } }
---~^ error: `x` shadows the parameter `x`
+proc bind_var(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x) => x > 0, _ => x > 0 } }  --~ error: `x` shadows the parameter `x`
 proc bind_var_ok(x: Int, s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(x!) => x > 0, _ => x > 0 } }
-proc bind_out(s: Shape): (n: Int) { ensure r: n = match s { Shape::Circle(n) => n, _ => 0 } }
---~^ error: `n` shadows the output `n`
-proc bind_const(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(RATE) => RATE > 0, _ => false } }
---~^ error: `RATE` shadows the constant `RATE`
+proc bind_out(s: Shape): (n: Int) { ensure r: n = match s { Shape::Circle(n) => n, _ => 0 } }  --~ error: `n` shadows the output `n`
+proc bind_const(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(RATE) => RATE > 0, _ => false } }  --~ error: `RATE` shadows the constant `RATE`
 proc bind_const_ok(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(RATE!) => RATE > 0, _ => false } }
-proc bind_fn(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(scale) => scale > 0, _ => false } }
---~^ error: `scale` shadows the function `scale`
+proc bind_fn(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(scale) => scale > 0, _ => false } }  --~ error: `scale` shadows the function `scale`
 proc bind_binder(s: Shape, t: Shape): (p?) {
     ensure r: p? iff match s {
-        Shape::Circle(k) => match t { Shape::Circle(k) => k > 0, _ => k > 0 },
-        --~^ error: `k` shadows the binder `k`
+        Shape::Circle(k) => match t { Shape::Circle(k) => k > 0, _ => k > 0 },  --~ error: `k` shadows the binder `k`
         _ => false,
     }
 }
@@ -62,21 +52,17 @@ proc bind_binder_ok(s: Shape, t: Shape): (p?) {
         _ => false,
     }
 }
-fn bind_param?(n: Int, s: Shape) := match s { Shape::Circle(n) => n > 0, _ => n > 0 }
---~^ error: `n` shadows the parameter `n`
+fn bind_param?(n: Int, s: Shape) := match s { Shape::Circle(n) => n > 0, _ => n > 0 }  --~ error: `n` shadows the parameter `n`
 fn bind_param_ok?(n: Int, s: Shape) := match s { Shape::Circle(n!) => n > 0, _ => n > 0 }
 proc sub(v: Int): (w: Int) { ensure r: w = v }
 proc bind_inst(s: Shape): (p?) {
     call w := sub(1)
-    ensure r: p? iff match s { Shape::Circle(w) => w > 0, _ => w.w > 0 }
-    --~^ error: `w` shadows the call `w`
+    ensure r: p? iff match s { Shape::Circle(w) => w > 0, _ => w.w > 0 }  --~ error: `w` shadows the call `w`
 }
-proc bind_bang(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(k!) => k > 0, _ => false } }
---~^ error: `k!` shadows nothing
+proc bind_bang(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(k!) => k > 0, _ => false } }  --~ error: `k!` shadows nothing
 
 -- An instance over a constant.
-proc inst_const(): (y: Int) { call ORIGIN := sub(1) ensure r: y = ORIGIN.w }
---~^ error: `ORIGIN` shadows the constant `ORIGIN`
+proc inst_const(): (y: Int) { call ORIGIN := sub(1) ensure r: y = ORIGIN.w }  --~ error: `ORIGIN` shadows the constant `ORIGIN`
 proc inst_const_ok(): (y: Int) { call ORIGIN! := sub(1) ensure r: y = ORIGIN.w }
 proc inst_bang(): (y: Int) { call u! := sub(1) ensure r: y = u.w }  --~ error: `u!` shadows nothing
 
@@ -102,29 +88,27 @@ expect global_bind(a_v: Int) {
 -- `!` on a `Bool` follows its `?`.
 proc bool_bang(ready?!): (go?) { ensure r: go? iff ready? }  --~ error: `ready?!` shadows nothing
 enum Flag { Set(Bool), Unset }
-proc bool_shadow(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?) => ok?, _ => ok? } }
---~^ error: `ok?` shadows the parameter `ok?`
+proc bool_shadow(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?) => ok?, _ => ok? } }  --~ error: `ok?` shadows the parameter `ok?`
 proc bool_shadow_ok(ok?, f: Flag): (go?) { ensure r: go? iff match f { Flag::Set(ok?!) => ok?, _ => ok? } }
 
 -- Items shadow only the prelude's names, and constraints and fields never
 -- shadow.
-const LIMIT!: Int := 3                   --~ error: `LIMIT!` shadows nothing
-fn twice!(n: Int): Int := 2 * n          --~ error: `twice!` shadows nothing
-enum Mode! { On, Off }                   --~ error: `Mode!` shadows nothing
-struct Pair { a!: Int, b: Int }          --~ error: `a!` shadows nothing
+const LIMIT!: Int := 3  --~ error: `LIMIT!` shadows nothing
+fn twice!(n: Int): Int := 2 * n  --~ error: `twice!` shadows nothing
+enum Mode! { On, Off }  --~ error: `Mode!` shadows nothing
+struct Pair { a!: Int, b: Int }  --~ error: `a!` shadows nothing
 proc named!(x: Int): (y: Int) { ensure r: y = x }  --~ error: `named!` shadows nothing
 proc constraint(x: Int): (y: Int) { ensure r!: y = x }  --~ error: `r!` shadows nothing
-expect global!: RATE > 0                 --~ error: `global!` shadows nothing
+expect global!: RATE > 0  --~ error: `global!` shadows nothing
 
 -- `!` marks only the declaration: a use is written without it.
 proc use_bang(x: Int): (y: Int) { ensure r: y = x! }  --~ error: cannot find `x!` in this scope
 
 -- Names that, with `!`, are Lean tokens cannot be declared with `!`.
 proc token_var(s!: Int): (y: Int) { ensure r: y = s }  --~ error: `s!` is a Lean token, so it cannot be declared
-proc token_bind(m: Int, t: Shape): (p?) { ensure r: p? iff match t { Shape::Circle(m!) => m > 0, _ => m > 0 } }
---~^ error: `m!` is a Lean token, so it cannot be declared
-fn token_param(f!: Int): Int := f + 1    --~ error: `f!` is a Lean token, so it cannot be declared
-const panic!: Int := 1                   --~ error: `panic!` is a Lean token, so it cannot be declared
+proc token_bind(m: Int, t: Shape): (p?) { ensure r: p? iff match t { Shape::Circle(m!) => m > 0, _ => m > 0 } }  --~ error: `m!` is a Lean token, so it cannot be declared
+fn token_param(f!: Int): Int := f + 1  --~ error: `f!` is a Lean token, so it cannot be declared
+const panic!: Int := 1  --~ error: `panic!` is a Lean token, so it cannot be declared
 expect token_global(using!: Int) {  --~ error: `using!` is a Lean token, so it cannot be declared
     expect token_global: true
 }
@@ -138,35 +122,32 @@ expect token_call(v: Int) {
 }
 proc token_use(s: Int): (y: Int) { ensure r: y = s! }  --~ error: cannot find `s!` in this scope
 -- A refinement's name, and a field read, take the tokens as identifiers too.
-refine s!: sub refines sub               --~ error: `s!` is a Lean token, so it cannot be declared
-proc token_field(): (y: Int) { ensure r: y = Point { x := 1, y := 2 }.s! }
---~^ error: no field `s!`
+expect s!(v: Int) {  --~ error: `s!` is a Lean token, so it cannot be declared
+    call concrete := sub(v)
+    refines concrete sub(v)
+}
+proc token_field(): (y: Int) { ensure r: y = Point { x := 1, y := 2 }.s! }  --~ error: no field `s!`
 -- Where the name with `!` is a Lean token, F0217 says to rename it.
-proc token_hint(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }
---~^ error: `s` shadows the parameter `s`
+proc token_hint(s: Shape): (p?) { ensure r: p? iff match s { Shape::Circle(s) => s > 0, _ => false } }  --~ error: `s` shadows the parameter `s`
 
 -- A duplicate is reported as such, before what it would hide.
-proc dup_bang(x: Int, x!: Int): (y: Int) { ensure r: y = x }
---~^ error: `x` is defined multiple times in this procedure
+proc dup_bang(x: Int, x!: Int): (y: Int) { ensure r: y = x }  --~ error: `x` is defined multiple times in this procedure
 enum Two { Pair(Int, Int) }
-proc dup_binder(t: Two): (y: Int) { ensure r: y = match t { Two::Pair(a, a!) => a } }
---~^ error: `a` is bound multiple times in this pattern
+proc dup_binder(t: Two): (y: Int) { ensure r: y = match t { Two::Pair(a, a!) => a } }  --~ error: `a` is bound multiple times in this pattern
 
 -- A name that two globs make ambiguous is not hidden: a use of it would be
 -- an error.
 enum Hue { Red }
 enum Tone { Red }
-proc ambiguous(Red: Int): (y: Int) { use self::Hue::* use self::Tone::* ensure r: y = Red }
---~^ warning: unused import `Hue::*`
+proc ambiguous(Red: Int): (y: Int) { use self::Hue::* use self::Tone::* ensure r: y = Red }  --~ warning: unused import `Hue::*`
+--~^ warning: `use Hue::*` imports every variant of `Hue`
 --~^^ warning: unused import `Tone::*`
---~^^^ warning: `use Hue::*` imports every variant of `Hue`
---~^^^^ warning: `use Tone::*` imports every variant of `Tone`
-proc ambiguous_bang(Red!: Int): (y: Int) { use self::Hue::* use self::Tone::* ensure r: y = Red }
---~^ error: `Red!` shadows nothing
---~^^ warning: unused import `Hue::*`
+--~^^^ warning: `use Tone::*` imports every variant of `Tone`
+proc ambiguous_bang(Red!: Int): (y: Int) { use self::Hue::* use self::Tone::* ensure r: y = Red }  --~ error: `Red!` shadows nothing
+--~^ warning: unused import `Hue::*`
+--~^^ warning: `use Hue::*` imports every variant of `Hue`
 --~^^^ warning: unused import `Tone::*`
---~^^^^ warning: `use Hue::*` imports every variant of `Hue`
---~^^^^^ warning: `use Tone::*` imports every variant of `Tone`
+--~^^^^ warning: `use Tone::*` imports every variant of `Tone`
 
 -- A later item is not in scope (`Reqs/Lang/Scope#scopes`): a declaration
 -- named like one hides nothing, so it takes no `!`.

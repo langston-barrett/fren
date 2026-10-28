@@ -1,17 +1,16 @@
-error[F0413]: `rough` has no variable `w`
- --> test/cli/instances/f0413_refine_unknown.fren:4:38
+error[F0201]: cannot find `w` in this scope
+ --> test/cli/instances/f0413_refine_unknown.fren:6:21
   |
-4 | refine fits: precise refines rough { w := y }
-  |                                      ^ unknown variable
+6 |     refines c rough(w)
+  |                     ^ not found in this scope
   |
-  = note: a refinement binds variables of the refined procedure; those of `rough` are `x` and `z`
-help: a variable with a similar name exists: `x`
+help: a similar name exists: `x`
   |
-4 - refine fits: precise refines rough { w := y }
-4 + refine fits: precise refines rough { x := y }
+6 -     refines c rough(w)
+6 +     refines c rough(x)
   |
 
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0413`.
+For more information about this error, try `fren --explain F0201`.
 exit=2

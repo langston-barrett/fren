@@ -378,8 +378,8 @@ nothing to report. What 1 and 3 mean is each command's own:
 `cli::exit`, `eval::eval_exit`, `trace::trace_exit` and `mutate::exit`
 refine `exit_status`. So do `fmt::exit` and `lint::fix_exit`, which say
 whether the command could run in terms of what it read, `all_parsed?` and
-`loaded?`: their refinements bind `ran?` to it (see
-[Bindings](Lang/Refinement.md#bindings)).
+`loaded?`: their expectation blocks pass it explicitly as the specification argument
+(see [Refinement](Lang/Refinement.md#refinement-in-expectation-blocks)).
 
 ```fren
 pub proc exit_status(
@@ -410,7 +410,11 @@ pub proc exit(
     expect documented_codes: 0 <= code <= 3
 }
 
-refine check_exit_status: exit refines exit_status
+expect check_exit_status(ran?, worst: view::Severity) {
+    use view
+    call concrete := exit(ran?, worst)
+    refines concrete exit_status(ran?)
+}
 ```
 
 `cli::worst_severity` gives the most severe level over all results and

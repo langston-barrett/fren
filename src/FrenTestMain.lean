@@ -154,7 +154,7 @@ def codesInSources : IO (Array String) := do
 depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
 def unsnapshotted : List String :=
-  ["F0142", "F0143", "F0155", "F0156", "F0158", "F0159", "F0160", "F0164", "F0399", "F0406", "F0407", "F0416", "F0420",
+  ["F0142", "F0143", "F0155", "F0156", "F0158", "F0159", "F0160", "F0164", "F0399", "F0406", "F0407", "F0412", "F0413", "F0414", "F0415", "F0416", "F0420",
    "F0608", "F0713"]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
@@ -547,7 +547,7 @@ def fixing : IO (Array String) := do
     failures := failures.push s!"`fren fix --check` reports a fixed file (exit {code}):\n{out}"
   -- Behaviour-binder migration is transactional, preserves Markdown
   -- prose, and leaves a spec that checks and is already fully fixed.
-  for fixture in #["migrate_global", "migrate_global_types", "migrate_global_empty", "migrate_global_scopes", "migrate_global_error"] do
+  for fixture in #["migrate_global", "migrate_global_types", "migrate_global_empty", "migrate_global_scopes", "migrate_global_functions", "migrate_refinement", "migrate_refinement_bindings", "migrate_global_error"] do
     let original ← IO.FS.readFile s!"test/cli/fix/{fixture}.fren"
     let text := "# Migration\n\nProse stays byte for byte.\n\n" ++ block original
     IO.FS.writeFile file text
@@ -565,6 +565,16 @@ def fixing : IO (Array String) := do
       let (out, code) ← runFren ["check", file]
       if code != 0 then
         failures := failures.push s!"migrated global did not check (exit {code}):\n{out}"
+  -- A legacy result binding must retain its pattern obligation even
+  -- when the specification has no explicit guarantee.
+  let original ← IO.FS.readFile "test/cli/fix/migrate_refinement_pattern.fren"
+  IO.FS.writeFile file (block original)
+  let (out, code) ← runFren ["fix", "--fmt", file]
+  if code != 0 then
+    failures := failures.push s!"result-pattern migration failed (exit {code}):\n{out}"
+  let (out, code) ← runFren ["check", file]
+  if code != 1 || !out.contains "F0622" then
+    failures := failures.push s!"result-pattern migration lost its obligation (exit {code}):\n{out}"
   let source := ".lake/fix-test/callee.fren"
   let caller := ".lake/fix-test/caller.fren"
   let text ← IO.FS.readFile "test/cli/fix/migrate_global_types.fren"

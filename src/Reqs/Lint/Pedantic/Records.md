@@ -44,8 +44,14 @@ pub proc inconsistent_struct_constructor_fixed(a: Int, b: Int, row: Int, column:
     out named := Cell { row, column }
 }
 
-refine inconsistent_struct_constructor_sound: inconsistent_struct_constructor_fixed refines inconsistent_struct_constructor_written
-refine inconsistent_struct_constructor_complete: inconsistent_struct_constructor_written refines inconsistent_struct_constructor_fixed
+expect inconsistent_struct_constructor_sound(a: Int, b: Int, row: Int, column: Int) {
+    call concrete := inconsistent_struct_constructor_fixed(a, b, row, column)
+    refines concrete inconsistent_struct_constructor_written(a, b, row, column)
+}
+expect inconsistent_struct_constructor_complete(a: Int, b: Int, row: Int, column: Int) {
+    call concrete := inconsistent_struct_constructor_written(a, b, row, column)
+    refines concrete inconsistent_struct_constructor_fixed(a, b, row, column)
+}
 ```
 
 ## Field names

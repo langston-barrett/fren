@@ -360,7 +360,10 @@ pub proc trace_exit(
 
 use cli::exit_status
 
-refine trace_exit_status: trace_exit refines exit_status
+expect trace_exit_status(ran?, below?, stray?) {
+    call concrete := trace_exit(ran?, below?, stray?)
+    refines concrete exit_status(ran?)
+}
 
 #fren_check
 ```

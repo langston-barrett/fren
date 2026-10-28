@@ -204,8 +204,14 @@ pub proc eq_op_cardinality_value(a?, b?): (det exactly?, det at_most?) {
     out at_most? := not a?
 }
 
-refine eq_op_cardinality_sound: eq_op_cardinality_value refines eq_op_cardinality_written
-refine eq_op_cardinality_complete: eq_op_cardinality_written refines eq_op_cardinality_value
+expect eq_op_cardinality_sound(a?, b?) {
+    call concrete := eq_op_cardinality_value(a?, b?)
+    refines concrete eq_op_cardinality_written(a?, b?)
+}
+expect eq_op_cardinality_complete(a?, b?) {
+    call concrete := eq_op_cardinality_written(a?, b?)
+    refines concrete eq_op_cardinality_value(a?, b?)
+}
 ```
 
 ## Erasing operations
@@ -280,8 +286,14 @@ pub proc empty_membership_value(x: Int): (det v?) {
     out v? := false
 }
 
-refine empty_membership_sound: empty_membership_value refines empty_membership_written
-refine empty_membership_complete: empty_membership_written refines empty_membership_value
+expect empty_membership_sound(x: Int) {
+    call concrete := empty_membership_value(x)
+    refines concrete empty_membership_written(x)
+}
+expect empty_membership_complete(x: Int) {
+    call concrete := empty_membership_written(x)
+    refines concrete empty_membership_value(x)
+}
 
 set_option fren.lint.erasing_op "allow" in
 pub proc empty_subset_written(s: Set<Int>): (det v?) {
@@ -294,8 +306,14 @@ pub proc empty_subset_value(s: Set<Int>): (det v?) {
     out v? := true
 }
 
-refine empty_subset_sound: empty_subset_value refines empty_subset_written
-refine empty_subset_complete: empty_subset_written refines empty_subset_value
+expect empty_subset_sound(s: Set<Int>) {
+    call concrete := empty_subset_value(s)
+    refines concrete empty_subset_written(s)
+}
+expect empty_subset_complete(s: Set<Int>) {
+    call concrete := empty_subset_written(s)
+    refines concrete empty_subset_value(s)
+}
 ```
 
 It also fires on `0 div k` and `0 mod k`, and on `-0 div k` and `-0 mod
@@ -329,8 +347,14 @@ pub proc erasing_division_fixed(): (det quotient: Int, det remainder: Int) {
     out remainder := 0
 }
 
-refine erasing_division_sound: erasing_division_fixed refines erasing_division_written
-refine erasing_division_complete: erasing_division_written refines erasing_division_fixed
+expect erasing_division_sound() {
+    call concrete := erasing_division_fixed()
+    refines concrete erasing_division_written()
+}
+expect erasing_division_complete() {
+    call concrete := erasing_division_written()
+    refines concrete erasing_division_fixed()
+}
 ```
 
 ## Branches written the same
@@ -426,8 +450,14 @@ pub proc same_rows_fixed(n: Int): (det v: Int) {
     out v := n + 1
 }
 
-refine same_rows_sound: same_rows_fixed refines same_rows_written
-refine same_rows_complete: same_rows_written refines same_rows_fixed
+expect same_rows_sound(n: Int) {
+    call concrete := same_rows_fixed(n)
+    refines concrete same_rows_written(n)
+}
+expect same_rows_complete(n: Int) {
+    call concrete := same_rows_written(n)
+    refines concrete same_rows_fixed(n)
+}
 ```
 
 `lint::same_rows` states when it fires, computing the facts from the rows, with each

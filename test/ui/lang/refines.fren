@@ -1,0 +1,70 @@
+-- fren-covers: refinement::positional_refinement, refinement::block_refinement, refinement::refinement_computed_local
+-- Positional names, computed locals and directional widening.
+proc abstract_value(amount: Int): (answer: Int) {
+    let doubled: Int := amount * 2
+    ensure result: answer = doubled
+}
+proc concrete_value(x: Int): (actual: Int) {
+    ensure result: actual = x * 2
+}
+expect positional(x: Int) {
+    call c := concrete_value(x)
+    refines c abstract_value(x)
+}
+proc natural(x: Nat): (result: Nat) {
+    ensure identity: result = x
+}
+proc integer(x: Int): (answer: Int) {
+    ensure result: answer = x
+}
+expect widening(x: Nat) {
+    call c := natural(x)
+    refines c integer(x)
+}
+proc computed(x: Int): (result: Int) {
+    out result := x + 1
+}
+expect definition_is_claimed(x: Int) {
+    call c := integer(x)
+    refines c computed(x)  --~ error: expectation `definition_is_claimed::refines_1` does not hold
+}
+
+-- The specification's domain is not silently introduced as a hypothesis.
+proc positive_spec(x: Int): (answer: Int) {
+    assume positive: x > 0
+    ensure positive_result: answer > 0
+    ensure relation: answer != x
+}
+expect no_implicit_domain(x: Int) {
+    call c := computed(x)
+    refines c positive_spec(x)  --~ error: expectation `no_implicit_domain::refines_1` does not hold
+}
+
+-- Internal call variables keep their declared types in the quantified claim.
+proc choose_natural(): (n: Nat) {}  --~ warning: unused variable `n`
+proc natural_truth(): (ok?) {
+    call inner := choose_natural()
+    ensure truth: ok? iff inner.n >= 0
+}
+proc true_value(): (value?) { ensure truth: value? }
+expect typed_internal_call() {
+    call c := true_value()
+    refines c natural_truth()
+}
+
+-- Definedness questions about specification guarantees must bind the
+-- specification's call variables too.
+proc singleton(flag?): (values: Seq<Int>) {
+    out values := if flag? then [1] else [2]
+}
+proc first_value(flag?): (answer: Int) {
+    call inner := singleton(flag?)
+    ensure first: answer = inner.values[0]
+}
+proc select_value(flag?): (actual: Int) {
+    out actual := if flag? then 1 else 2
+}
+expect indexed_internal_call(flag?) {
+    call c := select_value(flag?)
+    refines c first_value(flag?)
+}

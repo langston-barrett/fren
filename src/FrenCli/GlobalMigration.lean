@@ -216,6 +216,7 @@ def global (st : State) (module : Name) (src : Array Char) (start : Nat)
       st.comps.find? (·.path == r.path)
     for x in b.names do
       if let some c := callee? then
+        let scope := if st.table.scopes.contains c.path then c.path else c.path.getPrefix
         let mut subs : Substitution := #[]
         let mut args := #[]
         for v in c.vars.filter (fun v => v.role == .input && v.name.isAtomic) do
@@ -226,7 +227,7 @@ def global (st : State) (module : Name) (src : Array Char) (start : Nat)
             | _ => none
           let (text, more) := match ty with
             | some ty => ((rewritten c.migrationSource (typeSpanIn c.migrationSource ty)) <$>
-                typeEdits st.table c.path ty).run imports
+                typeEdits st.table scope ty).run imports
             | none => ("Bool", imports)
           imports := more
           parameters := parameters.push (n ++ ": " ++ text)
@@ -239,13 +240,13 @@ def global (st : State) (module : Name) (src : Array Char) (start : Nat)
               | .var false false _ y _ (some value) =>
                 if Name.mkSimple (declaredIdent y).1.name == decl then some (y, value) else none
               | _ => none then
-            let (es, more) := (expression st.table c.path subs value).run imports
+            let (es, more) := (expression st.table scope subs value).run imports
             imports := more
             let text := rewritten c.migrationSource (value.writtenSpan c.migrationSource) es
             subs := subs.push ((declaredIdent y).1.name, "(" ++ text ++ ")")
         for m in c.migrationMembers do
           if let .prop .assume y value := m then
-            let (es, more) := (expression st.table c.path subs value).run imports
+            let (es, more) := (expression st.table scope subs value).run imports
             imports := more
             let n := fresh used ((declaredIdent x).1.name ++ "_" ++ y.name)
             used := used.push n
@@ -262,8 +263,163 @@ def global (st : State) (module : Name) (src : Array Char) (start : Nat)
       #["    expect " ++ name.name ++ ": " ++ slice src (body.writtenSpan src)]).toList ++ "\n}"
   return ({ start, stop := end_ }, text)
 
+/-- Imports needed by a fully qualified base type, with pattern constraints
+removed. Extra implementation inputs had no abstract-domain type facts in
+an old refinement, so copying their pattern types would strengthen it. -/
+partial def baseTypeImports : Ty → Array String
+  | .set t | .seq t => baseTypeImports t
+  | .rel a b => baseTypeImports a ++ baseTypeImports b
+  | .enum p ts | .record p ts =>
+    (if p.components.head? == some preludeModule then #[] else #[p.components.headD .anonymous |>.toString])
+      ++ (ts.toArray.flatMap baseTypeImports)
+  | .abstract p | .newtype p _ => #[p.components.headD .anonymous |>.toString]
+  | _ => #[]
+
+/-- Relocate a top-level refinement. Named bindings become arguments.
+When the old item maps results by name in an order different from the new
+positional interface, spell its obligations as ordinary expectations. -/
+def refinement (st : State) (module : Name) (src : Array Char) (name : Ident)
+    (concrete abstract : Array Ident) (bindings : Array (Ident × Option Expr)) : Option (Range × String) := do
+  let cr ← (st.table.resolvePath module (segNames concrete)).toOption
+  let ar ← (st.table.resolvePath module (segNames abstract)).toOption
+  let c ← st.comps.find? (·.path == cr.path)
+  let a ← st.comps.find? (·.path == ar.path)
+  -- Validate the removed interface before rewriting. Otherwise an invalid
+  -- old narrowing or private-variable binding could become a well-typed
+  -- equality after relocation and silently acquire a new meaning.
+  guard (((elabRefine name concrete abstract bindings).run
+    { st with module, scope := module, src, itemErrors := #[] }).toOption.isSome)
+  let scope := if st.table.scopes.contains a.path then a.path else a.path.getPrefix
+  let mut used := identifiers src ++ identifiers c.migrationSource ++ identifiers a.migrationSource
+    ++ (st.table.scopeOf module).map nameText
+  let call := fresh used "concrete"
+  used := used.push call
+  let mut imports := #[]
+  let mut parameters : Array String := #[]
+  let mut concreteArgs : Array String := #[]
+  let mut own : Substitution := #[]
+  let mut abstractSubs : Substitution := #[]
+  let mut abstractArgs : Array String := #[]
+  let bound := bindings.map fun (x, _) => (declaredIdent x).1.name
+  for v in c.vars.filter (fun v => v.name.isAtomic && v.role == .input) do
+    let av := a.vars.find? fun u => u.name == v.name && u.role == .input && !bound.contains (nameText u.name)
+    let owner := if av.isSome then a else c
+    let ty := owner.migrationMembers.findSome? fun
+      | .var true _ _ x ty _ => if (declaredIdent x).1.name == nameText v.name then ty else none
+      | _ => none
+    let ownerScope := if st.table.scopes.contains owner.path then owner.path else owner.path.getPrefix
+    let (text, more) := if av.isNone then
+      (v.ty.show, (baseTypeImports v.ty).foldl (fun xs n => if xs.contains n then xs else xs.push n) imports)
+      else match ty with
+      | some ty => ((rewritten owner.migrationSource (typeSpanIn owner.migrationSource ty)) <$>
+          typeEdits st.table ownerScope ty).run imports
+      | none => ("Bool", imports)
+    imports := more
+    let declared := nameText v.name ++ (if (st.table.scopeOf module).contains v.name then "!" else "")
+    parameters := parameters.push (declared ++ ": " ++ text)
+    concreteArgs := concreteArgs.push (nameText v.name)
+    own := own.push (nameText v.name, nameText v.name)
+  for v in c.vars.filter (fun v => v.name.isAtomic && v.role == .output) do
+    own := own.push (nameText v.name, call ++ "." ++ nameText v.name)
+  for v in a.vars.filter (·.name.isAtomic) do
+    let (value, more) : String × Array String := match bindings.find? (fun (x, _) => (declaredIdent x).1.name == nameText v.name) with
+      | some (x, e?) => match e? with
+        | some e =>
+          let (es, more) := (expression st.table module own e).run imports
+          (rewritten src (e.writtenSpan src) es, more)
+        | none => (((own.find? (·.1 == (declaredIdent x).1.name)).map (·.2)).getD x.name, imports)
+      | none => ((if v.role == .input then nameText v.name else call ++ "." ++ nameText v.name), imports)
+    imports := more
+    abstractSubs := abstractSubs.push (nameText v.name, "(" ++ value ++ ")")
+    if v.role == .input then abstractArgs := abstractArgs.push value
+  let mut assumptions := #[]
+  for m in a.migrationMembers do
+    if let .prop .assume x e := m then
+      let (es, more) := (expression st.table scope abstractSubs e).run imports
+      imports := more
+      let n := fresh used ("spec_" ++ x.name)
+      used := used.push n
+      assumptions := assumptions.push ("    assume " ++ n ++ ": " ++ rewritten a.migrationSource (e.writtenSpan a.migrationSource) es)
+  let outputs := c.vars.filter (fun v => v.name.isAtomic && v.isPub && v.role == .output)
+  let required := a.vars.filter (fun v => v.name.isAtomic && v.isPub && v.role == .output)
+  let positional := outputs.size == required.size && (outputs.zip required).all (fun (x, y) => x.name == y.name)
+    && !(a.vars.any fun v => v.name.isAtomic && v.role == .output && (!v.isPub || bound.contains (nameText v.name)))
+  let mut claims := #[]
+  let mut specCalls := #[]
+  if positional then
+    claims := #["    refines " ++ call ++ " " ++ slice src (typeSpanIn src abstract) ++ "(" ++ ", ".intercalate abstractArgs.toList ++ ")"]
+  else
+    -- A result's type predicate is an obligation even when the old item
+    -- binds that result and the specification has no explicit ensures.
+    -- A typed local checks the same predicate without adding a hypothesis.
+    for v in a.vars.filter (fun v => v.name.isAtomic && v.role == .output && v.defn?.isNone) do
+      if (v.ptype.obligation st.shapeOf).isSome then
+        let ty ← a.migrationMembers.findSome? fun
+          | .var false _ _ x (some ty) _ => if (declaredIdent x).1.name == nameText v.name then some ty else none
+          | _ => none
+        let (es, more) := (typeEdits st.table scope ty).run imports
+        imports := more
+        let n := fresh used ("typed_" ++ nameText v.name)
+        used := used.push n
+        let claimBase := "type_" ++ nameText v.name
+        let claimBase := if claimBase.endsWith "?" then (claimBase.dropEnd 1).toString else claimBase
+        let claim := fresh used claimBase
+        used := used.push claim
+        let value := ((abstractSubs.find? (·.1 == nameText v.name)).map (·.2)).getD (nameText v.name)
+        claims := claims.push ("    let " ++ n ++ ": " ++ rewritten a.migrationSource (typeSpanIn a.migrationSource ty) es ++ " := " ++ value)
+        claims := claims.push ("    expect " ++ claim ++ ": " ++ n ++ " = " ++ value)
+    for m in a.migrationMembers do
+      if let .inst x callee bs _ := m then
+        let n := fresh used ("spec_" ++ (declaredIdent x).1.name)
+        used := used.push n
+        let mut arguments := #[]
+        for (b, e?) in bs do
+          let e := e?.getD (.path b.span #[b])
+          let (es, more) := (expression st.table scope abstractSubs e).run imports
+          imports := more
+          arguments := arguments.push (rewritten a.migrationSource (e.writtenSpan a.migrationSource) es)
+        let (es, more) := (reference st.table scope #[] callee).run imports
+        imports := more
+        specCalls := specCalls.push ("    call " ++ n ++ " := " ++ rewritten a.migrationSource (typeSpanIn a.migrationSource callee) es ++ "(" ++ ", ".intercalate arguments.toList ++ ")")
+        abstractSubs := abstractSubs.push ((declaredIdent x).1.name, n)
+    for m in a.migrationMembers do
+      if let .prop .ensure x e := m then
+        let (es, more) := (expression st.table scope abstractSubs e).run imports
+        imports := more
+        let n := if c.vars.any (fun v => v.role == .input && nameText v.name == x.name) || call == x.name then fresh used x.name else x.name
+        used := used.push n
+        claims := claims.push ("    expect " ++ n ++ ": " ++ rewritten a.migrationSource (e.writtenSpan a.migrationSource) es)
+    for (n, _) in a.defs do
+      if let some e := a.migrationMembers.findSome? (fun
+          | .var _ _ _ x _ (some e) => if Name.mkSimple (declaredIdent x).1.name == n then some e else none
+          | _ => none) then
+        let (es, more) := (expression st.table scope abstractSubs e).run imports
+        imports := more
+        let lhs := ((abstractSubs.find? (·.1 == nameText n)).map (·.2)).getD (nameText n)
+        let base := if (nameText n).endsWith "?" then ((nameText n).dropEnd 1).toString else nameText n
+        let claimName := if c.vars.any (fun v => v.role == .input && nameText v.name == base) || call == base || base != nameText n then fresh used base else base
+        used := used.push claimName
+        claims := claims.push ("    expect " ++ claimName ++ ": " ++ lhs ++ " = (" ++ rewritten a.migrationSource (e.writtenSpan a.migrationSource) es ++ ")")
+  parameters := parameters.map fun parameter =>
+    let pieces := parameter.splitOn ": "
+    let n := pieces.head!
+    if imports.contains n && !n.endsWith "!" then n ++ "!: " ++ ": ".intercalate pieces.tail else parameter
+  let text := "expect " ++ name.name ++ "(" ++ ", ".intercalate parameters.toList ++ ") {\n" ++
+    "\n".intercalate ((imports.map ("    use " ++ ·)) ++ assumptions ++
+      #["    call " ++ call ++ " := " ++ slice src (typeSpanIn src concrete) ++ "(" ++ ", ".intercalate concreteArgs.toList ++ ")"] ++ specCalls ++ claims).toList ++ "\n}"
+  let stop := (bindings.back?.map fun (x, e?) => (e?.map (·.writtenSpan src) |>.getD x.span).stop).getD (typeSpanIn src abstract).stop
+  let mut stop := stop
+  if let .ok tokens := lex src then
+    let after := tokens.filter (·.span.start >= stop)
+    if !bindings.isEmpty then
+      if let some close := after.find? (·.tok == .kw "}") then stop := close.span.stop
+    else if after[0]?.any (·.tok == .kw "{") && after[1]?.any (·.tok == .kw "}") then
+      stop := after[1]!.span.stop
+  return ({ start := wordStart src name.span.start, stop }, text)
+
 partial def item (st : State) (src : Array Char) (module : Name) : Item → Name × Edits
   | .mod _ path => ((segNames path).foldl (· ++ ·) .anonymous, #[])
+  | .refine name c a bs => (module, (refinement st module src name c a bs).toArray)
   | .global name bs body =>
     (module, (global st module src (wordStart src name.span.start) name bs body).toArray)
   | .lintSetting _ _ _ _ _ (some body) => item st src module body

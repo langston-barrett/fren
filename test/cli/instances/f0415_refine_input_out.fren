@@ -1,5 +1,7 @@
--- A refinement whose binding of an input mentions an output of the
--- concrete component.
+-- A specification argument must have its parameter's type.
 proc precise(x: Int): (y: Int) { ensure r: y = x }
 proc rough(n: Int): (y: Int) { ensure r: y >= n }
-refine fits: precise refines rough { n := y }
+expect fits(x: Int) {
+    call c := precise(x)
+    refines c rough(true)
+}

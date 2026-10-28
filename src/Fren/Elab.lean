@@ -83,6 +83,9 @@ but that is not one of Fren's (`lang::identifier`,
 `lang::integer_literal`), or prefix `!`, as the `fren` command's lexer
 does. -/
 partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
+  if stx.isOfKind ``Lang.refinesMember then
+    stx.getArgs[:6].toArray.forM checkLexemes
+    return
   if let `(fren_expr| !$_) := stx then throwErrorAt stx[0] (Core.foreignOpMsg "!").text
   match stx with
   | .ident _ raw _ _ =>
@@ -119,6 +122,9 @@ grammar accepts it:
 - `table` as a name: it is a reserved word, which Lean reads as a name
   where an expression starts, as it reads `when`. -/
 partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
+  if stx.isOfKind ``Lang.refinesMember then
+    stx.getArgs[:6].toArray.forM checkParsed
+    return
   let reserved (p : Syntax) : CommandElabM Unit := do
     let id := (pathSegs p)[0]!
     if id.getId.getRoot == Name.mkSimple "table" then throwErrorAt id Core.tableNameMsg
@@ -6505,6 +6511,10 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
   let mut clauses := #[]
   let mut uses := #[]
   for m in stx[12].getArgs do
+    let mut inner := m
+    while inner.isOfKind ``Lang.evidenceMember do inner := inner[4]
+    if inner.isOfKind ``Lang.refinesMember then
+      throwErrorAt inner "`refines` is accepted only in global expectation blocks"
     -- Each member that a function's block does not take (`F0442`,
     -- `F0443`), at its first token, or a `use`'s or an evidence
     -- setting's whole, as the `fren` command reports it.
@@ -6718,6 +6728,11 @@ open Lang in
 /-- The members of a procedure without their evidence settings, and the checks
 that those and the procedure's setting `all` set to testing. -/
 def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested × Core.Tested) := do
+  let reserved := raw.filterMap fun m0 => Id.run do
+    let mut m := m0
+    while m.isOfKind ``Lang.evidenceMember do m := m[4]
+    return (constraint? m).map fun (_, x, _) => x.getId
+  let mut refinesIndex := 0
   let mut members := #[]
   let mut expects := #[]
   let mut insts := #[]
@@ -6735,6 +6750,10 @@ def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Sy
       | .assume => misplaced "an assumption"; constraints := constraints.push x.getId
       | .ensure => misplaced "a guarantee"; constraints := constraints.push x.getId
     -- By the names they declare, without the `!` of shadowing.
+    else if m.isOfKind ``Lang.refinesMember then
+      refinesIndex := refinesIndex + 1
+      while reserved.contains (Name.mkSimple s!"refines_{refinesIndex}") do refinesIndex := refinesIndex + 1
+      expects := expects.push (Name.mkSimple s!"refines_{refinesIndex}", b?)
     else if m.isOfKind ``Lang.callMember then insts := insts.push ((declaredIdent m[1]).1.getId, b?)
     else if m.isOfKind ``Lang.outMember then
       -- `[pub] [det] out x [: T] [:= e]`
@@ -7015,6 +7034,116 @@ def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Va
     catch ex => logException ex; good := false
   return (props, defs, indexes, names, good)
 
+/-- Instantiate a specification positionally and generate ordinary expectation
+propositions. Specification assumptions are deliberately absent. -/
+def elabRefinesMembers (scope : Name) (members : Array Syntax) (vars : Array Var)
+    (insts : Array InstInfo) (declBase : Name) (fvs defnFvs : Array Expr)
+    (values : Array (Name × Expr)) (props : Array PropInfo) :
+    TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
+  let mut out := #[]
+  let mut defs := #[]
+  let mut indexes := #[]
+  let mut earlier : Array Name := #[]
+  for m in members do
+    if m.isOfKind ``Lang.callMember then earlier := earlier.push m[1].getId
+    unless m.isOfKind ``Lang.refinesMember do continue
+    let call := m[1].getId
+    let some inst := insts.find? (·.name == call)
+      | throwErrorAt m[1] "`{call}` is not a call in this global expectation block"
+    let r ← resolvePath scope (pathSegs m[2])
+    let .item { kind := .compItem, path, .. } := r
+      | throwErrorAt m[2] (Core.notACompMsg r).text
+    let some spec := (← getState).comps.get? path
+      | throwErrorAt m[2] "unknown specification procedure"
+    let some concrete := (← getState).comps.get? inst.comp
+      | throwErrorAt m[1] "unknown called procedure"
+    noteCounts spec m[2]
+    unless spec.decidable do modifyLocal fun l => { l with outsideCore := true }
+    let inputs := spec.vars.filter fun v => v.name.isAtomic && v.role == .input
+    let results := spec.vars.filter fun v => v.name.isAtomic && v.role == .output && v.isPub
+    let actual := concrete.vars.filter fun v => v.name.isAtomic && v.role == .output && v.isPub
+    let args := m[4].getSepArgs
+    unless args.size == inputs.size do
+      throwErrorAt m[2] (Core.callArityMsg (Core.showPath path) (inputs.map (Core.nameText ·.name)) args.size).text
+    unless results.size == actual.size do
+      throwErrorAt m[2] "refinement result count mismatch: specification has {results.size}, call has {actual.size}"
+    for v in spec.vars do
+      if v.name.isAtomic && v.role != .input && !v.isPub && v.defn?.isNone then
+        throwErrorAt m[2] "specification `exists` variable `{v.name}` is not supported by `refines`"
+    discard (takeIndexes fvs)
+    let cx : ExprCtx := { modName := scope, vars, insts := insts.map (·.name), place := .prop }
+    let inputValues ← (inputs.zip args).mapM fun (v, arg) => do
+      let t ← toTerm { cx with natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } arg
+      checkDeclared arg t v.type fun ty => s!"note: specification parameter `{v.name}` has type `{ty}`"
+      elabProp t v.type
+    let resultValues ← (results.zip actual).mapM fun (v, cv) => do
+      let some i := vars.findIdx? (·.name == call ++ cv.name)
+        | throwErrorAt m "missing call result"
+      let value := fvs[i]!
+      if ← isDefEq cv.type v.type then return value
+      if cv.type.isConstOf ``Nat && v.type.isConstOf ``Int then
+        return mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) value
+      throwErrorAt m[2] "refinement result type mismatch at `{v.name}`: call result `{cv.name}` cannot flow to the specification result"
+    let (body, specificationIndexes) ← withLocalDeclsD (spec.vars.map fun v => (v.name, fun _ => pure v.type)) fun sfvs => do
+      let mut slice := sfvs
+      for v in inputs, value in inputValues do
+        slice := slice.set! (spec.vars.findIdx? (·.name == v.name)).get! value
+      for v in results, value in resultValues do
+        slice := slice.set! (spec.vars.findIdx? (·.name == v.name)).get! value
+      -- Stored definitions already substitute dependencies on other lets.
+      -- Public results retain the concrete result, even when defined in the spec.
+      for (name, value) in spec.defs do
+        let some i := spec.vars.findIdx? (·.name == name) | continue
+        unless spec.vars[i]!.isPub do slice := slice.set! i (value.beta slice)
+      let guarantees := spec.ensures.map (·.body.beta slice)
+      let definitions ← spec.defs.filterMapM fun (name, value) => do
+        let some i := spec.vars.findIdx? (·.name == name) | return none
+        unless spec.vars[i]!.isPub do return none
+        return some (← mkEq slice[i]! (value.beta slice))
+      let typedResults ← ((inputs.zip inputValues) ++ (results.zip resultValues)).filterMapM fun (v, value) => do
+        let some obligation := v.ptype.obligation (← getState).shapeOf | return none
+        let pred ← predOf v.type obligation
+        return some (pred.beta #[value])
+      let goal := mkAndN (guarantees ++ definitions ++ typedResults).toList
+      let internalFacts := (spec.vars.zip slice).filterMap fun (v, value) =>
+        if v.name.isAtomic then none else v.fact?.map (·.beta #[value])
+      let callFacts := internalFacts ++ spec.insts.map fun i => mkAnd (i.bindings.beta slice) (i.behaviour.beta slice)
+      let internal := (spec.vars.zip sfvs).filterMap fun (v, fv) => if v.name.isAtomic then none else some fv
+      let close (goal : Expr) : TermElabM Expr := do
+        let goal ← if callFacts.isEmpty then pure goal else mkArrow (mkAndN callFacts.toList) goal
+        mkForallFVars internal goal
+      let checked := spec.ensures.map (·.name) ++ spec.defs.map (·.1)
+      let specificationIndexes ← spec.indexes.filterMapM fun (n, _, _, question, value) => do
+        unless question.isNone && checked.contains n do return none
+        return some (← mkLambdaFVars fvs (← close (value.beta slice)))
+      return (← close goal, specificationIndexes)
+    let mut serial := defs.size + 1
+    while (props ++ out).any (·.name == Name.mkSimple s!"refines_{serial}") do serial := serial + 1
+    let name := Name.mkSimple s!"refines_{serial}"
+    let decl := declBase ++ `expect ++ name
+    indexes := indexes ++ ((← takeIndexes fvs).map fun (r, q, g) => (name, Core.IndexPlace.prop, r, q, g))
+      ++ specificationIndexes.map (fun g => (name, Core.IndexPlace.prop, m, none, g))
+    if !m[6].isNone then
+      let assumptions := (props.filter (·.kind == .assume)).map (·.body.beta fvs)
+      let calls := (insts.filter fun i => earlier.contains i.name).map fun i => mkAnd (i.bindings.beta fvs) (i.behaviour.beta fvs)
+      let definitions ← (values.zip defnFvs).mapM fun ((_, value), fv) => mkEq fv value
+      let goal ← mkForallFVars fvs (← mkArrow (mkAndN (assumptions ++ calls ++ definitions).toList) body)
+      let tacs : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨m[6][1]⟩
+      let pf ← withoutErrToSorry <| Term.elabTermEnsuringType (← `(by $tacs)) goal
+      Term.synthesizeSyntheticMVarsNoPostponing
+      let pf ← instantiateMVars pf
+      if pf.hasSorry then throwErrorAt m[6] "a refinement proof must not contain `sorry`"
+      if pf.hasMVar then throwErrorAt m[6] "refinement proof has unresolved goals"
+      -- Kernel-check the proof while all block variables are abstracted.
+      let uses ← usesOf #[goal, pf]
+      let (proofType, proofValue) ← withUses uses fun xs => do
+        return (← mkForallFVars xs (replaceUses uses xs goal), ← mkLambdaFVars xs (replaceUses uses xs pf))
+      addDecl (.thmDecl { name := decl ++ `proof, levelParams := [], «type» := proofType, value := proofValue })
+    defs := defs.push (decl, body)
+    if m[6].isNone then
+      out := out.push { kind := .expect, name, ref := m, decl, trigger? := none, triggerRef? := none, body := ← mkLambdaFVars fvs body }
+  return (out, defs, indexes)
+
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
 constraints. -/
 def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
@@ -7150,6 +7279,11 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     let (insts, defs, values, defnFvs, indexes, defsOk) ← elabCompDefinitions scope vars pending declBase fvs
     let (props, defs, indexes, _, propsOk) ←
       elabCompConstraints scope members vars instNames declBase fvs defnFvs values varNames defs indexes
+    let (refines, refineDefs, refineIndexes) ←
+      elabRefinesMembers scope members vars insts declBase fvs defnFvs values props
+    let props := props ++ refines
+    let defs := defs ++ refineDefs
+    let indexes := indexes ++ refineIndexes
     let good := varsOk && defsOk && propsOk
     lintDuplicateConstraints members
     let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
@@ -7171,6 +7305,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   for m in members do
     if m.isOfKind ``Lang.callMember then
       for a in m[5].getSepArgs do mentioned := mentioned ++ pathMentions a
+    if m.isOfKind ``Lang.refinesMember then
+      for a in m[4].getSepArgs do mentioned := mentioned ++ pathMentions a
     if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
   for v in vars do
     if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
@@ -7182,6 +7318,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   for m in members do
     if m.isOfKind ``Lang.callMember then
       for a in m[5].getSepArgs do others := others ++ pathMentions a
+    if m.isOfKind ``Lang.refinesMember then
+      for a in m[4].getSepArgs do others := others ++ pathMentions a
     if let some (kind, _, e) := constraint? m then
       unless kind == .assume do others := others ++ pathMentions e
   for v in vars do
@@ -7198,6 +7336,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   for m in members do
     if m.isOfKind ``Lang.callMember then
       for a in m[5].getSepArgs do others := others ++ (← appliedFns acx a)
+    if m.isOfKind ``Lang.refinesMember then
+      for a in m[4].getSepArgs do others := others ++ (← appliedFns acx a)
     if let some (kind, _, e) := constraint? m then
       unless kind == .assume do others := others ++ (← appliedFns acx e)
   for v in vars do
@@ -7227,7 +7367,9 @@ def lintUnrelatedCalls (nameStx : Syntax) (n : String) (members : Array Syntax) 
   let expand (roots : Array Name) := roots.filter names.contains ++ (roots.filter params.contains).flatMap reading
   let atoms := members.flatMap (fun m => match constraint? m with
       | some (_, _, e) => (boolNode "" 0 (unparen e)).atoms.map fun a => expand ((pathMentions a.ref).map (·.getRoot))
-      | none => #[])
+      | none => if m.isOfKind ``Lang.refinesMember then
+          #[expand (#[m[1].getId] ++ m[4].getSepArgs.flatMap fun a => (pathMentions a).map (·.getRoot))]
+        else #[])
     -- A relation of one call alone puts it in no group.
     ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
   let groups := Core.binderGroups names atoms
@@ -7240,6 +7382,10 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
     (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3)
     (global : Bool := false) :
     TermElabM (Bool × Array Name) := do
+  unless global do
+    for m in members do
+      if m.isOfKind ``Lang.refinesMember then
+        throwErrorAt m "`refines` is accepted only in global expectation blocks"
   let (vars, names, ok) ← elabCompVars scope members
   unless ok do return (false, #[])
   let (pending, vars, names, ok) ← elabCompInsts scope members vars names
@@ -7381,6 +7527,7 @@ def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Bloc
       else if m.isOfKind ``Lang.expectMember then (.expect, false)
       else if m.isOfKind ``Lang.coverMember then (.cover, false)
       else if m.isOfKind ``Lang.callMember then (.call, false)
+      else if m.isOfKind ``Lang.refinesMember then (.refines, false)
       else (.use, false)
     unless Core.blockMemberAccepted kind det do return some (m, kind, det)
   return none
@@ -7581,6 +7728,10 @@ def globalText (stx : Syntax) : String :=
 
 /-! ## Refinements -/
 
+@[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx =>
+  throwErrorAt stx "top-level `refine` has been removed; use `refines c spec(args)` in a global expectation block"
+
+
 /-- Elaborates `refine r: c refines a { bindings }` into the procedure that
 checks it (`Reqs/Lang/Refinement`): `c`'s inputs, `a`'s assumptions, an
 call of `c` named as it is, `a`'s calls, and `a`'s requirements
@@ -7588,7 +7739,7 @@ and definitions as expectations, with `a`'s variables read as their
 bindings or as `c`'s of the same names, and `c`'s outputs from the
 call. With `by`, the tactics prove the obligation, generated as `r`,
 and the solver is asked nothing. -/
-@[command_elab Lang.refineCmd] def elabRefine : CommandElab := recordingErrors fun stx => do
+def elabRefineLegacy : CommandElab := recordingErrors fun stx => do
   -- Its proof, after `by`, is Lean.
   let spec := stx.getArgs[:7].toArray
   spec.forM checkLexemes

@@ -98,7 +98,10 @@ pub proc identifier_shape(lexeme: String): (accepted?) {
 }
 
 set_option fren.evidence "tested" in
-refine identifier_has_shape: identifier refines identifier_shape
+expect identifier_has_shape(lexeme: String) {
+    call concrete := identifier(lexeme)
+    refines concrete identifier_shape(lexeme)
+}
 ```
 
 Identifiers follow the rule of *maximal munch*: an identifier is the
@@ -158,7 +161,10 @@ pub proc longest_identifier(
 }
 
 set_option fren.evidence "tested" in
-refine identifier_end_is_longest: identifier_end refines longest_identifier
+expect identifier_end_is_longest(lexeme: String, remaining: String) {
+    call concrete := identifier_end(lexeme, remaining)
+    refines concrete longest_identifier(lexeme, remaining)
+}
 ```
 
 ## Paths
@@ -349,7 +355,10 @@ pub proc escape_text(
 }
 
 set_option fren.evidence "tested" in
-refine escape_sequence_is_exact: escape_sequence refines escape_text
+expect escape_sequence_is_exact(remaining: String) {
+    call concrete := escape_sequence(remaining)
+    refines concrete escape_text(remaining)
+}
 ```
 
 `lang::escape_start` says which input starts an escape sequence again,
@@ -372,7 +381,17 @@ pub proc escape_start(
         and remaining.at(4).matches?(r"[0-9a-fA-F]")))
 }
 
-refine escape_sequence_starts: escape_sequence refines escape_start
+expect escape_sequence_starts(remaining: String) {
+    call concrete := escape_sequence(remaining)
+    expect escapes: (concrete.accepted?) iff ((remaining).starts_with?("n") or (remaining).starts_with?("r")
+        or (remaining).starts_with?("t") or (remaining).starts_with?("\\") or (remaining).starts_with?("\"")
+        or (remaining).starts_with?("'")
+        or ((remaining).starts_with?("x") and (remaining).at(1).matches?(r"[0-9a-fA-F]")
+        and (remaining).at(2).matches?(r"[0-9a-fA-F]"))
+        or ((remaining).starts_with?("u") and (remaining).at(1).matches?(r"[0-9a-fA-F]")
+        and (remaining).at(2).matches?(r"[0-9a-fA-F]") and (remaining).at(3).matches?(r"[0-9a-fA-F]")
+        and (remaining).at(4).matches?(r"[0-9a-fA-F]")))
+}
 ```
 
 ## Punctuators
@@ -516,7 +535,12 @@ pub proc longest_punctuator(
 }
 
 set_option fren.evidence "tested" in
-refine punctuator_end_is_longest: punctuator_end refines longest_punctuator
+expect punctuator_end_is_longest(lexeme: String, remaining: String) {
+    use lang
+    assume spec_a_punctuator: (lexeme) in lang::PUNCTUATORS
+    call concrete := punctuator_end(lexeme, remaining)
+    refines concrete longest_punctuator(lexeme, remaining)
+}
 ```
 
 ## Tokens apart

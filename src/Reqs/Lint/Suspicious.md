@@ -217,8 +217,16 @@ pub proc irrefutable_is_value(s: Shade, n: Int): (det wildcard?, det every?, det
     out ranges? := true
 }
 
-refine irrefutable_is_sound: irrefutable_is_value refines irrefutable_is_written
-refine irrefutable_is_complete: irrefutable_is_written refines irrefutable_is_value
+expect irrefutable_is_sound(s: lint::Shade, n: Int) {
+    use lint
+    call concrete := irrefutable_is_value(s, n)
+    refines concrete irrefutable_is_written(s, n)
+}
+expect irrefutable_is_complete(s: lint::Shade, n: Int) {
+    use lint
+    call concrete := irrefutable_is_written(s, n)
+    refines concrete irrefutable_is_value(s, n)
+}
 ```
 
 ## Cover goals
@@ -330,6 +338,12 @@ pub proc redundant_locals_fixed(x: Int, y: Int): (
     out clause := x + y
 }
 
-refine redundant_locals_sound: redundant_locals_fixed refines redundant_locals_written
-refine redundant_locals_complete: redundant_locals_written refines redundant_locals_fixed
+expect redundant_locals_sound(x: Int, y: Int) {
+    call concrete := redundant_locals_fixed(x, y)
+    refines concrete redundant_locals_written(x, y)
+}
+expect redundant_locals_complete(x: Int, y: Int) {
+    call concrete := redundant_locals_written(x, y)
+    refines concrete redundant_locals_fixed(x, y)
+}
 ```

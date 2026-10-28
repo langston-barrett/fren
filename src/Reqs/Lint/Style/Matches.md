@@ -235,8 +235,16 @@ pub proc collapsible_match_fixed(g: Gauge): (det v: Int) {
     }
 }
 
-refine collapsible_match_sound: collapsible_match_fixed refines collapsible_match_written
-refine collapsible_match_complete: collapsible_match_written refines collapsible_match_fixed
+expect collapsible_match_sound(g: lint::Gauge) {
+    use lint
+    call concrete := collapsible_match_fixed(g)
+    refines concrete collapsible_match_written(g)
+}
+expect collapsible_match_complete(g: lint::Gauge) {
+    use lint
+    call concrete := collapsible_match_written(g)
+    refines concrete collapsible_match_fixed(g)
+}
 ```
 
 Where the inner `_` arm's body mentions a binder of the arm's pattern, the
@@ -261,8 +269,16 @@ pub proc collapsible_shadow_fixed(g: Gauge, n: Int): (det v: Int) {
     }
 }
 
-refine collapsible_shadow_sound: collapsible_shadow_fixed refines collapsible_shadow_written
-refine collapsible_shadow_complete: collapsible_shadow_written refines collapsible_shadow_fixed
+expect collapsible_shadow_sound(g: lint::Gauge, n: Int) {
+    use lint
+    call concrete := collapsible_shadow_fixed(g, n)
+    refines concrete collapsible_shadow_written(g, n)
+}
+expect collapsible_shadow_complete(g: lint::Gauge, n: Int) {
+    use lint
+    call concrete := collapsible_shadow_written(g, n)
+    refines concrete collapsible_shadow_fixed(g, n)
+}
 ```
 
 ## Overlapping arms

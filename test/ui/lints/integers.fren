@@ -20,15 +20,15 @@ proc absolute(x: Int, y: Int, n: Nat): (
     b5: Int,
     b6: Int,
 ) {
-    out a1 := if x < 0 then -x else x                  --~ warning: write `x.abs`
-    out a2 := if 0 >= x then -x else x                 --~ warning: write `x.abs`
-    out a3 := if x >= 0 then x else -x                 --~ warning: write `x.abs`
-    out a4 := if 0 < x then x else -x                  --~ warning: write `x.abs`
-    out a5 := if x - y < 0 then -(x - y) else x - y    --~ warning: write `(x - y).abs`
-    out a6 := 2 * if n <= 0 then -n else n             --~ warning: write `n.abs`
-    out a7 := if x > y then x - y else y - x           --~ warning: write `(x - y).abs`
-    out a8 := if x <= y then y - x else x - y          --~ warning: write `(y - x).abs`
-    out a9 := if y < x then x - y else y - x           --~ warning: write `(x - y).abs`
+    out a1 := if x < 0 then -x else x  --~ warning: this conditional is the absolute value
+    out a2 := if 0 >= x then -x else x  --~ warning: this conditional is the absolute value
+    out a3 := if x >= 0 then x else -x  --~ warning: this conditional is the absolute value
+    out a4 := if 0 < x then x else -x  --~ warning: this conditional is the absolute value
+    out a5 := if x - y < 0 then -(x - y) else x - y  --~ warning: this conditional is the absolute value
+    out a6 := 2 * if n <= 0 then -n else n  --~ warning: this conditional is the absolute value
+    out a7 := if x > y then x - y else y - x  --~ warning: this conditional is the absolute value of a difference
+    out a8 := if x <= y then y - x else x - y  --~ warning: this conditional is the absolute value of a difference
+    out a9 := if y < x then x - y else y - x  --~ warning: this conditional is the absolute value of a difference
     -- The negative branch where `x` is not negative, a bound other than
     -- `0`, or other operands: no lint.
     out b1 := if x < 0 then x else -x
@@ -36,7 +36,7 @@ proc absolute(x: Int, y: Int, n: Nat): (
     out b3 := if x < 0 then -y else x
     out b4 := if x > y then y - x else x - y
     out b5 := if x = 0 then -x else x
-    out b6 := if x > y then x - y else x - y         --~ warning: both branches of `if` are written the same
+    out b6 := if x > y then x - y else x - y  --~ warning: both branches of `if` are written the same
 }
 
 proc lesser_greater(x: Int, y: Int, n: Nat, s: String): (
@@ -53,14 +53,14 @@ proc lesser_greater(x: Int, y: Int, n: Nat, s: String): (
     n3: Int,
     n4: String,
 ) {
-    out m1 := if x < y then x else y                   --~ warning: write `x.min(y)`
-    out m2 := if x <= y then y else x                  --~ warning: write `x.max(y)`
-    out m3 := if x > y then y else x                   --~ warning: write `x.min(y)`
-    out m4 := if x >= y then x else y                  --~ warning: write `x.max(y)`
-    out m5 := if n > 3 then 3 else n                   --~ warning: write `n.min(3)`
-    out m6 := if 0 < x then 0 else x                   --~ warning: write `x.min(0)`
-    out m7 := if x + 1 < y then x + 1 else y           --~ warning: write `y.min(x + 1)`
-    out m8 := if x < LIMIT then LIMIT else x           --~ warning: write `x.max(LIMIT)`
+    out m1 := if x < y then x else y  --~ warning: this conditional is `min`
+    out m2 := if x <= y then y else x  --~ warning: this conditional is `max`
+    out m3 := if x > y then y else x  --~ warning: this conditional is `min`
+    out m4 := if x >= y then x else y  --~ warning: this conditional is `max`
+    out m5 := if n > 3 then 3 else n  --~ warning: this conditional is `min`
+    out m6 := if 0 < x then 0 else x  --~ warning: this conditional is `min`
+    out m7 := if x + 1 < y then x + 1 else y  --~ warning: this conditional is `min`
+    out m8 := if x < LIMIT then LIMIT else x  --~ warning: this conditional is `max`
     -- The lint suggests `min` and `max` of numbers only, not of `String`s,
     -- which have them too; literals on both sides would change type, and
     -- `=` or other branches are not `min` or `max`: no lint.
@@ -71,13 +71,13 @@ proc lesser_greater(x: Int, y: Int, n: Nat, s: String): (
 }
 
 proc clamps(x: Int, n: Nat): (c1: Int, c2: Int, c3: Nat, c4: Int, d1: Int, d2: Int) {
-    out c1 := if x < 0 then 0 else if x > 9 then 9 else x       --~ warning: write `x.max(0).min(9)`
-    out c2 := if x >= 9 then 9 else if x <= -3 then -3 else x   --~ warning: write `x.max(-3).min(9)`
-    out c3 := if 9 < n then 9 else if 2 > n then 2 else n       --~ warning: write `n.max(2).min(9)`
-    out c4 := if x < 3 then 3 else if x > 3 then 3 else x       --~ warning: write `x.max(3).min(3)`
+    out c1 := if x < 0 then 0 else if x > 9 then 9 else x  --~ warning: this conditional keeps its operand between two bounds
+    out c2 := if x >= 9 then 9 else if x <= -3 then -3 else x  --~ warning: this conditional keeps its operand between two bounds
+    out c3 := if 9 < n then 9 else if 2 > n then 2 else n  --~ warning: this conditional keeps its operand between two bounds
+    out c4 := if x < 3 then 3 else if x > 3 then 3 else x  --~ warning: this conditional keeps its operand between two bounds
     -- Bounds out of order, or not literals: only the inner `min` or `max`.
-    out d1 := if x < 9 then 9 else if x > 0 then 0 else x       --~ warning: write `x.min(0)`
-    out d2 := if x < LIMIT then LIMIT else if x > 9 then 9 else x  --~ warning: write `x.min(9)`
+    out d1 := if x < 9 then 9 else if x > 0 then 0 else x  --~ warning: this conditional is `min`
+    out d2 := if x < LIMIT then LIMIT else if x > 9 then 9 else x  --~ warning: this conditional is `min`
 }
 
 proc remainders(x: Int, n: Nat): (
@@ -91,16 +91,14 @@ proc remainders(x: Int, n: Nat): (
     s2: Int,
     s3: Int,
 ) {
-    out r1 := (x mod 7 + 7) mod 7                      --~ warning: write `x mod 7`
-    out r2 := (-3 + x mod -3) mod -3                   --~ warning: write `x mod -3`
-    out r3 := 2 * ((n mod LIMIT + LIMIT) mod LIMIT)    --~ warning: write `n mod LIMIT`
-    out r4 := x mod 1                                  --~ warning: the remainder by `1` is always `0`
-    out r5 := x mod -1 + x div 1
-    --~^ warning: the remainder by `-1` is always `0`
-    --~^^ warning: write `x`
-    out r6 := x + 0 div 7 + 0 mod -3
-    --~^ warning: this `div` is always `0`
-    --~^^ warning: this `mod` is always `0`
+    out r1 := (x mod 7 + 7) mod 7  --~ warning: `mod` is never negative already
+    out r2 := (-3 + x mod -3) mod -3  --~ warning: `mod` is never negative already
+    out r3 := 2 * ((n mod LIMIT + LIMIT) mod LIMIT)  --~ warning: `mod` is never negative already
+    out r4 := x mod 1  --~ warning: the remainder by `1` is always `0`
+    out r5 := x mod -1 + x div 1  --~ warning: the remainder by `-1` is always `0`
+    --~^ warning: this operation has no effect
+    out r6 := x + 0 div 7 + 0 mod -3  --~ warning: this `div` is always `0`
+    --~^ warning: this `mod` is always `0`
     -- Other divisors or addends: no lint.
     out s1 := (x mod 7 + 6) mod 7
     out s2 := (x mod 7 + 7) mod 5
@@ -108,10 +106,10 @@ proc remainders(x: Int, n: Nat): (
 }
 
 proc bounds(x: Int): (b1: Int, b2: Int, b3: Int, b4: Int, c1: Int, c2: Int, c3: Int, c4: Int) {
-    out b1 := x.min(0).max(9)                          --~ warning: always give `9`
-    out b2 := x.max(4).min(-1)                         --~ warning: always give `-1`
-    out b3 := x.min(x)                                 --~ warning: the receiver and the argument of `min` are written the same
-    out b4 := (x + 1).max(x + 1)                       --~ warning: the receiver and the argument of `max` are written the same
+    out b1 := x.min(0).max(9)  --~ warning: always give `9`
+    out b2 := x.max(4).min(-1)  --~ warning: always give `-1`
+    out b3 := x.min(x)  --~ warning: the receiver and the argument of `min` are written the same
+    out b4 := (x + 1).max(x + 1)  --~ warning: the receiver and the argument of `max` are written the same
     -- Bounds in order, equal, or not literals: no lint.
     out c1 := x.max(0).min(9)
     out c2 := x.min(3).max(3)
@@ -120,18 +118,17 @@ proc bounds(x: Int): (b1: Int, b2: Int, b3: Int, b4: Int, c1: Int, c2: Int, c3: 
 }
 
 proc naturals(n: Int, k: Int, j: Int, i: Int, h: Int, c?): (m: Int, p: Int, q: Int) {
-    assume counts: n >= 0 and k > n                             --~ warning: `n` is never negative, so it can be a `Nat`
-    --~^ warning: these comparisons can be chained
-    assume order: (0 <= j)                                      --~ warning: `j` is never negative, so it can be a `Nat`
+    assume counts: n >= 0 and k > n  --~ warning: these comparisons can be chained
+    --~^ warning: `n` is never negative, so it can be a `Nat`
+    assume order: (0 <= j)  --~ warning: `j` is never negative, so it can be a `Nat`
     --~^ warning: the assumption `order` constrains only parameters that nothing uses
     -- Under `when` or `or`, or not `0`: no lint.
     assume guarded: when c?, i >= 0
     assume either: i >= 0 or k = 1
-    assume shifted: h >= 1
-    --~^ warning: the assumption `shifted` constrains only parameters that nothing uses
+    assume shifted: h >= 1  --~ warning: the assumption `shifted` constrains only parameters that nothing uses
 
-    ensure r: m >= 0 and m <= n                                    --~ warning: `m` is never negative, so it can be a `Nat`
-    --~^ warning: these comparisons can be chained
+    ensure r: m >= 0 and m <= n  --~ warning: these comparisons can be chained
+    --~^ warning: `m` is never negative, so it can be a `Nat`
     ensure s: p = n + q
     -- A guarantee on an input: no lint.
     ensure u: q = 1 and k >= 0
@@ -143,11 +140,15 @@ proc naturals(n: Int, k: Int, j: Int, i: Int, h: Int, c?): (m: Int, p: Int, q: I
 -- keeps the variable an `Int`: no lint there.
 proc held(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v }
 proc binds(a: Int, b: Int): (c: Int) { assume order: a >= b call p := held(a - b) ensure r: c = p.w }
-proc free(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v }   --~ warning: `v` is never negative
+proc free(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v }  --~ warning: `v` is never negative
 proc binds_nat(a: Nat): (c: Int) { call p := free(a) ensure r: c = p.w }
 proc concrete(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v + 1 }
-proc abstract(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w > v }   --~ warning: `v` is never negative
-refine reads: concrete refines abstract
+proc abstract(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w > v }  --~ warning: `v` is never negative
+expect reads(v: Int) {
+    assume spec_nonneg: (v) >= 0  --~ warning: `v` is never negative
+    call concrete_1 := concrete(v)
+    refines concrete_1 abstract(v)
+}
 
 -- A newtype has no `abs`, and an ordered enumeration has `min` and `max`
 -- only: the lints follow the type the condition compares. An ordered
@@ -158,9 +159,9 @@ ordered enum Level { Low, Mid, High }
 proc newtypes(a: Ms, b: Ms, l: Level, k: Level): (m: Ms, d: Ms, n: Level, o: Level) {
     out m := if a < b then a else b
     out d := if a > b then a - b else b - a
-    out n := if l < k then l else k              --~ warning: write `l.min(k)`
-    out o := if l < k then l  -- the lower
-        else k  --~^ warning: the fix would drop the comments in the conditional
+    out n := if l < k then l else k  --~ warning: this conditional is `min`
+    out o := if l < k then l  -- the lower  --~ warning: this conditional is `min`
+        else k
 }
 
---@ summary: 38 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 39 passed, 0 failed, 0 inconclusive, 0 redundant

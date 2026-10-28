@@ -20,6 +20,7 @@ def toBlockMember : BlockMember → lang.BlockMember
   | .expect => .Expect
   | .cover => .Cover
   | .call => .Call
+  | .refines => .Refines
   | .use => .Use
 
 -- For every member, `det` or not: whether a global expectation's block

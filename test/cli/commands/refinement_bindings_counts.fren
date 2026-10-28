@@ -11,9 +11,18 @@ proc related(r: Rel<E, E>, s: Set<E>): (t: Rel<E, E>, size: Int) {
 
 proc counted(n: Int): (size: Int) { assume pos: n >= 0 ensure r: size = 0 or n > 0 }
 
-refine counts: related refines counted { n := s.card }
+expect counts(r: Rel<E, E>, s: Set<E>) {
+    use E
+    assume spec_pos: ((s).card) >= 0
+    call concrete := related(r, s)
+    expect result: (concrete.size) = 0 or ((s).card) > 0
+}
 
 -- Without counting, the same refinement is in the core.
 proc membered(has_a?): (size: Int) { ensure r: when has_a?, size != 0 }
 
-refine members: related refines membered { has_a? := E::A in s }
+expect members(r: Rel<E, E>, s: Set<E>) {
+    use E
+    call concrete := related(r, s)
+    expect result: when (E::A in (s)), (concrete.size) != 0
+}

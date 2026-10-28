@@ -16,8 +16,12 @@ proc relating(r: Rel<E, E>, s: Set<E>): (n: Int) {
     ensure k: when E::A in s, n >= 0
 }
 
-refine counts_relates: counting refines relating
---~^ error: the solver does not reliably combine counting with relational operators
+expect counts_relates(r: Rel<E, E>, s: Set<E>) {
+    use E
+    call concrete := counting(r, s)  --~ error: the solver does not reliably combine counting with relational operators
+    expect j: when ((r) join (r)) = (r), (concrete.n) >= 0
+    expect k: when E::A in (s), (concrete.n) >= 0
+}
 
 proc bounded(s: Set<E>): (n: Int) { ensure c: n <= s.card }
 
@@ -27,7 +31,10 @@ proc joined(r: Rel<E, E>, s: Set<E>): (n: Int, closed?, has_a?) {
     ensure h: has_a? iff E::A in s
 }
 
-refine relates_counts: joined refines bounded
---~^ error: the solver does not reliably combine counting with relational operators
+expect relates_counts(r: Rel<E, E>, s: Set<E>) {
+    use E
+    call concrete := joined(r, s)
+    expect c: (concrete.n) <= (s).card  --~ error: the solver does not reliably combine counting with relational operators
+}
 
 --@ exit: 2

@@ -196,9 +196,11 @@ pub proc recursive_payload(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine recursive_place: recursive_payload refines type_parameter_place {
-    place := if not nested? and args = params and not Arg::Other in params then ParamPlace::OwnParameter
-        else ParamPlace::OwnOther,
+expect recursive_place(params: Seq<lang::Arg>, args: Seq<lang::Arg>, nested?) {
+    use lang
+    call concrete := recursive_payload(params, args, nested?)
+    refines concrete type_parameter_place(if not (nested?) and (args) = (params) and not lang::Arg::Other in (params) then lang::ParamPlace::OwnParameter
+            else lang::ParamPlace::OwnOther)
 }
 ```
 
@@ -300,11 +302,13 @@ pub proc own_type(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine own_place: own_type refines type_parameter_place {
-    place := if own_nested?(segs) or (own_whole?(segs) and not (params <= 3 and segs = own_written(params)))
-        then ParamPlace::OwnOther
-        else if own_whole?(segs) then ParamPlace::OwnParameter
-        else ParamPlace::Whole,
+expect own_place(params: Nat, segs: Seq<lang::Segment>) {
+    use lang
+    call concrete := own_type(params, segs)
+    expect rule: (concrete.accepted?) iff (if lang::own_nested?((segs)) or (lang::own_whole?((segs)) and not ((params) <= 3 and (segs) = lang::own_written((params))))
+        then lang::ParamPlace::OwnOther
+        else if lang::own_whole?((segs)) then lang::ParamPlace::OwnParameter
+        else lang::ParamPlace::Whole) is lang::ParamPlace::Whole | lang::ParamPlace::Argument | lang::ParamPlace::OwnParameter
 }
 ```
 
@@ -407,9 +411,10 @@ pub proc written_type_arguments(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine written_arguments: written_type_arguments refines type_arguments {
-    params := if named = Named::Data then params.len else 0,
-    args := args.len,
+expect written_arguments(named: lang::Named, params: Seq<lang::Arg>, args: Seq<lang::Arg>) {
+    use lang
+    call concrete := written_type_arguments(named, params, args)
+    refines concrete type_arguments(if (named) = lang::Named::Data then (params).len else 0, (args).len)
 }
 ```
 
@@ -540,12 +545,16 @@ pub proc construction_synthesis(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine construction_shape: construction_synthesis refines synthesizes {
-    shape := Shape::Construction,
-    parts := params,
-    synthesizing := (if params >= 1 and ArgMode::Gives(Arg::P0) in values then 1 else 0)
-        + (if params >= 2 and ArgMode::Gives(Arg::P1) in values then 1 else 0)
-        + (if params >= 3 and ArgMode::Gives(Arg::P2) in values then 1 else 0),
+expect construction_shape(params: Nat, values: Seq<lang::ArgMode>) {
+    use lang
+    assume spec_counted: ((if (params) >= 1 and lang::ArgMode::Gives(lang::Arg::P0) in (values) then 1 else 0)
+        + (if (params) >= 2 and lang::ArgMode::Gives(lang::Arg::P1) in (values) then 1 else 0)
+        + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0)) <= (params)
+    assume spec_pair: when (lang::Shape::Construction) = lang::Shape::Pair, (params) = 2
+    call concrete := construction_synthesis(params, values)
+    refines concrete synthesizes(lang::Shape::Construction, (params), (if (params) >= 1 and lang::ArgMode::Gives(lang::Arg::P0) in (values) then 1 else 0)
+            + (if (params) >= 2 and lang::ArgMode::Gives(lang::Arg::P1) in (values) then 1 else 0)
+            + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0))
 }
 ```
 

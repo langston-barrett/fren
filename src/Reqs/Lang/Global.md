@@ -24,6 +24,7 @@ members that a claim needs, and no others:
   as `w.x`, as a procedure's call does;
 - `expect n: e` is a claim, and `cover n: e` a scenario that must be
   possible, as in a procedure;
+- `refines c a(args)` claims the specification `a` of call `c` (see [Refinement](Refinement.md));
 - `let x: T := e` names an expression, and `use` imports names for the
   block, as in a procedure.
 
@@ -46,15 +47,27 @@ pub mod lang
 accepts, and a result in its signature, which it does not:
 
 ```fren
-pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Use }
+pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Refines, Use }
 
 pub proc block_member(
     member: BlockMember,
     det?,                -- written with `det`
 ): (det accepted?) {
-    use self::BlockMember::{Assume, Call, Cover, Define, Ensure, Exists, Expect, Let, Result, Use}
+    use self::BlockMember::{
+        Assume,
+        Call,
+        Cover,
+        Define,
+        Ensure,
+        Exists,
+        Expect,
+        Let,
+        Refines,
+        Result,
+        Use,
+    }
 
-    ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Use})
+    ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Refines, Use})
 
     expect claims: when member in {Expect, Cover} and not det?, accepted?
     expect constrains_nothing: when member in {Result, Exists, Define, Ensure}, not accepted?
@@ -241,20 +254,41 @@ pub proc global_migration_name(
 }
 ```
 
-`global_migration_meaning` states why copying the assumptions preserves
-the old domain. Worlds that obey the old binders' assumptions and calls
-are precisely those admitted by the migrated block:
+## Relocating references
+
+Migration resolves free names at the declaration of the callee, before
+moving its assumptions. It does not resolve them at the caller. A local
+binder masks input substitution only in its lexical scope. This matters
+both when the caller has no such function and when it has a different
+function with the same spelling. Qualification must retain the original
+symbol even in the latter case; merely checking that the rewrite is
+well typed cannot establish preservation.
+
+The model below represents a predicate application by its resolved symbol
+and argument. The environments before and after relocation may disagree
+on the spelling; the rewritten reference retains the definition's symbol.
+The interpretation supplies the actual predicate meanings. Renaming an
+input supplies its value through the generated parameter, rather than
+re-resolving its original spelling.
 
 ```fren
+pub type GlobalSymbol
+
 pub proc global_migration_meaning(
-    old_assumptions: Set<GlobalWorld>,
-    calls: Set<GlobalWorld>,
-    claim: Set<GlobalWorld>,
-): (det old_worlds: Set<GlobalWorld>, det new_worlds: Set<GlobalWorld>, det same?) {
-    out old_worlds := old_assumptions inter calls
-    out new_worlds := old_assumptions inter calls
-    ensure meaning: same? iff (old_worlds subset claim iff new_worlds subset claim)
-    expect domains: old_worlds = new_worlds
-    expect preserved: same?
+    definition_symbol: GlobalSymbol,
+    caller_symbol: GlobalSymbol,
+    input_value: Int,
+    generated_parameter: Int,
+    interpretation: Rel<GlobalSymbol, Int>,
+): (det relocated_symbol: GlobalSymbol, det original?, det relocated?, det captured?) {
+    assume substitution: generated_parameter = input_value
+    out relocated_symbol := definition_symbol
+    ensure original: original? iff (definition_symbol, input_value) in interpretation
+    ensure relocation: relocated? iff (relocated_symbol, generated_parameter) in interpretation
+    ensure capture: captured? iff (caller_symbol, generated_parameter) in interpretation
+    expect preservation: original? iff relocated?
+    expect detects_capture: when (definition_symbol, input_value) in interpretation and not (caller_symbol, input_value) in interpretation,
+        original? and not captured?
+    cover different_domains: original? and not captured?
 }
 ```

@@ -1,4 +1,7 @@
--- A refinement that binds a name that is not a variable of the abstract component.
+-- A refinement argument resolves in the expectation block.
 proc precise(x: Int): (y: Int) { ensure r: y = x }
 proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough { w := y }
+expect fits(x: Int) {
+    call c := precise(x)
+    refines c rough(w)
+}

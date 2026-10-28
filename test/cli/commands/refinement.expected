@@ -1,13 +1,13 @@
-error[F0603]: expectation `lexref::word_is_wrong::never` does not hold
-  --> test/cli/commands/refinement.fren:26:8
+error[F0603]: expectation `lexref::word_is_wrong::refines_1` does not hold
+  --> test/cli/commands/refinement.fren:31:5
    |
-26 | refine word_is_wrong: word refines wrong
-   |        ^^^^^^^^^^^^^ does not follow from the guarantees
+31 |     refines concrete wrong(text)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
    |
-   = counterexample: text = "A", word.text = "A", word.accepted? = true
-   = help: strengthen the guarantees so that it follows, or correct the expectation
+   = counterexample: text = "A", concrete.accepted? = true
+   = help: correct the expectation, or assume what it needs
 
-fren: 15 passed (2 by testing), 1 failed, 0 inconclusive, 0 redundant
+fren: 16 passed (2 by testing), 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0603`.
 exit=1
