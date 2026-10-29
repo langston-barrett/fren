@@ -1,0 +1,56 @@
+--@ args: fix --check
+mod http
+
+ordered struct Seconds(Nat)                    -- newtype with derived ordering
+enum Decision { GiveUp, RetryAfter(Seconds) }  -- Rust-style enums
+enum Method { Get, Put, Post, Delete }
+type Status = status: Nat                      -- type alias with an invariant
+    where status_range: status is 100..=599    -- `status_range` is a label
+type Pos = n: Nat where positive: n is 1..     -- type alias using pattern type
+
+const MAX_ATTEMPTS: Nat := 5
+const MAX_DELAY: Seconds := Seconds(30)
+
+proc retry(
+    method: Method,
+    status: Status,
+    attempt: Pos,                    -- attempts made so far
+    retry_after: Seconds,            -- the server's `Retry-After`, or 0
+): (decision: Decision) {
+    use http::Decision::{GiveUp, RetryAfter}
+
+    ensure transient:
+        decision is RetryAfter(_)    -- `is` matches against a pattern
+        iff status is 429 | 503      -- `|` is an or-pattern
+        and method != Method::Post
+        and attempt < MAX_ATTEMPTS
+
+    ensure when decision is RetryAfter(d), and {
+        honor_server:   d >= retry_after,
+        backoff:        d >= Seconds(2 * attempt),
+        latency_budget: d <= MAX_DELAY,
+    }
+
+    expect not_found_fails: when status = 404, decision = GiveUp
+}
+
+-- Once the client gives up, a later attempt doesn't start retrying again.
+expect gives_up_for_good(
+    method: Method,
+    status: Status,
+    retry_after: Seconds,
+    early: Pos,
+    late: Pos,
+) {
+    use http::Decision::RetryAfter
+
+    assume later: early <= late
+
+    call a := retry(method, status, early, retry_after)
+    call b := retry(method, status, late, retry_after)
+
+    expect stays_given_up:
+        when b.decision is RetryAfter(_), a.decision is RetryAfter(_)
+}
+
+-- fren-covers: lint::labelled_clause_identity

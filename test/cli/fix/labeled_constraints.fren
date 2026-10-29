@@ -1,0 +1,19 @@
+--@ args: fix --check
+pub proc c(g?, x: Int, y: Int) {
+    expect when g?, and {
+        first: x > 0,
+        copy: x > 0, -- remove only this member and its comment
+        different: y > 0,
+        last: x < 100,
+    }
+}
+
+pub proc plain(x: Int, y: Int) {
+    expect and {
+        first: x > 0,
+        copy: x > 0, -- remove the comma too
+        different: y > 0,
+    }
+}
+
+-- fren-covers: lint::labelled_clause_identity

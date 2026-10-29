@@ -7853,7 +7853,7 @@ def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
     | _ => none
   -- Cover goals are compared with each other, and constraints with each other.
   for group in #[constraints.filter (·.1 != .cover), constraints.filter (·.1 == .cover)] do
-    for (i, j) in Core.repeatedConstraints (group.map fun (_, _, e) => exactText (unparen e)) do
+    for (i, j) in Core.repeatedConstraints (group.map fun (_, _, e) => srcText (unparen e)) do
       let (k, x, _) := group[i]!
       let (k', x', _) := group[j]!
       let msg := Core.duplicateConstraintMsg k' k x'.getId.toString

@@ -70,6 +70,46 @@ pub proc duplicate_constraint(
 }
 ```
 
+### Written identity of labelled clauses
+
+Splitting `ensure when decision is RetryAfter(d), and { honor_server:
+d >= retry_after, backoff: d >= Seconds(2 * attempt), latency_budget:
+d <= MAX_DELAY }` creates three guarded constraints. Their shared outer
+source range is not their written identity. Each identity retains its
+own expression plus the ordered guard/lexical-binding wrappers, with the
+names resolved in that scope. Labels and containing source ranges do not
+make unequal expressions equal. Different guards or bindings also keep
+otherwise equal bodies distinct. Predicate expansion likewise must not
+replace distinct written calls or member expressions by a common definition
+range or an empty synthetic source string.
+
+The following model contains the actual scoped expression and ordered
+wrappers; it deliberately keeps the label outside the identity.
+
+```fren
+pub enum ClauseWrapper { When(Scoped), Unless(Scoped), Let(Scoped) }
+pub struct ClauseIdentity { wrappers: Seq<ClauseWrapper>, expression: Scoped }
+pub struct LabelledClause { label: String, identity: ClauseIdentity }
+
+pub proc labelled_clause_identity(earlier: LabelledClause, later: LabelledClause):
+    (det same?) {
+    out same? := earlier.identity = later.identity
+    expect different_expression: when earlier.identity.expression != later.identity.expression,
+        not same?
+    expect different_wrapper: when earlier.identity.wrappers != later.identity.wrappers,
+        not same?
+    expect label_is_not_expression: when earlier.identity = later.identity, same?
+}
+```
+
+For an actual repeated member of one conjunction block, the fix removes
+only that member's label, expression, separator and trailing line comment.
+It retains the shared guard, bindings, block delimiters and all other
+members. A generated clause without an independently removable written
+member is diagnosed without a deletion fix; deleting its enclosing source
+range could remove different constraints. Different expressions receive
+neither this diagnostic nor its deletion fix.
+
 A constraint that repeats one adds nothing because the two have the same
 value in every behaviour: they are written the same, in one procedure, so
 by [`written_same`](Meaning.md#expressions-as-written) they have the same

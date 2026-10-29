@@ -671,6 +671,9 @@ def toConstraintKind : Fren.Core.ConstraintKind → lint.ConstraintKind
 -- Both front ends find the repeats with `repeatedConstraints`, and fix one
 -- where `duplicateConstraint` says.
 -- The constraints of one component are in one scope `s`.
+tested lint::labelled_clause_identity: "test/ui/lints/labeled_constraints.fren",
+  "test/cli/fix/labeled_constraints.fren", "test/cli/fix/labeled_constraints_readme.fren"
+
 impl duplicate_constraint: lint::duplicate_constraint for (e l : Fren.Core.ConstraintKind) (et lt : lint.Operand)
     (s : Fren.FinSet String) {
   earlier := toConstraintKind e,
