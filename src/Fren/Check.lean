@@ -346,14 +346,16 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     let guarded (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
     let args := app.getAppArgs
     if d.result == .nat then out := out.push (`nat, guarded (← atLeast0 app))
+    -- Newly reflected type facts need the same solver forms as explicit
+    -- clauses: their subset helpers may have executable Lean matches.
     if let some fact := d.fact? then
       let value := if d.result == .nat then
         mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      out := out.push (`type, guarded (fact.beta #[value]))
+      out := out.push (`type, guarded (← unfoldDefined (fact.beta #[value])))
     let k := st.contracts.get? d.path
     let domain := ((st.bodies.get? d.path).map fun b => (b.vars.zip args).filterMap fun (v, x) => v.fact?.map (·.beta #[x])).getD #[]
     let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => unfoldDefined (c.at args)
-    let pres := domain ++ pres
+    let pres := (← domain.mapM unfoldDefined) ++ pres
     let posts ← ((k.map (·.posts)).getD #[]).mapM fun c => return (c.name, ← unfoldDefined (c.at args))
     let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
     for (name, f) in (if ← allowPosts d app gs then Core.postconditionFacts implies pres posts else #[]) do
