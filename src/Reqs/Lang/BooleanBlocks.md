@@ -211,6 +211,15 @@ Negating a predicate preserves its labels while reversing the truth
 needed from the application. Source spans and occurrence identities are
 the same in both front ends.
 
+Report each observed member once, at its source location, with its original
+expression and its true, false, not-evaluated or unknown status. The true
+and false partitions are semantic classifications, not additional summary
+messages repeating those same observations at the enclosing clause.
+Preserve source member order and occurrence identities. In particular, a
+cover witness with one true member followed by a skipped member has two
+member notes, not a summary and a second note for each. Skipped and unknown
+remain distinct from false.
+
 ```fren
 pub proc block_values(members: Seq<BoolBlockMember>, position: Int): (det present?, det in_true?, det in_false?) {
     out present? := 0 <= position < members.len
