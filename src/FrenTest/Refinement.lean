@@ -152,7 +152,7 @@ expect bad_argument(x: Int) {
 /--
 error: expectation `refinement_test::fails::refines_1` does not hold
 
-counterexample: x = -1, precise.y = 0
+counterexample: x = 0, precise.y = 1
 help: correct the expectation, or assume what it needs
 ---
 info: the checks of `refinement_test::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
@@ -161,7 +161,7 @@ info: the checks of `refinement_test::same` set to testing are run by `fren chec
 ---
 error: expectation `refinement_test::bound_fails::refines_1` does not hold
 
-counterexample: v = -1, shifted.w = 0
+counterexample: v = 0, shifted.w = 1
 help: correct the expectation, or assume what it needs
 ---
 info: the checks of `refinement_test::bound_by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)

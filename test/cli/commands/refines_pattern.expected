@@ -1,13 +1,13 @@
 error[F0603]: expectation `bad::refines_1` does not hold
- --> test/cli/commands/refines_pattern.fren:7:5
+ --> test/cli/commands/refines_pattern.fren:8:5
   |
-7 |     refines c specification(0)
+8 |     refines c specification(0)
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
   |
   = counterexample: c.y = 0
   = help: correct the expectation, or assume what it needs
 
-fren: 3 passed, 1 failed, 0 inconclusive, in 1 tests each
+fren: 5 passed, 1 failed, 0 inconclusive, in 1 tests each
 
 For more information about this error, try `fren --explain F0603`.
 exit=1

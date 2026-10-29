@@ -2,7 +2,7 @@
 -- fren-covers: lang::recursive_facts, lang::recursive_post_result, lang::recursive_counterexample
 pub enum T { Z, S(T) }
 
-type SubsetRecursionHoare1 = subset_value: T  where invariant: subset_value is T::S(_)
+type SubsetRecursionHoare1 = subset_value: T where invariant: subset_value is T::S(_)
 pub fn bad(t: SubsetRecursionHoare1): (r: Int) {
     out r := match t {
         T::Z => 1,
