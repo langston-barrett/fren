@@ -397,16 +397,18 @@ expect realizability_protocol(
 
 ### Forced outputs
 
-On the input of a conflict, the guarantees of its core rule each other
-out, but not always for the same reason. A set of guarantees *forces* an
-output to a value on the input when every assignment of the outputs that
-satisfies them there gives the output that value. Where a guarantee `E`
-of the core forces an output to one value, and the rest of the core, its
-other guarantees, force it to another, `E` is part of the conflict for
-that reason, and a note at `E` says so:
+The primary conflict reports one counterexample input and its minimal core.
+Additional forcing notes have a different scope: they must hold for every
+model of the procedure's assumptions, definitions and calls, together
+with the named guarantees. Input pins from the primary counterexample
+are not premises of these explanations. Each side must admit a model;
+otherwise it cannot be described as forcing an output.
+
+For example, unconditional guarantees requiring an output to be true
+and false can be explained by the plain sentence:
 
 ```text
-note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
+note: `enable` requires `retry?` to equal true, while `disable` requires it to equal false.
 ```
 
 An output whose type is an
@@ -420,29 +422,25 @@ value where it forces one, and otherwise the variant, as the pattern test
 that holds of every value of it:
 
 ```text
-note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+note: `must_retry` requires `decision` to match Decision::RetryAfter(_), while `must_stop` requires it to equal Decision::GiveUp.
 ```
 
 The outputs are the procedure's results that have no
 [definition](#definitions): a result that has one is replaced by its
 definition, so what forces it forces the outputs that it is defined by. For an
 uninterpreted function's [contract](#contracts-of-uninterpreted-functions),
-the one output is its value. The input is pinned as the core was found
-(see [Minimal sets](#minimal-sets)): `P` is the equation `x = v` of each
-variable `x` of the input and its value `v`, where `v` can be written in a
-formula. If the value of some variable of the input cannot be written so,
-`P` is about more inputs than the one the error shows, so there are no
-clash notes. For a set of guarantees `S`, with the variables that have
-definitions replaced by them, Fren asks three kinds of query:
+the one output is its value. Let `B` be the general assumptions and call
+facts, with definitions substituted. The primary core may have been found
+with a pinned input, but these explanation queries do not use that pin.
+For a set of guarantees `S`, Fren asks:
 
-- **Model.** Can `False` be proved from `P` and `S`? A model gives each
-  output that they mention a value. On the input of a minimal core, a
-  proper subset of the core is satisfiable, so the answer is `Sat`, unless
-  the solver gives up.
+- **Model.** Can `False` be proved from `B` and `S`? A `Sat` answer proves
+  that the context is nonempty and supplies candidate output values. Neither
+  `Unsat` nor `Unknown` establishes a forcing fact for a diagnostic.
 - **Pin.** For an output `o` and its value `v` in the model, can `o = v` be
-  proved from `P` and `S`? `Unsat` means that `S` forces `o` to `v`.
+  proved from `B` and `S`? `Unsat` means that `S` forces `o` to `v`.
 - **Variant.** For an output `o` of an enumeration and its value `v` in
-  the model, of the variant `C`, can `o is C(_)` be proved from `P` and
+  the model, of the variant `C`, can `o is C(_)` be proved from `B` and
   `S`, with a `_` for each value of `C`'s payload? `Unsat` means that `S`
   forces `o` to `C`. A [newtype](Lang/Items.md#newtypes) of an
   enumeration is not asked about: no pattern matches its values, so a
@@ -450,7 +448,7 @@ definitions replaced by them, Fren asks three kinds of query:
 
 `check::forcing` states that the queries find what forcing means, over
 an output with three values of two variants, `C0` and `C1(b)`: `values`
-are its values in the assignments that satisfy `S` on the input, the
+are its values in the assignments that satisfy `B` and `S`, the
 model's is one of them, and the solver decides the pin and variant
 queries. A value that cannot be written in a formula is not pinned, and
 so not found to be forced, nor is a variant of a type that is not an
@@ -468,14 +466,14 @@ pub fn variant_of(c: Choice): ChoiceVariant := match c {
 }
 
 pub proc forcing(
-    values: Set<Choice>,     -- the output's values where `P` and `S` hold
-    model: Choice,           -- its value in the model of `P` and `S`
-    pin_q: Outcome,          -- can `o = model` be proved from `P` and `S`?
-    variant_q: Outcome,      -- can `o` being of `model`'s variant be proved from `P` and `S`?
+    values: Set<Choice>,     -- the output's values where `B` and `S` hold
+    model: Choice,           -- its value in the model of `B` and `S`
+    pin_q: Outcome,          -- can `o = model` be proved from `B` and `S`?
+    variant_q: Outcome,      -- can `o` being of `model`'s variant be proved from `B` and `S`?
 ): (
-    det forced?,                  -- `S` forces the output on the input
+    det forced?,                  -- `S` forces the output under the premises
     det found?,                   -- Fren finds that `S` forces it to `model`
-    det variant_forced?,          -- `S` forces the output to a variant on the input
+    det variant_forced?,          -- `S` forces the output to a variant under the premises
     det variant_found?,           -- Fren finds that `S` forces it to `model`'s variant
 ) {
     assume modelled: model in values
@@ -558,9 +556,8 @@ pub struct VariantForcing { guarantee: Guarantee, output: Output, variant: Choic
 
 pub enum Budget { All, AtMost(Int) }   -- `all`, or a count, at least 0
 
--- The note at a guarantee: a clash, whom it conflicts with, or that it is
--- false, in a core of one; or none, outside the core.
-pub enum MemberNote { ClashNote, ConflictsWith, FalseOnInput, NotInCore }
+-- A note is emitted only for an additional proved general relationship.
+pub enum MemberNote { ClashNote, Silent, NotInCore }
 
 -- `g` forces `o` to one value, and the rest of the core to another.
 pub fn value_clashes?(alone: Set<Forcing>, rest: Set<Forcing>, g: Guarantee, o: Output) :=
@@ -604,7 +601,7 @@ pub proc clash_notes(
     rest_variants: Set<VariantForcing>,      -- the variants that the rest of the core forces
     examples: Budget,                        -- `--examples`
     interpreted?,                            -- the notes' values would depend on an interpretation
-    unpinned?,                               -- some variable of the input cannot be pinned
+    consistent?,                             -- the general forcing contexts have models
     g: Guarantee,                            -- a guarantee, for the rules of each
     earlier: Set<Guarantee>,
 ): (
@@ -629,21 +626,21 @@ pub proc clash_notes(
     out shows_value? := forces_value?(alone, g, output)
     out rest_shows_value? := forces_value?(rest, g, output)
 
-    ensure rule: noted? iff (not interpreted? and not unpinned? and g in core
+    ensure rule: noted? iff (not interpreted? and consistent? and g in core
         and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
         and match examples { Budget::All => true, Budget::AtMost(n) => earlier.card < n })
     ensure first: when noted?, clashes?(alone, alone_variants, rest, rest_variants, g, output)
         and (forall (o: Output), when o < output, not clashes?(alone, alone_variants, rest, rest_variants, g, o))
     ensure one_note: note = (if not (g in core) then MemberNote::NotInCore
         else if noted? then MemberNote::ClashNote
-        else if core = {g} then MemberNote::FalseOnInput
-        else MemberNote::ConflictsWith)
+        else MemberNote::Silent)
 
     expect single: when core = {g}, not noted?
     expect none: when examples = Budget::AtMost(0), not noted?
     expect uninterpreted: when interpreted?, not noted?
-    expect pinned: when unpinned?, not noted?
+    expect nonvacuous: when not consistent?, not noted?
     expect marked: when g in core, note != MemberNote::NotInCore
+    expect no_repeated_core: when g in core and not noted?, note = MemberNote::Silent
     expect within_budget: when noted? and examples = Budget::AtMost(1), earlier = {}
     expect variants_differ: when noted? and not (shows_value? and rest_shows_value?),
         variant_clashes?(alone_variants, rest_variants, g, output)
@@ -662,30 +659,99 @@ never presented as the unconditional core of the original disjunction.
 For equivalence the alternatives are exactly the conjunction of positive
 members and the conjunction of negative members, including binary `iff`.
 
-Branch diagnostics describe the required truth values explicitly. A binary
-`iff` has the cases “both operands are true” and “both operands are false”;
-a larger equivalence says “all operands are true” or “all operands are
-false”. Bare “all hold” and “none hold” leave their subject unclear.
-Explain once that an equivalence requires these matching truth values.
-Each case keeps the applicable input constraints, definitions and calls;
-its other constraints are named separately. Refer to “the reported input”
-only when the enclosing diagnostic actually reports one. If no other
-constraint is needed to exclude the case, say so instead of referring to “the fixed
-hypotheses alone” or an empty “conditional core”.
+Supplementary explanations state properties that hold in every model of
+explicit, consistent premises. They are not evaluations of a selected
+counterexample. Keep the primary counterexample and its input-local
+minimal core, but do not reuse its input pins to justify any supplementary
+forced value, operand polarity, or branch elimination. A generic repeated
+“conflicts with” note is not a substitute for an additional proved property.
+If no additional general property is proved, emit no supplementary note.
 
-At an operand's source location, state the value required by that case and
-the opposite value imposed by the input or the named other constraints.
-Retain the actual source expression and named member identity. For example,
-the false case of `retry? iff eligible?` is impossible when the reported
-input makes `eligible?` true; explain that this case requires `eligible?`
-false but the input makes it true. Do not describe an impossible case as
-forcing arbitrary outputs. These wording changes preserve the existing
-queries, budgets, cores, source ranges and verdicts.
+For realizability, the general base consists of the procedure's assumptions
+and call facts, with definitions substituted just as in the primary query.
+The other premises are named core constraints. Remove a source group's
+own constraint from the base before inspecting its alternatives, including
+when it is itself an assumption. Do not add unlisted remaining guarantees
+to the base: the complete inconsistent specification is never a premise. For a
+failed cover or a vacuous trigger, the cover goal or trigger may be an
+explicit conditional premise, together with the definitions and applicable
+assumptions/calls. Name that condition in the explanation; it is not an
+input pin. Those contexts also exclude the selected owner; their other
+premises must be stated, not silently inherited from the full specification.
+For conflicting assumptions, inspect the selected assumption
+against the others, without assuming the inconsistent complete set.
+
+Before excluding an alternative, require a model of the base and the
+other named premises. Only then can an unsatisfiability proof with the
+alternative establish its impossibility in all models of those premises.
+Each side used for a forcing comparison must itself have a model. A
+premise set with no model proves no forcing fact for diagnostics. Unknown
+answers establish nothing and produce no claim. These queries share the
+same interpretation and use no value chosen from a counterexample as an
+assumption. Only owners in the primary minimized core are inspected, and
+the examples limit still counts groups. A selected group adds one shared
+consistency query before its alternative query families; a zero limit or
+an out-of-core group adds no queries.
+
+Write the proved relationship as a plain sentence with its source names,
+not a quoted `case "..."` heading or a transcript of Boolean evaluation.
+For example: “Both operands of `transient` cannot be true: `honor_server`
+and `latency_budget` require `transient.1` to be false.” If both alternatives
+are possible for some admitted inputs, omit both notes even when one is
+impossible at the particular counterexample. Do not claim that an impossible
+alternative forces arbitrary outputs. Preserve source ranges, occurrence
+identities, the original core, and the primary verdict. Model observations
+attached to a counterexample or cover witness remain explicitly local
+observations; they are not general implications.
+
+The following model uses actual candidate worlds, each with two input
+properties and an output decision. `base` and `others` denote premises;
+a local input slice cannot certify a general branch exclusion.
+
+```fren
+pub struct DiagnosticWorld { eligible?, within_budget?, retry? }
+
+pub proc general_branch_explanation(base: Set<DiagnosticWorld>, others: Set<DiagnosticWorld>,
+    alternative: Set<DiagnosticWorld>, sample: DiagnosticWorld,
+    context_q: Outcome, exclusion_q: Outcome): (
+    det consistent?, det excluded?, det reported?, det locally_excluded?,
+) {
+    assume context_sound: when context_q != Unknown,
+        (context_q = Sat iff base inter others != {})
+    assume exclusion_sound: when exclusion_q != Unknown,
+        (exclusion_q = Unsat iff base inter others inter alternative = {})
+    out reported? := context_q = Sat and exclusion_q = Unsat
+    out consistent? := base inter others != {}
+    out excluded? := consistent? and base inter others inter alternative = {}
+    out locally_excluded? := not (exists (w: DiagnosticWorld),
+        w in base inter others inter alternative and w.eligible? = sample.eligible?
+        and w.within_budget? = sample.within_budget?)
+    expect reported_sound: when reported?, excluded?
+    expect unknown_silent: when context_q = Unknown or exclusion_q = Unknown, not reported?
+    expect all_models: when excluded?, forall (w: DiagnosticWorld),
+        when w in base inter others, not w in alternative
+    expect nonvacuous: when base inter others = {}, not excluded?
+    cover local_is_insufficient: consistent? and sample in base inter others
+        and locally_excluded? and not excluded?
+}
+
+pub proc retry_alternatives_general(worlds: Set<DiagnosticWorld>): (det true_possible?, det false_possible?, det bad_input?) {
+    assume all_worlds: forall (w: DiagnosticWorld), w in worlds
+    out true_possible? := exists (w: DiagnosticWorld), w in worlds and w.retry? and w.eligible?
+        and (when w.retry?, w.within_budget?)
+    out false_possible? := exists (w: DiagnosticWorld), w in worlds and not w.retry? and not w.eligible?
+        and (when w.retry?, w.within_budget?)
+    out bad_input? := not (exists (w: DiagnosticWorld), w in worlds and w.eligible? and not w.within_budget?
+        and (w.retry? iff w.eligible?) and (when w.retry?, w.within_budget?))
+    expect both_globally_possible: true_possible? and false_possible?
+    expect still_a_counterexample: bad_input?
+}
+```
 
 The following finite interpretation defines deletion-minimal conditional
 cores using actual assignments (`Choice`) and a relation giving each
-candidate constraint's satisfying assignments. `base` is the pinned
-input and definition hypotheses. An impossible branch can have an empty
+candidate constraint's satisfying assignments. `base` contains the explicitly stated general premises and definitions,
+never counterexample input pins. An impossible branch can have an empty
 conditional core; that does not let the forcing queries invent a value.
 
 ```fren
@@ -728,8 +794,8 @@ rather than as forcing every value. Whole-value and variant clashes use
 exactly the existing non-vacuous model/pin/variant protocol.
 
 Only groups whose owners occur in the already minimized core are
-inspected. Realizability explanations use the same substituted definitions
-and pinned input as that core. Vacuity explanations use the check's
+inspected. Realizability explanations use substituted definitions and general
+assumptions/calls, without the primary core's input pins. Vacuity explanations use the check's
 definition equations and the triggering condition (or the failed cover
 goal) as fixed hypotheses.
 Unsatisfiable procedure assumptions use their minimal assumption core.

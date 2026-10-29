@@ -342,21 +342,29 @@ pub proc disjunction_core(first: Set<BranchBehaviour>, second: Set<BranchBehavio
     expect one_branch_insufficient: when first inter rest = {} and second inter rest != {}, not inconsistent?
 }
 
-pub proc branch_query_count(block_kind: BoolBlockKind, members: Nat, in_core?): (branches: Nat) {
-    ensure alternatives: branches = if not in_core? or block_kind = BoolBlockKind::Conjunction then 0
+pub enum BranchPremises { Model, NoModel, Unknown }
+pub enum BranchBudget { Unlimited, Remaining(Nat) }
+
+pub proc branch_query_count(block_kind: BoolBlockKind, members: Nat, in_core?, budget: BranchBudget, premises: BranchPremises): (branches: Nat, det selected?) {
+    out selected? := in_core? and match budget { BranchBudget::Unlimited => true, BranchBudget::Remaining(n) => n > 0 }
+    ensure alternatives: branches = if not selected? or premises != BranchPremises::Model or block_kind = BoolBlockKind::Conjunction then 0
         else if block_kind = BoolBlockKind::Equivalence then 2 else members
     expect unrelated_free: when not in_core?, branches = 0
-    expect one_per_member: when in_core? and block_kind = BoolBlockKind::ExactlyOne, branches = members
-    expect iff_two: when in_core? and block_kind = BoolBlockKind::Equivalence, branches = 2
+    expect zero_budget: when budget = BranchBudget::Remaining(0), not selected? and branches = 0
+    expect one_per_member: when selected? and premises = BranchPremises::Model and block_kind = BoolBlockKind::ExactlyOne, branches = members
+    expect iff_two: when selected? and premises = BranchPremises::Model and block_kind = BoolBlockKind::Equivalence, branches = 2
 }
 
-pub proc branch_query_families(block_kind: BoolBlockKind, members: Nat, in_core?,
-    per_branch: Nat, family_counts: Seq<Int>): (accounted?) {
-    call count := branch_query_count(block_kind, members, in_core?)
+pub proc branch_query_families(block_kind: BoolBlockKind, members: Nat, in_core?, budget: BranchBudget, premises: BranchPremises,
+    per_branch: Nat, family_counts: Seq<Int>): (accounted?, det shared_queries: Nat) {
+    call count := branch_query_count(block_kind, members, in_core?, budget, premises)
+    out shared_queries := if count.selected? and block_kind != BoolBlockKind::Conjunction then 1 else 0
     ensure families: accounted? iff family_counts.len = count.branches and
         (forall (i: Int), when 0 <= i < family_counts.len, family_counts[i] = per_branch)
-    expect no_hidden_queries: when not in_core?, accounted? iff family_counts = []
-    expect equivalence_budget: when in_core? and block_kind = BoolBlockKind::Equivalence and accounted?,
+    expect no_hidden_queries: when not in_core?, (accounted? iff family_counts = []) and shared_queries = 0
+    expect zero_budget: when budget = BranchBudget::Remaining(0), shared_queries = 0 and (accounted? iff family_counts = [])
+    expect uncertain_context: when premises != BranchPremises::Model and accounted?, family_counts = []
+    expect equivalence_budget: when count.selected? and premises = BranchPremises::Model and block_kind = BoolBlockKind::Equivalence and accounted?,
         family_counts.len = 2 and family_counts[0] = per_branch and family_counts[1] = per_branch
 }
 ```
@@ -366,7 +374,9 @@ for the members needed to refute each branch. Every retained member is
 necessary within that branch's minimized core; deletion is rechecked.
 The displayed explanation retains the owning disjunction and branch
 assumption so a conditional core cannot be mistaken for an unconditional
-one. Query cost is one existing pin/variant query family per disjunct
+one. A selected group first asks one shared consistency query. If it has no
+confirmed model, no alternative query families or explanations follow. Otherwise
+query cost is one existing output-value/variant query family per disjunct
 under consideration, or two families for equivalence, or one family per member for `one`, with the
 per-member polarity questions inside those equivalence families. It
 never scans unrelated disjunctions merely to enrich a diagnostic.
