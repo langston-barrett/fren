@@ -2,14 +2,15 @@
 -- collections, recursive enumerations, quantifiers and refinements.
 -- fren-covers: lang::pattern_finite, lang::nat_place
 
-type Byte := Int is 0..=255
-type Digit := Int is 0..=9
+type Byte = n: Int where invariant: n is 0..=255
+type Digit = n: Int where invariant: n is 0..=9
 
 -- A record's fields and an enumeration's payloads bring their constraints,
 -- however deep, and a `Nat` within one is at least 0.
 struct Stock { item: Byte, count: Nat }
 enum Reading { Raw(Stock), Missing }
-struct Flag { on?: Bool is true }
+type Enabled = value?: Bool where invariant: value?
+struct Flag { on?: Enabled }
 
 proc stocked(r: Reading, a: Flag, b: Flag) {
     expect deep: match r { Reading::Raw(s) => s.item <= 255 and s.count >= 0, Reading::Missing => true }
@@ -17,7 +18,8 @@ proc stocked(r: Reading, a: Flag, b: Flag) {
 }
 
 -- A newtype of a pattern type.
-struct Level(Int is 1..=3)
+type LevelValue = n: Int where invariant: n is 1..=3
+struct Level(LevelValue)
 
 proc levels(l: Level): (y: Int) {
     ensure r: y = l.0 + 1
@@ -26,9 +28,10 @@ proc levels(l: Level): (y: Int) {
 }
 
 -- A quantifier ranges over a bounded pattern type.
+type ThreeBit = n: Int where invariant: n is 0..=7
 proc digits(d: Digit) {
     expect all: forall (k: Digit), k + d <= 18
-    expect some: exists (k: Int is 0..=7), k = 7 and k > d - 3
+    expect some: exists (k: ThreeBit), k = 7 and k > d - 3
     expect one: d < 10
 }
 
@@ -57,9 +60,11 @@ expect positive(a_l: Level) {
 
 -- A refinement assumes what the abstract component's inputs bring, and
 -- checks what the concrete one's do.
-proc abstract_lvl(n: Int is 0..=9): (y: Int) { ensure r: y >= n }
-proc concrete_lvl(n: Int is 0..): (y: Int) { ensure r: y = n }
-expect narrower(n: Int is 0..=9) {
+type OtherDigit = n: Int where invariant: n is 0..=9
+proc abstract_lvl(n: OtherDigit): (y: Int) { ensure r: y >= n }
+type Nonnegative = n: Int where invariant: n is 0..
+proc concrete_lvl(n: Nonnegative): (y: Int) { ensure r: y = n }
+expect narrower(n: OtherDigit) {
     call concrete := concrete_lvl(n)
     refines concrete abstract_lvl(n)
 }

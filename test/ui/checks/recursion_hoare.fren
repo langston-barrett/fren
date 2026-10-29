@@ -2,7 +2,8 @@
 -- fren-covers: lang::recursive_facts, lang::recursive_post_result, lang::recursive_counterexample
 pub enum T { Z, S(T) }
 
-pub fn bad(t: T is T::S(_)): (r: Int) {
+type Successor = n: T where invariant: n is T::S(_)
+pub fn bad(t: Successor): (r: Int) {
     out r := match t {
         T::Z => 1,
         T::S(a) => if a is T::S(_) then bad(a) else 1,

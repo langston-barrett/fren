@@ -5,14 +5,15 @@
 mod http
 
 enum Method { Get, Put, Post, Delete }
-type Status := Nat is 100..=599
+type Status = status: Nat where invariant: status is 100..=599
 ordered struct Seconds(Nat)
 enum Decision { GiveUp, RetryAfter(Seconds) }
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
-proc retry(method: Method, status: Status, attempt: Nat is 1.., retry_after: Seconds): (
+type Pos = n: Nat where invariant: n is 1..
+proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
     decision: Decision,
 ) {
     ensure transient:

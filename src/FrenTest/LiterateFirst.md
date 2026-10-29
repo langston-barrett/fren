@@ -28,7 +28,7 @@ pub proc precise(x: Int): (y: Int) {
 }
 
 pub proc lower(x: Int): (y: Int) {
-    ensure below: y < x
+    ensure below: x != 0 or y < x
 }
 
 expect fails(x: Int) {

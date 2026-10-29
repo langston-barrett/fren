@@ -1,4 +1,5 @@
 -- A pattern type as a type argument of a recursive enumeration.
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-proc c(xs: List<Int is 0..=9>) {}
+type Digit = n: Int where invariant: n is 0..=9
+proc c(xs: List<Digit>) {}

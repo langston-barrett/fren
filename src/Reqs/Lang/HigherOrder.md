@@ -93,8 +93,8 @@ pub proc function_type_place(
 
 A function type's parameters and result are types of values, which may
 mention the function's [type parameters](GenericFunctions.md), as
-`fn(T) -> U` does above, but are not `Nat`s nor [pattern
-types](Types.md#pattern-types) (`F0435`): those bring a fact or an
+`fn(T) -> U` does above, but are not `Nat`s nor [subset
+types](SubsetTypes.md) (`F0435`): those bring a fact or an
 obligation of their values, which would be a [contract](Items.md#contracts)
 of the function given, and the parameter has none, for now. Nor is one a
 function type, as above. `lang::function_type_parts` states this, from

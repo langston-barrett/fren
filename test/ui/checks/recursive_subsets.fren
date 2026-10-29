@@ -1,0 +1,14 @@
+-- Declared subset results, recursive Hoare proofs, and named Boolean metadata agree.
+-- fren-covers: lang::recursive_post_result
+enum Tree { Leaf, Branch(Tree) }
+type Nonnegative = value: Int where nonnegative: value >= 0
+fn size(tree: Tree): (result: Nonnegative) {
+    out result := match tree { Tree::Leaf => 0, Tree::Branch(child) => 1 + size(child) }
+    ensure nonnegative: result >= 0
+}
+fn valid?(tree: Tree) := and { domain: size(tree) >= 0, equation: when tree = Tree::Leaf, size(tree) = 0 }
+expect recursive_subset(tree: Tree) {
+    expect properties: valid?(tree)
+    cover leaf: tree = Tree::Leaf and one { holds: valid?(tree), absent: false }
+    --~^ info: cover goal `recursive_subset::leaf` is met
+}

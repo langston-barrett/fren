@@ -8,8 +8,10 @@ set_option fren.lint.assertions_on_constants "allow"
 set_option fren.lint.struct_field_names "allow"
 set_option fren.lint.eq_op "allow"
 
-struct P { x: Int is 0..=3 }
-enum Small { S(Int is 0..=2), T }
+type TwoBit = n: Int where invariant: n is 0..=3
+struct P { x: TwoBit }
+type SmallPayload = n: Int where invariant: n is 0..=2
+enum Small { S(SmallPayload), T }
 struct Pair<A, B> { fst: A, snd: B }
 enum Maybe<T> { Nothing, Just(T) }
 struct Flag(Bool)
@@ -17,8 +19,10 @@ struct Count(Int)
 
 expect fields: forall (p: P), p.x <= 3
 expect payloads: forall (s: Small), (match s { Small::S(n) => n <= 2, Small::T => true })
-expect maybes: forall (o: Maybe<Int is 0..=2>), o != Maybe::Just(3)
-expect pairs: forall (p: Pair<Bool, Int is 1..=2>), p.snd >= 1
+type TritElement = n: Int where invariant: n is 0..=2
+expect maybes: forall (o: Maybe<TritElement>), o != Maybe::Just(3)
+type OneOrTwo = n: Int where invariant: n is 1..=2
+expect pairs: forall (p: Pair<Bool, OneOrTwo>), p.snd >= 1
 expect flags: forall (f: Flag), f = Flag(true) or f = Flag(false)
 expect flag_count: exists (f: Flag), f.0
 expect too_big: forall (p: P), p.x < 3    --~ error: expectation `type_facts::too_big` does not hold

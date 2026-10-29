@@ -8,7 +8,10 @@ import FrenCore.Check
 The check algorithms (`FrenCore.Check`) give the verdicts that `Reqs/Check`
 says they give, provided the solver is sound: these theorems say what each
 verdict, and what a failure reports, means about the procedure's behaviours,
-whatever the solver answers. An `inconclusive` verdict means nothing, so no
+whatever the solver answers. Fixed declaration inhabitation is distinguished
+from a procedure's universal-input realizability: its actual SAT witness is
+proved directly, and `fixed_inhabitation_completion` supplies the explicit
+output-locality bridge for fixed interpretations. An `inconclusive` verdict means nothing, so no
 theorem mentions it.
 
 A backend's formulas are interpreted as predicates on environments, which give
@@ -272,7 +275,7 @@ theorem checkExpect_fail (e : Name × F) (h : (checkExpect b c e).run.verdict = 
 theorem checkVacuity_pass (t : Name × F) (h : (checkVacuity b c t).run.verdict = .pass) :
     ∃ ρ, s.Typed ρ ∧ s.Behaves ρ ∧ s.den t.2 ρ := by
   unfold checkVacuity at h
-  cases hq : b.query (c.defEqs .vacuity ++ (c.hyps b ++ c.reqs)) (b.notF t.2) false <;>
+  cases hq : b.query (c.defEqs .vacuity ++ (c.hyps b ++ c.reqs)) (b.notF t.2) (c.memberGroups.any (·.owner == t.1)) <;>
     simp [hq, vacuityVerdict, Outcome.answer] at h
   obtain ⟨ρ, ht, hρ, hg, -⟩ := s.query_sat hq
   exact ⟨ρ, ht, (s.holds_behaves (kd := .vacuity) rfl ht).1 hρ, by simpa [s.notF ht] using hg⟩
@@ -361,7 +364,7 @@ theorem checkVacuity_fail (t : Name × F) (h : (checkVacuity b c t).run.verdict 
       ∀ ρ, s.Typed ρ → s.Defined ρ → s.Holds keep ρ → ¬s.den t.2 ρ := by
   obtain ⟨keep, hsub, hmin, hent, -⟩ := minimize_spec s (c.defEqs .vacuity) (c.hyps b ++ c.reqs) (b.notF t.2)
   unfold checkVacuity at h
-  cases hq : b.query (c.defEqs .vacuity ++ (c.hyps b ++ c.reqs)) (b.notF t.2) false <;>
+  cases hq : b.query (c.defEqs .vacuity ++ (c.hyps b ++ c.reqs)) (b.notF t.2) (c.memberGroups.any (·.owner == t.1)) <;>
     simp [hq, vacuityVerdict, Outcome.answer] at h
   have hall := s.query_unsat hq
   refine ⟨fun ρ ht hρ => (s.notF ht).1 (hall ρ ht ((s.holds_behaves (kd := .vacuity) rfl ht).2 hρ)), keep, hsub, ?_,
@@ -502,25 +505,39 @@ theorem checkInst_fail (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b 
 
 /-! ## Definedness -/
 
-/-- What the place of an index or a table says of the environments where it
-is evaluated: for an assumption, the definitions and the other assumptions
-hold; for a binding of call `k`, the environment is possible up to
-`k`; in a function's body or a constant's value, the definitions hold;
-otherwise it is a behaviour. -/
+/-- A clause independent of the written site: a distributed group's
+owner and descendant leaves cannot justify that group's own operation. -/
+def IndexSite.Independent (site : IndexSite F) (name : Name) : Prop :=
+  name ≠ site.prop ∧ (site.excludeSelf = true →
+    (name.toString (escape := false)).startsWith (site.prop.toString (escape := false) ++ ".") = false)
+
+private theorem independent_test (site : IndexSite F) (name : Name) :
+    (!(name == site.prop || (site.excludeSelf &&
+      (name.toString (escape := false)).startsWith (site.prop.toString (escape := false) ++ ".")))) = true ↔
+      site.Independent name := by
+  cases h : site.excludeSelf <;> by_cases hn : name = site.prop <;>
+    simp [IndexSite.Independent, h, hn]
+
+/-- The actual semantic context of an operation, retaining the exclusion
+of its own clause/group when the operation is checked independently. -/
 def Sound.AtSite (site : IndexSite F) (ρ : Env Val) : Prop :=
   match site.place with
-  | .assume => s.Defined ρ ∧ ∀ q ∈ c.assumes, q.1 ≠ site.prop → s.den q.2 ρ
+  | .assume => s.Defined ρ ∧ ∀ q ∈ c.assumes, site.Independent q.1 → s.den q.2 ρ
   | .binding k => s.Admits ρ k
-  | .prop => s.Behaves ρ
+  | .prop => s.Admits ρ ∧ ∀ q ∈ c.reqs, (site.excludeSelf = true → site.Independent q.1) → s.den q.2 ρ
   | .body => s.Defined ρ ∧ ∀ q ∈ c.assumes, s.den q.2 ρ
 
 theorem Sound.holds_site {kd : CheckKind} (hk : kd.substitutes = false) (site : IndexSite F) {ρ : Env Val}
     (ht : s.Typed ρ) : s.Holds (c.defEqs kd ++ c.siteHyps b site) ρ ↔ s.AtSite site ρ := by
-  obtain ⟨prop, k, place, goal⟩ := site
-  cases place <;> simp only [Comp.siteHyps, Sound.AtSite]
+  cases hp : site.place <;> simp only [Comp.siteHyps, hp, Sound.AtSite]
   · rw [s.holds_append, s.holds_defEqs hk]
-    exact and_congr .rfl (holds_others s c.assumes (prop, b.falseF) ρ)
-  · exact s.holds_behaves hk ht
+    simp only [Sound.Holds, Array.mem_filter]
+    simp only [independent_test]
+    exact ⟨fun ⟨hd, h⟩ => ⟨hd, fun q hq hi => h q ⟨hq, hi⟩⟩,
+      fun ⟨hd, h⟩ => ⟨hd, fun q ⟨hq, hi⟩ => h q hq hi⟩⟩
+  · rw [← Array.append_assoc, s.holds_append, s.holds_hyps hk _ ht]
+    cases he : site.excludeSelf <;>
+      simp [he, Sound.Holds, Array.mem_filter, IndexSite.Independent, and_imp]
   · exact s.holds_hyps hk _ ht
   · rw [s.holds_append, s.holds_defEqs hk]
     exact .rfl
@@ -669,18 +686,67 @@ private theorem Sound.den_subst_reqs (hd : s.DefsOk) {ρ : Env Val} (ht : s.Type
     obtain ⟨r, hr, rfl⟩ := Array.mem_map.1 hf
     exact h r hr⟩
 
-/-- A `pass` means the assumptions are satisfiable, and every possible
-environment, whatever the calls do, can be changed in its outputs alone
-to meet the definitions and the requirements. -/
-theorem checkRealizable_pass (hd : s.DefsOk) (h : (checkRealizable b c).run.verdict = .pass) :
-    (∃ ρ, s.Typed ρ ∧ s.Defined ρ ∧ ∀ a ∈ c.assumes, s.den a.2 ρ) ∧
+/-- The universal-input meaning of a procedure's realizability. -/
+def Sound.ProcedureRealizable : Prop :=
+  (∃ ρ, s.Typed ρ ∧ s.Defined ρ ∧ ∀ a ∈ c.assumes, s.den a.2 ρ) ∧
     ∀ ρ, s.Typed ρ → s.Admits ρ →
-      ∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Defined ρ' ∧ ∀ r ∈ c.reqs, s.den r.2 ρ' := by
-  unfold checkRealizable at h
+      ∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Defined ρ' ∧ ∀ r ∈ c.reqs, s.den r.2 ρ'
+
+/-- The ordinary protocol's concrete failure, including its reported core. -/
+def Sound.ProcedureFailure (result : CheckResult) : Prop :=
+  ((∀ ρ, s.Typed ρ → s.Defined ρ → ¬∀ a ∈ c.assumes, s.den a.2 ρ) ∧
+      ∃ keep : Array (Name × F), keep.toList.Sublist (c.substHyps b c.assumes).toList ∧
+        result.detail = .vacuousAssumptions (keep.map (·.1)) ∧
+        ∀ ρ, s.Typed ρ → ¬s.Holds keep ρ) ∨
+    ∃ ρ model, s.Typed ρ ∧ s.Admits ρ ∧
+      (¬∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Defined ρ' ∧ ∀ r ∈ c.reqs, s.den r.2 ρ') ∧
+      s.Agrees ρ (conflictInput c.vars model) ∧
+      ∃ keep : Array (Name × F), keep.toList.Sublist (c.substHyps b c.reqs).toList ∧
+        result.detail =
+          .conflict (renderModel b c.vars (conflictInput c.vars model) fun v => v.isIn && v.isPub).run
+            (keep.map (·.1)) ∧
+        ∀ ρ', s.Typed ρ' → OnlyOuts c.vars ρ ρ' → ¬s.Holds keep ρ'
+
+/-- The declaration carrier is checked, rather than inferred from its tag. -/
+theorem Comp.fixedInhabitation_shape (h : c.fixedInhabitation = true) :
+    c.defs = #[] ∧ c.assumes = #[] ∧ c.insts = #[] ∧ c.vars.all (·.role == .output) = true := by
+  simp only [Comp.fixedInhabitation, Bool.and_eq_true, Array.isEmpty_iff] at h
+  exact ⟨h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+
+private theorem Sound.fixed_behaves (hc : c.fixedInhabitation = true) (ρ : Env Val) :
+    s.Behaves ρ ↔ ∀ r ∈ c.reqs, s.den r.2 ρ := by
+  obtain ⟨hd, ha, hi, _⟩ := c.fixedInhabitation_shape hc
+  simp [Sound.Behaves, Sound.Admits, Sound.Defined, Sound.Possible, hd, ha, hi]
+
+/-- The checker has two actual domains: a fixed declaration needs a typed
+witness; a procedure needs completion for every possible input environment. -/
+def Sound.Realizable : Prop :=
+  if c.fixedInhabitation then ∃ ρ, s.Typed ρ ∧ s.Behaves ρ else s.ProcedureRealizable
+
+/-- Diagnostic metadata cannot change the ordinary protocol's verdict. -/
+private theorem checkRealizableUniversal_verdict :
+    (checkRealizableUniversal b c).run.verdict =
+      (realizableVerdict (b.query (c.substHyps b c.assumes) b.falseF false).answer
+        (b.query (c.substHyps b (c.hyps b))
+          (b.existsOutputs (c.subst b .realizable (b.conj (c.reqs.map (·.2))))) true).answer).1 := by
+  unfold checkRealizableUniversal
   cases ha : b.query (c.substHyps b c.assumes) b.falseF false <;>
     cases hc : b.query (c.substHyps b (c.hyps b))
       (b.existsOutputs (c.subst b .realizable (b.conj (c.reqs.map (·.2))))) true <;>
-    simp +decide [ha, hc, realizableVerdict, Outcome.answer, Outcome.isUnsat, bind_eq, run_eq] at h
+    simp +decide [ha, hc, realizableVerdict, Outcome.answer, Outcome.isUnsat, bind_eq, run_eq, pure_eq]
+  all_goals split <;> rfl
+
+/-- A `pass` means the assumptions are satisfiable, and every possible
+environment, whatever the calls do, can be changed in its outputs alone
+to meet the definitions and the requirements. -/
+theorem checkRealizableUniversal_pass (hd : s.DefsOk) (h : (checkRealizableUniversal b c).run.verdict = .pass) :
+    s.ProcedureRealizable := by
+  unfold Sound.ProcedureRealizable
+  rw [checkRealizableUniversal_verdict] at h
+  cases ha : b.query (c.substHyps b c.assumes) b.falseF false <;>
+    cases hc : b.query (c.substHyps b (c.hyps b))
+      (b.existsOutputs (c.subst b .realizable (b.conj (c.reqs.map (·.2))))) true <;>
+    simp +decide [ha, hc, realizableVerdict, Outcome.answer] at h
   refine ⟨?_, fun ρ ht hρ => ?_⟩
   · obtain ⟨ρ, ht, hρ, -⟩ := s.query_sat ha
     obtain ⟨ρ₀, ht₀, hsame, hdef⟩ := hd.complete ρ ht
@@ -697,24 +763,14 @@ definitions hold, and the reported ones do; or some possible environment
 cannot be changed in its outputs to meet the definitions and the
 requirements, and cannot be to meet the reported ones, with the
 definitions substituted. Its input is shown. -/
-theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verdict = .fail) :
-    ((∀ ρ, s.Typed ρ → s.Defined ρ → ¬∀ a ∈ c.assumes, s.den a.2 ρ) ∧
-      ∃ keep : Array (Name × F), keep.toList.Sublist (c.substHyps b c.assumes).toList ∧
-        (checkRealizable b c).run.detail = .vacuousAssumptions (keep.map (·.1)) ∧
-        ∀ ρ, s.Typed ρ → ¬s.Holds keep ρ) ∨
-    ∃ ρ model, s.Typed ρ ∧ s.Admits ρ ∧
-      (¬∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Defined ρ' ∧ ∀ r ∈ c.reqs, s.den r.2 ρ') ∧
-      s.Agrees ρ (conflictInput c.vars model) ∧
-      ∃ keep : Array (Name × F), keep.toList.Sublist (c.substHyps b c.reqs).toList ∧
-        (checkRealizable b c).run.detail =
-          .conflict (renderModel b c.vars (conflictInput c.vars model) fun v => v.isIn && v.isPub).run
-            (keep.map (·.1)) ∧
-        ∀ ρ', s.Typed ρ' → OnlyOuts c.vars ρ ρ' → ¬s.Holds keep ρ' := by
-  unfold checkRealizable at h
+theorem checkRealizableUniversal_fail (hd : s.DefsOk) (h : (checkRealizableUniversal b c).run.verdict = .fail) :
+    s.ProcedureFailure (checkRealizableUniversal b c).run := by
+  unfold Sound.ProcedureFailure
+  rw [checkRealizableUniversal_verdict] at h
   cases ha : b.query (c.substHyps b c.assumes) b.falseF false <;>
     cases hc : b.query (c.substHyps b (c.hyps b))
       (b.existsOutputs (c.subst b .realizable (b.conj (c.reqs.map (·.2))))) true <;>
-    simp +decide [ha, hc, realizableVerdict, Outcome.answer, Outcome.isUnsat, bind_eq, run_eq] at h
+    simp +decide [ha, hc, realizableVerdict, Outcome.answer] at h
   all_goals first
     | -- The assumptions contradict each other.
       have hall := s.query_unsat ha
@@ -723,7 +779,7 @@ theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verd
         fun ρ ht hρ => s.falseF ht <|
           hent (fun ρ ht hρ => hall ρ ht (by simpa [Sound.Holds] using hρ)) ρ ht (by simpa [Sound.Holds] using hρ)⟩
       simp only [run_eq] at hmin
-      unfold checkRealizable
+      unfold checkRealizableUniversal
       simp +decide [ha, hc, realizableVerdict, Outcome.answer, Outcome.isUnsat, bind_eq, run_eq, pure_eq, hmin]
     | -- A conflict.
       rename_i model
@@ -752,8 +808,9 @@ theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verd
       refine .inr ⟨ρ, model, ht, ⟨hdef, hposs⟩, hno, hagree, keep, hsub, ?_,
         fun ρ' ht' hout hkeep => ?_⟩
       · simp only [pinned, input, run_eq] at hmin
-        unfold checkRealizable
+        unfold checkRealizableUniversal
         simp +decide [ha, hc, realizableVerdict, Outcome.answer, Outcome.isUnsat, bind_eq, run_eq, pure_eq, hmin]
+        split <;> rfl
       rcases hor with rfl | hent
       · -- Nothing was dropped: no outputs meet all the requirements.
         obtain ⟨ρ'', ht'', hsame', hdef''⟩ := hd.complete ρ' ht'
@@ -775,11 +832,103 @@ the environment `Possible`: assumptions and bindings cannot mention outputs
 (`inst::binding`). So `expect` and `determinism` do not pass vacuously,
 provided some environment is possible: one that meets the definitions and
 the assumptions, if the procedure has no calls. -/
-theorem realizable_behaves (hd : s.DefsOk) (hindep : ∀ ρ ρ', OnlyOuts c.vars ρ ρ' → s.Possible ρ → s.Possible ρ')
-    (h : (checkRealizable b c).run.verdict = .pass) :
+theorem realizableUniversal_behaves (hd : s.DefsOk) (hindep : ∀ ρ ρ', OnlyOuts c.vars ρ ρ' → s.Possible ρ → s.Possible ρ')
+    (h : (checkRealizableUniversal b c).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.Admits ρ → ∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Behaves ρ' := fun ρ ht hρ =>
-  let ⟨ρ', ht', hin, hdef, hr⟩ := (checkRealizable_pass s hd h).2 ρ ht hρ
+  let ⟨ρ', ht', hin, hdef, hr⟩ := (checkRealizableUniversal_pass s hd h).2 ρ ht hρ
   ⟨ρ', ht', hin, ⟨hdef, hindep ρ ρ' hin hρ.2⟩, hr⟩
+
+/-- Passing the fixed SAT query gives an actual typed satisfying witness.
+No assumption that the declaration tag itself proves interpretation locality
+is used; the locality bridge below is a separate semantic theorem. -/
+theorem checkFixedInhabitation_pass (hc : c.fixedInhabitation = true)
+    (h : (checkRealizable b c).run.verdict = .pass) : ∃ ρ, s.Typed ρ ∧ s.Behaves ρ := by
+  obtain ⟨hdefs, ha, hi, _⟩ := c.fixedInhabitation_shape hc
+  simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, ha, hi] at h
+  cases hq : b.query c.reqs b.falseF true <;>
+    simp [hq, run_eq, pure_eq] at h
+  obtain ⟨ρ, ht, hr, _, _⟩ := s.query_sat hq
+  exact ⟨ρ, ht, (s.fixed_behaves hc ρ).2 hr⟩
+
+theorem checkRealizable_pass (hd : s.DefsOk) (h : (checkRealizable b c).run.verdict = .pass) :
+    s.Realizable := by
+  by_cases hc : c.fixedInhabitation = true
+  · simpa only [Sound.Realizable, hc, if_true] using checkFixedInhabitation_pass s hc h
+  · simp only [Sound.Realizable, hc]
+    apply checkRealizableUniversal_pass s hd
+    simpa [checkRealizable, hc] using h
+
+/-- Failure in declaration mode rules out every typed witness, and the
+reported invariant core itself is unsatisfiable. Procedure-mode failures
+retain the ordinary counterexample/core theorem unchanged. -/
+theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verdict = .fail) :
+    if c.fixedInhabitation then
+      (∀ ρ, s.Typed ρ → ¬s.Behaves ρ) ∧
+      ∃ keep : Array (Name × F), keep.toList.Sublist c.reqs.toList ∧
+        (checkRealizable b c).run.detail = .conflict #[] (keep.map (·.1)) ∧
+        ∀ ρ, s.Typed ρ → ¬s.Holds keep ρ
+    else s.ProcedureFailure (checkRealizable b c).run := by
+  by_cases hc : c.fixedInhabitation = true
+  · obtain ⟨hdefs, ha, hi, _⟩ := c.fixedInhabitation_shape hc
+    simp only [hc, if_true]
+    have hh := h
+    simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, ha, hi] at hh
+    cases hq : b.query c.reqs b.falseF true <;>
+      simp [hq, run_eq, pure_eq] at hh
+    have hall := s.query_unsat hq
+    obtain ⟨keep, hsub, hmin, hent, _⟩ := minimize_spec s #[] c.reqs b.falseF
+    refine ⟨fun ρ ht hb => s.falseF ht (hall ρ ht ((s.fixed_behaves hc ρ).1 hb)), keep, hsub, ?_, ?_⟩
+    · simp only [run_eq] at hmin
+      simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, ha, hi, hq,
+        bind_eq, run_eq, pure_eq, hmin]
+    · intro ρ ht hk
+      exact s.falseF ht (hent (fun ρ ht hr => hall ρ ht (by simpa [Sound.Holds] using hr))
+        ρ ht (by simpa [Sound.Holds] using hk))
+  · simp only [hc]
+    have hp : (checkRealizableUniversal b c).run.verdict = .fail := by
+      simpa [checkRealizable, hc] using h
+    simpa [checkRealizable, hc] using checkRealizableUniversal_fail s hd hp
+
+/-- A concrete proof link for fixed interpreted declarations: each invariant
+has the same truth in typed environments agreeing on the fresh outputs.
+This is semantic output locality, not a Boolean promise from the tag. -/
+def Sound.OutputLocal : Prop :=
+  ∀ r ∈ c.reqs, ∀ ρ ρ', s.Typed ρ → s.Typed ρ' →
+    (∀ n, IsOut c.vars n → ρ n = ρ' n) → (s.den r.2 ρ ↔ s.den r.2 ρ')
+
+/-- Copy the satisfying value into any fixed interpreted environment.
+This is the witness-to-universal-completion bridge required for the SAT
+optimization of declaration inhabitation. -/
+theorem fixed_inhabitation_completion (hc : c.fixedInhabitation = true)
+    (hlocal : s.OutputLocal) (h : (checkRealizable b c).run.verdict = .pass) :
+    ∀ ρ, s.Typed ρ → ∃ ρ', s.Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ s.Behaves ρ' := by
+  have hw := checkFixedInhabitation_pass s hc h
+  obtain ⟨witness, hwtyped, hwbehaves⟩ := hw
+  intro ρ ht
+  let completed : Env Val := fun n => if IsOut c.vars n then witness n else ρ n
+  have completed_typed : s.Typed completed := by
+    intro n
+    dsimp [completed]
+    split <;> first | exact hwtyped n | exact ht n
+  refine ⟨completed, completed_typed, fun n hn => ?_, (s.fixed_behaves hc completed).2 ?_⟩
+  · simp [completed, hn]
+  · intro r hr
+    exact (hlocal r hr witness completed hwtyped completed_typed (fun n hn => by simp [completed, hn])).1
+      ((s.fixed_behaves hc witness).1 hwbehaves r hr)
+
+/-- Both query modes give a nonvacuous behaviour. For ordinary procedures
+this follows by completing a possible environment; declaration mode supplies
+its satisfying witness directly. -/
+theorem realizable_behaves (hd : s.DefsOk)
+    (hindep : ∀ ρ ρ', OnlyOuts c.vars ρ ρ' → s.Possible ρ → s.Possible ρ')
+    (h : (checkRealizable b c).run.verdict = .pass)
+    (possible : ∃ ρ, s.Typed ρ ∧ s.Admits ρ) : ∃ ρ, s.Typed ρ ∧ s.Behaves ρ := by
+  by_cases hc : c.fixedInhabitation = true
+  · simpa [Sound.Realizable, hc] using checkRealizable_pass s hd h
+  · obtain ⟨ρ, ht, hp⟩ := possible
+    have hu : (checkRealizableUniversal b c).run.verdict = .pass := by simpa [checkRealizable, hc] using h
+    obtain ⟨ρ', ht', _, hb⟩ := realizableUniversal_behaves s hd hindep hu ρ ht hp
+    exact ⟨ρ', ht', hb⟩
 
 /-! ## Determinism -/
 
@@ -1113,7 +1262,7 @@ theorem kindsFor_spec :
   ⟨rfl, rfl⟩
 
 theorem checkRealizable_kind {b : Backend Id F V} : (checkRealizable b c).run.kind = .realizable := by
-  unfold checkRealizable
+  unfold checkRealizable checkRealizableUniversal
   simp only [bind_eq, run_eq, pure_eq]
   repeat' split
   all_goals rfl
@@ -1184,11 +1333,13 @@ private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s'
   split
   · simp [Sound.Defined, hd]
   · exact hA ρ _
-  · exact hB ρ
+  · simp [Sound.Admits, Sound.Defined, Sound.Possible, hd]
   · simp [Sound.Defined, hd]
 
 /-- When every check of a procedure passes, except perhaps `redundancy`,
-whose failures are only warnings: it is realizable, every call's
+whose failures are only warnings: it has its mode's realizability meaning
+(`Sound.Realizable`: a fixed declaration witness or universal procedure
+completion), every call's
 assumptions hold, every expectation holds, every cover goal is met by some
 behaviour, every trigger can hold, every
 `det` variable's check passes, so that `checkDeterminism_pass` applies to it (the
@@ -1206,10 +1357,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
     (hsame : ∀ k, (s k).den = (s .realizable).den ∧ (s k).HasType = (s .realizable).HasType)
     (hdefs : (s .realizable).DefsOk)
     (h : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass) :
-    ((∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Defined ρ ∧ ∀ a ∈ c.assumes, (s .realizable).den a.2 ρ) ∧
-      ∀ ρ, (s .realizable).Typed ρ → (s .realizable).Admits ρ →
-        ∃ ρ', (s .realizable).Typed ρ' ∧ OnlyOuts c.vars ρ ρ' ∧ (s .realizable).Defined ρ' ∧
-          ∀ r ∈ c.reqs, (s .realizable).den r.2 ρ') ∧
+    (s .realizable).Realizable ∧
     (∀ k (hk : k < c.insts.size), ∀ a ∈ c.insts[k].assumes, ∀ ρ, (s .realizable).Typed ρ →
       (s .realizable).Admits ρ k → (s .realizable).den c.insts[k].bindings ρ → (s .realizable).den a.2 ρ) ∧
     (∀ e ∈ c.expects, ∀ ρ, (s .realizable).Typed ρ → (s .realizable).Behaves ρ → (s .realizable).den e.2 ρ) ∧
@@ -1271,8 +1419,8 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
       (pass _ (hrc (all _) t hs) (by rw [checkReach_kind]; intro h; cases h))
     obtain ⟨tT, -, -, -⟩ := Sound.congr (s .reachability) (s .realizable) (hsame _)
     exact ⟨ρ, (tT ρ).1 ht, by simpa only [Sound.Holds, (hsame _).1] using hρ, by simpa only [(hsame _).1] using hg⟩
-  · obtain ⟨ρ', ht', -, hb⟩ := realizable_behaves (s .realizable) hdefs hindep
-      (pass _ (hr (all _)) (by rw [checkRealizable_kind]; intro h; cases h)) ρ ht hρ
+  · obtain ⟨ρ', ht', hb⟩ := realizable_behaves (s .realizable) hdefs hindep
+      (pass _ (hr (all _)) (by rw [checkRealizable_kind]; intro h; cases h)) ⟨ρ, ht, hρ⟩
     exact ⟨ρ', ht', hb, fun e he' => hE e he' ρ' ht' hb⟩
 
 /-! ## A sound backend

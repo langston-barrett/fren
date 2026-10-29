@@ -1,0 +1,17 @@
+set_option fren.lint.assertions_on_constants "allow"
+fn any?(x?, y?) := or { first: x?, second: y? }
+fn same?(x?, y?) := iff { first: x?, second: y? }
+fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
+fn all?(x?, y?) := and { first: x?, second: y? }
+expect members() {
+    expect none: any?(false, false)
+    expect held: not any?(true, false)
+    expect mismatch: same?(true, false)
+    expect agreed: not same?(false, false)
+    expect second_true: unique?(true, true, false)
+    expect single_true: not unique?(false, true, false)
+    expect all_true: not all?(true, true)
+    expect passing: one { first: true, second: false }
+}
+
+-- fren-covers: lang::block_result, lang::block_values, lang::exactly_one_result, lang::named_conjunction, lang::named_node

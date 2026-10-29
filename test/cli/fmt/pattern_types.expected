@@ -1,11 +1,13 @@
 --- test/cli/fmt/pattern_types.fren
 +++ test/cli/fmt/pattern_types.fren
 @@ -4 +4 @@
--type   Byte:=Int   is  0..=255
-+type Byte := Int is 0..=255
-@@ -6,2 +6,2 @@
--type Loud :=Level is Level::High|Level::Low
--proc c(b: Set< Byte >, n:Int is 1..): (l: Loud) {
-+type Loud := Level is Level::High | Level::Low
-+proc c(b: Set<Byte>, n: Int is 1..): (l: Loud) {
+-type   Byte= n: Int    where invariant: n is  0..=255
++type Byte = n: Int where invariant: n is 0..=255
+@@ -6,3 +6,3 @@
+-type Loud = level: Level  where invariant: level is Level::High|Level::Low
+-type Pos = n: Int  where invariant: n is 1..
+-proc c(b: Set< Byte >, n:Pos): (l: Loud) {
++type Loud = level: Level where invariant: level is Level::High | Level::Low
++type Pos = n: Int where invariant: n is 1..
++proc c(b: Set<Byte>, n: Pos): (l: Loud) {
 exit=1

@@ -1,6 +1,0 @@
--- A defined output's value that may not match its pattern type (F0622).
-type Byte := Int is 0..=255
-
-proc c(x: Int): (det b: Byte) {
-    out b := x
-}

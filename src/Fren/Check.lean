@@ -54,6 +54,34 @@ def fromModel (ty : Expr) (val : Expr) : Expr :=
     else val
   else val
 
+/-- Restore Boolean codomains of reconstructed model functions too.
+SMT propositions represent Bool values, including inside lambda bodies. -/
+partial def modelValue (ty value : Expr) : MetaM Expr := do
+  if let .forallE _ expectedDomain result _ := ty.consumeMData then
+    if let .lam name modelDomain body _ := value.consumeMData then
+      return ← withLocalDeclD name expectedDomain fun x => do
+        -- lean-smt reconstructs Boolean domains as propositions. Restore
+        -- the declared Bool binder and pass its truth proposition to the
+        -- reconstructed body, just as codomains are restored below.
+        let modelArgument := if expectedDomain.isConstOf ``Bool && modelDomain.isSort then
+          mkApp2 (mkConst ``Eq [Level.zero]) (mkConst ``Bool) x |>.app (mkConst ``Bool.true)
+          else x
+        let mapped ← modelValue (result.instantiate1 x) (body.instantiate1 modelArgument)
+        mkLambdaFVars #[x] mapped
+  if ty.isConstOf ``Bool && (← isProp value) then
+    let decision ← match ← trySynthInstance (mkApp (mkConst ``Decidable) value) with
+      | .some found => pure found
+      | _ => pure (mkApp (mkConst ``Classical.propDecidable) value)
+    return mkApp2 (mkConst ``Decidable.decide) value decision
+  return fromModel ty value
+
+/-- The total SMT value of a partial source table/match is free at its
+empty-sequence fallback, despite involving no declared uninterpreted function. -/
+partial def hasUnspecifiedRead (formula : Expr) : MetaM Bool := do
+  if formula.isAppOfArity ``Fren.Seq.nth 4 then
+    if (← whnf formula.getAppArgs[2]!).isAppOfArity ``List.nil 1 then return true
+  formula.foldlM (fun found child => if found then pure true else hasUnspecifiedRead child) false
+
 /-- A value of type `ty` as Fren builds it (`Reqs/View`), such as
 `Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`. -/
 partial def render (ty : Expr) (val : Expr) : MetaM String := do
@@ -318,14 +346,16 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     let guarded (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
     let args := app.getAppArgs
     if d.result == .nat then out := out.push (`nat, guarded (← atLeast0 app))
+    -- Newly reflected type facts need the same solver forms as explicit
+    -- clauses: their subset helpers may have executable Lean matches.
     if let some fact := d.fact? then
       let value := if d.result == .nat then
         mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      out := out.push (`type, guarded (fact.beta #[value]))
+      out := out.push (`type, guarded (← unfoldDefined (fact.beta #[value])))
     let k := st.contracts.get? d.path
     let domain := ((st.bodies.get? d.path).map fun b => (b.vars.zip args).filterMap fun (v, x) => v.fact?.map (·.beta #[x])).getD #[]
     let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => unfoldDefined (c.at args)
-    let pres := domain ++ pres
+    let pres := (← domain.mapM unfoldDefined) ++ pres
     let posts ← ((k.map (·.posts)).getD #[]).mapM fun c => return (c.name, ← unfoldDefined (c.at args))
     let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
     for (name, f) in (if ← allowPosts d app gs then Core.postconditionFacts implies pres posts else #[]) do
@@ -395,7 +425,8 @@ answer is not cached. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array (Name × Expr) := #[])
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
-    (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false) :
+    (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
+    (snapshots? : Option (IO.Ref (Array Smt.Model)) := none) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -450,10 +481,17 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                             ++ resourceLimitOptions (← getOptions) }
                   mv.mvarId! (hs.reverse ++ recFvs) with
         | .sat (some m) =>
-          return .sat <| m.values.filterMap fun (k, v) =>
+          let values := m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with
             | some n => some (n, v)
             | none => if extra.contains k then some (k.fvarId!.name, v) else none
+          let token ← match snapshots? with
+            | none => pure #[]
+            | some snapshots =>
+              let index := (← snapshots.get).size
+              snapshots.modify (·.push m)
+              pure #[((Name.mkSimple "#member_model"), mkNatLit index)]
+          return .sat (values ++ token)
         | .sat none => return .sat #[]
         | .unsat .. => return .unsat
         | .unknown r => return .unknown r
@@ -534,6 +572,32 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let o := if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
       if cacheable then cache.modify (·.insert key o)
       return o
+    modelBool? := snapshots?.map fun snapshots => fun model formula => do
+      let some (_, token) := model.find? (·.1 == Name.mkSimple "#member_model") | return none
+      let some index := token.rawNatLit? <|> token.nat? | return none
+      let some captured := (← snapshots.get)[index]? | return none
+      let formula := instances (← unfoldDefined (← zetaReduce formula))
+      -- Interpret the formula using the exact captured sort/function/value
+      -- interpretation. No new solver query or variable-only pinning is used.
+      try
+        return ← captured.ctx.runMetaM do
+          let entries ← captured.entries.mapM fun (key, value) => do
+            let expected ← inferType key
+            let expected := expected.replace fun term => (captured.sorts.find? (·.1 == term)).map (·.2)
+            return (key, ← modelValue expected value)
+          let interpreted := formula.replace fun e => (entries.find? (·.1 == e)).map (·.2)
+          let value ← reduce interpreted
+          if value.isConstOf ``True then return some true
+          if value.isConstOf ``False then return some false
+          if value.hasFVar || value.hasMVar then return none
+          match ← trySynthInstance (mkApp (mkConst ``Decidable) value) with
+          | .some decision =>
+            let decided ← reduce (mkApp2 (mkConst ``Decidable.decide) value decision)
+            if decided.isConstOf ``Bool.true then return some true
+            if decided.isConstOf ``Bool.false then return some false
+            return none
+          | _ => return none
+      catch _ => return none
     falseF := mkConst ``False
     notF := mkNot
     conj := fun ps => mkAndN ps.toList
@@ -653,7 +717,8 @@ uninterpreted functions among them use, which their applications' facts
 state (`Core.appFacts`), in declaration order. -/
 def checkUses (c : CompInfo) : MetaM (Array Name) := do
   let s ← getState
-  let mut uses ← usesOf (c.uses.map (mkConst ·) ++ c.indexes.map (·.2.2.2.2))
+  let mut uses ← usesOf (c.uses.map (mkConst ·) ++ c.indexes.map (·.2.2.2.2)
+    ++ c.vars.filterMap (·.fact?))
   repeat
     let more := uses.foldl (init := uses) fun acc u =>
       let posts := s.abstracts.foldl (init := #[]) fun ps _ a =>
@@ -766,6 +831,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     (hooks? : Option ElabHooks := none) (own : Array (Array Core.Ty) := #[])
     (foreign : Array (Name × Array Core.Ty) := #[]) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
+  let kinds := if c.subset?.isSome then #[.realizable]
+    else if c.subsetInvariant?.isSome then #[.definedness, .completeness, .disjointness, .precondition] else kinds
   let c := { c with uses := ← checkUses c }
   -- As elaborated, for its contract's instances (`instanceContract`).
   let elaborated := c
@@ -842,6 +909,20 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       fn? := c.fn?
       expects := ← named c.expects
       covers := ← named c.covers
+      branchGroups := ← (c.props.flatMap (·.branchGroups)).mapM fun group => do
+        let members ← group.members.mapM fun member => do
+          return { member with
+            formula := ← beta member.formula
+            valueFormula? := ← member.valueFormula?.mapM beta
+            evaluationGuard? := ← member.evaluationGuard?.mapM beta }
+        return { group with members, guard? := ← group.guard?.mapM beta }
+      memberGroups := ← (c.props.flatMap (·.memberGroups)).mapM fun group => do
+        let members ← group.members.mapM fun member => do
+          return { member with
+            formula := ← beta member.formula
+            valueFormula? := ← member.valueFormula?.mapM beta
+            evaluationGuard? := ← member.evaluationGuard?.mapM beta }
+        return { group with members }
       insts := ← c.insts.mapM fun i => return {
         name := i.name, comp := i.comp, bindings := ← beta i.bindings, behaviour := ← beta i.behaviour
         assumes := ← i.assumes.mapM fun (n, a) => return (n, ← beta a), typed := i.typed }
@@ -849,10 +930,10 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- Numbered in order within each item.
       indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
         let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
-        return { prop := n, k, place, goal := ← beta goal, patTy? := obligationTy? goal }
+        return { prop := n, k, place, goal := ← beta goal, patTy? := obligationTy? goal, excludeSelf := isLeafObligation goal }
       tables := tables.mapIdx fun j (n, place, q, goal) =>
         let k := (tables.extract 0 j).filter (·.1 == n) |>.size
-        { site := { prop := n, k, place, goal }, goal := q }
+        { site := { prop := n, k, place, goal, excludeSelf := isLeafObligation goal }, goal := q }
       defs := ← c.defs.filterMapM fun (d, e) => do
         let some i := c.vars.findIdx? (·.name == d) | return none
         let e ← beta e
@@ -864,7 +945,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let generic := c.fn?.any fun f => ((st0.abstracts.get? f).map (!·.typeParams.isEmpty)).getD false
     let comp : Core.Comp Expr := match contract, c.fn?, c.vars.back? with
       | true, some f, some v =>
-        Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables generic
+        { Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables generic
+          with branchGroups := comp.branchGroups, memberGroups := comp.memberGroups }
       | _, _, _ => comp
     -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
     -- copies, is at least 0. Each query's applications bring their own
@@ -912,12 +994,22 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- And a generic function without a body, which stays itself.
     let interprets (e : Expr) : Bool :=
       e.hasAnyFVar useIds.contains || generics.any fun (a, _) => (e.find? (·.isConstOf a.placeholder)).isSome
-    let full := { comp with typesInterpreted := c.vars.any fun v => interprets v.type }
+    -- A partial table/match has an unspecified empty-sequence read as
+    -- its fallback. Its interpretation is free even with no declared UF,
+    -- so a SAT witness must not stand in for universal inhabitation.
+    let unspecified ← if c.subset?.isNone then pure false else
+      (comp.reqs.map (·.2) ++ comp.defs.map (·.2.1) ++ facts.map (·.2)).anyM fun formula => do
+        let formula ← unfoldDefined formula
+        hasUnspecifiedRead formula
+    let full := { comp with
+      inhabitation := c.subset?.isSome
+      typesInterpreted := (c.vars.any fun v => interprets v.type) || facts.any (interprets ·.2) || unspecified }
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`),
     -- and enumeration those set to enumeration (`check::by_evidence`).
     let enumerated ← if c.enumerated.any then (enumerate?.mapM fun f => f c full fvs ufs fns kinds) else pure none
     let (comp, kinds) := full.untested (c.tested.union c.enumerated) kinds
     let cache : QueryCache ← IO.mkRef {}
+    let memberModels ← IO.mkRef (#[] : Array Smt.Model)
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
     -- The functions whose applications bring facts: those into `Nat`, and
@@ -972,6 +1064,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
       let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
+        (snapshots? := if full.memberGroups.isEmpty then none else some memberModels)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

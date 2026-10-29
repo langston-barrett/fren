@@ -535,7 +535,8 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
     let prop? := m.item?.bind fun n => c.props.find? (·.name == n)
     let index? := m.atIndex?.bind fun k => m.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
     let site? := m.atSite?.bind fun k => m.item?.bind fun n => (c.tables.filter (·.1 == n))[k]?.map (·.2.2.1)
-    let span := if let some sp := index?.orElse fun _ => site? then sp else match prop?, m.item? with
+    let explicit := m.atRange?.map fun sp => ({ start := sp.start, stop := sp.stop } : Span)
+    let span := if let some sp := explicit.orElse (fun _ => index?.orElse fun _ => site?) then sp else match prop?, m.item? with
       | some p, _ => if m.atTrigger then p.triggerSpan?.getD p.span else p.span
       | none, some n => (c.insts.find? (·.name == n)).map (·.span)
         |>.orElse (fun _ => (c.vars.find? (·.name == n)).map (·.span)) |>.getD c.span
@@ -544,7 +545,37 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
     let msg := match (index?.orElse fun _ => site?).bind fun sp => vias.find? (·.1 == sp) with
       | some (_, f) => if m.severity == .error then m.msg.note (Fren.Core.viaNote f) else m.msg
       | none => m.msg
-    printDiag p files { file := c.file, span, severity := m.severity, msg }
+    let msg := if let some subset := c.subset? then
+        if r.verdict == .fail && m.severity == .error then
+          { msg with
+            code? := some "F0660"
+            headline := s!"subset type `{Fren.Core.showPath subset}` is empty"
+            label? := some "no value satisfies its invariants"
+            notes := (msg.notes.filter (!·.startsWith "help:")).map (·.replace "no outputs satisfy" "no value satisfies")
+              |>.push "help: weaken the invariants or choose a base type with a satisfying value"
+          }
+        else msg
+      else if let some invariant := c.subsetInvariant? then
+        if r.verdict == .fail && m.severity == .error then
+          { msg with
+            code? := some "F0662"
+            headline := s!"invariant `{Fren.Core.showPath invariant}` may not be defined"
+            label? := some "not defined under the earlier invariants"
+          }
+        else msg
+      else if let some label := r.patTy?.bind (·.dropPrefix? "@invariant:") then
+        if m.severity == .error then
+          { msg with
+            code? := some "F0661"
+            headline := s!"invariant `{label}` does not hold"
+            label? := some "violates the invariant"
+            notes := (msg.notes.filter (·.startsWith "counterexample:")).push
+              "note: a value given for a subset type must satisfy each named invariant"
+          }
+        else msg
+      else msg
+    let file := prop?.bind fun prop => if prop.sourceRef || m.atRange?.isSome then prop.file? else none
+    printDiag p files { file := file.getD c.file, span, severity := m.severity, msg }
     shown := shown.push msg
   return shown
 
@@ -642,8 +673,8 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   -- Whether a formula uses an abstract type or an uninterpreted function,
   -- for the values that a realizability conflict's notes may show
   -- (`Fren.Core.Comp.realizableInterpreted`), as `markInterpreted` decides.
-  let interprets (f : String) : Bool := prelude.interprets (quotedSymbols f)
-  let typesInterpreted := c.vars.any (interprets ·.ty.sort)
+  let interprets (f : String) : Bool := f.contains "(seq.nth (as seq.empty" || prelude.interprets (quotedSymbols f)
+  let typesInterpreted := c.vars.any (fun v => interprets v.ty.sort || v.fact?.any interprets)
   let log ← IO.mkRef #[]
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
@@ -940,7 +971,7 @@ def trace (args : Args) : IO UInt32 := do
     let texts := c.texts.map (·.1)
     if c.tested then { cs with tested := cs.tested.insert c.comp (cs.tested.getD c.comp #[] ++ texts) }
     else { cs with trusted := cs.trusted.insert c.comp (cs.trusted.getD c.comp #[] ++ texts) }
-  let comps := st.comps.qsort (·.path.toString < ·.path.toString)
+  let comps := (st.comps.filter fun c => c.subset?.isNone && c.subsetInvariant?.isNone).qsort (·.path.toString < ·.path.toString)
   -- The `fren` command cannot check `impl`s.
   let ls := Fren.Core.levels (comps.map fun c =>
     { path := c.path, hasOutputs := c.vars.any (·.role == .output), insts := c.insts.map (·.comp) }) claims

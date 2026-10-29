@@ -23,16 +23,17 @@ mod http
 
 ordered struct Seconds(Nat)                    -- newtype with derived ordering
 enum Decision { GiveUp, RetryAfter(Seconds) }  -- Rust-style enums
-type Status := Nat is 100..=599                -- a pattern type
+type Status = status: Nat where status_range: status is 100..=599  -- a subset type
 enum Method { Get, Put, Post, Delete }
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
+type Pos = n: Nat where positive: n is 1..
 proc retry(
     method: Method,
     status: Status,
-    attempt: Nat is 1..,             -- attempts made so far
+    attempt: Pos,                    -- attempts made so far
     retry_after: Seconds,            -- the server's `Retry-After`, or 0
 ): (decision: Decision) {
     use http::Decision::{GiveUp, RetryAfter}
@@ -54,8 +55,8 @@ expect gives_up_for_good(
     method: Method,
     status: Status,
     retry_after: Seconds,
-    early: Nat is 1..,
-    late: Nat is 1..,
+    early: Pos,
+    late: Pos,
 ) {
     use http::Decision::RetryAfter
 

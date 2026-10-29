@@ -1,6 +1,11 @@
 -- A cover goal may end with a `where` clause, as any other constraint.
 proc heater(temp: Int): (alarm?) {
     ensure r: alarm? iff hot? where limit := 100, hot? := temp > limit
+    --~^? info: case "both operands are true" is impossible under the existing constraints
+    --~^^? info: case "both operands are true": `r.1` must be true, but is false under the existing constraints
+    --~^^^? info: no branch of `r` can hold
+    --~^^^^? info: case "both operands are false" is impossible under the existing constraints
+    --~^^^^^? info: case "both operands are false": `r.2` must be false, but is true under the existing constraints
 
     cover overheat: hot? and alarm? where hot? := temp > 100
     --~^ info: witness: temp = 101, alarm? = true

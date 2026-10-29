@@ -1,0 +1,2 @@
+-- Pattern tests remain expressions, but cannot modify a type.
+proc c(n: Int is 0..=9) {}

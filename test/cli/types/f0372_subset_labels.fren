@@ -1,0 +1,3 @@
+type Byte = n: Int where bound: n >= 0 and bound: n <= 255
+
+-- fren-covers: lang::subset_labels

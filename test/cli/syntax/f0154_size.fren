@@ -1,7 +1,8 @@
 -- A size bound of enumeration that is too large (F0154).
+type TwoBit = n: Int where invariant: n is 0..=3
 set_option fren.enumeration.size 100 in
 set_option fren.evidence "enumerated" in
-proc c(x: Int is 0..=3): (det y: Int) {
+proc c(x: TwoBit): (det y: Int) {
     out y := x
     expect e: y >= 0
 }

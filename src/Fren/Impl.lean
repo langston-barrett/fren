@@ -253,7 +253,9 @@ def mkObligation (c : CompInfo) (binders : Array Syntax) (maps : Array Syntax) (
       if stmt.hasMVar || stmt.hasLevelMVar then throwError "could not elaborate the statement{indentExpr stmt}"
       -- Whether the assumptions can hold: if not, the statement says nothing.
       let assumes ← instantiateMVars assumes
-      let never ← mkForallFVars xs (mkNot assumes)
+      -- The quantifier copies the elaborated binder types too. Freeze
+      -- their universe assignments before a later TermElabM checks vacuity.
+      let never ← instantiateMVars (← mkForallFVars xs (mkNot assumes))
       let found? ← (← assignments xs).mapM fun combos =>
         combos.anyM fun vals => return (← evalDecide (assumes.replaceFVars xs vals)) == some true
       if written then return { stmt, decideQ := .unknown, never, found? }

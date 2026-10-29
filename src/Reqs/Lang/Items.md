@@ -186,8 +186,9 @@ value, and `x.0` reads its field (see
 newtype has). A newtype is a record, so its field follows the rules of
 a record's [fields](#fields-and-payloads): its type has no abstract type
 within it and it does not have the newtype as an element type, and is not
-the newtype itself. It may be a `Nat`, or a [pattern
-type](Types.md#pattern-types), as in `struct Byte(Int is 0..=255)`: a value
+the newtype itself. It may be a `Nat`, or a [subset
+type](SubsetTypes.md), as in `struct Byte(ByteValue)` with
+`type ByteValue = n: Int where range: n is 0..=255`: a value
 of it is then in range wherever it is read, and `Byte(e)` has the
 obligation that `e` is. Like any type, a newtype is
 [unbounded](Types.md#recursive-and-unbounded-types) exactly when its
@@ -380,7 +381,7 @@ the item.
 ## Fields and payloads
 
 A field or a payload may have any type in which no abstract type occurs,
-including a [pattern type](Types.md#pattern-types) and a `Nat`, but not a
+including a [subset type](Types.md#subset-types) and a `Nat`, but not a
 `Nat` within an element type, nor as a payload of a recursive enumeration
 (see [Natural numbers](Types.md#natural-numbers)): the values of a record or
 enumeration are fully described by the spec, and `Set<Name>` is as
@@ -417,7 +418,7 @@ pub proc field_type(
 ```
 
 A [newtype](#newtypes)'s field is a record's field, so no abstract type is
-within it either. Its type may be a [pattern type](Types.md#pattern-types),
+within it either. Its type may be a [subset type](Types.md#subset-types),
 as any field's may:
 
 ```fren
@@ -494,25 +495,21 @@ at least one, and whether two of them are equal.
 type-alias := ["pub"] "type" IDENT ":=" type
 ```
 
-`type Byte := Int is 0..=255` declares the *type alias* `Byte`, which
-names the type after `:=`, as a constant names a value: wherever `Byte` is
-written as a type, it means `Int is 0..=255`. An alias is not a new type:
-`Byte` and `Int is 0..=255` are the same type, both widen to `Int`, and a
-`Byte` is accepted wherever an `Int is 0..=255` is (see [Pattern
-types](Types.md#pattern-types)). A type that is distinct from the one it is
-made from is a [newtype](#newtypes). Without `:=`, `type Name` still
-declares an abstract type.
+`type Integer := Int` declares the *type alias* `Integer`, which names
+the type after `:=`, as a constant names a value. An alias introduces no
+new representation or restrictions: `Integer` and `Int` are the same
+type. A type distinct from its underlying type is a [newtype](#newtypes).
+Without `:=` or `=`, `type Name` declares an abstract type.
 
-An alias names any type, most often a pattern type, so that it is written
-once and used everywhere: `type Port := Int is 1..=65535`, `type Loud :=
-Severity is Severity::Warning | Severity::Error`. Like any item, it is
-declared before it is used, so an alias is never recursive: its type
-mentions only types declared before it. It is a type and nothing else: a
-path that names an alias is not a record for a record literal, nor an
-enumeration for its variants. Its name follows the rules of a type's, and
-like any other item, it is visible according to `pub`, and can be brought
-into scope with `use`. A pattern on an alias of a pattern type is an error,
-since pattern types are not nested (`F0369`).
+An alias names any existing type, including a declared subset type, so it
+is written once and reused. It is declared before use and never recursive.
+Its name is a type, not a record constructor or enumeration namespace.
+Visibility and `use` follow the ordinary item rules.
+
+Restrictions are introduced by [declared subset types](SubsetTypes.md),
+as `type Byte = b: Int where low: b >= 0 and high: b <= 255`. A subset of
+a subset inherits the base's invariants. Applying a pattern to a type is
+no longer a surface form; expression `is` tests remain unchanged.
 
 ## Functions
 
@@ -562,10 +559,11 @@ body and the contract can mention them. `lang::function_params` states
 this, from the number of parameters and of those written with a name:
 
 ```fren
+type Pos = n: Nat where invariant: n is 1..
 pub proc function_params(
     defined?,            -- written with `:= e`
     contract?,           -- it has a contract: an `assume` or an `ensure` clause
-    n_params: Nat is 1..,
+    n_params: Pos,
     n_named: Nat,        -- parameters written with a name
 ): (det accepted?) {
     assume counts: n_named <= n_params
@@ -636,7 +634,7 @@ to equal arguments, it gives equal results, of its result type, and
 that it meets its [postconditions](#contracts). So an
 application of a function whose result is a `Nat` is at least 0, as a
 `Nat` variable is (see [Procedures](Procedures.md#natural-numbers)), one
-whose result is a [pattern type](Types.md#pattern-types) matches its
+whose result is a [subset type](Types.md#subset-types) matches its
 pattern, and an application of a function with postconditions meets each
 of them wherever it meets the preconditions: each application brings these
 constraints where it is written, and no constraint quantifies over the
@@ -873,7 +871,7 @@ and `where` clauses, and constants declared before it, so constants cannot depen
 apply [defined functions](#defined-functions) declared before it, but no
 uninterpreted function, since its value is unknown. And the constant's
 type is not an abstract type, which has no literals. Its type may be a
-[pattern type](Types.md#pattern-types), and its value is then checked to
+[subset type](Types.md#subset-types), and its value is then checked to
 match it, as a defined function's body is. `lang::constant`
 states this:
 

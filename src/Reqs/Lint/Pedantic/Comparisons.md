@@ -33,12 +33,32 @@ the last variant of the enumeration, and whether the test is that the
 operand is none of them. The fix compares with the last variant named,
 where they are the first, or the first named, where they are the last,
 and it holds exactly where the test does, for every value of the
-operand:
+operand.
+
+The preservation check matches the actual fix. `Unchanged` has no
+comparison to justify; `Compare(op, m)` must name its bound and agree at
+every position. This is the same condition as universally quantifying
+`op` and `m` under `fix = Compare(op, m)`: only the pair carried by the
+fix can satisfy that equality. Matching it directly avoids duplicating
+the conclusion for every other operator and bound.
 
 ```fren
 pub mod lint
 
 pub enum OrderingFix { Unchanged, Compare(Comparison, Position) }
+
+-- This holds for any property of an operator and a bound, independently
+-- of the lint's assumptions or how its fix is chosen.
+pub proc ordering_fix_statement(fix: OrderingFix, property: Rel<Comparison, Position>):
+    (det quantified?, det selected?) {
+    out quantified? := forall (op: Comparison) (m: Position),
+        when fix = OrderingFix::Compare(op, m), (op, m) in property
+    out selected? := match fix {
+        OrderingFix::Unchanged => true,
+        OrderingFix::Compare(op, m) => (op, m) in property,
+    }
+    expect equivalent: quantified? iff selected?
+}
 
 -- The variants a test names: whether it names each position.
 pub struct NamedVariants { v0?, v1?, v2?, v3?, v4? }
@@ -97,8 +117,11 @@ pub proc manual_ordering(
         and (exists (m: Position), bounded?(named, last, m, true) or bounded?(named, last, m, false)),
         fix = Unchanged
 
-    expect keeps_meaning: forall (op: Comparison) (m: Position), when fix = Compare(op, m),
-        names?(named, m) and (forall (x: Position), agrees_at?(named, last, negated?, op, m, x))
+    expect keeps_meaning: match fix {
+        Unchanged => true,
+        Compare(op, m) => names?(named, m)
+            and (forall (x: Position), agrees_at?(named, last, negated?, op, m, x)),
+    }
 }
 ```
 

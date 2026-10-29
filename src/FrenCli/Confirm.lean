@@ -254,7 +254,7 @@ def readModel (sp : Spec) (sy : Symbols) (model : Array (Name × String)) : Env 
   let fn (f : Name) (args : Array Val) : Option Val := do
     let (ps, body) ← funs[f]?
     sy.eval (ps.toList.zip args.toList) body
-  let interp : Interp := { fn, shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
+  let interp : Interp := { fn, defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
   return (env, interp)
 
 /-! ## Evaluating formulas in a model -/
@@ -343,7 +343,8 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
   let tys (n : Name) := (vars.find? (·.name == n)).map (·.ty)
-  { query := fun hyps goal wantModel => do
+  { modelBool? := b.modelBool?.map fun read => fun model formula => read model formula.1
+    query := fun hyps goal wantModel => do
       let o ← b.query (hyps.map fun (n, f) => (n, f.1)) goal.1 true
       if let .sat model := o then
         let (env, I) := readModel sp sy model
@@ -373,6 +374,32 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
       (b.subst (ds.map fun (d, e) => (d, e.1)) f.1,
         .defined (ds.filterMap fun (_, _, fm) => match fm with | .defn d e => some (d, e) | _ => none) f.2) }
 
+/-- The intrinsic operation of a guarded source site, retaining actual
+arguments and lexical pattern/quantifier binders. -/
+partial def nativeSiteOperation : Ex → Ex
+  | .when _ _ body => nativeSiteOperation body
+  | .bin .and a b =>
+    let left := nativeSiteOperation a
+    let right := nativeSiteOperation b
+    if left.same right then left else .bin .and left right
+  | .match value arms position armPositions unspecified pairs =>
+    .match value (arms.map fun (pattern, guard, body) => (pattern, guard, nativeSiteOperation body)) position armPositions unspecified pairs
+  | .quant file position all names domains types body =>
+    .quant file position all names domains types (nativeSiteOperation body)
+  | .table position rows unspecified =>
+    .table position (rows.map fun (source, guard, body) => (source, guard, nativeSiteOperation body)) unspecified
+  | value => value
+
+/-- Pair the same single source question as generated Boolean lowering:
+all its guarded evaluations are required together. -/
+def groupedNativeGoals (goals : Array Ex) : Array Ex := Id.run do
+  let mut grouped := #[]
+  for goal in goals do
+    if let some k := grouped.findIdx? fun old => (nativeSiteOperation old).same (nativeSiteOperation goal) then
+      grouped := grouped.set! k (.bin .and grouped[k]! goal)
+    else grouped := grouped.push goal
+  return grouped
+
 /-- `core`, the elaborator's procedure, with each formula paired with the
 meaning of the constraint of `ec` of the same name. Each index's
 definedness is paired by its position, one of `positions`, in order, the
@@ -400,7 +427,24 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
   let defn (d : Name) : Fm := match ec.defs.find? (·.1 == d) with
     | some (_, e) => .defn d e
     | none => .atoms #[]
-  { path := core.path, vars := core.vars
+  let pairedMember (m : Fren.Core.BranchMember String) (em : Option (Fren.Core.BranchMember Ex)) : Fren.Core.BranchMember (String × Fm) :=
+    let atom (e : Ex) : Fm := .atoms #[{ label := m.name, pfx := .anonymous, e }]
+    { name := m.name
+      formula := (m.formula, (em.map (atom ∘ (·.formula))).getD .unknown)
+      valueFormula? := m.valueFormula?.map fun value => (value, (em.map fun e => atom (e.valueFormula?.getD e.formula)).getD .unknown)
+      evaluationGuard? := m.evaluationGuard?.map fun guard => (guard, (em.bind (·.evaluationGuard?) |>.map atom).getD .unknown)
+      range? := m.range?, text := m.text }
+  let groups := core.branchGroups.map fun g =>
+    let eg := ec.branchGroups.find? (·.owner == g.owner)
+    { owner := g.owner, kind := g.kind
+      guard? := g.guard?.map fun guard => (guard, (eg.bind (·.guard?) |>.map fun e => Fm.atoms #[{ label := g.owner, pfx := .anonymous, e }]).getD .unknown)
+      members := g.members.map fun m => pairedMember m (eg.bind fun eg => eg.members.find? (·.name == m.name)) }
+  let observed := core.memberGroups.map fun g =>
+    let eg := ec.memberGroups.find? (·.owner == g.owner)
+    { owner := g.owner, op := g.op, wanted := g.wanted,
+      members := g.members.map fun m => pairedMember m (eg.bind fun eg => eg.members.find? (·.name == m.name)) }
+  { path := core.path, vars := core.vars, branchGroups := groups, memberGroups := observed
+    inhabitation := core.inhabitation
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, expects := props core.expects
     -- An uninterpreted function's postconditions, of its value, which the
@@ -419,7 +463,10 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       let goal? := if x.patTy?.isSome then none else positions[j]?.bind fun pos =>
         let n := ((positions.extract 0 j).zip (core.indexes.extract 0 j)).filter (fun (p, y) =>
           p == pos && y.prop == x.prop && y.patTy?.isNone) |>.size
-        (((exsOf x.prop).flatMap (·.indexGoals)).filter (·.1 == pos))[n]?
+        let goals := (((exsOf x.prop).flatMap (·.indexGoals)).filter (·.1 == pos)).map (·.2)
+        let count := (core.indexes.zip positions).filter (fun (site, position) => site.prop == x.prop && site.patTy?.isNone && position == pos) |>.size
+        let goals := if count < goals.size then groupedNativeGoals goals else goals
+        goals[n]?.map (pos, ·)
       { x with goal := (x.goal, match goal? with
         | some (_, g) => .atoms #[{ label := .num x.prop x.k, pfx := .anonymous, e := g }]
         | none => .unknown) }
@@ -436,7 +483,10 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       let goal? := tablePositions[j]?.bind fun pos =>
         let n := ((tablePositions.extract 0 j).zip (core.tables.extract 0 j)).filter (fun (p, y) =>
           p == pos && y.site.prop == t.site.prop && y.goal == t.goal) |>.size
-        (at? pos)[n]?
+        let goals := (at? pos).map (·.2.2)
+        let count := (core.tables.zip tablePositions).filter (fun (site, position) => site.site.prop == t.site.prop && site.goal == t.goal && position == pos) |>.size
+        let goals := if count < goals.size then groupedNativeGoals goals else goals
+        goals[n]?.map (pos, t.goal, ·)
       { t with site := { t.site with goal := (t.site.goal, match goal? with
         | some (_, _, g) => .atoms #[atom g]
         | none => .unknown) } }

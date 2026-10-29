@@ -1,2 +1,0 @@
--- A pattern type with a second pattern (F0137).
-proc c(n: Int is 0.. is ..=9) {}

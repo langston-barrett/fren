@@ -14,7 +14,8 @@ pub proc band(
     ensure hot: too_hot? iff temp > target + 2
 }
 
-pub proc thermostat(temp: Int, target: Int is 50..=90): (det mode: Mode, alarm?) {
+type Temperature = temperature: Int where invariant: temperature is 50..=90
+pub proc thermostat(temp: Int, target: Temperature): (det mode: Mode, alarm?) {
     use self::Mode::{Cool, Heat, Off}
 
     exists spare: Int

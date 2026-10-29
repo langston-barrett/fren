@@ -109,6 +109,101 @@ structure Clash where
   restForced : Forced
   deriving Inhabited
 
+/-- Source member paths use the language's separators, including dotted
+annotation segments, without Lean identifier escaping. -/
+def showAnnotationPath (name : Name) : String :=
+  "::".intercalate (name.components.map (·.toString (escape := false)))
+
+/-- A Boolean source group whose alternatives are retained for conflict
+explanations, without replacing its owning constraint in a primary core. -/
+inductive BranchKind where
+  | disjunction
+  | equivalence
+  | exactlyOne
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- A source member's final logical identity and formula. Leading guards
+are already included; a group's formulas exactly reconstruct its owner. -/
+structure BranchMember (F : Type) where
+  name : Name
+  formula : F
+  valueFormula? : Option F := none
+  evaluationGuard? : Option F := none
+  range? : Option Range := none
+  text : String := ""
+  deriving Inhabited, BEq
+
+structure BranchGroup (F : Type) where
+  owner : Name
+  kind : BranchKind
+  guard? : Option F := none
+  members : Array (BranchMember F)
+  deriving Inhabited, BEq
+
+/-- Change the backend formula representation while preserving source identity. -/
+def BranchMember.map (f : F → G) (member : BranchMember F) : BranchMember G :=
+  { name := member.name, formula := f member.formula, valueFormula? := member.valueFormula?.map f,
+    evaluationGuard? := member.evaluationGuard?.map f, range? := member.range?, text := member.text }
+
+def BranchGroup.map (f : F → G) (group : BranchGroup F) : BranchGroup G :=
+  { owner := group.owner, kind := group.kind, members := group.members.map (·.map f), guard? := group.guard?.map f }
+
+/-- Source observations are distinct from conflict alternatives: a group
+under negation has observations too, while its alternatives need not be
+those of a positive disjunction. -/
+structure MemberGroup (F : Type) where
+  owner : Name
+  op : String
+  wanted : Bool := true
+  members : Array (BranchMember F)
+  deriving Inhabited, BEq
+
+def MemberGroup.map (f : F → G) (group : MemberGroup F) : MemberGroup G :=
+  { owner := group.owner, op := group.op, wanted := group.wanted, members := group.members.map (·.map f) }
+
+/-- An observation in the actual primary model. None means unknown;
+false evaluation status means the member was deliberately not evaluated. -/
+structure MemberValue where
+  owner : Name
+  op : String
+  name : Name
+  evaluated? : Option Bool := none
+  value? : Option Bool := none
+  range? : Option Range := none
+  text : String := ""
+  deriving Inhabited, BEq
+
+/-- A member whose opposite polarity follows from the other constraints.
+`rest` is minimized under the fixed hypotheses, never under the
+contradictory complete alternative. -/
+structure BranchOpposition where
+  member : Name
+  wanted : Bool
+  rest : Array Name
+  range? : Option Range := none
+  text : String := ""
+  deriving Inhabited
+
+/-- A conditional conflict, with the alternative kept separate from its
+minimal core. An impossible alternative never claims to force a value. -/
+structure BranchCaseConflict where
+  name : Name
+  label : String := ""
+  excluded : Bool := false
+  impossible : Bool := false
+  core : Array Name := #[]
+  clashes : Array Clash := #[]
+  opposed : Array BranchOpposition := #[]
+  range? : Option Range := none
+  text : String := ""
+  deriving Inhabited
+
+structure BranchConflict where
+  owner : Name
+  kind : BranchKind
+  cases : Array BranchCaseConflict
+  deriving Inhabited
+
 structure CheckResult where
   kind : CheckKind
   comp : Name
@@ -140,6 +235,9 @@ structure CheckResult where
   /-- For `realizable`, failing with a conflict: the clashes of forced
   outputs between its core's guarantees (`clashesOf`). -/
   clashes : Array Clash := #[]
+  /-- Conditional explanations for disjunctions in the primary core. -/
+  branchConflicts : Array BranchConflict := #[]
+  memberValues : Array MemberValue := #[]
   /-- Decided by enumeration only up to this size bound, not for every
   behaviour (`check::enumerated_verdict`). -/
   bounded? : Option Nat := none
@@ -230,6 +328,9 @@ def Outcome.reason : Outcome V → String
 structure Backend (m : Type → Type) (F V : Type) where
   /-- Can `goal` be proved from the named hypotheses? -/
   query : Array (Name × F) → (goal : F) → (wantModel : Bool) → m (Outcome V)
+  /-- Read a formula from the actual returned model, without a fresh query.
+  An unavailable snapshot reports unknown, never a guessed truth. -/
+  modelBool? : Option (Array (Name × V) → F → m (Option Bool)) := none
   falseF : F
   notF : F → F
   conj : Array F → F
@@ -311,6 +412,8 @@ structure IndexSite (F : Type) where
   /-- For a value given where a pattern type is declared, rather than an
   index: that type, as written (`Reqs/Check#pattern-types`). -/
   patTy? : Option String := none
+  /-- Distributed Boolean clauses cannot justify their own evaluation sites. -/
+  excludeSelf : Bool := false
   deriving Inhabited
 
 /-- A question about the cases of a table or a `match` (`TableGoal`), where
@@ -359,6 +462,9 @@ structure Comp (F : Type) where
   /-- Some variable's type, its own or a call's, is or contains an
   abstract type. -/
   typesInterpreted : Bool := false
+  /-- A declaration checks existence in every interpretation. With no variable
+  interpretation, a direct satisfiability witness answers the same question. -/
+  inhabitation : Bool := false
   /-- The questions about the cases of its tables and `match`es, and about
   the arguments of its applications of functions with preconditions. -/
   tables : Array (TableSite F) := #[]
@@ -374,6 +480,9 @@ structure Comp (F : Type) where
   /-- For the contract of a generic function without a body: it is checked
   once, at its type parameters, for every type (`F0653`). -/
   generic : Bool := false
+  /-- Source Boolean groups, whose owners match named assumptions or requirements. -/
+  branchGroups : Array (BranchGroup F) := #[]
+  memberGroups : Array (MemberGroup F) := #[]
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -523,6 +632,13 @@ uninterpreted function, as `interprets` says of a formula. -/
 def Comp.realizableInterpreted (c : Comp F) (interprets : F → Bool) : Bool :=
   c.typesInterpreted || (c.defs.map (·.2.1) ++ c.reqs.map (·.2)).any interprets
 
+/-- The SAT shortcut is only a fresh-output declaration carrier, never a
+procedure whose inputs, definitions, assumptions or calls need the ordinary
+universal-completion protocol. Interpretation freedom is checked separately. -/
+def Comp.fixedInhabitation (c : Comp F) (interprets : F → Bool := fun _ => false) : Bool :=
+  c.inhabitation && !c.realizableInterpreted interprets && c.defs.isEmpty &&
+    c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
+
 /-- The clashes of a realizability conflict on the input that `pinned`
 pins, with the minimal core `core` (`clashesOf`): none if they would depend
 on an interpretation (`Comp.realizableInterpreted`), or if some variable
@@ -534,6 +650,87 @@ def conflictClashes (c : Comp F) (pinned : Array (Name × F)) (allPinned : Bool)
   if c.realizableInterpreted interprets || !allPinned then pure #[]
   else clashesOf b pinned ((c.substHyps b c.reqs).filter (core.contains ·.1)) c.clashOutputs examples
 
+/-- One alternative of a source group. Equivalence always has the two
+alternatives all-hold and none-hold, rather than a parity chain. -/
+structure BranchAlternative (F : Type) where
+  name : Name
+  formula : F
+  label : String := ""
+  wanted? : Option Bool := none
+  memberWanted : Array (Name × Bool) := #[]
+  range? : Option Range := none
+  text : String := ""
+
+def BranchGroup.alternatives (group : BranchGroup F) : Array (BranchAlternative F) :=
+  let cases : Array (BranchAlternative F) := match group.kind with
+  | .disjunction => group.members.map fun member =>
+    { name := member.name, formula := member.formula, range? := member.range?, text := member.text }
+  | .exactlyOne => group.members.map fun chosen =>
+    { name := chosen.name, formula := b.conj (group.members.map fun member =>
+        if member.name == chosen.name then member.formula else b.notF member.formula)
+      label := "only " ++ showAnnotationPath chosen.name ++ " holds"
+      memberWanted := group.members.map fun member => (member.name, member.name == chosen.name)
+      range? := chosen.range?, text := chosen.text }
+  | .equivalence =>
+    let operands := if group.members.size == 2 then "both operands" else "all operands"
+    #[{ name := .str group.owner "all", formula := b.conj (group.members.map (·.formula))
+        label := operands ++ " are true", wanted? := some true },
+      { name := .str group.owner "none", formula := b.conj (group.members.map (b.notF ·.formula))
+        label := operands ++ " are false", wanted? := some false }]
+  cases.map fun alternative =>
+    { alternative with formula := group.guard?.map (fun guard =>
+        b.notF (b.conj #[guard, b.notF alternative.formula])) |>.getD alternative.formula }
+
+/-- Explain only owners in an already minimized core. Conditional cores
+keep the selected alternative as a fixed hypothesis, so dropping other
+alternatives never changes or masquerades as the unconditional core.
+A model of each forcing side is required before any pin/polarity query. -/
+def branchConflictsOf (groups : Array (BranchGroup F)) (fixed candidates : Array (Name × F))
+    (core : Array Name) (outs : Array Name) (examples : Option Nat)
+    (valuesSafe : Bool := true) : m (Array BranchConflict) := do
+  let mut found := #[]
+  for group in groups do
+    if !core.contains group.owner then continue
+    if !withinBudget found.size examples then break
+    let rest := candidates.filter fun (n, _) => core.contains n && n != group.owner
+    let mut cases := #[]
+    for alternative in group.alternatives b do
+      let branch := #[(alternative.name, alternative.formula)]
+      let excluded ← b.query (fixed ++ branch ++ rest) b.falseF false
+      if !excluded.isUnsat then
+        cases := cases.push { name := alternative.name, label := alternative.label
+                              range? := alternative.range?, text := alternative.text }
+        continue
+      let conditional ← minimize b (fixed ++ branch) rest b.falseF
+      let branchModel ← b.query (fixed ++ branch) b.falseF true
+      let impossible := branchModel.isUnsat
+      let mut clashes := #[]
+      if valuesSafe && !impossible then
+        if let some clash ← clashAt b fixed (branch ++ rest) outs alternative.name then
+          clashes := clashes.push clash
+      let mut opposed := #[]
+      if alternative.wanted?.isSome || !alternative.memberWanted.isEmpty then
+        -- The other core constraints must themselves have a model;
+        -- otherwise every polarity would follow vacuously.
+        if (← b.query (fixed ++ rest) b.falseF true).answer == .sat then
+          for member in group.members do
+            let wanted := alternative.wanted?.getD ((alternative.memberWanted.find? (·.1 == member.name)).map (·.2) |>.getD true)
+            let opposite := if wanted then b.notF member.formula else member.formula
+            if (← b.query (fixed ++ rest) opposite false).isUnsat then
+              let because ← minimize b fixed rest opposite
+              opposed := opposed.push { member := member.name, wanted, rest := because
+                                        range? := member.range?, text := member.text }
+      cases := cases.push { name := alternative.name, label := alternative.label, excluded := true
+                            impossible, core := conditional, clashes, opposed
+                            range? := alternative.range?, text := alternative.text }
+    found := found.push { owner := group.owner, kind := group.kind, cases }
+  return found
+
+/-- The source groups with the same definition substitution as the primary
+realizability query. -/
+def Comp.substBranchGroups (c : Comp F) : Array (BranchGroup F) :=
+  c.branchGroups.map (·.map (c.subst b .realizable))
+
 /-- `realizable`: every input allowed by the assumptions has outputs
 satisfying the requirements, whatever the calls do
 (`check::realizability`). Defined outputs are replaced by their
@@ -541,7 +738,7 @@ definitions, so that they are never under `∃` (`check::definitions`). A
 conflict comes with at most `examples` clashes of forced outputs
 (`clashesOf`), `none` for no limit, and none if they would depend on an
 interpretation, as `interprets` says of a formula. -/
-def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
+def checkRealizableUniversal (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
     m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
@@ -554,17 +751,42 @@ def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets :
     else b.query (sub (c.hyps b)) (← b.existsOutputs (c.subst b .realizable (b.conj (c.reqs.map (·.2))))) true
   let (verdict, reportsCex, reportsVacuous) := realizableVerdict assumeQ.answer cexQ.answer
   if reportsVacuous then
-    return result verdict (.vacuousAssumptions (← minimize b #[] assumes b.falseF))
+    let core ← minimize b #[] assumes b.falseF
+    let branches ← branchConflictsOf b (c.substBranchGroups b) #[] assumes core
+      ((c.vars.filter (·.isPub)).map (·.name)) examples (!c.realizableInterpreted interprets)
+    return { result verdict (.vacuousAssumptions core) with branchConflicts := branches }
   if reportsCex then
     let .sat model := cexQ | return result verdict
     let input := conflictInput c.vars model
     let pinned ← pins b input
     let core ← minimize b pinned (sub c.reqs) b.falseF
     let clashes ← conflictClashes b c pinned (pinned.size == input.size) core examples interprets
-    return { result verdict (.conflict (← renderModel b c.vars input fun v => v.isIn && v.isPub) core) with clashes }
+    let branches ← if pinned.size != input.size then pure #[] else
+      branchConflictsOf b (c.substBranchGroups b) pinned (sub c.reqs) core c.clashOutputs examples
+        (!c.realizableInterpreted interprets)
+    return { result verdict (.conflict (← renderModel b c.vars input fun v => v.isIn && v.isPub) core)
+             with clashes, branchConflicts := branches }
   if verdict == .inconclusive then
     return result verdict (.unknown (if cexQ.reason.isEmpty then assumeQ.reason else cexQ.reason))
   return result verdict
+
+/-- Declaration inhabitation uses SAT only for the validated fixed carrier;
+all other shapes keep the universal-input realizability protocol. -/
+def checkRealizable (c : Comp F) (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) :
+    m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .realizable, comp := c.path, prop? := none, target? := c.fn?.map (·, .anonymous), verdict, detail
+      generic := c.generic }
+  if c.fixedInhabitation interprets then
+    let fixed := c.defEqs .realizable ++ c.hyps b
+    let q ← b.query (fixed ++ c.reqs) b.falseF true
+    match q with
+    | .sat _ => return result .pass
+    | .unsat =>
+      let core ← minimize b fixed c.reqs b.falseF
+      return result .fail (.conflict #[] core)
+    | .unknown reason => return result .inconclusive (.unknown reason)
+  checkRealizableUniversal b c examples interprets
 
 /-- `inst`: an assumption of call `k`'s procedure follows from the
 assumptions, `k`'s bindings and the earlier calls
@@ -583,6 +805,28 @@ def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResul
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
+/-- Observe only evaluated members in the primary model. In particular,
+this never substitutes another interpretation via a second solver query. -/
+def captureMembers (c : Comp F) (owner : Name) (model : Array (Name × V)) : m (Array MemberValue) := do
+  let some read := b.modelBool? | return #[]
+  let mut values := #[]
+  for group in c.memberGroups.filter (·.owner == owner) do
+    for member in group.members do
+      let evaluated ← match member.evaluationGuard? with
+        | none => pure (some true)
+        | some guard => read model guard
+      let value ← if evaluated == some true then read model (member.valueFormula?.getD member.formula) else pure none
+      values := values.push {
+        owner := owner
+        op := group.op
+        name := member.name
+        evaluated? := evaluated
+        value? := value
+        range? := member.range?
+        text := member.text
+      }
+  return values
+
 /-- `expect`: the expectation follows from the assumptions, calls and
 requirements (`check::expectation`). -/
 def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
@@ -591,14 +835,15 @@ def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
   let q ← b.query (c.defEqs .expect ++ (c.hyps b ++ c.reqs)) e.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+    return { result verdict (.counterexample (← renderModel b c.vars model (·.isPub))) with
+      memberValues := ← captureMembers b c e.1 model }
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
 /-- `cover`: some behaviour satisfying the assumptions, calls and
 requirements satisfies the cover goal, which a model of the negated goal
 witnesses (`check::cover_goal`). -/
-def checkCover (c : Comp F) (g : Name × F) : m CheckResult := do
+def checkCover (c : Comp F) (g : Name × F) (examples : Option Nat := some 1) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .cover, comp := c.path, prop? := some g.1, verdict, detail }
   let hyps := c.hyps b ++ c.reqs
@@ -606,18 +851,26 @@ def checkCover (c : Comp F) (g : Name × F) : m CheckResult := do
   let q ← b.query (c.defEqs .cover ++ hyps) goal true
   match coverVerdict q.answer, q with
   | (verdict, true, _), .sat model =>
-    return result verdict (.witness (← renderModel b c.vars model (·.isPub)))
+    return { result verdict (.witness (← renderModel b c.vars model (·.isPub))) with
+      memberValues := ← captureMembers b c g.1 model }
   -- The core is sought only on `unsat` (`Reqs/Check#cover-goals`).
-  | (verdict, _, true), _ => return result verdict (.vacuous (← minimize b (c.defEqs .cover) hyps goal))
+  | (verdict, _, true), _ =>
+    let core ← minimize b (c.defEqs .cover) hyps goal
+    let fixed := c.defEqs .cover ++ #[(g.1.appendAfter "_goal", g.2)]
+    let branches ← branchConflictsOf b c.branchGroups fixed hyps core
+      ((c.vars.filter (·.isPub)).map (·.name)) examples (!c.typesInterpreted)
+    return { result verdict (.vacuous core) with branchConflicts := branches }
   | (.inconclusive, _, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _, _), _ => return result verdict
 
 /-- The hypotheses of an index's place, for `definedness`. -/
 def Comp.siteHyps (c : Comp F) (b : Backend m F V) (site : IndexSite F) : Array (Name × F) :=
+  let own (name : Name) := name == site.prop || (site.excludeSelf &&
+    (name.toString (escape := false)).startsWith (site.prop.toString (escape := false) ++ "."))
   match site.place with
-  | .assume => c.assumes.filter (·.1 != site.prop)
+  | .assume => c.assumes.filter (!own ·.1)
   | .binding k => c.hyps b k
-  | .prop => c.hyps b ++ c.reqs
+  | .prop => c.hyps b ++ (if site.excludeSelf then c.reqs.filter (!own ·.1) else c.reqs)
   | .body => c.assumes
 
 /-- `definedness`: the index is in range wherever it is evaluated, given the
@@ -718,16 +971,23 @@ def checkReach (c : Comp F) (t : TableSite F) : m CheckResult := do
 
 /-- `vacuity`: the trigger can hold in some behaviour satisfying the
 assumptions and requirements (`check::non_vacuity`). -/
-def checkVacuity (c : Comp F) (t : Name × F) : m CheckResult := do
+def checkVacuity (c : Comp F) (t : Name × F) (examples : Option Nat := some 1) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .vacuity, comp := c.path, prop? := some t.1, verdict, detail }
   let hyps := c.hyps b ++ c.reqs
   let goal := b.notF t.2
-  let q ← b.query (c.defEqs .vacuity ++ hyps) goal false
+  let q ← b.query (c.defEqs .vacuity ++ hyps) goal (c.memberGroups.any (·.owner == t.1))
   match vacuityVerdict q.answer with
-  | .fail => return result .fail (.vacuous (← minimize b (c.defEqs .vacuity) hyps goal))
+  | .fail =>
+    let core ← minimize b (c.defEqs .vacuity) hyps goal
+    let fixed := c.defEqs .vacuity ++ #[(t.1.appendAfter "_trigger", t.2)]
+    let branches ← branchConflictsOf b c.branchGroups fixed hyps core
+      ((c.vars.filter (·.isPub)).map (·.name)) examples (!c.typesInterpreted)
+    return { result .fail (.vacuous core) with branchConflicts := branches }
   | .inconclusive => return result .inconclusive (.unknown q.reason)
-  | .pass => return result .pass
+  | .pass =>
+    let members ← match q with | .sat model => captureMembers b c t.1 model | _ => pure #[]
+    return { result .pass with memberValues := members }
 
 /-- `redundancy`: the assumption or requirement `p` does not follow from
 `others`: for an assumption, the other assumptions; for a requirement, the
@@ -951,8 +1211,8 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
     ((#[·]) <$> checkRealizable (bk .realizable) c examples interprets)
   let insts ← ifSelected (kinds.contains .inst) (checkInsts (bk .inst) c)
   let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM (checkExpect (bk .expect) c))
-  let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (checkCover (bk .cover) c))
-  let vacuities ← ifSelected (kinds.contains .vacuity) (c.triggers.mapM (checkVacuity (bk .vacuity) c))
+  let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (fun g => checkCover (bk .cover) c g examples))
+  let vacuities ← ifSelected (kinds.contains .vacuity) (c.triggers.mapM (fun t => checkVacuity (bk .vacuity) c t examples))
   let redundancies ←
     ifSelected (kinds.contains .redundancy)
       (checkRedundancies (bk .redundancy) c (vacuousOf vacuities) (satisfiedOf vacuities))
@@ -1080,20 +1340,22 @@ structure Message where
   /-- Point at the place of the item's question about its tables with this
   number, in order, rather than its name. -/
   atSite? : Option Nat := none
+  /-- Explicit source member range for a Boolean block explanation. -/
+  atRange? : Option Range := none
   msg : Msg
   deriving Inhabited
 
 def Message.text (m : Message) : String := m.msg.text
 
 def showNames (ns : Array Name) : String :=
-  ", ".intercalate (ns.toList.map fun n => s!"`{n}`")
+  ", ".intercalate (ns.toList.map fun n => s!"`{n.toString (escape := false)}`")
 
 def showAssignment (a : Assignment) : String :=
   if a.isEmpty then "(any values)" else ", ".intercalate (a.toList.map fun (n, v) => s!"{n} = {v}")
 
 /-- `` `a`, `b` and `c` ``: names in prose. -/
 def showNamesAnd (ns : Array Name) : String :=
-  match ns.toList.map (s!"`{·}`") |>.reverse with
+  match ns.toList.map (fun n => s!"`{n.toString (escape := false)}`") |>.reverse with
   | [] => ""
   | [n] => n
   | last :: rest => s!"{", ".intercalate rest.reverse} and {last}"
@@ -1198,7 +1460,7 @@ cover goal's witness. `decidable` says whether the procedure is in the
 decidable core: whether no construct of it opted out. A witness whose query
 depends on an interpretation (`CheckResult.interpreted`) is shown without
 its values. -/
-def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
+def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
   -- A global expectation's `comp` is its module, which may be the root.
   let subject := s!"`{showComp (r.comp ++ (r.prop?.getD .anonymous))}`"
   -- Passes have no severity, and no messages.
@@ -1241,9 +1503,9 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         | _ => s!"some row of a table in {subject} holds"
       | .disjointness, _ =>
         s!"{rowsText r.rows? (r.goal? matches some (.disjointness .tableMatch ..))} of a table in {subject} are disjoint"
-      | .precondition, some (f, p) => s!"the precondition `{p}` of `{showComp f}` holds at an application in {subject}"
+      | .precondition, some (f, p) => s!"the precondition `{p.toString (escape := false)}` of `{showComp f}` holds at an application in {subject}"
       | .precondition, none => s!"a precondition holds at an application in {subject}"
-      | .postcondition, some (f, p) => s!"the postcondition `{p}` of `{showComp f}` holds"
+      | .postcondition, some (f, p) => s!"the postcondition `{p.toString (escape := false)}` of `{showComp f}` holds"
       | .postcondition, none => s!"{subject} holds"
       | .reachability, _ => s!"{caseText r.goal?} of {splitText r.goal?} in {subject} can be taken"
     let advice := if let some n := r.bounded? then
@@ -1314,11 +1576,11 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   | .fail, .counterexample vals =>
     if let (.definedness, some ty) := (r.kind, r.patTy?) then
       let m := obligationMsg subject ty (showAssignment vals) priv
-      #[one "F0622" m.headline m.label? m.notes]
+      #[one "F0661" m.headline m.label? m.notes]
     else
     if let (.inst, some (sub, a), some ty) := (r.kind, r.target?, r.patTy?) then
       let m := instanceTypeMsg subject (showComp sub) (a.getPrefix.toString) ty (showAssignment vals)
-      #[one "F0623" m.headline m.label? m.notes]
+      #[one "F0661" m.headline m.label? m.notes]
     else
     if r.kind == .definedness then
       #[one "F0611" s!"an index of {subject} may be out of range" (some "may be out of range")
@@ -1357,14 +1619,14 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
           "help: make the conditions exclusive, as in `a => x, not a and b => y`"]]
     else
     if let (.precondition, some (f, p)) := (r.kind, r.target?) then
-      #[one "F0629" s!"the precondition `{p}` of `{showComp f}` may not hold at this application in {subject}"
+      #[one "F0629" s!"the precondition `{p.toString (escape := false)}` of `{showComp f}` may not hold at this application in {subject}"
         (some s!"may violate `{showComp f}::{p}`")
         #[s!"counterexample: {showAssignment vals}",
           "note: where a precondition fails, the application's value is unknown, or not what the function is for",
           "help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs"]]
     else
     if let (.postcondition, some (f, p)) := (r.kind, r.target?) then
-      #[one "F0630" s!"the postcondition `{p}` of `{showComp f}` does not hold" (some "does not follow from the body")
+      #[one "F0630" s!"the postcondition `{p.toString (escape := false)}` of `{showComp f}` does not hold" (some "does not follow from the body")
         #[s!"counterexample: {showAssignment vals}",
           "help: correct the body or the postcondition, or add a precondition that rules this case out"]]
     else
@@ -1415,6 +1677,89 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
         #["note: wherever the table is evaluated, its pattern or guard fails, or another arm is taken",
           "help: correct its guard or the arms that take its cases, or remove it"]]
     | _, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
+
+/-- Conditional branch notes retain both the owning constraint and the
+alternative. Their member ranges/text come from the original source. -/
+def branchMessages (r : CheckResult) : Array Message := Id.run do
+  if r.verdict != .fail then return #[]
+  let hasInput := match r.detail with | .conflict input _ => !input.isEmpty | _ => false
+  let context := if hasInput then "for the reported input" else "under the existing constraints"
+  let mut out := #[]
+  for group in r.branchConflicts do
+    let excluded := group.cases.filter (·.excluded)
+    if excluded.isEmpty && !group.cases.isEmpty then continue
+    let complete := group.cases.all (·.excluded)
+    out := out.push {
+      severity := .info
+      item? := some group.owner
+      msg := { code? := none, headline := if complete then s!"no branch of `{showAnnotationPath group.owner}` can hold"
+                           else s!"branches of `{showAnnotationPath group.owner}` ruled out by the conflict"
+               notes := (if group.kind == .equivalence then
+                 #["note: an `iff` requires matching truth values: all operands true or all operands false"] else #[]) ++
+                 #[if hasInput then "note: each case keeps the reported input, definitions and calls"
+                   else "note: each case keeps the definitions and calls; other constraints are named below"] }
+    }
+    for alternative in excluded do
+      let name := match alternative.name with
+        | .num .. => alternative.name.toString (escape := false)
+        | _ => showAnnotationPath alternative.name
+      let branch := if alternative.label.isEmpty then s!"`{name}`" else s!"case \"{alternative.label}\""
+      let source := if alternative.text.isEmpty then #[] else #[s!"member: {alternative.text}"]
+      let conditional := #[if alternative.core.isEmpty then "note: no other constraint is needed to rule out this case"
+        else s!"note: this case conflicts with {showNamesAnd alternative.core}"]
+      let headline := if alternative.impossible then
+          s!"{branch} is impossible {context}"
+        else if let some clash := alternative.clashes[0]? then
+          s!"{branch} requires {forcedText (toString clash.output) clash.forced}, but {showNamesAnd clash.rest}" ++
+            (if clash.rest.size == 1 then " forces " else " force ") ++ forcedText (toString clash.output) clash.restForced
+        else s!"{branch} is ruled out by " ++
+          (if alternative.core.isEmpty then "the input constraints, definitions and calls" else showNamesAnd alternative.core)
+      out := out.push {
+        severity := .info
+        item? := some group.owner
+        atRange? := alternative.range?
+        msg := { code? := none, headline, notes := conditional ++ source }
+      }
+      for opposed in alternative.opposed do
+        let required := if opposed.wanted then "true" else "false"
+        let actual := if opposed.wanted then "false" else "true"
+        let reason := if opposed.rest.isEmpty then s!"is {actual} {context}"
+          else s!"must be {actual} to satisfy {showNamesAnd opposed.rest}"
+        let why := s!"`{showAnnotationPath opposed.member}` must be {required}, but {reason}"
+        out := out.push {
+          severity := .info
+          item? := some group.owner
+          atRange? := opposed.range?
+          msg := { code? := none, headline := s!"{branch}: {why}"
+                   notes := if opposed.text.isEmpty then #[] else #[s!"member: {opposed.text}"] }
+        }
+  return out
+
+/-- Values and evaluation status of labelled members in a counterexample
+or witness, each at its original source range. Passing expectations have
+no observations and therefore no failed-member messages. -/
+def memberMessages (r : CheckResult) : Array Message := Id.run do
+  let mut out := #[]
+  for value in r.memberValues do
+    let label := match value.evaluated?, value.value? with
+      | some false, _ => "not evaluated"
+      | some true, some true => "true"
+      | some true, some false => "false"
+      | _, _ => "unknown"
+    out := out.push {
+      severity := .info
+      item? := some value.owner
+      atRange? := value.range?
+      msg := {
+        code? := none
+        headline := s!"`{showAnnotationPath value.name}` is {label}"
+        notes := if value.text.isEmpty then #[] else #[s!"member: {value.text}"]
+      }
+    }
+  return out
+
+def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
+  baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r
 
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/

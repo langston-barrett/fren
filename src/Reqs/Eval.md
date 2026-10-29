@@ -46,7 +46,7 @@ spec itself, not from the formulas given to the solver, so it is an
 independent statement of what a spec means. A name of a
 [`let` or `where`](Lang/Let.md) is read as its definition, so it is not
 part of a behaviour, and counterexamples show variables only. What a
-variable's [pattern type](Lang/Types.md#pattern-types) brings is a
+variable's [subset type](Lang/SubsetTypes.md) brings is a
 constraint of its procedure, as for the solver: an input's among the
 assumptions, an output's among the guarantees, and a call's input's
 among the assumptions of the called procedure, which the call

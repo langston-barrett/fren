@@ -902,8 +902,8 @@ means, exactly what that is. So a newtype of `Int` has both; a newtype of
 `Nat` has `+`, a `Nat` again, but not `-`, since `budget.0 - elapsed.0`
 is an `Int`, which is never [narrowed](#natural-numbers) to a `Nat`; a
 newtype of a newtype has those that its underlying type has; and a
-newtype of a [pattern type](Types.md#pattern-types), such as `struct
-Byte(Int is 0..=255)`, has its base type's, with the obligation, as for
+newtype of a [subset type](SubsetTypes.md), such as `struct
+Byte(ByteValue)` with `type ByteValue = n: Int where range: n is 0..=255`, has its base type's, with the obligation, as for
 `Byte(e)`, that the sum or difference matches the pattern. No other
 operator applies to a newtype, neither `*`, `div`, `mod`, `++` nor a
 prefix `-` (`F0362`): the field is read and the result built again, as in
@@ -1256,8 +1256,8 @@ write `x = E::A` and `x is E::A | E::B`, not `x is E::A` or `x = E::A or x
 with `iff` or `not` rather than `is true`, and compare an `Int`, a `Nat` or
 a `String` with a literal with `=`, but test it against several literals or
 a range with `is`, as in `n is 0 | 1` and `n is 0..=9`. A pattern test
-writes its alternatives in the syntax of a [pattern
-type](Types.md#pattern-types), and a range or a payload extends it as it
+writes its alternatives in the syntax of a [subset
+type](SubsetTypes.md), and a range or a payload extends it as it
 is, as in `status is 429 | 500..=599`; `in` is for collections, such as a
 set constant or a set that is computed. A pattern with a payload may still
 have alternatives without one, as in `s is Shape::Rect(_, _) |
@@ -2222,7 +2222,7 @@ the literal. A range must not be reversed: `lang::char_range` states this,
 from the code points of the characters before and after its `-`:
 
 ```fren
-type CodePoint := Int is 0..=MAX_CHAR
+type CodePoint = code_point: Int where invariant: code_point is 0..=MAX_CHAR
 
 pub proc char_range(
     low: CodePoint,      -- the code point of the character before `-`
@@ -2484,3 +2484,14 @@ into scope by `use`. `w.x` names the variable `x` of the call `w` (see
 [global expectation](Global.md), and otherwise reads the field `x` of
 the value `w`, a variable or a [constant](Items.md#constants) (see
 [Records](#records)), or applies its [method](#methods) `x`.
+
+## Named Boolean blocks
+
+The prefix expressions `and { ... }`, `or { ... }` and `iff { ... }`,
+with optional member labels and trailing commas, are specified in
+[Named Boolean blocks](BooleanBlocks.md). They are expression forms,
+not set literals. The `iff` block means all members have equal truth;
+it does not associate binary `iff`. Conjunctions used as clauses split
+into independent member checks with guards distributed to their leaves.
+The chapter also specifies member identities, witnesses, counterexamples
+and per-branch conflict/forcing explanations.

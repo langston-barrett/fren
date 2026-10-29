@@ -1,0 +1,19 @@
+fn either?(x?) := or { held: x?, skipped: false }
+--~^ info: `disjunction.either?@1.held` is true
+--~^^ info: `disjunction.either?@1.skipped` is not evaluated
+fn unique?(x?) := one { held: x?, absent: false }
+--~^ info: `uniqueness.unique?@1.absent` is false
+--~^^ info: `uniqueness.unique?@1.held` is true
+fn same?(x?) := iff { held: x?, also: true }
+--~^ info: `equivalence.same?@1.also` is true
+--~^^ info: `equivalence.same?@1.held` is true
+expect observations(x?) {
+    assume input: x?
+    cover disjunction: either?(x?)
+    --~^ info: cover goal `observations::disjunction` is met
+    cover uniqueness: unique?(x?)
+    --~^ info: cover goal `observations::uniqueness` is met
+    cover equivalence: same?(x?)
+    --~^ info: cover goal `observations::equivalence` is met
+}
+--@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant

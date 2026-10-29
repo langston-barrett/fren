@@ -96,16 +96,20 @@ help: check the terms it gives the inputs, and the interpretations they use
 impl never_ranked: ranked for (k : Int) { k := k, ok? := true } by
   intro _ _; simp [fren_spec]
 
--- An interpretation of a function whose result is a pattern type must give
+-- An interpretation of a function whose result is a subset type must give
 -- values of it: every application assumes one, so an interpretation that
--- gives 300 for an `Int is 0..=255` is rejected, and no implementation can
+-- gives 300 for a byte-range subset is rejected, and no implementation can
 -- rely on it (`Reqs/Impl#interpretations`).
 mod interp_typed
 
-fn size(Int): Int is 0..=255
-fn small(Int): Int is 0..=255
-fn proved(Int): Int is 0..=255
-fn count(Int): Nat is 1..
+type SizeByte = n: Int where invariant: n is 0..=255
+fn size(Int): SizeByte
+type ClampedByte = n: Int where invariant: n is 0..=255
+fn small(Int): ClampedByte
+type ProvedByte = n: Int where invariant: n is 0..=255
+fn proved(Int): ProvedByte
+type Pos = n: Nat where invariant: n is 1..
+fn count(Int): Pos
 
 proc sized(x: Int): (y: Int) {
     ensure r: y = size(x)
@@ -113,7 +117,7 @@ proc sized(x: Int): (y: Int) {
 }
 
 /--
-error: could not prove that the interpretation of `interp_typed::size` gives values of its result type `Int is 0..=255`
+error: could not prove that the interpretation of `interp_typed::size` gives values of its result type `SizeByte`
 
 note: `decide` does not apply, and the solver did not prove it
 note: each application of `interp_typed::size` is assumed to give one
@@ -129,7 +133,7 @@ interp small := fun (x : Int) => if x < 0 then 0 else if x > 255 then 255 else x
 #guard_msgs in #print axioms interp_typed.small.ensures
 
 -- Or a proof after `by`.
-interp proved := fun (_ : Int) => (7 : Int) by intro _; show (0 : Int) ≤ 7 ∧ (7 : Int) ≤ 255; decide
+interp proved := fun (_ : Int) => (7 : Int) by intro _; dsimp [fren_spec]; decide
 
 /-- info: 'Fren.Generated.interp_typed.proved.ensures' does not depend on any axioms -/
 #guard_msgs in #print axioms interp_typed.proved.ensures
@@ -143,13 +147,14 @@ interp count := fun (_ : Int) => (3 : Nat)
 -- adds nothing, so the function can be interpreted again.
 mod interp_typed_contract
 
-fn capped(n: Int): (r: Int is 0..=255) {
+type CappedByte = n: Int where invariant: n is 0..=255
+fn capped(n: Int): (r: CappedByte) {
     assume nonneg: n >= 0
     ensure within: r <= n
 }
 
 /--
-error: could not prove that the interpretation of `interp_typed_contract::capped` gives values of its result type `Int is 0..=255` and meets its postconditions
+error: could not prove that the interpretation of `interp_typed_contract::capped` gives values of its result type `CappedByte` and meets its postconditions
 
 note: `decide` does not apply, and the solver did not prove them
 note: each application of `interp_typed_contract::capped` is assumed to give one
@@ -159,9 +164,9 @@ help: write a proof after `by`
 interp capped := fun (n : Int) => n
 
 /--
-error: the proof that the interpretation of `interp_typed_contract::capped` gives values of its result type `Int is 0..=255` and meets its postconditions uses `sorry`
+error: the proof that the interpretation of `interp_typed_contract::capped` gives values of its result type `CappedByte` and meets its postconditions uses `sorry`
 
-note: an interpretation that is not proved to give values of its result type `Int is 0..=255` and meet its postconditions adds nothing
+note: an interpretation that is not proved to give values of its result type `CappedByte` and meet its postconditions adds nothing
 -/
 #guard_msgs in
 interp capped := fun (n : Int) => n by sorry

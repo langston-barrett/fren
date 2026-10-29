@@ -1,6 +1,9 @@
 -- A component with too many behaviours to enumerate (F0644).
+type FirstPercent = n: Int where invariant: n is 0..=99
+type SecondPercent = n: Int where invariant: n is 0..=99
+type ThirdPercent = n: Int where invariant: n is 0..=99
 set_option fren.evidence "enumerated" in
-proc c(a: Int is 0..=99, b: Int is 0..=99, d: Int is 0..=99): (det sum: Int) {
+proc c(a: FirstPercent, b: SecondPercent, d: ThirdPercent): (det sum: Int) {
     out sum := a + b + d
     expect e: sum >= 0
 }

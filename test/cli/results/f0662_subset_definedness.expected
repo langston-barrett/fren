@@ -1,0 +1,14 @@
+error[F0662]: invariant `FirstPositive::positive` may not be defined
+ --> test/cli/results/f0662_subset_definedness.fren:1:50
+  |
+1 | type FirstPositive = q: Seq<Int> where positive: q[0] > 0
+  |                                                  ^^^^ not defined under the earlier invariants
+  |
+  = counterexample: q = []
+  = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
+  = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
+
+fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0662`.
+exit=1

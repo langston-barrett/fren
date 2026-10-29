@@ -1,0 +1,10 @@
+error[F0372]: duplicate invariant `Byte::bound`
+ --> test/cli/types/f0372_subset_labels.fren:1:44
+  |
+1 | type Byte = n: Int where bound: n >= 0 and bound: n <= 255
+  |                                            ^^^^^ already declared in this subset type
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0372`.
+exit=2

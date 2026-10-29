@@ -6,11 +6,14 @@ set_option fren.lint.undecidable "allow"
 mod generics_pattern_elements
 
 pub struct Pair<A, B> { fst: A, snd: B }
-pub enum Tree<T> { Leaf, Node(Int is 0..=9, T, Tree<T>) }
-pub enum Bag<T> { Empty, More(Pair<Int is 0..=9, T>, Bag<T>) }
-type Byte := Int is 0..=255
+type NodeDigit = n: Int where invariant: n is 0..=9
+pub enum Tree<T> { Leaf, Node(NodeDigit, T, Tree<T>) }
+type BagDigit = n: Int where invariant: n is 0..=9
+pub enum Bag<T> { Empty, More(Pair<BagDigit, T>, Bag<T>) }
+type Byte = n: Int where invariant: n is 0..=255
 
-proc c(x: Option<Set<Int is 0..=9>>, q: Option<Seq<Byte>>, t: Tree<Int>, b: Bag<Bool>, k: Int) {
+type ElementDigit = n: Int where invariant: n is 0..=9
+proc c(x: Option<Set<ElementDigit>>, q: Option<Seq<Byte>>, t: Tree<Int>, b: Bag<Bool>, k: Int) {
     expect member: match x { Option::Some(s) => not (k in s) or k <= 9, Option::None => true }
     expect nth: match q { Option::Some(s) => s = [] or s[0] <= 255, Option::None => true }
     expect tag: match t { Tree::Node(d, _, _) => d <= 9, Tree::Leaf => true }

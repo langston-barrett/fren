@@ -5,8 +5,11 @@
 -- checks are.
 set_option fren.lint.undecidable "allow"
 
+type FirstPercent = n: Int where invariant: n is 0..=99
+type SecondPercent = n: Int where invariant: n is 0..=99
+type ThirdPercent = n: Int where invariant: n is 0..=99
 set_option fren.evidence "enumerated" in
-proc wide(a: Int is 0..=99, b: Int is 0..=99, c: Int is 0..=99): (det sum: Int) {  --~ error: `wide` has 1000000 behaviours up to size 3, too many to enumerate
+proc wide(a: FirstPercent, b: SecondPercent, c: ThirdPercent): (det sum: Int) {  --~ error: `wide` has 1000000 behaviours up to size 3, too many to enumerate
     out sum := a + b + c
     expect e: sum >= 0
 }
@@ -23,8 +26,10 @@ proc everywhere(k: Int): (all?) {  --~ error: `everywhere` cannot be enumerated:
 
 -- The unspecified value of a table's type that a definition reads is a
 -- slot too, counted alike in both front ends.
+type InputByte = n: Int where invariant: n is 0..=255
+type OtherByte = n: Int where invariant: n is 0..=255
 set_option fren.evidence "enumerated" in
-proc hidden(x: Int is 0..=255, y: Int is 0..=255): (det d: Int) {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
+proc hidden(x: InputByte, y: OtherByte): (det d: Int) {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
     out d := table { | x = 0 => 1 }
     expect e: x + y >= 0
 }
@@ -36,4 +41,4 @@ proc partly(name: String): (empty?) {  --~ error: `partly` cannot be enumerated
     expect e: when empty?, name = ""
 }
 
---@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 7 passed, 0 failed, 0 inconclusive, 0 redundant

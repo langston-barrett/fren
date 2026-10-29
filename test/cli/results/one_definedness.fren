@@ -1,0 +1,3 @@
+expect source_site(x?, y?, values: Seq<Int>) {
+    expect result: one { first: x?, second: y?, third: values[0] = 0 }
+}

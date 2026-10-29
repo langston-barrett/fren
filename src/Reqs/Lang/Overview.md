@@ -21,7 +21,8 @@ use self::Mode::{Off, Heat, Cool}
 const MIN_TARGET: Int := 50
 const MAX_TARGET: Int := 90
 
-pub proc thermostat(temp: Int, target: Int is MIN_TARGET..=MAX_TARGET): (mode: Mode) {
+type Target = target: Int where invariant: target is MIN_TARGET..=MAX_TARGET
+pub proc thermostat(temp: Int, target: Target): (mode: Mode) {
   ensure heat: when temp < target - 2, mode = Heat
   ensure cool: when temp > target + 2, mode = Cool
   ensure idle: unless temp < target - 2 or temp > target + 2, mode = Off
@@ -36,7 +37,7 @@ pub proc thermostat(temp: Int, target: Int is MIN_TARGET..=MAX_TARGET): (mode: M
 - `MIN_TARGET` and `MAX_TARGET` are [constants](Items.md#constants): each
   stands for its value.
 - `thermostat` has two parameters, `temp` and `target`, and one result,
-  `mode`. `target`'s type is a [pattern type](Types.md#pattern-types): an
+  `mode`. `target`'s type is a [subset type](SubsetTypes.md): an
   `Int` that matches the range `MIN_TARGET..=MAX_TARGET`, so the procedure
   assumes that the environment only ever sets a target between 50 and 90.
 - The guarantees `heat`, `cool` and `idle` say which mode the system must

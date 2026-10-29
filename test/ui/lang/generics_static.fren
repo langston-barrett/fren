@@ -22,8 +22,9 @@ proc abstract_within(x: Option<Set<Id>>) {}  --~ error: a payload's type cannot 
 
 -- A recursive enumeration's type arguments bring no constraints, which would
 -- hold of every payload, at every depth.
-type Digit := Int is 0..=9
-proc recursive_pattern(x: List<Int is 0..=9>) {}  --~ error: `Int is 0..=9` cannot be a type argument of the recursive enumeration `generics_static::List`
+type Digit = n: Int where invariant: n is 0..=9
+type OtherDigit = n: Int where invariant: n is 0..=9
+proc recursive_pattern(x: List<OtherDigit>) {}  --~ error: `OtherDigit` cannot be a type argument of the recursive enumeration `generics_static::List`
 proc recursive_alias(x: List<Digit>) {}  --~ error: `Digit` cannot be a type argument of the recursive enumeration `generics_static::List`
 proc recursive_within(x: List<Option<Digit>>) {}  --~ error: `Option<Digit>` cannot be a type argument of the recursive enumeration `generics_static::List`
 proc not_recursive(x: Option<Digit>, y: List<Option<Int>>) { expect e: x != Option::Some(10) or y = List::Nil }

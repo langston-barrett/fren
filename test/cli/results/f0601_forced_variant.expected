@@ -1,7 +1,7 @@
 error[F0601]: `http::retry` is not realizable
-  --> test/cli/results/f0601_forced_variant.fren:15:6
+  --> test/cli/results/f0601_forced_variant.fren:16:6
    |
-15 | proc retry(method: Method, status: Status, attempt: Nat is 1.., retry_after: Seconds): (
+16 | proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
    |      ^^^^^ not realizable
    |
    = note: for the input
@@ -13,24 +13,67 @@ error[F0601]: `http::retry` is not realizable
    = help: weaken one of them, or add an `assume` that rules this input out
 
 note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
-  --> test/cli/results/f0601_forced_variant.fren:18:12
+  --> test/cli/results/f0601_forced_variant.fren:19:12
    |
-18 |     ensure transient:
+19 |     ensure transient:
    |            ^^^^^^^^^
 
 note: conflicts with `transient` and `latency_budget`
-  --> test/cli/results/f0601_forced_variant.fren:22:12
+  --> test/cli/results/f0601_forced_variant.fren:23:12
    |
-22 |     ensure honor_server: match decision { Decision::RetryAfter(d) => d >= retry_after, _ => true }
+23 |     ensure honor_server: match decision { Decision::RetryAfter(d) => d >= retry_after, _ => true }
    |            ^^^^^^^^^^^^
 
 note: conflicts with `transient` and `honor_server`
-  --> test/cli/results/f0601_forced_variant.fren:24:12
+  --> test/cli/results/f0601_forced_variant.fren:25:12
    |
-24 |     ensure latency_budget: match decision { Decision::RetryAfter(d) => d <= MAX_DELAY, _ => true }
+25 |     ensure latency_budget: match decision { Decision::RetryAfter(d) => d <= MAX_DELAY, _ => true }
    |            ^^^^^^^^^^^^^^
 
-fren: 4 passed, 1 failed, 0 inconclusive, 0 redundant
+note: no branch of `transient` can hold
+  --> test/cli/results/f0601_forced_variant.fren:19:12
+   |
+19 |     ensure transient:
+   |            ^^^^^^^^^
+   |
+   = note: an `iff` requires matching truth values: all operands true or all operands false
+   = note: each case keeps the reported input, definitions and calls
+
+note: case "both operands are true" requires decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+  --> test/cli/results/f0601_forced_variant.fren:19:12
+   |
+19 |     ensure transient:
+   |            ^^^^^^^^^
+   |
+   = note: this case conflicts with `honor_server` and `latency_budget`
+
+note: case "both operands are true": `transient.1` must be true, but must be false to satisfy `honor_server` and `latency_budget`
+  --> test/cli/results/f0601_forced_variant.fren:20:9
+   |
+20 |         decision != Decision::GiveUp iff status is 429 | 503
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = member: decision != Decision::GiveUp
+
+note: case "both operands are false" is impossible for the reported input
+  --> test/cli/results/f0601_forced_variant.fren:19:12
+   |
+19 |     ensure transient:
+   |            ^^^^^^^^^
+   |
+   = note: no other constraint is needed to rule out this case
+
+note: case "both operands are false": `transient.2` must be false, but is true for the reported input
+  --> test/cli/results/f0601_forced_variant.fren:20:42
+   |
+20 |         decision != Decision::GiveUp iff status is 429 | 503
+   |                                          ^^^^^^^^^^^^^^^^^^^
+   |
+   = member: status is 429 | 503
+                     and method != Method::Post
+                     and attempt < MAX_ATTEMPTS
+
+fren: 6 passed, 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0601`.
 exit=1

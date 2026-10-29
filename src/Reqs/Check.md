@@ -16,12 +16,12 @@ and checks how its constraints are written six more ways, wherever they
 have an index, a [table](Lang/Expressions.md#tables), a
 [`match`](Lang/Expressions.md#matches) with guards, an application of a
 function with a [contract](Lang/Items.md#contracts), or a value given
-where a [pattern type](Lang/Types.md#pattern-types) is declared:
+where a [subset type](Lang/SubsetTypes.md) is declared:
 
 | Check | Confirms |
 |---|---|
 | [Definedness](#definedness) | each index is in range where it is evaluated |
-| [Pattern types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
+| [Subset types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
 | [Completeness](#completeness) | some row of each table without a `_` row holds, and some arm of each `match` that needs its guards to be exhaustive is taken, where it is evaluated |
 | [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once, and no two arms of a [table over a scrutinee](Lang/Expressions.md#tables-over-a-scrutinee) are taken at once, where it is evaluated |
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
@@ -49,7 +49,7 @@ variables `y` and the outputs `o`.
 [definitions](Lang/Procedures.md#definitions), and `o` excludes the
 variables they define.
 `N` is the constraints that [natural
-numbers](Lang/Procedures.md#natural-numbers), [pattern
+numbers](Lang/Procedures.md#natural-numbers), [subset
 types](Lang/Procedures.md#pattern-types) and the
 [postconditions](Lang/Items.md#contracts) of uninterpreted functions
 bring: `N(i, y)` that each `Nat` input and call variable, and each
@@ -650,6 +650,95 @@ pub proc clash_notes(
 }
 ```
 
+
+### Conditional branch cores
+
+[Named Boolean blocks](Lang/BooleanBlocks.md#branch-conflict-explanations)
+retain their owning constraint in the unconditional minimal core. Branch
+explanations are conditional: one alternative replaces that owner while
+its other core constraints are minimized. An alternative carries its
+source member name and the original leading guards. The replacement is
+never presented as the unconditional core of the original disjunction.
+For equivalence the alternatives are exactly the conjunction of positive
+members and the conjunction of negative members, including binary `iff`.
+
+Branch diagnostics describe the required truth values explicitly. A binary
+`iff` has the cases “both operands are true” and “both operands are false”;
+a larger equivalence says “all operands are true” or “all operands are
+false”. Bare “all hold” and “none hold” leave their subject unclear.
+Explain once that an equivalence requires these matching truth values.
+Each case keeps the applicable input constraints, definitions and calls;
+its other constraints are named separately. Refer to “the reported input”
+only when the enclosing diagnostic actually reports one. If no other
+constraint is needed to exclude the case, say so instead of referring to “the fixed
+hypotheses alone” or an empty “conditional core”.
+
+At an operand's source location, state the value required by that case and
+the opposite value imposed by the input or the named other constraints.
+Retain the actual source expression and named member identity. For example,
+the false case of `retry? iff eligible?` is impossible when the reported
+input makes `eligible?` true; explain that this case requires `eligible?`
+false but the input makes it true. Do not describe an impossible case as
+forcing arbitrary outputs. These wording changes preserve the existing
+queries, budgets, cores, source ranges and verdicts.
+
+The following finite interpretation defines deletion-minimal conditional
+cores using actual assignments (`Choice`) and a relation giving each
+candidate constraint's satisfying assignments. `base` is the pinned
+input and definition hypotheses. An impossible branch can have an empty
+conditional core; that does not let the forcing queries invent a value.
+
+```fren
+pub fn branch_rest_holds?(meaning: Rel<Guarantee, Choice>, selected: Set<Guarantee>, value: Choice) :=
+    forall (g: Guarantee), when g in selected, (g, value) in meaning
+
+pub proc conditional_branch_core(
+    branch: Set<Choice>,
+    base: Set<Choice>,
+    meaning: Rel<Guarantee, Choice>,
+    candidates: Set<Guarantee>,
+    conditional: Set<Guarantee>,
+): (valid?, minimal?) {
+    ensure refutes: valid? iff conditional subset candidates and
+        not (exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional, v))
+    ensure deletion_minimal: minimal? iff valid? and
+        (forall (g: Guarantee), when g in conditional,
+        exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional minus {g}, v))
+    expect within: when valid?, conditional subset candidates
+    expect impossible_empty: when branch inter base = {} and conditional = {}, valid? and minimal?
+    expect no_fake_global_core: when conditional = {} and branch = {} and base != {}, minimal?
+}
+
+pub proc branch_member_polarity(rest: Set<Choice>, positive_values: Set<Choice>, wanted?): (opposite_forced?) {
+    ensure nonvacuous_opposite: opposite_forced? iff rest != {} and
+        (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
+    expect positive_blocked: when wanted?, opposite_forced? iff rest != {} and rest inter positive_values = {}
+    expect negative_blocked: when not wanted?, opposite_forced? iff rest != {} and rest subset positive_values
+    expect no_vacuous_forcing: when rest = {}, not opposite_forced?
+}
+```
+
+A member-polarity note is made only after the rest has a model. For the
+all-hold equivalence branch, each member is asked positively; for the
+none-hold branch, negatively. A successful opposite-polarity proof is
+minimized against the other core constraints, retaining the branch and
+member identity in the result. Unknown answers never produce a forcing
+claim. A branch with no satisfying assignment is described as impossible
+rather than as forcing every value. Whole-value and variant clashes use
+exactly the existing non-vacuous model/pin/variant protocol.
+
+Only groups whose owners occur in the already minimized core are
+inspected. Realizability explanations use the same substituted definitions
+and pinned input as that core. Vacuity explanations use the check's
+definition equations and the triggering condition (or the failed cover
+goal) as fixed hypotheses.
+Unsatisfiable procedure assumptions use their minimal assumption core.
+Unrelated groups cost no branch queries. The examples limit counts groups,
+so selecting an equivalence group retains both of its alternatives; a
+zero limit asks no branch queries. Conditional minimization is additional
+explanatory work and cannot change the primary verdict or its original
+minimal core. Each source member retains its original text and range.
+
 ## Definitions
 
 A definition, of a result or a `let` variable, is not a constraint, and
@@ -775,7 +864,7 @@ realizable, by its own checks, so its constraints can hold.
 ## Call assumptions
 
 For each call `w` of a procedure `c`, and each assumption `a` of `c`,
-and each parameter `x` of `c` whose type brings a constraint (see [Pattern
+and each parameter `x` of `c` whose type brings a constraint (see [Subset
 types](Lang/Procedures.md#pattern-types)), before its assumptions,
 Fren asks whether `a`, or `x`'s constraint, with `w`'s arguments substituted, can be proved from
 `A`, the arguments of `w`, and the constraints `I_v` of the calls `v`
@@ -915,7 +1004,7 @@ pub proc definedness(
 ## Pattern types
 
 The pattern-type check is part of [definedness](#definedness), whose
-results it gives. A value given where a [pattern type](Lang/Types.md#pattern-types) is
+results it gives. A value given where a [subset type](Lang/SubsetTypes.md) is
 declared has an *obligation*: it must match the pattern. For each value
 given where a pattern type is declared, at the top of the declared type or
 in an element type (a definition, an argument of a function, a field of a
@@ -1752,7 +1841,7 @@ solver leaves it unconstrained. The definedness of indexes is not run:
 they are of sequences, which are not enumerable. A value given where a
 pattern type is declared is the solver's to check, whatever the evidence,
 for testing too: neither testing nor enumeration decides it, and dropping
-it would leave a value outside its type unreported (`F0622`, `F0623`).
+it would leave a value outside its type unreported (`F0661`).
 
 The default stays `"solver"`, and `"tested"` stays testing alone: most
 checks set to testing are about strings, sets and sequences, which are

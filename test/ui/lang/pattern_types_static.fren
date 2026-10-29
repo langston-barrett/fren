@@ -2,15 +2,15 @@
 -- fren-covers: lang::nat_place, lang::pattern_place
 set_option fren.lint.dead_code "allow"
 
-type Byte := Int is 0..=255
-type Small := Byte is ..=9   --~ error: `Byte` is a pattern type, so it cannot have a pattern of its own
+type Byte = n: Int where invariant: n is 0..=255
+type Small = n: Byte where invariant: n is ..=9
 
 enum Color { Red, Green }
 
-type Hue := Color is c   --~ error: a pattern type's pattern cannot bind `c`
-type Shade := Color is c!   --~ error: a pattern type's pattern cannot bind `c`
-type Odd := Int is Color::Red   --~ error: expected a pattern of `Int`, but this is a pattern of `Color`
-type Empty := Int is 5..=1   --~ error: the range `5..=1` matches no integer
+type Hue = color: Color where invariant: color is c   --~ error: a pattern test cannot bind `c` here
+type Shade = color: Color where invariant: color is c!   --~ error: a pattern test cannot bind `c` here
+type Odd = n: Int where invariant: n is Color::Red    --~ error: expected a pattern of `Int`, but this is a pattern of `Color`
+type Empty = n: Int where invariant: n is 5..=1    --~ error: the range `5..=1` matches no integer
 
 struct Counts { items: Set<Nat> }   --~ error: `Nat` cannot be the element type of a set, relation or sequence
 enum List { Nil, Cons(Nat, List) }   --~ error: `Nat` cannot be the type of a payload of a recursive enumeration

@@ -34,9 +34,10 @@ line, with a comment after each, and a comma after the last (see
 [Trailing commas](../Fmt.md#trailing-commas)):
 
 ```text
+type Target = n: Int where range: n is 50..=90
 pub proc thermostat(
     temp: Int,               -- the temperature
-    target: Int is 50..=90,  -- the target, which the environment keeps sane
+    target: Target,          -- the target, which the environment keeps sane
 ): (det mode: Mode) {
     ensure heat: when temp < target - 2, mode = Mode::Heat
 }
@@ -424,7 +425,7 @@ pub proc nat_variable(
 
 ## Pattern types
 
-A variable whose type is a [pattern type](Types.md#pattern-types), or a
+A variable whose type is a [subset type](SubsetTypes.md), or a
 record or an enumeration with a pattern type or a `Nat` within its fields
 and payloads, brings the constraint that its value matches, just as a
 `Nat` variable brings that it is at least 0, and in the same way, which

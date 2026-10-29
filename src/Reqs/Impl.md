@@ -13,6 +13,14 @@ map            := IDENT ":=" TERM
 Implementations exist only in Lean; the [`fren` command](Cli.md) rejects
 them.
 
+An implementation's mapped terms and quantified statements must be fully
+elaborated before they leave their elaboration context. This includes the
+statement that no binder values meet its assumptions, used to check vacuity:
+its binder types and polymorphic list or collection operations must retain
+their resolved universe levels when that statement is later sent to the
+solver. Written proofs over Lean lists and interpreted abstract types do
+not permit stale metavariables or a panic during the vacuity check.
+
 ## Example
 
 For the `thermostat` of the [Language overview](Lang/Overview.md), with this
@@ -167,8 +175,8 @@ definition.
 Each abstract type and function is interpreted at most once, in a Lean file
 and the files it imports, so every implementation uses the same meaning.
 An interpretation is not checked against the spec, which states nothing
-about a function beyond its type, including a [pattern
-type](Lang/Types.md#pattern-types) of its result, and its
+about a function beyond its type, including a [subset
+type](Lang/SubsetTypes.md) of its result, and its
 [postconditions](Lang/Items.md#contracts): it says what the spec's author
 means by the function, and is reviewed as part of the spec. Every
 application is assumed to meet both, so they are proved of its
@@ -185,7 +193,8 @@ any, and otherwise by `decide` or, failing that, by the solver, as an
 [implementation](#proof) is, in which case it is an axiom. An
 interpretation whose statement is not proved is an error, and adds
 nothing, so the function can be interpreted again; a proof that uses
-`sorry` proves nothing. So with `fn size(Int): Int is 0..=255`, `interp
+`sorry` proves nothing. So with `type Byte = n: Int where range: n is 0..=255`
+and `fn size(Int): Byte`, `interp
 size := fun _ => 300` is rejected, and no implementation can rely on it.
 An interpretation is what makes an
 implementation a claim about the code: the implementation of a procedure

@@ -10,7 +10,7 @@ set_option fren.lint.dead_code "allow"
 mod generic_uninterpreted_instances
 
 pub enum One { A }
-type Small := Int is 0..=9
+type Small = n: Int where invariant: n is 0..=9
 struct R { a: Small }
 
 -- Not realizable at a type with a single value, which the spec applies it
@@ -61,4 +61,4 @@ proc records(r: R): (det s: R, det t: R) {
     expect plain_field: t.a <= 9
 }
 --@ exit: 1
---@ summary: 19 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 20 passed, 1 failed, 0 inconclusive, 0 redundant

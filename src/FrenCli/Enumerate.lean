@@ -49,14 +49,40 @@ partial def Eval.Ex.varsOf (e : Ex) : Array Name :=
   | .var n => #[n]
   | _ => e.children.flatMap (·.varsOf)
 
-/-- The functions that `e` applies, uninterpreted or an interpretation's
-unspecified value. -/
-partial def Eval.Ex.appsOf (e : Ex) : Array Name :=
+/- The functions that `e` applies, including type-membership dependencies. -/
+mutual
+/-- Include the bodies that type membership evaluates, with recursion cycles
+visited once. These hidden dependencies share the ordinary function slots. -/
+partial def Eval.Ex.appsIn (sp : Spec) (seenFns seenTypes : NameSet) (e : Ex) : Array Name :=
+  let nested := e.children.flatMap (Eval.Ex.appsIn sp seenFns seenTypes)
   match e with
-  | .app f args => #[f] ++ args.flatMap (·.appsOf)
-  | .table _ _ (some u) => #[u] ++ e.children.flatMap (·.appsOf)
-  | .match _ _ _ _ (some u) _ => #[u] ++ e.children.flatMap (·.appsOf)
-  | _ => e.children.flatMap (·.appsOf)
+  | .app f _ =>
+    match sp.defs.find? f with
+    | some (_, body, _) => if seenFns.contains f then nested else nested ++ body.appsIn sp (seenFns.insert f) seenTypes
+    | none => #[f] ++ nested
+  | .typed t _ _ => nested ++ typeAppsIn sp seenFns seenTypes t
+  | .quant _ _ _ _ _ tys _ => nested ++ tys.flatMap (typeAppsIn sp seenFns seenTypes)
+  | .table _ _ (some u) | .match _ _ _ _ (some u) _ => #[u] ++ nested
+  | _ => nested
+
+partial def typeAppsIn (sp : Spec) (seenFns seenTypes : NameSet) (t : Fren.Core.PTy) : Array Name :=
+  let own := t.invariants.flatMap fun i =>
+    if seenFns.contains i.predicate then #[] else
+    match sp.defs.find? i.predicate with
+    | some (_, body, _) => body.appsIn sp (seenFns.insert i.predicate) seenTypes
+    | none => #[i.predicate]
+  let nested := (t.parts ++ t.elems).flatMap (typeAppsIn sp seenFns seenTypes)
+  let path? := match t.ty with
+    | .record p _ | .enum p _ | .newtype p _ => some p
+    | _ => none
+  let fields := path?.map fun path =>
+    if seenTypes.contains path then #[] else
+    ((sp.shapes.find? path).map fun shape => (shape.inst t.parts).parts.flatten.flatMap
+      (typeAppsIn sp seenFns (seenTypes.insert path))).getD #[]
+  own ++ nested ++ fields.getD #[]
+end
+
+partial def Eval.Ex.appsOf (e : Ex) (sp : Spec) : Array Name := e.appsIn sp {} {}
 
 /-- Whether `u` names the unspecified value of a type (`unspecifiedFn`). -/
 def isUnspecified (u : Name) : Bool := match u with
@@ -80,13 +106,21 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let n := c.enumSize
   let paired := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
   let (core, ks) := paired.only t kinds
-  let (ecomp, atoms) := core.atoms
+  let (ecomp, sourceAtoms) := core.atoms
+  -- Shape enumeration is only an optimization. General named invariants
+  -- remain semantic facts, including those nested inside data/collections.
+  let domains := c.vars.filterMap fun v =>
+    if v.defn?.isSome || v.fact?.isNone then none else
+    some (v.role == .output, Fm.atoms #[{ label := v.name, pfx := .anonymous, e := .typed v.ptype #[] (.var v.name) }])
+  let atoms := sourceAtoms ++ domains.map (fun (_, formula) => ("", formula))
+  let facts := domains.zipIdx.map fun (_, i) => EF.atom (sourceAtoms.size + i)
+  let outputFacts := domains.zipIdx.filterMap fun ((output, _), i) => if output then some (EF.atom (sourceAtoms.size + i)) else none
   let some exprs := atoms.mapM (·.2.exprs?)
     | throw (Fren.Core.Msg.internal s!"the evaluator does not know the meaning of a formula of `{Fren.Core.showComp c.path}`")
   -- And the definitions of the defined outputs, which the atoms read.
   let all := exprs.flatten ++ ec.defs.map fun (_, e) => ((.anonymous : Name), e)
   -- No uninterpreted function, nor unbounded quantifier (`check::enumerable`).
-  let apps := all.flatMap (·.2.appsOf)
+  let apps := all.flatMap (fun e => e.2.appsOf sp)
   -- The uninterpreted functions, whose interpretations are enumerated, but
   -- not of one with a contract, which constrains them.
   let fnNames := apps.foldl (init := #[]) fun acc f => if isUnspecified f || acc.contains f then acc else acc.push f
@@ -101,9 +135,13 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     throw (notEnumerableMsg subject (genericNotEnumerable g))
   if let some f := fnNames.find? (sp.contracts.contains ·) then
     throw (notEnumerableMsg subject s!"it applies the uninterpreted function `{Fren.Core.showComp f}`, which has a contract")
+  if let some f := fnNames.find? (fun f => !(sp.funs.contains f)) then
+    throw (notEnumerableMsg subject s!"the evaluator does not know the function `{Fren.Core.showPath f}` used by a type invariant")
   let funs : Array FunVar := fnNames.filterMap fun f => (sp.funs.find? f).map fun (ps, r) =>
     { name := f, params := ps.map fun t => Fren.Core.PTy.plain (t.core sp)
       result := (sp.results.find? f).getD (Fren.Core.PTy.plain (r.core sp)) }
+  if let some f := funs.find? (fun f => needsSemanticFilter sp.shapes.find? f.result) then
+    throw (notEnumerableMsg subject s!"the result type of `{Fren.Core.showPath f.name}` has a named invariant that cannot be enumerated as an unconstrained function table")
   if all.any (·.2.unbounded) then
     throw (notEnumerableMsg subject "it has an unbounded quantifier")
   -- The hidden slots: each type whose unspecified value is read, in the
@@ -152,7 +190,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     { fn := fun f args => match fvals.find? (·.1.name == f) with
         | some (fs, ps, rs) => apply env fs ps rs args
         | none => slotOf[f]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
-      shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
+      defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
   let rec look (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
     match slotOf[x]? with
     | some i => (vals[i]?.bind (·[env[i]!]?))
@@ -167,10 +205,10 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     match slotOf[x]?, fuel with
     | some i, _ => #[i]
     | none, f + 1 => ((defs.find? (·.1 == x)).map fun (_, e) => (e.varsOf.flatMap (reads f)) ++
-        (e.appsOf.filterMap (slotOf[·]?))).getD #[]
+        ((e.appsOf sp).filterMap (slotOf[·]?))).getD #[]
     | none, 0 => #[]
   let atomSlots := exprs.map fun es => es.foldl (init := #[]) fun acc (pfx, e) =>
-    ((e.varsOf.flatMap fun v => reads fuel (pfx ++ v)) ++ e.appsOf.filterMap (slotOf[·]?)).foldl
+    ((e.varsOf.flatMap fun v => reads fuel (pfx ++ v)) ++ (e.appsOf sp).filterMap (slotOf[·]?)).foldl
       (fun a s => if a.contains s then a else a.push s) acc
   let atomDefs := exprs.map fun es => es.foldl (init := #[]) fun acc (pfx, e) =>
     (e.varsOf.map (pfx ++ ·)).foldl (fun a v => if defined.contains v && !a.contains v then a.push v else a) acc
@@ -190,7 +228,17 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     if d.isRecord then none
     let k ← d.ctors[idx]?
     return { name := s!"{p.getString!}::{k.name}", arity := k.fields.size }
-  let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e)) (if testing then some (hash c.path) else none) variantOf) ecomp ks)
+  -- An unknown membership must not remove a world and produce a vacuous
+  -- proof. Check domain evaluation before entering the Boolean backend.
+  let domainSlots := facts.flatMap (fun f => (f.slots space ats).toArray) |>.toList.eraseDups
+  for assignment in space.fairList (Array.replicate space.names.size 0) domainSlots do
+    let env := setAll (Array.replicate space.names.size 0) domainSlots assignment
+    for (_, formula) in domains do
+      let some es := formula.exprs? | throw (notEnumerableMsg subject "a type invariant is unsupported")
+      if es.any (fun (_, e) => (e.eval (interp env) (look env fuel)).isNone) then
+        throw (notEnumerableMsg subject "the evaluator cannot decide a type invariant in an enumerated interpretation")
+  let ecomp := { ecomp with typesInterpreted := ecomp.typesInterpreted || !apps.isEmpty }
+  let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e)) (if testing then some (hash c.path) else none) variantOf facts outputFacts) ecomp ks)
   let ownOutputs := space.outputs
   let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
   let outputsExact := exhaustedAll shapes n ownOutputs

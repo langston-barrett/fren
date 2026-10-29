@@ -1,0 +1,48 @@
+error[F0603]: expectation `source_site::result` does not hold
+ --> test/cli/results/one_definedness.fren:2:12
+  |
+2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
+  |            ^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: x? = true, y? = true, values = []
+  = help: correct the expectation, or assume what it needs
+
+note: `result.first` is true
+ --> test/cli/results/one_definedness.fren:2:26
+  |
+2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
+  |                          ^^^^^
+  |
+  = member: x?
+
+note: `result.second` is true
+ --> test/cli/results/one_definedness.fren:2:37
+  |
+2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
+  |                                     ^^^^^^
+  |
+  = member: y?
+
+note: `result.third` is not evaluated
+ --> test/cli/results/one_definedness.fren:2:49
+  |
+2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
+  |                                                 ^^^^^
+  |
+  = member: values[0] = 0
+
+error[F0611]: an index of `source_site::result` may be out of range
+ --> test/cli/results/one_definedness.fren:2:56
+  |
+2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
+  |                                                        ^^^^^^^^^ may be out of range
+  |
+  = counterexample: x? = false, y? = false, values = []
+  = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
+  = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
+
+fren: 1 passed, 2 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0603, F0611.
+For more information about an error, try `fren --explain F0603`.
+exit=1

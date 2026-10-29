@@ -5,7 +5,8 @@
 mod rle
 
 -- `count` copies of `value`.
-pub struct Run { value: Int, count: Nat is 1.. }
+type Pos = n: Nat where positive: n is 1..
+pub struct Run { value: Int, count: Pos }
 
 -- The number of values in a run, or 0 when there is none.
 fn size(o: Option<Run>): Nat := match o { Some(r) => r.count, None => 0 }

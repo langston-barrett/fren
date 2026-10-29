@@ -1,0 +1,10 @@
+error[F0373]: an invariant may mention only its binder, constants and functions
+ --> test/cli/types/f0373_subset_closed.fren:1:38
+  |
+1 | type Small = n: Int where invariant: n <= limit
+  |                                      ^^^^^^^^^^ outside the scope of `n`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0373`.
+exit=2

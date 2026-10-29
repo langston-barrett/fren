@@ -100,6 +100,36 @@ open Lean PrettyPrinter in
 @[combinator_parenthesizer closeAngle] def closeAngle.parenthesizer : Parenthesizer :=
   Parenthesizer.symbolNoAntiquot.parenthesizer ">"
 
+/-- A source-labelled Boolean expression. A named conjunction is lowered
+as a sequence of root labels, preserving ordinary expression precedence. -/
+scoped syntax:36 (name := labelledExpr) frenIdent " : " fren_expr:10 : fren_expr
+
+open Lean Parser in
+/-- The contextual exact-one opener does not reserve `one` as a Lean token. -/
+def contextualOne : Parser where
+  fn := fun context state =>
+    let start := state.pos
+    let size := state.stackSize
+    let next := identNoAntiquot.fn context state
+    if next.hasError || next.stxStack.back.getId != `one then
+      next.restore size start |>.mkErrorAt "one" start
+    else next.popSyntax.pushSyntax (.atom next.stxStack.back.getHeadInfo "one")
+  info := identNoAntiquot.info
+
+open Lean PrettyPrinter in
+@[combinator_formatter contextualOne] def contextualOne.formatter : Formatter :=
+  Formatter.symbolNoAntiquot.formatter "one"
+
+open Lean PrettyPrinter in
+@[combinator_parenthesizer contextualOne] def contextualOne.parenthesizer : Parenthesizer :=
+  Parenthesizer.symbolNoAntiquot.parenthesizer "one"
+
+declare_syntax_cat fren_bool_member (behavior := both)
+syntax (atomic(frenIdent " : "))? fren_expr : fren_bool_member
+/-- Prefix Boolean blocks keep each source member and optional label. -/
+scoped syntax:arg (name := booleanBlockExpr) atomic(("and" <|> "or" <|> "iff" <|> contextualOne) " { "
+  sepBy(fren_bool_member, ", ", ", ", allowTrailingSep) " }") : fren_expr
+
 declare_syntax_cat fren_type (behavior := both)
 /-- A type named by a path: `Bool`, `Int`, `String`, or an item. -/
 syntax fren_path : fren_type
@@ -362,11 +392,6 @@ scoped syntax:max (name := tableMatchExpr) "table " notFollowedBy("{") withoutFo
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/
 scoped syntax:50 (name := isExpr) fren_expr:50 " is " fren_top_pattern : fren_expr
 
-/-- `T is P`, a pattern type: the values of `T` that match `P`
-(`Reqs/Lang/Types#pattern-types`). Its base type is never itself a pattern
-type, so a second `is` does not parse. -/
-scoped syntax:10 (name := patType) fren_type:11 " is " fren_top_pattern : fren_type
-
 declare_syntax_cat fren_member (behavior := both)
 
 /-- The variables of a procedure as the elaborator reads them, each a
@@ -386,6 +411,10 @@ scoped syntax (name := defineMember) &"out " frenIdent " := " fren_expr (fren_wh
 scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := ensureMember) &"ensure " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
+/-- An omitted outer label is accepted only for an explicit Boolean block. -/
+scoped syntax (name := bareAssumeMember) (priority := low) &"assume " fren_expr (fren_where)? : fren_member
+scoped syntax (name := bareEnsureMember) (priority := low) &"ensure " fren_expr (fren_where)? : fren_member
+scoped syntax (name := bareExpectMember) (priority := low) &"expect " fren_expr (fren_where)? : fren_member
 /-- `cover n: e`, a scenario that the procedure must allow (`Reqs/Lang/Procedures#cover-goals`). -/
 scoped syntax (name := coverMember) &"cover " frenIdent " : " fren_expr (fren_where)? : fren_member
 
@@ -466,6 +495,9 @@ scoped syntax (name := procCmd) ("pub ")? "proc " frenIdent noWs "("
 
 /-- `type T`, an abstract type, or `type T := U`, a type alias. -/
 scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent (" := " fren_type)? : command
+/-- Declared-only subset aliases, with a binder and labelled invariants. -/
+scoped syntax (name := subsetTypeCmd) (priority := high) ("pub ")? "type " frenIdent " = "
+  frenIdent " : " fren_type " where " fren_expr : command
 
 /-- A function's parameter: `T` of an uninterpreted function, `x: T` or
 `x?` of a defined one. Which it is depends on whether the function has a

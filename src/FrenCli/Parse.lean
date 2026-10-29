@@ -214,6 +214,8 @@ def Ident.pattern? (seg : Ident) : Option Pattern :=
   if text.isEmpty then none else (Pattern.decode text.toString).toOption
 
 inductive Expr where
+  /-- A prefix Boolean block, retaining member names for lowering and reports. -/
+  | block (span : Span) (op : String) (members : Array (Option Ident × Expr))
   | when (span : Span) (negated : Bool) (cond body : Expr)
   | ite (span : Span) (cond thenE elseE : Expr)
   | bin (span : Span) (op : String) (lhs rhs : Expr)
@@ -274,9 +276,68 @@ inductive Expr where
   deriving Inhabited
 
 def Expr.span : Expr → Span
-  | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
+  | .block s .. | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
   | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
   | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. | .table s .. | .closure s .. => s
+
+/-- Erase a single Boolean block's annotations while preserving evaluation
+order and short-circuiting. Equivalence compares all members to the first;
+empty and singleton equivalence evaluate no member. -/
+def Expr.lowerBlock (span : Span) (op : String) (members : Array (Option Ident × Expr)) : Expr := Id.run do
+  let values := members.map (·.2)
+  let combine (op : String) (identity : Bool) (xs : Array Expr) : Expr :=
+    if xs.isEmpty then .bool span identity else xs.toList.tail.foldl (fun acc e => .bin span op acc e) xs[0]!
+  if op == "and" then return combine "and" true values
+  if op == "or" then return combine "or" false values
+  if op == "one" then
+    let rec exactly (rest : List Expr) (held : Bool) : Expr :=
+      match rest with
+      | [] => .bool span held
+      | value :: tail =>
+        if held then .bin span "and" (.not value.span value) (exactly tail true)
+        else .ite span value (exactly tail true) (exactly tail false)
+    return exactly values.toList false
+  if values.size <= 1 then return .bool span true
+  let rest := values.extract 1
+  return .ite span values[0]! (combine "and" true rest)
+    (combine "and" true (rest.map fun e => .not e.span e))
+
+/-- Deterministic private implementation names for a subset declaration.
+All front ends use the same names; diagnostics use the invariant's logical
+`Type::label` name instead. -/
+def subsetPredicateIdent (typeName label : Ident) : Ident :=
+  { name := Fren.Core.subsetPredicateName typeName.name label.name typeName.span.start, span := label.span }
+
+def subsetCheckIdent (typeName : Ident) (part : String) : Ident :=
+  { name := Fren.Core.subsetCheckName typeName.name part typeName.span.start, span := typeName.span }
+
+/-- Whether a clause can omit its outer label: a leading guard may
+wrap an explicit Boolean block. -/
+partial def Expr.blockRoot : Expr → Bool
+  | .block .. => true
+  | .when _ _ _ body => body.blockRoot
+  | _ => false
+
+/-- The positive clause positions that distribute into independent leaves. -/
+partial def Expr.conjunctionRoot : Expr → Bool
+  | .block _ "and" _ => true
+  | .when _ _ _ body | .«let» _ _ body _ => body.conjunctionRoot
+  | _ => false
+
+/-- Independent conjunction leaves, retaining guards and lexical lets. -/
+partial def Expr.clauseLeaves (owner : Ident) : Expr → Array (Ident × Expr)
+  | .block _ "and" members => members.zipIdx.flatMap fun ((label, value), i) =>
+    let segment := label.map (·.name) |>.getD (toString (i + 1))
+    let child : Ident := {
+      name := if owner.name.isEmpty then segment else owner.name ++ "." ++ segment
+      span := label.map (·.span) |>.getD value.span
+    }
+    value.clauseLeaves child
+  | .when sp negative condition body => (body.clauseLeaves owner).map fun (label, value) =>
+    (label, .when sp negative condition value)
+  | .«let» sp defs body isWhere => (body.clauseLeaves owner).map fun (label, value) =>
+    (label, .«let» sp defs value isWhere)
+  | e => #[(if owner.name.isEmpty then { owner with name := "1" } else owner, e)]
 
 /-- The conditions and values of a table's rows, in order. -/
 def tableParts (rows : Array (Span × Option Expr × Expr)) : Array Expr :=
@@ -314,6 +375,84 @@ inductive Member where
   | evidence (span : Span) (value : String) (valueSpan : Span)
   deriving Inhabited
 
+/-- The logical members of a top-level disjunction/equivalence, with
+all surrounding guard/let wrappers retained on each member. -/
+partial def branchMembers (e : Expr) : Option (Fren.Core.BranchKind × Option Expr × Array (Option Ident × Span × Expr)) :=
+  match e with
+  | .block _ "or" members => some (.disjunction, none, members.map fun (label, value) => (label, value.span, value))
+  | .block _ "iff" members => some (.equivalence, none, members.map fun (label, value) => (label, value.span, value))
+  | .block _ "one" members => some (.exactlyOne, none, members.map fun (label, value) => (label, value.span, value))
+  | .bin _ "iff" a b => some (.equivalence, none, #[(none, a.span, a), (none, b.span, b)])
+  | .when sp negative condition body => (branchMembers body).map fun (kind, guard, members) =>
+    let inactive := .not sp (guard.getD (.bool sp true))
+    (kind, some (.not sp (.when sp negative condition inactive)),
+      members.map fun (label, source, member) => (label, source, .when sp negative condition member))
+  | .«let» sp defs body isWhere => (branchMembers body).map fun (kind, guard, members) =>
+    (kind, guard.map (.«let» sp defs · isWhere), members.map fun (label, source, member) => (label, source, .«let» sp defs member isWhere))
+  | _ => none
+
+structure BlockObservation where
+  op : String
+  wanted : Bool := true
+  members : Array (Option Ident × Span × Expr × Expr)
+
+/-- Value and evaluation guard are kept separate: observing a diagnostic
+must not evaluate a singleton equivalence or a short-circuited tail. -/
+partial def observedMembers (e : Expr) : Option BlockObservation :=
+  match e with
+  | .block sp op members => Id.run do
+    let values := members.map (·.2)
+    let combine (xs : Array Expr) := Expr.lowerBlock sp "and" (xs.map (none, ·))
+    let result := members.zipIdx.map fun ((label, value), i) =>
+      let preceding := values.extract 0 i
+      let guard := if op == "and" then combine preceding
+        else if op == "or" then combine (preceding.map fun value => .not value.span value)
+        else if op == "one" then
+          combine (preceding.zipIdx.flatMap fun (left, j) =>
+            (preceding.extract (j + 1)).map fun right => .not sp (.bin sp "and" left right))
+        else if values.size <= 1 then Expr.bool sp false
+        else if i == 0 then Expr.bool sp true
+        else combine ((values.extract 1 i).map fun previous => .bin sp "iff" values[0]! previous)
+      (label, value.span, value, guard)
+    return some { op, members := result }
+  | .not _ body => (observedMembers body).map fun group => { group with wanted := !group.wanted }
+  | .when sp negative condition body => (observedMembers body).map fun group =>
+    let active := if negative then Expr.not condition.span condition else condition
+    { group with members := group.members.map fun (label, source, value, guard) =>
+      (label, source, .when sp negative condition value, .bin sp "and" active guard) }
+  | .«let» sp defs body isWhere => (observedMembers body).map fun group =>
+    { group with members := group.members.map fun (label, source, value, guard) =>
+      (label, source, .«let» sp defs value isWhere, .«let» sp defs guard isWhere) }
+  | _ => none
+
+/-- Function contracts have the same independent conjunction clauses as
+procedure assumptions and guarantees. -/
+def splitContractClauses (clauses : Array (Bool × Ident × Expr)) : Array (Bool × Ident × Expr) :=
+  clauses.flatMap fun (post, owner, expression) =>
+    (expression.clauseLeaves owner).map fun (label, value) => (post, label, value)
+
+/-- Split a conjunction's own checks, copying a member-level method
+setting to every generated clause. No synthetic enclosing check remains. -/
+def splitConjunctionMembers (members : Array Member) : Array Member := Id.run do
+  let mut out := #[]
+  let mut pending : Option Member := none
+  for member in members do
+    match member with
+    | .evidence .. =>
+      if let some prior := pending then out := out.push prior
+      pending := some member
+    | .prop kind name expression =>
+      for (label, leaf) in expression.clauseLeaves name do
+        if let some setting := pending then out := out.push setting
+        out := out.push (.prop kind label leaf)
+      pending := none
+    | _ =>
+      if let some setting := pending then out := out.push setting
+      pending := none
+      out := out.push member
+  if let some setting := pending then out := out.push setting
+  return out
+
 /-- What a function's block gives its function beyond its lowering
 (`Reqs/Lang/Items#function-blocks`): its `use`s; its `let`s that nothing
 needs, which `unused_variables` reports; and the first precondition or
@@ -347,6 +486,7 @@ inductive Item where
   | abstractType (isPub : Bool) (name : Ident)
   /-- `type T := U`, a type alias. -/
   | typeAlias (isPub : Bool) (name : Ident) (ty : Array Ident)
+  | subsetType (isPub : Bool) (name binder : Ident) (base : Array Ident) (invariants : Array (Ident × Expr))
   /-- `fn f(T, U): R`, or `fn f(x: T, y?): R := e`, or with type parameters
 `fn f<A, B>(x: A): B := e`: each parameter's path,
 and its type after `:` if written. The result type is `none` if it is not
@@ -439,6 +579,7 @@ structure PState where
   /-- In a definition of a `let`, outside brackets, where `in` ends the
   definitions rather than starting a membership (`Reqs/Lang/Let#parentheses`). -/
   noIn : Bool := false
+  stopNamedAnd : Bool := false
   /-- In a procedure's block: its header, whose results `out` defines
   (`F0444`). -/
   proc? : Option ProcHeader := none
@@ -832,18 +973,10 @@ mutual
 /-- A type: a path, `Set<T>`, `Seq<T>`, `Rel<A, B>`, or an instance of a
 generic type, `G<A, B>`, optionally followed by `is` and a pattern, for a
 pattern type. -/
-partial def typeExpr : P (Array Ident) := do
-  let base ← baseType
-  unless isKw (← peek) "is" do return base
-  discard bump
-  let p ← pattern (arm := false)
-  if let some t ← eatKw "is" then throw { span := t.span, msg := Fren.Core.nestedPatternMsg }
-  let outer := base[0]?.any fun s => s.name == setSeg || s.name == seqSeg || s.name == relSeg
-  return if outer then #[p.seg true] ++ base else base.push (p.seg false)
+partial def typeExpr : P (Array Ident) := baseType
 
-/-- A type without a pattern of its own: a path, `Set<T>`, `Seq<T>`,
-`Rel<A, B>` or an instance of a generic type, `G<A, B>`, whose element
-types and type arguments may be pattern types. -/
+/-- A declared type path or a collection/generic instance of declared
+types. Subset constraints appear only in named declarations. -/
 partial def baseType : P (Array Ident) := do
   let t ← peek
   -- A function type (`Reqs/Lang/HigherOrder#function-types`).
@@ -934,6 +1067,20 @@ def binders (kw : Token) : P (Array Binder) := do
 mutual
 partial def expr : P Expr := do
   let t ← peek
+  let state ← get
+  if (t.tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
+    let mut members := #[]
+    repeat
+      let label ← ident
+      discard (expectKw ":")
+      let saved := (← get).stopNamedAnd
+      modify fun st => { st with stopNamedAnd := true }
+      let value ← expr
+      modify fun st => { st with stopNamedAnd := saved }
+      members := members.push (some label, value)
+      if !(isKw (← peek) "and") then break
+      discard bump
+    return .block (← spanFrom t.span) "and" members
   if isKw t "let" then
     discard bump
     let defs ← definitions true
@@ -977,7 +1124,13 @@ partial def or : P Expr := do
 partial def and : P Expr := do
   let start := (← peek).span
   let mut l ← not
-  while (← eatKw "and").isSome do l ← bin start "and" l (← not)
+  repeat
+    let state ← get
+    if state.stopNamedAnd && isKw (← peek) "and" &&
+        (state.toks[state.pos + 1]?).any (fun t => t.tok matches .ident _) &&
+        (state.toks[state.pos + 2]?).any (isKw · ":") then break
+    if (← eatKw "and").isNone then break
+    l ← bin start "and" l (← not)
   return l
 partial def not : P Expr := do
   let t ← peek
@@ -1117,6 +1270,31 @@ partial def matchArms (t : Token) (table : Bool) : P Expr := do
 
 partial def atom : P Expr := do
   let t ← peek
+  let state ← get
+  let oneBlock := (t.tok matches .ident "one") && isKw state.toks[state.pos + 1]! "{"
+  if isKw t "and" || isKw t "or" || isKw t "iff" || oneBlock then
+    let op := if isKw t "and" then "and" else if isKw t "or" then "or" else if oneBlock then "one" else "iff"
+    discard bump
+    markList
+    discard (expectKw "{")
+    let mut members := #[]
+    unless isKw (← peek) "}" do
+      repeat
+        markStart
+        let st ← get
+        let label ← if ((← peek).tok matches .ident _) && (st.toks[st.pos + 1]?).any (isKw · ":") then do
+            let name ← ident
+            discard (expectKw ":")
+            pure (some name)
+          else pure none
+        if let some label := label then
+          if members.any (fun (old, _) => old.any (·.name == label.name)) then
+            err label.span "F0372" s!"duplicate Boolean member label `{label.name}`" (some "already used in this block")
+        let value ← expr
+        members := members.push (label, value)
+        if (← eatKw ",").isNone || isKw (← peek) "}" then break
+    discard (expectKw "}")
+    return .block (← spanFrom t.span) op members
   match t.tok with
   | .num _ v => discard bump; return .num t.span v
   | .str v => discard bump; fieldReads callArgs indexArg (.str t.span v)
@@ -1453,9 +1631,14 @@ def member : P Member := do
     | fail t "a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`"
         #["use", "assume", "exists", "let", "out", "call", "det", "ensure", "expect", "cover"]
   discard bump
-  let x ← ident
-  discard (expectKw ":")
-  return .prop kind x (← top)
+  let state ← get
+  if ((← peek).tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
+    let x ← ident
+    discard (expectKw ":")
+    return .prop kind x (← top)
+  let expression ← top
+  unless kind != .cover && expression.blockRoot do fail t "a named clause or a Boolean block"
+  return .prop kind { name := "", span := t.span } expression
 
 /-- The names that the tokens within `sp` mention: each identifier's
 first segment, without the `!` of shadowing. -/
@@ -1810,6 +1993,19 @@ partial def item : P Item := do
     discard bump
     let name ← ident
     if (← eatKw ":=").isSome then return .typeAlias isPub name (← typeExpr)
+    if (← eatKw "=").isSome then
+      let binder ← ident
+      discard (expectKw ":")
+      let base ← typeExpr
+      discard (expectKw "where")
+      let invariantStart ← peek
+      let labelled ← expr
+      let .block _ "and" members := labelled | fail (← peek) "a labelled invariant"
+      if members.isEmpty then fail invariantStart "a nonempty labelled invariant list"
+      let invariants ← members.mapM fun (label, body) => do
+        let some label := label | fail (← peek) "an invariant label"
+        pure (label, body)
+      return .subsetType isPub name binder base invariants
     return .abstractType isPub name
   if isKw t "fn" then
     discard bump

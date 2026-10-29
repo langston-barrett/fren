@@ -1,0 +1,2 @@
+fn chosen?(Int)
+type Chosen = n: Int where invariant: chosen?(n)

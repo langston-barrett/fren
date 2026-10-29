@@ -1,13 +1,13 @@
 error[F0645]: `c` cannot be enumerated: it applies the generic function `pick`, which has no body
- --> test/cli/results/f0645_generic.fren:6:6
+ --> test/cli/results/f0645_generic.fren:8:6
   |
-6 | proc c(x: Int is 0..=3, y: Int is 0..=3): (det z: Int) {
+8 | proc c(x: LeftTwoBit, y: RightTwoBit): (det z: Int) {
   |      ^ not enumerable
   |
   = note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract or type parameters, nor unbounded quantifier
   = help: have the solver or testing check it
 
-fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0645`.
 exit=1

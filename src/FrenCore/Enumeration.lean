@@ -46,6 +46,19 @@ partial def EVal.toPVal? : EVal → Option PVal
   | .abs _ => none
   | .ctor idx args => do return .ctor idx (← args.mapM EVal.toPVal?).toArray
 
+/-- Whether a declared constraint needs semantic evaluation beyond Shape's
+literal-pattern filters. Function-result tables with such constraints require
+an additional world filter; frontends must not silently use unconstrained tables. -/
+partial def needsSemanticFilter (shapeOf : Name → Option DataShape) (t : PTy) (seen : List Name := []) : Bool :=
+  let own := !t.invariants.isEmpty && (t.invariants.size != 1 || t.pat?.isNone)
+  let nested := t.elems.any (needsSemanticFilter shapeOf · seen)
+  let fields := match t.ty with
+    | .record path _ | .enum path _ | .newtype path _ =>
+      !seen.contains path && ((shapeOf path).any fun shape => (shape.inst t.parts).parts.any
+        (·.any (needsSemanticFilter shapeOf · (path :: seen))))
+    | _ => false
+  own || nested || fields
+
 mutual
 /-- A type, unfolded for a size bound: a finite tree, whose recursive
 enumerations are unfolded as deep as the bound allows
@@ -610,6 +623,8 @@ writes it. -/
 structure EV where
   at? : Option (Nat × Nat)
   shown : String
+  /-- Exact assignment, including hidden function tables, for observations. -/
+  environment? : Option (Array Nat) := none
   deriving Inhabited
 
 /-- The checks' backend over the space `sp`, whose atoms are `ats`
@@ -621,9 +636,12 @@ ones, and the defined outputs that its formulas mention, as `render` and
 `defValue` show them. -/
 def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m String)
     (defValue : Name → Array Nat → m (Option String)) (testing? : Option UInt64 := none)
-    (variantOf : Nat → Nat → Option Variant := fun _ _ => none) : Backend m EF EV where
+    (variantOf : Nat → Nat → Option Variant := fun _ _ => none)
+    (facts : Array EF := #[]) (outputFacts : Array EF := #[]) : Backend m EF EV where
   query hyps goal _ := do
-    let parts := (hyps.map (·.2)).push (.not goal)
+    -- Type-domain facts hold in each copy, independently of named clauses.
+    let domain := facts ++ facts.map EF.primed
+    let parts := (domain ++ hyps.map (·.2)).push (.not goal)
     let found := answerOf ((search sp ats parts).map (·.1)) testing?.isSome fun _ =>
       testSearch sp ats parts (testing?.getD 0)
     match found with
@@ -636,11 +654,15 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
       let defd ← defs.filterMapM fun (d, primed) => do
         let e := if primed then sp.primedEnv env else env
         return (← defValue d e).map fun v => (if primed then primed' d else d, ({ at? := none, shown := v } : EV))
-      return .sat (shown ++ defd)
+      return .sat (shown ++ defd ++ #[(Lean.Name.mkSimple "#member_model", { at? := none, shown := "", environment? := some env })])
+  modelBool? := some fun model formula => pure do
+    let (_, token) ← model.find? (·.1 == Lean.Name.mkSimple "#member_model")
+    let env ← token.environment?
+    return formula.eval sp ats env
   falseF := .ff
   notF := .not
   conj := .conj
-  existsOutputs f := pure (.exOutputs f)
+  existsOutputs f := pure (.exOutputs (if outputFacts.isEmpty then f else .conj (outputFacts.push f)))
   pin _ v := pure (v.at?.map fun (x, j) => .pin x j)
   -- That the slot holds a value of the same variant: one of those of its
   -- values that are.
@@ -667,7 +689,7 @@ def _root_.Fren.Core.Comp.atoms (c : Comp F) : Comp EF × Array F := Id.run do
   let mut fs : Array F := #[]
   let mut next := 0
   let mut out : Comp EF := { path := c.path, vars := c.vars, assumes := #[], reqs := #[], expects := #[], triggers := #[]
-                             typesInterpreted := c.typesInterpreted, fn? := c.fn? }
+                             typesInterpreted := c.typesInterpreted, fn? := c.fn?, inhabitation := c.inhabitation }
   let mut named : Array (Array (Name × EF)) := #[]
   for xs in #[c.assumes, c.reqs, c.expects, c.covers, c.triggers, c.posts] do
     let mut ys := #[]
@@ -694,8 +716,76 @@ def _root_.Fren.Core.Comp.atoms (c : Comp F) : Comp EF × Array F := Id.run do
     fs := fs.push t.site.goal
     tables := tables.push { t with site := { t.site with goal := EF.atom next } }
     next := next + 1
+  let mut groups := #[]
+  for group in c.branchGroups do
+    let mut members := #[]
+    for member in group.members do
+      fs := fs.push member.formula
+      let formula := EF.atom next
+      next := next + 1
+      let value ← match member.valueFormula? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      let guard ← match member.evaluationGuard? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      members := members.push {
+        name := member.name
+        formula := formula
+        valueFormula? := value
+        evaluationGuard? := guard
+        range? := member.range?
+        text := member.text
+      }
+    let guard ← match group.guard? with
+      | none => pure none
+      | some f => do
+        fs := fs.push f
+        let atom := some (EF.atom next)
+        next := next + 1
+        pure atom
+    groups := groups.push { owner := group.owner, kind := group.kind, members, guard? := guard }
+  let mut observations := #[]
+  for group in c.memberGroups do
+    let mut members := #[]
+    for member in group.members do
+      fs := fs.push member.formula
+      let formula := EF.atom next
+      next := next + 1
+      let value ← match member.valueFormula? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      let guard ← match member.evaluationGuard? with
+        | none => pure none
+        | some f => do
+          fs := fs.push f
+          let result := some (EF.atom next)
+          next := next + 1
+          pure result
+      members := members.push {
+        name := member.name
+        formula := formula
+        valueFormula? := value
+        evaluationGuard? := guard
+        range? := member.range?
+        text := member.text
+      }
+    observations := observations.push { owner := group.owner, op := group.op, wanted := group.wanted, members }
   out := { out with assumes := named[0]!, reqs := named[1]!, expects := named[2]!, covers := named[3]!, triggers := named[4]!
-                    posts := named[5]!, insts, tables, defs := c.defs.map fun (d, _, _) => (d, .tt, .tt) }
+                    posts := named[5]!, insts, tables, branchGroups := groups, memberGroups := observations
+                    defs := c.defs.map fun (d, _, _) => (d, .tt, .tt) }
   return (out, fs)
 
 /-! ## Which checks, and their verdicts -/

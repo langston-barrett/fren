@@ -1,0 +1,8 @@
+fn empty_or?(g?) := when g?, or {}
+fn empty_one?(g?) := when g?, one {}
+expect empty(g?) {
+    assume inactive: not g?
+    expect disjunction: empty_or?(g?)
+    expect unique: empty_one?(g?)
+}
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant

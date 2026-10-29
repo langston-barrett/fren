@@ -221,9 +221,10 @@ pattern `P`, as of a `match` arm, matches `e`. Its binders name parts of
 `when` or the `then` branch of an `if` whose condition it is. See
 [Expressions](Lang/Expressions.md#pattern-tests).
 
-**Pattern type.** A type `T is P`, whose values are those of its base
-type `T` that match the pattern `P`, such as `Int is 0..=255`. See
-[Types](Lang/Types.md#pattern-types).
+**Subset type.** A declared alias whose values satisfy its named
+invariants, as in `type Byte = n: Int where range: n is 0..=255`.
+Its base type determines static type equivalence. See
+[Subset types](Lang/SubsetTypes.md).
 
 **Payload.** The values that a variant carries, as in `Circle(Int)`. See
 [Items](Lang/Items.md#enumerations).

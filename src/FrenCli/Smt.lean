@@ -151,7 +151,7 @@ def Prelude.interprets (p : Prelude) (syms : Array String) : Bool := Id.run do
     if seen[i]! then continue
     seen := seen.set! i true
     let text := p.decls[i]!.text
-    if text.startsWith "(declare-sort" || text.startsWith "(declare-fun" then return true
+    if text.startsWith "(declare-sort" || text.startsWith "(declare-fun" || text.contains "(seq.nth (as seq.empty" then return true
     work := work ++ p.deps[i]!
   return false
 
@@ -194,9 +194,26 @@ logic, options and limits, so the same script means the same question. The
 checks of several components may share it at once (`Reqs/Cli#parallel-checking`). -/
 abbrev QueryCache := IO.Ref (Std.HashMap String (Outcome String × Bool))
 
+/-- A Boolean expression to observe while the primary model is live.
+A value observation is skipped unless its evaluation guard was true. -/
+structure ModelObservation where
+  key : Lean.Name
+  formula : String
+  guard? : Option Lean.Name := none
+
+def observationsOf (c : CComp) : Array ModelObservation := Id.run do
+  let mut out := #[]
+  for group in c.memberGroups, g in [0:c.memberGroups.size] do
+    for member in group.members, k in [0:group.members.size] do
+      let guard := Lean.Name.mkSimple s!"#member_observation_{g}_{k}_guard"
+      let value := Lean.Name.mkSimple s!"#member_observation_{g}_{k}_value"
+      out := out.push { key := guard, formula := member.evaluationGuard?.getD "true" }
+      out := out.push { key := value, formula := member.valueFormula?.getD member.formula, guard? := some guard }
+  return out
+
 /-- Checks the satisfiability of `script`, a query over `vars`, with values
 of `vars` if `wantModel`. -/
-def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (Outcome String) := do
+def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation := #[]) : IO (Outcome String) := do
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
     let solver ← cvc5.Solver.new tm
@@ -229,6 +246,15 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) : IO (O
         -- Expand them before confirmation, rendering, or pinning a model.
         let value := toString ((SeqElems.parse value).unfold {})
         model := model.push (v.name, value)
+    for observation in observations do
+      let reached := observation.guard?.all fun guard => model.any (fun (name, value) => name == guard && value == "true")
+      let value ← if !reached then pure "unknown" else do
+        try
+          parser.setStringInput observation.formula .SMT_LIB_2_6
+          let term ← parser.nextTerm
+          pure (toString (← solver.getValue term))
+        catch _ => pure "unknown"
+      model := model.push (observation.key, value)
     return .sat model
   match r with
   | .ok o => return o
@@ -239,19 +265,20 @@ first passing the script to `dump?`, if any, and answering from `cache?`,
 if any, a script asked before. -/
 def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
-    (cache? : Option QueryCache := none) : IO (Outcome String) := do
+    (cache? : Option QueryCache := none) (observations : Array ModelObservation := #[]) : IO (Outcome String) := do
   let script := queryScript logic options prelude vars limits hyps goal
   if let some dump := dump? then dump script
-  let some cache := cache? | solveScript script vars wantModel
+  let key := script ++ String.join (observations.toList.map fun o => s!"; observe {o.key}: {o.formula}\n")
+  let some cache := cache? | solveScript script vars wantModel observations
   -- A model's variables are those that the script declares, which are `vars`.
-  match (← cache.get)[script]? with
+  match (← cache.get)[key]? with
   | some (o@(.sat _), hasModel) =>
     if !wantModel then return .sat #[]
     if hasModel then return o
   | some (o, _) => return o
   | none => pure ()
-  let o ← solveScript script vars wantModel
-  cache.modify (·.insert script (o, wantModel))
+  let o ← solveScript script vars wantModel observations
+  cache.modify (·.insert key (o, wantModel))
   return o
 
 /-- A value of an abstract type, as cvc5 writes it, such as
@@ -684,6 +711,13 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
   -- The query declares only the variables that its formulas mention, a
   -- `Nat`'s fact among them, so a model, and so a counterexample, has only
   -- those, as in Lean (`Reqs/View#check-results`).
+  modelBool? := some fun model formula => pure <|
+    (observationsOf c).findSome? fun observation =>
+      if observation.formula != formula then none else
+      match model.find? (·.1 == observation.key) |>.map (·.2) with
+      | some "true" => some true
+      | some "false" => some false
+      | _ => none
   query hyps goal wantModel := do
     let hasRecursion := prelude.decls.any (·.recursion?.isSome)
     let expand (f : String) : String := Id.run do
@@ -696,6 +730,10 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       return toString (contractBody own (SeqElems.parse body) e)
     let hyps := hyps.map fun (n, f) => (n, expand f)
     let goal := expand goal
+    -- Observe the same unfolded terms in the primary model. Keys retain
+    -- their source identity for modelBool? above.
+    let observations := (observationsOf c).map fun observation =>
+      { observation with formula := expand observation.formula }
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
     let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
@@ -726,11 +764,11 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let logic := Fren.Core.logic kind (strings || sets) projection quantified
     let options := String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n")
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
-        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache?) vars hyps goal
+        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel
-      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache?
+      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations
     return match o with
-      | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString)
+      | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString || n.toString.startsWith "#member_observation_")
       | o => o
   falseF := "false"
   notF f := s!"(not {f})"
@@ -763,6 +801,9 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
   let contract := c.fn?.isSome && c.vars.any (·.role == .output)
   let core : Fren.Core.Comp String :=
     { path := c.path
+      inhabitation := c.subset?.isSome
+      branchGroups := c.branchGroups
+      memberGroups := c.memberGroups
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := props .assume
@@ -782,9 +823,9 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
       defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
       -- Numbered in order within each item.
       indexes := c.indexes.mapIdx fun j (n, place, _, goal, t) =>
-        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal, patTy? := t.map (·.1) }
+        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal, patTy? := t.map (·.1), excludeSelf := c.distributed.contains n }
       tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
-        { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal }, goal := q } }
+        { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal, excludeSelf := c.distributed.contains n }, goal := q } }
   -- An uninterpreted function's contract, as both front ends build it
   -- (`Fren.Core.contractComp`).
   match contract, c.fn?, c.vars.back? with
@@ -796,7 +837,7 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
 an abstract type or an uninterpreted function, as the prelude declarations
 that a formula needs say (`Fren.Core.coverInterpreted`). -/
 def markInterpreted (p : Prelude) (c : CComp) (rs : Array Fren.Core.CheckResult) : Array Fren.Core.CheckResult :=
-  let interprets (f : String) : Bool := p.interprets (quotedSymbols f)
+  let interprets (f : String) : Bool := f.contains "(seq.nth (as seq.empty" || p.interprets (quotedSymbols f)
   Fren.Core.withInterpreted { toCore c with typesInterpreted := c.vars.any (interprets ·.ty.sort) } interprets rs
 
 end FrenCli

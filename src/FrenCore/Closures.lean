@@ -153,12 +153,12 @@ inductive FnPart where
 `parts` is accepted (`lang::function_type_parts`). -/
 def fnPartsAccepted (parts : List FnPart) : Bool := parts.all (· == .plain)
 
-/-- A `Nat` or a pattern type, `what`, within a function type
+/-- A `Nat` or a subset type, `what`, within a function type
 (`lang::function_type_parts`). -/
 def fnPartMsg (what : String) : Msg :=
   { code? := some "F0435", headline := s!"a function type's parameter or result cannot be {what}, for now"
     label? := some s!"{what}"
-    notes := #["note: a `Nat` or a pattern type brings a fact or an obligation of its values, which would be a contract of the function given, and a function parameter has none",
+    notes := #["note: a `Nat` or a subset type brings a fact or an obligation of its values, which would be a contract of the function given, and a function parameter has none",
       "help: use the base type, as `Int`"] }
 
 /-! ## Arguments -/
@@ -232,7 +232,7 @@ def fnPartMsg? (k : FnPart) : Option Msg :=
   if fnPartsAccepted [k] then none
   else some (match k with
     | .nat => fnPartMsg "a `Nat`"
-    | .pattern => fnPartMsg "a pattern type"
+    | .pattern => fnPartMsg "a subset type"
     | _ => fnTypePlaceMsg .definedParameter [.fnParameter])
 
 /-- The closure's body applies the uninterpreted function `g`. -/
