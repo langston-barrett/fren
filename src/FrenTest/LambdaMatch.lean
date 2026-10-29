@@ -18,6 +18,14 @@ example (x y : Shape) : compare_shapes x y = match x, y with
     | _, .Rect a b => a - b := by
   cases x <;> cases y <;> rfl
 
+example {α : Type} [Inhabited α] (left right : Option α) :
+    first_some α left right = match left with | .some x => .some x | .none => right := by
+  cases left <;> rfl
+
+example (flag : Bool) (n offset : Int) :
+    captured flag n offset = if flag then n + offset else n - offset := by
+  cases flag <;> rfl
+
 -- Compare actual vector usefulness against all four concrete worlds.
 -- Each of the nine rectangles is formed from wildcard/true/false in each
 -- column. The 81 pairs include correlated holes and full row coverage.
