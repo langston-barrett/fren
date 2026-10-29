@@ -5,7 +5,8 @@ thing, and `fren fix` fixes each of them but the lints of
 [names](#names), whose fixes would rename, and `assertions_on_constants`,
 which finds a constraint that says nothing about the variables.
 Its subchapters have the lints of [pattern tests and chained
-comparisons](Style/Comparisons.md), of [natural numbers](Style/Naturals.md)
+comparisons](Style/Comparisons.md), of [pattern tests written
+out](Style/PatternTests.md), of [natural numbers](Style/Naturals.md)
 and of [records](Style/Records.md).
 
 ## Glob imports
@@ -332,7 +333,7 @@ test](../Lang/Expressions.md#pattern-tests) of those alternatives, `x is
 E::A | E::B` or `x is E::A(_) | E::B`, or `not x is ...`, negated, so the
 two lints never undo each other: a test of several values is a pattern
 test, not a membership, as
-[`manual_pattern_test`](Style/Comparisons.md#pattern-tests-written-out)
+[`manual_pattern_test`](Style/PatternTests.md)
 also writes it. This is Clippy's `match_like_matches_macro`, also in
 `style`, and its `redundant_pattern_matching`: `match s { Shape::Circle(_)
 => true, _ => false }` becomes `s is Shape::Circle(_)`.

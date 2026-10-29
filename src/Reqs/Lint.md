@@ -76,7 +76,7 @@ use view::Severity
 | `manual_nat` | `F0810` | `style` | `warn` | an `Int` input or output that an assumption or a guarantee keeps at least 0, as in `assume counts: n >= 0` (see [Natural numbers](Lint/Style/Naturals.md#integers-kept-at-least-0)) |
 | `manual_ordering` | `F0841` | `pedantic` | `allow` | a membership in the first or last variants of an ordered enumeration, such as `s in {Severity::Silent, Severity::Info}` (see [Orderings written out](Lint/Pedantic/Comparisons.md#orderings-written-out)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
-| `manual_pattern_test` | `F0805` | `style` | `warn` | two or more equations of one expression with values that patterns write, such as `x = 429 or x = 503`, or the disequations of its dual (see [Pattern tests written out](Lint/Style/Comparisons.md#pattern-tests-written-out)) |
+| `manual_pattern_test` | `F0805` | `style` | `warn` | two or more equations of one expression with values that patterns write, such as `x = 429 or x = 503`, or the disequations of its dual (see [Pattern tests written out](Lint/Style/PatternTests.md)) |
 | `manual_range_patterns` | `F0833` | `complexity` | `warn` | an or-pattern of integer literals and ranges that is one range, such as `1 \| 2 \| 3` (see [Ranges written as alternatives](Lint/Complexity/Patterns.md#ranges-written-as-alternatives)) |
 | `manual_record_update` | `F0818` | `style` | `warn` | a record literal that copies more fields from one value than it gives, such as `Point { x := 1, y := p.y, z := p.z }` (see [Record literals](Lint/Style/Records.md#record-literals)) |
 | `manual_rem_euclid` | `F0815` | `complexity` | `warn` | a remainder made non-negative by hand, `(a mod k + k) mod k` (see [Remainders](Lint/Complexity/Integers.md#remainders)) |
@@ -244,7 +244,7 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
   tests](Lint/Style/Comparisons.md#pattern-tests)), and `warn`. Like
   `equatable_if_let`, it rewrites only a pattern of one alternative: a test
   of several values stays a pattern test, which
-  [`manual_pattern_test`](Lint/Style/Comparisons.md#pattern-tests-written-out)
+  [`manual_pattern_test`](Lint/Style/PatternTests.md)
   writes, as Clippy never pushes `matches!(x, A | B)` toward
   `[A, B].contains(&x)`.
 - `redundant_locals`: Clippy's is in `correctness`. As for `eq_op`, Fren

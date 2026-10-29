@@ -18,6 +18,7 @@ import Impls.Lint
 import Impls.Meaning
 import Impls.Modules
 import Impls.Mutate
+import Impls.PatternTests
 import Impls.PatternTypes
 import Impls.Procedures
 import Impls.Scope

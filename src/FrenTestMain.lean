@@ -252,7 +252,7 @@ def ownSpecFiles : Array String :=
   #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/SubsetTypes", "Lang/BooleanBlocks", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Global", "Lang/Decidability",
     "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Meaning", "Lang/MeaningLaws", "Lang/Expressions", "Lang/HigherOrder", "Lang/Recursion", "Lang/ScopeLaws",
     "Lang/Modules", "Lang/Calls", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
-    "Lint/Style/Comparisons", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
+    "Lint/Style/Comparisons", "Lint/Style/PatternTests", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
     "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
     "Lint/Suspicious/Comparisons", "Lint/Suspicious/Integers", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Pedantic/Conditionals", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Generated", "Trace"].map fun r => s!"src/Reqs/{r}.md"
 
@@ -710,6 +710,9 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
     | .field _ e x => s!"(field {go e} {x.name})"
     | .match _ sc arms _ =>
       s!"(match {go sc} {arms.toList.map fun (p, g?, b) => (Mutate.idText (s.text p.span), g?.map go, go b)})"
+    | .matches _ scs arms _ =>
+      s!"(matches {list scs} {arms.toList.map fun (ps, g?, b) =>
+        (ps.toList.map fun (p : FrenCli.Pattern) => Mutate.idText (s.text p.span), g?.map go, go b)})"
     | .is _ sc p => s!"(is {go sc} {Mutate.idText (s.text p.span)})"
     | .set _ es => s!"(set {list es})"
     | .pair _ a b => s!"(pair {go a} {go b})"
