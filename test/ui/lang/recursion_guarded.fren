@@ -3,6 +3,7 @@
 pub enum T { Z, S(T) }
 pub fn guarded(t: T): Int := match t {
     T::S(x) if x = T::Z => guarded(x),   --~ error: recursive defined function `guarded` has a `match` that Lean cannot see through
+    --~^ warning: this guard only compares `x` with `T::Z`, which the arm's pattern can match
     T::S(x) => guarded(x) + 1,
     T::Z => 0,
 }

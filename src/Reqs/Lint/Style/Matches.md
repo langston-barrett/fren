@@ -356,3 +356,179 @@ pub proc match_overlapping_arm(
     expect literal_inside: when earlier is Pat::Lit(_) and meet?, contains?
 }
 ```
+
+## Arms that are `if`s
+
+`match_arm_if_else` fires on two or more arms of a `match` whose bodies,
+without parentheses, are `if C then a else d`, with one `d`, [written the
+same](../../Lint.md#written-the-same), and whose patterns are not `_` or a
+binder:
+
+```text
+match s {
+    Shape::Circle(r) => if r > k then r else 0,
+    Shape::Square(w) => if w < k then 2 * w else 0,
+    _ => 0,
+}
+```
+
+is
+
+```text
+match s { Shape::Circle(r) if r > k => r, Shape::Square(w) if w < k => 2 * w, _ => 0 }
+```
+
+With `C` as its arm's [guard](../../Lang/Expressions.md#matches), a value
+that the arm's pattern matches but `C` does not falls through to the arms
+after it, where it had the body `d`. So the lint fires only where, after
+each such arm, every arm whose pattern has a value in common with its own
+has the body `d`, written the same, and is not one of the arms that the
+fix changes. The patterns are compared by what values they may have in
+common (`Pat.overlapWit?`, as for a [table over a
+scrutinee](../../Lang/Expressions.md#tables-over-a-scrutinee)), not by
+assuming that they are disjoint: nested and range patterns can overlap.
+Where the last arm is not `_` with the body `d`, the fix adds one, so that
+a value that no later arm matches has `d` too. It fires only where the
+static rules accept the `match` after the fix, so that the `_` it adds is
+reachable, and where `d` mentions no binder of these arms' patterns: in
+the `_` arm, a name means what it means outside them. It does not fire
+on a `match` that has an arm with a guard, nor on a table over a
+scrutinee, whose arms with guards are checked to be disjoint where they
+hold. Clippy has no such lint; it is in `style`, `warn`.
+
+The fix replaces each of these arms' `=> if C then a else d` with `if C =>
+a`, and adds `, _ => d` after the last arm where it adds an arm, each part
+in parentheses where an arm's guard or body needs them (a `when`, an
+`unless`, a quantifier or a `let`). `C` is evaluated under the same
+binders in both forms, and where the arm's pattern matches, so the guards
+of definedness are kept. There is no fix where the text it replaces has
+a comment. It is reported at the first arm's body.
+
+`lint::match_arm_if_else` states when it fires, over the [model of
+patterns](#patterns-as-the-lints-see-them), where an arm's body is `if C
+then a else d`, with the values of `C`, `a` and `d`, each also its written
+form, or another expression, and two patterns may have a value in common
+where their bounds meet: of integers, the integers in their ranges; of
+variants, the same tag, and the integers of each value of the payload. It
+checks that the fix keeps the meaning, for every value of the scrutinee:
+the `match` with the conditions as guards, and with the `_` arm that it
+adds, if it adds one, takes an arm with the body's value that the first
+arm that matches had:
+
+```fren
+-- An arm's body as `match_arm_if_else` reads it: `if C then a else d`,
+-- with the value of `C`, and the values of `a` and `d`, each also its
+-- written form; or another expression, with its value.
+pub enum IfBody { IfElse(Bool, Int, Int), Plain(Int) }
+
+pub struct IfArm { pat: Pat, body: IfBody }
+
+pub fn if_value(b: IfBody): Int := match b { IfBody::IfElse(c?, a, d) => if c? then a else d, IfBody::Plain(v) => v }
+
+pub fn then_of(b: IfBody): Int := match b { IfBody::IfElse(_, a, _) => a, IfBody::Plain(v) => v }
+
+pub fn else_of(b: IfBody): Int := match b { IfBody::IfElse(_, _, d) => d, IfBody::Plain(v) => v }
+
+pub fn cond_of?(b: IfBody) := match b { IfBody::IfElse(c?, _, _) => c?, IfBody::Plain(_) => true }
+
+pub fn int_pat?(p: Pat) := p is Pat::Lit(_) | Pat::Range(_, _)
+
+pub fn variant_pat?(p: Pat) := p is Pat::Tag(_) | Pat::Variant(_, _, _)
+
+pub fn tag_of(p: Pat): Int := match p { Pat::Tag(t) => t, Pat::Variant(t, _, _) => t, _ => -1 }
+
+pub fn payload_first(p: Pat): Leaf := match p { Pat::Variant(_, l, _) => l, _ => Leaf::Wild }
+
+pub fn payload_second(p: Pat): Leaf := match p { Pat::Variant(_, _, m) => m, _ => Leaf::Wild }
+
+pub fn leaf_lower(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(lo, _) => lo, _ => Bound::Open }
+
+pub fn leaf_upper(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(_, hi) => hi, _ => Bound::Open }
+
+pub fn leaves_meet?(l: Leaf, m: Leaf) := reaches?(leaf_lower(l), leaf_upper(m)) and reaches?(leaf_lower(m), leaf_upper(l))
+
+-- Whether two patterns may have a value in common: where their bounds
+-- meet, and for variants, where they are the same.
+pub fn pats_meet?(p: Pat, q: Pat) := (p is Pat::Wild | Pat::Binder(_, _)) or (q is Pat::Wild | Pat::Binder(_, _))
+    or (int_pat?(p) and int_pat?(q) and reaches?(lower_of(p), upper_of(q)) and reaches?(lower_of(q), upper_of(p)))
+    or (variant_pat?(p) and variant_pat?(q) and tag_of(p) = tag_of(q)
+    and leaves_meet?(payload_first(p), payload_first(q)) and leaves_meet?(payload_second(p), payload_second(q)))
+
+-- Whether the fix moves the condition of arm `s` into a guard: its body is
+-- `if C then a else d`, and its pattern is not `_` or a binder.
+pub fn moved?(arms: Seq<IfArm>, s: Slot, d: Int) := pos(s) < arms.len
+    and not (arms[pos(s)].pat is Pat::Wild | Pat::Binder(_, _))
+    and arms[pos(s)].body is IfBody::IfElse(_, _, _) and else_of(arms[pos(s)].body) = d
+
+pub fn arm_matches?(arms: Seq<IfArm>, s: Slot, x: Val) := pos(s) < arms.len and pat_matches?(arms[pos(s)].pat, x)
+
+-- Whether arm `s` is the first that matches `x`, as written.
+pub fn first_arm?(arms: Seq<IfArm>, s: Slot, x: Val) := arm_matches?(arms, s, x)
+    and (forall (r: Slot), when pos(r) < pos(s), not arm_matches?(arms, r, x))
+
+-- Whether arm `s` is taken at `x` after the fix, where no earlier one is:
+-- its pattern matches, and a guard that the fix gives it holds.
+pub fn taken_fixed?(arms: Seq<IfArm>, d: Int, s: Slot, x: Val) := arm_matches?(arms, s, x)
+    and (not moved?(arms, s, d) or cond_of?(arms[pos(s)].body))
+
+pub fn first_fixed?(arms: Seq<IfArm>, d: Int, s: Slot, x: Val) := taken_fixed?(arms, d, s, x)
+    and (forall (r: Slot), when pos(r) < pos(s), not taken_fixed?(arms, d, r, x))
+
+pub fn fixed_value(arms: Seq<IfArm>, d: Int, s: Slot): Int :=
+    if moved?(arms, s, d) then then_of(arms[pos(s)].body) else if_value(arms[pos(s)].body)
+
+pub proc match_arm_if_else(
+    arms: Seq<IfArm>,        -- the arms of the `match`, which have no guards
+    d: Int,                  -- the `else` branch that the arms share
+    accepted?,               -- the static rules accept the arms after the fix
+    x: Val,                  -- a value of the scrutinee
+): (det fires?, det appended?) {
+    assume size: 1 <= arms.len <= 4
+    -- The patterns are of one type: of integers, or of an enumeration.
+    assume typed: not ((exists (s: Slot), pos(s) < arms.len and int_pat?(arms[pos(s)].pat))
+        and (exists (s: Slot), pos(s) < arms.len and variant_pat?(arms[pos(s)].pat)))
+
+    ensure rule: fires? iff ((exists (s r: Slot), s != r and moved?(arms, s, d) and moved?(arms, r, d))
+        and (forall (s r: Slot), when moved?(arms, s, d) and pos(s) < pos(r) < arms.len
+        and pats_meet?(arms[pos(s)].pat, arms[pos(r)].pat),
+        not moved?(arms, r, d) and arms[pos(r)].body = IfBody::Plain(d))
+        and accepted?)
+    -- The fix adds `_ => d` unless the last arm is one.
+    ensure appended: appended? iff not (arms[arms.len - 1].pat = Pat::Wild and arms[arms.len - 1].body = IfBody::Plain(d))
+
+    expect keeps_meaning: forall (s: Slot), when fires? and first_arm?(arms, s, x),
+        (exists (r: Slot), first_fixed?(arms, d, r, x) and fixed_value(arms, d, r) = if_value(arms[pos(s)].body))
+        or (appended? and (forall (r: Slot), not taken_fixed?(arms, d, r, x)) and d = if_value(arms[pos(s)].body))
+}
+```
+
+The refinements below check the fix on one example, which adds a `_` arm:
+
+```fren
+pub enum Gate { Open(Int), Shut(Int), Stuck }
+
+set_option fren.lint.match_arm_if_else "allow" in
+pub proc match_arm_if_else_written(g: Gate, k: Int): (det v: Int) {
+    out v := match g { Gate::Open(n) => if n > k then n else 0, Gate::Shut(n) => if n < k then 1 else 0, Gate::Stuck => 2 }
+}
+
+pub proc match_arm_if_else_fixed(g: Gate, k: Int): (det v: Int) {
+    out v := match g { Gate::Open(n) if n > k => n, Gate::Shut(n) if n < k => 1, Gate::Stuck => 2, _ => 0 }
+}
+
+expect match_arm_if_else_sound(g: lint::Gate, k: Int) {
+    use lint
+    call concrete := match_arm_if_else_fixed(g, k)
+    refines concrete match_arm_if_else_written(g, k)
+}
+expect match_arm_if_else_complete(g: lint::Gate, k: Int) {
+    use lint
+    call concrete := match_arm_if_else_written(g, k)
+    refines concrete match_arm_if_else_fixed(g, k)
+}
+```
+
+Without the condition on the later arms, a later arm that overlaps one
+of them takes the values that its condition leaves, which had `d`, as in
+`match k { 0..=5 => if b? then 1 else 0, 3..=9 => 4, _ => 0 }`, and the
+lint does not fire there.

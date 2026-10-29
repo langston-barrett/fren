@@ -1,0 +1,35 @@
+--@ args: fix --check
+-- `fren fix` fixes the lints of guards on `match` arms, and `match_arm_if_else`.
+-- fren-covers: lint::match_arm_if_else
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+proc c(s: Shape, r: Reply, k: Int): (
+    det a: Int,
+    det b: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+    det h: Int,
+    det i: Int,
+    det j: Int,
+) {
+    out a := match s { Shape::Circle(x) if true => x, _ => 0 }
+    out b := match s {
+        Shape::Circle(_) if false => 1,
+        Shape::Square(_) => 2,
+        _ => 0,
+    }
+    out d := match k { 0 => 1, 1 if false => 2, _ => 3 }
+    out e := match s { Shape::Circle(_) => 1, Shape::Empty if false => 3, _ => 2 }
+    out f := match s { Shape::Circle(x) if x = 0 => 1, Shape::Square(x) if 2 = x => x + k, _ => 2 }
+    out g := match r { Reply::Ok(t) if t = Shape::Empty => 1, Reply::Err(n) if n = -1 => n + 1, _ => 2 }
+    out h := table s { Shape::Circle(x) if x = 4 => 1, _ => 2 }
+    out i := match s { Shape::Circle(x) => if x > k then x else 0, Shape::Square(x) => if x < k then 1 else 0, Shape::Empty => 2 }
+    out j := match s {
+        Shape::Circle(x) => if x > k then x else k - 1,
+        Shape::Square(_) => if k > 0 then 1 else k - 1,
+        _ => k - 1,
+    }
+}

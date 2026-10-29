@@ -1,0 +1,16 @@
+warning[F0808]: 2 arms of this `match` are `if`s with the same `else` branch
+ --> test/cli/lints/style/f0808_match_arm_if_else.fren:6:49
+  |
+6 |     ensure r: m = match s { Shape::Circle(x) => if x > k then x else 0, Shape::Square(x) => if x < k then 1 else 0, Shape::Empty => 2 }
+  |                                                 ^^^^^^^^^^^^^^^^^^^^^^ `else 0`, as in other arms
+  |
+  = note: with each condition as its arm's guard, the values that it leaves fall through to one `_` arm with the `else` branch
+  = help: move each condition into its arm's guard, and give the `else` branch to a `_` arm
+  = help: `fren fix` can fix this
+  = note: `match_arm_if_else` is `warn` by default
+  = help: to allow it, `set_option fren.lint.match_arm_if_else "allow"`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0808`.
+exit=3

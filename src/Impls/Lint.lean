@@ -1389,6 +1389,143 @@ trusted lint::nfc_fixed: "a model of a string literal, checked by the refinement
 trusted lint::trailing_comma_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::trailing_comma_fixed: "a model of an expression, checked by the refinements in its section"
 
+/-! ### Guards -/
+
+def toBound : lint.Bound → Option Int
+  | .Open => none
+  | .At k => some k
+
+/-- A guard as `trivial_guard` reads it (`lint::Guard`). -/
+def toGuardForm : lint.Guard → Fren.Core.GuardForm
+  | .Absent => .absent
+  | .Literal b => .literal b
+  | .Other _ => .other
+
+def toGuardFix : Fren.Core.GuardFix → lint.GuardFix
+  | .unchanged => .Unchanged
+  | .dropGuard => .DropGuard
+  | .dropArm => .DropArm
+
+-- Both front ends read the guard without its parentheses, and decide with
+-- `trivialGuard`, from `matchAccepted` of the arms after the fix and
+-- whether the text it removes has a comment.
+impl trivial_guard: lint::trivial_guard for (g : lint.Guard) (m a c : Bool) {
+  guard := g,
+  matches? := m,
+  accepted? := a,
+  commented? := c,
+  fires? := (Fren.Core.trivialGuard (toGuardForm g) a c).1,
+  fix := toGuardFix (Fren.Core.trivialGuard (toGuardForm g) a c).2,
+} by
+  intro g m a c _
+  rcases g with _ | ⟨_ | _⟩ | _ <;> cases a <;> cases c <;>
+    simp [fren_spec, Fren.Core.trivialGuard, toGuardForm, toGuardFix]
+
+/-- A leaf of the model as the code's patterns write it (`lint::Leaf`). -/
+def leafToCore : lint.Leaf → Fren.Core.Pat
+  | .Wild => .wild false
+  | .Binder _ _ => .wild true
+  | .Lit k => .int (some k) (some k)
+  | .Range lo hi => .int (toBound lo) (toBound hi)
+
+/-- A pattern of the model as the code's patterns write it (`lint::Pat`). -/
+def patToCore : lint.Pat → Fren.Core.Pat
+  | .Wild => .wild false
+  | .Binder _ _ => .wild true
+  | .Lit k => .int (some k) (some k)
+  | .Range lo hi => .int (toBound lo) (toBound hi)
+  | .Tag t => .ctor t.toNat #[]
+  | .Variant t l m => .ctor t.toNat #[leafToCore l, leafToCore m]
+
+/-- The path to the binder named `n` of the model's pattern `p`, which the
+front ends find from the binder's name (`Fren.Core.guardBinderPath?`). -/
+def binderPath (p : lint.Pat) (n : Int) : Option (List Nat) :=
+  if n < 0 then none else
+  match p with
+  | .Binder k _ => if k = n then some [] else none
+  | .Variant _ l m => if lint.leaf_name l = n then some [0] else if lint.leaf_name m = n then some [1] else none
+  | _ => none
+
+def toGuardValue : lint.GuardValue → Fren.Core.GuardValue
+  | .Written c => .pattern (.int (some c) (some c))
+  | .Other _ => .other
+
+/-- The binders of a pattern have distinct names (`lint::redundant_guards`'s
+`distinct`). -/
+abbrev DistinctBinders (p : lint.Pat) : Prop := match p with
+  | .Variant _ l m => lint.leaf_name l < 0 ∨ lint.leaf_name l ≠ lint.leaf_name m
+  | _ => True
+
+-- The code's new pattern is the spec's, `pat_with`, read as the code's
+-- patterns are, wherever the guard compares a binder of the pattern with a
+-- value that a pattern writes, and nothing otherwise: the binder is found
+-- by its name, which no other binder of the pattern has.
+theorem redundantGuard_pat_with (p : lint.Pat) (n : Int) (v : lint.GuardValue) (hd : DistinctBinders p) :
+    Fren.Core.redundantGuard? (patToCore p) (binderPath p n) (toGuardValue v) =
+      if lint.binds_name? p n = true ∧ v = .Written (lint.guard_value v) then
+        some (patToCore (lint.pat_with p n (lint.guard_value v)))
+      else none := by
+  rcases v with c | c <;>
+  rcases p with _ | ⟨k, b⟩ | k | ⟨lo, hi⟩ | t | ⟨t, l, m⟩ <;>
+  simp [fren_spec, binderPath, patToCore, toGuardValue, Fren.Core.redundantGuard?, lint.binds_name?, lint.pat_with,
+    lint.guard_value, Fren.Core.Pat.replaceAt]
+  all_goals (try rcases l with _ | ⟨k1, b1⟩ | _ | _)
+  all_goals (try rcases m with _ | ⟨k2, b2⟩ | _ | _)
+  all_goals (try simp [DistinctBinders, fren_spec, lint.leaf_name] at hd)
+  all_goals (repeat' split) <;> simp_all [fren_spec, leafToCore, Fren.Core.Pat.replaceAt] <;> omega
+
+theorem redundantGuard_isSome (p : lint.Pat) (n : Int) (v : lint.GuardValue) (hd : DistinctBinders p) :
+    (Fren.Core.redundantGuard? (patToCore p) (binderPath p n) (toGuardValue v)).isSome = true ↔
+      lint.binds_name? p n = true ∧ v = .Written (lint.guard_value v) := by
+  rw [redundantGuard_pat_with p n v hd]
+  by_cases h : lint.binds_name? p n = true ∧ v = .Written (lint.guard_value v)
+  · rw [if_pos h]; simp only [Option.isSome_some, true_iff]; exact h
+  · rw [if_neg h]; simp only [Option.isSome_none, Bool.false_eq_true, false_iff]; exact h
+
+theorem redundant_guards_distinct (p : lint.Pat) (n : Int) (v : lint.GuardValue) (a : Bool) (b : lint.Body)
+    (x : lint.Val) (o : Int) (fs : Bool) (fx : lint.Pat) (h : lint.redundant_guards.assume.distinct p n v a b x o fs fx) :
+    DistinctBinders p := by
+  rcases p <;> simp_all [lint.redundant_guards.assume.distinct, fren_spec, DistinctBinders]
+
+-- Both front ends decide with `redundantGuard?`, from the path of the binder
+-- that the guard names and the value it compares it with, and
+-- `matchAccepted` of the arms with its pattern and without the guard. The
+-- new pattern is the code's, by `redundantGuard_pat_with`.
+impl redundant_guards: lint::redundant_guards for (p : lint.Pat) (n : Int) (v : lint.GuardValue) (a : Bool)
+    (b : lint.Body) (x : lint.Val) (o : Int) {
+  pattern := p,
+  name := n,
+  value := v,
+  accepted? := a,
+  body := b,
+  x := x,
+  o := o,
+  fires? := (Fren.Core.redundantGuard? (patToCore p) (binderPath p n) (toGuardValue v)).isSome && a,
+  fixed := if (Fren.Core.redundantGuard? (patToCore p) (binderPath p n) (toGuardValue v)).isSome && a
+    then lint.pat_with p n (lint.guard_value v) else p,
+} by
+  intro p n v a b x o hA
+  have hd := redundant_guards_distinct p n v a b x o _ _ hA
+  unfold lint.redundant_guards.ensures lint.redundant_guards.ensure.rule lint.redundant_guards.ensure.fix
+  refine ⟨?_, rfl⟩
+  rw [Bool.and_eq_true, redundantGuard_isSome p n v hd]
+  rcases v <;> simp [fren_spec, lint.guard_value, lint.GuardValue.Written.x0]
+
+trusted lint::trivial_guard_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::trivial_guard_fixed: "a model of an expression, checked by the refinements in its section"
+trusted lint::redundant_guards_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::redundant_guards_fixed: "a model of an expression, checked by the refinements in its section"
+
+-- `match_arm_if_else` decides which arms overlap with `Pat.overlapWit?`,
+-- whose agreement with the model's `pats_meet?` is not proved: it is proved
+-- for patterns of one value (`lang::pattern_overlap`), not for the lints'
+-- model, whose variants have two; the front ends' reading of the arms is
+-- tested.
+tested lint::match_arm_if_else: "test/ui/lints/guards.fren", "test/cli/fix/guards.fren",
+  "test/cli/lints/style/f0808_match_arm_if_else.fren"
+trusted lint::match_arm_if_else_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::match_arm_if_else_fixed: "a model of an expression, checked by the refinements in its section"
+
 -- The models of the expressions that the refinements of `match_like_membership`,
 -- `is_equality`, `manual_pattern_test`, `irrefutable_is`, `chainable_comparison`, and of `int_plus_one`
 -- and `contradictory_comparisons` in chains, compare.

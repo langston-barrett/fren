@@ -82,6 +82,7 @@ use view::Severity
 | `manual_rem_euclid` | `F0815` | `complexity` | `warn` | a remainder made non-negative by hand, `(a mod k + k) mod k` (see [Remainders](Lint/Complexity/Integers.md#remainders)) |
 | `manual_table` | `F0838` | `pedantic` | `allow` | a chain of `if` of two or more tests that are not variant tests of one scrutinee, which a table writes (see [Chains of conditions](Lint/Pedantic/Matches.md#chains-of-conditions)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a procedure, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
+| `match_arm_if_else` | `F0808` | `style` | `warn` | two or more `match` arms whose bodies are `if`s with the same `else` branch, such as `E::A(x) => if x > 0 then x else 0` (see [Arms that are `if`s](Lint/Style/Matches.md#arms-that-are-ifs)) |
 | `match_bool` | `F0837` | `pedantic` | `allow` | a `match` on a `Bool` of `true` and `false`, or of one of them and `_` (see [Matches on a `Bool`](Lint/Pedantic/Matches.md#matches-on-a-bool)) |
 | `match_could_be_table` | `F0809` | `pedantic` | `allow` | a `match` without guards whose arms are disjoint, which a table over a scrutinee writes (see [Matches that could be tables](Lint/Pedantic/Matches.md#matches-that-could-be-tables)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
@@ -111,6 +112,7 @@ use view::Severity
 | `redundant_bindings` | `F0735` | `style` | `warn` | a field `x := x` of a record literal, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in the parameter `ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Redundant comparisons](Lint/Complexity/Comparisons.md#redundant-comparisons)) |
+| `redundant_guards` | `F0807` | `complexity` | `warn` | a guard that compares a binder of its arm's pattern with a literal or a variant without a payload, such as `Shape::Circle(r) if r = 0` (see [Redundant guards](Lint/Complexity/Matches.md#redundant-guards)) |
 | `redundant_locals` | `F0825` | `suspicious` | `warn` | a definition `x! := x` of a `let` or `where` clause (see [Redundant definitions](Lint/Suspicious.md#redundant-definitions)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity/Methods.md#chains-of-methods)) |
 | `redundant_newtype_roundtrip` | `F0842` | `complexity` | `warn` | a newtype built from the field of one, `Ms(x.0)`, or the field of one just built, `Ms(n).0` (see [Newtypes](Lint/Complexity.md#newtypes)) |
@@ -125,6 +127,7 @@ use view::Severity
 | `suspicious_unary_op_formatting` | `F0762` | `suspicious` | `warn` | a binary operator directly followed by a negation and then whitespace, such as `x >=- 1` (see [Negations after operators](Lint/Suspicious.md#negations-after-operators)) |
 | `too_many_lines` | `F0797` | `pedantic` | `allow` | a procedure or defined function of more than 100 lines (see [Long items](Lint/Pedantic.md#long-items)) |
 | `trivial_cover` | `F0820` | `suspicious` | `warn` | a cover goal that has a trigger, or is written the same as an assumption or a guarantee (see [Cover goals](Lint/Suspicious.md#cover-goals)) |
+| `trivial_guard` | `F0806` | `complexity` | `warn` | a guard of a `match` arm that is the literal `true` or `false` (see [Trivial guards](Lint/Complexity/Matches.md#trivial-guards)) |
 | `trivial_match` | `F0747` | `complexity` | `warn` | a `match` of one arm that binds nothing, such as `match x { _ => e }` (see [Trivial matches](Lint/Complexity/Matches.md#trivial-matches)) |
 | `trivial_pattern` | `F0744` | `style` | `warn` | `s.matches?(p)`, where `p` is a string, with `.*` or not at either end (see [Trivial patterns](Lint/Style.md#trivial-patterns)) |
 | `trivial_quantifier` | `F0827` | `complexity` | `warn` | a quantifier with a bound name whose type has one value (see [Trivial quantifiers](Lint/Complexity.md#trivial-quantifiers)) |
@@ -501,7 +504,7 @@ or in a flag, suggests the name of a lint or a group when one is close:
 the closest, at most a third of the name's length away in edit distance,
 or else one of at least three characters that the name starts with, or
 that starts with the name. Of several such names, it is the first by name,
-so that `manual` suggests `manual_abs`, and `match` suggests `match_bool`.
+so that `manual` suggests `manual_abs`, and `match` suggests `match_arm_if_else`.
 
 A lint that was renamed is unknown by its old name, and the `fren` command's
 error names the new one: `case_split_reqs` is now `case_split_guarantees`,
@@ -620,6 +623,7 @@ what the spec means:
 | `manual_range_patterns` | replaces the or-pattern with the range |
 | `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
 | `manual_rem_euclid` | replaces `(a mod k + k) mod k` with `a mod k` |
+| `match_arm_if_else` | moves each condition into its arm's guard, and adds `_ => d`, with the `else` branch `d`, where the last arm is not one |
 | `match_bool` | replaces the `match` with `if c? then a else b` |
 | `match_could_be_table` | writes `table` in place of `match` |
 | `match_like_membership` | replaces the `match` with an equation, `x = E::A`, or a pattern test, `x is E::A \| E::B`, as the message suggests |
@@ -638,6 +642,7 @@ what the spec means:
 | `redundant_bindings` | replaces `x := x` with `x`, and removes a field `x := r.x` of an update of `r`, with a comma |
 | `redundant_bool_type` | removes the `: Bool` |
 | `redundant_comparisons` | replaces the two comparisons with the one that implies the other, under `and`, or the one that the other implies, under `or` |
+| `redundant_guards` | writes the value in place of the binder in the pattern, and of its mentions in the body, and removes the guard |
 | `redundant_method_chain` | replaces the chain with its shorter form |
 | `redundant_newtype_roundtrip` | replaces `Ms(x.0)` with `x`, and `Ms(n).0` with `n` |
 | `redundant_slicing` | replaces the slice with its receiver |
@@ -645,6 +650,7 @@ what the spec means:
 | `single_match_else` | replaces the `match` with `if x = E::A then a else b`, or with `x in {...}` or `x is P` as the test, as the message suggests |
 | `singleton_membership` | replaces `x in {a}` with `x = a` |
 | `suspicious_unary_op_formatting` | moves the whitespace after the `-` to before it: `x >=- 1` becomes `x >= -1` |
+| `trivial_guard` | removes the guard `true`, or the arm whose guard is `false` |
 | `trivial_match` | replaces the `match` with its arm's body |
 | `trivial_pattern` | replaces `s.matches?(p)` with an equation or a call of `starts_with?`, `ends_with?` or `contains?` |
 | `trivial_quantifier` | replaces the quantifier with its body, with the value of each bound name in place of its mentions |

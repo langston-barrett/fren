@@ -1,0 +1,7 @@
+-- A guard that compares a binder with a variant, whose body mentions it.
+enum Shape { Circle(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+fn area(s: Shape): Int := match s { Shape::Circle(x) => x, Shape::Empty => 0 }
+
+proc c(q: Reply): (m: Int) { ensure r: m = match q { Reply::Ok(t) if t = Shape::Empty => area(t), _ => 2 } }
