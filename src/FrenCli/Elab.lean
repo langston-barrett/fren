@@ -2966,15 +2966,18 @@ def lintArmIfElse (cx : ExprCtx) (e : Expr) (sigs : Fren.Core.Sigs) (pty : Fren.
   let .match _ _ arms false := e | return
   if arms.any (·.2.1.isSome) then return
   let src := (← get).src
-  let mut infos : Array Fren.Core.IfArmInfo := #[]
+  let mut infos : Array (Fren.Core.IfArmInfo String) := #[]
+  let mut binders : Array (Array String) := #[]
   for (p, _, body) in arms, q in pats do
-    let else? := match body with
-      | .ite _ _ _ d => some (d.text src).text
-      | _ => none
-    let binders := (← patternBinders cx p).map binderName
-    infos := infos.push { wild := q matches .wild _, else?, body := (body.text src).text
-                          elseMentionsBinder := else?.any fun d => binders.any (Fren.Core.mentionsName d ·) }
-  let some (group, d, append) := Fren.Core.matchArmIfElse? infos fun i j => (pats[i]!.overlapWit? sigs pty pats[j]!).isSome
+    let armBody : Fren.Core.IfArmBody String := match body with
+      | .ite _ _ _ d => .ifElse (d.text src).text
+      | _ => .plain (body.text src).text
+    binders := binders.push ((← patternBinders cx p).map binderName)
+    infos := infos.push { wild := q matches .wild _, body := armBody }
+  -- `d` names a binder of arm `j`'s pattern.
+  let mentions (d : String) (j : Nat) : Bool := binders[j]!.any (Fren.Core.mentionsName d ·)
+  let overlap (i j : Nat) : Bool := (pats[i]!.overlapWit? sigs pty pats[j]!).isSome
+  let some (group, d, append) := Fren.Core.matchArmIfElse? Fren.Core.writtenSame mentions overlap infos.toList
     | return
   let guarded := (Array.range arms.size).map group.contains
   let (pats', guarded') := if append then (pats.push (.wild false), guarded.push false) else (pats, guarded)

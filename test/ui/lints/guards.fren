@@ -1,5 +1,4 @@
 -- The lints of guards on `match` arms, in both front ends.
--- fren-covers: lint::match_arm_if_else
 
 enum Shape { Circle(Int), Square(Int), Empty }
 enum Reply { Ok(Shape), Err(Int) }
@@ -81,7 +80,7 @@ proc redundant(s: Shape, r: Reply, k: Int, n: Nat, w: String, b?): (
 }
 
 -- `match_arm_if_else`.
-proc if_else(s: Shape, k: Int, b?): (
+proc if_else(s: Shape, k: Int, j: Int, b?): (
     det a: Int,
     det b: Int,
     det c: Int,
@@ -89,6 +88,8 @@ proc if_else(s: Shape, k: Int, b?): (
     det e: Int,
     det f: Int,
     det g: Int,
+    det h: Int,
+    det i: Int,
 ) {
     out a := match s {
         Shape::Circle(r) => if r > k then r else 0,
@@ -110,4 +111,9 @@ proc if_else(s: Shape, k: Int, b?): (
     out f := match s { Shape::Circle(r) => if b? then r else 0, _ => 0 }
     -- The arms already have guards.
     out g := match s { Shape::Circle(r) if r > 0 => if b? then r else 0, Shape::Square(w) => if b? then w else 0, _ => 0 }
+    -- A later arm that the values the conditions leave reach binds the name
+    -- that the `else` branch mentions, so there `j` is the binder.
+    out h := match k { 0..=5 => if b? then 1 else j, 6..=9 => if b? then 2 else j, j! => j }
+    -- The same, where the binder is in a payload.
+    out i := match s { Shape::Circle(0) => if b? then 1 else k, Shape::Square(0) => if b? then 2 else k, Shape::Circle(k!) => k, _ => k }
 }

@@ -1,5 +1,4 @@
 -- Two arms that are `if`s with the same `else` branch, and no `_` arm.
--- fren-covers: lint::match_arm_if_else
 enum Shape { Circle(Int), Square(Int), Empty }
 
 proc c(s: Shape, k: Int): (m: Int) {

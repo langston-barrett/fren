@@ -1,0 +1,13 @@
+-- `redundant_guards` on a variant that a `use` brings into scope: the fix
+-- writes it as it resolves, in the pattern and in the body.
+enum Shape { Circle(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+use Shape::{Circle, Empty}
+
+fn area(s: Shape): Int := match s { Circle(x) => x, Empty => 0 }
+
+proc uses(r: Reply): (det a: Int) {
+    out a := match r { Reply::Ok(t) if t = Empty => area(t), _ => 2 }
+    --~^ warning: this guard only compares `t` with `Empty`, which the arm's pattern can match
+}

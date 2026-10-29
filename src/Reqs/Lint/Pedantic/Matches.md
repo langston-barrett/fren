@@ -412,10 +412,6 @@ did:
 ```fren
 pub fn variant_tag(p: Pat): Int := match p { Pat::Variant(t, _, _) => t, _ => 0 }
 
-pub fn first_leaf(p: Pat): Leaf := match p { Pat::Variant(_, l, _) => l, _ => Leaf::Wild }
-
-pub fn second_leaf(p: Pat): Leaf := match p { Pat::Variant(_, _, m) => m, _ => Leaf::Wild }
-
 pub proc unnested_or_patterns(first: Pat, second: Pat, x: Val): (det fires?) {
     -- they name the same variant
     det let same_variant? := first is Pat::Variant(_, _, _) and second is Pat::Variant(_, _, _)
@@ -536,30 +532,11 @@ fine as it is; Clippy has no such lint. A `match` of one arm is left to
 
 `lint::match_could_be_table` states when it fires, over the [model of
 patterns](../Style/Matches.md#patterns-as-the-lints-see-them), where two
-patterns may overlap where their bounds meet, and for variants where
-their tags are the same, and checks that where it fires, no value of the
+patterns may overlap as [`overlap?`](../Style/Matches.md#overlapping-arms)
+says, and checks that where it fires, no value of the
 scrutinee matches two arms but through the otherwise:
 
 ```fren
-pub fn leaf_min(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(lo, _) => lo, _ => Bound::Open }
-
-pub fn leaf_max(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(_, hi) => hi, _ => Bound::Open }
-
-pub fn integers_pattern?(p: Pat) := p is Pat::Lit(_) | Pat::Range(_, _)
-
-pub fn variants_pattern?(p: Pat) := p is Pat::Tag(_) | Pat::Variant(_, _, _)
-
-pub fn pattern_tag(p: Pat): Int := match p { Pat::Tag(t) => t, Pat::Variant(t, _, _) => t, _ => -1 }
-
-pub fn leaves_overlap?(l: Leaf, m: Leaf) := reaches?(leaf_min(l), leaf_max(m)) and reaches?(leaf_min(m), leaf_max(l))
-
--- Whether two patterns may match a value in common.
-pub fn overlap?(p: Pat, q: Pat) := (p is Pat::Wild | Pat::Binder(_, _)) or (q is Pat::Wild | Pat::Binder(_, _))
-    or (integers_pattern?(p) and integers_pattern?(q) and reaches?(lower_of(p), upper_of(q))
-    and reaches?(lower_of(q), upper_of(p)))
-    or (variants_pattern?(p) and variants_pattern?(q) and pattern_tag(p) = pattern_tag(q)
-    and leaves_overlap?(first_leaf(p), first_leaf(q)) and leaves_overlap?(second_leaf(p), second_leaf(q)))
-
 pub proc match_could_be_table(
     arms: Seq<Pat>,          -- the patterns of the arms, in order
     guarded?,                -- some arm has a guard

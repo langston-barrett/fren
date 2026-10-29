@@ -143,10 +143,35 @@ pub proc trivial_guard(
 }
 ```
 
+`lint::trivial_guard_dropped` checks the fix of `false` in a `match`:
+at every value of the scrutinee, the arm taken, the first whose pattern
+matches and whose guard holds (`lang::guarded_match`), is the one taken
+without an arm whose guard is `false`, for every `match` of up to four
+arms:
+
+```fren
+-- An arm at a value of the scrutinee: whether its pattern matches it, and
+-- its guard.
+pub struct ArmGuard { matches?, guard: Guard }
+
+pub fn taken_at?(arms: Seq<ArmGuard>, s: Slot) := pos(s) < arms.len
+    and arm_at(arms[pos(s)].matches?, arms[pos(s)].guard) = lang::ArmAt::Taken
+
+-- Whether arm `s` is the arm taken, of the arms but `k` where `skip?`.
+pub fn first_taken?(arms: Seq<ArmGuard>, s: Slot, k: Slot, skip?) := taken_at?(arms, s) and not (skip? and s = k)
+    and (forall (r: Slot), when pos(r) < pos(s) and not (skip? and r = k), not taken_at?(arms, r))
+
+proc trivial_guard_dropped(arms: Seq<ArmGuard>, k: Slot) {
+    assume size: arms.len <= 4
+    assume dropped: pos(k) < arms.len and arms[pos(k)].guard = Guard::Literal(false)
+
+    expect same_arm: forall (s: Slot), first_taken?(arms, s, k, false) iff first_taken?(arms, s, k, true)
+}
+```
+
 The refinements below check the fix of `true` on one example. An
 example of `false` would fail the reachability check, whose finding the
-lint repeats; `drop_arm`, with `lang::guarded_match`'s `falls_through`,
-is that fix's claim:
+lint repeats, so `lint::trivial_guard_dropped` is that fix's claim:
 
 ```fren
 pub enum Mode { Idle, Run(Int), Halt }
@@ -281,17 +306,17 @@ The refinements below check the fix on one example, with a literal, a
 variant, and a body that mentions the binder:
 
 ```fren
-pub enum Reading { Low, High }
-pub enum Probe { Read(Reading, Int), Off }
+pub enum Strength { Low, High }
+pub enum Probe { Read(Strength, Int), Off }
 
 set_option fren.lint.redundant_guards "allow" in
 pub proc redundant_guards_written(p: Probe, k: Int): (det v: Int, det w: Int) {
-    out v := match p { Probe::Read(_, n) if n = 0 => 1, Probe::Read(l, n) if l = Reading::High => n + k, _ => 0 }
+    out v := match p { Probe::Read(_, n) if n = 0 => 1, Probe::Read(l, n) if l = Strength::High => n + k, _ => 0 }
     out w := match k { j if j = -3 => j + 1, _ => 2 }
 }
 
 pub proc redundant_guards_fixed(p: Probe, k: Int): (det v: Int, det w: Int) {
-    out v := match p { Probe::Read(_, 0) => 1, Probe::Read(Reading::High, n) => n + k, _ => 0 }
+    out v := match p { Probe::Read(_, 0) => 1, Probe::Read(Strength::High, n) => n + k, _ => 0 }
     out w := match k { -3 => (-3) + 1, _ => 2 }
 }
 

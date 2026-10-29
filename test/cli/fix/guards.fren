@@ -1,6 +1,5 @@
 --@ args: fix --check
 -- `fren fix` fixes the lints of guards on `match` arms, and `match_arm_if_else`.
--- fren-covers: lint::match_arm_if_else
 enum Shape { Circle(Int), Square(Int), Empty }
 enum Reply { Ok(Shape), Err(Int) }
 

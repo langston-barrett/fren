@@ -2409,14 +2409,17 @@ def lintArmIfElse (cx : ExprCtx) (e : Syntax) (sigs : Core.Sigs) (pty : Core.Pat
   unless e.isOfKind ``Lang.matchExpr do return
   let arms := e[3].getSepArgs
   if arms.any (!·[1].isNone) then return
-  let mut infos : Array Core.IfArmInfo := #[]
+  let mut infos : Array (Core.IfArmInfo String) := #[]
+  let mut binders : Array (Array String) := #[]
   for arm in arms, p in pats do
     let body := unparen arm[3]
-    let else? := if isIte body then some (exactText body[5]) else none
-    let binders := (← topBinders cx arm[0]).map binderName
-    infos := infos.push { wild := p matches .wild _, else?, body := exactText arm[3]
-                          elseMentionsBinder := else?.any fun d => binders.any (Core.mentionsName d ·) }
-  let some (group, d, append) := Core.matchArmIfElse? infos fun i j => (pats[i]!.overlapWit? sigs pty pats[j]!).isSome
+    let armBody : Core.IfArmBody String := if isIte body then .ifElse (exactText body[5]) else .plain (exactText arm[3])
+    binders := binders.push ((← topBinders cx arm[0]).map binderName)
+    infos := infos.push { wild := p matches .wild _, body := armBody }
+  -- `d` names a binder of arm `j`'s pattern.
+  let mentions (d : String) (j : Nat) : Bool := binders[j]!.any (Core.mentionsName d ·)
+  let overlap (i j : Nat) : Bool := (pats[i]!.overlapWit? sigs pty pats[j]!).isSome
+  let some (group, d, append) := Core.matchArmIfElse? Core.writtenSame mentions overlap infos.toList
     | return
   let guarded := (Array.range arms.size).map group.contains
   let (pats', guarded') := if append then (pats.push (.wild false), guarded.push false) else (pats, guarded)

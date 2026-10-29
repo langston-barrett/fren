@@ -2632,10 +2632,7 @@ those that have a guard are `guarded`: what the lints that change its
 arms' guards ask of their fixes (`lang::match_arms`,
 `Reqs/Lang/Expressions#tables-over-a-scrutinee`). -/
 def matchAccepted (sigs : Sigs) (ty : PatTy) (pats : Array Pat) (guarded : Array Bool) (table : Bool) : Bool :=
-  if table then
-    (rowAfterWild? ((pats.zip guarded).map fun (p, g) => p matches .wild false && !g)).isNone &&
-      (checkTableArms sigs ty pats guarded).toBool
-  else (checkMatch sigs ty pats guarded).toBool
+  if table then acceptedAsTable sigs ty pats guarded else (checkMatch sigs ty pats guarded).toBool
 
 /-- A guard of a `match` arm as `trivial_guard` reads it, without the
 parentheses around it (`lint::Guard`): none, the literal `true` or `false`,
@@ -2782,43 +2779,73 @@ def redundantGuardsMsg (x value : String) (fixed? : Option String) (why? : Optio
     notes := why?.toArray
     fixes := fixed?.toArray.map fun r => { msg := s!"match `{value}` in the pattern, in place of `{x}`", replacement := r } }
 
-/-- An arm of a `match` as `match_arm_if_else` reads it
-(`lint::IfArm`). -/
-structure IfArmInfo where
-  /-- Its pattern is `_` or a binder. -/
-  wild : Bool
-  /-- Its body, without parentheses, is `if C then a else d`: `d`, as
-  written. -/
-  else? : Option String
-  /-- `d` mentions a binder of its pattern (`mentionsName`). -/
-  elseMentionsBinder : Bool
-  /-- Its body, as written. -/
-  body : String
+/-- An arm's body as `match_arm_if_else` reads it, over written forms
+`β` (`lint::IfBody`): without parentheses, `if C then a else d`, with `d`,
+or another expression. -/
+inductive IfArmBody (β : Type) where
+  | ifElse (d : β)
+  | plain (b : β)
   deriving Inhabited
 
+/-- An arm of a `match` as `match_arm_if_else` reads it
+(`lint::IfArm`). -/
+structure IfArmInfo (β : Type) where
+  /-- Its pattern is `_` or a binder. -/
+  wild : Bool
+  body : IfArmBody β
+  deriving Inhabited
+
+/-- Whether `match_arm_if_else` moves the condition of the arm `a` into a
+guard, where the `else` branch is `d` (`lint::moved?`): its body is `if C
+then a else d`, and its pattern is not `_` or a binder. -/
+def IfArmInfo.moved {β} (same : β → β → Bool) (d : β) (a : IfArmInfo β) : Bool :=
+  !a.wild && match a.body with | .ifElse e => same e d | .plain _ => false
+
+/-- Whether the body of the arm `a` is `d`, but not an `if`. -/
+def IfArmInfo.plainIs {β} (same : β → β → Bool) (d : β) (a : IfArmInfo β) : Bool :=
+  match a.body with | .plain b => same b d | .ifElse _ => false
+
+/-- Whether `match_arm_if_else`'s fix adds `_ => d` after the arms `arms`:
+unless the last is `_` or a binder with the body `d`, not as an `if`
+(`lint::match_arm_if_else`'s `appended`). -/
+def matchArmIfElseAppends {β} (same : β → β → Bool) (arms : List (IfArmInfo β)) (d : β) : Bool :=
+  !(arms.getLast?.any fun a => a.wild && a.plainIs same d)
+
 /-- What `match_arm_if_else` does with the arms `arms` of a `match` without
-guards, where `overlap i j` says that the patterns of arms `i` and `j`
-have a value in common (`Pat.overlapWit?`), if it fires
-(`lint::match_arm_if_else`): the arms whose body is `if C then a else d`
-with one `d`, written the same, that mentions none of their binders, two
-or more, whose patterns are not `_` or a binder, and after each of which
-every arm whose pattern overlaps its own has the body `d`, and is not one
-of them; and whether the fix adds a `_` arm, where the last arm is not
-`_` with the body `d`. The front ends also ask that the static rules
-accept the arms with the fix (`matchAccepted`). -/
-def matchArmIfElse? (arms : Array IfArmInfo) (overlap : Nat → Nat → Bool) : Option (Array Nat × String × Bool) := do
-  let cands := (Array.range arms.size).filter fun i => !arms[i]!.wild && arms[i]!.else?.isSome && !arms[i]!.elseMentionsBinder
-  let groupOf (d : String) := cands.filter fun i => (arms[i]!.else?.map (writtenSame · d)).getD false
-  let d ← cands.findSome? fun i => arms[i]!.else?.bind fun d => if (groupOf d).size ≥ 2 then some d else none
-  let group := groupOf d
-  -- The arms with `d`, but for one that mentions a binder of its own.
-  guard <| (Array.range arms.size).all fun i =>
-    !(!arms[i]!.wild && (arms[i]!.else?.map (writtenSame · d)).getD false) || group.contains i
-  guard <| group.all fun i => ((List.range arms.size).filter (· > i)).all fun j =>
-    !overlap i j || (!group.contains j && writtenSame arms[j]!.body d)
-  let last? := arms.back?
-  let append := !(last?.any fun a => a.wild && a.else?.isNone && writtenSame a.body d)
-  return (group, d, append)
+guards, where the arms whose bodies are `if C then a else d` share the
+`else` branch `d`, if it fires (`lint::match_arm_if_else`): the arms whose
+conditions it moves into guards, and whether it adds a `_` arm. `same`
+says that two bodies are written the same, `mentions d j` that `d`
+mentions a binder of arm `j`'s pattern, and `overlap i j` that the
+patterns of arms `i` and `j` may have a value in common
+(`Pat.overlapWit?`). It fires where it moves two or more arms, `d`
+mentions a binder of none of them, and after each, every arm whose
+pattern overlaps its own has the body `d`, not as an `if`, and `d`
+mentions none of its binders: the values that the arm's condition leaves
+reach those arms, and the `_` arm, where `d` must mean what it meant in the
+arm. It adds `_ => d` unless the last arm is `_` or a binder with the body
+`d`. The front ends also ask that the static rules accept the arms with
+the fix (`matchAccepted`). -/
+def matchArmIfElseFor {β} (same : β → β → Bool) (mentions : β → Nat → Bool) (overlap : Nat → Nat → Bool)
+    (arms : List (IfArmInfo β)) (d : β) : Option (List Nat × Bool) :=
+  let moved (i : Nat) : Bool := (arms[i]?.map (·.moved same d)).getD false
+  let ix := List.range arms.length
+  let fires := ix.any (fun i => ix.any fun j => decide (i < j) && moved i && moved j) &&
+    ix.all (fun i => !moved i || !mentions d i) &&
+    ix.all (fun i => !moved i || ix.all fun j =>
+      !decide (i < j) || !overlap i j || ((arms[j]?.map (·.plainIs same d)).getD false && !mentions d j))
+  if fires then some (ix.filter moved, matchArmIfElseAppends same arms d) else none
+
+/-- `match_arm_if_else` on the arms `arms`, as `matchArmIfElseFor`, with
+the first `else` branch, of an arm whose pattern is not `_` or a binder,
+for which it fires, if any: the arms that it changes, their `else`
+branch, and whether it adds a `_` arm. -/
+def matchArmIfElse? {β} (same : β → β → Bool) (mentions : β → Nat → Bool) (overlap : Nat → Nat → Bool)
+    (arms : List (IfArmInfo β)) : Option (Array Nat × β × Bool) :=
+  arms.findSome? fun a => match a with
+    | { wild := false, body := .ifElse d } =>
+      (matchArmIfElseFor same mentions overlap arms d).map fun (g, ap) => (g.toArray, d, ap)
+    | _ => none
 
 /-- `match_arm_if_else` on `n` arms whose `else` branch is `d`; the fix
 is a set of edits, which it does not make where the text they replace
