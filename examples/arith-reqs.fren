@@ -1,0 +1,79 @@
+-- Requirements for constant folding with one variable, whose value is rho.
+-- These are relations on actual expression layers, not verdict flags.
+-- The executable model checks the local cases; Arith.lean must lift them
+-- to recursive trees and prove preservation for every rho, preservation of
+-- variable occurrence, absence of constant-addition redexes, and idempotence.
+mod arith_requirements
+
+enum Layer<E> { Val(Int), Var, Add(E, E) }
+
+fn value(e: Layer<Int>, rho: Int): Int := match e {
+    Layer::Val(n) => n,
+    Layer::Var => rho,
+    Layer::Add(a, b) => a + b,
+}
+
+fn uses_var?(e: Layer<Bool>) := match e {
+    Layer::Val(_) => false,
+    Layer::Var => true,
+    Layer::Add(a?, b?) => a? or b?,
+}
+
+-- An allowed folding step. Rebuilt operands stand for an arbitrary roll;
+-- only two literal children permit replacing the Add node by a literal.
+fn step?<T>(a: Layer<T>, b: Layer<T>, left: T, right: T, result: Layer<T>) := match a {
+    Layer::Val(n) => match b {
+        Layer::Val(m) => result = Layer::Val(n + m),
+        _ => result = Layer::Add(left, right),
+    },
+    _ => result = Layer::Add(left, right),
+}
+
+proc semantics(a: Layer<Int>, b: Layer<Int>, rho: Int, result: Layer<Int>) {
+    assume step: step?(a, b, value(a, rho), value(b, rho), result)
+    expect preserves_value: value(result, rho) = value(a, rho) + value(b, rho)
+}
+
+proc literals(n: Int, m: Int, left: Int, right: Int, result: Layer<Int>) {
+    assume step: step?(Layer::Val(n), Layer::Val(m), left, right, result)
+    expect collapses: result = Layer::Val(n + m)
+}
+
+proc residual(a: Layer<Int>, b: Layer<Int>, left: Int, right: Int, result: Layer<Int>) {
+    assume normal: not (a is Layer::Val(_) and b is Layer::Val(_))
+    assume step: step?(a, b, left, right, result)
+    expect preserves_structure: result = Layer::Add(left, right)
+}
+
+proc dynamic_operand(a: Layer<Int>, b: Layer<Int>, left: Int, right: Int, result: Layer<Int>) {
+    assume dynamic: a = Layer::Var or b = Layer::Var
+    assume step: step?(a, b, left, right, result)
+    expect stays_dynamic: not result is Layer::Val(_)
+}
+
+proc occurrence(a: Layer<Bool>, b: Layer<Bool>, result: Layer<Bool>) {
+    assume step: step?(a, b, uses_var?(a), uses_var?(b), result)
+    expect preserves_variable: uses_var?(result) iff (uses_var?(a) or uses_var?(b))
+}
+
+-- The same residual syntax must work at different variable values.
+proc environments(rho: Int, sigma: Int, n: Int) {
+    expect variable_changes: value(Layer::Var, rho) - value(Layer::Var, sigma) = rho - sigma
+    expect literal_fixed: value(Layer::Val(n), rho) = value(Layer::Val(n), sigma)
+}
+
+-- The recursive implementation must remain the spec's own recursive Expr,
+-- eval and fold, using Hoare induction for fold's contract. The layer model
+-- above is independent of that representation: map children to evaluated
+-- values or occurrence bits to relate the actual declarations to it.
+-- A fold result is independent of rho, so its single syntax tree must satisfy
+-- the value contract for every rho; evaluating then substituting a literal
+-- for Var is not a valid implementation. Lean additionally proves occurrence
+-- preservation, normalization, and idempotence for all recursive expressions.
+
+-- The current recursive Hoare checker proves a scalar environment contract.
+-- The recursive fold may carry rho solely as a proof parameter, forwarding
+-- it unchanged to recursive calls and never inspecting it. In that form
+-- Lean must prove fold(e, rho) = fold(e, sigma) for all environments, and
+-- eval(fold(e, rho), sigma) = eval(e, sigma). Thus a single residual tree,
+-- including every Var, works for all environments despite the proof parameter.
