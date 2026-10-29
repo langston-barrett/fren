@@ -365,3 +365,31 @@ copying that witness's output into any typed environment proves the usual
 completion property too. Definedness similarly uses its actual place:
 a distributed leaf excludes its owner and descendant clauses, so its proof
 cannot assume the invariant or conjunction it is checking.
+
+## Refinement members in expectation blocks
+
+A `refines` member uses the positional result and argument mappings of
+[Refinement](Refinement.md#refinement-in-expectation-blocks). Its ordinary
+expectation includes every required subset invariant, including inherited
+invariants and constraints nested in fields or element types, together
+with the specification's guarantees and public result definitions. Those
+required invariants are conclusions, never assumptions about the concrete
+call's result. Merely sharing a base type does not establish them. The
+member remains the ordinary refinement expectation; it does not restore
+the removed standalone `refine` declaration or its name-based mappings.
+
+The following law represents two independent required invariant domains
+and the specification guarantee over actual integer results. Either
+missing invariant invalidates the claim even if the guarantee holds.
+
+```fren
+pub proc refinement_subset_domain(first: Set<Int>, second: Set<Int>,
+    guarantees: Set<Int>, candidate: Int): (det accepted?) {
+    ensure complete_domain: accepted? iff candidate in first inter second inter guarantees
+    expect first_required: when candidate in second inter guarantees and not candidate in first, not accepted?
+    expect second_required: when candidate in first inter guarantees and not candidate in second, not accepted?
+    expect guarantee_required: when candidate in first inter second and not candidate in guarantees, not accepted?
+    cover first_only_missing: candidate in second inter guarantees and not candidate in first
+    cover second_only_missing: candidate in first inter guarantees and not candidate in second
+}
+```

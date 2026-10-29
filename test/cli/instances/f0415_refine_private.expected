@@ -1,13 +1,13 @@
-error[F0415]: `hidden` is private to `precise`
- --> test/cli/instances/f0415_refine_private.fren:5:43
+error[F0403]: `c.hidden` is private to call `c`
+ --> test/cli/instances/f0415_refine_private.fren:6:21
   |
-5 | refine fits: precise refines rough { z := hidden }
-  |                                           ^^^^^^ private
+6 |     refines c rough(c.hidden)
+  |                     ^^^^^^^^ private
   |
-  = note: a refinement's bindings see only the parameters and results of `precise`
-  = help: to mention it, make it a result of `precise`
+  = note: only the parameters and results of a call can be mentioned
+  = help: to mention it, make it a result of the called procedure
 
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0415`.
+For more information about this error, try `fren --explain F0403`.
 exit=2

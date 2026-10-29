@@ -1,4 +1,7 @@
--- A refinement whose concrete component lacks an output of the abstract one.
+-- Result types flow from the implementation to the specification.
 proc precise(x: Int): (y: Int) { ensure r: y = x }
-proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough
+proc rough(x: Int): (z: Nat) { ensure r: z >= x }
+expect fits(x: Int) {
+    call c := precise(x)
+    refines c rough(x)
+}

@@ -290,10 +290,18 @@ pub proc first_segment(
 -- an abstract type, as `declared != []`, is not in Lean: so `len`.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
-refine first_resolve: first_segment refines resolve_layers {
-    local? := declared.len > 0,
-    n_glob := opened.len,
-    prelude? := prelude.len > 0,
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.absurd_extreme_comparisons "allow" in
+expect first_resolve(declared: Seq<modules::Path>, opened: Seq<modules::Path>, prelude: Seq<modules::Path>) {
+    use modules
+    assume spec_counted: ((opened).len) >= 0
+    call concrete := first_segment(declared, opened, prelude)
+    expect local_wins: when ((declared).len > 0), (concrete.result) = modules::Resolution::Local
+    expect glob: unless ((declared).len > 0), when ((opened).len) = 1, (concrete.result) = modules::Resolution::Glob
+    expect ambiguous: unless ((declared).len > 0), when ((opened).len) > 1, (concrete.result) = modules::Resolution::Ambiguous
+    expect prelude_resolution: unless ((declared).len > 0), when ((opened).len) = 0 and ((prelude).len > 0), (concrete.result) = modules::Resolution::Prelude
+    expect unbound: unless ((declared).len > 0), when ((opened).len) = 0 and (prelude).len <= 0, (concrete.result) = modules::Resolution::Unbound
 }
 ```
 

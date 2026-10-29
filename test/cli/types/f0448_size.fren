@@ -1,4 +1,0 @@
--- A structurally recursive defined function, not yet supported (F0448).
--- fren-covers: lang::structural_recursion
-enum Expr { Lit(Int), Add(Expr, Expr) }
-fn size(e: Expr): Int := match e { Expr::Lit(_) => 1, Expr::Add(a, b) => size(a) + size(b) }

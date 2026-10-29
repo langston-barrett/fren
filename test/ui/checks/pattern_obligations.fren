@@ -37,4 +37,7 @@ proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
 -- bring, as it checks its guarantees.
 proc abstract_out(): (y: Byte) { ensure r: y != 7 }
 proc concrete_out(): (y: Int) { ensure r: y = 300 }
-refine wider: concrete_out refines abstract_out   --~ error: invariant `Byte::invariant` does not hold
+expect wider() {
+    call concrete := concrete_out()
+    refines concrete abstract_out()  --~ error: expectation `wider::refines_1` does not hold
+}

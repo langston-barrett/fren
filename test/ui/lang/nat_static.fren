@@ -7,52 +7,45 @@ set_option fren.lint.dead_code "allow"
 struct Stock { item: Int, count: Nat }
 enum Order { Placed(Nat), Cancelled }
 enum Counts { Last, More(Nat, Counts) }  --~ error: `Nat` cannot be the type of a payload of a recursive enumeration
-proc sets(s: Set<Nat>) {}             --~ error: `Nat` cannot be the element type of a set, relation or sequence
-proc seqs(q: Seq<Nat>) {}             --~ error: `Nat` cannot be the element type of a set, relation or sequence
-proc rels(r: Rel<Int, Nat>) {}        --~ error: `Nat` cannot be the element type of a set, relation or sequence
-enum Nat { Zero }                        --~ error: `Nat` is a built-in type and cannot be redefined
+proc sets(s: Set<Nat>) {}  --~ error: `Nat` cannot be the element type of a set, relation or sequence
+proc seqs(q: Seq<Nat>) {}  --~ error: `Nat` cannot be the element type of a set, relation or sequence
+proc rels(r: Rel<Int, Nat>) {}  --~ error: `Nat` cannot be the element type of a set, relation or sequence
+enum Nat { Zero }  --~ error: `Nat` is a built-in type and cannot be redefined
 
 fn halve(Nat): Nat
 enum Sign { Plus, Minus }
 
 -- An `Int` is never narrowed to a `Nat`.
-proc narrowed(n: Nat): (m: Nat) { out m := n - 1 }
---~^ error: type mismatch: expected `Nat`, found `Int`
-proc negated(n: Nat): (m: Nat) { out m := -n + n }
---~^ error: type mismatch: expected `Nat`, found `Int`
-proc argument(x: Int): (y: Nat) { ensure r: y = halve(x) }
---~^ error: type mismatch: expected `Nat`, found `Int`
-proc branch(n: Nat): (m: Nat) { out m := if n > 0 then n else -1 }
---~^ error: type mismatch: expected `Nat`, found `Int`
-const MINUS: Nat := 2 - 1
---~^ error: type mismatch: expected `Nat`, found `Int`
+proc narrowed(n: Nat): (m: Nat) { out m := n - 1 }  --~ error: type mismatch: expected `Nat`, found `Int`
+proc negated(n: Nat): (m: Nat) { out m := -n + n }  --~ error: type mismatch: expected `Nat`, found `Int`
+proc argument(x: Int): (y: Nat) { ensure r: y = halve(x) }  --~ error: type mismatch: expected `Nat`, found `Int`
+proc branch(n: Nat): (m: Nat) { out m := if n > 0 then n else -1 }  --~ error: type mismatch: expected `Nat`, found `Int`
+const MINUS: Nat := 2 - 1  --~ error: type mismatch: expected `Nat`, found `Int`
 proc inner(n: Nat): (m: Int) { ensure r: m = n }
-proc bound(x: Int) { call w := inner(x) }
---~^ error: type mismatch: expected `Nat`, found `Int`
+proc bound(x: Int) { call w := inner(x) }  --~ error: type mismatch: expected `Nat`, found `Int`
 
 -- An implicit binding of a refinement widens in the direction values flow:
 -- an input from the abstract component, an output from the concrete one.
 -- A `Nat` input of the concrete component does not serve for an `Int`.
 proc wide(n: Int): (m: Int) { ensure r: m = n }
-refine nat_input: inner refines wide
---~^ error: its `n` has another type
+expect nat_input(n: Int) {
+    call concrete := inner(n)  --~ error: type mismatch: expected `Nat`, found `Int`
+}
 -- Nor does an `Int` output for a `Nat`.
 proc nat_out(): (m: Nat) { ensure r: m = 0 }
 proc int_out(): (m: Int) { ensure r: m = 0 }
-refine int_output: int_out refines nat_out
---~^ error: its `m` has another type
+expect int_output() {
+    call concrete := int_out()
+    refines concrete nat_out()  --~ error: refinement result type mismatch at `m`: call result `m` cannot flow to the specification result
+}
 
 -- By a negative constant, and `abs`, are `Int`s.
-proc negative_divisor(n: Nat): (m: Nat) { out m := n div -2 }
---~^ error: type mismatch: expected `Nat`, found `Int`
-proc absolute(n: Nat): (m: Nat) { out m := n.abs }
---~^ error: type mismatch: expected `Nat`, found `Int`
-proc mixed_min(n: Nat, x: Int): (m: Nat) { out m := n.min(x) }
---~^ error: type mismatch: expected `Nat`, found `Int`
+proc negative_divisor(n: Nat): (m: Nat) { out m := n div -2 }  --~ error: type mismatch: expected `Nat`, found `Int`
+proc absolute(n: Nat): (m: Nat) { out m := n.abs }  --~ error: type mismatch: expected `Nat`, found `Int`
+proc mixed_min(n: Nat, x: Int): (m: Nat) { out m := n.min(x) }  --~ error: type mismatch: expected `Nat`, found `Int`
 
 -- A `Nat` is not an enumeration, so no variant pattern tests it.
-proc tested_nat(n: Nat): (z?) { ensure r: z? iff n is Sign::Plus }
---~^ error: expected a pattern of `Nat`, but this is a pattern of `Sign`
+proc tested_nat(n: Nat): (z?) { ensure r: z? iff n is Sign::Plus }  --~ error: expected a pattern of `Nat`, but this is a pattern of `Sign`
 
 -- A literal is a `Nat` where one is expected, and a `Nat` widens to an `Int`.
 const TWO: Nat := 2

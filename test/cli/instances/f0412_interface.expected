@@ -1,13 +1,12 @@
-error[F0412]: `precise` cannot refine `rough`: it has no variable `z`
- --> test/cli/instances/f0412_interface.fren:4:30
+error[F0304]: refinement result type mismatch at `z`: call result `y` cannot flow to the specification result
+ --> test/cli/instances/f0412_interface.fren:6:5
   |
-4 | refine fits: precise refines rough
-  |                              ^^^^^ `z` does not match
+6 |     refines c rough(x)
+  |     ^^^^^^^^^^^^^^^^^^ expected `Nat`, found `Int`
   |
-  = note: each parameter of `rough` must be a parameter of `precise`, and each output a result, of the same type, or one that widens: an output may be a `Nat` for an `Int`, and a parameter an `Int` for a `Nat`
-  = help: or bind it to an expression over the variables of `precise`, as in `{ z := ... }`
+  = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s
 
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0412`.
+For more information about this error, try `fren --explain F0304`.
 exit=2

@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Color
 import FrenCli.Exit
+import FrenCli.SeqElems
 import Impls.View
 import Reqs.Cli
 -- keep-sorted end
@@ -113,4 +114,14 @@ impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj q :
   sets_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "sets-exp"),
 }
 
+end Fren.Impls
+
+namespace Fren.Impls
+impl substitution_scope: cli::substitution_scope for (bound mentioned : Bool) {
+  name := { bound_here? := bound, mentioned_in_replacement? := mentioned },
+  replace? := (FrenCli.SeqElems.substitutionScope bound mentioned).1,
+  rename? := (FrenCli.SeqElems.substitutionScope bound mentioned).2,
+} by
+  intro bound mentioned _
+  cases bound <;> cases mentioned <;> simp [fren_spec, FrenCli.SeqElems.substitutionScope]
 end Fren.Impls

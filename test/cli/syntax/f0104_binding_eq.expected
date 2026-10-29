@@ -1,14 +1,14 @@
-error[F0104]: expected `:=` in a binding, found `=`
- --> test/cli/syntax/f0104_binding_eq.fren:4:27
+error[F0104]: expected `:=` in a record literal, found `=`
+ --> test/cli/syntax/f0104_binding_eq.fren:3:41
   |
-4 | refine r: c refines a { n = x }
-  |                           ^ expected `:=`
+3 | proc c(x: Int): (r: R) { out r := R { n = x } }
+  |                                         ^ expected `:=`
   |
-  = note: `=` is equality; a binding is written `x := e`
+  = note: `=` is equality; a field is given as `x := e`
 help: use `:=`
   |
-4 - refine r: c refines a { n = x }
-4 + refine r: c refines a { n := x }
+3 - proc c(x: Int): (r: R) { out r := R { n = x } }
+3 + proc c(x: Int): (r: R) { out r := R { n := x } }
   |
 
 error: could not check due to previous errors

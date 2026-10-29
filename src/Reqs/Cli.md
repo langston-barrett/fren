@@ -23,7 +23,10 @@ its arguments; see [Colour](#colour).
 reports the [evidence](Trace.md) for every procedure of the spec, and scans
 the tests for `fren-covers:` markers that no claim names; it does not run
 the checks. `fren fmt` [formats](Fmt.md) the files, and `fren fix`
-[fixes](Lint.md#fixing-lints) the lints that it can. `fren eval`
+[fixes](Lint.md#fixing-lints) the lints that it can and migrates the
+removed [global behaviour binders](Lang/Global.md#migration) to parameter
+blocks. Migration runs before lint selection and writes nothing if the
+rewritten spec has a static error. `fren eval`
 evaluates a procedure on one behaviour, and `fren quickcheck` tests the
 spec on random behaviours, both without the solver (see [Evaluation and
 testing](Eval.md)). `fren mutate` checks small changes to the spec, and
@@ -375,8 +378,8 @@ nothing to report. What 1 and 3 mean is each command's own:
 `cli::exit`, `eval::eval_exit`, `trace::trace_exit` and `mutate::exit`
 refine `exit_status`. So do `fmt::exit` and `lint::fix_exit`, which say
 whether the command could run in terms of what it read, `all_parsed?` and
-`loaded?`: their refinements bind `ran?` to it (see
-[Bindings](Lang/Refinement.md#bindings)).
+`loaded?`: their expectation blocks pass it explicitly as the specification argument
+(see [Refinement](Lang/Refinement.md#refinement-in-expectation-blocks)).
 
 ```fren
 pub proc exit_status(
@@ -407,7 +410,11 @@ pub proc exit(
     expect documented_codes: 0 <= code <= 3
 }
 
-refine check_exit_status: exit refines exit_status
+expect check_exit_status(ran?, worst: view::Severity) {
+    use view
+    call concrete := exit(ran?, worst)
+    refines concrete exit_status(ran?)
+}
 ```
 
 `cli::worst_severity` gives the most severe level over all results and
@@ -569,4 +576,34 @@ pub proc agreement(hosted: Verdict): (standalone: Verdict) {
 }
 
 #fren_check
+```
+
+## Substitution under binders
+
+Expanding a definition or a simultaneous SMT `let` substitutes only free
+occurrences of its parameters. Quantifiers (`forall`, `exists`, and the
+marked element quantifiers), lambdas, and lets bind their declared names
+in their body. A nested binder shadows substitutions for its own names.
+Before substituting the remaining replacements, rename every body binder
+that occurs in a replacement to a fresh name, consistently throughout its
+scope, respecting nested shadowing. Fresh names must avoid all atoms in
+the original term, all substitution keys and replacements, and names
+already chosen for other binders in the same declaration group. Conservative renaming for an occurrence
+that is itself bound in a replacement is permitted.
+
+A let’s right hand sides are outside its binders’ scope: substitute in
+those using the original substitution, without renaming their occurrences
+of the let’s names. Quantifier and lambda sort annotations are unchanged.
+These rules apply whether or not the query mentions a recursive function.
+The hosted frontend’s Lean substitution and the CLI’s SMT substitution
+must preserve exactly the same free variables and meaning.
+
+The per-name scope decision is bound to the helper used by SMT substitution:
+
+```fren
+pub struct SubstitutionName { bound_here?, mentioned_in_replacement? }
+pub proc substitution_scope(name: SubstitutionName): (det replace?, det rename?) {
+    ensure shadowing: replace? iff not name.bound_here?
+    ensure capture: rename? iff name.bound_here? and name.mentioned_in_replacement?
+}
 ```

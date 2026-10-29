@@ -80,8 +80,14 @@ pub proc integer_values_fixed(x: Int): (
     out ceiling := -1
 }
 
-refine integer_values_sound: integer_values_fixed refines integer_values_written
-refine integer_values_complete: integer_values_written refines integer_values_fixed
+expect integer_values_sound(x: Int) {
+    call concrete := integer_values_fixed(x)
+    refines concrete integer_values_written(x)
+}
+expect integer_values_complete(x: Int) {
+    call concrete := integer_values_written(x)
+    refines concrete integer_values_fixed(x)
+}
 ```
 
 ## Idempotent methods
@@ -117,6 +123,12 @@ pub proc eq_op_method_fixed(x: Int): (det lesser: Int, det greater: Int) {
     out greater := x + 1
 }
 
-refine eq_op_method_sound: eq_op_method_fixed refines eq_op_method_written
-refine eq_op_method_complete: eq_op_method_written refines eq_op_method_fixed
+expect eq_op_method_sound(x: Int) {
+    call concrete := eq_op_method_fixed(x)
+    refines concrete eq_op_method_written(x)
+}
+expect eq_op_method_complete(x: Int) {
+    call concrete := eq_op_method_written(x)
+    refines concrete eq_op_method_fixed(x)
+}
 ```

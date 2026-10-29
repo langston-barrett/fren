@@ -166,8 +166,14 @@ pub proc manual_abs_fixed(x: Int, y: Int): (
     out diff_below := (y - x).abs
 }
 
-refine manual_abs_sound: manual_abs_fixed refines manual_abs_written
-refine manual_abs_complete: manual_abs_written refines manual_abs_fixed
+expect manual_abs_sound(x: Int, y: Int) {
+    call concrete := manual_abs_fixed(x, y)
+    refines concrete manual_abs_written(x, y)
+}
+expect manual_abs_complete(x: Int, y: Int) {
+    call concrete := manual_abs_written(x, y)
+    refines concrete manual_abs_fixed(x, y)
+}
 ```
 
 ## Lesser and greater
@@ -333,8 +339,14 @@ pub proc manual_min_max_fixed(x: Int, y: Int, n: Nat): (
     out clamped_above := x.max(-2).min(5)
 }
 
-refine manual_min_max_sound: manual_min_max_fixed refines manual_min_max_written
-refine manual_min_max_complete: manual_min_max_written refines manual_min_max_fixed
+expect manual_min_max_sound(x: Int, y: Int, n: Nat) {
+    call concrete := manual_min_max_fixed(x, y, n)
+    refines concrete manual_min_max_written(x, y, n)
+}
+expect manual_min_max_complete(x: Int, y: Int, n: Nat) {
+    call concrete := manual_min_max_written(x, y, n)
+    refines concrete manual_min_max_fixed(x, y, n)
+}
 ```
 
 ## Remainders
@@ -397,8 +409,14 @@ pub proc manual_rem_euclid_fixed(x: Int, n: Nat): (
     out natural := n mod 4
 }
 
-refine manual_rem_euclid_sound: manual_rem_euclid_fixed refines manual_rem_euclid_written
-refine manual_rem_euclid_complete: manual_rem_euclid_written refines manual_rem_euclid_fixed
+expect manual_rem_euclid_sound(x: Int, n: Nat) {
+    call concrete := manual_rem_euclid_fixed(x, n)
+    refines concrete manual_rem_euclid_written(x, n)
+}
+expect manual_rem_euclid_complete(x: Int, n: Nat) {
+    call concrete := manual_rem_euclid_written(x, n)
+    refines concrete manual_rem_euclid_fixed(x, n)
+}
 ```
 
 Clippy's `manual_div_ceil` has no counterpart, since Fren has no rounding

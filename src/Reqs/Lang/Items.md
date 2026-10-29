@@ -584,8 +584,8 @@ clauses](Let.md), constants, variants, and defined functions
 declared before the function.
 So a function is not in scope in the bodies of those declared before it,
 and defined functions are never recursive through each other. A function's
-own name in its body is an application of itself, which is only ever a
-[structural recursion](Recursion.md), and that is not yet supported. Nor
+own name in its body is an application of itself, which must be a
+[structural recursion](Recursion.md). Nor
 does the body apply an uninterpreted function, so a defined function's
 values are fully known. `lang::function_body` states when a body is
 accepted:
@@ -594,12 +594,13 @@ accepted:
 set_option fren.evidence "enumerated" in
 pub proc function_body(
     typed?,                  -- the body has the function's result type
-    applies_self?,           -- the body applies the function being declared (`lang::structural_recursion`)
+    applies_self?,           -- the body applies the function being declared
+    structural?,             -- those applications are a structural recursion (`lang::structural_recursion`)
     applies_uninterpreted?,    -- the body applies an uninterpreted function
 ): (det accepted?) {
-    ensure rule: accepted? iff (typed? and not applies_self? and not applies_uninterpreted?)
+    ensure rule: accepted? iff (typed? and (not applies_self? or structural?) and not applies_uninterpreted?)
 
-    expect not_recursive: when applies_self?, not accepted?
+    expect only_structural: when applies_self? and not structural?, not accepted?
     expect well_typed: when not typed?, not accepted?
     expect interpreted_only: when applies_uninterpreted?, not accepted?
 }
@@ -726,8 +727,10 @@ pub proc contract_arguments(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine arguments_detail: contract_arguments refines contract_application {
-    to_params? := args = params and not Written::Other in params,
+expect arguments_detail(clause: lang::ClauseKind, own?, params: Seq<lang::Written>, args: Seq<lang::Written>) {
+    use lang
+    call concrete := contract_arguments(clause, own?, params, args)
+    refines concrete contract_application(clause, own?, (args) = (params) and not lang::Written::Other in (params))
 }
 ```
 
@@ -740,6 +743,11 @@ application's value is still what the body gives, for a defined function,
 or unknown, for an uninterpreted one: the failure is reported, never
 assumed away. A defined function's body, and its postconditions, are
 checked under its preconditions.
+
+A recursive defined function is used opaquely in checks, with the same
+application obligations and postcondition facts as an uninterpreted
+function, plus the finite one-step equations of [Recursion](Recursion.md).
+Its contract is checked by simultaneous Hoare induction against its body.
 
 A defined function's postconditions are claims about its body, which the
 [postcondition check](../Check.md#postconditions) confirms for every
@@ -910,15 +918,17 @@ than about one of their behaviours, such as two procedures agreeing, or one
 procedure being monotone: it takes parameters and calls the procedures, as
 a procedure does. See [Global expectations](Global.md).
 
-## Refinements
+## Refinement claims
 
 ```
-refinement := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
+refinement := "refines" IDENT path "(" [expr ("," expr)* [","]] ")" ["by" TACTICS]
 ```
 
-`refine r: c refines a` states that procedure `c` refines procedure `a`,
-and has Fren check it. Its bindings, written `x := e`, separated by commas, in braces, give
-variables of `a` as expressions over `c`'s. See [Refinement](Refinement.md).
+Inside a global expectation block, `refines c a(args)` claims procedure
+`a`'s guarantees of call `c`. The arguments explicitly supply `a`'s inputs;
+its public results match `c`'s public results positionally. The block must
+state any assumptions it needs. A hosted `by` proof establishes the same
+claim. See [Refinement](Refinement.md#refinement-in-expectation-blocks).
 
 ## Checks
 

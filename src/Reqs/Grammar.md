@@ -21,7 +21,7 @@
 ```
 spec           := item*
 item           := module | use | enumeration | record | abstract-type | type-alias | function | constant
-                | procedure | expectation | refinement | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
+                | procedure | expectation | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
@@ -43,7 +43,7 @@ procedure      := ["pub"] "proc" IDENT"(" [variable ("," variable)* [","]] ")"
 expectation    := "expect" IDENT"(" [variable ("," variable)* [","]] ")"
                   [":" "(" result ("," result)* [","] ")"] "{" member* "}"
                 | "expect" IDENT ":" ["forall" binder+ ","] top
-refinement     := "refine" IDENT ":" path "refines" path ["{" [binding ("," binding)* [","]] "}"] ["by" TACTICS]
+refinement     := "refines" IDENT path "(" [expr ("," expr)* [","]] ")" ["by" TACTICS]
 check          := "#fren_check" [path] | "#fren_trace"
 claim          := "tested" path ":" STRING ("," STRING)* [","]
                 | "trusted" path ":" STRING
@@ -73,6 +73,7 @@ member         := ["det"] "exists" variable
                 | "expect" IDENT ":" top
                 | "cover" IDENT ":" top
                 | call
+                | refinement  -- only in global expectation blocks
                 | use
                 | evidence-setting "in" member
 variable       := DECL [":" type]

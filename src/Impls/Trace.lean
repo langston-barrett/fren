@@ -25,6 +25,7 @@ test changes: such claims are only here and in `Impls.Lint`, the modules of
 Impls whose library says so, with `Impls` (`lakefile.lean`). -/
 
 tested cli::agreement: "src/FrenTestMain.lean"
+tested cli::substitution_scope: "test/ui/checks/recursion_capture.fren", "src/FrenTest/SmtSubstitution.lean"
 tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
@@ -56,8 +57,15 @@ tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_pa
   "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"
 tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax/f0110_det_param.fren", "test/cli/syntax/f0113_det_assume.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
-tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren",
-  "test/cli/types/f0448_size.fren"
+tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren"
+tested lang::recursive_facts: "test/ui/checks/recursion_hoare.fren",
+  "test/ui/checks/recursion_reflection.fren", "test/ui/checks/recursion_reflected_contracts.fren",
+  "test/ui/checks/recursion_independent.fren", "test/ui/checks/recursion_contract_queue.fren",
+  "test/ui/checks/recursion_ih_name.fren", "test/ui/checks/recursion_quantifiers.fren",
+  "test/ui/checks/recursion_dependency.fren", "src/FrenTest/RecursiveDependency.lean"
+tested lang::recursive_post_result: "test/ui/checks/recursion_hoare.fren"
+tested lang::recursive_counterexample: "test/ui/checks/recursion_hoare.fren"
+tested lang::recursive_match: "test/ui/lang/structural_recursion_static.fren", "test/ui/lang/recursion_guarded.fren", "test/cli/types/f0449_literal.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
 tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",
   "test/cli/types/f0367_no_arguments.fren"

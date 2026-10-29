@@ -101,8 +101,17 @@ pub proc nfc_fixed(s: String): (det cafe?) {
     out cafe? := s = "café"
 }
 
-refine nfc_sound: nfc_fixed refines nfc_written
-refine nfc_complete: nfc_written refines nfc_fixed
+expect nfc_sound(s: String) {
+    assume spec_composed: not (s).contains?("e\u0301")
+    call concrete := nfc_fixed(s)
+    refines concrete nfc_written(s)
+}
+set_option fren.lint.undecidable "allow" in
+expect nfc_complete(s: String) {
+    assume spec_composed: not (s).contains?("e\u0301")
+    call concrete := nfc_written(s)
+    refines concrete nfc_fixed(s)
+}
 ```
 
 ## Trailing commas
@@ -162,6 +171,12 @@ pub proc trailing_comma_fixed(x: Int): (det q: Seq<Int>) {
     out q := [x, 1]
 }
 
-refine trailing_comma_sound: trailing_comma_fixed refines trailing_comma_written
-refine trailing_comma_complete: trailing_comma_written refines trailing_comma_fixed
+expect trailing_comma_sound(x: Int) {
+    call concrete := trailing_comma_fixed(x)
+    refines concrete trailing_comma_written(x)
+}
+expect trailing_comma_complete(x: Int) {
+    call concrete := trailing_comma_written(x)
+    refines concrete trailing_comma_fixed(x)
+}
 ```

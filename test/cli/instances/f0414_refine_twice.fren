@@ -1,4 +1,7 @@
--- A refinement that binds a variable of the abstract component twice.
+-- Refinements have exactly one argument per specification parameter.
 proc precise(x: Int): (y: Int) { ensure r: y = x }
 proc rough(x: Int): (z: Int) { ensure r: z >= x }
-refine fits: precise refines rough { z := y, z := y + 1 }
+expect fits(x: Int) {
+    call c := precise(x)
+    refines c rough(x, x + 1)
+}

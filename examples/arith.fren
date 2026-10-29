@@ -1,39 +1,47 @@
--- Hutton's razor: a minimal language of integers and addition (see Graham
+-- Hutton's razor with one variable (see Graham
 -- Hutton, "Programming language semantics: it's easy as 1, 2, 3", JFP 2023).
--- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and
--- keeps every expression's value.
---
--- TODO(#279): expressions, evaluation and folding are recursive, which a
--- spec can't be yet. So this spec states one layer of each, over `Expr<E>`,
--- an expression whose operands have the type `E`, and `Arith.lean` ties the
--- knot: its expressions are the fixed point of `Expr`.
+-- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and keeps
+-- every expression's value in every environment. See arith-reqs.fren.
 mod arith
 
--- One layer of an expression, whose operands have the type `E`.
-pub enum Expr<E> { Val(Int), Add(E, E) }
+-- An expression.
+pub enum Expr { Val(Int), Var, Add(Expr, Expr) }
 
--- One layer of evaluation: the value of an expression whose operands are
--- values already.
-pub fn eval(e: Expr<Int>): Int := match e {
+-- The value of an expression. Checks use one step of its equations.
+-- No contract is needed for the folding proof.
+pub fn eval(e: Expr, x: Int): Int := match e {
     Expr::Val(n) => n,
-    Expr::Add(a, b) => a + b,
+    Expr::Var => x,
+    Expr::Add(a, b) => eval(a, x) + eval(b, x),
 }
 
--- Folding `Add(a, b)`, given the top layers of its operands: a value when
--- both are values, and otherwise `Add` of the operands, each rebuilt from
--- its top layer by `roll`.
-pub fn fold_add<T>(a: Expr<T>, b: Expr<T>, roll: fn(Expr<T>) -> T): Expr<T> := match a {
-    Expr::Val(x) => match b {
-        Expr::Val(y) => Expr::Val(x + y),
-        Expr::Add(_, _) => Expr::Add(roll(a), roll(b)),
-    },
-    Expr::Add(_, _) => Expr::Add(roll(a), roll(b)),
+-- Recursively fold `Add(Val(n), Val(m))` to `Val(n + m)`.
+-- rho is only forwarded for the scalar Hoare proof; folding never reads it.
+-- Arith.lean proves that the same folded syntax works for every environment.
+pub fn fold(e: Expr, rho: Int): (r: Expr) {
+    out r := match e {
+        Expr::Val(n) => Expr::Val(n),
+        Expr::Var => Expr::Var,
+        Expr::Add(a, b) => match fold(a, rho) {
+            Expr::Val(x) => match fold(b, rho) {
+                Expr::Val(y) => Expr::Val(x + y),
+                fb => Expr::Add(Expr::Val(x), fb),
+            },
+            fa => Expr::Add(fa, fold(b, rho)),
+        },
+    }
+    -- Folding keeps the value.
+    ensure keeps_value: eval(r, rho) = eval(e, rho)
 }
 
--- Folding keeps the value, where an expression is its value: `T` is `Int`,
--- and `roll` is `eval`.
--- TODO(#313): an expectation of `fold_add` itself, once functions can have
--- `expect` clauses.
-proc folding(a: Expr<Int>, b: Expr<Int>) {
-    expect keeps_value: eval(fold_add(a, b, eval)) = eval(a) + eval(b)
+-- Occurrence is a property of syntax, independent of the environment.
+pub fn uses_var?(e: Expr) := match e {
+    Expr::Val(_) => false,
+    Expr::Var => true,
+    Expr::Add(a, b) => uses_var?(a) or uses_var?(b),
+}
+
+proc environments(x: Int, y: Int, n: Int) {
+    expect variable_changes: eval(Expr::Var, x) - eval(Expr::Var, y) = x - y
+    expect literal_fixed: eval(Expr::Val(n), x) = eval(Expr::Val(n), y)
 }

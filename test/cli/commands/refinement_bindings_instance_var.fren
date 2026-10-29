@@ -3,4 +3,7 @@
 proc sub(v: Int): (y: Int) { ensure r: y = v }
 proc outer(x: Int): (z: Int) { call inner := sub(x) ensure r: z = inner.y }
 proc a(x: Int): (z: Int) { ensure r: z = x }
-refine fits: outer refines a { z := inner.y }
+expect fits(x: Int) {
+    call concrete := outer(x)
+    expect r: (inner.y) = (x)
+}

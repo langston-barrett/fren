@@ -1,12 +1,12 @@
-error[F0414]: variable `z` of `rough` is bound multiple times
- --> test/cli/instances/f0414_refine_twice.fren:4:46
+error[F0408]: too many arguments: `rough` takes 1 argument, `x`
+ --> test/cli/instances/f0414_refine_twice.fren:6:5
   |
-4 | refine fits: precise refines rough { z := y, z := y + 1 }
-  |                                              ^ bound again here
+6 |     refines c rough(x, x + 1)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^ 2 arguments
   |
-  = note: a refinement binds each variable of the refined procedure at most once
+  = note: a call gives one argument for each parameter, in order
 
 error: could not check due to previous errors
 
-For more information about this error, try `fren --explain F0414`.
+For more information about this error, try `fren --explain F0408`.
 exit=2

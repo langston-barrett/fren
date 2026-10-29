@@ -241,7 +241,11 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observ
     for t in ← sm.getDeclaredTerms do
       let n := (toString t).replace "|" ""
       if let some v := vars.find? (Fren.Core.smtName ·.name.toString == n) then
-        model := model.push (v.name, toString (← solver.getValue t))
+        let value := toString (← solver.getValue t)
+        -- cvc5 shares values and qualified constructor symbols with lets.
+        -- Expand them before confirmation, rendering, or pinning a model.
+        let value := toString ((SeqElems.parse value).unfold {})
+        model := model.push (v.name, value)
     for observation in observations do
       let reached := observation.guard?.all fun guard => model.any (fun (name, value) => name == guard && value == "true")
       let value ← if !reached then pure "unknown" else do
@@ -610,6 +614,89 @@ def solveExpanded (marked : Std.HashMap String (Array String × SeqElems.SExpr))
       | .unsat => return .unknown Fren.Core.elementUnconfirmedReason
       | o => return o
 
+/-- Definitions that may be expanded in a query; recursive symbols are absent. -/
+def queryDefinitions (prelude : Prelude) : Std.HashMap String (Array String × SeqElems.SExpr) :=
+  prelude.decls.foldl (init := {}) fun acc d => match SeqElems.parse d.text with
+    | .list #[.atom "define-fun", .atom f, .list ps, _, body] =>
+      acc.insert f (ps.filterMap fun | .list #[.atom p, _] => some p | _ => none, body)
+    | _ => acc
+
+/-- A recursive contract's own result stands for its body, once. -/
+partial def contractBody (own : SeqElems.SExpr) (body : SeqElems.SExpr) (e : SeqElems.SExpr) : SeqElems.SExpr :=
+  if e == own then body else match e with
+  | .list xs => .list (xs.map (contractBody own body))
+  | _ => e
+
+/-- Finite one-step reflection. Nonrecursive definitions and clauses are
+expanded before finding applications; equation-introduced applications receive
+only contract facts. Guards follow the original conditional branches. -/
+partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (Bool × Contract))
+    (types : Std.HashMap String String) (hyps : Array (Lean.Name × String)) (goal : String) : Array (Lean.Name × String) := Id.run do
+  let recs := prelude.decls.filterMap fun d => d.recursion?.map fun b => (quote d.syms[0]!, b.1, SeqElems.parse b.2)
+  if recs.isEmpty then return #[]
+  let defs := queryDefinitions prelude
+  let expand (s : String) := (SeqElems.parse s).unfold defs
+  let mut work := #[]
+  for f in hyps.map (·.2) |>.push goal do
+    work := work ++ scan recs (expand f) #[] false #[]
+  let mut out := #[]
+  let mut seen : Array (SeqElems.SExpr × Array String × Bool) := #[]
+  let mut done := 0
+  while done < work.size do
+    let (app, gs, introduced, ancestors) := work[done]!
+    done := done + 1
+    let key := (app, gs, introduced)
+    if seen.contains key then continue
+    seen := seen.push key
+    let .list xs := app | continue
+    let .atom head := xs[0]! | continue
+    let args := xs.extract 1
+    let text := toString app
+    if ancestors.contains text then continue
+    let ancestors := ancestors.push text
+    let guarded (f : String) := if gs.isEmpty then f else s!"(=> {conj gs} {f})"
+    let domain := ((prelude.decls.find? fun d => d.syms.any (quote · == head)).map fun d =>
+      let ps := (d.recursion?.map (·.1)).getD #[]
+      d.domain.map fun f => toString ((SeqElems.parse f).subst (ps.zip args))).getD #[]
+    for (n, f) in appFactsOf funs types text do
+      let f := expand f
+      out := out.push (n, guarded (if domain.isEmpty then toString f else s!"(=> {conj domain} {f})"))
+      work := work ++ scan recs f gs introduced ancestors
+    if (Fren.Core.recursiveFacts introduced).2 then
+      if let some (_, ps, body) := recs.find? (·.1 == head) then
+        let body := (body.subst (ps.zip args)).unfold defs
+        out := out.push (`equation, guarded s!"(= {text} {body})")
+        work := work ++ scan recs body gs true ancestors
+  return out.toList.eraseDups.toArray
+where
+  scan (recs : Array (String × Array String × SeqElems.SExpr)) (e : SeqElems.SExpr)
+      (gs : Array String) (introduced : Bool) (ancestors : Array String) (bound : Array String := #[]) :
+      Array (SeqElems.SExpr × Array String × Bool × Array String) :=
+    match e with
+    | .atom _ => #[]
+    | .list xs => Id.run do
+      let own := match xs[0]? with
+        | some (SeqElems.SExpr.atom h) => if recs.any (·.1 == h) && (Fren.Core.recursiveFacts introduced (e.mentions bound)).1 then
+          #[(e, gs.filter (fun g => !(SeqElems.parse g).mentions bound), introduced, ancestors)] else #[]
+        | _ => #[]
+      if let some (names, body) := SeqElems.binderOf? e then
+        return scan recs body gs introduced ancestors (bound ++ names)
+      if xs[0]? == some (SeqElems.SExpr.atom "and") || xs[0]? == some (SeqElems.SExpr.atom "or") then
+        let mut result := own
+        let mut guards := gs
+        for x in xs.extract 1 do
+          result := result ++ scan recs x guards introduced ancestors bound
+          guards := guards.push (if xs[0]? == some (SeqElems.SExpr.atom "and") then toString x else s!"(not {x})")
+        return result
+      match xs with
+      | #[.atom "ite", c, a, b] =>
+        return own ++ scan recs c gs introduced ancestors bound
+          ++ scan recs a (gs.push (toString c)) introduced ancestors bound
+          ++ scan recs b (gs.push s!"(not {c})") introduced ancestors bound
+      | #[.atom "=>", c, b] =>
+        return own ++ scan recs c gs introduced ancestors bound ++ scan recs b (gs.push (toString c)) introduced ancestors bound
+      | _ => return own ++ xs.flatMap fun x => scan recs x gs introduced ancestors bound
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite (`cli::logic`); answering from `cache?`, if any,
@@ -632,6 +719,17 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       | some "false" => some false
       | _ => none
   query hyps goal wantModel := do
+    let hasRecursion := prelude.decls.any (·.recursion?.isSome)
+    let expand (f : String) : String := Id.run do
+      if !hasRecursion then return f
+      let e := (SeqElems.parse f).unfold (queryDefinitions prelude)
+      let some fn := c.fn? | return toString e
+      let some d := prelude.decls.find? (·.syms.contains ((itemSym fn).drop 1 |>.dropEnd 1 |>.toString)) | return toString e
+      let some (ps, body) := d.recursion? | return toString e
+      let own := SeqElems.SExpr.list (#[.atom (itemSym fn)] ++ ps.map SeqElems.SExpr.atom)
+      return toString (contractBody own (SeqElems.parse body) e)
+    let hyps := hyps.map fun (n, f) => (n, expand f)
+    let goal := expand goal
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
     let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
@@ -653,13 +751,14 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs c.funFacts) hyps goal
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
+    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts hyps goal ++ hyps
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.
       ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
+    -- A recursive definition needs a logic with quantifiers.
     let logic := Fren.Core.logic kind (strings || sets) projection quantified
     let options := String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n")
-    let hyps := facts ++ appFacts ++ hyps
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? (observationsOf c)) vars hyps goal
           wantModel
@@ -708,6 +807,7 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
       -- (`check::postcondition`), and the hypotheses of nothing.
       reqs := if c.fn?.isNone || contract then props .ensure else #[]
       posts := if c.fn?.isSome && !contract then props .ensure else #[]
+      recursive := c.recursive
       fn? := c.fn?
       expects := props .expect
       covers := props .cover

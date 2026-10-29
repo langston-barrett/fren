@@ -31,12 +31,12 @@ error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 counterexample: (any values)
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:34:7: expectation `chapters::fails::below` does not hold
+error: LiterateFirst.md:36:4: expectation `chapters::fails::refines_1` does not hold
 
-counterexample: x = 0, precise.x = 0, precise.y = 1
-help: strengthen the guarantees so that it follows, or correct the expectation
+counterexample: x = 0, concrete.y = 1
+help: correct the expectation, or assume what it needs
 ---
-info: LiterateSecond.md:6:0: fren: 10 passed, 4 failed, 0 inconclusive, 0 redundant
+info: LiterateSecond.md:6:0: fren: 11 passed, 4 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_md "LiterateSecond.md"
@@ -60,12 +60,12 @@ error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 counterexample: (any values)
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:34:7: expectation `chapters::fails::below` does not hold
+error: LiterateFirst.md:36:4: expectation `chapters::fails::refines_1` does not hold
 
-counterexample: x = 0, precise.x = 0, precise.y = 1
-help: strengthen the guarantees so that it follows, or correct the expectation
+counterexample: x = 0, concrete.y = 1
+help: correct the expectation, or assume what it needs
 ---
-info: fren: 10 passed, 4 failed, 0 inconclusive, 0 redundant
+info: fren: 11 passed, 4 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check

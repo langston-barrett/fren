@@ -363,6 +363,7 @@ inductive Member where
   /-- `call name := comp(a, b)`, whose bindings are its arguments, each
   named after its position until the callee's parameters are known. `span`
   is the whole member's. -/
+  | refines (call : Ident) (abstract : Array Ident) (args : Array Expr) (span : Span)
   | inst (name : Ident) (comp : Array Ident) (bindings : Array (Ident × Option Expr)) (span : Span)
   /-- `use a::b` or `use a::E::*`, with the span of the whole member. -/
   | use (span : Span) (path : Array Ident) (glob : Bool)
@@ -1603,6 +1604,24 @@ def member : P Member := do
       #[if isDet then "note: `det` is written on a result, `det r: T`, or on `det exists x: T` or `det let x: T := e`"
         else "note: a procedure's public outputs are its results, and its other members are private"]
       #[{ msg := s!"remove `{mod}`", replacement := "", range? := some { start := m.span.start, stop := t.span.start } }]
+  if isWord t "refines" then
+    discard bump
+    let call ← ident
+    let (abstract, _) ← path false
+    noSpaceBeforeParen abstract.back!.name "refinement arguments"
+    markCall
+    markList
+    discard (expectKw "(")
+    let mut args := #[]
+    repeat
+      if isKw (← peek) ")" then break
+      markStart
+      args := args.push (← withRecords expr)
+      if (← eatKw ",").isNone then break
+    discard (expectKw ")")
+    if isWord (← peek) "by" then
+      err (← peek).span "F0112" "Lean proofs are supported only in Lean files" none #[]
+    return .refines call abstract args (start.to (← lastSpan))
   if isWord t "call" then
     discard bump
     let x ← ident
@@ -1711,6 +1730,8 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
     if t.tok == .eof then fail t "`}`"
     let mem ← member
     let sp := t.span.to (← lastSpan)
+    if mem matches .refines .. then
+      err sp "F0417" "`refines` is accepted only in global expectation blocks" none #[]
     -- Each member that a function's block does not take (`F0442`,
     -- `F0443`), at its first token, or a `use`'s or an evidence
     -- setting's whole.

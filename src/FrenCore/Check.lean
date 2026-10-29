@@ -2,6 +2,7 @@
 import FrenCore.Diagnostic
 import FrenCore.Names
 import FrenCore.PatternTypes
+import FrenCore.Recursion
 import FrenCore.SeqElems
 import FrenCore.Table
 import Lean.Data.Name
@@ -74,6 +75,10 @@ inductive Detail where
   | nondeterministic (input : Assignment) (v₁ v₂ : String)
   | unknown (reason : String)
   deriving Inhabited
+
+/-- Shared reason for a recursive model that real evaluation does not confirm. -/
+def recursiveReason (names : Array Name) : String :=
+  "recursive contracts: " ++ ", ".intercalate ((names.toList.eraseDups.mergeSort (fun a b => showPath a < showPath b)).map fun n => s!"`{showPath n}`")
 
 /-- A variant of an enumeration: its constructor, as Fren writes it in a
 value (`E::C`), and how many values its payload has. -/
@@ -467,6 +472,8 @@ structure Comp (F : Type) where
   over its parameters (`check::postcondition`); its preconditions are its
   `assumes`. -/
   posts : Array (Name × F) := #[]
+  /-- This function is checked by simultaneous Hoare induction. -/
+  recursive : Bool := false
   /-- For the body or contract of a function: the function, which the
   results of `postcondition` name. -/
   fn? : Option Name := none
@@ -934,12 +941,13 @@ def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
 
 /-- `postcondition`: the postcondition `p` of a defined function, named
 after the function and the clause, follows from its preconditions, its
-parameters free (`check::postcondition`). -/
+parameters free (`check::postcondition`); for a structural recursion, by
+simultaneous Hoare induction with facts at actual applications. -/
 def checkPostcondition (c : Comp F) (p : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .postcondition, comp := c.path, prop? := some p.1, target? := c.fn?.map (·, Name.mkSimple p.1.getString!),
       verdict, detail }
-  let q ← b.query c.assumes p.2 true
+  let q ← b.query (c.assumes) p.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
     return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
@@ -1124,6 +1132,7 @@ elements, which a pattern type within an element type brings
 quantifiers that membership bounds. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
 
+
 /-- The cvc5 option for the contract of a generic function without a body,
 checked once at its type parameters' sorts
 (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`):
@@ -1215,6 +1224,15 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let reach ← ifSelected (kinds.contains .reachability) ((c.tablesOf .reachability).mapM (checkReach (bk .reachability) c))
   return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete ++ disjoint
     ++ pres ++ posts ++ reach
+
+/-- Finalize simultaneous induction after counterexamples have been confirmed.
+A clause that used an unproved sibling's hypotheses is not a reported success. -/
+def recursiveResults (recursive : Bool) (results : Array CheckResult) : Array CheckResult :=
+  let unproved := results.any fun r => r.kind == .postcondition && r.verdict != .pass
+  results.map fun r =>
+    if recursive && r.kind == .postcondition && r.verdict == .pass && !recursivePostResult true unproved then
+      { r with verdict := .inconclusive, detail := .unknown "another postcondition used by simultaneous induction did not pass" }
+    else r
 
 /-- What the applications of uninterpreted functions in a query bring
 (`Reqs/Check`): for each application that `appsOf` finds in the query's
@@ -1501,7 +1519,17 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
     -- An expansion of quantifiers over elements that is too large, or
     -- whose model they refute, has a code of its own.
     match d with
-    | .unknown w => if let some (code, notes) := elementReasonNotes? w then
+    | .unknown w => if w == "another postcondition used by simultaneous induction did not pass" then
+        #[one "F0608" s!"could not decide whether {what}" (some "depends on an unproved postcondition")
+          #["note: simultaneous induction used all of the function's postconditions",
+            "note: another postcondition failed or was inconclusive, so this check cannot be reported as passed",
+            "help: establish the other postconditions before relying on this one"]]
+      else if w.startsWith "recursive contracts: " then
+        #[one "F0450" s!"could not decide whether {what}" (some "contracts may be too weak")
+          #[s!"note: this check fails only under the contracts of {((w.drop 21).toString)}",
+            "note: evaluation of the recursive definitions does not confirm the counterexample",
+            "help: strengthen those functions' contracts"]]
+      else if let some (code, notes) := elementReasonNotes? w then
         #[one code s!"could not decide whether {what}{why}" (some "undecided") notes]
       else #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
     | _ => #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]

@@ -17,7 +17,9 @@ fragment is decidable does not mean that the solver decides every query
 in it quickly, or at all: see [In practice](#in-practice) for where it
 does and where it does not. An `Inconclusive` verdict then means that the
 solver ran out of time, and the [message](../View.md#check-results) says
-to raise the time limit. In a procedure that opts out, it may also mean
+to raise the time limit. With recursive functions, it may instead mean that evaluation refuted
+a model allowed by their contracts (`F0450`); strengthen those contracts
+rather than raising the time limit. In a procedure that opts out, it may also mean
 that the solver gave up, and the message says that instead.
 
 The rest of the language is decidable by three rules:
@@ -239,6 +241,17 @@ the solver: a closure's body is in the core exactly when its expression
 would be, written where the closure is unfolded, and a closure's parameter
 counts as a value that varies, as an unbounded quantifier's bound name
 does, for the rules above.
+
+## Recursion
+
+Applications of [structural recursions](Recursion.md) are opaque,
+with ground postconditions and one step of defining equations at each
+application. Applications introduced by that step receive postconditions
+only. This is finite and adds no quantifiers, even for constant arguments,
+so recursion never raises `undecidable`. Completeness is modulo this
+opacity: facts requiring more of a recursive body than its one-step
+equations and contract are not promised. Strengthen its contract to prove
+such facts. Models refuted by evaluation are Inconclusive (`F0450`).
 
 ## In practice
 

@@ -17,7 +17,10 @@ type PositiveHead = values: Seq<Int> where nonempty: values.len > 0 and head: va
 pub struct TruthField { valid?: Truth }
 proc abstract_output(): (r: Byte) {}
 proc concrete_output(): (r: Int) {}
-refine output_membership: concrete_output refines abstract_output
+expect output_membership() {
+  call concrete := concrete_output()
+  refines concrete abstract_output()
+}
 fn gate?(Int)
 type FreeBase = n: Int where branch: if gate?(0) then n = 0 else n = 1
 type Derived = n: FreeBase where zero: n = 0
@@ -35,12 +38,11 @@ elab "#check_subset_obligations" : command => do
     unless wrongResults.any (fun r => r.verdict == Fren.Core.Verdict.fail &&
         r.patTy? == some "@invariant:subset_obligation_test::Byte::high") do
       throwError "the failing high invariant did not retain its logical identity"
-    let some refinement := state.refinements.get? `subset_obligation_test.output_membership
-      | throwError "missing refinement component: {state.refinements.toList.map (·.1)}"
-    let (refinementResults, _, _) ← Fren.checkComp refinement #[.definedness]
-    unless refinementResults.any (fun r => r.verdict == Fren.Core.Verdict.fail &&
-        r.patTy? == some "@invariant:subset_obligation_test::Byte::high") do
-      throwError "refinement output obligations lost their invariant identity"
+    let some refinement := state.globals.get? `subset_obligation_test.output_membership
+      | throwError "missing refinement expectation block"
+    let (refinementResults, _, _) ← Fren.checkComp refinement #[.expect]
+    unless refinementResults.any (fun r => r.verdict == Fren.Core.Verdict.fail && r.prop? == some `refines_1) do
+      throwError "refinement lost the required result invariants"
     let some (_, empty) := state.comps.toList.find? (fun (_, c) => c.subset? == some `subset_obligation_test.Empty)
       | throwError "missing empty-type inhabitation check"
     let (emptyResults, _, _) ← Fren.checkComp empty

@@ -3,6 +3,7 @@ import FrenCli.Color
 import FrenCli.Enumerate
 import FrenCli.Exit
 import FrenCli.Fmt
+import FrenCli.GlobalMigration
 import FrenCli.MutateRun
 import FrenCli.Quick
 import FrenCli.Same
@@ -698,6 +699,7 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
       let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
       pure (← Fren.Core.checkComp bk core ks examples interprets, none)
   let (results, refuted) := applyRefutations raw (← log.get)
+  let results := Fren.Core.recursiveResults c.recursive results
   -- The contract of a generic function without a body, where its check at
   -- its type parameters' sorts does not pass: its check at each instance
   -- that the spec applies, in order of their names (`lang::generic_contract`).
@@ -1070,7 +1072,21 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     let some src ← readSpec args.paint path | return Fren.Core.fixExit args.diffOnly false false
     srcs := srcs.push src
   let original := srcs
-  let (files, st) ← elaborateSources paths srcs args.lints fixing ignored
+  -- Behaviour binders are not part of the language. Resolve their callees
+  -- solely for migration, then check the entire rewritten spec before
+  -- committing any edit (including ordinary lint fixes).
+  let (oldFiles, oldState) ← elaborateSources paths srcs args.lints fixing ignored
+  let mut migrated := false
+  for i in [0:paths.size] do
+    if ignored paths[i]! then continue
+    let chars := oldFiles[i]!.2
+    if let .ok (_, items, _, _) := parseText chars then
+      let edits := GlobalMigration.file oldState chars items
+      unless edits.isEmpty do
+        srcs := srcs.set! i (applyFileEdits srcs[i]! chars edits)
+        migrated := true
+  let (files, st) ← if migrated then elaborateSources paths srcs args.lints fixing ignored
+    else pure (oldFiles, oldState)
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
     -- No lint is fixed.
@@ -1118,7 +1134,8 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     if args.diffOnly then IO.print (Fmt.diff out path src new)
     else
       IO.FS.writeFile path new
-      IO.eprintln <| if n == 0 then s!"formatted {path}" else s!"fixed {path} ({n} lint{if n == 1 then "" else "s"})"
+      IO.eprintln <| if n == 0 then s!"{if migrated then "migrated" else "formatted"} {path}"
+        else s!"fixed {path} ({n} lint{if n == 1 then "" else "s"})"
   printExplainHint (left.map (·.msg))
   return Fren.Core.fixExit args.diffOnly true unchanged
 
@@ -1165,7 +1182,7 @@ deriving instance BEq for Diag
 deriving instance BEq for Fren.Core.LevelInEffect
 deriving instance BEq for Fren.Core.Levels
 deriving instance BEq for Fren.Core.Item, Fren.Core.EnumDef, Fren.Core.UseDef, Fren.Core.Tested, DataDecl
-deriving instance BEq for Ident, Bound, Pattern, Binder, Expr
+deriving instance BEq for Ident, Bound, Pattern, Binder, Expr, Member
 deriving instance BEq for CVar, CProp, CInst, CComp
 
 instance : Same Fren.Core.Table := ⟨fun a b => same_fields% Fren.Core.Table a b except []⟩

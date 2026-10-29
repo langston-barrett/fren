@@ -273,12 +273,15 @@ pub proc obligation(
 ```
 
 ```fren
-refine obligation_widening: obligation refines pattern_widening {
-    patterned? := place != ValuePlace::Binding
-        and (pattern? or (type_kind in {ValueType::SetTy, ValueType::RelTy, ValueType::SeqTy} and element != Duty::Nothing)),
-    widened? := true,
-    accepted? := true,
-    obliged? := duty != Duty::Nothing,
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.absurd_extreme_comparisons "allow" in
+expect obligation_widening(place: lang::ValuePlace, type_kind: lang::ValueType, pattern?, element: lang::Duty) {
+    use lang
+    call concrete := obligation(place, type_kind, pattern?, element)
+    expect rule: true
+    expect obligation: ((concrete.duty) != lang::Duty::Nothing) iff ((true) and ((place) != lang::ValuePlace::Binding
+        and ((pattern?) or ((type_kind) in {lang::ValueType::SetTy, lang::ValueType::RelTy, lang::ValueType::SeqTy} and (element) != lang::Duty::Nothing))))
 }
 ```
 
@@ -395,11 +398,14 @@ pub proc pattern_bounds(
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-refine bounds_finite: pattern_bounds refines pattern_finite {
-    base_finite? := false,
-    integers? := true,
-    bounded? := not (Bound::Open in los or Bound::Open in his),
-    finite? := finite?,
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.absurd_extreme_comparisons "allow" in
+expect bounds_finite(los: Seq<lang::Bound>, his: Seq<lang::Bound>) {
+    use lang
+    assume spec_not_both: not (false)
+    call concrete := pattern_bounds(los, his)
+    expect rule: (concrete.finite?) iff ((false) or ((true) and (not (lang::Bound::Open in (los) or lang::Bound::Open in (his)))))
 }
 ```
 

@@ -1,0 +1,30 @@
+-- A modular caller may use a contract whose own proof is inconclusive.
+-- fren-covers: lang::recursive_facts
+pub enum T { Z, S(T) }
+
+pub fn weak(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => 1 + weak(a),
+    }
+    ensure not_minus_one: r != -1   --~ warning: could not decide whether the postcondition `not_minus_one` of `weak` holds
+}
+
+pub fn copy(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => if copy(a) != -1 then weak(a) else 0,
+    }
+    ensure not_minus_one: r != -1
+}
+
+-- Conditional dependency theorems must propagate the same modular rule.
+pub fn copy_again(t: T): (r: Int) {
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => if copy_again(a) != -1 then copy(a) else 0,
+    }
+    ensure not_minus_one: r != -1
+}
+
+--@ summary: 2 passed, 0 failed, 1 inconclusive, 0 redundant

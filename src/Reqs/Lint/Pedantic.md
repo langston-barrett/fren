@@ -353,8 +353,15 @@ pub proc invalid_upcast_fixed(x: Int, s: String, t: String, i: Int): (
     out below? := false
 }
 
-refine invalid_upcast_sound: invalid_upcast_fixed refines invalid_upcast_written
-refine invalid_upcast_complete: invalid_upcast_written refines invalid_upcast_fixed
+expect invalid_upcast_sound(x: Int, s: String, t: String, i: Int) {
+    call concrete := invalid_upcast_fixed(x, s, t, i)
+    refines concrete invalid_upcast_written(x, s, t, i)
+}
+set_option fren.lint.undecidable "allow" in
+expect invalid_upcast_complete(x: Int, s: String, t: String, i: Int) {
+    call concrete := invalid_upcast_written(x, s, t, i)
+    refines concrete invalid_upcast_fixed(x, s, t, i)
+}
 ```
 
 ## Operands that can be dropped
@@ -460,8 +467,14 @@ pub proc absorption_fixed(a?, b?): (
     out and_last_swapped? := a?
 }
 
-refine absorption_sound: absorption_fixed refines absorption_written
-refine absorption_complete: absorption_written refines absorption_fixed
+expect absorption_sound(a?, b?) {
+    call concrete := absorption_fixed(a?, b?)
+    refines concrete absorption_written(a?, b?)
+}
+expect absorption_complete(a?, b?) {
+    call concrete := absorption_written(a?, b?)
+    refines concrete absorption_fixed(a?, b?)
+}
 
 set_option fren.lint.overly_complex_bool_expr "allow" in
 set_option fren.evidence "enumerated" in
@@ -478,8 +491,14 @@ pub proc contradiction_fixed(a?): (det first?, det last?) {
     out last? := false
 }
 
-refine contradiction_sound: contradiction_fixed refines contradiction_written
-refine contradiction_complete: contradiction_written refines contradiction_fixed
+expect contradiction_sound(a?) {
+    call concrete := contradiction_fixed(a?)
+    refines concrete contradiction_written(a?)
+}
+expect contradiction_complete(a?) {
+    call concrete := contradiction_written(a?)
+    refines concrete contradiction_fixed(a?)
+}
 
 set_option fren.lint.overly_complex_bool_expr "allow" in
 set_option fren.evidence "enumerated" in
@@ -496,8 +515,14 @@ pub proc excluded_middle_fixed(a?): (det first?, det last?) {
     out last? := true
 }
 
-refine excluded_middle_sound: excluded_middle_fixed refines excluded_middle_written
-refine excluded_middle_complete: excluded_middle_written refines excluded_middle_fixed
+expect excluded_middle_sound(a?) {
+    call concrete := excluded_middle_fixed(a?)
+    refines concrete excluded_middle_written(a?)
+}
+expect excluded_middle_complete(a?) {
+    call concrete := excluded_middle_written(a?)
+    refines concrete excluded_middle_fixed(a?)
+}
 ```
 
 ## Raw string literals
@@ -552,6 +577,12 @@ pub proc raw_hashes_fixed(): (det pattern: String, det quote: String) {
     out quote := r#"say "hi""#
 }
 
-refine raw_hashes_sound: raw_hashes_fixed refines raw_hashes_written
-refine raw_hashes_complete: raw_hashes_written refines raw_hashes_fixed
+expect raw_hashes_sound() {
+    call concrete := raw_hashes_fixed()
+    refines concrete raw_hashes_written()
+}
+expect raw_hashes_complete() {
+    call concrete := raw_hashes_written()
+    refines concrete raw_hashes_fixed()
+}
 ```

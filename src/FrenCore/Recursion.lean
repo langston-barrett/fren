@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Names
+import FrenCore.Patterns
 -- keep-sorted end
 
 /-!
@@ -80,6 +81,44 @@ def recursion (n : Nat) (uses : List RecUse) : Recursion :=
       let k := fs.foldl max 0
       .notStructural k (fs.idxOf k)
 
+/-- Ground applications receive postconditions and, when written, an equation.
+Binder-dependent applications receive neither (`lang::recursive_facts`). -/
+def recursiveFacts (introduced : Bool) (bound : Bool := false) : Bool × Bool :=
+  (!bound, !bound && !introduced)
+
+/-- A simultaneous induction cannot report a dependent success when another
+postcondition is unproved (`lang::recursive_post_result`). -/
+def recursivePostResult (passed unproved : Bool) : Bool := passed && !unproved
+
+/-- Recursive counterexamples require evaluation (`lang::recursive_counterexample`). -/
+def recursiveCounterexample (recursive confirms : Bool) : Bool := !recursive || confirms
+
+/-! ## Lean `match`es (`lang::recursive_match`) -/
+
+/-- Whether the pattern `p` is one that a Lean `match` has as it is, as
+`Fren.matchForm` decides (`Reqs/Generated#matches`): no literal or range,
+and no or-pattern but at the top. -/
+partial def Pat.leanPattern (p : Pat) (top := true) : Bool :=
+  match p with
+  | .wild _ => true
+  | .bool _ | .int _ _ | .str _ => false
+  | .ctor _ args => args.all (Pat.leanPattern · false)
+  | .or alts => top && alts.all (Pat.leanPattern · true)
+
+/-- The first of the patterns `pats` of a `match`'s arms that a Lean
+`match` does not have as it is. -/
+def firstNonLeanPattern? (pats : Array Pat) (guarded : Array Bool := #[]) : Option Nat :=
+  (pats.zipIdx.find? fun (p, i) => !p.leanPattern || guarded[i]?.getD false).map (·.2)
+
+/-- A structural recursion's application under a `match`, on a parameter or
+a binder bound from a payload of one, that its Lean definition cannot have
+as a Lean `match` (`lang::recursive_match`). -/
+def recursiveMatchMsg (f : Lean.Name) : Msg :=
+  { code? := some "F0449", headline := s!"recursive defined function `{showPath f}` has a `match` that Lean cannot see through"
+    label? := some "this arm cannot preserve structural recursion"
+    notes := #["note: a structural recursion uses unguarded constructor patterns, binders and `_`, with or-patterns only at the top",
+      "help: move guards, literals, ranges or nested alternatives into the constructor arm"] }
+
 /-- A defined function's application of itself that is not structural
 recursion: `f` is the function, `param` the parameter at the position whose
 argument is reported, `arg` that argument's origin, and `form` the use's
@@ -93,16 +132,10 @@ def nonStructuralMsg (f param : Lean.Name) (form : RecForm) (arg : RecArg) : Msg
     | .applied, .expr => s!"the argument is an expression, not a payload of `{param}`"
     | .applied, .payload => s!"the argument is a payload of `{param}`"
   { code? := some "F0447", headline := s!"defined function `{showPath f}` is not structurally recursive"
-    label? := some why
-    notes := #["note: a defined function may apply itself only to a payload of a variant that a `match` on a parameter bound, at the same parameter in every application",
+    label? := some "not on a payload of a matched parameter"
+    -- The reason as a note, which the Lean-hosted front end shows, as it
+    -- does not show labels.
+    notes := #[s!"note: {why}","note: a defined function may apply itself only to a payload of a variant that a `match` on a parameter bound, at the same parameter in every application",
       "help: match on the parameter, and apply the function to a binder of the arm's pattern"] }
-
-/-- A defined function that is a structural recursion, which is not yet
-supported (#279). -/
-def structuralUnsupportedMsg (f param : Lean.Name) : Msg :=
-  { code? := some "F0448", headline := s!"recursive defined functions are not yet supported"
-    label? := some s!"`{showPath f}` recurses structurally on `{param}`"
-    notes := #["note: this application is structural recursion, which a later version of Fren will accept",
-      "help: state the function's values by quantified equations on an uninterpreted function, or one layer at a time"] }
 
 end Fren.Core

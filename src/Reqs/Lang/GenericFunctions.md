@@ -125,13 +125,15 @@ pub proc generic_signature(
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.length_zero "allow" in
-refine signature_detail: generic_signature refines generic_function {
-    unmentioned? := (params > 0 and not (ty_mentions?(result, 0) or (declared.len > 0 and ty_mentions?(declared[0], 0))
-        or (declared.len > 1 and ty_mentions?(declared[1], 0)) or (declared.len > 2 and ty_mentions?(declared[2], 0))))
-        or (params > 1 and not (ty_mentions?(result, 1) or (declared.len > 0 and ty_mentions?(declared[0], 1))
-        or (declared.len > 1 and ty_mentions?(declared[1], 1)) or (declared.len > 2 and ty_mentions?(declared[2], 1))))
-        or (params > 2 and not (ty_mentions?(result, 2) or (declared.len > 0 and ty_mentions?(declared[0], 2))
-        or (declared.len > 1 and ty_mentions?(declared[1], 2)) or (declared.len > 2 and ty_mentions?(declared[2], 2)))),
+expect signature_detail(params: Nat, declared: Seq<lang::Ty>, result: lang::Ty) {
+    use lang
+    call concrete := generic_signature(params, declared, result)
+    expect rule: (concrete.accepted?) iff ((params) = 0 or not (((params) > 0 and not (lang::ty_mentions?((result), 0) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 0))
+        or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 0)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 0))))
+        or ((params) > 1 and not (lang::ty_mentions?((result), 1) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 1))
+        or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 1)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 1))))
+        or ((params) > 2 and not (lang::ty_mentions?((result), 2) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 2))
+        or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 2)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 2))))))
 }
 ```
 

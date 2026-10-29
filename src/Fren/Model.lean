@@ -358,6 +358,17 @@ structure DefinedInfo where
   namedBranchGroups : Array (Core.BranchGroup Expr) := #[]
   namedMemberGroups : Array (Core.MemberGroup Expr) := #[]
   source? : Option (String × FileMap) := none
+  /-- It is a structural recursion (`lang::structural_recursion`): `solver?`
+  is then its evaluable definition over the placeholders themselves;
+  queries replace its symbol by an uninterpreted local
+  (`Reqs/Lang/Recursion#solver-encoding`). -/
+  recursive : Bool := false
+  /-- For a structural recursion, its body as the solver reads it: a
+  closed lambda over its parameters, with its `match`es as `if`s and its
+  applications of itself of `solver?`, used only for one-step ground equations. -/
+  recBody? : Option Expr := none
+  decreasing? : Option Nat := none
+  fact? : Option Expr := none
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -900,7 +911,13 @@ structure LocalState where
   guardedUsed : Bool := false
   /-- In a defined function's body, its uses of itself so far, each where
   it is written (`lang::structural_recursion`). -/
+  recApps : Array (Syntax × Array Expr × Array Expr) := #[]
   recUses : Array (Lean.Syntax × Core.RecUse) := #[]
+  /-- In a defined function's body, the patterns of the `match`es on a
+  parameter, or on a binder bound from a payload of one, that are not a Lean
+  `match` and have a recursive application under them, each the first
+  pattern that a Lean `match` does not have (`lang::recursive_match`). -/
+  recMatches : Array Lean.Syntax := #[]
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated, by where `e` is: whether `e` is a sequence, and the
   `undecidable` report that `in` defers until the quantifier is known to
@@ -1063,21 +1080,28 @@ form (`DefinedInfo.solver?`) is unfolded to that form instead of its
 declaration's body, so that the solver sees the same terms whatever form
 the declaration has. -/
 def deltaDefined (s : State) (e : Expr) (p : Name → Bool) : CoreM Expr := do
-  let redirect := s.defined.foldl (init := ({} : NameMap Name)) fun acc _ d =>
+  -- Each declaration with a solver form: that form, and how many of the
+  -- arguments, its placeholders', the form does not take, as a structural
+  -- recursion's does not.
+  let redirect := s.defined.foldl (init := ({} : NameMap (Name × Nat))) fun acc _ d =>
     match d.solver? with
-    | some n => acc.insert d.decl n
+    | some n => acc.insert d.decl (n, if d.recursive then d.uses.size else 0)
     | none => acc
   if redirect.isEmpty then return ← Meta.deltaExpand e p
-  let solvers := redirect.foldl (init := ({} : NameSet)) fun acc _ n => acc.insert n
+  let solvers := redirect.foldl (init := ({} : NameSet)) fun acc _ (n, _) => acc.insert n
+  -- A structural recursion's solver form is not unfolded: the solver is
+  -- given its recursive definition.
+  let recursive := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
+    if d.recursive then d.solver?.elim acc acc.insert else acc
   Core.transform e fun e => do
     let e := match e.getAppFn with
       | .const c ls => match redirect.get? c with
-        | some n => mkAppN (.const n ls) e.getAppArgs
+        | some (n, k) => mkAppN (.const n ls) (e.getAppArgs.extract k)
         | none => e
       | _ => e
-    match ← Meta.delta? e fun n => p n || solvers.contains n with
+    match ← Meta.delta? e fun n => (p n || solvers.contains n) && !recursive.contains n with
     | some e' => return .visit e'
-    | none => return .continue
+    | none => return .continue e
 
 def getLocal : m LocalState := return localExt.getState (← getEnv)
 

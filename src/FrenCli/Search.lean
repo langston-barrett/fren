@@ -148,12 +148,12 @@ partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (d
     | some t => typedValueOf sp w h r t
     | none => valueOf sp w h 2 r
   let contract := sp.contracts.find? base
-  let others : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, fn := fun g as => if depth == 0 then none else w.value sp g as (depth - 1) }
+  let others : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?, fn := fun g as => if depth == 0 then none else w.value sp g as (depth - 1) }
   let checkPosts := contract.any fun (ps, pres, _) =>
     pres.all (·.eval others (fun _ => none) (ps.zip args).toList == some (.bool true))
   let candidates := (List.range 16).map fun k => valueAt (if k == 0 then h else mix h k.toUInt64)
   candidates.find? fun v =>
-    let I : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, fn := fun g as =>
+    let I : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?, fn := fun g as =>
       if (g == f || g == base) && as == args then some v else if depth == 0 then none else w.value sp g as (depth - 1) }
     let member := (sp.results.find? base).all fun t =>
       (Ex.typed t #[] (.lit v)).eval I (fun _ => none) == some (.bool true)
@@ -170,6 +170,7 @@ it is given, built once for many interpretations. -/
 def World.interp (sp : Spec) (w : World) (shapes? : Option (Std.HashMap Name Fren.Core.DataShape) := none) : Interp where
   defs := sp.defs.find?
   fn f args := w.value sp f args
+  recDefs := sp.recDefs.find?
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
   shapes p := match shapes? with
     | some m => m[p]?

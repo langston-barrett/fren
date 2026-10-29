@@ -126,16 +126,6 @@ partial def decidableOf (p : Expr) : MetaM Expr := do
         return mkApp4 (mkConst ``instDecidableForall) a b (← decidableOf a) (← decidableOf b)
     synthInstance (mkApp (mkConst ``Decidable) p)
 
-/-- Compiles `fs`, each a closed function, with Lean's evaluator. -/
-unsafe def compileUnsafe (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α) := do
-  if fs.isEmpty then return #[]
-  let arr ← mkArrayLit ty fs.toList
-  let arrTy := mkApp (mkConst ``Array [0]) ty
-  evalExpr (Array α) arrTy arr
-
-@[implemented_by compileUnsafe]
-opaque compile (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α)
-
 instance : Inhabited (Array Nat → Bool) := ⟨fun _ => false⟩
 instance : Inhabited (Array Nat → Array Nat → Bool) := ⟨fun _ _ => false⟩
 
@@ -287,11 +277,11 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     let atomFns ← atoms.mapM fun a => withLocalDeclD `env arrNat fun env => do
       mkLambdaFVars #[env] (← decideOf (← over env a))
     let fnTy ← mkArrow arrNat (mkConst ``Bool)
-    let evals ← compile (Array Nat → Bool) fnTy atomFns
+    let evals ← compileValues (Array Nat → Bool) fnTy atomFns
     let sameFns ← defined.mapM fun (_, _, de) => withLocalDeclD `e₁ arrNat fun e₁ => withLocalDeclD `e₂ arrNat fun e₂ => do
       let de ← unfoldDefined de
       mkLambdaFVars #[e₁, e₂] (← decideOf (← mkEq (← over e₁ de) (← over e₂ de)))
-    let sames ← compile (Array Nat → Array Nat → Bool) (← mkArrow arrNat (← mkArrow arrNat (mkConst ``Bool))) sameFns
+    let sames ← compileValues (Array Nat → Array Nat → Bool) (← mkArrow arrNat (← mkArrow arrNat (mkConst ``Bool))) sameFns
     -- What each atom reads: the slots of the locals it mentions, and the
     -- defined outputs it mentions.
     let slotsOf (a : Expr) : Array Nat :=

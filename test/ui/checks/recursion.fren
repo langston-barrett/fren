@@ -1,0 +1,38 @@
+-- Opaque recursion with finite ground equations and contracts.
+pub enum Tree { Leaf, Node(Tree, Int, Tree) }
+
+pub fn elems(t: Tree): Set<Int> := match t {
+    Tree::Leaf => {},
+    Tree::Node(l, k, r) => elems(l) union {k} union elems(r),
+}
+
+pub fn has_zero?(t: Tree) := match t {
+    Tree::Leaf => false,
+    Tree::Node(l, k, r) => k = 0 or has_zero?(l) or has_zero?(r),
+}
+
+pub fn size(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => size(l) + 1 + size(r),
+}
+
+pub fn left_leaves(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => (if l = Tree::Leaf then 1 else 0) + left_leaves(l) + left_leaves(r),
+}
+
+proc decided(t: Tree) {
+    expect empty_is_leaf: when elems(t) = {}, t = Tree::Leaf
+    expect zero_not_leaf: when t is Tree::Node(_, 0, _) and has_zero?(t), t != Tree::Leaf
+    expect not_all: when t is Tree::Node(Tree::Leaf, 1, Tree::Node(Tree::Leaf, 2, Tree::Leaf)), elems(t) != {1, 2}   --~ error: expectation `decided::not_all` does not hold
+}
+
+proc constant(t: Tree) {
+    expect sizes: size(Tree::Node(Tree::Leaf, 1, Tree::Node(Tree::Leaf, 2, Tree::Leaf))) = 2 or t = Tree::Leaf   --~ warning: could not decide whether `constant::sizes` holds
+    expect lefts: left_leaves(Tree::Node(Tree::Node(Tree::Leaf, 1, Tree::Leaf), 2, Tree::Leaf)) = 1 or t = Tree::Leaf   --~ warning: could not decide whether `constant::lefts` holds
+}
+
+proc outside(t: Tree) {
+    expect small: when t is Tree::Node(Tree::Node(_, _, _), _, _), size(t) < 2   --~ error: expectation `outside::small` does not hold
+    expect layer: when t is Tree::Node(l, _, r), size(t) = size(l) + 1 + size(r)
+}

@@ -1,0 +1,4 @@
+--@ args: fix --check
+-- A failing rewrite must not print or write a partial migration.
+proc p(x: Int): (det y: Int) { ensure value: y = x }
+expect bad: forall (a: p), a.missing = 0

@@ -24,6 +24,7 @@ members that a claim needs, and no others:
   as `w.x`, as a procedure's call does;
 - `expect n: e` is a claim, and `cover n: e` a scenario that must be
   possible, as in a procedure;
+- `refines c a(args)` claims the specification `a` of call `c` (see [Refinement](Refinement.md));
 - `let x: T := e` names an expression, and `use` imports names for the
   block, as in a procedure.
 
@@ -46,15 +47,27 @@ pub mod lang
 accepts, and a result in its signature, which it does not:
 
 ```fren
-pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Use }
+pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Refines, Use }
 
 pub proc block_member(
     member: BlockMember,
     det?,                -- written with `det`
 ): (det accepted?) {
-    use self::BlockMember::{Assume, Call, Cover, Define, Ensure, Exists, Expect, Let, Result, Use}
+    use self::BlockMember::{
+        Assume,
+        Call,
+        Cover,
+        Define,
+        Ensure,
+        Exists,
+        Expect,
+        Let,
+        Refines,
+        Result,
+        Use,
+    }
 
-    ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Use})
+    ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Refines, Use})
 
     expect claims: when member in {Expect, Cover} and not det?, accepted?
     expect constrains_nothing: when member in {Result, Exists, Define, Ensure}, not accepted?
@@ -139,3 +152,143 @@ confirm it: they are a procedure's, but for those of what it does not
 have. Its assumptions must be satisfiable, as a procedure's must, or every
 expectation would hold vacuously: the realizability check reports
 contradictory ones (`F0602`).
+
+## Checks as sets of behaviours
+
+The following requirements model complete valuations, rather than flags
+for individual pieces of syntax. `GlobalWorld` identifies a valuation of
+the parameters, all call variables, and one shared interpretation. Sets
+of these worlds describe the meanings of assumptions, calls and claims.
+An expectation is validity over the admitted worlds; a cover is existence
+within them. Call preconditions are obligations, never extra hypotheses.
+
+```fren
+pub type GlobalWorld
+
+pub proc global_checks(
+    assumptions: Set<GlobalWorld>,
+    calls: Set<GlobalWorld>,
+    earlier_calls: Set<GlobalWorld>,
+    preconditions: Set<GlobalWorld>,
+    claim: Set<GlobalWorld>,
+    scenario: Set<GlobalWorld>,
+): (det expectation?, det call_valid?, det inhabited?, det covered?) {
+    let admitted: Set<GlobalWorld> := assumptions inter calls
+    ensure expectation: expectation? iff admitted subset claim
+    ensure obligation: call_valid? iff assumptions inter earlier_calls subset preconditions
+    ensure nonvacuous: inhabited? iff admitted != {}
+    ensure cover: covered? iff admitted inter scenario != {}
+
+    expect universal: when admitted subset claim, expectation?
+    expect missing_precondition: when not assumptions inter earlier_calls subset preconditions, not call_valid?
+    expect no_call_filter: when assumptions = {} or calls = {}, not inhabited?
+    expect impossible_scenario: when admitted inter scenario = {}, not covered?
+    expect witness: when scenario = admitted and admitted != {}, covered?
+}
+```
+
+Parameters range over their entire declared types. No enumeration size
+limit applies to a block's parameters. Two calls receive the same input
+exactly when their argument expressions give that value; outputs of an
+earlier call may supply arguments to a later one. These executable claims
+use unbounded integers, shared arguments, and an output passed onwards:
+
+```fren
+pub proc global_successor(x: Int): (det y: Int) {
+    ensure successor: y = x + 1
+}
+
+expect global_composition(x: Int) {
+    call first := global_successor(x)
+    call again := global_successor(x)
+    call next := global_successor(first.y)
+    expect shared_argument: first.y = again.y
+    expect composition: next.y = x + 2
+    cover possible: next.y = 2
+}
+```
+
+## Migration
+
+The removed behaviour-binder form is accepted only as input to `fren
+fix`. A behaviour binder contributes a fresh parameter for each input of
+its procedure, in declaration order, and a call with those arguments.
+Each value binder contributes a parameter. Each callee assumption is
+copied with its inputs substituted, including definitions used by the
+assumption. Names and types retain their original resolution. The old
+body, including any `where`, becomes the inner expectation. Generated
+names must avoid the original names, including locally bound names.
+Guards equating inputs remain guards; migration does not merge inputs.
+`--check` prints the change without writing, and `--ignore` excludes a
+file. An unsuccessful migration writes no partial change.
+
+The parameter types of one migrated binder are an ordered sequence,
+not a set: a behaviour contributes its procedure's input types in order,
+even when several inputs have the same type. A value contributes just
+its own type. A procedure with no inputs still contributes one call.
+
+```fren
+pub enum GlobalBinderKind { Behaviour, Value }
+
+pub proc global_migration_shape(
+    binder_kind: GlobalBinderKind,
+    input_types: Seq<String>,
+    value_type: String,
+): (det parameter_types: Seq<String>, det calls: Int) {
+    out parameter_types := if binder_kind = GlobalBinderKind::Behaviour then input_types else [value_type]
+    out calls := if binder_kind = GlobalBinderKind::Behaviour then 1 else 0
+    expect behaviour_order: when binder_kind = GlobalBinderKind::Behaviour, parameter_types = input_types
+    expect value_parameter: when binder_kind = GlobalBinderKind::Value, parameter_types = [value_type] and calls = 0
+    expect zero_inputs: when binder_kind = GlobalBinderKind::Behaviour and input_types = [], parameter_types = [] and calls = 1
+}
+
+pub proc global_migration_name(
+    reserved: Set<String>,    -- original declarations and locally bound names
+    allocated: Set<String>,   -- names already allocated by this migration
+    candidate: String,
+): (det available?) {
+    ensure fresh: available? iff not candidate in reserved union allocated
+    expect original_name: when candidate in reserved, not available?
+    expect generated_name: when candidate in allocated, not available?
+    expect unused_name: when not candidate in reserved and not candidate in allocated, available?
+}
+```
+
+## Relocating references
+
+Migration resolves free names at the declaration of the callee, before
+moving its assumptions. It does not resolve them at the caller. A local
+binder masks input substitution only in its lexical scope. This matters
+both when the caller has no such function and when it has a different
+function with the same spelling. Qualification must retain the original
+symbol even in the latter case; merely checking that the rewrite is
+well typed cannot establish preservation.
+
+The model below represents a predicate application by its resolved symbol
+and argument. The environments before and after relocation may disagree
+on the spelling; the rewritten reference retains the definition's symbol.
+The interpretation supplies the actual predicate meanings. Renaming an
+input supplies its value through the generated parameter, rather than
+re-resolving its original spelling.
+
+```fren
+pub type GlobalSymbol
+
+pub proc global_migration_meaning(
+    definition_symbol: GlobalSymbol,
+    caller_symbol: GlobalSymbol,
+    input_value: Int,
+    generated_parameter: Int,
+    interpretation: Rel<GlobalSymbol, Int>,
+): (det relocated_symbol: GlobalSymbol, det original?, det relocated?, det captured?) {
+    assume substitution: generated_parameter = input_value
+    out relocated_symbol := definition_symbol
+    ensure original: original? iff (definition_symbol, input_value) in interpretation
+    ensure relocation: relocated? iff (relocated_symbol, generated_parameter) in interpretation
+    ensure capture: captured? iff (caller_symbol, generated_parameter) in interpretation
+    expect preservation: original? iff relocated?
+    expect detects_capture: when (definition_symbol, input_value) in interpretation and not (caller_symbol, input_value) in interpretation,
+        original? and not captured?
+    cover different_domains: original? and not captured?
+}
+```

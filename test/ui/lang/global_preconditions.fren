@@ -1,0 +1,24 @@
+-- Global call checks substitute local definitions, and can use the
+-- fren-covers: lang::global_checks, lang::global_successor
+-- guarantees of earlier calls to discharge a later call's precondition.
+proc positive(x: Int): (det y: Int) {
+    let next: Int := x + 1
+    let twice: Int := next + 1
+    assume domain: twice > 0
+    ensure result: y = x
+}
+proc successor(x: Int): (det y: Int) {
+    ensure result: y = x + 1
+}
+expect composition(x: Int) {
+    assume domain: x > -2
+    call a := positive(x)
+    call b := successor(a.y)
+    call c := positive(b.y)
+    expect two_steps: c.y = x + 1
+    cover zero: c.y = 0  --~ info: cover goal `composition::zero` is met
+}
+expect unchecked(x: Int) {
+    call a := positive(x)  --~ error: the assumption `domain` of `positive` may not hold for call `unchecked::a`
+    expect result: a.y = x
+}

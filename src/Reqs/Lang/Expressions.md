@@ -259,7 +259,13 @@ Each layer of an expression mentions what `lang::mentions` says, so
 `lang::node` refines it:
 
 ```fren
-refine layer_mentions: node refines mentions
+expect layer_mentions(program: lang::Program, head: lang::Head, env: lang::Env, values: Seq<lang::Value>, parts_mentioned: Set<lang::Mention>, undefined_parts: Set<Int>) {
+    use lang
+    assume spec_leaves: when (head) is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_), (parts_mentioned) = {}
+    call concrete := node(program, head, env, values, parts_mentioned, undefined_parts)
+    expect mentioned: concrete.mentioned = (lang::mentioned_by((head), (parts_mentioned)))
+    expect mentions_definition: concrete.mentions? = ((concrete.mentioned) != {})
+}
 ```
 
 The parts of a defined variable, of a binder and of a name of a `let` or
@@ -1620,10 +1626,11 @@ pub proc table_arms(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine table_arms_refines: table_arms refines table_arm_pair {
-    overlap? := 0 <= i < overlaps.len and overlaps[i] = Overlap::Overlapping,
-    guarded? := (0 <= i < arms.len and arms[i] = TableArm::Guarded) or (0 <= j < arms.len and arms[j] = TableArm::Guarded),
-    otherwise? := 0 <= j and j = arms.len - 1 and arms[j] = TableArm::Wildcard,
+expect table_arms_refines(arms: Seq<lang::TableArm>, overlaps: Seq<lang::Overlap>, i: Int, j: Int, earlier_rejected?) {
+    use lang
+    call concrete := table_arms(arms, overlaps, i, j, earlier_rejected?)
+    expect static: (concrete.rejected?) iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping) and not ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded)) and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
+    expect checked: (concrete.asked?) iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping) and ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded)) and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
 }
 ```
 
@@ -1695,10 +1702,17 @@ pub proc table_eval(
 }
 
 set_option fren.lint.undecidable "allow" in
-refine table_eval_refines: table_eval refines table_match {
-    k := 0,                  -- only the expectations read `k`
-    one := first,
-    disjoint? := arms.index_of([ArmAt::Taken], first + 1) = -1,
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.absurd_extreme_comparisons "allow" in
+expect table_eval_refines(arms: Seq<lang::ArmAt>, values: Seq<Int>, otherwise: Seq<Int>) {
+    use lang
+    assume spec_aligned: (values).len = (arms).len
+    call concrete := table_eval(arms, values, otherwise)
+    expect held: when ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1) and (concrete.first) >= 0, (concrete.value) = (values)[(concrete.first)]
+    expect otherwise_held: when (concrete.first) = -1 and (otherwise) != [], (concrete.value) = (otherwise)[0]
+    expect one: (concrete.first) = ((arms).index_of([lang::ArmAt::Taken], 0))
+    expect disjoint_definition: ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1) = ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1)
 }
 ```
 

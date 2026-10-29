@@ -355,7 +355,11 @@ pub proc eval_exit(
 
 use cli::exit_status
 
-refine eval_exit_status: eval_exit refines exit_status
+expect eval_exit_status(ran?, complete?, status: eval::Status, expect_false?) {
+    use eval
+    call concrete := eval_exit(ran?, complete?, status, expect_false?)
+    refines concrete exit_status(ran?)
+}
 ```
 
 ## `fren quickcheck`

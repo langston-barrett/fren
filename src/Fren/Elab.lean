@@ -87,6 +87,9 @@ but that is not one of Fren's (`lang::identifier`,
 `lang::integer_literal`), or prefix `!`, as the `fren` command's lexer
 does. -/
 partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
+  if stx.isOfKind ``Lang.refinesMember then
+    stx.getArgs[:6].toArray.forM checkLexemes
+    return
   if let `(fren_expr| !$_) := stx then throwErrorAt stx[0] (Core.foreignOpMsg "!").text
   match stx with
   | .ident _ raw _ _ =>
@@ -123,6 +126,9 @@ grammar accepts it:
 - `table` as a name: it is a reserved word, which Lean reads as a name
   where an expression starts, as it reads `when`. -/
 partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
+  if stx.isOfKind ``Lang.refinesMember then
+    stx.getArgs[:6].toArray.forM checkParsed
+    return
   let reserved (p : Syntax) : CommandElabM Unit := do
     let id := (pathSegs p)[0]!
     if id.getId.getRoot == Name.mkSimple "table" then throwErrorAt id Core.tableNameMsg
@@ -560,6 +566,11 @@ structure ExprCtx where
   definition, where a `match` is Lean's own where it can be
   (`Reqs/Generated#matches`). -/
   leanMatch : Bool := false
+  /-- Translating a structural recursion's body for its Lean definition,
+  where a `match` whose arms are propositions is a Lean `match` of their
+  `decide`s, so that Lean's structural recursion sees through it
+  (`lang::recursive_match`). -/
+  leanBoolArms : Bool := false
 
 /-- What the binder `b` is, for a declaration that hides it (`Core.bindingLocals`). -/
 def MatchBinder.what (b : MatchBinder) : Name × Core.BindingKind :=
@@ -3170,7 +3181,11 @@ def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx
     bodies := bodies.push body
     guards := guards.push g?
     tys := tys.push ty?
-  let armKind : ArmKind := if tys.any (·.any (·.isProp)) then .propositions else .values
+  let mut armKind : ArmKind := if tys.any (·.any (·.isProp)) then .propositions else .values
+  if armKind == .propositions && cx.leanBoolArms then
+    bodies ← (bodies.zip tys).mapM fun (b, t?) => if t?.any (·.isProp) then `(decide $b) else pure b
+    tys := tys.map fun t? => if t?.any (·.isProp) then some (Lean.mkConst ``Bool) else t?
+    armKind := .values
   let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
   unless matchForm scrutineeKind armKind (pats.flatMap patHeads) == .leanMatch do return none
   -- An `Int` where another arm is a `Nat` (`widenMixed`).
@@ -3227,6 +3242,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- The scrutinee synthesizes its type, and each body is checked against the
   -- whole's, or another's (`lang::checked`).
   let scrutinee := e[1]
+  let origin? := cx.recOrigin? scrutinee
   let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false } scrutinee
   let ty ← typeOf s
   let pty := patTyOf (← getState) ty
@@ -3236,6 +3252,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut resolved := #[]
   for arm in arms do resolved := resolved.push (← resolveTop cx ty s false arm[0])
   let pats := resolved.map (·.1)
+  let usesBefore := (← getLocal).recUses.size
   let guarded := arms.map (!·[1].isNone)
   let isTable := e.isOfKind ``Lang.tableMatchExpr
   -- In a table over a scrutinee, only the last arm may be `_` without a
@@ -3342,6 +3359,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if armsTy?.isSome then armsTy? ← armType cx armsTy? b body (armsTy?.map (·.widen))
     bodies := bodies.set! k body
   noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
+  -- A recursive application under a `match` on an enumeration's parameter
+  -- or payload that is not a Lean `match` (`lang::recursive_match`).
+  if origin?.isSome && pty matches .enum .. then
+    if let some k := Core.firstNonLeanPattern? pats guarded then
+      if (← getLocal).recUses.size > usesBefore then
+        modifyLocal fun l => { l with recMatches := l.recMatches.push arms[k]![0] }
   let widened ← widenMixed bodies
   if lean then
     if let some m ← leanMatchTerm toTerm cx e s ty pty pats armInfo then return m
@@ -4727,7 +4750,6 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     let n := id.getId
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
-        -- A bound name has no scrutinee: it mentions nothing.
         if let some sc := b.scrutinee then
           if b.isDef then
             -- A name stands for its definition: its indexes are guarded
@@ -4884,10 +4906,16 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
 parameters are `ps`, in its own body; an error if with it the uses are not a
 structural recursion (`lang::structural_recursion`). -/
 def noteRecUse (ref : Syntax) (f : Name) (ps : Array Name) (u : Core.RecUse) : TermElabM Unit := do
+  -- Once for each use written: an expression elaborated again, such as a
+  -- `match`'s arms for Lean's `match` or a `match`'s scrutinee where a
+  -- closure refers to an arm's binder, is not another use.
+  let range? := ref.getRange?
+  if range?.isSome && (← getLocal).recUses.any (·.1.getRange? == range?) then return
   modifyLocal fun l => { l with recUses := l.recUses.push (ref, u) }
   let uses := (← getLocal).recUses
   if let .notStructural _ i := Core.recursion ps.size (uses.toList.map (·.2)) then
-    throwErrorAt ref (Core.nonStructuralMsg f ps[i]! u.form (u.args[i]?.getD .expr)).text
+    -- A function always has a parameter; without one, the message names the function.
+    throwErrorAt ref (Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr)).text
 
 open Lang in
 /-- A closure, or the name of a function, `e`, given for the function
@@ -5020,6 +5048,13 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       if let some found ← frenTypeOf? x then
         liftMsg a (Core.checkType t found (some s!"note: argument {k + 1} of `{Core.showPath f}` has type `{t.show}`"))
       return x
+    let ps := cx.vars.map (·.ptype)
+    for a in args.getElems, t in ts, i in [0:ts.size] do
+      noteObligation cx .argument a (ps[i]?.getD default) t
+    if cx.noteIndexes then
+      let vals ← ts.mapM fun t => Term.elabTerm t none
+      let gs ← cx.guards.mapM elabProp
+      modifyLocal fun l => { l with recApps := l.recApps.push (p, vals, gs) }
     return ← `($fx $ts*)
   -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
   if segs.size == 1 then
@@ -5095,6 +5130,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   if let some d := ((← getState).defined.get? path).filter (!·.hoParams.isEmpty) then
     return ← hoAppTerm toTerm cx e p path d args.getElems expected?
   if let some d := (← getState).defined.get? path then
+    let argStxs := args.getElems
     -- Its definition, applied to the placeholders it uses; its arguments
     -- may mention anything (`lang::argument`).
     unless args.getElems.size == d.nParams do throwError (Core.arityMsg path d.nParams args.getElems.size).text
@@ -6031,6 +6067,58 @@ def addLeanDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
       | _ => none
   addUsesDef uses name value
 
+/-- Adds the recursive definition `name` of type `type` and value `value`,
+which mentions `name`, as Lean's `def` adds one, by its structural
+recursion, compiled where `definitionForm` says that it is
+(`Reqs/Generated#computable-definitions`). -/
+def addRecursiveDef (ref : Syntax) (name : Name) (type value : Expr) : TermElabM Unit := do
+  let kind : ValueKind ← forallTelescope type fun _ r => return if r.isProp then .proposition else .data
+  let mentions ← if kind == .proposition then pure #[] else
+    ((value.foldConsts #[] fun c acc => if c == name then acc else acc.push c).mapM (liftM <| mentionOf ·))
+  let computeKind := if definitionForm kind mentions == .compiled then .regular else .noncomputable
+  addPreDefinitions ({}, {}) #[{ ref, kind := .def, levelParams := [], modifiers := { computeKind }, declName := name
+                                 binders := .missing, type, value, termination := .none }]
+
+/-- Adds a structural recursion's two definitions
+(`lang::structural_recursion`), from `recLean`, its Lean definition's value
+over itself first, with the placeholders `uses` as themselves and its
+`match`es Lean's, whose matchers are under `leanDeclName decl`: the
+solver's, `solverName decl`, as it is (`DefinedInfo.recursive`); and
+`decl`, generalized over the placeholders, with the matchers added again
+under `decl`, as `addLeanDef` adds them. Lean's structural recursion
+accepts each. -/
+def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean : Expr) : TermElabM Unit := do
+  let type := recLean.bindingDomain!
+  let solver := solverName decl
+  -- The solver's, with the defined functions that it applies unfolded, as
+  -- a query's are (`Fren.unfoldDefined`), but the structural recursions.
+  let st ← getState
+  let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
+  let sv ← Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st (recLean.beta #[Lean.mkConst solver]) ds.contains))
+  addRecursiveDef ref solver type sv
+  let tmp := leanDeclName decl
+  let ms := recLean.foldConsts #[] fun c acc => if c.getPrefix == tmp && !acc.contains c then acc.push c else acc
+  let args := uses.map (Lean.mkConst ·)
+  let mut value := recLean.beta #[mkAppN (Lean.mkConst decl) args]
+  for m in ms do
+    let some info ← Meta.getMatcherInfo? m | throwError "internal error: `{m}` is not a matcher"
+    let .defnInfo ci ← getConstInfo m | throwError "internal error: `{m}` is not a definition"
+    let m' := decl ++ Name.mkSimple m.getString!
+    let (mty, mval) ← withUses uses fun xs => do
+      return (← mkForallFVars xs (replaceUses uses xs ci.type), ← mkLambdaFVars xs (replaceUses uses xs ci.value))
+    addDecl (.defnDecl { name := m', levelParams := ci.levelParams, type := mty, value := mval, hints := ci.hints, safety := .safe })
+    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + uses.size }
+    setInlineAttribute m'
+    -- Lean's equation lemmas of the recursion are realized from it.
+    enableRealizationsForConst m'
+    value := value.replace fun e => match e with
+      | .const c ls => if c == m then some (mkAppN (.const m' ls) args) else none
+      | _ => none
+  let body := value
+  let (gType, gValue) ← withUses uses fun xs => do
+    return (← mkForallFVars xs (replaceUses uses xs type), ← mkLambdaFVars xs (replaceUses uses xs body))
+  addRecursiveDef ref decl gType gValue
+
 /-! ## Abstract types and functions -/
 
 /-- Records the questions about the tables and applications of the body
@@ -6874,32 +6962,42 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let fnVars := fnPs.map fun (_, x, _, ft, lty) => (x, ft, lty, placeholderName (path ++ x))
     let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
-    let (lam, tables, obls, leanLam?) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
-        withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+    -- A first-order function that is not generic may apply itself, in a
+    -- structural recursion (`lang::structural_recursion`): within the
+    -- body, a local of its type stands for it, which its definitions
+    -- replace with themselves.
+    let selfName := n.appendAfter "#self"
+    let recursive := tps.isEmpty && fnPs.isEmpty
+    let selfTy := vars.foldr (fun v acc => .forallE v.name v.type acc .default) result
+    let withSelf {α : Type} (k : Option Expr → TermElabM α) : TermElabM α :=
+      if recursive then withLocalDeclD selfName selfTy fun s => k (some s) else k none
+    let (lam, tables, obls, leanLam?, recLeanLam?, recIdx?, selfApps) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
+        withSelf fun self? => withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
-      -- A first-order function that is not generic may apply itself, in a
-      -- structural recursion (`lang::structural_recursion`): within the
-      -- body, a local of its type stands for it.
-      let selfName := n.appendAfter "#self"
-      let recursive := tps.isEmpty && fnPs.isEmpty
       let selfRec? := if recursive then some (vars.map (·.name), ({ params := declared, result := resultTy } : Core.FnTy),
         (⟨(mkIdent selfName).raw⟩ : Term)) else none
-      let selfTy := vars.foldr (fun v acc => .forallE `x v.type acc .default) result
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop
                             selfFn := if (← getLocal).inSubset then none else some n, natOk := result.isConstOf ``Nat
                             expected? := if result.isConstOf ``Nat then some .nat else none
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
-      modifyLocal fun l => { l with recUses := #[] }
-      let t ← if recursive then withLocalDeclD selfName selfTy fun _ => toTerm cx body else toTerm cx body
+      modifyLocal fun l => { l with recUses := #[], recApps := #[], recMatches := #[] }
+      let t ← toTerm cx body
       let uses := (← getLocal).recUses
-      if let .structural i := Core.recursion vars.size (uses.toList.map (·.2)) then
-        throwErrorAt uses[0]!.1 (Core.structuralUnsupportedMsg path vars[i]!.name).text
+      let recursion := Core.recursion vars.size (uses.toList.map (·.2))
+      let structural := recursion matches .structural _
+      if structural then
+        if let some m := (← getLocal).recMatches[0]? then throwErrorAt m (Core.recursiveMatchMsg path).text
       noteObligation cx .body body rp t
       -- Its tables, the applications of functions with preconditions, and
       -- its pattern types' obligations, for their checks; its indexes are
       -- not checked.
-      let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
+      -- A structural recursion's applications of itself are of its solver
+      -- form there (`DefinedInfo.recursive`).
+      let selfFor (x : Expr) : Expr := match self? with
+        | some s => x.replaceFVar s (Lean.mkConst (solverName decl))
+        | none => x
+      let tables := (← takeIndexes fvs (fun (x : Expr) => selfFor (x.replaceFVars fnFvs phs))).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
       -- A `Bool` body is decided, classically if need be: equality on an
       -- abstract type has no other `Decidable` instance.
@@ -6917,17 +7015,20 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       -- where it can be (`Reqs/Generated#matches`). What that translation
       -- records and reports is dropped, as the first's stands; where it
       -- fails, the definition is the solver's.
-      let leanValue? ← if (body.find? fun x => isMatchLike x || x.isOfKind ``Lang.isExpr).isNone then pure none else
+      let leanValue? ← if !structural && (body.find? fun x => isMatchLike x || x.isOfKind ``Lang.isExpr).isNone then pure none else
         keepingNames <| withDeclName (leanDeclName decl) do
           let saved ← saveState
           try
-            let t' ← toTerm { cx with leanMatch := true } body
+            let t' ← toTerm { cx with leanMatch := true, leanBoolArms := structural } body
             -- But the metavariables, which the terms of the types that `t'`
             -- is written with stand for (`exprToSyntax`).
             let mctx ← getMCtx
             saved.restore
             setMCtx mctx
-            some <$> (instantiateMVars (← elabValue t'))
+            -- A structural recursion's `Bool` body is a `Bool`, a Lean
+            -- `match` of its arms' `decide`s, rather than decided again.
+            let v ← if structural && result.isConstOf ``Bool then elabProp t' result else elabValue t'
+            some <$> (instantiateMVars v)
           catch _ =>
             saved.restore
             pure none
@@ -6941,7 +7042,17 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
           let gs ← siteGoals f pr [] unfolded
           let body := if gs.isEmpty then Lean.mkConst ``True else gs.pop.foldr mkAnd gs.back!
           mkLambdaFVars (all.push pr) body
-      return (← mkLambdaFVars all value, tables, obls, ← leanValue?.mapM (mkLambdaFVars all ·))
+      -- A structural recursion's Lean definition is a Lean `match`, which
+      -- `lang::recursive_match` makes sure there is: over itself first.
+      let recLean? ← if !structural then pure none else
+        match leanValue?, self? with
+        | some v, some s => pure (some (← mkLambdaFVars #[s] (← mkLambdaFVars all v)))
+        | _, _ => throwErrorAt nameStx s!"internal error: no Lean definition of the structural recursion `{n}`"
+      return (selfFor (← mkLambdaFVars all value), tables, obls, ← leanValue?.mapM (mkLambdaFVars all ·), recLean?,
+        (match recursion with | .structural i => some i | _ => none),
+        ← (← getLocal).recApps.mapM fun (r, args, gs) => do
+          return (r, ← args.mapM fun x => do mkLambdaFVars fvs (selfFor (← instantiateMVars x)),
+            ← gs.mapM fun x => do mkLambdaFVars fvs (selfFor (← instantiateMVars x))))
     lintBools body (← hidesIn { modName := scope, vars, insts := #[], place := .prop, selfFn := some n })
     -- A parameter that only the contract mentions is used too.
     let mentioned := (pathMentions body ++ clauses.flatMap fun c => pathMentions (withWhere c[3] c[4])).map (·.getRoot)
@@ -6957,9 +7068,16 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let uses ← usesOf #[lam]
     -- Where its Lean definition is a Lean `match`, the solver's is beside it
     -- (`DefinedInfo.solver?`).
-    let solver? ← match leanLam? with
-      | none => addUsesDef uses decl lam; pure none
-      | some leanLam =>
+    -- A structural recursion's body as the solver reads it, with the
+    -- defined functions it applies unfolded, as a query's are.
+    let recBody? ← if recLeanLam?.isNone then pure none else do
+      let st ← getState
+      let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
+      some <$> Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st lam ds.contains))
+    let solver? ← match recLeanLam?, leanLam? with
+      | some recLean, _ => addRecursiveDefs nameStx uses decl recLean; pure (some (solverName decl))
+      | none, none => addUsesDef uses decl lam; pure none
+      | none, some leanLam =>
         let saved ← saveState
         try
           -- As many names as `addUsesDef uses decl lam` would take.
@@ -6990,9 +7108,20 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
-                           oblDecls, solver?, namedMembers, namedBranchGroups, namedMemberGroups, source? })
+                           oblDecls, solver?, namedMembers, namedBranchGroups, namedMemberGroups, source?, recursive := recLeanLam?.isSome, recBody?, decreasing? := recIdx?
+                           fact? := ← if recIdx?.isSome then (← resultFact? result rp).mapM instantiateMVars else pure none })
     let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
-    recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites) props path
+    let selfSites ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
+      let k := (← getState).contracts.get? path
+      let mut out := #[]
+      for (ref, args, gs) in selfApps do
+        let args := args.map (·.beta fvs)
+        let gs := gs.map (·.beta fvs)
+        for p in (k.map (·.pres)).getD #[] do
+          let g := gs.foldr (fun g b => mkForall `h .default g b) (p.at args)
+          out := out.push (n, Core.IndexPlace.body, ref, some (Core.TableGoal.precondition path p.name), ← mkLambdaFVars fvs g)
+      return out
+    recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites ++ selfSites) props path
   lintDeclared .function n nameStx
   lintLines .function n nameStx orig
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
@@ -7065,6 +7194,10 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
   let mut clauses := #[]
   let mut uses := #[]
   for m in stx[12].getArgs do
+    let mut inner := m
+    while inner.isOfKind ``Lang.evidenceMember do inner := inner[4]
+    if inner.isOfKind ``Lang.refinesMember then
+      throwErrorAt inner "`refines` is accepted only in global expectation blocks"
     -- Each member that a function's block does not take (`F0442`,
     -- `F0443`), at its first token, or a `use`'s or an evidence
     -- setting's whole, as the `fren` command reports it.
@@ -7227,12 +7360,18 @@ def elabInst (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) (decl : Name) 
   let slice := fvs.extract pi.offset (pi.offset + pi.comp.vars.size)
   let behaviour := pi.comp.meaning slice
   let typed ← typedObligations pi.comp slice fvs
+  -- A call's own meaning is not a hypothesis of its precondition check.
+  -- Inline its local definitions into those obligations instead.
+  let mut defined := slice
+  for (name, value) in pi.comp.defs do
+    if let some k := pi.comp.vars.findIdx? (·.name == name) then
+      defined := defined.set! k (value.beta defined)
   return (·, mkAnd bindings (pi.comp.meaningDecl slice)) {
     name := pi.name, comp := pi.comp.path, ref := pi.ref, decl
     bindings := ← mkLambdaFVars fvs bindings
     behaviour := ← mkLambdaFVars fvs behaviour
     assumes := typed.map (fun (n, _, f) => (n, f))
-      ++ (← pi.comp.assumes.mapM fun a => return (a.name, ← mkLambdaFVars fvs (a.body.beta slice)))
+      ++ (← pi.comp.assumes.mapM fun a => return (a.name, ← mkLambdaFVars fvs (a.body.beta defined)))
     typed := typed.map fun (n, t, _) => (n, t) }
 
 /-- Whether the evidence `value`, written at `ref`, is testing
@@ -7278,6 +7417,11 @@ open Lang in
 /-- The members of a procedure without their evidence settings, and the checks
 that those and the procedure's setting `all` set to testing. -/
 def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Syntax × Core.Tested × Core.Tested) := do
+  let reserved := raw.filterMap fun m0 => Id.run do
+    let mut m := m0
+    while m.isOfKind ``Lang.evidenceMember do m := m[4]
+    return (constraint? m).map fun (_, x, _) => x.getId
+  let mut refinesIndex := 0
   let mut members := #[]
   let mut expects := #[]
   let mut insts := #[]
@@ -7295,6 +7439,10 @@ def testedOf (all : Core.Evidence) (raw : Array Syntax) : CommandElabM (Array Sy
       | .assume => misplaced "an assumption"; constraints := constraints.push x.getId
       | .ensure => misplaced "a guarantee"; constraints := constraints.push x.getId
     -- By the names they declare, without the `!` of shadowing.
+    else if m.isOfKind ``Lang.refinesMember then
+      refinesIndex := refinesIndex + 1
+      while reserved.contains (Name.mkSimple s!"refines_{refinesIndex}") do refinesIndex := refinesIndex + 1
+      expects := expects.push (Name.mkSimple s!"refines_{refinesIndex}", b?)
     else if m.isOfKind ``Lang.callMember then insts := insts.push ((declaredIdent m[1]).1.getId, b?)
     else if m.isOfKind ``Lang.outMember then
       -- `[pub] [det] out x [: T] [:= e]`
@@ -7589,6 +7737,116 @@ def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Va
     indexes := indexes ++ sites
   return (expanded, defs, indexes, names, good)
 
+/-- Instantiate a specification positionally and generate ordinary expectation
+propositions. Specification assumptions are deliberately absent. -/
+def elabRefinesMembers (scope : Name) (members : Array Syntax) (vars : Array Var)
+    (insts : Array InstInfo) (declBase : Name) (fvs defnFvs : Array Expr)
+    (values : Array (Name × Expr)) (props : Array PropInfo) :
+    TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
+  let mut out := #[]
+  let mut defs := #[]
+  let mut indexes := #[]
+  let mut earlier : Array Name := #[]
+  for m in members do
+    if m.isOfKind ``Lang.callMember then earlier := earlier.push m[1].getId
+    unless m.isOfKind ``Lang.refinesMember do continue
+    let call := m[1].getId
+    let some inst := insts.find? (·.name == call)
+      | throwErrorAt m[1] "`{call}` is not a call in this global expectation block"
+    let r ← resolvePath scope (pathSegs m[2])
+    let .item { kind := .compItem, path, .. } := r
+      | throwErrorAt m[2] (Core.notACompMsg r).text
+    let some spec := (← getState).comps.get? path
+      | throwErrorAt m[2] "unknown specification procedure"
+    let some concrete := (← getState).comps.get? inst.comp
+      | throwErrorAt m[1] "unknown called procedure"
+    noteCounts spec m[2]
+    unless spec.decidable do modifyLocal fun l => { l with outsideCore := true }
+    let inputs := spec.vars.filter fun v => v.name.isAtomic && v.role == .input
+    let results := spec.vars.filter fun v => v.name.isAtomic && v.role == .output && v.isPub
+    let actual := concrete.vars.filter fun v => v.name.isAtomic && v.role == .output && v.isPub
+    let args := m[4].getSepArgs
+    unless args.size == inputs.size do
+      throwErrorAt m[2] (Core.callArityMsg (Core.showPath path) (inputs.map (Core.nameText ·.name)) args.size).text
+    unless results.size == actual.size do
+      throwErrorAt m[2] "refinement result count mismatch: specification has {results.size}, call has {actual.size}"
+    for v in spec.vars do
+      if v.name.isAtomic && v.role != .input && !v.isPub && v.defn?.isNone then
+        throwErrorAt m[2] "specification `exists` variable `{v.name}` is not supported by `refines`"
+    discard (takeIndexes fvs)
+    let cx : ExprCtx := { modName := scope, vars, insts := insts.map (·.name), place := .prop }
+    let inputValues ← (inputs.zip args).mapM fun (v, arg) => do
+      let t ← toTerm { cx with natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } arg
+      checkDeclared arg t v.type fun ty => s!"note: specification parameter `{v.name}` has type `{ty}`"
+      elabProp t v.type
+    let resultValues ← (results.zip actual).mapM fun (v, cv) => do
+      let some i := vars.findIdx? (·.name == call ++ cv.name)
+        | throwErrorAt m "missing call result"
+      let value := fvs[i]!
+      if ← isDefEq cv.type v.type then return value
+      if cv.type.isConstOf ``Nat && v.type.isConstOf ``Int then
+        return mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) value
+      throwErrorAt m[2] "refinement result type mismatch at `{v.name}`: call result `{cv.name}` cannot flow to the specification result"
+    let (body, specificationIndexes) ← withLocalDeclsD (spec.vars.map fun v => (v.name, fun _ => pure v.type)) fun sfvs => do
+      let mut slice := sfvs
+      for v in inputs, value in inputValues do
+        slice := slice.set! (spec.vars.findIdx? (·.name == v.name)).get! value
+      for v in results, value in resultValues do
+        slice := slice.set! (spec.vars.findIdx? (·.name == v.name)).get! value
+      -- Stored definitions already substitute dependencies on other lets.
+      -- Public results retain the concrete result, even when defined in the spec.
+      for (name, value) in spec.defs do
+        let some i := spec.vars.findIdx? (·.name == name) | continue
+        unless spec.vars[i]!.isPub do slice := slice.set! i (value.beta slice)
+      let guarantees := spec.ensures.map (·.body.beta slice)
+      let definitions ← spec.defs.filterMapM fun (name, value) => do
+        let some i := spec.vars.findIdx? (·.name == name) | return none
+        unless spec.vars[i]!.isPub do return none
+        return some (← mkEq slice[i]! (value.beta slice))
+      let typedResults ← ((inputs.zip inputValues) ++ (results.zip resultValues)).filterMapM fun (v, value) => do
+        let some obligation := v.ptype.obligation (← getState).shapeOf | return none
+        let pred ← predOf v.type obligation
+        return some (pred.beta #[value])
+      let goal := mkAndN (guarantees ++ definitions ++ typedResults).toList
+      let internalFacts := (spec.vars.zip slice).filterMap fun (v, value) =>
+        if v.name.isAtomic then none else v.fact?.map (·.beta #[value])
+      let callFacts := internalFacts ++ spec.insts.map fun i => mkAnd (i.bindings.beta slice) (i.behaviour.beta slice)
+      let internal := (spec.vars.zip sfvs).filterMap fun (v, fv) => if v.name.isAtomic then none else some fv
+      let close (goal : Expr) : TermElabM Expr := do
+        let goal ← if callFacts.isEmpty then pure goal else mkArrow (mkAndN callFacts.toList) goal
+        mkForallFVars internal goal
+      let checked := spec.ensures.map (·.name) ++ spec.defs.map (·.1)
+      let specificationIndexes ← spec.indexes.filterMapM fun (n, _, _, question, value) => do
+        unless question.isNone && checked.contains n do return none
+        return some (← mkLambdaFVars fvs (← close (value.beta slice)))
+      return (← close goal, specificationIndexes)
+    let mut serial := defs.size + 1
+    while (props ++ out).any (·.name == Name.mkSimple s!"refines_{serial}") do serial := serial + 1
+    let name := Name.mkSimple s!"refines_{serial}"
+    let decl := declBase ++ `expect ++ name
+    indexes := indexes ++ ((← takeIndexes fvs).map fun (r, q, g) => (name, Core.IndexPlace.prop, r, q, g))
+      ++ specificationIndexes.map (fun g => (name, Core.IndexPlace.prop, m, none, g))
+    if !m[6].isNone then
+      let assumptions := (props.filter (·.kind == .assume)).map (·.body.beta fvs)
+      let calls := (insts.filter fun i => earlier.contains i.name).map fun i => mkAnd (i.bindings.beta fvs) (i.behaviour.beta fvs)
+      let definitions ← (values.zip defnFvs).mapM fun ((_, value), fv) => mkEq fv value
+      let goal ← mkForallFVars fvs (← mkArrow (mkAndN (assumptions ++ calls ++ definitions).toList) body)
+      let tacs : TSyntax ``Lean.Parser.Tactic.tacticSeq := ⟨m[6][1]⟩
+      let pf ← withoutErrToSorry <| Term.elabTermEnsuringType (← `(by $tacs)) goal
+      Term.synthesizeSyntheticMVarsNoPostponing
+      let pf ← instantiateMVars pf
+      if pf.hasSorry then throwErrorAt m[6] "a refinement proof must not contain `sorry`"
+      if pf.hasMVar then throwErrorAt m[6] "refinement proof has unresolved goals"
+      -- Kernel-check the proof while all block variables are abstracted.
+      let uses ← usesOf #[goal, pf]
+      let (proofType, proofValue) ← withUses uses fun xs => do
+        return (← mkForallFVars xs (replaceUses uses xs goal), ← mkLambdaFVars xs (replaceUses uses xs pf))
+      addDecl (.thmDecl { name := decl ++ `proof, levelParams := [], «type» := proofType, value := proofValue })
+    defs := defs.push (decl, body)
+    if m[6].isNone then
+      out := out.push { kind := .expect, name, ref := m, decl, trigger? := none, triggerRef? := none, body := ← mkLambdaFVars fvs body }
+  return (out, defs, indexes)
+
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
 constraints. -/
 def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
@@ -7724,6 +7982,11 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     let (insts, defs, values, defnFvs, indexes, defsOk) ← elabCompDefinitions scope vars pending declBase fvs
     let (props, defs, indexes, _, propsOk) ←
       elabCompConstraints scope members vars instNames declBase fvs defnFvs values varNames defs indexes
+    let (refines, refineDefs, refineIndexes) ←
+      elabRefinesMembers scope members vars insts declBase fvs defnFvs values props
+    let props := props ++ refines
+    let defs := defs ++ refineDefs
+    let indexes := indexes ++ refineIndexes
     let good := varsOk && defsOk && propsOk
     lintDuplicateConstraints members
     let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
@@ -7745,6 +8008,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   for m in members do
     if m.isOfKind ``Lang.callMember then
       for a in m[5].getSepArgs do mentioned := mentioned ++ pathMentions a
+    if m.isOfKind ``Lang.refinesMember then
+      for a in m[4].getSepArgs do mentioned := mentioned ++ pathMentions a
     if let some (_, _, e) := constraint? m then mentioned := mentioned ++ pathMentions e
   for v in vars do
     if let some d := v.defn? then mentioned := mentioned ++ pathMentions d
@@ -7756,6 +8021,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   for m in members do
     if m.isOfKind ``Lang.callMember then
       for a in m[5].getSepArgs do others := others ++ pathMentions a
+    if m.isOfKind ``Lang.refinesMember then
+      for a in m[4].getSepArgs do others := others ++ pathMentions a
     if let some (kind, _, e) := constraint? m then
       unless kind == .assume do others := others ++ pathMentions e
   for v in vars do
@@ -7772,6 +8039,8 @@ def lintCompUnused (scope path : Name) (members : Array Syntax) (vars : Array Va
   for m in members do
     if m.isOfKind ``Lang.callMember then
       for a in m[5].getSepArgs do others := others ++ (← appliedFns acx a)
+    if m.isOfKind ``Lang.refinesMember then
+      for a in m[4].getSepArgs do others := others ++ (← appliedFns acx a)
     if let some (kind, _, e) := constraint? m then
       unless kind == .assume do others := others ++ (← appliedFns acx e)
   for v in vars do
@@ -7801,7 +8070,9 @@ def lintUnrelatedCalls (nameStx : Syntax) (n : String) (members : Array Syntax) 
   let expand (roots : Array Name) := roots.filter names.contains ++ (roots.filter params.contains).flatMap reading
   let atoms := members.flatMap (fun m => match constraint? m with
       | some (_, _, e) => (boolNode "" 0 (unparen e)).atoms.map fun a => expand ((pathMentions a.ref).map (·.getRoot))
-      | none => #[])
+      | none => if m.isOfKind ``Lang.refinesMember then
+          #[expand (#[m[1].getId] ++ m[4].getSepArgs.flatMap fun a => (pathMentions a).map (·.getRoot))]
+        else #[])
     -- A relation of one call alone puts it in no group.
     ++ (calls.map (fun ((w, roots) : Name × Array Name) => #[w] ++ roots.filter names.contains) ++ params.map reading).filter (fun (a : Array Name) => a.size ≥ 2)
   let groups := Core.binderGroups names atoms
@@ -7814,6 +8085,10 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
     (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3)
     (global : Bool := false) :
     TermElabM (Bool × Array Name) := do
+  unless global do
+    for m in members do
+      if m.isOfKind ``Lang.refinesMember then
+        throwErrorAt m "`refines` is accepted only in global expectation blocks"
   let (vars, names, ok) ← elabCompVars scope members
   unless ok do return (false, #[])
   let (pending, vars, names, ok) ← elabCompInsts scope members vars names
@@ -8018,6 +8293,7 @@ def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Bloc
       else if m.isOfKind ``Lang.expectMember then (.expect, false)
       else if m.isOfKind ``Lang.coverMember then (.cover, false)
       else if m.isOfKind ``Lang.callMember then (.call, false)
+      else if m.isOfKind ``Lang.refinesMember then (.refines, false)
       else (.use, false)
     unless Core.blockMemberAccepted kind det do return some (m, kind, det)
   return none
@@ -8316,6 +8592,10 @@ def globalText (stx : Syntax) : String :=
 
 /-! ## Refinements -/
 
+@[command_elab Lang.refineCmd] def elabRefine : CommandElab := fun stx =>
+  throwErrorAt stx "top-level `refine` has been removed; use `refines c spec(args)` in a global expectation block"
+
+
 /-- Elaborates `refine r: c refines a { bindings }` into the procedure that
 checks it (`Reqs/Lang/Refinement`): `c`'s inputs, `a`'s assumptions, an
 call of `c` named as it is, `a`'s calls, and `a`'s requirements
@@ -8323,7 +8603,7 @@ and definitions as expectations, with `a`'s variables read as their
 bindings or as `c`'s of the same names, and `c`'s outputs from the
 call. With `by`, the tactics prove the obligation, generated as `r`,
 and the solver is asked nothing. -/
-@[command_elab Lang.refineCmd] def elabRefine : CommandElab := recordingErrors fun stx => do
+def elabRefineLegacy : CommandElab := recordingErrors fun stx => do
   -- Its proof, after `by`, is Lean.
   let spec := stx.getArgs[:7].toArray
   spec.forM checkLexemes

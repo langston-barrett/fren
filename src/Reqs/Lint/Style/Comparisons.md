@@ -117,8 +117,16 @@ pub proc membership_test_fixed(s: Shade, n: Int): (
     out positive? := not n is ..=0
 }
 
-refine membership_test_sound: membership_test_fixed refines membership_test_written
-refine membership_test_complete: membership_test_written refines membership_test_fixed
+expect membership_test_sound(s: lint::Shade, n: Int) {
+    use lint
+    call concrete := membership_test_fixed(s, n)
+    refines concrete membership_test_written(s, n)
+}
+expect membership_test_complete(s: lint::Shade, n: Int) {
+    use lint
+    call concrete := membership_test_written(s, n)
+    refines concrete membership_test_fixed(s, n)
+}
 ```
 
 The refinements check the fixes of `is_equality`:
@@ -154,8 +162,16 @@ pub proc is_equality_fixed(s: Shade, n: Int, b?): (
     out set? := b? = true
 }
 
-refine is_equality_sound: is_equality_fixed refines is_equality_written
-refine is_equality_complete: is_equality_written refines is_equality_fixed
+expect is_equality_sound(s: lint::Shade, n: Int, b?) {
+    use lint
+    call concrete := is_equality_fixed(s, n, b?)
+    refines concrete is_equality_written(s, n, b?)
+}
+expect is_equality_complete(s: lint::Shade, n: Int, b?) {
+    use lint
+    call concrete := is_equality_written(s, n, b?)
+    refines concrete is_equality_fixed(s, n, b?)
+}
 ```
 
 ## Pattern tests written out
@@ -371,8 +387,16 @@ pub proc manual_pattern_test_fixed(s: Shade, n: Int, t: String, q: Seq<Int>): (
     out first? := q != [] and q[0] is 1 | 2
 }
 
-refine manual_pattern_test_sound: manual_pattern_test_fixed refines manual_pattern_test_written
-refine manual_pattern_test_complete: manual_pattern_test_written refines manual_pattern_test_fixed
+expect manual_pattern_test_sound(s: lint::Shade, n: Int, t: String, q: Seq<Int>) {
+    use lint
+    call concrete := manual_pattern_test_fixed(s, n, t, q)
+    refines concrete manual_pattern_test_written(s, n, t, q)
+}
+expect manual_pattern_test_complete(s: lint::Shade, n: Int, t: String, q: Seq<Int>) {
+    use lint
+    call concrete := manual_pattern_test_written(s, n, t, q)
+    refines concrete manual_pattern_test_fixed(s, n, t, q)
+}
 ```
 
 ## Chained comparisons
@@ -493,6 +517,12 @@ pub proc chainable_fixed(lo: Int, x: Int, hi: Int, m: Int): (
     out joined? := lo <= x < hi <= m
 }
 
-refine chainable_sound: chainable_fixed refines chainable_written
-refine chainable_complete: chainable_written refines chainable_fixed
+expect chainable_sound(lo: Int, x: Int, hi: Int, m: Int) {
+    call concrete := chainable_fixed(lo, x, hi, m)
+    refines concrete chainable_written(lo, x, hi, m)
+}
+expect chainable_complete(lo: Int, x: Int, hi: Int, m: Int) {
+    call concrete := chainable_written(lo, x, hi, m)
+    refines concrete chainable_fixed(lo, x, hi, m)
+}
 ```

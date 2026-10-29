@@ -273,16 +273,17 @@ pub proc interpretation_at(
     expect unconstrained: when pres = {}, recorded?
 }
 
-refine interpretation_detail: interpretation_at refines interpretation_contract {
-    obligated? := true,
-    written? := false,
-    written_ok? := false,
-    uses_sorry? := false,
-    decide_q := if (when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
-        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts) then Unsat else Sat,
-    smt_q := Unknown,
-    proof := if recorded? then ContractProof::Theorem else ContractProof::Unproved,
-    error? := not recorded?,
+expect interpretation_detail(pres: Set<check::Argument>, posts: Set<check::Point>, at_a0: check::Value, at_a1: check::Value) {
+    use check
+    call concrete := interpretation_at(pres, posts, at_a0, at_a1)
+    call specification := interpretation_contract(true, false, false, false,
+        if (when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+            and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts)
+            then Outcome::Unsat else Outcome::Sat,
+        Outcome::Unknown)
+    expect rule: specification.proof = (if concrete.recorded? then ContractProof::Theorem else ContractProof::Unproved)
+    expect records: specification.recorded? iff concrete.recorded?
+    expect reports: specification.error? iff not concrete.recorded?
 }
 ```
 

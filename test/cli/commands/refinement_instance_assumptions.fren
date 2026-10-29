@@ -17,4 +17,8 @@ pub proc concrete(x: Int): (y: Int) {
 }
 
 set_option fren.evidence "tested" in
-refine fits: concrete refines abstract
+expect fits(x: Int) {
+    assume spec_pos: (x) > 0
+    call concrete_1 := concrete(x)
+    refines concrete_1 abstract(x)
+}

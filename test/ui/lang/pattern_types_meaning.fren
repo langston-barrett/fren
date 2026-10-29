@@ -39,7 +39,7 @@ proc digits(d: Digit) {
 -- decidable core.
 set_option fren.lint.undecidable "allow" in
 proc collections(s: Set<Digit>, q: Seq<Digit>) {
-    expect members: 12 in s or s != {}   --~ error: expectation `collections::members` does not hold
+    expect members: 12 in s or s != {}  --~ error: expectation `collections::members` does not hold
     expect index: when q != [], q[0] <= 9
     expect no_twelve: not 12 in s
 }
@@ -64,4 +64,7 @@ type SubsetPatternTypesMeaning4 = subset_value: Int where invariant: subset_valu
 proc abstract_lvl(n: SubsetPatternTypesMeaning4): (y: Int) { ensure r: y >= n }
 type SubsetPatternTypesMeaning5 = subset_value: Int where invariant: subset_value is 0..
 proc concrete_lvl(n: SubsetPatternTypesMeaning5): (y: Int) { ensure r: y = n }
-refine narrower: concrete_lvl refines abstract_lvl
+expect narrower(n: SubsetPatternTypesMeaning4) {
+    call concrete := concrete_lvl(n)
+    refines concrete abstract_lvl(n)
+}

@@ -237,8 +237,16 @@ pub proc single_match_else_fixed(light: Light, lamp: Lamp, n: Int, a: Int, b: In
     out y := if n in {1, 3} then a else b
 }
 
-refine single_match_else_sound: single_match_else_fixed refines single_match_else_written
-refine single_match_else_complete: single_match_else_written refines single_match_else_fixed
+expect single_match_else_sound(light: lint::Light, lamp: lint::Lamp, n: Int, a: Int, b: Int) {
+    use lint
+    call concrete := single_match_else_fixed(light, lamp, n, a, b)
+    refines concrete single_match_else_written(light, lamp, n, a, b)
+}
+expect single_match_else_complete(light: lint::Light, lamp: lint::Lamp, n: Int, a: Int, b: Int) {
+    use lint
+    call concrete := single_match_else_written(light, lamp, n, a, b)
+    refines concrete single_match_else_fixed(light, lamp, n, a, b)
+}
 ```
 
 `lint::single_match_else` states when it fires, computing the facts from the arms'
@@ -311,8 +319,14 @@ pub proc match_bool_fixed(c?, a: Int, b: Int): (det v: Int, det w: Int) {
     out w := if c? then b else a
 }
 
-refine match_bool_sound: match_bool_fixed refines match_bool_written
-refine match_bool_complete: match_bool_written refines match_bool_fixed
+expect match_bool_sound(c?, a: Int, b: Int) {
+    call concrete := match_bool_fixed(c?, a, b)
+    refines concrete match_bool_written(c?, a, b)
+}
+expect match_bool_complete(c?, a: Int, b: Int) {
+    call concrete := match_bool_written(c?, a, b)
+    refines concrete match_bool_fixed(c?, a, b)
+}
 ```
 
 `lint::match_bool` states when it fires, computing the facts from the two arms' patterns,
@@ -378,8 +392,16 @@ pub proc unnested_or_fixed(lamp: Lamp): (det v: Int) {
     out v := match lamp { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 }
 }
 
-refine unnested_or_sound: unnested_or_fixed refines unnested_or_written
-refine unnested_or_complete: unnested_or_written refines unnested_or_fixed
+expect unnested_or_sound(lamp: lint::Lamp) {
+    use lint
+    call concrete := unnested_or_fixed(lamp)
+    refines concrete unnested_or_written(lamp)
+}
+expect unnested_or_complete(lamp: lint::Lamp) {
+    use lint
+    call concrete := unnested_or_written(lamp)
+    refines concrete unnested_or_fixed(lamp)
+}
 ```
 
 `lint::unnested_or_patterns` states when it fires, computing the facts from two alternatives of the
@@ -441,8 +463,14 @@ pub proc manual_table_fixed(n: Int): (det v: Int) {
     out v := table { n > 10 => 2, n < 0 => 1, _ => 0 }
 }
 
-refine manual_table_sound: manual_table_fixed refines manual_table_written
-refine manual_table_complete: manual_table_written refines manual_table_fixed
+expect manual_table_sound(n: Int) {
+    call concrete := manual_table_fixed(n)
+    refines concrete manual_table_written(n)
+}
+expect manual_table_complete(n: Int) {
+    call concrete := manual_table_written(n)
+    refines concrete manual_table_fixed(n)
+}
 ```
 
 `lint::manual_table` states when it fires, computing whether the tests are variant tests of
