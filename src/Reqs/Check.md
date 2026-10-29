@@ -667,13 +667,14 @@ Branch diagnostics describe the required truth values explicitly. A binary
 a larger equivalence says “all operands are true” or “all operands are
 false”. Bare “all hold” and “none hold” leave their subject unclear.
 Explain once that an equivalence requires these matching truth values.
-Each case keeps the reported input, assumptions, definitions and calls;
-the case's other guarantees are named separately. If no other guarantee
-is needed to exclude the case, say so instead of referring to “the fixed
+Each case keeps the applicable input constraints, definitions and calls;
+its other constraints are named separately. Refer to “the reported input”
+only when the enclosing diagnostic actually reports one. If no other
+constraint is needed to exclude the case, say so instead of referring to “the fixed
 hypotheses alone” or an empty “conditional core”.
 
 At an operand's source location, state the value required by that case and
-the opposite value imposed by the input or the named other guarantees.
+the opposite value imposed by the input or the named other constraints.
 Retain the actual source expression and named member identity. For example,
 the false case of `retry? iff eligible?` is impossible when the reported
 input makes `eligible?` true; explain that this case requires `eligible?`
