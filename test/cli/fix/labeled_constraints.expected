@@ -1,0 +1,7 @@
+--- test/cli/fix/labeled_constraints.fren
++++ test/cli/fix/labeled_constraints.fren
+@@ -5 +4,0 @@
+-        copy: x > 0, -- remove only this member and its comment
+@@ -14 +12,0 @@
+-        copy: x > 0, -- remove the comma too
+exit=1

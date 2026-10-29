@@ -558,6 +558,21 @@ def fixing : IO (Array String) := do
       let (out, code) ← runFren (["fix"] ++ flags.toList ++ [file, other])
       if code != 2 || (← IO.FS.readFile file) != unfixed || (← IO.FS.readFile other) != text then
         failures := failures.push s!"invalid input changed a file under `fren fix` (exit {code}):\n{out}"
+  -- fren-covers: lint::labelled_clause_identity
+  -- Removing a duplicated block member must preserve every other byte,
+  -- and the result must remain valid and need no further fixes.
+  for fixture in #["labeled_constraints", "labeled_constraints_readme"] do
+    let original ← IO.FS.readFile ("test/cli/fix" / (fixture ++ ".fren"))
+    let target : System.FilePath := ".lake/fix-test" / (fixture ++ ".fren")
+    IO.FS.writeFile target original
+    let (out, code) ← runFren ["fix", target.toString]
+    let expected := original.replace "        copy: x > 0, -- remove only this member and its comment\n" ""
+      |>.replace "        copy: x > 0, -- remove the comma too\n" ""
+    if code != 0 || (← IO.FS.readFile target) != expected then
+      failures := failures.push s!"labelled constraint fix changed siblings or wrappers: {fixture} (exit {code}):\n{out}"
+    let (out, code) ← runFren ["fix", "--check", target.toString]
+    if code != 0 || !out.isEmpty then
+      failures := failures.push s!"labelled constraint fix was not valid and idempotent: {fixture} (exit {code}):\n{out}"
   return failures
 
 /-! ## Libraries
