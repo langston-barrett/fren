@@ -83,6 +83,7 @@ use view::Severity
 | `manual_table` | `F0838` | `pedantic` | `allow` | a chain of `if` of two or more tests that are not variant tests of one scrutinee, which a table writes (see [Chains of conditions](Lint/Pedantic/Matches.md#chains-of-conditions)) |
 | `many_single_char_names` | `F0795` | `pedantic` | `allow` | a procedure, function or global expectation that declares more than four single-character names (see [Names](Lint/Pedantic.md#names)) |
 | `match_bool` | `F0837` | `pedantic` | `allow` | a `match` on a `Bool` of `true` and `false`, or of one of them and `_` (see [Matches on a `Bool`](Lint/Pedantic/Matches.md#matches-on-a-bool)) |
+| `match_could_be_table` | `F0809` | `pedantic` | `allow` | a `match` without guards whose arms are disjoint, which a table over a scrutinee writes (see [Matches that could be tables](Lint/Pedantic/Matches.md#matches-that-could-be-tables)) |
 | `match_like_membership` | `F0726` | `style` | `warn` | a `match` whose arms are all `true` or `false`, and bind no name (see [Matches that are memberships](Lint/Style.md#matches-that-are-memberships)) |
 | `match_overlapping_arm` | `F0835` | `style` | `warn` | a range of a `match` arm that has an integer in common with an earlier arm's pattern, neither within the other, such as `5..=15` after `0..=10` (see [Overlapping arms](Lint/Style/Matches.md#overlapping-arms)) |
 | `match_same_arms` | `F0725` | `pedantic` | `allow` | an arm of a `match` with the same body as another (see [Arms](Lint/Pedantic/Matches.md#arms)) |
@@ -602,6 +603,7 @@ what the spec means:
 | `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
 | `manual_rem_euclid` | replaces `(a mod k + k) mod k` with `a mod k` |
 | `match_bool` | replaces the `match` with `if c? then a else b` |
+| `match_could_be_table` | writes `table` in place of `match` |
 | `match_like_membership` | replaces the `match` with an equation, `x = E::A`, or a pattern test, `x is E::A \| E::B`, as the message suggests |
 | `match_same_arms` | merges the arms into one with an or-pattern, removes those with the body of the `_` arm, or replaces the `match` with its body, as the message suggests |
 | `membership_chain` | replaces the chain with a membership, `x in {a, b, c}`, or `not x in {a, b, c}` |

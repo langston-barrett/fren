@@ -2287,6 +2287,17 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
   let msg := tm (Core.wildcardMsg (info.path ++ info.variants[covered[0]!]!) named[0]!)
   recordLint .wildcardSingleVariant arms[w]![0] (if named[0]!.isSome then help msg else msg)
 
+/-- `match_could_be_table` on the `match` `e`, whose arms' patterns are
+`pats`, on a value of `pty` (`lint::match_could_be_table`). -/
+def lintCouldBeTable (e : Syntax) (sigs : Core.Sigs) (pty : Core.PatTy) (pats : Array Core.Pat) : TermElabM Unit := do
+  unless e.isOfKind ``Lang.matchExpr do return
+  let arms := e[3].getSepArgs
+  let guarded := arms.map (!·[1].isNone)
+  unless Core.matchCouldBeTable arms.size (guarded.any id) (Core.acceptedAsTable sigs pty pats guarded) do return
+  let msg := Core.matchCouldBeTableMsg
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  recordLint .matchCouldBeTable e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
+
 /-- A binder of a pattern, with the type of its value, and its value, read
 from the scrutinee with selectors. -/
 structure PatBinder where
@@ -3357,7 +3368,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     | .error (none, msg) => throwError (if many then Core.vectorMsg msg else msg).text
   let p := if scrutinee.getNumArgs == 1 then scrutinee[0] else scrutinee
   let implicitArg := p.isOfKind ``Lang.fren_path && (pathSegs p).any (fun n => n.getId.toString.startsWith "#match")
-  if cx.noteIndexes && !many && !implicitArg then lintMatch cx e ty pats slot
+  if cx.noteIndexes && !many && !implicitArg then
+    lintMatch cx e ty pats slot
+    lintCouldBeTable e sigs pty pats
   -- In a defined function's Lean definition, a Lean `match`, where its
   -- patterns are Lean's (`Reqs/Generated#matches`).
   let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other

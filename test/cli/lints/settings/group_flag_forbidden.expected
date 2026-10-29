@@ -8,6 +8,21 @@ error[F0725]: this arm has the same body as the arm `E::A`
   = help: `fren fix` can fix this
   = note: `match_same_arms` is set to `forbid`
 
+warning[F0809]: the arms of this `match` are disjoint, so it can be a table
+ --> test/cli/lints/settings/group_flag_forbidden.fren:7:19
+  |
+7 |     ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 }
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ disjoint arms
+  |
+  = note: a table over a scrutinee states that its arms are disjoint, which is checked, so that their order does not matter
+  = help: `fren fix` can fix this
+  = note: `match_could_be_table` is set to `warn` by its group, `pedantic`
+help: write `table` in place of `match`
+  |
+7 -     ensure r: n = match e { E::A => 1, E::B => 2, E::C => 1 }
+7 +     ensure r: n = table e { E::A => 1, E::B => 2, E::C => 1 }
+  |
+
 warning[F0720]: `r` could be the definition of `n`
  --> test/cli/lints/settings/group_flag_forbidden.fren:6:16
   |
@@ -19,6 +34,6 @@ warning[F0720]: `r` could be the definition of `n`
 
 error: could not check due to previous errors
 
-Some errors have detailed explanations: F0720, F0725.
+Some errors have detailed explanations: F0720, F0725, F0809.
 For more information about an error, try `fren --explain F0720`.
 exit=2

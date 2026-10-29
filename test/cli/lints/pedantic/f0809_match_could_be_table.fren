@@ -1,0 +1,7 @@
+-- A `match` whose arms are disjoint, with nested and range patterns.
+-- fren-covers: lint::match_could_be_table
+set_option fren.lint.match_could_be_table "warn"
+
+enum Shape { Circle(Int), Square(Int), Empty }
+
+proc c(s: Shape): (m: Int) { ensure r: m = match s { Shape::Circle(..=0) => 0, Shape::Circle(1..) => 1, _ => 2 } }
