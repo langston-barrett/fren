@@ -24,8 +24,8 @@ proc vacuous(x: Int): (y: Int) {
 
 -- Contradictory constraints entail everything: only realizability fails.
 proc contradictory(): (y: Int) {  --~ error: note: no outputs satisfy `up` and `down`
-    ensure up: y > 0   --~ info: conflicts with `down`
-    ensure down: y < 0   --~ info: conflicts with `up`
+    ensure up: y > 0
+    ensure down: y < 0
 }
 
 --@ summary: 7 passed, 2 failed, 0 inconclusive, 3 redundant

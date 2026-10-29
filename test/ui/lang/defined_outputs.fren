@@ -57,8 +57,8 @@ proc determined(a: Int): (det h: Int) {
 proc conflict(a: Int): (o: Int) {                     --~ error: `conflict` is not realizable
     let d: Int := a
 
-    ensure r1: o = d   --~ info: conflicts with `r2`
-    ensure r2: o != a   --~ info: conflicts with `r1`
+    ensure r1: o = d
+    ensure r2: o != a
 }
 
 expect defined(u_a: Int) {

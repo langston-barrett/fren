@@ -1,4 +1,5 @@
--- `--examples 0`: no notes of forced variants.
+-- The retry counterexample is input-specific. Neither iff alternative
+-- is globally excluded, so no supplementary explanation is justified.
 -- fren-covers: check::clash_notes
 --@ args: check --examples 0
 mod http

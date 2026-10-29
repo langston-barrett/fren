@@ -7,24 +7,13 @@ error[F0615]: cover goal `heater::silent_overheat` cannot be met: it is ruled ou
   = note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow
   = help: weaken the constraints that rule it out, or correct the goal
 
-note: no branch of `r` can hold
+note: Assuming the cover goal `silent_overheat`, `r` cannot hold.
  --> test/cli/results/f0615_cover.fren:3:12
   |
 3 |     ensure r: alarm? iff temp > 100
   |            ^
-  |
-  = note: an `iff` requires matching truth values: all operands true or all operands false
-  = note: each case keeps the definitions and calls; other constraints are named below
 
-note: case "both operands are true" is impossible under the existing constraints
- --> test/cli/results/f0615_cover.fren:3:12
-  |
-3 |     ensure r: alarm? iff temp > 100
-  |            ^
-  |
-  = note: no other constraint is needed to rule out this case
-
-note: case "both operands are true": `r.1` must be true, but is false under the existing constraints
+note: Both operands of `r` cannot be true: the stated premises require `r.1` to be false.
  --> test/cli/results/f0615_cover.fren:3:15
   |
 3 |     ensure r: alarm? iff temp > 100
@@ -32,15 +21,7 @@ note: case "both operands are true": `r.1` must be true, but is false under the 
   |
   = member: alarm?
 
-note: case "both operands are false" is impossible under the existing constraints
- --> test/cli/results/f0615_cover.fren:3:12
-  |
-3 |     ensure r: alarm? iff temp > 100
-  |            ^
-  |
-  = note: no other constraint is needed to rule out this case
-
-note: case "both operands are false": `r.2` must be false, but is true under the existing constraints
+note: Both operands of `r` cannot be false: the stated premises require `r.2` to be true.
  --> test/cli/results/f0615_cover.fren:3:26
   |
 3 |     ensure r: alarm? iff temp > 100

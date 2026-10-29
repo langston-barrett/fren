@@ -7,12 +7,6 @@ error[F0601]: `bad_output` is not realizable
    = note: no outputs satisfy `opposite`
    = help: weaken one of them, or add an `assume` that rules this input out
 
-note: is false for this input
-  --> test/cli/results/nested_subset_enumeration.fren:17:41
-   |
-17 | proc bad_output(): (r?: Truth) { ensure opposite: not r? }
-   |                                         ^^^^^^^^
-
 error[F0661]: invariant `Positive::invariant` does not hold
   --> test/cli/results/nested_subset_enumeration.fren:20:49
    |

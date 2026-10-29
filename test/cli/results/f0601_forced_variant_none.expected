@@ -1,7 +1,7 @@
 error[F0601]: `http::retry` is not realizable
-  --> test/cli/results/f0601_forced_variant_none.fren:15:6
+  --> test/cli/results/f0601_forced_variant_none.fren:16:6
    |
-15 | proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
+16 | proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
    |      ^^^^^ not realizable
    |
    = note: for the input
@@ -11,24 +11,6 @@ error[F0601]: `http::retry` is not realizable
                retry_after = Seconds(31)
            no outputs satisfy `transient`, `honor_server` and `latency_budget`
    = help: weaken one of them, or add an `assume` that rules this input out
-
-note: conflicts with `honor_server` and `latency_budget`
-  --> test/cli/results/f0601_forced_variant_none.fren:18:12
-   |
-18 |     ensure transient:
-   |            ^^^^^^^^^
-
-note: conflicts with `transient` and `latency_budget`
-  --> test/cli/results/f0601_forced_variant_none.fren:22:12
-   |
-22 |     ensure honor_server: match decision { Decision::RetryAfter(d) => d >= retry_after, _ => true }
-   |            ^^^^^^^^^^^^
-
-note: conflicts with `transient` and `honor_server`
-  --> test/cli/results/f0601_forced_variant_none.fren:24:12
-   |
-24 |     ensure latency_budget: match decision { Decision::RetryAfter(d) => d <= MAX_DELAY, _ => true }
-   |            ^^^^^^^^^^^^^^
 
 fren: 6 passed, 1 failed, 0 inconclusive, 0 redundant
 

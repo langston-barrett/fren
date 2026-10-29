@@ -810,7 +810,6 @@ theorem checkRealizableUniversal_fail (hd : s.DefsOk) (h : (checkRealizableUnive
       · simp only [pinned, input, run_eq] at hmin
         unfold checkRealizableUniversal
         simp +decide [ha, hc, realizableVerdict, Outcome.answer, Outcome.isUnsat, bind_eq, run_eq, pure_eq, hmin]
-        split <;> rfl
       rcases hor with rfl | hent
       · -- Nothing was dropped: no outputs meet all the requirements.
         obtain ⟨ρ'', ht'', hsame', hdef''⟩ := hd.complete ρ' ht'

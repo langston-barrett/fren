@@ -2,52 +2,53 @@
 -- to a value that the rest of the conflict rules out (`check::clash_notes`).
 -- fren-covers: check::clash_notes
 
--- Each guarantee forces `y`, to a different value: one note, at the first.
+-- Each guarantee fixes `y` only after choosing `x`: no general value note.
 proc pinned(x: Int): (y: Int) {   --~ error: no outputs satisfy `low` and `high`
-    ensure low: y = x      --~ info: `low` forces y = 0, but `high` forces y = 1
-    ensure high: y = x + 1   --~ info: conflicts with `low`
+    ensure low: y = x
+    ensure high: y = x + 1
 }
 
 -- A conflict of one guarantee: the rest of it is empty, and forces nothing.
 proc alone(x: Int): (y: Int) {   --~ error: no outputs satisfy `r`
-    ensure r: x > 0 and y = x   --~ info: is false for this input
+    ensure r: x > 0 and y = x
 }
 
 -- Neither guarantee forces `y`.
 proc loose(x: Int): (y: Int) {   --~ error: no outputs satisfy `up` and `down`
-    ensure up: y > x   --~ info: conflicts with `down`
-    ensure down: y < x   --~ info: conflicts with `up`
+    ensure up: y > x
+    ensure down: y < x
 }
 
--- A variable of an abstract type: the values would depend on its
--- interpretation, so no note.
+-- Abstract values cannot support a fixed-value note, but the other
+-- guarantee consistently rules out both truth alternatives of `low`.
 type Token
 
 proc abstract(t: Token, u: Token): (same?) {   --~ error: no outputs satisfy `low` and `high`
-    ensure low: same? iff t = u   --~ info: conflicts with `high`
-    ensure high: same? iff t != u   --~ info: conflicts with `low`
+    ensure low: same? iff t = u   --~ info: Assuming `high`, `low` cannot hold.
+    --~^ info: Both operands of `low` cannot be true.
+    --~^^ info: Both operands of `low` cannot be false.
+    ensure high: same? iff t != u
 }
 
--- An uninterpreted function in a guarantee: no note either, although
--- `low` forces `y` whatever `weight` is.
+-- An uninterpreted function does not support a fixed-value explanation.
 fn weight(Int): Int
 
 proc weighed(x: Int): (y: Int) {   --~ error: no outputs satisfy `low` and `high`
-    ensure low: y = 0 and weight(x) > 0   --~ info: conflicts with `high`
-    ensure high: y = 1   --~ info: conflicts with `low`
+    ensure low: y = 0 and weight(x) > 0
+    ensure high: y = 1
 }
 
 -- A defined output is not an output that a note names: its definition
 -- stands for it. The output it is defined by is.
 proc defined(x: Int): (y: Int, z: Int) {   --~ error: no outputs satisfy `low` and `high`
     out z := y + 1
-    ensure low: z = x + 1    --~ info: `low` forces y =
-    ensure high: y = x + 1   --~ info: conflicts with `low`
+    ensure low: z = x + 1
+    ensure high: y = x + 1
 }
 
 -- The postconditions of an uninterpreted function, of its value.
 pub fn level(n: Int): (r: Int) {   --~ error: no value of `level` satisfies `zero` and `one`
     ensure zero: r = 0   --~ info: `zero` forces level = 0, but `one` forces level = 1
-    ensure one: r = 1   --~ info: conflicts with `zero`
+    ensure one: r = 1
 }
 --@ exit: 1

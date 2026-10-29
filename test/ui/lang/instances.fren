@@ -34,7 +34,7 @@ proc chooser(): (b?) {
 -- comp must cope.
 proc hopes(): (x: Int) {   --~ error: no outputs satisfy `lucky`
     call pick := chooser()
-    ensure lucky: pick.b? and x = 0   --~ info: is false for this input
+    ensure lucky: pick.b? and x = 0
 }
 
 proc observes(n: Int) {

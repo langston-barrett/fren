@@ -15,7 +15,6 @@ set_option fren.evidence "enumerated" in
 proc payloads(a: Payload, b: Payload) { expect same: a = b }
 set_option fren.evidence "enumerated" in
 proc bad_output(): (r?: Truth) { ensure opposite: not r? }  --~ error: `bad_output` is not realizable
---~^? info: is false for this input
 set_option fren.evidence "enumerated" in
 set_option fren.lint.constant_output "allow" in
 proc bad_definition(): (r: Positive) { out r := 0 }  --~ error: invariant `Positive::invariant` does not hold

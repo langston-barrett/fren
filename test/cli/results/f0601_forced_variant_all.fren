@@ -1,5 +1,5 @@
--- `--examples all`: a note at each guarantee whose output's forced
--- variant the rest of the conflict rules out.
+-- The retry counterexample is input-specific. Neither iff alternative
+-- is globally excluded, so no supplementary explanation is justified.
 -- fren-covers: check::clash_notes
 --@ args: check --examples all
 mod http

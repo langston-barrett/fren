@@ -139,6 +139,13 @@ uninterpreted `Decidable`, which cvc5 rejects. -/
   | Decidable.decide p _ => return some (← applyTranslators! p)
   | _ => return none
 
+/-- Equivalence may survive the Boolean embedding inside a defined
+quantified condition. It is logical equality, never an uninterpreted symbol. -/
+@[smt_translate] def translateIff : Translator := fun e => do
+  match_expr e with
+  | Iff p q => return some (mkApp2 (symbolT "=") (← applyTranslators! p) (← applyTranslators! q))
+  | _ => return none
+
 /-- Fren's string literals and methods (`Fren.Str`), as SMT-LIB's string
 functions. lean-smt translates `++` and `<` on strings, but writes literals
 without escaping them, and `>` as `str.>`, which is not SMT-LIB: so Fren

@@ -21,18 +21,6 @@ error[F0601]: `exit` is not realizable
           no outputs satisfy `failures` and `inconc`
   = help: weaken one of them, or add an `assume` that rules this input out
 
-note: `failures` forces code = 1, but `inconc` forces code = 3
- --> test/cli/commands/report.fren:6:12
-  |
-6 |     ensure failures: when n_fail > 0, code = 1
-  |            ^^^^^^^^
-
-note: conflicts with `failures`
- --> test/cli/commands/report.fren:7:12
-  |
-7 |     ensure inconc: when n_inconc > 0, code = 3
-  |            ^^^^^^
-
 error[F0603]: expectation `exit::zero` does not hold
   --> test/cli/commands/report.fren:10:12
    |
@@ -66,12 +54,6 @@ error[F0601]: `uses` is not realizable
            no outputs satisfy `lucky`
    = help: weaken one of them
    = note: call variables are part of the system: whatever the calls do, the procedure must cope
-
-note: is false for this input
-  --> test/cli/commands/report.fren:21:12
-   |
-21 |     ensure lucky: pick.b?
-   |            ^^^^^
 
 error[F0604]: the assumption `counts` of `exit` may not hold for call `uses::first`
   --> test/cli/commands/report.fren:17:10

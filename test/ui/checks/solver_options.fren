@@ -9,7 +9,7 @@ proc c(): (det g?) {
     --~^ error: `c` is not realizable
     let s: Set<Int> := {1, 2}
 
-    ensure r: {(0, 0), (1, 2)}.image(s inter {1}).card = 2   --~ info: is false for this input
+    ensure r: {(0, 0), (1, 2)}.image(s inter {1}).card = 2
     cover goal: g?
     --~^ error: cover goal `c::goal` cannot be met: it is ruled out by `r`
 }

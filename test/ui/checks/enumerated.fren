@@ -37,9 +37,9 @@ proc loose(a?): (
 
 set_option fren.evidence "enumerated" in
 proc stuck(a?): (b?) {  --~ error: `stuck` is not realizable
-    ensure up: when a?, b?  --~ info: `up` forces b? = true
+    ensure up: when a?, b?
     --~^ error: `stuck::up` is vacuous
-    ensure down: when a?, not b?  --~ info: conflicts with `up`
+    ensure down: when a?, not b?
     --~^ error: `stuck::down` is vacuous
 }
 

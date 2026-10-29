@@ -1,0 +1,11 @@
+-- Iff inside a defined, set-dependent existential keeps its logical
+-- meaning after the finite struct quantifier has been expanded.
+struct World { eligible?, within_budget?, retry? }
+proc retry_worlds(worlds: Set<World>): (det bad_input?) {
+    assume all_worlds: forall (w: World), w in worlds
+    out bad_input? := not (exists (w: World), w in worlds and w.eligible? and not w.within_budget?
+        and (w.retry? iff w.eligible?) and (when w.retry?, w.within_budget?))
+    expect impossible: bad_input?
+}
+--@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+-- fren-covers: lang::equivalence_branches
