@@ -12,13 +12,24 @@ type Byte = n: Int where low: n >= 0 and high: n <= 255
 proc too_large(): (r: Byte) { out r := 256 }
 type Empty = n: Int where low: n > 10 and high: n < 0
 type Unsafe = values: Seq<Int> where head: values[0] > 0
-type PositiveHead = values: Seq<Int> where nonempty: values.len > 0 and head: values[0] > 0
+type PositiveHead = values: Seq<Int> where nonempty: values != [] and head: values[0] > 0
+type ReversedHead = values: Seq<Int> where head: values[0] > 0 and nonempty: values != []
 #guard_msgs in
 pub struct TruthField { valid?: Truth }
 proc abstract_output(): (r: Byte) {}
-proc concrete_output(): (r: Int) {}
+proc concrete_output(): (r: Int) { ensure fixed: r = 256 }
+proc concrete_negative(): (r: Int) { ensure fixed: r = -1 }
+proc concrete_valid(): (r: Int) { ensure fixed: r = 0 }
 expect output_membership() {
   call concrete := concrete_output()
+  refines concrete abstract_output()
+}
+expect negative_membership() {
+  call concrete := concrete_negative()
+  refines concrete abstract_output()
+}
+expect valid_membership() {
+  call concrete := concrete_valid()
   refines concrete abstract_output()
 }
 fn gate?(Int)
@@ -43,6 +54,19 @@ elab "#check_subset_obligations" : command => do
     let (refinementResults, _, _) ← Fren.checkComp refinement #[.expect]
     unless refinementResults.any (fun r => r.verdict == Fren.Core.Verdict.fail && r.prop? == some `refines_1) do
       throwError "refinement lost the required result invariants"
+    for (path, expected) in #[(`subset_obligation_test.negative_membership, Fren.Core.Verdict.fail),
+        (`subset_obligation_test.valid_membership, Fren.Core.Verdict.pass)] do
+      let some comp := state.globals.get? path | throwError "missing isolated refinement domain case"
+      let (results, _, _) ← Fren.checkComp comp #[.expect]
+      unless results.size == 1 && results[0]!.verdict == expected do
+        throwError "a refinement dropped an invariant or assumed its own result domain"
+    for (path, expected) in #[(`subset_obligation_test.PositiveHead.head, Fren.Core.Verdict.pass),
+        (`subset_obligation_test.ReversedHead.head, Fren.Core.Verdict.fail)] do
+      let some (_, comp) := state.comps.toList.find? (fun (_, c) => c.subsetInvariant? == some path)
+        | throwError "missing ordered invariant check"
+      let (results, _, _) ← Fren.checkComp comp #[.definedness]
+      unless results.size == 1 && results[0]!.verdict == expected do
+        throwError "earlier-conjunct definedness did not respect declaration order"
     let some (_, empty) := state.comps.toList.find? (fun (_, c) => c.subset? == some `subset_obligation_test.Empty)
       | throwError "missing empty-type inhabitation check"
     let (emptyResults, _, _) ← Fren.checkComp empty
@@ -66,3 +90,16 @@ elab "#check_subset_obligations" : command => do
         throwError "a witness from one favorable interpretation was accepted as universal inhabitation"
 
 #check_subset_obligations
+
+-- fren-covers: lang::fixed_inhabitation, lang::refinement_subset_domain, lang::subset_earlier, lang::subset_inhabitation, lang::subset_obligations, lang::varying_inhabitation
+
+/--
+warning: unused variable `r`
+
+note: nothing constrains it, so it can take any value
+help: remove it, or mention it in a constraint
+note: `unused_variables` is `warn` by default
+help: to allow it, `set_option fren.lint.unused_variables "allow"`
+-/
+#guard_msgs in
+run_cmd Fren.reportLints

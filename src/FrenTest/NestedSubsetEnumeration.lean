@@ -77,3 +77,5 @@ elab "#check_nested_enumeration" : command => do
     unless definedResults.any (fun r => r.verdict == .fail && r.patTy? == some "@invariant:nested_subset_enumeration::Positive::invariant") do
       throwError "a defined output assumed its own invariant before the giving-site check"
 #check_nested_enumeration
+
+-- fren-covers: lang::subset_inheritance, lang::subset_membership, lang::subset_obligations

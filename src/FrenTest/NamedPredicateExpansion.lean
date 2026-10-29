@@ -49,3 +49,5 @@ elab "#check_expansion" : command => do
       unless ← Meta.isDefEq (active.beta arguments) inactive do
         throwError "branch activation lost the leading guard"
 #check_expansion
+
+-- fren-covers: lang::clause_leaf_path, lang::clause_partition, lang::distributed_guard, lang::named_conjunction, lang::named_identity, lang::named_node

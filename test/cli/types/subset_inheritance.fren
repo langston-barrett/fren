@@ -1,3 +1,5 @@
 type Byte = n: Int where low: n >= 0 and high: n <= 255
 type Digit = n: Byte where invariant: n <= 9
 proc bounded(n: Digit) { expect digit: 0 <= n <= 9 }
+
+-- fren-covers: lang::subset_inheritance

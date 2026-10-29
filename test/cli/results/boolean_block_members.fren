@@ -13,3 +13,5 @@ expect members() {
     expect all_true: not all?(true, true)
     expect passing: one { first: true, second: false }
 }
+
+-- fren-covers: lang::block_result, lang::block_values, lang::exactly_one_result, lang::named_conjunction, lang::named_node

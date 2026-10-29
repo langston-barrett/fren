@@ -224,4 +224,21 @@ private def variantBackend : Backend (StateM Queries) Formula Nat where
   ensure (result.branchConflicts[0]!.cases[0]!.opposed.any (fun p => p.member == `policy.backoff && p.wanted))
     "chosen member positive forcing was lost"
 
+-- Count actual backend calls for impossible disjuncts. With no candidates,
+-- outputs or polarity checks, each alternative has exactly its exclusion
+-- query and nonvacuity/model query. Cost must scale with retained members,
+-- and the group budget must not cut a selected group's alternatives in half.
+#eval do
+  for n in List.range 6 do
+    let members := (List.range n).toArray.map fun i =>
+      ({ name := Name.num `cost (i + 1), formula := no } : BranchMember Formula)
+    let group : BranchGroup Formula := { owner := `cost, kind := .disjunction, members }
+    let (results, queries) := (branchConflictsOf backend #[group] #[] #[] #[`cost] #[] (some 1) false).run #[]
+    ensure (results.size == 1 && results[0]!.cases.size == n) "one query family per disjunct was not retained"
+    ensure (queries.size == 2 * n) "branch query families contain hidden or missing backend calls"
+    for member in members do
+      ensure ((queries.filter (fun (query : Array Name) => query.contains member.name)).size == 2) "a branch's query family was duplicated or omitted"
+
 end FrenTest.BranchForcing
+
+-- fren-covers: check::branch_forcing, check::branch_member_polarity, check::branch_query_count, check::branch_query_families, check::conditional_branch_core, check::disjunction_core, lang::equivalence_branches, lang::exactly_one_branch

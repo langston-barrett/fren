@@ -71,3 +71,5 @@ elab "#check_boolean_model" : command => do
       throwError "distinct predicate arguments lost their own undefinedness obligations"
 
 #check_boolean_model
+
+-- fren-covers: lang::block_evaluation, lang::block_values, lang::exactly_one_reach, lang::named_identity

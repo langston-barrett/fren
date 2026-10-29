@@ -50,3 +50,15 @@ elab "#check_cover_members" : command => do
     unless results.all (·.verdict == .pass) do
       throwError "inactive empty blocks should hold"
 #check_cover_members
+
+-- fren-covers: lang::clause_partition, lang::distributed_guard
+
+/--
+warning: cover goal `guarded` has a trigger
+
+help: write the scenario as a conjunction, such as `c? and d?` for `when c?, d?`
+note: `trivial_cover` is `warn` by default
+help: to allow it, `set_option fren.lint.trivial_cover "allow"`
+-/
+#guard_msgs in
+run_cmd Fren.reportLints

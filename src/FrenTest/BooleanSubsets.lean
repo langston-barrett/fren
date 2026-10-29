@@ -25,6 +25,8 @@ expect blocks(values: Seq<Int>, x?, y?) {
     expect empty_and: and { }
     expect empty_or: not or { }
     expect iff_singleton: iff { values[0] = 0 }
+    expect iff_not_parity: not iff { false, false, true }
+    expect iff_all_false: iff { false, false, false }
     expect no_parity: not one { true, true, true }
     expect empty_one: not one { }
     expect singleton_one: one { true }
@@ -43,3 +45,5 @@ expect blocks(values: Seq<Int>, x?, y?) {
 proc identity(one: Int): (r: Int) { out r := one }
 
 #fren_check
+
+-- fren-covers: lang::block_evaluation, lang::boolean_block, lang::equivalence_three, lang::exactly_one_reach, lang::exactly_one_result, lang::subset_membership

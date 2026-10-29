@@ -102,3 +102,5 @@ private def ensure (holds : Bool) (reason : String) : IO Unit :=
     "an independent assumption remains available to prove membership"
 
 end FrenTest.SubsetInhabitation
+
+-- fren-covers: lang::fixed_inhabitation, lang::query_purpose, lang::subset_inhabitation, lang::varying_inhabitation
