@@ -66,8 +66,9 @@ expect g(a_z: Int) {
     expect g: a.z > 0
 }
 
--- A refinement of it in the file reads its inputs, bound or by name, under
--- its assumptions, which here guard the binding of `x`.
+-- A global expectation that states the procedure's assumptions as its own,
+-- `spec_pos` and `spec_named`, reads none of the procedure's, so `pos` and
+-- `named` are unused.
 proc first_of(n: Int, x: Int, m: Int): (y: Int) {
     assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
     assume named: m > 0  --~ warning: the assumption `named` constrains only parameters that nothing uses
@@ -185,4 +186,20 @@ proc covered(n: Int): (y: Int) {
 proc where_clause(n: Int): (y: Int) {
     assume a: n > 0
     ensure r: y = m where m := n
+}
+
+-- A `refines` claim checks only its abstraction's guarantees, and introduces
+-- none of its assumptions (`Lang/Refinement.md`), so it reads none of them.
+proc refined(n: Int): (y: Int) {
+    assume r: n > 0  --~ warning: the assumption `r` constrains only parameters that nothing uses
+    ensure e: y = 1
+}
+
+proc refining(): (y: Int) {
+    ensure e: y = 1
+}
+
+expect refines_refined(n: Int) {
+    call c := refining()
+    refines c refined(n)
 }

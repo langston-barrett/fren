@@ -6962,11 +6962,12 @@ def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
         nor does another assumption tie them to a used variable"] ++ together ++
       #["help: remove the assumption and its parameters, or use them"] }
 
-/-- The messages of `unused_assumption`, given what the file's global
-expectations read through calls, or apply (`fnLink`), its calls
-pass, and its refinements read of their abstractions: each read's
-procedure and parameter or function. An assumption is read when it mentions a
-read parameter, or one that a read assumption of its procedure mentions. Each
+/-- The messages of `unused_assumption`, given the parameters that the
+file's calls, its global expectations' among them, give values: each
+read's procedure and parameter. A `refines` claim reads none, since it
+introduces none of its abstraction's assumptions
+(`Reqs/Lang/Refinement`). An assumption is read when it mentions a read
+parameter, or one that a read assumption of its procedure mentions. Each
 message names the other reported assumptions linked to it. -/
 def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
     Array (LintReport α) :=

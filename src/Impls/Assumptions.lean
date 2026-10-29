@@ -203,7 +203,10 @@ def varsOf (ls : List (List lint.Link)) (i : Nat) : List lint.Link := (ls.getD i
 /-- The assumptions that the first step records, where the front ends
 elaborate the procedure (`lintCompUnused`): those that mention variables,
 all of them inputs, and that what the procedure's members mention does
-not reach. -/
+not reach. It, and `reported` below, mirror the front ends' two steps by
+hand, calling the same `usedAssumptions` and `unusedAssumption` that
+`lintCompUnused` and `unusedAssumptionReports` call; the records' names,
+spans and messages are left out. -/
 def recorded (ls : List (List lint.Link)) (ins ms : List lint.Link) : List Nat :=
   (List.range ls.length).filter fun i =>
     unusedAssumption (varsOf ls i).length ((varsOf ls i).all ins.contains)
@@ -303,21 +306,33 @@ theorem union_ofList (ms ins : List lint.Link) (rd : Bool) :
   intro x
   cases rd <;> simp [Fren.FinSet.mem_union, Fren.FinSet.mem_ofList]
 
+/-- The file's uses of a procedure read its inputs exactly where one is a
+call. -/
+theorem reads_inputs_iff (us : List lint.ProcUse) :
+    lint.reads_inputs? (Fren.FinSet.ofList us) = true ↔ us.contains .Call = true := by
+  simp only [List.contains_iff_mem]
+  simp only [lint.reads_inputs?, lint.checks_assumptions?, fren_spec, Fren.FinSet.mem_ofList]
+  simp
+
 -- Both front ends decide in the two steps of `recorded` and `reported`:
 -- `lintCompUnused`, where they elaborate the procedure, and
 -- `unusedAssumptionReports` at the end of the file, each with
 -- `usedAssumptions` and `unusedAssumption`, for every list of assumptions.
+-- The file reads the inputs where it calls the procedure: both front ends
+-- add reads at calls only, not at `refines` claims.
 impl unused_assumption: lint::unused_assumption
-    for (ls : List (List lint.Link)) (ins ms : List lint.Link) (rd : Bool) (k : Int) {
+    for (ls : List (List lint.Link)) (ins ms : List lint.Link) (us : List lint.ProcUse) (k : Int) {
   links := Fren.FinSet.ofList (linkPairs ls),
   inputs := Fren.FinSet.ofList ins,
   mentioned := Fren.FinSet.ofList ms,
-  «read?» := rd,
+  uses := Fren.FinSet.ofList us,
   k := k,
-  «fires?» := decide (0 ≤ k) && reported ls ins ms rd k.toNat,
+  «fires?» := decide (0 ≤ k) && reported ls ins ms (us.contains .Call) k.toNat,
 } by
-  intro ls ins ms rd k _
+  intro ls ins ms us k _
   unfold lint.unused_assumption.ensures lint.unused_assumption.ensure.rule
+  have hr : (lint.reads_inputs? (Fren.FinSet.ofList us) = true) ↔ (us.contains .Call = true) := reads_inputs_iff us
+  simp only [hr]
   rw [Bool.and_eq_true, decide_eq_true_iff, reported_iff, union_ofList, mem_reached]
   simp only [Fren.FinSet.mem_ofList, mem_linkPairs]
   constructor
