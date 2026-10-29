@@ -21,8 +21,8 @@ use self::Mode::{Off, Heat, Cool}
 const MIN_TARGET: Int := 50
 const MAX_TARGET: Int := 90
 
-type SubsetOverview1 = subset_value: Int  where invariant: subset_value is MIN_TARGET..=MAX_TARGET
-pub proc thermostat(temp: Int, target: SubsetOverview1): (mode: Mode) {
+type Target = target: Int where invariant: target is MIN_TARGET..=MAX_TARGET
+pub proc thermostat(temp: Int, target: Target): (mode: Mode) {
   ensure heat: when temp < target - 2, mode = Heat
   ensure cool: when temp > target + 2, mode = Cool
   ensure idle: unless temp < target - 2 or temp > target + 2, mode = Off

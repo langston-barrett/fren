@@ -559,11 +559,11 @@ body and the contract can mention them. `lang::function_params` states
 this, from the number of parameters and of those written with a name:
 
 ```fren
-type SubsetItems1 = subset_value: Nat where invariant: subset_value is 1..
+type Pos = n: Nat where invariant: n is 1..
 pub proc function_params(
     defined?,            -- written with `:= e`
     contract?,           -- it has a contract: an `assume` or an `ensure` clause
-    n_params: SubsetItems1,
+    n_params: Pos,
     n_named: Nat,        -- parameters written with a name
 ): (det accepted?) {
     assume counts: n_named <= n_params

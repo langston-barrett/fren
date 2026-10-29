@@ -102,14 +102,14 @@ impl never_ranked: ranked for (k : Int) { k := k, ok? := true } by
 -- rely on it (`Reqs/Impl#interpretations`).
 mod interp_typed
 
-type SubsetInterp1 = subset_value: Int  where invariant: subset_value is 0..=255
-fn size(Int): SubsetInterp1
-type SubsetInterp2 = subset_value: Int  where invariant: subset_value is 0..=255
-fn small(Int): SubsetInterp2
-type SubsetInterp3 = subset_value: Int  where invariant: subset_value is 0..=255
-fn proved(Int): SubsetInterp3
-type SubsetInterp4 = subset_value: Nat  where invariant: subset_value is 1..
-fn count(Int): SubsetInterp4
+type SizeByte = n: Int where invariant: n is 0..=255
+fn size(Int): SizeByte
+type ClampedByte = n: Int where invariant: n is 0..=255
+fn small(Int): ClampedByte
+type ProvedByte = n: Int where invariant: n is 0..=255
+fn proved(Int): ProvedByte
+type Pos = n: Nat where invariant: n is 1..
+fn count(Int): Pos
 
 proc sized(x: Int): (y: Int) {
     ensure r: y = size(x)
@@ -117,7 +117,7 @@ proc sized(x: Int): (y: Int) {
 }
 
 /--
-error: could not prove that the interpretation of `interp_typed::size` gives values of its result type `SubsetInterp1`
+error: could not prove that the interpretation of `interp_typed::size` gives values of its result type `SizeByte`
 
 note: `decide` does not apply, and the solver did not prove it
 note: each application of `interp_typed::size` is assumed to give one
@@ -147,14 +147,14 @@ interp count := fun (_ : Int) => (3 : Nat)
 -- adds nothing, so the function can be interpreted again.
 mod interp_typed_contract
 
-type SubsetInterp5 = subset_value: Int  where invariant: subset_value is 0..=255
-fn capped(n: Int): (r: SubsetInterp5) {
+type CappedByte = n: Int where invariant: n is 0..=255
+fn capped(n: Int): (r: CappedByte) {
     assume nonneg: n >= 0
     ensure within: r <= n
 }
 
 /--
-error: could not prove that the interpretation of `interp_typed_contract::capped` gives values of its result type `SubsetInterp5` and meets its postconditions
+error: could not prove that the interpretation of `interp_typed_contract::capped` gives values of its result type `CappedByte` and meets its postconditions
 
 note: `decide` does not apply, and the solver did not prove them
 note: each application of `interp_typed_contract::capped` is assumed to give one
@@ -164,9 +164,9 @@ help: write a proof after `by`
 interp capped := fun (n : Int) => n
 
 /--
-error: the proof that the interpretation of `interp_typed_contract::capped` gives values of its result type `SubsetInterp5` and meets its postconditions uses `sorry`
+error: the proof that the interpretation of `interp_typed_contract::capped` gives values of its result type `CappedByte` and meets its postconditions uses `sorry`
 
-note: an interpretation that is not proved to give values of its result type `SubsetInterp5` and meet its postconditions adds nothing
+note: an interpretation that is not proved to give values of its result type `CappedByte` and meet its postconditions adds nothing
 -/
 #guard_msgs in
 interp capped := fun (n : Int) => n by sorry

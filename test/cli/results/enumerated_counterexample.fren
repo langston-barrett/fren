@@ -2,9 +2,9 @@
 -- solver's are (`Reqs/Check#checking-by-enumeration`).
 enum Mode { Off, Heat, Cool }
 
-type SubsetEnumeratedCounterexample1 = subset_value: Int where invariant: subset_value is -2..=2
+type SmallSigned = n: Int where invariant: n is -2..=2
 set_option fren.evidence "enumerated" in
-proc thermostat(mode: Mode, temp: SubsetEnumeratedCounterexample1): (det on?) {
+proc thermostat(mode: Mode, temp: SmallSigned): (det on?) {
     ensure r: on? iff (mode = Mode::Heat and temp < 0)
     expect cold: when mode = Mode::Heat, on?
 }

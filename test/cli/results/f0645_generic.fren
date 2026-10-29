@@ -2,10 +2,10 @@
 -- body, each of whose instances is a function of its own (F0645).
 fn pick<T>(T, T): T
 
-type SubsetF0645Generic1 = subset_value: Int where invariant: subset_value is 0..=3
-type SubsetF0645Generic2 = subset_value: Int where invariant: subset_value is 0..=3
+type InputTwoBit = n: Int where invariant: n is 0..=3
+type OutputTwoBit = n: Int where invariant: n is 0..=3
 set_option fren.evidence "enumerated" in
-proc c(x: SubsetF0645Generic1, y: SubsetF0645Generic2): (det z: Int) {
+proc c(x: InputTwoBit, y: OutputTwoBit): (det z: Int) {
     out z := pick(x, y)
     expect congruent: when x = y, z = pick(y, x)
 }

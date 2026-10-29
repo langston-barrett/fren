@@ -2,13 +2,13 @@
 -- declared is checked to match its pattern, and fails where it may not.
 -- fren-covers: check::pattern_obligation, lang::pattern_widening
 
-type Byte = subset_value: Int where invariant: subset_value is 0..=255
+type Byte = n: Int where invariant: n is 0..=255
 
 enum Reading { Raw(Byte), Missing }
-type SubsetPatternObligations1 = subset_value?: Bool where invariant: subset_value?
-struct Packet { length: Byte, ok?: SubsetPatternObligations1 }
-type SubsetPatternObligations2 = subset_value: Int where invariant: subset_value is 0..=9
-struct Level(SubsetPatternObligations2)
+type RequiredTrue = value?: Bool where invariant: value?
+struct Packet { length: Byte, ok?: RequiredTrue }
+type Digit = n: Int where invariant: n is 0..=9
+struct Level(Digit)
 
 fn scale(b: Byte): Int := b * 2
 fn size(Byte): Int
@@ -18,7 +18,7 @@ proc sub(b: Byte): (y: Int) {
 }
 
 proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
-    assume newtype: Level(x) != Level(0)   --~ error: invariant `SubsetPatternObligations2::invariant` does not hold
+    assume newtype: Level(x) != Level(0)   --~ error: invariant `Digit::invariant` does not hold
     out d := x   --~ error: invariant `Byte::invariant` does not hold
     out guarded := if 0 <= x <= 255 then x else 0
     call w := sub(x)   --~ error: invariant `Byte::invariant` does not hold
@@ -28,7 +28,7 @@ proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
     --~^ error: invariant `Byte::invariant` does not hold
     expect guarded_args: when 0 <= x <= 255, scale(x) = 2 * x
     expect payload: Reading::Raw(x) != Reading::Missing   --~ error: invariant `Byte::invariant` does not hold
-    expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: invariant `SubsetPatternObligations1::invariant` does not hold
+    expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: invariant `RequiredTrue::invariant` does not hold
     expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: invariant `Byte::invariant` does not hold
     expect defined: (let b: Byte := x + 1 in b) > x   --~ error: invariant `Byte::invariant` does not hold
 }

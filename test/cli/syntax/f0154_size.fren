@@ -1,8 +1,8 @@
 -- A size bound of enumeration that is too large (F0154).
-type SubsetF0154Size1 = subset_value: Int  where invariant: subset_value is 0..=3
+type TwoBit = n: Int where invariant: n is 0..=3
 set_option fren.enumeration.size 100 in
 set_option fren.evidence "enumerated" in
-proc c(x: SubsetF0154Size1): (det y: Int) {
+proc c(x: TwoBit): (det y: Int) {
     out y := x
     expect e: y >= 0
 }

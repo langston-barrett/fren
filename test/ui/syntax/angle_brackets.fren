@@ -6,13 +6,13 @@ pub struct Pair<A, B> { fst: A, snd: B }
 
 fn size<T>(o: Option<T>): Int := if o = Option::None then 0 else 1
 
-type SubsetAngleBrackets1 = subset_value: Int  where invariant: subset_value is 0..=9
+type Digit = n: Int where invariant: n is 0..=9
 proc c(
     x: Option<Set<Int>>,
     p: Pair<Int, Option<Set<Int>>>,
     r: Rel<Int, Option<Pair<Int, Bool>>>,
     q: Seq<Option<Int>>,
-    d: Option<SubsetAngleBrackets1>,
+    d: Option<Digit>,
 ): (det y: Int) {
     out y := size(x)
 

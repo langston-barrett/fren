@@ -1,8 +1,8 @@
 --@ args: quickcheck --tests 1
 -- The evaluator must reject the same typed argument as the SMT backends.
 proc concrete(x: Int): (y: Int) { out y := x }
-type SubsetRefinesPattern2 = subset_value: Int where invariant: subset_value is 1..
-proc specification(x: SubsetRefinesPattern2): (y: Int) { out y := x }
+type Pos = n: Int where invariant: n is 1..
+proc specification(x: Pos): (y: Int) { out y := x }
 expect bad() {
     call c := concrete(0)
     refines c specification(0)

@@ -17,9 +17,9 @@ proc thermostat(mode: Mode, hot?): (det on?) {
 }
 
 -- A record, a generic instance and a finite integer pattern type.
-type SubsetEnumerated1 = subset_value: Int where invariant: subset_value is 0..=2
+type Trit = n: Int where invariant: n is 0..=2
 set_option fren.evidence "enumerated" in
-proc sensor(r: Reading, o: Option<Bool>, k: SubsetEnumerated1): (det alarm?) {
+proc sensor(r: Reading, o: Option<Bool>, k: Trit): (det alarm?) {
     ensure a: alarm? iff (r.valid? and r.level = Level::High and k > 0)
     expect needs_valid: when alarm?, r.valid?
     expect missing: when k = 2, o != Option::None  --~ error: expectation `sensor::missing` does not hold
@@ -78,16 +78,16 @@ proc nd(a?): (o?, det d?) {  --~ error: `nd::d?` is not determined by the inputs
 
 -- A quantifier over a listed type of many values, and a global
 -- expectation, shown by its name.
-type SubsetEnumerated2 = subset_value: Int where invariant: subset_value is 0..=63
+type SixBit = n: Int where invariant: n is 0..=63
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 proc wide_quantifier(x?) {
-    expect e: forall (k: SubsetEnumerated2), k < 63 or x?  --~ error: expectation `wide_quantifier::e` does not hold
+    expect e: forall (k: SixBit), k < 63 or x?  --~ error: expectation `wide_quantifier::e` does not hold
 }
 
-type SubsetEnumerated3 = subset_value: Int where invariant: subset_value is 0..=200
+type BoundedCount = n: Int where invariant: n is 0..=200
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
-expect constant: forall (x: SubsetEnumerated3), x < 200  --~ error: expectation `constant` does not hold
+expect constant: forall (x: BoundedCount), x < 200  --~ error: expectation `constant` does not hold
 
 --@ summary: 35 passed, 11 failed, 0 inconclusive, 2 redundant

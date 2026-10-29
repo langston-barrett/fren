@@ -5,11 +5,11 @@
 -- checks are.
 set_option fren.lint.undecidable "allow"
 
-type SubsetEnumeratedErrors1 = subset_value: Int where invariant: subset_value is 0..=99
-type SubsetEnumeratedErrors2 = subset_value: Int where invariant: subset_value is 0..=99
-type SubsetEnumeratedErrors3 = subset_value: Int where invariant: subset_value is 0..=99
+type FirstPercent = n: Int where invariant: n is 0..=99
+type SecondPercent = n: Int where invariant: n is 0..=99
+type ThirdPercent = n: Int where invariant: n is 0..=99
 set_option fren.evidence "enumerated" in
-proc wide(a: SubsetEnumeratedErrors1, b: SubsetEnumeratedErrors2, c: SubsetEnumeratedErrors3): (det sum: Int) {  --~ error: `wide` has 1000000 behaviours up to size 3, too many to enumerate
+proc wide(a: FirstPercent, b: SecondPercent, c: ThirdPercent): (det sum: Int) {  --~ error: `wide` has 1000000 behaviours up to size 3, too many to enumerate
     out sum := a + b + c
     expect e: sum >= 0
 }
@@ -26,10 +26,10 @@ proc everywhere(k: Int): (all?) {  --~ error: `everywhere` cannot be enumerated:
 
 -- The unspecified value of a table's type that a definition reads is a
 -- slot too, counted alike in both front ends.
-type SubsetEnumeratedErrors4 = subset_value: Int where invariant: subset_value is 0..=255
-type SubsetEnumeratedErrors5 = subset_value: Int where invariant: subset_value is 0..=255
+type InputByte = n: Int where invariant: n is 0..=255
+type OtherByte = n: Int where invariant: n is 0..=255
 set_option fren.evidence "enumerated" in
-proc hidden(x: SubsetEnumeratedErrors4, y: SubsetEnumeratedErrors5): (det d: Int) {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
+proc hidden(x: InputByte, y: OtherByte): (det d: Int) {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
     out d := table { | x = 0 => 1 }
     expect e: x + y >= 0
 }

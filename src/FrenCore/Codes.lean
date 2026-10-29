@@ -2479,8 +2479,8 @@ Erroneous code example:
 ```fren
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
-type SubsetErrorCodes8 = subset_value: Int  where invariant: subset_value is 0..=9
-proc c(xs: List<SubsetErrorCodes8>) {}
+type Digit = n: Int where invariant: n is 0..=9
+proc c(xs: List<Digit>) {}
 ```
 
 A subset type's constraint, or a constraint that a value of a record or
@@ -3936,11 +3936,11 @@ proc c(s: Set<Int>): (pos?) {
 Erroneous code example:
 
 ```fren
-type SubsetErrorCodes5 = subset_value: Int  where invariant: subset_value is 0..=99
-type SubsetErrorCodes6 = subset_value: Int  where invariant: subset_value is 0..=99
-type SubsetErrorCodes7 = subset_value: Int  where invariant: subset_value is 0..=99
+type FirstPercent = n: Int where invariant: n is 0..=99
+type SecondPercent = n: Int where invariant: n is 0..=99
+type ThirdPercent = n: Int where invariant: n is 0..=99
 set_option fren.evidence "enumerated" in
-proc c(a: SubsetErrorCodes5, b: SubsetErrorCodes6, d: SubsetErrorCodes7): (det sum: Int) {
+proc c(a: FirstPercent, b: SecondPercent, d: ThirdPercent): (det sum: Int) {
   out sum := a + b + d
   expect e: sum >= 0
 }
@@ -3955,10 +3955,10 @@ to enumeration is run. Narrow the types, lower `fren.enumeration.size`, or
 have the solver check it:
 
 ```fren
-type SubsetErrorCodes2 = subset_value: Int  where invariant: subset_value is 0..=99
-type SubsetErrorCodes3 = subset_value: Int  where invariant: subset_value is 0..=99
-type SubsetErrorCodes4 = subset_value: Int  where invariant: subset_value is 0..=99
-proc c(a: SubsetErrorCodes2, b: SubsetErrorCodes3, d: SubsetErrorCodes4): (det sum: Int) {
+type LeftPercent = n: Int where invariant: n is 0..=99
+type MiddlePercent = n: Int where invariant: n is 0..=99
+type RightPercent = n: Int where invariant: n is 0..=99
+proc c(a: LeftPercent, b: MiddlePercent, d: RightPercent): (det sum: Int) {
   out sum := a + b + d
   expect e: sum >= 0
 }
@@ -4007,9 +4007,9 @@ and 3: weaker than a proof, so it is reported, as information. With
 finitely many values decides it:
 
 ```fren
-type SubsetErrorCodes1 = subset_value: Int  where invariant: subset_value is -3..=3
+type SmallSigned = n: Int where invariant: n is -3..=3
 set_option fren.evidence "enumerated" in
-proc c(x: SubsetErrorCodes1): (det y: Int) { out y := x + 1 expect e: y > x }
+proc c(x: SmallSigned): (det y: Int) { out y := x + 1 expect e: y > x }
 ```
 "# },
   { code := "F0653", explanation := r#"A generic function's postconditions cannot all hold at some type.

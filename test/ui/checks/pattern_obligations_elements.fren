@@ -3,7 +3,7 @@
 -- fren-covers: check::pattern_obligation
 set_option fren.lint.undecidable "allow"
 
-type Byte = subset_value: Int where invariant: subset_value is 0..=255
+type Byte = n: Int where invariant: n is 0..=255
 
 fn total(Set<Byte>): Int
 

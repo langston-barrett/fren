@@ -372,9 +372,9 @@ pub fn arm_body(values: Seq<Value>, i: Int): Value := part(values, guard_at(i) +
 pub fn arm_present?(values: Seq<Value>, i: Int) := guard_at(i) + 1 < values.len
 
 -- The arms that the model states, and the positions of their parts.
-pub type ArmIndex = subset_value: Int where invariant: subset_value is 0..=2
+pub type ArmIndex = arm: Int where invariant: arm is 0..=2
 
-pub type PartAt = subset_value: Int where invariant: subset_value is 0..=6
+pub type PartAt = part: Int where invariant: part is 0..=6
 
 pub fn arm_matches?(Program, Head, Int, Value)
 

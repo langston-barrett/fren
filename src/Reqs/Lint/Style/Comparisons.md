@@ -284,7 +284,7 @@ pub enum Alt { Ints(Bound, Bound), Text(String), Variant(String) }
 pub enum Value { Number(Int), Word(String), Named(String) }
 
 -- A position in the alternatives of a run.
-pub type AltPosition = subset_value: Int where invariant: subset_value is 0..=7
+pub type AltPosition = position: Int where invariant: position is 0..=7
 
 -- No integer is at most `hi` and at least `lo`.
 fn bound_below?(hi: Bound, lo: Bound) := match hi {

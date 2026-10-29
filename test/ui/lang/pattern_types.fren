@@ -2,17 +2,17 @@
 -- of one bring, and the obligations of the values given where one is
 -- declared.
 
-type Byte = subset_value: Int where invariant: subset_value is 0..=255
+type Byte = n: Int where invariant: n is 0..=255
 
 pub enum Severity { Silent, Info, Warning, Error }
-type Loud = subset_value: Severity where invariant: subset_value is Severity::Warning | Severity::Error
+type Loud = level: Severity where invariant: level is Severity::Warning | Severity::Error
 
 struct Packet { length: Byte, level: Loud }
 
 fn size(Int): Byte
 
-type SubsetPatternTypes2 = subset_value: Int where invariant: subset_value is 1..
-proc router(p: Packet, hops: SubsetPatternTypes2): (y: Int) {
+type Pos = n: Int where invariant: n is 1..
+proc router(p: Packet, hops: Pos): (y: Int) {
     ensure r: y = p.length + hops
 
     expect positive: y >= 1
@@ -23,7 +23,7 @@ proc router(p: Packet, hops: SubsetPatternTypes2): (y: Int) {
 
 proc user(x: Int): (det d: Byte) {
     out d := x   --~ error: invariant `Byte::invariant` does not hold
-    call w := router(Packet { length := x, level := Severity::Warning }, x)   --~ error: invariant `SubsetPatternTypes2::invariant` does not hold
+    call w := router(Packet { length := x, level := Severity::Warning }, x)   --~ error: invariant `Pos::invariant` does not hold
     --~^ error: invariant `Byte::invariant` does not hold
 }
 

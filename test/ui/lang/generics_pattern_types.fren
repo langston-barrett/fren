@@ -6,21 +6,21 @@
 
 mod generics_pattern_types
 
-type Byte = subset_value: Int where invariant: subset_value is 0..=255
+type Byte = n: Int where invariant: n is 0..=255
 
 pub struct Pair<A, B> { fst: A, snd: B }
-type SubsetGenericsPatternTypes1 = subset_value: Int where invariant: subset_value is 0..=3
-pub enum Tagged<T> { Plain(T), Marked(SubsetGenericsPatternTypes1, T) }
-type Present = subset_value: Option<Int> where invariant: subset_value is Option::Some(_)
+type Mark = n: Int where invariant: n is 0..=3
+pub enum Tagged<T> { Plain(T), Marked(Mark, T) }
+type Present = option: Option<Int> where invariant: option is Option::Some(_)
 
 fn read(Int): Option<Byte>
 
-type SubsetGenericsPatternTypes2 = subset_value: Int where invariant: subset_value is 0..=9
-type SubsetGenericsPatternTypes3 = subset_value: Int where invariant: subset_value is 1..
+type Digit = n: Int where invariant: n is 0..=9
+type Pos = n: Int where invariant: n is 1..
 proc holder(
     x: Option<Byte>,
-    d: Option<SubsetGenericsPatternTypes2>,
-    p: Pair<Byte, Option<SubsetGenericsPatternTypes3>>,
+    d: Option<Digit>,
+    p: Pair<Byte, Option<Pos>>,
     t: Tagged<Byte>,
     s: Present,
     n: Int,
@@ -47,22 +47,22 @@ proc giver(n: Int): (
     out ok := if 0 <= n <= 255 then Option::Some(n) else Option::None
     out bad := Option::Some(n)   --~ error: invariant `generics_pattern_types::Byte::invariant` does not hold
     out pair := Pair { fst := n, snd := n }   --~ error: invariant `generics_pattern_types::Byte::invariant` does not hold
-    out marked := Tagged::Marked(n, 0)   --~ error: invariant `generics_pattern_types::SubsetGenericsPatternTypes1::invariant` does not hold
+    out marked := Tagged::Marked(n, 0)   --~ error: invariant `generics_pattern_types::Mark::invariant` does not hold
     out some := if n > 0 then Option::None else Option::Some(n)   --~ error: invariant `generics_pattern_types::Present::invariant` does not hold
     call h := holder(Option::Some(n), Option::None, Pair { fst := 0, snd := Option::None }, Tagged::Plain(0), Option::Some(0), n)   --~ error: invariant `generics_pattern_types::Byte::invariant` does not hold
 }
 
 -- A quantifier ranges over an instance's values that meet its arguments'
 -- patterns, as over a pattern type's.
-type SubsetGenericsPatternTypes4 = subset_value: Int where invariant: subset_value is 0..=2
+type Trit = n: Int where invariant: n is 0..=2
 set_option fren.lint.assertions_on_constants "allow" in
-expect digits: forall (d: SubsetGenericsPatternTypes4), d != 2   --~ error: expectation `generics_pattern_types::digits` does not hold
-type SubsetGenericsPatternTypes5 = subset_value: Int where invariant: subset_value is 0..=2
+expect digits: forall (d: Trit), d != 2   --~ error: expectation `generics_pattern_types::digits` does not hold
+type TritElement = n: Int where invariant: n is 0..=2
 set_option fren.lint.assertions_on_constants "allow" in
-expect small: forall (o: Option<SubsetGenericsPatternTypes5>), o != Option::Some(3)
-type SubsetGenericsPatternTypes6 = subset_value: Int where invariant: subset_value is 1..=2
+expect small: forall (o: Option<TritElement>), o != Option::Some(3)
+type OneOrTwo = n: Int where invariant: n is 1..=2
 set_option fren.lint.assertions_on_constants "allow" in
-expect pairs: forall (p: Pair<Bool, SubsetGenericsPatternTypes6>), p.snd >= 1
-type SubsetGenericsPatternTypes7 = subset_value: Int where invariant: subset_value is 0..=2
+expect pairs: forall (p: Pair<Bool, OneOrTwo>), p.snd >= 1
+type CounterexampleTrit = n: Int where invariant: n is 0..=2
 set_option fren.lint.assertions_on_constants "allow" in
-expect too_small: forall (o: Option<SubsetGenericsPatternTypes7>), o != Option::Some(2)   --~ error: expectation `generics_pattern_types::too_small` does not hold
+expect too_small: forall (o: Option<CounterexampleTrit>), o != Option::Some(2)   --~ error: expectation `generics_pattern_types::too_small` does not hold

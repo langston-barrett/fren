@@ -41,7 +41,7 @@ proc abstract(t: Token, u: Token): (s: Shape) {   --~ error: no outputs satisfy 
 }
 
 -- An output of a pattern type over an enumeration.
-type Roundish = subset_value: Shape where invariant: subset_value is Shape::Circle(_) | Shape::Rect(_, _)
+type Roundish = shape: Shape where invariant: shape is Shape::Circle(_) | Shape::Rect(_, _)
 
 proc patterned(): (s: Roundish) {   --~ error: no outputs satisfy `round` and `boxy`
     ensure round: s is Shape::Circle(_)   --~ info: `round` forces s is Shape::Circle(_), but `boxy` forces s is Shape::Rect(_, _)

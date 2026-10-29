@@ -25,8 +25,8 @@ fn uninterpreted(fn(Int) -> Int): Int  --~ error: a function type is only the ty
 fn nested(s: Set<fn(Int) -> Int>): Int := 0  --~ error: a function type cannot be within another type
 fn returns(f: fn(Int) -> fn(Int) -> Int): Int := 0  --~ error: a function type cannot be within another type
 fn natural(f: fn(Int) -> Nat): Int := 0  --~ error: a function type's parameter or result cannot be a `Nat`, for now
-type SubsetHigherOrderStatic1 = subset_value: Int where invariant: subset_value is 0..
-fn pattern(f: fn(SubsetHigherOrderStatic1) -> Int): Int := 0  --~ error: a function type's parameter or result cannot be a subset type, for now
+type Nonnegative = n: Int where invariant: n is 0..
+fn pattern(f: fn(Nonnegative) -> Int): Int := 0  --~ error: a function type's parameter or result cannot be a subset type, for now
 proc var_type(
     f: fn(Int) -> Int,    --~ error: a function type cannot be the type of a procedure's parameter or output
 ) {}

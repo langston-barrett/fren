@@ -7,6 +7,9 @@ containing item, including its `set_option ... in` wrappers. --verify checks
 all changed standalone specs before any write and after all writes; it saves
 the complete diagnostic/verdict pairs for review, because subset declarations
 introduce new inhabitation/definedness checks and per-invariant diagnostics.
+Generated Subset…N names and subset_value binders are capture-safe fallback
+names, not final domain terminology: review names, labels, sharing and all
+uses manually before publishing a migrated specification.
 """
 import argparse
 import dataclasses
