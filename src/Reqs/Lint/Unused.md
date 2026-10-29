@@ -307,18 +307,47 @@ this is what is left after the last guarantee that used the input is
 removed. As for [dead code](#dead-code), only the file's global
 expectations, calls and refinements count. There is no fix: removing
 the inputs would change the procedure's interface.
-`lint::unused_assumption` states when it fires:
+`lint::unused_assumption` states when it fires, over what each assumption
+links, by its position: the variables of the procedure that it mentions
+and the uninterpreted functions that it applies. `lint::reached` is the
+assumptions that a set of links reaches: those that link one of them, and
+those that share a link with one reached, transitively, through the
+closure of the relation of sharing a link. An assumption is used when
+what the procedure's other members mention or apply reaches it, or what
+the file reads of the procedure does: a call of the procedure gives each
+input a value, which its assumption check reads, and a refinement of it
+reads each input too, so where the file has either, every input is read:
 
 ```fren
+-- What links assumptions: a variable of the procedure, or an uninterpreted
+-- function, by its name.
+pub enum Link { Var(String), Fn(String) }
+
+-- The assumptions, by their positions, that `used` reaches.
+set_option fren.lint.undecidable "allow" in
+pub fn reached(links: Rel<Int, Link>, used: Set<Link>): Set<Int> :=
+    direct union (links join links.inverse).closure.image(direct)
+    where direct := links.inverse.image(used)
+
+set_option fren.lint.undecidable "allow" in
 pub proc unused_assumption(
-    n_mentioned: Nat,    -- variables the assumption mentions
-    all_inputs?,         -- each of them is an input
-    mentioned?,          -- one of them, or a function it applies, is used in the procedure, through its other assumptions too
-    read?,               -- one of them, or a function it applies, is read in the file, by a global expectation, a call or a refinement, through the procedure's other assumptions too
+    links: Rel<Int, Link>,       -- what each assumption of the procedure links, by its position
+    inputs: Set<Link>,           -- the procedure's inputs, each a `Var`
+    mentioned: Set<Link>,        -- what its other members mention or apply
+    read?,                       -- the file reads every input: a call of the procedure does, as does a refinement of it
+    k: Int,                      -- the position of the assumption
 ): (det fires?) {
-    ensure rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
+    ensure rule: fires? iff ((exists (x: String), (k, Link::Var(x)) in links)
+        and (forall (x: String), when (k, Link::Var(x)) in links, Link::Var(x) in inputs)
+        and not k in reached(links, mentioned union (if read? then inputs else {})))
 }
 ```
+
+Both front ends decide in two steps: with what the procedure's members
+mention, where they elaborate it, and with the inputs that the file reads,
+among the assumptions that the first step leaves, at the end of the file.
+That is the same as one step with both, since each assumption that the
+first step leaves links an input.
 
 The message is reported at the assumption's name, at the end of the
 file.

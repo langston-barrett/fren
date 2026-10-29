@@ -1345,18 +1345,6 @@ impl unused_lint_setting: lint::unused_lint_setting for (seen e : Bool) {
   intro seen e _
   cases seen <;> cases e <;> simp [fren_spec, Fren.Core.unusedLintSetting]
 
--- Both front ends decide it with `unusedAssumption`, at the component and
--- again at the end of the file, with the global expectations' reads.
-impl unused_assumption: lint::unused_assumption for (n : Nat) (a m r : Bool) {
-  n_mentioned := n,
-  all_inputs? := a,
-  mentioned? := m,
-  read? := r,
-  fires? := Fren.Core.unusedAssumption n a m r,
-} by
-  intro n a m r _
-  cases a <;> cases m <;> cases r <;> simp [fren_spec, Fren.Core.unusedAssumption]
-
 -- Both front ends count the groups with `binderGroups`.
 impl unrelated_binders: lint::unrelated_binders for (n : Nat) {
   n_groups := n,

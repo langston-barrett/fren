@@ -2,6 +2,7 @@
 -- proves each link. It imports every requirement, as `Reqs` does, so that
 -- `#fren_trace` sees the components of those that no module implements.
 -- keep-sorted start
+import Impls.Assumptions
 import Impls.Calls
 import Impls.Chains
 import Impls.Check
