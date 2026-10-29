@@ -70,3 +70,10 @@ proc environments(rho: Int, sigma: Int, n: Int) {
 -- the value contract for every rho; evaluating then substituting a literal
 -- for Var is not a valid implementation. Lean additionally proves occurrence
 -- preservation, normalization, and idempotence for all recursive expressions.
+
+-- The current recursive Hoare checker proves a scalar environment contract.
+-- The recursive fold may carry rho solely as a proof parameter, forwarding
+-- it unchanged to recursive calls and never inspecting it. In that form
+-- Lean must prove fold(e, rho) = fold(e, sigma) for all environments, and
+-- eval(fold(e, rho), sigma) = eval(e, sigma). Thus a single residual tree,
+-- including every Var, works for all environments despite the proof parameter.
