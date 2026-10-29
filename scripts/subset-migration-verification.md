@@ -190,5 +190,11 @@ name the functions whose result constraints they exercise.
 The final full build caught one additional naming collision: the proposed
 `PartAt` binder `part` shadowed the existing `lang::part` function. It is
 `part_index` instead; the base type and `0..=6` predicate are unchanged.
-This illustrates why declaration alpha-equivalence was paired with a full
-elaboration check rather than treated as sufficient validation.
+The earlier checks were bounded: declaration alpha-equivalence, 26 paired UI
+files, the hosted interpretation regression, and the migration-script tests.
+They did not compile every changed requirements chapter or validate all
+namespace lookup. The full `lake build --wfail` exposed this collision, so
+those earlier results are not a claim that the complete migration compiled.
+Every changed requirements chapter must pass the final full build after the
+correction, followed by the full test suite. Integration records those final
+results separately against the tested commit.
