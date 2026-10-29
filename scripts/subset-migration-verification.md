@@ -116,8 +116,8 @@ Reviewed generated declaration names:
 | `test/cli/results/f0644_too_many.fren` | `SubsetF0644TooMany1` | `FirstPercent` |
 | `test/cli/results/f0644_too_many.fren` | `SubsetF0644TooMany2` | `SecondPercent` |
 | `test/cli/results/f0644_too_many.fren` | `SubsetF0644TooMany3` | `ThirdPercent` |
-| `test/cli/results/f0645_generic.fren` | `SubsetF0645Generic1` | `InputTwoBit` |
-| `test/cli/results/f0645_generic.fren` | `SubsetF0645Generic2` | `OutputTwoBit` |
+| `test/cli/results/f0645_generic.fren` | `SubsetF0645Generic1` | `LeftTwoBit` |
+| `test/cli/results/f0645_generic.fren` | `SubsetF0645Generic2` | `RightTwoBit` |
 | `test/cli/syntax/f0154_size.fren` | `SubsetF0154Size1` | `TwoBit` |
 | `test/cli/types/f0389_recursive_argument.fren` | `SubsetF0389RecursiveArgument1` | `Digit` |
 | `test/ui/checks/enumerated.fren` | `SubsetEnumerated1` | `Trit` |
@@ -178,3 +178,11 @@ Independent review compared 114 actual declarations and found identical
 base types, bounds and predicate formulas after binder alpha-renaming; the
 other six binder records describe the formatter snapshot rather than new
 declarations. Final snapshots and full build are recorded by integration.
+
+A second role-name review caught and corrected the generic-function fixture's
+`InputTwoBit`/`OutputTwoBit` pair: both parameters are inputs, so their names
+are `LeftTwoBit` and `RightTwoBit`. Both declarations and their checks remain.
+The other introduced role names were checked against their actual use sites:
+`InputByte` is an input, node/bag/element digits describe their respective
+payloads or collection elements, and size/clamped/proved/capped byte aliases
+name the functions whose result constraints they exercise.
