@@ -1282,7 +1282,7 @@ constants, such as `2`, `2 * 3` or `(MAX - MIN)`.
 proc c(x: Int): (y: Int) { ensure r: y = 2 * x }
 ```
 "# },
-  { code := "F0308", explanation := r#"A function or variant is applied to the wrong number of arguments, or a pattern has the wrong number of binders.
+  { code := "F0308", explanation := r#"A function or variant is applied to the wrong number of arguments, a pattern has the wrong number of binders, or a match arm has a different number of patterns from its scrutinees.
 
 Erroneous code example:
 

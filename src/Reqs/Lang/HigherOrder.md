@@ -30,6 +30,8 @@ first-order formulas that it sees without them.
 ```
 type          := base ["is" pattern] | "fn" "(" type ("," type)* ")" "->" type
 closure       := "|" closure-param ("," closure-param)* "|" expr
+               | "match" "{" match-arm ("," match-arm)* [","] "}"
+match-arm     := pattern ("," pattern)* ["if" expr] "=>" expr
 closure-param := DECL [":" base]
 ```
 
@@ -415,6 +417,117 @@ formulas, and report the same counterexamples, which never show a
 function: a closure's parameters are bound within the queries, and a
 function parameter is never a variable of a component.
 
+## Lambda matches and multiple scrutinees
+
+`match { P => e, ... }` is a closure whose parameters are implicit. It is
+accepted wherever a closure is accepted, with its parameter types and
+arity supplied by the expected function type. For example,
+`match { Option::Some(x) => x, Option::None => 0 }` does not
+introduce a name merely to match it. It captures surrounding values as an
+ordinary closure does. It is second-class, has no zero-argument form,
+and cannot stand where a value expression is required (`F0436`). A generic
+function supplies concrete types in exactly the same way as for `|x| e`;
+when they cannot be inferred, the existing unknown-parameter diagnostic
+applies rather than inventing a type.
+
+A defined function may instead leave all its parameters unnamed and give
+this body: `fn area(Shape): Int := match { ... }`. Their declared types
+supply the implicit parameters. Mixed named and unnamed parameters remain
+invalid. An unnamed parameter is never a source-visible binder, and a
+nested explicit match cannot accidentally refer to its generated name.
+The shorthand expands before normal function checking, including generic
+instantiation, contracts, recursive descent and generated Lean definitions.
+
+An ordinary match may inspect multiple expressions:
+`match left, right { P, Q => e, ... }`. Each row has exactly one pattern
+per scrutinee, with constructor payload commas remaining inside their
+parentheses. The implicit closure form uses the same rows, with one
+implicit argument per column. A row matches iff all its patterns match,
+and binds each name to the value or payload of its own column. Binders
+must be distinct across the whole row, are in scope only in that row's
+guard and body, and retain the mentions and recursive origin of their own
+scrutinee. Later columns do not bring earlier columns' binders into scope.
+An arity mismatch is rejected before resolving patterns (`F0308`).
+
+Rows are ordered. Their guards run only after every pattern in that row
+matches; their bodies run only when that guard holds and no earlier row
+was taken. Coverage and reachability concern vectors of values, not
+independent coverage of each column. As with a single scrutinee, ignoring
+guards must give exhaustive patterns; guards then generate the ordinary
+completeness obligations. The same rules apply to `table left, right`,
+with existing table disjointness and otherwise semantics; the otherwise
+is a row of wildcards, one per column. `table { C => e }` remains a table
+of conditions and does not denote an implicit-argument closure.
+
+The following model uses the actual four worlds of two Boolean arguments.
+Each row denotes a Cartesian rectangle and its own guard. It records the
+first matching row, preserving correlated coverage holes and guard
+fallthrough, and returns the actual arguments rather than fresh values.
+
+```fren
+pub enum VectorChoice { First, Second, Missing }
+
+pub proc match_vector(
+    left?, right?,
+    first_left: Set<Bool>, first_right: Set<Bool>, first_guard?,
+    second_left: Set<Bool>, second_right: Set<Bool>, second_guard?,
+): (det choice: VectorChoice, det bound_left?, det bound_right?) {
+    out choice := if left? in first_left and right? in first_right and first_guard? then VectorChoice::First
+        else if left? in second_left and right? in second_right and second_guard? then VectorChoice::Second
+        else VectorChoice::Missing
+    out bound_left? := left?
+    out bound_right? := right?
+
+    expect first_wins: when left? in first_left and right? in first_right and first_guard?, choice = VectorChoice::First
+    expect fallthrough: when not first_guard? and left? in second_left and right? in second_right and second_guard?, choice = VectorChoice::Second
+    expect both_columns: when first_right = {} and second_right = {}, choice = VectorChoice::Missing
+    expect exact_binders: bound_left? = left? and bound_right? = right?
+    cover correlated_hole: first_left = {true} and first_right = {true}
+        and second_left = {false} and second_right = {false}
+        and first_guard? and second_guard? and choice = VectorChoice::Missing
+}
+
+pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>): (det complete?) {
+    out complete? := forall (left? right?: Bool), (left?, right?) in first or (left?, right?) in second
+    expect all_worlds: complete? iff (true, true) in first union second and (true, false) in first union second
+        and (false, true) in first union second and (false, false) in first union second
+    expect diagonal_is_incomplete: when first = {(true, true)} and second = {(false, false)}, not complete?
+    expect complementary_rows: when first = {(true, true), (true, false)} and second = {(false, true), (false, false)}, complete?
+}
+```
+
+The internal matrix carrier has a name outside the source identifier
+grammar. A legal user type, module or constructor name must never capture
+that carrier or change coverage, including names that resemble generated
+implementation names. The following model quantifies over actual source
+identifier strings, including `_fren_match_arguments`, which is a legal
+user declaration rather than a reserved implementation namespace.
+
+```fren
+pub proc match_namespace(user_type: Id): (det distinct?) {
+    assume source_identifier: user_type.matches?("[A-Za-z_][A-Za-z0-9_']*")
+    out distinct? := user_type != "#match_arguments"
+
+    expect no_capture: distinct?
+    cover implementation_like_name: user_type = "_fren_match_arguments"
+}
+```
+
+Rewriting lints must preserve the closure role and the implicit function
+parameters. A rewrite that only replaces a match by a value expression
+cannot be applied to an implicit-argument match: without a valid closure
+rewrite, omit that lint and fix. This applies equally to the standalone
+formatter/fixer and the hosted diagnostics.
+
+Both frontends must accept and reject the same source, preserve ordinary
+single-scrutinee matches, and format lists of scrutinees and patterns
+without changing their grouping. Tests compare shorthand to explicit
+closures and explicit matches, including heterogeneous columns, nested
+constructors, or-patterns, captures, generic functions, guards, type and
+arity errors, cross-column duplicate binders, correlated coverage holes,
+and recursive calls through payloads from each column. Generated Lean
+matches must bind the same values and retain structural recursive descent.
+
 This chapter comes after the last `#fren_check` of the chapters that share
 its Lean file, so it names its own procedures, which the Lean-hosted front
 end then checks, as the `fren` command checks every procedure:
@@ -426,4 +539,7 @@ end then checks, as the `fren` command checks every procedure:
 #fren_check closure_obligation
 #fren_check function_comparison
 #fren_check closure_capture
+#fren_check match_vector
+#fren_check match_vector_coverage
+#fren_check match_namespace
 ```

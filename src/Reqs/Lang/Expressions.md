@@ -1023,7 +1023,12 @@ match r {
 }
 ```
 
-A `match` reads the value of its *scrutinee*, the expression after
+A `match` can read several scrutinees, as in `match left, right { P, Q => e, ... }`.
+Each arm gives one pattern per scrutinee. Coverage is over combinations
+of values, and the first matching row with a true guard wins; see
+[lambda matches and multiple scrutinees](HigherOrder.md#lambda-matches-and-multiple-scrutinees).
+
+A single-scrutinee `match` reads the value of its *scrutinee*, the expression after
 `match`. The scrutinee is a value of an enumeration, a `Bool`, an `Int`, a
 `Nat` or a `String` (`F0316`). It is an atom, so an operator in it is
 written in parentheses, and it is not a record literal: in `match s {`,

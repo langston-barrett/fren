@@ -1,0 +1,122 @@
+-- fren-covers: lang::match_vector
+-- Lambda matches capture ordinary surrounding values and match every argument.
+set_option fren.lint.assertions_on_constants "allow"
+set_option fren.lint.length_zero "allow"
+
+pub enum Shape { Square(Int), Rect(Int, Int) }
+pub fn perimeter(Shape): Int := match {
+    Shape::Square(w) => 4 * w,
+    Shape::Rect(w, h) => 2 * (w + h),
+}
+
+pub fn choose(Bool, Int): Int := match {
+    true, n => n,
+    false, n => -n,
+}
+
+pub fn compare_shapes(left: Shape, right: Shape): Int := match left, right {
+    Shape::Square(a), Shape::Square(b) => a + b,
+    Shape::Rect(a, b), _ => a + b,
+    _, Shape::Rect(a, b) => a - b,
+}
+
+pub fn apply(f: fn(Bool, Int) -> Int, flag?, n: Int): Int := f(flag?, n)
+pub fn captured(flag?, n: Int, offset: Int): Int := apply(match {
+    true, x => x + offset,
+    false, x => x - offset,
+}, flag?, n)
+
+pub fn first_some<T>(Option<T>, Option<T>): Option<T> := match {
+    Option::Some(x), _ => Option::Some(x),
+    Option::None, fallback => fallback,
+}
+
+expect square: perimeter(Shape::Square(3)) = 12
+expect rectangle: perimeter(Shape::Rect(2, 5)) = 14
+expect two_arguments: choose(false, 7) = -7
+expect first_row: compare_shapes(Shape::Rect(2, 5), Shape::Rect(10, 3)) = 7
+expect capture: captured(true, 7, 4) = 11
+expect generic: first_some(Option::None, Option::Some(42)) = Option::Some(42)
+
+pub fn shape_apply(f: fn(Shape) -> Int, shape: Shape): Int := f(shape)
+expect one_argument_closure: shape_apply(match {
+    Shape::Square(n) => n + 1,
+    Shape::Rect(w, h) => w + h,
+}, Shape::Square(4)) = 5
+
+pub enum Values { Items(Seq<Int>) }
+pub fn guarded(Bool, Values): Int := match {
+    true, Values::Items(xs) if xs.len > 0 => xs[0],
+    _, _ => 0,
+}
+expect guarded_skipped: guarded(false, Values::Items([])) = 0
+expect guarded_taken: guarded(true, Values::Items([7])) = 7
+
+pub fn unordered(left?, right?): Int := table left?, right? {
+    true, true => 1,
+    true, false => 2,
+    false, _ => 3,
+}
+expect table_columns: unordered(true, false) = 2 and unordered(false, true) = 3
+
+pub fn triple(Bool, Bool, Bool): Int := match {
+    true, true, true => 1,
+    _, _, _ => 0,
+}
+expect three_arguments: triple(true, true, true) = 1 and triple(true, false, true) = 0
+
+pub enum Tree { Leaf, Next(Tree) }
+pub fn depth(Tree, Tree): Int := match {
+    Tree::Next(x), _ => 1 + depth(x, Tree::Leaf),
+    Tree::Leaf, _ => 0,
+}
+pub fn depth_right(Tree, Tree): Int := match {
+    _, Tree::Next(y) => 1 + depth_right(Tree::Leaf, y),
+    _, Tree::Leaf => 0,
+}
+set_option fren.evidence "enumerated" in
+expect recursion: depth(Tree::Next(Tree::Leaf), Tree::Next(Tree::Leaf)) = 1
+    and depth_right(Tree::Leaf, Tree::Next(Tree::Leaf)) = 1
+
+pub fn generic_apply<T>(o: Option<T>, f: fn(Option<T>) -> Int): Int := f(o)
+expect generic_closure: generic_apply(Option::Some(true), match {
+    Option::Some(_) => 1,
+    Option::None => 0,
+}) = 1
+
+pub enum Fork { End, Left(Fork), Right(Fork) }
+pub fn fork_depth(Fork, Tree): Int := match {
+    Fork::Left(x), Tree::Leaf | Tree::Next(_) => 1 + fork_depth(x, Tree::Leaf),
+    Fork::Right(x), _ => 1 + fork_depth(x, Tree::Leaf),
+    Fork::End, _ => 0,
+}
+set_option fren.evidence "enumerated" in
+expect recursive_alternatives: fork_depth(Fork::Right(Fork::Left(Fork::End)), Tree::Leaf) = 2
+
+pub fn split_sign(flag?, number: Int): Int := table flag?, number {
+    true, n if n >= 0 => 1,
+    true, n if n < 0 => -1,
+    false, _ => 0,
+}
+expect table_guards: split_sign(true, -2) = -1 and split_sign(false, -2) = 0
+
+pub fn negate?(Bool) := match {
+    true => false,
+    false => true,
+}
+expect boolean_parameter: negate?(false) and not negate?(true)
+
+pub fn bounded(Bool): (r: Int) {
+    out r := match { true => 1, false => 0 }
+    ensure range: 0 <= r <= 1
+}
+expect block_contract: bounded(true) = 1
+
+pub fn with_offset(Int): Int := (match { n => n + offset }) where offset := 3
+expect where_capture: with_offset(4) = 7
+
+pub fn apply_int(f: fn(Int) -> Int, n: Int): Int := f(n)
+pub fn nested_capture(Int): Int := match {
+    x => apply_int(match { y => x + y }, 5),
+}
+expect nested_closure_capture: nested_capture(7) = 12

@@ -211,6 +211,7 @@ def exprChildren : Expr → Array Expr
   | .app _ _ as | .set _ as | .seq _ as => as
   | .record _ _ fs => fs.filterMap (·.2)
   | .match _ sc arms _ => #[sc] ++ armParts arms
+  | .matches _ ss arms _ => ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)
   | .is _ sc _ => #[sc]
   | .table _ rows => tableParts rows
   | .method _ r _ as => #[r] ++ as
@@ -257,6 +258,8 @@ partial def divisorConstants (items : Array Item) : Std.HashSet String := Id.run
         if let some n := named k then out := out.insert n
     if let .match _ _ arms _ := e then
       out := out.insertMany (arms.flatMap (rangeBounds ·.1))
+    if let .matches _ _ arms _ := e then
+      out := out.insertMany (arms.flatMap fun (ps, _, _) => ps.flatMap rangeBounds)
     if let .is _ _ p := e then
       out := out.insertMany (rangeBounds p)
   -- Through the values of constants, until nothing is new.
@@ -499,6 +502,12 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
         let (a, b) := (vals[k]!, vals[k + 1]!)
         if s.binds arms[k]!.1 || s.binds arms[k + 1]!.1 || s.text a == s.text b then none else
         some { origin := .swapArms, span := { start := a.start, stop := b.stop }, after := s.swapped a b, context := sp }
+    | .matches sp _ arms _ =>
+      let vals := arms.map fun (_, _, b) => s.outer sp b.span
+      (Array.range (arms.size - 1)).filterMap fun k =>
+        let (a, b) := (vals[k]!, vals[k + 1]!)
+        if arms[k]!.1.any s.binds || arms[k + 1]!.1.any s.binds || s.text a == s.text b then none else
+        some { origin := .swapArms, span := { start := a.start, stop := b.stop }, after := s.swapped a b, context := sp }
     -- A well-formed spec applies no variable, so this is the built-in
     -- function.
     | .app sp #[f] args =>
@@ -582,6 +591,7 @@ where
     -- The body once, not each instance.
     | .quant _ _ _ b => #[edits s b]
     -- A closure's body once, not at each application of it.
+    | .matches _ ss arms _ => (ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).map (edits s ·)
     | .closure _ _ b => #[edits s b]
     | .pair _ a b | .index _ a b => #[edits s a, edits s b]
     | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)

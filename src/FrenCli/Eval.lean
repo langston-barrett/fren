@@ -2391,6 +2391,35 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     let u := unspecifiedFn ty
     modify fun s => { s with spec.funs := s.spec.funs.insert u (#[], ty) }
     return (.match s out span.start armPos (some u) pairs?, ty)
+  | .matches span scrutinees arms isTable => do
+    if scrutinees.isEmpty then throw "a lambda match is only an argument for a function parameter"
+    let values ← scrutinees.mapM (lowerExpr cx)
+    let mut out := #[]
+    let mut ty := VTy.bool
+    for (ps, guard?, body) in arms do
+      unless ps.size == values.size do throw "match pattern arity differs from scrutinees"
+      let parts ← (ps.zip values).mapM fun (p, (_, t)) => lowerPattern t p
+      let bound := parts.toList.flatMap (·.2)
+      let acx := { cx with binders := bound.reverse ++ cx.binders, lets := cx.lets.filter fun (n, _) => !bound.any (·.1 == n) }
+      let g? ← guard?.mapM fun g => return (← lowerExpr acx g).1
+      let (b, t) ← lowerExpr acx body
+      ty := t
+      out := out.push (Pat.ctor 0 (parts.map (·.1)), g?, b)
+    let st ← get
+    let baseSigs : Fren.Core.Sigs := fun p =>
+      ((st.spec.data.find? p).map fun d => d.ctors.map fun c => (c.name, c.fields.map (·.2.patTy))).getD #[]
+    let rows := out.map fun (p, _, _) => match p with | .ctor _ ps => ps.map (·.core) | _ => #[]
+    let (sigs, pty, pats) := Fren.Core.matchVector baseSigs (values.map (·.2.patTy)) rows
+    let guarded := out.map (·.2.1.isSome)
+    let checked := if isTable then Fren.Core.checkTableArms sigs pty pats guarded
+      else (Fren.Core.checkMatch sigs pty pats guarded).map (·, #[])
+    let (exhaustive, pairs) ← match checked with
+      | .ok u => pure u
+      | .error (_, msg) => throw s!"the evaluator rejects a multi-match accepted by the elaborator: {msg.headline}"
+    let u? := if exhaustive then none else some (unspecifiedFn ty)
+    if let some u := u? then modify fun s => { s with spec.funs := s.spec.funs.insert u (#[], ty) }
+    return (.match (.ctor Fren.Core.matchVectorPath 0 (values.map (·.1))) out span.start
+      (arms.map fun (ps, _, _) => ps[0]!.span.start) u? (if isTable then some pairs else none), ty)
   | .table span rows => do
     let mut out := #[]
     let mut ty := VTy.bool
@@ -2504,6 +2533,9 @@ the types `pts`: its parameters' names, made unique, and its body. -/
 partial def lowerFnArg (cx : Cx) (span : Span) (pts : Array VTy) (a : Expr) : L (Array Name × Ex) := do
   let (names, body) : Array Name × Expr := match a with
     | .closure _ params body => (params.map fun (x, _) => declName x, body)
+    | .matches s #[] arms false =>
+      let xs := pts.mapIdx fun j _ => ({ name := s!"#match{j}", span := s } : Ident)
+      (xs.map (Name.mkSimple ·.name), .explicitMatch s (xs.map fun x => .path s #[x]) arms)
     | .path s segs =>
       let xs := (List.range pts.size).toArray.map fun j => ({ name := s!"#{j}", span := s } : Ident)
       (xs.map (Name.mkSimple ·.name), .app s segs (xs.map fun x => .path s #[x]))
@@ -2962,6 +2994,7 @@ partial def lowerItem : Item → L Unit
       table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
       spec.sorts := s.spec.sorts.push path }
   | .function isPub name typeParams params result body clauses _ block => do
+    let (params, body) := lambdaMatchFunction params body
     let clauses := splitContractClauses clauses
     let path := (← get).module ++ itemName name
     -- The `use`s of its block, in its scope.

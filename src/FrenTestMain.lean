@@ -573,6 +573,15 @@ def fixing : IO (Array String) := do
     let (out, code) ← runFren ["fix", "--check", target.toString]
     if code != 0 || !out.isEmpty then
       failures := failures.push s!"labelled constraint fix was not valid and idempotent: {fixture} (exit {code}):\n{out}"
+  -- fren-covers: lang::match_vector
+  -- A value-level match rewrite would lose an implicit closure's scope.
+  let original ← IO.FS.readFile "test/ui/lang/lambda_match.fren"
+  let target := ".lake/fix-test/lambda_match.fren"
+  IO.FS.writeFile target original
+  for flags in #[#[], #["--check"]] do
+    let (out, code) ← runFren (["fix"] ++ flags.toList ++ [target])
+    if code != 0 || !out.isEmpty || (← IO.FS.readFile target) != original then
+      failures := failures.push s!"implicit match fix changed its closure or scope (exit {code}):\n{out}"
   return failures
 
 /-! ## Libraries

@@ -369,8 +369,17 @@ syntax fren_top_pattern := ("| ")? sepBy1(fren_pattern, " | ")
 neither the guard nor the expression can be a bare `when`/`unless`. -/
 syntax fren_arm := fren_top_pattern (" if " fren_expr:20)? " => " fren_expr:20
 
+/-- An arm with one pattern per scrutinee. -/
+syntax fren_many_arm := sepBy1(fren_top_pattern, ", ") (" if " fren_expr:20)? " => " fren_expr:20
+
 /-- `match e { pattern => e, ... }`. -/
-scoped syntax:max (name := matchExpr) "match " withoutForbidden(fren_expr:max) " { " withoutForbidden(sepBy(fren_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
+scoped syntax:max (name := matchExpr) "match " withoutForbidden(fren_expr:max) " { " withoutForbidden(sepBy((atomic(fren_arm) <|> fren_many_arm), ", ", ", ", allowTrailingSep)) " }" : fren_expr
+
+scoped syntax:max (name := matchManyExpr) "match " withoutForbidden(fren_expr:max) ", "
+  withoutForbidden(sepBy1(fren_expr:max, ", ")) " { " withoutForbidden(sepBy(fren_many_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
+/-- A context-typed closure matching its implicit arguments. -/
+scoped syntax:max (name := lambdaMatchExpr) "match " "{ "
+  withoutForbidden(sepBy(fren_many_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 
 /-- A row of a table: `C => e`, or `_ => e`, optionally after `|`. Like a
 `match` arm's body, neither the condition nor the value can be a bare
@@ -386,7 +395,10 @@ whose arms are disjoint (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
 Its parts are where a `match`'s are. `{` right after `table` starts the
 rows of a table by conditions, so the scrutinee does not start with it. -/
 scoped syntax:max (name := tableMatchExpr) "table " notFollowedBy("{") withoutForbidden(fren_expr:max) " { "
-  withoutForbidden(sepBy1(fren_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
+  withoutForbidden(sepBy1((atomic(fren_arm) <|> fren_many_arm), ", ", ", ", allowTrailingSep)) " }" : fren_expr
+
+scoped syntax:max (name := tableMatchManyExpr) "table " withoutForbidden(fren_expr:max) ", "
+  withoutForbidden(sepBy1(fren_expr:max, ", ")) " { " withoutForbidden(sepBy1(fren_many_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 
 /-- `e is P`, a pattern test, at the precedence of the comparisons. `is`
 is a reserved word where `Fren.Lang` is open, as the set operators are. -/

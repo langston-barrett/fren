@@ -1,0 +1,72 @@
+-- fren-covers: lang::match_vector, lang::match_vector_coverage
+set_option fren.lint.dead_code "allow"
+
+fn too_few(left?, right?): Int := match left?, right? {
+    _ => 1,  --~ error: takes 2 patterns, but 1 was given
+}
+
+fn too_many(value?): Int := match value? {
+    _, _ => 1,  --~ error: takes 1 pattern, but 2 were given
+}
+
+fn duplicate(left?, right?): Int := match left?, right? {
+    item?, item? => 1,  --~ error: bound multiple times
+}
+
+fn correlated(left?, right?): Int := match left?, right? {  --~ error: non-exhaustive match
+    true, true => 1,
+    false, false => 0,
+}
+
+fn unreachable(left?, right?): Int := match left?, right? {
+    _, _ => 1,
+    true, false => 0,  --~ error: unreachable arm
+}
+
+fn wrong_column(value?, n: Int): Int := match value?, n {
+    true, "bad" => 0,  --~ error: pattern
+    _, _ => 1,
+}
+
+fn apply_two(f: fn(Bool, Bool) -> Int): Int := f(true, false)
+fn bad_lambda(n: Int): Int := apply_two(match {
+    _ => n,  --~ error: takes 2 patterns, but 1 was given
+})
+
+fn not_a_value(n: Int): Int := match {  --~ error: closure
+    _ => n,
+}
+
+fn binder_scope(Bool, Int): Int := match {
+    true, n => n,
+    false, _ => n,  --~ error: cannot find `n`
+}
+
+fn bad_table(left?, right?): Int := table left?, right? {
+    true, _ => 0,
+    _, true => 1,  --~ error: overlap
+    _, _ => 2,
+}
+
+fn mixed(Bool, n: Int): Int := match {  --~ error: must be named
+    _, _ => n,
+}
+
+fn duplicate_alternative(left?, right?): Int := match left?, right? {
+    true, true | true => 1,  --~ error: unreachable pattern
+    _, _ => 0,
+}
+
+fn observe(Int): Int
+pub proc mentions_second_column(): (flag?, value: Int, result: Int) {
+    out result := match flag?, value {  --~ error: `value` is one
+        true, n => observe(n),
+        false, _ => 0,
+    }
+}
+
+pub enum OriginTree { Leaf, Next(OriginTree) }
+pub fn wrong_origin(left: OriginTree, right: OriginTree): Int := match left, right {
+    _, OriginTree::Next(child) => 1 + wrong_origin(child, left),  --~ error: not structurally recursive
+    _, OriginTree::Leaf => 0,
+}
