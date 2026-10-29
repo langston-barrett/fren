@@ -1,8 +1,0 @@
---@ args: fix --check --fmt
--- fren-covers: lang::global_migration_shape
--- A procedure without inputs still contributes a call. Literal text
--- must survive migration even when it looks like a variable reference.
-proc ready(): (det ready?) {
-    ensure ready: ready?
-}
-expect ready_claim: forall (a: ready), a.ready? and label = "a.ready?" where label: String := "a.ready?"

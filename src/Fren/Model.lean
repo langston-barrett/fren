@@ -9,7 +9,6 @@ import FrenCore.Lint
 import FrenCore.Names
 import FrenCore.PatternTypes
 import FrenCore.Recursion
-import FrenCore.Refine
 import Lean
 -- keep-sorted end
 
@@ -577,8 +576,6 @@ inductive Entry where
   /-- A global expectation, as a `CompInfo` whose path is its module, with
   a call per binder and the expectation as its only constraint. -/
   | globalInfo (path : Name) (c : CompInfo)
-  /-- A refinement, as the procedure that checks it (`Reqs/Lang/Refinement`). -/
-  | refinementInfo (c : CompInfo)
   /-- The body of the defined function, or the value of the constant, at
   `path`, which has tables, as a procedure whose path is its module, with the
   function's parameters as inputs, for the checks of its tables. -/
@@ -618,8 +615,6 @@ structure State where
   interps : NameMap Name := {}
   /-- Global expectations, by full path. -/
   globals : NameMap CompInfo := {}
-  /-- Refinements, as the procedures that check them, by path. -/
-  refinements : NameMap CompInfo := {}
   /-- The bodies of functions and values of constants that have tables, by
   the function's or constant's path (`Entry.bodyInfo`). -/
   bodies : NameMap CompInfo := {}
@@ -661,7 +656,6 @@ def State.add (s : State) : Entry → State
   | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }
-  | .refinementInfo c => { s with refinements := s.refinements.insert c.path c }
   | .bodyInfo p c => { s with bodies := s.bodies.insert p c }
   | .aliasInfo p t pt => { s with aliases := s.aliases.insert p (t, pt) }
   | .implInfo i =>
@@ -772,8 +766,6 @@ structure LocalState where
   comps : Array Name := #[]
   /-- Global expectations declared in this file, in order. -/
   globals : Array Name := #[]
-  /-- Refinements declared in this file, in order. -/
-  refinements : Array Name := #[]
   /-- The global expectations of this file, or Markdown spec: each one's
   module, name and text (`duplicate_constraint`). -/
   globalTexts : Array (Name × Name × String) := #[]
@@ -790,8 +782,7 @@ structure LocalState where
   variables, reported at its end unless a call or a refinement in it
   keeps the variable an `Int` (`natKept`). -/
   natReports : Array (Name × String × Core.LintReport Syntax) := #[]
-  /-- The variables that a call or a refinement in the file keeps
-  `Int`s, by their procedures (`Core.refinementGiven`). -/
+  /-- The variables that calls in the file keep `Int`s. -/
   natKept : Array (Name × String) := #[]
   /-- The variables, parameters, calls and binders that the item being
   elaborated declares (`many_single_char_names`, `similar_names`). -/

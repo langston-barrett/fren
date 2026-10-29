@@ -6241,15 +6241,6 @@ inductive Given where
   | givenNat
   deriving Inhabited, DecidableEq, Repr
 
-/-- Which procedure a refinement reading a variable by name gives a value,
-the concrete one if `true`, and the type it gives, from whether the
-variable is a parameter of the abstract procedure and the types of the
-abstract and the concrete procedure's variables: a parameter's value flows
-from the abstract procedure to the concrete one, and an output's back
-(`lint::refinement_given`). -/
-def refinementGiven (input : Bool) (abstractTy concreteTy : Given) : Bool × Given :=
-  if input then (true, abstractTy) else (false, concreteTy)
-
 /-- `manual_nat` on the variable `x`, whose bound `bound` is a conjunct of
 the constraint `prop`. -/
 def manualNatMsg (x : String) (input : Bool) (prop bound : String) : Msg :=

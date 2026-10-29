@@ -376,10 +376,6 @@ structure Comp where
   isGlobal : Bool := false
   /-- Each defined output, with its definition. -/
   defs : Array (Name × Ex) := #[]
-  /-- A refinement's bindings, each bound variable of the abstract
-  procedure with the expression it is bound to, which reads the concrete
-  procedure's variables. The definedness of their indexes is checked. -/
-  bindings : Array (Name × Ex) := #[]
   /-- For the body of a defined function or the value of a constant, as a
   procedure for the checks of its tables, the function or constant, and its body
   or value, over the parameters as its inputs. -/
@@ -1016,7 +1012,6 @@ part of them. -/
 partial def Spec.untestable? (sp : Spec) (c : Comp) (seen : List Name := []) : Option (Nat × Nat) :=
   c.constraints.findSome? (·.e.undomained?)
     <|> c.defs.findSome? (·.2.undomained?)
-    <|> c.bindings.findSome? (·.2.undomained?)
     <|> c.insts.findSome? fun i => i.bindings.findSome? (·.2.undomained?)
       <|> if seen.contains i.comp then none else (sp.comp? i.comp).bind (sp.untestable? · (i.comp :: seen))
 
@@ -1855,28 +1850,6 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substVars f), v.substVars f)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substVars f)
-
-/-- The procedure that checks that `c` refines `a` (`Reqs/Lang/Refinement`): its
-parameters are `c`'s, its assumptions `a`'s, it has a call `w` of `c` and
-`a`'s calls, and its expectations are `a`'s requirements and
-definitions, with each variable of `a` read as its binding in `bindings`,
-over `c`'s variables, or else as `c`'s of the same name, and `c`'s outputs
-read from `w`'s. -/
-def Comp.refinement (path w : Name) (c a : Comp) (bindings : Array (Name × Ex) := #[]) : Comp :=
-  let outs := (a.vars.filter (·.role == .output)).map (·.name)
-  let ownC (e : Ex) := e.renameVars fun n => if c.vars.any (fun v => v.name == n && v.role != .input) then w ++ n else n
-  let ren (e : Ex) := e.substVars fun n => match bindings.find? (·.1 == n) with
-    | some (_, b) => ownC b
-    | none => .var (if outs.contains n then w ++ n else n)
-  let inputs := c.vars.filter (·.role == .input)
-  { path
-    vars := inputs
-    constraints := (a.constraints.filter (·.kind == .assume)).map (fun p => { p with e := ren p.e })
-      ++ (a.constraints.filter (·.kind == .ensure)).map (fun p => { p with kind := .expect, e := ren p.e })
-      ++ a.defs.map fun (d, e) => { kind := .expect, name := d, e := .bin .eq (ren (.var d)) (ren e) }
-    insts := #[{ name := w, comp := c.path, bindings := inputs.map fun v => (v.name, .var v.name) }]
-      ++ a.insts.map fun i => { i with bindings := i.bindings.map fun (x, e) => (x, ren e) }
-    bindings := bindings.map fun (x, b) => (x, ownC b) }
 
 /-- `e` with the binders of `σ` that are free in it replaced by their
 expressions. -/
@@ -2931,20 +2904,6 @@ partial def lowerItem : Item → L Unit
   -- A global expectation with a block is checked as a procedure is, and
   -- nothing calls it (`Reqs/Lang/Global#meaning`).
   | .globalBlock name header members .. => lowerComp false name header members
-  | .refine name concrete abstract bs => do
-    let comp (segs : Array Ident) : L Comp := do
-      let some c := (← get).spec.comp? (← resolveComp segs) | throw s!"unknown procedure `{segNames segs}`"
-      return c
-    let c ← comp concrete
-    let a ← comp abstract
-    let path := (← get).module ++ itemName name
-    -- The bindings, over `c`'s own variables.
-    let bindings ← bs.mapM fun (b, e?) => do
-      return (Name.mkSimple b.name, (← lowerExpr { vars := c.vars } (e?.getD (.path b.span #[b]))).1)
-    -- As the elaborator builds it (`Reqs/Lang/Refinement`).
-    modify fun s => { s with
-      table := s.table.addItem { kind := .expectItem, path, isPub := false, owner := s.module }
-      spec.comps := s.spec.comps.push (Comp.refinement path (Name.mkSimple c.path.getString!) c a bindings) }
   | .claim .. | .check _ => pure ()
   | .lintSetting _ _ _ _ _ body? => do if let some b := body? then lowerItem b
 where
