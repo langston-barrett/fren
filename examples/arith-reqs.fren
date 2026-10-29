@@ -61,3 +61,12 @@ proc environments(rho: Int, sigma: Int, n: Int) {
     expect variable_changes: value(Layer::Var, rho) - value(Layer::Var, sigma) = rho - sigma
     expect literal_fixed: value(Layer::Val(n), rho) = value(Layer::Val(n), sigma)
 }
+
+-- The recursive implementation must remain the spec's own recursive Expr,
+-- eval and fold, using Hoare induction for fold's contract. The layer model
+-- above is independent of that representation: map children to evaluated
+-- values or occurrence bits to relate the actual declarations to it.
+-- A fold result is independent of rho, so its single syntax tree must satisfy
+-- the value contract for every rho; evaluating then substituting a literal
+-- for Var is not a valid implementation. Lean additionally proves occurrence
+-- preservation, normalization, and idempotence for all recursive expressions.
