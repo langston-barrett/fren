@@ -30,7 +30,7 @@ value, as in `x = 1 or x = 2 or x = y`: a membership is for a collection of
 values. Where each value is an integer literal, a string literal, `true`,
 `false` or a variant without a payload, the chain is a [pattern
 test](../Lang/Expressions.md#pattern-tests) written out, which
-[`manual_pattern_test`](Style/Comparisons.md#pattern-tests-written-out)
+[`manual_pattern_test`](Style/PatternTests.md)
 reports, with the fix `x is a | b | c`, and this lint does not fire, so the
 two never fire on the same chain.
 

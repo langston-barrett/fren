@@ -1,0 +1,667 @@
+-- keep-sorted start
+import FrenCore.Lint
+import Reqs.Lint
+-- keep-sorted end
+open Fren.Lang
+
+/-! # Pattern tests written out (`Reqs/Lint/Style/PatternTests`)
+
+`manual_pattern_test`, proved of the functions that both front ends call:
+the decision on one run (`manualPatternTest`), how an operand is read from
+its shape (`readOperand`), and which runs of a whole run of `or` or `and`
+are reported (`patternRuns`), for any number of operands and
+alternatives. -/
+
+namespace Fren.Impls.PatternTests
+
+open Fren.Core
+
+/-! ## One run -/
+
+def toBound : lint.Bound → Option Int
+  | .Open => none
+  | .At k => some k
+
+/-- An alternative of the model as `manual_pattern_test` reads one
+(`lint::Alt`). -/
+def toPatAlt : lint.Alt → Fren.Core.PatAlt
+  | .Ints l h => .ints (toBound l) (toBound h)
+  | .Text s => .str s
+  | .Variant v => .variant v
+
+theorem boundBelow_eq (h l : lint.Bound) : Fren.Core.boundBelow (toBound h) (toBound l) = lint.bound_below? h l := by
+  cases h <;> cases l <;> simp [fren_spec, toBound, Fren.Core.boundBelow, lint.bound_below?, lint.Bound.At.x0]
+
+theorem disjoint_eq (a b : lint.Alt) : (toPatAlt a).disjoint (toPatAlt b) = lint.alts_disjoint? a b := by
+  rw [Bool.eq_iff_iff]
+  cases a <;> cases b <;> simp only [toPatAlt, Fren.Core.PatAlt.disjoint, boundBelow_eq] <;>
+    simp [fren_spec, lint.alts_disjoint?, lint.bound_below?, lint.Alt.Ints.x0, lint.Alt.Ints.x1, lint.Alt.Text.x0,
+      lint.Alt.Variant.x0, lint.Bound.At.x0]
+
+theorem pairwiseDisjoint_iff (l : List Fren.Core.PatAlt) :
+    Fren.Core.pairwiseDisjoint l = true ↔ l.Pairwise (fun a b => a.disjoint b = true) := by
+  induction l with
+  | nil => simp [Fren.Core.pairwiseDisjoint]
+  | cons a as ih => simp [Fren.Core.pairwiseDisjoint, ih, List.pairwise_cons, List.all_eq_true]
+
+-- The alternatives are pairwise disjoint, by their positions in the model's
+-- sequence.
+theorem pairwise_nth (l : List lint.Alt) :
+    Fren.Core.pairwiseDisjoint (l.map toPatAlt) = true ↔
+      ∀ i j : Int, 0 ≤ i → i < j → j < (Fren.Seq.ofList l).len →
+        lint.alts_disjoint? ((Fren.Seq.ofList l).nth i) ((Fren.Seq.ofList l).nth j) = true := by
+  rw [pairwiseDisjoint_iff, List.pairwise_map, List.pairwise_iff_getElem]
+  simp only [disjoint_eq, Fren.Seq.len_eq, Fren.Seq.toList_ofList]
+  constructor
+  · intro h i j hi hij hj
+    rw [Fren.Seq.nth_of_lt _ _ hi (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]
+    simp only [Fren.Seq.toList_ofList]
+    exact h _ _ _ _ (by omega)
+  · intro h i j hi hj hij
+    have := h i j (by omega) (by omega) (by omega)
+    rwa [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)] at this
+
+theorem manualPatternTest_iff (l : List lint.Alt) (n e : Nat) (c : Bool) :
+    Fren.Core.manualPatternTest (l.map toPatAlt) n e c = true ↔
+      (((n : Int) ≥ 2 ∧ (e : Int) ≥ 1) ∧ ¬c = true) ∧
+        ∀ i j : Int, 0 ≤ i → i < j → j < (Fren.Seq.ofList l).len →
+          lint.alts_disjoint? ((Fren.Seq.ofList l).nth i) ((Fren.Seq.ofList l).nth j) = true := by
+  rw [← pairwise_nth]
+  simp only [Fren.Core.manualPatternTest, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
+  cases c <;> simp <;> omega
+
+-- The spec's quantifiers over positions, expanded as Fren expands them, are
+-- the quantifier over every position of the sequence, which has at most
+-- eight.
+impl manual_pattern_test: lint::manual_pattern_test for (l : List lint.Alt) (n e : Nat) (c : Bool) {
+  alts := Fren.Seq.ofList l,
+  n_operands := n,
+  n_equations := e,
+  chain? := c,
+  fires? := Fren.Core.manualPatternTest (l.map toPatAlt) n e c,
+} by
+  intro l n e c hs
+  unfold lint.manual_pattern_test.ensures lint.manual_pattern_test.ensure.rule
+  rw [manualPatternTest_iff]
+  refine and_congr_right fun _ => ?_
+  have _hl : (Fren.Seq.ofList l).len ≤ 8 := hs
+  constructor
+  · intro h
+    and_intros <;> exact fun hc => h _ _ (by decide) hc.1 hc.2
+  · intro E i j hi hij hj
+    rcases E with
+      ⟨⟨⟨⟨⟨⟨_, h01⟩, ⟨h02, h03⟩⟩, ⟨⟨h04, h05⟩, ⟨h06, h07⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨h12, h13⟩⟩, ⟨⟨h14, h15⟩, ⟨h16, h17⟩⟩⟩⟩,
+      ⟨⟨⟨⟨_, _⟩, ⟨_, h23⟩⟩, ⟨⟨h24, h25⟩, ⟨h26, h27⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨h34, h35⟩, ⟨h36, h37⟩⟩⟩⟩⟩,
+      ⟨⟨⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, h45⟩, ⟨h46, h47⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨h56, h57⟩⟩⟩⟩,
+      ⟨⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨_, h67⟩⟩⟩,
+      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨_, _⟩⟩⟩⟩⟩⟩
+    have hi' : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 := by omega
+    have hj' : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 ∨ j = 4 ∨ j = 5 ∨ j = 6 ∨ j = 7 := by omega
+    rcases hi' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      rcases hj' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · omega
+    · exact h01 ⟨by decide, hj⟩
+    · exact h02 ⟨by decide, hj⟩
+    · exact h03 ⟨by decide, hj⟩
+    · exact h04 ⟨by decide, hj⟩
+    · exact h05 ⟨by decide, hj⟩
+    · exact h06 ⟨by decide, hj⟩
+    · exact h07 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · exact h12 ⟨by decide, hj⟩
+    · exact h13 ⟨by decide, hj⟩
+    · exact h14 ⟨by decide, hj⟩
+    · exact h15 ⟨by decide, hj⟩
+    · exact h16 ⟨by decide, hj⟩
+    · exact h17 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · exact h23 ⟨by decide, hj⟩
+    · exact h24 ⟨by decide, hj⟩
+    · exact h25 ⟨by decide, hj⟩
+    · exact h26 ⟨by decide, hj⟩
+    · exact h27 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h34 ⟨by decide, hj⟩
+    · exact h35 ⟨by decide, hj⟩
+    · exact h36 ⟨by decide, hj⟩
+    · exact h37 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h45 ⟨by decide, hj⟩
+    · exact h46 ⟨by decide, hj⟩
+    · exact h47 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h56 ⟨by decide, hj⟩
+    · exact h57 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · exact h67 ⟨by decide, hj⟩
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+    · omega
+
+
+/-! ## Reading the operands -/
+
+def toForm : lint.Literal → ValueForm
+  | .Decimal k => .decimal k
+  | .Quoted t => .quoted t
+  | .Variant n => .variant n
+  | .Other => .other
+
+theorem alt_eq (v : lint.Literal) (nat : Bool) : (toForm v).alt? nat = (lint.value_alt v nat).map toPatAlt := by
+  cases v <;> simp only [toForm, ValueForm.alt?, lint.value_alt] <;> try rfl
+  split <;> split <;> simp_all [toPatAlt, toBound] <;> omega
+
+/-- A side of a comparison of the model, as the lint reads one, with its
+text for its expression. -/
+def toSide (s : lint.Side) : ComparisonSide String := { node := s.text, text := s.text, value := toForm s.value }
+
+/-- An operand of the model, as the lint reads its shape, with its
+expression's text for the expression and no text for its alternatives. -/
+def toShape : lint.Shape → OperandShape String
+  | .Comparison c => .comparison c.«equal?» c.«nat?» (toSide c.left) (toSide c.right)
+  | .Test t => .test t.«negated?» t.scrutinee (t.alts.map fun q => q.toList.map fun a => (toPatAlt a, ""))
+  | .Other => .other
+
+/-- What the lint's decisions read of a reading: the expression, the
+alternatives and whether it is an equation. -/
+def view (p : PatternOperand String) : String × List PatAlt × Bool := (p.scrutinee, p.alts.map (·.1), p.equation)
+
+/-- The same of a reading of the model. -/
+def rview (r : lint.Reading) : String × List PatAlt × Bool := (r.scrutinee, r.alts.toList.map toPatAlt, r.«equation?»)
+
+theorem read_eq (s : lint.Shape) (conj : Bool) :
+    (readOperand conj (toShape s)).map view = (lint.reading s conj).map rview := by
+  cases s with
+  | Comparison c =>
+    by_cases h : c.«equal?» = conj
+    · simp [toShape, readOperand, lint.reading, h]
+    · have h' : (c.«equal?» == conj) = false := by simpa using h
+      simp only [toShape, readOperand, toSide, alt_eq, lint.reading, lint.comparison_reading, h',
+        Bool.false_eq_true, ite_false]
+      cases lint.value_alt c.left.value c.«nat?» <;> cases lint.value_alt c.right.value c.«nat?» <;>
+        simp [view, rview, h]
+  | Test t =>
+    simp only [toShape, readOperand, lint.reading]
+    by_cases h : t.«negated?» = conj
+    · cases ha : t.alts <;> simp [h, view, rview, lint.test_reading, ha, Function.comp_def]
+    · simp [h]
+  | Other => simp [toShape, readOperand, lint.reading]
+
+theorem toPatAlt_injective : Function.Injective toPatAlt := by
+  intro a b h
+  cases a <;> cases b <;> simp_all [toPatAlt] <;>
+    (try (rename_i l1 h1 l2 h2; cases l1 <;> cases h1 <;> cases l2 <;> cases h2 <;> simp_all [toBound]))
+
+theorem map_toPatAlt_injective : ∀ {l m : List lint.Alt}, l.map toPatAlt = m.map toPatAlt → l = m
+  | [], [], _ => rfl
+  | a :: l, b :: m, h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    rw [toPatAlt_injective h.1, map_toPatAlt_injective h.2]
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+
+theorem rview_injective : Function.Injective rview := by
+  rintro ⟨s, q, e⟩ ⟨s', q', e'⟩ h
+  simp only [rview, Prod.mk.injEq] at h
+  obtain ⟨rfl, hq, rfl⟩ := h
+  have : q = q' := Fren.Seq.ext (map_toPatAlt_injective hq)
+  subst this; rfl
+
+-- Both front ends read an operand with `patternOperand?`, which decides
+-- with `readOperand` on the shape that `operandShape` reads.
+impl read_operand: lint::read_operand for (s : lint.Shape) (conj : Bool) (r : lint.Reading) {
+  shape := s,
+  «conj?» := conj,
+  read := r,
+  «reads?» := decide ((readOperand conj (toShape s)).map view = some (rview r)),
+} by
+  intro s conj r _
+  unfold lint.read_operand.ensures lint.read_operand.ensure.rule
+  rw [read_eq, decide_eq_true_iff]
+  constructor
+  · intro h
+    cases e : lint.reading s conj with
+    | none => simp [e] at h
+    | some r' => simp only [e, Option.map_some, Option.some.injEq] at h; rw [rview_injective h]
+  · intro h; simp [h]
+
+/-! ## Runs -/
+
+/-- `L` has a longest run of operands that test the expression written `f`
+from position `i` to position `j`. -/
+def MaxRun (L : List (Option String)) (i j : Nat) : Prop :=
+  ∃ f, i ≤ j ∧ (∀ p, i ≤ p → p ≤ j → L[p]? = some (some f))
+    ∧ (i = 0 ∨ L[i - 1]? ≠ some (some f)) ∧ L[j + 1]? ≠ some (some f)
+
+theorem runLength_spec (f : String) (rs : List (Option String)) :
+    (∀ p, p < runLength f rs → rs[p]? = some (some f)) ∧ rs[runLength f rs]? ≠ some (some f) := by
+  induction rs with
+  | nil => simp [runLength]
+  | cons r rs ih =>
+    cases r with
+    | none => simp [runLength]
+    | some g =>
+      simp only [runLength]
+      split
+      · rename_i h
+        have hg : g = f := by simpa using h
+        subst hg
+        refine ⟨fun p hp => ?_, by simpa using ih.2⟩
+        cases p with
+        | zero => simp
+        | succ p => simpa using ih.1 p (by omega)
+      · rename_i h
+        refine ⟨fun p hp => absurd hp (by omega), ?_⟩
+        simp only [List.getElem?_cons_zero, ne_eq, Option.some.injEq]
+        intro e; exact h (by simp [e])
+
+theorem get_of_drop {L : List (Option String)} {m : Nat} {x rest} (e : L.drop m = x :: rest) (p : Nat) :
+    L[m + p]? = (x :: rest)[p]? := by
+  rw [← e, List.getElem?_drop]
+
+theorem mem_runSpans (L : List (Option String)) (m : Nat)
+    (hm : m = 0 ∨ ∀ f, L[m]? = some (some f) → L[m - 1]? ≠ some (some f)) (i j : Nat) :
+    (i, j) ∈ runSpans m (L.drop m) ↔ m ≤ i ∧ MaxRun L i j := by
+  match e : L.drop m with
+  | [] =>
+    simp only [runSpans, List.not_mem_nil, false_iff, not_and]
+    intro hi ⟨f, hij, hall, _⟩
+    have h1 := hall i (Nat.le_refl _) hij
+    have : L.length ≤ m := by simpa using e
+    rw [List.getElem?_eq_none (by omega)] at h1
+    simp at h1
+  | none :: rest =>
+    have hL : L[m]? = some none := by simpa using get_of_drop e 0
+    have hr : rest = L.drop (m + 1) := by
+      rw [← List.drop_drop, e]; simp
+    simp only [runSpans]
+    rw [hr, mem_runSpans L (m + 1) (Or.inr fun f h => by simp [hL]) i j]
+    constructor
+    · rintro ⟨h1, h2⟩; exact ⟨by omega, h2⟩
+    · rintro ⟨h1, ⟨f, hij, hall, hl, hr⟩⟩
+      refine ⟨?_, ⟨f, hij, hall, hl, hr⟩⟩
+      rcases Nat.lt_or_eq_of_le h1 with h | h
+      · omega
+      · subst h; have := hall m (Nat.le_refl _) hij; simp [hL] at this
+  | some f :: rest =>
+    have hL : L[m]? = some (some f) := by simpa using get_of_drop e 0
+    have hr : rest = L.drop (m + 1) := by
+      rw [← List.drop_drop, e]; simp
+    obtain ⟨hk, hstop⟩ := runLength_spec f rest
+    generalize hkdef : runLength f rest = k at hk hstop
+    have hrun : ∀ p, m ≤ p → p ≤ m + k → L[p]? = some (some f) := by
+      intro p h1 h2
+      rcases Nat.lt_or_eq_of_le h1 with h | h
+      · have := get_of_drop e (p - m)
+        rw [show m + (p - m) = p by omega] at this
+        rw [this]
+        have := hk (p - m - 1) (by omega)
+        rw [show p - m = (p - m - 1) + 1 by omega]
+        simpa using this
+      · subst h; exact hL
+    have hend : L[m + k + 1]? ≠ some (some f) := by
+      have := get_of_drop e (k + 1)
+      rw [show m + (k + 1) = m + k + 1 by omega] at this
+      rw [this]; simpa using hstop
+    have hdrop : rest.drop k = L.drop (m + k + 1) := by
+      rw [hr, List.drop_drop]; congr 1; omega
+    simp only [runSpans, hkdef, List.mem_cons, Prod.mk.injEq]
+    rw [hdrop, mem_runSpans L (m + k + 1) (Or.inr fun g hg => by
+      rw [show m + k + 1 - 1 = m + k by omega, hrun (m + k) (by omega) (Nat.le_refl _)]
+      intro hfg; simp at hfg; subst hfg; exact hend hg) i j]
+    constructor
+    · rintro (⟨rfl, rfl⟩ | ⟨h1, h2⟩)
+      · refine ⟨Nat.le_refl _, f, by omega, hrun, ?_, hend⟩
+        rcases hm with h | h
+        · exact Or.inl h
+        · exact Or.inr (h f hL)
+      · exact ⟨by omega, h2⟩
+    · rintro ⟨h1, ⟨g, hij, hall, hl, hr'⟩⟩
+      by_cases hi : i ≤ m + k
+      · left
+        have hg : g = f := by
+          have := hall i (Nat.le_refl _) hij
+          rw [hrun i h1 hi] at this; simpa using this.symm
+        subst hg
+        have him : i = m := by
+          rcases Nat.lt_or_eq_of_le h1 with h | h
+          · exfalso
+            rcases hl with hl | hl
+            · omega
+            · exact hl (hrun (i - 1) (by omega) (by omega))
+          · exact h.symm
+        subst him
+        refine ⟨rfl, ?_⟩
+        by_cases hj : j < i + k
+        · exact absurd (hrun (j + 1) (by omega) (by omega)) hr'
+        · by_cases hj2 : j ≤ i + k
+          · omega
+          · exact absurd (hall (i + k + 1) (by omega) (by omega)) hend
+      · right; exact ⟨by omega, ⟨g, hij, hall, hl, hr'⟩⟩
+termination_by L.length - m
+decreasing_by
+  all_goals
+    first
+    | (have : L.length > m := by
+        have := congrArg List.length e; simp at this; omega
+       omega)
+
+theorem mem_runsOf (vs : List (Option (String × List PatAlt × Bool))) (chain : Bool) (i j : Nat) :
+    (i, j) ∈ runsOf vs chain ↔ MaxRun (vs.map (·.map (·.1))) i j ∧
+      manualPatternTest (((vs.extract i (j + 1)).filterMap id).flatMap (·.2.1)) ((vs.extract i (j + 1)).filterMap id).length
+        ((((vs.extract i (j + 1)).filterMap id).filter (·.2.2)).length) chain = true := by
+  simp only [runsOf, List.mem_filter]
+  have := mem_runSpans (vs.map (·.map (·.1))) 0 (Or.inl rfl) i j
+  simp only [List.drop_zero, Nat.zero_le, true_and] at this
+  rw [this]
+
+theorem filterMap_some_of {β : Type} : ∀ (l : List (Option β)), (∀ x ∈ l, x ≠ none) → (l.filterMap id).map some = l
+  | [], _ => rfl
+  | none :: _, h => absurd rfl (h none (by simp))
+  | some b :: l, h => by
+    have ih := filterMap_some_of l (fun x hx => h x (by simp [hx]))
+    simpa using ih
+
+theorem pairwiseDisjoint_iff' (l : List PatAlt) :
+    pairwiseDisjoint l = true ↔ l.Pairwise (fun a b => a.disjoint b = true) := by
+  induction l with
+  | nil => simp [pairwiseDisjoint]
+  | cons a as ih => simp [pairwiseDisjoint, ih, List.pairwise_cons, List.all_eq_true]
+
+/-- The alternatives of a run are disjoint two by two, in order, as
+positions within each operand's alternatives. -/
+theorem pairwise_flatMap_iff (w : List (String × List PatAlt × Bool)) :
+    (w.flatMap (·.2.1)).Pairwise (fun a b => a.disjoint b = true) ↔
+      ∀ p q k l (hp : p < w.length) (hq : q < w.length) (hk : k < w[p].2.1.length) (hl : l < w[q].2.1.length),
+        p ≤ q → (p < q ∨ k < l) → w[p].2.1[k].disjoint w[q].2.1[l] = true := by
+  rw [List.pairwise_flatMap, List.pairwise_iff_getElem]
+  constructor
+  · rintro ⟨hin, hx⟩ p q k l hp hq hk hl hpq hor
+    rcases Nat.lt_or_eq_of_le hpq with h | h
+    · exact hx p q hp hq h _ (List.getElem_mem hk) _ (List.getElem_mem hl)
+    · subst h
+      have hkl : k < l := by omega
+      exact (List.pairwise_iff_getElem.mp (hin _ (List.getElem_mem hp))) k l hk hl hkl
+  · intro h
+    refine ⟨fun a ha => ?_, fun p q hp hq hpq x hx y hy => ?_⟩
+    · obtain ⟨p, hp, rfl⟩ := List.getElem_of_mem ha
+      exact List.pairwise_iff_getElem.mpr fun k l hk hl hkl => h p p k l hp hp hk hl (Nat.le_refl _) (Or.inr hkl)
+    · obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hx
+      obtain ⟨l, hl, rfl⟩ := List.getElem_of_mem hy
+      exact h p q k l hp hq hk hl (Nat.le_of_lt hpq) (Or.inl hpq)
+
+theorem fires_iff (w : List (String × List PatAlt × Bool)) (chain : Bool) :
+    manualPatternTest (w.flatMap (·.2.1)) w.length (w.filter (·.2.2)).length chain = true ↔
+      2 ≤ w.length ∧ (∃ q, ∃ hq : q < w.length, w[q].2.2 = true) ∧ chain = false ∧
+      ∀ p q k l (hp : p < w.length) (hq : q < w.length) (hk : k < w[p].2.1.length) (hl : l < w[q].2.1.length),
+        p ≤ q → (p < q ∨ k < l) → w[p].2.1[k].disjoint w[q].2.1[l] = true := by
+  rw [← pairwise_flatMap_iff, ← pairwiseDisjoint_iff']
+  simp only [manualPatternTest, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true']
+  have : 1 ≤ (w.filter (·.2.2)).length ↔ ∃ q, ∃ hq : q < w.length, w[q].2.2 = true := by
+    constructor
+    · intro h
+      obtain ⟨a, ha⟩ := List.exists_mem_of_length_pos (by omega : 0 < (w.filter (·.2.2)).length)
+      rw [List.mem_filter] at ha
+      obtain ⟨q, hq, rfl⟩ := List.getElem_of_mem ha.1
+      exact ⟨q, hq, ha.2⟩
+    · rintro ⟨q, hq, he⟩
+      exact List.length_pos_of_mem (List.mem_filter.mpr ⟨List.getElem_mem hq, he⟩)
+  rw [ge_iff_le, ge_iff_le, this]
+  constructor
+  · rintro ⟨⟨⟨a, b⟩, c⟩, d⟩; exact ⟨a, b, c, d⟩
+  · rintro ⟨a, b, c, d⟩; exact ⟨⟨⟨a, b⟩, c⟩, d⟩
+
+/-! ### The model's runs -/
+
+/-- What the model's operands test, as written. -/
+def forms (l : List lint.Shape) (c : Bool) : List (Option String) := l.map fun x => (lint.reading x c).map (·.scrutinee)
+
+section
+variable (l : List lint.Shape) (c : Bool)
+
+
+theorem reading_at_eq (i : Int) :
+    lint.reading_at (Fren.Seq.ofList l) c i = if 0 ≤ i then l[i.toNat]?.bind (lint.reading · c) else none := by
+  unfold lint.reading_at
+  by_cases h : 0 ≤ i ∧ i < l.length
+  · rw [if_pos (by simpa using h), if_pos h.1, Fren.Seq.nth_of_lt _ _ h.1 (by simpa using h.2),
+      List.getElem?_eq_getElem (by omega)]
+    simp
+  · rw [if_neg (by simpa using h)]
+    by_cases h0 : 0 ≤ i
+    · rw [if_pos h0, List.getElem?_eq_none (by omega)]; simp
+    · rw [if_neg h0]
+
+theorem tests_iff (i : Int) (x : String) :
+    lint.tests_at? (Fren.Seq.ofList l) c i x = true ↔ 0 ≤ i ∧ (forms l c)[i.toNat]? = some (some x) := by
+  unfold lint.tests_at?
+  rw [reading_at_eq]
+  have hf : (forms l c)[i.toNat]? = l[i.toNat]?.map (fun y => (lint.reading y c).map (·.scrutinee)) := by
+    simp [forms]
+  rw [hf]
+  by_cases h0 : 0 ≤ i
+  · rw [if_pos h0]
+    cases l[i.toNat]? with
+    | none => simp [fren_spec, h0]
+    | some y =>
+      simp only [Option.bind_some, Option.map_some]
+      generalize lint.reading y c = o
+      cases o <;> simp [fren_spec, h0]
+  · rw [if_neg h0]; simp [fren_spec, h0]
+
+theorem longest_iff (s : lint.Span) :
+    lint.longest_run? (Fren.Seq.ofList l) c s = true ↔
+      0 ≤ s.first ∧ s.first ≤ s.last ∧ MaxRun (forms l c) s.first.toNat s.last.toNat := by
+  have T := tests_iff l c
+  simp only [decide_eq_true_eq] at T
+  unfold lint.longest_run?
+  simp only [decide_eq_true_eq]
+  constructor
+  · rintro ⟨x, ⟨⟨hfl, hall⟩, hl⟩, hr⟩
+    have h0 := ((T _ _).mp (hall s.first ⟨Int.le_refl _, hfl⟩)).1
+    refine ⟨h0, hfl, x, by omega, fun p h1 h2 => ?_, ?_, ?_⟩
+    · have := ((T _ _).mp (hall p ⟨by omega, by omega⟩)).2
+      simpa using this
+    · by_cases hz : s.first = 0
+      · exact Or.inl (by omega)
+      · refine Or.inr fun e => hl ((T _ _).mpr ⟨by omega, ?_⟩)
+        rw [show (s.first - 1).toNat = s.first.toNat - 1 by omega]; exact e
+    · intro e
+      exact hr ((T _ _).mpr ⟨by omega, by rw [show (s.last + 1).toNat = s.last.toNat + 1 by omega]; exact e⟩)
+  · rintro ⟨h0, hfl, x, _, hall, hl, hr⟩
+    refine ⟨x, ⟨⟨hfl, fun p hp => (T _ _).mpr ⟨by omega, ?_⟩⟩, ?_⟩, ?_⟩
+    · exact hall p.toNat (by omega) (by omega)
+    · intro e
+      obtain ⟨h1, e⟩ := (T _ _).mp e
+      rcases hl with hl | hl
+      · omega
+      · exact hl (by rw [show s.first.toNat - 1 = (s.first - 1).toNat by omega]; exact e)
+    · intro e
+      obtain ⟨_, e⟩ := (T _ _).mp e
+      exact hr (by rw [show s.last.toNat + 1 = (s.last + 1).toNat by omega]; exact e)
+
+theorem alts_at_of (p : Nat) (x : lint.Shape) (r : lint.Reading) (hx : l[p]? = some x) (hr : lint.reading x c = some r) :
+    lint.alts_at (Fren.Seq.ofList l) c p = r.alts := by
+  unfold lint.alts_at
+  rw [reading_at_eq, if_pos (by omega)]
+  simp [hx, hr]
+
+theorem equation_at_of (p : Nat) (x : lint.Shape) (r : lint.Reading) (hx : l[p]? = some x) (hr : lint.reading x c = some r) :
+    lint.equation_at? (Fren.Seq.ofList l) c p = r.«equation?» := by
+  unfold lint.equation_at?
+  rw [reading_at_eq, if_pos (by omega)]
+  simp [hx, hr]
+
+end
+
+/-- `decide`, with whatever instance a generated definition gives it. -/
+theorem decide_true_iff {p : Prop} {inst : Decidable p} : @decide p inst = true ↔ p := @decide_eq_true_iff p inst
+
+/-- The model's operands as the lint's decisions read them. -/
+def views (l : List lint.Shape) (c : Bool) : List (Option (String × List PatAlt × Bool)) :=
+  l.map fun x => (lint.reading x c).map rview
+
+theorem views_forms (l : List lint.Shape) (c : Bool) : (views l c).map (·.map (·.1)) = forms l c := by
+  simp [views, forms, rview, Function.comp_def]
+
+/-- The operands of a longest run, as the lint's decisions read them,
+each the reading of the model's operand at its position. -/
+theorem run_readings (l : List lint.Shape) (c : Bool) (i j : Nat) (hm : MaxRun (forms l c) i j) :
+    let w := ((views l c).extract i (j + 1)).filterMap id
+    w.length = j + 1 - i ∧
+      ∀ q (hq : q < w.length), ∃ x r, l[i + q]? = some x ∧ lint.reading x c = some r ∧ w[q] = rview r := by
+  intro w
+  obtain ⟨f, hij, hall, _, _⟩ := hm
+  have hread : ∀ p, i ≤ p → p ≤ j → ∃ x r, l[p]? = some x ∧ lint.reading x c = some r := by
+    intro p h1 h2
+    have := hall p h1 h2
+    simp only [forms, List.getElem?_map] at this
+    cases hx : l[p]? with
+    | none => simp [hx] at this
+    | some x =>
+      simp only [hx, Option.map_some, Option.some.injEq] at this
+      cases hr : lint.reading x c with
+      | none => simp [hr] at this
+      | some r => exact ⟨x, r, rfl, hr⟩
+  have hjl : j < l.length := by
+    obtain ⟨x, _, hx, _⟩ := hread j hij (Nat.le_refl _)
+    rcases Nat.lt_or_ge j l.length with h | h
+    · exact h
+    · rw [List.getElem?_eq_none h] at hx; simp at hx
+  have hsub : ∀ q, q < j + 1 - i → ((views l c).extract i (j + 1))[q]? = (views l c)[i + q]? := by
+    intro q hq
+    rw [List.extract_eq_take_drop, List.getElem?_take_of_lt hq, List.getElem?_drop]
+  have hsublen : ((views l c).extract i (j + 1)).length = j + 1 - i := by
+    simp [List.extract_eq_take_drop, views]; omega
+  have hsome : ∀ y ∈ (views l c).extract i (j + 1), y ≠ none := by
+    intro y hy
+    obtain ⟨q, hq, rfl⟩ := List.getElem_of_mem hy
+    have e := hsub q (by omega)
+    rw [List.getElem?_eq_getElem hq] at e
+    obtain ⟨x, r, hx, hr⟩ := hread (i + q) (by omega) (by omega)
+    have hv : (views l c)[i + q]? = some (some (rview r)) := by simp [views, hx, hr]
+    rw [hv, Option.some.injEq] at e
+    rw [e]; simp
+  have hmap := filterMap_some_of _ hsome
+  have hwlen : w.length = j + 1 - i := by
+    rw [← hsublen, ← hmap, List.length_map]
+  refine ⟨hwlen, fun q hq => ?_⟩
+  obtain ⟨x, r, hx, hr⟩ := hread (i + q) (by omega) (by omega)
+  refine ⟨x, r, hx, hr, ?_⟩
+  have e := hsub q (by omega)
+  have hv : (views l c)[i + q]? = some (some (rview r)) := by simp [views, hx, hr]
+  rw [← hmap, List.getElem?_map, List.getElem?_eq_getElem hq, hv] at e
+  simpa using e
+
+theorem fires_spec (l : List lint.Shape) (c ch : Bool) (s : lint.Span) (h0 : 0 ≤ s.first) (hfl : s.first ≤ s.last)
+    (hm : MaxRun (forms l c) s.first.toNat s.last.toNat) :
+    let w := ((views l c).extract s.first.toNat (s.last.toNat + 1)).filterMap id
+    lint.run_fires? (Fren.Seq.ofList l) c ch s = true ↔
+      manualPatternTest (w.flatMap (·.2.1)) w.length (w.filter (·.2.2)).length ch = true := by
+  intro w
+  obtain ⟨hwlen, hw⟩ := run_readings l c _ _ hm
+  have hwlen' : w.length = s.last.toNat + 1 - s.first.toNat := hwlen
+  replace hw : ∀ q (hq : q < w.length), ∃ x r, l[s.first.toNat + q]? = some x ∧ lint.reading x c = some r ∧
+      w[q] = rview r := hw
+  rw [fires_iff]
+  unfold lint.run_fires?
+  rw [decide_true_iff]
+  -- Each position of the run, as an integer, is one of `w`'s.
+  have hpos : ∀ p : Int, s.first ≤ p → p ≤ s.last → ∃ q, ∃ hq : q < w.length, p = ((s.first.toNat + q : Nat) : Int) :=
+    fun p h1 h2 => ⟨(p - s.first).toNat, by omega, by omega⟩
+  constructor
+  · rintro ⟨⟨⟨hlt, hch⟩, ⟨p, ⟨h1, h2⟩, he⟩⟩, hdis⟩
+    refine ⟨by omega, ?_, by simpa using hch, ?_⟩
+    · obtain ⟨q, hq, rfl⟩ := hpos p h1 h2
+      obtain ⟨x, r, hx, hr, hwq⟩ := hw q hq
+      rw [equation_at_of l c _ x r hx hr] at he
+      exact ⟨q, hq, by rw [hwq]; exact he⟩
+    · intro p q k k' hp hq hk hk' hpq hor
+      obtain ⟨x, r, hx, hr, hwp⟩ := hw p hp
+      obtain ⟨y, t, hy, ht, hwq⟩ := hw q hq
+      have hk2 : k < r.alts.toList.length := by
+        have := hk; simp only [hwp, rview, List.length_map] at this; exact this
+      have hk2' : k' < t.alts.toList.length := by
+        have := hk'; simp only [hwq, rview, List.length_map] at this; exact this
+      have := hdis ((s.first.toNat + p : Nat) : Int) ((s.first.toNat + q : Nat) : Int) k k'
+        ⟨⟨⟨⟨⟨by omega, by omega⟩, by omega⟩, by omega⟩, by
+          rw [alts_at_of l c _ x r hx hr]; simp; omega⟩, by rw [alts_at_of l c _ y t hy ht]; simp; omega⟩
+      rw [alts_at_of l c _ x r hx hr, alts_at_of l c _ y t hy ht, Fren.Seq.nth_of_lt _ _ (by omega) (by omega),
+        Fren.Seq.nth_of_lt _ _ (by omega) (by omega), ← disjoint_eq] at this
+      simp only [hwp, hwq, rview, List.getElem_map]
+      simpa using this
+  · rintro ⟨hlen, ⟨q, hq, he⟩, hch, hdis⟩
+    refine ⟨⟨⟨by omega, by simp [hch]⟩, ?_⟩, ?_⟩
+    · obtain ⟨x, r, hx, hr, hwq⟩ := hw q hq
+      refine ⟨((s.first.toNat + q : Nat) : Int), ⟨by omega, by omega⟩, ?_⟩
+      rw [equation_at_of l c _ x r hx hr]
+      rw [hwq] at he; exact he
+    · intro p p' k k' ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, hor⟩, hk0, hk⟩, hk0', hk'⟩
+      obtain ⟨q, hq, rfl⟩ := hpos p h1 (by omega)
+      obtain ⟨q', hq', rfl⟩ := hpos p' (by omega) h3
+      obtain ⟨x, r, hx, hr, hwp⟩ := hw q hq
+      obtain ⟨y, t, hy, ht, hwq⟩ := hw q' hq'
+      rw [alts_at_of l c _ x r hx hr] at hk ⊢
+      rw [alts_at_of l c _ y t hy ht] at hk' ⊢
+      simp only [Fren.Seq.len_eq] at hk hk'
+      rw [Fren.Seq.nth_of_lt _ _ hk0 hk, Fren.Seq.nth_of_lt _ _ hk0' hk', ← disjoint_eq]
+      have := hdis q q' k.toNat k'.toNat hq hq' (by simp [hwp, rview]; omega) (by simp [hwq, rview]; omega)
+        (by omega) (by omega)
+      simp only [hwp, hwq, rview, List.getElem_map] at this
+      exact this
+
+-- Both front ends report the runs that `patternRuns` gives, of the operands
+-- that `patternOperand?` reads, for every list of operands.
+impl manual_pattern_test_runs: lint::manual_pattern_test_runs
+    for (l : List lint.Shape) (c ch : Bool) (s : lint.Span) {
+  operands := Fren.Seq.ofList l,
+  «conj?» := c,
+  «chain?» := ch,
+  run := s,
+  «reported?» := decide (0 ≤ s.first ∧ s.first ≤ s.last ∧
+    (s.first.toNat, s.last.toNat) ∈ patternRuns id (l.map (readOperand c ∘ toShape)) ch),
+} by
+  intro l c ch s _
+  unfold lint.manual_pattern_test_runs.ensures lint.manual_pattern_test_runs.ensure.rule
+  have hps : (l.map (readOperand c ∘ toShape)).map (·.map fun p => (id p.scrutinee, p.alts.map (·.1), p.equation)) =
+      views l c := by
+    simp only [views, List.map_map]
+    congr 1; funext x
+    exact read_eq x c
+  rw [decide_eq_true_iff, patternRuns, hps, mem_runsOf, views_forms, longest_iff]
+  constructor
+  · rintro ⟨h0, hfl, hm, hf⟩
+    exact ⟨⟨h0, hfl, hm⟩, (fires_spec l c ch s h0 hfl hm).mpr hf⟩
+  · rintro ⟨⟨h0, hfl, hm⟩, hf⟩
+    exact ⟨h0, hfl, hm, (fires_spec l c ch s h0 hfl hm).mp hf⟩
+
+end Fren.Impls.PatternTests

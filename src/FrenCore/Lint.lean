@@ -4621,15 +4621,43 @@ def decimalLiteral? (t : String) : Option Int :=
   let w := writtenForm t
   if w.isEmpty || !(w.toList.all fun c => c.isDigit || c == '-') then none else w.toInt?
 
-/-- The value written `t` as a pattern's alternative, if a pattern writes it
-as `t` is written: a decimal integer literal, possibly negated, a string
-literal without `"` in it, or, where `variant?` gives its name, a variant
-without a payload. `true` and `false` are left to `bool_equality`. -/
-def valueAlt? (t : String) (variant? : Option String) : Option PatAlt :=
+/-- A value as written, as `manual_pattern_test` reads it (`lint::Literal`):
+a decimal integer literal, possibly negated, by its value; a string literal
+without `"` in it, by its text; a variant without a payload, by the last
+segment of its name; or anything else, `true` and `false` among them. -/
+inductive ValueForm where
+  | decimal (k : Int)
+  | quoted (t : String)
+  | variant (name : String)
+  | other
+  deriving Inhabited, DecidableEq, Repr
+
+/-- The form of the value written `t`, where `variant?` gives its name if it
+is a variant without a payload: the step that reads the text, before
+`ValueForm.alt?` decides on its structure. -/
+def valueForm (t : String) (variant? : Option String) : ValueForm :=
   let t := t.trimAscii.toString
-  if let some k := decimalLiteral? t then some (.ints (some k) (some k))
-  else if t.length ≥ 2 && t.startsWith "\"" && t.endsWith "\"" && t.toList.count '"' == 2 then some (.str t)
-  else (variant?.map lastSegment).map .variant
+  if let some k := decimalLiteral? t then .decimal k
+  else if t.length ≥ 2 && t.startsWith "\"" && t.endsWith "\"" && t.toList.count '"' == 2 then .quoted t
+  else match variant? with
+    | some v => .variant (lastSegment v)
+    | none => .other
+
+/-- The alternative of a pattern that writes the value `v`, if there is
+one (`lint::value_alt`): none for a negative literal where `nat` says that
+the operands are `Nat`s, as an alternative that never matches is an
+error. -/
+def ValueForm.alt? (nat : Bool) : ValueForm → Option PatAlt
+  | .decimal k => if nat && k < 0 then none else some (.ints (some k) (some k))
+  | .quoted t => some (.str t)
+  | .variant v => some (.variant v)
+  | .other => none
+
+/-- The value written `t` as a pattern's alternative, if a pattern writes it
+as `t` is written (`valueForm`, `ValueForm.alt?`). `true` and `false` are
+left to `bool_equality`. -/
+def valueAlt? (t : String) (variant? : Option String) : Option PatAlt :=
+  (valueForm t variant?).alt? false
 
 /-- Whether `t`, written as a value, is one that a pattern writes, as
 `membership_chain` asks of each value it puts in a set: as
@@ -4710,45 +4738,125 @@ def patternAlts? (t : String) : Option (Array (PatAlt × String)) := do
   let t := if t.startsWith "|" then (t.drop 1).toString else t
   (splitAlternatives t).mapM fun a => return (← patternAlt? a, a)
 
-/-- An operand of a run that `manual_pattern_test` reads: the expression it
-tests, as written, its alternatives, with their texts, and whether it is
-an equation, or a disequation, rather than a pattern test. -/
-structure PatternOperand (α : Type) where
-  scrutinee : BNode α
-  alts : Array (PatAlt × String)
+/-- An operand of a run that `manual_pattern_test` reads (`lint::Reading`):
+the expression it tests, as written, its alternatives, with their texts,
+and whether it is an equation, or a disequation, rather than a pattern
+test. -/
+structure PatternOperand (σ : Type) where
+  scrutinee : σ
+  alts : List (PatAlt × String)
   equation : Bool
 
-/-- `d`, an operand of a run of `or`, or of `and` if `conj`, within `outer`,
-as `manual_pattern_test` reads it: `x = v` or `v = x`, `x != v` or `v !=
-x` for `and`, where `v` is a value that `valueAlt?` reads, and `x` is
-not, and `v` is not negative where `fact?` says that the operands are
-`Nat`s, for which a negative alternative is an error; or `x is P`, `not x
-is P` for `and`, where `patternAlts?` reads `P`. -/
-def patternOperand? (src : Array Char) (variant? : α → Option String) (fact? : α → Option NodeFact) (conj : Bool)
-    (d : BNode α) : Option (PatternOperand α) := do
-  let nat := fact? d.ref == some .natOperands
-  let value? (k : BNode α) : Option PatAlt := do
-    let a ← match k.kind with
-      | .atom | .neg => valueAlt? (textOf src k.range) (variant? k.ref)
-      | _ => none
-    if nat && a matches .ints (some (.negSucc _)) _ then none else some a
+/-- A side of a comparison (`lint::Side`): the expression, its text, and its
+value as `valueForm` reads it. -/
+structure ComparisonSide (σ : Type) where
+  node : σ
+  text : String
+  value : ValueForm
+
+/-- An operand of a run of `or` or `and`, as `manual_pattern_test` reads its
+structure (`lint::Shape`): `l = r` (`equal`) or `l != r`, where `nat` says
+that the operands are `Nat`s; `x is P`, or its negation, with `P`'s
+alternatives where `patternAlts?` reads each; or anything else. -/
+inductive OperandShape (σ : Type) where
+  | comparison (equal nat : Bool) (left right : ComparisonSide σ)
+  | test (negated : Bool) (scrutinee : σ) (alts : Option (List (PatAlt × String)))
+  | other
+
+/-- How `manual_pattern_test` reads an operand of a run of `or`, or of
+`and` if `conj`, from its shape (`lint::reading`): an equation for `or`
+and a disequation for `and`, with exactly one side a value that a pattern
+writes, or a pattern test for `or` and its negation for `and`, whose
+alternatives are read. -/
+def readOperand (conj : Bool) : OperandShape σ → Option (PatternOperand σ)
+  | .comparison equal nat l r =>
+    if equal == conj then none
+    else match l.value.alt? nat, r.value.alt? nat with
+      | none, some a => some { scrutinee := l.node, alts := [(a, r.text)], equation := true }
+      | some a, none => some { scrutinee := r.node, alts := [(a, l.text)], equation := true }
+      | _, _ => none
+  | .test negated x alts =>
+    if negated != conj then none
+    else alts.map fun as => { scrutinee := x, alts := as, equation := false }
+  | .other => none
+
+/-- The shape of `d`, an operand of a run: the step that reads the syntax
+tree and the text, before `readOperand` decides on the structure. A side
+of a comparison has a value only if it is an atom or a negation, which
+`valueForm` reads, with `variant?` saying whether it is a variant without
+a payload, and `fact?` whether the comparison's operands are `Nat`s. -/
+def operandShape (src : Array Char) (variant? : α → Option String) (fact? : α → Option NodeFact) (d : BNode α) :
+    OperandShape (BNode α) :=
+  let side (k : BNode α) : ComparisonSide (BNode α) :=
+    { node := k, text := textOf src k.range
+      value := match k.kind with
+        | .atom | .neg => valueForm (textOf src k.range) (variant? k.ref)
+        | _ => .other }
   match d.kind, d.kids with
   | .bin op, #[l, r] =>
-    guard (op == if conj then "!=" else "=")
-    match value? l, value? r with
-    | none, some a => return { scrutinee := l, alts := #[(a, textOf src r.range)], equation := true }
-    | some a, none => return { scrutinee := r, alts := #[(a, textOf src l.range)], equation := true }
-    | _, _ => none
-  | .not, #[t] =>
-    guard conj
-    test? t
-  | _, _ => if conj then none else test? d
+    if op == "=" || op == "!=" then .comparison (op == "=") (fact? d.ref == some .natOperands) (side l) (side r)
+    else .other
+  | .not, #[t] => match test? t with
+    | some (x, alts) => .test true x alts
+    | none => .other
+  | _, _ => match test? d with
+    | some (x, alts) => .test false x alts
+    | none => .other
 where
-  test? (t : BNode α) : Option (PatternOperand α) := do
+  /-- `x is P`: `x`, and `P`'s alternatives, with their texts, where
+  `patternAlts?` reads each. -/
+  test? (t : BNode α) : Option (BNode α × Option (List (PatAlt × String))) := do
     let (.patternTest, #[x]) := (t.kind, t.kids) | none
     let rest := (textOf src { start := (withParensIn src t.range x.range).stop, stop := t.range.stop }).trimAscii.toString
-    guard (rest.startsWith "is" && ((rest.drop 2).toString.toList.head?.any Char.isWhitespace))
-    return { scrutinee := x, alts := ← patternAlts? (rest.drop 2).toString, equation := false }
+    let alts := if rest.startsWith "is" && ((rest.drop 2).toString.toList.head?.any Char.isWhitespace)
+      then (patternAlts? (rest.drop 2).toString).map (·.toList) else none
+    return (x, alts)
+
+/-- `d`, an operand of a run of `or`, or of `and` if `conj`, as
+`manual_pattern_test` reads it: `readOperand` of its `operandShape`. -/
+def patternOperand? (src : Array Char) (variant? : α → Option String) (fact? : α → Option NodeFact) (conj : Bool)
+    (d : BNode α) : Option (PatternOperand (BNode α)) :=
+  readOperand conj (operandShape src variant? fact? d)
+
+/-- The length of the run at the head of `rs` of operands that test the
+expression written `f`. -/
+def runLength (f : String) : List (Option String) → Nat
+  | some g :: rs => if g == f then runLength f rs + 1 else 0
+  | _ => 0
+
+theorem runLength_le (f : String) (rs : List (Option String)) : runLength f rs ≤ rs.length := by
+  induction rs with
+  | nil => simp [runLength]
+  | cons r rs ih => cases r with
+    | none => simp [runLength]
+    | some g => simp only [runLength]; split <;> simp <;> omega
+
+/-- The longest runs of adjacent operands that test one expression, each
+from its first position to its last, where `rs` gives, for each operand
+from position `i`, the expression it tests, as written, if it is read. -/
+def runSpans (i : Nat) : List (Option String) → List (Nat × Nat)
+  | [] => []
+  | none :: rs => runSpans (i + 1) rs
+  | some f :: rs =>
+    let k := runLength f rs
+    (i, i + k) :: runSpans (i + k + 1) (rs.drop k)
+termination_by rs => rs.length
+decreasing_by all_goals simp_wf; all_goals omega
+
+/-- The runs that `manual_pattern_test` reports, of operands each read, if
+it is, as the expression it tests, as written, its alternatives, and
+whether it is an equation, each from its first position to its last
+(`lint::manual_pattern_test_runs`): the longest runs of operands that test
+one expression, on which `manualPatternTest` fires. -/
+def runsOf (vs : List (Option (String × List PatAlt × Bool))) (chain : Bool) : List (Nat × Nat) :=
+  (runSpans 0 (vs.map (·.map (·.1)))).filter fun (i, j) =>
+    let run := (vs.extract i (j + 1)).filterMap id
+    manualPatternTest (run.flatMap (·.2.1)) run.length (run.filter (·.2.2)).length chain
+
+/-- The runs that `manual_pattern_test` reports, of the operands read as
+`ps`, where `form` writes the expression that each tests (`runsOf`). -/
+def patternRuns (form : σ → String) (ps : List (Option (PatternOperand σ))) (chain : Bool) : List (Nat × Nat) :=
+  runsOf (ps.map (·.map fun p => (form p.scrutinee, p.alts.map (·.1), p.equation))) chain
 
 /-- The operands of the chain of `op` that `n` is the top of, as
 `membership_chain` reads it: through each operand that is an `op`, in
@@ -4799,37 +4907,31 @@ def manualPatternTestAt [Inhabited α] (src : Array Char) (variant? : α → Opt
   unless runTop op src n slot parent do return #[]
   let cs := runOperands op src n
   let ps := cs.map (patternOperand? src variant? fact? conj)
-  let form (p : PatternOperand α) := writtenForm (textOf src p.scrutinee.range)
+  let form (b : BNode α) := writtenForm (textOf src b.range)
   let mut out := #[]
-  let mut i := 0
-  while i < cs.size do
-    let some p := ps[i]! | i := i + 1; continue
-    let mut j := i
-    while j + 1 < cs.size && (ps[j + 1]!.any (form · == form p)) do j := j + 1
-    let run := (ps.extract i (j + 1)).filterMap id
-    let alts := run.flatMap (·.alts)
-    if manualPatternTest (alts.toList.map (·.1)) run.size (run.filter (·.equation)).size chain then
-      let x := (p.scrutinee.text src).inSlot (BKind.patternTest.slots[0]!)
-      let test := s!"{x} is {" | ".intercalate (alts.toList.map (·.2))}"
-      let t : BText := if conj then { text := s!"not {test}", prec := BKind.not.prec }
-        else { text := test, prec := BKind.patternTest.prec }
-      let whole := i == 0 && j + 1 == cs.size
-      -- The whole run, in parentheses that the test does not need, is
-      -- replaced with them.
-      let outer := withParensIn src parent n.range
-      let unwrapped := whole && outer != n.range && t.dropsParens slot (followedAt src outer)
-      let range : Range := if unwrapped then outer
-        else { start := (withParensIn src n.range cs[i]!.range).start, stop := (withParensIn src n.range cs[j]!.range).stop }
-      let fixed := if unwrapped then t.text else if whole then placed src n slot parent t
-        else t.inSlot (some ⟨(BKind.bin op).prec, .left, i > 0⟩) (j + 1 < cs.size)
-      -- Where `manual_ordering` reports the run too, its fix is made,
-      -- if `fren fix` makes it.
-      let unless? := if whole && (manualOrderingAt? src fact? n slot parent).isSome then some (.manualOrdering, n.ref)
-        else none
-      out := out.push { lint := .manualPatternTest, ref := cs[i]!.ref, last? := some cs[j]!.ref, unless?
-                        msg := manualPatternTestMsg (textOf src p.scrutinee.range) fixed conj range
-                          (hasComment (textOf src range)) }
-    i := j + 1
+  for (i, j) in patternRuns form ps.toList chain do
+    let some p := ps[i]! | continue
+    let alts := ((ps.extract i (j + 1)).filterMap id).toList.flatMap (·.alts)
+    let x := (p.scrutinee.text src).inSlot (BKind.patternTest.slots[0]!)
+    let test := s!"{x} is {" | ".intercalate (alts.map (·.2))}"
+    let t : BText := if conj then { text := s!"not {test}", prec := BKind.not.prec }
+      else { text := test, prec := BKind.patternTest.prec }
+    let whole := i == 0 && j + 1 == cs.size
+    -- The whole run, in parentheses that the test does not need, is
+    -- replaced with them.
+    let outer := withParensIn src parent n.range
+    let unwrapped := whole && outer != n.range && t.dropsParens slot (followedAt src outer)
+    let range : Range := if unwrapped then outer
+      else { start := (withParensIn src n.range cs[i]!.range).start, stop := (withParensIn src n.range cs[j]!.range).stop }
+    let fixed := if unwrapped then t.text else if whole then placed src n slot parent t
+      else t.inSlot (some ⟨(BKind.bin op).prec, .left, i > 0⟩) (j + 1 < cs.size)
+    -- Where `manual_ordering` reports the run too, its fix is made,
+    -- if `fren fix` makes it.
+    let unless? := if whole && (manualOrderingAt? src fact? n slot parent).isSome then some (.manualOrdering, n.ref)
+      else none
+    out := out.push { lint := .manualPatternTest, ref := cs[i]!.ref, last? := some cs[j]!.ref, unless?
+                      msg := manualPatternTestMsg (textOf src p.scrutinee.range) fixed conj range
+                        (hasComment (textOf src range)) }
   return out
 
 /-- The variant of an ordered enumeration that `k` is, or that the
