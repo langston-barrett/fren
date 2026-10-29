@@ -374,7 +374,7 @@ pub fn arm_present?(values: Seq<Value>, i: Int) := guard_at(i) + 1 < values.len
 -- The arms that the model states, and the positions of their parts.
 pub type ArmIndex = arm: Int where invariant: arm is 0..=2
 
-pub type PartAt = part: Int where invariant: part is 0..=6
+pub type PartAt = part_index: Int where invariant: part_index is 0..=6
 
 pub fn arm_matches?(Program, Head, Int, Value)
 

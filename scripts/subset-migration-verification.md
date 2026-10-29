@@ -186,3 +186,9 @@ The other introduced role names were checked against their actual use sites:
 `InputByte` is an input, node/bag/element digits describe their respective
 payloads or collection elements, and size/clamped/proved/capped byte aliases
 name the functions whose result constraints they exercise.
+
+The final full build caught one additional naming collision: the proposed
+`PartAt` binder `part` shadowed the existing `lang::part` function. It is
+`part_index` instead; the base type and `0..=6` predicate are unchanged.
+This illustrates why declaration alpha-equivalence was paired with a full
+elaboration check rather than treated as sufficient validation.
