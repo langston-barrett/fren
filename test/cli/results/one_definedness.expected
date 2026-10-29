@@ -7,12 +7,6 @@ error[F0603]: expectation `source_site::result` does not hold
   = counterexample: x? = true, y? = true, values = []
   = help: correct the expectation, or assume what it needs
 
-note: true members: `result.first`, `result.second`
- --> test/cli/results/one_definedness.fren:2:12
-  |
-2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
-  |            ^^^^^^
-
 note: `result.first` is true
  --> test/cli/results/one_definedness.fren:2:26
   |
@@ -28,12 +22,6 @@ note: `result.second` is true
   |                                     ^^^^^^
   |
   = member: y?
-
-note: not evaluated members: `result.third`
- --> test/cli/results/one_definedness.fren:2:12
-  |
-2 |     expect result: one { first: x?, second: y?, third: values[0] = 0 }
-  |            ^^^^^^
 
 note: `result.third` is not evaluated
  --> test/cli/results/one_definedness.fren:2:49

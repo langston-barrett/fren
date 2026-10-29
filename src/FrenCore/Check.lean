@@ -672,10 +672,11 @@ def BranchGroup.alternatives (group : BranchGroup F) : Array (BranchAlternative 
       memberWanted := group.members.map fun member => (member.name, member.name == chosen.name)
       range? := chosen.range?, text := chosen.text }
   | .equivalence =>
+    let operands := if group.members.size == 2 then "both operands" else "all operands"
     #[{ name := .str group.owner "all", formula := b.conj (group.members.map (·.formula))
-        label := "all hold", wanted? := some true },
+        label := operands ++ " are true", wanted? := some true },
       { name := .str group.owner "none", formula := b.conj (group.members.map (b.notF ·.formula))
-        label := "none hold", wanted? := some false }]
+        label := operands ++ " are false", wanted? := some false }]
   cases.map fun alternative =>
     { alternative with formula := group.guard?.map (fun guard =>
         b.notF (b.conj #[guard, b.notF alternative.formula])) |>.getD alternative.formula }
@@ -1681,6 +1682,8 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
 alternative. Their member ranges/text come from the original source. -/
 def branchMessages (r : CheckResult) : Array Message := Id.run do
   if r.verdict != .fail then return #[]
+  let hasInput := match r.detail with | .conflict input _ => !input.isEmpty | _ => false
+  let context := if hasInput then "for the reported input" else "under the existing constraints"
   let mut out := #[]
   for group in r.branchConflicts do
     let excluded := group.cases.filter (·.excluded)
@@ -1690,19 +1693,27 @@ def branchMessages (r : CheckResult) : Array Message := Id.run do
       severity := .info
       item? := some group.owner
       msg := { code? := none, headline := if complete then s!"no branch of `{showAnnotationPath group.owner}` can hold"
-                           else s!"branches of `{showAnnotationPath group.owner}` ruled out by the conflict" }
+                           else s!"branches of `{showAnnotationPath group.owner}` ruled out by the conflict"
+               notes := (if group.kind == .equivalence then
+                 #["note: an `iff` requires matching truth values: all operands true or all operands false"] else #[]) ++
+                 #[if hasInput then "note: each case keeps the reported input, definitions and calls"
+                   else "note: each case keeps the definitions and calls; other constraints are named below"] }
     }
     for alternative in excluded do
-      let branch := if alternative.label.isEmpty then s!"`{showAnnotationPath alternative.name}`" else alternative.label
+      let name := match alternative.name with
+        | .num .. => alternative.name.toString (escape := false)
+        | _ => showAnnotationPath alternative.name
+      let branch := if alternative.label.isEmpty then s!"`{name}`" else s!"case \"{alternative.label}\""
       let source := if alternative.text.isEmpty then #[] else #[s!"member: {alternative.text}"]
-      let conditional := #[s!"note: conditional core of `{showAnnotationPath group.owner}` under {branch}: " ++
-        (if alternative.core.isEmpty then "the fixed hypotheses alone" else showNamesAnd alternative.core)]
+      let conditional := #[if alternative.core.isEmpty then "note: no other constraint is needed to rule out this case"
+        else s!"note: this case conflicts with {showNamesAnd alternative.core}"]
       let headline := if alternative.impossible then
-          s!"{branch} is impossible under the fixed hypotheses"
+          s!"{branch} is impossible {context}"
         else if let some clash := alternative.clashes[0]? then
-          s!"{branch}: {clashLine (toString clash.guarantee) (toString clash.output) clash.forced (showNamesAnd clash.rest) clash.restForced clash.rest.size}"
+          s!"{branch} requires {forcedText (toString clash.output) clash.forced}, but {showNamesAnd clash.rest}" ++
+            (if clash.rest.size == 1 then " forces " else " force ") ++ forcedText (toString clash.output) clash.restForced
         else s!"{branch} is ruled out by " ++
-          (if alternative.core.isEmpty then "the fixed hypotheses" else showNamesAnd alternative.core)
+          (if alternative.core.isEmpty then "the input constraints, definitions and calls" else showNamesAnd alternative.core)
       out := out.push {
         severity := .info
         item? := some group.owner
@@ -1710,9 +1721,11 @@ def branchMessages (r : CheckResult) : Array Message := Id.run do
         msg := { code? := none, headline, notes := conditional ++ source }
       }
       for opposed in alternative.opposed do
-        let rest := if opposed.rest.isEmpty then "the fixed hypotheses" else showNamesAnd opposed.rest
-        let why := if opposed.wanted then s!"`{showAnnotationPath opposed.member}` cannot hold, because {rest} forces it to be false"
-                   else s!"`{showAnnotationPath opposed.member}` must hold, because {rest} forces it to be true"
+        let required := if opposed.wanted then "true" else "false"
+        let actual := if opposed.wanted then "false" else "true"
+        let reason := if opposed.rest.isEmpty then s!"is {actual} {context}"
+          else s!"must be {actual} to satisfy {showNamesAnd opposed.rest}"
+        let why := s!"`{showAnnotationPath opposed.member}` must be {required}, but {reason}"
         out := out.push {
           severity := .info
           item? := some group.owner
@@ -1727,30 +1740,22 @@ or witness, each at its original source range. Passing expectations have
 no observations and therefore no failed-member messages. -/
 def memberMessages (r : CheckResult) : Array Message := Id.run do
   let mut out := #[]
-  let owners := r.memberValues.foldl (init := #[]) fun acc value => if acc.contains value.owner then acc else acc.push value.owner
-  for owner in owners do
-    let values := r.memberValues.filter (·.owner == owner)
-    for (label, selected) in #[("true", values.filter (fun v => v.evaluated? == some true && v.value? == some true)),
-        ("false", values.filter (fun v => v.evaluated? == some true && v.value? == some false)),
-        ("not evaluated", values.filter (·.evaluated? == some false)),
-        ("unknown", values.filter (fun v => v.evaluated?.isNone || (v.evaluated? == some true && v.value?.isNone)))] do
-      if selected.isEmpty then continue
-      out := out.push {
-        severity := .info
-        item? := some owner
-        msg := { code? := none, headline := s!"{label} members: {", ".intercalate (selected.toList.map fun value => s!"`{showAnnotationPath value.name}`")}" }
+  for value in r.memberValues do
+    let label := match value.evaluated?, value.value? with
+      | some false, _ => "not evaluated"
+      | some true, some true => "true"
+      | some true, some false => "false"
+      | _, _ => "unknown"
+    out := out.push {
+      severity := .info
+      item? := some value.owner
+      atRange? := value.range?
+      msg := {
+        code? := none
+        headline := s!"`{showAnnotationPath value.name}` is {label}"
+        notes := if value.text.isEmpty then #[] else #[s!"member: {value.text}"]
       }
-      for value in selected do
-        out := out.push {
-          severity := .info
-          item? := some owner
-          atRange? := value.range?
-          msg := {
-            code? := none
-            headline := s!"`{showAnnotationPath value.name}` is {label}"
-            notes := if value.text.isEmpty then #[] else #[s!"member: {value.text}"]
-          }
-        }
+    }
   return out
 
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=

@@ -9,14 +9,14 @@ open Fren.Lang
 -- (`test/cli/results/f0601_forced_variant.fren`).
 
 enum Method { Get, Put, Post, Delete }
-type Status = subset_value: Nat  where invariant: subset_value is 100..=599
+type Status = status: Nat where invariant: status is 100..=599
 ordered struct Seconds(Nat)
 enum Decision { GiveUp, RetryAfter(Seconds) }
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
-type SubsetForcedVariants1 = subset_value: Nat  where invariant: subset_value is 1..
-proc retry(method: Method, status: Status, attempt: SubsetForcedVariants1, retry_after: Seconds): (
+type Pos = n: Nat where invariant: n is 1..
+proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
     decision: Decision,
 ) {
     ensure transient:
@@ -46,20 +46,23 @@ info: conflicts with `transient` and `latency_budget`
 info: conflicts with `transient` and `honor_server`
 ---
 info: no branch of `transient` can hold
----
-info: all hold: `transient.all` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
 
-note: conditional core of `transient` under all hold: `honor_server` and `latency_budget`
+note: an `iff` requires matching truth values: all operands true or all operands false
+note: each case keeps the reported input, definitions and calls
 ---
-info: all hold: `transient.1` cannot hold, because `honor_server` and `latency_budget` forces it to be false
+info: case "both operands are true" requires decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
+
+note: this case conflicts with `honor_server` and `latency_budget`
+---
+info: case "both operands are true": `transient.1` must be true, but must be false to satisfy `honor_server` and `latency_budget`
 
 member: decision != Decision::GiveUp
 ---
-info: none hold is impossible under the fixed hypotheses
+info: case "both operands are false" is impossible for the reported input
 
-note: conditional core of `transient` under none hold: the fixed hypotheses alone
+note: no other constraint is needed to rule out this case
 ---
-info: none hold: `transient.2` must hold, because the fixed hypotheses forces it to be true
+info: case "both operands are false": `transient.2` must be false, but is true for the reported input
 
 member: status is 429 | 503
                 and method != Method::Post

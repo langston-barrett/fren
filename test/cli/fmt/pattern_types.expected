@@ -1,13 +1,13 @@
 --- test/cli/fmt/pattern_types.fren
 +++ test/cli/fmt/pattern_types.fren
 @@ -4 +4 @@
--type   Byte= subset_value: Int    where invariant: subset_value is  0..=255
-+type Byte = subset_value: Int where invariant: subset_value is 0..=255
+-type   Byte= n: Int    where invariant: n is  0..=255
++type Byte = n: Int where invariant: n is 0..=255
 @@ -6,3 +6,3 @@
--type Loud = subset_value: Level  where invariant: subset_value is Level::High|Level::Low
--type SubsetPatternTypes1 = subset_value: Int  where invariant: subset_value is 1..
--proc c(b: Set< Byte >, n:SubsetPatternTypes1): (l: Loud) {
-+type Loud = subset_value: Level where invariant: subset_value is Level::High | Level::Low
-+type SubsetPatternTypes1 = subset_value: Int where invariant: subset_value is 1..
-+proc c(b: Set<Byte>, n: SubsetPatternTypes1): (l: Loud) {
+-type Loud = level: Level  where invariant: level is Level::High|Level::Low
+-type Pos = n: Int  where invariant: n is 1..
+-proc c(b: Set< Byte >, n:Pos): (l: Loud) {
++type Loud = level: Level where invariant: level is Level::High | Level::Low
++type Pos = n: Int where invariant: n is 1..
++proc c(b: Set<Byte>, n: Pos): (l: Loud) {
 exit=1

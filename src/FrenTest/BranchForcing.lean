@@ -76,6 +76,9 @@ private def ensure (ok : Bool) (why : String) : IO Unit :=
   ensure (first.clashes[0]!.output == `x && second.clashes[0]!.output == `y) "wrong branch forcing output"
   ensure (first.range? == some ({ start := 10, stop := 20 } : Range) && first.text == "x?") "source range/text lost"
   let notes := branchMessages r
+  ensure (notes.all fun m => (m.msg.headline.splitOn "reported input").length == 1 &&
+    m.msg.notes.all (fun note => (note.splitOn "reported input").length == 1))
+    "an output-only conflict claimed to display an input"
   ensure (notes.any fun m => m.atRange? == some ({ start := 10, stop := 20 } : Range)) "member diagnostic range lost"
   ensure (notes.any fun m => m.msg.headline.contains 'x') "forced output is absent from diagnostics"
   let (without, _) := (checkRealizable backend { orComp with branchGroups := #[] }).run #[]
@@ -101,7 +104,7 @@ private def ensure (ok : Bool) (why : String) : IO Unit :=
   let (r, _) := (checkRealizable backend iffComp).run #[]
   ensure (r.verdict == Verdict.fail && r.branchConflicts.size == 1) "equivalence conflict missing"
   let cases := r.branchConflicts[0]!.cases
-  ensure (cases.size == 2 && cases[0]!.label == "all hold" && cases[1]!.label == "none hold") "iff must have exactly two explanation branches"
+  ensure (cases.size == 2 && cases[0]!.label == "both operands are true" && cases[1]!.label == "both operands are false") "iff must have exactly two explanation branches"
   ensure (cases[0]!.opposed.any fun p => p.member == `modes.manual && p.wanted && p.rest == #[`too_hot])
     "all-hold branch must name the member forced false"
   ensure (cases[1]!.opposed.any fun p => p.member == `modes.heating && !p.wanted && p.rest == #[`override])

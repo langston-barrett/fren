@@ -6,12 +6,6 @@ note: cover goal `observations::disjunction` is met
   |
   = witness: x? = true
 
-note: true members: `disjunction.either?@1.held`
- --> test/cli/results/named_cover_members.fren:6:11
-  |
-6 |     cover disjunction: either?(x?)
-  |           ^^^^^^^^^^^
-
 note: `disjunction.either?@1.held` is true
  --> test/cli/results/named_cover_members.fren:1:24
   |
@@ -19,12 +13,6 @@ note: `disjunction.either?@1.held` is true
   |                        ^^^^
   |
   = member: x?
-
-note: not evaluated members: `disjunction.either?@1.skipped`
- --> test/cli/results/named_cover_members.fren:6:11
-  |
-6 |     cover disjunction: either?(x?)
-  |           ^^^^^^^^^^^
 
 note: `disjunction.either?@1.skipped` is not evaluated
  --> test/cli/results/named_cover_members.fren:1:34
@@ -42,12 +30,6 @@ note: cover goal `observations::uniqueness` is met
   |
   = witness: x? = true
 
-note: true members: `uniqueness.unique?@1.held`
- --> test/cli/results/named_cover_members.fren:7:11
-  |
-7 |     cover uniqueness: unique?(x?)
-  |           ^^^^^^^^^^
-
 note: `uniqueness.unique?@1.held` is true
  --> test/cli/results/named_cover_members.fren:2:25
   |
@@ -55,12 +37,6 @@ note: `uniqueness.unique?@1.held` is true
   |                         ^^^^
   |
   = member: x?
-
-note: false members: `uniqueness.unique?@1.absent`
- --> test/cli/results/named_cover_members.fren:7:11
-  |
-7 |     cover uniqueness: unique?(x?)
-  |           ^^^^^^^^^^
 
 note: `uniqueness.unique?@1.absent` is false
  --> test/cli/results/named_cover_members.fren:2:35
@@ -77,12 +53,6 @@ note: cover goal `observations::equivalence` is met
   |           ^^^^^^^^^^^ met
   |
   = witness: x? = true
-
-note: true members: `equivalence.same?@1.held`, `equivalence.same?@1.also`
- --> test/cli/results/named_cover_members.fren:8:11
-  |
-8 |     cover equivalence: same?(x?)
-  |           ^^^^^^^^^^^
 
 note: `equivalence.same?@1.held` is true
  --> test/cli/results/named_cover_members.fren:3:23

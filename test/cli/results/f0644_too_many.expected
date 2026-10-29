@@ -1,7 +1,7 @@
 error[F0644]: `c` has 1000000 behaviours up to size 3, too many to enumerate
  --> test/cli/results/f0644_too_many.fren:6:6
   |
-6 | proc c(a: SubsetF0644TooMany1, b: SubsetF0644TooMany2, d: SubsetF0644TooMany3): (det sum: Int) {
+6 | proc c(a: FirstPercent, b: SecondPercent, d: ThirdPercent): (det sum: Int) {
   |      ^ too many behaviours
   |
   = note: enumeration searches at most 65536 behaviours, counting a second copy of each for determinism

@@ -1,7 +1,7 @@
 error[F0601]: `http::retry` is not realizable
   --> test/cli/results/f0601_forced_variant_none.fren:15:6
    |
-15 | proc retry(method: Method, status: Status, attempt: SubsetF0601ForcedVariantNone1, retry_after: Seconds): (
+15 | proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
    |      ^^^^^ not realizable
    |
    = note: for the input

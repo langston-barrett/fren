@@ -35,16 +35,19 @@ note: no branch of `transient` can hold
    |
 20 |     ensure transient: retry? iff status is 429 | 503
    |            ^^^^^^^^^
+   |
+   = note: an `iff` requires matching truth values: all operands true or all operands false
+   = note: each case keeps the reported input, definitions and calls
 
-note: all hold: `transient.all` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
+note: case "both operands are true" requires retry? = true, but `honor_server` and `latency_budget` force retry? = false
   --> test/cli/results/f0601_forced_all.fren:20:12
    |
 20 |     ensure transient: retry? iff status is 429 | 503
    |            ^^^^^^^^^
    |
-   = note: conditional core of `transient` under all hold: `honor_server` and `latency_budget`
+   = note: this case conflicts with `honor_server` and `latency_budget`
 
-note: all hold: `transient.1` cannot hold, because `honor_server` and `latency_budget` forces it to be false
+note: case "both operands are true": `transient.1` must be true, but must be false to satisfy `honor_server` and `latency_budget`
   --> test/cli/results/f0601_forced_all.fren:20:23
    |
 20 |     ensure transient: retry? iff status is 429 | 503
@@ -52,15 +55,15 @@ note: all hold: `transient.1` cannot hold, because `honor_server` and `latency_b
    |
    = member: retry?
 
-note: none hold is impossible under the fixed hypotheses
+note: case "both operands are false" is impossible for the reported input
   --> test/cli/results/f0601_forced_all.fren:20:12
    |
 20 |     ensure transient: retry? iff status is 429 | 503
    |            ^^^^^^^^^
    |
-   = note: conditional core of `transient` under none hold: the fixed hypotheses alone
+   = note: no other constraint is needed to rule out this case
 
-note: none hold: `transient.2` must hold, because the fixed hypotheses forces it to be true
+note: case "both operands are false": `transient.2` must be false, but is true for the reported input
   --> test/cli/results/f0601_forced_all.fren:20:34
    |
 20 |     ensure transient: retry? iff status is 429 | 503

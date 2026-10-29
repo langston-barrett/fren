@@ -11,14 +11,9 @@ expect observations(x?) {
     assume input: x?
     cover disjunction: either?(x?)
     --~^ info: cover goal `observations::disjunction` is met
-    --~^^ info: not evaluated members: `disjunction.either?@1.skipped`
-    --~^^^ info: true members: `disjunction.either?@1.held`
     cover uniqueness: unique?(x?)
     --~^ info: cover goal `observations::uniqueness` is met
-    --~^^ info: false members: `uniqueness.unique?@1.absent`
-    --~^^^ info: true members: `uniqueness.unique?@1.held`
     cover equivalence: same?(x?)
     --~^ info: cover goal `observations::equivalence` is met
-    --~^^ info: true members: `equivalence.same?@1.held`, `equivalence.same?@1.also`
 }
 --@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant

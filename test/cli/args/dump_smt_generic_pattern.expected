@@ -4,22 +4,22 @@
 (set-option :tlimit-per 10000)
 (set-option :sets-exp true)
 (set-option :finite-model-find true)
-(define-fun |::subset_byte_invariant_295?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 255)))
-(declare-const |subset_value| Int)
-(assert (|::subset_byte_invariant_295?| |subset_value|)) ; invariant
+(define-fun |::subset_byte_invariant_295?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 255)))
+(declare-const |n| Int)
+(assert (|::subset_byte_invariant_295?| |n|)) ; invariant
 (assert (not false))
 (check-sat)
 (reset)
 
-; subset_subsetdumpsmtgenericpattern1_inhabited_367: query 1
+; subset_digit_inhabited_345: query 1
 (set-logic ALL)
 (set-option :produce-models true)
 (set-option :tlimit-per 10000)
 (set-option :sets-exp true)
 (set-option :finite-model-find true)
-(define-fun |::subset_subsetdumpsmtgenericpattern1_invariant_367?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 9)))
-(declare-const |subset_value| Int)
-(assert (|::subset_subsetdumpsmtgenericpattern1_invariant_367?| |subset_value|)) ; invariant
+(define-fun |::subset_digit_invariant_345?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
+(declare-const |n| Int)
+(assert (|::subset_digit_invariant_345?| |n|)) ; invariant
 (assert (not false))
 (check-sat)
 (reset)
@@ -31,12 +31,12 @@
 (set-option :sets-exp true)
 (set-option :fmf-bound true)
 (declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
-(define-fun |::subset_byte_invariant_295?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 255)))
-(define-fun |::subset_subsetdumpsmtgenericpattern1_invariant_367?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 9)))
+(define-fun |::subset_byte_invariant_295?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 255)))
+(define-fun |::subset_digit_invariant_345?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
 (declare-const |x| (Option Int))
 (declare-const |s| (Option (Set (Tuple Int))))
 (assert (=> (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (|::subset_byte_invariant_295?| (Option.some.val |x|)))) ; type
-(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_subsetdumpsmtgenericpattern1_invariant_367?| |#e0|))))) ; type
+(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_digit_invariant_345?| |#e0|))))) ; type
 (assert (not false))
 (check-sat)
 (reset)
@@ -48,12 +48,12 @@
 (set-option :sets-exp true)
 (set-option :fmf-bound true)
 (declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
-(define-fun |::subset_byte_invariant_295?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 255)))
-(define-fun |::subset_subsetdumpsmtgenericpattern1_invariant_367?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 9)))
+(define-fun |::subset_byte_invariant_295?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 255)))
+(define-fun |::subset_digit_invariant_345?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
 (declare-const |x| (Option Int))
 (declare-const |s| (Option (Set (Tuple Int))))
 (assert (=> (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (|::subset_byte_invariant_295?| (Option.some.val |x|)))) ; type
-(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_subsetdumpsmtgenericpattern1_invariant_367?| |#e0|))))) ; type
+(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_digit_invariant_345?| |#e0|))))) ; type
 (assert (not true))
 (check-sat)
 (reset)
@@ -65,12 +65,12 @@
 (set-option :sets-exp true)
 (set-option :fmf-bound true)
 (declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
-(define-fun |::subset_byte_invariant_295?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 255)))
-(define-fun |::subset_subsetdumpsmtgenericpattern1_invariant_367?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 9)))
+(define-fun |::subset_byte_invariant_295?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 255)))
+(define-fun |::subset_digit_invariant_345?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
 (declare-const |x| (Option Int))
 (declare-const |s| (Option (Set (Tuple Int))))
 (assert (=> (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (|::subset_byte_invariant_295?| (Option.some.val |x|)))) ; type
-(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_subsetdumpsmtgenericpattern1_invariant_367?| |#e0|))))) ; type
+(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_digit_invariant_345?| |#e0|))))) ; type
 (assert (not (ite (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (<= (Option.some.val |x|) 255) true)))
 (check-sat)
 (reset)
@@ -82,12 +82,12 @@
 (set-option :sets-exp true)
 (set-option :fmf-bound true)
 (declare-datatypes ((Option 1)) ((par (|α|) ((Option.none) (Option.some (Option.some.val |α|))))))
-(define-fun |::subset_byte_invariant_295?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 255)))
-(define-fun |::subset_subsetdumpsmtgenericpattern1_invariant_367?| ((|subset_value| Int)) Bool (and (<= 0 |subset_value|) (<= |subset_value| 9)))
+(define-fun |::subset_byte_invariant_295?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 255)))
+(define-fun |::subset_digit_invariant_345?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
 (declare-const |x| (Option Int))
 (declare-const |s| (Option (Set (Tuple Int))))
 (assert (=> (= |x| ((as Option.some (Option Int)) (Option.some.val |x|))) (|::subset_byte_invariant_295?| (Option.some.val |x|)))) ; type
-(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_subsetdumpsmtgenericpattern1_invariant_367?| |#e0|))))) ; type
+(assert (=> (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (forall ((|#e0| Int)) (=> (set.member (tuple |#e0|) (Option.some.val |s|)) (|::subset_digit_invariant_345?| |#e0|))))) ; type
 (assert (not (ite (= |s| ((as Option.some (Option (Set (Tuple Int)))) (Option.some.val |s|))) (not (set.member (tuple 10) (Option.some.val |s|))) true)))
 (check-sat)
 (reset)
