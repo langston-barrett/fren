@@ -494,6 +494,12 @@ pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>):
 }
 ```
 
+Rewriting lints must preserve the closure role and the implicit function
+parameters. A rewrite that only replaces a match by a value expression
+cannot be applied to an implicit-argument match: without a valid closure
+rewrite, omit that lint and fix. This applies equally to the standalone
+formatter/fixer and the hosted diagnostics.
+
 Both frontends must accept and reject the same source, preserve ordinary
 single-scrutinee matches, and format lists of scrutinees and patterns
 without changing their grouping. Tests compare shorthand to explicit
