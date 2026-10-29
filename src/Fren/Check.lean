@@ -370,6 +370,10 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
 where
   scan (recs : Array (Name × DefinedInfo)) (e : Expr) (gs : Array Expr)
       (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
+    -- A formula without a recursive symbol has no application to find:
+    -- `find?` visits each shared subterm once, where the descent below
+    -- would visit it once for each path to it.
+    if (e.find? fun x => recs.any (x.isConstOf ·.1)).isNone then return #[]
     -- Descend through binders to find closed applications, but never export
     -- an application or a guard containing a binder-local variable.
     let own := if (Core.recursiveFacts introduced e.hasLooseBVars).1 && recs.any (e.getAppFn.isConstOf ·.1) && e.isApp then
@@ -530,14 +534,21 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       | .error n => return (.unknown (Core.elementLimitReason n), true)
       | .ok (.unsat, c) => return (.unknown Core.elementUnconfirmedReason, c)
       | .ok r => return r
-  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) :=
+  -- `unfolded?` is `hyps`'s and `goal`'s formulas already unfolded, by
+  -- `unfoldDefined`, which a query that may be recursive does first.
+  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (unfolded? : Option (Array Expr × Expr) := none) :
+      MetaM (Core.Outcome Expr × Bool) :=
     withoutModifyingState do
     -- With the `have`s of `let`s and `where` clauses substituted, so that an
     -- application to a name mentions no bound variable.
     let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
       (← zetaReduce goal)
-    let hyps ← (facts ++ appFacts ++ hyps).mapM fun (n, t) => return (n, ← contractBody c fvs (← unfoldDefined t))
-    let goal ← contractBody c fvs (← unfoldDefined goal)
+    let unfoldedHyps ← match unfolded? with
+      | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)
+      | none => hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
+    let hyps ← ((← (facts ++ appFacts).mapM fun (n, t) => return (n, ← unfoldDefined t)) ++ unfoldedHyps).mapM
+      fun (n, t) => return (n, ← contractBody c fvs t)
+    let goal ← contractBody c fvs (← match unfolded? with | some (_, g) => pure g | none => unfoldDefined goal)
     let reflected ← recursiveQueryFacts hyps goal
     let hyps := reflected ++ hyps
     let goal ← smtBinders goal
@@ -555,10 +566,16 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let key := (hyps.map (·.2), goal, wantModel)
       if let some o := (← cache.get)[key]? then return o
       let hasRecursion := (← getState).defined.foldl (init := false) fun yes _ d => yes || d.recursive
-      let recs ← if hasRecursion then recursiveSolvers (← (hyps.map (·.2) |>.push goal).mapM unfoldDefined) else pure #[]
+      -- The formulas unfolded once, for both the recursive symbols and the query.
+      let unfolded? ← if hasRecursion then
+          pure (some (← hyps.mapM (unfoldDefined ·.2), ← unfoldDefined goal))
+        else pure none
+      let recs ← match unfolded? with
+        | some (us, g) => recursiveSolvers (us.push g)
+        | none => pure #[]
       -- Even a query that needs only sat/unsat must obtain its inputs to
       -- confirm a recursive model, as the CLI's confirming backend does.
-      let (o, cacheable) ← ask hyps goal (wantModel || !recs.isEmpty)
+      let (o, cacheable) ← ask hyps goal (wantModel || !recs.isEmpty) unfolded?
       let o ← match o with
         | .sat model => do
           if recs.isEmpty then pure o else

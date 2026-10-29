@@ -113,11 +113,10 @@ neither this diagnostic nor its deletion fix.
 A constraint that repeats one adds nothing because the two have the same
 value in every behaviour: they are written the same, in one procedure, so
 by [`written_same`](Meaning.md#expressions-as-written) they have the same
-value in each environment. A global expectation is not one layer, since
+value in each environment. A global expectation is not one [expression of the semantics](../Lang/Semantics.md#expressions), since
 it is a [quantifier](../Lang/Quantifiers.md), but the bodies of two written
 the same, under the same binders, have the same value at each value of the
-binders, and so the two do.
-Here `p` and `q` are the constraints' root layers:
+binders, and so the two do:
 
 ```fren
 expect duplicate_constraint_value(
@@ -125,31 +124,13 @@ expect duplicate_constraint_value(
     d_later: ConstraintKind,
     d_earlier_text: Scoped,
     d_later_text: Scoped,
-    p_program: lang::Program,
-    p_head: lang::Head,
-    p_env: lang::Env,
-    p_values: Seq<lang::Value>,
-    p_parts_mentioned: Set<lang::Mention>,
-    p_undefined_parts: Set<Int>,
-    q_program: lang::Program,
-    q_head: lang::Head,
-    q_env: lang::Env,
-    q_values: Seq<lang::Value>,
-    q_parts_mentioned: Set<lang::Mention>,
-    q_undefined_parts: Set<Int>,
+    i: lang::Interp,
+    env: lang::Env,
 ) {
     assume d_covers_apart: (d_earlier = ConstraintKind::Cover) iff (d_later = ConstraintKind::Cover)
-    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        p_parts_mentioned = {}
-    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        q_parts_mentioned = {}
     call d := duplicate_constraint(d_earlier, d_later, d_earlier_text, d_later_text)
-    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
-    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
-    expect duplicate_constraint_value: when d.fires? and p.env = q.env and p.program = q.program and p.head = written_head(d.earlier_text)
-        and p.values = written_values(p.env, d.earlier_text) and q.head = written_head(d.later_text)
-        and q.values = written_values(q.env, d.later_text),
-        p.value = q.value
+    expect duplicate_constraint_value: when d.fires?,
+        lang::eval(i, env, written(d.earlier_text)) = lang::eval(i, env, written(d.later_text))
 }
 ```
 

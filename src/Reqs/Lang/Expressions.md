@@ -185,10 +185,12 @@ Some rules ask whether an expression *mentions* a variable or an
 uninterpreted [function](Items.md#functions): those of [linear
 arithmetic](#linear-arithmetic), of the [decidable
 core](Decidability.md#strings), and of the
-[lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An expression that mentions
-neither has the same value in every behaviour, unless it is
-unspecified there, as an index out of range within a constant's value is
-(see [The whole tree](MeaningLaws.md#the-whole-tree)). What an expression mentions is decided from its parts, as `lang::mentions` states:
+[lint](../Lint/Complexity.md#constant-outputs) `constant_output`. An
+expression that mentions neither has the same value in every behaviour
+where it is well-defined, by the [coincidence
+lemma](EvaluationRules.md#free-variables). What an expression mentions is
+decided from what its immediate subexpressions mention, as
+`lang::mentions` states:
 
 - A literal mentions nothing, and neither does a
   [constant](Items.md#constants), a variant without a payload, or any
@@ -217,62 +219,134 @@ unspecified there, as an index out of range within a constant's value is
   value is unknown even at fixed arguments.
 - An application of a defined function mentions what its arguments
   mention: its value is fixed by theirs.
-- Every other expression mentions what its parts mention: an operator,
-  `when` and `unless`, a `let`, a quantifier (its body), a conditional, a
-  `match` (its scrutinee, and the guards and bodies of its arms), a [table](#tables) (its rows' conditions and
-  values), a [pattern
-  test](#pattern-tests) (its scrutinee), a [cardinality
-  operator](#cardinality) (its arguments), indexing `q[i]`, a field read
-  from an expression that is not a name, such as `R { a := x }.a`, and a
-  literal of a set, pair or sequence.
+- Every other expression mentions what its immediate subexpressions
+  mention: an operator, `when` and `unless`, a `let` (its body), a
+  quantifier (its body), a conditional, a `match` (its scrutinee, and the
+  guards and bodies of its arms), a [table](#tables) (its rows' conditions
+  and values), a [pattern test](#pattern-tests) (its scrutinee), a
+  [cardinality operator](#cardinality) (its arguments), indexing `q[i]`, a
+  field read from an expression that is not a name, such as `R { a := x
+  }.a`, and a literal of a set, pair or sequence.
 
-Each kind of expression is the head of a [layer](Meaning.md#layers), a
-`lang::Head`, and what it mentions is a set of names, of variables and
-uninterpreted functions as `Mention`s, given by `mentioned_by`. `lang::mentions` states
-it, from the head and what the parts mention together:
+Both front ends classify each expression into a `lang::ExprKind`, and
+`mentioned_by` gives what it mentions, as a set of `lang::Mention`s, from
+its kind and what its immediate subexpressions mention together. Only the
+names that an expression mentions are kept in its kind: what it mentions
+does not depend on the rest.
 
 ```fren
+pub enum ExprKind {
+    Literal,              -- a literal
+    Constant,             -- a constant, a variant without a payload, or another path
+    Variable(Id),         -- a variable, a field read from one, or an unbounded quantifier's bound name
+    Definition,           -- a defined variable, or a name of a `let` or `where`: its definition
+    Binder,               -- a binder of a pattern: its scrutinee
+    BoundName,            -- a quantifier's bound name of a listed type
+    Construction,         -- a variant with a payload, a record literal or a newtype
+    Method,               -- a method call: its receiver and arguments
+    Uninterpreted(Id),    -- an application of an uninterpreted function
+    Defined,              -- an application of a defined function: its arguments
+    Compound,             -- every other expression
+}
+
+pub fn mentioned_by(form: ExprKind, sub_mentioned: Set<Mention>): Set<Mention> := match form {
+    ExprKind::Literal | ExprKind::BoundName | ExprKind::Constant => {},
+    ExprKind::Variable(x) => {Mention::Var(x)},
+    ExprKind::Uninterpreted(f) => sub_mentioned union {Mention::Fn(f)},
+    _ => sub_mentioned,
+}
+
 pub proc mentions(
-    head: Head,
-    parts_mentioned: Set<Mention>,    -- what its parts mention, together
+    form: ExprKind,
+    sub_mentioned: Set<Mention>,    -- what its immediate subexpressions mention, together
 ): (det mentioned: Set<Mention>, det mentions?) {
-    use self::Head::{Bound, Constant, Construction, Defined, Literal, Method, Uninterpreted, Variable}
+    use self::ExprKind::{
+        BoundName,
+        Constant,
+        Construction,
+        Defined,
+        Literal,
+        Method,
+        Uninterpreted,
+        Variable,
+    }
 
-    assume leaves: when head is Literal(_) | Bound(_) | Constant(_) | Variable(_), parts_mentioned = {}
+    assume leaves: when form is Literal | BoundName | Constant | Variable(_), sub_mentioned = {}
 
-    out mentioned := mentioned_by(head, parts_mentioned)
+    out mentioned := mentioned_by(form, sub_mentioned)
     out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
 
-    expect fixed_meaning: when head is Defined(_) | Method(_) | Construction(_, _), mentioned = parts_mentioned
-    expect unknown: when head is Variable(_) | Uninterpreted(_), mentions?
-    expect bound_fixed: when head is Bound(_), not mentions?
-    expect itself: match head {
+    expect fixed_meaning: when form is Defined | Method | Construction, mentioned = sub_mentioned
+    expect unknown: when form is Variable(_) | Uninterpreted(_), mentions?
+    expect bound_fixed: when form = BoundName, not mentions?
+    expect itself: match form {
         Variable(x) => mentioned = {Mention::Var(x)},
         _ => true,
     }
 
-    cover through_parts: parts_mentioned != {} and mentions?
+    cover through_subexpressions: sub_mentioned != {} and mentions?
 }
 ```
 
-Each layer of an expression mentions what `lang::mentions` says, so
-`lang::node` refines it:
+What an expression mentions is what its elaboration's [free
+variables](EvaluationRules.md#free-variables) are: `lang::mentions` refines
+`lang::free_vars`. For a form that binds no name, the front ends' kind of
+the expression and `mentioned_by` give exactly the free variables of the
+form, from those of its immediate subexpressions, as
+`mentions_free_vars` states. The binding forms count a name's
+definition or scrutinee alike, but at different places: to the front ends,
+a name of a `let` is a `Definition` and a binder a `Binder`, which mention
+the definition's or the scrutinee's mentions where the name is written; to
+the semantics, the name is a `Var`, and its `Let` or `Match` counts them
+where the name is free in its scope. So both count a definition only where
+its name is read. A [structural recursion](Recursion.md) is a defined
+function to the front ends, which mentions only its arguments, since every
+interpretation of the language gives it the same values, those of its
+equations; to the semantics, it is a `Call`, read from an interpretation
+that [respects](EvaluationRules.md#call-expressions) it.
 
 ```fren
-expect layer_mentions(program: lang::Program, head: lang::Head, env: lang::Env, values: Seq<lang::Value>, parts_mentioned: Set<lang::Mention>, undefined_parts: Set<Int>) {
-    use lang
-    assume spec_leaves: when (head) is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_), (parts_mentioned) = {}
-    call concrete := node(program, head, env, values, parts_mentioned, undefined_parts)
-    expect mentioned: concrete.mentioned = (lang::mentioned_by((head), (parts_mentioned)))
-    expect mentions_definition: concrete.mentions? = ((concrete.mentioned) != {})
+-- The kind of an expression of the semantics, as the front ends classify
+-- the expression that it is elaborated from.
+pub fn kind_of(e: Expr): ExprKind := match e {
+    Expr::Literal(_) => ExprKind::Literal,
+    Expr::Var(x) => ExprKind::Variable(x),
+    Expr::Construct(_, _) => ExprKind::Construction,
+    Expr::Method(_, _, _) => ExprKind::Method,
+    Expr::Call(f, _) => ExprKind::Uninterpreted(f),
+    Expr::Apply(_, _, _, _) => ExprKind::Defined,
+    _ => ExprKind::Compound,
+}
+
+-- What the immediate subexpressions of a form that binds no name mention
+-- together, but an `Apply`'s body, which reads only its parameters.
+pub fn sub_free_vars(e: Expr): Set<Mention> := match e {
+    Expr::Unary(_, a) => free_vars(a),
+    Expr::Is(a, _) => free_vars(a),
+    Expr::Project(a, _, _) => free_vars(a),
+    Expr::Binary(_, a, b) => free_vars(a) union free_vars(b),
+    Expr::And(a, b) => free_vars(a) union free_vars(b),
+    Expr::Or(a, b) => free_vars(a) union free_vars(b),
+    Expr::Cons(a, b) => free_vars(a) union free_vars(b),
+    Expr::Index(a, b) => free_vars(a) union free_vars(b),
+    Expr::If(c, t, f) => free_vars(c) union free_vars(t) union free_vars(f),
+    Expr::Construct(_, args) => free_vars(args),
+    Expr::Count(_, args) => free_vars(args),
+    Expr::Apply(_, args, _, _) => free_vars(args),
+    Expr::Call(_, args) => free_vars(args),
+    Expr::Method(_, r, args) => free_vars(r) union free_vars(args),
+    _ => {},
+}
+
+expect mentions_free_vars(e: Expr) {
+    assume binds_nothing: not e is Expr::Let(_, _, _) | Expr::Match(_, _, _, _, _)
+    call m := mentions(kind_of(e), sub_free_vars(e))
+    expect free_vars: m.mentioned = free_vars(e)
 }
 ```
 
-The parts of a defined variable, of a binder and of a name of a `let` or
-`where` are its definition, its scrutinee and its definition. The only
-part of a `let` is its body, so a definition that the body never
-mentions counts for nothing. So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention
-nothing, and `s.len`, `double(x)` and `rate(1)` mention something.
+So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention nothing, and
+`s.len`, `double(x)` and `rate(1)` mention something.
 
 ## Linear arithmetic
 
@@ -319,90 +393,41 @@ A defined function applied to constants scales a product like a literal,
 whatever the other operand:
 
 ```fren
-expect defined_scales(
-    m_program: Program,
-    m_head: Head,
-    m_env: Env,
-    m_values: Seq<Value>,
-    m_parts_mentioned: Set<Mention>,
-    m_undefined_parts: Set<Int>,
-    p_a_mentioned: Set<Mention>,
-    p_b_mentioned: Set<Mention>,
-) {
-    use self::Head::{Bound, Constant, Literal, Variable}
-    assume m_leaves: when m_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), m_parts_mentioned = {}
-    call m := node(m_program, m_head, m_env, m_values, m_parts_mentioned, m_undefined_parts)
-    call p := linear_product(p_a_mentioned, p_b_mentioned)
-    expect defined_scales: when m.head is Head::Defined(_) and m.parts_mentioned = {} and p.a_mentioned = m.mentioned, p.accepted?
+expect defined_scales(b_mentioned: Set<Mention>) {
+    call m := mentions(ExprKind::Defined, {})
+    call p := linear_product(m.mentioned, b_mentioned)
+    expect defined_scales: p.accepted?
 }
 ```
 
 The rule is what makes the product linear: of an accepted product, one
-operand is a *fixed factor*, with the same value in every environment
-where it is specified, and so where it is defined, by the [laws of a
-layer](MeaningLaws.md). Where it is not, as `get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`,
-a check reports why: the [definedness check](../Check.md#definedness)
-reports the index in `get`'s body, as the [precondition
-check](../Check.md#preconditions) reports an application outside a
-function's preconditions. Here `a` is the layer of the operand that the
-rule makes the factor, the left one where the right mentions something,
-and `a2` the same layer, with the same parts' values, in any other
-environment; that the parts' values are the same follows by induction
-(see [The whole tree](MeaningLaws.md#the-whole-tree)):
+operand is a *fixed factor*, which mentions nothing, and so, by the
+[coincidence lemma](EvaluationRules.md#free-variables), has the same outcome in
+every interpretation and environment, given the primitive operations.
+Where that outcome is undefined, as for `get([1], 5)` with `fn get(q:
+Seq<Int>, i: Int): Int := q[i]`, a check reports why: the [definedness
+check](../Check.md#definedness) reports the index in `get`'s body, as the
+[precondition check](../Check.md#preconditions) reports an application
+outside a function's preconditions. Here `a` and `b` are the operands'
+elaborations, and `p` and `q`, with `i` and `j`, two environments and
+interpretations:
 
 ```fren
 expect fixed_factor(
-    p_a_mentioned: Set<Mention>,
-    p_b_mentioned: Set<Mention>,
-    a_program: Program,
-    a_head: Head,
-    a_env: Env,
-    a_values: Seq<Value>,
-    a_parts_mentioned: Set<Mention>,
-    a_undefined_parts: Set<Int>,
-    a2_program: Program,
-    a2_head: Head,
-    a2_env: Env,
-    a2_values: Seq<Value>,
-    a2_parts_mentioned: Set<Mention>,
-    a2_undefined_parts: Set<Int>,
+    a: Expr,
+    b: Expr,
+    i: Interp,
+    p: Env,
+    j: Interp,
+    q: Env,
 ) {
-    use self::Head::{Bound, Constant, Literal, Variable}
-    assume a_leaves: when a_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), a_parts_mentioned = {}
-    assume a2_leaves: when a2_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), a2_parts_mentioned = {}
-    call p := linear_product(p_a_mentioned, p_b_mentioned)
-    call a := node(a_program, a_head, a_env, a_values, a_parts_mentioned, a_undefined_parts)
-    call a2 := node(a2_program, a2_head, a2_env, a2_values, a2_parts_mentioned, a2_undefined_parts)
-    expect fixed_factor: when p.accepted? and p.b_mentioned != {} and p.a_mentioned = a.mentioned
-        and a2.program = a.program and a2.head = a.head and a2.values = a.values and a.specified?,
-        a2.value = a.value
-}
-
-expect fixed_factor_right(
-    p_a_mentioned: Set<Mention>,
-    p_b_mentioned: Set<Mention>,
-    b_program: Program,
-    b_head: Head,
-    b_env: Env,
-    b_values: Seq<Value>,
-    b_parts_mentioned: Set<Mention>,
-    b_undefined_parts: Set<Int>,
-    b2_program: Program,
-    b2_head: Head,
-    b2_env: Env,
-    b2_values: Seq<Value>,
-    b2_parts_mentioned: Set<Mention>,
-    b2_undefined_parts: Set<Int>,
-) {
-    use self::Head::{Bound, Constant, Literal, Variable}
-    assume b_leaves: when b_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), b_parts_mentioned = {}
-    assume b2_leaves: when b2_head is Literal(_) | Bound(_) | Constant(_) | Variable(_), b2_parts_mentioned = {}
-    call p := linear_product(p_a_mentioned, p_b_mentioned)
-    call b := node(b_program, b_head, b_env, b_values, b_parts_mentioned, b_undefined_parts)
-    call b2 := node(b2_program, b2_head, b2_env, b2_values, b2_parts_mentioned, b2_undefined_parts)
-    expect fixed_factor_right: when p.accepted? and p.a_mentioned != {} and p.b_mentioned = b.mentioned
-        and b2.program = b.program and b2.head = b.head and b2.values = b.values and b.specified?,
-        b2.value = b.value
+    assume primitives: i.primitives = j.primitives
+    call product := linear_product(free_vars(a), free_vars(b))
+    call factor_a := closed(i, p, j, q, a)
+    call factor_b := closed(i, p, j, q, b)
+    expect fixed_factor: when product.accepted?,
+        eval(i, p, a) = eval(j, q, a) or eval(i, p, b) = eval(j, q, b)
+    expect left_factor: when product.accepted? and free_vars(b) != {}, eval(i, p, a) = eval(j, q, a)
 }
 ```
 
@@ -636,8 +661,6 @@ core](Decidability.md#integers). `lang::cardinality` states their value,
 from how many of their arguments are `true`:
 
 ```fren
-pub enum Cardinality { Exactly, AtMost }
-
 pub proc cardinality(
     op: Cardinality,
     n_args: Nat,             -- how many arguments it has
@@ -1788,14 +1811,14 @@ So `q != [] and q[0] = x` is defined, and `q[0] = x and q != []` is not,
 though the two mean the same: the order of `and` and `or` changes only
 definedness, never meaning.
 
-`lang::guard` (see [Guards](Meaning.md#guards)) states which operands
+`lang::guard` (see [Guards](EvaluationRules.md#guards)) states which operands
 are guarded, and by what, from the operand and the value of its
 *condition*: that of `when`, `unless` or the conditional, or the left
-operand of `and` or `or`. `lang::node` uses it to say which parts a layer
-evaluates, and a layer is defined where every part it evaluates is. That a
-part that is not evaluated changes neither the value nor the definedness
-is the law `unevaluated` (see [Laws](MeaningLaws.md)), which is why the
-definedness check asks for an index's range only under its guard.
+operand of `and` or `or`. An operand that is not evaluated changes
+neither the outcome of the expression nor whether it is well-defined, as
+`lang::guards_evaluation` states of [evaluation](Semantics.md), which is
+why the definedness check asks for an index's range only under its
+guard.
 
 ## Relations
 

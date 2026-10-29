@@ -1952,7 +1952,7 @@ enumeration is run.
 
 ### Sizes and order
 
-The values are the [values](Lang/Meaning.md#values) of `lang::Val`, and
+The values are the [values](Lang/Semantics.md#values) of `lang::Value`, and
 an abstract type's values those of an interpretation. Each type is
 unfolded, for the size bound `n`, into a *shape*, a finite tree: a recursive enumeration's payloads are unfolded `n` deep, since a
 variant's payload is one smaller than it. Each value has a *size*:
@@ -2064,7 +2064,7 @@ smallest first.
 
 Each query of the [checks](#checks) is answered by searching the
 assignments of the slots that its formulas read, the variables that they
-mention (`lang::node`'s `mentioned`, see [Meaning](Lang/Meaning.md)), for
+mention (their [free variables](Lang/EvaluationRules.md#free-variables)), for
 one that makes its hypotheses true and its goal false: `sat`, with that assignment as its
 model, or `unsat` if there is none. The assignments are searched fairly,
 by *level*, the largest size of an assignment's values: every assignment

@@ -1427,16 +1427,12 @@ impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Boo
   intro c a n s _
   cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
 
-theorem op_of (op : String) : lang.operator (.Op op "") = op := by
-  simp [lang.operator]
-
 theorem sharingNonlinear (op : String) (left : Bool) (m x : List Fren.Core.Mention) :
-    Fren.Core.branchesSharingNonlinear op left m x = match lint.shared_op (.Op op "") with
+    Fren.Core.branchesSharingNonlinear op left m x = match lint.shared_op op with
       | .Times => !Fren.Core.productAccepted m x
       | .Div | .Mod => left
       | .OtherOp => false := by
   unfold Fren.Core.branchesSharingNonlinear lint.shared_op
-  rw [op_of]
   simp only [Fren.Str.lit]
   by_cases h1 : op = "*"
   · subst h1; simp
@@ -1454,8 +1450,8 @@ theorem sharingNonlinear (op : String) (left : Bool) (m x : List Fren.Core.Menti
 impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (op op' : String) (_hop : op ≠ "")
     (tl tr el er : lint.Operand) (s : Fren.FinSet String) (c a b x : List Fren.Core.Mention) {
   binders := Fren.FinSet.ofList bs,
-  then_head := .Op op "",
-  else_head := .Op op' "",
+  then_op := op,
+  else_op := op',
   then_left := ⟨tl, s⟩,
   then_right := ⟨tr, s⟩,
   else_left := ⟨el, s⟩,
@@ -1464,7 +1460,7 @@ impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (
   a_mentioned := mentionSet a,
   b_mentioned := mentionSet b,
   shared_mentioned := mentionSet x,
-  op := lint.shared_op (.Op op ""),
+  op := lint.shared_op op,
   same_op? := decide (op = op'),
   shared_left? := decide (tl = el),
   shared_right? := decide (tr = er),

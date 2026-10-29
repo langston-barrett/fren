@@ -1,7 +1,7 @@
 # Meaning
 
 Many lints are right because of what an expression means, as the
-[core](../Lang/Meaning.md) of the language states it: `x - x` is always
+[dynamic semantics](../Lang/Semantics.md) of the language states it: `x - x` is always
 `0` because its two operands have the same value, and a constraint that
 mentions no variable is the same in every behaviour. This chapter states
 the model of an expression as written that those lints share, and how it
@@ -33,7 +33,7 @@ Reply::Value(v!)) and (v > 1 and r is Reply::Value(v!))`, the right
 operand's first `v` is the left's payload. `lint::Scoped` is an expression
 as written in its scope: its text, and the binders of pattern tests in
 scope where it is written, each by the `Id` of its declaration, as a
-`Binder` head names it (see [Layers](../Lang/Meaning.md#layers)). Names
+`PatternBinder` binding targets it (see [Bindings](../Lang/Scope.md#bindings)). Names
 declared outside every pattern test are the same wherever the lints
 compare expressions, within one procedure or one global expectation, so
 they are not part of the scope. Both front ends compare scopes as well as
@@ -44,123 +44,71 @@ differ.
 pub struct Scoped { text: Operand, scope: Set<lang::Id> }
 ```
 
-An expression as written is one [layer](../Lang/Meaning.md#layers) at its
-root, with parts as written. `written_head(x)` is the head of that layer:
-with the same text and the same binders, an expression has the same names,
-of the same declarations, and so the same head. `written_values(env, x)`
-is its parts' values in the environment `env`. That it is a function is
-the law [`same_written`](../Lang/MeaningLaws.md) of each part, by induction
-from the leaves up (see [The whole tree](../Lang/MeaningLaws.md#the-whole-tree)):
-parts with the same text and binders have the same head, and the same
-parts' values, in one environment, and so the same value.
+An expression as written elaborates to one [expression of the
+semantics](../Lang/Semantics.md#abstract-syntax), `written(x)`: with the
+same text and the same binders, an expression has the same names, of the
+same declarations, and so elaborates alike.
 
 ```fren
-pub fn written_head(Scoped): lang::Head
-pub fn written_values(lang::Env, Scoped): Seq<lang::Value>
+pub fn written(Scoped): lang::Expr
 ```
 
-So, by `same_written` of the roots, two expressions written the same in
-the same scope have the same value in one environment, specified or not:
-`[1][5] = [1][5]` holds in every behaviour, though `[1][5]` may differ
-between them. Here `p` and `q` are their root layers:
+So, since [evaluation](../Lang/Semantics.md#the-evaluation-function) is a
+function, two expressions written the same in the same scope have the same
+outcome in one interpretation and environment, well-defined or not:
+`[1][5] = [1][5]` holds in every behaviour, though `[1][5]` is not
+well-defined, and so may differ between them:
 
 ```fren
--- It quantifies over scopes, which are sets of names.
-set_option fren.lint.undecidable "allow" in
-expect written_same(
-    x: Scoped,
-    y: Scoped,
-    p_program: lang::Program,
-    p_head: lang::Head,
-    p_env: lang::Env,
-    p_values: Seq<lang::Value>,
-    p_parts_mentioned: Set<lang::Mention>,
-    p_undefined_parts: Set<Int>,
-    q_program: lang::Program,
-    q_head: lang::Head,
-    q_env: lang::Env,
-    q_values: Seq<lang::Value>,
-    q_parts_mentioned: Set<lang::Mention>,
-    q_undefined_parts: Set<Int>,
-) {
-    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        p_parts_mentioned = {}
-    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        q_parts_mentioned = {}
-    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
-    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
-    expect written_same: when x = y and p.env = q.env and p.program = q.program and p.head = written_head(x) and p.values = written_values(p.env, x)
-        and q.head = written_head(y) and q.values = written_values(q.env, y),
-        p.value = q.value
+expect written_same(x: Scoped, y: Scoped, i: lang::Interp, env: lang::Env) {
+    expect written_same: when x = y, lang::eval(i, env, written(x)) = lang::eval(i, env, written(y))
 }
 ```
 
 Two texts in different scopes may have different values.
 `lint::written_scopes` is the two `v`s of the conditional above: in the
-`then` branch, the binder of the payload of the scrutinee `r`, and in the
-`else` branch, the variable `v`, in one environment:
+`then` branch, the binder of the payload of the scrutinee `r`, which the
+`match` that the [pattern test elaborates
+to](../Lang/Semantics.md#derived-forms) binds, and in the `else` branch,
+the variable `v`, in an environment that binds `r` to a reply and `v` to
+another value. Its evidence is testing, which evaluates it, since the
+solver unfolds [`eval`](../Lang/Semantics.md) only one step:
 
 ```fren
-pub proc written_scopes(program: lang::Program, env: lang::Env) {
-    call payload := lang::node(
-        program,
-        lang::Head::Binder("Reply::Value.0"),
-        env,
-        [lang::lookup(env, "r")],
-        {lang::Mention::Var("r")},
-        {},
-    )
-    call outer := lang::node(
-        program,
-        lang::Head::Variable("v"),
-        env,
-        [],
-        {},
-        {},
-    )
+set_option fren.evidence "tested" in
+pub proc written_scopes(i: lang::Interp, payload: lang::Value, v: lang::Value) {
+    use lang::{Env, Expr, Outcome, Pattern, Value, eval}
 
-    cover differ: payload.value != outer.value
+    let env: Env := Env::Bind("r", Outcome::Defined(Value::Constructed("Reply::Value", Value::Cons(payload, Value::Nil))),
+        Env::Bind("v", Outcome::Defined(v), Env::Empty))
+    let in_then: Outcome := eval(i, env, Expr::Match(Expr::Var("r"),
+        Pattern::Variant("Reply::Value", Pattern::Cons(Pattern::Binder("v"), Pattern::Nil)),
+        Expr::Literal(Value::True), Expr::Var("v"), Expr::NoMatch))
+    let in_else: Outcome := eval(i, env, Expr::Var("v"))
+
+    expect payload_read: in_then = Outcome::Defined(payload)
+    cover differ: in_then != in_else
 }
 ```
 
 ## Expressions that mention nothing
 
 What an expression mentions is a set of `lang::Mention`s, as
-[`lang::mentions`](../Lang/Expressions.md#mentions) gives it. One that
-mentions nothing has the same value in every environment where each of its
-layers that is evaluated is specified: by [`own_mentioned`](../Lang/MeaningLaws.md), its
-root reads the same in every environment, and by `frame` it then has the
-same value, given the same parts' values, which by induction it has (see
-[The whole tree](../Lang/MeaningLaws.md#the-whole-tree)). Where an evaluated layer is not
-specified, as in `get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int :=
-q[i]`, its value is the environment's to choose, so it may differ between
-behaviours; the [definedness check](../Check.md#definedness) reports that
-index, so in a spec that passes its checks the value is the same. Here `p`
-is the root layer in one environment and `q` the same layer, with the same
-parts' values, in any other:
+[`lang::mentions`](../Lang/Expressions.md#mentions) gives it, and as its
+elaboration's [free variables](../Lang/EvaluationRules.md#free-variables) are.
+One that mentions nothing has the same outcome in every interpretation
+and environment, given the primitive operations, by the coincidence lemma;
+where its outcome is undefined, as in `get([1], 5)` with `fn get(q:
+Seq<Int>, i: Int): Int := q[i]`, its value is unspecified, so it may
+differ between behaviours; the [definedness check](../Check.md#definedness)
+reports that index, so in a spec that passes its checks the value is the
+same. Here `e` is the expression's elaboration, and `i`, `p`, `j` and `q`
+two interpretations and environments:
 
 ```fren
-expect mentions_nothing(
-    p_program: lang::Program,
-    p_head: lang::Head,
-    p_env: lang::Env,
-    p_values: Seq<lang::Value>,
-    p_parts_mentioned: Set<lang::Mention>,
-    p_undefined_parts: Set<Int>,
-    q_program: lang::Program,
-    q_head: lang::Head,
-    q_env: lang::Env,
-    q_values: Seq<lang::Value>,
-    q_parts_mentioned: Set<lang::Mention>,
-    q_undefined_parts: Set<Int>,
-) {
-    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        p_parts_mentioned = {}
-    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        q_parts_mentioned = {}
-    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
-    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
-    expect mentions_nothing: when p.mentioned = {} and p.specified? and q.program = p.program and q.head = p.head and q.values = p.values,
-        q.value = p.value
+expect mentions_nothing(e: lang::Expr, i: lang::Interp, p: lang::Env, j: lang::Interp, q: lang::Env) {
+    assume primitives: i.primitives = j.primitives
+    call c := lang::closed(i, p, j, q, e)
+    expect mentions_nothing: when lang::free_vars(e) = {}, lang::eval(i, p, e) = lang::eval(j, q, e)
 }
 ```

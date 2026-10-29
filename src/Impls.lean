@@ -17,7 +17,6 @@ import Impls.HigherOrder
 import Impls.Impl
 import Impls.Lang
 import Impls.Lint
-import Impls.Meaning
 import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTests
@@ -77,6 +76,18 @@ tested lang::subset_membership: "src/FrenTest/BooleanSubsets.lean", "src/FrenTes
 tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
 tested lang::varying_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
+
+-- The dynamic semantics (`Reqs/Lang/Semantics`): its coincidence lemma, by
+-- random expressions evaluated with a variable that they do not mention
+-- rebound, and the binary's evaluator against `lang::eval`.
+tested lang::coincidence: "src/FrenTest/Semantics.lean"
+tested lang::closed: "src/FrenTest/Semantics.lean"
+tested lint::written_scopes: "src/FrenTest/Semantics.lean"
+tested lint::manual_at_most_one_defined: "src/FrenTest/Semantics.lean"
+-- No front end elaborates a name into the semantics' abstract syntax yet,
+-- so there is no code to bind `lang::named` to; its expectations are
+-- checked by the solver.
+trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
 
 tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"

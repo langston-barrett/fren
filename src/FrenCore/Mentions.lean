@@ -23,7 +23,7 @@ def Mention.describe : Mention → String
   | .fn f => s!"the function `{f}`"
 
 /-- The kinds of expression, for what one mentions (`lang::mentions`), each
-a `lang::Head` (`Reqs/Lang/Meaning#layers`). Only the names that it
+a `lang::ExprKind` (`Reqs/Lang/Expressions#mentions`). Only the names that it
 mentions are kept: what it mentions does not depend on the rest. -/
 inductive MentionKind where
   /-- A literal, or a part with no expression, such as a field's name. -/

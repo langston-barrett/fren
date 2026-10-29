@@ -51,7 +51,7 @@ does not fire: the branches see different binders (see
 Reply::Value(v!) then 1 + v else 2 + v` the two `v`s are the payload and
 the variable `v`, and moving one out of the `if` would change which is
 meant. `lint::branches_sharing_code` states when it fires, from the
-branches' root layers and operands as
+branches' operators, as written, and operands as
 [written](../Meaning.md#expressions-as-written) in their scopes, and what the
 operands mention:
 
@@ -60,7 +60,7 @@ operands mention:
 -- `div` and `mod`, or another.
 pub enum SharedOp { Times, Div, Mod, OtherOp }
 
-pub fn shared_op(head: lang::Head): SharedOp := match lang::operator(head) {
+pub fn shared_op(op: lang::Id): SharedOp := match op {
     "*" => SharedOp::Times,
     "div" => SharedOp::Div,
     "mod" => SharedOp::Mod,
@@ -69,8 +69,8 @@ pub fn shared_op(head: lang::Head): SharedOp := match lang::operator(head) {
 
 pub proc branches_sharing_code(
     binders: Set<lang::Id>,                -- the binders of the pattern tests in the conditional
-    then_head: lang::Head,                 -- the head of the `then` branch's root layer
-    else_head: lang::Head,                 -- the `else` branch's
+    then_op: lang::Id,                     -- the operator of the `then` branch, as written, or `""` for none
+    else_op: lang::Id,                     -- the `else` branch's
     then_left: Scoped,                     -- the operands of the `then` branch, as written in their scopes
     then_right: Scoped,
     else_left: Scoped,                     -- the operands of the `else` branch
@@ -88,13 +88,13 @@ pub proc branches_sharing_code(
     det fires?,
 ) {
     use self::SharedOp::{Div, Mod, OtherOp, Times}
-    out op := shared_op(then_head)
-    out same_op? := then_head = else_head and lang::operator(then_head) != ""
+    out op := shared_op(then_op)
+    out same_op? := then_op = else_op and then_op != ""
     out shared_left? := then_left = else_left
     out shared_right? := then_right = else_right
     -- What the `if` that the fix moves out, `if C then A else B`, mentions.
     out moved_mentioned :=
-        lang::mentioned_by(lang::Head::Op("if", ""), condition_mentioned union a_mentioned union b_mentioned)
+        lang::mentioned_by(lang::ExprKind::Compound, condition_mentioned union a_mentioned union b_mentioned)
 
     -- The product the fix would write, for `*`.
     call product := lang::linear_product(moved_mentioned, shared_mentioned)
@@ -110,7 +110,7 @@ pub proc branches_sharing_code(
     -- Never across binders, and the fix writes one binary operator, whose
     -- divisor is never the `if`.
     expect no_binders: when fires?, binders = {}
-    expect one_operator: when fires?, then_head = else_head and lang::operator(then_head) != ""
+    expect one_operator: when fires?, then_op = else_op and then_op != ""
     expect no_divisor: when fires? and op in {Div, Mod}, not shared_left?
 
     cover other: fires? and op = OtherOp
@@ -119,13 +119,13 @@ pub proc branches_sharing_code(
 ```
 
 Where it fires, the two copies of `X` have the same value in one
-environment. Here `p` and `q` are their root layers:
+environment:
 
 ```fren
 expect branches_sharing_value(
     b_binders: Set<lang::Id>,
-    b_then_head: lang::Head,
-    b_else_head: lang::Head,
+    b_then_op: lang::Id,
+    b_else_op: lang::Id,
     b_then_left: Scoped,
     b_then_right: Scoped,
     b_else_left: Scoped,
@@ -134,32 +134,13 @@ expect branches_sharing_value(
     b_a_mentioned: Set<lang::Mention>,
     b_b_mentioned: Set<lang::Mention>,
     b_shared_mentioned: Set<lang::Mention>,
-    p_program: lang::Program,
-    p_head: lang::Head,
-    p_env: lang::Env,
-    p_values: Seq<lang::Value>,
-    p_parts_mentioned: Set<lang::Mention>,
-    p_undefined_parts: Set<Int>,
-    q_program: lang::Program,
-    q_head: lang::Head,
-    q_env: lang::Env,
-    q_values: Seq<lang::Value>,
-    q_parts_mentioned: Set<lang::Mention>,
-    q_undefined_parts: Set<Int>,
+    i: lang::Interp,
+    env: lang::Env,
 ) {
-    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        p_parts_mentioned = {}
-    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        q_parts_mentioned = {}
-    call b := branches_sharing_code(b_binders, b_then_head, b_else_head, b_then_left, b_then_right, b_else_left, b_else_right, b_condition_mentioned, b_a_mentioned, b_b_mentioned, b_shared_mentioned)
-    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
-    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
-    expect branches_sharing_value: when b.fires? and p.env = q.env and p.program = q.program
-        and p.head = written_head(if b.shared_left? then b.then_left else b.then_right)
-        and p.values = written_values(p.env, if b.shared_left? then b.then_left else b.then_right)
-        and q.head = written_head(if b.shared_left? then b.else_left else b.else_right)
-        and q.values = written_values(q.env, if b.shared_left? then b.else_left else b.else_right),
-        p.value = q.value
+    call b := branches_sharing_code(b_binders, b_then_op, b_else_op, b_then_left, b_then_right, b_else_left, b_else_right, b_condition_mentioned, b_a_mentioned, b_b_mentioned, b_shared_mentioned)
+    expect branches_sharing_value: when b.fires?,
+        lang::eval(i, env, written(if b.shared_left? then b.then_left else b.then_right))
+        = lang::eval(i, env, written(if b.shared_left? then b.else_left else b.else_right))
 }
 ```
 
