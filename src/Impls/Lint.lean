@@ -2185,6 +2185,33 @@ def toOrderingFix : Option (Comparison × Nat) → lint.OrderingFix
   | none => .Unchanged
   | some (c, k) => .Compare (toComparison c) (ofPosIdx k)
 
+/-- The original universally quantified preservation statement, for an
+arbitrary relation rather than a table of precomputed truth values. -/
+noncomputable def orderingQuantified (fix : lint.OrderingFix)
+    (property : Fren.FinSet (lint.Comparison × lint.Position)) : Bool := by
+  classical
+  exact decide (∀ op m, fix = lint.OrderingFix.Compare op m → (op, m) ∈ property)
+
+noncomputable def orderingSelected (fix : lint.OrderingFix)
+    (property : Fren.FinSet (lint.Comparison × lint.Position)) : Bool := by
+  classical
+  exact match fix with
+    | .Unchanged => true
+    | .Compare op m => decide ((op, m) ∈ property)
+
+impl ordering_fix_statement: lint::ordering_fix_statement
+    for (fix : lint.OrderingFix) (property : Fren.FinSet (lint.Comparison × lint.Position)) {
+  fix := fix,
+  property := property,
+  quantified? := orderingQuantified fix property,
+  selected? := orderingSelected fix property,
+} by
+  intro fix property
+  cases fix with
+  | Unchanged => simp [fren_spec, orderingQuantified, orderingSelected]
+  | Compare op m =>
+    cases op <;> cases m <;> simp [fren_spec, orderingQuantified, orderingSelected]
+
 impl manual_ordering: lint::manual_ordering for (l : lint.Position) (b0 b1 b2 b3 b4 g : Bool) {
   named := ⟨b0, b1, b2, b3, b4⟩,
   last := l,
