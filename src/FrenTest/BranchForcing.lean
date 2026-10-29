@@ -19,9 +19,10 @@ private def y (i : Nat) : Bool := i / 2 == 1
 private def yes : Formula := fun _ => true
 private def no : Formula := fun _ => false
 
-private def backend (unknownModels := false) : Backend (StateM Queries) Formula Bool where
+private def backend (unknownModels := false) (unknownConsistency := false) : Backend (StateM Queries) Formula Bool where
   query hyps goal wantModel := do
     modify (·.push (hyps.map (·.1)))
+    if unknownConsistency then return .unknown "consistency unavailable"
     if wantModel && unknownModels then return .unknown "model unavailable"
     match (List.range 4).find? fun i => hyps.all (fun (_, f) => f i) && !goal i with
     | some i => return .sat #[(`x, x i), (`y, y i)]
@@ -113,8 +114,8 @@ private def ensure (ok : Bool) (why : String) : IO Unit :=
   ensure ((larger.alternatives backend).size == 2) "n-ary iff was expanded into a parity chain or exponentially many cases"
   let (unknown, _) := (branchConflictsOf (backend true) #[iffGroup] #[] iffComp.reqs
     #[`modes, `override, `too_hot] #[`x, `y] (some 1)).run #[]
-  ensure (unknown.all fun g => g.cases.all fun c => c.clashes.isEmpty && c.opposed.isEmpty)
-    "unknown model queries cannot establish forcing"
+  ensure (unknown.all fun g => g.cases.all fun c => c.clashes.isEmpty)
+    "unknown candidate models cannot establish output-value forcing"
 
 #eval do
   let impossible : BranchGroup Formula :=
@@ -229,7 +230,7 @@ private def variantBackend : Backend (StateM Queries) Formula Nat where
 
 -- Count actual backend calls for impossible disjuncts. With no candidates,
 -- outputs or polarity checks, each alternative has exactly its exclusion
--- query and nonvacuity/model query. Cost must scale with retained members,
+-- query and nonvacuity/model query, plus one shared consistency query. Cost must scale with retained members,
 -- and the group budget must not cut a selected group's alternatives in half.
 #eval do
   for n in List.range 6 do
@@ -237,11 +238,89 @@ private def variantBackend : Backend (StateM Queries) Formula Nat where
       ({ name := Name.num `cost (i + 1), formula := no } : BranchMember Formula)
     let group : BranchGroup Formula := { owner := `cost, kind := .disjunction, members }
     let (results, queries) := (branchConflictsOf backend #[group] #[] #[] #[`cost] #[] (some 1) false).run #[]
-    ensure (results.size == 1 && results[0]!.cases.size == n) "one query family per disjunct was not retained"
-    ensure (queries.size == 2 * n) "branch query families contain hidden or missing backend calls"
+    ensure (if n == 0 then results.isEmpty else results.size == 1 && results[0]!.cases.size == n) "one query family per disjunct was not retained"
+    ensure (queries.size == 1 + 2 * n) "branch query families contain hidden or missing backend calls"
     for member in members do
       ensure ((queries.filter (fun (query : Array Name) => query.contains member.name)).size == 2) "a branch's query family was duplicated or omitted"
+
+-- Unknown or inconsistent premises cannot establish supplementary facts.
+#eval do
+  let second := { orGroup with owner := `second }
+  let (unknown, queries) := (branchConflictsOf (backend false true) #[orGroup, second]
+    #[] (orComp.reqs.push (`second, fun i => x i || y i)) #[`policy, `second, `no_x, `no_y] #[] (some 1)).run #[]
+  ensure (unknown.isEmpty && queries.size == 1) "unknown consistency must be silent and consume only the selected group budget"
+  let contradictory := #[(`x, x), (`not_x, fun i => !x i)]
+  let (vacuous, queries) := (branchConflictsOf backend #[orGroup] #[] contradictory
+    #[`policy, `x, `not_x] #[] none).run #[]
+  ensure (vacuous.isEmpty && queries.size == 1) "an inconsistent rest cannot force every member by vacuity"
+  let (proved, _) := (checkRealizable backend orComp).run #[]
+  let bounded := Fren.Core.Enumeration.classify 2 false true proved
+  ensure (bounded.clashes.isEmpty && bounded.branchConflicts.isEmpty)
+    "inexact enumeration cannot publish unqualified all-model relationships"
+  let exact := Fren.Core.Enumeration.classify 2 true true proved
+  ensure (!exact.branchConflicts.isEmpty) "exact finite checking lost its general explanations"
+
+-- Two independent input properties and one output: a bad input does not
+-- make either equivalence alternative globally impossible.
+private def eligible (i : Nat) : Bool := i % 2 == 1
+private def budget (i : Nat) : Bool := i / 2 % 2 == 1
+private def retry (i : Nat) : Bool := i / 4 == 1
+private def inputBackend : Backend Id Formula Bool where
+  query hs goal _ := match (List.range 8).find? (fun i => hs.all (fun (_, f) => f i) && !goal i) with
+    | some i => .sat #[(`eligible, eligible i), (`budget, budget i), (`retry, retry i)]
+    | none => .unsat
+  falseF := no
+  notF f := fun i => !f i
+  conj fs := fun i => fs.all (· i)
+  existsOutputs f := fun i => f (i % 4) || f (i % 4 + 4)
+  pin name value := some fun i => (if name == `eligible then eligible i else if name == `budget then budget i else retry i) == value
+  pinVariant _ _ := none
+  render _ value := if value then "true" else "false"
+  prime := id
+  samePrimed _ := yes
+  subst _ f := f
+private def inputComp : Comp Formula := {
+  path := `input_dependent
+  vars := #[{name := `eligible, role := .input, isPub := true},
+            {name := `budget, role := .input, isPub := true},
+            {name := `retry, role := .output, isPub := true}]
+  assumes := #[]
+  reqs := #[(`policy, fun i => retry i == eligible i), (`deadline, fun i => !retry i || budget i)]
+  expects := #[]
+  triggers := #[]
+  branchGroups := #[{
+    owner := `policy
+    kind := .equivalence
+    members := #[{name := `policy.retry, formula := retry}, {name := `policy.eligible, formula := eligible}] }]
+}
+#eval do
+  let result := checkRealizable inputBackend inputComp
+  ensure (result.verdict == Verdict.fail) "the concrete bad input must remain a counterexample"
+  ensure (result.clashes.isEmpty && result.branchConflicts.isEmpty)
+    "input-only elimination leaked into a general explanation"
+  ensure ((messages false result).size == 1) "an unproved relationship was replaced by repetitive core notes"
+  let emptyGroup : BranchGroup Formula := {
+    owner := `empty, kind := .disjunction, members := #[], guard? := some eligible }
+  let guardedEmpty := { inputComp with reqs := #[(`empty, fun i => !eligible i)], branchGroups := #[emptyGroup] }
+  let emptyResult := checkRealizable inputBackend guardedEmpty
+  ensure (emptyResult.verdict == Verdict.fail && emptyResult.branchConflicts.isEmpty)
+    "an empty guarded group produced a vacuous all-alternatives claim"
+  let restricted := { inputComp with assumes := #[(`over_budget, fun i => !budget i)] }
+  let general := checkRealizable inputBackend restricted
+  ensure (general.verdict == Verdict.fail && general.branchConflicts.size == 1)
+    "a genuine all-model relationship was lost"
+  let group := general.branchConflicts[0]!
+  ensure ((group.cases.filter (fun (alternative : BranchCaseConflict) => alternative.excluded)).size == 1)
+    "a globally feasible equivalence alternative was ruled out"
+  ensure (group.premises == #[`over_budget]) "general premise identities were not retained"
+  let notes := branchMessages general
+  ensure (notes.any fun note => (note.msg.headline.splitOn "Both operands of `policy` cannot be true").length > 1)
+    "general explanations are not plain source-named sentences"
+  ensure (notes.all fun note => (note.msg.headline.splitOn "case \"").length == 1 && (note.msg.headline.splitOn "reported input").length == 1)
+    "general explanations reverted to quoted cases or a particular input"
 
 end FrenTest.BranchForcing
 
 -- fren-covers: check::branch_forcing, check::branch_member_polarity, check::branch_query_count, check::branch_query_families, check::conditional_branch_core, check::disjunction_core, lang::equivalence_branches, lang::exactly_one_branch
+
+-- fren-covers: check::general_branch_explanation, check::retry_alternatives_general

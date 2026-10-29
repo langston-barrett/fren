@@ -12,66 +12,6 @@ error[F0601]: `http::retry` is not realizable
            no outputs satisfy `transient`, `honor_server` and `latency_budget`
    = help: weaken one of them, or add an `assume` that rules this input out
 
-note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
-  --> test/cli/results/f0601_forced_all.fren:20:12
-   |
-20 |     ensure transient: retry? iff status is 429 | 503
-   |            ^^^^^^^^^
-
-note: conflicts with `transient` and `latency_budget`
-  --> test/cli/results/f0601_forced_all.fren:22:12
-   |
-22 |     ensure honor_server: when retry?, delay >= retry_after
-   |            ^^^^^^^^^^^^
-
-note: conflicts with `transient` and `honor_server`
-  --> test/cli/results/f0601_forced_all.fren:24:12
-   |
-24 |     ensure latency_budget: delay <= MAX_DELAY
-   |            ^^^^^^^^^^^^^^
-
-note: no branch of `transient` can hold
-  --> test/cli/results/f0601_forced_all.fren:20:12
-   |
-20 |     ensure transient: retry? iff status is 429 | 503
-   |            ^^^^^^^^^
-   |
-   = note: an `iff` requires matching truth values: all operands true or all operands false
-   = note: each case keeps the reported input, definitions and calls
-
-note: case "both operands are true" requires retry? = true, but `honor_server` and `latency_budget` force retry? = false
-  --> test/cli/results/f0601_forced_all.fren:20:12
-   |
-20 |     ensure transient: retry? iff status is 429 | 503
-   |            ^^^^^^^^^
-   |
-   = note: this case conflicts with `honor_server` and `latency_budget`
-
-note: case "both operands are true": `transient.1` must be true, but must be false to satisfy `honor_server` and `latency_budget`
-  --> test/cli/results/f0601_forced_all.fren:20:23
-   |
-20 |     ensure transient: retry? iff status is 429 | 503
-   |                       ^^^^^^
-   |
-   = member: retry?
-
-note: case "both operands are false" is impossible for the reported input
-  --> test/cli/results/f0601_forced_all.fren:20:12
-   |
-20 |     ensure transient: retry? iff status is 429 | 503
-   |            ^^^^^^^^^
-   |
-   = note: no other constraint is needed to rule out this case
-
-note: case "both operands are false": `transient.2` must be false, but is true for the reported input
-  --> test/cli/results/f0601_forced_all.fren:20:34
-   |
-20 |     ensure transient: retry? iff status is 429 | 503
-   |                                  ^^^^^^^^^^^^^^^^^^^
-   |
-   = member: status is 429 | 503
-                     and method != Method::Post and attempt < MAX_ATTEMPTS
-
 error[F0601]: `http::pinned` is not realizable
   --> test/cli/results/f0601_forced_all.fren:27:6
    |
@@ -82,18 +22,6 @@ error[F0601]: `http::pinned` is not realizable
                x = 0
            no outputs satisfy `low` and `high`
    = help: weaken one of them, or add an `assume` that rules this input out
-
-note: `low` forces y = 0, but `high` forces y = 1
-  --> test/cli/results/f0601_forced_all.fren:28:12
-   |
-28 |     ensure low: y = x
-   |            ^^^
-
-note: `high` forces y = 1, but `low` forces y = 0
-  --> test/cli/results/f0601_forced_all.fren:29:12
-   |
-29 |     ensure high: y = x + 1
-   |            ^^^^
 
 fren: 8 passed, 2 failed, 0 inconclusive, 0 redundant
 

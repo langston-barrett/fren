@@ -5,12 +5,9 @@ proc heater(temp: Int): (alarm?) {
     assume sane: temp < 1000
     exists margin: Int
 
-    ensure r: alarm? iff temp > 100
-    --~^? info: case "both operands are true" is impossible under the existing constraints
-    --~^^? info: case "both operands are true": `r.1` must be true, but is false under the existing constraints
-    --~^^^? info: no branch of `r` can hold
-    --~^^^^? info: case "both operands are false" is impossible under the existing constraints
-    --~^^^^^? info: case "both operands are false": `r.2` must be false, but is true under the existing constraints
+    ensure r: alarm? iff temp > 100   --~ info: Assuming `sane` and the cover goal `silent`, `r` cannot hold.
+    --~^ info: Both operands of `r` cannot be true:
+    --~^^ info: Both operands of `r` cannot be false:
     ensure m: margin = temp - 100
 
     cover overheat: temp > 100 and alarm?          --~ info: cover goal `heater::overheat` is met
@@ -28,12 +25,9 @@ proc panel(t: Int): (lit?) {
 
     call h := heater(t)
 
-    ensure shows: lit? iff h.alarm?
-    --~^? info: case "both operands are true": `shows.2` must be true, but must be false to satisfy `h`
-    --~^^? info: case "both operands are true" requires h.alarm? = true, but `h` forces h.alarm? = false
-    --~^^^? info: no branch of `shows` can hold
-    --~^^^^? info: case "both operands are false" is impossible under the existing constraints
-    --~^^^^^? info: case "both operands are false": `shows.1` must be false, but is true under the existing constraints
+    ensure shows: lit? iff h.alarm?   --~ info: Assuming `sane` and `h` and the cover goal `lit_when_cold`, `shows` cannot hold.
+    --~^ info: Both operands of `shows` cannot be true:
+    --~^^ info: Both operands of `shows` cannot be false:
 
     cover lit_when_hot: lit? and t > 500           --~ info: cover goal `panel::lit_when_hot` is met
     cover lit_when_cold: lit? and t < 0            --~ error: cover goal `panel::lit_when_cold` cannot be met
@@ -41,8 +35,8 @@ proc panel(t: Int): (lit?) {
 
 -- Contradictory guarantees rule out every goal, as they fail realizability.
 proc stuck(x: Int): (y: Int) {                                       --~ error: `stuck` is not realizable
-    ensure a: y > x   --~ info: conflicts with `b`
-    ensure b: y < x   --~ info: conflicts with `a`
+    ensure a: y > x
+    ensure b: y < x
 
     cover any: true                                --~ error: cover goal `stuck::any` cannot be met: it is ruled out by `a`, `b`
     --~^ warning: this cover goal mentions no variable

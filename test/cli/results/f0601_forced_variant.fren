@@ -1,6 +1,5 @@
--- A component that is not realizable (F0601), with a note at the guarantee
--- that forces only the variant of an output of an enumeration, which the
--- rest of the conflict forces to a value of another variant.
+-- The retry counterexample is input-specific. Neither iff alternative
+-- is globally excluded, so no supplementary explanation is justified.
 -- fren-covers: check::clash_notes
 mod http
 

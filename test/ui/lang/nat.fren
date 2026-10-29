@@ -34,7 +34,7 @@ proc defined(n: Nat): (det next: Nat, det prev: Int, det mixed: Int) {
 -- No output is a `Nat` below 0.
 proc unreal(n: Nat) {  --~ error: `unreal` is not realizable
     exists y: Nat
-    ensure r: y = n - 1  --~ info: is false for this input
+    ensure r: y = n - 1
 }
 
 -- An instance's variables are at least 0, as its component's own are.
@@ -112,7 +112,7 @@ proc below_instance(k: Nat) {  --~ error: `below_instance` is not realizable
     exists x: Int
     call w := counted(k, 0)
 
-    ensure r: x < 0 and x = w.y  --~ info: is false for this input
+    ensure r: x < 0 and x = w.y
 }
 
 -- A pattern test beside a `Nat`.

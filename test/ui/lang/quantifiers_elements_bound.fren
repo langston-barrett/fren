@@ -11,10 +11,8 @@ fn in_r?(x: Int) := exists (y: Int), y in R and y = x
 set_option fren.lint.undecidable "allow" in
 proc realize(q: Seq<Int>): (o: Int) {  --~ error: is not realizable
     assume ends: q != [] and q[0] = 5 and q[q.len - 1] = 5
-    ensure range: 0 <= o <= 1  --~? info: is false for this input
-    --~^? info: conflicts with
-    ensure avoid: forall (x: Int), when x in q, x != o  --~? info: is false for this input
-    --~^? info: conflicts with
+    ensure range: 0 <= o <= 1
+    ensure avoid: forall (x: Int), when x in q, x != o
 }
 
 -- An enclosing quantifier, through a defined function.

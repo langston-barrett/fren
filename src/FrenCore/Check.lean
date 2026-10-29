@@ -202,6 +202,9 @@ structure BranchConflict where
   owner : Name
   kind : BranchKind
   cases : Array BranchCaseConflict
+  premises : Array Name := #[]
+  constraints : Array Name := #[]
+  condition? : Option Name := none
   deriving Inhabited
 
 structure CheckResult where
@@ -235,6 +238,7 @@ structure CheckResult where
   /-- For `realizable`, failing with a conflict: the clashes of forced
   outputs between its core's guarantees (`clashesOf`). -/
   clashes : Array Clash := #[]
+  explanationPremises : Array Name := #[]
   /-- Conditional explanations for disjunctions in the primary core. -/
   branchConflicts : Array BranchConflict := #[]
   memberValues : Array MemberValue := #[]
@@ -523,8 +527,8 @@ def forcedOf (hyps : Array (Name × F)) (x : Name) (v : V) (s : String) (k? : Op
   if ← forcesVariant b hyps x v then return some (.variant k)
   return none
 
-/-- The clash at the guarantee `e` of the minimal core `core`, on the input
-that `pinned` pins: the first of the outputs `outs` that `{e}` and the
+/-- The clash at the guarantee `e` of the core `core`, under the fixed
+hypotheses `pinned`: the first of the outputs `outs` that `{e}` and the
 rest of the core force to different values, or to values of different
 variants (`check::clash_notes`). Each side is asked for a model, then
 whether each output's value in it follows (`forces`); only the outputs
@@ -562,8 +566,8 @@ def withinBudget (found : Nat) : Option Nat → Bool
   | none => true
   | some n => found < n
 
-/-- The clashes of a conflict, one at most at each guarantee of the
-minimal core `core`, in its order, and at most `examples` in all
+/-- The clashes under fixed hypotheses `pinned`, one at most at each
+guarantee of `core`, in its order, and at most `examples` in all
 (`check::clash_notes`): no query is asked once they are found. -/
 def clashesOf (pinned core : Array (Name × F)) (outs : Array Name) (examples : Option Nat) : m (Array Clash) := do
   let mut found := #[]
@@ -639,16 +643,12 @@ def Comp.fixedInhabitation (c : Comp F) (interprets : F → Bool := fun _ => fal
   c.inhabitation && !c.realizableInterpreted interprets && c.defs.isEmpty &&
     c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
 
-/-- The clashes of a realizability conflict on the input that `pinned`
-pins, with the minimal core `core` (`clashesOf`): none if they would depend
-on an interpretation (`Comp.realizableInterpreted`), or if some variable
-of the input could not be pinned (`allPinned` is false), since the
-queries would then not be about the input that the error shows
-(`check::clash_notes`). -/
-def conflictClashes (c : Comp F) (pinned : Array (Name × F)) (allPinned : Bool) (core : Array Name)
+/-- Additional all-model forcing relationships under the general assumptions
+and calls. The primary core may be input-local; its pins are not premises. -/
+def conflictClashes (c : Comp F) (base : Array (Name × F)) (core : Array Name)
     (examples : Option Nat) (interprets : F → Bool) : m (Array Clash) :=
-  if c.realizableInterpreted interprets || !allPinned then pure #[]
-  else clashesOf b pinned ((c.substHyps b c.reqs).filter (core.contains ·.1)) c.clashOutputs examples
+  if c.realizableInterpreted interprets then pure #[]
+  else clashesOf b base ((c.substHyps b c.reqs).filter (core.contains ·.1)) c.clashOutputs examples
 
 /-- One alternative of a source group. Equivalence always has the two
 alternatives all-hold and none-hold, rather than a parity chain. -/
@@ -687,43 +687,50 @@ alternatives never changes or masquerades as the unconditional core.
 A model of each forcing side is required before any pin/polarity query. -/
 def branchConflictsOf (groups : Array (BranchGroup F)) (fixed candidates : Array (Name × F))
     (core : Array Name) (outs : Array Name) (examples : Option Nat)
-    (valuesSafe : Bool := true) : m (Array BranchConflict) := do
+    (valuesSafe : Bool := true) (premises? : Option (Array Name) := none)
+    (condition? : Option Name := none) : m (Array BranchConflict) := do
   let mut found := #[]
+  let mut inspected := 0
   for group in groups do
     if !core.contains group.owner then continue
-    if !withinBudget found.size examples then break
+    if !withinBudget inspected examples then break
+    inspected := inspected + 1
+    let base := fixed.filter (·.1 != group.owner)
     let rest := candidates.filter fun (n, _) => core.contains n && n != group.owner
+    -- A contradiction in the premises is not an explanatory relationship.
+    if (← b.query (base ++ rest) b.falseF false).answer != .sat then continue
     let mut cases := #[]
     for alternative in group.alternatives b do
       let branch := #[(alternative.name, alternative.formula)]
-      let excluded ← b.query (fixed ++ branch ++ rest) b.falseF false
+      let excluded ← b.query (base ++ branch ++ rest) b.falseF false
       if !excluded.isUnsat then
         cases := cases.push { name := alternative.name, label := alternative.label
                               range? := alternative.range?, text := alternative.text }
         continue
-      let conditional ← minimize b (fixed ++ branch) rest b.falseF
-      let branchModel ← b.query (fixed ++ branch) b.falseF true
+      let conditional ← minimize b (base ++ branch) rest b.falseF
+      let branchModel ← b.query (base ++ branch) b.falseF true
       let impossible := branchModel.isUnsat
       let mut clashes := #[]
       if valuesSafe && !impossible then
-        if let some clash ← clashAt b fixed (branch ++ rest) outs alternative.name then
+        if let some clash ← clashAt b base (branch ++ rest) outs alternative.name then
           clashes := clashes.push clash
       let mut opposed := #[]
       if alternative.wanted?.isSome || !alternative.memberWanted.isEmpty then
-        -- The other core constraints must themselves have a model;
-        -- otherwise every polarity would follow vacuously.
-        if (← b.query (fixed ++ rest) b.falseF true).answer == .sat then
-          for member in group.members do
-            let wanted := alternative.wanted?.getD ((alternative.memberWanted.find? (·.1 == member.name)).map (·.2) |>.getD true)
-            let opposite := if wanted then b.notF member.formula else member.formula
-            if (← b.query (fixed ++ rest) opposite false).isUnsat then
-              let because ← minimize b fixed rest opposite
-              opposed := opposed.push { member := member.name, wanted, rest := because
-                                        range? := member.range?, text := member.text }
+        -- The shared query above already established consistency.
+        for member in group.members do
+          let wanted := alternative.wanted?.getD ((alternative.memberWanted.find? (·.1 == member.name)).map (·.2) |>.getD true)
+          let opposite := if wanted then b.notF member.formula else member.formula
+          if (← b.query (base ++ rest) opposite false).isUnsat then
+            let because ← minimize b base rest opposite
+            opposed := opposed.push { member := member.name, wanted, rest := because
+                                      range? := member.range?, text := member.text }
       cases := cases.push { name := alternative.name, label := alternative.label, excluded := true
                             impossible, core := conditional, clashes, opposed
                             range? := alternative.range?, text := alternative.text }
-    found := found.push { owner := group.owner, kind := group.kind, cases }
+    if cases.any (·.excluded) then
+      found := found.push { owner := group.owner, kind := group.kind, cases
+                            premises := (premises?.getD (fixed.map (·.1))).filter (· != group.owner)
+                            constraints := rest.map (·.1), condition? }
   return found
 
 /-- The source groups with the same definition substitution as the primary
@@ -760,12 +767,12 @@ def checkRealizableUniversal (c : Comp F) (examples : Option Nat := some 1) (int
     let input := conflictInput c.vars model
     let pinned ← pins b input
     let core ← minimize b pinned (sub c.reqs) b.falseF
-    let clashes ← conflictClashes b c pinned (pinned.size == input.size) core examples interprets
-    let branches ← if pinned.size != input.size then pure #[] else
-      branchConflictsOf b (c.substBranchGroups b) pinned (sub c.reqs) core c.clashOutputs examples
-        (!c.realizableInterpreted interprets)
+    let base := sub (c.hyps b)
+    let clashes ← conflictClashes b c base core examples interprets
+    let branches ← branchConflictsOf b (c.substBranchGroups b) base (sub c.reqs) core c.clashOutputs examples
+      (!c.realizableInterpreted interprets)
     return { result verdict (.conflict (← renderModel b c.vars input fun v => v.isIn && v.isPub) core)
-             with clashes, branchConflicts := branches }
+             with clashes, explanationPremises := base.map (·.1), branchConflicts := branches }
   if verdict == .inconclusive then
     return result verdict (.unknown (if cexQ.reason.isEmpty then assumeQ.reason else cexQ.reason))
   return result verdict
@@ -856,9 +863,10 @@ def checkCover (c : Comp F) (g : Name × F) (examples : Option Nat := some 1) : 
   -- The core is sought only on `unsat` (`Reqs/Check#cover-goals`).
   | (verdict, _, true), _ =>
     let core ← minimize b (c.defEqs .cover) hyps goal
-    let fixed := c.defEqs .cover ++ #[(g.1.appendAfter "_goal", g.2)]
+    let fixed := c.defEqs .cover ++ c.hyps b ++ #[(g.1.appendAfter "_goal", g.2)]
     let branches ← branchConflictsOf b c.branchGroups fixed hyps core
       ((c.vars.filter (·.isPub)).map (·.name)) examples (!c.typesInterpreted)
+      (some ((c.defEqs .cover ++ c.hyps b).map (·.1))) (some g.1)
     return { result verdict (.vacuous core) with branchConflicts := branches }
   | (.inconclusive, _, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _, _), _ => return result verdict
@@ -980,9 +988,10 @@ def checkVacuity (c : Comp F) (t : Name × F) (examples : Option Nat := some 1) 
   match vacuityVerdict q.answer with
   | .fail =>
     let core ← minimize b (c.defEqs .vacuity) hyps goal
-    let fixed := c.defEqs .vacuity ++ #[(t.1.appendAfter "_trigger", t.2)]
+    let fixed := c.defEqs .vacuity ++ c.hyps b ++ #[(t.1.appendAfter "_trigger", t.2)]
     let branches ← branchConflictsOf b c.branchGroups fixed hyps core
       ((c.vars.filter (·.isPub)).map (·.name)) examples (!c.typesInterpreted)
+      (some ((c.defEqs .vacuity ++ c.hyps b).map (·.1))) (some t.1)
     return { result .fail (.vacuous core) with branchConflicts := branches }
   | .inconclusive => return result .inconclusive (.unknown q.reason)
   | .pass =>
@@ -1547,10 +1556,20 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
   | .fail, .conflict input core =>
     let contract := r.target?.map (·.1)
     let names := if contract.isSome then core.map clauseName else core
-    let clashNotes := core.map fun n =>
+    let clashNotes := core.filterMap fun n => do
+      let some clash := r.clashes.find? (·.guarantee == n) | none
       let short (ns : Array Name) := if contract.isSome then ns.map clauseName else ns
-      let headline := memberText (r.clashes.find? (·.guarantee == n)) (short (core.filter (· != n))) fun cl => short cl.rest
-      { severity := .info, item? := some n, msg := { code? := none, headline } }
+      let headline := clashText clash (short clash.rest)
+      some {
+        severity := .info
+        item? := some n
+        msg := {
+          code? := none
+          headline := headline
+          notes := if r.explanationPremises.isEmpty then #[] else
+            #[s!"note: This holds under {showNamesAnd r.explanationPremises}."]
+        }
+      }
     if let (some f, true) := (contract, r.generic) then
       #[one "F0653" s!"the postconditions of `{showComp f}` cannot all hold at some type" (some "unrealizable contract")
         #[conflictNote "arguments" input s!"no value of `{showComp f}` satisfies {showNamesAnd names}",
@@ -1678,60 +1697,83 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
           "help: correct its guard or the arms that take its cases, or remove it"]]
     | _, _ => #[{ severity := sev, item? := r.prop?, msg := Msg.internal s!"{subject} failed without details" }]
 
-/-- Conditional branch notes retain both the owning constraint and the
-alternative. Their member ranges/text come from the original source. -/
+/-- A requirement on an output, phrased as part of a sentence. -/
+def forcedRequirement (output : Name) : Forced → String
+  | .value value => s!"`{showAnnotationPath output}` to equal {value}"
+  | .variant variant => s!"`{showAnnotationPath output}` to match {variant.pattern}"
+
+/-- Supplementary notes express proved relationships under consistent general
+premises, never Boolean evaluation at the primary counterexample. -/
 def branchMessages (r : CheckResult) : Array Message := Id.run do
   if r.verdict != .fail then return #[]
-  let hasInput := match r.detail with | .conflict input _ => !input.isEmpty | _ => false
-  let context := if hasInput then "for the reported input" else "under the existing constraints"
   let mut out := #[]
   for group in r.branchConflicts do
     let excluded := group.cases.filter (·.excluded)
-    if excluded.isEmpty && !group.cases.isEmpty then continue
-    let complete := group.cases.all (·.excluded)
-    out := out.push {
-      severity := .info
-      item? := some group.owner
-      msg := { code? := none, headline := if complete then s!"no branch of `{showAnnotationPath group.owner}` can hold"
-                           else s!"branches of `{showAnnotationPath group.owner}` ruled out by the conflict"
-               notes := (if group.kind == .equivalence then
-                 #["note: an `iff` requires matching truth values: all operands true or all operands false"] else #[]) ++
-                 #[if hasInput then "note: each case keeps the reported input, definitions and calls"
-                   else "note: each case keeps the definitions and calls; other constraints are named below"] }
-    }
+    if excluded.isEmpty then continue
+    let owner := showAnnotationPath group.owner
+    let names := (group.premises ++ group.constraints).toList.eraseDups.toArray
+    let premise := showNamesAnd names
+    let condition := group.condition?.map fun name =>
+      if r.kind == .cover then s!"the cover goal `{showAnnotationPath name}`"
+      else s!"the condition of `{showAnnotationPath name}`"
+    let assumptions := if let some condition := condition then
+      if names.isEmpty then condition else premise ++ " and " ++ condition
+      else premise
+    if group.cases.all (·.excluded) then
+      out := out.push {
+        severity := .info
+        item? := some group.owner
+        msg := { code? := none, headline := if assumptions.isEmpty then s!"`{owner}` cannot hold."
+          else s!"Assuming {assumptions}, `{owner}` cannot hold." }
+      }
+    else if !assumptions.isEmpty then
+      out := out.push {
+        severity := .info
+        item? := some group.owner
+        msg := { code? := none, headline := s!"The following relationships follow from {assumptions}." }
+      }
     for alternative in excluded do
       let name := match alternative.name with
         | .num .. => alternative.name.toString (escape := false)
         | _ => showAnnotationPath alternative.name
-      let branch := if alternative.label.isEmpty then s!"`{name}`" else s!"case \"{alternative.label}\""
+      let proposition := match group.kind with
+        | .equivalence =>
+          let operands := if alternative.label.startsWith "both operands" then "Both operands" else "All operands"
+          let value := if alternative.label.endsWith "true" then "true" else "false"
+          s!"{operands} of `{owner}` cannot be {value}"
+        | .disjunction => s!"`{name}` cannot hold"
+        | .exactlyOne => s!"The operands of `{owner}` cannot have only `{name}` true"
       let source := if alternative.text.isEmpty then #[] else #[s!"member: {alternative.text}"]
-      let conditional := #[if alternative.core.isEmpty then "note: no other constraint is needed to rule out this case"
-        else s!"note: this case conflicts with {showNamesAnd alternative.core}"]
-      let headline := if alternative.impossible then
-          s!"{branch} is impossible {context}"
+      let coreNote := if alternative.core.isEmpty then
+          "note: No additional constraint is needed to rule this out."
+        else s!"note: {showNamesAnd alternative.core}" ++ (if alternative.core.size == 1 then " already rules this out." else " already rule this out.")
+      let headline := if alternative.impossible then proposition ++ "."
         else if let some clash := alternative.clashes[0]? then
-          s!"{branch} requires {forcedText (toString clash.output) clash.forced}, but {showNamesAnd clash.rest}" ++
-            (if clash.rest.size == 1 then " forces " else " force ") ++ forcedText (toString clash.output) clash.restForced
-        else s!"{branch} is ruled out by " ++
-          (if alternative.core.isEmpty then "the input constraints, definitions and calls" else showNamesAnd alternative.core)
-      out := out.push {
-        severity := .info
-        item? := some group.owner
-        atRange? := alternative.range?
-        msg := { code? := none, headline, notes := conditional ++ source }
-      }
+          let others := if clash.rest.isEmpty then "the stated premises" else showNamesAnd clash.rest
+          proposition ++ s!": this would require {forcedRequirement clash.output clash.forced}, while {others}" ++
+            (if clash.rest.size == 1 then " requires " else " require ") ++ forcedRequirement clash.output clash.restForced ++ "."
+        else proposition ++ "."
+      if alternative.opposed.isEmpty || !alternative.clashes.isEmpty then
+        out := out.push {
+          severity := .info
+          item? := some group.owner
+          atRange? := alternative.range?
+          msg := { code? := none, headline := headline, notes := #[coreNote] ++ source }
+        }
       for opposed in alternative.opposed do
-        let required := if opposed.wanted then "true" else "false"
         let actual := if opposed.wanted then "false" else "true"
-        let reason := if opposed.rest.isEmpty then s!"is {actual} {context}"
-          else s!"must be {actual} to satisfy {showNamesAnd opposed.rest}"
-        let why := s!"`{showAnnotationPath opposed.member}` must be {required}, but {reason}"
+        let reason := if opposed.rest.isEmpty then "the stated premises" else showNamesAnd opposed.rest
+        let why := reason ++ (if opposed.rest.size == 1 then " requires " else " require ") ++
+          s!"`{showAnnotationPath opposed.member}` to be {actual}."
         out := out.push {
           severity := .info
           item? := some group.owner
           atRange? := opposed.range?
-          msg := { code? := none, headline := s!"{branch}: {why}"
-                   notes := if opposed.text.isEmpty then #[] else #[s!"member: {opposed.text}"] }
+          msg := {
+            code? := none
+            headline := proposition ++ ": " ++ why
+            notes := if opposed.text.isEmpty then #[] else #[s!"member: {opposed.text}"]
+          }
         }
   return out
 

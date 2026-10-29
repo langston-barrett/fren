@@ -12,24 +12,6 @@ error[F0601]: `http::retry` is not realizable
            no outputs satisfy `transient`, `honor_server` and `latency_budget`
    = help: weaken one of them, or add an `assume` that rules this input out
 
-note: conflicts with `honor_server` and `latency_budget`
-  --> test/cli/results/f0601_forced_none.fren:18:12
-   |
-18 |     ensure transient: retry? iff status is 429 | 503
-   |            ^^^^^^^^^
-
-note: conflicts with `transient` and `latency_budget`
-  --> test/cli/results/f0601_forced_none.fren:20:12
-   |
-20 |     ensure honor_server: when retry?, delay >= retry_after
-   |            ^^^^^^^^^^^^
-
-note: conflicts with `transient` and `honor_server`
-  --> test/cli/results/f0601_forced_none.fren:22:12
-   |
-22 |     ensure latency_budget: delay <= MAX_DELAY
-   |            ^^^^^^^^^^^^^^
-
 fren: 8 passed, 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0601`.

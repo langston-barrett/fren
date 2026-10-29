@@ -23,8 +23,6 @@ note: for the arguments
 note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass
 help: weaken one of them, or add a precondition that rules these arguments out
 ---
-info: is false for this input
----
 info: fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in

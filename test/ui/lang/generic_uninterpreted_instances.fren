@@ -16,7 +16,7 @@ struct R { a: Small }
 -- Not realizable at a type with a single value, which the spec applies it
 -- at: reported there, and realizable at `Bool` and `Int`.
 fn other<T>(x: T): (r: T) {  --~ error: the postconditions of `generic_uninterpreted_instances::other<generic_uninterpreted_instances::One>` cannot all hold
-    ensure diff: other(x) != x  --~ info: is false for this input
+    ensure diff: other(x) != x
 }
 
 proc at_one(x: One): (det y: One) {

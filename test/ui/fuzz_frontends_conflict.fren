@@ -12,9 +12,7 @@ proc both(s: String) {
     --~^ error: `both` is not realizable
     call w := source(s != "")
     ensure q0: w.b?
-    --~^? info: is false for this input
     ensure q1: not w.b?
-    --~^? info: is false for this input
 }
 --@ summary: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

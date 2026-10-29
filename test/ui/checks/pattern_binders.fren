@@ -10,14 +10,9 @@ const MAX_DELAY: Seconds := Seconds(30)
 -- names the guarantees apart, though they read the same payload, and
 -- `transient` forces the variant that the others rule out (`check::clash_notes`).
 proc retry(transient?, retry_after: Seconds): (decision: Decision) {   --~ error: no outputs satisfy `transient`, `honor_server` and `latency_budget`
-    ensure transient: decision != Decision::GiveUp iff transient?   --~ info: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
-    --~^? info: case "both operands are true": `transient.1` must be true, but must be false to satisfy `honor_server` and `latency_budget`
-    --~^^? info: case "both operands are true" requires decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
-    --~^^^? info: no branch of `transient` can hold
-    --~^^^^? info: case "both operands are false" is impossible for the reported input
-    --~^^^^^? info: case "both operands are false": `transient.2` must be false, but is true for the reported input
-    ensure honor_server: when decision is Decision::RetryAfter(d), d >= retry_after   --~ info: conflicts with `transient` and `latency_budget`
-    ensure latency_budget: when decision is Decision::RetryAfter(d), d <= MAX_DELAY   --~ info: conflicts with `transient` and `honor_server`
+    ensure transient: decision != Decision::GiveUp iff transient?
+    ensure honor_server: when decision is Decision::RetryAfter(d), d >= retry_after
+    ensure latency_budget: when decision is Decision::RetryAfter(d), d <= MAX_DELAY
 }
 
 -- The trigger is the condition with `_` for the binder, and a nested

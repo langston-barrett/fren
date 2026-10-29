@@ -31,10 +31,6 @@ note: for the input
       no outputs satisfy `a` and `b`
 help: weaken one of them, or add an `assume` that rules this input out
 ---
-info: `a` forces y = 0, but `b` forces y = 1
----
-info: conflicts with `a`
----
 info: fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
 #guard_msgs in

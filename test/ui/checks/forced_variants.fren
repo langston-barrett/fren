@@ -8,27 +8,27 @@ enum Shape { Circle(Int), Square(Int), Rect(Int, Int), Empty }
 -- Each guarantee forces only a variant, a different one.
 proc variants(): (s: Shape) {   --~ error: no outputs satisfy `round` and `square`
     ensure round: s is Shape::Circle(_)   --~ info: `round` forces s is Shape::Circle(_), but `square` forces s is Shape::Square(_)
-    ensure square: s is Shape::Square(_)   --~ info: conflicts with `round`
+    ensure square: s is Shape::Square(_)
 }
 
--- A whole value against a variant, of a payload of two values.
+-- The payload depends on an input, but the variant relationship is general.
 proc mixed(x: Int): (s: Shape) {   --~ error: no outputs satisfy `one` and `boxy`
-    ensure one: s = Shape::Circle(x)   --~ info: `one` forces s = Shape::Circle(0), but `boxy` forces s is Shape::Rect(_, _)
-    ensure boxy: s is Shape::Rect(_, _)   --~ info: conflicts with `one`
+    ensure one: s = Shape::Circle(x)   --~ info: `one` forces s is Shape::Circle(_), but `boxy` forces s is Shape::Rect(_, _)
+    ensure boxy: s is Shape::Rect(_, _)
 }
 
 -- A variant without a payload has one value, which a side that forces
 -- the variant forces.
 proc empty(): (s: Shape) {   --~ error: no outputs satisfy `square` and `none`
     ensure square: s is Shape::Square(_)   --~ info: `square` forces s is Shape::Square(_), but `none` forces s = Shape::Empty
-    ensure none: not (s is Shape::Circle(_) | Shape::Square(_) | Shape::Rect(_, _))   --~ info: conflicts with `square`
+    ensure none: not (s is Shape::Circle(_) | Shape::Square(_) | Shape::Rect(_, _))
 }
 
 -- Of the same variant: `one` forces a value, `other` only the variant, so
 -- they do not clash.
 proc same_variant(x: Int): (s: Shape) {   --~ error: no outputs satisfy `one` and `other`
-    ensure one: s = Shape::Circle(x)   --~ info: conflicts with `other`
-    ensure other: s is Shape::Circle(_) and s != Shape::Circle(x)   --~ info: conflicts with `one`
+    ensure one: s = Shape::Circle(x)
+    ensure other: s is Shape::Circle(_) and s != Shape::Circle(x)
 }
 
 -- A variable of an abstract type: the values would depend on its
@@ -36,8 +36,8 @@ proc same_variant(x: Int): (s: Shape) {   --~ error: no outputs satisfy `one` an
 type Token
 
 proc abstract(t: Token, u: Token): (s: Shape) {   --~ error: no outputs satisfy `round` and `square`
-    ensure round: s is Shape::Circle(_) and t = u   --~ info: conflicts with `square`
-    ensure square: s is Shape::Square(_)   --~ info: conflicts with `round`
+    ensure round: s is Shape::Circle(_) and t = u
+    ensure square: s is Shape::Square(_)
 }
 
 -- An output of a pattern type over an enumeration.
@@ -45,7 +45,7 @@ type Roundish = shape: Shape where invariant: shape is Shape::Circle(_) | Shape:
 
 proc patterned(): (s: Roundish) {   --~ error: no outputs satisfy `round` and `boxy`
     ensure round: s is Shape::Circle(_)   --~ info: `round` forces s is Shape::Circle(_), but `boxy` forces s is Shape::Rect(_, _)
-    ensure boxy: s is Shape::Rect(_, _)   --~ info: conflicts with `round`
+    ensure boxy: s is Shape::Rect(_, _)
 }
 -- A generic enumeration: its constructors and selectors take the type's
 -- arguments.
@@ -53,6 +53,6 @@ enum Opt<T> { Nothing, Just(T) }
 
 proc generic(): (g: Opt<Int>) {   --~ error: no outputs satisfy `one` and `two`
     ensure one: g is Opt::Just(_)   --~ info: `one` forces g is Opt::Just(_), but `two` forces g = Opt::Nothing
-    ensure two: not (g is Opt::Just(_))   --~ info: conflicts with `one`
+    ensure two: not (g is Opt::Just(_))
 }
 --@ exit: 1

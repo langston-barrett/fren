@@ -9,18 +9,6 @@ error[F0601]: `c` is not realizable
           no outputs satisfy `big` and `small`
   = help: weaken one of them, or add an `assume` that rules this input out
 
-note: conflicts with `small`
- --> test/cli/results/f0601_unrealizable.fren:3:12
-  |
-3 |     ensure big: y > x
-  |            ^^^
-
-note: conflicts with `big`
- --> test/cli/results/f0601_unrealizable.fren:4:12
-  |
-4 |     ensure small: y < 0
-  |            ^^^^^
-
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0601`.

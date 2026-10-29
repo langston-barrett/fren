@@ -53,7 +53,7 @@ tested lang::boolean_block: "src/FrenTest/BooleanSubsets.lean"
 tested lang::clause_leaf_path: "src/FrenTest/NamedPredicateExpansion.lean"
 tested lang::clause_partition: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/CoverMembers.lean"
 tested lang::distributed_guard: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/CoverMembers.lean"
-tested lang::equivalence_branches: "src/FrenTest/BranchForcing.lean"
+tested lang::equivalence_branches: "src/FrenTest/BranchForcing.lean", "test/ui/checks/quantified_iff_definition.fren"
 tested lang::equivalence_three: "src/FrenTest/BooleanSubsets.lean"
 tested lang::exactly_one_branch: "src/FrenTest/BranchForcing.lean"
 tested lang::exactly_one_reach: "src/FrenTest/BooleanSubsets.lean", "src/FrenTest/BooleanModels.lean"
@@ -73,6 +73,9 @@ tested lang::subset_membership: "src/FrenTest/BooleanSubsets.lean", "src/FrenTes
 tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
 tested lang::varying_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
+
+tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
+tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"
 
 -- The evidence for each of Fren's components, and the converse of the
 -- `tested` claims over the tests. Every requirement must be traced somehow:
