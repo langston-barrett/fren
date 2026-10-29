@@ -1,4 +1,4 @@
--- fren-covers: lang::match_vector, lang::match_vector_coverage
+-- fren-covers: lang::match_vector, lang::match_vector_coverage, lang::match_namespace
 import Fren
 
 open scoped Fren.Lang
@@ -38,3 +38,8 @@ def vectorCoverageConforms : Bool := Id.run do
   return true
 
 #guard vectorCoverageConforms
+
+#fren_md "../../test/ui/lang/multi_match_names.fren"
+#guard !Fren.Core.identifierAccepted (Fren.Core.matchVectorPath.toString (escape := false))
+example : select .A true = 0 := by decide
+example : select .B false = 1 := by decide

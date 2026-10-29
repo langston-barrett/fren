@@ -2418,7 +2418,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       | .error (_, msg) => throw s!"the evaluator rejects a multi-match accepted by the elaborator: {msg.headline}"
     let u? := if exhaustive then none else some (unspecifiedFn ty)
     if let some u := u? then modify fun s => { s with spec.funs := s.spec.funs.insert u (#[], ty) }
-    return (.match (.ctor `_fren_match_arguments 0 (values.map (·.1))) out span.start
+    return (.match (.ctor Fren.Core.matchVectorPath 0 (values.map (·.1))) out span.start
       (arms.map fun (ps, _, _) => ps[0]!.span.start) u? (if isTable then some pairs else none), ty)
   | .table span rows => do
     let mut out := #[]

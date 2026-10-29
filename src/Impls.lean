@@ -78,6 +78,7 @@ tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"
 
 -- Multi-column matching is checked against actual frontend programs and all Boolean vector worlds.
+tested lang::match_namespace: "test/ui/lang/multi_match_names.fren", "src/FrenTest/LambdaMatch.lean"
 tested lang::match_vector: "test/ui/lang/lambda_match.fren", "src/FrenTest/LambdaMatch.lean", "src/FrenTestMain.lean"
 tested lang::match_vector_coverage: "test/ui/lang/multi_match_errors.fren", "src/FrenTest/LambdaMatch.lean"
 

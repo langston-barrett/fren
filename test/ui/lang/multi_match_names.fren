@@ -1,0 +1,12 @@
+-- fren-covers: lang::match_namespace
+set_option fren.lint.non_camel_case_types "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+-- This legal type name formerly captured the internal matrix carrier.
+pub enum _fren_match_arguments { A, B }
+pub fn select(x: _fren_match_arguments, flag?): Int := match x, flag? {
+    _fren_match_arguments::A, _ => 0,
+    _fren_match_arguments::B, _ => 1,
+}
+expect first: select(_fren_match_arguments::A, true) = 0
+expect second: select(_fren_match_arguments::B, false) = 1
