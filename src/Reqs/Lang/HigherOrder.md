@@ -496,6 +496,23 @@ pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>):
 }
 ```
 
+The internal matrix carrier has a name outside the source identifier
+grammar. A legal user type, module or constructor name must never capture
+that carrier or change coverage, including names that resemble generated
+implementation names. The following model quantifies over actual source
+identifier strings, including `_fren_match_arguments`, which is a legal
+user declaration rather than a reserved implementation namespace.
+
+```fren
+pub proc match_namespace(user_type: Id): (det distinct?) {
+    assume source_identifier: user_type.matches?("[A-Za-z_][A-Za-z0-9_']*")
+    out distinct? := user_type != "#match_arguments"
+
+    expect no_capture: distinct?
+    cover implementation_like_name: user_type = "_fren_match_arguments"
+}
+```
+
 Rewriting lints must preserve the closure role and the implicit function
 parameters. A rewrite that only replaces a match by a value expression
 cannot be applied to an implicit-argument match: without a valid closure
@@ -524,4 +541,5 @@ end then checks, as the `fren` command checks every procedure:
 #fren_check closure_capture
 #fren_check match_vector
 #fren_check match_vector_coverage
+#fren_check match_namespace
 ```
