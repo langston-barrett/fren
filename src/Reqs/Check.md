@@ -662,6 +662,25 @@ never presented as the unconditional core of the original disjunction.
 For equivalence the alternatives are exactly the conjunction of positive
 members and the conjunction of negative members, including binary `iff`.
 
+Branch diagnostics describe the required truth values explicitly. A binary
+`iff` has the cases “both operands are true” and “both operands are false”;
+a larger equivalence says “all operands are true” or “all operands are
+false”. Bare “all hold” and “none hold” leave their subject unclear.
+Explain once that an equivalence requires these matching truth values.
+Each case keeps the reported input, assumptions, definitions and calls;
+the case's other guarantees are named separately. If no other guarantee
+is needed to exclude the case, say so instead of referring to “the fixed
+hypotheses alone” or an empty “conditional core”.
+
+At an operand's source location, state the value required by that case and
+the opposite value imposed by the input or the named other guarantees.
+Retain the actual source expression and named member identity. For example,
+the false case of `retry? iff eligible?` is impossible when the reported
+input makes `eligible?` true; explain that this case requires `eligible?`
+false but the input makes it true. Do not describe an impossible case as
+forcing arbitrary outputs. These wording changes preserve the existing
+queries, budgets, cores, source ranges and verdicts.
+
 The following finite interpretation defines deletion-minimal conditional
 cores using actual assignments (`Choice`) and a relation giving each
 candidate constraint's satisfying assignments. `base` is the pinned
