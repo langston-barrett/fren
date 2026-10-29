@@ -13,6 +13,14 @@ map            := IDENT ":=" TERM
 Implementations exist only in Lean; the [`fren` command](Cli.md) rejects
 them.
 
+An implementation's mapped terms and quantified statements must be fully
+elaborated before they leave their elaboration context. This includes the
+statement that no binder values meet its assumptions, used to check vacuity:
+its binder types and polymorphic list or collection operations must retain
+their resolved universe levels when that statement is later sent to the
+solver. Written proofs over Lean lists and interpreted abstract types do
+not permit stale metavariables or a panic during the vacuity check.
+
 ## Example
 
 For the `thermostat` of the [Language overview](Lang/Overview.md), with this
