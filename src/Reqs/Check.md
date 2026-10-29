@@ -666,6 +666,8 @@ minimal core, but do not reuse its input pins to justify any supplementary
 forced value, operand polarity, or branch elimination. A generic repeated
 “conflicts with” note is not a substitute for an additional proved property.
 If no additional general property is proved, emit no supplementary note.
+An empty collection of alternatives is not by itself a proof that a
+guarded owner is impossible; do not emit a vacuous all-branches heading.
 
 For realizability, the general base consists of the procedure's assumptions
 and call facts, with definitions substituted just as in the primary query.
@@ -686,7 +688,11 @@ other named premises. Only then can an unsatisfiability proof with the
 alternative establish its impossibility in all models of those premises.
 Each side used for a forcing comparison must itself have a model. A
 premise set with no model proves no forcing fact for diagnostics. Unknown
-answers establish nothing and produce no claim. These queries share the
+answers establish nothing and produce no claim. An inexact bounded
+enumeration can still provide its primary counterexample or witness, but
+cannot establish an unqualified all-model relationship; omit these
+supplementary relationships unless its whole model space was exhausted.
+These queries share the
 same interpretation and use no value chosen from a counterexample as an
 assumption. Only owners in the primary minimized core are inspected, and
 the examples limit still counts groups. A selected group adds one shared
