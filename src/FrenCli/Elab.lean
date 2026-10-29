@@ -5936,20 +5936,55 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
     tables := tables ++ mergeReachTables tbl
   return (props, indexes, tables)
 
+/-- Written identity of a split clause. Synthetic guard/let nodes retain
+an enclosing block's span, so that span cannot stand for their new body. -/
+partial def Expr.clauseWritten (src : Array Char) (e : Expr) : String :=
+  match e with
+  | .when _ negative condition body =>
+    (if negative then "unless " else "when ") ++
+      Fren.Core.textOf src (toRange (condition.writtenSpan src)) ++ ", (" ++ body.clauseWritten src ++ ")"
+  | .«let» _ defs body isWhere =>
+    let bindings := defs.map fun (name, _, value) =>
+      Fren.Core.textOf src { start := name.span.start, stop := value.span.stop }
+    (if isWhere then "where{" else "let{") ++ String.intercalate "," bindings.toList ++
+      "}in(" ++ body.clauseWritten src ++ ")"
+  | _ => Fren.Core.textOf src (toRange (e.writtenSpan src))
+
+/-- End of the actual written member, excluding enclosing synthetic wrappers. -/
+partial def Expr.clauseWrittenStop (label : Span) (e : Expr) : Nat :=
+  match e with
+  | .when sp _ _ body | .«let» sp _ body _ =>
+    max (if sp.start >= label.stop then sp.stop else 0) (body.clauseWrittenStop label)
+  | _ => e.span.stop
+
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
 constraints. -/
-def lintDuplicateConstraints (members : Array Member) : M Unit := do
+def lintDuplicateConstraints (members writtenMembers : Array Member) : M Unit := do
   let src := (← get).src
+  let writtenLabels := writtenMembers.filterMap fun | .prop _ name _ => some name.span | _ => none
   -- Cover goals are compared with each other, and constraints with each other.
   let all := members.filterMap fun | .prop k x e => some (k.core, x, e) | _ => none
   for constraints in #[all.filter (·.1 != .cover), all.filter (·.1 == .cover)] do
-    for (i, j) in Fren.Core.repeatedConstraints (← constraints.mapM fun (_, _, e) => srcAt (e.writtenSpan src)) do
+    for (i, j) in Fren.Core.repeatedConstraints (constraints.map fun (_, _, e) => e.clauseWritten src) do
       let (k, x, e) := constraints[i]!
       let (k', x', _) := constraints[j]!
       let msg := Fren.Core.duplicateConstraintMsg k' k x'.name
       if (Fren.Core.duplicateConstraint k' k true).2 then
-        let stop := withLineComment src (Fren.Core.withParens src (toRange (e.writtenSpan src))).stop
-        lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := wordStart src x.span.start, stop }, "")]
+        if !writtenLabels.contains x.span then
+          -- Only a written label gives a removable member range. Never
+          -- delete a generated clause's entire shared parent expression.
+          let mut colon := x.span.stop
+          while src[colon]?.any Char.isWhitespace do colon := colon + 1
+          if src[colon]? == some ':' then
+            let mut stop := e.clauseWrittenStop x.span
+            while src[stop]?.any (fun c => c == ' ' || c == '\t') do stop := stop + 1
+            if src[stop]? == some ',' then stop := stop + 1
+            stop := withLineComment src stop
+            lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := x.span.start, stop }, "")]
+          else lint .duplicateConstraint x.span msg
+        else
+          let stop := withLineComment src (Fren.Core.withParens src (toRange (e.writtenSpan src))).stop
+          lintEdits .duplicateConstraint x.span msg #[(Fren.Core.deletionRange src { start := wordStart src x.span.start, stop }, "")]
       else lint .duplicateConstraint x.span msg
 
 /-- `constant_output` and `definable_output` (`lint::output_lints`), of a
@@ -6250,7 +6285,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
         tables := tables ++ (← takeTables).map (fun (sp, q, g) => (p.name, Fren.Core.IndexPlace.prop, sp, q, g))
 
   lintManualNat (module ++ n) members
-  lintDuplicateConstraints members
+  lintDuplicateConstraints members body
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
   lintOutputs lcx members vars
   lintTrivialCover lcx members

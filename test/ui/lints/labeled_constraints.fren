@@ -1,0 +1,35 @@
+-- fren-covers: lint::labelled_clause_identity
+-- Distinct guarded members must retain their own written expressions.
+proc bounds(x: Nat, y: Nat): (z: Int) {
+    ensure when x > 0, and {
+        first: z >= x,
+        second: z >= 2 * y,
+        third: z <= x + 2 * y + 100,
+    }
+}
+
+-- Written predicate calls with different arguments stay different.
+fn nonnegative?(n: Int) := and { bound: n >= 0 }
+proc predicates(x: Nat, y: Nat) {
+    expect and { left: nonnegative?(x), right: nonnegative?(y) }
+}
+
+-- Different wrappers are part of each member's written identity.
+proc guards(x: Int, y: Int) {
+    expect and {
+        positive: when x > 0, x != x + 1,
+        negative: unless x > 0, x != x + 1,
+        bound: let n := x in n != n + 1,
+        other_bound: let n := y in n != n + 1,
+    }
+}
+
+-- A genuinely repeated member still names the first occurrence.
+proc repeated(x: Nat): (y: Int) {
+    ensure when x > 0, and {
+        first: y >= x,  --~ warning: `repeated::first` is redundant
+        copy: y >= x,  --~ warning: this is written the same as `first`
+        --~^ warning: `repeated::copy` is redundant
+        upper: y <= x + 10,
+    }
+}
