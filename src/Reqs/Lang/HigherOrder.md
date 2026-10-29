@@ -30,6 +30,8 @@ first-order formulas that it sees without them.
 ```
 type          := base ["is" pattern] | "fn" "(" type ("," type)* ")" "->" type
 closure       := "|" closure-param ("," closure-param)* "|" expr
+               | "match" "{" match-arm ("," match-arm)* [","] "}"
+match-arm     := pattern ("," pattern)* ["if" expr] "=>" expr
 closure-param := DECL [":" base]
 ```
 
@@ -420,7 +422,7 @@ function parameter is never a variable of a component.
 `match { P => e, ... }` is a closure whose parameters are implicit. It is
 accepted wherever a closure is accepted, with its parameter types and
 arity supplied by the expected function type. For example,
-`map(o, match { Option::Some(x) => x, Option::None => 0 })` does not
+`match { Option::Some(x) => x, Option::None => 0 }` does not
 introduce a name merely to match it. It captures surrounding values as an
 ordinary closure does. It is second-class, has no zero-argument form,
 and cannot stand where a value expression is required (`F0436`). A generic
