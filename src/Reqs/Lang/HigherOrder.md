@@ -486,9 +486,9 @@ pub proc match_vector(
 }
 
 pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>): (det complete?) {
-    out complete? := forall (left? right?), (left?, right?) in first or (left?, right?) in second
-    expect all_worlds: complete? iff (true, true) in first | second and (true, false) in first | second
-        and (false, true) in first | second and (false, false) in first | second
+    out complete? := forall (left? right?: Bool), (left?, right?) in first or (left?, right?) in second
+    expect all_worlds: complete? iff (true, true) in first union second and (true, false) in first union second
+        and (false, true) in first union second and (false, false) in first union second
     expect diagonal_is_incomplete: when first = {(true, true)} and second = {(false, false)}, not complete?
     expect complementary_rows: when first = {(true, true), (true, false)} and second = {(false, true), (false, false)}, complete?
 }

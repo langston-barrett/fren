@@ -554,8 +554,10 @@ declared like a procedure's parameters, `n: Int` or `ready?` for a `Bool`,
 and its *body* `e` is an [expression](Expressions.md) of its result type,
 optionally followed by a [`where` clause](Let.md).
 An uninterpreted function's parameters have types but no names, unless
-it has a contract, and a defined function's all have names, so that the
-body and the contract can mention them. `lang::function_params` states
+it has a contract, and a defined function's normally all have names, so that the
+body and the contract can mention them. An [implicit-argument match](HigherOrder.md#lambda-matches-and-multiple-scrutinees)
+may instead supply its parameters internally: `fn area(Shape): Int := match { ... }`.
+The following rule applies after those parameters are expanded. `lang::function_params` states
 this, from the number of parameters and of those written with a name:
 
 ```fren
@@ -564,7 +566,7 @@ pub proc function_params(
     defined?,            -- written with `:= e`
     contract?,           -- it has a contract: an `assume` or an `ensure` clause
     n_params: Pos,
-    n_named: Nat,        -- parameters written with a name
+    n_named: Nat,        -- named parameters, after implicit match arguments are expanded
 ): (det accepted?) {
     assume counts: n_named <= n_params
 
