@@ -730,6 +730,10 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       return toString (contractBody own (SeqElems.parse body) e)
     let hyps := hyps.map fun (n, f) => (n, expand f)
     let goal := expand goal
+    -- Observe the same unfolded terms in the primary model. Keys retain
+    -- their source identity for modelBool? above.
+    let observations := (observationsOf c).map fun observation =>
+      { observation with formula := expand observation.formula }
     let facts := c.natFacts false ++ c.natFacts true
     let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
     let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
@@ -760,9 +764,9 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let logic := Fren.Core.logic kind (strings || sets) projection quantified
     let options := String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n")
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
-        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? (observationsOf c)) vars hyps goal
+        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel
-      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? (observationsOf c)
+      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations
     return match o with
       | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString || n.toString.startsWith "#member_observation_")
       | o => o
