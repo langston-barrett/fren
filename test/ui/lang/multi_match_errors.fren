@@ -1,4 +1,4 @@
--- fren-covers: lang::match_vector_coverage
+-- fren-covers: lang::match_vector, lang::match_vector_coverage
 set_option fren.lint.dead_code "allow"
 
 fn too_few(left?, right?): Int := match left?, right? {
@@ -63,4 +63,10 @@ pub proc mentions_second_column(): (flag?, value: Int, result: Int) {
         true, n => observe(n),
         false, _ => 0,
     }
+}
+
+pub enum OriginTree { Leaf, Next(OriginTree) }
+pub fn wrong_origin(left: OriginTree, right: OriginTree): Int := match left, right {
+    _, OriginTree::Next(child) => 1 + wrong_origin(child, left),  --~ error: not structurally recursive
+    _, OriginTree::Leaf => 0,
 }

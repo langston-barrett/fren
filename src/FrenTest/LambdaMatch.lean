@@ -6,7 +6,7 @@ open scoped Fren.Lang
 -- Concrete frontend examples and kernel evaluation of generated matches.
 #fren_md "../../test/ui/lang/lambda_match.fren"
 
-example : area (.Square 3) = 12 := by decide
+example : perimeter (.Square 3) = 12 := by decide
 example : first_some Int .none (.some 42) = .some 42 := by decide
 example : triple true false true = 0 := by decide
 example : depth (.Next .Leaf) .Leaf = 1 := by decide
@@ -25,6 +25,8 @@ example {α : Type} [Inhabited α] (left right : Option α) :
 example (flag : Bool) (n offset : Int) :
     captured flag n offset = if flag then n + offset else n - offset := by
   cases flag <;> rfl
+
+example (n : Int) : nested_capture n = n + 5 := by rfl
 
 -- Compare actual vector usefulness against all four concrete worlds.
 -- Each of the nine rectangles is formed from wildcard/true/false in each
