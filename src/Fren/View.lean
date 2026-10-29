@@ -320,11 +320,10 @@ where
   let s ← getState
   let mut items := #[]
   for p in paths do
-    let (c, kinds) ← match s.comps.get? p, s.globals.get? p, s.refinements.get? p with
-      | some c, _, _ => pure (c, Core.CheckedItem.component.kinds)
-      | none, some g, _ => pure (g, (if g.global then Core.CheckedItem.global else .shortGlobal).kinds)
-      | none, none, some r => pure (r, Core.CheckKind.all.filter Core.refinementRuns)
-      | none, none, none => match s.bodies.get? p with
+    let (c, kinds) ← match s.comps.get? p, s.globals.get? p with
+      | some c, _ => pure (c, Core.CheckedItem.component.kinds)
+      | none, some g => pure (g, (if g.global then Core.CheckedItem.global else .shortGlobal).kinds)
+      | none, none => match s.bodies.get? p with
         -- An uninterpreted function's contract has its value as an output.
         | some b => pure (b, (if b.vars.any (·.role == .output) then Core.CheckedItem.contract else .body).kinds)
         | none => continue
@@ -382,7 +381,7 @@ where
   lintInvisible stx
   if stx[1].isNone then
     let l ← getLocal
-    checkAndReport (l.comps ++ l.globals ++ l.refinements ++ l.bodies)
+    checkAndReport (l.comps ++ l.globals ++ l.bodies)
   else
     let r ← resolvePath (← getLocal).currentModule (pathSegs stx[1][0])
     match r with

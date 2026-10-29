@@ -543,9 +543,6 @@ scoped syntax (name := globalBlockCmd) "expect " frenIdent noWs "("
   sepBy(fren_proc_param, ", ", ", ", allowTrailingSep) ")"
   (" : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")")? " { " fren_member* " }" : command
 
-/-- Legacy top-level refinement syntax, retained only for a migration diagnostic. -/
-scoped syntax (name := refineCmd) "refine " frenIdent " : " fren_path ppSpace &"refines " fren_path
-  (" { " sepBy(fren_binding, ", ", ", ", allowTrailingSep) " }")? (" by " Lean.Parser.Tactic.tacticSeq)? : command
 
 
 end Fren.Lang

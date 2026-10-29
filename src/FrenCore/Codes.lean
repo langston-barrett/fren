@@ -2741,37 +2741,33 @@ from the inputs, or constrain it with a guarantee instead:
 proc c(x: Int): (y: Int) { let a: Int := b + x let b: Int := x ensure r: y = a }
 ```
 "# },
-  { code := "F0412", args := none, explanation := r#"Retired code for the removed name-based refinement interface.
+  { code := "F0412", args := none, explanation := r#"A removed code: the name-based refinement interface.
 
-Use `refines c spec(args)` in a global expectation block. Arguments use
-ordinary call arity and type checks; public results match positionally
-and may widen from `Nat` to `Int`. Private `let` values are computed;
-specification `exists` values must become public results. See
-`Reqs/Lang/Refinement`.
+`F0412` belonged to top-level refinement declarations. Every spec now
+writes `refines` members inside expectation blocks, with explicit
+arguments and positional results. A top-level `refine` is an ordinary
+parse error. Nothing reports `F0412`, and the code is not reused.
 "# },
-  { code := "F0413", args := none, explanation := r#"Retired code for unknown names in removed refinement bindings.
+  { code := "F0413", args := none, explanation := r#"A removed code: unknown names in refinement bindings.
 
-Use `refines c spec(args)` in a global expectation block. Arguments use
-ordinary call arity and type checks; public results match positionally
-and may widen from `Nat` to `Int`. Private `let` values are computed;
-specification `exists` values must become public results. See
-`Reqs/Lang/Refinement`.
+`F0413` belonged to top-level refinement declarations. Every spec now
+writes `refines` members inside expectation blocks, with explicit
+arguments and positional results. A top-level `refine` is an ordinary
+parse error. Nothing reports `F0413`, and the code is not reused.
 "# },
-  { code := "F0414", args := none, explanation := r#"Retired code for duplicate removed refinement bindings.
+  { code := "F0414", args := none, explanation := r#"A removed code: duplicate refinement bindings.
 
-Use `refines c spec(args)` in a global expectation block. Arguments use
-ordinary call arity and type checks; public results match positionally
-and may widen from `Nat` to `Int`. Private `let` values are computed;
-specification `exists` values must become public results. See
-`Reqs/Lang/Refinement`.
+`F0414` belonged to top-level refinement declarations. Every spec now
+writes `refines` members inside expectation blocks, with explicit
+arguments and positional results. A top-level `refine` is an ordinary
+parse error. Nothing reports `F0414`, and the code is not reused.
 "# },
-  { code := "F0415", args := none, explanation := r#"Retired code for inaccessible variables in removed refinement bindings.
+  { code := "F0415", args := none, explanation := r#"A removed code: inaccessible variables in refinement bindings.
 
-Use `refines c spec(args)` in a global expectation block. Arguments use
-ordinary call arity and type checks; public results match positionally
-and may widen from `Nat` to `Int`. Private `let` values are computed;
-specification `exists` values must become public results. See
-`Reqs/Lang/Refinement`.
+`F0415` belonged to top-level refinement declarations. Every spec now
+writes `refines` members inside expectation blocks, with explicit
+arguments and positional results. A top-level `refine` is an ordinary
+parse error. Nothing reports `F0415`, and the code is not reused.
 "# },
   { code := "F0432", explanation := r#"A function type as a field's or a payload's type.
 

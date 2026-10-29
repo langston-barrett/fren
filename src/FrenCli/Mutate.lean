@@ -227,7 +227,6 @@ partial def allExprs (items : Array Item) : Array Expr :=
       | .prop _ _ e | .var _ _ _ _ _ (some e) | .define _ e => #[e]
       | .inst _ _ bs .. => bs.filterMap (·.2)
       | _ => #[]
-    | .refine _ _ _ bs => bs.filterMap (·.2)
     | .lintSetting _ _ _ _ _ (some body) => ofItem body
     | _ => #[]
   (items.flatMap ofItem).flatMap sub

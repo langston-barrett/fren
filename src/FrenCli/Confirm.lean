@@ -409,13 +409,11 @@ of `tablePositions`, and the question. -/
 def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat)
     (tablePositions : Array Nat := #[]) : Fren.Core.Comp (String × Fm) :=
   -- The expressions an index or a table can be in: the constraint, the
-  -- definition, the call's bindings or the body that it names, or, in
-  -- a refinement, the binding of the variable that it names.
+  -- definition, the call's bindings or the body that it names.
   let exsOf (n : Name) : Array Ex :=
     (ec.constraints.filter (·.name == n)).map (·.e)
       ++ (ec.defs.filter (·.1 == n)).map (·.2)
       ++ (ec.insts.filter (·.name == n)).flatMap (·.bindings.map (·.2))
-      ++ (ec.bindings.filter (·.1 == n)).map (·.2)
       ++ (ec.body?.filter (·.1 == n)).toArray.map (·.2)
   let atomOf (n : Name) : Fm :=
     match ec.constraints.find? (·.name == n) with

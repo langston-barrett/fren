@@ -23,10 +23,7 @@ its arguments; see [Colour](#colour).
 reports the [evidence](Trace.md) for every procedure of the spec, and scans
 the tests for `fren-covers:` markers that no claim names; it does not run
 the checks. `fren fmt` [formats](Fmt.md) the files, and `fren fix`
-[fixes](Lint.md#fixing-lints) the lints that it can and migrates the
-removed [global behaviour binders](Lang/Global.md#migration) to parameter
-blocks. Migration runs before lint selection and writes nothing if the
-rewritten spec has a static error. `fren eval`
+[fixes](Lint.md#fixing-lints) the lints that it can. `fren eval`
 evaluates a procedure on one behaviour, and `fren quickcheck` tests the
 spec on random behaviours, both without the solver (see [Evaluation and
 testing](Eval.md)). `fren mutate` checks small changes to the spec, and
@@ -62,6 +59,44 @@ installation. It is built by `lake build fren`.
 | `--shard K/N` | `mutate`: check the `K`th of `N` parts of the mutants, counted from 0; see [Samples and shards](Mutate.md#samples-and-shards) |
 | `--list` | `mutate`: list the mutants, and check none |
 | `--color WHEN` | colour the output: `auto` (the default), `always` or `never` |
+
+## Completed syntax migrations
+
+`fren fix` accepts the same language as `fren check`. Completed migration
+syntax has no separate parsing or elaboration path: global behaviour
+binders and top-level `refine` declarations receive ordinary language
+errors. Value quantifiers in short expectations, parameter blocks and
+`refines` members remain part of the language. No file is written when
+its input has a static error, even if other files have fixable lints.
+Lint selection, Markdown preservation and formatting retain their normal
+meaning.
+
+The retired implementation inventory is the global/refinement rewrite
+module, retained declaration source and members, top-level refinement
+AST/parser/elaborators (including the unreachable hosted elaborator),
+legacy refinement evaluation/mutation branches, dedicated migration
+fixtures and promises in the manual. Historical error numbers remain
+reserved, without syntax examples that promise their emission. Ordinary
+lint fixes are outside this retirement.
+
+The transaction domain is the complete input text of all files, represented
+as a sequence of strings. A rejected input preserves that sequence exactly;
+there is no partial write of another file's proposed lint edits.
+
+```fren
+mod cli
+
+pub proc fix_static_errors(
+    original: Seq<String>,
+    proposed: Seq<String>,
+    static_errors: Set<String>,
+): (det written: Seq<String>) {
+    out written := if static_errors = {} then proposed else original
+    expect rejected_input: when static_errors != {}, written = original
+    expect accepted_input: when static_errors = {}, written = proposed
+    expect preserves_file_count: when static_errors != {}, written.len = original.len
+}
+```
 
 ## Input files
 

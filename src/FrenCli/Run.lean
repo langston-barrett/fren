@@ -3,7 +3,6 @@ import FrenCli.Color
 import FrenCli.Enumerate
 import FrenCli.Exit
 import FrenCli.Fmt
-import FrenCli.GlobalMigration
 import FrenCli.MutateRun
 import FrenCli.Quick
 import FrenCli.Same
@@ -650,13 +649,6 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     shown := shown.push msg
   return (results, shown, false)
 
-/-- Whether the result `r` of testing the refinement `c` is about its
-obligation (`Reqs/Lang/Refinement#the-obligation`): of the calls, only
-the call of the concrete procedure, since the abstract procedure's
-calls are hypotheses there. -/
-def refinementKeeps (c : CComp) (r : Fren.Core.CheckResult) : Bool :=
-  Fren.Core.refinementRuns r.kind && (r.kind != .inst || r.prop? == c.insts[0]?.map (·.name))
-
 /-- The SMT-LIB symbols of the evaluator's spec (`Symbols.of`), for
 confirming models (`solveComp`); none if it has none. -/
 def symbolsOf (spec? : Except String Eval.Spec) : Symbols :=
@@ -740,11 +732,10 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   return (markInterpreted prelude c results, refuted, missing?)
 
 /-- Which results of testing `c` `fren check` keeps, for the checks of
-kinds `kinds` set to testing (`Reqs/Check#checking-by-testing`); for a
-refinement, only those about its obligation. -/
-def testedKeeps (c : CComp) (kinds : Array Fren.Core.CheckKind) (refinement : Bool) (r : Fren.Core.CheckResult) : Bool :=
+kinds `kinds` set to testing (`Reqs/Check#checking-by-testing`). -/
+def testedKeeps (c : CComp) (kinds : Array Fren.Core.CheckKind) (r : Fren.Core.CheckResult) : Bool :=
   kinds.contains r.kind && c.tested.covers r && Fren.Core.runOf r.kind true == .byTesting
-    && (!refinement || refinementKeeps c r) && !(c.enumerated.covers r && Fren.Core.Enumeration.enumerable r.kind)
+    && !(c.enumerated.covers r && Fren.Core.Enumeration.enumerable r.kind)
 
 /-- The subject of the messages about `c`, as they show it. -/
 def subjectOf (c : CComp) (global : Bool) : String :=
@@ -757,9 +748,8 @@ def sameCheck (a b : Fren.Core.CheckResult) : Bool :=
 /-- The checks of `c` set to enumeration, enumerated
 (`Reqs/Check#checking-by-enumeration`), those also set to testing tested
 beyond the bound too (`Reqs/Check#enumeration-then-testing`); or the error
-that stopped it. Only the results of the kinds `kinds`, and for a
-refinement those about its obligation, are kept. -/
-def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global refinement : Bool) (kinds : Array Fren.Core.CheckKind) :
+that stopped it. Only the results of the kinds `kinds` are kept. -/
+def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (kinds : Array Fren.Core.CheckKind) :
     Except Msg Fren.Core.Enumeration.Enumerated := do
   let subject := subjectOf c global
   let alone := c.enumerated.minus c.tested
@@ -768,7 +758,7 @@ def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global refinement 
     if !t.any then pure none else some <$> enumerateComp sp ec c kinds subject t testing
   let a? ← run alone false
   let b? ← run both true
-  let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r && (!refinement || refinementKeeps c r)
+  let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r
   return Fren.Core.Enumeration.Enumerated.merge c.enumSize a? b? keep
 
 /-- `f` of each of `xs`, taken in order by at most `jobs` threads at
@@ -802,9 +792,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
-  -- Each procedure, global expectation and refinement (`Reqs/Lang/Refinement`),
+  -- Each procedure and global expectation,
   -- with the checks that run on it.
-  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.refinement, t.body, t.key)
+  let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
   let prelude := Prelude.ofDecls st.prelude
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`).
@@ -824,7 +814,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- checks set to testing; reported below, in order
   -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
   -- output is the same as one at a time.
-  let solve := fun ((c, global, kinds, refinement, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × Bool × String) => do
+  let solve := fun ((c, global, kinds, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × String) => do
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
@@ -841,11 +831,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       | .error _ => none
     -- And those set to enumeration, enumerated (`Reqs/Check#checking-by-enumeration`).
     let enumerated? := if !c.enumerated.any then none else match spec? with
-      | .ok sp => (sp.counterpart? c global).map fun ec => enumerated sp ec c global refinement kinds
+      | .ok sp => (sp.counterpart? c global).map fun ec => enumerated sp ec c global kinds
       | .error _ => none
     return (r, ← dumped.get, tested?, enumerated?)
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
-  for (c, global, kinds, refinement, _, key) in todo, solved in solving do
+  for (c, global, kinds, _, key) in todo, solved in solving do
     let ((results, refuted, missing?), dumped, tested?, enumerated?) ← solved
     IO.print dumped
     if let some msg := missing? then
@@ -862,7 +852,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
-      let (tested, msgs, failed) ← testComp args files sp c ec global (testedKeeps c kinds refinement) prelude (byCheck := true) rep st.vias
+      let (tested, msgs, failed) ← testComp args files sp c ec global (testedKeeps c kinds) prelude (byCheck := true) rep st.vias
       shown := shown ++ msgs
       if failed then internal := internal.push msgs[0]!
       all := all ++ tested
@@ -904,14 +894,12 @@ def quickcheck (args : Args) : IO UInt32 := do
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
   let prelude := Prelude.ofDecls st.prelude
-  for (c, global, refinement) in st.comps.map (·, false, false) ++ st.globals.map (fun g => (g, g.short, false))
-      ++ st.refinements.map (·, false, true) do
+  for (c, global) in st.comps.map (·, false) ++ st.globals.map (fun g => (g, g.short)) do
     let some ec := sp.counterpart? c global
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
-    let keep (r : Fren.Core.CheckResult) := !refinement || refinementKeeps c r
-    let (results, msgs, failed) ← testComp args files sp c ec global keep prelude (vias := st.vias)
+    let (results, msgs, failed) ← testComp args files sp c ec global (fun _ => true) prelude (vias := st.vias)
     shown := shown ++ msgs
     if failed then sevs := sevs.push .error
     all := all ++ results
@@ -1072,21 +1060,7 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     let some src ← readSpec args.paint path | return Fren.Core.fixExit args.diffOnly false false
     srcs := srcs.push src
   let original := srcs
-  -- Behaviour binders are not part of the language. Resolve their callees
-  -- solely for migration, then check the entire rewritten spec before
-  -- committing any edit (including ordinary lint fixes).
-  let (oldFiles, oldState) ← elaborateSources paths srcs args.lints fixing ignored
-  let mut migrated := false
-  for i in [0:paths.size] do
-    if ignored paths[i]! then continue
-    let chars := oldFiles[i]!.2
-    if let .ok (_, items, _, _) := parseText chars then
-      let edits := GlobalMigration.file oldState chars items
-      unless edits.isEmpty do
-        srcs := srcs.set! i (applyFileEdits srcs[i]! chars edits)
-        migrated := true
-  let (files, st) ← if migrated then elaborateSources paths srcs args.lints fixing ignored
-    else pure (oldFiles, oldState)
+  let (files, st) ← elaborateSources paths srcs args.lints fixing ignored
   let errors := st.diags.filter fun d => d.severity == .error && d.lint?.isNone
   if !errors.isEmpty then
     -- No lint is fixed.
@@ -1134,13 +1108,13 @@ def fix (args : Args) (out : Paint) : IO UInt32 := do
     if args.diffOnly then IO.print (Fmt.diff out path src new)
     else
       IO.FS.writeFile path new
-      IO.eprintln <| if n == 0 then s!"{if migrated then "migrated" else "formatted"} {path}"
+      IO.eprintln <| if n == 0 then s!"formatted {path}"
         else s!"fixed {path} ({n} lint{if n == 1 then "" else "s"})"
   printExplainHint (left.map (·.msg))
   return Fren.Core.fixExit args.diffOnly true unchanged
 
 /-- The results of one way of checking (`--by`) the spec's procedures,
-global expectations and refinements, by `Mutate.Todo.key`, as far as they
+global expectations, by `Mutate.Todo.key`, as far as they
 have been needed. -/
 abbrev Baseline := IO.Ref (Std.HashMap String (Array Fren.Core.CheckResult))
 
@@ -1238,7 +1212,7 @@ or splices. Every field is compared (`same_fields%`), so a field added to
   checks that they are not read, by elaborating files after states that
   differ in them (`FrenTestMain`);
 - `comps`, `consts` and `constInts`, which `skipFile?` compares by name;
-- the fields that `skipFile?` splices: `globals`, `refinements`, `bodies`,
+- the fields that `skipFile?` splices: `globals`, `bodies`,
   `diags`, `edits`, `natSums`, `claims` and `applied`, which elaboration
   only extends, or restores to an earlier value, and reads `applied` only
   after the size that it had when it was read; and `defs`, of which only
@@ -1253,7 +1227,7 @@ def sameForLater (a b : State) : Bool :=
     lintReports, useLocs, expectationRemovals, items, usedItems, lintFixes, globalTexts, settings, settingRemovals,
     seenSettings, assumptions, globalReads, trailingCommas, natReports, natKept, itemStart, literals, itemSpan,
     comps, consts, constInts,
-    globals, refinements, bodies, diags, edits, natSums, claims, applied, defs, bound]
+    globals, bodies, diags, edits, natSums, claims, applied, defs, bound]
     && a.bound.size == b.bound.size
     && a.defs.isEqv b.defs (fun (n, ps, r, _) (n', ps', r', _) => n == n' && ps == ps' && r == r')
     && a.itemErrors.isEmpty && b.itemErrors.isEmpty
@@ -1307,7 +1281,7 @@ either, and so does the same:
   constant's, each resolved from a path written in the file, which ends in
   the item's name (`Table.resolvePath`); the latter two are otherwise only
   extended;
-- `globals`, `refinements`, `bodies`, `diags`, `edits`, `natSums`,
+- `globals`, `bodies`, `diags`, `edits`, `natSums`,
   `claims` and `applied` are only extended or restored to an earlier value,
   and `applied` is read after the size that it had when it was read;
 - `defs` is read only as `sameForLater` compares it.
@@ -1321,7 +1295,7 @@ def skipFile? (orig mine orig' : State) (d : Drift) (written : Std.HashSet Strin
   let splice {α} (f : State → Array α) : Array α := f mine ++ (f orig').extract (f orig).size
   return { orig' with consts := ← respliced? orig.consts mine.consts orig'.consts d.consts
                       constInts := ← respliced? orig.constInts mine.constInts orig'.constInts d.constInts
-                      comps := splice (·.comps), globals := splice (·.globals), refinements := splice (·.refinements)
+                      comps := splice (·.comps), globals := splice (·.globals)
                       bodies := splice (·.bodies), diags := splice (·.diags), edits := splice (·.edits)
                       natSums := splice (·.natSums), claims := splice (·.claims), applied := splice (·.applied)
                       defs := splice (·.defs) }
@@ -1404,7 +1378,7 @@ structure Decision where
 
 /-- What the tests of `fren mutate` see of a run. -/
 structure Probe where
-  /-- Checks every procedure, global expectation and refinement of a
+  /-- Checks every procedure and global expectation of a
   mutant, not only those whose fingerprint it changes, and every one of
   their checks, rather than stopping at the first that kills it. -/
   exhaustive : Bool := false
@@ -1486,7 +1460,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
     -- A procedure's checks share the symbols of its spec.
     let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
       (examples := args.examples)
-    let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds t.refinement) else #[]
+    let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
     return (rs ++ tested, missing?.toArray.map (t.comp.span, ·) ++ errors)
@@ -1494,7 +1468,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   let test (_ : State) (_ : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
     -- A body has no checks that testing runs.
-    pure (if t.body then #[] else testing spec? t.comp t.global fun r => !t.refinement || refinementKeeps t.comp r, #[])
+    pure (if t.body then #[] else testing spec? t.comp t.global fun _ => true, #[])
   let prefixes := lowerPrefixes parsed
   let spec? := specOfParsed parsed prefixes
   if let .error e := spec? then

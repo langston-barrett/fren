@@ -1,3 +1,0 @@
---@ args: fix --check --ignore test/cli/fix/migrate_global_ignore.fren
-proc p(x: Int): (det y: Int) { ensure value: y = x }
-expect same: forall (a: p), a.y = a.x

@@ -513,8 +513,6 @@ its lowering (`Reqs/Lang/Items#function-blocks`). -/
   results, which are an error (`F0417`), as `header`, then its block. -/
   | globalBlock (name : Ident) (header : Array Member) (members : Array Member) (close : Span) (spans : Array Span)
       (openStop : Nat)
-  /-- `refine r: c refines a { bindings }` (`Reqs/Lang/Refinement`). -/
-  | refine (name : Ident) (concrete abstract : Array Ident) (bindings : Array (Ident × Option Expr))
   /-- `tested c: "file", ...` or `trusted c: "why"`, with each string's span. -/
   | claim (tested : Bool) (comp : Array Ident) (texts : Array (String × Span))
   /-- `#fren_check [path]` or `#fren_trace`. -/
@@ -1519,25 +1517,6 @@ def typeParams (name : Ident) : P (Array Ident) := do
   discard closeAngle
   return ps
 
-/-- `{ x := e, y, ... }`: the bindings of a call or a refinement. -/
-def bindings : P (Array (Ident × Option Expr)) := do
-  markList
-  discard (expectKw "{")
-  let mut bs := #[]
-  repeat
-    if isKw (← peek) "}" then break
-    markStart
-    let b ← ident
-    if let some eq ← eatKw "=" then
-      err eq.span "F0104" "expected `:=` in a binding, found `=`" (some "expected `:=`")
-        #["note: `=` is equality; a binding is written `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
-    -- Below `when`, which would swallow the following bindings.
-    let e ← if (← eatKw ":=").isSome then some <$> iff else pure none
-    bs := bs.push (b, e)
-    if (← eatKw ",").isNone then break
-  discard (expectKw "}")
-  return bs
-
 /-- A declared name without the `!` of shadowing. -/
 def unbanged (s : String) : String := if s.endsWith "!" then (s.dropEnd 1).toString else s
 
@@ -1905,22 +1884,6 @@ partial def item : P Item := do
       let removal := { span with stop := (← peek).span.start }
       return .lintSetting span { name, span := o.span } value v.span removal (some (← item))
     return .lintSetting span { name, span := o.span } value v.span span none
-  if isKw t "refine" then
-    discard bump
-    let name ← ident
-    discard (expectKw ":")
-    let (concrete, _) ← path false
-    let r ← peek
-    unless isWord r "refines" do fail r "`refines`"
-    discard bump
-    let (abstract, _) ← path false
-    let bs ← if isKw (← peek) "{" then bindings else pure #[]
-    let b ← peek
-    if isWord b "by" then
-      err b.span "F0112" "Lean code is not supported in .fren files" (some "a proof needs Lean")
-        #["note: a refinement is proved with `by` only in Lean; the `fren` command checks it with the solver, or by testing",
-          "help: move it to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
-    return .refine name concrete abstract bs
   if isKw t "tested" || isKw t "trusted" then
     discard bump
     let (comp, _) ← path false
