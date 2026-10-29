@@ -242,6 +242,55 @@ with a `panic!`, which prints and carries on: what it wrote is reported.
 The failures are reported sorted, so that their order does not depend on
 which job finished first.
 
+## Learning from review
+
+Review findings are evidence about the requirements and their connection
+to the implementation, as well as about the code. Revisit that connection
+as findings arrive, when a fix crosses another implementation path, and
+when the same kind of failure recurs. Do not wait until the final review.
+
+For each substantive finding, distinguish the following causes; a finding
+can have more than one:
+
+- **Missing rule:** the requirements allow the wrong behavior or leave a
+  choice ambiguous. Specify the domain, assumptions, allowed outcomes and
+  boundary cases before changing the implementation.
+- **Model abstraction:** the rule is stated, but its executable model
+  omits what failed. Strengthen the model with the relevant values,
+  propositions, behaviors, interpretations or identities and their
+  relationships. A collection of expected Boolean answers is not a model
+  of those relationships.
+- **Implementation conformance:** the rule and model are adequate, but
+  the implementation path is not checked against them. Add a regression
+  through the actual parser, lowering, query construction or evidence
+  adapter that violated the rule. Checking a second copy of the model
+  does not establish that connection.
+
+Use the smallest counterexample that distinguishes the intended semantics
+from the faulty implementation, and a valid neighboring case when a fix
+could reject too much. For example, two individually satisfiable cover
+members can have no common witness; a constrained record field can make
+two records equal although their unrestricted base values differ; a proof
+of one proposition must not establish another through changed metadata.
+Test actual check identities and verdicts where identity matters, rather
+than relying on unchanged summary totals.
+
+Run shared semantic cases through both front ends and every applicable
+evidence method. Keep the interpretation and witness fixed when the rule
+requires them to be shared. Exercise the boundaries introduced by the
+change: empty and singleton groups, nested values, defined outputs,
+imported declarations, unknown results and exhausted budgets, as relevant.
+An unsupported method must say so; silently omitting a check is not
+agreement. Record the requirement and conformance test strengthened by a
+review fix in its change description.
+
+Recurring difficulty stating these relationships can motivate a language
+feature. Propose it with concrete cases that are awkward or impossible
+today, the intended syntax and semantics, counterexamples it must reject,
+and its effects on decidability and evidence. Distinguish a limitation of
+the language from a missing model or test. A proposal does not authorize
+expanding the implementation's scope automatically.
+
 ## Coverage
 
 Every declaration of Fren's code must be run by `lake test`, or say why it

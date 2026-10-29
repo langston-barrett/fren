@@ -1,31 +1,47 @@
--- Hutton's razor: a minimal language of integers and addition (see Graham
+-- Hutton's razor with one variable (see Graham
 -- Hutton, "Programming language semantics: it's easy as 1, 2, 3", JFP 2023).
 -- Constant folding replaces `Add(Val(x), Val(y))` with `Val(x + y)`, and keeps
--- every expression's value.
+-- every expression's value in every environment. See arith-reqs.fren.
 mod arith
 
 -- An expression.
-pub enum Expr { Val(Int), Add(Expr, Expr) }
+pub enum Expr { Val(Int), Var, Add(Expr, Expr) }
 
 -- The value of an expression. Checks use one step of its equations.
 -- No contract is needed for the folding proof.
-pub fn eval(e: Expr): Int := match e {
+pub fn eval(e: Expr, x: Int): Int := match e {
     Expr::Val(n) => n,
-    Expr::Add(a, b) => eval(a) + eval(b),
+    Expr::Var => x,
+    Expr::Add(a, b) => eval(a, x) + eval(b, x),
 }
 
 -- Recursively fold `Add(Val(n), Val(m))` to `Val(n + m)`.
-pub fn fold(e: Expr): (r: Expr) {
+-- rho is only forwarded for the scalar Hoare proof; folding never reads it.
+-- Arith.lean proves that the same folded syntax works for every environment.
+pub fn fold(e: Expr, rho: Int): (r: Expr) {
     out r := match e {
         Expr::Val(n) => Expr::Val(n),
-        Expr::Add(a, b) => match fold(a) {
-            Expr::Val(x) => match fold(b) {
+        Expr::Var => Expr::Var,
+        Expr::Add(a, b) => match fold(a, rho) {
+            Expr::Val(x) => match fold(b, rho) {
                 Expr::Val(y) => Expr::Val(x + y),
                 fb => Expr::Add(Expr::Val(x), fb),
             },
-            fa => Expr::Add(fa, fold(b)),
+            fa => Expr::Add(fa, fold(b, rho)),
         },
     }
     -- Folding keeps the value.
-    ensure keeps_value: eval(r) = eval(e)
+    ensure keeps_value: eval(r, rho) = eval(e, rho)
+}
+
+-- Occurrence is a property of syntax, independent of the environment.
+pub fn uses_var?(e: Expr) := match e {
+    Expr::Val(_) => false,
+    Expr::Var => true,
+    Expr::Add(a, b) => uses_var?(a) or uses_var?(b),
+}
+
+proc environments(x: Int, y: Int, n: Int) {
+    expect variable_changes: eval(Expr::Var, x) - eval(Expr::Var, y) = x - y
+    expect literal_fixed: eval(Expr::Val(n), x) = eval(Expr::Val(n), y)
 }
