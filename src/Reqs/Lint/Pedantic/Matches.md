@@ -517,3 +517,93 @@ pub proc manual_table(
         chain_value(holds, branches, z) = z
 }
 ```
+
+## Matches that could be tables
+
+`match_could_be_table` fires on a `match` of two or more arms without
+[guards](../../Lang/Expressions.md#matches), whose arms the static rules
+accept as those of a [table over a
+scrutinee](../../Lang/Expressions.md#tables-over-a-scrutinee): no two of
+them [overlap](../../Lang/Patterns.md#overlap), as `Pat.overlapWit?`
+decides, from the patterns, nested and range ones among them, but for a
+last arm `_`, the otherwise. Such a `match` does not depend on the order
+of its arms, and a table says so and has it checked. The fix writes
+`table` in place of `match`, which keeps the arms in order: the table
+means the `match` with the same scrutinee and arms, so the fix keeps the
+meaning. It is `pedantic`, `allow`, since a `match` with disjoint arms is
+fine as it is; Clippy has no such lint. A `match` of one arm is left to
+[`trivial_match`](../Complexity/Matches.md#trivial-matches).
+
+`lint::match_could_be_table` states when it fires, over the [model of
+patterns](../Style/Matches.md#patterns-as-the-lints-see-them), where two
+patterns may overlap where their bounds meet, and for variants where
+their tags are the same, and checks that where it fires, no value of the
+scrutinee matches two arms but through the otherwise:
+
+```fren
+pub fn leaf_min(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(lo, _) => lo, _ => Bound::Open }
+
+pub fn leaf_max(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(_, hi) => hi, _ => Bound::Open }
+
+pub fn integers_pattern?(p: Pat) := p is Pat::Lit(_) | Pat::Range(_, _)
+
+pub fn variants_pattern?(p: Pat) := p is Pat::Tag(_) | Pat::Variant(_, _, _)
+
+pub fn pattern_tag(p: Pat): Int := match p { Pat::Tag(t) => t, Pat::Variant(t, _, _) => t, _ => -1 }
+
+pub fn leaves_overlap?(l: Leaf, m: Leaf) := reaches?(leaf_min(l), leaf_max(m)) and reaches?(leaf_min(m), leaf_max(l))
+
+-- Whether two patterns may match a value in common.
+pub fn overlap?(p: Pat, q: Pat) := (p is Pat::Wild | Pat::Binder(_, _)) or (q is Pat::Wild | Pat::Binder(_, _))
+    or (integers_pattern?(p) and integers_pattern?(q) and reaches?(lower_of(p), upper_of(q))
+    and reaches?(lower_of(q), upper_of(p)))
+    or (variants_pattern?(p) and variants_pattern?(q) and pattern_tag(p) = pattern_tag(q)
+    and leaves_overlap?(first_leaf(p), first_leaf(q)) and leaves_overlap?(second_leaf(p), second_leaf(q)))
+
+pub proc match_could_be_table(
+    arms: Seq<Pat>,          -- the patterns of the arms, in order
+    guarded?,                -- some arm has a guard
+    x: Val,                  -- a value of the scrutinee
+): (det fires?) {
+    assume size: 1 <= arms.len <= 4
+    -- The patterns are of one type: of integers, or of an enumeration.
+    assume typed: not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)]))
+        and (exists (s: Slot), pos(s) < arms.len and variants_pattern?(arms[pos(s)])))
+
+    ensure rule: fires? iff (arms.len >= 2 and not guarded?
+        and (forall (s r: Slot), when pos(s) < pos(r) < arms.len and overlap?(arms[pos(s)], arms[pos(r)]),
+        pos(r) = arms.len - 1 and arms[pos(r)] = Pat::Wild))
+
+    -- No value matches two arms, but where one is the otherwise.
+    expect disjoint: forall (s r: Slot), when fires? and pos(s) < pos(r) and slot_matches?(arms, s, x)
+        and slot_matches?(arms, r, x),
+        pos(r) = arms.len - 1 and arms[pos(r)] = Pat::Wild
+}
+```
+
+The refinements below check the fix on one example, with nested and
+range patterns:
+
+```fren
+pub enum Sensor { Reading(Int), Fault(Int), Idle }
+
+set_option fren.lint.match_could_be_table "allow" in
+pub proc match_could_be_table_written(s: Sensor): (det v: Int) {
+    out v := match s { Sensor::Reading(..=0) => 0, Sensor::Reading(1..) => 1, Sensor::Fault(_) => 2, _ => 3 }
+}
+
+pub proc match_could_be_table_fixed(s: Sensor): (det v: Int) {
+    out v := table s { Sensor::Reading(..=0) => 0, Sensor::Reading(1..) => 1, Sensor::Fault(_) => 2, _ => 3 }
+}
+
+expect match_could_be_table_sound(s: lint::Sensor) {
+    use lint
+    call concrete := match_could_be_table_fixed(s)
+    refines concrete match_could_be_table_written(s)
+}
+expect match_could_be_table_complete(s: lint::Sensor) {
+    use lint
+    call concrete := match_could_be_table_written(s)
+    refines concrete match_could_be_table_fixed(s)
+}
+```

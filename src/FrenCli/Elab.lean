@@ -2865,6 +2865,18 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
   unless Fren.Core.wildcardSingle covered.size do return
   lintFix .wildcardSingleVariant arms[w]!.1.span (tm (Fren.Core.wildcardMsg (d.path ++ d.ctors[covered[0]!]!.1) named[0]!)) unless?
 
+/-- `match_could_be_table` on the `match` `e`, whose arms' patterns are
+`pats`, on a value of `pty` (`lint::match_could_be_table`): the fix writes
+`table` in place of the keyword. -/
+def lintCouldBeTable (e : Expr) (sigs : Fren.Core.Sigs) (pty : Fren.Core.PatTy) (pats : Array Fren.Core.Pat) : M Unit := do
+  let .match span _ arms false := e | return
+  let guarded := arms.map (·.2.1.isSome)
+  unless Fren.Core.matchCouldBeTable arms.size (guarded.any id) (Fren.Core.acceptedAsTable sigs pty pats guarded) do return
+  let keyword : Fren.Core.Range := { start := span.start, stop := span.start + "match".length }
+  unless (← srcAt { start := keyword.start, stop := keyword.stop }) == "match" do return
+  let msg := Fren.Core.matchCouldBeTableMsg
+  lintFix .matchCouldBeTable span { msg with fixes := msg.fixes.map ({ · with range? := some keyword }) }
+
 /-! ## Patterns -/
 
 /-- A binder of a pattern, with the type of its value, and its value, read
@@ -5091,7 +5103,9 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     | .error (some (i, none), msg) => err arms[i]!.1.span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
     | .error (none, msg) => err span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
   let implicitArg := match scrutinee with | .path _ #[n] => n.name.startsWith "#match" | _ => false
-  if cx.noteIndexes && many?.isNone && !implicitArg then lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
+  if cx.noteIndexes && many?.isNone && !implicitArg then
+    lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
+    lintCouldBeTable e sigs pty pats
   let mut bodies : Array String := #[]
   let mut ty? : Option Ty := none
   let mut waiting : Array (Nat × ExprCtx × Expr) := #[]

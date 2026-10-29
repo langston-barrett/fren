@@ -1,4 +1,4 @@
---@ args: fix --check -W pedantic -A definable_output -A many_single_char_names
+--@ args: fix --check -W pedantic -A definable_output -A match_could_be_table -A many_single_char_names
 -- `fren fix` writes a chain of `if` as a `match`, and `x := x` as `x`.
 enum Mode { Heat, Cool, Off }
 

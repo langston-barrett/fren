@@ -1,0 +1,34 @@
+-- `match_could_be_table`, in both front ends.
+-- fren-covers: lint::match_could_be_table
+set_option fren.lint.match_could_be_table "warn"
+
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+proc tables(s: Shape, r: Reply, k: Int, b?): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+    det h: Int,
+) {
+    out a := match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, _ => 0 }
+    --~^ warning: the arms of this `match` are disjoint, so it can be a table
+    out b := match r { Reply::Ok(Shape::Circle(_)) => 1, Reply::Ok(_) => 2, Reply::Err(_) => 0 }
+    out c := match r { Reply::Ok(Shape::Circle(_)) => 1, Reply::Ok(Shape::Empty) => 2, _ => 0 }
+    --~^ warning: the arms of this `match` are disjoint, so it can be a table
+    out d := match k { ..=-1 => -1, 0 => 0, 1.. => 1 }
+    --~^ warning: the arms of this `match` are disjoint, so it can be a table
+    -- Overlapping ranges.
+    out e := match k { 0..=5 => 1, 3..=9 => 2, _ => 0 }
+    --~^ warning: this range overlaps `0..=5`, an earlier arm's pattern
+    -- A guard.
+    out f := match s { Shape::Circle(x) if x > 0 => 1, Shape::Square(_) => 2, _ => 0 }
+    -- Already a table, and a `match` of one arm.
+    out g := table s { Shape::Circle(_) => 1, _ => 0 }
+    out h := match b? { true => 1, false => 0 }
+    --~^ warning: the arms of this `match` are disjoint, so it can be a table
+}

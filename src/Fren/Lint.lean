@@ -654,6 +654,11 @@ register_option fren.lint.trivial_quantifier : String := {
   descr := "the level of the lint `trivial_quantifier`: allow, expect, warn, deny or forbid"
 }
 
+register_option fren.lint.match_could_be_table : String := {
+  defValue := "allow"
+  descr := "the level of the lint `match_could_be_table`: allow, expect, warn, deny or forbid"
+}
+
 register_option fren.lint.unused : String := {
   defValue := "warn"
   descr := "the level of each lint of the group `unused`: allow, expect, warn, deny or forbid"

@@ -2642,6 +2642,16 @@ tested lint::unused_bound: "test/ui/lints/let_quantifiers.fren"
 tested lint::unused_definitions: "test/ui/lints/let_quantifiers.fren"
 -- keep-sorted end
 
+-- `match_could_be_table` asks whether the static rules accept the arms as a
+-- table's (`checkTableArms`), which decides overlap with `Pat.overlapWit?`:
+-- that is proved for patterns of one value (`lang::pattern_overlap`), not
+-- for the lints' model, whose variants have two, so the agreement of the
+-- two front ends' reading of the arms with the model is tested.
+tested lint::match_could_be_table: "test/ui/lints/match_could_be_table.fren",
+  "test/cli/lints/pedantic/f0809_match_could_be_table.fren", "test/cli/fix/match_could_be_table.fren"
+trusted lint::match_could_be_table_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::match_could_be_table_fixed: "a model of an expression, checked by the refinements in its section"
+
 -- The models of the expressions that the refinements of these lints compare.
 -- keep-sorted start
 trusted lint::let_and_return_fixed: "a model of an expression, checked by the refinements in its section"

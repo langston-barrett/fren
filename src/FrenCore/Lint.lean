@@ -177,6 +177,7 @@ inductive Lint where
   | redundantLocals
   | manualForall
   | trivialQuantifier
+  | matchCouldBeTable
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
@@ -207,7 +208,8 @@ def Lint.all : Array Lint :=
     .manualRecordUpdate, .needlessUpdate, .trivialCover, .manualPatternTest,
     .collapsibleMatch, .manualRangePatterns, .wildcardInOrPatterns, .matchOverlappingArm, .unnestedOrPatterns,
     .matchBool, .manualTable,
-    .letAndReturn, .redundantLocals, .manualForall, .trivialQuantifier]
+    .letAndReturn, .redundantLocals, .manualForall, .trivialQuantifier,
+    .matchCouldBeTable]
 
 def Lint.name : Lint → String
   | .unusedImports => "unused_imports"
@@ -336,6 +338,7 @@ def Lint.name : Lint → String
   | .redundantLocals => "redundant_locals"
   | .manualForall => "manual_forall"
   | .trivialQuantifier => "trivial_quantifier"
+  | .matchCouldBeTable => "match_could_be_table"
 
 def Lint.code : Lint → String
   | .unusedImports => "F0701"
@@ -466,6 +469,7 @@ def Lint.code : Lint → String
   | .redundantLocals => "F0825"
   | .manualForall => "F0826"
   | .trivialQuantifier => "F0827"
+  | .matchCouldBeTable => "F0809"
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -534,7 +538,8 @@ def Lint.group : Lint → Group
   | .singleCallFn => .restriction
   | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
   | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
-  | .branchesSharingCode | .manualOrdering | .unnestedOrPatterns | .matchBool | .manualTable => .pedantic
+  | .branchesSharingCode | .manualOrdering | .unnestedOrPatterns | .matchBool | .manualTable
+  | .matchCouldBeTable => .pedantic
   | .undecidable => .decidability
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
@@ -2757,6 +2762,29 @@ def matchBoolMsg (replacement : String) (commented : Bool := false) : Msg :=
     label? := some "a `match` on a `Bool`"
     notes := if commented then #["note: the fix would drop the comments in the `match`, so it has none"] else #[]
     fixes := if commented then #[] else #[{ msg := "write it as an `if`", replacement }] }
+
+/-! ## Matches that could be tables -/
+
+/-- Whether the static rules accept the arms of a `match` on a value of
+`ty`, whose patterns are `pats`, of which those that have a guard are
+`guarded`, as the arms of a table over a scrutinee
+(`Reqs/Lang/Expressions#tables-over-a-scrutinee`): only the last arm is
+`_` without a guard, and `checkTableArms` accepts them. -/
+def acceptedAsTable (sigs : Sigs) (ty : PatTy) (pats : Array Pat) (guarded : Array Bool) : Bool :=
+  (rowAfterWild? ((pats.zip guarded).map fun (p, g) => p matches .wild false && !g)).isNone &&
+    (checkTableArms sigs ty pats guarded).toBool
+
+/-- Whether `match_could_be_table` fires on a `match` of `nArms` arms, from
+whether one has a guard, and whether the static rules accept its arms as
+a table's (`acceptedAsTable`) (`lint::match_could_be_table`). -/
+def matchCouldBeTable (nArms : Nat) (anyGuard tableAccepted : Bool) : Bool := nArms ≥ 2 && !anyGuard && tableAccepted
+
+/-- `match_could_be_table`, whose fix writes `table` in place of `match`. -/
+def matchCouldBeTableMsg : Msg :=
+  { code? := some Lint.matchCouldBeTable.code, headline := "the arms of this `match` are disjoint, so it can be a table"
+    label? := some "disjoint arms"
+    notes := #["note: a table over a scrutinee states that its arms are disjoint, which is checked, so that their order does not matter"]
+    fixes := #[{ msg := "write `table` in place of `match`", replacement := "table" }] }
 
 /-! ## Tables -/
 
