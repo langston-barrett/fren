@@ -1,0 +1,18 @@
+-- A model of a recursive query over a datatype with a `Bool` field, which
+-- the hosted front end reads to confirm it, has `Bool`s, not propositions,
+-- in those fields: so the vacuity of `false_left` is decided, as it is by
+-- the `fren` command.
+
+pub enum Value { Boolean(Bool), Integer(Int) }
+pub enum Outcome { Defined(Value), Undefined }
+pub enum E { Lit(Value), Not(E) }
+
+pub fn ev(e: E): Outcome := match e {
+    E::Lit(v) => Outcome::Defined(v),
+    E::Not(a) => ev(a),
+}
+
+expect false_left(a: E) {
+    expect same: when ev(a) = Outcome::Defined(Value::Boolean(false)),
+        ev(E::Not(a)) = Outcome::Defined(Value::Boolean(false))
+}
