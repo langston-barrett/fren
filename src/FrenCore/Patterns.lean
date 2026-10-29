@@ -674,6 +674,24 @@ def checkMatch (sigs : Sigs) (ty : PatTy) (arms : Array Pat) (guarded : Array Bo
       throw (some (i, some j), unreachableMsg true (unreachableNote sigs ty true p? before wild?))
   throw (none, nonExhaustiveMsg ty (ws.filterMap (·.head?)) (table := !ordered))
 
+/-- The multi-column matrix, represented by a fresh single constructor for
+Maranget's existing specialization algorithm. No product value or source
+constructor is introduced. -/
+def matchVector (sigs : Sigs) (types : Array PatTy) (rows : Array (Array Pat)) : Sigs × PatTy × Array Pat :=
+  let path := `_fren_match_arguments
+  let signatures : Sigs := fun p => if p == path then #[(`arguments, types)] else sigs p
+  (signatures, .enum path [], rows.map fun ps => if ps.all (· matches .wild false) then .wild false else .ctor 0 ps)
+
+/-- Explain a vector mismatch without exposing the internal matrix constructor. -/
+def vectorMsg (msg : Msg) : Msg :=
+  let f (s : String) := s.replace "_fren_match_arguments::arguments" ""
+  let label := msg.label?.map f
+  let notes := msg.notes.map fun n =>
+    if n == "note: a `match` has an arm for every variant, or a last arm `_`" ||
+        n == "note: every variant of `_fren_match_arguments` has an arm before it" then
+      "note: a `match` has an arm for every combination of its scrutinees" else f n
+  { msg with headline := f msg.headline, label? := label, notes := notes }
+
 /-! ## Overlap -/
 
 /-- One step of overlap (`lang::overlap`): what two patterns, whose heads

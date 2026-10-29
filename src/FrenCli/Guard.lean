@@ -27,6 +27,7 @@ def Expr.children : Expr → Array Expr
   | .record _ _ fs => fs.filterMap (·.2)
   | .update _ r fs => #[r] ++ fs.filterMap (·.2)
   | .match _ s arms _ => arms.foldl (init := #[s]) fun acc (_, g?, b) => acc ++ g?.toArray ++ #[b]
+  | .matches _ ss arms _ => arms.foldl (init := ss) fun acc (_, g, b) => acc ++ g.toArray ++ #[b]
   | .«let» _ defs body _ => defs.map (·.2.2) ++ #[body]
   | .quant _ _ _ body | .closure _ _ body => #[body]
   | .table _ rows => tableParts rows

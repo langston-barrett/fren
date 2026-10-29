@@ -241,6 +241,8 @@ inductive Expr where
   scrutinee (`table`), which means the `match` whose arms are disjoint
   (`Reqs/Lang/Expressions#tables-over-a-scrutinee`). -/
   | «match» (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (table : Bool)
+  /-- Multiple scrutinees, or an implicit-argument match when empty. -/
+  | matches (span : Span) (scrutinees : Array Expr) (arms : Array (Array Pattern × Option Expr × Expr)) (table : Bool)
   /-- `e is P`, a pattern test. -/
   | is (span : Span) (scrutinee : Expr) (pattern : Pattern)
   /-- A string literal, with its value. -/
@@ -277,8 +279,30 @@ inductive Expr where
 
 def Expr.span : Expr → Span
   | .block s .. | .when s .. | .ite s .. | .bin s .. | .not s .. | .neg s .. | .num s .. | .bool s .. | .path s .. | .app s ..
-  | .record s .. | .update s .. | .field s .. | .match s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
+  | .record s .. | .update s .. | .field s .. | .match s .. | .matches s .. | .is s .. | .str s .. | .method s .. | .set s .. | .pair s ..
   | .seq s .. | .index s .. | .chain s .. | .«let» s .. | .quant s .. | .table s .. | .closure s .. => s
+
+/-- Instantiate an implicit-argument match with its surrounding arguments. -/
+def Expr.explicitMatch (span : Span) (values : Array Expr)
+    (arms : Array (Array Pattern × Option Expr × Expr)) (table := false) : Expr :=
+  if values.size == 1 && arms.all (·.1.size == 1) then
+    .match span values[0]! (arms.map fun (ps, g, b) => (ps[0]!, g, b)) table
+  else .matches span values arms table
+
+/-- Expand the match before its optional `where` definitions are lowered. -/
+partial def Expr.implicitMatchBody (names : Array Ident) : Expr → Option Expr
+  | .matches span #[] arms false => some (.explicitMatch span (names.map fun n => .path span #[n]) arms)
+  | .«let» span defs body true => (body.implicitMatchBody names).map fun b => .«let» span defs b true
+  | _ => none
+
+/-- Unnamed defined parameters are fresh internal arguments of a lambda match. -/
+def lambdaMatchFunction (params : Array (Array Ident × Option (Array Ident))) (body : Option Expr) :
+    Array (Array Ident × Option (Array Ident)) × Option Expr := Id.run do
+  unless params.all (fun p => p.2.isNone && !(p.1.size == 1 && p.1[0]!.name.endsWith "?")) do return (params, body)
+  let some e := body | return (params, body)
+  let names := params.mapIdx fun j p => ({ name := s!"#match{j}", span := p.1[0]!.span } : Ident)
+  let some expanded := e.implicitMatchBody names | return (params, body)
+  return (params.zip names |>.map fun ((ty, _), n) => (#[n], some ty), some expanded)
 
 /-- Erase a single Boolean block's annotations while preserving evaluation
 order and short-circuiting. Equivalence compares all members to the first;
@@ -1250,7 +1274,10 @@ partial def matchArms (t : Token) (table : Bool) : P Expr := do
   let saved := (← get).noRecord
   modify fun s => { s with noRecord := true }
   -- An atom, as Lean reads it.
-  let scrutinee ← withIn atom
+  let mut scrutinees := #[]
+  unless isKw (← peek) "{" do
+    scrutinees := scrutinees.push (← withIn atom)
+    while (← eatKw ",").isSome do scrutinees := scrutinees.push (← withIn atom)
   modify fun s => { s with noRecord := saved }
   markList
   discard (expectKw "{")
@@ -1258,15 +1285,19 @@ partial def matchArms (t : Token) (table : Bool) : P Expr := do
   repeat
     if isKw (← peek) "}" && !(table && arms.isEmpty) then break
     markStart
-    let p ← pattern
+    let mut ps := #[← pattern]
+    while (← eatKw ",").isSome do ps := ps.push (← pattern)
     -- A guard, below `when`, which would swallow the arm's body.
     let guard? ← if (← eatKw "if").isSome then some <$> withRecords iff else pure none
     discard (expectKw "=>")
     -- Below `when`, which would swallow the following arms.
-    arms := arms.push (p, guard?, ← withRecords iff)
+    arms := arms.push (ps, guard?, ← withRecords iff)
     if (← eatKw ",").isNone then break
   discard (expectKw "}")
-  fieldReads callArgs indexArg (.match (← spanFrom t.span) scrutinee arms table)
+  let span ← spanFrom t.span
+  if scrutinees.size == 1 && arms.all (·.1.size == 1) then
+    fieldReads callArgs indexArg (.match span scrutinees[0]! (arms.map fun (ps, g, b) => (ps[0]!, g, b)) table)
+  else fieldReads callArgs indexArg (.matches span scrutinees arms table)
 
 partial def atom : P Expr := do
   let t ← peek
@@ -1735,6 +1766,8 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
     | _ => pure ()
   let close ← bump
   modify fun s => { s with fnResult? := saved.1, proc? := saved.2 }
+  let (params, expandedBody) := lambdaMatchFunction params body
+  body := expandedBody
   -- The function applied to its parameters, at the result's name.
   let args := params.map fun (p, _) => Expr.path r.span #[{ name := unbanged p[0]!.name, span := r.span }]
   let value := Expr.app r.span #[{ name with span := r.span }] args

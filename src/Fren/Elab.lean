@@ -45,8 +45,24 @@ namespace Fren
 local macro_rules | `(tactic| get_elem_tactic_extensible) => `(tactic| exact True.intro)
 
 /-- Whether `e` is a `match`, or a table over a scrutinee, which means
-one: their scrutinee is `e[1]` and their arms `e[3]`. -/
-def isMatchLike (e : Syntax) : Bool := e.isOfKind ``Lang.matchExpr || e.isOfKind ``Lang.tableMatchExpr
+one. Access their columns and arms through the helpers below. -/
+def isMatchLike (e : Syntax) : Bool := e.isOfKind ``Lang.matchExpr || e.isOfKind ``Lang.tableMatchExpr ||
+  e.isOfKind ``Lang.matchManyExpr || e.isOfKind ``Lang.tableMatchManyExpr
+
+def isManyMatch (e : Syntax) : Bool := e.isOfKind ``Lang.matchManyExpr || e.isOfKind ``Lang.tableMatchManyExpr
+
+def matchScrutinees (e : Syntax) : Array Syntax :=
+  if isManyMatch e then #[e[1]] ++ e[3].getSepArgs else if e.isOfKind ``Lang.lambdaMatchExpr then #[] else #[e[1]]
+
+def matchSourceArms (e : Syntax) : Array Syntax :=
+  (if isManyMatch e then e[5] else if e.isOfKind ``Lang.lambdaMatchExpr then e[2] else e[3]).getSepArgs
+
+def matchPatterns (e arm : Syntax) : Array Syntax :=
+  if isManyMatch e || e.isOfKind ``Lang.lambdaMatchExpr || arm.isOfKind ``Lang.fren_many_arm then arm[0].getSepArgs else #[arm[0]]
+
+def matchArm (e arm : Syntax) : Syntax :=
+  if isManyMatch e || e.isOfKind ``Lang.lambdaMatchExpr || arm.isOfKind ``Lang.fren_many_arm then (mkNode ``Lang.fren_arm ((arm.setArg 0 arm[0].getSepArgs[0]!).getArgs)).raw else arm
+
 
 /-- The identifiers of a `Lang.fren_path`. -/
 def pathSegs (p : Syntax) : Array Syntax :=
@@ -1214,10 +1230,10 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
   else if e.isOfKind ``Lang.updateExpr then
     e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc b =>
       acc ++ if b[1].isNone then #[b[0].getId] else pathMentions b[1][1]
-  else if isMatchLike e then
-    e[3].getSepArgs.foldl (init := pathMentions e[1]) fun acc arm =>
+  else if isMatchLike e || e.isOfKind ``Lang.lambdaMatchExpr then
+    (matchSourceArms e).foldl (init := (matchScrutinees e).flatMap pathMentions) fun acc arm =>
       -- In its arm, a binder's name means the binder, not what it shadows.
-      let bound := (topNames arm[0]).map fun b => (declaredIdent b).1.getId
+      let bound := ((matchPatterns e arm).flatMap topNames).map fun b => (declaredIdent b).1.getId
       let guard := if arm[1].isNone then #[] else pathMentions arm[1][1]
       acc ++ (guard ++ pathMentions arm[3]).filter (!bound.contains ·.getRoot)
   -- A pattern's paths name variants.
@@ -1288,6 +1304,36 @@ open Lang in
 def pathExpr (ref : Syntax) (n : Name) : TermElabM Syntax := do
   let tmpl ← `(fren_expr| x)
   return tmpl.raw.setArg 0 (mkNode ``Lang.fren_path #[mkNullNode #[mkIdentFrom ref n]])
+
+/-- Give an implicit match its fresh, unspellable argument references. -/
+def explicitLambdaMatch (e : Syntax) (names : Array Syntax) : TermElabM Syntax := do
+  let values ← names.mapM fun n => pathExpr n n.getId
+  let arms := e[2].getSepArgs
+  for arm in arms do
+    unless arm[0].getSepArgs.size == names.size do
+      throwErrorAt arm (Core.arityMsg `match names.size arm[0].getSepArgs.size "pattern").text
+  if names.size == 1 then
+    return mkNode ``Lang.matchExpr #[e[0], values[0]!, mkAtom "{",
+      Syntax.mkSep (arms.map fun a => (mkNode ``Lang.fren_arm ((a.setArg 0 a[0].getSepArgs[0]!).getArgs)).raw) (mkAtom ","), mkAtom "}"]
+  return mkNode ``Lang.matchManyExpr #[e[0], values[0]!, mkAtom ",",
+    Syntax.mkSep (values.extract 1 values.size) (mkAtom ","), mkAtom "{", e[2], mkAtom "}"]
+
+open Lang in
+/-- Expand unnamed function parameters before normal function elaboration. -/
+def anonymousMatchFunction (stx : Syntax) : TermElabM Syntax := do
+  if !stx[8].isNone && (unparen stx[8][1]).isOfKind ``Lang.lambdaMatchExpr &&
+      stx[5].getSepArgs.all (fun p => p[1].isNone && !(typePath? p[0]).any (fun q => (pathSegs q).size == 1 && (pathSegs q)[0]!.getId.toString.endsWith "?")) then do
+    let ps := stx[5].getSepArgs
+    let names := ps.mapIdx fun j p => mkIdentFrom p (Name.mkSimple s!"#match{j}")
+    let fnTemplate ← `(command| fn placeholder(x: Int): Int := 0)
+    let template := fnTemplate.raw[5].getSepArgs[0]!
+    let params := ps.zip names |>.map fun (p, n) =>
+      let path := mkNode ``Lang.fren_path #[mkNullNode #[n]]
+      let named := template.setArg 0 ((template[0]).setArg 0 path)
+      named.setArg 1 (mkNullNode #[mkAtom ":", p[0]])
+    let body ← explicitLambdaMatch (unparen stx[8][1]) names
+    pure ((stx.setArg 5 (Syntax.mkSep params (mkAtom ","))).setArg 8 (stx[8].setArg 1 body))
+  else pure stx
 
 /-- For `x.m(a)`, an application of a dotted name, the receiver `x` and the
 method `m`. Paths are written with `::`, so an applied dotted name is a
@@ -1360,12 +1406,15 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     -- The updated value, and the new values.
     parts .compound (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
-  else if isMatchLike e then
-    let s ← shapeOf cx e[1] bs
-    let arms ← e[3].getSepArgs.toList.flatMapM fun arm => do
-      let new := (← topBinders cx arm[0]).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
+  else if isMatchLike e || e.isOfKind ``Lang.lambdaMatchExpr then
+    let shapes ← (matchScrutinees e).mapM (shapeOf cx · bs)
+    let arms ← (matchSourceArms e).toList.flatMapM fun arm => do
+      let mut new := #[]
+      for p in matchPatterns e arm, j in [0:(matchPatterns e arm).size] do
+        new := new ++ (← topBinders cx p).map fun b => ((declaredIdent b).1.getId,
+          Core.MentionShape.node .binder (shapes[j]?.toList))
       ((if arm[1].isNone then [] else [arm[1][1]]) ++ [arm[3]]).mapM (shapeOf cx · (bs ++ new))
-    return .node .compound (s :: arms)
+    return .node .compound (shapes.toList ++ arms)
   else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
   else if e.isOfKind ``Lang.letExpr then
     -- Each name stands for its definition, which sees the earlier names.
@@ -1721,8 +1770,8 @@ partial def declaredNames (e : Syntax) : Array String :=
     if e.isOfKind ``Lang.letExpr then e[1].getSepArgs.map fun d => Core.nameText (declaredIdent d[0]).1.getId
     else if e.isOfKind ``Lang.quantExpr then (quantNames e).map Core.nameText
     else if e.isOfKind ``Lang.closureExpr then (closureNames e).map Core.nameText
-    else if e.isOfKind ``Lang.matchExpr then
-      e[3].getSepArgs.flatMap fun arm => (topNames arm[0]).map fun b => Core.nameText (declaredIdent b).1.getId
+    else if isMatchLike e || e.isOfKind ``Lang.lambdaMatchExpr then
+      (matchSourceArms e).flatMap fun arm => ((matchPatterns e arm).flatMap topNames).map fun b => Core.nameText (declaredIdent b).1.getId
     else if e.isOfKind ``Lang.isExpr then (topNames e[2]).map fun b => Core.nameText (declaredIdent b).1.getId
     else #[]
   own ++ e.getArgs.flatMap declaredNames
@@ -1924,7 +1973,7 @@ partial def typeShape (cx : ExprCtx) (e : Syntax) : TermElabM Core.TypeShape := 
   else if e.isOfKind ``Lang.pairExpr then return .pair (← go e[1]) (← go e[3])
   else if e.isOfKind ``Lang.unionExpr || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr then
     return .anyPart [← go e[0], ← go e[2]]
-  else if isMatchLike e then return .anyPart (← e[3].getSepArgs.toList.mapM (go ·[3]))
+  else if isMatchLike e then return .anyPart (← (matchSourceArms e).toList.mapM (go ·[3]))
   else if e.isOfKind ``Lang.letExpr then return .anyPart [← go e[3]]
   else if e.isOfKind ``Lang.tableExpr then return .anyPart (← e[2].getSepArgs.toList.mapM (go ·[3]))
   else match e with
@@ -2241,6 +2290,7 @@ def lintMatch (cx : ExprCtx) (e : Syntax) (ty : Expr) (pats : Array Core.Pat)
 /-- A binder of a pattern, with the type of its value, and its value, read
 from the scrutinee with selectors. -/
 structure PatBinder where
+  source? : Option Syntax := none
   ident : Syntax
   type : Expr
   term : Term
@@ -2647,9 +2697,9 @@ def varPType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM 
   let n := name.getId
   let t ← ty?.mapM (elabPType modName)
   if let some ty := ty? then lintRelTypes modName ty
-  liftMsg name (Core.checkVarName n (t.map (·.1.isConstOf ``Bool)))
+  unless n.toString.startsWith "#match" do liftMsg name (Core.checkVarName n (t.map (·.1.isConstOf ``Bool)))
   if let (some ty, some (t, pt)) := (ty?, t) then
-    if pt.invariants.isEmpty then lintBoolType n ty t
+    if pt.invariants.isEmpty && !n.toString.startsWith "#match" then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool, .plain .bool)
 
 /-- The declared type of the `k`th field or payload value of the variant
@@ -2967,7 +3017,7 @@ conditional or a `match` with one among its shared parts, so that the right
 of `in` is checked against a sequence, as in the `fren` command. -/
 partial def seqShaped (e : Syntax) : Bool :=
   if e.isOfKind ``Lang.seqExpr then true
-  else if isMatchLike e then e[3].getSepArgs.any (seqShaped ·[3])
+  else if isMatchLike e then (matchSourceArms e).any (seqShaped ·[3])
   else match e with
     | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => seqShaped a || seqShaped b
     | _ => false
@@ -3158,8 +3208,8 @@ arms from `k` on. `none` where its arms are propositions, which stay `if`s
 (`matchForm`). Each arm's context, binders and expected type are
 `armInfo`, as the `if`s' translation has them. -/
 def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) (s : Term) (ty : Expr)
-    (pty : Core.PatTy) (pats : Array Core.Pat) (armInfo : Array (ExprCtx × Array MatchBinder × Option Core.Ty)) :
-    TermElabM (Option Term) := do
+    (pty : Core.PatTy) (pats : Array Core.Pat) (armInfo : Array (ExprCtx × Array MatchBinder × Option Core.Ty))
+    (vector? : Option (Array Expr × Array Term × Core.Sigs) := none) : TermElabM (Option Term) := do
   let arms := e[3].getSepArgs
   let mut bodies : Array Term := #[]
   let mut guards : Array (Option Term) := #[]
@@ -3182,7 +3232,11 @@ def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx
     tys := tys.map fun t? => if t?.any (·.isProp) then some (Lean.mkConst ``Bool) else t?
     armKind := .values
   let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
-  unless matchForm scrutineeKind armKind (pats.flatMap patHeads) == .leanMatch do return none
+  let heads := if vector?.isSome then pats.flatMap fun p => match p with
+    | .ctor _ ps => ps.flatMap patHeads
+    | _ => patHeads p
+    else pats.flatMap patHeads
+  unless matchForm scrutineeKind armKind heads == .leanMatch do return none
   -- An `Int` where another arm is a `Nat` (`widenMixed`).
   let mixed := tys.any (·.any (·.isConstOf ``Int)) && tys.any (·.any (·.isConstOf ``Nat))
   let widen (b : Term) (t? : Option Expr) : TermElabM Term :=
@@ -3197,6 +3251,25 @@ def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx
     (topPats pats[k]!).mapM fun q => return (q, ← (leanPattern names[k]! ty q).run' 0)
   -- The `match` of the arms from `start` on.
   let build (start : Nat) : TermElabM Term := do
+    if let some (types, terms, signatures) := vector? then
+      let mut rows : Array (List Core.Pat) := #[]
+      let mut alts : Array (TSyntax ``Lean.Parser.Term.matchAlt) := #[]
+      for k in [start:n] do
+        let rhs ← match guards[k]! with
+          | some g => do let rest ← fallTo (k + 1); `(if $g then $(bodies[k]!) else $rest)
+          | none => pure bodies[k]!
+        for q in (pats[k]!.expand).1.map (·.1) do
+          unless Core.useful signatures [pty] rows [q] do continue
+          rows := rows.push [q]
+          let columns ← match q with
+            | .ctor _ ps => ((ps.zip types).mapM fun (p, t) => leanPattern names[k]! t p).run' 0
+            | _ => types.mapM fun _ => `(_)
+          alts := alts.push (← `(Lean.Parser.Term.matchAltExpr| | $columns:term,* => $rhs))
+      if Core.useful signatures [pty] rows [.wild false] then
+        let wilds ← types.mapM fun _ => `(_)
+        alts := alts.push (← `(Lean.Parser.Term.matchAltExpr| | $wilds:term,* => $default))
+      let discrs ← terms.mapM fun t => `(Lean.Parser.Term.matchDiscr| $t:term)
+      return ← `(match $discrs:matchDiscr,* with $alts:matchAlt*)
     let mut out := #[]
     for k in [start:n] do
       let rhs ← match guards[k]! with
@@ -3236,17 +3309,37 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let cx := { cx with expected? := none }
   -- The scrutinee synthesizes its type, and each body is checked against the
   -- whole's, or another's (`lang::checked`).
-  let scrutinee := e[1]
-  let origin? := cx.recOrigin? scrutinee
-  let s ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false } scrutinee
-  let ty ← typeOf s
-  let pty := patTyOf (← getState) ty
-  if pty == .other then throwErrorAt scrutinee (Core.scrutineeMsg (← typeName ty)).text
-  let arms := e[3].getSepArgs
-  -- Each arm's pattern, its binders and its test.
+  let original := e
+  let many := isManyMatch e
+  let scrutinees := matchScrutinees e
+  let sourceArms := matchSourceArms e
+  for arm in sourceArms do
+    unless (matchPatterns e arm).size == scrutinees.size do
+      throwErrorAt arm (Core.arityMsg `match scrutinees.size (matchPatterns e arm).size "pattern").text
+  let terms ← scrutinees.mapM (toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false })
+  let types ← terms.mapM typeOf
+  let ptypes := types.map (patTyOf (← getState))
+  for scr in scrutinees, pty in ptypes, ty in types do
+    if pty == .other then throwErrorAt scr (Core.scrutineeMsg (← typeName ty)).text
+  let scrutinee := scrutinees[0]!
+  let origin? := scrutinees.findSome? cx.recOrigin?
+  let arms := sourceArms.map (matchArm e)
   let mut resolved := #[]
-  for arm in arms do resolved := resolved.push (← resolveTop cx ty s false arm[0])
-  let pats := resolved.map (·.1)
+  let mut rows := #[]
+  for arm in sourceArms do
+    let parts ← ((matchPatterns e arm).zipIdx).mapM fun (p, j) => do
+      let (q, bs, test) ← resolveTop cx types[j]! terms[j]! false p
+      return (q, bs.map fun b => { b with source? := some scrutinees[j]! }, test)
+    rows := rows.push (parts.map (·.1))
+    resolved := resolved.push (parts[0]!.1, parts.flatMap (·.2.1),
+      Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) (parts.filterMap (·.2.2)))
+  let baseSigs ← patSigs
+  let (sigs, pty, pats) := if many then Core.matchVector baseSigs ptypes rows
+    else (baseSigs, ptypes[0]!, rows.map (·[0]!))
+  let s := terms[0]!
+  let ty := types[0]!
+  let e : Syntax := if many then (mkNode (if e.isOfKind ``Lang.tableMatchManyExpr then ``Lang.tableMatchExpr else ``Lang.matchExpr)
+    #[e[0], scrutinee, mkAtom "{", Syntax.mkSep arms (mkAtom ","), mkAtom "}"]).raw else e
   let usesBefore := (← getLocal).recUses.size
   let guarded := arms.map (!·[1].isNone)
   let isTable := e.isOfKind ``Lang.tableMatchExpr
@@ -3255,19 +3348,21 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   if isTable then
     if let some k := Core.rowAfterWild? ((pats.zip guarded).map fun (p, g) => p matches .wild false && !g) then
       throwErrorAt arms[k]![0] Core.armAfterWildMsg.text
-  let sigs ← patSigs
   let checked := if isTable then Core.checkTableArms sigs pty pats guarded
     else (Core.checkMatch sigs pty pats guarded).map (·, #[])
   let (unguardedExhaustive, pairs) ← match checked with
     | .ok u => pure u
-    | .error (some (i, some j), msg) => throwErrorAt (topAlternatives arms[i]![0])[j]! msg.text
-    | .error (some (i, none), msg) => throwErrorAt arms[i]![0] msg.text
-    | .error (none, msg) => throwError msg.text
-  if cx.noteIndexes then lintMatch cx e ty pats slot
+    | .error (some (i, some j), msg) => throwErrorAt ((matchPatterns original sourceArms[i]!).flatMap topAlternatives)[j]! (if many then Core.vectorMsg msg else msg).text
+    | .error (some (i, none), msg) => throwErrorAt arms[i]![0] (if many then Core.vectorMsg msg else msg).text
+    | .error (none, msg) => throwError (if many then Core.vectorMsg msg else msg).text
+  let p := if scrutinee.getNumArgs == 1 then scrutinee[0] else scrutinee
+  let implicitArg := p.isOfKind ``Lang.fren_path && (pathSegs p).any (fun n => n.getId.toString.startsWith "#match")
+  if cx.noteIndexes && !many && !implicitArg then lintMatch cx e ty pats slot
   -- In a defined function's Lean definition, a Lean `match`, where its
   -- patterns are Lean's (`Reqs/Generated#matches`).
   let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other
-  let lean := cx.leanMatch && matchForm scrutineeKind .values (pats.flatMap patHeads) == .leanMatch
+  let heads := if many then rows.flatMap (fun ps => ps.flatMap patHeads) else pats.flatMap patHeads
+  let lean := cx.leanMatch && matchForm scrutineeKind .values heads == .leanMatch
   -- Each arm's context, binders and the type expected of its body.
   let mut armInfo : Array (ExprCtx × Array MatchBinder × Option Core.Ty) := #[]
   let mut bodies : Array Term := #[]
@@ -3304,8 +3399,9 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       lintName .binder bn y
       -- A payload of a parameter, or of a binder bound from one, is bound
       -- from a payload of that parameter; so is the whole of such a binder.
-      let payloadOf? := cx.recOrigin? scrutinee |>.bind fun (j, p) => if b.payload || p then some j else none
-      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some scrutinee, outer := cx.binders.size, payloadOf? }
+      let source := b.source?.getD scrutinee
+      let payloadOf? := cx.recOrigin? source |>.bind fun (j, p) => if b.payload || p then some j else none
+      new := new.push { name := bn, term := b.term, «type» := b.type, scrutinee := some source, outer := cx.binders.size, payloadOf? }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let (g?, d?) ← if arm[1].isNone then pure (none, none) else if !isTable then do
@@ -3357,12 +3453,14 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- A recursive application under a `match` on an enumeration's parameter
   -- or payload that is not a Lean `match` (`lang::recursive_match`).
   if origin?.isSome && pty matches .enum .. then
-    if let some k := Core.firstNonLeanPattern? pats guarded then
+    let nonLean? := if many then (rows.zipIdx.find? fun (ps, j) => ps.any (!·.leanPattern) || guarded[j]!).map (·.2)
+      else Core.firstNonLeanPattern? pats guarded
+    if let some k := nonLean? then
       if (← getLocal).recUses.size > usesBefore then
         modifyLocal fun l => { l with recMatches := l.recMatches.push arms[k]![0] }
   let widened ← widenMixed bodies
   if lean then
-    if let some m ← leanMatchTerm toTerm cx e s ty pty pats armInfo then return m
+    if let some m ← leanMatchTerm toTerm cx e s ty pty pats armInfo (if many then some (types, terms, sigs) else none) then return m
   -- The first arm that is taken. Where the arms without guards are
   -- exhaustive, the last arm has none, and takes whatever is left;
   -- otherwise, where none is taken, the `match` is the index out of range
@@ -3814,7 +3912,7 @@ open Lang in
 closure, the name of a function or of a function parameter, or a value. -/
 def comparand (cx : ExprCtx) (e : Syntax) : TermElabM Core.Comparand := do
   let e := unparen e
-  if e.isOfKind ``Lang.closureExpr then return .closure
+  if e.isOfKind ``Lang.closureExpr || e.isOfKind ``Lang.lambdaMatchExpr then return .closure
   let p := if e.getNumArgs == 1 && e[0].isOfKind ``Lang.fren_path then e[0] else e
   unless p.isOfKind ``Lang.fren_path do return .value
   let segs := pathSegs p
@@ -4922,6 +5020,11 @@ name of a function `g` is the closure `|x1, ..., xn| g(x1, ..., xn)`. -/
 def fnArgTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (f : String) (ft : Core.FnTy)
     (ps : Array (Option Core.Ty)) (r? : Option Core.Ty) (e : Syntax) : TermElabM (ClosureTerm × Array Core.Ty × Core.Ty) := do
   let e := unparen e
+  if e.isOfKind ``Lang.lambdaMatchExpr then
+    let some types := ps.mapM id | throwErrorAt e (Core.closureParamUnknownMsg f).text
+    let names := types.mapIdx fun j _ => mkIdentFrom e (Name.mkSimple s!"#match{j}")
+    let body ← explicitLambdaMatch e names
+    return ← closureTerm toTerm cx ((names.map (·.raw)).zip types) body r? true
   if e.isOfKind ``Lang.closureExpr then
     let params := e[1].getSepArgs
     if let some msg := Core.argumentMsg? ft (.closure params.size) then throwErrorAt e msg.text
@@ -5727,7 +5830,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
       || e.isOfKind ``Lang.interExpr || e.isOfKind ``Lang.minusExpr || e.isOfKind ``Lang.joinExpr then setOpTerm toTerm { cx with emptyOk, expected? } e
   else if e.isOfKind ``Lang.pairExpr then throwError Core.pairPlaceMsg.text
   -- Only an argument for a function parameter (`lang::function_argument`).
-  else if e.isOfKind ``Lang.closureExpr then throwError Core.closurePlaceMsg.text
+  else if e.isOfKind ``Lang.closureExpr || e.isOfKind ``Lang.lambdaMatchExpr then throwError Core.closurePlaceMsg.text
   else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm { cx with expected? } emptyOk e
   else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
   else if e.isOfKind ``Lang.recordExpr then do
@@ -6208,7 +6311,7 @@ def paramVars (modName path : Name) (params : Array Syntax) : TermElabM (Array V
   let paramIds ← params.mapM fun p => do
     let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
     pure (pathSegs q)[0]!
-  for x in paramIds do discard (segName x)
+  for x in paramIds do unless x.getId.toString.startsWith "#match" do discard (segName x)
   -- By the names they declare, without the `!` of shadowing.
   let declared := paramIds.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
@@ -6285,7 +6388,7 @@ def paramVarsHo (modName path : Name) (params : Array Syntax) (defined : Bool) :
   let paramIds ← params.mapM fun p => do
     let some q := typePath? p[0] | throwErrorAt p[0] (Core.functionParamsMsg path true).text
     pure (pathSegs q)[0]!
-  for x in paramIds do discard (segName x)
+  for x in paramIds do unless x.getId.toString.startsWith "#match" do discard (segName x)
   -- By the names they declare, without the `!` of shadowing.
   let declared := paramIds.map fun x => (declaredIdent x).1.getId
   if let some k := (Core.repeatsAt declared)[0]? then
@@ -6874,6 +6977,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     if m.isOfKind ``Lang.useMember then declareUse (pathSegs m[1]) (!m[2].isNone) m[1] (some path)
     else for p in m[3].getSepArgs do declareUse (pathSegs m[1] ++ pathSegs p) false p (some path)
   let scope := if uses.isEmpty then modName else path
+  let stx ← liftTermElabM <| anonymousMatchFunction stx
   let params := stx[5].getSepArgs
   let body? := if stx[8].isNone then none else some (withWhere stx[8][1] stx[8][2])
   let clauses := stx[9].getArgs
@@ -7218,14 +7322,25 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
       if out?.isSome then throwErrorAt m[1] (Core.resultDefinedTwiceMsg x).text
       out? := some (mkNullNode #[m[2], m[3], m[4]])
     else if (constraint? m).isSome then clauses := clauses.push m
+  -- Expand implicit parameters before forming the result's self-call in
+  -- postconditions; that call must use the same fresh parameters.
+  let (parameters, expandedOut) ← match out? with
+    | some body => liftTermElabM do
+      let fn := mkNode ``Lang.fnCmd #[stx[0], stx[1], stx[2], stx[3], stx[4], stx[5], stx[6], mkNullNode, body, mkNullNode]
+      let expanded ← anonymousMatchFunction fn
+      pure (expanded[5], some expanded[8])
+    | none => pure (stx[5], out?)
+  out? := expandedOut
   -- The result, the function applied to its parameters, at the result's
   -- name.
   let fname := Core.nameText (declaredIdent stx[2]).1.getId
-  let pnames := stx[5].getSepArgs.map fun p =>
+  let pnames := parameters.getSepArgs.map fun p =>
     match typePath? p[0] with
-    | some q => Core.nameText (declaredIdent (pathSegs q)[0]!).1.getId
-    | none => ""
-  let value ← parseAt `fren_expr s!"{fname}({", ".intercalate pnames.toList})" rx
+    | some q => (declaredIdent (pathSegs q)[0]!).1.getId
+    | none => Name.anonymous
+  let args ← liftTermElabM <| pnames.mapM (pathExpr rx)
+  let template ← parseAt `fren_expr s!"{fname}(false)" rx
+  let value := template.setArg 2 (Syntax.mkSep args (mkAtom ","))
   -- With the result's type, if written, which a generic function's
   -- application may need.
   let rDef : Syntax := mkNode ``Lang.fren_def #[withInfoOf rx (mkIdent rx.getId), r[3], mkAtom ":=", value]
@@ -7262,7 +7377,7 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
   let result ← if !r[3].isNone then pure r[3]
     else if rn.endsWith "?" && !fname.endsWith "?" then pure (mkNullNode #[mkAtom ":", ← parseAt `fren_type "Bool" rx])
     else pure mkNullNode
-  let fn := mkNode ``Lang.fnCmd #[stx[0], stx[1], stx[2], stx[3], stx[4], stx[5], stx[6], result, body, mkNullNode clauses']
+  let fn := mkNode ``Lang.fnCmd #[stx[0], stx[1], stx[2], stx[3], stx[4], parameters, stx[6], result, body, mkNullNode clauses']
   elabFunctionCore fn stx uses
 
 /-- A call whose procedure has been resolved, before its bindings are

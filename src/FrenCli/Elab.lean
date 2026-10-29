@@ -1134,6 +1134,7 @@ exactly when it hides something in the current scope or among `locals`
 used. -/
 def declare (x : Ident) (locals : Fren.Core.Locals := #[]) : M Ident := do
   let (y, bang) := declaredIdent x
+  if y.name.startsWith "#match" then return y
   let n := Name.mkSimple y.name
   let st ← get
   liftMsg x.span (Fren.Core.checkDeclaredName n bang)
@@ -1176,6 +1177,7 @@ def resolveWritten (segs : Array Ident) (extra : Array Name := #[]) (report : Bo
 that look only at the name, at the level in effect; and, for an item other
 than a module, `module_name_repetitions`. -/
 def lintName (what : Named) (n : Name) (span : Span) : M Unit := do
+  if n.toString.startsWith "#match" then return
   for (l, msg) in Fren.Core.nameMsgs what n do lint l span msg
   unless what matches .module do
     if let some msg := Fren.Core.moduleNameMsg? what (← get).module n then lint .moduleNameRepetitions span msg
@@ -1490,6 +1492,7 @@ partial def appliedPaths : Expr → Array (Array Ident)
   | .record _ _ fs => fs.foldl (init := #[]) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
   | .update _ r fs => fs.foldl (init := appliedPaths r) fun acc (_, e?) => acc ++ (e?.map appliedPaths).getD #[]
   | .match _ s arms _ => (armParts arms).foldl (init := appliedPaths s) fun acc e => acc ++ appliedPaths e
+  | .matches _ ss arms _ => (ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).flatMap appliedPaths
   | .is _ s _ => appliedPaths s
   | _ => #[]
 
@@ -1566,6 +1569,15 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
         (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
       (g?.toList ++ [body]).mapM (shapeOf cx (bs ++ new))
     return .node .compound (s' :: arms)
+  | .matches _ ss arms _ =>
+    let shapes ← ss.mapM (shapeOf cx bs)
+    let children ← arms.toList.flatMapM fun (ps, g, body) => do
+      let mut new := #[]
+      for p in ps, j in [0:ps.size] do
+        new := new ++ (← patternBinders cx p).map fun x =>
+          (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder (shapes[j]?.toList))
+      (g.toList ++ [body]).mapM (shapeOf cx (bs ++ new))
+    return .node .compound (shapes.toList ++ children)
   | .is _ s _ => parts .compound [s]
   | .«let» _ defs body _ =>
     -- Each name stands for its definition, which sees the earlier names.
@@ -1619,6 +1631,9 @@ partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
     -- In its arm, a binder's name means the binder, not what it shadows.
     let bound := p.names.map fun b => Name.mkSimple (declaredIdent b).1.name
     acc ++ ((g?.map mentions).getD #[] ++ mentions body).filter (!bound.contains ·.getRoot)
+  | .matches _ ss arms _ => arms.foldl (init := ss.flatMap mentions) fun acc (ps, g, body) =>
+    let bound := ps.flatMap Pattern.names |>.map fun b => Name.mkSimple (declaredIdent b).1.name
+    acc ++ (g.toArray.flatMap mentions ++ mentions body).filter (!bound.contains ·.getRoot)
   | .is _ s _ => mentions s
   | .«let» _ defs body _ =>
     (Fren.Core.clauseMentions (defs.map fun (x, _, _) => Name.mkSimple (declaredIdent x).1.name)
@@ -1717,6 +1732,7 @@ partial def hasConcat (cx : ExprCtx) (e : Expr) : M Bool := do
   | .update _ r fs =>
     return (← hasConcat cx r) || (← fs.anyM fun (_, e?) => match e? with | some e => hasConcat cx e | none => pure false)
   | .match _ s arms _ => return (← hasConcat cx s) || (← (armParts arms).anyM (hasConcat cx))
+  | .matches _ ss arms _ => return (← ss.anyM (hasConcat cx)) || (← (arms.flatMap fun (_, g, b) => g.toArray.push b).anyM (hasConcat cx))
   | .is _ s _ => hasConcat cx s
   | .«let» _ defs body _ => return (← defs.anyM (hasConcat cx ·.2.2)) || (← hasConcat cx body)
   | .quant _ _ _ b => hasConcat cx b
@@ -1827,6 +1843,7 @@ def Expr.operands : Expr → Array Expr
   | .record _ _ fs => fs.filterMap (·.2)
   | .update _ r fs => #[r] ++ fs.filterMap (·.2)
   | .match _ s arms _ => #[s] ++ armParts arms
+  | .matches _ ss arms _ => ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)
   | .quant _ _ _ b | .closure _ _ b => #[b]
   | .is _ s _ => #[s]
   | .«let» _ defs body _ => defs.map (·.2.2) |>.push body
@@ -1845,6 +1862,7 @@ partial def Expr.declaredNames (e : Expr) : Array String :=
   let own := match e with
     | .«let» _ defs _ _ => defs.map fun (x, _, _) => (declaredIdent x).1.name
     | .quant _ _ bs _ => bs.flatMap (·.names) |>.map fun x => (declaredIdent x).1.name
+    | .matches _ _ arms _ => arms.flatMap fun (ps, _, _) => ps.flatMap Pattern.names |>.map fun x => (declaredIdent x).1.name
     | .closure _ ps _ => ps.map fun (x, _) => (declaredIdent x).1.name
     | .match _ _ arms _ => arms.flatMap fun (p, _, _) => p.names.map fun x => (declaredIdent x).1.name
     | .is _ _ p => p.names.map fun x => (declaredIdent x).1.name
@@ -1866,6 +1884,7 @@ partial def Expr.integerSpans (e : Expr) : Array Span :=
   let own := match e with
     | .num s _ => #[s]
     | .match _ _ arms _ => arms.flatMap (·.1.integerSpans)
+    | .matches _ _ arms _ => arms.flatMap fun (ps, _, _) => ps.flatMap Pattern.integerSpans
     | .is _ _ p => p.integerSpans
     | _ => #[]
   own ++ e.operands.flatMap (·.integerSpans)
@@ -1906,6 +1925,7 @@ partial def Expr.boolNode (e : Expr) (src : Array Char := #[]) (base : Nat := 0)
   | .pair s a b | .index s a b => .mk .atom (toRange s) s #[a.boolNode src base, b.boolNode src base]
   | .chain s es ops => .mk (.chain (ops.map (·.1))) (toRange s) s (es.map (·.boolNode src base))
   | .«let» s _ body _ => .mk .«let» (toRange s) s #[body.boolNode src base]
+  | .matches s ss arms _ => .mk .atom (toRange s) s ((ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).map (·.boolNode src base))
   | .quant s _ _ b | .closure s _ b => .mk .quant (toRange s) s #[b.boolNode src base]
   | .num s _ | .path s _ | .str s .. => .mk .atom (toRange s) s #[]
 -- `base` is at most the start of `e`'s span as written, and every span in
@@ -2318,6 +2338,7 @@ partial def indexedIn : Expr → M (Array String)
   | .app _ _ args | .set _ args | .seq _ args | .chain _ args _ => args.foldlM (fun acc a => return acc ++ (← indexedIn a)) #[]
   | .record _ _ fs => fs.foldlM (fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))) #[]
   | .match _ sc arms _ => return (← indexedIn sc) ++ (← (armParts arms).foldlM (fun acc b => return acc ++ (← indexedIn b)) #[])
+  | .matches _ ss arms _ => (ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).foldlM (fun acc b => return acc ++ (← indexedIn b)) #[]
   -- As the Lean front end reads it: the record, and the new values.
   | .update _ r fs => do
     fs.foldlM (init := ← indexedIn r) fun acc (_, e?) => return acc ++ (← (e?.map indexedIn).getD (pure #[]))
@@ -2849,6 +2870,7 @@ def lintMatch (cx : ExprCtx) (e : Expr) (ty : Ty) (pats : Array Fren.Core.Pat) (
 /-- A binder of a pattern, with the type of its value, and its value, read
 from the scrutinee with selectors. -/
 structure PBinder where
+  source? : Option Expr := none
   ident : Ident
   ty : Ty
   smt : String
@@ -3095,6 +3117,7 @@ partial def typeShape (cx : ExprCtx) (e : Expr) : M Fren.Core.TypeShape := do
       return .anyPart [← typeShape cx a, ← typeShape cx b] else return .other
   | .ite _ _ a b => return .anyPart [← typeShape cx a, ← typeShape cx b]
   | .match _ _ arms _ => return .anyPart (← arms.toList.mapM (typeShape cx ·.2.2))
+  | .matches _ ss arms _ => if ss.isEmpty then return .other else return .anyPart (← arms.toList.mapM (typeShape cx ·.2.2))
   | .«let» _ _ body _ => return .anyPart [← typeShape cx body]
   | .table _ rows => return .anyPart (← rows.toList.mapM (typeShape cx ·.2.2))
   | _ => return .other
@@ -3131,6 +3154,7 @@ partial def seqShaped : Expr → Bool
   | .seq .. => true
   | .bin _ "++" a b | .ite _ _ a b => seqShaped a || seqShaped b
   | .match _ _ arms _ => arms.any (seqShaped ·.2.2)
+  | .matches _ _ arms _ => arms.any (seqShaped ·.2.2)
   | .«let» _ _ body _ => seqShaped body
   | .table _ rows => rows.any (seqShaped ·.2.2)
   | _ => false
@@ -3415,7 +3439,7 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) (defer : Bool := false) :
 closure, the name of a function or of a function parameter, or a value. -/
 def comparand (cx : ExprCtx) (e : Expr) : M Fren.Core.Comparand := do
   match e with
-  | .closure .. => return .closure
+  | .closure .. | .matches _ #[] _ _ => return .closure
   | .path _ #[s] =>
     let n := identName s.name
     if (cx.fnParam? n).isSome then return .functionName
@@ -3698,6 +3722,10 @@ partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   | .record span tySegs fields => elabRecordExpr cx expected? span tySegs fields
   | .update span base fields => elabUpdateExpr cx span base fields
   | .match span scrutinee arms isTable => elabMatchExpr cx e expected? parent? span scrutinee arms isTable
+  | .matches span scrutinees arms isTable =>
+    if scrutinees.isEmpty then err span Fren.Core.closurePlaceMsg
+    elabMatchExpr cx e expected? parent? span scrutinees[0]! (arms.map fun (ps, g, b) => (ps[0]!, g, b)) isTable
+      (some (scrutinees, arms.map (·.1)))
   | .table span rows => elabTableExpr cx e expected? parent? span rows
   | .is span scrutinee p => elabIsExpr cx test span scrutinee p
   | .«let» span defs body isWhere => elabLetExpr cx span concatOk expected? defs body isWhere
@@ -4710,6 +4738,15 @@ The name of a function `g` is the closure `|x1, ..., xn| g(x1, ..., xn)`. -/
 partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Array (Option Ty)) (r? : Option Ty)
     (e : Expr) : M (ClosureArg × Array Ty × Ty) := do
   match e with
+  | .matches span #[] arms false =>
+    let some types := ps.mapM id | err span (Fren.Core.closureParamUnknownMsg f)
+    let names := types.mapIdx fun j _ => ({ name := s!"#match{j}", span } : Ident)
+    let values := names.map fun n => Expr.path span #[n]
+    let body := if types.size == 1 then Expr.match span values[0]! (arms.map fun (ps, g, b) => (ps[0]!, g, b)) false
+      else Expr.matches span values arms false
+    for (patterns, _, _) in arms do
+      unless patterns.size == types.size do err patterns[0]!.span (Fren.Core.arityMsg `match types.size patterns.size "pattern")
+    elabClosure cx (names.zip types) body r? true
   | .closure span params body =>
     if let some msg := Fren.Core.argumentMsg? ft (.closure params.size) then err span msg
     -- Distinct names (`lang::distinct_names`).
@@ -5017,30 +5054,44 @@ partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : 
   return (if bind then s!"(let (({r} {rv})) {lit})" else lit, .record path targs)
 
 /-- `elabExpr` on a `match`. -/
-partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (parent? : Option Expr) (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (isTable : Bool) : M (String × Ty) := do
-  let origin? := cx.recOrigin? scrutinee
-  let (s, ts) ← elabExpr cx scrutinee
-  unless ts matches .enum .. | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.scrutineeMsg ts.show)
-  -- Each arm's pattern, its binders and its test.
+partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (parent? : Option Expr) (span : Span) (scrutinee : Expr) (arms : Array (Pattern × Option Expr × Expr)) (isTable : Bool)
+    (many? : Option (Array Expr × Array (Array Pattern)) := none) : M (String × Ty) := do
+  let scrutinees := many?.map (·.1) |>.getD #[scrutinee]
+  let patterns := many?.map (·.2) |>.getD (arms.map fun a => #[a.1])
+  for ps in patterns, arm in arms do
+    unless ps.size == scrutinees.size do err arm.1.span (Fren.Core.arityMsg `match scrutinees.size ps.size "pattern")
+  let origin? := scrutinees.findSome? cx.recOrigin?
+  let values ← scrutinees.mapM (elabExpr cx)
+  for scr in scrutinees, (_, ts) in values do
+    unless ts matches .enum .. | .bool | .int | .nat | .string do err scr.span (Fren.Core.scrutineeMsg ts.show)
+  let ts := values[0]!.2
   let mut resolved := #[]
-  for (p, _, _) in arms do resolved := resolved.push (← resolvePattern cx ts s false false p)
-  let pats := resolved.map (·.1)
+  let mut rows := #[]
+  for ps in patterns do
+    let parts ← ps.zipIdx |>.mapM fun (p, j) => do
+      let (q, bs, test) ← resolvePattern cx values[j]!.2 values[j]!.1 false false p
+      return (q, bs.map fun b => { b with source? := some scrutinees[j]! }, test)
+    rows := rows.push (parts.map (·.1))
+    resolved := resolved.push (parts[0]!.1, parts.flatMap (·.2.1), Fren.Core.allOf? andSmt (parts.filterMap (·.2.2)))
+  let baseSigs ← patSigs
+  let (sigs, pty, pats) := if many?.isSome then Fren.Core.matchVector baseSigs (values.map (·.2.patTy)) rows
+    else (baseSigs, ts.patTy, rows.map (·[0]!))
   let usesBefore := (← get).recUses.size
   let guarded := arms.map (·.2.1.isSome)
   -- In a table over a scrutinee, only the last arm may be `_` without a
   -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
   if isTable then
-    if let some k := Fren.Core.rowAfterWild? (arms.map fun (p, g?, _) => p matches .wild _ && g?.isNone) then
+    if let some k := Fren.Core.rowAfterWild? ((pats.zip guarded).map fun (p, g) => p matches .wild false && !g) then
       err arms[k]!.1.span Fren.Core.armAfterWildMsg
-  let sigs ← patSigs
-  let checked := if isTable then Fren.Core.checkTableArms sigs ts.patTy pats guarded
-    else (Fren.Core.checkMatch sigs ts.patTy pats guarded).map (·, #[])
+  let checked := if isTable then Fren.Core.checkTableArms sigs pty pats guarded
+    else (Fren.Core.checkMatch sigs pty pats guarded).map (·, #[])
   let (unguardedExhaustive, pairs) ← match checked with
     | .ok u => pure u
-    | .error (some (i, some j), msg) => err arms[i]!.1.alternatives[j]!.span msg
-    | .error (some (i, none), msg) => err arms[i]!.1.span msg
-    | .error (none, msg) => err span msg
-  if cx.noteIndexes then lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
+    | .error (some (i, some j), msg) => err (patterns[i]!.flatMap Pattern.alternatives)[j]!.span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
+    | .error (some (i, none), msg) => err arms[i]!.1.span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
+    | .error (none, msg) => err span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
+  let implicitArg := match scrutinee with | .path _ #[n] => n.name.startsWith "#match" | _ => false
+  if cx.noteIndexes && many?.isNone && !implicitArg then lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
   let mut bodies : Array String := #[]
   let mut ty? : Option Ty := none
   let mut waiting : Array (Nat × ExprCtx × Expr) := #[]
@@ -5073,8 +5124,9 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
       lintName .binder bn x.span
       -- A payload of a parameter, or of a binder bound from one, is bound
       -- from a payload of that parameter; so is the whole of such a binder.
-      let payloadOf? := cx.recOrigin? scrutinee |>.bind fun (j, p) => if b.payload || p then some j else none
-      new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size, payloadOf? }
+      let source := b.source?.getD scrutinee
+      let payloadOf? := cx.recOrigin? source |>.bind fun (j, p) => if b.payload || p then some j else none
+      new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some source, outer := cx.binders.size, payloadOf? }
     let gcx := { cx with binders := cx.binders ++ new, guards := armGuards }
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let guardOf (g : Expr) : M (String × Option String) := do
@@ -5122,8 +5174,10 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   noteMatch cx span (arms.map (·.1.span)) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
   -- A recursive application under a `match` on an enumeration's parameter
   -- or payload that is not a Lean `match` (`lang::recursive_match`).
-  if origin?.isSome && ts matches .enum .. then
-    if let some k := Fren.Core.firstNonLeanPattern? pats guarded then
+  if origin?.isSome && values.any (fun (_, t) => t matches .enum ..) then
+    let nonLean? := if many?.isSome then (rows.zipIdx.find? fun (ps, j) => ps.any (!·.leanPattern) || guarded[j]!).map (·.2)
+      else Fren.Core.firstNonLeanPattern? pats guarded
+    if let some k := nonLean? then
       if (← get).recUses.size > usesBefore then
         modify fun s => { s with recMatches := s.recMatches.push arms[k]!.1.span }
   -- The first arm that is taken. Where the arms without guards are
@@ -5406,10 +5460,10 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   let pt ← ty?.mapM elabPTy
   let t := pt.map (·.ty)
   let n := Name.mkSimple name.name
-  liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
+  unless name.name.startsWith "#match" do liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
   -- `redundant_bool_type` (`lint::redundant_bool_type`), but not of a
   -- pattern type, whose pattern the annotation holds.
-  if let (some segs, true, false) := (ty?, Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
+  if let (some segs, true, false) := (ty?, !name.name.startsWith "#match" && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
   return pt.getD (.plain .bool)
@@ -6861,6 +6915,7 @@ partial def elabItem (item : Item) : M Unit := do
     if !tps.isEmpty then
       modify fun s => { s with fnTypeParams := some (path, tps), genericCalls := #[], pendingInsts := #[]
                                sorts := s.sorts ++ tps.mapIdx fun k p => Fren.Core.typeParamPath path k p }
+    let (params, body) := lambdaMatchFunction params body
     let contract := !clauses.isEmpty
     -- A parameter is named if it has a type after `:`, or is a `Bool`
     -- written `x?` (`lang::function_params`).
