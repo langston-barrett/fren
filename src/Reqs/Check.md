@@ -933,6 +933,18 @@ wherever `A` is follows from its other checks: each call's arguments meet
 its procedure's assumptions, by the call checks, and the procedure is
 realizable, by its own checks, so its constraints can hold.
 
+That argument needs each called procedure's realizability to be proved.
+Where it is not, because the procedure's realizability check is set to
+testing ([evidence](#checking-by-testing)) or is inconclusive, the
+procedure may have no outputs at some input that meets its assumptions.
+At such an input `A ∧ I` is unsatisfiable, and the global expectation's
+expectations pass there vacuously. With `assume a: x = 1234567`, `call c
+:= tested_lies(x)` and `expect e: c.y = 0`, where `tested_lies` has no
+outputs at `1234567`, `e` passes. Only the called procedure's own report
+says so: its tested evidence, or its inconclusive result. So a global
+expectation proves no more than its called procedures' realizability
+does.
+
 ## Call assumptions
 
 For each call `w` of a procedure `c`, and each assumption `a` of `c`,
