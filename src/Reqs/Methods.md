@@ -40,7 +40,8 @@ reported as passing by random testing, with the caveat `Random` of the
 chapter on evidence of #439. That is the trust level that the source
 chose, never a silent upgrade (#446), and it is where that caveat arises
 on such a check. In a combination of methods, such a pass counts for
-nothing (see [Combinations](#combinations)).
+nothing (see [Combinations](#combinations)). A witness that testing finds
+for a check of the second row is genuine, so that pass has no caveat.
 
 Random testing refutes realizability with an input for which no output
 exists. Its goal has an `∃ outputs` within it, so an input for which the
@@ -93,11 +94,6 @@ pub enum Cell {
     Confirms,          -- only `Pass`, on a witness
 }
 
--- Whether a pass of a check of this kind is a proof from hypotheses,
--- rather than a witness. As the chapter on evidence of #439 defines it;
--- this copy goes when #439 merges.
-pub fn proof?(kind: Kind) := not kind in {Kind::Cover, Kind::Vacuity, Kind::Reachability, Kind::Redundancy}
-
 pub proc method_cell(kind: Kind, method: ProofMethod): (det cell: Cell) {
     use self::Cell::{Confirms, Decides, DecidesUpToSize, Refutes}
 
@@ -124,7 +120,7 @@ expect enumeration_within_matrix(kind: check::Kind, verdict: check::Verdict, con
     call cell := method_cell(kind, check::ProofMethod::Enumerated)
     expect up_to_size: (cell.cell) = check::Cell::DecidesUpToSize
     expect witness_fails_exhausted: when not proof?(kind) and (e.reported) = check::Verdict::Fail, (exact?)
-    expect proof_bounded: when proof?(kind) and enumerable?(kind) and (e.reported) = check::Verdict::Pass and not (exact?), (e.bounded?)
+    expect proof_bounded: when proof?(kind) and (e.reported) = check::Verdict::Pass and not (exact?), (e.bounded?)
 }
 ```
 
@@ -150,7 +146,11 @@ first row pass. Then:
 The pass's *method* is the strongest method that contributed a pass with
 no caveat: Lean, then the solver, then enumeration, then random testing;
 or enumeration, if every pass contributed is bounded, and then the pass
-has the caveat `Bounded`. Its *evidence*, in the sense of the chapter on
+has the caveat `Bounded`. A check that does not pass has no method. A
+witness that random testing finds, for a cover goal, vacuity, redundancy
+or reachability, is a genuine witness, so its pass has no caveat: only a
+pass of a check of the first row by random testing has the caveat
+`Random`. Its *evidence*, in the sense of the chapter on
 evidence of #439, is the weakest link: those caveats, with those of the
 checks that it rests on. The summary records each method's verdict.
 
@@ -189,7 +189,7 @@ pub proc combined(
     outputs_exact?,
     random: Verdict,             -- the verdict of testing (`eval::test_verdict`)
     lean: Verdict,               -- what a Lean proof shows
-): (det verdict: Verdict, det method: ProofMethod, det bounded?) {
+): (det verdict: Verdict, det method: Option<ProofMethod>, det bounded?) {
     use self::Contribution::{Bounded, Nothing, Passed, Refuted}
     use self::ProofMethod::{Enumerated, Lean, Random, Solver}
     use self::Verdict::{Fail, Inconclusive, Pass}
@@ -216,23 +216,32 @@ pub proc combined(
     ensure refuted: (verdict = Fail) iff Refuted in {s, e, r, l}
     ensure passed: (verdict = Pass) iff (not Refuted in {s, e, r, l} and (Passed in {s, e, r, l} or Bounded in {s, e, r, l}))
     ensure bound: bounded? iff (verdict = Pass and not Passed in {s, e, r, l})
-    -- The strongest method that contributed a pass with no caveat, if the check passes.
+    -- The strongest method that contributed a pass with no caveat, or
+    -- enumeration's bounded pass; none unless the check passes.
     ensure strongest: method = (
-        if l = Passed then Lean
-        else if s = Passed then Solver
-        else if e = Passed then Enumerated
-        else if r = Passed then Random
-        else Enumerated)
+        if verdict != Pass then Option::None
+        else if l = Passed then Option::Some(Lean)
+        else if s = Passed then Option::Some(Solver)
+        else if e = Passed then Option::Some(Enumerated)
+        else if r = Passed then Option::Some(Random)
+        else Option::Some(Enumerated))
+
+    expect ran: forall (m: ProofMethod), when method = Option::Some(m), m in selected
+    expect only_passes: (method = Option::None) iff verdict != Pass
+    expect every_bounded_pass: when proof?(kind) and Enumerated in selected and verdict = Pass
+        and not Passed in {s, r, l} and not exact?, bounded?
+    expect definedness_bounded: when selected = {Solver, Enumerated} and solver = Outcome::Unknown
+        and kind = Kind::Definedness and enumerated = Pass and not exact?, verdict = Pass and bounded?
 
     expect any_refutes: when Random in selected and random = Fail and proof?(kind), verdict = Fail
     expect no_counterexample_adds_nothing: when selected = {Solver, Random} and solver = Outcome::Unknown
         and proof?(kind), verdict != Pass
     expect witness_confirms: when selected = {Solver, Random} and random = Pass and not proof?(kind)
-        and solver = Outcome::Unknown, verdict = Pass and method = Random
+        and solver = Outcome::Unknown, verdict = Pass and method = Option::Some(Random)
     expect bounded_passes: when selected = {Solver, Enumerated} and solver = Outcome::Unknown and proof?(kind)
-        and enumerable?(kind) and enumerated = Pass and not exact?, verdict = Pass and bounded? and method = Enumerated
+        and enumerated = Pass and not exact?, verdict = Pass and bounded? and method = Option::Some(Enumerated)
     expect decided_unbounded: when selected = {Solver, Enumerated} and solver = Outcome::Unsat and proof?(kind)
-        and enumerated = Pass, verdict = Pass and not bounded? and method = Solver
+        and enumerated = Pass, verdict = Pass and not bounded? and method = Option::Some(Solver)
     expect nothing_reached: when solver = Outcome::Unknown and enumerated = Inconclusive and random = Inconclusive
         and lean = Inconclusive, verdict = Inconclusive
 }

@@ -6589,10 +6589,11 @@ def lintLiterals : M Unit := do
   modify fun s => { s with literals := #[] }
 
 /-- What `F0215` calls the item `item`, after `set_option ... in`, if it is
-a function or a constant, through further settings with `in`. -/
-partial def evidenceTarget? : Item → Option String
-  | .function .. => some "a function"
-  | .const .. => some "a constant"
+a function or a constant, through further settings with `in`, and what
+its checks are of: a body, a constant's value, or a contract. -/
+partial def evidenceTarget? : Item → Option (String × Fren.Core.CheckedItem)
+  | .function _ _ _ _ _ body .. => some ("a function", if body.isSome then .body else .contract)
+  | .const .. => some ("a constant", .body)
   | .lintSetting _ _ _ _ _ (some body) => evidenceTarget? body
   | _ => none
 
@@ -7278,8 +7279,8 @@ partial def elabItem (item : Item) : M Unit := do
         -- Before a function or a constant, whose checks are the solver's,
         -- only the solver can be set (`F0215`), and the item is elaborated
         -- as though it were (`Fren.Core.dispatchOf`).
-        if let (some what, some ev) := (evidenceTarget? body, Fren.Core.evidenceOf? value) then
-          unless ev.settable .body do
+        if let (some (what, item), some ev) := (evidenceTarget? body, Fren.Core.evidenceOf? value) then
+          unless ev.settable item do
             modify fun s => { s with diags := s.diags.push { file := s.file, span := stx, msg := Fren.Core.itemEvidenceMsg what value } }
             elabItem body
             return

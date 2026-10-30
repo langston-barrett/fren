@@ -2193,9 +2193,16 @@ to the bound*, a weaker pass than a proof, and a check that fails on
 exist. Realizability's goal has `∃ outputs` within it: its failure, a
 conflict, is genuine only where the outputs are exhausted, since their
 values are pinned by the input, and its contradictory assumptions rest on
-`unsat`. `check::enumerated_verdict`:
+`unsat`. `check::proof?` gives the checks that pass on a proof, and
+`check::enumerated_verdict` the verdicts:
 
 ```fren
+-- Whether a pass of a check of this kind is a proof from hypotheses,
+-- rather than a witness (see [Verdict families](#verdict-families)). As
+-- the chapter on evidence of #439 defines it; one of the two goes when
+-- #439 merges.
+pub fn proof?(kind: Kind) := not kind in {Kind::Cover, Kind::Vacuity, Kind::Reachability, Kind::Redundancy}
+
 pub proc enumerated_verdict(
     kind: Kind,
     verdict: Verdict,        -- what the check algorithm reaches from the search's answers
@@ -2206,15 +2213,7 @@ pub proc enumerated_verdict(
     det reported: Verdict,
     det bounded?,            -- it holds only up to the bound
 ) {
-    use self::Kind::{
-        Completeness,
-        Determinism,
-        Disjointness,
-        Expectation,
-        InstanceAssumption,
-        Precondition,
-        Realizability,
-    }
+    use self::Kind::Realizability
     use self::Verdict::{Fail, Inconclusive, Pass}
 
     ensure reported_rule: reported = table {
@@ -2222,17 +2221,18 @@ pub proc enumerated_verdict(
         | not exact? and verdict = Pass => Pass,
         | not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? => Fail,
         | not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) => Inconclusive,
-        | not exact? and verdict = Fail and kind in {Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition} => Fail,
-        | not exact? and verdict = Fail and not kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition} => Inconclusive,
+        | not exact? and verdict = Fail and kind != Realizability and proof?(kind) => Fail,
+        | not exact? and verdict = Fail and not proof?(kind) => Inconclusive,
         | not exact? and verdict = Inconclusive => Inconclusive,
     }
     -- What rests on an `unsat` answer that does not see every behaviour.
     ensure bounded_rule: bounded? iff (not exact? and reported != Fail and verdict != Inconclusive
-        and (verdict = Fail or kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition}))
+        and (verdict = Fail or proof?(kind)))
 
     expect decided: when exact?, reported = verdict
     expect failures_genuine: when reported = Fail, verdict = Fail
-    expect bounded_pass_proves: when reported = Pass and bounded?, kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition}
+    expect bounded_pass_proves: when reported = Pass and bounded?, proof?(kind)
+    expect proof_passes_bounded: when proof?(kind) and reported = Pass and not exact?, bounded?
 }
 ```
 

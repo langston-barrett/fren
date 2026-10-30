@@ -96,6 +96,8 @@ trusted check::method_cell: "the design of the proof methods; check::today_withi
 -- No code combines verdicts yet: `fren.evidence` takes no sets (#368).
 trusted check::combined: "no front end combines the verdicts of several methods yet; its expectations are checked by the solver"
 
+tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"
+
 tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"
 

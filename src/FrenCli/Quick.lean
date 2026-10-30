@@ -144,41 +144,45 @@ def finiteValues? (sp : Spec) (w : World) : VTy → Option (Array Val)
   | _ => none
 
 /-- Whether `c` has no outputs for the input and behaviours of the calls in
-`env`, under `I`: whether every assignment of its outputs makes one of
-`reqs`, its definitions and guarantees, `false`, and if so, those that
-are, one for each assignment, preferring those already found. This is
-decided only where the search sees every output (`eval::test_verdict`):
-each output is defined, with a definition that has a value, or is of a
-type of `finiteValues?`, with at most `limit` assignments of them in all,
-and in each assignment some constraint is `false`. Otherwise it is
-`none`. -/
+`env`, under `I`, decided only where the search sees every output
+(`eval::outputs_seen`): each output is defined, or of a type of
+`finiteValues?`, with at most `limit` assignments of the others, and each
+assignment, with the defined outputs from their definitions, makes one of
+`reqs`, its definitions and guarantees, `false`. If so, those that are
+`false`, one for each assignment, preferring those already found. -/
 def Spec.noOutputsExist (sp : Spec) (w : World) (I : Interp) (c : Comp) (reqs : Array Atom) (env : Env)
     (limit : Nat := 4096) : Option (Array Name) := Id.run do
   let free := c.vars.filter fun v => v.role == .output && !c.defs.any (·.1 == v.name)
-  let mut domains : Array (Name × Array Val) := #[]
-  for v in free do
-    let some vs := finiteValues? sp w v.ty | return none
-    domains := domains.push (v.name, vs)
-  let total := domains.foldl (· * ·.2.size) 1
-  if total > limit then return none
+  let domains := free.map fun v => (v.name, finiteValues? sp w v.ty)
+  let sizes := domains.map (·.2.map (·.size))
+  let count := sizes.foldl (· * ·.getD 0) 1
+  let mut assignments : Array Assigned := #[]
   let mut core : Array Nat := #[]
-  for k in [0:total] do
-    -- The `k`th assignment of the outputs without definitions.
-    let mut env := env
-    let mut j := k
-    for (x, vs) in domains do
-      env := env.insert x vs[j % vs.size]!
-      j := j / vs.size
-    -- The defined outputs, from their definitions, which may read one
-    -- another: one round for each.
-    for _ in c.defs do
-      for (d, e) in c.defs do
-        unless env.contains d do
-          if let some v := e.eval I env.look then env := env.insert d v
-    unless c.defs.all (env.contains ·.1) do return none
-    let falsified := (reqs.map (·.eval I env.look)).zipIdx.filterMap fun (v, i) => if v == some false then some i else none
-    if falsified.isEmpty then return none
-    unless falsified.any core.contains do core := core.push falsified[0]!
+  if sizes.all (·.isSome) && count ≤ limit then
+    for k in [0:count] do
+      -- The `k`th assignment of the outputs without definitions.
+      let mut env := env
+      let mut j := k
+      for (x, vs?) in domains do
+        let vs := vs?.getD #[]
+        env := env.insert x vs[j % vs.size]!
+        j := j / vs.size
+      -- The defined outputs, from their definitions, which may read one
+      -- another: one round for each.
+      for _ in c.defs do
+        for (d, e) in c.defs do
+          unless env.contains d do
+            if let some v := e.eval I env.look then env := env.insert d v
+      let values := reqs.map (·.eval I env.look)
+      let falsified := values.zipIdx.filterMap fun (v, i) => if v == some false then some i else none
+      assignments := assignments.push <|
+        if !c.defs.all (env.contains ·.1) then .Undefined
+        else if !falsified.isEmpty then .Ruled
+        else if values.all (·.isSome) then .Satisfied
+        else .Undefined
+      if let some i := falsified[0]? then
+        unless falsified.any core.contains do core := core.push i
+  if !outputsSeen sizes count assignments limit then return none
   return some ((core.qsort (· < ·)).map (reqs[·]!.label))
 
 /-- Whether a test that found what a check is about, in `env`, reaches it:

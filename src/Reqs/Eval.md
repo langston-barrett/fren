@@ -447,16 +447,41 @@ A counterexample from testing is genuine, so it fails the check. But
 the search can miss outputs, so an input for which none were found
 suggests that the procedure is not realizable, without showing it. That
 gives a warning, `F0609`, and an inconclusive result, unless the search
-saw every output for that input. It does where each output is defined,
-by a definition that has a value there, or is of a type with finitely
-many values, all of which the search tries: `Bool`, an abstract type, of
-the interpretation's number of values, and an enumeration whose variants
-have no fields; where at most 4096 assignments of them are left; and where,
-in each of those, some constraint of the procedure is `false`, or else
-every constraint has a value. Then no output exists for that input, as
-for enumeration where it sees every output
+saw every output for that input. It does where each output without a
+definition is of a type with finitely many values, all of which the
+search tries: `Bool`, an abstract type, of the interpretation's number of
+values, and an enumeration whose variants have no fields; where there are
+at most 4096 assignments of those outputs; and where, in each of those,
+with the defined outputs given by their definitions, every definition has
+a value and some constraint of the procedure is `false`. Then no output
+exists for that input, as for enumeration where it sees every output
 (`check::enumerated_verdict`), so the input is a genuine counterexample,
-and fails realizability. A check that no test
+and fails realizability, with the constraints that are `false` as its
+core. `eval::outputs_seen` states when the search saw every output:
+
+```fren
+-- What one assignment of the outputs makes of the constraints: some is
+-- `false`, with every definition's value; none is, and all have values;
+-- or something it needs has no value.
+pub enum Assigned { Ruled, Satisfied, Undefined }
+
+set_option fren.lint.undecidable "allow" in
+pub proc outputs_seen(
+    sizes: Seq<Option<Int>>,     -- each output without a definition: its number of values, where the search tries all
+    count: Nat,                  -- the assignments of those outputs: the product of their numbers of values
+    assignments: Seq<Assigned>,  -- what each assignment makes of the constraints, if there are at most 4096
+): (det seen?) {
+    ensure rule: seen? iff ((forall (s: Option<Int>), when s in sizes, s != Option::None) and count <= 4096 and assignments.len = count
+        and (forall (a: Assigned), when a in assignments, a = Assigned::Ruled))
+
+    expect unbounded_unseen: when sizes != [] and sizes[0] = Option::None, not seen?
+    expect satisfied_unseen: when assignments != [] and assignments[0] = Assigned::Satisfied, not seen?
+    expect undefined_unseen: when assignments != [] and assignments[0] = Assigned::Undefined, not seen?
+}
+```
+
+`exhausted?` below is `seen?`, for the input that the search found no
+outputs for. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
 with the warning `F0610`. A check with a trigger that no test reached,
 though some found what it is about, is inconclusive with the warning

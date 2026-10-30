@@ -839,9 +839,9 @@ def _root_.Fren.Core.Comp.only (t : Tested) (c : Comp F) (kinds : Array CheckKin
       tables := c.tables.filter fun s => t.props.contains s.site.prop || t.insts.contains s.site.prop },
     kinds.filter fun k => enumerable k && (k != .realizable || t.realizable) && (k != .redundancy || t.redundancy))
 
-/-- Of the checks that enumeration decides (`enumerable`), whether one
-passes on a proof, rather than on a model (`Reqs/Check#verdict-families`). -/
-def provesFamily (kind : CheckKind) : Bool := kind.proof && kind.enumerable
+/-- Whether a check passes on a proof, rather than on a model
+(`check::proof?`, `Reqs/Check#verdict-families`). -/
+def provesFamily (kind : CheckKind) : Bool := kind.proof
 
 /-- What enumeration within the bound shows of a check
 (`check::enumerated_verdict`): `exact` when every slot's values are all of
