@@ -410,19 +410,11 @@ The error names a value that both patterns match, as a pattern, as a
 constructors that both name, with such a value of each value of their
 payloads, an integer that both match, or `_` where both are wildcards.
 
-## Patterns as text
+## Meaning
 
-The [model of meaning](Meaning.md#layers) holds a pattern as text, in the
-static part `s` of a layer: of a pattern test, `Op("is", s)`, its pattern,
-and of a `match`, `Op("match", s)`, its arms' patterns, joined by `;`.
-Each is written as Fren writes it, with every binder written `_` and each
-variant by its qualified path, as its construction names it, as in
-`Option::Some(_); Option::None`, and a name of one segment, not applied,
-is a constant. Nothing produces this text yet: the front ends will, once
-they evaluate through the model. Its interpretation in Lean reads only
-`_`, `true` and `false`, integer literals, ranges whose bounds are
-literals, string literals without escapes, variants by paths of more than
-one segment, constants whose values are known, and or-patterns. Any other
-text, such as an applied name of one segment, `Some(_)`, decodes to no
-patterns, and then no arm of the `match` is open, so its value is
-unspecified rather than that of a later arm.
+A pattern's meaning is stated by the [dynamic
+semantics](Semantics.md#pattern-matching): `lang::Pattern` is a pattern
+after elaboration, with each variant by its full path, each range by its
+bounds' values, and each constant by its value, and `lang::matches_value?`
+and `lang::bind` say which values it matches and what its binders are
+bound to.

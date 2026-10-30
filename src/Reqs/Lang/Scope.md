@@ -6,8 +6,8 @@ Which declarations are in scope, and which one a name resolves to, is
 stated once, in this chapter, as a model that the other chapters
 [instantiate](Calls.md): [shadowing](Procedures.md#shadowing), what an
 identifier is in a [pattern](Patterns.md#kinds-of-pattern), [module
-resolution](Modules.md#resolution), and the [layer](ScopeLaws.md#names-as-layers)
-that a name is in the core of meaning.
+resolution](Modules.md#resolution), and the [expression](ScopeLaws.md#names-as-expressions)
+that a name elaborates to in the [dynamic semantics](Semantics.md).
 
 ```fren
 pub mod lang
@@ -34,8 +34,7 @@ is the kinds:
   `Instance`, as a procedure's are;
 - `PatternBinder`, a binder of a [`match` arm](Expressions.md#matches) or
   of a [pattern test](Expressions.md#pattern-tests), whose target is where
-  its pattern declares it, as a `Binder` [head](Meaning.md#layers) names
-  it, such as `Reply::Value.0`; `BoundName`, a
+  its pattern declares it, such as `Reply::Value.0`; `BoundName`, a
   [quantifier's](Quantifiers.md#names) bound name; and `Definition`, a
   name of a [`let` or `where`](Let.md);
 - `Builtin`, a [cardinality operator](Expressions.md#cardinality);
@@ -237,9 +236,8 @@ A name resolves to the binding of that name at the least depth, its
 *innermost*. Where several distinct bindings of the name are innermost,
 which only glob imports allow, it is *ambiguous*, and where none has the
 name, it is *unbound*. `lang::resolve` states this; it is a function with
-a contract, as [`step`](Meaning.md#one-layer) is, since its postconditions
-determine it: every finite set of bindings has a least depth among those of
-a name, if any has it.
+a contract, since its postconditions determine it: every finite set of
+bindings has a least depth among those of a name, if any has it.
 
 ```fren
 -- What a name resolves to: the kind of its binding, or that it is

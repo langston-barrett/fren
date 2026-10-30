@@ -310,57 +310,51 @@ pub proc manual_at_most_one_guarded(q: Seq<Int>, i: Int, x: Int, z?): (indexed?,
 ```
 
 The `obligation?` of a conjunct is what makes the fix keep definedness. In
-the conjunct `not (a and b)`, the `and` is a [layer](../../Lang/Meaning.md#guards),
-`Op("and", "")`, whose second operand is guarded by its first; in the fix,
-the operands are the parts of `Op("at_most_one?", "")`, which guards none.
-An `and` without an obligation is one whose operands are defined in every
-environment, so the two layers are defined alike, whatever the operands'
-values: the guard that the fix drops was not needed.
-`lint::manual_at_most_one_defined` states this over `lang::node`; with an
-obligation, the `and` can be defined where the call is not, which is why
-the lint does not fire there.
+the conjunct `not (a and b)`, the `and` is an
+[`And`](../../Lang/EvaluationRules.md#lazy-boolean-expressions), whose right
+operand is evaluated only where its left is true; in the fix, the operands
+are the arguments of a [`Count`](../../Lang/EvaluationRules.md#operator-expressions),
+which evaluates both. An `and` without an obligation is one whose operands
+are well-defined in every environment, so the two are well-defined alike,
+whatever the operands' values: the guard that the fix drops was not
+needed. `lint::manual_at_most_one_defined` states this over
+[evaluation](../../Lang/Semantics.md); with an obligation, the `and` can be
+well-defined where the call is not, which is why the lint does not fire
+there.
 
 `lint::manual_at_most_one` and `lint::manual_at_most_one_any` are tied to
 this only by the assumption `no_obligation`: their `obligation?` is a
 field of each conjunct, an input that the lint computes from the
 conjunct's syntax, and their implementations read it as one, so it cannot
-be defined as `node`'s `defined?`. That the lint's syntactic test gives
-`obligation?` wherever an operand may not be defined, as `no_obligation`
-assumes, is tested, by `lint::manual_at_most_one_guarded` above and the ui
-tests, not proved:
+be defined from evaluation. That the lint's syntactic test gives
+`obligation?` wherever an operand may not be well-defined, as
+`no_obligation` assumes, is tested, by `lint::manual_at_most_one_guarded`
+above and the ui tests, not proved. Its own evidence is testing, which
+evaluates both expressions, since the solver unfolds
+[`eval`](../../Lang/Semantics.md#the-evaluation-function) one step, and the
+call's argument list is two deep:
 
 ```fren
-proc manual_at_most_one_defined(
-    program: Program,
+set_option fren.evidence "tested" in
+pub proc manual_at_most_one_defined(
+    i: Interp,
     env: Env,
-    a: Value,                        -- the operands' values
-    b: Value,
-    undefined_parts: Set<Int>,       -- which operands, `0` and `1`, are not defined
+    a: Expr,                         -- the operands
+    b: Expr,
     obligation?,                     -- the `and` gives a definedness obligation
 ) {
-    use lang::{Env, Head, Program, Value, node}
+    use lang::{Cardinality, Env, Expr, Interp, Outcome, Value, eval}
 
-    assume no_obligation: unless obligation?, undefined_parts = {}
+    -- The operands are `Bool`s where they are well-defined.
+    assume booleans: eval(i, env, a) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
+        and eval(i, env, b) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
+    assume no_obligation: unless obligation?, eval(i, env, a) is Outcome::Defined(_) and eval(i, env, b) is Outcome::Defined(_)
 
-    call conjunct := node(
-        program,
-        Head::Op("and", ""),
-        env,
-        [a, b],
-        {},
-        undefined_parts,
-    )
-    call call := node(
-        program,
-        Head::Op("at_most_one?", ""),
-        env,
-        [a, b],
-        {},
-        undefined_parts,
-    )
+    let conjunct: Outcome := eval(i, env, Expr::And(a, b))
+    let counted: Outcome := eval(i, env, Expr::Count(Cardinality::AtMost, Expr::Cons(a, Expr::Cons(b, Expr::Nil))))
 
-    expect kept: unless obligation?, conjunct.defined? and call.defined?
-    -- With an obligation, the `and`'s guard can be what makes it defined.
-    cover guard_needed: obligation? and conjunct.defined? and not call.defined?
+    expect kept: unless obligation?, conjunct is Outcome::Defined(_) and counted is Outcome::Defined(_)
+    -- With an obligation, the `and`'s guard can be what makes it well-defined.
+    cover guard_needed: obligation? and conjunct is Outcome::Defined(_) and counted = Outcome::Undefined
 }
 ```

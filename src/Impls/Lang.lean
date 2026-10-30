@@ -41,42 +41,37 @@ def toMention : Fren.Core.Mention → lang.Mention
   | .var x => .Var x
   | .fn f => .Fn f
 
-/-- The layer (`lang::Head`) of an expression of kind `k`, where `v` is its
-value, for a literal or a bound name, and `x` and `y` its names and static
-parts, for the kinds whose names `Fren.Core.MentionKind` does not keep,
-since what they mention does not depend on them. -/
-def toLayerHead (v : lang.Value) (x y : String) : Fren.Core.MentionKind → lang.Head
-  | .literal => .Literal v
-  | .constant => .Constant x
+/-- The kind (`lang::ExprKind`) of an expression of kind `k`. -/
+def toExprKind : Fren.Core.MentionKind → lang.ExprKind
+  | .literal => .Literal
+  | .constant => .Constant
   | .variable n => .Variable n
-  | .definition => .Definition x
-  | .binder => .Binder x
-  | .bound => .Bound v
-  | .construction => .Construction x y
-  | .method => .Method x
+  | .definition => .Definition
+  | .binder => .Binder
+  | .bound => .BoundName
+  | .construction => .Construction
+  | .method => .Method
   | .uninterpreted f => .Uninterpreted f
-  | .defined => .Defined x
-  | .compound => .Op x y
+  | .defined => .Defined
+  | .compound => .Compound
 
 /-- What `ms` mention, as a set of the spec's mentions. -/
 def mentionSet (ms : List Fren.Core.Mention) : Fren.FinSet lang.Mention := Fren.FinSet.ofList (ms.map toMention)
 
--- For every expression's shape, and every value, name and static part of
--- its layer: what each kind mentions, and the walk over a shape that both
--- front ends decide by. That each front end classifies its syntax into the
--- right kinds is not proved here, but tested by both on the same ui tests,
--- whose messages name what each operand of a nonlinear product mentions.
-impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Core.MentionShape) (v : lang.Value)
-    (x y : String) {
-  head := toLayerHead v x y k,
-  parts_mentioned := mentionSet (Fren.Core.MentionShape.allMentioned ps),
+-- For every expression's shape: what each kind mentions, and the walk over
+-- a shape that both front ends decide by. That each front end classifies
+-- its syntax into the right kinds is not proved here, but tested by both on
+-- the same ui tests, whose messages name what each operand of a nonlinear
+-- product mentions.
+impl mentions: lang::mentions for (k : Fren.Core.MentionKind) (ps : List Fren.Core.MentionShape) {
+  form := toExprKind k,
+  sub_mentioned := mentionSet (Fren.Core.MentionShape.allMentioned ps),
   mentioned := mentionSet (Fren.Core.MentionShape.node k ps).mentioned,
   mentions? := (Fren.Core.MentionShape.node k ps).mentions,
 } by
-  intro k ps v x y h
-  cases k <;> simp_all [fren_spec, toLayerHead, mentionSet, toMention, Fren.Core.MentionShape.mentions,
-    Fren.Core.MentionShape.mentioned, Fren.Core.kindMentioned, lang.Head.Literal.x0, lang.Head.Bound.x0,
-    lang.Head.Constant.x0, lang.Head.Variable.x0, Fren.FinSet.ext_iff, or_comm]
+  intro k ps h
+  cases k <;> simp_all [fren_spec, toExprKind, mentionSet, toMention, Fren.Core.MentionShape.mentions,
+    Fren.Core.MentionShape.mentioned, Fren.Core.kindMentioned, Fren.FinSet.ext_iff, or_comm]
   all_goals cases Fren.Core.MentionShape.allMentioned ps <;> simp [Fren.FinSet.ext_iff]
   all_goals exact ⟨_, fun h => absurd rfl h⟩
 
@@ -96,13 +91,13 @@ def toGuardedOperand : Fren.Core.GuardedOperand → lang.GuardedOperand
 -- tested by both on the same ui tests.
 impl guard: lang::guard for (o : Fren.Core.GuardedOperand) (h : Bool) {
   operand := toGuardedOperand o,
-  condition := .B h,
+  condition := lang.truth h,
   holds? := h,
   evaluated? := o.guard h (!h),
 } by
   intro o h _
   cases o <;> cases h <;>
-    simp [fren_spec, toGuardedOperand, Fren.Core.GuardedOperand.guard, Fren.Core.GuardedOperand.whenHolds]
+    simp [fren_spec, toGuardedOperand, lang.truth, Fren.Core.GuardedOperand.guard, Fren.Core.GuardedOperand.whenHolds]
 
 def toPosition : Fren.Core.Position → lang.Position
   | .declared => .Declared

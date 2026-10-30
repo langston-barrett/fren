@@ -265,14 +265,14 @@ pub proc output_lints(
 }
 ```
 
-A defined variable is the layer `Definition(x)`, whose one part is its
-definition, so its value is its definition's. Where `constant_output`
-fires, that value is the same in every behaviour, by
-[`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where each
-layer of the definition that is evaluated is specified, as the [definedness
+A defined variable is read from an environment that binds it to its
+definition's outcome, so its value is its definition's. Where
+`constant_output` fires, that value is the same in every behaviour, by
+[`mentions_nothing`](Meaning.md#expressions-that-mention-nothing), where the
+definition is well-defined, as the [definedness
 check](../Check.md#definedness) ensures of a spec that passes its checks.
-Here `p` is the root layer of the definition in one behaviour and `q` the
-same layer, with the same parts' values, in any other:
+Here `definition` is the definition's elaboration, and `i`, `p`, `j` and
+`q` two interpretations and environments:
 
 ```fren
 expect constant_output_fixed(
@@ -280,29 +280,17 @@ expect constant_output_fixed(
     o_mentioned: Set<lang::Mention>,
     o_n_guarantees: Nat,
     o_equation?,
-    p_program: lang::Program,
-    p_head: lang::Head,
-    p_env: lang::Env,
-    p_values: Seq<lang::Value>,
-    p_parts_mentioned: Set<lang::Mention>,
-    p_undefined_parts: Set<Int>,
-    q_program: lang::Program,
-    q_head: lang::Head,
-    q_env: lang::Env,
-    q_values: Seq<lang::Value>,
-    q_parts_mentioned: Set<lang::Mention>,
-    q_undefined_parts: Set<Int>,
+    definition: lang::Expr,
+    i: lang::Interp,
+    p: lang::Env,
+    j: lang::Interp,
+    q: lang::Env,
 ) {
-    assume p_leaves: when p_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        p_parts_mentioned = {}
-    assume q_leaves: when q_head is lang::Head::Literal(_) | lang::Head::Bound(_) | lang::Head::Constant(_) | lang::Head::Variable(_),
-        q_parts_mentioned = {}
+    assume elaborated: lang::free_vars(definition) = o_mentioned
+    assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call o := output_lints(o_defined?, o_mentioned, o_n_guarantees, o_equation?)
-    call p := lang::node(p_program, p_head, p_env, p_values, p_parts_mentioned, p_undefined_parts)
-    call q := lang::node(q_program, q_head, q_env, q_values, q_parts_mentioned, q_undefined_parts)
-    expect constant_output_fixed: when o.constant? and p.mentioned = o.mentioned and p.specified? and q.program = p.program and q.head = p.head
-        and q.values = p.values,
-        q.value = p.value
+    call same := lang::closed(i, p, j, q, definition)
+    expect constant_output_fixed: when o.constant?, lang::eval(i, p, definition) = lang::eval(j, q, definition)
 }
 ```
 

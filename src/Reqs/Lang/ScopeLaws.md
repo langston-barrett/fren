@@ -1,8 +1,8 @@
 # Laws of scope
 
 This chapter ties the [scope](Scope.md) model to the chapters that it
-comes before: where a pattern test's binders are in scope, and what layer
-of the [core of meaning](Meaning.md#layers) a name is.
+comes before: where a pattern test's binders are in scope, and what
+[expression](Semantics.md#abstract-syntax) a name is.
 
 ## Pattern tests
 
@@ -37,47 +37,63 @@ pub proc test_local(
 }
 ```
 
-## Names as layers
+## Names as expressions
 
-A name written alone is the layer that its [binding](Scope.md#bindings)
-says, `named_head`: a variable, a parameter, an instance, a global
-expectation's binder or a bound name is a `Variable`, read from the
-environment; a constant or a variant a `Constant`, by its full path; a
-name of a `let` or `where` a `Definition`; and a binder a `Binder`, by
-where its pattern declares it. A bound name of a listed type is replaced
-by its value in each instance of its quantifier, so it is a `Bound` layer
-there, and only an unbounded one is read from the environment. A
-function, and an item that is not a value, is never a layer alone: it is
-applied, or a path's first segment, and is a `Constant` by its path too.
+A name written alone elaborates to the [expression](Semantics.md#expressions)
+that its [binding](Scope.md#bindings) says, `named_expr`: a variable, a
+parameter, an instance, a global expectation's binder, a bound name, a
+name of a `let` or `where` and a binder of a pattern are a `Var`, read from
+the environment, which the procedure, a function's application, a
+quantifier's instance, a `Let` or a `Match` binds; a variant, by its full
+path, is a `Construct` without a payload; and a constant, by its full
+path, is an `Apply` of its definition. A function, and an item that is not
+a value, is never an expression alone: it is applied, or a path's first
+segment.
 
 ```fren
-pub fn named_head(b: Binding): Head := match b.kind {
-    BindingKind::Input | BindingKind::Output | BindingKind::Parameter | BindingKind::Instance
-    | BindingKind::BoundName => Head::Variable(b.name),
-    BindingKind::Definition => Head::Definition(b.name),
-    BindingKind::PatternBinder => Head::Binder(b.target),
-    _ => Head::Constant(b.target),
+-- The expression that a name written alone elaborates to, where
+-- `definition` is the definition of a constant.
+pub fn named_expr(b: Binding, definition: Expr): Expr := match b.kind {
+    BindingKind::Variant | BindingKind::Opened => Expr::Construct(b.target, Expr::Nil),
+    BindingKind::Constant | BindingKind::Function | BindingKind::Builtin | BindingKind::Module
+    | BindingKind::Enumeration | BindingKind::Item => Expr::Apply(b.target, Expr::Nil, Params::Nil, definition),
+    _ => Expr::Var(b.name),
 }
 ```
 
-`lang::named` is the layer of one name written alone:
+`lang::named` is the expression of one name written alone:
 
 ```fren
 pub proc named(
     binding: Binding,      -- what the name resolves to
-): (det head: Head) {
-    use self::BindingKind::{Constant, Input, Opened, Output, Variant}
+    definition: Expr,      -- a constant's definition
+): (det expr: Expr) {
+    use self::BindingKind::{Constant, Definition, Input, Opened, Output, PatternBinder, Variant}
 
-    out head := named_head(binding)
+    out expr := named_expr(binding, definition)
 
     -- A component's variable is read from the environment, by its name, and
     -- a constant and a variant are not.
-    expect read: when binding.kind in {Input, Output}, head = Head::Variable(binding.name)
-    expect constant: when binding.kind in {Constant, Variant, Opened}, head = Head::Constant(binding.target)
-    -- A binder is named by where its pattern declares it, and a name of a
-    -- `let` by its name.
-    expect binder: when binding.kind = BindingKind::PatternBinder, head = Head::Binder(binding.target)
-    expect definition: when binding.kind = BindingKind::Definition, head = Head::Definition(binding.name)
+    expect read: when binding.kind in {Input, Output}, expr = Expr::Var(binding.name)
+    expect constant: when binding.kind = Constant, expr = Expr::Apply(binding.target, Expr::Nil, Params::Nil, definition)
+    expect variant: when binding.kind in {Variant, Opened}, expr = Expr::Construct(binding.target, Expr::Nil)
+    -- A binder and a name of a `let` are read from the environment that
+    -- their `Match` or `Let` extends, by their names.
+    expect locals: when binding.kind in {PatternBinder, Definition}, expr = Expr::Var(binding.name)
+}
+```
+
+So a constant has its definition's outcome in every environment, as
+[Constants](Items.md#constants) states:
+
+```fren
+expect constant_value(binding: Binding, definition: Expr, i: Interp, env: Env) {
+    assume constant: binding.kind = BindingKind::Constant
+    call name := named(binding, definition)
+    -- The constant has no arguments, whose list is `Nil`, and so no parameters.
+    expect definition_outcome: eval(i, env, Expr::Nil) = Outcome::Defined(Value::Nil)
+        and bind_params(Params::Nil, Value::Nil) = Env::Empty
+        and eval(i, env, name.expr) = eval(i, Env::Empty, definition)
 }
 ```
 
@@ -88,4 +104,5 @@ check every earlier chapter again:
 ```fren
 #fren_check test_local
 #fren_check named
+#fren_check constant_value
 ```
