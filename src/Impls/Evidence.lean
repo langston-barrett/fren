@@ -21,6 +21,7 @@ import Impls.HigherOrder
 import Impls.Impl
 import Impls.Lang
 import Impls.Lint
+import Impls.Models
 import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTests
@@ -93,6 +94,8 @@ tested lang::closed: "src/FrenTest/Semantics.lean"
 tested lint::written_scopes: "src/FrenTest/Semantics.lean"
 tested lint::ifs_same_cond_taken: "src/FrenTest/Semantics.lean"
 tested lint::manual_at_most_one_defined: "src/FrenTest/Semantics.lean"
+-- Both front ends' fill rules, on the examples of `model::default_examples`.
+tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- No front end elaborates a name into the semantics' abstract syntax yet,
 -- so there is no code to bind `lang::named` to; its expectations are
 -- checked by the solver.

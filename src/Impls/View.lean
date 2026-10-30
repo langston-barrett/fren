@@ -18,11 +18,24 @@ def toLevel : Option Severity → view.Severity
   | some .warning => .Warning
   | some .error => .Error
 
-impl severity: view::severity for (k : CheckKind) (v : Verdict) {
+/-- A result's severity is its kind's and verdict's, whatever it reports:
+no detail of it has a severity of its own. An internal error beside a
+result is a diagnostic (`Reqs/Models#reporting`). -/
+theorem severity_of_result (k : CheckKind) (v : Verdict) (d : Fren.Core.Detail) :
+    ({ kind := k, comp := .anonymous, prop? := none, verdict := v, detail := d : CheckResult }).severity?
+      = Fren.Core.severity? k v := rfl
+
+-- Bound to `CheckResult.severity?`, the severity that a run reports and
+-- exits from, rather than to the helper `Fren.Core.severity?`: a rule added
+-- beside it, as `Reqs/Models`'s internal error nearly was, must break this.
+impl severity: view::severity for (k : CheckKind) (v : Verdict) (d : Fren.Core.Detail) {
   kind := toCheckKind k,
   verdict := toVerdict v,
-  level := toLevel (Fren.Core.severity? k v),
-}
+  level := toLevel ({ kind := k, comp := .anonymous, prop? := none, verdict := v, detail := d : CheckResult }).severity?,
+} by
+  intro k v d _
+  rw [severity_of_result]
+  cases k <;> cases v <;> decide
 
 impl summary: view::summary for (rs : Array CheckResult) {
   level := toLevel (some (summarySeverity rs)),

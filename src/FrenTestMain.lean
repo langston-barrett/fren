@@ -52,6 +52,10 @@ def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
   let fs ← dir.walkDir
   return (fs.filter (·.extension == some ext)) |>.qsort (·.toString < ·.toString)
 
+/-- The ui tests that run with the readers of solver models misreading
+them, to see that confirmation catches it (`Reqs/Models#testing`). -/
+def misreadDir : FilePath := "test" / "ui" / "misread"
+
 /-- The ui tests: `test/ui/**/*.fren`, and the examples, `examples/**/*.fren`,
 which are checked as ui tests too. -/
 def uiFiles : IO (Array FilePath) :=
@@ -312,6 +316,7 @@ def ownSpecFiles : Array String :=
     "Lang/Calls",
     "Check",
     "Methods",
+    "Models",
     "View",
     "Cli",
     "Lint",
@@ -1573,13 +1578,14 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
-  let ui ← uiFiles
+  -- The ui tests of `misreadDir` run with the readers' injected bug.
+  let (misread, ui) := (← uiFiles).partition (·.toString.startsWith misreadDir.toString)
   let n := (ui.size + uiBatch - 1) / uiBatch
   -- Every `n`th file, so that the slow ones spread over the batches.
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
-    ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
+    ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
@@ -1592,6 +1598,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     initSearchPath (← findSysroot)
     let env ← importModules #[{ module := `Fren }] {} (loadExts := true)
     uiTests env (files.toArray.map FilePath.mk)
+  -- Spawned with `FREN_MISREAD_MODELS` set (`spawnJob`).
+  | "uiMisread" :: files => runJob bless ("ui" :: files)
   | ["leanTokens"] => leanTokens
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
@@ -1635,7 +1643,9 @@ prints how long it took (`--timings`). -/
 def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
   let start ← IO.monoMsNow
-  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
+  -- Both front ends' readers of solver models misread them (`Fren.Core.misreadModels`).
+  let env := if job.head? == some "uiMisread" then #[("FREN_MISREAD_MODELS", some "1")] else #[]
+  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""

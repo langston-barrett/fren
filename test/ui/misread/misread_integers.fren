@@ -1,0 +1,36 @@
+-- Run with `FREN_MISREAD_MODELS` set: both front ends' readers of solver
+-- models read each integer as one more than it is (`Reqs/Models#testing`).
+-- Where the misread values contradict the query, Fren's semantics catches
+-- it, and reports an internal error rather than a counterexample.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+
+proc caught(a: Int) {
+    assume pinned: a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `caught::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- Within a sequence too.
+proc in_sequence(q: Seq<Int>) {
+    assume pinned: q = [1, 2]
+    expect e: q.len = 3  --~ error: internal error: the solver's model for the expectation check of `in_sequence::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- Caught only because `b`, which the model leaves free, has its default
+-- value: without one, `ignore(b)` would have none, and nor would `pinned`.
+fn ignore(x: Int): Int := 0
+
+proc free(a: Int, b: Int) {
+    assume pinned: ignore(b) = 0 and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `free::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A model without integers is read right, and its counterexample shown.
+proc unaffected(x?, y?) {
+    assume ax: x?
+    expect e: y?  --~ error: counterexample: x? = true, y? = false
+}
+
+--@ summary: 8 passed, 1 failed, 3 inconclusive, 0 redundant
+--@ exit: 1

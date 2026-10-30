@@ -33,6 +33,7 @@
 
 - [Checks](Check.md)
   - [Proof methods](Methods.md)
+  - [Reading models](Models.md)
 - [Diagnostics](View.md)
 - [Lints](Lint.md)
   - [Meaning](Lint/Meaning.md)

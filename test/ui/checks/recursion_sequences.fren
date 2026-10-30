@@ -1,0 +1,27 @@
+-- A recursive query's model is confirmed by evaluating the recursive
+-- definitions on it (`Reqs/Lang/Recursion`), at the values read
+-- (`Reqs/Models#reading`). A sequence in the model, as a payload or as an
+-- input, is read with its elements, so both front ends confirm these
+-- counterexamples, rather than the Lean-hosted one reading every sequence
+-- as `[]` and leaving them undecided.
+
+set_option fren.lint.unused_variables "allow"
+
+pub enum F { L(Seq<Int>), N(F) }
+
+pub fn evf(f: F): Seq<Int> := match f {
+    F::L(q) => q,
+    F::N(g) => evf(g),
+}
+
+proc seq_payload(a: F) {
+    expect e: when a = F::L([0, 1]), evf(a) != [0, 1]  --~ error: counterexample: a = F::L([0, 1])
+}
+
+proc seq_input(a: F, q: Seq<Int>) {
+    assume pinned: q = [2] and a = F::L(q)
+    expect e: evf(a) != q  --~ error: counterexample: a = F::L([2]), q = [2]
+}
+
+--@ summary: 4 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1

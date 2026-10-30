@@ -298,9 +298,10 @@ def reconstructElement (t : cvc5.Term) : Smt.ReconstructM Expr := do
   | .CONST_SEQUENCE =>
     let ty ← Smt.Reconstruct.reconstructSort t.getSort!
     let some α := seqOf ty | return none
-    -- Only the empty sequence is a constant; others are units and joins.
-    return Lean.mkApp2 (mkConst ``EmptyCollection.emptyCollection [Level.zero]) ty
-      (mkApp (mkConst ``Fren.Seq.instEmptyCollection [Level.zero]) α)
+    -- A model's sequence value is a constant whatever its length, with its
+    -- elements as its value rather than its children (`Reqs/Models#reading`).
+    let elems ← t.getSequenceValue!.mapM Smt.Reconstruct.reconstructTerm
+    return Lean.mkApp2 (mkConst ``Fren.Seq.ofList [Level.zero]) α (← mkListLit α elems.toList)
   | .SEQ_UNIT =>
     let ty ← Smt.Reconstruct.reconstructSort t.getSort!
     let some α := seqOf ty | return none

@@ -886,7 +886,12 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown
+  -- A result whose model Fren's semantics contradicts stays inconclusive,
+  -- and its internal error, printed with it, is an error of the run, as a
+  -- refuted model's is (`applyRefutations`, `Reqs/Models#reporting`).
+  let refutedModels := all.filter (·.detail matches .refuted ..)
   let errors := (internal.map fun _ => Fren.Core.Severity.error) ++ Array.replicate enumErrors .error
+    ++ refutedModels.map fun _ => Fren.Core.Severity.error
   return exitCode true (Fren.Core.worst (all.filterMap (·.severity?) ++ st.diags.map (·.severity) ++ errors))
 
 /-- Runs `fren quickcheck` (`Reqs/Eval#fren-quickcheck`), printing

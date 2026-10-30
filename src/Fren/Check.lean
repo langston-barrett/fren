@@ -82,9 +82,117 @@ partial def hasUnspecifiedRead (formula : Expr) : MetaM Bool := do
     if (← whnf formula.getAppArgs[2]!).isAppOfArity ``List.nil 1 then return true
   formula.foldlM (fun found child => if found then pure true else hasUnspecifiedRead child) false
 
+/-- The integer that `e` is, as the solver or `toExpr` writes one. -/
+def intValue? (e : Expr) : Option Int :=
+  e.int? <|> e.nat?.map Int.ofNat <|> e.rawNatLit?.map Int.ofNat <|> match_expr e with
+    | Int.ofNat n => n.rawNatLit? <|> n.nat? |>.map Int.ofNat
+    | Int.negSucc n => (n.rawNatLit? <|> n.nat?).map fun k => -((k : Int) + 1)
+    | _ => none
+
+/-- A model's value of type `ty`, as the Fren value that it stands for
+(`Reqs/Models#reading`): a term of literals and constructors, with a
+sequence as `Fren.Seq.ofList` and a set as `Fren.FinSet.ofList` of a list
+literal, and a `Bool` or `Nat` as one. A part that it does not recognise is
+kept as the solver's, so what `render` shows is always what `confirmModel`
+evaluates. If `misread`, each integer is read as one more than it is: the
+bug that `FREN_MISREAD_MODELS` injects (`Fren.Core.misreadModels`). -/
+partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
+  -- A value of an abstract type, a local standing for it (`checkComp`).
+  if ty.isFVar then return val
+  let val := fromModel ty val
+  let int (i : Int) : Int := if misread then i + 1 else i
+  if ty.isConstOf ``Int then
+    if let some i := intValue? val then return toExpr (int i)
+  if ty.isConstOf ``Nat then
+    if let some i := intValue? val then return mkNatLit (int i).toNat
+  -- A pair, a member of a relation.
+  if ty.isAppOfArity ``Prod 2 && val.isAppOfArity ``Prod.mk 4 then
+    let (a, b) := (ty.appFn!.appArg!, ty.appArg!)
+    return mkApp4 (.const ``Prod.mk [0, 0]) a b (← readValue misread a val.appFn!.appArg!)
+      (← readValue misread b val.appArg!)
+  let list (elem : Expr) (xs : Array Expr) : MetaM Expr := do
+    mkListLit elem (← xs.mapM (readValue misread elem)).toList
+  -- A sequence: the solver's concatenation of units.
+  if ty.isAppOfArity ``Fren.Seq 1 then
+    let rec elems (e : Expr) : Option (Array Expr) := match_expr e with
+      | HAppend.hAppend _ _ _ _ a b => return (← elems a) ++ (← elems b)
+      | Fren.Seq.unit _ x => some #[x]
+      | EmptyCollection.emptyCollection _ _ => some #[]
+      | Fren.Seq.ofList _ l => l.listLit?.map (·.2.toArray)
+      | _ => none
+    if let some xs := elems val then return mkApp2 (.const ``Fren.Seq.ofList [0]) ty.appArg! (← list ty.appArg! xs)
+  -- A set: the solver's union of singletons.
+  if ty.isAppOfArity ``Fren.FinSet 1 then
+    let rec members (e : Expr) : Option (Array Expr) := match_expr e with
+      | Union.union _ _ a b => return (← members a) ++ (← members b)
+      | Singleton.singleton _ _ _ x => some #[x]
+      | Insert.insert _ _ _ x s => return #[x] ++ (← members s)
+      | EmptyCollection.emptyCollection _ _ => some #[]
+      | Fren.FinSet.ofList _ l => l.listLit?.map (·.2.toArray)
+      | _ => none
+    if let some xs := members val then return mkApp2 (.const ``Fren.FinSet.ofList [0]) ty.appArg! (← list ty.appArg! xs)
+  let st ← getState
+  if let some n := st.newtypeOf? ty then
+    if val.isAppOfArity n.ctor 1 then return mkApp val.appFn! (← readValue misread n.under val.appArg!)
+  if let .const c _ := val.getAppFn then
+    -- A generic type's constructor is applied to its type arguments first.
+    let targs := ty.getAppArgs
+    if let some e := st.enumOfDecl? c.getPrefix <|> st.enumOf? ty then
+      if let some idx := e.ctorIdx? c then
+        let tys := (e.payloadsAt targs)[idx]?.getD #[]
+        let all := val.getAppArgs
+        let args := all.extract e.params.size
+        if args.size == tys.size then
+          return mkAppN val.getAppFn ((all.extract 0 e.params.size) ++ (← (tys.zip args).mapM fun (t, a) => readValue misread t a))
+    if let some r := st.recordOfDecl? c.getPrefix then
+      let all := val.getAppArgs
+      let args := all.extract r.params.size
+      if c == r.ctor && args.size == r.fields.size then
+        return mkAppN val.getAppFn ((all.extract 0 r.params.size)
+          ++ (← ((r.fieldsAt targs).zip args).mapM fun ((_, t), a) => readValue misread t a))
+  return val
+
+/-- The default value of the type `ty` (`model::default_value`), as
+the `fren` command's `Spec.defaultVal` gives it: `false`, `0`, `""`, `[]` and `{}`;
+a newtype's underlying type's; and a record's, or an enumeration's first
+variant whose payload has one, with the default values of its fields or
+payload. An enumeration within its own payload, which `seen` holds, and an
+abstract type have none. -/
+partial def defaultValue (ty : Expr) (seen : List Name := []) : MetaM (Option Expr) := do
+  if ty.isConstOf ``Bool then return some (mkConst ``Bool.false)
+  if ty.isConstOf ``Int then return some (toExpr (0 : Int))
+  if ty.isConstOf ``Nat then return some (mkNatLit 0)
+  if ty.isConstOf ``String then return some (mkStrLit "")
+  if ty.isAppOfArity ``Fren.Seq 1 then
+    return some (mkApp2 (.const ``Fren.Seq.ofList [0]) ty.appArg! (← mkListLit ty.appArg! []))
+  if ty.isAppOfArity ``Fren.FinSet 1 then
+    return some (mkApp2 (.const ``Fren.FinSet.ofList [0]) ty.appArg! (← mkListLit ty.appArg! []))
+  let st ← getState
+  if let some n := st.newtypeOf? ty then
+    return (← defaultValue n.under seen).map (mkApp (mkConst n.ctor))
+  let targs := ty.getAppArgs
+  if let some r := st.recordOf? ty then
+    if seen.contains r.decl then return none
+    let some fs ← (r.fieldsAt targs).mapM (defaultValue ·.2 (r.decl :: seen)) <&> (·.mapM id) | return none
+    return some (mkAppN (mkConst r.ctor (← getLevels ty)) (targs ++ fs))
+  if let some e := st.enumOf? ty then
+    if seen.contains e.decl then return none
+    for tys in e.payloadsAt targs, idx in [0:e.variants.size] do
+      let some ps ← tys.mapM (defaultValue · (e.decl :: seen)) <&> (·.mapM id) | continue
+      return some (mkAppN (e.ctorConst idx) (targs ++ ps))
+  return none
+where
+  getLevels (ty : Expr) : MetaM (List Level) := return match ty.getAppFn with
+    | .const _ ls => ls
+    | _ => []
+
 /-- A value of type `ty` as Fren builds it (`Reqs/View`), such as
-`Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`. -/
+`Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`:
+the Fren value that `readValue` reads (`Reqs/Models#reading`). -/
 partial def render (ty : Expr) (val : Expr) : MetaM String := do
+  show_ ty (← readValue (← Core.misreadModels) ty val)
+where
+  show_ (ty val : Expr) : MetaM String := do
   -- A value of an abstract type, a local standing for it (`checkComp`).
   if let .fvar id := ty then
     -- By the last segment of its sort's name, as the `fren` command has it
@@ -92,32 +200,26 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
     -- its whole path (`withNatUses`), and shown by its name.
     let sort := (← id.getUserName).getString!
     return s!"{(sort.splitOn "::").getLast?.getD sort}#{← ppExpr val}"
-  let val := fromModel ty val
   if let .lit (.strVal s) := val then return s.quote
+  if ty.isConstOf ``Int || ty.isConstOf ``Nat then
+    if let some i := intValue? val then return toString i
   -- A pair, a member of a relation.
   if ty.isAppOfArity ``Prod 2 && val.isAppOfArity ``Prod.mk 4 then
-    return s!"({← render ty.appFn!.appArg! val.appFn!.appArg!}, {← render ty.appArg! val.appArg!})"
+    return s!"({← show_ ty.appFn!.appArg! val.appFn!.appArg!}, {← show_ ty.appArg! val.appArg!})"
   -- A sequence, as a literal.
-  if ty.isAppOfArity ``Fren.Seq 1 then
-    let rec elems (e : Expr) : Array Expr := match_expr e with
-      | HAppend.hAppend _ _ _ _ a b => elems a ++ elems b
-      | Fren.Seq.unit _ x => #[x]
-      | _ => #[]
-    let shown ← (elems val).mapM (render ty.appArg!)
-    return "[" ++ ", ".intercalate shown.toList ++ "]"
+  if ty.isAppOfArity ``Fren.Seq 1 && val.isAppOfArity ``Fren.Seq.ofList 2 then
+    if let some (_, xs) := val.appArg!.listLit? then
+      let shown ← xs.toArray.mapM (show_ ty.appArg!)
+      return "[" ++ ", ".intercalate shown.toList ++ "]"
   -- A set, as a literal, with its members sorted.
-  if ty.isAppOfArity ``Fren.FinSet 1 then
-    let rec members (e : Expr) : Array Expr := match_expr e with
-      | Union.union _ _ a b => members a ++ members b
-      | Singleton.singleton _ _ _ x => #[x]
-      | Insert.insert _ _ _ x s => #[x] ++ members s
-      | _ => #[]
-    let shown ← (members val).mapM (render ty.appArg!)
-    return "{" ++ ", ".intercalate (shown.toList.eraseDups.mergeSort (· < ·)) ++ "}"
+  if ty.isAppOfArity ``Fren.FinSet 1 && val.isAppOfArity ``Fren.FinSet.ofList 2 then
+    if let some (_, xs) := val.appArg!.listLit? then
+      let shown ← xs.toArray.mapM (show_ ty.appArg!)
+      return "{" ++ ", ".intercalate (shown.toList.eraseDups.mergeSort (· < ·)) ++ "}"
   let st ← getState
   -- A newtype, as Fren builds it: `Ms(5)`.
   if let some n := st.newtypeOf? ty then
-    if val.isAppOfArity n.ctor 1 then return s!"{n.path.getString!}({← render n.under val.appArg!})"
+    if val.isAppOfArity n.ctor 1 then return s!"{n.path.getString!}({← show_ n.under val.appArg!})"
   if let .const c _ := val.getAppFn then
     -- A generic type's constructor is applied to its type arguments first,
     -- which a value is shown without (`Reqs/Lang/Generics#printing`); its
@@ -129,12 +231,12 @@ partial def render (ty : Expr) (val : Expr) : MetaM String := do
       let v := s!"{e.path.getString!}::{e.variants[idx]!}"
       let tys := (e.payloadsAt targs)[idx]?.getD #[]
       if args.isEmpty || args.size != tys.size then return v
-      let vals ← (tys.zip args).mapM fun (t, a) => render t a
+      let vals ← (tys.zip args).mapM fun (t, a) => show_ t a
       return s!"{v}({", ".intercalate vals.toList})"
     if let some r := st.recordOfDecl? c.getPrefix then
       let args := val.getAppArgs.extract r.params.size
       if c == r.ctor && args.size == r.fields.size then
-        let fs ← ((r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← render t a}"
+        let fs ← ((r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← show_ t a}"
         return s!"{r.path.getString!} \{ {", ".intercalate fs.toList} }"
   return toString (← ppExpr val)
 
@@ -147,23 +249,132 @@ unsafe def compileValuesUnsafe (α : Type) [Inhabited α] (ty : Expr) (fs : Arra
 @[implemented_by compileValuesUnsafe]
 opaque compileValues (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α)
 
+/-- The procedure's variables, and the second copies of the copied ones,
+each with its local and its value in `model`, as `readValue` reads it, or
+its type's default value if the model leaves it free
+(`Reqs/Models#free-values`); none for one that has neither. Misread if
+`misread`, as only the reader of a model that a check reports is under
+`FREN_MISREAD_MODELS` (`Reqs/Models#testing`). -/
+def modelValues (c : CompInfo) (fvs primes : Array Expr) (model : Array (Name × Expr)) (misread : Bool := false) :
+    MetaM (Array (Expr × Option Expr)) := do
+  let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
+  let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
+    ({ v with name := Core.primed v.name }, p)
+  vars.mapM fun (v, x) => do
+    match model.find? (·.1 == v.name) with
+    | some (_, val) => return (x, some (← readValue misread v.type val))
+    -- Only the procedure's own variables without a definition are free: a
+    -- defined one's, or a call's, value follows from the others.
+    | none => if v.name.isAtomic && v.defn?.isNone then return (x, ← defaultValue v.type) else return (x, none)
+
+/-- The operations whose value in Lean's definitions differs from Fren's
+where Fren's semantics gives none, and the solver's interpretation does:
+an index, which may be out of range, and a quotient or remainder, whose
+divisor may be 0 (`Reqs/Models#how-the-front-ends-evaluate`).
+
+A generated selector of a payload is total in the same way, by a
+`| _ => default` arm (`Reqs/Generated`), and is deliberately not here: a
+read of a payload is evaluated only where the model gives the value the
+variant that a `match` arm or a pattern test matched, since every such read
+is under that test's `ite`, which Lean does not evaluate on the branch not
+taken; and a `match` that may take no arm reads the empty sequence, so
+`Fren.Seq.nth` excludes it already. -/
+def interpretedOps : Array Name := #[``Fren.Seq.nth, ``HDiv.hDiv, ``HMod.hMod]
+
+/-- Whether `e` applies one of `targets`, directly or within the
+definitions of the spec's functions and clauses that it applies, and their
+auxiliary definitions, such as their `match`es. -/
+partial def readsAny (targets : Array Name) (e : Expr) : MetaM Bool := do
+  let s ← getState
+  let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
+  let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
+  let rec go (e : Expr) (seen : NameSet) : MetaM (Bool × NameSet) := do
+    let mut seen := seen
+    for c in e.getUsedConstants do
+      if targets.contains c then return (true, seen)
+      if seen.contains c || !own.any (·.isPrefixOf c) then continue
+      seen := seen.insert c
+      let some v := (← getEnv).find? c |>.bind (·.value?) | continue
+      let (found, seen') ← go v seen
+      if found then return (true, seen')
+      seen := seen'
+    return (false, seen)
+  return (← go e {}).1
+
+/-- Whether `e` applies one of `interpretedOps`, directly or within the
+functions and clauses that it applies. -/
+def readsInterpreted (e : Expr) : MetaM Bool := readsAny interpretedOps e
+
+/-- `e` at the values `values` (`modelValues`), if it then has no local and
+its value is the same in every interpretation, since it reads none of
+`interpretedOps` (`Reqs/Models#confirmation`). -/
+def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option Expr) := do
+  let given := values.filterMap fun (x, v?) => v?.map (x, ·)
+  let e := e.replaceFVars (given.map (·.1)) (given.map (·.2))
+  if e.hasFVar || e.hasMVar || (← readsInterpreted e) then return none
+  return some e
+
+/-- The truth of each proposition of `ps` that has one, by the compiled
+evaluation of its decision; none for one that cannot be decided. -/
+def decideAll (ps : Array (Option Expr)) : MetaM (Array (Option Bool)) := do
+  let decision (p : Expr) : MetaM (Option Expr) := do
+    match ← trySynthInstance (mkApp (mkConst ``Decidable) p) with
+    | .some d => return some (mkApp2 (mkConst ``Decidable.decide) p d)
+    | _ => return none
+  let ds ← ps.mapM fun p? => do
+    let some p := p? | return none
+    try decision p catch _ => return none
+  let known := ds.filterMap id
+  -- All at once, and one at a time where that fails.
+  let values ← try pure (some (← compileValues Bool (mkConst ``Bool) known)) catch _ => pure none
+  let mut k := 0
+  let mut out := #[]
+  for d? in ds do
+    match d? with
+    | none => out := out.push none
+    | some d =>
+      match values with
+      | some vs => out := out.push vs[k]?
+      | none => out := out.push (← try pure (← compileValues Bool (mkConst ``Bool) #[d])[0]? catch _ => pure none)
+      k := k + 1
+  return out
+
+/-- What `model`, a counterexample or witness of the query of `hyps` and
+`goal`, contradicts in Fren's semantics, which the generated definitions
+compute, at the values that `render` shows (`Reqs/Models#confirmation`): the
+first hypothesis that is false there, or the goal, if it is true; none if
+neither, or if Lean cannot evaluate them. -/
+def confirmModel (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
+    (model : Array (Name × Expr)) : MetaM (Option Core.Contradiction) := do
+  let values ← modelValues c fvs primes model (← Core.misreadModels)
+  let truths ← decideAll ((← hyps.mapM (atModel values ·.2)).push (← atModel values goal))
+  return Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join
+
+/-- Whether `model` is contradicted in a formula that applies none of the
+recursive functions `recs`: a bug in Fren, which the report of the model
+shows (`Reqs/Models#reporting`), not evidence about the functions'
+contracts (`Reqs/Lang/Recursion`). Read without the injected misread, as
+the recursive confirmation is. -/
+def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
+    (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
+  let values ← modelValues c fvs primes model
+  let plain (e : Expr) : MetaM (Option Expr) := do
+    if ← readsAny recs e then return none
+    atModel values e
+  let truths ← decideAll ((← hyps.mapM (plain ·.2)).push (← plain goal))
+  return (Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join).isSome
+
 /-- Evaluate a model using real definitions, before reporting a recursive
 counterexample. Failure to evaluate is not confirmation. -/
 def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM Bool := do
   try
-    let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
-    let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
-      ({ v with name := Core.primed v.name }, p)
-    let values ← vars.mapM fun (v, _) => do
-      match model.find? (·.1 == v.name) with
-      | some (_, val) =>
-        let val := fromModel v.type val
-        if v.type.isConstOf ``Nat then
-          if let some i := val.int? then return mkNatLit i.toNat
-        return val
-      | none => mkAppOptM ``Inhabited.default #[some v.type, none]
-    let instantiate (e : Expr) := e.replaceFVars (vars.map (·.2)) values
+    let values ← modelValues c fvs primes model
+    let vars := values.map (·.1)
+    let values ← values.mapM fun (x, v?) => match v? with
+      | some v => pure v
+      | none => do mkAppOptM ``Inhabited.default #[some (← inferType x), none]
+    let instantiate (e : Expr) := e.replaceFVars vars values
     let ps := (hyps.map (instantiate ∘ Prod.snd)).push (mkNot (instantiate goal))
     let bools ← ps.mapM fun p => do
       if p.hasFVar || p.hasMVar then throwError "model leaves free values"
@@ -582,6 +793,11 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
             if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) then pure o
             else do
               let st ← getState
+              -- A formula without recursion that the model contradicts is
+              -- the report's internal error, not the contracts'.
+              let recursive := st.defined.foldl (init := #[]) fun acc _ d =>
+                if d.recursive then (acc.push d.decl) ++ d.solver?.toArray else acc
+              if ← plainContradiction c fvs primes hyps goal model recursive then pure o else
               let names := recs.filterMap fun r => st.defined.foldl (init := none) fun acc _ d =>
                 if d.solver? == some r then some d.path else acc
               pure (.unknown (Core.recursiveReason names))
@@ -653,6 +869,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     render := fun n val => do
       let some (v, _) := varOf? n | return toString (← ppExpr val)
       render v.type val
+    confirm? := some fun hyps goal model => confirmModel c fvs primes hyps goal model
     prime := fun f => f.replaceFVars (copied.map (·.2)) primes
     samePrimed := fun n =>
       match varOf? n, varOf? (Core.primed n) with

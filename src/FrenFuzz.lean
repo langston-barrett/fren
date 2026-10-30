@@ -832,7 +832,7 @@ def keyOf (r : CheckResult) : CheckKind × Option Name × Option (Name × Name) 
 
 def showKey (k : CheckKind × Option Name × Option (Name × Name)) : String :=
   let (kind, p, t) := k
-  s!"{kindName kind}{(p.map (s!" {·}")).getD ""}{(t.map fun (d, a) => s!" ({d}::{a})").getD ""}"
+  s!"{Fren.Core.kindName kind}{(p.map (s!" {·}")).getD ""}{(t.map fun (d, a) => s!" ({d}::{a})").getD ""}"
 
 /-- Checks one spec, and returns what differs from brute force. -/
 def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
@@ -875,7 +875,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
       let pos? := r.prop?.bind fun p => (c.indexes.filter (·.1 == p))[r.index?.getD 0]?.map (·.2.2.1.start)
       (r.kind, r.prop?.map fun p => Name.num p (pos?.getD 0), r.target?)
     for x in ← log.get do
-      found := found.push s!"{c.path}: refuted model ({kindName x.kind} {x.subject?}, hypothesis {x.hyp?}): {x.model}"
+      found := found.push s!"{c.path}: refuted model ({Fren.Core.kindName x.kind} {x.subject?}, hypothesis {x.hyp?}): {x.model}"
     if space sp ec > maxSpace then skipped := skipped + 1; continue
     let o := oracle sp ec
     for r in results do
