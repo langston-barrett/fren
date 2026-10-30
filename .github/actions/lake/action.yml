@@ -1,0 +1,47 @@
+name: lake
+description: >-
+  Installs Lean, restores the `.lake` that the `lean ci` workflow saved on
+  `main`, and builds Fren's dependencies.
+inputs:
+  sha:
+    description: >-
+      The commit of `main` whose `.lake` to restore. If none was saved for
+      it, the latest one saved is restored, and Lake rebuilds what differs.
+    required: true
+outputs:
+  cache-hit:
+    description: Whether the `.lake` of `sha` itself was restored.
+    value: ${{ steps.restore.outputs.cache-hit }}
+  key:
+    description: The key of the `.lake` of `sha`, under which to save it.
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+runs:
+  using: composite
+  steps:
+  # Lake keeps a hash of each input in its traces, so a `.lake` from another
+  # commit rebuilds only the modules whose inputs differ, although the
+  # checkout's files are all new. Only `main` saves one, and a pull request
+  # can restore `main`'s but cannot save to it.
+  - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+    id: restore
+    with:
+      path: .lake
+      key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ inputs.sha }}
+      restore-keys: |
+        lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+        lake-${{ runner.os }}-${{ runner.arch }}-
+  # Only to install elan and the toolchain: the steps that follow build.
+  - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+    with:
+      auto-config: "false"
+      build: "false"
+      test: "false"
+      lint: "false"
+      use-github-cache: "false"
+      use-mathlib-cache: "false"
+  # The dependencies first, without `--wfail`: one that builds from source
+  # warns that it couldn't fetch a release, and `--wfail` would count that
+  # warning as a failure of Fren's build.
+  - name: Build the dependencies
+    shell: bash
+    run: lake build +Smt +cvc5

@@ -1,0 +1,73 @@
+name: pre-merge
+# Each pull request's head, merged into `main` as GitHub merges it, built
+# with `--wfail` and tested, but for the slowest tests, the mutants of
+# Fren's own requirements, which the `lean ci` workflow checks on `main`
+# (`Reqs/dev/Testing#continuous-integration`). Each job starts from the
+# `.lake` of `main`'s last build, so that it rebuilds only what the pull
+# request changes. Its last job, `pre-merge`, passes only if all the others
+# did: it is the status to rely on.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: lake build --wfail
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    # The parent of the merge commit, too: it is `main`'s commit.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        fetch-depth: 2
+    - id: base
+      run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ steps.base.outputs.sha }}
+    # The library, the regression tests, Fren's own requirements, the links
+    # from Fren's code to them, the examples and the binaries; warnings,
+    # including inconclusive checks and untraced requirements, fail it.
+    - run: lake build --wfail
+  test:
+    name: lake test (shard ${{ matrix.shard }} of 4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        fetch-depth: 2
+    - id: base
+      run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ steps.base.outputs.sha }}
+    # Only the test driver, and what it imports, not `Reqs`: the tests run
+    # the binary's code in the driver's process, and import `Fren`.
+    - run: lake build fren_test
+    - run: lake test -- --skip-own-mutants --shard "$SHARD/4"
+      env:
+        SHARD: ${{ matrix.shard }}
+  pre-merge:
+    needs: [build, test]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - run: test "$BUILD" = success && test "$TEST" = success
+      env:
+        BUILD: ${{ needs.build.result }}
+        TEST: ${{ needs.test.result }}

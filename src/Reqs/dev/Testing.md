@@ -251,6 +251,24 @@ with a `panic!`, which prints and carries on: what it wrote is reported.
 The failures are reported sorted, so that their order does not depend on
 which job finished first.
 
+CI splits the jobs over machines. `lake test -- --shard K/N` runs every
+`N`th job from the `K`th, for `K < N`, so that the shards together run
+each job once, and the slowest jobs, which come first, spread over them.
+`--skip-own-mutants` leaves out the slices of the mutants of Fren's own
+requirements, the slowest jobs, which only the CI run on `main` checks.
+The selection is made before `--bless` runs the snapshots job first.
+
+## Continuous integration
+
+On a pull request, the `pre-merge` workflow checks the head merged into
+`main`, starting from the `.lake` that `main`'s last build left: one
+machine runs `lake build --wfail`, and others run `lake test --
+--skip-own-mutants --shard K/N`, each building only the test driver. On
+`main`, the `lean ci` workflow runs `lake build --wfail` and the whole
+`lake test`, samples mutants of Fren's own requirements, measures the
+coverage, and saves the `.lake` for pull requests. The `lint` workflow runs
+`lun run --check` on both.
+
 ## Learning from review
 
 Review findings are evidence about the requirements and their connection

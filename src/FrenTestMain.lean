@@ -1676,12 +1676,40 @@ def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := d
   let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
 
+/-- Whether `job` checks a slice of the mutants of Fren's own requirements,
+the slowest jobs, which `--skip-own-mutants` leaves out. -/
+def ownMutantsJob : List String → Bool
+  | ["mutation", "0", _, _] => true
+  | _ => false
+
+/-- The shard `K/N` of `--shard K/N`, for `K < N`. -/
+def parseShard (s : String) : Except String (Nat × Nat) :=
+  match s.splitOn "/" with
+  | [k, n] => match k.toNat?, n.toNat? with
+    | some k, some n => if k < n then .ok (k, n) else .error s!"--shard {s}: K must be less than N"
+    | _, _ => .error s!"--shard {s}: expected K/N, two whole numbers"
+  | _ => .error s!"--shard {s}: expected K/N, two whole numbers"
+
+/-- The jobs that `args` select: with `--skip-own-mutants`, all but
+`ownMutantsJob`'s; with `--shard K/N`, of those, every `N`th from the
+`K`th, so that the slowest, which come first, spread over the shards, and
+the shards together run each job once. -/
+def selectJobs (args : List String) (all : Array (List String)) : Except String (Array (List String)) := do
+  let all := if args.contains "--skip-own-mutants" then all.filter (!ownMutantsJob ·) else all
+  match args.dropWhile (· != "--shard") with
+  | _ :: s :: _ =>
+    let (k, n) ← parseShard s
+    return (all.zipIdx.filter fun (_, i) => i % n == k).map (·.1)
+  | [_] => .error "--shard needs an argument, K/N"
+  | [] => return all
+
 unsafe def main (args : List String) : IO UInt32 := do
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if let "--job" :: job := args then
     IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
     return 0
-  let (first, rest) := (← jobs).partition (bless && · == ["snapshots"])
+  let selected ← IO.ofExcept ((selectJobs args (← jobs)).mapError IO.userError)
+  let (first, rest) := selected.partition (bless && · == ["snapshots"])
   let failures := ((← runJobs bless first) ++ (← runJobs bless rest)).qsort (· < ·)
   for f in failures do IO.eprintln s!"FAIL {f}"
   if failures.isEmpty then

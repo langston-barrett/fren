@@ -1,7 +1,8 @@
 name: lean ci
-# Not on pull requests, to save Actions minutes: before a PR is merged, its
-# author runs `lake build --wfail` and `lake test` locally, and anyone can
-# still run this on a PR's branch by hand (workflow_dispatch).
+# On `main`, everything: `lake build --wfail`, the whole `lake test`, a
+# sample of the mutants of Fren's own requirements, and the coverage. It
+# saves `main`'s `.lake`, from which each pull request's `pre-merge`
+# workflow starts (`Reqs/dev/Testing#continuous-integration`).
 on:
   push:
     branches:
@@ -11,48 +12,42 @@ on:
 permissions:
   contents: read
 
+# A push to `main` waits for the run before it, rather than cancelling it,
+# so that pushes in quick succession still save a `.lake`.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  ci:
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-    # The dependencies (cvc5, lean-smt, ...) depend only on the toolchain and
-    # the manifest. `lean-action` saves `.lake` only when the build succeeds,
-    # and a warning fails it, so they are cached apart, whatever the outcome.
-    - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-      id: packages
+    - uses: ./.github/actions/lake
+      id: lake
       with:
-        path: .lake/packages
-        key: lake-packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
-    # The dependencies first, without `--wfail`: one that builds from source
-    # warns that it couldn't fetch a release, and `--wfail` would count that
-    # warning as a failure of Fren's build.
-    - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
-      with:
-        build-args: +Smt +cvc5
-        test: false
-        lint: false
-        use-github-cache: false
+        sha: ${{ github.sha }}
     # `lake build` builds the library, the regression tests (`FrenTest`, which
     # check their own output with `#guard_msgs`), Fren's own requirements
     # (`Reqs`, which `#fren_check` checks with the SMT solver), the links from
     # Fren's code to them (`Impls`, whose `#fren_trace` warns about any
     # requirement without evidence), the example specs' Lean implementations
     # (`Examples`) and the `fren` binary; warnings, including
-    # inconclusive checks and untraced requirements, fail it. `lake test` runs
-    # the ui, snapshot and agreement tests.
-    - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+    # inconclusive checks and untraced requirements, fail it.
+    - id: build
+      run: lake build --wfail
+    # As soon as it is built, for the pull requests that start from it. Lake
+    # saves no output of a module that failed, so a failed build's `.lake`
+    # would serve as well, but a pull request that restores it would
+    # rebuild the modules that failed.
+    - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      if: ${{ steps.build.outcome == 'success' && steps.lake.outputs.cache-hit != 'true' }}
       with:
-        build-args: --wfail
-        test: true
-        lint: false
+        path: .lake
+        key: ${{ steps.lake.outputs.key }}
     # A few mutants of Fren's own requirements on each push, a different few
     # each run (the seed is the run's number), so that over many pushes the
     # runs cover them: all of them, over 3000, are too many for one run.
@@ -79,17 +74,27 @@ jobs:
           1) echo "::error title=fren mutate::an internal error (seed $SEED); see the step's log"; exit 1 ;;
           *) echo "::error title=fren mutate::could not run (exit $code); see the step's log"; exit "$code" ;;
         esac
-    # Only once the packages Fren imports, `Smt` and `cvc5`, are built (and so
-    # everything they import): a fetch or a dependency build that failed
-    # partway must not be saved, as the exact key would keep it.
-    - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-      if: >-
-        ${{ !cancelled() && steps.packages.outputs.cache-hit != 'true' &&
-            hashFiles('.lake/packages/cvc5/.lake/build/lib/lean/cvc5.olean') != '' &&
-            hashFiles('.lake/packages/smt/.lake/build/lib/lean/Smt.olean') != '' }}
+  # The whole of `lake test`, the mutants of Fren's own requirements too,
+  # split over machines.
+  test:
+    name: lake test (shard ${{ matrix.shard }} of 4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        path: .lake/packages
-        key: ${{ steps.packages.outputs.cache-primary-key }}
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - run: lake build fren_test
+    - run: lake test -- --shard "$SHARD/4"
+      env:
+        SHARD: ${{ matrix.shard }}
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
@@ -99,16 +104,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-    - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+    - uses: ./.github/actions/lake
       with:
-        path: .lake/packages
-        key: lake-packages-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
-    - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
-      with:
-        build-args: +Smt +cvc5
-        test: false
-        lint: false
-        use-github-cache: false
+        sha: ${{ github.sha }}
     # Lean's toolchain has clang but not its profiling runtime: LLVM's, of
     # the same major version, and its `llvm-cov`.
     - name: Install the profiling runtime and llvm-cov
