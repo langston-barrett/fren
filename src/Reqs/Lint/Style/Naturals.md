@@ -86,7 +86,7 @@ pub fn bounds?(v: NatVariable, c: NatConjunct) := v.int?
     and (match v.role { NatRole::Input => c.assumption?, NatRole::Output => not c.assumption?,
     NatRole::DefinedOutput => false })
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 set_option fren.lint.undecidable "allow" in
 pub proc manual_nat(
     var: NatVariable,

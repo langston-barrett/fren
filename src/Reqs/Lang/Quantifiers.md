@@ -384,7 +384,7 @@ fn first_at?(cs: Seq<GuardConjunct>, k: Int, b: GuardBound, j: Int) :=
 pub enum DomainShape { Members, Range, FromZero, Unbounded }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc guard_domain(
     conjuncts: Seq<GuardConjunct>,    -- the conjuncts of the guard, in order
     k: Nat,                           -- the position of the bound name

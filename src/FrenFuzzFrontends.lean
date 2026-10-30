@@ -403,11 +403,11 @@ def genWide (avoidKnown : Bool := false) : R String := do
     for k in [0:(← below 3) + 1] do
       body := body ++ s!"    ensure q{k}: {← gen csc .bool 3}\n"
     for k in [0:← below 3] do
-      let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
+      let tested := if ← chance 5 then "set_option fren.evidence \"random\" in " else ""
       let e ← if ← chance 50 then pure s!"when {← gen csc .bool 1}, {← gen csc .bool 2}" else gen csc .bool 3
       body := body ++ s!"    {tested}expect x{k}: {e}\n"
     for k in [0:← below 2] do
-      let tested := if ← chance 5 then "set_option fren.evidence \"tested\" in " else ""
+      let tested := if ← chance 5 then "set_option fren.evidence \"random\" in " else ""
       body := body ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
     let resultList := if results.isEmpty then "" else s!": (\n{results})"
     out := out ++ s!"\npub proc c{c}(\n{params}){resultList} \{\n{body}}\n"

@@ -32,7 +32,7 @@ expect fails(x: Int) {
     refines precise wrong(x)
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect by_testing(x: Int) {
     assume small: x < 100
     call precise := precise(x)
@@ -67,7 +67,7 @@ pub proc exact(q: Seq<Int>): (y: Int) {
     ensure r: y = q[0]
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect same(q: Seq<Int>) {
     assume nonempty: q != []
     call exact := exact(q)
@@ -91,7 +91,7 @@ expect bound_fails(v: Int) {
     refines shifted wrong(v)
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect bound_by_testing(v: Int) {
     assume small: v < 100
     call shifted := shifted(v)

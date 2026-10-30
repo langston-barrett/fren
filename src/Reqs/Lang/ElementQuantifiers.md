@@ -39,7 +39,7 @@ which `P` holds:
 pub mod lang
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc element_meaning(q: Seq<Int>, good: Set<Int>): (det holds?) {
     ensure by_elements: holds? iff (forall (x: Int), when x in q, x in good)
     ensure by_positions: holds? iff (forall (i: Int), when 0 <= i < q.len, q[i] in good)
@@ -144,7 +144,7 @@ fn binder_verdict(b: ElementBinder): ElementVerdict := match b.members {
 }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc element_quantifier(
     binders: Seq<ElementBinder>,    -- its bound names of types that are not listed, in order
     nesting: ElementNesting,
@@ -208,7 +208,7 @@ the others:
 pub type IndexTerm
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc index_set(
     zero: IndexTerm,
     lasts: Seq<IndexTerm>,         -- each quantifier's sequence's last position
@@ -264,7 +264,7 @@ and `updated` are made so:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc element_projection(
     q: Seq<Int>,
     ix: Seq<Int>,               -- the values of the index set's terms
@@ -324,7 +324,7 @@ fn in_chain?(frames: Seq<Frame>, all?, j: Int) :=
     forall (k: Int), when j <= k < frames.len, frames[k] = Frame::Element(all?, true)
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc site_expanded(
     frames: Seq<Frame>,          -- the binders around it, outermost first
     all?,                        -- it is a `forall`
@@ -350,7 +350,7 @@ instance that fails, serves:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc element_witness(
     q: Seq<Int>,
     good: Set<Int>,              -- the elements at which the body holds

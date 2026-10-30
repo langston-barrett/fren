@@ -14,7 +14,7 @@ pub proc gate(a?): (b?) {
 set_option fren.lint.assertions_on_constants "allow" in
 expect arithmetic: 1 + 1 = 3
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc by_testing(a?): (b?) {
     ensure same: b? iff a?
 }

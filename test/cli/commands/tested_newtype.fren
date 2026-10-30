@@ -3,7 +3,7 @@
 pub ordered struct Ms(Int)
 pub struct Job { took: Ms, waits: Set<Ms> }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc timer(job: Job, took: Ms): (det left: Ms) {
     out left := Ms(10) - took
 

@@ -16,7 +16,7 @@ pub proc concrete(x: Int): (y: Int) {
     ensure r: y = x + 1
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect fits(x: Int) {
     assume spec_pos: (x) > 0
     call concrete_1 := concrete(x)

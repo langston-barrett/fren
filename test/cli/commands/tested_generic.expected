@@ -16,7 +16,7 @@ error[F0603]: expectation `picks::flag` does not hold
    = counterexample: x = Option::Some(2), p = Pair { fst := Option::Some(false), snd := -10 }, got = 2
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
-fren: 2 passed (2 by testing), 2 failed, 0 inconclusive, 0 redundant
+fren: 2 passed (2 by random testing), 2 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0603`.
 exit=1

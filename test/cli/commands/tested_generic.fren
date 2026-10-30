@@ -3,7 +3,7 @@
 -- counterexamples do.
 pub struct Pair<A, B> { fst: A, snd: B }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc picks(x: Option<Int>, p: Pair<Option<Bool>, Int>): (det got: Int) {
     out got := match x { Option::Some(n) => n, Option::None => p.snd }
 

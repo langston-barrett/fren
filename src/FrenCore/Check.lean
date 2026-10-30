@@ -1870,7 +1870,7 @@ def couldNotHeadline (what := "check") : String :=
 
 def summary (results : Array CheckResult) (byTesting : Nat := 0) (byBound : Nat := 0) : String :=
   let count (b : Bucket) := (results.filter fun r => bucketOf r.kind r.verdict == b).size
-  let parts := (if byTesting == 0 then [] else [s!"{byTesting} by testing"])
+  let parts := (if byTesting == 0 then [] else [s!"{byTesting} by random testing"])
     ++ (if byBound == 0 then [] else [s!"{byBound} by bounded enumeration"])
   let tested := if parts.isEmpty then "" else s!" ({", ".intercalate parts})"
   s!"fren: {count .passed} passed{tested}, {count .failed} failed, {count .inconclusive} inconclusive, \

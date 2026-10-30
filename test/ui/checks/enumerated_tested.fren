@@ -6,14 +6,14 @@
 
 enum Mode { Off, Heat }
 
-set_option fren.evidence "enumerated+tested" in
+set_option fren.evidence "enumerated+random" in
 proc finite(mode: Mode): (det on?) {
     ensure r: on? iff mode = Mode::Heat
     expect wrong: on?  --~ error: expectation `finite::wrong` does not hold
 }
 
 -- Testing finds what is beyond the bound.
-set_option fren.evidence "enumerated+tested" in
+set_option fren.evidence "enumerated+random" in
 proc beyond(x: Int): (det y: Int) {  --~ info: 3 checks of `beyond` hold for every behaviour up to size 3, and for 100 random tests
     out y := x + 1
     expect small: y < 6  --~ error: counterexample: x = 10, y = 11
@@ -21,7 +21,7 @@ proc beyond(x: Int): (det y: Int) {  --~ info: 3 checks of `beyond` hold for eve
 }
 
 -- Enumeration's counterexample comes first, the smallest.
-set_option fren.evidence "enumerated+tested" in
+set_option fren.evidence "enumerated+random" in
 proc near(x: Int): (det y: Int) {  --~ info: 3 checks of `near` hold for every behaviour up to size 3, and for 100 random tests
     out y := x + 1
     expect small: y < 3  --~ error: counterexample: x = 2, y = 3

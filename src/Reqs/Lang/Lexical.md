@@ -97,7 +97,7 @@ pub proc identifier_shape(lexeme: String): (accepted?) {
     expect first_characters: when lexeme in {"1", "1x", "'x", ".x", "?", "?x", "!", "!x"}, not accepted?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect identifier_has_shape(lexeme: String) {
     call concrete := identifier(lexeme)
     refines concrete identifier_shape(lexeme)
@@ -142,7 +142,7 @@ checks, are tested:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc longest_identifier(
     lexeme: String,
     remaining: String,       -- the input after the lexeme
@@ -160,7 +160,7 @@ pub proc longest_identifier(
     expect dotted_then_space: when lexeme = "w" and remaining = ".x y", not ends?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect identifier_end_is_longest(lexeme: String, remaining: String) {
     call concrete := identifier_end(lexeme, remaining)
     refines concrete longest_identifier(lexeme, remaining)
@@ -354,7 +354,7 @@ pub proc escape_text(
     ensure rejected: when not accepted?, length = 0
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect escape_sequence_is_exact(remaining: String) {
     call concrete := escape_sequence(remaining)
     refines concrete escape_text(remaining)
@@ -520,7 +520,7 @@ the refinement is tested:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc longest_punctuator(
     lexeme: String,
     remaining: String,       -- the input after the lexeme
@@ -534,7 +534,7 @@ pub proc longest_punctuator(
     ensure at_end: when remaining = "", ends?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect punctuator_end_is_longest(lexeme: String, remaining: String) {
     use lang
     assume spec_a_punctuator: (lexeme) in lang::PUNCTUATORS

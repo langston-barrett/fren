@@ -11,17 +11,17 @@ pub proc positive(k: Int) {
     assume pos: k > 0
 }
 
-pub proc members(n: Int): (set_option fren.evidence "tested" in det y!: Int) {
-    set_option fren.evidence "tested" in
+pub proc members(n: Int): (set_option fren.evidence "random" in det y!: Int) {
+    set_option fren.evidence "random" in
     call p! := positive(1)
 
     ensure r: y = n + p.k
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc defined(q: Seq<Int>): (d!: Int) {
     assume nonempty: q != []
     out d := q[0]
 }
 
---@ summary: 7 passed (3 by testing), 0 failed, 0 inconclusive, 0 redundant
+--@ summary: 7 passed (3 by random testing), 0 failed, 0 inconclusive, 0 redundant

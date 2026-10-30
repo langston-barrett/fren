@@ -1231,13 +1231,16 @@ impl enumeration_limit: check::enumeration_limit for (c : Nat) {
   omega
 
 instance : Fren.Finite check.EvidenceValue :=
-  ⟨[.Solver, .Tested, .Enumerated, .EnumeratedTested, .Other], by intro x; cases x <;> simp⟩
+  ⟨[.Solver, .Random, .Enumerated, .EnumeratedRandom, .Tested, .EnumeratedTested, .Other],
+    by intro x; cases x <;> simp⟩
 
 /-- A value of `fren.evidence` of each kind. -/
 def evidenceText : check.EvidenceValue → String
   | .Solver => "solver"
-  | .Tested => "tested"
+  | .Random => "random"
   | .Enumerated => "enumerated"
+  | .EnumeratedRandom => "enumerated+random"
+  | .Tested => "tested"
   | .EnumeratedTested => "enumerated+tested"
   | .Other => "guess"
 
@@ -1245,7 +1248,7 @@ def evidenceText : check.EvidenceValue → String
 impl evidence_value: check::evidence_value for (v : check.EvidenceValue) {
   value := v,
   valid? := (Fren.Core.evidenceOf? (evidenceText v)).isSome,
-  tested? := ((Fren.Core.evidenceOf? (evidenceText v)).map (·.tested)).getD false,
+  random? := ((Fren.Core.evidenceOf? (evidenceText v)).map (·.tested)).getD false,
   enumerated? := ((Fren.Core.evidenceOf? (evidenceText v)).map (·.enumerated)).getD false,
 } by
   intro v _

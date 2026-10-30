@@ -6,7 +6,7 @@ import FrenCore.Check
 # Checking by testing (`Reqs/Check#checking-by-testing`)
 
 Which checks a spec has tested rather than asked of the solver, as set by
-`set_option fren.evidence "tested" in`, shared by both front ends. Each
+`set_option fren.evidence "random" in`, shared by both front ends. Each
 front end drops these checks from the procedure before `checkComp`, so that the
 solver is asked nothing about them; the `fren` command then tests them.
 -/
@@ -97,10 +97,13 @@ def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F Ã
 `evidenceValues`. -/
 def invalidEvidenceMsg (v : String) : Msg :=
   { code? := some "F0214", headline := s!"invalid evidence `{v}`"
-    label? := some "not `\"solver\"`, `\"tested\"`, `\"enumerated\"` or `\"enumerated+tested\"`"
-    notes := #["note: `\"tested\"` has the checks tested instead of asked of the solver, `\"enumerated\"` has them \
-      decided by enumerating behaviours, smallest first, `\"enumerated+tested\"` tests them too where enumeration is not \
-      complete, and `\"solver\"` is the default"] }
+    label? := some "not `\"solver\"`, `\"random\"`, `\"enumerated\"` or `\"enumerated+random\"`"
+    notes := #["note: `\"random\"` has the checks tested on random behaviours instead of asked of the solver, \
+      `\"enumerated\"` has them decided by enumerating behaviours, smallest first, `\"enumerated+random\"` tests them \
+      too where enumeration is not complete, and `\"solver\"` is the default"] ++
+      (if v == "tested" || v == "enumerated+tested" then
+        #[s!"note: `\"tested\"` was renamed to `\"random\"`; write `\"{v.replace "tested" "random"}\"`"]
+      else #[]) }
 
 /-- `set_option fren.evidence` before something that has no checks it
 could set. -/
@@ -126,9 +129,9 @@ structure Evidence where
 (`Reqs/Check#checking-by-enumeration`). -/
 def evidenceOf? : String â†’ Option Evidence
   | "solver" => some {}
-  | "tested" => some { tested := true }
+  | "random" => some { tested := true }
   | "enumerated" => some { enumerated := true }
-  | "enumerated+tested" => some { tested := true, enumerated := true }
+  | "enumerated+random" => some { tested := true, enumerated := true }
   | _ => none
 
 /-- The value of `set_option fren.evidence`: whether it is testing, or

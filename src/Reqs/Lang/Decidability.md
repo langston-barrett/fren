@@ -282,7 +282,7 @@ does Z3, so the chapter leaves it as a comment. Raising `--timeout`
 does not help, and bounding the string's `len` only turns a query that
 never ends into a slow one.
 Such a check stays `Inconclusive`. A spec can say so where it applies,
-with `set_option fren.evidence "tested" in`, and have the check tested
+with `set_option fren.evidence "random" in`, and have the check tested
 instead (see [Checking by testing](../Check.md#checking-by-testing)), which
 gives evidence for it, not proof.
 

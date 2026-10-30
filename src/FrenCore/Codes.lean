@@ -972,14 +972,15 @@ set_option fren.evidence "testing" in
 proc c(x?): (det y?) { ensure r: y? iff x? }
 ```
 
-The evidence of a check is `"tested"`, to have it tested instead of asked of
-the solver, `"enumerated"`, to have it decided by enumerating behaviours,
-smallest first, `"enumerated+tested"`, to have it tested too where
+The evidence of a check is `"random"`, to have it tested on random
+behaviours instead of asked of the solver, `"enumerated"`, to have it decided
+by enumerating behaviours, smallest first, `"enumerated+random"`, to have it
+tested too where
 enumeration is not complete, or `"solver"`, the default (see `Reqs/Check`,
 "Checking by testing" and "Checking by enumeration").
 
 ```fren
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 proc c(x?): (det y?) { ensure r: y? iff x? }
 ```
 "# },
@@ -989,7 +990,7 @@ Erroneous code example:
 
 ```fren
 proc c(x?): (y?) {
-  set_option fren.evidence "tested" in
+  set_option fren.evidence "random" in
   ensure r: y? iff x?
 }
 ```
@@ -999,7 +1000,7 @@ its expectations, calls, `det` outputs and the procedure as a whole, so
 the setting goes before one of those, or before the procedure.
 
 ```fren
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 proc c(x?): (y?) {
   ensure r: y? iff x?
 }
@@ -3840,7 +3841,7 @@ testing, as `fren quickcheck` does. Here the checks reject the mutant
 the expectation. But none of testing's random behaviours has such a
 sequence, so testing passes the mutant. The spec itself may be fine: the
 warning is about testing's search, which a procedure whose evidence is
-testing (`fren.evidence "tested"`) relies on. Raising `--tests` can help
+testing (`fren.evidence "random"`) relies on. Raising `--tests` can help
 where the search reaches such behaviours rarely; otherwise rely on `fren
 check` for the procedure.
 "# },
@@ -3984,7 +3985,7 @@ an unbounded quantifier. None of the procedure's checks set to
 enumeration is run. Have the solver or testing check it:
 
 ```fren
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 proc c(name: String): (empty?) { ensure r: empty? iff name = "" }
 ```
 "# },
@@ -4003,7 +4004,7 @@ enumeration"). Where every variable has finitely many values, each within
 the bound, that is every behaviour, and the check is decided. Here `x` is
 an `Int`, so the expectation is only known to hold for `x` between -3
 and 3: weaker than a proof, so it is reported, as information. With
-`"enumerated+tested"`, random tests also look beyond the bound. A type of
+`"enumerated+random"`, random tests also look beyond the bound. A type of
 finitely many values decides it:
 
 ```fren

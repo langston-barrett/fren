@@ -426,7 +426,7 @@ pub proc stepwise(settings: Seq<Level>): (accepted?) {
     expect unforbid_last: when settings = [Warn, Forbid, Allow], not accepted?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 set_option fren.lint.undecidable "allow" in
 expect history_is_stepwise(settings: Seq<lint::Level>) {
     use lint

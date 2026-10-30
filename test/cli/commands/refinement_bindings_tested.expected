@@ -7,7 +7,7 @@ error[F0603]: expectation `bad_exit_status::refines_1` does not hold
    = counterexample: all_parsed? = true, concrete.code = 4
    = help: correct the expectation, or assume what it needs
 
-fren: 10 passed (3 by testing), 1 failed, 0 inconclusive, 0 redundant
+fren: 10 passed (3 by random testing), 1 failed, 0 inconclusive, 0 redundant
 
 For more information about this error, try `fren --explain F0603`.
 exit=1

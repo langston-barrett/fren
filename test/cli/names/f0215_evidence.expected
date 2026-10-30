@@ -1,7 +1,7 @@
 error[F0215]: `fren.evidence` cannot be set for a guarantee
  --> test/cli/names/f0215_evidence.fren:3:5
   |
-3 |     set_option fren.evidence "tested" in
+3 |     set_option fren.evidence "random" in
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ has no checks to test
   |
   = note: it can be set before a procedure, an expectation or global expectation, a cover goal, a call or a `det` variable

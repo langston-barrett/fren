@@ -2,6 +2,6 @@
 proc heater(temp: Int): (alarm?) {
     ensure r: alarm? iff temp > 100
 
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     cover overheat: temp > 100 and alarm?
 }

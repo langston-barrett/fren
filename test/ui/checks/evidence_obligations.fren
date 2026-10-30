@@ -8,7 +8,7 @@ proc by_enumeration(b?): (det bad: Small) {
     out bad := if b? then 7 else 1  --~ error: invariant `Small::invariant` does not hold
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 proc by_testing(b?): (det bad: Small) {
     out bad := if b? then 7 else 1  --~ error: invariant `Small::invariant` does not hold
 }

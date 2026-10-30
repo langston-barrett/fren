@@ -16,7 +16,7 @@ pub proc exact(q: Seq<Int>): (y: Int) {
     ensure r: y = q[0]
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect same(q: Seq<Int>) {
     assume spec_nonempty: (q) != []
     call concrete := exact(q)

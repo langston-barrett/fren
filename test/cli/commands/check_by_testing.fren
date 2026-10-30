@@ -7,14 +7,14 @@ pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
 
     expect dotted: when text = "w.x.y?", accepted?
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     expect no_empty_segment: when text.contains?(".."), not accepted?
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     expect wrong: when text.contains?("x"), not accepted?
 }
 
 -- Set for the whole component, but its `det out` by the solver.
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc parity(n: Int): (set_option fren.evidence "solver" in det even?) {
     ensure r: even? iff n is 0 | 2 | 4
     expect zero: when n = 0, even?
@@ -26,16 +26,16 @@ pub proc positive(k: Int) {
 }
 
 pub proc caller(m: Int) {
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     call p := positive(m)
 }
 
 -- Before an item that is not a component, it sets nothing.
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub const LIMIT: Int := 3
 
 -- Without `in`, it sets every later component and global expectation.
-set_option fren.evidence "tested"
+set_option fren.evidence "random"
 
 expect global_wrong(p_n: Int) {
     call p := parity(p_n)
@@ -46,6 +46,6 @@ expect global_wrong(p_n: Int) {
 -- the user back to `fren check`.
 pub proc narrow(x: Int): (big?) {
     ensure r: big? iff x > 1000
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     expect e: when 7 * x = 123459, big?
 }

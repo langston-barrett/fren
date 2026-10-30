@@ -1,5 +1,5 @@
 -- `fren.evidence` before a guarantee, which has no checks of its own.
 proc c(x?): (y?) {
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     ensure r: y? iff x?
 }

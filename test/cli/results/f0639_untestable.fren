@@ -4,13 +4,13 @@
 -- component's checks set to testing are not run. Those of `guarded`, whose
 -- quantifier has one, are.
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 proc unguarded(s: Set<Int>): (pos?) {
     ensure r: pos? iff (forall (x: Int), not (x in s) or x > 0)
 }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 proc guarded(s: Set<Int>): (pos?) {
     ensure r: pos? iff (forall (x: Int), when x in s, x > 0)
 }
