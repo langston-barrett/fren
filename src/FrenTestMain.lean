@@ -1694,16 +1694,23 @@ def parseShard (s : String) : Except String (Nat × Nat) :=
     | _, _ => .error s!"--shard {s}: expected K/N, two whole numbers"
   | _ => .error s!"--shard {s}: expected K/N, two whole numbers"
 
+/-- The shard of the `i`th job of the selection, of `n` shards: the first
+job, the slowest, alone in shard 0, as it takes about as long as the
+others together (`ownSpec`, unless the mutants of Fren's own requirements
+are checked too), and the others dealt in turn to shards 1 to `n - 1`, so
+that the slowest, which come first, spread over them. -/
+def shardOf (n i : Nat) : Nat :=
+  if n ≤ 1 then 0 else if i == 0 then 0 else 1 + (i - 1) % (n - 1)
+
 /-- The jobs that `args` select: with `--skip-own-mutants`, all but
-`ownMutantsJob`'s; with `--shard K/N`, of those, every `N`th from the
-`K`th, so that the slowest, which come first, spread over the shards, and
-the shards together run each job once. -/
+`ownMutantsJob`'s; with `--shard K/N`, of those, the `K`th shard's
+(`shardOf`), so that the shards together run each job once. -/
 def selectJobs (args : List String) (all : Array (List String)) : Except String (Array (List String)) := do
   let all := if args.contains "--skip-own-mutants" then all.filter (!ownMutantsJob ·) else all
   match args.dropWhile (· != "--shard") with
   | _ :: s :: _ =>
     let (k, n) ← parseShard s
-    return (all.zipIdx.filter fun (_, i) => i % n == k).map (·.1)
+    return (all.zipIdx.filter fun (_, i) => shardOf n i == k).map (·.1)
   | [_] => .error "--shard needs an argument, K/N"
   | [] => return all
 

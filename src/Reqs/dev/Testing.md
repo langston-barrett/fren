@@ -251,9 +251,12 @@ with a `panic!`, which prints and carries on: what it wrote is reported.
 The failures are reported sorted, so that their order does not depend on
 which job finished first.
 
-CI splits the jobs over machines. `lake test -- --shard K/N` runs every
-`N`th job from the `K`th, for `K < N`, so that the shards together run
-each job once, and the slowest jobs, which come first, spread over them.
+CI splits the jobs over machines. `lake test -- --shard K/N`, for
+`K < N`, runs the `K`th of `N` shards, which together run each job once:
+shard 0 runs the first job, the slowest, alone, since it takes about as
+long as all the others on one machine, and the others are dealt in turn
+to shards 1 to `N - 1`, so that the slowest, which come first, spread
+over them.
 `--skip-own-mutants` leaves out the slices of the mutants of Fren's own
 requirements, the slowest jobs, which only the CI run on `main` checks.
 The selection is made before `--bless` runs the snapshots job first.

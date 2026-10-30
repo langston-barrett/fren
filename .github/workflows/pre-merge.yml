@@ -56,7 +56,9 @@ jobs:
       with:
         sha: ${{ steps.base.outputs.sha }}
     # Only the test driver, and what it imports, not `Reqs`: the tests run
-    # the binary's code in the driver's process, and import `Fren`.
+    # the binary's code in the driver's process, and import `Fren`. Shard 0
+    # checks Fren's own requirements with the binary, the slowest job, and
+    # the others the rest (`Reqs/dev/Testing`).
     - run: lake build fren_test
     - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
       env:

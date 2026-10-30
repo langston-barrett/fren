@@ -75,15 +75,16 @@ jobs:
           *) echo "::error title=fren mutate::could not run (exit $code); see the step's log"; exit "$code" ;;
         esac
   # The whole of `lake test`, the mutants of Fren's own requirements too,
-  # split over machines.
+  # split over machines: shard 0 checks Fren's own requirements with the
+  # binary, and the others the rest (`Reqs/dev/Testing`).
   test:
-    name: lake test (shard ${{ matrix.shard }} of 4)
+    name: lake test (shard ${{ matrix.shard }} of 5)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -92,7 +93,7 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_test
-    - run: lake test -- --timings --shard "$SHARD/4"
+    - run: lake test -- --timings --shard "$SHARD/5"
       env:
         SHARD: ${{ matrix.shard }}
   # Every declaration of Fren's code is run by `lake test`, or listed in
