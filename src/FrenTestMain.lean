@@ -324,6 +324,7 @@ def ownSpecFiles : Array String :=
     "Lint/Style/Records",
     "Lint/Style/Matches",
     "Lint/Style/Let",
+    "Lint/Style/Closures",
     "Lint/Complexity",
     "Lint/Complexity/Comparisons",
     "Lint/Complexity/Operators",
@@ -897,6 +898,8 @@ deriving instance BEq for Fren.Core.ExpectationRecord
 deriving instance BEq for Fren.Core.LintReport
 deriving instance BEq for FrenCli.UseLoc
 deriving instance BEq for Fren.Core.ItemRecord
+deriving instance BEq for Fren.Core.HofParamRecord
+deriving instance BEq for Fren.Core.FnArgRecord
 deriving instance BEq for FrenCli.LintFix
 deriving instance BEq for FrenCli.NatReport
 deriving instance BEq for Fren.Core.SettingRecord

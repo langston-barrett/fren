@@ -44,6 +44,7 @@
     - [Natural numbers](Lint/Style/Naturals.md)
     - [Matches](Lint/Style/Matches.md)
     - [Local definitions and quantifiers](Lint/Style/Let.md)
+    - [Closures](Lint/Style/Closures.md)
   - [Complexity](Lint/Complexity.md)
     - [Comparisons](Lint/Complexity/Comparisons.md)
     - [Operators](Lint/Complexity/Operators.md)

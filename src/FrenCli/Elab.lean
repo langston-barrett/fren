@@ -857,6 +857,11 @@ structure State where
   /-- The current file's private enumerations and constants, and the items
   that paths in it resolve to (`dead_code`). -/
   items : Array (Fren.Core.ItemRecord × Span) := #[]
+  /-- The function parameters of the file's private higher-order functions,
+  and what the applications give them, by where each is written
+  (`needless_higher_order`). -/
+  hofParams : Array (Fren.Core.HofParamRecord × Span) := #[]
+  fnArgs : Array (Fren.Core.FnArgRecord × Span) := #[]
   usedItems : Array Name := #[]
   /-- The edits that fix the lints whose message suggests a replacement:
   the collection, membership, index, rewriting and match lints. -/
@@ -1018,7 +1023,7 @@ nothing (`Reqs/View#static-errors`). -/
 def State.keepLints (s t : State) : State :=
   { s with lintReports := t.lintReports, lintFixes := t.lintFixes, used := t.used, usedItems := t.usedItems
            useRecords := t.useRecords, useLocs := t.useLocs, items := t.items, declared := t.declared
-           seenSettings := t.seenSettings, globalReads := t.globalReads }
+           seenSettings := t.seenSettings, globalReads := t.globalReads, hofParams := t.hofParams, fnArgs := t.fnArgs }
 
 /-- Why an item failed: its static errors, the last of which stopped it,
 and the state when it did, whose lints outlive it (`State.keepLints`). -/
@@ -3699,6 +3704,63 @@ def withBound (x : M α) : M (α × Array CBinder) := do
   modify fun s => { s with bound := s.bound.extract 0 mark }
   return (r, new)
 
+/-- `redundant_type_annotations` and `redundant_closure` on the closure at `span`, of the parameters `params` and the body `body`,
+given for a function parameter whose parameters' types are `ps` where they
+are known before the closure, and whose result's is `r?`
+(`lint::redundant_type_annotations`, `lint::redundant_closure`). -/
+def lintClosure (cx : ExprCtx) (ps : Array (Option Ty)) (r? : Option Ty) (span : Span)
+    (params : Array (Ident × Option (Array Ident))) (body : Expr) : M Unit := do
+  let names := params.map fun (x, _) => (declaredIdent x).1.name
+  -- `redundant_type_annotations` (`lint::redundant_type_annotations`).
+  for (x, ty?) in params, p? in ps do
+    let some segs := ty? | continue
+    unless Fren.Core.redundantTypeAnnotation true p?.isSome do continue
+    let tr := typeSpan segs
+    let msg := Fren.Core.redundantTypeAnnotationMsg (if x.name.startsWith "#_" then "_" else (declaredIdent x).1.name) (← srcAt tr)
+    lintFix .redundantTypeAnnotations tr { msg with fixes := msg.fixes.map ({ · with range? := some { start := x.span.stop, stop := tr.stop } }) }
+  -- `unused_variables` on its parameters (`lint::unused_closure_params`).
+  let mentioned := (mentions body).map (·.getRoot)
+  for (x, _) in params, n in names do
+    unless Fren.Core.closureParamOptedOut n || mentioned.contains (Name.mkSimple n) do
+      lint .unusedVariables (declaredIdent x).1.span (Fren.Core.unusedClosureParamMsg (Name.mkSimple n))
+  -- `redundant_closure` (`lint::redundant_closure`).
+  let .app _ segs args := body | return
+  let args := args.toList.map fun | .path _ #[y] => names.idxOf? y.name | _ => none
+  let st ← get
+  let some rt := r? | return
+  let some pts := ps.mapM id | return
+  let (callee, exact) : Fren.Core.Callee × Bool :=
+    if segs.size == 1 && names.contains segs[0]!.name then (.other, false)
+    else if let some (ft, _) := (if segs.size == 1 then cx.fnParam? (identName segs[0]!.name) else none) then
+      (.fnParameter, ft.params == pts && ft.result == rt)
+    else match st.table.resolvePath st.scope (segNames segs) cx.shadowing with
+      | .ok (.item { kind := .fnItem, path, .. }) =>
+        match (if st.hofs.contains path then none else st.defs.find? (·.1 == path)), st.funPTys.find? path with
+        | some (_, dps, dr, _), some (pps, rp) =>
+          (.defined, dps.map (·.2) == pts && dr == rt && (pps.push rp).all (!·.patterned))
+        | _, _ => (.other, false)
+      | _ => (.other, false)
+  unless Fren.Core.redundantClosure names.size args true callee exact do return
+  lintFix .redundantClosure span (Fren.Core.redundantClosureMsg (← srcAt (segs[0]!.span.to segs.back!.span)))
+
+/-- Records what the application of the higher-order function `path` gives
+its parameter at `k`, the closure or function's name `e`, for
+`needless_higher_order` (`lint::needless_higher_order`): its text, and the
+names it mentions (`Fren.Core.closureNamesIn`); a function's name is one,
+and a lambda match is taken to mention one, which keeps the lint from
+firing on it. -/
+def noteFnArg (path : Name) (k : Nat) (e : Expr) : M Unit := do
+  if (← get).fnArgs.any fun (a, sp) => sp == e.span && a.index == k then return
+  let src := (← get).src
+  let names : Array String := match e with
+    | .closure _ params body =>
+      Fren.Core.closureNamesIn ((body.text src).text) (params.map fun (x, _) => (declaredIdent x).1.name)
+    | .path _ segs => #[(segs.map (·.name)).foldl (· ++ "::" ++ ·) ""]
+    -- A lambda match is not compared.
+    | _ => #["match"]
+  let text := (e.text src).text
+  modify fun s => { s with fnArgs := s.fnArgs.push ({ path, index := k, text, names }, e.span) }
+
 mutual
 /-- Two operands of the same type, each checked against the other's, when it
 does not synthesize its own (`lang::checked`). -/
@@ -4888,6 +4950,8 @@ partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Ar
     elabClosure cx (names.zip types) body r? true
   | .closure span params body =>
     if let some msg := Fren.Core.argumentMsg? ft (.closure params.size) then err span msg
+    -- `_` declares no name: one that no spec can write or mention.
+    let params := params.mapIdx fun k (x, ty?) => if x.name == "_" then ({ x with name := s!"#_{k}" }, ty?) else (x, ty?)
     -- Distinct names (`lang::distinct_names`).
     let declared := params.map fun (x, _) => Name.mkSimple (declaredIdent x).1.name
     if let some k := (Fren.Core.repeatsAt declared)[0]? then err params[k]!.1.span (Fren.Core.dupBoundMsg declared[k]!)
@@ -4902,6 +4966,7 @@ partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Ar
         | none, some p => pure p
         | none, none => err x.span (Fren.Core.closureParamUnknownMsg f)
       return (x, t)
+    lintClosure cx ps r? span params body
     elabClosure cx named body r? false
   | .path span segs =>
     -- The function itself, in its own body, not applied.
@@ -4938,7 +5003,8 @@ partial def elabClosure (cx : ExprCtx) (params : Array (Ident × Ty)) (body : Ex
   let mut new : Array CBinder := #[]
   let mut free : Array FreeBound := #[]
   for (x, t) in params do
-    let bn ← if synthetic then pure (Name.mkSimple x.name) else do
+    -- `_`, which declares no name (`elabFnArg`), as a synthetic one.
+    let bn ← if synthetic || x.name.startsWith "#_" then pure (Name.mkSimple x.name) else do
       let locals := Fren.Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         ((cx.binders ++ new).map (·.what)) cx.selfFn.isSome
       let y ← declare x locals
@@ -4981,6 +5047,7 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
       (fun k ps r? => do
         let .function ft := h.params[k]!.2.2 | return none
         let (c, pts, rt) ← (elabFnArg cx f ft ps r? args[k]! : M _)
+        noteFnArg path k args[k]!
         modify fun (a, cs) => (a, cs.set! k (some c))
         return some (pts, rt))
       (fun k ft (_, rt) => (liftMsg args[k]!.span
@@ -7259,6 +7326,11 @@ partial def elabItem (item : Item) : M Unit := do
         let h : HigherOrderFn := { typeParams := tps, params := hofParams, result := r.asParams path tps, body := smt
                                    calls := (← get).genericCalls }
         modify fun s => { s with hofs := s.hofs.insert path h }
+        unless isPub do
+          for (j, x, sp, _) in fnPs do
+            let r : Fren.Core.HofParamRecord :=
+              { path, index := j, name := x, generic := !tps.isEmpty, level := (← get).levels.get .needlessHigherOrder }
+            modify fun s => { s with hofParams := s.hofParams.push (r, sp) }
       let clausesBefore := (← get).clauseDefs.size
       let (_, props, sites) ← if contract then elabContract path n true vars clauses r name.span fnParams (paramSpans.map (·.1)) else pure (vars, #[], #[])
       if !fnPs.isEmpty then
@@ -7514,7 +7586,8 @@ def finishLints : StateM State Unit := do
     (s.lintReports ++ Fren.Core.importReports s.useRecords s.used true ++ Fren.Core.deadCodeReports s.items s.usedItems
       ++ Fren.Core.unusedAssumptionReports s.assumptions s.globalReads
       ++ Fren.Core.unusedSettingReports s.settings s.seenSettings atEnd true
-      ++ Fren.Core.singleCallReports s.items s.usedItems)
+      ++ Fren.Core.singleCallReports s.items s.usedItems
+      ++ Fren.Core.needlessHigherOrderReports s.hofParams (s.fnArgs.map (·.1)))
   let (unfulfilled, _) := Fren.Core.finishReports (Fren.Core.expectationReports s.expectations fulfilled true)
   let all := reports ++ unfulfilled
   let (edits, fixed) := s.fixes (all.map fun (r, _) => (r.lint, r.ref))
@@ -7554,6 +7627,7 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
                            enumSize := Fren.Core.Enumeration.defaultSize,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
                            expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
+                           hofParams := #[], fnArgs := #[],
                            globalTexts := #[], natReports := #[], natKept := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
                            assumptions := #[], globalReads := #[], trailingCommas }
   for item in items, k in [0:items.size] do

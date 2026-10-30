@@ -92,7 +92,8 @@ declaration. A name of a clause, or a bound name, has no fix, as a
 variable has none: it may be meant to be mentioned. A name that starts
 with `_`, such as `_m` in `forall (_m: Mode), p?` or `_k` in `let _k := x
 in y`, is reported like any other, as are the binders of global
-expectations: unlike Rust, Fren has no `_` prefix that opts a name out.
+expectations: unlike Rust, Fren has no `_` prefix that opts a name out,
+but for a [closure's](../Lang/HigherOrder.md#arguments) parameter, below.
 
 ### Scopes
 
@@ -155,6 +156,42 @@ pub proc unused_bound(names: Set<Local>, body: Tree): (det unused: Set<Local>) {
     expect shadowed: when body.children = {(Node::N0, Node::N1)} and body.root = Node::N0
         and body.declares = {(Node::N1, Local::A)} and body.mentions = {(Node::N1, Local::A)},
         unused = names
+}
+```
+
+A [closure's](../Lang/HigherOrder.md#arguments) parameter that its body
+does not mention is reported too, at the parameter: the closure's value
+does not depend on it. Its function type fixes how many parameters it
+has, so a closure that ignores an argument cannot drop the parameter, and
+writes `_` in its place, which declares no name, or a name that starts
+with `_`, such as `_count`, which says what the argument is; neither is
+reported, as in Rust. `lint::unused_closure_params` states this, for the
+closure's parameters `names`, of which those written with a name that
+starts with `_` are `opted_out`:
+
+```fren
+-- Whether a closure's parameter written `name` is left out of
+-- `unused_variables`: a name that starts with `_`. `_` alone declares no
+-- name, so it is no parameter of `names`.
+pub fn opted_out?(name: String) := name.starts_with?("_")
+
+-- The name that a closure's parameter is written with.
+fn written_name(Local): String
+
+set_option fren.lint.arbitrary_source_item_ordering "expect" in
+pub proc unused_closure_params(
+    names: Set<Local>,
+    opted_out: Set<Local>,           -- the parameters left out
+    body: Tree,
+): (det unused: Set<Local>) {
+    call s := scope(body)
+
+    -- The parameters left out are those written with a leading `_`.
+    assume left_out: forall (x: Local), x in opted_out iff opted_out?(written_name(x))
+
+    out unused := (names minus opted_out) minus s.free
+
+    expect mentioned_kept: unused inter s.free = {}
 }
 ```
 

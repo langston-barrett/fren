@@ -1205,7 +1205,7 @@ or splices. Every field is compared (`same_fields%`), so a field added to
 - the fields that `elabFile` sets before it reads them: `file`, `src`,
   `fixing`, `module`, `scope`, `levels`, `useRecords`, `evidence?`, `used`,
   `expectations`, `lintReports`, `useLocs`, `expectationRemovals`,
-  `items`, `usedItems`, `lintFixes`, `globalTexts`, `settings`,
+  `items`, `usedItems`, `hofParams`, `fnArgs`, `lintFixes`, `globalTexts`, `settings`,
   `settingRemovals`, `seenSettings`, `assumptions`, `globalReads`,
   `trailingCommas`, `natReports` and `natKept`; and `itemStart`, `literals` and `itemSpan`, which it
   sets for each item before the item reads them. The `mutation` test job
@@ -1224,7 +1224,7 @@ A file is also elaborated again after a state with static errors of an
 item in progress (`itemErrors`). -/
 def sameForLater (a b : State) : Bool :=
   same_fields% State a b except [file, src, fixing, module, scope, levels, useRecords, evidence?, used, expectations,
-    lintReports, useLocs, expectationRemovals, items, usedItems, lintFixes, globalTexts, settings, settingRemovals,
+    lintReports, useLocs, expectationRemovals, items, usedItems, hofParams, fnArgs, lintFixes, globalTexts, settings, settingRemovals,
     seenSettings, assumptions, globalReads, trailingCommas, natReports, natKept, itemStart, literals, itemSpan,
     comps, consts, constInts,
     globals, bodies, diags, edits, natSums, claims, applied, defs, bound]
@@ -1239,7 +1239,8 @@ def State.withPerFileOf (s t : State) : State :=
   { s with file := t.file, src := t.src, fixing := t.fixing, module := t.module, scope := t.scope, levels := t.levels
            useRecords := t.useRecords, evidence? := t.evidence?, used := t.used, expectations := t.expectations
            lintReports := t.lintReports, useLocs := t.useLocs, expectationRemovals := t.expectationRemovals
-           items := t.items, usedItems := t.usedItems, lintFixes := t.lintFixes, globalTexts := t.globalTexts
+           items := t.items, usedItems := t.usedItems, hofParams := t.hofParams, fnArgs := t.fnArgs
+           lintFixes := t.lintFixes, globalTexts := t.globalTexts
            settings := t.settings, settingRemovals := t.settingRemovals, seenSettings := t.seenSettings
            assumptions := t.assumptions, globalReads := t.globalReads, trailingCommas := t.trailingCommas
            natReports := t.natReports, natKept := t.natKept

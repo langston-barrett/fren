@@ -1,0 +1,19 @@
+warning[F0822]: the type of `y` is the function type's, `Int`
+ --> test/cli/lints/restriction/f0822_redundant_type_annotations.fren:6:52
+  |
+6 | proc c(k: Int): (m: Int) { ensure r: m = twice(|y: Int| y + 1, k) }
+  |                                                    ^^^ given by the function type
+  |
+  = note: a closure's parameter has the type of the function type's parameter, which is written once, in the signature
+  = help: `fren fix` can fix this
+  = note: `redundant_type_annotations` is set to `warn`
+help: remove the type
+  |
+6 - proc c(k: Int): (m: Int) { ensure r: m = twice(|y: Int| y + 1, k) }
+6 + proc c(k: Int): (m: Int) { ensure r: m = twice(|y| y + 1, k) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0822`.
+exit=3

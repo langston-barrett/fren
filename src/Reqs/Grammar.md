@@ -126,7 +126,7 @@ atom           := INT | STRING | "true" | "false" | path | IDENT ("." IDENT)+ | 
                 | "[" [expr ("," expr)* [","]] "]"
                 | atom"[" expr "]"
                 | "|" closure-param ("," closure-param)* "|" expr
-closure-param  := DECL [":" base]
+closure-param  := (DECL | "_") [":" base]
 element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]

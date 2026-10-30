@@ -2442,6 +2442,7 @@ tested lint::redundant_locals: "test/ui/lints/let_quantifiers.fren"
 tested lint::scope: "test/ui/lints/let_quantifiers.fren"
 tested lint::trivial_quantifier: "test/ui/lints/let_quantifiers.fren"
 tested lint::unused_bound: "test/ui/lints/let_quantifiers.fren"
+tested lint::unused_closure_params: "test/ui/lints/closures.fren"
 tested lint::unused_definitions: "test/ui/lints/let_quantifiers.fren"
 -- keep-sorted end
 
@@ -2637,5 +2638,158 @@ end Printing
 -- parser of the `fren` command.
 tested lint::printing: "src/FrenTestMain.lean", "src/FrenTest/Quote.lean"
 tested lint::parenthesization: "src/FrenTestMain.lean", "src/FrenTest/Quote.lean"
+
+/-! ### Closures -/
+
+def toClosureArg : Option Nat → lint.ClosureArg
+  | some k => .Param k
+  | none => .Other
+
+theorem toClosureArg_param (a : Option Nat) (i : Nat) : toClosureArg a = .Param (i : Int) ↔ a = some i := by
+  cases a <;> simp [toClosureArg] <;> omega
+
+-- A quantifier over the positions of a sequence, as the spec writes it, is
+-- one over the positions of its list.
+theorem forall_positions [Inhabited α] (l : List α) (P : Int → α → Prop) :
+    (∀ k : Int, 0 ≤ k ∧ k < (Fren.Seq.ofList l).len → P k ((Fren.Seq.ofList l).nth k)) ↔
+      ∀ (i : Nat) (h : i < l.length), P i l[i] := by
+  simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList]
+  constructor
+  · intro h i hi
+    have := h i ⟨by omega, by omega⟩
+    rwa [Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using hi)] at this
+  · intro h k ⟨h0, h1⟩
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
+    have := h k.toNat (by omega)
+    simp only [Fren.Seq.toList_ofList]
+    rwa [Int.toNat_of_nonneg h0] at this
+
+theorem closure_args_range (args : List (Option Nat)) (n : Nat) :
+    (args == (List.range n).map some) = true ↔
+      (Fren.Seq.ofList (args.map toClosureArg)).len = (n : Int) ∧
+      ∀ k : Int, 0 ≤ k ∧ k < (Fren.Seq.ofList (args.map toClosureArg)).len →
+        (Fren.Seq.ofList (args.map toClosureArg)).nth k = lint.ClosureArg.Param k := by
+  rw [forall_positions (args.map toClosureArg) (fun k a => a = lint.ClosureArg.Param k)]
+  simp only [beq_iff_eq, Fren.Seq.len_eq, Fren.Seq.toList_ofList, List.length_map, List.getElem_map, toClosureArg_param]
+  constructor
+  · rintro rfl
+    exact ⟨by simp, fun i h => by simp⟩
+  · rintro ⟨hl, h⟩
+    apply List.ext_getElem (by simp; omega)
+    intro i h1 h2
+    simp [h i h1]
+
+theorem seq_ofList_ne_empty (l : List α) : Fren.Seq.ofList l ≠ ∅ ↔ l ≠ [] := by
+  constructor
+  · rintro h rfl; exact h rfl
+  · intro h e; exact h (by simpa using congrArg Fren.Seq.toList e)
+
+theorem needlessHigherOrder_iff (gs : List lint.GivenFunction) :
+    Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun g => decide (g.names ≠ ∅)) false = true ↔
+      Fren.Seq.ofList gs ≠ ∅ ∧ ∀ k : Int, 0 ≤ k ∧ k < (Fren.Seq.ofList gs).len →
+        ((Fren.Seq.ofList gs).nth k).names = ∅ ∧ ((Fren.Seq.ofList gs).nth k).form = ((Fren.Seq.ofList gs).nth 0).form := by
+  rw [seq_ofList_ne_empty]
+  cases gs with
+  | nil => simp [Fren.Core.needlessHigherOrderBy]
+  | cons g gs =>
+    have h0 : (Fren.Seq.ofList (g :: gs)).nth 0 = g := by
+      rw [Fren.Seq.nth_of_lt _ 0 (by omega) (by simp)]; rfl
+    rw [h0, forall_positions (g :: gs) (fun _ a => a.names = ∅ ∧ a.form = g.form)]
+    simp only [List.map_cons, Fren.Core.needlessHigherOrderBy, Bool.and_eq_true, Bool.not_eq_true', Bool.not_false,
+      List.all_eq_true, beq_iff_eq, List.mem_map, List.length_cons, List.any_eq_false, and_true, decide_eq_true_eq,
+      ne_eq, Classical.not_not]
+    constructor
+    · rintro ⟨hc, hf⟩
+      refine ⟨by simp, fun i hi => ⟨hc _ (List.getElem_mem hi), ?_⟩⟩
+      cases i with
+      | zero => rfl
+      | succ j => exact hf _ ⟨_, List.getElem_mem (by simp at hi; omega), rfl⟩
+    · rintro ⟨_, h⟩
+      refine ⟨fun x hx => ?_, fun s ⟨x, hx, e⟩ => ?_⟩
+      · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+        exact (h i hi).1
+      · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+        rw [← e]; exact (h (i + 1) (by simp; omega)).2
+
+def toCallee : Fren.Core.Callee → lint.Callee
+  | .defined => .Defined
+  | .fnParameter => .FnParameter
+  | .other => .Other
+
+-- Both front ends read the closure's body and arguments, and the callee's
+-- types, and decide with `redundantClosure`.
+impl redundant_closure: lint::redundant_closure for (n : Nat) (a : Bool) (c : Fren.Core.Callee) (args : List (Option Nat))
+    (e : Bool) {
+  n_params := n,
+  applies? := a,
+  callee := toCallee c,
+  args := Fren.Seq.ofList (args.map toClosureArg),
+  exact? := e,
+  fires? := Fren.Core.redundantClosure n args a c e,
+} by
+  intro n a c args e _
+  unfold lint.redundant_closure.ensures lint.redundant_closure.ensure.rule
+  have hc : (c != .other) = true ↔ toCallee c ≠ .Other := by cases c <;> decide
+  simp only [Fren.Core.redundantClosure, Bool.and_eq_true, closure_args_range, hc, and_assoc]
+
+-- The type parameters, by position, that `t` mentions, and those that `b`
+-- fixes, among the function's `b.length`.
+def mentionedParams (t : Fren.Core.Ty) (b : List (Option Fren.Core.Ty)) : Fren.FinSet Int :=
+  Fren.FinSet.ofList (((List.range b.length).filter (t.mentions ·)).map Int.ofNat)
+
+def fixedParams (b : List (Option Fren.Core.Ty)) : Fren.FinSet Int :=
+  Fren.FinSet.ofList (((List.range b.length).filter fun k => (b[k]?.join).isSome).map Int.ofNat)
+
+theorem known_iff (t : Fren.Core.Ty) (b : List (Option Fren.Core.Ty)) :
+    (!t.unknownIn b.toArray) = true ↔ mentionedParams t b ⊆ fixedParams b := by
+  simp only [Fren.Core.Ty.unknownIn, Bool.not_eq_true', List.any_eq_false, Bool.and_eq_true, Option.isNone_iff_eq_none,
+    not_and, List.mem_range, List.size_toArray, Fren.FinSet.subset_def, mentionedParams, fixedParams,
+    Fren.FinSet.mem_ofList, List.mem_map, List.mem_filter, List.getElem?_toArray]
+  constructor
+  · rintro h x ⟨k, ⟨hk, hm⟩, rfl⟩
+    refine ⟨k, ⟨hk, ?_⟩, rfl⟩
+    cases e : b[k]?.join with
+    | none => exact absurd e (h k hk hm)
+    | some _ => rfl
+  · intro h k hk hm e
+    obtain ⟨j, ⟨_, hj⟩, hjk⟩ := h k ⟨k, ⟨hk, hm⟩, rfl⟩
+    have : j = k := Int.ofNat.inj hjk
+    subst this
+    simp [e] at hj
+
+-- `inferHigherOrder` gives each closure's parameters the types that the
+-- expected type and the arguments elaborated before the closures fix, as
+-- `!t.unknownIn b`; both front ends ask `redundantTypeAnnotation` with
+-- whether that type is given.
+impl redundant_type_annotations: lint::redundant_type_annotations for (a : Bool) (t : Fren.Core.Ty)
+    (b : List (Option Fren.Core.Ty)) {
+  annotated? := a,
+  mentioned := mentionedParams t b,
+  fixed := fixedParams b,
+  fires? := Fren.Core.redundantTypeAnnotation a (!t.unknownIn b.toArray),
+} by
+  intro a t b _
+  unfold lint.redundant_type_annotations.ensures lint.redundant_type_annotations.ensure.rule
+  simp only [Fren.Core.redundantTypeAnnotation, Bool.and_eq_true, known_iff]
+
+-- Both front ends record what each application gives the parameter, and
+-- report only a private function's parameters (`needlessHigherOrderReports`),
+-- comparing the texts as written: each `form` here is a text's written form
+-- (`Reqs/Lint#written-the-same`).
+impl needless_higher_order: lint::needless_higher_order for (gs : List lint.GivenFunction) (p g : Bool) {
+  given := Fren.Seq.ofList gs,
+  pub? := p,
+  generic? := g,
+  fires? := !p && Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun x => decide (x.names ≠ ∅)) g,
+} by
+  intro gs p g _
+  unfold lint.needless_higher_order.ensures lint.needless_higher_order.ensure.rule
+  cases g
+  · rw [Bool.and_eq_true, needlessHigherOrder_iff]
+    cases p <;> simp
+  · cases gs <;> cases p <;> simp [Fren.Core.needlessHigherOrderBy]
+
+trusted lint::redundant_closure_written: "a model of an expression, checked by the refinements in its section"
+trusted lint::redundant_closure_fixed: "a model of an expression, checked by the refinements in its section"
 
 end Fren.Impls

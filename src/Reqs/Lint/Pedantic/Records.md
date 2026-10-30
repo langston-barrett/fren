@@ -123,3 +123,50 @@ pub proc fn_params_excessive_bools(
     ensure rule: fires? iff n_bools > 3
 }
 ```
+
+## Function parameters given one function
+
+`needless_higher_order`, `allow` by default, fires on a function parameter
+of a private [higher-order function](../../Lang/HigherOrder.md) to which
+every application in the file gives the same closure, [written the
+same](../../Lint.md#written-the-same), whose body mentions no name but the
+closure's own parameters: literals, operators and methods only, as
+`|y| 2 * y`. The parameter is then the same function everywhere, and the
+closure's body could be written in the function's body, where the
+parameter is applied, without the parameter. A name that the closure
+mentions might not mean the same there, or anything: a name of where the
+closure is written (a variable, a binder, a parameter, a call or a name
+of a `let` or `where`), an item declared after the function, which Fren's
+declare-before-use rule hides from its body, or a name that the
+function's own parameters shadow. So the lint asks that the closure
+mention none, which is enough for the body to mean the same in the
+function, and does not look for which names would. For the same reason
+it does not fire where every application gives the same function's name,
+nor on a lambda match, nor on a generic function, whose body is written
+over its type parameters, where `|y| y + 1` need not type-check. It is
+reported at the parameter. It does not fire on a public function, which
+other files may apply, nor where nothing applies the function, which
+[`dead_code`](../Unused.md#dead-code) reports. It has no fix, since it
+changes the function's parameters, and with them every application. Clippy
+has no such lint.
+
+`lint::needless_higher_order` states when it fires, from what each
+application gives the parameter, its written form and the names it
+mentions:
+
+```fren
+-- What an application gives a function parameter, as
+-- `needless_higher_order` reads it: its written form, and the names it
+-- mentions, but for a closure's own parameters, which are the closure's.
+pub struct GivenFunction { form: String, names: Set<String> }
+
+set_option fren.lint.undecidable "allow" in
+pub proc needless_higher_order(
+    given: Seq<GivenFunction>,       -- what each application in the file gives the parameter
+    pub?,                            -- the function is public
+    generic?,                        -- the function is generic
+): (det fires?) {
+    ensure rule: fires? iff (not pub? and not generic? and given != []
+        and (forall (k: Int), when 0 <= k < given.len, given[k].names = {} and given[k].form = given[0].form))
+}
+```

@@ -32,7 +32,7 @@ type          := base ["is" pattern] | "fn" "(" type ("," type)* ")" "->" type
 closure       := "|" closure-param ("," closure-param)* "|" expr
                | "match" "{" match-arm ("," match-arm)* [","] "}"
 match-arm     := pattern ("," pattern)* ["if" expr] "=>" expr
-closure-param := DECL [":" base]
+closure-param := (DECL | "_") [":" base]
 ```
 
 ## Function types
@@ -188,6 +188,9 @@ A closure's parameters are declared as a quantifier's bound names are:
 their names are distinct (`F0213`), follow the [Boolean
 names](Types.md#boolean-names) rule for their types, and are written with
 `!` exactly when they [shadow](Procedures.md#shadowing) a name in scope.
+A parameter written `_` declares no name, so the body cannot mention it,
+and a closure may have several: `|_, y| y` ignores its first argument, as
+a function type may require.
 A closure has as many parameters as the function type (`F0436`); a
 parameter's type is the function type's, and if it is written, `|x: T|`,
 it must be that type (`F0304`), which a [generic

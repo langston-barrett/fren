@@ -262,9 +262,9 @@ scoped syntax:max str : fren_expr
 scoped syntax:max &"true" : fren_expr
 scoped syntax:max &"false" : fren_expr
 scoped syntax:max fren_path : fren_expr
-/-- A closure's parameter, `x` or `x: T`, whose type has no pattern: its
-`|` would be read as the pattern's. -/
-syntax fren_closure_param := frenIdent (" : " fren_type:11)?
+/-- A closure's parameter, `x` or `x: T`, or `_`, which declares no name,
+whose type has no pattern: its `|` would be read as the pattern's. -/
+syntax fren_closure_param := ("_" <|> frenIdent) (" : " fren_type:11)?
 
 /-- `|x, y: T| e`, a closure, an argument for a function parameter
 (`Reqs/Lang/HigherOrder#arguments`): where an operand is expected, `|`

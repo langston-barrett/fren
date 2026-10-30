@@ -1,0 +1,12 @@
+--- test/cli/fix/closures.fren
++++ test/cli/fix/closures.fren
+@@ -9,4 +9,4 @@
+-    out a := twice(|y| inc(y), k)
+-    out b := both(|p, q| add(p, q), k)
+-    out d := twice(|y: Int| y + 1, k)
+-    out e := twice(|y: Int| inc(y), k)
++    out a := twice(inc, k)
++    out b := both(add, k)
++    out d := twice(|y| y + 1, k)
++    out e := twice(inc, k)
+exit=1

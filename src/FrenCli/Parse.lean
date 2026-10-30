@@ -1471,6 +1471,7 @@ partial def atom : P Expr := do
     let mut params := #[]
     repeat
       let x ← peek
+      -- `_`, as an identifier, is a parameter that declares no name.
       unless x.tok matches .ident _ do
         if params.isEmpty then closureNoParams x.span
         fail x "a closure's parameter"
