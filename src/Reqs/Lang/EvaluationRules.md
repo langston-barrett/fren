@@ -355,7 +355,7 @@ expression.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc coincidence(i: Interp, p: Env, j: Interp, q: Env, e: Expr) {
     ensure same: when agree?(i, p, j, q, free_vars(e)), eval(i, p, e) = eval(j, q, e)
 }
@@ -369,7 +369,7 @@ tests it, and `src/Impls/Semantics.lean` proves it in Lean, from the
 coincidence lemma:
 
 ```fren
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc closed(i: Interp, p: Env, j: Interp, q: Env, e: Expr) {
     ensure same: when free_vars(e) = {} and i.recursions = j.recursions and i.primitives = j.primitives,
         eval(i, p, e) = eval(j, q, e)

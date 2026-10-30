@@ -76,7 +76,7 @@ another value. Its evidence is testing, which evaluates it, since the
 solver unfolds [`eval`](../Lang/Semantics.md) only one step:
 
 ```fren
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc written_scopes(i: lang::Interp, payload: lang::Value, v: lang::Value) {
     use lang::{Env, Expr, Outcome, Pattern, Value, eval}
 
