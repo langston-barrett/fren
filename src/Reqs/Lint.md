@@ -66,8 +66,8 @@ use view::Severity
 | `length_zero` | `F0715` | `style` | `warn` | a comparison of a string's or sequence's `len` with `0` or `1`, or of its `at(0)` with `""` or `[]`, that says whether it is empty, such as `s.len = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
 | `let_and_return` | `F0824` | `style` | `warn` | a `let` or `where` clause whose body is the name of its last definition, such as `let d := x + 1 in d` (see [Returned definitions](Lint/Style/Let.md#returned-definitions)) |
 | `literal_dot_in_pattern` | `F0794` | `suspicious` | `warn` | a `.` between two letters or digits in a pattern, such as `r"v1.2"` (see [Dots in patterns](Lint/Suspicious/Literals.md#dots-in-patterns)) |
-| `manual_abs` | `F0811` | `complexity` | `warn` | a conditional that is the absolute value, such as `if x < 0 then -x else x` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
 | `manual_abs_diff` | `F0812` | `complexity` | `warn` | a conditional that is the absolute value of a difference, such as `if a > b then a - b else b - a` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
+| `manual_abs` | `F0811` | `complexity` | `warn` | a conditional that is the absolute value, such as `if x < 0 then -x else x` (see [Absolute values](Lint/Complexity/Integers.md#absolute-values)) |
 | `manual_at_most_one` | `F0840` | `complexity` | `warn` | a conjunction that negates each pair of three or more operands, such as `not (a? and b?) and not (a? and c?) and not (b? and c?)` (see [Cardinality](Lint/Complexity/Operators.md#cardinality)) |
 | `manual_clamp` | `F0814` | `complexity` | `warn` | a conditional that keeps its operand between two literals, such as `if x < 0 then 0 else if x > 9 then 9 else x` (see [Lesser and greater](Lint/Complexity/Integers.md#lesser-and-greater)) |
 | `manual_forall` | `F0826` | `style` | `warn` | three or more operands of a run of `and` or `or` that are one expression at each variant of an enumeration, such as `Mode::Heat in s and Mode::Cool in s and Mode::Off in s` (see [Operands at each variant](Lint/Style/Let.md#operands-at-each-variant)) |
@@ -237,8 +237,6 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
 - `glob_imports` and `trivial_pattern`: their Clippy counterparts are in
   `pedantic` and `nursery`, but here both are in `style` (see [Trivial
   patterns](Lint/Style.md#trivial-patterns)), so both are `warn`.
-- `precedence`: Clippy's is in `complexity`, but here it is in
-  `restriction`, and allowed (see [Precedence](Lint/Restriction.md#precedence)).
 - `is_equality`: its Clippy counterpart, `equatable_if_let`, is in
   `nursery`, which is about a lint's maturity rather than a judgement of
   style, so it is in `style` (see [Pattern
@@ -248,14 +246,16 @@ theirs is in the group of the same name: a Clippy lint in `pedantic` or
   [`manual_pattern_test`](Lint/Style/PatternTests.md)
   writes, as Clippy never pushes `matches!(x, A | B)` toward
   `[A, B].contains(&x)`.
-- `redundant_locals`: Clippy's is in `correctness`. As for `eq_op`, Fren
-  has no `correctness` group, and the definition changes no meaning, so it
-  is in `suspicious`, and `warn` (see [Redundant
-  definitions](Lint/Suspicious.md#redundant-definitions)).
+- `precedence`: Clippy's is in `complexity`, but here it is in
+  `restriction`, and allowed (see [Precedence](Lint/Restriction.md#precedence)).
 - `redundant_bool_type`: its Clippy counterpart, `redundant_type_annotations`,
   is in `restriction`, which is allowed by default. The `?` of a name
   already gives its type, so the `: Bool` only repeats it: it is in
   `style`, and `warn`.
+- `redundant_locals`: Clippy's is in `correctness`. As for `eq_op`, Fren
+  has no `correctness` group, and the definition changes no meaning, so it
+  is in `suspicious`, and `warn` (see [Redundant
+  definitions](Lint/Suspicious.md#redundant-definitions)).
 - `same_branches`: Clippy's `if_same_then_else` is in `style`. Two
   branches written the same are more likely a slip in one of them than a
   matter of style, so it is in `suspicious`. Both are `warn`.
@@ -589,8 +589,8 @@ what the spec means:
 | `length_zero` | compares the string with `""`, or the sequence with `[]`, as the message suggests |
 | `let_and_return` | writes the last definition's expression in place of the body, and removes the definition, or the clause if it has no other |
 | `literal_dot_in_pattern` | writes each `.` that it fires on as `[.]` |
-| `manual_abs` | replaces the conditional with `x.abs` |
 | `manual_abs_diff` | replaces the conditional with the `abs` of its `then` branch, `(a - b).abs` |
+| `manual_abs` | replaces the conditional with `x.abs` |
 | `manual_at_most_one` | replaces the conjuncts with `at_most_one?`, or with `exactly_one?` where the disjunction of the operands is among them |
 | `manual_clamp` | replaces the conditional with `x.max(lo).min(hi)` |
 | `manual_forall` | replaces the operands with `forall (x: T), e`, or `exists` for `or`, as the message suggests |

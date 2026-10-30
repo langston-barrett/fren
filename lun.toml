@@ -19,5 +19,5 @@ configs = []
 [[formatter]]
 name = "keep-sorted"
 cmd = "keep-sorted --mode fix --"
-files = ["*.lean"]
+files = ["*.lean", "*.md"]
 check = "keep-sorted --mode lint --"
