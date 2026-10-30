@@ -9,7 +9,7 @@ proc composed(flag?): (answer?) {
     ensure value: answer? iff not computed?
 }
 set_option fren.evidence "random" in
-expect composed_identity(flag?) {  --~[hosted] info: the checks of `composed_identity` set to testing are run by `fren check`, not in Lean
+expect composed_identity(flag?) {  --~[hosted] info: the checks of `composed_identity` set to random testing are run by `fren check`, not in Lean
     call c := identity(flag?)
     refines c composed(flag?)
 }
@@ -32,7 +32,7 @@ proc chain(flag?): (answer?) {
     ensure value: answer? iff l.out?
 }
 set_option fren.evidence "random" in
-expect exact_determined_calls(flag?) {  --~[hosted] info: the checks of `exact_determined_calls` set to testing are run by `fren check`, not in Lean
+expect exact_determined_calls(flag?) {  --~[hosted] info: the checks of `exact_determined_calls` set to random testing are run by `fren check`, not in Lean
     call c := identity(flag?)
     refines c chain(flag?)
 }

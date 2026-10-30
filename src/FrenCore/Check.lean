@@ -1806,7 +1806,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/
 def testingHelp (byCheck : Bool) (decide : String) : String :=
-  if byCheck then "help: raise `--tests`; the checks set to testing are not asked of the solver"
+  if byCheck then "help: raise `--tests`; the checks set to random testing are not asked of the solver"
   else s!"help: run `fren check` to {decide}, or raise `--tests`"
 
 /-- Testing found no outputs for an admissible input (`eval::test_verdict`). -/

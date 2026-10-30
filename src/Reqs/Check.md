@@ -1738,7 +1738,8 @@ be followed by `in` and by a member whose checks it sets: before anything
 else, such as a guarantee, it is an error (`F0215`), and so is a
 `set_option` of any other option before a member (`F0216`). The setting is a
 statement that the solver cannot be relied on there, so it is never
-reported as unneeded. A value other than `"random"` or `"solver"` is an
+reported as unneeded. A value other than `"solver"`, `"random"`, or one
+of those of [Checking by enumeration](#checking-by-enumeration), is an
 error (`F0214`), reported once, at the value, wherever the setting is.
 The items and members after it are elaborated as though it were
 `"solver"`, so that the error is not repeated at each of them.
@@ -2241,7 +2242,7 @@ fren: 30 passed (3 by bounded enumeration), 0 failed, 0 inconclusive, 0 redundan
 
 ### Enumeration then testing
 
-With `"enumerated+tested"`, a check is enumerated, and its queries are
+With `"enumerated+random"`, a check is enumerated, and its queries are
 also tested beyond the bound: where the search finds no model up to the
 bound, each query draws 100 random assignments of the slots it reads, the
 `t`th taking, for each slot, its `t`th random value of a size above the
@@ -2262,7 +2263,7 @@ pub enum Found { Model, NoModel }
 
 pub proc enumerated_answer(
     search: Found,           -- what the search up to the bound found
-    testing?,                -- the check is set to `"enumerated+tested"`
+    testing?,                -- the check is set to `"enumerated+random"`
     test: Found,             -- what testing beyond the bound found, if asked
 ): (
     det answer: Outcome,
@@ -2290,7 +2291,7 @@ unspecified value by its hidden slot's, and decides the constraint. The
 search, the order, the counts and the verdicts are `FrenCore`'s, shared
 with the `fren` command. So both front ends report the same results and
 messages, with the same counterexamples, for the checks set to
-`"enumerated"` and to `"enumerated+tested"`, whose tests both draw alike,
+`"enumerated"` and to `"enumerated+random"`, whose tests both draw alike,
 and are compared like any other (see [Agreement with
 Lean](Cli.md#agreement-with-lean)).
 

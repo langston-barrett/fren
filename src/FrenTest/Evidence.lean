@@ -29,11 +29,11 @@ expect global_tested(a_n: Int) {
 }
 
 /--
-info: the checks of `evidence_test::word` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `evidence_test::word` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: the checks of `evidence_test::all_tested` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `evidence_test::all_tested` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: the checks of `evidence_test::global_tested` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `evidence_test::global_tested` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 -/

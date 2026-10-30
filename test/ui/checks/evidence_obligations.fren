@@ -12,4 +12,4 @@ set_option fren.evidence "random" in
 proc by_testing(b?): (det bad: Small) {
     out bad := if b? then 7 else 1  --~ error: invariant `Small::invariant` does not hold
 }
---~^^^[hosted] info: the checks of `by_testing` set to testing are run by `fren check`, not in Lean
+--~^^^[hosted] info: the checks of `by_testing` set to random testing are run by `fren check`, not in Lean

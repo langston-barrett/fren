@@ -358,7 +358,7 @@ where
     for r in results do
       report p c r
     if (c.tested.minus c.enumerated).any then
-      logAbout p c.ref m!"the checks of `{Core.showComp p}` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
+      logAbout p c.ref m!"the checks of `{Core.showComp p}` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
     all := all ++ results
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with

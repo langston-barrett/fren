@@ -23,7 +23,7 @@ warning[F0612]: testing never reached `lex::narrow::e` in 100 tests: its trigger
    |               ^^^^^^^^^^^^^^^^^^^ never held
    |
    = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
-   = help: raise `--tests`; the checks set to testing are not asked of the solver
+   = help: raise `--tests`; the checks set to random testing are not asked of the solver
 
 error[F0603]: expectation `lex::global_wrong::global_wrong` does not hold
   --> test/cli/commands/check_by_testing.fren:42:12

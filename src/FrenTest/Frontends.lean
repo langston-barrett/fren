@@ -226,7 +226,7 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let anyTested := text.contains "set_option fren.evidence \"random\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"random\""
   let testing (d : Diagnostic) := anyTested &&
-    (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to testing are run by `fren check`"))
+    (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to random testing are run by `fren check`"))
   let staticError := cliDiags.any fun d => d.severity == "error" && !isCheckResult d
   let keep (d : Diagnostic) := !onTested d && !testing d
   -- A realizability failure's requirements, and so its notes, are compared
