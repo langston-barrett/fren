@@ -1416,17 +1416,6 @@ def toBoolRule : Fren.Core.BoolRule → lint.BoolRule
   | .contradiction => .Contradiction
   | .excludedMiddle => .ExcludedMiddle
 
-impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Bool) {
-  conj? := c,
-  absorbs? := a,
-  negates? := n,
-  simpler_negation? := s,
-  fires? := (Fren.Core.overlyComplexBool c a n s).1,
-  kind := toBoolRule (Fren.Core.overlyComplexBool c a n s).2,
-} by
-  intro c a n s _
-  cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
-
 /-- The core's `InfixOp` of each of `lint::InfixOp`'s, the inverse of `toInfixOp`. -/
 def ofLintInfixOp : lint.InfixOp → Fren.Core.InfixOp
   | .Iff => .iff

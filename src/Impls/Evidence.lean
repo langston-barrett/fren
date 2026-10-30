@@ -28,6 +28,7 @@ import Impls.PatternTests
 import Impls.PatternTypes
 import Impls.Procedures
 import Impls.Repeats
+import Impls.Rewrites
 import Impls.Scope
 import Impls.Semantics
 import Impls.Trace

@@ -108,7 +108,7 @@ use view::Severity
 | `non_snake_case` | `F0703` | `nonstandard_style` | `warn` | a module, procedure, variable, function, call, constraint or global expectation not named in `snake_case` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `non_upper_case_constants` | `F0705` | `nonstandard_style` | `warn` | a constant not named in `UPPER_CASE` (see [Naming conventions](Lint/NonstandardStyle.md#naming-conventions)) |
 | `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` or `exactly_one?(a?)` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
-| `overly_complex_bool_expr` | `F0773` | `pedantic` | `allow` | an `and` or `or` with an operand that can be dropped, such as `a or (a and b)` or `a and not a` (see [Operands that can be dropped](Lint/Pedantic.md#operands-that-can-be-dropped)) |
+| `overly_complex_bool_expr` | `F0773` | `pedantic` | `allow` | an `and` or `or` with an operand that can be dropped, such as `a or (a and b)` or `a and not a` (see [Operands that can be dropped](Lint/Pedantic/Booleans.md#operands-that-can-be-dropped)) |
 | `precedence` | `F0787` | `restriction` | `allow` | an `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses, such as `a? or b? and c?` (see [Precedence](Lint/Restriction.md#precedence)) |
 | `redundant_bindings` | `F0735` | `style` | `warn` | a field `x := x` of a record literal, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in the parameter `ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
