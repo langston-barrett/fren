@@ -7,15 +7,15 @@
 -- the contract that the semantics rewrite (#391) dropped, `no_parameters`.
 -- With it, the `fren` command passes every check, and the Lean-hosted front
 -- end stops the whole check with `simp`'s maximum recursion depth error, which
--- the `--~$[hosted]` annotation at the end of the file expects. Without the
--- contract, both front ends pass every check. A fix of the hosted front end
--- makes that annotation fail; then drop it, and this file is an agreement
--- test like the others.
+-- the hosted annotation at the end of the file expects, a message with no
+-- line. Without the contract, both front ends pass every check. A fix of the
+-- hosted front end makes that annotation fail; then drop it, and this file is
+-- an agreement test like the others.
 --
 -- The depth that `simp` reaches grows with the model. With the default
--- `maxRecDepth`, the whole semantics fails, and so do these 12 forms; 11 of
--- them, without `Index`, and 10, without `Construct` and `Project`, pass in
--- both front ends.
+-- `maxRecDepth`, the whole semantics fails, and so do these 12 forms; in the
+-- hosted front end, 11 of them, without `Index`, and 10, without `Construct`
+-- and `Project`, pass.
 
 pub type Id := String
 
