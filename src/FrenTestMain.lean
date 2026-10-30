@@ -3,6 +3,7 @@ import Fren
 import FrenCli.Eval
 import FrenCli.Run
 import FrenTest.Messages
+import FrenTest.Quote
 import FrenTest.Ui
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -29,6 +30,9 @@ import Lean.Elab.Frontend
   stable and, for a swap, involutive (`mutation`).
 - **Lean's tokens:** the tokens that both front ends read as identifiers,
   and reject as declarations, are Lean's (`leanTokens`).
+- **Printing fixes:** what the printer of fixes writes for random trees
+  reads back as each tree, by the parser of the `fren` command, and needs
+  each pair of parentheses that it adds (`printing`, `lint::printing`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -341,6 +345,7 @@ def ownSpecFiles : Array String :=
     "Lint/Pedantic/Conditionals",
     "Lint/Restriction",
     "Lint/Decidability",
+    "Lint/Printing",
     "Eval",
     "Lang/Refinement",
     "Mutate",
@@ -1427,7 +1432,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -1442,6 +1447,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["leanTokens"] => leanTokens
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
+  -- fren-covers: lint::printing
+  | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus

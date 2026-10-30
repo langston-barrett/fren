@@ -1,0 +1,6 @@
+--- test/cli/fix/variant_receivers.fren
++++ test/cli/fix/variant_receivers.fren
+@@ -7 +7 @@
+-    ensure r: z = (if Level::Low < y then Level::Low else y)
++    ensure r: z = ((Level::Low).min(y))
+exit=1

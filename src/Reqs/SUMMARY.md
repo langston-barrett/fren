@@ -66,6 +66,7 @@
     - [Conditionals](Lint/Pedantic/Conditionals.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
+  - [Printing fixes](Lint/Printing.md)
 
 # Using Fren
 

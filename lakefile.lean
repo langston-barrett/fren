@@ -35,8 +35,10 @@ def coverageLinkArgs : Array String := match get_config? coverage with
 -- `trust-skip-proofs`.
 require smt from git "https://github.com/langston-barrett/lean-smt.git"@"3da3dcc7e07a0254e853e1f97f3b4f533ab0ba3b"
 
--- Shared by the Lean library and the binary; depends only on Lean core.
--- All of its modules, not only those that the module `FrenCore` imports.
+-- Shared by the Lean library and the binary; depends only on Lean core, and
+-- on the parser of the binary, with which `FrenCore.Lint` reads the Fren
+-- quotations of its fixes when it is built (`FrenCli.Quote`). All of its
+-- modules, not only those that the module `FrenCore` imports.
 --
 -- Neither it nor `Fren` is precompiled (`precompileModules`), although the
 -- hosted front end's elaborators, which run on every build of `Reqs`, would
