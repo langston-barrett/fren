@@ -587,6 +587,8 @@ structure Layout where
 /-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
   results : Array String
+  /-- The block is a global expectation's, which has no results. -/
+  global : Bool := false
   deriving Inhabited
 
 structure PState where
@@ -1593,6 +1595,7 @@ def member : P Member := do
       throw { span := t.span.to x.span, msg := Fren.Core.fnOutMsg x.name rn }
     let results := ((← get).proc?.map (·.results)).getD #[]
     if results.contains x.name then return .define x e
+    if (← get).proc?.any (·.global) then throw { span := t.span.to x.span, msg := Fren.Core.globalOutMsg x.name }
     throw { span := t.span.to x.span, msg := Fren.Core.procOutMsg x.name }
   if (isKw t "exists" || isKw t "let") && pub?.isNone then
     discard bump
@@ -1820,11 +1823,11 @@ partial def isNames : Expr → Array String
   | _ => #[]
 
 /-- The rest of a procedure, or of a global expectation written with a
-block, after its name: its parameters, as inputs, and its results, as
+block (`global`), after its name: its parameters, as inputs, and its results, as
 public outputs, each after any evidence setting (`header`); its block's
 members, the span of its closing `}`, the span of each member, and where
 its `{` ends. -/
-def procRest (name : Ident) : P (Array Member × Array Member × Span × Array Span × Nat) := do
+def procRest (name : Ident) (global := false) : P (Array Member × Array Member × Span × Array Span × Nat) := do
   noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
   markCall
   markList
@@ -1864,7 +1867,7 @@ def procRest (name : Ident) : P (Array Member × Array Member × Span × Array S
     discard (expectKw ")")
   let ob ← expectKw "{"
   let saved := (← get).proc?
-  modify fun s => { s with proc? := some { results } }
+  modify fun s => { s with proc? := some { results, global } }
   let mut ms := #[]
   let mut spans := #[]
   repeat
@@ -1945,7 +1948,7 @@ partial def item : P Item := do
     let name ← ident
     -- Written with parameters and a block (`Reqs/Lang/Global`).
     if isKw (← peek) "(" then
-      let (header, ms, close, spans, openStop) ← procRest name
+      let (header, ms, close, spans, openStop) ← procRest name (global := true)
       return .globalBlock name header ms close spans openStop
     discard (expectKw ":")
     let bs ← match ← eatKw "forall" with

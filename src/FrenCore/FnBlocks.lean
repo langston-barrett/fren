@@ -102,6 +102,13 @@ def procOutMsg (x : String) : Msg :=
     label? := some "not a result"
     notes := #[s!"note: `out` defines a result of the procedure, one in its signature; a local definition is written `let {x} := e`"] }
 
+/-- `out x := e` in a global expectation block, which has no results
+(`F0444`). -/
+def globalOutMsg (x : String) : Msg :=
+  { code? := some "F0444", headline := s!"`{x}` is not a result: a global expectation block has none"
+    label? := some "not a result"
+    notes := #[s!"note: `out` defines a result of a procedure or a function; a local definition is written `let {x} := e`"] }
+
 /-- A function with more than one result (`F0445`), which Fren does not
 take yet. -/
 def fnResultsMsg : Msg :=

@@ -10,7 +10,7 @@ pub enum Option<T> { None, Some(T) }      -- a value, or none
 pub enum Result<T, E> { Ok(T), Err(E) }   -- a value, or an error
 ```
 
-So a spec can write `in x: Option<Int>`, `x = Option::Some(3)`, or
+So a spec can write `proc p(x: Option<Int>)`, `x = Option::Some(3)`, or
 `match x { Some(n) => n, None => 0 }` without declaring `Option`. Every
 item of the prelude is a name taken from every spec, so it is kept small.
 
