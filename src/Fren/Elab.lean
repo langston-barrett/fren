@@ -7672,7 +7672,7 @@ def lintMemberOrder (stx open_ : Syntax) (raw members : Array Syntax) : CommandE
   let fixable := (← getLocal).inMarkdown && fix?.isSome
   recordLint .arbitrarySourceItemOrdering raw[i]! (if fixable then msg.note Core.fixHelp else msg)
 
-/-! ### `elabComp`, in parts
+/-! ### Elaborating a procedure, in parts
 
 Each part is a definition of its own, so that the compiler, whose time grows
 faster than the length of a `do` block, compiles several short ones, and
@@ -8253,13 +8253,15 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
 def procResults (stx : Syntax) : Array Syntax := if stx[6].isNone then #[] else stx[6][2].getSepArgs
 
 /-- Reports an `out` member of the procedure `stx` whose name is not one of
-its results (`F0444`), as the `fren` command's parser does. -/
-def checkProcMembers (stx : Syntax) : CommandElabM Unit := do
+its results (`F0444`), as the `fren` command's parser does; a global
+expectation block (`global`) has none. -/
+def checkProcMembers (stx : Syntax) (global := false) : CommandElabM Unit := do
   let results := (procResults stx).map fun r => (declaredIdent r[2]).1.getId
   for m0 in stx[8].getArgs do
     let (m, _) ← unwrapEvidence m0
     if m.isOfKind ``Lang.defineMember && !results.contains m[1].getId then
-      throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.procOutMsg (Core.nameText m[1].getId)).text
+      let msg := if global then Core.globalOutMsg (Core.nameText m[1].getId) else Core.procOutMsg (Core.nameText m[1].getId)
+      throwErrorAt (mkNullNode #[m[0], m[1]]) msg.text
 
 open Lang in
 /-- One source clause's independent conjunction leaves, preserving lexical
@@ -8430,7 +8432,7 @@ nothing calls. -/
   checkParsed stx0
   -- Aligned as a procedure's, after a `pub` that it does not have.
   let stx : Syntax := mkNode ``Lang.procCmd (#[mkNullNode] ++ stx0.getArgs)
-  checkProcMembers stx
+  checkProcMembers stx (global := true)
   lintItem stx0
   lintTrailingCommas stx0
   let modName := (← getLocal).currentModule

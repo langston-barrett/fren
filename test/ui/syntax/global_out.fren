@@ -1,0 +1,7 @@
+-- A global expectation block has no results, so `out` defines nothing
+-- there (`F0444`).
+expect g(x: Int) {
+    out y := x   --~ error: `y` is not a result: a global expectation block has none
+    expect r: x = x
+}
+--@ exit: 2
