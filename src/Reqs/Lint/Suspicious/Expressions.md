@@ -469,11 +469,12 @@ first. It has no fix: one of the tests is probably not the one meant.
 `lint::ifs_same_cond` states when it fires, over the chain's tests, in
 order, each as [written](../../Lint.md#written-the-same): `lint::repeated?`
 says that the test at a position is written the same as an earlier one,
-and `lint::first_same` gives the first such, which the message names, and
-which `duplicate_elements` shares. Their quantifiers are over positions of
-any number of tests, so they are outside the decidable core; their own
-checks are tested, and their implementations are proved in Lean of the
-lint's code, for every chain:
+and `lint::first_same` gives the first such, which the message names; the
+claim `lint::duplicate_elements_members` of [Elements written the
+same](Literals.md#elements-written-the-same) uses it too. Their
+quantifiers are over positions of any number of tests, so they are outside
+the decidable core; their own checks are tested, and their implementations
+are proved in Lean of the lint's code, for every chain:
 
 ```fren
 -- The text at position `i` is written the same as an earlier one.
@@ -513,8 +514,9 @@ pub proc ifs_same_cond(
 Its branch is never taken. Every test of the chain is written in one
 scope, and evaluated in one environment: the test at `k` is in the `else`
 branch of each earlier one, which sees none of its binders, by
-[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests). So tests
-written the same are the same [`Scoped`](../Meaning.md#expressions-as-written)
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), and the
+claim checks this for a pattern test of any earlier test. So tests written
+the same are the same [`Scoped`](../Meaning.md#expressions-as-written)
 expression, and have the same outcome, by
 [`written_same`](../Meaning.md#expressions-as-written). The branch of the
 test at `k` is taken where that test is `true` and each earlier one `false`.
@@ -529,14 +531,21 @@ pub proc ifs_same_cond_never_taken(
     tests: Seq<Scoped>,           -- the tests, as written in their scope
     scope: Set<lang::Id>,         -- the chain's scope
     i: lang::Interp, env: lang::Env, k: Int,
+    operands: Nat,                -- an earlier test's chain of `and` that holds a pattern test: its operands
+    test_at: Nat,                 -- the test's position among them, from 0
 ) {
-    use lang::{Outcome, Value, eval}
+    use lang::{Outcome, Site, TestContext, Value, eval}
 
+    assume within: test_at < operands
     assume texts: tests.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
         and 0 <= b < forms.len and forms[a] = forms[b], tests[a].text = tests[b].text)
     assume one_scope: forall (a: Int), when 0 <= a < tests.len, tests[a].scope = scope
 
     call c := ifs_same_cond(forms, k)
+    call earlier_test := lang::test_scope(TestContext::IfCondition, operands, test_at, Site::ElseBranch)
+
+    -- A later test, in the `else` branch, sees none of an earlier test's binders: one scope.
+    expect unseen: not earlier_test.visible?
 
     -- The branch of the test at `k` is taken where that test is `true`, and each earlier one `false`.
     expect never_taken: when c.fires?, not (eval(i, env, written(tests[k])) = Outcome::Defined(Value::True)
@@ -544,66 +553,31 @@ pub proc ifs_same_cond_never_taken(
 }
 ```
 
-## Elements written the same
-
-`duplicate_elements` fires on a set or relation literal with an element
-written the same as an earlier one, as in `{a, b, a}` or `{(a, b), (a,
-b)}`, and is reported once for the literal. The parentheses around a whole
-element are not part of it, so `{(a), a}` repeats `a`. A set has no
-repeats, so the fix, which removes each repeat with the `,` before it,
-keeps the meaning, and it keeps the guards, which are the same for every
-element of the literal. It does not fire on a sequence literal, where a
-repeat means something. `lint::duplicate_elements` states when it fires,
-over the literal's elements, in order, each as written, and which elements
-the fix removes, the repeats. As for `ifs_same_cond`, its own checks are
-tested, and its implementation is proved in Lean, for every literal:
+Which branch is taken is what evaluating the chain gives: `if p then a
+else if q then b else d` is `If(p, a, If(q, b, d))`, by the [abstract
+syntax](../../Lang/Semantics.md#expressions), and [If
+expressions](../../Lang/EvaluationRules.md#if-expressions) selects the
+branch. `lint::ifs_same_cond_taken` evaluates such a chain, with tests
+that are variables: its outcome is that of `if p? then a else if q? then
+b else d`, so it takes the branch of `q` exactly where `p` is `false` and
+`q` `true`, as `lint::ifs_same_cond_never_taken` reads it, and where the
+two tests have the same value, the chain has the outcome that it has
+without the second test. Its evidence is testing, which evaluates it,
+since the solver unfolds [`eval`](../../Lang/Semantics.md) only one step:
 
 ```fren
-set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-pub proc duplicate_elements(
-    elements: Seq<String>,   -- the literal's elements, in order, each as written
-    k: Int,                  -- the position of an element
-): (
-    det fires?,
-    det repeat?,             -- the fix removes the element at `k`
-) {
-    ensure rule: fires? iff (exists (i: Int), 0 <= i < elements.len and repeated?(elements, i))
-    ensure removed: repeat? iff repeated?(elements, k)
-}
-```
+pub proc ifs_same_cond_taken(i: lang::Interp, p?, q?, a: lang::Value, b: lang::Value, d: lang::Value) {
+    use lang::{Env, Expr, Outcome, eval, truth}
 
-The fix keeps the members: each element that it removes has the outcome
-of one that it keeps, the first earlier element written the same, by
-`lint::first_same`. That one is not a repeat itself, since an element
-before it written the same would be written the same as the removed one
-too, and earlier. The two have the same outcome: as for the tests of a
-chain, every element of a literal is written in one scope, since no
-element sees the binders of another's pattern tests, by
-[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), and is
-evaluated in one environment. So every member of the literal is the value
-of an element that the fix keeps. `lint::duplicate_elements_members` states
-this at each position, over the elements as written in their scope and
-their outcomes by Fren's own evaluation; the solver checks it, for any
-number of elements:
+    let env: Env := Env::Bind("p", Outcome::Defined(truth(p?)), Env::Bind("q", Outcome::Defined(truth(q?)), Env::Empty))
+    let chain: Outcome := eval(i, env, Expr::If(Expr::Var("p"), Expr::Literal(a),
+        Expr::If(Expr::Var("q"), Expr::Literal(b), Expr::Literal(d))))
+    let without: Outcome := eval(i, env, Expr::If(Expr::Var("p"), Expr::Literal(a), Expr::Literal(d)))
 
-```fren
-set_option fren.lint.undecidable "allow" in
-pub proc duplicate_elements_members(
-    forms: Seq<String>,           -- the literal's elements, each as written
-    elements: Seq<Scoped>,        -- the elements, as written in their scope
-    scope: Set<lang::Id>,         -- the literal's scope
-    i: lang::Interp, env: lang::Env, k: Int,
-) {
-    assume texts: elements.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
-        and 0 <= b < forms.len and forms[a] = forms[b], elements[a].text = elements[b].text)
-    assume one_scope: forall (a: Int), when 0 <= a < elements.len, elements[a].scope = scope
-
-    call removed := duplicate_elements(forms, k)
-    call first := first_same(forms, k)
-    call stays := duplicate_elements(forms, first.earlier)
-
-    expect kept: when removed.repeat?, 0 <= first.earlier < forms.len and not stays.repeat?
-        and lang::eval(i, env, written(elements[first.earlier])) = lang::eval(i, env, written(elements[k]))
+    -- The branch of `q` is taken where `q` is `true` and `p` `false`.
+    expect taken: chain = (if p? then Outcome::Defined(a) else if q? then Outcome::Defined(b) else Outcome::Defined(d))
+    expect never_taken: when (p? iff q?), chain = without
+    cover second: not p? and q? and chain = Outcome::Defined(b)
 }
 ```

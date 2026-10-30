@@ -224,3 +224,79 @@ expect literal_dot_complete(s: String) {
     refines concrete literal_dot_value(s)
 }
 ```
+
+## Elements written the same
+
+`duplicate_elements` fires on a set or relation literal with an element
+written the same as an earlier one, as in `{a, b, a}` or `{(a, b), (a,
+b)}`, and is reported once for the literal. The parentheses around a whole
+element are not part of it, so `{(a), a}` repeats `a`. A set has no
+repeats, so the fix, which removes each repeat with the `,` before it,
+keeps the meaning, and it keeps the guards, which are the same for every
+element of the literal. It does not fire on a sequence literal, where a
+repeat means something. `lint::duplicate_elements` states when it fires,
+over the literal's elements, in order, each as written, and which elements
+the fix removes, the repeats. As for
+[`ifs_same_cond`](Expressions.md#branches-written-the-same), its own checks
+are tested, and its implementation is proved in Lean, for every literal:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc duplicate_elements(
+    elements: Seq<String>,   -- the literal's elements, in order, each as written
+    k: Int,                  -- the position of an element
+): (
+    det fires?,
+    det repeat?,             -- the fix removes the element at `k`
+) {
+    ensure rule: fires? iff (exists (i: Int), 0 <= i < elements.len and repeated?(elements, i))
+    ensure removed: repeat? iff repeated?(elements, k)
+}
+```
+
+The fix keeps the members: each element that it removes has the outcome
+of one that it keeps, the first earlier element written the same, by
+[`lint::first_same`](Expressions.md#branches-written-the-same). That one
+is not a repeat itself, since an element before it written the same
+would be written the same as the removed one too, and earlier. The two
+have the same outcome: as for the tests of a chain, every element of a
+literal is written in one scope, and evaluated in one environment. Each
+other element is outside the chains of an element's pattern tests, where
+their binders are not in scope, by
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), whatever
+those chains are a part of. So every member of the literal is the value
+of an element that the fix keeps. `lint::duplicate_elements_members`
+states this at each position, over the elements as written in their
+scope and their outcomes by Fren's own evaluation, and checks the one
+scope against `lang::test_scope`, for a pattern test of any element; the
+solver checks it, for any number of elements:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc duplicate_elements_members(
+    forms: Seq<String>,           -- the literal's elements, each as written
+    elements: Seq<Scoped>,        -- the elements, as written in their scope
+    scope: Set<lang::Id>,         -- the literal's scope
+    i: lang::Interp, env: lang::Env, k: Int,
+    context: lang::TestContext,   -- what an element's chain of `and` that holds a pattern test is a part of
+    operands: Nat,                -- the chain's operands
+    test_at: Nat,                 -- the test's position among them, from 0
+) {
+    assume within: test_at < operands
+    assume texts: elements.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
+        and 0 <= b < forms.len and forms[a] = forms[b], elements[a].text = elements[b].text)
+    assume one_scope: forall (a: Int), when 0 <= a < elements.len, elements[a].scope = scope
+
+    call removed := duplicate_elements(forms, k)
+    call first := first_same(forms, k)
+    call stays := duplicate_elements(forms, first.earlier)
+    call other := lang::test_scope(context, operands, test_at, lang::Site::Outside)
+
+    -- The other elements, outside the test's chain, see none of its binders: one scope.
+    expect unseen: not other.visible?
+
+    expect kept: when removed.repeat?, 0 <= first.earlier < forms.len and not stays.repeat?
+        and lang::eval(i, env, written(elements[first.earlier])) = lang::eval(i, env, written(elements[k]))
+}
+```

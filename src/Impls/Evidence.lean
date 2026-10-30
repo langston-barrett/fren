@@ -88,6 +88,7 @@ tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
 tested lang::coincidence: "src/FrenTest/Semantics.lean"
 tested lang::closed: "src/FrenTest/Semantics.lean"
 tested lint::written_scopes: "src/FrenTest/Semantics.lean"
+tested lint::ifs_same_cond_taken: "src/FrenTest/Semantics.lean"
 tested lint::manual_at_most_one_defined: "src/FrenTest/Semantics.lean"
 -- No front end elaborates a name into the semantics' abstract syntax yet,
 -- so there is no code to bind `lang::named` to; its expectations are
