@@ -1261,6 +1261,44 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
     pathMentions c ++ (pathMentions d).filter (!bound.contains ·.getRoot) ++ others.foldl (· ++ pathMentions ·) #[]
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
 
+/-- The segments of the paths in `t`, a type or a bound of a range
+pattern. -/
+partial def pathNamesIn (t : Syntax) : Array Name :=
+  if t.isOfKind ``Lang.fren_path then (pathSegs t).map (·.getId.getRoot)
+  else t.getArgs.flatMap pathNamesIn
+
+/-- The names that `e` writes other than its variables, which no binder of
+`e` declares (`lint::closure_names`): the first segment of the function
+that each application applies (but for a method's receiver, which is a
+variable), and of each path of more than one segment, the type of each
+record literal, the variant of each pattern that is applied or written
+with `::`, and the segments of each type and each range pattern's bound. -/
+partial def itemNames (e : Syntax) : Array Name :=
+  let head (p : Syntax) : Array Name := ((pathSegs p)[0]?.map (·.getId.getRoot)).toArray
+  if e.isOfKind ``Lang.fren_path then if (pathSegs e).size > 1 then head e else #[]
+  else if e.isOfKind ``Lang.appExpr then
+    let segs := pathSegs e[0]
+    (if segs.size == 1 && !segs[0]!.getId.isAtomic then #[] else head e[0]) ++ e[2].getSepArgs.flatMap itemNames
+  else if e.isOfKind ``Lang.recordExpr then head e[0] ++ e[2].getSepArgs.flatMap itemNames
+  else if e.isOfKind ``Lang.variantPattern then
+    (if e[1].isNone && (pathSegs e[0]).size == 1 then #[] else head e[0]) ++ e[1].getArgs.flatMap itemNames
+  else if e.isOfKind ``Lang.pathBound then pathNamesIn e
+  -- The type of a quantifier's binders, of a closure's parameter, or of a
+  -- definition of a `let` or `where`.
+  else if e.isOfKind ``Lang.fren_binder then pathNamesIn e[3]
+  else if e.isOfKind ``Lang.fren_closure_param || e.isOfKind ``Lang.fren_let_def || e.isOfKind ``Lang.fren_def then
+    pathNamesIn e[1] ++ e.getArgs.flatMap itemNames
+  else e.getArgs.flatMap itemNames
+
+/-- The names that the body of the closure `e` has free, but for the
+closure's own parameters (`lint::closure_names`): the variables it
+mentions (`pathMentions`) and the other names it writes (`itemNames`),
+each once, as written. -/
+def closureFreeNames (e : Syntax) : Array String :=
+  let params := closureNames e
+  (((pathMentions e[3]).map (·.getRoot) ++ itemNames e[3]).filter (!params.contains ·)).toList.eraseDups.toArray.map
+    Core.nameText
+
 /-- Which of the definitions `defs` of a `let` or `where` clause its body
 `body` mentions, directly or through the later ones that it mentions: the
 others count for nothing (`Reqs/Lang/Let#meaning`). -/
@@ -5212,17 +5250,15 @@ def lintClosure (cx : ExprCtx) (ps : Array (Option Core.Ty)) (r? : Option Core.T
 /-- Records what the application of the higher-order function `path` gives
 its parameter at `k`, the closure or function's name `e`, for
 `needless_higher_order` (`lint::needless_higher_order`): its text, and the
-names it mentions (`Core.closureNamesIn`); a function's name is one, and a
-lambda match is taken to mention one, which keeps the lint from firing on
-it. -/
+names that a closure's body has free (`closureFreeNames`); a function's
+name is one, and a lambda match is taken to mention one, which keeps the
+lint from firing on it. -/
 def noteFnArg (path : Name) (k : Nat) (e : Syntax) : TermElabM Unit := do
   let range? := e.getRange?
   if (← getLocal).fnArgs.any fun (a, r) => r.getRange? == range? && a.index == k then return
   let u := unparen e
   let names : Array String :=
-    if u.isOfKind ``Lang.closureExpr then
-      Core.closureNamesIn (exactText u[3])
-        (u[1].getSepArgs.mapIdx fun k p => Core.nameText (declaredIdent (closureParamIdent p k)).1.getId)
+    if u.isOfKind ``Lang.closureExpr then closureFreeNames u
     else
       let p := if u.getNumArgs == 1 && u[0].isOfKind ``Lang.fren_path then u[0] else u
       if p.isOfKind ``Lang.fren_path then #[(pathSegs p).foldl (fun acc s => acc ++ "::" ++ Core.nameText s.getId) ""]

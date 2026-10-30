@@ -3141,8 +3141,8 @@ structure HofParamRecord where
 
 /-- What an application of the higher-order function `path` gives its
 parameter at `index`: a closure or a function's name, as written, and the
-names it mentions, but for a closure's own parameters
-(`closureNamesIn`). Each of those may mean something else in the
+names it has free, but for a closure's own parameters
+(`lint::closure_names`). Each of those may mean something else in the
 function's body, or nothing: a name of where it is written (a variable, a
 binder, a parameter, a call, a `let`), an item declared after the
 function, or one that the function's parameters shadow
@@ -3153,33 +3153,6 @@ structure FnArgRecord where
   text : String
   names : Array String
   deriving Inhabited
-
-/-- The identifiers in the text `s` of a closure's body, outside comments
-and string literals, but for its own parameters `params`, a reserved or
-contextual keyword, a number, a path's later segment, and a field or
-method after `.`: the names whose meaning depends on where the body is
-written (`lint::needless_higher_order`). -/
-def closureNamesIn (s : String) (params : Array String) : Array String := Id.run do
-  let keywords := reservedWords ++ ["when", "unless", "not", "true", "false"]
-  let cs := (withoutComments s).toList.toArray
-  let mut out : Array String := #[]
-  let mut i := 0
-  while i < cs.size do
-    let c := cs[i]!
-    if c == '"' then
-      i := i + 1
-      while i < cs.size && cs[i]! != '"' do i := i + (if cs[i]! == '\\' then 2 else 1)
-      i := i + 1
-    else if isWordChar c then
-      let start := i
-      while i < cs.size && isWordChar cs[i]! do i := i + 1
-      let w := String.ofList (cs.extract start i).toList
-      let afterPath := start ≥ 2 && cs[start - 1]! == ':' && cs[start - 2]! == ':'
-      let afterDot := start ≥ 1 && cs[start - 1]! == '.'
-      if !afterPath && !afterDot && !c.isDigit && !keywords.contains w && !params.contains w && !out.contains w then
-        out := out.push w
-    else i := i + 1
-  return out
 
 /-- Whether `needless_higher_order` fires on a function parameter, from
 what the applications of its function give it, as written, whether one of

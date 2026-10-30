@@ -1,5 +1,5 @@
 -- The lints of closures, in both front ends.
--- fren-covers: lint::unused_closure_params
+-- fren-covers: lint::unused_closure_params, lint::closure_names_scope
 set_option fren.lint.redundant_type_annotations "warn"
 
 fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
@@ -89,6 +89,25 @@ proc uses(k: Int, j: Int): (det a: Int, det b: Int, det d: Int, det e: Int, det 
     out g := captured(|y| y + k, j)
 }
 
+-- A name is read whole: the captured `y'` is not the closure's parameter
+-- `y`. A binder of the body is not free in it, but a constant that bounds
+-- a range pattern and a variant written with `::`, each declared after
+-- the function, are names that the body mentions.
+fn primed(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn bound(f: fn(Int) -> Int, x: Int): Int := f(x)
+--~^ warning: each application of `bound` gives `f` the same function
+fn ranged(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn tagged(f: fn(Int) -> Int, x: Int): Int := f(x)
+const LIMIT: Int := 9
+enum Tag { A, B }
+
+proc names(k: Int, y': Int): (det a: Int, det b: Int, det d: Int, det e: Int) {
+    out a := primed(|y| y + y', k)
+    out b := bound(|y| let z := y + 1 in z + z, k)
+    out d := ranged(|y| if y is 0..=LIMIT then 1 else 0, k)
+    out e := tagged(|y| match y { 0 => if Tag::A = Tag::B then 1 else 0, _ => y }, k)
+}
+
 -- `redundant_type_annotations`, where a generic function's type parameter
 -- is fixed by a value argument after the closure, and where only the
 -- closure fixes it.
@@ -98,4 +117,13 @@ proc picks(k: Int): (det a: Int, det b: Int) {
     out a := pick(|y: Int| y + k, Some(3))
     --~^ warning: the type of `y` is the function type's, `Int`
     out b := pick(|y: Int| y + k, None)
+}
+
+-- An earlier closure fixes a type parameter too: the first closure's
+-- annotation is needed, and the second's is not.
+fn two<T>(f: fn(T) -> Int, g: fn(T) -> Int, o: Option<T>): Int := match o { Some(x) => f(x) + g(x), None => 0 }
+
+proc twos(): (det a: Int) {
+    out a := two(|x: Int| x, |y: Int| y, None)
+    --~^ warning: the type of `y` is the function type's, `Int`
 }

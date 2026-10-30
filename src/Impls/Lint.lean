@@ -2431,11 +2431,12 @@ impl quantifier_parentheses: lint::quantifier_parentheses for (p : Fren.Core.Run
   cases p <;> cases f <;> cases w <;> cases e <;> simp [fren_spec, toRunPlace, Fren.Core.quantifierParenthesized]
 
 -- Both front ends read these from their syntax trees, with `mentions`
--- (`pathMentions`), `declaredNames` and `clauseMentions`, and decide them
--- with `letAndReturn`, `redundantLocal`, `manualForallAt` and
--- `trivialQuantifier`; a tree of nodes and relations has too many values
+-- (`pathMentions`), `itemNames`, `declaredNames` and `clauseMentions`, and
+-- decide them with `letAndReturn`, `redundantLocal`, `manualForallAt` and
+-- `trivialQuantifier`, or name them with `closureFreeNames`; a tree of nodes and relations has too many values
 -- for `decide`, so the ui and fix tests check them against the components.
 -- keep-sorted start
+tested lint::closure_names_scope: "test/ui/lints/closures.fren"
 tested lint::let_and_return: "test/ui/lints/let_quantifiers.fren"
 tested lint::manual_forall: "test/ui/lints/let_quantifiers.fren"
 tested lint::redundant_locals: "test/ui/lints/let_quantifiers.fren"
@@ -2685,16 +2686,16 @@ theorem seq_ofList_ne_empty (l : List α) : Fren.Seq.ofList l ≠ ∅ ↔ l ≠ 
   · intro h e; exact h (by simpa using congrArg Fren.Seq.toList e)
 
 theorem needlessHigherOrder_iff (gs : List lint.GivenFunction) :
-    Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun g => decide (g.names ≠ ∅)) false = true ↔
+    Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun g => decide (lint.closure_names g.params g.body ≠ ∅)) false = true ↔
       Fren.Seq.ofList gs ≠ ∅ ∧ ∀ k : Int, 0 ≤ k ∧ k < (Fren.Seq.ofList gs).len →
-        ((Fren.Seq.ofList gs).nth k).names = ∅ ∧ ((Fren.Seq.ofList gs).nth k).form = ((Fren.Seq.ofList gs).nth 0).form := by
+        lint.closure_names ((Fren.Seq.ofList gs).nth k).params ((Fren.Seq.ofList gs).nth k).body = ∅ ∧ ((Fren.Seq.ofList gs).nth k).form = ((Fren.Seq.ofList gs).nth 0).form := by
   rw [seq_ofList_ne_empty]
   cases gs with
   | nil => simp [Fren.Core.needlessHigherOrderBy]
   | cons g gs =>
     have h0 : (Fren.Seq.ofList (g :: gs)).nth 0 = g := by
       rw [Fren.Seq.nth_of_lt _ 0 (by omega) (by simp)]; rfl
-    rw [h0, forall_positions (g :: gs) (fun _ a => a.names = ∅ ∧ a.form = g.form)]
+    rw [h0, forall_positions (g :: gs) (fun _ a => lint.closure_names a.params a.body = ∅ ∧ a.form = g.form)]
     simp only [List.map_cons, Fren.Core.needlessHigherOrderBy, Bool.and_eq_true, Bool.not_eq_true', Bool.not_false,
       List.all_eq_true, beq_iff_eq, List.mem_map, List.length_cons, List.any_eq_false, and_true, decide_eq_true_eq,
       ne_eq, Classical.not_not]
@@ -2758,9 +2759,9 @@ theorem known_iff (t : Fren.Core.Ty) (b : List (Option Fren.Core.Ty)) :
     simp [e] at hj
 
 -- `inferHigherOrder` gives each closure's parameters the types that the
--- expected type and the arguments elaborated before the closures fix, as
--- `!t.unknownIn b`; both front ends ask `redundantTypeAnnotation` with
--- whether that type is given.
+-- expected type, the value arguments elaborated before the closures and the
+-- closures before this one fix, as `!t.unknownIn b`; both front ends ask
+-- `redundantTypeAnnotation` with whether that type is given.
 impl redundant_type_annotations: lint::redundant_type_annotations for (a : Bool) (t : Fren.Core.Ty)
     (b : List (Option Fren.Core.Ty)) {
   annotated? := a,
@@ -2775,12 +2776,14 @@ impl redundant_type_annotations: lint::redundant_type_annotations for (a : Bool)
 -- Both front ends record what each application gives the parameter, and
 -- report only a private function's parameters (`needlessHigherOrderReports`),
 -- comparing the texts as written: each `form` here is a text's written form
--- (`Reqs/Lint#written-the-same`).
+-- (`Reqs/Lint#written-the-same`), and the names that each closure's body has
+-- free, which `closureFreeNames` reads from the parsed body, are
+-- `closure_names` of its parameters and its body's tree.
 impl needless_higher_order: lint::needless_higher_order for (gs : List lint.GivenFunction) (p g : Bool) {
   given := Fren.Seq.ofList gs,
   pub? := p,
   generic? := g,
-  fires? := !p && Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun x => decide (x.names ≠ ∅)) g,
+  fires? := !p && Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun x => decide (lint.closure_names x.params x.body ≠ ∅)) g,
 } by
   intro gs p g _
   unfold lint.needless_higher_order.ensures lint.needless_higher_order.ensure.rule

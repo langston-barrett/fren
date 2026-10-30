@@ -1653,6 +1653,67 @@ partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
   | .table _ rows => (tableParts rows).foldl (· ++ mentions ·) #[]
   | _ => #[]
 
+/-- The first segment of the path `segs`. -/
+def pathHead (segs : Array Ident) : Array Name := (segs[0]?.map fun s => (identName s.name).getRoot).toArray
+
+/-- The names of a type's segments, but for those that write its form
+(`fn(`, a pattern type's pattern). -/
+def typeNames (segs : Array Ident) : Array Name :=
+  segs.filterMap fun s =>
+    if Fren.Core.isIdStart s.name.front && s.name.all (fun c => Fren.Core.isIdRest c || c == '.') then
+      some (identName s.name).getRoot
+    else none
+
+/-- The names that the pattern `p` writes other than its binders: the
+variant of each pattern that is applied or written with `::`, and the
+segments of each range pattern's bound (`lint::closure_names`). -/
+partial def patternItemNames : Pattern → Array Name
+  | .variant _ path args =>
+    (if args.isNone && path.size == 1 then #[] else pathHead path) ++ (args.getD #[]).flatMap patternItemNames
+  | .range _ lo hi _ =>
+    #[lo, hi].flatMap fun | some (.path _ segs) => segs.map fun s => (identName s.name).getRoot | _ => #[]
+  | .or _ alts => alts.flatMap patternItemNames
+  | _ => #[]
+
+/-- The names that `e` writes other than its variables, which no binder of
+`e` declares (`lint::closure_names`): the first segment of the function
+that each application applies, and of each path of more than one
+segment, the type of each record literal, the names that its patterns
+write other than their binders (`patternItemNames`), and the segments of
+each type. -/
+partial def itemNames (e : Expr) : Array Name :=
+  match e with
+  | .block _ _ members => members.flatMap fun (_, value) => itemNames value
+  | .path _ segs => if segs.size > 1 then pathHead segs else #[]
+  | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => itemNames c ++ itemNames d
+  | .ite _ c a b => itemNames c ++ itemNames a ++ itemNames b
+  | .not _ a | .neg _ a | .field _ a _ => itemNames a
+  | .method _ r _ args => args.foldl (· ++ itemNames ·) (itemNames r)
+  | .set _ es | .seq _ es | .chain _ es _ => es.flatMap itemNames
+  | .app _ fn args =>
+    (if fn.size == 1 && fn[0]!.name.contains '.' then #[] else pathHead fn) ++ args.flatMap itemNames
+  | .record _ ty fs => pathHead ty ++ fs.flatMap fun (_, e?) => (e?.map itemNames).getD #[]
+  | .update _ r fs => fs.foldl (init := itemNames r) fun acc (_, e?) => acc ++ (e?.map itemNames).getD #[]
+  | .match _ s arms _ => arms.foldl (init := itemNames s) fun acc (p, g?, body) =>
+    acc ++ patternItemNames p ++ (g?.map itemNames).getD #[] ++ itemNames body
+  | .matches _ ss arms _ => arms.foldl (init := ss.flatMap itemNames) fun acc (ps, g, body) =>
+    acc ++ ps.flatMap patternItemNames ++ g.toArray.flatMap itemNames ++ itemNames body
+  | .is _ s p => itemNames s ++ patternItemNames p
+  | .«let» _ defs body _ =>
+    defs.foldl (init := itemNames body) fun acc (_, ty?, d) => acc ++ (ty?.map typeNames).getD #[] ++ itemNames d
+  | .quant _ _ binders body => binders.foldl (init := itemNames body) fun acc b => acc ++ typeNames b.ty
+  | .closure _ ps body => ps.foldl (init := itemNames body) fun acc (_, ty?) => acc ++ (ty?.map typeNames).getD #[]
+  | .table _ rows => (tableParts rows).flatMap itemNames
+  | .num .. | .bool .. | .str .. => #[]
+
+/-- The names that the closure's body `body` has free, but for the
+closure's own parameters `params` (`lint::closure_names`): the variables
+it mentions (`mentions`) and the other names it writes (`itemNames`),
+each once, as written. -/
+def closureFreeNames (params : Array String) (body : Expr) : Array String :=
+  (((mentions body).map (·.getRoot) ++ itemNames body).map Fren.Core.nameText).filter (!params.contains ·)
+    |>.toList.eraseDups.toArray
+
 /-- The atoms of `e`, a `Bool` expression: its operands through `and`
 (`lint::unrelated_binders`). -/
 partial def boolAtoms : Expr → Array Expr
@@ -3746,15 +3807,14 @@ def lintClosure (cx : ExprCtx) (ps : Array (Option Ty)) (r? : Option Ty) (span :
 /-- Records what the application of the higher-order function `path` gives
 its parameter at `k`, the closure or function's name `e`, for
 `needless_higher_order` (`lint::needless_higher_order`): its text, and the
-names it mentions (`Fren.Core.closureNamesIn`); a function's name is one,
-and a lambda match is taken to mention one, which keeps the lint from
-firing on it. -/
+names that a closure's body has free (`closureFreeNames`); a function's
+name is one, and a lambda match is taken to mention one, which keeps the
+lint from firing on it. -/
 def noteFnArg (path : Name) (k : Nat) (e : Expr) : M Unit := do
   if (← get).fnArgs.any fun (a, sp) => sp == e.span && a.index == k then return
   let src := (← get).src
   let names : Array String := match e with
-    | .closure _ params body =>
-      Fren.Core.closureNamesIn ((body.text src).text) (params.map fun (x, _) => (declaredIdent x).1.name)
+    | .closure _ params body => closureFreeNames (params.map fun (x, _) => (declaredIdent x).1.name) body
     | .path _ segs => #[(segs.map (·.name)).foldl (· ++ "::" ++ ·) ""]
     -- A lambda match is not compared.
     | _ => #["match"]
