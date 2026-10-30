@@ -601,11 +601,6 @@ impl eq_op_conditional: lint::eq_op_conditional for (n : Bool) (c b : lint.Opera
   by_cases h : c = b <;> by_cases hs : Fren.Core.sameScope sc sb = true <;> cases n <;>
     simp [fren_spec, toEqOpValue, Fren.Core.eqOpConditional, h, hs, ofList_eq_sameScope]
 
-impl ifs_same_cond: lint::ifs_same_cond for (earlier : Bool) {
-  earlier? := earlier,
-  fires? := Fren.Core.ifsSameCond earlier,
-}
-
 theorem mentionSet_append (l m : List Fren.Core.Mention) : mentionSet (l ++ m) = mentionSet l ∪ mentionSet m := by
   simp [mentionSet, Fren.FinSet.ext_iff]
 
@@ -623,13 +618,6 @@ impl same_branches: lint::same_branches for (bs : List String) (t e : lint.Opera
 } by
   intro bs t e s _
   by_cases h : t = e <;> cases bs <;> simp [fren_spec, Fren.Core.sameBranches, h]
-
-impl duplicate_elements: lint::duplicate_elements for (n : Nat) {
-  n_repeats := n,
-  fires? := Fren.Core.duplicateElements n,
-} by
-  intro n _
-  simp [fren_spec, Fren.Core.duplicateElements]
 
 impl empty_argument: lint::empty_argument for (m : Fren.Core.Method) (i : Nat) (e : Bool) {
   method := toMethod m,

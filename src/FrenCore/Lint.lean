@@ -2962,11 +2962,15 @@ def sameBranchesMsg (branch : String) (prec : Nat) (before after : String) : Msg
     label? := some s!"`{branch}` whatever the condition"
     fixes := #[{ msg := "remove the condition, which decides nothing", replacement }] }
 
+/-- The positions of the written forms `forms` that are the same as an
+earlier one (`lint::duplicate_elements`). -/
+def repeatedForms (forms : Array String) : Array Nat :=
+  (Array.range forms.size).filter fun i => (forms.extract 0 i).contains forms[i]!
+
 /-- The elements of a literal that are written the same as an earlier one,
 by their positions (`lint::duplicate_elements`). -/
 def repeatedElements (texts : Array String) : Array Nat :=
-  let forms := texts.map writtenForm
-  (Array.range forms.size).filter fun i => (forms.extract 0 i).contains forms[i]!
+  repeatedForms (texts.map writtenForm)
 
 /-- Whether `duplicate_elements` fires (`lint::duplicate_elements`). -/
 def duplicateElements (nRepeats : Nat) : Bool := nRepeats > 0
@@ -4228,14 +4232,21 @@ partial def ifTests (n : BNode α) : Array (BNode α) :=
   | .ite, #[c, _, e] => #[c] ++ ifTests e
   | _, _ => #[]
 
+/-- The position of the first test of a chain of `else if` before the
+one at `i` that is written the same, given each test's written form
+(`lint::ifs_same_cond`). -/
+def earlierSame (forms : Array String) (i : Nat) : Option Nat :=
+  (List.range i).find? fun j => forms[j]! == forms[i]!
+
 /-- `ifs_same_cond` on the chain of `else if` that starts at `n`
 (`lint::ifs_same_cond`): at each test written the same as an earlier
 one, naming the first. -/
 def ifsSameCondAt (src : Array Char) (n : BNode α) : Array (OpReport α) :=
   let tests := ifTests n
   let texts := tests.map fun t => textOf src t.range
+  let forms := texts.map writtenForm
   tests.zipIdx.filterMap fun (t, i) => do
-    let earlier := (texts.extract 0 i).find? (writtenSame · texts[i]!)
+    let earlier := (earlierSame forms i).map (texts[·]!)
     unless ifsSameCond earlier.isSome do none
     return { lint := .ifsSameCond, ref := t.ref, msg := ifsSameCondMsg (earlier.getD "") }
 

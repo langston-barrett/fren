@@ -23,6 +23,7 @@ import Impls.Mutate
 import Impls.PatternTests
 import Impls.PatternTypes
 import Impls.Procedures
+import Impls.Repeats
 import Impls.Scope
 import Impls.Trace
 import Impls.TypeFacts

@@ -503,14 +503,55 @@ the negation of the earlier test, so wherever the test holds, the earlier
 branch is taken. It is reported at the repeated test, and the message names
 the earlier one. A test in parentheses, `else (if ...)`, is still in the
 chain. It has no fix: one of the tests is probably not the one meant.
-`lint::ifs_same_cond` states when it fires:
+`lint::ifs_same_cond` states when it fires, over the chain's tests, in
+order, each as [written](../../Lint.md#written-the-same): `lint::repeated?`
+says that the test at a position is written the same as an earlier one,
+and `earlier` is the first such, which the message names. Its quantifiers
+are over positions of any number of tests, so it is outside the decidable
+core; its own checks are tested, and its implementation is proved in Lean
+of the lint's code, for every chain:
 
 ```fren
-set_option fren.evidence "enumerated" in
+-- The text at position `i` is written the same as an earlier one.
+set_option fren.lint.undecidable "allow" in
+pub fn repeated?(forms: Seq<String>, i: Int) :=
+    0 <= i < forms.len and (exists (j: Int), 0 <= j < i and forms[j] = forms[i])
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
 pub proc ifs_same_cond(
-    earlier?,            -- an earlier test of the chain is written the same
-): (det fires?) {
-    ensure rule: fires? iff earlier?
+    tests: Seq<String>,      -- the tests of the chain of `else if`, in order, each as written
+    k: Int,                  -- the position of a test
+): (
+    det fires?,
+    det earlier: Int,        -- the position of the first earlier test written the same, or -1
+) {
+    ensure rule: fires? iff repeated?(tests, k)
+    ensure first: when fires?, 0 <= earlier < k and tests[earlier] = tests[k]
+        and (forall (j: Int), when 0 <= j < earlier, tests[j] != tests[k])
+    ensure none: unless fires?, earlier = -1
+}
+```
+
+Its branch is never taken. Tests written the same have the same value, by
+[`written_same`](../Meaning.md#expressions-as-written), and the branch of
+the test at `k` is taken where that test holds and no earlier one does.
+`lint::ifs_same_cond_never_taken` states this over the tests' values:
+
+```fren
+-- The branch of the test at `k` is taken: its test holds, and no earlier one.
+set_option fren.lint.undecidable "allow" in
+pub fn taken?(values: Seq<Bool>, k: Int) :=
+    0 <= k < values.len and values[k] and (forall (j: Int), when 0 <= j < k, not values[j])
+
+set_option fren.lint.undecidable "allow" in
+pub proc ifs_same_cond_never_taken(tests: Seq<String>, values: Seq<Bool>, k: Int) {
+    assume same_values: values.len = tests.len and (forall (i j: Int), when 0 <= i < tests.len
+        and 0 <= j < tests.len and tests[i] = tests[j], values[i] = values[j])
+
+    call c := ifs_same_cond(tests, k)
+
+    expect never_taken: when c.fires?, not taken?(values, k)
 }
 ```
 
@@ -522,12 +563,40 @@ b)}`, and is reported once for the literal. A set has no repeats, so the
 fix, which removes each repeat with the `,` before it, keeps the meaning,
 and it keeps the guards, which are the same for every element of the
 literal. It does not fire on a sequence literal, where a repeat means
-something. `lint::duplicate_elements` states when it fires:
+something. `lint::duplicate_elements` states when it fires, over the
+literal's elements, in order, each as written, and which elements the fix
+removes, the repeats. As for `ifs_same_cond`, its own checks are tested,
+and its implementation is proved in Lean, for every literal:
 
 ```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
 pub proc duplicate_elements(
-    n_repeats: Nat,      -- elements written the same as an earlier one
-): (det fires?) {
-    ensure rule: fires? iff n_repeats > 0
+    elements: Seq<String>,   -- the literal's elements, in order, each as written
+    k: Int,                  -- the position of an element
+): (
+    det fires?,
+    det repeat?,             -- the fix removes the element at `k`
+) {
+    ensure rule: fires? iff (exists (i: Int), 0 <= i < elements.len and repeated?(elements, i))
+    ensure removed: repeat? iff repeated?(elements, k)
+}
+```
+
+The fix keeps the members. Elements written the same have the same
+value, so each element that the fix removes has the value of an earlier
+one, which, if it is a repeat too, has the value of an earlier one again,
+down to one that the fix keeps. `lint::duplicate_elements_members` states
+this over the elements' values:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "tested" in
+pub proc duplicate_elements_members(elements: Seq<String>, values: Seq<Int>, x: Int) {
+    assume same_values: values.len = elements.len and (forall (i j: Int), when 0 <= i < elements.len
+        and 0 <= j < elements.len and elements[i] = elements[j], values[i] = values[j])
+
+    expect kept: (exists (i: Int), 0 <= i < values.len and values[i] = x)
+        iff (exists (i: Int), 0 <= i < values.len and not repeated?(elements, i) and values[i] = x)
 }
 ```
