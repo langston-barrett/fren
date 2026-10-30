@@ -1695,10 +1695,10 @@ def parseShard (s : String) : Except String (Nat × Nat) :=
   | _ => .error s!"--shard {s}: expected K/N, two whole numbers"
 
 /-- The shard of the `i`th job of the selection, of `n` shards: the first
-job, the slowest, alone in shard 0, as it takes about as long as the
-others together (`ownSpec`, unless the mutants of Fren's own requirements
-are checked too), and the others dealt in turn to shards 1 to `n - 1`, so
-that the slowest, which come first, spread over them. -/
+job, `ownSpec`, alone in shard 0, as on one machine it takes about as long
+as all the others but `ownMutantsJob`'s, and the others dealt in turn to
+shards 1 to `n - 1`, so that the slowest, which come first, spread over
+them. -/
 def shardOf (n i : Nat) : Nat :=
   if n ≤ 1 then 0 else if i == 0 then 0 else 1 + (i - 1) % (n - 1)
 
