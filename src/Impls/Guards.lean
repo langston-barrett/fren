@@ -218,17 +218,6 @@ theorem moved_eq (l : List lint.IfArm) (s : lint.Slot) (d : lint.Body) :
     simp only [Option.map_none, Option.getD_none, Bool.false_eq_true, iff_false]
     rintro ⟨⟨⟨hl, _⟩, _⟩, _⟩; exact h hl
 
-/-- `lint::names_binder?` and `lint::overlap?`, as definitions that `simp`
-does not unfold: the spec's are reducible, and `decide_eq_true_eq` would
-unfold them, as it takes `fires_on?`'s `decide` apart. -/
-def namesBinder (b : lint.Body) (p : lint.Pat) : Bool := lint.names_binder? b p
-
-def overlapPat (p q : lint.Pat) : Bool := lint.overlap? p q
-
-theorem names_fold (b : lint.Body) (p : lint.Pat) : lint.names_binder? b p = namesBinder b p := rfl
-
-theorem overlap_fold (p q : lint.Pat) : lint.overlap? p q = overlapPat p q := rfl
-
 theorem ite_some_isSome (c : Prop) [Decidable c] (x : α) : (if c then some x else none).isSome = decide c := by
   by_cases h : c <;> simp [h]
 
@@ -344,7 +333,7 @@ impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : l
   | [], h => simp at h
   | _ :: _ :: _ :: _ :: _ :: _, h => simp at h
 
-/-! ### The fix keeps the meaning (`lint::match_arm_if_else_keeps`) -/
+/-! ### The fix keeps the meaning (`lint::match_arm_if_else_keeps_meaning`) -/
 
 -- A lower bound and an upper bound that hold of one value meet.
 theorem reaches_of (a b : lint.Bound) (v : Int) (ha : lint.lower_holds? a v = true)
@@ -501,15 +490,15 @@ macro "arm_facts" d:term:max a:term:max x:term:max o:term:max : tactic => `(tact
 -- written, every value of the scrutinee and every value outside the
 -- `match`: each case is a formula over the tests and values of the arms and
 -- of each pair, with the facts that relate them, which `grind` decides.
-impl match_arm_if_else_keeps: lint::match_arm_if_else_keeps for (l : List lint.IfArm) (d : lint.Body) (x : lint.Val)
-    (o : Int) {
+impl match_arm_if_else_keeps_meaning: lint::match_arm_if_else_keeps_meaning for (l : List lint.IfArm) (d : lint.Body)
+    (x : lint.Val) (o : Int) {
   arms := Fren.Seq.ofList l, d := d, x := x, o := o,
 } by
   intro l d x o _
-  unfold lint.match_arm_if_else_keeps.ensures
-  dsimp only [lint.match_arm_if_else_keeps.ensure.keeps_meaning]
-  simp only [lint.one_type?, lint.fires_on?, lint.first_arm?, lint.keeps?, lint.first_fixed?, lint.taken_fixed?,
-    lint.fixed_value, lint.arm_matches?, decide_eq_true_eq]
+  unfold lint.match_arm_if_else_keeps_meaning.ensures
+  dsimp only [lint.match_arm_if_else_keeps_meaning.ensure.keeps_meaning]
+  simp only [lint.one_type?, lint.fires_on?, lint.keeps_where_fires?, lint.first_arm?, lint.keeps?, lint.first_fixed?,
+    lint.taken_fixed?, lint.fixed_value, lint.arm_matches?, decide_eq_true_eq]
   repeat rw [moved_eq]
   match l with
   | [] => simp

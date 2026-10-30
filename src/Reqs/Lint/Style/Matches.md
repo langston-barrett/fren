@@ -352,15 +352,16 @@ pub fn overlap?(p: Pat, q: Pat) := (p is Pat::Wild | Pat::Binder(_, _)) or (q is
     or (variants_pattern?(p) and variants_pattern?(q) and pattern_tag(p) = pattern_tag(q)
     and leaves_overlap?(first_leaf(p), first_leaf(q)) and leaves_overlap?(second_leaf(p), second_leaf(q)))
 
--- Two patterns of one type that match a value in common overlap.
+-- Two patterns of one type that match a value in common overlap. The
+-- converse does not hold: see the prose below.
 expect overlap_matches(p: Pat, q: Pat, x: Val) {
     expect sound: when pat_matches?(p, x) and pat_matches?(q, x) and not (integers_pattern?(p) and variants_pattern?(q))
         and not (variants_pattern?(p) and integers_pattern?(q)), overlap?(p, q)
 }
 ```
 
-`overlap?` says whether two patterns may match a value in common, which
-[`match_arm_if_else`](#arms-that-are-ifs) and
+`overlap?` is an upper bound on the values two patterns may have in
+common, which [`match_arm_if_else`](#arms-that-are-ifs) and
 [`match_could_be_table`](../Pedantic/Matches.md#matches-that-could-be-tables)
 ask: `_` or a binder overlaps every pattern, two integer patterns overlap
 where their bounds meet, and two variant patterns where their tags are the
@@ -369,6 +370,15 @@ that some value matches overlap, if they are of one type, which
 `lint::overlap_matches` checks against `pat_matches?`. An integer pattern
 and a variant pattern never overlap, though the model's value has both an
 integer and a tag: no scrutinee has both types.
+
+Only that direction holds, and only it is checked. `overlap?` compares
+bounds, so a range whose bounds cross, which matches nothing, overlaps a
+range that its bounds meet: `5..=3` matches no integer, and
+`overlap?(0..=10, 5..=3)` holds. Soundness is the direction the lints
+need, since each asks `overlap?` to rule an arm *out*: a value that two
+arms share must make them overlap, so that the lint does not fire where a
+later arm could take a value from an earlier one. A pattern that matches
+nothing only keeps the lint from firing.
 
 `lint::match_overlapping_arm` states when it fires, computing the facts from the earlier
 pattern and the later range, by their bounds, and checks them against
@@ -468,7 +478,7 @@ expression, a body too. A body means something else wherever the name it
 mentions does: in an arm, it is the value that the arm's pattern binds to
 that name (`in_arm`), if it binds it, and the value of the name outside
 the `match` otherwise. Two patterns may have a value in common as
-[`overlap?`](#overlapping-arms) says. `lint::match_arm_if_else_keeps`
+[`overlap?`](#overlapping-arms) says. `lint::match_arm_if_else_keeps_meaning`
 states that the fix keeps the meaning, for every value of the scrutinee
 and of the names outside the `match`: where the lint fires, the `match`
 with the conditions as guards, and with the `_` arm that it adds, if it
@@ -591,31 +601,37 @@ pub proc match_arm_if_else(
     ensure appended: appended? iff appends?(arms, d)
 }
 
+-- The fix keeps the value of the `match` at `x` and `o`, whichever arm is
+-- the first that matches `x` as written. The lemma and the example below
+-- share it, so that the example witnesses the lemma itself.
+pub fn keeps_where_fires?(arms: Seq<IfArm>, d: Body, x: Val, o: Int) := forall (s: Slot),
+    when first_arm?(arms, s, x), keeps?(arms, d, appends?(arms, d), s, x, o)
+
 -- Where it fires, the fix keeps the value of the `match` at every value `x`
--- of the scrutinee and `o` of a name outside it, whichever arm `s` is the
--- first that matches `x` as written. The arms are those that
+-- of the scrutinee and `o` of a name outside it. The arms are those that
 -- `match_arm_if_else` assumes; as conditions rather than assumptions, so
 -- that every random test is admissible, though few make the lint fire.
 set_option fren.evidence "random" in
-pub proc match_arm_if_else_keeps(arms: Seq<IfArm>, d: Body, x: Val, o: Int) {
-    ensure keeps_meaning: forall (s: Slot), when 1 <= arms.len <= 4 and one_type?(arms) and fires_on?(arms, d)
-        and first_arm?(arms, s, x), keeps?(arms, d, appends?(arms, d), s, x, o)
+pub proc match_arm_if_else_keeps_meaning(arms: Seq<IfArm>, d: Body, x: Val, o: Int) {
+    ensure keeps_meaning: when 1 <= arms.len <= 4 and one_type?(arms) and fires_on?(arms, d),
+        keeps_where_fires?(arms, d, x, o)
 }
 
 -- `match s { E::A => if c? then 1 else 0, E::B => if e? then 2 else 0 }`,
--- on which the lint fires, and whose fix keeps its value.
--- The arm of the variant with tag `t`: `if c? then f else 0`.
-pub fn example_arm(t: Int, c?, f: Int): IfArm := IfArm { pat := Pat::Tag(t),
-    body := IfBody::IfElse(c?, Body { form := f, uses := Use::Nothing }, Body { form := 0, uses := Use::Nothing }),
+-- on which the lint fires, and whose fix keeps its value: the arms' shared
+-- `else` branch, and the arm of the variant with tag `t`, `if c? then f else 0`.
+pub const IF_ELSE_EXAMPLE_BRANCH: Body := Body { form := 0, uses := Use::Nothing }
+
+pub fn if_else_example_arm(t: Int, c?, f: Int): IfArm := IfArm { pat := Pat::Tag(t),
+    body := IfBody::IfElse(c?, Body { form := f, uses := Use::Nothing }, IF_ELSE_EXAMPLE_BRANCH),
     binds? := false }
 
-pub fn example_arms(c?, e?): Seq<IfArm> := [example_arm(0, c?, 1), example_arm(1, e?, 2)]
+pub fn if_else_example_arms(c?, e?): Seq<IfArm> :=
+    [if_else_example_arm(0, c?, 1), if_else_example_arm(1, e?, 2)]
 
 expect match_arm_if_else_example(c?, e?, x: Val, o: Int) {
-    expect fires: fires_on?(example_arms(c?, e?), Body { form := 0, uses := Use::Nothing })
-    expect keeps: forall (s: Slot), when first_arm?(example_arms(c?, e?), s, x),
-        keeps?(example_arms(c?, e?), Body { form := 0, uses := Use::Nothing },
-        appends?(example_arms(c?, e?), Body { form := 0, uses := Use::Nothing }), s, x, o)
+    expect fires: fires_on?(if_else_example_arms(c?, e?), IF_ELSE_EXAMPLE_BRANCH)
+    expect keeps: keeps_where_fires?(if_else_example_arms(c?, e?), IF_ELSE_EXAMPLE_BRANCH, x, o)
 }
 ```
 
