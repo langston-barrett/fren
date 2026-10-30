@@ -17,8 +17,9 @@ passes the same check. A smaller copy, with only the forms that
 failure needs more of the model.
 
 This is a disagreement between the front ends, which #391 avoided by
-dropping the contract. The `#guard_msgs` below records today's failure, so
-that a fix of the hosted front end shows up here (#417, #420).
+dropping the contract. `#expect_max_rec_depth` below records today's
+failure, and fails once the check stops reaching the maximum recursion
+depth, so that a fix of the hosted front end shows up here (#417, #420).
 -/
 
 mod simp_depth
@@ -599,10 +600,23 @@ expect arm_guards_evaluation(
         eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g, b, rest2))
 }
 
-/--
-error: Tactic `simp` failed with a nested error:
-maximum recursion depth has been reached
-use `set_option maxRecDepth <num>` to increase limit
-use `set_option diagnostics true` to get diagnostic information
--/
-#guard_msgs (drop info, drop warning) in #fren_check recursion_unfolds
+open Lean Elab Command in
+/-- Elaborates `cmd`, and fails unless it logs Lean's maximum recursion
+depth error, which it removes from the log. `#guard_msgs` did not record
+that error, with or without `Elab.async`, though it is in the log. -/
+elab "#expect_max_rec_depth " cmd:command : command => do
+  let before := (← get).messages
+  modify fun s => { s with messages := {} }
+  elabCommand cmd
+  let logged := (← get).messages
+  let isDepth (m : Message) : BaseIO Bool := do
+    return m.severity == .error && ((← m.data.toString).splitOn "maximum recursion depth").length > 1
+  let mut depth := 0
+  let mut kept : MessageLog := {}
+  for m in logged.toList do
+    if ← isDepth m then depth := depth + 1 else kept := kept.add m
+  modify fun s => { s with messages := before ++ kept }
+  if depth = 0 then
+    throwError m!"expected the maximum recursion depth error among the {logged.toList.length} messages logged"
+
+#expect_max_rec_depth #fren_check recursion_unfolds
