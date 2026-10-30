@@ -16,3 +16,31 @@ expect false_left(a: E) {
     expect same: when ev(a) = Outcome::Defined(Value::Boolean(false)),
         ev(E::Not(a)) = Outcome::Defined(Value::Boolean(false))
 }
+
+-- A `Bool` as a datatype's type argument, as in `Option<Bool>`, is a `Bool`
+-- in the model too.
+pub enum F { L(Option<Bool>), N(F) }
+
+pub fn evf(e: F): Option<Bool> := match e {
+    F::L(v) => v,
+    F::N(a) => evf(a),
+}
+
+expect option_payload(a: F) {
+    -- The trigger applies the recursion, so the hosted front end reads the
+    -- model, `F::L(Option::Some(false))`, to confirm it.
+    expect leaf: when a = F::L(Option::Some(false)) and evf(a) = Option::Some(false), evf(F::N(a)) = Option::Some(false)
+}
+
+-- A `Bool` field of a record within an enumeration.
+pub struct Flag { on?, level: Int }
+pub enum G { Leaf(Flag), Wrap(G) }
+
+pub fn evg(g: G): Flag := match g {
+    G::Leaf(f) => f,
+    G::Wrap(h) => evg(h),
+}
+
+expect record_field(g: G) {
+    expect leaf: when g = G::Leaf(Flag { on? := false, level := 1 }) and evg(g).level = 1, evg(G::Wrap(g)).level = 1
+}

@@ -27,11 +27,11 @@ def coverageLinkArgs : Array String := match get_config? coverage with
 -- datatypes (`Reqs/Lang/Generics`); and universe-polymorphic ones, Lean's
 -- `Option` and `Except`, which the prelude's types are, at universe 0, with
 -- a hygienic field named after its position (`Reqs/Lang/Prelude`); and a
--- datatype's `Bool` fields in a model are reconstructed as `Bool`s, not
--- propositions. The commit is on the fork's branch `fren-bool-payloads`, on
+-- datatype's `Bool` fields and `Bool` type arguments in a model are
+-- reconstructed as `Bool`s, not propositions. The commit is on the fork's branch `fren-bool-payloads`, on
 -- top of `parametric-datatypes-v3`, `parametric-datatypes-v2` and
 -- `trust-skip-proofs`.
-require smt from git "https://github.com/langston-barrett/lean-smt.git"@"eb86bb026829da5c761e848f582935efbef229b5"
+require smt from git "https://github.com/langston-barrett/lean-smt.git"@"3da3dcc7e07a0254e853e1f97f3b4f533ab0ba3b"
 
 -- Shared by the Lean library and the binary; depends only on Lean core.
 -- All of its modules, not only those that the module `FrenCore` imports.
