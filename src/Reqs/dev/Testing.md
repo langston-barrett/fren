@@ -38,13 +38,22 @@
   Each explanation's first ```` ```fren ```` block must report its code,
   and its other blocks must not. A new message needs a code, an
   explanation and a snapshot.
-- **Libraries** (`lake test`): the modules that copy a root module's
-  imports, to keep it off the build's critical path, import exactly its
-  modules; each module of `Reqs` reads only the specs that its library in
-  `lakefile.lean` needs; and only the modules of `Impls` whose library needs
-  the tests, `ImplsTested`, make `tested` claims.
+- **Libraries** (`lake test`): `lake build` rebuilds a module when a file
+  that it reads changes. Lake rebuilds it when a file changes that the
+  library that builds it needs. A library builds the modules of its globs
+  in `lakefile.lean` with its own `needs`, and a module that a build
+  reaches only by an import, with those of the last library that has it.
+  So no module is in the globs of two libraries; each module of `Reqs`
+  reads only the specs that its library needs; only the modules of `Impls`
+  whose library needs the tests, `ImplsTested`, make `tested` claims; and
+  only the tests of `FrenTestFiles`, whose library needs the files that
+  they read, read files with `#fren_md`, and they, and the files that they
+  read, read only files that it needs. Also, the modules that copy a root
+  module's imports, to keep it off the build's critical path, import
+  exactly its modules.
 - **Lean-only behaviour** (`lake build`): `#guard_msgs` tests in
-  `src/FrenTest`, e.g. the shape of generated definitions.
+  `src/FrenTest` and `src/FrenTestFiles`, e.g. the shape of generated
+  definitions.
 - **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by
   the `fren` command under `lake test`.
 - **Conformance corpus** (`lake test`): random procedures whose
