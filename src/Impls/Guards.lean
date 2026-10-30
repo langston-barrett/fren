@@ -148,7 +148,7 @@ def wildPat (p : lint.Pat) : Bool := match p with | .Wild | .Binder _ _ => true 
 
 /-- An arm as `match_arm_if_else` reads it (`lint::IfArm`). -/
 def toIfArmInfo (a : lint.IfArm) : Fren.Core.IfArmInfo lint.Body :=
-  { wild := wildPat a.pat, body := toIfArmBody a.body }
+  { wild := wildPat a.pat, body := toIfArmBody a.body, binds := a.«binds?» }
 
 /-- Two bodies of the model are written the same where they are equal. -/
 def sameBody (b c : lint.Body) : Bool := decide (b = c)
@@ -177,21 +177,23 @@ theorem plain_fold (d : lint.Body) (a : lint.IfArm) : (toIfArmInfo a).plainIs sa
 
 theorem wild_fold (a : lint.IfArm) : (toIfArmInfo a).wild = wildPat a.pat := rfl
 
+theorem binds_fold (a : lint.IfArm) : (toIfArmInfo a).binds = a.«binds?» := rfl
+
 theorem wildPat_spec (p : lint.Pat) :
     (p = .Wild ∨ p = .Binder (lint.Pat.Binder.x0 p) (lint.Pat.Binder.x1 p)) ↔ wildPat p = true := by
   cases p <;> simp [wildPat, lint.Pat.Binder.x0, lint.Pat.Binder.x1]
 
 theorem plainArm_spec (d : lint.Body) (a : lint.IfArm) : a.body = .Plain d ↔ plainArm d a = true := by
-  rcases a with ⟨p, b⟩
-  cases b <;> simp [plainArm, toIfArmInfo, toIfArmBody, Fren.Core.IfArmInfo.plainIs, sameBody]
+  rcases a with ⟨p, b, bi⟩
+  cases b <;> cases bi <;> simp [plainArm, toIfArmInfo, toIfArmBody, Fren.Core.IfArmInfo.plainIs, sameBody]
 
 theorem movedArm_spec (d : lint.Body) (a : lint.IfArm) :
     ((¬(match a.pat with | .Wild => true | .Binder _ _ => true | _ => false) = true) ∧
       (match a.body with | .IfElse _ _ _ => true | _ => false) = true) ∧ lint.else_of a.body = d ↔
       movedArm d a = true := by
-  rcases a with ⟨p, b⟩
-  cases p <;> cases b <;> simp [movedArm, toIfArmInfo, wildPat, toIfArmBody, Fren.Core.IfArmInfo.moved, sameBody,
-    lint.else_of]
+  rcases a with ⟨p, b, bi⟩
+  cases p <;> cases b <;> cases bi <;> simp [movedArm, toIfArmInfo, wildPat, toIfArmBody, Fren.Core.IfArmInfo.moved,
+    sameBody, lint.else_of]
 
 theorem nth_slot (l : List lint.IfArm) (s : lint.Slot) (h : (lint.pos s).toNat < l.length) :
     (Fren.Seq.ofList l).nth (lint.pos s) = l[(lint.pos s).toNat] := by
@@ -247,7 +249,7 @@ macro "arms_normal" : tactic => `(tactic| (
     List.length_nil, Fren.Seq.nth, plainArm_spec, Int.reduceToNat, List.getElem?_cons_zero, List.getElem?_cons_succ,
     List.getElem?_nil, Option.map_some, Option.map_none, Option.getD_some, Option.getD_none, dite_true, dite_false,
     List.getElem_cons_zero, List.getElem_cons_succ, Fren.Core.matchArmIfElseFor, List.map_cons, List.map_nil,
-    mentionsIn, overlapIn, moved_fold, plain_fold, List.range, List.range.loop, List.any_cons, List.any_nil,
+    mentionsIn, overlapIn, moved_fold, plain_fold, binds_fold, List.range, List.range.loop, List.any_cons, List.any_nil,
     List.all_cons, List.all_nil, ite_some_isSome]
   simp only [false_and, and_false, false_implies, true_and, and_true, or_false, false_or,
     decide_false, decide_true, Bool.false_and, Bool.true_and, Bool.and_true, Bool.not_false,
@@ -261,8 +263,11 @@ macro "arms_normal" : tactic => `(tactic| (
 -- (`lang::pattern_overlap`), not for the model's variants of two; and
 -- `mentionsName` over the binders' names for `names_binder?`. The rule is
 -- proved for each number of arms, one to four, as the spec has: each is a
--- formula over the tests of the arms and of each pair, which a SAT solver
--- decides.
+-- formula over the tests of the arms and of each pair, which `bv_decide`
+-- decides. Its proofs are checked by Lean's compiled LRAT checker
+-- (`Lean.ofReduceBool`, the `_native.bv_decide.ax_*` axioms), not by the
+-- kernel alone: a weaker level of trust than this file's other proofs,
+-- stated here rather than left to the evidence report.
 set_option linter.unusedSimpArgs false in
 impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : lint.Body) (a : Bool) (x : lint.Val)
     (o : Int) {
@@ -287,7 +292,8 @@ impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : l
   | [a0], _ =>
     arms_normal
     generalize movedArm d a0 = m0
-    revert m0 a
+    generalize a0.«binds?» = b0
+    revert m0 b0 a
     bv_decide
   | [a0, a1], _ =>
     arms_normal
@@ -295,7 +301,8 @@ impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : l
     generalize plainArm d a1 = p1
     generalize lint.names_binder? d a0.pat = n0; generalize lint.names_binder? d a1.pat = n1
     generalize lint.overlap? a0.pat a1.pat = o01
-    revert m0 m1 p1 n0 n1 o01 a
+    generalize a0.«binds?» = b0; generalize a1.«binds?» = b1
+    revert m0 m1 p1 n0 n1 o01 b0 b1 a
     bv_decide
   | [a0, a1, a2], _ =>
     arms_normal
@@ -305,7 +312,8 @@ impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : l
     generalize lint.names_binder? d a2.pat = n2
     generalize lint.overlap? a0.pat a1.pat = o01; generalize lint.overlap? a0.pat a2.pat = o02
     generalize lint.overlap? a1.pat a2.pat = o12
-    revert m0 m1 m2 p1 p2 n0 n1 n2 o01 o02 o12 a
+    generalize a0.«binds?» = b0; generalize a1.«binds?» = b1; generalize a2.«binds?» = b2
+    revert m0 m1 m2 p1 p2 n0 n1 n2 o01 o02 o12 b0 b1 b2 a
     bv_decide
   | [a0, a1, a2, a3], _ =>
     arms_normal
@@ -317,7 +325,9 @@ impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : l
     generalize lint.overlap? a0.pat a1.pat = o01; generalize lint.overlap? a0.pat a2.pat = o02
     generalize lint.overlap? a0.pat a3.pat = o03; generalize lint.overlap? a1.pat a2.pat = o12
     generalize lint.overlap? a1.pat a3.pat = o13; generalize lint.overlap? a2.pat a3.pat = o23
-    revert m0 m1 m2 m3 p1 p2 p3 n0 n1 n2 n3 o01 o02 o03 o12 o13 o23 a
+    generalize a0.«binds?» = b0; generalize a1.«binds?» = b1; generalize a2.«binds?» = b2
+    generalize a3.«binds?» = b3
+    revert m0 m1 m2 m3 p1 p2 p3 n0 n1 n2 n3 o01 o02 o03 o12 o13 o23 b0 b1 b2 b3 a
     bv_decide
   | [], h => simp at h
   | _ :: _ :: _ :: _ :: _ :: _, h => simp at h

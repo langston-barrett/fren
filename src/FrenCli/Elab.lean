@@ -2972,8 +2972,12 @@ def lintArmIfElse (cx : ExprCtx) (e : Expr) (sigs : Fren.Core.Sigs) (pty : Fren.
     let armBody : Fren.Core.IfArmBody String := match body with
       | .ite _ _ _ d => .ifElse (d.text src).text
       | _ => .plain (body.text src).text
+    -- A condition that binds names cannot be a guard (`F0334`).
+    let condBinds ← match body with
+      | .ite _ c _ _ => chainBinds cx c
+      | _ => pure false
     binders := binders.push ((← patternBinders cx p).map binderName)
-    infos := infos.push { wild := q matches .wild _, body := armBody }
+    infos := infos.push { wild := q matches .wild _, body := armBody, binds := condBinds }
   -- `d` names a binder of arm `j`'s pattern.
   let mentions (d : String) (j : Nat) : Bool := binders[j]!.any (Fren.Core.mentionsName d ·)
   let overlap (i j : Nat) : Bool := (pats[i]!.overlapWit? sigs pty pats[j]!).isSome

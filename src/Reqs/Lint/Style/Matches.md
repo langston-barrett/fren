@@ -429,7 +429,12 @@ later arms whose patterns may have a value in common with theirs: in
 arm is the variable `k` outside the `match`, and in the last arm it is
 the binder, so with the fix `n = 3` and `not c?` would give `3`. In the
 `_` arm that the fix adds, a name means what it means outside the
-`match`. Where arms share more than one `else` branch, the lint takes the
+`match`. It does not fire where the condition of an arm that the fix would change is
+a [pattern test](../../Lang/Expressions.md#pattern-tests) that binds
+names, as in `if t is Shape::Circle(z) then z else 0`: the test binds them
+for `a`, and a guard cannot (`F0334`). A body that is not an
+`if` is compared with `d` as written, with any parentheses around it, so
+`(0)` is not `0`. Where arms share more than one `else` branch, the lint takes the
 first, by the arms' order, for which it fires. It does not fire on a
 `match` that has an arm with a guard, nor on a table over a scrutinee,
 whose arms with guards are checked to be disjoint where they hold.
@@ -464,7 +469,10 @@ arm, the value that the first arm that matched had in its own:
 -- with the value of `C`, and `a` and `d` as bodies; or another expression.
 pub enum IfBody { IfElse(Bool, Body, Body), Plain(Body) }
 
-pub struct IfArm { pat: Pat, body: IfBody }
+-- An arm: its pattern, its body, and whether its body is an `if` whose
+-- condition is a pattern test that binds names, which `a` sees and a guard
+-- could not bind (`F0334`).
+pub struct IfArm { pat: Pat, body: IfBody, binds? }
 
 -- The value of the body `b` in an arm whose pattern `p` matches `x`, where
 -- a name outside the `match` has the value `o`.
@@ -547,6 +555,8 @@ pub proc match_arm_if_else(
     -- body `d`, which names none of its binders.
     ensure rule: fires? iff ((exists (s r: Slot), pos(s) < pos(r) and moved?(arms, s, d) and moved?(arms, r, d))
         and (forall (s: Slot), when pos(s) < arms.len and moved?(arms, s, d), not names_binder?(d, arms[pos(s)].pat))
+        -- no condition that it moves binds names, which a guard could not
+        and (forall (s: Slot), when moved?(arms, s, d), not arms[pos(s)].binds?)
         and (forall (s r: Slot), when moved?(arms, s, d) and pos(s) < pos(r) < arms.len
         and overlap?(arms[pos(s)].pat, arms[pos(r)].pat),
         arms[pos(r)].body = IfBody::Plain(d) and not names_binder?(d, arms[pos(r)].pat))

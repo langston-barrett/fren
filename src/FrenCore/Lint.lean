@@ -2793,6 +2793,9 @@ structure IfArmInfo (β : Type) where
   /-- Its pattern is `_` or a binder. -/
   wild : Bool
   body : IfArmBody β
+  /-- Its body is an `if` whose condition is a pattern test that binds
+  names, which `a` sees: a guard cannot bind them (`F0334`). -/
+  binds : Bool := false
   deriving Inhabited
 
 /-- Whether `match_arm_if_else` moves the condition of the arm `a` into a
@@ -2830,8 +2833,10 @@ def matchArmIfElseFor {β} (same : β → β → Bool) (mentions : β → Nat �
     (arms : List (IfArmInfo β)) (d : β) : Option (List Nat × Bool) :=
   let moved (i : Nat) : Bool := (arms[i]?.map (·.moved same d)).getD false
   let ix := List.range arms.length
+  let binds (i : Nat) : Bool := (arms[i]?.map (·.binds)).getD false
   let fires := ix.any (fun i => ix.any fun j => decide (i < j) && moved i && moved j) &&
     ix.all (fun i => !moved i || !mentions d i) &&
+    ix.all (fun i => !moved i || !binds i) &&
     ix.all (fun i => !moved i || ix.all fun j =>
       !decide (i < j) || !overlap i j || ((arms[j]?.map (·.plainIs same d)).getD false && !mentions d j))
   if fires then some (ix.filter moved, matchArmIfElseAppends same arms d) else none
@@ -2843,7 +2848,7 @@ branch, and whether it adds a `_` arm. -/
 def matchArmIfElse? {β} (same : β → β → Bool) (mentions : β → Nat → Bool) (overlap : Nat → Nat → Bool)
     (arms : List (IfArmInfo β)) : Option (Array Nat × β × Bool) :=
   arms.findSome? fun a => match a with
-    | { wild := false, body := .ifElse d } =>
+    | { wild := false, body := .ifElse d, .. } =>
       (matchArmIfElseFor same mentions overlap arms d).map fun (g, ap) => (g.toArray, d, ap)
     | _ => none
 

@@ -117,3 +117,8 @@ proc if_else(s: Shape, k: Int, j: Int, b?): (
     -- The same, where the binder is in a payload.
     out i := match s { Shape::Circle(0) => if b? then 1 else k, Shape::Square(0) => if b? then 2 else k, Shape::Circle(k!) => k, _ => k }
 }
+
+-- A condition that binds a name, which a guard cannot (`F0334`).
+proc binding_test(r: Reply, k: Int): (det v: Int) {
+    out v := match r { Reply::Ok(t) => if t is Shape::Circle(z) then z else 0, Reply::Err(e) => if e > k then 1 else 0 }
+}

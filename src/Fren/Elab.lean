@@ -2414,8 +2414,10 @@ def lintArmIfElse (cx : ExprCtx) (e : Syntax) (sigs : Core.Sigs) (pty : Core.Pat
   for arm in arms, p in pats do
     let body := unparen arm[3]
     let armBody : Core.IfArmBody String := if isIte body then .ifElse (exactText body[5]) else .plain (exactText arm[3])
+    -- A condition that binds names cannot be a guard (`F0334`).
+    let condBinds ← if isIte body then chainBinds cx body[1] else pure false
     binders := binders.push ((← topBinders cx arm[0]).map binderName)
-    infos := infos.push { wild := p matches .wild _, body := armBody }
+    infos := infos.push { wild := p matches .wild _, body := armBody, binds := condBinds }
   -- `d` names a binder of arm `j`'s pattern.
   let mentions (d : String) (j : Nat) : Bool := binders[j]!.any (Core.mentionsName d ·)
   let overlap (i j : Nat) : Bool := (pats[i]!.overlapWit? sigs pty pats[j]!).isSome

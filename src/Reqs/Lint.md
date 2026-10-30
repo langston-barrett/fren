@@ -623,7 +623,7 @@ what the spec means:
 | `manual_range_patterns` | replaces the or-pattern with the range |
 | `manual_record_update` | replaces the literal with an update of the value it copies from, as the message suggests |
 | `manual_rem_euclid` | replaces `(a mod k + k) mod k` with `a mod k` |
-| `match_arm_if_else` | moves each condition into its arm's guard, and adds `_ => d`, with the `else` branch `d`, where the last arm is not one |
+| `match_arm_if_else` | moves each condition into its arm's guard, and adds `_ => d`, with the `else` branch `d`, unless the last arm is `_` or a binder with the body `d` |
 | `match_bool` | replaces the `match` with `if c? then a else b` |
 | `match_could_be_table` | writes `table` in place of `match` |
 | `match_like_membership` | replaces the `match` with an equation, `x = E::A`, or a pattern test, `x is E::A \| E::B`, as the message suggests |
