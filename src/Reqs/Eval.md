@@ -164,6 +164,11 @@ that has no value, or too many, in one behaviour only leaves that
 behaviour without a value for the quantifier, as an index out of range
 does, so the test that finds it reaches nothing.
 
+[Enumeration](Check.md#quantifiers-up-to-the-bound) is not testing, and
+`F0639` is not raised there: it gives a bound name without a domain its
+type's values up to the bound, and the quantifier is true, false or
+unknown over them.
+
 ## Searching for behaviours
 
 Both commands search for behaviours. The search chooses the variables in

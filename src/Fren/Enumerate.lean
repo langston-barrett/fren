@@ -149,6 +149,80 @@ def Enum.apply {β : Type} (rs : Array β) (d : β) (tables env : Array Nat) (sl
   | some pos => rs.getD (Core.Enumeration.tableEntry rs.size (tables.getD (env.getD slot 0) 0) pos) d
   | none => rs.getD 0 d
 
+/-! ## Partial truth (`Reqs/Check#quantifiers-up-to-the-bound`)
+
+A quantifier evaluated by enumeration ranges over its domain, or its
+type's values up to the bound, and its truth is `none` where no instance
+decides it and the values are not all of its type's. Connectives are the
+strong Kleene ones, as the `fren` command's evaluator has them. -/
+
+/-- A quantifier's truth, a `forall` if `universal`, over `values`, all of
+its domain's if `exact`: an instance that decides it does so; the other
+value needs every instance known and the domain exhausted. -/
+def Enum.quantify {α : Type} (values : Array α) (exact universal : Bool) (body : α → Option Bool) : Option Bool :=
+  Core.Enumeration.quantifiedTruth exact universal body values.toList
+
+/-- `Enum.quantify` over the members of a set or the elements of a
+sequence, which are all of its domain's. -/
+def Enum.quantifyList {α : Type} (values : List α) (universal : Bool) (body : α → Option Bool) : Option Bool :=
+  Enum.quantify values.toArray true universal body
+
+/-- `Enum.quantify` over the integers from `lower` to `upper`, excluded. -/
+def Enum.quantifyIntRange (lower upper : Int) (universal : Bool) (body : Int → Option Bool) : Option Bool :=
+  Enum.quantify ((List.range (upper - lower).toNat).toArray.map fun (k : Nat) => lower + (k : Int)) true universal body
+
+/-- `Enum.quantifyIntRange` for a `Nat`, from 0 at least. -/
+def Enum.quantifyNatRange (lower upper : Int) (universal : Bool) (body : Nat → Option Bool) : Option Bool :=
+  Enum.quantifyIntRange (max 0 lower) upper universal fun i => body i.toNat
+
+def Enum.notTruth (a : Option Bool) : Option Bool := a.map (!·)
+
+/-- The strong Kleene disjunction. -/
+def Enum.orTruth (a b : Option Bool) : Option Bool :=
+  match a, b with
+  | some true, _ | _, some true => some true
+  | some false, some false => some false
+  | _, _ => none
+
+/-- The strong Kleene conjunction, without evaluating a right side that a
+false left side settles. -/
+def Enum.andLazy (a : Option Bool) (b : Unit → Option Bool) : Option Bool :=
+  if a == some false then some false else Core.Enumeration.andTruth a (b ())
+
+def Enum.orLazy (a : Option Bool) (b : Unit → Option Bool) : Option Bool :=
+  if a == some true then some true else Enum.orTruth a (b ())
+
+def Enum.iffLazy (a : Option Bool) (b : Unit → Option Bool) : Option Bool :=
+  match a with
+  | none => none
+  | some x => (b ()).map (x == ·)
+
+/-- A conditional's value: its branch's, or, with its condition unknown,
+the value that both branches have, if they have the same, as the `fren`
+command's evaluator has it. -/
+def Enum.iteValue {α : Type} [DecidableEq α] (c : Option Bool) (yes no : Unit → Option α) : Option α :=
+  match c with
+  | some true => yes ()
+  | some false => no ()
+  | none => let a := yes (); if a.isSome && decide (a = no ()) then a else none
+
+/-- `v`, if `k`, and otherwise unknown. -/
+def Enum.ifKnown {α : Type} (k : Bool) (v : Option α) : Option α := if k then v else none
+
+/-- Whether two values are the same, unknown if either is. -/
+def Enum.sameValue {α : Type} [DecidableEq α] (a b : Option α) : Option Bool :=
+  match a, b with
+  | some x, some y => some (decide (x = y))
+  | _, _ => none
+
+/-- A conditional's truth: its branch's, or, with its condition unknown,
+the truth that both branches have, if they have the same. -/
+def Enum.iteLazy (c : Option Bool) (yes no : Unit → Option Bool) : Option Bool :=
+  match c with
+  | some true => yes ()
+  | some false => no ()
+  | none => let a := yes (); if a == no () then a else none
+
 namespace Enumerate
 
 open Core.Enumeration
@@ -613,10 +687,188 @@ partial def decidableOf (p : Expr) : MetaM Expr := do
         return mkApp4 (mkConst ``instDecidableForall) a b (← decidableOf a) (← decidableOf b)
     synthInstance (mkApp (mkConst ``Decidable) p)
 
+/-- A guard's node, as both front ends read guards (`Core.guardConjunctsBy`). -/
+def typedGuardNode (source : Expr) : Core.GuardNode Expr :=
+  let e := source.consumeMData
+  let args := e.getAppArgs
+  if e.isAppOfArity ``And 2 then .conj args[0]! args[1]!
+  -- Membership takes the collection before the member.
+  else if (e.isAppOf ``Membership.mem || e.isAppOf ``Fren.FinSet.Mem) && args.size >= 2 then
+    .compare #[args[args.size - 1]!, args[args.size - 2]!] #["in"]
+  else if e.isAppOf ``LT.lt && args.size >= 2 then .compare #[args[args.size - 2]!, args[args.size - 1]!] #["<"]
+  else if e.isAppOf ``LE.le && args.size >= 2 then .compare #[args[args.size - 2]!, args[args.size - 1]!] #["<="]
+  else .other
+
+/-- The implications at the top of a universal's body, whose hypotheses
+are its guard. -/
+partial def leadingGuards (source : Expr) : MetaM (Array Expr) := do
+  let e := source.consumeMData
+  if let .forallE _ condition body _ := e then
+    if !body.hasLooseBVars && (← isProp condition) then return #[e] ++ (← leadingGuards body)
+  return #[]
+
+/-- The domain of the bound local `x`, of a `forall` if `universal`, by its
+guard in `body`, as the `fren` command reads it (`lang::guard_domain`):
+the members of a collection, or a range of integers. -/
+def guardedDomain (universal : Bool) (x body : Expr) : MetaM (Core.GuardDomain × Array (Option (Expr × Bool))) := do
+  let leading ← leadingGuards body
+  let when? (source : Expr) :=
+    let e := source.consumeMData
+    if leading.contains e then match e with
+      | .forallE _ condition tail _ => some (condition, tail)
+      | _ => none
+    else none
+  let conjuncts := Core.guardConjunctsBy typedGuardNode when? universal body
+  let alone (source : Expr) :=
+    let e := source.consumeMData
+    let e := if e.isAppOfArity ``Int.ofNat 1 then e.appArg!.consumeMData else e
+    let e := if (e.isAppOf ``NatCast.natCast || e.isAppOf ``Nat.cast) && e.getAppArgs[0]?.any (·.isConstOf ``Int) then
+      e.appArg!.consumeMData else e
+    if e == x then some 0 else none
+  let names (e : Expr) := if e.containsFVar x.fvarId! then [0] else []
+  return Core.boundDomain alone names conjuncts 0 ((← inferType x).isConstOf ``Nat)
+
+/-- How `partialDecide` evaluates: `values` gives a quantified type's
+values up to the bound and whether they are all of its type's; with
+`known?`, whether a quantifier-free part's value is known with every
+index out of range unknown (`knownOf`), and unknown where it is not. -/
+structure PartialEnv where
+  values : Expr → MetaM (Array Expr × Bool)
+  known? : Option (Expr → MetaM Expr) := none
+
+/-- `v`, an `Option`, unknown where `env.known?` says that one of `parts`
+is not known. -/
+def PartialEnv.wrap (env : PartialEnv) (parts : Array Expr) (v : Expr) : MetaM Expr := do
+  let some known := env.known? | return v
+  let ks ← parts.mapM known
+  mkAppM ``Enum.ifKnown #[ks.foldl (fun acc k => mkApp2 (mkConst ``and) acc k) (mkConst ``Bool.true), v]
+
+/-- The truth of a quantifier over the bound local `x`, whose instance's
+truth is `fn x`, over its guard's domain, if it has one: unknown, under
+`env.known?`, where the domain's bounds are not known. -/
+def quantifyGuarded (env : PartialEnv) (universal : Bool) (x body fn : Expr) : MetaM (Option Expr) := do
+  let (domain, bounds) ← guardedDomain universal x body
+  let ty ← inferType x
+  let toInt (e : Expr) : MetaM (Option Expr) := do
+    let t ← inferType e
+    if t.isConstOf ``Int then return some e
+    if t.isConstOf ``Nat then return some (mkApp (mkConst ``Int.ofNat) e)
+    return none
+  match domain with
+  | .members index =>
+    let some (collection, _) := bounds[index]?.getD none | return none
+    let collectionType ← inferType collection
+    let some element := collectionType.getAppArgs[0]? | return none
+    let values ← if collectionType.isAppOf ``Fren.FinSet then mkAppM ``Fren.FinSet.toListImpl #[collection]
+      else if collectionType.isAppOf ``Fren.Seq then mkAppM ``Fren.Seq.toList #[collection]
+      else return none
+    unless ← isDefEq element ty do return none
+    return some (← env.wrap #[collection] (← mkAppM ``Enum.quantifyList #[values, toExpr universal, fn]))
+  | .range _ hi | .fromZero hi =>
+    let lower ← match domain with
+      | .range lo _ => do
+        let some (value, strict) := bounds[lo]?.getD none | return none
+        let some value ← toInt value | return none
+        pure (some (value, strict))
+      | _ => pure (some (← intExpr 0, false))
+    let some (lower, strictLower) := lower | return none
+    let some (upper, strictUpper) := bounds[hi]?.getD none | return none
+    let some upper ← toInt upper | return none
+    let lo ← if strictLower then mkAppM ``HAdd.hAdd #[lower, ← intExpr 1] else pure lower
+    let hi ← if strictUpper then pure upper else mkAppM ``HAdd.hAdd #[upper, ← intExpr 1]
+    if ty.isConstOf ``Nat then return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyNatRange #[lo, hi, toExpr universal, fn]))
+    if ty.isConstOf ``Int then return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyIntRange #[lo, hi, toExpr universal, fn]))
+    return none
+  | .unbounded => return none
+
+mutual
+/-- The truth of the proposition `p`, an `Option Bool`, `none` where it is
+unknown: by the strong Kleene connectives, and each quantifier over its
+guard's domain or, without one, over `domain` of its type, which gives
+its values up to the bound and whether they are all of its type's. -/
+partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
+  let p := p.consumeMData
+  if p.isAppOfArity ``Fren.typeObligation 2 then return ← partialDecide domain p.appArg!
+  -- `decide P = true`, or `= false`.
+  if p.isAppOfArity ``Eq 3 && p.getAppArgs[0]!.isConstOf ``Bool then
+    let value := p.getAppArgs[1]!
+    let wanted := p.getAppArgs[2]!
+    if value.isAppOfArity ``Decidable.decide 2 && (wanted.isConstOf ``Bool.true || wanted.isConstOf ``Bool.false) then
+      let truth ← partialDecide domain value.getAppArgs[0]!
+      return ← if wanted.isConstOf ``Bool.true then pure truth else mkAppM ``Enum.notTruth #[truth]
+  if let .letE _ _ value body _ := p then return ← partialDecide domain (body.instantiate1 value)
+  let thunk (value : Expr) := withLocalDeclD `_ (mkConst ``Unit) fun u => mkLambdaFVars #[u] value
+  let combine (name : Name) (a b : Expr) := do
+    mkAppM name #[← partialDecide domain a, ← thunk (← partialDecide domain b)]
+  let quantified (universal : Bool) (x ty body : Expr) : MetaM Expr := do
+    let fn ← mkLambdaFVars #[x] (← partialDecide domain body)
+    if let some guarded ← quantifyGuarded domain universal x body fn then return guarded
+    let (values, exact) ← domain.values ty
+    mkAppM ``Enum.quantify #[← mkArrayLit ty values.toList, toExpr exact, toExpr universal, fn]
+  match p.getAppFn.constName?, p.getAppArgs with
+  | some ``And, #[a, b] => combine ``Enum.andLazy a b
+  | some ``Or, #[a, b] => combine ``Enum.orLazy a b
+  | some ``Not, #[a] => mkAppM ``Enum.notTruth #[← partialDecide domain a]
+  | some ``Iff, #[a, b] => combine ``Enum.iffLazy a b
+  | some ``ite, #[_, c, _, yes, no] =>
+    mkAppM ``Enum.iteLazy #[← partialDecide domain c, ← thunk (← partialDecide domain yes), ← thunk (← partialDecide domain no)]
+  | some ``Exists, #[ty, body] =>
+    withLocalDeclD `x ty fun x => quantified false x ty (body.beta #[x])
+  | _, _ =>
+    if let .forallE name ty body bi := p then
+      if ← isProp ty then
+        if body.hasLooseBVars then throwError "a proof-dependent implication cannot be evaluated"
+        return ← mkAppM ``Enum.orLazy #[← mkAppM ``Enum.notTruth #[← partialDecide domain ty], ← thunk (← partialDecide domain body)]
+      return ← withLocalDecl name bi ty fun x => quantified true x ty (body.instantiate1 x)
+    -- A quantifier within an argument, as in `n = (if forall ... then 1
+    -- else 2)`: the argument's value, if it is known.
+    if ← hasQuantifier p then
+      return ← liftArgs domain p fun q => do
+        domain.wrap #[q] (← mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) q (← decidableOf q)])
+    domain.wrap #[p] (← mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p)])
+
+/-- The value of `e`, which is not a proposition, as an `Option`, `none`
+where it is unknown, as the `fren` command's evaluator has it: a
+conditional whose condition is unknown has the value that its branches
+share, and an application with an unknown argument has none. -/
+partial def partialValue (domain : PartialEnv) (e : Expr) : MetaM Expr := do
+  let e := e.consumeMData
+  unless ← hasQuantifier e do return ← domain.wrap #[e] (← mkAppM ``Option.some #[e])
+  if e.isAppOfArity ``Decidable.decide 2 then return ← partialDecide domain e.getAppArgs[0]!
+  if let .letE _ _ value body _ := e then return ← partialValue domain (body.instantiate1 value)
+  let thunk (value : Expr) := withLocalDeclD `_ (mkConst ``Unit) fun u => mkLambdaFVars #[u] value
+  if e.isAppOfArity ``ite 5 then
+    let args := e.getAppArgs
+    return ← mkAppM ``Enum.iteValue
+      #[← partialDecide domain args[1]!, ← thunk (← partialValue domain args[3]!), ← thunk (← partialValue domain args[4]!)]
+  liftArgs domain e fun x => do domain.wrap #[x] (← mkAppM ``Option.some #[x])
+
+/-- `leaf` of the application `e`, an `Option`, with each of its arguments
+that has a quantifier evaluated first by `partialValue`: `none` if one is
+unknown. -/
+partial def liftArgs (domain : PartialEnv) (e : Expr) (leaf : Expr → MetaM Expr) : MetaM Expr := do
+  let fn := e.getAppFn
+  let args := e.getAppArgs
+  if ← hasQuantifier fn then throwError "a quantifier in a function position cannot be enumerated: {e}"
+  let some i ← (List.range args.size).findM? (fun i => hasQuantifier args[i]!) | leaf e
+  let arg := args[i]!
+  let ty ← inferType arg
+  if (← isProp arg) || (← isProp ty) then throwError "a quantifier in a proposition's argument cannot be enumerated: {e}"
+  let value ← partialValue domain arg
+  withLocalDeclD `v ty fun x => do
+    let e' := mkAppN fn (args.set! i x)
+    unless ← isTypeCorrect e' do throwError "a quantifier in a dependent argument cannot be enumerated: {e}"
+    mkAppM ``Option.bind #[value, ← mkLambdaFVars #[x] (← liftArgs domain e' leaf)]
+end
+
+
+instance : Inhabited (Array Nat → Option Bool) := ⟨fun _ => none⟩
 instance : Inhabited (Array Nat → Bool) := ⟨fun _ => false⟩
 instance : Inhabited (Array Nat → Array Nat → Bool) := ⟨fun _ _ => false⟩
 instance : Inhabited (Array (Array EVal) → Array Nat → Bool) := ⟨fun _ _ => false⟩
+instance : Inhabited (Array (Array EVal) → Array Nat → Option Bool) := ⟨fun _ _ => none⟩
 instance : Inhabited (Array (Array EVal) → Array Nat → Array Nat → Bool) := ⟨fun _ _ _ => false⟩
+instance : Inhabited (Array (Array EVal) → Array Nat → Array Nat → Option Bool) := ⟨fun _ _ _ => none⟩
 
 /-- What a message about `c`'s checks is about: a global expectation by its
 module and name, as the `fren` command shows it. -/
@@ -685,8 +937,9 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   if let some f := used.find? (fun f => needsSemanticFilter st.shapeOf f.2.2.2.result) then
     return .error (notEnumerableMsg subject
       s!"the result type of `{Core.showPath f.1}` has a named invariant that cannot be enumerated as an unconstrained function table")
-  if ← scanned.anyM hasQuantifier then
-    return .error (notEnumerableMsg subject "it has an unbounded quantifier")
+  -- A quantifier ranges over its guard's domain, or its type's values up
+  -- to the bound (`Reqs/Check#quantifiers-up-to-the-bound`).
+  let quantified ← scanned.anyM hasQuantifier
   -- Nor of a recursive function whose body indexes a sequence, which Lean
   -- evaluates out of range by its own default, through the recursive
   -- functions it applies.
@@ -807,6 +1060,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     Meta.transform e (post := fun x => do
       if x.isAppOfArity ``Decidable.decide 2 then
         let p := x.getAppArgs[0]!
+        -- A quantified one is evaluated by `partialDecide` instead.
+        if ← hasQuantifier p then return .done x
         return .done (mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p))
       return .done x)
   let arrNat := mkApp (mkConst ``Array [0]) (mkConst ``Nat)
@@ -821,10 +1076,45 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     let fnTy ← mkArrow tablesTy (← mkArrow arrNat (mkConst ``Bool))
     let compile1 (fs : Array Expr) : MetaM (Array (Array Nat → Bool)) := do
       return (← compileValues (Array (Array EVal) → Array Nat → Bool) fnTy fs).map (· values)
-    let evals ← compile1 (← atoms.mapM fun a => fn1 fun tables env => do decideOf (← overWith tables env none a))
+    -- The values of a quantified type up to the bound, and whether they
+    -- are all of its values; one with too many is an error.
+    let domainError ← IO.mkRef (none : Option Core.Msg)
+    let domainValues (ty : Expr) : MetaM (Array Expr × Bool) := do
+      let some pt := ptyOfLean ty | throwError "a quantified type has no declared counterpart: {ty}"
+      match Core.Enumeration.shapeOf st.shapeOf n pt with
+      | .ok shape =>
+        if shape.estimate n > maxBehaviours then
+          domainError.set (some (tooManyMsg subject (maxBehaviours + 1) n (estimated := true)))
+          return (#[], false)
+        return (← (shape.ordered n).toArray.mapM fun (v, _) => valueExpr ty v, shape.exhausted n)
+      | .error why =>
+        domainError.set (some (notEnumerableMsg subject (notEnumerableWhy none why)))
+        return (#[], false)
+    let domain : PartialEnv := { values := domainValues }
+    -- The same, with every index out of range unknown, as `knownOf` has
+    -- it of what has no quantifier.
+    let strictDomain : PartialEnv := { values := domainValues, known? := some (knownOf decideOf) }
+    -- An atom's truth, three-valued, over the slots' values and the
+    -- assignment.
+    let optionBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
+    let truthTy ← mkArrow tablesTy (← mkArrow arrNat optionBool)
+    let compileTruth (fs : Array Expr) : MetaM (Array (Array Nat → Option Bool)) := do
+      return (← compileValues (Array (Array EVal) → Array Nat → Option Bool) truthTy fs).map (· values)
+    let evals ← compileTruth (← atoms.mapM fun a => fn1 fun tables env => do
+      let e ← overWith tables env none a
+      if ← hasQuantifier e then partialDecide domain e else mkAppM ``Option.some #[← decideOf e])
+    if let some msg ← domainError.get then return .error msg
     -- Whether each atom, and each defined output, that has an index is
-    -- known in an assignment, with the indexes out of range unknown.
-    let knownFn (e : Expr) : MetaM Expr := fn1 fun tables env => do overWith tables env none (← knownOf decideOf e)
+    -- unknown in an assignment with the indexes out of range unknown, but
+    -- known as the search reads them: with a quantifier, as the `fren`
+    -- command evaluates it, through each instance.
+    let knownFn (e : Expr) : MetaM Expr := fn1 fun tables env => do
+      let x ← overWith tables env none e
+      unless ← hasQuantifier x do return ← overWith tables env none (← knownOf decideOf e)
+      let (strict, normal) ← if ← isProp x then pure (← partialDecide strictDomain x, ← partialDecide domain x)
+        else pure (← partialValue strictDomain x, ← partialValue domain x)
+      return mkApp2 (mkConst ``or) (← mkAppM ``Option.isSome #[strict])
+        (mkApp (mkConst ``not) (← mkAppM ``Option.isSome #[normal]))
     let atomKnown ← compile1
       (← (atoms.zip atomIndexed).filterMapM fun (a, i) => if i then some <$> knownFn a else pure none)
     let atomKnownAt := (atomIndexed.foldl (init := (#[], 0)) fun (acc, j) i =>
@@ -833,12 +1123,21 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       (← (defExprs.zip defIndexed).filterMapM fun (d, i) => if i then some <$> knownFn d else pure none)
     let defKnownAt := (defIndexed.foldl (init := (#[], 0)) fun (acc, j) i =>
       if i then (acc.push (some j), j + 1) else (acc.push none, j)).1
+    -- Whether a defined output is the same in two assignments, unknown
+    -- where a quantifier leaves its value unknown in either.
     let sameFns ← defined.mapM fun (_, _, de) => withLocalDeclD `tables tablesTy fun tables =>
       withLocalDeclD `e₁ arrNat fun e₁ => withLocalDeclD `e₂ arrNat fun e₂ => do
         let (de, _) ← readIndexes (← unfoldDefined de)
-        mkLambdaFVars #[tables, e₁, e₂] (← decideOf (← mkEq (← overWith tables e₁ none de) (← overWith tables e₂ none de)))
-    let sameTy ← mkArrow tablesTy (← mkArrow arrNat (← mkArrow arrNat (mkConst ``Bool)))
-    let sames := (← compileValues (Array (Array EVal) → Array Nat → Array Nat → Bool) sameTy sameFns).map (· values)
+        let a ← overWith tables e₁ none de
+        let b ← overWith tables e₂ none de
+        mkLambdaFVars #[tables, e₁, e₂] (← if !(← hasQuantifier a) then mkAppM ``Option.some #[← decideOf (← mkEq a b)]
+          else if ← isProp a then do
+            mkAppM ``Enum.iffLazy #[← partialDecide domain a,
+              ← withLocalDeclD `_ (mkConst ``Unit) fun u => do mkLambdaFVars #[u] (← partialDecide domain b)]
+          else mkAppM ``Enum.sameValue #[← partialValue domain a, ← partialValue domain b])
+    if let some msg ← domainError.get then return .error msg
+    let sameTy ← mkArrow tablesTy (← mkArrow arrNat (← mkArrow arrNat optionBool))
+    let sames := (← compileValues (Array (Array EVal) → Array Nat → Array Nat → Option Bool) sameTy sameFns).map (· values)
     -- What each atom reads: the slots of the locals it mentions, and the
     -- defined outputs it mentions.
     let slotsOf (a : Expr) : Array Nat :=
@@ -848,9 +1147,14 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     let atomSlots := atoms.map slotsOf
     let atomDefs := atoms0.map fun a => defined.filterMap fun (d, fv, _) => if a.containsFVar fv.fvarId! then some d else none
     let ats : Atoms := {
-      slots := atomSlots, defs := atomDefs, eval := fun k env => evals[k]! env
+      slots := atomSlots, defs := atomDefs, eval := fun k env => evals[k]! env == some true
+      known := fun k env => (evals[k]! env).isSome
+      total := !quantified
       sameDefined := fun d e₁ e₂ => match defined.findIdx? (·.1 == d) with
-        | some i => sames[i]! e₁ e₂
+        | some i => sames[i]! e₁ e₂ == some true
+        | none => true
+      sameKnown := fun d e₁ e₂ => match defined.findIdx? (·.1 == d) with
+        | some i => (sames[i]! e₁ e₂).isSome
         | none => true
       defSlots := fun d => match defined.findIdx? (·.1 == d) with
         | some i => slotsOf defExprs[i]!
@@ -903,6 +1207,14 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
             | return .continue
           return .done (mkConst (if b then ``Bool.true else ``Bool.false))
         return .continue)
+      -- With a quantifier, its value is known only if every quantifier
+      -- that it reads is decided, as the `fren` command shows it.
+      let v ← if !(← hasQuantifier v) then pure v else do
+        let known ← if ← isProp v then partialDecide domain v else partialValue domain v
+        let known ← withTransparency .all <| Meta.reduce known
+        let known := known.consumeMData
+        unless known.isAppOfArity ``Option.some 2 do return none
+        pure known.appArg!
       let v ← withTransparency .all <| Meta.reduce v
       return some (← Fren.render (varTy d) (← normInts v))
     -- The variant of each value of a slot whose type is an enumeration,

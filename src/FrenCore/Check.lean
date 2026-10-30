@@ -104,6 +104,10 @@ inductive Detail where
   reads as `[][0]`, may decide the check in another interpretation
   (`Reqs/Check#searching`). -/
   | outOfRange
+  /-- Enumeration found no model, but a quantifier that it did not decide
+  up to the bound `n` may decide the check
+  (`Reqs/Check#quantifiers-up-to-the-bound`). -/
+  | undecidedQuantifier (n : Nat)
   deriving Inhabited
 
 /-- Shared reason for a recursive model that real evaluation does not confirm. -/
@@ -1628,6 +1632,10 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
     -- An expansion of quantifiers over elements that is too large, or
     -- whose model they refute, has a code of its own.
     match d with
+    | .undecidedQuantifier n =>
+      #[one "F0608" s!"could not decide whether {what}: a quantifier is undecided up to size {n}" (some "undecided")
+        #["note: a quantifier over a type that the bound does not exhaust is decided only by an instance that settles it: a counterexample to a `forall`, or a witness of an `exists`",
+          "help: have the solver check it, or raise `fren.enumeration.size` if such an instance is larger"]]
     | .outOfRange =>
       #[one "F0608" s!"could not decide whether {what}: an index out of range may decide it" (some "undecided")
         #["note: enumeration reads every index out of range as `[][0]`, one of the values it may have",

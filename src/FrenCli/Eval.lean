@@ -2,6 +2,7 @@
 import Fren.Seq
 import FrenCli.Guard
 import FrenCli.Parse
+import FrenCore.Enumeration
 import FrenCore.Names
 import FrenCore.Patterns
 import FrenCore.Regex
@@ -57,6 +58,20 @@ inductive VTy where
   /-- The `k`th type parameter, within a generic type's declaration. -/
   | param (k : Nat)
   deriving Inhabited, BEq, Hashable, Repr
+
+/-- The evaluator's type of a declared type. -/
+partial def VTy.ofCore : Fren.Core.Ty → VTy
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set e => .set (VTy.ofCore e)
+  | .seq e => .seq (VTy.ofCore e)
+  | .rel a b => .rel (VTy.ofCore a) (VTy.ofCore b)
+  | .abstract p => .abstract p
+  | .enum p args | .record p args => .data p (args.map VTy.ofCore)
+  | .newtype p t => .newtype p (VTy.ofCore t)
+  | .param k _ => .param k
 
 /-- `t`, with the `k`th of `args` for each type parameter `k`
 (`lang::instantiation`). A parameter without one stays. -/
@@ -473,6 +488,11 @@ partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
 
 /-- What the abstract types and functions mean, as far as it is known. -/
 structure Interp where
+  /-- The values of a declared type that a quantifier without a domain
+  ranges over, up to a bound, and whether they are all of its values:
+  enumeration's (`Reqs/Check#quantifiers-up-to-the-bound`). Elsewhere
+  there are none, and such a quantifier has no value. -/
+  domain : Fren.Core.PTy → Option (Array Val × Bool) := fun _ => none
   /-- Defined predicates used by declared subset invariants. -/
   defs : Name → Option (Array Name × Ex × VTy) := fun _ => none
   fn : Name → Array Val → Option Val := fun _ _ => none
@@ -1071,20 +1091,26 @@ where
       | some ls => ls.foldl (init := memos) fun ms x => ms.push (Thunk.mk fun _ => x.eval I look locals slots frame memos)
       | none => memos
     if h : k < names.size then
-      match doms[k]?.bind id |>.bind (·.eval I look locals slots frame memos) with
-      | some (.seq vs) | some (.set vs) => Id.run do
-        -- Once an instance decides it, the rest would leave it as it is,
-        -- so they are not looked at.
-        let mut acc : Option Val := some (.bool all)
-        for v in vs do
-          if (match acc with | some (.bool b) => b != all | _ => false) then break
-          let membership := (tys[k]?.map (typeV I · v)).getD (some true)
-          if membership == some true then
-            let x := quantV I look locals slots all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos
-            acc := if all then kleeneAnd acc x else kleeneOr acc x
-          else if membership.isNone then acc := none
-        return acc
-      | _ => none
+      -- Its domain, or, without one, the values of its type up to the
+      -- bound, if enumeration gives them.
+      let listed := match doms[k]?.bind id |>.bind (·.eval I look locals slots frame memos) with
+        | some (.seq vs) | some (.set vs) => some (vs, true)
+        | _ => if (doms[k]?.bind id).isSome then none else tys[k]?.bind I.domain
+      match listed with
+      | some (vs, exact) =>
+        -- A value outside the type, as its invariant has it, is no
+        -- instance; one whose membership is unknown is an unknown instance.
+        let inst (v : Val) : Option Bool :=
+          match (tys[k]?.map (typeV I · v)).getD (some true) with
+          | some true => match quantV I look locals slots all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos with
+            | some (.bool b) => some b
+            | _ => none
+          | some false => some all
+          | none => none
+        -- Shared with the hosted front end (`check::quantified_truth`):
+        -- the instances after a deciding one are not evaluated.
+        (Fren.Core.Enumeration.quantifiedTruth exact all inst vs.toList).map Val.bool
+      | none => none
     else body.eval I look locals slots frame memos
 
 /-- The expressions directly within `e`. -/
@@ -1504,7 +1530,11 @@ where
   interpretation with `shapes`. -/
   fold (e : Ex) : Ex :=
     let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
-    if !readsFns && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
+    -- A quantifier without a domain reads the interpretation's domain.
+    let readsDomain := match e with
+      | .quant _ _ _ _ domains _ _ => domains.any Option.isNone
+      | _ => false
+    if !readsFns && !readsDomain && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
   /-- `e`, an expression with parts, with its parts compiled. -/
   compound (e : Ex) : Ex :=
   let go (x : Ex) := x.compile shapes scope

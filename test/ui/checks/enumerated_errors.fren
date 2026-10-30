@@ -1,9 +1,8 @@
--- Components that enumeration does not check, in both front ends
+-- Procedures that enumeration does not check, in both front ends
 -- (`Reqs/Check#checking-by-enumeration`): too many behaviours, a variable
--- with too many values, refused before they are listed, and an unbounded
--- quantifier. Each is an error at the
--- component, and its checks set to enumeration are not run; its other
--- checks are.
+-- with too many values, refused before they are listed. Each is an error
+-- at the procedure, and its checks set to enumeration are not run; its
+-- other checks are.
 set_option fren.lint.undecidable "allow"
 
 type FirstPercent = n: Int where invariant: n is 0..=99
@@ -20,11 +19,6 @@ proc wide(a: FirstPercent, b: SecondPercent, c: ThirdPercent): (det sum: Int) { 
 set_option fren.evidence "enumerated" in
 proc nested(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `nested` has a slot whose type, without its invariants, has more than 65536 values up to size 3, too many to enumerate
     ensure r: empty? iff rows = []
-}
-
-set_option fren.evidence "enumerated" in
-proc everywhere(k: Int): (all?) {  --~ error: `everywhere` cannot be enumerated: it has an unbounded quantifier
-    ensure r: all? iff (forall (x: Int), x != k)
 }
 
 -- The unspecified value of a table's type that a definition reads is a

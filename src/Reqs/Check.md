@@ -2088,11 +2088,12 @@ is not enumerated if it applies an uninterpreted function with a
 [contract](Lang/Items.md#contracts), whose postconditions constrain its
 interpretations, or a [generic
 one](Lang/GenericFunctions.md#uninterpreted-generic-functions), each of
-whose instances is a function of its own; if it applies a recursive
+whose instances is a function of its own; or if it applies a recursive
 function whose body indexes a sequence, whose value out of range
-enumeration cannot give (see [Searching](#searching)); or if it has an
-unbounded quantifier. It is then the error `F0645`, at it, and none of its
-checks set to enumeration is run.
+enumeration cannot give (see [Searching](#searching)). It is then the
+error `F0645`, at it, and none of its checks set to enumeration is run. A
+quantifier is enumerated too, up to the bound (see [Quantifiers up to the
+bound](#quantifiers-up-to-the-bound)).
 
 ### Sizes and order
 
@@ -2481,6 +2482,100 @@ Nested<T> { Leaf(T), Node(Nested<Pair<T, T>>) }`, whose values have no one
 shape to read, is refused ([`F0387`](Lang/Generics.md#type-parameters)),
 while one at a part of its own arguments, as `Box<Wide>` within
 `Box<Box<Wide>>`, is a smaller type, read as any other.
+
+### Quantifiers up to the bound
+
+A quantifier that enumeration evaluates ranges over its
+[domain](Lang/Quantifiers.md#guards) where its guard gives one, as testing
+reads it: the members of a set or the elements of a sequence, or a range
+of integers. Without one, it ranges over its type's values up to the
+bound. Its truth is then *true*, *false* or *unknown*: an instance that
+decides it does so, false for a `forall` and true for an `exists`, and its
+other value needs every instance known and every value of its type within
+the bound. So `forall (x: Int), x + 1 > x` is unknown up to any bound, and
+`exists (x: Int), x > 2` true from size 3. The connectives over such truths
+are those of strong Kleene logic: `not` of unknown is unknown, a false
+conjunct makes a conjunction false, and a true one a disjunction true.
+
+`check::quantified_truth` states a quantifier's truth, over the truths of
+its instances, and `check::partial_not` and `check::partial_and` the
+connectives:
+
+```fren
+pub proc quantified_truth(
+    universal?,              -- a `forall`; otherwise an `exists`
+    exhausted?,              -- it ranges over all of its domain's values
+    instances: Set<Truth>,   -- the truths of its instances
+): (det truth: Truth) {
+    use self::Truth::{False, True, Unknown}
+    let deciding: Truth := if universal? then False else True
+    let other: Truth := if universal? then True else False
+
+    ensure rule: truth = if deciding in instances then deciding
+        else if exhausted? and not Unknown in instances then other else Unknown
+
+    expect decided_by_instance: when deciding in instances, truth = deciding
+    expect bounded_absence_is_unknown: when not exhausted?, truth != other
+    expect empty_domain: when exhausted? and instances = {}, truth = other
+}
+
+pub proc partial_not(value: Truth): (det truth: Truth) {
+    use self::Truth::{False, True, Unknown}
+    ensure rule: truth = match value { True => False, False => True, Unknown => Unknown }
+}
+
+pub proc partial_and(left: Truth, right: Truth): (det truth: Truth) {
+    use self::Truth::{False, True, Unknown}
+    ensure rule: truth = if left = False or right = False then False
+        else if left = True and right = True then True else Unknown
+
+    expect false_settles: when left = False, truth = False
+}
+```
+
+So each formula of a query is true, false or unknown in an assignment:
+unknown where an index out of range leaves it so, as
+[Searching](#searching) has it (`check::Truth`), and where such a
+quantifier does. An index within a quantifier's body is read as any
+other: as `[][0]` by the search, and as unknown in a formula's truth where
+it is out of range; its index may depend on the bound name, so it is
+never a slot of its own. Where a defined output's value reads such a
+quantifier, it is unknown where the quantifier is, and so is whether it
+has the same value in two assignments, as [determinism](#determinism)
+asks: two unknown values are not taken to be the same.
+
+A query's model is an assignment in which each of its formulas is known
+to be true, with each index out of range read as `[][0]`, so that a model
+is a behaviour. Without one, the answer is unknown if some assignment up
+to the bound is doubtful, and `unsat` if none is, as
+`check::enumerated_answer` has it. A formula that is false in an
+assignment is false whatever a larger bound would add, so `unsat` is
+then a decision where every slot is exhausted, as it is without
+quantifiers. An unknown answer leaves the check inconclusive (`F0608`):
+because a quantifier is undecided where some assignment is doubtful with
+only the quantifiers unknown, and otherwise because an index out of
+range decides it.
+
+The search finds a model with the search of [Searching](#searching),
+over each atom twice: as whether it is known to be true, and as whether
+it may be. A formula read with its atoms as known true where they are
+not negated, and as possibly true where they are, holds exactly where it
+is known to be true; read the other way round, exactly where it may be.
+Whether a defined output is the same in both copies is read twice too,
+as whether it is known to be and whether it may be. `check::polarized`
+states it, and it is proved of the search's formulas (`EF.polarize` in
+`FrenCore.Enumeration`), but `∃ outputs`, whose search reads its formula
+the same way: that case is tested, not proved, and realizability's
+queries, which have it, rest on it:
+
+```fren
+pub proc polarized(
+    truth: Truth,            -- the formula's truth in an assignment
+    positive?,               -- read with its atoms as known true where not negated
+): (det holds?) {
+    ensure rule: holds? iff (if positive? then truth = Truth::True else truth != Truth::False)
+}
+```
 
 ### Verdicts of enumeration
 

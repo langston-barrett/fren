@@ -870,6 +870,274 @@ theorem cexhausted_within : (cs : Ctors) → (i n : Nat) → cs.exhausted n = tr
     | there h => exact cexhausted_within rest (i + 1) n he.2 h
 end
 
+/-! ## Partial truth (`Reqs/Check#quantifiers-up-to-the-bound`) -/
+
+instance : Fren.Finite check.Truth := ⟨[.True, .False, .Unknown], by intro x; cases x <;> simp⟩
+
+/-- A truth as the spec has it, `none` being unknown. -/
+def optTruth : Option Bool → check.Truth
+  | some true => .True
+  | some false => .False
+  | none => .Unknown
+
+/-- The truth of `f` in `env`: known to be true, known to be false, or
+`none`, unknown, by the strong Kleene connectives over its atoms' truths
+(`check::partial_and`, `check::partial_not`). -/
+def truth3 (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Option Bool
+  | .atom k => if ats.known k env then some (ats.eval k env) else none
+  | .tt => some true
+  | .ff => some false
+  | .not f => (truth3 sp ats env f).map (!·)
+  | .conj fs =>
+    if fs.attach.any (fun ⟨f, _⟩ => truth3 sp ats env f == some false) then some false
+    else if fs.attach.all (fun ⟨f, _⟩ => truth3 sp ats env f == some true) then some true else none
+  | .primed f => truth3 sp ats (sp.primedEnv env) f
+  | .same x => match sp.slotOf? x with
+    | some _ => some ((EF.same x).eval sp ats env)
+    | none => if ats.sameKnown x env (sp.primedEnv env) then some (ats.sameDefined x env (sp.primedEnv env)) else none
+  | f => some (f.eval sp ats env)
+
+/-- Whether `f` has no `∃ outputs`, its atoms are among the first `n`,
+and no name it compares is one that `possiblySame` gives. -/
+def plain (n : Nat) : EF → Bool
+  | .atom k => k < n
+  | .not f => plain n f
+  | .conj fs => fs.attach.all fun ⟨f, _⟩ => plain n f
+  | .primed f => plain n f
+  | .exOutputs _ => false
+  | .same x => (unPossibly? x).isNone
+  | _ => true
+
+@[simp] theorem some_eq_true (b : Bool) : (some b == some true) = b := by cases b <;> rfl
+@[simp] theorem some_ne_false (b : Bool) : (some b != some false) = b := by cases b <;> rfl
+
+theorem not_truth (t : Option Bool) :
+    (t.map (!·) == some true) = !(t != some false) ∧ (t.map (!·) != some false) = !(t == some true) := by
+  cases t with
+  | none => simp
+  | some b => cases b <;> simp
+
+theorem all_attach_map {α β : Type} (xs : Array α) (g : {x // x ∈ xs} → β) (p : β → Bool) :
+    ((xs.attach.map g).attach.all fun a => p a.val) = xs.attach.all (fun a => p (g a)) := by
+  rw [Bool.eq_iff_iff, Array.all_eq_true', Array.all_eq_true']
+  constructor
+  · intro h x _
+    exact h ⟨g x, Array.mem_map.2 ⟨x, Array.mem_attach _ _, rfl⟩⟩ (Array.mem_attach _ _)
+  · intro h y _
+    obtain ⟨x, _, e⟩ := Array.mem_map.1 y.2
+    rw [← e]; exact h x (Array.mem_attach _ _)
+
+theorem attach_all {α : Type} (xs : Array α) (p : α → Bool) :
+    (xs.attach.all fun a => p a.val) = true ↔ ∀ x ∈ xs, p x = true := by
+  rw [Array.all_eq_true']
+  exact ⟨fun h x hx => h ⟨x, hx⟩ (Array.mem_attach _ _), fun h a _ => h a.val a.2⟩
+
+theorem attach_any {α : Type} (xs : Array α) (p : α → Bool) :
+    (xs.attach.any fun a => p a.val) = true ↔ ∃ x ∈ xs, p x = true := by
+  rw [Array.any_eq_true']
+  exact ⟨fun ⟨a, _, h⟩ => ⟨a.val, a.2, h⟩, fun ⟨x, hx, h⟩ => ⟨⟨x, hx⟩, Array.mem_attach _ _, h⟩⟩
+
+theorem pol_pos (ats : Atoms) (k : Nat) (env : Array Nat) (h : k < ats.slots.size) :
+    ats.polarized.eval k env = (ats.known k env && ats.eval k env) := by
+  simp [Atoms.polarized, h]
+
+theorem pol_neg (ats : Atoms) (k : Nat) (env : Array Nat) :
+    ats.polarized.eval (ats.slots.size + k) env = (!ats.known k env || ats.eval k env) := by
+  simp only [Atoms.polarized]
+  rw [if_neg (by omega), Nat.add_sub_cancel_left]
+
+@[simp] theorem unPossibly_possiblySame (x : Lean.Name) : unPossibly? (possiblySame x) = some x := rfl
+
+/-- `f` read positively holds of the polarized atoms exactly where it is
+known to be true, and negatively, where it may be (`check::polarized`). -/
+theorem polarize_eval (sp : Space) (ats : Atoms) (hsp : ∀ x, sp.slotOf? (possiblySame x) = none) :
+    ∀ (f : EF) (env : Array Nat), plain ats.slots.size f = true →
+    (f.polarize sp ats.slots.size true).eval sp ats.polarized env = (truth3 sp ats env f == some true) ∧
+    (f.polarize sp ats.slots.size false).eval sp ats.polarized env = (truth3 sp ats env f != some false)
+  | .atom k, env, h => by
+    simp only [plain, decide_eq_true_eq] at h
+    simp only [EF.polarize, if_true, Bool.false_eq_true, if_false, EF.eval, pol_pos ats k env h, pol_neg, truth3]
+    constructor <;> split <;> simp_all
+  | .tt, env, _ => by simp [EF.polarize, EF.eval, truth3]
+  | .ff, env, _ => by simp [EF.polarize, EF.eval, truth3]
+  | .not f, env, h => by
+    simp only [plain] at h
+    have ih := polarize_eval sp ats hsp f env h
+    have hn := not_truth (truth3 sp ats env f)
+    simp only [EF.polarize, Bool.not_true, Bool.not_false, EF.eval, truth3]
+    rw [ih.1, ih.2, hn.1, hn.2]
+    exact ⟨rfl, rfl⟩
+  | .primed f, env, h => by
+    simp only [plain] at h
+    have ih := polarize_eval sp ats hsp f (sp.primedEnv env) h
+    simp only [EF.polarize, EF.eval, truth3]
+    exact ih
+  | .conj fs, env, h => by
+    have hp : ∀ f ∈ fs, plain ats.slots.size f = true := by
+      simp only [plain] at h
+      exact (attach_all fs (plain ats.slots.size)).1 h
+    have ih : ∀ f ∈ fs, _ := fun f (hf : f ∈ fs) => polarize_eval sp ats hsp f env (hp f hf)
+    simp only [EF.polarize, EF.eval, truth3]
+    rw [all_attach_map fs _ (EF.eval sp ats.polarized env), all_attach_map fs _ (EF.eval sp ats.polarized env)]
+    -- Every conjunct known true, and some conjunct known false.
+    have hA := attach_all fs (fun f => truth3 sp ats env f == some true)
+    have hB := attach_any fs (fun f => truth3 sp ats env f == some false)
+    have h1 := attach_all fs (fun f => (f.polarize sp ats.slots.size true).eval sp ats.polarized env)
+    have h2 := attach_all fs (fun f => (f.polarize sp ats.slots.size false).eval sp ats.polarized env)
+    by_cases hb : (fs.attach.any fun a => truth3 sp ats env a.val == some false) = true
+    · -- Some conjunct is known to be false.
+      obtain ⟨x, hx, e⟩ := hB.1 hb
+      rw [if_pos hb]
+      constructor
+      · rw [Bool.eq_iff_iff, h1]
+        refine ⟨fun hall => ?_, fun e' => by simp at e'⟩
+        have := (ih x hx).1 ▸ hall x hx; simp_all
+      · rw [Bool.eq_iff_iff, h2]
+        refine ⟨fun hall => ?_, fun e' => by simp at e'⟩
+        have := (ih x hx).2 ▸ hall x hx; simp_all
+    · rw [if_neg hb]
+      -- No conjunct is known to be false.
+      have hnf : ∀ x ∈ fs, (truth3 sp ats env x != some false) = true := by
+        intro x hx
+        cases hx' : truth3 sp ats env x with
+        | none => rfl
+        | some c =>
+          cases c
+          · exact absurd (hB.2 ⟨x, hx, by simp [hx']⟩) hb
+          · rfl
+      constructor
+      · rw [Bool.eq_iff_iff, h1]
+        by_cases ha : (fs.attach.all fun a => truth3 sp ats env a.val == some true) = true
+        · rw [if_pos ha]
+          exact ⟨fun _ => rfl, fun _ x hx => (ih x hx).1 ▸ hA.1 ha x hx⟩
+        · rw [if_neg ha]
+          refine ⟨fun hall => absurd (hA.2 fun x hx => (ih x hx).1 ▸ hall x hx) ha, fun e' => by simp at e'⟩
+      · rw [Bool.eq_iff_iff, h2]
+        have hr : ((if (fs.attach.all fun a => truth3 sp ats env a.val == some true) = true then some true
+            else none) != some false) = true := by split <;> rfl
+        exact ⟨fun _ => hr, fun _ x hx => (ih x hx).2 ▸ hnf x hx⟩
+  | .exOutputs f, env, h => by simp [plain] at h
+  | .pin x v, env, _ => by simp [EF.polarize, EF.eval, truth3]
+  | .oneOf x vs, env, _ => by simp [EF.polarize, EF.eval, truth3]
+  | .same x, env, h => by
+    simp only [plain] at h
+    cases hs : sp.slotOf? x with
+    | some s =>
+      simp only [EF.polarize, Bool.true_or, Bool.false_or, hs, Option.isSome_some, if_true, truth3]
+      constructor <;> simp [EF.eval, hs]
+    | none =>
+      have hu : unPossibly? x = none := Option.isNone_iff_eq_none.1 h
+      simp only [EF.polarize, Bool.true_or, Bool.false_or, hs, Option.isSome_none, if_true,
+        Bool.false_eq_true, if_false, truth3, EF.eval, hsp, Atoms.polarized, hu, unPossibly_possiblySame]
+      constructor <;> split <;> simp_all
+
+termination_by f => sizeOf f
+decreasing_by all_goals (try simp_wf) <;> (try have := Array.sizeOf_lt_of_mem ‹_ ∈ fs›) <;> omega
+
+
+-- The search's formulas, read with polarized atoms (`EF.polarize`).
+impl polarized: check::polarized for (sp : Space) (ats : Atoms) (f : EF) (env : Array Nat)
+    (_hsp : ∀ x, sp.slotOf? (possiblySame x) = none) (_h : plain ats.slots.size f = true) (positive : Bool) {
+  truth := optTruth (truth3 sp ats env f),
+  positive? := positive,
+  holds? := (f.polarize sp ats.slots.size positive).eval sp ats.polarized env,
+} by
+  intro sp ats f env hsp h positive
+  have := polarize_eval sp ats hsp f env h
+  cases positive
+  · rw [this.2]; cases truth3 sp ats env f with
+    | none => simp [fren_spec, optTruth]
+    | some b => cases b <;> simp [fren_spec, optTruth]
+  · rw [this.1]; cases truth3 sp ats env f with
+    | none => simp [fren_spec, optTruth]
+    | some b => cases b <;> simp [fren_spec, optTruth]
+
+theorem optTruth_inj {a b : Option Bool} (h : optTruth a = optTruth b) : a = b := by
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some y => cases y <;> cases h
+  | some x => cases x <;> cases b with
+    | none => cases h
+    | some y => cases y <;> first | rfl | cases h
+
+/-- A quantifier's truth over its instances' truths: the deciding value
+if an instance has it, else the other one if the domain is exhausted and
+every instance is known, else unknown. -/
+theorem quantifiedTruth_eq (exact universal : Bool) : ∀ ts : List (Option Bool),
+    quantifiedTruth exact universal id ts =
+      if some (!universal) ∈ ts then some (!universal)
+      else if exact = true ∧ none ∉ ts then some universal else none
+  | [] => by cases exact <;> simp [quantifiedTruth]
+  | t :: ts => by
+    have ih := quantifiedTruth_eq exact universal ts
+    cases t with
+    | none =>
+      simp only [quantifiedTruth, id, ih]
+      by_cases h : some (!universal) ∈ ts
+      · simp [h]
+      · by_cases he : exact = true ∧ none ∉ ts <;> cases universal <;> simp_all
+    | some b =>
+      simp only [quantifiedTruth, id]
+      by_cases hb : b = universal
+      · subst hb
+        simp only [bne_self_eq_false, Bool.false_eq_true, if_false, ih, List.mem_cons]
+        cases b <;> simp
+      · have : b = !universal := by cases b <;> cases universal <;> simp_all
+        subst this
+        cases universal <;> simp
+
+-- The truth of a quantifier over its instances' truths (`quantifiedTruth`,
+-- which both front ends evaluate quantifiers with).
+impl quantified_truth: check::quantified_truth for (exact universal : Bool) (ts : List (Option Bool)) {
+  universal? := universal,
+  exhausted? := exact,
+  instances := Fren.FinSet.ofList (ts.map optTruth),
+  truth := optTruth (quantifiedTruth exact universal id ts),
+} by
+  intro exact universal ts
+  have hd : ∀ v, (optTruth v ∈ Fren.FinSet.ofList (ts.map optTruth)) ↔ v ∈ ts := fun v => by
+    simp only [Fren.FinSet.mem_ofList, List.mem_map]
+    exact ⟨fun ⟨w, hw, e⟩ => optTruth_inj e ▸ hw, fun h => ⟨v, h, rfl⟩⟩
+  have hD := hd (some !universal)
+  have hU := hd none
+  clear hd
+  simp only [fren_spec]
+  intro _
+  refine ⟨_, _, ⟨rfl, rfl⟩, ?_⟩
+  have hd : (if universal = true then check.Truth.False else .True) = optTruth (some !universal) := by
+    cases universal <;> rfl
+  have ho : (if universal = true then check.Truth.True else .False) = optTruth (some universal) := by
+    cases universal <;> rfl
+  have hU' : check.Truth.Unknown ∈ Fren.FinSet.ofList (ts.map optTruth) ↔ none ∈ ts := hU
+  rw [hd, ho, quantifiedTruth_eq]
+  simp only [hD, hU']
+  by_cases h1 : some (!universal) ∈ ts <;> by_cases h2 : exact = true ∧ none ∉ ts <;>
+    simp [h1, h2, optTruth]
+
+impl partial_not: check::partial_not for (t : Option Bool) {
+  value := optTruth t,
+  truth := optTruth (t.map (!·)),
+} by
+  intro t
+  cases t with
+  | none => simp [fren_spec, optTruth]
+  | some b => cases b <;> simp [fren_spec, optTruth]
+
+impl partial_and: check::partial_and for (a b : Option Bool) {
+  left := optTruth a,
+  right := optTruth b,
+  truth := optTruth (andTruth a b),
+} by
+  intro a b
+  cases a with
+  | none => cases b with
+    | none => simp [fren_spec, optTruth, andTruth]
+    | some y => cases y <;> simp [fren_spec, optTruth, andTruth]
+  | some x => cases x <;> cases b with
+    | none => simp [fren_spec, optTruth, andTruth]
+    | some y => cases y <;> simp [fren_spec, optTruth, andTruth]
+
 /-! ## The search -/
 
 
