@@ -229,9 +229,8 @@ fix writes it: as it is, or, for a single comparison, the other way
 round, with its operands swapped and its operator mirrored, so that `x >=
 lo` is `lo <= x`. Two conjuncts, so written, chain where they order the
 same way, the left's last operand is the right's first, and the chain's
-first operand is not its last. The left conjunct may be written the other
-way round only where it is one comparison written as one conjunct, not a
-chain that earlier conjuncts joined, which `left_single?` says:
+first operand is not its last. Either conjunct may be written the other
+way round only where it is one comparison:
 
 ```fren
 -- An operator, strict (`<` or `>`) or not (`<=` or `>=`), and the operand
@@ -261,37 +260,137 @@ pub fn chains?(l: Chain, r: Chain) :=
 -- The conjuncts chain with the left written the other way round if
 -- `flip_left?`, and the right if `flip_right?`, each only if it is one
 -- comparison.
-pub fn chains_flipped?(l: Chain, r: Chain, left_single?, flip_left?, flip_right?) :=
-    (not flip_left? or left_single?) and (not flip_right? or r.steps.len = 1)
+pub fn chains_flipped?(l: Chain, r: Chain, flip_left?, flip_right?) :=
+    (not flip_left? or l.steps.len = 1) and (not flip_right? or r.steps.len = 1)
     and chains?(oriented(l, flip_left?), oriented(r, flip_right?))
 
-pub proc chainable_comparison(
-    left: Chain,
-    right: Chain,
-    left_single?,            -- the left is one comparison, written as one conjunct
-): (
+pub proc chainable_comparison(left: Chain, right: Chain): (
     det fires?,
     det flip_left?,          -- the fix writes the left conjunct the other way round
     det flip_right?,
 ) {
     assume comparisons: left.steps != [] and right.steps != []
-    assume single: when left_single?, left.steps.len = 1
 
-    out fires? := exists (a? b?: Bool), chains_flipped?(left, right, left_single?, a?, b?)
-    out flip_left? := exists (b?: Bool), chains_flipped?(left, right, left_single?, true, b?)
-    out flip_right? := exists (a?: Bool), chains_flipped?(left, right, left_single?, a?, true)
+    out fires? := exists (a? b?: Bool), chains_flipped?(left, right, a?, b?)
+    out flip_left? := exists (b?: Bool), chains_flipped?(left, right, true, b?)
+    out flip_right? := exists (a?: Bool), chains_flipped?(left, right, a?, true)
 
     -- At most one way of writing the conjuncts chains them, so the fix is
     -- the way that does.
-    expect flips: when fires?, chains_flipped?(left, right, left_single?, flip_left?, flip_right?)
-    expect one_way: forall (a? b? c? d?: Bool), when chains_flipped?(left, right, left_single?, a?, b?)
-        and chains_flipped?(left, right, left_single?, c?, d?), a? = c? and b? = d?
+    expect flips: when fires?, chains_flipped?(left, right, flip_left?, flip_right?)
+    expect one_way: forall (a? b? c? d?: Bool), when chains_flipped?(left, right, a?, b?)
+        and chains_flipped?(left, right, c?, d?), a? = c? and b? = d?
     expect both_or_neither: when fires? and (left.ascending? iff right.ascending?), flip_left? iff flip_right?
+    -- A chain that earlier conjuncts joined is never written the other way round.
+    expect joined_kept: when left.steps.len >= 2, not flip_left?
+}
+```
+
+In a run, the lint joins each conjunct, in turn, to the chain of the
+conjuncts before it that chain, as `lint::chainable_comparison` joins two
+conjuncts, or else starts a new chain at it. A chain that joins two
+conjuncts has two operators or more, so `joined_kept` says it is never
+written the other way round, and the conjuncts before it keep their order.
+
+The chain that the fix writes for two conjuncts is
+`lint::chainable_joined`: the left as the fix writes it, and then each of
+the right's operators, with the operand after it. That it keeps the
+meaning is stated over the comparisons that the
+[semantics](../../Lang/Semantics.md#derived-forms) reads in a chain: a
+chained comparison is the `and` of its comparisons, from left to right,
+and `b > a` is `a < b`, so each comparison is a `lint::Inequality`, of a
+lower operand that is less than, or at most, an upper one. The joined
+chain's comparisons are the left's and then the right's, as written:
+`joined_inequalities` states it for conjuncts that chain as the fix
+writes them, `chainable_joined` that the two conjuncts are then such, and
+`turned` that a comparison written the other way round is the same
+inequality. The solver decides `chainable_joined`'s expectations and
+`turned`, for chains of any length. `joined_inequalities`'s evidence is
+testing, since the solver does not always decide it in time: its index
+ranges over the joined chain, so testing evaluates it at every position.
+The implementation of `chainable_joined` is proved in Lean of the code's
+join:
+
+```fren
+-- A comparison as the semantics reads it: `lower < upper` if `strict?`,
+-- else `lower <= upper`.
+pub struct Inequality { lower: String, strict?, upper: String }
+
+-- The operand of `c` at the position `k`, from `0`.
+pub fn chain_operand(c: Chain, k: Int): String := if k = 0 then c.first else c.steps[k - 1].operand
+
+-- The inequality of `c` at the position `k`, from `0`: of its operands at
+-- `k` and `k + 1`, the other way round if `c` orders descending.
+pub fn inequality(c: Chain, k: Int): Inequality := if c.ascending?
+    then Inequality { lower := chain_operand(c, k), strict? := c.steps[k].strict?, upper := chain_operand(c, k + 1) }
+    else Inequality { lower := chain_operand(c, k + 1), strict? := c.steps[k].strict?, upper := chain_operand(c, k) }
+
+-- The chain of `l` and then `r`, whose first operand is `l`'s last: `l`'s
+-- operands, then `r`'s after its first.
+set_option fren.lint.undecidable "allow" in
+pub fn joined(l: Chain, r: Chain): Chain := { l with steps := l.steps ++ r.steps }
+
+-- A comparison written the other way round is the same inequality.
+expect turned(c: Chain) {
+    expect turned: when c.steps.len = 1, inequality(reversed(c), 0) = inequality(c, 0)
+}
+
+-- The joined chain's inequalities are the left's and then the right's, for
+-- conjuncts that chain as the fix writes them: the right orders as the left
+-- does, and its first operand is the left's last.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect joined_inequalities(left: Chain, steps: Seq<Step>) {
+    assume nonempty: left.steps != [] and steps != []
+
+    let right: Chain := Chain { first := last_operand(left), ascending? := left.ascending?, steps }
+    let chain: Chain := joined(left, right)
+
+    expect inequalities: chain.steps.len = left.steps.len + right.steps.len
+        and (forall (k: Int), when 0 <= k < chain.steps.len, inequality(chain, k)
+        = (if k < left.steps.len then inequality(left, k) else inequality(right, k - left.steps.len)))
+}
+
+set_option fren.lint.undecidable "allow" in
+pub proc chainable_joined(left: Chain, right: Chain, flip_left?, flip_right?): (chain: Chain) {
+    assume nonempty: left.steps != [] and right.steps != []
+    assume chains: chains_flipped?(left, right, flip_left?, flip_right?)
+
+    out chain := joined(oriented(left, flip_left?), oriented(right, flip_right?))
+
+    -- The conjuncts, as the fix writes them, are those of
+    -- `joined_inequalities`: the right orders as the left does, and its first
+    -- operand is the left's last; each has as many comparisons as it is
+    -- written with.
+    expect follows: (oriented(right, flip_right?).ascending? iff oriented(left, flip_left?).ascending?)
+        and oriented(right, flip_right?).first = last_operand(oriented(left, flip_left?))
+    expect kept: oriented(left, flip_left?).steps.len = left.steps.len
+        and oriented(right, flip_right?).steps.len = right.steps.len
+}
+```
+
+So the fix keeps the meaning of a run. The chain of a run is joined one
+conjunct at a time, so its comparisons are those of its conjuncts, in
+order. Operands written the same, in two adjacent conjuncts of one run,
+are in the same scope, and so [elaborate
+alike](../Meaning.md#expressions-as-written). The fix's chain then
+elaborates to the `and` of the run's comparisons, which the run is too,
+with the `and`s nested otherwise, and an `and` has the same outcome
+however it nests, well-defined or not. That is `lint::and_associates`, of
+the [evaluation function](../../Lang/Semantics.md#the-evaluation-function).
+Its evidence is testing, which evaluates it, since the solver unfolds
+`eval` only one step:
+
+```fren
+set_option fren.evidence "random" in
+expect and_associates(i: lang::Interp, env: lang::Env, a: lang::Expr, b: lang::Expr, c: lang::Expr) {
+    use lang::{Expr, eval}
+    expect associates: eval(i, env, Expr::And(Expr::And(a, b), c)) = eval(i, env, Expr::And(a, Expr::And(b, c)))
 }
 ```
 
 The refinements check each way of writing the conjuncts, and the joining
-of a chained comparison:
+of a chained comparison, as examples:
 
 ```fren
 set_option fren.lint.chainable_comparison "allow" in
