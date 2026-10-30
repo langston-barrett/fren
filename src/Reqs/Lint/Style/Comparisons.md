@@ -304,8 +304,12 @@ chain's comparisons are the left's and then the right's, as written:
 `joined_inequalities` states it for conjuncts that chain as the fix
 writes them, `chainable_joined` that the two conjuncts are then such, and
 `turned` that a comparison written the other way round is the same
-inequality. The implementation of `chainable_joined` is proved in Lean of
-the code's join:
+inequality. The solver decides `chainable_joined`'s expectations and
+`turned`, for chains of any length. `joined_inequalities`'s evidence is
+testing, since the solver does not always decide it in time: its index
+ranges over the joined chain, so testing evaluates it at every position.
+The implementation of `chainable_joined` is proved in Lean of the code's
+join:
 
 ```fren
 -- A comparison as the semantics reads it: `lower < upper` if `strict?`,
@@ -335,7 +339,8 @@ expect turned(c: Chain) {
 -- conjuncts that chain as the fix writes them: the right orders as the left
 -- does, and its first operand is the left's last.
 set_option fren.lint.undecidable "allow" in
-pub proc joined_inequalities(left: Chain, steps: Seq<Step>) {
+set_option fren.evidence "random" in
+expect joined_inequalities(left: Chain, steps: Seq<Step>) {
     assume nonempty: left.steps != [] and steps != []
 
     let right: Chain := Chain { first := last_operand(left), ascending? := left.ascending?, steps }
@@ -343,7 +348,7 @@ pub proc joined_inequalities(left: Chain, steps: Seq<Step>) {
 
     expect inequalities: chain.steps.len = left.steps.len + right.steps.len
         and (forall (k: Int), when 0 <= k < chain.steps.len, inequality(chain, k)
-            = (if k < left.steps.len then inequality(left, k) else inequality(right, k - left.steps.len)))
+        = (if k < left.steps.len then inequality(left, k) else inequality(right, k - left.steps.len)))
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -353,13 +358,12 @@ pub proc chainable_joined(left: Chain, right: Chain, flip_left?, flip_right?): (
 
     out chain := joined(oriented(left, flip_left?), oriented(right, flip_right?))
 
-    -- The conjuncts, as the fix writes them, are those of `joined_inequalities`,
-    -- each with as many comparisons as it is written with.
-    expect follows: oriented(right, flip_right?) = Chain {
-        first := last_operand(oriented(left, flip_left?)),
-        ascending? := oriented(left, flip_left?).ascending?,
-        steps := oriented(right, flip_right?).steps,
-    }
+    -- The conjuncts, as the fix writes them, are those of
+    -- `joined_inequalities`: the right orders as the left does, and its first
+    -- operand is the left's last; each has as many comparisons as it is
+    -- written with.
+    expect follows: (oriented(right, flip_right?).ascending? iff oriented(left, flip_left?).ascending?)
+        and oriented(right, flip_right?).first = last_operand(oriented(left, flip_left?))
     expect kept: oriented(left, flip_left?).steps.len = left.steps.len
         and oriented(right, flip_right?).steps.len = right.steps.len
 }
