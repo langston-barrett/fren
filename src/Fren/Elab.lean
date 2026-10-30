@@ -8253,15 +8253,13 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
 def procResults (stx : Syntax) : Array Syntax := if stx[6].isNone then #[] else stx[6][2].getSepArgs
 
 /-- Reports an `out` member of the procedure `stx` whose name is not one of
-its results (`F0444`), as the `fren` command's parser does; a global
-expectation block (`global`) has none. -/
-def checkProcMembers (stx : Syntax) (global := false) : CommandElabM Unit := do
+its results (`F0444`), as the `fren` command's parser does. -/
+def checkProcMembers (stx : Syntax) : CommandElabM Unit := do
   let results := (procResults stx).map fun r => (declaredIdent r[2]).1.getId
   for m0 in stx[8].getArgs do
     let (m, _) ← unwrapEvidence m0
     if m.isOfKind ``Lang.defineMember && !results.contains m[1].getId then
-      let msg := if global then Core.globalOutMsg (Core.nameText m[1].getId) else Core.procOutMsg (Core.nameText m[1].getId)
-      throwErrorAt (mkNullNode #[m[0], m[1]]) msg.text
+      throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.procOutMsg (Core.nameText m[1].getId)).text
 
 open Lang in
 /-- One source clause's independent conjunction leaves, preserving lexical
@@ -8404,9 +8402,9 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
 /-- The first member of the global expectation `stx`, aligned as a
 procedure's, that its block does not accept (`lang::block_member`), with
 where it is reported. -/
-def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.BlockMember × Bool)) := do
+def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Msg)) := do
   for r in procResults stx do
-    unless Core.blockMemberAccepted .result !r[1].isNone do return some (r[2], .result, !r[1].isNone)
+    if let some msg := Core.blockMemberReport? .result !r[1].isNone then return some (r[2], msg)
   for m0 in stx[8].getArgs do
     let (m, _) ← unwrapEvidence m0
     let (kind, det) : Core.BlockMember × Bool :=
@@ -8420,7 +8418,7 @@ def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Bloc
       else if m.isOfKind ``Lang.callMember then (.call, false)
       else if m.isOfKind ``Lang.refinesMember then (.refines, false)
       else (.use, false)
-    unless Core.blockMemberAccepted kind det do return some (m, kind, det)
+    if let some msg := Core.blockMemberReport? kind det then return some (m, msg)
   return none
 
 /-- `expect n(x: T) { members }`, a global expectation with a block
@@ -8431,8 +8429,9 @@ nothing calls. -/
   checkLexemes stx0
   checkParsed stx0
   -- Aligned as a procedure's, after a `pub` that it does not have.
+  -- Its `out` members are reported as members that it does not accept
+  -- (`F0417`, `blockMemberError?`), not as a procedure's (`F0444`).
   let stx : Syntax := mkNode ``Lang.procCmd (#[mkNullNode] ++ stx0.getArgs)
-  checkProcMembers stx (global := true)
   lintItem stx0
   lintTrailingCommas stx0
   let modName := (← getLocal).currentModule
@@ -8442,8 +8441,8 @@ nothing calls. -/
   if n.toString.endsWith "?" then throwErrorAt nameStx (Core.propNameMsg n).text
   checkFresh modName n nameStx
   lintName .global n nameStx
-  if let some (ref, m, det) ← blockMemberError? stx then
-    throwErrorAt ref (Core.blockMemberMsg m det).text
+  if let some (ref, msg) ← blockMemberError? stx then
+    throwErrorAt ref msg.text
   startDeclared
   let path := modName ++ n
   modifyLocal fun l => { l with currentItem := path }

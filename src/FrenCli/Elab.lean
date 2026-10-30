@@ -6206,7 +6206,7 @@ def lintUnrelatedCalls (name : Ident) (members : Array Member) : M Unit := do
 
 /-- A member of a global expectation's block that it does not accept
 (`lang::block_member`), with where it is reported. -/
-def blockMemberError? (header body : Array Member) (spans : Array Span) : Option (Span × Fren.Core.BlockMember × Bool) :=
+def blockMemberError? (header body : Array Member) (spans : Array Span) : Option (Span × Fren.Core.Msg) :=
   let results := header.filterMap fun
     | .var false _ det x _ _ => some (x.span, Fren.Core.BlockMember.result, det)
     | _ => none
@@ -6222,7 +6222,7 @@ def blockMemberError? (header body : Array Member) (spans : Array Span) : Option
     | .use .. | .useGroup .. => some (sp, .use, false)
     | .refines .. => some (sp, .refines, false)
     | .evidence .. => none
-  (results ++ others).find? fun (_, m, det) => !Fren.Core.blockMemberAccepted m det
+  (results ++ others).findSome? fun (sp, m, det) => (Fren.Core.blockMemberReport? m det).map (sp, ·)
 
 /-- Claims an abstract procedure's guarantees with positional inputs and
 results. Abstract local definitions are substituted in dependency order. -/
@@ -6305,8 +6305,8 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   startDeclared
   -- What a global expectation's block accepts (`lang::block_member`).
   if global then
-    if let some (sp, m, det) := blockMemberError? header body spans then
-      err sp (Fren.Core.blockMemberMsg m det)
+    if let some (sp, msg) := blockMemberError? header body spans then
+      err sp msg
   let distributed := body.flatMap fun
     | .prop kind owner expression =>
       if kind != .cover && expression.blockRoot then (expression.clauseLeaves owner).map fun (name, _) => Name.mkSimple name.name else #[]

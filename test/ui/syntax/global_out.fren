@@ -1,7 +1,8 @@
--- A global expectation block has no results, so `out` defines nothing
--- there (`F0444`).
+-- A global expectation's block has no results, and no `out` members: an
+-- `out` member is reported as a member that the block does not accept
+-- (`F0417`), not as a procedure's `out` that names no result (`F0444`).
 expect g(x: Int) {
-    out y := x   --~ error: `y` is not a result: a global expectation block has none
+    out y := x   --~ error: global expectations have no `out` members
     expect r: x = x
 }
 --@ exit: 2
