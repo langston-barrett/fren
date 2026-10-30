@@ -10,7 +10,12 @@ Fren settles each check by one of four *methods*:
 - **Lean**, a proof that the user writes. This method does not exist yet.
 
 The source states each check's method with `set_option fren.evidence`.
-Nothing falls back from one method to another by itself.
+Nothing falls back from one method to a weaker one by itself. Where the
+method that the source sets does not run a check, an information message
+says so (`F0654`). The one check that another method runs instead is the
+solver's check of a value given where a pattern type is declared, which
+the solver runs whatever the evidence: that is stronger, not
+weaker.
 
 A method *decides* a check if it can both pass it and fail it. It is
 *one-sided* if it can reach only one of those verdicts: it either
@@ -21,21 +26,35 @@ witness exists:
 
 | Check | solver | enumerated | random | lean |
 |---|---|---|---|---|
-| realizability | decides | decides up to the size | concludes nothing, so it is skipped | decides |
-| expectations, call assumptions, determinism, definedness, completeness, disjointness, preconditions, postconditions | decides | decides up to the size | refutes | decides |
+| realizability, expectations, call assumptions, determinism, definedness, completeness, disjointness, preconditions, postconditions | decides | decides up to the size | refutes | decides |
 | cover goals, vacuity, redundancy, reachability | decides | decides up to the size | confirms | decides |
 
-The second row's checks pass on a proof and the third row's on a witness
-(see [Verdict families](Check.md#verdict-families)). Realizability is in
-neither row, since its goal has an `∃ outputs` within it. A test that
-finds no output for an input does not show that no output exists. And no
-set of tests shows that every input has one.
+The first row's checks pass on a proof, and the second row's on a witness
+(`check::proof?`; see [Verdict families](Check.md#verdict-families)). No
+cell is a skip: every method can conclude something about every check.
 
-Enumeration decides only up to the size. Where it has seen every
-behaviour, its verdict is a decision. Elsewhere a model that it finds is
-still genuine, but finding none is a decision only up to the size. For a
-check that passes on a proof, that is a pass that holds *up to the size*,
-reported as such (`F0646`). For one that passes on a witness, it is
+One verdict outside a one-sided cell is allowed, and only for a single
+method that the source chose. When the source sets `"random"` alone, a
+check of the first row for which testing finds no counterexample passes,
+reported as passing by random testing, with the caveat `Random` of the
+chapter on evidence of #439. That is the trust level that the source
+chose, never a silent upgrade (#446), and it is where that caveat arises
+on such a check. In a combination of methods, such a pass counts for
+nothing (see [Combinations](#combinations)).
+
+Random testing refutes realizability with an input for which no output
+exists. Its goal has an `∃ outputs` within it, so an input for which the
+search found no output is a counterexample only where the search saw
+every output: where each output is defined from the input, or is of a
+type with finitely many values, all of which the search tries
+(`eval::test_verdict`). Elsewhere outputs may still exist, so testing
+warns (`F0609`), and realizability is inconclusive.
+
+Enumeration *decides up to the size*. Where it sees every behaviour, its
+verdict is a decision. Elsewhere a model that it finds is still genuine,
+but finding none is a decision only up to the size. For a check that
+passes on a proof, that is a pass that holds up to the size, recorded as
+such: bounded (`F0646`). For one that passes on a witness, it is
 inconclusive (`check::enumerated_verdict`).
 
 The rows cover every check that Fren runs:
@@ -68,101 +87,159 @@ pub enum ProofMethod { Solver, Enumerated, Random, Lean }
 
 -- What a method can conclude about a check.
 pub enum Cell {
-    Decides,     -- both verdicts
-    Refutes,     -- only `Fail`, on a counterexample
-    Confirms,    -- only `Pass`, on a witness
-    Skip,        -- neither: the method concludes nothing, and does not run it
+    Decides,           -- both verdicts
+    DecidesUpToSize,   -- both where it sees every behaviour; elsewhere a model, or a pass up to the size
+    Refutes,           -- only `Fail`, on a counterexample; chosen alone, also a pass with the caveat `Random` (#446)
+    Confirms,          -- only `Pass`, on a witness
 }
 
--- Whether a check passes on a witness, a behaviour in which something
--- holds, rather than on a proof (`check::satisfiable`).
-pub fn witnessed?(kind: Kind) := kind in {Kind::Cover, Kind::Vacuity, Kind::Redundancy, Kind::Reachability}
+-- Whether a pass of a check of this kind is a proof from hypotheses,
+-- rather than a witness. As the chapter on evidence of #439 defines it;
+-- this copy goes when #439 merges.
+pub fn proof?(kind: Kind) := not kind in {Kind::Cover, Kind::Vacuity, Kind::Reachability, Kind::Redundancy}
 
-set_option fren.evidence "enumerated" in
 pub proc method_cell(kind: Kind, method: ProofMethod): (det cell: Cell) {
-    use self::Cell::{Confirms, Decides, Refutes, Skip}
+    use self::Cell::{Confirms, Decides, DecidesUpToSize, Refutes}
 
     ensure rule: cell = match method {
-        ProofMethod::Random => if witnessed?(kind) then Confirms else if kind = Kind::Realizability then Skip else Refutes,
-        ProofMethod::Solver | ProofMethod::Enumerated | ProofMethod::Lean => Decides,
+        ProofMethod::Solver | ProofMethod::Lean => Decides,
+        ProofMethod::Enumerated => DecidesUpToSize,
+        ProofMethod::Random => if proof?(kind) then Refutes else Confirms,
     }
 
-    expect random_one_sided: when method = ProofMethod::Random, cell != Decides
-    expect others_decide: when method != ProofMethod::Random, cell = Decides
+    expect random_one_sided: when method = ProofMethod::Random, cell in {Refutes, Confirms}
+    expect realizability_refuted: when method = ProofMethod::Random and kind = Kind::Realizability, cell = Refutes
 }
 ```
 
+The verdicts of enumeration and of testing are within their cells.
+Enumeration fails a check that passes on a witness only where it sees
+every behaviour, and a pass of one that passes on a proof is bounded
+unless it does:
+
+```fren
+expect enumeration_within_matrix(kind: check::Kind, verdict: check::Verdict, conflict?, exact?, outputs_exact?) {
+    use check
+    call e := enumerated_verdict(kind, verdict, conflict?, exact?, outputs_exact?)
+    call cell := method_cell(kind, check::ProofMethod::Enumerated)
+    expect up_to_size: (cell.cell) = check::Cell::DecidesUpToSize
+    expect witness_fails_exhausted: when not proof?(kind) and (e.reported) = check::Verdict::Fail, (exact?)
+    expect proof_bounded: when proof?(kind) and enumerable?(kind) and (e.reported) = check::Verdict::Pass and not (exact?), (e.bounded?)
+}
+```
+
+Random testing fails only checks of the row that it refutes:
+`eval::random_within_matrix`, in [Evaluation](Eval.md#fren-quickcheck),
+states it of `eval::test_verdict`.
+
 ## Combinations
 
-A check may be set to a set of methods. They all run, and their
-verdicts combine:
+A check may be set to a set of methods. They all run, and each
+contributes what its cell allows: a counterexample from a method that
+decides or refutes the check, a pass from one that decides or confirms
+it, recorded as bounded if it holds only up to the size, and nothing
+else. A one-sided method's other verdicts contribute nothing: a "no
+counterexample found" from random testing never helps a check of the
+first row pass. Then:
 
-- the check fails if any method fails it;
-- otherwise it passes if at least one method gives a *conclusive* pass:
-  a pass by a method that decides the check, or a witness from one that
-  confirms it, but not a pass up to the size where enumeration has not
-  seen every behaviour;
+- the check fails if any method contributes a counterexample;
+- otherwise it passes if any method contributes a pass, and the pass is
+  bounded only if every pass contributed is;
 - otherwise it is `Inconclusive`.
 
-So a one-sided "no counterexample found" never makes a pass, nor does a
-pass up to the size. The pass's evidence is the strongest method that
-gave a conclusive pass: Lean, then the solver, then enumeration, then
-random testing. The summary records each method's verdict.
+The pass's *method* is the strongest method that contributed a pass with
+no caveat: Lean, then the solver, then enumeration, then random testing;
+or enumeration, if every pass contributed is bounded, and then the pass
+has the caveat `Bounded`. Its *evidence*, in the sense of the chapter on
+evidence of #439, is the weakest link: those caveats, with those of the
+checks that it rests on. The summary records each method's verdict.
 
-`check::combined` states this, over what each selected method reached.
-The value of `fren.evidence` does not yet take a set (#447). Its one
-combination today, `"enumerated+random"`, is enumeration with testing
+A single method is not a combination, and its report is its own: when
+the source sets `"random"` alone, a check of the first row for which
+testing finds no counterexample passes with the caveat `Random`, as
+[The matrix](#the-matrix) allows. In a combination, the same verdict
+contributes nothing, so a random pass is never counted there.
+
+`check::combined` states this, over what each method reached: the
+solver's answer to the check's query, what enumeration found, as for
+`check::enumerated_verdict`, and the verdicts of testing and of a Lean
+proof. The value of `fren.evidence` does not yet take a set (#447). Its
+one combination today, `"enumerated+random"`, is enumeration with testing
 beyond the bound, a single method whose answers are enumeration's (see
 [Enumeration then testing](Check.md#enumeration-then-testing)):
 
 ```fren
--- What one method reached for a check: its verdict, and whether a pass is
--- conclusive.
-pub struct Reached { verdict: Verdict, conclusive? }
+-- What a method's verdict contributes to a combination: a counterexample,
+-- a pass with no caveat, a pass up to the size, or nothing.
+pub enum Contribution { Refuted, Passed, Bounded, Nothing }
 
--- What the method `method` reached, of the four.
-pub fn result_of(method: ProofMethod, solver: Reached, enumerated: Reached, random: Reached, lean: Reached): Reached :=
-    match method {
-    ProofMethod::Solver => solver,
-    ProofMethod::Enumerated => enumerated,
-    ProofMethod::Random => random,
-    ProofMethod::Lean => lean,
-}
+-- What a verdict contributes, as the cell allows it.
+pub fn contribution(cell: Cell, verdict: Verdict, bounded?): Contribution :=
+    if verdict = Verdict::Fail and cell != Cell::Confirms then Contribution::Refuted
+    else if verdict = Verdict::Pass and cell != Cell::Refutes then (if bounded? then Contribution::Bounded else Contribution::Passed)
+    else Contribution::Nothing
 
 pub proc combined(
+    kind: Kind,
     selected: Set<ProofMethod>,
-    solver: Reached,
-    enumerated: Reached,
-    random: Reached,
-    lean: Reached,
-): (det verdict: Verdict, evidence: ProofMethod) {
+    solver: Outcome,             -- the solver's answer to the check's query
+    enumerated: Verdict,         -- what the check algorithm reaches from enumeration's answers
+    conflict?,                   -- as for `check::enumerated_verdict`
+    exact?,
+    outputs_exact?,
+    random: Verdict,             -- the verdict of testing (`eval::test_verdict`)
+    lean: Verdict,               -- what a Lean proof shows
+): (det verdict: Verdict, det method: ProofMethod, det bounded?) {
+    use self::Contribution::{Bounded, Nothing, Passed, Refuted}
     use self::ProofMethod::{Enumerated, Lean, Random, Solver}
     use self::Verdict::{Fail, Inconclusive, Pass}
-    assume nonempty: selected != {}
+    -- A single method's report is its own: chosen alone, random testing's
+    -- pass of a check of the first row stands, with the caveat `Random` (#446).
+    assume combination: exists (a: ProofMethod) (b: ProofMethod), a != b and a in selected and b in selected
 
-    ensure refuted: (verdict = Fail) iff
-        (exists (m: ProofMethod), m in selected and result_of(m, solver, enumerated, random, lean).verdict = Fail)
-    ensure passed: (verdict = Pass) iff (verdict != Fail and (exists (m: ProofMethod), m in selected
-        and result_of(m, solver, enumerated, random, lean).verdict = Pass
-        and result_of(m, solver, enumerated, random, lean).conclusive?))
-    -- The strongest method that gave a conclusive pass.
-    ensure strongest: when verdict = Pass, evidence = (
-        if Lean in selected and lean.verdict = Pass and lean.conclusive? then Lean
-        else if Solver in selected and solver.verdict = Pass and solver.conclusive? then Solver
-        else if Enumerated in selected and enumerated.verdict = Pass and enumerated.conclusive? then Enumerated
-        else Random)
+    call by_proof := proved(solver)
+    call by_witness := satisfiable(solver)
+    call enumeration := enumerated_verdict(kind, enumerated, conflict?, exact?, outputs_exact?)
+    call solver_cell := method_cell(kind, Solver)
+    call enumerated_cell := method_cell(kind, Enumerated)
+    call random_cell := method_cell(kind, Random)
+    call lean_cell := method_cell(kind, Lean)
+    -- What each selected method contributes, as its cell allows.
+    let s: Contribution := if Solver in selected
+        then contribution(solver_cell.cell, if proof?(kind) then by_proof.verdict else by_witness.verdict, false)
+        else Nothing
+    let e: Contribution := if Enumerated in selected
+        then contribution(enumerated_cell.cell, enumeration.reported, enumeration.bounded?) else Nothing
+    let r: Contribution := if Random in selected then contribution(random_cell.cell, random, false) else Nothing
+    let l: Contribution := if Lean in selected then contribution(lean_cell.cell, lean, false) else Nothing
 
-    expect any_refutes: when Random in selected and random.verdict = Fail, verdict = Fail
-    expect one_sided_never_passes: when selected = {Random} and not random.conclusive?, verdict != Pass
-    expect bounded_never_passes: when selected = {Enumerated, Random} and not enumerated.conclusive?
-        and not random.conclusive?, verdict != Pass
-    expect nothing_conclusive: when not solver.conclusive? and not enumerated.conclusive? and not random.conclusive?
-        and not lean.conclusive? and verdict != Fail, verdict = Inconclusive
+    ensure refuted: (verdict = Fail) iff Refuted in {s, e, r, l}
+    ensure passed: (verdict = Pass) iff (not Refuted in {s, e, r, l} and (Passed in {s, e, r, l} or Bounded in {s, e, r, l}))
+    ensure bound: bounded? iff (verdict = Pass and not Passed in {s, e, r, l})
+    -- The strongest method that contributed a pass with no caveat, if the check passes.
+    ensure strongest: method = (
+        if l = Passed then Lean
+        else if s = Passed then Solver
+        else if e = Passed then Enumerated
+        else if r = Passed then Random
+        else Enumerated)
+
+    expect any_refutes: when Random in selected and random = Fail and proof?(kind), verdict = Fail
+    expect no_counterexample_adds_nothing: when selected = {Solver, Random} and solver = Outcome::Unknown
+        and proof?(kind), verdict != Pass
+    expect witness_confirms: when selected = {Solver, Random} and random = Pass and not proof?(kind)
+        and solver = Outcome::Unknown, verdict = Pass and method = Random
+    expect bounded_passes: when selected = {Solver, Enumerated} and solver = Outcome::Unknown and proof?(kind)
+        and enumerable?(kind) and enumerated = Pass and not exact?, verdict = Pass and bounded? and method = Enumerated
+    expect decided_unbounded: when selected = {Solver, Enumerated} and solver = Outcome::Unsat and proof?(kind)
+        and enumerated = Pass, verdict = Pass and not bounded? and method = Solver
+    expect nothing_reached: when solver = Outcome::Unknown and enumerated = Inconclusive and random = Inconclusive
+        and lean = Inconclusive, verdict = Inconclusive
 }
 ```
 
 Fren has no code that combines verdicts yet, so `combined` has no
-`impl`. It will have one when `fren.evidence` takes sets.
+`impl`. It will have one when `fren.evidence` takes sets (#447).
 
 ## What runs today
 
@@ -179,8 +256,16 @@ each method:
 An error can also depend on what a check reads, not only on its kind.
 Testing a check with an unbounded quantifier that has no domain is
 `F0639`, and enumerating a procedure with a variable of a type that is
-not enumerable is `F0645`. At the level of kinds, the only error is Lean
-itself: `"lean"` is not yet a value of `fren.evidence`, so it is `F0214`.
+not enumerable is `F0645`. At the level of kinds and items, the errors
+are these: before a function or a constant, whose checks are the
+solver's, `fren.evidence` can be set to nothing but `"solver"` (`F0215`);
+and `"lean"` is not yet a value of `fren.evidence` (`F0214`, whose note
+says so).
+
+Which checks random testing and enumeration run is `check::testable?`
+and `check::enumerable?`, of [Checking by
+testing](Check.md#checking-by-testing); `method_run` adds the items, the
+values given where pattern types are declared, and the reasons:
 
 ```fren
 pub enum Dispatch {
@@ -194,7 +279,7 @@ pub enum Dispatch {
 pub enum Reason {
     Selected,          -- the method that the evidence sets runs it
     NoLean,            -- Lean evidence is not yet a method: `"lean"` is `F0214`
-    NoSetting,         -- `fren.evidence` sets nothing before a function or a constant
+    NotSettable,       -- only the solver can be set before a function or a constant: others are `F0215`
     PatternType,       -- a value given where a pattern type is declared is the solver's to check
     NoWitnessSearch,   -- testing searches for counterexamples, not for witnesses
     NoValue,           -- the check is about where the evaluator knows no value
@@ -207,49 +292,41 @@ pub proc method_run(
     method: ProofMethod,     -- the method that the check's evidence sets
     obligation?,             -- a definedness check of a value given where a pattern type is declared
 ): (det dispatch: Dispatch, det reason: Reason) {
-    use self::Kind::{
-        Completeness,
-        Definedness,
-        Disjointness,
-        Postcondition,
-        Precondition,
-        Reachability,
-        Redundancy,
-        Vacuity,
-    }
     use self::Reason::{
         NoLean,
-        NoSetting,
         NoValue,
         NoWitnessSearch,
         NotEnumerated,
+        NotSettable,
         PatternType,
         Selected,
     }
-    assume obligation_definedness: when obligation?, kind = Definedness
+    assume obligation_definedness: when obligation?, kind = Kind::Definedness
 
     ensure reason_rule: reason = match method {
         ProofMethod::Solver => Selected,
         ProofMethod::Lean => NoLean,
-        ProofMethod::Enumerated => if item in {CheckedItem::Body, CheckedItem::Contract} then NoSetting
+        ProofMethod::Enumerated | ProofMethod::Random =>
+            if item in {CheckedItem::Body, CheckedItem::Contract} then NotSettable
             else if obligation? then PatternType
-            else if kind in {Definedness, Postcondition} then NotEnumerated
-            else Selected,
-        ProofMethod::Random => if item in {CheckedItem::Body, CheckedItem::Contract} then NoSetting
-            else if obligation? then PatternType
-            else if kind in {Vacuity, Redundancy, Reachability} then NoWitnessSearch
-            else if kind in {Definedness, Completeness, Disjointness, Precondition} then NoValue
-            else Selected,
+            else if method = ProofMethod::Enumerated then (if enumerable?(kind) then Selected else NotEnumerated)
+            else if testable?(kind) then Selected
+            else if proof?(kind) then NoValue
+            else NoWitnessSearch,
     }
     ensure dispatch_rule: dispatch = match reason {
         Selected => Dispatch::Run,
-        NoLean => Dispatch::Reject,
-        NoSetting | PatternType => Dispatch::BySolver,
+        NoLean | NotSettable => Dispatch::Reject,
+        PatternType => Dispatch::BySolver,
         NoWitnessSearch | NoValue | NotEnumerated => Dispatch::Skip,
     }
 
     expect solver_runs_all: when method = ProofMethod::Solver, dispatch = Dispatch::Run
     expect lean_rejected: when method = ProofMethod::Lean, dispatch = Dispatch::Reject
+    expect functions_solver_only: when item in {CheckedItem::Body, CheckedItem::Contract}
+        and method != ProofMethod::Solver, dispatch = Dispatch::Reject
+    expect realizability_tested: when method = ProofMethod::Random and kind = Kind::Realizability
+        and item = CheckedItem::Component, dispatch = Dispatch::Run
 }
 ```
 
@@ -262,7 +339,8 @@ The reasons for a skip are these:
   hold, or one in which a case is taken. A test that reaches an
   expectation shows that its trigger can hold. But the trigger's vacuity
   check is not run, and testing that never reaches a trigger only warns
-  (`F0612`).
+  (`F0612`). Enumeration runs these checks, and the message's help says
+  so.
 - Random testing does not run definedness, completeness, disjointness or
   preconditions either. Each is about where something has no value that
   the evaluator knows: an index out of range, a table or `match` where no
@@ -275,89 +353,96 @@ The reasons for a skip are these:
   postconditions of a defined function: `fren.evidence` cannot be set for
   a function anyway.
 
-`fren.evidence` sets nothing before a function or a constant (see
-[Checking by testing](Check.md#checking-by-testing)), so their checks,
-including a contract's realizability and a body's postconditions, are
-always the solver's. The solver also checks a value given where a pattern
-type is declared, whatever the evidence: dropping that check would leave
-a value outside its type unreported (`F0661`).
+The checks of a function or a constant, including a contract's
+realizability and a body's postconditions, are always the solver's, so
+setting another method before one is an error (`F0215`), rather than a
+setting that sets nothing. The solver also checks a value given where a
+pattern type is declared, whatever the evidence: dropping that check
+would leave a value outside its type unreported (`F0661`).
 
-`check::method_run` is bound to `Fren.Core.dispatchOf`. The front ends'
-choices of which checks to test and to enumerate (`check::by_testing` and
-`check::by_evidence`) are both made from it, and so are the reported
-skips (`Fren.Core.Comp.skippedMsgs`).
+`check::method_run` is bound to `Fren.Core.dispatchOf`, which both front
+ends consult for each dimension: for the checks to test, to enumerate and
+to leave to the solver, including those of values given where pattern
+types are declared (`Fren.Core.Comp.untested`); for the reported skips
+(`Fren.Core.Comp.skippedMsgs`); for whether a setting can be given before
+a function or a constant (`Fren.Core.Evidence.settable`, `F0215`); and
+for the note of `F0214` on `"lean"`.
 
 ### Today and the matrix
 
-What runs today never claims more than the matrix allows. A method runs
-a check only where the matrix gives it something to conclude, with one
-exception, below. And every skip today is a gap to close, not a limit of
-the method: the matrix has each skipped cell decide, refute or confirm.
+What runs today never claims more than the matrix allows. Enumeration
+runs a check only where it decides up to the size, and random testing
+only where it refutes or confirms:
 
 ```fren
 expect today_within_matrix(kind: check::Kind, method: check::ProofMethod) {
     use check
     call today := method_run(kind, check::CheckedItem::Component, method, false)
     call cell := method_cell(kind, method)
-    -- Random testing still runs realizability (see below).
-    expect runs_conclude: when (today.dispatch) = check::Dispatch::Run and not ((kind) = check::Kind::Realizability
-        and (method) = check::ProofMethod::Random), (cell.cell) != check::Cell::Skip
-    expect skips_are_gaps: when (today.dispatch) = check::Dispatch::Skip, (cell.cell) != check::Cell::Skip
+    expect enumeration_up_to_size: when (today.dispatch) = check::Dispatch::Run
+        and (method) = check::ProofMethod::Enumerated, (cell.cell) = check::Cell::DecidesUpToSize
+    expect testing_one_sided: when (today.dispatch) = check::Dispatch::Run and (method) = check::ProofMethod::Random,
+        (cell.cell) in {check::Cell::Refutes, check::Cell::Confirms}
 }
 ```
 
-The exception is random testing, which still reports a pass where it
-finds no counterexample. That pass is not conclusive. It rests on the
-tests alone, and the summary counts it apart ("by random testing"; see
-[Checking by testing](Check.md#checking-by-testing)). Realizability is
-one such pass: testing concludes nothing about it, but it still runs, and
-warns where it finds no output (`F0609`). By the matrix, all of these
-would be `Inconclusive`, which would leave the checks that Fren's own
-specs set to random testing unsettled. The gaps between this section and
-the matrix are left to later work on #368:
+Since no cell is a skip, every skip today is a gap to close, not a limit
+of the method. The gaps between this section and the matrix are left to
+later work on #368:
 
 - random testing confirms vacuity, redundancy and reachability with
   witnesses, and refutes definedness, completeness, disjointness and
   preconditions (#443);
 - enumeration decides the definedness of indexes, once sequences are
   enumerable, and postconditions (#444);
-- `fren.evidence` can be set for functions and constants (#445);
+- `fren.evidence` can be set for functions and constants, rather than
+  being `F0215` (#445);
 - Lean evidence;
-- whether a pass by random testing that is not conclusive stays a pass
-  (#446);
 - `fren.evidence` takes sets of methods, combined by `check::combined`
   (#447).
 
-`check::by_evidence` follows `method_run`. It skips a check exactly when
-`method_run` skips it under the method that runs: enumeration if the
-evidence includes it, and otherwise testing:
+`check::by_testing` and `check::by_evidence` follow `method_run`. They
+skip a check exactly when `method_run` skips it under the method that
+runs: enumeration if the evidence includes it, and otherwise testing; and
+they leave a check to the solver exactly when `method_run` does:
 
 ```fren
-expect by_evidence_follows(kind: check::Kind, tested?, enumerated?) {
+expect by_evidence_follows(kind: check::Kind, tested?, enumerated?, obligation?) {
     use check
-    call chosen := by_evidence(kind, tested?, enumerated?, false)
-    call testing := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Random, false)
-    call enumeration := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Enumerated, false)
-    expect enumeration_skips: when (enumerated?), (chosen.method) = check::Method::Skipped
+    assume obligation_definedness: when (obligation?), (kind) = check::Kind::Definedness
+    call run := by_testing(kind, tested?)
+    call chosen := by_evidence(kind, tested?, enumerated?, obligation?)
+    call testing := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Random, obligation?)
+    call testing_any := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Random, false)
+    call enumeration := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Enumerated, obligation?)
+    expect testing_run: when (tested?), ((run.run) = check::Run::Skipped)
+        iff (testing_any.dispatch) = check::Dispatch::Skip
+    expect enumeration_skips: when (enumerated?), ((chosen.method) = check::Method::Skipped)
         iff (enumeration.dispatch) = check::Dispatch::Skip
-    expect testing_skips: when (tested?) and not (enumerated?), (chosen.method) = check::Method::Skipped
+    expect testing_skips: when (tested?) and not (enumerated?), ((chosen.method) = check::Method::Skipped)
         iff (testing.dispatch) = check::Dispatch::Skip
+    expect solver_instead: when (tested?) or (enumerated?), ((chosen.method) = check::Method::Solver)
+        iff (testing.dispatch) = check::Dispatch::BySolver
 }
 ```
 
 ## Solver queries
 
-Every place that Fren asks the solver is a check of the table, or a
-query that a check asks to explain its result:
+Every place that Fren asks the solver is a check of the table, a query
+that a check asks to explain its result, or a proof about something
+other than a check of the spec:
 
 | Where | Check |
 |---|---|
 | `checkRealizable`, `checkRealizableUniversal` | realizability, of procedures, global expectations, contracts, and the type instances of generic contracts |
 | `checkExpect`, `checkInst`, `checkCover`, `checkVacuity`, `checkRedundant`, `checkDeterminism` | expectations, call assumptions, cover goals, vacuity, redundancy, determinism |
 | `checkDefinedness`, `checkTable`, `checkReach`, `checkPostcondition` | definedness and pattern types, completeness, disjointness, preconditions, reachability, postconditions |
-| `minimize`, `forces`, `clashAt`, `branchConflictsOf`, more cover examples | none: they explain a result of the solver's, within its check |
+| `fren_recursive_case` (`Fren/RecursiveProof.lean`), in the theorems of a recursive function's postconditions (`Fren/View.lean`) | postconditions: the Lean proof by induction of what `checkPostcondition` checks, whose cases the solver closes; it is part of the function's checks, which only the solver runs (`F0215`) |
+| `minimize`, `forces`, `forcesVariant`, `clashAt`, `branchConflictsOf`, more cover examples | none: they explain a result of the solver's, within its check |
 | `consistent`, before redundancy | none: it decides whether redundancy is asked (`check::redundancy_asked`) |
 | the evaluator's confirmation of a model (`Reqs/Eval#confirming-models`) | none: it checks a model of the solver's, and never gives a verdict of its own |
+| `solverAnswer` (`Fren/Impl.lean`), for an `impl`'s obligation, and whether its assumptions never hold | none: it proves that an implementation meets a spec, not a check of the spec; `decide` and a written Lean proof are its other methods ([Proof](Impl.md#proof), [Vacuous implementations](Impl.md#vacuous-implementations)) |
+| `solverAnswer`, for an interpretation's contract | none: it proves that an interpretation meets its type's constraint, with `decide` and a written Lean proof as its other methods ([Interpretations](Impl.md#interpretations)) |
 | `fren mutate`'s search for equivalent mutants | none: it is about a mutant, not a check of the spec |
 
 The shared check algorithms, `Fren.Core.checkComp`, run every check

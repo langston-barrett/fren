@@ -30,10 +30,6 @@ pub proc caller(m: Int) {
     call p := positive(m)
 }
 
--- Before an item that is not a component, it sets nothing.
-set_option fren.evidence "random" in
-pub const LIMIT: Int := 3
-
 -- Without `in`, it sets every later component and global expectation.
 set_option fren.evidence "random"
 

@@ -1454,6 +1454,12 @@ def showComp (path : Name) : String :=
   -- (`instanceName`).
   "::".intercalate (path.components.map (·.toString (escape := false)))
 
+/-- The subject of the messages about a procedure at `path`, as both front
+ends show it: a global expectation, `global`, by its module and the name
+of its first expectation, `first?`. -/
+def subjectOf (path : Name) (global : Bool) (first? : Option Name) : String :=
+  s!"`{showComp (if global then path ++ first?.getD .anonymous else path)}`"
+
 inductive Advice where
   | raiseTimeout
   | namesConstructs

@@ -1029,7 +1029,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- The checks that the method their evidence sets does not run
     -- (`check::method_run`), as the `fren` command shows its subject.
     let global := st0.globals.toList.any fun (p, g) => g.decl == c.decl && p != g.path
-    let subject := s!"`{Core.showComp (if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path)}`"
+    let subject := Core.subjectOf c.path global (c.props[0]?.map (·.name))
     let skipped := full.skippedMsgs subject c.tested c.enumerated kinds
     let (comp, kinds) := full.untested (c.tested.union c.enumerated) kinds
     let cache : QueryCache ← IO.mkRef {}

@@ -29,7 +29,7 @@ info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to random 
 info: LiterateFirst.md:18:9: the redundancy checks of `chapters::by_testing` are not run by random testing
 
 note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
-help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 ---
 error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 
@@ -63,7 +63,7 @@ info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to random 
 info: LiterateFirst.md:18:9: the redundancy checks of `chapters::by_testing` are not run by random testing
 
 note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
-help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 ---
 error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 

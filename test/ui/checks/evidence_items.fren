@@ -1,0 +1,33 @@
+-- Before a function or a constant, whose checks are the solver's,
+-- `fren.evidence` can be set only to "solver" (`F0215`, `check::method_run`):
+-- another value is an error in both front ends, not a setting that sets
+-- nothing, and the item is checked as though it were "solver".
+
+set_option fren.evidence "random" in  --~ error: `fren.evidence` cannot be set to `"random"` for a function
+pub fn next(x: Int): Int := x + 1
+
+set_option fren.evidence "enumerated" in  --~ error: `fren.evidence` cannot be set to `"enumerated"` for a constant
+pub const LIMIT: Int := 3
+
+set_option fren.evidence "enumerated+random" in  --~ error: `fren.evidence` cannot be set to `"enumerated+random"` for a function
+pub fn above(x: Int): (r: Int) {
+    assume small: x < LIMIT
+    ensure greater: r > x
+}
+
+-- Through another setting too.
+set_option fren.evidence "random" in  --~ error: `fren.evidence` cannot be set to `"random"` for a function
+set_option fren.lint.unused_variables "allow" in
+pub fn constant(x: Int): Int := 0
+
+-- "solver" is what they have anyway.
+set_option fren.evidence "solver" in
+pub fn previous(x: Int): Int := x - 1
+
+-- The items are elaborated, so the procedure that applies them is too.
+pub proc uses(x: Int): (y: Int) {
+    ensure r: y = next(previous(x)) + LIMIT
+    expect e: y = x + 3
+}
+
+--@ exit: 2

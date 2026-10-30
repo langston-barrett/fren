@@ -61,17 +61,18 @@ impl reaches_check: eval::reaches for (f h t : Bool) {
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.
-impl test_verdict_of: eval::test_verdict for (k : CheckKind) (refuted : Bool) (n : Nat) {
+impl test_verdict_of: eval::test_verdict for (k : CheckKind) (refuted : Bool) (n : Nat) (x : Bool) {
   kind := toCheckKind k,
   refuted? := refuted,
   n_tests := n,
-  verdict := toVerdict (testVerdict k refuted n),
+  exhausted? := x,
+  verdict := toVerdict (testVerdict k refuted n x),
 } by
-  intro k refuted n _
+  intro k refuted n x _
   rcases n with _ | n
-  · cases k <;> cases refuted <;> decide
+  · cases k <;> cases refuted <;> cases x <;> decide
   · have : n + 1 > 0 := Nat.succ_pos n
-    cases k <;> cases refuted <;> simp_all [fren_spec, testVerdict, toVerdict, toCheckKind] <;> first | omega | decide
+    cases k <;> cases refuted <;> cases x <;> simp_all [fren_spec, testVerdict, toVerdict, toCheckKind] <;> first | omega | decide
 
 def toConfirmation : Confirmation → eval.Confirmation
   | .Confirmed => .Confirmed

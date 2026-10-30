@@ -92,7 +92,7 @@ trusted lang::named: "no front end elaborates a name into the semantics' abstrac
 
 -- The matrix of what each method can conclude is a design, refined by
 -- what runs today (`check::method_run`), which is bound to `dispatchOf`.
-trusted check::method_cell: "the design of the proof methods; check::today_within_matrix checks check::method_run, bound to dispatchOf, against it"
+trusted check::method_cell: "the design of the proof methods; check::today_within_matrix checks check::method_run, bound to dispatchOf, against it, and check::enumeration_within_matrix and eval::random_within_matrix the verdicts of enumeration and testing"
 -- No code combines verdicts yet: `fren.evidence` takes no sets (#368).
 trusted check::combined: "no front end combines the verdicts of several methods yet; its expectations are checked by the solver"
 

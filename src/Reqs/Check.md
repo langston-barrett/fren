@@ -1798,30 +1798,26 @@ Lean has no evaluator, so `#fren_check` does not run a check whose evidence
 is testing: it reports, as information, that `fren check` tests it. Such a
 check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 
-`check::by_testing` gives how a check is run:
+`check::testable?` gives the checks that testing runs, and
+`check::by_testing` how a check is run:
 
 ```fren
 pub enum Run { BySolver, ByTesting, Skipped }
+
+-- The checks that testing runs.
+pub fn testable?(kind: Kind) :=
+    not kind in {Kind::Vacuity, Kind::Redundancy, Kind::Definedness, Kind::Completeness, Kind::Disjointness, Kind::Precondition, Kind::Reachability}
 
 pub proc by_testing(
     kind: Kind,
     tested?,               -- the check's evidence is testing
 ): (det run: Run) {
-    use self::Kind::{
-        Completeness,
-        Definedness,
-        Disjointness,
-        Precondition,
-        Reachability,
-        Redundancy,
-        Vacuity,
-    }
     use self::Run::{BySolver, ByTesting, Skipped}
 
     ensure rule: run = table {
         | not tested? => BySolver,
-        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition, Reachability} => ByTesting,
-        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition, Reachability} => Skipped,
+        | tested? and testable?(kind) => ByTesting,
+        | tested? and not testable?(kind) => Skipped,
     }
 
     expect never_both: when tested?, run != BySolver
@@ -1890,10 +1886,6 @@ pub proc evidence_value(value: EvidenceValue): (det valid?, det random?, det enu
     expect invalid_sets_nothing: when not valid?, not random? and not enumerated?
     expect no_alias: when value in {Tested, EnumeratedTested}, not valid?
 }
-
--- The checks that testing decides (`check::by_testing`).
-pub fn testable?(kind: Kind) :=
-    not kind in {Kind::Vacuity, Kind::Redundancy, Kind::Definedness, Kind::Completeness, Kind::Disjointness, Kind::Precondition, Kind::Reachability}
 
 -- The checks that enumeration decides: all but definedness, whose indexes
 -- only sequences have, and postconditions, which only bodies have.

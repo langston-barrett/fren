@@ -1289,7 +1289,7 @@ def toDispatch : Fren.Core.Dispatch → check.Dispatch
 def toReason : Fren.Core.Reason → check.Reason
   | .selected => .Selected
   | .noLean => .NoLean
-  | .noSetting => .NoSetting
+  | .notSettable => .NotSettable
   | .patternType => .PatternType
   | .noWitnessSearch => .NoWitnessSearch
   | .noValue => .NoValue

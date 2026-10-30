@@ -140,7 +140,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   -- A global expectation is shown by its module and name, as the `fren`
   -- command shows it.
   let global := st.globals.toList.any fun (p, g) => g.decl == c.decl && p != g.path
-  let subject := s!"`{Core.showComp (if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path)}`"
+  let subject := Core.subjectOf c.path global (c.props[0]?.map (·.name))
   let n := c.enumSize
   let (core, ks) := full.only t kinds
   let (ecomp, sourceAtoms) := core.atoms

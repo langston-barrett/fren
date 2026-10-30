@@ -5,7 +5,7 @@ note[F0654]: the vacuity and redundancy checks of `c` are not run by random test
   |      ^
   |
   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
-  = help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+  = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 
 fren: 1 passed (1 by random testing), 0 failed, 0 inconclusive, 0 redundant
 

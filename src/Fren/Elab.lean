@@ -7526,6 +7526,39 @@ set, and does not stop them, as in the `fren` command. -/
     if n > Core.Enumeration.maxSize then logErrorAt stx[3] (Core.Enumeration.sizeTooLargeMsg n).text
   elabSetOption stx
 
+/-- An internal command, which `set_option fren.evidence "v" in` before a
+function or a constant expands into (`expandItemEvidence`): it reports
+`F0215` at the setting, with what the item is and the value. -/
+syntax (name := itemEvidenceCmd) "fren_item_evidence% " str str : command
+
+@[command_elab itemEvidenceCmd] def elabItemEvidence : CommandElab := fun stx => do
+  let (some what, some value) := (stx[1].isStrLit?, stx[2].isStrLit?) | throwUnsupportedSyntax
+  logError (Core.itemEvidenceMsg what value).text
+
+open Lang in
+/-- What `F0215` calls the item `stx`, after `set_option ... in`, if it is
+a function or a constant, through further settings with `in`. -/
+partial def evidenceTarget? (stx : Syntax) : Option String :=
+  if stx.isOfKind ``Lean.Parser.Command.in then evidenceTarget? stx[2]
+  else if stx.isOfKind ``fnCmd || stx.isOfKind ``fnBlockCmd then some "a function"
+  else if stx.isOfKind ``constCmd then some "a constant"
+  else none
+
+/-- `set_option fren.evidence "v" in` before a function or a constant,
+whose checks are the solver's (`Fren.Core.dispatchOf`): `F0215`, as in the
+`fren` command, and the item is elaborated as though the value were
+`"solver"`. -/
+@[macro Lean.Parser.Command.in] def expandItemEvidence : Macro := fun stx => do
+  let opt := stx[0]
+  unless opt.isOfKind ``Lean.Parser.Command.set_option && opt[1].getId.eraseMacroScopes == `fren.evidence do
+    Macro.throwUnsupported
+  let some value := opt[3].isStrLit? | Macro.throwUnsupported
+  let some ev := Core.evidenceOf? value | Macro.throwUnsupported
+  let some what := evidenceTarget? stx[2] | Macro.throwUnsupported
+  if ev.settable .body then Macro.throwUnsupported
+  let report ← withRef opt `(fren_item_evidence% $(quote what) $(quote value))
+  `(section $report:command $(⟨stx[2]⟩):command end)
+
 open Lang in
 /-- A member without its `set_option fren.evidence ... in`, and the
 setting, if it has one: the innermost, if there are several. -/

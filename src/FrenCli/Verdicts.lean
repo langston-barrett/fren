@@ -34,10 +34,11 @@ def evalExit (ran complete : Bool) (status? : Option Status) (expectFalse : Bool
 (`eval::reaches`). -/
 def reached (found hasTrigger trigger : Bool) : Bool := found && (!hasTrigger || trigger)
 
-/-- The verdict of testing a check, from whether some test refuted it and
-how many reached it (`eval::test_verdict`). -/
-def testVerdict (kind : CheckKind) (refuted : Bool) (tests : Nat) : Verdict :=
-  if refuted then (if kind == .realizable then .inconclusive else .fail)
+/-- The verdict of testing a check, from whether some test refuted it, how
+many reached it, and, for realizability, whether the search saw every
+output of the input that refuted it (`eval::test_verdict`). -/
+def testVerdict (kind : CheckKind) (refuted : Bool) (tests : Nat) (exhausted : Bool := false) : Verdict :=
+  if refuted then (if kind == .realizable && !exhausted then .inconclusive else .fail)
   else if tests > 0 then .pass else .inconclusive
 
 /-- `eval::Confirmation`. -/

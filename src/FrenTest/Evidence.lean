@@ -34,21 +34,21 @@ info: the checks of `evidence_test::word` set to random testing are run by `fren
 info: the vacuity checks of `evidence_test::word` are not run by random testing
 
 note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
-help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 ---
 info: the checks of `evidence_test::all_tested` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: the vacuity and redundancy checks of `evidence_test::all_tested` are not run by random testing
 
 note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
-help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 ---
 info: the checks of `evidence_test::global_tested` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: the vacuity checks of `evidence_test::global_tested` are not run by random testing
 
 note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
-help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 ---
 info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 -/
