@@ -1,0 +1,7 @@
+-- Changing the level of a group with two forbidden lints (F0709), in both
+-- front ends: the message names the first of them by name
+-- (`Reqs/Lint#setting-levels`), `assertions_on_constants`, not
+-- `glob_imports`, which is forbidden first.
+set_option fren.lint.glob_imports "forbid"
+set_option fren.lint.assertions_on_constants "forbid"
+set_option fren.lint.style "allow"  --~ error: `allow` for `style` is incompatible with an earlier `forbid` of `assertions_on_constants`

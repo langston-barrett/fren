@@ -134,8 +134,9 @@ input_file reqs_lint_chapter_md where
 -- `Impls`, `Impls.Lint` and `Impls.Trace` make such claims, in
 -- `ImplsTested`, so that editing a test rebuilds only those three, and a new
 -- module of `Impls` needs no entry here. A module that makes one elsewhere
--- fails `lake test`'s `libraries` job. (Lake places a module in the last
--- library that has it.)
+-- fails `lake test`'s `libraries` job, which also checks that `testReaders`
+-- in `src/FrenTestMain.lean` lists these three. (Lake places a module in
+-- the last library that has it.)
 @[default_target] lean_lib Impls
 
 lean_lib ImplsTested where

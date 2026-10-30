@@ -930,8 +930,10 @@ def removedLintNotes (n : String) : Array String :=
 def groupsNote : String :=
   s!"note: the groups of lints are {", ".intercalate (((Group.all.map (·.name)).qsort (· < ·)).map (s!"`{·}`")).toList}"
 
-/-- The names of the lints and of the groups. -/
-def lintTargetNames : Array String := Lint.all.map (·.name) ++ Group.all.map (·.name)
+/-- The names of the lints and of the groups, sorted, so that of several
+names equally close to an unknown one, the suggestion is the first by name
+(`Reqs/Lint#setting-levels`). -/
+def lintTargetNames : Array String := (Lint.all.map (·.name) ++ Group.all.map (·.name)).qsort (· < ·)
 
 /-- The message of the fix that replaces an unknown name with `s`, the
 name of a lint or a group. -/

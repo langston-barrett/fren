@@ -350,6 +350,11 @@ pub proc group_setting(
 }
 ```
 
+When a group's setting is an error, its message names one of the group's
+forbidden lints: the first by name, whatever order they were forbidden in.
+So `glob_imports` and then `assertions_on_constants` at `forbid`, then
+`set_option fren.lint.style "allow"`, name `assertions_on_constants`.
+
 In Lean, the options set outside the file have no order. There, as on the
 command line, `forbid` wins, whether the lint's default, its own option or
 its group's sets it, so `fren.lint.pedantic` at `forbid` and
@@ -484,6 +489,13 @@ A `set_option` naming a lint that does not exist is an error (`F0707`),
 and so is a level other than the five (`F0708`). In Lean, an option that
 does not exist is Lean's own error, worded differently. The `fren` command
 accepts no other `set_option` (see [Input files](Cli.md#input-files)).
+
+The error for a name that is neither a lint nor a group, in a `set_option`
+or in a flag, suggests the name of a lint or a group when one is close:
+the closest, at most a third of the name's length away in edit distance,
+or else one of at least three characters that the name starts with, or
+that starts with the name. Of several such names, it is the first by name,
+so that `manual` suggests `manual_abs`, and `match` suggests `match_bool`.
 
 A lint that was renamed is unknown by its old name, and the `fren` command's
 error names the new one: `case_split_reqs` is now `case_split_guarantees`,

@@ -699,11 +699,21 @@ def specsRead : List (List String × (String → Bool)) :=
     (["Reqs.Calls", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
     (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/")]
 
-/-- The modules of Impls whose library needs the tests. -/
+/-- The modules of Impls whose library needs the tests, `ImplsTested` in
+`lakefile.lean` (`libraryGlobs`). -/
 def testReaders : List String := ["src/Impls.lean", "src/Impls/Lint.lean", "src/Impls/Trace.lean"]
 
 /-- The source file of module `m`. -/
 def sourceOf (m : String) : System.FilePath := "src" / ((m.replace "." "/") ++ ".lean")
+
+/-- The source files of the modules in the `globs` of the library `lib` in
+`lakefile.lean`, when they are plain module names. -/
+def libraryGlobs (lib : String) : IO (List String) := do
+  let text ← IO.FS.readFile "lakefile.lean"
+  let some after := (text.splitOn s!"lean_lib {lib} where")[1]? | return []
+  let some globs := (after.splitOn "globs := #[")[1]? | return []
+  let names := ((globs.splitOn "]").headD "").splitOn "," |>.map fun n => ((n.trimAscii.toString.dropPrefix "`").toString)
+  return names.filter (!·.isEmpty) |>.map fun n => (sourceOf n).toString
 
 /-- The modules that `m` imports. -/
 def importsOf (m : String) : IO (Array String) := do
@@ -733,6 +743,9 @@ def libraries : IO (Array String) := do
       for spec in specsOf (← IO.FS.readFile (sourceOf m)) do
         unless ok spec do
           failures := failures.push s!"{sourceOf m}: reads `{spec}`, which its library in `lakefile.lean` does not need"
+  let tested ← libraryGlobs "ImplsTested"
+  unless tested.toArray.qsort (· < ·) == testReaders.toArray.qsort (· < ·) do
+    failures := failures.push s!"lakefile.lean: `ImplsTested` holds {tested}, but `testReaders` in src/FrenTestMain.lean is {testReaders}"
   for f in (← System.FilePath.walkDir "src/Impls").push "src/Impls.lean" do
     if f.extension != some "lean" || testReaders.contains f.toString then continue
     if (← IO.FS.readFile f).splitOn "\n" |>.any (·.startsWith "tested ") then

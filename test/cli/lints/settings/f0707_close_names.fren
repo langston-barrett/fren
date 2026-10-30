@@ -1,0 +1,6 @@
+-- Unknown lints that are as close to several names as to each other
+-- (F0707): the suggestion is the first of them by name
+-- (`Reqs/Lint#setting-levels`). `manual` is one edit from several names,
+-- and `match` a prefix of several.
+set_option fren.lint.manual "allow"
+set_option fren.lint.match "allow"

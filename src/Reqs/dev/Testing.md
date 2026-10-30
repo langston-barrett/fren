@@ -42,7 +42,7 @@
   imports, to keep it off the build's critical path, import exactly its
   modules; each module of `Reqs` reads only the specs that its library in
   `lakefile.lean` needs; and only the modules of `Impls` whose library needs
-  the tests make `tested` claims.
+  the tests, `ImplsTested`, make `tested` claims.
 - **Lean-only behaviour** (`lake build`): `#guard_msgs` tests in
   `src/FrenTest`, e.g. the shape of generated definitions.
 - **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by
