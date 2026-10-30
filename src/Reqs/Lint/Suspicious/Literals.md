@@ -258,18 +258,19 @@ pub proc duplicate_elements(
 The fix keeps the members: each element that it removes has the outcome
 of one that it keeps, the first earlier element written the same, by
 [`lint::first_same`](Expressions.md#branches-written-the-same). That one
-is not a repeat itself, since an element before it written the same would
-be written the same as the removed one too, and earlier. The two have the same outcome: as for the tests of a
-chain, every element of a literal is written in one scope, and evaluated
-in one environment. Each other element is outside the chains of an
-element's pattern tests, where their binders are not in scope, by
+is not a repeat itself, since an element before it written the same
+would be written the same as the removed one too, and earlier. The two
+have the same outcome: as for the tests of a chain, every element of a
+literal is written in one scope, and evaluated in one environment. Each
+other element is outside the chains of an element's pattern tests, where
+their binders are not in scope, by
 [`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), whatever
-those chains are a part of. So every member of the literal is the value of
-an element that the fix keeps. `lint::duplicate_elements_members` states
-this at each position, over the elements as written in their scope and
-their outcomes by Fren's own evaluation, and checks the one scope against
-`lang::test_scope`, for a pattern test of any element; the solver checks
-it, for any number of elements:
+those chains are a part of. So every member of the literal is the value
+of an element that the fix keeps. `lint::duplicate_elements_members`
+states this at each position, over the elements as written in their
+scope and their outcomes by Fren's own evaluation, and checks the one
+scope against `lang::test_scope`, for a pattern test of any element; the
+solver checks it, for any number of elements:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
