@@ -2191,12 +2191,8 @@ def toCountOp : Fren.Core.Cardinality → check.CountOp
   | .exactlyOne => .Exactly
   | .atMostOne => .AtMost
 
-/-- A value that may be unknown as `check::Truth` has it. -/
-def optTruth : Option Bool → check.Truth
-  | some true => .True
-  | some false => .False
-  | none => .Unknown
-
+-- `optTruth`, a value that may be unknown as `check::Truth` has it, is
+-- defined above, with the quantifiers' truths.
 theorem optTruth_some (b : Bool) : optTruth (some b) = if b then .True else .False := by cases b <;> rfl
 
 theorem optTruth_none : optTruth none = .Unknown := rfl

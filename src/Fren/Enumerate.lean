@@ -711,12 +711,15 @@ partial def leadingGuards (source : Expr) : MetaM (Array Expr) := do
     if !body.hasLooseBVars && (← isProp condition) then return #[e] ++ (← leadingGuards body)
   return #[]
 
-/-- `e` without the newtype fields, `fields`, that it reads outermost: a
-newtype's value is its field's (`Reqs/Lang/Expressions#newtypes`), so an
-ordering of a newtype, which `orderingTerm` writes as one of the fields,
-reads the bound name itself. -/
-partial def withoutFields (fields : Array Name) (e : Expr) : Expr :=
-  if e.isApp && e.getAppFn.constName?.any fields.contains then withoutFields fields e.appArg!.consumeMData else e
+/-- `e` without the newtype fields, `fields`, that it reads outermost, and
+one `true` for each, for `Core.nameAlone`: `m.0` of a newtype `m`, and an
+ordering of a newtype, which `orderingTerm` writes as one of its fields,
+elaborate alike, to the field's projection of `m`. -/
+partial def withoutFields (fields : Array Name) (e : Expr) : Expr × List Bool :=
+  if e.isApp && e.getAppFn.constName?.any fields.contains then
+    let (base, fs) := withoutFields fields e.appArg!.consumeMData
+    (base, fs ++ [true])
+  else (e, [])
 
 /-- The domain of the bound local `x`, of a `forall` if `universal`, by its
 guard in `body`, as the `fren` command reads it (`lang::guard_domain`):
@@ -740,8 +743,8 @@ def guardedDomain (universal : Bool) (x body : Expr) : MetaM (Core.GuardDomain �
     let e := if e.isAppOfArity ``Int.ofNat 1 then e.appArg!.consumeMData else e
     let e := if (e.isAppOf ``NatCast.natCast || e.isAppOf ``Nat.cast) && e.getAppArgs[0]?.any (·.isConstOf ``Int) then
       e.appArg!.consumeMData else e
-    let e := withoutFields fields e
-    if e == x then some 0 else none
+    let (e, fs) := withoutFields fields e
+    Core.nameAlone (if e == x then some 0 else none) fs
   let names (e : Expr) := if e.containsFVar x.fvarId! then [0] else []
   return Core.boundDomain alone names conjuncts 0 ((← inferType x).isConstOf ``Nat)
 

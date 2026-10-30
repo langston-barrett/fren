@@ -1963,6 +1963,21 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
   let r := r.sealShown
   baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r
 
+/-- Sealing twice is sealing once. -/
+theorem CheckResult.sealShown_idem (r : CheckResult) : r.sealShown.sealShown = r.sealShown := by
+  unfold CheckResult.sealShown
+  split
+  · simp_all
+  · simp [Detail.shown, shownAllowed]
+
+/-- The messages of a result are those of its sealed result, which shows
+only what its verdict allows (`shown_sealed`): whatever a producer put in
+it, no report shows a counterexample beside a pass (`view::report_shows`).
+Without the seal in `messages`, this would not hold. -/
+theorem messages_sealed (h : Bool) (r : CheckResult) (d : Bool) :
+    messages h r d = messages h r.sealShown d := by
+  simp only [messages, CheckResult.sealShown_idem]
+
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/
 def testingHelp (byCheck : Bool) (decide : String) : String :=

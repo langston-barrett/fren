@@ -288,8 +288,8 @@ conjunct `not (a and b)`.
 Each conjunct gives a *bound* for each bound name `x` of a type that is
 not listed: `x in e` gives its members, `x >= e`, `x > e`, `e <= x` and
 `e < x` a lower bound, and `x <= e`, `x < e`, `e >= x` and `e > x` an
-upper bound, where `x` is the bound name alone, not a field read from it,
-and `e` names neither `x` nor a bound name declared after `x` in the same
+upper bound, where `x` is the bound name alone, not a field read from it
+but a newtype's field `0`, and `e` names neither `x` nor a bound name declared after `x` in the same
 quantifier: no name of one segment within it, nor the root of a dotted
 name, nor a field of a record literal written without `:=`, is one of
 theirs, whatever shadows it. A bound by `<` or `>` is *strict*: the bound
@@ -334,6 +334,36 @@ pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOpera
 
     expect members_by_in: when bound = Members, relation = In
     expect name_alone: when bound != NoBound, (lhs = Name) != (rhs = Name)
+}
+```
+
+A [newtype](Items.md#newtypes)'s values are its field's, so its field
+`0`, read from a bound name, is the name itself: `0 <= m.0 < 2` bounds a
+bound name `m` of a newtype over `Int` as `Ms(0) <= m < Ms(2)` does, and
+`m.0.0` is `m` where `m`'s type is a newtype over a newtype. Any other field
+read from a bound name, such as `p.x`, is not the name. `lang::name_alone`
+states it, from the position of the bound name that an operand reads, or
+-1, and, for each field read from it, outermost last, whether it is the
+field `0` of a newtype; it gives the position that `GuardSide`'s `alone`
+holds. Both front ends ask it (`nameAlone` in `FrenCore.Quantifier`): the
+`fren` command of a path such as `m.0`, and the hosted front end of the
+field projections that elaboration writes, which are the same for `m.0` as
+for an ordering of a newtype. The elaborators read no field as the name,
+since they set `fmf-bound` from the guard's shape alone (see below):
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc name_alone(
+    base: Int,                  -- the position of the bound name read, or -1
+    newtype_fields: Seq<Bool>,  -- for each field read from it: it is a newtype's field `0`
+): (det alone: Int) {
+    assume position: base >= -1
+
+    ensure rule: alone = (if (forall (j: Int), when 0 <= j < newtype_fields.len, newtype_fields[j]) then base else -1)
+
+    expect itself: when newtype_fields = [], alone = base
+    expect through_newtypes: when newtype_fields = [true, true], alone = base
+    expect other_field: when newtype_fields = [false], alone = -1
 }
 ```
 
@@ -434,27 +464,33 @@ bound name of any of those gives it no bound, and, without a membership,
 it has no domain: both [evaluation](../Eval.md#quantifiers) and
 [enumeration](../Check.md#quantifiers-up-to-the-bound) then read it as
 any other bound name without a domain. `lang::range_domain` states which
-types a comparison bounds, from the kinds of the bound name's type and of
-the type that each newtype it is wraps, from the outermost in, so that
-the last is the kind of the values that the comparison compares. Both
-front ends ask it (`countedBetween` in `FrenCore.Quantifier`):
+types a comparison bounds, over the type model of
+[Types](Types.md#types): from the bound name's type and the underlying type
+of each newtype it is, from the outermost in, each but the last a newtype
+whose `under` is the next, so that the last, not a newtype, is the type
+of the values that the comparison compares. Both front ends ask it
+(`countedBetween` in `FrenCore.Quantifier`):
 
 ```fren
+set_option fren.lint.undecidable "allow" in
 pub proc range_domain(
-    kinds: Seq<ValueType>,    -- the kinds, from the outermost in, at least one
+    types: Seq<Ty>,    -- the bound name's type, then each newtype's underlying type
 ): (ranged?) {
     use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
 
-    assume typed: kinds != []
+    assume typed: types != []
+    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+        newtype?(types[i]) and under(types[i]) = types[i + 1]
+    assume erased: not newtype?(types[types.len - 1])
 
-    out ranged? := kinds[kinds.len - 1] in {IntTy, NatTy}
+    out ranged? := kind(types[types.len - 1]) in {IntTy, NatTy}
 
-    expect ints: when kinds = [IntTy], ranged?
-    expect nats: when kinds = [NatTy], ranged?
-    expect strings: when kinds = [StringTy], not ranged?
-    expect records: when kinds = [RecordTy], not ranged?
-    expect newtype_over_int: when kinds = [RecordTy, IntTy], ranged?
-    expect newtype_over_string: when kinds = [RecordTy, StringTy], not ranged?
+    expect ints: when types.len = 1 and kind(types[0]) = IntTy, ranged?
+    expect nats: when types.len = 1 and kind(types[0]) = NatTy, ranged?
+    expect strings: when types.len = 1 and kind(types[0]) = StringTy, not ranged?
+    expect records: when types.len = 1 and kind(types[0]) = RecordTy, not ranged?
+    expect newtype_over_int: when types.len = 2 and kind(types[1]) = IntTy, ranged?
+    expect newtype_over_string: when types.len = 2 and kind(types[1]) = StringTy, not ranged?
 }
 ```
 

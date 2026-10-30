@@ -1326,34 +1326,55 @@ theorem wrapped_last : ∀ t : Fren.Core.Ty, t.wrapped[t.wrapped.length - 1]? = 
   | .bool | .int | .nat | .string | .set _ | .rel _ _ | .seq _ | .enum _ _ | .record _ _ | .abstract _
   | .param _ _ => rfl
 
--- For every type, the kinds of it and of the types that the newtypes it
--- is wrap, by the predicate that both front ends ask of a comparison in a
--- guard (`Fren.Core.countedBetween`).
+-- For every type, it and the types that the newtypes it is wrap, by the
+-- predicate that both front ends ask of a comparison in a guard
+-- (`Fren.Core.countedBetween`).
 impl range_domain: lang::range_domain for (t : Fren.Core.Ty) {
-  kinds := Fren.Seq.ofList (t.wrapped.map kindOf),
+  types := Fren.Seq.ofList t.wrapped,
   ranged? := Fren.Core.countedBetween t,
 } by
   intro t _
-  have hne : (t.wrapped.map kindOf) ≠ [] := by simpa using wrapped_ne_nil t
-  have hlast : (t.wrapped.map kindOf)[(t.wrapped.map kindOf).length - 1]? = some (kindOf t.erased) := by
-    simpa using congrArg (Option.map kindOf) (wrapped_last t)
-  have hpos : 0 < (t.wrapped.map kindOf).length := by
-    cases h : t.wrapped.map kindOf with
+  have hne := wrapped_ne_nil t
+  have hpos : 0 < t.wrapped.length := by
+    cases h : t.wrapped with
     | nil => exact absurd h hne
     | cons a l => simp
-  have hidx : (t.wrapped.map kindOf).length - 1 < (t.wrapped.map kindOf).length := by omega
-  have hget : (t.wrapped.map kindOf)[(t.wrapped.map kindOf).length - 1] = kindOf t.erased :=
-    Option.some.inj ((List.getElem?_eq_getElem hidx).symm.trans hlast)
-  have hnth : (Fren.Seq.ofList (t.wrapped.map kindOf)).nth
-      ((Fren.Seq.ofList (t.wrapped.map kindOf)).len - 1) = kindOf t.erased := by
-    have hlenInt : (Fren.Seq.ofList (t.wrapped.map kindOf)).len - 1
-        = (((t.wrapped.map kindOf).length - 1 : Nat) : Int) := by
+  have hidx : t.wrapped.length - 1 < t.wrapped.length := by omega
+  have hget : t.wrapped[t.wrapped.length - 1] = t.erased :=
+    Option.some.inj ((List.getElem?_eq_getElem hidx).symm.trans (wrapped_last t))
+  have hnth : (Fren.Seq.ofList t.wrapped).nth ((Fren.Seq.ofList t.wrapped).len - 1) = t.erased := by
+    have hlenInt : (Fren.Seq.ofList t.wrapped).len - 1 = ((t.wrapped.length - 1 : Nat) : Int) := by
       rw [Fren.Seq.len_eq, Fren.Seq.toList_ofList]; omega
     rw [hlenInt, Fren.Seq.nth_of_lt _ _ (by omega) (by simp only [Fren.Seq.toList_ofList]; omega)]
     simpa using hget
   simp only [fren_spec, hnth]
   refine ⟨?_, trivial⟩
   cases h : t.erased <;> simp [Fren.Core.countedBetween, h, kindOf]
+
+-- For every operand, as both front ends decide that it is a bound name
+-- written alone (`Fren.Core.nameAlone`).
+impl name_alone: lang::name_alone for (k : Option Nat) (fs : List Bool) {
+  base := posOr k,
+  newtype_fields := Fren.Seq.ofList fs,
+  alone := posOr (Fren.Core.nameAlone k fs),
+} by
+  intro k fs _
+  simp only [fren_spec, Fren.Core.nameAlone]
+  have hall : (fs.all id = true) ↔ ∀ j : Int, 0 ≤ j ∧ j < (Fren.Seq.ofList fs).len → (Fren.Seq.ofList fs).nth j = true := by
+    simp only [List.all_eq_true, id, Fren.Seq.len_eq, Fren.Seq.toList_ofList]
+    constructor
+    · intro h j ⟨h0, h1⟩
+      rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
+      exact h _ (List.getElem_mem _)
+    · intro h x hx
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+      have := h i ⟨by omega, by omega⟩
+      rwa [Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using hi)] at this
+  by_cases h : fs.all id = true
+  · simp only [h, if_true]
+    rw [if_pos (by intro j hj; exact (hall.1 h) j hj)]
+  · simp only [h, Bool.false_eq_true, if_false, posOr]
+    rw [if_neg (by intro h'; exact h (hall.2 fun j hj => h' j hj))]
 
 /-! ## Strings and decidability (`Reqs/Lang/Types#strings`, `Reqs/Lang/Decidability`) -/
 

@@ -226,6 +226,18 @@ partial def guardConjunctsBy (view : α → GuardNode α) (when? : α → Option
     | none => #[]
   else splitConjuncts view body
 
+/-- The bound name that an operand of a guard's conjunct is, written alone
+(`lang::name_alone`): the bound name at `base`, read through `fields`,
+one for each field read from it, outermost last, each saying whether it is
+the field `0` of a newtype. A newtype's values are its field's
+(`Reqs/Lang/Expressions#newtypes`), so `m.0` of a newtype `m`, and
+`m.0.0` of one over a newtype, is `m` itself; any other field read from a
+bound name is not the name. Both front ends ask it: the `fren` command of
+a path such as `m.0`, and the hosted front end of the field projections
+that elaboration writes, for `m.0` as for an ordering of a newtype. -/
+def nameAlone (base : Option Nat) (fields : List Bool) : Option Nat :=
+  if fields.all id then base else none
+
 /-- What the operand `e` of a conjunct is, seen from the bound name at
 position `k` (`lang::guard_operand`): that name, if `alone e` is its
 position, an expression that names it or a later one, by `names e`, or

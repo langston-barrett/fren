@@ -393,9 +393,15 @@ not decide the check, so it refutes nothing and meets nothing.
 `view::report_shows` states this. Both front ends build a report's
 messages with `Core.messages`, which seals the result by it first
 (`CheckResult.sealShown` in `FrenCore.Check`), so a pass shows no
-counterexample whatever the method reached the verdict; enumeration,
-which changes a verdict for its bound (`classify`), and testing, which
-reports what it refuted, seal theirs as well:
+counterexample whatever the method reached the verdict: `messages_sealed`
+proves that a result's messages are those of its sealed result, and
+`shown_sealed` that a sealed result shows only what its verdict allows.
+Enumeration, which changes a verdict for its bound (`classify`), and
+testing, which reports what it refuted, seal theirs as well. No check
+makes a result that the seal changes, so it changes no report today: it
+is there so that one never can, since a pass beside a behaviour that
+refutes it would be an internal inconsistency, and the report would then
+show the verdict without the behaviour:
 
 ```fren
 use check::{Kind, Verdict}

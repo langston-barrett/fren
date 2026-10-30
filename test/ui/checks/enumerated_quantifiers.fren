@@ -14,6 +14,7 @@ type Bit = b: Int where invariant: b is 0..=1
 ordered struct Ms(Int)
 ordered struct Ns(Nat)
 ordered struct Pt { x: Int, y: Int }
+struct Plain(Int)
 
 -- False within the bound: the counterexample is genuine.
 set_option fren.evidence "enumerated" in
@@ -108,6 +109,27 @@ set_option fren.evidence "enumerated" in
 proc nat_newtype_range(k: Ns): (all?) {  --~ info: 1 check of `nat_newtype_range` holds for every behaviour up to size 3
     ensure r: all? iff (forall (n: Ns), when Ns(0) <= n and n < Ns(2), n < k)
     expect wrong: all?  --~ error: counterexample: k = Ns(0), all? = false
+}
+
+-- A newtype's field `0`, read from a bound name, is the name itself
+-- (`lang::name_alone`), whether the newtype is ordered or not; the field
+-- `x` of a record is not, so that guard gives `Pt` no domain.
+set_option fren.evidence "enumerated" in
+proc field_guard(k: Int): (all?) {  --~ info: 1 check of `field_guard` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when 0 <= m.0 and m.0 < 2, m.0 < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc plain_field_guard(k: Int): (all?) {  --~ info: 1 check of `plain_field_guard` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (p: Plain), when 0 <= p.0 and p.0 < 2, p.0 < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc record_field_guard(k: Int): (all?) {  --~ warning: could not decide whether `record_field_guard` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (p: Pt), when 0 <= p.x and p.x < 2, p.x < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
 }
 
 -- Between two `String`s lie `"aa"`, `"aaa"` and every other string that
@@ -229,4 +251,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 58 passed (18 by bounded enumeration), 16 failed, 18 inconclusive, 0 redundant
+--@ summary: 63 passed (20 by bounded enumeration), 19 failed, 19 inconclusive, 0 redundant
