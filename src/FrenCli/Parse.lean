@@ -1595,7 +1595,9 @@ def member : P Member := do
       throw { span := t.span.to x.span, msg := Fren.Core.fnOutMsg x.name rn }
     let results := ((← get).proc?.map (·.results)).getD #[]
     if results.contains x.name then return .define x e
-    if (← get).proc?.any (·.global) then throw { span := t.span.to x.span, msg := Fren.Core.globalOutMsg x.name }
+    -- A global expectation's block has no results: its `out` members are
+    -- reported as members that it does not accept (`F0417`).
+    if (← get).proc?.any (·.global) then return .define x e
     throw { span := t.span.to x.span, msg := Fren.Core.procOutMsg x.name }
   if (isKw t "exists" || isKw t "let") && pub?.isNone then
     discard bump

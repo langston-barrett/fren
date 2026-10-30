@@ -65,4 +65,11 @@ def blockMemberMsg (m : BlockMember) (det : Bool) : Msg :=
       `expect`, `refines` and `cover` members only",
       "help: state what the procedures guarantee in the procedures, and claim what follows with `expect`"] }
 
+/-- What both front ends report for the member `m` of a global expectation's
+block, written with `det` if `det`, before any other check of it
+(`lang::block_member`): nothing if the block accepts it, and otherwise
+`blockMemberMsg`, `F0417`. -/
+def blockMemberReport? (m : BlockMember) (det : Bool) : Option Msg :=
+  if blockMemberAccepted m det then none else some (blockMemberMsg m det)
+
 end Fren.Core

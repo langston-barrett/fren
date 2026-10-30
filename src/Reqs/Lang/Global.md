@@ -44,15 +44,22 @@ pub mod lang
 ```
 
 `lang::block_member` states which members a global expectation's block
-accepts, and a result in its signature, which it does not:
+accepts, and a result in its signature, which it does not, and the code of
+the error that both front ends report for a member that it does not
+accept, before any other check of that member: `F0417`, so an `out`
+member is reported as one that the block does not accept, not as a
+procedure's `out` that names no result (`F0444`):
 
 ```fren
 pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Refines, Use }
 
+-- What is reported for a member: nothing, or the error `F0417`.
+pub enum MemberReport { NoReport, F0417 }
+
 pub proc block_member(
     member: BlockMember,
     det?,                -- written with `det`
-): (det accepted?) {
+): (det accepted?, det report: MemberReport) {
     use self::BlockMember::{
         Assume,
         Call,
@@ -68,10 +75,12 @@ pub proc block_member(
     }
 
     ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Refines, Use})
+    ensure reported: report = (if accepted? then MemberReport::NoReport else MemberReport::F0417)
 
     expect claims: when member in {Expect, Cover} and not det?, accepted?
     expect constrains_nothing: when member in {Result, Exists, Define, Ensure}, not accepted?
     expect determines_nothing: when det?, not accepted?
+    expect out_rejected: when member = Define, report = MemberReport::F0417
 }
 ```
 
