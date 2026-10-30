@@ -6,8 +6,8 @@ open Fren.Lang
 
 /-! # Texts written the same as earlier ones (`Reqs/Lint/Suspicious/Expressions`)
 
-`ifs_same_cond` and `duplicate_elements`, proved of `earlierSame` and
-`repeatedForms`, which both front ends call on the written forms of a
+`first_same`, `ifs_same_cond` and `duplicate_elements`, proved of
+`earlierSame` and `repeatedForms`, which both front ends call on the written forms of a
 chain's tests and of a literal's elements, for any number of them. -/
 
 namespace Fren.Impls.Repeats
@@ -127,42 +127,61 @@ theorem earlierSame_none (l : List String) (i : Nat) (hi : i < l.length) :
     rw [getElem!_toArray l j (by omega), getElem!_toArray l i hi]
     simpa using h hi j hj
 
+/-- The first earlier position written the same as the one at `k`, or `-1`,
+as `ifsSameCondAt` computes it with `earlierSame`. -/
+def firstSame (ts : List String) (k : Int) : Int :=
+  if 0 ≤ k ∧ k.toNat < ts.length then
+    (match earlierSame ts.toArray k.toNat with | some j => (j : Int) | none => -1) else -1
+
+/-- `firstSame` meets `lint::first_same`'s guarantees. -/
+theorem firstSame_ensures (ts : List String) (k : Int) :
+    lint.first_same.ensures (Fren.Seq.ofList ts) k (firstSame ts k) := by
+  unfold lint.first_same.ensures lint.first_same.ensure.first lint.first_same.ensure.none firstSame
+  rw [repeated_iff]
+  by_cases hk : 0 ≤ k ∧ k.toNat < ts.length
+  · rw [if_pos hk]
+    cases e : earlierSame ts.toArray k.toNat with
+    | none =>
+      have hr := (earlierSame_none ts k.toNat hk.2).mp e
+      exact ⟨fun h => absurd h.2 hr, fun _ => rfl⟩
+    | some j =>
+      obtain ⟨hj, he, hb⟩ := (earlierSame_some ts k.toNat j hk.2).mp e
+      dsimp only
+      refine ⟨fun _ => ⟨⟨⟨by omega, by omega⟩, ?_⟩, ?_⟩, fun h => absurd ⟨hk.1, hk.2, j, hj, he⟩ h⟩
+      · rw [nth_ofList ts j (by omega) (by simp; omega), nth_ofList ts k hk.1 hk.2]; simpa using he
+      · intro j' ⟨h0, h1⟩
+        rw [nth_ofList ts j' h0 (by omega), nth_ofList ts k hk.1 hk.2]
+        exact hb j'.toNat (by omega)
+  · rw [if_neg hk]
+    exact ⟨fun ⟨h0, hl, _⟩ => absurd ⟨h0, hl⟩ hk, fun _ => rfl⟩
+
+impl first_same: lint::first_same for (ts : List String) (k : Int) {
+  forms := Fren.Seq.ofList ts,
+  k := k,
+  earlier := firstSame ts k,
+} by
+  intro ts k _
+  exact firstSame_ensures ts k
+
 -- Both front ends decide `ifs_same_cond` with `earlierSame`, in
 -- `ifsSameCondAt`, of the written forms of the chain's tests.
 impl ifs_same_cond: lint::ifs_same_cond for (ts : List String) (k : Int) {
   tests := Fren.Seq.ofList ts,
   k := k,
   «fires?» := decide (0 ≤ k ∧ k.toNat < ts.length) && (earlierSame ts.toArray k.toNat).isSome,
-  earlier := if 0 ≤ k ∧ k.toNat < ts.length then
-    (match earlierSame ts.toArray k.toNat with | some j => (j : Int) | none => -1) else -1,
+  earlier := firstSame ts k,
 } by
   intro ts k _
-  unfold lint.ifs_same_cond.ensures lint.ifs_same_cond.ensure.rule lint.ifs_same_cond.ensure.first
-    lint.ifs_same_cond.ensure.none
-  rw [repeated_iff]
-  by_cases hk : 0 ≤ k ∧ k.toNat < ts.length
-  · rw [if_pos hk]
-    have hd : decide (0 ≤ k ∧ k.toNat < ts.length) = true := decide_eq_true hk
-    rw [hd, Bool.true_and]
-    cases e : earlierSame ts.toArray k.toNat with
-    | none =>
-      have hr := (earlierSame_none ts k.toNat hk.2).mp e
-      dsimp only
-      refine ⟨⟨fun h => absurd h (by simp), fun ⟨_, h⟩ => absurd h hr⟩, fun h => absurd h (by simp), fun _ => rfl⟩
-    | some j =>
-      obtain ⟨hj, he, hb⟩ := (earlierSame_some ts k.toNat j hk.2).mp e
-      dsimp only
-      refine ⟨⟨fun _ => ⟨hk.1, hk.2, j, hj, he⟩, fun _ => rfl⟩, fun _ => ⟨⟨⟨by omega, by omega⟩, ?_⟩, ?_⟩,
-        fun h => absurd rfl h⟩
-      · rw [nth_ofList ts j (by omega) (by simp; omega), nth_ofList ts k hk.1 hk.2]; simpa using he
-      · intro j' ⟨h0, h1⟩
-        rw [nth_ofList ts j' h0 (by omega), nth_ofList ts k hk.1 hk.2]
-        exact hb j'.toNat (by omega)
-  · rw [if_neg hk]
-    have hd : decide (0 ≤ k ∧ k.toNat < ts.length) = false := decide_eq_false hk
-    rw [hd, Bool.false_and]
-    refine ⟨⟨fun h => absurd h (by simp), fun ⟨h0, hl, _⟩ => absurd ⟨h0, hl⟩ hk⟩, fun h => absurd h (by simp),
-      fun _ => rfl⟩
+  refine ⟨Fren.Seq.ofList ts, k, firstSame ts k, ⟨?_, rfl⟩, ?_⟩
+  · unfold lint.ifs_same_cond.ensure.rule
+    rw [repeated_iff]
+    by_cases hk : 0 ≤ k ∧ k.toNat < ts.length
+    · rw [decide_eq_true hk, Bool.true_and, Option.isSome_iff_ne_none, ne_eq,
+        earlierSame_none ts k.toNat hk.2, Classical.not_not]
+      exact ⟨fun h => ⟨hk.1, h⟩, fun h => h.2⟩
+    · rw [decide_eq_false hk, Bool.false_and]
+      exact ⟨fun h => absurd h (by simp), fun ⟨h0, hl, _⟩ => absurd ⟨h0, hl⟩ hk⟩
+  · exact ⟨⟨rfl, rfl⟩, trivial, firstSame_ensures ts k⟩
 
 -- Both front ends decide `duplicate_elements` with `repeatedForms`, through
 -- `repeatedElements`, of the written forms of the literal's elements.

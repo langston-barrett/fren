@@ -463,20 +463,36 @@ else if x > 0 then b else c`. Its branch is never taken: it is guarded by
 the negation of the earlier test, so wherever the test holds, the earlier
 branch is taken. It is reported at the repeated test, and the message names
 the earlier one. A test in parentheses, `else (if ...)`, is still in the
-chain. It has no fix: one of the tests is probably not the one meant.
+chain. The parentheses around a whole test are not part of it, so in `if b
+> 0 then a else if (b > 0) then c else d` the second test repeats the
+first. It has no fix: one of the tests is probably not the one meant.
 `lint::ifs_same_cond` states when it fires, over the chain's tests, in
 order, each as [written](../../Lint.md#written-the-same): `lint::repeated?`
 says that the test at a position is written the same as an earlier one,
-and `earlier` is the first such, which the message names. Its quantifiers
-are over positions of any number of tests, so it is outside the decidable
-core; its own checks are tested, and its implementation is proved in Lean
-of the lint's code, for every chain:
+and `lint::first_same` gives the first such, which the message names, and
+which `duplicate_elements` shares. Their quantifiers are over positions of
+any number of tests, so they are outside the decidable core; their own
+checks are tested, and their implementations are proved in Lean of the
+lint's code, for every chain:
 
 ```fren
 -- The text at position `i` is written the same as an earlier one.
 set_option fren.lint.undecidable "allow" in
 pub fn repeated?(forms: Seq<String>, i: Int) :=
     0 <= i < forms.len and (exists (j: Int), 0 <= j < i and forms[j] = forms[i])
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc first_same(
+    forms: Seq<String>,      -- texts, in order, each as written
+    k: Int,                  -- a position
+): (
+    det earlier: Int,        -- the first earlier position written the same, or -1
+) {
+    ensure first: when repeated?(forms, k), 0 <= earlier < k and forms[earlier] = forms[k]
+        and (forall (j: Int), when 0 <= j < earlier, forms[j] != forms[k])
+    ensure none: unless repeated?(forms, k), earlier = -1
+}
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
@@ -487,32 +503,44 @@ pub proc ifs_same_cond(
     det fires?,
     det earlier: Int,        -- the position of the first earlier test written the same, or -1
 ) {
+    call first := first_same(tests, k)
+
     ensure rule: fires? iff repeated?(tests, k)
-    ensure first: when fires?, 0 <= earlier < k and tests[earlier] = tests[k]
-        and (forall (j: Int), when 0 <= j < earlier, tests[j] != tests[k])
-    ensure none: unless fires?, earlier = -1
+    ensure named: earlier = first.earlier
 }
 ```
 
-Its branch is never taken. Tests written the same have the same value, by
-[`written_same`](../Meaning.md#expressions-as-written), and the branch of
-the test at `k` is taken where that test holds and no earlier one does.
-`lint::ifs_same_cond_never_taken` states this over the tests' values:
+Its branch is never taken. Every test of the chain is written in one
+scope, and evaluated in one environment: the test at `k` is in the `else`
+branch of each earlier one, which sees none of its binders, by
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests). So tests
+written the same are the same [`Scoped`](../Meaning.md#expressions-as-written)
+expression, and have the same outcome, by
+[`written_same`](../Meaning.md#expressions-as-written). The branch of the
+test at `k` is taken where that test is `true` and each earlier one `false`.
+`lint::ifs_same_cond_never_taken` states this over the tests as written in
+their scope, and their outcomes by Fren's own evaluation; the solver
+checks it, for any number of tests:
 
 ```fren
--- The branch of the test at `k` is taken: its test holds, and no earlier one.
 set_option fren.lint.undecidable "allow" in
-pub fn taken?(values: Seq<Bool>, k: Int) :=
-    0 <= k < values.len and values[k] and (forall (j: Int), when 0 <= j < k, not values[j])
+pub proc ifs_same_cond_never_taken(
+    forms: Seq<String>,           -- the tests, each as written
+    tests: Seq<Scoped>,           -- the tests, as written in their scope
+    scope: Set<lang::Id>,         -- the chain's scope
+    i: lang::Interp, env: lang::Env, k: Int,
+) {
+    use lang::{Outcome, Value, eval}
 
-set_option fren.lint.undecidable "allow" in
-pub proc ifs_same_cond_never_taken(tests: Seq<String>, values: Seq<Bool>, k: Int) {
-    assume same_values: values.len = tests.len and (forall (i j: Int), when 0 <= i < tests.len
-        and 0 <= j < tests.len and tests[i] = tests[j], values[i] = values[j])
+    assume texts: tests.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
+        and 0 <= b < forms.len and forms[a] = forms[b], tests[a].text = tests[b].text)
+    assume one_scope: forall (a: Int), when 0 <= a < tests.len, tests[a].scope = scope
 
-    call c := ifs_same_cond(tests, k)
+    call c := ifs_same_cond(forms, k)
 
-    expect never_taken: when c.fires?, not taken?(values, k)
+    -- The branch of the test at `k` is taken where that test is `true`, and each earlier one `false`.
+    expect never_taken: when c.fires?, not (eval(i, env, written(tests[k])) = Outcome::Defined(Value::True)
+        and (forall (j: Int), when 0 <= j < k, eval(i, env, written(tests[j])) = Outcome::Defined(Value::False)))
 }
 ```
 
@@ -520,14 +548,15 @@ pub proc ifs_same_cond_never_taken(tests: Seq<String>, values: Seq<Bool>, k: Int
 
 `duplicate_elements` fires on a set or relation literal with an element
 written the same as an earlier one, as in `{a, b, a}` or `{(a, b), (a,
-b)}`, and is reported once for the literal. A set has no repeats, so the
-fix, which removes each repeat with the `,` before it, keeps the meaning,
-and it keeps the guards, which are the same for every element of the
-literal. It does not fire on a sequence literal, where a repeat means
-something. `lint::duplicate_elements` states when it fires, over the
-literal's elements, in order, each as written, and which elements the fix
-removes, the repeats. As for `ifs_same_cond`, its own checks are tested,
-and its implementation is proved in Lean, for every literal:
+b)}`, and is reported once for the literal. The parentheses around a whole
+element are not part of it, so `{(a), a}` repeats `a`. A set has no
+repeats, so the fix, which removes each repeat with the `,` before it,
+keeps the meaning, and it keeps the guards, which are the same for every
+element of the literal. It does not fire on a sequence literal, where a
+repeat means something. `lint::duplicate_elements` states when it fires,
+over the literal's elements, in order, each as written, and which elements
+the fix removes, the repeats. As for `ifs_same_cond`, its own checks are
+tested, and its implementation is proved in Lean, for every literal:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -544,20 +573,37 @@ pub proc duplicate_elements(
 }
 ```
 
-The fix keeps the members. Elements written the same have the same
-value, so each element that the fix removes has the value of an earlier
-one, which, if it is a repeat too, has the value of an earlier one again,
-down to one that the fix keeps. `lint::duplicate_elements_members` states
-this over the elements' values:
+The fix keeps the members: each element that it removes has the outcome
+of one that it keeps, the first earlier element written the same, by
+`lint::first_same`. That one is not a repeat itself, since an element
+before it written the same would be written the same as the removed one
+too, and earlier. The two have the same outcome: as for the tests of a
+chain, every element of a literal is written in one scope, since no
+element sees the binders of another's pattern tests, by
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), and is
+evaluated in one environment. So every member of the literal is the value
+of an element that the fix keeps. `lint::duplicate_elements_members` states
+this at each position, over the elements as written in their scope and
+their outcomes by Fren's own evaluation; the solver checks it, for any
+number of elements:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-pub proc duplicate_elements_members(elements: Seq<String>, values: Seq<Int>, x: Int) {
-    assume same_values: values.len = elements.len and (forall (i j: Int), when 0 <= i < elements.len
-        and 0 <= j < elements.len and elements[i] = elements[j], values[i] = values[j])
+pub proc duplicate_elements_members(
+    forms: Seq<String>,           -- the literal's elements, each as written
+    elements: Seq<Scoped>,        -- the elements, as written in their scope
+    scope: Set<lang::Id>,         -- the literal's scope
+    i: lang::Interp, env: lang::Env, k: Int,
+) {
+    assume texts: elements.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
+        and 0 <= b < forms.len and forms[a] = forms[b], elements[a].text = elements[b].text)
+    assume one_scope: forall (a: Int), when 0 <= a < elements.len, elements[a].scope = scope
 
-    expect kept: (exists (i: Int), 0 <= i < values.len and values[i] = x)
-        iff (exists (i: Int), 0 <= i < values.len and not repeated?(elements, i) and values[i] = x)
+    call removed := duplicate_elements(forms, k)
+    call first := first_same(forms, k)
+    call stays := duplicate_elements(forms, first.earlier)
+
+    expect kept: when removed.repeat?, 0 <= first.earlier < forms.len and not stays.repeat?
+        and lang::eval(i, env, written(elements[first.earlier])) = lang::eval(i, env, written(elements[k]))
 }
 ```
