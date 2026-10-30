@@ -21,7 +21,7 @@ pub mod model
 
 use check::Verdict
 use check::Verdict::Inconclusive
-use lang::{Outcome, Value}
+use lang::{Env, Expr, Interp, Outcome, Value, eval}
 ```
 
 ## Reading
@@ -140,43 +140,88 @@ expect default_examples(t: TypeShape) {
 
 A variable whose type has no default value stays without one, and the
 parts of the query that read it are undecided. A value that the model does
-give is never replaced, even where no formula reads it.
+give is never replaced, even where no formula reads it. `model::fill`
+binds the free variables, each with its type, in an environment of the
+values read:
+
+```fren
+-- A free variable of the type `t` is filled with `value`.
+pub proc fill_rule(t: TypeShape): (det value: Outcome) {
+    out value := default_value(t)
+}
+
+-- The variables that a model leaves free, each with its type.
+pub enum Free { Nil, Bind(Id, TypeShape, Free) }
+
+pub fn fill(env: Env, free: Free): Env := match free {
+    Free::Bind(x, t, rest) => Env::Bind(x, default_value(t), fill(env, rest)),
+    Free::Nil => env,
+}
+```
+
+The `fren` command's `Spec.defaultVal` and the Lean-hosted front end's
+`defaultValue` implement `default_value`, as `fill_rule` states. `src/FrenTest/ModelDefaults.lean`
+tests both on the examples above, and on a record, a newtype and an
+enumeration whose payload is a record.
 
 ## Confirmation
 
 A model's *confirmation* evaluates each hypothesis of the query, and its
-goal, at the values read, with the free ones filled: the outcome of each is
-`Defined(true)`, `Defined(false)` or, where the semantics does not fix it
-in the model, `Undefined`. A query asks that the hypotheses imply the goal,
-so its model is right if every hypothesis is `true` and the goal `false`,
-and *contradicted* if some hypothesis is `false` or the goal `true`. For a
-witness, the goal is the negation of the cover goal, so a contradicted
-witness is one in which the cover goal is `false`. A model that is neither,
-such as one where a hypothesis applies a function that the model's
-interpretation does not give, is *undecided*: it is reported on the
-solver's word, as the checks report any answer.
+goal, by `lang::eval`, in the model's interpretation, as read, and in the
+environment of the values read, with the free ones filled. The outcome of
+each is `Defined(true)`, `Defined(false)` or, where the semantics does not
+fix it in the model, `Undefined`. A query asks that the hypotheses imply
+the goal, so its model is right if every hypothesis is `true` and the goal
+`false`, and *contradicted* if some hypothesis is `false` or the goal
+`true`. For a witness, the goal is the negation of the cover goal, so a
+contradicted witness is one in which the cover goal is `false`. A model
+that is neither, such as one where a hypothesis applies a function that
+the model's interpretation does not give, is *undecided*: it is reported
+on the solver's word, as the checks report any answer. The hypotheses are
+a list of expressions, `Nil` or `Cons(h, rest)`, as the operands of a
+form are in [the abstract syntax](Lang/Semantics.md#expressions):
 
 ```fren
-set_option fren.lint.undecidable "allow" in
-pub fn contradicted?(hypotheses: Seq<Outcome>, goal: Outcome) :=
-    Outcome::Defined(Value::False) in hypotheses or goal = Outcome::Defined(Value::True)
+pub fn some_false?(i: Interp, env: Env, hypotheses: Expr) := match hypotheses {
+    Expr::Cons(h, rest) => eval(i, env, h) = Outcome::Defined(Value::False) or some_false?(i, env, rest),
+    _ => false,
+}
+
+pub fn contradicted?(i: Interp, env: Env, hypotheses: Expr, goal: Expr) :=
+    some_false?(i, env, hypotheses) or eval(i, env, goal) = Outcome::Defined(Value::True)
 ```
 
-Each front end evaluates with an evaluator of its own, each in Fren's
-semantics: the `fren` command with the evaluator of [`fren
-eval`](Eval.md#fren-eval), and the Lean-hosted front end by compiling the
-Lean definitions that the spec generates (see [Generated Lean
-declarations](Generated.md)) and running them. Lean's definitions give a
-value where Fren's semantics gives none: an index out of range, a quotient
-or remainder by 0, and the unspecified value of a table or `match` where
-no row or arm is taken, which is an index of the empty sequence. So the
-Lean-hosted front end evaluates only the formulas that have none of these,
-directly or within the bodies of the functions and clauses that they
-apply, and that apply no uninterpreted function and mention no value of an
-abstract type: the others are `Undefined` to it. Neither front end ever
-finds a correct model contradicted. Where one decides a formula that the
-other leaves undefined, they may disagree about a model, but only about one
-that Fren has misread or mistranslated.
+### How the front ends evaluate
+
+Neither front end evaluates by `lang::eval` itself, which models only a
+fragment of the language (see [What the model leaves
+out](Lang/Semantics.md#what-the-model-leaves-out)). Each has an evaluator of
+its own, and that each agrees with `lang::eval` where `lang::eval` is
+defined is **trusted**, not checked:
+
+- The `fren` command evaluates with the evaluator of [`fren
+  eval`](Eval.md#fren-eval), the one that [confirms its other
+  models](Eval.md#confirming-models). Like `lang::eval`, it gives no value
+  to an index out of range, a quotient or remainder by 0, or a table or
+  `match` where no row or arm is taken.
+- The Lean-hosted front end compiles the Lean definitions that the spec
+  generates (see [Generated Lean declarations](Generated.md)) and runs
+  them. Lean's definitions give a value where Fren's semantics gives none:
+  `default` for an index out of range, 0 for a quotient or remainder by 0,
+  and so for a table or `match` where no row or arm is taken, which is an
+  index of the empty sequence. So the Lean-hosted front end evaluates only
+  the formulas that have none of these, directly or within the bodies of
+  the functions and clauses that they apply, and that apply no
+  uninterpreted function and mention no value of an abstract type: the
+  others are `Undefined` to it. It confirms nothing that indexes a
+  sequence, so a misread model whose contradiction is only in such a
+  formula is shown by it, and caught by the `fren` command (#462).
+
+Where one front end decides a formula that the other leaves undefined,
+they may disagree about a model, but only about one that the semantics
+contradicts. That neither finds a correct model contradicted rests on the
+trusted agreement above. The ui tests, run by both front ends, check it on
+every model that they report.
 
 ## Reporting
 
@@ -197,33 +242,99 @@ note: so it is not shown as a counterexample or a witness, and the check is inco
 note: this is a bug in Fren: in reading the solver's model, or in translating the spec
 ```
 
-The last line of `report`, `real`, is the statement at the top of this
-chapter: where the semantics decides the query, a model shown is a
-counterexample or a witness.
+`model::report` states it over the semantics: given the model's
+interpretation and values as read, the free variables, and the query's
+hypotheses and goal as expressions, the values are shown exactly where
+`contradicted?` does not hold of them, with the free variables filled:
+
+```fren
+pub proc report(
+    i: Interp,              -- the model's interpretation, as read
+    env: Env,               -- the model's values of the query's variables, as read
+    free: Free,             -- the variables that the model leaves free
+    hypotheses: Expr,       -- the query's hypotheses, in order, as a list
+    goal: Expr,             -- the query's goal
+    solver: Verdict,        -- the verdict that the solver's answer gives
+): (
+    det shown?,             -- the values are shown, as a counterexample or a witness
+    det internal?,          -- an internal error is reported instead
+    det verdict: Verdict,
+) {
+    out shown? := not contradicted?(i, fill(env, free), hypotheses, goal)
+    out internal? := not shown?
+    out verdict := if shown? then solver else Inconclusive
+}
+```
+
+`model::reported_real` is the statement at the top of this chapter: a
+model shown is one in which, in Fren's semantics, no hypothesis is false
+and the goal is not true, so a counterexample or a witness wherever the
+semantics decides them. `report` refines it:
+
+```fren
+pub proc reported_real(
+    no_false_hypothesis?,   -- in Fren's semantics, at the values shown, no hypothesis is false
+    goal_not_true?,         -- nor is the goal true
+    solver: Verdict,
+): (shown?, internal?, verdict: Verdict) {
+    ensure real: when shown?, no_false_hypothesis? and goal_not_true?
+    ensure reported: shown? or internal?
+    ensure kept: when shown?, verdict = solver
+}
+
+expect report_real(i: Interp, env: Env, free: Free, hypotheses: Expr, goal: Expr, solver: Verdict) {
+    call r := report(i, env, free, hypotheses, goal, solver)
+    refines r reported_real(not some_false?(i, fill(env, free), hypotheses),
+        eval(i, fill(env, free), goal) != Outcome::Defined(Value::True), solver)
+}
+```
+
+Both front ends decide from the outcomes that their evaluators give, by
+one function of the shared core, `Fren.Core.contradiction?`, which
+implements `model::decision`: `report`'s rule over the list of the
+hypotheses' outcomes and the goal's, which is what `report` reads of
+`lang::eval`. That `report` holds of the front ends is then the trusted
+agreement of their evaluators with `lang::eval` above.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub proc report(
+pub fn outcomes_contradicted?(hypotheses: Seq<Outcome>, goal: Outcome) :=
+    Outcome::Defined(Value::False) in hypotheses or goal = Outcome::Defined(Value::True)
+
+set_option fren.lint.undecidable "allow" in
+pub proc decision(
     hypotheses: Seq<Outcome>,      -- each hypothesis of the query, in its order, at the values read
     goal: Outcome,                 -- the goal, likewise
-    solver: Verdict,               -- the verdict that the solver's answer gives
+    solver: Verdict,
 ): (
-    det shown?,                    -- the values are shown, as a counterexample or a witness
-    det internal?,                 -- an internal error is reported instead
+    det shown?,
+    det internal?,
     det verdict: Verdict,
 ) {
-    assume booleans: forall (k: Int), when 0 <= k < hypotheses.len, hypotheses[k] is Outcome::Defined(Value::True | Value::False) | Outcome::Undefined
-    assume boolean_goal: goal is Outcome::Defined(Value::True | Value::False) | Outcome::Undefined
-
-    ensure shows: shown? iff not contradicted?(hypotheses, goal)
+    ensure shows: shown? iff not outcomes_contradicted?(hypotheses, goal)
     ensure errs: internal? iff not shown?
     ensure kept: when shown?, verdict = solver
     ensure inconclusive: unless shown?, verdict = Inconclusive
-
-    expect real: when shown? and not (Outcome::Undefined in hypotheses) and goal != Outcome::Undefined,
-        goal = Outcome::Defined(Value::False) and not (Outcome::Defined(Value::False) in hypotheses)
 }
 ```
+
+### What is not confirmed
+
+The other values that checks report from models are not confirmed, since
+none is a counterexample or a witness of the query whose model it is:
+
+- the input of a [realizability](Check.md#realizability) conflict: its
+  query's goal is that some outputs satisfy the guarantees, `∃ o. R`, which
+  evaluation decides only by searching for outputs, and a search that finds
+  none decides nothing. The `fren` command's [confirmation of every
+  model](Eval.md#confirming-models) refutes one for which its search finds
+  outputs;
+- the [forced outputs](Check.md#forced-outputs) of a conflict's clash
+  notes, which come from models of parts of the guarantees, not of the
+  query reported;
+- the values of the members of a [Boolean block](Lang/BooleanBlocks.md),
+  which are read from the model of the reported query, but are shown only
+  where the model also gives their guards, as values, not as a behaviour.
 
 The `fren` command also confirms every other model that the solver gives
 it, as [Confirming models](Eval.md#confirming-models) states.

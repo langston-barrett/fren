@@ -1,0 +1,23 @@
+-- Run with `FREN_MISREAD_MODELS` set (`Reqs/Models#testing`). A recursive
+-- query's model is first confirmed by evaluating the recursive definitions
+-- on it, read right, as both front ends read it; the misread is caught when
+-- the model is reported, as for any other query, and is not blamed on the
+-- contracts of the recursive function.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+
+pub enum Tree { Leaf, Node(Tree, Int, Tree) }
+
+pub fn size(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(l, _, r) => size(l) + 1 + size(r),
+}
+
+proc recursion(t: Tree) {
+    assume pinned: t = Tree::Node(Tree::Leaf, 2, Tree::Node(Tree::Leaf, 3, Tree::Leaf))
+    expect e: size(t) = 1  --~ error: internal error: the solver's model for the expectation check of `recursion::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+--@ summary: 2 passed, 0 failed, 1 inconclusive, 0 redundant
+--@ exit: 1

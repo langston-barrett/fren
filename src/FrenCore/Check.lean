@@ -55,7 +55,7 @@ inductive Verdict where
 abbrev Assignment := Array (Name × String)
 
 /-- What Fren's semantics, at the values read from a solver's model, says
-against the solver's answer (`model::confirmation`): a hypothesis of the
+against the solver's answer (`model::contradicted?`): a hypothesis of the
 query is false there, or its goal is true. -/
 inductive Contradiction where
   | hypothesis (name : Name)
@@ -378,7 +378,7 @@ structure Backend (m : Type → Type) (F V : Type) where
   /-- What the model of the query of the hypotheses and the goal, a
   counterexample or witness that a check reports, contradicts, evaluated in
   Fren's semantics at the values that `render` shows; none if it confirms
-  the answer or leaves it undecided (`Reqs/Model#confirmation`). -/
+  the answer or leaves it undecided (`Reqs/Models#confirmation`). -/
   confirm? : Option (Array (Name × F) → F → Array (Name × V) → m (Option Contradiction)) := none
   /-- `f` with each variable `x` that is not an own parameter (call variables
   too) replaced by `primed x`, a second copy of it. -/

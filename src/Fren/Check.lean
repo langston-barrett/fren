@@ -252,10 +252,11 @@ opaque compileValues (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : 
 /-- The procedure's variables, and the second copies of the copied ones,
 each with its local and its value in `model`, as `readValue` reads it, or
 its type's default value if the model leaves it free
-(`Reqs/Models#free-values`); none for one that has neither. -/
-def modelValues (c : CompInfo) (fvs primes : Array Expr) (model : Array (Name × Expr)) :
+(`Reqs/Models#free-values`); none for one that has neither. Misread if
+`misread`, as only the reader of a model that a check reports is under
+`FREN_MISREAD_MODELS` (`Reqs/Models#testing`). -/
+def modelValues (c : CompInfo) (fvs primes : Array Expr) (model : Array (Name × Expr)) (misread : Bool := false) :
     MetaM (Array (Expr × Option Expr)) := do
-  let misread ← Core.misreadModels
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
     ({ v with name := Core.primed v.name }, p)
@@ -272,17 +273,17 @@ an index, which may be out of range, and a quotient or remainder, whose
 divisor may be 0 (`Reqs/Models#confirmation`). -/
 def interpretedOps : Array Name := #[``Fren.Seq.nth, ``HDiv.hDiv, ``HMod.hMod]
 
-/-- Whether `e` applies one of `interpretedOps`, directly or within the
+/-- Whether `e` applies one of `targets`, directly or within the
 definitions of the spec's functions and clauses that it applies, and their
 auxiliary definitions, such as their `match`es. -/
-partial def readsInterpreted (e : Expr) : MetaM Bool := do
+partial def readsAny (targets : Array Name) (e : Expr) : MetaM Bool := do
   let s ← getState
   let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
   let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
   let rec go (e : Expr) (seen : NameSet) : MetaM (Bool × NameSet) := do
     let mut seen := seen
     for c in e.getUsedConstants do
-      if interpretedOps.contains c then return (true, seen)
+      if targets.contains c then return (true, seen)
       if seen.contains c || !own.any (·.isPrefixOf c) then continue
       seen := seen.insert c
       let some v := (← getEnv).find? c |>.bind (·.value?) | continue
@@ -291,6 +292,10 @@ partial def readsInterpreted (e : Expr) : MetaM Bool := do
       seen := seen'
     return (false, seen)
   return (← go e {}).1
+
+/-- Whether `e` applies one of `interpretedOps`, directly or within the
+functions and clauses that it applies. -/
+def readsInterpreted (e : Expr) : MetaM Bool := readsAny interpretedOps e
 
 /-- `e` at the values `values` (`modelValues`), if it then has no local and
 its value is the same in every interpretation, since it reads none of
@@ -333,9 +338,23 @@ first hypothesis that is false there, or the goal, if it is true; none if
 neither, or if Lean cannot evaluate them. -/
 def confirmModel (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
     (model : Array (Name × Expr)) : MetaM (Option Core.Contradiction) := do
-  let values ← modelValues c fvs primes model
+  let values ← modelValues c fvs primes model (← Core.misreadModels)
   let truths ← decideAll ((← hyps.mapM (atModel values ·.2)).push (← atModel values goal))
   return Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join
+
+/-- Whether `model` is contradicted in a formula that applies none of the
+recursive functions `recs`: a bug in Fren, which the report of the model
+shows (`Reqs/Models#reporting`), not evidence about the functions'
+contracts (`Reqs/Lang/Recursion`). Read without the injected misread, as
+the recursive confirmation is. -/
+def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
+    (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
+  let values ← modelValues c fvs primes model
+  let plain (e : Expr) : MetaM (Option Expr) := do
+    if ← readsAny recs e then return none
+    atModel values e
+  let truths ← decideAll ((← hyps.mapM (plain ·.2)).push (← plain goal))
+  return (Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join).isSome
 
 /-- Evaluate a model using real definitions, before reporting a recursive
 counterexample. Failure to evaluate is not confirmation. -/
@@ -766,6 +785,11 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
             if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) then pure o
             else do
               let st ← getState
+              -- A formula without recursion that the model contradicts is
+              -- the report's internal error, not the contracts'.
+              let recursive := st.defined.foldl (init := #[]) fun acc _ d =>
+                if d.recursive then (acc.push d.decl) ++ d.solver?.toArray else acc
+              if ← plainContradiction c fvs primes hyps goal model recursive then pure o else
               let names := recs.filterMap fun r => st.defined.foldl (init := none) fun acc _ d =>
                 if d.solver? == some r then some d.path else acc
               pure (.unknown (Core.recursiveReason names))

@@ -9,10 +9,12 @@ open Fren.Lang
 # Reading models (`Reqs/Models`)
 
 `Fren.Core.contradiction?`, which both front ends use to decide what a
-reported model contradicts, implements `model::report`: for the truths of
+reported model contradicts, implements `model::decision`: for the truths of
 any number of hypotheses and of the goal, the model is shown exactly when
-nothing is contradicted, and the check is then inconclusive otherwise, as
-`Fren.Core.confirmReport` makes it.
+nothing is contradicted, and the check is inconclusive otherwise, as
+`Fren.Core.confirmReport` makes it. `model::report`, the same rule over
+`lang::eval`, is trusted: neither front end's evaluator is bound to
+`lang::eval` (`Reqs/Models#how-the-front-ends-evaluate`).
 -/
 
 namespace Fren.Impls
@@ -54,7 +56,7 @@ theorem toLangOutcome_true (x : Option Bool) : toLangOutcome x = .Defined .True 
   rcases x with _ | _ | _ <;> simp [toLangOutcome]
 
 -- For any number of hypotheses, each `true`, `false` or unknown.
-impl report_of: model::report for (hs : List (Option Bool)) (g : Option Bool) (v : Verdict) {
+impl decision_of: model::decision for (hs : List (Option Bool)) (g : Option Bool) (v : Verdict) {
   hypotheses := Fren.Seq.ofList (hs.map toLangOutcome),
   goal := toLangOutcome g,
   solver := toVerdict v,
@@ -69,5 +71,9 @@ impl report_of: model::report for (hs : List (Option Bool)) (g : Option Bool) (v
   have hn := contradiction?_isNone hs g
   cases hc : (contradiction? (hs.toArray.map (Lean.Name.anonymous, ·)) g) <;>
     simp_all [fren_spec, toLangOutcome_true, Option.isSome, Option.isNone, toVerdict]
+
+trusted model::report: "the front ends decide by `contradiction?`, which implements `model::decision`, from the outcomes of their own evaluators, the `fren eval` evaluator and the compiled generated Lean definitions; that these agree with `lang::eval` is trusted, as `Reqs/Models#how-the-front-ends-evaluate` states"
+
+trusted model::reported_real: "the readable statement of `Reqs/Models`, which `model::report` refines, as `model::report_real` checks"
 
 end Fren.Impls

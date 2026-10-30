@@ -406,7 +406,12 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         let bad := vals.find? (·.2 == some false)
         let g := goal.2.eval sp sy I env tys
         let recursive := (hyps.flatMap fun (_, f) => f.2.recursiveNames sp) ++ goal.2.recursiveNames sp
-        if !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true)) then
+        -- A formula without recursion that the model contradicts is a bug
+        -- in Fren, which the refutation below reports, not evidence about
+        -- the contracts (`Reqs/Models#reporting`).
+        let plain := (hyps.zip vals).any (fun ((_, f), (_, v)) => v == some false && (f.2.recursiveNames sp).isEmpty)
+          || (g == some true && (goal.2.recursiveNames sp).isEmpty)
+        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true)) then
           return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then
