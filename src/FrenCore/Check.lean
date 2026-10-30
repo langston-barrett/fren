@@ -1385,10 +1385,12 @@ def severity? : CheckKind → Verdict → Option Severity
   | _, .fail => some .error
   | _, .inconclusive => some .warning
 
-/-- A model that Fren's semantics contradicts is an internal error, so an
-error (`model::report`). -/
+/-- A result's own severity (`view::severity`), which `impl severity`
+binds: from its kind and verdict alone, so a refuted model's result is a
+warning, as any inconclusive one is, and the internal error that reports it
+is a diagnostic beside it (`internalMsg?`). -/
 def CheckResult.severity? (r : CheckResult) : Option Severity :=
-  if r.detail matches .refuted .. then some .error else Fren.Core.severity? r.kind r.verdict
+  Fren.Core.severity? r.kind r.verdict
 
 /-- The most severe of the severities of a run's results, `none` if there
 are none, for the exit code (`cli::worst_severity`). -/
@@ -1868,6 +1870,10 @@ or witness, each at its original source range. Passing expectations have
 no observations and therefore no failed-member messages. -/
 def memberMessages (r : CheckResult) : Array Message := Id.run do
   let mut out := #[]
+  -- The members' values are of the model, so a model that Fren's semantics
+  -- contradicts, and that is therefore not shown, shows none of them
+  -- either (`Reqs/Models#reporting`).
+  if r.detail matches .refuted .. then return out
   for value in r.memberValues do
     let label := match value.evaluated?, value.value? with
       | some false, _ => "not evaluated"

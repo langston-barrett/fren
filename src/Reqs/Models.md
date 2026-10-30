@@ -10,11 +10,13 @@ its models, nor Fren's translation of the spec for the solver. So before it
 reports a model, each front end evaluates the query in Fren's [dynamic
 semantics](Lang/Semantics.md), at the values it would show.
 
-**Every counterexample that Fren shows is a behaviour in which the claim
-is false, and every witness one in which the cover goal holds, in Fren's
-semantics, at the values shown.** Where the semantics says otherwise, Fren
-has a bug, and reports that as an internal error, never as a
-counterexample.
+**Wherever Fren's semantics decides the claim, every counterexample that
+Fren shows is a behaviour in which the claim is false, and every witness
+one in which the cover goal holds, at the values shown.** Where the
+semantics says otherwise, Fren has a bug, and reports that as an internal
+error, never as a counterexample. Where the semantics decides nothing, the
+values are shown on the solver's word, as [Confirmation](#confirmation)
+states.
 
 ```fren
 pub mod model
@@ -69,8 +71,17 @@ which `Itself` stands for the enumeration within its own payload:
 - for a newtype, its underlying type's default value, constructed;
 - for an enumeration or a record, its first variant whose payload's or
   fields' types all have a default value, with them;
-- none for an abstract type, or for the enumeration within its own
-  payload, whose default value is still being sought.
+- none for an abstract type, or for the type within its own payload, whose
+  default value is still being sought, which `Itself` stands for.
+
+`TypeShape` is `model::default_value`'s own model of a type, not the type
+itself, and it covers only what the rule needs: `Set` stands for a set and
+for a relation, since the default value of both is empty, and the elements'
+type is not read; and a record is a `Data` of one `Variant`, its fields. It
+leaves out what both front ends' rules handle and the rule above does not
+state: *mutual* recursion, which they cut with a list of the types being
+sought, where `Itself` names only the immediately enclosing one, and a
+type parameter, which has no default value in either (#488).
 
 ```fren
 use lang::Id
@@ -135,6 +146,16 @@ expect default_examples(t: TypeShape) {
         default_value(t) = Outcome::Defined(Value::Constructed("G::L", Value::Nil))
     expect abstract_none: when t = TypeShape::Cons(TypeShape::Integer, TypeShape::Cons(TypeShape::Abstract, TypeShape::Nil)),
         default_value(t) = Outcome::Undefined
+    -- A newtype's value is its underlying type's, constructed: `Ms(0)`.
+    expect newtype: when t = TypeShape::Newtype("Ms", TypeShape::Integer),
+        default_value(t) = Outcome::Defined(Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)))
+    expect text: when t = TypeShape::Text, default_value(t) = Outcome::Defined(Value::Text(""))
+    expect set: when t = TypeShape::Set, default_value(t) = Outcome::Defined(Value::Nil)
+    -- A record: its fields, in the order declared.
+    expect record: when t = TypeShape::Data(TypeShape::Variant("P", TypeShape::Cons(TypeShape::Boolean,
+        TypeShape::Cons(TypeShape::Newtype("Ms", TypeShape::Integer), TypeShape::Nil)), TypeShape::NoVariant)),
+        default_value(t) = Outcome::Defined(Value::Constructed("P", Value::Cons(Value::False,
+        Value::Cons(Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)), Value::Nil))))
 }
 ```
 
@@ -160,9 +181,16 @@ pub fn fill(env: Env, free: Free): Env := match free {
 ```
 
 The `fren` command's `Spec.defaultVal` and the Lean-hosted front end's
-`defaultValue` implement `default_value`, as `fill_rule` states. `src/FrenTest/ModelDefaults.lean`
-tests both on the examples above, and on a record, a newtype and an
-enumeration whose payload is a record.
+`defaultValue` implement `default_value`, as `fill_rule` states.
+`src/FrenTest/ModelDefaults.lean` tests each against `default_value`
+itself, which Lean generates from this chapter: it builds the `TypeShape`
+of each of an enumeration whose first variant has a default value, one
+whose first variant's payload is the enumeration itself, a newtype, a
+record of a newtype and a set, and an enumeration whose payload is that
+record, evaluates `default_value` on it, and compares the result with each
+front end's value, read as a `lang::Value`. Neither front end's value
+records a newtype's constructor, which its renderer restores, so the test
+restores it too: that is the one place where the representations differ.
 
 ## Confirmation
 
@@ -196,14 +224,19 @@ pub fn contradicted?(i: Interp, env: Env, hypotheses: Expr, goal: Expr) :=
 Neither front end evaluates by `lang::eval` itself, which models only a
 fragment of the language (see [What the model leaves
 out](Lang/Semantics.md#what-the-model-leaves-out)). Each has an evaluator of
-its own, and that each agrees with `lang::eval` where `lang::eval` is
-defined is **trusted**, not checked:
+its own, so that each agrees with `lang::eval` where `lang::eval` is
+defined is a separate claim:
 
 - The `fren` command evaluates with the evaluator of [`fren
   eval`](Eval.md#fren-eval), the one that [confirms its other
   models](Eval.md#confirming-models). Like `lang::eval`, it gives no value
   to an index out of range, a quotient or remainder by 0, or a table or
-  `match` where no row or arm is taken.
+  `match` where no row or arm is taken. It is checked against `lang::eval`
+  on random expressions, in random behaviours, by
+  `src/FrenTest/Semantics.lean`, which is the evidence for
+  [`lang::coincidence`](Lang/EvaluationRules.md#free-variables): the
+  agreement is **tested**, over the forms that that test generates, which
+  leave out `*`, `div`, `mod` and the concatenation of strings.
 - The Lean-hosted front end compiles the Lean definitions that the spec
   generates (see [Generated Lean declarations](Generated.md)) and runs
   them. Lean's definitions give a value where Fren's semantics gives none:
@@ -215,13 +248,25 @@ defined is **trusted**, not checked:
   uninterpreted function and mention no value of an abstract type: the
   others are `Undefined` to it. It confirms nothing that indexes a
   sequence, so a misread model whose contradiction is only in such a
-  formula is shown by it, and caught by the `fren` command (#462).
+  formula is shown by it, and caught by the `fren` command (#462). That it
+  agrees with `lang::eval` on the formulas it does decide is **trusted**:
+  nothing checks the generated definitions against `lang::eval`.
+
+  A generated [selector](Generated.md) of a payload is total in the same
+  way, by a `| _ => default` arm for the other variants, and is not
+  excluded. A read of a payload is evaluated only where the model gives the
+  value the variant that a `match` arm or a pattern test matched, since
+  every such read is under the `ite` of that test, which Lean's definitions
+  do not evaluate on the branch not taken; and a `match` that may take no
+  arm reads the empty sequence, so it is excluded already.
 
 Where one front end decides a formula that the other leaves undefined,
 they may disagree about a model, but only about one that the semantics
 contradicts. That neither finds a correct model contradicted rests on the
-trusted agreement above. The ui tests, run by both front ends, check it on
-every model that they report.
+evidence above: tested for the `fren` command, trusted for the Lean-hosted
+front end. Beyond that, the ui tests and the specs that `lake build`
+checks run both front ends over every model that they report, so a
+confirmation that refuted a correct model would fail them.
 
 ## Reporting
 
@@ -335,6 +380,9 @@ none is a counterexample or a witness of the query whose model it is:
 - the values of the members of a [Boolean block](Lang/BooleanBlocks.md),
   which are read from the model of the reported query, but are shown only
   where the model also gives their guards, as values, not as a behaviour.
+  They are part of what a model shows, so a model that is not shown shows
+  none of them: they would say, of the same model, what the internal error
+  says is not a behaviour.
 
 The `fren` command also confirms every other model that the solver gives
 it, as [Confirming models](Eval.md#confirming-models) states.

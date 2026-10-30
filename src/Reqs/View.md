@@ -326,6 +326,11 @@ note: conflicts with `transient` and `honor_server`
    |            ^^^^^^^^^^^^^^
 ```
 
+The values of a counterexample or a witness are those that Fren reads from
+the solver's model, and it shows them only where its own semantics
+confirms them; otherwise it reports an internal error instead (see
+[Reading models](Models.md)).
+
 A counterexample, or a witness, gives the values of the variables that
 the check's [query](Check.md) mentions, those that occur in one of its
 formulas, and of no others: a variable that none mentions could have any

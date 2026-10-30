@@ -110,7 +110,10 @@ none (see [Limits](Cli.md#limits)).
 
 From the solver's outcomes, each check reaches a verdict: `Pass`, `Fail` or
 `Inconclusive`. An `Unknown` outcome never leads to `Pass`. Results are
-trusted from the solver: no Lean proofs of them are produced.
+trusted from the solver: no Lean proofs of them are produced. What Fren
+reads back from a model is not trusted: before it shows a counterexample or
+a witness, each front end confirms it in Fren's semantics (see [Reading
+models](Models.md)).
 
 ```fren
 pub enum Outcome { Sat, Unsat, Unknown }
