@@ -285,7 +285,7 @@ pub proc ordered_declaration(
     declaration: Declaration,
     ordered?,                         -- declared with `ordered`
     n_payloads: Nat,                  -- for an enumeration: its variants with a payload
-    fields: Seq<Ty>,                  -- a record's fields' types, in order, or a newtype's underlying type, without patterns
+    fields: Seq<Ty>,                  -- a record's fields' types, in order, or a newtype's underlying type, with base types for subset types
     ordered_items: Set<TypeName>,     -- the enumerations, records and newtypes declared `ordered`
     k: Int,                           -- any position among the fields
 ): (
@@ -508,8 +508,9 @@ Visibility and `use` follow the ordinary item rules.
 
 Restrictions are introduced by [declared subset types](SubsetTypes.md),
 as `type Byte = b: Int where low: b >= 0 and high: b <= 255`. A subset of
-a subset inherits the base's invariants. Applying a pattern to a type is
-no longer a surface form; expression `is` tests remain unchanged.
+a subset inherits the base's invariants. There is no inline subset type:
+`T is P` is not a type, while the expression `e is P` remains a pattern
+test.
 
 ## Functions
 
@@ -623,8 +624,8 @@ than called with `call`. Otherwise only how the body is written is checked: the
 [tables](Expressions.md#tables) and its [`match`es](Expressions.md#matches)
 with guards, the
 [preconditions](../Check.md#preconditions) of the functions it applies,
-and its [pattern types' obligations](../Check.md#pattern-types), such as
-that the body is in range where the result is a pattern type, for every
+and its [subset types' obligations](../Check.md#subset-types), such as
+that the body is in range where the result is a subset type, for every
 value of the parameters that meets its preconditions and their types, as
 for the value of a [constant](#constants).
 

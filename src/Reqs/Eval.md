@@ -126,7 +126,7 @@ values of the bound names before it:
 - for `FromZero`, those from 0 up to the upper bound's.
 
 A value that is not of the bound name's type is left out: a negative one
-for a `Nat`, and one that its pattern type does not match. The body is
+for a `Nat`, and one that does not satisfy the invariants of its subset type. The body is
 evaluated at each combination of the values, and the quantifier is the
 conjunction of those values for a `forall`, and their disjunction for an
 `exists`, decided as soon as one decides it. That is its value: at any

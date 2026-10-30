@@ -2682,7 +2682,7 @@ def recordOutsideCore (ref : Syntax) (msg : Core.Msg) : TermElabM Unit := do
 
 /-- The declared type `ty`, written in the module `modName`: its Lean type,
 and the type with the patterns of the pattern types within it
-(`Reqs/Lang/Types#pattern-types`), as the `fren` command's `elabPTy`. -/
+(`Reqs/Lang/Types#subset-types`), as the `fren` command's `elabPTy`. -/
 partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]) : TermElabM (Expr × Core.PTy) := do
   -- What Lean recovered from a parse error that it has reported.
   if ty.hasMissing then throwAbortTerm
@@ -2693,7 +2693,7 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
   -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
   -- quantifies over the elements, outside the decidable core
-  -- (`lang::pattern_place`).
+  -- (`lang::subset_place`).
   let elem (e : Syntax) : TermElabM (Expr × Core.PTy) := do
     let (t, pt) ← elabPType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
@@ -2738,7 +2738,7 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
     let t ← instanceType modName segs args params ty
     let some ct ← coreTy? t params | throwErrorAt ty s!"internal error: a type without a Fren type"
     -- A recursive enumeration's type arguments bring no constraints
-    -- (`Reqs/Lang/Generics#pattern-types-as-type-arguments`).
+    -- (`Reqs/Lang/Generics#subset-types-as-type-arguments`).
     if let .enum p _ := ct then
       if ((← getState).shapeOf p).any (·.recursive) then
         for a in given, pt in pts do
@@ -2899,7 +2899,7 @@ def partPType (shape : Core.DataShape) (v k : Nat) (args : Array Core.Ty := #[])
 
 /-- Records the obligation of the value `x`, given at `ref` where the type
 `t` is declared, if it has one, for the pattern-type check
-(`Reqs/Check#pattern-types`): its guard implies that the value matches,
+(`Reqs/Check#subset-types`): its guard implies that the value matches,
 marked with its type (`Fren.typeObligation`). -/
 def noteObligation (cx : ExprCtx) (place : Core.ValuePlace) (ref : Syntax) (t : Core.PTy) (x : Term) : TermElabM Unit := do
   unless cx.noteIndexes do return
@@ -3023,7 +3023,7 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
   unless Core.wellFounded variants.size nRecursive do throwErrorAt nameStx (Core.illFoundedMsg n).text
   -- A recursive enumeration's payloads are never `Nat`s (`lang::nat_place`),
   -- and a constraint of one is outside the decidable core
-  -- (`lang::pattern_place`).
+  -- (`lang::subset_place`).
   let isRecursive := nRecursive > 0
   let shape : Core.DataShape := { recursive := isRecursive, parts := ptys.map (·.map (·.1)) }
   if isRecursive then

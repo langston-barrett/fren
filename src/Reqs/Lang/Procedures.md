@@ -423,24 +423,27 @@ pub proc nat_variable(
 }
 ```
 
-## Pattern types
+## Subset types
 
 A variable whose type is a [subset type](SubsetTypes.md), or a
-record or an enumeration with a pattern type or a `Nat` within its fields
-and payloads, brings the constraint that its value matches, just as a
+record or an enumeration with a subset type or a `Nat` within its fields
+and payloads, brings the constraint that its value satisfies the
+invariants, just as a
 `Nat` variable brings that it is at least 0, and in the same way, which
 `lang::nat_variable` states: an assumption for a parameter, a guarantee
 for an output, a constraint of the call for a call's variable, and
-nothing for a defined variable, whose definition is checked to match
-instead (see [Checks](../Check.md#pattern-types)). A call's parameter is
+nothing for a defined variable, whose definition is checked to satisfy
+them instead (see [Checks](../Check.md#subset-types)). A call's parameter is
 the one exception: what its type brings is the called procedure's
 assumption, which the call assumption check asks of its argument, so it
-is not also a constraint of the call. With the parameter `hops: Int is
-1..`, the procedure assumes `hops is 1..`; with the result `level: Loud`,
-it guarantees that `level` is one of `Loud`'s variants. Like a `Nat`'s,
+is not also a constraint of the call. With `type Hops = h: Int where
+range: h is 1..` and the parameter `hops: Hops`, the procedure assumes
+`hops is 1..`; with the result `level: Loud`, where `type Loud = s:
+Severity where invariant: s is Severity::Warning | Severity::Error`, it
+guarantees that `level` is one of those variants. Like a `Nat`'s,
 these constraints have no names, are never reported in a minimal set, and
 are never checked for redundancy. A call's argument for a parameter of a
-pattern type is checked like any other assumption of the called
+subset type is checked like any other assumption of the called
 procedure, by the [call assumption check](../Check.md#call-assumptions).
 
 ## Interpretations

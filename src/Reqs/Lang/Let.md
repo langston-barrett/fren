@@ -35,11 +35,11 @@ and may be written, `x: T := e`, in which case `e` must have type `T`.
 A written type may be a [`Nat`](Types.md#natural-numbers), and an `Int`
 then accepts a `Nat`, as anywhere an `Int` is expected. It may be a
 [subset type](SubsetTypes.md), as in `low: Byte := x - 1`, which
-compares as its base type does, with the obligation that `e` matches its
-pattern, which the [pattern-type check](../Check.md#pattern-types) asks
-where the definition is written. A definition is substituted, so its
+compares as its base type does, with the obligation that `e` satisfies
+its invariants, which the [subset-type check](../Check.md#subset-types)
+asks where the definition is written. A definition is substituted, so its
 name brings no constraint of its own: its value is `e`, which the
-obligation says matches.
+obligation says satisfies them.
 The name follows the [Boolean names](Types.md#boolean-names) rule for its
 type, as a binder of a pattern does: `cold? := temp < 40`, and `n := 3`.
 `lang::definition_type` states this:

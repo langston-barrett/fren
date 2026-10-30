@@ -325,7 +325,7 @@ structure CVar where
   defn? : Option Expr := none
   /-- Its type as declared, with its patterns. -/
   ptype : Fren.Core.PTy := default
-  /-- The constraint that its type brings, over it (`Reqs/Lang/Procedures#pattern-types`). -/
+  /-- The constraint that its type brings, over it (`Reqs/Lang/Procedures#subset-types`). -/
   fact? : Option String := none
   deriving Inhabited
 
@@ -2476,7 +2476,7 @@ def noteIndex (cx : ExprCtx) (span : Span) (q i : String) : M Unit := do
 
 /-- Records the obligation of the value `value`, in SMT-LIB, given at
 `span` where the type `t` is declared, if it has one, for the pattern-type
-check (`Reqs/Check#pattern-types`): its guard implies that the value
+check (`Reqs/Check#subset-types`): its guard implies that the value
 matches. It is a definedness goal, with its type beside it. -/
 def noteObligation (cx : ExprCtx) (place : Fren.Core.ValuePlace) (span : Span) (t : Fren.Core.PTy) (value : String) :
     M Unit := do
@@ -3432,7 +3432,7 @@ def checkFnTypeSite (site : Fren.Core.TypeSite) (segs : Array Ident) : M Unit :=
 
 mutual
 /-- The declared type written `segs`, with the patterns of the pattern
-types within it (`Reqs/Lang/Types#pattern-types`). -/
+types within it (`Reqs/Lang/Types#subset-types`). -/
 partial def elabPTy (segs : Array Ident) : M Fren.Core.PTy := do
   -- A function type is only a defined function's parameter's, which
   -- `elabFnTy` elaborates (`lang::function_type_place`).
@@ -3462,7 +3462,7 @@ partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
         args := args.push t
       let t ← instanceTy (segs.extract 0 i) args span
       -- A recursive enumeration's type arguments bring no constraints
-      -- (`Reqs/Lang/Generics#pattern-types-as-type-arguments`).
+      -- (`Reqs/Lang/Generics#subset-types-as-type-arguments`).
       if let .enum p _ := t.ty then
         if ((← get).shapeOf p).any (·.recursive) then
           for a in args, aSegs in argSegs do
@@ -3490,7 +3490,7 @@ partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
   -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
   -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
   -- quantifies over the elements, outside the decidable core
-  -- (`lang::pattern_place`).
+  -- (`lang::subset_place`).
   let elem (segs : Array Ident) : M Fren.Core.PTy := do
     let t ← elabPTy segs
     if t.ty == .nat then err (typeSpan segs) (Fren.Core.natPlaceMsg .element)
@@ -6948,7 +6948,7 @@ partial def elabItem (item : Item) : M Unit := do
     unless Fren.Core.wellFounded variants.size nRecursive do err name.span (Fren.Core.illFoundedMsg n)
     -- A recursive enumeration's payloads are never `Nat`s (`lang::nat_place`),
     -- and a constraint of one is outside the decidable core
-    -- (`lang::pattern_place`).
+    -- (`lang::subset_place`).
     let isRecursive := nRecursive > 0
     let shape : Fren.Core.DataShape := { recursive := isRecursive, parts := payloadTys.map (·.map (·.1)) }
     if isRecursive then

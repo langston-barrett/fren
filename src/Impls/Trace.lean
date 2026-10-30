@@ -47,11 +47,11 @@ tested lang::operator_type: "test/ui/lang/types.fren", "test/ui/lang/ordered_enu
 tested lang::widening: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren", "test/cli/types/f0304_narrowing.fren"
 tested lang::literal_type: "test/ui/lang/nat.fren", "test/ui/lang/nat_static.fren"
 tested lang::nat_variable: "test/ui/lang/nat.fren"
-tested lang::pattern_place: "test/ui/lang/pattern_types_static.fren"
+tested lang::subset_place: "test/ui/lang/pattern_types_static.fren"
 tested lang::pattern_binding: "test/ui/lang/pattern_binders.fren", "test/ui/checks/pattern_binders.fren"
 tested lang::pattern_finite: "test/ui/lang/pattern_types_meaning.fren"
-tested lang::pattern_widening: "test/ui/checks/pattern_obligations.fren"
-tested check::pattern_obligation: "test/ui/checks/pattern_obligations.fren", "test/ui/checks/pattern_obligations_elements.fren"
+tested lang::subset_widening: "test/ui/checks/pattern_obligations.fren"
+tested check::subset_obligation: "test/ui/checks/pattern_obligations.fren", "test/ui/checks/pattern_obligations_elements.fren"
 tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_payload.fren", "test/ui/lang/pattern_types_static.fren",
   "test/ui/lang/pattern_types_meaning.fren", "test/ui/lang/nat_fields.fren",
   "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"

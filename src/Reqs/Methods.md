@@ -13,7 +13,7 @@ The source states each check's method with `set_option fren.evidence`.
 Nothing falls back from one method to a weaker one by itself. Where the
 method that the source sets does not run a check, an information message
 says so (`F0654`). The one check that another method runs instead is the
-solver's check of a value given where a pattern type is declared, which
+solver's check of a value given where a subset type is declared, which
 the solver runs whatever the evidence: that is stronger, not
 weaker.
 
@@ -67,8 +67,8 @@ The rows cover every check that Fren runs:
 - expectations include the obligations of a
   [refinement](Lang/Refinement.md), which are the expectations and call
   assumptions of a global expectation;
-- definedness includes the values given where a pattern type is declared
-  ([Pattern types](Check.md#pattern-types));
+- definedness includes the values given where a subset type is declared
+  ([Subset types](Check.md#subset-types));
 - postconditions are those of a defined function, against its body.
 
 `fren fix` asks the solver nothing yet. When conditional fixes do (#212),
@@ -274,7 +274,7 @@ says so).
 Which checks random testing and enumeration run is `check::testable?`
 and `check::enumerable?`, of [Checking by
 testing](Check.md#checking-by-testing); `method_run` adds the items, the
-values given where pattern types are declared, and the reasons:
+values given where subset types are declared, and the reasons:
 
 ```fren
 pub enum Dispatch {
@@ -289,7 +289,7 @@ pub enum Reason {
     Selected,          -- the method that the evidence sets runs it
     NoLean,            -- Lean evidence is not yet a method: `"lean"` is `F0214`
     NotSettable,       -- only the solver can be set before a function or a constant: others are `F0215`
-    PatternType,       -- a value given where a pattern type is declared is the solver's to check
+    SubsetType,        -- a value given where a subset type is declared is the solver's to check
     NoWitnessSearch,   -- testing searches for counterexamples, not for witnesses
     NoValue,           -- the check is about where the evaluator knows no value
     NotEnumerated,     -- enumeration does not enumerate indexes, nor a function's body
@@ -299,7 +299,7 @@ pub proc method_run(
     kind: Kind,
     item: CheckedItem,
     method: ProofMethod,     -- the method that the check's evidence sets
-    obligation?,             -- a definedness check of a value given where a pattern type is declared
+    obligation?,             -- a definedness check of a value given where a subset type is declared
 ): (det dispatch: Dispatch, det reason: Reason) {
     use self::Reason::{
         NoLean,
@@ -307,8 +307,8 @@ pub proc method_run(
         NoWitnessSearch,
         NotEnumerated,
         NotSettable,
-        PatternType,
         Selected,
+        SubsetType,
     }
     assume obligation_definedness: when obligation?, kind = Kind::Definedness
 
@@ -317,7 +317,7 @@ pub proc method_run(
         ProofMethod::Lean => NoLean,
         ProofMethod::Enumerated | ProofMethod::Random =>
             if item in {CheckedItem::Body, CheckedItem::Contract} then NotSettable
-            else if obligation? then PatternType
+            else if obligation? then SubsetType
             else if method = ProofMethod::Enumerated then (if enumerable?(kind) then Selected else NotEnumerated)
             else if testable?(kind) then Selected
             else if proof?(kind) then NoValue
@@ -326,7 +326,7 @@ pub proc method_run(
     ensure dispatch_rule: dispatch = match reason {
         Selected => Dispatch::Run,
         NoLean | NotSettable => Dispatch::Reject,
-        PatternType => Dispatch::BySolver,
+        SubsetType => Dispatch::BySolver,
         NoWitnessSearch | NoValue | NotEnumerated => Dispatch::Skip,
     }
 
@@ -366,12 +366,12 @@ The checks of a function or a constant, including a contract's
 realizability and a body's postconditions, are always the solver's, so
 setting another method before one is an error (`F0215`), rather than a
 setting that sets nothing. The solver also checks a value given where a
-pattern type is declared, whatever the evidence: dropping that check
+subset type is declared, whatever the evidence: dropping that check
 would leave a value outside its type unreported (`F0661`).
 
 `check::method_run` is bound to `Fren.Core.dispatchOf`, which both front
 ends consult for each dimension: for the checks to test, to enumerate and
-to leave to the solver, including those of values given where pattern
+to leave to the solver, including those of values given where subset
 types are declared (`Fren.Core.Comp.untested`); for the reported skips
 (`Fren.Core.Comp.skippedMsgs`); for whether a setting can be given before
 a function or a constant (`Fren.Core.Evidence.settable`, `F0215`); and
@@ -445,7 +445,7 @@ other than a check of the spec:
 |---|---|
 | `checkRealizable`, `checkRealizableUniversal` | realizability, of procedures, global expectations, contracts, and the type instances of generic contracts |
 | `checkExpect`, `checkInst`, `checkCover`, `checkVacuity`, `checkRedundant`, `checkDeterminism` | expectations, call assumptions, cover goals, vacuity, redundancy, determinism |
-| `checkDefinedness`, `checkTable`, `checkReach`, `checkPostcondition` | definedness and pattern types, completeness, disjointness, preconditions, reachability, postconditions |
+| `checkDefinedness`, `checkTable`, `checkReach`, `checkPostcondition` | definedness and subset types, completeness, disjointness, preconditions, reachability, postconditions |
 | `fren_recursive_case` (`Fren/RecursiveProof.lean`), in the theorems of a recursive function's postconditions (`Fren/View.lean`) | postconditions: the Lean proof by induction of what `checkPostcondition` checks, whose cases the solver closes; it is part of the function's checks, which only the solver runs (`F0215`) |
 | `minimize`, `forces`, `forcesVariant`, `clashAt`, `branchConflictsOf`, more cover examples | none: they explain a result of the solver's, within its check |
 | `consistent`, before redundancy | none: it decides whether redundancy is asked (`check::redundancy_asked`) |

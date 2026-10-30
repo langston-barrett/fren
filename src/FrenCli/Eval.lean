@@ -351,7 +351,7 @@ structure Constraint where
   name : Name
   e : Ex
   /-- For what a variable's type brings, rather than a constraint of the
-  spec: that type, as written (`Reqs/Lang/Procedures#pattern-types`). -/
+  spec: that type, as written (`Reqs/Lang/Procedures#subset-types`). -/
   typed? : Option String := none
   deriving Inhabited
 
@@ -2621,7 +2621,7 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
   | _ => return none
 
 /-- `x`'s constraint of its declared type `t`, if it has one: what its
-type brings, as a constraint (`Reqs/Lang/Procedures#pattern-types`). -/
+type brings, as a constraint (`Reqs/Lang/Procedures#subset-types`). -/
 def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option Constraint) := do
   let sp := (← get).spec
   if (t.cons sp.shapes.find?).isNone then return none

@@ -254,7 +254,7 @@ structure CheckResult where
   goal? : Option TableGoal := none
   /-- For `definedness`, of a value given where a pattern type is declared,
   and for `inst`, of an input of a pattern type: that type, as written
-  (`Reqs/Check#pattern-types`). -/
+  (`Reqs/Check#subset-types`). -/
   patTy? : Option String := none
   verdict : Verdict
   detail : Detail := .none
@@ -445,7 +445,7 @@ structure IndexSite (F : Type) where
   place : IndexPlace
   goal : F
   /-- For a value given where a pattern type is declared, rather than an
-  index: that type, as written (`Reqs/Check#pattern-types`). -/
+  index: that type, as written (`Reqs/Check#subset-types`). -/
   patTy? : Option String := none
   /-- Distributed Boolean clauses cannot justify their own evaluation sites. -/
   excludeSelf : Bool := false

@@ -380,7 +380,7 @@ impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
   intro p _
   cases p <;> simp [fren_spec, toTypePlace, Fren.Core.natPlaceAccepted]
 
-impl pattern_place: lang::pattern_place for (p : Fren.Core.PatternPlace) (r : Bool) {
+impl subset_place: lang::subset_place for (p : Fren.Core.PatternPlace) (r : Bool) {
   place := match p with | .top => .Top | .field => .Field | .payload => .Payload | .element => .Element,
   recursive? := r && p == .payload,
   decidable? := Fren.Core.patternPlaceDecidable p (r && p == .payload),
@@ -397,8 +397,8 @@ impl pattern_finite: lang::pattern_finite for (b i n : Bool) {
   intro b i n _
   cases b <;> cases i <;> cases n <;> simp [fren_spec, Fren.Core.patternFinite]
 
-impl pattern_widening: lang::pattern_widening for (p w : Bool) {
-  patterned? := p,
+impl subset_widening: lang::subset_widening for (p w : Bool) {
+  restricted? := p,
   widened? := w,
   accepted? := (Fren.Core.patternWidening w p).1,
   obliged? := (Fren.Core.patternWidening w p).2,
@@ -465,13 +465,13 @@ def posOr : Option Nat → Int
   | none => -1
   | some i => i
 
--- For every declared type, with its pattern, where `os` are the
+-- For every declared type, with its invariants, where `os` are the
 -- declarations declared `ordered`, by the function that both front ends
 -- ask of a declaration's fields (`Fren.Core.PTy.ordered`), which is
 -- `Fren.Core.Ty.ordered`, asked of an expression's type, of its base.
 impl ordered_type: lang::ordered_type for (pt : Fren.Core.PTy) (os : List Lean.Name) {
   base := pt.ty,
-  patterned? := pt.pat?.isSome,
+  restricted? := pt.pat?.isSome || !pt.invariants.isEmpty,
   ordered_items := Fren.FinSet.ofList os,
   ordered? := pt.ordered (fun x => decide (x ∈ os)),
 } by

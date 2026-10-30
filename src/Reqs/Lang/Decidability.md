@@ -89,20 +89,23 @@ realizability's quantifier, and the one on an application of an
 uninterpreted function is about that application, so no query quantifies
 over a function's arguments.
 
-## Pattern types
+## Subset types
 
 A [subset type](SubsetTypes.md) at the top of a declared type,
 or within a record's fields or the payloads of an enumeration that is not
-recursive, brings constraints that are quantifier-free: a pattern is a
-disjunction of comparisons with constants and tests of variants, one for
-each value that the variable or application has. Its obligations are
-quantifier-free too. Within a set's, relation's or sequence's element
-type, its constraint and its obligations hold of every element, which
-quantifies over the elements, and within a recursive enumeration's
-payload, of every payload, which Fren states for each one that a query
-reads. Both are outside the core, by `lang::pattern_place`: the
+recursive, brings one constraint for each of its invariants, at each
+value that the variable or application has, which adds no quantifier: it
+is in the core exactly when each invariant is. An invariant that is one
+pattern test is: a pattern is a disjunction of comparisons with constants
+and tests of variants. Its obligations add no quantifier either. Within a
+set's, relation's or sequence's element type, its constraint and its
+obligations hold of every element, which quantifies over the elements,
+and within a recursive enumeration's payload, of every payload, which Fren
+states for each one that a query reads. Both are outside the core, by
+`lang::subset_place`: the
 [`undecidable` lint](../Lint/Decidability.md#undecidable-constructs)
-reports each such pattern type where it is written, and the `Nat` that
+reports each such subset type where it is written, besides any invariant
+that is itself outside the core, and the `Nat` that
 would be the same is an error instead (see [Natural
 numbers](Types.md#natural-numbers)).
 

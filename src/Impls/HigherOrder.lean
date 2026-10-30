@@ -43,7 +43,7 @@ impl function_type_place: lang::function_type_place for (site : Fren.Core.TypeSi
 def toFnPart : Fren.Core.FnPart → lang.FnPart
   | .plain => .Plain
   | .nat => .Natural
-  | .pattern => .Patterned
+  | .pattern => .Subset
   | .function => .Function
 
 -- For every function type's parts, as both front ends classify them.

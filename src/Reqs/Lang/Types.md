@@ -45,8 +45,10 @@ redeclared, nor can the built-in functions `exactly_one?` and
 
 Every expression has exactly one type, and the only conversion between
 types is *widening*: a `Nat` is accepted where an `Int` is expected (see
-[Natural numbers](#natural-numbers)), and a pattern type where its base
-type is (see [Subset types](#subset-types)). Comparing values of other different
+[Natural numbers](#natural-numbers)). A subset type needs no conversion:
+it is its base type to the type checker, so a value of either is accepted
+where the other is expected, with an obligation where the subset type is
+(see [Subset types](#subset-types)). Comparing values of other different
 types, such as an `Int` with an enumeration, is an error. Which operators apply to which types is given in
 [Expressions](Expressions.md). Two values of an enumeration or a record
 are equal if they are built alike: the same variant with equal payloads,
@@ -129,7 +131,7 @@ may be written, but it is a type of its own, closed under `+` and `*`:
 `n + 1` is a `Nat` where `n` is, while the result of an operator on an
 `Nonnegative` is an `Int`, and an `Int` given where a `Nat` is expected is
 an error rather than an obligation. Lean has `Nat`, and the solver has
-`Int`, so it is the one pattern type that both know. Every `Nat`
+`Int`, so it is the one subset of `Int` that both know. Every `Nat`
 is an `Int`, so a `Nat` is accepted wherever an `Int` is expected, as an
 argument, a binding, a definition or an operand: it is *widened* to an
 `Int`. An `Int` is never accepted where a `Nat` is expected, even where it
@@ -173,19 +175,19 @@ of an uninterpreted function whose result is a `Nat` (see
 [Items](Items.md#uninterpreted-functions)). In Lean, a `Nat` is Lean's
 `Nat`, and widening is Lean's coercion `↑` to `Int`.
 
-`Nat` may be written where a pattern type may (see [Subset
+`Nat` may be written where a subset type may (see [Subset
 types](#subset-types)), with two exceptions for now: it is not the
 element type of a set, relation or sequence, nor the type of a payload of a
 recursive enumeration, where an `Int` and a constraint serve instead. Nor
 is it a [type argument](Generics.md#type-arguments), which a construction
 infers widened, so that `Option<Int>` serves.
 There its constraint would hold of every element, which quantifies, as
-a pattern type's does there, and Fren does not yet carry it there for
-`Nat`, whose values Lean and the solver represent differently: `Int is
-0..` serves instead. `Nat` written there is an error (`F0338`). In a record's field or a payload of an
+a subset type's does there, and Fren does not yet carry it there for
+`Nat`, whose values Lean and the solver represent differently: the subset
+type `Nonnegative` serves instead. `Nat` written there is an error (`F0338`). In a record's field or a payload of an
 enumeration that is not recursive, it is Lean's `Nat` and the solver's
 `Int`, with the constraint that it is at least 0, which a value of the
-record or enumeration brings, as it brings a pattern type's. `lang::nat_place` states where `Nat`
+record or enumeration brings, as it brings a subset type's. `lang::nat_place` states where `Nat`
 may be written:
 
 ```fren
@@ -208,7 +210,8 @@ pub proc nat_place(
 
 ## Subset types
 
-[Declared subset types](SubsetTypes.md) replace inline pattern types.
+[Declared subset types](SubsetTypes.md) replace the inline pattern types
+`T is P` of earlier versions of Fren.
 A declaration such as `type Byte = b: Int where low: b >= 0 and high:
 b <= 255` names a reusable conjunction of invariants of its base type.
 Only named declarations introduce restrictions; `T is P` is no longer
@@ -216,59 +219,58 @@ valid in a type position. Expression pattern tests retain their syntax.
 The syntax, scope, interpretation, obligations, declaration checks,
 named-conjunct diagnostics and migration are specified in that chapter.
 
-### Pattern-test invariant fragment
+### Widening, obligations and placement
 
-The following existing executable rules describe the special case in
-which an invariant is one pattern test on its binder. Their `pattern_*`
-names remain the names of this semantic fragment, not additional surface
-type syntax. `pattern_widening` and `obligation` apply to general subset
-invariants as well, with `Matches` meaning satisfying all named
-invariants. `pattern_place` states only whether placement introduces a
-quantifier; a general invariant is in the core only if its body is too.
-The bounded-range algorithms describe recognized pattern-test predicates,
-not an assumption that arbitrary integer predicates are finite.
+The following rules apply to every subset type, whatever its invariants.
+`subset_widening` states when a value is accepted where a type is
+declared, and when it has an obligation; `obligation` states what that
+obligation asks, with `Matches` meaning that the value satisfies every
+named invariant of the declared subset type. `subset_place` states only
+whether the place where a subset type is written introduces a
+quantifier; a constraint is in the core only if each of its invariants is
+too (see [Decidability](Decidability.md#subset-types)).
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub proc pattern_widening(
-    patterned?,              -- the declared type has a pattern, at the top or in an element type
-    widened?,                -- `widening` accepts the expression's type, which has no pattern, where the declared type without its patterns is expected
+pub proc subset_widening(
+    restricted?,             -- the declared type is a subset type, or has one as an element type
+    widened?,                -- `widening` accepts the expression's type, which is never a subset type, where the declared type with its base types for its subset types is expected
 ): (
     det accepted?,
-    det obliged?,            -- a check confirms that the value matches
+    det obliged?,            -- a check confirms that the value satisfies the invariants
 ) {
     ensure rule: accepted? iff widened?
-    ensure obligation: obliged? iff (accepted? and patterned?)
+    ensure obligation: obliged? iff (accepted? and restricted?)
 
     expect never_by_type: when widened?, accepted?
-    expect only_patterns: unless patterned?, not obliged?
+    expect only_subsets: unless restricted?, not obliged?
 }
 ```
 
 ```fren
 pub enum ValuePlace { Definition, Argument, Field, Payload, Construction, Let, Body, Constant, Binding }
 
--- Nothing; that the value matches the pattern; that each element meets
--- its element type's obligation; or both.
+-- Nothing; that the value satisfies the invariants of the declared subset
+-- type; that each element meets its element type's obligation; or both.
 pub enum Duty { Nothing, Matches, Each, MatchesAndEach }
 
 pub proc obligation(
     place: ValuePlace,           -- where the value is given
     type_kind: ValueType,        -- the declared type's kind
-    pattern?,                    -- the declared type has a pattern at the top
+    restricted?,                 -- the declared type is a subset type at the top
     element: Duty,               -- for a set, relation or sequence, its element type's obligation
 ): (det duty: Duty) {
     use self::ValueType::{RelTy, SeqTy, SetTy}
 
     ensure rule: duty = (if place = ValuePlace::Binding then Duty::Nothing
-        else if pattern? and each? then Duty::MatchesAndEach
-        else if pattern? then Duty::Matches
+        else if restricted? and each? then Duty::MatchesAndEach
+        else if restricted? then Duty::Matches
         else if each? then Duty::Each
         else Duty::Nothing)
         where each? := type_kind in {SetTy, RelTy, SeqTy} and element != Duty::Nothing
 
     expect by_instances: when place = ValuePlace::Binding, duty = Duty::Nothing
-    expect records_built: when type_kind = ValueType::RecordTy and not pattern?, duty = Duty::Nothing
+    expect records_built: when type_kind = ValueType::RecordTy and not restricted?, duty = Duty::Nothing
 }
 ```
 
@@ -276,24 +278,24 @@ pub proc obligation(
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.lint.eq_op "allow" in
 set_option fren.lint.absurd_extreme_comparisons "allow" in
-expect obligation_widening(place: lang::ValuePlace, type_kind: lang::ValueType, pattern?, element: lang::Duty) {
+expect obligation_widening(place: lang::ValuePlace, type_kind: lang::ValueType, restricted?, element: lang::Duty) {
     use lang
-    call concrete := obligation(place, type_kind, pattern?, element)
+    call concrete := obligation(place, type_kind, restricted?, element)
     expect rule: true
     expect obligation: ((concrete.duty) != lang::Duty::Nothing) iff ((true) and ((place) != lang::ValuePlace::Binding
-        and ((pattern?) or ((type_kind) in {lang::ValueType::SetTy, lang::ValueType::RelTy, lang::ValueType::SeqTy} and (element) != lang::Duty::Nothing))))
+        and ((restricted?) or ((type_kind) in {lang::ValueType::SetTy, lang::ValueType::RelTy, lang::ValueType::SeqTy} and (element) != lang::Duty::Nothing))))
 }
 ```
 
 ```fren
-pub enum PatternPlace { Top, Field, Payload, Element }
+pub enum SubsetPlace { Top, Field, Payload, Element }
 
 set_option fren.evidence "enumerated" in
-pub proc pattern_place(
-    place: PatternPlace,         -- where the pattern type is written: the top of a declared type, a record's field, a variant's payload, or an element type
+pub proc subset_place(
+    place: SubsetPlace,          -- where the subset type is written: the top of a declared type, a record's field, a variant's payload, or an element type
     recursive?,                  -- for a payload: its enumeration is recursive
 ): (det decidable?) {
-    use self::PatternPlace::{Element, Payload, Top}
+    use self::SubsetPlace::{Element, Payload, Top}
 
     assume payloads_only: when recursive?, place = Payload
 
@@ -304,12 +306,24 @@ pub proc pattern_place(
 }
 ```
 
+### Pattern-test invariant fragment
+
+The rules named `pattern_*` below describe the special case in which a
+subset type's invariant is one pattern test on its binder, as in `type
+Byte = n: Int where range: n is 0..=255`. They name that fragment, not a
+kind of type of its own: `pattern_finite` states when such a subset type
+is finite, and `pattern_member`, `pattern_count` and `pattern_bounds`
+state the integers that the pattern of the test matches. These
+bounded-range algorithms describe recognized pattern-test invariants: an
+integer subset type whose invariants are other Boolean expressions, such
+as `low: b >= 0 and high: b <= 255`, is not finite by them.
+
 ```fren
 set_option fren.evidence "enumerated" in
 pub proc pattern_finite(
     base_finite?,            -- the base type is finite
     integers?,               -- the base type is `Int` or `Nat`
-    bounded?,                -- every alternative of the pattern is a bounded range or an integer
+    bounded?,                -- the invariant is a pattern test, every alternative of whose pattern is a bounded range or an integer
 ): (det finite?) {
     assume not_both: when integers?, not base_finite?
 
@@ -334,7 +348,7 @@ pub fn below?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(h) =
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub proc pattern_member(
-    alts: Seq<Alternative>,      -- the pattern's alternatives, in order
+    alts: Seq<Alternative>,      -- the alternatives of the pattern test's pattern, in order
     x: Int,
     k: Int,                      -- any position among the alternatives
 ): (
@@ -420,7 +434,7 @@ or a newtype declared `ordered` (see [Ordered
 declarations](Items.md#ordered-declarations)), whose fields' types are then
 ordered too, and no other type: not `Bool`, a set, a relation, a sequence,
 an abstract type, nor an enumeration, record or newtype declared without
-`ordered`, even one whose fields' types are ordered. A pattern type is
+`ordered`, even one whose fields' types are ordered. A subset type is
 ordered exactly when its base type is, since it is its base type to the
 type checker, and a type alias exactly when the type it names is, since
 it is that type. So `ordered struct Seconds(Nat)`, `ordered struct
@@ -440,9 +454,9 @@ to declare it `ordered`.
 from a type's kind and, for an enumeration, a record or a newtype, whether
 its name is among those declared `ordered`. `lang::ordered_type` states it
 of a declared type, from its *base*, the type that the type checker sees:
-a pattern type's base type, or the type that an alias names. Whether the
-type is written with a pattern, `patterned?`, does not change the rule,
-which `patterns_by_base` says:
+a subset type's base type, or the type that an alias names. Whether the
+type is a subset type, `restricted?`, does not change the rule, which
+`subsets_by_base` says:
 
 ```fren
 pub type TypeName
@@ -458,8 +472,8 @@ pub fn ordered_in?(k: ValueType, name: TypeName, ordered_items: Set<TypeName>) :
 }
 
 pub proc ordered_type(
-    base: Ty,                         -- the type without its pattern: a pattern type's base, an alias's type
-    patterned?,                       -- written `T is P`, directly or through an alias
+    base: Ty,                         -- the type without its invariants: a subset type's base, an alias's type
+    restricted?,                      -- a subset type, directly or through an alias
     ordered_items: Set<TypeName>,     -- the enumerations, records and newtypes declared `ordered`
 ): (det ordered?) {
     use self::ValueType::{
@@ -481,20 +495,20 @@ pub proc ordered_type(
     expect strings: when kind(base) = StringTy, ordered?
     expect opt_in: when kind(base) in {EnumTy, RecordTy}, ordered? iff type_name(base) in ordered_items
     expect never_unordered: when kind(base) in {BoolTy, SetTy, RelTy, SeqTy, AbstractTy}, not ordered?
-    expect by_base: when patterned?, ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
+    expect by_base: when restricted?, ordered? iff ordered_in?(kind(base), type_name(base), ordered_items)
 }
 
-expect patterns_by_base(
+expect subsets_by_base(
     a_base: Ty,
-    a_patterned?,
+    a_restricted?,
     a_ordered_items: Set<TypeName>,
     b_base: Ty,
-    b_patterned?,
+    b_restricted?,
     b_ordered_items: Set<TypeName>,
 ) {
-    call a := ordered_type(a_base, a_patterned?, a_ordered_items)
-    call b := ordered_type(b_base, b_patterned?, b_ordered_items)
-    expect patterns_by_base: when a.base = b.base and a.ordered_items = b.ordered_items, a.ordered? iff b.ordered?
+    call a := ordered_type(a_base, a_restricted?, a_ordered_items)
+    call b := ordered_type(b_base, b_restricted?, b_ordered_items)
+    expect subsets_by_base: when a.base = b.base and a.ordered_items = b.ordered_items, a.ordered? iff b.ordered?
 }
 ```
 
@@ -577,18 +591,19 @@ enumeration may not contain itself within a sequence.
 A type is *finite* if it has finitely many values: `Bool`, an
 enumeration that is not recursive and whose payloads have finite types, a
 record or newtype whose fields have finite types, a set or relation type
-whose element types are finite, and a pattern type whose base type is
-finite or whose pattern matches finitely many integers, as
-`lang::pattern_finite` says. `Int`, `Nat`, `String` and abstract types are
+whose element types are finite, and a subset type whose base type is
+finite or whose invariant is a pattern test that matches finitely many
+integers, as `lang::pattern_finite` says. `Int`, `Nat`, `String` and abstract types are
 not finite, and neither is any sequence type. With aliases `Four`, `Three`,
 and `Two` restricting integers to `0..=3`, `0..=2`, and `1..=2`, respectively,
 `struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>` and
 `Pair<Bool, Two>` are finite.
 
-These facts are of a type as it is declared, with its patterns, which
+These facts are of a type as it is declared, with its subset types, which
 `lang::DeclaredTy` stands for: `lang::declared_kind` gives its kind, that
-of its base type for a pattern type, and `lang::pattern_bounded?` whether it is a
-pattern type whose pattern matches finitely many integers. A type's
+of its base type for a subset type, and `lang::pattern_bounded?` whether it
+is a subset type whose invariant is a pattern test that matches finitely
+many integers. A type's
 *constituents* are the declared types of its fields, payloads and elements,
 those of an instance of a generic type with its arguments for its
 parameters, and a newtype's underlying type: the types that its values are
@@ -607,8 +622,9 @@ a growing former or is recursive.
 constituents: whether a type of it is finite when its constituents are
 (`finite?`), whether its values can be arbitrarily large whatever its
 constituents (`growing?`), and whether it may have constituents at all
-(`composite?`). A pattern type has its base type's former, and is finite
-by itself when its former is or its pattern bounds it (`own_finite?`). A
+(`composite?`). A subset type has its base type's former, and is finite
+by itself when its former is or a pattern-test invariant bounds it
+(`own_finite?`). A
 new type former is one more variant of `ValueType` and one more arm of
 `former`: what is finite, unbounded or [listed](Quantifiers.md#types), and
 so which [outputs](Procedures.md#members), [newtypes](Items.md#newtypes)
@@ -622,7 +638,7 @@ is asked of it:
 pub type DeclaredTy
 
 pub fn declared_kind(DeclaredTy): ValueType
-pub fn pattern_bounded?(DeclaredTy)     -- a pattern type whose pattern matches finitely many integers
+pub fn pattern_bounded?(DeclaredTy)     -- a subset type whose pattern-test invariant matches finitely many integers
 
 pub struct Former {
     finite?,
@@ -644,9 +660,10 @@ pub fn former(k: ValueType): Former := match k {
 }
 
 -- A type of the kind `k` is finite by itself: its former is, or it is an
--- integer type whose pattern bounds it (`lang::pattern_finite`).
-pub fn own_finite?(k: ValueType, patterned?) :=
-    former(k).finite? or (patterned? and k in {ValueType::IntTy, ValueType::NatTy})
+-- integer subset type whose pattern-test invariant bounds it
+-- (`lang::pattern_finite`).
+pub fn own_finite?(k: ValueType, invariant_bounded?) :=
+    former(k).finite? or (invariant_bounded? and k in {ValueType::IntTy, ValueType::NatTy})
 
 -- The types that `ty` is built from, where `(t, u)` is in `constituents`
 -- when `t` has a field, payload or element of type `u`.

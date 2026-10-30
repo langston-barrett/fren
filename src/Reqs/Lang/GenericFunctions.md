@@ -320,8 +320,8 @@ generic function without a body applies: its parameters' and result's
 declared types, instantiated with the application's type arguments
 (`lang::instantiation`), which are the sorts of its unknown function, the
 type whose constraint each of its applications brings, which is the
-instance's result type, with its patterns, not the declared one, so that
-`pick(r)` of an `r: R` brings what `R`'s fields' pattern types do, and
+instance's result type, with its subset types, not the declared one, so
+that `pick(r)` of an `r: R` brings what `R`'s fields' subset types do, and
 whether each of its applications is at least 0. A type argument is never a
 `Nat`, since an inferred one is widened (see [Applications](#applications)),
 so it is at least 0 exactly when the declared result type is `Nat`. Here a

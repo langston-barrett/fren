@@ -278,7 +278,7 @@ pub fn own_nested?(segs: Seq<Segment>) :=
 set_option fren.lint.undecidable "allow" in
 pub proc own_type(
     params: Nat,                 -- how many type parameters the declaration has: `P0`, `P1`, ...
-    segs: Seq<Segment>,          -- a payload's or field's type, as written, without its patterns
+    segs: Seq<Segment>,          -- a payload's or field's type, as written
 ): (det own?, det as_declared?, det nested?, det bare?, det in_element?, det accepted?) {
     use self::Arg::{Other, P0, P1}
     use self::Segment::{ArgsClose, ArgsOpen, ArgsSep, Ident, Own, RelOf, RelSep, SeqOf, SetOf}
@@ -660,7 +660,7 @@ A type argument may be a [subset type](SubsetTypes.md), as in
 `Option<Byte>` with `type Byte = n: Int where range: n is 0..=255`,
 or a type whose
 values bring a constraint, as `Option<Byte>` is in `Pair<Option<Byte>,
-Int>`. A type argument stands for its parameter with its pattern, so a
+Int>`. A type argument stands for its parameter with its invariants, so a
 payload or field whose declared type is the parameter has the argument's
 type as declared:
 
@@ -670,12 +670,12 @@ type as declared:
   `Option<Byte>` brings that when `x` is `Option::Some(b)`, `b` is in
   `0..=255`. A constraint of an element type within an argument, as in
   `Option<Set<Digit>>` with `type Digit = n: Int where range: n is 0..=9`, quantifies over the elements, as it does
-  anywhere (`lang::pattern_place`).
+  anywhere (`lang::subset_place`).
 - A value given where an instance is declared has the obligation
   (`lang::obligation`) of each payload or field whose declared type
   mentions a type parameter, with the arguments, guarded by its variant:
   the value was built from values of the parameters' types, which have no
-  patterns, so nothing else ensures them. `Option::Some(300)` given where an
+  invariants, so nothing else ensures them. `Option::Some(300)` given where an
   `Option<Byte>` is declared is an error (`F0661`), as `300` is where a
   `Byte` is. A payload or field whose declared type mentions no parameter
   has its own obligation where its value is given, as in any enumeration or
@@ -690,23 +690,23 @@ every payload, at every depth, which the constraints of a recursive
 enumeration's payloads, brought where each is read, do not say for a type
 parameter. So `List<Digit>` and `List<Option<Byte>>` are errors,
 and `List<Option<Int>>` is not. This is stricter than for a recursive
-enumeration that is not generic, whose payload of a pattern type is
+enumeration that is not generic, whose payload of a subset type is
 allowed, under the [`undecidable` lint](../Lint/Decidability.md#undecidable-constructs)
 (see [Subset types](Types.md#meaning)). It reaches records too: with
 `struct R { b: Byte }`, `List<R>` is an error, since a value of `R` brings
-that its field is in range, though `R` itself is not a pattern type. It
+that its field is in range, though `R` itself is not a subset type. It
 reaches through instances too, once their arguments stand for their
 parameters: with `enum Wrap<T> { W(List<T>) }`, `Wrap<Byte>` is an error,
 and so is `S<Byte>`, with `struct S<T> { s: Set<List<T>> }`, through a
 set's, sequence's or relation's element types. A
-recursive generic enumeration's payload of a declared pattern type that
+recursive generic enumeration's payload of a declared subset type that
 mentions no parameter, as `Digit` in
 `enum Tree<T> { Leaf, Node(Digit, T, Tree<T>) }`, brings its
 constraint where it is read, as for any recursive enumeration.
 
 A subset type's base type may be an instance, as in
-`type Present = o: Option<Int> where present: o is Option::Some(_)`, whose pattern is a pattern of the
-instance (see [Patterns](Patterns.md)).
+`type Present = o: Option<Int> where present: o is Option::Some(_)`, whose
+invariant's pattern is a pattern of the instance (see [Patterns](Patterns.md)).
 
 ## Recursive, unbounded and finite instances
 

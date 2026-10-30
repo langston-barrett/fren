@@ -8,7 +8,7 @@ import FrenCore.Patterns
 # Pattern types
 
 The types as declared, with the pattern of each pattern type within them
-(`Reqs/Lang/Types#pattern-types`), and what a value of such a type must
+(`Reqs/Lang/Types#subset-types`), and what a value of such a type must
 satisfy: the *constraint* that a variable, parameter or application of it
 brings, and the *obligation* of a value given where it is declared. Both
 front ends build a `PTy` for each declared type and call `PTy.cons` and
@@ -106,7 +106,7 @@ def PTy.firstUnordered? (orderedDecl : Name → Bool) : List PTy → Option Nat
   | t :: ts => if t.ordered orderedDecl then (PTy.firstUnordered? orderedDecl ts).map (· + 1) else some 0
 
 /-- Whether `t` has a pattern, at the top or in an element type
-(`lang::pattern_widening`). -/
+(`lang::subset_widening`). -/
 partial def PTy.patterned (t : PTy) : Bool := t.pat?.isSome || !t.invariants.isEmpty || t.elems.any (·.patterned)
 
 /-- What a front end knows of a record's fields, of an enumeration's
@@ -157,7 +157,7 @@ inductive Cons where
   deriving Inhabited
 
 /-- Whether the constraint quantifies over the elements of a collection
-(`lang::pattern_place`). -/
+(`lang::subset_place`). -/
 partial def Cons.quantifies : Cons → Bool
   | .pat .. | .predicate .. | .atLeast0 => false
   | .fields _ _ cs => cs.any (·.2.quantifies)
@@ -233,7 +233,7 @@ def obligationCons (ty : Ty) (top? : Option Pat) (e1? e2? : Option Cons) : Optio
 
 mutual
 /-- The obligation of a value given where the type `t` is declared, `none`
-if it has none (`lang::pattern_widening`, `lang::obligation`): its
+if it has none (`lang::subset_widening`, `lang::obligation`): its
 pattern, and its elements' patterns, for every element. A record's or an
 enumeration's own constraints need no obligation: its values were built to
 meet them. But an instance's payloads and fields whose declared types
@@ -251,7 +251,7 @@ partial def PTy.obligation (shapes : Name → Option DataShape) (t : PTy) : Opti
 
 /-- The obligation of a value of the instance of the generic record or
 enumeration `p` with the declared type arguments `args`
-(`Reqs/Lang/Generics#pattern-types-as-type-arguments`): for each payload or
+(`Reqs/Lang/Generics#subset-types-as-type-arguments`): for each payload or
 field whose declared type mentions a type parameter, the obligation of its
 type with the arguments, guarded by its variant. -/
 partial def instanceObligation (shapes : Name → Option DataShape) (p : Name) (args : Array PTy) : Option Cons := do
@@ -352,7 +352,7 @@ whether that is `Int` or `Nat`, and whether its pattern bounds it
 (`lang::pattern_finite`). -/
 def patternFinite (baseFinite integers bounded : Bool) : Bool := baseFinite || (integers && bounded)
 
-/-- Where a pattern type is written (`lang::pattern_place`). -/
+/-- Where a pattern type is written (`lang::subset_place`). -/
 inductive PatternPlace where
   /-- At the top of a declared type. -/
   | top
@@ -363,27 +363,27 @@ inductive PatternPlace where
 
 /-- Whether a pattern type written at `place` is in the decidable core,
 where `recursive` says whether a payload's enumeration is recursive
-(`lang::pattern_place`). -/
+(`lang::subset_place`). -/
 def patternPlaceDecidable (place : PatternPlace) (recursive : Bool) : Bool :=
   !(place == .element || (place == .payload && recursive))
 
 /-- Whether a value is accepted where a type is declared, and whether it
 has an obligation, from whether `widening` accepts the types without their
 patterns and whether the declared type has a pattern
-(`lang::pattern_widening`). -/
+(`lang::subset_widening`). -/
 def patternWidening (widened patterned : Bool) : Bool × Bool := (widened, widened && patterned)
 
 /-! ## Messages -/
 
 /-- An element type whose values bring a constraint, which holds of every
-element (`lang::pattern_place`). -/
+element (`lang::subset_place`). -/
 def undecidableElementsMsg : Msg :=
   { code? := some "F0714", headline := "this is outside the decidable core: the constraint of an element type holds of every element, which quantifies over them"
     label? := some "outside the decidable core"
     notes := #["help: use an unrestricted element type, and say of the elements that the spec reads what it needs"] }
 
 /-- A pattern type as a payload of a recursive enumeration, whose
-constraint holds of every payload, at every depth (`lang::pattern_place`). -/
+constraint holds of every payload, at every depth (`lang::subset_place`). -/
 def undecidableRecursivePayloadMsg : Msg :=
   { code? := some "F0714", headline := "this is outside the decidable core: a recursive enumeration's payload's constraint holds of every payload, at every depth"
     label? := some "outside the decidable core"
@@ -391,7 +391,7 @@ def undecidableRecursivePayloadMsg : Msg :=
 
 /-- A type argument `arg` of the recursive generic enumeration `ty` whose
 values bring a constraint, which would hold of every payload, at every
-depth (`Reqs/Lang/Generics#pattern-types-as-type-arguments`). -/
+depth (`Reqs/Lang/Generics#subset-types-as-type-arguments`). -/
 def recursiveArgumentMsg (arg ty : String) : Msg :=
   { code? := some "F0389", headline := s!"`{arg}` cannot be a type argument of the recursive enumeration `{ty}`"
     label? := some "its values bring a constraint"
