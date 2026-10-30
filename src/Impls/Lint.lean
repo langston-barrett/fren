@@ -2686,31 +2686,36 @@ theorem seq_ofList_ne_empty (l : List α) : Fren.Seq.ofList l ≠ ∅ ↔ l ≠ 
   · intro h e; exact h (by simpa using congrArg Fren.Seq.toList e)
 
 theorem needlessHigherOrder_iff (gs : List lint.GivenFunction) :
-    Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun g => decide (lint.closure_names g.params g.body ≠ ∅)) false = true ↔
+    Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun g => decide (lint.closure_names g.params g.body ≠ ∅))
+        (gs.any (·.«lambda_match?»)) false = true ↔
       Fren.Seq.ofList gs ≠ ∅ ∧ ∀ k : Int, 0 ≤ k ∧ k < (Fren.Seq.ofList gs).len →
-        lint.closure_names ((Fren.Seq.ofList gs).nth k).params ((Fren.Seq.ofList gs).nth k).body = ∅ ∧ ((Fren.Seq.ofList gs).nth k).form = ((Fren.Seq.ofList gs).nth 0).form := by
+        ((Fren.Seq.ofList gs).nth k).«lambda_match?» = false ∧
+          lint.closure_names ((Fren.Seq.ofList gs).nth k).params ((Fren.Seq.ofList gs).nth k).body = ∅ ∧
+          ((Fren.Seq.ofList gs).nth k).form = ((Fren.Seq.ofList gs).nth 0).form := by
   rw [seq_ofList_ne_empty]
   cases gs with
   | nil => simp [Fren.Core.needlessHigherOrderBy]
   | cons g gs =>
     have h0 : (Fren.Seq.ofList (g :: gs)).nth 0 = g := by
       rw [Fren.Seq.nth_of_lt _ 0 (by omega) (by simp)]; rfl
-    rw [h0, forall_positions (g :: gs) (fun _ a => lint.closure_names a.params a.body = ∅ ∧ a.form = g.form)]
+    rw [h0, forall_positions (g :: gs) (fun _ a => a.«lambda_match?» = false ∧ lint.closure_names a.params a.body = ∅ ∧ a.form = g.form)]
     simp only [List.map_cons, Fren.Core.needlessHigherOrderBy, Bool.and_eq_true, Bool.not_eq_true', Bool.not_false,
       List.all_eq_true, beq_iff_eq, List.mem_map, List.length_cons, List.any_eq_false, and_true, decide_eq_true_eq,
       ne_eq, Classical.not_not]
     constructor
-    · rintro ⟨hc, hf⟩
-      refine ⟨by simp, fun i hi => ⟨hc _ (List.getElem_mem hi), ?_⟩⟩
+    · rintro ⟨⟨hc, hl⟩, hf⟩
+      refine ⟨by simp, fun i hi => ⟨by simpa using hl _ (List.getElem_mem hi), hc _ (List.getElem_mem hi), ?_⟩⟩
       cases i with
       | zero => rfl
       | succ j => exact hf _ ⟨_, List.getElem_mem (by simp at hi; omega), rfl⟩
     · rintro ⟨_, h⟩
-      refine ⟨fun x hx => ?_, fun s ⟨x, hx, e⟩ => ?_⟩
+      refine ⟨⟨fun x hx => ?_, fun x hx => ?_⟩, fun s ⟨x, hx, e⟩ => ?_⟩
       · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
-        exact (h i hi).1
+        exact (h i hi).2.1
       · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
-        rw [← e]; exact (h (i + 1) (by simp; omega)).2
+        simpa using (h i hi).1
+      · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+        rw [← e]; exact (h (i + 1) (by simp; omega)).2.2
 
 def toCallee : Fren.Core.Callee → lint.Callee
   | .defined => .Defined
@@ -2776,20 +2781,22 @@ impl redundant_type_annotations: lint::redundant_type_annotations for (a : Bool)
 -- Both front ends record what each application gives the parameter, and
 -- report only a private function's parameters (`needlessHigherOrderReports`),
 -- comparing the texts as written: each `form` here is a text's written form
--- (`Reqs/Lint#written-the-same`), and the names that each closure's body has
+-- (`Reqs/Lint#written-the-same`), `lambda_match?` is whether it is a lambda
+-- match, which both front ends tell from its syntax, and the names that each closure's body has
 -- free, which `closureFreeNames` reads from the parsed body, are
 -- `closure_names` of its parameters and its body's tree.
 impl needless_higher_order: lint::needless_higher_order for (gs : List lint.GivenFunction) (p g : Bool) {
   given := Fren.Seq.ofList gs,
   pub? := p,
   generic? := g,
-  fires? := !p && Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun x => decide (lint.closure_names x.params x.body ≠ ∅)) g,
+  fires? := !p && Fren.Core.needlessHigherOrderBy (· == ·) (gs.map (·.form)) (gs.any fun x => decide (lint.closure_names x.params x.body ≠ ∅))
+    (gs.any (·.«lambda_match?»)) g,
 } by
   intro gs p g _
   unfold lint.needless_higher_order.ensures lint.needless_higher_order.ensure.rule
   cases g
   · rw [Bool.and_eq_true, needlessHigherOrder_iff]
-    cases p <;> simp
+    cases p <;> simp [and_assoc]
   · cases gs <;> cases p <;> simp [Fren.Core.needlessHigherOrderBy]
 
 trusted lint::redundant_closure_written: "a model of an expression, checked by the refinements in its section"

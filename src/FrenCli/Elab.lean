@@ -3807,19 +3807,18 @@ def lintClosure (cx : ExprCtx) (ps : Array (Option Ty)) (r? : Option Ty) (span :
 /-- Records what the application of the higher-order function `path` gives
 its parameter at `k`, the closure or function's name `e`, for
 `needless_higher_order` (`lint::needless_higher_order`): its text, and the
-names that a closure's body has free (`closureFreeNames`); a function's
-name is one, and a lambda match is taken to mention one, which keeps the
-lint from firing on it. -/
+names that a closure's body has free (`closureFreeNames`), of which a
+function's name is one, or that it is a lambda match. -/
 def noteFnArg (path : Name) (k : Nat) (e : Expr) : M Unit := do
   if (← get).fnArgs.any fun (a, sp) => sp == e.span && a.index == k then return
   let src := (← get).src
-  let names : Array String := match e with
-    | .closure _ params body => closureFreeNames (params.map fun (x, _) => (declaredIdent x).1.name) body
-    | .path _ segs => #[(segs.map (·.name)).foldl (· ++ "::" ++ ·) ""]
-    -- A lambda match is not compared.
-    | _ => #["match"]
+  let (lambdaMatch, names) : Bool × Array String := match e with
+    | .closure _ params body => (false, closureFreeNames (params.map fun (x, _) => (declaredIdent x).1.name) body)
+    | .path _ segs => (false, #[(segs.map (·.name)).foldl (· ++ "::" ++ ·) ""])
+    -- `elabFnArg` accepts nothing else but a lambda match.
+    | _ => (true, #[])
   let text := (e.text src).text
-  modify fun s => { s with fnArgs := s.fnArgs.push ({ path, index := k, text, names }, e.span) }
+  modify fun s => { s with fnArgs := s.fnArgs.push ({ path, index := k, text, lambdaMatch, names }, e.span) }
 
 mutual
 /-- Two operands of the same type, each checked against the other's, when it

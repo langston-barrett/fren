@@ -142,9 +142,16 @@ function's own parameters shadow. So the lint asks that the closure
 mention none, which is enough for the body to mean the same in the
 function, and does not look for which names would. For the same reason
 it does not fire where every application gives the same function's name,
-nor on a lambda match, nor on a generic function, whose body is written
-over its type parameters, where `|y| y + 1` need not type-check. It is
-reported at the parameter. It does not fire on a public function, which
+nor on a generic function, whose body is written over its type
+parameters, where `|y| y + 1` need not type-check. Nor does it fire on a
+[lambda match](../../Lang/HigherOrder.md#lambda-matches-and-multiple-scrutinees),
+`match { P => e, ... }`: its parameters are not written, so it has no
+body to write in the function as it stands, and the lint does not read
+its arms. The body means the same in the function, but need not be
+written the same there, since a `!` marks a binder that shadows a name in
+scope where the binder is written: `let k! := …`, in a closure written
+where a variable `k` is in scope, is `F0218` where no `k` is, and
+`let k := …` is `F0217` where one is. It is reported at the parameter. It does not fire on a public function, which
 other files may apply, nor where nothing applies the function, which
 [`dead_code`](../Unused.md#dead-code) reports. It has no fix, since it
 changes the function's parameters, and with them every application. Clippy
@@ -187,15 +194,17 @@ pub proc closure_names_scope(params: Set<Local>, body: Tree): (det names: Set<Lo
 ```
 
 `lint::needless_higher_order` states when it fires, from what each
-application gives the parameter: its written form, and, as a closure, its
-parameters and the tree of its body. A function's name, `g`, is the
-closure `|x| g(x)`, whose body mentions `g`.
+application gives the parameter: its written form, whether it is a lambda
+match, and, as a closure, its parameters and the tree of its body. A
+function's name, `g`, is the closure `|x| g(x)`, whose body mentions `g`.
 
 ```fren
 -- What an application gives a function parameter, as
--- `needless_higher_order` reads it: its written form, and the closure's
--- parameters and body.
-pub struct GivenFunction { form: String, params: Set<Local>, body: Tree }
+-- `needless_higher_order` reads it: its written form, whether it is a
+-- lambda match, `match { P => e, ... }`, and the closure's parameters and
+-- body. The lint does not read a lambda match's arms, and does not fire
+-- on it whatever they mention.
+pub struct GivenFunction { form: String, lambda_match?, params: Set<Local>, body: Tree }
 
 set_option fren.lint.undecidable "allow" in
 pub proc needless_higher_order(
@@ -205,6 +214,7 @@ pub proc needless_higher_order(
 ): (det fires?) {
     ensure rule: fires? iff (not pub? and not generic? and given != []
         and (forall (k: Int), when 0 <= k < given.len,
-        closure_names(given[k].params, given[k].body) = {} and given[k].form = given[0].form))
+        not given[k].lambda_match? and closure_names(given[k].params, given[k].body) = {}
+        and given[k].form = given[0].form))
 }
 ```

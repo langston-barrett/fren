@@ -108,6 +108,14 @@ proc names(k: Int, y': Int): (det a: Int, det b: Int, det d: Int, det e: Int) {
     out e := tagged(|y| match y { 0 => if Tag::A = Tag::B then 1 else 0, _ => y }, k)
 }
 
+-- A lambda match, whose arms mention no name: its parameters are not
+-- written, and the lint does not read its arms.
+fn arms(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+proc lambda_matches(k: Int): (det a: Int) {
+    out a := arms(match { 0 => 1, _ => 2 }, k) + arms(match { 0 => 1, _ => 2 }, k + 1)
+}
+
 -- `redundant_type_annotations`, where a generic function's type parameter
 -- is fixed by a value argument after the closure, and where only the
 -- closure fixes it.

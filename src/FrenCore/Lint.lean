@@ -3140,9 +3140,9 @@ structure HofParamRecord where
   deriving Inhabited
 
 /-- What an application of the higher-order function `path` gives its
-parameter at `index`: a closure or a function's name, as written, and the
-names it has free, but for a closure's own parameters
-(`lint::closure_names`). Each of those may mean something else in the
+parameter at `index`: a closure, a lambda match or a function's name, as
+written, whether it is a lambda match, and the names it has free, but for
+a closure's own parameters (`lint::closure_names`). Each of those may mean something else in the
 function's body, or nothing: a name of where it is written (a variable, a
 binder, a parameter, a call, a `let`), an item declared after the
 function, or one that the function's parameters shadow
@@ -3151,23 +3151,27 @@ structure FnArgRecord where
   path : Name
   index : Nat
   text : String
+  /-- It is a lambda match, `match { P => e, ... }`, whose arms are not
+  read. -/
+  lambdaMatch : Bool
   names : Array String
   deriving Inhabited
 
 /-- Whether `needless_higher_order` fires on a function parameter, from
 what the applications of its function give it, as written, whether one of
-them mentions a name (`FnArgRecord.names`), and whether the function is
-generic (`lint::needless_higher_order`): there is one, each is the same as
-the first, by `same`, none mentions a name, and the function is not
-generic. -/
-def needlessHigherOrderBy (same : String → String → Bool) (texts : List String) (named generic : Bool) : Bool :=
+them mentions a name (`FnArgRecord.names`), whether one is a lambda match,
+and whether the function is generic (`lint::needless_higher_order`): there
+is one, each is the same as the first, by `same`, none mentions a name,
+none is a lambda match, and the function is not generic. -/
+def needlessHigherOrderBy (same : String → String → Bool) (texts : List String) (named lambdaMatch generic : Bool) : Bool :=
   match texts with
   | [] => false
-  | t :: ts => !named && !generic && ts.all (same · t)
+  | t :: ts => !named && !lambdaMatch && !generic && ts.all (same · t)
 
 /-- `needlessHigherOrderBy`, comparing the texts as written
 (`writtenSame`). -/
-def needlessHigherOrder (texts : List String) (named generic : Bool) : Bool := needlessHigherOrderBy writtenSame texts named generic
+def needlessHigherOrder (texts : List String) (named lambdaMatch generic : Bool) : Bool :=
+  needlessHigherOrderBy writtenSame texts named lambdaMatch generic
 
 def needlessHigherOrderMsg (f p : Name) (text : String) : Msg :=
   { code? := some Lint.needlessHigherOrder.code
@@ -3182,7 +3186,7 @@ the file give them, `args`. -/
 def needlessHigherOrderReports (params : Array (HofParamRecord × α)) (args : Array FnArgRecord) : Array (LintReport α) :=
   params.filterMap fun (p, ref) =>
     let given := args.filter fun a => a.path == p.path && a.index == p.index
-    if needlessHigherOrder (given.toList.map (·.text)) (given.any (!·.names.isEmpty)) p.generic then
+    if needlessHigherOrder (given.toList.map (·.text)) (given.any (!·.names.isEmpty)) (given.any (·.lambdaMatch)) p.generic then
       some { lint := .needlessHigherOrder, level := p.level, ref, msg := needlessHigherOrderMsg p.path p.name given[0]!.text }
     else none
 
