@@ -54,6 +54,14 @@ def uiFiles : IO (Array FilePath) :=
 
 /-! ## Snapshots -/
 
+/-- `out` with the note that lists every lint (`Fren.Core.lintsNote`)
+written as `lintsPlaceholder`, so that a snapshot that shows it does not
+change when a lint is added, and lints added at once merge cleanly. The
+note is made from `Lint.all`, which `lintTable` compares with the table of
+lints. -/
+def lintsShown (out : String) : String := out.replace Fren.Core.lintsNote lintsPlaceholder
+where lintsPlaceholder := "note: the lints are {Lint.all}"
+
 /-- Compares `actual` with the snapshot at `path`, or writes it when blessing. -/
 def expectFile (bless : Bool) (path : FilePath) (actual : String) : IO (Option String) := do
   if bless then
@@ -83,7 +91,7 @@ def snapshots (bless : Bool) : IO (Array String) := do
       | some argv => argv
       | none => (directive "args").getD ["check"] ++ [f.toString]
     let (out, code) ← runFren argv
-    expectFile bless (f.withExtension "expected") s!"{out}exit={code}\n"
+    expectFile bless (f.withExtension "expected") s!"{lintsShown out}exit={code}\n"
 
 /-! ## ui tests -/
 
@@ -149,8 +157,35 @@ def codesInSources : IO (Array String) := do
 depends on the machine; and removed codes, which nothing reports, and
 whose explanations say what replaced them. -/
 def unsnapshotted : List String :=
-  ["F0137", "F0142", "F0143", "F0155", "F0156", "F0158", "F0159", "F0160", "F0164", "F0369", "F0370", "F0399", "F0406", "F0407", "F0412", "F0413", "F0414", "F0415", "F0416", "F0420",
-   "F0448", "F0608", "F0622", "F0623", "F0713"]
+  [
+    -- keep-sorted start
+    "F0137",
+    "F0142",
+    "F0143",
+    "F0155",
+    "F0156",
+    "F0158",
+    "F0159",
+    "F0160",
+    "F0164",
+    "F0369",
+    "F0370",
+    "F0399",
+    "F0406",
+    "F0407",
+    "F0412",
+    "F0413",
+    "F0414",
+    "F0415",
+    "F0416",
+    "F0420",
+    "F0448",
+    "F0608",
+    "F0622",
+    "F0623",
+    "F0713",
+    -- keep-sorted end
+  ]
 
 /-- The rows of the table of lints in `Reqs/Lint.md` that disagree with
 the code: each lint's row gives its name, code, group and default level,
@@ -221,7 +256,7 @@ def errorCodes : IO (Array String) := do
     unless ok do failures := failures.push s!"{c}: not of the form `F0` followed by a group from 1 to 8 and two digits"
   let snapshots ← (← sortedFiles ("test" / "cli") "expected").mapM IO.FS.readFile
   for c in ← codesInSources do
-    unless codes.contains c do failures := failures.push s!"{c}: used in the sources but not explained in `FrenCore/Codes.lean`"
+    unless codes.contains c do failures := failures.push s!"{c}: used in the sources but not explained in `src/FrenCore/Codes/{c}.md`"
   for c in Fren.Core.errorCodes do
     unless unsnapshotted.contains c.code || snapshots.any (·.contains s!"[{c.code}]:".toSlice) do
       failures := failures.push s!"{c.code}: no snapshot in test/cli reports it"
@@ -244,12 +279,76 @@ def errorCodes : IO (Array String) := do
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : Array String :=
-  #["Lang/Overview", "Lang/Lexical", "Lang/Types", "Lang/SubsetTypes", "Lang/BooleanBlocks", "Lang/Items", "Lang/Generics", "Lang/GenericFunctions", "Lang/Prelude", "Lang/Scope", "Lang/Procedures", "Lang/Global", "Lang/Decidability",
-    "Lang/Patterns", "Lang/Let", "Lang/Quantifiers", "Lang/ElementQuantifiers", "Lang/Semantics", "Lang/EvaluationRules", "Lang/Expressions", "Lang/HigherOrder", "Lang/Recursion", "Lang/ScopeLaws",
-    "Lang/Modules", "Lang/Calls", "Check", "View", "Cli", "Lint", "Lint/Meaning", "Lint/Unused", "Lint/NonstandardStyle", "Lint/Style",
-    "Lint/Style/Comparisons", "Lint/Style/PatternTests", "Lint/Style/Naturals", "Lint/Style/Records", "Lint/Style/Matches", "Lint/Style/Let", "Lint/Complexity", "Lint/Complexity/Comparisons", "Lint/Complexity/Operators", "Lint/Complexity/Methods", "Lint/Complexity/Matches", "Lint/Complexity/Patterns", "Lint/Complexity/Integers", "Lint/Complexity/Updates",
-    "Lint/Suspicious", "Lint/Suspicious/Expressions", "Lint/Suspicious/Methods", "Lint/Suspicious/Literals",
-    "Lint/Suspicious/Comparisons", "Lint/Suspicious/Integers", "Lint/Pedantic", "Lint/Pedantic/Matches", "Lint/Pedantic/Records", "Lint/Pedantic/Text", "Lint/Pedantic/Comparisons", "Lint/Pedantic/Conditionals", "Lint/Restriction", "Lint/Decidability", "Eval", "Lang/Refinement", "Mutate", "Fmt", "Impl", "Generated", "Trace"].map fun r => s!"src/Reqs/{r}.md"
+  #[
+    "Lang/Overview",
+    "Lang/Lexical",
+    "Lang/Types",
+    "Lang/SubsetTypes",
+    "Lang/BooleanBlocks",
+    "Lang/Items",
+    "Lang/Generics",
+    "Lang/GenericFunctions",
+    "Lang/Prelude",
+    "Lang/Scope",
+    "Lang/Procedures",
+    "Lang/Global",
+    "Lang/Decidability",
+    "Lang/Patterns",
+    "Lang/Let",
+    "Lang/Quantifiers",
+    "Lang/ElementQuantifiers",
+    "Lang/Semantics",
+    "Lang/EvaluationRules",
+    "Lang/Expressions",
+    "Lang/HigherOrder",
+    "Lang/Recursion",
+    "Lang/ScopeLaws",
+    "Lang/Modules",
+    "Lang/Calls",
+    "Check",
+    "View",
+    "Cli",
+    "Lint",
+    "Lint/Meaning",
+    "Lint/Unused",
+    "Lint/NonstandardStyle",
+    "Lint/Style",
+    "Lint/Style/Comparisons",
+    "Lint/Style/PatternTests",
+    "Lint/Style/Naturals",
+    "Lint/Style/Records",
+    "Lint/Style/Matches",
+    "Lint/Style/Let",
+    "Lint/Complexity",
+    "Lint/Complexity/Comparisons",
+    "Lint/Complexity/Operators",
+    "Lint/Complexity/Methods",
+    "Lint/Complexity/Matches",
+    "Lint/Complexity/Patterns",
+    "Lint/Complexity/Integers",
+    "Lint/Complexity/Updates",
+    "Lint/Suspicious",
+    "Lint/Suspicious/Expressions",
+    "Lint/Suspicious/Methods",
+    "Lint/Suspicious/Literals",
+    "Lint/Suspicious/Comparisons",
+    "Lint/Suspicious/Integers",
+    "Lint/Pedantic",
+    "Lint/Pedantic/Matches",
+    "Lint/Pedantic/Records",
+    "Lint/Pedantic/Text",
+    "Lint/Pedantic/Comparisons",
+    "Lint/Pedantic/Conditionals",
+    "Lint/Restriction",
+    "Lint/Decidability",
+    "Eval",
+    "Lang/Refinement",
+    "Mutate",
+    "Fmt",
+    "Impl",
+    "Generated",
+    "Trace",
+  ].map fun r => s!"src/Reqs/{r}.md"
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
 commands of `src/Reqs`, each as a path from the repository's root. -/
@@ -345,6 +444,8 @@ def fmtIgnore : List String :=
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
+   -- The explanations of the codes, whose first examples are erroneous.
+   "src/FrenCore/Codes/*.md",
    -- The README's example keeps its hand-aligned continuation lines.
    "README.md",
    -- `#fren_md` in a block, which only the Lean front end reads.

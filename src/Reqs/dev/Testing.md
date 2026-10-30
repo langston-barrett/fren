@@ -34,7 +34,7 @@
   `syntax/` and `lean/`. The example specs are in `examples/`, outside
   `test/`.
 - **Error codes** (`lake test`): every code used in the sources must be
-  explained in `src/FrenCore/Codes.lean` and reported by some snapshot.
+  explained in `src/FrenCore/Codes/CODE.md` and reported by some snapshot.
   Each explanation's first ```` ```fren ```` block must report its code,
   and its other blocks must not. A new message needs a code, an
   explanation and a snapshot.
