@@ -6,36 +6,38 @@ open Fren.Lang
 /-!
 # A hosted front-end failure: `simp` reaches its maximum recursion depth
 
-A model of the semantics (`Reqs/Lang/Semantics.md`) with five forms of
-expression, and `recursion_unfolds` of `Reqs/Lang/EvaluationRules.md`, in
-which `bind_params` has the contract that the semantics rewrite (#391)
-dropped, `no_parameters`. With it, the Lean-hosted front end fails the whole
-check of `recursion_unfolds`: `simp` reaches its maximum recursion depth.
-#417 reports that the `fren` command passes the same check. Without the
-contract, the check passes.
+A small model of the semantics (`Reqs/Lang/Semantics.md`), with the law
+`recursion_unfolds` of `Reqs/Lang/EvaluationRules.md`, in which
+`bind_params` has the contract that the semantics rewrite (#391) dropped,
+`no_parameters`. With it, the Lean-hosted front end fails the whole check:
+`simp` reaches its maximum recursion depth. #417 reports that the `fren`
+command passes the same check. Without that one contract, the check passes
+here too, so the failure is pinned to it.
 
-The depth that `simp` reaches grows with the number of forms that `eval`
-has. With the default `maxRecDepth`, the semantics' 21 forms fail, and so
-do 14 of them: all but `Let`, `If`, `And`, `Or`, `Is`, `Match` and
-`NoMatch`. Without `Unary`, `Binary`, `Method` and `Count`, those 14 pass,
-and with `Binary` alone, or with only the other three, they pass too. So the check runs at a `maxRecDepth` of
-128, where these five forms fail, and quickly, with the contract, and pass
-without it. #417's own reproduction also assumes `unfolded`; at this depth,
-the contract alone is enough.
+The depth that `simp` reaches grows with the model, so this check runs at a
+`maxRecDepth` of 128, where the failure comes quickly. What the failure
+needs, as far as bisecting found:
 
-This is a disagreement between the front ends, which #391 avoided by
-dropping the contract. `#expect_max_rec_depth` below records today's
-failure, and fails once the check stops reaching the maximum recursion
-depth, so that a fix of the hosted front end shows up here (#417, #420).
-The model need not follow later changes to the chapters, only keep the
-failure.
+- The whole semantics, 21 forms of expression, fails at the default
+  `maxRecDepth`, and so does a model of 14 forms; a model of 12, without
+  the operators and methods, passes, and so do models with only some of
+  `Unary`, `Binary`, `Method` and `Count` added back.
+- At a `maxRecDepth` of 128, these five forms fail, and three (without
+  `Nil` and `Cons`) pass. At 64, three forms fail with the contract and
+  without it, so that limit pins nothing.
+- `lookup`'s contract is needed: without it this model passes. So are the
+  assumption `unfolded` and `respects?`, which #417's reproduction has.
+
+`#expect_max_rec_depth` records today's failure, and fails once the check
+stops reaching the maximum recursion depth, so a fix of the hosted front
+end shows up here (#417, #420, #476).
 -/
 
 mod simp_depth
 
 pub type Id := String
 
-pub enum Value { Nil, Cons(Value, Value), Integer(Int) }
+pub enum Value { Nil, Cons(Value, Value) }
 
 pub enum Outcome { Defined(Value), Undefined }
 
@@ -46,8 +48,6 @@ pub enum Expr { Var(Id), Nil, Cons(Expr, Expr), Apply(Id, Expr, Params, Expr), R
 pub enum Env { Empty, Bind(Id, Outcome, Env) }
 
 pub enum Graph { Empty, Point(Id, Value, Value, Graph) }
-
-pub struct Interp { functions: Graph, recursions: Graph, primitives: Graph }
 
 pub fn lookup(env: Env, x: Id): (r: Outcome) {
     out r := match env {
@@ -78,35 +78,33 @@ pub fn bind_params(ps: Params, args: Value): (r: Env) {
     ensure no_parameters: when ps = Params::Nil, r = Env::Empty
 }
 
-pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
-    out r := match e {
-        Expr::Var(x) => lookup(env, x),
-        Expr::Nil => Outcome::Defined(Value::Nil),
-        Expr::Cons(a, rest) => match eval(i, env, a), eval(i, env, rest) {
-            Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
-            _, _ => Outcome::Undefined,
-        },
-        Expr::Apply(_, args, ps, body) => match eval(i, env, args) {
-            Outcome::Defined(l) => eval(i, bind_params(ps, l), body),
-            Outcome::Undefined => Outcome::Undefined,
-        },
-        Expr::Recur(f, args) => match eval(i, env, args) {
-            Outcome::Defined(l) => apply(i.recursions, f, l),
-            Outcome::Undefined => Outcome::Undefined,
-        },
-    }
+pub fn eval(g: Graph, env: Env, e: Expr): Outcome := match e {
+    Expr::Var(x) => lookup(env, x),
+    Expr::Nil => Outcome::Defined(Value::Nil),
+    Expr::Cons(a, rest) => match eval(g, env, a), eval(g, env, rest) {
+        Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
+        _, _ => Outcome::Undefined,
+    },
+    Expr::Apply(_, args, ps, body) => match eval(g, env, args) {
+        Outcome::Defined(l) => eval(g, bind_params(ps, l), body),
+        Outcome::Undefined => Outcome::Undefined,
+    },
+    Expr::Recur(f, args) => match eval(g, env, args) {
+        Outcome::Defined(l) => apply(g, f, l),
+        Outcome::Undefined => Outcome::Undefined,
+    },
 }
 
-pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
-    apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
+pub fn respects?(g: Graph, f: Id, ps: Params, e: Expr, l: Value) :=
+    apply(g, f, l) = Outcome::Undefined or apply(g, f, l) = eval(g, bind_params(ps, l), e)
 
-expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {
-    assume arguments: eval(i, env, args) = Outcome::Defined(l)
-    assume body_outcome: eval(i, bind_params(ps, l), body) = r
-    assume point: apply(i.recursions, f, l) = r and r is Outcome::Defined(_)
-    assume unfolded: apply(i.recursions, f, l) = eval(i, bind_params(ps, l), body)
-    expect unfolds: eval(i, env, Expr::Recur(f, args)) = r
-    expect respected: respects?(i, f, ps, body, l)
+expect recursion_unfolds(g: Graph, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {
+    assume arguments: eval(g, env, args) = Outcome::Defined(l)
+    assume body_outcome: eval(g, bind_params(ps, l), body) = r
+    assume point: apply(g, f, l) = r and r is Outcome::Defined(_)
+    assume unfolded: apply(g, f, l) = eval(g, bind_params(ps, l), body)
+    expect unfolds: eval(g, env, Expr::Recur(f, args)) = r
+    expect respected: respects?(g, f, ps, body, l)
 }
 
 open Lean Elab Command in

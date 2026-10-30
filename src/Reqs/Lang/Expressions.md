@@ -361,16 +361,14 @@ is the `Let`'s free variables. In a `match`, an arm's guard and body
 mention their free variables with each binder of the pattern, a `Binder`,
 mentioning what the scrutinee does; the `match` mentions what its
 scrutinee, its arms and its later arms do, and that is the `Match`'s free
-variables. What the law pins down is the step of `mentions` at each such
-name and form: a `Definition` and a `Binder` mention what their definition
-or scrutinee does, and a `let` and a `match`, `Compound`s, what their
-parts do. The binders' term of the `match` adds nothing to the union,
-which has the scrutinee's free variables already, as in the semantics,
-where a `Match` counts its scrutinee whether or not a binder is read; it
-is there to state the `Binder` step, as the `let`'s states the
-`Definition` step. That the front ends count a name's definition where the
-name is read is the prose's above; checking it would need a model of the
-front ends' substitution:
+variables. A binder mentions what the scrutinee does, which the `match`
+mentions anyway, as the semantics counts a `Match`'s scrutinee whether or
+not a binder is read; so only the `let` law needs the substituted term.
+What the law pins down is the step of `mentions` at each such name and
+form: a `Definition` mentions what its definition does, and a `let` and a
+`match`, `Compound`s, what their parts do. That the front ends count a
+name's definition where the name is read is the prose's above; checking it
+would need a model of the front ends' substitution:
 
 ```fren
 expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
@@ -379,10 +377,8 @@ expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: 
             union (if Mention::Var(x) in free_vars(b) then definition.mentioned else {}))
     expect let_free_vars: let_form.mentioned = free_vars(Expr::Let(x, d, b))
 
-    call binder := mentions(ExprKind::Binder, free_vars(s))
     call match_form := mentions(kind_of(Expr::Match(s, p, g, b, rest)), free_vars(s)
             union ((free_vars(g) union free_vars(b)) minus binders(p))
-            union (if (free_vars(g) union free_vars(b)) inter binders(p) != {} then binder.mentioned else {})
             union free_vars(rest))
     expect match_free_vars: match_form.mentioned = free_vars(Expr::Match(s, p, g, b, rest))
 }
