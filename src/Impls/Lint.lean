@@ -1483,18 +1483,17 @@ theorem sharingNonlinear (o : lint.BinaryOperator) (left : Bool) (m x : List Fre
   | Infix o => cases o <;> simp [Fren.Core.branchesSharingNonlinear, operatorText, ofLintInfixOp, Fren.Core.InfixOp.op]
   | _ => simp [Fren.Core.branchesSharingNonlinear, operatorText]
 
--- For every `then` branch of a binary operator, and `else` branch of one or
--- of none (`o' = none`, where `b.kind` is not `.bin`), by their operators, their
+-- For every two branches, each of a binary operator or of none (`none`,
+-- where its kind is not `.bin`), by their operators, their
 -- operands as written in one scope `s` and what the operands mention. Both
 -- front ends decide it with `branchesSharingAt?`, on the operators' texts,
 -- `operatorText`'s, which asks `productAccepted`, as `lang::linear_product`
 -- states, and drop every report of `opReports` over a pattern test that
 -- binds names (`keeps`), which `bs.isEmpty` is here.
-impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (o : lint.BinaryOperator)
-    (o' : Option lint.BinaryOperator)
+impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (o o' : Option lint.BinaryOperator)
     (tl tr el er : lint.Operand) (s : Fren.FinSet String) (c a b x : List Fren.Core.Mention) {
   binders := Fren.FinSet.ofList bs,
-  then_op := some o,
+  then_op := o,
   else_op := o',
   then_left := ⟨tl, s⟩,
   then_right := ⟨tr, s⟩,
@@ -1504,16 +1503,25 @@ impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (
   a_mentioned := mentionSet a,
   b_mentioned := mentionSet b,
   shared_mentioned := mentionSet x,
-  op := lint.shared_op (some o),
-  same_op? := decide (some o = o'),
+  op := lint.shared_op o,
+  same_op? := decide (o = o' ∧ o ≠ none),
   shared_left? := decide (tl = el),
   shared_right? := decide (tr = er),
   moved_mentioned := mentionSet (c ++ a ++ b),
-  fires? := bs.isEmpty && Fren.Core.branchesSharingCode (o'.any (operatorText o == operatorText ·)) (decide (tl = el))
-    (decide (tr = er)) (Fren.Core.branchesSharingNonlinear (operatorText o) (decide (tl = el)) (c ++ a ++ b) x),
+  fires? := o.any fun o => bs.isEmpty && Fren.Core.branchesSharingCode (o'.any (operatorText o == operatorText ·))
+    (decide (tl = el)) (decide (tr = er)) (Fren.Core.branchesSharingNonlinear (operatorText o) (decide (tl = el)) (c ++ a ++ b) x),
 } by
   intro bs o o' tl tr el er s c a b x _
   refine ⟨mentionSet (c ++ a ++ b), mentionSet x, Fren.Core.productAccepted (c ++ a ++ b) x, ?_⟩
+  -- A `then` branch that is not a binary operator: it never fires.
+  cases o with
+  | none =>
+    simp only [fren_spec, lang.mentioned_by, Option.any_none]
+    rw [← mentionSet_append, ← mentionSet_append]
+    by_cases hc : c = [] <;> by_cases ha : a = [] <;> by_cases hb : b = [] <;>
+      simp_all [Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet_eq_empty, List.append_assoc]
+  | some o => ?_
+  simp only [Option.any_some]
   rw [sharingNonlinear]
   -- An `else` branch that is not a binary operator: it never fires.
   cases o' with

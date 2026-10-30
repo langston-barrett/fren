@@ -364,9 +364,13 @@ scrutinee, its arms and its later arms do, and that is the `Match`'s free
 variables. What the law pins down is the step of `mentions` at each such
 name and form: a `Definition` and a `Binder` mention what their definition
 or scrutinee does, and a `let` and a `match`, `Compound`s, what their
-parts do. That the front ends count a name's definition where the name is
-read is the prose's above; checking it would need a model of the front
-ends' substitution:
+parts do. The binders' term of the `match` adds nothing to the union,
+which has the scrutinee's free variables already, as in the semantics,
+where a `Match` counts its scrutinee whether or not a binder is read; it
+is there to state the `Binder` step, as the `let`'s states the
+`Definition` step. That the front ends count a name's definition where the
+name is read is the prose's above; checking it would need a model of the
+front ends' substitution:
 
 ```fren
 expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
