@@ -156,12 +156,15 @@ expect reads(v: Int) {
 pub ordered struct Ms(Int)
 ordered enum Level { Low, Mid, High }
 
-proc newtypes(a: Ms, b: Ms, l: Level, k: Level): (m: Ms, d: Ms, n: Level, o: Level) {
+proc newtypes(a: Ms, b: Ms, l: Level, k: Level): (m: Ms, d: Ms, n: Level, o: Level, p: Level) {
     out m := if a < b then a else b
     out d := if a > b then a - b else b - a
     out n := if l < k then l else k  --~ warning: this conditional is `min`
     out o := if l < k then l  -- the lower  --~ warning: this conditional is `min`
         else k
+    -- A variant is a receiver only in parentheses: `Level::Low.min(k)`
+    -- would read `Low.min` as one segment of the path.
+    out p := if Level::Low < k then Level::Low else k  --~ warning: write `(Level::Low).min(k)`
 }
 
 --@ summary: 39 passed, 0 failed, 0 inconclusive, 0 redundant

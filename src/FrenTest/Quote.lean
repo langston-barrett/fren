@@ -6,13 +6,13 @@ import FrenCore.Lint
 # Printing fixes
 
 The printer of the trees that fixes write (`Fren.Core.Tree.print`) and the
-quotations that build them (`fren_expr!`), against `lint::printing`
-(`Reqs/Lint/Printing`): what it writes reads back, by the parser of the
-`fren` command, as the tree, and each pair of parentheses that it adds is
-needed. `roundTrips` checks this on random trees, as a job of `lake test`;
+quotations that build them (`fren_expr!`), against
+`lint::parenthesization` (`Reqs/Lint/Printing`): what it writes reads back,
+by the parser of the `fren` command, as the tree, and each pair of
+parentheses that it adds is needed, but those of its two exceptions. `roundTrips` checks this on random trees, as a job of `lake test`;
 the `#guard`s here check examples.
 
--- fren-covers: lint::printing
+-- fren-covers: lint::parenthesization
 -/
 
 namespace FrenTest.Quote
@@ -49,6 +49,11 @@ def elems : Array BText := #[{ text := "1", prec := BKind.atom.prec }, { text :=
 #guard (fren_expr!{ $orAB.len = $(Tree.atom "3") }).print.text == "(a or b).len = 3"
 #guard (fren_expr!{ $orAB.starts_with?("a") }).print.text == "(a or b).starts_with?(\"a\")"
 #guard (fren_expr!{ q[$orAB] }).print.text == "q[a or b]"
+-- A name that ends in `?`, or a path of more than one segment, is no
+-- receiver without parentheses; a negative literal binds as `-` does.
+#guard (fren_expr!{ $(Tree.field (.atom "x") "empty?").len }).print.text == "(x.empty?).len"
+#guard (fren_expr!{ $(Tree.atom "E::A").min(y) }).print.text == "(E::A).min(y)"
+#guard (fren_expr!{ $(Tree.atom "-1").abs }).print.text == "(-1).abs"
 #guard (fren_expr!{ - $(Tree.neg (.atom "x")) }).print.text == "- -x"
 -- The quotation is read as the `fren` command reads it: a quantifier as
 -- an operand needs parentheses, and the printer writes them again.
@@ -75,6 +80,38 @@ error: a Fren quotation has no tree for `match a { _ => 1 }`: `Fren.Core.Tree` h
 -/
 #guard_msgs in
 example : Tree := fren_expr!{ match a { _ => 1 } }
+
+/-- error: a Fren quotation cannot write `fren_hole_`, which stands for its antiquotations -/
+#guard_msgs in
+example : Tree := fren_expr!{ $orAB and fren_hole_0 }
+
+/-- error: `elems` stands for several expressions, which only a list can have -/
+#guard_msgs in
+example : Tree := fren_expr!{ a < $elems,* < d }
+
+/-- error: in a Fren quotation, an antiquotation stands for an expression, list elements or a pattern, not for part of a name or a literal -/
+#guard_msgs in
+example : Tree := fren_expr!{ $(orAB)1 and b }
+
+/-! ## Hygiene
+
+An antiquotation is Lean syntax, read by Lean's parser: in a macro, it
+refers to the macro's bindings, and a `)` in a string literal of it closes
+nothing. The constructors that a quotation builds are those of
+`Fren.Core.Tree`, wherever it is written. -/
+
+macro "quoted_and" : term => `(let y : Tree := .atom "Y"; fren_expr!{ $y and b })
+
+#guard (quoted_and).print.text == "Y and b"
+#guard (fren_expr!{ $(Tree.atom ")") and b }).print.text == ") and b"
+
+namespace Hijack
+
+def Fren.Core.Tree.bin (_ : String) (_ _ : Fren.Core.Tree) : Fren.Core.Tree := .atom "HIJACKED"
+
+#guard (fren_expr!{ a and b }).print.text == "a and b"
+
+end Hijack
 
 /-! ## The fixes that build trees -/
 
@@ -123,8 +160,8 @@ partial def tree (d : Nat) : R Tree := do
     let ops ← if (← next 2) == 0 then pure #["<", "<="] else pure #[">", ">="]
     return .chain [← sub, ← sub, ← sub] [← pick ops, ← pick ops]
   | 12 => return .app "f" [← sub, ← sub]
-  | 13 => return .method (← sub) "m" [← sub]
-  | 14 => return .field (← sub) "len"
+  | 13 => return .method (← sub) (← pick #["m", "m?"]) [← sub]
+  | 14 => return .field (← sub) (← pick #["len", "empty?"])
   | 15 => return .index (← sub) (← sub)
   | 16 => return (if (← next 2) == 0 then Tree.set else Tree.seq) [← sub, ← sub]
   | _ => return .quant ((← next 2) == 0) "(k: Int)" (← sub)
@@ -215,23 +252,57 @@ def parenPairs (cs : Array Char) : Array (Nat × Nat) := Id.run do
     i := i + 1
   return out
 
-/-- Whether the pair of parentheses from `i` to `j` in `cs` is one that
-[Parentheses in fixes] keeps where the grammar would not need it
-(`lint::printing`): around an open-ended form in a part of an atom, after
-`(`, `[`, `{` or `,`, or around a conditional. -/
-partial def keptForReading (cs : Array Char) (i j : Nat) : Bool :=
-  let inner := String.ofList (cs.extract (i + 1) j).toList
-  let before := ((cs.extract 0 i).toList.reverse.dropWhile Char.isWhitespace).head?
-  let delimited := before.any ("([{,".contains ·)
-  (delimited && endsOpen inner) || inner.startsWith "if "
-    -- The parentheses of a call around such a pair, which removing either
-    -- pair leaves.
-    || (i + 1 < j && cs[i + 1]! == '(' && cs[j - 1]! == ')' && (parenPairs (cs.extract (i + 1) j)).contains (0, j - i - 2)
-      && keptForReading cs (i + 1) (j - 1))
+/-- The place of a subexpression, as `lint::Place` tells them apart: an
+operand of an operator, a part of an atom between delimiters, or another
+place, a receiver or the condition or a branch of `if`, where the printer
+adds no parentheses that the grammar does not need. -/
+inductive Context where
+  | operand
+  | delimited
+  | other
+  deriving BEq
 
-/-- The failures of `lint::printing` on `t`: what it prints must read back
-as `t`, and without any pair of parentheses that it adds, but those that
-`keptForReading` allows, it must read otherwise, or not at all. Its
+/-- The subexpressions of `e`, as the parser read them, each with its span
+and its place. -/
+partial def contexts (e : Expr) : Array (FrenCli.Span × Expr × Context) :=
+  let kids : Array (Expr × Context) := match e with
+    | .bin _ _ a b => #[(a, .operand), (b, .operand)]
+    | .not _ a | .neg _ a => #[(a, .operand)]
+    | .when _ _ c d => #[(c, .operand), (d, .operand)]
+    | .ite _ c a b => #[(c, .other), (a, .other), (b, .other)]
+    | .is _ x _ => #[(x, .operand)]
+    | .chain _ es _ => es.map (·, .operand)
+    | .quant _ _ _ b => #[(b, .operand)]
+    | .app _ _ args => args.map (·, .delimited)
+    | .method _ r _ args => #[(r, .other)] ++ args.map (·, .delimited)
+    | .field _ r _ => #[(r, .other)]
+    | .index _ q i => #[(q, .other), (i, .delimited)]
+    | .set _ es | .seq _ es => es.map (·, .delimited)
+    | _ => #[]
+  kids.flatMap fun (k, c) => #[(k.span, k, c)] ++ contexts k
+
+/-- Whether the pair of parentheses from `i` to `j` in `cs`, which reads as
+`e` without it, is one of the two that `lint::parenthesization` keeps where
+the grammar does not need them (`lint::kept_for_reading?`): around an
+open-ended form as an operand of an operator, or around one, or an
+expression that ends in one, between delimiters. A pair right inside
+another is the same as that other: removing either leaves the same text. -/
+partial def keptForReading (cs : Array Char) (es : Array (FrenCli.Span × Expr × Context)) (i j : Nat) : Bool :=
+  let inner := String.ofList (cs.extract (i + 1) j).toList
+  match es.find? (·.1 == { start := i + 1, stop := j }) with
+  | some (_, e, ctx) =>
+    let openForm := e matches .ite .. | .when .. | .quant .. | .«let» ..
+    match ctx with
+    | .operand => openForm
+    | .delimited => openForm || endsOpen inner
+    | .other => false
+  | none =>
+    i + 1 < j && cs[i + 1]! == '(' && cs[j - 1]! == ')' && (parenPairs (cs.extract (i + 1) j)).contains (0, j - i - 2)
+      && keptForReading cs es (i + 1) (j - 1)
+
+/-- The failures of `lint::parenthesization` on `t`: what the printer writes
+must read back as `t`, and without any pair of parentheses in it, but those
+that `keptForReading` allows, it must read otherwise, or not at all. Its
 `endsOpen` must be what the text says (`Fren.Core.endsOpen`). -/
 def printingFailures (t : Tree) : Array String := Id.run do
   let p := t.print
@@ -241,15 +312,16 @@ def printingFailures (t : Tree) : Array String := Id.run do
     out := out.push s!"`{p.text}` reads as {readShape p.text}, not {want}"
   if p.endsOpen != endsOpen p.text then
     out := out.push s!"`{p.text}` ends open by the printer: {p.endsOpen}, but by its text: {endsOpen p.text}"
+  let some (e, _) := (FrenCli.Quote.parseExpr p.text).toOption | return out
+  let es := contexts e
   let cs := p.text.toList.toArray
   for (i, j) in parenPairs cs do
-    if keptForReading cs i j then continue
     let without := String.ofList ((cs.extract 0 i) ++ (cs.extract (i + 1) j) ++ (cs.extract (j + 1) cs.size)).toList
-    if readShape without == some want then
+    if readShape without == some want && !keptForReading cs es i j then
       out := out.push s!"`{p.text}` does not need the parentheses at {i}: `{without}` reads the same"
   return out
 
-/-- `lint::printing` on `n` random trees of depth at most 4, from `seed`. -/
+/-- `lint::parenthesization` on `n` random trees of depth at most 4, from `seed`. -/
 def roundTrips (n : Nat) (seed : Nat := 392) : Array String := Id.run do
   let mut failures := #[]
   let mut s := seed

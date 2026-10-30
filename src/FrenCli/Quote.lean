@@ -20,6 +20,15 @@ subtree:
 - in a pattern, `$p` is the `String` `p`, and `$ps|*` is the array of
   strings `ps`, as alternatives.
 
+`$x` is a Lean identifier of one component: a `.` after it is Fren's, so
+`$x.len` reads the field `len` of `x`'s tree. An antiquotation is Lean
+syntax, read by Lean's parser where the quotation is, so in a macro it
+refers to the macro's bindings. The text of `e` may not write
+`fren_hole_`, which stands for the antiquotations in what the parser
+reads, nor can an antiquotation be part of a name or a literal of an
+expression; nor can `$xs,*` be operands of a chained comparison, which has
+one operand between each two operators.
+
 The parentheses written in `e` are not kept: `Tree.print` writes those that
 the grammar needs. So is everything that the tree does not say: comments,
 and the layout of `e`.
@@ -49,26 +58,93 @@ partial def skipString (c : ParserContext) (s : ParserState) : ParserState :=
       if h' : c.atEnd j then s else skipString c (s.next' c j h')
     else skipString c s
 
-/-- The text of a quotation, up to the `}` that closes it: braces nest,
-and string literals are skipped. -/
-partial def bodyFn : ParserFn := fun c s =>
+/-- How many braces are open after `text`, where `depth` were before it,
+outside its string literals. -/
+def braceDepth (depth : Nat) (text : String) : Nat := Id.run do
+  let mut depth := depth
+  let mut inString := false
+  let mut escaped := false
+  for ch in text.toList do
+    if inString then
+      if escaped then escaped := false
+      else if ch == '\\' then escaped := true
+      else if ch == '"' then inString := false
+    else if ch == '"' then inString := true
+    else if ch == '{' then depth := depth + 1
+    else if ch == '}' then depth := depth - 1
+  return depth
+
+/-- Fren text of a quotation, up to an antiquotation's `$` or to the `}`
+that closes the quotation, where `depth` braces are open: braces nest, and
+string literals are skipped. -/
+partial def chunkFn (depth : Nat) : ParserFn := fun c s =>
   let rec go (depth : Nat) (s : ParserState) : ParserState :=
     let i := s.pos
     if h : c.atEnd i then s.mkUnexpectedError "unterminated Fren quotation: expected `}`"
     else
       let ch := c.get' i h
-      if ch == '}' && depth == 0 then s
+      if ch == '$' || (ch == '}' && depth == 0) then s
       else
         let s := s.next' c i h
         if ch == '"' then go depth (skipString c s)
         else go (if ch == '{' then depth + 1 else if ch == '}' then depth - 1 else depth) s
-  go 0 s
+  go depth s
 
-/-- The Fren text of a quotation, as one atom. -/
-def body : Parser := { fn := rawFn bodyFn (trailingWs := false) }
+/-- Whether `c` can be in the name of an antiquotation, `$x`: a Lean
+identifier of one component, since `.` after it is Fren's. -/
+def isHoleChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '\''
+
+/-- The name of `$x`, as a Lean identifier, so that a quotation in a macro
+gets the macro's scopes on it. -/
+def holeNameFn : ParserFn := fun c s =>
+  let s := rawFn (takeWhile1Fn isHoleChar "a name or `(` after `$`") false c s
+  if s.hasError then s else
+  match s.stxStack.back with
+  | .atom info val => s.popSyntax.pushSyntax (Syntax.ident info val.toRawSubstring (.mkSimple val) [])
+  | _ => s
+
+/-- `,*` or `|*` after an antiquotation, or nothing, as an atom. -/
+def spliceFn : ParserFn := fun c s =>
+  let i := s.pos
+  let j := c.next i
+  if !c.atEnd i && !c.atEnd j && (c.get i == ',' || c.get i == '|') && c.get j == '*' then
+    rawFn (fun c s => let s := s.next c s.pos; s.next c s.pos) false c s
+  else s.pushSyntax (Syntax.atom .none "")
+
+/-- An antiquotation: `$`, then a name or a Lean term in parentheses, and
+`,*` or `|*` for a splice. Its term is Lean's own syntax, read by Lean's
+parser. -/
+def holeFn : ParserFn := fun c s =>
+  let iniSz := s.stackSize
+  let s := chFn '$' false c s
+  if s.hasError then s else
+  let i := s.pos
+  let s := if !c.atEnd i && c.get i == '(' then
+      (andthenFn (rawCh '(' (trailingWs := true)).fn (andthenFn (termParser).fn (rawCh ')').fn)) c s
+    else holeNameFn c s
+  if s.hasError then s else
+  (spliceFn c s).mkNode `FrenCli.Quote.hole iniSz
+
+/-- The text of a quotation, up to the `}` that closes it: Fren text, as
+atoms, between antiquotations. -/
+partial def bodyFn : ParserFn := fun c s =>
+  let iniSz := s.stackSize
+  let rec loop (depth : Nat) (s : ParserState) : ParserState :=
+    let s := rawFn (chunkFn depth) false c s
+    if s.hasError then s else
+    let depth := braceDepth depth s.stxStack.back.getAtomVal
+    let i := s.pos
+    if !c.atEnd i && c.get i == '$' then
+      let s := holeFn c s
+      if s.hasError then s else loop depth s
+    else s
+  (loop 0 s).mkNode `FrenCli.Quote.body iniSz
+
+/-- The Fren text of a quotation, with its antiquotations. -/
+def body : Parser := { fn := bodyFn }
 
 open PrettyPrinter in
-@[combinator_formatter body] def body.formatter : Formatter := Formatter.visitAtom .anonymous
+@[combinator_formatter body] def body.formatter : Formatter := pure ()
 
 open PrettyPrinter in
 @[combinator_parenthesizer body] def body.parenthesizer : Parenthesizer := pure ()
@@ -94,83 +170,45 @@ structure Hole where
   splice : Splice
   deriving Inhabited
 
-/-- The identifier that stands for the `i`th antiquotation in the text that
-the parser reads. -/
-def holeName (i : Nat) : String := s!"fren_hole_{i}"
+/-- The start of the identifiers that stand for the antiquotations in the
+text that the parser reads, which a quotation may not write itself. -/
+def holePrefix : String := "fren_hole_"
+
+/-- The identifier that stands for the `i`th antiquotation. -/
+def holeName (i : Nat) : String := s!"{holePrefix}{i}"
 
 /-- The antiquotation that an identifier of the text stands for, if it is
 one (`holeName`). -/
 def holeOf? (holes : Array Hole) (x : String) : Option Hole := do
-  guard (x.startsWith "fren_hole_")
-  let i ← (x.drop 10).toString.toNat?
+  guard (x.startsWith holePrefix)
+  let i ← (x.drop holePrefix.length).toString.toNat?
   holes[i]?
 
-/-- Whether `c` can be in the name of an antiquotation, `$x`. -/
-def isHoleChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '\''
-
-/-- `stx`, read from a part of the file that starts at `base`, with its
-positions in the file, so that Lean sees what it mentions as mentioned
-there. -/
-partial def shifted (base : String.Pos.Raw) (stx : Syntax) : Syntax :=
-  let shift (p : String.Pos.Raw) : String.Pos.Raw := ⟨base.byteIdx + p.byteIdx⟩
-  let info : SourceInfo → SourceInfo
-    | .original l p t q => .original l (shift p) t (shift q)
-    | .synthetic p q c => .synthetic (shift p) (shift q) c
-    | .none => .none
-  match stx with
-  | .node i k args => .node (info i) k (args.map (shifted base))
-  | .atom i v => .atom (info i) v
-  | .ident i r n p => .ident (info i) r n p
-  | .missing => .missing
-
-/-- The text of a quotation with each antiquotation replaced by its
-`holeName`, and the antiquotations, where the text starts at `base` in the
-file. -/
-def antiquotations (text : String) (base : String.Pos.Raw) : TermElabM (String × Array Hole) := do
-  let cs := text.toList.toArray
+/-- The text of a quotation, `body`, with each antiquotation replaced by its
+`holeName`, and the antiquotations. -/
+def antiquotations (body : Syntax) : TermElabM (String × Array Hole) := do
   let mut out := ""
   let mut holes : Array Hole := #[]
-  let mut i := 0
-  while i < cs.size do
-    let ch := cs[i]!
-    if ch == '"' then
-      -- A string literal, copied as it is.
-      let mut j := i + 1
-      while j < cs.size && cs[j]! != '"' do j := j + (if cs[j]! == '\\' then 2 else 1)
-      out := out ++ String.ofList (cs.extract i (j + 1)).toList
-      i := j + 1
-    else if ch != '$' then
-      out := out.push ch
-      i := i + 1
-    else
-      -- Where the antiquotation's term starts in the file.
-      let at_ (k : Nat) : String.Pos.Raw := ⟨base.byteIdx + (String.ofList (cs.extract 0 k).toList).utf8ByteSize⟩
-      let (term, next) ← if cs[i + 1]? == some '(' then do
-          let mut depth := 0
-          let mut j := i + 1
-          repeat
-            if j ≥ cs.size then throwError "unterminated antiquotation `$(` in a Fren quotation"
-            if cs[j]! == '(' then depth := depth + 1
-            if cs[j]! == ')' then
-              depth := depth - 1
-              if depth == 0 then break
-            j := j + 1
-          let inner := String.ofList (cs.extract (i + 2) j).toList
-          match Parser.runParserCategory (← getEnv) `term inner with
-          | .ok stx => pure (⟨shifted (at_ (i + 2)) stx⟩, j + 1)
-          | .error e => throwError "in the antiquotation `$({inner})`: {e}"
-        else do
-          let name := String.ofList ((cs.extract (i + 1) cs.size).toList.takeWhile isHoleChar)
-          if name.isEmpty then throwError "expected a name or `(` after `$` in a Fren quotation"
-          let info := SourceInfo.original "".toRawSubstring (at_ (i + 1)) "".toRawSubstring (at_ (i + 1 + name.length))
-          pure (⟨Syntax.ident info name.toRawSubstring (.mkSimple name) []⟩, i + 1 + name.length)
-      let splice := match cs[next]?, cs[next + 1]? with
-        | some ',', some '*' => Splice.commas
-        | some '|', some '*' => .bars
-        | _, _ => .one
+  for part in body.getArgs do
+    match part with
+    | .atom _ text =>
+      if (text.splitOn holePrefix).length > 1 then
+        throwErrorAt part "a Fren quotation cannot write `{holePrefix}`, which stands for its antiquotations"
+      -- What follows an antiquotation would otherwise run into its name.
+      if !holes.isEmpty && text.toList.head?.any isHoleChar then
+        throwErrorAt part "in a Fren quotation, an antiquotation stands for an expression, list elements or a pattern, \
+          not for part of a name or a literal"
+      out := out ++ text
+    | stx =>
+      let args := stx.getArgs
+      -- `$`, the name or `(`, term and `)`, and the splice.
+      let term : Term := ⟨if args.size == 3 then args[1]! else args[2]!⟩
+      let splice := match args.back!.getAtomVal with
+        | ",*" => Splice.commas
+        | "|*" => .bars
+        | _ => .one
       holes := holes.push { term, splice }
       out := out ++ holeName (holes.size - 1)
-      i := next + (if splice == .one then 0 else 2)
   return (out, holes)
 
 /-! ## Reading the text -/
@@ -195,7 +233,7 @@ def parseExpr (text : String) : Except String (Expr × Array Char) := do
 
 /-- The declaration `n` of `FrenCore.Lint`, which imports this module, as
 it is named where a quotation is elaborated. -/
-def core (n : Name) : Term := mkIdent n
+def core (n : Name) : Term := mkCIdent n
 
 /-- The text of `sp` in `src`. -/
 def spanText (src : Array Char) (sp : Span) : String := String.ofList (src.extract sp.start sp.stop).toList
@@ -203,7 +241,7 @@ def spanText (src : Array Char) (sp : Span) : String := String.ofList (src.extra
 /-- `s`, a name or a literal of the quotation, which an antiquotation cannot
 be part of. -/
 def plain (s : String) : TermElabM String := do
-  if (s.splitOn "fren_hole_").length > 1 then
+  if (s.splitOn holePrefix).length > 1 then
     throwError "in a Fren quotation, an antiquotation stands for an expression, list elements or a pattern, not for \
       part of a name or a literal"
   return s
@@ -215,13 +253,13 @@ def textTerm (holes : Array Hole) (text : String) : TermElabM Term := do
   let mut parts : Array Term := #[]
   let mut rest := text
   repeat
-    let pieces := rest.splitOn "fren_hole_"
+    let pieces := rest.splitOn holePrefix
     let some first := pieces.head? | break
     if pieces.length == 1 then
       parts := parts.push (quote first)
       break
     parts := parts.push (quote first)
-    let after := (rest.drop (first.length + 10)).toString
+    let after := (rest.drop (first.length + holePrefix.length)).toString
     let digits := after.takeWhile Char.isDigit |>.toString
     let some h := holes[digits.toNat!]? | throwError "unknown antiquotation in a Fren quotation"
     parts := parts.push <| ← match h.splice with
@@ -251,7 +289,8 @@ partial def treeOf (holes : Array Hole) (src : Array Char) (e : Expr) : TermElab
   | .when _ n c d => `($(core `Fren.Core.Tree.when) $(quote n) $(← go c) $(← go d))
   | .ite _ c a b => `($(core `Fren.Core.Tree.ite) $(← go c) $(← go a) $(← go b))
   | .is _ x p => `($(core `Fren.Core.Tree.test) $(← go x) $(← textTerm holes (spanText src p.span)))
-  | .chain _ es ops => `($(core `Fren.Core.Tree.chain) $(← listOf holes src es) $(quote (ops.map (·.1)).toList))
+  -- One operand for each place between operators: no splice.
+  | .chain _ es ops => `($(core `Fren.Core.Tree.chain) [$(← es.mapM go),*] $(quote (ops.map (·.1)).toList))
   | .app _ fn args =>
     `($(core `Fren.Core.Tree.app) $(quote (← plain ("::".intercalate (fn.map (·.name)).toList))) $(← listOf holes src args))
   | .method _ r m args => `($(core `Fren.Core.Tree.method) $(← go r) $(quote (← plain m.name)) $(← listOf holes src args))
@@ -285,12 +324,17 @@ partial def listOf (holes : Array Hole) (src : Array Char) (es : Array Expr) : T
   `(List.flatten [$parts,*])
 end
 
+/-- The text of a quotation as written. -/
+def reprintBody (body : Syntax) : String :=
+  String.join (body.getArgs.toList.map fun part => match part with
+    | .atom _ text => text
+    | stx => (stx.reprint.getD "").trimAscii.toString)
+
 @[term_elab frenExpr] def elabFrenExpr : TermElab := fun stx expected? => do
-  let written := stx[1].getAtomVal
-  let (text, holes) ← antiquotations written (stx[1].getPos?.getD 0)
+  let (text, holes) ← antiquotations stx[1]
   let (e, src) ← match parseExpr text with
     | .ok r => pure r
-    | .error msg => throwErrorAt stx[1] "in the Fren quotation `{written.trimAscii}`: {msg}"
+    | .error msg => throwErrorAt stx[1] "in the Fren quotation `{(reprintBody stx[1]).trimAscii}`: {msg}"
   let t ← withRef stx (treeOf holes src e)
   elabTerm (← `(($t : $(core `Fren.Core.Tree)))) expected?
 

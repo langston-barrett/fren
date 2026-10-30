@@ -2075,8 +2075,11 @@ def receivesText (text : String) (dot : Bool) : Bool :=
 def Tree.ofText (t : BText) : Tree := .written t (endsOpen t.text) (receivesText t.text true)
 
 /-- Text that is written as it is: a name, a literal, or an expression
-that stays where it is written, with the parentheses it has there. -/
-def Tree.atom (text : String) : Tree := .written { text, prec := BKind.atom.prec } false (receivesText text true)
+that stays where it is written, with the parentheses it has there. A
+negative literal, as `-1`, binds as a negation does. -/
+def Tree.atom (text : String) : Tree :=
+  let prec := if text.startsWith "-" then BKind.neg.prec else BKind.atom.prec
+  .written { text, prec } false (receivesText text true)
 
 /-- A `Tree`, written out: its text, its precedence, whether it ends in an
 open-ended form outside parentheses, which would take in what follows it,
@@ -2103,13 +2106,19 @@ def Printed.inSlot (p : Printed) (slot : Option Slot) (followed : Bool := false)
 `slot`, leaves that expression open-ended. -/
 def Printed.leavesOpen (p : Printed) (slot : Option Slot) : Bool := p.bare slot false && p.endsOpen
 
+/-- Whether `p` can be a receiver without parentheses, before the `.` of a
+field read or a method call (`dot`), or the `[` of an index: where it can
+be an operand there (`receiverSlot`), and is an atom that can take what
+follows (`receivesText`). -/
+def Printed.bareReceiver (p : Printed) (dot : Bool) : Bool :=
+  p.bare (some receiverSlot) true && (if dot then p.receivable else p.receivable || receivesText p.text false)
+
 /-- `p` as a receiver, before the `.` of a field read or a method call
 (`dot`), or the `[` of an index: in parentheses where it needs them as an
 operand (`receiverSlot`), and where it is an atom that cannot take what
 follows (`receivesText`). -/
 def Printed.asReceiver (p : Printed) (dot : Bool) : String :=
-  if p.bare (some receiverSlot) true && (if dot then p.receivable else p.receivable || receivesText p.text false) then p.text
-  else s!"({p.text})"
+  if p.bareReceiver dot then p.text else s!"({p.text})"
 
 /-- The text and precedence of `p`, as other fixes take them. -/
 def Printed.toBText (p : Printed) : BText := { text := p.text, prec := p.prec }
@@ -2161,7 +2170,10 @@ def Tree.print : Tree → Printed
   | .app f args => { text := s!"{f}({Tree.delimited args})", prec := BKind.atom.prec, endsOpen := false }
   | .method r m args =>
     { text := s!"{r.print.asReceiver true}.{m}({Tree.delimited args})", prec := BKind.atom.prec, endsOpen := false }
-  | .field r m => { text := s!"{r.print.asReceiver true}.{m}", prec := BKind.atom.prec, endsOpen := false }
+  -- A name that ends in `?` takes no `.` after it.
+  | .field r m =>
+    { text := s!"{r.print.asReceiver true}.{m}", prec := BKind.atom.prec, endsOpen := false
+      receivable := !Fren.Str.endsWith m "?" }
   | .index q i =>
     { text := s!"{q.print.asReceiver false}[{i.print.inSlot delimitedSlot}]", prec := BKind.atom.prec, endsOpen := false }
   | .set es => { text := s!"\{{Tree.delimited es}}", prec := BKind.atom.prec, endsOpen := false }
