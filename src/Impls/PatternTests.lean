@@ -7,185 +7,96 @@ open Fren.Lang
 /-! # Pattern tests written out (`Reqs/Lint/Style/PatternTests`)
 
 `manual_pattern_test`, proved of the functions that both front ends call:
-the decision on one run (`manualPatternTest`), how an operand is read from
-its shape (`readOperand`), and which runs of a whole run of `or` or `and`
-are reported (`patternRuns`), for any number of operands and
-alternatives. -/
+how an operand is read from its shape (`readOperand`), and which runs of a
+whole run of `or` or `and` are reported (`patternRuns`), for any number of
+operands and alternatives. -/
 
 namespace Fren.Impls.PatternTests
 
 open Fren.Core
 
-/-! ## One run -/
+/-! ## Alternatives -/
 
-def toBound : lint.Bound → Option Int
-  | .Open => none
-  | .At k => some k
+/-- A string literal's text, from its value. -/
+def quote (s : String) : String := "\"" ++ s ++ "\""
 
-/-- An alternative of the model as `manual_pattern_test` reads one
-(`lint::Alt`). -/
+theorem quote_inj (s t : String) : quote s = quote t ↔ s = t := by
+  constructor
+  · intro h
+    have h' := congrArg String.toList h
+    simp only [quote, String.toList_append] at h'
+    have : s.toList = t.toList := by simpa using h'
+    exact String.ext this
+  · rintro rfl; rfl
+
+theorem isPrefixOf_single (c : Char) (l : List Char) : [c].isPrefixOf l = (l.head? == some c) := by
+  cases l with
+  | nil => rfl
+  | cons h t =>
+    simp only [List.isPrefixOf, List.head?_cons]
+    rw [Bool.eq_iff_iff]; simp only [Bool.and_eq_true, beq_iff_eq, Option.some.injEq]
+    simp [eq_comm (a := c)]
+
+/-- A text has a character exactly where it has it in its list. -/
+theorem contains_char (s : String) (c : Char) : Fren.Str.contains s (String.singleton c) = decide (c ∈ s.toList) := by
+  rw [Bool.eq_iff_iff, decide_eq_true_iff]
+  simp only [Fren.Str.contains, List.any_eq_true, List.mem_range, String.toList_singleton, isPrefixOf_single,
+    beq_iff_eq, List.head?_drop]
+  constructor
+  · rintro ⟨i, _, h⟩; exact List.mem_of_getElem? h
+  · intro h
+    obtain ⟨i, hi, e⟩ := List.getElem_of_mem h
+    exact ⟨i, by have : s.toList.length = s.length := String.length_toList; omega, by simp [hi, e]⟩
+
+theorem contains_quote (s : String) : Fren.Str.contains (quote s) "\\" = Fren.Str.contains s "\\" := by
+  have h1 := contains_char (quote s) '\\'
+  have h2 := contains_char s '\\'
+  simp only [show String.singleton '\\' = "\\" from rfl] at h1 h2
+  rw [h1, h2]
+  simp [quote]
+
+/-- The bounds of a range, each where it has one. -/
+def lowOf (r : lang.IntRange) : Option Int := if r.«bounded_below?» then some r.low else none
+
+def highOf (r : lang.IntRange) : Option Int := if r.«bounded_above?» then some r.high else none
+
+/-- An alternative of the model as `manual_pattern_test` reads one, with a
+string literal by its text. -/
 def toPatAlt : lint.Alt → Fren.Core.PatAlt
-  | .Ints l h => .ints (toBound l) (toBound h)
-  | .Text s => .str s
-  | .Variant v => .variant v
+  | .Integers r => .ints (lowOf r) (highOf r)
+  | .Text s => .str (quote s)
+  | .Variant c => .variant c
 
-theorem boundBelow_eq (h l : lint.Bound) : Fren.Core.boundBelow (toBound h) (toBound l) = lint.bound_below? h l := by
-  cases h <;> cases l <;> simp [fren_spec, toBound, Fren.Core.boundBelow, lint.bound_below?, lint.Bound.At.x0]
+theorem boundBelow_ranges (r s : lang.IntRange) :
+    Fren.Core.boundBelow (highOf r) (lowOf s) = (r.«bounded_above?» && s.«bounded_below?» && decide (r.high < s.low)) := by
+  rcases r with ⟨_ | _, _, _ | _, _⟩ <;> rcases s with ⟨_ | _, _, _ | _, _⟩ <;>
+    simp [highOf, lowOf, Fren.Core.boundBelow]
 
 theorem disjoint_eq (a b : lint.Alt) : (toPatAlt a).disjoint (toPatAlt b) = lint.alts_disjoint? a b := by
   rw [Bool.eq_iff_iff]
-  cases a <;> cases b <;> simp only [toPatAlt, Fren.Core.PatAlt.disjoint, boundBelow_eq] <;>
-    simp [fren_spec, lint.alts_disjoint?, lint.bound_below?, lint.Alt.Ints.x0, lint.Alt.Ints.x1, lint.Alt.Text.x0,
-      lint.Alt.Variant.x0, lint.Bound.At.x0]
-
-theorem pairwiseDisjoint_iff (l : List Fren.Core.PatAlt) :
-    Fren.Core.pairwiseDisjoint l = true ↔ l.Pairwise (fun a b => a.disjoint b = true) := by
-  induction l with
-  | nil => simp [Fren.Core.pairwiseDisjoint]
-  | cons a as ih => simp [Fren.Core.pairwiseDisjoint, ih, List.pairwise_cons, List.all_eq_true]
-
--- The alternatives are pairwise disjoint, by their positions in the model's
--- sequence.
-theorem pairwise_nth (l : List lint.Alt) :
-    Fren.Core.pairwiseDisjoint (l.map toPatAlt) = true ↔
-      ∀ i j : Int, 0 ≤ i → i < j → j < (Fren.Seq.ofList l).len →
-        lint.alts_disjoint? ((Fren.Seq.ofList l).nth i) ((Fren.Seq.ofList l).nth j) = true := by
-  rw [pairwiseDisjoint_iff, List.pairwise_map, List.pairwise_iff_getElem]
-  simp only [disjoint_eq, Fren.Seq.len_eq, Fren.Seq.toList_ofList]
-  constructor
-  · intro h i j hi hij hj
-    rw [Fren.Seq.nth_of_lt _ _ hi (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]
-    simp only [Fren.Seq.toList_ofList]
-    exact h _ _ _ _ (by omega)
-  · intro h i j hi hj hij
-    have := h i j (by omega) (by omega) (by omega)
-    rwa [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega), Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)] at this
-
-theorem manualPatternTest_iff (l : List lint.Alt) (n e : Nat) (c : Bool) :
-    Fren.Core.manualPatternTest (l.map toPatAlt) n e c = true ↔
-      (((n : Int) ≥ 2 ∧ (e : Int) ≥ 1) ∧ ¬c = true) ∧
-        ∀ i j : Int, 0 ≤ i → i < j → j < (Fren.Seq.ofList l).len →
-          lint.alts_disjoint? ((Fren.Seq.ofList l).nth i) ((Fren.Seq.ofList l).nth j) = true := by
-  rw [← pairwise_nth]
-  simp only [Fren.Core.manualPatternTest, Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq]
-  cases c <;> simp <;> omega
-
--- The spec's quantifiers over positions, expanded as Fren expands them, are
--- the quantifier over every position of the sequence, which has at most
--- eight.
-impl manual_pattern_test: lint::manual_pattern_test for (l : List lint.Alt) (n e : Nat) (c : Bool) {
-  alts := Fren.Seq.ofList l,
-  n_operands := n,
-  n_equations := e,
-  chain? := c,
-  fires? := Fren.Core.manualPatternTest (l.map toPatAlt) n e c,
-} by
-  intro l n e c hs
-  unfold lint.manual_pattern_test.ensures lint.manual_pattern_test.ensure.rule
-  rw [manualPatternTest_iff]
-  refine and_congr_right fun _ => ?_
-  have _hl : (Fren.Seq.ofList l).len ≤ 8 := hs
-  constructor
-  · intro h
-    and_intros <;> exact fun hc => h _ _ (by decide) hc.1 hc.2
-  · intro E i j hi hij hj
-    rcases E with
-      ⟨⟨⟨⟨⟨⟨_, h01⟩, ⟨h02, h03⟩⟩, ⟨⟨h04, h05⟩, ⟨h06, h07⟩⟩⟩,
-      ⟨⟨⟨_, _⟩, ⟨h12, h13⟩⟩, ⟨⟨h14, h15⟩, ⟨h16, h17⟩⟩⟩⟩,
-      ⟨⟨⟨⟨_, _⟩, ⟨_, h23⟩⟩, ⟨⟨h24, h25⟩, ⟨h26, h27⟩⟩⟩,
-      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨h34, h35⟩, ⟨h36, h37⟩⟩⟩⟩⟩,
-      ⟨⟨⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, h45⟩, ⟨h46, h47⟩⟩⟩,
-      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨h56, h57⟩⟩⟩⟩,
-      ⟨⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨_, h67⟩⟩⟩,
-      ⟨⟨⟨_, _⟩, ⟨_, _⟩⟩, ⟨⟨_, _⟩, ⟨_, _⟩⟩⟩⟩⟩⟩
-    have hi' : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 := by omega
-    have hj' : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 ∨ j = 4 ∨ j = 5 ∨ j = 6 ∨ j = 7 := by omega
-    rcases hi' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-      rcases hj' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · omega
-    · exact h01 ⟨by decide, hj⟩
-    · exact h02 ⟨by decide, hj⟩
-    · exact h03 ⟨by decide, hj⟩
-    · exact h04 ⟨by decide, hj⟩
-    · exact h05 ⟨by decide, hj⟩
-    · exact h06 ⟨by decide, hj⟩
-    · exact h07 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · exact h12 ⟨by decide, hj⟩
-    · exact h13 ⟨by decide, hj⟩
-    · exact h14 ⟨by decide, hj⟩
-    · exact h15 ⟨by decide, hj⟩
-    · exact h16 ⟨by decide, hj⟩
-    · exact h17 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · omega
-    · exact h23 ⟨by decide, hj⟩
-    · exact h24 ⟨by decide, hj⟩
-    · exact h25 ⟨by decide, hj⟩
-    · exact h26 ⟨by decide, hj⟩
-    · exact h27 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · omega
-    · omega
-    · exact h34 ⟨by decide, hj⟩
-    · exact h35 ⟨by decide, hj⟩
-    · exact h36 ⟨by decide, hj⟩
-    · exact h37 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · exact h45 ⟨by decide, hj⟩
-    · exact h46 ⟨by decide, hj⟩
-    · exact h47 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · exact h56 ⟨by decide, hj⟩
-    · exact h57 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · exact h67 ⟨by decide, hj⟩
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-    · omega
-
+  cases a <;> cases b <;> simp only [toPatAlt, Fren.Core.PatAlt.disjoint, boundBelow_ranges, contains_quote] <;>
+    simp [lint.alts_disjoint?, lint.ranges_apart?, fren_spec, quote_inj]
 
 /-! ## Reading the operands -/
 
 def toForm : lint.Literal → ValueForm
   | .Decimal k => .decimal k
-  | .Quoted t => .quoted t
-  | .Variant n => .variant n
+  | .Quoted t => .quoted (quote t)
+  | .Variant c => .variant c
+  | .Truth b => .truth b
   | .Other => .other
 
 theorem alt_eq (v : lint.Literal) (nat : Bool) : (toForm v).alt? nat = (lint.value_alt v nat).map toPatAlt := by
   cases v <;> simp only [toForm, ValueForm.alt?, lint.value_alt] <;> try rfl
-  split <;> split <;> simp_all [toPatAlt, toBound] <;> omega
+  split <;> split <;> simp_all [toPatAlt, lowOf, highOf, lint.just] <;> omega
 
 /-- A side of a comparison of the model, as the lint reads one, with its
-text for its expression. -/
+written form for its expression. -/
 def toSide (s : lint.Side) : ComparisonSide String := { node := s.text, text := s.text, value := toForm s.value }
 
 /-- An operand of the model, as the lint reads its shape, with its
-expression's text for the expression and no text for its alternatives. -/
+expression's written form for the expression and no text for its
+alternatives. -/
 def toShape : lint.Shape → OperandShape String
   | .Comparison c => .comparison c.«equal?» c.«nat?» (toSide c.left) (toSide c.right)
   | .Test t => .test t.«negated?» t.scrutinee (t.alts.map fun q => q.toList.map fun a => (toPatAlt a, ""))
@@ -216,43 +127,29 @@ theorem read_eq (s : lint.Shape) (conj : Bool) :
     · simp [h]
   | Other => simp [toShape, readOperand, lint.reading]
 
-theorem toPatAlt_injective : Function.Injective toPatAlt := by
-  intro a b h
-  cases a <;> cases b <;> simp_all [toPatAlt] <;>
-    (try (rename_i l1 h1 l2 h2; cases l1 <;> cases h1 <;> cases l2 <;> cases h2 <;> simp_all [toBound]))
-
-theorem map_toPatAlt_injective : ∀ {l m : List lint.Alt}, l.map toPatAlt = m.map toPatAlt → l = m
-  | [], [], _ => rfl
-  | a :: l, b :: m, h => by
-    simp only [List.map_cons, List.cons.injEq] at h
-    rw [toPatAlt_injective h.1, map_toPatAlt_injective h.2]
-  | [], _ :: _, h => by simp at h
-  | _ :: _, [], h => by simp at h
-
-theorem rview_injective : Function.Injective rview := by
-  rintro ⟨s, q, e⟩ ⟨s', q', e'⟩ h
-  simp only [rview, Prod.mk.injEq] at h
-  obtain ⟨rfl, hq, rfl⟩ := h
-  have : q = q' := Fren.Seq.ext (map_toPatAlt_injective hq)
-  subst this; rfl
-
 -- Both front ends read an operand with `patternOperand?`, which decides
 -- with `readOperand` on the shape that `operandShape` reads.
-impl read_operand: lint::read_operand for (s : lint.Shape) (conj : Bool) (r : lint.Reading) {
+impl read_operand: lint::read_operand for (s : lint.Shape) (conj : Bool) {
   shape := s,
   «conj?» := conj,
-  read := r,
-  «reads?» := decide ((readOperand conj (toShape s)).map view = some (rview r)),
+  «reads?» := (readOperand conj (toShape s)).isSome,
+  «equation?» := ((readOperand conj (toShape s)).map (·.equation)).getD false,
 } by
-  intro s conj r _
-  unfold lint.read_operand.ensures lint.read_operand.ensure.rule
-  rw [read_eq, decide_eq_true_iff]
-  constructor
-  · intro h
-    cases e : lint.reading s conj with
-    | none => simp [e] at h
-    | some r' => simp only [e, Option.map_some, Option.some.injEq] at h; rw [rview_injective h]
-  · intro h; simp [h]
+  intro s conj _
+  have h := read_eq s conj
+  unfold lint.read_operand.ensures lint.read_operand.ensure.rule lint.read_operand.ensure.equation
+  cases e : readOperand conj (toShape s) with
+  | none =>
+    cases e' : lint.reading s conj with
+    | none => simp [fren_spec]
+    | some r => rw [e, e'] at h; simp at h
+  | some p =>
+    cases e' : lint.reading s conj with
+    | none => rw [e, e'] at h; simp at h
+    | some r =>
+      rw [e, e'] at h
+      simp only [Option.map_some, Option.some.injEq, view, rview, Prod.mk.injEq] at h
+      simp [fren_spec, h.2.2]
 
 /-! ## Runs -/
 
@@ -582,11 +479,12 @@ theorem run_readings (l : List lint.Shape) (c : Bool) (i j : Nat) (hm : MaxRun (
   rw [← hmap, List.getElem?_map, List.getElem?_eq_getElem hq, hv] at e
   simpa using e
 
-theorem fires_spec (l : List lint.Shape) (c ch : Bool) (s : lint.Span) (h0 : 0 ≤ s.first) (hfl : s.first ≤ s.last)
-    (hm : MaxRun (forms l c) s.first.toNat s.last.toNat) :
+theorem fires_spec (l : List lint.Shape) (c : Bool) (cs : List lint.Shape) (s : lint.Span) (h0 : 0 ≤ s.first)
+    (hfl : s.first ≤ s.last) (hm : MaxRun (forms l c) s.first.toNat s.last.toNat) :
     let w := ((views l c).extract s.first.toNat (s.last.toNat + 1)).filterMap id
-    lint.run_fires? (Fren.Seq.ofList l) c ch s = true ↔
-      manualPatternTest (w.flatMap (·.2.1)) w.length (w.filter (·.2.2)).length ch = true := by
+    lint.run_fires? (Fren.Seq.ofList l) c (Fren.Seq.ofList cs) s = true ↔
+      manualPatternTest (w.flatMap (·.2.1)) w.length (w.filter (·.2.2)).length
+        (lint.membership_chain? (Fren.Seq.ofList cs) c) = true := by
   intro w
   obtain ⟨hwlen, hw⟩ := run_readings l c _ _ hm
   have hwlen' : w.length = s.last.toNat + 1 - s.first.toNat := hwlen
@@ -639,29 +537,108 @@ theorem fires_spec (l : List lint.Shape) (c ch : Bool) (s : lint.Span) (h0 : 0 �
       simp only [hwp, hwq, rview, List.getElem_map] at this
       exact this
 
+/-- The lint's reading of the membership chain is the model's. -/
+theorem chainLeft_eq (c : Bool) (x : lint.Shape) :
+    membershipChainShapes.chainLeft? id c (toShape x) =
+      match x with
+      | .Comparison k => if k.«equal?» != c then some k.left.text else none
+      | _ => none := by
+  cases x <;> simp [toShape, membershipChainShapes.chainLeft?, toSide]
+
+theorem unwritten_eq (x : lint.Shape) : membershipChainShapes.unwrittenRight (toShape x) = lint.unwritten? x := by
+  cases x with
+  | Comparison k =>
+    simp only [toShape, membershipChainShapes.unwrittenRight, toSide, lint.unwritten?]
+    cases h : k.right.value <;> simp [toForm, fren_spec, h]
+  | _ => simp [toShape, membershipChainShapes.unwrittenRight, lint.unwritten?]
+
+theorem forall_nth {α : Type} [Inhabited α] (l : List α) (P : α → Prop) :
+    (∀ i : Int, 0 ≤ i ∧ i < (Fren.Seq.ofList l).len → P ((Fren.Seq.ofList l).nth i)) ↔ ∀ x ∈ l, P x := by
+  constructor
+  · intro h x hx
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    have := h i ⟨by omega, by simp; omega⟩
+    rwa [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)] at this
+  · intro h i ⟨h0, h1⟩
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
+    exact h _ (List.getElem_mem _)
+
+theorem exists_nth {α : Type} [Inhabited α] (l : List α) (P : α → Prop) :
+    (∃ i : Int, (0 ≤ i ∧ i < (Fren.Seq.ofList l).len) ∧ P ((Fren.Seq.ofList l).nth i)) ↔ ∃ x ∈ l, P x := by
+  constructor
+  · rintro ⟨i, ⟨h0, h1⟩, h⟩
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)] at h
+    exact ⟨_, List.getElem_mem _, h⟩
+  · rintro ⟨x, hx, h⟩
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    exact ⟨i, ⟨by omega, by simp; omega⟩, by rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]; exact h⟩
+
+/-- An operand of the chain has the chain's left operand, as the lint reads
+it, exactly where the model's reads both. -/
+theorem chain_left_iff (c : Bool) (x s0 : lint.Shape) :
+    ((membershipChainShapes.chainLeft? id c (toShape x)).isSome = true ∧
+        membershipChainShapes.chainLeft? id c (toShape x) = membershipChainShapes.chainLeft? id c (toShape s0)) ↔
+      (lint.chain_equation? x c (lint.left_text s0) = true ∧ lint.chain_equation? s0 c (lint.left_text s0) = true) := by
+  rw [chainLeft_eq, chainLeft_eq]
+  cases x <;> cases s0 <;> simp [lint.chain_equation?, lint.left_text, fren_spec] <;> split <;> simp_all <;> exact and_comm
+
+theorem chain_shapes_cons (c : Bool) (s0 : lint.Shape) (rest : List lint.Shape) :
+    membershipChainShapes id c ((s0 :: rest).map toShape) = true ↔
+      rest.length + 1 ≥ 3 ∧
+        (∀ x ∈ s0 :: rest, (membershipChainShapes.chainLeft? id c (toShape x)).isSome = true ∧
+          membershipChainShapes.chainLeft? id c (toShape x) = membershipChainShapes.chainLeft? id c (toShape s0)) ∧
+        ∃ x ∈ s0 :: rest, membershipChainShapes.unwrittenRight (toShape x) = true := by
+  simp [membershipChainShapes, List.all_eq_true, List.any_eq_true, and_assoc]
+
+/-- The lint's reading of the membership chain is the model's. -/
+theorem chain_eq (cs : List lint.Shape) (c : Bool) :
+    membershipChainShapes id c (cs.map toShape) = lint.membership_chain? (Fren.Seq.ofList cs) c := by
+  rw [Bool.eq_iff_iff]
+  unfold lint.membership_chain?
+  rw [decide_true_iff]
+  cases cs with
+  | nil => simp [membershipChainShapes]
+  | cons s0 rest =>
+    have h0 : (Fren.Seq.ofList (s0 :: rest)).nth 0 = s0 := by
+      rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp)]; rfl
+    have hlen : (Fren.Seq.ofList (s0 :: rest)).len = ((rest.length + 1 : Nat) : Int) := by simp
+    rw [h0, forall_nth (s0 :: rest) (fun x => lint.chain_equation? x c (lint.left_text s0) = true),
+      exists_nth (s0 :: rest) (fun x => lint.unwritten? x = true), chain_shapes_cons, hlen]
+    have hu := unwritten_eq
+    constructor
+    · rintro ⟨hl, hall, x, hx, hw⟩
+      rw [hu] at hw
+      exact ⟨⟨by omega, fun y hy => ((chain_left_iff c y s0).mp (hall y hy)).1⟩, x, hx, hw⟩
+    · rintro ⟨⟨hl, hall⟩, x, hx, hw⟩
+      have h00 := hall s0 List.mem_cons_self
+      refine ⟨by omega, fun y hy => (chain_left_iff c y s0).mpr ⟨hall y hy, h00⟩, x, hx, ?_⟩
+      rw [hu]; exact hw
+
 -- Both front ends report the runs that `patternRuns` gives, of the operands
--- that `patternOperand?` reads, for every list of operands.
+-- that `patternOperand?` reads, in a chain that `membershipChainOf` reads
+-- from the shapes of its operands, for every list of operands.
 impl manual_pattern_test_runs: lint::manual_pattern_test_runs
-    for (l : List lint.Shape) (c ch : Bool) (s : lint.Span) {
+    for (l cs : List lint.Shape) (c : Bool) (s : lint.Span) {
   operands := Fren.Seq.ofList l,
+  chain := Fren.Seq.ofList cs,
   «conj?» := c,
-  «chain?» := ch,
   run := s,
   «reported?» := decide (0 ≤ s.first ∧ s.first ≤ s.last ∧
-    (s.first.toNat, s.last.toNat) ∈ patternRuns id (l.map (readOperand c ∘ toShape)) ch),
+    (s.first.toNat, s.last.toNat) ∈ patternRuns id (l.map (readOperand c ∘ toShape))
+      (membershipChainShapes id c (cs.map toShape))),
 } by
-  intro l c ch s _
+  intro l cs c s _
   unfold lint.manual_pattern_test_runs.ensures lint.manual_pattern_test_runs.ensure.rule
   have hps : (l.map (readOperand c ∘ toShape)).map (·.map fun p => (id p.scrutinee, p.alts.map (·.1), p.equation)) =
       views l c := by
     simp only [views, List.map_map]
     congr 1; funext x
     exact read_eq x c
-  rw [decide_eq_true_iff, patternRuns, hps, mem_runsOf, views_forms, longest_iff]
+  rw [decide_eq_true_iff, patternRuns, hps, mem_runsOf, views_forms, longest_iff, chain_eq]
   constructor
   · rintro ⟨h0, hfl, hm, hf⟩
-    exact ⟨⟨h0, hfl, hm⟩, (fires_spec l c ch s h0 hfl hm).mpr hf⟩
+    exact ⟨⟨h0, hfl, hm⟩, (fires_spec l c cs s h0 hfl hm).mpr hf⟩
   · rintro ⟨⟨h0, hfl, hm⟩, hf⟩
-    exact ⟨h0, hfl, hm, (fires_spec l c ch s h0 hfl hm).mp hf⟩
+    exact ⟨h0, hfl, hm, (fires_spec l c cs s h0 hfl hm).mp hf⟩
 
 end Fren.Impls.PatternTests

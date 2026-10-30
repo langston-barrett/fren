@@ -5014,7 +5014,7 @@ def manualOrderingAt? (src : Array Char) (fact? : α → Option NodeFact) (n : B
 /-! ## Pattern tests written out -/
 
 /-- An alternative of a pattern, as `manual_pattern_test` reads it
-(`lint::Alt`): the integers from `lo` to `hi`, where `none` leaves that
+(`lint::integers`, `lint::quoted`, `lint::variant_name`): the integers from `lo` to `hi`, where `none` leaves that
 side unbounded, so that a literal is a range of one integer; a string
 literal, as written; or a variant, by its name, with or without a
 payload. -/
@@ -5031,7 +5031,7 @@ def boundBelow : Option Int → Option Int → Bool
   | _, _ => false
 
 /-- Whether no value matches both `a` and `b`, as their text shows
-(`lint::disjoint?`): two ranges of integers that do not meet, two string
+(`lint::alts_disjoint?`): two ranges of integers that do not meet, two string
 literals written differently, without escape sequences, or two variants
 of different names. A pattern's alternatives are of one type, so two
 alternatives of different kinds are never both in a pattern that checks,
@@ -5052,7 +5052,7 @@ operands of `or`, or of `and`, each an equation, or a disequation, of one
 expression with a value that a pattern writes, or a pattern test of it,
 or its negation, `nEquations` of them equations, whose alternatives are
 `alts`, in order, where `chain` says that `membership_chain` reads the
-chain they are in (`lint::manual_pattern_test`). -/
+chain they are in (`lint::run_fires?`). -/
 def manualPatternTest (alts : List PatAlt) (nOperands nEquations : Nat) (chain : Bool) : Bool :=
   nOperands ≥ 2 && nEquations ≥ 1 && !chain && pairwiseDisjoint alts
 
@@ -5075,6 +5075,7 @@ inductive ValueForm where
   | decimal (k : Int)
   | quoted (t : String)
   | variant (name : String)
+  | truth (b : Bool)
   | other
   deriving Inhabited, DecidableEq, Repr
 
@@ -5085,6 +5086,8 @@ def valueForm (t : String) (variant? : Option String) : ValueForm :=
   let t := t.trimAscii.toString
   if let some k := decimalLiteral? t then .decimal k
   else if t.length ≥ 2 && t.startsWith "\"" && t.endsWith "\"" && t.toList.count '"' == 2 then .quoted t
+  else if t == "true" then .truth true
+  else if t == "false" then .truth false
   else match variant? with
     | some v => .variant (lastSegment v)
     | none => .other
@@ -5097,6 +5100,7 @@ def ValueForm.alt? (nat : Bool) : ValueForm → Option PatAlt
   | .decimal k => if nat && k < 0 then none else some (.ints (some k) (some k))
   | .quoted t => some (.str t)
   | .variant v => some (.variant v)
+  | .truth _ => none
   | .other => none
 
 /-- The value written `t` as a pattern's alternative, if a pattern writes it
@@ -5110,8 +5114,7 @@ def valueAlt? (t : String) (variant? : Option String) : Option PatAlt :=
 `valueAlt?` reads it, or `true` or `false`, where `variant` says that it
 is a variant without a payload. -/
 def patternValue (t : String) (variant : Bool) : Bool :=
-  let t := t.trimAscii.toString
-  t == "true" || t == "false" || (valueAlt? t (if variant then some t else none)).isSome
+  valueForm t (if variant then some t else none) != .other
 
 /-- Splits `t` at each `|` outside parentheses and string literals. -/
 def splitAlternatives (t : String) : Array String := Id.run do
@@ -5236,7 +5239,7 @@ def operandShape (src : Array Char) (variant? : α → Option String) (fact? : �
   let side (k : BNode α) : ComparisonSide (BNode α) :=
     { node := k, text := textOf src k.range
       value := match k.kind with
-        | .atom | .neg => valueForm (textOf src k.range) (variant? k.ref)
+        | .atom | .neg | .lit _ => valueForm (textOf src k.range) (variant? k.ref)
         | _ => .other }
   match d.kind, d.kids with
   | .bin op, #[l, r] =>
@@ -5312,22 +5315,35 @@ partial def chainOperandsOf (op : String) (n : BNode α) : Array (BNode α) :=
   | .bin o, #[l, r] => if o == op then chainOperandsOf op l ++ chainOperandsOf op r else #[n]
   | _, _ => #[n]
 
+/-- Whether `membership_chain` reads a chain of `or`, or of `and` if
+`conj`, whose operands, through parentheses, have the shapes `shapes`
+(`lint::membership_chain?`): three or more, each an equation, or a
+disequation, with the same left operand, written as `form` writes it,
+and some value that is not one that a pattern writes. -/
+def membershipChainShapes (form : σ → String) (conj : Bool) (shapes : List (OperandShape σ)) : Bool :=
+  match shapes with
+  | [] => false
+  | s :: _ =>
+    shapes.length ≥ 3 && (shapes.all fun t => (chainLeft? t).isSome && chainLeft? t == chainLeft? s)
+      && shapes.any unwrittenRight
+where
+  /-- The left operand of an equation, or for `and` a disequation. -/
+  chainLeft? : OperandShape σ → Option String
+    | .comparison equal _ l _ => if equal != conj then some (form l.node) else none
+    | _ => none
+  /-- The right operand of a comparison is a value that no pattern writes. -/
+  unwrittenRight : OperandShape σ → Bool
+    | .comparison _ _ _ r => r.value == .other
+    | _ => false
+
 /-- Whether `membership_chain` reads the chain of `or`, or of `and` if
-`conj`, that `n` is the top of: three or more operands, each an equation,
-or a disequation, with the same left operand, and some value that is not
-one that a pattern writes (`patternValue`), whether or not a later value
-indexes a sequence, which that lint also asks. -/
-def membershipChainOf (src : Array Char) (variant? : α → Option String) (conj : Bool) (n : BNode α) : Bool := Id.run do
-  let ds := chainOperandsOf (if conj then "and" else "or") n
-  if ds.size < 3 then return false
-  let eqs := ds.filterMap fun d => match d.kind, d.kids with
-    | .bin op, #[l, r] => if op == (if conj then "!=" else "=") then some (l, r) else none
-    | _, _ => none
-  if eqs.size != ds.size then return false
-  let some (l0, _) := eqs[0]? | return false
-  let left := writtenForm (textOf src l0.range)
-  return eqs.all (fun (l, _) => writtenForm (textOf src l.range) == left)
-    && eqs.any fun (_, v) => !patternValue (textOf src v.range) (variant? v.ref).isSome
+`conj`, that `n` is the top of: `membershipChainShapes` of its operands,
+through parentheses, whose values are read as `patternValue` reads them,
+whether or not a later value indexes a sequence, which that lint also
+asks. -/
+def membershipChainOf (src : Array Char) (variant? : α → Option String) (conj : Bool) (n : BNode α) : Bool :=
+  membershipChainShapes (fun b => writtenForm (textOf src b.range)) conj
+    ((chainOperandsOf (if conj then "and" else "or") n).toList.map (operandShape src variant? (fun _ => none)))
 
 /-- `manual_pattern_test`'s message, on `x` if `conj` is not set, and
 otherwise on its negation, whose fix is `fixed`, at `range`, the
@@ -5344,7 +5360,7 @@ def manualPatternTestMsg (x fixed : String) (conj : Bool) (range : Range) (comme
 /-- `manual_pattern_test` on `n`, an `or`, or an `and` if `conj`, in `slot`
 within `parent`, if it is the top of a run of them, where `chain` says
 that `membershipChainOf` holds of the chain it is in
-(`lint::manual_pattern_test`): one report for each longest run of
+(`lint::manual_pattern_test_runs`): one report for each longest run of
 adjacent operands that `patternOperand?` reads, of an expression written
 the same, from the first to the last. -/
 def manualPatternTestAt [Inhabited α] (src : Array Char) (variant? : α → Option String) (fact? : α → Option NodeFact)
