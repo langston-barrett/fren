@@ -1084,7 +1084,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       match Core.Enumeration.shapeOf st.shapeOf n pt with
       | .ok shape =>
         if shape.estimate n > maxBehaviours then
-          domainError.set (some (tooManyMsg subject (maxBehaviours + 1) n (estimated := true)))
+          domainError.set (some (quantifiedTooManyMsg subject n))
           return (#[], false)
         return (← (shape.ordered n).toArray.mapM fun (v, _) => valueExpr ty v, shape.exhausted n)
       | .error why =>

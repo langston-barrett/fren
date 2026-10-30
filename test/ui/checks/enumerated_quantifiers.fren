@@ -95,6 +95,46 @@ proc defined_unknown(): (y: Int, det d?) {  --~ info: 1 check of `defined_unknow
     out d? := forall (x: Int), y = 1 or x != 10
 }
 
+-- A `forall` over a pattern type is decided by exhausting it.
+set_option fren.evidence "enumerated" in
+proc exhausted(): (all?) {
+    ensure r: all? iff (forall (b: Bit), b <= 1)
+    expect holds: all?
+}
+
+-- Alternating quantifiers: decided over a finite type, unknown over `Int`.
+set_option fren.evidence "enumerated" in
+proc alternating(): (finite?, infinite?) {  --~ warning: could not decide whether `alternating` is realizable: a quantifier is undecided up to size 3
+    ensure f: finite? iff (forall (x: Mode), exists (y: Mode), y != x)  --~ warning: could not decide whether `alternating::f` is redundant: a quantifier is undecided up to size 3
+    ensure i: infinite? iff (forall (x: Int), exists (y: Int), y > x)  --~ warning: could not decide whether `alternating::i` is redundant: a quantifier is undecided up to size 3
+    expect decided: finite?
+    expect undecided: infinite?  --~ warning: could not decide whether `alternating::undecided` holds: a quantifier is undecided up to size 3
+}
+
+-- The negation of an unknown quantifier is unknown: no counterexample is
+-- made up from it.
+set_option fren.evidence "enumerated" in
+proc negated(): (none?) {  --~ warning: could not decide whether `negated` is realizable: a quantifier is undecided up to size 3
+    ensure r: none? iff not (forall (x: Int), x + 1 > x)  --~ warning: could not decide whether `negated::r` is redundant: a quantifier is undecided up to size 3
+    expect holds: not none?  --~ warning: could not decide whether `negated::holds` holds: a quantifier is undecided up to size 3
+}
+
+-- An index within a quantifier's body, by the bound name: unknown where
+-- it is out of range, so that realizability is inconclusive, while a model
+-- that reads it as `[][0]` is a behaviour; and known where the guard keeps
+-- it in range.
+set_option fren.evidence "enumerated" in
+proc body_index(q: Seq<Int>): (all?) {  --~ warning: could not decide whether `body_index` is realizable: an index out of range decides it
+    ensure r: all? iff (forall (i: Int), when 0 <= i <= q.len, q[i] > 0)
+    expect empty: when q = [], not all?  --~ error: counterexample: q = [], all? = true
+}
+
+set_option fren.evidence "enumerated" in
+proc guarded_body_index(q: Seq<Int>): (all?) {  --~ info: 2 checks of `guarded_body_index` hold for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when 0 <= i < q.len, q[i] > 0)
+    expect empty: when q = [], all?
+}
+
 -- With the solver: it proves what enumeration leaves unknown.
 proc proved(): (all?) {
     ensure r: all? iff (forall (x: Int), x + 1 > x)
@@ -111,4 +151,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 33 passed (9 by bounded enumeration), 8 failed, 5 inconclusive, 0 redundant
+--@ summary: 43 passed (11 by bounded enumeration), 9 failed, 13 inconclusive, 0 redundant

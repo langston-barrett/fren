@@ -204,7 +204,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     match shape? with
     | .error why => throw (notEnumerableMsg subject (notEnumerableWhy none why))
     | .ok shape =>
-      if shape.estimate n > maxBehaviours then throw (tooManyMsg subject (maxBehaviours + 1) n (estimated := true))
+      if shape.estimate n > maxBehaviours then throw (quantifiedTooManyMsg subject n)
   if apps.contains recursiveIndexRead then
     throw (notEnumerableMsg subject recursiveIndexWhy)
   -- The hidden slots: each type whose unspecified value is read, in the

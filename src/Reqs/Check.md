@@ -2497,6 +2497,10 @@ the bound. So `forall (x: Int), x + 1 > x` is unknown up to any bound, and
 are those of strong Kleene logic: `not` of unknown is unknown, a false
 conjunct makes a conjunction false, and a true one a disjunction true.
 
+A quantifier over a type that, without its patterns, has more than
+65,536 values up to the bound is not evaluated: it is the error `F0644`,
+at the procedure, and none of its checks set to enumeration is run.
+
 `check::quantified_truth` states a quantifier's truth, over the truths of
 its instances, and `check::partial_not` and `check::partial_and` the
 connectives:

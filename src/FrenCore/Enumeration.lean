@@ -1442,6 +1442,16 @@ def tooManyMsg (subject : String) (count n : Nat) (estimated : Bool := false) : 
     notes := #[s!"note: enumeration searches at most {maxBehaviours} behaviours, counting a second copy of each for determinism",
       "help: lower `fren.enumeration.size`, or have the solver check it"] }
 
+/-- `subject` quantifies over a type with more than `maxBehaviours`
+values up to size `n` (`Reqs/Check#quantifiers-up-to-the-bound`), which
+enumeration does not list (`F0644`). -/
+def quantifiedTooManyMsg (subject : String) (n : Nat) : Msg :=
+  { code? := some "F0644", headline :=
+      s!"{subject} has a quantifier over a type that, without its patterns, has more than {maxBehaviours} values up to size {n}, too many to enumerate"
+    label? := some "too many values"
+    notes := #[s!"note: enumeration evaluates a quantifier at each of its type's values up to the bound, at most {maxBehaviours} of them",
+      "help: lower `fren.enumeration.size`, give the quantifier a guard with a domain, or have the solver check it"] }
+
 /-- Why a component that applies the generic function `f`, which has no
 body, cannot be enumerated (`check::enumerable`): each instance is a
 function of its own, which enumeration does not enumerate. -/

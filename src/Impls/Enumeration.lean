@@ -1087,15 +1087,24 @@ theorem quantifiedTruth_eq (exact universal : Bool) : ∀ ts : List (Option Bool
         subst this
         cases universal <;> simp
 
+/-- A quantifier's truth reads only its instances' truths, in order. -/
+theorem quantifiedTruth_map {α : Type} (exact universal : Bool) (body : α → Option Bool) :
+    ∀ vs : List α, quantifiedTruth exact universal body vs = quantifiedTruth exact universal id (vs.map body)
+  | [] => rfl
+  | v :: vs => by
+    simp only [quantifiedTruth, List.map_cons, id, quantifiedTruth_map exact universal body vs]
+
 -- The truth of a quantifier over its instances' truths (`quantifiedTruth`,
 -- which both front ends evaluate quantifiers with).
-impl quantified_truth: check::quantified_truth for (exact universal : Bool) (ts : List (Option Bool)) {
+impl quantified_truth: check::quantified_truth for (exact universal : Bool) (vs : List Nat) (body : Nat → Option Bool) {
   universal? := universal,
   exhausted? := exact,
-  instances := Fren.FinSet.ofList (ts.map optTruth),
-  truth := optTruth (quantifiedTruth exact universal id ts),
+  instances := Fren.FinSet.ofList ((vs.map body).map optTruth),
+  truth := optTruth (quantifiedTruth exact universal body vs),
 } by
-  intro exact universal ts
+  intro exact universal vs body
+  rw [quantifiedTruth_map]
+  generalize vs.map body = ts
   have hd : ∀ v, (optTruth v ∈ Fren.FinSet.ofList (ts.map optTruth)) ↔ v ∈ ts := fun v => by
     simp only [Fren.FinSet.mem_ofList, List.mem_map]
     exact ⟨fun ⟨w, hw, e⟩ => optTruth_inj e ▸ hw, fun h => ⟨v, h, rfl⟩⟩
