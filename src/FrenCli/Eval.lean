@@ -537,13 +537,19 @@ closed term, which the compiler allocates once. -/
   | some (.bool b) => some b
   | _ => none
 
+/-- `some (.bool b)` of a truth, `none` being unknown, without allocating
+it (`boolV`). -/
+@[inline] def truthV : Option Bool → Option Val
+  | some b => boolV b
+  | none => none
+
 /-- The strong Kleene connectives, shared with the hosted front end
 (`Core.Enumeration.andTruth`, `check::partial_and`). -/
-def kleeneAnd (a b : Option Val) : Option Val := (Fren.Core.Enumeration.andTruth (truthOf a) (truthOf b)).map .bool
+def kleeneAnd (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.andTruth (truthOf a) (truthOf b))
 
-def kleeneOr (a b : Option Val) : Option Val := (Fren.Core.Enumeration.orTruth (truthOf a) (truthOf b)).map .bool
+def kleeneOr (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.orTruth (truthOf a) (truthOf b))
 
-def notV (a : Option Val) : Option Val := (Fren.Core.Enumeration.notTruth (truthOf a)).map .bool
+def notV (a : Option Val) : Option Val := truthV (Fren.Core.Enumeration.notTruth (truthOf a))
 
 @[inline] def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => some (f x y)
@@ -1105,7 +1111,7 @@ where
           | none => none
         -- Shared with the hosted front end (`check::quantified_truth`):
         -- the instances after a deciding one are not evaluated.
-        (Fren.Core.Enumeration.quantifiedTruth exact all inst vs.toList).map Val.bool
+        truthV (Fren.Core.Enumeration.quantifiedTruth exact all inst vs.toList)
       | none => none
     else body.eval I look locals slots frame memos
 
@@ -2589,6 +2595,13 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         doms := doms.push (some (.lit (.seq vs)))
         continue
       let (d, reads) := domainOf all strs body k (t == .nat)
+      -- A comparison bounds a bound name only where its type has finitely
+      -- many values between any two bounds, as both front ends have it
+      -- (`lang::range_domain`); otherwise its guard gives no range, and
+      -- the quantifier ranges over its type's values.
+      let d := match d with
+        | .range .. | .fromZero .. => if Fren.Core.countedBetween (t.core sp) then d else .unbounded
+        | d => d
       let one := Ex.lit (.int 1)
       -- A lower bound, and an upper bound past the range's end.
       let lower (j : Nat) : L (Option Ex) := do

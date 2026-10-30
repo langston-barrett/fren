@@ -418,6 +418,46 @@ pub proc guard_domain(
 }
 ```
 
+A membership bounds a bound name of any type, but a comparison bounds one
+only where its type has finitely many values between any two bounds,
+whatever they are, so that the type alone says that its range can be
+enumerated. Only the integers do: an `Int`, a `Nat`, or a
+[newtype](Items.md#newtypes) over them, whose values are its underlying
+type's, a [pattern type](Types.md#subset-types) counting as its base
+type. Between `"a"` and `"b"` lie `"aa"`, `"aaa"` and every other string
+that starts with `"a"`; an [ordered
+record](Items.md#ordered-declarations)'s values are compared
+lexicographically, so between `P(0, 0)` and `P(1, 0)` lies `P(0, n)` for
+every `n`; and an ordered enumeration's are compared by their variants'
+positions, which say nothing of their payloads. So a comparison of a
+bound name of any of those gives it no bound, and, without a membership,
+it has no domain: both [evaluation](../Eval.md#quantifiers) and
+[enumeration](../Check.md#quantifiers-up-to-the-bound) then read it as
+any other bound name without a domain. `lang::range_domain` states which
+types a comparison bounds, from the kinds of the bound name's type and of
+the type that each newtype it is wraps, from the outermost in, so that
+the last is the kind of the values that the comparison compares. Both
+front ends ask it (`countedBetween` in `FrenCore.Quantifier`):
+
+```fren
+pub proc range_domain(
+    kinds: Seq<ValueType>,    -- the kinds, from the outermost in, at least one
+): (ranged?) {
+    use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
+
+    assume typed: kinds != []
+
+    out ranged? := kinds[kinds.len - 1] in {IntTy, NatTy}
+
+    expect ints: when kinds = [IntTy], ranged?
+    expect nats: when kinds = [NatTy], ranged?
+    expect strings: when kinds = [StringTy], not ranged?
+    expect records: when kinds = [RecordTy], not ranged?
+    expect newtype_over_int: when kinds = [RecordTy, IntTy], ranged?
+    expect newtype_over_string: when kinds = [RecordTy, StringTy], not ranged?
+}
+```
+
 A quantifier's guard says nothing about its meaning, which is the same
 however it is written: a domain only lets the evaluator enumerate the
 values at which the guard can hold (see
@@ -426,7 +466,10 @@ quantifier is bounded: a procedure, global expectation or refinement
 whose queries have an unbounded quantifier with a bound name that has a
 domain sets cvc5's `fmf-bound` (see [Solver
 queries](../Cli.md#solver-queries)), with which it finds models of
-quantifiers bounded by membership and by integer ranges.
+quantifiers bounded by membership and by integer ranges. `fmf-bound` is
+set from the shape of the guard alone (`lang::guard_domain`), whatever
+the bound name's type: `lang::range_domain` says only which ranges the
+evaluators enumerate.
 
 ## Names
 

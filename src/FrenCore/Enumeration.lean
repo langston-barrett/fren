@@ -1260,8 +1260,11 @@ def enumeratedVerdict (kind : CheckKind) (verdict : Verdict) (conflict exact out
     | .inconclusive => (.inconclusive, false)
 
 /-- `r`, a result of enumeration within the bound `n`, with its verdict as
-`enumeratedVerdict` gives it, marked bounded if it is. -/
+`enumeratedVerdict` gives it, marked bounded if it is; sealed, since the
+verdict changes, so that it shows a behaviour only where its verdict
+allows it (`view::report_shows`). -/
 def classify (n : Nat) (exact outputsExact : Bool) (r : CheckResult) (indexed : Bool := false) : CheckResult :=
+  CheckResult.sealShown <|
   -- A bounded search does not prove properties of all admitted models.
   -- Keep its concrete evidence, but not unqualified global explanations.
   let r := if exact then r else { r with clashes := #[], branchConflicts := #[], explanationPremises := #[] }

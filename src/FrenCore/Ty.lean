@@ -392,6 +392,13 @@ def Ty.erased : Ty → Ty
   | .newtype _ u => u.erased
   | t => t
 
+/-- `t`, and the underlying type of each newtype it is, from the outermost
+in, so that the last is `t.erased`: `[Int]` for an `Int`, and `[Ms, Int]`
+for a newtype `Ms` over `Int` (`check::range_domain`). -/
+def Ty.wrapped : Ty → List Ty
+  | .newtype p u => .newtype p u :: u.wrapped
+  | t => [t]
+
 /-- The newtypes that `t` is, from the outermost in: `t` itself, if it is a
 newtype, then its underlying type, if that is one, and so on. -/
 def Ty.newtypePaths : Ty → Array Name

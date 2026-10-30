@@ -11,6 +11,9 @@ set_option fren.lint.chainable_comparison "allow"
 
 enum Mode { Off, On }
 type Bit = b: Int where invariant: b is 0..=1
+ordered struct Ms(Int)
+ordered struct Ns(Nat)
+ordered struct Pt { x: Int, y: Int }
 
 -- False within the bound: the counterexample is genuine.
 set_option fren.evidence "enumerated" in
@@ -89,6 +92,42 @@ set_option fren.evidence "enumerated" in
 proc gt_ge(k: Int): (all?) {  --~ info: 1 check of `gt_ge` holds for every behaviour up to size 3
     ensure r: all? iff (forall (i: Int), when i > -1 and 1 >= i, i < k)
     expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- A comparison bounds a bound name only where its type's values are the
+-- integers, of which finitely many lie between any two bounds
+-- (`lang::range_domain`): an `Int`, a `Nat`, or a newtype over them. The
+-- values of a newtype are its field's, so the range is of those.
+set_option fren.evidence "enumerated" in
+proc newtype_range(k: Ms): (all?) {  --~ info: 1 check of `newtype_range` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when Ms(0) <= m and m < Ms(2), m < k)
+    expect wrong: all?  --~ error: counterexample: k = Ms(0), all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc nat_newtype_range(k: Ns): (all?) {  --~ info: 1 check of `nat_newtype_range` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (n: Ns), when Ns(0) <= n and n < Ns(2), n < k)
+    expect wrong: all?  --~ error: counterexample: k = Ns(0), all? = false
+}
+
+-- Between two `String`s lie `"aa"`, `"aaa"` and every other string that
+-- starts with the lower one, so a comparison gives no bound: the
+-- quantifier ranges over `String`'s values up to the bound, in both front
+-- ends, and an instance within it settles it here.
+set_option fren.evidence "enumerated" in
+proc string_range(k: Int): (all?) {  --~ info: 1 check of `string_range` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (s: String), when "a" <= s and s < "b", s.len < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- An ordered record's values are compared lexicographically, so between
+-- `Pt { x := 0, y := 0 }` and `Pt { x := 1, y := 0 }` lies one for every
+-- `y`: a comparison gives no bound, and `Pt`'s values up to the bound do
+-- not exhaust it, so the quantifier is unknown in both front ends.
+set_option fren.evidence "enumerated" in
+proc record_range(k: Pt): (all?) {  --~ warning: could not decide whether `record_range` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (p: Pt), when Pt { x := 0, y := 0 } <= p and p < k, p != k)  --~ warning: could not decide whether `record_range::r` is redundant: a quantifier is undecided up to size 3
+    expect holds: all?  --~ warning: could not decide whether `record_range::holds` holds: a quantifier is undecided up to size 3
 }
 
 -- A pattern type's values are those it matches.
@@ -190,4 +229,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 52 passed (15 by bounded enumeration), 13 failed, 15 inconclusive, 0 redundant
+--@ summary: 58 passed (18 by bounded enumeration), 16 failed, 18 inconclusive, 0 redundant

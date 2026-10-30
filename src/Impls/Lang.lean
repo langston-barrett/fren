@@ -1307,6 +1307,54 @@ impl guard_domain: lang::guard_domain for (cs : List lang.GuardConjunct) (k : Na
   intro cs k n _
   exact guard_domain_meets cs k n
 
+/-- A type wraps at least itself. -/
+theorem wrapped_ne_nil (t : Fren.Core.Ty) : t.wrapped ≠ [] := by
+  cases t <;> simp [Fren.Core.Ty.wrapped]
+
+/-- The last type that `t` wraps is the one it is erased to, whose values
+a comparison of `t`'s compares. -/
+theorem wrapped_last : ∀ t : Fren.Core.Ty, t.wrapped[t.wrapped.length - 1]? = some t.erased
+  | .newtype p u => by
+    have ih := wrapped_last u
+    have hlen : u.wrapped.length - 1 + 1 = u.wrapped.length := by
+      cases h : u.wrapped with
+      | nil => exact absurd h (wrapped_ne_nil u)
+      | cons a l => simp
+    simp only [Fren.Core.Ty.wrapped, Fren.Core.Ty.erased, List.length_cons, Nat.add_sub_cancel]
+    rw [← hlen, List.getElem?_cons_succ]
+    exact ih
+  | .bool | .int | .nat | .string | .set _ | .rel _ _ | .seq _ | .enum _ _ | .record _ _ | .abstract _
+  | .param _ _ => rfl
+
+-- For every type, the kinds of it and of the types that the newtypes it
+-- is wrap, by the predicate that both front ends ask of a comparison in a
+-- guard (`Fren.Core.countedBetween`).
+impl range_domain: lang::range_domain for (t : Fren.Core.Ty) {
+  kinds := Fren.Seq.ofList (t.wrapped.map kindOf),
+  ranged? := Fren.Core.countedBetween t,
+} by
+  intro t _
+  have hne : (t.wrapped.map kindOf) ≠ [] := by simpa using wrapped_ne_nil t
+  have hlast : (t.wrapped.map kindOf)[(t.wrapped.map kindOf).length - 1]? = some (kindOf t.erased) := by
+    simpa using congrArg (Option.map kindOf) (wrapped_last t)
+  have hpos : 0 < (t.wrapped.map kindOf).length := by
+    cases h : t.wrapped.map kindOf with
+    | nil => exact absurd h hne
+    | cons a l => simp
+  have hidx : (t.wrapped.map kindOf).length - 1 < (t.wrapped.map kindOf).length := by omega
+  have hget : (t.wrapped.map kindOf)[(t.wrapped.map kindOf).length - 1] = kindOf t.erased :=
+    Option.some.inj ((List.getElem?_eq_getElem hidx).symm.trans hlast)
+  have hnth : (Fren.Seq.ofList (t.wrapped.map kindOf)).nth
+      ((Fren.Seq.ofList (t.wrapped.map kindOf)).len - 1) = kindOf t.erased := by
+    have hlenInt : (Fren.Seq.ofList (t.wrapped.map kindOf)).len - 1
+        = (((t.wrapped.map kindOf).length - 1 : Nat) : Int) := by
+      rw [Fren.Seq.len_eq, Fren.Seq.toList_ofList]; omega
+    rw [hlenInt, Fren.Seq.nth_of_lt _ _ (by omega) (by simp only [Fren.Seq.toList_ofList]; omega)]
+    simpa using hget
+  simp only [fren_spec, hnth]
+  refine ⟨?_, trivial⟩
+  cases h : t.erased <;> simp [Fren.Core.countedBetween, h, kindOf]
+
 /-! ## Strings and decidability (`Reqs/Lang/Types#strings`, `Reqs/Lang/Decidability`) -/
 
 impl string_char: lang::string_char for (c : Nat) {

@@ -122,7 +122,11 @@ values of the bound names before it:
   that the expression `e` of the conjunct `x in e` at `lo` has;
 - for `Range`, the integers from the expression of the lower bound at
   `lo`, plus 1 if it is strict, up to that of the upper bound at `hi`,
-  minus 1 if it is strict;
+  minus 1 if it is strict, where the bound name's type is one that a
+  comparison bounds at all (`lang::range_domain`), and no domain where it
+  is not: a `String`, an ordered record or an ordered enumeration has
+  none, so a quantifier over one cannot be tested (`F0639`), while
+  enumeration gives it its type's values up to the bound;
 - for `FromZero`, those from 0 up to the upper bound's.
 
 A value that is not of the bound name's type is left out: a negative one

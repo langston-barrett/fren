@@ -711,6 +711,13 @@ partial def leadingGuards (source : Expr) : MetaM (Array Expr) := do
     if !body.hasLooseBVars && (← isProp condition) then return #[e] ++ (← leadingGuards body)
   return #[]
 
+/-- `e` without the newtype fields, `fields`, that it reads outermost: a
+newtype's value is its field's (`Reqs/Lang/Expressions#newtypes`), so an
+ordering of a newtype, which `orderingTerm` writes as one of the fields,
+reads the bound name itself. -/
+partial def withoutFields (fields : Array Name) (e : Expr) : Expr :=
+  if e.isApp && e.getAppFn.constName?.any fields.contains then withoutFields fields e.appArg!.consumeMData else e
+
 /-- The domain of the bound local `x`, of a `forall` if `universal`, by its
 guard in `body`, as the `fren` command reads it (`lang::guard_domain`):
 the members of a collection, or a range of integers. -/
@@ -723,11 +730,17 @@ def guardedDomain (universal : Bool) (x body : Expr) : MetaM (Core.GuardDomain �
       | _ => none
     else none
   let conjuncts := Core.guardConjunctsBy typedGuardNode when? universal body
+  -- The fields of the newtypes, whose values are their underlying types'
+  -- (`Reqs/Lang/Expressions#newtypes`): an ordering of a newtype compares
+  -- them (`orderingTerm`), so a field of the bound name is the name
+  -- itself, written alone, as the `fren` command's syntax has it.
+  let fields := (← getState).newtypes.foldl (init := (#[] : Array Name)) fun acc _ n => acc.push n.field
   let alone (source : Expr) :=
     let e := source.consumeMData
     let e := if e.isAppOfArity ``Int.ofNat 1 then e.appArg!.consumeMData else e
     let e := if (e.isAppOf ``NatCast.natCast || e.isAppOf ``Nat.cast) && e.getAppArgs[0]?.any (·.isConstOf ``Int) then
       e.appArg!.consumeMData else e
+    let e := withoutFields fields e
     if e == x then some 0 else none
   let names (e : Expr) := if e.containsFVar x.fvarId! then [0] else []
   return Core.boundDomain alone names conjuncts 0 ((← inferType x).isConstOf ``Nat)
@@ -749,10 +762,26 @@ def PartialEnv.wrap (env : PartialEnv) (parts : Array Expr) (v : Expr) : MetaM E
   let ks ← parts.mapM known
   mkAppM ``Enum.ifKnown #[ks.foldl (fun acc k => mkApp2 (mkConst ``and) acc k) (mkConst ``Bool.true), v]
 
+/-- The Fren type that the Lean type `ty` is, as far as a comparison
+guard's range needs it, with the constructors of the newtypes that it is,
+from the innermost out: `Int` and `Nat` themselves, a pattern type over
+them being its base type here, and a newtype the type that its field is,
+wrapped back by its constructor. `none` where `ty` names no Fren type.
+Whether a comparison bounds such a name is `Core.countedBetween`, which
+both front ends ask (`lang::range_domain`). -/
+partial def rangeTy? (ty : Expr) : MetaM (Option (Core.Ty × Array Expr)) := do
+  if ← isDefEq ty (mkConst ``Nat) then return some (.nat, #[])
+  if ← isDefEq ty (mkConst ``Int) then return some (.int, #[])
+  if let some n := (← getState).newtypeOf? ty then
+    if let some (under, wrap) ← rangeTy? n.under then
+      return some (.newtype n.path under, wrap.push (mkAppN (mkConst n.ctor) ty.getAppArgs))
+  return (coreTyOf (← getState) ty).map (·, #[])
+
 /-- The truth of a quantifier over the bound local `x`, whose instance's
 truth is `fn x`, over its guard's domain, if it has one: unknown, under
 `env.known?`, where the domain's bounds are not known. `none` only where
-the guard gives no domain. -/
+the guard gives no domain, which includes a comparison that does not bound
+the name (`Core.countedBetween`). -/
 def quantifyGuarded (env : PartialEnv) (universal : Bool) (x body fn : Expr) : MetaM (Option Expr) := do
   let (domain, bounds) ← guardedDomain universal x body
   let ty ← inferType x
@@ -788,12 +817,22 @@ def quantifyGuarded (env : PartialEnv) (universal : Bool) (x body fn : Expr) : M
     let some upper ← toInt upper | return some unknown
     let lo ← if strictLower then mkAppM ``HAdd.hAdd #[lower, ← intExpr 1] else pure lower
     let hi ← if strictUpper then pure upper else mkAppM ``HAdd.hAdd #[upper, ← intExpr 1]
-    -- A pattern type over `Int` is `Int` here; its pattern is the body's.
-    if ← isDefEq ty (mkConst ``Nat) then
+    -- A comparison bounds the name only where finitely many values lie
+    -- between any two bounds, as both front ends have it
+    -- (`lang::range_domain`); where it does not, its guard gives no
+    -- range, and the quantifier ranges over its type's values. A pattern
+    -- type over `Int` is `Int` here; its pattern is the body's.
+    let some (core, wrap) ← rangeTy? ty | return none
+    unless Core.countedBetween core do return none
+    let nat := core.erased matches .nat
+    -- A newtype's values are its field's, so the range is of those, and
+    -- each is wrapped back into the bound name's type.
+    let fn ← if wrap.isEmpty then pure fn else
+      withLocalDeclD `x (mkConst (if nat then ``Nat else ``Int)) fun i =>
+        mkLambdaFVars #[i] (mkApp fn (wrap.foldl (init := i) fun acc c => mkApp c acc))
+    if nat then
       return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyNatRange #[lo, hi, toExpr universal, fn]))
-    if ← isDefEq ty (mkConst ``Int) then
-      return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyIntRange #[lo, hi, toExpr universal, fn]))
-    return some unknown
+    return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyIntRange #[lo, hi, toExpr universal, fn]))
   | .unbounded => return none
 
 mutual

@@ -2496,13 +2496,22 @@ a comparison of the bound name with `<`, `<=`, `>` or `>=`, on either
 side. Without one, it ranges over its type's values up to the
 bound. Its truth is then *true*, *false* or *unknown*: an instance that
 decides it does so, false for a `forall` and true for an `exists`, and its
-other value needs every instance known and every value of its type within
-the bound. So `forall (x: Int), x + 1 > x` is unknown up to any bound, and
-`exists (x: Int), x > 2` true from size 3. The connectives over such truths
+other value needs every instance known and every value of its domain, or
+of its type, within the bound. So `forall (x: Int), x + 1 > x` is unknown
+up to any bound, and `exists (x: Int), x > 2` true from size 3. The connectives over such truths
 are those of strong Kleene logic: `not` of unknown is unknown, a false
 conjunct makes a conjunction false, and a true one a disjunction true
 (`andTruth`, `notTruth` and `orTruth` in `FrenCore.Enumeration`, which
 both front ends' evaluators use).
+
+A membership gives a domain for a bound name of any type, but a
+comparison bounds one only where its type's values are the integers,
+of which finitely many lie between any two bounds, as
+[Guards](Lang/Quantifiers.md#guards) states (`lang::range_domain`). A
+comparison of a `String`, of an [ordered
+record](Lang/Items.md#ordered-declarations) or of an ordered enumeration
+gives no bound in either front end, so, without a membership, its
+quantifier ranges over its type's values up to the bound.
 
 A quantifier over a type that, without its patterns, has more than
 65,536 values up to the bound is not evaluated: it is the error `F0644`,

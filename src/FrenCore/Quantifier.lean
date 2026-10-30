@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
+import FrenCore.Ty
 import Lean.Data.NameMap
 -- keep-sorted end
 
@@ -137,6 +138,22 @@ def guardBound (left : GuardOperand) (relation : GuardRelation) (right : GuardOp
     | .name, .lt, .free | .name, .le, .free | .free, .gt, .name | .free, .ge, .name => .upper
     | _, _, _ => .none
   (bound, strict)
+
+/-- Whether a comparison of a bound name of the type `t` bounds it, so
+that its guard gives it a range (`lang::range_domain`): only where
+finitely many values lie between any two bounds, whatever they are, which
+holds of the integers -- `Int`, `Nat`, and a newtype over them, whose
+values are its underlying type's -- and of no other type. Between two
+`String`s lie `"aa"`, `"aaa"`, ...; an ordered record's values are
+compared lexicographically, so `P(0, 0) <= p < P(1, 0)` has `P(0, n)` for
+every `n`; and an ordered enumeration's are compared by their variants'
+positions, which say nothing of their payloads. Both front ends read a
+guard's comparisons as a range only here; a pattern type is its base type
+to both. -/
+def countedBetween (t : Ty) : Bool :=
+  match t.erased with
+  | .int | .nat => true
+  | _ => false
 
 /-- A bound name's domain, from the bounds of its guard's conjuncts, naming
 the conjuncts by position (`lang::Domain`). -/
