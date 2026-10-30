@@ -1,0 +1,69 @@
+-- A model of a recursive query over a datatype with a `Bool` field, which
+-- the hosted front end reads to confirm it, has `Bool`s, not propositions,
+-- in those fields: so the vacuity of `false_left` is decided, as it is by
+-- the `fren` command.
+
+pub enum Value { Boolean(Bool), Integer(Int) }
+pub enum Outcome { Defined(Value), Undefined }
+pub enum E { Lit(Value), Not(E) }
+
+pub fn ev(e: E): Outcome := match e {
+    E::Lit(v) => Outcome::Defined(v),
+    E::Not(a) => ev(a),
+}
+
+expect false_left(a: E) {
+    expect same: when ev(a) = Outcome::Defined(Value::Boolean(false)),
+        ev(E::Not(a)) = Outcome::Defined(Value::Boolean(false))
+}
+
+-- A `Bool` as a datatype's type argument, as in `Option<Bool>`, is a `Bool`
+-- in the model too.
+pub enum F { L(Option<Bool>), N(F) }
+
+pub fn evf(e: F): Option<Bool> := match e {
+    F::L(v) => v,
+    F::N(a) => evf(a),
+}
+
+expect option_payload(a: F) {
+    -- The trigger applies the recursion, so the hosted front end reads the
+    -- model, `F::L(Option::Some(false))`, to confirm it.
+    expect leaf: when a = F::L(Option::Some(false)) and evf(a) = Option::Some(false), evf(F::N(a)) = Option::Some(false)
+}
+
+-- A `Bool` field of a record within an enumeration.
+pub struct Flag { on?, level: Int }
+pub enum G { Leaf(Flag), Wrap(G) }
+
+pub fn evg(g: G): Flag := match g {
+    G::Leaf(f) => f,
+    G::Wrap(h) => evg(h),
+}
+
+expect record_field(g: G) {
+    expect leaf: when g = G::Leaf(Flag { on? := false, level := 1 }) and evg(g).level = 1, evg(G::Wrap(g)).level = 1
+}
+
+-- A `Bool` member of a set, and a `Bool` component of a relation's pairs.
+pub enum S { L(Set<Bool>), N(S) }
+
+pub fn evs(e: S): Set<Bool> := match e {
+    S::L(v) => v,
+    S::N(a) => evs(a),
+}
+
+expect set_member(a: S) {
+    expect leaf: when a = S::L({false}) and evs(a) = {false}, evs(S::N(a)) = {false}
+}
+
+pub enum R { L(Rel<Int, Bool>), N(R) }
+
+pub fn evr(e: R): Rel<Int, Bool> := match e {
+    R::L(v) => v,
+    R::N(a) => evr(a),
+}
+
+expect relation_member(a: R) {
+    expect leaf: when a = R::L({(1, false)}) and evr(a) = {(1, false)}, evr(R::N(a)) = {(1, false)}
+}
