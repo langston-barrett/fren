@@ -1,0 +1,6 @@
+-- Two arms that are `if`s with the same `else` branch, and no `_` arm.
+enum Shape { Circle(Int), Square(Int), Empty }
+
+proc c(s: Shape, k: Int): (m: Int) {
+    ensure r: m = match s { Shape::Circle(x) => if x > k then x else 0, Shape::Square(x) => if x < k then 1 else 0, Shape::Empty => 2 }
+}

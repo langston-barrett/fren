@@ -1,0 +1,26 @@
+--- test/cli/fix/guards.fren
++++ test/cli/fix/guards.fren
+@@ -17 +17 @@
+-    out a := match s { Shape::Circle(x) if true => x, _ => 0 }
++    out a := match s { Shape::Circle(x) => x, _ => 0 }
+@@ -19 +18,0 @@
+-        Shape::Circle(_) if false => 1,
+@@ -23,6 +22,6 @@
+-    out d := match k { 0 => 1, 1 if false => 2, _ => 3 }
+-    out e := match s { Shape::Circle(_) => 1, Shape::Empty if false => 3, _ => 2 }
+-    out f := match s { Shape::Circle(x) if x = 0 => 1, Shape::Square(x) if 2 = x => x + k, _ => 2 }
+-    out g := match r { Reply::Ok(t) if t = Shape::Empty => 1, Reply::Err(n) if n = -1 => n + 1, _ => 2 }
+-    out h := table s { Shape::Circle(x) if x = 4 => 1, _ => 2 }
+-    out i := match s { Shape::Circle(x) => if x > k then x else 0, Shape::Square(x) => if x < k then 1 else 0, Shape::Empty => 2 }
++    out d := match k { 0 => 1, _ => 3 }
++    out e := match s { Shape::Circle(_) => 1, _ => 2 }
++    out f := match s { Shape::Circle(0) => 1, Shape::Square(2) => 2 + k, _ => 2 }
++    out g := match r { Reply::Ok(Shape::Empty) => 1, Reply::Err(-1) => (-1) + 1, _ => 2 }
++    out h := table s { Shape::Circle(4) => 1, _ => 2 }
++    out i := match s { Shape::Circle(x) if x > k => x, Shape::Square(x) if x < k => 1, Shape::Empty => 2, _ => 0 }
+@@ -30,2 +29,2 @@
+-        Shape::Circle(x) => if x > k then x else k - 1,
+-        Shape::Square(_) => if k > 0 then 1 else k - 1,
++        Shape::Circle(x) if x > k => x,
++        Shape::Square(_) if k > 0 => 1,
+exit=1

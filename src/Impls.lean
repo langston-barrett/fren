@@ -13,6 +13,7 @@ import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
 import Impls.Global
+import Impls.Guards
 import Impls.HigherOrder
 import Impls.Impl
 import Impls.Lang

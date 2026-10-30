@@ -2298,6 +2298,139 @@ def lintCouldBeTable (e : Syntax) (sigs : Core.Sigs) (pty : Core.PatTy) (pats : 
   -- `fren fix` reads Markdown specs, but not Lean files.
   recordLint .matchCouldBeTable e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
 
+/-- The literal `true` or `false` that `e` is, without parentheses. -/
+def boolLiteral? (e : Syntax) : Option Bool :=
+  let e := unparen e
+  -- `true` and `false` are also paths.
+  let e := if e.isOfKind choiceKind then (e.getArgs.find? fun a => a.getNumArgs == 1 && a[0].isAtom).getD e[0] else e
+  if e.getNumArgs == 1 && e[0].isAtom then
+    match e[0].getAtomVal.trimAscii.toString with
+    | "true" => some true
+    | "false" => some false
+    | _ => none
+  else none
+
+/-- The source text from the position of `a`, or its end if `aTail`, to
+that of `b`, or its end if `bTail`. -/
+def textBetween (a : Syntax) (aTail : Bool) (b : Syntax) (bTail : Bool) : String :=
+  match a.getSubstring? false false, (if aTail then a.getTailPos? else a.getPos?), (if bTail then b.getTailPos? else b.getPos?) with
+  | some sub, some i, some j => String.Pos.Raw.extract sub.str i j
+  | _, _, _ => ""
+
+/-- The value that the guard operand `v` is, as `redundant_guards` reads it,
+with its text in a pattern and in an expression: a literal, or a variant
+without a payload, which is written by its path (`Core.Table.variantPath?`). -/
+def guardValue (cx : ExprCtx) (extra : Array Name) (sigs : Core.Sigs) (siblings : Array (Array Name)) (v : Syntax) :
+    TermElabM (Core.GuardValue × String × String) := do
+  let v := unparen v
+  let other := (Core.GuardValue.other, "", "")
+  if let some b := boolLiteral? v then return (.pattern (.bool b), toString b, toString b)
+  let v := if v.isOfKind choiceKind then v[0] else v
+  if v.getNumArgs == 1 && v[0].isOfKind numLitKind then
+    let some n := v[0].isNatLit? | return other
+    return (.pattern (.int (some n) (some n)), toString n, toString n)
+  if v.getNumArgs == 2 && v[0].isAtom && v[0].getAtomVal == "-" && v[1].getNumArgs == 1 && v[1][0].isOfKind numLitKind then
+    let some n := v[1][0].isNatLit? | return other
+    return (.pattern (.int (some (-(n : Int))) (some (-(n : Int)))), s!"-{n}", s!"(-{n})")
+  if v.getNumArgs == 1 && v[0].isOfKind strLitKind then
+    let some t := v[0].isStrLit? | return other
+    return (.pattern (.str t), exactText v, exactText v)
+  let p := if v.getNumArgs == 1 then v[0] else v
+  unless p.isOfKind ``Lang.fren_path && (pathSegs p).all (·.getId.isAtomic) do return other
+  let names := (pathSegs p).map (·.getId)
+  let table := (← getState).table
+  let shadowing := cx.shadowing ++ extra
+  let .ok (.variant en i) := table.resolvePath cx.modName names shadowing | return other
+  unless ((sigs en.path)[i]?.map (·.2.size)) == some 0 do return other
+  let some path := table.variantPath? cx.modName shadowing en.path en.variants[i]! siblings | return other
+  let t := Core.variantPattern path 0
+  return (.pattern (.ctor i #[]), t, t)
+
+/-- `trivial_guard` and `redundant_guards` on the arms of the `match` `e`,
+whose patterns are `pats`, on a value of `pty` (`lint::trivial_guard`,
+`lint::redundant_guards`): each fix is given only where the static rules
+accept the `match` after it (`Core.matchAccepted`). -/
+def lintGuards (cx : ExprCtx) (e : Syntax) (sigs : Core.Sigs) (pty : Core.PatTy) (pats : Array Core.Pat) :
+    TermElabM Unit := do
+  let arms := e[3].getSepArgs
+  let isTable := e.isOfKind ``Lang.tableMatchExpr
+  let tm (m : Core.Msg) : Core.Msg := if isTable then m.ofTable else m
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  let fixable := (← getLocal).inMarkdown
+  let help (m : Core.Msg) := if fixable && !m.fixes.isEmpty then m.note Core.fixHelp else m
+  let guarded := arms.map (!·[1].isNone)
+  let siblings ← (arms.flatMap fun arm => (topAlts arm[0]).1.filter (·.isOfKind ``Lang.variantPattern)).mapM fun p =>
+    (pathSegs p[0]).mapM segName
+  for h : i in [0:arms.size] do
+    let arm := arms[i]
+    if arm[1].isNone then continue
+    let g := arm[1][1]
+    -- `trivial_guard` (`lint::trivial_guard`).
+    if let some b := boolLiteral? g then
+      let accepted := if b then Core.matchAccepted sigs pty pats (guarded.set! i false) isTable
+        else Core.matchAccepted sigs pty (pats.eraseIdxIfInBounds i) (guarded.eraseIdxIfInBounds i) isTable
+      -- What the fix removes: the guard, from the pattern's end; or the
+      -- arm, up to the next one, or from the previous one's end.
+      let removed := if b then textBetween arm[0] true arm[1] true
+        else if h' : i + 1 < arms.size then textBetween arm false arms[i + 1] false
+        else if i > 0 then textBetween arms[i - 1]! true arm true else exactText arm
+      let (_, fix) := Core.trivialGuard (.literal b) accepted (Core.hasComment removed)
+      recordLint .trivialGuard g (help (tm (Core.trivialGuardMsg b fix !accepted)))
+      continue
+    -- `redundant_guards` (`lint::redundant_guards`).
+    let g' := unparen g
+    unless isBinOp g' "=" do continue
+    let binders := (← topBinders cx arm[0]).map binderName
+    let sides := #[(g'[0], g'[2]), (g'[2], g'[0])]
+    let some (x, v) := sides.findSome? fun (a, b) => (soleName? a).bind fun n =>
+      if binders.contains (Core.nameText n) then some (Core.nameText n, b) else none | continue
+    let (value, inPattern, inExpr) ← guardValue cx (binders.map Name.mkSimple) sigs siblings v
+    let some p := Core.redundantGuard? pats[i]! (Core.guardBinderPath? pats[i]! (binders.idxOf? x)) value | continue
+    unless Core.matchAccepted sigs pty (pats.set! i p) (guarded.set! i false) isTable do continue
+    let some bx := (← topBinders cx arm[0]).find? (binderName · == x) | continue
+    let pattern := textBetween arm[0] false bx false ++ inPattern ++ textBetween bx true arm[0] true
+    let body := exactText arm[3]
+    let (fixed?, why?) :=
+      if !Core.mentionsName body x then
+        if Core.hasComment (textBetween arm[0] false arm[1] true) then
+          (none, some "note: the fix would drop the comments in the arm's pattern or guard, so it has none")
+        else (some pattern, none)
+      else match Core.replaceMentions? body x inExpr with
+        | some b' => if Core.hasComment (textBetween arm[0] false arm[1] true) then
+            (none, some "note: the fix would drop the comments in the arm's pattern or guard, so it has none")
+          else (some s!"{pattern} => {b'}", none)
+        | none => (none, some s!"note: the body mentions `{x}` where its value cannot be written in its place, so it has no fix")
+    recordLint .redundantGuards g (help (tm (Core.redundantGuardsMsg x (exactText (unparen v)) fixed? why?)))
+
+/-- `match_arm_if_else` on the `match` `e`, whose arms' patterns are
+`pats`, on a value of `pty` (`lint::match_arm_if_else`). -/
+def lintArmIfElse (cx : ExprCtx) (e : Syntax) (sigs : Core.Sigs) (pty : Core.PatTy) (pats : Array Core.Pat) :
+    TermElabM Unit := do
+  unless e.isOfKind ``Lang.matchExpr do return
+  let arms := e[3].getSepArgs
+  if arms.any (!·[1].isNone) then return
+  let mut infos : Array (Core.IfArmInfo String) := #[]
+  let mut binders : Array (Array String) := #[]
+  for arm in arms, p in pats do
+    let body := unparen arm[3]
+    let armBody : Core.IfArmBody String := if isIte body then .ifElse (exactText body[5]) else .plain (exactText arm[3])
+    -- A condition that binds names cannot be a guard (`F0334`).
+    let condBinds ← if isIte body then chainBinds cx body[1] else pure false
+    binders := binders.push ((← topBinders cx arm[0]).map binderName)
+    infos := infos.push { wild := p matches .wild _, body := armBody, binds := condBinds }
+  -- `d` names a binder of arm `j`'s pattern.
+  let mentions (d : String) (j : Nat) : Bool := binders[j]!.any (Core.mentionsName d ·)
+  let overlap (i j : Nat) : Bool := (pats[i]!.overlapWit? sigs pty pats[j]!).isSome
+  let some (group, d, append) := Core.matchArmIfElse? Core.writtenSame mentions overlap infos.toList
+    | return
+  let guarded := (Array.range arms.size).map group.contains
+  let (pats', guarded') := if append then (pats.push (.wild false), guarded.push false) else (pats, guarded)
+  unless Core.matchAccepted sigs pty pats' guarded' false do return
+  let commented := group.any fun i => Core.hasComment (textBetween arms[i]![0] true arms[i]! true)
+  let msg := Core.matchArmIfElseMsg group.size d commented
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  recordLint .matchArmIfElse arms[group[0]!]![3] (if (← getLocal).inMarkdown && !commented then msg.note Core.fixHelp else msg)
+
 /-- A binder of a pattern, with the type of its value, and its value, read
 from the scrutinee with selectors. -/
 structure PatBinder where
@@ -3371,6 +3504,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   if cx.noteIndexes && !many && !implicitArg then
     lintMatch cx e ty pats slot
     lintCouldBeTable e sigs pty pats
+    lintGuards cx e sigs pty pats
+    lintArmIfElse cx e sigs pty pats
   -- In a defined function's Lean definition, a Lean `match`, where its
   -- patterns are Lean's (`Reqs/Generated#matches`).
   let scrutineeKind : ScrutineeKind := if pty matches .enum .. then .enumeration else .other

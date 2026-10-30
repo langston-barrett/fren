@@ -59,6 +59,7 @@ proc hides_nothing(b?, x: Int): (det y: Int) {
 
 -- Every arm may have a guard, if the guards cover every case: the `match`
 -- is checked for completeness, as a table without `_` is.
+set_option fren.lint.redundant_guards "allow" in
 proc all_guarded(x: Int): (det s: Int) {
     ensure r: s = match x {
         n if n > 0 => 1,

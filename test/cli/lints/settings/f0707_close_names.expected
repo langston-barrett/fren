@@ -20,10 +20,10 @@ error[F0707]: unknown lint `match`
   |
   = note: the lints are {Lint.all}
   = note: the groups of lints are `complexity`, `decidability`, `nonstandard_style`, `pedantic`, `restriction`, `style`, `suspicious`, `unused`
-help: a lint with a similar name exists: `match_bool`
+help: a lint with a similar name exists: `match_arm_if_else`
   |
 6 - set_option fren.lint.match "allow"
-6 + set_option fren.lint.match_bool "allow"
+6 + set_option fren.lint.match_arm_if_else "allow"
   |
 
 error: could not check due to previous errors

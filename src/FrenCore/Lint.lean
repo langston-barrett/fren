@@ -121,6 +121,7 @@ inductive Lint where
   | manualRemEuclid
   | manualTable
   | manySingleCharNames
+  | matchArmIfElse
   | matchBool
   | matchCouldBeTable
   | matchLikeMembership
@@ -150,6 +151,7 @@ inductive Lint where
   | redundantBindings
   | redundantBoolType
   | redundantComparisons
+  | redundantGuards
   | redundantLocals
   | redundantMethodChain
   | redundantNewtypeRoundtrip
@@ -164,6 +166,7 @@ inductive Lint where
   | suspiciousUnaryOpFormatting
   | tooManyLines
   | trivialCover
+  | trivialGuard
   | trivialMatch
   | trivialPattern
   | trivialQuantifier
@@ -299,6 +302,7 @@ def Lint.info : Lint → String × String × Group
   | .manualRemEuclid => ("manual_rem_euclid", "F0815", .complexity)
   | .manualTable => ("manual_table", "F0838", .pedantic)
   | .manySingleCharNames => ("many_single_char_names", "F0795", .pedantic)
+  | .matchArmIfElse => ("match_arm_if_else", "F0808", .style)
   | .matchBool => ("match_bool", "F0837", .pedantic)
   | .matchCouldBeTable => ("match_could_be_table", "F0809", .pedantic)
   | .matchLikeMembership => ("match_like_membership", "F0726", .style)
@@ -328,6 +332,7 @@ def Lint.info : Lint → String × String × Group
   | .redundantBindings => ("redundant_bindings", "F0735", .style)
   | .redundantBoolType => ("redundant_bool_type", "F0746", .style)
   | .redundantComparisons => ("redundant_comparisons", "F0767", .complexity)
+  | .redundantGuards => ("redundant_guards", "F0807", .complexity)
   | .redundantLocals => ("redundant_locals", "F0825", .suspicious)
   | .redundantMethodChain => ("redundant_method_chain", "F0743", .complexity)
   | .redundantNewtypeRoundtrip => ("redundant_newtype_roundtrip", "F0842", .complexity)
@@ -342,6 +347,7 @@ def Lint.info : Lint → String × String × Group
   | .suspiciousUnaryOpFormatting => ("suspicious_unary_op_formatting", "F0762", .suspicious)
   | .tooManyLines => ("too_many_lines", "F0797", .pedantic)
   | .trivialCover => ("trivial_cover", "F0820", .suspicious)
+  | .trivialGuard => ("trivial_guard", "F0806", .complexity)
   | .trivialMatch => ("trivial_match", "F0747", .complexity)
   | .trivialPattern => ("trivial_pattern", "F0744", .style)
   | .trivialQuantifier => ("trivial_quantifier", "F0827", .complexity)
@@ -2617,6 +2623,245 @@ def matchCouldBeTableMsg : Msg :=
     label? := some "disjoint arms"
     notes := #["note: a table over a scrutinee states that its arms are disjoint, which is checked, so that their order does not matter"]
     fixes := #[{ msg := "write `table` in place of `match`", replacement := "table" }] }
+
+/-! ## Guards -/
+
+/-- Whether the static rules accept a `match`, or a table over a scrutinee
+(`table`), on a value of `ty` whose arms' patterns are `pats`, of which
+those that have a guard are `guarded`: what the lints that change its
+arms' guards ask of their fixes (`lang::match_arms`,
+`Reqs/Lang/Expressions#tables-over-a-scrutinee`). -/
+def matchAccepted (sigs : Sigs) (ty : PatTy) (pats : Array Pat) (guarded : Array Bool) (table : Bool) : Bool :=
+  if table then acceptedAsTable sigs ty pats guarded else (checkMatch sigs ty pats guarded).toBool
+
+/-- A guard of a `match` arm as `trivial_guard` reads it, without the
+parentheses around it (`lint::Guard`): none, the literal `true` or `false`,
+or another expression. -/
+inductive GuardForm where
+  | absent
+  | literal (b : Bool)
+  | other
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- The fix of `trivial_guard` (`lint::GuardFix`). -/
+inductive GuardFix where
+  | unchanged
+  | dropGuard
+  | dropArm
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Whether `trivial_guard` fires on an arm whose guard is `g`, and its fix,
+where `accepted` says that the static rules accept the `match` after the
+fix, and `commented` that the text the fix removes has a comment
+(`lint::trivial_guard`): the guard `true` is removed, and the arm whose
+guard is `false`. -/
+def trivialGuard (g : GuardForm) (accepted commented : Bool) : Bool × GuardFix :=
+  match g with
+  | .literal b => (true, if !accepted || commented then .unchanged else if b then .dropGuard else .dropArm)
+  | _ => (false, .unchanged)
+
+/-- `trivial_guard` on the guard `b`, whose fix is `fix`; `rejected` says
+that the `match` without it is rejected, rather than that the text has a
+comment, where it has none. -/
+def trivialGuardMsg (b : Bool) (fix : GuardFix) (rejected : Bool) : Msg :=
+  let why := if rejected then
+      if b then "note: without the guard, the `match` would have an arm that is never reached, an error, so it has no fix"
+      else "note: without the arm, the `match` would not be exhaustive, an error, so it has no fix"
+    else if b then "note: the fix would drop the comments in the guard, so it has none"
+    else "note: the fix would drop the comments in the arm, so it has none"
+  { code? := some Lint.trivialGuard.code
+    headline := if b then "this guard is always `true`" else "this guard is always `false`, so the arm is never taken"
+    label? := some (if b then "always `true`" else "always `false`")
+    notes := (if b then #["note: an arm whose guard is `true` is taken wherever its pattern matches"] else #[]) ++
+      (if fix == .unchanged then #[why] else #[])
+    fixes := match fix with
+      | .dropGuard => #[{ msg := "remove the guard", replacement := "" }]
+      | .dropArm => #[{ msg := "remove the arm", replacement := "" }]
+      | .unchanged => #[] }
+
+/-- The other operand of a guard `x = v` or `v = x`, where `x` is a binder
+of the arm's pattern, as `redundant_guards` reads it (`lint::GuardValue`):
+a literal or a variant without a payload, which the pattern `p` writes, or
+anything else, such as a constant. -/
+inductive GuardValue where
+  | pattern (p : Pat)
+  | other
+  deriving Inhabited
+
+/-- Whether `p` has an or-pattern, at any depth. -/
+partial def Pat.hasOr : Pat → Bool
+  | .or _ => true
+  | .ctor _ args => args.any (·.hasOr)
+  | _ => false
+
+/-- The positions of `p`'s binders, in preorder, each the positions within
+the payloads from the top that lead to it; those within an or-pattern
+are left out. -/
+partial def Pat.binderPaths : Pat → Array (List Nat)
+  | .wild true => #[[]]
+  | .ctor _ args => (args.mapIdx fun j a => (a.binderPaths).map (j :: ·)).flatten
+  | _ => #[]
+
+/-- `p` with `q` in place of its binder at `path`, if one is there. -/
+def Pat.replaceAt (p : Pat) (path : List Nat) (q : Pat) : Option Pat :=
+  match path, p with
+  | [], .wild true => some q
+  | j :: rest, .ctor idx args => do
+    let a ← args[j]?
+    return .ctor idx (args.set! j (← a.replaceAt rest q))
+  | _, _ => none
+termination_by structural path
+
+/-- The pattern that `redundant_guards` gives an arm whose pattern is `p`,
+whose guard compares its binder at `path?`, if it is one, with `v`
+(`lint::redundant_guards`): `v`'s pattern in place of the binder, where `v`
+is a value that a pattern writes. The front ends give no path where `p`
+has an or-pattern, whose alternatives each bind the name. -/
+def redundantGuard? (p : Pat) (path? : Option (List Nat)) (v : GuardValue) : Option Pat := do
+  let path ← path?
+  let .pattern q := v | none
+  p.replaceAt path q
+
+/-- The path of the binder at `k` of the arm's pattern `p`, in preorder, for
+`redundantGuard?`: none where `p` has an or-pattern. -/
+def guardBinderPath? (p : Pat) (k? : Option Nat) : Option (List Nat) := do
+  guard !p.hasOr
+  p.binderPaths[← k?]?
+
+/-- The text `s` with each mention of the name `x` (`mentionsName`)
+replaced by `r`, if each is one that a value can replace: none followed by
+`!`, which declares the name again, by `.`, `(` or `[`, or by `:=`, and
+none between `{` or `,` and `,` or `}`, which may be a field of a record
+literal written with its name alone; and none where `s` has a comment,
+which may mention it in prose. -/
+def replaceMentions? (s : String) (x r : String) : Option String := Id.run do
+  if hasComment s then return none
+  let cs := s.toList.toArray
+  let mut out : Array Char := #[]
+  let mut i := 0
+  let next (j : Nat) : Option Char := (cs.extract j cs.size).find? (!·.isWhitespace)
+  let prev (j : Nat) : Option Char := (cs.extract 0 j).reverse.find? (!·.isWhitespace)
+  while i < cs.size do
+    let c := cs[i]!
+    if c == '"' then
+      let start := i
+      i := i + 1
+      while i < cs.size && cs[i]! != '"' do i := i + (if cs[i]! == '\\' then 2 else 1)
+      i := min cs.size (i + 1)
+      out := out ++ cs.extract start i
+    else if isWordChar c then
+      let start := i
+      while i < cs.size && isWordChar cs[i]! do i := i + 1
+      let w := String.ofList (cs.extract start i).toList
+      let afterPath := start ≥ 2 && cs[start - 1]! == ':' && cs[start - 2]! == ':'
+      let afterDot := start ≥ 1 && cs[start - 1]! == '.'
+      if w == x && !afterPath && !afterDot then
+        let after := next i
+        if after == some '!' || after == some '.' || after == some '(' || after == some '[' then return none
+        let rest := ((cs.extract i cs.size).toList.dropWhile Char.isWhitespace).drop 1
+        if after == some ':' && rest.head? == some '=' then return none
+        if (prev start == some '{' || prev start == some ',') && (after == some ',' || after == some '}') then return none
+        out := out ++ r.toList.toArray
+      else out := out ++ cs.extract start i
+    else
+      out := out.push c
+      i := i + 1
+  return some (String.ofList out.toList)
+
+/-- `redundant_guards` on a guard that compares the binder `x` with
+`value`, as written, with the arm's head and body that replace it from
+its pattern to its body's end, `fixed?`; where it has none, `why?` says
+why. -/
+def redundantGuardsMsg (x value : String) (fixed? : Option String) (why? : Option String) : Msg :=
+  { code? := some Lint.redundantGuards.code
+    headline := s!"this guard only compares `{x}` with `{value}`, which the arm's pattern can match"
+    label? := some s!"`{x}` compared with `{value}`"
+    notes := why?.toArray
+    fixes := fixed?.toArray.map fun r => { msg := s!"match `{value}` in the pattern, in place of `{x}`", replacement := r } }
+
+/-- An arm's body as `match_arm_if_else` reads it, over written forms
+`β` (`lint::IfBody`): without parentheses, `if C then a else d`, with `d`,
+or another expression. -/
+inductive IfArmBody (β : Type) where
+  | ifElse (d : β)
+  | plain (b : β)
+  deriving Inhabited
+
+/-- An arm of a `match` as `match_arm_if_else` reads it
+(`lint::IfArm`). -/
+structure IfArmInfo (β : Type) where
+  /-- Its pattern is `_` or a binder. -/
+  wild : Bool
+  body : IfArmBody β
+  /-- Its body is an `if` whose condition is a pattern test that binds
+  names, which `a` sees: a guard cannot bind them (`F0334`). -/
+  binds : Bool := false
+  deriving Inhabited
+
+/-- Whether `match_arm_if_else` moves the condition of the arm `a` into a
+guard, where the `else` branch is `d` (`lint::moved?`): its body is `if C
+then a else d`, and its pattern is not `_` or a binder. -/
+def IfArmInfo.moved {β} (same : β → β → Bool) (d : β) (a : IfArmInfo β) : Bool :=
+  !a.wild && match a.body with | .ifElse e => same e d | .plain _ => false
+
+/-- Whether the body of the arm `a` is `d`, but not an `if`. -/
+def IfArmInfo.plainIs {β} (same : β → β → Bool) (d : β) (a : IfArmInfo β) : Bool :=
+  match a.body with | .plain b => same b d | .ifElse _ => false
+
+/-- Whether `match_arm_if_else`'s fix adds `_ => d` after the arms `arms`:
+unless the last is `_` or a binder with the body `d`, not as an `if`
+(`lint::match_arm_if_else`'s `appended`). -/
+def matchArmIfElseAppends {β} (same : β → β → Bool) (arms : List (IfArmInfo β)) (d : β) : Bool :=
+  !(arms.getLast?.any fun a => a.wild && a.plainIs same d)
+
+/-- What `match_arm_if_else` does with the arms `arms` of a `match` without
+guards, where the arms whose bodies are `if C then a else d` share the
+`else` branch `d`, if it fires (`lint::match_arm_if_else`): the arms whose
+conditions it moves into guards, and whether it adds a `_` arm. `same`
+says that two bodies are written the same, `mentions d j` that `d`
+mentions a binder of arm `j`'s pattern, and `overlap i j` that the
+patterns of arms `i` and `j` may have a value in common
+(`Pat.overlapWit?`). It fires where it moves two or more arms, `d`
+mentions a binder of none of them, and after each, every arm whose
+pattern overlaps its own has the body `d`, not as an `if`, and `d`
+mentions none of its binders: the values that the arm's condition leaves
+reach those arms, and the `_` arm, where `d` must mean what it meant in the
+arm. It adds `_ => d` unless the last arm is `_` or a binder with the body
+`d`. The front ends also ask that the static rules accept the arms with
+the fix (`matchAccepted`). -/
+def matchArmIfElseFor {β} (same : β → β → Bool) (mentions : β → Nat → Bool) (overlap : Nat → Nat → Bool)
+    (arms : List (IfArmInfo β)) (d : β) : Option (List Nat × Bool) :=
+  let moved (i : Nat) : Bool := (arms[i]?.map (·.moved same d)).getD false
+  let ix := List.range arms.length
+  let binds (i : Nat) : Bool := (arms[i]?.map (·.binds)).getD false
+  let fires := ix.any (fun i => ix.any fun j => decide (i < j) && moved i && moved j) &&
+    ix.all (fun i => !moved i || !mentions d i) &&
+    ix.all (fun i => !moved i || !binds i) &&
+    ix.all (fun i => !moved i || ix.all fun j =>
+      !decide (i < j) || !overlap i j || ((arms[j]?.map (·.plainIs same d)).getD false && !mentions d j))
+  if fires then some (ix.filter moved, matchArmIfElseAppends same arms d) else none
+
+/-- `match_arm_if_else` on the arms `arms`, as `matchArmIfElseFor`, with
+the first `else` branch, of an arm whose pattern is not `_` or a binder,
+for which it fires, if any: the arms that it changes, their `else`
+branch, and whether it adds a `_` arm. -/
+def matchArmIfElse? {β} (same : β → β → Bool) (mentions : β → Nat → Bool) (overlap : Nat → Nat → Bool)
+    (arms : List (IfArmInfo β)) : Option (Array Nat × β × Bool) :=
+  arms.findSome? fun a => match a with
+    | { wild := false, body := .ifElse d, .. } =>
+      (matchArmIfElseFor same mentions overlap arms d).map fun (g, ap) => (g.toArray, d, ap)
+    | _ => none
+
+/-- `match_arm_if_else` on `n` arms whose `else` branch is `d`; the fix
+is a set of edits, which it does not make where the text they replace
+has a comment (`commented`). -/
+def matchArmIfElseMsg (n : Nat) (d : String) (commented : Bool) : Msg :=
+  { code? := some Lint.matchArmIfElse.code
+    headline := s!"{n} arms of this `match` are `if`s with the same `else` branch"
+    label? := some s!"`else {d}`, as in other arms"
+    notes := #["note: with each condition as its arm's guard, the values that it leaves fall through to one `_` arm with the `else` branch",
+      "help: move each condition into its arm's guard, and give the `else` branch to a `_` arm"] ++
+      (if commented then #["note: the fix would drop the comments in the arms, so it has none"] else #[]) }
 
 /-! ## Tables -/
 

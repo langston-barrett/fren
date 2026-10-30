@@ -2877,6 +2877,133 @@ def lintCouldBeTable (e : Expr) (sigs : Fren.Core.Sigs) (pty : Fren.Core.PatTy) 
   let msg := Fren.Core.matchCouldBeTableMsg
   lintFix .matchCouldBeTable span { msg with fixes := msg.fixes.map ({ · with range? := some keyword }) }
 
+/-- The value that the guard operand `v` is, as `redundant_guards` reads it,
+with its text in a pattern and in an expression: a literal, or a variant
+without a payload, which is written by its path (`Fren.Core.Table.variantPath?`). -/
+def guardValue (cx : ExprCtx) (extra : Array Name) (sigs : Fren.Core.Sigs) (siblings : Array (Array Name)) (v : Expr) :
+    M (Fren.Core.GuardValue × String × String) := do
+  let other := (Fren.Core.GuardValue.other, "", "")
+  match v with
+  | .bool _ b => return (.pattern (.bool b), toString b, toString b)
+  | .num _ n => return (.pattern (.int (some n) (some n)), toString n, toString n)
+  | .neg _ (.num _ n) => return (.pattern (.int (some (-(n : Int))) (some (-(n : Int)))), s!"-{n}", s!"(-{n})")
+  | .str sp t => let w ← srcAt sp; return (.pattern (.str t), w, w)
+  | .path _ segs =>
+    let st ← get
+    let shadowing := cx.shadowing ++ extra
+    let .ok (.variant en i) := st.table.resolvePath st.scope (segNames segs) shadowing | return other
+    unless ((sigs en.path)[i]?.map (·.2.size)) == some 0 do return other
+    let some path := st.table.variantPath? st.scope shadowing en.path en.variants[i]! siblings | return other
+    let t := Fren.Core.variantPattern path 0
+    return (.pattern (.ctor i #[]), t, t)
+  | _ => return other
+
+/-- `trivial_guard` and `redundant_guards` on the arms of the `match` `e`,
+whose patterns are `pats`, on a value of `pty` (`lint::trivial_guard`,
+`lint::redundant_guards`): each fix is given only where the static rules
+accept the `match` after it (`Fren.Core.matchAccepted`). -/
+def lintGuards (cx : ExprCtx) (e : Expr) (sigs : Fren.Core.Sigs) (pty : Fren.Core.PatTy) (pats : Array Fren.Core.Pat) :
+    M Unit := do
+  let .match _ _ arms isTable := e | return
+  let src := (← get).src
+  let tm (m : Fren.Core.Msg) : Fren.Core.Msg := if isTable then m.ofTable else m
+  let guarded := arms.map (·.2.1.isSome)
+  let siblings := (arms.flatMap (·.1.alts)).filterMap fun | .variant _ segs _ => some (segs.map (Name.mkSimple ·.name)) | _ => none
+  let bodyStop (i : Nat) : Nat := (Fren.Core.withParens src (toRange arms[i]!.2.2.span)).stop
+  for h : i in [0:arms.size] do
+    let (p, g?, body) := arms[i]
+    let some g := g? | continue
+    let gStop := (Fren.Core.withParens src (toRange g.span)).stop
+    -- `trivial_guard` (`lint::trivial_guard`).
+    if let .bool _ b := g then
+      let accepted := if b then Fren.Core.matchAccepted sigs pty pats (guarded.set! i false) isTable
+        else Fren.Core.matchAccepted sigs pty (pats.eraseIdxIfInBounds i) (guarded.eraseIdxIfInBounds i) isTable
+      -- What the fix removes: the guard, from the pattern's end; or the
+      -- arm, up to the next one, or from the previous one's end.
+      let removed : Fren.Core.Range := if b then { start := p.span.stop, stop := gStop }
+        else if i + 1 < arms.size then { start := p.span.start, stop := arms[i + 1]!.1.span.start }
+        else if i > 0 then { start := bodyStop (i - 1), stop := bodyStop i }
+        else { start := p.span.start, stop := bodyStop i }
+      let (_, fix) := Fren.Core.trivialGuard (.literal b) accepted (Fren.Core.hasComment (Fren.Core.textOf src removed))
+      let msg := tm (Fren.Core.trivialGuardMsg b fix !accepted)
+      lintFix .trivialGuard g.span { msg with fixes := msg.fixes.map ({ · with range? := some removed }) }
+      continue
+    -- `redundant_guards` (`lint::redundant_guards`).
+    let .bin _ "=" l r := g | continue
+    let bs ← patternBinders cx p
+    let binders := bs.map binderName
+    let soleName? : Expr → Option String
+      | .path _ #[n] => some n.name
+      | _ => none
+    let some (x, v) := #[(l, r), (r, l)].findSome? fun (a, b) => (soleName? a).bind fun n =>
+      if binders.contains n then some (n, b) else none | continue
+    let (value, inPattern, inExpr) ← guardValue cx (binders.map Name.mkSimple) sigs siblings v
+    let some q := Fren.Core.redundantGuard? pats[i]! (Fren.Core.guardBinderPath? pats[i]! (binders.idxOf? x)) value | continue
+    unless Fren.Core.matchAccepted sigs pty (pats.set! i q) (guarded.set! i false) isTable do continue
+    let some bx := bs.find? (binderName · == x) | continue
+    let pattern := Fren.Core.textOf src { start := p.span.start, stop := bx.span.start } ++ inPattern ++
+      Fren.Core.textOf src { start := bx.span.stop, stop := p.span.stop }
+    let bodyText := Fren.Core.textOf src (Fren.Core.withParens src (toRange body.span))
+    let head : Fren.Core.Range := { start := p.span.start, stop := gStop }
+    let commented := Fren.Core.hasComment (Fren.Core.textOf src head)
+    let why := "note: the fix would drop the comments in the arm's pattern or guard, so it has none"
+    let (fixed?, why?) :=
+      if !Fren.Core.mentionsName bodyText x then
+        if commented then (none, some why) else (some (pattern, head), none)
+      else match Fren.Core.replaceMentions? bodyText x inExpr with
+        | some b' => if commented then (none, some why)
+          else (some (s!"{pattern} => {b'}", { head with stop := bodyStop i }), none)
+        | none => (none, some s!"note: the body mentions `{x}` where its value cannot be written in its place, so it has no fix")
+    let msg := tm (Fren.Core.redundantGuardsMsg x (← srcAt v.span) (fixed?.map (·.1)) why?)
+    lintFix .redundantGuards g.span { msg with fixes := msg.fixes.map ({ · with range? := fixed?.map (·.2) }) }
+
+/-- `match_arm_if_else` on the `match` `e`, whose arms' patterns are
+`pats`, on a value of `pty` (`lint::match_arm_if_else`): the fix moves each
+condition into its arm's guard, and adds a `_` arm with the `else` branch
+where the last arm is not one. -/
+def lintArmIfElse (cx : ExprCtx) (e : Expr) (sigs : Fren.Core.Sigs) (pty : Fren.Core.PatTy) (pats : Array Fren.Core.Pat) :
+    M Unit := do
+  let .match _ _ arms false := e | return
+  if arms.any (·.2.1.isSome) then return
+  let src := (← get).src
+  let mut infos : Array (Fren.Core.IfArmInfo String) := #[]
+  let mut binders : Array (Array String) := #[]
+  for (p, _, body) in arms, q in pats do
+    let armBody : Fren.Core.IfArmBody String := match body with
+      | .ite _ _ _ d => .ifElse (d.text src).text
+      | _ => .plain (body.text src).text
+    -- A condition that binds names cannot be a guard (`F0334`).
+    let condBinds ← match body with
+      | .ite _ c _ _ => chainBinds cx c
+      | _ => pure false
+    binders := binders.push ((← patternBinders cx p).map binderName)
+    infos := infos.push { wild := q matches .wild _, body := armBody, binds := condBinds }
+  -- `d` names a binder of arm `j`'s pattern.
+  let mentions (d : String) (j : Nat) : Bool := binders[j]!.any (Fren.Core.mentionsName d ·)
+  let overlap (i j : Nat) : Bool := (pats[i]!.overlapWit? sigs pty pats[j]!).isSome
+  let some (group, d, append) := Fren.Core.matchArmIfElse? Fren.Core.writtenSame mentions overlap infos.toList
+    | return
+  let guarded := (Array.range arms.size).map group.contains
+  let (pats', guarded') := if append then (pats.push (.wild false), guarded.push false) else (pats, guarded)
+  unless Fren.Core.matchAccepted sigs pty pats' guarded' false do return
+  let bodyStop (i : Nat) : Nat := (Fren.Core.withParens src (toRange arms[i]!.2.2.span)).stop
+  let part (e : Expr) : M String := return Fren.Core.rowPart (← srcAt e.span) (e matches .when .. | .quant .. | .«let» ..)
+  let mut edits : Array (Fren.Core.Range × String) := #[]
+  let mut commented := false
+  for i in group do
+    let (p, _, body) := arms[i]!
+    let .ite _ c a _ := body | return
+    let r : Fren.Core.Range := { start := p.span.stop, stop := bodyStop i }
+    commented := commented || Fren.Core.hasComment (Fren.Core.textOf src r)
+    edits := edits.push (r, s!" if {← part c} => {← part a}")
+  if append then
+    let .ite _ _ _ de := arms[group[0]!]!.2.2 | return
+    let stop := bodyStop (arms.size - 1)
+    edits := edits.push ({ start := stop, stop }, s!", _ => {← part de}")
+  let msg := Fren.Core.matchArmIfElseMsg group.size d commented
+  let at_ := arms[group[0]!]!.2.2.span
+  if commented then lint .matchArmIfElse at_ msg else lintEdits .matchArmIfElse at_ msg edits
+
 /-! ## Patterns -/
 
 /-- A binder of a pattern, with the type of its value, and its value, read
@@ -5106,6 +5233,8 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   if cx.noteIndexes && many?.isNone && !implicitArg then
     lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
     lintCouldBeTable e sigs pty pats
+    lintGuards cx e sigs pty pats
+    lintArmIfElse cx e sigs pty pats
   let mut bodies : Array String := #[]
   let mut ty? : Option Ty := none
   let mut waiting : Array (Nat × ExprCtx × Expr) := #[]

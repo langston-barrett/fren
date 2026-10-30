@@ -1,0 +1,29 @@
+warning[F0806]: this guard is always `false`, so the arm is never taken
+ --> test/cli/lints/complexity/f0806_trivial_guard.fren:2:65
+  |
+2 | proc c(k: Int): (m: Int) { ensure r: m = match k { 0 => 1, 1 if false => 2, _ => 3 } }
+  |                                                                 ^^^^^ always `false`
+  |
+  = help: `fren fix` can fix this
+  = note: `trivial_guard` is `warn` by default
+  = help: to allow it, `set_option fren.lint.trivial_guard "allow"`
+help: remove the arm
+  |
+2 - proc c(k: Int): (m: Int) { ensure r: m = match k { 0 => 1, 1 if false => 2, _ => 3 } }
+2 + proc c(k: Int): (m: Int) { ensure r: m = match k { 0 => 1, _ => 3 } }
+  |
+
+error[F0626]: arm 2 of a `match` in `c::r` is never taken
+ --> test/cli/lints/complexity/f0806_trivial_guard.fren:2:60
+  |
+2 | proc c(k: Int): (m: Int) { ensure r: m = match k { 0 => 1, 1 if false => 2, _ => 3 } }
+  |                                                            ^ never taken
+  |
+  = note: wherever the `match` is evaluated, its pattern or guard fails, or an earlier arm is taken
+  = help: correct its guard or the arms before it, or remove it
+
+fren: 3 passed, 1 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0626, F0806.
+For more information about an error, try `fren --explain F0626`.
+exit=1

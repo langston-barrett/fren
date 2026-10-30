@@ -1,0 +1,2 @@
+-- A guard that is the literal `false`: the fix removes the arm.
+proc c(k: Int): (m: Int) { ensure r: m = match k { 0 => 1, 1 if false => 2, _ => 3 } }

@@ -1,0 +1,124 @@
+-- The lints of guards on `match` arms, in both front ends.
+
+enum Shape { Circle(Int), Square(Int), Empty }
+enum Reply { Ok(Shape), Err(Int) }
+
+const LIMIT: Int := 3
+
+-- `trivial_guard`.
+proc trivial(s: Shape, k: Int): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+) {
+    out a := match s { Shape::Circle(r) if true => r, _ => 0 }
+    --~^ warning: this guard is always `true`
+    out b := match s { Shape::Circle(_) if (true) => 1, _ => 0 }
+    --~^ warning: this guard is always `true`
+    -- Without the guard, the next arm is never reached.
+    out c := match s { Shape::Circle(_) if true => 1, Shape::Circle(_) => 2, _ => 0 }
+    --~^ warning: this guard is always `true`
+    --~^^ error: arm 2 of a `match` in `trivial::c` is never taken
+    -- A guard that is not a literal.
+    out d := match s { Shape::Circle(r) if r > k => r, _ => 0 }
+    -- In a table over a scrutinee.
+    out e := table s { Shape::Circle(_) if true => 1, Shape::Square(_) => 2, _ => 0 }
+    --~^ warning: this guard is always `true`
+    out f := match k {
+        0 if false => 1,
+        --~^ warning: this guard is always `false`, so the arm is never taken
+        --~^^ error: arm 1 of a `match` in `trivial::f` is never taken
+        _ => 2,
+    }
+    -- Without the arm, the `match` is not exhaustive: it has no fix.
+    out g := match s { Shape::Circle(_) => 1, Shape::Square(_) => 2, Shape::Empty if false => 3 }
+    --~^ warning: this guard is always `false`, so the arm is never taken
+    --~^^ error: a `match` in `trivial::g` may have no arm that is taken
+    --~^^^ error: arm 3 of a `match` in `trivial::g` is never taken
+}
+
+-- `redundant_guards`.
+proc redundant(s: Shape, r: Reply, k: Int, n: Nat, w: String, b?): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+    det h: Int,
+    det i: Int,
+    det j: Int,
+) {
+    out a := match s { Shape::Circle(x) if x = 0 => 1, _ => 2 }
+    --~^ warning: this guard only compares `x` with `0`, which the arm's pattern can match
+    -- Either way round, and the body's mentions are replaced.
+    out b := match s { Shape::Circle(x) if 3 = x => x + 1, _ => 2 }
+    --~^ warning: this guard only compares `x` with `3`, which the arm's pattern can match
+    out c := match k { y if y = -2 => y, _ => 2 }
+    --~^ warning: this guard only compares `y` with `-2`, which the arm's pattern can match
+    out d := match r { Reply::Ok(t) if t = Shape::Empty => 1, _ => 2 }
+    --~^ warning: this guard only compares `t` with `Shape::Empty`, which the arm's pattern can match
+    out e := match w { v if v = "on" => 1, _ => 2 }
+    --~^ warning: this guard only compares `v` with `"on"`, which the arm's pattern can match
+    out f := match b? { c? if c? = true => 1, _ => 2 }
+    --~^ warning: this guard only compares `c?` with `true`, which the arm's pattern can match
+    -- A constant is not a pattern.
+    out g := match s { Shape::Circle(x) if x = LIMIT => 1, _ => 2 }
+    -- A variable is not a pattern.
+    out h := match s { Shape::Circle(x) if x = k => 1, _ => 2 }
+    -- With the pattern, a later arm is never reached.
+    out i := match s { Shape::Circle(x) if x = 0 => 1, Shape::Circle(0) => 2, _ => 3 }
+    --~^ error: arm 2 of a `match` in `redundant::i` is never taken
+    -- The body mentions the binder where a value cannot be written.
+    out j := match n { m if m = 4 => m.min(k), _ => 2 }
+    --~^ warning: this guard only compares `m` with `4`, which the arm's pattern can match
+}
+
+-- `match_arm_if_else`.
+proc if_else(s: Shape, k: Int, j: Int, b?): (
+    det a: Int,
+    det b: Int,
+    det c: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+    det h: Int,
+    det i: Int,
+) {
+    out a := match s {
+        Shape::Circle(r) => if r > k then r else 0,
+        --~^ warning: 2 arms of this `match` are `if`s with the same `else` branch
+        Shape::Square(w) => if w < k then 2 * w else 0,
+        _ => 0,
+    }
+    -- Without a `_` arm, the fix adds one.
+    out b := match s { Shape::Circle(r) => if r > k then r else 0, Shape::Square(w) => if b? then w else 0, Shape::Empty => 3 }
+    --~^ warning: 2 arms of this `match` are `if`s with the same `else` branch
+    -- The `_` arm has another body.
+    out c := match s { Shape::Circle(r) => if r > k then r else 0, Shape::Square(w) => if b? then w else 0, _ => 1 }
+    -- A later arm that overlaps an earlier one has another body.
+    out d := match k { 0..=5 => if b? then 1 else 0, 6..=9 => if b? then 2 else 0, 4..=12 => 4, _ => 0 }
+    --~^ warning: this range overlaps `0..=5`, an earlier arm's pattern
+    -- The `else` branch mentions a binder.
+    out e := match s { Shape::Circle(r) => if b? then 1 else r, Shape::Square(r) => if b? then 2 else r, _ => 0 }
+    -- One `if`.
+    out f := match s { Shape::Circle(r) => if b? then r else 0, _ => 0 }
+    -- The arms already have guards.
+    out g := match s { Shape::Circle(r) if r > 0 => if b? then r else 0, Shape::Square(w) => if b? then w else 0, _ => 0 }
+    -- A later arm that the values the conditions leave reach binds the name
+    -- that the `else` branch mentions, so there `j` is the binder.
+    out h := match k { 0..=5 => if b? then 1 else j, 6..=9 => if b? then 2 else j, j! => j }
+    -- The same, where the binder is in a payload.
+    out i := match s { Shape::Circle(0) => if b? then 1 else k, Shape::Square(0) => if b? then 2 else k, Shape::Circle(k!) => k, _ => k }
+}
+
+-- A condition that binds a name, which a guard cannot (`F0334`).
+proc binding_test(r: Reply, k: Int): (det v: Int) {
+    out v := match r { Reply::Ok(t) => if t is Shape::Circle(z) then z else 0, Reply::Err(e) => if e > k then 1 else 0 }
+}

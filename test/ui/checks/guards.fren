@@ -23,6 +23,7 @@ enum Mode { Off, Heat, Cool }
 proc contradictory(m: Mode): (y: Int) {
     ensure r: y = match m {
         Mode::Off if false => 0,   --~ error: arm 1 of a `match` in `contradictory::r` is never taken
+        --~^ warning: this guard is always `false`, so the arm is never taken
         Mode::Heat if m = Mode::Cool => 1,   --~ error: arm 2 of a `match` in `contradictory::r` is never taken
         _ => 2,
     }
