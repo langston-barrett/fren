@@ -84,6 +84,9 @@ def hostedDiagnostics (env : Environment) (file : String) (src : String) :
   -- One line of header; message lines are shifted back below.
   let input := "open Fren.Lang\n" ++ src ++ "\n#fren_check\n"
   let (_, log) ← Elab.process input env {} file
+  -- The lines of `src`; a message below them is at the `#fren_check` added
+  -- above, which has no line in `src`.
+  let lines := (src.splitOn "\n").length
   let mut diags := #[]
   let mut summary := none
   for m in log.toList do
@@ -96,8 +99,9 @@ def hostedDiagnostics (env : Environment) (file : String) (src : String) :
       summary := some (text.drop 6).toString
     -- At the `#fren_check` added above: the counterpart of the binary's
     -- last line after a static error, which has no location, and so has
-    -- none here either.
-    else if sev == "error" && text == Fren.Core.couldNotHeadline then
+    -- none here either; and any other message there, such as an error
+    -- that stops the whole check (`--~$`).
+    else if (sev == "error" && text == Fren.Core.couldNotHeadline) || m.pos.line - 1 > lines then
       diags := diags.push { line := 0, severity := sev, text }
     else
       diags := diags.push { line := m.pos.line - 1, severity := sev, text }

@@ -11,6 +11,9 @@ ui tests, checked against the messages of either front end:
 - `--~[hosted] ...` and `--~[cli] ...` apply to one front end only, for
   messages that legitimately differ (mostly parse and type errors, which the
   Lean front end gets from Lean).
+- `--~$ ...` expects a message with no line: in the Lean front end, one at
+  the `#fren_check` that the test adds after the source, such as an error
+  that stops the whole check.
 - `--~? ...` (`--~^? ...`, and so on) allows such a message without
   expecting it, for a message that either front end may give in one of
   several places, such as a note at whichever requirement of a conflict its
@@ -63,6 +66,8 @@ def parse (src : String) : Except String Spec := do
       | ["only", v] => spec := { spec with only? := some v.trimAscii.toString }
       | _ => throw s!"line {i}: unknown directive `--@ {rest}`"
     let some ann := (line.splitOn "--~")[1]? | continue
+    let atEnd := ann.startsWith "$"
+    let ann := if atEnd then (ann.drop 1).toString else ann
     let carets := (ann.takeWhile (· == '^')).toString.length
     let ann := (ann.drop carets).toString
     let optional := ann.startsWith "?"
@@ -79,7 +84,7 @@ def parse (src : String) : Except String Spec := do
       | throw s!"line {i}: annotation must start with `error: `, `warning: ` or `info: `"
     if carets ≥ i then throw s!"line {i}: `^` points above the first line"
     let e : Expectation :=
-      { line := i - carets, severity := sev, text := text.trimAscii.toString, frontEnd? := frontEnd?, optional, at_ := i }
+      { line := if atEnd then 0 else i - carets, severity := sev, text := text.trimAscii.toString, frontEnd? := frontEnd?, optional, at_ := i }
     spec := { spec with expectations := spec.expectations.push e }
   return spec
 

@@ -353,22 +353,16 @@ expect mentions_free_vars(e: Expr) {
 }
 ```
 
-For the binding forms, `binding_forms_free_vars` states the same through
-the front ends' kinds of the names that they bind. In `let x := d in b`,
-the body's mentions are its free variables with each `x`, a `Definition`,
-mentioning what `d` does; the `let` mentions what its body does, and that
-is the `Let`'s free variables. In a `match`, an arm's guard and body
-mention their free variables with each binder of the pattern, a `Binder`,
-mentioning what the scrutinee does; the `match` mentions what its
-scrutinee, its arms and its later arms do, and that is the `Match`'s free
-variables. A binder mentions what the scrutinee does, which the `match`
-mentions anyway, as the semantics counts a `Match`'s scrutinee whether or
-not a binder is read; so only the `let` law needs the substituted term.
-What the law pins down is the step of `mentions` at each such name and
-form: a `Definition` mentions what its definition does, and a `let` and a
-`match`, `Compound`s, what their parts do. That the front ends count a
-name's definition where the name is read is the prose's above; checking it
-would need a model of the front ends' substitution:
+For the binding forms, `binding_forms_free_vars` is less than
+`mentions_free_vars`, whose argument `sub_free_vars` is given apart from
+`free_vars`. Its arguments are `free_vars`' own clauses for `Let` and
+`Match`, fed back in, with the `Definition`'s mentions in place of `d`'s
+free variables, and `kind_of` gives both forms the kind `Compound`. So what
+it checks is exactly the step of `mentions` at `Definition`, which mentions
+what its definition does, and at `Compound`, which mentions what its parts
+do. That the front ends count a name's definition where the name is read
+is the prose's above; checking it would need a model of the front ends'
+substitution:
 
 ```fren
 expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
@@ -444,8 +438,9 @@ operand is a *fixed factor*, which mentions nothing, and so, by the
 [coincidence lemma](EvaluationRules.md#free-variables), has the same outcome in
 every interpretation and environment, given the structural recursions and
 the primitive operations. Where that outcome is undefined, as for
-`get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`, a check reports why: the [definedness
-check](../Check.md#definedness) reports the index in `get`'s body, as the
+`get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`, a check
+reports why: the [definedness check](../Check.md#definedness) reports the
+index in `get`'s body, as the
 [precondition check](../Check.md#preconditions) reports an application
 outside a function's preconditions. Here `a` and `b` are the operands'
 elaborations, and `p` and `q`, with `i` and `j`, two environments and

@@ -104,8 +104,9 @@ One that mentions nothing has the same outcome in every interpretation
 and environment, given the structural recursions and the primitive
 operations, by the coincidence lemma; where its outcome is undefined, as
 in `get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`, its
-value is unspecified, so it may differ between behaviours; the [definedness check](../Check.md#definedness)
-reports that index, so in a spec that passes its checks the value is the
+value is unspecified, so it may differ between behaviours; the
+[definedness check](../Check.md#definedness) reports that index, so in a
+spec that passes its checks the value is the
 same. Here `e` is the expression's elaboration, and `i`, `p`, `j` and `q`
 two interpretations and environments:
 

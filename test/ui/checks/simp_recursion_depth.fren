@@ -1,0 +1,211 @@
+-- A known disagreement of the front ends (#417): the Lean-hosted front end's
+-- `simp` reaches its maximum recursion depth, where the `fren` command passes.
+--
+-- A model of the dynamic semantics (`src/Reqs/Lang/Semantics.md`) with 12 of
+-- its 21 forms of expression, and `recursion_unfolds` and `respects?` as
+-- `src/Reqs/Lang/EvaluationRules.md` states them, in which `bind_params` has
+-- the contract that the semantics rewrite (#391) dropped, `no_parameters`.
+-- With it, the `fren` command passes every check, and the Lean-hosted front
+-- end stops the whole check with `simp`'s maximum recursion depth error, which
+-- the `--~$[hosted]` annotation at the end of the file expects. Without the
+-- contract, both front ends pass every check. A fix of the hosted front end
+-- makes that annotation fail; then drop it, and this file is an agreement
+-- test like the others.
+--
+-- The depth that `simp` reaches grows with the model. With the default
+-- `maxRecDepth`, the whole semantics fails, and so do these 12 forms; 11 of
+-- them, without `Index`, and 10, without `Construct` and `Project`, pass in
+-- both front ends.
+
+pub type Id := String
+
+pub enum Value {
+    True,
+    False,
+    Integer(Int),
+    Text(String),
+    Nil,
+    Cons(Value, Value),
+    Constructed(Id, Value),
+}
+
+-- The value of a `Bool`.
+pub fn truth(b?): Value := if b? then Value::True else Value::False
+
+pub enum Outcome { Defined(Value), Undefined }
+
+pub enum BinaryOp { Eq, Lt, Le, Add, Sub, Mul, Div, Mod, Concat, In }
+
+pub enum MethodName { Abs, Min, Max, Len }
+
+-- A function's parameters, in order.
+pub enum Params { Nil, Cons(Id, Params) }
+
+pub enum Expr {
+    Literal(Value),
+    Var(Id),
+    Binary(BinaryOp, Expr, Expr),
+    Nil,
+    Cons(Expr, Expr),
+    Construct(Id, Expr),
+    Project(Expr, Id, Int),
+    Index(Expr, Expr),
+    Method(MethodName, Expr, Expr),
+    Apply(Id, Expr, Params, Expr),
+    Call(Id, Expr),
+    Recur(Id, Expr),
+}
+
+pub enum Env { Empty, Bind(Id, Outcome, Env) }
+
+pub enum Graph { Empty, Point(Id, Value, Value, Graph) }
+
+pub struct Interp { functions: Graph, recursions: Graph, primitives: Graph }
+
+pub fn lookup(env: Env, x: Id): (r: Outcome) {
+    out r := match env {
+        Env::Empty => Outcome::Undefined,
+        Env::Bind(y, bound, rest) => if y = x then bound else lookup(rest, x),
+    }
+
+    ensure innermost: match env {
+        Env::Bind(y, bound, _) => (when y = x, r = bound),
+        Env::Empty => r = Outcome::Undefined,
+    }
+}
+
+-- `f`'s value at `args`, and undefined where the graph has no point for them.
+pub fn apply(g: Graph, f: Id, args: Value): Outcome := match g {
+    Graph::Empty => Outcome::Undefined,
+    Graph::Point(h, a, r, rest) => if h = f and a = args then Outcome::Defined(r) else apply(rest, f, args),
+}
+
+-- The element at position `k`, from 0, and undefined out of range.
+pub fn nth(list: Value, k: Int): (r: Outcome) {
+    out r := match list {
+        Value::Cons(v, rest) => if k = 0 then Outcome::Defined(v) else if k < 0 then Outcome::Undefined else nth(rest, k - 1),
+        _ => Outcome::Undefined,
+    }
+
+    ensure first: match list {
+        Value::Cons(v, _) => (when k = 0, r = Outcome::Defined(v)),
+        _ => r = Outcome::Undefined,
+    }
+    ensure negative: when k < 0, r = Outcome::Undefined
+}
+
+pub fn length(list: Value): Int := match list {
+    Value::Cons(_, rest) => 1 + length(rest),
+    _ => 0,
+}
+
+pub fn append(a: Value, b: Value): Value := match a {
+    Value::Cons(v, rest) => Value::Cons(v, append(rest, b)),
+    _ => b,
+}
+
+pub fn element?(v: Value, list: Value) := match list {
+    Value::Cons(w, rest) => w = v or element?(v, rest),
+    _ => false,
+}
+
+pub fn list?(v: Value) := v is Value::Nil | Value::Cons(_, _)
+
+-- The environment of a function's body: its parameters bound to the arguments.
+pub fn bind_params(ps: Params, args: Value): (r: Env) {
+    out r := match ps {
+        Params::Cons(x, rest) => match args {
+            Value::Cons(v, more) => Env::Bind(x, Outcome::Defined(v), bind_params(rest, more)),
+            _ => Env::Empty,
+        },
+        Params::Nil => Env::Empty,
+    }
+
+    ensure no_parameters: when ps = Params::Nil, r = Env::Empty
+}
+
+-- A primitive operation at two arguments.
+pub fn primitive(i: Interp, f: Id, v: Value, w: Value): Outcome :=
+    apply(i.primitives, f, Value::Cons(v, Value::Cons(w, Value::Nil)))
+
+pub fn binary_value(i: Interp, op: BinaryOp, a: Outcome, b: Outcome): Outcome := match a, b {
+    Outcome::Defined(v), Outcome::Defined(w) => match op, v, w {
+        BinaryOp::Eq, _, _ => Outcome::Defined(truth(v = w)),
+        BinaryOp::Lt, Value::Integer(m), Value::Integer(n) => Outcome::Defined(truth(m < n)),
+        BinaryOp::Le, Value::Integer(m), Value::Integer(n) => Outcome::Defined(truth(m <= n)),
+        BinaryOp::Add, Value::Integer(m), Value::Integer(n) => Outcome::Defined(Value::Integer(m + n)),
+        BinaryOp::Sub, Value::Integer(m), Value::Integer(n) => Outcome::Defined(Value::Integer(m - n)),
+        BinaryOp::Mul, Value::Integer(_), Value::Integer(_) => primitive(i, "*", v, w),
+        BinaryOp::Div, Value::Integer(_), Value::Integer(n) => if n = 0 then Outcome::Undefined else primitive(i, "div", v, w),
+        BinaryOp::Mod, Value::Integer(_), Value::Integer(n) => if n = 0 then Outcome::Undefined else primitive(i, "mod", v, w),
+        BinaryOp::Concat, Value::Text(_), Value::Text(_) => primitive(i, "++", v, w),
+        BinaryOp::Concat, Value::Nil | Value::Cons(_, _), Value::Nil | Value::Cons(_, _) => Outcome::Defined(append(v, w)),
+        BinaryOp::In, _, Value::Nil | Value::Cons(_, _) => Outcome::Defined(truth(element?(v, w))),
+        _, _, _ => Outcome::Undefined,
+    },
+    _, _ => Outcome::Undefined,
+}
+
+pub fn method_value(m: MethodName, receiver: Outcome, args: Outcome): Outcome := match receiver, args {
+    Outcome::Defined(v), Outcome::Defined(l) => match m, v, l {
+        MethodName::Abs, Value::Integer(n), Value::Nil => Outcome::Defined(Value::Integer(n.abs)),
+        MethodName::Min, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(Value::Integer(n.min(k))),
+        MethodName::Max, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(Value::Integer(n.max(k))),
+        MethodName::Len, Value::Text(s), Value::Nil => Outcome::Defined(Value::Integer(s.len)),
+        MethodName::Len, Value::Nil | Value::Cons(_, _), Value::Nil => Outcome::Defined(Value::Integer(length(v))),
+        _, _, _ => Outcome::Undefined,
+    },
+    _, _ => Outcome::Undefined,
+}
+
+pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
+    out r := match e {
+        Expr::Literal(v) => Outcome::Defined(v),
+        Expr::Var(x) => lookup(env, x),
+        Expr::Binary(op, a, b) => binary_value(i, op, eval(i, env, a), eval(i, env, b)),
+        Expr::Nil => Outcome::Defined(Value::Nil),
+        Expr::Cons(a, rest) => match eval(i, env, a), eval(i, env, rest) {
+            Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
+            _, _ => Outcome::Undefined,
+        },
+        Expr::Construct(c, args) => match eval(i, env, args) {
+            Outcome::Defined(l) => Outcome::Defined(Value::Constructed(c, l)),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Project(a, c, k) => match eval(i, env, a) {
+            Outcome::Defined(Value::Constructed(d, l)) => if c = d then nth(l, k) else Outcome::Undefined,
+            _ => Outcome::Undefined,
+        },
+        Expr::Index(q, k) => match eval(i, env, q), eval(i, env, k) {
+            Outcome::Defined(l), Outcome::Defined(Value::Integer(n)) => if list?(l) then nth(l, n) else Outcome::Undefined,
+            _, _ => Outcome::Undefined,
+        },
+        Expr::Method(m, receiver, args) => method_value(m, eval(i, env, receiver), eval(i, env, args)),
+        Expr::Apply(_, args, ps, body) => match eval(i, env, args) {
+            Outcome::Defined(l) => eval(i, bind_params(ps, l), body),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Call(f, args) => match eval(i, env, args) {
+            Outcome::Defined(l) => apply(i.functions, f, l),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Recur(f, args) => match eval(i, env, args) {
+            Outcome::Defined(l) => apply(i.recursions, f, l),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+    }
+}
+
+pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
+    apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
+
+expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {
+    assume arguments: eval(i, env, args) = Outcome::Defined(l)
+    -- The body's outcome at `l`, which is the interpretation's point for `f` there.
+    assume body_outcome: eval(i, bind_params(ps, l), body) = r
+    assume point: apply(i.recursions, f, l) = r and r is Outcome::Defined(_)
+    expect unfolds: eval(i, env, Expr::Recur(f, args)) = r
+    expect respected: respects?(i, f, ps, body, l)
+}
+
+--~$[hosted] error: maximum recursion depth has been reached
