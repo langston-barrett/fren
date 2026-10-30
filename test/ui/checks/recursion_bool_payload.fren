@@ -44,3 +44,26 @@ pub fn evg(g: G): Flag := match g {
 expect record_field(g: G) {
     expect leaf: when g = G::Leaf(Flag { on? := false, level := 1 }) and evg(g).level = 1, evg(G::Wrap(g)).level = 1
 }
+
+-- A `Bool` member of a set, and a `Bool` component of a relation's pairs.
+pub enum S { L(Set<Bool>), N(S) }
+
+pub fn evs(e: S): Set<Bool> := match e {
+    S::L(v) => v,
+    S::N(a) => evs(a),
+}
+
+expect set_member(a: S) {
+    expect leaf: when a = S::L({false}) and evs(a) = {false}, evs(S::N(a)) = {false}
+}
+
+pub enum R { L(Rel<Int, Bool>), N(R) }
+
+pub fn evr(e: R): Rel<Int, Bool> := match e {
+    R::L(v) => v,
+    R::N(a) => evr(a),
+}
+
+expect relation_member(a: R) {
+    expect leaf: when a = R::L({(1, false)}) and evr(a) = {(1, false)}, evr(R::N(a)) = {(1, false)}
+}

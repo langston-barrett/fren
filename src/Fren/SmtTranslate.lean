@@ -271,11 +271,24 @@ set of 1-tuples (`Reqs/Cli`). -/
   | Fren.Seq.rev _ q => return appT (symbolT "seq.rev") (← tr q)
   | _ => return none
 
+/-- An element's sort in a model: SMT-LIB's `Bool` is `Bool` there, not a
+proposition, since a collection's elements are data, as in `Fren.Seq Bool`. -/
+def reconstructElementSort (s : cvc5.Sort) : Smt.ReconstructM Expr :=
+  if s.isBoolean then return mkConst ``Bool else Smt.Reconstruct.reconstructSort s
+
+/-- An element in a model, a `Bool` where its SMT sort is `Bool`. -/
+def reconstructElement (t : cvc5.Term) : Smt.ReconstructM Expr := do
+  let e ← Smt.Reconstruct.reconstructTerm t
+  unless t.getSort!.isBoolean do return e
+  if e.isConstOf ``True then return mkConst ``Bool.true
+  if e.isConstOf ``False then return mkConst ``Bool.false
+  Meta.mkDecide e
+
 /-- A sequence in a model. -/
 @[smt_sort_reconstruct] def reconstructSeqSort : Smt.SortReconstructor := fun s => do
   match s.getKind! with
   | .SEQUENCE_SORT =>
-    let α ← Smt.Reconstruct.reconstructSort s.getSequenceElementSort!
+    let α ← reconstructElementSort s.getSequenceElementSort!
     return mkApp (mkConst ``Fren.Seq [Level.zero]) α
   | _ => return none
 
@@ -291,7 +304,7 @@ set of 1-tuples (`Reqs/Cli`). -/
   | .SEQ_UNIT =>
     let ty ← Smt.Reconstruct.reconstructSort t.getSort!
     let some α := seqOf ty | return none
-    return Lean.mkApp2 (mkConst ``Fren.Seq.unit [Level.zero]) α (← Smt.Reconstruct.reconstructTerm t[0]!)
+    return Lean.mkApp2 (mkConst ``Fren.Seq.unit [Level.zero]) α (← reconstructElement t[0]!)
   | .STRING_CONCAT =>
     let ty ← Smt.Reconstruct.reconstructSort t.getSort!
     let some α := seqOf ty | return none
@@ -309,11 +322,11 @@ set of 1-tuples (`Reqs/Cli`). -/
     unless e.isTuple do return none
     let ts := e.getTupleSorts!
     if ts.size == 2 then
-      let a ← Smt.Reconstruct.reconstructSort ts[0]!
-      let b ← Smt.Reconstruct.reconstructSort ts[1]!
+      let a ← reconstructElementSort ts[0]!
+      let b ← reconstructElementSort ts[1]!
       return mkApp (mkConst ``Fren.FinSet [Level.zero]) (mkApp2 (mkConst ``Prod [Level.zero, Level.zero]) a b)
     unless ts.size == 1 do return none
-    let α ← Smt.Reconstruct.reconstructSort ts[0]!
+    let α ← reconstructElementSort ts[0]!
     return mkApp (mkConst ``Fren.FinSet [Level.zero]) α
   | _ => return none
 
@@ -334,8 +347,8 @@ set of 1-tuples (`Reqs/Cli`). -/
     let n := tup.getNumChildren
     let x ← if α.isAppOfArity ``Prod 2 then
         pure (mkApp4 (mkConst ``Prod.mk [Level.zero, Level.zero]) α.appFn!.appArg! α.appArg!
-          (← Smt.Reconstruct.reconstructTerm tup[n - 2]!) (← Smt.Reconstruct.reconstructTerm tup[n - 1]!))
-      else Smt.Reconstruct.reconstructTerm tup[n - 1]!
+          (← reconstructElement tup[n - 2]!) (← reconstructElement tup[n - 1]!))
+      else reconstructElement tup[n - 1]!
     return mkApp4 (mkConst ``Singleton.singleton [Level.zero, Level.zero]) α ty
       (mkApp (mkConst ``Fren.FinSet.instSingleton [Level.zero]) α) x
   | .SET_UNION =>
