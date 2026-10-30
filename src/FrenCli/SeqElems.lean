@@ -202,6 +202,9 @@ structure Scan where
   sites : Array Site := #[]
   reads : Array SExpr := #[]
   updates : Array (SExpr × SExpr × SExpr) := #[]
+  /-- The updates that mention no bound name, each once: the update, its
+  sequence, its position and its element. -/
+  updateTerms : Array (SExpr × SExpr × SExpr × SExpr) := #[]
   /-- The equations, between terms that mention no bound name. -/
   equations : Array (SExpr × SExpr) := #[]
 
@@ -256,8 +259,11 @@ partial def scan (frames : Frames) (e : SExpr) : StateM Scan SExpr := do
     match ts.toList with
     | [.atom "seq.nth", _, i] =>
       if !i.mentions bound then modify fun s => { s with reads := s.reads.push i }
-    | [.atom "seq.update", _, i, _] =>
+    | [.atom "seq.update", r, i, v] =>
       if !i.mentions bound then modify fun s => { s with updates := s.updates.push (plus i (-1), i, plus i 1) }
+      if let .list #[.atom "seq.unit", x] := v then
+        if !e.mentions bound && !(← get).updateTerms.any (·.1 == e) then
+          modify fun s => { s with updateTerms := s.updateTerms.push (e, r, i, x) }
     | [.atom "=", a, b] =>
       if !a.mentions bound && !b.mentions bound then modify fun s => { s with equations := s.equations.push (a, b) }
     | _ => pure ()
@@ -340,7 +346,8 @@ structure Expanded where
 `define-fun`s `defs` that have them unfolded: at the query's index set
 (`Fren.Core.indexSet`), with a witness for each bound name of each site
 and for each equation between sequences of which one is a site's, which
-two sequences that differ differ at; or with `pins`, the lengths of the
+two sequences that differ differ at, and each update's reads at the index
+set (`lang::update_reads`); or with `pins`, the lengths of the
 sequences in a model, at each position below a pinned sequence's length.
 The error is the number of instances, if more than
 `Fren.Core.maxElementInstances`. -/
@@ -373,8 +380,14 @@ def expandQuery (defs : Std.HashMap String (Array String × SExpr)) (hyps : Arra
   let lengths := receivers.mapIdx fun k q => (s!"|#l{k}|", q)
   let extra := match pins? with
     | some pins => pins.map fun (q, n) => (`elementLength, s!"(= (seq.len {q}) {n})")
-    | none => lengths.map (fun (l, q) => (`elementLength, s!"(= {l} (seq.len {q}))")) ++ ds.map fun (a, b, d) =>
-      (`elementWitness, s!"(or (= {a} {b}) (not (= (seq.len {a}) (seq.len {b}))) (and (<= 0 {d}) (< {d} (seq.len {a})) (not (= (seq.nth {a} {d}) (seq.nth {b} {d})))))")
+    | none => lengths.map (fun (l, q) => (`elementLength, s!"(= {l} (seq.len {q}))")) ++ ds.map (fun (a, b, d) =>
+      (`elementWitness, s!"(or (= {a} {b}) (not (= (seq.len {a}) (seq.len {b}))) (and (<= 0 {d}) (< {d} (seq.len {a})) (not (= (seq.nth {a} {d}) (seq.nth {b} {d})))))"))
+      -- Each update's reads at the index set (`lang::update_reads`).
+      ++ sc.updateTerms.map fun (u, r, i, x) =>
+        let reads := ix.map fun t =>
+          let inRange := s!"(<= 0 {t}) (< {t} (seq.len {r}))"
+          s!" (=> (and {inRange} (= {t} {i})) (= (seq.nth {u} {t}) {x})) (=> (and {inRange} (not (= {t} {i}))) (= (seq.nth {u} {t}) (seq.nth {r} {t})))"
+        (`elementUpdate, s!"(and (= (seq.len {u}) (seq.len {r})){String.join reads})")
   return { hyps := hs.map (fun (n, h) => (n, toString h)) ++ extra, goal := toString g
            consts := if pins?.isSome then #[] else ws ++ ds.map (·.2.2) ++ lengths.map (·.1)
            lengths := if pins?.isSome then #[] else lengths }

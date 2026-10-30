@@ -103,6 +103,7 @@ structure Scan where
   sites : Array Site := #[]
   reads : Array Expr := #[]
   updates : Array (Expr × Expr × Expr) := #[]
+  updateTerms : Array (Expr × Expr × Expr × Expr) := #[]
   equations : Array (Expr × Expr) := #[]
 
 /-- Whether `e` mentions only the locals of `ctx`: none that a binder of
@@ -138,6 +139,8 @@ def noteApp (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (x : Expr) : MetaM Un
     if closedIn ctx i then
       let u := (← plus i (-1), i, ← plus i 1)
       ref.modify fun s => { s with updates := s.updates.push u }
+    if closedIn ctx x && !(← ref.get).updateTerms.any (·.1 == x) then
+      ref.modify fun s => { s with updateTerms := s.updateTerms.push (x, x.appFn!.appFn!.appArg!, i, x.appArg!) }
   if x.isAppOfArity ``Eq 3 && x.appFn!.appFn!.appArg!.isAppOfArity ``Fren.Seq 1 then
     let (a, b) := (x.appFn!.appArg!, x.appArg!)
     if closedIn ctx a && closedIn ctx b then ref.modify fun s => { s with equations := s.equations.push (a, b) }
@@ -235,8 +238,8 @@ structure Expanded where
 
 /-- `hyps` and `goal` with their marked quantifiers expanded, at the query's
 index set, with a witness for each bound name of each expanded quantifier
-and for each equation between sequences of which one is a quantifier's;
-or with `pins`, the lengths of the sequences in a model, at each position
+and for each equation between sequences of which one is a quantifier's,
+and each update's reads at the index set (`lang::update_reads`); or with `pins`, the lengths of the sequences in a model, at each position
 below a pinned sequence's length; passed to `k`, within the locals that it
 declares (`FrenCli.SeqElems.expandQuery`). The error is the number of
 instances, if more than `Fren.Core.maxElementInstances`. -/
@@ -285,7 +288,16 @@ def withExpanded (hyps : Array (Name × Expr)) (goal : Expr) (pins? : Option (Ar
         let atNe := mkNot (← mkEq (← mkAppM ``Fren.Seq.nth #[a, d]) (← mkAppM ``Fren.Seq.nth #[b, d]))
         let inRange ← mkAppM ``And #[← mkAppM ``LE.le #[← mkNumeral int 0, d], ← mkAppM ``LT.lt #[d, ← mkAppM ``Fren.Seq.len #[a]]]
         return (`elementWitness, mkOr (← mkEq a b) (mkOr lenNe (mkAnd inRange atNe)))
-      pure (lens ++ exts)
+      -- Each update's reads at the index set (`lang::update_reads`).
+      let reads ← sc.updateTerms.mapM fun (u, r, i, x) => do
+        let len ← mkEq (← mkAppM ``Fren.Seq.len #[u]) (← mkAppM ``Fren.Seq.len #[r])
+        let parts ← ix.mapM fun t => do
+          let inRange ← mkAppM ``And #[← mkAppM ``LE.le #[← mkNumeral int 0, t], ← mkAppM ``LT.lt #[t, ← mkAppM ``Fren.Seq.len #[r]]]
+          let here ← mkEq (← mkAppM ``Fren.Seq.nth #[u, t]) x
+          let other ← mkEq (← mkAppM ``Fren.Seq.nth #[u, t]) (← mkAppM ``Fren.Seq.nth #[r, t])
+          return [← mkArrow (mkAnd inRange (← mkEq t i)) here, ← mkArrow (mkAnd inRange (mkNot (← mkEq t i))) other]
+        return (`elementUpdate, parts.flatten.foldl mkAnd len)
+      pure (lens ++ exts ++ reads)
   return .ok (← k { hyps := hs ++ extra, goal := g, locals := fvs, lengths := ls.zip receivers })
 
 end Fren.Elems

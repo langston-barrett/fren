@@ -371,9 +371,29 @@ pub proc element_witness(
 }
 ```
 
+The expansion at the index set also gives the solver each update's
+elimination into reads, from which the index set has its terms `i - 1`,
+`i` and `i + 1`: for each `r.update(i, v)` in the query that mentions no
+bound name, that its length is `r.len`, and at each term `t` of the index
+set, in that order, that its element at `t` is `v` when `0 <= t < r.len`
+and `t = i`, and `r[t]` when `0 <= t < r.len` and `t != i`. Each update is
+given once, in the order of its first occurrence. These facts hold of
+every update, so they change no answer, but without them the solver
+derives each read of an update in its theory of sequences, which took
+cvc5 longer than its time limit for an update read at nine terms (#432).
+`lang::update_reads` states them:
+
+```fren
+pub proc update_reads(r: Seq<Int>, i: Int, v: Int, t: Int) {
+    expect length: r.update(i, v).len = r.len
+    expect at_position: when 0 <= t < r.len and t = i, r.update(i, v)[t] = v
+    expect elsewhere: when 0 <= t < r.len and t != i, r.update(i, v)[t] = r[t]
+}
+```
+
 What is proved is this law, the rule of which quantifiers are expanded,
 the index set and the projection, each of the code that both front ends
-call. That the whole expanded query is unsatisfiable exactly where the
+call; the reads of an update are checked, as expectations, by both. That the whole expanded query is unsatisfiable exactly where the
 quantified one is follows from them by an induction over the query's
 terms, which is argued here and not proved in Lean.
 
