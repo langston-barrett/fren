@@ -55,27 +55,35 @@ theorem contains_quote (s : String) : Fren.Str.contains (quote s) "\\" = Fren.St
   rw [h1, h2]
   simp [quote]
 
-/-- The bounds of a range, each where it has one. -/
-def lowOf (r : lang.IntRange) : Option Int := if r.«bounded_below?» then some r.low else none
+/-- A string literal's value, from its text. -/
+def unquote (s : String) : String := String.ofList (s.toList.drop 1).dropLast
 
-def highOf (r : lang.IntRange) : Option Int := if r.«bounded_above?» then some r.high else none
+theorem unquote_quote (t : String) : unquote (quote t) = t := by
+  simp [unquote, quote, String.toList_append]
 
 /-- An alternative of the model as `manual_pattern_test` reads one, with a
 string literal by its text. -/
 def toPatAlt : lint.Alt → Fren.Core.PatAlt
-  | .Integers r => .ints (lowOf r) (highOf r)
+  | .Integers lo hi => .ints lo hi
   | .Text s => .str (quote s)
   | .Variant c => .variant c
 
-theorem boundBelow_ranges (r s : lang.IntRange) :
-    Fren.Core.boundBelow (highOf r) (lowOf s) = (r.«bounded_above?» && s.«bounded_below?» && decide (r.high < s.low)) := by
-  rcases r with ⟨_ | _, _, _ | _, _⟩ <;> rcases s with ⟨_ | _, _, _ | _, _⟩ <;>
-    simp [highOf, lowOf, Fren.Core.boundBelow]
+/-- The model's alternative that the lint reads as `a`. -/
+def fromPatAlt : Fren.Core.PatAlt → lint.Alt
+  | .ints lo hi => .Integers lo hi
+  | .str s => .Text (unquote s)
+  | .variant c => .Variant c
+
+theorem from_to (a : lint.Alt) : fromPatAlt (toPatAlt a) = a := by
+  cases a <;> simp [toPatAlt, fromPatAlt, unquote_quote]
+
+theorem below_eq (h l : Option Int) : Fren.Core.boundBelow h l = lint.bound_below? h l := by
+  cases h <;> cases l <;> simp [Fren.Core.boundBelow, lint.bound_below?, fren_spec]
 
 theorem disjoint_eq (a b : lint.Alt) : (toPatAlt a).disjoint (toPatAlt b) = lint.alts_disjoint? a b := by
   rw [Bool.eq_iff_iff]
-  cases a <;> cases b <;> simp only [toPatAlt, Fren.Core.PatAlt.disjoint, boundBelow_ranges, contains_quote] <;>
-    simp [lint.alts_disjoint?, lint.ranges_apart?, fren_spec, quote_inj]
+  cases a <;> cases b <;> simp only [toPatAlt, Fren.Core.PatAlt.disjoint, below_eq, contains_quote] <;>
+    simp [lint.alts_disjoint?, fren_spec, quote_inj]
 
 /-! ## Reading the operands -/
 
@@ -88,7 +96,7 @@ def toForm : lint.Literal → ValueForm
 
 theorem alt_eq (v : lint.Literal) (nat : Bool) : (toForm v).alt? nat = (lint.value_alt v nat).map toPatAlt := by
   cases v <;> simp only [toForm, ValueForm.alt?, lint.value_alt] <;> try rfl
-  split <;> split <;> simp_all [toPatAlt, lowOf, highOf, lint.just] <;> omega
+  split <;> split <;> simp_all [toPatAlt]
 
 /-- A side of a comparison of the model, as the lint reads one, with its
 written form for its expression. -/
@@ -134,14 +142,17 @@ impl read_operand: lint::read_operand for (s : lint.Shape) (conj : Bool) {
   «conj?» := conj,
   «reads?» := (readOperand conj (toShape s)).isSome,
   «equation?» := ((readOperand conj (toShape s)).map (·.equation)).getD false,
+  scrutinee := ((readOperand conj (toShape s)).map (·.scrutinee)).getD "",
+  alts := Fren.Seq.ofList (((readOperand conj (toShape s)).map fun p => p.alts.map (fromPatAlt ·.1)).getD []),
 } by
   intro s conj _
   have h := read_eq s conj
-  unfold lint.read_operand.ensures lint.read_operand.ensure.rule lint.read_operand.ensure.equation
+  unfold lint.read_operand.defs lint.read_operand.def.scrutinee lint.read_operand.def.alts
+    lint.read_operand.ensures lint.read_operand.ensure.rule lint.read_operand.ensure.equation
   cases e : readOperand conj (toShape s) with
   | none =>
     cases e' : lint.reading s conj with
-    | none => simp [fren_spec]
+    | none => simp [fren_spec]; rfl
     | some r => rw [e, e'] at h; simp at h
   | some p =>
     cases e' : lint.reading s conj with
@@ -149,7 +160,11 @@ impl read_operand: lint::read_operand for (s : lint.Shape) (conj : Bool) {
     | some r =>
       rw [e, e'] at h
       simp only [Option.map_some, Option.some.injEq, view, rview, Prod.mk.injEq] at h
-      simp [fren_spec, h.2.2]
+      obtain ⟨h1, h2, h3⟩ := h
+      have ha : p.alts.map (fromPatAlt ·.1) = r.alts.toList := by
+        have := congrArg (List.map fromPatAlt) h2
+        simpa [List.map_map, Function.comp_def, from_to] using this
+      simp [fren_spec, h1, h3, ha]
 
 /-! ## Runs -/
 
@@ -511,8 +526,8 @@ theorem fires_spec (l : List lint.Shape) (c : Bool) (cs : List lint.Shape) (s : 
       have hk2' : k' < t.alts.toList.length := by
         have := hk'; simp only [hwq, rview, List.length_map] at this; exact this
       have := hdis ((s.first.toNat + p : Nat) : Int) ((s.first.toNat + q : Nat) : Int) k k'
-        ⟨⟨⟨⟨⟨by omega, by omega⟩, by omega⟩, by omega⟩, by
-          rw [alts_at_of l c _ x r hx hr]; simp; omega⟩, by rw [alts_at_of l c _ y t hy ht]; simp; omega⟩
+        ⟨⟨⟨⟨⟨by omega, by omega⟩, ⟨by omega, by omega⟩⟩, by
+          rw [alts_at_of l c _ x r hx hr]; simp; omega⟩, by rw [alts_at_of l c _ y t hy ht]; simp; omega⟩, by omega⟩
       rw [alts_at_of l c _ x r hx hr, alts_at_of l c _ y t hy ht, Fren.Seq.nth_of_lt _ _ (by omega) (by omega),
         Fren.Seq.nth_of_lt _ _ (by omega) (by omega), ← disjoint_eq] at this
       simp only [hwp, hwq, rview, List.getElem_map]
@@ -523,7 +538,7 @@ theorem fires_spec (l : List lint.Shape) (c : Bool) (cs : List lint.Shape) (s : 
       refine ⟨((s.first.toNat + q : Nat) : Int), ⟨by omega, by omega⟩, ?_⟩
       rw [equation_at_of l c _ x r hx hr]
       rw [hwq] at he; exact he
-    · intro p p' k k' ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, hor⟩, hk0, hk⟩, hk0', hk'⟩
+    · intro p p' k k' ⟨⟨⟨⟨⟨h1, _⟩, ⟨h2, h3⟩⟩, hk0, hk⟩, hk0', hk'⟩, hor⟩
       obtain ⟨q, hq, rfl⟩ := hpos p h1 (by omega)
       obtain ⟨q', hq', rfl⟩ := hpos p' (by omega) h3
       obtain ⟨x, r, hx, hr, hwp⟩ := hw q hq
@@ -640,5 +655,207 @@ impl manual_pattern_test_runs: lint::manual_pattern_test_runs
     exact ⟨⟨h0, hfl, hm⟩, (fires_spec l c cs s h0 hfl hm).mpr hf⟩
   · rintro ⟨⟨h0, hfl, hm⟩, hf⟩
     exact ⟨h0, hfl, hm, (fires_spec l c cs s h0 hfl hm).mp hf⟩
+
+/-! ## The fix -/
+
+/-- An operand holds exactly where one of its alternatives in the fix
+matches. -/
+theorem fix_alternatives_holds (t : lint.RunTest) (w : lang.Value) :
+    (∃ k : Int, (0 ≤ k ∧ k < (lint.fix_alternatives t).len) ∧
+      lang.matches_value? ((lint.fix_alternatives t).nth k) w = true) ↔ lint.test_holds? t w = true := by
+  cases t with
+  | Equals v =>
+    simp only [lint.fix_alternatives, lint.test_holds?]
+    constructor
+    · rintro ⟨k, ⟨h0, h1⟩, hm⟩
+      have hk : k = 0 := by simp at h1; omega
+      subst hk; simpa [lang.matches_value?, fren_spec] using hm
+    · intro h
+      exact ⟨0, ⟨Int.le_refl _, by simp⟩, by simpa [lang.matches_value?, fren_spec] using h⟩
+  | Is alts => simp [lint.fix_alternatives, lint.test_holds?, fren_spec]
+
+-- Proved of the spec's own functions, for any number of tests and
+-- alternatives.
+impl manual_pattern_test_fix: lint::manual_pattern_test_fix for (tests : Fren.Seq lint.RunTest) (w : lang.Value) {
+  tests := tests,
+  w := w,
+} by
+  intro tests w _
+  unfold lint.manual_pattern_test_fix.ensures lint.manual_pattern_test_fix.ensure.same_meaning
+    lint.manual_pattern_test_fix.ensure.dual
+  unfold lint.fix_holds? lint.run_holds?
+  rw [decide_true_iff, decide_true_iff]
+  have key : (∃ i k : Int, ((0 ≤ i ∧ i < tests.len) ∧ 0 ≤ k ∧ k < (lint.fix_alternatives (tests.nth i)).len) ∧
+      lang.matches_value? ((lint.fix_alternatives (tests.nth i)).nth k) w = true) ↔
+      ∃ i : Int, (0 ≤ i ∧ i < tests.len) ∧ lint.test_holds? (tests.nth i) w = true := by
+    constructor
+    · rintro ⟨i, k, ⟨hi, hk⟩, hm⟩
+      exact ⟨i, hi, (fix_alternatives_holds _ w).mp ⟨k, hk, hm⟩⟩
+    · rintro ⟨i, hi, ht⟩
+      obtain ⟨k, hk, hm⟩ := (fix_alternatives_holds _ w).mpr ht
+      exact ⟨i, k, ⟨hi, hk⟩, hm⟩
+  refine ⟨key, ?_⟩
+  rw [key]
+  simp only [not_exists, not_and]
+
+/-! ## The fix of a run -/
+
+/-- An equation's reading matches the value it writes. -/
+theorem value_matches (v : lint.Literal) (nat : Bool) (a : lint.Alt) (h : lint.value_alt v nat = some a) :
+    ∃ x, lint.literal_value v = some x ∧ lang.matches_value? (lint.alt_pattern a) x = true := by
+  cases v with
+  | Decimal k =>
+    simp only [lint.value_alt] at h
+    split at h
+    · simp at h
+    · cases h; exact ⟨.Integer k, rfl, by simp [lang.matches_value?, fren_spec]⟩
+  | Quoted t =>
+    simp only [lint.value_alt, Option.some.injEq] at h
+    subst h
+    refine ⟨.Text t, rfl, ?_⟩
+    simp only [lint.alt_pattern]
+    split <;> simp [lang.matches_value?, fren_spec]
+  | Variant k =>
+    simp only [lint.value_alt, Option.some.injEq] at h
+    subst h
+    exact ⟨.Constructed k .Nil, rfl, by simp [lang.matches_value?, fren_spec]⟩
+  | Truth b => simp [lint.value_alt] at h
+  | Other => simp [lint.value_alt] at h
+
+/-- Disjoint alternatives' patterns match no value in common
+(`lint::disjoint_alternatives::apart`), for every value. -/
+theorem apart (a b : lint.Alt) (v : lang.Value) (h : lint.alts_disjoint? a b = true) :
+    ¬(lang.matches_value? (lint.alt_pattern a) v = true ∧ lang.matches_value? (lint.alt_pattern b) v = true) := by
+  cases a with
+  | Integers l1 h1 =>
+    cases b with
+    | Integers l2 h2 =>
+      cases l1 <;> cases h1 <;> cases l2 <;> cases h2 <;> cases v <;>
+        simp_all [lint.alts_disjoint?, lint.bound_below?, lang.matches_value?, fren_spec] <;> omega
+    | _ => simp [lint.alts_disjoint?] at h
+  | Text s =>
+    cases b with
+    | Text t =>
+      simp [lint.alts_disjoint?, fren_spec] at h
+      simp only [lint.alt_pattern]
+      split <;> split <;> cases v <;> simp_all [lang.matches_value?, fren_spec]
+    | _ => simp [lint.alts_disjoint?] at h
+  | Variant c =>
+    cases b with
+    | Variant d =>
+      cases v <;> simp_all [lint.alts_disjoint?, lang.matches_value?, fren_spec]
+      intro h1 h2; exact h (h1.trans h2.symm)
+    | _ => simp [lint.alts_disjoint?] at h
+
+/-- Each alternative of an operand's test in the fix matches no value that
+the reading's pattern of the alternative at its position does not. -/
+theorem cover (x : lint.Shape) (c : Bool) (r : lint.Reading) (hr : lint.reading x c = some r)
+    (pats : Fren.Seq lang.Pattern) (w : lang.Value)
+    (hread : ∀ t, x = .Test t → pats.len = r.alts.len ∧ ∀ k : Int, (0 ≤ k ∧ k < pats.len) ∧
+      lang.matches_value? (pats.nth k) w = true → lang.matches_value? (lint.alt_pattern (r.alts.nth k)) w = true) :
+    (lint.fix_alternatives (lint.run_test x pats)).len = r.alts.len ∧
+      ∀ k : Int, 0 ≤ k → k < r.alts.len → lang.matches_value? ((lint.fix_alternatives (lint.run_test x pats)).nth k) w = true →
+        lang.matches_value? (lint.alt_pattern (r.alts.nth k)) w = true := by
+  cases x with
+  | Comparison k =>
+    simp only [lint.reading] at hr
+    split at hr
+    · rename_i hc
+      simp only [lint.comparison_reading] at hr
+      simp only [lint.run_test, lint.equation_value]
+      cases hl : lint.value_alt k.left.value k.«nat?» <;> cases hrt : lint.value_alt k.right.value k.«nat?» <;>
+        simp only [hl, hrt] at hr <;> try simp at hr
+      · obtain ⟨v, hv, hm⟩ := value_matches _ _ _ hrt
+        cases hr
+        simp only [hv]
+        refine ⟨by simp [lint.fix_alternatives], fun k h0 h1 hk => ?_⟩
+        have : k = 0 := by simp at h1; omega
+        subst this
+        simp [lint.fix_alternatives, lang.matches_value?, fren_spec] at hk
+        subst hk; simpa using hm
+      · obtain ⟨v, hv, hm⟩ := value_matches _ _ _ hl
+        cases hr
+        simp only [hv]
+        refine ⟨by simp [lint.fix_alternatives], fun k h0 h1 hk => ?_⟩
+        have : k = 0 := by simp at h1; omega
+        subst this
+        simp [lint.fix_alternatives, lang.matches_value?, fren_spec] at hk
+        subst hk; simpa using hm
+    · simp at hr
+  | Test t =>
+    obtain ⟨hlen, himp⟩ := hread t rfl
+    simp only [lint.fix_alternatives]
+    exact ⟨hlen, fun k h0 h1 hk => himp k ⟨⟨h0, by omega⟩, hk⟩⟩
+  | Other => simp [lint.reading] at hr
+
+/-- A read operand of the run, and its reading. -/
+theorem read_at (l : List lint.Shape) (c : Bool) (p : Int) (h : lint.reading_at (Fren.Seq.ofList l) c p ≠ none) :
+    ∃ y r, 0 ≤ p ∧ (Fren.Seq.ofList l).nth p = y ∧ lint.reading y c = some r ∧
+      lint.alts_at (Fren.Seq.ofList l) c p = r.alts := by
+  rw [reading_at_eq] at h
+  by_cases h0 : 0 ≤ p
+  · rw [if_pos h0] at h
+    cases hy : l[p.toNat]? with
+    | none => simp [hy] at h
+    | some y =>
+    cases hr : lint.reading y c with
+    | none => simp [hy, hr] at h
+    | some r =>
+      have hlt : p.toNat < l.length := by
+        rcases Nat.lt_or_ge p.toNat l.length with h | h
+        · exact h
+        · rw [List.getElem?_eq_none h] at hy; simp at hy
+      refine ⟨y, r, h0, ?_, hr, ?_⟩
+      · rw [Fren.Seq.nth_of_lt _ _ h0 (by simp; omega)]
+        simp only [Fren.Seq.toList_ofList]
+        have := List.getElem?_eq_getElem hlt
+        rw [hy] at this
+        exact (Option.some.inj this).symm
+      · have := alts_at_of l c p.toNat y r hy hr
+        rwa [show ((p.toNat : Nat) : Int) = p by omega] at this
+  · rw [if_neg h0] at h; exact absurd rfl h
+
+-- Proved of the spec's own functions, for any number of operands and
+-- alternatives.
+impl manual_pattern_test_refines: lint::manual_pattern_test_refines
+    for (l cs : List lint.Shape) (c : Bool) (s : lint.Span) (ps : Fren.Seq (Fren.Seq lang.Pattern))
+      (ts : Fren.Seq lint.RunTest) (w : lang.Value) {
+  operands := Fren.Seq.ofList l,
+  chain := Fren.Seq.ofList cs,
+  «conj?» := c,
+  run := s,
+  patterns := ps,
+  tests := ts,
+  w := w,
+} by
+  intro l cs c s ps ts w hyp
+  unfold lint.manual_pattern_test_refines.ensures lint.manual_pattern_test_refines.ensure.reachable
+  unfold lint.manual_pattern_test_refines.assumes lint.manual_pattern_test_refines.assume.read
+    lint.manual_pattern_test_refines.assume.operands_tests at hyp
+  unfold lint.run_fires?
+  rintro ⟨hall, hfire⟩ i j k k' ⟨⟨⟨⟨⟨h0, _⟩, ⟨hij, hj⟩⟩, hk0, hk⟩, hk0', hk'⟩, hor⟩ ⟨hm, hm'⟩
+  rw [decide_true_iff] at hfire
+  obtain ⟨_, hdis⟩ := hfire
+  obtain ⟨hread, hlen, hts⟩ := hyp
+  -- The operands at the two positions, and what the fix and the readings
+  -- give there.
+  have at_ : ∀ q : Int, 0 ≤ q → q < ts.len → ∃ r : lint.Reading, lint.alts_at (Fren.Seq.ofList l) c (s.first + q) = r.alts ∧
+      (lint.fix_alternatives (ts.nth q)).len = r.alts.len ∧
+      ∀ m : Int, 0 ≤ m → m < r.alts.len → lang.matches_value? ((lint.fix_alternatives (ts.nth q)).nth m) w = true →
+        lang.matches_value? (lint.alt_pattern (r.alts.nth m)) w = true := by
+    intro q hq0 hq
+    obtain ⟨y, r, _, hy, hr, ha⟩ := read_at l c (s.first + q) (by simpa using hall _ ⟨by omega, by omega⟩)
+    refine ⟨r, ha, ?_⟩
+    rw [hts q ⟨hq0, hq⟩, hy]
+    refine cover y c r hr _ w fun t ht => ?_
+    have := hread (s.first + q) ⟨⟨by omega, by omega⟩, by rw [hy, ht]; rfl⟩
+    rw [ha] at this
+    exact ⟨this.1, fun m hm => this.2 m hm⟩
+  obtain ⟨r, har, hlr, himp⟩ := at_ i h0 (by omega)
+  obtain ⟨r', har', hlr', himp'⟩ := at_ j (by omega) hj
+  have hd := hdis (s.first + i) (s.first + j) k k'
+    ⟨⟨⟨⟨⟨by omega, by omega⟩, ⟨by omega, by omega⟩⟩, ⟨hk0, by rw [har]; omega⟩⟩, ⟨hk0', by rw [har']; omega⟩⟩, by omega⟩
+  rw [har, har'] at hd
+  exact apart _ _ w hd ⟨himp k hk0 (by omega) hm, himp' k' hk0' (by omega) hm'⟩
 
 end Fren.Impls.PatternTests

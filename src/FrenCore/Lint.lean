@@ -5014,10 +5014,10 @@ def manualOrderingAt? (src : Array Char) (fact? : α → Option NodeFact) (n : B
 /-! ## Pattern tests written out -/
 
 /-- An alternative of a pattern, as `manual_pattern_test` reads it
-(`lint::integers`, `lint::quoted`, `lint::variant_name`): the integers from `lo` to `hi`, where `none` leaves that
-side unbounded, so that a literal is a range of one integer; a string
-literal, as written; or a variant, by its name, with or without a
-payload. -/
+(`lint::Alt`, whose meaning is `lint::alt_pattern`): the integers from
+`lo` to `hi`, where `none` leaves that side unbounded, so that a literal
+is a range of one integer; a string literal, as written; or a variant, by
+its name, with or without a payload. -/
 inductive PatAlt where
   | ints (lo hi : Option Int)
   | str (s : String)

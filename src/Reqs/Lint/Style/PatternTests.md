@@ -98,22 +98,35 @@ membership such as `[A, B].contains(&x)`. This lint is in `style` too, and
 `warn`: there should be one way to write each test, and a pattern test is
 the one that ranges and payloads extend.
 
-What the fix means is stated over the language's own [pattern
+What the lint does is stated over the language's own [pattern
 matching](../../Lang/Semantics.md#pattern-matching), `lang::matches_value?`
 over the values and patterns of the dynamic semantics. An operand of the
 run, as the language means it, is a `lint::RunTest`: `x = a` or `a = x`,
 where `a` has the value `v`, which holds where `x`'s value is `v`; or `x
-is A₁ | … | Aₖ`, by its alternatives, which holds where one of them
-matches `x`'s value. The fix writes `x is` and then each operand's
-alternatives, in order: for an equation, `a` as a pattern, which is the
-literal pattern of its value, `Literal(v)`, which matches `v` alone, and
-for a pattern test, its own. `lint::manual_pattern_test_fix` states that
-the fix holds exactly where the run did, at every value `w` of `x`: some
-alternative of the fix matches `w` exactly where some operand holds. The
-dual is its negation, by De Morgan's law: `not x is …` holds exactly
-where each disequation and negated test of the run does. Its quantifiers
-range over any number of operands and alternatives, so it is checked by
-random testing:
+is A₁ | … | Aₖ`, by its alternatives' patterns, which holds where one of
+them matches `x`'s value. The lint fires on a run of two or more such
+operands, of one expression, at least one of them an equation, outside a
+chain that `membership_chain` reads, where no value matches two
+alternatives of the fix, as their text shows (see [Runs](#runs)). The fix
+writes `x is` and then each operand's alternatives, the operands in
+order and each operand's alternatives in order: for an equation, `a` as
+a pattern, which is the literal pattern of its value, `Literal(v)`, which
+matches `v` alone, and for a pattern test, its own.
+
+`lint::manual_pattern_test_fix` states that the fix holds exactly where
+the run did, at every value `w` of `x`: some alternative of the fix
+matches `w` exactly where some operand holds. Its dual, for a run of
+`and`, is the negation of both sides, by De Morgan's law: `not x is …`
+holds exactly where each disequation and negated test of the run does.
+The fix keeps definedness too, as [above](#what-it-does) says: it
+evaluates `x` once, where the run's first operand did, and the
+alternatives are defined everywhere. `lint::manual_pattern_test_refines`
+in [The fix of a run](#the-fix-of-a-run) computes the tests from the
+operands that the lint reads, and states that the lint fires only where
+no value matches two of the fix's alternatives, so that each is
+reachable. Both are proved in Lean for any number of operands and
+alternatives (`src/Impls/PatternTests.lean`), and checked by random
+testing as well:
 
 ```fren
 pub mod lint
@@ -135,12 +148,24 @@ pub fn fix_alternatives(t: RunTest): Seq<lang::Pattern> := match t {
     RunTest::Is(alts) => alts,
 }
 
+-- The fix `x is A₁ | … | Aₙ` holds where `x` has the value `w`: the `k`th
+-- alternative of the `i`th test is the fix's alternative after those of the
+-- tests before it and the test's alternatives before it.
+set_option fren.lint.undecidable "allow" in
+pub fn fix_holds?(tests: Seq<RunTest>, w: lang::Value) := exists (i k: Int), 0 <= i < tests.len
+    and 0 <= k < fix_alternatives(tests[i]).len and lang::matches_value?(fix_alternatives(tests[i])[k], w)
+
+-- The run of `or` of the tests holds where `x` has the value `w`.
+set_option fren.lint.undecidable "allow" in
+pub fn run_holds?(tests: Seq<RunTest>, w: lang::Value) := exists (i: Int), 0 <= i < tests.len
+    and test_holds?(tests[i], w)
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 pub proc manual_pattern_test_fix(tests: Seq<RunTest>, w: lang::Value) {
-    expect same_meaning: (exists (i k: Int), 0 <= i < tests.len and 0 <= k < fix_alternatives(tests[i]).len
-        and lang::matches_value?(fix_alternatives(tests[i])[k], w))
-        iff (exists (i: Int), 0 <= i < tests.len and test_holds?(tests[i], w))
+    ensure same_meaning: fix_holds?(tests, w) iff run_holds?(tests, w)
+    -- The run of `and` of the negations, and `not x is A₁ | … | Aₙ`.
+    ensure dual: not fix_holds?(tests, w) iff (forall (i: Int), when 0 <= i < tests.len, not test_holds?(tests[i], w))
 }
 ```
 
@@ -157,8 +182,9 @@ its quotes, or a variant, by its name, whatever its payload's patterns,
 which the lint does not read. `lint::alt_pattern` is what an `Alt` means,
 as a pattern of the [dynamic semantics](../../Lang/Semantics.md#patterns),
 `lang::Pattern`: a variant's is `Variant(c, _)`, with `_` for its payload,
-which may match more than the alternative does, so that each alternative
-matches no value that its `alt_pattern` does not. An `Alt` is not a
+which may match more than the alternative does, and a string literal
+with an escape sequence's is `_`, so that each alternative matches no
+value that its `alt_pattern` does not. An `Alt` is not a
 second model of matching, as it has no matching of its own: the rules
 below are stated over `lang::matches_value?` of its `alt_pattern`. It is
 not recursive, unlike `lang::Pattern`, which keeps the checks over whole
@@ -180,19 +206,21 @@ for `true` and `false`, whose equations
 [`bool_equality`](../Pedantic.md#boolean-equality) reports:
 
 ```fren
--- An alternative of a pattern as the lint reads it: the integers of a
--- range, a string literal, by the text between its quotes, or a variant,
--- by its name, whatever its payload.
-pub enum Alt { Integers(lang::IntRange), Text(String), Variant(lang::Id) }
+-- An alternative of a pattern as the lint reads it: the integers from a
+-- lower bound to an upper bound, each where there is one, a string literal,
+-- by the text between its quotes, or a variant, by its name, whatever its
+-- payload.
+pub enum Alt { Integers(Option<Int>, Option<Int>), Text(String), Variant(lang::Id) }
 
--- The alternative as a pattern: a range by its bounds, without them `_`,
+-- The alternative as a pattern: a range by its bounds, without them `_`, a
+-- string literal with an escape sequence `_`, as its text is not its value,
 -- and a variant with `_` for its payload.
 pub fn alt_pattern(a: Alt): lang::Pattern := match a {
-    Alt::Integers(r) => if r.bounded_below? and r.bounded_above? then lang::Pattern::Between(r.low, r.high)
-        else if r.bounded_below? then lang::Pattern::AtLeast(r.low)
-        else if r.bounded_above? then lang::Pattern::AtMost(r.high)
-        else lang::Pattern::Wildcard,
-    Alt::Text(t) => lang::Pattern::Literal(lang::Value::Text(t)),
+    Alt::Integers(Some(lo), Some(hi)) => lang::Pattern::Between(lo, hi),
+    Alt::Integers(Some(lo), None) => lang::Pattern::AtLeast(lo),
+    Alt::Integers(None, Some(hi)) => lang::Pattern::AtMost(hi),
+    Alt::Integers(None, None) => lang::Pattern::Wildcard,
+    Alt::Text(t) => if t.contains?("\\") then lang::Pattern::Wildcard else lang::Pattern::Literal(lang::Value::Text(t)),
     Alt::Variant(c) => lang::Pattern::Variant(c, lang::Pattern::Wildcard),
 }
 
@@ -219,13 +247,10 @@ pub enum Shape { Comparison(ComparisonShape), Test(TestShape), Other }
 -- alternatives it gives the fix, and whether it is an equation.
 pub struct Reading { scrutinee: String, alts: Seq<Alt>, equation? }
 
--- The integer `k` alone, as a range.
-pub fn just(k: Int): lang::IntRange := lang::IntRange { bounded_below? := true, low := k, bounded_above? := true, high := k }
-
 -- The alternative that writes the value, if there is one: a negative
 -- literal is not one where the operands are `Nat`s.
 pub fn value_alt(v: Literal, nat?): Option<Alt> := match v {
-    Literal::Decimal(k) => if nat? and k < 0 then None else Some(Alt::Integers(just(k))),
+    Literal::Decimal(k) => if nat? and k < 0 then None else Some(Alt::Integers(Some(k), Some(k))),
     Literal::Quoted(t) => Some(Alt::Text(t)),
     Literal::Variant(c) => Some(Alt::Variant(c)),
     _ => None,
@@ -254,7 +279,10 @@ pub fn reading(s: Shape, conj?): Option<Reading> := match s {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub proc read_operand(shape: Shape, conj?): (det reads?, det equation?) {
+pub proc read_operand(shape: Shape, conj?): (det reads?, det equation?, det scrutinee: String, det alts: Seq<Alt>) {
+    out scrutinee := match reading(shape, conj?) { Some(r) => r.scrutinee, None => "" }
+    out alts := match reading(shape, conj?) { Some(r) => r.alts, None => [] }
+
     ensure rule: reads? iff reading(shape, conj?) != None
     ensure equation: equation? iff (reading(shape, conj?) is Some(r) and r.equation?)
 
@@ -269,11 +297,11 @@ pub proc read_operand(shape: Shape, conj?): (det reads?, det equation?) {
 }
 ```
 
-`lint::read_operand` states whether the lint reads the operand into a
-run, and as an equation. It is bound to the lint's own decision, which
-both front ends make, from the shape that they read from the syntax tree
-and the text; the expression and alternatives that the reading gives are
-bound, with the runs, by `lint::manual_pattern_test_runs` below.
+`lint::read_operand` states how the lint reads the operand: whether into
+a run, as an equation, testing which expression, by its written form,
+and with which alternatives, in order. It is bound to the lint's own
+reading, which both front ends make, from the shape that they read from
+the syntax tree and the text.
 
 The fix writes each operand's alternatives as the operand writes them,
 so they are those of the operands as the language means them
@@ -289,7 +317,9 @@ and at its payload, more deeply than the solver does, so it is checked by
 random testing:
 
 ```fren
--- The value that a literal writes, where it is one.
+-- The value that a literal writes, where it is one: a string literal's is
+-- the text between its quotes, which is its value where it has no escape
+-- sequences.
 pub fn literal_value(v: Literal): Option<lang::Value> := match v {
     Literal::Decimal(k) => Some(lang::Value::Integer(k)),
     Literal::Quoted(t) => Some(lang::Value::Text(t)),
@@ -318,13 +348,16 @@ matching, for every value, and so do the alternatives, which match no
 more than their patterns:
 
 ```fren
--- No integer is in both ranges, as their bounds show.
-fn ranges_apart?(r: lang::IntRange, s: lang::IntRange) := (r.bounded_above? and s.bounded_below? and r.high < s.low)
-    or (s.bounded_above? and r.bounded_below? and s.high < r.low)
+-- The upper bound `hi` is below the lower bound `lo`, so that no integer
+-- is within both.
+fn bound_below?(hi: Option<Int>, lo: Option<Int>) := match hi, lo {
+    Some(h), Some(l) => h < l,
+    _, _ => false,
+}
 
 -- The alternatives match no value in common, as their text shows.
 pub fn alts_disjoint?(a: Alt, b: Alt) := match a, b {
-    Alt::Integers(r), Alt::Integers(s) => ranges_apart?(r, s),
+    Alt::Integers(l1, h1), Alt::Integers(l2, h2) => bound_below?(h1, l2) or bound_below?(h2, l1),
     Alt::Text(s), Alt::Text(t) => s != t and not s.contains?("\\") and not t.contains?("\\"),
     Alt::Variant(c), Alt::Variant(d) => c != d,
     _, _ => false,
@@ -335,8 +368,7 @@ pub proc disjoint_alternatives(a: Alt, b: Alt, v: lang::Value, c: lang::Id, k: I
         not (lang::matches_value?(alt_pattern(a), v) and lang::matches_value?(alt_pattern(b), v))
     expect symmetric: alts_disjoint?(a, b) iff alts_disjoint?(b, a)
     expect repeated: not alts_disjoint?(Alt::Variant(c), Alt::Variant(c))
-    expect overlapping: when 0 <= k <= 9, not alts_disjoint?(Alt::Integers(lang::IntRange { bounded_below? := true,
-        low := 0, bounded_above? := true, high := 9 }), Alt::Integers(just(k)))
+    expect overlapping: when 0 <= k <= 9, not alts_disjoint?(Alt::Integers(Some(0), Some(9)), Alt::Integers(Some(k), Some(k)))
 }
 ```
 
@@ -404,6 +436,13 @@ fn left_text(s: Shape): String := match s {
     _ => "",
 }
 
+-- The chain's operand `c` is the run's operand `o`, as `membership_chain`
+-- reads it, which does not read whether the operands are `Nat`s.
+fn chain_operand?(c: Shape, o: Shape) := match o {
+    Shape::Comparison(k) => c = Shape::Comparison({ k with nat? := false }),
+    _ => c = o,
+}
+
 -- `membership_chain` reads the chain whose operands, through parentheses,
 -- are `chain`.
 set_option fren.lint.undecidable "allow" in
@@ -426,8 +465,8 @@ set_option fren.lint.undecidable "allow" in
 fn run_fires?(operands: Seq<Shape>, conj?, chain: Seq<Shape>, s: Span) :=
     s.first < s.last and not membership_chain?(chain, conj?)
     and (exists (i: Int), s.first <= i <= s.last and equation_at?(operands, conj?, i))
-    and (forall (i j k l: Int), when s.first <= i <= j <= s.last and (i < j or k < l)
-    and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len,
+    and (forall (i j k l: Int), when s.first <= i <= s.last and i <= j <= s.last
+    and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len and (i < j or k < l),
     alts_disjoint?(alts_at(operands, conj?, i)[k], alts_at(operands, conj?, j)[l]))
 
 set_option fren.lint.undecidable "allow" in
@@ -437,7 +476,78 @@ pub proc manual_pattern_test_runs(
     conj?,                   -- it is a run of `and`
     run: Span,               -- a run of the operands
 ): (det reported?) {
+    -- Each operand of the run that is read is an operand of the chain.
+    assume within: forall (i: Int), when run.first <= i <= run.last and reading_at(operands, conj?, i) != None,
+        exists (j: Int), 0 <= j < chain.len and chain_operand?(chain[j], operands[i])
+
     ensure rule: reported? iff longest_run?(operands, conj?, run) and run_fires?(operands, conj?, chain, run)
+}
+```
+
+## The fix of a run
+
+`lint::manual_pattern_test_refines` relates the runs to the [high-level
+spec](#what-it-does), at a value `w` of the expression. Each operand of
+the run is the test `lint::run_test`, computed from its shape: an
+equation is `Equals` of its value side's `literal_value`, and a pattern
+test is `Is` of its alternatives as the language means them,
+`patterns`, which match no value that their readings' `alt_pattern`s do
+not (`read`). The `tests` are those of the run's operands, in order.
+`manual_pattern_test_fix` then states the fix's meaning, and the lint
+fires only where no value matches two alternatives of the fix: where the
+run's operands are read and it fires, as where it is reported, by the
+rule of `lint::manual_pattern_test_runs`, each alternative of the fix is
+reachable. The lint writes the fix from its own
+list of the run's alternatives, in order, each with its text, and the
+proof of `manual_pattern_test_runs` binds that list's readings to the
+model's, the alternatives of `reading`, operand by operand; the texts
+themselves are outside the model.
+
+```fren
+-- The value that an equation's value side writes.
+fn equation_value(c: ComparisonShape): Option<lang::Value> := match value_alt(c.left.value, c.nat?), value_alt(c.right.value, c.nat?) {
+    None, Some(_) => literal_value(c.right.value),
+    Some(_), None => literal_value(c.left.value),
+    _, _ => None,
+}
+
+-- The operand `s` as the language means it, where `patterns` are its pattern
+-- test's alternatives, as the language means them.
+pub fn run_test(s: Shape, patterns: Seq<lang::Pattern>): RunTest := match s {
+    Shape::Comparison(c) => match equation_value(c) {
+        Some(v) => RunTest::Equals(v),
+        None => RunTest::Is([]),
+    },
+    _ => RunTest::Is(patterns),
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc manual_pattern_test_refines(
+    operands: Seq<Shape>,                -- the operands of the run of `or`, or of `and`, in order
+    chain: Seq<Shape>,                   -- the operands of the chain the run is in
+    conj?,                               -- it is a run of `and`
+    run: Span,                           -- a run of the operands
+    patterns: Seq<Seq<lang::Pattern>>,   -- each operand's pattern test's alternatives, as the language means them
+    tests: Seq<RunTest>,                 -- the tests of the run's operands, in order
+    w: lang::Value,                      -- a value of the expression
+) {
+    -- A pattern test's alternatives are its readings', each matching no value
+    -- that its reading's pattern does not.
+    assume read: forall (i: Int), when run.first <= i <= run.last and operands[i] is Shape::Test(_),
+        patterns[i].len = alts_at(operands, conj?, i).len
+        and (forall (k: Int), when 0 <= k < patterns[i].len and lang::matches_value?(patterns[i][k], w),
+        lang::matches_value?(alt_pattern(alts_at(operands, conj?, i)[k]), w))
+    assume operands_tests: tests.len = run.last - run.first + 1
+        and (forall (i: Int), when 0 <= i < tests.len, tests[i] = run_test(operands[run.first + i], patterns[run.first + i]))
+
+    -- Where the run's operands are read and it fires, as where it is
+    -- reported, no value matches two alternatives of the fix.
+    ensure reachable: when (forall (i: Int), when run.first <= i <= run.last, reading_at(operands, conj?, i) != None)
+        and run_fires?(operands, conj?, chain, run),
+        forall (i j k l: Int), when 0 <= i < tests.len and i <= j < tests.len
+        and 0 <= k < fix_alternatives(tests[i]).len and 0 <= l < fix_alternatives(tests[j]).len and (i < j or k < l),
+        not (lang::matches_value?(fix_alternatives(tests[i])[k], w) and lang::matches_value?(fix_alternatives(tests[j])[l], w))
 }
 ```
 

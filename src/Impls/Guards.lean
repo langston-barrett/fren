@@ -1,6 +1,5 @@
 -- keep-sorted start
 import FrenCore.Lint
-import Impls.PatternTests
 import Reqs.Lint
 import Std.Tactic.BVDecide
 -- keep-sorted end
@@ -13,7 +12,10 @@ functions that both front ends call. -/
 
 namespace Fren.Impls.Guards
 
-open Fren.Impls.PatternTests (toBound)
+/-- A bound of a range of the model (`lint::Bound`), as the code's are. -/
+def toBound : lint.Bound → Option Int
+  | .Open => none
+  | .At k => some k
 
 /-- A guard as `trivial_guard` reads it (`lint::Guard`). -/
 def toGuardForm : lint.Guard → Fren.Core.GuardForm
