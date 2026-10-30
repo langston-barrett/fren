@@ -110,7 +110,7 @@ gave a conclusive pass: Lean, then the solver, then enumeration, then
 random testing. The summary records each method's verdict.
 
 `check::combined` states this, over what each selected method reached.
-The value of `fren.evidence` does not yet take a set (#368). Its one
+The value of `fren.evidence` does not yet take a set (#447). Its one
 combination today, `"enumerated+random"`, is enumeration with testing
 beyond the bound, a single method whose answers are enumeration's (see
 [Enumeration then testing](Check.md#enumeration-then-testing)):
@@ -318,12 +318,15 @@ the matrix are left to later work on #368:
 
 - random testing confirms vacuity, redundancy and reachability with
   witnesses, and refutes definedness, completeness, disjointness and
-  preconditions;
+  preconditions (#443);
 - enumeration decides the definedness of indexes, once sequences are
-  enumerable, and postconditions;
-- `fren.evidence` can be set for functions and constants;
+  enumerable, and postconditions (#444);
+- `fren.evidence` can be set for functions and constants (#445);
 - Lean evidence;
-- whether a pass by random testing that is not conclusive stays a pass.
+- whether a pass by random testing that is not conclusive stays a pass
+  (#446);
+- `fren.evidence` takes sets of methods, combined by `check::combined`
+  (#447).
 
 `check::by_evidence` follows `method_run`. It skips a check exactly when
 `method_run` skips it under the method that runs: enumeration if the
