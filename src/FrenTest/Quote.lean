@@ -7,12 +7,12 @@ import FrenCore.Lint
 
 The printer of the trees that fixes write (`Fren.Core.Tree.print`) and the
 quotations that build them (`fren_expr!`), against
-`lint::parenthesization` (`Reqs/Lint/Printing`): what it writes reads back,
+`lint::printing` (`Reqs/Lint/Printing`): what it writes reads back,
 by the parser of the `fren` command, as the tree, and each pair of
 parentheses that it adds is needed, but those of its two exceptions. `roundTrips` checks this on random trees, as a job of `lake test`;
 the `#guard`s here check examples.
 
--- fren-covers: lint::parenthesization
+-- fren-covers: lint::printing, lint::parenthesization
 -/
 
 namespace FrenTest.Quote
@@ -25,6 +25,17 @@ open FrenCli (Expr)
 def orAB : BText := { text := "a or b", prec := (BKind.bin "or").prec }
 def open_ : BText := { text := "x + if p? then 1 else 2", prec := (BKind.bin "+").prec }
 def alts : Array String := #["E::A", "E::B"]
+
+/-- Expressions as written that end in an open-ended form, as a fix takes
+them from the source, with their precedence: the printer writes none, as it
+encloses an open-ended operand. -/
+def openTexts : Array BText :=
+  #[{ text := "q? and if p? then q? else d?", prec := (BKind.bin "and").prec },
+    { text := "x + if p? then 1 else 2", prec := (BKind.bin "+").prec },
+    { text := "x = if p? then 1 else 2", prec := (BKind.bin "=").prec },
+    { text := "not if p? then q? else d?", prec := BKind.not.prec },
+    { text := "-if p? then 1 else 2", prec := BKind.neg.prec }]
+
 def elems : Array BText := #[{ text := "1", prec := BKind.atom.prec }, { text := "when p?, q?", prec := 0 }]
 
 -- An operand that binds more loosely than its operator is in parentheses.
@@ -53,6 +64,10 @@ def elems : Array BText := #[{ text := "1", prec := BKind.atom.prec }, { text :=
 -- receiver without parentheses; a negative literal binds as `-` does.
 #guard (fren_expr!{ $(Tree.field (.atom "x") "empty?").len }).print.text == "(x.empty?).len"
 #guard (fren_expr!{ $(Tree.atom "E::A").min(y) }).print.text == "(E::A).min(y)"
+#guard (fren_expr!{ $(Tree.atom "E::A'").min(y) }).print.text == "(E::A').min(y)"
+-- A `when`'s condition that ends open is in parentheses, to keep the
+-- reading plain, though its `,` would end it.
+#guard (fren_expr!{ when $(openTexts[0]!), d? }).print.text == "when (q? and if p? then q? else d?), d?"
 #guard (fren_expr!{ $(Tree.atom "-1").abs }).print.text == "(-1).abs"
 #guard (fren_expr!{ - $(Tree.neg (.atom "x")) }).print.text == "- -x"
 -- The quotation is read as the `fren` command reads it: a quantifier as
@@ -138,7 +153,8 @@ def next (n : Nat) : R Nat := modifyGet fun s =>
 
 def pick (xs : Array α) [Inhabited α] : R α := return xs[← next xs.size]!
 
-def atoms : Array String := #["a", "b?", "x", "1", "true", "\"s\"", "E::A"]
+def atoms : Array String := #["a", "b?", "x", "x'", "1", "true", "\"s\"", "E::A", "E::A'"]
+
 def patterns : Array String := #["E::A", "E::A | E::B", "1..=3", "_", "\"s\""]
 def ops : Array String := binaryOps
 
@@ -148,7 +164,8 @@ partial def tree (d : Nat) : R Tree := do
   if d == 0 then return .atom (← pick atoms)
   let sub := tree (d - 1)
   match ← next 18 with
-  | 0 | 1 => return .atom (← pick atoms)
+  | 0 => return .atom (← pick atoms)
+  | 1 => return .ofText (← pick openTexts)
   | 2 => let t ← sub; return .ofText t.print.toBText
   | 3 | 4 | 5 => return .bin (← pick ops) (← sub) (← sub)
   | 6 => return .not (← sub)
@@ -268,7 +285,8 @@ partial def contexts (e : Expr) : Array (FrenCli.Span × Expr × Context) :=
   let kids : Array (Expr × Context) := match e with
     | .bin _ _ a b => #[(a, .operand), (b, .operand)]
     | .not _ a | .neg _ a => #[(a, .operand)]
-    | .when _ _ c d => #[(c, .operand), (d, .operand)]
+    -- A condition before its `,` takes the exceptions of a delimited place.
+    | .when _ _ c d => #[(c, .delimited), (d, .operand)]
     | .ite _ c a b => #[(c, .other), (a, .other), (b, .other)]
     | .is _ x _ => #[(x, .operand)]
     | .chain _ es _ => es.map (·, .operand)
@@ -282,10 +300,11 @@ partial def contexts (e : Expr) : Array (FrenCli.Span × Expr × Context) :=
   kids.flatMap fun (k, c) => #[(k.span, k, c)] ++ contexts k
 
 /-- Whether the pair of parentheses from `i` to `j` in `cs`, which reads as
-`e` without it, is one of the two that `lint::parenthesization` keeps where
-the grammar does not need them (`lint::kept_for_reading?`): around an
+`e` without it, is one of the two that `lint::printing` keeps where the
+grammar does not need them (`lint::kept_for_reading?`): around an
 open-ended form as an operand of an operator, or around one, or an
-expression that ends in one, between delimiters. A pair right inside
+expression that ends in one, as a `when`'s condition or between
+delimiters. A pair right inside
 another is the same as that other: removing either leaves the same text. -/
 partial def keptForReading (cs : Array Char) (es : Array (FrenCli.Span × Expr × Context)) (i j : Nat) : Bool :=
   let inner := String.ofList (cs.extract (i + 1) j).toList
@@ -300,7 +319,7 @@ partial def keptForReading (cs : Array Char) (es : Array (FrenCli.Span × Expr �
     i + 1 < j && cs[i + 1]! == '(' && cs[j - 1]! == ')' && (parenPairs (cs.extract (i + 1) j)).contains (0, j - i - 2)
       && keptForReading cs es (i + 1) (j - 1)
 
-/-- The failures of `lint::parenthesization` on `t`: what the printer writes
+/-- The failures of `lint::printing` on `t`: what the printer writes
 must read back as `t`, and without any pair of parentheses in it, but those
 that `keptForReading` allows, it must read otherwise, or not at all. Its
 `endsOpen` must be what the text says (`Fren.Core.endsOpen`). -/
@@ -321,7 +340,7 @@ def printingFailures (t : Tree) : Array String := Id.run do
       out := out.push s!"`{p.text}` does not need the parentheses at {i}: `{without}` reads the same"
   return out
 
-/-- `lint::parenthesization` on `n` random trees of depth at most 4, from `seed`. -/
+/-- `lint::printing` on `n` random trees of depth at most 4, from `seed`. -/
 def roundTrips (n : Nat) (seed : Nat := 392) : Array String := Id.run do
   let mut failures := #[]
   let mut s := seed

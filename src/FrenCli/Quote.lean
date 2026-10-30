@@ -30,8 +30,9 @@ expression; nor can `$xs,*` be operands of a chained comparison, which has
 one operand between each two operators.
 
 The parentheses written in `e` are not kept: `Tree.print` writes those that
-the grammar needs. So is everything that the tree does not say: comments,
-and the layout of `e`.
+the grammar needs. Nor is the layout of `e`. A quotation has no comments:
+`--` is not read as one, so a `}`, a `"` or a `$` after it is the
+quotation's.
 
 The module is imported by `FrenCore.Lint`, which builds fixes with
 `fren_expr!`; it needs only the parser, not the elaborator of the

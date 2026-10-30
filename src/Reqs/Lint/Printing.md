@@ -129,13 +129,15 @@ pub fn atom(text: String): FixTree := FixTree::Written(text, Precedence::Atom, f
 
 An operand is in a *place*: an operand of an operator of a precedence and
 an associativity, on its right or not, with something after it or not; a
-receiver; a part of an atom between delimiters, as an argument, an element
-or an index; or the condition or a branch of `if`, between keywords:
+receiver; the condition of `when` or `unless`, before its `,`; a part of
+an atom between delimiters, as an argument, an element or an index; or the
+condition or a branch of `if`, between keywords:
 
 ```fren
 pub enum Place {
     Operand(Precedence, Assoc, Bool, Bool),    -- outer precedence, associativity, on the right, followed
     Receiver,
+    Condition,
     Delimited,
     Branch,
 }
@@ -171,54 +173,94 @@ expect bare_operand_is_operand(outer: Precedence, inner: Precedence, assoc: Asso
 
 ## What printing does
 
-The printer writes each operand without parentheses where the grammar
-reads it there as itself, and in parentheses where it does not, with two
-exceptions, which [Parentheses in fixes](../Lint.md#parentheses-in-fixes)
-makes to keep the reading plain: an open-ended form as an operand of an
-operator is in parentheses, though the grammar reads a conditional
-without them where nothing follows it; and so is an open-ended form
-between delimiters, though the grammar reads it without them there.
+Printing a tree gives a text that the parser of the `fren` command reads
+back as the tree, each expression as written as itself, and in which every
+pair of parentheses is needed: without it, the text would read as another
+tree, or as none. There are two exceptions, which [Parentheses in
+fixes](../Lint.md#parentheses-in-fixes) makes to keep the reading plain.
+An open-ended form as an operand of an operator is in parentheses, though
+the grammar reads a conditional without them where nothing follows it.
+And an open-ended form, or an expression that ends in one, is in
+parentheses as a `when`'s condition or between delimiters, though no
+open-ended form takes in the `,` or the delimiter that follows it.
+`lint::printing` states this of the whole text:
 
-The grammar reads an operand without parentheses as itself where
-`lang::operand` allows it, counting a conditional as an atom, unless it
-ends open and something follows it: a left operand is followed by its
-operator, and a `when`'s condition by its `,`. A receiver must be an atom
-that can be one and does not end open, and anything can be written
-between delimiters or keywords:
+```fren
+-- `tree` is what the properties are of: no spec models the parser that
+-- reads its text, so none constrains it.
+set_option fren.lint.unused_variables "allow" in
+pub proc printing(
+    tree: FixTree,           -- what a fix writes
+): (
+    reads_back?,             -- the parser reads the printed text as `tree`
+    all_needed?,             -- without any pair of parentheses in it, but those of the two exceptions, the text reads otherwise
+    ends_as_said?,           -- the text ends in an open-ended form outside parentheses exactly where `ends_open?(tree)` says
+) {
+    ensure reads_back: reads_back?
+    ensure all_needed: all_needed?
+    ensure ends_as_said: ends_as_said?
+}
+```
+
+No spec models the parser, so the printer's tests check this. They print
+random trees and read each back with the parser of the `fren` command,
+and remove each pair of parentheses in turn: the text must then read
+otherwise, unless the pair is one of the exceptions, which they find from
+where the parser reads the pair's contents. The trees have every operator
+and form of the printer, with names, a name that ends in `?`, names and
+paths that end in `'`, integers, `true` and strings as atoms, fields and
+methods whose names end in `?`, and expressions as written that end open,
+as `x + if p? then 1 else 2`, as well as printed trees.
+
+### Each operand in its place
+
+Each pair of parentheses is decided at an operand in its place, from the
+operand's text: whether that text ends open (`open?`), which is all that
+the grammar asks of what is in it. The grammar reads an operand without
+parentheses as itself, in an operator's place, where `lang::operand`
+allows it, counting a conditional as an atom, unless it ends open and
+something follows it: a left operand is followed by its operator. A
+receiver must be an atom that can be one and does not end open. A `when`'s
+condition is any expression that binds at least as tightly as `iff`, a
+conditional among them, and anything can be written between delimiters or
+keywords:
 
 ```fren
 pub fn grammar_precedence(t: FixTree): Precedence := if t is FixTree::If(_, _, _) then Precedence::Atom else precedence_of(t)
 
-pub fn reads_bare?(t: FixTree, place: Place) := match place {
+pub fn reads_bare?(t: FixTree, place: Place, open?) := match place {
     Place::Operand(outer, assoc, right?, followed?) =>
-        bare_operand?(outer, grammar_precedence(t), assoc, right?) and not ((followed? or not right?) and ends_open?(t)),
-    Place::Receiver => grammar_precedence(t) = Precedence::Atom and receivable?(t) and not ends_open?(t),
+        bare_operand?(outer, grammar_precedence(t), assoc, right?) and not ((followed? or not right?) and open?),
+    Place::Receiver => grammar_precedence(t) = Precedence::Atom and receivable?(t) and not open?,
+    Place::Condition => rank_of(grammar_precedence(t)) > rank_of(Precedence::Open),
     Place::Delimited | Place::Branch => true,
 }
 
--- The two exceptions: an open-ended form as an operand, or between delimiters.
-pub fn kept_for_reading?(t: FixTree, place: Place) := match place {
+-- The two exceptions: an open-ended form as an operand, or one, or an
+-- expression that ends in one, as a condition or between delimiters.
+pub fn kept_for_reading?(t: FixTree, place: Place, open?) := match place {
     Place::Operand(_, _, _, _) => precedence_of(t) = Precedence::Open,
-    Place::Delimited => precedence_of(t) = Precedence::Open or ends_open?(t),
+    Place::Condition | Place::Delimited => precedence_of(t) = Precedence::Open or open?,
     _ => false,
 }
 
--- Its own checks are by testing: the solver does not unfold the recursive
--- `ends_open?`. That the printer meets it is checked by the solver below.
-set_option fren.evidence "random" in
-pub proc parenthesization(operand: FixTree, place: Place): (parens?) {
-    ensure reads_back: unless parens?, reads_bare?(operand, place)
-    ensure all_needed: when parens?, not reads_bare?(operand, place) or kept_for_reading?(operand, place)
+set_option fren.lint.undecidable "allow" in
+pub proc parenthesization(
+    operand: FixTree,
+    place: Place,
+    open?,                   -- the operand's text ends in an open-ended form outside parentheses
+): (parens?) {
+    ensure reads_back: unless parens?, reads_bare?(operand, place, open?)
+    ensure all_needed: when parens?, not reads_bare?(operand, place, open?) or kept_for_reading?(operand, place, open?)
 }
 ```
 
-So the printed text reads back as the tree, and no pair of parentheses
-that the printer adds can be removed without changing what it reads as,
-but those of the two exceptions. `reads_bare?` is a model of the grammar,
-not the parser itself, so the printer's tests check `lint::parenthesization`
-against the parser of the `fren` command: they print random trees, read
-each back, and remove each pair of parentheses in turn, which must change
-the reading unless the pair is one of the exceptions.
+So where each operand's text ends open exactly where `ends_open?` says,
+which `lint::printing` asks of every text, and each operand is enclosed
+as `lint::parenthesization` says, the whole text reads back as the tree,
+and needs each pair of parentheses but those of the exceptions.
+`reads_bare?` is a model of the grammar, not the parser itself, so the
+same tests check it.
 
 ## How the printer writes a tree
 
@@ -233,7 +275,7 @@ pub fn bare?(t: FixTree, outer: Precedence, assoc: Assoc, right?, followed?) :=
 pub fn bare_in?(t: FixTree, place: Place) := match place {
     Place::Operand(outer, assoc, right?, followed?) => bare?(t, outer, assoc, right?, followed?),
     Place::Receiver => bare?(t, Precedence::Atom, Assoc::Left, false, true) and receivable?(t),
-    Place::Delimited => bare?(t, Precedence::Open, Assoc::NonAssoc, false, true),
+    Place::Condition | Place::Delimited => bare?(t, Precedence::Open, Assoc::NonAssoc, false, true),
     Place::Branch => true,
 }
 
@@ -244,7 +286,7 @@ pub proc print_parens(operand: FixTree, place: Place): (det parens?) {
 set_option fren.lint.undecidable "allow" in
 expect print_parens_refines(operand: FixTree, place: Place) {
     call concrete := print_parens(operand, place)
-    refines concrete parenthesization(operand, place)
+    refines concrete parenthesization(operand, place, ends_open?(operand))
 }
 ```
 
@@ -322,9 +364,10 @@ The printer writes the other forms of its trees in the same way: the
 operands of a chained comparison as a comparison's, and a receiver, an
 argument, an element and an index as [Parentheses in
 fixes](../Lint.md#parentheses-in-fixes) says. Its tests check them against
-`lint::parenthesization`.
+`lint::printing`.
 
 ```fren
+#fren_check printing
 #fren_check parenthesization
 #fren_check print_parens
 #fren_check print_parens_refines

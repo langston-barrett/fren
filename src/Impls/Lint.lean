@@ -2528,6 +2528,7 @@ decisions it makes: `Printed.bare` in an operand's slot or a delimited one
 def bareIn (p : Printed) : lint.Place → Bool
   | .Operand o a r f => p.bare (some ⟨precOf o, toAssoc a, r⟩) f
   | .Receiver => p.bareReceiver true
+  | .Condition => p.bare ((BKind.when false).slots[0]?.join) true
   | .Delimited => p.bare (some Fren.Core.delimitedSlot) true
   | .Branch => true
 
@@ -2558,6 +2559,10 @@ theorem bareIn_eq (t : lint.FixTree) (place : lint.Place) : bareIn (specPrinted 
     have : Fren.Core.receiverSlot = ⟨precOf .Atom, toAssoc .Left, false⟩ := rfl
     simp only [bareIn, Printed.bareReceiver, this, bare_eq]
     simp [lint.bare_in?, specPrinted]
+  | Condition =>
+    have : (BKind.when false).slots[0]?.join = some ⟨precOf .Open, toAssoc .NonAssoc, false⟩ := rfl
+    simp only [bareIn, this, bare_eq]
+    simp [lint.bare_in?]
   | Delimited =>
     have : Fren.Core.delimitedSlot = ⟨precOf .Open, toAssoc .NonAssoc, false⟩ := rfl
     simp only [bareIn, this, bare_eq]
@@ -2625,10 +2630,12 @@ impl print_parens_tree: lint::print_parens for (t : lint.FixTree) (place : lint.
 
 end Printing
 
--- That the grammar reads the printed text as `lint::parenthesization`
--- says, with no parentheses that it does not need but those of its
--- exceptions: the parser is not modelled, so this is tested, on random
--- trees read back by the parser of the `fren` command.
+-- That the parser reads the printed text back as the tree, with no
+-- parentheses that it does not need but those of the exceptions, and that
+-- each operand's place reads as the model of the grammar says: the parser
+-- is not modelled, so this is tested, on random trees read back by the
+-- parser of the `fren` command.
+tested lint::printing: "src/FrenTestMain.lean", "src/FrenTest/Quote.lean"
 tested lint::parenthesization: "src/FrenTestMain.lean", "src/FrenTest/Quote.lean"
 
 end Fren.Impls

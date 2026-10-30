@@ -2061,11 +2061,12 @@ parentheses by the `.` of a field read or a method call, if `dot`, or by
 the `[` of an index: an integer, `true` and `false` cannot be; nor, before
 `.`, a name that ends in `?`, which no identifier continues
 (`Reqs/Lang/Lexical#identifiers`), or a path of more than one segment, as
-`E::A`, whose last segment would take in what follows the `.`
+`E::A` or `E::A'`, whose last segment would take in what follows the `.`
 (`Reqs/Lang/Expressions`: `atom "." IDENT`). -/
 def receivesText (text : String) (dot : Bool) : Bool :=
   let rev := text.toList.reverse
-  let word := rev.takeWhile isWordChar
+  -- An identifier's last component, which may end in `'`, or in `?`.
+  let word := rev.takeWhile fun c => isWordChar c || c == '\''
   let before := rev.drop word.length
   if text.isEmpty then false
   else if before.isEmpty && (text.front.isDigit || text == "true" || text == "false") then false

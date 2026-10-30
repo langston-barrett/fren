@@ -33,7 +33,7 @@ import Lean.Elab.Frontend
 - **Printing fixes:** what the printer of fixes writes for random trees
   reads back as each tree, by the parser of the `fren` command, and needs
   each pair of parentheses that it adds, but those of its exceptions
-  (`printing`, `lint::parenthesization`).
+  (`printing`, `lint::printing`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -1448,7 +1448,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["leanTokens"] => leanTokens
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
-  -- fren-covers: lint::parenthesization
+  -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec
   | ["conformance", name] => match corpora.lookup name with
