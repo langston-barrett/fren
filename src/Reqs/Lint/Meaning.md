@@ -72,8 +72,11 @@ Two texts in different scopes may have different values.
 `match` that the [pattern test elaborates
 to](../Lang/Semantics.md#derived-forms) binds, and in the `else` branch,
 the variable `v`, in an environment that binds `r` to a reply and `v` to
-another value. Its evidence is testing, which evaluates it, since the
-solver unfolds [`eval`](../Lang/Semantics.md) only one step:
+another value. The solver unfolds [`eval`](../Lang/Semantics.md) only one
+step, and the `match` takes several, so `src/Impls/Lint.lean` proves
+`payload_read` in Lean, for every interpretation and pair of values, by
+evaluating the `match`; `fren check` tests it, and finds the cover goal's
+witness by testing:
 
 ```fren
 set_option fren.evidence "random" in
@@ -87,7 +90,7 @@ pub proc written_scopes(i: lang::Interp, payload: lang::Value, v: lang::Value) {
         Expr::Literal(Value::True), Expr::Var("v"), Expr::NoMatch))
     let in_else: Outcome := eval(i, env, Expr::Var("v"))
 
-    expect payload_read: in_then = Outcome::Defined(payload)
+    ensure payload_read: in_then = Outcome::Defined(payload)
     cover differ: in_then != in_else
 }
 ```
@@ -98,10 +101,10 @@ What an expression mentions is a set of `lang::Mention`s, as
 [`lang::mentions`](../Lang/Expressions.md#mentions) gives it, and as its
 elaboration's [free variables](../Lang/EvaluationRules.md#free-variables) are.
 One that mentions nothing has the same outcome in every interpretation
-and environment, given the primitive operations, by the coincidence lemma;
-where its outcome is undefined, as in `get([1], 5)` with `fn get(q:
-Seq<Int>, i: Int): Int := q[i]`, its value is unspecified, so it may
-differ between behaviours; the [definedness check](../Check.md#definedness)
+and environment, given the structural recursions and the primitive
+operations, by the coincidence lemma; where its outcome is undefined, as
+in `get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`, its
+value is unspecified, so it may differ between behaviours; the [definedness check](../Check.md#definedness)
 reports that index, so in a spec that passes its checks the value is the
 same. Here `e` is the expression's elaboration, and `i`, `p`, `j` and `q`
 two interpretations and environments:

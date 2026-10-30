@@ -56,21 +56,24 @@ branches' operators, as written, and operands as
 operands mention:
 
 ```fren
+-- A binary operator as written: one of `lint::InfixOp`, `div` or `mod`.
+pub enum BinaryOperator { Infix(InfixOp), Div, Mod }
+
 -- The operator of the branches, as Fren's arithmetic restricts it: `*`,
--- `div` and `mod`, or another.
+-- `div` and `mod`, or another, or none.
 pub enum SharedOp { Times, Div, Mod, OtherOp }
 
-pub fn shared_op(op: lang::Id): SharedOp := match op {
-    "*" => SharedOp::Times,
-    "div" => SharedOp::Div,
-    "mod" => SharedOp::Mod,
+pub fn shared_op(op: Option<BinaryOperator>): SharedOp := match op {
+    Some(BinaryOperator::Infix(InfixOp::Mul)) => SharedOp::Times,
+    Some(BinaryOperator::Div) => SharedOp::Div,
+    Some(BinaryOperator::Mod) => SharedOp::Mod,
     _ => SharedOp::OtherOp,
 }
 
 pub proc branches_sharing_code(
     binders: Set<lang::Id>,                -- the binders of the pattern tests in the conditional
-    then_op: lang::Id,                     -- the operator of the `then` branch, as written, or `""` for none
-    else_op: lang::Id,                     -- the `else` branch's
+    then_op: Option<BinaryOperator>,       -- the binary operator of the `then` branch, or none
+    else_op: Option<BinaryOperator>,       -- the `else` branch's
     then_left: Scoped,                     -- the operands of the `then` branch, as written in their scopes
     then_right: Scoped,
     else_left: Scoped,                     -- the operands of the `else` branch
@@ -89,7 +92,7 @@ pub proc branches_sharing_code(
 ) {
     use self::SharedOp::{Div, Mod, OtherOp, Times}
     out op := shared_op(then_op)
-    out same_op? := then_op = else_op and then_op != ""
+    out same_op? := then_op = else_op and then_op != None
     out shared_left? := then_left = else_left
     out shared_right? := then_right = else_right
     -- What the `if` that the fix moves out, `if C then A else B`, mentions.
@@ -110,7 +113,7 @@ pub proc branches_sharing_code(
     -- Never across binders, and the fix writes one binary operator, whose
     -- divisor is never the `if`.
     expect no_binders: when fires?, binders = {}
-    expect one_operator: when fires?, then_op = else_op and then_op != ""
+    expect one_operator: when fires?, then_op = else_op and then_op != None
     expect no_divisor: when fires? and op in {Div, Mod}, not shared_left?
 
     cover other: fires? and op = OtherOp
@@ -124,8 +127,8 @@ environment:
 ```fren
 expect branches_sharing_value(
     b_binders: Set<lang::Id>,
-    b_then_op: lang::Id,
-    b_else_op: lang::Id,
+    b_then_op: Option<BinaryOperator>,
+    b_else_op: Option<BinaryOperator>,
     b_then_left: Scoped,
     b_then_right: Scoped,
     b_else_left: Scoped,

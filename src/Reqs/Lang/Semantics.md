@@ -210,7 +210,7 @@ meaning, since evaluation has no effects and is deterministic.
 | `C`, a constant with the definition `e` | `Apply(C, Nil, Nil, e)` |
 | `f(a, b)`, where `f` is uninterpreted | `Call(f, [a, b])`; an instance of a [generic one](GenericFunctions.md#uninterpreted-generic-functions) is named with its type arguments, as `pick<Int>`, one unknown function for each instance |
 | `f(a, b)`, where `f` is a [structural recursion](Recursion.md) | `Recur(f, [a, b])` |
-| an application of a [higher-order function](HigherOrder.md) | its body, with each application of a function parameter replaced by the closure's body within a `let` of each of the closure's parameters, the names renamed apart, as [Meaning](HigherOrder.md#meaning) states |
+| `h(c, a)`, where `h` is a [higher-order function](HigherOrder.md) with the function parameter `f`, the other parameter `x` and the body `e`, and `c` is the closure `\|y\| d` | `let #0 := z in let x := a in e'`, where `e'` is `e` with each application `f(b)` replaced by `let y := b in d'`, and `d'` is `d` with each name `z` that it captures renamed to its capture symbol `#0`: a `let` of each capture symbol at its name and of each other parameter at its argument, around the body, as [Meaning](HigherOrder.md#meaning) states; the parameters are renamed apart from the names that the arguments mention, as the capture symbols are, so that each argument means what it means where `h` is applied |
 | `exactly_one?(a, b)`, `at_most_one?(a, b)` | `Count(Exactly, [a, b])`, `Count(AtMost, [a, b])` |
 
 ## Environments and interpretations

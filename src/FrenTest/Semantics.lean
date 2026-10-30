@@ -14,20 +14,27 @@ expressions are over integers, `Bool`s, strings, sequences of integers, an
 enumeration `E { A(Int), B }` and a record `R(Int, Bool)`: literals,
 variables, `+` and `-`, the comparisons, the connectives, conditionals,
 cardinality, indexing in and out of range, constructions, field reads,
-`match`es over `E` and over integers, with binders and guards, tables, and
-the constant `C0` and the defined function `f(n)`, which both inline. The
-primitive operations, `*`, `div`, `mod` and `++` of strings, are left out:
-the semantics takes them from its interpretation. Where the semantics finds
-an expression well-defined, the binary gives it the same value; where the
+`match`es over `E` and over integers, with binders and guards, tables, the
+constant `C0` and the defined function `f(n)`, which both inline, and
+applications of the uninterpreted function `u` (`Call`) and of the
+structural recursion `r(n)` (`Recur`). The binary's interpretation and the
+semantics' are built from the same graphs: `u`'s, at random points, and
+`r`'s, whose body is `n + 1`, at some of the integers. The primitive
+operations, `*`, `div`, `mod` and `++` of strings, are left out: the
+semantics takes them from its interpretation. Where the semantics finds an
+expression well-defined, the binary gives it the same value; where the
 binary does not know it, the semantics finds it undefined. The binary may
-know more, by its Kleene connectives.
+know more, by its Kleene connectives, and by evaluating `r`'s body where
+the semantics' finite graph has no point.
 
-Last, expressions with applications of uninterpreted functions and
-structural recursions are evaluated under interpretations that differ in
-the functions that they do not mention. Each expression is also evaluated in the behaviour with a variable that it
+Each expression is also evaluated in the behaviour with a variable that it
 does not mention rebound, which the coincidence lemma (`lang::coincidence`)
 says changes nothing, and, where it mentions nothing, in the empty
-environment, which `lang::closed` says changes nothing either.
+environment, which `lang::closed` says changes nothing either. Last,
+expressions of the semantics alone are evaluated under interpretations
+that differ in the functions that they do not mention. Both lemmas are
+proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
+statements against the generated code.
 -/
 
 namespace Fren.Test.Semantics
@@ -52,12 +59,14 @@ inductive Ty where
   deriving BEq, Inhabited
 
 /-- What an expression may mention: the behaviour's variables, the
-parameter `n` of `f`, `C0`, `f`, and the binders of the arms around it. -/
+parameter `n` of `f`, `C0`, `f`, `u` and `r`, and the binders of the arms
+around it. -/
 structure Scope where
   vars : Bool := true
   param : Bool := false
   const : Bool := true
   fn : Bool := true
+  apps : Bool := true
   binders : List Lean.Name := []
 
 abbrev Pair := Ex × lang.Expr
@@ -148,6 +157,12 @@ partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
       if sc.fn then
         let a ← gen P sc .int (d - 1)
         return (subst a.1 P.f.1, .Apply "f" (list [a.2]) (.Cons "n" .Nil) P.f.2)
+      else genLeaf P sc t
+    | 9 =>
+      if sc.apps then
+        let a ← gen P sc .int (d - 1)
+        if (← next 2) = 0 then return (.app `u #[a.1], .Call "u" (list [a.2]))
+        else return (.app `r #[a.1], .Recur "r" (list [a.2]))
       else genLeaf P sc t
     | _ => genLeaf P sc t
   | .bool =>
@@ -287,9 +302,9 @@ end
 /-- A program: `C0`, closed, and `f(n)`, which may apply `C0`. -/
 def genProg : R Prog := do
   let none : Prog := ⟨intLit 0, intLit 0⟩
-  let c0 ← gen none { vars := false, const := false, fn := false } .int 2
+  let c0 ← gen none { vars := false, const := false, fn := false, apps := false } .int 2
   let P : Prog := ⟨c0, intLit 0⟩
-  let f ← gen P { vars := false, param := true, fn := false } .int 2
+  let f ← gen P { vars := false, param := true, fn := false, apps := false } .int 2
   return ⟨c0, f⟩
 
 /-- A value of the binary's, as the semantics has it. -/
@@ -320,6 +335,37 @@ def envOf (b : List (String × Val)) : lang.Env :=
 
 def interp : lang.Interp := ⟨.Empty, .Empty, .Empty⟩
 
+/-- Some of the integers from `-6` to `6`, each with a random value. -/
+def genPoints : R (List (Int × Int)) := do
+  let mut out := []
+  for k in [0:13] do
+    if (← next 4) != 0 then out := ((k : Int) - 6, ← small) :: out
+  return out
+
+/-- The graph of `g` at the points `pts`, in order. -/
+def graphOf (g : String) (pts : List (Int × Int)) : lang.Graph :=
+  pts.foldr (init := .Empty) fun (k, v) rest => .Point g (.Cons (.Integer k) .Nil) (.Integer v) rest
+
+/-- The binary's interpretation of `u`, at the points `us`, and of `r`, by
+its body `n + 1`. -/
+def binaryInterp (us : List (Int × Int)) : FrenCli.Eval.Interp where
+  fn f vs := if f == `u then (match vs with | #[.int k] => (us.lookup k).map .int | _ => none) else none
+  recDefs f := if f == `r then some (#[`n], .bin .add (.bound `n) (.lit (.int 1))) else none
+
+/-- The semantics' interpretation of `u`, at the points `us`, and of `r`, at
+the integers `rs`, where it is their successor, as its body says. -/
+def semanticInterp (us : List (Int × Int)) (rs : List Int) : lang.Interp :=
+  ⟨graphOf "u" us, graphOf "r" (rs.map fun k => (k, k + 1)), .Empty⟩
+
+/-- Whether `e` applies an uninterpreted function or a structural recursion. -/
+def applies : lang.Expr → Bool
+  | .Call _ _ | .Recur _ _ => true
+  | .Unary _ a | .Is a _ | .Project a _ _ | .Construct _ a | .Count _ a | .Apply _ a _ _ => applies a
+  | .Binary _ a b | .And a b | .Or a b | .Cons a b | .Index a b | .Let _ a b | .Method _ a b => applies a || applies b
+  | .If a b c => applies a || applies b || applies c
+  | .Match a _ b c d => applies a || applies b || applies c || applies d
+  | _ => false
+
 /-- The problems found on 3000 random expressions. -/
 def run : Array String := Id.run do
   let mut failures := #[]
@@ -328,17 +374,20 @@ def run : Array String := Id.run do
   let mut unknown := 0
   let mut rebound := 0
   let mut closedOnes := 0
+  let mut applied := 0
   for k in [0:3000] do
-    let ((_, e, b), s) := (do
+    let ((_, e, b, us, rs), s) := (do
       let P ← genProg
       let t := #[Ty.bool, .int, .str, .e][k % 4]!
       let e ← gen P {} t 4
-      return (P, e, ← behaviour)).run seed
+      return (P, e, ← behaviour, ← genPoints, (← genPoints).map Prod.fst)).run seed
     seed := s
     let look : FrenCli.Eval.Look := fun n => b.lookup n.toString
     let env := envOf b
-    let w := lang.eval interp env e.2
-    match e.1.eval {} look, w with
+    let i := semanticInterp us rs
+    let w := lang.eval i env e.2
+    if applies e.2 then applied := applied + 1
+    match e.1.eval (binaryInterp us) look, w with
     | some v, .Defined w =>
       defined := defined + 1
       unless toValue v == some w do
@@ -350,14 +399,14 @@ def run : Array String := Id.run do
     -- An expression that mentions nothing has one outcome in every environment.
     if lang.free_vars e.2 = ∅ then
       closedOnes := closedOnes + 1
-      unless lang.eval interp .Empty e.2 == w do
+      unless lang.eval i .Empty e.2 == w do
         failures := failures.push s!"{repr e.2} mentions nothing, but its outcome differs in the empty environment"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do
         rebound := rebound + 1
         let env' := lang.Env.Bind x (.Defined (.Integer 7)) env
-        unless lang.eval interp env' e.2 == w do
+        unless lang.eval i env' e.2 == w do
           failures := failures.push s!"{repr e.2} in {repr b} changes when `{x}`, which it does not mention, is rebound"
   -- `lint::manual_at_most_one_defined`: of two well-defined `Bool`s, the
   -- `and` and the call of `at_most_one?` are both well-defined.
@@ -380,6 +429,7 @@ def run : Array String := Id.run do
   if unknown < 50 then failures := failures.push s!"only {unknown} expressions were undefined"
   if rebound < 1000 then failures := failures.push s!"only {rebound} variables were rebound"
   if closedOnes < 100 then failures := failures.push s!"only {closedOnes} expressions mentioned nothing"
+  if applied < 300 then failures := failures.push s!"only {applied} expressions applied `u` or `r`"
   return failures
 
 /-- `lint::written_scopes`: in an environment that binds `r` to a reply and

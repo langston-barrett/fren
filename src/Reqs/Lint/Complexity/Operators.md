@@ -329,10 +329,11 @@ conjunct's syntax, and their implementations read it as one, so it cannot
 be defined from evaluation. That the lint's syntactic test gives
 `obligation?` wherever an operand may not be well-defined, as
 `no_obligation` assumes, is tested, by `lint::manual_at_most_one_guarded`
-above and the ui tests, not proved. Its own evidence is testing, which
-evaluates both expressions, since the solver unfolds
+above and the ui tests, not proved. The solver unfolds
 [`eval`](../../Lang/Semantics.md#the-evaluation-function) one step, and the
-call's argument list is two deep:
+call's argument list is two deep, so `src/Impls/Lint.lean` proves `kept` in
+Lean, for every interpretation, environment and pair of operands; `fren
+check` tests it, and finds the cover goal's witness by testing:
 
 ```fren
 set_option fren.evidence "random" in
@@ -353,7 +354,7 @@ pub proc manual_at_most_one_defined(
     let conjunct: Outcome := eval(i, env, Expr::And(a, b))
     let counted: Outcome := eval(i, env, Expr::Count(Cardinality::AtMost, Expr::Cons(a, Expr::Cons(b, Expr::Nil))))
 
-    expect kept: unless obligation?, conjunct is Outcome::Defined(_) and counted is Outcome::Defined(_)
+    ensure kept: unless obligation?, conjunct is Outcome::Defined(_) and counted is Outcome::Defined(_)
     -- With an obligation, the `and`'s guard can be what makes it well-defined.
     cover guard_needed: obligation? and conjunct is Outcome::Defined(_) and counted = Outcome::Undefined
 }

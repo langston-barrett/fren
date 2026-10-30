@@ -353,6 +353,32 @@ expect mentions_free_vars(e: Expr) {
 }
 ```
 
+For the binding forms, `binding_forms_free_vars` states the same through
+the front ends' kinds of the names that they bind. In `let x := d in b`,
+the body's mentions are its free variables with each `x`, a `Definition`,
+mentioning what `d` does; the `let` mentions what its body does, and that
+is the `Let`'s free variables. In a `match`, an arm's guard and body
+mention their free variables with each binder of the pattern, a `Binder`,
+mentioning what the scrutinee does; the `match` mentions what its
+scrutinee, its arms and its later arms do, and that is the `Match`'s free
+variables:
+
+```fren
+expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
+    call definition := mentions(ExprKind::Definition, free_vars(d))
+    call let_form := mentions(kind_of(Expr::Let(x, d, b)), (free_vars(b) minus {Mention::Var(x)})
+        union (if Mention::Var(x) in free_vars(b) then definition.mentioned else {}))
+    expect let_free_vars: let_form.mentioned = free_vars(Expr::Let(x, d, b))
+
+    call binder := mentions(ExprKind::Binder, free_vars(s))
+    call match_form := mentions(kind_of(Expr::Match(s, p, g, b, rest)), free_vars(s)
+        union ((free_vars(g) union free_vars(b)) minus binders(p))
+        union (if (free_vars(g) union free_vars(b)) inter binders(p) != {} then binder.mentioned else {})
+        union free_vars(rest))
+    expect match_free_vars: match_form.mentioned = free_vars(Expr::Match(s, p, g, b, rest))
+}
+```
+
 So `double(3)`, `"abc".len` and `Shape::Circle(2)` mention nothing, and
 `s.len`, `double(x)` and `rate(1)` mention something.
 
@@ -411,9 +437,9 @@ expect defined_scales(b_mentioned: Set<Mention>) {
 The rule is what makes the product linear: of an accepted product, one
 operand is a *fixed factor*, which mentions nothing, and so, by the
 [coincidence lemma](EvaluationRules.md#free-variables), has the same outcome in
-every interpretation and environment, given the primitive operations.
-Where that outcome is undefined, as for `get([1], 5)` with `fn get(q:
-Seq<Int>, i: Int): Int := q[i]`, a check reports why: the [definedness
+every interpretation and environment, given the structural recursions and
+the primitive operations. Where that outcome is undefined, as for
+`get([1], 5)` with `fn get(q: Seq<Int>, i: Int): Int := q[i]`, a check reports why: the [definedness
 check](../Check.md#definedness) reports the index in `get`'s body, as the
 [precondition check](../Check.md#preconditions) reports an application
 outside a function's preconditions. Here `a` and `b` are the operands'
