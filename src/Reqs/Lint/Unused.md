@@ -264,11 +264,12 @@ The message is reported at the item's name, at the end of the file.
 only inputs, one or more, none of them used. An input is *used* when
 something mentions it: a constraint other than an assumption, cover goals
 among them, as for an [unused variable](#unused-variables); a definition;
-an argument of one of the procedure's calls; a global expectation in
-the same file that reads it through a binder over the procedure, as `a.x` with
-the binder `a`; or a [call](../Lang/Calls.md) of the procedure in
-the same file, which gives each of its parameters, and whose precondition
-check has the procedure's assumptions as hypotheses. A
+an argument of one of the procedure's calls; or a
+[call](../Lang/Calls.md) of the procedure in the same file, which gives
+each of its parameters, and whose precondition check has the procedure's
+assumptions as hypotheses. A global expectation that reads an input
+through the call's binder, as `a.x` after `call a := p(...)`, uses it
+through that call, since only a call binds a procedure. A
 [refinement](../Lang/Refinement.md) whose abstraction is the procedure is
 not a use: it checks only the abstraction's guarantees, and introduces
 none of its assumptions, so removing one changes no verdict of the

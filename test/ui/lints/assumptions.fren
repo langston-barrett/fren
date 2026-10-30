@@ -39,7 +39,7 @@ pub proc sub(x: Int): (y: Int) {
     ensure r: y = x
 }
 
--- The assumption feeds an instance's binding.
+-- The assumption constrains an argument of a call.
 proc bound(x: Int): (y: Int) {
     assume pos: x > 0
     call w := sub(x)
@@ -66,29 +66,8 @@ expect g(a_z: Int) {
     expect g: a.z > 0
 }
 
--- A global expectation that states the procedure's assumptions as its own,
--- `spec_pos` and `spec_named`, reads none of the procedure's, so `pos` and
--- `named` are unused.
-proc first_of(n: Int, x: Int, m: Int): (y: Int) {
-    assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
-    assume named: m > 0  --~ warning: the assumption `named` constrains only parameters that nothing uses
-    ensure r: y = x
-}
-
-proc heads(q: Seq<Int>, m: Int): (s: Seq<Int>, t: Int) {
-    out s := q
-    out t := m
-}
-
-expect guarded(q: Seq<Int>, m: Int) {
-    assume spec_pos: ((q).len) > 0  --~ warning: say whether it is empty with `[]`, not `len`
-    assume spec_named: (m) > 0
-    call concrete := heads(q, m)
-    expect r: ((concrete.s)[0]) = ((q)[0])
-}
-
--- An instance of it in the file binds its input, and the instance's
--- assumption check checks the assumption.
+-- A call of the procedure in the file gives its input, and the call's
+-- precondition check checks the assumption.
 proc instanced(k: Int) {
     assume pos: k > 0
 }

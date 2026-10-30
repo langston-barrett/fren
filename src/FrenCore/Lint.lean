@@ -6974,7 +6974,7 @@ def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
       #["help: remove the assumption and its parameters, or use them"] }
 
 /-- The messages of `unused_assumption`, given the parameters that the
-file's calls, its global expectations' among them, give values: each
+file's calls, those in global expectations among them, give values: each
 read's procedure and parameter. A `refines` claim reads none, since it
 introduces none of its abstraction's assumptions
 (`Reqs/Lang/Refinement`). An assumption is read when it mentions a read
