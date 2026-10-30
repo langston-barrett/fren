@@ -473,12 +473,15 @@ states that the fix keeps the meaning, for every value of the scrutinee
 and of the names outside the `match`: where the lint fires, the `match`
 with the conditions as guards, and with the `_` arm that it adds, if it
 adds one, takes an arm whose body has, in that arm, the value that the
-first arm that matched had in its own. Its guarantee is the lemma, as for
-the [coincidence lemma](../../Lang/EvaluationRules.md): `fren check` tests
-it, and `src/Impls/Guards.lean` proves it in Lean, for every sequence of
-up to four arms. The solver could check it, but its query for the first
-arm takes cvc5 some 150,000 resource units, and timed out under the
-build's load, which a proof does not depend on.
+first arm that matched had in its own. It is a lemma, as the [coincidence
+lemma](../../Lang/EvaluationRules.md) is: `src/Impls/Guards.lean` proves
+it in Lean, for every sequence of up to four arms. The solver is not asked:
+its query is large, and timed out under the build's load, which a proof
+does not depend on. `fren check` tests it on random arms, but those seldom
+make the lint fire, so the tests mostly hold vacuously. The solver checks
+the lemma on one `match` where the lint fires, `lint::match_arm_if_else_example`,
+two arms of different variants, for every value of their conditions, of
+the scrutinee and of the name outside the `match`.
 
 ```fren
 -- An arm's body as `match_arm_if_else` reads it: `if C then a else d`,
@@ -592,11 +595,27 @@ pub proc match_arm_if_else(
 -- of the scrutinee and `o` of a name outside it, whichever arm `s` is the
 -- first that matches `x` as written. The arms are those that
 -- `match_arm_if_else` assumes; as conditions rather than assumptions, so
--- that every random test is admissible.
+-- that every random test is admissible, though few make the lint fire.
 set_option fren.evidence "random" in
 pub proc match_arm_if_else_keeps(arms: Seq<IfArm>, d: Body, x: Val, o: Int) {
     ensure keeps_meaning: forall (s: Slot), when 1 <= arms.len <= 4 and one_type?(arms) and fires_on?(arms, d)
         and first_arm?(arms, s, x), keeps?(arms, d, appends?(arms, d), s, x, o)
+}
+
+-- `match s { E::A => if c? then 1 else 0, E::B => if e? then 2 else 0 }`,
+-- on which the lint fires, and whose fix keeps its value.
+-- The arm of the variant with tag `t`: `if c? then f else 0`.
+pub fn example_arm(t: Int, c?, f: Int): IfArm := IfArm { pat := Pat::Tag(t),
+    body := IfBody::IfElse(c?, Body { form := f, uses := Use::Nothing }, Body { form := 0, uses := Use::Nothing }),
+    binds? := false }
+
+pub fn example_arms(c?, e?): Seq<IfArm> := [example_arm(0, c?, 1), example_arm(1, e?, 2)]
+
+expect match_arm_if_else_example(c?, e?, x: Val, o: Int) {
+    expect fires: fires_on?(example_arms(c?, e?), Body { form := 0, uses := Use::Nothing })
+    expect keeps: forall (s: Slot), when first_arm?(example_arms(c?, e?), s, x),
+        keeps?(example_arms(c?, e?), Body { form := 0, uses := Use::Nothing },
+        appends?(example_arms(c?, e?), Body { form := 0, uses := Use::Nothing }), s, x, o)
 }
 ```
 

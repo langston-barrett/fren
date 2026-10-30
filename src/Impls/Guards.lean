@@ -389,7 +389,8 @@ theorem variant_facts (p : lint.Pat) (x : lint.Val) (h : lint.pat_matches? p x =
   · exact ⟨h.1.1.symm, h.1.2, h.2⟩
 
 -- `overlap?` is sound: two patterns of one type that match a value in common
--- overlap (`lint::overlap_matches`).
+-- overlap. The same statement as `lint::overlap_matches`, which the solver
+-- checks: a change to one changes the other.
 theorem overlap_sound (p q : lint.Pat) (x : lint.Val) (hp : lint.pat_matches? p x = true)
     (hq : lint.pat_matches? q x = true)
     (h1 : ¬(lint.integers_pattern? p = true ∧ lint.variants_pattern? q = true))
