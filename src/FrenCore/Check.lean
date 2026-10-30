@@ -54,9 +54,35 @@ inductive Verdict where
 /-- Variables' values in a model, written the way Fren writes them. -/
 abbrev Assignment := Array (Name × String)
 
+/-- What Fren's semantics, at the values read from a solver's model, says
+against the solver's answer (`model::confirmation`): a hypothesis of the
+query is false there, or its goal is true. -/
+inductive Contradiction where
+  | hypothesis (name : Name)
+  | goal
+  deriving Inhabited, BEq, Repr
+
+/-- What the truths of a query's hypotheses, in order, and of its goal, at
+the values read from a model, contradict (`model::report`): the first
+hypothesis that is false, or else the goal, if it is true; none if
+neither. A truth that the evaluator does not know is none. -/
+def contradiction? (hyps : Array (Name × Option Bool)) (goal : Option Bool) : Option Contradiction :=
+  match hyps.find? (·.2 == some false) with
+  | some (h, _) => some (.hypothesis h)
+  | none => if goal == some true then some .goal else none
+
+/-- Whether the readers of both front ends misread every integer of a
+model that a check reports as one more than it is, a bug that the ui tests inject, with
+the environment variable `FREN_MISREAD_MODELS`, to see that confirmation
+catches it (`Reqs/Models#testing`). -/
+def misreadModels : BaseIO Bool := return (← IO.getEnv "FREN_MISREAD_MODELS").isSome
+
 /-- Why a check failed or was inconclusive. -/
 inductive Detail where
   | none
+  /-- The model that the check would report, read as `vals`, is not a
+  counterexample or witness in Fren's semantics (`model::report`). -/
+  | refuted (how : Contradiction) (vals : Assignment)
   /-- The procedure's assumptions contradict each other. -/
   | vacuousAssumptions (core : Array Name)
   /-- No outputs satisfy `core` on input `input`. -/
@@ -349,6 +375,11 @@ structure Backend (m : Type → Type) (F V : Type) where
   pinVariant : Name → V → m (Option (Variant × F))
   /-- `v`, written the way Fren writes values. -/
   render : Name → V → m String
+  /-- What the model of the query of the hypotheses and the goal, a
+  counterexample or witness that a check reports, contradicts, evaluated in
+  Fren's semantics at the values that `render` shows; none if it confirms
+  the answer or leaves it undecided (`Reqs/Model#confirmation`). -/
+  confirm? : Option (Array (Name × F) → F → Array (Name × V) → m (Option Contradiction)) := none
   /-- `f` with each variable `x` that is not an own parameter (call variables
   too) replaced by `primed x`, a second copy of it. -/
   prime : F → F
@@ -583,6 +614,17 @@ def renderModel (vars : Array VarSig) (model : Array (Name × V)) (keep : VarSig
     let some (_, val) := model.find? (·.1 == v.name) | return none
     return some (v.name, ← b.render v.name val)
 
+/-- The verdict `verdict` and the detail `d`, which reports `vals`, the
+values that `model` of the query of `hyps` and `goal` gives, unless Fren's
+semantics at those values contradicts the solver (`model::report`): then the
+check is inconclusive, and its detail says what the values contradict. -/
+def confirmReport (hyps : Array (Name × F)) (goal : F) (model : Array (Name × V)) (vals : Assignment)
+    (verdict : Verdict) (d : Detail) : m (Verdict × Detail) := do
+  let some confirm := b.confirm? | return (verdict, d)
+  match ← confirm hyps goal model with
+  | some how => return (.inconclusive, .refuted how vals)
+  | none => return (verdict, d)
+
 /-- The variables of `model` that are universally quantified, and not also
 outputs, for a realizability conflict. -/
 def conflictInput (vars : Array VarSig) (model : Array (Name × V)) : Array (Name × V) :=
@@ -802,13 +844,16 @@ def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResul
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .inst, comp := c.path, prop? := some i.name, target? := some (i.comp, a.1), verdict, detail
       patTy? := (i.typed.find? (·.1 == a.1)).map (·.2) }
-  let q ← b.query (c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)) a.2 true
+  let hyps := c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)
+  let q ← b.query hyps a.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
     -- Inputs and earlier calls; later ones (and `i`) are unconstrained.
     let later := (c.insts.extract k).map (·.name)
     let shown v := v.isIn && v.isPub && !later.contains v.name.getRoot
-    return result verdict (.counterexample (← renderModel b c.vars model shown))
+    let vals ← renderModel b c.vars model shown
+    let (verdict, detail) ← confirmReport b hyps a.2 model vals verdict (.counterexample vals)
+    return result verdict detail
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -839,11 +884,13 @@ requirements (`check::expectation`). -/
 def checkExpect (c : Comp F) (e : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .expect, comp := c.path, prop? := some e.1, verdict, detail }
-  let q ← b.query (c.defEqs .expect ++ (c.hyps b ++ c.reqs)) e.2 true
+  let hyps := c.defEqs .expect ++ (c.hyps b ++ c.reqs)
+  let q ← b.query hyps e.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    return { result verdict (.counterexample (← renderModel b c.vars model (·.isPub))) with
-      memberValues := ← captureMembers b c e.1 model }
+    let vals ← renderModel b c.vars model (·.isPub)
+    let (verdict, detail) ← confirmReport b hyps e.2 model vals verdict (.counterexample vals)
+    return { result verdict detail with memberValues := ← captureMembers b c e.1 model }
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -858,8 +905,9 @@ def checkCover (c : Comp F) (g : Name × F) (examples : Option Nat := some 1) : 
   let q ← b.query (c.defEqs .cover ++ hyps) goal true
   match coverVerdict q.answer, q with
   | (verdict, true, _), .sat model =>
-    return { result verdict (.witness (← renderModel b c.vars model (·.isPub))) with
-      memberValues := ← captureMembers b c g.1 model }
+    let vals ← renderModel b c.vars model (·.isPub)
+    let (verdict, detail) ← confirmReport b (c.defEqs .cover ++ hyps) goal model vals verdict (.witness vals)
+    return { result verdict detail with memberValues := ← captureMembers b c g.1 model }
   -- The core is sought only on `unsat` (`Reqs/Check#cover-goals`).
   | (verdict, _, true), _ =>
     let core ← minimize b (c.defEqs .cover) hyps goal
@@ -889,10 +937,13 @@ def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .definedness, comp := c.path, prop? := some site.prop, index? := some site.k, verdict, detail
       patTy? := site.patTy? }
-  let q ← b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true
+  let hyps := c.defEqs .definedness ++ c.siteHyps b site
+  let q ← b.query hyps site.goal true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+    let vals ← renderModel b c.vars model (·.isPub)
+    let (verdict, detail) ← confirmReport b hyps site.goal model vals verdict (.counterexample vals)
+    return result verdict detail
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -944,7 +995,9 @@ def checkTable (c : Comp F) (t : TableSite F) : m CheckResult := do
   let q ← b.query (c.tableHyps b t) t.site.goal true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+    let vals ← renderModel b c.vars model (·.isPub)
+    let (verdict, detail) ← confirmReport b (c.tableHyps b t) t.site.goal model vals verdict (.counterexample vals)
+    return result verdict detail
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -959,7 +1012,9 @@ def checkPostcondition (c : Comp F) (p : Name × F) : m CheckResult := do
   let q ← b.query (c.assumes) p.2 true
   match expectVerdict q.answer, q with
   | (verdict, true), .sat model =>
-    return result verdict (.counterexample (← renderModel b c.vars model (·.isPub)))
+    let vals ← renderModel b c.vars model (·.isPub)
+    let (verdict, detail) ← confirmReport b c.assumes p.2 model vals verdict (.counterexample vals)
+    return result verdict detail
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -1022,8 +1077,9 @@ def checkDeterminism (c : Comp F) (x : Name) : m CheckResult := do
   match determinismVerdict q.answer, q with
   | (verdict, true), .sat model =>
     let input ← renderModel b c.vars model fun v => v.isIn && v.isPub && v.name.isAtomic
-    return result verdict
-      (.nondeterministic input (← modelValue b x model x) (← modelValue b x model (primed x)))
+    let d := .nondeterministic input (← modelValue b x model x) (← modelValue b x model (primed x))
+    let (verdict, detail) ← confirmReport b twice (b.samePrimed x) model input verdict d
+    return result verdict detail
   | (.inconclusive, _), _ => return result .inconclusive (.unknown q.reason)
   | (verdict, _), _ => return result verdict
 
@@ -1329,7 +1385,10 @@ def severity? : CheckKind → Verdict → Option Severity
   | _, .fail => some .error
   | _, .inconclusive => some .warning
 
-def CheckResult.severity? (r : CheckResult) : Option Severity := Fren.Core.severity? r.kind r.verdict
+/-- A model that Fren's semantics contradicts is an internal error, so an
+error (`model::report`). -/
+def CheckResult.severity? (r : CheckResult) : Option Severity :=
+  if r.detail matches .refuted .. then some .error else Fren.Core.severity? r.kind r.verdict
 
 /-- The most severe of the severities of a run's results, `none` if there
 are none, for the exit code (`cli::worst_severity`). -/
@@ -1460,6 +1519,14 @@ of its first expectation, `first?`. -/
 def subjectOf (path : Name) (global : Bool) (first? : Option Name) : String :=
   s!"`{showComp (if global then path ++ first?.getD .anonymous else path)}`"
 
+/-- A check's kind, as a message names its check. -/
+def kindName : CheckKind → String
+  | .realizable => "realizability" | .inst => "call" | .expect => "expectation" | .cover => "cover"
+  | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
+  | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
+  | .precondition => "precondition" | .postcondition => "postcondition"
+  | .reachability => "reachability"
+
 inductive Advice where
   | raiseTimeout
   | namesConstructs
@@ -1495,6 +1562,19 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
                  notes := if r.interpreted then #["note: the witness is not shown, since its query uses abstract types or functions, whose interpretation it depends on"]
                    else #[s!"witness: {showAssignment vals}"] ++ priv } }]
   | .pass, _ => #[]
+  -- Not a counterexample, nor a witness, but a bug (`Reqs/Models#reporting`).
+  | _, .refuted how vals =>
+    let what := match how, r.kind with
+      | .hypothesis h, _ => s!"makes its hypothesis `{h.toString (escape := false)}` false"
+      | .goal, .cover => "makes the cover goal false"
+      | .goal, _ => "makes the check's claim true"
+    let read := if vals.isEmpty then #[] else #[s!"note: Fren reads the model as {showAssignment vals}"]
+    #[{ severity := .error, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?
+        msg := { code? := none
+                 headline := s!"internal error: the solver's model for the {kindName r.kind} check of {subject} {what} in Fren's semantics"
+                 label? := some "model contradicts the solver"
+                 notes := read ++ #["note: so it is not shown as a counterexample or a witness, and the check is inconclusive",
+                   "note: this is a bug in Fren: in reading the solver's model, or in translating the spec"] } }]
   | .inconclusive, d =>
     let why := match d with | .unknown w => s!": {w}" | _ => ""
     let what := match r.kind, r.target? with

@@ -237,9 +237,47 @@ partial def Symbols.eval (sy : Symbols) (env : List (String × Val)) : SExp → 
         return ← vs[k]?
       none
 
-/-- A model: its variables' values, and the interpretation of the
-functions whose values it gives (as `::f`, a `lambda`). -/
-def readModel (sp : Spec) (sy : Symbols) (model : Array (Name × String)) : Env × Interp := Id.run do
+/-- `v` with each integer in it one more than it is: the reader's bug that
+`FREN_MISREAD_MODELS` injects (`Fren.Core.misreadModels`). -/
+partial def Eval.Val.misread : Val → Val
+  | .int i => .int (i + 1)
+  | .set ms => Val.setOf (ms.map Val.misread)
+  | .pair a b => .pair a.misread b.misread
+  | .seq es => .seq (es.map Val.misread)
+  | .ctor ty idx args => .ctor ty idx (args.map Val.misread)
+  | v => v
+
+/-- A variable's value in a model, as the solver writes it, as a Fren value
+(`Reqs/Models#reading`), misread if `misread`. -/
+def Symbols.read (sy : Symbols) (misread : Bool) (s : String) : Option Val :=
+  (parseSExp? s >>= sy.eval []).map fun v => if misread then v.misread else v
+
+/-- The default value of the type `t` (`model::default_value`): `false`, `0`,
+`""`, `[]` and `{}`; a newtype's underlying type's; and a record's, or an
+enumeration's first variant whose payload has one, with the default values
+of its fields or payload. An enumeration within its own payload, which
+`seen` holds, an abstract type and a type parameter have none. -/
+partial def Eval.Spec.defaultVal (sp : Spec) (t : VTy) (seen : List Name := []) : Option Val :=
+  match t with
+  | .bool => some (.bool false)
+  | .int | .nat => some (.int 0)
+  | .string => some (.str "")
+  | .set _ | .rel _ _ => some (.set #[])
+  | .seq _ => some (.seq #[])
+  | .newtype _ u => sp.defaultVal u seen
+  | .data p targs => do
+    guard !(seen.contains p)
+    let d ← sp.data.find? p
+    d.ctors.zipIdx.findSome? fun (c, idx) => do
+      let args ← c.fields.mapM fun (_, f) => sp.defaultVal (f.subst targs) (p :: seen)
+      return .ctor p idx args
+  | .abstract _ | .param _ => none
+
+/-- A model: its variables' values, misread if `misread`, each of `vars`
+that it leaves out with its type's default value, and the interpretation
+of the functions whose values it gives (as `::f`, a `lambda`). -/
+def readModel (sp : Spec) (sy : Symbols) (model : Array (Name × String)) (misread : Bool := false)
+    (vars : Array (Name × VTy) := #[]) : Env × Interp := Id.run do
   let mut env : Env := {}
   let mut funs : Std.HashMap Name (Array String × SExp) := {}
   for (n, s) in model do
@@ -250,7 +288,12 @@ def readModel (sp : Spec) (sy : Symbols) (model : Array (Name × String)) : Env 
         let names := params.filterMap fun | .list #[.atom x, _] => some x | _ => none
         funs := funs.insert p (names, body)
       continue
-    if let some v := sy.eval [] e then env := env.insert n v
+    if let some v := sy.read misread s then env := env.insert n v
+  -- What the model leaves free (`Reqs/Models#free-values`); a value that
+  -- the reader cannot read is not free, but unknown.
+  for (n, t) in vars do
+    if model.any (·.1 == n) then continue
+    if let some v := sp.defaultVal t then env := env.insert n v
   let fn (f : Name) (args : Array Val) : Option Val := do
     let (ps, body) ← funs[f]?
     sy.eval (ps.toList.zip args.toList) body
@@ -343,11 +386,22 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
   let tys (n : Name) := (vars.find? (·.name == n)).map (·.ty)
+  -- The variables that a model may leave free, and the second copy of each
+  -- copied one, with their types: the procedure's own, without a
+  -- definition, since a defined one's, or a call's, value follows from the
+  -- others (`Reqs/Models#free-values`).
+  let free := vars.filter fun v => v.name.isAtomic && !ec.defs.any (·.1 == v.name)
+  let typed := free.map (fun v => (v.name, v.ty))
+    ++ (free.filter fun v => (Fren.Core.Symbol.ofRole v.role).copied).map fun v => (Fren.Core.primed v.name, v.ty)
+  -- The injected bug is only in reading a model that a check reports, as
+  -- the Lean-hosted front end, which confirms only those, has it.
+  let read (model : Array (Name × String)) : IO (Env × Interp) := do
+    return readModel sp sy model (← Fren.Core.misreadModels) typed
   { modelBool? := b.modelBool?.map fun read => fun model formula => read model formula.1
     query := fun hyps goal wantModel => do
       let o ← b.query (hyps.map fun (n, f) => (n, f.1)) goal.1 true
       if let .sat model := o then
-        let (env, I) := readModel sp sy model
+        let (env, I) := readModel sp sy model false typed
         let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
         let bad := vals.find? (·.2 == some false)
         let g := goal.2.eval sp sy I env tys
@@ -366,7 +420,14 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     existsOutputs := fun f => do return (← b.existsOutputs f.1, .exOutputs outs f.2)
     pin := fun n v => do return (← b.pin n v).map (·, .pin n v)
     pinVariant := fun n v => do return (← b.pinVariant n v).map fun (k, f) => (k, (f, .pinVariant n v))
-    render := b.render
+    -- The values read, which the confirmation evaluates (`Reqs/Models#reading`).
+    render := fun n v => do
+      match tys n, sy.read (← Fren.Core.misreadModels) v with
+      | some ty, some val => return val.showAs sp ty
+      | _, _ => b.render n v
+    confirm? := some fun hyps goal model => do
+      let (env, I) ← read model
+      return Fren.Core.contradiction? (hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)) (goal.2.eval sp sy I env tys)
     prime := fun f => (b.prime f.1, .primed copied f.2)
     samePrimed := fun n => (b.samePrimed n, .same n)
     -- `R[d := e]` means `d = e ∧ R`, under `∃ outputs`.
@@ -517,20 +578,13 @@ def Refutation.about (x : Refutation) (r : Fren.Core.CheckResult) : Bool :=
       | _, some p, _ => s == p
       | _, none, _ => true
 
-def kindName : Fren.Core.CheckKind → String
-  | .realizable => "realizability" | .inst => "call" | .expect => "expectation" | .cover => "cover"
-  | .vacuity => "vacuity" | .redundancy => "redundancy" | .determinism => "determinism"
-  | .definedness => "definedness" | .completeness => "completeness" | .disjointness => "disjointness"
-  | .precondition => "precondition" | .postcondition => "postcondition"
-  | .reachability => "reachability"
-
 def Refutation.msg (x : Refutation) (r : Fren.Core.CheckResult) : Fren.Core.Msg :=
   let subject := Fren.Core.showComp (r.comp ++ (r.prop?.getD .anonymous))
   let what := match x.hyp? with
     | some h => s!"makes its hypothesis `{h}` false"
     | none => "makes its goal true"
   { code? := none
-    headline := s!"internal error: the solver's model for the {kindName r.kind} check of `{subject}` {what}"
+    headline := s!"internal error: the solver's model for the {Fren.Core.kindName r.kind} check of `{subject}` {what}"
     notes := #[s!"note: the model: {Fren.Core.showAssignment (x.model.map fun (n, v) => (n, v))}",
       "note: this is a bug in Fren's translation of the spec, or in the solver",
       "note: so this check is inconclusive" ] }
@@ -542,6 +596,8 @@ def applyRefutations (results : Array Fren.Core.CheckResult) (log : Array Refuta
   let mut out := #[]
   let mut errs := #[]
   for r in results do
+    -- A reported model already refuted is its result's own message (`Reqs/Models#reporting`).
+    if r.detail matches .refuted .. then out := out.push r; continue
     match log.find? (·.about r) with
     | some x =>
       out := out.push { r with verdict := confirmedVerdict r.verdict .Refuted, detail := .unknown "the solver's model was refuted" }

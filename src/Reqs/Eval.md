@@ -629,5 +629,8 @@ pub proc confirmed_verdict(
 #fren_check
 ```
 
-Only the `fren` command confirms models. On a spec whose models are
-never refuted, it gives the verdicts that Lean does (`cli::agreement`).
+Only the `fren` command confirms every model. Both front ends confirm
+each model that they report, as a counterexample or a witness, at the
+values that they show (see [Reading models](Models.md)). On a spec whose
+models are never refuted, the `fren` command gives the verdicts that Lean
+does (`cli::agreement`).

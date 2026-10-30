@@ -249,13 +249,26 @@ theorem modelValue_spec (x : Name) (model : Array (Name × V)) (n : Name) :
     exact .inr ⟨val, Array.mem_of_find?_eq_some hp, rfl⟩
   · exact .inl rfl
 
+/-- Closes a goal about a check that reports a model, in which `h` says
+that its verdict is one that a contradicted model's never is, by cases
+on what the backend's `confirm?` finds (`confirmReport`). -/
+macro "confirm_close" b:term:max h:ident : tactic => `(tactic| (
+  cases hc : ($b).confirm? <;> simp [hc, bind_eq, run_eq, pure_eq, map_eq] at $h:ident <;> (try split at $h:ident) <;> simp_all))
+
+/-- Proves that a check's detail is the model it reports, given `h`, that
+its verdict is one that a contradicted model's never is. -/
+macro "confirm_detail" b:term:max h:ident : tactic => `(tactic| (
+  cases hc : ($b).confirm? <;> simp [hc, bind_eq, run_eq, pure_eq, map_eq] at $h:ident ⊢ <;> (try split at $h:ident) <;>
+    simp_all))
+
 /-! ## Expectations -/
 
 /-- A `pass` means the expectation holds in every behaviour. -/
 theorem checkExpect_pass (e : Name × F) (h : (checkExpect b c e).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.Behaves ρ → s.den e.2 ρ := by
-  unfold checkExpect at h
+  unfold checkExpect confirmReport at h
   cases hq : b.query (c.defEqs .expect ++ (c.hyps b ++ c.reqs)) e.2 true <;> simp [hq, expectVerdict, Outcome.answer] at h
+  case sat => confirm_close b h
   exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_behaves (kd := .expect) rfl ht).2 hρ)
 
 /-- A `fail` is a behaviour in which the expectation is false, which the
@@ -263,11 +276,12 @@ counterexample shows. -/
 theorem checkExpect_fail (e : Name × F) (h : (checkExpect b c e).run.verdict = .fail) :
     ∃ ρ model, s.Typed ρ ∧ s.Behaves ρ ∧ ¬s.den e.2 ρ ∧ s.Agrees ρ model ∧
       (checkExpect b c e).run.detail = .counterexample (renderModel b c.vars model (·.isPub)).run := by
-  unfold checkExpect at h ⊢
+  unfold checkExpect confirmReport at h ⊢
   cases hq : b.query (c.defEqs .expect ++ (c.hyps b ++ c.reqs)) e.2 true <;>
     simp [hq, expectVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
-  exact ⟨ρ, ht, (s.holds_behaves (kd := .expect) rfl ht).1 hρ, hg, _, hm, rfl⟩
+  refine ⟨ρ, ht, (s.holds_behaves (kd := .expect) rfl ht).1 hρ, hg, _, hm, ?_⟩
+  confirm_detail b h
 
 /-! ## Vacuity -/
 
@@ -381,11 +395,12 @@ witness shows. -/
 theorem checkCover_pass (g : Name × F) (h : (checkCover b c g).run.verdict = .pass) :
     ∃ ρ model, s.Typed ρ ∧ s.Behaves ρ ∧ s.den g.2 ρ ∧ s.Agrees ρ model ∧
       (checkCover b c g).run.detail = .witness (renderModel b c.vars model (·.isPub)).run := by
-  unfold checkCover at h ⊢
+  unfold checkCover confirmReport at h ⊢
   cases hq : b.query (c.defEqs .cover ++ (c.hyps b ++ c.reqs)) (b.notF g.2) true <;>
     simp [hq, coverVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
-  exact ⟨ρ, ht, (s.holds_behaves (kd := .cover) rfl ht).1 hρ, by simpa [s.notF ht] using hg, _, hm, rfl⟩
+  refine ⟨ρ, ht, (s.holds_behaves (kd := .cover) rfl ht).1 hρ, by simpa [s.notF ht] using hg, _, hm, ?_⟩
+  confirm_detail b h
 
 /-- A `fail` means the cover goal holds in no behaviour, and the reported
 constraints rule it out wherever the definitions hold. -/
@@ -395,9 +410,10 @@ theorem checkCover_fail (g : Name × F) (h : (checkCover b c g).run.verdict = .f
       (checkCover b c g).run.detail = .vacuous (keep.map (·.1)) ∧
       ∀ ρ, s.Typed ρ → s.Defined ρ → s.Holds keep ρ → ¬s.den g.2 ρ := by
   obtain ⟨keep, hsub, hmin, hent, -⟩ := minimize_spec s (c.defEqs .cover) (c.hyps b ++ c.reqs) (b.notF g.2)
-  unfold checkCover at h
+  unfold checkCover confirmReport at h
   cases hq : b.query (c.defEqs .cover ++ (c.hyps b ++ c.reqs)) (b.notF g.2) true <;>
     simp [hq, coverVerdict, Outcome.answer] at h
+  case sat => confirm_close b h
   have hall := s.query_unsat hq
   refine ⟨fun ρ ht hρ => (s.notF ht).1 (hall ρ ht ((s.holds_behaves (kd := .cover) rfl ht).2 hρ)), keep, hsub, ?_,
     fun ρ ht hd hρ => (s.notF ht).1 (hent hall ρ ht
@@ -480,9 +496,10 @@ theorem checkRedundant_req_fail (r : Name × F)
 the earlier calls and the call's bindings. -/
 theorem checkInst_pass (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b c k i a).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.Admits ρ k → s.den i.bindings ρ → s.den a.2 ρ := by
-  unfold checkInst at h
+  unfold checkInst confirmReport at h
   cases hq : b.query (c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)) a.2 true <;>
     simp [hq, expectVerdict, Outcome.answer] at h
+  case sat => confirm_close b h
   refine fun ρ ht hρ hb => s.query_unsat hq ρ ht ((s.holds_append _ _ ρ).2 ⟨(s.holds_defEqs rfl ρ).2 hρ.1,
     fun g hg => ?_⟩)
   rcases Array.mem_push.1 hg with hg | rfl
@@ -495,13 +512,14 @@ theorem checkInst_fail (k : Nat) (i : Inst F) (a : Name × F) (h : (checkInst b 
     ∃ ρ model, s.Typed ρ ∧ s.Admits ρ k ∧ s.den i.bindings ρ ∧ ¬s.den a.2 ρ ∧ s.Agrees ρ model ∧
       (checkInst b c k i a).run.detail = .counterexample (renderModel b c.vars model fun v =>
         v.isIn && v.isPub && !((c.insts.extract k).map (·.name)).contains v.name.getRoot).run := by
-  unfold checkInst at h ⊢
+  unfold checkInst confirmReport at h ⊢
   cases hq : b.query (c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)) a.2 true <;>
     simp [hq, expectVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
   refine ⟨ρ, ht, ⟨(s.holds_defEqs rfl ρ).1 fun g hg => hρ g (Array.mem_append_left _ hg),
       (s.holds_possible k ht).1 fun g hg => hρ g (Array.mem_append_right _ (Array.mem_push_of_mem _ hg))⟩,
-    hρ _ (Array.mem_append_right _ (Array.mem_push_self ..)), hg, _, hm, rfl⟩
+    hρ _ (Array.mem_append_right _ (Array.mem_push_self ..)), hg, _, hm, ?_⟩
+  confirm_detail b h
 
 /-! ## Definedness -/
 
@@ -545,9 +563,10 @@ theorem Sound.holds_site {kd : CheckKind} (hk : kd.substitutes = false) (site : 
 /-- A `pass` means the index is in range wherever it is evaluated. -/
 theorem checkDefinedness_pass (site : IndexSite F) (h : (checkDefinedness b c site).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.AtSite site ρ → s.den site.goal ρ := by
-  unfold checkDefinedness at h
+  unfold checkDefinedness confirmReport at h
   cases hq : b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h
+  case sat => confirm_close b h
   exact fun ρ ht hρ => s.query_unsat hq ρ ht ((s.holds_site (kd := .definedness) rfl site ht).2 hρ)
 
 /-- A `fail` is an environment where the index is evaluated and out of
@@ -555,11 +574,12 @@ range, which the counterexample shows. -/
 theorem checkDefinedness_fail (site : IndexSite F) (h : (checkDefinedness b c site).run.verdict = .fail) :
     ∃ ρ model, s.Typed ρ ∧ s.AtSite site ρ ∧ ¬s.den site.goal ρ ∧ s.Agrees ρ model ∧
       (checkDefinedness b c site).run.detail = .counterexample (renderModel b c.vars model (·.isPub)).run := by
-  unfold checkDefinedness at h ⊢
+  unfold checkDefinedness confirmReport at h ⊢
   cases hq : b.query (c.defEqs .definedness ++ c.siteHyps b site) site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
-  exact ⟨ρ, ht, (s.holds_site (kd := .definedness) rfl site ht).1 hρ, hg, _, hm, rfl⟩
+  refine ⟨ρ, ht, (s.holds_site (kd := .definedness) rfl site ht).1 hρ, hg, _, hm, ?_⟩
+  confirm_detail b h
 
 /-! ## Tables -/
 
@@ -585,9 +605,10 @@ theorem Sound.holds_tableHyps (t : TableSite F) {ρ : Env Val} (ht : s.Typed ρ)
 holds wherever the table is evaluated. -/
 theorem checkTable_pass (t : TableSite F) (h : (checkTable b c t).run.verdict = .pass) :
     ∀ ρ, s.Typed ρ → s.AtSite t.site ρ → s.den t.site.goal ρ := by
-  unfold checkTable at h
+  unfold checkTable confirmReport at h
   cases hq : b.query (c.tableHyps b t) t.site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h
+  case sat => confirm_close b h
   exact fun ρ ht hρ => s.query_unsat hq ρ ht (s.holds_tableHyps t ht hρ)
 
 /-- A `fail` is an environment where the hypotheses of the question hold
@@ -598,11 +619,13 @@ theorem checkTable_fail (t : TableSite F) (h : (checkTable b c t).run.verdict = 
     ∃ ρ model, s.Typed ρ ∧ s.Holds (c.tableHyps b t) ρ ∧ (t.goal.kind ≠ .disjointness → s.AtSite t.site ρ) ∧
       ¬s.den t.site.goal ρ ∧ s.Agrees ρ model ∧
       (checkTable b c t).run.detail = .counterexample (renderModel b c.vars model (·.isPub)).run := by
-  unfold checkTable at h ⊢
+  unfold checkTable confirmReport at h ⊢
   cases hq : b.query (c.tableHyps b t) t.site.goal true <;>
     simp [hq, expectVerdict, Outcome.answer] at h ⊢
   obtain ⟨ρ, ht, hρ, hg, hm⟩ := s.query_sat hq
-  refine ⟨ρ, ht, hρ, fun hk => ?_, hg, _, hm, rfl⟩
+  refine ⟨ρ, ht, hρ, fun hk => ?_, hg, _, hm, ?_⟩
+  rotate_left
+  · confirm_detail b h
   have : c.tableHyps b t = c.defEqs t.goal.kind ++ c.siteHyps b t.site := by
     simp [Comp.tableHyps, hk]
   rw [this] at hρ
@@ -974,7 +997,7 @@ theorem checkDeterminism_fail (x : Name) (hx : IsOut c.vars x)
         (modelValue b x model x).run (modelValue b x model (primed x)).run ∧
       ((modelValue b x model x).run = "?" ∨ (modelValue b x model (primed x)).run = "?" ∨
         (modelValue b x model x).run ≠ (modelValue b x model (primed x)).run) := by
-  unfold checkDeterminism at h ⊢
+  unfold checkDeterminism confirmReport at h ⊢
   simp only [bind_eq] at h ⊢
   cases hq : b.query (c.once b ++ (c.once b).map fun x => (primed x.1, b.prime x.2)) (b.samePrimed x) true <;>
     rw [hq] at h <;> simp +decide [determinismVerdict, expectVerdict, Outcome.answer, run_eq, pure_eq] at h ⊢
@@ -984,7 +1007,8 @@ theorem checkDeterminism_fail (x : Name) (hx : IsOut c.vars x)
   rename_i model
   have hne : ρ x ≠ ρ (primed x) := by simpa [s.samePrimed ht] using hg
   refine ⟨ρ, ht, ht', (s.holds_behaves (kd := .determinism) rfl ht).1 hρ.1, (s.holds_behaves (kd := .determinism) rfl ht').1 hρ.2,
-    by simpa [primeEnv, copied_of_out hx] using hne, _, hm, ⟨rfl, rfl, rfl⟩, ?_⟩
+    by simpa [primeEnv, copied_of_out hx] using hne, _, hm, ?_, ?_⟩
+  · confirm_detail b h
   rcases modelValue_spec x model x with h₁ | ⟨v₁, hv₁, e₁⟩
   · exact .inl h₁
   rcases modelValue_spec x model (primed x) with h₂ | ⟨v₂, hv₂, e₂⟩
@@ -1007,10 +1031,11 @@ theorem checkDeterminism_pass (x : Name) (hx : IsOut c.vars x)
     (h : (checkDeterminism b c x).run.verdict = .pass) :
     ∀ ρ₁ ρ₂, s.Typed ρ₁ → s.Typed ρ₂ → (∀ n, ¬IsCopied c.vars n → ρ₁ n = ρ₂ n) →
       s.Behaves ρ₁ → s.Behaves ρ₂ → ρ₁ x = ρ₂ x := by
-  unfold checkDeterminism at h
+  unfold checkDeterminism confirmReport at h
   simp only [bind_eq] at h
   cases hq : b.query (c.once b ++ (c.once b).map fun x => (primed x.1, b.prime x.2)) (b.samePrimed x) true <;>
     rw [hq] at h <;> simp +decide [determinismVerdict, expectVerdict, Outcome.answer, run_eq] at h
+  case sat => confirm_close b h
   intro ρ₁ ρ₂ ht₁ ht₂ hsame h₁ h₂
   classical
   -- One environment holding both behaviours: `ρ₂`'s copied variables in their second copies.

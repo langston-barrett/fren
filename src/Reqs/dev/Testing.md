@@ -31,7 +31,7 @@
   lints by lint group (`lints/style/` and so on, and `lints/settings/` for
   setting levels), and the others by command (`args/`, `fix/`, `fmt/`,
   `commands/`). Under `test/ui/`, they are `lang/`, `checks/`, `lints/`,
-  `syntax/` and `lean/`. The example specs are in `examples/`, outside
+  `syntax/`, `lean/` and `misread/`. The example specs are in `examples/`, outside
   `test/`.
 - **Error codes** (`lake test`): every code used in the sources must be
   explained in `src/FrenCore/Codes/CODE.md` and reported by some snapshot.
@@ -136,6 +136,10 @@
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
   runs the checks also checks the translation of its spec on the solver's
   models. A refuted model is an internal error, which fails the test.
+  Both front ends also confirm each model that they report, at the values
+  that their readers read (see [Reading models](../Models.md)). The ui tests in
+  `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
+  readers misread every integer, to check that the confirmation catches it.
 - **Differential fuzzing** (`lake exe fren_fuzz [--count N] [--seed N]
   [--out DIR]`): generates random specs and compares each verdict of `fren
   check` with one computed by brute force from the evaluator. The specs stay

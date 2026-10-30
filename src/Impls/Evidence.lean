@@ -21,6 +21,7 @@ import Impls.HigherOrder
 import Impls.Impl
 import Impls.Lang
 import Impls.Lint
+import Impls.Models
 import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTests

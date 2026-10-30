@@ -1,0 +1,35 @@
+-- Each counterexample is evaluated in Fren's semantics, at the values it
+-- shows, before it is shown (`Reqs/Models`): these are real, so they are
+-- shown as before, with values of every shape that the readers read.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+
+pub enum Within { Element, Other }
+
+pub enum Wrapped { Flag(Bool), Items(Seq<Bool>), Empty }
+
+pub struct Point { x: Int, on? }
+
+proc shapes(a: Int, n: Nat, q: Seq<Int>, w: Seq<Within>, bs: Seq<Bool>, s: Set<Int>, p: Point, v: Wrapped) {
+    assume pinned: a = -1 and n = 2
+    assume sequences: q = [3, -4] and w = [Within::Element] and bs = [true, false]
+    assume set: s = {1, 2}
+    assume record: p = Point { x := -5, on? := true }
+    assume variant: v = Wrapped::Items([false, true])
+    expect e: a > 0  --~ error: counterexample: a = -1, n = 2, q = [3, -4], w = [Within::Element], bs = [true, false], s = {1, 2}, p = Point { x := -5, on? := true }, v = Wrapped::Items([false, true])
+}
+
+-- `ignore(b)` mentions `b`, but its body does not read it, so no query
+-- does: the model leaves `b` free, and the counterexample does not show
+-- it. The confirmation fills it with its type's default value, `0`, to
+-- evaluate `ignore(b)` (`Reqs/Models#free-values`).
+fn ignore(x: Int): Int := 0
+
+proc filled(a: Int, b: Int) {
+    assume pinned: ignore(b) = 0 and a = -1
+    expect e: a > 0  --~ error: counterexample: a = -1
+}
+
+--@ summary: 8 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1
