@@ -367,14 +367,14 @@ variables:
 expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
     call definition := mentions(ExprKind::Definition, free_vars(d))
     call let_form := mentions(kind_of(Expr::Let(x, d, b)), (free_vars(b) minus {Mention::Var(x)})
-        union (if Mention::Var(x) in free_vars(b) then definition.mentioned else {}))
+            union (if Mention::Var(x) in free_vars(b) then definition.mentioned else {}))
     expect let_free_vars: let_form.mentioned = free_vars(Expr::Let(x, d, b))
 
     call binder := mentions(ExprKind::Binder, free_vars(s))
     call match_form := mentions(kind_of(Expr::Match(s, p, g, b, rest)), free_vars(s)
-        union ((free_vars(g) union free_vars(b)) minus binders(p))
-        union (if (free_vars(g) union free_vars(b)) inter binders(p) != {} then binder.mentioned else {})
-        union free_vars(rest))
+            union ((free_vars(g) union free_vars(b)) minus binders(p))
+            union (if (free_vars(g) union free_vars(b)) inter binders(p) != {} then binder.mentioned else {})
+            union free_vars(rest))
     expect match_free_vars: match_form.mentioned = free_vars(Expr::Match(s, p, g, b, rest))
 }
 ```
