@@ -1630,12 +1630,15 @@ def jobName (job : List String) : IO String := do
         return if g == 0 then s!"{name} (Fren's own requirements)" else s!"{name} ({", ".intercalate paths.toList})"
   return name
 
-/-- Runs `job` in a process of its own, returning its failures. -/
-def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
+/-- Runs `job` in a process of its own, returning its failures. If `timed`,
+prints how long it took (`--timings`). -/
+def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
+  let start ← IO.monoMsNow
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
-  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   let name ← jobName job
+  if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   match Json.parse last >>= fromJson? with
   | .ok failures =>
     if out.exitCode == 0 then
@@ -1663,26 +1666,63 @@ def jobCount : IO Nat := do
     throw (IO.userError s!"FREN_TEST_JOBS must be a positive integer, not `{v}`")
   return max 1 (min maxJobs (System.Platform.Internal.getHardwareConcurrency ()).toNat)
 
-/-- Runs `jobs`, at most `jobCount` at once. -/
-def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := do
+/-- Runs `jobs`, at most `jobCount` at once, printing how long each took if
+`timed`. -/
+def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String) := do
   let next ← IO.mkRef 0
   let worker : IO (Array String) := do
     let mut failures := #[]
     repeat
       let k ← next.modifyGet fun k => (k, k + 1)
       let some job := jobs[k]? | break
-      failures := failures ++ (← spawnJob bless job)
+      failures := failures ++ (← spawnJob bless timed job)
     return failures
   let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
+
+/-- Whether `job` checks a slice of the mutants of Fren's own requirements,
+the slowest jobs, which `--skip-own-mutants` leaves out. -/
+def ownMutantsJob : List String → Bool
+  | ["mutation", "0", _, _] => true
+  | _ => false
+
+/-- The shard `K/N` of `--shard K/N`, for `K < N`. -/
+def parseShard (s : String) : Except String (Nat × Nat) :=
+  match s.splitOn "/" with
+  | [k, n] => match k.toNat?, n.toNat? with
+    | some k, some n => if k < n then .ok (k, n) else .error s!"--shard {s}: K must be less than N"
+    | _, _ => .error s!"--shard {s}: expected K/N, two whole numbers"
+  | _ => .error s!"--shard {s}: expected K/N, two whole numbers"
+
+/-- The shard of the `i`th job of the selection, of `n` shards: the first
+job, `ownSpec`, alone in shard 0, as on one machine it takes about as long
+as all the others but `ownMutantsJob`'s, and the others dealt in turn to
+shards 1 to `n - 1`, so that the slowest, which come first, spread over
+them. -/
+def shardOf (n i : Nat) : Nat :=
+  if n ≤ 1 then 0 else if i == 0 then 0 else 1 + (i - 1) % (n - 1)
+
+/-- The jobs that `args` select: with `--skip-own-mutants`, all but
+`ownMutantsJob`'s; with `--shard K/N`, of those, the `K`th shard's
+(`shardOf`), so that the shards together run each job once. -/
+def selectJobs (args : List String) (all : Array (List String)) : Except String (Array (List String)) := do
+  let all := if args.contains "--skip-own-mutants" then all.filter (!ownMutantsJob ·) else all
+  match args.dropWhile (· != "--shard") with
+  | _ :: s :: _ =>
+    let (k, n) ← parseShard s
+    return (all.zipIdx.filter fun (_, i) => shardOf n i == k).map (·.1)
+  | [_] => .error "--shard needs an argument, K/N"
+  | [] => return all
 
 unsafe def main (args : List String) : IO UInt32 := do
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if let "--job" :: job := args then
     IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
     return 0
-  let (first, rest) := (← jobs).partition (bless && · == ["snapshots"])
-  let failures := ((← runJobs bless first) ++ (← runJobs bless rest)).qsort (· < ·)
+  let selected ← IO.ofExcept ((selectJobs args (← jobs)).mapError IO.userError)
+  let (first, rest) := selected.partition (bless && · == ["snapshots"])
+  let timed := args.contains "--timings"
+  let failures := ((← runJobs bless timed first) ++ (← runJobs bless timed rest)).qsort (· < ·)
   for f in failures do IO.eprintln s!"FAIL {f}"
   if failures.isEmpty then
     IO.println "fren_test: all passed"
