@@ -4553,28 +4553,53 @@ structure ChainPart (σ : Type) where
   operands : Array σ
   ops : Array String
 
-def ChainPart.ascending (p : ChainPart σ) : Bool := p.ops.all (· matches "<" | "<=")
+/-- Whether `op` orders ascending: `<` or `<=`. -/
+def ascendingOp (op : String) : Bool := op matches "<" | "<="
+
+/-- Whether `op` orders descending: `>` or `>=`. -/
+def descendingOp (op : String) : Bool := op matches ">" | ">="
+
+def ChainPart.ascending (p : ChainPart σ) : Bool := p.ops.all ascendingOp
 
 /-- The conjunct, written the other way round: `a < b` as `b > a`. -/
 def ChainPart.flip (p : ChainPart σ) : ChainPart σ :=
   { operands := p.operands.reverse
     ops := p.ops.reverse.map fun op => ((Comparison.ofOp? op).map (·.mirror.op)).getD op }
 
+/-- The conjunct with each operand `f` of it: as written, for `f` the
+operand's written form. -/
+def ChainPart.map (f : σ → τ) (p : ChainPart σ) : ChainPart τ := { operands := p.operands.map f, ops := p.ops }
+
 /-- Whether `chainable_comparison` joins the conjuncts `l and r`, and
 whether its fix writes `l`, and `r`, the other way round
-(`lint::chainable_comparison`), where `form` writes an operand as written
-and `lSingle` says that `l` is one comparison, written as one conjunct:
+(`lint::chainable_comparison`), each operand as written:
 `chainableComparison` of what their operands and operators are. -/
-def chainFlips [Inhabited σ] (form : σ → String) (l r : ChainPart σ) (lSingle : Bool) : Bool × Bool × Bool :=
-  chainableComparison l.ascending r.ascending lSingle (r.ops.size == 1)
-    (form l.operands.back! == form r.operands[0]!) (form l.operands[0]! == form r.operands.back!)
-    (form l.operands[0]! == form r.operands[0]!) (form l.operands.back! == form r.operands.back!)
+def chainFlips (l r : ChainPart String) : Bool × Bool × Bool :=
+  chainableComparison l.ascending r.ascending (l.ops.size == 1) (r.ops.size == 1)
+    (l.operands.back! == r.operands[0]!) (l.operands[0]! == r.operands.back!)
+    (l.operands[0]! == r.operands[0]!) (l.operands.back! == r.operands.back!)
 
-/-- `n` as a conjunct that `chainable_comparison` can join, if it is one. -/
+/-- The chained comparison that `chainable_comparison`'s fix writes for
+`l and r`, where `fl` and `fr` say which it writes the other way round
+(`lint::chainable_joined`): `l`'s operands, then `r`'s after its first,
+which is `l`'s last. -/
+def ChainPart.join (l r : ChainPart σ) (fl fr : Bool) : ChainPart σ :=
+  let l := if fl then l.flip else l
+  let r := if fr then r.flip else r
+  { operands := l.operands ++ r.operands.extract 1, ops := l.ops ++ r.ops }
+
+/-- Whether `ops` are the operators of a chain that orders one way: one or
+more, each `<` or `<=`, or each `>` or `>=`. -/
+def orderingOps (ops : Array String) : Bool :=
+  !ops.isEmpty && (ops.all ascendingOp || ops.all descendingOp)
+
+/-- `n` as a conjunct that `chainable_comparison` can join, if it is one:
+a comparison that orders, or a chained comparison that orders one way,
+which is the one kind that is not an error. -/
 def chainPart? (n : BNode α) : Option (ChainPart (BNode α)) :=
   match n.kind with
-  | .bin op => if ["<", "<=", ">", ">="].contains op && n.kids.size == 2 then some ⟨n.kids, #[op]⟩ else none
-  | .chain ops => if ops.size + 1 == n.kids.size then some ⟨n.kids, ops⟩ else none
+  | .bin op => if orderingOps #[op] && n.kids.size == 2 then some ⟨n.kids, #[op]⟩ else none
+  | .chain ops => if orderingOps ops && ops.size + 1 == n.kids.size then some ⟨n.kids, ops⟩ else none
   | _ => none
 
 /-- The text of the chained comparison of `operands` and `ops`, each
@@ -4613,11 +4638,9 @@ def chainableAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option 
     let joined? := do
       let (start, l, m) ← run
       let r ← next?
-      let (fires, fl, fr) := chainFlips form l r (m == 1 && l.ops.size == 1)
+      let (fires, fl, fr) := chainFlips (l.map form) (r.map form)
       guard fires
-      let l := if fl then l.flip else l
-      let r := if fr then r.flip else r
-      pure (start, ({ operands := l.operands ++ r.operands.extract 1, ops := l.ops ++ r.ops } : ChainPart (BNode α)), m + 1)
+      pure (start, l.join r fl fr, m + 1)
     match joined? with
     | some j => run := some j
     | none =>
