@@ -8,8 +8,8 @@ proc composed(flag?): (answer?) {
     let computed? := not inner.out?
     ensure value: answer? iff not computed?
 }
-set_option fren.evidence "tested" in
-expect composed_identity(flag?) {  --~[hosted] info: the checks of `composed_identity` set to testing are run by `fren check`, not in Lean
+set_option fren.evidence "random" in
+expect composed_identity(flag?) {  --~[hosted] info: the checks of `composed_identity` set to random testing are run by `fren check`, not in Lean
     call c := identity(flag?)
     refines c composed(flag?)
 }
@@ -31,8 +31,8 @@ proc chain(flag?): (answer?) {
     call l := identity(k.out?)
     ensure value: answer? iff l.out?
 }
-set_option fren.evidence "tested" in
-expect exact_determined_calls(flag?) {  --~[hosted] info: the checks of `exact_determined_calls` set to testing are run by `fren check`, not in Lean
+set_option fren.evidence "random" in
+expect exact_determined_calls(flag?) {  --~[hosted] info: the checks of `exact_determined_calls` set to random testing are run by `fren check`, not in Lean
     call c := identity(flag?)
     refines c chain(flag?)
 }

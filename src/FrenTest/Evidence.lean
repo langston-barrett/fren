@@ -12,28 +12,28 @@ pub proc word(text: String): (det accepted?) {
     ensure rule: accepted? iff text.matches?(r"[a-z]+")
 
     expect plain: when text = "ab", accepted?
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     expect wrong: when text.contains?("x"), not accepted?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc all_tested(n: Int): (big?) {
     ensure r: big? iff n > 3
     expect wrong: when n = 4, not big?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect global_tested(a_n: Int) {
     call a := all_tested(a_n)
     expect global_tested: when a.n = 4, a.big?
 }
 
 /--
-info: the checks of `evidence_test::word` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `evidence_test::word` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: the checks of `evidence_test::all_tested` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `evidence_test::all_tested` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: the checks of `evidence_test::global_tested` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `evidence_test::global_tested` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 -/
@@ -43,11 +43,21 @@ info: fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
 /--
 error: invalid evidence `maybe`
 
-note: `"tested"` has the checks tested instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+tested"` tests them too where enumeration is not complete, and `"solver"` is the default
+note: `"random"` has the checks tested on random behaviours instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+random"` tests them too where enumeration is not complete, and `"solver"` is the default
 -/
 #guard_msgs in
 set_option fren.evidence "maybe" in
 pub proc bad(x?): (y?) { ensure r: y? iff x? }
+
+/--
+error: invalid evidence `enumerated+tested`
+
+note: `"random"` has the checks tested on random behaviours instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+random"` tests them too where enumeration is not complete, and `"solver"` is the default
+note: `"tested"` was renamed to `"random"`; write `"enumerated+random"`
+-/
+#guard_msgs in
+set_option fren.evidence "enumerated+tested" in
+pub proc retired(x?): (y?) { ensure r: y? iff x? }
 
 /--
 error: `fren.evidence` cannot be set for a guarantee
@@ -56,7 +66,7 @@ note: it can be set before a procedure, an expectation or global expectation, a 
 -/
 #guard_msgs in
 pub proc misplaced(x?): (y?) {
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     ensure r: y? iff x?
 }
 

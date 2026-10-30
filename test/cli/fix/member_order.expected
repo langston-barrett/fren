@@ -11,10 +11,10 @@ warning[F0779]: a `let` after a call
 @@ -13,0 +14,4 @@
 +    use self::Shape::Square
 +    assume small: x < 100
-+    set_option fren.evidence "tested" in
++    set_option fren.evidence "random" in
 +    call w := helper(x)
 @@ -18,4 +21,0 @@
--    set_option fren.evidence "tested" in
+-    set_option fren.evidence "random" in
 -    call w := helper(x)
 -    use self::Shape::Square
 -    assume small: x < 100

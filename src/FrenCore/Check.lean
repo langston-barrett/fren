@@ -1806,7 +1806,7 @@ def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/
 def testingHelp (byCheck : Bool) (decide : String) : String :=
-  if byCheck then "help: raise `--tests`; the checks set to testing are not asked of the solver"
+  if byCheck then "help: raise `--tests`; the checks set to random testing are not asked of the solver"
   else s!"help: run `fren check` to {decide}, or raise `--tests`"
 
 /-- Testing found no outputs for an admissible input (`eval::test_verdict`). -/
@@ -1870,7 +1870,7 @@ def couldNotHeadline (what := "check") : String :=
 
 def summary (results : Array CheckResult) (byTesting : Nat := 0) (byBound : Nat := 0) : String :=
   let count (b : Bucket) := (results.filter fun r => bucketOf r.kind r.verdict == b).size
-  let parts := (if byTesting == 0 then [] else [s!"{byTesting} by testing"])
+  let parts := (if byTesting == 0 then [] else [s!"{byTesting} by random testing"])
     ++ (if byBound == 0 then [] else [s!"{byBound} by bounded enumeration"])
   let tested := if parts.isEmpty then "" else s!" ({", ".intercalate parts})"
   s!"fren: {count .passed} passed{tested}, {count .failed} failed, {count .inconclusive} inconclusive, \

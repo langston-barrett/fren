@@ -36,7 +36,7 @@ register_option fren.enumeration.size : Nat := {
 
 register_option fren.evidence : String := {
   defValue := "solver"
-  descr := "the evidence of the checks of the next procedure, global expectation or refinement: \"tested\" to have the `fren` command test them, \"enumerated\" to decide them by enumerating behaviours, \"enumerated+tested\" for both, or \"solver\""
+  descr := "the evidence of the checks of the next procedure, global expectation or refinement: \"random\" to have the `fren` command test them on random behaviours, \"enumerated\" to decide them by enumerating behaviours, \"enumerated+random\" for both, or \"solver\""
 }
 
 export Core (ItemKind Item EnumDef UseDef)

@@ -1,10 +1,19 @@
 error[F0214]: invalid evidence `testing`
- --> test/cli/names/f0214_evidence.fren:2:26
+ --> test/cli/names/f0214_evidence.fren:3:26
   |
-2 | set_option fren.evidence "testing" in
-  |                          ^^^^^^^^^ not `"solver"`, `"tested"`, `"enumerated"` or `"enumerated+tested"`
+3 | set_option fren.evidence "testing" in
+  |                          ^^^^^^^^^ not `"solver"`, `"random"`, `"enumerated"` or `"enumerated+random"`
   |
-  = note: `"tested"` has the checks tested instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+tested"` tests them too where enumeration is not complete, and `"solver"` is the default
+  = note: `"random"` has the checks tested on random behaviours instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+random"` tests them too where enumeration is not complete, and `"solver"` is the default
+
+error[F0214]: invalid evidence `tested`
+ --> test/cli/names/f0214_evidence.fren:9:26
+  |
+9 | set_option fren.evidence "tested" in
+  |                          ^^^^^^^^ not `"solver"`, `"random"`, `"enumerated"` or `"enumerated+random"`
+  |
+  = note: `"random"` has the checks tested on random behaviours instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+random"` tests them too where enumeration is not complete, and `"solver"` is the default
+  = note: `"tested"` was renamed to `"random"`; write `"random"`
 
 error: could not check due to previous errors
 

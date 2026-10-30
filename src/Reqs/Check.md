@@ -1726,9 +1726,9 @@ member := evidence-setting "in" member | ...
 evidence-setting := "set_option" "fren.evidence" STRING
 ```
 
-`set_option fren.evidence "tested" in` before a procedure, an expectation
+`set_option fren.evidence "random" in` before a procedure, an expectation
 or global expectation, a call or a `det` output sets the evidence of its
-checks to *testing*; `"solver"`, the default, sets it back. Before a
+checks to *random testing*; `"solver"`, the default, sets it back. Before a
 procedure, it sets that of all the procedure's checks, and before a member
 or result, that of its checks, which takes precedence:
 
@@ -1750,7 +1750,8 @@ be followed by `in` and by a member whose checks it sets: before anything
 else, such as a guarantee, it is an error (`F0215`), and so is a
 `set_option` of any other option before a member (`F0216`). The setting is a
 statement that the solver cannot be relied on there, so it is never
-reported as unneeded. A value other than `"tested"` or `"solver"` is an
+reported as unneeded. A value other than `"solver"`, `"random"`, or one
+of those of [Checking by enumeration](#checking-by-enumeration), is an
 error (`F0214`), reported once, at the value, wherever the setting is.
 The items and members after it are elaborated as though it were
 `"solver"`, so that the error is not repeated at each of them.
@@ -1789,7 +1790,7 @@ since a failed search does not show that no behaviour exists; it never
 fails a goal. The summary counts the passes that came from testing:
 
 ```text
-fren: 30 passed (2 by testing), 0 failed, 0 inconclusive, 0 redundant
+fren: 30 passed (2 by random testing), 0 failed, 0 inconclusive, 0 redundant
 ```
 
 Lean has no evaluator, so `#fren_check` does not run a check whose evidence
@@ -1847,13 +1848,18 @@ size-setting     := "set_option" "fren.enumeration.size" NUMBER ["in" item]
 ```
 
 - `"enumerated"` decides the checks by enumeration, up to the size bound;
-- `"enumerated+tested"` decides them by enumeration too, and where
-  enumeration is not complete, also tests them, as `"tested"` does, with
+- `"enumerated+random"` decides them by enumeration too, and where
+  enumeration is not complete, also tests them, as `"random"` does, with
   random behaviours beyond the bound (see [Enumeration then
   testing](#enumeration-then-testing)).
 
-Any other value but `"solver"` and `"tested"` is the error `F0214`. A value
-sets the same checks as `"tested"` does, before a procedure or a member.
+Any other value but `"solver"` and `"random"` is the error `F0214`. A value
+sets the same checks as `"random"` does, before a procedure or a member.
+The values `"tested"` and `"enumerated+tested"`, the names of `"random"`
+and `"enumerated+random"` before they were renamed, are errors too, with
+no alias: `tested` is the keyword of a [`tested` claim](Lang/Items.md#claims),
+which is about an implementation's test files, not about a check's
+evidence. The error's note gives the new value.
 `set_option fren.enumeration.size N`, before an item with `in`, or alone,
 for the rest of the file, as `fren.evidence` is, sets the size bound of
 the checks that the later items set to enumeration; the default is 3. A
@@ -1865,19 +1871,22 @@ used instead. Before a member, it is `F0216`, as any option but
 how each check is run:
 
 ```fren
-pub enum EvidenceValue { Solver, Tested, Enumerated, EnumeratedTested, Other }
+-- `Tested` and `EnumeratedTested` are the retired spellings `"tested"`
+-- and `"enumerated+tested"`.
+pub enum EvidenceValue { Solver, Random, Enumerated, EnumeratedRandom, Tested, EnumeratedTested, Other }
 
 pub enum Method { Solver, Testing, Enumeration, EnumerationThenTesting, Skipped }
 
 set_option fren.evidence "enumerated" in
-pub proc evidence_value(value: EvidenceValue): (det valid?, det tested?, det enumerated?) {
-    use self::EvidenceValue::{Enumerated, EnumeratedTested, Other, Tested}
+pub proc evidence_value(value: EvidenceValue): (det valid?, det random?, det enumerated?) {
+    use self::EvidenceValue::{Enumerated, EnumeratedRandom, EnumeratedTested, Random, Solver, Tested}
 
-    ensure valid: valid? iff value != Other
-    ensure testing: tested? iff value in {Tested, EnumeratedTested}
-    ensure enumeration: enumerated? iff value in {Enumerated, EnumeratedTested}
+    ensure valid: valid? iff value in {Solver, Random, Enumerated, EnumeratedRandom}
+    ensure testing: random? iff value in {Random, EnumeratedRandom}
+    ensure enumeration: enumerated? iff value in {Enumerated, EnumeratedRandom}
 
-    expect invalid_sets_nothing: when not valid?, not tested? and not enumerated?
+    expect invalid_sets_nothing: when not valid?, not random? and not enumerated?
+    expect no_alias: when value in {Tested, EnumeratedTested}, not valid?
 }
 
 -- The checks that testing decides (`check::by_testing`).
@@ -1927,10 +1936,10 @@ pattern type is declared is the solver's to check, whatever the evidence,
 for testing too: neither testing nor enumeration decides it, and dropping
 it would leave a value outside its type unreported (`F0661`).
 
-The default stays `"solver"`, and `"tested"` stays testing alone: most
+The default stays `"solver"`, and `"random"` stays testing alone: most
 checks set to testing are about strings, sets and sequences, which are
 not yet enumerable (below), so enumerating them first would make them
-errors; and a spec that sets `"tested"` has chosen evidence that Lean does
+errors; and a spec that sets `"random"` has chosen evidence that Lean does
 not run, which a combined default would change.
 
 ### Enumerable types
@@ -2245,7 +2254,7 @@ fren: 30 passed (3 by bounded enumeration), 0 failed, 0 inconclusive, 0 redundan
 
 ### Enumeration then testing
 
-With `"enumerated+tested"`, a check is enumerated, and its queries are
+With `"enumerated+random"`, a check is enumerated, and its queries are
 also tested beyond the bound: where the search finds no model up to the
 bound, each query draws 100 random assignments of the slots it reads, the
 `t`th taking, for each slot, its `t`th random value of a size above the
@@ -2266,7 +2275,7 @@ pub enum Found { Model, NoModel }
 
 pub proc enumerated_answer(
     search: Found,           -- what the search up to the bound found
-    testing?,                -- the check is set to `"enumerated+tested"`
+    testing?,                -- the check is set to `"enumerated+random"`
     test: Found,             -- what testing beyond the bound found, if asked
 ): (
     det answer: Outcome,
@@ -2294,7 +2303,7 @@ unspecified value by its hidden slot's, and decides the constraint. The
 search, the order, the counts and the verdicts are `FrenCore`'s, shared
 with the `fren` command. So both front ends report the same results and
 messages, with the same counterexamples, for the checks set to
-`"enumerated"` and to `"enumerated+tested"`, whose tests both draw alike,
+`"enumerated"` and to `"enumerated+random"`, whose tests both draw alike,
 and are compared like any other (see [Agreement with
 Lean](Cli.md#agreement-with-lean)).
 

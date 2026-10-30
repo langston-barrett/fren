@@ -32,7 +32,7 @@ expect fails(x: Int) {
     refines precise wrong(x)
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect by_testing(x: Int) {
     assume small: x < 100
     call precise := precise(x)
@@ -67,7 +67,7 @@ pub proc exact(q: Seq<Int>): (y: Int) {
     ensure r: y = q[0]
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect same(q: Seq<Int>) {
     assume nonempty: q != []
     call exact := exact(q)
@@ -91,7 +91,7 @@ expect bound_fails(v: Int) {
     refines shifted wrong(v)
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect bound_by_testing(v: Int) {
     assume small: v < 100
     call shifted := shifted(v)
@@ -155,16 +155,16 @@ error: expectation `refinement_test::fails::refines_1` does not hold
 counterexample: x = 0, precise.y = 1
 help: correct the expectation, or assume what it needs
 ---
-info: the checks of `refinement_test::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `refinement_test::by_testing` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
-info: the checks of `refinement_test::same` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `refinement_test::same` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 error: expectation `refinement_test::bound_fails::refines_1` does not hold
 
 counterexample: v = 0, shifted.w = 1
 help: correct the expectation, or assume what it needs
 ---
-info: the checks of `refinement_test::bound_by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: the checks of `refinement_test::bound_by_testing` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 info: fren: 39 passed, 2 failed, 0 inconclusive, 0 redundant
 -/

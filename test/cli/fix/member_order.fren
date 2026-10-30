@@ -15,7 +15,7 @@ proc c(x: Int, shape: Shape): (
 
     ensure r: y = x + w.v
     expect square: shape = Square or y = x + w.v
-    set_option fren.evidence "tested" in
+    set_option fren.evidence "random" in
     call w := helper(x)
     use self::Shape::Square
     assume small: x < 100

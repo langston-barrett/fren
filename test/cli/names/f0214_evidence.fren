@@ -1,5 +1,12 @@
--- A `fren.evidence` value other than "tested" or "solver".
+-- A `fren.evidence` value other than "random", "enumerated",
+-- "enumerated+random" or "solver".
 set_option fren.evidence "testing" in
 proc c(x?): (det y?) {
+    ensure r: y? iff x?
+}
+
+-- The retired spelling of "random" is an error too, with no alias.
+set_option fren.evidence "tested" in
+proc d(x?): (det y?) {
     ensure r: y? iff x?
 }

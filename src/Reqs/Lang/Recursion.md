@@ -72,7 +72,7 @@ pub fn decreases_at?(u: RecUse, i: Int) :=
     u.form = RecForm::Applied and 0 <= i < u.args.len and u.args[i] = RecArg::Payload
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc structural_recursion(
     n_params: Int,         -- the function's number of parameters
     uses: Seq<RecUse>,     -- its uses of itself in its body, in order
@@ -152,7 +152,7 @@ pub struct RecMatch {
 }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc recursive_match(m: RecMatch): (det rejected?) {
     ensure rule: rejected? = (m.on != MatchedOn::Other and m.enumeration? and m.recursion_under?
         and (m.guarded? or (exists (k: Int), 0 <= k < m.arms.len

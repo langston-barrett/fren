@@ -331,7 +331,7 @@ pub fn rank(kind: MemberKind): Int := match kind {
 pub struct Mention { mentioner: Int, mentioned: Int }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc arbitrary_source_item_ordering(
     kinds: Seq<MemberKind>,      -- the members' kinds, in the order written
     mentions: Set<Mention>,

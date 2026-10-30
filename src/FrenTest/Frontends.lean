@@ -223,10 +223,10 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
       return (stopped, false)
     return (stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"), false)
   -- Checks whose evidence is testing, which Lean does not run.
-  let anyTested := text.contains "set_option fren.evidence \"tested\""
-  let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"tested\""
+  let anyTested := text.contains "set_option fren.evidence \"random\""
+  let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"random\""
   let testing (d : Diagnostic) := anyTested &&
-    (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to testing are run by `fren check`"))
+    (d.code?.any (["F0609", "F0610", "F0612", "F0616"].contains ·) || (d.severity == "info" && (headOf d).contains " set to random testing are run by `fren check`"))
   let staticError := cliDiags.any fun d => d.severity == "error" && !isCheckResult d
   let keep (d : Diagnostic) := !onTested d && !testing d
   -- A realizability failure's requirements, and so its notes, are compared

@@ -332,7 +332,7 @@ end
 /-- The largest size of the values that testing draws, beyond the bound `n`. -/
 def testSize (n : Nat) : Nat := 10 * (n + 1)
 
-/-- How many random tests a check set to `"enumerated+tested"` runs. -/
+/-- How many random tests a check set to `"enumerated+random"` runs. -/
 def testCount : Nat := 100
 
 /-- Up to `count` random values of the declared type `t` of size more than

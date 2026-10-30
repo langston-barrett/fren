@@ -446,7 +446,7 @@ scoped syntax (name := refinesMember) &"refines " frenIdent ppSpace fren_path no
 /-- `use`, as a member: its names are in scope in the procedure only. -/
 scoped syntax (name := useMember) "use " fren_path ("::*")? : fren_member
 scoped syntax (name := useGroupMember) "use " fren_path "::{" sepBy1(fren_path, ", ", ", ", allowTrailingSep) "}" : fren_member
-/-- `set_option fren.evidence "tested" in`, before a member whose checks it
+/-- `set_option fren.evidence "random" in`, before a member whose checks it
 sets (`Reqs/Check#checking-by-testing`). -/
 scoped syntax (name := evidenceMember) "set_option " ident ppSpace str " in " fren_member : fren_member
 
@@ -491,7 +491,7 @@ scoped syntax (name := newtypeCmd) ("pub ")? ("ordered ")? "struct " frenIdent n
 elaborator reports them (`F0110`, `F0114`). -/
 syntax fren_proc_param := ("pub " <|> atomic(&"det " lookahead(frenIdent)))? frenIdent (" : " fren_type)? (" := " fren_expr)?
 
-/-- `set_option fren.evidence "tested" in`, before a result, which sets the
+/-- `set_option fren.evidence "random" in`, before a result, which sets the
 evidence of its determinism check (`Reqs/Check#checking-by-testing`). -/
 syntax fren_result_evidence := "set_option " ident ppSpace str " in "
 

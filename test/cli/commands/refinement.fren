@@ -15,7 +15,7 @@ pub proc shape(text: String): (accepted?) {
     expect dots_rejected: when text = "a..b", not accepted?
 }
 
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 expect word_has_shape(text: String) {
     call concrete := word(text)
     refines concrete shape(text)

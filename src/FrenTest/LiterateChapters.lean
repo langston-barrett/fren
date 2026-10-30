@@ -24,7 +24,7 @@ error: LiterateFirst.md:11:11: expectation `chapters::gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 
@@ -53,7 +53,7 @@ error: LiterateFirst.md:11:11: expectation `chapters::gate::never` does not hold
 counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
 error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 
