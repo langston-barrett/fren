@@ -279,7 +279,7 @@ pub proc duplicate_elements_members(
     elements: Seq<Scoped>,        -- the elements, as written in their scope
     scope: Set<lang::Id>,         -- the literal's scope
     i: lang::Interp, env: lang::Env, k: Int,
-    context: lang::TestContext,   -- what the chain of a pattern test of an element is a part of
+    context: lang::TestContext,   -- what an element's chain of `and` that holds a pattern test is a part of
     operands: Nat,                -- the chain's operands
     test_at: Nat,                 -- the test's position among them, from 0
 ) {

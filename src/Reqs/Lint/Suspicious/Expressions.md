@@ -531,7 +531,7 @@ pub proc ifs_same_cond_never_taken(
     tests: Seq<Scoped>,           -- the tests, as written in their scope
     scope: Set<lang::Id>,         -- the chain's scope
     i: lang::Interp, env: lang::Env, k: Int,
-    operands: Nat,                -- the operands of the chain of a pattern test of an earlier test
+    operands: Nat,                -- an earlier test's chain of `and` that holds a pattern test: its operands
     test_at: Nat,                 -- the test's position among them, from 0
 ) {
     use lang::{Outcome, Site, TestContext, Value, eval}
@@ -554,15 +554,16 @@ pub proc ifs_same_cond_never_taken(
 ```
 
 Which branch is taken is what evaluating the chain gives: `if p then a
-else if q then b else d` is `If(p, a, If(q, b, d))`, by [If
-expressions](../../Lang/EvaluationRules.md#if-expressions).
-`lint::ifs_same_cond_taken` evaluates such a chain, with tests that are
-variables: its outcome is that of `if p? then a else if q? then b else d`,
-so it takes the branch of `q` exactly where `p` is `false` and `q` `true`,
-as `lint::ifs_same_cond_never_taken` reads it, and where the two tests
-have the same value, the chain has the outcome that it has without the
-second test. Its evidence is testing, which evaluates it, since the
-solver unfolds [`eval`](../../Lang/Semantics.md) only one step:
+else if q then b else d` is `If(p, a, If(q, b, d))`, by the [abstract
+syntax](../../Lang/Semantics.md#expressions), and [If
+expressions](../../Lang/EvaluationRules.md#if-expressions) selects the
+branch. `lint::ifs_same_cond_taken` evaluates such a chain, with tests
+that are variables: its outcome is that of `if p? then a else if q? then
+b else d`, so it takes the branch of `q` exactly where `p` is `false` and
+`q` `true`, as `lint::ifs_same_cond_never_taken` reads it, and where the
+two tests have the same value, the chain has the outcome that it has
+without the second test. Its evidence is testing, which evaluates it,
+since the solver unfolds [`eval`](../../Lang/Semantics.md) only one step:
 
 ```fren
 set_option fren.evidence "random" in
