@@ -48,7 +48,8 @@ quantifier's instance, a `Let` or a `Match` binds; a variant, by its full
 path, is a `Construct` without a payload; and a constant, by its full
 path, is an `Apply` of its definition. A function, and an item that is not
 a value, is never an expression alone: it is applied, or a path's first
-segment.
+segment. `named_expr` gives such a binding an `Apply` too, but that image
+is arbitrary, and `named` assumes that the name is a value's.
 
 ```fren
 -- The expression that a name written alone elaborates to, where
@@ -68,7 +69,23 @@ pub proc named(
     binding: Binding,      -- what the name resolves to
     definition: Expr,      -- a constant's definition
 ): (det expr: Expr) {
-    use self::BindingKind::{Constant, Definition, Input, Opened, Output, PatternBinder, Variant}
+    use self::BindingKind::{
+        Builtin,
+        Constant,
+        Definition,
+        Enumeration,
+        Function,
+        Input,
+        Item,
+        Module,
+        Opened,
+        Output,
+        PatternBinder,
+        Variant,
+    }
+
+    -- A function, a module, a type and another item are never an expression alone.
+    assume value_kinds: not binding.kind in {Function, Builtin, Module, Enumeration, Item}
 
     out expr := named_expr(binding, definition)
 

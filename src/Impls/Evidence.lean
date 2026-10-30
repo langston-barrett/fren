@@ -82,9 +82,12 @@ tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/Fre
 tested lang::varying_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
 
--- The dynamic semantics (`Reqs/Lang/Semantics`): its coincidence lemma, by
--- random expressions evaluated with a variable that they do not mention
--- rebound, and the binary's evaluator against `lang::eval`.
+-- The dynamic semantics (`Reqs/Lang/Semantics`). `lang::coincidence` and
+-- `lang::closed` are proved in `Impls/Semantics.lean`, and
+-- `lint::written_scopes` and `lint::manual_at_most_one_defined` in
+-- `Impls/Lint.lean`, for every input; these tests are cross-checks, by random
+-- expressions evaluated with what they do not mention changed, and the
+-- binary's evaluator against `lang::eval`.
 tested lang::coincidence: "src/FrenTest/Semantics.lean"
 tested lang::closed: "src/FrenTest/Semantics.lean"
 tested lint::written_scopes: "src/FrenTest/Semantics.lean"

@@ -1427,31 +1427,74 @@ impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (c a n s : Boo
   intro c a n s _
   cases c <;> cases a <;> cases n <;> cases s <;> simp [fren_spec, Fren.Core.overlyComplexBool, toBoolRule]
 
-theorem sharingNonlinear (op : String) (left : Bool) (m x : List Fren.Core.Mention) :
-    Fren.Core.branchesSharingNonlinear op left m x = match lint.shared_op op with
+/-- The core's `InfixOp` of each of `lint::InfixOp`'s, the inverse of `toInfixOp`. -/
+def ofLintInfixOp : lint.InfixOp → Fren.Core.InfixOp
+  | .Iff => .iff
+  | .Or => .or
+  | .And => .and
+  | .Eq => .eq
+  | .Ne => .ne
+  | .Lt => .lt
+  | .Le => .le
+  | .Gt => .gt
+  | .Ge => .ge
+  | .In => .in
+  | .Subset => .subset
+  | .Add => .add
+  | .Sub => .sub
+  | .Concat => .concat
+  | .Union => .union
+  | .Minus => .minus
+  | .Mul => .mul
+  | .Inter => .inter
+  | .Join => .join
+
+/-- A binary operator's text, as the core's `BKind.bin` holds it (`Fren.Core.binaryOps`). -/
+def operatorText : lint.BinaryOperator → String
+  | .Infix o => (ofLintInfixOp o).op
+  | .Div => "div"
+  | .Mod => "mod"
+
+/-- The operator of a text, which `operatorText` inverts. -/
+def ofOperatorText (t : String) : Option lint.BinaryOperator :=
+  if t = "div" then some .Div
+  else if t = "mod" then some .Mod
+  else (Fren.Core.InfixOp.ofOp? t).map (.Infix ∘ toInfixOp)
+
+theorem ofOperatorText_text (o : lint.BinaryOperator) : ofOperatorText (operatorText o) = some o := by
+  cases o with
+  | Infix o => cases o <;> decide
+  | _ => decide
+
+/-- Two operators are written alike exactly when they are one. -/
+theorem operatorText_beq (o o' : lint.BinaryOperator) : (operatorText o == operatorText o') = decide (o = o') := by
+  by_cases h : o = o'
+  · subst h; simp
+  · have : operatorText o ≠ operatorText o' := fun ht => h (by
+      have := ofOperatorText_text o; rw [ht, ofOperatorText_text] at this; exact (Option.some.inj this).symm)
+    simp [h, this]
+
+theorem sharingNonlinear (o : lint.BinaryOperator) (left : Bool) (m x : List Fren.Core.Mention) :
+    Fren.Core.branchesSharingNonlinear (operatorText o) left m x = match lint.shared_op (some o) with
       | .Times => !Fren.Core.productAccepted m x
       | .Div | .Mod => left
       | .OtherOp => false := by
-  unfold Fren.Core.branchesSharingNonlinear lint.shared_op
-  simp only [Fren.Str.lit]
-  by_cases h1 : op = "*"
-  · subst h1; simp
-  by_cases h2 : op = "div"
-  · subst h2; simp
-  by_cases h3 : op = "mod"
-  · subst h3; simp
-  simp [h1, h2, h3]
+  cases o with
+  | Infix o => cases o <;> simp [Fren.Core.branchesSharingNonlinear, operatorText, ofLintInfixOp, Fren.Core.InfixOp.op]
+  | _ => simp [Fren.Core.branchesSharingNonlinear, operatorText]
 
--- For every two branches of one binary operator, by their operands as
--- written in one scope `s` and what the operands mention. Both front ends
--- decide it with `branchesSharingAt?`, which asks `productAccepted`, as
--- `lang::linear_product` states, and drop every report of `opReports` over
--- a pattern test that binds names (`keeps`), which `bs.isEmpty` is here.
-impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (op op' : String) (_hop : op ≠ "")
+-- For every two branches, each of a binary operator or of none (`none`,
+-- where its kind is not `.bin`), by their operators, their
+-- operands as written in one scope `s` and what the operands mention. Both
+-- front ends decide it with `branchesSharingAt?`, on the operators' texts,
+-- `operatorText`'s, which asks `productAccepted`, as `lang::linear_product`
+-- states, and drop every report of `opReports` over a pattern test that
+-- binds names (`keeps`), which `bs.isEmpty` is here.
+impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (o o' : Option lint.BinaryOperator)
     (tl tr el er : lint.Operand) (s : Fren.FinSet String) (c a b x : List Fren.Core.Mention) {
   binders := Fren.FinSet.ofList bs,
-  then_op := op,
-  else_op := op',
+  then_op := o,
+  else_op := o',
   then_left := ⟨tl, s⟩,
   then_right := ⟨tr, s⟩,
   else_left := ⟨el, s⟩,
@@ -1460,22 +1503,45 @@ impl branches_sharing_code: lint::branches_sharing_code for (bs : List String) (
   a_mentioned := mentionSet a,
   b_mentioned := mentionSet b,
   shared_mentioned := mentionSet x,
-  op := lint.shared_op op,
-  same_op? := decide (op = op'),
+  op := lint.shared_op o,
+  same_op? := decide (o = o' ∧ o ≠ none),
   shared_left? := decide (tl = el),
   shared_right? := decide (tr = er),
   moved_mentioned := mentionSet (c ++ a ++ b),
-  fires? := bs.isEmpty && Fren.Core.branchesSharingCode (op == op') (decide (tl = el)) (decide (tr = er))
-    (Fren.Core.branchesSharingNonlinear op (decide (tl = el)) (c ++ a ++ b) x),
+  fires? := o.any fun o => bs.isEmpty && Fren.Core.branchesSharingCode (o'.any (operatorText o == operatorText ·))
+    (decide (tl = el)) (decide (tr = er)) (Fren.Core.branchesSharingNonlinear (operatorText o) (decide (tl = el)) (c ++ a ++ b) x),
 } by
-  intro bs op op' _hop tl tr el er s c a b x _
+  intro bs o o' tl tr el er s c a b x _
   refine ⟨mentionSet (c ++ a ++ b), mentionSet x, Fren.Core.productAccepted (c ++ a ++ b) x, ?_⟩
+  -- A `then` branch that is not a binary operator: it never fires.
+  cases o with
+  | none =>
+    simp only [fren_spec, lang.mentioned_by, Option.any_none]
+    rw [← mentionSet_append, ← mentionSet_append]
+    by_cases hc : c = [] <;> by_cases ha : a = [] <;> by_cases hb : b = [] <;>
+      simp_all [Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet_eq_empty, List.append_assoc]
+  | some o => ?_
+  simp only [Option.any_some]
   rw [sharingNonlinear]
-  unfold lint.shared_op
-  simp only [fren_spec, Fren.Str.lit, lang.mentioned_by]
+  -- An `else` branch that is not a binary operator: it never fires.
+  cases o' with
+  | none =>
+    simp only [fren_spec, lang.mentioned_by]
+    rw [← mentionSet_append, ← mentionSet_append]
+    rcases o with i | _ | _ <;> (try cases i) <;> by_cases hc : c = [] <;> by_cases ha : a = [] <;>
+      by_cases hb : b = [] <;>
+      simp_all [Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet_eq_empty, List.append_assoc]
+  | some o' => ?_
+  simp only [Option.any_some]
+  rw [operatorText_beq]
+  simp only [fren_spec, lang.mentioned_by]
   rw [← mentionSet_append, ← mentionSet_append]
-  by_cases h1 : op = "*" <;> by_cases h2 : op = "div" <;> by_cases h3 : op = "mod" <;>
-    by_cases hl : tl = el <;> by_cases hr : tr = er <;> by_cases ho : op = op' <;> cases hb : bs <;>
+  by_cases ho : o = o'
+  · subst ho
+    rcases o with i | _ | _ <;> (try cases i) <;> by_cases hl : tl = el <;> by_cases hr : tr = er <;> cases hb : bs <;>
+      simp_all [Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet_eq_empty, List.append_assoc]
+    all_goals by_cases hc : c = [] <;> by_cases ha : a = [] <;> by_cases hb : b = [] <;> simp_all
+  rcases o with i | _ | _ <;> (try cases i) <;> by_cases hl : tl = el <;> by_cases hr : tr = er <;> cases hb : bs <;>
     simp_all [Fren.Core.branchesSharingCode, Fren.Core.productAccepted, mentionSet_eq_empty, List.append_assoc]
   all_goals by_cases hc : c = [] <;> by_cases ha : a = [] <;> by_cases hb : b = [] <;> simp_all
 
@@ -1931,6 +1997,32 @@ impl manual_at_most_one_any: lint::manual_at_most_one_any for (ps : List lint.Wr
   intro ps ds _
   unfold lint.manual_at_most_one_any.ensures
   exact ⟨written_fires ps ds, written_exactly ps ds⟩
+
+-- For every interpretation and pair of values, by evaluating the `match`.
+impl written_scopes: lint::written_scopes for (i : lang.Interp) (payload v : lang.Value) {
+  i := i, payload := payload, v := v,
+} by
+  intro i payload v _
+  simp [fren_spec, lang.eval, lang.lookup, lang.matches_value?, lang.bind]
+
+-- For every interpretation, environment, pair of operands and obligation,
+-- by evaluating the `and` and the call of `at_most_one?`, a few steps each.
+impl manual_at_most_one_defined: lint::manual_at_most_one_defined for (i : lang.Interp) (env : lang.Env)
+    (a b : lang.Expr) (o : Bool) {
+  i := i, env := env, a := a, b := b, «obligation?» := o,
+} by
+  intro i env a b o
+  simp only [fren_spec]
+  intro ⟨hbool, hd⟩
+  refine ⟨_, _, ⟨rfl, rfl⟩, ?_⟩
+  intro ho
+  have hd := hd ho
+  revert hbool hd
+  generalize lang.eval i env a = A
+  generalize lang.eval i env b = B
+  intro hbool hd
+  cases A <;> cases B <;> simp_all
+  obtain ⟨ha | ha, hb | hb⟩ := hbool <;> simp [ha, hb, lang.booleans?, lang.trues]
 
 def toCardinalityFix : Bool × Bool → lint.CardinalityFix
   | (false, _) => .Unchanged

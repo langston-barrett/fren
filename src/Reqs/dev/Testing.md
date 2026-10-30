@@ -8,8 +8,12 @@
   must satisfy the same annotations, and both or neither must say that a
   static error stopped the checks; `--~[cli]` and `--~[hosted]` mark the
   only messages that may differ, parse errors, which the Lean front end gets
-  from Lean's parser, and `--~?` allows a message without expecting
-  it, for one that may be in one of several places, such as a conflict's
+  from Lean's parser, and a known disagreement that a test pins until it is
+  fixed, with its issue, as `checks/simp_recursion_depth.fren` does for
+  #417. `--~$` expects a message with no line, such as the Lean front end's
+  error at the `#fren_check` that the test adds, and `--~?` allows a
+  message without expecting it, for one that may be in one of several
+  places, such as a conflict's
   note at whichever guarantee the solver's model picks. This is how
   `cli::agreement` is tested. See
   `src/FrenTest/Ui.lean` for the format.
