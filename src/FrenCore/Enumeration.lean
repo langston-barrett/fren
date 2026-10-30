@@ -801,6 +801,19 @@ def doubtfulRow (ts : List Truth) : Bool := ts.all (· != .no) && ts.any (· == 
 
 /-! ## Partial truth -/
 
+/-- The most values that a range a quantifier ranges over may have
+(`eval::MAX_ENUMERATED`): with more, the quantifier has no value that the
+evaluators know (`Reqs/Eval#quantifiers`), in both front ends. -/
+def maxEnumerated : Int := 1024
+
+/-- Whether some atom's truth may be unknown to the model search
+(`Atoms.known`), given whether each of a procedure's formulas, and each of
+the definitions they read, has a quantifier: only a quantifier, guarded or
+not, can leave one unknown there, where its domain is too large or an
+instance is unknown (`Reqs/Check#quantifiers-up-to-the-bound`). Both front
+ends set `Atoms.total` to its negation. -/
+def mayBeUnknown (quantified : Array Bool) : Bool := quantified.any id
+
 /-- Why a query that a quantifier undecided up to the bound leaves open
 is unknown without a model (`Detail.undecidedQuantifier`). -/
 def undecidedQuantifierReason : String := "a quantifier is undecided"
@@ -1447,9 +1460,10 @@ values up to size `n` (`Reqs/Check#quantifiers-up-to-the-bound`), which
 enumeration does not list (`F0644`). -/
 def quantifiedTooManyMsg (subject : String) (n : Nat) : Msg :=
   { code? := some "F0644", headline :=
-      s!"{subject} has a quantifier over a type that, without its patterns, has more than {maxBehaviours} values up to size {n}, too many to enumerate"
+      s!"{subject} has a quantifier over a type with more than {maxBehaviours} values up to size {n}, too many to enumerate"
     label? := some "too many values"
     notes := #[s!"note: enumeration evaluates a quantifier at each of its type's values up to the bound, at most {maxBehaviours} of them",
+      "note: a type's values are counted without its patterns",
       "help: lower `fren.enumeration.size`, give the quantifier a guard with a domain, or have the solver check it"] }
 
 /-- Why a component that applies the generic function `f`, which has no

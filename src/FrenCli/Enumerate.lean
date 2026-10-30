@@ -57,6 +57,10 @@ partial def Fm.value? (I : Interp) (look : Look) : Fm → Option Bool
   | .defined _ f => Fm.value? I look f
   | _ => some false
 
+/-- Whether `e` has a quantifier, guarded or not. -/
+partial def Eval.Ex.hasQuantifier (e : Ex) : Bool :=
+  (e matches .quant ..) || e.children.any (·.hasQuantifier)
+
 /-- The declared types that the quantifiers in `e` without a domain range
 over. -/
 partial def Eval.Ex.quantifiedTypes (e : Ex) : Array Fren.Core.PTy :=
@@ -309,7 +313,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     eval := fun k env => evalFm (atoms[k]!.2) env
     -- Only a quantifier up to the bound leaves an atom's truth unknown.
     known := fun k env => (Fm.value? (interp env) (look env fuel) atoms[k]!.2).isSome
-    total := quantified.isEmpty
+    total := !mayBeUnknown (all.map (·.2.hasQuantifier))
     sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d
     sameKnown := fun d e₁ e₂ => (look e₁ fuel d).isSome && (look e₂ fuel d).isSome
     defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[]

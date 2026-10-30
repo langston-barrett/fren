@@ -1634,7 +1634,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
     match d with
     | .undecidedQuantifier n =>
       #[one "F0608" s!"could not decide whether {what}: a quantifier is undecided up to size {n}" (some "undecided")
-        #["note: a quantifier over a type that the bound does not exhaust is decided only by an instance that settles it: a counterexample to a `forall`, or a witness of an `exists`",
+        #["note: enumeration decides a quantifier by an instance that settles it, a counterexample to a `forall` or a witness of an `exists`, or by every value of its domain, which it could not evaluate here",
           "help: have the solver check it, or raise `fren.enumeration.size` if such an instance is larger"]]
     | .outOfRange =>
       #[one "F0608" s!"could not decide whether {what}: an index out of range may decide it" (some "undecided")

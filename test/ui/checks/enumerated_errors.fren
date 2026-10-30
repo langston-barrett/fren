@@ -23,7 +23,7 @@ proc nested(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `nested` has a slot who
 
 -- A quantifier over a type with too many values up to the bound.
 set_option fren.evidence "enumerated" in
-proc big(): (t?) {  --~ error: `big` has a quantifier over a type that, without its patterns, has more than 65536 values up to size 3, too many to enumerate
+proc big(): (t?) {  --~ error: `big` has a quantifier over a type with more than 65536 values up to size 3, too many to enumerate
     ensure r: t? iff (forall (q: Seq<Seq<Int>>), q != [[7]])
 }
 

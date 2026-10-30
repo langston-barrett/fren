@@ -333,7 +333,7 @@ inductive Ex where
   | quant (file pos : Nat) (all : Bool) (names : Array Name) (doms : Array (Option Ex)) (tys : Array Fren.Core.PTy)
       (body : Ex)
   /-- The integers from `lo` up to `hi`, but not `hi`, as a sequence, if
-  there are at most `maxEnumerated` of them (`Reqs/Eval#quantifiers`). -/
+  there are at most `Fren.Core.Enumeration.maxEnumerated` of them (`Reqs/Eval#quantifiers`). -/
   | range (lo hi : Ex)
   /-- A table, whose `table` is at the source position `pos`: each row's
   position, its condition, `none` for `_`, and its value. The positions
@@ -527,9 +527,6 @@ instance : Inhabited Interp := ⟨{}⟩
 /-- The value of each variable, as far as it is known. -/
 abbrev Look := Name → Option Val
 
-/-- The most values that the evaluator enumerates of a range
-(`eval::MAX_ENUMERATED`). -/
-def maxEnumerated : Int := 1024
 
 /-- `some (.bool b)`, without allocating it: each of the two values is a
 closed term, which the compiler allocates once. -/
@@ -1038,7 +1035,7 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
   | .range lo hi => do
     let .int a ← lo.eval I look locals slots frame memos | none
     let .int b ← hi.eval I look locals slots frame memos | none
-    if b - a > maxEnumerated then none
+    if b - a > Fren.Core.Enumeration.maxEnumerated then none
     return .seq ((Array.range (b - a).toNat).map fun (k : Nat) => Val.int (a + k))
   -- The conjunction or disjunction of its instances, decided when one
   -- instance decides it: the body at each combination of the values of its

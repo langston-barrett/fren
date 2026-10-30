@@ -2279,10 +2279,12 @@ at `Int` and `Nat`, at newtypes over each, and at newtypes of newtypes two
 and three deep. `fren_fuzz_frontends` generates counts at `Int`, `Nat`,
 newtypes over each and newtypes of those to a random depth, in all these
 ways, in the procedures it generates and in one of counts alone, always
-enumerated. A quantifier is enumerated only over a listed type or a
-literal domain, as its instances' conjunction or disjunction, and a
+enumerated. A quantifier is its instances' conjunction or disjunction,
+over its domain or its type's values up to the bound (see [Quantifiers up
+to the bound](#quantifiers-up-to-the-bound)), and a
 `match` is its arms' tests, so these rules cover them; any other part of a
-formula that binds a name is unknown wherever it has an index. An
+formula that binds a name, such as a closure, is unknown wherever it has
+an index. An
 assignment is *doubtful* where none of the query's formulas is false and
 one is unknown (`check::doubtful`): some interpretation of the indexes out
 of range may then make them all true. A query without a model is *unknown*
@@ -2499,7 +2501,14 @@ conjunct makes a conjunction false, and a true one a disjunction true.
 
 A quantifier over a type that, without its patterns, has more than
 65,536 values up to the bound is not evaluated: it is the error `F0644`,
-at the procedure, and none of its checks set to enumeration is run.
+at the procedure, and none of its checks set to enumeration is run. A
+range that a guard gives with more than `MAX_ENUMERATED` values (see [the
+evaluator](Eval.md#quantifiers)) leaves its quantifier unknown, as it
+does in testing. Other than an index out of range, only a quantifier,
+guarded or not, can leave a formula unknown. So a procedure whose
+formulas, and the definitions they read, have none is searched as in
+[Searching](#searching), and the search never asks which atoms are known
+(`mayBeUnknown` in `FrenCore.Enumeration`, which both front ends use).
 
 `check::quantified_truth` states a quantifier's truth, over the truths of
 its instances, and `check::partial_not` and `check::partial_and` the
@@ -2569,8 +2578,8 @@ Whether a defined output is the same in both copies is read twice too,
 as whether it is known to be and whether it may be. `check::polarized`
 states it, and it is proved of the search's formulas (`EF.polarize` in
 `FrenCore.Enumeration`), but `∃ outputs`, whose search reads its formula
-the same way: that case is tested, not proved, and realizability's
-queries, which have it, rest on it:
+the same way: that case is tested, not proved (#469), and
+realizability's queries, which have it, rest on it:
 
 ```fren
 pub proc polarized(

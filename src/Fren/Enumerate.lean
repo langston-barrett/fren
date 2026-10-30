@@ -169,10 +169,16 @@ def Enum.quantifyList {α : Type} (values : List α) (universal : Bool) (body : 
 
 /-- `Enum.quantify` over the integers from `lower` to `upper`, excluded. -/
 def Enum.quantifyIntRange (lower upper : Int) (universal : Bool) (body : Int → Option Bool) : Option Bool :=
+  -- Too many values leave it unknown, as the `fren` command's evaluator
+  -- has it (`Core.Enumeration.maxEnumerated`).
+  if upper - lower > Core.Enumeration.maxEnumerated then none else
   Enum.quantify ((List.range (upper - lower).toNat).toArray.map fun (k : Nat) => lower + (k : Int)) true universal body
 
 /-- `Enum.quantifyIntRange` for a `Nat`, from 0 at least. -/
 def Enum.quantifyNatRange (lower upper : Int) (universal : Bool) (body : Nat → Option Bool) : Option Bool :=
+  -- Counted before the negative values are left out, as by the `fren`
+  -- command's evaluator.
+  if upper - lower > Core.Enumeration.maxEnumerated then none else
   Enum.quantifyIntRange (max 0 lower) upper universal fun i => body i.toNat
 
 def Enum.notTruth (a : Option Bool) : Option Bool := a.map (!·)
@@ -734,6 +740,8 @@ values up to the bound and whether they are all of its type's; with
 index out of range unknown (`knownOf`), and unknown where it is not. -/
 structure PartialEnv where
   values : Expr → MetaM (Array Expr × Bool)
+  /-- The prefix of the definitions that hold large domains' values. -/
+  base : Name
   known? : Option (Expr → MetaM Expr) := none
 
 /-- `v`, an `Option`, unknown where `env.known?` says that one of `parts`
@@ -804,7 +812,8 @@ partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
     let fn ← mkLambdaFVars #[x] (← partialDecide domain body)
     if let some guarded ← quantifyGuarded domain universal x body fn then return guarded
     let (values, exact) ← domain.values ty
-    mkAppM ``Enum.quantify #[← mkArrayLit ty values.toList, toExpr exact, toExpr universal, fn]
+    -- A type may have thousands of values: chunked, as the slots' are.
+    mkAppM ``Enum.quantify #[← mkArrayChunked domain.base ty values.toList, toExpr exact, toExpr universal, fn]
   match p.getAppFn.constName?, p.getAppArgs with
   | some ``And, #[a, b] => combine ``Enum.andLazy a b
   | some ``Or, #[a, b] => combine ``Enum.orLazy a b
@@ -939,7 +948,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       s!"the result type of `{Core.showPath f.1}` has a named invariant that cannot be enumerated as an unconstrained function table")
   -- A quantifier ranges over its guard's domain, or its type's values up
   -- to the bound (`Reqs/Check#quantifiers-up-to-the-bound`).
-  let quantified ← scanned.anyM hasQuantifier
+  let quantified := mayBeUnknown (← scanned.mapM hasQuantifier)
   -- Nor of a recursive function whose body indexes a sequence, which Lean
   -- evaluates out of range by its own default, through the recursive
   -- functions it applies.
@@ -1090,10 +1099,10 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       | .error why =>
         domainError.set (some (notEnumerableMsg subject (notEnumerableWhy none why)))
         return (#[], false)
-    let domain : PartialEnv := { values := domainValues }
+    let domain : PartialEnv := { values := domainValues, base := c.decl ++ `_enum_domain }
     -- The same, with every index out of range unknown, as `knownOf` has
     -- it of what has no quantifier.
-    let strictDomain : PartialEnv := { values := domainValues, known? := some (knownOf decideOf) }
+    let strictDomain : PartialEnv := { domain with known? := some (knownOf decideOf) }
     -- An atom's truth, three-valued, over the slots' values and the
     -- assignment.
     let optionBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)

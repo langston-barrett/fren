@@ -124,15 +124,26 @@ proc negated(): (none?) {  --~ warning: could not decide whether `negated` is re
 -- that reads it as `[][0]` is a behaviour; and known where the guard keeps
 -- it in range.
 set_option fren.evidence "enumerated" in
-proc body_index(q: Seq<Int>): (all?) {  --~ warning: could not decide whether `body_index` is realizable: an index out of range decides it
+proc body_index(q: Seq<Int>): (all?) {  --~ warning: could not decide whether `body_index` is realizable: an index out of range may decide it
+    --~^ info: the definedness checks of `body_index` are not run by enumeration
     ensure r: all? iff (forall (i: Int), when 0 <= i <= q.len, q[i] > 0)
     expect empty: when q = [], not all?  --~ error: counterexample: q = [], all? = true
 }
 
 set_option fren.evidence "enumerated" in
 proc guarded_body_index(q: Seq<Int>): (all?) {  --~ info: 2 checks of `guarded_body_index` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `guarded_body_index` are not run by enumeration
     ensure r: all? iff (forall (i: Int), when 0 <= i < q.len, q[i] > 0)
     expect empty: when q = [], all?
+}
+
+-- A guarded quantifier can be unknown too: a range with more than 1024
+-- values has no value that the evaluators know, so its checks are
+-- inconclusive, not failed.
+set_option fren.evidence "enumerated" in
+proc wide_range(k: Int): (all?) {  --~ warning: could not decide whether `wide_range` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (i: Int), when 0 <= i < k * 1000, i >= 0)
+    expect holds: all?  --~ warning: could not decide whether `wide_range::holds` holds: a quantifier is undecided up to size 3
 }
 
 -- With the solver: it proves what enumeration leaves unknown.
@@ -151,4 +162,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 43 passed (11 by bounded enumeration), 9 failed, 13 inconclusive, 0 redundant
+--@ summary: 44 passed (11 by bounded enumeration), 9 failed, 15 inconclusive, 0 redundant
