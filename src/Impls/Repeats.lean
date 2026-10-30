@@ -127,8 +127,9 @@ theorem earlierSame_none (l : List String) (i : Nat) (hi : i < l.length) :
     rw [getElem!_toArray l j (by omega), getElem!_toArray l i hi]
     simpa using h hi j hj
 
-/-- The first earlier position written the same as the one at `k`, or `-1`,
-as `ifsSameCondAt` computes it with `earlierSame`. -/
+/-- The first earlier position written the same as the one at `k`, or `-1`:
+`earlierSame`, which `ifsSameCondAt` calls, restated over `Int` positions as
+`lint::first_same` gives them, for the proofs. -/
 def firstSame (ts : List String) (k : Int) : Int :=
   if 0 ≤ k ∧ k.toNat < ts.length then
     (match earlierSame ts.toArray k.toNat with | some j => (j : Int) | none => -1) else -1

@@ -1,4 +1,4 @@
--- fren-covers: lang::coincidence, lang::closed, lint::written_scopes, lint::manual_at_most_one_defined
+-- fren-covers: lang::coincidence, lang::closed, lint::written_scopes, lint::ifs_same_cond_taken, lint::manual_at_most_one_defined
 -- keep-sorted start
 import FrenCli.Eval
 import Reqs.Lang
@@ -393,6 +393,22 @@ def writtenScopes : Bool :=
   inThen == .Defined (.Integer 1) && inThen != lang.eval interp env (.Var "v")
 
 #guard writtenScopes
+
+/-- `lint::ifs_same_cond_taken`: `if p then a else if q then b else d`, for
+each truth of `p` and `q`, has `b`'s outcome exactly where `p` is `false`
+and `q` `true`, and where `p` and `q` have the same value, the outcome
+that it has without the second test. -/
+def ifsSameCondTaken : Bool :=
+  let (a, b, d) : lang.Value × lang.Value × lang.Value := (.Integer 1, .Integer 2, .Integer 3)
+  [false, true].all fun p => [false, true].all fun q =>
+    let env : lang.Env := .Bind "p" (.Defined (lang.truth p)) (.Bind "q" (.Defined (lang.truth q)) .Empty)
+    let chain := lang.eval interp env (.If (.Var "p") (.Literal a) (.If (.Var "q") (.Literal b) (.Literal d)))
+    let without := lang.eval interp env (.If (.Var "p") (.Literal a) (.Literal d))
+    chain == .Defined (if p then a else if q then b else d)
+      && (chain == .Defined b) == (!p && q)
+      && (p != q || chain == without)
+
+#guard ifsSameCondTaken
 
 /-! ## The coincidence lemma over interpretations
 
