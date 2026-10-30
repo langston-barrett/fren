@@ -34,7 +34,7 @@
   `syntax/` and `lean/`. The example specs are in `examples/`, outside
   `test/`.
 - **Error codes** (`lake test`): every code used in the sources must be
-  explained in `src/FrenCore/Codes.lean` and reported by some snapshot.
+  explained in `src/FrenCore/Codes/CODE.md` and reported by some snapshot.
   Each explanation's first ```` ```fren ```` block must report its code,
   and its other blocks must not. A new message needs a code, an
   explanation and a snapshot.
@@ -42,7 +42,7 @@
   imports, to keep it off the build's critical path, import exactly its
   modules; each module of `Reqs` reads only the specs that its library in
   `lakefile.lean` needs; and only the modules of `Impls` whose library needs
-  the tests make `tested` claims.
+  the tests, `ImplsTested`, make `tested` claims.
 - **Lean-only behaviour** (`lake build`): `#guard_msgs` tests in
   `src/FrenTest`, e.g. the shape of generated definitions.
 - **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by

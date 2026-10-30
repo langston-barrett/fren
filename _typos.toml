@@ -1,5 +1,7 @@
 [default.extend-words]
 # keep-sorted start
+# `caf\u00E9`, an escaped "café", in `src/FrenCore/Codes/F0783.md`.
+caf = "caf"
 # Deliberate: `test/cli/args/unknown_command.fren` tests the suggestion.
 chekc = "chekc"
 # The README's `**r**equirements`, spelling out the name.

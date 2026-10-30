@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Ctors
 import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Names
@@ -18,6 +19,12 @@ variables, dead code, simpler `Bool` expressions, and expectations. Each
 front end records what happened while elaborating a file (`UseRecord`,
 `UsedName`, `ExpectationRecord`) and calls `importReports` and
 `expectationReports` at its end.
+
+A new lint is a constructor of `Lint` and a line of `Lint.info`, each in
+its sorted place, an explanation `FrenCore/Codes/CODE.md`, and a row of
+the table in `Reqs/Lint.md`; `Lint.all`, the Lean options
+(`Fren.Lint`) and the note that lists the lints follow from them. So
+lints added at once merge cleanly.
 -/
 
 open Lean
@@ -51,425 +58,141 @@ def LintLevel.severity? : LintLevel → Option Severity
   | .deny | .forbid => some .error
 
 inductive Lint where
-  | unusedImports
-  | globImports
-  | nonSnakeCase
-  | nonCamelCaseTypes
-  | nonUpperCaseConstants
-  | unfulfilledExpectations
-  | unusedVariables
-  | deadCode
-  | nonminimalBool
-  | undecidable
-  | lengthZero
-  | cardZero
-  | singletonMembership
-  | membershipChain
-  | constantOutput
-  | definableOutput
-  | indexAfterUse
-  | unlessNot
-  | collapsibleWhen
-  | ifNotElse
-  | matchSameArms
-  | matchLikeMembership
-  | wildcardSingleVariant
-  | ifChainMatch
-  | caseSplitGuarantees
-  | redundantBindings
-  | eqOp
-  | sameBranches
-  | duplicateElements
-  | emptyArgument
-  | doubleComparison
-  | boolEquality
-  | manualMethod
-  | elseExtends
-  | identityOp
-  | doubleParens
-  | doubleNeg
-  | intPlusOne
-  | negMultiply
-  | redundantMethodChain
-  | trivialPattern
-  | redundantBoolType
-  | trivialMatch
-  | zeroSizedMapValues
-  | manySingleCharNames
-  | similarNames
-  | tooManyLines
-  | moduleInception
-  | enumVariantNames
-  | upperCaseAcronyms
-  | justUnderscoresAndDigits
-  | disallowedNames
-  | needlessBoolAssign
-  | needlessMatch
-  | assertionsOnConstants
-  | suspiciousUnaryOpFormatting
-  | redundantSlicing
-  | noEffectReplace
-  | constIsEmpty
-  | manualPatternCharComparison
-  | almostCompleteRange
-  | duplicateConstraint
-  | invisibleCharacters
-  | negativePosition
-  | absurdExtremeComparisons
-  | erasingOp
-  | ifsSameCond
-  | contradictoryComparisons
-  | redundantComparisons
-  | allowAttributes
-  | wildcardEnumMatchArm
-  | needlessRawStrings
-  | nonAsciiLiteral
-  | moduleNameRepetitions
-  | minIdentChars
+  -- keep-sorted start
   | absolutePaths
-  | precedence
-  | unnecessaryStructInitialization
-  | unusedLintSetting
-  | unusedAssumption
-  | unrelatedBinders
-  | literalDotInPattern
-  | invalidUpcastComparisons
-  | unicodeNotNfc
-  | unnecessaryTrailingComma
-  | isEquality
-  | irrefutableIs
-  | chainableComparison
-  | singleMatchElse
-  | inconsistentStructConstructor
-  | overlyComplexBoolExpr
-  | structFieldNames
-  | fnParamsExcessiveBools
-  | structExcessiveBools
-  | needlessRawStringHashes
-  | branchesSharingCode
-  | zeroPrefixedLiteral
+  | absurdExtremeComparisons
+  | allowAttributes
+  | almostCompleteRange
   | arbitrarySourceItemOrdering
-  | singleCallFn
-  | manualAtMostOne
-  | manualOrdering
-  | redundantNewtypeRoundtrip
-  | unnecessaryMinOrMax
-  | manualNat
+  | assertionsOnConstants
+  | boolEquality
+  | branchesSharingCode
+  | cardZero
+  | caseSplitGuarantees
+  | chainableComparison
+  | collapsibleMatch
+  | collapsibleWhen
+  | constIsEmpty
+  | constantOutput
+  | contradictoryComparisons
+  | deadCode
+  | definableOutput
+  | disallowedNames
+  | doubleComparison
+  | doubleNeg
+  | doubleParens
+  | duplicateConstraint
+  | duplicateElements
+  | elseExtends
+  | emptyArgument
+  | enumVariantNames
+  | eqOp
+  | erasingOp
+  | fnParamsExcessiveBools
+  | globImports
+  | identityOp
+  | ifChainMatch
+  | ifNotElse
+  | ifsSameCond
+  | inconsistentStructConstructor
+  | indexAfterUse
+  | intPlusOne
+  | invalidUpcastComparisons
+  | invisibleCharacters
+  | irrefutableIs
+  | isEquality
+  | justUnderscoresAndDigits
+  | lengthZero
+  | letAndReturn
+  | literalDotInPattern
   | manualAbs
   | manualAbsDiff
-  | manualMinMax
+  | manualAtMostOne
   | manualClamp
-  | manualRemEuclid
-  | moduloOne
-  | minMax
-  | manualRecordUpdate
-  | needlessUpdate
-  | trivialCover
-  | manualPatternTest
-  | collapsibleMatch
-  | manualRangePatterns
-  | wildcardInOrPatterns
-  | matchOverlappingArm
-  | unnestedOrPatterns
-  | matchBool
-  | manualTable
-  | letAndReturn
-  | redundantLocals
   | manualForall
-  | trivialQuantifier
+  | manualMethod
+  | manualMinMax
+  | manualNat
+  | manualOrdering
+  | manualPatternCharComparison
+  | manualPatternTest
+  | manualRangePatterns
+  | manualRecordUpdate
+  | manualRemEuclid
+  | manualTable
+  | manySingleCharNames
+  | matchBool
   | matchCouldBeTable
+  | matchLikeMembership
+  | matchOverlappingArm
+  | matchSameArms
+  | membershipChain
+  | minIdentChars
+  | minMax
+  | moduleInception
+  | moduleNameRepetitions
+  | moduloOne
+  | needlessBoolAssign
+  | needlessMatch
+  | needlessRawStringHashes
+  | needlessRawStrings
+  | needlessUpdate
+  | negMultiply
+  | negativePosition
+  | noEffectReplace
+  | nonAsciiLiteral
+  | nonCamelCaseTypes
+  | nonSnakeCase
+  | nonUpperCaseConstants
+  | nonminimalBool
+  | overlyComplexBoolExpr
+  | precedence
+  | redundantBindings
+  | redundantBoolType
+  | redundantComparisons
+  | redundantLocals
+  | redundantMethodChain
+  | redundantNewtypeRoundtrip
+  | redundantSlicing
+  | sameBranches
+  | similarNames
+  | singleCallFn
+  | singleMatchElse
+  | singletonMembership
+  | structExcessiveBools
+  | structFieldNames
+  | suspiciousUnaryOpFormatting
+  | tooManyLines
+  | trivialCover
+  | trivialMatch
+  | trivialPattern
+  | trivialQuantifier
+  | undecidable
+  | unfulfilledExpectations
+  | unicodeNotNfc
+  | unlessNot
+  | unnecessaryMinOrMax
+  | unnecessaryStructInitialization
+  | unnecessaryTrailingComma
+  | unnestedOrPatterns
+  | unrelatedBinders
+  | unusedAssumption
+  | unusedImports
+  | unusedLintSetting
+  | unusedVariables
+  | upperCaseAcronyms
+  | wildcardEnumMatchArm
+  | wildcardInOrPatterns
+  | wildcardSingleVariant
+  | zeroPrefixedLiteral
+  | zeroSizedMapValues
+  -- keep-sorted end
   -- `BEq` from `DecidableEq`, which makes it lawful at once; a derived `BEq`
   -- would need a proof over every pair of lints.
   deriving Inhabited, DecidableEq, Repr
 
-def Lint.all : Array Lint :=
-  #[.unusedImports, .globImports, .nonSnakeCase, .nonCamelCaseTypes, .nonUpperCaseConstants, .unfulfilledExpectations,
-    .unusedVariables, .deadCode, .nonminimalBool, .undecidable, .lengthZero, .cardZero,
-    .singletonMembership, .membershipChain, .constantOutput, .definableOutput, .indexAfterUse, .unlessNot,
-    .collapsibleWhen, .ifNotElse, .matchSameArms, .matchLikeMembership, .wildcardSingleVariant, .ifChainMatch,
-    .caseSplitGuarantees, .redundantBindings, .eqOp, .sameBranches, .duplicateElements, .emptyArgument, .doubleComparison,
-    .boolEquality, .manualMethod, .elseExtends, .identityOp, .doubleParens, .doubleNeg, .intPlusOne, .negMultiply,
-    .redundantMethodChain, .trivialPattern, .redundantBoolType, .trivialMatch,
-    .zeroSizedMapValues, .manySingleCharNames, .similarNames, .tooManyLines, .moduleInception, .enumVariantNames,
-    .upperCaseAcronyms, .justUnderscoresAndDigits, .disallowedNames, .needlessBoolAssign, .needlessMatch,
-    .assertionsOnConstants, .suspiciousUnaryOpFormatting, .redundantSlicing, .noEffectReplace, .constIsEmpty,
-    .manualPatternCharComparison, .almostCompleteRange, .duplicateConstraint, .invisibleCharacters, .negativePosition,
-    .absurdExtremeComparisons, .erasingOp, .ifsSameCond, .contradictoryComparisons, .redundantComparisons,
-    .allowAttributes, .wildcardEnumMatchArm, .needlessRawStrings, .nonAsciiLiteral, .moduleNameRepetitions,
-    .minIdentChars, .absolutePaths, .precedence, .unnecessaryStructInitialization, .unusedLintSetting,
-    .unusedAssumption, .unrelatedBinders, .literalDotInPattern, .invalidUpcastComparisons,
-    .unicodeNotNfc, .unnecessaryTrailingComma,
-    .isEquality, .irrefutableIs, .chainableComparison,
-    .singleMatchElse, .inconsistentStructConstructor, .overlyComplexBoolExpr, .structFieldNames, .fnParamsExcessiveBools,
-    .structExcessiveBools, .needlessRawStringHashes, .branchesSharingCode, .zeroPrefixedLiteral,
-    .arbitrarySourceItemOrdering, .singleCallFn,
-    .manualAtMostOne, .manualOrdering, .redundantNewtypeRoundtrip, .unnecessaryMinOrMax,
-    .manualNat, .manualAbs, .manualAbsDiff, .manualMinMax, .manualClamp, .manualRemEuclid, .moduloOne, .minMax,
-    .manualRecordUpdate, .needlessUpdate, .trivialCover, .manualPatternTest,
-    .collapsibleMatch, .manualRangePatterns, .wildcardInOrPatterns, .matchOverlappingArm, .unnestedOrPatterns,
-    .matchBool, .manualTable,
-    .letAndReturn, .redundantLocals, .manualForall, .trivialQuantifier,
-    .matchCouldBeTable]
-
-def Lint.name : Lint → String
-  | .unusedImports => "unused_imports"
-  | .globImports => "glob_imports"
-  | .nonSnakeCase => "non_snake_case"
-  | .nonCamelCaseTypes => "non_camel_case_types"
-  | .nonUpperCaseConstants => "non_upper_case_constants"
-  | .unfulfilledExpectations => "unfulfilled_lint_expectations"
-  | .unusedVariables => "unused_variables"
-  | .deadCode => "dead_code"
-  | .nonminimalBool => "nonminimal_bool"
-  | .undecidable => "undecidable"
-  | .lengthZero => "length_zero"
-  | .cardZero => "card_zero"
-  | .singletonMembership => "singleton_membership"
-  | .membershipChain => "membership_chain"
-  | .constantOutput => "constant_output"
-  | .definableOutput => "definable_output"
-  | .indexAfterUse => "index_after_use"
-  | .unlessNot => "unless_not"
-  | .collapsibleWhen => "collapsible_when"
-  | .ifNotElse => "if_not_else"
-  | .matchSameArms => "match_same_arms"
-  | .matchLikeMembership => "match_like_membership"
-  | .wildcardSingleVariant => "wildcard_single_variant"
-  | .ifChainMatch => "if_chain_match"
-  | .caseSplitGuarantees => "case_split_guarantees"
-  | .redundantBindings => "redundant_bindings"
-  | .eqOp => "eq_op"
-  | .sameBranches => "same_branches"
-  | .duplicateElements => "duplicate_elements"
-  | .emptyArgument => "empty_argument"
-  | .doubleComparison => "double_comparison"
-  | .boolEquality => "bool_equality"
-  | .manualMethod => "manual_method"
-  | .elseExtends => "else_extends"
-  | .identityOp => "identity_op"
-  | .doubleParens => "double_parens"
-  | .doubleNeg => "double_neg"
-  | .intPlusOne => "int_plus_one"
-  | .negMultiply => "neg_multiply"
-  | .redundantMethodChain => "redundant_method_chain"
-  | .trivialPattern => "trivial_pattern"
-  | .redundantBoolType => "redundant_bool_type"
-  | .trivialMatch => "trivial_match"
-  | .zeroSizedMapValues => "zero_sized_map_values"
-  | .manySingleCharNames => "many_single_char_names"
-  | .similarNames => "similar_names"
-  | .tooManyLines => "too_many_lines"
-  | .moduleInception => "module_inception"
-  | .enumVariantNames => "enum_variant_names"
-  | .upperCaseAcronyms => "upper_case_acronyms"
-  | .justUnderscoresAndDigits => "just_underscores_and_digits"
-  | .disallowedNames => "disallowed_names"
-  | .needlessBoolAssign => "needless_bool_assign"
-  | .needlessMatch => "needless_match"
-  | .assertionsOnConstants => "assertions_on_constants"
-  | .suspiciousUnaryOpFormatting => "suspicious_unary_op_formatting"
-  | .redundantSlicing => "redundant_slicing"
-  | .noEffectReplace => "no_effect_replace"
-  | .constIsEmpty => "const_is_empty"
-  | .manualPatternCharComparison => "manual_pattern_char_comparison"
-  | .almostCompleteRange => "almost_complete_range"
-  | .duplicateConstraint => "duplicate_constraint"
-  | .invisibleCharacters => "invisible_characters"
-  | .negativePosition => "negative_position"
-  | .absurdExtremeComparisons => "absurd_extreme_comparisons"
-  | .erasingOp => "erasing_op"
-  | .ifsSameCond => "ifs_same_cond"
-  | .contradictoryComparisons => "contradictory_comparisons"
-  | .redundantComparisons => "redundant_comparisons"
-  | .allowAttributes => "allow_attributes"
-  | .wildcardEnumMatchArm => "wildcard_enum_match_arm"
-  | .needlessRawStrings => "needless_raw_strings"
-  | .nonAsciiLiteral => "non_ascii_literal"
-  | .moduleNameRepetitions => "module_name_repetitions"
-  | .minIdentChars => "min_ident_chars"
-  | .absolutePaths => "absolute_paths"
-  | .precedence => "precedence"
-  | .unnecessaryStructInitialization => "unnecessary_struct_initialization"
-  | .unusedLintSetting => "unused_lint_setting"
-  | .unusedAssumption => "unused_assumption"
-  | .unrelatedBinders => "unrelated_binders"
-  | .literalDotInPattern => "literal_dot_in_pattern"
-  | .invalidUpcastComparisons => "invalid_upcast_comparisons"
-  | .unicodeNotNfc => "unicode_not_nfc"
-  | .unnecessaryTrailingComma => "unnecessary_trailing_comma"
-  | .isEquality => "is_equality"
-  | .irrefutableIs => "irrefutable_is"
-  | .chainableComparison => "chainable_comparison"
-  | .singleMatchElse => "single_match_else"
-  | .inconsistentStructConstructor => "inconsistent_struct_constructor"
-  | .overlyComplexBoolExpr => "overly_complex_bool_expr"
-  | .structFieldNames => "struct_field_names"
-  | .fnParamsExcessiveBools => "fn_params_excessive_bools"
-  | .structExcessiveBools => "struct_excessive_bools"
-  | .needlessRawStringHashes => "needless_raw_string_hashes"
-  | .branchesSharingCode => "branches_sharing_code"
-  | .zeroPrefixedLiteral => "zero_prefixed_literal"
-  | .arbitrarySourceItemOrdering => "arbitrary_source_item_ordering"
-  | .singleCallFn => "single_call_fn"
-  | .manualAtMostOne => "manual_at_most_one"
-  | .manualOrdering => "manual_ordering"
-  | .redundantNewtypeRoundtrip => "redundant_newtype_roundtrip"
-  | .unnecessaryMinOrMax => "unnecessary_min_or_max"
-  | .manualRecordUpdate => "manual_record_update"
-  | .needlessUpdate => "needless_update"
-  | .trivialCover => "trivial_cover"
-  | .manualNat => "manual_nat"
-  | .manualAbs => "manual_abs"
-  | .manualAbsDiff => "manual_abs_diff"
-  | .manualMinMax => "manual_min_max"
-  | .manualClamp => "manual_clamp"
-  | .manualRemEuclid => "manual_rem_euclid"
-  | .moduloOne => "modulo_one"
-  | .minMax => "min_max"
-  | .manualPatternTest => "manual_pattern_test"
-  | .collapsibleMatch => "collapsible_match"
-  | .manualRangePatterns => "manual_range_patterns"
-  | .wildcardInOrPatterns => "wildcard_in_or_patterns"
-  | .matchOverlappingArm => "match_overlapping_arm"
-  | .unnestedOrPatterns => "unnested_or_patterns"
-  | .matchBool => "match_bool"
-  | .manualTable => "manual_table"
-  | .letAndReturn => "let_and_return"
-  | .redundantLocals => "redundant_locals"
-  | .manualForall => "manual_forall"
-  | .trivialQuantifier => "trivial_quantifier"
-  | .matchCouldBeTable => "match_could_be_table"
-
-def Lint.code : Lint → String
-  | .unusedImports => "F0701"
-  | .globImports => "F0702"
-  | .nonSnakeCase => "F0703"
-  | .nonCamelCaseTypes => "F0704"
-  | .nonUpperCaseConstants => "F0705"
-  | .unfulfilledExpectations => "F0706"
-  | .unusedVariables => "F0710"
-  | .deadCode => "F0711"
-  | .nonminimalBool => "F0712"
-  -- `F0713` was `shadowed_constants`, which explicit shadowing replaced
-  -- (`F0217`); it is not reused.
-  | .undecidable => "F0714"
-  | .lengthZero => "F0715"
-  | .cardZero => "F0716"
-  | .singletonMembership => "F0717"
-  | .membershipChain => "F0718"
-  | .constantOutput => "F0719"
-  | .definableOutput => "F0720"
-  | .indexAfterUse => "F0721"
-  | .unlessNot => "F0722"
-  | .collapsibleWhen => "F0723"
-  | .ifNotElse => "F0724"
-  | .matchSameArms => "F0725"
-  | .matchLikeMembership => "F0726"
-  | .wildcardSingleVariant => "F0728"
-  | .ifChainMatch => "F0727"
-  | .caseSplitGuarantees => "F0729"
-  | .redundantBindings => "F0735"
-  | .eqOp => "F0736"
-  | .sameBranches => "F0737"
-  | .duplicateElements => "F0738"
-  | .emptyArgument => "F0745"
-  | .doubleComparison => "F0730"
-  | .boolEquality => "F0731"
-  | .manualMethod => "F0732"
-  | .elseExtends => "F0733"
-  | .identityOp => "F0734"
-  | .doubleParens => "F0739"
-  | .doubleNeg => "F0740"
-  | .intPlusOne => "F0741"
-  | .negMultiply => "F0742"
-  | .redundantMethodChain => "F0743"
-  | .trivialPattern => "F0744"
-  | .redundantBoolType => "F0746"
-  | .trivialMatch => "F0747"
-  | .zeroSizedMapValues => "F0789"
-  | .manySingleCharNames => "F0795"
-  | .similarNames => "F0796"
-  | .tooManyLines => "F0797"
-  | .moduleInception => "F0748"
-  | .enumVariantNames => "F0749"
-  | .upperCaseAcronyms => "F0750"
-  | .justUnderscoresAndDigits => "F0751"
-  | .disallowedNames => "F0752"
-  | .needlessBoolAssign => "F0759"
-  | .needlessMatch => "F0760"
-  | .assertionsOnConstants => "F0761"
-  | .suspiciousUnaryOpFormatting => "F0762"
-  | .redundantSlicing => "F0753"
-  | .noEffectReplace => "F0754"
-  | .constIsEmpty => "F0755"
-  | .manualPatternCharComparison => "F0756"
-  | .almostCompleteRange => "F0757"
-  | .duplicateConstraint => "F0768"
-  | .invisibleCharacters => "F0769"
-  | .negativePosition => "F0770"
-  | .absurdExtremeComparisons => "F0763"
-  | .erasingOp => "F0764"
-  | .ifsSameCond => "F0765"
-  | .contradictoryComparisons => "F0766"
-  | .redundantComparisons => "F0767"
-  | .allowAttributes => "F0780"
-  | .wildcardEnumMatchArm => "F0781"
-  | .needlessRawStrings => "F0782"
-  | .nonAsciiLiteral => "F0783"
-  | .moduleNameRepetitions => "F0784"
-  | .minIdentChars => "F0785"
-  | .absolutePaths => "F0786"
-  | .precedence => "F0787"
-  | .unnecessaryStructInitialization => "F0790"
-  | .unusedLintSetting => "F0791"
-  | .unusedAssumption => "F0792"
-  | .unrelatedBinders => "F0793"
-  | .literalDotInPattern => "F0794"
-  | .invalidUpcastComparisons => "F0798"
-  | .unicodeNotNfc => "F0799"
-  | .unnecessaryTrailingComma => "F0801"
-  | .isEquality => "F0802"
-  | .irrefutableIs => "F0803"
-  | .chainableComparison => "F0804"
-  | .singleMatchElse => "F0771"
-  | .inconsistentStructConstructor => "F0772"
-  | .overlyComplexBoolExpr => "F0773"
-  | .structFieldNames => "F0774"
-  | .fnParamsExcessiveBools => "F0775"
-  | .structExcessiveBools => "F0776"
-  | .needlessRawStringHashes => "F0777"
-  | .branchesSharingCode => "F0778"
-  | .zeroPrefixedLiteral => "F0758"
-  | .arbitrarySourceItemOrdering => "F0779"
-  | .singleCallFn => "F0788"
-  | .manualAtMostOne => "F0840"
-  | .manualOrdering => "F0841"
-  | .redundantNewtypeRoundtrip => "F0842"
-  | .unnecessaryMinOrMax => "F0843"
-  | .manualRecordUpdate => "F0818"
-  | .needlessUpdate => "F0819"
-  | .trivialCover => "F0820"
-  | .manualNat => "F0810"
-  | .manualAbs => "F0811"
-  | .manualAbsDiff => "F0812"
-  | .manualMinMax => "F0813"
-  | .manualClamp => "F0814"
-  | .manualRemEuclid => "F0815"
-  | .moduloOne => "F0816"
-  | .minMax => "F0817"
-  | .manualPatternTest => "F0805"
-  | .collapsibleMatch => "F0832"
-  | .manualRangePatterns => "F0833"
-  | .wildcardInOrPatterns => "F0834"
-  | .matchOverlappingArm => "F0835"
-  | .unnestedOrPatterns => "F0836"
-  | .matchBool => "F0837"
-  | .manualTable => "F0838"
-  | .letAndReturn => "F0824"
-  | .redundantLocals => "F0825"
-  | .manualForall => "F0826"
-  | .trivialQuantifier => "F0827"
-  | .matchCouldBeTable => "F0809"
+/-- Every lint, in the order of `Lint`'s constructors, which is by name. -/
+def Lint.all : Array Lint := ctors% Lint
 
 /-- A group of lints (`lint::Group`). Each lint is in exactly one, whose
 level it takes by default. -/
@@ -509,38 +232,145 @@ def Group.default : Group → LintLevel
 
 def Group.ofName? (s : String) : Option Group := Group.all.find? (·.name == s)
 
-def Lint.group : Lint → Group
-  | .unusedImports | .unusedVariables | .deadCode | .unfulfilledExpectations | .unusedLintSetting
-  | .unusedAssumption => .unused
-  | .nonSnakeCase | .nonCamelCaseTypes | .nonUpperCaseConstants => .nonstandardStyle
-  | .globImports | .lengthZero | .cardZero | .unlessNot | .collapsibleWhen | .matchLikeMembership | .redundantBindings
-  | .doubleNeg | .negMultiply | .trivialPattern | .redundantBoolType | .moduleInception | .enumVariantNames
-  | .upperCaseAcronyms | .justUnderscoresAndDigits | .disallowedNames | .assertionsOnConstants
-  | .manualPatternCharComparison | .isEquality | .chainableComparison | .manualNat | .manualRecordUpdate
-  | .manualPatternTest | .collapsibleMatch | .matchOverlappingArm | .letAndReturn | .manualForall => .style
-  | .nonminimalBool | .singletonMembership | .constantOutput | .doubleComparison | .manualMethod | .elseExtends
-  | .identityOp | .doubleParens | .intPlusOne | .redundantMethodChain | .trivialMatch | .needlessBoolAssign
-  | .needlessMatch | .redundantSlicing | .redundantComparisons | .unnecessaryStructInitialization
-  | .zeroPrefixedLiteral | .manualAtMostOne | .redundantNewtypeRoundtrip | .unnecessaryMinOrMax | .manualAbs
-  | .manualAbsDiff | .manualMinMax | .manualClamp | .manualRemEuclid | .needlessUpdate
-  | .manualRangePatterns | .wildcardInOrPatterns | .trivialQuantifier => .complexity
-  | .indexAfterUse | .eqOp | .sameBranches | .duplicateElements | .emptyArgument
-  | .suspiciousUnaryOpFormatting | .noEffectReplace | .constIsEmpty | .almostCompleteRange | .duplicateConstraint
-  | .invisibleCharacters | .negativePosition | .absurdExtremeComparisons | .erasingOp | .ifsSameCond
-  | .contradictoryComparisons | .unrelatedBinders | .literalDotInPattern | .irrefutableIs | .moduloOne | .minMax
-  | .trivialCover
-  | .redundantLocals => .suspicious
-  | .membershipChain | .definableOutput | .ifNotElse | .matchSameArms | .wildcardSingleVariant | .ifChainMatch
-  | .caseSplitGuarantees | .boolEquality | .zeroSizedMapValues | .manySingleCharNames | .similarNames
-  | .tooManyLines | .invalidUpcastComparisons | .unicodeNotNfc | .unnecessaryTrailingComma => .pedantic
-  | .allowAttributes | .wildcardEnumMatchArm | .needlessRawStrings | .nonAsciiLiteral | .moduleNameRepetitions
-  | .minIdentChars | .absolutePaths | .precedence | .arbitrarySourceItemOrdering
-  | .singleCallFn => .restriction
-  | .singleMatchElse | .inconsistentStructConstructor | .overlyComplexBoolExpr
-  | .structFieldNames | .fnParamsExcessiveBools | .structExcessiveBools | .needlessRawStringHashes
-  | .branchesSharingCode | .manualOrdering | .unnestedOrPatterns | .matchBool | .manualTable
-  | .matchCouldBeTable => .pedantic
-  | .undecidable => .decidability
+/-- A lint's name, code and group: one line for each lint, kept sorted, so
+that lints added at once merge cleanly. (`F0713` was `shadowed_constants`,
+which explicit shadowing replaced, `F0217`; it is not reused.) -/
+def Lint.info : Lint → String × String × Group
+  -- keep-sorted start
+  | .absolutePaths => ("absolute_paths", "F0786", .restriction)
+  | .absurdExtremeComparisons => ("absurd_extreme_comparisons", "F0763", .suspicious)
+  | .allowAttributes => ("allow_attributes", "F0780", .restriction)
+  | .almostCompleteRange => ("almost_complete_range", "F0757", .suspicious)
+  | .arbitrarySourceItemOrdering => ("arbitrary_source_item_ordering", "F0779", .restriction)
+  | .assertionsOnConstants => ("assertions_on_constants", "F0761", .style)
+  | .boolEquality => ("bool_equality", "F0731", .pedantic)
+  | .branchesSharingCode => ("branches_sharing_code", "F0778", .pedantic)
+  | .cardZero => ("card_zero", "F0716", .style)
+  | .caseSplitGuarantees => ("case_split_guarantees", "F0729", .pedantic)
+  | .chainableComparison => ("chainable_comparison", "F0804", .style)
+  | .collapsibleMatch => ("collapsible_match", "F0832", .style)
+  | .collapsibleWhen => ("collapsible_when", "F0723", .style)
+  | .constIsEmpty => ("const_is_empty", "F0755", .suspicious)
+  | .constantOutput => ("constant_output", "F0719", .complexity)
+  | .contradictoryComparisons => ("contradictory_comparisons", "F0766", .suspicious)
+  | .deadCode => ("dead_code", "F0711", .unused)
+  | .definableOutput => ("definable_output", "F0720", .pedantic)
+  | .disallowedNames => ("disallowed_names", "F0752", .style)
+  | .doubleComparison => ("double_comparison", "F0730", .complexity)
+  | .doubleNeg => ("double_neg", "F0740", .style)
+  | .doubleParens => ("double_parens", "F0739", .complexity)
+  | .duplicateConstraint => ("duplicate_constraint", "F0768", .suspicious)
+  | .duplicateElements => ("duplicate_elements", "F0738", .suspicious)
+  | .elseExtends => ("else_extends", "F0733", .complexity)
+  | .emptyArgument => ("empty_argument", "F0745", .suspicious)
+  | .enumVariantNames => ("enum_variant_names", "F0749", .style)
+  | .eqOp => ("eq_op", "F0736", .suspicious)
+  | .erasingOp => ("erasing_op", "F0764", .suspicious)
+  | .fnParamsExcessiveBools => ("fn_params_excessive_bools", "F0775", .pedantic)
+  | .globImports => ("glob_imports", "F0702", .style)
+  | .identityOp => ("identity_op", "F0734", .complexity)
+  | .ifChainMatch => ("if_chain_match", "F0727", .pedantic)
+  | .ifNotElse => ("if_not_else", "F0724", .pedantic)
+  | .ifsSameCond => ("ifs_same_cond", "F0765", .suspicious)
+  | .inconsistentStructConstructor => ("inconsistent_struct_constructor", "F0772", .pedantic)
+  | .indexAfterUse => ("index_after_use", "F0721", .suspicious)
+  | .intPlusOne => ("int_plus_one", "F0741", .complexity)
+  | .invalidUpcastComparisons => ("invalid_upcast_comparisons", "F0798", .pedantic)
+  | .invisibleCharacters => ("invisible_characters", "F0769", .suspicious)
+  | .irrefutableIs => ("irrefutable_is", "F0803", .suspicious)
+  | .isEquality => ("is_equality", "F0802", .style)
+  | .justUnderscoresAndDigits => ("just_underscores_and_digits", "F0751", .style)
+  | .lengthZero => ("length_zero", "F0715", .style)
+  | .letAndReturn => ("let_and_return", "F0824", .style)
+  | .literalDotInPattern => ("literal_dot_in_pattern", "F0794", .suspicious)
+  | .manualAbs => ("manual_abs", "F0811", .complexity)
+  | .manualAbsDiff => ("manual_abs_diff", "F0812", .complexity)
+  | .manualAtMostOne => ("manual_at_most_one", "F0840", .complexity)
+  | .manualClamp => ("manual_clamp", "F0814", .complexity)
+  | .manualForall => ("manual_forall", "F0826", .style)
+  | .manualMethod => ("manual_method", "F0732", .complexity)
+  | .manualMinMax => ("manual_min_max", "F0813", .complexity)
+  | .manualNat => ("manual_nat", "F0810", .style)
+  | .manualOrdering => ("manual_ordering", "F0841", .pedantic)
+  | .manualPatternCharComparison => ("manual_pattern_char_comparison", "F0756", .style)
+  | .manualPatternTest => ("manual_pattern_test", "F0805", .style)
+  | .manualRangePatterns => ("manual_range_patterns", "F0833", .complexity)
+  | .manualRecordUpdate => ("manual_record_update", "F0818", .style)
+  | .manualRemEuclid => ("manual_rem_euclid", "F0815", .complexity)
+  | .manualTable => ("manual_table", "F0838", .pedantic)
+  | .manySingleCharNames => ("many_single_char_names", "F0795", .pedantic)
+  | .matchBool => ("match_bool", "F0837", .pedantic)
+  | .matchCouldBeTable => ("match_could_be_table", "F0809", .pedantic)
+  | .matchLikeMembership => ("match_like_membership", "F0726", .style)
+  | .matchOverlappingArm => ("match_overlapping_arm", "F0835", .style)
+  | .matchSameArms => ("match_same_arms", "F0725", .pedantic)
+  | .membershipChain => ("membership_chain", "F0718", .pedantic)
+  | .minIdentChars => ("min_ident_chars", "F0785", .restriction)
+  | .minMax => ("min_max", "F0817", .suspicious)
+  | .moduleInception => ("module_inception", "F0748", .style)
+  | .moduleNameRepetitions => ("module_name_repetitions", "F0784", .restriction)
+  | .moduloOne => ("modulo_one", "F0816", .suspicious)
+  | .needlessBoolAssign => ("needless_bool_assign", "F0759", .complexity)
+  | .needlessMatch => ("needless_match", "F0760", .complexity)
+  | .needlessRawStringHashes => ("needless_raw_string_hashes", "F0777", .pedantic)
+  | .needlessRawStrings => ("needless_raw_strings", "F0782", .restriction)
+  | .needlessUpdate => ("needless_update", "F0819", .complexity)
+  | .negMultiply => ("neg_multiply", "F0742", .style)
+  | .negativePosition => ("negative_position", "F0770", .suspicious)
+  | .noEffectReplace => ("no_effect_replace", "F0754", .suspicious)
+  | .nonAsciiLiteral => ("non_ascii_literal", "F0783", .restriction)
+  | .nonCamelCaseTypes => ("non_camel_case_types", "F0704", .nonstandardStyle)
+  | .nonSnakeCase => ("non_snake_case", "F0703", .nonstandardStyle)
+  | .nonUpperCaseConstants => ("non_upper_case_constants", "F0705", .nonstandardStyle)
+  | .nonminimalBool => ("nonminimal_bool", "F0712", .complexity)
+  | .overlyComplexBoolExpr => ("overly_complex_bool_expr", "F0773", .pedantic)
+  | .precedence => ("precedence", "F0787", .restriction)
+  | .redundantBindings => ("redundant_bindings", "F0735", .style)
+  | .redundantBoolType => ("redundant_bool_type", "F0746", .style)
+  | .redundantComparisons => ("redundant_comparisons", "F0767", .complexity)
+  | .redundantLocals => ("redundant_locals", "F0825", .suspicious)
+  | .redundantMethodChain => ("redundant_method_chain", "F0743", .complexity)
+  | .redundantNewtypeRoundtrip => ("redundant_newtype_roundtrip", "F0842", .complexity)
+  | .redundantSlicing => ("redundant_slicing", "F0753", .complexity)
+  | .sameBranches => ("same_branches", "F0737", .suspicious)
+  | .similarNames => ("similar_names", "F0796", .pedantic)
+  | .singleCallFn => ("single_call_fn", "F0788", .restriction)
+  | .singleMatchElse => ("single_match_else", "F0771", .pedantic)
+  | .singletonMembership => ("singleton_membership", "F0717", .complexity)
+  | .structExcessiveBools => ("struct_excessive_bools", "F0776", .pedantic)
+  | .structFieldNames => ("struct_field_names", "F0774", .pedantic)
+  | .suspiciousUnaryOpFormatting => ("suspicious_unary_op_formatting", "F0762", .suspicious)
+  | .tooManyLines => ("too_many_lines", "F0797", .pedantic)
+  | .trivialCover => ("trivial_cover", "F0820", .suspicious)
+  | .trivialMatch => ("trivial_match", "F0747", .complexity)
+  | .trivialPattern => ("trivial_pattern", "F0744", .style)
+  | .trivialQuantifier => ("trivial_quantifier", "F0827", .complexity)
+  | .undecidable => ("undecidable", "F0714", .decidability)
+  | .unfulfilledExpectations => ("unfulfilled_lint_expectations", "F0706", .unused)
+  | .unicodeNotNfc => ("unicode_not_nfc", "F0799", .pedantic)
+  | .unlessNot => ("unless_not", "F0722", .style)
+  | .unnecessaryMinOrMax => ("unnecessary_min_or_max", "F0843", .complexity)
+  | .unnecessaryStructInitialization => ("unnecessary_struct_initialization", "F0790", .complexity)
+  | .unnecessaryTrailingComma => ("unnecessary_trailing_comma", "F0801", .pedantic)
+  | .unnestedOrPatterns => ("unnested_or_patterns", "F0836", .pedantic)
+  | .unrelatedBinders => ("unrelated_binders", "F0793", .suspicious)
+  | .unusedAssumption => ("unused_assumption", "F0792", .unused)
+  | .unusedImports => ("unused_imports", "F0701", .unused)
+  | .unusedLintSetting => ("unused_lint_setting", "F0791", .unused)
+  | .unusedVariables => ("unused_variables", "F0710", .unused)
+  | .upperCaseAcronyms => ("upper_case_acronyms", "F0750", .style)
+  | .wildcardEnumMatchArm => ("wildcard_enum_match_arm", "F0781", .restriction)
+  | .wildcardInOrPatterns => ("wildcard_in_or_patterns", "F0834", .complexity)
+  | .wildcardSingleVariant => ("wildcard_single_variant", "F0728", .pedantic)
+  | .zeroPrefixedLiteral => ("zero_prefixed_literal", "F0758", .complexity)
+  | .zeroSizedMapValues => ("zero_sized_map_values", "F0789", .pedantic)
+  -- keep-sorted end
+
+def Lint.name (l : Lint) : String := l.info.1
+
+def Lint.code (l : Lint) : String := l.info.2.1
+
+def Lint.group (l : Lint) : Group := l.info.2.2
 
 def Lint.default (l : Lint) : LintLevel := l.group.default
 
@@ -1100,8 +930,10 @@ def removedLintNotes (n : String) : Array String :=
 def groupsNote : String :=
   s!"note: the groups of lints are {", ".intercalate (((Group.all.map (·.name)).qsort (· < ·)).map (s!"`{·}`")).toList}"
 
-/-- The names of the lints and of the groups. -/
-def lintTargetNames : Array String := Lint.all.map (·.name) ++ Group.all.map (·.name)
+/-- The names of the lints and of the groups, sorted, so that of several
+names equally close to an unknown one, the suggestion is the first by name
+(`Reqs/Lint#setting-levels`). -/
+def lintTargetNames : Array String := (Lint.all.map (·.name) ++ Group.all.map (·.name)).qsort (· < ·)
 
 /-- The message of the fix that replaces an unknown name with `s`, the
 name of a lint or a group. -/
@@ -2821,7 +2653,6 @@ def sameRowsMsg (value fixed : String) (wildcard : Bool) : Msg :=
     fixes := if wildcard then #[{ msg := "remove the conditions, which decide nothing", replacement := fixed }] else #[] }
 
 /-! ## Suspicious expressions -/
-
 
 /-- An infix operator (`lint::InfixOp`). -/
 inductive InfixOp where
@@ -5418,7 +5249,6 @@ def eqOpMethodAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
   let wf (k : BNode α) := writtenForm (textOf src k.range)
   guard (eqOpMethod (wf r) (wf a))
   return { lint := .eqOp, ref := n.ref, msg := eqOpMethodMsg m (textOf src r.range) }
-
 
 /-! ## Local definitions and quantifiers -/
 

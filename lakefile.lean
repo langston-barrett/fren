@@ -56,6 +56,19 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"3da3dcc
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
+-- `FrenCore.Codes` reads the explanations of the codes, a Markdown file
+-- each in `src/FrenCore/Codes`, when it is compiled, hence `needs`.
+lean_lib FrenCoreCodes where
+  globs := #[`FrenCore.Codes]
+  needs := #[`@/codes_md]
+  moreLeancArgs := coverageArgs
+  moreLeanArgs := coverageLeanArgs
+
+input_dir codes_md where
+  path := "src/FrenCore/Codes"
+  text := true
+  filter := .extension #["md"]
+
 -- The Lean-hosted front end (uses lean-smt).
 @[default_target] lean_lib Fren where
   moreLeancArgs := coverageArgs
@@ -120,12 +133,19 @@ input_file reqs_lint_chapter_md where
   text := true
 
 -- Fren's own code linked to its requirements with `impl`. It imports both
--- the requirements and the code, so that neither depends on the other. Its
--- `tested` claims read the tests, hence `needs`. Only `Impls`, `Impls.Lint`
--- and `Impls.Trace` make such claims (checked by `lake test`'s `libraries`
--- job), so the other modules are in `ImplsProofs`, which needs no tests,
--- and editing a test rebuilds only those three.
-@[default_target] lean_lib Impls where needs := #[`@/tests, `@/test_lean, `@/test_main]
+-- the requirements and the code, so that neither depends on the other. A
+-- `tested` claim reads the tests, so its module's library needs them: only
+-- `Impls`, `Impls.Lint` and `Impls.Trace` make such claims, in
+-- `ImplsTested`, so that editing a test rebuilds only those three, and a new
+-- module of `Impls` needs no entry here. A module that makes one elsewhere
+-- fails `lake test`'s `libraries` job, which also checks that `testReaders`
+-- in `src/FrenTestMain.lean` lists these three. (Lake places a module in
+-- the last library that has it.)
+@[default_target] lean_lib Impls
+
+lean_lib ImplsTested where
+  globs := #[`Impls, `Impls.Lint, `Impls.Trace]
+  needs := #[`@/tests, `@/test_lean, `@/test_main]
 
 input_dir tests where
   path := "test"
@@ -140,13 +160,6 @@ input_dir test_lean where
 input_file test_main where
   path := "src/FrenTestMain.lean"
   text := true
-
-lean_lib ImplsProofs where
-  globs := #[`Impls.Assumptions, `Impls.Calls, `Impls.Chains, `Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated,
-    `Impls.HigherOrder,
-    `Impls.Impl, `Impls.Lang, `Impls.Modules, `Impls.Mutate, `Impls.PatternTests, `Impls.PatternTypes, `Impls.Procedures,
-    `Impls.Repeats, `Impls.Scope, `Impls.Semantics,
-    `Impls.TypeFacts, `Impls.View]
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
