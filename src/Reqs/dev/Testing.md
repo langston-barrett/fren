@@ -41,8 +41,11 @@
 - **Libraries** (`lake test`): the modules that copy a root module's
   imports, to keep it off the build's critical path, import exactly its
   modules; each module of `Reqs` reads only the specs that its library in
-  `lakefile.lean` needs; and only the modules of `Impls` whose library needs
-  the tests, `ImplsTested`, make `tested` claims.
+  `lakefile.lean` needs; only the modules of `Impls` whose library needs
+  the tests, `ImplsTested`, make `tested` claims; and only the modules of
+  `FrenTest` whose library needs their files, `FrenTestFiles`, read files
+  with `#fren_md`, and only those files. Lake rebuilds a module when a file
+  that its library needs changes, and only then.
 - **Lean-only behaviour** (`lake build`): `#guard_msgs` tests in
   `src/FrenTest`, e.g. the shape of generated definitions.
 - **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by

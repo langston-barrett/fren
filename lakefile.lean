@@ -166,6 +166,31 @@ input_file test_main where
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
 
+-- The tests that read Markdown or `.fren` files with `#fren_md`: the
+-- fixtures in `src/FrenTest`, and two ui tests, hence `needs`, so that
+-- editing one rebuilds them. `lake test`'s `libraries` job checks that no
+-- other module of `FrenTest` reads a file, that these read only the files
+-- that this library needs, and that `fileReaders` in `src/FrenTestMain.lean`
+-- lists these modules. (Lake places a module in the last library that has
+-- it.)
+lean_lib FrenTestFiles where
+  globs := #[`FrenTest.LambdaMatch, `FrenTest.Literate, `FrenTest.LiterateChapters, `FrenTest.LiterateImported,
+    `FrenTest.LiterateNested, `FrenTest.LiterateRelative, `FrenTest.LiterateSettings, `FrenTest.LiterateUndecidable]
+  needs := #[`@/test_fixtures, `@/test_lambda_match, `@/test_multi_match_names]
+
+input_dir test_fixtures where
+  path := "src/FrenTest"
+  text := true
+  filter := .extension #["md", "fren"]
+
+input_file test_lambda_match where
+  path := "test/ui/lang/lambda_match.fren"
+  text := true
+
+input_file test_multi_match_names where
+  path := "test/ui/lang/multi_match_names.fren"
+  text := true
+
 -- The example specs' Lean implementations, each proved to meet the spec it
 -- reads with `#fren_md`, hence `needs` (the `.fren` specs only: an example
 -- that reads a Markdown spec needs that file too). Each is listed in

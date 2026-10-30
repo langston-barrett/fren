@@ -711,6 +711,28 @@ def specsRead : List (List String × (String → Bool)) :=
 `lakefile.lean` (`libraryGlobs`). -/
 def testReaders : List String := ["src/Impls.lean", "src/Impls/Lint.lean", "src/Impls/Trace.lean"]
 
+/-- The modules of FrenTest that read files with `#fren_md`, whose library,
+`FrenTestFiles` in `lakefile.lean` (`libraryGlobs`), needs those files. -/
+def fileReaders : List String :=
+  ["src/FrenTest/LambdaMatch.lean", "src/FrenTest/Literate.lean", "src/FrenTest/LiterateChapters.lean",
+    "src/FrenTest/LiterateImported.lean", "src/FrenTest/LiterateNested.lean", "src/FrenTest/LiterateRelative.lean",
+    "src/FrenTest/LiterateSettings.lean", "src/FrenTest/LiterateUndecidable.lean"]
+
+/-- The files that `FrenTestFiles` needs, relative to the repository: the
+fixtures in `src/FrenTest`, and two ui tests. -/
+def fixtureNeeded (p : String) : Bool :=
+  (p.startsWith "src/FrenTest/" && (p.endsWith ".md" || p.endsWith ".fren"))
+    || ["test/ui/lang/lambda_match.fren", "test/ui/lang/multi_match_names.fren"].contains p
+
+/-- The relative path `p` without its `.` and `..` components, where it can
+drop them. -/
+def normalPath (p : String) : String :=
+  let parts := (p.splitOn "/").foldl (init := (#[] : Array String)) fun acc c =>
+    if c == "." || c.isEmpty then acc
+    else if c == ".." && !acc.isEmpty && acc.back! != ".." then acc.pop
+    else acc.push c
+  "/".intercalate parts.toList
+
 /-- The source file of module `m`. -/
 def sourceOf (m : String) : System.FilePath := "src" / ((m.replace "." "/") ++ ".lean")
 
@@ -735,8 +757,9 @@ def specsOf (src : String) : Array String :=
     if line.startsWith "#fren_md \"" then (line.drop 10).takeWhile (· != '"') |>.toString else none
 
 /-- Each copy of a root's imports is the root's; each module of Reqs reads
-only the specs that its library needs; and only modules whose library
-needs the tests make `tested` claims. -/
+only the specs that its library needs; only modules whose library needs
+the tests make `tested` claims; and only the modules of FrenTest whose
+library needs their files read files with `#fren_md`. -/
 def libraries : IO (Array String) := do
   let mut failures := #[]
   for (root, copies) in rootCopies do
@@ -758,6 +781,22 @@ def libraries : IO (Array String) := do
     if f.extension != some "lean" || testReaders.contains f.toString then continue
     if (← IO.FS.readFile f).splitOn "\n" |>.any (·.startsWith "tested ") then
       failures := failures.push s!"{f}: makes a `tested` claim, but its library in `lakefile.lean` does not need the tests"
+  let readers ← libraryGlobs "FrenTestFiles"
+  unless readers.toArray.qsort (· < ·) == fileReaders.toArray.qsort (· < ·) do
+    failures := failures.push s!"lakefile.lean: `FrenTestFiles` holds {readers}, but `fileReaders` in src/FrenTestMain.lean is {fileReaders}"
+  -- A module of FrenTest outside `FrenTestFiles` is in `FrenTest`, which
+  -- needs no file, so that editing one that it read would not rebuild it.
+  -- The fixtures' own `#fren_md` commands are read by the modules that read
+  -- the fixtures, relative to the fixture.
+  for f in ← System.FilePath.walkDir "src/FrenTest" do
+    let ext := f.extension.getD ""
+    unless ["lean", "md", "fren"].contains ext do continue
+    for file in specsOf (← IO.FS.readFile f) do
+      let path := normalPath ((f.parent.getD "" / file).toString)
+      if ext == "lean" && !fileReaders.contains f.toString then
+        failures := failures.push s!"{f}: reads `{file}`, but its library in `lakefile.lean` is not `FrenTestFiles`, which needs the files that tests read"
+      else unless fixtureNeeded path do
+        failures := failures.push s!"{f}: reads `{file}`, which `FrenTestFiles` in `lakefile.lean` does not need"
   return failures
 
 /-! ## Mutants
