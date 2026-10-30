@@ -46,6 +46,13 @@ def resourceLimitOptions (opts : Options) : List (String × String) :=
   | 0 => []
   | n => [("rlimit-per", toString n)]
 
+/-- The cvc5 option that silences its diagnostics, as the binary's
+`solveScript` sets it. cvc5 warns on stderr when a model's value of a
+quantified formula cannot be evaluated (`Could not evaluate ... in
+getValue.`), which the model then holds as that formula: the warning is not
+an outcome, and only cvc5's own diagnostics are silenced. -/
+def quietOptions : List (String × String) := [("verbosity", "-1")]
+
 /-- Values for `Bool` variables come back as `True`/`False`. -/
 def fromModel (ty : Expr) (val : Expr) : Expr :=
   if ty.isConstOf ``Bool then
@@ -693,7 +700,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                           -- binary sets it.
                           extraSolverOptions := Core.solverOptions true true ++ bounded
                             ++ (if finiteModel then Core.finiteModelOptions else []) ++ logic ++ cvc5Defaults
-                            ++ resourceLimitOptions (← getOptions) }
+                            ++ resourceLimitOptions (← getOptions) ++ quietOptions }
                   mv.mvarId! (hs.reverse ++ recFvs) with
         | .sat (some m) =>
           let values := m.values.filterMap fun (k, v) =>
