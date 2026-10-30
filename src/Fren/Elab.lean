@@ -5250,21 +5250,20 @@ def lintClosure (cx : ExprCtx) (ps : Array (Option Core.Ty)) (r? : Option Core.T
 /-- Records what the application of the higher-order function `path` gives
 its parameter at `k`, the closure or function's name `e`, for
 `needless_higher_order` (`lint::needless_higher_order`): its text, and the
-names that a closure's body has free (`closureFreeNames`); a function's
-name is one, and a lambda match is taken to mention one, which keeps the
-lint from firing on it. -/
+names that a closure's body has free (`closureFreeNames`), of which a
+function's name is one, or that it is a lambda match. -/
 def noteFnArg (path : Name) (k : Nat) (e : Syntax) : TermElabM Unit := do
   let range? := e.getRange?
   if (← getLocal).fnArgs.any fun (a, r) => r.getRange? == range? && a.index == k then return
   let u := unparen e
-  let names : Array String :=
-    if u.isOfKind ``Lang.closureExpr then closureFreeNames u
+  let (lambdaMatch, names) : Bool × Array String :=
+    if u.isOfKind ``Lang.closureExpr then (false, closureFreeNames u)
     else
       let p := if u.getNumArgs == 1 && u[0].isOfKind ``Lang.fren_path then u[0] else u
-      if p.isOfKind ``Lang.fren_path then #[(pathSegs p).foldl (fun acc s => acc ++ "::" ++ Core.nameText s.getId) ""]
-      -- A lambda match is not compared.
-      else #["match"]
-  modifyLocal fun l => { l with fnArgs := l.fnArgs.push ({ path, index := k, text := exactText e, names }, e) }
+      if p.isOfKind ``Lang.fren_path then (false, #[(pathSegs p).foldl (fun acc s => acc ++ "::" ++ Core.nameText s.getId) ""])
+      -- `fnArgTerm` accepts nothing else but a lambda match.
+      else (true, #[])
+  modifyLocal fun l => { l with fnArgs := l.fnArgs.push ({ path, index := k, text := exactText e, lambdaMatch, names }, e) }
 
 open Lang in
 /-- A closure, or the name of a function, `e`, given for the function
