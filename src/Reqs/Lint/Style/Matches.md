@@ -9,10 +9,9 @@ variant, by its tag, with up to two integers as its payload, or an integer.
 A pattern is `_`, a binder (its name, and whether it is written with `!`),
 an integer literal, a range, a variant without a payload, or a variant
 with a pattern for each of two values of its payload; those inner patterns
-are *leaves*, which do not nest further, since the spec's functions do not
-recurse. A bound of a range is an integer, or absent, a `Bound` as
-[pattern tests](Comparisons.md#pattern-tests) model it; a range's bounds
-are inclusive, as `a..b` is `a..=b - 1`. An or-pattern is a sequence of up
+are *leaves*, which do not nest further. A bound of a range is an
+integer, or absent, a `Bound`; a range's bounds are inclusive, as `a..b`
+is `a..=b - 1`. An or-pattern is a sequence of up
 to four alternatives, and its slots are quantified over. An arm's body is
 its written form and the name it mentions, if any, two bodies being
 written the same exactly when they are equal; its value is its form
@@ -28,6 +27,9 @@ pub mod lint
 pub enum Slot { S0, S1, S2, S3 }
 
 pub fn pos(s: Slot): Int := match s { Slot::S0 => 0, Slot::S1 => 1, Slot::S2 => 2, Slot::S3 => 3 }
+
+-- A bound of a range of integers, `Open` where there is none.
+pub enum Bound { Open, At(Int) }
 
 -- A pattern of a value of a payload.
 pub enum Leaf { Wild, Binder(Int, Bool), Lit(Int), Range(Bound, Bound) }

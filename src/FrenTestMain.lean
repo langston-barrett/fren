@@ -321,6 +321,7 @@ def ownSpecFiles : Array String :=
     "Lint/Style",
     "Lint/Style/Comparisons",
     "Lint/Style/PatternTests",
+    "Lint/Style/PatternTestFixes",
     "Lint/Style/Naturals",
     "Lint/Style/Records",
     "Lint/Style/Matches",
