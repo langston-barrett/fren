@@ -216,6 +216,14 @@ structure IndexSources (τ : Type) where
   witnesses : List τ
   deriving Inhabited
 
+/-- `xs` with `v` pushed, or put at `k?`, if there is one: both front ends'
+scans record a term's reads, updates and equations before its parts', and
+put them back, once its parts are scanned, in the same places. -/
+def putAt (xs : Array α) (k? : Option Nat) (v : α) : Array α :=
+  match k? with
+  | some k => xs.set! k v
+  | none => xs.push v
+
 /-- The terms, in order, before those equal to an earlier one are removed. -/
 def IndexSources.candidates (s : IndexSources τ) : List τ :=
   s.zero :: s.lasts ++ s.reads ++ s.updates.flatMap (fun u => [u.1, u.2.1, u.2.2]) ++ s.witnesses
