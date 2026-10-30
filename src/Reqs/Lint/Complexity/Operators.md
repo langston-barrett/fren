@@ -335,7 +335,7 @@ evaluates both expressions, since the solver unfolds
 call's argument list is two deep:
 
 ```fren
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc manual_at_most_one_defined(
     i: Interp,
     env: Env,

@@ -479,7 +479,7 @@ pub fn repeated?(forms: Seq<String>, i: Int) :=
     0 <= i < forms.len and (exists (j: Int), 0 <= j < i and forms[j] = forms[i])
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc ifs_same_cond(
     tests: Seq<String>,      -- the tests of the chain of `else if`, in order, each as written
     k: Int,                  -- the position of a test
@@ -531,7 +531,7 @@ and its implementation is proved in Lean, for every literal:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc duplicate_elements(
     elements: Seq<String>,   -- the literal's elements, in order, each as written
     k: Int,                  -- the position of an element
@@ -552,7 +552,7 @@ this over the elements' values:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "tested" in
+set_option fren.evidence "random" in
 pub proc duplicate_elements_members(elements: Seq<String>, values: Seq<Int>, x: Int) {
     assume same_values: values.len = elements.len and (forall (i j: Int), when 0 <= i < elements.len
         and 0 <= j < elements.len and elements[i] = elements[j], values[i] = values[j])
