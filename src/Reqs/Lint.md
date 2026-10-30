@@ -173,7 +173,13 @@ numbers or keywords is ignored, except inside string literals, raw ones
 too, which are compared as they are. So `x+1` and `x + 1` are written the
 same, and so are `f(x)`, `f( x )` and `f(x /- c -/)`, but `"a b"` and
 `"ab"` are not. The lints look only at the text, never at types or the
-solver, so `x + 1` and `1 + x` are not written the same.
+solver, so `x + 1` and `1 + x` are not written the same. Where a lint compares
+whole expressions, such as the operands of an operator, the tests of a
+chain of `else if` or the elements of a literal, the parentheses around
+each one are not part of it, as its section says: `x = (x)` has operands
+written the same, and `{(a), a}` repeats `a`. Parentheses inside an
+expression are part of its text, so `f((x))` and `f(x)` are not written
+the same.
 
 ## Levels
 

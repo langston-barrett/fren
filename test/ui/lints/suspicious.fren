@@ -1,5 +1,5 @@
 -- The suspicious lints, in both front ends: `eq_op`, `same_branches`,
--- `duplicate_elements` and `empty_argument`.
+-- `duplicate_elements`, `ifs_same_cond` and `empty_argument`.
 set_option fren.lint.undecidable "allow"
 
 proc ops(x: Int, y: Int, a?, t: Set<Int>, q: Seq<Int>): (
@@ -41,6 +41,15 @@ proc elements(x: Int, y: Int, r: Rel<Int, Int>, q: Seq<Int>): (p?, o?, k?) {
     ensure r1: p? iff x in {1, y, 1, 2, y}  --~ warning: `1`, `y` are repeated in this literal
     ensure r2: o? iff (x, y) in {(1, 2), (1, 2)}  --~ warning: `(1, 2)` is repeated in this literal
     ensure r3: k? iff q = [x, x] and r != {}
+}
+
+fn inc(x: Int): Int := x + 1
+
+-- The parentheses around a whole element, or a whole test, are not part
+-- of it; those inside are.
+proc parenthesized(x: Int, y: Int, b: Int): (p?, n: Int) {
+    ensure r1: p? iff x in {(y), y, inc((x)), inc(x)}  --~ warning: `y` is repeated in this literal
+    ensure r2: n = if b > 0 then 1 else if (b > 0) then 2 else 3  --~ warning: `b > 0` is already tested earlier in this chain
 }
 
 proc methods(s: String, q: Seq<Int>, i: Int): (p?, o?, n: Int, k?, l?) {
