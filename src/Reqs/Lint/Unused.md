@@ -266,14 +266,13 @@ something mentions it: a constraint other than an assumption, cover goals
 among them, as for an [unused variable](#unused-variables); a definition;
 an argument of one of the procedure's calls; a global expectation in
 the same file that reads it through a binder over the procedure, as `a.x` with
-the binder `a`; a [call](../Lang/Calls.md) of the procedure in
-the same file, which gives each of its parameters, and whose assumption check
-checks the assumption; or a [refinement](../Lang/Refinement.md) in the
-same file of which the procedure is the abstraction. Such a refinement
-reads every input of the abstraction, through its binding or by name, and
-the abstraction's assumptions are its hypotheses, so an assumption can
-guard a binding: with `n := q.len` and `assume pos: n > 0`, `x := q[0]` is
-defined. An input is also used when another assumption mentions it and a
+the binder `a`; or a [call](../Lang/Calls.md) of the procedure in
+the same file, which gives each of its parameters, and whose precondition
+check has the procedure's assumptions as hypotheses. A
+[refinement](../Lang/Refinement.md) whose abstraction is the procedure is
+not a use: it checks only the abstraction's guarantees, and introduces
+none of its assumptions, so removing one changes no verdict of the
+refinement. An input is also used when another assumption mentions it and a
 used variable, since the assumption constrains the two together, and so
 on transitively: with `assume a: n > 0`, `assume b: m = 2 * n` and `ensure r:
 y = m`, `m` is used, so `n` is, and without `a`, `y > 0` would not follow.
@@ -305,20 +304,68 @@ input does not affect the procedure, as for an [unused variable](#unused-variabl
 `unused_variables` does not report it, since the assumption mentions it:
 this is what is left after the last guarantee that used the input is
 removed. As for [dead code](#dead-code), only the file's global
-expectations, calls and refinements count. There is no fix: removing
+expectations and calls count. There is no fix: removing
 the inputs would change the procedure's interface.
-`lint::unused_assumption` states when it fires:
+`lint::unused_assumption` states when it fires, over what each assumption
+links, by its position: the variables of the procedure that it mentions
+and the uninterpreted functions that it applies. `lint::reached` is the
+assumptions that a set of links reaches: those that link one of them, and
+those that share a link with one reached, transitively, through the
+closure of the relation of sharing a link. An assumption is used when
+what the procedure's members other than its assumptions mention or apply
+reaches it, or what the file reads of the procedure does. The file uses
+the procedure in calls and in `refines` claims; a call gives each input a
+value, and its precondition check has the procedure's assumptions as
+hypotheses ([calls](../Lang/Calls.md)), so where the file calls it, every
+input is read. A `refines` claim checks only its abstraction's
+guarantees, and introduces none of its assumptions
+([refinement](../Lang/Refinement.md)), so it reads no input:
 
 ```fren
+-- What links assumptions: a variable of the procedure, or an uninterpreted
+-- function, by its name.
+pub enum Link { Var(String), Fn(String) }
+
+-- The assumptions, by their positions, that `used` reaches.
+set_option fren.lint.undecidable "allow" in
+pub fn reached(links: Rel<Int, Link>, used: Set<Link>): Set<Int> :=
+    direct union (links join links.inverse).closure.image(direct)
+    where direct := links.inverse.image(used)
+
+-- How the file uses the procedure: in a call, or as the abstraction of a
+-- `refines` claim.
+pub enum ProcUse { Call, Refines }
+
+-- Whether a use checks the procedure's assumptions: a call's precondition
+-- check has them as hypotheses, and a `refines` claim introduces none.
+pub fn checks_assumptions?(u: ProcUse) := u = ProcUse::Call
+
+-- Whether the file reads every input of the procedure: where a use checks
+-- its assumptions.
+pub fn reads_inputs?(uses: Set<ProcUse>) := exists (u: ProcUse), u in uses and checks_assumptions?(u)
+
+set_option fren.lint.undecidable "allow" in
 pub proc unused_assumption(
-    n_mentioned: Nat,    -- variables the assumption mentions
-    all_inputs?,         -- each of them is an input
-    mentioned?,          -- one of them, or a function it applies, is used in the procedure, through its other assumptions too
-    read?,               -- one of them, or a function it applies, is read in the file, by a global expectation, a call or a refinement, through the procedure's other assumptions too
+    links: Rel<Int, Link>,       -- what each assumption of the procedure links, by its position
+    inputs: Set<Link>,           -- the procedure's inputs, each a `Var`
+    mentioned: Set<Link>,        -- what its members other than its assumptions mention or apply
+    uses: Set<ProcUse>,          -- how the file uses the procedure
+    k: Int,                      -- the position of the assumption
 ): (det fires?) {
-    ensure rule: fires? iff (n_mentioned > 0 and all_inputs? and not mentioned? and not read?)
+    ensure rule: fires? iff ((exists (x: String), (k, Link::Var(x)) in links)
+        and (forall (x: String), when (k, Link::Var(x)) in links, Link::Var(x) in inputs)
+        and not k in reached(links, mentioned union (if reads_inputs?(uses) then inputs else {})))
+    -- A `refines` claim alone reads no input; a call reads them all.
+    expect refines_reads_nothing: when uses = {ProcUse::Refines}, not reads_inputs?(uses)
+    expect call_reads: when ProcUse::Call in uses, reads_inputs?(uses)
 }
 ```
+
+Both front ends decide in two steps: with what the procedure's members
+mention, where they elaborate it, and with the inputs that the file reads,
+among the assumptions that the first step leaves, at the end of the file.
+That is the same as one step with both, since each assumption that the
+first step leaves links an input.
 
 The message is reported at the assumption's name, at the end of the
 file.

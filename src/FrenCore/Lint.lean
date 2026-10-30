@@ -6917,20 +6917,26 @@ def unusedAssumption (nMentioned : Nat) (allInputs mentioned read : Bool) : Bool
 variable's name has. -/
 def fnLink (path : Name) : Name := Name.mkNum .anonymous 0 ++ path
 
+/-- The assumptions, by their positions, that `markUsed` marks, given the
+links `ms` of each, as many rounds as `fuel` allows: each round marks the
+first assumption not yet in `out` that links one of `used`, and adds its
+links to `used`, until there is none. -/
+def markUsed [DecidableEq α] (ms : List (List α)) : Nat → List α → List Nat → List Nat
+  | 0, _, out => out
+  | fuel + 1, used, out =>
+    match (List.range ms.length).find? fun i => !out.contains i && (ms.getD i []).any used.contains with
+    | none => out
+    | some i => markUsed ms fuel (used ++ ms.getD i []) (i :: out)
+
 /-- Which of the assumptions, given the variables each mentions and the
-uninterpreted functions each applies (`fnLink`), are used: those that
-mention one of `used`, or one that a used assumption mentions,
-transitively, since they constrain the same values. -/
-def usedAssumptions (mentions : Array (Array Name)) (used : Array Name) : Array Bool := Id.run do
-  let mut used := used
-  let mut out := mentions.map fun _ => false
-  -- Each round marks one more assumption, or none.
-  for _ in [0:mentions.size] do
-    let some i := (List.range mentions.size).find? fun i => !out[i]! && mentions[i]!.any used.contains
-      | break
-    out := out.set! i true
-    used := used ++ mentions[i]!
-  return out
+uninterpreted functions each applies (`fnLink`), are used
+(`lint::reached`): those that mention one of `used`, or one that a used
+assumption mentions, transitively, since they constrain the same values.
+Each round of `markUsed` marks one more assumption, or none. -/
+def usedAssumptions [DecidableEq α] (mentions : Array (Array α)) (used : Array α) : Array Bool :=
+  let ms := mentions.toList.map (·.toList)
+  let marked := markUsed ms ms.length used.toList []
+  (List.range ms.length).toArray.map (marked.contains ·)
 
 /-- An assumption that `unused_assumption` may fire on: its procedure, its
 name, the inputs it mentions, those and the uninterpreted functions it
@@ -6956,11 +6962,12 @@ def unusedAssumptionMsg (name : Name) (inputs linked : Array Name) : Msg :=
         nor does another assumption tie them to a used variable"] ++ together ++
       #["help: remove the assumption and its parameters, or use them"] }
 
-/-- The messages of `unused_assumption`, given what the file's global
-expectations read through calls, or apply (`fnLink`), its calls
-pass, and its refinements read of their abstractions: each read's
-procedure and parameter or function. An assumption is read when it mentions a
-read parameter, or one that a read assumption of its procedure mentions. Each
+/-- The messages of `unused_assumption`, given the parameters that the
+file's calls, its global expectations' among them, give values: each
+read's procedure and parameter. A `refines` claim reads none, since it
+introduces none of its abstraction's assumptions
+(`Reqs/Lang/Refinement`). An assumption is read when it mentions a read
+parameter, or one that a read assumption of its procedure mentions. Each
 message names the other reported assumptions linked to it. -/
 def unusedAssumptionReports (rs : Array (AssumptionRecord × α)) (reads : Array (Name × Name)) :
     Array (LintReport α) :=
