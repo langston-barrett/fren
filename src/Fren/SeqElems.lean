@@ -128,22 +128,24 @@ def Frames.within (frames : Frames) (keep : Bool) : Frames :=
   | some (xs, .element all spine) => frames.pop.push (xs, .element all (spine && keep))
   | _ => frames
 
-/-- Records the reads, updates and equations between sequences of the
-application `x`, at terms that mention only the locals of `ctx`. -/
-def noteApp (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (x : Expr) : MetaM Unit := do
+/-- Records the read, update position or equation between sequences that
+the application `x` is, at terms that mention only the locals of `ctx`:
+pushed, or with `at?`, the numbers of reads, updates and equations before
+they were pushed, put back in their places (`FrenCli.SeqElems.note`). -/
+def noteApp (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (x : Expr) (at? : Option (Nat × Nat × Nat) := none) :
+    MetaM Unit := do
   if x.isAppOfArity ``Fren.Seq.nth 4 then
     let i := x.appArg!
-    if closedIn ctx i then ref.modify fun s => { s with reads := s.reads.push i }
+    if closedIn ctx i then ref.modify fun s => { s with reads := Core.putAt s.reads (at?.map (·.1)) i }
   if x.isAppOfArity ``Fren.Seq.update 4 then
     let i := x.appFn!.appArg!
     if closedIn ctx i then
       let u := (← plus i (-1), i, ← plus i 1)
-      ref.modify fun s => { s with updates := s.updates.push u }
-    if closedIn ctx x && !(← ref.get).updateTerms.any (·.1 == x) then
-      ref.modify fun s => { s with updateTerms := s.updateTerms.push (x, x.appFn!.appFn!.appArg!, i, x.appArg!) }
+      ref.modify fun s => { s with updates := Core.putAt s.updates (at?.map (·.2.1)) u }
   if x.isAppOfArity ``Eq 3 && x.appFn!.appFn!.appArg!.isAppOfArity ``Fren.Seq 1 then
     let (a, b) := (x.appFn!.appArg!, x.appArg!)
-    if closedIn ctx a && closedIn ctx b then ref.modify fun s => { s with equations := s.equations.push (a, b) }
+    if closedIn ctx a && closedIn ctx b then
+      ref.modify fun s => { s with equations := Core.putAt s.equations (at?.map (·.2.2)) (a, b) }
 
 /-- `e`, within `frames`, with each marked quantifier numbered, and recorded
 with its sequences if it is expanded (`Fren.Core.siteExpanded`), as the
@@ -163,10 +165,14 @@ partial def scan (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (frames : Frames
         else ((spineMembers all x b).find? (closedIn ctx)).map some
       let mentioned := (List.range frames.size).filter fun j => frames[j]!.1.any (b.containsFVar ·.fvarId!)
       let expanded := Core.siteExpanded (frames.toList.map (·.2)) all (receivers.all Option.isSome) mentioned
-      if expanded then
-        ref.modify fun s => { s with sites := s.sites.set! k { all, n, receivers? := some (receivers.map (·.join)) } }
       let frame : Core.Frame := if expanded then .element all true else .other
       let b ← scan ctx ref (frames.push (xs, frame)) b
+      -- Its sequences as they are in its scanned body, as in the binary's
+      -- `scan`.
+      if expanded then
+        let receivers := xs.map fun x =>
+          if !(b.containsFVar x.fvarId!) then none else (spineMembers all x b).find? (closedIn ctx)
+        ref.modify fun s => { s with sites := s.sites.set! k { all, n, receivers? := some receivers } }
       if all then mkForallFVars xs b
       else xs.foldrM (init := b) fun x acc => do mkAppM ``Exists #[← mkLambdaFVars #[x] acc]
     let some q := r | return e
@@ -182,11 +188,19 @@ partial def scan (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (frames : Frames
     withLocalDecl n bi t fun fv => do
       mkLambdaFVars #[fv] (← scan ctx ref (frames.push (#[fv], .other)) (b.instantiate1 fv))
   | .app .. =>
+    let before ← ref.get
     noteApp ctx ref e
     let keep := e.isAppOfArity ``And 2
     let f := e.getAppFn
     let args ← e.getAppArgs.mapM (scan ctx ref (frames.within keep))
-    return mkAppN f args
+    -- Recorded before its arguments, but as they are once scanned, as in
+    -- the binary's `scan`.
+    let e := mkAppN f args
+    noteApp ctx ref e (some (before.reads.size, before.updates.size, before.equations.size))
+    -- With no facts for an update with a marked quantifier within it.
+    if e.isAppOfArity ``Fren.Seq.update 4 && closedIn ctx e && !hasMark e && !(← ref.get).updateTerms.any (·.1 == e) then
+      ref.modify fun s => { s with updateTerms := s.updateTerms.push (e, e.appFn!.appFn!.appArg!, e.appFn!.appArg!, e.appArg!) }
+    return e
   | _ => return e
 
 /-- A query whose quantifiers would have more instances than
@@ -271,13 +285,6 @@ def withExpanded (hyps : Array (Name × Expr)) (goal : Expr) (pins? : Option (Ar
       | some (_, n) => (List.range n).mapM fun j => mkNumeral int j
       | none => pure ix
     | none => pure ix
-  let count ← IO.mkRef 0
-  let run : MetaM (Array (Name × Expr) × Expr) := do
-    return (← hyps.mapM fun (n, h) => return (n, ← expand sc.sites terms count h), ← expand sc.sites terms count goal)
-  let (hs, g) ← try run catch ex =>
-    let msg ← ex.toMessageData.toString
-    if let some n := (msg.dropPrefix? tooManyTag).bind (·.toString.toNat?) then return .error n
-    throw ex
   let extra ← match pins? with
     | some pins => pins.mapM fun (q, n) => return (`elementLength, ← mkEq (← mkAppM ``Fren.Seq.len #[q]) (← mkNumeral int n))
     | none => do
@@ -298,6 +305,16 @@ def withExpanded (hyps : Array (Name × Expr)) (goal : Expr) (pins? : Option (Ar
           return [← mkArrow (mkAnd inRange (← mkEq t i)) here, ← mkArrow (mkAnd inRange (mkNot (← mkEq t i))) other]
         return (`elementUpdate, parts.flatten.foldl mkAnd len)
       pure (lens ++ exts ++ reads)
-  return .ok (← k { hyps := hs ++ extra, goal := g, locals := fvs, lengths := ls.zip receivers })
+  -- The facts are over the scanned terms, so a marked quantifier within
+  -- them is expanded as in the hypotheses.
+  let count ← IO.mkRef 0
+  let run : MetaM (Array (Name × Expr) × Expr) := do
+    return (← (hyps ++ extra).mapM fun (n, h) => return (n, ← expand sc.sites terms count h),
+      ← expand sc.sites terms count goal)
+  let (hs, g) ← try run catch ex =>
+    let msg ← ex.toMessageData.toString
+    if let some n := (msg.dropPrefix? tooManyTag).bind (·.toString.toNat?) then return .error n
+    throw ex
+  return .ok (← k { hyps := hs, goal := g, locals := fvs, lengths := ls.zip receivers })
 
 end Fren.Elems

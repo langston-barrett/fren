@@ -25,7 +25,7 @@ the first is (`Fren.Core.project_all`).
 
 namespace FrenCli.SeqElems
 
-open Fren.Core (IndexSources)
+open Fren.Core (IndexSources putAt)
 
 /-- An SMT-LIB term, with each atom as written, its `|` quotes kept. -/
 inductive SExpr where
@@ -99,6 +99,11 @@ def binderOf? : SExpr → Option (Array String × SExpr)
 partial def SExpr.mentions (xs : Array String) : SExpr → Bool
   | .atom a => xs.contains a
   | .list ts => ts.any (·.mentions xs)
+
+/-- Whether `e` has a marked quantifier. -/
+partial def SExpr.hasSite : SExpr → Bool
+  | .atom a => (markerOf? a).isSome
+  | .list ts => ts.any (·.hasSite)
 
 /-- Per-name substitution scope policy (`cli::substitution_scope`). -/
 def substitutionScope (bound mentioned : Bool) : Bool × Bool :=
@@ -202,8 +207,9 @@ structure Scan where
   sites : Array Site := #[]
   reads : Array SExpr := #[]
   updates : Array (SExpr × SExpr × SExpr) := #[]
-  /-- The updates that mention no bound name, each once: the update, its
-  sequence, its position and its element. -/
+  /-- The updates that mention no bound name, each once, as scanned, one
+  within another before it: the update, its sequence, its position and its
+  element. -/
   updateTerms : Array (SExpr × SExpr × SExpr × SExpr) := #[]
   /-- The equations, between terms that mention no bound name. -/
   equations : Array (SExpr × SExpr) := #[]
@@ -222,6 +228,24 @@ def Frames.within (frames : Frames) (keep : Bool) : Frames :=
   match frames.back? with
   | some (xs, .element all spine) => frames.pop.push (xs, .element all (spine && keep))
   | _ => frames
+
+/-- Records the read, update position or equation that the parts `ts` of a
+term are, at terms that mention none of `bound`: pushed, or with `at?`,
+the numbers of reads, updates and equations before they were pushed, put
+back in their places. -/
+def note (bound : Array String) (ts : Array SExpr) (at? : Option (Nat × Nat × Nat) := none) : StateM Scan Unit :=
+  match ts.toList with
+  | [.atom "seq.nth", _, i] =>
+    if !i.mentions bound then modify fun s => { s with reads := putAt s.reads (at?.map (·.1)) i } else pure ()
+  | [.atom "seq.update", _, i, _] =>
+    if !i.mentions bound then
+      modify fun s => { s with updates := putAt s.updates (at?.map (·.2.1)) (plus i (-1), i, plus i 1) }
+    else pure ()
+  | [.atom "=", a, b] =>
+    if !a.mentions bound && !b.mentions bound then
+      modify fun s => { s with equations := putAt s.equations (at?.map (·.2.2)) (a, b) }
+    else pure ()
+  | _ => pure ()
 
 /-- `e`, within `frames`, with each marked quantifier numbered, as
 `fren.forall#k`, and recorded with its sequences if it is expanded
@@ -247,7 +271,14 @@ partial def scan (frames : Frames) (e : SExpr) : StateM Scan SExpr := do
         modify fun s => { s with sites := s.sites.push site }
         let head := s!"{if all then "fren.forall" else "fren.exists"}#{k}"
         let frame : Fren.Core.Frame := if expanded then .element all true else .other
-        return .list #[.atom head, decls, ← scan (frames.push (xs, frame)) body]
+        let body ← scan (frames.push (xs, frame)) body
+        -- Its sequences as they are in its scanned body, which `expand`
+        -- instantiates: scanning numbers quantifiers, and changes no mention.
+        if expanded then
+          let receivers := xs.map fun x =>
+            if !body.mentions #[x] then none else (spineMembers all x body).find? (!·.mentions (bound ++ xs))
+          modify fun s => { s with sites := s.sites.modify k fun site => { site with receivers? := some receivers } }
+        return .list #[.atom head, decls, body]
       -- A `let`'s definitions are outside its scope.
       let decls ← if h == "let" then match decls with
           | .list ds => pure (.list (← ds.mapM fun
@@ -256,23 +287,25 @@ partial def scan (frames : Frames) (e : SExpr) : StateM Scan SExpr := do
           | d => pure d
         else pure decls
       return .list #[.atom h, decls, ← scan (frames.push (xs, .other)) body]
-    match ts.toList with
-    | [.atom "seq.nth", _, i] =>
-      if !i.mentions bound then modify fun s => { s with reads := s.reads.push i }
-    | [.atom "seq.update", r, i, v] =>
-      if !i.mentions bound then modify fun s => { s with updates := s.updates.push (plus i (-1), i, plus i 1) }
-      if let .list #[.atom "seq.unit", x] := v then
-        if !e.mentions bound && !(← get).updateTerms.any (·.1 == e) then
-          modify fun s => { s with updateTerms := s.updateTerms.push (e, r, i, x) }
-    | [.atom "=", a, b] =>
-      if !a.mentions bound && !b.mentions bound then modify fun s => { s with equations := s.equations.push (a, b) }
-    | _ => pure ()
+    let before ← get
+    note bound ts
     -- The consequent of an implication, and the conjuncts of `and`, are on
     -- the innermost quantifier's spine; nothing else is.
     let head := ts[0]?
     let keepAt (i : Nat) : Bool :=
       head == some (.atom "and") || (head == some (.atom "=>") && i == 2)
-    return .list (← ts.zipIdx.mapM fun (t, i) => scan (frames.within (keepAt i)) t)
+    let ts ← ts.zipIdx.mapM fun (t, i) => scan (frames.within (keepAt i)) t
+    -- Recorded before its parts, in the order of first occurrence, but as
+    -- they are once scanned: a marked quantifier within them is numbered,
+    -- and so expanded wherever they are used.
+    note bound ts (some (before.reads.size, before.updates.size, before.equations.size))
+    let e := SExpr.list ts
+    -- An update with a marked quantifier within it gets no facts, which
+    -- would repeat the quantifier's instances at each term of the index set.
+    if let [.atom "seq.update", r, i, .list #[.atom "seq.unit", x]] := ts.toList then
+      if !e.mentions bound && !e.hasSite && !(← get).updateTerms.any (·.1 == e) then
+        modify fun s => { s with updateTerms := s.updateTerms.push (e, r, i, x) }
+    return e
 
 /-- The terms at which the bound name `k` of the site `i`, whose sequence
 is `q`, is instantiated. -/
@@ -374,11 +407,8 @@ def expandQuery (defs : Std.HashMap String (Array String × SExpr)) (hyps : Arra
       | some (_, n) => (List.range n).map fun j => numeral (Int.ofNat j)
       | none => ix
     | none => ix
-  let go : StateT Nat (Except Nat) (Array (Lean.Name × SExpr) × SExpr) := do
-    return (← hs.mapM fun (n, h) => return (n, ← expand sc.sites terms h), ← expand sc.sites terms g)
-  let ((hs, g), _) ← go.run 0
   let lengths := receivers.mapIdx fun k q => (s!"|#l{k}|", q)
-  let extra := match pins? with
+  let extra : Array (Lean.Name × String) := match pins? with
     | some pins => pins.map fun (q, n) => (`elementLength, s!"(= (seq.len {q}) {n})")
     | none => lengths.map (fun (l, q) => (`elementLength, s!"(= {l} (seq.len {q}))")) ++ ds.map (fun (a, b, d) =>
       (`elementWitness, s!"(or (= {a} {b}) (not (= (seq.len {a}) (seq.len {b}))) (and (<= 0 {d}) (< {d} (seq.len {a})) (not (= (seq.nth {a} {d}) (seq.nth {b} {d})))))"))
@@ -388,7 +418,13 @@ def expandQuery (defs : Std.HashMap String (Array String × SExpr)) (hyps : Arra
           let inRange := s!"(<= 0 {t}) (< {t} (seq.len {r}))"
           s!" (=> (and {inRange} (= {t} {i})) (= (seq.nth {u} {t}) {x})) (=> (and {inRange} (not (= {t} {i}))) (= (seq.nth {u} {t}) (seq.nth {r} {t})))"
         (`elementUpdate, s!"(and (= (seq.len {u}) (seq.len {r})){String.join reads})")
-  return { hyps := hs.map (fun (n, h) => (n, toString h)) ++ extra, goal := toString g
+  -- The facts are over the scanned terms, so a marked quantifier within
+  -- them is expanded as in the hypotheses.
+  let go : StateT Nat (Except Nat) (Array (Lean.Name × SExpr) × SExpr) := do
+    let hs := hs ++ extra.map fun (n, f) => (n, parse f)
+    return (← hs.mapM fun (n, h) => return (n, ← expand sc.sites terms h), ← expand sc.sites terms g)
+  let ((hs, g), _) ← go.run 0
+  return { hyps := hs.map (fun (n, h) => (n, toString h)), goal := toString g
            consts := if pins?.isSome then #[] else ws ++ ds.map (·.2.2) ++ lengths.map (·.1)
            lengths := if pins?.isSome then #[] else lengths }
 

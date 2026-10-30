@@ -374,14 +374,23 @@ pub proc element_witness(
 The expansion at the index set also gives the solver each update's
 elimination into reads, from which the index set has its terms `i - 1`,
 `i` and `i + 1`: for each `r.update(i, v)` in the query that mentions no
-bound name, that its length is `r.len`, and at each term `t` of the index
+bound name and has no quantifier over elements within it, whose
+instances its facts would repeat at each term, that its length is `r.len`, and at each term `t` of the index
 set, in that order, that its element at `t` is `v` when `0 <= t < r.len`
 and `t = i`, and `r[t]` when `0 <= t < r.len` and `t != i`. Each update is
-given once, in the order of its first occurrence. These facts hold of
-every update, so they change no answer, but without them the solver
-derives each read of an update in its theory of sequences, which took
-cvc5 longer than its time limit for an update read at nine terms (#432).
-`lang::update_reads` states them:
+given once, in the order of its occurrences, one within another before
+it. These facts hold of every update, so they change no answer, but
+without them the solver derives each read of an update in its theory of
+sequences, which took cvc5 longer than its time limit for an update read
+at nine terms (#432).
+
+Every term of the expansion's facts, the witnesses' and lengths' as well
+as the updates', and every term of the index set, is as written in the
+query, with its marked quantifiers numbered as the query's; each fact is
+then expanded as a hypothesis is, so that a quantifier within an update's
+element or an equation's side is expanded there, or given to the solver
+as written if it is not expanded, and never left marked.
+`lang::update_reads` states the facts of an update:
 
 ```fren
 pub proc update_reads(r: Seq<Int>, i: Int, v: Int, t: Int) {
@@ -393,9 +402,11 @@ pub proc update_reads(r: Seq<Int>, i: Int, v: Int, t: Int) {
 
 What is proved is this law, the rule of which quantifiers are expanded,
 the index set and the projection, each of the code that both front ends
-call; the reads of an update are checked, as expectations, by both. That the whole expanded query is unsatisfiable exactly where the
-quantified one is follows from them by an induction over the query's
-terms, which is argued here and not proved in Lean.
+call. The facts of an update are checked, as expectations, by both: that
+they hold, not that the front ends give them. That the whole expanded
+query is unsatisfiable exactly where the quantified one is follows from
+them by an induction over the query's terms, which is argued here and not
+proved in Lean.
 
 Both front ends expand the same quantifiers over the same index set: the
 binary on the SMT-LIB of each query, and the Lean-hosted front end on the
@@ -410,8 +421,15 @@ not asked, and its check is inconclusive with a message that says so
 (`F0647`). The index set grows with the indexes in the query,
 and an instance's count is the index set's size to the power of the
 quantifier's bound names, so the limit is reached by many indexes, not by
-long sequences. The second query counts its positions instead.
-`lang::element_size` states the limit:
+long sequences. The second query counts its positions instead. The facts
+of updates are not instances, and are not counted: each update gives
+`2 * n + 1` of them over an index set of `n` terms, to which it adds three,
+so they grow with the square of the number of updates. They are
+quantifier-free, and an update is written in the query, as a read is, so
+their number is bounded by the size of the query as written, as the
+index set's is. An update with a quantifier over elements within it gets
+none; a quantifier within an equation's witness is expanded, and its
+instances counted, as any other's. `lang::element_size` states the limit:
 
 ```fren
 pub const MAX_ELEMENT_INSTANCES: Int := 256
