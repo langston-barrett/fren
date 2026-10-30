@@ -632,7 +632,7 @@ expect constant_constraint(
     q: lang::Env,
 ) {
     assume elaborated: lang::free_vars(e) = c_mentioned
-    assume primitives: i.primitives = j.primitives
+    assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call c := assertions_on_constants(c_mentioned)
     call same := lang::closed(i, p, j, q, e)
     expect constant_constraint: when c.fires?, lang::eval(i, p, e) = lang::eval(j, q, e)

@@ -287,7 +287,7 @@ expect constant_output_fixed(
     q: lang::Env,
 ) {
     assume elaborated: lang::free_vars(definition) = o_mentioned
-    assume primitives: i.primitives = j.primitives
+    assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call o := output_lints(o_defined?, o_mentioned, o_n_guarantees, o_equation?)
     call same := lang::closed(i, p, j, q, definition)
     expect constant_output_fixed: when o.constant?, lang::eval(i, p, definition) = lang::eval(j, q, definition)

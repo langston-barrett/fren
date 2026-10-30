@@ -23,6 +23,13 @@ A variable evaluates to the outcome that the environment binds it to. A
 constant is an `Apply` of its definition, and a variant without a payload
 a `Construct` (see [Derived forms](Semantics.md#derived-forms)).
 
+```fren
+expect leaf_rules(i: Interp, env: Env, v: Value, x: Id) {
+    expect literal: eval(i, env, Expr::Literal(v)) = Outcome::Defined(v)
+    expect read: eval(i, env, Expr::Var(x)) = lookup(env, x)
+}
+```
+
 ## Let expressions
 
 `Let(x, d, b)` evaluates `b` with `x` bound to the outcome of `d`. Since
@@ -58,6 +65,10 @@ expect operator_rules(i: Interp, env: Env, op: BinaryOp, a: Expr, b: Expr, m: In
     -- Strictness: an operand that is not WD makes the operation undefined.
     expect strict_left: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
     expect strict_right: when eval(i, env, b) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
+    expect strict_unary: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Unary(UnaryOp::Not, a)) = Outcome::Undefined
+        and eval(i, env, Expr::Unary(UnaryOp::Neg, a)) = Outcome::Undefined
+    expect negation: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)),
+        eval(i, env, Expr::Unary(UnaryOp::Neg, a)) = Outcome::Defined(Value::Integer(-m))
     -- `=` is WD wherever its operands are.
     expect equality: when eval(i, env, a) is Outcome::Defined(_) and eval(i, env, b) is Outcome::Defined(_),
         eval(i, env, Expr::Binary(BinaryOp::Eq, a, b)) is Outcome::Defined(Value::True | Value::False)
@@ -180,6 +191,19 @@ integers, and `len` of a string or a list. The methods of strings other
 than `len`, and `min` and `max` of the other ordered types, are not yet in
 the model.
 
+```fren
+expect method_rules(i: Interp, env: Env, r: Expr, args: Expr, m: Int, n: Int, s: String) {
+    expect strict: when eval(i, env, r) = Outcome::Undefined, eval(i, env, Expr::Method(MethodName::Abs, r, args)) = Outcome::Undefined
+    expect abs: when eval(i, env, r) = Outcome::Defined(Value::Integer(m)) and eval(i, env, args) = Outcome::Defined(Value::Nil),
+        eval(i, env, Expr::Method(MethodName::Abs, r, args)) = Outcome::Defined(Value::Integer(m.abs))
+    expect min: when eval(i, env, r) = Outcome::Defined(Value::Integer(m))
+        and eval(i, env, args) = Outcome::Defined(Value::Cons(Value::Integer(n), Value::Nil)),
+        eval(i, env, Expr::Method(MethodName::Min, r, args)) = Outcome::Defined(Value::Integer(m.min(n)))
+    expect text_len: when eval(i, env, r) = Outcome::Defined(Value::Text(s)) and eval(i, env, args) = Outcome::Defined(Value::Nil),
+        eval(i, env, Expr::Method(MethodName::Len, r, args)) = Outcome::Defined(Value::Integer(s.len))
+}
+```
+
 ## Call expressions
 
 `Apply(f, args, ps, body)` is an application of a defined function that is
@@ -189,8 +213,13 @@ values, so the body reads nothing of the caller's. This is the rule of
 [Defined functions](Items.md#defined-functions): the value of an
 application is that of the body with the parameters substituted by the
 arguments' values (*substitution*). `Call(f, args)` is an application of
-an uninterpreted function or of a structural recursion, whose value is the
-interpretation's. Both evaluate every argument.
+an uninterpreted function, whose value is the interpretation's
+`functions`, which differ between behaviours. An instance of a [generic
+uninterpreted function](GenericFunctions.md#uninterpreted-generic-functions)
+is named with its type arguments, as `pick<Int>`, so that each instance is
+a function of its own. `Recur(f, args)` is an application of a structural
+recursion, whose value is the interpretation's `recursions`, the same in
+every behaviour. All three evaluate every argument.
 
 ```fren
 expect call_rules(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value) {
@@ -198,20 +227,32 @@ expect call_rules(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr
 
     expect substitution: eval(i, env, Expr::Apply(f, args, ps, body)) = eval(i, bind_params(ps, l), body)
     expect interpreted: eval(i, env, Expr::Call(f, args)) = apply(i.functions, f, l)
+    expect recursive: eval(i, env, Expr::Recur(f, args)) = apply(i.recursions, f, l)
 }
 ```
 
 A structural recursion `f` with the parameters `ps` and the body `e`
 denotes the least fixed point of its equations (see
 [Meaning](Recursion.md#meaning)). An interpretation *respects* it at the
-arguments `l` where the point there is the body's outcome, evaluated with
-`f`'s applications read from the same interpretation, or where it has no
-point; the language's interpretation respects every structural recursion
-everywhere:
+arguments `l` where its point in `recursions` there is the body's
+outcome, evaluated with `f`'s applications read from the same
+interpretation, or where it has no point; the language's interpretation
+respects every structural recursion everywhere. Where it does, an
+application of `f` unfolds to its body, as [Defined
+functions](Items.md#defined-functions) states:
 
 ```fren
 pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
-    apply(i.functions, f, l) = Outcome::Undefined or apply(i.functions, f, l) = eval(i, bind_params(ps, l), e)
+    apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
+
+expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {
+    assume arguments: eval(i, env, args) = Outcome::Defined(l)
+    -- The body's outcome at `l`, which is the interpretation's point for `f` there.
+    assume body_outcome: eval(i, bind_params(ps, l), body) = r
+    assume point: apply(i.recursions, f, l) = r and r is Outcome::Defined(_)
+    expect unfolds: eval(i, env, Expr::Recur(f, args)) = r
+    expect respected: respects?(i, f, ps, body, l)
+}
 ```
 
 ## Free variables
@@ -222,11 +263,14 @@ variable and a function of one name are two: a variable mentions itself;
 a `Call` its function, and what its arguments mention; a `Let(x, d, b)`
 what `b` mentions but `x`, and what `d` mentions where `b` mentions `x`;
 a `Match` what its scrutinee and later arms mention, and what its guard
-and body mention but its pattern's binders; and every other form what
-its immediate subexpressions mention, but the body of an `Apply`, which
-reads only its parameters. Where a definition is not read, it counts for
-nothing, as for the [mentions](Expressions.md#mentions) of the front
-ends.
+and body mention but its pattern's binders; an `Apply` what its arguments
+mention, and what its body mentions but its parameters, which is nothing
+for an elaborated one, whose body reads only its parameters and applies no
+uninterpreted function; a `Recur` what its arguments mention, since the
+values of structural recursions are the same in every behaviour; and
+every other form what its immediate subexpressions mention. Where a
+definition is not read, it counts for nothing, as for the
+[mentions](Expressions.md#mentions) of the front ends.
 
 ```fren
 pub enum Mention { Var(Id), Fn(Id) }
@@ -237,6 +281,12 @@ pub fn binders(p: Pattern): Set<Mention> := match p {
     Pattern::Variant(_, ps) => binders(ps),
     Pattern::Cons(first, rest) => binders(first) union binders(rest),
     _ => {},
+}
+
+-- The names of a function's parameters.
+pub fn param_names(ps: Params): Set<Mention> := match ps {
+    Params::Cons(x, rest) => {Mention::Var(x)} union param_names(rest),
+    Params::Nil => {},
 }
 
 pub fn free_vars(e: Expr): Set<Mention> := match e {
@@ -257,15 +307,17 @@ pub fn free_vars(e: Expr): Set<Mention> := match e {
     Expr::Index(q, k) => free_vars(q) union free_vars(k),
     Expr::Method(_, r, args) => free_vars(r) union free_vars(args),
     Expr::Count(_, args) => free_vars(args),
-    Expr::Apply(_, args, _, _) => free_vars(args),
+    Expr::Apply(_, args, ps, body) => free_vars(args) union (free_vars(body) minus param_names(ps)),
     Expr::Call(f, args) => {Mention::Fn(f)} union free_vars(args),
+    Expr::Recur(_, args) => free_vars(args),
     _ => {},
 }
 ```
 
 Two interpretations and environments *agree* on a set of mentions where
 they bind each of its variables to the same outcome, give each of its
-functions the same points, and have the same primitive operations.
+functions the same points, and have the same structural recursions and
+primitive operations, which are the same in every behaviour.
 `points(g, f)` are the points of `g` for `f`:
 
 ```fren
@@ -277,7 +329,8 @@ pub fn points(g: Graph, f: Id): Graph := match g {
 -- A quantifier over a set's members is outside the decidable core; the
 -- laws that use it are tested, or decided where the set is empty.
 set_option fren.lint.undecidable "allow" in
-pub fn agree?(i: Interp, p: Env, j: Interp, q: Env, ms: Set<Mention>) := i.primitives = j.primitives
+pub fn agree?(i: Interp, p: Env, j: Interp, q: Env, ms: Set<Mention>) := i.recursions = j.recursions
+    and i.primitives = j.primitives
     and (forall (m: Mention), when m in ms, match m {
     Mention::Var(x) => lookup(p, x) = lookup(q, x),
     Mention::Fn(f) => points(i.functions, f) = points(j.functions, f),
@@ -291,14 +344,14 @@ which is why a product may have it as a factor (see [Linear
 arithmetic](Expressions.md#linear-arithmetic)) and why a constraint that
 mentions nothing is constant (see [Expressions that mention
 nothing](../Lint/Meaning.md#expressions-that-mention-nothing)).
-`lang::coincidence` states it, for the other chapters to call. It holds by
-structural induction on `e`, which the solver does not do, since
-[recursive functions are opaque](Recursion.md#counterexamples-and-completeness)
-beyond one step, and each step of which, for a form that binds a name,
-needs the two environments to agree on the extended ones, through `lookup`
-within the quantifier of `agree?`. So its evidence is testing, stated
-here: `fren check` tests it, and `src/FrenTest/Semantics.lean` evaluates
-random expressions with a variable that they do not mention rebound.
+`lang::coincidence` states it. It is a procedure rather than an
+expectation, so that the other chapters can call it, and its guarantee is
+the lemma. It holds by structural induction on `e`, which the solver does
+not do, since [recursive functions are
+opaque](Recursion.md#counterexamples-and-completeness) beyond one step:
+`fren check` tests it, and `src/Impls/Semantics.lean` proves it in Lean,
+by induction on `lang::Expr`, for every interpretation, environment and
+expression.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -311,12 +364,15 @@ pub proc coincidence(i: Interp, p: Env, j: Interp, q: Env, e: Expr) {
 Its case for an expression that mentions nothing, `lang::closed`, needs no
 quantifier, and is the one that the other chapters call: such an
 expression has one outcome in every interpretation and environment, given
-the primitive operations. Its evidence is testing too, by the same tests:
+the structural recursions and the primitive operations. `fren check`
+tests it, and `src/Impls/Semantics.lean` proves it in Lean, from the
+coincidence lemma:
 
 ```fren
 set_option fren.evidence "tested" in
 pub proc closed(i: Interp, p: Env, j: Interp, q: Env, e: Expr) {
-    ensure same: when free_vars(e) = {} and i.primitives = j.primitives, eval(i, p, e) = eval(j, q, e)
+    ensure same: when free_vars(e) = {} and i.recursions = j.recursions and i.primitives = j.primitives,
+        eval(i, p, e) = eval(j, q, e)
 }
 ```
 
@@ -372,7 +428,8 @@ pub proc guard(
 
 The guards are those of evaluation: where `guard` says that an operand is
 not evaluated, replacing it changes no outcome. `guards_evaluation` states
-this for the operands of `and`, `or` and the conditional, whose
+this for the operands of `and`, `or`, the conditional, and `when` and
+`unless` through their [translations](Semantics.md#derived-forms), whose
 conditions are WD `Bool`s:
 
 ```fren
@@ -382,12 +439,59 @@ expect guards_evaluation(i: Interp, env: Env, a: Expr, b: Expr, c: Expr, b2: Exp
     call disjunct := guard(GuardedOperand::OrRight, truth(cond?))
     call then_guard := guard(GuardedOperand::ThenBranch, truth(cond?))
     call else_guard := guard(GuardedOperand::ElseBranch, truth(cond?))
+    call when_guard := guard(GuardedOperand::WhenBody, truth(cond?))
+    call unless_guard := guard(GuardedOperand::UnlessBody, truth(cond?))
 
     expect and_right: unless conjunct.evaluated?, eval(i, env, Expr::And(a, b)) = eval(i, env, Expr::And(a, b2))
     expect or_right: unless disjunct.evaluated?, eval(i, env, Expr::Or(a, b)) = eval(i, env, Expr::Or(a, b2))
     expect then_unevaluated: unless then_guard.evaluated?, eval(i, env, Expr::If(a, b, c)) = eval(i, env, Expr::If(a, b2, c))
     expect else_unevaluated: unless else_guard.evaluated?, eval(i, env, Expr::If(a, b, c)) = eval(i, env, Expr::If(a, b, c2))
+    -- `when a, b` is `if a then b else true`, and `unless a, b` is `if a then true else b`.
+    expect when_body: unless when_guard.evaluated?, eval(i, env, Expr::If(a, b, Expr::Literal(Value::True)))
+        = eval(i, env, Expr::If(a, b2, Expr::Literal(Value::True)))
+    expect unless_body: unless unless_guard.evaluated?, eval(i, env, Expr::If(a, Expr::Literal(Value::True), b))
+        = eval(i, env, Expr::If(a, Expr::Literal(Value::True), b2))
     -- Exactly one branch of a conditional is evaluated.
     expect one_branch: then_guard.evaluated? != else_guard.evaluated?
+}
+```
+
+For an arm of a `match`, the condition of its guard is that its pattern
+matches and no earlier arm is taken, and that of its body that the arm is
+the one taken, as [`guard`](#guards) states for `ArmGuard` and `ArmBody`.
+`arm_guards_evaluation` states this of the first arm of a chain, whose
+earlier arms are none, and of a later arm, through the `rest` of the
+first, which is evaluated exactly where the first is not taken:
+
+```fren
+expect arm_guards_evaluation(
+    i: Interp,
+    env: Env,
+    s: Expr,
+    p: Pattern,
+    g: Expr,
+    b: Expr,
+    rest: Expr,
+    g2: Expr,
+    b2: Expr,
+    rest2: Expr,
+    v: Value,
+    taken?,
+) {
+    assume scrutinee: eval(i, env, s) = Outcome::Defined(v)
+    -- The guard is a WD `Bool` where the pattern matches.
+    assume guard_value: when matches_value?(p, v), eval(i, bind(p, v, env), g) = Outcome::Defined(truth(taken?))
+
+    call arm_guard := guard(GuardedOperand::ArmGuard, truth(matches_value?(p, v)))
+    call arm_body := guard(GuardedOperand::ArmBody, truth(matches_value?(p, v) and taken?))
+    -- The later arms are evaluated where this one is not taken.
+    call later := guard(GuardedOperand::ArmGuard, truth(not (matches_value?(p, v) and taken?)))
+
+    expect guard_unevaluated: unless arm_guard.evaluated?,
+        eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g2, b, rest))
+    expect body_unevaluated: unless arm_body.evaluated?,
+        eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g, b2, rest))
+    expect later_unevaluated: unless later.evaluated?,
+        eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g, b, rest2))
 }
 ```

@@ -90,8 +90,9 @@ So a constant has its definition's outcome in every environment, as
 expect constant_value(binding: Binding, definition: Expr, i: Interp, env: Env) {
     assume constant: binding.kind = BindingKind::Constant
     call name := named(binding, definition)
-    -- The constant has no arguments, whose list is `Nil`.
+    -- The constant has no arguments, whose list is `Nil`, and so no parameters.
     expect definition_outcome: eval(i, env, Expr::Nil) = Outcome::Defined(Value::Nil)
+        and bind_params(Params::Nil, Value::Nil) = Env::Empty
         and eval(i, env, name.expr) = eval(i, Env::Empty, definition)
 }
 ```

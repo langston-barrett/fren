@@ -135,7 +135,8 @@ the arguments of a call, has a list expression for them, `Nil` or
 | `Method(m, r, args)` | `x.abs`, `x.min(y)`, `q.len` | [Method call expressions](EvaluationRules.md#method-call-expressions) |
 | `Count(c, args)` | `at_most_one?(a, b)` | [Operator expressions](EvaluationRules.md#operator-expressions) |
 | `Apply(f, args, ps, body)` | `f(a)`, a constant `C` | [Call expressions](EvaluationRules.md#call-expressions) |
-| `Call(f, args)` | `f(a)` | [Call expressions](EvaluationRules.md#call-expressions) |
+| `Call(f, args)` | `f(a)`, `f` uninterpreted | [Call expressions](EvaluationRules.md#call-expressions) |
+| `Recur(f, args)` | `f(a)`, `f` a structural recursion | [Call expressions](EvaluationRules.md#call-expressions) |
 
 ```fren
 pub enum UnaryOp { Not, Neg }
@@ -171,6 +172,7 @@ pub enum Expr {
     Count(Cardinality, Expr),
     Apply(Id, Expr, Params, Expr),
     Call(Id, Expr),
+    Recur(Id, Expr),
 }
 ```
 
@@ -195,7 +197,10 @@ meaning, since evaluation has no effects and is deterministic.
 | `match a, b { p, q => e, ... }` | `match [a, b] { [p, q] => e, ... }`, its patterns as list patterns |
 | `table { c => v, rows }` | `if c then v else table { rows }`; `table { _ => v }` is `v`, and `table {}` is `NoMatch` |
 | `table s { arms }` | `match s { arms }` |
-| `s is p` where its binders are in scope, as in `s is p and e` | `e` within `Match(s, p, true, e, NoMatch)`, which binds them, at each place where [`lang::test_scope`](Expressions.md#pattern-tests) has them in scope |
+| `s is p and e`, where `e` reads a binder of `p` | `And(Is(s, p), Match(s, p, true, e, NoMatch))` |
+| `if s is p then t else f`, where `t` reads a binder of `p` | `If(Is(s, p), Match(s, p, true, t, NoMatch), f)` |
+| `when s is p, d`, where `d` reads a binder of `p` | `If(Is(s, p), Match(s, p, true, d, NoMatch), true)` |
+| a later operand of a chain of `and`s after `s is p`, as `s is p and a and e` | each operand that reads a binder of `p` within `Match(s, p, true, ·, NoMatch)`, at the places where [`lang::test_scope`](Expressions.md#pattern-tests) has the binders in scope: the `Match` is evaluated only where the test holds, so it never reaches `NoMatch` |
 | `[a, b]` | `Cons(a, Cons(b, Nil))` |
 | `C`, a variant without a payload | `Construct(C, Nil)` |
 | `C(a, b)`; `R { y := b, x := a }`; `N(a)` | `Construct(C, [a, b])`; `Construct(R, [a, b])`, in the order that `R` declares `x` and `y`; `Construct(N, [a])` |
@@ -203,7 +208,8 @@ meaning, since evaluation has no effects and is deterministic.
 | `{ r with x := a }` | `Construct(R, ...)` of `R`'s fields, `a` for `x` and `Project(r, R, k)` for each other field `k` |
 | `f(a, b)`, where `f` is a defined function that is not recursive, with the parameters `x` and `y` and the body `e` | `Apply(f, [a, b], [x, y], e)` |
 | `C`, a constant with the definition `e` | `Apply(C, Nil, Nil, e)` |
-| `f(a, b)`, where `f` is uninterpreted or a [structural recursion](Recursion.md) | `Call(f, [a, b])` |
+| `f(a, b)`, where `f` is uninterpreted | `Call(f, [a, b])`; an instance of a [generic one](GenericFunctions.md#uninterpreted-generic-functions) is named with its type arguments, as `pick<Int>`, one unknown function for each instance |
+| `f(a, b)`, where `f` is a [structural recursion](Recursion.md) | `Recur(f, [a, b])` |
 | an application of a [higher-order function](HigherOrder.md) | its body, with each application of a function parameter replaced by the closure's body within a `let` of each of the closure's parameters, the names renamed apart, as [Meaning](HigherOrder.md#meaning) states |
 | `exactly_one?(a, b)`, `at_most_one?(a, b)` | `Count(Exactly, [a, b])`, `Count(AtMost, [a, b])` |
 
@@ -215,13 +221,21 @@ names of quantifiers, the names of `let`s, and the binders of patterns.
 `lookup(env, x)` is the outcome of the innermost binding of `x`, and an
 unbound variable, which a resolved expression never reads, is undefined.
 
-An *interpretation*, `lang::Interp`, gives what the spec does not fix:
-the values of its uninterpreted functions and of its structural
-recursions, `functions`, and the *primitive operations*, `primitives`,
-which Fren's own decidable fragment cannot compute and which this chapter
-therefore takes as given, as the Definition takes its basic values from
-`APPLY`: products and quotients of two integers, `*`, `div` and `mod`,
-and concatenations of two strings, `++`. Each is a `Graph`, a finite list
+An *interpretation*, `lang::Interp`, gives three tables of values, which
+are kept apart because they vary differently between behaviours:
+
+- `functions`, the values of the spec's uninterpreted functions, which
+  differ between behaviours;
+- `recursions`, the values of its [structural recursions](Recursion.md),
+  which are the same in every behaviour: each is the least fixed point of
+  its equations (see [Call expressions](EvaluationRules.md#call-expressions));
+- `primitives`, the *primitive operations*, which Fren's own decidable
+  fragment cannot compute and which this chapter therefore takes as given,
+  as the Definition takes its basic values from `APPLY`: products and
+  quotients of two integers, `*`, `div` and `mod`, and concatenations of
+  two strings, `++`; they too are the same in every behaviour.
+
+Each is a `Graph`, a finite list
 of points `Point(f, args, r)`: `f` at the list of arguments `args` is `r`,
 the first point for them where there are several. An evaluation reads
 finitely many points, so every outcome under an interpretation of the
@@ -235,7 +249,7 @@ pub enum Env { Empty, Bind(Id, Outcome, Env) }
 
 pub enum Graph { Empty, Point(Id, Value, Value, Graph) }
 
-pub struct Interp { functions: Graph, primitives: Graph }
+pub struct Interp { functions: Graph, recursions: Graph, primitives: Graph }
 
 pub fn lookup(env: Env, x: Id): (r: Outcome) {
     out r := match env {
@@ -285,7 +299,8 @@ where what it evaluates is, and the operation applies to the values:
 | `Project(a, c, k)`, `Index(q, k)` | every operand | the element at `k`, where there is one |
 | `Method(m, r, args)` | receiver and arguments | the method at their values |
 | `Apply(f, args, ps, body)` | the arguments, then `body` | `body`'s, with only `ps` bound |
-| `Call(f, args)` | the arguments | the interpretation's |
+| `Call(f, args)` | the arguments | the interpretation's `functions` |
+| `Recur(f, args)` | the arguments | the interpretation's `recursions` |
 
 [Rules of evaluation](EvaluationRules.md) states each row as laws over the
 outcomes of a form's immediate subexpressions, which `eval` meets: they are
@@ -343,8 +358,8 @@ pub fn booleans?(list: Value) := match list {
 ### Pattern matching
 
 `matches_value?(p, v)` says that `p` matches `v`, and `bind(p, v, env)` is `env`
-with `p`'s binders bound to the parts of `v` that they match, the first
-alternative's of an or-pattern. Elaboration rejects an or-pattern whose
+with `p`'s binders bound to the parts of `v` that they match. An
+or-pattern binds nothing, since elaboration rejects one whose
 alternatives bind names (`F0333`).
 
 ```fren
@@ -381,16 +396,12 @@ pub fn bind(p: Pattern, v: Value, env: Env): Env := match p {
 }
 
 -- The environment of a function's body: its parameters bound to the arguments.
-pub fn bind_params(ps: Params, args: Value): (r: Env) {
-    out r := match ps {
-        Params::Cons(x, rest) => match args {
-            Value::Cons(v, more) => Env::Bind(x, Outcome::Defined(v), bind_params(rest, more)),
-            _ => Env::Empty,
-        },
-        Params::Nil => Env::Empty,
-    }
-
-    ensure no_parameters: when ps = Params::Nil, r = Env::Empty
+pub fn bind_params(ps: Params, args: Value): Env := match ps {
+    Params::Cons(x, rest) => match args {
+        Value::Cons(v, more) => Env::Bind(x, Outcome::Defined(v), bind_params(rest, more)),
+        _ => Env::Empty,
+    },
+    Params::Nil => Env::Empty,
 }
 ```
 
@@ -454,73 +465,87 @@ environment `env`. It is a [structural recursion](Recursion.md) on `e`, so
 it is a function: the same expression in the same interpretation and
 environment always has the same outcome (*determinism*), which is why two
 expressions written the same have the same value (see [Expressions as
-written](../Lint/Meaning.md#expressions-as-written)).
+written](../Lint/Meaning.md#expressions-as-written)). It is written as a
+[function block](Items.md#function-blocks), whose `out` gives its body.
 
 ```fren
-pub fn eval(i: Interp, env: Env, e: Expr): Outcome := match e {
-    Expr::Literal(v) => Outcome::Defined(v),
-    Expr::Var(x) => lookup(env, x),
-    Expr::Let(x, d, b) => eval(i, Env::Bind(x, eval(i, env, d), env), b),
-    Expr::Unary(op, a) => unary_value(op, eval(i, env, a)),
-    Expr::Binary(op, a, b) => binary_value(i, op, eval(i, env, a), eval(i, env, b)),
-    Expr::And(a, b) => match eval(i, env, a) {
-        Outcome::Defined(Value::True) => eval(i, env, b),
-        Outcome::Defined(Value::False) => Outcome::Defined(Value::False),
-        _ => Outcome::Undefined,
-    },
-    Expr::Or(a, b) => match eval(i, env, a) {
-        Outcome::Defined(Value::True) => Outcome::Defined(Value::True),
-        Outcome::Defined(Value::False) => eval(i, env, b),
-        _ => Outcome::Undefined,
-    },
-    Expr::If(c, t, f) => match eval(i, env, c) {
-        Outcome::Defined(Value::True) => eval(i, env, t),
-        Outcome::Defined(Value::False) => eval(i, env, f),
-        _ => Outcome::Undefined,
-    },
-    Expr::Is(s, p) => match eval(i, env, s) {
-        Outcome::Defined(v) => Outcome::Defined(truth(matches_value?(p, v))),
-        Outcome::Undefined => Outcome::Undefined,
-    },
-    Expr::Match(s, p, g, b, rest) => match eval(i, env, s) {
-        Outcome::Defined(v) => if matches_value?(p, v) then (match eval(i, bind(p, v, env), g) {
-            Outcome::Defined(Value::True) => eval(i, bind(p, v, env), b),
-            Outcome::Defined(Value::False) => eval(i, env, rest),
+pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
+    out r := match e {
+        Expr::Literal(v) => Outcome::Defined(v),
+        Expr::Var(x) => lookup(env, x),
+        Expr::Let(x, d, b) => eval(i, Env::Bind(x, eval(i, env, d), env), b),
+        Expr::Unary(op, a) => unary_value(op, eval(i, env, a)),
+        Expr::Binary(op, a, b) => binary_value(i, op, eval(i, env, a), eval(i, env, b)),
+        Expr::And(a, b) => match eval(i, env, a) {
+            Outcome::Defined(Value::True) => eval(i, env, b),
+            Outcome::Defined(Value::False) => Outcome::Defined(Value::False),
             _ => Outcome::Undefined,
-        }) else eval(i, env, rest),
-        Outcome::Undefined => Outcome::Undefined,
-    },
-    Expr::NoMatch => Outcome::Undefined,
-    Expr::Nil => Outcome::Defined(Value::Nil),
-    Expr::Cons(a, rest) => match eval(i, env, a), eval(i, env, rest) {
-        Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
-        _, _ => Outcome::Undefined,
-    },
-    Expr::Construct(c, args) => match eval(i, env, args) {
-        Outcome::Defined(l) => Outcome::Defined(Value::Constructed(c, l)),
-        Outcome::Undefined => Outcome::Undefined,
-    },
-    Expr::Project(a, c, k) => match eval(i, env, a) {
-        Outcome::Defined(Value::Constructed(d, l)) => if c = d then nth(l, k) else Outcome::Undefined,
-        _ => Outcome::Undefined,
-    },
-    Expr::Index(q, k) => match eval(i, env, q), eval(i, env, k) {
-        Outcome::Defined(l), Outcome::Defined(Value::Integer(n)) => if list?(l) then nth(l, n) else Outcome::Undefined,
-        _, _ => Outcome::Undefined,
-    },
-    Expr::Method(m, receiver, args) => method_value(m, eval(i, env, receiver), eval(i, env, args)),
-    Expr::Count(c, args) => count_value(c, eval(i, env, args)),
-    Expr::Apply(_, args, ps, body) => match eval(i, env, args) {
-        Outcome::Defined(l) => eval(i, bind_params(ps, l), body),
-        Outcome::Undefined => Outcome::Undefined,
-    },
-    Expr::Call(f, args) => match eval(i, env, args) {
-        Outcome::Defined(l) => apply(i.functions, f, l),
-        Outcome::Undefined => Outcome::Undefined,
-    },
+        },
+        Expr::Or(a, b) => match eval(i, env, a) {
+            Outcome::Defined(Value::True) => Outcome::Defined(Value::True),
+            Outcome::Defined(Value::False) => eval(i, env, b),
+            _ => Outcome::Undefined,
+        },
+        Expr::If(c, t, f) => match eval(i, env, c) {
+            Outcome::Defined(Value::True) => eval(i, env, t),
+            Outcome::Defined(Value::False) => eval(i, env, f),
+            _ => Outcome::Undefined,
+        },
+        Expr::Is(s, p) => match eval(i, env, s) {
+            Outcome::Defined(v) => Outcome::Defined(truth(matches_value?(p, v))),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Match(s, p, g, b, rest) => match eval(i, env, s) {
+            Outcome::Defined(v) => if matches_value?(p, v) then (match eval(i, bind(p, v, env), g) {
+                Outcome::Defined(Value::True) => eval(i, bind(p, v, env), b),
+                Outcome::Defined(Value::False) => eval(i, env, rest),
+                _ => Outcome::Undefined,
+            }) else eval(i, env, rest),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::NoMatch => Outcome::Undefined,
+        Expr::Nil => Outcome::Defined(Value::Nil),
+        Expr::Cons(a, rest) => match eval(i, env, a), eval(i, env, rest) {
+            Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
+            _, _ => Outcome::Undefined,
+        },
+        Expr::Construct(c, args) => match eval(i, env, args) {
+            Outcome::Defined(l) => Outcome::Defined(Value::Constructed(c, l)),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Project(a, c, k) => match eval(i, env, a) {
+            Outcome::Defined(Value::Constructed(d, l)) => if c = d then nth(l, k) else Outcome::Undefined,
+            _ => Outcome::Undefined,
+        },
+        Expr::Index(q, k) => match eval(i, env, q), eval(i, env, k) {
+            Outcome::Defined(l), Outcome::Defined(Value::Integer(n)) => if list?(l) then nth(l, n) else Outcome::Undefined,
+            _, _ => Outcome::Undefined,
+        },
+        Expr::Method(m, receiver, args) => method_value(m, eval(i, env, receiver), eval(i, env, args)),
+        Expr::Count(c, args) => count_value(c, eval(i, env, args)),
+        Expr::Apply(_, args, ps, body) => match eval(i, env, args) {
+            Outcome::Defined(l) => eval(i, bind_params(ps, l), body),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Call(f, args) => match eval(i, env, args) {
+            Outcome::Defined(l) => apply(i.functions, f, l),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+        Expr::Recur(f, args) => match eval(i, env, args) {
+            Outcome::Defined(l) => apply(i.recursions, f, l),
+            Outcome::Undefined => Outcome::Undefined,
+        },
+    }
 }
 ```
 
+`determinism` states it:
+
+```fren
+expect determinism(i: Interp, env: Env, e: Expr, e2: Expr) {
+    expect same: when e2 = e, eval(i, env, e2) = eval(i, env, e)
+}
+```
 
 ## What the model leaves out
 

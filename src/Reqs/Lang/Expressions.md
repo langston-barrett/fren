@@ -302,8 +302,9 @@ where the name is free in its scope. So both count a definition only where
 its name is read. A [structural recursion](Recursion.md) is a defined
 function to the front ends, which mentions only its arguments, since every
 interpretation of the language gives it the same values, those of its
-equations; to the semantics, it is a `Call`, read from an interpretation
-that [respects](EvaluationRules.md#call-expressions) it.
+equations; so it is to the semantics, where it is a `Recur`, read from the
+interpretation's `recursions`, which are the same in every behaviour and
+[respect](EvaluationRules.md#call-expressions) its equations.
 
 ```fren
 -- The kind of an expression of the semantics, as the front ends classify
@@ -315,6 +316,7 @@ pub fn kind_of(e: Expr): ExprKind := match e {
     Expr::Method(_, _, _) => ExprKind::Method,
     Expr::Call(f, _) => ExprKind::Uninterpreted(f),
     Expr::Apply(_, _, _, _) => ExprKind::Defined,
+    Expr::Recur(_, _) => ExprKind::Defined,
     _ => ExprKind::Compound,
 }
 
@@ -334,12 +336,18 @@ pub fn sub_free_vars(e: Expr): Set<Mention> := match e {
     Expr::Count(_, args) => free_vars(args),
     Expr::Apply(_, args, _, _) => free_vars(args),
     Expr::Call(_, args) => free_vars(args),
+    Expr::Recur(_, args) => free_vars(args),
     Expr::Method(_, r, args) => free_vars(r) union free_vars(args),
     _ => {},
 }
 
 expect mentions_free_vars(e: Expr) {
     assume binds_nothing: not e is Expr::Let(_, _, _) | Expr::Match(_, _, _, _, _)
+    -- An elaborated function's body reads only its parameters.
+    assume closed_bodies: match e {
+        Expr::Apply(_, _, ps, body) => free_vars(body) subset param_names(ps),
+        _ => true,
+    }
     call m := mentions(kind_of(e), sub_free_vars(e))
     expect free_vars: m.mentioned = free_vars(e)
 }
@@ -421,7 +429,7 @@ expect fixed_factor(
     j: Interp,
     q: Env,
 ) {
-    assume primitives: i.primitives = j.primitives
+    assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call product := linear_product(free_vars(a), free_vars(b))
     call factor_a := closed(i, p, j, q, a)
     call factor_b := closed(i, p, j, q, b)

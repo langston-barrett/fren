@@ -141,7 +141,7 @@ lean_lib ImplsProofs where
   globs := #[`Impls.Assumptions, `Impls.Calls, `Impls.Chains, `Impls.Check, `Impls.Cli, `Impls.Enumeration, `Impls.Eval, `Impls.Fmt, `Impls.Generated,
     `Impls.HigherOrder,
     `Impls.Impl, `Impls.Lang, `Impls.Modules, `Impls.Mutate, `Impls.PatternTests, `Impls.PatternTypes, `Impls.Procedures,
-    `Impls.Repeats, `Impls.Scope,
+    `Impls.Repeats, `Impls.Scope, `Impls.Semantics,
     `Impls.TypeFacts, `Impls.View]
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.

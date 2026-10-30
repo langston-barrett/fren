@@ -54,7 +54,8 @@ pub fn written(Scoped): lang::Expr
 ```
 
 So, since [evaluation](../Lang/Semantics.md#the-evaluation-function) is a
-function, two expressions written the same in the same scope have the same
+function, as [`lang::determinism`](../Lang/Semantics.md#the-evaluation-function)
+states, two expressions written the same in the same scope have the same
 outcome in one interpretation and environment, well-defined or not:
 `[1][5] = [1][5]` holds in every behaviour, though `[1][5]` is not
 well-defined, and so may differ between them:
@@ -107,7 +108,7 @@ two interpretations and environments:
 
 ```fren
 expect mentions_nothing(e: lang::Expr, i: lang::Interp, p: lang::Env, j: lang::Interp, q: lang::Env) {
-    assume primitives: i.primitives = j.primitives
+    assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call c := lang::closed(i, p, j, q, e)
     expect mentions_nothing: when lang::free_vars(e) = {}, lang::eval(i, p, e) = lang::eval(j, q, e)
 }

@@ -24,6 +24,7 @@ import Impls.PatternTypes
 import Impls.Procedures
 import Impls.Repeats
 import Impls.Scope
+import Impls.Semantics
 import Impls.Trace
 import Impls.TypeFacts
 import Impls.View

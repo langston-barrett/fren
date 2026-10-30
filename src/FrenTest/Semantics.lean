@@ -22,7 +22,9 @@ an expression well-defined, the binary gives it the same value; where the
 binary does not know it, the semantics finds it undefined. The binary may
 know more, by its Kleene connectives.
 
-Each expression is also evaluated in the behaviour with a variable that it
+Last, expressions with applications of uninterpreted functions and
+structural recursions are evaluated under interpretations that differ in
+the functions that they do not mention. Each expression is also evaluated in the behaviour with a variable that it
 does not mention rebound, which the coincidence lemma (`lang::coincidence`)
 says changes nothing, and, where it mentions nothing, in the empty
 environment, which `lang::closed` says changes nothing either.
@@ -316,7 +318,7 @@ def envOf (b : List (String × Val)) : lang.Env :=
   b.foldr (init := .Empty) fun (x, v) env =>
     .Bind x (match toValue v with | some w => .Defined w | none => .Undefined) env
 
-def interp : lang.Interp := ⟨.Empty, .Empty⟩
+def interp : lang.Interp := ⟨.Empty, .Empty, .Empty⟩
 
 /-- The problems found on 3000 random expressions. -/
 def run : Array String := Id.run do
@@ -392,8 +394,85 @@ def writtenScopes : Bool :=
 
 #guard writtenScopes
 
+/-! ## The coincidence lemma over interpretations
+
+Expressions of the semantics alone, with applications of an uninterpreted
+function `u` (`Call`), of a structural recursion `r` (`Recur`) and of a
+defined function `f` whose body may apply either (`Apply`), are evaluated
+under interpretations that agree on their structural recursions and
+primitive operations, and differ in `u`. -/
+
+/-- An integer expression over `x`, `y`, `n` (in a body), `u` and `r`. -/
+partial def genL (inBody : Bool) : Nat → R lang.Expr
+  | 0 => do
+    match ← next 4 with
+    | 0 =>
+      let x ← pick #["x", "y"]
+      return .Var (if inBody then "n" else x)
+    | _ => return .Literal (.Integer (← small))
+  | d + 1 => do
+    match ← next 8 with
+    | 0 => return .Binary .Add (← genL inBody d) (← genL inBody d)
+    | 1 => return .If (.Binary .Lt (← genL inBody d) (← genL inBody d)) (← genL inBody d) (← genL inBody d)
+    | 2 => return .Call "u" (list [← genL inBody d])
+    | 3 => return .Recur "r" (list [← genL inBody d])
+    | 4 => if inBody then genL inBody d else
+        return .Apply "f" (list [← genL inBody d]) (.Cons "n" .Nil) (← genL true d)
+    | 5 => if inBody then genL inBody d else
+        return .Let "z" (← genL inBody d) (.Binary .Add (.Var "z") (← genL inBody d))
+    | _ => genL inBody 0
+
+/-- A graph of `g` at the integers from `-6` to `6`, with random values. -/
+def genGraph (g : String) : R lang.Graph := do
+  let mut out := lang.Graph.Empty
+  for k in [0:13] do
+    if (← next 4) != 0 then
+      out := .Point g (.Cons (.Integer ((k : Int) - 6)) .Nil) (.Integer (← small)) out
+  return out
+
+/-- The problems found on random expressions under varying interpretations. -/
+def runInterp : Array String := Id.run do
+  let mut failures := #[]
+  let mut seed := 7
+  let mut closedOnes := 0
+  let mut agreeing := 0
+  for _ in [0:2000] do
+    let ((e, fs, gs, rs, b), s) := (do
+      return (← genL false 4, ← genGraph "u", ← genGraph "u", ← genGraph "r", ← behaviour)).run seed
+    seed := s
+    let i : lang.Interp := ⟨fs, rs, .Empty⟩
+    let j : lang.Interp := ⟨gs, rs, .Empty⟩
+    let env := envOf b
+    -- `lang::closed`: under any two such interpretations, in any environment.
+    if lang.free_vars e = ∅ then
+      closedOnes := closedOnes + 1
+      unless lang.eval i env e == lang.eval j .Empty e do
+        failures := failures.push s!"{repr e} mentions nothing, but its outcome differs between interpretations"
+    -- `lang::coincidence`: where `u` is not mentioned, it may differ.
+    if !decide (lang.Mention.Fn "u" ∈ lang.free_vars e) then
+      agreeing := agreeing + 1
+      unless lang.eval i env e == lang.eval j env e do
+        failures := failures.push s!"{repr e} does not mention `u`, but its outcome depends on it"
+  if closedOnes < 100 then failures := failures.push s!"only {closedOnes} expressions mentioned nothing"
+  if agreeing < 300 then failures := failures.push s!"only {agreeing} expressions did not mention `u`"
+  return failures
+
+/-- The counterexample of the review of #391: a constant whose definition
+applies a structural recursion mentions nothing, and has one outcome under
+interpretations with the same recursions; one that applies an uninterpreted
+function mentions it. -/
+def constantOfRecursion : Bool :=
+  let e : lang.Expr := .Apply "C" .Nil .Nil (.Recur "r" .Nil)
+  let rs : lang.Graph := .Point "r" .Nil .True .Empty
+  let viaCall : lang.Expr := .Apply "C" .Nil .Nil (.Call "u" .Nil)
+  decide (lang.free_vars e = ∅)
+    && lang.eval ⟨.Point "u" .Nil .False .Empty, rs, .Empty⟩ .Empty e == lang.eval ⟨.Empty, rs, .Empty⟩ .Empty e
+    && decide (lang.Mention.Fn "u" ∈ lang.free_vars viaCall)
+
+#guard constantOfRecursion
+
 #eval show IO Unit from do
-  let failures := run
+  let failures := run ++ runInterp
   unless failures.isEmpty do
     throw (IO.userError s!"`lang::eval` and `Ex.eval` disagree:\n{"\n".intercalate (failures.toList.take 5)}")
 
