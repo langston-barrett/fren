@@ -92,7 +92,7 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_test
-    - run: lake test -- --shard "$SHARD/4"
+    - run: lake test -- --timings --shard "$SHARD/4"
       env:
         SHARD: ${{ matrix.shard }}
   # Every declaration of Fren's code is run by `lake test`, or listed in

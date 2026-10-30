@@ -257,6 +257,7 @@ each job once, and the slowest jobs, which come first, spread over them.
 `--skip-own-mutants` leaves out the slices of the mutants of Fren's own
 requirements, the slowest jobs, which only the CI run on `main` checks.
 The selection is made before `--bless` runs the snapshots job first.
+`--timings` prints how long each job took, to balance the shards.
 
 ## Continuous integration
 

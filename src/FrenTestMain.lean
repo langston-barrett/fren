@@ -1630,12 +1630,15 @@ def jobName (job : List String) : IO String := do
         return if g == 0 then s!"{name} (Fren's own requirements)" else s!"{name} ({", ".intercalate paths.toList})"
   return name
 
-/-- Runs `job` in a process of its own, returning its failures. -/
-def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
+/-- Runs `job` in a process of its own, returning its failures. If `timed`,
+prints how long it took (`--timings`). -/
+def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
+  let start ← IO.monoMsNow
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
-  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   let name ← jobName job
+  if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   match Json.parse last >>= fromJson? with
   | .ok failures =>
     if out.exitCode == 0 then
@@ -1663,15 +1666,16 @@ def jobCount : IO Nat := do
     throw (IO.userError s!"FREN_TEST_JOBS must be a positive integer, not `{v}`")
   return max 1 (min maxJobs (System.Platform.Internal.getHardwareConcurrency ()).toNat)
 
-/-- Runs `jobs`, at most `jobCount` at once. -/
-def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := do
+/-- Runs `jobs`, at most `jobCount` at once, printing how long each took if
+`timed`. -/
+def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String) := do
   let next ← IO.mkRef 0
   let worker : IO (Array String) := do
     let mut failures := #[]
     repeat
       let k ← next.modifyGet fun k => (k, k + 1)
       let some job := jobs[k]? | break
-      failures := failures ++ (← spawnJob bless job)
+      failures := failures ++ (← spawnJob bless timed job)
     return failures
   let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
@@ -1710,7 +1714,8 @@ unsafe def main (args : List String) : IO UInt32 := do
     return 0
   let selected ← IO.ofExcept ((selectJobs args (← jobs)).mapError IO.userError)
   let (first, rest) := selected.partition (bless && · == ["snapshots"])
-  let failures := ((← runJobs bless first) ++ (← runJobs bless rest)).qsort (· < ·)
+  let timed := args.contains "--timings"
+  let failures := ((← runJobs bless timed first) ++ (← runJobs bless timed rest)).qsort (· < ·)
   for f in failures do IO.eprintln s!"FAIL {f}"
   if failures.isEmpty then
     IO.println "fren_test: all passed"

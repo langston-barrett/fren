@@ -58,7 +58,7 @@ jobs:
     # Only the test driver, and what it imports, not `Reqs`: the tests run
     # the binary's code in the driver's process, and import `Fren`.
     - run: lake build fren_test
-    - run: lake test -- --skip-own-mutants --shard "$SHARD/4"
+    - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
       env:
         SHARD: ${{ matrix.shard }}
   pre-merge:
