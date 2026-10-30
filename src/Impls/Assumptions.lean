@@ -206,7 +206,10 @@ all of them inputs, and that what the procedure's members mention does
 not reach. It, and `reported` below, mirror the front ends' two steps by
 hand, calling the same `usedAssumptions` and `unusedAssumption` that
 `lintCompUnused` and `unusedAssumptionReports` call; the records' names,
-spans and messages are left out. -/
+spans and messages are left out. `reported` finds an assumption among
+those recorded by its position, and `unusedAssumptionReports` by its
+name, which agree since a procedure's constraints have distinct names
+(`F0213`). -/
 def recorded (ls : List (List lint.Link)) (ins ms : List lint.Link) : List Nat :=
   (List.range ls.length).filter fun i =>
     unusedAssumption (varsOf ls i).length ((varsOf ls i).all ins.contains)
