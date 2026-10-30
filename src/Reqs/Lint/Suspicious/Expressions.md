@@ -471,10 +471,10 @@ order, each as [written](../../Lint.md#written-the-same): `lint::repeated?`
 says that the test at a position is written the same as an earlier one,
 and `lint::first_same` gives the first such, which the message names; the
 claim `lint::duplicate_elements_members` of [Elements written the
-same](Literals.md#elements-written-the-same) uses it too. Their quantifiers are over positions of
-any number of tests, so they are outside the decidable core; their own
-checks are tested, and their implementations are proved in Lean of the
-lint's code, for every chain:
+same](Literals.md#elements-written-the-same) uses it too. Their
+quantifiers are over positions of any number of tests, so they are outside
+the decidable core; their own checks are tested, and their implementations
+are proved in Lean of the lint's code, for every chain:
 
 ```fren
 -- The text at position `i` is written the same as an earlier one.
@@ -514,9 +514,9 @@ pub proc ifs_same_cond(
 Its branch is never taken. Every test of the chain is written in one
 scope, and evaluated in one environment: the test at `k` is in the `else`
 branch of each earlier one, which sees none of its binders, by
-[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), and
-the claim checks this for a pattern test of any earlier test. So tests
-written the same are the same [`Scoped`](../Meaning.md#expressions-as-written)
+[`lang::test_scope`](../../Lang/Expressions.md#pattern-tests), and the
+claim checks this for a pattern test of any earlier test. So tests written
+the same are the same [`Scoped`](../Meaning.md#expressions-as-written)
 expression, and have the same outcome, by
 [`written_same`](../Meaning.md#expressions-as-written). The branch of the
 test at `k` is taken where that test is `true` and each earlier one `false`.
@@ -557,10 +557,11 @@ Which branch is taken is what evaluating the chain gives: `if p then a
 else if q then b else d` is `If(p, a, If(q, b, d))`, by [If
 expressions](../../Lang/EvaluationRules.md#if-expressions).
 `lint::ifs_same_cond_taken` evaluates such a chain, with tests that are
-variables: its outcome is `b`'s exactly where `p` is `false` and `q`
-`true`, as `lint::ifs_same_cond_never_taken` reads it, and where the two
-tests have the same value, the chain has the outcome that it has without
-the second test. Its evidence is testing, which evaluates it, since the
+variables: its outcome is that of `if p? then a else if q? then b else d`,
+so it takes the branch of `q` exactly where `p` is `false` and `q` `true`,
+as `lint::ifs_same_cond_never_taken` reads it, and where the two tests
+have the same value, the chain has the outcome that it has without the
+second test. Its evidence is testing, which evaluates it, since the
 solver unfolds [`eval`](../../Lang/Semantics.md) only one step:
 
 ```fren

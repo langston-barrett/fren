@@ -257,9 +257,9 @@ pub proc duplicate_elements(
 
 The fix keeps the members: each element that it removes has the outcome
 of one that it keeps, the first earlier element written the same, by
-[`lint::first_same`](Expressions.md#branches-written-the-same). That one is not a repeat itself, since an element
-before it written the same would be written the same as the removed one
-too, and earlier. The two have the same outcome: as for the tests of a
+[`lint::first_same`](Expressions.md#branches-written-the-same). That one
+is not a repeat itself, since an element before it written the same would
+be written the same as the removed one too, and earlier. The two have the same outcome: as for the tests of a
 chain, every element of a literal is written in one scope, and evaluated
 in one environment. Each other element is outside the chains of an
 element's pattern tests, where their binders are not in scope, by
