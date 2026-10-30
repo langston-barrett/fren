@@ -1,6 +1,7 @@
 --@ args: fmt --check
--- `fren fmt` spaces a record update's braces as a record literal's, and
--- gives the fields of a vertical one a trailing comma.
+-- `fren fmt` spaces a record update's braces as a record literal's, keeps
+-- the record it updates on the line of the `{`, and puts the fields on that
+-- line if they fit, as a record literal's.
 struct P { x: Int, y: Int }
 proc c(p: P): (q: P, r: P) {
     ensure a: q = {p with x:=1,y}

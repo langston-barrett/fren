@@ -23,10 +23,11 @@ import Lean.Elab.Frontend
   instead of `fren check X.fren`. `lake test -- --bless` (or `FREN_BLESS=1`)
   rewrites them.
 - Fren's own requirements must pass under the binary.
-- **Formatting:** every spec in the repository that parses must be
-  formatted, keeps its tokens, imports and comments when formatted, and
-  formatting it again changes nothing (`fmt::safe`); `fren fmt` rewrites a
-  file in place.
+- **Formatting:** every spec in the repository that parses keeps its
+  tokens, imports and comments when formatted, formatting it again changes
+  nothing, and it formats as it does when its lists are laid out again at
+  random (`fmt::safe`, `fmt::layout_free`); `fren fmt` rewrites a file in
+  place.
 - **Mutants:** every mutant of the corpus is well-formed, identified,
   stable and, for a swap, involutive (`mutation`).
 - **Lean's tokens:** the tokens that both front ends read as identifiers,
@@ -464,37 +465,9 @@ def specFiles : IO (Array String) := do
   let fs := fs.filter fun f => f.extension == some "fren" || f.extension == some "md"
   return (fs.map fun f => ((f.toString.dropPrefix? "./").map (·.toString)).getD f.toString).qsort (· < ·)
 
-/-- Specs that are not formatted, as `--ignore` globs: those deliberately
-not formatted, and those that `fren fmt` cannot parse, such as tests of
-syntax errors and of Lean code, and the examples of Markdown specs. -/
-def fmtIgnore : List String :=
-  ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
-   "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
-   "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
-   "test/cli/fmt/cover.fren",
-   "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren", "test/cli/fmt/closures.fren",
-   "test/cli/fmt/newtypes.fren",
-   "test/cli/fmt/table.fren", "test/cli/fmt/pattern_types.fren",
-   "test/cli/fmt/contract.fren",
-   "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren",
-   "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
-   "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
-   "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
-   -- The explanations of the codes, whose first examples are erroneous.
-   "src/FrenCore/Codes/*.md",
-   -- The README's example keeps its hand-aligned continuation lines.
-   "README.md",
-   -- `#fren_md` in a block, which only the Lean front end reads.
-   "src/FrenTestFiles/chapters/LiterateOuter.md", "src/FrenTestFiles/chapters/LiterateReader.md",
-   "src/FrenTestFiles/chapters/deep/LiterateDeep.md", "src/FrenTestFiles/chapters/LiterateReplacing.md",
-   -- Lean code in a block, likewise.
-   "src/FrenTestFiles/chapters/LiterateNoPosition.md",
-   -- Trailing commas that `unnecessary_trailing_comma` reports.
-   "test/cli/lints/pedantic/f0801_unnecessary_trailing_comma.fren", "test/ui/lints/ranges_literals_commas.fren"]
-
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing
 commas of lists and claims and for `use` items; the paths the `use` items
-import, sorted; and the comments. -/
+import, sorted; and the comments, each with whether it starts its line. -/
 def fmtKept (path src : String) : Option (Array String × Array (Array String) × Array String) := do
   let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
   let chars := src.toList.toArray
@@ -507,12 +480,18 @@ def fmtKept (path src : String) : Option (Array String × Array (Array String) �
     if inUse k then continue
     let t := toks[k]
     let trailing := t.tok == .kw "," &&
-      (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
+      (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")" || n.tok == .kw "]") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
     if !trailing then kept := kept.push (reprStr t.tok)
   let paths := (lay.uses.flatMap fun (f, l) =>
     let (ps, glob) := FrenCli.Fmt.usePaths toks f l
     if glob then ps.map (·.push "*") else ps).qsort FrenCli.Fmt.pathLt
-  return (kept, paths, comments.map fun c => (FrenCli.Fmt.text chars c).trimAsciiEnd.toString)
+  let startsLine (c : FrenCli.Span) : Bool := Id.run do
+    let mut i := c.start
+    while i > 0 && chars[i - 1]! != '\n' do
+      if !chars[i - 1]!.isWhitespace then return false
+      i := i - 1
+    return true
+  return (kept, paths, comments.map fun c => s!"{startsLine c} {(FrenCli.Fmt.text chars c).trimAsciiEnd}")
 
 /-! ## Conformance corpus (`Reqs/Lang/Decidability`) -/
 
@@ -627,10 +606,80 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
     return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
   return #[]
 
-/-- `fmt::safe` over every spec in the repository, and every spec that
-parses is formatted. -/
+/-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
+allows: each gap whose line break a list or block decides, with no comment
+or blank line in it and none on its lines, gets a line break or a space;
+the trailing comma of a list that may end with one, on a line without a
+comment, is dropped or added; and then each line without a comment, and not inside a token, is indented
+by a random number of spaces. `none` if `src` does not parse. -/
+def relaid (src : String) (seed : Nat) : Option String := do
+  let chars := src.toList.toArray
+  let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
+  let lay ← (FrenCli.parseLayout toks chars).toOption
+  let (lineOf, _) := FrenCli.Fmt.lineTable chars
+  let mut commented : Std.HashSet Nat := {}
+  for c in comments do
+    for l in [lineOf[c.start]!:lineOf[c.stop - 1]! + 1] do commented := commented.insert l
+  let mut rng := seed
+  -- Edits: a span of `chars` and its replacement, an insertion first.
+  let mut edits : Array (Nat × Nat × String) := #[]
+  let mut seen : Std.HashSet Nat := {}
+  for b in lay.bracketed do
+    if b.closing == b.opening + 1 then continue
+    let mut gaps := #[(b.lead, b.lead + 1), (b.closing - 1, b.closing)]
+    if b.lead != b.opening then gaps := gaps.push (b.opening, b.opening + 1)
+    for k in b.commas do
+      if k + 1 != b.closing then gaps := gaps.push (k, k + 1)
+    for (a, c) in gaps do
+      let start := toks[a]!.span.stop
+      let stop := toks[c]!.span.start
+      let between := chars.extract start stop
+      if seen.contains start || !between.all Char.isWhitespace || between.count '\n' > 1 then continue
+      if commented.contains lineOf[start]! || commented.contains lineOf[stop]! then continue
+      seen := seen.insert start
+      rng := (rng * 1103515245 + 12345) % 2147483648
+      edits := edits.push (start, stop, if (rng / 65536) % 2 == 0 then "\n" else " ")
+    -- The trailing comma, where the syntax allows one.
+    if FrenCli.Fmt.endsWithComma b.kind && !commented.contains lineOf[toks[b.closing - 1]!.span.start]! then
+      rng := (rng * 1103515245 + 12345) % 2147483648
+      if (rng / 65536) % 2 == 0 then
+        let last := b.closing - 1
+        if b.commas.back? == some last then edits := edits.push (toks[last]!.span.start, toks[last]!.span.stop, "")
+        else edits := edits.push (toks[last]!.span.stop, toks[last]!.span.stop, ",")
+  let sortedEdits := edits.qsort fun (a, b, _) (c, d, _) => a < c || (a == c && b - a < d - c)
+  let mut out := ""
+  let mut pos := 0
+  for (start, stop, r) in sortedEdits do
+    out := out ++ String.ofList (chars.extract pos start).toList ++ r
+    pos := stop
+  out := out ++ String.ofList (chars.extract pos chars.size).toList
+  -- Indentation, at random, on the lines that it cannot change.
+  let chars' := out.toList.toArray
+  let (toks', comments') ← (FrenCli.lexWithComments chars').toOption
+  let (lineOf', starts) := FrenCli.Fmt.lineTable chars'
+  let mut fixed : Std.HashSet Nat := {}
+  for c in comments' do
+    for l in [lineOf'[c.start]!:lineOf'[c.stop - 1]! + 1] do fixed := fixed.insert l
+  for t in toks' do
+    if t.span.stop > t.span.start then
+      for l in [lineOf'[t.span.start]! + 1:lineOf'[t.span.stop - 1]! + 1] do fixed := fixed.insert l
+  let lines := (out.splitOn "\n").toArray
+  let mut result := #[]
+  for h : l in [0:lines.size] do
+    let line := lines[l]
+    if fixed.contains l || starts[l]?.isNone then result := result.push line; continue
+    rng := (rng * 1103515245 + 12345) % 2147483648
+    let body := line.trimAsciiStart.toString
+    result := result.push (if body.isEmpty then line else "".pushn ' ' ((rng / 65536) % 13) ++ body)
+  return "\n".intercalate result.toList
+
+/-- `fmt::safe` and `fmt::layout_free` over every spec in the repository,
+and over each laid out again at random, twice: formatting keeps its
+tokens, imports and comments, formatting it again changes nothing, and
+laying it out again changes nothing that formatting writes. -/
 def formatting : IO (Array String) := do
   let mut failures := #[]
+  let mut relaidSome := false
   for f in ← specFiles do
     let src ← IO.FS.readFile f
     let .ok new := FrenCli.Fmt.formatFile f src | continue
@@ -638,11 +687,22 @@ def formatting : IO (Array String) := do
       failures := failures.push s!"{f}: formatting changes its tokens, imports or comments"
     if (FrenCli.Fmt.formatFile f new).toOption != some new then
       failures := failures.push s!"{f}: formatting it twice changes it again"
-  -- Every other spec is formatted, as `fren fmt --check` says.
-  let ignore := fmtIgnore.flatMap (["--ignore", ·])
-  let (out, code) ← runFren (["fmt", "--check"] ++ ignore ++ (← specFiles).toList)
-  if code != 0 then
-    failures := failures.push s!"specs are not formatted (exit {code}); run `fren fmt {" ".intercalate ignore} FILE...`:\n{out}"
+    -- Its Fren source, laid out again.
+    let code := FrenCli.Fmt.parsedText f src
+    let .ok formatted := FrenCli.Fmt.formatFren code | continue
+    for seed in [1, 2] do
+      let some other := relaid code (seed * 7919 + f.length) | failures := failures.push s!"{f}: laid out again, it does not parse"; continue
+      if other != code then relaidSome := true
+      match FrenCli.Fmt.formatFren other with
+      | .error _ => failures := failures.push s!"{f}: laid out again, it does not parse"
+      | .ok again =>
+        if fmtKept "x.fren" other != fmtKept "x.fren" again then
+          failures := failures.push s!"{f}: laid out again, formatting changes its tokens, imports or comments"
+        if again != formatted then
+          failures := failures.push s!"{f}: laid out again (seed {seed}), it formats differently:\n{FrenCli.Fmt.diff {} f formatted again}"
+        if (FrenCli.Fmt.formatFren again).toOption != some again then
+          failures := failures.push s!"{f}: laid out again, formatting it twice changes it again"
+  if !relaidSome then failures := failures.push "laying out the specs again at random changes none of them"
   -- In place: the file becomes formatted, and is then left alone.
   IO.FS.createDirAll (".lake" / "fmt-test")
   let file := ".lake/fmt-test/spec.fren"

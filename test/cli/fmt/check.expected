@@ -5,7 +5,7 @@
 @@ -5 +4 @@
 -use view::Severity::{Info, Error}
 +use view::Severity::{Error, Info, Warning}
-@@ -7,8 +6,8 @@
+@@ -7,8 +6,6 @@
 -pub enum Mode {Heat,Cool}
 -proc   c(
 -    t:Int,  -- the temperature
@@ -19,10 +19,8 @@
 +    t: Int,  -- the temperature
 +): (mode: Mode) {
 +    ensure r: mode = if t < -18 then Mode::Heat else Mode::Cool
-+    call h := d(
-+        1,
-+    )
-@@ -16 +15 @@
++    call h := d(1)
+@@ -16 +13 @@
 -tested c: "a", "b",
 +tested c: "a", "b"
 exit=1

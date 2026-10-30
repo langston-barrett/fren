@@ -1,0 +1,56 @@
+--@ args: fmt --check
+-- `fren fmt` lays out lists and blocks as rustfmt does: one on one line if
+-- it fits, and otherwise one element to a line, with a trailing comma where
+-- the syntax allows; a `match` is always vertical.
+pub enum Op { Add, Sub }
+
+-- #287: the arms of a `match` in a function's `ensure` clause are indented
+-- past the line with the `match`.
+pub fn eval(op: Op, a: Int, b: Int): (r: Int) {
+    ensure by_op: r = match op {
+Op::Add => a + b,
+Op::Sub => a - b,
+}
+    out r := match op { Op::Add => a + b, Op::Sub => a - b }
+}
+
+proc c(x: Int, y: Int): (q: P, r: Int) {
+    -- A `match` on a line that continues a clause.
+    ensure m: unless x = 0,
+        r = match x {
+        1 => 2,
+        _ => 3,
+        }
+    -- Arguments 60 wide fit; 61 do not.
+    call h := g(
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    )
+    call k := g(aaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+    -- A record literal's fields 18 wide fit; 19 do not.
+    ensure p: q = P {
+        xx := 10, y := 200,
+    }
+    ensure p2: q = P { xx := 10, y := 2000 }
+    -- An application's arguments get no trailing comma.
+    ensure f: r = f(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
+    -- Nested: a list in one on one line is on it too, and a vertical one
+    -- makes the one around it vertical.
+    ensure n: and { [1, 2,
+        3] = [x], {x, y} = {y, x} }
+    ensure v: [match x { _ => 1 }, 2] = [r]
+    -- A comment, or a blank line between two elements, keeps a list vertical.
+    ensure k: or { x = 1,  -- one
+        x = 2 }
+    ensure b: or {
+        x = 1,
+
+        x = 2,
+    }
+    -- A record update's fields start after its `with`.
+    ensure u: q = { q with xx := 1000000, y := 2000000 }
+}
+
+-- A function's parameters get no trailing comma, and the line ends by column 100.
+fn exactly(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaa: Int): Int := p0
+fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaa: Int): Int := p0

@@ -1,8 +1,8 @@
 --@ args: fmt --check
 -- `fren fmt` lays out a table over a scrutinee as a `match`: its arms are
--- spaced as any other, each `|` that starts a line starts its
--- alternative, and the arms of a vertical table get a trailing comma. A
--- table by conditions is unchanged by it.
+-- spaced as any other, one to a line, each `|` that starts a line starts
+-- its alternative, and every arm gets a trailing comma, as a table by
+-- conditions does.
 enum Mode { Off, Heat, Cool }
 
 proc c(m: Mode, t: Int): (y: Int) {
