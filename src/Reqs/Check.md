@@ -2490,14 +2490,19 @@ while one at a part of its own arguments, as `Box<Wide>` within
 A quantifier that enumeration evaluates ranges over its
 [domain](Lang/Quantifiers.md#guards) where its guard gives one, as testing
 reads it: the members of a set or the elements of a sequence, or a range
-of integers. Without one, it ranges over its type's values up to the
+of integers. Each conjunct of the guard is read as `lang::guard_bound`
+and `lang::guard_domain` have it, in both front ends alike: `x in e`, and
+a comparison of the bound name with `<`, `<=`, `>` or `>=`, on either
+side. Without one, it ranges over its type's values up to the
 bound. Its truth is then *true*, *false* or *unknown*: an instance that
 decides it does so, false for a `forall` and true for an `exists`, and its
 other value needs every instance known and every value of its type within
 the bound. So `forall (x: Int), x + 1 > x` is unknown up to any bound, and
 `exists (x: Int), x > 2` true from size 3. The connectives over such truths
 are those of strong Kleene logic: `not` of unknown is unknown, a false
-conjunct makes a conjunction false, and a true one a disjunction true.
+conjunct makes a conjunction false, and a true one a disjunction true
+(`andTruth`, `notTruth` and `orTruth` in `FrenCore.Enumeration`, which
+both front ends' evaluators use).
 
 A quantifier over a type that, without its patterns, has more than
 65,536 values up to the bound is not evaluated: it is the error `F0644`,

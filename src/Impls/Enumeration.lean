@@ -1126,12 +1126,12 @@ impl quantified_truth: check::quantified_truth for (exact universal : Bool) (vs 
 
 impl partial_not: check::partial_not for (t : Option Bool) {
   value := optTruth t,
-  truth := optTruth (t.map (!·)),
+  truth := optTruth (notTruth t),
 } by
   intro t
   cases t with
-  | none => simp [fren_spec, optTruth]
-  | some b => cases b <;> simp [fren_spec, optTruth]
+  | none => simp [fren_spec, optTruth, notTruth]
+  | some b => cases b <;> simp [fren_spec, optTruth, notTruth]
 
 impl partial_and: check::partial_and for (a b : Option Bool) {
   left := optTruth a,

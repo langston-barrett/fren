@@ -532,19 +532,18 @@ abbrev Look := Name → Option Val
 closed term, which the compiler allocates once. -/
 @[inline] def boolV (b : Bool) : Option Val := if b then some (.bool true) else some (.bool false)
 
-def kleeneAnd : Option Val → Option Val → Option Val
-  | some (.bool false), _ | _, some (.bool false) => some (.bool false)
-  | some (.bool true), some (.bool true) => some (.bool true)
-  | _, _ => none
-
-def kleeneOr : Option Val → Option Val → Option Val
-  | some (.bool true), _ | _, some (.bool true) => some (.bool true)
-  | some (.bool false), some (.bool false) => some (.bool false)
-  | _, _ => none
-
-def notV : Option Val → Option Val
-  | some (.bool b) => boolV !b
+/-- A value's truth, unknown unless it is a `Bool`'s. -/
+@[inline] def truthOf : Option Val → Option Bool
+  | some (.bool b) => some b
   | _ => none
+
+/-- The strong Kleene connectives, shared with the hosted front end
+(`Core.Enumeration.andTruth`, `check::partial_and`). -/
+def kleeneAnd (a b : Option Val) : Option Val := (Fren.Core.Enumeration.andTruth (truthOf a) (truthOf b)).map .bool
+
+def kleeneOr (a b : Option Val) : Option Val := (Fren.Core.Enumeration.orTruth (truthOf a) (truthOf b)).map .bool
+
+def notV (a : Option Val) : Option Val := (Fren.Core.Enumeration.notTruth (truthOf a)).map .bool
 
 @[inline] def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => some (f x y)

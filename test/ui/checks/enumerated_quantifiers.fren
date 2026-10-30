@@ -6,6 +6,8 @@
 set_option fren.lint.undecidable "allow"
 -- The same expectation, checked by each method.
 set_option fren.lint.duplicate_constraint "allow"
+-- Guards written out, each comparison on its own.
+set_option fren.lint.chainable_comparison "allow"
 
 enum Mode { Off, On }
 type Bit = b: Int where invariant: b is 0..=1
@@ -61,6 +63,32 @@ set_option fren.evidence "enumerated" in
 proc naturals(k: Int): (below?) {  --~ info: 1 check of `naturals` holds for every behaviour up to size 3
     ensure r: below? iff (forall (n: Nat), when n < 2, n < k)
     expect wrong: not below?  --~ error: counterexample: k = 2, below? = true
+}
+
+-- Every comparison of a guard gives a domain, on either side of the bound
+-- name, in both front ends alike: here each guard gives `0` and `1`.
+set_option fren.evidence "enumerated" in
+proc le_lt(k: Int): (all?) {  --~ info: 1 check of `le_lt` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when 0 <= i and i < 2, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ge_gt(k: Int): (all?) {  --~ info: 1 check of `ge_gt` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when i >= 0 and 2 > i, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc lt_le(k: Int): (all?) {  --~ info: 1 check of `lt_le` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when -1 < i and i <= 1, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc gt_ge(k: Int): (all?) {  --~ info: 1 check of `gt_ge` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when i > -1 and 1 >= i, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
 }
 
 -- A pattern type's values are those it matches.
@@ -162,4 +190,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 44 passed (11 by bounded enumeration), 9 failed, 15 inconclusive, 0 redundant
+--@ summary: 52 passed (15 by bounded enumeration), 13 failed, 15 inconclusive, 0 redundant

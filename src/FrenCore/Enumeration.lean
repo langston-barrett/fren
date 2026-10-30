@@ -826,6 +826,13 @@ def andTruth (a b : Option Bool) : Option Bool :=
   | some true, some true => some true
   | _, _ => none
 
+/-- The strong Kleene negation (`check::partial_not`). -/
+def notTruth (a : Option Bool) : Option Bool := a.map (!·)
+
+/-- The strong Kleene disjunction, the conjunction's dual: a true one
+settles it. -/
+def orTruth (a b : Option Bool) : Option Bool := notTruth (andTruth (notTruth a) (notTruth b))
+
 /-- The truth of a quantifier, a `forall` if `universal`, whose instances,
 over values all of its domain's if `exact`, have the truths of `body` at
 `values`, `none` being unknown (`check::quantified_truth`): an instance that

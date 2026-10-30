@@ -181,14 +181,10 @@ def Enum.quantifyNatRange (lower upper : Int) (universal : Bool) (body : Nat →
   if upper - lower > Core.Enumeration.maxEnumerated then none else
   Enum.quantifyIntRange (max 0 lower) upper universal fun i => body i.toNat
 
-def Enum.notTruth (a : Option Bool) : Option Bool := a.map (!·)
+def Enum.notTruth (a : Option Bool) : Option Bool := Core.Enumeration.notTruth a
 
 /-- The strong Kleene disjunction. -/
-def Enum.orTruth (a b : Option Bool) : Option Bool :=
-  match a, b with
-  | some true, _ | _, some true => some true
-  | some false, some false => some false
-  | _, _ => none
+def Enum.orTruth (a b : Option Bool) : Option Bool := Core.Enumeration.orTruth a b
 
 /-- The strong Kleene conjunction, without evaluating a right side that a
 false left side settles. -/
@@ -703,6 +699,8 @@ def typedGuardNode (source : Expr) : Core.GuardNode Expr :=
     .compare #[args[args.size - 1]!, args[args.size - 2]!] #["in"]
   else if e.isAppOf ``LT.lt && args.size >= 2 then .compare #[args[args.size - 2]!, args[args.size - 1]!] #["<"]
   else if e.isAppOf ``LE.le && args.size >= 2 then .compare #[args[args.size - 2]!, args[args.size - 1]!] #["<="]
+  else if e.isAppOf ``GT.gt && args.size >= 2 then .compare #[args[args.size - 2]!, args[args.size - 1]!] #[">"]
+  else if e.isAppOf ``GE.ge && args.size >= 2 then .compare #[args[args.size - 2]!, args[args.size - 1]!] #[">="]
   else .other
 
 /-- The implications at the top of a universal's body, whose hypotheses
@@ -753,7 +751,8 @@ def PartialEnv.wrap (env : PartialEnv) (parts : Array Expr) (v : Expr) : MetaM E
 
 /-- The truth of a quantifier over the bound local `x`, whose instance's
 truth is `fn x`, over its guard's domain, if it has one: unknown, under
-`env.known?`, where the domain's bounds are not known. -/
+`env.known?`, where the domain's bounds are not known. `none` only where
+the guard gives no domain. -/
 def quantifyGuarded (env : PartialEnv) (universal : Bool) (x body fn : Expr) : MetaM (Option Expr) := do
   let (domain, bounds) ← guardedDomain universal x body
   let ty ← inferType x
@@ -762,31 +761,39 @@ def quantifyGuarded (env : PartialEnv) (universal : Bool) (x body fn : Expr) : M
     if t.isConstOf ``Int then return some e
     if t.isConstOf ``Nat then return some (mkApp (mkConst ``Int.ofNat) e)
     return none
+  -- A guard that gives a domain that cannot be read here, which well-typed
+  -- Fren does not write, leaves the quantifier unknown, as the `fren`
+  -- command's evaluator leaves a domain without a value: never its type's
+  -- values instead.
+  let unknown ← mkAppOptM ``Option.none #[some (mkConst ``Bool)]
   match domain with
   | .members index =>
-    let some (collection, _) := bounds[index]?.getD none | return none
+    let some (collection, _) := bounds[index]?.getD none | return some unknown
     let collectionType ← inferType collection
-    let some element := collectionType.getAppArgs[0]? | return none
+    let some element := collectionType.getAppArgs[0]? | return some unknown
     let values ← if collectionType.isAppOf ``Fren.FinSet then mkAppM ``Fren.FinSet.toListImpl #[collection]
       else if collectionType.isAppOf ``Fren.Seq then mkAppM ``Fren.Seq.toList #[collection]
-      else return none
-    unless ← isDefEq element ty do return none
+      else return some unknown
+    unless ← isDefEq element ty do return some unknown
     return some (← env.wrap #[collection] (← mkAppM ``Enum.quantifyList #[values, toExpr universal, fn]))
   | .range _ hi | .fromZero hi =>
     let lower ← match domain with
       | .range lo _ => do
-        let some (value, strict) := bounds[lo]?.getD none | return none
-        let some value ← toInt value | return none
+        let some (value, strict) := bounds[lo]?.getD none | return some unknown
+        let some value ← toInt value | return some unknown
         pure (some (value, strict))
       | _ => pure (some (← intExpr 0, false))
-    let some (lower, strictLower) := lower | return none
-    let some (upper, strictUpper) := bounds[hi]?.getD none | return none
-    let some upper ← toInt upper | return none
+    let some (lower, strictLower) := lower | return some unknown
+    let some (upper, strictUpper) := bounds[hi]?.getD none | return some unknown
+    let some upper ← toInt upper | return some unknown
     let lo ← if strictLower then mkAppM ``HAdd.hAdd #[lower, ← intExpr 1] else pure lower
     let hi ← if strictUpper then pure upper else mkAppM ``HAdd.hAdd #[upper, ← intExpr 1]
-    if ty.isConstOf ``Nat then return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyNatRange #[lo, hi, toExpr universal, fn]))
-    if ty.isConstOf ``Int then return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyIntRange #[lo, hi, toExpr universal, fn]))
-    return none
+    -- A pattern type over `Int` is `Int` here; its pattern is the body's.
+    if ← isDefEq ty (mkConst ``Nat) then
+      return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyNatRange #[lo, hi, toExpr universal, fn]))
+    if ← isDefEq ty (mkConst ``Int) then
+      return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyIntRange #[lo, hi, toExpr universal, fn]))
+    return some unknown
   | .unbounded => return none
 
 mutual
