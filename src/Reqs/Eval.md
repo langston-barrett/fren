@@ -446,7 +446,42 @@ pub proc reaches(
 A counterexample from testing is genuine, so it fails the check. But
 the search can miss outputs, so an input for which none were found
 suggests that the procedure is not realizable, without showing it. That
-gives a warning, `F0609`, and an inconclusive result. A check that no test
+gives a warning, `F0609`, and an inconclusive result, unless the search
+saw every output for that input. It does where each output without a
+definition is of a type with finitely many values, all of which the
+search tries: `Bool`, an abstract type, of the interpretation's number of
+values, and an enumeration whose variants have no fields; where there are
+at most 4096 assignments of those outputs; and where, in each of those,
+with the defined outputs given by their definitions, every definition has
+a value and some constraint of the procedure is `false`. Then no output
+exists for that input, as for enumeration where it sees every output
+(`check::enumerated_verdict`), so the input is a genuine counterexample,
+and fails realizability, with the constraints that are `false` as its
+core. `eval::outputs_seen` states when the search saw every output:
+
+```fren
+-- What one assignment of the outputs makes of the constraints: some is
+-- `false`, with every definition's value; none is, and all have values;
+-- or something it needs has no value.
+pub enum Assigned { Ruled, Satisfied, Undefined }
+
+set_option fren.lint.undecidable "allow" in
+pub proc outputs_seen(
+    sizes: Seq<Option<Int>>,     -- each output without a definition: its number of values, where the search tries all
+    count: Nat,                  -- the assignments of those outputs: the product of their numbers of values
+    assignments: Seq<Assigned>,  -- what each assignment makes of the constraints, if there are at most 4096
+): (det seen?) {
+    ensure rule: seen? iff ((forall (s: Option<Int>), when s in sizes, s != Option::None) and count <= 4096 and assignments.len = count
+        and (forall (a: Assigned), when a in assignments, a = Assigned::Ruled))
+
+    expect unbounded_unseen: when sizes != [] and sizes[0] = Option::None, not seen?
+    expect satisfied_unseen: when assignments != [] and assignments[0] = Assigned::Satisfied, not seen?
+    expect undefined_unseen: when assignments != [] and assignments[0] = Assigned::Undefined, not seen?
+}
+```
+
+`exhausted?` below is `seen?`, for the input that the search found no
+outputs for. A check that no test
 reached, because no admissible behaviour was found, is also inconclusive,
 with the warning `F0610`. A check with a trigger that no test reached,
 though some found what it is about, is inconclusive with the warning
@@ -461,18 +496,37 @@ pub proc test_verdict(
     kind: Kind,
     refuted?,            -- some test is a counterexample, or an input without outputs
     n_tests: Nat,        -- the tests that reached the check (`reaches`)
+    exhausted?,          -- for realizability: the search saw every output of such an input
 ): (det verdict: Verdict) {
     assume testable: not kind is Kind::Vacuity | Kind::Redundancy
     -- A cover goal is reached by its witnesses, which refute nothing.
     assume witnesses: when kind = Kind::Cover, not refuted?
 
-    ensure definite: when refuted? and kind != Kind::Realizability, verdict = Fail
-    ensure not_found: when refuted? and kind = Kind::Realizability, verdict = Inconclusive
+    ensure definite: when refuted? and (kind != Kind::Realizability or exhausted?), verdict = Fail
+    ensure not_found: when refuted? and kind = Kind::Realizability and not exhausted?, verdict = Inconclusive
     ensure passes: when not refuted? and n_tests > 0, verdict = Pass
     ensure untested: when not refuted? and n_tests = 0, verdict = Inconclusive
 
-    expect realizability_never_fails: when kind = Kind::Realizability, verdict != Fail
+    expect realizability_fails_exhausted: when kind = Kind::Realizability and not exhausted?, verdict != Fail
     expect cover_never_fails: when kind = Kind::Cover, verdict != Fail
+}
+```
+
+Testing that runs a check fails it only where the
+[matrix](Methods.md#the-matrix) has it refute the check: those whose pass
+is a proof, realizability among them. Its pass of such a check, where it
+finds no counterexample, is the one that `"random"` chosen alone reports,
+with the caveat `Random`:
+
+```fren
+use check::{Cell, ProofMethod, method_cell, testable?}
+
+expect random_within_matrix(kind: Kind, refuted?, n_tests: Nat, exhausted?) {
+    assume run: testable?(kind)
+    assume witnesses: when (kind) = Kind::Cover, not (refuted?)
+    call t := test_verdict(kind, refuted?, n_tests, exhausted?)
+    call cell := method_cell(kind, ProofMethod::Random)
+    expect fails_where_refutes: when (t.verdict) = Fail, (cell.cell) = Cell::Refutes
 }
 ```
 

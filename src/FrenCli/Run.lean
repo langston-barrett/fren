@@ -598,7 +598,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     (global : Bool) (keep : Fren.Core.CheckResult → Bool) (prelude : Prelude) (byCheck : Bool := false)
     (rep : Eval.Report := testReport sp ec c global args.seed args.nTests) (vias : Array (Span × Lean.Name) := #[]) :
     IO (Array Fren.Core.CheckResult × Array Msg × Bool) := do
-  let subject := s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
+  let subject := Fren.Core.subjectOf c.path global (c.props[0]?.map (·.name))
   if let some (file, pos) := sp.untestable? ec then
     let msg := Fren.Core.untestableMsg subject
     -- At its keyword, `forall` or `exists`.
@@ -618,9 +618,12 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
       shown := shown ++ (← printResult args.paint files c r vias)
   let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
+  -- Realizability refuted by an input whose outputs the search all saw
+  -- (`eval::test_verdict`), which its failure reports.
+  let refuted := results.any fun r => r.kind == .realizable && r.verdict == .fail
   if let some input := rep.noOutputs? then
     -- It explains why the checks it selects were not reached, too.
-    if !results.isEmpty then
+    if !results.isEmpty && !(refuted && results.all (·.verdict != .inconclusive)) then
       let msg := Fren.Core.noOutputsMsg subject input byCheck
       warn msg
       shown := shown.push msg
@@ -739,7 +742,7 @@ def testedKeeps (c : CComp) (kinds : Array Fren.Core.CheckKind) (r : Fren.Core.C
 
 /-- The subject of the messages about `c`, as they show it. -/
 def subjectOf (c : CComp) (global : Bool) : String :=
-  s!"`{Fren.Core.showComp (if global then c.path ++ (c.props[0]?.map (·.name)).getD .anonymous else c.path)}`"
+  Fren.Core.subjectOf c.path global (c.props[0]?.map (·.name))
 
 /-- Whether two results are of the same check. -/
 def sameCheck (a b : Fren.Core.CheckResult) : Bool :=
@@ -874,6 +877,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
     | none => pure ()
+    -- The checks that the method their evidence sets does not run
+    -- (`check::method_run`).
+    for msg in (toCore c).skippedMsgs (subjectOf c global) c.tested c.enumerated kinds do
+      printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
+      shown := shown.push msg
   IO.eprintln (Fren.Core.summary all byTesting byBound)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""

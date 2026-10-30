@@ -1,0 +1,63 @@
+error[F0601]: `c` is not realizable
+ --> test/cli/results/f0601_random_exhausted.fren:6:6
+  |
+6 | proc c(x: Int): (big?) {
+  |      ^ not realizable
+  |
+  = note: for the input
+              x = -1
+          no outputs satisfy `bad`
+  = help: weaken one of them, or add an `assume` that rules this input out
+
+note[F0654]: the redundancy checks of `c` are not run by random testing
+ --> test/cli/results/f0601_random_exhausted.fren:6:6
+  |
+6 | proc c(x: Int): (big?) {
+  |      ^
+  |
+  = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+  = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+
+error[F0601]: `d` is not realizable
+  --> test/cli/results/f0601_random_exhausted.fren:12:6
+   |
+12 | proc d(x?): (a?, b?) {
+   |      ^ not realizable
+   |
+   = note: for the input
+               x? = false
+           no outputs satisfy `one` and `two`
+   = help: weaken one of them, or add an `assume` that rules this input out
+
+note[F0654]: the redundancy checks of `d` are not run by random testing
+  --> test/cli/results/f0601_random_exhausted.fren:12:6
+   |
+12 | proc d(x?): (a?, b?) {
+   |      ^
+   |
+   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+   = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+
+warning[F0609]: testing found no outputs of `e` for the input x = 1
+  --> test/cli/results/f0601_random_exhausted.fren:18:6
+   |
+18 | proc e(x: Int): (y: Int) {
+   |      ^ possibly not realizable
+   |
+   = note: the search tries only some values, so outputs may still exist
+   = help: raise `--tests`; the checks set to random testing are not asked of the solver
+
+note[F0654]: the redundancy checks of `e` are not run by random testing
+  --> test/cli/results/f0601_random_exhausted.fren:18:6
+   |
+18 | proc e(x: Int): (y: Int) {
+   |      ^
+   |
+   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+   = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+
+fren: 0 passed, 2 failed, 1 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0601, F0609, F0654.
+For more information about an error, try `fren --explain F0601`.
+exit=1

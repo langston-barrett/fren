@@ -7,7 +7,26 @@ error[F0639]: this quantifier cannot be evaluated, so `unguarded` cannot be test
   = note: testing enumerates a bound name of a type that is not listed over its domain: the members in `x in s`, or the integers between a lower and an upper bound, as in `0 <= i < n`, in the guard
   = help: guard the bound name, as in `forall (x: T), when x in s, ...` or `exists (i: Int), 0 <= i < q.len and ...`, or check it with the solver
 
+note[F0654]: the redundancy checks of `unguarded` are not run by random testing
+ --> test/cli/results/f0639_untestable.fren:8:6
+  |
+8 | proc unguarded(s: Set<Int>): (pos?) {
+  |      ^^^^^^^^^
+  |
+  = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+  = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+
+note[F0654]: the redundancy checks of `guarded` are not run by random testing
+  --> test/cli/results/f0639_untestable.fren:14:6
+   |
+14 | proc guarded(s: Set<Int>): (pos?) {
+   |      ^^^^^^^
+   |
+   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+   = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+
 fren: 1 passed (1 by random testing), 0 failed, 0 inconclusive, 0 redundant
 
-For more information about this error, try `fren --explain F0639`.
+Some errors have detailed explanations: F0639, F0654.
+For more information about an error, try `fren --explain F0639`.
 exit=1

@@ -842,12 +842,14 @@ abbrev EnumHook := CompInfo → Core.Comp Expr → Array Expr → Array Expr →
   Array CheckKind → MetaM (Except Core.Msg Core.Enumeration.Enumerated)
 
 /-- All selected checks for one procedure, in reporting order, with the theorems
-that its cover goals are met (`coverWitness`), for the caller to add, and
-what enumerating the checks set to enumeration found, by `enumerate`. -/
+that its cover goals are met (`coverWitness`), for the caller to add,
+what enumerating the checks set to enumeration found, by `enumerate`, and
+the messages about the checks that the method their evidence sets does not
+run (`F0654`). -/
 partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none)
     (hooks? : Option ElabHooks := none) (own : Array (Array Core.Ty) := #[])
     (foreign : Array (Name × Array Core.Ty) := #[]) :
-    MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
+    MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated) × Array Core.Msg) := do
   let kinds := if c.subset?.isSome then #[.realizable]
     else if c.subsetInvariant?.isSome then #[.definedness, .completeness, .disjointness, .precondition] else kinds
   let c := { c with uses := ← checkUses c }
@@ -1024,6 +1026,11 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- Only the `fren` command runs the checks set to testing (`check::by_testing`),
     -- and enumeration those set to enumeration (`check::by_evidence`).
     let enumerated ← if c.enumerated.any then (enumerate?.mapM fun f => f c full fvs ufs fns kinds) else pure none
+    -- The checks that the method their evidence sets does not run
+    -- (`check::method_run`), as the `fren` command shows its subject.
+    let global := st0.globals.toList.any fun (p, g) => g.decl == c.decl && p != g.path
+    let subject := Core.subjectOf c.path global (c.props[0]?.map (·.name))
+    let skipped := full.skippedMsgs subject c.tested c.enumerated kinds
     let (comp, kinds) := full.untested (c.tested.union c.enumerated) kinds
     let cache : QueryCache ← IO.mkRef {}
     let memberModels ← IO.mkRef (#[] : Array Smt.Model)
@@ -1098,7 +1105,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         let mut instResults := #[]
         for targs in own do
           let ic ← instanceContract hooks elaborated f targs
-          let (rs, _, _) ← checkComp ic #[.realizable] none hooks?
+          let (rs, _, _, _) ← checkComp ic #[.realizable] none hooks?
           instResults := instResults ++ rs.filter (·.kind == .realizable)
         let checked := Core.genericContract (·.verdict) r instResults
         pure (results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x)
@@ -1112,10 +1119,10 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     if let some hooks := hooks? then
       for (f, targs) in foreign do
         let some b := st0.bodies.get? f | continue
-        let (rs, _, _) ← checkComp b #[.realizable]
+        let (rs, _, _, _) ← checkComp b #[.realizable]
         unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
         let ic ← instanceContract hooks b f targs
-        let (rs, _, _) ← checkComp ic #[.realizable] none hooks?
+        let (rs, _, _, _) ← checkComp ic #[.realizable] none hooks?
         results := results ++ (rs.filter (·.kind == .realizable)).map fun r => { r with clashes := #[] }
     let mut witnesses := #[]
     for g in c.covers do
@@ -1124,6 +1131,6 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       if let some (_, model) := (← models.get).find? (·.1 == goal) then
         if passed then
           if let some d ← coverWitness c fvs g model then witnesses := witnesses.push d
-    return (results, witnesses, enumerated)
+    return (results, witnesses, enumerated, skipped)
 
 end Fren

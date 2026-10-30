@@ -169,7 +169,8 @@ def errorsLogged : CommandElabM Nat :=
 theorems of its cover goals (`checkComp`), or the exception it threw, with
 the messages, traces and info trees that it logged. -/
 abbrev CheckOutcome :=
-  Except Exception (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) ×
+  Except Exception (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated) ×
+    Array Core.Msg) ×
     MessageLog × PersistentArray TraceElem × PersistentArray InfoTree
 
 /-- Generate a structural induction theorem for the conjunction of the
@@ -298,7 +299,8 @@ def checkItems (items : Array (Name × CompInfo × Array CheckKind)) (sites : Ar
 state, and gives its results, or throws its exception, as `liftTermElabM`
 would have. -/
 def awaitCheck (task : Task (Except Exception CheckOutcome)) :
-    CommandElabM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated)) := do
+    CommandElabM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated) ×
+      Array Core.Msg) := do
   let (r, msgs, traces, trees) ← ofExcept (← IO.wait task)
   modify fun s => { s with messages := s.messages ++ msgs, traceState.traces := s.traceState.traces ++ traces,
                            infoState.trees := s.infoState.trees ++ trees }
@@ -348,7 +350,7 @@ where
   let mut all := #[]
   let mut byBound := 0
   for (p, c, _) in items, task in tasks do
-    let (results, witnesses, enumerated?) ← try awaitCheck task catch ex => cancel.set; throw ex
+    let (results, witnesses, enumerated?, skipped) ← try awaitCheck task catch ex => cancel.set; throw ex
     -- Proof artifacts are supplementary: preserve the checker report even
     -- if generation fails, and discard any partial declarations/messages.
     let proofState ← get
@@ -371,6 +373,10 @@ where
       if let some msg := e.boundedMsg? s!"`{Core.showComp p}`" c.tested then
         logAbout p c.ref msg.text .information
     | none => pure ()
+    -- The checks that the method their evidence sets does not run
+    -- (`check::method_run`).
+    for msg in skipped do
+      logAbout p c.ref msg.text .information
   match Core.summarySeverity all with
   | .info => logInfo (Core.summary all 0 byBound)
   | .warning => logWarning (Core.summary all 0 byBound)

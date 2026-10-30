@@ -1,0 +1,32 @@
+-- The checks that the method their evidence sets does not run are
+-- reported, with why, in both front ends (`F0654`, `check::method_run`):
+-- random testing searches for no witness, so `r`'s vacuity and redundancy
+-- are not run.
+set_option fren.evidence "random" in
+proc sampled(x: Int): (big?) {  --~ info: the vacuity and redundancy checks of `sampled` are not run by random testing
+    ensure r: when x > 0, big?
+}
+--~^^^[hosted] info: the checks of `sampled` set to random testing are run by `fren check`, not in Lean
+
+-- Enumeration runs them.
+set_option fren.evidence "enumerated" in
+proc enumerated(x: Int): (big?) {  --~ info: 1 check of `enumerated` holds for every behaviour up to size 3
+    ensure r: when x > 0, big?
+}
+
+-- Random testing does not run the definedness of an index, which is about
+-- where the evaluator knows no value.
+set_option fren.evidence "random" in
+proc indexed(i: Int): (y: Int) {  --~ info: the redundancy and definedness checks of `indexed` are not run by random testing
+    assume small: 0 <= i < 3
+    ensure r: y = [1, 2, 3][i]
+}
+--~^^^^[hosted] info: the checks of `indexed` set to random testing are run by `fren check`, not in Lean
+
+-- Nor does enumeration.
+set_option fren.evidence "enumerated" in
+proc enumerated_index(i: Int): (y: Int) {  --~ info: the definedness checks of `enumerated_index` are not run by enumeration
+    assume small: 0 <= i < 3
+    ensure r: y = [1, 2, 3][i]
+}
+--~^^^^ info: 1 check of `enumerated_index` holds for every behaviour up to size 3

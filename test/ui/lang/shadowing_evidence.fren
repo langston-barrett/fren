@@ -19,7 +19,7 @@ pub proc members(n: Int): (set_option fren.evidence "random" in det y!: Int) {
 }
 
 set_option fren.evidence "random" in
-pub proc defined(q: Seq<Int>): (d!: Int) {
+pub proc defined(q: Seq<Int>): (d!: Int) {  --~ info: the redundancy and definedness checks of `defined` are not run by random testing
     assume nonempty: q != []
     out d := q[0]
 }

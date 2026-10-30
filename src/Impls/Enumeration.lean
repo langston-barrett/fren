@@ -1272,6 +1272,41 @@ impl method_of: check::by_evidence for (k : CheckKind) (t e o : Bool) {
   intro k t e o _
   cases k <;> cases t <;> cases e <;> cases o <;> decide
 
+instance : Fren.Finite Fren.Core.ProofMethod := ⟨[.solver, .enumerated, .random, .lean], by intro x; cases x <;> simp⟩
+
+def toProofMethod : Fren.Core.ProofMethod → check.ProofMethod
+  | .solver => .Solver
+  | .enumerated => .Enumerated
+  | .random => .Random
+  | .lean => .Lean
+
+def toDispatch : Fren.Core.Dispatch → check.Dispatch
+  | .run => .Run
+  | .bySolver => .BySolver
+  | .skip => .Skip
+  | .reject => .Reject
+
+def toReason : Fren.Core.Reason → check.Reason
+  | .selected => .Selected
+  | .noLean => .NoLean
+  | .notSettable => .NotSettable
+  | .patternType => .PatternType
+  | .noWitnessSearch => .NoWitnessSearch
+  | .noValue => .NoValue
+  | .notEnumerated => .NotEnumerated
+
+-- What runs each check, under each method (`dispatchOf`).
+impl dispatch_of: check::method_run for (k : CheckKind) (i : Fren.Core.CheckedItem) (m : Fren.Core.ProofMethod) (o : Bool) {
+  kind := toCheckKind k,
+  item := toCheckedItem i,
+  method := toProofMethod m,
+  obligation? := o,
+  dispatch := toDispatch (Fren.Core.dispatchOf k i m o).1,
+  reason := toReason (Fren.Core.dispatchOf k i m o).2,
+} by
+  intro k i m o _
+  cases k <;> cases i <;> cases m <;> cases o <;> decide
+
 -- The verdicts of enumeration (`enumeratedVerdict`).
 impl enumerated_verdict: check::enumerated_verdict for (k : CheckKind) (v : Verdict) (c x o : Bool) {
   kind := toCheckKind k,

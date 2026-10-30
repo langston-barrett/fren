@@ -6844,6 +6844,15 @@ def lintLiterals : M Unit := do
   for (l, span, msg) in (← get).literals do lintFix l span msg
   modify fun s => { s with literals := #[] }
 
+/-- What `F0215` calls the item `item`, after `set_option ... in`, if it is
+a function or a constant, through further settings with `in`, and what
+its checks are of: a body, a constant's value, or a contract. -/
+partial def evidenceTarget? : Item → Option (String × Fren.Core.CheckedItem)
+  | .function _ _ _ _ _ body .. => some ("a function", if body.isSome then .body else .contract)
+  | .const .. => some ("a constant", .body)
+  | .lintSetting _ _ _ _ _ (some body) => evidenceTarget? body
+  | _ => none
+
 /-- Records that the settings that set `lints` here are in effect at an
 item, or at a setting that reads their level (`unused_lint_setting`). -/
 def noteSettingsSeen (lints : Array Lint := Lint.all) : M Unit :=
@@ -7527,10 +7536,19 @@ partial def elabItem (item : Item) : M Unit := do
       -- items it would set (`Reqs/Check#checking-by-testing`).
       if (Fren.Core.evidenceTested? value).isNone then
         modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.invalidEvidenceMsg value } }
-      modify fun s => { s with evidence? := some (value, valueSpan) }
       if let some body := body? then
+        -- Before a function or a constant, whose checks are the solver's,
+        -- only the solver can be set (`F0215`), and the item is elaborated
+        -- as though it were (`Fren.Core.dispatchOf`).
+        if let (some (what, item), some ev) := (evidenceTarget? body, Fren.Core.evidenceOf? value) then
+          unless ev.settable item do
+            modify fun s => { s with diags := s.diags.push { file := s.file, span := stx, msg := Fren.Core.itemEvidenceMsg what value } }
+            elabItem body
+            return
+        modify fun s => { s with evidence? := some (value, valueSpan) }
         elabItem body
         modify fun s => { s with evidence? := prev }
+      else modify fun s => { s with evidence? := some (value, valueSpan) }
       return
     let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
     let some target := Fren.Core.LintTarget.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)

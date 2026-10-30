@@ -14,9 +14,10 @@ proc seqs(q: Seq<Int>): (s: Seq<Int>) {
 }
 
 -- Not a definedness error, as it is with the solver
--- (`refinement_bindings.fren`): testing does not check definedness.
+-- (`refinement_bindings.fren`): testing does not check definedness, and
+-- says so (`F0654`).
 set_option fren.evidence "random" in
-expect unguarded(q: Seq<Int>) {
+expect unguarded(q: Seq<Int>) {  --~ info: the definedness checks of `unguarded` are not run by random testing
     assume spec_pos: (1) > 0  --~[cli] warning: this assumption mentions no variable
     call concrete := seqs(q)
     expect r: ((concrete.s)[0]) = ((q)[0])
@@ -24,7 +25,7 @@ expect unguarded(q: Seq<Int>) {
 
 -- Testing finds a sequence whose first element is not 0.
 set_option fren.evidence "random" in
-expect wrong(q: Seq<Int>) {
+expect wrong(q: Seq<Int>) {  --~ info: the definedness checks of `wrong` are not run by random testing
     assume spec_pos: ((q).len) > 0  --~[cli] warning: say whether it is empty with `[]`, not `len`
     call concrete := seqs(q)
     expect r: (0) = (if (q) != [] then (q)[0] else 0)  --~[cli] error: expectation `wrong::r` does not hold

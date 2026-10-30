@@ -40,7 +40,7 @@ elab "#check_nested_enumeration" : command => do
     for path in #[`nested_subset_enumeration.records, `nested_subset_enumeration.wrappers,
         `nested_subset_enumeration.payloads, `nested_subset_enumeration.shared] do
       let some comp := state.comps.get? path | throwError "missing enumeration component {path}"
-      let (_, _, checked) ← Fren.checkComp comp #[.expect] (some Fren.Enumerate.enumerate)
+      let (_, _, checked, _) ← Fren.checkComp comp #[.expect] (some Fren.Enumerate.enumerate)
       let some checked := checked | throwError "enumeration was not requested for {path}"
       let checked ← match checked with
         | .ok checked => pure checked
@@ -50,30 +50,30 @@ elab "#check_nested_enumeration" : command => do
         throwError "nested membership was not enforced for {path}"
     let some (_, maybeType) := state.comps.toList.find? (fun (_, c) => c.subset? == some `nested_subset_enumeration.Maybe)
       | throwError "missing interpreted inhabitation component"
-    let (_, _, checked) ← Fren.checkComp maybeType #[.realizable] (some Fren.Enumerate.enumerate)
+    let (_, _, checked, _) ← Fren.checkComp maybeType #[.realizable] (some Fren.Enumerate.enumerate)
     let some (.ok checked) := checked | throwError "interpreted inhabitation was not enumerated"
     let maybeResults := checked.results
     unless maybeResults.size == 1 && maybeResults.all (·.verdict == .fail) do
       throwError "one favorable interpretation certified universal inhabitation"
     let some numeric := state.comps.get? `nested_subset_enumeration.numeric | throwError "missing numeric component"
-    let (_, _, checked) ← Fren.checkComp numeric #[.expect] (some Fren.Enumerate.enumerate)
+    let (_, _, checked, _) ← Fren.checkComp numeric #[.expect] (some Fren.Enumerate.enumerate)
     let some (.ok checked) := checked | throwError "numeric membership was not enumerated"
     let results := checked.results
     unless results.any (fun r => r.prop? == some `positive && r.verdict != .fail) &&
         results.any (fun r => r.prop? == some `stricter && r.verdict == .fail) do
       throwError "numeric invariant admitted an invalid counterexample or hid a valid one"
     let some bad := state.comps.get? `nested_subset_enumeration.bad_output | throwError "missing output component"
-    let (_, _, checked) ← Fren.checkComp bad #[.realizable] (some Fren.Enumerate.enumerate)
+    let (_, _, checked, _) ← Fren.checkComp bad #[.realizable] (some Fren.Enumerate.enumerate)
     let some (.ok checked) := checked | throwError "output membership was not enumerated"
     let results := checked.results
     unless results.size == 1 && results.all (·.verdict == .fail) do
       throwError "an invalid output witnessed realizability"
     let some constrained := state.comps.get? `nested_subset_enumeration.constrained_result | throwError "missing constrained function component"
-    let (_, _, result) ← Fren.checkComp constrained #[.expect] (some Fren.Enumerate.enumerate)
+    let (_, _, result, _) ← Fren.checkComp constrained #[.expect] (some Fren.Enumerate.enumerate)
     let some (.error why) := result | throwError "a constrained UF result table was silently enumerated without its invariant"
     unless why.code? == some "F0645" do throwError "unsupported result constraint was not reported honestly"
     let some defined := state.comps.get? `nested_subset_enumeration.bad_definition | throwError "missing defined output component"
-    let (definedResults, _, _) ← Fren.checkComp defined #[.definedness] (some Fren.Enumerate.enumerate)
+    let (definedResults, _, _, _) ← Fren.checkComp defined #[.definedness] (some Fren.Enumerate.enumerate)
     unless definedResults.any (fun r => r.verdict == .fail && r.patTy? == some "@invariant:nested_subset_enumeration::Positive::invariant") do
       throwError "a defined output assumed its own invariant before the giving-site check"
 #check_nested_enumeration

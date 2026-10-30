@@ -26,6 +26,11 @@ help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
 ---
+info: LiterateFirst.md:18:9: the redundancy checks of `chapters::by_testing` are not run by random testing
+
+note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+---
 error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 
 counterexample: (any values)
@@ -54,6 +59,11 @@ counterexample: a? = true, b? = true
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
 info: LiterateFirst.md:18:9: the checks of `chapters::by_testing` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+---
+info: LiterateFirst.md:18:9: the redundancy checks of `chapters::by_testing` are not run by random testing
+
+note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 ---
 error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 

@@ -802,21 +802,28 @@ inductive Method where
 
 /-- The checks that enumeration decides: all but definedness, of indexes,
 which only sequences have, and of values of pattern types, and the
-postconditions of defined functions, which only their bodies have
-(`check::by_evidence`). -/
+postconditions of defined functions, which only their bodies have: those
+that `dispatchOf` runs (`check::by_evidence`). -/
 def enumerable (kind : CheckKind) : Bool :=
-  !(kind == .definedness || kind == .postcondition)
+  (dispatchOf kind .component .enumerated).1 == .run
 
 /-- How a check of kind `kind` is run, given its evidence, and whether it
 is the definedness of a value given where a pattern type is declared,
-which the solver always checks (`check::by_evidence`). -/
+which the solver always checks: as `dispatchOf` runs it under enumeration,
+if the evidence includes it, and otherwise under testing
+(`check::by_evidence`). -/
 def methodOf (kind : CheckKind) (ev : Evidence) (obligation : Bool := false) : Method :=
-  if obligation then .solver
-  else if ev.enumerated then
-    if !enumerable kind then .skipped
-    else if ev.tested then .enumerationThenTesting
-    else .enumeration
-  else if ev.tested then (if kind.untestable then .skipped else .testing)
+  let dispatch (m : ProofMethod) := (dispatchOf kind .component m obligation).1
+  if ev.enumerated then
+    match dispatch .enumerated with
+    | .run => if ev.tested then .enumerationThenTesting else .enumeration
+    | .skip => .skipped
+    | .bySolver | .reject => .solver
+  else if ev.tested then
+    match dispatch .random with
+    | .run => .testing
+    | .skip => .skipped
+    | .bySolver | .reject => .solver
   else .solver
 
 /-- `c` with only the checks of `t`, those that enumeration decides, and
@@ -832,11 +839,9 @@ def _root_.Fren.Core.Comp.only (t : Tested) (c : Comp F) (kinds : Array CheckKin
       tables := c.tables.filter fun s => t.props.contains s.site.prop || t.insts.contains s.site.prop },
     kinds.filter fun k => enumerable k && (k != .realizable || t.realizable) && (k != .redundancy || t.redundancy))
 
-/-- Of the checks that enumeration decides (`enumerable`), whether one
-passes on a proof, rather than on a model (`Reqs/Check#verdict-families`). -/
-def provesFamily (kind : CheckKind) : Bool :=
-  kind == .realizable || kind == .expect || kind == .inst || kind == .determinism || kind == .completeness
-    || kind == .disjointness || kind == .precondition
+/-- Whether a check passes on a proof, rather than on a model
+(`check::proof?`, `Reqs/Check#verdict-families`). -/
+def provesFamily (kind : CheckKind) : Bool := kind.proof
 
 /-- What enumeration within the bound shows of a check
 (`check::enumerated_verdict`): `exact` when every slot's values are all of

@@ -1,0 +1,21 @@
+-- Random testing fails realizability with an input for which the search
+-- saw every output (`eval::test_verdict`): each output is defined, or of a
+-- type whose values it tries in full. `c`'s and `d`'s outputs are; `e`'s is
+-- an `Int`, so outputs may still exist, and it only warns (`F0609`).
+set_option fren.evidence "random" in
+proc c(x: Int): (big?) {
+    out big? := x > 0
+    ensure bad: big? and not big?
+}
+
+set_option fren.evidence "random" in
+proc d(x?): (a?, b?) {
+    ensure one: a? iff not b?
+    ensure two: a? iff (b? and (x? or not x?))
+}
+
+set_option fren.evidence "random" in
+proc e(x: Int): (y: Int) {
+    ensure above: y > x
+    ensure below: y < x
+}

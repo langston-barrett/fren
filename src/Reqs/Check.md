@@ -1767,7 +1767,8 @@ cannot enumerate, one with a bound name without a
 [domain](Lang/Quantifiers.md#guards), is not run, and the quantifier is an
 error (`F0639`), as [Evaluation](Eval.md#quantifiers) says: such a check
 needs the solver's evidence, or a `trusted` claim. The
-checks that testing cannot decide are not run: vacuity and redundancy,
+checks that testing cannot decide are not run, and an information message
+says which, and why (`F0654`; see [Proof methods](Methods.md#what-runs-today)): vacuity and redundancy,
 which ask whether something can hold at all, which a failed search does
 not refute; definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
@@ -1797,30 +1798,26 @@ Lean has no evaluator, so `#fren_check` does not run a check whose evidence
 is testing: it reports, as information, that `fren check` tests it. Such a
 check is not part of the [agreement with Lean](Cli.md#agreement-with-lean).
 
-`check::by_testing` gives how a check is run:
+`check::testable?` gives the checks that testing runs, and
+`check::by_testing` how a check is run:
 
 ```fren
 pub enum Run { BySolver, ByTesting, Skipped }
+
+-- The checks that testing runs.
+pub fn testable?(kind: Kind) :=
+    not kind in {Kind::Vacuity, Kind::Redundancy, Kind::Definedness, Kind::Completeness, Kind::Disjointness, Kind::Precondition, Kind::Reachability}
 
 pub proc by_testing(
     kind: Kind,
     tested?,               -- the check's evidence is testing
 ): (det run: Run) {
-    use self::Kind::{
-        Completeness,
-        Definedness,
-        Disjointness,
-        Precondition,
-        Reachability,
-        Redundancy,
-        Vacuity,
-    }
     use self::Run::{BySolver, ByTesting, Skipped}
 
     ensure rule: run = table {
         | not tested? => BySolver,
-        | tested? and not kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition, Reachability} => ByTesting,
-        | tested? and kind in {Vacuity, Redundancy, Definedness, Completeness, Disjointness, Precondition, Reachability} => Skipped,
+        | tested? and testable?(kind) => ByTesting,
+        | tested? and not testable?(kind) => Skipped,
     }
 
     expect never_both: when tested?, run != BySolver
@@ -1868,7 +1865,8 @@ used instead. Before a member, it is `F0216`, as any option but
 `fren.evidence` is.
 
 `check::evidence_value` gives what each value sets, and `check::by_evidence`
-how each check is run:
+how each check is run, as `check::method_run` of [Proof
+methods](Methods.md#what-runs-today) says:
 
 ```fren
 -- `Tested` and `EnumeratedTested` are the retired spellings `"tested"`
@@ -1888,10 +1886,6 @@ pub proc evidence_value(value: EvidenceValue): (det valid?, det random?, det enu
     expect invalid_sets_nothing: when not valid?, not random? and not enumerated?
     expect no_alias: when value in {Tested, EnumeratedTested}, not valid?
 }
-
--- The checks that testing decides (`check::by_testing`).
-pub fn testable?(kind: Kind) :=
-    not kind in {Kind::Vacuity, Kind::Redundancy, Kind::Definedness, Kind::Completeness, Kind::Disjointness, Kind::Precondition, Kind::Reachability}
 
 -- The checks that enumeration decides: all but definedness, whose indexes
 -- only sequences have, and postconditions, which only bodies have.
@@ -1930,8 +1924,8 @@ decide completeness, disjointness, reachability and preconditions, which
 are about where an expression is evaluated: where no row of a table holds,
 the table's value is the interpretation's unspecified value of its type,
 which enumeration enumerates too (see [Searching](#searching)), as the
-solver leaves it unconstrained. The definedness of indexes is not run:
-they are of sequences, which are not enumerable. A value given where a
+solver leaves it unconstrained. The definedness of indexes is not run,
+and that is reported (`F0654`): they are of sequences, which are not enumerable. A value given where a
 pattern type is declared is the solver's to check, whatever the evidence,
 for testing too: neither testing nor enumeration decides it, and dropping
 it would leave a value outside its type unreported (`F0661`).
@@ -2199,9 +2193,16 @@ to the bound*, a weaker pass than a proof, and a check that fails on
 exist. Realizability's goal has `∃ outputs` within it: its failure, a
 conflict, is genuine only where the outputs are exhausted, since their
 values are pinned by the input, and its contradictory assumptions rest on
-`unsat`. `check::enumerated_verdict`:
+`unsat`. `check::proof?` gives the checks that pass on a proof, and
+`check::enumerated_verdict` the verdicts:
 
 ```fren
+-- Whether a pass of a check of this kind is a proof from hypotheses,
+-- rather than a witness (see [Verdict families](#verdict-families)). As
+-- the chapter on evidence of #439 defines it; one of the two goes when
+-- #439 merges.
+pub fn proof?(kind: Kind) := not kind in {Kind::Cover, Kind::Vacuity, Kind::Reachability, Kind::Redundancy}
+
 pub proc enumerated_verdict(
     kind: Kind,
     verdict: Verdict,        -- what the check algorithm reaches from the search's answers
@@ -2212,15 +2213,7 @@ pub proc enumerated_verdict(
     det reported: Verdict,
     det bounded?,            -- it holds only up to the bound
 ) {
-    use self::Kind::{
-        Completeness,
-        Determinism,
-        Disjointness,
-        Expectation,
-        InstanceAssumption,
-        Precondition,
-        Realizability,
-    }
+    use self::Kind::Realizability
     use self::Verdict::{Fail, Inconclusive, Pass}
 
     ensure reported_rule: reported = table {
@@ -2228,17 +2221,18 @@ pub proc enumerated_verdict(
         | not exact? and verdict = Pass => Pass,
         | not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? => Fail,
         | not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) => Inconclusive,
-        | not exact? and verdict = Fail and kind in {Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition} => Fail,
-        | not exact? and verdict = Fail and not kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition} => Inconclusive,
+        | not exact? and verdict = Fail and kind != Realizability and proof?(kind) => Fail,
+        | not exact? and verdict = Fail and not proof?(kind) => Inconclusive,
         | not exact? and verdict = Inconclusive => Inconclusive,
     }
     -- What rests on an `unsat` answer that does not see every behaviour.
     ensure bounded_rule: bounded? iff (not exact? and reported != Fail and verdict != Inconclusive
-        and (verdict = Fail or kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition}))
+        and (verdict = Fail or proof?(kind)))
 
     expect decided: when exact?, reported = verdict
     expect failures_genuine: when reported = Fail, verdict = Fail
-    expect bounded_pass_proves: when reported = Pass and bounded?, kind in {Realizability, Expectation, InstanceAssumption, Determinism, Completeness, Disjointness, Precondition}
+    expect bounded_pass_proves: when reported = Pass and bounded?, proof?(kind)
+    expect proof_passes_bounded: when proof?(kind) and reported = Pass and not exact?, bounded?
 }
 ```
 

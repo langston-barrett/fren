@@ -24,11 +24,19 @@ structure Tally where
   tests : Nat := 0
   /-- The first counterexample. -/
   refuted? : Option Fren.Core.Detail := none
+  /-- For realizability: the counterexample is an input for which the
+  search saw every output (`Spec.noOutputsExist`). -/
+  exhausted : Bool := false
 
 def Tally.reach (t : Tally) : Tally := { t with tests := t.tests + 1 }
 
 def Tally.refute (t : Tally) (d : Fren.Core.Detail) : Tally :=
   if t.refuted?.isSome then t else { t with refuted? := some d }
+
+/-- `t`, refuted by an input for which the search saw every output, which
+takes the place of an earlier input without outputs that it did not. -/
+def Tally.refuteExhausted (t : Tally) (d : Fren.Core.Detail) : Tally :=
+  if t.exhausted then t else { t with refuted? := some d, exhausted := true }
 
 def Spec.shown (sp : Spec) (vars : Array Var) (env : Env) (keep : Var → Bool) : Assignment :=
   vars.filterMap fun v => if keep v then env[v.name]?.map (v.name, ·.showAs sp v.ty) else none
@@ -121,7 +129,61 @@ structure Report where
   behaviours that meet the procedure (`F0616`). -/
   unwitnessed : Array CheckResult := #[]
 
-def verdictOf (kind : CheckKind) (t : Tally) : Fren.Core.Verdict := testVerdict kind t.refuted?.isSome t.tests
+def verdictOf (kind : CheckKind) (t : Tally) : Fren.Core.Verdict := testVerdict kind t.refuted?.isSome t.tests t.exhausted
+
+/-- Every value of `ty`, where it has finitely many, all of which a search
+tries (`smallValues`): `Bool`, an abstract type, with the world's number
+of values, and an enumeration whose variants have no fields. -/
+def finiteValues? (sp : Spec) (w : World) : VTy → Option (Array Val)
+  | .bool => some #[.bool false, .bool true]
+  | .abstract s => some ((Array.range (w.size s)).map (.abs s))
+  | .data p _ => do
+    let d ← sp.data.find? p
+    if d.isRecord || d.ctors.isEmpty || !d.ctors.all (·.fields.isEmpty) then none
+    some ((Array.range d.ctors.size).map fun i => .ctor p i #[])
+  | _ => none
+
+/-- Whether `c` has no outputs for the input and behaviours of the calls in
+`env`, under `I`, decided only where the search sees every output
+(`eval::outputs_seen`): each output is defined, or of a type of
+`finiteValues?`, with at most `limit` assignments of the others, and each
+assignment, with the defined outputs from their definitions, makes one of
+`reqs`, its definitions and guarantees, `false`. If so, those that are
+`false`, one for each assignment, preferring those already found. -/
+def Spec.noOutputsExist (sp : Spec) (w : World) (I : Interp) (c : Comp) (reqs : Array Atom) (env : Env)
+    (limit : Nat := 4096) : Option (Array Name) := Id.run do
+  let free := c.vars.filter fun v => v.role == .output && !c.defs.any (·.1 == v.name)
+  let domains := free.map fun v => (v.name, finiteValues? sp w v.ty)
+  let sizes := domains.map (·.2.map (·.size))
+  let count := sizes.foldl (· * ·.getD 0) 1
+  let mut assignments : Array Assigned := #[]
+  let mut core : Array Nat := #[]
+  if sizes.all (·.isSome) && count ≤ limit then
+    for k in [0:count] do
+      -- The `k`th assignment of the outputs without definitions.
+      let mut env := env
+      let mut j := k
+      for (x, vs?) in domains do
+        let vs := vs?.getD #[]
+        env := env.insert x vs[j % vs.size]!
+        j := j / vs.size
+      -- The defined outputs, from their definitions, which may read one
+      -- another: one round for each.
+      for _ in c.defs do
+        for (d, e) in c.defs do
+          unless env.contains d do
+            if let some v := e.eval I env.look then env := env.insert d v
+      let values := reqs.map (·.eval I env.look)
+      let falsified := values.zipIdx.filterMap fun (v, i) => if v == some false then some i else none
+      assignments := assignments.push <|
+        if !c.defs.all (env.contains ·.1) then .Undefined
+        else if !falsified.isEmpty then .Ruled
+        else if values.all (·.isSome) then .Satisfied
+        else .Undefined
+      if let some i := falsified[0]? then
+        unless falsified.any core.contains do core := core.push i
+  if !outputsSeen sizes count assignments limit then return none
+  return some ((core.qsort (· < ·)).map (reqs[·]!.label))
 
 /-- Whether a test that found what a check is about, in `env`, reaches it:
 whether the check's trigger, if any, holds there (`eval::reaches`). -/
@@ -181,7 +243,11 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     let some env ← ({ vars := outs, atoms := reqs, ints, strs : Problem }.solve sp w I adm.env)
       | let input := sp.shown vars adm.env fun v => v.role.isUniversal && v.isPub
         if noOutputs?.isNone then noOutputs? := some input
-        realizable := realizable.refute (.conflict input #[])
+        -- Where the search saw every output, the input is a genuine
+        -- counterexample (`eval::test_verdict`).
+        realizable := match sp.noOutputsExist w I c reqs adm.env with
+          | some core => realizable.refuteExhausted (.conflict input core)
+          | none => realizable.refute (.conflict input #[])
         continue
     behaviours := behaviours + 1
     for e in expects, k in [0:expects.size] do
