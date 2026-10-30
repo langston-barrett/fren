@@ -674,6 +674,18 @@ theorem fix_alternatives_holds (t : lint.RunTest) (w : lang.Value) :
       exact ⟨0, ⟨Int.le_refl _, by simp⟩, by simpa [lang.matches_value?, fren_spec] using h⟩
   | Is alts => simp [lint.fix_alternatives, lint.test_holds?, fren_spec]
 
+/-- The fix holds exactly where the run does. -/
+theorem fix_run_iff (tests : Fren.Seq lint.RunTest) (w : lang.Value) :
+    (∃ i k : Int, ((0 ≤ i ∧ i < tests.len) ∧ 0 ≤ k ∧ k < (lint.fix_alternatives (tests.nth i)).len) ∧
+      lang.matches_value? ((lint.fix_alternatives (tests.nth i)).nth k) w = true) ↔
+      ∃ i : Int, (0 ≤ i ∧ i < tests.len) ∧ lint.test_holds? (tests.nth i) w = true := by
+  constructor
+  · rintro ⟨i, k, ⟨hi, hk⟩, hm⟩
+    exact ⟨i, hi, (fix_alternatives_holds _ w).mp ⟨k, hk, hm⟩⟩
+  · rintro ⟨i, hi, ht⟩
+    obtain ⟨k, hk, hm⟩ := (fix_alternatives_holds _ w).mpr ht
+    exact ⟨i, k, ⟨hi, hk⟩, hm⟩
+
 -- Proved of the spec's own functions, for any number of tests and
 -- alternatives.
 impl manual_pattern_test_fix: lint::manual_pattern_test_fix for (tests : Fren.Seq lint.RunTest) (w : lang.Value) {
@@ -685,15 +697,7 @@ impl manual_pattern_test_fix: lint::manual_pattern_test_fix for (tests : Fren.Se
     lint.manual_pattern_test_fix.ensure.dual
   unfold lint.fix_holds? lint.run_holds?
   rw [decide_true_iff, decide_true_iff]
-  have key : (∃ i k : Int, ((0 ≤ i ∧ i < tests.len) ∧ 0 ≤ k ∧ k < (lint.fix_alternatives (tests.nth i)).len) ∧
-      lang.matches_value? ((lint.fix_alternatives (tests.nth i)).nth k) w = true) ↔
-      ∃ i : Int, (0 ≤ i ∧ i < tests.len) ∧ lint.test_holds? (tests.nth i) w = true := by
-    constructor
-    · rintro ⟨i, k, ⟨hi, hk⟩, hm⟩
-      exact ⟨i, hi, (fix_alternatives_holds _ w).mp ⟨k, hk, hm⟩⟩
-    · rintro ⟨i, hi, ht⟩
-      obtain ⟨k, hk, hm⟩ := (fix_alternatives_holds _ w).mpr ht
-      exact ⟨i, k, ⟨hi, hk⟩, hm⟩
+  have key := fix_run_iff tests w
   refine ⟨key, ?_⟩
   rw [key]
   simp only [not_exists, not_and]
@@ -829,21 +833,19 @@ impl manual_pattern_test_refines: lint::manual_pattern_test_refines
   w := w,
 } by
   intro l cs c s ps ts w hyp
-  unfold lint.manual_pattern_test_refines.ensures lint.manual_pattern_test_refines.ensure.reachable
+  unfold lint.manual_pattern_test_refines.ensures lint.manual_pattern_test_refines.ensure.covered
+    lint.manual_pattern_test_refines.ensure.same_meaning lint.manual_pattern_test_refines.ensure.reachable
   unfold lint.manual_pattern_test_refines.assumes lint.manual_pattern_test_refines.assume.read
     lint.manual_pattern_test_refines.assume.operands_tests at hyp
-  unfold lint.run_fires?
-  rintro ⟨hall, hfire⟩ i j k k' ⟨⟨⟨⟨⟨h0, _⟩, ⟨hij, hj⟩⟩, hk0, hk⟩, hk0', hk'⟩, hor⟩ ⟨hm, hm'⟩
-  rw [decide_true_iff] at hfire
-  obtain ⟨_, hdis⟩ := hfire
   obtain ⟨hread, hlen, hts⟩ := hyp
-  -- The operands at the two positions, and what the fix and the readings
-  -- give there.
-  have at_ : ∀ q : Int, 0 ≤ q → q < ts.len → ∃ r : lint.Reading, lint.alts_at (Fren.Seq.ofList l) c (s.first + q) = r.alts ∧
+  -- Where the run's operands are read: what the fix and the readings give
+  -- at a position of the run.
+  have at_ : (∀ i : Int, s.first ≤ i ∧ i ≤ s.last → lint.reading_at (Fren.Seq.ofList l) c i ≠ none) →
+      ∀ q : Int, 0 ≤ q → q < ts.len → ∃ r : lint.Reading, lint.alts_at (Fren.Seq.ofList l) c (s.first + q) = r.alts ∧
       (lint.fix_alternatives (ts.nth q)).len = r.alts.len ∧
       ∀ m : Int, 0 ≤ m → m < r.alts.len → lang.matches_value? ((lint.fix_alternatives (ts.nth q)).nth m) w = true →
         lang.matches_value? (lint.alt_pattern (r.alts.nth m)) w = true := by
-    intro q hq0 hq
+    intro hall q hq0 hq
     obtain ⟨y, r, _, hy, hr, ha⟩ := read_at l c (s.first + q) (by simpa using hall _ ⟨by omega, by omega⟩)
     refine ⟨r, ha, ?_⟩
     rw [hts q ⟨hq0, hq⟩, hy]
@@ -851,11 +853,116 @@ impl manual_pattern_test_refines: lint::manual_pattern_test_refines
     have := hread (s.first + q) ⟨⟨by omega, by omega⟩, by rw [hy, ht]; rfl⟩
     rw [ha] at this
     exact ⟨this.1, fun m hm => this.2 m hm⟩
-  obtain ⟨r, har, hlr, himp⟩ := at_ i h0 (by omega)
-  obtain ⟨r', har', hlr', himp'⟩ := at_ j (by omega) hj
-  have hd := hdis (s.first + i) (s.first + j) k k'
-    ⟨⟨⟨⟨⟨by omega, by omega⟩, ⟨by omega, by omega⟩⟩, ⟨hk0, by rw [har]; omega⟩⟩, ⟨hk0', by rw [har']; omega⟩⟩, by omega⟩
-  rw [har, har'] at hd
-  exact apart _ _ w hd ⟨himp k hk0 (by omega) hm, himp' k' hk0' (by omega) hm'⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro hall q ⟨hq0, hq⟩
+    obtain ⟨r, har, hlr, himp⟩ := at_ hall q hq0 hq
+    rw [har]
+    exact ⟨hlr, fun m ⟨⟨hm0, _⟩, hm⟩ => himp m hm0 (by omega) hm⟩
+  · unfold lint.fix_holds? lint.run_holds?
+    rw [decide_true_iff, decide_true_iff]
+    exact fix_run_iff ts w
+  · unfold lint.run_fires?
+    rintro ⟨hall, hfire⟩ i j k k' ⟨⟨⟨⟨⟨h0, _⟩, ⟨hij, hj⟩⟩, hk0, hk⟩, hk0', hk'⟩, hor⟩ ⟨hm, hm'⟩
+    rw [decide_true_iff] at hfire
+    obtain ⟨_, hdis⟩ := hfire
+    obtain ⟨r, har, hlr, himp⟩ := at_ hall i h0 (by omega)
+    obtain ⟨r', har', hlr', himp'⟩ := at_ hall j (by omega) hj
+    have hd := hdis (s.first + i) (s.first + j) k k'
+      ⟨⟨⟨⟨⟨by omega, by omega⟩, ⟨by omega, by omega⟩⟩, ⟨hk0, by rw [har]; omega⟩⟩, ⟨hk0', by rw [har']; omega⟩⟩,
+        by omega⟩
+    rw [har, har'] at hd
+    exact apart _ _ w hd ⟨himp k hk0 (by omega) hm, himp' k' hk0' (by omega) hm'⟩
+
+impl manual_pattern_test_reads: lint::manual_pattern_test_reads for (v : lint.Literal) (nat : Bool) {
+  v := v,
+  «nat?» := nat,
+} by
+  intro v nat _
+  unfold lint.manual_pattern_test_reads.ensures lint.manual_pattern_test_reads.ensure.value_matches
+  rintro ⟨h1, _⟩
+  obtain ⟨x, hx, hm⟩ := value_matches v nat _ h1
+  rw [hx]
+  exact hm
+
+impl manual_pattern_test_fix_alts: lint::manual_pattern_test_fix_alts for (l : List lint.Shape) (c : Bool) (s : lint.Span)
+    (q : Int) {
+  operands := Fren.Seq.ofList l,
+  «conj?» := c,
+  run := s,
+  q := q,
+  n_operands := ((runAlternatives (l.map (readOperand c ∘ toShape)) s.first.toNat s.last.toNat).length : Int),
+  alts := Fren.Seq.ofList ((((runAlternatives (l.map (readOperand c ∘ toShape)) s.first.toNat s.last.toNat)[q.toNat]?).getD
+    []).map (fromPatAlt ·.1)),
+} by
+  intro l c s q hyp
+  unfold lint.manual_pattern_test_fix_alts.defs lint.manual_pattern_test_fix_alts.def.n_operands
+    lint.manual_pattern_test_fix_alts.def.alts
+  unfold lint.manual_pattern_test_fix_alts.assumes lint.manual_pattern_test_fix_alts.assume.read
+    lint.manual_pattern_test_fix_alts.assume.position at hyp
+  obtain ⟨⟨⟨h0, hfl⟩, hall⟩, hq0, hq⟩ := hyp
+  generalize hL : l.map (readOperand c ∘ toShape) = L
+  have hop : ∀ p : Nat, s.first.toNat ≤ p → p ≤ s.last.toNat → ∃ (op : PatternOperand String) (r : lint.Reading),
+      L[p]? = some (some op) ∧
+      lint.alts_at (Fren.Seq.ofList l) c p = r.alts ∧ op.alts.map (fromPatAlt ·.1) = r.alts.toList := by
+    intro p h1 h2
+    obtain ⟨y, r, _, hy, hr, ha⟩ := read_at l c p (by simpa using hall p ⟨by omega, by omega⟩)
+    have hlt : p < l.length := by
+      rcases Nat.lt_or_ge p l.length with hn | hn
+      · exact hn
+      · have hnone := hall p ⟨by omega, by omega⟩
+        rw [reading_at_eq, if_pos (by omega), show (p : Int).toNat = p by omega, List.getElem?_eq_none hn] at hnone
+        exact absurd rfl hnone
+    have hly : l[p]? = some y := by
+      rw [List.getElem?_eq_getElem hlt]
+      rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)] at hy
+      simpa using hy
+    have h := read_eq y c
+    rw [hr] at h
+    cases e : readOperand c (toShape y) with
+    | none => rw [e] at h; simp at h
+    | some op =>
+      rw [e] at h
+      simp only [Option.map_some, Option.some.injEq, view, rview, Prod.mk.injEq] at h
+      refine ⟨op, r, by simp [← hL, hly, e], by simpa using ha, ?_⟩
+      have := congrArg (List.map fromPatAlt) h.2.1
+      simpa [List.map_map, Function.comp_def, from_to] using this
+  have hjl : s.last.toNat < L.length := by
+    obtain ⟨op, _, h, _⟩ := hop s.last.toNat (by omega) (Nat.le_refl _)
+    rcases Nat.lt_or_ge s.last.toNat L.length with h' | h'
+    · exact h'
+    · rw [List.getElem?_eq_none h'] at h; simp at h
+  -- The run's operands are all read, so none is dropped.
+  have hsome : ∀ y ∈ L.extract s.first.toNat (s.last.toNat + 1), y ≠ none := by
+    intro y hy
+    obtain ⟨m, hm, rfl⟩ := List.getElem_of_mem hy
+    have hlen : (L.extract s.first.toNat (s.last.toNat + 1)).length = s.last.toNat + 1 - s.first.toNat := by
+      simp [List.extract_eq_take_drop]; omega
+    obtain ⟨op, _, h, _⟩ := hop (s.first.toNat + m) (by omega) (by omega)
+    have e : (L.extract s.first.toNat (s.last.toNat + 1))[m]? = L[s.first.toNat + m]? := by
+      rw [List.extract_eq_take_drop, List.getElem?_take_of_lt (by omega), List.getElem?_drop]
+    rw [List.getElem?_eq_getElem hm, h] at e
+    rw [Option.some.inj e]; simp
+  have hmap := filterMap_some_of _ hsome
+  have hlenx : (L.extract s.first.toNat (s.last.toNat + 1)).length = s.last.toNat + 1 - s.first.toNat := by
+    simp [List.extract_eq_take_drop]; omega
+  have hlenf : ((L.extract s.first.toNat (s.last.toNat + 1)).filterMap id).length = s.last.toNat + 1 - s.first.toNat := by
+    have := congrArg List.length hmap
+    rw [List.length_map] at this
+    rw [this, hlenx]
+  refine ⟨⟨?_, ?_⟩, trivial⟩
+  · simp only [runAlternatives, List.length_map]
+    rw [hlenf]; omega
+  · obtain ⟨op, r, h, ha, hr⟩ := hop (s.first.toNat + q.toNat) (by omega) (by omega)
+    have e : ((L.extract s.first.toNat (s.last.toNat + 1)).filterMap id)[q.toNat]? = some op := by
+      have e1 : (L.extract s.first.toNat (s.last.toNat + 1))[q.toNat]? = some (some op) := by
+        rw [List.extract_eq_take_drop, List.getElem?_take_of_lt (by omega), List.getElem?_drop, h]
+      rw [← hmap, List.getElem?_map] at e1
+      cases e2 : ((L.extract s.first.toNat (s.last.toNat + 1)).filterMap id)[q.toNat]? with
+      | none => rw [e2] at e1; simp at e1
+      | some o => rw [e2] at e1; simp at e1; rw [e1]
+    have hq' : ((s.first.toNat + q.toNat : Nat) : Int) = s.first + q := by omega
+    rw [hq'] at ha
+    simp only [runAlternatives, List.getElem?_map, e, Option.map_some, Option.getD_some]
+    rw [hr, ha]; rfl
 
 end Fren.Impls.PatternTests

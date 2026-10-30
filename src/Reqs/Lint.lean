@@ -15,6 +15,7 @@ open Fren.Lang
 #fren_md "Lint/Style.md"
 #fren_md "Lint/Style/Comparisons.md"
 #fren_md "Lint/Style/PatternTests.md"
+#fren_md "Lint/Style/PatternTestFixes.md"
 #fren_md "Lint/Style/Records.md"
 #fren_md "Lint/Style/Naturals.md"
 #fren_md "Lint/Style/Matches.md"

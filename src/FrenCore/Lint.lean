@@ -5307,6 +5307,12 @@ def runsOf (vs : List (Option (String × List PatAlt × Bool))) (chain : Bool) :
 def patternRuns (form : σ → String) (ps : List (Option (PatternOperand σ))) (chain : Bool) : List (Nat × Nat) :=
   runsOf (ps.map (·.map fun p => (form p.scrutinee, p.alts.map (·.1), p.equation))) chain
 
+/-- The alternatives of the fix of the run from position `i` to position
+`j` of the operands read as `ps`, operand by operand and in order, each
+with its text (`lint::manual_pattern_test_fix_alts`). -/
+def runAlternatives (ps : List (Option (PatternOperand σ))) (i j : Nat) : List (List (PatAlt × String)) :=
+  ((ps.extract i (j + 1)).filterMap id).map (·.alts)
+
 /-- The operands of the chain of `op` that `n` is the top of, as
 `membership_chain` reads it: through each operand that is an `op`, in
 parentheses or not. -/
@@ -5373,7 +5379,7 @@ def manualPatternTestAt [Inhabited α] (src : Array Char) (variant? : α → Opt
   let mut out := #[]
   for (i, j) in patternRuns form ps.toList chain do
     let some p := ps[i]! | continue
-    let alts := ((ps.extract i (j + 1)).filterMap id).toList.flatMap (·.alts)
+    let alts := (runAlternatives ps.toList i j).flatten
     let x := p.scrutinee.text src
     let pats := alts.toArray.map (·.2)
     let t := (if conj then fren_expr!{ not $x is $pats|* } else fren_expr!{ $x is $pats|* }).print.toBText
