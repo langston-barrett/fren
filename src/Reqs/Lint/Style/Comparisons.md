@@ -218,40 +218,75 @@ Fren has no ranges, so a chained comparison is how it writes Clippy's
 `(lo..hi).contains(&x)`: this is Clippy's `manual_range_contains`, in
 `style`, which suggests `contains` for `x >= lo && x < hi`.
 `lint::chainable_comparison` states when two conjuncts chain, and which of
-them the fix writes the other way round:
+them the fix writes the other way round, over the conjuncts as written: a
+`lint::Chain` is a comparison or a chained comparison, which orders one
+way, as a chain must (see [Chained
+comparisons](../../Lang/Expressions.md#chained-comparisons)): its first
+operand, whether it orders ascending, with `<` and `<=`, or descending,
+with `>` and `>=`, and then each operator, strict or not, with the operand
+after it, each operand as written. `lint::oriented` is a conjunct as the
+fix writes it: as it is, or, for a single comparison, the other way
+round, with its operands swapped and its operator mirrored, so that `x >=
+lo` is `lo <= x`. Two conjuncts, so written, chain where they order the
+same way, the left's last operand is the right's first, and the chain's
+first operand is not its last. The left conjunct may be written the other
+way round only where it is one comparison written as one conjunct, not a
+chain that earlier conjuncts joined, which `left_single?` says:
 
 ```fren
+-- An operator, strict (`<` or `>`) or not (`<=` or `>=`), and the operand
+-- after it, as written.
+pub struct Step { strict?, operand: String }
+
+-- `first op x op y ...`, with `<` and `<=` if `ascending?`, else with `>`
+-- and `>=`: a comparison if it has one step, else a chained comparison.
+pub struct Chain { first: String, ascending?, steps: Seq<Step> }
+
+pub fn last_operand(c: Chain): String := if c.steps = [] then c.first else c.steps[c.steps.len - 1].operand
+
+-- A comparison the other way round: `b > a` for `a < b`.
+pub fn reversed(c: Chain): Chain := Chain {
+    first := last_operand(c),
+    ascending? := not c.ascending?,
+    steps := [Step { strict? := c.steps[0].strict?, operand := c.first }],
+}
+
+-- The conjunct as the fix writes it: the other way round, if `flip?`.
+pub fn oriented(c: Chain, flip?): Chain := if flip? and c.steps != [] then reversed(c) else c
+
+-- The conjuncts, as written, chain.
+pub fn chains?(l: Chain, r: Chain) :=
+    (l.ascending? iff r.ascending?) and last_operand(l) = r.first and l.first != last_operand(r)
+
+-- The conjuncts chain with the left written the other way round if
+-- `flip_left?`, and the right if `flip_right?`, each only if it is one
+-- comparison.
+pub fn chains_flipped?(l: Chain, r: Chain, left_single?, flip_left?, flip_right?) :=
+    (not flip_left? or left_single?) and (not flip_right? or r.steps.len = 1)
+    and chains?(oriented(l, flip_left?), oriented(r, flip_right?))
+
 pub proc chainable_comparison(
-    left_ascending?,     -- the left conjunct orders with `<` and `<=`, rather than `>` and `>=`
-    right_ascending?,
-    left_single?,        -- it is one comparison, rather than a chain
-    right_single?,
-    last_first?,         -- the left's last operand is written the same as the right's first
-    first_last?,         -- the left's first as the right's last
-    first_first?,
-    last_last?,
+    left: Chain,
+    right: Chain,
+    left_single?,            -- the left is one comparison, written as one conjunct
 ): (
     det fires?,
     det flip_left?,          -- the fix writes the left conjunct the other way round
     det flip_right?,
 ) {
-    -- Each way to write the conjuncts: as written, the left the other way
-    -- round, the right, or both.
-    ensure rule: fires? iff (((left_ascending? iff right_ascending?) and last_first? and not first_last?)
-        or (left_single? and not (left_ascending? iff right_ascending?) and first_first? and not last_last?)
-        or (right_single? and not (left_ascending? iff right_ascending?) and last_last? and not first_first?)
-        or (left_single? and right_single? and (left_ascending? iff right_ascending?) and first_last?
-        and not last_first?))
-    ensure left: flip_left? iff ((left_single? and not (left_ascending? iff right_ascending?) and first_first?
-        and not last_last?)
-        or (left_single? and right_single? and (left_ascending? iff right_ascending?) and first_last?
-        and not last_first?))
-    ensure right: flip_right? iff ((right_single? and not (left_ascending? iff right_ascending?) and last_last?
-        and not first_first?)
-        or (left_single? and right_single? and (left_ascending? iff right_ascending?) and first_last?
-        and not last_first?))
+    assume comparisons: left.steps != [] and right.steps != []
+    assume single: when left_single?, left.steps.len = 1
 
-    expect both_or_neither: when fires? and (left_ascending? iff right_ascending?), flip_left? iff flip_right?
+    out fires? := exists (a? b?: Bool), chains_flipped?(left, right, left_single?, a?, b?)
+    out flip_left? := exists (b?: Bool), chains_flipped?(left, right, left_single?, true, b?)
+    out flip_right? := exists (a?: Bool), chains_flipped?(left, right, left_single?, a?, true)
+
+    -- At most one way of writing the conjuncts chains them, so the fix is
+    -- the way that does.
+    expect flips: when fires?, chains_flipped?(left, right, left_single?, flip_left?, flip_right?)
+    expect one_way: forall (a? b? c? d?: Bool), when chains_flipped?(left, right, left_single?, a?, b?)
+        and chains_flipped?(left, right, left_single?, c?, d?), a? = c? and b? = d?
+    expect both_or_neither: when fires? and (left.ascending? iff right.ascending?), flip_left? iff flip_right?
 }
 ```
 

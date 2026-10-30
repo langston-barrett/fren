@@ -4261,21 +4261,32 @@ def chainableComparisonMsg (fixed : String) (commented : Bool) : Msg :=
       "note: `fren fix` leaves this, since the chain would lose the comment between the comparisons"] else #[]
     fixes := if commented then #[] else #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
-/-- A conjunct that `chainable_comparison` can join: a comparison that
-orders, or a chained comparison, as its operands and operators. -/
-structure ChainPart (α : Type) where
-  operands : Array (BNode α)
+/-- A conjunct that `chainable_comparison` can join (`lint::Chain`): a
+comparison that orders, or a chained comparison, as its operands and
+operators. -/
+structure ChainPart (σ : Type) where
+  operands : Array σ
   ops : Array String
 
-def ChainPart.ascending (p : ChainPart α) : Bool := p.ops.all (· matches "<" | "<=")
+def ChainPart.ascending (p : ChainPart σ) : Bool := p.ops.all (· matches "<" | "<=")
 
 /-- The conjunct, written the other way round: `a < b` as `b > a`. -/
-def ChainPart.flip (p : ChainPart α) : ChainPart α :=
+def ChainPart.flip (p : ChainPart σ) : ChainPart σ :=
   { operands := p.operands.reverse
     ops := p.ops.reverse.map fun op => ((Comparison.ofOp? op).map (·.mirror.op)).getD op }
 
+/-- Whether `chainable_comparison` joins the conjuncts `l and r`, and
+whether its fix writes `l`, and `r`, the other way round
+(`lint::chainable_comparison`), where `form` writes an operand as written
+and `lSingle` says that `l` is one comparison, written as one conjunct:
+`chainableComparison` of what their operands and operators are. -/
+def chainFlips [Inhabited σ] (form : σ → String) (l r : ChainPart σ) (lSingle : Bool) : Bool × Bool × Bool :=
+  chainableComparison l.ascending r.ascending lSingle (r.ops.size == 1)
+    (form l.operands.back! == form r.operands[0]!) (form l.operands[0]! == form r.operands.back!)
+    (form l.operands[0]! == form r.operands[0]!) (form l.operands.back! == form r.operands.back!)
+
 /-- `n` as a conjunct that `chainable_comparison` can join, if it is one. -/
-def chainPart? (n : BNode α) : Option (ChainPart α) :=
+def chainPart? (n : BNode α) : Option (ChainPart (BNode α)) :=
   match n.kind with
   | .bin op => if ["<", "<=", ">", ">="].contains op && n.kids.size == 2 then some ⟨n.kids, #[op]⟩ else none
   | .chain ops => if ops.size + 1 == n.kids.size then some ⟨n.kids, ops⟩ else none
@@ -4310,21 +4321,18 @@ def chainableAt [Inhabited α] (src : Array Char) (n : BNode α) (slot : Option 
   let bare (k : BNode α) := !enclosed src n.range k.range
   let mut out := #[]
   -- The run so far: its first conjunct, the chain, and how many it joins.
-  let mut run : Option (Nat × ChainPart α × Nat) := none
+  let mut run : Option (Nat × ChainPart (BNode α) × Nat) := none
   for i in [0:cs.size] do
     let k := cs[i]!
     let next? := if bare k then chainPart? k else none
     let joined? := do
       let (start, l, m) ← run
       let r ← next?
-      let lSingle := m == 1 && l.ops.size == 1
-      let (fires, fl, fr) := chainableComparison l.ascending r.ascending lSingle (r.ops.size == 1)
-        (form l.operands.back! == form r.operands[0]!) (form l.operands[0]! == form r.operands.back!)
-        (form l.operands[0]! == form r.operands[0]!) (form l.operands.back! == form r.operands.back!)
+      let (fires, fl, fr) := chainFlips form l r (m == 1 && l.ops.size == 1)
       guard fires
       let l := if fl then l.flip else l
       let r := if fr then r.flip else r
-      pure (start, ({ operands := l.operands ++ r.operands.extract 1, ops := l.ops ++ r.ops } : ChainPart α), m + 1)
+      pure (start, ({ operands := l.operands ++ r.operands.extract 1, ops := l.ops ++ r.ops } : ChainPart (BNode α)), m + 1)
     match joined? with
     | some j => run := some j
     | none =>

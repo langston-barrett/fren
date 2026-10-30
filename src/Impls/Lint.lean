@@ -499,24 +499,6 @@ impl irrefutable_is: lint::irrefutable_is for (m : Bool) {
   intro m _
   cases m <;> simp [fren_spec, Fren.Core.irrefutableIs]
 
--- Both front ends decide `chainable_comparison` with `chainableAt`, which
--- reads each pair of conjuncts with `chainableComparison`.
-impl chainable_comparison: lint::chainable_comparison for (la ra ls rs lf fl ff ll : Bool) {
-  left_ascending? := la,
-  right_ascending? := ra,
-  left_single? := ls,
-  right_single? := rs,
-  last_first? := lf,
-  first_last? := fl,
-  first_first? := ff,
-  last_last? := ll,
-  fires? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).1,
-  flip_left? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).2.1,
-  flip_right? := (Fren.Core.chainableComparison la ra ls rs lf fl ff ll).2.2,
-} by
-  intro la ra ls rs lf fl ff ll _
-  simp [fren_spec, Fren.Core.chainableComparison]
-
 /-! ## Matches and bindings -/
 
 -- Both front ends decide `if_chain_match` with `ifChainMatch`, from the

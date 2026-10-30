@@ -3,6 +3,7 @@
 -- `#fren_trace` sees the components of those that no module implements.
 -- keep-sorted start
 import Impls.Calls
+import Impls.Chains
 import Impls.Check
 import Impls.Cli
 import Impls.Elements
