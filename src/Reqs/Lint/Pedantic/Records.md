@@ -123,3 +123,88 @@ pub proc fn_params_excessive_bools(
     ensure rule: fires? iff n_bools > 3
 }
 ```
+
+## Function parameters given one function
+
+`needless_higher_order`, `allow` by default, fires on a function parameter
+of a private [higher-order function](../../Lang/HigherOrder.md) to which
+every application in the file gives the same closure, [written the
+same](../../Lint.md#written-the-same), whose body mentions no name but the
+closure's own parameters: literals, operators and methods only, as
+`|y| 2 * y`. The parameter is then the same function everywhere, and the
+closure's body could be written in the function's body, where the
+parameter is applied, without the parameter. A name that the closure
+mentions might not mean the same there, or anything: a name of where the
+closure is written (a variable, a binder, a parameter, a call or a name
+of a `let` or `where`), an item declared after the function, which Fren's
+declare-before-use rule hides from its body, or a name that the
+function's own parameters shadow. So the lint asks that the closure
+mention none, which is enough for the body to mean the same in the
+function, and does not look for which names would. For the same reason
+it does not fire where every application gives the same function's name,
+nor on a lambda match, nor on a generic function, whose body is written
+over its type parameters, where `|y| y + 1` need not type-check. It is
+reported at the parameter. It does not fire on a public function, which
+other files may apply, nor where nothing applies the function, which
+[`dead_code`](../Unused.md#dead-code) reports. It has no fix, since it
+changes the function's parameters, and with them every application. Clippy
+has no such lint.
+
+The names that a closure mentions are those its body has free, in the
+[model of scopes](../Unused.md#scopes), but for the closure's own
+parameters. For this lint, a node of the body's tree mentions every name
+written directly in it whose meaning depends on where it is written: a
+variable, the function that an application applies, the first segment of
+a longer path (`m::f`, `E::V`), a record literal's type, a variant that a
+pattern applies or writes with `::`, a constant that bounds a range
+pattern, and each name in a type. A binder in the body, of a quantifier,
+a `let`, a `match` arm, a pattern test or a closure inside it, declares
+its names at the node whose scope they are. Each name is read whole, by
+the lexer's rule for identifiers, so `y'` is not `y`. `free_names` is
+`scope`'s `free`, as a function, which `lint::closure_names` checks:
+
+```fren
+-- The names that the tree `t` has free: those it mentions where neither
+-- the node of the mention nor one around it declares them (`scope`).
+pub fn free_names(t: Tree): Set<Local> :=
+    (t.mentions minus ((t.children.closure.inverse join t.declares) union t.declares)).image(t.children.closure.image({t.root}) union {t.root})
+
+-- The names that a closure of the parameters `params` and the body `body`
+-- mentions, which may mean something else, or nothing, where the closure
+-- is moved.
+pub fn closure_names(params: Set<Local>, body: Tree): Set<Local> := free_names(body) minus params
+
+set_option fren.lint.arbitrary_source_item_ordering "expect" in
+pub proc closure_names_scope(params: Set<Local>, body: Tree): (det names: Set<Local>) {
+    call s := scope(body)
+
+    out names := closure_names(params, body)
+
+    expect free: names = s.free minus params
+    -- A closure that mentions only its parameters mentions no name.
+    expect own: when s.free subset params, names = {}
+}
+```
+
+`lint::needless_higher_order` states when it fires, from what each
+application gives the parameter: its written form, and, as a closure, its
+parameters and the tree of its body. A function's name, `g`, is the
+closure `|x| g(x)`, whose body mentions `g`.
+
+```fren
+-- What an application gives a function parameter, as
+-- `needless_higher_order` reads it: its written form, and the closure's
+-- parameters and body.
+pub struct GivenFunction { form: String, params: Set<Local>, body: Tree }
+
+set_option fren.lint.undecidable "allow" in
+pub proc needless_higher_order(
+    given: Seq<GivenFunction>,       -- what each application in the file gives the parameter
+    pub?,                            -- the function is public
+    generic?,                        -- the function is generic
+): (det fires?) {
+    ensure rule: fires? iff (not pub? and not generic? and given != []
+        and (forall (k: Int), when 0 <= k < given.len,
+        closure_names(given[k].params, given[k].body) = {} and given[k].form = given[0].form))
+}
+```

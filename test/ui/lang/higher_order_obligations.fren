@@ -19,6 +19,7 @@ fn pos(n: Int): (r: Int) {
 proc holds(q: Seq<Int>, k: Int): (det a: Int, det b: Int, det c: Int, det d: Int) {
     out a := guarded(q, |i| q[i]) + k
     out b := apply(|n| pos(n), 3) + k
+    --~^ warning: this closure only applies `pos` to its parameters
     out c := apply(pos, 3) + k
     out d := never(|n| q[n], k)
 }

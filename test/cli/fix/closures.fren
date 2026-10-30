@@ -1,0 +1,13 @@
+--@ args: fix --check -W redundant_type_annotations
+-- `fren fix` fixes the lints of closures.
+fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
+fn both(g: fn(Int, Int) -> Int, x: Int): Int := g(x, x)
+fn inc(n: Int): Int := n + 1
+fn add(a: Int, b: Int): Int := a + b
+
+proc c(k: Int): (det a: Int, det b: Int, det d: Int, det e: Int) {
+    out a := twice(|y| inc(y), k)
+    out b := both(|p, q| add(p, q), k)
+    out d := twice(|y: Int| y + 1, k)
+    out e := twice(|y: Int| inc(y), k)
+}

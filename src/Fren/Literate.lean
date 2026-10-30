@@ -110,7 +110,7 @@ def relativeTo (base path : System.FilePath) : String :=
                                 items := #[], usedItems := #[], natReports := #[], natKept := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap), globalTexts := #[],
                                 invisibleFrom := 0, settings := #[], settingIds := #[], seenSettings := #[],
-                                outerReplaced := #[], assumptions := #[], globalReads := #[] }
+                                outerReplaced := #[], assumptions := #[], globalReads := #[], hofParams := #[], fnArgs := #[] }
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
@@ -160,6 +160,6 @@ def relativeTo (base path : System.FilePath) : String :=
                                 outerReplaced := further,
                                 settingIds := outer.settingIds, seenSettings := outer.seenSettings ++ seen,
                                 assumptions := outer.assumptions,
-                                globalReads := outer.globalReads }
+                                globalReads := outer.globalReads, hofParams := outer.hofParams, fnArgs := outer.fnArgs }
 
 end Fren

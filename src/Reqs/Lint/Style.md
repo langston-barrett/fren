@@ -6,8 +6,8 @@ thing, and `fren fix` fixes each of them but the lints of
 which finds a constraint that says nothing about the variables.
 Its subchapters have the lints of [pattern tests and chained
 comparisons](Style/Comparisons.md), of [pattern tests written
-out](Style/PatternTests.md), of [natural numbers](Style/Naturals.md)
-and of [records](Style/Records.md).
+out](Style/PatternTests.md), of [natural numbers](Style/Naturals.md),
+of [records](Style/Records.md) and of [closures](Style/Closures.md).
 
 ## Glob imports
 

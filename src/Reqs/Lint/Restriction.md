@@ -447,3 +447,43 @@ pub proc single_call_fn(
     expect public_never: when pub?, not fires?
 }
 ```
+
+## Type annotations of closures
+
+`redundant_type_annotations`, `allow` by default, fires on the type of a
+closure's parameter, `|x: Int| ...`, where the function type's parameter's
+type is fixed without the closure. A written type must be that type
+(`F0304`), so it then says nothing new. The type is fixed where it
+mentions no [type parameter](../Lang/GenericFunctions.md#applications) of
+the higher-order function, or only those that the type expected of the
+application, the value arguments elaborated before the closures, and the
+closures before this one fix: value arguments are elaborated before the
+closures, wherever they are written, and the closures in order, each
+fixing what its parameters' and its body's types give
+(`Reqs/Lang/HigherOrder#applications`). So with `fn pick<T>(f: fn(T) ->
+Int, o: Option<T>): Int`, the lint fires on `pick(|y: Int| y + k,
+Some(3))`, since `Some(3)` gives `T`, but not on `pick(|y: Int| y + k,
+None)`, where only the closure's type gives it, and the annotation is
+needed. With `fn two<T>(f: fn(T) -> Int, g: fn(T) -> Int, o:
+Option<T>)`, it fires on the second closure of `two(|x: Int| x, |y: Int|
+y, None)`, whose `T` the first closure fixes, but not on the first: the
+annotations are not both redundant, and removing the one reported leaves
+`T` fixed. The fix removes the type, with its `:`, and the parameter
+has the same type without it. It is Clippy's `redundant_type_annotations`, also in
+`restriction`. `lint::redundant_type_annotations` states this, from the
+type parameters, by position, that the function type's parameter's type
+mentions and those that are fixed before the closure:
+
+```fren
+pub proc redundant_type_annotations(
+    annotated?,              -- the closure's parameter has its type written
+    mentioned: Set<Int>,     -- the type parameters that the function type's parameter's type mentions
+    fixed: Set<Int>,         -- those that the expected type, the value arguments elaborated before the closures and the closures before this one fix
+): (det fires?) {
+    -- It fires where the parameter's type is fixed without the closure.
+    ensure rule: fires? iff (annotated? and mentioned subset fixed)
+
+    expect not_generic: when mentioned = {}, fires? iff annotated?
+    expect needed: when annotated? and not mentioned subset fixed, not fires?
+}
+```

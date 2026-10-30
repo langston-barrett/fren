@@ -95,6 +95,7 @@ use view::Severity
 | `module_name_repetitions` | `F0784` | `restriction` | `allow` | an item whose name contains its module's, such as `climate::ClimateMode` (see [Names](Lint/Restriction.md#names)) |
 | `modulo_one` | `F0816` | `suspicious` | `warn` | a remainder by `1` or `-1`, which is always `0` (see [Integers](Lint/Suspicious/Integers.md#remainders-and-bounds)) |
 | `needless_bool_assign` | `F0759` | `complexity` | `warn` | `if C then X else not X`, or `if C then not X else X` (see [Conditionals of `Bool`s](Lint/Complexity.md#conditionals-of-bools)) |
+| `needless_higher_order` | `F0823` | `pedantic` | `allow` | a function parameter of a private higher-order function, not generic, to which every application gives the same closure, which mentions no name but its parameters (see [Function parameters given one function](Lint/Pedantic/Records.md#function-parameters-given-one-function)) |
 | `needless_match` | `F0760` | `complexity` | `warn` | a `match` whose every arm gives back the value it matches, such as `match x { E::A => E::A, _ => x }` (see [Matches that give back the scrutinee](Lint/Complexity/Matches.md#matches-that-give-back-the-scrutinee)) |
 | `needless_raw_string_hashes` | `F0777` | `pedantic` | `allow` | a raw string literal with more `#`s than it needs, such as `r#"a"#` (see [Raw string literals](Lint/Pedantic.md#raw-string-literals)) |
 | `needless_raw_strings` | `F0782` | `restriction` | `allow` | a raw string literal with no `\` and no `"` (see [Literals](Lint/Restriction.md#literals)) |
@@ -111,12 +112,14 @@ use view::Severity
 | `precedence` | `F0787` | `restriction` | `allow` | an `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses, such as `a? or b? and c?` (see [Precedence](Lint/Restriction.md#precedence)) |
 | `redundant_bindings` | `F0735` | `style` | `warn` | a field `x := x` of a record literal, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in the parameter `ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
+| `redundant_closure` | `F0821` | `style` | `warn` | a closure that only applies a function to its parameters, such as `\|x\| f(x)` (see [Closures that only apply a function](Lint/Style/Closures.md#closures-that-only-apply-a-function)) |
 | `redundant_comparisons` | `F0767` | `complexity` | `warn` | two comparisons of one operand with integers, of which one implies the other, such as `x < 3 and x < 5` (see [Redundant comparisons](Lint/Complexity/Comparisons.md#redundant-comparisons)) |
 | `redundant_guards` | `F0807` | `complexity` | `warn` | a guard that compares a binder of its arm's pattern with a literal or a variant without a payload, such as `Shape::Circle(r) if r = 0` (see [Redundant guards](Lint/Complexity/Matches.md#redundant-guards)) |
 | `redundant_locals` | `F0825` | `suspicious` | `warn` | a definition `x! := x` of a `let` or `where` clause (see [Redundant definitions](Lint/Suspicious.md#redundant-definitions)) |
 | `redundant_method_chain` | `F0743` | `complexity` | `warn` | a chain of methods with a shorter form, such as `q.rev.rev` (see [Chains of methods](Lint/Complexity/Methods.md#chains-of-methods)) |
 | `redundant_newtype_roundtrip` | `F0842` | `complexity` | `warn` | a newtype built from the field of one, `Ms(x.0)`, or the field of one just built, `Ms(n).0` (see [Newtypes](Lint/Complexity.md#newtypes)) |
 | `redundant_slicing` | `F0753` | `complexity` | `warn` | `s.slice(0, s.len)` (see [Whole slices](Lint/Complexity/Methods.md#whole-slices)) |
+| `redundant_type_annotations` | `F0822` | `restriction` | `allow` | the type of a closure's parameter that the function type fixes without the closure, such as `\|x: Int\|` (see [Type annotations of closures](Lint/Restriction.md#type-annotations-of-closures)) |
 | `same_branches` | `F0737` | `suspicious` | `warn` | `if c then a else a`, or a table whose rows' values are all written the same (see [Branches written the same](Lint/Suspicious/Expressions.md#branches-written-the-same)) |
 | `similar_names` | `F0796` | `pedantic` | `allow` | a name declared in the same item as another that differs from it by one character, such as `level` and `levels` (see [Names](Lint/Pedantic.md#names)) |
 | `single_call_fn` | `F0788` | `restriction` | `allow` | a private defined function that one path in its file applies (see [Functions applied once](Lint/Restriction.md#functions-applied-once)) |
@@ -641,11 +644,13 @@ what the spec means:
 | `precedence` | puts the operand in parentheses |
 | `redundant_bindings` | replaces `x := x` with `x`, and removes a field `x := r.x` of an update of `r`, with a comma |
 | `redundant_bool_type` | removes the `: Bool` |
+| `redundant_closure` | replaces the closure with the function's name |
 | `redundant_comparisons` | replaces the two comparisons with the one that implies the other, under `and`, or the one that the other implies, under `or` |
 | `redundant_guards` | writes the value in place of the binder in the pattern, and of its mentions in the body, and removes the guard |
 | `redundant_method_chain` | replaces the chain with its shorter form |
 | `redundant_newtype_roundtrip` | replaces `Ms(x.0)` with `x`, and `Ms(n).0` with `n` |
 | `redundant_slicing` | replaces the slice with its receiver |
+| `redundant_type_annotations` | removes the type, with its `:` |
 | `same_branches` | replaces the conditional with its `then` branch, or a table with a `_` row with its value |
 | `single_match_else` | replaces the `match` with `if x = E::A then a else b`, or with `x in {...}` or `x is P` as the test, as the message suggests |
 | `singleton_membership` | replaces `x in {a}` with `x = a` |

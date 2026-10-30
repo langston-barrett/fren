@@ -1203,10 +1203,15 @@ def topNames (top : Syntax) : Array Syntax := (topAlts top).1.flatMap patternNam
 def quantNames (e : Syntax) : Array Name :=
   e[1].getArgs.flatMap fun b => b[1].getArgs.map fun x => (declaredIdent x).1.getId
 
+/-- The identifier of the closure's parameter `p`, at `k`: for `_`, which
+declares no name, one that no spec can write or mention. -/
+def closureParamIdent (p : Syntax) (k : Nat) : Syntax :=
+  if !p[0].isIdent then mkIdentFrom p[0] (Name.mkSimple s!"#_{k}") else p[0]
+
 /-- The names of the parameters of the closure `e`, without the `!` of
 shadowing. -/
 def closureNames (e : Syntax) : Array Name :=
-  e[1].getSepArgs.map fun p => (declaredIdent p[0]).1.getId
+  e[1].getSepArgs.mapIdx fun k p => (declaredIdent (closureParamIdent p k)).1.getId
 
 /-- The names of the variables that `e` mentions: its paths of one
 segment, and for `p.x`, `p` too. -/
@@ -1255,6 +1260,44 @@ partial def pathMentions (e : Syntax) (all : Bool := true) : Array Name :=
     let bound := (chainTests c).flatMap fun (_, p) => (topNames p).map fun b => (declaredIdent b).1.getId
     pathMentions c ++ (pathMentions d).filter (!bound.contains ·.getRoot) ++ others.foldl (· ++ pathMentions ·) #[]
   else e.getArgs.foldl (· ++ pathMentions ·) #[]
+
+/-- The segments of the paths in `t`, a type or a bound of a range
+pattern. -/
+partial def pathNamesIn (t : Syntax) : Array Name :=
+  if t.isOfKind ``Lang.fren_path then (pathSegs t).map (·.getId.getRoot)
+  else t.getArgs.flatMap pathNamesIn
+
+/-- The names that `e` writes other than its variables, which no binder of
+`e` declares (`lint::closure_names`): the first segment of the function
+that each application applies (but for a method's receiver, which is a
+variable), and of each path of more than one segment, the type of each
+record literal, the variant of each pattern that is applied or written
+with `::`, and the segments of each type and each range pattern's bound. -/
+partial def itemNames (e : Syntax) : Array Name :=
+  let head (p : Syntax) : Array Name := ((pathSegs p)[0]?.map (·.getId.getRoot)).toArray
+  if e.isOfKind ``Lang.fren_path then if (pathSegs e).size > 1 then head e else #[]
+  else if e.isOfKind ``Lang.appExpr then
+    let segs := pathSegs e[0]
+    (if segs.size == 1 && !segs[0]!.getId.isAtomic then #[] else head e[0]) ++ e[2].getSepArgs.flatMap itemNames
+  else if e.isOfKind ``Lang.recordExpr then head e[0] ++ e[2].getSepArgs.flatMap itemNames
+  else if e.isOfKind ``Lang.variantPattern then
+    (if e[1].isNone && (pathSegs e[0]).size == 1 then #[] else head e[0]) ++ e[1].getArgs.flatMap itemNames
+  else if e.isOfKind ``Lang.pathBound then pathNamesIn e
+  -- The type of a quantifier's binders, of a closure's parameter, or of a
+  -- definition of a `let` or `where`.
+  else if e.isOfKind ``Lang.fren_binder then pathNamesIn e[3]
+  else if e.isOfKind ``Lang.fren_closure_param || e.isOfKind ``Lang.fren_let_def || e.isOfKind ``Lang.fren_def then
+    pathNamesIn e[1] ++ e.getArgs.flatMap itemNames
+  else e.getArgs.flatMap itemNames
+
+/-- The names that the body of the closure `e` has free, but for the
+closure's own parameters (`lint::closure_names`): the variables it
+mentions (`pathMentions`) and the other names it writes (`itemNames`),
+each once, as written. -/
+def closureFreeNames (e : Syntax) : Array String :=
+  let params := closureNames e
+  (((pathMentions e[3]).map (·.getRoot) ++ itemNames e[3]).filter (!params.contains ·)).toList.eraseDups.toArray.map
+    Core.nameText
 
 /-- Which of the definitions `defs` of a `let` or `where` clause its body
 `body` mentions, directly or through the later ones that it mentions: the
@@ -5109,7 +5152,8 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     (body : Syntax) (r? : Option Core.Ty) (synthetic : Bool) : TermElabM (ClosureTerm × Array Core.Ty × Core.Ty) := do
   let mut named : Array (Name × Name × Core.Ty × Expr) := #[]
   for (x, t) in params, i in [0:params.size] do
-    let bn ← if synthetic then pure x.getId else do
+    -- `_`, which declares no name (`closureParamIdent`), as a synthetic one.
+    let bn ← if synthetic || x.getId.toString.startsWith "#_" then pure x.getId else do
       let locals := Core.bindingLocals (cx.vars.map (fun v => (v.name, v.role)) ++ cx.fnParams.map fun p => (p.1, .input)) cx.insts
         (cx.binders.map (·.what) ++ named.map fun (bn, _) => (bn, Core.BindingKind.boundName)) cx.selfFn.isSome
       let y ← declare x cx.modName locals
@@ -5158,6 +5202,70 @@ def noteRecUse (ref : Syntax) (f : Name) (ps : Array Name) (u : Core.RecUse) : T
     -- A function always has a parameter; without one, the message names the function.
     throwErrorAt ref (Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr)).text
 
+/-- `redundant_type_annotations` and `redundant_closure` on the closure `e`, given for a function parameter whose parameters' types
+are `ps` where they are known before the closure, and whose result's is
+`r?` (`lint::redundant_type_annotations`, `lint::redundant_closure`). -/
+def lintClosure (cx : ExprCtx) (ps : Array (Option Core.Ty)) (r? : Option Core.Ty) (e : Syntax) : TermElabM Unit := do
+  let params := e[1].getSepArgs
+  let names := params.mapIdx fun k p => Core.nameText (declaredIdent (closureParamIdent p k)).1.getId
+  -- `fren fix` reads Markdown specs, but not Lean files.
+  let fixable := (← getLocal).inMarkdown
+  -- `redundant_type_annotations` (`lint::redundant_type_annotations`).
+  for p in params, p? in ps, n in names do
+    if p[1].isNone then continue
+    unless Core.redundantTypeAnnotation true p?.isSome do continue
+    let msg := Core.redundantTypeAnnotationMsg (if !p[0].isIdent then "_" else n) (exactText p[1][1])
+    recordLint .redundantTypeAnnotations p[1][1] (if fixable then msg.note Core.fixHelp else msg)
+  -- `unused_variables` on its parameters (`lint::unused_closure_params`).
+  let mentioned := (pathMentions e[3]).map (·.getRoot)
+  for p in params, n in names do
+    unless Core.closureParamOptedOut n || mentioned.contains (Name.mkSimple n) do
+      recordLint .unusedVariables (declaredIdent p[0]).1 (Core.unusedClosureParamMsg (Name.mkSimple n))
+  -- `redundant_closure` (`lint::redundant_closure`).
+  let body := unparen e[3]
+  unless body.isOfKind ``Lang.appExpr do return
+  let segs := pathSegs body[0]
+  let args := (body[2].getSepArgs.map fun a => (soleName? a).bind fun y => names.idxOf? (Core.nameText y)).toList
+  let some rt := r? | return
+  let some pts := ps.mapM id | return
+  let (callee, exact) : Core.Callee × Bool :=
+    if segs.size == 1 && names.contains (Core.nameText segs[0]!.getId) then (.other, false)
+    else if let some (ft, _) := (if segs.size == 1 then cx.fnParam? segs[0]!.getId else none) then
+      (.fnParameter, ft.params == pts && ft.result == rt)
+    else (.other, false)
+  let (callee, exact) ← if callee != .other || (segs.size == 1 && names.contains (Core.nameText segs[0]!.getId)) then
+      pure (callee, exact)
+    else match (← getState).table.resolvePath cx.modName (segs.map (·.getId)) cx.shadowing with
+      | .ok (.item { kind := .fnItem, path, .. }) =>
+        match (← getState).defined.find? path with
+        | some d =>
+          pure (if d.typeParams.isEmpty && d.hoParams.isEmpty then
+            (.defined, d.declared == pts && d.result == rt && (d.ptys.1.push d.ptys.2).all (!·.patterned)) else (.other, false))
+        | none => pure (.other, false)
+      | _ => pure (.other, false)
+  unless Core.redundantClosure names.size args true callee exact do return
+  let msg := Core.redundantClosureMsg (exactText body[0])
+  recordLint .redundantClosure e (if fixable then msg.note Core.fixHelp else msg)
+
+/-- Records what the application of the higher-order function `path` gives
+its parameter at `k`, the closure or function's name `e`, for
+`needless_higher_order` (`lint::needless_higher_order`): its text, and the
+names that a closure's body has free (`closureFreeNames`); a function's
+name is one, and a lambda match is taken to mention one, which keeps the
+lint from firing on it. -/
+def noteFnArg (path : Name) (k : Nat) (e : Syntax) : TermElabM Unit := do
+  let range? := e.getRange?
+  if (← getLocal).fnArgs.any fun (a, r) => r.getRange? == range? && a.index == k then return
+  let u := unparen e
+  let names : Array String :=
+    if u.isOfKind ``Lang.closureExpr then closureFreeNames u
+    else
+      let p := if u.getNumArgs == 1 && u[0].isOfKind ``Lang.fren_path then u[0] else u
+      if p.isOfKind ``Lang.fren_path then #[(pathSegs p).foldl (fun acc s => acc ++ "::" ++ Core.nameText s.getId) ""]
+      -- A lambda match is not compared.
+      else #["match"]
+  modifyLocal fun l => { l with fnArgs := l.fnArgs.push ({ path, index := k, text := exactText e, names }, e) }
+
 open Lang in
 /-- A closure, or the name of a function, `e`, given for the function
 parameter of type `ft`, as its function's signature declares it, of the
@@ -5177,9 +5285,9 @@ def fnArgTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (f
     let params := e[1].getSepArgs
     if let some msg := Core.argumentMsg? ft (.closure params.size) then throwErrorAt e msg.text
     -- Distinct names (`lang::distinct_names`).
-    let declared := params.map fun p => (declaredIdent p[0]).1.getId
+    let declared := params.mapIdx fun k p => (declaredIdent (closureParamIdent p k)).1.getId
     if let some k := (Core.repeatsAt declared)[0]? then throwErrorAt params[k]![0] (Core.dupBoundMsg declared[k]!).text
-    let named ← (params.zip ps).mapM fun (p, p?) => do
+    let named ← (params.zipIdx.zip ps).mapM fun ((p, k), p?) => do
       -- Its written type is the function type's (`lang::function_argument`).
       let t ← match (if p[1].isNone then none else some p[1][1]), p? with
         | some ty, some q => do
@@ -5190,7 +5298,8 @@ def fnArgTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (f
         | some ty, none => pure (((← coreTy? (← elabPType cx.modName ty).1)).getD .bool)
         | none, some q => pure q
         | none, none => throwErrorAt p[0] (Core.closureParamUnknownMsg f).text
-      return (p[0], t)
+      return (closureParamIdent p k, t)
+    lintClosure cx ps r? e
     return ← closureTerm toTerm cx named e[3] r? false
   let p := if e.getNumArgs == 1 && e[0].isOfKind ``Lang.fren_path then e[0] else e
   unless p.isOfKind ``Lang.fren_path do throwErrorAt e ((Core.argumentMsg? ft .other).getD default).text
@@ -5238,6 +5347,7 @@ def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       (fun k ps r? => do
         let .function ft := d.hoParams[k]! | return none
         let (c, pts, rt) ← (fnArgTerm toTerm cx f ft ps r? elems[k]! : TermElabM _)
+        noteFnArg path k elems[k]!
         modify fun (ts, cs) => (ts.set! k c.term, cs.set! k (some c))
         return some (pts, rt))
       (fun k ft (_, rt) => (liftMsg elems[k]!
@@ -7351,6 +7461,11 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       return if fnPs.isEmpty then #[] else out
     let (namedMembers, namedBranchGroups, namedMemberGroups) ← if resultTy == .bool && (← getLocal).recUses.isEmpty then
         predicateMetadata scope vars fnVars body else pure (#[], #[], #[])
+    unless isPub do
+      for (j, x, ref, _, _) in fnPs do
+        let r : Core.HofParamRecord :=
+          { path, index := j, name := x, generic := !tps.isEmpty, level := ← lintLevel .needlessHigherOrder }
+        modifyLocal fun l => { l with hofParams := l.hofParams.push (r, ref) }
     let source? := some (← getFileName, ← getFileMap)
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps

@@ -1,0 +1,14 @@
+warning[F0823]: each application of `step` gives `f` the same function
+ --> test/cli/lints/pedantic/f0823_needless_higher_order.fren:5:9
+  |
+5 | fn step(f: fn(Int) -> Int, x: Int): Int := f(x) + 1
+  |         ^ always `|y| 2 * y`
+  |
+  = note: every application in this file gives `|y| 2 * y`, and `step` is private
+  = help: apply it in the body of `step` where `f` is applied, writing its body with `f`'s arguments, and remove the parameter
+  = note: `needless_higher_order` is set to `warn`
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0823`.
+exit=3

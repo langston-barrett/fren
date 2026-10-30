@@ -1,0 +1,129 @@
+-- The lints of closures, in both front ends.
+-- fren-covers: lint::unused_closure_params, lint::closure_names_scope
+set_option fren.lint.redundant_type_annotations "warn"
+
+fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
+fn both(g: fn(Int, Int) -> Int, x: Int): Int := g(x, x)
+fn inc(n: Int): Int := n + 1
+fn add(a: Int, b: Int): Int := a + b
+fn to_nat(n: Int): Nat := if n > 0 then 1 else 0
+type Digit = n: Int where invariant: n is 0..=9
+fn small(n: Digit): Int := n
+fn map<T, U>(o: Option<T>, f: fn(T) -> U): Option<U> := match o { Some(x) => Some(f(x)), None => None }
+fn id<T>(x: T): T := x
+-- A function parameter given on.
+pub fn again(h: fn(Int) -> Int, x: Int): Int := twice(|y| h(y), x)
+--~^ warning: this closure only applies `h` to its parameters
+
+proc c(k: Int, o: Option<Int>): (
+    det a: Int,
+    det b: Int,
+    det d: Int,
+    det e: Int,
+    det f: Int,
+    det g: Int,
+    det h: Int,
+    det i: Option<Int>,
+    det j: Int,
+    det l: Int,
+    det m: Int,
+    det n: Int,
+    det r: Int,
+) {
+    out a := twice(|y| inc(y), k)
+    --~^ warning: this closure only applies `inc` to its parameters
+    out b := both(|p, q| add(p, q), k)
+    --~^ warning: this closure only applies `add` to its parameters
+    -- In another order.
+    out d := both(|p, q| add(q, p), k)
+    -- A parameter given twice.
+    out e := both(|p, q| add(p, p + q), k)
+    -- A `Nat` result, and a subset type.
+    out f := twice(|y| to_nat(y), k)
+    out g := twice(|y| small(y), k)
+    --~^ error: invariant `Digit::invariant` does not hold
+    -- A generic function.
+    out h := twice(|y| id(y), k)
+    out i := map(o, |y| inc(y))
+    --~^ warning: this closure only applies `inc` to its parameters
+    out j := twice(|y: Int| y + 1, k)
+    --~^ warning: the type of `y` is the function type's, `Int`
+    out l := twice(|y| inc(y + 1), k)
+    out m := twice(|y| inc(k), k)
+    --~^ warning: unused closure parameter `y`
+    -- `_` declares no name, and a name that starts with `_` is left out.
+    out n := twice(|_| 3, k) + twice(|_y| 3, k) + both(|_, _| 3, k)
+    out r := both(|q, _| q, k)
+}
+
+-- `needless_higher_order`.
+set_option fren.lint.needless_higher_order "warn"
+set_option fren.lint.redundant_closure "allow"
+
+-- A closure that mentions an item declared after the function, and a
+-- generic function: the closure cannot be written in the body.
+fn early(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn later(n: Int): Int := n * 3
+fn app<T>(f: fn(T) -> T, x: T): T := f(x)
+
+proc not_inlined(k: Int): (det a: Int, det b: Int) {
+    out a := early(|y| later(y), k) + early(|y| later(y), k + 1)
+    out b := app(|y| y + 1, k) + app(|y| y + 1, k + 1)
+}
+
+fn step(f: fn(Int) -> Int, x: Int): Int := f(x) + 1
+--~^ warning: each application of `step` gives `f` the same function
+fn shift(g: fn(Int) -> Int, x: Int): Int := g(x)
+pub fn open_step(h: fn(Int) -> Int, x: Int): Int := h(x)
+fn captured(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+proc uses(k: Int, j: Int): (det a: Int, det b: Int, det d: Int, det e: Int, det f: Int, det g: Int) {
+    out a := step(|y| y * 2, k)
+    out b := step(|y| y * 2, j)
+    -- Two different closures.
+    out d := shift(|y| y + 1, k) + shift(|y| y + 2, k)
+    -- A public function, which other files may apply.
+    out e := open_step(|y| y + 1, k)
+    -- A closure that mentions a variable of where it is written.
+    out f := captured(|y| y + k, j)
+    out g := captured(|y| y + k, j)
+}
+
+-- A name is read whole: the captured `y'` is not the closure's parameter
+-- `y`. A binder of the body is not free in it, but a constant that bounds
+-- a range pattern and a variant written with `::`, each declared after
+-- the function, are names that the body mentions.
+fn primed(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn bound(f: fn(Int) -> Int, x: Int): Int := f(x)
+--~^ warning: each application of `bound` gives `f` the same function
+fn ranged(f: fn(Int) -> Int, x: Int): Int := f(x)
+fn tagged(f: fn(Int) -> Int, x: Int): Int := f(x)
+const LIMIT: Int := 9
+enum Tag { A, B }
+
+proc names(k: Int, y': Int): (det a: Int, det b: Int, det d: Int, det e: Int) {
+    out a := primed(|y| y + y', k)
+    out b := bound(|y| let z := y + 1 in z + z, k)
+    out d := ranged(|y| if y is 0..=LIMIT then 1 else 0, k)
+    out e := tagged(|y| match y { 0 => if Tag::A = Tag::B then 1 else 0, _ => y }, k)
+}
+
+-- `redundant_type_annotations`, where a generic function's type parameter
+-- is fixed by a value argument after the closure, and where only the
+-- closure fixes it.
+fn pick<T>(f: fn(T) -> Int, o: Option<T>): Int := match o { Some(x) => f(x), None => 0 }
+
+proc picks(k: Int): (det a: Int, det b: Int) {
+    out a := pick(|y: Int| y + k, Some(3))
+    --~^ warning: the type of `y` is the function type's, `Int`
+    out b := pick(|y: Int| y + k, None)
+}
+
+-- An earlier closure fixes a type parameter too: the first closure's
+-- annotation is needed, and the second's is not.
+fn two<T>(f: fn(T) -> Int, g: fn(T) -> Int, o: Option<T>): Int := match o { Some(x) => f(x) + g(x), None => 0 }
+
+proc twos(): (det a: Int) {
+    out a := two(|x: Int| x, |y: Int| y, None)
+    --~^ warning: the type of `y` is the function type's, `Int`
+}

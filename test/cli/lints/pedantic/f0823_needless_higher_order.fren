@@ -1,0 +1,7 @@
+-- Every application of a private function gives its function parameter
+-- the same closure.
+set_option fren.lint.needless_higher_order "warn"
+
+fn step(f: fn(Int) -> Int, x: Int): Int := f(x) + 1
+
+proc c(k: Int): (m: Int) { ensure r: m = step(|y| 2 * y, k) + step(|y| 2 * y, k + 1) }

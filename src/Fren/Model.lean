@@ -824,6 +824,11 @@ structure LocalState where
   paths in it resolve to (`dead_code`). -/
   items : Array (Core.ItemRecord × Syntax) := #[]
   usedItems : Array Name := #[]
+  /-- The function parameters of the file's private higher-order functions,
+  and what the applications give them, by where each is written
+  (`needless_higher_order`). -/
+  hofParams : Array (Core.HofParamRecord × Syntax) := #[]
+  fnArgs : Array (Core.FnArgRecord × Syntax) := #[]
   /-- The lint settings of this file, or Markdown spec, the identifier of
   each, and the identifiers of those in effect at an item
   (`unused_lint_setting`). An identifier is the number of settings before

@@ -1,0 +1,20 @@
+warning[F0821]: this closure only applies `inc` to its parameters
+ --> test/cli/lints/style/f0821_redundant_closure.fren:5:48
+  |
+5 | proc c(k: Int): (m: Int) { ensure r: m = twice(|y| inc(y), k) }
+  |                                                ^^^^^^^^^^ `inc` with extra steps
+  |
+  = note: the name `inc` given here means this closure
+  = help: `fren fix` can fix this
+  = note: `redundant_closure` is `warn` by default
+  = help: to allow it, `set_option fren.lint.redundant_closure "allow"`
+help: write `inc`
+  |
+5 - proc c(k: Int): (m: Int) { ensure r: m = twice(|y| inc(y), k) }
+5 + proc c(k: Int): (m: Int) { ensure r: m = twice(inc, k) }
+  |
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0821`.
+exit=3
