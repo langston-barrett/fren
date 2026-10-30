@@ -7,6 +7,24 @@ error[F0603]: expectation `lex::word::wrong` does not hold
    = counterexample: text = "x", accepted? = true
    = help: strengthen the guarantees so that it follows, or correct the expectation
 
+note[F0654]: the vacuity checks of `lex::word` are not run by random testing
+ --> test/cli/commands/check_by_testing.fren:6:10
+  |
+6 | pub proc word(text: String): (det accepted?) {
+  |          ^^^^
+  |
+  = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+  = help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+
+note[F0654]: the vacuity and redundancy checks of `lex::parity` are not run by random testing
+  --> test/cli/commands/check_by_testing.fren:18:10
+   |
+18 | pub proc parity(n: Int): (set_option fren.evidence "solver" in det even?) {
+   |          ^^^^^^
+   |
+   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+   = help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+
 error[F0604]: the assumption `pos` of `lex::positive` may not hold for call `lex::caller::p`
   --> test/cli/commands/check_by_testing.fren:30:10
    |
@@ -25,6 +43,15 @@ warning[F0612]: testing never reached `lex::narrow::e` in 100 tests: its trigger
    = note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it
    = help: raise `--tests`; the checks set to random testing are not asked of the solver
 
+note[F0654]: the vacuity and redundancy checks of `lex::narrow` are not run by random testing
+  --> test/cli/commands/check_by_testing.fren:47:10
+   |
+47 | pub proc narrow(x: Int): (big?) {
+   |          ^^^^^^
+   |
+   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+   = help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+
 error[F0603]: expectation `lex::global_wrong::global_wrong` does not hold
   --> test/cli/commands/check_by_testing.fren:42:12
    |
@@ -34,8 +61,17 @@ error[F0603]: expectation `lex::global_wrong::global_wrong` does not hold
    = counterexample: p_n = 2, p.even? = true
    = help: correct the expectation, or assume what it needs
 
+note[F0654]: the vacuity checks of `lex::global_wrong` are not run by random testing
+  --> test/cli/commands/check_by_testing.fren:40:8
+   |
+40 | expect global_wrong(p_n: Int) {
+   |        ^^^^^^^^^^^^
+   |
+   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+   = help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+
 fren: 14 passed (5 by random testing), 3 failed, 1 inconclusive, 0 redundant
 
-Some errors have detailed explanations: F0603, F0604, F0612.
+Some errors have detailed explanations: F0603, F0604, F0612, F0654.
 For more information about an error, try `fren --explain F0603`.
 exit=1

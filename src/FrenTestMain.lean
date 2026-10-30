@@ -306,6 +306,7 @@ def ownSpecFiles : Array String :=
     "Lang/Modules",
     "Lang/Calls",
     "Check",
+    "Methods",
     "View",
     "Cli",
     "Lint",

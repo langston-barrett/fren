@@ -1767,7 +1767,8 @@ cannot enumerate, one with a bound name without a
 [domain](Lang/Quantifiers.md#guards), is not run, and the quantifier is an
 error (`F0639`), as [Evaluation](Eval.md#quantifiers) says: such a check
 needs the solver's evidence, or a `trusted` claim. The
-checks that testing cannot decide are not run: vacuity and redundancy,
+checks that testing cannot decide are not run, and an information message
+says which, and why (`F0654`; see [Proof methods](Methods.md#what-runs-today)): vacuity and redundancy,
 which ask whether something can hold at all, which a failed search does
 not refute; definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
@@ -1868,7 +1869,8 @@ used instead. Before a member, it is `F0216`, as any option but
 `fren.evidence` is.
 
 `check::evidence_value` gives what each value sets, and `check::by_evidence`
-how each check is run:
+how each check is run, as `check::method_run` of [Proof
+methods](Methods.md#what-runs-today) says:
 
 ```fren
 -- `Tested` and `EnumeratedTested` are the retired spellings `"tested"`
@@ -1930,8 +1932,8 @@ decide completeness, disjointness, reachability and preconditions, which
 are about where an expression is evaluated: where no row of a table holds,
 the table's value is the interpretation's unspecified value of its type,
 which enumeration enumerates too (see [Searching](#searching)), as the
-solver leaves it unconstrained. The definedness of indexes is not run:
-they are of sequences, which are not enumerable. A value given where a
+solver leaves it unconstrained. The definedness of indexes is not run,
+and that is reported (`F0654`): they are of sequences, which are not enumerable. A value given where a
 pattern type is declared is the solver's to check, whatever the evidence,
 for testing too: neither testing nor enumeration decides it, and dropping
 it would leave a value outside its type unreported (`F0661`).

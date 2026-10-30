@@ -802,10 +802,10 @@ inductive Method where
 
 /-- The checks that enumeration decides: all but definedness, of indexes,
 which only sequences have, and of values of pattern types, and the
-postconditions of defined functions, which only their bodies have
-(`check::by_evidence`). -/
+postconditions of defined functions, which only their bodies have: those
+that `dispatchOf` runs (`check::by_evidence`). -/
 def enumerable (kind : CheckKind) : Bool :=
-  !(kind == .definedness || kind == .postcondition)
+  (dispatchOf kind .component .enumerated).1 == .run
 
 /-- How a check of kind `kind` is run, given its evidence, and whether it
 is the definedness of a value given where a pattern type is declared,

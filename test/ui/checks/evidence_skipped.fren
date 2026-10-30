@@ -1,0 +1,15 @@
+-- The checks that the method their evidence sets does not run are
+-- reported, with why, in both front ends (`F0654`, `check::method_run`):
+-- random testing searches for no witness, so `r`'s vacuity and redundancy
+-- are not run.
+set_option fren.evidence "random" in
+proc sampled(x: Int): (big?) {  --~ info: the vacuity and redundancy checks of `sampled` are not run by random testing
+    ensure r: when x > 0, big?
+}
+--~^^^[hosted] info: the checks of `sampled` set to random testing are run by `fren check`, not in Lean
+
+-- Enumeration runs them.
+set_option fren.evidence "enumerated" in
+proc enumerated(x: Int): (big?) {  --~ info: 1 check of `enumerated` holds for every behaviour up to size 3
+    ensure r: when x > 0, big?
+}

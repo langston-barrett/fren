@@ -874,6 +874,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
     | none => pure ()
+    -- The checks that the method their evidence sets does not run
+    -- (`check::method_run`).
+    for msg in (toCore c).skippedMsgs (subjectOf c global) c.tested c.enumerated kinds do
+      printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
+      shown := shown.push msg
   IO.eprintln (Fren.Core.summary all byTesting byBound)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""

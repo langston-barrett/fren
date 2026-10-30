@@ -22,10 +22,71 @@ inductive Run where
   | skipped
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- The checks that testing cannot decide (`check::by_testing`). -/
+/-- A method that settles a check (`check::ProofMethod`). -/
+inductive ProofMethod where
+  | solver
+  | enumerated
+  | random
+  | lean
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- What Fren does with a check set to a method (`check::Dispatch`). -/
+inductive Dispatch where
+  /-- The method runs it. -/
+  | run
+  /-- The solver runs it instead, whatever the evidence. -/
+  | bySolver
+  /-- Nothing runs it, and that is reported (`F0654`). -/
+  | skip
+  /-- Requesting the method is an error. -/
+  | reject
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- Why a check runs as it does (`check::Reason`). -/
+inductive Reason where
+  /-- The method that the evidence sets runs it. -/
+  | selected
+  /-- Lean evidence is not yet a method: `"lean"` is `F0214`. -/
+  | noLean
+  /-- `fren.evidence` sets nothing before a function or a constant. -/
+  | noSetting
+  /-- A value given where a pattern type is declared is the solver's to check. -/
+  | patternType
+  /-- Testing searches for counterexamples, not for witnesses. -/
+  | noWitnessSearch
+  /-- The check is about where the evaluator knows no value. -/
+  | noValue
+  /-- Enumeration does not enumerate indexes, nor a function's body. -/
+  | notEnumerated
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- What Fren does with a check of kind `kind` of an item `item` set to
+`method`, and why (`check::method_run`). `obligation` is whether it is the
+definedness of a value given where a pattern type is declared. -/
+def dispatchOf (kind : CheckKind) (item : CheckedItem) (method : ProofMethod) (obligation : Bool := false) :
+    Dispatch × Reason :=
+  let reason : Reason := match method with
+    | .solver => .selected
+    | .lean => .noLean
+    | .enumerated | .random =>
+      if item == .body || item == .contract then .noSetting
+      else if obligation then .patternType
+      else if method == .enumerated then
+        if kind == .definedness || kind == .postcondition then .notEnumerated else .selected
+      else if kind == .vacuity || kind == .redundancy || kind == .reachability then .noWitnessSearch
+      else if kind == .definedness || kind == .completeness || kind == .disjointness || kind == .precondition then .noValue
+      else .selected
+  let dispatch : Dispatch := match reason with
+    | .selected => .run
+    | .noLean => .reject
+    | .noSetting | .patternType => .bySolver
+    | .noWitnessSearch | .noValue | .notEnumerated => .skip
+  (dispatch, reason)
+
+/-- The checks that testing cannot decide (`check::by_testing`): those
+that `dispatchOf` skips under random testing. -/
 def CheckKind.untestable (kind : CheckKind) : Bool :=
-  kind == .vacuity || kind == .redundancy || kind == .definedness || kind == .completeness || kind == .disjointness
-    || kind == .precondition || kind == .reachability
+  (dispatchOf kind .component .random).1 == .skip
 
 /-- How a check of kind `kind` is run, given whether its evidence is
 testing (`check::by_testing`). Vacuity and redundancy ask whether
@@ -77,6 +138,80 @@ def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
   | .inst, some n => t.insts.contains n
   | .determinism, some n => t.dets.contains n
   | _, _ => false
+
+/-- The kind of check in prose, as the messages about skipped checks name it. -/
+def CheckKind.noun : CheckKind → String
+  | .realizable => "realizability"
+  | .inst => "call assumption"
+  | .expect => "expectation"
+  | .cover => "cover"
+  | .vacuity => "vacuity"
+  | .redundancy => "redundancy"
+  | .determinism => "determinism"
+  | .definedness => "definedness"
+  | .completeness => "completeness"
+  | .disjointness => "disjointness"
+  | .precondition => "precondition"
+  | .postcondition => "postcondition"
+  | .reachability => "reachability"
+
+/-- Whether `c` has a check of kind `kind` among those that `t` sets, as
+the solver would ask it: a constraint's vacuity, its redundancy, an index's
+definedness, or a question about the cases of a table or a `match`. The
+definedness of a value given where a pattern type is declared is not
+counted: the solver checks it (`dispatchOf`). -/
+def Comp.hasCheck (c : Comp F) (t : Tested) (kind : CheckKind) : Bool :=
+  let mine (n : Name) := t.props.contains n || t.insts.contains n
+  match kind with
+  | .realizable => t.realizable
+  | .redundancy => t.redundancy && !(c.assumes.isEmpty && c.reqs.isEmpty)
+  | .expect => c.expects.any (t.props.contains ·.1)
+  | .cover => c.covers.any (t.props.contains ·.1)
+  | .vacuity => c.triggers.any (t.props.contains ·.1)
+  | .inst => c.insts.any fun i => t.insts.contains i.name && !i.assumes.isEmpty
+  | .determinism => c.vars.any fun v => v.isDet && t.dets.contains v.name
+  | .definedness => c.indexes.any fun s => s.patTy?.isNone && mine s.prop
+  | .postcondition => false
+  | k => c.tables.any fun s => s.goal.kind == k && mine s.site.prop
+
+/-- The kinds of `kinds` of the checks of `c` that `t` sets to `method`
+and that `method` skips (`dispatchOf`), in the order of `kinds`, each with
+why. -/
+def Comp.skipped (c : Comp F) (t : Tested) (method : ProofMethod) (kinds : Array CheckKind) :
+    Array (CheckKind × Reason) :=
+  kinds.filterMap fun k =>
+    let (d, why) := dispatchOf k .component method
+    if d == .skip && c.hasCheck t k then some (k, why) else none
+
+/-- The method in prose. -/
+def ProofMethod.noun : ProofMethod → String
+  | .solver => "the solver"
+  | .enumerated => "enumeration"
+  | .random => "random testing"
+  | .lean => "Lean"
+
+/-- `a`, `b` and `c`. -/
+private def inProse (xs : Array String) : String :=
+  match xs.toList.reverse with
+  | last :: rest@(_ :: _) => s!"{", ".intercalate rest.reverse} and {last}"
+  | _ => ", ".intercalate xs.toList
+
+/-- The note that says why a method skips a check. -/
+def Reason.note : Reason → String
+  | .noWitnessSearch => "note: testing searches for counterexamples, not for witnesses: \
+      a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken"
+  | .noValue => "note: where an index is out of range, no case of a table or `match` is taken, \
+      or an application does not meet its preconditions, the evaluator knows no value, so no test reaches it"
+  | .notEnumerated => "note: indexes are of sequences, which enumeration does not enumerate"
+  | .selected | .noLean | .noSetting | .patternType => ""
+
+/-- The checks of `subject` of the kinds `skipped` that `method`, which
+their evidence sets, does not run (`F0654`). -/
+def skippedMsg (subject : String) (method : ProofMethod) (skipped : Array (CheckKind × Reason)) : Msg :=
+  let reasons := skipped.foldl (init := #[]) fun acc (_, r) => if acc.contains r then acc else acc.push r
+  { code? := some "F0654"
+    headline := s!"the {inProse (skipped.map (·.1.noun))} checks of {subject} are not run by {method.noun}"
+    notes := reasons.map (·.note) |>.push "help: the solver decides them: set `fren.evidence` to `\"solver\"` to have them run" }
 
 /-- `c` without the checks of `t`, and the kinds of check left to ask the
 solver. -/
@@ -159,5 +294,15 @@ def Tested.union (a b : Tested) : Tested :=
   let merge (xs ys : Array Name) := ys.foldl (fun acc y => if acc.contains y then acc else acc.push y) xs
   { realizable := a.realizable || b.realizable, redundancy := a.redundancy || b.redundancy
     props := merge a.props b.props, insts := merge a.insts b.insts, dets := merge a.dets b.dets }
+
+/-- The messages about the checks of `c`, shown as `subject`, of the kinds
+`kinds`, that the method that their evidence sets does not run (`F0654`):
+those set to random testing alone, then those set to enumeration. -/
+def Comp.skippedMsgs (c : Comp F) (subject : String) (tested enumerated : Tested) (kinds : Array CheckKind) :
+    Array Msg :=
+  let one (t : Tested) (method : ProofMethod) : Array Msg :=
+    let s := c.skipped t method kinds
+    if s.isEmpty then #[] else #[skippedMsg subject method s]
+  one (tested.minus enumerated) .random ++ one enumerated .enumerated
 
 end Fren.Core

@@ -32,6 +32,7 @@
 # Checking
 
 - [Checks](Check.md)
+  - [Proof methods](Methods.md)
 - [Diagnostics](View.md)
 - [Lints](Lint.md)
   - [Meaning](Lint/Meaning.md)
