@@ -174,4 +174,9 @@ proc primed(g: Grade): (h: Grade) {
     out h := if Grade::Low' < g then Grade::Low' else g  --~ warning: write `(Grade::Low').min(g)`
 }
 
---@ summary: 40 passed, 0 failed, 0 inconclusive, 0 redundant
+-- A keyword after a `'` is part of a name, which takes no parentheses.
+proc primed_keyword(x'if: Level, k: Level): (h: Level) {
+    out h := if x'if < k then x'if else k  --~ warning: write `x'if.min(k)`
+}
+
+--@ summary: 41 passed, 0 failed, 0 inconclusive, 0 redundant

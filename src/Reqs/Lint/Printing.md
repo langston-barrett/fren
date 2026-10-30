@@ -175,8 +175,11 @@ expect bare_operand_is_operand(outer: Precedence, inner: Precedence, assoc: Asso
 
 Printing a tree gives a text that the parser of the `fren` command reads
 back as the tree, each expression as written as itself, and in which every
-pair of parentheses is needed: without it, the text would read as another
-tree, or as none. There are two exceptions, which [Parentheses in
+pair of parentheses that the printer adds is needed: without it, the text
+would read as another tree, or as none. An expression as written is
+written as it is, with any parentheses of its own, and must come with the
+precedence, the open end and the receivability of its own text, as
+`Tree.ofText` gives them. There are two exceptions, which [Parentheses in
 fixes](../Lint.md#parentheses-in-fixes) makes to keep the reading plain.
 An open-ended form as an operand of an operator is in parentheses, though
 the grammar reads a conditional without them where nothing follows it.
@@ -192,8 +195,8 @@ set_option fren.lint.unused_variables "allow" in
 pub proc printing(
     tree: FixTree,           -- what a fix writes
 ): (
-    reads_back?,             -- the parser reads the printed text as `tree`
-    all_needed?,             -- without any pair of parentheses in it, but those of the two exceptions, the text reads otherwise
+    reads_back?,             -- the parser reads the text `printed(tree)` as `tree`
+    all_needed?,             -- without any pair of parentheses that the printer adds, but those of the two exceptions, the text reads otherwise
     ends_as_said?,           -- the text ends in an open-ended form outside parentheses exactly where `ends_open?(tree)` says
 ) {
     ensure reads_back: reads_back?
@@ -203,14 +206,18 @@ pub proc printing(
 ```
 
 No spec models the parser, so the printer's tests check this. They print
-random trees and read each back with the parser of the `fren` command,
-and remove each pair of parentheses in turn: the text must then read
-otherwise, unless the pair is one of the exceptions, which they find from
-where the parser reads the pair's contents. The trees have every operator
-and form of the printer, with names, a name that ends in `?`, names and
-paths that end in `'`, integers, `true` and strings as atoms, fields and
-methods whose names end in `?`, and expressions as written that end open,
-as `x + if p? then 1 else 2`, as well as printed trees.
+random trees and read each back with the parser of the `fren` command.
+They remove each pair of parentheses that the printer adds in turn: the
+text must then read otherwise, unless the pair is one of the exceptions,
+which they find from where the parser reads the pair's contents. And they
+ask the parser whether the text ends open, by reading it before `iff`.
+The trees have every operator and form of the printer, applications and
+method calls with and without arguments, and as atoms every shape of name
+and path, with `?`, `'` and keywords after a `'`, integers in every base,
+`true`, `false` and strings. Fields and methods have names that end in `?`
+and `'`. The expressions as written are atoms, printed trees, and texts
+that end open at every precedence, as `x + if p? then 1 else 2` and
+`when p?, q?`, some with parentheses of their own.
 
 ### Each operand in its place
 

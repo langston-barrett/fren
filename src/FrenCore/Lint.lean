@@ -604,7 +604,8 @@ def indexAfterUseMsg (a b : String) : Msg :=
 
 /-! ## Texts -/
 
-def isWordChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?'
+/-- Whether `c` can be in an identifier's component (`Reqs/Lang/Lexical#identifiers`). -/
+def isWordChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?' || c == '\''
 
 /-- The characters `cs[start:stop]` without the comments outside their
 string literals: line comments, and block comments, which nest. Each
@@ -2065,8 +2066,7 @@ the `[` of an index: an integer, `true` and `false` cannot be; nor, before
 (`Reqs/Lang/Expressions`: `atom "." IDENT`). -/
 def receivesText (text : String) (dot : Bool) : Bool :=
   let rev := text.toList.reverse
-  -- An identifier's last component, which may end in `'`, or in `?`.
-  let word := rev.takeWhile fun c => isWordChar c || c == '\''
+  let word := rev.takeWhile isWordChar
   let before := rev.drop word.length
   if text.isEmpty then false
   else if before.isEmpty && (text.front.isDigit || text == "true" || text == "false") then false
@@ -2076,8 +2076,8 @@ def receivesText (text : String) (dot : Bool) : Bool :=
 def Tree.ofText (t : BText) : Tree := .written t (endsOpen t.text) (receivesText t.text true)
 
 /-- Text that is written as it is: a name, a literal, or an expression
-that stays where it is written, with the parentheses it has there. A
-negative literal, as `-1`, binds as a negation does. -/
+that stays where it is written, with the parentheses it has there, which
+the printer keeps. A negative literal, as `-1`, binds as a negation does. -/
 def Tree.atom (text : String) : Tree :=
   let prec := if text.startsWith "-" then BKind.neg.prec else BKind.atom.prec
   .written { text, prec } false (receivesText text true)
@@ -2168,9 +2168,14 @@ def Tree.print : Tree → Printed
     let texts := ps.zipIdx.map fun (p, i) => p.inSlot (slot i) (i + 1 < ps.length)
     { text := (texts.head?.getD "") ++ String.join ((ops.zip texts.tail).map fun (op, t) => s!" {op} {t}"), prec := k.prec
       endsOpen := (ps.getLast?.map (·.leavesOpen (slot 1))).getD false }
-  | .app f args => { text := s!"{f}({Tree.delimited args})", prec := BKind.atom.prec, endsOpen := false }
+  -- Without arguments, an application is written as its path, and a method
+  -- call as a field read is.
+  | .app f args =>
+    { text := if args.isEmpty then f else s!"{f}({Tree.delimited args})", prec := BKind.atom.prec, endsOpen := false
+      receivable := !args.isEmpty || receivesText f true }
   | .method r m args =>
-    { text := s!"{r.print.asReceiver true}.{m}({Tree.delimited args})", prec := BKind.atom.prec, endsOpen := false }
+    { text := s!"{r.print.asReceiver true}.{m}" ++ (if args.isEmpty then "" else s!"({Tree.delimited args})")
+      prec := BKind.atom.prec, endsOpen := false, receivable := !args.isEmpty || !Fren.Str.endsWith m "?" }
   -- A name that ends in `?` takes no `.` after it.
   | .field r m =>
     { text := s!"{r.print.asReceiver true}.{m}", prec := BKind.atom.prec, endsOpen := false

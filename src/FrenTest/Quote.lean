@@ -27,14 +27,18 @@ def open_ : BText := { text := "x + if p? then 1 else 2", prec := (BKind.bin "+"
 def alts : Array String := #["E::A", "E::B"]
 
 /-- Expressions as written that end in an open-ended form, as a fix takes
-them from the source, with their precedence: the printer writes none, as it
-encloses an open-ended operand. -/
+them from the source, at every precedence, with their precedence: the
+printer writes none, as it encloses an open-ended operand. And some that
+end in a parenthesized one. -/
 def openTexts : Array BText :=
-  #[{ text := "q? and if p? then q? else d?", prec := (BKind.bin "and").prec },
-    { text := "x + if p? then 1 else 2", prec := (BKind.bin "+").prec },
-    { text := "x = if p? then 1 else 2", prec := (BKind.bin "=").prec },
-    { text := "not if p? then q? else d?", prec := BKind.not.prec },
-    { text := "-if p? then 1 else 2", prec := BKind.neg.prec }]
+  let bt (text : String) (prec : Nat) : BText := { text, prec }
+  #[bt "a iff if p? then q? else d?" 1, bt "a or if p? then q? else d?" 2, bt "q? and if p? then q? else d?" 3,
+    bt "a and not if p? then q? else d?" 3, bt "not if p? then q? else d?" 4, bt "x = if p? then 1 else 2" 5,
+    bt "x < -if p? then 1 else 2" 5, bt "x + if p? then 1 else 2" 6, bt "x - -if p? then 1 else 2" 6,
+    bt "x * if p? then 1 else 2" 7, bt "x mod -if p? then 1 else 2" 7, bt "-if p? then 1 else 2" 8,
+    bt "- -if p? then 1 else 2" 8, bt "if p? then q? else d?" 0, bt "when p?, q?" 0, bt "unless p?, a or b" 0,
+    bt "forall (k: Int), k = k" 0, bt "exists (k: Int), a and if p? then q? else d?" 0,
+    bt "a and (if p? then q? else d?)" 3, bt "x + (when p?, 1)" 6]
 
 def elems : Array BText := #[{ text := "1", prec := BKind.atom.prec }, { text := "when p?, q?", prec := 0 }]
 
@@ -65,9 +69,14 @@ def elems : Array BText := #[{ text := "1", prec := BKind.atom.prec }, { text :=
 #guard (fren_expr!{ $(Tree.field (.atom "x") "empty?").len }).print.text == "(x.empty?).len"
 #guard (fren_expr!{ $(Tree.atom "E::A").min(y) }).print.text == "(E::A).min(y)"
 #guard (fren_expr!{ $(Tree.atom "E::A'").min(y) }).print.text == "(E::A').min(y)"
+-- A keyword after a `'` is part of the name, which does not end open.
+#guard (fren_expr!{ $(Tree.ofText { text := "x'if", prec := BKind.atom.prec }) is E::A }).print.text == "x'if is E::A"
+#guard (fren_expr!{ $(Tree.atom "x'if").min(k) }).print.text == "x'if.min(k)"
+-- Without arguments, a method call is written as a field read.
+#guard (Tree.method (.atom "x") "abs" []).print.text == "x.abs"
 -- A `when`'s condition that ends open is in parentheses, to keep the
 -- reading plain, though its `,` would end it.
-#guard (fren_expr!{ when $(openTexts[0]!), d? }).print.text == "when (q? and if p? then q? else d?), d?"
+#guard (fren_expr!{ when $(openTexts[2]!), d? }).print.text == "when (q? and if p? then q? else d?), d?"
 #guard (fren_expr!{ $(Tree.atom "-1").abs }).print.text == "(-1).abs"
 #guard (fren_expr!{ - $(Tree.neg (.atom "x")) }).print.text == "- -x"
 -- The quotation is read as the `fren` command reads it: a quantifier as
@@ -153,18 +162,27 @@ def next (n : Nat) : R Nat := modifyGet fun s =>
 
 def pick (xs : Array α) [Inhabited α] : R α := return xs[← next xs.size]!
 
-def atoms : Array String := #["a", "b?", "x", "x'", "1", "true", "\"s\"", "E::A", "E::A'"]
+/-- Every shape of identifier, path and literal, and other atoms, among
+them some whose parentheses are their own. -/
+def atoms : Array String :=
+  #["a", "b?", "x", "x'", "x''", "a'b", "x'?", "_x", "_", "x_1", "A", "x.y", "x.y'", "x.y?", "x'.y",
+    "E::A", "E::A'", "E::A::B", "E::A'?", "m::c", "if'", "when'", "iff'", "not'", "x'if", "a'when", "or'", "ifx", "notx",
+    "1", "0", "-1", "0x1F", "1_000", "true", "false", "\"s\"", "\"a\\\"b\"", "\"if\"", "f(x)", "q[0]", "x.m?(a)",
+    "[1, 2]", "{1}", "(a or b)", "E::f(x)"]
 
 def patterns : Array String := #["E::A", "E::A | E::B", "1..=3", "_", "\"s\""]
 def ops : Array String := binaryOps
 
-/-- A random tree of depth at most `d`. An expression as written is a
-random tree, printed. -/
+/-- A random tree of depth at most `d`. An expression as written is an
+atom, one of `openTexts`, or a random tree, printed. -/
 partial def tree (d : Nat) : R Tree := do
-  if d == 0 then return .atom (← pick atoms)
+  if d == 0 then
+    if (← next 3) == 0 then return .ofText (← pick openTexts) else return .atom (← pick atoms)
   let sub := tree (d - 1)
-  match ← next 18 with
-  | 0 => return .atom (← pick atoms)
+  -- Up to two arguments, or none.
+  let args : R (List Tree) := do return (← [0, 1].filterMapM fun _ => do if (← next 3) == 0 then pure none else some <$> sub)
+  match ← next 20 with
+  | 0 | 19 => return .atom (← pick atoms)
   | 1 => return .ofText (← pick openTexts)
   | 2 => let t ← sub; return .ofText t.print.toBText
   | 3 | 4 | 5 => return .bin (← pick ops) (← sub) (← sub)
@@ -176,9 +194,9 @@ partial def tree (d : Nat) : R Tree := do
   | 11 =>
     let ops ← if (← next 2) == 0 then pure #["<", "<="] else pure #[">", ">="]
     return .chain [← sub, ← sub, ← sub] [← pick ops, ← pick ops]
-  | 12 => return .app "f" [← sub, ← sub]
-  | 13 => return .method (← sub) (← pick #["m", "m?"]) [← sub]
-  | 14 => return .field (← sub) (← pick #["len", "empty?"])
+  | 12 => return .app (← pick #["f", "E::g"]) (← args)
+  | 13 => return .method (← sub) (← pick #["m", "m?", "m'"]) (← args)
+  | 14 => return .field (← sub) (← pick #["len", "empty?", "y'"])
   | 15 => return .index (← sub) (← sub)
   | 16 => return (if (← next 2) == 0 then Tree.set else Tree.seq) [← sub, ← sub]
   | _ => return .quant ((← next 2) == 0) "(k: Int)" (← sub)
@@ -242,7 +260,10 @@ partial def treeShape (t : Tree) : String :=
   | .ite c a b => s!"(if {go c} {go a} {go b})"
   | .test e p => s!"(is {go e} {p})"
   | .chain es ops => s!"(chain {ops} {all es})"
+  -- Without arguments, an application is its path, and a method call a field read.
+  | .app f [] => (readShape f).getD s!"<unreadable {f}>"
   | .app f args => s!"(app {f} {all args})"
+  | .method r m [] => s!"(field {go r} {m})"
   | .method r m args => s!"(method {go r} {m} {all args})"
   | .field r m => s!"(field {go r} {m})"
   | .index q i => s!"(index {go q} {go i})"
@@ -319,22 +340,58 @@ partial def keptForReading (cs : Array Char) (es : Array (FrenCli.Span × Expr �
     i + 1 < j && cs[i + 1]! == '(' && cs[j - 1]! == ')' && (parenPairs (cs.extract (i + 1) j)).contains (0, j - i - 2)
       && keptForReading cs es (i + 1) (j - 1)
 
+/-- `t` with each parenthesis in the text of an expression as written
+replaced by a `z`: the pairs of parentheses in what it prints are those
+that the printer adds, where they are in `t`'s text, since the printer
+writes the rest as it did. -/
+partial def masked : Tree → Tree
+  | .written t e r => .written { t with text := t.text.map fun c => if c == '(' || c == ')' then 'z' else c } e r
+  | .bin op a b => .bin op (masked a) (masked b)
+  | .not a => .not (masked a)
+  | .neg a => .neg (masked a)
+  | .when n c d => .when n (masked c) (masked d)
+  | .ite c a b => .ite (masked c) (masked a) (masked b)
+  | .test e p => .test (masked e) p
+  | .chain es ops => .chain (es.map masked) ops
+  | .app f args => .app f (args.map masked)
+  | .method r m args => .method (masked r) m (args.map masked)
+  | .field r m => .field (masked r) m
+  | .index q i => .index (masked q) (masked i)
+  | .set es => .set (es.map masked)
+  | .seq es => .seq (es.map masked)
+  | .quant all bs body => .quant all bs (masked body)
+
+/-- Whether the printer says that what it writes for `t` ends open where the
+parser does: a text that binds at least as tightly as `or` does not end open
+exactly where `text iff zz` reads as `iff` of it and `zz`. A text that binds
+more loosely ends open, or is an `iff`, whose operands the same check reads. -/
+def endsAsSaid (t : Tree) : Bool :=
+  let p := t.print
+  p.prec < (BKind.bin "or").prec ||
+    (readShape (p.text ++ " iff zz") == some s!"(iff {treeShape t} zz)") == !p.endsOpen
+
 /-- The failures of `lint::printing` on `t`: what the printer writes
-must read back as `t`, and without any pair of parentheses in it, but those
-that `keptForReading` allows, it must read otherwise, or not at all. Its
-`endsOpen` must be what the text says (`Fren.Core.endsOpen`). -/
+must read back as `t`; without any pair of parentheses that it adds, but
+those that `keptForReading` allows, it must read otherwise, or not at all;
+and it must end open where the printer says (`endsAsSaid`), which the
+parser decides. -/
 def printingFailures (t : Tree) : Array String := Id.run do
   let p := t.print
   let want := treeShape t
   let mut out := #[]
   if readShape p.text != some want then
     out := out.push s!"`{p.text}` reads as {readShape p.text}, not {want}"
-  if p.endsOpen != endsOpen p.text then
-    out := out.push s!"`{p.text}` ends open by the printer: {p.endsOpen}, but by its text: {endsOpen p.text}"
+  unless endsAsSaid t do
+    out := out.push s!"`{p.text}` ends open by the printer: {p.endsOpen}, but not by the parser"
   let some (e, _) := (FrenCli.Quote.parseExpr p.text).toOption | return out
   let es := contexts e
   let cs := p.text.toList.toArray
-  for (i, j) in parenPairs cs do
+  let added := parenPairs (masked t).print.text.toList.toArray
+  let own := (parenPairs cs).filter (!added.contains ·)
+  for (i, j) in added do
+    -- A pair right around one of an expression as written: removing either
+    -- leaves the same text, and the parentheses are that expression's.
+    if own.contains (i + 1, j - 1) then continue
     let without := String.ofList ((cs.extract 0 i) ++ (cs.extract (i + 1) j) ++ (cs.extract (j + 1) cs.size)).toList
     if readShape without == some want && !keptForReading cs es i j then
       out := out.push s!"`{p.text}` does not need the parentheses at {i}: `{without}` reads the same"

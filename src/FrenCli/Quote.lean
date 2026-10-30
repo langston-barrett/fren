@@ -31,8 +31,8 @@ one operand between each two operators.
 
 The parentheses written in `e` are not kept: `Tree.print` writes those that
 the grammar needs. Nor is the layout of `e`. A quotation has no comments:
-`--` is not read as one, so a `}`, a `"` or a `$` after it is the
-quotation's.
+a comment is an error, as the braces, strings and antiquotations of a
+quotation are read without them.
 
 The module is imported by `FrenCore.Lint`, which builds fixes with
 `fren_expr!`; it needs only the parser, not the elaborator of the
@@ -74,6 +74,20 @@ def braceDepth (depth : Nat) (text : String) : Nat := Id.run do
     else if ch == '{' then depth := depth + 1
     else if ch == '}' then depth := depth - 1
   return depth
+
+/-- Whether `text` has a comment, a line comment or a block comment,
+outside its string literals. -/
+def hasComment (text : String) : Bool := Id.run do
+  let cs := text.toList.toArray
+  let mut i := 0
+  while i < cs.size do
+    let c := cs[i]!
+    if c == '"' then
+      i := i + 1
+      while i < cs.size && cs[i]! != '"' do i := i + (if cs[i]! == '\\' then 2 else 1)
+    else if (c == '-' || c == '/') && cs[i + 1]? == some '-' then return true
+    i := i + 1
+  return false
 
 /-- Fren text of a quotation, up to an antiquotation's `$` or to the `}`
 that closes the quotation, where `depth` braces are open: braces nest, and
@@ -195,6 +209,8 @@ def antiquotations (body : Syntax) : TermElabM (String × Array Hole) := do
     | .atom _ text =>
       if (text.splitOn holePrefix).length > 1 then
         throwErrorAt part "a Fren quotation cannot write `{holePrefix}`, which stands for its antiquotations"
+      -- Its braces, strings and antiquotations are read without them.
+      if hasComment text then throwErrorAt part "a Fren quotation has no comments"
       -- What follows an antiquotation would otherwise run into its name.
       if !holes.isEmpty && text.toList.head?.any isHoleChar then
         throwErrorAt part "in a Fren quotation, an antiquotation stands for an expression, list elements or a pattern, \
