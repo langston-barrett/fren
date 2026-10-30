@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.Quote
 import FrenTest.Ui
@@ -45,7 +46,7 @@ reported sorted.
 
 -- fren-covers: cli::agreement, fmt::safe
 
-open System Lean FrenTest.Ui
+open System Lean FrenTest.Ui FrenTest.Jobs
 
 /-- The files under `dir`, in its subdirectories too, with extension `ext`. -/
 def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
@@ -362,6 +363,7 @@ def ownSpecFiles : Array String :=
     "Impl",
     "Generated",
     "Trace",
+    "dev/Testing",
   ].map fun r => s!"src/Reqs/{r}.md"
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
@@ -711,7 +713,8 @@ def specsRead : List (List String × (String → Bool)) :=
   [(["Reqs.Check", "Reqs.Cli", "Reqs.Eval", "Reqs.Fmt", "Reqs.Generated", "Reqs.Impl", "Reqs.Mutate", "Reqs.Trace", "Reqs.View"],
       fun p => !p.contains '/'),
     (["Reqs.Calls", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
-    (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/")]
+    (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/"),
+    (["Reqs.Testing"], (·.startsWith "dev/"))]
 
 /-- The modules of Impls whose library needs the tests, `ImplsTested` in
 `lakefile.lean` (`libraryModules`). -/
@@ -1689,40 +1692,6 @@ def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String
     return failures
   let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
-
-/-- Whether `job` checks a slice of the mutants of Fren's own requirements,
-the slowest jobs, which `--skip-own-mutants` leaves out. -/
-def ownMutantsJob : List String → Bool
-  | ["mutation", "0", _, _] => true
-  | _ => false
-
-/-- The shard `K/N` of `--shard K/N`, for `K < N`. -/
-def parseShard (s : String) : Except String (Nat × Nat) :=
-  match s.splitOn "/" with
-  | [k, n] => match k.toNat?, n.toNat? with
-    | some k, some n => if k < n then .ok (k, n) else .error s!"--shard {s}: K must be less than N"
-    | _, _ => .error s!"--shard {s}: expected K/N, two whole numbers"
-  | _ => .error s!"--shard {s}: expected K/N, two whole numbers"
-
-/-- The shard of the `i`th job of the selection, of `n` shards: the first
-job, `ownSpec`, alone in shard 0, as on one machine it takes about as long
-as all the others but `ownMutantsJob`'s, and the others dealt in turn to
-shards 1 to `n - 1`, so that the slowest, which come first, spread over
-them. -/
-def shardOf (n i : Nat) : Nat :=
-  if n ≤ 1 then 0 else if i == 0 then 0 else 1 + (i - 1) % (n - 1)
-
-/-- The jobs that `args` select: with `--skip-own-mutants`, all but
-`ownMutantsJob`'s; with `--shard K/N`, of those, the `K`th shard's
-(`shardOf`), so that the shards together run each job once. -/
-def selectJobs (args : List String) (all : Array (List String)) : Except String (Array (List String)) := do
-  let all := if args.contains "--skip-own-mutants" then all.filter (!ownMutantsJob ·) else all
-  match args.dropWhile (· != "--shard") with
-  | _ :: s :: _ =>
-    let (k, n) ← parseShard s
-    return (all.zipIdx.filter fun (_, i) => shardOf n i == k).map (·.1)
-  | [_] => .error "--shard needs an argument, K/N"
-  | [] => return all
 
 unsafe def main (args : List String) : IO UInt32 := do
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome

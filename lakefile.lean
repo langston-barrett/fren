@@ -144,6 +144,15 @@ input_file reqs_lint_chapter_md where
   path := "src/Reqs/Lint.md"
   text := true
 
+lean_lib ReqsDev where
+  globs := #[`Reqs.Testing]
+  needs := #[`@/reqs_dev_md]
+
+input_dir reqs_dev_md where
+  path := "src/Reqs/dev"
+  text := true
+  filter := .extension #["md"]
+
 -- Fren's own code linked to its requirements with `impl`. It imports both
 -- the requirements and the code, so that neither depends on the other. A
 -- `tested` claim reads the tests, so its module's library needs them: only
