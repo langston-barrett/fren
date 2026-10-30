@@ -4,7 +4,6 @@
 -- keep-sorted start
 import FrenCore.Check
 import FrenCore.Closures
-import FrenCore.Codes
 import FrenCore.Diagnostic
 import FrenCore.Evidence
 import FrenCore.FnBlocks
@@ -28,4 +27,5 @@ import FrenCore.Syntax
 import FrenCore.Table
 import FrenCore.Trace
 import FrenCore.Ty
+import FrenCoreCodes
 -- keep-sorted end

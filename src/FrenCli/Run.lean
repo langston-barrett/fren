@@ -7,8 +7,8 @@ import FrenCli.MutateRun
 import FrenCli.Quick
 import FrenCli.Same
 import FrenCli.Smt
-import FrenCore.Codes
 import FrenCore.Literate
+import FrenCoreCodes
 -- keep-sorted end
 
 /-!

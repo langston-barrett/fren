@@ -35,6 +35,14 @@ def coverageLinkArgs : Array String := match get_config? coverage with
 -- `trust-skip-proofs`.
 require smt from git "https://github.com/langston-barrett/lean-smt.git"@"3da3dcc7e07a0254e853e1f97f3b4f533ab0ba3b"
 
+-- Which library builds a module: a library builds each module of its
+-- `globs` (by default, its root) with its own configuration, its `needs`
+-- and compiler arguments, even if another library has the module too. A
+-- module that a build reaches only by an import is built with that of the
+-- last library that has it, in its globs or under one of its roots. So that
+-- each module is built one way, no module is in the globs of two libraries,
+-- which `lake test`'s `libraries` job checks.
+
 -- Shared by the Lean library and the binary; depends only on Lean core, and
 -- on the parser of the binary, with which `FrenCore.Lint` reads the Fren
 -- quotations of its fixes when it is built (`FrenCli.Quote`). All of its
@@ -58,10 +66,10 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"3da3dcc
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
--- `FrenCore.Codes` reads the explanations of the codes, a Markdown file
--- each in `src/FrenCore/Codes`, when it is compiled, hence `needs`.
+-- `FrenCoreCodes` reads the explanations of the codes, a Markdown file
+-- each in `src/FrenCore/Codes`, when it is compiled, hence `needs`. It is
+-- not a module of `FrenCore`, whose globs would build it without them.
 lean_lib FrenCoreCodes where
-  globs := #[`FrenCore.Codes]
   needs := #[`@/codes_md]
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
@@ -81,7 +89,8 @@ input_dir codes_md where
 -- (`fren_test`, `fren_fuzz_frontends`, `fren_coverage`): `lean` interprets
 -- it on every build of `Reqs`. At `-O3`, clang took 17 s on it, on the path
 -- of `lake test`'s build; at `-O0` it takes 3 s, and `lake test`'s run takes
--- no longer. (Lake places a module in the last library that has it.)
+-- no longer. A build reaches it only through `Fren`'s imports, so it is
+-- built here (see the top of this file).
 lean_lib FrenElab where
   globs := #[`Fren.Elab]
   moreLeancArgs := coverageArgs ++ #["-O0"]
@@ -92,9 +101,10 @@ lean_lib FrenElab where
 -- see, hence `needs`. The libraries after `Reqs` hold its modules by the
 -- specs that they read, so that editing a spec rebuilds only the modules
 -- that read it, and those that import them; a module that none of them
--- lists is in `Reqs`, which needs every spec. (Lake places a module in the
--- last library that has it.) `lake test`'s `libraries` job checks that each
--- module reads only the specs of its library.
+-- lists is in `Reqs`, which needs every spec. The root `Reqs` imports them,
+-- so each is built in the last library that has it (see the top of this
+-- file). `lake test`'s `libraries` job checks that each module reads only
+-- the specs of its library.
 @[default_target] lean_lib Reqs where needs := #[`@/reqs_md]
 
 input_dir reqs_md where
@@ -137,17 +147,18 @@ input_file reqs_lint_chapter_md where
 -- Fren's own code linked to its requirements with `impl`. It imports both
 -- the requirements and the code, so that neither depends on the other. A
 -- `tested` claim reads the tests, so its module's library needs them: only
--- `Impls`, `Impls.Lint` and `Impls.Trace` make such claims, in
+-- `Impls.Evidence`, `Impls.Lint` and `Impls.Trace` make such claims, in
 -- `ImplsTested`, so that editing a test rebuilds only those three, and a new
--- module of `Impls` needs no entry here. A module that makes one elsewhere
--- fails `lake test`'s `libraries` job, which also checks that `testReaders`
--- in `src/FrenTestMain.lean` lists these three. (Lake places a module in
--- the last library that has it.)
+-- module of `Impls` needs no entry here. The root `Impls`, which the library
+-- `Impls` builds, imports them, so they are built in `ImplsTested`, the last
+-- library that has them (see the top of this file). A module that makes one
+-- elsewhere fails `lake test`'s `libraries` job, which also checks that
+-- `testReaders` in `src/FrenTestMain.lean` lists these three.
 @[default_target] lean_lib Impls
 
 lean_lib ImplsTested where
-  globs := #[`Impls, `Impls.Lint, `Impls.Trace]
-  needs := #[`@/tests, `@/test_lean, `@/test_main]
+  globs := #[`Impls.Evidence, `Impls.Lint, `Impls.Trace]
+  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main]
 
 input_dir tests where
   path := "test"
@@ -159,6 +170,11 @@ input_dir test_lean where
   text := true
   filter := .extension #["lean"]
 
+input_dir test_files_lean where
+  path := "src/FrenTestFiles"
+  text := true
+  filter := .extension #["lean"]
+
 input_file test_main where
   path := "src/FrenTestMain.lean"
   text := true
@@ -167,19 +183,17 @@ input_file test_main where
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
 
 -- The tests that read Markdown or `.fren` files with `#fren_md`: the
--- fixtures in `src/FrenTest`, and two ui tests, hence `needs`, so that
--- editing one rebuilds them. `lake test`'s `libraries` job checks that no
--- other module of `FrenTest` reads a file, that these read only the files
--- that this library needs, and that `fileReaders` in `src/FrenTestMain.lean`
--- lists these modules. (Lake places a module in the last library that has
--- it.)
-lean_lib FrenTestFiles where
-  globs := #[`FrenTest.LambdaMatch, `FrenTest.Literate, `FrenTest.LiterateChapters, `FrenTest.LiterateImported,
-    `FrenTest.LiterateNested, `FrenTest.LiterateRelative, `FrenTest.LiterateSettings, `FrenTest.LiterateUndecidable]
+-- fixtures in `src/FrenTestFiles`, and two ui tests, hence `needs`, so that
+-- editing one rebuilds them. They are not modules of `FrenTest`, whose globs
+-- would build them without these files. `lake test`'s `libraries` job
+-- checks that no other test reads a file, and that these, and the files
+-- that they read, read only files that this library needs.
+@[default_target] lean_lib FrenTestFiles where
+  globs := #[`FrenTestFiles.+]
   needs := #[`@/test_fixtures, `@/test_lambda_match, `@/test_multi_match_names]
 
 input_dir test_fixtures where
-  path := "src/FrenTest"
+  path := "src/FrenTestFiles"
   text := true
   filter := .extension #["md", "fren"]
 

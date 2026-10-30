@@ -9,7 +9,7 @@ Every error and warning Fren reports, except internal errors, has a code,
 explained by `fren --explain CODE` as rustc explains its codes: what is
 wrong, an erroneous example, why, and the example fixed.
 
-Each code is explained in a Markdown file of its own, `Codes/CODE.md`. In
+Each code is explained in a Markdown file of its own, `FrenCore/Codes/CODE.md`. In
 each explanation, the first ```` ```fren ```` block is the erroneous
 example and the others are fixed versions. `lake test` checks that the
 erroneous example reports the code (with `args`, if they are not `none`),
@@ -103,7 +103,7 @@ proc c(s: String): (p?) { ensure r: p? iff s = "café" }
 
 /-- Every code: explained in `Codes/CODE.md`, a file each, so that codes
 added at once merge cleanly, or in `computedCodes`. -/
-def errorCodes : Array ErrorCode := error_codes% "Codes" ++ computedCodes
+def errorCodes : Array ErrorCode := error_codes% "FrenCore/Codes" ++ computedCodes
 
 /-- The explanation of `code`. Codes are written `F0101`; lower case is
 accepted, as are `0101` and `101`. -/

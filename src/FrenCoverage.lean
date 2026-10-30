@@ -17,11 +17,11 @@ Coverage is per declaration: a declaration ran if one of its entry
 points ran, its own function, its boxed or reduced-arity version, or a
 specialization of it. Lambdas, join points and closed terms count for no
 one, since the compiler shares them among declarations. The declarations
-counted are the definitions of `FrenCore`, `Fren` and `FrenCli` that are
-compiled to a function and written in the source: not theorems,
-constructors, recursors, matchers, projections, instances that `deriving`
-makes, constants, or `@[inline]` definitions, whose code runs in their
-callers.
+counted are the definitions of `FrenCore`, `FrenCoreCodes`, `Fren` and
+`FrenCli` that are compiled to a function and written in the source: not
+theorems, constructors, recursors, matchers, projections, instances that
+`deriving` makes, constants, or `@[inline]` definitions, whose code runs in
+their callers.
 
 The declarations that no test runs are listed in `test/coverage.txt`, one
 per line, each followed by ` -- ` and why, if it is never meant to run.
@@ -35,7 +35,7 @@ open Lean
 namespace FrenCoverage
 
 /-- The libraries whose code is counted. -/
-def counted : List Name := [`FrenCore, `Fren, `FrenCli]
+def counted : List Name := [`FrenCore, `FrenCoreCodes, `Fren, `FrenCli]
 
 /-- `parts` as a name, component by component: `++` refuses names with
 macro scopes. -/
