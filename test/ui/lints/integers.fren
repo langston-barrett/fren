@@ -156,12 +156,27 @@ expect reads(v: Int) {
 pub ordered struct Ms(Int)
 ordered enum Level { Low, Mid, High }
 
-proc newtypes(a: Ms, b: Ms, l: Level, k: Level): (m: Ms, d: Ms, n: Level, o: Level) {
+proc newtypes(a: Ms, b: Ms, l: Level, k: Level): (m: Ms, d: Ms, n: Level, o: Level, p: Level) {
     out m := if a < b then a else b
     out d := if a > b then a - b else b - a
     out n := if l < k then l else k  --~ warning: this conditional is `min`
     out o := if l < k then l  -- the lower  --~ warning: this conditional is `min`
         else k
+    -- A variant is a receiver only in parentheses: `Level::Low.min(k)`
+    -- would read `Low.min` as one segment of the path.
+    out p := if Level::Low < k then Level::Low else k  --~ warning: write `(Level::Low).min(k)`
 }
 
---@ summary: 39 passed, 0 failed, 0 inconclusive, 0 redundant
+-- So is one whose last segment ends in `'`.
+ordered enum Grade { Low', High }
+
+proc primed(g: Grade): (h: Grade) {
+    out h := if Grade::Low' < g then Grade::Low' else g  --~ warning: write `(Grade::Low').min(g)`
+}
+
+-- A keyword after a `'` is part of a name, which takes no parentheses.
+proc primed_keyword(x'if: Level, k: Level): (h: Level) {
+    out h := if x'if < k then x'if else k  --~ warning: write `x'if.min(k)`
+}
+
+--@ summary: 41 passed, 0 failed, 0 inconclusive, 0 redundant

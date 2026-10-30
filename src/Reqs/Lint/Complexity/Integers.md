@@ -43,7 +43,9 @@ both branches are `0`, so the strict and the non-strict comparisons
 agree. The condition must compare `Int`s or `Nat`s, and then the
 conditional is an `Int`, as `abs` is. `x` is in parentheses as the
 receiver where [`lang::operand`](../../Lang/Expressions.md#operators)
-requires them, as in `(a - b).abs`. `lint::manual_abs` states when it
+requires them, as in `(a - b).abs`, and where the grammar would not read
+it as a receiver without them (`lint::print`, in [Printing
+fixes](../Printing.md)). `lint::manual_abs` states when it
 fires, from the comparison with `x` on its left, mirrored where `x` is
 written on the right:
 

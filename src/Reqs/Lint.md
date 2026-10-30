@@ -859,3 +859,7 @@ if q? then r? else s?) = t?` becomes `(p? or if q? then r? else s?) iff
 t?`, and `z = (x + if p? then 1 else 2) + 0 and q?` becomes `z = (x + if
 p? then 1 else 2) and q?`, but `z = (x + if p? then 1 else 2) + 0` alone
 becomes `z = x + if p? then 1 else 2`, as nothing follows it.
+
+A fix that builds what it writes as a tree gets these parentheses from
+one printer, which puts them where this section says (see [Printing
+fixes](Lint/Printing.md)).

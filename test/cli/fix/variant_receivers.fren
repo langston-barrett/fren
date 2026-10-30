@@ -1,0 +1,8 @@
+--@ args: fix --check
+-- A variant as a receiver is in parentheses: in `E::A.min(y)`, `A.min`
+-- would be one segment of the path (`Reqs/Lint/Printing`).
+pub ordered enum Level { Low, High }
+
+pub proc c(y: Level): (z: Level) {
+    ensure r: z = (if Level::Low < y then Level::Low else y)
+}

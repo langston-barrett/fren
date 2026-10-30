@@ -2467,4 +2467,175 @@ trusted lint::trivial_quantifier_fixed: "a model of an expression, checked by th
 trusted lint::trivial_quantifier_written: "a model of an expression, checked by the refinements in its section"
 -- keep-sorted end
 
+
+/-! ## Printing fixes (`Reqs/Lint/Printing`) -/
+
+namespace Printing
+
+open Fren.Core (Tree Printed BKind bareOperand)
+
+-- The payloads of the spec's variants, which its generated `match`es read.
+attribute [local simp] lint.Place.Operand.x0 lint.Place.Operand.x1 lint.Place.Operand.x2 lint.Place.Operand.x3
+  lint.FixTree.Written.x0 lint.FixTree.Written.x1 lint.FixTree.Written.x2 lint.FixTree.Written.x3
+  lint.FixTree.Field.x0 lint.FixTree.Field.x1
+
+def toAssoc : lang.Assoc → Fren.Core.Assoc
+  | .Left => .left
+  | .Right => .right
+  | .NonAssoc => .nonAssoc
+
+/-- A precedence, as `BKind.prec` gives it. -/
+def precOf : lint.Precedence → Nat
+  | .Open => 0
+  | .Iff => 1
+  | .Or => 2
+  | .And => 3
+  | .Not => 4
+  | .Comparison => 5
+  | .Sum => 6
+  | .Product => 7
+  | .Negative => 8
+  | .Atom => 9
+
+def ofPrec : Nat → lint.Precedence
+  | 0 => .Open
+  | 1 => .Iff
+  | 2 => .Or
+  | 3 => .And
+  | 4 => .Not
+  | 5 => .Comparison
+  | 6 => .Sum
+  | 7 => .Product
+  | 8 => .Negative
+  | _ => .Atom
+
+theorem ofPrec_precOf (p : lint.Precedence) : ofPrec (precOf p) = p := by cases p <;> rfl
+
+/-- The printer's tree of a spec's tree. -/
+def toTree : lint.FixTree → Tree
+  | .Written s p o r => .written { text := s, prec := precOf p } o r
+  | .Bin o a b => .bin (lint.lexeme o) (toTree a) (toTree b)
+  | .Not a => .not (toTree a)
+  | .Neg a => .neg (toTree a)
+  | .When n c d => .when n (toTree c) (toTree d)
+  | .If c a b => .ite (toTree c) (toTree a) (toTree b)
+  | .Test e p => .test (toTree e) p
+  | .Field e x => .field (toTree e) x
+
+/-- Whether the printer writes `p` without parentheses in `place`, by the
+decisions it makes: `Printed.bare` in an operand's slot or a delimited one
+(`delimitedSlot`), and `Printed.bareReceiver` for a receiver. -/
+def bareIn (p : Printed) : lint.Place → Bool
+  | .Operand o a r f => p.bare (some ⟨precOf o, toAssoc a, r⟩) f
+  | .Receiver => p.bareReceiver true
+  | .Condition => p.bare ((BKind.when false).slots[0]?.join) true
+  | .Delimited => p.bare (some Fren.Core.delimitedSlot) true
+  | .Branch => true
+
+theorem bin_prec (o : lint.BinOp) : (BKind.bin (lint.lexeme o)).prec = precOf (lint.op_precedence o) := by
+  cases o <;> rfl
+
+theorem bin_assoc (o : lint.BinOp) : (BKind.bin (lint.lexeme o)).assoc = toAssoc (lint.op_assoc o) := by
+  cases o <;> rfl
+
+theorem bareOperand_eq (o i : lint.Precedence) (a : lang.Assoc) (r : Bool) :
+    bareOperand (precOf o) (precOf i) (toAssoc a) r = lint.bare_operand? o i a r := by
+  cases o <;> cases i <;> cases a <;> cases r <;> rfl
+
+/-- What `lint::print` says that the printer writes for `t`. -/
+def specPrinted (t : lint.FixTree) : Printed :=
+  { text := lint.printed t, prec := precOf (lint.precedence_of t), endsOpen := lint.ends_open? t,
+    receivable := lint.receivable? t }
+
+theorem bare_eq (t : lint.FixTree) (o : lint.Precedence) (a : lang.Assoc) (r f : Bool) :
+    (specPrinted t).bare (some ⟨precOf o, toAssoc a, r⟩) f = lint.bare? t o a r f := by
+  simp only [Printed.bare, specPrinted, Option.all, Option.any, bareOperand_eq, lint.bare?]
+  cases lint.bare_operand? o (lint.precedence_of t) a r <;> cases lint.ends_open? t <;> cases r <;> cases f <;> simp
+
+theorem bareIn_eq (t : lint.FixTree) (place : lint.Place) : bareIn (specPrinted t) place = lint.bare_in? t place := by
+  cases place with
+  | Operand o a r f => simp [bareIn, bare_eq, lint.bare_in?]
+  | Receiver =>
+    have : Fren.Core.receiverSlot = ⟨precOf .Atom, toAssoc .Left, false⟩ := rfl
+    simp only [bareIn, Printed.bareReceiver, this, bare_eq]
+    simp [lint.bare_in?, specPrinted]
+  | Condition =>
+    have : (BKind.when false).slots[0]?.join = some ⟨precOf .Open, toAssoc .NonAssoc, false⟩ := rfl
+    simp only [bareIn, this, bare_eq]
+    simp [lint.bare_in?]
+  | Delimited =>
+    have : Fren.Core.delimitedSlot = ⟨precOf .Open, toAssoc .NonAssoc, false⟩ := rfl
+    simp only [bareIn, this, bare_eq]
+    simp [lint.bare_in?]
+  | Branch => simp [bareIn, lint.bare_in?]
+
+theorem inSlot_eq (t : lint.FixTree) (o : lint.Precedence) (a : lang.Assoc) (r f : Bool) :
+    (specPrinted t).inSlot (some ⟨precOf o, toAssoc a, r⟩) f = lint.enclosed (lint.printed t) (lint.bare? t o a r f) := by
+  unfold Printed.inSlot lint.enclosed
+  rw [bare_eq]
+  cases lint.bare? t o a r f <;> simp [specPrinted, Fren.Str.lit, toString]
+
+/-- The printer writes each tree of the spec as `lint::print` says, by
+induction on the tree. -/
+theorem print_eq (t : lint.FixTree) : (toTree t).print = specPrinted t := by
+  induction t with
+  | Written s p o r =>
+    simp [toTree, Tree.print, specPrinted, lint.printed, lint.precedence_of, lint.ends_open?, lint.receivable?]
+  | Bin o a b iha ihb =>
+    simp only [toTree, Tree.print, iha, ihb, Fren.Core.binSlot, bin_prec, bin_assoc, inSlot_eq, Printed.leavesOpen, bare_eq]
+    simp [specPrinted, lint.printed, lint.ends_open?, lint.receivable?, lint.bare?, toString, Fren.Str.lit]
+  | Not a ih =>
+    simp only [toTree, Tree.print, ih, Printed.leavesOpen]
+    have : BKind.not.slots[0]?.join = some ⟨precOf .Not, toAssoc .Right, true⟩ := rfl
+    simp only [this, inSlot_eq, bare_eq]
+    simp [specPrinted, lint.printed, lint.ends_open?, lint.receivable?, lint.bare?, toString, Fren.Str.lit]; rfl
+  | Neg a ih =>
+    simp only [toTree, Tree.print, ih, Printed.leavesOpen]
+    have : BKind.neg.slots[0]?.join = some ⟨precOf .Negative, toAssoc .Right, true⟩ := rfl
+    simp only [this, inSlot_eq, bare_eq, Fren.Core.negText]
+    simp [specPrinted, lint.printed, lint.ends_open?, lint.receivable?, lint.bare?, toString, Fren.Str.lit, lint.negated]; rfl
+  | When n c d ihc ihd =>
+    simp only [toTree, Tree.print, ihc, ihd]
+    have h0 : (BKind.when n).slots[0]?.join = some ⟨precOf .Open, toAssoc .NonAssoc, false⟩ := rfl
+    have h1 : (BKind.when n).slots[1]?.join = some ⟨precOf .Open, toAssoc .Right, true⟩ := rfl
+    simp only [h0, h1, inSlot_eq]
+    cases n <;> simp [specPrinted, lint.printed, lint.ends_open?, lint.receivable?, toString, Fren.Str.lit] <;> rfl
+  | If c a b ihc iha ihb =>
+    simp only [toTree, Tree.print, ihc, iha, ihb]
+    simp [specPrinted, lint.printed, lint.ends_open?, lint.receivable?, toString, Fren.Str.lit]; rfl
+  | Test e p ih =>
+    simp only [toTree, Tree.print, ih]
+    have : BKind.patternTest.slots[0]?.join = some ⟨precOf .Comparison, toAssoc .NonAssoc, false⟩ := rfl
+    simp only [this, inSlot_eq]
+    simp [specPrinted, lint.printed, lint.ends_open?, lint.receivable?, toString, Fren.Str.lit]; rfl
+  | Field e x ih =>
+    simp only [toTree, Tree.print, ih, Printed.asReceiver, Printed.bareReceiver]
+    have : Fren.Core.receiverSlot = ⟨precOf .Atom, toAssoc .Left, false⟩ := rfl
+    simp only [this, bare_eq]
+    simp [specPrinted, lint.printed, lint.ends_open?, lint.enclosed, lint.receivable?, toString, Fren.Str.lit]
+    rfl
+
+impl print_tree: lint::print for (t : lint.FixTree) {
+  tree := t, text := (toTree t).print.text, precedence := ofPrec (toTree t).print.prec,
+  open? := (toTree t).print.endsOpen, receiver? := (toTree t).print.receivable
+} by
+  intro t _
+  simp [fren_spec, print_eq, specPrinted, ofPrec_precOf]
+
+impl print_parens_tree: lint::print_parens for (t : lint.FixTree) (place : lint.Place) {
+  operand := t, place := place, parens? := !bareIn (toTree t).print place
+} by
+  intro t place _
+  simp [fren_spec, print_eq, bareIn_eq]
+
+end Printing
+
+-- That the parser reads the printed text back as the tree, with no
+-- parentheses that it does not need but those of the exceptions, and that
+-- each operand's place reads as the model of the grammar says: the parser
+-- is not modelled, so this is tested, on random trees read back by the
+-- parser of the `fren` command.
+tested lint::printing: "src/FrenTestMain.lean", "src/FrenTest/Quote.lean"
+tested lint::parenthesization: "src/FrenTestMain.lean", "src/FrenTest/Quote.lean"
+
 end Fren.Impls

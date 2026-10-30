@@ -1,5 +1,6 @@
 -- Shared by the Lean-hosted front end and the standalone binary. Depends only
--- on Lean core.
+-- on Lean core, and on the binary's parser, with which `FrenCore.Lint` reads
+-- the Fren quotations of its fixes (`FrenCli.Quote`).
 -- keep-sorted start
 import FrenCore.Check
 import FrenCore.Closures
