@@ -70,12 +70,16 @@ lean_lib FrenElab where
 
 -- Fren's own requirements, written in Fren and checked on every build. They
 -- are Markdown specs (`src/Reqs/*.md`) read by `#fren_md`, which Lake can't
--- see, hence `needs`. The libraries after `Reqs` hold its modules by the
--- specs that they read, so that editing a spec rebuilds only the modules
--- that read it, and those that import them; a module that none of them
--- lists is in `Reqs`, which needs every spec. (Lake places a module in the
--- last library that has it.) `lake test`'s `libraries` job checks that each
--- module reads only the specs of its library.
+-- see, hence `needs`. Each module of `Reqs` that reads specs is in a library
+-- of its own, which needs exactly those specs, so that editing a spec
+-- rebuilds only the module that reads it, and those that import it: before,
+-- a library held the modules of a directory and needed all of its specs, so
+-- that editing `Trace.md`, say, rebuilt `Reqs.Check` and with it nearly every
+-- module of `Reqs` and `Impls`. A module that none of them lists is in
+-- `Reqs`, which needs every spec. (Lake places a module in the last library
+-- that has it.) `lake test`'s `libraries` job checks that each module reads
+-- only the specs of its library, as `specsRead` in `src/FrenTestMain.lean`
+-- lists them.
 @[default_target] lean_lib Reqs where needs := #[`@/reqs_md]
 
 input_dir reqs_md where
@@ -83,24 +87,75 @@ input_dir reqs_md where
   text := true
   filter := .extension #["md"]
 
-lean_lib ReqsChapters where
-  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
-  needs := #[`@/reqs_chapters_md]
+-- The root module only imports the others, and reads no spec, so editing a
+-- spec that no module reads, such as `dev/Testing.md`, rebuilds nothing.
+lean_lib ReqsRoot where globs := #[`Reqs]
 
--- The specs in `src/Reqs` itself, not in its subdirectories.
-input_dir reqs_chapters_md where
-  path := "src/Reqs"
+lean_lib ReqsCalls where
+  globs := #[`Reqs.Calls]
+  needs := #[`@/reqs_calls_md]
+
+input_file reqs_calls_md where
+  path := "src/Reqs/Lang/Calls.md"
   text := true
-  filter := .ofFn fun p => p.extension == some "md" && (p.parent.bind (·.fileName)) == some "Reqs"
 
+lean_lib ReqsCheck where
+  globs := #[`Reqs.Check]
+  needs := #[`@/reqs_check_md]
+
+input_file reqs_check_md where
+  path := "src/Reqs/Check.md"
+  text := true
+
+lean_lib ReqsCli where
+  globs := #[`Reqs.Cli]
+  needs := #[`@/reqs_cli_md]
+
+input_file reqs_cli_md where
+  path := "src/Reqs/Cli.md"
+  text := true
+
+lean_lib ReqsEval where
+  globs := #[`Reqs.Eval]
+  needs := #[`@/reqs_eval_md]
+
+input_file reqs_eval_md where
+  path := "src/Reqs/Eval.md"
+  text := true
+
+lean_lib ReqsFmt where
+  globs := #[`Reqs.Fmt]
+  needs := #[`@/reqs_fmt_md]
+
+input_file reqs_fmt_md where
+  path := "src/Reqs/Fmt.md"
+  text := true
+
+lean_lib ReqsGenerated where
+  globs := #[`Reqs.Generated]
+  needs := #[`@/reqs_generated_md]
+
+input_file reqs_generated_md where
+  path := "src/Reqs/Generated.md"
+  text := true
+
+lean_lib ReqsImpl where
+  globs := #[`Reqs.Impl]
+  needs := #[`@/reqs_impl_md]
+
+input_file reqs_impl_md where
+  path := "src/Reqs/Impl.md"
+  text := true
+
+-- The chapters under `Lang/`, but for those that the modules after it read.
 lean_lib ReqsLang where
-  globs := #[`Reqs.Calls, `Reqs.Lang, `Reqs.Modules, `Reqs.Refine]
+  globs := #[`Reqs.Lang]
   needs := #[`@/reqs_lang_md]
 
 input_dir reqs_lang_md where
   path := "src/Reqs/Lang"
   text := true
-  filter := .extension #["md"]
+  filter := .ofFn fun p => p.extension == some "md" && !["Calls.md", "Modules.md", "Refinement.md"].contains (p.fileName.getD "")
 
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
@@ -113,6 +168,46 @@ input_dir reqs_lint_md where
 
 input_file reqs_lint_chapter_md where
   path := "src/Reqs/Lint.md"
+  text := true
+
+lean_lib ReqsModules where
+  globs := #[`Reqs.Modules]
+  needs := #[`@/reqs_modules_md]
+
+input_file reqs_modules_md where
+  path := "src/Reqs/Lang/Modules.md"
+  text := true
+
+lean_lib ReqsMutate where
+  globs := #[`Reqs.Mutate]
+  needs := #[`@/reqs_mutate_md]
+
+input_file reqs_mutate_md where
+  path := "src/Reqs/Mutate.md"
+  text := true
+
+lean_lib ReqsRefine where
+  globs := #[`Reqs.Refine]
+  needs := #[`@/reqs_refine_md]
+
+input_file reqs_refine_md where
+  path := "src/Reqs/Lang/Refinement.md"
+  text := true
+
+lean_lib ReqsTrace where
+  globs := #[`Reqs.Trace]
+  needs := #[`@/reqs_trace_md]
+
+input_file reqs_trace_md where
+  path := "src/Reqs/Trace.md"
+  text := true
+
+lean_lib ReqsView where
+  globs := #[`Reqs.View]
+  needs := #[`@/reqs_view_md]
+
+input_file reqs_view_md where
+  path := "src/Reqs/View.md"
   text := true
 
 -- Fren's own code linked to its requirements with `impl`. It imports both
@@ -144,6 +239,27 @@ lean_lib ImplsProofs where
 
 -- Regression tests: each file checks its own messages with `#guard_msgs`.
 @[default_target] lean_lib FrenTest where globs := #[`FrenTest.+]
+
+-- The tests that read Markdown or `.fren` files with `#fren_md`: the
+-- fixtures in `src/FrenTest`, and two ui tests. `lake test`'s `libraries`
+-- job checks that no other test module reads one.
+lean_lib FrenTestFiles where
+  globs := #[`FrenTest.LambdaMatch, `FrenTest.Literate, `FrenTest.LiterateChapters, `FrenTest.LiterateImported,
+    `FrenTest.LiterateNested, `FrenTest.LiterateRelative, `FrenTest.LiterateSettings, `FrenTest.LiterateUndecidable]
+  needs := #[`@/test_fixtures, `@/test_lambda_match, `@/test_multi_match_names]
+
+input_dir test_fixtures where
+  path := "src/FrenTest"
+  text := true
+  filter := .extension #["md", "fren"]
+
+input_file test_lambda_match where
+  path := "test/ui/lang/lambda_match.fren"
+  text := true
+
+input_file test_multi_match_names where
+  path := "test/ui/lang/multi_match_names.fren"
+  text := true
 
 -- The example specs' Lean implementations, each proved to meet the spec it
 -- reads with `#fren_md`, hence `needs` (the `.fren` specs only: an example

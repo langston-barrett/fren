@@ -595,13 +595,37 @@ would wait for its own build too: each must import exactly the root's. -/
 def rootCopies : List (String × List String) :=
   [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang", "Reqs.Modules"])]
 
-/-- The libraries of Reqs that need only some of its specs, as module and
-the specs, relative to `src/Reqs`, that it may read. -/
-def specsRead : List (List String × (String → Bool)) :=
-  [(["Reqs.Check", "Reqs.Cli", "Reqs.Eval", "Reqs.Fmt", "Reqs.Generated", "Reqs.Impl", "Reqs.Mutate", "Reqs.Trace", "Reqs.View"],
-      fun p => !p.contains '/'),
-    (["Reqs.Calls", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
-    (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/")]
+/-- The modules of Reqs that have libraries of their own, as module and the
+specs, relative to `src/Reqs`, that it may read: those that its library
+needs. -/
+def specsRead : List (String × (String → Bool)) :=
+  [("Reqs", fun _ => false),
+    ("Reqs.Calls", (· == "Lang/Calls.md")),
+    ("Reqs.Check", (· == "Check.md")),
+    ("Reqs.Cli", (· == "Cli.md")),
+    ("Reqs.Eval", (· == "Eval.md")),
+    ("Reqs.Fmt", (· == "Fmt.md")),
+    ("Reqs.Generated", (· == "Generated.md")),
+    ("Reqs.Impl", (· == "Impl.md")),
+    ("Reqs.Lang", fun p => p.startsWith "Lang/" && !["Lang/Calls.md", "Lang/Modules.md", "Lang/Refinement.md"].contains p),
+    ("Reqs.Lint", fun p => p == "Lint.md" || p.startsWith "Lint/"),
+    ("Reqs.Modules", (· == "Lang/Modules.md")),
+    ("Reqs.Mutate", (· == "Mutate.md")),
+    ("Reqs.Refine", (· == "Lang/Refinement.md")),
+    ("Reqs.Trace", (· == "Trace.md")),
+    ("Reqs.View", (· == "View.md"))]
+
+/-- The modules of FrenTest whose library needs the files that they read
+with `#fren_md`. -/
+def fileReaders : List String :=
+  ["FrenTest.LambdaMatch", "FrenTest.Literate", "FrenTest.LiterateChapters", "FrenTest.LiterateImported",
+    "FrenTest.LiterateNested", "FrenTest.LiterateRelative", "FrenTest.LiterateSettings", "FrenTest.LiterateUndecidable"]
+
+/-- The files that the library of `fileReaders` needs, relative to
+`src/FrenTest`: its fixtures, and two ui tests. -/
+def fixtureNeeded (p : String) : Bool :=
+  (!p.startsWith "../" && (p.endsWith ".md" || p.endsWith ".fren"))
+    || ["../../test/ui/lang/lambda_match.fren", "../../test/ui/lang/multi_match_names.fren"].contains p
 
 /-- The modules of Impls whose library needs the tests. -/
 def testReaders : List String := ["src/Impls.lean", "src/Impls/Lint.lean", "src/Impls/Trace.lean"]
@@ -632,11 +656,18 @@ def libraries : IO (Array String) := do
       let got := ofRoot (← importsOf m)
       if got != want then
         failures := failures.push s!"{sourceOf m}: imports {got.toList} of `{root}`'s modules, not `{root}`'s {want.toList}"
-  for (mods, ok) in specsRead do
-    for m in mods do
-      for spec in specsOf (← IO.FS.readFile (sourceOf m)) do
-        unless ok spec do
-          failures := failures.push s!"{sourceOf m}: reads `{spec}`, which its library in `lakefile.lean` does not need"
+  for (m, ok) in specsRead do
+    for spec in specsOf (← IO.FS.readFile (sourceOf m)) do
+      unless ok spec do
+        failures := failures.push s!"{sourceOf m}: reads `{spec}`, which its library in `lakefile.lean` does not need"
+  -- A module of Reqs without a library of its own is in `Reqs`, which needs
+  -- every spec; but a module of FrenTest is in `FrenTest`, which needs none.
+  for f in ← System.FilePath.walkDir "src/FrenTest" do
+    if f.extension != some "lean" then continue
+    let m := "FrenTest." ++ ((f.toString.dropPrefix "src/FrenTest/").toString.dropSuffix ".lean").toString.replace "/" "."
+    for file in specsOf (← IO.FS.readFile f) do
+      unless fileReaders.contains m && fixtureNeeded file do
+        failures := failures.push s!"{f}: reads `{file}`, which its library in `lakefile.lean` does not need"
   for f in (← System.FilePath.walkDir "src/Impls").push "src/Impls.lean" do
     if f.extension != some "lean" || testReaders.contains f.toString then continue
     if (← IO.FS.readFile f).splitOn "\n" |>.any (·.startsWith "tested ") then
@@ -667,8 +698,9 @@ def readGroup (paths : Array String) : IO (Array (String × Array Char)) :=
     return (path, src.toList.toArray)
 
 /-- The mutants of Fren's own requirements are checked in this many jobs,
-each taking every `n`th mutant; every other group is one job. -/
-def mutationSlices : Nat := 8
+each taking every `n`th mutant, and the checks of the whole group in one
+more; every other group is one job. -/
+def mutationSlices : Nat := 16
 
 /-- The mutants of the text `chars` of file `file`, whose parse is
 `parsed` (`FrenCli.parseText`), as `fren` makes them, where the spec's
@@ -811,7 +843,10 @@ These are the checks of the group `paths` for the mutants whose index is
 `slice` modulo `slices`; the checks of the whole group are in slice 0. Each
 slice computes every mutant of the group, which the checks of one mutant
 compare it with. -/
-def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := do
+def mutation (paths : Array String) (slice? : Option Nat) (slices : Nat) : IO (Array String) := do
+  -- The checks of the whole group: in a job of their own when the group
+  -- has slices, as Fren's own requirements do, which `slice? = none` runs.
+  let whole := slice?.isNone || slices == 1
   let mut failures := #[]
   let files ← readGroup paths
   let (before, all) := FrenCli.mutantsOf files #[]
@@ -821,12 +856,13 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     | .ok (_, items, _) => items
     | .error _ => #[])
   let ids := all.map (·.id)
-  if slice == 0 && ids.toList.eraseDups.length != ids.size then
+  if whole && ids.toList.eraseDups.length != ids.size then
     failures := failures.push s!"mutants of {files.map (·.1)}: duplicate identifiers"
   -- The tokens and sites of each file, unmutated.
   let toks := files.map fun (_, chars) => (FrenCli.lex chars).toOption.getD #[]
   let fileSites := files.map fun (_, chars) => sitesOfText chars
   for m in all, i in [0:all.size] do
+    let some slice := slice? | break
     if i % slices != slice then continue
     let (path, chars) := files[m.file]!
     let chars' := m.apply chars
@@ -870,14 +906,14 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   -- Each file elaborates as it does after a state whose fields that
   -- `elabFile` sets before reading them are another file's, or the first's
   -- (`State.withPerFileOf`), so `sameForLater` need not compare them.
-  if slice == 0 then
+  if whole then
     for (_, chars) in files, j in [0:files.size] do
       let other := before[if j == 0 then files.size else 0]?.getD {}
       let st := FrenCli.elabParsed (before[j]?.getD {}) j chars parsed[j]!
       let st' := FrenCli.elabParsed ((before[j]?.getD {}).withPerFileOf other) j chars parsed[j]!
       unless same_fields% FrenCli.State st st' except [bound] && st.bound.size == st'.bound.size do
         failures := failures.push s!"{files[j]!.1}: elaborates differently after a state with another file's per-file fields"
-  if slice != 0 then return failures
+  unless whole do return failures
   -- Formatting each file keeps the identifiers.
   for (path, chars) in files, i in [0:files.size] do
     let src ← IO.FS.readFile path
@@ -1631,6 +1667,7 @@ def jobs : IO (Array (List String)) := do
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
+    ++ #[["mutation", "0", "whole", toString mutationSlices]]
     ++ batches ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["evaluation"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"]]
@@ -1666,7 +1703,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["mutation", group, slice, slices] => do
     -- A slice out of range would check nothing, and pass.
     match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with
-    | some paths, some k, some n => if k < n then return ← mutation paths k n
+    | some paths, some k, some n => if k < n then return ← mutation paths (some k) n
+    | some paths, none, some n => if slice == "whole" && n > 1 then return ← mutation paths none n
     | _, _, _ => pure ()
     throw (IO.userError s!"unknown mutation job `{group} {slice} {slices}`")
   | job => throw (IO.userError s!"unknown job `{" ".intercalate job}`")
@@ -1681,10 +1719,16 @@ def jobName (job : List String) : IO String := do
         return if g == 0 then s!"{name} (Fren's own requirements)" else s!"{name} ({", ".intercalate paths.toList})"
   return name
 
-/-- Runs `job` in a process of its own, returning its failures. -/
-def spawnJob (bless : Bool) (job : List String) : IO (Array String) := do
+/-- Runs `job` in a process of its own, returning its failures. With
+`times`, it adds to `times` how long it took, in milliseconds. -/
+def spawnJob (bless : Bool) (times : Option (IO.Ref (Array (Nat × String)))) (job : List String) :
+    IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
+  let start ← IO.monoMsNow
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args }
+  if let some times := times then
+    let shown := if job.head? == some "ui" then s!"ui ({job.length - 1} files, {job[1]?.getD ""}, …)" else " ".intercalate job
+    times.modify (·.push ((← IO.monoMsNow) - start, shown))
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   let name ← jobName job
   match Json.parse last >>= fromJson? with
@@ -1715,25 +1759,62 @@ def jobCount : IO Nat := do
   return max 1 (min maxJobs (System.Platform.Internal.getHardwareConcurrency ()).toNat)
 
 /-- Runs `jobs`, at most `jobCount` at once. -/
-def runJobs (bless : Bool) (jobs : Array (List String)) : IO (Array String) := do
+def runJobs (bless : Bool) (times : Option (IO.Ref (Array (Nat × String)))) (jobs : Array (List String)) :
+    IO (Array String) := do
   let next ← IO.mkRef 0
   let worker : IO (Array String) := do
     let mut failures := #[]
     repeat
       let k ← next.modifyGet fun k => (k, k + 1)
       let some job := jobs[k]? | break
-      failures := failures ++ (← spawnJob bless job)
+      failures := failures ++ (← spawnJob bless times job)
     return failures
   let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
+
+/-- The jobs that `selectors` select, in the order of `jobs`: a selector
+is a job's name, which selects every job of that name (`ui`, `mutation`,
+`snapshots`, …); an argument of a job other than a number, which selects
+the jobs that have it (a corpus such as `strings`, an example in
+`test/mutate`); or a ui test, `test/ui/….fren` or `examples/….fren`,
+which selects that test alone, in batches of `uiBatch`. A selector that
+selects nothing is an error, so that a typo cannot pass by running no
+test. -/
+def select (all : Array (List String)) (selectors : List String) : IO (Array (List String)) := do
+  let ui := (← uiFiles).map (·.toString)
+  let norm (s : String) := (s.dropPrefix "./").toString
+  let (files, names) := (selectors.map norm).partition ui.contains
+  -- Numbers are not selectors: they are the groups and slices of mutation
+  -- jobs, which `fren_test --job` runs one at a time.
+  let selects (job : List String) (n : String) :=
+    job.head? == some n || (job.head? != some "ui" && n.toNat?.isNone && job.contains n)
+  for n in names do
+    unless all.any (selects · n) do
+      throw (IO.userError s!"no job or ui test `{n}`; `lake test -- --list` lists them")
+  let picked := all.filter fun job => names.any (selects job ·)
+  let batches := (List.range ((files.length + uiBatch - 1) / uiBatch)).toArray.map fun k =>
+    "ui" :: (files.drop (k * uiBatch)).take uiBatch
+  return (if names.contains "ui" then picked else picked ++ batches)
 
 unsafe def main (args : List String) : IO UInt32 := do
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if let "--job" :: job := args then
     IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
     return 0
-  let (first, rest) := (← jobs).partition (bless && · == ["snapshots"])
-  let failures := ((← runJobs bless first) ++ (← runJobs bless rest)).qsort (· < ·)
+  if args.contains "--list" then
+    for job in ← jobs do IO.println (" ".intercalate job)
+    return 0
+  let selectors := args.filter (!["--bless", "--times"].contains ·)
+  let all ← jobs
+  let chosen ← if selectors.isEmpty then pure all else select all selectors
+  let times ← if args.contains "--times" then some <$> IO.mkRef #[] else pure none
+  let start ← IO.monoMsNow
+  let (first, rest) := chosen.partition (bless && · == ["snapshots"])
+  let failures := ((← runJobs bless times first) ++ (← runJobs bless times rest)).qsort (· < ·)
+  if let some times := times then
+    for (ms, job) in (← times.get).qsort (·.1 > ·.1) do
+      IO.eprintln s!"{ms / 1000}.{toString (ms % 1000 / 100)} s  {job}"
+    IO.eprintln s!"{(← IO.monoMsNow) - start} ms for {chosen.size} jobs, {← jobCount} at once"
   for f in failures do IO.eprintln s!"FAIL {f}"
   if failures.isEmpty then
     IO.println "fren_test: all passed"
