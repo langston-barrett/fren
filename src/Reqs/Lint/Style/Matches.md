@@ -351,6 +351,12 @@ pub fn overlap?(p: Pat, q: Pat) := (p is Pat::Wild | Pat::Binder(_, _)) or (q is
     and reaches?(lower_of(q), upper_of(p)))
     or (variants_pattern?(p) and variants_pattern?(q) and pattern_tag(p) = pattern_tag(q)
     and leaves_overlap?(first_leaf(p), first_leaf(q)) and leaves_overlap?(second_leaf(p), second_leaf(q)))
+
+-- Two patterns of one type that match a value in common overlap.
+expect overlap_matches(p: Pat, q: Pat, x: Val) {
+    expect sound: when pat_matches?(p, x) and pat_matches?(q, x) and not (integers_pattern?(p) and variants_pattern?(q))
+        and not (variants_pattern?(p) and integers_pattern?(q)), overlap?(p, q)
+}
 ```
 
 `overlap?` says whether two patterns may match a value in common, which
@@ -358,7 +364,11 @@ pub fn overlap?(p: Pat, q: Pat) := (p is Pat::Wild | Pat::Binder(_, _)) or (q is
 [`match_could_be_table`](../Pedantic/Matches.md#matches-that-could-be-tables)
 ask: `_` or a binder overlaps every pattern, two integer patterns overlap
 where their bounds meet, and two variant patterns where their tags are the
-same and the bounds of each leaf of their payloads meet.
+same and the bounds of each leaf of their payloads meet. So two patterns
+that some value matches overlap, if they are of one type, which
+`lint::overlap_matches` checks against `pat_matches?`. An integer pattern
+and a variant pattern never overlap, though the model's value has both an
+integer and a tag: no scrutinee has both types.
 
 `lint::match_overlapping_arm` states when it fires, computing the facts from the earlier
 pattern and the later range, by their bounds, and checks them against
@@ -458,11 +468,17 @@ expression, a body too. A body means something else wherever the name it
 mentions does: in an arm, it is the value that the arm's pattern binds to
 that name (`in_arm`), if it binds it, and the value of the name outside
 the `match` otherwise. Two patterns may have a value in common as
-[`overlap?`](#overlapping-arms) says. The spec checks that the fix keeps
-the meaning, for every value of the scrutinee and of the names outside
-the `match`: the `match` with the conditions as guards, and with the `_`
-arm that it adds, if it adds one, takes an arm whose body has, in that
-arm, the value that the first arm that matched had in its own:
+[`overlap?`](#overlapping-arms) says. `lint::match_arm_if_else_keeps`
+states that the fix keeps the meaning, for every value of the scrutinee
+and of the names outside the `match`: where the lint fires, the `match`
+with the conditions as guards, and with the `_` arm that it adds, if it
+adds one, takes an arm whose body has, in that arm, the value that the
+first arm that matched had in its own. Its guarantee is the lemma, as for
+the [coincidence lemma](../../Lang/EvaluationRules.md): `fren check` tests
+it, and `src/Impls/Guards.lean` proves it in Lean, for every sequence of
+up to four arms. The solver could check it, but its query for the first
+arm takes cvc5 some 150,000 resource units, and timed out under the
+build's load, which a proof does not depend on.
 
 ```fren
 -- An arm's body as `match_arm_if_else` reads it: `if C then a else d`,
@@ -538,40 +554,49 @@ pub fn keeps?(arms: Seq<IfArm>, d: Body, appended?, s: Slot, x: Val, o: Int) :=
     or (appended? and (forall (r: Slot), not taken_fixed?(arms, d, r, x))
     and body_value(d, -1, 0, -1, 0, -1, 0, o) = arm_value(arms[pos(s)], x, o))
 
+-- The patterns are of one type: of integers, or of an enumeration.
+pub fn one_type?(arms: Seq<IfArm>) := not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)].pat))
+    and (exists (s: Slot), pos(s) < arms.len and variants_pattern?(arms[pos(s)].pat)))
+
+-- Whether the lint fires, where the static rules accept the arms after the
+-- fix: it moves two or more arms; `d` names a binder of none of them; and
+-- after each, an arm that may match a value in common with it has the body
+-- `d`, which names none of its binders.
+pub fn fires_on?(arms: Seq<IfArm>, d: Body) := (exists (s r: Slot), pos(s) < pos(r) and moved?(arms, s, d)
+    and moved?(arms, r, d))
+    and (forall (s: Slot), when pos(s) < arms.len and moved?(arms, s, d), not names_binder?(d, arms[pos(s)].pat))
+    -- no condition that it moves binds names, which a guard could not
+    and (forall (s: Slot), when moved?(arms, s, d), not arms[pos(s)].binds?)
+    and (forall (s r: Slot), when moved?(arms, s, d) and pos(s) < pos(r) < arms.len
+    and overlap?(arms[pos(s)].pat, arms[pos(r)].pat),
+    arms[pos(r)].body = IfBody::Plain(d) and not names_binder?(d, arms[pos(r)].pat))
+
+-- Whether the fix adds `_ => d`: unless the last arm is `_` or a binder
+-- with the body `d`.
+pub fn appends?(arms: Seq<IfArm>, d: Body) := not (arms != []
+    and arms[arms.len - 1].pat is Pat::Wild | Pat::Binder(_, _) and arms[arms.len - 1].body = IfBody::Plain(d))
+
 pub proc match_arm_if_else(
     arms: Seq<IfArm>,        -- the arms of the `match`, which have no guards
     d: Body,                 -- the `else` branch that the arms share
     accepted?,               -- the static rules accept the arms after the fix
-    x: Val,                  -- a value of the scrutinee
-    o: Int,                  -- the value of a name outside the `match`
 ): (det fires?, det appended?) {
     assume size: 1 <= arms.len <= 4
-    -- The patterns are of one type: of integers, or of an enumeration.
-    assume typed: not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)].pat))
-        and (exists (s: Slot), pos(s) < arms.len and variants_pattern?(arms[pos(s)].pat)))
+    assume typed: one_type?(arms)
 
-    -- It moves two or more arms; `d` names a binder of none of them; and
-    -- after each, an arm that may match a value in common with it has the
-    -- body `d`, which names none of its binders.
-    ensure rule: fires? iff ((exists (s r: Slot), pos(s) < pos(r) and moved?(arms, s, d) and moved?(arms, r, d))
-        and (forall (s: Slot), when pos(s) < arms.len and moved?(arms, s, d), not names_binder?(d, arms[pos(s)].pat))
-        -- no condition that it moves binds names, which a guard could not
-        and (forall (s: Slot), when moved?(arms, s, d), not arms[pos(s)].binds?)
-        and (forall (s r: Slot), when moved?(arms, s, d) and pos(s) < pos(r) < arms.len
-        and overlap?(arms[pos(s)].pat, arms[pos(r)].pat),
-        arms[pos(r)].body = IfBody::Plain(d) and not names_binder?(d, arms[pos(r)].pat))
-        and accepted?)
-    -- The fix adds `_ => d` unless the last arm is `_` or a binder with the
-    -- body `d`.
-    ensure appended: appended? iff not (arms[arms.len - 1].pat is Pat::Wild | Pat::Binder(_, _)
-        and arms[arms.len - 1].body = IfBody::Plain(d))
+    ensure rule: fires? iff (fires_on?(arms, d) and accepted?)
+    ensure appended: appended? iff appends?(arms, d)
+}
 
-    -- Each arm that the `match` takes as written, one at a time, so that
-    -- each query is small.
-    expect keeps_meaning_0: when fires? and first_arm?(arms, Slot::S0, x), keeps?(arms, d, appended?, Slot::S0, x, o)
-    expect keeps_meaning_1: when fires? and first_arm?(arms, Slot::S1, x), keeps?(arms, d, appended?, Slot::S1, x, o)
-    expect keeps_meaning_2: when fires? and first_arm?(arms, Slot::S2, x), keeps?(arms, d, appended?, Slot::S2, x, o)
-    expect keeps_meaning_3: when fires? and first_arm?(arms, Slot::S3, x), keeps?(arms, d, appended?, Slot::S3, x, o)
+-- Where it fires, the fix keeps the value of the `match` at every value `x`
+-- of the scrutinee and `o` of a name outside it, whichever arm `s` is the
+-- first that matches `x` as written. The arms are those that
+-- `match_arm_if_else` assumes; as conditions rather than assumptions, so
+-- that every random test is admissible.
+set_option fren.evidence "random" in
+pub proc match_arm_if_else_keeps(arms: Seq<IfArm>, d: Body, x: Val, o: Int) {
+    ensure keeps_meaning: forall (s: Slot), when 1 <= arms.len <= 4 and one_type?(arms) and fires_on?(arms, d)
+        and first_arm?(arms, s, x), keeps?(arms, d, appends?(arms, d), s, x, o)
 }
 ```
 

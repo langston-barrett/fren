@@ -218,28 +218,40 @@ theorem moved_eq (l : List lint.IfArm) (s : lint.Slot) (d : lint.Body) :
     simp only [Option.map_none, Option.getD_none, Bool.false_eq_true, iff_false]
     rintro ⟨⟨⟨hl, _⟩, _⟩, _⟩; exact h hl
 
+/-- `lint::names_binder?` and `lint::overlap?`, as definitions that `simp`
+does not unfold: the spec's are reducible, and `decide_eq_true_eq` would
+unfold them, as it takes `fires_on?`'s `decide` apart. -/
+def namesBinder (b : lint.Body) (p : lint.Pat) : Bool := lint.names_binder? b p
+
+def overlapPat (p q : lint.Pat) : Bool := lint.overlap? p q
+
+theorem names_fold (b : lint.Body) (p : lint.Pat) : lint.names_binder? b p = namesBinder b p := rfl
+
+theorem overlap_fold (p q : lint.Pat) : lint.overlap? p q = overlapPat p q := rfl
+
 theorem ite_some_isSome (c : Prop) [Decidable c] (x : α) : (if c then some x else none).isSome = decide c := by
   by_cases h : c <;> simp [h]
 
 -- Whether the fix adds `_ => d`: the code reads the last arm, as the spec
 -- does.
 theorem appended_iff (l : List lint.IfArm) (h : l ≠ []) (d : lint.Body) :
-    Fren.Core.matchArmIfElseAppends sameBody (l.map toIfArmInfo) d = true ↔
-      ¬((((Fren.Seq.ofList l).nth ((Fren.Seq.ofList l).len - 1)).pat = .Wild ∨
-          ((Fren.Seq.ofList l).nth ((Fren.Seq.ofList l).len - 1)).pat =
-            .Binder (lint.Pat.Binder.x0 ((Fren.Seq.ofList l).nth ((Fren.Seq.ofList l).len - 1)).pat)
-              (lint.Pat.Binder.x1 ((Fren.Seq.ofList l).nth ((Fren.Seq.ofList l).len - 1)).pat)) ∧
-        ((Fren.Seq.ofList l).nth ((Fren.Seq.ofList l).len - 1)).body = .Plain d) := by
+    Fren.Core.matchArmIfElseAppends sameBody (l.map toIfArmInfo) d = lint.appends? (Fren.Seq.ofList l) d := by
   have hn : 0 < l.length := List.length_pos_iff.mpr h
   have hlast : (Fren.Seq.ofList l).nth ((Fren.Seq.ofList l).len - 1) = l.getLast h := by
     simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList]
     rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp; omega)]
     simp only [Fren.Seq.toList_ofList, List.getLast_eq_getElem]
     congr 1; omega
-  rw [hlast, wildPat_spec, plainArm_spec]
+  have hne : ¬Fren.Seq.ofList l = ∅ := by
+    intro he
+    have := congrArg Fren.Seq.len he
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at this
+    exact h (by simpa using this)
+  rw [Bool.eq_iff_iff]
+  simp only [lint.appends?, decide_eq_true_eq, hlast, plainArm_spec]
   simp only [Fren.Core.matchArmIfElseAppends, List.getLast?_map, List.getLast?_eq_some_getLast h, Option.map_some,
     Option.any_some, plain_fold, wild_fold]
-  cases wildPat (l.getLast h).pat <;> cases plainArm d (l.getLast h) <;> simp
+  cases plainArm d (l.getLast h) <;> cases (l.getLast h).pat <;> simp [wildPat, hne]
 
 /-- Normalizes the rule of `match_arm_if_else` over a list of arms written
 out, to the tests of each arm and of each pair. -/
@@ -269,25 +281,25 @@ macro "arms_normal" : tactic => `(tactic| (
 -- kernel alone: a weaker level of trust than this file's other proofs,
 -- stated here rather than left to the evidence report.
 set_option linter.unusedSimpArgs false in
-impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : lint.Body) (a : Bool) (x : lint.Val)
-    (o : Int) {
+impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : lint.Body) (a : Bool) {
   arms := Fren.Seq.ofList l,
   d := d,
   accepted? := a,
-  x := x,
-  o := o,
   fires? := (Fren.Core.matchArmIfElseFor sameBody (mentionsIn l) (overlapIn l) (l.map toIfArmInfo) d).isSome && a,
   appended? := Fren.Core.matchArmIfElseAppends sameBody (l.map toIfArmInfo) d,
 } by
-  intro l d a x o hA
+  intro l d a hA
   have hl : 1 ≤ l.length ∧ l.length ≤ 4 := by
     simp only [lint.match_arm_if_else.assumes, lint.match_arm_if_else.assume.size, Fren.Seq.len_eq,
       Fren.Seq.toList_ofList] at hA
     omega
   have hne : l ≠ [] := by intro h; simp [h] at hl
   unfold lint.match_arm_if_else.ensures
-  refine ⟨?_, (appended_iff l hne d)⟩
+  refine ⟨?_, by rw [appended_iff l hne d]⟩
   dsimp only [lint.match_arm_if_else.ensure.rule]
+  -- `fires_on?` as a proposition over the tests of each arm and pair, which
+  -- its `decide` decides classically.
+  rw [(@decide_eq_true_iff _ (Classical.propDecidable _) : lint.fires_on? (Fren.Seq.ofList l) d = true ↔ _)]
   match l, hl with
   | [a0], _ =>
     arms_normal
@@ -331,6 +343,206 @@ impl match_arm_if_else: lint::match_arm_if_else for (l : List lint.IfArm) (d : l
     bv_decide
   | [], h => simp at h
   | _ :: _ :: _ :: _ :: _ :: _, h => simp at h
+
+/-! ### The fix keeps the meaning (`lint::match_arm_if_else_keeps`) -/
+
+-- A lower bound and an upper bound that hold of one value meet.
+theorem reaches_of (a b : lint.Bound) (v : Int) (ha : lint.lower_holds? a v = true)
+    (hb : lint.upper_holds? b v = true) : lint.reaches? a b = true := by
+  cases a <;> cases b <;> simp [lint.lower_holds?, lint.upper_holds?, lint.reaches?, lint.Bound.At.x0] at ha hb ⊢
+  omega
+
+-- A leaf that matches `v` has `v` within its bounds.
+theorem leaf_bounds (l : lint.Leaf) (v : Int) (h : lint.leaf_matches? l v = true) :
+    lint.lower_holds? (lint.leaf_min l) v = true ∧ lint.upper_holds? (lint.leaf_max l) v = true := by
+  cases l <;> simp [lint.leaf_matches?, lint.leaf_min, lint.leaf_max, lint.lower_holds?, lint.upper_holds?,
+    lint.Bound.At.x0, lint.Leaf.Lit.x0, lint.Leaf.Range.x0, lint.Leaf.Range.x1] at h ⊢ <;> grind
+
+theorem leaves_overlap_of (l m : lint.Leaf) (v : Int) (hl : lint.leaf_matches? l v = true)
+    (hm : lint.leaf_matches? m v = true) : lint.leaves_overlap? l m = true := by
+  obtain ⟨l1, l2⟩ := leaf_bounds l v hl
+  obtain ⟨m1, m2⟩ := leaf_bounds m v hm
+  simp [lint.leaves_overlap?, reaches_of _ _ v l1 m2, reaches_of _ _ v m1 l2]
+
+-- An integer pattern that matches `x` has `x.n` within its bounds.
+theorem int_bounds (p : lint.Pat) (x : lint.Val) (h : lint.pat_matches? p x = true)
+    (hi : lint.integers_pattern? p = true) :
+    lint.lower_holds? (lint.lower_of p) x.n = true ∧ lint.upper_holds? (lint.upper_of p) x.n = true := by
+  cases p <;> simp [lint.pat_matches?, lint.integers_pattern?, lint.lower_of, lint.upper_of, lint.lower_holds?,
+    lint.upper_holds?, lint.Bound.At.x0, lint.Pat.Lit.x0, lint.Pat.Range.x0, lint.Pat.Range.x1] at h hi ⊢ <;> grind
+
+-- Every pattern is `_` or a binder, an integer pattern, or a variant pattern.
+theorem pat_kinds (p : lint.Pat) :
+    wildPat p = true ∨ lint.integers_pattern? p = true ∨ lint.variants_pattern? p = true := by
+  cases p <;> simp [wildPat, lint.integers_pattern?, lint.variants_pattern?]
+
+-- A variant pattern that matches `x` has its tag, and its leaves match its
+-- payload.
+theorem variant_facts (p : lint.Pat) (x : lint.Val) (h : lint.pat_matches? p x = true)
+    (hv : lint.variants_pattern? p = true) :
+    lint.pattern_tag p = x.tag ∧ lint.leaf_matches? (lint.first_leaf p) x.a = true ∧
+      lint.leaf_matches? (lint.second_leaf p) x.b = true := by
+  cases p <;> simp only [lint.variants_pattern?, decide_false, decide_true, Bool.false_eq_true] at hv <;>
+    simp only [lint.pat_matches?, lint.pattern_tag, lint.first_leaf, lint.second_leaf, reduceCtorEq, ↓reduceIte,
+      lint.Pat.Tag.x0, lint.Pat.Variant.x0, lint.Pat.Variant.x1, lint.Pat.Variant.x2, decide_eq_true_eq] at h ⊢
+  · exact ⟨h.symm, trivial, trivial⟩
+  · exact ⟨h.1.1.symm, h.1.2, h.2⟩
+
+-- `overlap?` is sound: two patterns of one type that match a value in common
+-- overlap (`lint::overlap_matches`).
+theorem overlap_sound (p q : lint.Pat) (x : lint.Val) (hp : lint.pat_matches? p x = true)
+    (hq : lint.pat_matches? q x = true)
+    (h1 : ¬(lint.integers_pattern? p = true ∧ lint.variants_pattern? q = true))
+    (h2 : ¬(lint.variants_pattern? p = true ∧ lint.integers_pattern? q = true)) :
+    lint.overlap? p q = true := by
+  rw [lint.overlap?.eq_def, decide_eq_true_eq]
+  rcases pat_kinds p with kp | kp | kp
+  · exact Or.inl (Or.inl (Or.inl kp))
+  rcases pat_kinds q with kq | kq | kq
+  · exact Or.inl (Or.inl (Or.inr kq))
+  · obtain ⟨p1, p2⟩ := int_bounds p x hp kp
+    obtain ⟨q1, q2⟩ := int_bounds q x hq kq
+    exact Or.inl (Or.inr ⟨⟨⟨kp, kq⟩, reaches_of _ _ _ p1 q2⟩, reaches_of _ _ _ q1 p2⟩)
+  · exact absurd ⟨kp, kq⟩ h1
+  rcases pat_kinds q with kq | kq | kq
+  · exact Or.inl (Or.inl (Or.inr kq))
+  · exact absurd ⟨kp, kq⟩ h2
+  · obtain ⟨t1, a1, b1⟩ := variant_facts p x hp kp
+    obtain ⟨t2, a2, b2⟩ := variant_facts q x hq kq
+    exact Or.inr ⟨⟨⟨⟨kp, kq⟩, t1.trans t2.symm⟩, leaves_overlap_of _ _ _ a1 a2⟩, leaves_overlap_of _ _ _ b1 b2⟩
+
+-- A body that names no binder of the pattern has its value outside the `match`.
+theorem in_arm_outside (p : lint.Pat) (b : lint.Body) (x : lint.Val) (o : Int)
+    (h : lint.names_binder? b p = false) :
+    lint.in_arm p b x o = lint.body_value b (-1) 0 (-1) 0 (-1) 0 o := by
+  rcases b with ⟨f, u⟩
+  cases p <;> cases u <;> simp [lint.in_arm, lint.names_binder?, lint.body_value, lint.leaf_name,
+    lint.Use.Name.x0, lint.Pat.Binder.x0, lint.Pat.Binder.x1, lint.Pat.Variant.x0, lint.Pat.Variant.x1,
+    lint.Pat.Variant.x2] at h ⊢ <;> grind
+
+-- A moved arm whose condition holds has the value of its `then` branch.
+theorem arm_kept (d : lint.Body) (a : lint.IfArm) (x : lint.Val) (o : Int) (hm : movedArm d a = true)
+    (hc : lint.cond_of? a.body = true) : lint.in_arm a.pat (lint.then_of a.body) x o = lint.arm_value a x o := by
+  rcases a with ⟨p, b, i⟩
+  cases b <;> simp_all [movedArm, toIfArmInfo, toIfArmBody, Fren.Core.IfArmInfo.moved, lint.cond_of?, lint.then_of,
+    lint.arm_value]
+
+-- A moved arm whose condition fails has its `else` branch `d`, the value
+-- that `d` has outside the `match`, where it names none of the arm's binders.
+theorem arm_falls (d : lint.Body) (a : lint.IfArm) (x : lint.Val) (o : Int) (hm : movedArm d a = true)
+    (hc : lint.cond_of? a.body = false) (hn : lint.names_binder? d a.pat = false) :
+    lint.arm_value a x o = lint.body_value d (-1) 0 (-1) 0 (-1) 0 o := by
+  have he := ((movedArm_spec d a).2 hm).2
+  rcases a with ⟨p, b, i⟩
+  cases b with
+  | IfElse c t e =>
+    simp only [lint.else_of] at he
+    subst he
+    cases c
+    · simp only [lint.arm_value, Bool.false_eq_true, ↓reduceIte]
+      exact in_arm_outside p _ x o hn
+    · simp [lint.cond_of?] at hc
+  | Plain _ => simp [movedArm, toIfArmInfo, toIfArmBody, Fren.Core.IfArmInfo.moved] at hm
+
+-- An arm whose body is `d`, not as an `if`, has the value that `d` has
+-- outside the `match`, where it names none of the arm's binders; and the fix
+-- does not move it.
+theorem arm_plain (d : lint.Body) (a : lint.IfArm) (x : lint.Val) (o : Int) (hp : plainArm d a = true)
+    (hn : lint.names_binder? d a.pat = false) :
+    lint.arm_value a x o = lint.body_value d (-1) 0 (-1) 0 (-1) 0 o := by
+  rw [← plainArm_spec] at hp
+  rcases a with ⟨p, b, i⟩
+  simp only at hp
+  subst hp
+  simp only [lint.arm_value]
+  exact in_arm_outside p d x o hn
+
+theorem plain_unmoved (d : lint.Body) (a : lint.IfArm) (hp : plainArm d a = true) : movedArm d a = false := by
+  rw [← plainArm_spec] at hp
+  rcases a with ⟨p, b, i⟩
+  simp only at hp
+  subst hp
+  simp [movedArm, toIfArmInfo, toIfArmBody, Fren.Core.IfArmInfo.moved]
+
+-- `_` or a binder matches every value, and the fix does not move its arm.
+theorem wild_matches (p : lint.Pat) (h : wildPat p = true) (x : lint.Val) : lint.pat_matches? p x = true := by
+  cases p <;> simp_all [wildPat, lint.pat_matches?]
+
+theorem wild_unmoved (d : lint.Body) (a : lint.IfArm) (h : wildPat a.pat = true) : movedArm d a = false := by
+  rcases a with ⟨p, b, i⟩
+  cases p <;> simp_all [wildPat, movedArm, toIfArmInfo, Fren.Core.IfArmInfo.moved]
+
+section keeps
+-- The tests and values of single arms stay folded while `simp` takes the
+-- spec's functions apart: they are reducible, and `decide_eq_true_eq` would
+-- unfold them.
+set_option allowUnsafeReducibility true
+attribute [local irreducible] lint.moved? lint.names_binder? lint.overlap? lint.pat_matches? lint.cond_of?
+  lint.arm_value lint.in_arm lint.then_of lint.body_value lint.integers_pattern? lint.variants_pattern? lint.appends?
+
+/-- Normalizes `keeps_meaning` over a list of arms written out, to the tests
+and values of each arm and of each pair, with `appends?` as the code reads
+the last arm (`appended_iff`). -/
+macro "keeps_normal" : tactic => `(tactic| (
+  rw [← appended_iff _ (by simp) _]
+  simp (config := { decide := true }) only [lint.pos, Fren.Seq.len_eq, Fren.Seq.toList_ofList, List.length_cons,
+    List.length_nil, Fren.Seq.nth, plainArm_spec, Int.reduceToNat, List.getElem?_cons_zero, List.getElem?_cons_succ,
+    List.getElem?_nil, Option.map_some, Option.map_none, Option.getD_some, Option.getD_none, dite_true, dite_false,
+    List.getElem_cons_zero, List.getElem_cons_succ, Fren.Core.matchArmIfElseAppends, List.map_cons, List.map_nil,
+    List.getLast?_cons_cons, List.getLast?_singleton, Option.any_some, plain_fold, wild_fold]))
+
+/-- The facts of one arm `a`'s value and tests, for `grind`. -/
+macro "arm_facts" d:term:max a:term:max x:term:max o:term:max : tactic => `(tactic| (
+  have := arm_kept $d $a $x $o; have := arm_falls $d $a $x $o; have := arm_plain $d $a $x $o
+  have := plain_unmoved $d $a))
+
+-- For every sequence of up to four arms, each arm that the `match` takes as
+-- written, every value of the scrutinee and every value outside the
+-- `match`: each case is a formula over the tests and values of the arms and
+-- of each pair, with the facts that relate them, which `grind` decides.
+impl match_arm_if_else_keeps: lint::match_arm_if_else_keeps for (l : List lint.IfArm) (d : lint.Body) (x : lint.Val)
+    (o : Int) {
+  arms := Fren.Seq.ofList l, d := d, x := x, o := o,
+} by
+  intro l d x o _
+  unfold lint.match_arm_if_else_keeps.ensures
+  dsimp only [lint.match_arm_if_else_keeps.ensure.keeps_meaning]
+  simp only [lint.one_type?, lint.fires_on?, lint.first_arm?, lint.keeps?, lint.first_fixed?, lint.taken_fixed?,
+    lint.fixed_value, lint.arm_matches?, decide_eq_true_eq]
+  repeat rw [moved_eq]
+  match l with
+  | [] => simp
+  | [a0] =>
+    keeps_normal
+    arm_facts d a0 x o
+    grind
+  | [a0, a1] =>
+    keeps_normal
+    arm_facts d a0 x o; arm_facts d a1 x o
+    have := overlap_sound a0.pat a1.pat x
+    have := wild_matches a1.pat; have := wild_unmoved d a1
+    grind
+  | [a0, a1, a2] =>
+    keeps_normal
+    arm_facts d a0 x o; arm_facts d a1 x o; arm_facts d a2 x o
+    have := overlap_sound a0.pat a1.pat x; have := overlap_sound a0.pat a2.pat x
+    have := overlap_sound a1.pat a2.pat x
+    have := wild_matches a2.pat; have := wild_unmoved d a2
+    grind
+  | [a0, a1, a2, a3] =>
+    keeps_normal
+    arm_facts d a0 x o; arm_facts d a1 x o; arm_facts d a2 x o; arm_facts d a3 x o
+    have := overlap_sound a0.pat a1.pat x; have := overlap_sound a0.pat a2.pat x
+    have := overlap_sound a0.pat a3.pat x; have := overlap_sound a1.pat a2.pat x
+    have := overlap_sound a1.pat a3.pat x; have := overlap_sound a2.pat a3.pat x
+    have := wild_matches a3.pat; have := wild_unmoved d a3
+    -- Each arm that the `match` takes as written on its own; with four arms,
+    -- the earlier ones need more than `grind`'s default nine case splits.
+    repeat' apply And.intro
+    all_goals grind (splits := 16)
+  | _ :: _ :: _ :: _ :: _ :: _ => simp; omega
+
+end keeps
 
 trusted lint::match_arm_if_else_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::match_arm_if_else_fixed: "a model of an expression, checked by the refinements in its section"
