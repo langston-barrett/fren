@@ -276,9 +276,12 @@ def withExpanded (hyps : Array (Name × Expr)) (goal : Expr) (pins? : Option (Ar
   withLocalDeclsD decls fun fvs => do
   let (ws, rest) := (fvs.extract 0 nw, fvs.extract nw fvs.size)
   let (ds, ls) := (rest.extract 0 eqs.size, rest.extract eqs.size rest.size)
-  let lasts ← receivers.mapM fun q => do plus (← mkAppM ``Fren.Seq.len #[q]) (-1)
+  -- A term with a marked quantifier within it is left out, as in the
+  -- binary's `expandQuery`.
+  let lasts ← (receivers.filter (!hasMark ·)).mapM fun q => do plus (← mkAppM ``Fren.Seq.len #[q]) (-1)
   let ix := Fren.Core.indexSet
-    { zero := ← mkNumeral int 0, lasts := lasts.toList, reads := sc.reads.toList, updates := sc.updates.toList
+    { zero := ← mkNumeral int 0, lasts := lasts.toList, reads := (sc.reads.filter (!hasMark ·)).toList
+      updates := (sc.updates.filter (!hasMark ·.2.1)).toList
       witnesses := (ws ++ ds).toList : Fren.Core.IndexSources Expr }
   let terms (_ _ : Nat) (q : Expr) : MetaM (List Expr) := match pins? with
     | some pins => match pins.find? (·.1 == q) with

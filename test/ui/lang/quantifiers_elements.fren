@@ -76,6 +76,17 @@ proc within_update(r: Seq<Int>, q: Seq<Int>) {
     expect bad_element: when r != [], r.update(0, if (forall (x: Int), when x in q, x > 0) then 1 else 0)[0] = 0  --~ error: within_update::bad_element` does not hold
 }
 
+-- A position with a quantifier within it is not in the index set, whose
+-- terms that quantifier is instantiated at.
+proc within_position(q: Seq<Int>, r: Seq<Int>) {
+    assume pos: forall (x: Int), when x in q, x > 0
+
+    expect read: when q.len > 1, q[if (forall (x: Int), when x in q, x > 0) then 0 else 1] > 0
+    expect bad_read: when q.len > 1, q[if (forall (x: Int), when x in q, x > 0) then 0 else 1] > 1  --~ error: within_position::bad_read` does not hold
+    expect update: when r.len > 1, r.update(if (forall (x: Int), when x in q, x > 0) then 0 else 1, 7)[0] = 7
+    expect bad_update: when r.len > 1, r.update(if (forall (x: Int), when x in q, x > 0) then 0 else 1, 7)[1] = 7  --~ error: within_position::bad_update` does not hold
+}
+
 proc within_equation(r: Seq<Int>, q: Seq<Int>, p: Seq<Int>) {
     assume pos: forall (x: Int), when x in q, x > 0
     assume defn: p = r.update(0, if (forall (x: Int), when x in q, x > 0) then 1 else 0)

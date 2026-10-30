@@ -396,11 +396,13 @@ def expandQuery (defs : Std.HashMap String (Array String × SExpr)) (hyps : Arra
   let ws := (List.range (expanded.foldl (· + ·.vars.size) 0)).toArray.map (s!"|#w{·}|")
   let eqs := sc.equations.filter fun (a, b) => receivers.contains a || receivers.contains b
   let ds := eqs.mapIdx fun k (a, b) => (a, b, s!"|#d{k}|")
+  -- A term with a marked quantifier within it is left out: that quantifier
+  -- would be instantiated at terms that contain it, without end.
   let ix := Fren.Core.indexSet
     { zero := .atom "0"
-      lasts := receivers.toList.map fun q => plus (.list #[.atom "seq.len", q]) (-1)
-      reads := sc.reads.toList
-      updates := sc.updates.toList
+      lasts := (receivers.filter (!·.hasSite)).toList.map fun q => plus (.list #[.atom "seq.len", q]) (-1)
+      reads := (sc.reads.filter (!·.hasSite)).toList
+      updates := (sc.updates.filter (!·.2.1.hasSite)).toList
       witnesses := (ws ++ ds.map (·.2.2)).toList.map .atom : IndexSources SExpr }
   let terms : TermsFor := fun _ _ q => match pins? with
     | some pins => match pins.find? (·.1 == q) with
