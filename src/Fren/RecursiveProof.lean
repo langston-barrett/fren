@@ -130,7 +130,8 @@ elab "fren_recursive_case" self:ident ihName:(ident)? : tactic => do
       let timeout := fren.timeout.get opts
       let query ← mkFreshExprMVar (← g.getType)
       match ← Smt.smt { trust := true, timeout := some (if timeout == 0 then 30 else min 30 timeout)
-                        extraSolverOptions := Core.solverOptions true true ++ resourceLimitOptions opts }
+                        extraSolverOptions := Core.solverOptions true true ++ resourceLimitOptions opts
+                          ++ quietOptions }
           query.mvarId! hs with
       | .unsat .. =>
         g.assign (← instantiateMVars query)
