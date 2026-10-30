@@ -14,7 +14,9 @@ Lean-hosted front end fails the whole check of `recursion_unfolds`: `simp`
 reaches its maximum recursion depth. #417 reports that the `fren` command
 passes the same check. A smaller copy, with only the forms that
 `recursion_unfolds` reads, passes in the hosted front end, so the
-failure needs more of the model.
+failure needs more of the model. The copy is frozen on purpose: it need
+not follow later changes to the chapters, only keep the failure. If its
+check grows slow, shrink it to the smallest copy that still fails.
 
 This is a disagreement between the front ends, which #391 avoided by
 dropping the contract. `#expect_max_rec_depth` below records today's

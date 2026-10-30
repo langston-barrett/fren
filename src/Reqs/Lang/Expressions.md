@@ -361,7 +361,12 @@ is the `Let`'s free variables. In a `match`, an arm's guard and body
 mention their free variables with each binder of the pattern, a `Binder`,
 mentioning what the scrutinee does; the `match` mentions what its
 scrutinee, its arms and its later arms do, and that is the `Match`'s free
-variables:
+variables. What the law pins down is the step of `mentions` at each such
+name and form: a `Definition` and a `Binder` mention what their definition
+or scrutinee does, and a `let` and a `match`, `Compound`s, what their
+parts do. That the front ends count a name's definition where the name is
+read is the prose's above; checking it would need a model of the front
+ends' substitution:
 
 ```fren
 expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
