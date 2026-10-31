@@ -45,6 +45,9 @@ module's. -/
 def logAbout (path : Name) (ref : Syntax) (text : MessageData) (severity : MessageSeverity) :
     CommandElabM Unit := do
   let l ← getLocal
+  -- A check of a parenthesized expression is reported within its
+  -- parentheses, as the `fren` command places it (`Reqs/View`).
+  let ref := unparen ref
   -- Without a position, `logAt` would use the current command's, which
   -- another file's line map would misplace: the message is named by the
   -- file that declares the item, if it is a spec, with no position, and

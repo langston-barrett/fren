@@ -5546,7 +5546,11 @@ if it is a chain of more than one. -/
 partial def elabIsExpr (cx : ExprCtx) (test : Fren.Core.TestContext × Option (Nat × Nat)) (span : Span)
     (scrutinee : Expr) (p : Pattern) : M (String × Ty) := do
   let (s, ts) ← elabExpr cx scrutinee
-  unless ts matches .enum .. | .bool | .int | .nat | .string do err scrutinee.span (Fren.Core.isScrutineeMsg ts.show)
+  unless ts matches .enum .. | .bool | .int | .nat | .string do
+    let shorthand := match scrutinee with
+      | .path _ #[b] => b.name == Fren.Core.shorthandBinder
+      | _ => false
+    err scrutinee.span (Fren.Core.isScrutineeMsg ts.show shorthand)
   -- Whether the names that it binds are in scope anywhere (`lang::test_scope`):
   -- then its or-patterns bind none, as a `match` arm's do.
   let (context, at?) := test

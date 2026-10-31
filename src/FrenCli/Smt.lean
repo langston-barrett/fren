@@ -224,7 +224,9 @@ def Limits.options (limits : Limits) : String :=
 
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
 hypothesis followed by a comment with its name; without `(check-sat)`. It
-declares only what the prelude needs to (`Prelude.neededDecls`). -/
+declares only what the prelude needs to (`Prelude.neededDecls`), and is in
+`logic`, but for `ALL` instead of `HO_ALL` if it projects no relation
+(`Fren.Core.queryLogic`). -/
 def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (hyps : Array (Lean.Name × String)) (goal : String) : String :=
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
@@ -233,10 +235,12 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- `mapQuoted` of the whole script, piece by piece: each piece is whole
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
+  let defs := String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
+  -- Higher-order only if the script, its definitions among it, projects a
+  -- relation (`cli::logic`).
+  let logic := Fren.Core.queryLogic logic (Fren.Core.projectsRelation defs || Fren.Core.projectsRelation body)
   let head := s!"(set-logic {logic})\n(set-option :produce-models true)\n{limits.options}{options}"
-  solverText head
-    ++ String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
-    ++ solverText body
+  solverText head ++ defs ++ solverText body
 
 /-- The answers to the queries asked so far, by script, each with whether
 it has a model: a script asked again gets the same answer without the
@@ -818,7 +822,8 @@ where
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
-type that is not finite (`cli::logic`); answering from `cache?`, if any,
+type that is not finite, which puts in `HO_ALL` those of its queries that
+do (`cli::logic`, `queryScript`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)

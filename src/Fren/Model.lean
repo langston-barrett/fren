@@ -1115,6 +1115,22 @@ def getLocal : m LocalState := return localExt.getState (← getEnv)
 def modifyLocal (f : LocalState → LocalState) : m Unit :=
   modifyEnv (localExt.modifyState · f)
 
+/-- Strips parentheses from `e`. -/
+partial def unparen (e : Lean.Syntax) : Lean.Syntax :=
+  if e.isOfKind Lean.choiceKind && e.getArgs.any (·.isOfKind `Fren.Lang.booleanBlockExpr) then
+    unparen ((e.getArgs.find? (·.isOfKind `Fren.Lang.booleanBlockExpr)).getD e[0])
+  else if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
+
+open Lean Elab in
+/-- Logs the exception `ex`, as `logException` does, but an error about a
+parenthesized expression within its parentheses, as the `fren` command
+places it (`Reqs/View`). -/
+def logWithin {m : Type → Type} [Monad m] [MonadLog m] [AddMessageContext m] [MonadOptions m] [MonadLiftT IO m]
+    (ex : Exception) : m Unit :=
+  match ex with
+  | .error ref msg => logException (.error (unparen ref) msg)
+  | _ => logException ex
+
 open Lean Elab Command in
 /-- Runs `k`, then records how many errors its top-level command has
 logged (`LocalState.staticErrors`), but those of checks
@@ -1133,7 +1149,7 @@ def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
     match ex with
     | .internal id _ => if id == unsupportedSyntaxExceptionId || id == interruptExceptionId then throw ex
                         else logException ex
-    | _ => logException ex
+    | _ => logWithin ex
   -- A generic function's type parameters end with it, even after an error.
   modifyLocal fun l => { l with fnTypeParams := none }
   openGenerated

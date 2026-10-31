@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.Frontends
 import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.Quote
@@ -124,12 +125,47 @@ def snapshots (bless : Bool) : IO (Array String) := do
 
 /-! ## ui tests -/
 
+/-- The lines of ui tests where the front ends are known to report a
+message alike but at different columns, until each is fixed (#555): Lean
+at a method's or field's receiver, the binary at its name; the binary at
+`refines`, Lean at the call that it refines; Lean at a pattern's `r"`,
+the binary at its text; and Lean at a higher-order call, the binary at
+its argument. A line here that no longer differs fails, so that it is
+removed. -/
+def knownColumnDifferences : List (String × Nat) :=
+  [("test/ui/checks/refinement_bindings_static.fren", 17), ("test/ui/checks/refinement_bindings_static.fren", 25),
+   ("test/ui/checks/refinement_bindings_static.fren", 33), ("test/ui/checks/refinement_bindings_static.fren", 37),
+   ("test/ui/lang/constants_methods_static.fren", 5), ("test/ui/lang/constants_static.fren", 20),
+   ("test/ui/lang/datatypes_static.fren", 32), ("test/ui/lang/datatypes_static.fren", 33),
+   ("test/ui/lang/div_mod_static.fren", 32), ("test/ui/lang/div_mod_static.fren", 36),
+   ("test/ui/lang/higher_order_static.fren", 52), ("test/ui/lang/nat_static.fren", 39),
+   ("test/ui/lang/newtypes_static.fren", 53), ("test/ui/lang/newtypes_static.fren", 56),
+   ("test/ui/lang/ordered_enums_static.fren", 23), ("test/ui/lang/ordered_enums_static.fren", 25),
+   ("test/ui/lang/ordered_enums_static.fren", 33), ("test/ui/lang/ordered_enums_static.fren", 35),
+   ("test/ui/lang/ordered_structs_static.fren", 35), ("test/ui/lang/ordered_structs_static.fren", 37),
+   ("test/ui/lang/ordered_structs_static.fren", 42), ("test/ui/lang/patterns_static.fren", 6),
+   ("test/ui/lang/patterns_static.fren", 8), ("test/ui/lang/patterns_static.fren", 10),
+   ("test/ui/lang/patterns_static.fren", 12), ("test/ui/lang/patterns_static.fren", 14),
+   ("test/ui/lang/relations_static.fren", 9), ("test/ui/lang/relations_static.fren", 27),
+   ("test/ui/lang/sequences_static.fren", 10), ("test/ui/lang/strings_static.fren", 4),
+   ("test/ui/lang/strings_static.fren", 8)]
+
+/-- A path as `knownColumnDifferences` writes it: without a leading `./`. -/
+partial def withoutDotSlash (p : String) : String :=
+  match p.dropPrefix? "./" with
+  | some rest => withoutDotSlash rest.toString
+  | none => p
+
+#guard withoutDotSlash "./test/ui/a.fren" == "test/ui/a.fren"
+#guard withoutDotSlash "test/ui/a.fren" == "test/ui/a.fren"
+
 /-- The ui tests of `files`. -/
 def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := do
   let mut failures := #[]
   let isStopped (d : Diagnostic) := d.line == 0 && d.text == Fren.Core.couldNotHeadline
   for f in files do
     let mut cliStopped := none
+    let mut cliDiags : Array Diagnostic := #[]
     let src ← IO.FS.readFile f
     let spec ← match parse src with
       | .ok s => pure s
@@ -137,6 +173,7 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
     if spec.only? != some "hosted" then
       let (out, code) ← runCheck #[f.toString]
       let (diags, summary) := cliDiagnostics f.toString out
+      cliDiags := diags
       for e in check "cli" spec diags summary (some code.toNat) do
         failures := failures.push s!"{f} (binary): {e}"
       cliStopped := some (out.contains s!"error: {Fren.Core.couldNotHeadline}")
@@ -145,6 +182,23 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
       let stopped := diags.any isStopped
       for e in check "hosted" spec (diags.filter (!isStopped ·)) summary none do
         failures := failures.push s!"{f} (Lean): {e}"
+      -- A message that both front ends report on a line, alike, is at
+      -- the same column in both (`cli::agreement`), but on the lines
+      -- known to differ, which must still differ.
+      let known := knownColumnDifferences.filterMap fun (g, l) => if g == withoutDotSlash f.toString then some l else none
+      let mut differing := #[]
+      for h in diags do
+        let alike := cliDiags.filter fun c => c.line == h.line && c.line != 0 && c.severity == h.severity
+          && FrenTest.Frontends.normHead c.text == FrenTest.Frontends.normHead h.text
+        unless alike.isEmpty || alike.any (·.col == h.col) do
+          differing := differing.push h.line
+          unless known.contains h.line do
+            failures := failures.push
+              s!"{f}:{h.line}: Lean reports `{FrenTest.Frontends.headOf h}` at column {h.col + 1}, the binary at {(alike.map (·.col + 1)).toList}"
+      if spec.only?.isNone then
+        for l in known do
+          unless differing.contains l do
+            failures := failures.push s!"{f}:{l}: the front ends' columns no longer differ; remove it from `knownColumnDifferences`"
       -- Both front ends say that a static error stopped the checks, or
       -- neither does (`cli::agreement`).
       if let some c := cliStopped then

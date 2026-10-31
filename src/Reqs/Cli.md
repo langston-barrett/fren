@@ -255,9 +255,12 @@ cvc5 refuses to count the members of a set of a finite type. A relation's
 its `range` the same on the other side, written as a literal when that type
 is finite. Over a type that is not finite, which is outside the core, they
 are cvc5's projections, which it supports only in higher-order logic, so
-such a spec uses `HO_ALL`. The Lean-hosted front end does the same, for
-each query with a projection, by cvc5's option `force-logic`, since
-lean-smt always sets `ALL`. A query with a quantifier over a
+a query of such a spec whose script has a projection, in its hypotheses,
+its goal or the definitions that it includes, uses `HO_ALL`, and its other
+queries use `ALL`: cvc5's higher-order extension slows every query that it
+is set for. The Lean-hosted front end does the same, for each query with a
+projection, by cvc5's option `force-logic`, since lean-smt always sets
+`ALL`. A query with a quantifier over a
 collection's elements, which a [subset type](Lang/SubsetTypes.md#static-types-assumptions-and-obligations)
 within an element type brings, and which is outside the core, sets
 `fmf-bound`, with which cvc5 finds models of quantifiers bounded by
@@ -293,7 +296,7 @@ pub enum Theory { Strings, Sets, Sequences }
 pub proc logic(
     kind: Kind,
     theories: Set<Theory>,       -- beyond uninterpreted functions, datatypes and linear integer arithmetic
-    projection?,                 -- the spec takes the domain or range of a relation over a type that is not finite
+    projection?,                 -- the query's script takes the domain or range of a relation over a type that is not finite
     quantified?,                 -- the spec has an unbounded quantifier, or a refinement claim whose abstraction has calls
 ): (
     det logic: Logic,

@@ -2132,13 +2132,17 @@ partial def item : P Item := do
         -- `type T = U is P`, which means `type T = #value: U where pattern:
         -- #value is P`, whose binder is generated (`Fren.Core.shorthandBinder`,
         -- `Reqs/Lang/SubsetTypes#the-pattern-shorthand`).
+        let baseStart := (← peek).span
         let base ← typeExpr
+        let baseSpan ← spanFrom baseStart
         let isTok ← expectKw "is"
         let p ← pattern (arm := false)
-        -- At the type's name, as a written binder is outside the invariant.
-        let binder : Ident := { name := Fren.Core.shorthandBinder, span := name.span }
+        -- The binder, and the scrutinee that stands for the unwritten
+        -- value, are at the base type: outside the invariant, as a written
+        -- binder is, and where an error about the value is reported.
+        let binder : Ident := { name := Fren.Core.shorthandBinder, span := baseSpan }
         let label : Ident := { name := "pattern", span := isTok.span }
-        return .subsetType isPub name binder base #[(label, .is (← spanFrom isTok.span) (.path name.span #[binder]) p)]
+        return .subsetType isPub name binder base #[(label, .is (← spanFrom isTok.span) (.path baseSpan #[binder]) p)]
       let binder ← ident
       discard (expectKw ":")
       let base ← typeExpr

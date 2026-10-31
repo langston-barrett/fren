@@ -879,11 +879,14 @@ inductive TestAt where
   deriving Inhabited
 
 /-- `e is P`, where `e` is not of a type that patterns match
-(`Reqs/Lang/Expressions#pattern-tests`). -/
-def isScrutineeMsg (ty : String) : Msg :=
+(`Reqs/Lang/Expressions#pattern-tests`); with `shorthand`, the pattern
+shorthand `type T = U is P`, whose value is not written, and which is
+reported at `U` (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
+def isScrutineeMsg (ty : String) (shorthand := false) : Msg :=
   { code? := some "F0335", headline := s!"cannot test `{ty}` against a pattern", label? := some "no patterns of this type"
     notes := #["note: `is` tests a value of an enum, `Bool`, `Int`, `Nat` or `String`",
-      "help: for other types, compare with `=` or `in`"] }
+      if shorthand then s!"help: for other types, declare the type in full, as `type T = x: {ty} where …`, and compare `x` with `=` or `in`"
+      else "help: for other types, compare with `=` or `in`"] }
 
 /-- The name that a binder `n` or `n!` would declare, as a message names
 it: without its `!` (`Reqs/Lang/Procedures#shadowing`). -/

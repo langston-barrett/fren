@@ -32,6 +32,10 @@ namespace FrenTest.Ui
 
 structure Diagnostic where
   line : Nat
+  /-- Its column, counted in characters from 0 at the start of the line;
+  0 where it has no line. The ui tests do not compare it; the front-end
+  fuzzer does (`FrenTest.Frontends.compare`). -/
+  col : Nat := 0
   /-- `error`, `warning` or `info`. -/
   severity : String
   text : String
