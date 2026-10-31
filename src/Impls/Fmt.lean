@@ -104,16 +104,17 @@ impl trailing_comma: fmt::trailing_comma for (e v a : Bool) {
   comma? := FrenCli.Fmt.trailingComma e v a,
 }
 
-impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w e : Nat) (l : Bool) {
+impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Nat) (l : Bool) {
   list := toFmtListKind k,
   n := n,
   broken? := b,
   width := w,
+  start := s,
   line_end := e,
   own_line? := l,
-  vertical? := FrenCli.Fmt.vertical k n b w e l,
+  vertical? := FrenCli.Fmt.vertical k n b w s e l,
 } by
-  intro k n b w e l _
+  intro k n b w s e l _
   cases k <;> cases b <;> cases l <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
 

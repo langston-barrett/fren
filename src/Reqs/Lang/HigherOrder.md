@@ -179,11 +179,7 @@ pub proc function_argument(param: ParamKind, arg: ArgShape): (det accepted?, det
     }
 
     expect values: when param = ParamKind::Value, accepted? iff arg = Other
-    expect closures: when param = ParamKind::Function(1), accepted? iff arg in {
-        Closure(1),
-        DefinedName,
-        FnParameterName,
-    }
+    expect closures: when param = ParamKind::Function(1), accepted? iff arg in {Closure(1), DefinedName, FnParameterName}
     expect no_uninterpreted: when arg = UninterpretedName, not accepted?
 }
 ```

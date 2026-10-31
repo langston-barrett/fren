@@ -228,12 +228,7 @@ pub proc combined(
     let l: Contribution := if Lean in selected then contribution(lean_cell.cell, lean, false) else Nothing
 
     ensure refuted: (verdict = Fail) iff Refuted in {s, e, r, l}
-    ensure passed: (verdict = Pass) iff (not Refuted in {s, e, r, l} and (Passed in {s, e, r, l} or Bounded in {
-        s,
-        e,
-        r,
-        l,
-    }))
+    ensure passed: (verdict = Pass) iff (not Refuted in {s, e, r, l} and (Passed in {s, e, r, l} or Bounded in {s, e, r, l}))
     ensure bound: bounded? iff (verdict = Pass and not Passed in {s, e, r, l})
     -- The strongest method that contributed a pass with no caveat, or
     -- enumeration's bounded pass; none unless the check passes.

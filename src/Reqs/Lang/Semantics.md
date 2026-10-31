@@ -437,9 +437,7 @@ pub fn binary_value(i: Interp, op: BinaryOp, a: Outcome, b: Outcome): Outcome :=
         BinaryOp::Div, Value::Integer(_), Value::Integer(n) => if n = 0 then Outcome::Undefined else primitive(i, "div", v, w),
         BinaryOp::Mod, Value::Integer(_), Value::Integer(n) => if n = 0 then Outcome::Undefined else primitive(i, "mod", v, w),
         BinaryOp::Concat, Value::Text(_), Value::Text(_) => primitive(i, "++", v, w),
-        BinaryOp::Concat, Value::Nil | Value::Cons(_, _), Value::Nil | Value::Cons(_, _) => Outcome::Defined(
-            append(v, w)
-        ),
+        BinaryOp::Concat, Value::Nil | Value::Cons(_, _), Value::Nil | Value::Cons(_, _) => Outcome::Defined(append(v, w)),
         BinaryOp::In, _, Value::Nil | Value::Cons(_, _) => Outcome::Defined(truth(element?(v, w))),
         _, _, _ => Outcome::Undefined,
     },
@@ -449,12 +447,8 @@ pub fn binary_value(i: Interp, op: BinaryOp, a: Outcome, b: Outcome): Outcome :=
 pub fn method_value(m: MethodName, receiver: Outcome, args: Outcome): Outcome := match receiver, args {
     Outcome::Defined(v), Outcome::Defined(l) => match m, v, l {
         MethodName::Abs, Value::Integer(n), Value::Nil => Outcome::Defined(Value::Integer(n.abs)),
-        MethodName::Min, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(
-            Value::Integer(n.min(k))
-        ),
-        MethodName::Max, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(
-            Value::Integer(n.max(k))
-        ),
+        MethodName::Min, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(Value::Integer(n.min(k))),
+        MethodName::Max, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(Value::Integer(n.max(k))),
         MethodName::Len, Value::Text(s), Value::Nil => Outcome::Defined(Value::Integer(s.len)),
         MethodName::Len, Value::Nil | Value::Cons(_, _), Value::Nil => Outcome::Defined(
             Value::Integer(length(v))

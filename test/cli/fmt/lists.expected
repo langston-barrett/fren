@@ -77,13 +77,19 @@
 +        xxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
 +        yyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 +    ))
-@@ -64 +86,4 @@
+@@ -66 +88,4 @@
+-    ensure record_right: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
++    ensure record_right: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P {
++        xx := 1,
++        y := 2,
++    }
+@@ -72 +97,4 @@
 -        and ffffffffffffffffffffffffffffffffff(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
 +        and ffffffffffffffffffffffffffffffffff(
 +            xxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
 +            yyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 +        )
-@@ -70 +95,10 @@
+@@ -78 +106,10 @@
 -fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaaaa: Int): Int := p0 + p1 + p2
 +fn longer(
 +    p0: Int,

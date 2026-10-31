@@ -58,10 +58,7 @@ pub proc manual_abs(
 ): (det fires?) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule: fires? iff (compared = Ordered::Number and (if negated_then? then op in {Lt, Le} else op in {
-        Gt,
-        Ge,
-    }))
+    ensure rule: fires? iff (compared = Ordered::Number and (if negated_then? then op in {Lt, Le} else op in {Gt, Ge}))
 }
 ```
 

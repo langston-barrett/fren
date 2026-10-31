@@ -497,7 +497,8 @@ def fmtIgnore : List String :=
 Their expected outputs and `--~` annotations name their lines, so
 formatting them means updating those too. Step 2 of the move to rustfmt's
 layout, which breaks long expressions, will change many of them again, so
-they are formatted once, with that step, and this list is then removed. -/
+they are formatted once, with that step, and this list is then removed
+(#509). -/
 def fmtPending : List String :=
   ["test/cli/args/dump_smt_generic_function.fren", "test/cli/args/dump_smt_generic_pattern.fren",
    "test/cli/args/dump_smt_prelude.fren", "test/cli/commands/counterexample_newtype.fren",

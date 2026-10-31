@@ -984,9 +984,7 @@ pub enum NewtypeOp { Equality, Order, Addition, Subtraction, Other }
 -- The chain of a newtype whose underlying type is `underlying`, where
 -- `(n, u)` is in `unders` when `u` is the underlying type of the newtype `n`.
 set_option fren.lint.undecidable "allow" in
-pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> := unders.closure.image({underlying}) union {
-    underlying,
-}
+pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> := unders.closure.image({underlying}) union {underlying}
 
 set_option fren.lint.undecidable "allow" in
 pub proc newtype_operator(
@@ -1019,10 +1017,7 @@ pub proc newtype_operator(
     expect strings_never_sum: when kind(underlying) = StringTy and op in {Addition, Subtraction}, not accepted?
     -- A newtype of a newtype has the operators of the inner newtype's underlying type.
     expect inner_integers: when newtype?(underlying) and unders = {(underlying, under(underlying))}
-        and kind(under(underlying)) = IntTy and not newtype?(under(underlying)) and op in {
-            Addition,
-            Subtraction,
-        },
+        and kind(under(underlying)) = IntTy and not newtype?(under(underlying)) and op in {Addition, Subtraction},
         accepted?
     expect inner_strings: when newtype?(underlying) and unders = {(underlying, under(underlying))}
         and kind(under(underlying)) = StringTy and op in {Addition, Subtraction}, not accepted?
@@ -2485,10 +2480,7 @@ pub proc operator_type(
         Concat => a = b and kind(a) in {StringTy, SeqTy},
         Membership => kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
         SetAlgebra | Subset => a = b and kind(a) in {SetTy, RelTy},
-        Conditional => kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {
-            IntTy,
-            NatTy,
-        })),
+        Conditional => kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
     }
     ensure results: result = match op {
         Addition | Multiplication => if newtype?(a) then RecordTy else if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,

@@ -294,10 +294,7 @@ pub proc invalid_upcast_comparisons(
     det fires?,
     det value?,          -- what the comparison always is, where it fires
 ) {
-    ensure rule: fires? iff (bound < lowest or (bound = lowest and (if left? then op in {Lt, Ge} else op in {
-        Gt,
-        Le,
-    })))
+    ensure rule: fires? iff (bound < lowest or (bound = lowest and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
     ensure fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
 }
 ```

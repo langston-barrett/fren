@@ -74,15 +74,7 @@ pub proc block_member(
         Use,
     }
 
-    ensure rule: accepted? iff (not det? and member in {
-        Let,
-        Assume,
-        Expect,
-        Cover,
-        Call,
-        Refines,
-        Use,
-    })
+    ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Refines, Use})
     ensure reported: report = (if accepted? then MemberReport::NoReport else MemberReport::F0417)
 
     expect claims: when member in {Expect, Cover} and not det?, accepted?

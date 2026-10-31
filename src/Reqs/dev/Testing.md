@@ -80,7 +80,12 @@ pub mod testing
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
-  fixtures that are deliberately unformatted or do not parse. Run `fren fmt`
+  fixtures that are deliberately unformatted or do not parse, and those
+  listed in `fmtPending`: test fixtures that `fren fmt`'s move to rustfmt's
+  layout would lay out anew. Their expected outputs and `--~` annotations
+  name their lines, and the next step of that move, which breaks long
+  expressions, will change many of them again, so they are formatted once,
+  with that step, and `fmtPending` is then removed (#509). Run `fren fmt`
   on a spec after editing it. Formatting every spec must also keep its
   tokens, imports and comments, and be idempotent (`fmt::safe`), and each
   spec, laid out again at random, must format as it does

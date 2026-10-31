@@ -170,6 +170,10 @@ are left for later:
   in `f(match x {` ... `})`. `fren fmt` makes the arguments vertical.
 - rustfmt puts a long sequence of short literals several to a line
   (`short_array_element_width_threshold`). `fren fmt` puts one to a line.
+- `fmt::indent`'s `base` and `fmt::one_line`'s `own_line?` are inputs that
+  the formatter computes, rather than rules over the open brackets and
+  expressions of a line, and the test fixtures in `fmtPending` are not
+  formatted yet (#509).
 
 ## Lists and blocks
 
@@ -223,18 +227,23 @@ hold:
 3. with the list on one line, that line ends by column 100, rustfmt's
    `max_width`, counting what follows the list up to the first opening
    bracket or the first place where a line may end. This counts only
-   where the list *is its line's expression*: it is a procedure's or
+   where breaking the list shortens the line, so that the line up to
+   its first element ends by column 100, and only where the list *is its
+   line's expression*: it is a procedure's or
    function's parameters or results, as rustfmt breaks a long signature
    there first, and then what follows it counts only up to the
    signature's `:=`, as rustfmt counts a signature only up to its ` {`; or
    both of these hold:
    - what follows its closing bracket on the line is only closing
-     brackets, commas, `=>` and an opening bracket; and
-   - it opens with a brace, or in each expression that holds it and
-     starts on its line, at most 4 columns come before its *head*, the
-     names, `::` and `.` just before its opening bracket. A line that
-     continues an expression from the line before starts one, after its
-     operator, if it starts with one.
+     brackets, commas, `=>`, the `>` that closes a type's arguments, and
+     an opening bracket; and
+   - in each expression that holds it and starts on its line, at most 4
+     columns come before its *head*, the names, `::` and `.` just before
+     its opening bracket. A line that continues an expression from the
+     line before starts one, after its operator, if it starts with one.
+     A record literal or update that is the whole right operand of the
+     innermost operation of a binary operator on its line is exempt from
+     that operation, and only from it.
 
    Otherwise the list is horizontal when 1 and 2 hold, however long its
    line.
@@ -248,9 +257,15 @@ rustfmt breaks the expression instead, between its operands, and gives
 each list the line that is left. It keeps a right operand on the line
 of its operator, and breaks it in place, only where the left operand is
 at most 4 wide, as in `r = f(` ..., or the operand's first line ends with
-a brace, as in `q = P {` .... `fren fmt` allows the same, a little more
-strictly, as it counts all that comes before the list in the expression.
-Until it breaks expressions, every other such list stays on one line.
+a brace, as for a struct literal in `q = P {` .... A chain of operators,
+as in `a and b and q = P {`, it breaks one operand to a line whatever
+its operands. `fren fmt`
+allows the same, a little more strictly, as it counts all that comes
+before the list in the expression, and exempts from that only the
+operation whose right operand a record is. A set literal is not exempt:
+it is Rust's array, which opens with `[`, and so are a Boolean block's
+members. Until `fren fmt` breaks expressions, every other such list
+stays on one line.
 
 | List | Widest | rustfmt's option |
 |---|---|---|
@@ -302,11 +317,12 @@ pub proc one_line(
     n: Int,                  -- its elements
     broken?,                 -- some element must span several lines
     width: Int,              -- the width of its elements on one line, separated by `, `
+    start: Int,              -- the column where its first element would start
     line_end: Int,           -- the column where its line would end, with it on one line
     own_line?,               -- it is its line's expression
 ): (det vertical?) {
     ensure rule: vertical? iff (n > 0 and (list = Arms or broken? or width > width_limit(list)
-        or (own_line? and line_end > 100)))
+        or (own_line? and start <= 100 < line_end)))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
@@ -314,11 +330,16 @@ pub proc one_line(
         not vertical?
     expect just_fits: when list = Arguments and n = 2 and not broken? and width = 60 and line_end = 100, not vertical?
     expect just_too_wide: when list = Arguments and n = 2 and width = 61, vertical?
-    expect just_too_long: when list = Fields and n = 1 and width = 18 and line_end = 101 and own_line?, vertical?
+    expect just_too_long: when list = Fields and n = 1 and width = 18 and start = 80 and line_end = 101 and own_line?,
+        vertical?
     -- Breaking a list helps its line only where the list is the line's expression: elsewhere, the
     -- rest of the expression would still be on the lines of its brackets.
     expect operand: when not own_line? and list != Arms and not broken? and width <= width_limit(list),
         not vertical?
+    -- A list that is vertical for its line's length alone shortens the line: the line fits up to its
+    -- first element, and is too long with the list on it.
+    expect helps: when vertical? and list != Arms and not broken? and width <= width_limit(list),
+        own_line? and start <= 100 < line_end
 }
 ```
 
@@ -364,7 +385,8 @@ pub proc list_layout(
     own_line?,               -- it is its line's expression
 ): (det vertical?) {
     ensure rule: vertical? iff (count(elements) > 0 and (list = Arms or any_broken?(elements)
-        or joined(elements) > width_limit(list) or (own_line? and start + joined(elements) + after > 100)))
+        or joined(elements) > width_limit(list) or (own_line?
+        and start <= 100 < start + joined(elements) + after)))
 }
 
 expect list_layout_one_line(
@@ -380,6 +402,7 @@ expect list_layout_one_line(
         count(elements),
         any_broken?(elements),
         joined(elements),
+        start,
         start + joined(elements) + after,
         own_line?,
     )
