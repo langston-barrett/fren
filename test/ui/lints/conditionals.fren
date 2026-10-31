@@ -25,6 +25,9 @@ proc conditionals(a?, b?, x: Int, y: Int): (p?, n: Int) {
     expect e14: when b?, p? iff if not a? then false else b?
     --~^ warning: this `if` has a negated condition
     --~^^ warning: this `Bool` expression can be simpler
+    -- Which `unless_not_fires?` leaves, since its fix is `unless a?, true`
+    -- as elaborated, but the linter fixes.
+    expect e15: unless not a?, true            --~ warning: this `unless` has a negated condition
 }
---@ summary: 22 passed, 1 failed, 0 inconclusive, 0 redundant
+--@ summary: 24 passed, 1 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

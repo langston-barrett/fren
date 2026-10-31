@@ -802,7 +802,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
     -- A recursive definition needs a logic with quantifiers.
     let logic := Fren.Core.logic kind (strings || sets) projection quantified
-    let options := String.join (options.map fun (o, v) => s!"(set-option :{o} {v})\n")
+    let options := String.join ((options ++ Fren.Core.quantifierOptions logic).map fun (o, v) => s!"(set-option :{o} {v})\n")
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel

@@ -722,8 +722,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := true
                           -- `fmf-bound` right after the options both front ends set, as the
                           -- binary sets it.
+                          -- lean-smt's logic, `ALL`, quantifies (`Core.quantifierOptions`).
                           extraSolverOptions := Core.solverOptions true true ++ bounded
-                            ++ (if finiteModel then Core.finiteModelOptions else []) ++ logic ++ cvc5Defaults
+                            ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
+                            ++ logic ++ cvc5Defaults
                             ++ resourceLimitOptions (← getOptions) ++ quietOptions }
                   mv.mvarId! (hs.reverse ++ recFvs) with
         | .sat (some m) =>

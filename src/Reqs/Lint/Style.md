@@ -86,6 +86,205 @@ pub proc collapsible_when(
 }
 ```
 
+### Conditionals, over the syntax of the semantics
+
+In the [syntax of the semantics](../Lang/Semantics.md#abstract-syntax),
+`when c, d` is `if c then d else true`, `unless c, d` is `if c then true
+else d`, and `a != b` is `not (a = b)`, as [Derived
+forms](../Lang/Semantics.md#derived-forms) states, so a condition that is
+a negation is `Unary(Not, a)`, of the condition `a` that it negates. So
+`unless_not` fires on `if not a then true else d`, and its fix is `if a
+then d else true`. `collapsible_when` fires on `if a then (if b then d
+else true) else true`, whose fix is `if a and b then d else true`, and on
+`if a then true else (if b then true else d)`, whose fix is `if a or b
+then true else d`. Each is a rewrite, as [Fixes as rewrites](Rewrites.md)
+states for every such lint.
+
+`when a, true` and `unless a, true` are one expression, `if a then true
+else true`. So where `d` is `true`, the fix of `unless_not` is a
+conditional on which it fires again where `a` is a negation, and
+`unless_not_fires?` leaves a `d` that is `true`.
+
+```fren
+-- `e` is the literal `true`.
+fn true?(e: lang::Expr) := e = lang::Expr::Literal(lang::Value::True)
+
+-- `if not a then true else d`, of a `d` that is not `true`.
+pub fn unless_not_fires?(e: lang::Expr) := match e {
+    lang::Expr::If(lang::Expr::Unary(lang::UnaryOp::Not, _), t, f) => true?(t) and not true?(f),
+    _ => false,
+}
+
+pub fn unless_not_fix(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::If(lang::Expr::Unary(lang::UnaryOp::Not, a), t, f) =>
+        if true?(t) and not true?(f) then lang::Expr::If(a, f, t) else e,
+    _ => e,
+}
+
+-- `if a then (if b then d else true) else true`.
+fn nested_when?(t: lang::Expr, f: lang::Expr) := true?(f) and match t {
+    lang::Expr::If(_, _, g) => true?(g),
+    _ => false,
+}
+
+-- `if a then true else (if b then true else d)`.
+fn nested_unless?(t: lang::Expr, f: lang::Expr) := true?(t) and match f {
+    lang::Expr::If(_, u, _) => true?(u),
+    _ => false,
+}
+
+pub fn collapsible_when_fires?(e: lang::Expr) := match e {
+    lang::Expr::If(_, t, f) => nested_when?(t, f) or nested_unless?(t, f),
+    _ => false,
+}
+
+pub fn collapsible_when_fix(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::If(a, lang::Expr::If(b, d, g), f) =>
+        if true?(f) and true?(g) then lang::Expr::If(lang::Expr::And(a, b), d, f) else e,
+    lang::Expr::If(a, t, lang::Expr::If(b, u, d)) =>
+        if true?(t) and true?(u) then lang::Expr::If(lang::Expr::Or(a, b), t, d) else e,
+    _ => e,
+}
+```
+
+`lint::unless_not` and `lint::collapsible_when` bind this to the linter.
+For every condition `a` and body `d` that is not `true`, `unless_not`, on
+`unless C, d` or `when C, d` where `C` is a negation of `a`, fires exactly
+where `unless_not_fires?` does on its elaboration, and its fix is `when a,
+d`. Where the condition is not a negation, neither fires. For every `a`,
+`b` and `d`, `collapsible_when` fires on `when a, when b, d` and on
+`unless a, unless b, d`, and so does `collapsible_when_fires?` on their
+elaborations, and the fixes are `when a and b, d` and `unless a or b, d`.
+On a nest of `when` and `unless`, of a `d` that is not `true`, neither
+fires, and where the body is not a conditional, neither does.
+
+The front ends' reading of `when`, `unless`, `not` and `!=` into a
+`Head` is trusted, and checked by the ui tests of the lints, and so is
+the text of each fix. The linter fires only where these functions do, but
+on `unless not a, true`, which `unless_not_fires?` leaves, as above, and
+not in every place they do: elaboration does not keep which keyword wrote
+a conditional, so `if not a then true else d` and `when a, if b then d
+else true` are expressions these functions fire on, but the linter, which
+sees an `if`, does not.
+
+```fren
+-- `when c, d`, or `unless c, d`, as elaborated.
+fn conditional_of(unless?, c: lang::Expr, d: lang::Expr): lang::Expr :=
+    if unless? then lang::Expr::If(c, lang::Expr::Literal(lang::Value::True), d)
+    else lang::Expr::If(c, d, lang::Expr::Literal(lang::Value::True))
+
+expect unless_not_elaborated(
+    unless?,
+    condition: Head,
+    a: lang::Expr,
+    c: lang::Expr,
+    d: lang::Expr,
+) {
+    use lang::Expr::Unary
+    use lang::UnaryOp::Not
+
+    call p := unless_not(unless?, condition)
+
+    expect negation: when condition in {Head::Not, Head::Unequal} and not true?(d),
+        p.fires? iff unless_not_fires?(conditional_of(unless?, Unary(Not, a), d))
+    expect fix: unless true?(d), unless_not_fix(conditional_of(true, Unary(Not, a), d)) = conditional_of(false, a, d)
+    expect other: when not (condition in {Head::Not, Head::Unequal}) and not (c is Unary(Not, _)),
+        not p.fires? and not unless_not_fires?(conditional_of(unless?, c, d))
+}
+
+expect collapsible_when_elaborated(
+    unless?,
+    body: Head,
+    a: lang::Expr,
+    b: lang::Expr,
+    c: lang::Expr,
+    d: lang::Expr,
+) {
+    call p := collapsible_when(unless?, body)
+    call same := collapsible_when(unless?, if unless? then Head::Unless else Head::When)
+    call mixed := collapsible_when(unless?, if unless? then Head::When else Head::Unless)
+
+    expect nested: same.fires? and collapsible_when_fires?(conditional_of(unless?, a, conditional_of(unless?, b, d)))
+    expect fix: collapsible_when_fix(conditional_of(unless?, a, conditional_of(unless?, b, d)))
+        = conditional_of(
+            unless?,
+            if unless? then lang::Expr::Or(a, b) else lang::Expr::And(a, b),
+            d
+        )
+    expect nest: unless true?(d),
+        not mixed.fires? and not collapsible_when_fires?(
+            conditional_of(unless?, a, conditional_of(not unless?, b, d))
+        )
+    expect other: when not (body in {Head::When, Head::Unless}) and not (c is lang::Expr::If(_, _, _)),
+        not p.fires? and not collapsible_when_fires?(conditional_of(unless?, a, c))
+}
+```
+
+Where they fire, the fixes have the conditional's outcome, in every
+interpretation and environment: each evaluates the conditions in the same
+order, and where one is not a `Bool`, both are undefined. `and` and `or`
+evaluate `b` only where `a` lets the nested conditional reach it. So each
+[agrees](Meaning.md#fixes-that-agree) with the conditional, and is exact.
+The solver unfolds [`eval`](../Lang/Semantics.md#the-evaluation-function)
+one step, and the conditionals are two deep, so `src/Impls/Rewrites.lean`
+proves it in Lean, for every expression, interpretation and environment;
+`fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc unless_not_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+    ensure exact: when unless_not_fires?(e), lang::eval(i, env, unless_not_fix(e)) = lang::eval(i, env, e)
+}
+
+set_option fren.evidence "random" in
+pub proc collapsible_when_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+    ensure exact: when collapsible_when_fires?(e), lang::eval(i, env, collapsible_when_fix(e)) = lang::eval(i, env, e)
+}
+```
+
+The fix of `unless_not` fixes the lint at one place: its `else` branch is
+`true`, so the lint does not fire on it (`kept`). And it starts no new
+firing elsewhere: around an expression, the lint reads only whether it is
+`true` and whether it is a negation, and the fix keeps both (`around`).
+
+That of `collapsible_when` writes a conditional of a new `and` or `or` of
+operands and operands' operands, and its body, which is the nested
+conditional's. Once the operands are fixed, the nested conditional does
+not fire, so its body is not another nested conditional of the same
+keyword, and the fix leaves nothing to fix. The fix alone need not: for
+every `v`, in `when v, when v, when v, v`, the body of the fix is `when v,
+v`, so it fires again (`kept`). And an expression around it may start
+firing once it is fixed: in `when v, unless v, unless v, true`, the outer
+`when` does not fire, and the fix of the inner `unless`, `unless v or v,
+true`, which is `when v or v, true`, makes it fire (`around`).
+
+```fren
+expect unless_not_once(e: lang::Expr) {
+    expect kept: not unless_not_fires?(unless_not_fix(e))
+    expect around: (true?(unless_not_fix(e)) iff true?(e))
+        and ((unless_not_fix(e) is lang::Expr::Unary(lang::UnaryOp::Not, _)) iff (e is lang::Expr::Unary(lang::UnaryOp::Not, _)))
+}
+
+expect collapsible_when_refires(v: lang::Expr) {
+    expect kept: collapsible_when_fires?(
+        collapsible_when_fix(
+            conditional_of(
+                false,
+                v,
+                conditional_of(false, v, conditional_of(false, v, v))
+            )
+        )
+    )
+    expect around: not collapsible_when_fires?(conditional_of(false, v, inner))
+        and collapsible_when_fires?(conditional_of(false, v, collapsible_when_fix(inner)))
+        where inner := conditional_of(
+            true,
+            v,
+            conditional_of(true, v, lang::Expr::Literal(lang::Value::True))
+        )
+}
+```
+
 ## Empty collections
 
 `length_zero` fires on a comparison of a string's or sequence's `len` with

@@ -138,9 +138,11 @@ def equal (st : State) (prelude : Prelude) (vars : Array CVar) (pairs : Array (S
   if pairs.isEmpty then return some true
   let strings := st.usesStrings || st.usesSeqs
   let sets := st.usesSets || st.usesSeqs
-  let options := String.join ((Fren.Core.solverOptions strings sets).map fun (o, v) => s!"(set-option :{o} {v})\n")
+  let logic := Fren.Core.logic .expect (strings || sets) st.usesProjection st.quantified
+  let options := String.join ((Fren.Core.solverOptions strings sets ++ Fren.Core.quantifierOptions logic).map
+    fun (o, v) => s!"(set-option :{o} {v})\n")
   let goal := conj (pairs.map fun (a, b) => s!"(= {a} {b})")
-  match ← runQuery (Fren.Core.logic .expect (strings || sets) st.usesProjection st.quantified) options prelude vars { timeoutSecs := timeout } none #[] goal false cache with
+  match ← runQuery logic options prelude vars { timeoutSecs := timeout } none #[] goal false cache with
   | .unsat => return some true
   | .sat _ => return some false
   | .unknown _ => return none
