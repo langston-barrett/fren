@@ -623,8 +623,9 @@ structure Layout where
   parses, each operation of a binary operator and its operands, and each
   `if`. -/
   exprs : Array Span := #[]
-  /-- The spans of the operations of binary operators. -/
-  pairs : Array Span := #[]
+  /-- The spans of the operations of binary operators, each with that of
+  its right operand. -/
+  pairs : Array (Span × Span) := #[]
 
 /-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
@@ -766,7 +767,7 @@ def spanFrom (start : Span) : P Span := return start.to (← lastSpan)
 `(` around `l`. -/
 def bin (start : Span) (op : String) (l r : Expr) : P Expr := do
   let sp ← spanFrom start
-  modify fun st => { st with layout.exprs := st.layout.exprs ++ #[sp, l.span, r.span], layout.pairs := st.layout.pairs.push sp }
+  modify fun st => { st with layout.exprs := st.layout.exprs ++ #[sp, l.span, r.span], layout.pairs := st.layout.pairs.push (sp, r.span) }
   return .bin sp op l r
 
 /-- Runs `x` within brackets: a record literal may appear, even in a

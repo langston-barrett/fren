@@ -170,10 +170,7 @@ are left for later:
   in `f(match x {` ... `})`. `fren fmt` makes the arguments vertical.
 - rustfmt puts a long sequence of short literals several to a line
   (`short_array_element_width_threshold`). `fren fmt` puts one to a line.
-- `fmt::indent`'s `base` and `fmt::one_line`'s `own_line?` are inputs that
-  the formatter computes, rather than rules over the open brackets and
-  expressions of a line, and the test fixtures in `fmtPending` are not
-  formatted yet (#509).
+- The test fixtures in `fmtPending` are not formatted yet (#509).
 
 ## Lists and blocks
 
@@ -225,25 +222,28 @@ hold:
 2. on one line, its elements, separated by `, `, are no wider than the
    table below allows, as rustfmt allows for the like construct; and
 3. with the list on one line, that line ends by column 100, rustfmt's
-   `max_width`, counting what follows the list up to the first opening
-   bracket or the first place where a line may end. This counts only
-   where breaking the list shortens the line, so that the line up to
-   its first element ends by column 100, and only where the list *is its
-   line's expression*: it is a procedure's or
+   `max_width`, counting what follows the list up to the next place
+   where a line may end: after a bracket that indents, before a comment
+   or a line break that the formatter keeps, or where a list around it
+   may break. What follows a signature's parameters or results counts
+   only up to and including the `:=` before a function's body, if it
+   gets that far, as rustfmt counts a signature only up to its ` {`.
+   This counts only where breaking the list shortens the line, so that
+   the line up to its first element ends by column 100, and only where
+   the list *is its line's expression*: either it is a procedure's or
    function's parameters or results, as rustfmt breaks a long signature
-   there first, and then what follows it counts only up to the
-   signature's `:=`, as rustfmt counts a signature only up to its ` {`; or
-   both of these hold:
-   - what follows its closing bracket on the line is only closing
-     brackets, commas, `=>`, the `>` that closes a type's arguments, and
-     an opening bracket; and
+   there first, or both of these hold:
+   - what follows its closing bracket on the line, as far as it counts,
+     is only closing brackets, commas, `=>`, the `>` that closes a
+     type's arguments, and a bracket that indents; and
    - in each expression that holds it and starts on its line, at most 4
      columns come before its *head*, the names, `::` and `.` just before
      its opening bracket. A line that continues an expression from the
-     line before starts one, after its operator, if it starts with one.
-     A record literal or update that is the whole right operand of the
-     innermost operation of a binary operator on its line is exempt from
-     that operation, and only from it.
+     line before starts one, after its operator, if it starts with one:
+     the innermost operation that starts there and holds the list, if
+     any.
+     A record literal or update is exempt from the operation of a binary
+     operator whose whole right operand it is, and only from that one.
 
    Otherwise the list is horizontal when 1 and 2 hold, however long its
    line.
@@ -259,13 +259,12 @@ of its operator, and breaks it in place, only where the left operand is
 at most 4 wide, as in `r = f(` ..., or the operand's first line ends with
 a brace, as for a struct literal in `q = P {` .... A chain of operators,
 as in `a and b and q = P {`, it breaks one operand to a line whatever
-its operands. `fren fmt`
-allows the same, a little more strictly, as it counts all that comes
-before the list in the expression, and exempts from that only the
-operation whose right operand a record is. A set literal is not exempt:
-it is Rust's array, which opens with `[`, and so are a Boolean block's
-members. Until `fren fmt` breaks expressions, every other such list
-stays on one line.
+its operands. `fren fmt` allows the same, a little more strictly, as it
+counts all that comes before the list in the expression, and exempts
+from that only the operation whose whole right operand a record is. A
+set literal is not exempt: it is Rust's array, which opens with `[`, and
+so are a Boolean block's members. Until `fren fmt` breaks expressions,
+every other such list stays on one line.
 
 | List | Widest | rustfmt's option |
 |---|---|---|
@@ -319,7 +318,7 @@ pub proc one_line(
     width: Int,              -- the width of its elements on one line, separated by `, `
     start: Int,              -- the column where its first element would start
     line_end: Int,           -- the column where its line would end, with it on one line
-    own_line?,               -- it is its line's expression
+    own_line?,               -- it is its line's expression (`fmt::own_line`)
 ): (det vertical?) {
     ensure rule: vertical? iff (n > 0 and (list = Arms or broken? or width > width_limit(list)
         or (own_line? and start <= 100 < line_end)))
@@ -350,7 +349,7 @@ follow its last on that line: its closing bracket, with the space before
 a brace, and the tokens after it up to where a line may end. Where that
 line ends an element of a vertical list, the comma that the list adds
 after it counts too. Whether the list is its line's expression is
-decided from those same tokens and the expressions that hold it.
+decided by [`fmt::own_line`](#a-lists-own-line).
 `fmt::list_layout` refines `fmt::one_line`, and the formatter's decision
 implements both, proved in Lean:
 
@@ -382,7 +381,7 @@ pub proc list_layout(
     elements: ElementList,
     start: Nat,              -- the column where its first element would start
     after: Nat,              -- the width of what would follow its last element on its line
-    own_line?,               -- it is its line's expression
+    own_line?,               -- it is its line's expression (`fmt::own_line`)
 ): (det vertical?) {
     ensure rule: vertical? iff (count(elements) > 0 and (list = Arms or any_broken?(elements)
         or joined(elements) > width_limit(list) or (own_line?
@@ -406,6 +405,108 @@ expect list_layout_one_line(
         start + joined(elements) + after,
         own_line?,
     )
+}
+```
+
+### A list's own line
+
+`fmt::own_line` decides whether a list is its line's expression, for
+rule 3. It decides from the tokens that follow the list's closing
+bracket on its line, as far as they count, and from the expressions that
+hold the list and start on its line. Each expression comes with the
+columns before the list's head in it, and, where it is the operation of
+a binary operator, the span of its right operand, as the parser reads
+it. Spans are offsets in the file: a right operand is the whole list
+where it starts at the list's head and ends with its closing bracket.
+The expression that a continued line starts, after its operator, is the
+innermost operation that starts there and holds the list, with that
+operation's right operand. The formatter's decision implements `fmt::own_line`, proved in Lean,
+and gives what it decides to `fmt::list_layout`:
+
+```fren
+-- A token that follows a list's closing bracket on its line.
+pub enum Follower {
+    Closing,                 -- `)`, `]` or `}`
+    Comma,                   -- `,`
+    Arrow,                   -- `=>`
+    TypeClosing,             -- the `>` that closes a type's arguments
+    Opening,                 -- a bracket that indents
+    Other,                   -- any other token
+}
+
+pub enum Followers { Nil, Then(Follower, Followers) }
+
+-- The right operand of an expression that holds a list: none, where the expression is not the
+-- operation of a binary operator, or where it starts and ends.
+pub enum Operand { Absent, Spans(Int, Int) }
+
+-- The expressions that hold a list and start on its line, each with the columns before the list's
+-- head in it, and its right operand.
+pub enum Holders { Nil, Holder(Int, Operand, Holders) }
+
+use self::Followers::Then
+use self::Holders::Holder
+use self::Operand::{Absent, Spans}
+
+-- Only closing brackets, commas, `=>`, a type's `>` and brackets that indent follow.
+pub fn only_closing?(followers: Followers) := match followers {
+    Followers::Nil => true,
+    Then(token, rest) => token != Follower::Other and only_closing?(rest),
+}
+
+-- The list, from `head` to `close`, is the whole of a right operand.
+pub fn whole?(operand: Operand, head: Int, close: Int) := match operand {
+    Absent => false,
+    Spans(start, stop) => start = head and stop = close,
+}
+
+-- In each expression that holds the list, at most 4 columns come before its head, but where the
+-- list is a record that is the expression's whole right operand.
+pub fn heads_near?(list: ListKind, head: Int, close: Int, holders: Holders) := match holders {
+    Holders::Nil => true,
+    Holder(columns, operand, rest) => (columns <= 4 or (list = Fields and whole?(operand, head, close)))
+        and heads_near?(list, head, close, rest),
+}
+
+pub proc own_line(
+    list: ListKind,
+    followers: Followers,
+    head: Int,               -- where the list's head starts
+    close: Int,              -- where its closing bracket ends
+    holders: Holders,
+): (det own_line?) {
+    ensure rule: own_line? iff (list is Parameters | FunctionParameters
+        or (only_closing?(followers) and heads_near?(list, head, close, holders)))
+
+    expect signature: when list = Parameters, own_line?
+    expect alone: when followers = Followers::Nil and holders = Holders::Nil, own_line?
+    -- `f(a).len`: breaking `f`'s arguments would leave `.len` on the line of its `)`.
+    expect method_after: when list = Arguments and followers = Then(Follower::Other, Followers::Nil),
+        not own_line?
+    -- `qqqqqqqqqq in {1, 2}`: a set literal does not break in place after a long left operand.
+    expect set_right: when list = Elements and holders = Holder(14, Spans(head, close), Holders::Nil),
+        not own_line?
+}
+
+-- `qqq = P { x := 1 }`: a record breaks in place after a long left operand. In `x = 1 and qqq =
+-- P { x := 1 }`, it does not after a long operation that it is not the right operand of, and in
+-- `qqq = -P { x := 1 }`, its operation's right operand ends with it but is more than the record.
+expect records_break_in_place(
+    n: Int,
+    fs: Followers,
+    head: Int,
+    close: Int,
+    start: Int,
+    hs: Holders,
+) {
+    assume longer: start < head
+    call right := own_line(Fields, fs, head, close, Holder(n, Spans(head, close), hs))
+    call without := own_line(Fields, fs, head, close, hs)
+    call elsewhere := own_line(Fields, fs, head, close, Holder(n, Absent, hs))
+    call negated := own_line(Fields, fs, head, close, Holder(n, Spans(start, close), hs))
+    expect exempt: right.own_line? = without.own_line?
+    expect only_there: when n > 4, not elsewhere.own_line?
+    expect only_the_whole_operand: when n > 4, not negated.own_line?
 }
 ```
 
@@ -535,27 +636,93 @@ A line that starts with the closing bracket of one that indents is
 indented as the line that opens it. A comment on a line of its own is
 indented as the line after it, but inside the brackets when that line
 closes them. Other brackets, such as those of a grouping or an index, do
-not indent. `fmt::indent` gives the indentation, in spaces, from that of
-a line that starts an element of the innermost bracket that indents:
+not indent. `fmt::indent` gives the indentation, in spaces, from the
+brackets open at the start of the line, the innermost first, each with
+whether it opens a list or block and the indentation of the line that
+opens it. A line is indented from the line that opens the innermost of
+those that indent, however many open on that line: in `f(g(` ... `))`,
+the arguments of `g` are indented four spaces more than the line, not
+eight. So the arms of a `match` in a clause are indented four spaces
+more than the clause:
 
 ```fren
+pub enum Bracket {
+    Paren,                   -- `(`
+    Square,                  -- `[`
+    Curly,                   -- `{`
+    PathCurly,               -- `::{`
+}
+
+use self::Bracket::{Curly, Paren, PathCurly, Square}
+
+-- The brackets open at the start of a line, the innermost first, each with whether it opens a list
+-- or block and the indentation of the line that opens it.
+pub enum OpenBrackets { Nil, Within(Bracket, Bool, Int, OpenBrackets) }
+
+use self::OpenBrackets::Within
+
+-- A bracket indents the lines inside it if it is a brace or opens a list or block.
+pub fn indents?(bracket: Bracket, list?) := bracket is Curly | PathCurly or list?
+
+-- Four more than the line that opens the innermost bracket that indents, or 0 outside every one.
+pub fn base(brackets: OpenBrackets): Int := match brackets {
+    OpenBrackets::Nil => 0,
+    Within(bracket, list?, line, rest) => if indents?(bracket, list?) then line + 4 else base(rest),
+}
+
+-- The innermost open bracket indents.
+pub fn innermost_indents?(brackets: OpenBrackets) := match brackets {
+    OpenBrackets::Nil => false,
+    Within(bracket, list?, _, _) => indents?(bracket, list?),
+}
+
+-- The indentation of the line that opens the innermost open bracket.
+pub fn opener(brackets: OpenBrackets): Int := match brackets {
+    OpenBrackets::Nil => 0,
+    Within(_, _, line, _) => line,
+}
+
 pub enum LineStart { Closing, Starting, Continuing }
 
 use self::LineStart::{Closing, Continuing, Starting}
 
 pub proc indent(
-    base: Nat,               -- four more than the line that opens the innermost bracket that indents, or 0 outside every one
+    brackets: OpenBrackets,  -- the brackets open at the line's start
     start: LineStart,        -- what the line's first token does, or for a comment, the next line's
     comment?,                -- the line is a comment
 ): (det columns: Int) {
-    assume closes_open: when start = Closing, base >= 4
+    -- A closing line's first token closes the innermost open bracket, which indents.
+    assume closes_innermost: when start = Closing, innermost_indents?(brackets)
 
-    ensure closing: when start = Closing, columns = (if comment? then base else base - 4)
-    ensure starting: when start = Starting, columns = base
-    ensure continuing: when start = Continuing, columns = base + 4
+    ensure closing: when start = Closing,
+        columns = (if comment? then base(brackets) else opener(brackets))
+    ensure starting: when start = Starting, columns = base(brackets)
+    ensure continuing: when start = Continuing, columns = base(brackets) + 4
 
-    expect non_negative: columns >= 0
-    expect comment_inside: when comment?, columns >= base
+    expect comment_inside: when comment?, columns >= base(brackets)
+    expect outside: when brackets = OpenBrackets::Nil and start = Starting, columns = 0
+    expect closing_below_its_elements: when start = Closing and not comment?, columns = base(brackets) - 4
+    -- The arms of a `match` in a procedure's clause are indented by eight.
+    expect match_in_a_clause: when brackets = Within(Curly, true, 4, Within(Curly, false, 0, OpenBrackets::Nil))
+        and start = Starting, columns = 8
+    -- Two brackets opened on one line indent once.
+    expect two_on_a_line: when brackets = Within(Paren, true, 0, Within(Paren, true, 0, OpenBrackets::Nil))
+        and start = Starting, columns = 4
+}
+
+-- A grouping or an index does not indent: a line inside one is indented as outside it.
+expect others_do_not_indent(
+    bracket: Bracket,
+    line: Int,
+    rest: OpenBrackets,
+    start: LineStart,
+    comment?,
+) {
+    assume not_a_brace: bracket is Paren | Square
+    assume not_closing: start != Closing
+    call inside := indent(Within(bracket, false, line, rest), start, comment?)
+    call outside := indent(rest, start, comment?)
+    expect same: inside.columns = outside.columns
 }
 ```
 
