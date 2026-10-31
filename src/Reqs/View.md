@@ -370,7 +370,17 @@ A value of an enumeration or a record is shown as Fren would build it:
 `Shape::Circle(2)`, `List::Cons(1, List::Nil)` or `Point { x := 1, y := 2 }`,
 with the enumeration's or record's name and not its module, as for a
 variant without a payload. So is a value of a newtype, as in `Ms(5)`, even
-though the solver sees only its underlying type's value.
+though the solver sees only its underlying type's value. A value of a
+sequence is shown as a sequence literal, `[1, 2]`, and a value of a set,
+a relation among them, as a set literal, `{1, 2}` or `{(1, 2)}`, with its
+members in the order their texts sort in.
+
+Every value shown is the value that the check found, and both front ends
+show it with the same text, as above. A front end never shows a value as
+another value of the type, such as a sequence as `[]` or a set as `{}`
+when that is not the value: a sequence or a set that it cannot show as a
+literal is an internal error, a bug in Fren, rather than shown in a
+notation of its own.
 
 An inconclusive result is reported at the position of the corresponding
 failure, saying what could not be decided and why. What it advises
@@ -389,6 +399,14 @@ pub proc inconclusive_advice(
     ensure rule: advice = (if decidable? then Advice::RaiseTimeout else Advice::NamesConstructs)
 }
 ```
+
+Checking one procedure never keeps another's results from being
+reported. Where it fails altogether, that failure is an error at that
+procedure, and every other procedure's results, and the summary, are
+reported as they otherwise would be. A limit of the front end's own that
+the user may raise, as Lean's maximum recursion depth or heartbeats, is
+reported as that limit reached, saying how to raise it; any other failure
+is an internal error, a bug in Fren.
 
 After the results, a summary is reported as information. It counts the
 results by verdict, except that redundant constraints, which are warnings,

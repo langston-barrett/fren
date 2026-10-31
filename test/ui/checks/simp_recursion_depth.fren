@@ -6,11 +6,12 @@
 -- `src/Reqs/Lang/EvaluationRules.md` states them, in which `bind_params` has
 -- the contract that the semantics rewrite (#391) dropped, `no_parameters`.
 -- With it, the `fren` command passes every check, and the Lean-hosted front
--- end stops the whole check with `simp`'s maximum recursion depth error, which
--- the hosted annotation at the end of the file expects, a message with no
--- line. Without the contract, both front ends pass every check. A fix of the
--- hosted front end makes that annotation fail; then drop it, and this file is
--- an agreement test like the others.
+-- end reaches `simp`'s maximum recursion depth in `recursion_unfolds`, which
+-- the hosted annotation there expects, as a limit reached, at that
+-- expectation; every other check's result is still reported. Without the
+-- contract, both front ends pass every check. A fix of the hosted front end
+-- makes that annotation fail; then drop it, and this file is an agreement
+-- test like the others.
 --
 -- The depth that `simp` reaches grows with the model. With the default
 -- `maxRecDepth`, the whole semantics fails, and so do these 12 forms; in the
@@ -199,7 +200,7 @@ pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
 pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
     apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
 
-expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {
+expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {  --~[hosted] error: checking `recursion_unfolds` in Lean reached a limit
     assume arguments: eval(i, env, args) = Outcome::Defined(l)
     -- The body's outcome at `l`, which is the interpretation's point for `f` there.
     assume body_outcome: eval(i, bind_params(ps, l), body) = r
@@ -207,5 +208,3 @@ expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, bod
     expect unfolds: eval(i, env, Expr::Recur(f, args)) = r
     expect respected: respects?(i, f, ps, body, l)
 }
-
---~$[hosted] error: maximum recursion depth has been reached

@@ -29,21 +29,44 @@ open Lean (Name)
 /-! ## Values and shapes -/
 
 /-- A value as the enumerator builds it: a `Bool`, an integer, the `k`th
-value of an abstract type, or the variant `idx` of an enumeration, with its
-payload, or a record or newtype, as its one constructor `0`, with its
-fields. -/
+value of an abstract type, a string, a set by its members, a sequence by
+its elements, a pair of a relation, or the variant `idx` of an
+enumeration, with its payload, or a record or newtype, as its one
+constructor `0`, with its fields. A set's members are distinct, in
+increasing `EVal.code` (`membersOrdered`), as `Shape.vals` and
+`Shape.random` give them. -/
 inductive EVal where
   | bool (b : Bool)
   | int (i : Int)
   | abs (k : Nat)
+  | str (s : String)
+  | set (members : List EVal)
+  | seq (elems : List EVal)
+  | pair (a b : EVal)
   | ctor (idx : Nat) (args : List EVal)
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, BEq
+
+/-- A code of the value, by which a set's members are ordered: their codes
+increase, in the lexicographic order of lists of integers. -/
+partial def EVal.code : EVal → List Int
+  | .bool b => [0, if b then 1 else 0]
+  | .int i => [1, i]
+  | .abs k => [2, (k : Int)]
+  | .str s => [3, (s.length : Int)] ++ s.toList.map fun c => (c.toNat : Int)
+  | .set ms => [4, (ms.length : Int)] ++ ms.flatMap EVal.code
+  | .seq vs => [5, (vs.length : Int)] ++ vs.flatMap EVal.code
+  | .pair a b => [6] ++ a.code ++ b.code
+  | .ctor idx args => [7, (idx : Int), (args.length : Int)] ++ args.flatMap EVal.code
+
+/-- Whether the values `vs` are a set's members as `EVal.set` has them:
+their codes strictly increase. -/
+def membersOrdered (vs : List EVal) : Bool := decide (vs.Pairwise (·.code < ·.code))
 
 /-- The value as a value of a pattern, if it has no abstract value in it. -/
 partial def EVal.toPVal? : EVal → Option PVal
   | .bool b => some (.bool b)
   | .int i => some (.int i)
-  | .abs _ => none
+  | .abs _ | .str _ | .set _ | .seq _ | .pair .. => none
   | .ctor idx args => do return .ctor idx (← args.mapM EVal.toPVal?).toArray
 
 /-- Whether a declared constraint needs semantic evaluation beyond Shape's
@@ -69,6 +92,15 @@ inductive Shape where
   | int
   /-- `Nat`: `k` has size `k`. -/
   | nat
+  /-- `String`: the largest of its length and its characters' sizes, the
+  character with code point `c` having size `c + 1`. -/
+  | string
+  /-- A sequence: the largest of its length and its elements' sizes. -/
+  | seq (elem : Shape)
+  /-- A set: the largest of its cardinality and its members' sizes. -/
+  | set (elem : Shape)
+  /-- A pair of a relation: the larger of its two values' sizes. -/
+  | pair (a b : Shape)
   /-- A finite integer subset type: its integers, in increasing order, each
   of size 0. -/
   | ints (vs : List Int)
@@ -116,24 +148,64 @@ inductive SizeKind where
   | variant
   /-- A record or a newtype. -/
   | record
+  /-- A character, by its code point. -/
+  | char
+  /-- A string, a sequence or a set, by its length or cardinality. -/
+  | collection
+  /-- A pair, a member of a relation. -/
+  | pair
   deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- How many code points there are, valid or not. -/
+def codePoints : Nat := 0x110000
+
+/-- The size of the character with code point `c`: one more than its
+distance from `a`, wrapping around, so that `a` is 1, `b` 2, ..., `z` 26,
+`{` 27, and the characters below `a` come last. -/
+def charSize (c : Nat) : Nat := (c + codePoints - 'a'.toNat) % codePoints + 1
 
 /-- The size of a value (`check::value_size`): of an integer `i`, its
 magnitude, and of a `Nat` or the `i`th value of an abstract type, `i`;
 of a variant with a payload, one more than `largest`, the largest of its
-payload's values' sizes, and of a record, `largest`, its fields'; and of
-anything else 0. -/
+payload's values' sizes, of a record, `largest`, its fields', and of a
+pair, `largest`, its two values'; of a character with code point `c`,
+`charSize c`; of a string, a sequence or a set of length `len`, the larger
+of `len` and `largest`; and of anything else 0. -/
 def valueSize : SizeKind → Int → Nat → Nat
   | .int, i, _ => i.natAbs
   | .nat, i, _ => i.toNat
   | .abstract, i, _ => i.toNat
   | .variant, _, largest => largest + 1
-  | .record, _, largest => largest
+  | .record, _, largest | .pair, _, largest => largest
+  | .char, c, _ => charSize c.toNat
+  | .collection, len, largest => max len.toNat largest
   | _, _, _ => 0
 
 /-- The integers of size at most `n`, by size: `0, 1, -1, 2, -2, ...`. -/
 def intsUpTo (n : Nat) : List Int :=
   (List.range (n + 1)).flatMap fun (k : Nat) => if k = 0 then [(0 : Int)] else [(k : Int), -(k : Int)]
+
+/-- The lists of exactly `length` values of `vs`, each with the largest of
+their sizes, the first varying slowest: a sequence's elements, or a
+string's characters. -/
+def listsOf {α : Type} (vs : List (α × Nat)) : Nat → List (List α × Nat)
+  | 0 => [([], 0)]
+  | len + 1 => vs.flatMap fun (v, k) => (listsOf vs len).map fun (ws, l) => (v :: ws, max k l)
+
+/-- The sublists of `vs` of at most `card` values, each with the largest of
+their sizes: each value's presence before its absence, the first varying
+slowest, so that among sets of a size they are in lexicographic order. -/
+def subsetsOf : List (EVal × Nat) → Nat → List (List EVal × Nat)
+  | [], _ => [([], 0)]
+  | (_ :: rest), 0 => subsetsOf rest 0
+  | ((v, k) :: rest), card + 1 =>
+    (subsetsOf rest card).map (fun (vs, l) => (v :: vs, max k l)) ++ subsetsOf rest (card + 1)
+
+/-- The characters of size at most `n` (`charSize`), smallest first. -/
+def charsUpTo (n : Nat) : List (Char × Nat) :=
+  (List.range (min n codePoints)).filterMap fun r =>
+    let c := (r + 'a'.toNat) % codePoints
+    if c.isValidChar then some (Char.ofNat c, r + 1) else none
 
 mutual
 /-- Every value of `s` of size at most `n`, each with its size, once, in
@@ -144,6 +216,13 @@ def Shape.vals : Shape → Nat → List (EVal × Nat)
   | .int, n => (intsUpTo n).map fun i => (.int i, valueSize .int i 0)
   | .nat, n => (List.range (n + 1)).map fun (k : Nat) => (.int (k : Int), valueSize .nat k 0)
   | .ints vs, _ => vs.map fun i => (.int i, valueSize .finiteInt i 0)
+  | .string, n => (List.range (n + 1)).flatMap fun len =>
+    (listsOf (charsUpTo n) len).map fun (w, k) => (.str (String.ofList w), max len k)
+  | .seq e, n => (List.range (n + 1)).flatMap fun len =>
+    (listsOf (e.vals n) len).map fun (vs, k) => (.seq vs, max len k)
+  | .set e, n => ((subsetsOf ((e.vals n).mergeSort fun a b => a.1.code ≤ b.1.code) n).filter
+      fun (vs, _) => membersOrdered vs).map fun (vs, k) => (.set vs, max vs.length k)
+  | .pair a b, n => (a.vals n).flatMap fun (x, k) => (b.vals n).map fun (y, l) => (.pair x y, max k l)
   | .abstract, n => (List.range (n + 1)).map fun (k : Nat) => (.abs k, valueSize .abstract k 0)
   | .ctors cs, n => cs.vals 0 n
   | .record fs, n => (fs.vals n).map fun (vs, k) => (.ctor 0 vs, valueSize .record 0 k)
@@ -180,7 +259,14 @@ lists every value of the type it stands for: `s` has no value of size
 variant was cut off. -/
 def Shape.exhausted : Shape → Nat → Bool
   | .bool, _ | .ints _, _ | .empty, _ => true
-  | .int, _ | .nat, _ | .abstract, _ => false
+  | .int, _ | .nat, _ | .abstract, _ | .string, _ => false
+  -- A sequence of any length but none has a value of every size, so only
+  -- one whose elements have no value at all is exhausted.
+  | .seq e, n => (e.vals n).isEmpty && e.exhausted n
+  -- Every set of `e`'s values is within the bound when they all are, and
+  -- there are at most `n` of them.
+  | .set e, n => e.exhausted n && (e.vals n).length ≤ n
+  | .pair a b, n => a.exhausted n && b.exhausted n
   | .ctors cs, n => cs.exhausted n
   | .record fs, n => fs.exhausted n
   | .filter s _, n => s.exhausted n
@@ -201,16 +287,27 @@ end
 def notEnumerable (t : PTy) : String :=
   s!"`{if t.text.isEmpty then t.ty.show else t.text}`"
 
+/-- Whether the pattern `p` matches the value `v`, over every kind of value
+(`Pat.matchesVal` over the values that patterns have). A value of a kind
+that `p` does not describe does not match it. -/
+partial def matchesEVal : Pat → EVal → Bool
+  | .wild _, _ => true
+  | .bool b, .bool c => b == c
+  | .int lo hi, .int i => intervalHolds lo hi i
+  | .str s, .str t => s == t
+  | .ctor i ps, .ctor j vs => i == j && ps.size == vs.length && (ps.toList.zip vs).all fun (p, v) => matchesEVal p v
+  | .or alts, v => alts.any (matchesEVal · v)
+  | _, _ => false
+
 /-- The shape of the declared type `t` for the bound `n`
-(`Reqs/Check#enumerable-types`): `Bool`, `Int`, `Nat`, enumerations,
-records, newtypes, instances of generic types, subset types and abstract
-types are enumerable; strings, sets, relations and sequences are not, nor
-any type with one within it. `shapes` gives what is known of each record,
-newtype and enumeration. A recursive enumeration is unfolded `n` deep. -/
+(`Reqs/Check#enumerable-types`): every declared type has one: `Bool`,
+`Int`, `Nat`, `String`, sets, relations, sequences, enumerations, records,
+newtypes, instances of generic types, subset types and abstract types.
+`shapes` gives what is known of each record, newtype and enumeration. A
+recursive enumeration is unfolded `n` deep. -/
 partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : Except String Shape := do
-  let keep (p : Pat) : EVal → Bool := fun v => match v.toPVal? with
-    | some pv => p.matchesVal pv
-    | none => true
+  let keep (p : Pat) : EVal → Bool := matchesEVal p
+  let elem (i : Nat) (e : Ty) : Except String Shape := shapeOf shapes n (t.elems[i]?.getD (PTy.plain e))
   let base : Shape ← match t.ty with
     | .bool => pure .bool
     | .int | .nat =>
@@ -227,6 +324,10 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
           let top := (p.bounds.foldl max 0).toNat
           return .ints (((List.range (top + 1)).map fun (k : Nat) => (k : Int)).filter fun i => p.matchesVal (.int i))
         | _, _ => pure (if nat then .nat else .int)
+    | .string => pure .string
+    | .seq e => pure (.seq (← elem 0 e))
+    | .set e => pure (.set (← elem 0 e))
+    | .rel a b => pure (.set (.pair (← elem 0 a) (← elem 1 b)))
     | .abstract _ => pure .abstract
     | .enum p _ | .record p _ | .newtype p _ =>
       let some d := shapes p | throw (notEnumerable t)
@@ -253,6 +354,59 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
 
 /-- How many values of size at most `n` a shape has. -/
 def Shape.count (s : Shape) (n : Nat) : Nat := (s.vals n).length
+
+/-- The most assignments that enumeration searches for a procedure
+(`check::enumeration_limit`). -/
+def maxBehaviours : Nat := 65536
+
+/-- `x`, or one more than `maxBehaviours` if it is larger. -/
+def saturate (x : Nat) : Nat := min x (maxBehaviours + 1)
+
+/-- `1 + k + k ^ 2 + ... + k ^ len`, saturated. -/
+def geometric (k len : Nat) : Nat :=
+  (List.range len).foldl (init := (1, 1)) (fun (sum, power) _ =>
+    let power := saturate (power * k)
+    (saturate (sum + power), power)) |>.1
+
+/-- How many sets of at most `card` of `k` values there are, saturated:
+the sum of the binomial coefficients `C(k, c)` for `c ≤ card`. -/
+def subsetCount (k card : Nat) : Nat :=
+  if k > maxBehaviours then maxBehaviours + 1 else
+  -- Row `j` holds, for each `c ≤ card`, how many sets of exactly `c` of
+  -- `j` values there are.
+  let row := (List.range k).foldl (init := (List.range (card + 1)).map fun c => if c == 0 then 1 else 0)
+    fun row _ => row.zipIdx.map fun (x, c) => saturate (x + if c == 0 then 0 else row.getD (c - 1) 0)
+  row.foldl (fun acc x => saturate (acc + x)) 0
+
+mutual
+/-- At least as many as the values of size at most `n` of the shape `s`
+(`Shape.count`): exactly as many, but that a subset type may have fewer,
+and `maxBehaviours + 1` if there are more (`saturate`).
+Computed without listing them, so that a slot with too many values is
+refused before they are listed. -/
+def Shape.estimate : Shape → Nat → Nat
+  | .bool, _ => 2
+  | .int, n => 2 * n + 1
+  | .nat, n | .abstract, n => n + 1
+  | .ints vs, _ => vs.length
+  | .string, n => geometric (charsUpTo n).length n
+  | .seq e, n => geometric (e.estimate n) n
+  | .set e, n => subsetCount (e.estimate n) n
+  | .pair a b, n => saturate (a.estimate n * b.estimate n)
+  | .ctors cs, n => cs.estimate n
+  | .record fs, n => fs.estimate n
+  | .filter s _, n => s.estimate n
+  | .empty, _ => 0
+
+def Shapes.estimate : Shapes → Nat → Nat
+  | .nil, _ => 1
+  | .cons s rest, n => saturate (s.estimate n * rest.estimate n)
+
+def Ctors.estimate : Ctors → Nat → Nat
+  | .nil, _ => 0
+  | .cons .nil rest, n => saturate (1 + rest.estimate n)
+  | .cons ps rest, n => saturate ((match n with | 0 => 0 | m + 1 => ps.estimate m) + rest.estimate n)
+end
 
 /-! ## Random values, for testing beyond the bound -/
 
@@ -286,6 +440,30 @@ partial def Shape.random (s : Shape) (m : Nat) (st : UInt64) : Option (EVal × N
     (some (.int i, valueSize .int i 0), st)
   | .nat => let (k, st) := below st (m + 1); (some (.int k, valueSize .nat k 0), st)
   | .ints vs => let (k, st) := below st vs.length; ((vs[k]?).map fun i => (.int i, 0), st)
+  | .string =>
+    let (len, st) := below st (m + 1)
+    -- Each character of size at most `m` (`charSize`).
+    let (cs, st) := (List.range len).foldl (init := ([], st)) fun (cs, st) _ =>
+      let (r, st) := below st (min m codePoints)
+      ((Char.ofNat ((r + 'a'.toNat) % codePoints), r + 1) :: cs, st)
+    (some (.str (String.ofList (cs.map (·.1))), cs.foldl (fun k (_, l) => max k l) len), st)
+  | .seq e =>
+    let (len, st) := below st (m + 1)
+    let (vs, st) := (List.range len).foldl (init := (some [], st)) fun (vs, st) _ =>
+      let (v, st) := e.random m st
+      ((do let vs ← vs; let v ← v; return v :: vs), st)
+    (vs.map fun vs => (.seq vs.reverse.unzip.1, vs.foldl (fun k (_, l) => max k l) len), st)
+  | .set e =>
+    let (len, st) := below st (m + 1)
+    let (vs, st) := (List.range len).foldl (init := (some [], st)) fun (vs, st) _ =>
+      let (v, st) := e.random m st
+      ((do let vs ← vs; let v ← v; return if vs.any (·.1 == v.1) then vs else v :: vs), st)
+    -- Its members in increasing code, as `EVal.set` has them.
+    (vs.map fun vs => (.set (vs.unzip.1.mergeSort fun a b => !(b.code < a.code)), vs.foldl (fun k (_, l) => max k l) vs.length), st)
+  | .pair a b =>
+    let (x, st) := a.random m st
+    let (y, st) := b.random m st
+    ((do let (x, k) ← x; let (y, l) ← y; return (.pair x y, max k l)), st)
   | .abstract => let (k, st) := below st (m + 1); (some (.abs k, valueSize .abstract k 0), st)
   | .ctors cs =>
     let (k, st) := below st cs.size
@@ -417,6 +595,20 @@ structure Atoms where
   /-- The slots that each defined output's definition reads, through the
   definitions of the defined outputs that it mentions too. -/
   defSlots : Name → Array Nat := fun _ => #[]
+  /-- Whether the `k`th atom has an index, in itself or in the
+  definitions of the defined outputs that it mentions or the bodies it
+  applies, whose value out of range is the hidden slot's, one
+  interpretation of all (`Reqs/Check#searching`): if none has,
+  `unknown` is never true, and the backend does not look for it. -/
+  readsIndex : Nat → Bool := fun _ => false
+  /-- Whether the definition of the defined output `d` has one. -/
+  defReadsIndex : Name → Bool := fun _ => false
+  /-- Whether the `k`th atom's value in an assignment depends on an index
+  out of range: evaluated with every such index unknown, it is unknown. -/
+  unknown : Nat → Array Nat → Bool := fun _ _ => false
+  /-- Whether the defined output `d`'s value in an assignment depends on
+  one. -/
+  defUnknown : Name → Array Nat → Bool := fun _ _ => false
 
 instance : Inhabited Atoms := ⟨{ slots := #[], eval := fun _ _ => false }⟩
 
@@ -445,6 +637,15 @@ def EF.slots (sp : Space) (ats : Atoms) : EF → List Nat
       -- second copies.
       let ss := (ats.defSlots x).toList
       ss ++ ss.filterMap (sp.primeOf[·]?.join)
+
+/-- Whether `f` reads an index, through an atom or a defined output that
+it compares (`Atoms.readsIndex`). -/
+def EF.readsIndex (ats : Atoms) : EF → Bool
+  | .atom k => ats.readsIndex k
+  | .not f | .exOutputs f | .primed f => f.readsIndex ats
+  | .conj fs => fs.attach.any fun ⟨f, _⟩ => f.readsIndex ats
+  | .same x => ats.defReadsIndex x
+  | .tt | .ff | .pin .. | .oneOf .. => false
 
 /-- `xs` without repeats, in order of first occurrence. -/
 def dedup (xs : List Nat) : List Nat := xs.foldl (fun a x => if a.contains x then a else a ++ [x]) []
@@ -531,6 +732,59 @@ def EF.eval (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Bool
       | none => true
     | none => ats.sameDefined x env (sp.primedEnv env)
 
+/-- A formula's truth where the indexes out of range are unknown: the
+strong Kleene truth values (`check::Truth`). -/
+inductive Truth where
+  | yes
+  | no
+  | unknown
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+def Truth.ofBool (b : Bool) : Truth := if b then .yes else .no
+
+def Truth.not : Truth → Truth
+  | .yes => .no
+  | .no => .yes
+  | .unknown => .unknown
+
+/-- The conjunction of `ts`: false if one is, else unknown if one is. -/
+def Truth.all (ts : List Truth) : Truth :=
+  if ts.contains .no then .no else if ts.contains .unknown then .unknown else .yes
+
+/-- The disjunction of `ts`: true if one is, else unknown if one is. -/
+def Truth.any (ts : List Truth) : Truth :=
+  if ts.contains .yes then .yes else if ts.contains .unknown then .unknown else .no
+
+/-- The truth of `f` in `env`, with each index out of range unknown: an
+atom is unknown where its value depends on one (`Atoms.unknown`), and
+otherwise its value; `∃ outputs` is true if some values of the outputs
+make it true, else unknown if some make it unknown. -/
+def EF.truth (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Truth
+  | .atom k => if ats.unknown k env then .unknown else .ofBool (ats.eval k env)
+  | .tt => .yes
+  | .ff => .no
+  | .not f => (f.truth sp ats env).not
+  | .conj fs => Truth.all (fs.attach.toList.map fun ⟨f, _⟩ => f.truth sp ats env)
+  | .exOutputs f =>
+    let outs := sp.outputs.toList.filter fun o => (f.slots sp ats).contains o
+    let lims := outs.map fun s => (sp.sizes[s]?.getD #[]).size
+    Truth.any ((lexAll lims).map fun a => f.truth sp ats (setAll env outs a))
+  | .pin x v => .ofBool (env[x]? == some v)
+  | .oneOf x vs => .ofBool ((env[x]?.map vs.contains).getD false)
+  | .primed f => f.truth sp ats (sp.primedEnv env)
+  | .same x => match sp.slotOf? x with
+    | some s => match sp.primeOf[s]?.join with
+      | some p => .ofBool (env[s]? == env[p]?)
+      | none => .yes
+    | none =>
+      let e' := sp.primedEnv env
+      if ats.defUnknown x env || ats.defUnknown x e' then .unknown else .ofBool (ats.sameDefined x env e')
+
+/-- Whether the truths of a query's formulas in an assignment leave it
+open: none is false, and one is unknown, so that some interpretation of
+the indexes out of range may make them all true (`check::doubtful`). -/
+def doubtfulRow (ts : List Truth) : Bool := ts.all (· != .no) && ts.any (· == .unknown)
+
 /-- The slots that `parts` read, in order. -/
 def slotsOf (sp : Space) (ats : Atoms) (parts : Array EF) : List Nat :=
   (dedup (parts.toList.flatMap (·.slots sp ats))).mergeSort
@@ -566,6 +820,15 @@ the slots and of each slot's values, the last varying fastest. -/
 def Space.fairList (sp : Space) (base : Array Nat) (slots : List Nat) : List (List Nat) :=
   Fren.Core.Enumeration.fairList sp.bound (fun k => slots.map (sp.within · k))
     (fun k a => (sp.levelPart slots k).2 (setAll base slots a))
+
+/-- Whether some assignment up to the bound of the slots that `parts` read
+is doubtful for them (`doubtfulRow`): where the search finds no model,
+the query is then unknown, not `unsat` (`check::enumerated_answer`). -/
+def doubtful (sp : Space) (ats : Atoms) (parts : Array EF) : Bool :=
+  let slots := slotsOf sp ats parts
+  let env0 := Array.replicate sp.names.size 0
+  (if slots.isEmpty then [[]] else sp.fairList env0 slots).any fun a =>
+    doubtfulRow (parts.toList.map (·.truth sp ats (setAll env0 slots a)))
 
 /-- The first assignment of the slots that `parts` read that makes them
 all true, smallest first and fairly (`Reqs/Check#searching`): the first
@@ -615,6 +878,17 @@ def answerOf (found? : Option α) (testing : Bool) (test : Unit → Option α) :
   | some a => some (a, false)
   | none => if testing then (test ()).map (·, true) else none
 
+/-- What a query answers, from whether a model was found and whether
+some assignment is doubtful (`check::enumerated_answer`): a model is a
+behaviour, so `sat`; without one, `unsat`, unless the indexes out of
+range of a doubtful assignment, whose values the search sees for one
+interpretation only, may make one, so `unknown`. -/
+def answerKind (found doubtful : Bool) : Answer :=
+  if found then .sat else if doubtful then .unknown else .unsat
+
+/-- Why a query with a doubtful assignment is unknown without a model. -/
+def indexUnknownReason : String := "an index out of range may decide it"
+
 /-! ## The backend -/
 
 /-- A value of a model: its slot and the position of its value there, if
@@ -645,7 +919,10 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
     let found := answerOf ((search sp ats parts).map (·.1)) testing?.isSome fun _ =>
       testSearch sp ats parts (testing?.getD 0)
     match found with
-    | none => return .unsat
+    | none =>
+      -- Only a query with an index can be doubtful.
+      let open? := parts.any (·.readsIndex ats) && doubtful sp ats parts
+      return if answerKind false open? == .unknown then .unknown indexUnknownReason else .unsat
     | some (env, _) =>
       let slots := slotsOf sp ats parts
       let shown ← (slots.toArray.filter (· < sp.names.size - sp.hidden)).mapM fun x => do
@@ -862,26 +1139,27 @@ def enumeratedVerdict (kind : CheckKind) (verdict : Verdict) (conflict exact out
 
 /-- `r`, a result of enumeration within the bound `n`, with its verdict as
 `enumeratedVerdict` gives it, marked bounded if it is. -/
-def classify (n : Nat) (exact outputsExact : Bool) (r : CheckResult) : CheckResult :=
+def classify (n : Nat) (exact outputsExact : Bool) (r : CheckResult) (indexed : Bool := false) : CheckResult :=
   -- A bounded search does not prove properties of all admitted models.
   -- Keep its concrete evidence, but not unqualified global explanations.
   let r := if exact then r else { r with clashes := #[], branchConflicts := #[], explanationPremises := #[] }
   let conflict := r.detail matches .conflict ..
   let (verdict, bounded) := enumeratedVerdict r.kind r.verdict conflict exact outputsExact
+  -- An index out of range left a query open (`answerKind`).
+  let r := match r.detail with
+    | .unknown w => if w == indexUnknownReason then { r with detail := .outOfRange } else r
+    | _ => r
   if !bounded then { r with verdict } else
   if verdict == .inconclusive then
     let why := match r.kind, r.detail with
       | .realizable, .vacuousAssumptions _ => s!"no input meets the assumptions up to size {n}, but a larger one may"
       | .realizable, _ => s!"no outputs up to size {n}, but larger ones may exist"
       | _, _ => s!"no witness up to size {n}, but a larger one may exist"
-    { r with verdict, detail := .unknown why, bounded? := some n }
+    { r with verdict, detail := .unknown why, bounded? := some n, oneInterpretation := indexed }
   else { r with verdict, bounded? := some n }
 
 /-! ## The space of a procedure -/
 
-/-- The most assignments that enumeration searches for a procedure
-(`check::enumeration_limit`). -/
-def maxBehaviours : Nat := 65536
 
 /-- Whether a procedure whose enumeration would search `count` assignments
 is enumerated (`check::enumeration_limit`). -/
@@ -944,6 +1222,10 @@ def tablesBySize (domain : Nat) (sizes : Array Nat) (limit : Nat) : Option (Arra
     (j, (List.range domain).foldl (init := 0) fun m p => max m (sizes[tableEntry r j p]!))
   some (tables.qsort fun a b => a.2 < b.2 || (a.2 == b.2 && a.1 < b.1))
 
+/-- What `spaceOf` throws for a slot with more values than the limit, for
+`tooManyMsg`. -/
+def tooManyMarker : String := "#too-many"
+
 /-- The space of a procedure for the bound `n` (`Space`), with each slot's
 values, smallest first, then, if `tests` is not 0, as many random values
 beyond the bound (`extrasOf`), and its shape, and the slots of its
@@ -960,6 +1242,9 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
   let shapesOf ← all.zipIdx.mapM fun ((x, t), i) => match shapeOf shapes n t with
     | .ok s => pure s
     | .error why => throw (if i < visible then some x else none, why)
+  -- A slot with more values than the limit is refused before they are
+  -- listed (`F0644`).
+  if shapesOf.any (·.estimate n > maxBehaviours) then throw (none, tooManyMarker)
   -- With testing, each slot's values are followed by random ones beyond
   -- the bound; a second copy has its original's.
   let extras := all.zipIdx.map fun ((_, t), i) =>
@@ -983,6 +1268,7 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
       | .error why => throw (none, why)
     let ps ← f.params.mapM shape
     let r ← shape f.result
+    if (ps.push r).any (·.estimate n > maxBehaviours) then throw (none, tooManyMarker)
     let params := ps.map fun s => (s.ordered n).toArray
     let results := (r.ordered n).toArray
     let domain := params.foldl (· * ·.size) 1
@@ -1040,9 +1326,12 @@ def Enumerated.merge (n : Nat) (alone both : Option Enumerated) (keep : CheckRes
 
 /-- A procedure, or a global expectation, `subject`, written as it is shown,
 whose enumeration would search more than `maxBehaviours` assignments
-(`F0644`). -/
-def tooManyMsg (subject : String) (count n : Nat) : Msg :=
-  { code? := some "F0644", headline := s!"{subject} has {count} behaviours up to size {n}, too many to enumerate"
+(`F0644`): `count` of them, or, if `estimated`, more than the limit, since
+a variable has more values than it, which are not listed. -/
+def tooManyMsg (subject : String) (count n : Nat) (estimated : Bool := false) : Msg :=
+  { code? := some "F0644", headline :=
+      if estimated then s!"{subject} has a slot whose type, without its invariants, has more than {maxBehaviours} values up to size {n}, too many to enumerate"
+      else s!"{subject} has {count} behaviours up to size {n}, too many to enumerate"
     label? := some "too many behaviours"
     notes := #[s!"note: enumeration searches at most {maxBehaviours} behaviours, counting a second copy of each for determinism",
       "help: lower `fren.enumeration.size`, or have the solver check it"] }
@@ -1053,10 +1342,15 @@ function of its own, which enumeration does not enumerate. -/
 def genericNotEnumerable (f : Name) : String :=
   s!"it applies the generic function `{showComp f}`, which has no body"
 
+/-- Why a procedure that applies a recursive function whose body indexes
+a sequence cannot be enumerated (`F0645`). -/
+def recursiveIndexWhy : String :=
+  "it applies a recursive function that indexes a sequence, whose value out of range enumeration cannot give"
+
 /-- `subject` cannot be enumerated, for the reason `why` (`F0645`). -/
 def notEnumerableMsg (subject why : String) : Msg :=
   { code? := some "F0645", headline := s!"{subject} cannot be enumerated: {why}", label? := some "not enumerable"
-    notes := #["note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract or type parameters, nor unbounded quantifier",
+    notes := #["note: enumeration cannot apply an uninterpreted function with a contract or type parameters, nor evaluate an unbounded quantifier or an index within a recursive function",
       "help: have the solver or testing check it"] }
 
 /-- The checks of `subject` that enumeration decided only up to the bound

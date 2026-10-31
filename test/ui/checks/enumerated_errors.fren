@@ -1,6 +1,7 @@
 -- Components that enumeration does not check, in both front ends
--- (`Reqs/Check#checking-by-enumeration`): too many behaviours, a type that
--- is not enumerable, and an unbounded quantifier. Each is an error at the
+-- (`Reqs/Check#checking-by-enumeration`): too many behaviours, a variable
+-- with too many values, refused before they are listed, and an unbounded
+-- quantifier. Each is an error at the
 -- component, and its checks set to enumeration are not run; its other
 -- checks are.
 set_option fren.lint.undecidable "allow"
@@ -14,9 +15,11 @@ proc wide(a: FirstPercent, b: SecondPercent, c: ThirdPercent): (det sum: Int) { 
     expect e: sum >= 0
 }
 
+-- Sequences of sequences of integers: more than 65536 values of size at
+-- most 3, so they are not listed.
 set_option fren.evidence "enumerated" in
-proc named(name: String): (empty?) {  --~ error: `named` cannot be enumerated: `name` has the type `String`, which is not enumerable
-    ensure r: empty? iff name = ""
+proc nested(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `nested` has a slot whose type, without its invariants, has more than 65536 values up to size 3, too many to enumerate
+    ensure r: empty? iff rows = []
 }
 
 set_option fren.evidence "enumerated" in
@@ -35,10 +38,10 @@ proc hidden(x: InputByte, y: OtherByte): (det d: Int) {  --~ error: `hidden` has
 }
 
 -- Only its expectation is enumerated; the solver checks the rest.
-proc partly(name: String): (empty?) {  --~ error: `partly` cannot be enumerated
-    ensure r: empty? iff name = ""
+proc partly(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `partly` has a slot whose type, without its invariants, has more than 65536 values
+    ensure r: empty? iff rows = []
     set_option fren.evidence "enumerated" in
-    expect e: when empty?, name = ""
+    expect e: when empty?, rows = []
 }
 
 --@ summary: 7 passed, 0 failed, 0 inconclusive, 0 redundant

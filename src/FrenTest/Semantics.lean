@@ -30,7 +30,9 @@ the semantics' finite graph has no point.
 Each expression is also evaluated in the behaviour with a variable that it
 does not mention rebound, which the coincidence lemma (`lang::coincidence`)
 says changes nothing, and, where it mentions nothing, in the empty
-environment, which `lang::closed` says changes nothing either. Last,
+environment, which `lang::closed` says changes nothing either. Each is
+compiled too (`Ex.compile`), which keeps its value in every interpretation,
+one with values for the indexes out of range among them. Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -110,7 +112,7 @@ partial def subst (a : Ex) : Ex → Ex
   | .when g x y => .when g (subst a x) (subst a y)
   | .ite c x y => .ite (subst a c) (subst a x) (subst a y)
   | .cardinality c xs => .cardinality c (xs.map (subst a))
-  | .index q i pos => .index (subst a q) (subst a i) pos
+  | .index q i pos u => .index (subst a q) (subst a i) pos u
   | .seqLit xs => .seqLit (xs.map (subst a))
   | .ctor t i xs => .ctor t i (xs.map (subst a))
   | .field x i => .field (subst a x) i
@@ -146,7 +148,7 @@ partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
     | 3 =>
       let q ← gen P sc .seq (d - 1)
       let i ← gen P sc .int (d - 1)
-      return (.index q.1 i.1 0, .Index q.2 i.2)
+      return (.index q.1 i.1 0 (FrenCli.Eval.unspecifiedFn .int), .Index q.2 i.2)
     | 4 =>
       let r ← gen P sc .r (d - 1)
       return (.field r.1 0, .Project r.2 "R" 0)
@@ -401,6 +403,12 @@ def run : Array String := Id.run do
       closedOnes := closedOnes + 1
       unless lang.eval i .Empty e.2 == w do
         failures := failures.push s!"{repr e.2} mentions nothing, but its outcome differs in the empty environment"
+    -- Compiling, which folds the parts that are known, keeps the value in
+    -- every interpretation, one that gives each index out of range a value
+    -- too, as enumeration's does (`Ex.compile`, `Interp.outOfRange`).
+    for I in [binaryInterp us, { binaryInterp us with outOfRange := fun _ => some (.int 7) }] do
+      unless (e.1.compile (fun _ => none) none).eval I look == e.1.eval I look do
+        failures := failures.push s!"{repr e.2} in {repr b} changes its value when compiled"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do

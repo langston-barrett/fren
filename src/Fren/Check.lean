@@ -136,6 +136,8 @@ partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
       | Insert.insert _ _ _ x s => return #[x] ++ (← members s)
       | EmptyCollection.emptyCollection _ _ => some #[]
       | Fren.FinSet.ofList _ l => l.listLit?.map (·.2.toArray)
+      -- As reduction leaves a list's class.
+      | Quot.mk _ _ l => l.listLit?.map (·.2.toArray)
       | _ => none
     if let some xs := members val then return mkApp2 (.const ``Fren.FinSet.ofList [0]) ty.appArg! (← list ty.appArg! xs)
   let st ← getState
@@ -193,6 +195,23 @@ where
     | .const _ ls => ls
     | _ => []
 
+/-- What a failure in Lean of `what`, such as checking a procedure, with
+the message `msg`, is reported as: a limit of Lean's, its maximum
+recursion depth or heartbeats, reached, which the user may raise, if
+`runtime` or the message says so; else an internal error, a bug in Fren. -/
+def failureMsg (what msg : String) (runtime : Bool) : Core.Msg :=
+  let limit := runtime || (msg.splitOn "maximum recursion depth").length > 1 ||
+    (msg.splitOn "maximum number of heartbeats").length > 1
+  if limit then
+    { code? := none, headline := s!"{what} in Lean reached a limit: {msg}"
+      notes := #["note: Lean stopped at one of its limits; raising it, with `set_option maxRecDepth` or `set_option maxHeartbeats` before `#fren_check`, may let the check finish"] }
+  else Core.Msg.internal s!"{what} in Lean failed: {msg}"
+
+/-- A sequence or a set that `render` cannot read: an internal error,
+since the `fren` command would show its literal. -/
+def unreadableValue (val : Expr) : MetaM String :=
+  throwError "internal error: cannot show the value `{val}` as a literal; this is a bug in Fren"
+
 /-- A value of type `ty` as Fren builds it (`Reqs/View`), such as
 `Mode::Heat`, `Shape::Circle(2)`, `Point { x := 1, y := 2 }` or `Ms(5)`:
 the Fren value that `readValue` reads (`Reqs/Models#reading`). -/
@@ -213,16 +232,21 @@ where
   -- A pair, a member of a relation.
   if ty.isAppOfArity ``Prod 2 && val.isAppOfArity ``Prod.mk 4 then
     return s!"({← show_ ty.appFn!.appArg! val.appFn!.appArg!}, {← show_ ty.appArg! val.appArg!})"
-  -- A sequence, as a literal.
-  if ty.isAppOfArity ``Fren.Seq 1 && val.isAppOfArity ``Fren.Seq.ofList 2 then
-    if let some (_, xs) := val.appArg!.listLit? then
-      let shown ← xs.toArray.mapM (show_ ty.appArg!)
-      return "[" ++ ", ".intercalate shown.toList ++ "]"
-  -- A set, as a literal, with its members sorted.
-  if ty.isAppOfArity ``Fren.FinSet 1 && val.isAppOfArity ``Fren.FinSet.ofList 2 then
-    if let some (_, xs) := val.appArg!.listLit? then
-      let shown ← xs.toArray.mapM (show_ ty.appArg!)
-      return "{" ++ ", ".intercalate (shown.toList.eraseDups.mergeSort (· < ·)) ++ "}"
+  -- A sequence, as a literal. One that is not written so is an internal
+  -- error, never shown as another value nor as Lean shows it (`Reqs/View`).
+  if ty.isAppOfArity ``Fren.Seq 1 then
+    if val.isAppOfArity ``Fren.Seq.ofList 2 then
+      if let some (_, xs) := val.appArg!.listLit? then
+        let shown ← xs.toArray.mapM (show_ ty.appArg!)
+        return "[" ++ ", ".intercalate shown.toList ++ "]"
+    return ← unreadableValue val
+  -- A set, as a literal, with its members sorted; likewise.
+  if ty.isAppOfArity ``Fren.FinSet 1 then
+    if val.isAppOfArity ``Fren.FinSet.ofList 2 then
+      if let some (_, xs) := val.appArg!.listLit? then
+        let shown ← xs.toArray.mapM (show_ ty.appArg!)
+        return "{" ++ ", ".intercalate (shown.toList.eraseDups.mergeSort (· < ·)) ++ "}"
+    return ← unreadableValue val
   let st ← getState
   -- A newtype, as Fren builds it: `Ms(5)`.
   if let some n := st.newtypeOf? ty then

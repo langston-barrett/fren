@@ -556,6 +556,19 @@ def Cardinality.holds : Cardinality → Nat → Bool
   | .exactlyOne, n => n == 1
   | .atMostOne, n => n ≤ 1
 
+/-- Its value where some of its arguments' values are unknown (`none`), as
+both front ends' enumeration reads it where an index may be out of range
+(`check::cardinality_truth`): known exactly where every value of the
+unknown arguments gives the same, which is where none is unknown or two
+are `true`, or, for `at_most_one?`, where at most one is `true` or
+unknown. -/
+def Cardinality.holds? (c : Cardinality) (args : List (Option Bool)) : Option Bool :=
+  let trues := args.count (some true)
+  let unknown := args.count none
+  if unknown == 0 || 2 ≤ trues then some (c.holds trues)
+  else if c == .atMostOne && trues + unknown ≤ 1 then some true
+  else none
+
 /-- How it compares the number of its arguments that are `true` with 1,
 in SMT-LIB. -/
 def Cardinality.smtOp : Cardinality → String
