@@ -803,12 +803,6 @@ def paramTypes : Expr → Array Expr
   | .forallE _ d b _ => #[d] ++ paramTypes b
   | _ => #[]
 
-/-- Strips parentheses from `e`. -/
-partial def unparen (e : Syntax) : Syntax :=
-  if e.isOfKind choiceKind && e.getArgs.any (·.isOfKind ``Lang.booleanBlockExpr) then
-    unparen ((e.getArgs.find? (·.isOfKind ``Lang.booleanBlockExpr)).getD e[0])
-  else if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then unparen e[1] else e
-
 /-- The single name that the expression `a` is, without parentheses, if it
 is one. -/
 def soleName? (a : Syntax) : Option Name :=
@@ -6715,7 +6709,7 @@ partial def clauseBranchGroups (cx : ExprCtx) (owner : Name) (expression : Synta
         let formula ← mkLambdaFVars fvs (subst value)
         let text := exactText body
         return { name, formula
-                 range? := some (charRange source (label.getD body)), text : Core.BranchMember Expr }
+                 range? := some (charRange source (label.getD (unparen body))), text : Core.BranchMember Expr }
       -- Recover activation from the already elaborated wrapper, avoiding a
       -- second elaboration of generated contract lets with hygienic binders.
       let guard? ← if !wrappers.any isBooleanGuard then pure none else do
@@ -6786,7 +6780,7 @@ partial def clauseMemberGroups (cx : ExprCtx) (owner : Name) (expression : Synta
         let segment := label.map (·.getId.toString) |>.getD (toString (i + 1))
         out := out.push { name := Name.mkSimple (if owner.isAnonymous then segment else owner.toString ++ "." ++ segment), formula := raw
                           valueFormula? := some raw, evaluationGuard? := some reachable
-                          range? := some (charRange source (label.getD body)), text := exactText body : Core.BranchMember Expr }
+                          range? := some (charRange source (label.getD (unparen body))), text := exactText body : Core.BranchMember Expr }
       return #[{ owner, op, wanted, members := out }]
     finally modifyLocal fun _ => saved
   strip expression #[] true
@@ -7996,7 +7990,7 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
       | _ => continue
     -- An error in shadowing leaves the variable's meaning clear.
     let x ← try declare x scope
-      catch ex => logException ex; ok := false; pure (declaredIdent x).1
+      catch ex => logWithin ex; ok := false; pure (declaredIdent x).1
     names := names.insert x.getId
     lintName .variable x.getId x
     try
@@ -8007,7 +8001,7 @@ def elabCompVars (scope : Name) (members : Array Syntax) : TermElabM (Array Var 
         throwErrorAt x (Core.unboundedOutputMsg x.getId ptype.text).text
       let fact? ← factPred? ty ptype
       vars := vars.push { name := x.getId, role, isPub, isDet, «type» := ty, ref := x, defn?, ptype, fact? }
-    catch ex => logException ex; ok := false
+    catch ex => logWithin ex; ok := false
   -- One cycle is reported, as by the `fren` command.
   if let some (v, cycle) := vars.findSome? fun v => (defCycle? vars v.name).map (v, ·) then
     logErrorAt v.ref (Core.cyclicDefinitionMsg cycle).text; ok := false
@@ -8030,7 +8024,7 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
     if let .error msg := Core.checkNotLiteral (declaredIdent x).1.getId then
       logErrorAt x msg.text; ok := false; continue
     let x ← try declare x scope
-      catch ex => logException ex; ok := false; pure (declaredIdent x).1
+      catch ex => logWithin ex; ok := false; pure (declaredIdent x).1
     names := names.insert x.getId
     lintName .instance x.getId x
     try
@@ -8041,7 +8035,7 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
       -- call's assumption check reads them (`unused_assumption`).
       let reads := (pi.comp.vars.filter fun v => v.name.isAtomic && v.role == Core.Role.input).map (pi.comp.path, ·.name)
       modifyLocal fun l => { l with globalReads := l.globalReads ++ reads }
-    catch ex => logException ex; ok := false
+    catch ex => logWithin ex; ok := false
   return (pending, vars, names, ok)
 
 /-- A procedure's calls, over its variables `fvs`, and then its definitions,
@@ -8066,7 +8060,7 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
       insts := insts.push i
       defs := defs.push (i.decl, body)
       indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (pi.name, .binding k, r, q, g)
-    catch ex => logException ex; good := false
+    catch ex => logWithin ex; good := false
   let mut values : Array (Name × Expr) := #[]
   let mut todo := vars.filter (·.defn?.isSome)
   let mut defnFvs : Array Expr := #[]
@@ -8092,7 +8086,7 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
       defs := defs.push (declBase ++ `def ++ v.name, ← mkEq fvs[idx]! value)
       values := values.push (v.name, value)
       defnFvs := defnFvs.push fvs[idx]!
-    catch ex => logException ex; good := false
+    catch ex => logWithin ex; good := false
   return (insts, defs, values, defnFvs, indexes, good)
 
 /-- A procedure's assumptions, requirements and expectations, over its variables
@@ -8140,7 +8134,7 @@ def elabCompConstraints (scope : Name) (members : Array Syntax) (vars : Array Va
       props := props.push {
         kind, name := x.getId, ref := x, body := ← mkLambdaFVars fvs body,
         trigger?, triggerRef? := trig.map (·.2), decl, branchGroups, memberGroups }
-    catch ex => logException ex; good := false
+    catch ex => logWithin ex; good := false
   let mut expanded := #[]
   for prop in props do
     let source := (members.findSome? fun member => do

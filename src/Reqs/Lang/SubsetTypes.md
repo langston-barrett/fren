@@ -177,20 +177,22 @@ in it is an error, as it is in a pattern test elsewhere: a range's bound,
 in `type Digit = Int is 0..=Digit`, must name a constant, and `Digit`
 names none (`F0373`, whose label then says so, rather than naming the
 binder); and a lone name, in `type Same = Int is Same`, binds, which an
-invariant's pattern test cannot (`F0334`). An error about the value that
-the shorthand does not write is reported at the base type `U`, where the
-declaration in full writes its binder: in `type S = Set<Int> is _`,
-that a `Set<Int>` cannot be tested against a pattern (`F0335`), with
-help to declare `S` in full and compare its binder with `=` or `in`.
+invariant's pattern test cannot (`F0334`). The shorthand's invariant,
+as written, is `is P`, so an error about the whole invariant, such as
+`F0373`, is reported at its `is`. An error about the value that the shorthand
+tests is reported at the base type `U`, since the value is written
+nowhere: in `type S = Set<Int> is _`, that a `Set<Int>` cannot be tested
+against a pattern (`F0335`), with help to declare the type in full, as
+`type T = x: Set<Int> where …`, and compare `x` with `=` or `in`.
 
 No lint reports the shorthand's pattern test as an expression `x is P`
 whose scrutinee `x` is written: `is_equality`, whose fix replaces it with
 `x = P`, does not apply, since the shorthand has no form with `=`. Lints
 of the pattern itself, such as `irrefutable_is` and the lints of
 or-patterns, apply as to any pattern test. Of the lints of an invariant's
-generated predicate, only those within the invariant's expression are
-reported, whether or not it has a static error, so a written binder's
-name is not linted there either.
+generated predicate, only those within the invariant's expression, the
+shorthand's `is P`, are reported, whether or not it has a static error,
+so a written binder's name is not linted there either.
 
 ## Static types, assumptions and obligations
 

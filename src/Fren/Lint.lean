@@ -85,8 +85,11 @@ def recordUse (u : Core.UseDef) (ref : Syntax) : m Unit := do
     unusedLevel := ← lintLevel .unusedImports, globLevel := ← lintLevel .globImports }
   modifyLocal fun l => { l with useRecords := l.useRecords.push (r, ref) }
 
-/-- Records a lint's message at `ref`, at the level here. -/
+/-- Records a lint's message at `ref`, at the level here: within its
+parentheses, if it is parenthesized, as the `fren` command places it
+(`Reqs/View`), but for `double_parens`, which is about them. -/
 def recordLint (lint : Core.Lint) (ref : Syntax) (msg : Core.Msg) : m Unit := do
+  let ref := if lint == .doubleParens then ref else unparen ref
   let level ← lintLevel lint
   -- Once at a place: a function's block gives a `let` to each expression
   -- that needs it, which elaborates it again (`Reqs/Lang/Items#function-blocks`).

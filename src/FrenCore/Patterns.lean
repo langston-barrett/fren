@@ -885,7 +885,7 @@ reported at `U` (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
 def isScrutineeMsg (ty : String) (shorthand := false) : Msg :=
   { code? := some "F0335", headline := s!"cannot test `{ty}` against a pattern", label? := some "no patterns of this type"
     notes := #["note: `is` tests a value of an enum, `Bool`, `Int`, `Nat` or `String`",
-      if shorthand then "help: for other types, declare the type in full, `type T = x: U where name: …`, and compare `x` with `=` or `in`"
+      if shorthand then s!"help: for other types, declare the type in full, as `type T = x: {ty} where …`, and compare `x` with `=` or `in`"
       else "help: for other types, compare with `=` or `in`"] }
 
 /-- The name that a binder `n` or `n!` would declare, as a message names

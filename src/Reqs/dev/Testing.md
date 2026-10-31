@@ -261,7 +261,14 @@ pub mod testing
   worker that dies while checking no spec is blamed on none. Each run's
   work files are its own, but the findings are named by seed, so runs with
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known` steers clear of differences
-  already known, to find others; `--files FILE...` compares the front ends
+  already known, to find others. A known difference that the generator
+  writes by default must not be flagged by default: `compare` masks it,
+  with its issue cited and a test in `FrontendsCompare` that it masks
+  only that, or it is fixed first, as the columns of a parenthesized
+  operand were. The known column differences of #555 are of static
+  errors that the generator does not write (an unknown method or field, a
+  `refines`, an invalid string pattern, a higher-order call's arity), so
+  `compare` masks no column. `--files FILE...` compares the front ends
   on given files, and `--print SEED` prints a generated spec. The
   comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
 
