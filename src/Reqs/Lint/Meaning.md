@@ -117,3 +117,20 @@ expect mentions_nothing(e: lang::Expr, i: lang::Interp, p: lang::Env, j: lang::I
     expect mentions_nothing: when lang::free_vars(e) = {}, lang::eval(i, p, e) = lang::eval(j, q, e)
 }
 ```
+
+## Fixes that agree
+
+A fix *agrees* with the expression it replaces where, in each
+interpretation and environment, the expression is undefined or the fix
+has its outcome. So where the expression as written is well-defined, the
+fix is too, with the same value, and a fix may be well-defined where the
+expression is not, as `false` is where `a and not a` is undefined: its
+value there was unspecified (see [Outcomes and
+well-definedness](../Lang/Semantics.md#outcomes-and-well-definedness)).
+Each lint stated over the [syntax of the
+semantics](../Lang/Semantics.md#abstract-syntax) states that its fix agrees,
+with `agrees?`, at the outcomes of `lang::eval`:
+
+```fren
+pub fn agrees?(fix: lang::Outcome, original: lang::Outcome) := original = lang::Outcome::Undefined or fix = original
+```

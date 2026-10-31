@@ -41,6 +41,8 @@ open Fren.Lang
 #fren_md "Lint/Pedantic/Text.md"
 #fren_md "Lint/Pedantic/Comparisons.md"
 #fren_md "Lint/Pedantic/Conditionals.md"
+#fren_md "Lint/Pedantic/Booleans.md"
 #fren_md "Lint/Restriction.md"
 #fren_md "Lint/Decidability.md"
 #fren_md "Lint/Printing.md"
+#fren_md "Lint/Rewrites.md"

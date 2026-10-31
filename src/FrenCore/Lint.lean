@@ -4538,13 +4538,62 @@ inductive BoolRule where
   | excludedMiddle
   deriving Inhabited, BEq, DecidableEq, Repr
 
-/-- Whether `overly_complex_bool_expr` fires on an `and`, if `conj`, or an
-`or`, and by which rule, from whether an operand absorbs the other, whether
-one is the other's negation, and whether `nonminimal_bool` rewrites that
-negation (`lint::overly_complex_bool_expr`). -/
-def overlyComplexBool (conj absorbs negates simplerNegation : Bool) : Bool × BoolRule :=
-  (absorbs || (negates && !simplerNegation),
-    if absorbs then .absorption else if conj then .contradiction else .excludedMiddle)
+/-- One layer of an expression, as `overly_complex_bool_expr` reads it: an
+`and`, an `or`, a `not`, or another form. -/
+inductive BoolLayer (α : Type) where
+  | and (a b : α)
+  | or (a b : α)
+  | not (a : α)
+  | other
+
+/-- What the fix of `overly_complex_bool_expr` writes: the left operand,
+the right one, or a `Bool` (`lint::Kept`). -/
+inductive Kept where
+  | left
+  | right
+  | constant
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+section OverlyComplex
+variable {α : Type} (layer : α → BoolLayer α) (same : α → α → Bool)
+
+/-- `k` is `p or q`, in an `and` if `conj`, or `p and q`, in an `or`, where
+`p` or `q` is the same as `o` (`lint::absorbs_operand?`). -/
+def absorbsOperand (conj : Bool) (k o : α) : Bool :=
+  match layer k with
+  | .or p q => conj && (same p o || same q o)
+  | .and p q => !conj && (same p o || same q o)
+  | _ => false
+
+/-- `k` is `not p`, where `p` is the same as `o` (`lint::negates_operand?`). -/
+def negatesOperand (k o : α) : Bool :=
+  match layer k with
+  | .not p => same p o
+  | _ => false
+
+/-- Whether `overly_complex_bool_expr` fires on `e`, and by which rule, with
+what its fix writes (`lint::overly_complex_bool_expr`). A negation where
+`rewritten` holds, one that `nonminimal_bool` rewrites, does not make it
+fire. Both front ends run it over their expressions, with `same` the test
+of being written the same, which is trusted and checked by the ui tests;
+`Impls/Rewrites.lean` proves that it meets the procedure over `lang::Expr`,
+with `=`, and `rewritten` the procedure's `negation_rewritten?`. -/
+def overlyComplexRule (rewritten : α → Bool) (e : α) : Option (BoolRule × Kept) :=
+  let go (conj : Bool) (l r : α) : Option (BoolRule × Kept) :=
+    if absorbsOperand layer same conj r l then some (.absorption, .left)
+    else if absorbsOperand layer same conj l r then some (.absorption, .right)
+    else
+      let negation? := if negatesOperand layer same r l then some r
+        else if negatesOperand layer same l r then some l else none
+      match negation? with
+      | some k => if rewritten k then none else some (if conj then .contradiction else .excludedMiddle, .constant)
+      | none => none
+  match layer e with
+  | .and l r => go true l r
+  | .or l r => go false l r
+  | _ => none
+
+end OverlyComplex
 
 /-- `overly_complex_bool_expr` by `rule`, on an `and`, if `conj`, or an
 `or`, whose fix is `fixed`. -/
@@ -4560,24 +4609,26 @@ def overlyComplexBoolMsg (conj : Bool) (rule : BoolRule) (fixed : String) (range
   { code? := some Lint.overlyComplexBoolExpr.code, headline, label? := some label, notes := #[note]
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed, range? }] }
 
+/-- An expression as `overly_complex_bool_expr` reads it. -/
+def BNode.boolLayer (n : BNode α) : BoolLayer (BNode α) :=
+  match n.kind, n.kids with
+  | .bin "and", #[l, r] => .and l r
+  | .bin "or", #[l, r] => .or l r
+  | .not, #[a] => .not a
+  | _, _ => .other
+
 /-- `overly_complex_bool_expr` on `n`, an `and` if `conj`, or an `or`, in
 `slot` within `parent` (`lint::overly_complex_bool_expr`). -/
 def overlyComplexAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (parent : Range) (conj : Bool) :
     Option (OpReport α) := do
-  let #[l, r] := n.kids | none
   let same (a b : BNode α) := writtenSame (textOf src a.range) (textOf src b.range)
-  -- `k` is `p or q` in an `and`, or `p and q` in an `or`, where `p` or `q` is `o`.
-  let absorbs (k o : BNode α) := k.kind == .bin (if conj then "or" else "and") && k.kids.any (same · o)
-  let kept? := if absorbs r l then some l else if absorbs l r then some r else none
-  let negates (k o : BNode α) := k.kind == .not && k.kids.any (same · o)
-  let negation? := if negates r l then some r else if negates l r then some l else none
-  let simpler := negation?.any fun k => ((k.toEx 3).simplerForm .nonminimalBool).isSome
-  let (fires, rule) := overlyComplexBool conj kept?.isSome negation?.isSome simpler
-  unless fires do none
-  let t ← match rule, kept? with
-    | .absorption, some k => some (k.text src)
-    | .absorption, none => none
-    | _, _ => some { text := toString (rule == .excludedMiddle), prec := BKind.atom.prec }
+  let rewritten (k : BNode α) := ((k.toEx 3).simplerForm .nonminimalBool).isSome
+  let (rule, kept) ← overlyComplexRule BNode.boolLayer same rewritten n
+  let #[l, r] := n.kids | none
+  let t := match kept with
+    | .left => l.text src
+    | .right => r.text src
+    | .constant => { text := toString (rule == .excludedMiddle), prec := BKind.atom.prec }
   -- An operand in parentheses: the fix replaces them too, and has the
   -- parentheses that its slot needs, rather than keeping those of `n`.
   match slot, parensAround? src parent n.range with

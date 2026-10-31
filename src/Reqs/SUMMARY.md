@@ -67,9 +67,11 @@
     - [Source text](Lint/Pedantic/Text.md)
     - [Comparisons](Lint/Pedantic/Comparisons.md)
     - [Conditionals](Lint/Pedantic/Conditionals.md)
+    - [Boolean operands](Lint/Pedantic/Booleans.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
   - [Printing fixes](Lint/Printing.md)
+  - [Fixes as rewrites](Lint/Rewrites.md)
 
 # Using Fren
 
