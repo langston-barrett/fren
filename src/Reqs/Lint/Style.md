@@ -459,6 +459,78 @@ space, `- -y`, since `--` starts a comment. No fix adds or removes an
 `and`, `or`, `when`, `unless`, `if` or `match`, and each operand is
 evaluated where it was, so the guards are kept.
 
+### Negations, over the syntax of the semantics
+
+In the [syntax of the semantics](../Lang/Semantics.md#abstract-syntax),
+parentheses are gone and `-a` is `Unary(Neg, a)`, so `double_neg` fires on
+`Unary(Neg, Unary(Neg, a))`, and its fix is `a`, as [Fixes as
+rewrites](Rewrites.md) states for every such lint. `neg_multiply` is not
+stated so: a product is a primitive operation, which an interpretation
+gives (see [Environments and
+interpretations](../Lang/Semantics.md#environments-and-interpretations)),
+so `x * -1` and `-x` agree only in an interpretation that gives `*` its
+usual meaning.
+
+```fren
+pub fn double_neg_fires?(e: lang::Expr) :=
+    e is lang::Expr::Unary(lang::UnaryOp::Neg, lang::Expr::Unary(lang::UnaryOp::Neg, _))
+
+pub fn double_neg_fix(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::Unary(lang::UnaryOp::Neg, lang::Expr::Unary(lang::UnaryOp::Neg, a)) => a,
+    _ => e,
+}
+```
+
+`lint::double_neg` above binds this to the linter: on the negation of an
+operand `a`, it fires where `a` is a negation, and on nothing else. That
+the front ends read `-` and parentheses as elaboration does is trusted,
+and checked by the ui tests of the lint.
+
+```fren
+expect double_neg_elaborated(a: lang::Expr, e: lang::Expr) {
+    call n := double_neg(a is lang::Expr::Unary(lang::UnaryOp::Neg, _))
+
+    expect negation: n.fires? iff double_neg_fires?(lang::Expr::Unary(lang::UnaryOp::Neg, a))
+    expect other: unless e is lang::Expr::Unary(lang::UnaryOp::Neg, _), not double_neg_fires?(e)
+}
+```
+
+Where it fires, the fix [agrees](Meaning.md#fixes-that-agree) with the
+expression in every interpretation and environment: where `a` is an
+integer, `- -a` is `a`, and elsewhere `- -a` is undefined, while `a` may
+not be. The solver unfolds
+[`eval`](../Lang/Semantics.md#the-evaluation-function) one step, and the
+negations are two deep, so `src/Impls/Rewrites.lean` proves it in Lean,
+for every expression, interpretation and environment; `fren check` tests
+it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc double_neg_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+    ensure keeps_meaning: when double_neg_fires?(e),
+        agrees?(lang::eval(i, env, double_neg_fix(e)), lang::eval(i, env, e))
+}
+```
+
+The fix writes an operand's operand, so once the operands are fixed, it
+leaves nothing to fix. The fix alone need not: the operand it keeps may
+itself fire, as in `- - - -x`, whose fix is `- -x` (`kept`). No
+expression around it starts firing once it is fixed, though: the lint
+looks two deep, at a negation and its operand, and where it fires on
+`e`, the negation of `e` fires already (`around`).
+
+```fren
+expect double_neg_refires(x: lang::Id, e: lang::Expr) {
+    use lang::Expr::{Unary, Var}
+    use lang::UnaryOp::Neg
+
+    expect kept: double_neg_fires?(
+        double_neg_fix(Unary(Neg, Unary(Neg, Unary(Neg, Unary(Neg, Var(x))))))
+    )
+    expect around: when double_neg_fires?(e), double_neg_fires?(Unary(Neg, e))
+}
+```
+
 ## Names
 
 Five lints find a declared name that says less than it could, or says it

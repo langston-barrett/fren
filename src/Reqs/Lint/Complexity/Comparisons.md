@@ -344,3 +344,106 @@ expect int_plus_one_chain_complete(i: Int, n: Int, m: Int) {
     refines concrete int_plus_one_chain_fixed(i, n, m)
 }
 ```
+
+### Off-by-one comparisons, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`a >= b` is `b <= a`, and `a > b` is `b < a`, as [Derived
+forms](../../Lang/Semantics.md#derived-forms) states, so the rows of the
+table above are of one operator, `<=`: `b + 1 <= a` and `1 + b <= a`, or
+`b <= a - 1`, each of which becomes `b < a`, as [Fixes as
+rewrites](../Rewrites.md) states for every such lint. Where both operands
+are off by one, the fix drops the `+ 1`, as above. `offset_of` reads an
+operand as `lint::int_plus_one` does, and `without_offset` drops its
+offset:
+
+```fren
+-- `e` is the literal `1`.
+fn one?(e: lang::Expr) := e = lang::Expr::Literal(lang::Value::Integer(1))
+
+pub fn offset_of(e: lang::Expr): Offset := match e {
+    lang::Expr::Binary(lang::BinaryOp::Add, a, b) if one?(b) or one?(a) => PlusOne,
+    lang::Expr::Binary(lang::BinaryOp::Sub, _, b) if one?(b) => MinusOne,
+    _ => Zero,
+}
+
+pub fn without_offset(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::Binary(lang::BinaryOp::Add, a, b) => if one?(b) then a else if one?(a) then b else e,
+    lang::Expr::Binary(lang::BinaryOp::Sub, a, b) => if one?(b) then a else e,
+    _ => e,
+}
+
+pub fn int_plus_one_fires?(e: lang::Expr) := match e {
+    lang::Expr::Binary(lang::BinaryOp::Le, a, b) => offset_of(a) = PlusOne or offset_of(b) = MinusOne,
+    _ => false,
+}
+
+pub fn int_plus_one_fix(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::Binary(lang::BinaryOp::Le, a, b) => if offset_of(a) = PlusOne
+        then lang::Expr::Binary(lang::BinaryOp::Lt, without_offset(a), b)
+        else if offset_of(b) = MinusOne then lang::Expr::Binary(lang::BinaryOp::Lt, a, without_offset(b))
+        else e,
+    _ => e,
+}
+```
+
+`lint::int_plus_one` binds this to the linter: at the offsets that
+`offset_of` reads, it fires on `a <= b`, and on `b >= a`, exactly where
+`int_plus_one_fires?` does on their elaboration, and its fix drops the
+offset that `int_plus_one_fix` drops. It fires on no other comparison,
+and `int_plus_one_fires?` on no other expression. That the front ends read
+the operators, and `1`, as elaboration does, is trusted, and checked by
+the ui tests of the lint. In a chained comparison, the linter fires only at
+an end of the chain, so not in every place that `int_plus_one_fires?`
+does: the elaboration of `0 <= i + 1 <= n` has `i + 1 <= n`, on which it
+fires.
+
+```fren
+expect int_plus_one_elaborated(a: lang::Expr, b: lang::Expr, e: lang::Expr) {
+    use lang::BinaryOp
+    use lang::Expr::Binary
+
+    -- `a <= b`, as written, and `b >= a`.
+    call le := int_plus_one(Comparison::Le, offset_of(a), offset_of(b))
+    call ge := int_plus_one(Comparison::Ge, offset_of(b), offset_of(a))
+
+    expect le_rule: le.fires? iff int_plus_one_fires?(Binary(BinaryOp::Le, a, b))
+    expect ge_rule: ge.fires? iff int_plus_one_fires?(Binary(BinaryOp::Le, a, b))
+    expect le_fix: when le.fires?, int_plus_one_fix(Binary(BinaryOp::Le, a, b))
+        = if le.drop_left? then Binary(BinaryOp::Lt, without_offset(a), b) else Binary(BinaryOp::Lt, a, without_offset(b))
+    expect ge_fix: when ge.fires?, int_plus_one_fix(Binary(BinaryOp::Le, a, b))
+        = if ge.drop_left? then Binary(BinaryOp::Lt, a, without_offset(b)) else Binary(BinaryOp::Lt, without_offset(a), b)
+    expect other: unless e is Binary(BinaryOp::Le, _, _), not int_plus_one_fires?(e)
+}
+```
+
+Where it fires, the fix has the expression's outcome, in every
+interpretation and environment: where `a` and `b` are integers, `b + 1 <=
+a` holds exactly where `b < a` does, and elsewhere both are undefined. So
+it [agrees](../Meaning.md#fixes-that-agree) with the expression, and is
+exact. Addition and subtraction are not primitives, so this holds in
+every interpretation. The solver unfolds
+[`eval`](../../Lang/Semantics.md#the-evaluation-function) one step, and the
+offsets are two deep, so `src/Impls/Rewrites.lean` proves it in Lean, for
+every expression, interpretation and environment; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc int_plus_one_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+    ensure exact: when int_plus_one_fires?(e),
+        lang::eval(i, env, int_plus_one_fix(e)) = lang::eval(i, env, e)
+}
+```
+
+Unlike those of `overly_complex_bool_expr` and `double_neg`, this fix
+fixes the lint at one place: it writes a `<`, on which the lint does not
+fire (`kept`). And it starts no new firing elsewhere: the lint reads an
+operand only by its offset and by whether it is `1`, and the fix keeps
+both (`around`).
+
+```fren
+expect int_plus_one_once(e: lang::Expr) {
+    expect kept: not int_plus_one_fires?(int_plus_one_fix(e))
+    expect around: offset_of(int_plus_one_fix(e)) = offset_of(e) and (one?(int_plus_one_fix(e)) iff one?(e))
+}
+```

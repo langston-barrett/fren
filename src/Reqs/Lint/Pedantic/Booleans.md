@@ -28,9 +28,10 @@ use lang::Expr
 The fix is in parentheses where [fixes need
 them](../../Lint.md#parentheses-in-fixes). Where the expression is an
 operand in parentheses of its own, the fix replaces them too, so that
-`((a? or b?) and a?) or c?` becomes `a? or c?`, not `(a?) or c?`. The lint looks at the operands of the operator alone: in
-`a or (a and b and c)`, the right operand is `(a and b) and c`, whose
-operands are not `a`. Its Clippy counterpart is in `correctness`.
+`((a? or b?) and a?) or c?` becomes `a? or c?`, not `(a?) or c?`. The
+lint looks at the operands of the operator alone: in `a or (a and b and
+c)`, the right operand is `(a and b) and c`, whose operands are not `a`.
+Its Clippy counterpart is in `correctness`.
 
 [`eq_op`](../Suspicious/Expressions.md#operands-written-the-same) reports an
 operator whose operands are written the same, and this lint one whose
@@ -131,8 +132,11 @@ and a test of whether `nonminimal_bool` rewrites a negation. What is
 proved and what is trusted:
 
 - Proved: `src/Impls/Rewrites.lean` instantiates it at `lang::Expr`, with
-  `=` for being the same and `negation_rewritten?` for every negation, and
-  proves that it meets this procedure, for every expression.
+  `=` for being the same and, for whether `nonminimal_bool` rewrites a
+  negation, `negation_rewritten?` at an operand that is the negation of an
+  operand of `e`, and `false` at any other, and proves that it meets this
+  procedure, for every expression. So it checks that the linter asks
+  about the operand that is the negation, whichever side it is on.
 - Trusted, and checked by the ui tests of the lint: both front ends run it
   at their own expressions as written (`BNode.boolLayer`), with
   [written the same](../../Lint.md#written-the-same) for being the same
