@@ -756,7 +756,7 @@ def runFrontends (env : Environment) (path : System.FilePath) (text : String) :
   let (found, flaky) := FrenTest.Frontends.compare text
     { diags := cli, summary? := cliSum, exit? := some code.toNat } { diags := hosted, summary? := hostedSum }
   let render (ds : Array Diagnostic) (s : Option String) :=
-    String.join (ds.toList.map fun d => s!"--   {d.line}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
+    String.join (ds.toList.map fun d => s!"--   {d.line}:{d.col + 1}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
       ++ s!"--   summary: {s.getD "(none)"}\n"
   return (found, flaky, s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
     cli.filterMap fun d => if d.severity == "error" then d.code? else none)

@@ -148,8 +148,9 @@ keeps `Byte::pattern` followed by its own `Digit::pattern`, as any subset
 type keeps its base's invariants. Both front ends read the shorthand as
 the declaration it stands for while parsing, so everything after parsing
 is as for that declaration: its scope, its declaration checks, its
-obligations, its diagnostics and the pattern-test invariant fragment of
-[Decidability, Lean and migration](#decidability-lean-and-migration),
+obligations, its diagnostics, except as stated below, and the
+pattern-test invariant fragment of [Decidability, Lean and
+migration](#decidability-lean-and-migration),
 which makes `Byte` finite, with the integers `0` to `255` in order. The
 declaration written out in full, with any binder that shadows nothing,
 means the same: `pattern` is an ordinary label, not a reserved word.
@@ -176,7 +177,11 @@ in it is an error, as it is in a pattern test elsewhere: a range's bound,
 in `type Digit = Int is 0..=Digit`, must name a constant, and `Digit`
 names none (`F0373`, whose label then says so, rather than naming the
 binder); and a lone name, in `type Same = Int is Same`, binds, which an
-invariant's pattern test cannot (`F0334`).
+invariant's pattern test cannot (`F0334`). An error about the value that
+the shorthand does not write is reported at the base type `U`, where the
+declaration in full writes its binder: in `type S = Set<Int> is _`,
+that a `Set<Int>` cannot be tested against a pattern (`F0335`), with
+help to declare `S` in full and compare its binder with `=` or `in`.
 
 No lint reports the shorthand's pattern test as an expression `x is P`
 whose scrutinee `x` is written: `is_equality`, whose fix replaces it with

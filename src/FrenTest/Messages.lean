@@ -59,7 +59,8 @@ def cliDiagnostics (file : String) (out : String) (keepUnlocated := false) : Arr
         let parts := loc.toString.splitOn ":"
         let ours := parts.length ≥ 3 && ":".intercalate (parts.take (parts.length - 2)) == file
         diags := diags.modify (diags.size - 1) fun (d, _) =>
-          ({ d with line := if ours then parts[parts.length - 2]!.toNat! else 0 }, ours)
+          ({ d with line := if ours then parts[parts.length - 2]!.toNat! else 0
+                    col := if ours then parts[parts.length - 1]!.toNat! - 1 else 0 }, ours)
       pending := false
     else if line.startsWith "fren: " then
       summary := some (line.drop 6).toString
@@ -104,7 +105,7 @@ def hostedDiagnostics (env : Environment) (file : String) (src : String) :
     else if (sev == "error" && text == Fren.Core.couldNotHeadline) || m.pos.line - 1 > lines then
       diags := diags.push { line := 0, severity := sev, text }
     else
-      diags := diags.push { line := m.pos.line - 1, severity := sev, text }
+      diags := diags.push { line := m.pos.line - 1, col := m.pos.column, severity := sev, text }
   return (diags, summary)
 
 end FrenTest.Ui

@@ -8790,6 +8790,13 @@ shared procedure check protocol, with separate declaration-only checks. -/
   discard (segName binder)
   let base : TSyntax `fren_type := ⟨stx[6]⟩
   let (ty, baseType) ← liftTermElabM (elabPType module base)
+  -- The pattern shorthand's value, which is not written, is tested
+  -- against a pattern; an error about it is at the base type, where the
+  -- declaration in full writes its binder, as the `fren` command reports
+  -- it (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`).
+  let shorthand := Core.nameText binder.getId == Core.shorthandBinder
+  if shorthand && patTyOf (← getState) ty == .other then
+    throwErrorAt base (Core.isScrutineeMsg (← liftTermElabM (typeName ty)) true).text
   let some (op, members) := booleanBlockView stx[8]
     | throwErrorAt stx[8] "expected a labelled invariant"
   unless op == "and" && !members.isEmpty do throwErrorAt stx[8] "expected a nonempty labelled invariant list"
@@ -8821,7 +8828,10 @@ shared procedure check protocol, with separate declaration-only checks. -/
     let parameter : TSyntax `ident := ⟨binder⟩
     let command ← `(pub fn $predicate:ident($parameter:ident : $base) := $body)
     let before ← getLocal
-    let insideInvariant (ref : Syntax) := match ref.getPos?, ref.getTailPos?, expression.getPos?, expression.getTailPos? with
+    -- The pattern shorthand's invariant, as written: `is P`, without the
+    -- scrutinee that it does not write, which is at the command's start.
+    let written := if shorthand then mkNullNode #[expression[1], expression[2]] else expression
+    let insideInvariant (ref : Syntax) := match ref.getPos?, ref.getTailPos?, written.getPos?, written.getTailPos? with
       | some start, some stop, some first, some last => first <= start && stop <= last
       | _, _, _, _ => false
     modifyLocal fun l => { l with inSubset := true }
@@ -8830,7 +8840,7 @@ shared procedure check protocol, with separate declaration-only checks. -/
     catch ex =>
       let message ← ex.toMessageData.toString
       if (message.splitOn "cannot find").length > 1 then
-        throwErrorAt expression ({ code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Core.invariantScopeLabel (Core.nameText binder.getId)) } : Core.Msg).text
+        throwErrorAt written ({ code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Core.invariantScopeLabel (Core.nameText binder.getId)) } : Core.Msg).text
       throw ex
     finally
       -- Only the lints of the invariant's own source are reported, as for
@@ -8880,8 +8890,8 @@ open Lang in
 (`Core.shorthandBinder`, `Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
 @[command_elab Lang.subsetShorthandCmd] def elabSubsetShorthand : CommandElab := fun stx => do
   let isTok := stx[5]
-  -- The binder has no position, so that the invariant is where `is P` is
-  -- written, and only its lints are reported, as for a written binder.
+  -- The binder has no position. `elabSubsetType` reads the invariant as
+  -- written as `is P`, and reports only its lints, as for a written binder.
   let binder := mkIdent (Name.mkSimple Core.shorthandBinder)
   let label := mkIdentFrom isTok `pattern
   let scrutinee ← `(fren_expr| $binder:ident)
