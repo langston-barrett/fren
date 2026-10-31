@@ -93,8 +93,9 @@ a pass by random testing, with at least the caveat `Random`. `caller`'s
 realizability rests on it too, so a check that calls `caller` does as
 well. Here random testing also finds that `lookup` has no output at
 `1234567`, a literal of the spec, so its realizability is `Inconclusive`
-(`F0609`), and `fren check` reports each of the three as `Inconclusive`,
-with `F0664`:
+(`F0609`), and once the front-end PR of #414's stack merges, `fren check`
+reports each of the three as `Inconclusive`, with `F0664` (today it reports
+all three as passes, with only `lookup`'s `F0609`):
 
 ```text
 warning[F0664]: the realizability of `demo::caller` rests on the realizability of `demo::lookup`, which did not pass
@@ -103,8 +104,8 @@ warning[F0664]: `demo::answers_one::e` rests on the realizability of `demo::look
 ```
 
 Where testing finds outputs at every input it tries, they are passes by
-random testing instead, each with `F0663`. `check::issue_examples`, below,
-checks both cases.
+random testing instead, each with `F0663`, once that PR merges.
+`check::issue_examples`, below, checks both cases.
 
 Realizability is a check whose pass is a proof: its pass is the solver's
 proof that no input meets the assumptions without some outputs meeting the
@@ -288,7 +289,12 @@ hypothesis that a query has is backed by a premise that it takes, or needs
 none: `check::has_hypothesis?` says which hypotheses a query has, over the
 sorts of [Checks](Check.md), `check::backs` gives the premises that back
 each, and `premise`'s `backed` states that `premise` takes every one of
-them, so that no hypothesis goes unaccounted for:
+them, so that no hypothesis goes unaccounted for. `backed` is only as
+strong as `has_hypothesis?`, so `check::site_hypotheses` pins it from
+below, row by row, from the tables of [Checks](Check.md) and
+[Refinement](Lang/Refinement.md), stated apart from `premise`'s `rule`, so
+that a `has_hypothesis?` that leaves a hypothesis out fails a named check
+rather than emptying `backed`:
 
 ```fren
 -- Where a check's query is, which decides its hypotheses (`Reqs/Check`,
@@ -371,13 +377,22 @@ pub fn own_call?(site: Site, p: Premise) := match site {
 -- so there is nothing to show and no check of it to rest on; a function's
 -- body has none either, and its clauses rest on its contract's checks.
 pub fn own_realizability?(item: CheckedItem) :=
-    item in {CheckedItem::Component, CheckedItem::GlobalExpectation, CheckedItem::Contract}
+    item in {
+        CheckedItem::Component,
+        CheckedItem::GlobalExpectation,
+        CheckedItem::Contract,
+    }
 
 -- Whether the query of a check of this kind at `site`, of this item, has the
 -- item's own assumptions among its hypotheses, with its guarantees where it
 -- has both, and is not the realizability check that shows that they can
 -- hold. An assumption's check is over the other assumptions, a subset of
--- `A`, which can hold only where `A` can, so it is one of them.
+-- `A`, which can hold wherever `A` can, so the item's realizability, which
+-- shows that `A` can hold, shows that they can too. The converse fails:
+-- without an assumption that contradicts the others, the rest can hold
+-- where `A` cannot. So resting on it is conservative: an assumption's check
+-- whose own hypotheses can hold is still capped where the item's
+-- realizability does not pass.
 pub fn own_hypotheses?(item: CheckedItem, kind: Kind, site: Site) := own_realizability?(item)
     and kind != Kind::Realizability
     and site is Site::Whole | Site::Assumption | Site::Constraint | Site::Refinement(_)
@@ -394,7 +409,12 @@ pub fn own_function?(site: Site, f: Int) := match site {
 -- the function at a position that it applies; the invariants of the subset
 -- type at a position; the preconditions of the function at a position, in a
 -- clause of which the check is; and the calls of the abstraction at a
--- position, of a refinement's obligation.
+-- position, of a refinement's obligation. A guard `G`, which `Reqs/Check`
+-- puts among the hypotheses of definedness, the values given where subset
+-- types are declared, completeness, disjointness, reachability and
+-- preconditions, is not one of these sorts: where it cannot hold, the
+-- expression that it guards is never evaluated, so a vacuous pass there is
+-- the intended answer, and an arm's reachability check reports a dead case.
 pub enum Hypothesis {
     Assumptions,
     Definitions,
@@ -410,7 +430,7 @@ pub enum Hypothesis {
 pub fn has_hypothesis?(check: CheckRecord, h: Hypothesis, n_calls: Int) := match h {
     Hypothesis::Assumptions => own_realizability?(check.item)
         and not check.site is Site::FunctionClause(_) | Site::Constant,
-    Hypothesis::Definitions => own_realizability?(check.item)
+    Hypothesis::Definitions => own_realizability?(check.item) and check.kind != Kind::Realizability
         and not check.site is Site::FunctionClause(_) | Site::Constant,
     Hypothesis::Call(j) => has_call?(check.site, j, n_calls),
     Hypothesis::Facts(f) => f in check.applies and not own_function?(check.site, f),
@@ -422,13 +442,16 @@ pub fn has_hypothesis?(check: CheckRecord, h: Hypothesis, n_calls: Int) := match
 -- The premises that show that the hypothesis `h` of the check `check` can
 -- hold. Every hypothesis that a query has is backed by one of these, which
 -- `check::premise`'s `backed` states: it is the dual of `rule`, and it is
--- what says that no hypothesis goes unaccounted for. Three have none:
--- `Definitions`, because each definition determines its variable; the item's
--- own assumptions at its calls' own checks, and a function's preconditions
--- in its own clauses, because the check that shows each can hold comes after
--- the checks that assume it, which #487 states. The realizability check is
--- itself the one that shows the item's own assumptions can hold, so it rests
--- on no check of its own.
+-- what says that no hypothesis goes unaccounted for. Four have none:
+-- `Definitions`, because each definition determines its variable; the facts
+-- of a function that `kinds` makes only defined, because a defined function
+-- that is not recursive is unfolded, so its equations determine its value,
+-- as definitions do, and `CheckRecord`'s `applies` never lists it anyway;
+-- and the item's own assumptions at its calls' own checks, and a function's
+-- preconditions in its own clauses, because the check that shows each can
+-- hold comes after the checks that assume it, which #487 states. The
+-- realizability check is itself the one that shows the item's own
+-- assumptions can hold, so it rests on no check of its own.
 pub fn backs(check: CheckRecord, h: Hypothesis, kinds: Rel<Int, FnKind>): Set<Premise> := match h {
     Hypothesis::Assumptions => if check.kind = Kind::Realizability
         or check.site is Site::CallArgument(_) | Site::CallAssumption(_)
@@ -469,7 +492,12 @@ pub proc premise(
     expect backed: forall (h: Hypothesis), when proof?(check.kind)
         and has_hypothesis?(check, h, n_calls) and p in backs(check, h, kinds), premised?
 
-    expect witnesses: when check.kind in {Kind::Cover, Kind::Vacuity, Kind::Reachability, Kind::Redundancy},
+    expect witnesses: when check.kind in {
+        Kind::Cover,
+        Kind::Vacuity,
+        Kind::Reachability,
+        Kind::Redundancy,
+    },
         not premised?
     -- A procedure's checks over its own assumptions and guarantees rest on
     -- its realizability, but its calls' checks, which come before it, and its
@@ -501,7 +529,10 @@ pub proc premise(
     expect own_call: when own_call?(check.site, p), not premised?
     -- Nor are a function's own checks among those of its clauses.
     expect own_function: forall (f: Int), when own_function?(check.site, f)
-        and p in {Premise::ContractRealizability(f), Premise::Postconditions(f)}, not premised?
+        and p in {
+            Premise::ContractRealizability(f),
+            Premise::Postconditions(f),
+        }, not premised?
     expect assumptions_alone: when check.site = Site::Assumption
         and p is Premise::Realizability(_) | Premise::CallAssumptions(_), not premised?
     -- Realizability's pass is a proof from `A` and `I`, so it rests on every
@@ -513,8 +544,68 @@ pub proc premise(
         and p = Premise::AbstractionRealizability(a), premised?
     -- A defined function that is not recursive brings no premise.
     expect defined_nothing: forall (f: Int), when (f, FnKind::Defined) in kinds and not (f, FnKind::Contract) in kinds
-        and not (f, FnKind::Recursive) in kinds and p in {Premise::ContractRealizability(f), Premise::Postconditions(f)},
+        and not (f, FnKind::Recursive) in kinds and p in {
+            Premise::ContractRealizability(f),
+            Premise::Postconditions(f),
+        },
         not premised?
+}
+
+-- The hypotheses of each site, row by row from the tables of `Reqs/Check`
+-- ("Realizability", "Global expectations", "Call assumptions" and the
+-- "Where | Hypotheses" table of "Definedness") and `Reqs/Lang/Refinement`,
+-- and from the meanings of `CheckRecord`'s `applies` and `types`. Each says
+-- that `has_hypothesis?` has at least that hypothesis.
+set_option fren.lint.undecidable "allow" in
+expect site_hypotheses(check: CheckRecord, n_calls: Int, j: Int, f: Int, g: Int) {
+    let procedure? := check.item in {CheckedItem::Component, CheckedItem::GlobalExpectation}
+    let any_call? := 0 <= j < n_calls
+    -- Realizability: `A` and `I`; `D` is substituted.
+    expect whole: when procedure? and check.site = Site::Whole and any_call?,
+        has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
+        and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
+    -- An assumption: the other assumptions.
+    expect assumption: when procedure? and check.site = Site::Assumption,
+        has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
+    -- A guarantee, expectation, cover goal or definition: `A`, `I` and `R`
+    -- (a global expectation's `R` empty), and `D`.
+    expect constraint: when procedure? and check.site = Site::Constraint and any_call?,
+        has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
+        and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
+    expect constraint_definitions: when procedure? and check.site = Site::Constraint
+        and check.kind != Kind::Realizability, has_hypothesis?(check, Hypothesis::Definitions, n_calls)
+    -- An argument of call `k`, or an assumption of the procedure that it
+    -- calls: `A`, `D` and the calls declared before it.
+    expect call_argument: forall (k: Int), when procedure? and check.site = Site::CallArgument(k)
+        and 0 <= j < k <= n_calls,
+        has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
+        and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
+        and (when check.kind != Kind::Realizability, has_hypothesis?(check, Hypothesis::Definitions, n_calls))
+    expect call_assumption: forall (k: Int), when procedure? and check.site = Site::CallAssumption(k)
+        and 0 <= j < k <= n_calls,
+        has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
+        and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
+        and (when check.kind != Kind::Realizability, has_hypothesis?(check, Hypothesis::Definitions, n_calls))
+    -- A refinement's obligation: the block's `A` and `I`, and its
+    -- abstraction's calls.
+    expect refinement: forall (a: Int), when procedure? and check.site = Site::Refinement(a) and any_call?,
+        has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
+        and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
+        and has_hypothesis?(check, Hypothesis::Abstraction(a), n_calls)
+    -- A precondition, postcondition or the body of function `f`: its
+    -- preconditions, whatever the kind of check.
+    expect clause: when check.site = Site::FunctionClause(f),
+        has_hypothesis?(check, Hypothesis::Preconditions(f), n_calls)
+    -- Every query has the facts `N` of the functions that it applies: those
+    -- of `f` itself in its own clauses are its induction hypotheses, which
+    -- `lang::recursive_post_result` covers instead.
+    expect facts: when f in check.applies and not check.site is Site::FunctionClause(_),
+        has_hypothesis?(check, Hypothesis::Facts(f), n_calls)
+    expect clause_facts: when check.site = Site::FunctionClause(g) and f != g and f in check.applies,
+        has_hypothesis?(check, Hypothesis::Facts(f), n_calls)
+    -- And the invariants of the subset types that it brings, at every site
+    -- and of every kind.
+    expect invariants: when f in check.types, has_hypothesis?(check, Hypothesis::Invariants(f), n_calls)
 }
 ```
 
@@ -536,7 +627,15 @@ premise never names a check that the item does not have. The caveats of a
 check's own method, `pass_evidence`'s `own`, are those of the method that
 passed it, which `check::combined` gives; `check::own_caveats` states them
 over that method, and `check::own_caveats_combined` chains the two into
-`pass_evidence`:
+`pass_evidence`, and `check::own_caveats_reported`, below, into
+`check::reported_pass`. That chaining inherits `check::combined`'s
+assumption that two or more methods are selected. A single method's report
+is its own (`Reqs/Methods`): where `check::method_run` runs a check with
+the one method that its evidence sets, `own_caveats`
+takes that method, so a proof check that random testing alone passes, the
+case of #414's example, has `Random`. That case is stated by `own_caveats`
+alone, and `check::issue_examples` checks its consequences; no component
+gives the method of a single-method pass to chain it to:
 
 ```fren
 -- The caveats of a check's own method (`check::combined`): a pass by random
@@ -574,9 +673,24 @@ expect own_caveats_combined(
     k: Int,
 ) {
     assume combination: exists (a: ProofMethod) (b: ProofMethod), a != b and a in selected and b in selected
-    call c := combined(kind, selected, solver, enumerated, conflict?, exact?, outputs_exact?, random, lean)
+    call c := combined(
+        kind,
+        selected,
+        solver,
+        enumerated,
+        conflict?,
+        exact?,
+        outputs_exact?,
+        random,
+        lean,
+    )
     -- A check that rests on nothing has exactly its own method's caveats.
-    call e := pass_evidence(own_pairs(k, own_caveats(kind, c.method, c.bounded?)), {}, {}, k)
+    call e := pass_evidence(
+        own_pairs(k, own_caveats(kind, c.method, c.bounded?)),
+        {},
+        {},
+        k,
+    )
 
     expect alone_random: e.random? iff Caveat::Random in own_caveats(kind, c.method, c.bounded?)
     expect alone_bounded: e.bounded? iff Caveat::Bounded in own_caveats(kind, c.method, c.bounded?)
@@ -657,6 +771,58 @@ pub proc reported_pass(
 }
 ```
 
+`check::own_caveats_reported` chains the caveats of a check's own method,
+from `check::combined`, through `check::pass_evidence` into `reported_pass`,
+so that `reported_pass`'s assumptions `own_within` and `witness_plain` are
+checked at a call rather than handed in. A check that rests on nothing is
+shown with its own verdict, unweakened:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+expect own_caveats_reported(
+    kind: Kind,
+    selected: Set<ProofMethod>,
+    solver: Outcome,
+    enumerated: Verdict,
+    conflict?,
+    exact?,
+    outputs_exact?,
+    random: Verdict,
+    lean: Verdict,
+    k: Int,
+) {
+    assume combination: exists (a: ProofMethod) (b: ProofMethod), a != b and a in selected and b in selected
+    call c := combined(
+        kind,
+        selected,
+        solver,
+        enumerated,
+        conflict?,
+        exact?,
+        outputs_exact?,
+        random,
+        lean,
+    )
+    call e := pass_evidence(
+        own_pairs(k, own_caveats(kind, c.method, c.bounded?)),
+        {},
+        {},
+        k,
+    )
+    call r := reported_pass(
+        kind,
+        c.verdict,
+        own_caveats(kind, c.method, c.bounded?),
+        (if e.random? then {Caveat::Random} else {}) union (if e.bounded? then {Caveat::Bounded} else {}),
+        e.settled?,
+    )
+
+    expect shown_own: r.shown = c.verdict and not r.weakened? and not r.unsettled?
+    expect bound_own: r.by_bound? iff (c.verdict = Verdict::Pass
+        and Caveat::Bounded in own_caveats(kind, c.method, c.bounded?))
+}
+```
+
 ## Lean
 
 `#fren_check` runs no check set to random testing, and reports, as
@@ -717,36 +883,133 @@ set_option fren.lint.undecidable "allow" in
 set_option fren.lint.unrelated_binders "allow" in
 expect issue_examples() {
     -- The premises, from the checks' records.
-    call p1 := premise(CheckRecord { item := CheckedItem::Component, kind := Kind::Realizability,
-            site := Site::Whole, applies := {}, types := {} }, 1, {}, Premise::Realizability(0))
-    call p2 := premise(CheckRecord { item := CheckedItem::Component, kind := Kind::Expectation,
-            site := Site::Constraint, applies := {}, types := {} }, 1, {}, Premise::Realizability(0))
-    call o2 := premise(CheckRecord { item := CheckedItem::Component, kind := Kind::Expectation,
-            site := Site::Constraint, applies := {}, types := {} }, 1, {}, Premise::OwnRealizability)
-    call p3 := premise(CheckRecord { item := CheckedItem::GlobalExpectation, kind := Kind::Realizability,
-            site := Site::Whole, applies := {}, types := {} }, 1, {}, Premise::Realizability(0))
-    call p4 := premise(CheckRecord { item := CheckedItem::GlobalExpectation, kind := Kind::Expectation,
-            site := Site::Constraint, applies := {}, types := {} }, 1, {}, Premise::Realizability(0))
-    call o4 := premise(CheckRecord { item := CheckedItem::GlobalExpectation, kind := Kind::Expectation,
-            site := Site::Constraint, applies := {}, types := {} }, 1, {}, Premise::OwnRealizability)
-    call p5 := premise(CheckRecord { item := CheckedItem::Component, kind := Kind::Realizability,
-            site := Site::Whole, applies := {}, types := {} }, 1, {}, Premise::Realizability(0))
-    let edges: Rel<Int, Int> := example_edges(p1.premised?, p2.premised?, o2.premised?, p3.premised?,
-        p4.premised?, o4.premised?, p5.premised?)
+    call p1 := premise(
+        CheckRecord {
+            item := CheckedItem::Component,
+            kind := Kind::Realizability,
+            site := Site::Whole,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::Realizability(0),
+    )
+    call p2 := premise(
+        CheckRecord {
+            item := CheckedItem::Component,
+            kind := Kind::Expectation,
+            site := Site::Constraint,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::Realizability(0),
+    )
+    call o2 := premise(
+        CheckRecord {
+            item := CheckedItem::Component,
+            kind := Kind::Expectation,
+            site := Site::Constraint,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::OwnRealizability,
+    )
+    call p3 := premise(
+        CheckRecord {
+            item := CheckedItem::GlobalExpectation,
+            kind := Kind::Realizability,
+            site := Site::Whole,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::Realizability(0),
+    )
+    call p4 := premise(
+        CheckRecord {
+            item := CheckedItem::GlobalExpectation,
+            kind := Kind::Expectation,
+            site := Site::Constraint,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::Realizability(0),
+    )
+    call o4 := premise(
+        CheckRecord {
+            item := CheckedItem::GlobalExpectation,
+            kind := Kind::Expectation,
+            site := Site::Constraint,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::OwnRealizability,
+    )
+    call p5 := premise(
+        CheckRecord {
+            item := CheckedItem::Component,
+            kind := Kind::Realizability,
+            site := Site::Whole,
+            applies := {},
+            types := {},
+        },
+        1,
+        {},
+        Premise::Realizability(0),
+    )
+    let edges: Rel<Int, Int> := example_edges(
+        p1.premised?,
+        p2.premised?,
+        o2.premised?,
+        p3.premised?,
+        p4.premised?,
+        o4.premised?,
+        p5.premised?
+    )
     -- Where testing finds outputs at every input that it tries: each is a
     -- pass by random testing, `top`'s through `caller`'s.
     call e1 := pass_evidence({(0, Caveat::Random)}, {}, edges, 1)
     call e3 := pass_evidence({(0, Caveat::Random)}, {}, edges, 3)
     call e4 := pass_evidence({(0, Caveat::Random)}, {}, edges, 4)
     call e5 := pass_evidence({(0, Caveat::Random)}, {}, edges, 5)
-    call r1 := reported_pass(Kind::Realizability, Verdict::Pass, {}, if e1.random? then {Caveat::Random} else {},
-        e1.settled?)
-    call r3 := reported_pass(Kind::Realizability, Verdict::Pass, {}, if e3.random? then {Caveat::Random} else {},
-        e3.settled?)
-    call r4 := reported_pass(Kind::Expectation, Verdict::Pass, {}, if e4.random? then {Caveat::Random} else {},
-        e4.settled?)
-    call r5 := reported_pass(Kind::Realizability, Verdict::Pass, {}, if e5.random? then {Caveat::Random} else {},
-        e5.settled?)
+    call r1 := reported_pass(
+        Kind::Realizability,
+        Verdict::Pass,
+        {},
+        if e1.random? then {Caveat::Random} else {},
+        e1.settled?,
+    )
+    call r3 := reported_pass(
+        Kind::Realizability,
+        Verdict::Pass,
+        {},
+        if e3.random? then {Caveat::Random} else {},
+        e3.settled?,
+    )
+    call r4 := reported_pass(
+        Kind::Expectation,
+        Verdict::Pass,
+        {},
+        if e4.random? then {Caveat::Random} else {},
+        e4.settled?,
+    )
+    call r5 := reported_pass(
+        Kind::Realizability,
+        Verdict::Pass,
+        {},
+        if e5.random? then {Caveat::Random} else {},
+        e5.settled?,
+    )
     expect weakened: r1.weakened? and r1.by_testing? and r3.weakened? and r3.by_testing?
         and r4.weakened? and r4.by_testing?
         and r5.shown = Verdict::Pass and r5.weakened? and r5.by_testing?
@@ -755,12 +1018,27 @@ expect issue_examples() {
     call u2 := pass_evidence({(0, Caveat::Random)}, {0}, edges, 2)
     call u4 := pass_evidence({(0, Caveat::Random)}, {0}, edges, 4)
     call u5 := pass_evidence({(0, Caveat::Random)}, {0}, edges, 5)
-    call v2 := reported_pass(Kind::Expectation, Verdict::Pass, {}, if u2.random? then {Caveat::Random} else {},
-        u2.settled?)
-    call v4 := reported_pass(Kind::Expectation, Verdict::Pass, {}, if u4.random? then {Caveat::Random} else {},
-        u4.settled?)
-    call v5 := reported_pass(Kind::Realizability, Verdict::Pass, {}, if u5.random? then {Caveat::Random} else {},
-        u5.settled?)
+    call v2 := reported_pass(
+        Kind::Expectation,
+        Verdict::Pass,
+        {},
+        if u2.random? then {Caveat::Random} else {},
+        u2.settled?,
+    )
+    call v4 := reported_pass(
+        Kind::Expectation,
+        Verdict::Pass,
+        {},
+        if u4.random? then {Caveat::Random} else {},
+        u4.settled?,
+    )
+    call v5 := reported_pass(
+        Kind::Realizability,
+        Verdict::Pass,
+        {},
+        if u5.random? then {Caveat::Random} else {},
+        u5.settled?,
+    )
     expect inconclusive: v2.shown = Verdict::Inconclusive and v2.unsettled?
         and v4.shown = Verdict::Inconclusive and v4.unsettled?
         and v5.shown = Verdict::Inconclusive
