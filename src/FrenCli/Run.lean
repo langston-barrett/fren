@@ -21,7 +21,7 @@ fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren quickcheck [--tests N] [--seed N] [--jobs N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
     [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
@@ -62,7 +62,7 @@ def usage : String :=
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
-  fren quickcheck [--tests N] [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  fren quickcheck [--tests N] [--seed N] [--jobs N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]\n              \
   [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]\n              \
   [LINT OPTIONS] [--color WHEN] FILE...\n       \
@@ -104,7 +104,8 @@ def usage : String :=
   expectations, 1 it does not, 2 it could not run, 3 no behaviour was found.\n\n\
   `quickcheck` tests every component and global expectation on `--tests`\n\
   random behaviours (default 100), without the solver. Exit status as for\n\
-  `check`. `--seed N` sets where the random search starts (default 0).\n\n\
+  `check`. `--seed N` sets where the random search starts (default 0).\n\
+  `--jobs N` tests N procedures at once, as for `check`.\n\n\
   `mutate` makes small changes to the spec's constraints and definitions,\n\
   checks each changed spec (a mutant), and reports the mutants that no check\n\
   rejects. `--by` checks them with the solver (the default), by testing, or\n\
@@ -168,7 +169,7 @@ structure Args where
   examples : Option Nat := some 1
   /-- `--timeout` and `--resource-limit` (`Reqs/Cli#limits`). -/
   limits : Limits := {}
-  /-- `check --jobs`; by default, the number of cores
+  /-- `check --jobs` and `quickcheck --jobs`; by default, the number of cores
   (`Reqs/Cli#parallel-checking`). -/
   jobs? : Option Nat := none
   dumpSmt : Bool := false
@@ -275,7 +276,7 @@ where
           code? := none, headline := s!"invalid number of examples `{n}`",
           notes := #["note: the number of examples is a whole number, such as `--examples 3`, or `all`"] })
     | "--jobs" :: n :: rest, a =>
-      if a.command != .check then only "--jobs" "check" else
+      if a.command != .check && a.command != .quickcheck then only "--jobs" "check` and `fren quickcheck" else
       match n.toNat? with
       | some j@(_ + 1) => go rest { a with jobs? := some j }
       | _ => .error (argError p {
@@ -770,17 +771,24 @@ def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (ki
   let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r
   return Fren.Core.Enumeration.Enumerated.merge c.enumSize a? b? keep
 
-/-- `f` of each of `xs`, taken in order by at most `jobs` threads at
-once: for each, in the order of `xs`, an action that waits for it. With
-one job, each action runs `f` itself, in the thread that runs it, so that
-nothing is shared between threads. -/
-def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) : IO (Array (IO β)) := do
+/-- `f` of each of `xs`, taken by at most `jobs` threads at once, those
+that `first` selects before the others, and otherwise in order: for each,
+in the order of `xs`, an action that waits for it. Which is started first
+changes only when each finishes, not what it gives. With one job, each
+action runs `f` itself, in the thread that runs it, so that nothing is
+shared between threads. -/
+def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) (first : α → Bool := fun _ => false) :
+    IO (Array (IO β)) := do
   if jobs ≤ 1 then return xs.map f
   let promises ← xs.mapM fun _ => IO.Promise.new
+  let firsts := xs.map first
+  let idxs := Array.range xs.size
+  let order := idxs.filter (firsts[·]?.getD false) ++ idxs.filter (!firsts[·]?.getD false)
   let next ← IO.mkRef 0
   let worker : IO Unit := do
     repeat
-      let i ← next.modifyGet fun i => (i, i + 1)
+      let k ← next.modifyGet fun k => (k, k + 1)
+      let some i := order[k]? | break
       let (some x, some p) := (xs[i]?, promises[i]?) | break
       p.resolve (← (f x).toBaseIO)
   for _ in [0:min jobs xs.size] do
@@ -869,7 +877,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let timing := (solved - start, (← IO.monoNanosNow) - solved)
     return (r, ← dumped.get, tested?, enumerated?, timing)
   let mut timings := #[]
+  -- Those with checks by testing or enumeration first: they are the
+  -- slowest, and starting them last would leave them running alone at
+  -- the end.
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
+    (first := fun (c, _) => c.tested.any || c.enumerated.any)
   for (c, global, kinds, body, key) in todo, solved in solving do
     let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) ← solved
     timings := timings.push (solverNs + restNs, solverNs, restNs, subjectOf c global, key)
@@ -970,12 +982,24 @@ def quickcheck (args : Args) : IO UInt32 := do
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
   let prelude := st.queryPrelude
-  for (c, global) in st.comps.map (·, false) ++ st.globals.map (fun g => (g, g.short)) do
+  let items := st.comps.map (·, false) ++ st.globals.map (fun g => (g, g.short))
+  -- The report of testing each, `--jobs` at a time, each from a random
+  -- stream of its own (`testReport`); printed below, in order
+  -- (`Reqs/Cli#parallel-checking`).
+  let test := fun ((c, global) : CComp × Bool) => do
+    let rep := match sp.counterpart? c global with
+      | some ec => if (sp.untestable? ec).isSome then {} else testReport sp ec c global args.seed args.nTests
+      | none => {}
+    -- Forced here, in this thread.
+    IO.lazyPure fun _ => some rep
+  let testing ← inParallel (args.jobs?.getD (← jobsDefault)) items test
+  for (c, global) in items, tested in testing do
+    let rep := (← tested).getD {}
     let some ec := sp.counterpart? c global
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
         printDiag args.paint files { file := c.file, span := c.span, msg }
         sevs := sevs.push .error
-    let (results, msgs, failed) ← testComp args files sp c ec global (fun _ => true) prelude (vias := st.vias)
+    let (results, msgs, failed) ← testComp args files sp c ec global (fun _ => true) prelude (rep := rep) (vias := st.vias)
     shown := shown ++ msgs
     if failed then sevs := sevs.push .error
     all := all ++ results

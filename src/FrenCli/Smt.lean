@@ -117,6 +117,13 @@ structure Prelude where
   /-- The `define-fun`s that a query of a spec with recursion unfolds
   (`queryDefinitions`), computed once, when first needed. -/
   unfolds : Thunk (Std.HashMap String (Array String × SeqElems.SExpr)) := Thunk.pure {}
+  /-- Each recursive function's quoted symbol, parameters and parsed body
+  (`recursiveQueryFacts`), computed once, when first needed, rather than at
+  each query. -/
+  recs : Thunk (Array (String × Array String × SeqElems.SExpr)) := Thunk.pure #[]
+  /-- The first declaration of each quoted symbol (`quote`), computed once,
+  when first needed. -/
+  byQuoted : Thunk (Std.HashMap String Nat) := Thunk.pure {}
   deriving Inhabited
 
 /-- The `define-fun`s of `decls`, by symbol, with their parameters and
@@ -158,7 +165,10 @@ def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Pre
   { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
     smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked
-    unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked }
+    unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked
+    recs := Thunk.mk fun _ => decls.filterMap fun d => d.recursion?.map fun b => (quote d.syms[0]!, b.1, SeqElems.parse b.2)
+    byQuoted := Thunk.mk fun _ => decls.zipIdx.foldl (init := {}) fun m (d, i) =>
+      d.syms.foldl (fun m s => if m.contains (quote s) then m else m.insert (quote s) i) m }
 
 /-- The prelude of the queries of `st`'s spec, with the selectors whose
 payloads bring facts, which every front end of the CLI asks with. -/
@@ -672,7 +682,7 @@ expanded before finding applications; equation-introduced applications receive
 only contract facts. Guards follow the original conditional branches. -/
 partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (Bool × Contract))
     (types : Std.HashMap String String) (hyps : Array (Lean.Name × String)) (goal : String) : Array (Lean.Name × String) := Id.run do
-  let recs := prelude.decls.filterMap fun d => d.recursion?.map fun b => (quote d.syms[0]!, b.1, SeqElems.parse b.2)
+  let recs := prelude.recs.get
   if recs.isEmpty then return #[]
   let defs := prelude.unfolds.get
   let expand (s : String) := (SeqElems.parse s).unfold defs
@@ -680,14 +690,14 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ scan recs (expand f) #[] false #[]
   let mut out := #[]
-  let mut seen : Array (SeqElems.SExpr × Array String × Bool) := #[]
+  let mut seen : Std.HashSet (SeqElems.SExpr × Array String × Bool) := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, introduced, ancestors) := work[done]!
     done := done + 1
     let key := (app, gs, introduced)
     if seen.contains key then continue
-    seen := seen.push key
+    seen := seen.insert key
     let .list xs := app | continue
     let .atom head := xs[0]! | continue
     let args := xs.extract 1
@@ -695,7 +705,7 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
     if ancestors.contains text then continue
     let ancestors := ancestors.push text
     let guarded (f : String) := if gs.isEmpty then f else s!"(=> {conj gs} {f})"
-    let domain := ((prelude.decls.find? fun d => d.syms.any (quote · == head)).map fun d =>
+    let domain := ((prelude.byQuoted.get[head]?.bind (prelude.decls[·]?)).map fun d =>
       let ps := (d.recursion?.map (·.1)).getD #[]
       d.domain.map fun f => toString ((SeqElems.parse f).subst (ps.zip args))).getD #[]
     for (n, f) in appFactsOf funs types text do
@@ -707,7 +717,14 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
         let body := (body.subst (ps.zip args)).unfold defs
         out := out.push (`equation, guarded s!"(= {text} {body})")
         work := work ++ scan recs body gs true ancestors
-  return out.toList.eraseDups.toArray
+  -- Each fact once, where it first occurs.
+  let mut kept : Std.HashSet (Lean.Name × String) := {}
+  let mut facts := #[]
+  for f in out do
+    unless kept.contains f do
+      kept := kept.insert f
+      facts := facts.push f
+  return facts
 where
   scan (recs : Array (String × Array String × SeqElems.SExpr)) (e : SeqElems.SExpr)
       (gs : Array String) (introduced : Bool) (ancestors : Array String) (bound : Array String := #[]) :
@@ -717,7 +734,9 @@ where
     | .list xs => Id.run do
       let own := match xs[0]? with
         | some (SeqElems.SExpr.atom h) => if recs.any (·.1 == h) && (Fren.Core.recursiveFacts introduced (e.mentions bound)).1 then
-          #[(e, gs.filter (fun g => !(SeqElems.parse g).mentions bound), introduced, ancestors)] else #[]
+          -- With nothing bound, no guard mentions a bound name.
+          let gs := if bound.isEmpty then gs else gs.filter fun g => !(SeqElems.parse g).mentions bound
+          #[(e, gs, introduced, ancestors)] else #[]
         | _ => #[]
       if let some (names, body) := SeqElems.binderOf? e then
         return scan recs body gs introduced ancestors (bound ++ names)

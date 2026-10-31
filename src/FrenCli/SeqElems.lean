@@ -39,6 +39,13 @@ partial def SExpr.toString : SExpr → String
 
 instance : ToString SExpr := ⟨SExpr.toString⟩
 
+/-- A hash of `e`'s structure, for sets of terms. -/
+partial def SExpr.hash : SExpr → UInt64
+  | .atom s => mixHash 11 (Hashable.hash s)
+  | .list xs => xs.foldl (fun h x => mixHash h x.hash) 13
+
+instance : Hashable SExpr := ⟨SExpr.hash⟩
+
 /-- The terms of `cs` from `i`, up to an unmatched `)`, and where they end. -/
 partial def parseAt (cs : Array Char) (i : Nat) : Array SExpr × Nat := Id.run do
   let mut i := i
