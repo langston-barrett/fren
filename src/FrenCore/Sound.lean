@@ -1148,7 +1148,7 @@ theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKin
       (if kinds.contains .reachability then (c.tablesOf .reachability).map (checkReach (bk .reachability) c · |>.run)
         else #[]) := by
   unfold checkComp
-  simp only [bind_eq, run_eq, pure_eq, ifSelected, map_eq, mapM_id']
+  simp only [withApplies_none, withAllApplies_none, bind_eq, run_eq, pure_eq, ifSelected, map_eq, mapM_id']
   split <;> rfl
 
 /-- Every result of `checkComp` is the result of one of the checks, on an

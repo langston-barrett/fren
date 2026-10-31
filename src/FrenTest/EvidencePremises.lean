@@ -64,3 +64,32 @@ info: fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check claimed
+
+-- A check whose query applies an uninterpreted function with a contract
+-- rests on that contract's realizability: a `#fren_check` that names only
+-- the procedure still checks the contract, for its evidence.
+fn bad(n: Int): (r: Int) {
+    ensure a: r > 0
+    ensure b: r < 0
+}
+
+proc user(n: Int): (y: Int) {
+    ensure r: y = bad(n)
+    expect wrong: y = 5
+}
+
+/--
+warning: the realizability of `evidence_premises_test::user` rests on the realizability of the contract of `evidence_premises_test::bad`, which did not pass
+
+note: its proof has the realizability of the contract of `evidence_premises_test::bad` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+help: make the check it rests on pass
+---
+warning: `evidence_premises_test::user::wrong` rests on the realizability of `evidence_premises_test::user`, which did not pass
+
+note: its proof has the realizability of `evidence_premises_test::user` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+help: make the check it rests on pass
+---
+info: fren: 0 passed, 0 failed, 2 inconclusive, 0 redundant
+-/
+#guard_msgs in
+#fren_check user

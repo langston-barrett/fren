@@ -342,7 +342,7 @@ each script is backed by the ui tests, not proved:
 ```fren
 pub proc query_logic(
     logic: Logic,                -- the logic that `cli::logic` gives the query's check
-    quantifies?,                 -- the script it would ask, its definitions, hypotheses and goal, has a `forall` or `exists`
+    quantifies?,                 -- the script it would ask, its definitions, declarations, hypotheses and goal, has a `forall` or `exists`
 ): (det asked?, det internal?) {
     use self::Logic::QuantifierFree
 

@@ -19,7 +19,9 @@ reports in comments.
 
 Brute force is not needed, so the generator is wider than `fren_fuzz`'s,
 and aims at the analyses that each front end implements on its own:
-constants, defined outputs, defined and uninterpreted functions, `match`
+constants, defined outputs, defined and uninterpreted functions, the
+latter sometimes with contracts whose postconditions may contradict each
+other, so that what applies them rests on their realizability, `match`
 and tables over a scrutinee,
 string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
@@ -629,6 +631,20 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let ps := ", ".intercalate (params.toList.map fun (n, t) => if t == .bool then n else s!"{n}: {t.name relElem}")
       out := out ++ s!"pub fn {name}({ps}){ty} := {body}\n"
       sc := { sc with fns := sc.fns.push (name, params.map (·.2), r, true) }
+    else if r != .bool && (← chance 50) then
+      -- An uninterpreted function with a contract, whose postconditions
+      -- may contradict each other, so that what applies it rests on its
+      -- realizability (`ContractRealizability`, `Reqs/Evidence`).
+      let params := ps.mapIdx fun i t => (if t == .bool then s!"x{i}?" else s!"x{i}", t)
+      let csc := { sc with vars := params.map (fun (n, t) => (n, t, true)) |>.push ("r", r, false) }
+      let decls := ", ".intercalate (params.toList.map fun (n, t) => if t == .bool then n else s!"{n}: {t.name relElem}")
+      let mut clauses := ""
+      if ← chance 30 then
+        clauses := clauses ++ s!"    assume p0: {← gen { csc with vars := csc.vars.pop } .bool 2}\n"
+      for j in [0:(← below 2) + 1] do
+        clauses := clauses ++ s!"    ensure c{j}: {← gen csc .bool 2}\n"
+      out := out ++ s!"pub fn {name}({decls}): (r: {r.name relElem}) \{\n{clauses}}\n"
+      sc := { sc with fns := sc.fns.push (name, ps, r, false) }
     else
       let ty := if r == .bool then "" else s!": {r.name relElem}"
       out := out ++ s!"pub fn {name}({", ".intercalate (ps.toList.map (·.name relElem))}){ty}\n"

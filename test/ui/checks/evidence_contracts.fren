@@ -1,0 +1,50 @@
+-- fren-covers: check::runs_premises
+-- A check whose query applies an uninterpreted function with a contract
+-- rests on the realizability of that contract (`Reqs/Evidence`): its query
+-- has the function's postconditions as facts, which can hold only where
+-- the contract is realizable.
+set_option fren.lint.dead_code "allow"
+
+-- `bad`'s postconditions contradict each other.
+fn bad(n: Int): (r: Int) {  --~ error: the postconditions of `bad` cannot all hold
+    ensure a: r > 0
+    ensure b: r < 0
+}
+
+proc user(n: Int): (y: Int) {  --~ warning: the realizability of `user` rests on the realizability of the contract of `bad`, which did not pass
+    ensure r: y = bad(n)
+    expect wrong: y = 5  --~ warning: `user::wrong` rests on the realizability of `user`, which did not pass
+}
+
+-- A contract whose postcondition applies `bad` rests on it too.
+fn above(n: Int): (r: Int) {  --~ warning: the realizability of the contract of `above` rests on the realizability of the contract of `bad`, which did not pass
+    ensure over: r > bad(n)
+}
+
+-- A contract that can hold caps nothing.
+fn good(n: Int): (r: Int) {
+    ensure gt: r > n
+}
+
+proc fine(n: Int): (y: Int) {
+    ensure r: y = good(n)
+    expect bigger: y > n
+}
+
+-- Nor does one that the queries do not apply.
+proc apart(n: Int): (y: Int) {
+    ensure r: y = n
+    expect same: y >= n
+}
+
+-- A check passed by random testing asks the solver nothing: it rests on
+-- the contracts of every function that its item applies. `#fren_check`
+-- runs no check set to random testing, and reports nothing that rests on
+-- one.
+set_option fren.evidence "random" in
+proc by_testing(n: Int): (y: Int) {  --~[cli] warning: the realizability of `by_testing` rests on the realizability of the contract of `bad`, which did not pass
+    --~^ info: the redundancy checks of `by_testing` are not run by random testing
+    --~^^[hosted] info: the checks of `by_testing` set to random testing are run by `fren check`, not in Lean
+    ensure r: y = n
+    expect e: y = n or bad(n) > 0  --~[cli] warning: `by_testing::e` rests on the realizability of `by_testing`, which did not pass
+}

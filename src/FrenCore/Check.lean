@@ -290,6 +290,11 @@ structure CheckResult where
   expectations, assumptions and calls rather than of guarantees; set by the
   front ends where they report it. -/
   global : Bool := false
+  /-- The uninterpreted functions with contracts, by their paths, whose
+  postconditions the facts of its queries have, as `appFactsWith` finds
+  them (`check::CheckRecord`'s `applies`); a check that no query decides
+  has none. -/
+  applies : Array Name := #[]
   deriving Inhabited
 
 /-- The behaviour that a report shows of the procedure (`view::Shown`): a
@@ -1213,7 +1218,7 @@ def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := fa
     | _ => if quantified then "UFDTLIA" else "QF_UFDTLIA"
 
 /-- Whether `fren check` asks a query in the logic `logic`, given whether
-its text has a `forall` or `exists` (`quantifies`): never a quantified one
+the script it would ask has a `forall` or `exists` (`quantifies`): never a quantified one
 in a quantifier-free logic, which is an internal error instead
 (`cli::query_logic`). -/
 def queryAsked (logic : String) (quantifies : Bool) : Bool :=
@@ -1222,7 +1227,10 @@ def queryAsked (logic : String) (quantifies : Bool) : Bool :=
 /-- Whether the SMT-LIB text `f` has a quantifier, `forall` or `exists`
 (`cli::query_logic`). It reads the text as Fren prints it, a binder list
 right after the quantifier, one space apart, as `(forall ((x Int)) ...)`;
-a symbol that spells `forall` is quoted, as `|forall|`, and is not one. -/
+a symbol that spells `forall` is quoted, as `|forall|`, and is not one. A
+match in a comment, as a hypothesis's name, or in a string literal counts
+too, which errs toward not asking the query: a false positive is an
+internal `Unknown`, never a wrong answer. -/
 def hasQuantifier (f : String) : Bool :=
   ["(forall (", "(exists ("].any fun q => (f.splitOn q).length > 1
 
@@ -1373,29 +1381,66 @@ def checkDets (c : Comp F) : m (Array CheckResult) :=
 /-- The results of `x` if `selected`, else none. -/
 def ifSelected (selected : Bool) (x : m (Array α)) : m (Array α) := if selected then x else pure #[]
 
+/-- `act`, a check, with the functions whose contracts its queries' facts
+have (`CheckResult.applies`), as `applied?` gives them: the functions that
+the queries since its last call applied, which it then forgets. Both front
+ends' backends record them, from `appFactsWith`. Without `applied?`, `act`
+itself. -/
+def withApplies (applied? : Option (m (Array Name))) (act : m CheckResult) : m CheckResult :=
+  match applied? with
+  | none => act
+  | some applied => do
+    discard applied
+    let r ← act
+    return { r with applies := ← applied }
+
+/-- `withApplies`, for checks run together, as all of a kind of an item:
+each has the functions of all of their queries, which is conservative. -/
+def withAllApplies (applied? : Option (m (Array Name))) (act : m (Array CheckResult)) : m (Array CheckResult) :=
+  match applied? with
+  | none => act
+  | some applied => do
+    discard applied
+    let rs ← act
+    let fs ← applied
+    return rs.map fun r => { r with applies := fs }
+
+@[simp] theorem withApplies_none (act : m CheckResult) : withApplies none act = act := rfl
+@[simp] theorem withAllApplies_none (act : m (Array CheckResult)) : withAllApplies none act = act := rfl
+
 /-- All selected checks for one procedure, in reporting order, each with the
 backend `bk` gives for its kind. A realizability conflict has at most
 `examples` clash notes, `none` for no limit, and none where `interprets`
 says that their queries depend on an interpretation
 (`Comp.realizableInterpreted`). -/
 def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array CheckKind := CheckKind.all)
-    (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false) : m (Array CheckResult) := do
+    (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false)
+    (applied? : Option (m (Array Name)) := none) : m (Array CheckResult) := do
+  let one := withApplies applied?
+  let all := withAllApplies applied?
   let realizable ← ifSelected (kinds.contains .realizable)
-    ((#[·]) <$> checkRealizable (bk .realizable) c examples interprets)
-  let insts ← ifSelected (kinds.contains .inst) (checkInsts (bk .inst) c)
-  let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM (checkExpect (bk .expect) c))
-  let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (fun g => checkCover (bk .cover) c g examples))
-  let vacuities ← ifSelected (kinds.contains .vacuity) (c.triggers.mapM (fun t => checkVacuity (bk .vacuity) c t examples))
+    ((#[·]) <$> one (checkRealizable (bk .realizable) c examples interprets))
+  let insts ← ifSelected (kinds.contains .inst) (all (checkInsts (bk .inst) c))
+  let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM fun e => one (checkExpect (bk .expect) c e))
+  let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (fun g => one (checkCover (bk .cover) c g examples)))
+  let vacuities ← ifSelected (kinds.contains .vacuity)
+    (c.triggers.mapM (fun t => one (checkVacuity (bk .vacuity) c t examples)))
   let redundancies ←
     ifSelected (kinds.contains .redundancy)
-      (checkRedundancies (bk .redundancy) c (vacuousOf vacuities) (satisfiedOf vacuities))
-  let dets ← ifSelected (kinds.contains .determinism) (checkDets (bk .determinism) c)
-  let defined ← ifSelected (kinds.contains .definedness) (c.indexes.mapM (checkDefinedness (bk .definedness) c))
-  let complete ← ifSelected (kinds.contains .completeness) ((c.tablesOf .completeness).mapM (checkTable (bk .completeness) c))
-  let disjoint ← ifSelected (kinds.contains .disjointness) ((c.tablesOf .disjointness).mapM (checkTable (bk .disjointness) c))
-  let pres ← ifSelected (kinds.contains .precondition) ((c.tablesOf .precondition).mapM (checkTable (bk .precondition) c))
-  let posts ← ifSelected (kinds.contains .postcondition) (c.posts.mapM (checkPostcondition (bk .postcondition) c))
-  let reach ← ifSelected (kinds.contains .reachability) ((c.tablesOf .reachability).mapM (checkReach (bk .reachability) c))
+      (all (checkRedundancies (bk .redundancy) c (vacuousOf vacuities) (satisfiedOf vacuities)))
+  let dets ← ifSelected (kinds.contains .determinism) (all (checkDets (bk .determinism) c))
+  let defined ← ifSelected (kinds.contains .definedness)
+    (c.indexes.mapM fun s => one (checkDefinedness (bk .definedness) c s))
+  let complete ← ifSelected (kinds.contains .completeness)
+    ((c.tablesOf .completeness).mapM fun t => one (checkTable (bk .completeness) c t))
+  let disjoint ← ifSelected (kinds.contains .disjointness)
+    ((c.tablesOf .disjointness).mapM fun t => one (checkTable (bk .disjointness) c t))
+  let pres ← ifSelected (kinds.contains .precondition)
+    ((c.tablesOf .precondition).mapM fun t => one (checkTable (bk .precondition) c t))
+  let posts ← ifSelected (kinds.contains .postcondition)
+    (c.posts.mapM fun p => one (checkPostcondition (bk .postcondition) c p))
+  let reach ← ifSelected (kinds.contains .reachability)
+    ((c.tablesOf .reachability).mapM fun t => one (checkReach (bk .reachability) c t))
   return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete
     ++ disjoint ++ pres ++ posts ++ reach
 
@@ -1429,6 +1474,30 @@ def appFacts [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Arra
   let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
   return (← apps.mapM factsOf).flatten
+
+/-- `appFacts`, with the uninterpreted functions with contracts whose
+postconditions those facts have (`CheckResult.applies`), each once, in the
+order of their applications: of each application whose facts have one, a
+fact named neither `nat` nor `type`, the function that `fnOf` names.
+`fnOf` gives the path of the function of an application of an
+uninterpreted function with a contract, and `.anonymous` where it knows
+none, a function whose evidence is never known, so that a pass that rests
+on it fails closed; and `none` for an instance of a generic function, whose
+premise is the check that decides the instance's contract, which is not
+applied yet (#522). Both front ends' query builders give their queries the
+facts of this, and record its functions. -/
+def appFactsWith [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F)))
+    (fnOf : F → Option Name) (hyps : Array (Name × F)) (goal : F) : m (Array (Name × F) × Array Name) := do
+  let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
+    (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
+  let each ← apps.mapM fun a => return (a, ← factsOf a)
+  let fns := each.foldl (init := #[]) fun acc (a, fs) =>
+    if fs.any (fun (n, _) => n != `nat && n != `type) then
+      match fnOf a with
+      | some f => if acc.contains f then acc else acc.push f
+      | none => acc
+    else acc
+  return (each.flatMap (·.2), fns)
 
 /-- The questions that an application of the function `f` asks of its
 arguments, for the precondition check (`check::application_contract`):

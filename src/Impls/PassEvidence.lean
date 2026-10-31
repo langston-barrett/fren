@@ -584,16 +584,17 @@ theorem mem_premisesOf (c : Fren.Core.CheckRecord) (n : Nat) (kinds : List (Nat 
 -- `itemHasPremise` (`itemEvidence`), and a premise that it has with no
 -- result is a check that is not settled.
 impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : Bool) (n : Nat) (assumed : List Nat)
-    (na : Nat) (p : Fren.Core.Premise) {
+    (na nf : Nat) (p : Fren.Core.Premise) {
   item := toCheckedItem item,
   «validator?» := v,
   n_calls := n,
   assumed := Fren.FinSet.ofList (assumed.map fun (j : Nat) => (j : Int)),
   n_abstractions := na,
+  n_functions := nf,
   p := toPremise p,
-  «has?» := Fren.Core.itemHasPremise item v n assumed na p,
+  «has?» := Fren.Core.itemHasPremise item v n assumed na nf p,
 } by
-  intro item v n assumed na p
+  intro item v n assumed na nf p
   unfold check.item_premise.ensures check.item_premise.ensure.rule
   intro _
   have hi : item.ownRealizability = true ↔ check.own_realizability? (toCheckedItem item) = true := by
@@ -611,7 +612,21 @@ impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : B
     simp [fren_spec, Fren.Core.itemHasPremise, toPremise, hi]
   | abstractionRealizability a =>
     simp [fren_spec, Fren.Core.itemHasPremise, toPremise, check.Premise.AbstractionRealizability.x0]
+  | contractRealizability f =>
+    simp [fren_spec, Fren.Core.itemHasPremise, toPremise, check.Premise.ContractRealizability.x0]
   | _ => simp [fren_spec, Fren.Core.itemHasPremise, toPremise]
+
+-- Both front ends take the functions whose contracts a check rests on
+-- with `checkApplies` (`itemEvidence`, `appliedOf`).
+impl check_applies: check::check_applies for (q i : List Nat) (own : List Caveat) {
+  queried := Fren.FinSet.ofList (q.map fun (j : Nat) => (j : Int)),
+  item_applies := Fren.FinSet.ofList (i.map fun (j : Nat) => (j : Int)),
+  «random?» := own.contains .random,
+  applies := Fren.FinSet.ofList ((Fren.Core.checkApplies q.toArray i.toArray own).toList.map fun (j : Nat) => (j : Int)),
+} by
+  intro q i own _
+  unfold Fren.Core.checkApplies
+  cases own.contains .random <;> simp_all [fren_spec, check.check_applies.ensures]
 
 -- Lean decides what it reports with `hostedReported`, from the caveats
 -- that `passEvidence` gives each check (`itemEvidence`), each check's own

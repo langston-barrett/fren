@@ -566,6 +566,20 @@ strengthens a pass. Both front ends name it so. -/
 def knownRealizability (known : Name → Option ExternalPremise) (p : Name) : ExternalPremise :=
   (known p).getD { what := s!"the realizability of `{showComp p}`", settled := false }
 
+/-- How messages name the realizability of the contract of the
+uninterpreted function `f`, or, for `.anonymous`, of a function that a
+front end could not name. -/
+def contractText (f : Name) : String :=
+  if f.isAnonymous then "the realizability of the contract of an applied function"
+  else s!"the realizability of the contract of `{showComp f}`"
+
+/-- The evidence of the realizability of the contract of the uninterpreted
+function `f`, as `known` keeps it, by `f`'s path, for the checks whose
+queries apply `f` (`CheckResult.applies`): where no run has kept it, a
+check that is not settled, as for `knownRealizability`. -/
+def knownContract (known : Name → Option ExternalPremise) (f : Name) : ExternalPremise :=
+  (if f.isAnonymous then none else known f).getD { what := contractText f, settled := false }
+
 /-- Whether `r` is the realizability check of the item `comp` itself, not
 of the contract of an instance that the item's checks apply, which is
 checked with it (`lang::instance_site`). -/
@@ -665,11 +679,12 @@ calls, `assumed` the calls whose procedures have assumption checks, and
 `nAbstractions` its number of refinement claims, each of whose
 abstraction's realizability it has. -/
 def itemHasPremise (item : CheckedItem) (validator : Bool) (nCalls : Nat) (assumed : List Nat)
-    (nAbstractions : Nat := 0) : Premise → Bool
+    (nAbstractions : Nat := 0) (nFunctions : Nat := 0) : Premise → Bool
   | .realizability j => j < nCalls
   | .callAssumptions j => j < nCalls && assumed.contains j && (item == .component || item == .global || item == .shortGlobal)
   | .ownRealizability => item.ownRealizability && !validator
   | .abstractionRealizability a => a < nAbstractions
+  | .contractRealizability f => f < nFunctions
   | _ => false
 
 /-- A call of an item, as the evidence of the item's checks sees it: its
@@ -704,6 +719,26 @@ def ReportedCheck.realizability (rc : ReportedCheck) (p : Name) : ExternalPremis
   { what := s!"the realizability of `{showComp p}`", caveats := rc.caveats, settled := rc.rep.shown == .pass
     origins := rc.origins }
 
+/-- The evidence of the realizability of the contract of the function `f`,
+reported as `rc`, as both front ends keep it, by `f`'s path, for the checks
+whose queries apply `f`. -/
+def ReportedCheck.contract (rc : ReportedCheck) (f : Name) : ExternalPremise :=
+  { what := contractText f, caveats := rc.caveats, settled := rc.rep.shown == .pass, origins := rc.origins }
+
+/-- The functions whose contracts a check rests on (`check::check_applies`):
+those whose contracts' facts its queries have (`CheckResult.applies`); or,
+for a check passed by random testing, `own` having `Random`, which asks the
+solver nothing, those that its item applies, `item`, since a test's
+interpretation meets their postconditions, which may not be able to hold. -/
+def checkApplies {α : Type} (queried item : Array α) (own : List Caveat) : Array α :=
+  if own.contains .random then item else queried
+
+/-- The functions whose contracts the checks `rs` of an item rest on
+(`checkApplies`), each once, in order, for `itemEvidence`'s `functions`. -/
+def appliedOf (rs : Array (CheckResult × List Caveat)) (item : Array Name) : Array Name :=
+  rs.foldl (init := #[]) fun acc (r, own) =>
+    (checkApplies r.applies item own).foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
+
 /-- The refinement claims among an item's constraints `props`, each by its
 name and, for a refinement claim, its abstraction: each claim's name and
 abstraction, in order, as `CheckResult.site` and `itemEvidence` number
@@ -721,6 +756,13 @@ def externalPremises (known : Name → Option ExternalPremise) (calls : Array (N
     (refinements : Array (Name × Name)) : Array CallEvidence × Array ExternalPremise :=
   (calls.map fun (w, p, as) => { name := w, comp := p, assumes := as, realizability := knownRealizability known p },
     refinements.map fun (_, a) => knownRealizability known a)
+
+/-- The functions `fns` whose contracts an item's checks rest on
+(`appliedOf`), each with its contract's evidence, from `known`
+(`knownContract`), but the item's own function `fn?`, for `itemEvidence`. -/
+def functionPremises (known : Name → Option ExternalPremise) (fns : Array Name) (fn? : Option Name) :
+    Array (Name × ExternalPremise) :=
+  (fns.filter (some · != fn?)).map fun f => (f, knownContract known f)
 
 /-- The checks of an item, its results `rs`, each with its site and the
 caveats of its own method, reported (`check::pass_evidence`,
@@ -741,7 +783,8 @@ check, as `passEvidence` needs, and as `check::hosted_runs` assumes
 (`in_order`):
 
 1. the realizability of each call's procedure, then of each refinement's
-   abstraction: checks of other items, which rest on nothing here;
+   abstraction, then of the contract of each function in `functions`:
+   checks of other items, which rest on nothing here;
 2. each call's assumption checks, in the calls' order: the check of an
    assumption of call `k` is at `Site.callAssumption k`, whose premises,
    by `Site.hasCall`, are those of calls `j < k` only, laid out before
@@ -755,15 +798,27 @@ check, as `passEvidence` needs, and as `check::hosted_runs` assumes
 Even out of that order a mistake fails closed: `passEvidence` takes a
 premise that is not an earlier check as one that is not settled. -/
 def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (calls : Array CallEvidence)
-    (rs : Array (CheckResult × Site × List Caveat)) (abstractions : Array ExternalPremise := #[]) :
+    (rs : Array (CheckResult × Site × List Caveat)) (abstractions : Array ExternalPremise := #[])
+    (functions : Array (Name × ExternalPremise) := #[]) (fn? : Option Name := none)
+    (itemApplies : Array Name := #[]) :
     Array ReportedCheck := Id.run do
   let nCalls := calls.size
-  let externals := calls.map (·.realizability) ++ abstractions
+  let nAbs := abstractions.size
+  let externals := calls.map (·.realizability) ++ abstractions ++ functions.map (·.2)
   let nExt := externals.size
+  -- The functions by position, as `CheckRecord.applies` has them: the
+  -- item's own at 0, which `Site.functionClause 0` names, then
+  -- `functions`. A function that is neither has no position.
+  let fnPos (f : Name) : Option Nat :=
+    if some f == fn? then some 0 else (functions.findIdx? (·.1 == f)).map (· + 1)
+  let fnKinds : List (Nat × FnKind) := (List.range (functions.size + 1)).map (·, .contract)
   -- The premises that the item has, from its structure, not from `rs`.
   let assumed := (List.range nCalls).filter fun j => !calls[j]!.assumes.isEmpty
-  let has := itemHasPremise item subsetInvariant nCalls assumed abstractions.size
-  let names := premiseTexts (rs.map (·.1)) comp
+  let has := itemHasPremise item subsetInvariant nCalls assumed nAbs (functions.size + 1)
+  let names := (premiseTexts (rs.map (·.1)) comp).mapIdx fun i t =>
+    match fn?, rs[i]? with
+    | some f, some (r, _, _) => if item == .contract && r.isOwnRealizability comp then contractText f else t
+    | _, _ => t
   let ofCall (r : CheckResult) (j : Nat) : Bool :=
     r.kind == .inst && r.comp == comp && r.prop? == some calls[j]!.name
   -- The checks in order, after the external ones: each a result, or a check
@@ -822,16 +877,23 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
       posOf := posOf.set! i nodes.size
       -- An instance's contract, checked with the item, is not a check of
       -- the item's own queries, and rests on none of its calls.
+      -- The functions whose contracts it rests on, by position; one with
+      -- none fails closed, as a premise that is not earlier.
+      let applied := checkApplies r.applies itemApplies own
+      let unplaced := applied.any fun f => (fnPos f).isNone
       let premises : List Nat := if r.comp != comp then [] else
-        (premisesOf { item, kind := r.kind, site } nCalls []).flatMap fun
+        (if unplaced && r.kind.proof then [nodes.size] else []) ++
+        (premisesOf { item, kind := r.kind, site, applies := (applied.filterMap fnPos).toList } nCalls fnKinds).flatMap fun
           | .realizability j => [j]
           | .callAssumptions j => callNodes[j]?.getD []
           | .ownRealizability => ownNodes
           -- A refinement's abstraction that the item does not have is a
           -- premise that is not earlier, so not settled.
           | .abstractionRealizability a => [if has (.abstractionRealizability a) then nCalls + a else nodes.size]
-          -- The premises of functions, instances and subset types are not
-          -- applied yet (#522).
+          | .contractRealizability f =>
+            [if 0 < f && has (.contractRealizability f) then nCalls + nAbs + (f - 1) else nodes.size]
+          -- The premises of instances, recursive functions and subset types
+          -- are not applied yet (#522).
           | _ => []
       nodes := nodes.push { own, settled := r.verdict == .pass, premises }
   let finals := passEvidence nodes.toList
@@ -872,6 +934,31 @@ bound has `Bounded`; a witness check has neither, however it was found. -/
 def ownCaveatsOf (r : CheckResult) (random : Bool) : List Caveat :=
   if !r.kind.proof then [] else
   (if random then [.random] else []) ++ (if r.bounded?.isSome then [.bounded] else [])
+
+/-- The evidence of the realizability of the contracts of uninterpreted
+functions, from their items `bodies`, in declaration order: each by its
+item's path, its function, what it is and its results, with `known`'s for
+those checked before. Each contract's checks rest on the contracts of the
+functions that its queries apply, which are declared before it, so their
+evidence is computed first. Both front ends compute this before the
+evidence of any procedure or global expectation: no function's check rests
+on one of theirs, but theirs rest on the contracts that they apply, though
+both front ends check and report the bodies and contracts after them
+(`Reqs/Evidence`). An item with no realizability result keeps nothing, so
+that what rests on its contract is not settled (`knownContract`). -/
+def contractsEvidence (known : Name → Option ExternalPremise)
+    (bodies : Array (Name × Name × CheckedItem × Array CheckResult)) : Array (Name × ExternalPremise) := Id.run do
+  let mut kept : Array (Name × ExternalPremise) := #[]
+  for (comp, f, item, results) in bodies do
+    if item != .contract then continue
+    let lookup (g : Name) := ((kept.find? (·.1 == g)).map (·.2)) <|> known g
+    let rs := results.map fun r => (r, ownCaveatsOf r false)
+    let functions := functionPremises lookup (appliedOf rs #[]) (some f)
+    let reported := itemEvidence comp item false #[] (rs.map fun (r, own) => (r, r.site #[] #[] true false, own))
+      #[] functions (some f)
+    for (r, _) in rs, rc in reported do
+      if r.isOwnRealizability comp then kept := kept.push (f, rc.contract f)
+  return kept
 
 /-! ### What Lean reports (`check::hosted_runs`) -/
 
