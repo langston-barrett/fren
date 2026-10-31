@@ -16,7 +16,17 @@ warning[F0608]: could not decide whether `c::r` is redundant: the solver returne
   = note: the solver gave up, so this check neither passed nor failed
   = help: raise the time limit with `--timeout`, or simplify the constraints involved
 
-fren: 1 passed, 0 failed, 2 inconclusive, 0 redundant
+warning[F0664]: `c::bigger` rests on the realizability of `c`, which did not pass
+ --> test/cli/results/resource_limit.fren:6:12
+  |
+6 |     expect bigger: y > x
+  |            ^^^^^^ rests on a check that did not pass
+  |
+  = note: its proof has the realizability of `c` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+  = help: make the check it rests on pass
 
-For more information about this error, try `fren --explain F0608`.
+fren: 0 passed, 0 failed, 3 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0608, F0664.
+For more information about an error, try `fren --explain F0608`.
 exit=3

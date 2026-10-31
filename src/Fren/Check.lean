@@ -1098,8 +1098,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     (hooks? : Option ElabHooks := none) (own : Array (Array Core.Ty) := #[])
     (foreign : Array (Name × Array Core.Ty) := #[]) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated) × Array Core.Msg) := do
-  let kinds := if c.subset?.isSome then #[.realizable]
-    else if c.subsetInvariant?.isSome then #[.definedness, .completeness, .disjointness, .precondition] else kinds
+  let kinds := Core.kindsRun c.subset?.isSome c.subsetInvariant?.isSome kinds
   let c := { c with uses := ← checkUses c }
   -- As elaborated, for its contract's instances (`instanceContract`).
   let elaborated := c

@@ -1175,6 +1175,14 @@ inductive CheckedItem where
   | contract
   deriving Inhabited, DecidableEq, Repr
 
+/-- What an item of a front end is (`check::CheckedItem`): a function's
+body or contract (`body`), the contract where it has its value as an output
+(`output`); a global expectation (`global`), in the short form where
+`short`; otherwise a procedure. Both front ends decide it with this. -/
+def CheckedItem.of (body output global short : Bool) : CheckedItem :=
+  if body then (if output then .contract else .body)
+  else if global then (if short then .shortGlobal else .global) else .component
+
 /-- The checks run on an item (`check::applies`). -/
 def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .component => kindsFor false
@@ -1182,6 +1190,15 @@ def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .shortGlobal => (kindsFor true).filter (· != .realizable)
   | .body => bodyKinds
   | .contract => contractKinds
+
+/-- The kinds of check that both front ends run on a procedure of `kinds`:
+on the procedure that checks a subset type's inhabitation (`subset`), only
+its realizability, and on the one that checks that its invariants are
+defined (`subsetInvariant`), only the checks of its clauses
+(`Reqs/Lang/SubsetTypes`). -/
+def kindsRun (subset subsetInvariant : Bool) (kinds : Array CheckKind) : Array CheckKind :=
+  if subset then #[.realizable]
+  else if subsetInvariant then #[.definedness, .completeness, .disjointness, .precondition] else kinds
 
 /-- The SMT-LIB logic of a check's queries (`cli::logic`): realizability
 quantifies, over outputs, and so does every query of a spec with an

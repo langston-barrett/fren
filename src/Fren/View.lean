@@ -306,6 +306,26 @@ def awaitCheck (task : Task (Except Exception CheckOutcome)) :
                            infoState.trees := s.infoState.trees ++ trees }
   ofExcept r
 
+/-- The procedures that the checks of `roots` rest on, through their calls,
+transitively, but those that `skip` says are known: callees before callers
+(`check::runs_premises`). -/
+def premiseItems (s : State) (skip : Name → Bool) (roots : Array CompInfo) : Array Name := Id.run do
+  let mut out : Array Name := #[]
+  let mut seen : Std.HashSet Name := {}
+  let mut stack : Array (Name × Bool) := ((roots.flatMap fun c => c.insts.map (·.comp)).reverse).map (·, false)
+  while !stack.isEmpty do
+    let (p, done) := stack.back!
+    stack := stack.pop
+    if done then
+      out := out.push p
+      continue
+    if seen.contains p || skip p then continue
+    seen := seen.insert p
+    stack := stack.push (p, true)
+    if let some c := s.comps.get? p then
+      for i in c.insts.reverse do stack := stack.push (i.comp, false)
+  return out
+
 /-- Checks the procedures and global expectations `paths`, and reports the
 results; after a static error, checks none, as the `fren` command does. -/
 def checkAndReport (paths : Array Name) : CommandElabM Unit := do
@@ -321,14 +341,17 @@ where
     return ← logError Core.couldNotHeadline
   let s ← getState
   let mut items := #[]
+  -- What each item is (`check::applies`), as its checks' premises see it.
+  let mut what : Array Core.CheckedItem := #[]
   for p in paths do
-    let (c, kinds) ← match s.comps.get? p, s.globals.get? p with
-      | some c, _ => pure (c, Core.CheckedItem.component.kinds)
-      | none, some g => pure (g, (if g.global then Core.CheckedItem.global else .shortGlobal).kinds)
+    let (c, item) ← match s.comps.get? p, s.globals.get? p with
+      | some c, _ => pure (c, Core.CheckedItem.of false false false false)
+      | none, some g => pure (g, Core.CheckedItem.of false false true !g.global)
       | none, none => match s.bodies.get? p with
         -- An uninterpreted function's contract has its value as an output.
-        | some b => pure (b, (if b.vars.any (·.role == .output) then Core.CheckedItem.contract else .body).kinds)
+        | some b => pure (b, Core.CheckedItem.of true (b.vars.any (·.role == .output)) false false)
         | none => continue
+    let kinds := item.kinds
     -- Not where `undecidable` is denied, though the error does not stop
     -- `#fren_check` where `#guard_msgs` catches it: the solver is not asked
     -- about constructs outside the decidable core that the spec has not
@@ -336,6 +359,17 @@ where
     -- (`Reqs/Lint/Decidability#undecidable-constructs`).
     if c.undecidableDenied then continue
     items := items.push (p, c, kinds)
+    what := what.push item
+  -- The procedures that their checks rest on, whose evidence no run has
+  -- kept, are checked first, and reported nothing of, so that every premise
+  -- is settled where it is known (`check::runs_premises`).
+  let named := items.map (·.1)
+  let premises := (premiseItems s (fun p => named.contains p || (s.realizability.find? p).isSome)
+    (items.map (·.2.1))).filterMap fun p => (s.comps.get? p).bind fun c =>
+      if c.undecidableDenied then none else some (p, c, Core.CheckedItem.component.kinds)
+  let silent := premises.size
+  items := premises ++ items
+  what := premises.map (fun _ => Core.CheckedItem.component) ++ what
   -- Each item is checked in a task of its own, all at once; the results are
   -- then reported, and the cover goals' theorems added, in order, as if
   -- each had been checked in turn (`checkItems`).
@@ -349,7 +383,8 @@ where
   let tasks ← checkItems items sites cancel
   let mut all := #[]
   let mut byBound := 0
-  for (p, c, _) in items, task in tasks do
+  for (p, c, _) in items, task in tasks, item in what, k in [0:items.size] do
+    let quiet := k < silent
     -- A failure of one procedure's check, a recursion depth or a heartbeat
     -- limit among them, is reported as its own error: every other
     -- procedure keeps its verdicts, which throwing here would drop.
@@ -360,25 +395,60 @@ where
         (← (← addMessageContext ex.toMessageData).toString) ex.isRuntime).text .error
       continue
     let .ok (results, witnesses, enumerated?, skipped) := outcome | continue
+    -- What its checks rest on, the realizability of the procedures it
+    -- calls, weakens them or leaves them inconclusive (`Reqs/Evidence`).
+    let known := (← getState).realizability
+    let calls := c.insts.map fun i =>
+      let ev : Core.ExternalPremise := (known.find? i.comp).getD
+        { what := s!"the realizability of `{Core.showComp i.comp}`", settled := false }
+      (Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
+    let names := c.insts.map (·.name)
+    let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
+    let siteOf (r : CheckResult) := r.site names assumptions c.fn?.isSome false
+    let enumResults := match enumerated? with | some (.ok e) => e.results | _ => #[]
+    -- Its checks set to random testing alone, which `#fren_check` does not
+    -- run, stand for themselves with the caveat `Random` where the item has
+    -- them as premises, so that what rests on them gets it too
+    -- (`Core.hostedStandIns`, `check::hosted_runs`); they are never reported.
+    let random := c.tested.minus c.enumerated
+    let standIns := Core.hostedStandIns p item c.subsetInvariant?.isSome calls random
+    let checks := results.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
+      ++ enumResults.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
+      ++ standIns.map fun r => (r, siteOf r, Core.ownCaveatsOf r true)
+    let reported := Core.itemEvidence p item c.subsetInvariant?.isSome calls checks
+    -- The evidence of its realizability, kept for the checks that rest on
+    -- it, in this run, later runs and the modules that import this one
+    -- (`check::runs_premises`).
+    for (r, _, _) in checks, (rep, caveats, _) in reported do
+      if r.isOwnRealizability p && item == .component then
+        record (.realizabilityEvidence p
+          { what := s!"the realizability of `{Core.showComp p}`", caveats, settled := rep.shown == .pass })
+    -- A premise checked for its evidence alone is reported nothing of.
+    if quiet then continue
     -- Proof artifacts are supplementary: preserve the checker report even
     -- if generation fails, and discard any partial declarations/messages.
     let proofState ← get
     try proveRecursiveContract c results catch _ => set proofState
     for d in witnesses do
       liftCoreM <| addCoverWitness d
-    for r in results do
-      report p c r
-    if (c.tested.minus c.enumerated).any then
+    -- A check that rests on one set to random testing gets no verdict in
+    -- Lean, as one set to random testing (`check::hosted_runs`).
+    -- A failure is reported all the same: no premise changes it, and
+    -- `fren check` reports the same counterexample (`check::reported_pass`).
+    let resting (i : Nat) : Bool := !Core.hostedReported ((reported[i]?.map (·.2.1)).getD [])
+      ((checks[i]?.map (·.1.verdict == .fail)).getD false) ((checks[i]?.map (·.2.2.contains .random)).getD false)
+    for r in results, i in [0:results.size] do
+      unless resting i do report p c r
+    if random.any then
       logAbout p c.ref m!"the checks of `{Core.showComp p}` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
-    all := all ++ results
+    if (Array.range (results.size + enumResults.size)).any resting then
+      logAbout p c.ref m!"the checks of `{Core.showComp p}` that rest on checks set to random testing are run by `fren check`, not in Lean (`Reqs/Evidence#lean`)" .information
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with
     | some (.error msg) => logAbout p c.ref msg.text .error
     | some (.ok e) =>
-      for r in e.results do
-        report p c r
-      all := all ++ e.results
-      byBound := byBound + (e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome).size
+      for r in e.results, i in [results.size:results.size + e.results.size] do
+        unless resting i do report p c r
       if let some msg := e.boundedMsg? s!"`{Core.showComp p}`" c.tested then
         logAbout p c.ref msg.text .information
     | none => pure ()
@@ -386,6 +456,14 @@ where
     -- (`check::method_run`).
     for msg in skipped do
       logAbout p c.ref msg.text .information
+    for (r, _, _) in checks, (rep, _, msg?) in reported, i in [0:checks.size] do
+      if resting i then continue
+      if let some msg := msg? then
+        let ref := (r.prop?.bind fun n => c.props.find? (·.name == n)).map (·.ref)
+          |>.orElse (fun _ => r.prop?.bind fun n => (c.insts.find? (·.name == n)).map (·.ref)) |>.getD c.ref
+        logAbout p ref msg.text (if rep.unsettled then .warning else .information)
+      if rep.byBound then byBound := byBound + 1
+      all := all.push { r with verdict := rep.shown }
   match Core.summarySeverity all with
   | .info => logInfo (Core.summary all 0 byBound)
   | .warning => logWarning (Core.summary all 0 byBound)

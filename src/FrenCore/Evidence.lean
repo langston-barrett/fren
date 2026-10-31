@@ -542,4 +542,254 @@ def reportedPass (verdict : Verdict) (own caveats : List Caveat) (settled : Bool
     weakened := shown == .pass && caveats.any (!own.contains ·)
     unsettled := verdict == .pass && !settled }
 
+/-! ### An item's checks, as both front ends report them -/
+
+/-- A check outside an item that the item's checks may rest on: the
+realizability of a called procedure, by how messages name it, and its
+evidence, `passEvidence`'s for it. -/
+structure ExternalPremise where
+  what : String
+  caveats : List Caveat := []
+  settled : Bool := true
+  deriving Inhabited
+
+/-- Whether `r` is the realizability check of the item `comp` itself, not
+of the contract of an instance that the item's checks apply, which is
+checked with it (`lang::instance_site`). -/
+def CheckResult.isOwnRealizability (r : CheckResult) (comp : Name) : Bool :=
+  r.kind == .realizable && r.prop?.isNone && r.comp == comp
+
+/-- How a message names a check of the item `comp`: by its kind, and the
+constraint or call that it is about (`F0663`, `F0664`). -/
+def CheckResult.premiseText (r : CheckResult) (comp : Name) : String :=
+  match r.kind, r.prop?, r.target? with
+  | .realizable, _, _ => s!"the realizability of `{showComp r.comp}`"
+  | .inst, some w, some (d, a) => s!"the assumption `{showComp (d ++ a)}` of call `{w}`"
+  | .expect, some n, _ => s!"`{showComp (comp ++ n)}`"
+  | .definedness, some n, _ => match r.subsetTy? with
+    | some t => match t.dropPrefix? "@invariant:" with
+      | some l => s!"the invariant `{l}` in `{showComp (comp ++ n)}`"
+      | none => s!"the check that the value in `{showComp (comp ++ n)}` is a `{t}`"
+    | none => s!"the definedness of `{showComp (comp ++ n)}`"
+  | k, some n, _ => s!"the {k.noun} of `{showComp (comp ++ n)}`"
+  | k, none, _ => s!"the {k.noun} of `{showComp comp}`"
+
+/-- The ordinal of `n`, as "2nd". -/
+def ordinal (n : Nat) : String :=
+  let suffix := if n % 100 ∈ [11, 12, 13] then "th"
+    else match n % 10 with | 1 => "st" | 2 => "nd" | 3 => "rd" | _ => "th"
+  s!"{n}{suffix}"
+
+/-- How messages name each of the checks `rs` of the item `comp`
+(`CheckResult.premiseText`): where several are named alike, as the
+definedness checks of one constraint, each is told apart by its place among
+them, as "the definedness of `c::e` (the 2nd)". -/
+def premiseTexts (rs : Array CheckResult) (comp : Name) : Array String := Id.run do
+  let base := rs.map (·.premiseText comp)
+  let mut out := #[]
+  for t in base, i in [0:base.size] do
+    let total := (base.filter (· == t)).size
+    let before := ((base.extract 0 i).filter (· == t)).size
+    out := out.push (if total > 1 then s!"{t} (the {ordinal (before + 1)})" else t)
+  return out
+
+/-- Where the query of the result `r` of an item is (`check::Site`): `calls`
+are the item's calls, in order, and `assumptions` its assumptions; `fn` says
+that it is a function's body or contract, and `constant` a constant's
+value. -/
+def CheckResult.site (r : CheckResult) (calls assumptions : Array Name) (fn constant : Bool) : Site :=
+  if constant then .constant else if fn then .functionClause 0 else
+  match r.kind, r.prop? with
+  | .realizable, _ | .determinism, _ => .whole
+  | .inst, some w => match calls.idxOf? w with
+    | some k => .callAssumption k
+    | none => .whole
+  | _, some n => match calls.idxOf? n with
+    | some k => .callArgument k
+    | none => if assumptions.contains n then .assumption else .constraint
+  | _, none => .whole
+
+/-- A caveat, as messages name it. -/
+def Caveat.text : Caveat → String
+  | .random => "random testing"
+  | .bounded => "enumeration up to a size bound"
+
+/-- A pass of `what` that rests on `premise`, which has the caveat `c`
+(`F0663`, `check::reported_pass`). -/
+def weakenedMsg (what premise : String) (c : Caveat) : Msg :=
+  { code? := some "F0663", headline := s!"{what} rests on {premise}, which is only checked by {c.text}"
+    label? := some "rests on an unproved check"
+    notes := #[s!"note: its proof has {premise} among its hypotheses, so it is no stronger than that check \
+      (`Reqs/Evidence`)"] }
+
+/-- A check `what` made inconclusive by its premise `premise`, which did
+not pass, or, where `missing`, was not checked, as where enumeration stopped
+with an error (`F0664`, `check::reported_pass`). -/
+def unsettledMsg (what premise : String) (missing : Bool := false) : Msg :=
+  { code? := some "F0664"
+    headline := s!"{what} rests on {premise}, which {if missing then "was not checked" else "did not pass"}"
+    label? := some (if missing then "rests on a check that was not checked" else "rests on a check that did not pass")
+    notes := #[s!"note: its proof has {premise} among its hypotheses, which may not hold, so it may hold vacuously \
+      (`Reqs/Evidence`)",
+      if missing then "help: make the check it rests on run" else "help: make the check it rests on pass"] }
+
+/-- Whether an item has the premise `p` among its own checks, from its
+structure (`check::item_premise`): `validator` says that it only checks
+that a subset type's invariants are defined, `nCalls` is its number of
+calls, and `assumed` the calls whose procedures have assumption checks. -/
+def itemHasPremise (item : CheckedItem) (validator : Bool) (nCalls : Nat) (assumed : List Nat) : Premise → Bool
+  | .realizability j => j < nCalls
+  | .callAssumptions j => j < nCalls && assumed.contains j && (item == .component || item == .global || item == .shortGlobal)
+  | .ownRealizability => item.ownRealizability && !validator
+  | _ => false
+
+/-- A call of an item, as the evidence of the item's checks sees it: its
+name, the procedure that it calls, the names of that procedure's
+assumptions that the call checks, one for each assumption and for each of
+its inputs whose type brings a constraint (`Inst.assumes`), and the
+evidence of that procedure's realizability. -/
+structure CallEvidence where
+  name : Name
+  comp : Name
+  assumes : Array Name := #[]
+  realizability : ExternalPremise
+  deriving Inhabited
+
+/-- The checks of an item, its results `rs`, each with its site and the
+caveats of its own method, reported (`check::pass_evidence`,
+`check::premise`, `check::reported_pass`): each with how it is reported, its
+caveats, and the message about the premise that weakens it or leaves it
+unsettled, if one does (`F0663`, `F0664`). `item` is what the checks run
+on, `subsetInvariant` whether it is a procedure that only checks that a
+subset type's invariants are defined, and `calls` are its calls, in order.
+A check's premises are those of `premisesOf`, among those that the item has
+(`itemHasPremise`), which are read from its structure, not from the
+results: where the item has a premise, a call's assumption check or its
+own realizability, that `rs` has no result of, as where enumeration
+stopped with an error, that premise is a check that is not settled, so that
+a missing premise never strengthens a pass (`check::item_premise`). -/
+def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (calls : Array CallEvidence)
+    (rs : Array (CheckResult × Site × List Caveat)) :
+    Array (ReportedPass × List Caveat × Option Msg) := Id.run do
+  let nCalls := calls.size
+  -- The premises that the item has, from its structure, not from `rs`.
+  let assumed := (List.range nCalls).filter fun j => !calls[j]!.assumes.isEmpty
+  let has := itemHasPremise item subsetInvariant nCalls assumed
+  let names := premiseTexts (rs.map (·.1)) comp
+  let ofCall (r : CheckResult) (j : Nat) : Bool :=
+    r.kind == .inst && r.comp == comp && r.prop? == some calls[j]!.name
+  -- The checks in order, after the calls' realizability: each a result, or
+  -- a check that the item has with no result, by how messages name it.
+  let mut layout : Array (Option Nat × String) := #[]
+  let mut placed : Array Bool := rs.map fun _ => false
+  -- Each call's assumption checks, in the calls' order.
+  let mut callNodes : Array (List Nat) := #[]
+  for j in [0:nCalls] do
+    let call := calls[j]!
+    let mut here : List Nat := []
+    if has (.callAssumptions j) then
+      for a in call.assumes do
+        let found := (Array.range rs.size).find? fun i =>
+          !placed[i]! && ofCall rs[i]!.1 j && (rs[i]!.1.target?.map (·.2)) == some a
+        here := here ++ [nCalls + layout.size]
+        match found with
+        | some i =>
+          placed := placed.set! i true
+          layout := layout.push (some i, names[i]!)
+        | none => layout := layout.push (none, s!"the assumption `{showComp (call.comp ++ a)}` of call `{call.name}`")
+    -- And any other result of its assumptions.
+    for i in [0:rs.size] do
+      if !placed[i]! && ofCall rs[i]!.1 j then
+        placed := placed.set! i true
+        here := here ++ [nCalls + layout.size]
+        layout := layout.push (some i, names[i]!)
+    callNodes := callNodes.push here
+  -- Then the item's own realizability, which rests on them.
+  let mut ownNodes : List Nat := []
+  for i in [0:rs.size] do
+    if !placed[i]! && rs[i]!.1.isOwnRealizability comp then
+      placed := placed.set! i true
+      ownNodes := ownNodes ++ [nCalls + layout.size]
+      layout := layout.push (some i, names[i]!)
+  if ownNodes.isEmpty && has .ownRealizability then
+    ownNodes := [nCalls + layout.size]
+    layout := layout.push (none, s!"the realizability of `{showComp comp}`")
+  -- Then its other checks, which rest on it.
+  for i in [0:rs.size] do
+    if !placed[i]! then
+      placed := placed.set! i true
+      layout := layout.push (some i, names[i]!)
+  let mut nodes : Array (CheckEvidence Caveat) := calls.map fun c =>
+    { own := c.realizability.caveats, settled := c.realizability.settled }
+  let mut texts : Array String := calls.map (·.realizability.what)
+  let mut absent : Array Bool := calls.map fun _ => false
+  let mut posOf : Array Nat := rs.map fun _ => 0
+  for (slot, text) in layout do
+    texts := texts.push text
+    absent := absent.push slot.isNone
+    match slot with
+    | none => nodes := nodes.push { settled := false }
+    | some i =>
+      let (r, site, own) := rs[i]!
+      posOf := posOf.set! i nodes.size
+      -- An instance's contract, checked with the item, is not a check of
+      -- the item's own queries, and rests on none of its calls.
+      let premises : List Nat := if r.comp != comp then [] else
+        (premisesOf { item, kind := r.kind, site } nCalls []).flatMap fun
+          | .realizability j => [j]
+          | .callAssumptions j => callNodes[j]?.getD []
+          | .ownRealizability => ownNodes
+          -- The premises of functions, instances, subset types and
+          -- refinements are not applied yet (#522).
+          | _ => []
+      nodes := nodes.push { own, settled := r.verdict == .pass, premises }
+  let finals := passEvidence nodes.toList
+  return (Array.range rs.size).map fun i =>
+    let (r, _, own) := rs[i]!
+    let k := posOf[i]!
+    let (caveats, settled) := finals[k]?.getD ([], false)
+    let rep := reportedPass r.verdict own caveats settled
+    -- The first premise that weakens it, or leaves it unsettled, named in
+    -- its message.
+    let culprit? := (nodes[k]?.map (·.premises)).getD [] |>.find? fun j =>
+      let (cj, sj) := finals[j]?.getD ([], false)
+      (rep.unsettled && !sj) || (rep.weakened && cj.any (!own.contains ·))
+    let what := names[i]!
+    let msg? := culprit?.bind fun j => (texts[j]?).bind fun premise =>
+      if rep.unsettled then some (unsettledMsg what premise (absent[j]?.getD false))
+      else ((finals[j]?.getD ([], false)).1.find? (!own.contains ·)).map (weakenedMsg what premise)
+    (rep, caveats, msg?)
+
+/-- The caveats of the own method of the check `r`, run by random testing
+where `random` (`check::own_caveats`): a proof check's pass by random
+testing has `Random`, and one that enumeration reached only up to its size
+bound has `Bounded`; a witness check has neither, however it was found. -/
+def ownCaveatsOf (r : CheckResult) (random : Bool) : List Caveat :=
+  if !r.kind.proof then [] else
+  (if random then [.random] else []) ++ (if r.bounded?.isSome then [.bounded] else [])
+
+/-! ### What Lean reports (`check::hosted_runs`) -/
+
+/-- The checks that `#fren_check` does not run, as it runs none set to
+random testing alone (`random`), but that the item has as premises
+(`itemHasPremise`): each a pass, to which `itemEvidence` gives the caveat
+`Random`, so that what rests on it gets it too (`check::hosted_runs`). Its
+own realizability, and each assumption check of each of its calls. -/
+def hostedStandIns (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (calls : Array CallEvidence)
+    (random : Tested) : Array CheckResult :=
+  let assumed := (List.range calls.size).filter fun j => !calls[j]!.assumes.isEmpty
+  let has := itemHasPremise item subsetInvariant calls.size assumed
+  (if random.realizable && has .ownRealizability then
+    #[{ kind := .realizable, comp, prop? := none, verdict := .pass }] else #[])
+  ++ ((Array.range calls.size).filter fun j => random.insts.contains calls[j]!.name && has (.callAssumptions j)).flatMap
+    fun j => calls[j]!.assumes.map fun a =>
+      { kind := .inst, comp, prop? := some calls[j]!.name, target? := some (calls[j]!.comp, a), verdict := .pass }
+
+/-- Whether `#fren_check` reports a check whose caveats `itemEvidence` gives
+(`check::hosted_runs`): where it rests on no check set to random testing,
+which only such checks give the caveat `Random` in Lean, or where it fails,
+and is not itself one that Lean stands for (`own` has `Random`). -/
+def hostedReported (caveats : List Caveat) (failed : Bool) (ownRandom : Bool) : Bool :=
+  !caveats.contains .random || (failed && !ownRandom)
+
 end Fren.Core

@@ -1,0 +1,22 @@
+-- #414's examples: `lookup` has no output at `1234567`, which random
+-- testing finds, so the checks that rest on its realizability are
+-- inconclusive (F0664).
+mod demo
+
+set_option fren.evidence "random" in
+pub proc lookup(x: Int): (y: Int) {
+    ensure r: y = 0 and x != 1234567
+}
+
+pub proc caller(x: Int): (z: Int) {
+    assume a: x = 1234567
+    call c := lookup(x)
+    ensure q: z = c.y + 1
+    expect wrong: z = 5
+}
+
+expect answers_one(x: Int) {
+    assume a: x = 1234567
+    call c := lookup(x)
+    expect e: c.y = 1
+}

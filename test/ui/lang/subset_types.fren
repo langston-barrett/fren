@@ -21,7 +21,8 @@ proc router(p: Packet, hops: Pos): (y: Int) {
     expect loud: p.level != Severity::Info
 }
 
-proc user(x: Int): (det d: Byte) {
+proc user(x: Int): (det d: Byte) {  --~ warning: the determinism of `user::d` rests on the assumption `router::hops::0` of call `w`, which did not pass
+--~^ warning: the realizability of `user` rests on the assumption `router::hops::0` of call `w`, which did not pass
     out d := x   --~ error: invariant `Byte::invariant` does not hold
     call w := router(Packet { length := x, level := Severity::Warning }, x)   --~ error: invariant `Pos::invariant` does not hold
     --~^ error: invariant `Byte::invariant` does not hold

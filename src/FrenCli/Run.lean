@@ -831,6 +831,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let mut byTesting := 0
   let mut byBound := 0
   let mut enumErrors := 0
+  -- The evidence of each procedure's realizability, by its path, which the
+  -- checks of the items that call it rest on (`Reqs/Evidence`).
+  let mut realizability : Std.HashMap Lean.Name Fren.Core.ExternalPremise := {}
   if let .error e := spec? then
     internal := internal.push (Msg.internal s!"the evaluator cannot read the spec: {e}")
     printDiag args.paint files { file := 0, span := default, msg := internal.back! }
@@ -867,7 +870,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     return (r, ← dumped.get, tested?, enumerated?, timing)
   let mut timings := #[]
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
-  for (c, global, kinds, _, key) in todo, solved in solving do
+  for (c, global, kinds, body, key) in todo, solved in solving do
     let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) ← solved
     timings := timings.push (solverNs + restNs, solverNs, restNs, subjectOf c global, key)
     IO.print dumped
@@ -880,17 +883,18 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       internal := internal.push msg
     for r in results do
       shown := shown ++ (← printResult args.paint files c r st.vias)
-    all := all ++ results
-    if let some r := record? then r.modify (· ++ results.map (key, ·))
+    -- Each of its results, with the caveats of the method that ran it.
+    let mut item : Array (Fren.Core.CheckResult × List Fren.Core.Caveat) :=
+      results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
       let (tested, msgs, failed) ← testComp args files sp c ec global (testedKeeps c kinds) prelude (byCheck := true) rep st.vias
       shown := shown ++ msgs
       if failed then internal := internal.push msgs[0]!
-      all := all ++ tested
-      if let some r := record? then r.modify (· ++ tested.map (key, ·))
-      byTesting := byTesting + (tested.filter (·.verdict == .pass)).size
+      -- A witness found by testing is a real witness: only a proof check's
+      -- pass by testing has the caveat `Random` (`Reqs/Evidence`).
+      item := item ++ tested.map fun r => (r, Fren.Core.ownCaveatsOf r true)
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with
     | some (.error msg) =>
@@ -900,9 +904,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     | some (.ok e) =>
       for r in e.results do
         shown := shown ++ (← printResult args.paint files c r st.vias)
-      all := all ++ e.results
-      if let some r := record? then r.modify (· ++ e.results.map (key, ·))
-      byBound := byBound + (e.results.filter fun r => r.verdict == .pass && r.bounded?.isSome).size
+      item := item ++ e.results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
       if let some msg := e.boundedMsg? (subjectOf c global) c.tested then
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
@@ -912,6 +914,34 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     for msg in (toCore c).skippedMsgs (subjectOf c global) c.tested c.enumerated kinds do
       printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
       shown := shown.push msg
+    -- What its checks rest on, the realizability of the procedures it calls,
+    -- weakens them or leaves them inconclusive (`Reqs/Evidence`).
+    let calls := c.insts.map fun i =>
+      let ev : Fren.Core.ExternalPremise := (realizability.get? i.comp).getD
+        { what := s!"the realizability of `{Fren.Core.showComp i.comp}`", settled := false }
+      (Fren.Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
+    let names := c.insts.map (·.name)
+    let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
+    let what := Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global
+    let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
+      (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false, own))
+    let mut final := #[]
+    for (r, _) in item, (rep, caveats, msg?) in reported do
+      if let some msg := msg? then
+        let span := (r.prop?.bind fun n => c.props.find? (·.name == n)).map (·.span)
+          |>.orElse (fun _ => r.prop?.bind fun n => (c.insts.find? (·.name == n)).map (·.span)) |>.getD c.span
+        printDiag args.paint files { file := c.file, span, severity := if rep.unsettled then .warning else .info, msg }
+        shown := shown.push msg
+      if rep.byTesting then byTesting := byTesting + 1
+      if rep.byBound then byBound := byBound + 1
+      final := final.push { r with verdict := rep.shown }
+      if r.isOwnRealizability c.path && what == .component then
+        realizability := realizability.insert c.path
+          { what := s!"the realizability of `{Fren.Core.showComp c.path}`", caveats, settled := rep.shown == .pass }
+    all := all ++ final
+    -- The tests compare each method's own verdicts, before the evidence of
+    -- what they rest on changes how they are shown.
+    if let some r := record? then r.modify (· ++ item.map fun (x, _) => (key, x))
   IO.eprintln (Fren.Core.summary all byTesting byBound)
   if args.timings then IO.eprint (timingReport timings)
   if shown.any (·.code?.isSome) then

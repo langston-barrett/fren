@@ -25,6 +25,14 @@ note[F0654]: the vacuity and redundancy checks of `lex::parity` are not run by r
    = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
    = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 
+note[F0663]: the determinism of `lex::parity::even?` rests on the realizability of `lex::parity`, which is only checked by random testing
+  --> test/cli/commands/check_by_testing.fren:18:10
+   |
+18 | pub proc parity(n: Int): (set_option fren.evidence "solver" in det even?) {
+   |          ^^^^^^ rests on an unproved check
+   |
+   = note: its proof has the realizability of `lex::parity` among its hypotheses, so it is no stronger than that check (`Reqs/Evidence`)
+
 error[F0604]: the assumption `pos` of `lex::positive` may not hold for call `lex::caller::p`
   --> test/cli/commands/check_by_testing.fren:30:10
    |
@@ -33,6 +41,15 @@ error[F0604]: the assumption `pos` of `lex::positive` may not hold for call `lex
    |
    = counterexample: m = -1
    = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
+
+warning[F0664]: the realizability of `lex::caller` rests on the assumption `lex::positive::pos` of call `p`, which did not pass
+  --> test/cli/commands/check_by_testing.fren:28:10
+   |
+28 | pub proc caller(m: Int) {
+   |          ^^^^^^ rests on a check that did not pass
+   |
+   = note: its proof has the assumption `lex::positive::pos` of call `p` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+   = help: make the check it rests on pass
 
 warning[F0612]: testing never reached `lex::narrow::e` in 100 tests: its trigger held in none of them
   --> test/cli/commands/check_by_testing.fren:46:15
@@ -70,8 +87,8 @@ note[F0654]: the vacuity checks of `lex::global_wrong` are not run by random tes
    = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
    = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 
-fren: 14 passed (5 by random testing), 3 failed, 1 inconclusive, 0 redundant
+fren: 13 passed (6 by random testing), 3 failed, 2 inconclusive, 0 redundant
 
-Some errors have detailed explanations: F0603, F0604, F0612, F0654.
+Some errors have detailed explanations: F0603, F0604, F0612, F0654, F0663, F0664.
 For more information about an error, try `fren --explain F0603`.
 exit=1

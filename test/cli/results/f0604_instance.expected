@@ -7,7 +7,17 @@ error[F0604]: the assumption `nonneg` of `sub` may not hold for call `c::s`
   = counterexample: i = -1
   = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
-fren: 5 passed, 1 failed, 0 inconclusive, 0 redundant
+warning[F0664]: the realizability of `c` rests on the assumption `sub::nonneg` of call `s`, which did not pass
+ --> test/cli/results/f0604_instance.fren:3:6
+  |
+3 | proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.m }
+  |      ^ rests on a check that did not pass
+  |
+  = note: its proof has the assumption `sub::nonneg` of call `s` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+  = help: make the check it rests on pass
 
-For more information about this error, try `fren --explain F0604`.
+fren: 4 passed, 1 failed, 1 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0604, F0664.
+For more information about an error, try `fren --explain F0604`.
 exit=1

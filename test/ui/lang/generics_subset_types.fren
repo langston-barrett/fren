@@ -37,7 +37,13 @@ proc holder(
     expect bounded: y < 255   --~ error: expectation `generics_subset_types::holder::bounded` does not hold
 }
 
-proc giver(n: Int): (
+proc giver(n: Int): (  --~ warning: the determinism of `generics_subset_types::giver::bad` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
+--~^ warning: the determinism of `generics_subset_types::giver::marked` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
+--~^^ warning: the determinism of `generics_subset_types::giver::ok` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
+--~^^^ warning: the determinism of `generics_subset_types::giver::pair` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
+--~^^^^ warning: the determinism of `generics_subset_types::giver::some` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
+--~^^^^^ warning: the invariant `generics_subset_types::Byte::invariant` in `generics_subset_types::giver::ok` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
+--~^^^^^^ warning: the realizability of `generics_subset_types::giver` rests on the assumption `generics_subset_types::holder::x::0` of call `h`, which did not pass
     det ok: Option<Byte>,
     det bad: Option<Byte>,
     det pair: Pair<Byte, Int>,

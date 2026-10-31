@@ -10,7 +10,8 @@ fn in_r?(x: Int) := exists (y: Int), y in R and y = x
 -- The realizability check's `∃` over the output `o`.
 set_option fren.lint.undecidable "allow" in
 proc realize(q: Seq<Int>): (o: Int) {  --~ error: is not realizable
-    assume ends: q != [] and q[0] = 5 and q[q.len - 1] = 5
+    assume ends: q != [] and q[0] = 5 and q[q.len - 1] = 5  --~ warning: the definedness of `realize::ends` (the 1st) rests on the realizability of `realize`, which did not pass
+    --~^ warning: the definedness of `realize::ends` (the 2nd) rests on the realizability of `realize`, which did not pass
     ensure range: 0 <= o <= 1
     ensure avoid: forall (x: Int), when x in q, x != o
 }
