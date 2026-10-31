@@ -196,6 +196,217 @@ expect manual_abs_complete(x: Int, y: Int) {
 }
 ```
 
+### Absolute values, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`a > b` is `b < a`, and `a >= b` is `b <= a`, as [Derived
+forms](../../Lang/Semantics.md#derived-forms) states, so each condition
+of these lints is a `<` or a `<=`, and its fix is a call of `abs`, as
+[Fixes as rewrites](../Rewrites.md) states for every such lint.
+`manual_abs` fires on `if x OP 0 then -x else x` and on `if 0 OP x then x
+else -x`, where `OP` is `<` or `<=` and `x` is not an integer literal.
+`manual_abs_diff` fires on `if s OP m then m - s else s - m`, where `OP`
+is `<` or `<=` and `s` and `m` are not the same, and its fix is the
+absolute value of the `then` branch. Operands written the same in one
+scope are the same `lang::Expr`, as
+[`written`](../Meaning.md#expressions-as-written) states, so `=` is the
+test of being written the same. The model orders only integers, so
+neither states what the condition compares.
+
+```fren
+-- `e` is the literal `0`.
+fn zero?(e: lang::Expr) := e = lang::Expr::Literal(lang::Value::Integer(0))
+
+-- `op` is `<` or `<=`, the orderings that elaboration writes.
+fn ordering?(op: lang::BinaryOp) := op is lang::BinaryOp::Lt | lang::BinaryOp::Le
+
+-- `abs` of `x`.
+fn abs_of(x: lang::Expr): lang::Expr := lang::Expr::Method(
+    lang::MethodName::Abs,
+    x,
+    lang::Expr::Nil
+)
+
+-- `if x OP 0 then -x else x`, of an `x` that is not an integer literal.
+fn abs_negated_then?(c: lang::Expr, t: lang::Expr, f: lang::Expr) := match c {
+    lang::Expr::Binary(op, x, z) => ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
+        and t = lang::Expr::Unary(lang::UnaryOp::Neg, x) and f = x,
+    _ => false,
+}
+
+-- `if 0 OP x then x else -x`.
+fn abs_negated_else?(c: lang::Expr, t: lang::Expr, f: lang::Expr) := match c {
+    lang::Expr::Binary(op, z, x) => ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
+        and t = x and f = lang::Expr::Unary(lang::UnaryOp::Neg, x),
+    _ => false,
+}
+
+pub fn manual_abs_fires?(e: lang::Expr) := match e {
+    lang::Expr::If(c, t, f) => abs_negated_then?(c, t, f) or abs_negated_else?(c, t, f),
+    _ => false,
+}
+
+pub fn manual_abs_fix(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::If(c, t, f) => if abs_negated_then?(c, t, f) then abs_of(f)
+        else if abs_negated_else?(c, t, f) then abs_of(t)
+        else e,
+    _ => e,
+}
+
+-- `if s OP m then m - s else s - m`.
+fn abs_diff?(c: lang::Expr, t: lang::Expr, f: lang::Expr) := match c {
+    lang::Expr::Binary(op, s, m) => ordering?(op) and s != m
+        and t = lang::Expr::Binary(lang::BinaryOp::Sub, m, s) and f = lang::Expr::Binary(lang::BinaryOp::Sub, s, m),
+    _ => false,
+}
+
+pub fn manual_abs_diff_fires?(e: lang::Expr) := match e {
+    lang::Expr::If(c, t, f) => abs_diff?(c, t, f),
+    _ => false,
+}
+
+pub fn manual_abs_diff_fix(e: lang::Expr): lang::Expr := match e {
+    lang::Expr::If(c, t, f) => if abs_diff?(c, t, f) then abs_of(t) else e,
+    _ => e,
+}
+```
+
+`lint::manual_abs` and `lint::manual_abs_diff` bind this to the linter.
+For every comparison operator and every `x`, `manual_abs`, at the
+comparison with `x` on its left, fires on the conditional with `x OP 0`
+exactly where `manual_abs_fires?` does on its elaboration, and its fix is
+`x.abs`. A condition written with `0` on the left, as in `0 > x`, is
+mirrored first, to `x < 0`, whose elaboration is the same, so this is
+stated with `x` on the left only. For every comparison operator and two
+operands `a` and `b` not written the same, `manual_abs_diff` fires on
+`if a OP b then c else d`, with `c` and `d` the two differences, exactly
+where `manual_abs_diff_fires?` does on its elaboration, and its fix is the
+absolute value of `c`. Where `a` and `b` are the same, neither fires.
+
+The front ends' reading of `-`, `0` and the comparison, and the
+mirroring of the condition, are trusted, and checked by the ui tests of
+the lints. So is that they run these lints only at conditionals:
+neither procedure has an input that says it is at one, and the functions
+above fire on nothing else, by their `match`. The linter fires only where
+these functions do, not in every place they do: it compares only `Int`s
+and `Nat`s, which are the only values the model orders, and it leaves an
+`x` written as a negated literal, such as `-5`.
+
+```fren
+-- `if x OP 0 then -x else x`, or the reverse, as elaborated.
+fn abs_written(op: Comparison, negated_then?, x: lang::Expr): lang::Expr := lang::Expr::If(
+    elaborated_comparison(op, x, lang::Expr::Literal(lang::Value::Integer(0))),
+    if negated_then? then lang::Expr::Unary(lang::UnaryOp::Neg, x) else x,
+    if negated_then? then x else lang::Expr::Unary(lang::UnaryOp::Neg, x)
+)
+
+-- `a - b`, or `b - a`.
+fn difference_of(a_first?, a: lang::Expr, b: lang::Expr): lang::Expr :=
+    if a_first? then lang::Expr::Binary(lang::BinaryOp::Sub, a, b) else lang::Expr::Binary(lang::BinaryOp::Sub, b, a)
+
+-- `if a OP b then a - b else b - a`, or the reverse, as elaborated.
+fn abs_diff_written(op: Comparison, then_left_first?, a: lang::Expr, b: lang::Expr): lang::Expr := lang::Expr::If(
+    elaborated_comparison(op, a, b),
+    difference_of(then_left_first?, a, b),
+    difference_of(not then_left_first?, a, b)
+)
+
+-- The written forms of `a - b`, or of `b - a`, of the operands `a` and `b`.
+fn written_difference(a_first?, a: String, b: String): Difference :=
+    if a_first? then Difference {
+        minuend := a,
+        subtrahend := b,
+    } else Difference {
+        minuend := b,
+        subtrahend := a,
+    }
+
+expect manual_abs_elaborated(op: Comparison, negated_then?, x: lang::Expr) {
+    call p := manual_abs(Ordered::Number, op, negated_then?)
+
+    expect rule: unless x is lang::Expr::Literal(lang::Value::Integer(_)),
+        p.fires? iff manual_abs_fires?(abs_written(op, negated_then?, x))
+    expect fix: when p.fires? and not (x is lang::Expr::Literal(lang::Value::Integer(_))),
+        manual_abs_fix(abs_written(op, negated_then?, x)) = abs_of(x)
+}
+
+expect manual_abs_diff_elaborated(op: Comparison, then_left_first?, a: lang::Expr, b: lang::Expr) {
+    call p := manual_abs_diff(
+        op,
+        Ordered::Number,
+        "a",
+        "b",
+        written_difference(then_left_first?, "a", "b"),
+        written_difference(not then_left_first?, "a", "b"),
+    )
+    call alike := manual_abs_diff(
+        op,
+        Ordered::Number,
+        "a",
+        "a",
+        written_difference(then_left_first?, "a", "a"),
+        written_difference(not then_left_first?, "a", "a"),
+    )
+
+    expect rule: when a != b, p.fires? iff manual_abs_diff_fires?(abs_diff_written(op, then_left_first?, a, b))
+    expect fix: when a != b and p.fires?,
+        manual_abs_diff_fix(abs_diff_written(op, then_left_first?, a, b)) = abs_of(difference_of(then_left_first?, a, b))
+    expect same: not alike.fires? and not manual_abs_diff_fires?(abs_diff_written(op, then_left_first?, a, a))
+}
+```
+
+Where they fire, the fixes have the conditional's outcome, in every
+interpretation and environment: where the operands are integers, the
+conditional is the absolute value of `x`, or of the difference, and
+elsewhere the condition is undefined, and so are the conditional and the
+call of `abs`. So each [agrees](../Meaning.md#fixes-that-agree) with the
+conditional, and is exact. Negation, subtraction and `abs` are not
+primitives, so this holds in every interpretation. The solver unfolds
+[`eval`](../../Lang/Semantics.md#the-evaluation-function) one step, and
+the operands are two deep, so `src/Impls/Rewrites.lean` proves it in Lean,
+for every expression, interpretation and environment; `fren check` tests
+it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc manual_abs_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+    ensure exact: when manual_abs_fires?(e), lang::eval(i, env, manual_abs_fix(e)) = lang::eval(i, env, e)
+}
+
+set_option fren.evidence "random" in
+pub proc manual_abs_diff_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+    ensure exact: when manual_abs_diff_fires?(e), lang::eval(i, env, manual_abs_diff_fix(e)) = lang::eval(i, env, e)
+}
+```
+
+Each fix writes a call of `abs`, on which the lint does not fire
+(`kept`), of an operand of the conditional or of one of its operands, so
+once the operands are fixed, it leaves nothing to fix. An expression
+around it may start firing once it is fixed, though, since the lints
+compare whole operands: in `if y.abs < 0 then -(if y < 0 then -y else y)
+else y.abs`, the inner conditional does not fire, and its fix makes the
+outer one fire (`around`).
+
+```fren
+-- `if y.abs < 0 then -z else y.abs`.
+fn abs_around(y: lang::Expr, z: lang::Expr): lang::Expr := lang::Expr::If(
+    elaborated_comparison(
+        Comparison::Lt,
+        abs_of(y),
+        lang::Expr::Literal(lang::Value::Integer(0))
+    ),
+    lang::Expr::Unary(lang::UnaryOp::Neg, z),
+    abs_of(y)
+)
+
+expect manual_abs_refires(y: lang::Id, e: lang::Expr) {
+    expect kept: not manual_abs_fires?(manual_abs_fix(e)) and not manual_abs_diff_fires?(manual_abs_diff_fix(e))
+    expect around: not manual_abs_fires?(abs_around(lang::Expr::Var(y), inner))
+        and manual_abs_fires?(abs_around(lang::Expr::Var(y), manual_abs_fix(inner)))
+        where inner := abs_written(Comparison::Lt, true, lang::Expr::Var(y))
+}
+```
+
 ## Lesser and greater
 
 `manual_min_max` fires on `if a OP b then c else d`, where `OP` is `<`,
