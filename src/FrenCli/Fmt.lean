@@ -656,7 +656,8 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     -- that line (`fmt::own_line`'s `holders`): for each, the columns before
     -- the list's head, and the span of its right operand, as the parser
     -- reads it, where it is the operation of a binary operator. A line
-    -- that continues an expression starts one, after its operator.
+    -- that continues an expression starts one, after its operator: the
+    -- innermost operation that starts there and holds the list, if any.
     let holders (b : Bracketed) : List (Nat × Option (Nat × Nat)) := Id.run do
       let h := headOf b
       let here := out.size - 1
@@ -665,7 +666,14 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let mut hs : Array (Nat × Option (Nat × Nat)) := #[]
       if let some f := lineFirst then
         if continues then
-          hs := hs.push (before (if toks[f]!.tok matches .kw _ && !indents f then f + 1 else f), none)
+          let g := if toks[f]!.tok matches .kw _ && !indents f then f + 1 else f
+          -- The operation that starts there and holds the list, the
+          -- innermost if several do.
+          let mut op? : Option (Span × Span) := none
+          for (op, r) in lay.pairs do
+            if tokAt[op.start]? == some g && closeStop ≤ op.stop && op?.all (op.stop < ·.1.stop) then
+              op? := some (op, r)
+          hs := hs.push (before g, op?.map fun (_, r) => (r.start, r.stop))
       for e in lay.exprs do
         if let some f := tokAt[e.start]? then
           if outLine[f]? == some here && closeStop ≤ e.stop then

@@ -239,7 +239,9 @@ hold:
    - in each expression that holds it and starts on its line, at most 4
      columns come before its *head*, the names, `::` and `.` just before
      its opening bracket. A line that continues an expression from the
-     line before starts one, after its operator, if it starts with one.
+     line before starts one, after its operator, if it starts with one:
+     the innermost operation that starts there and holds the list, if
+     any.
      A record literal or update is exempt from the operation of a binary
      operator whose whole right operand it is, and only from that one.
 
@@ -257,13 +259,12 @@ of its operator, and breaks it in place, only where the left operand is
 at most 4 wide, as in `r = f(` ..., or the operand's first line ends with
 a brace, as for a struct literal in `q = P {` .... A chain of operators,
 as in `a and b and q = P {`, it breaks one operand to a line whatever
-its operands. `fren fmt`
-allows the same, a little more strictly, as it counts all that comes
-before the list in the expression, and exempts from that only the
-operation whose whole right operand a record is. A set literal is not
-exempt: it is Rust's array, which opens with `[`, and so are a Boolean block's
-members. Until `fren fmt` breaks expressions, every other such list
-stays on one line.
+its operands. `fren fmt` allows the same, a little more strictly, as it
+counts all that comes before the list in the expression, and exempts
+from that only the operation whose whole right operand a record is. A
+set literal is not exempt: it is Rust's array, which opens with `[`, and
+so are a Boolean block's members. Until `fren fmt` breaks expressions,
+every other such list stays on one line.
 
 | List | Widest | rustfmt's option |
 |---|---|---|
@@ -417,7 +418,9 @@ columns before the list's head in it, and, where it is the operation of
 a binary operator, the span of its right operand, as the parser reads
 it. Spans are offsets in the file: a right operand is the whole list
 where it starts at the list's head and ends with its closing bracket.
-The formatter's decision implements `fmt::own_line`, proved in Lean,
+The expression that a continued line starts, after its operator, is the
+innermost operation that starts there and holds the list, with that
+operation's right operand. The formatter's decision implements `fmt::own_line`, proved in Lean,
 and gives what it decides to `fmt::list_layout`:
 
 ```fren
@@ -703,8 +706,8 @@ pub proc indent(
     expect match_in_a_clause: when brackets = Within(Curly, true, 4, Within(Curly, false, 0, OpenBrackets::Nil))
         and start = Starting, columns = 8
     -- Two brackets opened on one line indent once.
-    expect two_on_a_line: when brackets = Within(Paren, true, 4, Within(Curly, false, 4, OpenBrackets::Nil))
-        and start = Starting, columns = 8
+    expect two_on_a_line: when brackets = Within(Paren, true, 0, Within(Paren, true, 0, OpenBrackets::Nil))
+        and start = Starting, columns = 4
 }
 
 -- A grouping or an index does not indent: a line inside one is indented as outside it.

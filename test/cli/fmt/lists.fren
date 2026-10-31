@@ -59,8 +59,8 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     ensure branch_of_an_if: r = if x > 0 then 0 else gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
     ensure short_left_operand_q: r = gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
     ensure only_closing_brackets_after: (gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy))
-    -- A set literal or a Boolean block is held to the same: only a record that is the right operand of
-    -- its line's innermost operation may break in place after a long left operand.
+    -- A set literal or a Boolean block is held to the same: only a record that is the whole right
+    -- operand of an operation may break in place after a long left operand.
     ensure set_in_chain: r > 0 and x = 1 and r = x and x != 2 and r != 3 and x > 0 and x in {r, 1, 2, 3}
     ensure set_in_branch: r = (if x > 0 then x in {1, 2} else if x = r then x in {3, 4} else x in {5, 6})
     ensure record_right: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
@@ -72,6 +72,9 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     ensure continued: x = 1
         and ff(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy) and r = gg(xxxxxxxxxxxxx)
         and ffffffffffffffffffffffffffffffffff(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
+    -- A record breaks in place on a continued line too, after the operation that the line starts.
+    ensure record_continued: x = 1
+        and qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
 }
 
 -- A function's parameters get no trailing comma, and the signature ends by column 100, counting

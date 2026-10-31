@@ -89,7 +89,13 @@
 +            xxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
 +            yyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 +        )
-@@ -80 +108,10 @@
+@@ -77 +105,4 @@
+-        and qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
++        and qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P {
++            xx := 1,
++            y := 2,
++        }
+@@ -83 +114,10 @@
 -fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaaaa: Int): Int := p0 + p1 + p2
 +fn longer(
 +    p0: Int,
