@@ -1387,8 +1387,9 @@ def severity? : CheckKind → Verdict → Option Severity
 
 /-- A result's own severity (`view::severity`), which `impl severity`
 binds: from its kind and verdict alone, so a refuted model's result is a
-warning, as any inconclusive one is, and the internal error that reports it
-is a diagnostic beside it (`internalMsg?`). -/
+warning, as any inconclusive one is. Its only message, though, is the
+internal error that reports the model, an error, in place of the warning
+(`messages`, `Reqs/View#check-results`). -/
 def CheckResult.severity? (r : CheckResult) : Option Severity :=
   Fren.Core.severity? r.kind r.verdict
 

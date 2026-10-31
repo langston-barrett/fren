@@ -416,7 +416,7 @@ alone. Only these lines differ between two runs that differ only in
 | Status | Meaning |
 |---|---|
 | 0 | every check passed |
-| 1 | some result is an error: a check failed; or Fren's semantics refuted a solver's model, an internal error |
+| 1 | some result is an error: a check failed; or Fren reports an internal error, such as one that reports a refuted model |
 | 2 | the checks could not run: an unreadable file, bad arguments, or a static error, including a denied lint |
 | 3 | no result is an error, but some diagnostic is a warning: a check was inconclusive, a constraint is redundant, or a [lint](Lint.md) warned |
 
@@ -453,10 +453,10 @@ pub proc exit_status(
 
 `cli::exit` gives the exit status, from whether the checks ran and the
 most severe [level](View.md#severity) of their results, of the
-[lints](Lint.md) reported along the way, and of the internal errors that
-report a refuted model, each an `Error` (see [Check
-results](View.md#check-results)). So a run with such an error exits with
-1, though the result that it reports is inconclusive:
+[lints](Lint.md) reported along the way, and of its internal errors, each
+an `Error`, such as one that reports a refuted model (see [Check
+results](View.md#check-results)). So a run with an internal error exits
+with 1, even where the result that it reports is inconclusive:
 
 ```fren
 pub proc exit(

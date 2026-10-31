@@ -151,15 +151,16 @@ Each check yields one result for each thing it checks:
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
 redundant constraint is a warning. An inconclusive result is a warning,
-with one exception: when Fren's semantics contradicts the solver's model
-of a counterexample or a witness that the result would show, the result
-is still inconclusive, and the summary counts it so, but the only
-diagnostic printed for it is an error, the internal error of [Reading
-models](Models.md#reporting), in place of its warning. The `fren`
-command's [confirmation of its other models](Eval.md#confirming-models)
-keeps the inconclusive result's warning, and reports the refuted model's
-internal error beside it. Either internal error is an error of the run,
-which fails a Lean build and makes `fren check` exit with 1 (see
+with one exception. Fren's semantics may contradict the solver's model of
+a counterexample or a witness that the result would show. The result is
+then still inconclusive, and the summary counts it so. But the only
+diagnostic printed for it is the internal error of [Reading
+models](Models.md#reporting), an error, in place of its warning. The
+`fren` command's [confirmation of its other
+models](Eval.md#confirming-models), which Lean does not do, keeps the
+inconclusive result's warning, and reports the refuted model's internal
+error beside it. Each internal error is an error of the run: it fails a
+Lean build, where it occurs, and makes `fren check` exit with 1 (see
 [Severity](#severity)). A failure is reported at:
 
 | Failure | Position | Details |
@@ -432,9 +433,10 @@ pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
 ```
 
 `view::build` states when a Lean build fails, from the most severe level of
-the diagnostics of a `#fren_check`: its results, and the internal errors
-that report a refuted model (see [Check results](#check-results)), each an
-`Error`, though the result that one reports is inconclusive, a `Warning`:
+the diagnostics of a `#fren_check`: its results, and its internal errors,
+each an `Error`, such as one that reports a refuted model (see [Check
+results](#check-results)), though the result that it reports is
+inconclusive, a `Warning`:
 
 ```fren
 set_option fren.evidence "enumerated" in

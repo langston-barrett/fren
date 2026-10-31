@@ -1,0 +1,32 @@
+-- Run with `FREN_MISREAD_MODELS` set (`Reqs/Models#testing`). A generic
+-- function's checks hold for every type, so their models have values of
+-- its type parameter, which confirmation treats as a value of an abstract
+-- type (`Reqs/Models#free-values`). The `fren` command reads the model's
+-- value of `x`, so it decides `pinned` and catches the misread `a`, as it
+-- does at `Int`. The Lean-hosted front end does not evaluate a formula that
+-- mentions a value of an abstract type, so `pinned` is undecided to it, and
+-- it shows the misread model on the solver's word
+-- (`Reqs/Models#how-the-front-ends-evaluate`): the front ends may differ
+-- only on a model that the semantics contradicts.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+
+fn ignore<U>(x: U): Int := 0
+
+fn at_parameter<T>(x: T, a: Int): (r: Int) {
+    assume pinned: ignore(x) = a + 1
+    out r := a
+    ensure positive: at_parameter(x, a) > 0  --~[cli] error: internal error: the solver's model for the postcondition check of `at_parameter::positive` makes its hypothesis `at_parameter.pinned` false in Fren's semantics
+    --~^[hosted] error: counterexample: a = 0
+}
+
+-- At `Int`, both front ends catch it.
+fn at_int(x: Int, a: Int): (r: Int) {
+    assume pinned: ignore(x) = a + 1
+    out r := a
+    ensure positive: at_int(x, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_int::positive` makes its hypothesis `at_int.pinned` false in Fren's semantics
+}
+
+--@ exit: 1

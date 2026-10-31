@@ -79,16 +79,20 @@ payload:
 itself, and it covers only what the rule needs: `Set` stands for a set and
 for a relation, since the default value of both is empty, and the elements'
 type is not read; and a record is a `Data` of one `Variant`, its fields.
-It is complete for Fren's types, for two reasons. A type's payload or
-fields can recur only into the type itself, never through another type:
-a type is declared before it is used, so two types cannot each contain
-the other, and a recursive payload must be the type itself, not an
-instance that contains it (F0387). So `Itself`, the immediately enclosing
-type, is the only type whose default value can be sought within its own.
-And a generic type's arguments are substituted before the rule is
-applied, so no type parameter reaches it. Both front ends' rules cut
-recursion with a list of the types being sought, and give no value for a
-type parameter, but neither case arises.
+It is complete for Fren's types, as the variables of a query have them.
+A type's payload or fields can recur only into the type itself, never
+through another type: a type is declared before it is used, so two types
+cannot each contain the other, and a recursive payload must be the type
+itself, not an instance that contains it (F0387). So `Itself`, the
+immediately enclosing type, is the only type whose default value can be
+sought within its own. An instance of a generic type has its arguments substituted
+before the rule is applied. A [generic
+function](Lang/GenericFunctions.md#type-parameters)'s checks, though, hold
+for every type, so their variables may have its type parameter as their
+type, as an abstract type: the rule treats it as one, `Abstract`, and
+gives no value, as both front ends do. A free variable of a type
+parameter is then left without a value, and the parts of the query that
+read it are undecided, as for an abstract type.
 
 ```fren
 use lang::Id
@@ -291,10 +295,13 @@ defined is a separate claim:
   index of the empty sequence. So the Lean-hosted front end evaluates only
   the formulas that have none of these, directly or within the bodies of
   the functions and clauses that they apply, and that apply no
-  uninterpreted function and mention no value of an abstract type: the
-  others are `Undefined` to it. It confirms nothing that indexes a
+  uninterpreted function and mention no value of an abstract type, nor
+  of a generic function's type parameter, which is one: the others are
+  `Undefined` to it. It confirms nothing that indexes a
   sequence, so a misread model whose contradiction is only in such a
-  formula is shown by it, and caught by the `fren` command (#462). That it
+  formula is shown by it, and caught by the `fren` command (#462), as is
+  one whose contradiction is only in a formula that mentions a value of a
+  type parameter (`test/ui/misread/misread_type_parameter.fren`). That it
   agrees with `lang::eval` on the formulas it does decide is **trusted**:
   nothing checks the generated definitions against `lang::eval`.
 

@@ -22,8 +22,10 @@ restored, as each front end restores it when it prints one. That both front
 ends then *show* the same value is checked over the strings at the end.
 
 The types here recurse only into themselves, which is all that Fren's
-types can do, so `TypeShape` is complete for them
-(`Reqs/Models#free-values`).
+types can do (`Reqs/Models#free-values`). A generic function's type
+parameter is `Abstract`, as `shapeOf` maps it, and
+`test/ui/misread/misread_type_parameter.fren` checks what both front ends
+do with one.
 -/
 
 mod model_defaults_test
@@ -135,7 +137,17 @@ def tyOf (sp : Spec) (path : Lean.Name) : VTy :=
   let ty := tyOf spec path
   (spec.defaultVal ty).map (·.showAs spec ty) == some shown
 
+-- A generic function's type parameter is `Abstract`, and has no default
+-- value in the spec or in the `fren` command's rule.
+#guard specDefault spec (.param 0) == none && (spec.defaultVal (.param 0)).isNone
+
 /-! ## The Lean-hosted front end's rule -/
+
+-- Nor in the Lean-hosted front end's, where it is a local type.
+open Lean Meta in
+run_meta do
+  if let some v ← withLocalDeclD `T (mkSort 1) fun t => Fren.defaultValue t then
+    throwError "a type parameter has the default value {← ppExpr v}"
 
 open Lean Meta in
 /-- `s` as a term, to apply the generated `model::default_value` to. -/
