@@ -7,11 +7,13 @@ name: pre-merge
 # request changes. Its last job, `pre-merge`, passes only if all the others
 # did: it is the status to rely on, and the one the merge queue requires.
 #
-# On a pull request, it also uploads the binaries it built, `fren` from the
-# build and `fren_test` from shard 0, as the artifacts `fren-SHA` and
-# `fren_test-SHA`, where SHA is the pull request's head, kept for 3 days:
-# Linux binaries of the head merged into `main`, with which a reviewer can
-# probe the head without building it (`Reqs/dev/Testing#continuous-integration`).
+# On a pull request, it also uploads stripped copies of the binaries it
+# built, `fren` from the build and `fren_test` from shard 0, as the
+# artifacts `fren-SHA` and `fren_test-SHA`, where SHA is the pull request's
+# head, kept for 3 days: Linux binaries of the head merged into `main`, each
+# with the merge commit in `MERGE_SHA` and its parents, `main`'s commit and
+# the head, in `MERGE_PARENTS`, with which a reviewer can probe the
+# head without building it (`Reqs/dev/Testing#continuous-integration`).
 #
 # It runs on each push to a pull request, and again in the merge queue, on
 # the queue's merge commit of the pull request into the current `main`
@@ -55,14 +57,26 @@ jobs:
     # including inconclusive checks and untraced requirements, fail it.
     - run: lake build --wfail
     # Only once the build has passed: until then, the `.lake` may still hold
-    # the `fren` of `main` that it was restored with.
+    # the `fren` of `main` that it was restored with. A stripped copy, with
+    # the merge commit it was built from, which a probe must check out; the
+    # copy checks an example, so that stripping cannot break it unnoticed.
+    - if: ${{ github.event_name == 'pull_request' }}
+      run: |
+        mkdir "$RUNNER_TEMP/artifact"
+        cp .lake/build/bin/fren "$RUNNER_TEMP/artifact/fren"
+        strip "$RUNNER_TEMP/artifact/fren"
+        git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
+        git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
+        ls -l .lake/build/bin/fren "$RUNNER_TEMP/artifact"
+        "$RUNNER_TEMP/artifact/fren" check examples/arith.fren
     - if: ${{ github.event_name == 'pull_request' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fren-${{ github.event.pull_request.head.sha }}
-        path: .lake/build/bin/fren
+        path: ${{ runner.temp }}/artifact
         if-no-files-found: error
         retention-days: 3
+        overwrite: true
   test:
     name: lake test (shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-24.04
@@ -87,14 +101,28 @@ jobs:
     # the others the rest (`Reqs/dev/Testing`).
     - run: lake build fren_test
     # Before the tests run, so that a reviewer can probe a head whose tests
-    # fail.
+    # fail. A stripped copy, with the merge commit, as for `fren`. Stripping
+    # keeps the dynamic symbols, through which the interpreter finds the
+    # compiled code; a ui job of the copy, which loads `Fren`, checks that.
+    - if: ${{ github.event_name == 'pull_request' && matrix.shard == 0 }}
+      run: |
+        mkdir "$RUNNER_TEMP/artifact"
+        cp .lake/build/bin/fren_test "$RUNNER_TEMP/artifact/fren_test"
+        strip "$RUNNER_TEMP/artifact/fren_test"
+        git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
+        git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
+        ls -l .lake/build/bin/fren_test "$RUNNER_TEMP/artifact"
+        out=$(lake env "$RUNNER_TEMP/artifact/fren_test" --job ui test/ui/syntax/eqeq.fren)
+        echo "$out"
+        test "$out" = "[]"
     - if: ${{ github.event_name == 'pull_request' && matrix.shard == 0 }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fren_test-${{ github.event.pull_request.head.sha }}
-        path: .lake/build/bin/fren_test
+        path: ${{ runner.temp }}/artifact
         if-no-files-found: error
         retention-days: 3
+        overwrite: true
     - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
       env:
         SHARD: ${{ matrix.shard }}
