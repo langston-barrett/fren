@@ -1,0 +1,9 @@
+-- The shorthand has one invariant, its pattern test, and takes no `where`.
+pub type Byte = Int is 0..=255 where low: true
+--~^[cli] error: expected an item
+--~^^[hosted] error: unexpected token 'where'; expected command
+
+-- Stop Lean's command recovery before the test harness's check command.
+pub type T
+
+--@ exit: 2

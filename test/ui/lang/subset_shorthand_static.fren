@@ -1,0 +1,4 @@
+-- A static error in the pattern of the pattern shorthand is reported at
+-- the pattern, and alone: the binder, named as the type, is not linted,
+-- as its case would be (`non_snake_case`) if it were written.
+pub type Empty = Int is 3..=2   --~ error: the range `3..=2` matches no integer

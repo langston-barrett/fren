@@ -1042,12 +1042,14 @@ source expressions have already received their expression lints; procedural
 unused-variable and manual-assumption suggestions do not apply to them. -/
 def withoutGhostLints (action : M α) : M α := do
   let before ← get
-  let result ← action
-  modify fun st => { st with
+  let restore (st : State) : State := { st with
     lintReports := before.lintReports
     lintFixes := before.lintFixes
     natReports := before.natReports
   }
+  -- Also on a static error, which keeps the state it failed in.
+  let result ← tryCatch action fun failure => throw { failure with state := restore failure.state }
+  modify restore
   return result
 
 /-- Runs `x`, a member of an item that is checked on its own: on a static
@@ -7095,17 +7097,20 @@ partial def elabItem (item : Item) : M Unit := do
       let generatedBefore ← get
       let priorSubset := (← get).inSubset
       modify fun st => { st with inSubset := true }
+      -- Only the lints of the invariant's own source are reported, as for
+      -- any expression, whether or not it has a static error: not those of
+      -- the binder, which the pattern shorthand does not write.
+      let ownLints (st : State) : State := { st with
+        lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
+        lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
+        natReports := generatedBefore.natReports }
       try
         elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
       catch failure =>
         if failure.diags.any (·.msg.code? == some "F0201") then
           err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some s!"outside the scope of `{binder.name}`" }
-        throw failure
-      modify fun st => { st with
-        inSubset := priorSubset
-        lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
-        lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-        natReports := generatedBefore.natReports }
+        throw { failure with state := ownLints failure.state }
+      modify fun st => { ownLints st with inSubset := priorSubset }
       -- Its full-definedness check is guarded by earlier invariants below,
       -- rather than checked unconditionally as an ordinary function body.
       modify fun st => { st with bodies := st.bodies.extract 0 before }

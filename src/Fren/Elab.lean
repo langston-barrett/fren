@@ -8812,6 +8812,9 @@ shared procedure check protocol, with separate declaration-only checks. -/
     let parameter : TSyntax `ident := ⟨binder⟩
     let command ← `(pub fn $predicate:ident($parameter:ident : $base) := $body)
     let before ← getLocal
+    let insideInvariant (ref : Syntax) := match ref.getPos?, ref.getTailPos?, expression.getPos?, expression.getTailPos? with
+      | some start, some stop, some first, some last => first <= start && stop <= last
+      | _, _, _, _ => false
     modifyLocal fun l => { l with inSubset := true }
     try
       elabFunctionCore command command
@@ -8821,16 +8824,16 @@ shared procedure check protocol, with separate declaration-only checks. -/
         throwErrorAt expression ({ code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some s!"outside the scope of `{binder.getId}`" } : Core.Msg).text
       throw ex
     finally
-      modifyLocal fun l => { l with inSubset := before.inSubset }
+      -- Only the lints of the invariant's own source are reported, as for
+      -- any expression, whether or not it has a static error: not those of
+      -- the binder, which the pattern shorthand does not write.
+      modifyLocal fun l => { l with
+        inSubset := before.inSubset
+        lintReports := before.lintReports ++ (l.lintReports.extract before.lintReports.size).filter (insideInvariant ·.ref)
+        natReports := before.natReports ++ (l.natReports.extract before.natReports.size).filter (insideInvariant ·.2.2.ref) }
     -- Definedness is checked with earlier conjuncts, never unconditionally
     -- as an ordinary function body or using its own membership as a fact.
-    let insideInvariant (ref : Syntax) := match ref.getPos?, ref.getTailPos?, expression.getPos?, expression.getTailPos? with
-      | some start, some stop, some first, some last => first <= start && stop <= last
-      | _, _, _, _ => false
-    modifyLocal fun l => { l with
-      bodies := before.bodies
-      lintReports := before.lintReports ++ (l.lintReports.extract before.lintReports.size).filter (insideInvariant ·.ref)
-      natReports := before.natReports ++ (l.natReports.extract before.natReports.size).filter (insideInvariant ·.2.2.ref) }
+    modifyLocal fun l => { l with bodies := before.bodies }
     invariants := invariants.push { name := path ++ label.getId, predicate := module ++ predicateName }
     let value := unparen expression
     if pattern.isNone && clauses.size == 1 && value.isOfKind ``Lang.isExpr && soleName? value[0] == some binder.getId then
@@ -8861,6 +8864,22 @@ shared procedure check protocol, with separate declaration-only checks. -/
   ghost (makeProc inhabit mkNullNode resultSyntax (guarantees.map (·.raw)))
   if let some info := (← getState).comps.get? (module ++ inhabit.getId) then
     record (.compInfo { info with subset? := some path })
+
+open Lang in
+/-- `type T = U is P`, elaborated as the declaration it stands for,
+`type T = T: U where pattern: T is P`, the binder named as the type, which
+no other name in scope is (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
+@[command_elab Lang.subsetShorthandCmd] def elabSubsetShorthand : CommandElab := fun stx => do
+  let isTok := stx[5]
+  -- The binder has no position, so that the invariant is where `is P` is
+  -- written, and only its lints are reported, as for a written binder.
+  let binder := mkIdent stx[2].getId
+  let label := mkIdentFrom isTok `pattern
+  let scrutinee ← `(fren_expr| $binder:ident)
+  let test := mkNode ``Lang.isExpr #[scrutinee, isTok, stx[6]]
+  let invariant := mkNode ``Lang.labelledExpr #[label, mkAtom ":", test]
+  elabSubsetType (mkNode ``Lang.subsetTypeCmd
+    #[stx[0], stx[1], stx[2], stx[3], binder, mkAtom ":", stx[4], mkAtom "where", invariant])
 
 end
 

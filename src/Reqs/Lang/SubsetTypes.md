@@ -1,12 +1,15 @@
 # Subset types
 
 A subset type is a declared alias of a base type restricted by a nonempty,
-ordered list of named invariants. It replaces the type syntax `T is P`;
-`is` remains a pattern test in expressions. There is no inline subset type.
-Ordinary aliases retain `type Name := Base`.
+ordered list of named invariants. It replaces the type syntax `T is P`
+of earlier versions of Fren, which remains only as the [pattern
+shorthand](#the-pattern-shorthand) of a declaration; `is` remains a
+pattern test in expressions. There is no inline subset type. Ordinary
+aliases retain `type Name := Base`.
 
 ```
 subset := ["pub"] "type" IDENT "=" IDENT ":" type "where" conjunct ("and" conjunct)*
+        | ["pub"] "type" IDENT "=" type "is" pattern
 conjunct := IDENT ":" expression
 ```
 
@@ -31,7 +34,9 @@ its base's invariants followed by its own, without changing the base
 representation. Cyclic and forward type references follow ordinary alias
 resolution and are rejected. Empty lists and unlabelled conjuncts are
 syntax errors. A lone label other than `invariant` is accepted; the
-separate lint reports it, without changing the meaning.
+separate lint reports it, without changing the meaning. The [pattern
+shorthand](#the-pattern-shorthand) writes no label, so the lint does not
+report its `pattern`.
 
 ## Conjunctions and interpretation
 
@@ -121,6 +126,52 @@ pub proc subset_labels(clauses: Seq<SubsetClause>): (accepted?) {
     ], not accepted?
 }
 ```
+
+## The pattern shorthand
+
+A subset type whose one invariant is a pattern test of its value may be
+declared with the shorthand `type T = U is P`. It stands for
+`type T = T: U where pattern: T is P`, the subset type of `U` whose one
+invariant is `T::pattern`, with the binder named as the type:
+
+```
+type Byte = Int is 0..=255
+type Digit = Byte is 0..=9
+pub enum Severity { Silent, Info, Warning, Error }
+type Loud = Severity is Severity::Warning | Severity::Error
+```
+
+`Byte` is `type Byte = Byte: Int where pattern: Byte is 0..=255`, and an
+obligation of a `Byte` names `Byte::pattern`. `Digit`, built on `Byte`,
+keeps `Byte::pattern` followed by its own `Digit::pattern`, as any subset
+type keeps its base's invariants. Both front ends read the shorthand as
+the declaration it stands for while parsing, so everything after parsing
+is as for that declaration: its scope, its declaration checks, its
+obligations, its diagnostics and the pattern-test invariant fragment of
+[Decidability, Lean and migration](#decidability-lean-and-migration),
+which makes `Byte` finite, with the integers `0` to `255` in order. The
+declaration written out in full means the same, and is as valid:
+`pattern` is an ordinary label, not a reserved word.
+
+The shorthand is written only as a declaration, and only with `=`. In
+any other place where a type is written, `T is P` is a syntax error: a
+variable's, parameter's or result's type, a field or payload, the element
+type of a collection, a type argument, a quantifier's binder and an
+ordinary alias, `type T := U is P`, which restricts nothing. A
+restriction is thus always the invariant of a named type, as the other
+declarations' are. A declaration with more than one invariant, or with
+an invariant that is not a pattern test, is written in full; the
+shorthand takes no `where`.
+
+The binder is never written, and a pattern mentions no variable, so its
+only requirement is that it shadows nothing, since [shadowing is
+explicit](Procedures.md#shadowing). The type's own name meets it: no
+other name in the module's scope can be the type's, since an item or a
+`use` of the same name is an error. Any other name, such as `value`,
+could be a constant's or a function's. A subset type's declaration
+reports only the lints of its invariants' source, whether or not it has a
+static error, so the binder's case, which `non_snake_case` would report
+of a variable named `Byte`, is not linted.
 
 ## Static types, assumptions and obligations
 
