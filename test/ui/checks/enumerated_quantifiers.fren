@@ -132,6 +132,50 @@ proc record_field_guard(k: Int): (all?) {  --~ warning: could not decide whether
     expect wrong: all?  --~ error: counterexample: k = 0, all? = false
 }
 
+-- A membership read through the field gives the members as the name's
+-- values (`Ms(0)` and `Ms(1)` here), from a set or a sequence.
+set_option fren.evidence "enumerated" in
+proc member_field(k: Int): (all?) {  --~ info: 1 check of `member_field` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when m.0 in {0, 1}, m.0 < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc member_field_seq(xs: Seq<Int>, k: Int): (all?) {  --~ info: 1 check of `member_field_seq` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when m.0 in xs, m.0 < k)
+    expect wrong: all?  --~ error: counterexample: xs = [0], k = 0, all? = false
+}
+
+-- A name whose values are naturals ranges over the members of a
+-- collection of `Int`s that are not negative: `-1` is no `Nat`, and
+-- `2`, or `Ns(2)`, refutes the quantifier.
+set_option fren.evidence "enumerated" in
+proc nat_members(): (all?) {
+    ensure r: all? iff (forall (x: Nat), when x in {-1, 2}, x != 2)
+    expect e: all?  --~ error: counterexample: all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ns_members(s: Set<Int>): (all?) {  --~ info: 1 check of `ns_members` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (n: Ns), when n.0 in s, n.0 != 2)
+    expect e: all?  --~ error: counterexample: s = {-2, 2}, all? = false
+}
+
+-- A newtype over `Nat` with only an upper bound ranges from 0, as a `Nat`
+-- does (`lang::nat_floor`), whether the bound compares the name or its
+-- field: `Ns(5)` refutes `e` here.
+set_option fren.evidence "enumerated" in
+proc ns_far(): (all?) {
+    ensure r: all? iff (forall (n: Ns), when n < Ns(10), n.0 < 5)
+    expect e: all?  --~ error: counterexample: all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ns_field_far(): (all?) {
+    ensure r: all? iff (forall (n: Ns), when n.0 < 10, n.0 < 5)
+    expect e: all?  --~ error: counterexample: all? = false
+}
+
 -- Between two `String`s lie `"aa"`, `"aaa"` and every other string that
 -- starts with the lower one, so a comparison gives no bound: the
 -- quantifier ranges over `String`'s values up to the bound, in both front
@@ -251,4 +295,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 63 passed (20 by bounded enumeration), 19 failed, 19 inconclusive, 0 redundant
+--@ summary: 75 passed (23 by bounded enumeration), 25 failed, 19 inconclusive, 0 redundant

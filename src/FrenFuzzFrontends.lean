@@ -35,7 +35,10 @@ recorded against its spec and the run goes on.
 
 `--avoid-known` keeps the generator clear of the differences already
 known, to find others: it parenthesizes every method's receiver that is
-not a name.
+not a name. `--guards` generates guarded quantifiers alone
+(`Wide.genGuards`), over every type that a guard may bound or not, with
+their operands read through fields, so that many run fast; `genWide`
+includes such a procedure now and then too.
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -458,6 +461,116 @@ def countsProc (name : String) (hasMs : Bool) (newtypes : Array String) : R Stri
   return s!"\nset_option fren.lint.undecidable \"allow\" in\nset_option fren.enumeration.size {size} in\n" ++
     s!"set_option fren.evidence \"enumerated\" in\npub proc {name}({params}){resultList} \{\n{body}}\n"
 
+/-! ### Guards of quantifiers -/
+
+/-- The declarations that `guardsProc` quantifies over: newtypes over
+`Int` and `Nat`, a newtype over a newtype, one that is not ordered, an
+ordered record and an ordered enumeration. -/
+def guardDecls : String :=
+  "pub ordered struct Gm(Int)\npub ordered struct Gn(Nat)\npub ordered struct Go(Gm)\npub struct Gp(Int)\n" ++
+  "pub ordered struct Gr { x: Int, y: Int }\npub ordered enum Ge { A, B, C }\n" ++
+  "pub type Gb = b: Int where invariant: b is 0..=3\n"
+
+/-- An operand of a guard: how it reads the bound name `x`, and a constant
+of its type, which a bound or a member may be. -/
+structure GuardForm where
+  text : String
+  lit : R String
+  /-- A collection of the operand's type, for a membership. -/
+  coll : R String
+  /-- Whether `k`, an `Int`, may bound it. -/
+  int : Bool := false
+
+instance : Inhabited GuardForm := ⟨{ text := "x", lit := pure "0", coll := pure "s" }⟩
+
+def intLit : R String := do
+  let n ← below 6
+  return if (← chance 15) then s!"-{n}" else toString n
+
+/-- The ways a guard may read a bound name of the type `ty`, by its fields
+and orderings, each with constants of its type. -/
+def guardForms (ty : String) (x : String) : Array GuardForm :=
+  let ints : R String := intLit
+  let natLit : R String := do return toString (← below 6)
+  let intColl (lit : R String) : R String := do
+    match ← below 3 with
+    | 0 => return "s"
+    | 1 => return "q"
+    | _ => return s!"\{{← lit}, {← lit}}"
+  let wrapColl (lit : R String) : R String := do
+    if ← chance 50 then return s!"\{{← lit}, {← lit}}" else return s!"[{← lit}, {← lit}]"
+  let int (t : String) (lit : R String) : GuardForm := { text := t, lit, coll := intColl lit, int := true }
+  match ty with
+  | "Int" | "Gb" => #[int x ints]
+  | "Nat" => #[int x natLit]
+  | "Gm" =>
+    let gm : R String := do return s!"Gm({← intLit})"
+    #[{ text := x, lit := gm, coll := wrapColl gm }, int s!"{x}.0" ints]
+  | "Gn" =>
+    let gn : R String := do return s!"Gn({← natLit})"
+    #[{ text := x, lit := gn, coll := wrapColl gn }, int s!"{x}.0" natLit]
+  | "Go" =>
+    let gm : R String := do return s!"Gm({← intLit})"
+    let go : R String := do return s!"Go(Gm({← intLit}))"
+    #[{ text := x, lit := go, coll := wrapColl go }, { text := s!"{x}.0", lit := gm, coll := wrapColl gm },
+      int s!"{x}.0.0" ints, int s!"({x}).0.0" ints]
+  | "Gp" => #[int s!"{x}.0" ints, int s!"({x}).0" ints]
+  | "Gr" =>
+    let gr : R String := do return s!"Gr \{ x := {← intLit}, y := {← intLit} }"
+    #[{ text := x, lit := gr, coll := wrapColl gr }, int s!"{x}.x" ints]
+  | "Ge" =>
+    let ge : R String := do return s!"Ge::{← pick #["A", "B", "C"]}"
+    #[{ text := x, lit := ge, coll := wrapColl ge }]
+  | _ =>
+    let str : R String := do pick #["\"\"", "\"a\"", "\"ab\"", "\"b\""]
+    #[{ text := x, lit := str, coll := wrapColl str }]
+
+/-- A conjunct of a guard of the bound name `x` of the type `ty`: a
+comparison of one of its forms, on either side, with each operator, a
+chain of two, a membership, or a conjunct about something else. -/
+def guardConjunct (ty x : String) : R String := do
+  let f ← pick (guardForms ty x)
+  let bound : R String := do
+    if f.int && (← chance 30) then pick #["k", "k + 1", "q.len"] else f.lit
+  match ← below 6 with
+  | 0 | 1 =>
+    let op ← pick #["<", "<=", ">", ">="]
+    if ← chance 50 then return s!"{f.text} {op} {← bound}" else return s!"{← bound} {op} {f.text}"
+  | 2 => return s!"{← bound} {← pick #["<", "<="]} {f.text} {← pick #["<", "<="]} {← bound}"
+  | 3 | 4 => return s!"{f.text} in {← f.coll}"
+  | _ => pick #["k > 0", "true"]
+
+/-- A procedure of guarded quantifiers alone, always enumerated, over
+each type that a guard may bound or not (`lang::range_domain`), its
+operands read through fields (`lang::name_alone`), with ranges with one
+or both bounds, memberships in sets and sequences, and each comparison
+operator. -/
+def guardsProc (name : String) : R String := do
+  let tys := #["Int", "Nat", "Gb", "Gm", "Gn", "Go", "Gp", "Gr", "Ge", "String"]
+  let mut body := ""
+  let n := (← below 3) + 1
+  for j in [0:n] do
+    let ty ← pick tys
+    let x := "x"
+    let guard := " and ".intercalate (← (List.range ((← below 3) + 1)).mapM fun _ => guardConjunct ty x)
+    let f ← pick (guardForms ty x)
+    let inst := s!"{f.text} != {← f.lit}"
+    let q ← if ← chance 60 then pure s!"forall ({x}: {ty}), when {guard}, {inst}"
+      else pure s!"exists ({x}: {ty}), {guard} and {inst}"
+    body := body ++ s!"    ensure r{j}: b{j}? iff ({q})\n    expect e{j}: b{j}?\n"
+  let outs := ", ".intercalate ((List.range n).map (s!"b{·}?"))
+  let size := if ← chance 10 then 3 else 2
+  return s!"\nset_option fren.lint.undecidable \"allow\" in\nset_option fren.lint.chainable_comparison \"allow\" in\n" ++
+    s!"set_option fren.enumeration.size {size} in\nset_option fren.evidence \"enumerated\" in\n" ++
+    s!"pub proc {name}(k: Int, s: Set<Int>, q: Seq<Int>): ({outs}) \{\n{body}}\n"
+
+/-- A spec of guarded quantifiers alone (`--guards`). -/
+def genGuards : R String := do
+  let mut out := "mod fz\n\n" ++ guardDecls
+  for i in [0:(← below 3) + 2] do
+    out := out ++ (← guardsProc s!"g{i}")
+  return out
+
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := do
   let useEnum ← chance 60
@@ -621,6 +734,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     out := out ++ s!"\n{enumerated}pub proc c{c}(\n{params}){resultList} \{\n{body}}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
   if hasCounts then out := out ++ (← countsProc "counts" hasMs countNewtypes)
+  if ← chance 25 then out := out ++ guardDecls ++ (← guardsProc "guards")
   -- Only variables have the type `P`, each declared on a line of its own.
   return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 
@@ -666,6 +780,18 @@ unsafe def mainFiles (files : List String) (dir : String) : IO UInt32 := do
 
 def rngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0xf407⟩
 
+/-- How specs are generated: `--avoid-known`, and `--guards`, which
+generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
+structure Mode where
+  avoidKnown : Bool := false
+  guards : Bool := false
+
+def Mode.spec (m : Mode) (seed : Nat) : String :=
+  Id.run ((if m.guards then Wide.genGuards else Wide.genWide m.avoidKnown).run' (rngOf seed))
+
+def Mode.args (m : Mode) : Array String :=
+  (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[])
+
 /-- A difference without its line, names and values, to group the
 specs that differ alike. -/
 def signature (f : String) : String := Id.run do
@@ -708,16 +834,16 @@ def record (r : Run) (o : Outcome) : IO Unit := do
   h.putStrLn (toJson o).compress
   h.flush
 
-def flags (avoidKnown : Bool) : String := if avoidKnown then " --avoid-known" else ""
+def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- Checks the specs of seeds `[seed, seed + count)` in this process,
 writing each one's outcome to the results file. -/
-unsafe def worker (count seed : Nat) (run : Run) (avoidKnown : Bool) : IO UInt32 := do
+unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
   let env ← loadFren
   for i in [0:count] do
     let s := seed + i
     IO.FS.writeFile run.progress (toString s)
-    let text : String := Id.run ((Wide.genWide avoidKnown).run' (rngOf s))
+    let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let (found, flaky, reports, errs) ← runFrontends env run.spec text
     let elapsed := (← IO.monoMsNow) - t0
@@ -726,7 +852,7 @@ unsafe def worker (count seed : Nat) (run : Run) (avoidKnown : Bool) : IO UInt32
     unless found.isEmpty do
       let file : System.FilePath := run.dir / s!"{if flaky then "inconclusive-" else ""}fe-seed{s}.fren"
       let header := String.join (found.toList.map fun f => s!"-- {f.replace "\n" " "}\n")
-      IO.FS.writeFile file (s!"-- fren_fuzz_frontends{flags avoidKnown} --seed {s}\n" ++ header ++ reports ++ text)
+      IO.FS.writeFile file (s!"-- fren_fuzz_frontends{flags mode} --seed {s}\n" ++ header ++ reports ++ text)
       IO.eprintln s!"seed {s}: front ends differ{if flaky then " (only in inconclusive results)" else ""}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
     record run { seed := s, status, errors := errs.toList.eraseDups.toArray, signatures := found.map signature }
@@ -753,7 +879,7 @@ Crashes and timeouts are findings: the run then exits nonzero. A worker
 that dies while checking no spec, before its first or between two, is
 blamed on none: the run resumes after the last spec recorded, or stops if
 the worker recorded none. -/
-unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (limit : Nat) : IO UInt32 := do
+unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit : Nat) : IO UInt32 := do
   let start ← IO.monoMsNow
   let run : Run := { dir, id := toString (← IO.Process.getPID) }
   IO.FS.writeFile run.results ""
@@ -761,7 +887,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (
   while next < seed + count do
     IO.FS.writeFile run.progress ""
     let args := #["--worker", run.id, "--count", toString (seed + count - next), "--seed", toString next, "--out", dir]
-      ++ (if avoidKnown then #["--avoid-known"] else #[])
+      ++ mode.args
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
     -- Wait, and stop the worker if one spec takes too long.
     let mut current := ""
@@ -791,9 +917,9 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (
         continue
     let what := if timedOut then s!"took more than {limit}s" else s!"crashed (exit {code?.getD 0})"
     IO.eprintln s!"seed {failed}: the worker {what}"
-    let text : String := Id.run ((Wide.genWide avoidKnown).run' (rngOf failed))
+    let text : String := mode.spec failed
     let kind := if timedOut then "timeout" else "crash"
-    IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags avoidKnown} --seed {failed}: {what}\n" ++ text)
+    IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags mode} --seed {failed}: {what}\n" ++ text)
     record run { seed := failed, status := kind }
     next := failed + 1
   let outcomes ← outcomesOf run
@@ -816,9 +942,9 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (avoidKnown : Bool) (
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
-  "       fren_fuzz_frontends [--avoid-known] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -831,11 +957,11 @@ unsafe def main (args : List String) : IO UInt32 := do
   if let "--files" :: files := args then
     IO.FS.createDirAll ".lake/fuzz"
     return ← mainFiles files ".lake/fuzz"
-  let avoidKnown := args.contains "--avoid-known"
-  let args := args.filter (· != "--avoid-known")
+  let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards" }
+  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards")
   if let ["--print", n] := args then
     let some s := n.toNat? | IO.eprintln usage; return 2
-    IO.print (Id.run ((Wide.genWide avoidKnown).run' (rngOf s)))
+    IO.print (mode.spec s)
     return 0
   let rec parse : List String → Opts → Option Opts
     | [], o => some o
@@ -848,8 +974,8 @@ unsafe def main (args : List String) : IO UInt32 := do
   let some o := parse args {} | IO.eprintln usage; return 2
   IO.FS.createDirAll o.dir
   match o.worker? with
-  | some id => worker o.count o.seed { dir := o.dir, id } avoidKnown
-  | none => mainFrontends o.count o.seed o.dir avoidKnown o.limit
+  | some id => worker o.count o.seed { dir := o.dir, id } mode
+  | none => mainFrontends o.count o.seed o.dir mode o.limit
 
 end FrenFuzzFrontends
 

@@ -227,16 +227,23 @@ partial def guardConjunctsBy (view : α → GuardNode α) (when? : α → Option
   else splitConjuncts view body
 
 /-- The bound name that an operand of a guard's conjunct is, written alone
-(`lang::name_alone`): the bound name at `base`, read through `fields`,
-one for each field read from it, outermost last, each saying whether it is
-the field `0` of a newtype. A newtype's values are its field's
-(`Reqs/Lang/Expressions#newtypes`), so `m.0` of a newtype `m`, and
-`m.0.0` of one over a newtype, is `m` itself; any other field read from a
-bound name is not the name. Both front ends ask it: the `fren` command of
-a path such as `m.0`, and the hosted front end of the field projections
-that elaboration writes, for `m.0` as for an ordering of a newtype. -/
-def nameAlone (base : Option Nat) (fields : List Bool) : Option Nat :=
-  if fields.all id then base else none
+(`lang::name_alone`): the bound name at `base`, of the type `t`, read
+through the fields `fields`, outermost last. A newtype's values are its
+field's (`Reqs/Lang/Expressions#newtypes`), so its field `0` is the name
+itself: `m.0` of a newtype `m`, and `m.0.0` of one over a newtype, as many
+as `t` has newtypes, the first `t.wrapped.length - 1`; any other field is
+not the name. Both front ends ask it, of the bound name's type: the `fren`
+command of a path such as `m.0`, and the hosted front end of the field
+projections that elaboration writes, for `m.0` as for an ordering of a
+newtype. -/
+def nameAlone (base : Option Nat) (t : Ty) (fields : List String) : Option Nat :=
+  if decide (fields.length < t.wrapped.length) && fields.all (· == "0") then base else none
+
+/-- Whether a bound name of the type `t` ranges from 0 where its guard gives
+it only an upper bound (`lang::nat_floor`): where its values are naturals,
+a `Nat` or a newtype over one, whose values are its field's. Both front
+ends' evaluators ask it of the bound name's type. -/
+def startsAtZero (t : Ty) : Bool := t.erased matches .nat
 
 /-- What the operand `e` of a conjunct is, seen from the bound name at
 position `k` (`lang::guard_operand`): that name, if `alone e` is its

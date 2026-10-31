@@ -59,12 +59,6 @@ inductive VTy where
   | param (k : Nat)
   deriving Inhabited, BEq, Hashable, Repr
 
-/-- `t` with `d` newtypes unwrapped, as far as it is one: the type of
-`x.0.0`, with `d` fields `0`, of an `x` of type `t`. -/
-def VTy.unwrapped : Nat → VTy → VTy
-  | d + 1, .newtype _ u => VTy.unwrapped d u
-  | _, t => t
-
 /-- The evaluator's type of a declared type. -/
 partial def VTy.ofCore : Fren.Core.Ty → VTy
   | .bool => .bool
@@ -2601,11 +2595,10 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         doms := doms.push (some (.lit (.seq vs)))
         continue
       -- A newtype's field `0`, read from a bound name, is the name itself
-      -- (`Fren.Core.nameAlone`).
-      let newtypeAt (j d : Nat) : Bool := match bound[j]? with
-        | some (_, t, _, _) => ((t.unwrapped d) matches .newtype ..)
-        | none => false
-      let (d, reads) := domainOf all strs body k (t == .nat) newtypeAt
+      -- (`Fren.Core.nameAlone`), and a name whose values are naturals
+      -- ranges from 0 (`Fren.Core.startsAtZero`), both of its type.
+      let tyOf (j : Nat) : Option Fren.Core.Ty := bound[j]?.map fun (_, t, _, _) => t.core sp
+      let (d, reads) := domainOf all strs body k (Fren.Core.startsAtZero (t.core sp)) tyOf
       -- A comparison bounds a bound name only where its type has finitely
       -- many values between any two bounds, as both front ends have it
       -- (`lang::range_domain`); otherwise its guard gives no range, and

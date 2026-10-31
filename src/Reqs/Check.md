@@ -2548,7 +2548,11 @@ pub proc quantified_truth(
 
 pub proc partial_not(value: Truth): (det truth: Truth) {
     use self::Truth::{False, True, Unknown}
-    ensure rule: truth = match value { True => False, False => True, Unknown => Unknown }
+    ensure rule: truth = match value {
+        True => False,
+        False => True,
+        Unknown => Unknown,
+    }
 }
 
 pub proc partial_and(left: Truth, right: Truth): (det truth: Truth) {
