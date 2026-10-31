@@ -15,7 +15,7 @@ import FrenCoreCodes
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
     [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -56,7 +56,7 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--tests N]\n              \
+  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]\n              \
   [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
@@ -79,7 +79,8 @@ def usage : String :=
   to different values, for each unrealizable component (default 1), or\n\
   all of them with `all`.\n\
   `--jobs N` checks N procedures at once (default: the number of cores),\n\
-  with the same output as one at a time.\n\n\
+  with the same output as one at a time. `--timings` then reports how long\n\
+  each procedure's checks took, slowest first, on stderr.\n\n\
   `trace` reports the evidence for every component, and scans the tests for\n\
   `fren-covers:` markers. LEVEL is trusted, tested, solver or proved. Exit\n\
   status: 0 nothing below LEVEL and no stray markers, 1 otherwise, 2 the\n\
@@ -171,6 +172,8 @@ structure Args where
   (`Reqs/Cli#parallel-checking`). -/
   jobs? : Option Nat := none
   dumpSmt : Bool := false
+  /-- `check --timings` (`Reqs/Cli#timings`). -/
+  timings : Bool := false
   /-- `fmt --check` and `fix --check`. -/
   diffOnly : Bool := false
   /-- `fmt --ignore` and `fix --ignore`. -/
@@ -210,7 +213,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -335,6 +338,9 @@ where
     | "--dump-smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only "--dump-smt" "check"
+    | "--timings" :: rest, a =>
+      if a.command == .check then go rest { a with timings := true }
+      else only "--timings" "check"
     | "--check" :: rest, a =>
       if a.command == .fmt || a.command == .fix then go rest { a with diffOnly := true }
       else only "--check" "fmt` and `fren fix"
@@ -781,6 +787,22 @@ def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) : I
     discard <| IO.asTask worker .dedicated
   return promises.map fun p => IO.ofExcept p.result!.get
 
+/-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
+and global expectation, with its total time, the time of its solver's
+checks and that of its checks by testing and enumeration, in nanoseconds,
+its subject and its key, a line of its times in milliseconds, slowest
+first, then their total. -/
+def timingReport (ts : Array (Nat × Nat × Nat × String × String)) : String :=
+  let ms (ns : Nat) : String :=
+    let tenths := (ns + 50000) / 100000
+    s!"{tenths / 10}.{tenths % 10}"
+  let sorted := ts.qsort fun a b => a.1 > b.1 || (a.1 == b.1 && a.2.2.2.2 < b.2.2.2.2)
+  let lines := sorted.toList.map fun (t, s, r, subject, key) =>
+    s!"timing: {ms t} ms (solver {ms s} ms, testing {ms r} ms): {subject} ({key})\n"
+  let total := ts.foldl (· + ·.1) 0
+  let solver := ts.foldl (· + ·.2.1) 0
+  String.join lines ++ s!"timing: total {ms total} ms (solver {ms solver} ms, testing {ms (total - solver)} ms), of {ts.size} procedures and global expectations\n"
+
 /-- How many procedures `fren check` checks at once without `--jobs`: as
 many as the machine has cores (`Reqs/Cli#parallel-checking`). -/
 def jobsDefault : BaseIO Nat :=
@@ -825,7 +847,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         let k ← n.get
         dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
+    let start ← IO.monoNanosNow
     let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples
+    let solved ← IO.monoNanosNow
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !(c.tested.minus c.enumerated).any then none else match spec? with
       | .ok sp => (sp.counterpart? c global).map fun ec =>
@@ -836,10 +860,16 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let enumerated? := if !c.enumerated.any then none else match spec? with
       | .ok sp => (sp.counterpart? c global).map fun ec => enumerated sp ec c global kinds
       | .error _ => none
-    return (r, ← dumped.get, tested?, enumerated?)
+    -- Forced here, in this thread, so that `--timings` counts them.
+    let tested? ← IO.lazyPure fun _ => tested?
+    let enumerated? ← IO.lazyPure fun _ => enumerated?
+    let timing := (solved - start, (← IO.monoNanosNow) - solved)
+    return (r, ← dumped.get, tested?, enumerated?, timing)
+  let mut timings := #[]
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
   for (c, global, kinds, _, key) in todo, solved in solving do
-    let ((results, refuted, missing?), dumped, tested?, enumerated?) ← solved
+    let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) ← solved
+    timings := timings.push (solverNs + restNs, solverNs, restNs, subjectOf c global, key)
     IO.print dumped
     if let some msg := missing? then
       internal := internal.push msg
@@ -883,6 +913,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
       shown := shown.push msg
   IO.eprintln (Fren.Core.summary all byTesting byBound)
+  if args.timings then IO.eprint (timingReport timings)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown

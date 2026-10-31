@@ -72,6 +72,24 @@ lints. -/
 def lintsShown (out : String) : String := out.replace Fren.Core.lintsNote lintsPlaceholder
 where lintsPlaceholder := "note: the lints are {Lint.all}"
 
+/-- `out` with each time of `fren check --timings` (`Reqs/Cli#timings`)
+written as `_`, so that a snapshot that shows them does not depend on how
+fast the machine is: every run of digits and dots on a line that starts
+with `timing: `. -/
+def timingsShown (out : String) : String :=
+  "\n".intercalate <| (out.splitOn "\n").map fun line =>
+    if !line.startsWith "timing: " then line else Id.run do
+      let mut acc := ""
+      let mut inNumber := false
+      for ch in line.toList do
+        if ch.isDigit || (inNumber && ch == '.') then
+          unless inNumber do acc := acc.push '_'
+          inNumber := true
+        else
+          acc := acc.push ch
+          inNumber := false
+      return acc
+
 /-- Compares `actual` with the snapshot at `path`, or writes it when blessing. -/
 def expectFile (bless : Bool) (path : FilePath) (actual : String) : IO (Option String) := do
   if bless then
@@ -101,7 +119,7 @@ def snapshots (bless : Bool) : IO (Array String) := do
       | some argv => argv
       | none => (directive "args").getD ["check"] ++ [f.toString]
     let (out, code) ← runFren argv
-    expectFile bless (f.withExtension "expected") s!"{lintsShown out}exit={code}\n"
+    expectFile bless (f.withExtension "expected") s!"{timingsShown (lintsShown out)}exit={code}\n"
 
 /-! ## ui tests -/
 

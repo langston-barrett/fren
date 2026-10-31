@@ -1,0 +1,4 @@
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+timing: _ ms (solver _ ms, testing _ ms): `c` (comp c)
+timing: total _ ms (solver _ ms, testing _ ms), of _ procedures and global expectations
+exit=0

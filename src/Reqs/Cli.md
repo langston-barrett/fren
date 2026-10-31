@@ -1,7 +1,7 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
     [--seed N] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -41,6 +41,7 @@ installation. It is built by `lake build fren`.
 | `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
 | `--jobs N` | `check`: how many procedures to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
+| `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
 | `--require LEVEL` | `trace`: warn about, and fail on, procedures with weaker evidence than `trusted`, `tested`, `solver` or `proved` |
 | `--check` | `fmt` and `fix`: change no file, and print a diff of what would change |
@@ -116,7 +117,8 @@ pub proc fix_static_errors(
 
 ## Output
 
-Diagnostics, and the summary of the checks, go to standard error. Standard
+Diagnostics, the summary of the checks, and the [timings](#timings) of
+`fren check --timings` go to standard error. Standard
 output holds only what was asked for: the evidence report of `fren trace`,
 the evaluated behaviour of `fren eval`, the kill rates and the list of
 mutants of `fren mutate`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt`, and the
@@ -384,6 +386,30 @@ testing](Check.md#checking-by-testing) run with its solver queries, from
 a random stream of its own, so they do not depend on the order either.
 `--jobs` is at least 1.
 `fren mutate` checks its mutants one at a time.
+
+## Timings
+
+With `--timings`, `fren check` writes to standard error, after the
+summary, a line for each procedure and global expectation that it
+checked, slowest first, then a line of their total:
+
+```text
+timing: 41.3 ms (solver 41.3 ms, testing 0.0 ms): `c` (comp c)
+timing: total 41.3 ms (solver 41.3 ms, testing 0.0 ms), of 1 procedures and global expectations
+```
+
+Each time is wall-clock time, in milliseconds. `solver` is the time of the
+checks that the solver decides, with the confirmation of its models in
+Fren's [semantics](Models.md), and `testing` that of the checks [by
+testing](Check.md#checking-by-testing) and [by
+enumeration](Check.md#checking-by-enumeration). A query that another
+procedure asked first is answered without the solver (see [Solver
+queries](#solver-queries)), so it counts for whichever asked it first.
+Under [`--jobs`](#parallel-checking), the procedures run at once and
+share the machine, so each time is longer than it would be alone, and
+the total is more than the run's wall-clock time; `--jobs 1` times each
+alone. Only these lines differ between two runs that differ only in
+`--timings`.
 
 ## Exit status
 
