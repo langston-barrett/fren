@@ -76,3 +76,31 @@ def passes (es : Array Expectation) (ds : Array Diagnostic) (fe := "cli") : Bool
 #guard !(check "cli" { summary? := some "s" } #[] none none).isEmpty
 #guard !(check "cli" { exit? := some 1 } #[] none (some 0)).isEmpty
 #guard (check "hosted" { exit? := some 1 } #[] none none).isEmpty
+
+-- `solve` gives the messages by matching, in polynomial time, so a file
+-- with many expectations that the same messages meet fails, or passes,
+-- at once: a search over every way of giving them would try all 11! here.
+#guard !passes (.replicate 10 (ex 1 "x")) (.replicate 11 (msg 1 "x"))
+#guard !passes (.replicate 11 (ex 1 "x")) (.replicate 10 (msg 1 "x"))
+#guard passes (.replicate 40 (ex 1 "x") ++ .replicate 40 (ex 1 "x" true)) (.replicate 60 (msg 1 "x"))
+
+/-- Whether `met` decides by `solve`'s answer, which passes its check,
+without falling back on `assignable`'s search; and every set that `solve`
+reports cannot be given, for the failures that `unmatched` describes. -/
+def decided (es : List Expectation) (ds : List Diagnostic) : Bool :=
+  let sol := solve "cli" es ds
+  (if sol.lacking.isEmpty && sol.unexpected.isEmpty then checkAssigns "cli" es ds sol.assignment else true)
+    && sol.lacking.all (refutesExpected "cli" es ds) && sol.unexpected.all (refutesGiven "cli" es ds)
+
+/-- The lists of `n` elements of `xs`. -/
+def listsOf (xs : List α) : Nat → List (List α)
+  | 0 => [[]]
+  | n + 1 => (listsOf xs n).flatMap fun l => xs.map (· :: l)
+
+/-- The lists of up to `n` elements of `xs`. -/
+def upTo (xs : List α) (n : Nat) : List (List α) := (List.range (n + 1)).flatMap (listsOf xs)
+
+-- On every file of one line with up to three expectations, each `x`, `xy`
+-- or `y`, expected or allowed, and up to four messages, `x`, `xy` or `y`.
+#guard (upTo [ex 1 "x", ex 1 "xy", ex 1 "y", ex 1 "x" true, ex 1 "xy" true, ex 1 "y" true] 3).all fun es =>
+  (upTo [msg 1 "x", msg 1 "xy", msg 1 "y"] 4).all (decided es)

@@ -280,7 +280,7 @@ which job finished first.
 
 CI splits the jobs over machines. `lake test -- --shard K/N`, for
 `K < N`, runs the `K`th of `N` shards, which together run each job once:
-shard 0 runs the first job alone, which checks Fren's own requirements
+shard 0 runs only the first job, which checks Fren's own requirements
 with the binary and takes about as long on one machine as all the other
 jobs but the mutants of Fren's own requirements, and the others are dealt
 in turn to shards 1 to `N - 1`, so that the slowest, which come first,
@@ -298,7 +298,7 @@ those of the first group of the corpus, which is Fren's own requirements.
 `testing::shard` states which shard runs each job, for any list of jobs,
 as `FrenTest.Jobs.placement` gives it: every job that `--skip-own-mutants`
 keeps is run by exactly one shard, of `0` to `N - 1`, and no other job is
-run; and shard 0 runs the first job kept alone. Without `--shard`, there
+run; and shard 0 runs only the first job kept. Without `--shard`, there
 is one shard, which runs every job kept. `jobs` in `src/FrenTestMain.lean`
 lists `ownSpec` first. The shard `K/N` runs, in order, the jobs that
 `placement` puts in `K` (`FrenTest.Jobs.selectJobs`), so the shards
@@ -362,11 +362,22 @@ Lean does not.
 
 Giving each expectation the first message left that meets it is not
 enough: with expectations `x` and `xy` on one line, and messages `xy` and
-`x` there, `x` would take `xy`, which `xy` needed. `FrenTest.Ui.check`
-searches every way of giving them (`assignable`), which branches only
-between the messages of one line, and reports what the first-message way
-leaves over when none works. How the annotations are read from a file's
-text is tested, in `src/FrenTest/UiCheck.lean`, not proved.
+`x` there, `x` would take `xy`, which `xy` needed. Searching every way of
+giving them, as `FrenTest.Ui.assignable` does, takes time exponential in
+the number of expectations that the same messages meet, multiplied across
+lines. So `FrenTest.Ui.check` gives them by bipartite matching (`solve`),
+in time polynomial in the numbers of expectations and messages: first
+each message an expectation that it meets, by augmenting paths, and then
+each expectation that needs a message one, without taking any message's
+away. Its answer comes with what shows it right, which `check` checks: a
+way of giving them, or a set of messages that meet fewer expectations
+than there are of them, or a set of expectations that need a message and
+are met by fewer messages than there are of them, either of which shows
+that there is no way. That the answer always passes the check is tested,
+not proved; should it fail, `check` falls back on `assignable`'s search,
+so that its verdict is proved either way. It reports each expectation and
+each message that the matching could not give. How the annotations are
+read from a file's text is tested, in `src/FrenTest/UiCheck.lean`, not proved.
 
 ```fren
 -- A front end's message, on its line, or 0 for one with no line.
@@ -459,7 +470,7 @@ pub proc fresh(
     changed: Set<File>,     -- the files changed since its last build
     rebuilt?,               -- Lake rebuilds it
 ): (det fresh?) {
-    assume lake: rebuilt? iff needs inter changed != {}
+    assume lake: when needs inter changed != {}, rebuilt?
     ensure rule: fresh? iff (rebuilt? or reads inter changed = {})
 
     expect read_needed: when reads subset needs, fresh?
