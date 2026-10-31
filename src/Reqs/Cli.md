@@ -275,7 +275,14 @@ without a `_` row, whose value where no row holds is an index out of range
 of the empty sequence, or a [`match`](Lang/Expressions.md#matches) whose
 arms without guards are not exhaustive, likewise where no arm is taken,
 even if no variable has such a type.
-`cli::logic` gives the logic from the check, where `QuantifierFree` is
+A query in a logic with quantifiers, any but `QF_UFDTLIA`, sets cvc5's
+`inst-when` to `last-call`, so that cvc5 instantiates quantifiers only
+once the rest of the query is satisfied, not also during its search of
+the rest. That changes how cvc5 searches, not what a query means. By
+default, cvc5 can go on instantiating a contract that quantifies within a
+quantifier, such as `lang::resolve`'s, each instance bringing new terms
+to instantiate it with, long before it finds a model.
+`cli::logic` gives the logic and options from the check, where `QuantifierFree` is
 `QF_UFDTLIA`, `Quantified` is `UFDTLIA` and `HigherOrder` is `HO_ALL`:
 
 ```fren
@@ -292,6 +299,7 @@ pub proc logic(
     det logic: Logic,
     det strings_exp?,            -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
     det sets_exp?,               -- set cvc5's `sets-exp` option
+    det last_call?,              -- set cvc5's `inst-when` option to `last-call`
 ) {
     use check::Kind::Realizability
     use self::Logic::{All, HigherOrder, Quantified, QuantifierFree}
@@ -305,10 +313,13 @@ pub proc logic(
     -- cvc5 decides sequences in its strings solver.
     ensure options: (strings_exp? iff (Strings in theories or Sequences in theories))
         and (sets_exp? iff (Sets in theories or Sequences in theories))
+    -- cvc5 instantiates quantifiers only once the rest of the query is satisfied.
+    ensure instantiation: last_call? iff logic != QuantifierFree
 
     expect quantifier_free_when_possible: when logic = QuantifierFree, kind != Realizability and not quantified?
     expect sets_alone: when theories = {Sets}, not strings_exp?
     expect higher_order_rarely: when logic = HigherOrder, projection?
+    expect realizability_last_call: when kind = Realizability, last_call?
 }
 ```
 
