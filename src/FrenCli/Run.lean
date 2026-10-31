@@ -950,11 +950,10 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let what := Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global
     -- And the contracts of the functions that its checks' queries apply, or,
     -- for a check by random testing, that it applies (`Fren.Core.checkApplies`).
-    let itemApplies := c.natApps.foldl (init := #[]) fun acc app =>
-      let inner := peelLets app
-      match contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString with
-      | some f => if acc.contains f then acc else acc.push f
-      | none => acc
+    -- Shared with Lean, which reads the placeholders that the item uses
+    -- instead (`Fren.Core.itemContracts`).
+    let itemApplies := Fren.Core.itemContracts c.natApps fun app =>
+      contractFns.get? (((peelLets app).drop 1).takeWhile (· != ' ')).toString
     let functions := Fren.Core.functionPremises realizability.get? (Fren.Core.appliedOf item itemApplies) c.fn?
     let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
       (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false (refinements.map (·.1)), own))

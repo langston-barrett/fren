@@ -48,3 +48,30 @@ proc by_testing(n: Int): (y: Int) {  --~[cli] warning: the realizability of `by_
     ensure r: y = n
     expect e: y = n or bad(n) > 0  --~[cli] warning: `by_testing::e` rests on the realizability of `by_testing`, which did not pass
 }
+
+-- A postcondition named `nat` is a postcondition like any other: what a
+-- fact is about is never read from its name (`check::query_applies`).
+fn worse(n: Int): (r: Int) {  --~ error: the postconditions of `worse` cannot all hold
+    ensure nat: r > 0 and r < 0  --~ warning: these two comparisons cannot both hold
+}
+
+proc user_nat(n: Int): (y: Int) {  --~ warning: the realizability of `user_nat` rests on the realizability of the contract of `worse`, which did not pass
+    ensure r: y = worse(n)
+    expect wrong: y = 5  --~ warning: `user_nat::wrong` rests on the realizability of `user_nat`, which did not pass
+}
+
+-- The checks of a kind run together, as a procedure's call assumption
+-- checks are, each rest on the functions of all of their queries: the
+-- assumption check of `a`, whose argument applies no contract, rests on
+-- `bad`'s too, which `b`'s argument applies. That is conservative, and
+-- intended (`check::check_applies`).
+proc callee(x: Int): (y: Int) {
+    assume pos: x > 0
+    ensure r: y = x
+}
+
+proc two(n: Int): (z: Int) {  --~ warning: the realizability of `two` rests on the assumption `callee::pos` of call `a`, which did not pass
+    call a := callee(1)  --~ warning: the assumption `callee::pos` of call `a` rests on the realizability of the contract of `bad`, which did not pass
+    call b := callee(bad(n))  --~ warning: the assumption `callee::pos` of call `b` rests on the assumption `callee::pos` of call `a`, which did not pass
+    ensure r: z = a.y + b.y
+}

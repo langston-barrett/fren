@@ -1475,29 +1475,57 @@ def appFacts [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Arra
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
   return (← apps.mapM factsOf).flatten
 
+/-- What a fact that an application brings to a query is about
+(`check::Fact`): that the application is at least 0, that it matches its
+result type, or a postcondition of the function `f`. -/
+inductive AppFact (α : Type) where
+  | nat
+  | type
+  | postcondition (f : α)
+  deriving Inhabited, BEq, Repr
+
+/-- The functions whose postconditions are among the facts `facts`, each
+once, in order (`check::query_applies`): read from what each fact is, never
+from its name, which a clause shares with the user's names. -/
+def queriedFns {α : Type} [BEq α] (facts : List (AppFact α)) : List α :=
+  (facts.filterMap fun | .postcondition f => some f | _ => none).eraseDups
+
+/-- The facts of the application `a` that `appFactsWith` reads, as
+`AppFact`s: its function's postconditions, where `fnOf` names a function
+with a contract, which both front ends' `factsOf` give it. -/
+def appFactKinds {F : Type} (fnOf : F → Option Name) (a : F) : List (AppFact Name) :=
+  match fnOf a with
+  | some f => [.postcondition f]
+  | none => []
+
+/-- The uninterpreted functions with contracts that an item applies, each
+once, in order, for its checks that ask no query (`Core.checkApplies`):
+`queriedFns` of the `appFactKinds` of the item's applications `apps`, as
+each front end finds them in the item, which `fnOf` names. Both front ends
+take it from here, each from its own representation of the item's
+applications, so that a check by random testing rests on the same
+contracts in both: Lean reports no such check yet, but `#fren_check` runs
+the contracts that this names for its evidence. -/
+def itemContracts {α : Type} (apps : Array α) (fnOf : α → Option Name) : Array Name :=
+  (queriedFns (apps.toList.flatMap (appFactKinds fnOf))).toArray
+
 /-- `appFacts`, with the uninterpreted functions with contracts whose
 postconditions those facts have (`CheckResult.applies`), each once, in the
-order of their applications: of each application whose facts have one, a
-fact named neither `nat` nor `type`, the function that `fnOf` names.
+order of their applications (`queriedFns` of their `appFactKinds`).
 `fnOf` gives the path of the function of an application of an
-uninterpreted function with a contract, and `.anonymous` where it knows
-none, a function whose evidence is never known, so that a pass that rests
-on it fails closed; and `none` for an instance of a generic function, whose
-premise is the check that decides the instance's contract, which is not
-applied yet (#522). Both front ends' query builders give their queries the
-facts of this, and record its functions. -/
+uninterpreted function with a contract, which brings its postconditions,
+and `.anonymous` where it knows none, a function whose evidence is never
+known, so that a pass that rests on it fails closed; and `none` for an
+application that brings no postcondition, and for an instance of a generic
+function, whose premise is the check that decides the instance's contract,
+which is not applied yet (#522). Both front ends' query builders give their
+queries the facts of this, and record its functions. -/
 def appFactsWith [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F)))
     (fnOf : F → Option Name) (hyps : Array (Name × F)) (goal : F) : m (Array (Name × F) × Array Name) := do
   let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
-  let each ← apps.mapM fun a => return (a, ← factsOf a)
-  let fns := each.foldl (init := #[]) fun acc (a, fs) =>
-    if fs.any (fun (n, _) => n != `nat && n != `type) then
-      match fnOf a with
-      | some f => if acc.contains f then acc else acc.push f
-      | none => acc
-    else acc
-  return (each.flatMap (·.2), fns)
+  let facts ← apps.mapM factsOf
+  return (facts.flatten, (queriedFns (apps.toList.flatMap (appFactKinds fnOf))).toArray)
 
 /-- The questions that an application of the function `f` asks of its
 arguments, for the precondition check (`check::application_contract`):

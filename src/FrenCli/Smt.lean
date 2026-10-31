@@ -624,6 +624,15 @@ partial def dropUnusedLets (f : String) : String := Id.run do
     i := i + 1
   return f
 
+-- A dead binding, one that is dead only once the binding within it is
+-- dropped, one dead binding of two, a quoted symbol that is used, and a
+-- name mentioned only in a string literal, which is kept, conservatively.
+#guard dropUnusedLets "(let ((|x| (f 1))) true)" == "true"
+#guard dropUnusedLets "(and (let ((|z| (f 1))) (let ((|w| |z|)) true)) b)" == "(and true b)"
+#guard dropUnusedLets "(let ((|x| 1) (|y| (f 2))) (> |x| 0))" == "(let ((|x| 1)) (> |x| 0))"
+#guard dropUnusedLets "(let ((|x| 1)) (|f| |x|))" == "(let ((|x| 1)) (|f| |x|))"
+#guard dropUnusedLets "(let ((|x| (f 1))) (= s \"|x|\"))" == "(let ((|x| (f 1))) (= s \"|x|\"))"
+
 /-- The terms of the SMT-LIB text `f` that bring facts, in the order in
 which they start, as `termsIn` finds them: those of `terms`, and the
 applications of the selectors `heads`, whatever their arguments, as the

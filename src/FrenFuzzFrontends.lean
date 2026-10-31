@@ -639,10 +639,16 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let csc := { sc with vars := params.map (fun (n, t) => (n, t, true)) |>.push ("r", r, false) }
       let decls := ", ".intercalate (params.toList.map fun (n, t) => if t == .bool then n else s!"{n}: {t.name relElem}")
       let mut clauses := ""
+      -- Clause names now and then the names that the code gives facts
+      -- itself, so that nothing reads a fact's sort from its name.
+      let names := #["nat", "c", "post", "equation", "ok"]
       if ← chance 30 then
-        clauses := clauses ++ s!"    assume p0: {← gen { csc with vars := csc.vars.pop } .bool 2}\n"
+        let n := if ← chance 30 then "nat" else "p"
+        clauses := clauses ++ s!"    assume {n}0: {← gen { csc with vars := csc.vars.pop } .bool 2}\n"
       for j in [0:(← below 2) + 1] do
-        clauses := clauses ++ s!"    ensure c{j}: {← gen csc .bool 2}\n"
+        let n ← pick names
+        let n := if j == 0 && n == "nat" then n else s!"{n}{j}"
+        clauses := clauses ++ s!"    ensure {n}: {← gen csc .bool 2}\n"
       out := out ++ s!"pub fn {name}({decls}): (r: {r.name relElem}) \{\n{clauses}}\n"
       sc := { sc with fns := sc.fns.push (name, ps, r, false) }
     else

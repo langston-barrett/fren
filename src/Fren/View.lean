@@ -310,12 +310,12 @@ def awaitCheck (task : Task (Except Exception CheckOutcome)) :
 formulas use, by their paths: those whose contracts its checks may rest on
 (`Core.checkApplies`). -/
 def contractsUsed (s : State) (c : CompInfo) : Array Name :=
-  c.uses.foldl (init := #[]) fun acc u =>
-    match s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == u then some a else none with
-    | some a =>
+  -- Shared with `fren check`, which reads the item's applications instead
+  -- (`Core.itemContracts`).
+  Core.itemContracts c.uses fun u =>
+    (s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == u then some a else none).bind fun a =>
       let posts := ((s.contracts.get? a.path).map (·.posts)).getD #[]
-      if !a.typeParams.isEmpty || posts.isEmpty || acc.contains a.path then acc else acc.push a.path
-    | none => acc
+      if !a.typeParams.isEmpty || posts.isEmpty then none else some a.path
 
 /-- The procedures and function contracts that the checks of `roots` rest
 on, through their calls, their refinements' abstractions and the contracts

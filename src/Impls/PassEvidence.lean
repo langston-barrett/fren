@@ -616,6 +616,39 @@ impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : B
     simp [fren_spec, Fren.Core.itemHasPremise, toPremise, check.Premise.ContractRealizability.x0]
   | _ => simp [fren_spec, Fren.Core.itemHasPremise, toPremise]
 
+def toFact : Fren.Core.AppFact Nat → check.Fact
+  | .nat => .AtLeastZero
+  | .type => .ResultType
+  | .postcondition f => .Postcondition f
+
+theorem mem_queriedFns (facts : List (Fren.Core.AppFact Nat)) (f : Nat) :
+    f ∈ Fren.Core.queriedFns facts ↔ Fren.Core.AppFact.postcondition f ∈ facts := by
+  unfold Fren.Core.queriedFns
+  rw [List.mem_eraseDups, List.mem_filterMap]
+  constructor
+  · rintro ⟨a, ha, h⟩
+    cases a <;> simp at h
+    subst h; exact ha
+  · intro h; exact ⟨_, h, rfl⟩
+
+-- Both front ends' query builders take the functions whose contracts a
+-- query's facts bring with `queriedFns`, over what each fact is
+-- (`appFactsWith`, `appFactKinds`).
+impl query_applies: check::query_applies for (facts : List (Fren.Core.AppFact Nat)) (f : Nat) {
+  facts := Fren.FinSet.ofList (facts.map toFact),
+  f := (f : Int),
+  «applied?» := (Fren.Core.queriedFns facts).contains f,
+} by
+  intro facts f _
+  unfold check.query_applies.ensures check.query_applies.ensure.rule
+  rw [List.contains_iff_mem, mem_queriedFns, Fren.FinSet.mem_ofList, List.mem_map]
+  constructor
+  · intro h; exact ⟨_, h, rfl⟩
+  · rintro ⟨a, ha, he⟩
+    cases a <;> simp [toFact] at he
+    have : _ := Int.ofNat_inj.mp he
+    subst this; exact ha
+
 -- Both front ends take the functions whose contracts a check rests on
 -- with `checkApplies` (`itemEvidence`, `appliedOf`).
 impl check_applies: check::check_applies for (q i : List Nat) (own : List Caveat) {

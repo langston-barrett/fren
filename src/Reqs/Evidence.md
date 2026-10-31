@@ -815,6 +815,26 @@ expect call_assumptions_applies(item: CheckedItem) {
 }
 ```
 
+`check::query_applies` states which functions' contracts the facts of a
+check's query bring: those whose postconditions are among them. What a fact
+is about is part of the fact (`Fren.Core.AppFact`), never read from its
+name, which a postcondition shares with its clause, so a clause named
+`nat` is a postcondition like any other:
+
+```fren
+-- What a fact that an application brings to a query is about: that the
+-- application is at least 0, that it matches its result type, or a
+-- postcondition of the function at a position.
+pub enum Fact { AtLeastZero, ResultType, Postcondition(Int) }
+
+pub proc query_applies(
+    facts: Set<Fact>,            -- the facts of its query's applications
+    f: Int,                      -- a function, by its position
+): (det applied?) {
+    ensure rule: applied? iff Fact::Postcondition(f) in facts
+}
+```
+
 `check::check_applies` states which functions' contracts a check rests
 on: those whose applications in its queries bring a postcondition as a
 fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
@@ -824,7 +844,17 @@ every function with a contract that its item applies: a test's
 interpretation of such a function meets its postconditions where it can
 (`Reqs/Eval`), and where they cannot hold it has no value, so no test there
 finds a counterexample. Instances of generic functions and recursive
-functions are left to `InstanceContract` and `Postconditions` (#522):
+functions are left to `InstanceContract` and `Postconditions` (#522).
+Where a front end runs the checks of a kind of an item together, as it runs
+all of an item's call assumption checks, its redundancy checks and its
+determinism checks, each of them is given the functions of all of their
+queries (`Fren.Core.withAllApplies`), so `queried` is a superset of its
+own. That is conservative: a function too many only adds a premise, which
+can cap a pass but never strengthens one, and both front ends share it
+through `Fren.Core.checkComp`. The ui test
+`test/ui/checks/evidence_contracts.fren` pins it: the assumption check of
+a call whose arguments apply no contract still rests on the contract that
+a later call's arguments apply.
 
 ```fren
 pub proc check_applies(
