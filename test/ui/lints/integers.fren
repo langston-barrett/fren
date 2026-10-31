@@ -19,6 +19,8 @@ proc absolute(x: Int, y: Int, n: Nat): (
     b4: Int,
     b5: Int,
     b6: Int,
+    b7: Int,  --~ warning: defined output `b7` is the same in every behaviour
+    b8: Int,
 ) {
     out a1 := if x < 0 then -x else x  --~ warning: this conditional is the absolute value
     out a2 := if 0 >= x then -x else x  --~ warning: this conditional is the absolute value
@@ -37,6 +39,12 @@ proc absolute(x: Int, y: Int, n: Nat): (
     out b4 := if x > y then y - x else x - y
     out b5 := if x = 0 then -x else x
     out b6 := if x > y then x - y else x - y  --~ warning: both branches of `if` are written the same
+    -- An `x` written as a negated literal, and operands written the same.
+    out b7 := if -5 < 0 then - -5 else -5  --~ warning: negating twice is the operand itself
+    out b8 := if x > x then x - x else x - x  --~ warning: both branches of `if` are written the same
+    --~^ warning: both operands of `>` are written the same
+    --~^^ warning: both operands of `-` are written the same
+    --~^^^ warning: both operands of `-` are written the same
 }
 
 proc lesser_greater(x: Int, y: Int, n: Nat, s: String): (
