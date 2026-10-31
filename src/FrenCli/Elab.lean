@@ -953,8 +953,9 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   item : Name := .anonymous
   /-- Some type is a set. -/
   usesSets : Bool := false
-  /-- Some quantifier is unbounded, so every query may quantify
-  (`cli::logic`). -/
+  /-- Some quantifier is unbounded, or some refinement claim's abstraction
+  has calls, over whose variables the claim quantifies, so every query may
+  quantify (`cli::logic`, `cli::query_logic`). -/
   quantified : Bool := false
   /-- The memberships `x in e` of the guards of the quantifiers over elements
   being elaborated (`ExprCtx.elemGuards`), by the span of `e`: whether `e`

@@ -236,9 +236,11 @@ bound name's position among those in scope, from 0, keep it apart from
 every variable; a `Nat` is an `Int` there, with `(>= |n'0| 0)` before
 the body, as an implication for `forall` and a conjunct for `exists`, and
 a subset type's constraint likewise. Its bound names of listed types are
-expanded within it. A spec with an unbounded quantifier quantifies, so
-its queries use a quantified logic: `UFDTLIA` where they would be
-`QF_UFDTLIA`. A spec that uses
+expanded within it. So does a [refinement
+claim](Lang/Refinement.md) whose abstraction has calls: the claim holds
+for every value of the abstraction's call variables, which it gives the
+solver as a `forall`. A spec with either quantifies, so its queries use a
+quantified logic: `UFDTLIA` where they would be `QF_UFDTLIA`. A spec that uses
 strings needs the theory of strings, which has no smaller standard logic,
 so its queries use `ALL`, and set cvc5's options `strings-exp`, without
 which cvc5 refuses some string operations, `re-inter-mode all`, so
@@ -285,7 +287,7 @@ pub proc logic(
     kind: Kind,
     theories: Set<Theory>,       -- beyond uninterpreted functions, datatypes and linear integer arithmetic
     projection?,                 -- the spec takes the domain or range of a relation over a type that is not finite
-    quantified?,                 -- the spec has an unbounded quantifier
+    quantified?,                 -- the spec has an unbounded quantifier, or a refinement claim whose abstraction has calls
 ): (
     det logic: Logic,
     det strings_exp?,            -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
@@ -307,6 +309,31 @@ pub proc logic(
     expect quantifier_free_when_possible: when logic = QuantifierFree, kind != Realizability and not quantified?
     expect sets_alone: when theories = {Sets}, not strings_exp?
     expect higher_order_rarely: when logic = HigherOrder, projection?
+}
+```
+
+`quantified?` is computed before any query is written, from what the spec
+says, so a source of quantifiers that it leaves out would have a query
+with a quantifier asked in `QF_UFDTLIA`, which cvc5 rejects with an error
+that looks like the solver giving up. So `fren check` also reads each
+query's own text, its hypotheses and goal as it asserts them, after any
+quantifier over elements is expanded: `cli::query_logic` states that a
+query whose text has a `forall` or `exists` is never asked in the
+quantifier-free logic. Such a query is an internal error, `Unknown` with
+the reason that it has a quantifier, never a solver's answer. Every ui
+test that reaches one then fails, rather than reporting a solver error:
+
+```fren
+pub proc query_logic(
+    logic: Logic,                -- the logic that `cli::logic` gives the query's check
+    quantifies?,                 -- the query's text has a `forall` or `exists`
+): (det asked?, det internal?) {
+    use self::Logic::QuantifierFree
+
+    ensure rule: asked? iff not (logic = QuantifierFree and quantifies?)
+    ensure error: internal? iff not asked?
+
+    expect quantifier_free: when asked? and logic = QuantifierFree, not quantifies?
 }
 ```
 

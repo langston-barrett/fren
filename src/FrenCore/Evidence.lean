@@ -415,8 +415,10 @@ inductive Site where
   /-- A clause or the body of the function at this position. -/
   | functionClause (f : Nat)
   | constant
-  /-- The obligation of a refinement whose abstraction is the procedure at
-  this position. -/
+  /-- A check of the item's refinement claim at this position, among its
+  refinement claims: its obligation and the formulas within it, which have
+  the abstraction's calls, and, conservatively, the definedness of its
+  arguments, which do not (`CheckResult.site`). -/
   | refinement (a : Nat)
   deriving Inhabited, DecidableEq, Repr
 
@@ -453,8 +455,8 @@ inductive Premise where
   | callAssumptions (j : Nat)
   /-- The item's own realizability. -/
   | ownRealizability
-  /-- The realizability of the procedure at this position, a refinement's
-  abstraction. -/
+  /-- The realizability of the abstraction of the item's refinement claim at
+  this position, among its refinement claims. -/
   | abstractionRealizability (a : Nat)
   | contractRealizability (f : Nat)
   /-- The check that decides the contract of the instance at this
