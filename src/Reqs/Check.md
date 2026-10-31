@@ -1067,12 +1067,12 @@ global expectation's expectations there vacuously. With `assume a: x =
 holds of a procedure's own checks. So such a proof is not reported as one:
 [Evidence](Evidence.md) states the rule that caps a pass at the evidence of
 what it rests on, and both front ends apply it to each call's assumption
-checks, its called procedure's realizability and the item's own
-realizability. `e` is reported as `Inconclusive` where `tested_lies`'s
-realizability did not pass (`F0664`), and otherwise as a pass by random
-testing (`F0663`), never as a proof. They do not
-apply it yet to a refinement's abstraction, to functions' contracts,
-instances and postconditions, or to subset types' inhabitation (#522).
+checks, its called procedure's realizability, the item's own
+realizability and its refinement claims' abstractions' realizability. `e`
+is reported as `Inconclusive` where `tested_lies`'s realizability did not
+pass (`F0664`), and otherwise as a pass by random testing (`F0663`), never
+as a proof. They do not apply it yet to functions' contracts, instances
+and postconditions, or to subset types' inhabitation (#522).
 
 ## Call assumptions
 
@@ -1931,7 +1931,13 @@ testing can pass it: a test that finds a behaviour that meets the
 procedure, in which the goal holds, is a witness, and passes it. Testing
 that finds none leaves the goal inconclusive, with a warning (`F0616`),
 since a failed search does not show that no behaviour exists; it never
-fails a goal. The summary counts the passes that came from testing:
+fails a goal. The summary counts, under "by random testing", the passes
+of the checks whose pass is a proof and whose evidence has the caveat
+`Random` (`check::reported_pass`'s `testing`): those that random testing
+passed, and those that rest on such a check, whatever their own method,
+such as a solver's proof from a call whose procedure's realizability is
+only tested ([Evidence](Evidence.md)). A cover goal met by testing is not
+counted, as its witness is genuine:
 
 ```text
 fren: 30 passed (2 by random testing), 0 failed, 0 inconclusive, 0 redundant

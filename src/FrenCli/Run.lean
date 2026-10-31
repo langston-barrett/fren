@@ -914,19 +914,22 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     for msg in (toCore c).skippedMsgs (subjectOf c global) c.tested c.enumerated kinds do
       printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
       shown := shown.push msg
-    -- What its checks rest on, the realizability of the procedures it calls,
-    -- weakens them or leaves them inconclusive (`Reqs/Evidence`).
-    let calls := c.insts.map fun i =>
-      let ev : Fren.Core.ExternalPremise := (realizability.get? i.comp).getD
-        { what := s!"the realizability of `{Fren.Core.showComp i.comp}`", settled := false }
-      (Fren.Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
+    -- What its checks rest on, the realizability of the procedures it calls
+    -- and of its refinements' abstractions, weakens them or leaves them
+    -- inconclusive (`Reqs/Evidence`).
+    let refinements := Fren.Core.refinementsOf (c.props.map fun q => (q.name, q.abstraction?))
+    let (calls, abstractions) := Fren.Core.externalPremises realizability.get?
+      (c.insts.map fun i => (i.name, i.comp, i.assumes.map Prod.fst)) refinements
     let names := c.insts.map (·.name)
     let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
     let what := Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global
     let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
-      (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false, own))
+      (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false (refinements.map (·.1)), own))
+      abstractions
     let mut final := #[]
-    for (r, _) in item, (rep, caveats, msg?) in reported do
+    for (r, _) in item, rc in reported do
+      let rep := rc.rep
+      let msg? := rc.msg?
       if let some msg := msg? then
         let span := (r.prop?.bind fun n => c.props.find? (·.name == n)).map (·.span)
           |>.orElse (fun _ => r.prop?.bind fun n => (c.insts.find? (·.name == n)).map (·.span)) |>.getD c.span
@@ -936,8 +939,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       if rep.byBound then byBound := byBound + 1
       final := final.push { r with verdict := rep.shown }
       if r.isOwnRealizability c.path && what == .component then
-        realizability := realizability.insert c.path
-          { what := s!"the realizability of `{Fren.Core.showComp c.path}`", caveats, settled := rep.shown == .pass }
+        realizability := realizability.insert c.path (rc.realizability c.path)
     all := all ++ final
     -- The tests compare each method's own verdicts, before the evidence of
     -- what they rest on changes how they are shown.

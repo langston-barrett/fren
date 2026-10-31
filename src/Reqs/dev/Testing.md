@@ -499,6 +499,49 @@ coverage, and saves the `.lake` for pull requests. The `lint` workflow runs
 `pre-merge`, passes only if its build and every shard passed: it is the
 status that reviewers and the coordinator rely on.
 
+On a pull request, `pre-merge` also uploads stripped copies of the
+binaries that it built and tested, so that a reviewer can probe the head
+without building it: `fren`, once the build has passed, as the artifact
+`fren-SHA`, and `fren_test`, once shard 0 has built it, as
+`fren_test-SHA`, where SHA is the full sha of the pull request's head.
+They are kept for 3 days. They are Linux binaries, built on
+`ubuntu-24.04`, which run on Linux machines such as sky but not on macOS.
+
+They are built from the head merged into `main`, as the tests are, not
+from the head itself, so each artifact holds the merge commit's sha in
+`MERGE_SHA`, and its parents, `main`'s commit and the head, in
+`MERGE_PARENTS`. Probe in a checkout of exactly that commit. Once `main`
+has moved past the head's base, the head's own tree differs from the code
+compiled into the binary: `fren_test` would read test files and specs
+that do not match it, and the hosted front end's jobs would load
+`.olean` files of other code next to its compiled code, which can give
+wrong results or crash. GitHub moves the pull request's merge ref when
+`main` moves, so fetch the commit by its sha; if that fails, merging the
+head into `main`'s commit, as `MERGE_PARENTS` names them, rebuilds the same
+tree. A zip artifact may lose the executable bit, which `chmod` restores:
+
+```sh
+gh run list --workflow pre-merge --branch BRANCH --json headSha,databaseId
+gh run download RUN -n fren-SHA -D /tmp/fren-SHA
+chmod +x /tmp/fren-SHA/fren
+git fetch origin "$(cat /tmp/fren-SHA/MERGE_SHA)"
+git checkout --detach "$(cat /tmp/fren-SHA/MERGE_SHA)"
+/tmp/fren-SHA/fren check FILE
+```
+
+`fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
+`fmt`. `fren_test --job JOB` reads the test files and specs of the
+checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
+`uiMisread`, `smtAgreement` and `leanTokens` load the hosted front end,
+the `.olean` files of `Fren` and its dependencies; for them, run `heavy
+lake build Fren` in the checkout, which compiles no C code and links
+nothing, and then `lake env /tmp/fren_test-SHA/fren_test --job ui FILE`.
+The other jobs, such as `snapshots`, `errorCodes` and `mutation`, need
+only the binary. On CI, `fren` is 161 MB, 116 MB stripped and 45 MB
+compressed, and `fren_test` is 320 MB, 235 MB stripped and 78 MB
+compressed. The `.olean` files are not uploaded: those of `Fren` and its
+dependencies came to some 340 MB, 96 MB compressed, on macOS.
+
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
 in the queue, and runs `pre-merge` and `lint` on that merge commit. It
