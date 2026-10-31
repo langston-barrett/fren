@@ -307,12 +307,13 @@ if any, a script asked before. -/
 def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
     (cache? : Option QueryCache := none) (observations : Array ModelObservation := #[]) : IO (Outcome String) := do
-  -- Read from the query's own text, not from the spec: a query with a
+  let script := queryScript logic options prelude vars limits hyps goal
+  -- Read from the script that would be asked, the definitions that it
+  -- includes, its hypotheses and its goal, not from the spec: a query with a
   -- quantifier is never asked in a quantifier-free logic, whatever set it
   -- (`cli::query_logic`).
-  unless Fren.Core.queryAsked logic ((hyps.map (·.2)).push goal |>.any Fren.Core.hasQuantifier) do
+  unless Fren.Core.queryAsked logic (Fren.Core.hasQuantifier script) do
     return .unknown (Fren.Core.quantifiedQueryReason logic)
-  let script := queryScript logic options prelude vars limits hyps goal
   if let some dump := dump? then dump script
   let key := script ++ String.join (observations.toList.map fun o => s!"; observe {o.key}: {o.formula}\n")
   let some cache := cache? | solveScript script vars wantModel observations

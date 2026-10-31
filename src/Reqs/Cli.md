@@ -315,25 +315,28 @@ pub proc logic(
 `quantified?` is computed before any query is written, from what the spec
 says, so a source of quantifiers that it leaves out would have a query
 with a quantifier asked in `QF_UFDTLIA`, which cvc5 rejects with an error
-that looks like the solver giving up. So `fren check` also reads each
-query's own text, its hypotheses and goal as it asserts them, after any
-quantifier over elements is expanded: `cli::query_logic` states that a
-query whose text has a `forall` or `exists` is never asked in the
-quantifier-free logic. Such a query is an internal error, `Unknown` with
-the reason that it has a quantifier, never a solver's answer. Every ui
-test that reaches one then fails, rather than reporting a solver error:
+that looks like the solver giving up. So `fren check` also reads the
+script of each query that it would ask, after any quantifier over
+elements is expanded: the definitions that it includes, such as those of
+the defined functions that it applies, its declarations, its hypotheses
+and its goal. `cli::query_logic` states that a query whose script has a
+`forall` or `exists` is never asked in the quantifier-free logic. Such a
+query is an internal error, `Unknown` with the reason that it has a
+quantifier, never a solver's answer. Every ui test that reaches one then
+fails, rather than reporting a solver error. `quantifies?` is read from
+the script by `Fren.Core.hasQuantifier`, and the `impl` of `query_logic`
+binds the decision, `Fren.Core.queryAsked`; that `runQuery` asks it of
+each script is backed by the ui tests, not proved:
 
 ```fren
 pub proc query_logic(
     logic: Logic,                -- the logic that `cli::logic` gives the query's check
-    quantifies?,                 -- the query's text has a `forall` or `exists`
+    quantifies?,                 -- the script it would ask, its definitions, hypotheses and goal, has a `forall` or `exists`
 ): (det asked?, det internal?) {
     use self::Logic::QuantifierFree
 
     ensure rule: asked? iff not (logic = QuantifierFree and quantifies?)
     ensure error: internal? iff not asked?
-
-    expect quantifier_free: when asked? and logic = QuantifierFree, not quantifies?
 }
 ```
 

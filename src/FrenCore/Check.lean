@@ -1220,9 +1220,18 @@ def queryAsked (logic : String) (quantifies : Bool) : Bool :=
   !(logic.startsWith "QF_" && quantifies)
 
 /-- Whether the SMT-LIB text `f` has a quantifier, `forall` or `exists`
-(`cli::query_logic`). -/
+(`cli::query_logic`). It reads the text as Fren prints it, a binder list
+right after the quantifier, one space apart, as `(forall ((x Int)) ...)`;
+a symbol that spells `forall` is quoted, as `|forall|`, and is not one. -/
 def hasQuantifier (f : String) : Bool :=
   ["(forall (", "(exists ("].any fun q => (f.splitOn q).length > 1
+
+#guard hasQuantifier "(forall ((x Int)) x)"
+#guard hasQuantifier "(exists ((x Int)) x)"
+#guard hasQuantifier "(define-fun f ((y Int)) Bool (forall ((x Int)) (> (g x) y)))"
+#guard !hasQuantifier "(and a b)"
+#guard !hasQuantifier "(and |forall| |exists|)"
+#guard !hasQuantifier "(define-fun f ((y Int)) Bool (> y 0))"
 
 /-- Why a query with a quantifier, which `cli::logic` put in a
 quantifier-free logic, is not asked (`cli::query_logic`). -/
