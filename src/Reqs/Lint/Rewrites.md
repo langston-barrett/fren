@@ -22,7 +22,8 @@ one's functions:
 
 - [`overly_complex_bool_expr`](Pedantic/Booleans.md#the-rule-over-the-syntax-of-the-semantics);
 - [`double_neg`](Style.md#negations-over-the-syntax-of-the-semantics);
-- [`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons-over-the-syntax-of-the-semantics).
+- [`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons-over-the-syntax-of-the-semantics);
+- [`manual_abs` and `manual_abs_diff`](Complexity/Integers.md#absolute-values-over-the-syntax-of-the-semantics).
 
 The generated `fix_all` below has `fix_at` inlined in each of its arms, so
 its size grows with the number of arms, the number of lints and the size
@@ -32,15 +33,22 @@ lint's fix, such as
 [`drop_fix`](Pedantic/Booleans.md#the-rule-over-the-syntax-of-the-semantics),
 evaluates each of its tests once, and `fix_at` is the fix itself, not `if
 fires_at?(l, e) then … else e`, which made the term three times as large.
+Compiling `fix_all` took 83M of Lean's raw heartbeats with one lint, 98M
+with three and 126M with these five, against a limit of 200M: the arms of
+`manual_abs` and `manual_abs_diff` cost about 14M each, twice as much as
+those of `double_neg` and `int_plus_one`. A lint whose arm is larger, or
+several more, will need a dispatch to each lint's fix that is not inlined.
 
 ```fren
 -- The lints stated over the syntax of the semantics.
-pub enum ExprLint { OverlyComplexBoolExpr, DoubleNeg, IntPlusOne }
+pub enum ExprLint { OverlyComplexBoolExpr, DoubleNeg, IntPlusOne, ManualAbs, ManualAbsDiff }
 
 pub fn fires_at?(l: ExprLint, e: Expr) := match l {
     ExprLint::OverlyComplexBoolExpr => overly_complex_fires?(e),
     ExprLint::DoubleNeg => double_neg_fires?(e),
     ExprLint::IntPlusOne => int_plus_one_fires?(e),
+    ExprLint::ManualAbs => manual_abs_fires?(e),
+    ExprLint::ManualAbsDiff => manual_abs_diff_fires?(e),
 }
 
 -- Inlined in every arm of `fix_all`: each lint's arm must stay small.
@@ -48,6 +56,8 @@ pub fn fix_at(l: ExprLint, e: Expr): Expr := match l {
     ExprLint::OverlyComplexBoolExpr => overly_complex_fix(e),
     ExprLint::DoubleNeg => double_neg_fix(e),
     ExprLint::IntPlusOne => int_plus_one_fix(e),
+    ExprLint::ManualAbs => manual_abs_fix(e),
+    ExprLint::ManualAbsDiff => manual_abs_diff_fix(e),
 }
 ```
 
@@ -63,7 +73,8 @@ the fix leaves nothing to fix. The fix of `overly_complex_bool_expr`
 writes an operand or a literal, and that of `double_neg` an operand's
 operand, which are fixed where the operands are. That of `int_plus_one`
 writes a new node, `<`, of operands that are fixed, and the lint does not
-fire on a `<`.
+fire on a `<`. Those of `manual_abs` and `manual_abs_diff` write a call of
+`abs`, on which they do not fire, of an operand or an operand's operand.
 
 A lint whose fix may write something that it fires on, from operands
 that are fixed, does not meet the last fact. The De Morgan rewrites of
@@ -192,8 +203,8 @@ written, in every interpretation and environment (`keeps_meaning`). These
 follow from the [facts about each lint](#each-lint-where-it-fires) at the
 place where it fires: `fix_at_unfired`, `fix_at_agrees` and
 `fix_at_fixed`. The fix at one place alone need not fix the lint, as
-`overly_complex_refires` and `double_neg_refires` show: these laws are of
-fixing everywhere. For `int_plus_one` it does, as `int_plus_one_once`
+`overly_complex_refires`, `double_neg_refires` and `manual_abs_refires`
+show: these laws are of fixing everywhere. For `int_plus_one` it does, as `int_plus_one_once`
 shows. That the passes of `fren fix` end where `fix_all` does is a
 property of the passes, which these laws do not state.
 

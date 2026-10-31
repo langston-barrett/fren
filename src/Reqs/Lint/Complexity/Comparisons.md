@@ -387,33 +387,46 @@ pub fn int_plus_one_fix(e: lang::Expr): lang::Expr := match e {
 }
 ```
 
-`lint::int_plus_one` binds this to the linter: at the offsets that
-`offset_of` reads, it fires on `a <= b`, and on `b >= a`, exactly where
-`int_plus_one_fires?` does on their elaboration, and its fix drops the
-offset that `int_plus_one_fix` drops. It fires on no other comparison,
-and `int_plus_one_fires?` on no other expression. That the front ends read
-the operators, and `1`, as elaboration does, is trusted, and checked by
-the ui tests of the lint. In a chained comparison, the linter fires only at
-an end of the chain, so not in every place that `int_plus_one_fires?`
-does: the elaboration of `0 <= i + 1 <= n` has `i + 1 <= n`, on which it
-fires.
+`elaborated_comparison(op, a, b)` is the elaboration of `a OP b`, for
+each of the comparison operators `lint::Comparison`:
 
 ```fren
-expect int_plus_one_elaborated(a: lang::Expr, b: lang::Expr, e: lang::Expr) {
-    use lang::BinaryOp
-    use lang::Expr::Binary
+pub fn elaborated_comparison(op: Comparison, a: lang::Expr, b: lang::Expr): lang::Expr := match op {
+    Eq => lang::Expr::Binary(lang::BinaryOp::Eq, a, b),
+    Ne => lang::Expr::Unary(
+        lang::UnaryOp::Not,
+        lang::Expr::Binary(lang::BinaryOp::Eq, a, b)
+    ),
+    Lt => lang::Expr::Binary(lang::BinaryOp::Lt, a, b),
+    Le => lang::Expr::Binary(lang::BinaryOp::Le, a, b),
+    Gt => lang::Expr::Binary(lang::BinaryOp::Lt, b, a),
+    Ge => lang::Expr::Binary(lang::BinaryOp::Le, b, a),
+}
+```
 
-    -- `a <= b`, as written, and `b >= a`.
-    call le := int_plus_one(Comparison::Le, offset_of(a), offset_of(b))
-    call ge := int_plus_one(Comparison::Ge, offset_of(b), offset_of(a))
+`lint::int_plus_one` binds this to the linter: at the offsets that
+`offset_of` reads, it fires on `a OP b`, for every comparison operator,
+exactly where `int_plus_one_fires?` does on its elaboration (`rule`), so
+on no strict comparison, `=` or `!=`. Where it fires, its fix, the
+comparison `result` with the offset that `drop_left?` says dropped, is
+what `int_plus_one_fix` writes (`fix`). `int_plus_one_fires?` fires on no
+expression but a `<=` (`other`). That the front ends read the operators,
+and `1`, as elaboration does, is trusted, and checked by the ui tests of
+the lint. In a chained comparison, the linter fires only at an end of the
+chain, so not in every place that `int_plus_one_fires?` does: the
+elaboration of `0 <= i + 1 <= n` has `i + 1 <= n`, on which it fires.
 
-    expect le_rule: le.fires? iff int_plus_one_fires?(Binary(BinaryOp::Le, a, b))
-    expect ge_rule: ge.fires? iff int_plus_one_fires?(Binary(BinaryOp::Le, a, b))
-    expect le_fix: when le.fires?, int_plus_one_fix(Binary(BinaryOp::Le, a, b))
-        = if le.drop_left? then Binary(BinaryOp::Lt, without_offset(a), b) else Binary(BinaryOp::Lt, a, without_offset(b))
-    expect ge_fix: when ge.fires?, int_plus_one_fix(Binary(BinaryOp::Le, a, b))
-        = if ge.drop_left? then Binary(BinaryOp::Lt, a, without_offset(b)) else Binary(BinaryOp::Lt, without_offset(a), b)
-    expect other: unless e is Binary(BinaryOp::Le, _, _), not int_plus_one_fires?(e)
+```fren
+expect int_plus_one_elaborated(op: Comparison, a: lang::Expr, b: lang::Expr, e: lang::Expr) {
+    call p := int_plus_one(op, offset_of(a), offset_of(b))
+
+    expect rule: p.fires? iff int_plus_one_fires?(elaborated_comparison(op, a, b))
+    expect fix: when p.fires?, int_plus_one_fix(elaborated_comparison(op, a, b)) = elaborated_comparison(
+        p.result,
+        if p.drop_left? then without_offset(a) else a,
+        if p.drop_left? then b else without_offset(b)
+    )
+    expect other: unless e is lang::Expr::Binary(lang::BinaryOp::Le, _, _), not int_plus_one_fires?(e)
 }
 ```
 

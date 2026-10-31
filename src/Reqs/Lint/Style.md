@@ -482,9 +482,11 @@ pub fn double_neg_fix(e: lang::Expr): lang::Expr := match e {
 ```
 
 `lint::double_neg` above binds this to the linter: on the negation of an
-operand `a`, it fires where `a` is a negation, and on nothing else. That
-the front ends read `-` and parentheses as elaboration does is trusted,
-and checked by the ui tests of the lint.
+operand `a`, it fires where `a` is a negation (`negation`), and
+`double_neg_fires?` fires on no expression but a negation (`other`).
+`lint::double_neg` has no input that says it is at a negation: that the
+front ends run it only at a negation, and read `-` and parentheses as
+elaboration does, is trusted, and checked by the ui tests of the lint.
 
 ```fren
 expect double_neg_elaborated(a: lang::Expr, e: lang::Expr) {

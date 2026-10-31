@@ -5,8 +5,8 @@ import Reqs.Lint
 
 /-! # Lints over the syntax of the semantics (`Reqs/Lint/Rewrites`)
 
-`overly_complex_bool_expr`, `double_neg` and `int_plus_one` over
-`lang::Expr`: each fix agrees with the expression where it fires, and the
+`overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs` and
+`manual_abs_diff` over `lang::Expr`: each fix agrees with the expression where it fires, and the
 linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
 meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of
 fixing every lint everywhere (`lint::fix_all_laws`), by induction on the
@@ -252,6 +252,121 @@ theorem ipo_site (env : Env) (e : Expr) : eval i env (lint.int_plus_one_fix e) =
       · rfl
   · rfl
 
+/-! ### `manual_abs` and `manual_abs_diff` -/
+
+/-- `abs_negated_then?`, without its selectors. -/
+theorem negated_then_imp (c t f : Expr) (h : lint.abs_negated_then? c t f = true) :
+    ∃ op x, (op = .Lt ∨ op = .Le) ∧ c = .Binary op x (.Literal (.Integer 0)) ∧ t = .Unary .Neg x ∧ f = x := by
+  cases c <;> simp [lint.abs_negated_then?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2,
+    lint.ordering?, lint.zero?] at h
+  rename_i op x z
+  cases op <;> simp_all
+
+/-- `abs_negated_else?`, without its selectors. -/
+theorem negated_else_imp (c t f : Expr) (h : lint.abs_negated_else? c t f = true) :
+    ∃ op x, (op = .Lt ∨ op = .Le) ∧ c = .Binary op (.Literal (.Integer 0)) x ∧ t = x ∧ f = .Unary .Neg x := by
+  cases c <;> simp [lint.abs_negated_else?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2,
+    lint.ordering?, lint.zero?] at h
+  rename_i op z x
+  cases op <;> simp_all
+
+/-- `abs_diff?`, without its selectors. -/
+theorem diff_imp (c t f : Expr) (h : lint.abs_diff? c t f = true) :
+    ∃ op s m, (op = .Lt ∨ op = .Le) ∧ c = .Binary op s m ∧ t = .Binary .Sub m s ∧ f = .Binary .Sub s m := by
+  cases c <;> simp [lint.abs_diff?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2,
+    lint.ordering?] at h
+  rename_i op s m
+  cases op <;> simp_all <;> exact ⟨s, m, by simp⟩
+
+/-- `if x OP 0 then -x else x` is `x.abs`, at every outcome of `x`. -/
+theorem abs_then (env : Env) (op : BinaryOp) (hop : op = .Lt ∨ op = .Le) (x : Expr) :
+    eval i env (lint.abs_of x) = eval i env (.If (.Binary op x (.Literal (.Integer 0))) (.Unary .Neg x) x) := by
+  simp only [eval]
+  generalize eval i env x = X
+  rcases hop with rfl | rfl <;> rcases X with v | _ <;> (try cases v) <;> simp [binary_value, unary_value, method_value]
+  all_goals (rename_i n; by_cases h0 : n < 0 <;> by_cases h1 : n ≤ 0 <;> simp [truth, h0, h1] <;> omega)
+
+/-- `if 0 OP x then x else -x` is `x.abs`. -/
+theorem abs_else (env : Env) (op : BinaryOp) (hop : op = .Lt ∨ op = .Le) (x : Expr) :
+    eval i env (lint.abs_of x) = eval i env (.If (.Binary op (.Literal (.Integer 0)) x) x (.Unary .Neg x)) := by
+  simp only [eval]
+  generalize eval i env x = X
+  rcases hop with rfl | rfl <;> rcases X with v | _ <;> (try cases v) <;> simp [binary_value, unary_value, method_value]
+  all_goals (rename_i n; by_cases h0 : n < 0 <;> by_cases h1 : 0 < n <;> by_cases h2 : 0 ≤ n <;>
+    simp [truth, h0, h1, h2] <;> omega)
+
+/-- `if s OP m then m - s else s - m` is `(m - s).abs`, at every outcome of `s` and `m`. -/
+theorem abs_diff (env : Env) (op : BinaryOp) (hop : op = .Lt ∨ op = .Le) (s m : Expr) :
+    eval i env (lint.abs_of (.Binary .Sub m s)) = eval i env (.If (.Binary op s m) (.Binary .Sub m s) (.Binary .Sub s m)) := by
+  simp only [eval]
+  generalize eval i env s = S
+  generalize eval i env m = M
+  rcases hop with rfl | rfl <;> rcases S with v | _ <;> rcases M with w | _ <;> (try cases v) <;> (try cases w) <;>
+    simp [binary_value, method_value]
+  all_goals (rename_i a b; by_cases h0 : a < b <;> by_cases h1 : a ≤ b <;> by_cases h2 : b - a < 0 <;>
+    simp [truth, h0, h1, h2] <;> omega)
+
+
+theorem ma_fires_if (c t f : Expr) :
+    lint.manual_abs_fires? (.If c t f) = (lint.abs_negated_then? c t f || lint.abs_negated_else? c t f) := by
+  simp [lint.manual_abs_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+
+theorem mad_fires_if (c t f : Expr) : lint.manual_abs_diff_fires? (.If c t f) = lint.abs_diff? c t f := by
+  simp [lint.manual_abs_diff_fires?]
+
+/-- Where `manual_abs` does not fire, its fix is the expression. -/
+theorem ma_fires_other (e : Expr) (h : ∀ c t f, e = .If c t f → False) : lint.manual_abs_fires? e = false := by
+  cases e with
+  | If c t f => exact absurd rfl (h c t f)
+  | _ => simp [lint.manual_abs_fires?]
+
+theorem mad_fires_other (e : Expr) (h : ∀ c t f, e = .If c t f → False) :
+    lint.manual_abs_diff_fires? e = false := by
+  cases e with
+  | If c t f => exact absurd rfl (h c t f)
+  | _ => simp [lint.manual_abs_diff_fires?]
+
+theorem ma_unfired (e : Expr) (h : lint.manual_abs_fires? e = false) : lint.manual_abs_fix e = e := by
+  unfold lint.manual_abs_fix; split
+  · rename_i c t f
+    rw [ma_fires_if, Bool.or_eq_false_iff] at h
+    rw [if_neg (by simp [h.1]), if_neg (by simp [h.2])]
+  · rfl
+
+/-- Where `manual_abs_diff` does not fire, its fix is the expression. -/
+theorem mad_unfired (e : Expr) (h : lint.manual_abs_diff_fires? e = false) : lint.manual_abs_diff_fix e = e := by
+  unfold lint.manual_abs_diff_fix; split
+  · rename_i c t f
+    rw [mad_fires_if] at h
+    rw [if_neg (by simp [h])]
+  · rfl
+
+/-- Where `manual_abs` fires, `x.abs` is the conditional; elsewhere the fix is the expression. -/
+theorem ma_site (env : Env) (e : Expr) : eval i env (lint.manual_abs_fix e) = eval i env e := by
+  unfold lint.manual_abs_fix; split
+  · rename_i c t f
+    split
+    · rename_i h
+      obtain ⟨op, x, hop, rfl, rfl, rfl⟩ := negated_then_imp c t f h
+      exact abs_then env op hop _
+    · split
+      · rename_i h
+        obtain ⟨op, x, hop, rfl, rfl, rfl⟩ := negated_else_imp c t f h
+        exact abs_else env op hop _
+      · rfl
+  · rfl
+
+/-- Where `manual_abs_diff` fires, `(m - s).abs` is the conditional. -/
+theorem mad_site (env : Env) (e : Expr) : eval i env (lint.manual_abs_diff_fix e) = eval i env e := by
+  unfold lint.manual_abs_diff_fix; split
+  · rename_i c t f
+    split
+    · rename_i h
+      obtain ⟨op, s, m, hop, rfl, rfl, rfl⟩ := diff_imp c t f h
+      exact abs_diff env op hop s m
+    · rfl
+  · rfl
+
 /-! ### Each lint at the place where it fires -/
 
 theorem fires_at_overly (e : Expr) : lint.fires_at? .OverlyComplexBoolExpr e = lint.overly_complex_fires? e := by
@@ -266,6 +381,14 @@ theorem fires_at_ipo (e : Expr) : lint.fires_at? .IntPlusOne e = lint.int_plus_o
   show decide (lint.int_plus_one_fires? e = true) = _
   cases lint.int_plus_one_fires? e <;> rfl
 
+theorem fires_at_ma (e : Expr) : lint.fires_at? .ManualAbs e = lint.manual_abs_fires? e := by
+  show decide (lint.manual_abs_fires? e = true) = _
+  cases lint.manual_abs_fires? e <;> rfl
+
+theorem fires_at_mad (e : Expr) : lint.fires_at? .ManualAbsDiff e = lint.manual_abs_diff_fires? e := by
+  show decide (lint.manual_abs_diff_fires? e = true) = _
+  cases lint.manual_abs_diff_fires? e <;> rfl
+
 /-- Where a lint does not fire, its fix is the expression
 (`lint::fix_at_unfired`). Each new arm of `lint::ExprLint` owes this. -/
 theorem fix_at_unfired (l : lint.ExprLint) (e : Expr) (h : lint.fires_at? l e = false) : lint.fix_at l e = e := by
@@ -273,6 +396,8 @@ theorem fix_at_unfired (l : lint.ExprLint) (e : Expr) (h : lint.fires_at? l e = 
   · rw [fires_at_overly] at h; exact overly_fix_unfired e h
   · rw [fires_at_dn] at h; exact dn_unfired e h
   · rw [fires_at_ipo] at h; exact ipo_unfired e h
+  · rw [fires_at_ma] at h; exact ma_unfired e h
+  · rw [fires_at_mad] at h; exact mad_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
@@ -285,6 +410,10 @@ theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr) : Le (eval i env e) (
   · exact dn_site env e
   · show Le _ (eval i env (lint.int_plus_one_fix e))
     rw [ipo_site env e]; exact Le.refl _
+  · show Le _ (eval i env (lint.manual_abs_fix e))
+    rw [ma_site env e]; exact Le.refl _
+  · show Le _ (eval i env (lint.manual_abs_diff_fix e))
+    rw [mad_site env e]; exact Le.refl _
 
 /-! ### Fixing everywhere -/
 
@@ -323,6 +452,11 @@ theorem operands_one (l : lint.ExprLint) (op : UnaryOp) (a : Expr) :
     lint.operands_fixed? l (.Unary op a) = true → lint.fires_in? l a = false := by
   operands_simp; simp
 
+theorem operands_if (l : lint.ExprLint) (c t f : Expr) :
+    lint.operands_fixed? l (.If c t f) = true →
+    lint.fires_in? l c = false ∧ lint.fires_in? l t = false ∧ lint.fires_in? l f = false := by
+  operands_simp; simp; exact fun hc ht hf => ⟨hc, ht, hf⟩
+
 /-- Where the lint fires nowhere within an expression, it fires within no operand. -/
 theorem operands_of_clean (l : lint.ExprLint) (e : Expr) (h : lint.fires_in? l e = false) :
     lint.operands_fixed? l e = true := by
@@ -348,6 +482,14 @@ theorem without_offset_fixed (l : lint.ExprLint) (a : Expr) (h : lint.fires_in? 
     · exact this.1
     · exact h
   · exact h
+
+/-- A call of `abs` is fixed where its receiver is, and the lint fires neither
+on the call nor on `Nil`. -/
+theorem abs_of_fixed (l : lint.ExprLint) (x : Expr) (hx : lint.fires_in? l x = false)
+    (h : lint.fires_at? l (lint.abs_of x) = false) (hn : lint.fires_at? l .Nil = false) :
+    lint.fires_in? l (lint.abs_of x) = false := by
+  have hN : lint.fires_in? l .Nil = false := by rw [fires_in_eq, hn]; operands_simp; rfl
+  rw [fires_in_eq, h]; simp only [lint.abs_of]; operands_simp; simp [hx, hN]
 
 /-- Where the lint fires within no operand, it fires nowhere within the fix
 (`lint::fix_at_fixed`). Each new arm of `lint::ExprLint` owes this. -/
@@ -397,6 +539,43 @@ theorem clean_at (l : lint.ExprLint) (e : Expr) (ho : lint.operands_fixed? l e =
           · exact absurd h h2
     · rename_i hne
       rw [ipo_fires_other e hne] at hf; cases hf
+  · rw [fires_at_ma] at hf
+    show lint.fires_in? _ (lint.manual_abs_fix e) = false
+    have hm (x : Expr) (hx : lint.fires_in? .ManualAbs x = false) :
+        lint.fires_in? .ManualAbs (lint.abs_of x) = false :=
+      abs_of_fixed _ x hx (by rw [fires_at_ma]; rfl) (by rw [fires_at_ma]; rfl)
+    revert ho hf
+    unfold lint.manual_abs_fix; split
+    · rename_i c t f
+      intro ho hf
+      have ho := operands_if _ c t f ho
+      split
+      · exact hm _ ho.2.2
+      · split
+        · exact hm _ ho.2.1
+        · rename_i h1 h2
+          rw [ma_fires_if, Bool.or_eq_true] at hf
+          rcases hf with h | h
+          · exact absurd h h1
+          · exact absurd h h2
+    · rename_i hne
+      intro _ hf
+      rw [ma_fires_other e hne] at hf; cases hf
+  · rw [fires_at_mad] at hf
+    show lint.fires_in? _ (lint.manual_abs_diff_fix e) = false
+    revert ho hf
+    unfold lint.manual_abs_diff_fix; split
+    · rename_i c t f
+      intro ho hf
+      have ho := operands_if _ c t f ho
+      split
+      · exact abs_of_fixed _ _ ho.2.1 (by rw [fires_at_mad]; rfl) (by rw [fires_at_mad]; rfl)
+      · rename_i h1
+        rw [mad_fires_if] at hf
+        exact absurd hf h1
+    · rename_i hne
+      intro _ hf
+      rw [mad_fires_other e hne] at hf; cases hf
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr) : lint.fires_in? l (lint.fix_all l e) = false := by
@@ -598,6 +777,28 @@ impl int_plus_one_keeps_meaning: lint::int_plus_one_keeps_meaning for (e : lang.
   unfold lint.int_plus_one_keeps_meaning.ensures lint.int_plus_one_keeps_meaning.ensure.exact
   intro _
   simpa using ipo_site env e
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the operand.
+impl manual_abs_keeps_meaning: lint::manual_abs_keeps_meaning for (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.manual_abs_keeps_meaning.ensures lint.manual_abs_keeps_meaning.ensure.exact
+  intro _
+  simpa using ma_site env e
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the operands.
+impl manual_abs_diff_keeps_meaning: lint::manual_abs_diff_keeps_meaning for (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.manual_abs_diff_keeps_meaning.ensures lint.manual_abs_diff_keeps_meaning.ensure.exact
+  intro _
+  simpa using mad_site env e
 
 open RewriteProof in
 -- For every lint and expression, by `clean_at`.
