@@ -7,7 +7,7 @@ fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren quickcheck [--tests N] [--seed N] [--jobs N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
     [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
@@ -39,7 +39,7 @@ installation. It is built by `lake build fren`.
 | `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10; 0 means none); see [Limits](#limits) |
 | `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
 | `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
-| `--jobs N` | `check`: how many procedures to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
+| `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
@@ -415,6 +415,9 @@ with `--timeout 0` and `--resource-limit`, the output is the same for every
 testing](Check.md#checking-by-testing) run with its solver queries, from
 a random stream of its own, so they do not depend on the order either.
 `--jobs` is at least 1.
+`fren quickcheck` tests up to `--jobs` procedures and global expectations
+at once in the same way: each from a random stream of its own, reported
+in order, so its output is the same for every `--jobs`.
 `fren mutate` checks its mutants one at a time.
 
 ## Timings

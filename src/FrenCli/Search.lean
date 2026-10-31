@@ -250,54 +250,73 @@ def smallSeqs (elems : Array Val) : Array Val :=
   let vs := elems.extract 0 3
   #[.seq #[]] ++ vs.map (Val.seq #[·]) ++ (vs.zip (vs.extract 1)).map fun (a, b) => .seq #[a, b]
 
+/-- All of `each`, if they are at most `cap`; otherwise the first `cap` of
+them taken in turn, the first of each, then the second of each, and so on,
+so that each has some within `cap` (`smallValues`). -/
+def smallInterleaved (cap : Nat) (each : Array (Array Val)) : Array Val := Id.run do
+  if each.foldl (· + ·.size) 0 ≤ cap then return each.flatten
+  let mut out := #[]
+  for k in [0:cap] do
+    for vs in each do
+      if let some v := vs[k]? then out := out.push v
+    if out.size ≥ cap then break
+  return out.extract 0 cap
+
+/-- `smallValues`, with the values of each type at each depth computed
+once, however many fields have that type: a pure function of them. -/
+partial def smallValuesMemo (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat)
+    (depth : Nat) (ty : VTy) : StateM (Std.HashMap (Nat × VTy) (Array Val)) (Array Val) := do
+  if let some vs := (← get)[(depth, ty)]? then return vs
+  let go := smallValuesMemo sp w ints strs cap
+  let vs ← match ty with
+    | .bool => pure #[.bool false, .bool true]
+    | .int => pure (ints.map .int)
+    | .nat => pure ((ints.filter (0 ≤ ·)).map .int)
+    -- The strings of the constraints (`stringsOf`) first, so that sets
+    -- and sequences of strings, which take the first few, have them; then a
+    -- few others. Constraints that equate a variable with a string give the
+    -- rest.
+    | .string => pure ((strs ++ #["", "a", "b"].filter (!strs.contains ·)).map .str)
+    -- The empty set and singletons; constraints that equate a variable with a
+    -- set give the others.
+    | .set t => pure (smallSets (← go depth t))
+    -- The empty sequence, singletons and pairs of candidates, so that
+    -- indexes at `0` and `1` have something to read.
+    | .seq t => pure (smallSeqs (← go depth t))
+    -- The empty relation, single pairs, and a chain of pairs, so that
+    -- `closure` has something to close.
+    | .rel a b => do
+      let as := (← go depth a).extract 0 3
+      let bs := (← go depth b).extract 0 3
+      let pairs := as.flatMap fun x => bs.map (Val.pair x ·)
+      let mut out := #[.set #[]] ++ (pairs.extract 0 6).map (Val.setOf #[·])
+      if a == b && as.size ≥ 3 then
+        out := out.push (Val.setOf #[.pair as[0]! as[1]!, .pair as[1]! as[2]!])
+      pure out
+    | .abstract s => pure ((Array.range (w.size s)).map (.abs s))
+    | .newtype _ u => go depth u
+    | .param _ => pure #[]
+    -- Each variant's, taken in turn, so that each has some within `cap`.
+    | .data p targs =>
+      match sp.data.find? p with
+      | none => pure #[]
+      | some d => do
+        let mut each : Array (Array Val) := #[]
+        for c in d.ctors, idx in [0:d.ctors.size] do
+          if depth == 0 && !c.fields.isEmpty then continue
+          let mut combos : Array (Array Val) := #[#[]]
+          for (_, t) in c.fields do
+            let vs ← go (depth - 1) (t.subst targs)
+            combos := (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
+          each := each.push (combos.map (.ctor p idx ·))
+        pure (smallInterleaved cap each)
+  modify (·.insert (depth, ty) vs)
+  return vs
+
 /-- Every value of `ty` up to `depth`, at most `cap` of them. -/
-partial def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat) (depth : Nat) :
-    VTy → Array Val
-  | .bool => #[.bool false, .bool true]
-  | .int => ints.map .int
-  | .nat => (ints.filter (0 ≤ ·)).map .int
-  -- The strings of the constraints (`stringsOf`) first, so that sets
-  -- and sequences of strings, which take the first few, have them; then a
-  -- few others. Constraints that equate a variable with a string give the
-  -- rest.
-  | .string => (strs ++ #["", "a", "b"].filter (!strs.contains ·)).map .str
-  -- The empty set and singletons; constraints that equate a variable with a
-  -- set give the others.
-  | .set t => smallSets (smallValues sp w ints strs cap depth t)
-  -- The empty sequence, singletons and pairs of candidates, so that
-  -- indexes at `0` and `1` have something to read.
-  | .seq t => smallSeqs (smallValues sp w ints strs cap depth t)
-  -- The empty relation, single pairs, and a chain of pairs, so that
-  -- `closure` has something to close.
-  | .rel a b => Id.run do
-    let as := (smallValues sp w ints strs cap depth a).extract 0 3
-    let bs := (smallValues sp w ints strs cap depth b).extract 0 3
-    let pairs := as.flatMap fun x => bs.map (Val.pair x ·)
-    let mut out := #[.set #[]] ++ (pairs.extract 0 6).map (Val.setOf #[·])
-    if a == b && as.size ≥ 3 then
-      out := out.push (Val.setOf #[.pair as[0]! as[1]!, .pair as[1]! as[2]!])
-    return out
-  | .abstract s => (Array.range (w.size s)).map (.abs s)
-  | .newtype _ u => smallValues sp w ints strs cap depth u
-  | .param _ => #[]
-  -- Each variant's, taken in turn, so that each has some within `cap`.
-  | .data p targs => Id.run do
-    let some d := sp.data.find? p | return #[]
-    let mut each : Array (Array Val) := #[]
-    for c in d.ctors, idx in [0:d.ctors.size] do
-      if depth == 0 && !c.fields.isEmpty then continue
-      let mut combos : Array (Array Val) := #[#[]]
-      for (_, t) in c.fields do
-        let vs := smallValues sp w ints strs cap (depth - 1) (t.subst targs)
-        combos := (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
-      each := each.push (combos.map (.ctor p idx ·))
-    if each.foldl (· + ·.size) 0 ≤ cap then return each.flatten
-    let mut out := #[]
-    for k in [0:cap] do
-      for vs in each do
-        if let some v := vs[k]? then out := out.push v
-      if out.size ≥ cap then break
-    return out.extract 0 cap
+def smallValues (sp : Spec) (w : World) (ints : Array Int) (strs : Array String) (cap : Nat) (depth : Nat)
+    (ty : VTy) : Array Val :=
+  (smallValuesMemo sp w ints strs cap depth ty).run' {}
 
 /-- Whether `smallValues` reads its integers for `ty`: whether an `Int` or
 a `Nat` can be reached from it, through elements and fields. Otherwise it
