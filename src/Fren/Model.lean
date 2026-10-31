@@ -470,6 +470,9 @@ structure PropInfo where
   evidenceOwner? : Option Name := none
   sourceRef : Bool := false
   source? : Option (String × FileMap) := none
+  /-- For a refinement claim (`refines`): its abstraction, the procedure
+  whose realizability its checks rest on (`Reqs/Evidence`). -/
+  abstraction? : Option Name := none
   deriving Inhabited
 
 /-- A call. Expressions are closed lambdas over all of the

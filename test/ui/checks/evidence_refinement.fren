@@ -1,0 +1,43 @@
+-- fren-covers: check::runs_premises
+-- A refinement claim's checks rest on the realizability of its abstraction
+-- (`Reqs/Evidence`): the claim has the meanings of the abstraction's own
+-- calls among its hypotheses, which hold only where the abstraction has
+-- outputs.
+
+proc precise(x: Int): (y: Int) {
+    ensure r: y = x + 1
+}
+
+-- `empty` has no outputs, so a call of it means nothing can hold.
+proc empty(x: Int): (y: Int) {  --~ error: `empty` is not realizable
+    ensure above: y > x
+    ensure below: y < x
+}
+
+-- `vacuous` calls `empty`, so its realizability did not pass, and the claim
+-- that `precise` refines it holds only vacuously: it is inconclusive, in
+-- both front ends. The claim quantifies over `vacuous`'s call variables,
+-- so `fren check` asks it in a logic with quantifiers, as Lean does.
+proc vacuous(x: Int): (z: Int) {  --~ warning: the realizability of `vacuous` rests on the realizability of `empty`, which did not pass
+    call n := empty(x)
+    ensure r: z = n.y
+}
+
+expect claimed(x: Int) {
+    call c := precise(x)
+    refines c vacuous(x)  --~ warning: `claimed::refines_1` rests on the realizability of `vacuous`, which did not pass
+}
+
+-- `rough`'s realizability is only checked by random testing, so the claim
+-- is a pass by random testing in `fren check`, and `#fren_check` reports no
+-- verdict for it (`check::hosted_runs`).
+set_option fren.evidence "random" in
+proc rough(x: Int): (y: Int) {  --~[hosted] info: the checks of `rough` set to random testing are run by `fren check`, not in Lean
+    --~^ info: the redundancy checks of `rough` are not run by random testing
+    ensure r: y = x + 1
+}
+
+expect by_testing(x: Int) {  --~[hosted] info: the checks of `by_testing` that rest on checks set to random testing are run by `fren check`, not in Lean
+    call c := precise(x)
+    refines c rough(x)  --~[cli] info: `by_testing::refines_1` rests on the realizability of `rough`, which is only checked by random testing
+}

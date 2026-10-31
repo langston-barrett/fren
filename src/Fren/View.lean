@@ -306,13 +306,16 @@ def awaitCheck (task : Task (Except Exception CheckOutcome)) :
                            infoState.trees := s.infoState.trees ++ trees }
   ofExcept r
 
-/-- The procedures that the checks of `roots` rest on, through their calls,
-transitively, but those that `skip` says are known: callees before callers
-(`check::runs_premises`). -/
+/-- The procedures that the checks of `roots` rest on, through their calls
+and their refinements' abstractions, transitively, but those that `skip`
+says are known: callees before callers (`check::runs_premises`). -/
 def premiseItems (s : State) (skip : Name → Bool) (roots : Array CompInfo) : Array Name := Id.run do
   let mut out : Array Name := #[]
   let mut seen : Std.HashSet Name := {}
-  let mut stack : Array (Name × Bool) := ((roots.flatMap fun c => c.insts.map (·.comp)).reverse).map (·, false)
+  -- The procedures that each root calls, and the abstractions of its
+  -- refinement claims.
+  let rested (c : CompInfo) := c.insts.map (·.comp) ++ c.props.filterMap (·.abstraction?)
+  let mut stack : Array (Name × Bool) := ((roots.flatMap rested).reverse).map (·, false)
   while !stack.isEmpty do
     let (p, done) := stack.back!
     stack := stack.pop
@@ -323,7 +326,7 @@ def premiseItems (s : State) (skip : Name → Bool) (roots : Array CompInfo) : A
     seen := seen.insert p
     stack := stack.push (p, true)
     if let some c := s.comps.get? p then
-      for i in c.insts.reverse do stack := stack.push (i.comp, false)
+      for q in (rested c).reverse do stack := stack.push (q, false)
   return out
 
 /-- Checks the procedures and global expectations `paths`, and reports the
@@ -396,15 +399,15 @@ where
       continue
     let .ok (results, witnesses, enumerated?, skipped) := outcome | continue
     -- What its checks rest on, the realizability of the procedures it
-    -- calls, weakens them or leaves them inconclusive (`Reqs/Evidence`).
+    -- calls and of its refinements' abstractions, weakens them or leaves
+    -- them inconclusive (`Reqs/Evidence`).
     let known := (← getState).realizability
-    let calls := c.insts.map fun i =>
-      let ev : Core.ExternalPremise := (known.find? i.comp).getD
-        { what := s!"the realizability of `{Core.showComp i.comp}`", settled := false }
-      (Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
+    let refinements := Core.refinementsOf (c.props.map fun q => (q.name, q.abstraction?))
+    let (calls, abstractions) := Core.externalPremises known.find?
+      (c.insts.map fun i => (i.name, i.comp, i.assumes.map Prod.fst)) refinements
     let names := c.insts.map (·.name)
     let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
-    let siteOf (r : CheckResult) := r.site names assumptions c.fn?.isSome false
+    let siteOf (r : CheckResult) := r.site names assumptions c.fn?.isSome false (refinements.map (·.1))
     let enumResults := match enumerated? with | some (.ok e) => e.results | _ => #[]
     -- Its checks set to random testing alone, which `#fren_check` does not
     -- run, stand for themselves with the caveat `Random` where the item has
@@ -415,14 +418,13 @@ where
     let checks := results.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
       ++ enumResults.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
       ++ standIns.map fun r => (r, siteOf r, Core.ownCaveatsOf r true)
-    let reported := Core.itemEvidence p item c.subsetInvariant?.isSome calls checks
+    let reported := Core.itemEvidence p item c.subsetInvariant?.isSome calls checks abstractions
     -- The evidence of its realizability, kept for the checks that rest on
     -- it, in this run, later runs and the modules that import this one
     -- (`check::runs_premises`).
-    for (r, _, _) in checks, (rep, caveats, _) in reported do
+    for (r, _, _) in checks, rc in reported do
       if r.isOwnRealizability p && item == .component then
-        record (.realizabilityEvidence p
-          { what := s!"the realizability of `{Core.showComp p}`", caveats, settled := rep.shown == .pass })
+        record (.realizabilityEvidence p (rc.realizability p))
     -- A premise checked for its evidence alone is reported nothing of.
     if quiet then continue
     -- Proof artifacts are supplementary: preserve the checker report even
@@ -435,7 +437,7 @@ where
     -- Lean, as one set to random testing (`check::hosted_runs`).
     -- A failure is reported all the same: no premise changes it, and
     -- `fren check` reports the same counterexample (`check::reported_pass`).
-    let resting (i : Nat) : Bool := !Core.hostedReported ((reported[i]?.map (·.2.1)).getD [])
+    let resting (i : Nat) : Bool := !Core.hostedReported ((reported[i]?.map (·.caveats)).getD [])
       ((checks[i]?.map (·.1.verdict == .fail)).getD false) ((checks[i]?.map (·.2.2.contains .random)).getD false)
     for r in results, i in [0:results.size] do
       unless resting i do report p c r
@@ -456,7 +458,9 @@ where
     -- (`check::method_run`).
     for msg in skipped do
       logAbout p c.ref msg.text .information
-    for (r, _, _) in checks, (rep, _, msg?) in reported, i in [0:checks.size] do
+    for (r, _, _) in checks, rc in reported, i in [0:checks.size] do
+      let rep := rc.rep
+      let msg? := rc.msg?
       if resting i then continue
       if let some msg := msg? then
         let ref := (r.prop?.bind fun n => c.props.find? (·.name == n)).map (·.ref)
