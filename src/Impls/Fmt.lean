@@ -77,9 +77,13 @@ def toFollowers : List Follower → fmt.Followers
   | [] => .Nil
   | f :: fs => .Then (toFollower f) (toFollowers fs)
 
-def toHolders : List (Nat × Bool) → fmt.Holders
+def toOperand : Option (Nat × Nat) → fmt.Operand
+  | none => .Absent
+  | some (start, stop) => .Spans start stop
+
+def toHolders : List (Nat × Option (Nat × Nat)) → fmt.Holders
   | [] => .Nil
-  | (c, r) :: hs => .Holder c r (toHolders hs)
+  | (c, o) :: hs => .Holder c (toOperand o) (toHolders hs)
 
 def toFmtLineStart : LineStart → fmt.LineStart
   | .closing => .Closing
@@ -171,26 +175,38 @@ theorem only_closing_toFollowers (fs : List Follower) :
   | nil => rfl
   | cons f fs ih => cases f <;> simp [toFollowers, toFollower, fmt.«only_closing?», FrenCli.Fmt.onlyClosing, ih]
 
-theorem heads_near_toHolders (k : ListKind) (hs : List (Nat × Bool)) :
-    fmt.«heads_near?» (toFmtListKind k) (toHolders hs) = FrenCli.Fmt.headsNear k hs := by
+theorem whole_toOperand (o : Option (Nat × Nat)) (head close : Nat) :
+    fmt.«whole?» (toOperand o) head close = FrenCli.Fmt.whole o head close := by
+  rcases o with _ | ⟨start, stop⟩
+  · rfl
+  · simp only [toOperand, fmt.«whole?», FrenCli.Fmt.whole, fmt.Operand.Spans.x0, fmt.Operand.Spans.x1]
+    have e1 : ((start : Int) = head) ↔ start = head := by omega
+    have e2 : ((stop : Int) = close) ↔ stop = close := by omega
+    simp [e1, e2]
+
+theorem heads_near_toHolders (k : ListKind) (head close : Nat) (hs : List (Nat × Option (Nat × Nat))) :
+    fmt.«heads_near?» (toFmtListKind k) head close (toHolders hs) = FrenCli.Fmt.headsNear k head close hs := by
   induction hs with
   | nil => rfl
   | cons h hs ih =>
-    obtain ⟨c, r⟩ := h
+    obtain ⟨c, o⟩ := h
     have hc : ((c : Int) ≤ 4) ↔ c ≤ 4 := by omega
-    simp only [toHolders, fmt.«heads_near?», FrenCli.Fmt.headsNear, ih]
-    cases k <;> cases r <;> simp [toFmtListKind, hc]
+    simp only [toHolders, fmt.«heads_near?», FrenCli.Fmt.headsNear, ih, whole_toOperand]
+    cases k <;> simp [toFmtListKind, hc]
 
-impl own_line: fmt::own_line for (k : ListKind) (fs : List Follower) (hs : List (Nat × Bool)) {
+impl own_line: fmt::own_line for (k : ListKind) (fs : List Follower) (head close : Nat)
+    (hs : List (Nat × Option (Nat × Nat))) {
   list := toFmtListKind k,
   followers := toFollowers fs,
+  head := head,
+  close := close,
   holders := toHolders hs,
-  own_line? := FrenCli.Fmt.ownLine k fs hs,
+  own_line? := FrenCli.Fmt.ownLine k fs head close hs,
 } by
-  intro k fs hs _
+  intro k fs head close hs _
   simp only [fren_spec, only_closing_toFollowers, heads_near_toHolders, FrenCli.Fmt.ownLine]
   generalize FrenCli.Fmt.onlyClosing fs = a
-  generalize FrenCli.Fmt.headsNear k hs = b
+  generalize FrenCli.Fmt.headsNear k head close hs = b
   cases k <;> cases a <;> cases b <;> simp [toFmtListKind]
 
 theorem count_toElementList (es : List (Nat × Bool)) : fmt.count (toElementList es) = es.length := by

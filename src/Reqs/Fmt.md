@@ -230,9 +230,9 @@ hold:
    gets that far, as rustfmt counts a signature only up to its ` {`.
    This counts only where breaking the list shortens the line, so that
    the line up to its first element ends by column 100, and only where
-   the list *is its line's expression*: either it is a procedure's or function's parameters or
-   results, as rustfmt breaks a long signature there first, or both of
-   these hold:
+   the list *is its line's expression*: either it is a procedure's or
+   function's parameters or results, as rustfmt breaks a long signature
+   there first, or both of these hold:
    - what follows its closing bracket on the line, as far as it counts,
      is only closing brackets, commas, `=>`, the `>` that closes a
      type's arguments, and a bracket that indents; and
@@ -410,12 +410,15 @@ expect list_layout_one_line(
 ### A list's own line
 
 `fmt::own_line` decides whether a list is its line's expression, for
-rule 3, from the tokens that follow its closing bracket on its line, as
-far as they count, and from the expressions that hold it and start on its
-line. Each of those comes with the columns before the list's head in it,
-and whether the list is its whole right operand, where it is the
-operation of a binary operator. The formatter's decision implements it,
-proved in Lean, and gives what it decides to `fmt::list_layout`:
+rule 3. It decides from the tokens that follow the list's closing
+bracket on its line, as far as they count, and from the expressions that
+hold the list and start on its line. Each expression comes with the
+columns before the list's head in it, and, where it is the operation of
+a binary operator, the span of its right operand, as the parser reads
+it. Spans are offsets in the file: a right operand is the whole list
+where it starts at the list's head and ends with its closing bracket.
+The formatter's decision implements `fmt::own_line`, proved in Lean,
+and gives what it decides to `fmt::list_layout`:
 
 ```fren
 -- A token that follows a list's closing bracket on its line.
@@ -430,12 +433,17 @@ pub enum Follower {
 
 pub enum Followers { Nil, Then(Follower, Followers) }
 
+-- The right operand of an expression that holds a list: none, where the expression is not the
+-- operation of a binary operator, or where it starts and ends.
+pub enum Operand { Absent, Spans(Int, Int) }
+
 -- The expressions that hold a list and start on its line, each with the columns before the list's
--- head in it, and whether the list is its whole right operand, an operation of a binary operator.
-pub enum Holders { Nil, Holder(Int, Bool, Holders) }
+-- head in it, and its right operand.
+pub enum Holders { Nil, Holder(Int, Operand, Holders) }
 
 use self::Followers::Then
 use self::Holders::Holder
+use self::Operand::{Absent, Spans}
 
 -- Only closing brackets, commas, `=>`, a type's `>` and brackets that indent follow.
 pub fn only_closing?(followers: Followers) := match followers {
@@ -443,17 +451,29 @@ pub fn only_closing?(followers: Followers) := match followers {
     Then(token, rest) => token != Follower::Other and only_closing?(rest),
 }
 
--- In each expression that holds the list, at most 4 columns come before its head, but where the
--- list is a record that is the expression's whole right operand.
-pub fn heads_near?(list: ListKind, holders: Holders) := match holders {
-    Holders::Nil => true,
-    Holder(columns, right_operand?, rest) => (columns <= 4 or (list = Fields and right_operand?))
-        and heads_near?(list, rest),
+-- The list, from `head` to `close`, is the whole of a right operand.
+pub fn whole?(operand: Operand, head: Int, close: Int) := match operand {
+    Absent => false,
+    Spans(start, stop) => start = head and stop = close,
 }
 
-pub proc own_line(list: ListKind, followers: Followers, holders: Holders): (det own_line?) {
-    ensure rule: own_line? iff (list is Parameters | FunctionParameters or (only_closing?(followers)
-        and heads_near?(list, holders)))
+-- In each expression that holds the list, at most 4 columns come before its head, but where the
+-- list is a record that is the expression's whole right operand.
+pub fn heads_near?(list: ListKind, head: Int, close: Int, holders: Holders) := match holders {
+    Holders::Nil => true,
+    Holder(columns, operand, rest) => (columns <= 4 or (list = Fields and whole?(operand, head, close)))
+        and heads_near?(list, head, close, rest),
+}
+
+pub proc own_line(
+    list: ListKind,
+    followers: Followers,
+    head: Int,               -- where the list's head starts
+    close: Int,              -- where its closing bracket ends
+    holders: Holders,
+): (det own_line?) {
+    ensure rule: own_line? iff (list is Parameters | FunctionParameters
+        or (only_closing?(followers) and heads_near?(list, head, close, holders)))
 
     expect signature: when list = Parameters, own_line?
     expect alone: when followers = Followers::Nil and holders = Holders::Nil, own_line?
@@ -461,17 +481,29 @@ pub proc own_line(list: ListKind, followers: Followers, holders: Holders): (det 
     expect method_after: when list = Arguments and followers = Then(Follower::Other, Followers::Nil),
         not own_line?
     -- `qqqqqqqqqq in {1, 2}`: a set literal does not break in place after a long left operand.
-    expect set_right: when list = Elements and holders = Holder(14, true, Holders::Nil), not own_line?
+    expect set_right: when list = Elements and holders = Holder(14, Spans(head, close), Holders::Nil),
+        not own_line?
 }
 
--- `qqq = P { x := 1 }`: a record breaks in place after a long left operand, but in `x = 1 and qqq =
--- P { x := 1 }`, not after a long operation that it is not the right operand of.
-expect records_break_in_place(columns: Int, followers: Followers, rest: Holders) {
-    call right := own_line(Fields, followers, Holder(columns, true, rest))
-    call without := own_line(Fields, followers, rest)
-    call elsewhere := own_line(Fields, followers, Holder(columns, false, rest))
+-- `qqq = P { x := 1 }`: a record breaks in place after a long left operand. In `x = 1 and qqq =
+-- P { x := 1 }`, it does not after a long operation that it is not the right operand of, and in
+-- `qqq = -P { x := 1 }`, its operation's right operand ends with it but is more than the record.
+expect records_break_in_place(
+    n: Int,
+    fs: Followers,
+    head: Int,
+    close: Int,
+    start: Int,
+    hs: Holders,
+) {
+    assume longer: start < head
+    call right := own_line(Fields, fs, head, close, Holder(n, Spans(head, close), hs))
+    call without := own_line(Fields, fs, head, close, hs)
+    call elsewhere := own_line(Fields, fs, head, close, Holder(n, Absent, hs))
+    call negated := own_line(Fields, fs, head, close, Holder(n, Spans(start, close), hs))
     expect exempt: right.own_line? = without.own_line?
-    expect only_there: when columns > 4, not elsewhere.own_line?
+    expect only_there: when n > 4, not elsewhere.own_line?
+    expect only_the_whole_operand: when n > 4, not negated.own_line?
 }
 ```
 
@@ -656,7 +688,7 @@ pub proc indent(
     start: LineStart,        -- what the line's first token does, or for a comment, the next line's
     comment?,                -- the line is a comment
 ): (det columns: Int) {
-    -- The innermost open bracket is the one a line's first token closes.
+    -- A closing line's first token closes the innermost open bracket, which indents.
     assume closes_innermost: when start = Closing, innermost_indents?(brackets)
 
     ensure closing: when start = Closing,
