@@ -1522,10 +1522,10 @@ which is not applied yet (#522). Both front ends' query builders give their
 queries the facts of this, and record its functions. -/
 def appFactsWith [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F)))
     (fnOf : F → Option Name) (hyps : Array (Name × F)) (goal : F) : m (Array (Name × F) × Array Name) := do
+  -- The facts are `appFacts`'s, of the same applications, in the same order.
   let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
-  let facts ← apps.mapM factsOf
-  return (facts.flatten, (queriedFns (apps.toList.flatMap (appFactKinds fnOf))).toArray)
+  return (← appFacts appsOf factsOf hyps goal, (queriedFns (apps.toList.flatMap (appFactKinds fnOf))).toArray)
 
 /-- The questions that an application of the function `f` asks of its
 arguments, for the precondition check (`check::application_contract`):
