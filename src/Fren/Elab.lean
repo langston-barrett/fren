@@ -6445,20 +6445,18 @@ def addRecursiveDef (ref : Syntax) (name : Name) (type value : Expr) : TermElabM
 /-- Adds a structural recursion's two definitions
 (`lang::structural_recursion`), from `recLean`, its Lean definition's value
 over itself first, with the placeholders `uses` as themselves and its
-`match`es Lean's, whose matchers are under `leanDeclName decl`: the
-solver's, `solverName decl`, as it is (`DefinedInfo.recursive`); and
-`decl`, generalized over the placeholders, with the matchers added again
-under `decl`, as `addLeanDef` adds them. Lean's structural recursion
-accepts each. -/
+`match`es Lean's, whose matchers are under `leanDeclName decl`: `decl`,
+generalized over the placeholders, with the matchers added again under
+`decl`, as `addLeanDef` adds them, which Lean's structural recursion
+accepts; and the solver's, `solverName decl` (`DefinedInfo.recursive`),
+`decl` at the placeholders themselves. The solver never reads the solver's
+definition, only its body with the defined functions it applies unfolded
+(`DefinedInfo.recBody?`), so the definition is not that body: the body of
+a recursion that applies large functions in each arm, as `lint::fix_all`
+does, is large, and Lean's structural recursion over it costs as much. -/
 def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean : Expr) : TermElabM Unit := do
   let type := recLean.bindingDomain!
   let solver := solverName decl
-  -- The solver's, with the defined functions that it applies unfolded, as
-  -- a query's are (`Fren.unfoldDefined`), but the structural recursions.
-  let st ← getState
-  let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
-  let sv ← Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st (recLean.beta #[Lean.mkConst solver]) ds.contains))
-  addRecursiveDef ref solver type sv
   let tmp := leanDeclName decl
   let ms := recLean.foldConsts #[] fun c acc => if c.getPrefix == tmp && !acc.contains c then acc.push c else acc
   let args := uses.map (Lean.mkConst ·)
@@ -6481,6 +6479,9 @@ def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean :
   let (gType, gValue) ← withUses uses fun xs => do
     return (← mkForallFVars xs (replaceUses uses xs type), ← mkLambdaFVars xs (replaceUses uses xs body))
   addRecursiveDef ref decl gType gValue
+  let sv := mkAppN (Lean.mkConst decl) args
+  addDecl (.defnDecl { name := solver, levelParams := [], type, value := sv, hints := .abbrev, safety := .safe })
+  compileGenerated solver type sv
 
 /-! ## Abstract types and functions -/
 

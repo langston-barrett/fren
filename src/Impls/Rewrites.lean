@@ -5,8 +5,9 @@ import Reqs.Lint
 
 /-! # Lints over the syntax of the semantics (`Reqs/Lint/Rewrites`)
 
-`overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs` and
-`manual_abs_diff` over `lang::Expr`: each fix agrees with the expression where it fires, and the
+`overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs`,
+`manual_abs_diff`, `unless_not` and `collapsible_when` over `lang::Expr`:
+each fix agrees with the expression where it fires, and the
 linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
 meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of
 fixing every lint everywhere (`lint::fix_all_laws`), by induction on the
@@ -306,7 +307,6 @@ theorem abs_diff (env : Env) (op : BinaryOp) (hop : op = .Lt ∨ op = .Le) (s m 
   all_goals (rename_i a b; by_cases h0 : a < b <;> by_cases h1 : a ≤ b <;> by_cases h2 : b - a < 0 <;>
     simp [truth, h0, h1, h2] <;> omega)
 
-
 theorem ma_fires_if (c t f : Expr) :
     lint.manual_abs_fires? (.If c t f) = (lint.abs_negated_then? c t f || lint.abs_negated_else? c t f) := by
   simp [lint.manual_abs_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
@@ -314,18 +314,20 @@ theorem ma_fires_if (c t f : Expr) :
 theorem mad_fires_if (c t f : Expr) : lint.manual_abs_diff_fires? (.If c t f) = lint.abs_diff? c t f := by
   simp [lint.manual_abs_diff_fires?]
 
-/-- Where `manual_abs` does not fire, its fix is the expression. -/
+/-- `manual_abs` fires only on a conditional. -/
 theorem ma_fires_other (e : Expr) (h : ∀ c t f, e = .If c t f → False) : lint.manual_abs_fires? e = false := by
   cases e with
   | If c t f => exact absurd rfl (h c t f)
   | _ => simp [lint.manual_abs_fires?]
 
+/-- `manual_abs_diff` fires only on a conditional. -/
 theorem mad_fires_other (e : Expr) (h : ∀ c t f, e = .If c t f → False) :
     lint.manual_abs_diff_fires? e = false := by
   cases e with
   | If c t f => exact absurd rfl (h c t f)
   | _ => simp [lint.manual_abs_diff_fires?]
 
+/-- Where `manual_abs` does not fire, its fix is the expression. -/
 theorem ma_unfired (e : Expr) (h : lint.manual_abs_fires? e = false) : lint.manual_abs_fix e = e := by
   unfold lint.manual_abs_fix; split
   · rename_i c t f
@@ -367,6 +369,134 @@ theorem mad_site (env : Env) (e : Expr) : eval i env (lint.manual_abs_diff_fix e
     · rfl
   · rfl
 
+/-! ### `unless_not` and `collapsible_when` -/
+
+theorem true_iff (e : Expr) : lint.true? e = true ↔ e = .Literal .True := by
+  simp [lint.true?]
+
+theorem true_lit : lint.true? (.Literal .True) = true := by simp [lint.true?]
+
+theorem true_if (c t f : Expr) : lint.true? (.If c t f) = false := by simp [lint.true?]
+
+theorem and_not_true {p q : Bool} (h : (p && !q) = true) : p = true ∧ ¬q = true := by
+  cases p <;> cases q <;> simp_all
+
+theorem and_not_false {p q : Bool} (h : (p && !q) = false) : ¬(p = true ∧ ¬q = true) := by
+  cases p <;> cases q <;> simp_all
+
+theorem and_false {p q : Bool} (h : (p && q) = false) : ¬(p = true ∧ q = true) := by
+  cases p <;> cases q <;> simp_all
+
+theorem un_fires_not (a t f : Expr) :
+    lint.unless_not_fires? (.If (.Unary .Not a) t f) = (lint.true? t && !lint.true? f) := by
+  simp [lint.unless_not_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2, lang.Expr.Unary.x0,
+    lang.Expr.Unary.x1]
+
+/-- `unless_not` fires only on a conditional whose condition is a negation. -/
+theorem un_fires_else (e : Expr) (h : ∀ a t f, e = .If (.Unary .Not a) t f → False) :
+    lint.unless_not_fires? e = false := by
+  cases e with
+  | If c t f =>
+    cases c with
+    | Unary op a =>
+      cases op
+      · exact absurd rfl (h a t f)
+      · simp [lint.unless_not_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2, lang.Expr.Unary.x0,
+          lang.Expr.Unary.x1]
+    | _ => simp [lint.unless_not_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+  | _ => simp [lint.unless_not_fires?]
+
+/-- `unless_not` does not fire on a conditional whose `else` branch is `true`. -/
+theorem un_fires_else_true (c t : Expr) : lint.unless_not_fires? (.If c t (.Literal .True)) = false := by
+  by_cases hc : ∃ a, c = .Unary .Not a
+  · obtain ⟨a, rfl⟩ := hc
+    rw [un_fires_not, true_lit]; simp
+  · exact un_fires_else _ (fun a _ _ h => hc ⟨a, by injection h⟩)
+
+/-- Where `unless_not` does not fire, its fix is the expression. -/
+theorem un_unfired (e : Expr) (h : lint.unless_not_fires? e = false) : lint.unless_not_fix e = e := by
+  unfold lint.unless_not_fix; split
+  · rw [un_fires_not] at h
+    rw [if_neg (and_not_false h)]
+  · rfl
+
+/-- `if not a then true else d` is `if a then d else true`, at every outcome of `a`. -/
+theorem un_site (env : Env) (e : Expr) : eval i env (lint.unless_not_fix e) = eval i env e := by
+  unfold lint.unless_not_fix; split
+  · rename_i a t f
+    split
+    · rename_i h
+      obtain rfl := (true_iff _).1 h.1
+      simp only [eval]
+      generalize eval i env a = A
+      rcases A with v | _ <;> (try cases v) <;> simp
+    · rfl
+  · rfl
+
+theorem cw_fires_if (c t f : Expr) :
+    lint.collapsible_when_fires? (.If c t f) = (lint.nested_when? t f || lint.nested_unless? t f) := by
+  simp only [lint.collapsible_when_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+  simp
+
+/-- `collapsible_when` fires only on a conditional. -/
+theorem cw_fires_other (e : Expr) (h : ∀ c t f, e = .If c t f → False) :
+    lint.collapsible_when_fires? e = false := by
+  cases e with
+  | If c t f => exact absurd rfl (h c t f)
+  | _ => simp [lint.collapsible_when_fires?]
+
+theorem nw_if (b d g f : Expr) : lint.nested_when? (.If b d g) f = (lint.true? f && lint.true? g) := by
+  simp [lint.nested_when?]
+
+theorem nu_if (t b u d : Expr) : lint.nested_unless? t (.If b u d) = (lint.true? t && lint.true? u) := by
+  simp [lint.nested_unless?]
+
+theorem nu_if_left (b d g f : Expr) : lint.nested_unless? (.If b d g) f = false := by
+  simp [lint.nested_unless?, lint.true?]
+
+theorem nw_not_if (t f : Expr) (h : ∀ b d g, t = .If b d g → False) : lint.nested_when? t f = false := by
+  cases t with
+  | If b d g => exact absurd rfl (h b d g)
+  | _ => simp [lint.nested_when?]
+
+theorem nu_not_if (t f : Expr) (h : ∀ b u d, f = .If b u d → False) : lint.nested_unless? t f = false := by
+  cases f with
+  | If b u d => exact absurd rfl (h b u d)
+  | _ => simp [lint.nested_unless?]
+
+/-- Where `collapsible_when` does not fire, its fix is the expression. -/
+theorem cw_unfired (e : Expr) (h : lint.collapsible_when_fires? e = false) : lint.collapsible_when_fix e = e := by
+  unfold lint.collapsible_when_fix; split
+  · rw [cw_fires_if, nw_if, Bool.or_eq_false_iff] at h
+    rw [if_neg (and_false h.1)]
+  · rw [cw_fires_if, nu_if, Bool.or_eq_false_iff] at h
+    rw [if_neg (and_false h.2)]
+  · rfl
+
+/-- `when a, when b, d` is `when a and b, d`, and `unless a, unless b, d` is
+`unless a or b, d`, at every outcome of `a`. -/
+theorem cw_site (env : Env) (e : Expr) : eval i env (lint.collapsible_when_fix e) = eval i env e := by
+  unfold lint.collapsible_when_fix; split
+  · rename_i a b d g f
+    split
+    · rename_i h
+      obtain rfl := (true_iff _).1 h.1
+      obtain rfl := (true_iff _).1 h.2
+      simp only [eval]
+      generalize eval i env a = A
+      rcases A with v | _ <;> (try cases v) <;> simp
+    · rfl
+  · rename_i a t b u d _
+    split
+    · rename_i h
+      obtain rfl := (true_iff _).1 h.1
+      obtain rfl := (true_iff _).1 h.2
+      simp only [eval]
+      generalize eval i env a = A
+      rcases A with v | _ <;> (try cases v) <;> simp
+    · rfl
+  · rfl
+
 /-! ### Each lint at the place where it fires -/
 
 theorem fires_at_overly (e : Expr) : lint.fires_at? .OverlyComplexBoolExpr e = lint.overly_complex_fires? e := by
@@ -389,6 +519,14 @@ theorem fires_at_mad (e : Expr) : lint.fires_at? .ManualAbsDiff e = lint.manual_
   show decide (lint.manual_abs_diff_fires? e = true) = _
   cases lint.manual_abs_diff_fires? e <;> rfl
 
+theorem fires_at_un (e : Expr) : lint.fires_at? .UnlessNot e = lint.unless_not_fires? e := by
+  show decide (lint.unless_not_fires? e = true) = _
+  cases lint.unless_not_fires? e <;> rfl
+
+theorem fires_at_cw (e : Expr) : lint.fires_at? .CollapsibleWhen e = lint.collapsible_when_fires? e := by
+  show decide (lint.collapsible_when_fires? e = true) = _
+  cases lint.collapsible_when_fires? e <;> rfl
+
 /-- Where a lint does not fire, its fix is the expression
 (`lint::fix_at_unfired`). Each new arm of `lint::ExprLint` owes this. -/
 theorem fix_at_unfired (l : lint.ExprLint) (e : Expr) (h : lint.fires_at? l e = false) : lint.fix_at l e = e := by
@@ -398,6 +536,8 @@ theorem fix_at_unfired (l : lint.ExprLint) (e : Expr) (h : lint.fires_at? l e = 
   · rw [fires_at_ipo] at h; exact ipo_unfired e h
   · rw [fires_at_ma] at h; exact ma_unfired e h
   · rw [fires_at_mad] at h; exact mad_unfired e h
+  · rw [fires_at_un] at h; exact un_unfired e h
+  · rw [fires_at_cw] at h; exact cw_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
@@ -414,6 +554,10 @@ theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr) : Le (eval i env e) (
     rw [ma_site env e]; exact Le.refl _
   · show Le _ (eval i env (lint.manual_abs_diff_fix e))
     rw [mad_site env e]; exact Le.refl _
+  · show Le _ (eval i env (lint.unless_not_fix e))
+    rw [un_site env e]; exact Le.refl _
+  · show Le _ (eval i env (lint.collapsible_when_fix e))
+    rw [cw_site env e]; exact Le.refl _
 
 /-! ### Fixing everywhere -/
 
@@ -490,6 +634,13 @@ theorem abs_of_fixed (l : lint.ExprLint) (x : Expr) (hx : lint.fires_in? l x = f
     lint.fires_in? l (lint.abs_of x) = false := by
   have hN : lint.fires_in? l .Nil = false := by rw [fires_in_eq, hn]; operands_simp; rfl
   rw [fires_in_eq, h]; simp only [lint.abs_of]; operands_simp; simp [hx, hN]
+
+/-- Where the lint fires nowhere within an expression, it does not fire on it. -/
+theorem at_of_clean (l : lint.ExprLint) (e : Expr) (h : lint.fires_in? l e = false) : lint.fires_at? l e = false := by
+  rw [fires_in_eq] at h
+  cases h1 : lint.fires_at? l e
+  · rfl
+  · rw [h1] at h; simp at h
 
 /-- Where the lint fires within no operand, it fires nowhere within the fix
 (`lint::fix_at_fixed`). Each new arm of `lint::ExprLint` owes this. -/
@@ -576,6 +727,77 @@ theorem clean_at (l : lint.ExprLint) (e : Expr) (ho : lint.operands_fixed? l e =
     · rename_i hne
       intro _ hf
       rw [mad_fires_other e hne] at hf; cases hf
+  · rw [fires_at_un] at hf
+    show lint.fires_in? _ (lint.unless_not_fix e) = false
+    revert ho hf
+    unfold lint.unless_not_fix; split
+    · rename_i a t f
+      intro ho hf
+      obtain ⟨hc, ht, hf'⟩ := operands_if _ _ _ _ ho
+      have ha := operands_one _ _ _ (operands_of_clean _ _ hc)
+      split
+      · rename_i h
+        obtain rfl := (true_iff _).1 h.1
+        rw [fires_in_eq, fires_at_un, un_fires_else_true]; operands_simp; simp [ha, hf', ht]
+      · rename_i h
+        rw [un_fires_not] at hf
+        exact absurd (and_not_true hf) h
+    · rename_i hne
+      intro _ hf
+      rw [un_fires_else e hne] at hf; cases hf
+  · rw [fires_at_cw] at hf
+    show lint.fires_in? _ (lint.collapsible_when_fix e) = false
+    have hlit : lint.fires_in? .CollapsibleWhen (.Literal .True) = false := by
+      rw [fires_in_eq, fires_at_cw, cw_fires_other _ (fun _ _ _ h => by cases h)]; operands_simp; rfl
+    have hbin (k a b : Expr) (hk : k = .And a b ∨ k = .Or a b) (ha : lint.fires_in? .CollapsibleWhen a = false)
+        (hb : lint.fires_in? .CollapsibleWhen b = false) : lint.fires_in? .CollapsibleWhen k = false := by
+      rw [fires_in_eq, fires_at_cw, cw_fires_other _ (fun _ _ _ h => by rcases hk with rfl | rfl <;> cases h)]
+      rcases hk with rfl | rfl <;> operands_simp <;> simp [ha, hb]
+    revert ho hf
+    unfold lint.collapsible_when_fix; split
+    · rename_i a b d g f
+      intro ho hf
+      obtain ⟨ha, hi, _⟩ := operands_if _ _ _ _ ho
+      obtain ⟨hb, hd, _⟩ := operands_if _ _ _ _ (operands_of_clean _ _ hi)
+      have hni : lint.collapsible_when_fires? (.If b d g) = false := by
+        rw [← fires_at_cw]; exact at_of_clean _ _ hi
+      split
+      · rename_i h
+        obtain rfl := (true_iff _).1 h.1
+        obtain rfl := (true_iff _).1 h.2
+        have : lint.collapsible_when_fires? (.If (.And a b) d (.Literal .True)) = false := by
+          rw [cw_fires_if] at hni ⊢; exact hni
+        rw [fires_in_eq, fires_at_cw, this]; operands_simp
+        simp [hbin _ a b (Or.inl rfl) ha hb, hd, hlit]
+      · rename_i h
+        rw [cw_fires_if, nw_if, nu_if_left, Bool.or_false, Bool.and_eq_true] at hf
+        exact absurd hf h
+    · rename_i a t b u d hne
+      intro ho hf
+      obtain ⟨ha, _, hi⟩ := operands_if _ _ _ _ ho
+      obtain ⟨hb, _, hd⟩ := operands_if _ _ _ _ (operands_of_clean _ _ hi)
+      have hni : lint.collapsible_when_fires? (.If b u d) = false := by
+        rw [← fires_at_cw]; exact at_of_clean _ _ hi
+      split
+      · rename_i h
+        obtain rfl := (true_iff _).1 h.1
+        obtain rfl := (true_iff _).1 h.2
+        have : lint.collapsible_when_fires? (.If (.Or a b) (.Literal .True) d) = false := by
+          rw [cw_fires_if] at hni ⊢; exact hni
+        rw [fires_in_eq, fires_at_cw, this]; operands_simp
+        simp [hbin _ a b (Or.inr rfl) ha hb, hd, hlit]
+      · rename_i h
+        rw [cw_fires_if, nw_not_if _ _ hne, nu_if, Bool.false_or, Bool.and_eq_true] at hf
+        exact absurd hf h
+    · rename_i h1 h2
+      intro _ hf
+      exfalso
+      cases e with
+      | If c t f =>
+        rw [cw_fires_if, nw_not_if t f (fun b d g h => h1 c b d g f (by rw [h])),
+          nu_not_if t f (fun b u d h => h2 c t b u d (by rw [h]))] at hf
+        cases hf
+      | _ => rw [cw_fires_other _ (fun _ _ _ h => by cases h)] at hf; cases hf
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr) : lint.fires_in? l (lint.fix_all l e) = false := by
@@ -799,6 +1021,28 @@ impl manual_abs_diff_keeps_meaning: lint::manual_abs_diff_keeps_meaning for (e :
   unfold lint.manual_abs_diff_keeps_meaning.ensures lint.manual_abs_diff_keeps_meaning.ensure.exact
   intro _
   simpa using mad_site env e
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the condition.
+impl unless_not_keeps_meaning: lint::unless_not_keeps_meaning for (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.unless_not_keeps_meaning.ensures lint.unless_not_keeps_meaning.ensure.exact
+  intro _
+  simpa using un_site env e
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the outer condition.
+impl collapsible_when_keeps_meaning: lint::collapsible_when_keeps_meaning for (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.collapsible_when_keeps_meaning.ensures lint.collapsible_when_keeps_meaning.ensure.exact
+  intro _
+  simpa using cw_site env e
 
 open RewriteProof in
 -- For every lint and expression, by `clean_at`.

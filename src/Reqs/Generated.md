@@ -372,6 +372,14 @@ then generalized, as `p` is, over the abstract types and functions that
 which the rule above should never let happen, `p` is the solver's
 definition, and there is no `p.«#solver»`.
 
+A [structural recursion](Lang/Recursion.md)'s `p.«#solver»` is `p`
+itself, at the placeholders. The solver never unfolds it: it reads only
+its [one-step equations](Lang/Recursion.md#solver-encoding), from its body
+with its `match`es as `if`s and the defined functions that it applies
+unfolded. So Lean's structural recursion runs once, over `p`'s body,
+which applies those functions, rather than also over that unfolded body,
+whose size is the sum of theirs in each arm.
+
 ## Computable definitions
 
 Each generated definition that has something to run is compiled, so that
