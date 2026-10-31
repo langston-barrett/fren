@@ -624,10 +624,17 @@ Apple's, such as
 and `GCOV` is `xcrun llvm-cov gcov`. CI installs LLVM's of the version of
 Lean's clang.
 
-`fren_coverage` reads the counters with `GCOV`. A declaration ran if one of
-its entry points ran: its own function, or its boxed or reduced-arity
-version, which callers may call instead. An executable's `main` is emitted
-as `_lean_main`, and is `main`'s. A specialization
+`fren_coverage` reads the counters with `GCOV`, without the library path
+that `lake exe` sets to Lean's toolchain, whose LLVM libraries are not the
+ones that `GCOV` is linked with. It stops with an error, and no report,
+when it finds no counters, when `GCOV` fails on one module's, or when the
+counters show that nothing ran: each means that the counters were not
+read, and a report would list every declaration as never run.
+
+A declaration ran if one of its entry points ran: its own function, or its
+boxed or reduced-arity version, which callers may call instead. An
+executable's `main` is emitted as `_lean_main`, and is `main`'s. A
+specialization
 `f._at_.g.spec_N` is an entry point of `f`, with arguments from `g`, and
 `g` may itself be one. Lambdas, join points and closed terms are no
 declaration's: the compiler shares them among declarations whose code is
