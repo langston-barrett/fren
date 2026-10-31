@@ -5,12 +5,14 @@ import Reqs.Lint
 
 /-! # Lints over the syntax of the semantics (`Reqs/Lint/Rewrites`)
 
-`overly_complex_bool_expr` over `lang::Expr`: its fix agrees with the
-expression where it fires, and the linter's rule, `Core.overlyComplexRule`,
-meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of fixing every lint
-everywhere (`lint::fix_all_laws`), by induction on the expression, from two
-facts about each lint where it fires: its fix agrees there, and it writes an
-operand or a literal on which the lint does not fire. `Le o o'` says that
+`overly_complex_bool_expr`, `double_neg` and `int_plus_one` over
+`lang::Expr`: each fix agrees with the expression where it fires, and the
+linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
+meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of
+fixing every lint everywhere (`lint::fix_all_laws`), by induction on the
+expression, from three facts about each lint where it fires: its fix is
+the expression where it does not fire, it agrees, and where the lint fires
+within no operand, it fires nowhere within the fix. `Le o o'` says that
 `o'` agrees with `o`: `lint::agrees?(o', o)`. -/
 
 open Fren.Lang
@@ -167,35 +169,122 @@ theorem overly_site (env : Env) (e : Expr) (h : lint.overly_complex_fires? e = t
     · exact (site_shapes (i := i) env a a).2.2.2.2.2.2.2.2.2.2.1
   | _ => simp [lint.overly_complex_fires?] at h
 
+/-! ### `double_neg` -/
+
+/-- Where `double_neg` does not fire, its fix is the expression. -/
+theorem dn_unfired (e : Expr) (h : lint.double_neg_fires? e = false) : lint.double_neg_fix e = e := by
+  unfold lint.double_neg_fix; split
+  · simp [lint.double_neg_fires?] at h
+  · rfl
+
+/-- `- -a` is `a` where `a` is an integer, and undefined elsewhere. -/
+theorem dn_site (env : Env) (e : Expr) : Le (eval i env e) (eval i env (lint.double_neg_fix e)) := by
+  unfold lint.double_neg_fix; split
+  · rename_i a
+    simp only [eval]
+    generalize eval i env a = A
+    rcases A with v | _ <;> (try cases v) <;> simp [Le, unary_value]
+  · exact Le.refl _
+
+/-! ### `int_plus_one` -/
+
+theorem ipo_fires_le (a b : Expr) : lint.int_plus_one_fires? (.Binary .Le a b) =
+    decide (lint.offset_of a = .PlusOne ∨ lint.offset_of b = .MinusOne) := by
+  simp [lint.int_plus_one_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+theorem ipo_fires_other (e : Expr) (h : ∀ a b, e = .Binary .Le a b → False) : lint.int_plus_one_fires? e = false := by
+  cases e with
+  | Binary op a b => cases op <;> first | exact absurd rfl (h a b) |
+      simp [lint.int_plus_one_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+  | _ => simp [lint.int_plus_one_fires?]
+
+/-- Where `int_plus_one` does not fire, its fix is the expression. -/
+theorem ipo_unfired (e : Expr) (h : lint.int_plus_one_fires? e = false) : lint.int_plus_one_fix e = e := by
+  unfold lint.int_plus_one_fix; split
+  · rename_i a b
+    rw [ipo_fires_le, decide_eq_false_iff_not, not_or] at h
+    rw [if_neg h.1, if_neg h.2]
+  · rfl
+
+/-- Dropping the offset of an operand drops a `+ 1` or a `- 1`. -/
+theorem without_offset_cases (a : Expr) :
+    (lint.offset_of a = .PlusOne → ∃ x, lint.without_offset a = x ∧
+      (a = .Binary .Add x (.Literal (.Integer 1)) ∨ a = .Binary .Add (.Literal (.Integer 1)) x)) ∧
+    (lint.offset_of a = .MinusOne → ∃ x, lint.without_offset a = x ∧ a = .Binary .Sub x (.Literal (.Integer 1))) := by
+  cases a with
+  | Binary op x y =>
+    cases op <;> by_cases hy : lint.one? y = true <;> by_cases hx : lint.one? x = true <;>
+      simp_all [lint.offset_of, lint.without_offset, lint.one?]
+  | _ => simp [lint.offset_of]
+
+/-- The operands of a comparison of integers, at every outcome. -/
+macro "compare_cases" env:term:max x:term:max y:term:max : tactic => `(tactic|
+  (simp only [eval]; generalize eval _ $env $x = X; generalize eval _ $env $y = Y
+   rcases X with v | _ <;> rcases Y with w | _ <;> (try cases v) <;> (try cases w) <;> simp [binary_value]
+   all_goals (congr 1; try exact decide_eq_decide.mpr (by omega))))
+
+theorem lt_plus (env : Env) (x b : Expr) :
+    eval i env (.Binary .Lt x b) = eval i env (.Binary .Le (.Binary .Add x (.Literal (.Integer 1))) b) := by
+  compare_cases env x b
+
+theorem lt_one_plus (env : Env) (x b : Expr) :
+    eval i env (.Binary .Lt x b) = eval i env (.Binary .Le (.Binary .Add (.Literal (.Integer 1)) x) b) := by
+  compare_cases env x b
+
+theorem lt_minus (env : Env) (a x : Expr) :
+    eval i env (.Binary .Lt a x) = eval i env (.Binary .Le a (.Binary .Sub x (.Literal (.Integer 1)))) := by
+  compare_cases env a x
+
+/-- Over the integers, `b + 1 <= a` is `b < a`, and `b <= a - 1` is `b < a`;
+elsewhere both are undefined. -/
+theorem ipo_site (env : Env) (e : Expr) : eval i env (lint.int_plus_one_fix e) = eval i env e := by
+  unfold lint.int_plus_one_fix; split
+  · rename_i a b
+    split
+    · rename_i hp
+      obtain ⟨x, hx, rfl | rfl⟩ := (without_offset_cases a).1 hp <;> rw [hx]
+      · exact lt_plus env x b
+      · exact lt_one_plus env x b
+    · split
+      · rename_i _ hm
+        obtain ⟨x, hx, rfl⟩ := (without_offset_cases b).2 hm
+        rw [hx]; exact lt_minus env a x
+      · rfl
+  · rfl
+
 /-! ### Each lint at the place where it fires -/
 
-/-- Each lint, where it does not fire, writes the expression
-(`lint::fix_at_unfired`); where it fires, an operand of an `and` or an `or`,
-or a literal (`lint::fix_at_operand`). Each new arm of `lint::ExprLint` owes
-this. -/
-theorem fix_at_cases (l : lint.ExprLint) (e : Expr) :
-    (lint.fires_at? l e = false ∧ lint.fix_at l e = e) ∨
-    (lint.fires_at? l e = true ∧ ∃ a b, (e = .And a b ∨ e = .Or a b) ∧
-      (lint.fix_at l e = a ∨ lint.fix_at l e = b ∨ ∃ v, lint.fix_at l e = .Literal v)) := by
+theorem fires_at_overly (e : Expr) : lint.fires_at? .OverlyComplexBoolExpr e = lint.overly_complex_fires? e := by
+  show decide (lint.overly_complex_fires? e = true) = _
+  cases lint.overly_complex_fires? e <;> rfl
+
+theorem fires_at_dn (e : Expr) : lint.fires_at? .DoubleNeg e = lint.double_neg_fires? e := by
+  show decide (lint.double_neg_fires? e = true) = _
+  cases lint.double_neg_fires? e <;> rfl
+
+theorem fires_at_ipo (e : Expr) : lint.fires_at? .IntPlusOne e = lint.int_plus_one_fires? e := by
+  show decide (lint.int_plus_one_fires? e = true) = _
+  cases lint.int_plus_one_fires? e <;> rfl
+
+/-- Where a lint does not fire, its fix is the expression
+(`lint::fix_at_unfired`). Each new arm of `lint::ExprLint` owes this. -/
+theorem fix_at_unfired (l : lint.ExprLint) (e : Expr) (h : lint.fires_at? l e = false) : lint.fix_at l e = e := by
   cases l
-  have hf : lint.fires_at? .OverlyComplexBoolExpr e = lint.overly_complex_fires? e := by
-    show decide (lint.overly_complex_fires? e = true) = _
-    cases lint.overly_complex_fires? e <;> rfl
-  have hx : lint.fix_at .OverlyComplexBoolExpr e = lint.overly_complex_fix e := rfl
-  rw [hf, hx]
-  cases h : lint.overly_complex_fires? e
-  · exact Or.inl ⟨rfl, overly_fix_unfired e h⟩
-  · exact Or.inr ⟨rfl, overly_fix_shape e h⟩
+  · rw [fires_at_overly] at h; exact overly_fix_unfired e h
+  · rw [fires_at_dn] at h; exact dn_unfired e h
+  · rw [fires_at_ipo] at h; exact ipo_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
 theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr) : Le (eval i env e) (eval i env (lint.fix_at l e)) := by
   cases l
-  have hx : lint.fix_at .OverlyComplexBoolExpr e = lint.overly_complex_fix e := rfl
-  rw [hx]
-  cases h : lint.overly_complex_fires? e
-  · rw [overly_fix_unfired e h]; exact Le.refl _
-  · exact overly_site env e h
+  · show Le _ (eval i env (lint.overly_complex_fix e))
+    cases h : lint.overly_complex_fires? e
+    · rw [overly_fix_unfired e h]; exact Le.refl _
+    · exact overly_site env e h
+  · exact dn_site env e
+  · show Le _ (eval i env (lint.int_plus_one_fix e))
+    rw [ipo_site env e]; exact Le.refl _
 
 /-! ### Fixing everywhere -/
 
@@ -203,31 +292,115 @@ theorem db (p q : Bool) : decide ((p || q) = true) = (p || q) := by cases p <;> 
 
 theorem bor (p q : Bool) : (p = true ∨ q = true) ↔ (p || q) = true := by cases p <;> cases q <;> simp
 
-/-- Where the operands are fixed, the fix at the expression leaves nothing to fix. -/
-theorem clean_at (l : lint.ExprLint) (e : Expr)
-    (hk : ∀ a b, (e = .And a b ∨ e = .Or a b) → lint.fires_in? l a = false ∧ lint.fires_in? l b = false)
-    (hn : lint.fires_at? l e = false → lint.fires_in? l e = false) :
-    lint.fires_in? l (lint.fix_at l e) = false := by
-  rcases fix_at_cases l e with ⟨hf, he⟩ | ⟨_, a, b, hab, hfix⟩
-  · rw [he]; exact hn hf
-  · have := hk a b hab
-    rcases hfix with h | h | ⟨v, h⟩ <;> rw [h]
+/-- `lint::operands_fixed?` at an expression whose form is known: its tests
+of each form, by the selectors of that form. -/
+macro "operands_simp" : tactic => `(tactic|
+  simp only [lint.operands_fixed?, reduceCtorEq, if_false, if_true,
+    lang.Expr.Let.x0, lang.Expr.Let.x1, lang.Expr.Let.x2, lang.Expr.Unary.x0, lang.Expr.Unary.x1,
+    lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2, lang.Expr.And.x0, lang.Expr.And.x1,
+    lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2,
+    lang.Expr.Is.x0, lang.Expr.Is.x1, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4, lang.Expr.Cons.x0, lang.Expr.Cons.x1, lang.Expr.Construct.x0,
+    lang.Expr.Construct.x1, lang.Expr.Project.x0, lang.Expr.Project.x1, lang.Expr.Project.x2,
+    lang.Expr.Index.x0, lang.Expr.Index.x1, lang.Expr.Method.x0, lang.Expr.Method.x1, lang.Expr.Method.x2,
+    lang.Expr.Count.x0, lang.Expr.Count.x1, lang.Expr.Apply.x0, lang.Expr.Apply.x1, lang.Expr.Apply.x2,
+    lang.Expr.Apply.x3, lang.Expr.Call.x0, lang.Expr.Call.x1, lang.Expr.Recur.x0, lang.Expr.Recur.x1])
+
+/-- A lint fires within an expression where it fires on it or within an operand. -/
+theorem fires_in_eq (l : lint.ExprLint) (e : Expr) :
+    lint.fires_in? l e = (lint.fires_at? l e || !lint.operands_fixed? l e) := by
+  cases e <;> simp only [lint.fires_in?] <;> operands_simp <;> (generalize lint.fires_at? l _ = F) <;>
+    cases F <;> simp
+
+/-- The operands of a binary form are fixed where each is. -/
+theorem operands_two (l : lint.ExprLint) (a b : Expr) :
+    (lint.operands_fixed? l (.And a b) = true ∨ lint.operands_fixed? l (.Or a b) = true ∨
+      ∃ op, lint.operands_fixed? l (.Binary op a b) = true) →
+    lint.fires_in? l a = false ∧ lint.fires_in? l b = false := by
+  rintro (h | h | ⟨op, h⟩) <;> revert h <;> operands_simp <;> simp
+
+theorem operands_one (l : lint.ExprLint) (op : UnaryOp) (a : Expr) :
+    lint.operands_fixed? l (.Unary op a) = true → lint.fires_in? l a = false := by
+  operands_simp; simp
+
+/-- Where the lint fires nowhere within an expression, it fires within no operand. -/
+theorem operands_of_clean (l : lint.ExprLint) (e : Expr) (h : lint.fires_in? l e = false) :
+    lint.operands_fixed? l e = true := by
+  rw [fires_in_eq] at h
+  cases h1 : lint.operands_fixed? l e
+  · rw [h1] at h; simp at h
+  · rfl
+
+/-- Dropping the offset writes the operand, or one of its own operands. -/
+theorem without_offset_fixed (l : lint.ExprLint) (a : Expr) (h : lint.fires_in? l a = false) :
+    lint.fires_in? l (lint.without_offset a) = false := by
+  unfold lint.without_offset; split
+  · rename_i x y
+    have := operands_two l x y (Or.inr (Or.inr ⟨_, operands_of_clean l _ h⟩))
+    split
     · exact this.1
-    · exact this.2
-    · simp [lint.fires_in?]
+    · split
+      · exact this.2
+      · exact h
+  · rename_i x y
+    have := operands_two l x y (Or.inr (Or.inr ⟨_, operands_of_clean l _ h⟩))
+    split
+    · exact this.1
+    · exact h
+  · exact h
+
+/-- Where the lint fires within no operand, it fires nowhere within the fix
+(`lint::fix_at_fixed`). Each new arm of `lint::ExprLint` owes this. -/
+theorem clean_at (l : lint.ExprLint) (e : Expr) (ho : lint.operands_fixed? l e = true) :
+    lint.fires_in? l (lint.fix_at l e) = false := by
+  cases hf : lint.fires_at? l e
+  · rw [fix_at_unfired l e hf, fires_in_eq, hf, ho]; rfl
+  cases l
+  · rw [fires_at_overly] at hf
+    show lint.fires_in? _ (lint.overly_complex_fix e) = false
+    obtain ⟨a, b, hab, hfix⟩ := overly_fix_shape e hf
+    have hk : lint.fires_in? .OverlyComplexBoolExpr a = false ∧ lint.fires_in? .OverlyComplexBoolExpr b = false := by
+      rcases hab with rfl | rfl
+      · exact operands_two _ a b (Or.inl ho)
+      · exact operands_two _ a b (Or.inr (Or.inl ho))
+    rcases hfix with h | h | ⟨v, h⟩ <;> rw [h]
+    · exact hk.1
+    · exact hk.2
+    · have : lint.overly_complex_fires? (.Literal v) = false := by simp [lint.overly_complex_fires?]
+      rw [fires_in_eq, fires_at_overly, this]; operands_simp; simp
+  · rw [fires_at_dn] at hf
+    show lint.fires_in? _ (lint.double_neg_fix e) = false
+    unfold lint.double_neg_fix; split
+    · exact operands_one _ _ _ (operands_of_clean _ _ (operands_one _ _ _ ho))
+    · rename_i hne
+      exfalso
+      unfold lint.double_neg_fires? at hf
+      split at hf
+      · exact hne _ rfl
+      · simp at hf
+  · rw [fires_at_ipo] at hf
+    show lint.fires_in? _ (lint.int_plus_one_fix e) = false
+    unfold lint.int_plus_one_fix; split
+    · rename_i a b
+      have ho := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      have hlt (x y : Expr) (hx : lint.fires_in? .IntPlusOne x = false) (hy : lint.fires_in? .IntPlusOne y = false) :
+          lint.fires_in? .IntPlusOne (.Binary .Lt x y) = false := by
+        rw [fires_in_eq, fires_at_ipo, ipo_fires_other _ (fun _ _ h => by cases h)]; operands_simp; simp [hx, hy]
+      split
+      · exact hlt _ _ (without_offset_fixed _ _ ho.1) ho.2
+      · split
+        · exact hlt _ _ ho.1 (without_offset_fixed _ _ ho.2)
+        · rename_i h1 h2
+          rw [ipo_fires_le, decide_eq_true_eq] at hf
+          rcases hf with h | h
+          · exact absurd h h1
+          · exact absurd h h2
+    · rename_i hne
+      rw [ipo_fires_other e hne] at hf; cases hf
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr) : lint.fires_in? l (lint.fix_all l e) = false := by
-  induction e <;> simp only [lint.fix_all] <;> apply clean_at <;>
-    first
-    | (intro a b h; simp only [reduceCtorEq, or_false, false_or, Expr.And.injEq, Expr.Or.injEq] at h
-       try (obtain ⟨rfl, rfl⟩ := h; constructor <;> assumption))
-    | (intro hf; simp only [lint.fires_in?, hf]; simp [*])
-
-theorem fix_at_unfired (l : lint.ExprLint) (e : Expr) (h : lint.fires_at? l e = false) : lint.fix_at l e = e := by
-  rcases fix_at_cases l e with ⟨_, he⟩ | ⟨hf, _⟩
-  · exact he
-  · rw [h] at hf; cases hf
+  induction e <;> simp only [lint.fix_all] <;> apply clean_at <;> (try operands_simp) <;> (try simp [*])
 
 /-- `lint::fix_all_laws::unchanged`. -/
 theorem unchanged (l : lint.ExprLint) (e : Expr) (h : lint.fires_in? l e = false) : lint.fix_all l e = e := by
@@ -307,10 +480,18 @@ def layer : Expr → Fren.Core.BoolLayer Expr
   | .Unary .Not a => .not a
   | _ => .other
 
+/-- `k` is the negation of an operand of `e`. -/
+def negatesOperandOf (e k : Expr) : Bool :=
+  match e with
+  | .And a b | .Or a b => lint.negates_operand? k a || lint.negates_operand? k b
+  | _ => false
+
 /-- `Core.overlyComplexRule` over `lang::Expr`, with `=` for being written the
-same, and `n` for whether `nonminimal_bool` rewrites the negation. -/
+same, and `n` for whether `nonminimal_bool` rewrites the negation, at an
+operand that is the negation of an operand, and `false` at any other: so a
+rule that asks about the wrong operand does not meet the procedure. -/
 def rule (n : Bool) (e : Expr) : Option (Fren.Core.BoolRule × Fren.Core.Kept) :=
-  Fren.Core.overlyComplexRule layer (fun a b => decide (a = b)) (fun _ => n) e
+  Fren.Core.overlyComplexRule layer (fun a b => decide (a = b)) (fun k => n && negatesOperandOf e k) e
 
 theorem absorbs_eq (c : Bool) (k o : Expr) :
     Fren.Core.absorbsOperand layer (fun a b => decide (a = b)) c k o = lint.absorbs_operand? c k o := by
@@ -336,7 +517,8 @@ procedure's. -/
 macro "linter_cases" a:term:max b:term:max c:term:max : tactic => `(tactic|
   (by_cases h1 : lint.absorbs_operand? $c $b $a = true <;> by_cases h2 : lint.absorbs_operand? $c $a $b = true <;>
     by_cases h3 : lint.negates_operand? $a $b = true <;> by_cases h4 : lint.negates_operand? $b $a = true <;>
-    simp only [RewriteProof.rule, Fren.Core.overlyComplexRule, RewriteProof.layer, RewriteProof.absorbs_eq,
+    simp only [RewriteProof.rule, RewriteProof.negatesOperandOf, Fren.Core.overlyComplexRule, RewriteProof.layer,
+      RewriteProof.absorbs_eq,
       RewriteProof.negates_eq, RewriteProof.fires_and, RewriteProof.fires_or, RewriteProof.drops_iff,
       lint.overly_complex_fix, lint.drop_fix, lint.bool_rule, h1, h2, h3, h4, if_true, if_false, true_or, or_true,
       or_false, false_or, Bool.false_eq_true, reduceIte, iff_true, iff_false, Option.isSome_some,
@@ -346,7 +528,8 @@ macro "linter_cases" a:term:max b:term:max c:term:max : tactic => `(tactic|
 open RewriteProof in
 -- Both front ends run `Core.overlyComplexRule` (trusted, and checked by the ui
 -- tests); this is it over `lang::Expr`, with `=` for being written the same and
--- `n` for whether `nonminimal_bool` rewrites the negation, for every expression.
+-- `n` for whether `nonminimal_bool` rewrites the negation of an operand, for
+-- every expression.
 impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (e : lang.Expr) (n : Bool) {
   e := e,
   negation_rewritten? := n,
@@ -393,3 +576,35 @@ impl fix_all_laws: lint::fix_all_laws for (l : lint.ExprLint) (e : lang.Expr) (i
   unfold lint.fix_all_laws.ensures lint.fix_all_laws.ensure.fixed lint.fix_all_laws.ensure.unchanged
     lint.fix_all_laws.ensure.idempotent lint.fix_all_laws.ensure.keeps_meaning
   refine ⟨by simp [fixed], fun h => unchanged l e (by simpa using h), idempotent l e, (agrees_iff _ _).2 (keeps l e env)⟩
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the operand.
+impl double_neg_keeps_meaning: lint::double_neg_keeps_meaning for (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.double_neg_keeps_meaning.ensures lint.double_neg_keeps_meaning.ensure.keeps_meaning
+  intro _
+  exact (agrees_iff _ _).2 (dn_site env e)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the operands.
+impl int_plus_one_keeps_meaning: lint::int_plus_one_keeps_meaning for (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.int_plus_one_keeps_meaning.ensures lint.int_plus_one_keeps_meaning.ensure.exact
+  intro _
+  simpa using ipo_site env e
+
+open RewriteProof in
+-- For every lint and expression, by `clean_at`.
+impl fix_at_fixed: lint::fix_at_fixed for (l : lint.ExprLint) (e : lang.Expr) {
+  l := l, e := e,
+} by
+  intro l e _
+  unfold lint.fix_at_fixed.ensures lint.fix_at_fixed.ensure.fixed
+  intro h
+  simpa using clean_at l e (by simpa using h)

@@ -32,7 +32,7 @@ proc one_variant(m: Mode, x: Int): (a: Int, b: Int, c?, d: Int, e: Int, f: Mode)
 }
 
 -- `overly_complex_bool_expr`.
-proc drop_operands(a?, b?, x: Int): (p1?, p2?, p3?, p4?, p5?, p6?, p7?) {
+proc drop_operands(a?, b?, x: Int): (p1?, p2?, p3?, p4?, p5?, p6?, p7?, p8?) {
     ensure r1: p1? iff (a? or (a? and b?))
     --~^ warning: write `a?`
     ensure r2: p2? iff ((b? or a?) and a?)
@@ -49,6 +49,9 @@ proc drop_operands(a?, b?, x: Int): (p1?, p2?, p3?, p4?, p5?, p6?, p7?) {
     ensure r7: p7? = (b? and (b? or a?))
     --~^ warning: write `b?`
     --~^^ warning: equality of `Bool`s is `iff`
+    -- `nonminimal_bool` simplifies the negation on the left too.
+    ensure r8: p8? iff (not x = 1 and x = 1)
+    --~^ warning: this `Bool` expression can be simpler
 }
 
 -- `branches_sharing_code`.
