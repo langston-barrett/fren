@@ -1,0 +1,298 @@
+-- Quantifiers under enumeration, in both front ends
+-- (`Reqs/Check#quantifiers-up-to-the-bound`): a bound name ranges over its
+-- guard's domain, or else over its type's values up to the bound, and the
+-- quantifier is true, false or unknown. An unknown one leaves its check
+-- inconclusive at the bound, not passed.
+set_option fren.lint.undecidable "allow"
+-- The same expectation, checked by each method.
+set_option fren.lint.duplicate_constraint "allow"
+-- Guards written out, each comparison on its own.
+set_option fren.lint.chainable_comparison "allow"
+
+enum Mode { Off, On }
+type Bit = b: Int where invariant: b is 0..=1
+ordered struct Ms(Int)
+ordered struct Ns(Nat)
+ordered struct Pt { x: Int, y: Int }
+struct Plain(Int)
+
+-- False within the bound: the counterexample is genuine.
+set_option fren.evidence "enumerated" in
+proc small_witness(k: Int): (all?) {  --~ info: 1 check of `small_witness` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (x: Int), x != k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- True up to the bound, but `Int` is not exhausted: unknown, not true.
+set_option fren.evidence "enumerated" in
+proc unknown_universal(): (all?) {  --~ warning: could not decide whether `unknown_universal` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (x: Int), x + 1 > x)  --~ warning: could not decide whether `unknown_universal::r` is redundant: a quantifier is undecided up to size 3
+    expect holds: all?  --~ warning: could not decide whether `unknown_universal::holds` holds: a quantifier is undecided up to size 3
+}
+
+-- Over an exhausted type a quantifier is decided.
+set_option fren.evidence "enumerated" in
+proc finite_exists(m: Mode): (some?) {
+    ensure r: some? iff (exists (n: Mode), n != m)
+    expect holds: some?
+}
+
+-- An `exists` true within the bound is true.
+set_option fren.evidence "enumerated" in
+proc found(): (some?) {
+    ensure r: some? iff (exists (x: Int), x > 2)
+    expect holds: some?
+}
+
+-- Guards give domains: a set's members, a sequence's elements, and ranges.
+set_option fren.evidence "enumerated" in
+proc members(s: Set<Bool>): (all?) {
+    ensure r: all? iff (forall (x?: Bool), when x? in s, x?)
+    expect wrong: when all?, true in s  --~ error: counterexample: s = {}, all? = true
+}
+
+set_option fren.evidence "enumerated" in
+proc elements(q: Seq<Bool>): (all?) {  --~ info: 1 check of `elements` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (x?: Bool), when x? in q, x?)
+    expect wrong: all?  --~ error: counterexample: q = [false], all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ranges(k: Int): (below?) {  --~ info: 1 check of `ranges` holds for every behaviour up to size 3
+    ensure r: below? iff (forall (i: Int), when 0 <= i < 3, i < k)
+    expect wrong: below?  --~ error: counterexample: k = 0, below? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc naturals(k: Int): (below?) {  --~ info: 1 check of `naturals` holds for every behaviour up to size 3
+    ensure r: below? iff (forall (n: Nat), when n < 2, n < k)
+    expect wrong: not below?  --~ error: counterexample: k = 2, below? = true
+}
+
+-- Every comparison of a guard gives a domain, on either side of the bound
+-- name, in both front ends alike: here each guard gives `0` and `1`.
+set_option fren.evidence "enumerated" in
+proc le_lt(k: Int): (all?) {  --~ info: 1 check of `le_lt` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when 0 <= i and i < 2, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ge_gt(k: Int): (all?) {  --~ info: 1 check of `ge_gt` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when i >= 0 and 2 > i, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc lt_le(k: Int): (all?) {  --~ info: 1 check of `lt_le` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when -1 < i and i <= 1, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc gt_ge(k: Int): (all?) {  --~ info: 1 check of `gt_ge` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (i: Int), when i > -1 and 1 >= i, i < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- A comparison bounds a bound name only where its type's values are the
+-- integers, of which finitely many lie between any two bounds
+-- (`lang::range_domain`): an `Int`, a `Nat`, or a newtype over them. The
+-- values of a newtype are its field's, so the range is of those.
+set_option fren.evidence "enumerated" in
+proc newtype_range(k: Ms): (all?) {  --~ info: 1 check of `newtype_range` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when Ms(0) <= m and m < Ms(2), m < k)
+    expect wrong: all?  --~ error: counterexample: k = Ms(0), all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc nat_newtype_range(k: Ns): (all?) {  --~ info: 1 check of `nat_newtype_range` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (n: Ns), when Ns(0) <= n and n < Ns(2), n < k)
+    expect wrong: all?  --~ error: counterexample: k = Ns(0), all? = false
+}
+
+-- A newtype's field `0`, read from a bound name, is the name itself
+-- (`lang::name_alone`), whether the newtype is ordered or not; the field
+-- `x` of a record is not, so that guard gives `Pt` no domain.
+set_option fren.evidence "enumerated" in
+proc field_guard(k: Int): (all?) {  --~ info: 1 check of `field_guard` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when 0 <= m.0 and m.0 < 2, m.0 < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc plain_field_guard(k: Int): (all?) {  --~ info: 1 check of `plain_field_guard` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (p: Plain), when 0 <= p.0 and p.0 < 2, p.0 < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc record_field_guard(k: Int): (all?) {  --~ warning: could not decide whether `record_field_guard` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (p: Pt), when 0 <= p.x and p.x < 2, p.x < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- A membership read through the field gives the members as the name's
+-- values (`Ms(0)` and `Ms(1)` here), from a set or a sequence.
+set_option fren.evidence "enumerated" in
+proc member_field(k: Int): (all?) {  --~ info: 1 check of `member_field` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when m.0 in {0, 1}, m.0 < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc member_field_seq(xs: Seq<Int>, k: Int): (all?) {  --~ info: 1 check of `member_field_seq` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (m: Ms), when m.0 in xs, m.0 < k)
+    expect wrong: all?  --~ error: counterexample: xs = [0], k = 0, all? = false
+}
+
+-- A name whose values are naturals ranges over the members of a
+-- collection of `Int`s that are not negative: `-1` is no `Nat`, and
+-- `2`, or `Ns(2)`, refutes the quantifier.
+set_option fren.evidence "enumerated" in
+proc nat_members(): (all?) {
+    ensure r: all? iff (forall (x: Nat), when x in {-1, 2}, x != 2)
+    expect e: all?  --~ error: counterexample: all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ns_members(s: Set<Int>): (all?) {  --~ info: 1 check of `ns_members` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (n: Ns), when n.0 in s, n.0 != 2)
+    expect e: all?  --~ error: counterexample: s = {-2, 2}, all? = false
+}
+
+-- A newtype over `Nat` with only an upper bound ranges from 0, as a `Nat`
+-- does (`lang::nat_floor`), whether the bound compares the name or its
+-- field: `Ns(5)` refutes `e` here.
+set_option fren.evidence "enumerated" in
+proc ns_far(): (all?) {
+    ensure r: all? iff (forall (n: Ns), when n < Ns(10), n.0 < 5)
+    expect e: all?  --~ error: counterexample: all? = false
+}
+
+set_option fren.evidence "enumerated" in
+proc ns_field_far(): (all?) {
+    ensure r: all? iff (forall (n: Ns), when n.0 < 10, n.0 < 5)
+    expect e: all?  --~ error: counterexample: all? = false
+}
+
+-- Between two `String`s lie `"aa"`, `"aaa"` and every other string that
+-- starts with the lower one, so a comparison gives no bound: the
+-- quantifier ranges over `String`'s values up to the bound, in both front
+-- ends, and an instance within it settles it here.
+set_option fren.evidence "enumerated" in
+proc string_range(k: Int): (all?) {  --~ info: 1 check of `string_range` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (s: String), when "a" <= s and s < "b", s.len < k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- An ordered record's values are compared lexicographically, so between
+-- `Pt { x := 0, y := 0 }` and `Pt { x := 1, y := 0 }` lies one for every
+-- `y`: a comparison gives no bound, and `Pt`'s values up to the bound do
+-- not exhaust it, so the quantifier is unknown in both front ends.
+set_option fren.evidence "enumerated" in
+proc record_range(k: Pt): (all?) {  --~ warning: could not decide whether `record_range` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (p: Pt), when Pt { x := 0, y := 0 } <= p and p < k, p != k)  --~ warning: could not decide whether `record_range::r` is redundant: a quantifier is undecided up to size 3
+    expect holds: all?  --~ warning: could not decide whether `record_range::holds` holds: a quantifier is undecided up to size 3
+}
+
+-- A pattern type's values are those it matches.
+set_option fren.evidence "enumerated" in
+proc patterned(k: Int): (all?) {  --~ info: 1 check of `patterned` holds for every behaviour up to size 3
+    ensure r: all? iff (forall (b: Bit), b <= k)
+    expect wrong: all?  --~ error: counterexample: k = 0, all? = false
+}
+
+-- Nested quantifiers: the inner one is decided, the outer true within the
+-- bound.
+set_option fren.evidence "enumerated" in
+proc nested(m: Mode): (some?) {
+    ensure r: some? iff (exists (x: Int), forall (n: Mode), x > 0 or n = m)
+    expect holds: some?
+}
+
+-- A quantifier in a value: `n` is known wherever the condition is.
+set_option fren.evidence "enumerated" in
+proc valued(k: Int): (det n: Int) {  --~ info: 3 checks of `valued` hold for every behaviour up to size 3
+    out n := if (forall (x: Int), x != k) then 1 else 2
+    expect two: n = 2
+}
+
+-- A defined output whose value is unknown: whether it is the same in two
+-- behaviours is unknown too. Here it is not: `d?` is true where `y = 1`,
+-- and false where `y = 0`, at `x = 10`, beyond the bound.
+set_option fren.evidence "enumerated" in
+proc defined_unknown(): (y: Int, det d?) {  --~ info: 1 check of `defined_unknown` holds for every behaviour up to size 3
+    --~^ warning: could not decide whether `defined_unknown::d?` is determined by the inputs: a quantifier is undecided up to size 3
+    ensure r: 0 <= y <= 1
+    out d? := forall (x: Int), y = 1 or x != 10
+}
+
+-- A `forall` over a pattern type is decided by exhausting it.
+set_option fren.evidence "enumerated" in
+proc exhausted(): (all?) {
+    ensure r: all? iff (forall (b: Bit), b <= 1)
+    expect holds: all?
+}
+
+-- Alternating quantifiers: decided over a finite type, unknown over `Int`.
+set_option fren.evidence "enumerated" in
+proc alternating(): (finite?, infinite?) {  --~ warning: could not decide whether `alternating` is realizable: a quantifier is undecided up to size 3
+    ensure f: finite? iff (forall (x: Mode), exists (y: Mode), y != x)  --~ warning: could not decide whether `alternating::f` is redundant: a quantifier is undecided up to size 3
+    ensure i: infinite? iff (forall (x: Int), exists (y: Int), y > x)  --~ warning: could not decide whether `alternating::i` is redundant: a quantifier is undecided up to size 3
+    expect decided: finite?
+    expect undecided: infinite?  --~ warning: could not decide whether `alternating::undecided` holds: a quantifier is undecided up to size 3
+}
+
+-- The negation of an unknown quantifier is unknown: no counterexample is
+-- made up from it.
+set_option fren.evidence "enumerated" in
+proc negated(): (none?) {  --~ warning: could not decide whether `negated` is realizable: a quantifier is undecided up to size 3
+    ensure r: none? iff not (forall (x: Int), x + 1 > x)  --~ warning: could not decide whether `negated::r` is redundant: a quantifier is undecided up to size 3
+    expect holds: not none?  --~ warning: could not decide whether `negated::holds` holds: a quantifier is undecided up to size 3
+}
+
+-- An index within a quantifier's body, by the bound name: unknown where
+-- it is out of range, so that realizability is inconclusive, while a model
+-- that reads it as `[][0]` is a behaviour; and known where the guard keeps
+-- it in range.
+set_option fren.evidence "enumerated" in
+proc body_index(q: Seq<Int>): (all?) {  --~ warning: could not decide whether `body_index` is realizable: an index out of range may decide it
+    --~^ info: the definedness checks of `body_index` are not run by enumeration
+    ensure r: all? iff (forall (i: Int), when 0 <= i <= q.len, q[i] > 0)
+    expect empty: when q = [], not all?  --~ error: counterexample: q = [], all? = true
+}
+
+set_option fren.evidence "enumerated" in
+proc guarded_body_index(q: Seq<Int>): (all?) {  --~ info: 2 checks of `guarded_body_index` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `guarded_body_index` are not run by enumeration
+    ensure r: all? iff (forall (i: Int), when 0 <= i < q.len, q[i] > 0)
+    expect empty: when q = [], all?
+}
+
+-- A guarded quantifier can be unknown too: a range with more than 1024
+-- values has no value that the evaluators know, so its checks are
+-- inconclusive, not failed.
+set_option fren.evidence "enumerated" in
+proc wide_range(k: Int): (all?) {  --~ warning: could not decide whether `wide_range` is realizable: a quantifier is undecided up to size 3
+    ensure r: all? iff (forall (i: Int), when 0 <= i < k * 1000, i >= 0)
+    expect holds: all?  --~ warning: could not decide whether `wide_range::holds` holds: a quantifier is undecided up to size 3
+}
+
+-- With the solver: it proves what enumeration leaves unknown.
+proc proved(): (all?) {
+    ensure r: all? iff (forall (x: Int), x + 1 > x)
+    expect by_solver: all?
+    set_option fren.evidence "enumerated" in
+    expect by_enumeration: all?  --~ warning: could not decide whether `proved::by_enumeration` holds: a quantifier is undecided up to size 3
+}
+
+-- Both refute what is false within the bound.
+proc refuted(k: Int): (none?) {
+    ensure r: none? iff (forall (x: Int), x != k)
+    expect by_solver: none?  --~ error: counterexample: k = 0, none? = false
+    set_option fren.evidence "enumerated" in
+    expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
+}
+
+--@ summary: 75 passed (23 by bounded enumeration), 25 failed, 19 inconclusive, 0 redundant

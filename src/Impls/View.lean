@@ -8,7 +8,7 @@ open Fren.Lang
 
 namespace Fren.Impls
 
-open Fren.Core (Severity Verdict CheckKind CheckResult summarySeverity)
+open Fren.Core (Severity Verdict CheckKind CheckResult Shown summarySeverity)
 
 instance : Fren.Finite Severity := ⟨[.error, .warning, .info], by intro x; cases x <;> simp⟩
 
@@ -55,6 +55,22 @@ impl counted: view::counted for (k : CheckKind) (v : Verdict) {
   verdict := toVerdict v,
   bucket := toBucket (Fren.Core.bucketOf k v),
 }
+
+def toShown : Fren.Core.Shown → view.Shown
+  | .nothing => .NoBehaviour
+  | .counterexample => .Counterexample
+  | .witness => .Witness
+
+-- For every kind, verdict and behaviour shown, by the rule that both front
+-- ends seal every result they report with (`Core.CheckResult.sealShown`).
+impl report_shows: view::report_shows for (k : CheckKind) (v : Verdict) (sh : Fren.Core.Shown) {
+  kind := toCheckKind k,
+  verdict := toVerdict v,
+  shown := toShown sh,
+  allowed? := Fren.Core.shownAllowed k v sh,
+} by
+  intro k v sh _
+  cases k <;> cases v <;> cases sh <;> decide
 
 def toAdvice : Fren.Core.Advice → view.Advice
   | .raiseTimeout => .RaiseTimeout

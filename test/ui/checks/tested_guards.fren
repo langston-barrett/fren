@@ -1,0 +1,24 @@
+-- Testing's domains of a quantifier (`Reqs/Eval#quantifiers`): a
+-- comparison bounds a bound name only where its type's values are the
+-- integers (`lang::range_domain`), so a quantifier whose only guard
+-- compares `String`s has no domain and cannot be tested (`F0639`), while
+-- one over an ordered newtype's range is tested. The checks set to random
+-- testing are run by `fren check`, not in Lean.
+set_option fren.lint.undecidable "allow"
+set_option fren.lint.chainable_comparison "allow"
+
+ordered struct Ms(Int)
+
+set_option fren.evidence "random" in
+proc string_range(k: Int): (all?) {  --~ info: the redundancy checks of `string_range` are not run by random testing
+    --~^[hosted] info: the checks of `string_range` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+    ensure r: all? iff (forall (s: String), when "a" <= s and s < "b", s.len < k)  --~[cli] error: this quantifier cannot be evaluated, so `string_range` cannot be tested
+    expect wrong: all?
+}
+
+set_option fren.evidence "random" in
+proc newtype_range(k: Int): (all?) {  --~ info: the redundancy checks of `newtype_range` are not run by random testing
+    --~^[hosted] info: the checks of `newtype_range` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)
+    ensure r: all? iff (forall (m: Ms), when Ms(0) <= m and m < Ms(2), m.0 < k)
+    expect wrong: all?  --~[cli] error: counterexample: k = 1, all? = false
+}

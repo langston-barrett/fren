@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
+import FrenCore.Ty
 import Lean.Data.NameMap
 -- keep-sorted end
 
@@ -138,6 +139,22 @@ def guardBound (left : GuardOperand) (relation : GuardRelation) (right : GuardOp
     | _, _, _ => .none
   (bound, strict)
 
+/-- Whether a comparison of a bound name of the type `t` bounds it, so
+that its guard gives it a range (`lang::range_domain`): only where
+finitely many values lie between any two bounds, whatever they are, which
+holds of the integers -- `Int`, `Nat`, and a newtype over them, whose
+values are its underlying type's -- and of no other type. Between two
+`String`s lie `"aa"`, `"aaa"`, ...; an ordered record's values are
+compared lexicographically, so `P(0, 0) <= p < P(1, 0)` has `P(0, n)` for
+every `n`; and an ordered enumeration's are compared by their variants'
+positions, which say nothing of their payloads. Both front ends read a
+guard's comparisons as a range only here; a pattern type is its base type
+to both. -/
+def countedBetween (t : Ty) : Bool :=
+  match t.erased with
+  | .int | .nat => true
+  | _ => false
+
 /-- A bound name's domain, from the bounds of its guard's conjuncts, naming
 the conjuncts by position (`lang::Domain`). -/
 inductive GuardDomain where
@@ -208,6 +225,25 @@ partial def guardConjunctsBy (view : α → GuardNode α) (when? : α → Option
     | some (c, d) => splitConjuncts view c ++ guardConjunctsBy view when? all d
     | none => #[]
   else splitConjuncts view body
+
+/-- The bound name that an operand of a guard's conjunct is, written alone
+(`lang::name_alone`): the bound name at `base`, of the type `t`, read
+through the fields `fields`, outermost last. A newtype's values are its
+field's (`Reqs/Lang/Expressions#newtypes`), so its field `0` is the name
+itself: `m.0` of a newtype `m`, and `m.0.0` of one over a newtype, as many
+as `t` has newtypes, the first `t.wrapped.length - 1`; any other field is
+not the name. Both front ends ask it, of the bound name's type: the `fren`
+command of a path such as `m.0`, and the hosted front end of the field
+projections that elaboration writes, for `m.0` as for an ordering of a
+newtype. -/
+def nameAlone (base : Option Nat) (t : Ty) (fields : List String) : Option Nat :=
+  if decide (fields.length < t.wrapped.length) && fields.all (· == "0") then base else none
+
+/-- Whether a bound name of the type `t` ranges from 0 where its guard gives
+it only an upper bound (`lang::nat_floor`): where its values are naturals,
+a `Nat` or a newtype over one, whose values are its field's. Both front
+ends' evaluators ask it of the bound name's type. -/
+def startsAtZero (t : Ty) : Bool := t.erased matches .nat
 
 /-- What the operand `e` of a conjunct is, seen from the bound name at
 position `k` (`lang::guard_operand`): that name, if `alone e` is its

@@ -66,15 +66,30 @@ body is `body` (`Fren.Core.guardConjunctsBy`). -/
 def guardConjuncts (all : Bool) (body : Expr) : Array (Fren.Core.GuardConjunct Expr) :=
   Fren.Core.guardConjunctsBy guardNode whenOf? all body
 
+/-- The bound name, among `names`, that the operand `e` is, written alone,
+and the fields read from it, outermost last: `m`, `m.0` as one path, or
+`(m).0` as a field of one. -/
+partial def readFrom (names : Array String) : Expr → Option (Nat × List String)
+  | .path _ #[s] => match s.name.splitOn "." with
+    | root :: fs => (names.idxOf? root).map (·, fs)
+    | [] => none
+  | .field _ e f => (readFrom names e).map fun (j, fs) => (j, fs ++ [f.name])
+  | _ => none
+
 /-- The domain of the bound name at position `k` of `names`, the bound
 names of a quantifier, a `forall` if `all`, with the body `body`, where
 `nat` says that it is a `Nat`; and the expressions that its domain reads,
-by conjunct, each with whether its bound is strict (`Fren.Core.boundDomain`). -/
-def domainOf (all : Bool) (names : Array String) (body : Expr) (k : Nat) (nat : Bool) :
+by conjunct, each with whether its bound is strict (`Fren.Core.boundDomain`).
+`tyOf j` is the type of the bound name at `j`, of which `Fren.Core.nameAlone`
+decides which fields read from it are the name itself; the elaborators,
+which set `fmf-bound` from the guard's shape alone, give none, and read no
+field as the name. -/
+def domainOf (all : Bool) (names : Array String) (body : Expr) (k : Nat) (nat : Bool)
+    (tyOf : Nat → Option Fren.Core.Ty := fun _ => none) :
     Fren.Core.GuardDomain × Array (Option (Expr × Bool)) :=
-  let alone : Expr → Option Nat
-    | .path _ #[s] => names.idxOf? s.name
-    | _ => none
+  let alone (e : Expr) : Option Nat := match readFrom names e with
+    | some (j, fs) => Fren.Core.nameAlone (some j) ((tyOf j).getD .bool) fs
+    | none => none
   let mentions (e : Expr) : List Nat := (List.range names.size).filter fun j => e.names names[j]!
   Fren.Core.boundDomain alone mentions (guardConjuncts all body) k nat
 

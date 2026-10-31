@@ -104,6 +104,10 @@ inductive Detail where
   reads as `[][0]`, may decide the check in another interpretation
   (`Reqs/Check#searching`). -/
   | outOfRange
+  /-- Enumeration found no model, but a quantifier that it did not decide
+  up to the bound `n` may decide the check
+  (`Reqs/Check#quantifiers-up-to-the-bound`). -/
+  | undecidedQuantifier (n : Nat)
   deriving Inhabited
 
 /-- Shared reason for a recursive model that real evaluation does not confirm. -/
@@ -287,6 +291,46 @@ structure CheckResult where
   front ends where they report it. -/
   global : Bool := false
   deriving Inhabited
+
+/-- The behaviour that a report shows of the procedure (`view::Shown`): a
+counterexample, a witness, or none. -/
+inductive Shown where
+  | nothing
+  | counterexample
+  | witness
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- The behaviour that the detail `d` shows. Every other detail names
+constraints, or says what could not be decided, and shows none. -/
+def Detail.shown : Detail → Shown
+  | .counterexample _ => .counterexample
+  | .witness _ => .witness
+  | _ => .nothing
+
+/-- Whether a result of a check of kind `kind` with the verdict `verdict`
+may show `shown` (`view::report_shows`): a counterexample only where the
+check fails, since it is a behaviour that refutes what the check asks,
+and a witness only where a cover goal passes, since it is how the goal is
+met. So no report shows a counterexample beside a pass, whatever the
+method that reached the verdict. -/
+def shownAllowed (kind : CheckKind) (verdict : Verdict) (shown : Shown) : Bool :=
+  match shown with
+  | .nothing => true
+  | .counterexample => verdict == .fail
+  | .witness => verdict == .pass && kind == .cover
+
+/-- `r` with its detail dropped where its verdict does not allow the
+behaviour it shows (`shownAllowed`). Both front ends seal every result
+they report with this, so `shown_sealed` holds of each. -/
+def CheckResult.sealShown (r : CheckResult) : CheckResult :=
+  if shownAllowed r.kind r.verdict r.detail.shown then r else { r with detail := .none }
+
+theorem shown_sealed (r : CheckResult) :
+    shownAllowed r.kind r.verdict r.sealShown.detail.shown := by
+  unfold CheckResult.sealShown
+  split
+  · assumption
+  · simp_all [Detail.shown, shownAllowed]
 
 inductive Outcome (V : Type) where
   /-- The goal does not follow; values of (some of) the variables. -/
@@ -1296,8 +1340,8 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let pres ← ifSelected (kinds.contains .precondition) ((c.tablesOf .precondition).mapM (checkTable (bk .precondition) c))
   let posts ← ifSelected (kinds.contains .postcondition) (c.posts.mapM (checkPostcondition (bk .postcondition) c))
   let reach ← ifSelected (kinds.contains .reachability) ((c.tablesOf .reachability).mapM (checkReach (bk .reachability) c))
-  return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete ++ disjoint
-    ++ pres ++ posts ++ reach
+  return realizable ++ insts ++ expects ++ covers ++ vacuities ++ redundancies ++ dets ++ defined ++ complete
+    ++ disjoint ++ pres ++ posts ++ reach
 
 /-- Finalize simultaneous induction after counterexamples have been confirmed.
 A clause that used an unproved sibling's hypotheses is not a reported success. -/
@@ -1628,6 +1672,10 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
     -- An expansion of quantifiers over elements that is too large, or
     -- whose model they refute, has a code of its own.
     match d with
+    | .undecidedQuantifier n =>
+      #[one "F0608" s!"could not decide whether {what}: a quantifier is undecided up to size {n}" (some "undecided")
+        #["note: enumeration decides a quantifier by an instance that settles it, a counterexample to a `forall` or a witness of an `exists`, or by every value of its domain, which it could not evaluate here",
+          "help: have the solver check it, or raise `fren.enumeration.size` if such an instance is larger"]]
     | .outOfRange =>
       #[one "F0608" s!"could not decide whether {what}: an index out of range may decide it" (some "undecided")
         #["note: enumeration reads every index out of range as `[][0]`, one of the values it may have",
@@ -1907,8 +1955,28 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
     }
   return out
 
+/-- The messages of one result, which both front ends report. The result
+shows a behaviour only where its verdict allows it: it is sealed here, so
+that no message of a pass shows a counterexample, whatever method reached
+the verdict (`view::report_shows`). -/
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
+  let r := r.sealShown
   baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r
+
+/-- Sealing twice is sealing once. -/
+theorem CheckResult.sealShown_idem (r : CheckResult) : r.sealShown.sealShown = r.sealShown := by
+  unfold CheckResult.sealShown
+  split
+  · simp_all
+  · simp [Detail.shown, shownAllowed]
+
+/-- The messages of a result are those of its sealed result, which shows
+only what its verdict allows (`shown_sealed`): whatever a producer put in
+it, no report shows a counterexample beside a pass (`view::report_shows`).
+Without the seal in `messages`, this would not hold. -/
+theorem messages_sealed (h : Bool) (r : CheckResult) (d : Bool) :
+    messages h r d = messages h r.sealShown d := by
+  simp only [messages, CheckResult.sealShown_idem]
 
 /-- The help of a warning from testing: from `fren check`, testing a check
 set to testing, running `fren check` would not help (`Reqs/Check#checking-by-testing`). -/

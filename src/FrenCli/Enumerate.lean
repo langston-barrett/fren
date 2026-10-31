@@ -57,6 +57,19 @@ partial def Fm.value? (I : Interp) (look : Look) : Fm → Option Bool
   | .defined _ f => Fm.value? I look f
   | _ => some false
 
+/-- Whether `e` has a quantifier, guarded or not. -/
+partial def Eval.Ex.hasQuantifier (e : Ex) : Bool :=
+  (e matches .quant ..) || e.children.any (·.hasQuantifier)
+
+/-- The declared types that the quantifiers in `e` without a domain range
+over. -/
+partial def Eval.Ex.quantifiedTypes (e : Ex) : Array Fren.Core.PTy :=
+  let own := match e with
+    | .quant _ _ _ _ domains types _ => types.zipIdx.filterMap fun (ty, i) =>
+      if (domains[i]?.join).isNone then some ty else none
+    | _ => #[]
+  own ++ e.children.flatMap (·.quantifiedTypes)
+
 /-- The variables that `e` reads, by name. -/
 partial def Eval.Ex.varsOf (e : Ex) : Array Name :=
   match e with
@@ -163,7 +176,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     | throw (Fren.Core.Msg.internal s!"the evaluator does not know the meaning of a formula of `{Fren.Core.showComp c.path}`")
   -- And the definitions of the defined outputs, which the atoms read.
   let all := exprs.flatten ++ ec.defs.map fun (_, e) => ((.anonymous : Name), e)
-  -- No uninterpreted function, nor unbounded quantifier (`check::enumerable`).
+  -- No uninterpreted function with a contract (`check::enumerable`).
   let apps := all.flatMap (fun e => e.2.appsOf sp)
   -- The uninterpreted functions, whose interpretations are enumerated, but
   -- not of one with a contract, which constrains them.
@@ -187,8 +200,15 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
       result := (sp.results.find? f).getD (Fren.Core.PTy.plain (r.core sp)) }
   if let some f := funs.find? (fun f => needsSemanticFilter sp.shapes.find? f.result) then
     throw (notEnumerableMsg subject s!"the result type of `{Fren.Core.showPath f.name}` has a named invariant that cannot be enumerated as an unconstrained function table")
-  if all.any (·.2.unbounded) then
-    throw (notEnumerableMsg subject "it has an unbounded quantifier")
+  -- A quantifier without a domain ranges over its type's values up to the
+  -- bound (`Reqs/Check#quantifiers-up-to-the-bound`).
+  let quantified := all.flatMap (·.2.quantifiedTypes)
+  for pt in quantified do
+    let shape? : Except String Shape := Fren.Core.Enumeration.shapeOf sp.shapes.find? n pt
+    match shape? with
+    | .error why => throw (notEnumerableMsg subject (notEnumerableWhy none why))
+    | .ok shape =>
+      if shape.estimate n > maxBehaviours then throw (quantifiedTooManyMsg subject n)
   if apps.contains recursiveIndexRead then
     throw (notEnumerableMsg subject recursiveIndexWhy)
   -- The hidden slots: each type whose unspecified value is read, in the
@@ -242,7 +262,11 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
         | none => slotOf[f]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
       outOfRange := fun u => slotOf[u]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
       defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?
-      defined := (defOf[·]?), definedCount := defs.size + 1 }
+      defined := (defOf[·]?), definedCount := defs.size + 1
+      domain := fun pt => do
+        let shape ← (Fren.Core.Enumeration.shapeOf sp.shapes.find? n pt).toOption
+        let ty := VTy.ofCore pt.ty
+        return ((shape.ordered n).toArray.map fun (v, _) => evalOf sp ty v, shape.exhausted n) }
   let rec look (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
     match slotOf[x]? with
     | some i => (vals[i]?.bind (·[env[i]!]?))
@@ -287,7 +311,11 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let ats : Atoms := {
     slots := atomSlots, defs := atomDefs
     eval := fun k env => evalFm (atoms[k]!.2) env
+    -- Only a quantifier up to the bound leaves an atom's truth unknown.
+    known := fun k env => (Fm.value? (interp env) (look env fuel) atoms[k]!.2).isSome
+    total := !mayBeUnknown (all.map (·.2.hasQuantifier))
     sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d
+    sameKnown := fun d e₁ e₂ => (look e₁ fuel d).isSome && (look e₂ fuel d).isSome
     defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[]
     readsIndex := fun k => atomIndexed[k]!
     defReadsIndex := defIndexed fuel

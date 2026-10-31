@@ -119,11 +119,20 @@ those of its type, for a bound name of a listed type, and those of its
 values of the bound names before it:
 
 - for `Members`, the members of the set, or the elements of the sequence,
-  that the expression `e` of the conjunct `x in e` at `lo` has;
+  that the expression `e` of the conjunct `x in e` at `lo` has, as values
+  of the bound name's type: where the conjunct reads a newtype's field
+  `0`, as `m.0 in e` does (`lang::name_alone`), each member is the value
+  whose field it is;
 - for `Range`, the integers from the expression of the lower bound at
   `lo`, plus 1 if it is strict, up to that of the upper bound at `hi`,
-  minus 1 if it is strict;
-- for `FromZero`, those from 0 up to the upper bound's.
+  minus 1 if it is strict, where the bound name's type is one that a
+  comparison bounds at all (`lang::range_domain`), and no domain where it
+  is not: a `String`, an ordered record or an ordered enumeration has
+  none, so a quantifier over one cannot be tested (`F0639`), while
+  enumeration gives it its type's values up to the bound;
+- for `FromZero`, those from 0 up to the upper bound's, for a bound name
+  whose values are naturals (`lang::nat_floor`): a `Nat`, or a newtype
+  over one.
 
 A value that is not of the bound name's type is left out: a negative one
 for a `Nat`, and one that does not satisfy the invariants of its subset type. The body is
@@ -163,6 +172,11 @@ solver decides such a check, or a `trusted` claim stands for it. A domain
 that has no value, or too many, in one behaviour only leaves that
 behaviour without a value for the quantifier, as an index out of range
 does, so the test that finds it reaches nothing.
+
+[Enumeration](Check.md#quantifiers-up-to-the-bound) is not testing, and
+`F0639` is not raised there: it gives a bound name without a domain its
+type's values up to the bound, and the quantifier is true, false or
+unknown over them.
 
 ## Searching for behaviours
 

@@ -382,6 +382,48 @@ when that is not the value: a sequence or a set that it cannot show as a
 literal is an internal error, a bug in Fren, rather than shown in a
 notation of its own.
 
+Which results show a behaviour at all is fixed, whatever the method that
+reached the verdict: a counterexample belongs to a failure, since it is a
+behaviour that refutes what the check asks, and a witness to a passing
+[cover goal](Check.md#cover-goals), since it is how the goal is met. So
+no report shows a counterexample beside a pass, and a pass of any other
+check shows nothing: it is silent (see [Severity](#severity)). An
+inconclusive result shows no behaviour either: what the search found did
+not decide the check, so it refutes nothing and meets nothing.
+`view::report_shows` states this. Both front ends build a report's
+messages with `Core.messages`, which seals the result by it first
+(`CheckResult.sealShown` in `FrenCore.Check`), so a pass shows no
+counterexample whatever the method reached the verdict: `messages_sealed`
+proves that a result's messages are those of its sealed result, and
+`shown_sealed` that a sealed result shows only what its verdict allows.
+Enumeration, which changes a verdict for its bound (`classify`), and
+testing, which reports what it refuted, seal theirs as well. No check
+makes a result that the seal changes, so it changes no report today: it
+is there so that one never can, since a pass beside a behaviour that
+refutes it would be an internal inconsistency, and the report would then
+show the verdict without the behaviour:
+
+```fren
+use check::{Kind, Verdict}
+
+-- What a result shows of a behaviour of the procedure.
+pub enum Shown { NoBehaviour, Counterexample, Witness }
+
+pub proc report_shows(kind: Kind, verdict: Verdict, shown: Shown): (det allowed?) {
+    use check::Kind::Cover
+    use check::Verdict::{Fail, Inconclusive, Pass}
+    use self::Shown::{Counterexample, NoBehaviour, Witness}
+
+    ensure nothing: when shown = NoBehaviour, allowed?
+    ensure counterexample: when shown = Counterexample, allowed? iff verdict = Fail
+    ensure witness: when shown = Witness, allowed? iff (verdict = Pass and kind = Cover)
+
+    expect no_counterexample_with_a_pass: when verdict = Pass and shown = Counterexample, not allowed?
+    expect only_a_cover_goal_shows_a_witness: when verdict = Pass and kind != Cover and allowed?, shown = NoBehaviour
+    expect inconclusive_shows_nothing: when verdict = Inconclusive and allowed?, shown = NoBehaviour
+}
+```
+
 An inconclusive result is reported at the position of the corresponding
 failure, saying what could not be decided and why. What it advises
 depends on whether the procedure is in the [decidable
@@ -433,7 +475,6 @@ verdict:
 ```fren
 pub ordered enum Severity { Silent, Info, Warning, Error }
 
-use check::{Kind, Verdict}
 use check::Kind::Redundancy
 use check::Verdict::{Fail, Inconclusive, Pass}
 use self::Severity::{Error, Info, Silent, Warning}

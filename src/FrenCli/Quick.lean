@@ -293,20 +293,24 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
         let some v₂ := env₂[x.name]? | continue
         let input := sp.shown vars env fun v => v.role == .input && v.isPub
         detT := detT.modify k (·.refute (.nondeterministic input (v₁.showAs sp x.ty) (v₂.showAs sp x.ty)))
+  -- Each result shows a behaviour only where its verdict allows it
+  -- (`view::report_shows`): a counterexample where it fails, and a
+  -- witness where a cover goal passes, added below.
   let result (kind : CheckKind) (prop? : Option Name) (t : Tally) (target? : Option (Name × Name) := none) : CheckResult :=
     let verdict := verdictOf kind t
-    { kind, comp := c.path, prop?, target?, verdict
-      detail := match verdict with
-        | .fail => t.refuted?.getD .none
-        | .inconclusive => .unknown "testing found no outputs, or no test reached it"
-        | .pass => .none }
+    Fren.Core.CheckResult.sealShown
+      { kind, comp := c.path, prop?, target?, verdict
+        detail := match verdict with
+          | .fail => t.refuted?.getD .none
+          | .inconclusive => .unknown "testing found no outputs, or no test reached it"
+          | .pass => .none }
   let results := #[result .realizable none realizable]
     ++ (instAssumes.zip instT).map (fun ((w, d, a, _), t) => result .inst (some w) t (some (d, a)))
     ++ (expects.zip expT).map (fun (e, t) => result .expect (some e.name) t)
     ++ ((covers.zip covT).zip covW).map (fun ((g, t), w?) =>
       let r := result .cover (some g.name) t
       match r.verdict, w? with
-      | .pass, some w => { r with detail := .witness w }
+      | .pass, some w => Fren.Core.CheckResult.sealShown { r with detail := .witness w }
       | _, _ => r)
     ++ (dets.zip detT).map (fun (x, t) => result .determinism (some x.name) t)
   let untested := behaviours == 0 && noOutputs?.isNone

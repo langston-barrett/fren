@@ -589,9 +589,21 @@ structure Atoms where
   slots : Array (Array Nat)
   defs : Array (Array Name) := #[]
   eval : Nat → Array Nat → Bool
+  /-- Whether the atom's truth is known in an assignment: it is not where
+  a quantifier over a domain that the bound does not exhaust has no
+  instance that decides it (`Reqs/Check#quantifiers-up-to-the-bound`).
+  `eval` is its truth where it is known. -/
+  known : Nat → Array Nat → Bool := fun _ _ => true
+  /-- Whether every atom's truth is known in every assignment, so that the
+  search need not read `known`. -/
+  total : Bool := true
   /-- Whether the defined output `d` has the same value in two
-  assignments. -/
+  assignments, where `sameKnown` says that it is known whether it has. -/
   sameDefined : Name → Array Nat → Array Nat → Bool := fun _ _ _ => true
+  /-- Whether the defined output `d`'s values in two assignments are both
+  known: a quantifier up to the bound may leave one unknown, and then so
+  is whether they are the same (`Reqs/Check#quantifiers-up-to-the-bound`). -/
+  sameKnown : Name → Array Nat → Array Nat → Bool := fun _ _ _ => true
   /-- The slots that each defined output's definition reads, through the
   definitions of the defined outputs that it mentions too. -/
   defSlots : Name → Array Nat := fun _ => #[]
@@ -756,11 +768,12 @@ def Truth.any (ts : List Truth) : Truth :=
   if ts.contains .yes then .yes else if ts.contains .unknown then .unknown else .no
 
 /-- The truth of `f` in `env`, with each index out of range unknown: an
-atom is unknown where its value depends on one (`Atoms.unknown`), and
+atom is unknown where its value depends on one (`Atoms.unknown`), or
+where a quantifier up to the bound leaves it unknown (`Atoms.known`), and
 otherwise its value; `∃ outputs` is true if some values of the outputs
 make it true, else unknown if some make it unknown. -/
 def EF.truth (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Truth
-  | .atom k => if ats.unknown k env then .unknown else .ofBool (ats.eval k env)
+  | .atom k => if ats.unknown k env || !ats.known k env then .unknown else .ofBool (ats.eval k env)
   | .tt => .yes
   | .ff => .no
   | .not f => (f.truth sp ats env).not
@@ -778,12 +791,105 @@ def EF.truth (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Truth
       | none => .yes
     | none =>
       let e' := sp.primedEnv env
-      if ats.defUnknown x env || ats.defUnknown x e' then .unknown else .ofBool (ats.sameDefined x env e')
+      if ats.defUnknown x env || ats.defUnknown x e' || !ats.sameKnown x env e' then .unknown
+      else .ofBool (ats.sameDefined x env e')
 
 /-- Whether the truths of a query's formulas in an assignment leave it
 open: none is false, and one is unknown, so that some interpretation of
 the indexes out of range may make them all true (`check::doubtful`). -/
 def doubtfulRow (ts : List Truth) : Bool := ts.all (· != .no) && ts.any (· == .unknown)
+
+/-! ## Partial truth -/
+
+/-- The most values that a range a quantifier ranges over may have
+(`eval::MAX_ENUMERATED`): with more, the quantifier has no value that the
+evaluators know (`Reqs/Eval#quantifiers`), in both front ends. -/
+def maxEnumerated : Int := 1024
+
+/-- Whether some atom's truth may be unknown to the model search
+(`Atoms.known`), given whether each of a procedure's formulas, and each of
+the definitions they read, has a quantifier: only a quantifier, guarded or
+not, can leave one unknown there, where its domain is too large or an
+instance is unknown (`Reqs/Check#quantifiers-up-to-the-bound`). Both front
+ends set `Atoms.total` to its negation. -/
+def mayBeUnknown (quantified : Array Bool) : Bool := quantified.any id
+
+/-- Why a query that a quantifier undecided up to the bound leaves open
+is unknown without a model (`Detail.undecidedQuantifier`). -/
+def undecidedQuantifierReason : String := "a quantifier is undecided"
+
+/-- The strong Kleene conjunction of two truths, `none` being unknown: a
+false one settles it. -/
+def andTruth (a b : Option Bool) : Option Bool :=
+  match a, b with
+  | some false, _ | _, some false => some false
+  | some true, some true => some true
+  | _, _ => none
+
+/-- The strong Kleene negation (`check::partial_not`). -/
+def notTruth (a : Option Bool) : Option Bool := a.map (!·)
+
+/-- The strong Kleene disjunction, the conjunction's dual: a true one
+settles it. -/
+def orTruth (a b : Option Bool) : Option Bool := notTruth (andTruth (notTruth a) (notTruth b))
+
+/-- The truth of a quantifier, a `forall` if `universal`, whose instances,
+over values all of its domain's if `exact`, have the truths of `body` at
+`values`, `none` being unknown (`check::quantified_truth`): an instance that
+decides it, `false` for a `forall` and `true` for an `exists`, does so;
+otherwise it has the other value if every instance is known and the domain
+exhausted, and is unknown if not. The instances after a deciding one are
+not evaluated. -/
+def quantifiedTruth {α : Type} (exact universal : Bool) (body : α → Option Bool) : List α → Option Bool
+  | [] => if exact then some universal else none
+  | v :: vs => match body v with
+    | some b => if b != universal then some b else quantifiedTruth exact universal body vs
+    | none => if quantifiedTruth exact universal body vs == some (!universal) then some (!universal) else none
+
+/-- The name under which `EF.polarize` reads whether the defined output
+`x` is the same in both copies as whether it may be: no variable's name
+has a `#`. -/
+def possiblySame (x : Name) : Name := .str x "#possibly"
+
+/-- The defined output that `possiblySame` names. -/
+def unPossibly? : Name → Option Name
+  | .str x "#possibly" => some x
+  | _ => none
+
+/-- The atoms of `ats`, each twice: the `k`th, of `n`, as whether it is
+known to be true, and the `n + k`th as whether it may be, not being known
+to be false (`EF.polarize`). Each copy reads what the atom reads. So is
+whether a defined output is the same in both copies: under its own name,
+whether it is known to be, and under `possiblySame`, whether it may be. -/
+def Atoms.polarized (ats : Atoms) : Atoms :=
+  let n := ats.slots.size
+  { slots := ats.slots ++ ats.slots
+    defs := (List.range (2 * n)).toArray.map fun k => ats.defs[k % n]?.getD #[]
+    eval := fun k env => if k < n then ats.known k env && ats.eval k env
+      else !ats.known (k - n) env || ats.eval (k - n) env
+    sameDefined := fun d e₁ e₂ => match unPossibly? d with
+      | some x => !ats.sameKnown x e₁ e₂ || ats.sameDefined x e₁ e₂
+      | none => ats.sameKnown d e₁ e₂ && ats.sameDefined d e₁ e₂
+    defSlots := fun d => ats.defSlots ((unPossibly? d).getD d)
+    -- What each copy reads of the indexes out of range is its atom's.
+    readsIndex := fun k => ats.readsIndex (k % n)
+    defReadsIndex := fun d => ats.defReadsIndex ((unPossibly? d).getD d)
+    unknown := fun k env => ats.unknown (k % n) env
+    defUnknown := fun d env => ats.defUnknown ((unPossibly? d).getD d) env }
+
+/-- `f` with each of its atoms read under `Atoms.polarized` of `n` atoms:
+where `f` is read positively, if `positive?`, as known to be true, and
+where it is read under a negation, as possibly true. So `f` holds of the
+polarized atoms, positively, exactly where it is known to be true, and,
+negatively, where it may be. -/
+def EF.polarize (sp : Space) (n : Nat) (positive? : Bool) : EF → EF
+  | .atom k => .atom (if positive? then k else n + k)
+  | .not f => .not (f.polarize sp n (!positive?))
+  | .conj fs => .conj (fs.attach.map fun ⟨f, _⟩ => f.polarize sp n positive?)
+  | .exOutputs f => .exOutputs (f.polarize sp n positive?)
+  | .primed f => .primed (f.polarize sp n positive?)
+  | .same x => .same (if positive? || (sp.slotOf? x).isSome then x else possiblySame x)
+  | f => f
 
 /-- The slots that `parts` read, in order. -/
 def slotsOf (sp : Space) (ats : Atoms) (parts : Array EF) : List Nat :=
@@ -916,13 +1022,24 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
     -- Type-domain facts hold in each copy, independently of named clauses.
     let domain := facts ++ facts.map EF.primed
     let parts := (domain ++ hyps.map (·.2)).push (.not goal)
-    let found := answerOf ((search sp ats parts).map (·.1)) testing?.isSome fun _ =>
-      testSearch sp ats parts (testing?.getD 0)
+    -- Where a quantifier may leave an atom unknown, a model is an
+    -- assignment where every part is known to be true (`check::polarized`).
+    -- An index out of range is read as `[][0]` there: a model is a
+    -- behaviour either way.
+    let known := if ats.total then parts else parts.map (·.polarize sp ats.slots.size true)
+    let searched := if ats.total then ats else ats.polarized
+    let found := answerOf ((search sp searched known).map (·.1)) testing?.isSome fun _ =>
+      testSearch sp searched known (testing?.getD 0)
     match found with
     | none =>
-      -- Only a query with an index can be doubtful.
-      let open? := parts.any (·.readsIndex ats) && doubtful sp ats parts
-      return if answerKind false open? == .unknown then .unknown indexUnknownReason else .unsat
+      -- Only a query with an index or a quantifier can be doubtful, and it
+      -- is unknown if some assignment is (`check::enumerated_answer`): by
+      -- a quantifier if one is with only the quantifiers unknown.
+      let open? := (!ats.total || parts.any (·.readsIndex ats)) && doubtful sp ats parts
+      if answerKind false open? != .unknown then return .unsat
+      let byQuantifier := !ats.total &&
+        doubtful sp { ats with unknown := fun _ _ => false, defUnknown := fun _ _ => false } parts
+      return .unknown (if byQuantifier then undecidedQuantifierReason else indexUnknownReason)
     | some (env, _) =>
       let slots := slotsOf sp ats parts
       let shown ← (slots.toArray.filter (· < sp.names.size - sp.hidden)).mapM fun x => do
@@ -935,7 +1052,12 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
   modelBool? := some fun model formula => pure do
     let (_, token) ← model.find? (·.1 == Lean.Name.mkSimple "#member_model")
     let env ← token.environment?
-    return formula.eval sp ats env
+    if ats.total then return formula.eval sp ats env
+    -- Known to be true, known to be false, or unknown.
+    let n := ats.slots.size
+    if (formula.polarize sp n true).eval sp ats.polarized env then return true
+    if !(formula.polarize sp n false).eval sp ats.polarized env then return false
+    none
   falseF := .ff
   notF := .not
   conj := .conj
@@ -1138,12 +1260,19 @@ def enumeratedVerdict (kind : CheckKind) (verdict : Verdict) (conflict exact out
     | .inconclusive => (.inconclusive, false)
 
 /-- `r`, a result of enumeration within the bound `n`, with its verdict as
-`enumeratedVerdict` gives it, marked bounded if it is. -/
+`enumeratedVerdict` gives it, marked bounded if it is; sealed, since the
+verdict changes, so that it shows a behaviour only where its verdict
+allows it (`view::report_shows`). -/
 def classify (n : Nat) (exact outputsExact : Bool) (r : CheckResult) (indexed : Bool := false) : CheckResult :=
+  CheckResult.sealShown <|
   -- A bounded search does not prove properties of all admitted models.
   -- Keep its concrete evidence, but not unqualified global explanations.
   let r := if exact then r else { r with clashes := #[], branchConflicts := #[], explanationPremises := #[] }
   let conflict := r.detail matches .conflict ..
+  -- A quantifier undecided up to the bound left a query open
+  -- (`answerKind`).
+  if r.verdict == .inconclusive && (match r.detail with | .unknown w => w == undecidedQuantifierReason | _ => false) then
+    { r with detail := .undecidedQuantifier n, bounded? := some n } else
   let (verdict, bounded) := enumeratedVerdict r.kind r.verdict conflict exact outputsExact
   -- An index out of range left a query open (`answerKind`).
   let r := match r.detail with
@@ -1336,6 +1465,17 @@ def tooManyMsg (subject : String) (count n : Nat) (estimated : Bool := false) : 
     notes := #[s!"note: enumeration searches at most {maxBehaviours} behaviours, counting a second copy of each for determinism",
       "help: lower `fren.enumeration.size`, or have the solver check it"] }
 
+/-- `subject` quantifies over a type with more than `maxBehaviours`
+values up to size `n` (`Reqs/Check#quantifiers-up-to-the-bound`), which
+enumeration does not list (`F0644`). -/
+def quantifiedTooManyMsg (subject : String) (n : Nat) : Msg :=
+  { code? := some "F0644", headline :=
+      s!"{subject} has a quantifier over a type with more than {maxBehaviours} values up to size {n}, too many to enumerate"
+    label? := some "too many values"
+    notes := #[s!"note: enumeration evaluates a quantifier at each of its type's values up to the bound, at most {maxBehaviours} of them",
+      "note: a type's values are counted without its patterns",
+      "help: lower `fren.enumeration.size`, give the quantifier a guard with a domain, or have the solver check it"] }
+
 /-- Why a component that applies the generic function `f`, which has no
 body, cannot be enumerated (`check::enumerable`): each instance is a
 function of its own, which enumeration does not enumerate. -/
@@ -1350,7 +1490,7 @@ def recursiveIndexWhy : String :=
 /-- `subject` cannot be enumerated, for the reason `why` (`F0645`). -/
 def notEnumerableMsg (subject why : String) : Msg :=
   { code? := some "F0645", headline := s!"{subject} cannot be enumerated: {why}", label? := some "not enumerable"
-    notes := #["note: enumeration cannot apply an uninterpreted function with a contract or type parameters, nor evaluate an unbounded quantifier or an index within a recursive function",
+    notes := #["note: enumeration cannot apply an uninterpreted function with a contract or type parameters, nor evaluate an index within a recursive function",
       "help: have the solver or testing check it"] }
 
 /-- The checks of `subject` that enumeration decided only up to the bound

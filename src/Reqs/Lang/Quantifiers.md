@@ -288,9 +288,9 @@ conjunct `not (a and b)`.
 Each conjunct gives a *bound* for each bound name `x` of a type that is
 not listed: `x in e` gives its members, `x >= e`, `x > e`, `e <= x` and
 `e < x` a lower bound, and `x <= e`, `x < e`, `e >= x` and `e > x` an
-upper bound, where `x` is the bound name alone, not a field read from it,
-and `e` names neither `x` nor a bound name declared after `x` in the same
-quantifier: no name of one segment within it, nor the root of a dotted
+upper bound, where `x` is the bound name alone, or a newtype's field `0`
+read from it (see below), but no other field, and `e` names neither `x`
+nor a bound name declared after `x` in the same quantifier: no name of one segment within it, nor the root of a dotted
 name, nor a field of a record literal written without `:=`, is one of
 theirs, whatever shadows it. A bound by `<` or `>` is *strict*: the bound
 itself is not in range. Any other conjunct gives no bound. Seen from `x`,
@@ -337,11 +337,84 @@ pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOpera
 }
 ```
 
+A [newtype](Items.md#newtypes)'s values are its field's, so its field
+`0`, read from a bound name, is the name itself: `0 <= m.0 < 2` bounds a
+bound name `m` of a newtype over `Int` as `Ms(0) <= m < Ms(2)` does, and
+`m.0.0` is `m` where `m`'s type is a newtype over a newtype. Any other field
+read from a bound name, such as `p.x`, is not the name, and neither is a
+field `0` read from a type that is not a newtype. A membership read
+through such fields gives the members as the name's values: in
+`m.0 in {0, 1}`, `m` ranges over `Ms(0)` and `Ms(1)`.
+`lang::name_alone` states which operands are the name, over the type
+model of [Types](Types.md#types), as `lang::range_domain` below is: from
+the position of the bound name that an operand reads, or -1, its type and
+the underlying type of each newtype it is, and the fields read from it,
+outermost last. It gives the position that `GuardSide`'s `alone` holds.
+Both front ends ask it of the bound name's type (`nameAlone` in
+`FrenCore.Quantifier`), so what each computes for itself is only which
+bound name an operand reads and its fields' names: the `fren` command from
+a path such as `m.0`, and the hosted front end from the field projections
+that elaboration writes, which are the same for `m.0` as for an ordering
+of a newtype. The elaborators read no field as the name, since they set
+`fmf-bound` from the guard's shape alone (see below):
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc name_alone(
+    base: Int,             -- the position of the bound name read, or -1
+    types: Seq<Ty>,        -- its type, then each newtype's underlying type
+    fields: Seq<String>,   -- the fields read from it, outermost last
+): (det alone: Int) {
+    assume position: base >= -1
+    assume typed: types != []
+    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+        newtype?(types[i]) and under(types[i]) = types[i + 1]
+    assume erased: not newtype?(types[types.len - 1])
+
+    ensure rule: alone = (if fields.len < types.len
+        and (forall (i: Int), when 0 <= i < fields.len, fields[i] = "0") then base else -1)
+
+    expect itself: when fields = [], alone = base
+    expect through_a_newtype: when types.len = 2 and fields = ["0"], alone = base
+    expect not_a_newtype: when types.len = 1 and fields = ["0"], alone = -1
+    expect other_field: when fields = ["x"], alone = -1
+}
+```
+
+Where the guard gives a bound name only an upper bound, its range starts
+from 0 if its values are naturals: a `Nat`, or a newtype over one, whose
+values are its field's, so that `n < Ns(10)` and `n.0 < 10` both give a
+newtype `Ns` over `Nat` the values from `Ns(0)` to `Ns(9)`.
+`lang::nat_floor` states it over the same types, and gives
+`lang::guard_domain`'s `nat?`; both front ends' evaluators ask it
+(`startsAtZero` in `FrenCore.Quantifier`). The elaborators take `nat?`
+only of a name declared `Nat`:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc nat_floor(
+    types: Seq<Ty>,    -- the bound name's type, then each newtype's underlying type
+): (nat?) {
+    use self::ValueType::{IntTy, NatTy}
+
+    assume typed: types != []
+    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+        newtype?(types[i]) and under(types[i]) = types[i + 1]
+    assume erased: not newtype?(types[types.len - 1])
+
+    out nat? := kind(types[types.len - 1]) = NatTy
+
+    expect nats: when types.len = 1 and kind(types[0]) = NatTy, nat?
+    expect newtype_over_nat: when types.len = 2 and kind(types[1]) = NatTy, nat?
+    expect ints: when kind(types[types.len - 1]) = IntTy, not nat?
+}
+```
+
 The bound name's *domain* comes from its conjuncts' bounds, in order: its
 members, from the first conjunct that gives them; otherwise a range, from
 the first conjunct that gives a lower bound and the first that gives an
-upper bound, where a `Nat` with no lower bound starts from 0; otherwise
-none. `lang::guard_domain` states it, from the conjuncts as written: each
+upper bound, where a name whose values are naturals (`lang::nat_floor`)
+with no lower bound starts from 0; otherwise none. `lang::guard_domain` states it, from the conjuncts as written: each
 side of each with the position of the bound name that it is, written
 alone, and those of the bound names that it names, which is all that each
 front end reads of a conjunct's syntax. The bound names and the conjuncts
@@ -390,7 +463,7 @@ set_option fren.evidence "random" in
 pub proc guard_domain(
     conjuncts: Seq<GuardConjunct>,    -- the conjuncts of the guard, in order
     k: Nat,                           -- the position of the bound name
-    nat?,                             -- the bound name is a `Nat`
+    nat?,                             -- its values are naturals (`lang::nat_floor`)
 ): (
     det shape: DomainShape,
     det lo: Int,                      -- the position of the conjunct that gives the members or the lower bound, or -1
@@ -418,6 +491,52 @@ pub proc guard_domain(
 }
 ```
 
+A membership bounds a bound name of any type, but a comparison bounds one
+only where its type has finitely many values between any two bounds,
+whatever they are, so that the type alone says that its range can be
+enumerated. Only the integers do: an `Int`, a `Nat`, or a
+[newtype](Items.md#newtypes) over them, whose values are its underlying
+type's, a [pattern type](Types.md#subset-types) counting as its base
+type. Between `"a"` and `"b"` lie `"aa"`, `"aaa"` and every other string
+that starts with `"a"`; an [ordered
+record](Items.md#ordered-declarations)'s values are compared
+lexicographically, so between `P(0, 0)` and `P(1, 0)` lies `P(0, n)` for
+every `n`; and an ordered enumeration's are compared by their variants'
+positions, which say nothing of their payloads. So a comparison of a
+bound name of any of those gives it no bound, and, without a membership,
+it has no domain: both [evaluation](../Eval.md#quantifiers) and
+[enumeration](../Check.md#quantifiers-up-to-the-bound) then read it as
+any other bound name without a domain. `lang::range_domain` states which
+types a comparison bounds, over the type model of
+[Types](Types.md#types): from the bound name's type and the underlying type
+of each newtype it is, from the outermost in, each but the last a newtype
+whose `under` is the next, so that the last, not a newtype, is the type
+of the values that the comparison compares. Both front ends ask it
+(`countedBetween` in `FrenCore.Quantifier`):
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc range_domain(
+    types: Seq<Ty>,    -- the bound name's type, then each newtype's underlying type
+): (ranged?) {
+    use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
+
+    assume typed: types != []
+    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+        newtype?(types[i]) and under(types[i]) = types[i + 1]
+    assume erased: not newtype?(types[types.len - 1])
+
+    out ranged? := kind(types[types.len - 1]) in {IntTy, NatTy}
+
+    expect ints: when types.len = 1 and kind(types[0]) = IntTy, ranged?
+    expect nats: when types.len = 1 and kind(types[0]) = NatTy, ranged?
+    expect strings: when types.len = 1 and kind(types[0]) = StringTy, not ranged?
+    expect records: when types.len = 1 and kind(types[0]) = RecordTy, not ranged?
+    expect newtype_over_int: when types.len = 2 and kind(types[1]) = IntTy, ranged?
+    expect newtype_over_string: when types.len = 2 and kind(types[1]) = StringTy, not ranged?
+}
+```
+
 A quantifier's guard says nothing about its meaning, which is the same
 however it is written: a domain only lets the evaluator enumerate the
 values at which the guard can hold (see
@@ -426,7 +545,10 @@ quantifier is bounded: a procedure, global expectation or refinement
 whose queries have an unbounded quantifier with a bound name that has a
 domain sets cvc5's `fmf-bound` (see [Solver
 queries](../Cli.md#solver-queries)), with which it finds models of
-quantifiers bounded by membership and by integer ranges.
+quantifiers bounded by membership and by integer ranges. `fmf-bound` is
+set from the shape of the guard alone (`lang::guard_domain`), whatever
+the bound name's type: `lang::range_domain` says only which ranges the
+evaluators enumerate.
 
 ## Names
 

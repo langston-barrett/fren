@@ -2,6 +2,7 @@
 import Fren.Seq
 import FrenCli.Guard
 import FrenCli.Parse
+import FrenCore.Enumeration
 import FrenCore.Names
 import FrenCore.Patterns
 import FrenCore.Regex
@@ -57,6 +58,20 @@ inductive VTy where
   /-- The `k`th type parameter, within a generic type's declaration. -/
   | param (k : Nat)
   deriving Inhabited, BEq, Hashable, Repr
+
+/-- The evaluator's type of a declared type. -/
+partial def VTy.ofCore : Fren.Core.Ty → VTy
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set e => .set (VTy.ofCore e)
+  | .seq e => .seq (VTy.ofCore e)
+  | .rel a b => .rel (VTy.ofCore a) (VTy.ofCore b)
+  | .abstract p => .abstract p
+  | .enum p args | .record p args => .data p (args.map VTy.ofCore)
+  | .newtype p t => .newtype p (VTy.ofCore t)
+  | .param k _ => .param k
 
 /-- `t`, with the `k`th of `args` for each type parameter `k`
 (`lang::instantiation`). A parameter without one stays. -/
@@ -318,7 +333,7 @@ inductive Ex where
   | quant (file pos : Nat) (all : Bool) (names : Array Name) (doms : Array (Option Ex)) (tys : Array Fren.Core.PTy)
       (body : Ex)
   /-- The integers from `lo` up to `hi`, but not `hi`, as a sequence, if
-  there are at most `maxEnumerated` of them (`Reqs/Eval#quantifiers`). -/
+  there are at most `Fren.Core.Enumeration.maxEnumerated` of them (`Reqs/Eval#quantifiers`). -/
   | range (lo hi : Ex)
   /-- A table, whose `table` is at the source position `pos`: each row's
   position, its condition, `none` for `_`, and its value. The positions
@@ -473,6 +488,11 @@ partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
 
 /-- What the abstract types and functions mean, as far as it is known. -/
 structure Interp where
+  /-- The values of a declared type that a quantifier without a domain
+  ranges over, up to a bound, and whether they are all of its values:
+  enumeration's (`Reqs/Check#quantifiers-up-to-the-bound`). Elsewhere
+  there are none, and such a quantifier has no value. -/
+  domain : Fren.Core.PTy → Option (Array Val × Bool) := fun _ => none
   /-- Defined predicates used by declared subset invariants. -/
   defs : Name → Option (Array Name × Ex × VTy) := fun _ => none
   fn : Name → Array Val → Option Val := fun _ _ => none
@@ -507,27 +527,29 @@ instance : Inhabited Interp := ⟨{}⟩
 /-- The value of each variable, as far as it is known. -/
 abbrev Look := Name → Option Val
 
-/-- The most values that the evaluator enumerates of a range
-(`eval::MAX_ENUMERATED`). -/
-def maxEnumerated : Int := 1024
 
 /-- `some (.bool b)`, without allocating it: each of the two values is a
 closed term, which the compiler allocates once. -/
 @[inline] def boolV (b : Bool) : Option Val := if b then some (.bool true) else some (.bool false)
 
-def kleeneAnd : Option Val → Option Val → Option Val
-  | some (.bool false), _ | _, some (.bool false) => some (.bool false)
-  | some (.bool true), some (.bool true) => some (.bool true)
-  | _, _ => none
-
-def kleeneOr : Option Val → Option Val → Option Val
-  | some (.bool true), _ | _, some (.bool true) => some (.bool true)
-  | some (.bool false), some (.bool false) => some (.bool false)
-  | _, _ => none
-
-def notV : Option Val → Option Val
-  | some (.bool b) => boolV !b
+/-- A value's truth, unknown unless it is a `Bool`'s. -/
+@[inline] def truthOf : Option Val → Option Bool
+  | some (.bool b) => some b
   | _ => none
+
+/-- `some (.bool b)` of a truth, `none` being unknown, without allocating
+it (`boolV`). -/
+@[inline] def truthV : Option Bool → Option Val
+  | some b => boolV b
+  | none => none
+
+/-- The strong Kleene connectives, shared with the hosted front end
+(`Core.Enumeration.andTruth`, `check::partial_and`). -/
+def kleeneAnd (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.andTruth (truthOf a) (truthOf b))
+
+def kleeneOr (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.orTruth (truthOf a) (truthOf b))
+
+def notV (a : Option Val) : Option Val := truthV (Fren.Core.Enumeration.notTruth (truthOf a))
 
 @[inline] def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => some (f x y)
@@ -1018,7 +1040,7 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
   | .range lo hi => do
     let .int a ← lo.eval I look locals slots frame memos | none
     let .int b ← hi.eval I look locals slots frame memos | none
-    if b - a > maxEnumerated then none
+    if b - a > Fren.Core.Enumeration.maxEnumerated then none
     return .seq ((Array.range (b - a).toNat).map fun (k : Nat) => Val.int (a + k))
   -- The conjunction or disjunction of its instances, decided when one
   -- instance decides it: the body at each combination of the values of its
@@ -1071,20 +1093,26 @@ where
       | some ls => ls.foldl (init := memos) fun ms x => ms.push (Thunk.mk fun _ => x.eval I look locals slots frame memos)
       | none => memos
     if h : k < names.size then
-      match doms[k]?.bind id |>.bind (·.eval I look locals slots frame memos) with
-      | some (.seq vs) | some (.set vs) => Id.run do
-        -- Once an instance decides it, the rest would leave it as it is,
-        -- so they are not looked at.
-        let mut acc : Option Val := some (.bool all)
-        for v in vs do
-          if (match acc with | some (.bool b) => b != all | _ => false) then break
-          let membership := (tys[k]?.map (typeV I · v)).getD (some true)
-          if membership == some true then
-            let x := quantV I look locals slots all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos
-            acc := if all then kleeneAnd acc x else kleeneOr acc x
-          else if membership.isNone then acc := none
-        return acc
-      | _ => none
+      -- Its domain, or, without one, the values of its type up to the
+      -- bound, if enumeration gives them.
+      let listed := match doms[k]?.bind id |>.bind (·.eval I look locals slots frame memos) with
+        | some (.seq vs) | some (.set vs) => some (vs, true)
+        | _ => if (doms[k]?.bind id).isSome then none else tys[k]?.bind I.domain
+      match listed with
+      | some (vs, exact) =>
+        -- A value outside the type, as its invariant has it, is no
+        -- instance; one whose membership is unknown is an unknown instance.
+        let inst (v : Val) : Option Bool :=
+          match (tys[k]?.map (typeV I · v)).getD (some true) with
+          | some true => match quantV I look locals slots all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos with
+            | some (.bool b) => some b
+            | _ => none
+          | some false => some all
+          | none => none
+        -- Shared with the hosted front end (`check::quantified_truth`):
+        -- the instances after a deciding one are not evaluated.
+        truthV (Fren.Core.Enumeration.quantifiedTruth exact all inst vs.toList)
+      | none => none
     else body.eval I look locals slots frame memos
 
 /-- The expressions directly within `e`. -/
@@ -1504,7 +1532,11 @@ where
   interpretation with `shapes`. -/
   fold (e : Ex) : Ex :=
     let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
-    if !readsFns && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
+    -- A quantifier without a domain reads the interpretation's domain.
+    let readsDomain := match e with
+      | .quant _ _ _ _ domains _ _ => domains.any Option.isNone
+      | _ => false
+    if !readsFns && !readsDomain && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
   /-- `e`, an expression with parts, with its parts compiled. -/
   compound (e : Ex) : Ex :=
   let go (x : Ex) := x.compile shapes scope
@@ -2562,7 +2594,18 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       if let some vs := sp.listedValues t pt then
         doms := doms.push (some (.lit (.seq vs)))
         continue
-      let (d, reads) := domainOf all strs body k (t == .nat)
+      -- A newtype's field `0`, read from a bound name, is the name itself
+      -- (`Fren.Core.nameAlone`), and a name whose values are naturals
+      -- ranges from 0 (`Fren.Core.startsAtZero`), both of its type.
+      let tyOf (j : Nat) : Option Fren.Core.Ty := bound[j]?.map fun (_, t, _, _) => t.core sp
+      let (d, reads) := domainOf all strs body k (Fren.Core.startsAtZero (t.core sp)) tyOf
+      -- A comparison bounds a bound name only where its type has finitely
+      -- many values between any two bounds, as both front ends have it
+      -- (`lang::range_domain`); otherwise its guard gives no range, and
+      -- the quantifier ranges over its type's values.
+      let d := match d with
+        | .range .. | .fromZero .. => if Fren.Core.countedBetween (t.core sp) then d else .unbounded
+        | d => d
       let one := Ex.lit (.int 1)
       -- A lower bound, and an upper bound past the range's end.
       let lower (j : Nat) : L (Option Ex) := do

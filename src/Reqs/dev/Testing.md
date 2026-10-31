@@ -196,7 +196,7 @@ pub mod testing
   exact. A procedure with too many behaviours to enumerate is skipped,
   and counted in the summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
-  [--seed N] [--out DIR] [--avoid-known] [--spec-timeout SECONDS]`):
+  [--seed N] [--out DIR] [--avoid-known] [--guards] [--spec-timeout SECONDS]`):
   generates random specs and checks each with both front ends, the `fren`
   command's pipeline and the Lean front end (in an environment that
   imports `Fren`, as the ui tests do), whose reports must agree
@@ -210,7 +210,13 @@ pub mod testing
   enumeration, a newtype of `Int` and its operators, an enumeration with
   payloads, whose outputs' variants clash notes may give, and sets and
   relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
-  and the lints. Only what may legitimately differ is not compared:
+  and the lints; and quantifiers whose [guards](../Lang/Quantifiers.md#guards) each
+  front end reads on its own: over `Int`, `Nat`, a pattern type,
+  newtypes over each, a newtype over a newtype, one that is not ordered,
+  an ordered record, an ordered enumeration and `String`, read through
+  their fields, with ranges with one or both bounds, chains, memberships
+  in sets and sequences, and each comparison on either side. `--guards`
+  generates those quantifiers alone, so that many specs run fast. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
     the parse error's line, or on the last line before it that is not blank
