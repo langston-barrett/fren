@@ -278,12 +278,21 @@ pub proc obligation(
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.lint.eq_op "allow" in
 set_option fren.lint.absurd_extreme_comparisons "allow" in
-expect obligation_widening(place: lang::ValuePlace, type_kind: lang::ValueType, restricted?, element: lang::Duty) {
+expect obligation_widening(
+    place: lang::ValuePlace,
+    type_kind: lang::ValueType,
+    restricted?,
+    element: lang::Duty,
+) {
     use lang
     call concrete := obligation(place, type_kind, restricted?, element)
     expect rule: true
     expect obligation: ((concrete.duty) != lang::Duty::Nothing) iff ((true) and ((place) != lang::ValuePlace::Binding
-        and ((restricted?) or ((type_kind) in {lang::ValueType::SetTy, lang::ValueType::RelTy, lang::ValueType::SeqTy} and (element) != lang::Duty::Nothing))))
+        and ((restricted?) or ((type_kind) in {
+            lang::ValueType::SetTy,
+            lang::ValueType::RelTy,
+            lang::ValueType::SeqTy,
+        } and (element) != lang::Duty::Nothing))))
 }
 ```
 
@@ -340,9 +349,15 @@ pub enum Bound { Open, At(Int) }
 -- A range from `lo` to `hi`, both included; `Bound::Open` is no bound.
 pub struct Alternative { lo: Bound, hi: Bound }
 
-pub fn above?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(l) => l <= x }
+pub fn above?(b: Bound, x: Int) := match b {
+    Bound::Open => true,
+    Bound::At(l) => l <= x,
+}
 
-pub fn below?(b: Bound, x: Int) := match b { Bound::Open => true, Bound::At(h) => x <= h }
+pub fn below?(b: Bound, x: Int) := match b {
+    Bound::Open => true,
+    Bound::At(h) => x <= h,
+}
 ```
 
 ```fren
@@ -365,7 +380,10 @@ pub proc pattern_member(
 
 ```fren
 -- A bound's integer, and 0 for no bound.
-pub fn bound_value(b: Bound): Int := match b { Bound::At(v) => v, Bound::Open => 0 }
+pub fn bound_value(b: Bound): Int := match b {
+    Bound::At(v) => v,
+    Bound::Open => 0,
+}
 
 pub fn bounded?(a: Alternative) := a.lo != Bound::Open and a.hi != Bound::Open
 
@@ -647,16 +665,56 @@ pub struct Former {
 }
 
 pub fn former(k: ValueType): Former := match k {
-    ValueType::BoolTy => Former { finite? := true, growing? := false, composite? := false },
-    ValueType::IntTy => Former { finite? := false, growing? := false, composite? := false },
-    ValueType::NatTy => Former { finite? := false, growing? := false, composite? := false },
-    ValueType::StringTy => Former { finite? := false, growing? := true, composite? := false },
-    ValueType::EnumTy => Former { finite? := true, growing? := false, composite? := true },
-    ValueType::RecordTy => Former { finite? := true, growing? := false, composite? := true },
-    ValueType::AbstractTy => Former { finite? := false, growing? := false, composite? := false },
-    ValueType::SetTy => Former { finite? := true, growing? := true, composite? := true },
-    ValueType::RelTy => Former { finite? := true, growing? := true, composite? := true },
-    ValueType::SeqTy => Former { finite? := false, growing? := true, composite? := true },
+    ValueType::BoolTy => Former {
+        finite? := true,
+        growing? := false,
+        composite? := false,
+    },
+    ValueType::IntTy => Former {
+        finite? := false,
+        growing? := false,
+        composite? := false,
+    },
+    ValueType::NatTy => Former {
+        finite? := false,
+        growing? := false,
+        composite? := false,
+    },
+    ValueType::StringTy => Former {
+        finite? := false,
+        growing? := true,
+        composite? := false,
+    },
+    ValueType::EnumTy => Former {
+        finite? := true,
+        growing? := false,
+        composite? := true,
+    },
+    ValueType::RecordTy => Former {
+        finite? := true,
+        growing? := false,
+        composite? := true,
+    },
+    ValueType::AbstractTy => Former {
+        finite? := false,
+        growing? := false,
+        composite? := false,
+    },
+    ValueType::SetTy => Former {
+        finite? := true,
+        growing? := true,
+        composite? := true,
+    },
+    ValueType::RelTy => Former {
+        finite? := true,
+        growing? := true,
+        composite? := true,
+    },
+    ValueType::SeqTy => Former {
+        finite? := false,
+        growing? := true,
+        composite? := true,
+    },
 }
 
 -- A type of the kind `k` is finite by itself: its former is, or it is an

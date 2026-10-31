@@ -9,6 +9,7 @@ open Fren.Lang
 
 namespace Fren.Impls
 
+open FrenCli (ListKind)
 open FrenCli.Fmt (Kind LineStart)
 
 instance : Fren.Finite Kind :=
@@ -16,6 +17,10 @@ instance : Fren.Finite Kind :=
     by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite LineStart := ⟨[.closing, .starting, .continuing], by intro x; cases x <;> simp⟩
+
+instance : Fren.Finite ListKind :=
+  ⟨[.arms, .arguments, .applicationArguments, .parameters, .functionParameters, .elements, .fields],
+    by intro x; cases x <;> simp⟩
 
 def toFmtKind : Kind → fmt.Kind
   | .paren => .Open
@@ -34,6 +39,21 @@ def toFmtKind : Kind → fmt.Kind
   | .comment => .Comment
   | .other => .Other
 
+def toFmtListKind : ListKind → fmt.ListKind
+  | .arms => .Arms
+  | .arguments => .Arguments
+  | .applicationArguments => .ApplicationArguments
+  | .parameters => .Parameters
+  | .functionParameters => .FunctionParameters
+  | .elements => .Elements
+  | .fields => .Fields
+
+/-- A list's elements, each with its width on one line and whether it must
+span several lines. -/
+def toElementList : List (Nat × Bool) → fmt.ElementList
+  | [] => .Nil
+  | (w, b) :: es => .Cons w b (toElementList es)
+
 def toFmtLineStart : LineStart → fmt.LineStart
   | .closing => .Closing
   | .starting => .Starting
@@ -50,7 +70,7 @@ impl space: fmt::space for (b a : Kind) {
 
 -- Over `Nat`, so `decide` does not apply: proofs by cases.
 impl indent: fmt::indent for (d : Nat) (s : LineStart) (c : Bool) {
-  depth := d,
+  base := d,
   start := toFmtLineStart s,
   comment? := c,
   columns := FrenCli.Fmt.indent d s c,
@@ -77,11 +97,63 @@ impl blank_lines: fmt::blank_lines for (b : Nat) (f ao bc : Bool) {
   intro b f ao bc _
   cases f <;> cases ao <;> cases bc <;> rcases b with _ | b <;> simp [fren_spec, FrenCli.Fmt.blankLines] <;> omega
 
-impl trailing_comma: fmt::trailing_comma for (e v : Bool) {
+impl trailing_comma: fmt::trailing_comma for (e v a : Bool) {
   empty? := e,
   vertical? := v,
-  comma? := FrenCli.Fmt.trailingComma e v,
+  allowed? := a,
+  comma? := FrenCli.Fmt.trailingComma e v a,
 }
+
+impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Nat) (l : Bool) {
+  list := toFmtListKind k,
+  n := n,
+  broken? := b,
+  width := w,
+  start := s,
+  line_end := e,
+  own_line? := l,
+  vertical? := FrenCli.Fmt.vertical k n b w s e l,
+} by
+  intro k n b w s e l _
+  cases k <;> cases b <;> cases l <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
+    toFmtListKind] <;> omega
+
+theorem count_toElementList (es : List (Nat × Bool)) : fmt.count (toElementList es) = es.length := by
+  induction es with
+  | nil => simp [toElementList, fmt.count]
+  | cons e es ih => simp [toElementList, fmt.count, ih]; omega
+
+theorem any_broken_toElementList (es : List (Nat × Bool)) :
+    fmt.«any_broken?» (toElementList es) = es.any (·.2) := by
+  induction es with
+  | nil => simp [toElementList, fmt.«any_broken?»]
+  | cons e es ih => simp [toElementList, fmt.«any_broken?», ih]
+
+theorem joined_toElementList (es : List (Nat × Bool)) :
+    fmt.joined (toElementList es) = FrenCli.Fmt.joinedWidth (es.map (·.1)) := by
+  induction es with
+  | nil => simp [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
+  | cons e es ih =>
+    cases es with
+    | nil => simp [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
+    | cons f fs => simp_all [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
+
+impl list_layout: fmt::list_layout for (k : ListKind) (es : List (Nat × Bool)) (s a : Nat) (l : Bool) {
+  list := toFmtListKind k,
+  elements := toElementList es,
+  start := s,
+  after := a,
+  own_line? := l,
+  vertical? := FrenCli.Fmt.listLayout k es s a l,
+} by
+  intro k es s a l _
+  simp only [fren_spec, count_toElementList, any_broken_toElementList, joined_toElementList,
+    FrenCli.Fmt.listLayout]
+  generalize es.any (·.2) = b
+  generalize FrenCli.Fmt.joinedWidth (es.map (·.1)) = w
+  generalize es.length = n
+  cases k <;> cases b <;> cases l <;> simp [FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
+    toFmtListKind] <;> omega
 
 impl group_layout: fmt::group_layout for (n : Nat) (wv fits : Bool) {
   n_paths := n,

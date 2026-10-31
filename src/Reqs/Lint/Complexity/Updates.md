@@ -33,12 +33,20 @@ fields, is checked by refinement, each way:
 ```fren
 set_option fren.lint.needless_update "allow" in
 pub proc needless_update_written(t: Triple, n: Int): (det u: Triple) {
-    out u := { t with a := n, b := 1, c := n + 1 }
+    out u := { t with
+        a := n,
+        b := 1,
+        c := n + 1,
+    }
 }
 
 set_option fren.lint.unused_variables "allow" in
 pub proc needless_update_fixed(t: Triple, n: Int): (det u: Triple) {
-    out u := Triple { a := n, b := 1, c := n + 1 }
+    out u := Triple {
+        a := n,
+        b := 1,
+        c := n + 1,
+    }
 }
 
 expect needless_update_sound(t: lint::Triple, n: Int) {

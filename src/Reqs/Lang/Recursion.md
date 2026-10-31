@@ -270,8 +270,8 @@ too weak. Both front ends use this rule and diagnostic.
 ```fren
 pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?):
     (det report_counterexample?) {
-    ensure rule: report_counterexample? iff (not applies_recursive? or evaluation_confirms?)
-}
+        ensure rule: report_counterexample? iff (not applies_recursive? or evaluation_confirms?)
+    }
 ```
 
 Checks are complete modulo recursive functions being opaque. A fact that

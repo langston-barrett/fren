@@ -1,6 +1,6 @@
 --@ args: fmt --check
--- `fren fmt` starts a table's rows on their lines, each `|` as it starts
--- its row, and gives the rows of a vertical one a trailing comma.
+-- `fren fmt` puts a table's rows one to a line, as a `match`'s arms, each
+-- `|` as it starts its row, and gives every row a trailing comma.
 proc c(x: Int): (y: Int) {
     ensure a: y = table {x > 0=>1,_=>0}
     ensure b: y = table {

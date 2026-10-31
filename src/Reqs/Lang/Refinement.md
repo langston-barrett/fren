@@ -78,10 +78,9 @@ pub proc block_refinement(
     expect full_domain: when guarantees = {}, holds? iff block_domain inter implementation = {}
 }
 
-pub proc refinement_computed_local(
-    definition_value: Int,
-    concrete_private_value: Int,
-): (det abstract_local: Int) {
+pub proc refinement_computed_local(definition_value: Int, concrete_private_value: Int): (
+    det abstract_local: Int,
+) {
     out abstract_local := definition_value
     expect evaluated: abstract_local = definition_value
     cover not_matched: abstract_local != concrete_private_value
@@ -121,11 +120,10 @@ forced value is outside the declared domain there is no admitted world.
 The equivalence below models an arbitrary continuation as a set of values:
 
 ```fren
-pub proc refinement_singleton_domain(
-    domain: Set<Int>,
-    forced: Int,
-    continuation: Set<Int>,
-): (det full?, det singleton?) {
+pub proc refinement_singleton_domain(domain: Set<Int>, forced: Int, continuation: Set<Int>): (
+    det full?,
+    det singleton?,
+) {
     ensure full_enumeration: full? iff domain inter {forced} subset continuation
     ensure singleton_enumeration: singleton? iff (when forced in domain, forced in continuation)
     expect exact: full? iff singleton?

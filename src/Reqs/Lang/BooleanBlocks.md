@@ -95,7 +95,9 @@ Diagnostic inspection never evaluates a skipped member solely to fill a
 truth table: it reports that member as not evaluated.
 
 ```fren
-pub proc block_evaluation(block_kind: BoolBlockKind, values: Seq<Bool>, position: Int): (evaluated?) {
+pub proc block_evaluation(block_kind: BoolBlockKind, values: Seq<Bool>, position: Int): (
+    evaluated?,
+) {
     ensure in_range: when not (0 <= position < values.len), not evaluated?
     ensure conjunction: when 0 <= position < values.len and block_kind = BoolBlockKind::Conjunction,
         evaluated? iff not (exists (j: Int), 0 <= j < position and not values[j])
@@ -164,9 +166,12 @@ pub proc clause_leaf_path(path: Seq<ClauseAncestor>, member?): (split?, active?,
     ensure independent: split? iff (forall (i: Int), when 0 <= i < path.len, clause_splits?(path[i]))
     ensure all_guards: active? iff (forall (i: Int), when 0 <= i < path.len, clause_guard?(path[i]))
     ensure leaf_meaning: guarded? iff (when active?, member?)
-    expect nested_named_indexed: when path = [ClauseAncestor::When(true),
-    ClauseAncestor::Conjunct(BoolBlockLabel::Named("outer")), ClauseAncestor::Unless(false),
-    ClauseAncestor::Conjunct(BoolBlockLabel::Index(2))], split? and active? and (guarded? iff member?)
+    expect nested_named_indexed: when path = [
+        ClauseAncestor::When(true),
+        ClauseAncestor::Conjunct(BoolBlockLabel::Named("outer")),
+        ClauseAncestor::Unless(false),
+        ClauseAncestor::Conjunct(BoolBlockLabel::Index(2)),
+    ], split? and active? and (guarded? iff member?)
     expect negation_keeps_one_clause: when path = [ClauseAncestor::Negated], not split?
     expect disjunction_keeps_one_clause: when path = [ClauseAncestor::Disjunct(BoolBlockLabel::Index(1))], not split?
 }
@@ -221,7 +226,11 @@ member notes, not a summary and a second note for each. Skipped and unknown
 remain distinct from false.
 
 ```fren
-pub proc block_values(members: Seq<BoolBlockMember>, position: Int): (det present?, det in_true?, det in_false?) {
+pub proc block_values(members: Seq<BoolBlockMember>, position: Int): (
+    det present?,
+    det in_true?,
+    det in_false?,
+) {
     out present? := 0 <= position < members.len
     out in_true? := 0 <= position < members.len and members[position].value?
     out in_false? := present? and not in_true?
@@ -238,7 +247,11 @@ evaluation status separately from logical truth and never invents a value
 for an undefined skipped expression.
 
 ```fren
-pub proc block_result(actual?, wanted?, member_value?, evaluated?): (det failed?, det true_group?, det false_group?) {
+pub proc block_result(actual?, wanted?, member_value?, evaluated?): (
+    det failed?,
+    det true_group?,
+    det false_group?,
+) {
     out failed? := actual? != wanted?
     out true_group? := failed? and evaluated? and member_value?
     out false_group? := failed? and evaluated? and not member_value?
@@ -251,7 +264,12 @@ pub proc block_result(actual?, wanted?, member_value?, evaluated?): (det failed?
 ```
 
 ```fren
-pub proc exactly_one_result(values: Seq<Bool>, wanted?): (det actual?, det failed?, det no_true?, det multiple?) {
+pub proc exactly_one_result(values: Seq<Bool>, wanted?): (
+    det actual?,
+    det failed?,
+    det no_true?,
+    det multiple?,
+) {
     out actual? := exists (i: Int), 0 <= i < values.len and values[i] and
         (forall (j: Int), when 0 <= j < values.len and j != i, not values[j])
     out failed? := actual? != wanted?
@@ -326,7 +344,10 @@ pub enum BranchBehaviour { OffOff, OffOn, OnOff, OnOn }
 pub fn branch_first?(b: BranchBehaviour) := b is BranchBehaviour::OnOff | BranchBehaviour::OnOn
 
 pub proc branch_forcing(branch: Set<BranchBehaviour>, rest: Set<BranchBehaviour>, forced?): (
-    branch_forces?, rest_forces_opposite?, excluded?) {
+    branch_forces?,
+    rest_forces_opposite?,
+    excluded?,
+) {
     ensure branch_value: branch_forces? iff branch != {} and
         (forall (b: BranchBehaviour), when b in branch, branch_first?(b) iff forced?)
     ensure rest_value: rest_forces_opposite? iff rest != {} and
@@ -336,7 +357,11 @@ pub proc branch_forcing(branch: Set<BranchBehaviour>, rest: Set<BranchBehaviour>
     expect impossible_not_forcing: when branch = {}, not branch_forces?
 }
 
-pub proc disjunction_core(first: Set<BranchBehaviour>, second: Set<BranchBehaviour>, rest: Set<BranchBehaviour>): (inconsistent?) {
+pub proc disjunction_core(
+    first: Set<BranchBehaviour>,
+    second: Set<BranchBehaviour>,
+    rest: Set<BranchBehaviour>,
+): (inconsistent?) {
     ensure union_meaning: inconsistent? iff (first union second) inter rest = {}
     expect every_branch: inconsistent? iff first inter rest = {} and second inter rest = {}
     expect one_branch_insufficient: when first inter rest = {} and second inter rest != {}, not inconsistent?
@@ -345,8 +370,17 @@ pub proc disjunction_core(first: Set<BranchBehaviour>, second: Set<BranchBehavio
 pub enum BranchPremises { Model, NoModel, Unknown }
 pub enum BranchBudget { Unlimited, Remaining(Nat) }
 
-pub proc branch_query_count(block_kind: BoolBlockKind, members: Nat, in_core?, budget: BranchBudget, premises: BranchPremises): (branches: Nat, det selected?) {
-    out selected? := in_core? and match budget { BranchBudget::Unlimited => true, BranchBudget::Remaining(n) => n > 0 }
+pub proc branch_query_count(
+    block_kind: BoolBlockKind,
+    members: Nat,
+    in_core?,
+    budget: BranchBudget,
+    premises: BranchPremises,
+): (branches: Nat, det selected?) {
+    out selected? := in_core? and match budget {
+        BranchBudget::Unlimited => true,
+        BranchBudget::Remaining(n) => n > 0,
+    }
     ensure alternatives: branches = if not selected? or premises != BranchPremises::Model or block_kind = BoolBlockKind::Conjunction then 0
         else if block_kind = BoolBlockKind::Equivalence then 2 else members
     expect unrelated_free: when not in_core?, branches = 0
@@ -355,8 +389,15 @@ pub proc branch_query_count(block_kind: BoolBlockKind, members: Nat, in_core?, b
     expect iff_two: when selected? and premises = BranchPremises::Model and block_kind = BoolBlockKind::Equivalence, branches = 2
 }
 
-pub proc branch_query_families(block_kind: BoolBlockKind, members: Nat, in_core?, budget: BranchBudget, premises: BranchPremises,
-    per_branch: Nat, family_counts: Seq<Int>): (accounted?, det shared_queries: Nat) {
+pub proc branch_query_families(
+    block_kind: BoolBlockKind,
+    members: Nat,
+    in_core?,
+    budget: BranchBudget,
+    premises: BranchPremises,
+    per_branch: Nat,
+    family_counts: Seq<Int>,
+): (accounted?, det shared_queries: Nat) {
     call count := branch_query_count(block_kind, members, in_core?, budget, premises)
     out shared_queries := if count.selected? and block_kind != BoolBlockKind::Conjunction then 1 else 0
     ensure families: accounted? iff family_counts.len = count.branches and

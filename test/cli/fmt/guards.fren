@@ -1,8 +1,8 @@
 --@ args: fmt --check
 -- `fren fmt` spaces a guard as any other expression, `P if C => e`, and
--- lays out an arm with a guard as one without: each `|` that starts a line
--- starts its alternative, and the arms of a vertical `match` get a
--- trailing comma.
+-- lays out an arm with a guard as one without: one arm to a line, each `|`
+-- that starts a line starts its alternative, and every arm gets a trailing
+-- comma.
 enum Mode { Off, Heat, Cool }
 
 proc c(m: Mode, t: Int): (y: Int) {

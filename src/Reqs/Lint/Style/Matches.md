@@ -26,7 +26,12 @@ pub mod lint
 -- The slots of an or-pattern, or of the arms of a `match`.
 pub enum Slot { S0, S1, S2, S3 }
 
-pub fn pos(s: Slot): Int := match s { Slot::S0 => 0, Slot::S1 => 1, Slot::S2 => 2, Slot::S3 => 3 }
+pub fn pos(s: Slot): Int := match s {
+    Slot::S0 => 0,
+    Slot::S1 => 1,
+    Slot::S2 => 2,
+    Slot::S3 => 3,
+}
 
 -- A bound of a range of integers, `Open` where there is none.
 pub enum Bound { Open, At(Int) }
@@ -45,9 +50,15 @@ pub enum Use { Nothing, Name(Int) }
 -- An arm's body: its written form, and the name it mentions.
 pub struct Body { form: Int, uses: Use }
 
-pub fn lower_holds?(lo: Bound, v: Int) := match lo { Bound::Open => true, Bound::At(l) => l <= v }
+pub fn lower_holds?(lo: Bound, v: Int) := match lo {
+    Bound::Open => true,
+    Bound::At(l) => l <= v,
+}
 
-pub fn upper_holds?(hi: Bound, v: Int) := match hi { Bound::Open => true, Bound::At(h) => v <= h }
+pub fn upper_holds?(hi: Bound, v: Int) := match hi {
+    Bound::Open => true,
+    Bound::At(h) => v <= h,
+}
 
 pub fn leaf_matches?(l: Leaf, v: Int) := match l {
     Leaf::Lit(k) => v = k,
@@ -69,7 +80,10 @@ pub fn slot_matches?(alts: Seq<Pat>, s: Slot, x: Val) := pos(s) < alts.len and p
 pub fn or_matches?(alts: Seq<Pat>, x: Val) := exists (s: Slot), slot_matches?(alts, s, x)
 
 -- The name that a leaf binds, `-1` for none; names are not negative.
-pub fn leaf_name(l: Leaf): Int := match l { Leaf::Binder(k, _) => k, _ => -1 }
+pub fn leaf_name(l: Leaf): Int := match l {
+    Leaf::Binder(k, _) => k,
+    _ => -1,
+}
 
 -- The value of the body `b` where the names `n1`, `n2` and `n3` are bound
 -- to `v1`, `v2` and `v3`, and a name outside the patterns has the value `o`.
@@ -210,13 +224,38 @@ pub proc collapsible_match(
 
     expect keeps_meaning: forall (s: Slot), when fires? and x.tag = tag and first_leaf?(inner, s, x.a),
         if pos(s) = inner.len - 1 then
-        body_value(leaf_arm_body(inner[pos(s)]), leaf_name(first), x.a, leaf_name(second), x.b, -1, 0, o)
+        body_value(
+            leaf_arm_body(inner[pos(s)]),
+            leaf_name(first),
+            x.a,
+            leaf_name(second),
+            x.b,
+            -1,
+            0,
+            o
+        )
         = body_value(outer, -1, 0, -1, 0, -1, 0, o)
         else
-        body_value(leaf_arm_body(inner[pos(s)]), leaf_name(first), x.a, leaf_name(leaf_arm_pat(inner[pos(s)])), x.a,
-        leaf_name(second), x.b, o)
-        = body_value(leaf_arm_body(inner[pos(s)]), leaf_name(leaf_arm_pat(inner[pos(s)])), x.a, leaf_name(second),
-        x.b, -1, 0, o)
+        body_value(
+            leaf_arm_body(inner[pos(s)]),
+            leaf_name(first),
+            x.a,
+            leaf_name(leaf_arm_pat(inner[pos(s)])),
+            x.a,
+            leaf_name(second),
+            x.b,
+            o
+        )
+        = body_value(
+            leaf_arm_body(inner[pos(s)]),
+            leaf_name(leaf_arm_pat(inner[pos(s)])),
+            x.a,
+            leaf_name(second),
+            x.b,
+            -1,
+            0,
+            o
+        )
 }
 
 pub enum Grade { Low, High, Off }
@@ -225,14 +264,19 @@ pub enum Gauge { Read(Grade, Int), Missing }
 set_option fren.lint.collapsible_match "allow" in
 pub proc collapsible_match_written(g: Gauge): (det v: Int) {
     out v := match g {
-        Gauge::Read(l, n) => match l { Grade::Low => n, Grade::High => n + 1, _ => 0 },
+        Gauge::Read(l, n) => match l {
+            Grade::Low => n,
+            Grade::High => n + 1,
+            _ => 0,
+        },
         _ => 0,
     }
 }
 
 pub proc collapsible_match_fixed(g: Gauge): (det v: Int) {
     out v := match g {
-        Gauge::Read(Grade::Low, n) => n, Gauge::Read(Grade::High, n) => n + 1,
+        Gauge::Read(Grade::Low, n) => n,
+        Gauge::Read(Grade::High, n) => n + 1,
         _ => 0,
     }
 }
@@ -259,14 +303,18 @@ names the input:
 set_option fren.lint.collapsible_match "allow" in
 pub proc collapsible_shadow_written(g: Gauge, n: Int): (det v: Int) {
     out v := match g {
-        Gauge::Read(t, n!) => match t { Grade::Low => 1, _ => n },
+        Gauge::Read(t, n!) => match t {
+            Grade::Low => 1,
+            _ => n,
+        },
         _ => n,
     }
 }
 
 pub proc collapsible_shadow_fixed(g: Gauge, n: Int): (det v: Int) {
     out v := match g {
-        Gauge::Read(Grade::Low, _) => 1, Gauge::Read(_, n!) => n,
+        Gauge::Read(Grade::Low, _) => 1,
+        Gauge::Read(_, n!) => n,
         _ => n,
     }
 }
@@ -305,13 +353,24 @@ Its functions compare the bounds of the [model](#patterns-as-the-lints-see-them)
 ```fren
 -- The bounds of an integer pattern; a pattern of another kind is
 -- unbounded.
-pub fn lower_of(p: Pat): Bound := match p { Pat::Lit(k) => Bound::At(k), Pat::Range(lo, _) => lo, _ => Bound::Open }
+pub fn lower_of(p: Pat): Bound := match p {
+    Pat::Lit(k) => Bound::At(k),
+    Pat::Range(lo, _) => lo,
+    _ => Bound::Open,
+}
 
-pub fn upper_of(p: Pat): Bound := match p { Pat::Lit(k) => Bound::At(k), Pat::Range(_, hi) => hi, _ => Bound::Open }
+pub fn upper_of(p: Pat): Bound := match p {
+    Pat::Lit(k) => Bound::At(k),
+    Pat::Range(_, hi) => hi,
+    _ => Bound::Open,
+}
 
 -- Whether the lower bound `a` is at most the upper bound `b`.
 pub fn reaches?(a: Bound, b: Bound) := match a {
-    Bound::At(l) => match b { Bound::At(h) => l <= h, Bound::Open => true },
+    Bound::At(l) => match b {
+        Bound::At(h) => l <= h,
+        Bound::Open => true,
+    },
     Bound::Open => true,
 }
 
@@ -319,31 +378,55 @@ pub fn reaches?(a: Bound, b: Bound) := match a {
 -- bound `c` at most the upper bound `d`.
 pub fn lower_le?(a: Bound, b: Bound) := match a {
     Bound::Open => true,
-    Bound::At(x) => match b { Bound::At(y) => x <= y, Bound::Open => false },
+    Bound::At(x) => match b {
+        Bound::At(y) => x <= y,
+        Bound::Open => false,
+    },
 }
 
 pub fn upper_le?(c: Bound, d: Bound) := match d {
     Bound::Open => true,
-    Bound::At(y) => match c { Bound::At(x) => x <= y, Bound::Open => false },
+    Bound::At(y) => match c {
+        Bound::At(x) => x <= y,
+        Bound::Open => false,
+    },
 }
 
 -- Whether the integer pattern `p` matches `v`.
 pub fn int_matches?(p: Pat, v: Int) := lower_holds?(lower_of(p), v) and upper_holds?(upper_of(p), v)
 
 -- The leaves of a variant's payload; a pattern of another kind has `_`.
-pub fn first_leaf(p: Pat): Leaf := match p { Pat::Variant(_, l, _) => l, _ => Leaf::Wild }
+pub fn first_leaf(p: Pat): Leaf := match p {
+    Pat::Variant(_, l, _) => l,
+    _ => Leaf::Wild,
+}
 
-pub fn second_leaf(p: Pat): Leaf := match p { Pat::Variant(_, _, m) => m, _ => Leaf::Wild }
+pub fn second_leaf(p: Pat): Leaf := match p {
+    Pat::Variant(_, _, m) => m,
+    _ => Leaf::Wild,
+}
 
-pub fn leaf_min(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(lo, _) => lo, _ => Bound::Open }
+pub fn leaf_min(l: Leaf): Bound := match l {
+    Leaf::Lit(k) => Bound::At(k),
+    Leaf::Range(lo, _) => lo,
+    _ => Bound::Open,
+}
 
-pub fn leaf_max(l: Leaf): Bound := match l { Leaf::Lit(k) => Bound::At(k), Leaf::Range(_, hi) => hi, _ => Bound::Open }
+pub fn leaf_max(l: Leaf): Bound := match l {
+    Leaf::Lit(k) => Bound::At(k),
+    Leaf::Range(_, hi) => hi,
+    _ => Bound::Open,
+}
 
 pub fn integers_pattern?(p: Pat) := p is Pat::Lit(_) | Pat::Range(_, _)
 
 pub fn variants_pattern?(p: Pat) := p is Pat::Tag(_) | Pat::Variant(_, _, _)
 
-pub fn pattern_tag(p: Pat): Int := match p { Pat::Tag(t) => t, Pat::Variant(t, _, _) => t, _ => -1 }
+pub fn pattern_tag(p: Pat): Int := match p {
+    Pat::Tag(t) => t,
+    Pat::Variant(t, _, _) => t,
+    _ => -1,
+}
 
 pub fn leaves_overlap?(l: Leaf, m: Leaf) := reaches?(leaf_min(l), leaf_max(m)) and reaches?(leaf_min(m), leaf_max(l))
 
@@ -523,11 +606,20 @@ pub fn names_binder?(b: Body, p: Pat) := match b.uses {
     Use::Nothing => false,
 }
 
-pub fn then_of(b: IfBody): Body := match b { IfBody::IfElse(_, a, _) => a, IfBody::Plain(v) => v }
+pub fn then_of(b: IfBody): Body := match b {
+    IfBody::IfElse(_, a, _) => a,
+    IfBody::Plain(v) => v,
+}
 
-pub fn else_of(b: IfBody): Body := match b { IfBody::IfElse(_, _, d) => d, IfBody::Plain(v) => v }
+pub fn else_of(b: IfBody): Body := match b {
+    IfBody::IfElse(_, _, d) => d,
+    IfBody::Plain(v) => v,
+}
 
-pub fn cond_of?(b: IfBody) := match b { IfBody::IfElse(c?, _, _) => c?, IfBody::Plain(_) => true }
+pub fn cond_of?(b: IfBody) := match b {
+    IfBody::IfElse(c?, _, _) => c?,
+    IfBody::Plain(_) => true,
+}
 
 -- The value of the arm `arm`'s body where its pattern matches `x`.
 pub fn arm_value(arm: IfArm, x: Val, o: Int): Int := match arm.body {
@@ -622,11 +714,23 @@ pub proc match_arm_if_else_keeps_meaning(arms: Seq<IfArm>, d: Body, x: Val, o: I
 -- `match s { E::A => if c? then 1 else 0, E::B => if e? then 2 else 0 }`,
 -- on which the lint fires, and whose fix keeps its value: the arms' shared
 -- `else` branch, and the arm of the variant with tag `t`, `if c? then f else 0`.
-pub const IF_ELSE_EXAMPLE_BRANCH: Body := Body { form := 0, uses := Use::Nothing }
+pub const IF_ELSE_EXAMPLE_BRANCH: Body := Body {
+    form := 0,
+    uses := Use::Nothing,
+}
 
-pub fn if_else_example_arm(t: Int, c?, f: Int): IfArm := IfArm { pat := Pat::Tag(t),
-    body := IfBody::IfElse(c?, Body { form := f, uses := Use::Nothing }, IF_ELSE_EXAMPLE_BRANCH),
-    binds? := false }
+pub fn if_else_example_arm(t: Int, c?, f: Int): IfArm := IfArm {
+    pat := Pat::Tag(t),
+    body := IfBody::IfElse(
+        c?,
+        Body {
+            form := f,
+            uses := Use::Nothing,
+        },
+        IF_ELSE_EXAMPLE_BRANCH
+    ),
+    binds? := false,
+}
 
 pub fn if_else_example_arms(c?, e?): Seq<IfArm> :=
     [if_else_example_arm(0, c?, 1), if_else_example_arm(1, e?, 2)]
@@ -644,11 +748,20 @@ pub enum Gate { Open(Int), Shut(Int), Stuck }
 
 set_option fren.lint.match_arm_if_else "allow" in
 pub proc match_arm_if_else_written(g: Gate, k: Int): (det v: Int) {
-    out v := match g { Gate::Open(n) => if n > k then n else 0, Gate::Shut(n) => if n < k then 1 else 0, Gate::Stuck => 2 }
+    out v := match g {
+        Gate::Open(n) => if n > k then n else 0,
+        Gate::Shut(n) => if n < k then 1 else 0,
+        Gate::Stuck => 2,
+    }
 }
 
 pub proc match_arm_if_else_fixed(g: Gate, k: Int): (det v: Int) {
-    out v := match g { Gate::Open(n) if n > k => n, Gate::Shut(n) if n < k => 1, Gate::Stuck => 2, _ => 0 }
+    out v := match g {
+        Gate::Open(n) if n > k => n,
+        Gate::Shut(n) if n < k => 1,
+        Gate::Stuck => 2,
+        _ => 0,
+    }
 }
 
 expect match_arm_if_else_sound(g: lint::Gate, k: Int) {

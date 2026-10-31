@@ -51,14 +51,14 @@ pub enum OrderingFix { Unchanged, Compare(Comparison, Position) }
 -- of the lint's assumptions or how its fix is chosen.
 pub proc ordering_fix_statement(fix: OrderingFix, property: Rel<Comparison, Position>):
     (det quantified?, det selected?) {
-    out quantified? := forall (op: Comparison) (m: Position),
-        when fix = OrderingFix::Compare(op, m), (op, m) in property
-    out selected? := match fix {
-        OrderingFix::Unchanged => true,
-        OrderingFix::Compare(op, m) => (op, m) in property,
+        out quantified? := forall (op: Comparison) (m: Position),
+            when fix = OrderingFix::Compare(op, m), (op, m) in property
+        out selected? := match fix {
+            OrderingFix::Unchanged => true,
+            OrderingFix::Compare(op, m) => (op, m) in property,
+        }
+        expect equivalent: quantified? iff selected?
     }
-    expect equivalent: quantified? iff selected?
-}
 
 -- The variants a test names: whether it names each position.
 pub struct NamedVariants { v0?, v1?, v2?, v3?, v4? }
@@ -96,7 +96,14 @@ fn bounded?(named: NamedVariants, last: Position, m: Position, up?) :=
     forall (v: Position), bounded_at?(named, last, v, m, up?)
 
 -- `x OP m` holds exactly where the test does, at `x`.
-fn agrees_at?(named: NamedVariants, last: Position, negated?, op: Comparison, m: Position, x: Position) :=
+fn agrees_at?(
+    named: NamedVariants,
+    last: Position,
+    negated?,
+    op: Comparison,
+    m: Position,
+    x: Position
+) :=
     when x <= last, (names?(named, x) != negated?) iff orders?(op, x, m)
 
 pub proc manual_ordering(

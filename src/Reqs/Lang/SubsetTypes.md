@@ -67,15 +67,33 @@ pub fn subset_rule_holds?(rule: SubsetRule, x: Int) := match rule {
 
 pub proc subset_membership(clauses: Seq<SubsetClause>, value: Int): (member?) {
     ensure conjunction: member? iff (forall (i: Int), when 0 <= i < clauses.len, subset_rule_holds?(clauses[i].rule, value))
-    expect labelled_range: when clauses = [SubsetClause { label := "low", rule := SubsetRule::Lower(0) },
-    SubsetClause { label := "high", rule := SubsetRule::Upper(255) }], member? iff 0 <= value <= 255
-    expect even: when clauses = [SubsetClause { label := "invariant", rule := SubsetRule::Even }],
+    expect labelled_range: when clauses = [
+        SubsetClause {
+            label := "low",
+            rule := SubsetRule::Lower(0),
+        },
+        SubsetClause {
+            label := "high",
+            rule := SubsetRule::Upper(255),
+        },
+    ], member? iff 0 <= value <= 255
+    expect even: when clauses = [
+        SubsetClause {
+            label := "invariant",
+            rule := SubsetRule::Even,
+        },
+    ],
         member? iff value mod 2 = 0
 }
 
 pub proc subset_obligations(clauses: Seq<SubsetClause>, value: Int, label: String): (failed?) {
     ensure named: failed? iff (exists (i: Int), 0 <= i < clauses.len and clauses[i].label = label and not subset_rule_holds?(clauses[i].rule, value))
-    expect upper_bound: when clauses = [SubsetClause { label := "high", rule := SubsetRule::Upper(255) }] and label = "high",
+    expect upper_bound: when clauses = [
+        SubsetClause {
+            label := "high",
+            rule := SubsetRule::Upper(255),
+        },
+    ] and label = "high",
         failed? iff value > 255
     expect other_label: when not (exists (i: Int), 0 <= i < clauses.len and clauses[i].label = label), not failed?
 }
@@ -91,8 +109,16 @@ pub proc subset_labels(clauses: Seq<SubsetClause>): (accepted?) {
     ensure distinct: when clauses != [], accepted? iff
         (forall (i: Int), forall (j: Int),
         when 0 <= i < clauses.len and 0 <= j < clauses.len and i != j, clauses[i].label != clauses[j].label)
-    expect repeated: when clauses = [SubsetClause { label := "same", rule := SubsetRule::Lower(0) },
-    SubsetClause { label := "same", rule := SubsetRule::Upper(3) }], not accepted?
+    expect repeated: when clauses = [
+        SubsetClause {
+            label := "same",
+            rule := SubsetRule::Lower(0),
+        },
+        SubsetClause {
+            label := "same",
+            rule := SubsetRule::Upper(3),
+        },
+    ], not accepted?
 }
 ```
 
@@ -126,7 +152,9 @@ even when its source annotation names the same subset. Base invariants
 are checked before derived invariants and keep their original names.
 
 ```fren
-pub proc subset_inheritance(base: Seq<SubsetClause>, added: Seq<SubsetClause>, value: Int): (member?) {
+pub proc subset_inheritance(base: Seq<SubsetClause>, added: Seq<SubsetClause>, value: Int): (
+    member?,
+) {
     ensure inherited: member? iff (forall (i: Int), when 0 <= i < base.len, subset_rule_holds?(base[i].rule, value))
         and (forall (i: Int), when 0 <= i < added.len, subset_rule_holds?(added[i].rule, value))
     expect retains_base: when member?, forall (i: Int), when 0 <= i < base.len, subset_rule_holds?(base[i].rule, value)
@@ -252,8 +280,14 @@ pub proc named_conjunction(a?, b?, wanted?): (failed: Set<String>) {
     expect negative_both: when not wanted?, failed = if a? and b? then {"a", "b"} else {}
 }
 
-pub proc named_identity(first_definition: String, first_occurrence: Nat, first_label: String,
-    second_definition: String, second_occurrence: Nat, second_label: String): (det same?) {
+pub proc named_identity(
+    first_definition: String,
+    first_occurrence: Nat,
+    first_label: String,
+    second_definition: String,
+    second_occurrence: Nat,
+    second_label: String,
+): (det same?) {
     ensure identity: same? iff first_definition = second_definition and first_occurrence = second_occurrence
         and first_label = second_label
     expect repeated_application: when first_occurrence != second_occurrence, not same?
@@ -303,8 +337,10 @@ justifies this optimization when an interpretation can vary.
 pub enum InhabitationWorld { First, Second }
 pub enum InhabitationValue { Zero, One }
 
-pub proc fixed_inhabitation(allowed: Set<InhabitationWorld>,
-    membership: Rel<InhabitationWorld, InhabitationValue>): (det satisfiable?, det inhabited_everywhere?) {
+pub proc fixed_inhabitation(
+    allowed: Set<InhabitationWorld>,
+    membership: Rel<InhabitationWorld, InhabitationValue>,
+): (det satisfiable?, det inhabited_everywhere?) {
     assume some_world: allowed != {}
     assume fixed_meaning: forall (w: InhabitationWorld), forall (other: InhabitationWorld),
         forall (value: InhabitationValue), when w in allowed and other in allowed,
@@ -316,7 +352,10 @@ pub proc fixed_inhabitation(allowed: Set<InhabitationWorld>,
     expect same_question: satisfiable? iff inhabited_everywhere?
 }
 
-pub proc varying_inhabitation(membership: Rel<InhabitationWorld, InhabitationValue>): (det some_witness?, det inhabited_everywhere?) {
+pub proc varying_inhabitation(membership: Rel<InhabitationWorld, InhabitationValue>): (
+    det some_witness?,
+    det inhabited_everywhere?,
+) {
     assume interpretation: membership = {(InhabitationWorld::First, InhabitationValue::Zero)}
     out some_witness? := exists (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
     out inhabited_everywhere? := forall (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
@@ -346,16 +385,16 @@ pub enum QueryPurpose { Procedure, FixedDeclaration }
 
 pub proc query_purpose(purpose: QueryPurpose, requirements: Rel<QueryInput, QueryOutput>):
     (det holds?, det some_pair?, det all_inputs?) {
-    out some_pair? := exists (input: QueryInput), exists (output: QueryOutput),
-        (input, output) in requirements
-    out all_inputs? := forall (input: QueryInput), exists (output: QueryOutput),
-        (input, output) in requirements
-    out holds? := if purpose = QueryPurpose::Procedure then all_inputs? else some_pair?
-    expect procedure: when purpose = QueryPurpose::Procedure, holds? iff all_inputs?
-    expect declaration: when purpose = QueryPurpose::FixedDeclaration, holds? iff some_pair?
-    expect input_counterexample: when requirements = {(QueryInput::Accept, QueryOutput::First)},
-        some_pair? and not all_inputs?
-}
+        out some_pair? := exists (input: QueryInput), exists (output: QueryOutput),
+            (input, output) in requirements
+        out all_inputs? := forall (input: QueryInput), exists (output: QueryOutput),
+            (input, output) in requirements
+        out holds? := if purpose = QueryPurpose::Procedure then all_inputs? else some_pair?
+        expect procedure: when purpose = QueryPurpose::Procedure, holds? iff all_inputs?
+        expect declaration: when purpose = QueryPurpose::FixedDeclaration, holds? iff some_pair?
+        expect input_counterexample: when requirements = {(QueryInput::Accept, QueryOutput::First)},
+            some_pair? and not all_inputs?
+    }
 ```
 
 The kernel model therefore gives a fixed declaration a typed satisfying
@@ -383,8 +422,12 @@ and the specification guarantee over actual integer results. Either
 missing invariant invalidates the claim even if the guarantee holds.
 
 ```fren
-pub proc refinement_subset_domain(first: Set<Int>, second: Set<Int>,
-    guarantees: Set<Int>, candidate: Int): (det accepted?) {
+pub proc refinement_subset_domain(
+    first: Set<Int>,
+    second: Set<Int>,
+    guarantees: Set<Int>,
+    candidate: Int,
+): (det accepted?) {
     ensure complete_domain: accepted? iff candidate in first inter second inter guarantees
     expect first_required: when candidate in second inter guarantees and not candidate in first, not accepted?
     expect second_required: when candidate in first inter guarantees and not candidate in second, not accepted?

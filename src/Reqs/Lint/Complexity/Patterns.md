@@ -27,12 +27,18 @@ pub enum Signal { Stop, Slow, Go }
 set_option fren.lint.wildcard_in_or_patterns "allow" in
 set_option fren.evidence "enumerated" in
 pub proc wildcard_in_or_written(s: Signal): (det v: Int) {
-    out v := match s { Signal::Stop => 0, Signal::Slow | _ => 1 }
+    out v := match s {
+        Signal::Stop => 0,
+        Signal::Slow | _ => 1,
+    }
 }
 
 set_option fren.evidence "enumerated" in
 pub proc wildcard_in_or_fixed(s: Signal): (det v: Int) {
-    out v := match s { Signal::Stop => 0, _ => 1 }
+    out v := match s {
+        Signal::Stop => 0,
+        _ => 1,
+    }
 }
 
 expect wildcard_in_or_sound(s: lint::Signal) {
@@ -81,13 +87,27 @@ alternatives. The refinements below check the fix on one example:
 ```fren
 set_option fren.lint.manual_range_patterns "allow" in
 pub proc manual_range_written(n: Int): (det small: Int, det low: Int) {
-    out small := match n { 1 | 2 | 3 => n, _ => 0 }
-    out low := match n { ..=0 | 1 | 2..5 => 1, 5 => 2, _ => 3 }
+    out small := match n {
+        1 | 2 | 3 => n,
+        _ => 0,
+    }
+    out low := match n {
+        ..=0 | 1 | 2..5 => 1,
+        5 => 2,
+        _ => 3,
+    }
 }
 
 pub proc manual_range_fixed(n: Int): (det small: Int, det low: Int) {
-    out small := match n { 1..=3 => n, _ => 0 }
-    out low := match n { ..=4 => 1, 5 => 2, _ => 3 }
+    out small := match n {
+        1..=3 => n,
+        _ => 0,
+    }
+    out low := match n {
+        ..=4 => 1,
+        5 => 2,
+        _ => 3,
+    }
 }
 
 expect manual_range_sound(n: Int) {

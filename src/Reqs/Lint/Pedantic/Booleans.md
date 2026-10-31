@@ -202,7 +202,10 @@ and environment; `fren check` tests it:
 set_option fren.evidence "random" in
 pub proc overly_complex_keeps_meaning(e: Expr, i: lang::Interp, env: lang::Env) {
     ensure keeps_meaning: when overly_complex_fires?(e),
-        agrees?(lang::eval(i, env, overly_complex_fix(e)), lang::eval(i, env, e))
+        agrees?(
+            lang::eval(i, env, overly_complex_fix(e)),
+            lang::eval(i, env, e)
+        )
 }
 ```
 
@@ -235,10 +238,23 @@ expect overly_complex_refires(b: lang::Id, c: lang::Id, d: lang::Id) {
 
     assume distinct: b != c
 
-    expect kept: overly_complex_fires?(overly_complex_fix(Or(Or(Var(c), And(Var(c), Var(d))),
-        And(Or(Var(c), And(Var(c), Var(d))), Var(b)))))
-    expect around: not overly_complex_fires?(Or(Var(c), And(Or(Var(c), And(Var(c), Var(d))), Var(b))))
-        and overly_complex_fires?(Or(Var(c), And(overly_complex_fix(Or(Var(c), And(Var(c), Var(d)))), Var(b))))
+    expect kept: overly_complex_fires?(
+        overly_complex_fix(
+            Or(
+                Or(Var(c), And(Var(c), Var(d))),
+                And(Or(Var(c), And(Var(c), Var(d))), Var(b))
+            )
+        )
+    )
+    expect around: not overly_complex_fires?(
+        Or(Var(c), And(Or(Var(c), And(Var(c), Var(d))), Var(b)))
+    )
+        and overly_complex_fires?(
+            Or(
+                Var(c),
+                And(overly_complex_fix(Or(Var(c), And(Var(c), Var(d)))), Var(b))
+            )
+        )
 }
 ```
 

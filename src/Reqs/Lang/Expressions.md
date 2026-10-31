@@ -367,13 +367,19 @@ substitution:
 ```fren
 expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
     call definition := mentions(ExprKind::Definition, free_vars(d))
-    call let_form := mentions(kind_of(Expr::Let(x, d, b)), (free_vars(b) minus {Mention::Var(x)})
-            union (if Mention::Var(x) in free_vars(b) then definition.mentioned else {}))
+    call let_form := mentions(
+        kind_of(Expr::Let(x, d, b)),
+        (free_vars(b) minus {Mention::Var(x)})
+            union (if Mention::Var(x) in free_vars(b) then definition.mentioned else {}),
+    )
     expect let_free_vars: let_form.mentioned = free_vars(Expr::Let(x, d, b))
 
-    call match_form := mentions(kind_of(Expr::Match(s, p, g, b, rest)), free_vars(s)
+    call match_form := mentions(
+        kind_of(Expr::Match(s, p, g, b, rest)),
+        free_vars(s)
             union ((free_vars(g) union free_vars(b)) minus binders(p))
-            union free_vars(rest))
+            union free_vars(rest),
+    )
     expect match_free_vars: match_form.mentioned = free_vars(Expr::Match(s, p, g, b, rest))
 }
 ```
@@ -447,14 +453,7 @@ elaborations, and `p` and `q`, with `i` and `j`, two environments and
 interpretations:
 
 ```fren
-expect fixed_factor(
-    a: Expr,
-    b: Expr,
-    i: Interp,
-    p: Env,
-    j: Interp,
-    q: Env,
-) {
+expect fixed_factor(a: Expr, b: Expr, i: Interp, p: Env, j: Interp, q: Env) {
     assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call product := linear_product(free_vars(a), free_vars(b))
     call factor_a := closed(i, p, j, q, a)
@@ -1442,9 +1441,18 @@ pub proc pattern_binding(r: Reading, limit: Int): (
     ensure above_rule: exceeds? iff r is Reading::Value(v) and v > limit
     ensure clamped_rule: clamped = (if r is Reading::Value(v) and v <= limit then v else limit)
 
-    expect within_match: at_most_limit? iff match r { Reading::Value(v) => v <= limit, _ => true }
-    expect above_match: exceeds? iff match r { Reading::Value(v) => v > limit, _ => false }
-    expect clamped_match: clamped = match r { Reading::Value(v) if v <= limit => v, _ => limit }
+    expect within_match: at_most_limit? iff match r {
+        Reading::Value(v) => v <= limit,
+        _ => true,
+    }
+    expect above_match: exceeds? iff match r {
+        Reading::Value(v) => v > limit,
+        _ => false,
+    }
+    expect clamped_match: clamped = match r {
+        Reading::Value(v) if v <= limit => v,
+        _ => limit,
+    }
     expect complement: when r is Reading::Value(_), at_most_limit? iff not exceeds?
     expect missing: when r = Reading::Missing, at_most_limit? and not exceeds? and clamped = limit
     expect at_most: clamped <= limit
@@ -1688,7 +1696,13 @@ pub proc table_arms(
 }
 
 set_option fren.lint.undecidable "allow" in
-expect table_arms_refines(arms: Seq<lang::TableArm>, overlaps: Seq<lang::Overlap>, i: Int, j: Int, earlier_rejected?) {
+expect table_arms_refines(
+    arms: Seq<lang::TableArm>,
+    overlaps: Seq<lang::Overlap>,
+    i: Int,
+    j: Int,
+    earlier_rejected?,
+) {
     use lang
     call concrete := table_arms(arms, overlaps, i, j, earlier_rejected?)
     expect static: (concrete.rejected?) iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping) and not ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded)) and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
@@ -2480,7 +2494,15 @@ pub proc operator_type(
     -- Only a `Nat` is widened.
     expect no_mixing: when accepted? and op != Membership and kind(a) != NatTy and kind(b) != NatTy, a = b
     expect member_typed: when op = Membership and accepted? and kind(a) != NatTy, elem(b) = a
-    expect bool_valued: unless op in {Addition, Multiplication, Subtraction, Negation, Concat, SetAlgebra, Conditional},
+    expect bool_valued: unless op in {
+        Addition,
+        Multiplication,
+        Subtraction,
+        Negation,
+        Concat,
+        SetAlgebra,
+        Conditional,
+    },
         result = BoolTy
     expect strings_ordered: when op = Ordering and kind(a) = StringTy and a = b, accepted?
     expect concat_closed: when op = Concat and accepted?, result = kind(a)

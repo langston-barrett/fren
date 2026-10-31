@@ -558,6 +558,39 @@ def leanCommands : List String :=
    "namespace", "section", "end", "variable", "set_option", "attribute", "macro", "syntax",
    "notation", "#check", "#eval", "#print", "#guard_msgs"]
 
+/-- A list or block whose line breaks the formatter decides
+(`fmt::list_layout`), by how its elements may be laid out. -/
+inductive ListKind where
+  /-- The arms of a `match` or the rows of a table, always one to a line. -/
+  | arms
+  /-- The arguments of a `call` member or of a refinement. -/
+  | arguments
+  /-- The arguments of an application or a method call, which may not end
+  with a comma. -/
+  | applicationArguments
+  /-- The parameters or results of a procedure, or a function's results. -/
+  | parameters
+  /-- A function's parameters, which may not end with a comma. -/
+  | functionParameters
+  /-- The elements of a sequence or set literal, or the members of a
+  Boolean block. -/
+  | elements
+  /-- The fields of a record literal or of a record update. -/
+  | fields
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- A list or block: its kind, its opening and closing brackets, the token
+after which its first element starts, and the commas after its elements,
+as indices of tokens. The first element starts after the opening bracket,
+but for a record update's, which start after its `with`. -/
+structure Bracketed where
+  kind : ListKind
+  opening : Nat
+  lead : Nat
+  closing : Nat := 0
+  commas : Array Nat := #[]
+  deriving Inhabited, Repr
+
 /-- What the formatter needs to know of a file's structure, as indices of
 tokens. -/
 structure Layout where
@@ -583,6 +616,14 @@ structure Layout where
   /-- The `|` that open a closure's parameters, and those that close them. -/
   closureOpens : Array Nat := #[]
   closureCloses : Array Nat := #[]
+  /-- The lists and blocks whose line breaks the formatter decides. -/
+  bracketed : Array Bracketed := #[]
+  /-- The spans of expressions that a list may start: each that `expr`
+  parses, each operation of a binary operator and its operands, and each
+  `if`. -/
+  exprs : Array Span := #[]
+  /-- The spans of the operations of binary operators. -/
+  pairs : Array Span := #[]
 
 /-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
@@ -612,6 +653,9 @@ structure PState where
   /-- In a function's block: its result's name, which `out` defines
   (`F0444`). -/
   fnResult? : Option String := none
+  /-- The lists and blocks open at the current token, innermost last, with
+  their commas so far. -/
+  openLists : Array Bracketed := #[]
 
 abbrev P := StateT PState (Except ParseError)
 
@@ -632,6 +676,27 @@ def markStart : P Unit := modify fun s => { s with layout.starts := s.layout.sta
 def markList : P Unit := modify fun s => { s with layout.lists := s.layout.lists.push s.pos }
 /-- Records that the next token is the `(` of a call. -/
 def markCall : P Unit := modify fun s => { s with layout.calls := s.layout.calls.push s.pos }
+/-- Records that the next token opens a list or block of kind `k`, whose
+line breaks the formatter decides. -/
+def openList (k : ListKind) : P Unit :=
+  modify fun s => { s with openLists := s.openLists.push { kind := k, opening := s.pos, lead := s.pos } }
+/-- Records that the innermost open list or block is a record update's
+fields, which start after the next token, its `with`. -/
+def updateList : P Unit :=
+  modify fun s => { s with openLists := s.openLists.modify (s.openLists.size - 1) fun b => { b with kind := .fields, lead := s.pos } }
+/-- Eats a comma after an element of the innermost open list or block,
+recording it. -/
+def listComma : P Bool := do
+  let s ← get
+  unless s.toks[s.pos]!.tok == .kw "," do return false
+  modify fun s => { s with openLists := s.openLists.modify (s.openLists.size - 1) fun b => { b with commas := b.commas.push s.pos } }
+  modify fun s => { s with pos := s.pos + 1 }
+  return true
+/-- Records that the next token closes the innermost open list or block. -/
+def closeList : P Unit := modify fun s =>
+  match s.openLists.back? with
+  | some b => { s with openLists := s.openLists.pop, layout.bracketed := s.layout.bracketed.push { b with closing := s.pos } }
+  | none => s
 
 def err (span : Span) (code headline : String) (label? : Option String := none)
     (notes : Array String := #[]) (fixes : Array Fren.Core.Fix := #[]) : P α :=
@@ -698,7 +763,10 @@ def spanFrom (start : Span) : P Span := return start.to (← lastSpan)
 
 /-- `l op r`, where `start` is the span of its first token, which may be a
 `(` around `l`. -/
-def bin (start : Span) (op : String) (l r : Expr) : P Expr := return .bin (← spanFrom start) op l r
+def bin (start : Span) (op : String) (l r : Expr) : P Expr := do
+  let sp ← spanFrom start
+  modify fun st => { st with layout.exprs := st.layout.exprs ++ #[sp, l.span, r.span], layout.pairs := st.layout.pairs.push sp }
+  return .bin sp op l r
 
 /-- Runs `x` within brackets: a record literal may appear, even in a
 `match`'s scrutinee, and `in` is a membership, even in a definition of a
@@ -1091,7 +1159,12 @@ def binders (kw : Token) : P (Array Binder) := do
   return out
 
 mutual
+/-- An expression, whose span the layout records. -/
 partial def expr : P Expr := do
+  let e ← exprBody
+  modify fun st => { st with layout.exprs := st.layout.exprs.push e.span }
+  return e
+partial def exprBody : P Expr := do
   let t ← peek
   let state ← get
   if (t.tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
@@ -1240,9 +1313,11 @@ partial def unary : P Expr := do
 /-- `(a, b)`, the arguments of a method call. -/
 partial def callArgs : P (Array Expr) := do
   markCall
+  openList .applicationArguments
   discard (expectKw "(")
   let mut args := #[← withRecords expr]
-  while (← eatKw ",").isSome do args := args.push (← withRecords expr)
+  while (← listComma) do args := args.push (← withRecords expr)
+  closeList
   discard (expectKw ")")
   return args
 /-- `[i]`, the index of an indexing. -/
@@ -1267,7 +1342,7 @@ partial def fieldInits (what : String) : P (Array (Ident × Option Expr)) := do
     -- Below `when`, which would swallow the following fields.
     let e ← if (← eatKw ":=").isSome then some <$> withRecords iff else pure none
     fs := fs.push (f, e)
-    if (← eatKw ",").isNone then break
+    if !(← listComma) then break
   return fs
 /-- The scrutinee and arms of `match e { ... }`, or of `table e { ... }`, a
 table over a scrutinee (`table`), whose first token is `t`. -/
@@ -1281,7 +1356,7 @@ partial def matchArms (t : Token) (table : Bool) : P Expr := do
     scrutinees := scrutinees.push (← withIn atom)
     while (← eatKw ",").isSome do scrutinees := scrutinees.push (← withIn atom)
   modify fun s => { s with noRecord := saved }
-  markList
+  openList .arms
   discard (expectKw "{")
   let mut arms := #[]
   repeat
@@ -1294,7 +1369,8 @@ partial def matchArms (t : Token) (table : Bool) : P Expr := do
     discard (expectKw "=>")
     -- Below `when`, which would swallow the following arms.
     arms := arms.push (ps, guard?, ← withRecords iff)
-    if (← eatKw ",").isNone then break
+    if !(← listComma) then break
+  closeList
   discard (expectKw "}")
   let span ← spanFrom t.span
   if scrutinees.size == 1 && arms.all (·.1.size == 1) then
@@ -1308,7 +1384,7 @@ partial def atom : P Expr := do
   if isKw t "and" || isKw t "or" || isKw t "iff" || oneBlock then
     let op := if isKw t "and" then "and" else if isKw t "or" then "or" else if oneBlock then "one" else "iff"
     discard bump
-    markList
+    openList .elements
     discard (expectKw "{")
     let mut members := #[]
     unless isKw (← peek) "}" do
@@ -1325,7 +1401,8 @@ partial def atom : P Expr := do
             err label.span "F0372" s!"duplicate Boolean member label `{label.name}`" (some "already used in this block")
         let value ← expr
         members := members.push (label, value)
-        if (← eatKw ",").isNone || isKw (← peek) "}" then break
+        if !(← listComma) || isKw (← peek) "}" then break
+    closeList
     discard (expectKw "}")
     return .block (← spanFrom t.span) op members
   match t.tok with
@@ -1364,23 +1441,27 @@ partial def atom : P Expr := do
     let (segs, _) ← path false
     let start := segs[0]!.span
     if isKw (← peek) "{" && !(← get).noRecord then
-      markList
+      openList .fields
       discard bump
       let fs ← fieldInits "a record literal"
+      closeList
       discard (expectKw "}")
       return ← fieldReads callArgs indexArg (.record (← spanFrom start) segs fs)
     let name := "::".intercalate (segs.map (·.name)).toList
     noSpaceBeforeParen name s!"the arguments of `{name}`"
     unless isKw (← peek) "(" do return ← fieldReads callArgs indexArg (.path (start.to segs.back!.span) segs)
     markCall
+    openList .applicationArguments
     discard bump
     -- A cardinality operator without arguments parses, so that the
     -- elaborator reports it (`lang::cardinality_args`).
     if segs.size == 1 && (Fren.Core.Cardinality.ofName? segs[0]!.name).isSome && isKw (← peek) ")" then
+      closeList
       discard bump
       return ← fieldReads callArgs indexArg (.app (← spanFrom start) segs #[])
     let mut args := #[← withRecords expr]
-    while (← eatKw ",").isSome do args := args.push (← withRecords expr)
+    while (← listComma) do args := args.push (← withRecords expr)
+    closeList
     discard (expectKw ")")
     fieldReads callArgs indexArg (.app (← spanFrom start) segs args)
   | .kw "table" =>
@@ -1389,7 +1470,7 @@ partial def atom : P Expr := do
     let st ← get
     if !isKw (st.toks[st.pos + 1]?.getD (← peek)) "{" then matchArms t true else
     discard bump
-    markList
+    openList .arms
     discard (expectKw "{")
     let mut rows := #[]
     repeat
@@ -1402,14 +1483,15 @@ partial def atom : P Expr := do
       let cond? ← if (← peek).tok == .ident "_" then discard bump; pure none else some <$> withRecords iff
       discard (expectKw "=>")
       rows := rows.push (start, cond?, ← withRecords iff)
-      if (← eatKw ",").isNone then break
+      if !(← listComma) then break
+    closeList
     discard (expectKw "}")
     fieldReads callArgs indexArg (.table (← spanFrom t.span) rows)
   | .kw "match" => matchArms t false
   | .kw "{" =>
     -- A set literal, or a record update if `with` follows the first
     -- expression.
-    markList
+    openList .elements
     let brace := (← get).pos
     modify fun s => { s with layout.sets := s.layout.sets.push brace }
     discard bump
@@ -1421,25 +1503,29 @@ partial def atom : P Expr := do
       if es.size == 1 && isKw (← peek) "with" then
         -- An update's braces are spaced as a record literal's.
         modify fun s => { s with layout.sets := s.layout.sets.filter (· != brace) }
+        updateList
         discard bump
         -- At least one field.
         if isKw (← peek) "}" then fail (← peek) "a name"
         let fs ← fieldInits "a record update"
+        closeList
         discard (expectKw "}")
         return ← fieldReads callArgs indexArg (.update (← spanFrom t.span) es[0]! fs)
-      if (← eatKw ",").isNone then break
+      if !(← listComma) then break
+    closeList
     discard (expectKw "}")
     fieldReads callArgs indexArg (.set (← spanFrom t.span) es)
   | .kw "[" =>
     -- A sequence literal.
-    markList
+    openList .elements
     discard bump
     let mut es := #[]
     repeat
       if isKw (← peek) "]" then break
       markStart
       es := es.push (← withRecords iff)
-      if (← eatKw ",").isNone then break
+      if !(← listComma) then break
+    closeList
     discard (expectKw "]")
     fieldReads callArgs indexArg (.seq (← spanFrom t.span) es)
   | .kw "if" =>
@@ -1451,7 +1537,9 @@ partial def atom : P Expr := do
     let a ← withIn expr
     discard (expectKw "else")
     let b ← expr
-    return .ite (← spanFrom t.span) c a b
+    let sp ← spanFrom t.span
+    modify fun st => { st with layout.exprs := st.layout.exprs.push sp }
+    return .ite sp c a b
   | .kw "(" =>
     discard bump
     let e ← withRecords expr
@@ -1626,14 +1714,15 @@ def member : P Member := do
     let (abstract, _) ← path false
     noSpaceBeforeParen abstract.back!.name "refinement arguments"
     markCall
-    markList
+    openList .arguments
     discard (expectKw "(")
     let mut args := #[]
     repeat
       if isKw (← peek) ")" then break
       markStart
       args := args.push (← withRecords expr)
-      if (← eatKw ",").isNone then break
+      if !(← listComma) then break
+    closeList
     discard (expectKw ")")
     if isWord (← peek) "by" then
       err (← peek).span "F0112" "Lean proofs are supported only in Lean files" none #[]
@@ -1645,7 +1734,7 @@ def member : P Member := do
     let (comp, _) ← path false
     noSpaceBeforeParen (" :: ".intercalate (comp.map (·.name)).toList) s!"the arguments of `{comp.back!.name}`"
     markCall
-    markList
+    openList .arguments
     discard (expectKw "(")
     let mut args := #[]
     repeat
@@ -1653,7 +1742,8 @@ def member : P Member := do
       markStart
       let e ← withRecords expr
       args := args.push (({ name := "", span := e.span } : Ident), some e)
-      if (← eatKw ",").isNone then break
+      if !(← listComma) then break
+    closeList
     discard (expectKw ")")
     return .inst x comp args (start.to (← lastSpan))
   let kind? := if isWord t "assume" then some PropKind.assume
@@ -1714,7 +1804,7 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
 def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
     (params : Array (Array Ident × Option (Array Ident))) : P Item := do
   discard (expectKw ":")
-  markList
+  openList .parameters
   discard (expectKw "(")
   markStart
   let m ← peek
@@ -1724,9 +1814,10 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
     throw { span := m.span, msg := (Fren.Core.fnMemberMsg? .define true "det").get! }
   let r ← ident
   let ty ← type?
-  if (← eatKw ",").isSome && !isKw (← peek) ")" then
+  if (← listComma) && !isKw (← peek) ")" then
     let t ← peek
     throw { span := t.span, msg := Fren.Core.fnResultsMsg }
+  closeList
   discard (expectKw ")")
   -- A result `r?` without a type is a `Bool`, as is the function's
   -- value if its name ends in `?` too.
@@ -1833,7 +1924,7 @@ its `{` ends. -/
 def procRest (name : Ident) (global := false) : P (Array Member × Array Member × Span × Array Span × Nat) := do
   noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
   markCall
-  markList
+  openList .parameters
   discard (expectKw "(")
   let mut header := #[]
   repeat
@@ -1850,11 +1941,12 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
     if let some d ← eatKw ":=" then
       throw { span := d.span, msg := Fren.Core.inputDefinitionMsg }
     header := header.push (.var true true false x ty none)
-    if (← eatKw ",").isNone then break
+    if !(← listComma) then break
+  closeList
   discard (expectKw ")")
   let mut results := #[]
   if (← eatKw ":").isSome then
-    markList
+    openList .parameters
     discard (expectKw "(")
     repeat
       markStart
@@ -1865,8 +1957,9 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
       let x ← ident
       header := header.push (.var false true det?.isSome x (← type?) none)
       results := results.push (unbanged x.name)
-      if (← eatKw ",").isNone then break
+      if !(← listComma) then break
       if isKw (← peek) ")" then break
+    closeList
     discard (expectKw ")")
   let ob ← expectKw "{"
   let saved := (← get).proc?
@@ -2068,13 +2161,15 @@ partial def item : P Item := do
     | _ => pure ()
     noSpaceBeforeParen name.name s!"the parameters of `{name.name}`"
     markCall
+    openList .functionParameters
     discard (expectKw "(")
     let param : P (Array Ident × Option (Array Ident)) := do
       let p ← typeExpr
       return (p, ← type?)
     let group : P (Array (Array Ident × Option (Array Ident))) := do
       let mut params := #[← param]
-      while (← eatKw ",").isSome do params := params.push (← param)
+      while (← listComma) do params := params.push (← param)
+      closeList
       discard (expectKw ")")
       return params
     let params ← group

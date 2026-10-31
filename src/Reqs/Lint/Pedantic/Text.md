@@ -141,12 +141,12 @@ command.
 
 The fix removes the comma. It changes no expression, so it keeps what the
 spec means and every guard. It leaves the space before the `}` or `]` as
-it is, which `fren fix --fmt` then formats. `fren fmt` removes the same
-commas from a list in braces, which is not vertical where the `}` follows
-the comma on its line. It leaves the commas of a sequence literal as they
-are, but never adds one there. `lint::unnecessary_trailing_comma` states
-when it fires, and [`fmt::trailing_comma_lint`](../../Fmt.md#trailing-commas)
-that `fren fmt` removes what it reports in braces:
+it is, which `fren fix --fmt` then formats. `fren fmt` leaves none of
+these commas: it writes a list's last comma only where the list is
+vertical, and its closing bracket then starts a line.
+`lint::unnecessary_trailing_comma` states when it fires, and
+[`fmt::trailing_comma_lint`](../../Fmt.md#trailing-commas) that `fren
+fmt` leaves nothing that it reports:
 
 ```fren
 set_option fren.evidence "enumerated" in
@@ -159,12 +159,12 @@ pub proc unnecessary_trailing_comma(
 
 The refinements below check the fix of a sequence literal: a procedure as
 written, one as fixed, and a refinement each way. `fren fmt` would remove
-the comma of a list in braces, so only the sequence keeps it here:
+the comma, so the written one is left unformatted:
 
 ```fren
 set_option fren.lint.unnecessary_trailing_comma "allow" in
 pub proc trailing_comma_written(x: Int): (det q: Seq<Int>) {
-    out q := [x, 1,]
+    out q := [x, 1]
 }
 
 pub proc trailing_comma_fixed(x: Int): (det q: Seq<Int>) {

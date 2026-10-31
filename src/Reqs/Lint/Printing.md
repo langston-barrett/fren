@@ -314,18 +314,44 @@ set_option fren.lint.undecidable "allow" in
 pub fn printed(t: FixTree): String := match t {
     FixTree::Written(s, _, _, _) => s,
     FixTree::Bin(o, a, b) =>
-        enclosed(printed(a), bare?(a, op_precedence(o), op_assoc(o), false, true)) ++ " " ++ lexeme(o) ++ " "
-        ++ enclosed(printed(b), bare?(b, op_precedence(o), op_assoc(o), true, false)),
-    FixTree::Not(a) => "not " ++ enclosed(printed(a), bare?(a, Precedence::Not, Assoc::Right, true, false)),
-    FixTree::Neg(a) => negated(enclosed(printed(a), bare?(a, Precedence::Negative, Assoc::Right, true, false))),
+        enclosed(
+            printed(a),
+            bare?(a, op_precedence(o), op_assoc(o), false, true)
+        ) ++ " " ++ lexeme(o) ++ " "
+        ++ enclosed(
+            printed(b),
+            bare?(b, op_precedence(o), op_assoc(o), true, false)
+        ),
+    FixTree::Not(a) => "not " ++ enclosed(
+        printed(a),
+        bare?(a, Precedence::Not, Assoc::Right, true, false)
+    ),
+    FixTree::Neg(a) => negated(
+        enclosed(
+            printed(a),
+            bare?(a, Precedence::Negative, Assoc::Right, true, false)
+        )
+    ),
     FixTree::When(negated?, c, d) =>
         (if negated? then "unless " else "when ")
-        ++ enclosed(printed(c), bare?(c, Precedence::Open, Assoc::NonAssoc, false, true))
-        ++ ", " ++ enclosed(printed(d), bare?(d, Precedence::Open, Assoc::Right, true, false)),
+        ++ enclosed(
+            printed(c),
+            bare?(c, Precedence::Open, Assoc::NonAssoc, false, true)
+        )
+        ++ ", " ++ enclosed(
+            printed(d),
+            bare?(d, Precedence::Open, Assoc::Right, true, false)
+        ),
     FixTree::If(c, a, b) => "if " ++ printed(c) ++ " then " ++ printed(a) ++ " else " ++ printed(b),
     FixTree::Test(e, p) =>
-        enclosed(printed(e), bare?(e, Precedence::Comparison, Assoc::NonAssoc, false, true)) ++ " is " ++ p,
-    FixTree::Field(e, x) => enclosed(printed(e), bare?(e, Precedence::Atom, Assoc::Left, false, true) and receivable?(e)) ++ "." ++ x,
+        enclosed(
+            printed(e),
+            bare?(e, Precedence::Comparison, Assoc::NonAssoc, false, true)
+        ) ++ " is " ++ p,
+    FixTree::Field(e, x) => enclosed(
+        printed(e),
+        bare?(e, Precedence::Atom, Assoc::Left, false, true) and receivable?(e)
+    ) ++ "." ++ x,
 }
 ```
 
@@ -337,31 +363,75 @@ the solver does not unfold a recursive function that builds a `String`:
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-pub proc print(tree: FixTree): (det text: String, det precedence: Precedence, det open?, det receiver?) {
+pub proc print(tree: FixTree): (
+    det text: String,
+    det precedence: Precedence,
+    det open?,
+    det receiver?,
+) {
     out text := printed(tree)
     out precedence := precedence_of(tree)
     out open? := ends_open?(tree)
     out receiver? := receivable?(tree)
 
-    expect looser_right: when tree = FixTree::Bin(BinOp::And, atom("a"), FixTree::Bin(BinOp::Or, atom("b"), atom("c"))),
+    expect looser_right: when tree = FixTree::Bin(
+        BinOp::And,
+        atom("a"),
+        FixTree::Bin(BinOp::Or, atom("b"), atom("c"))
+    ),
         text = "a and (b or c)"
-    expect left_associative: when tree = FixTree::Bin(BinOp::Minus, FixTree::Bin(BinOp::Minus, atom("a"), atom("b")), atom("c")),
+    expect left_associative: when tree = FixTree::Bin(
+        BinOp::Minus,
+        FixTree::Bin(BinOp::Minus, atom("a"), atom("b")),
+        atom("c")
+    ),
         text = "a - b - c"
-    expect right_kept: when tree = FixTree::Bin(BinOp::Minus, atom("a"), FixTree::Bin(BinOp::Minus, atom("b"), atom("c"))),
+    expect right_kept: when tree = FixTree::Bin(
+        BinOp::Minus,
+        atom("a"),
+        FixTree::Bin(BinOp::Minus, atom("b"), atom("c"))
+    ),
         text = "a - (b - c)"
-    expect non_associative: when tree = FixTree::Bin(BinOp::Eq, FixTree::Bin(BinOp::Eq, atom("a"), atom("b")), atom("c")),
+    expect non_associative: when tree = FixTree::Bin(
+        BinOp::Eq,
+        FixTree::Bin(BinOp::Eq, atom("a"), atom("b")),
+        atom("c")
+    ),
         text = "(a = b) = c"
-    expect open_last: when tree = FixTree::Bin(BinOp::And, atom("a"), FixTree::Written("x + if p? then 1 else 2", Precedence::Sum, true, true)),
+    expect open_last: when tree = FixTree::Bin(
+        BinOp::And,
+        atom("a"),
+        FixTree::Written("x + if p? then 1 else 2", Precedence::Sum, true, true)
+    ),
         text = "a and x + if p? then 1 else 2" and open?
-    expect open_followed: when tree = FixTree::Bin(BinOp::And, FixTree::Written("x + if p? then 1 else 2", Precedence::Sum, true, true), atom("a")),
+    expect open_followed: when tree = FixTree::Bin(
+        BinOp::And,
+        FixTree::Written("x + if p? then 1 else 2", Precedence::Sum, true, true),
+        atom("a")
+    ),
         text = "(x + if p? then 1 else 2) and a" and not open?
-    expect conditional_operand: when tree = FixTree::Bin(BinOp::And, atom("a"), FixTree::If(atom("p?"), atom("q?"), atom("r?"))),
+    expect conditional_operand: when tree = FixTree::Bin(
+        BinOp::And,
+        atom("a"),
+        FixTree::If(atom("p?"), atom("q?"), atom("r?"))
+    ),
         text = "a and (if p? then q? else r?)"
-    expect test_scrutinee: when tree = FixTree::Not(FixTree::Test(FixTree::Written("a or b", Precedence::Or, false, true), "E::A | E::B")),
+    expect test_scrutinee: when tree = FixTree::Not(
+        FixTree::Test(
+            FixTree::Written("a or b", Precedence::Or, false, true),
+            "E::A | E::B"
+        )
+    ),
         text = "not (a or b) is E::A | E::B"
     expect double_negation: when tree = FixTree::Neg(FixTree::Neg(atom("x"))), text = "- -x"
-    expect receiver: when tree = FixTree::Field(FixTree::Written("a + b", Precedence::Sum, false, true), "abs"), text = "(a + b).abs"
-    expect variant_receiver: when tree = FixTree::Field(FixTree::Written("E::A", Precedence::Atom, false, false), "min"),
+    expect receiver: when tree = FixTree::Field(
+        FixTree::Written("a + b", Precedence::Sum, false, true),
+        "abs"
+    ), text = "(a + b).abs"
+    expect variant_receiver: when tree = FixTree::Field(
+        FixTree::Written("E::A", Precedence::Atom, false, false),
+        "min"
+    ),
         text = "(E::A).min"
     expect predicate_receiver: when tree = FixTree::Field(FixTree::Field(atom("x"), "empty?"), "len"), text = "(x.empty?).len"
 }

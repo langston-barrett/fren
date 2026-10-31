@@ -74,7 +74,14 @@ set_option fren.evidence "enumerated" in
 pub proc complement(op: Comparison): (det result: Comparison) {
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
 
-    ensure rule: result = match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
+    ensure rule: result = match op {
+        Eq => Ne,
+        Ne => Eq,
+        Lt => Ge,
+        Ge => Lt,
+        Gt => Le,
+        Le => Gt,
+    }
 
     expect changes: result != op
 }

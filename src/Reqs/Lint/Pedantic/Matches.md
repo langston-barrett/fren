@@ -219,10 +219,22 @@ pub proc single_match_else_written(light: Light, lamp: Lamp, n: Int, a: Int, b: 
     det x: Int,
     det y: Int,
 ) {
-    out v := match light { Light::Red => a, _ => b }
-    out w := match lamp { Lamp::Lit(Light::Red | Light::Amber) => a, _ => b }
-    out x := match n { 0..=9 => a, _ => b }
-    out y := match n { 1 | 3 => a, _ => b }
+    out v := match light {
+        Light::Red => a,
+        _ => b,
+    }
+    out w := match lamp {
+        Lamp::Lit(Light::Red | Light::Amber) => a,
+        _ => b,
+    }
+    out x := match n {
+        0..=9 => a,
+        _ => b,
+    }
+    out y := match n {
+        1 | 3 => a,
+        _ => b,
+    }
 }
 
 pub proc single_match_else_fixed(light: Light, lamp: Lamp, n: Int, a: Int, b: Int): (
@@ -264,7 +276,11 @@ pub fn pat_binds?(p: Pat) := match p {
 }
 
 -- The test of the fix of `single_match_else` on the pattern `p`.
-pub fn fix_test?(p: Pat, x: Val) := match p { Pat::Lit(k) => x.n = k, Pat::Tag(t) => x.tag = t, _ => pat_matches?(p, x) }
+pub fn fix_test?(p: Pat, x: Val) := match p {
+    Pat::Lit(k) => x.n = k,
+    Pat::Tag(t) => x.tag = t,
+    _ => pat_matches?(p, x),
+}
 
 pub proc single_match_else(
     first: Pat,              -- the first arm's pattern
@@ -285,7 +301,16 @@ pub proc single_match_else(
 
     ensure rule: fires? iff (test? and wildcard? and not other?)
 
-    expect keeps_meaning: when fires?, body_value(if pat_matches?(first, x) then a else b, -1, 0, -1, 0, -1, 0, o)
+    expect keeps_meaning: when fires?, body_value(
+        if pat_matches?(first, x) then a else b,
+        -1,
+        0,
+        -1,
+        0,
+        -1,
+        0,
+        o
+    )
         = body_value(if fix_test?(first, x) then a else b, -1, 0, -1, 0, -1, 0, o)
     expect binders_kept: when pat_binds?(first), not fires?
 }
@@ -310,8 +335,14 @@ also in `pedantic`. The refinements below check the fix on one example:
 ```fren
 set_option fren.lint.match_bool "allow" in
 pub proc match_bool_written(c?, a: Int, b: Int): (det v: Int, det w: Int) {
-    out v := match c? { true => a, false => b }
-    out w := match c? { false => a, _ => b }
+    out v := match c? {
+        true => a,
+        false => b,
+    }
+    out w := match c? {
+        false => a,
+        _ => b,
+    }
 }
 
 pub proc match_bool_fixed(c?, a: Int, b: Int): (det v: Int, det w: Int) {
@@ -335,7 +366,11 @@ and checks the fix for each value of the scrutinee:
 ```fren
 pub enum BoolPat { True, False, Wild }
 
-pub fn bool_matches?(p: BoolPat, c?) := match p { BoolPat::True => c?, BoolPat::False => not c?, BoolPat::Wild => true }
+pub fn bool_matches?(p: BoolPat, c?) := match p {
+    BoolPat::True => c?,
+    BoolPat::False => not c?,
+    BoolPat::Wild => true,
+}
 
 pub proc match_bool(
     first: BoolPat,
@@ -357,8 +392,26 @@ pub proc match_bool(
     ensure rule: fires? iff (literals? and not other?)
 
     expect keeps_meaning: when fires?,
-        body_value(if bool_matches?(first, c?) then a else b, -1, 0, -1, 0, -1, 0, o)
-        = body_value(if c? iff first = BoolPat::True then a else b, -1, 0, -1, 0, -1, 0, o)
+        body_value(
+            if bool_matches?(first, c?) then a else b,
+            -1,
+            0,
+            -1,
+            0,
+            -1,
+            0,
+            o
+        )
+        = body_value(
+            if c? iff first = BoolPat::True then a else b,
+            -1,
+            0,
+            -1,
+            0,
+            -1,
+            0,
+            o
+        )
 }
 ```
 
@@ -384,12 +437,18 @@ The refinements below check the fix on one example:
 set_option fren.lint.unnested_or_patterns "allow" in
 set_option fren.evidence "enumerated" in
 pub proc unnested_or_written(lamp: Lamp): (det v: Int) {
-    out v := match lamp { Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1, _ => 0 }
+    out v := match lamp {
+        Lamp::Lit(Light::Red) | Lamp::Lit(Light::Amber) => 1,
+        _ => 0,
+    }
 }
 
 set_option fren.evidence "enumerated" in
 pub proc unnested_or_fixed(lamp: Lamp): (det v: Int) {
-    out v := match lamp { Lamp::Lit(Light::Red | Light::Amber) => 1, _ => 0 }
+    out v := match lamp {
+        Lamp::Lit(Light::Red | Light::Amber) => 1,
+        _ => 0,
+    }
 }
 
 expect unnested_or_sound(lamp: lint::Lamp) {
@@ -410,7 +469,10 @@ equal to it, and checks that the nested or-pattern matches what the two
 did:
 
 ```fren
-pub fn variant_tag(p: Pat): Int := match p { Pat::Variant(t, _, _) => t, _ => 0 }
+pub fn variant_tag(p: Pat): Int := match p {
+    Pat::Variant(t, _, _) => t,
+    _ => 0,
+}
 
 pub proc unnested_or_patterns(first: Pat, second: Pat, x: Val): (det fires?) {
     -- they name the same variant
@@ -456,7 +518,11 @@ pub proc manual_table_written(n: Int): (det v: Int) {
 }
 
 pub proc manual_table_fixed(n: Int): (det v: Int) {
-    out v := table { n > 10 => 2, n < 0 => 1, _ => 0 }
+    out v := table {
+        n > 10 => 2,
+        n < 0 => 1,
+        _ => 0,
+    }
 }
 
 expect manual_table_sound(n: Int) {
@@ -479,7 +545,10 @@ holds, or of the `_` row where none does:
 -- another condition.
 pub enum Test { VariantOf(Int, Int), Other(Int) }
 
-pub fn scrutinee_of(t: Test): Int := match t { Test::VariantOf(x, _) => x, Test::Other(_) => -1 }
+pub fn scrutinee_of(t: Test): Int := match t {
+    Test::VariantOf(x, _) => x,
+    Test::Other(_) => -1,
+}
 
 pub fn chain_value(h: Seq<Bool>, v: Seq<Int>, z: Int): Int :=
     if h != [] and v != [] and h[0] then v[0]
@@ -566,11 +635,21 @@ pub enum Sensor { Reading(Int), Fault(Int), Idle }
 
 set_option fren.lint.match_could_be_table "allow" in
 pub proc match_could_be_table_written(s: Sensor): (det v: Int) {
-    out v := match s { Sensor::Reading(..=0) => 0, Sensor::Reading(1..) => 1, Sensor::Fault(_) => 2, _ => 3 }
+    out v := match s {
+        Sensor::Reading(..=0) => 0,
+        Sensor::Reading(1..) => 1,
+        Sensor::Fault(_) => 2,
+        _ => 3,
+    }
 }
 
 pub proc match_could_be_table_fixed(s: Sensor): (det v: Int) {
-    out v := table s { Sensor::Reading(..=0) => 0, Sensor::Reading(1..) => 1, Sensor::Fault(_) => 2, _ => 3 }
+    out v := table s {
+        Sensor::Reading(..=0) => 0,
+        Sensor::Reading(1..) => 1,
+        Sensor::Fault(_) => 2,
+        _ => 3,
+    }
 }
 
 expect match_could_be_table_sound(s: lint::Sensor) {

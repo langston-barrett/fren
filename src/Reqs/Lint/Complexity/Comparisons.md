@@ -151,7 +151,14 @@ fn disjoint?(op1: Comparison, a: Int, op2: Comparison, b: Int) :=
 
 fn both?(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) := compares?(op1, x, a) and compares?(op2, x, b)
 
-fn complement_of(op: Comparison): Comparison := match op { Eq => Ne, Ne => Eq, Lt => Ge, Ge => Lt, Gt => Le, Le => Gt }
+fn complement_of(op: Comparison): Comparison := match op {
+    Eq => Ne,
+    Ne => Eq,
+    Lt => Ge,
+    Ge => Lt,
+    Gt => Le,
+    Le => Gt,
+}
 
 expect complement_of_agrees(c_op: Comparison) {
     call c := complement(c_op)
@@ -210,7 +217,13 @@ expect redundant_not_double(
     d_first: Comparison,
     d_second: Comparison,
 ) {
-    call r := redundant_comparisons(r_conjunction?, r_first, r_first_bound, r_second, r_second_bound)
+    call r := redundant_comparisons(
+        r_conjunction?,
+        r_first,
+        r_first_bound,
+        r_second,
+        r_second_bound,
+    )
     call d := double_comparison(d_conjunction?, d_first, d_second)
     expect redundant_not_double: when r.first_bound = r.second_bound and r.conjunction? = d.conjunction?
         and r.first = d.first and r.second = d.second,
@@ -261,7 +274,11 @@ of the operands, `a` and `b` with their offsets, holds exactly when the
 fix does:
 
 ```fren
-fn offset_value(o: Offset): Int := match o { Zero => 0, PlusOne => 1, MinusOne => -1 }
+fn offset_value(o: Offset): Int := match o {
+    Zero => 0,
+    PlusOne => 1,
+    MinusOne => -1,
+}
 
 proc int_plus_one_exact(
     op: Comparison,
@@ -273,8 +290,11 @@ proc int_plus_one_exact(
     call p := int_plus_one(op, left, right)
 
     expect exact: when p.fires?, compares?(op, a + offset_value(left), b + offset_value(right))
-        iff compares?(p.result, if p.drop_left? then a else a + offset_value(left),
-        if p.drop_left? then b + offset_value(right) else b)
+        iff compares?(
+            p.result,
+            if p.drop_left? then a else a + offset_value(left),
+            if p.drop_left? then b + offset_value(right) else b
+        )
 }
 ```
 

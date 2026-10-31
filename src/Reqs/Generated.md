@@ -197,7 +197,10 @@ pub proc prelude_type(
     ty: PreludeType,
     args: Seq<String>,             -- the Lean types of its type arguments, as written
 ): (det lean: String, det lean_args: Seq<String>) {
-    out lean := match ty { PreludeType::Option => "Option", PreludeType::Result => "Except" }
+    out lean := match ty {
+        PreludeType::Option => "Option",
+        PreludeType::Result => "Except",
+    }
     -- `Except`'s arguments are `Result`'s, swapped.
     out lean_args := if ty = PreludeType::Result and args.len = 2 then [args[1], args[0]]
         else args
@@ -228,7 +231,10 @@ pub proc prelude_variant(variant: PreludeVariant): (
         Err => ["Except.error.field1"],
     }
     -- Its constructor's position among the Lean type's: `Except.error` is first.
-    out position := match variant { None | Err => 0, Some | Ok => 1 }
+    out position := match variant {
+        None | Err => 0,
+        Some | Ok => 1,
+    }
 
     -- A selector is the constructor's, as lean-smt names them.
     expect named: selectors = [] or selectors[0].starts_with?(ctor ++ ".")

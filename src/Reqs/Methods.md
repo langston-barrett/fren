@@ -114,7 +114,13 @@ every behaviour, and a pass of one that passes on a proof is bounded
 unless it does:
 
 ```fren
-expect enumeration_within_matrix(kind: check::Kind, verdict: check::Verdict, conflict?, exact?, outputs_exact?) {
+expect enumeration_within_matrix(
+    kind: check::Kind,
+    verdict: check::Verdict,
+    conflict?,
+    exact?,
+    outputs_exact?,
+) {
     use check
     call e := enumerated_verdict(kind, verdict, conflict?, exact?, outputs_exact?)
     call cell := method_cell(kind, check::ProofMethod::Enumerated)
@@ -206,10 +212,18 @@ pub proc combined(
     call lean_cell := method_cell(kind, Lean)
     -- What each selected method contributes, as its cell allows.
     let s: Contribution := if Solver in selected
-        then contribution(solver_cell.cell, if proof?(kind) then by_proof.verdict else by_witness.verdict, false)
+        then contribution(
+            solver_cell.cell,
+            if proof?(kind) then by_proof.verdict else by_witness.verdict,
+            false
+        )
         else Nothing
     let e: Contribution := if Enumerated in selected
-        then contribution(enumerated_cell.cell, enumeration.reported, enumeration.bounded?) else Nothing
+        then contribution(
+            enumerated_cell.cell,
+            enumeration.reported,
+            enumeration.bounded?
+        ) else Nothing
     let r: Contribution := if Random in selected then contribution(random_cell.cell, random, false) else Nothing
     let l: Contribution := if Lean in selected then contribution(lean_cell.cell, lean, false) else Nothing
 
@@ -421,9 +435,24 @@ expect by_evidence_follows(kind: check::Kind, tested?, enumerated?, obligation?)
     assume obligation_definedness: when (obligation?), (kind) = check::Kind::Definedness
     call run := by_testing(kind, tested?)
     call chosen := by_evidence(kind, tested?, enumerated?, obligation?)
-    call testing := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Random, obligation?)
-    call testing_any := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Random, false)
-    call enumeration := method_run(kind, check::CheckedItem::Component, check::ProofMethod::Enumerated, obligation?)
+    call testing := method_run(
+        kind,
+        check::CheckedItem::Component,
+        check::ProofMethod::Random,
+        obligation?,
+    )
+    call testing_any := method_run(
+        kind,
+        check::CheckedItem::Component,
+        check::ProofMethod::Random,
+        false,
+    )
+    call enumeration := method_run(
+        kind,
+        check::CheckedItem::Component,
+        check::ProofMethod::Enumerated,
+        obligation?,
+    )
     expect testing_run: when (tested?), ((run.run) = check::Run::Skipped)
         iff (testing_any.dispatch) = check::Dispatch::Skip
     expect enumeration_skips: when (enumerated?), ((chosen.method) = check::Method::Skipped)

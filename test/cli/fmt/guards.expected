@@ -1,9 +1,12 @@
 --- test/cli/fmt/guards.fren
 +++ test/cli/fmt/guards.fren
-@@ -9 +9 @@
+@@ -9 +9,4 @@
 -    ensure a: y = match m {Mode::Off if t>0=>1,_=>0}
-+    ensure a: y = match m { Mode::Off if t > 0 => 1, _ => 0 }
-@@ -11,5 +11,5 @@
++    ensure a: y = match m {
++        Mode::Off if t > 0 => 1,
++        _ => 0,
++    }
+@@ -11,5 +14,5 @@
 -    | Mode::Off
 -          | Mode::Heat if t > 0 =>
 -    1,

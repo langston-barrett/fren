@@ -442,8 +442,20 @@ expect newtype_not_abstract(
     assume f_own_record: when f_own? and not f_payload?, f_kind = ValueType::RecordTy
     assume f_abstract_kind: when f_kind = ValueType::AbstractTy, f_abstract_within?
     assume f_in_set: when f_own_in_set?, f_kind = ValueType::SetTy and not f_own?
-    call n := newtype(n_n_fields, n_field_accepted?, n_ty, n_underlying, n_constituents)
-    call f := field_type(f_kind, f_abstract_within?, f_own?, f_own_in_set?, f_payload?)
+    call n := newtype(
+        n_n_fields,
+        n_field_accepted?,
+        n_ty,
+        n_underlying,
+        n_constituents,
+    )
+    call f := field_type(
+        f_kind,
+        f_abstract_within?,
+        f_own?,
+        f_own_in_set?,
+        f_payload?,
+    )
     expect newtype_not_abstract: when n.n_fields = 1 and (n.field_accepted? iff f.accepted?) and f.abstract_within? and not f.payload?,
         not n.accepted?
 }
@@ -730,10 +742,19 @@ pub proc contract_arguments(
 }
 
 set_option fren.lint.undecidable "allow" in
-expect arguments_detail(clause: lang::ClauseKind, own?, params: Seq<lang::Written>, args: Seq<lang::Written>) {
+expect arguments_detail(
+    clause: lang::ClauseKind,
+    own?,
+    params: Seq<lang::Written>,
+    args: Seq<lang::Written>,
+) {
     use lang
     call concrete := contract_arguments(clause, own?, params, args)
-    refines concrete contract_application(clause, own?, (args) = (params) and not lang::Written::Other in (params))
+    refines concrete contract_application(
+        clause,
+        own?,
+        (args) = (params) and not lang::Written::Other in (params),
+    )
 }
 ```
 
@@ -813,7 +834,11 @@ pub proc fn_member(
     det?,                    -- it is written `det`
 ): (det verdict: FnVerdict) {
     ensure rule: verdict = (if member = FnMemberKind::Claim then FnVerdict::NotYet
-        else if det? or member in {FnMemberKind::Exists, FnMemberKind::Call, FnMemberKind::Evidence}
+        else if det? or member in {
+            FnMemberKind::Exists,
+            FnMemberKind::Call,
+            FnMemberKind::Evidence,
+        }
         then FnVerdict::NotFunctions else FnVerdict::Accepted)
 
     expect contract: when not det? and member in {FnMemberKind::Assumption, FnMemberKind::Guarantee}, verdict = FnVerdict::Accepted

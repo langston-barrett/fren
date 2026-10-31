@@ -53,7 +53,10 @@ pub fn run_test(s: Shape, patterns: Seq<lang::Pattern>): RunTest := match s {
 -- The alternatives that the lint writes in the fix of the run, of the
 -- operand at position `run.first + q`, and how many operands they are of.
 set_option fren.lint.undecidable "allow" in
-pub proc manual_pattern_test_fix_alts(operands: Seq<Shape>, conj?, run: Span, q: Int): (det n_operands: Int, det alts: Seq<Alt>) {
+pub proc manual_pattern_test_fix_alts(operands: Seq<Shape>, conj?, run: Span, q: Int): (
+    det n_operands: Int,
+    det alts: Seq<Alt>,
+) {
     -- The run's operands are read.
     assume read: 0 <= run.first <= run.last
         and (forall (i: Int), when run.first <= i <= run.last, reading_at(operands, conj?, i) != None)

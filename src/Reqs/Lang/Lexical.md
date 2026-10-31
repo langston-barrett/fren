@@ -60,7 +60,9 @@ accepts the declaration.
 pub mod lang
 
 pub proc identifier(lexeme: String): (det accepted?) {
-    ensure rule: accepted? iff lexeme.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?")
+    ensure rule: accepted? iff lexeme.matches?(
+        r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?"
+    )
 
     expect primed: when lexeme = "x'", accepted?
     expect components: when lexeme = "w.x.y?", accepted?
@@ -204,9 +206,42 @@ which:
 
 ```fren
 pub const RESERVED: Set<String> := {
-    "mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "expect", "impl", "interp",
-    "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join",
-    "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "with", "let", "where", "table",
+    "mod",
+    "use",
+    "pub",
+    "ordered",
+    "enum",
+    "struct",
+    "type",
+    "fn",
+    "const",
+    "proc",
+    "expect",
+    "impl",
+    "interp",
+    "tested",
+    "trusted",
+    "iff",
+    "and",
+    "or",
+    "union",
+    "inter",
+    "minus",
+    "subset",
+    "join",
+    "div",
+    "is",
+    "in",
+    "if",
+    "then",
+    "else",
+    "match",
+    "forall",
+    "exists",
+    "with",
+    "let",
+    "where",
+    "table",
 }
 
 pub proc reserved_word(
@@ -478,8 +513,38 @@ the rule assumes that `lexeme` is a punctuator:
 ```fren
 -- Longest first, as the lexer tries them.
 pub const PUNCTUATORS: Set<String> := {
-    "::*", "::{", "..=", "::", "..", "==", "=>", "&&", "||", "|", "!=", "<=", "<-", "->", ">=", ":=", "{", "}",
-    "(", ")", "[", "]", ",", ":", ".", "*", "=", "<", ">", "++", "+", "-",
+    "::*",
+    "::{",
+    "..=",
+    "::",
+    "..",
+    "==",
+    "=>",
+    "&&",
+    "||",
+    "|",
+    "!=",
+    "<=",
+    "<-",
+    "->",
+    ">=",
+    ":=",
+    "{",
+    "}",
+    "(",
+    ")",
+    "[",
+    "]",
+    ",",
+    ":",
+    ".",
+    "*",
+    "=",
+    "<",
+    ">",
+    "++",
+    "+",
+    "-",
 }
 
 pub proc punctuator(lexeme: String): (det accepted?) {
@@ -488,8 +553,38 @@ pub proc punctuator(lexeme: String): (det accepted?) {
     -- The punctuators listed above, the three of other languages, and
     -- Lean's `<-`.
     expect listed: accepted? iff lexeme in {
-        "::", "::*", "::{", ":", ":=", ",", "(", ")", "{", "}", "[", "]", ".", "..", "..=", "=>", "|", "->",
-        "=", "!=", "<", "<=", ">", ">=", "+", "++", "-", "*", "==", "&&", "||", "<-",
+        "::",
+        "::*",
+        "::{",
+        ":",
+        ":=",
+        ",",
+        "(",
+        ")",
+        "{",
+        "}",
+        "[",
+        "]",
+        ".",
+        "..",
+        "..=",
+        "=>",
+        "|",
+        "->",
+        "=",
+        "!=",
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "+",
+        "++",
+        "-",
+        "*",
+        "==",
+        "&&",
+        "||",
+        "<-",
     }
 }
 

@@ -123,7 +123,11 @@ proc const_is_empty_exact(
     call p := const_is_empty(op, bound, left?, set?, n)
 
     expect exact: when p.fires?,
-        compares?(op, if left? then length else bound, if left? then bound else length) iff p.value?
+        compares?(
+            op,
+            if left? then length else bound,
+            if left? then bound else length
+        ) iff p.value?
 }
 ```
 
@@ -278,7 +282,9 @@ pub proc duplicate_elements_members(
     forms: Seq<String>,           -- the literal's elements, each as written
     elements: Seq<Scoped>,        -- the elements, as written in their scope
     scope: Set<lang::Id>,         -- the literal's scope
-    i: lang::Interp, env: lang::Env, k: Int,
+    i: lang::Interp,
+    env: lang::Env,
+    k: Int,
     context: lang::TestContext,   -- what an element's chain of `and` that holds a pattern test is a part of
     operands: Nat,                -- the chain's operands
     test_at: Nat,                 -- the test's position among them, from 0

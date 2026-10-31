@@ -210,7 +210,11 @@ message from its level:
 pub proc severity(level: Level): (det result: Severity) {
     use view::Severity::{Error, Info, Silent, Warning}
 
-    ensure rule: result = match level { Allow | Expect => Silent, Warn => Warning, Deny | Forbid => Error }
+    ensure rule: result = match level {
+        Allow | Expect => Silent,
+        Warn => Warning,
+        Deny | Forbid => Error,
+    }
 
     expect never_info: result != Info
     expect silent_below_warn: result = Silent iff level in {Allow, Expect}

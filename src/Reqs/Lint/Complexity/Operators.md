@@ -158,8 +158,16 @@ pub struct PairNegation { first: Operand, second: Operand, obligation? }
 
 -- Some conjunct is `not (x and y)`.
 fn pair_negated?(pairs: Set<PairNegation>, x: Operand, y: Operand) :=
-    PairNegation { first := x, second := y, obligation? := true } in pairs
-    or PairNegation { first := x, second := y, obligation? := false } in pairs
+    PairNegation {
+        first := x,
+        second := y,
+        obligation? := true,
+    } in pairs
+    or PairNegation {
+        first := x,
+        second := y,
+        obligation? := false,
+    } in pairs
 
 -- `x` is an operand of some conjunct.
 fn named?(pairs: Set<PairNegation>, x: Operand) := exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
@@ -176,7 +184,11 @@ pub proc manual_at_most_one(
         and (forall (x: Operand), not pair_negated?(pairs, x, x))
         and (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y),
         pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x))
-        and not (exists (x y: Operand), PairNegation { first := x, second := y, obligation? := true } in pairs))
+        and not (exists (x y: Operand), PairNegation {
+            first := x,
+            second := y,
+            obligation? := true,
+        } in pairs))
     ensure fix: exactly? iff (disjunction != {} and (forall (x: Operand), x in disjunction iff named?(pairs, x)))
 }
 ```
@@ -224,7 +236,11 @@ pub struct WrittenNegation { first: String, second: String, obligation? }
 
 -- Some conjunct is `not (x and y)`.
 fn written_negated?(pairs: Set<WrittenNegation>, x: String, y: String) :=
-    exists (o?: Bool), WrittenNegation { first := x, second := y, obligation? := o? } in pairs
+    exists (o?: Bool), WrittenNegation {
+        first := x,
+        second := y,
+        obligation? := o?,
+    } in pairs
 
 -- `x` is an operand of some conjunct.
 set_option fren.lint.undecidable "allow" in
@@ -305,7 +321,9 @@ pub proc manual_at_most_one_guarded(q: Seq<Int>, i: Int, x: Int, z?): (indexed?,
     ensure indexes: indexed? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
         where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and z?, big? := q[i] > 0
     ensure tables: tabled? iff not (pos? and t?) and not (pos2? and t?) and not (pos? and pos2?)
-        where pos? := x > 0, pos2? := x > 0 and z?, t? := table { x > 0 => true }
+        where pos? := x > 0, pos2? := x > 0 and z?, t? := table {
+            x > 0 => true,
+        }
 }
 ```
 
@@ -352,7 +370,11 @@ pub proc manual_at_most_one_defined(
     assume no_obligation: unless obligation?, eval(i, env, a) is Outcome::Defined(_) and eval(i, env, b) is Outcome::Defined(_)
 
     let conjunct: Outcome := eval(i, env, Expr::And(a, b))
-    let counted: Outcome := eval(i, env, Expr::Count(Cardinality::AtMost, Expr::Cons(a, Expr::Cons(b, Expr::Nil))))
+    let counted: Outcome := eval(
+        i,
+        env,
+        Expr::Count(Cardinality::AtMost, Expr::Cons(a, Expr::Cons(b, Expr::Nil)))
+    )
 
     ensure kept: unless obligation?, conjunct is Outcome::Defined(_) and counted is Outcome::Defined(_)
     -- With an obligation, the `and`'s guard can be what makes it well-defined.

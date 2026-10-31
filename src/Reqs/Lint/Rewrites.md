@@ -128,14 +128,26 @@ pub fn fix_all(l: ExprLint, e: Expr): Expr := match e {
     Expr::Or(a, b) => fix_at(l, Expr::Or(fix_all(l, a), fix_all(l, b))),
     Expr::If(c, t, f) => fix_at(l, Expr::If(fix_all(l, c), fix_all(l, t), fix_all(l, f))),
     Expr::Is(s, p) => fix_at(l, Expr::Is(fix_all(l, s), p)),
-    Expr::Match(s, p, g, b, rest) => fix_at(l, Expr::Match(fix_all(l, s), p, fix_all(l, g), fix_all(l, b), fix_all(l, rest))),
+    Expr::Match(s, p, g, b, rest) => fix_at(
+        l,
+        Expr::Match(
+            fix_all(l, s),
+            p,
+            fix_all(l, g),
+            fix_all(l, b),
+            fix_all(l, rest)
+        )
+    ),
     Expr::Cons(a, rest) => fix_at(l, Expr::Cons(fix_all(l, a), fix_all(l, rest))),
     Expr::Construct(c, args) => fix_at(l, Expr::Construct(c, fix_all(l, args))),
     Expr::Project(a, c, k) => fix_at(l, Expr::Project(fix_all(l, a), c, k)),
     Expr::Index(q, k) => fix_at(l, Expr::Index(fix_all(l, q), fix_all(l, k))),
     Expr::Method(m, r, args) => fix_at(l, Expr::Method(m, fix_all(l, r), fix_all(l, args))),
     Expr::Count(c, args) => fix_at(l, Expr::Count(c, fix_all(l, args))),
-    Expr::Apply(f, args, ps, body) => fix_at(l, Expr::Apply(f, fix_all(l, args), ps, fix_all(l, body))),
+    Expr::Apply(f, args, ps, body) => fix_at(
+        l,
+        Expr::Apply(f, fix_all(l, args), ps, fix_all(l, body))
+    ),
     Expr::Call(f, args) => fix_at(l, Expr::Call(f, fix_all(l, args))),
     Expr::Recur(f, args) => fix_at(l, Expr::Recur(f, fix_all(l, args))),
     _ => fix_at(l, e),

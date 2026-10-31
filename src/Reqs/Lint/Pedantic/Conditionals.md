@@ -97,7 +97,10 @@ pub proc branches_sharing_code(
     out shared_right? := then_right = else_right
     -- What the `if` that the fix moves out, `if C then A else B`, mentions.
     out moved_mentioned :=
-        lang::mentioned_by(lang::ExprKind::Compound, condition_mentioned union a_mentioned union b_mentioned)
+        lang::mentioned_by(
+            lang::ExprKind::Compound,
+            condition_mentioned union a_mentioned union b_mentioned
+        )
 
     -- The product the fix would write, for `*`.
     call product := lang::linear_product(moved_mentioned, shared_mentioned)
@@ -140,10 +143,30 @@ expect branches_sharing_value(
     i: lang::Interp,
     env: lang::Env,
 ) {
-    call b := branches_sharing_code(b_binders, b_then_op, b_else_op, b_then_left, b_then_right, b_else_left, b_else_right, b_condition_mentioned, b_a_mentioned, b_b_mentioned, b_shared_mentioned)
+    call b := branches_sharing_code(
+        b_binders,
+        b_then_op,
+        b_else_op,
+        b_then_left,
+        b_then_right,
+        b_else_left,
+        b_else_right,
+        b_condition_mentioned,
+        b_a_mentioned,
+        b_b_mentioned,
+        b_shared_mentioned,
+    )
     expect branches_sharing_value: when b.fires?,
-        lang::eval(i, env, written(if b.shared_left? then b.then_left else b.then_right))
-        = lang::eval(i, env, written(if b.shared_left? then b.else_left else b.else_right))
+        lang::eval(
+            i,
+            env,
+            written(if b.shared_left? then b.then_left else b.then_right)
+        )
+        = lang::eval(
+            i,
+            env,
+            written(if b.shared_left? then b.else_left else b.else_right)
+        )
 }
 ```
 

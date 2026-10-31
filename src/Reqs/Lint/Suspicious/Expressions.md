@@ -91,7 +91,17 @@ pub proc eq_op_values(op: InfixOp, x: Int, a?, s: Set<Int>) {
     use self::EqOpValue::{AlwaysFalse, AlwaysTrue, Empty, Zero}
     use self::InfixOp::{And, Eq, Ge, Gt, Iff, Inter, Le, Lt, Minus, Ne, Or, Sub, Subset, Union}
 
-    call e := eq_op(op, Scoped { text := Operand::P, scope := {} }, Scoped { text := Operand::P, scope := {} })
+    call e := eq_op(
+        op,
+        Scoped {
+            text := Operand::P,
+            scope := {},
+        },
+        Scoped {
+            text := Operand::P,
+            scope := {},
+        },
+    )
 
     expect said: when e.fires?, match e.value {
         AlwaysTrue => (op = Eq and x = x) or (op = Le and x <= x) or (op = Ge and x >= x)
@@ -133,8 +143,14 @@ set_option fren.lint.eq_op "allow" in
 pub proc eq_op_conditional_values(unless?, a?) {
     call e := eq_op_conditional(
         unless?,
-        Scoped { text := Operand::P, scope := {} },
-        Scoped { text := Operand::P, scope := {} },
+        Scoped {
+            text := Operand::P,
+            scope := {},
+        },
+        Scoped {
+            text := Operand::P,
+            scope := {},
+        },
     )
 
     -- What the message says `when a?, a?` and `unless a?, a?` are.
@@ -404,7 +420,11 @@ check the fix on one example:
 ```fren
 set_option fren.lint.same_branches "allow" in
 pub proc same_rows_written(n: Int): (det v: Int) {
-    out v := table { n > 0 => n + 1, n < -5 => n + 1, _ => n + 1 }
+    out v := table {
+        n > 0 => n + 1,
+        n < -5 => n + 1,
+        _ => n + 1,
+    }
 }
 
 pub proc same_rows_fixed(n: Int): (det v: Int) {
@@ -530,7 +550,9 @@ pub proc ifs_same_cond_never_taken(
     forms: Seq<String>,           -- the tests, each as written
     tests: Seq<Scoped>,           -- the tests, as written in their scope
     scope: Set<lang::Id>,         -- the chain's scope
-    i: lang::Interp, env: lang::Env, k: Int,
+    i: lang::Interp,
+    env: lang::Env,
+    k: Int,
     operands: Nat,                -- an earlier test's chain of `and` that holds a pattern test: its operands
     test_at: Nat,                 -- the test's position among them, from 0
 ) {
@@ -542,7 +564,12 @@ pub proc ifs_same_cond_never_taken(
     assume one_scope: forall (a: Int), when 0 <= a < tests.len, tests[a].scope = scope
 
     call c := ifs_same_cond(forms, k)
-    call earlier_test := lang::test_scope(TestContext::IfCondition, operands, test_at, Site::ElseBranch)
+    call earlier_test := lang::test_scope(
+        TestContext::IfCondition,
+        operands,
+        test_at,
+        Site::ElseBranch,
+    )
 
     -- A later test, in the `else` branch, sees none of an earlier test's binders: one scope.
     expect unseen: not earlier_test.visible?
@@ -567,13 +594,35 @@ since the solver unfolds [`eval`](../../Lang/Semantics.md) only one step:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc ifs_same_cond_taken(i: lang::Interp, p?, q?, a: lang::Value, b: lang::Value, d: lang::Value) {
+pub proc ifs_same_cond_taken(
+    i: lang::Interp,
+    p?,
+    q?,
+    a: lang::Value,
+    b: lang::Value,
+    d: lang::Value,
+) {
     use lang::{Env, Expr, Outcome, eval, truth}
 
-    let env: Env := Env::Bind("p", Outcome::Defined(truth(p?)), Env::Bind("q", Outcome::Defined(truth(q?)), Env::Empty))
-    let chain: Outcome := eval(i, env, Expr::If(Expr::Var("p"), Expr::Literal(a),
-        Expr::If(Expr::Var("q"), Expr::Literal(b), Expr::Literal(d))))
-    let without: Outcome := eval(i, env, Expr::If(Expr::Var("p"), Expr::Literal(a), Expr::Literal(d)))
+    let env: Env := Env::Bind(
+        "p",
+        Outcome::Defined(truth(p?)),
+        Env::Bind("q", Outcome::Defined(truth(q?)), Env::Empty)
+    )
+    let chain: Outcome := eval(
+        i,
+        env,
+        Expr::If(
+            Expr::Var("p"),
+            Expr::Literal(a),
+            Expr::If(Expr::Var("q"), Expr::Literal(b), Expr::Literal(d))
+        )
+    )
+    let without: Outcome := eval(
+        i,
+        env,
+        Expr::If(Expr::Var("p"), Expr::Literal(a), Expr::Literal(d))
+    )
 
     -- The branch of `q` is taken where `q` is `true` and `p` `false`.
     expect taken: chain = (if p? then Outcome::Defined(a) else if q? then Outcome::Defined(b) else Outcome::Defined(d))

@@ -1,9 +1,12 @@
 --- test/cli/fmt/table_scrutinee.fren
 +++ test/cli/fmt/table_scrutinee.fren
-@@ -9 +9 @@
+@@ -9 +9,4 @@
 -    ensure a: y = table m {Mode::Off if t>0=>1,_=>0}
-+    ensure a: y = table m { Mode::Off if t > 0 => 1, _ => 0 }
-@@ -11,5 +11,5 @@
++    ensure a: y = table m {
++        Mode::Off if t > 0 => 1,
++        _ => 0,
++    }
+@@ -11,5 +14,9 @@
 -    | Mode::Off
 -          | Mode::Heat if t > 0 =>
 -    1,
@@ -14,7 +17,10 @@
 +            1,
 +        Mode::Cool if (t < 0 and t > -5) => 2,
 +        _ => 0,
-@@ -17 +17 @@
++    }
++    ensure d: y = table {
++        t > 0 => 1,
++        _ => 0,
+@@ -17 +23,0 @@
 -    ensure d: y = table {t>0=>1,_=>0}
-+    ensure d: y = table { t > 0 => 1, _ => 0 }
 exit=1
