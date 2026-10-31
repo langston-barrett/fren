@@ -21,8 +21,9 @@ constructor of a newtype, which neither implementation's value records,
 restored, as each front end restores it when it prints one. That both front
 ends then *show* the same value is checked over the strings at the end.
 
-The types here recurse only into themselves, which is all that `TypeShape`
-can state (`Reqs/Models#free-values`).
+The types here recurse only into themselves, which is all that Fren's
+types can do, so `TypeShape` is complete for them
+(`Reqs/Models#free-values`).
 -/
 
 mod model_defaults_test
@@ -121,10 +122,13 @@ def tyOf (sp : Spec) (path : Lean.Name) : VTy :=
   | some u => .newtype path u
   | none => .data path []
 
--- Each default value of the `fren` command's rule is the spec's.
+-- Each default value of the `fren` command's rule is the spec's. Each case
+-- has one, so the guard cannot pass by both rules giving none, as they would
+-- if `src` failed to elaborate.
 #guard cases.all fun (path, _) =>
   let ty := tyOf spec path
-  ((spec.defaultVal ty).bind (langValue spec ty)) == specDefault spec ty
+  let v := (spec.defaultVal ty).bind (langValue spec ty)
+  v.isSome && v == specDefault spec ty
 
 -- And each is the value that a counterexample would show.
 #guard cases.all fun (path, shown) =>

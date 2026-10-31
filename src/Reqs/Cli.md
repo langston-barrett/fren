@@ -416,7 +416,7 @@ alone. Only these lines differ between two runs that differ only in
 | Status | Meaning |
 |---|---|
 | 0 | every check passed |
-| 1 | some result is an error: a check failed |
+| 1 | some result is an error: a check failed; or Fren's semantics refuted a solver's model, an internal error |
 | 2 | the checks could not run: an unreadable file, bad arguments, or a static error, including a denied lint |
 | 3 | no result is an error, but some diagnostic is a warning: a check was inconclusive, a constraint is redundant, or a [lint](Lint.md) warned |
 
@@ -452,13 +452,16 @@ pub proc exit_status(
 ```
 
 `cli::exit` gives the exit status, from whether the checks ran and the
-most severe [level](View.md#severity) of their results and of the
-[lints](Lint.md) reported along the way:
+most severe [level](View.md#severity) of their results, of the
+[lints](Lint.md) reported along the way, and of the internal errors that
+report a refuted model, each an `Error` (see [Check
+results](View.md#check-results)). So a run with such an error exits with
+1, though the result that it reports is inconclusive:
 
 ```fren
 pub proc exit(
     ran?,                  -- no static errors: checks ran
-    worst: Severity,       -- the most severe level over all results and lints
+    worst: Severity,       -- the most severe level over all results, lints and internal errors
 ): (det code: Int) {
     ensure code_rule: code = table {
         | not ran? => 2,
@@ -478,12 +481,12 @@ expect check_exit_status(ran?, worst: view::Severity) {
 }
 ```
 
-`cli::worst_severity` gives the most severe level over all results and
-lints of a run, from the levels present among them:
+`cli::worst_severity` gives the most severe level over all results,
+lints and internal errors of a run, from the levels present among them:
 
 ```fren
 pub proc worst_severity(
-    present: Set<Severity>,      -- the levels of the run's results and lints
+    present: Set<Severity>,      -- the levels of the run's results, lints and internal errors
 ): (det worst: Severity) {
     -- The last row includes runs with no checks at all.
     ensure rule: worst = table {

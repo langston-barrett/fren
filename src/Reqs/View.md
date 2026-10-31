@@ -150,8 +150,17 @@ Each check yields one result for each thing it checks:
 
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
-redundant constraint is a warning. An inconclusive result is a warning. A
-failure is reported at:
+redundant constraint is a warning. An inconclusive result is a warning,
+with one exception: when Fren's semantics contradicts the solver's model
+of a counterexample or a witness that the result would show, the result
+is still inconclusive, and the summary counts it so, but the only
+diagnostic printed for it is an error, the internal error of [Reading
+models](Models.md#reporting), in place of its warning. The `fren`
+command's [confirmation of its other models](Eval.md#confirming-models)
+keeps the inconclusive result's warning, and reports the refuted model's
+internal error beside it. Either internal error is an error of the run,
+which fails a Lean build and makes `fren check` exit with 1 (see
+[Severity](#severity)). A failure is reported at:
 
 | Failure | Position | Details |
 |---|---|---|
@@ -423,7 +432,9 @@ pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
 ```
 
 `view::build` states when a Lean build fails, from the most severe level of
-the results of a `#fren_check`:
+the diagnostics of a `#fren_check`: its results, and the internal errors
+that report a refuted model (see [Check results](#check-results)), each an
+`Error`, though the result that one reports is inconclusive, a `Warning`:
 
 ```fren
 set_option fren.evidence "enumerated" in
