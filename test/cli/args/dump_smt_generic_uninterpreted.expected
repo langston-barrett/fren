@@ -14,14 +14,10 @@
 (set-option :inst-when last-call)
 (declare-fun |::choose<Int>| (Int Int) Int)
 (declare-fun |::choose<Bool>| (Bool Bool) Bool)
-(define-fun |::choose<Int>#either| ((|a| Int) (|b| Int)) Bool (or (= (|::choose<Int>| |a| |b|) |a|) (= (|::choose<Int>| |a| |b|) |b|)))
-(define-fun |::choose<Bool>#either| ((|a| Bool) (|b| Bool)) Bool (or (= (|::choose<Bool>| |a| |b|) |a|) (= (|::choose<Bool>| |a| |b|) |b|)))
 (declare-const |x| Int)
 (declare-const |p?| Bool)
 (declare-const |y| Int)
 (declare-const |q?| Bool)
-(assert (|::choose<Int>#either| |x| 0)) ; either
-(assert (|::choose<Bool>#either| |p?| true)) ; either
 (assert (not (let ((|y| (|::choose<Int>| |x| 0))) (let ((|q?| (|::choose<Bool>| |p?| true))) true))))
 (check-sat)
 (reset)

@@ -7826,6 +7826,18 @@ def State.appFuns (s : State) : Std.HashMap String (Bool × Contract) :=
   (s.funs ++ s.defs.filterMap (fun (p, ps, r, _) => if s.recursiveDefs.contains p then some (p, ps.map (·.2), r) else none)).foldl (init := {}) fun m (p, _, r) =>
     m.insert ((s.instSyms.find? p).getD (itemSym p)) (r == .nat, (s.contracts.find? p).getD {})
 
+/-- Of each uninterpreted function with postconditions, by its SMT-LIB
+symbol, its path: the function whose contract's realizability the checks
+whose queries apply it rest on (`Fren.Core.appFactsWith`). Not instances
+of generic functions, whose premise is not applied yet (#522), nor
+recursive functions, which are defined. -/
+def State.contractFns (s : State) : Std.HashMap String Name :=
+  s.funs.foldl (init := {}) fun m (p, _, _) =>
+    if s.instSyms.contains p || s.genericFns.contains p then m
+    else match s.contracts.find? p with
+      | some k => if k.posts.isEmpty then m else m.insert (itemSym p) p
+      | none => m
+
 /-- Each instance that the spec's items use of a generic function without a
 body, with where its contract is checked (`Fren.Core.instanceSites`). -/
 def State.instanceSites (s : State) : Array (Fren.Core.InstanceSite × Name × Array Ty) :=

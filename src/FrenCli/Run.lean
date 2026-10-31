@@ -678,8 +678,13 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
     (examples : Option Nat := some 1) (instances : Bool := true) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
+  -- The functions whose contracts each check's queries apply, recorded by
+  -- the backend, and taken by `checkComp` after each check
+  -- (`Fren.Core.withApplies`).
+  let applied ← IO.mkRef (#[] : Array Lean.Name)
   let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache st.quantified
-    st.appFuns
+    st.appFuns (contractFns := st.contractFns) (applied? := some applied)
+  let take : IO (Array Lean.Name) := applied.modifyGet fun a => (a, #[])
   -- Whether a formula uses an abstract type or an uninterpreted function,
   -- for the values that a realizability conflict's notes may show
   -- (`Fren.Core.Comp.realizableInterpreted`), as `markInterpreted` decides.
@@ -692,14 +697,14 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
       | some ec =>
         let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
         let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-        pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks examples (interprets ·.1), none)
+        pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks examples (interprets ·.1) (some take), none)
       | none =>
         let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-        pure (← Fren.Core.checkComp bk core ks examples interprets,
+        pure (← Fren.Core.checkComp bk core ks examples interprets (some take),
           some (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"))
     | .error _ =>
       let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-      pure (← Fren.Core.checkComp bk core ks examples interprets, none)
+      pure (← Fren.Core.checkComp bk core ks examples interprets (some take), none)
   let (results, refuted) := applyRefutations raw (← log.get)
   let results := Fren.Core.recursiveResults c.recursive results
   -- The contract of a generic function without a body, where its check at
@@ -880,10 +885,18 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- Those with checks by testing or enumeration first: they are the
   -- slowest, and starting them last would leave them running alone at
   -- the end.
-  let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
-    (first := fun (c, _) => c.tested.any || c.enumerated.any)
+  let solving ← (← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
+    (first := fun (c, _) => c.tested.any || c.enumerated.any)).mapM id
+  -- The contracts of the uninterpreted functions first, though their items
+  -- come last, since what applies them rests on them
+  -- (`Fren.Core.contractsEvidence`).
+  let contractFns := st.contractFns
+  let bodies := (todo.zip solving).filterMap fun ((c, global, _, body, _), ((results, _, _), _)) =>
+    c.fn?.map fun f => (c.path, f, Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global, results)
+  for (f, e) in Fren.Core.contractsEvidence realizability.get? bodies do
+    realizability := realizability.insert f e
   for (c, global, kinds, body, key) in todo, solved in solving do
-    let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) ← solved
+    let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) := solved
     timings := timings.push (solverNs + restNs, solverNs, restNs, subjectOf c global, key)
     IO.print dumped
     if let some msg := missing? then
@@ -935,9 +948,16 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let names := c.insts.map (·.name)
     let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
     let what := Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global
+    -- And the contracts of the functions that its checks' queries apply, or,
+    -- for a check by random testing, that it applies (`Fren.Core.checkApplies`).
+    -- Shared with Lean, which reads the placeholders that the item uses
+    -- instead (`Fren.Core.itemContracts`).
+    let itemApplies := Fren.Core.itemContracts c.natApps fun app =>
+      contractFns.get? (((peelLets app).drop 1).takeWhile (· != ' ')).toString
+    let functions := Fren.Core.functionPremises realizability.get? (Fren.Core.appliedOf item itemApplies) c.fn?
     let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
       (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false (refinements.map (·.1)), own))
-      abstractions
+      abstractions functions c.fn? itemApplies
     let mut final := #[]
     for (r, _) in item, rc in reported do
       let rep := rc.rep
@@ -952,6 +972,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       final := final.push { r with verdict := rep.shown }
       if r.isOwnRealizability c.path && what == .component then
         realizability := realizability.insert c.path (rc.realizability c.path)
+      if let (true, some f) := (r.isOwnRealizability c.path && what == .contract, c.fn?) then
+        realizability := realizability.insert f (rc.contract f)
     all := all ++ final
     -- The tests compare each method's own verdicts, before the evidence of
     -- what they rest on changes how they are shown.

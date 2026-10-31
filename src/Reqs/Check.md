@@ -1068,11 +1068,13 @@ holds of a procedure's own checks. So such a proof is not reported as one:
 [Evidence](Evidence.md) states the rule that caps a pass at the evidence of
 what it rests on, and both front ends apply it to each call's assumption
 checks, its called procedure's realizability, the item's own
-realizability and its refinement claims' abstractions' realizability. `e`
-is reported as `Inconclusive` where `tested_lies`'s realizability did not
-pass (`F0664`), and otherwise as a pass by random testing (`F0663`), never
-as a proof. They do not apply it yet to functions' contracts, instances
-and postconditions, or to subset types' inhabitation (#522).
+realizability, its refinement claims' abstractions' realizability and the
+realizability of the contracts of the uninterpreted functions that its
+queries apply. `e` is reported as `Inconclusive` where `tested_lies`'s
+realizability did not pass (`F0664`), and otherwise as a pass by random
+testing (`F0663`), never as a proof. They do not apply it yet to instances
+of generic functions, to recursive functions' postconditions, or to subset
+types' inhabitation (#522).
 
 ## Call assumptions
 

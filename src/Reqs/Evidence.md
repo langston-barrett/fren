@@ -139,7 +139,8 @@ is decided, that check fails (`F0602`) on the same item; where its
 assumptions query answers `Unknown`, and the check is `Inconclusive`,
 nothing caps them, and they can be vacuous passes. That gap is #487.
 Within a function, its contract's realizability and its postcondition
-checks come before what applies it; a subset type's inhabitation comes
+checks come before what applies it, in the order in which the evidence is
+computed, though both front ends report them after it; a subset type's inhabitation comes
 before what uses the type. A procedure is declared before the procedures
 that call it, and a function before what applies it, so a premise is
 always an earlier check. A [generic
@@ -200,21 +201,30 @@ check by itself, though a witness that it finds confirms a witness check's
 pass.
 
 Both front ends apply this rule to the premises that come from
-procedures and refinement claims: `Realizability(j)`, `CallAssumptions(j)`, `OwnRealizability`
-and `AbstractionRealizability(a)` (`Fren.Core.itemEvidence`). Every check
+procedures, refinement claims and the contracts of uninterpreted
+functions: `Realizability(j)`, `CallAssumptions(j)`, `OwnRealizability`,
+`AbstractionRealizability(a)` and `ContractRealizability(f)`
+(`Fren.Core.itemEvidence`). Every check
 of a refinement claim, its obligation and the definedness and cases of its
 formulas, is at `Site::Refinement(a)`, where `a` is the claim's position
 among the item's refinement claims (`Fren.Core.CheckResult.site`); the
 definedness of the claim's arguments is among them, though its query does
 not have the abstraction's calls, which is conservative. Both front ends
 take the abstraction's realizability from the evidence that they keep for
-procedures, as for a call's procedure. They do not apply the rule yet to
-`ContractRealizability`, `InstanceContract`, `Postconditions` or
-`Inhabitation`, which need each check to know which functions' facts and
-which subset types' invariants its query has, as
-[Checks](Check.md#global-expectations) says too; that is #522. Until then,
-a pass that rests only on one of those can be vacuous where that check
-does not pass, as before.
+procedures, as for a call's procedure. Each check's `applies` is recorded
+by both front ends' query builders, from the facts that they give its
+queries (`check::check_applies`, below), and each function's contract's
+realizability is kept by the function's path. Both front ends check and
+report the bodies and contracts of functions after the procedures and
+global expectations, so they compute the contracts' evidence first, in
+declaration order (`Fren.Core.contractsEvidence`), and `#fren_check` runs
+the contracts of the functions that an item it names uses, as it runs the
+procedures that the item calls. They do not apply the rule yet to
+`InstanceContract`, `Postconditions` or `Inhabitation`, which need each
+check to know which instances, recursive functions and subset types'
+invariants its query has, as [Checks](Check.md#global-expectations) says
+too; that is #522. Until then, a pass that rests only on one of those can be
+vacuous where that check does not pass, as before.
 
 ## Resting on checks
 
@@ -730,7 +740,11 @@ checks, where the called procedure has any, one for each of its assumptions
 and for each of its inputs whose type brings a constraint, and the item runs
 them (`check::applies`); the item's own realizability, where it has one; and
 the realizability of the abstraction of each of its refinement claims, which
-only a global expectation block has (`Lang/Refinement`).
+only a global expectation block has (`Lang/Refinement`); and the realizability
+of the contract of each uninterpreted function whose contract its checks
+apply (`check::check_applies`, below), by their positions, the item's own
+function's first, which its own clauses do not rest on (`check::premise`'s
+`own_function`).
 A procedure that only checks that a subset type's invariants are defined
 (`Lang/SubsetTypes`) runs no realizability check, so it has none to rest on.
 Each premise that the item has is a check that its other checks rest on,
@@ -748,6 +762,7 @@ pub proc item_premise(
     n_calls: Int,                -- the number of its calls
     assumed: Set<Int>,           -- the calls whose procedures have assumption checks
     n_abstractions: Int,         -- the number of its refinement claims
+    n_functions: Int,            -- the number of the functions whose contracts its checks apply, its own among them
     p: Premise,                  -- a premise that a check of it may take
 ): (det has?) {
     ensure rule: has? iff match p {
@@ -760,6 +775,7 @@ pub proc item_premise(
             },
         Premise::OwnRealizability => own_realizability?(item) and not validator?,
         Premise::AbstractionRealizability(a) => 0 <= a < n_abstractions,
+        Premise::ContractRealizability(f) => 0 <= f < n_functions,
         _ => false,
     }
 }
@@ -771,6 +787,7 @@ expect unassumed(
     n_calls: Int,
     assumed: Set<Int>,
     n_abstractions: Int,
+    n_functions: Int,
     j: Int,
 ) {
     assume none: not j in assumed
@@ -780,6 +797,7 @@ expect unassumed(
         n_calls,
         assumed,
         n_abstractions,
+        n_functions,
         Premise::CallAssumptions(j),
     )
     expect absent: not h.has?
@@ -794,6 +812,57 @@ expect call_assumptions_applies(item: CheckedItem) {
         CheckedItem::ShortExpectation,
     }
         iff a.runs?
+}
+```
+
+`check::query_applies` states which functions' contracts the facts of a
+check's query bring: those whose postconditions are among them. What a fact
+is about is part of the fact (`Fren.Core.AppFact`), never read from its
+name, which a postcondition shares with its clause, so a clause named
+`nat` is a postcondition like any other:
+
+```fren
+-- What a fact that an application brings to a query is about: that the
+-- application is at least 0, that it matches its result type, or a
+-- postcondition of the function at a position.
+pub enum Fact { AtLeastZero, ResultType, Postcondition(Int) }
+
+pub proc query_applies(
+    facts: Set<Fact>,            -- the facts of its query's applications
+    f: Int,                      -- a function, by its position
+): (det applied?) {
+    ensure rule: applied? iff Fact::Postcondition(f) in facts
+}
+```
+
+`check::check_applies` states which functions' contracts a check rests
+on: those whose applications in its queries bring a postcondition as a
+fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
+and whose functions they record for each check, `Fren.Core.withApplies`),
+or, for a check passed by random testing, which asks the solver nothing,
+every function with a contract that its item applies: a test's
+interpretation of such a function meets its postconditions where it can
+(`Reqs/Eval`), and where they cannot hold it has no value, so no test there
+finds a counterexample. Instances of generic functions and recursive
+functions are left to `InstanceContract` and `Postconditions` (#522).
+Where a front end runs the checks of a kind of an item together, as it runs
+all of an item's call assumption checks, its redundancy checks and its
+determinism checks, each of them is given the functions of all of their
+queries (`Fren.Core.withAllApplies`), so `queried` is a superset of its
+own. That is conservative: a function too many only adds a premise, which
+can cap a pass but never strengthens one, and both front ends share it
+through `Fren.Core.checkComp`. The ui test
+`test/ui/checks/evidence_contracts.fren` pins it: the assumption check of
+a call whose arguments apply no contract still rests on the contract that
+a later call's arguments apply.
+
+```fren
+pub proc check_applies(
+    queried: Set<Int>,           -- the functions whose postconditions its queries' facts have
+    item_applies: Set<Int>,      -- the functions with contracts that its item applies
+    random?,                     -- it was passed by random testing
+): (det applies: Set<Int>) {
+    out applies := if random? then item_applies else queried
 }
 ```
 

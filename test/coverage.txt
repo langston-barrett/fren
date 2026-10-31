@@ -29,7 +29,6 @@ Fren.Core.Re.matchD
 Fren.Core.Re.matches
 Fren.Core.STerm.binds?
 Fren.Core.Shape.build
-Fren.Core.Site.ownFunction
 Fren.Core.Ty.Flat.unflat
 Fren.Core.Ty.FlatList.unflat
 Fren.Core.Ty.asAbstract

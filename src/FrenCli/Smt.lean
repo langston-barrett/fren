@@ -577,6 +577,66 @@ def balancedAt (cs : Array Char) (i : Nat) : String := Id.run do
     j := j + 1
   return String.ofList (cs.extract i cs.size).toList
 
+/-- Whether the SMT-LIB text `t` mentions the symbol `x`, as written, quoted
+or not, as a whole token. -/
+def mentionsSymbol (t x : String) : Bool :=
+  let parts := t.splitOn x
+  parts.length > 1 && (List.range (parts.length - 1)).any fun k =>
+    let before := (parts[k]!.toList.getLast?).getD ' '
+    let after := (parts[k + 1]!.toList.head?).getD ' '
+    let delim (c : Char) := c == ' ' || c == '(' || c == ')' || c == '\n'
+    (x.startsWith "|" || delim before) && (x.endsWith "|" || delim after)
+
+/-- `f` without the bindings of its `let`s whose names their bodies do not
+mention, as the Lean front end's `zetaReduce` drops them: an application
+in such a binding is not one of the query's, so it brings no facts
+(`Fren.Core.appFactsWith`), in both front ends. A `let` with no binding
+left is its body. -/
+partial def dropUnusedLets (f : String) : String := Id.run do
+  let cs := f.toList.toArray
+  let pat := "(let (".toList.toArray
+  let mut i := 0
+  let mut inString := false
+  while h : i < cs.size do
+    let c := cs[i]
+    if c == '"' then inString := !inString
+    else if !inString && c == '(' && i + pat.size ≤ cs.size && (List.range pat.size).all (fun k => cs[i + k]! == pat[k]!) then
+      let whole := balancedAt cs i
+      let j := i + 5
+      let list := balancedAt cs j
+      -- Its bindings, each `(name value)`.
+      let mut bindings : Array (String × String) := #[]
+      let mut k := j + 1
+      while k < j + list.length - 1 do
+        if cs[k]! == '(' then
+          let b := balancedAt cs k
+          let inner := ((b.drop 1).dropEnd 1).toString
+          let name := (inner.takeWhile (· != ' ')).toString
+          bindings := bindings.push (name, b)
+          k := k + b.length
+        else k := k + 1
+      let bodyStart := j + list.length + 1
+      let bodyEnd := i + whole.length - 1
+      if bodyStart ≤ bodyEnd then
+        let body := String.ofList (cs.extract bodyStart bodyEnd).toList
+        let kept := bindings.filter fun (x, _) => mentionsSymbol body x
+        if kept.size < bindings.size then
+          let replaced := if kept.isEmpty then body else s!"(let ({" ".intercalate (kept.toList.map (·.2))}) {body})"
+          let before := String.ofList (cs.extract 0 i).toList
+          let after := String.ofList (cs.extract (i + whole.length) cs.size).toList
+          return dropUnusedLets (before ++ replaced ++ after)
+    i := i + 1
+  return f
+
+-- A dead binding, one that is dead only once the binding within it is
+-- dropped, one dead binding of two, a quoted symbol that is used, and a
+-- name mentioned only in a string literal, which is kept, conservatively.
+#guard dropUnusedLets "(let ((|x| (f 1))) true)" == "true"
+#guard dropUnusedLets "(and (let ((|z| (f 1))) (let ((|w| |z|)) true)) b)" == "(and true b)"
+#guard dropUnusedLets "(let ((|x| 1) (|y| (f 2))) (> |x| 0))" == "(let ((|x| 1)) (> |x| 0))"
+#guard dropUnusedLets "(let ((|x| 1)) (|f| |x|))" == "(let ((|x| 1)) (|f| |x|))"
+#guard dropUnusedLets "(let ((|x| (f 1))) (= s \"|x|\"))" == "(let ((|x| (f 1))) (= s \"|x|\"))"
+
 /-- The terms of the SMT-LIB text `f` that bring facts, in the order in
 which they start, as `termsIn` finds them: those of `terms`, and the
 applications of the selectors `heads`, whatever their arguments, as the
@@ -767,7 +827,8 @@ do (`cli::logic`, `queryScript`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)
-    (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind) :
+    (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind)
+    (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
@@ -816,7 +877,15 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- a constraint, by its selector (`State.funFacts`).
     let heads := c.funFacts.toArray.filterMap fun (h, _) => if h.startsWith "|::" then none else some h
     let appsOf (f : String) := (factTermsIn peeled heads f).map fun t => ((peeled.idxOf? t).map (apps[·]!)).getD t
-    let appFacts ← Fren.Core.appFacts (m := Id) appsOf (appFactsOf funs c.funFacts) hyps goal
+    -- And the functions whose contracts those facts have, which its check
+    -- rests on (`Fren.Core.appFactsWith`).
+    let fnOf (app : String) : Option Lean.Name :=
+      let inner := (splitLets app).2.1
+      contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString
+    let (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf
+      (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal)
+    if let some r := applied? then
+      r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
     let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts hyps goal ++ hyps

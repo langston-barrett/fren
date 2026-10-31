@@ -309,15 +309,29 @@ def awaitCheck (task : Task (Except Exception CheckOutcome)) :
                            infoState.trees := s.infoState.trees ++ trees }
   ofExcept r
 
-/-- The procedures that the checks of `roots` rest on, through their calls
-and their refinements' abstractions, transitively, but those that `skip`
-says are known: callees before callers (`check::runs_premises`). -/
+/-- The uninterpreted functions with contracts, not generic, that `c`'s
+formulas use, by their paths: those whose contracts its checks may rest on
+(`Core.checkApplies`). -/
+def contractsUsed (s : State) (c : CompInfo) : Array Name :=
+  -- Shared with `fren check`, which reads the item's applications instead
+  -- (`Core.itemContracts`).
+  Core.itemContracts c.uses fun u =>
+    (s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == u then some a else none).bind fun a =>
+      let posts := ((s.contracts.get? a.path).map (·.posts)).getD #[]
+      if !a.typeParams.isEmpty || posts.isEmpty then none else some a.path
+
+/-- The procedures and function contracts that the checks of `roots` rest
+on, through their calls, their refinements' abstractions and the contracts
+of the functions that they use, transitively, but those that `skip` says
+are known: what is rested on before what rests on it
+(`check::runs_premises`). -/
 def premiseItems (s : State) (skip : Name → Bool) (roots : Array CompInfo) : Array Name := Id.run do
   let mut out : Array Name := #[]
   let mut seen : Std.HashSet Name := {}
-  -- The procedures that each root calls, and the abstractions of its
-  -- refinement claims.
+  -- The procedures that each root calls, the abstractions of its
+  -- refinement claims, and the contracts that it uses.
   let rested (c : CompInfo) := c.insts.map (·.comp) ++ c.props.filterMap (·.abstraction?)
+    ++ (contractsUsed s c).filter (s.bodies.contains ·)
   let mut stack : Array (Name × Bool) := ((roots.flatMap rested).reverse).map (·, false)
   while !stack.isEmpty do
     let (p, done) := stack.back!
@@ -328,7 +342,7 @@ def premiseItems (s : State) (skip : Name → Bool) (roots : Array CompInfo) : A
     if seen.contains p || skip p then continue
     seen := seen.insert p
     stack := stack.push (p, true)
-    if let some c := s.comps.get? p then
+    if let some c := s.comps.get? p <|> s.bodies.get? p then
       for q in (rested c).reverse do stack := stack.push (q, false)
   return out
 
@@ -371,11 +385,15 @@ where
   -- is settled where it is known (`check::runs_premises`).
   let named := items.map (·.1)
   let premises := (premiseItems s (fun p => named.contains p || (s.realizability.find? p).isSome)
-    (items.map (·.2.1))).filterMap fun p => (s.comps.get? p).bind fun c =>
-      if c.undecidableDenied then none else some (p, c, Core.CheckedItem.component.kinds)
+    (items.map (·.2.1))).filterMap fun p =>
+      let found : Option (CompInfo × Core.CheckedItem) := match s.comps.get? p, s.bodies.get? p with
+        | some c, _ => some (c, Core.CheckedItem.of false false false false)
+        | none, some b => some (b, Core.CheckedItem.of true (b.vars.any (·.role == .output)) false false)
+        | none, none => none
+      found.bind fun (c, item) => if c.undecidableDenied then none else some ((p, c, item.kinds), item)
   let silent := premises.size
-  items := premises ++ items
-  what := premises.map (fun _ => Core.CheckedItem.component) ++ what
+  items := premises.map (·.1) ++ items
+  what := premises.map (·.2) ++ what
   -- Each item is checked in a task of its own, all at once; the results are
   -- then reported, and the cover goals' theorems added, in order, as if
   -- each had been checked in turn (`checkItems`).
@@ -387,6 +405,19 @@ where
   let sites := s.instanceSites (← getMainModule) (keys.contains ·)
   for (_, f, targs) in sites do record (.instanceChecked f targs)
   let tasks ← checkItems items sites cancel
+  -- The evidence of the contracts of the functions among them first, though
+  -- they are reported last, since what applies them rests on them
+  -- (`Core.contractsEvidence`). Their results are read here, and their
+  -- messages added where they are reported.
+  let mut bodies := #[]
+  for (p, c, _) in items, task in tasks, item in what do
+    if item != .contract then continue
+    let results := match ← IO.wait task with
+      | .ok (.ok (results, _, _, _), _, _, _) => results
+      | _ => #[]
+    bodies := bodies.push (c.path, c.fn?.getD p, item, results)
+  for (f, e) in Core.contractsEvidence (← getState).realizability.find? bodies do
+    record (.realizabilityEvidence f e)
   let mut all := #[]
   let mut byBound := 0
   for (p, c, _) in items, task in tasks, item in what, k in [0:items.size] do
@@ -405,6 +436,8 @@ where
     -- calls and of its refinements' abstractions, weakens them or leaves
     -- them inconclusive (`Reqs/Evidence`).
     let known := (← getState).realizability
+    -- A function's body or contract, whose results are its module's.
+    let comp := if item == .body || item == .contract then c.path else p
     let refinements := Core.refinementsOf (c.props.map fun q => (q.name, q.abstraction?))
     let (calls, abstractions) := Core.externalPremises known.find?
       (c.insts.map fun i => (i.name, i.comp, i.assumes.map Prod.fst)) refinements
@@ -417,17 +450,26 @@ where
     -- them as premises, so that what rests on them gets it too
     -- (`Core.hostedStandIns`, `check::hosted_runs`); they are never reported.
     let random := c.tested.minus c.enumerated
-    let standIns := Core.hostedStandIns p item c.subsetInvariant?.isSome calls random
+    let standIns := Core.hostedStandIns comp item c.subsetInvariant?.isSome calls random
     let checks := results.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
       ++ enumResults.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
       ++ standIns.map fun r => (r, siteOf r, Core.ownCaveatsOf r true)
-    let reported := Core.itemEvidence p item c.subsetInvariant?.isSome calls checks abstractions
+    -- And the contracts of the functions that its checks' queries apply,
+    -- or, for a check by random testing, that it uses (`Core.checkApplies`).
+    let itemApplies := contractsUsed (← getState) c
+    let fn? := if item == .body || item == .contract then some (c.fn?.getD p) else none
+    let functions := Core.functionPremises known.find?
+      (Core.appliedOf (checks.map fun (r, _, own) => (r, own)) itemApplies) fn?
+    let reported := Core.itemEvidence comp item c.subsetInvariant?.isSome calls checks abstractions functions fn?
+      itemApplies
     -- The evidence of its realizability, kept for the checks that rest on
     -- it, in this run, later runs and the modules that import this one
     -- (`check::runs_premises`).
     for (r, _, _) in checks, rc in reported do
       if r.isOwnRealizability p && item == .component then
         record (.realizabilityEvidence p (rc.realizability p))
+      if let (true, some f) := (r.isOwnRealizability comp && item == .contract, fn?) then
+        record (.realizabilityEvidence f (rc.contract f))
     -- A premise checked for its evidence alone is reported nothing of.
     if quiet then continue
     -- Proof artifacts are supplementary: preserve the checker report even

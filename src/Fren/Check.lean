@@ -452,7 +452,7 @@ def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
 /-- The answers to a procedure's queries so far, by hypotheses, goal and
 whether a model was wanted: some checks of a procedure ask the same
 query, which is answered once, as in the binary (`Reqs/Cli#solver-queries`). -/
-abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outcome Expr))
+abbrev QueryCache := IO.Ref (Std.HashMap (Array Expr × Expr × Bool) (Core.Outcome Expr × Array Name))
 
 /-- That `x`, a `Nat` or an `Int`, is at least 0. -/
 def atLeast0 (x : Expr) : MetaM Expr := do
@@ -672,7 +672,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
-    (snapshots? : Option (IO.Ref (Array Smt.Model)) := none) :
+    (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
+    (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -781,11 +782,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- `unfolded?` is `hyps`'s and `goal`'s formulas already unfolded, by
   -- `unfoldDefined`, which a query that may be recursive does first.
   let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (unfolded? : Option (Array Expr × Expr) := none) :
-      MetaM (Core.Outcome Expr × Bool) :=
+      MetaM ((Core.Outcome Expr × Bool) × Array Name) :=
     withoutModifyingState do
     -- With the `have`s of `let`s and `where` clauses substituted, so that an
-    -- application to a name mentions no bound variable.
-    let appFacts ← Core.appFacts appsOf factsOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
+    -- application to a name mentions no bound variable. And the functions
+    -- whose contracts those facts have (`Core.appFactsWith`).
+    let (appFacts, fns) ← Core.appFactsWith appsOf factsOf fnOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
       (← zetaReduce goal)
     let unfoldedHyps ← match unfolded? with
       | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)
@@ -802,13 +804,18 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- expanded.
     let goal := instances goal
     let hyps := hyps.map fun (n, t) => (n, instances t)
-    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then askElems hyps goal wantModel
-    else askSmt hyps goal wantModel
+    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems hyps goal wantModel, fns)
+    else return (← askSmt hyps goal wantModel, fns)
   { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
       let key := (hyps.map (·.2), goal, wantModel)
-      if let some o := (← cache.get)[key]? then return o
+      -- The functions whose contracts a query's facts have, for its check
+      -- (`Core.withApplies`), whether or not it was asked before.
+      let record (fns : Array Name) : MetaM Unit := do
+        if let some r := applied? then
+          r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
+      if let some (o, fns) := (← cache.get)[key]? then record fns; return o
       let hasRecursion := (← getState).defined.foldl (init := false) fun yes _ d => yes || d.recursive
       -- The formulas unfolded once, for both the recursive symbols and the query.
       let unfolded? ← if hasRecursion then
@@ -819,7 +826,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         | none => pure #[]
       -- Even a query that needs only sat/unsat must obtain its inputs to
       -- confirm a recursive model, as the CLI's confirming backend does.
-      let (o, cacheable) ← ask hyps goal (wantModel || !recs.isEmpty) unfolded?
+      let ((o, cacheable), fns) ← ask hyps goal (wantModel || !recs.isEmpty) unfolded?
+      record fns
       let o ← match o with
         | .sat model => do
           if recs.isEmpty then pure o else
@@ -836,7 +844,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
               pure (.unknown (Core.recursiveReason names))
         | _ => pure o
       let o := if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
-      if cacheable then cache.modify (·.insert key o)
+      if cacheable then cache.modify (·.insert key (o, fns))
       return o
     modelBool? := snapshots?.map fun snapshots => fun model formula => do
       let some (_, token) := model.find? (·.1 == Name.mkSimple "#member_model") | return none
@@ -1332,19 +1340,35 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       let posts := Core.postconditionFacts implies pres (← (postsOf u).mapM fun k => return (k.name, ← rep (k.at args)))
       let natFact ← if nat then pure #[(`nat, ← atLeast0 app)] else pure #[]
       return natFact ++ typeFact ++ posts
+    -- The function of an application, closed over the binders around it
+    -- (`natApps`), whose contract's postconditions its facts have, by its
+    -- path (`Core.appFactsWith`): not an instance of a generic function, whose
+    -- premise is not applied yet (#522).
+    let fnOf (app : Expr) : Option Name :=
+      let rec peel : Expr → Expr
+        | .lam _ _ b _ => peel b
+        | e => e
+      let head := (peel app).getAppFn
+      if generics.any (head.isConstOf ·.1.placeholder) then none else
+      (factFns.find? (·.2.1 == head)).bind fun (u, _, _, _) =>
+        if (postsOf u).isEmpty then none
+        else some ((st.abstracts.foldl (init := none) fun acc _ a =>
+          acc <|> if a.placeholder == u then some a.path else none).getD .anonymous)
+    let applied ← IO.mkRef (#[] : Array Name)
     let bk (k : CheckKind) :=
       let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map (fun (x, n, _, _) => (x, n))
         ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
       let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
-        (snapshots? := if full.memberGroups.isEmpty then none else some memberModels)
+        (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf (some applied)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel
           if let .sat model := o then models.modify (·.push (goal, model))
           return o }
     let examples := fren.examples.get (← getOptions)
-    let results := Core.recursiveResults comp.recursive (Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets))
+    let results := Core.recursiveResults comp.recursive (Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets
+      (some (applied.modifyGet fun a => (a, #[])))))
     -- The contract of a generic function without a body, where its check
     -- at its type parameters' sorts does not pass: its check at each
     -- instance that the spec applies (`lang::generic_contract`).
