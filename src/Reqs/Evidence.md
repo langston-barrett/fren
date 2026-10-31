@@ -159,8 +159,9 @@ realizability check of the procedure that the item's call `j` calls,
 `CallAssumptions(j)` is call `j`'s assumption checks, one for each
 assumption of the called procedure and for each of its parameters whose
 type brings a constraint (`Lang/SubsetTypes`), `OwnRealizability` is the
-item's own realizability check, `AbstractionRealizability(a)` is procedure
-`a`'s realizability check, `ContractRealizability(f)` is uninterpreted
+item's own realizability check, `AbstractionRealizability(a)` is the
+realizability check of the abstraction of the item's refinement claim `a`,
+by the claim's position among the item's refinement claims, `ContractRealizability(f)` is uninterpreted
 function `f`'s contract's realizability check, `InstanceContract(i)` is
 the check that decides instance `i`'s contract (above),
 `Postconditions(f)` is recursive function `f`'s postcondition checks, one
@@ -199,11 +200,18 @@ check by itself, though a witness that it finds confirms a witness check's
 pass.
 
 Both front ends apply this rule to the premises that come from
-procedures: `Realizability(j)`, `CallAssumptions(j)` and
-`OwnRealizability` (`Fren.Core.itemEvidence`). They do not apply it yet to
-`AbstractionRealizability`, `ContractRealizability`, `InstanceContract`,
-`Postconditions` or `Inhabitation`, which need each check to know which
-functions' facts and which subset types' invariants its query has, as
+procedures and refinement claims: `Realizability(j)`, `CallAssumptions(j)`, `OwnRealizability`
+and `AbstractionRealizability(a)` (`Fren.Core.itemEvidence`). Every check
+of a refinement claim, its obligation and the definedness and cases of its
+formulas, is at `Site::Refinement(a)`, where `a` is the claim's position
+among the item's refinement claims (`Fren.Core.CheckResult.site`); the
+definedness of the claim's arguments is among them, though its query does
+not have the abstraction's calls, which is conservative. Both front ends
+take the abstraction's realizability from the evidence that they keep for
+procedures, as for a call's procedure. They do not apply the rule yet to
+`ContractRealizability`, `InstanceContract`, `Postconditions` or
+`Inhabitation`, which need each check to know which functions' facts and
+which subset types' invariants its query has, as
 [Checks](Check.md#global-expectations) says too; that is #522. Until then,
 a pass that rests only on one of those can be vacuous where that check
 does not pass, as before.
@@ -310,9 +318,12 @@ rather than emptying `backed`:
 -- goal or definition, over `A`, `I` and `R`; an argument or an assumption of
 -- the call at a position, over `A` and the earlier calls; a clause or the
 -- body of the function at a position, over its preconditions; a constant's
--- value, over nothing; the obligation of a refinement whose abstraction is
--- the procedure at a position, over the block's `A` and `I` and the
--- abstraction's calls.
+-- value, over nothing; a check of the item's refinement claim at a
+-- position, among its refinement claims, over the block's `A` and `I` and,
+-- for its obligation and the formulas within it, the claim's abstraction's
+-- calls. The definedness of the claim's arguments is put there too, though
+-- its query does not have the abstraction's calls: that is conservative,
+-- as it only adds the abstraction's realizability as a premise.
 pub enum Site {
     Whole,
     Assumption,
@@ -344,9 +355,8 @@ pub struct CheckRecord {
 
 -- What a check may rest on, by position: the realizability of the procedure
 -- that the item's call at a position calls; that call's assumption checks;
--- the item's own realizability; the realizability of the procedure at a
--- position, a refinement's
--- abstraction; an uninterpreted function's contract's realizability; the
+-- the item's own realizability; the realizability of the abstraction of
+-- the item's refinement claim at a position; an uninterpreted function's contract's realizability; the
 -- check that decides an instance's contract; a recursive function's
 -- postcondition checks; or a subset type's inhabitation.
 pub enum Premise {
@@ -415,8 +425,8 @@ pub fn own_function?(site: Site, f: Int) := match site {
 -- definitions; the constraints of the call at a position; the facts `N` of
 -- the function at a position that it applies; the invariants of the subset
 -- type at a position; the preconditions of the function at a position, in a
--- clause of which the check is; and the calls of the abstraction at a
--- position, of a refinement's obligation. A guard `G`, which `Reqs/Check`
+-- clause of which the check is; and the calls of the abstraction of the
+-- item's refinement claim at a position, of that claim's obligation. A guard `G`, which `Reqs/Check`
 -- puts among the hypotheses of definedness, the values given where subset
 -- types are declared, completeness, disjointness, reachability and
 -- preconditions, is not one of these sorts: where it cannot hold, the
@@ -594,7 +604,10 @@ expect site_hypotheses(check: CheckRecord, n_calls: Int, j: Int, f: Int, g: Int)
         and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
         and (when check.kind != Kind::Realizability, has_hypothesis?(check, Hypothesis::Definitions, n_calls))
     -- A refinement's obligation: the block's `A` and `I`, and its
-    -- abstraction's calls.
+    -- abstraction's calls. The definedness of a claim's arguments is at this
+    -- site too, conservatively, and its query does not have
+    -- `Abstraction(a)`: this states only that `has_hypothesis?` has it, which
+    -- makes such a check rest on more than it needs, never on less.
     expect refinement: forall (a: Int), when procedure? and check.site = Site::Refinement(a) and any_call?,
         has_hypothesis?(check, Hypothesis::Assumptions, n_calls)
         and has_hypothesis?(check, Hypothesis::Call(j), n_calls)
@@ -715,7 +728,9 @@ its structure, not from the results that a front end happens to have: the
 realizability of the procedure that each call calls; each call's assumption
 checks, where the called procedure has any, one for each of its assumptions
 and for each of its inputs whose type brings a constraint, and the item runs
-them (`check::applies`); and the item's own realizability, where it has one.
+them (`check::applies`); the item's own realizability, where it has one; and
+the realizability of the abstraction of each of its refinement claims, which
+only a global expectation block has (`Lang/Refinement`).
 A procedure that only checks that a subset type's invariants are defined
 (`Lang/SubsetTypes`) runs no realizability check, so it has none to rest on.
 Each premise that the item has is a check that its other checks rest on,
@@ -732,6 +747,7 @@ pub proc item_premise(
     validator?,                  -- it only checks that a subset type's invariants are defined
     n_calls: Int,                -- the number of its calls
     assumed: Set<Int>,           -- the calls whose procedures have assumption checks
+    n_abstractions: Int,         -- the number of its refinement claims
     p: Premise,                  -- a premise that a check of it may take
 ): (det has?) {
     ensure rule: has? iff match p {
@@ -743,18 +759,27 @@ pub proc item_premise(
                 CheckedItem::ShortExpectation,
             },
         Premise::OwnRealizability => own_realizability?(item) and not validator?,
+        Premise::AbstractionRealizability(a) => 0 <= a < n_abstractions,
         _ => false,
     }
 }
 
 -- A call has no assumption checks to rest on where its procedure has none.
-expect unassumed(item: CheckedItem, validator?, n_calls: Int, assumed: Set<Int>, j: Int) {
+expect unassumed(
+    item: CheckedItem,
+    validator?,
+    n_calls: Int,
+    assumed: Set<Int>,
+    n_abstractions: Int,
+    j: Int,
+) {
     assume none: not j in assumed
     call h := item_premise(
         item,
         validator?,
         n_calls,
         assumed,
+        n_abstractions,
         Premise::CallAssumptions(j),
     )
     expect absent: not h.has?
@@ -809,7 +834,11 @@ by random testing in the summary, and one whose caveats include `Bounded` among
 those by bounded enumeration. Where its caveats are more than its own
 method's, it gets an information message (`F0663`) that names a check it
 rests on, with that check's caveat: "`wrong` rests on the realizability
-of `lookup`, which is only checked by random testing".
+of `lookup`, which is only checked by random testing". Where that check's
+own method does not have the caveat, but a check that it rests on does,
+the message names that one too: "`top::good` rests on the realizability of
+`mid`, which rests on the realizability of `echo`, which is only checked by
+random testing".
 
 `check::reported_pass` states it:
 
