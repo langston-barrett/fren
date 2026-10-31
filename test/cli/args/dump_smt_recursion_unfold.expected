@@ -63,5 +63,45 @@
 (check-sat)
 (reset)
 
-fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+; subset_digit_inhabited_843: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :finite-model-find true)
+(define-fun |::subset_digit_invariant_843?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
+(declare-const |n| Int)
+(assert (|::subset_digit_invariant_843?| |n|)) ; invariant
+(assert (not false))
+(check-sat)
+(reset)
+
+; h: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; h: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not true))
+(check-sat)
+(reset)
+
+; h: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |L| ((|L::Nil|) (|L::Cons| (|L::Cons::0| Int) (|L::Cons::1| |L|))))
+(define-fun |::subset_digit_invariant_843?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
+(declare-const |l| |L|)
+(assert (|::subset_digit_invariant_843?| (|L::Cons::0| |l|))) ; type
+(assert (not (<= (ite (= |l| (|L::Cons| (|L::Cons::0| |l|) (|L::Cons::1| |l|))) (|L::Cons::0| |l|) 0) 9)))
+(check-sat)
+(reset)
+
+fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
 exit=0

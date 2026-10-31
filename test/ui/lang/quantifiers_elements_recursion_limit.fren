@@ -1,0 +1,23 @@
+-- The limit of the expansion of a quantifier over elements in a function's
+-- body, in a spec with a recursive function that the procedure does not
+-- apply: it holds as in a spec without recursion
+-- (`Reqs/Lang/Recursion#solver-encoding`). The CLI only: where the
+-- quantifier is in a function's body, the Lean front end also reports the
+-- realizability, vacuity, redundancy and index checks as over the limit,
+-- with recursion or without.
+--@ only: cli
+--@ summary: 5 passed, 0 failed, 1 inconclusive, 0 redundant
+pub enum T { Leaf, Node(T) }
+
+pub fn depth(t: T): Int := match t {
+    T::Leaf => 0,
+    T::Node(u) => 1 + depth(u),
+}
+
+fn triples_nonneg?(q: Seq<Int>) := forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
+
+-- Three bound names over an index set of seven terms: 343 instances.
+proc many(q: Seq<Int>) {
+    assume r: triples_nonneg?(q)
+    expect e: when q.len >= 3, q[1] + q[2] >= 0  --~ warning: would have more than 256 instances
+}

@@ -1,0 +1,30 @@
+-- Quantifiers over elements in the bodies of functions, in a spec with a
+-- recursive function, in both front ends: each is expanded where its
+-- function is applied, as in a spec without recursion, whether or not the
+-- function applies the recursive one (`Reqs/Lang/Recursion#solver-encoding`).
+--@ summary: 12 passed, 0 failed, 0 inconclusive, 0 redundant
+enum T { Leaf, Node(T) }
+
+fn depth(t: T): Int := match t {
+    T::Leaf => 0,
+    T::Node(u) => 1 + depth(u),
+}
+
+fn all_pos?(q: Seq<Int>) := forall (x: Int), when x in q, x > 0
+
+-- The function does not apply `depth`: expanded, so the expectation holds.
+proc firsts(q: Seq<Int>) {
+    assume pos: all_pos?(q)
+    assume long: q.len > 1
+    expect e: q[0] > 0 and q[1] > 0
+}
+
+fn deep_pos?(t: T, q: Seq<Int>) := depth(t) >= 0 and (forall (x: Int), when x in q, x > 0)
+
+-- The function applies `depth`, and is unfolded to find its application:
+-- its quantifier is expanded there too.
+proc deep_firsts(t: T, q: Seq<Int>) {
+    assume pos: deep_pos?(t, q)
+    assume long: q.len > 1
+    expect e: q[0] > 0 and q[1] > 0
+}

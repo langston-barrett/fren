@@ -2,7 +2,10 @@
 -- `--dump-smt` of a spec with a recursive function: a query unfolds the
 -- definitions that apply it, as `twice` does, to find its applications
 -- and their facts, and leaves the others to the solver, as `small?`, which
--- applies none (`Reqs/Lang/Recursion#solver-encoding`).
+-- applies none (`Reqs/Lang/Recursion#solver-encoding`). `head_or_zero` reads
+-- the `Digit` payload of the recursive `L`, whose invariant a query finds
+-- only where the definition is unfolded, so it is unfolded too, and the
+-- invariant is assumed of the payload it reads.
 pub enum T { Leaf, Node(T) }
 
 pub fn depth(t: T): Int := match t {
@@ -18,4 +21,18 @@ proc p(t: T, n: Int): (y: Int) {
     ensure r: y = twice(t)
 
     expect even: small?(n) or y = 2 * depth(t)
+}
+
+pub type Digit = n: Int where invariant: n is 0..=9
+
+set_option fren.lint.undecidable "allow" in
+pub enum L { Nil, Cons(Digit, L) }
+
+pub fn head_or_zero(l: L): Int := match l {
+    L::Cons(d, _) => d,
+    _ => 0,
+}
+
+proc h(l: L) {
+    expect digit: head_or_zero(l) <= 9
 }

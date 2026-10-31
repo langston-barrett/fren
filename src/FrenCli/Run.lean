@@ -670,7 +670,7 @@ each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
 an internal error if the evaluator has no counterpart of `c`. `sy` is
 `symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
-(`Prelude.ofDecls`), and `cache` holds the answers to the queries asked
+(`State.queryPrelude`), and `cache` holds the answers to the queries asked
 before (`QueryCache`). -/
 partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
@@ -820,7 +820,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- Each procedure and global expectation,
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
-  let prelude := Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
+  let prelude := st.queryPrelude
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`).
   let cache : QueryCache ← IO.mkRef {}
@@ -937,7 +937,7 @@ def quickcheck (args : Args) : IO UInt32 := do
   let mut all := #[]
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
-  let prelude := Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
+  let prelude := st.queryPrelude
   for (c, global) in st.comps.map (·, false) ++ st.globals.map (fun g => (g, g.short)) do
     let some ec := sp.counterpart? c global
       | let msg := Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"
@@ -1497,7 +1497,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- as its assumptions' consistency, is often one of the spec's
   -- (`Reqs/Cli#solver-queries`).
   let cache : QueryCache ← IO.mkRef {}
-  let prelude := Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
+  let prelude := st.queryPrelude
   -- As `fren check` checks `c`: with the solver, and the checks set to
   -- testing by testing; with the internal errors, each at its place in `c`.
   let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
@@ -1584,7 +1584,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       if let .error e := spec'? then
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
-      let prelude' := Prelude.ofDecls st'.prelude (st'.funFacts.toArray.map (·.1))
+      let prelude' := st'.queryPrelude
       let preludeText' := st'.preludeText
       let (killers₁, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' preludeText' spec'? solve onMutant
         else pure (#[], false)

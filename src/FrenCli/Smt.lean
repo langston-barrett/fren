@@ -125,12 +125,16 @@ bodies, that a query unfolds before it scans for applications
 or through another of them, a recursive or uninterpreted function, or a
 selector of `factHeads` (`State.funFacts`), which bring facts. Unfolding the
 others finds nothing, and writes each of their bodies once at every
-application, which can make a query hundreds of times larger. -/
-def queryDefinitions (decls : Array PreludeDecl) (factHeads : Array String) :
+application, which can make a query hundreds of times larger. One of
+`marked` is unfolded to its body with its quantifiers over elements still
+marked, so that they are expanded where it is applied, as they are where
+it is left to the expansion (`solveExpanded`). -/
+def queryDefinitions (decls : Array PreludeDecl) (factHeads : Array String)
+    (marked : Std.HashMap String (Array String × SeqElems.SExpr)) :
     Std.HashMap String (Array String × SeqElems.SExpr) := Id.run do
   let defs := decls.filterMap fun d => match SeqElems.parse d.text with
     | .list #[.atom "define-fun", .atom f, .list ps, _, body] =>
-      some (f, ps.filterMap (fun | .list #[.atom p, _] => some p | _ => none), body)
+      some (f, marked[f]?.getD (ps.filterMap (fun | .list #[.atom p, _] => some p | _ => none), body))
     | _ => none
   let mut wanted : Std.HashSet String := .ofArray factHeads
   for d in decls do
@@ -154,7 +158,12 @@ def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Pre
   { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
     smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked
-    unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads }
+    unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked }
+
+/-- The prelude of the queries of `st`'s spec, with the selectors whose
+payloads bring facts, which every front end of the CLI asks with. -/
+def State.queryPrelude (st : State) : Prelude :=
+  Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
 
 /-- The positions of the declarations that a script whose quoted symbols
 are `syms` needs: those of its symbols, and of theirs in turn, in the
