@@ -1289,6 +1289,17 @@ def solverOptions (strings sets : Bool) : List (String × String) :=
   (if strings then [("strings-exp", "true"), ("re-inter-mode", "all"), ("re-elim", "on")] else [])
     ++ (if sets then [("sets-exp", "true")] else [])
 
+/-- The cvc5 option for a query in a logic with quantifiers, every logic
+of `logic` but `QF_UFDTLIA` (`cli::logic`): `inst-when` `last-call`, so
+that cvc5 instantiates quantifiers only once the rest of the query is
+satisfied, not also while it searches it. Its default instantiates, by
+E-matching, at each step of that search too, and can go on making
+instances that each bring new terms to match: a query that assumes the
+contract of `lang::resolve` for two scopes of one name took 1.4 to 2 s
+to find a model so, and 0.1 to 0.2 s with the option (#520). -/
+def quantifierOptions (logic : String) : List (String × String) :=
+  if logic == "QF_UFDTLIA" then [] else [("inst-when", "last-call")]
+
 /-- The cvc5 option for a query with a quantifier over a collection's
 elements, which a subset type within an element type brings
 (`Reqs/Cli#solver-queries`): `fmf-bound`, with which cvc5 finds models of

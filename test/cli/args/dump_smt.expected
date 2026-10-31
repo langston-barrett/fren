@@ -2,6 +2,7 @@
 (set-logic UFDTLIA)
 (set-option :produce-models true)
 (set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
 (declare-const |x| Int)
 (assert (> |x| 0)) ; pos
 (assert (not false))
@@ -12,6 +13,7 @@
 (set-logic UFDTLIA)
 (set-option :produce-models true)
 (set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
 (declare-datatype |Mode| ((|Mode::Off|) (|Mode::On|)))
 (declare-const |m| |Mode|)
 (declare-const |x| Int)
