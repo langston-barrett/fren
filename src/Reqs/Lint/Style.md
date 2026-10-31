@@ -232,7 +232,9 @@ pub enum PatternFix { Equality, StartsWith, EndsWith, Contains }
 pub proc trivial_pattern(
     pattern: String,         -- the value of the literal
 ): (det fires?, det fix: PatternFix) {
-    ensure rule: fires? iff pattern.matches?(r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?")
+    ensure rule: fires? iff pattern.matches?(
+        r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?"
+    )
     ensure which: fix = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
         else PatternFix::EndsWith)
         else if pattern.ends_with?(".*") then PatternFix::StartsWith

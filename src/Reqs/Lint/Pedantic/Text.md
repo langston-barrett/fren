@@ -164,7 +164,7 @@ the comma, so the written one is left unformatted:
 ```fren
 set_option fren.lint.unnecessary_trailing_comma "allow" in
 pub proc trailing_comma_written(x: Int): (det q: Seq<Int>) {
-    out q := [x, 1,]
+    out q := [x, 1]
 }
 
 pub proc trailing_comma_fixed(x: Int): (det q: Seq<Int>) {

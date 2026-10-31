@@ -104,16 +104,17 @@ impl trailing_comma: fmt::trailing_comma for (e v a : Bool) {
   comma? := FrenCli.Fmt.trailingComma e v a,
 }
 
-impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w e : Nat) {
+impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w e : Nat) (l : Bool) {
   list := toFmtListKind k,
   n := n,
   broken? := b,
   width := w,
   line_end := e,
-  vertical? := FrenCli.Fmt.vertical k n b w e,
+  own_line? := l,
+  vertical? := FrenCli.Fmt.vertical k n b w e l,
 } by
-  intro k n b w e _
-  cases k <;> cases b <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
+  intro k n b w e l _
+  cases k <;> cases b <;> cases l <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
 
 theorem count_toElementList (es : List (Nat × Bool)) : fmt.count (toElementList es) = es.length := by
@@ -136,20 +137,21 @@ theorem joined_toElementList (es : List (Nat × Bool)) :
     | nil => simp [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
     | cons f fs => simp_all [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
 
-impl list_layout: fmt::list_layout for (k : ListKind) (es : List (Nat × Bool)) (s a : Nat) {
+impl list_layout: fmt::list_layout for (k : ListKind) (es : List (Nat × Bool)) (s a : Nat) (l : Bool) {
   list := toFmtListKind k,
   elements := toElementList es,
   start := s,
   after := a,
-  vertical? := FrenCli.Fmt.listLayout k es s a,
+  own_line? := l,
+  vertical? := FrenCli.Fmt.listLayout k es s a l,
 } by
-  intro k es s a _
+  intro k es s a l _
   simp only [fren_spec, count_toElementList, any_broken_toElementList, joined_toElementList,
     FrenCli.Fmt.listLayout]
   generalize es.any (·.2) = b
   generalize FrenCli.Fmt.joinedWidth (es.map (·.1)) = w
   generalize es.length = n
-  cases k <;> cases b <;> simp [FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
+  cases k <;> cases b <;> cases l <;> simp [FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
 
 impl group_layout: fmt::group_layout for (n : Nat) (wv fits : Bool) {

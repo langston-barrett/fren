@@ -113,8 +113,16 @@ The fix's meaning is checked by refinement, each way:
 ```fren
 set_option fren.lint.manual_record_update "allow" in
 pub proc manual_record_update_written(t: Triple, n: Int): (det u: Triple, det v: Triple) {
-    out u := Triple { a := n, b := t.b, c := t.c }
-    out v := Triple { a := t.a, b := n + 1, c := t.c }
+    out u := Triple {
+        a := n,
+        b := t.b,
+        c := t.c,
+    }
+    out v := Triple {
+        a := t.a,
+        b := n + 1,
+        c := t.c,
+    }
 }
 
 pub proc manual_record_update_fixed(t: Triple, n: Int): (det u: Triple, det v: Triple) {

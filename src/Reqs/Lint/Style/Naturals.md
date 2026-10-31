@@ -81,10 +81,16 @@ pub struct NatConjunct { assumption?, op: BoundOp, left: String, right: String }
 pub enum Given { Integer, Natural }  -- `Int` or `Nat`
 
 pub fn bounds?(v: NatVariable, c: NatConjunct) := v.int?
-    and (match c.op { BoundOp::AtLeast => c.left = v.name and c.right = "0",
-    BoundOp::AtMost => c.left = "0" and c.right = v.name, BoundOp::OtherOp => false })
-    and (match v.role { NatRole::Input => c.assumption?, NatRole::Output => not c.assumption?,
-    NatRole::DefinedOutput => false })
+    and (match c.op {
+        BoundOp::AtLeast => c.left = v.name and c.right = "0",
+        BoundOp::AtMost => c.left = "0" and c.right = v.name,
+        BoundOp::OtherOp => false,
+    })
+    and (match v.role {
+        NatRole::Input => c.assumption?,
+        NatRole::Output => not c.assumption?,
+        NatRole::DefinedOutput => false,
+    })
 
 set_option fren.evidence "random" in
 set_option fren.lint.undecidable "allow" in

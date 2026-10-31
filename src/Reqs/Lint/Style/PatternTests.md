@@ -262,14 +262,32 @@ pub fn value_alt(v: Literal, nat?): Option<Alt> := match v {
 
 -- An equation, or a disequation, with exactly one side a value.
 fn comparison_reading(c: ComparisonShape): Option<Reading> := match value_alt(c.left.value, c.nat?), value_alt(c.right.value, c.nat?) {
-    None, Some(a) => Some(Reading { scrutinee := c.left.text, alts := [a], equation? := true }),
-    Some(a), None => Some(Reading { scrutinee := c.right.text, alts := [a], equation? := true }),
+    None, Some(a) => Some(
+        Reading {
+            scrutinee := c.left.text,
+            alts := [a],
+            equation? := true,
+        }
+    ),
+    Some(a), None => Some(
+        Reading {
+            scrutinee := c.right.text,
+            alts := [a],
+            equation? := true,
+        }
+    ),
     _, _ => None,
 }
 
 -- A pattern test, or its negation, whose alternatives are read.
 fn test_reading(t: TestShape): Option<Reading> := match t.alts {
-    Some(q) => Some(Reading { scrutinee := t.scrutinee, alts := q, equation? := false }),
+    Some(q) => Some(
+        Reading {
+            scrutinee := t.scrutinee,
+            alts := q,
+            equation? := false,
+        }
+    ),
     None => None,
 }
 
@@ -283,9 +301,20 @@ pub fn reading(s: Shape, conj?): Option<Reading> := match s {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub proc read_operand(shape: Shape, conj?): (det reads?, det equation?, det scrutinee: String, det alts: Seq<Alt>) {
-    out scrutinee := match reading(shape, conj?) { Some(r) => r.scrutinee, None => "" }
-    out alts := match reading(shape, conj?) { Some(r) => r.alts, None => [] }
+pub proc read_operand(shape: Shape, conj?): (
+    det reads?,
+    det equation?,
+    det scrutinee: String,
+    det alts: Seq<Alt>,
+) {
+    out scrutinee := match reading(shape, conj?) {
+        Some(r) => r.scrutinee,
+        None => "",
+    }
+    out alts := match reading(shape, conj?) {
+        Some(r) => r.alts,
+        None => [],
+    }
 
     ensure rule: reads? iff reading(shape, conj?) != None
     ensure equation: equation? iff (reading(shape, conj?) is Some(r) and r.equation?)
@@ -372,7 +401,10 @@ pub proc disjoint_alternatives(a: Alt, b: Alt, v: lang::Value, c: lang::Id, k: I
         not (lang::matches_value?(alt_pattern(a), v) and lang::matches_value?(alt_pattern(b), v))
     expect symmetric: alts_disjoint?(a, b) iff alts_disjoint?(b, a)
     expect repeated: not alts_disjoint?(Alt::Variant(c), Alt::Variant(c))
-    expect overlapping: when 0 <= k <= 9, not alts_disjoint?(Alt::Integers(Some(0), Some(9)), Alt::Integers(Some(k), Some(k)))
+    expect overlapping: when 0 <= k <= 9, not alts_disjoint?(
+        Alt::Integers(Some(0), Some(9)),
+        Alt::Integers(Some(k), Some(k))
+    )
 }
 ```
 
@@ -471,7 +503,10 @@ fn run_fires?(operands: Seq<Shape>, conj?, chain: Seq<Shape>, s: Span) :=
     and (exists (i: Int), s.first <= i <= s.last and equation_at?(operands, conj?, i))
     and (forall (i j k l: Int), when s.first <= i <= s.last and i <= j <= s.last
     and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len and (i < j or k < l),
-    alts_disjoint?(alts_at(operands, conj?, i)[k], alts_at(operands, conj?, j)[l]))
+    alts_disjoint?(
+        alts_at(operands, conj?, i)[k],
+        alts_at(operands, conj?, j)[l]
+    ))
 
 set_option fren.lint.undecidable "allow" in
 pub proc manual_pattern_test_runs(

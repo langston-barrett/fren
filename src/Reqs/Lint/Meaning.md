@@ -83,11 +83,27 @@ set_option fren.evidence "random" in
 pub proc written_scopes(i: lang::Interp, payload: lang::Value, v: lang::Value) {
     use lang::{Env, Expr, Outcome, Pattern, Value, eval}
 
-    let env: Env := Env::Bind("r", Outcome::Defined(Value::Constructed("Reply::Value", Value::Cons(payload, Value::Nil))),
-        Env::Bind("v", Outcome::Defined(v), Env::Empty))
-    let in_then: Outcome := eval(i, env, Expr::Match(Expr::Var("r"),
-        Pattern::Variant("Reply::Value", Pattern::Cons(Pattern::Binder("v"), Pattern::Nil)),
-        Expr::Literal(Value::True), Expr::Var("v"), Expr::NoMatch))
+    let env: Env := Env::Bind(
+        "r",
+        Outcome::Defined(
+            Value::Constructed("Reply::Value", Value::Cons(payload, Value::Nil))
+        ),
+        Env::Bind("v", Outcome::Defined(v), Env::Empty)
+    )
+    let in_then: Outcome := eval(
+        i,
+        env,
+        Expr::Match(
+            Expr::Var("r"),
+            Pattern::Variant(
+                "Reply::Value",
+                Pattern::Cons(Pattern::Binder("v"), Pattern::Nil)
+            ),
+            Expr::Literal(Value::True),
+            Expr::Var("v"),
+            Expr::NoMatch
+        )
+    )
     let in_else: Outcome := eval(i, env, Expr::Var("v"))
 
     ensure payload_read: in_then = Outcome::Defined(payload)
@@ -111,7 +127,13 @@ same. Here `e` is the expression's elaboration, and `i`, `p`, `j` and `q`
 two interpretations and environments:
 
 ```fren
-expect mentions_nothing(e: lang::Expr, i: lang::Interp, p: lang::Env, j: lang::Interp, q: lang::Env) {
+expect mentions_nothing(
+    e: lang::Expr,
+    i: lang::Interp,
+    p: lang::Env,
+    j: lang::Interp,
+    q: lang::Env,
+) {
     assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call c := lang::closed(i, p, j, q, e)
     expect mentions_nothing: when lang::free_vars(e) = {}, lang::eval(i, p, e) = lang::eval(j, q, e)

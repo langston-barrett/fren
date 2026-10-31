@@ -118,7 +118,11 @@ pub enum Guard { Absent, Literal(Bool), Other(Bool) }
 -- What `trivial_guard`'s fix does.
 pub enum GuardFix { Unchanged, DropGuard, DropArm }
 
-pub fn guard_holds?(g: Guard) := match g { Guard::Absent => true, Guard::Literal(b?) => b?, Guard::Other(b?) => b? }
+pub fn guard_holds?(g: Guard) := match g {
+    Guard::Absent => true,
+    Guard::Literal(b?) => b?,
+    Guard::Other(b?) => b?,
+}
 
 -- What an arm does at a value of the scrutinee (`lang::ArmAt`), from
 -- whether its pattern matches the value, and its guard.
@@ -178,11 +182,19 @@ pub enum Mode { Idle, Run(Int), Halt }
 
 set_option fren.lint.trivial_guard "allow" in
 pub proc trivial_guard_written(m: Mode): (det v: Int) {
-    out v := match m { Mode::Idle => 1, Mode::Run(n) if true => n, _ => 0 }
+    out v := match m {
+        Mode::Idle => 1,
+        Mode::Run(n) if true => n,
+        _ => 0,
+    }
 }
 
 pub proc trivial_guard_fixed(m: Mode): (det v: Int) {
-    out v := match m { Mode::Idle => 1, Mode::Run(n) => n, _ => 0 }
+    out v := match m {
+        Mode::Idle => 1,
+        Mode::Run(n) => n,
+        _ => 0,
+    }
 }
 
 expect trivial_guard_sound(m: lint::Mode) {
@@ -246,7 +258,10 @@ there:
 -- value.
 pub enum GuardValue { Written(Int), Other(Int) }
 
-pub fn guard_value(v: GuardValue): Int := match v { GuardValue::Written(c) => c, GuardValue::Other(c) => c }
+pub fn guard_value(v: GuardValue): Int := match v {
+    GuardValue::Written(c) => c,
+    GuardValue::Other(c) => c,
+}
 
 -- `l` with the literal `c` in place of the binder named `n`.
 pub fn leaf_with(l: Leaf, n: Int, c: Int): Leaf := match l {
@@ -274,7 +289,10 @@ pub fn bound_value(p: Pat, n: Int, x: Val): Int := match p {
 }
 
 -- The body `b` with the integer `c` in place of its mention of `n`.
-pub fn body_with(b: Body, n: Int, c: Int): Body := if body_names?(b, n) then Body { form := b.form + c, uses := Use::Nothing } else b
+pub fn body_with(b: Body, n: Int, c: Int): Body := if body_names?(b, n) then Body {
+    form := b.form + c,
+    uses := Use::Nothing,
+} else b
 
 pub proc redundant_guards(
     pattern: Pat,            -- the arm's pattern
@@ -286,7 +304,10 @@ pub proc redundant_guards(
     o: Int,                  -- the value of a name outside the pattern
 ): (det fires?, det fixed: Pat) {
     -- The binders of a pattern have distinct names (`lang::distinct_names`).
-    assume distinct: match pattern { Pat::Variant(_, l, m) => leaf_name(l) < 0 or leaf_name(l) != leaf_name(m), _ => true }
+    assume distinct: match pattern {
+        Pat::Variant(_, l, m) => leaf_name(l) < 0 or leaf_name(l) != leaf_name(m),
+        _ => true,
+    }
 
     ensure rule: fires? iff (binds_name?(pattern, name) and value is GuardValue::Written(_) and accepted?)
     ensure fix: fixed = (if fires? then pat_with(pattern, name, guard_value(value)) else pattern)
@@ -297,7 +318,16 @@ pub proc redundant_guards(
     -- There, the body with the value in place of the binder means what it did.
     expect same_body: when fires? and pat_matches?(fixed, x),
         body_value(body, name, bound_value(pattern, name, x), -1, 0, -1, 0, o)
-        = body_value(body_with(body, name, guard_value(value)), -1, 0, -1, 0, -1, 0, o)
+        = body_value(
+            body_with(body, name, guard_value(value)),
+            -1,
+            0,
+            -1,
+            0,
+            -1,
+            0,
+            o
+        )
     expect constant_kept: when value is GuardValue::Other(_), not fires?
 }
 ```
@@ -311,13 +341,27 @@ pub enum Probe { Read(Strength, Int), Off }
 
 set_option fren.lint.redundant_guards "allow" in
 pub proc redundant_guards_written(p: Probe, k: Int): (det v: Int, det w: Int) {
-    out v := match p { Probe::Read(_, n) if n = 0 => 1, Probe::Read(l, n) if l = Strength::High => n + k, _ => 0 }
-    out w := match k { j if j = -3 => j + 1, _ => 2 }
+    out v := match p {
+        Probe::Read(_, n) if n = 0 => 1,
+        Probe::Read(l, n) if l = Strength::High => n + k,
+        _ => 0,
+    }
+    out w := match k {
+        j if j = -3 => j + 1,
+        _ => 2,
+    }
 }
 
 pub proc redundant_guards_fixed(p: Probe, k: Int): (det v: Int, det w: Int) {
-    out v := match p { Probe::Read(_, 0) => 1, Probe::Read(Strength::High, n) => n + k, _ => 0 }
-    out w := match k { -3 => (-3) + 1, _ => 2 }
+    out v := match p {
+        Probe::Read(_, 0) => 1,
+        Probe::Read(Strength::High, n) => n + k,
+        _ => 0,
+    }
+    out w := match k {
+        -3 => (-3) + 1,
+        _ => 2,
+    }
 }
 
 expect redundant_guards_sound(p: lint::Probe, k: Int) {

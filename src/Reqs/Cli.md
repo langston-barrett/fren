@@ -535,7 +535,10 @@ expect failing_check_exits_1(s_kind: Kind, s_verdict: Verdict, r_ran?, r_present
 expect passing_checks_exit_0(s_kind: Kind, s_verdict: Verdict, r_ran?, r_present: Set<Severity>) {
     call s := severity(s_kind, s_verdict)
     call r := run(r_ran?, r_present)
-    expect passing_checks_exit_0: when r.ran? and s.verdict = Verdict::Pass and r.present subset {s.level, Info},
+    expect passing_checks_exit_0: when r.ran? and s.verdict = Verdict::Pass and r.present subset {
+        s.level,
+        Info,
+    },
         s.level = Silent and r.code = 0
 }
 

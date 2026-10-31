@@ -25,7 +25,10 @@ pub proc test_local(
     assume within: test_at < operands
     assume binder: declaration.kind = BindingKind::PatternBinder
 
-    out entry := Local { declaration, visible? := visibility.visible? }
+    out entry := Local {
+        declaration,
+        visible? := visibility.visible?,
+    }
 
     call visibility := test_scope(context, operands, test_at, site)
 
@@ -57,7 +60,12 @@ is arbitrary, and `named` assumes that the name is a value's.
 pub fn named_expr(b: Binding, definition: Expr): Expr := match b.kind {
     BindingKind::Variant | BindingKind::Opened => Expr::Construct(b.target, Expr::Nil),
     BindingKind::Constant | BindingKind::Function | BindingKind::Builtin | BindingKind::Module
-    | BindingKind::Enumeration | BindingKind::Item => Expr::Apply(b.target, Expr::Nil, Params::Nil, definition),
+    | BindingKind::Enumeration | BindingKind::Item => Expr::Apply(
+        b.target,
+        Expr::Nil,
+        Params::Nil,
+        definition
+    ),
     _ => Expr::Var(b.name),
 }
 ```

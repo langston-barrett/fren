@@ -87,14 +87,38 @@ pub proc membership_test_written(s: Shade, n: Int): (
     det clear?,
     det positive?,
 ) {
-    out tinted? := match s { Shade::Tinted(_) => true, _ => false }
-    out shaded? := match s { Shade::Light => false, Shade::Dark | Shade::Tinted(_) => true }
-    out light? := match s { Shade::Light => true, _ => false }
-    out untinted? := match s { Shade::Tinted(_) => false, _ => true }
-    out small? := match n { 0 | 1 => true, _ => false }
-    out digit? := match n { 0..=9 => true, _ => false }
-    out clear? := match s { Shade::Tinted(0) => true, _ => false }
-    out positive? := match n { ..=0 => false, _ => true }
+    out tinted? := match s {
+        Shade::Tinted(_) => true,
+        _ => false,
+    }
+    out shaded? := match s {
+        Shade::Light => false,
+        Shade::Dark | Shade::Tinted(_) => true,
+    }
+    out light? := match s {
+        Shade::Light => true,
+        _ => false,
+    }
+    out untinted? := match s {
+        Shade::Tinted(_) => false,
+        _ => true,
+    }
+    out small? := match n {
+        0 | 1 => true,
+        _ => false,
+    }
+    out digit? := match n {
+        0..=9 => true,
+        _ => false,
+    }
+    out clear? := match s {
+        Shade::Tinted(0) => true,
+        _ => false,
+    }
+    out positive? := match n {
+        ..=0 => false,
+        _ => true,
+    }
 }
 
 pub proc membership_test_fixed(s: Shade, n: Int): (
@@ -247,7 +271,12 @@ pub fn last_operand(c: Chain): String := if c.steps = [] then c.first else c.ste
 pub fn reversed(c: Chain): Chain := Chain {
     first := last_operand(c),
     ascending? := not c.ascending?,
-    steps := [Step { strict? := c.steps[0].strict?, operand := c.first }],
+    steps := [
+        Step {
+            strict? := c.steps[0].strict?,
+            operand := c.first,
+        },
+    ],
 }
 
 -- The conjunct as the fix writes it: the other way round, if `flip?`.
@@ -322,13 +351,23 @@ pub fn chain_operand(c: Chain, k: Int): String := if k = 0 then c.first else c.s
 -- The inequality of `c` at the position `k`, from `0`: of its operands at
 -- `k` and `k + 1`, the other way round if `c` orders descending.
 pub fn inequality(c: Chain, k: Int): Inequality := if c.ascending?
-    then Inequality { lower := chain_operand(c, k), strict? := c.steps[k].strict?, upper := chain_operand(c, k + 1) }
-    else Inequality { lower := chain_operand(c, k + 1), strict? := c.steps[k].strict?, upper := chain_operand(c, k) }
+    then Inequality {
+        lower := chain_operand(c, k),
+        strict? := c.steps[k].strict?,
+        upper := chain_operand(c, k + 1),
+    }
+    else Inequality {
+        lower := chain_operand(c, k + 1),
+        strict? := c.steps[k].strict?,
+        upper := chain_operand(c, k),
+    }
 
 -- The chain of `l` and then `r`, whose first operand is `l`'s last: `l`'s
 -- operands, then `r`'s after its first.
 set_option fren.lint.undecidable "allow" in
-pub fn joined(l: Chain, r: Chain): Chain := { l with steps := l.steps ++ r.steps }
+pub fn joined(l: Chain, r: Chain): Chain := { l with
+    steps := l.steps ++ r.steps,
+}
 
 -- A comparison written the other way round is the same inequality.
 expect turned(c: Chain) {
@@ -343,7 +382,11 @@ set_option fren.evidence "random" in
 expect joined_inequalities(left: Chain, steps: Seq<Step>) {
     assume nonempty: left.steps != [] and steps != []
 
-    let right: Chain := Chain { first := last_operand(left), ascending? := left.ascending?, steps }
+    let right: Chain := Chain {
+        first := last_operand(left),
+        ascending? := left.ascending?,
+        steps,
+    }
     let chain: Chain := joined(left, right)
 
     expect inequalities: chain.steps.len = left.steps.len + right.steps.len
@@ -383,7 +426,13 @@ Its evidence is testing, which evaluates it, since the solver unfolds
 
 ```fren
 set_option fren.evidence "random" in
-expect and_associates(i: lang::Interp, env: lang::Env, a: lang::Expr, b: lang::Expr, c: lang::Expr) {
+expect and_associates(
+    i: lang::Interp,
+    env: lang::Env,
+    a: lang::Expr,
+    b: lang::Expr,
+    c: lang::Expr,
+) {
     use lang::{Expr, eval}
     expect associates: eval(i, env, Expr::And(Expr::And(a, b), c)) = eval(i, env, Expr::And(a, Expr::And(b, c)))
 }

@@ -49,8 +49,22 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     }
     -- A record update's fields start after its `with`.
     ensure u: q = { q with xx := 1000000, y := 2000000 }
+    -- Past column 100, a list goes vertical only if it is its line's expression: nothing but
+    -- closing brackets follows it, and at most 4 columns come before it, or it opens with a brace.
+    -- Elsewhere, breaking it would not shorten the line.
+    ensure mid: r = ff(xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy) + gg(xxxxxxxxxxxxxxxx) and r = gg(yyyyyyyyyy) + 1000
+    ensure dot: [xxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyy, zzzzzzzzzzzzzz].len = r + 1000000000000000
+    ensure long_left: r + 1 = ff(xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy) + gg(xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyy)
+    ensure guarded_by_a_condition: when x > 0, gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
+    ensure branch_of_an_if: r = if x > 0 then 0 else gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
+    ensure short_left_operand_q: r = gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
+    ensure only_closing_brackets_after: (gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy))
+    ensure continued: x = 1
+        and ff(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy) and r = gg(xxxxxxxxxxxxx)
+        and ffffffffffffffffffffffffffffffffff(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
 }
 
--- A function's parameters get no trailing comma, and the line ends by column 100.
-fn exactly(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaa: Int): Int := p0
-fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaa: Int): Int := p0
+-- A function's parameters get no trailing comma, and the signature ends by column 100, counting
+-- up to its `:=` but not the body after it.
+fn exactly(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaa: Int): Int := p0 + p1 + p2
+fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaaaa: Int): Int := p0 + p1 + p2

@@ -93,13 +93,13 @@ pub struct LabelledClause { label: String, identity: ClauseIdentity }
 
 pub proc labelled_clause_identity(earlier: LabelledClause, later: LabelledClause):
     (det same?) {
-    out same? := earlier.identity = later.identity
-    expect different_expression: when earlier.identity.expression != later.identity.expression,
-        not same?
-    expect different_wrapper: when earlier.identity.wrappers != later.identity.wrappers,
-        not same?
-    expect label_is_not_expression: when earlier.identity = later.identity, same?
-}
+        out same? := earlier.identity = later.identity
+        expect different_expression: when earlier.identity.expression != later.identity.expression,
+            not same?
+        expect different_wrapper: when earlier.identity.wrappers != later.identity.wrappers,
+            not same?
+        expect label_is_not_expression: when earlier.identity = later.identity, same?
+    }
 ```
 
 For an actual repeated member of one conjunction block, the fix removes

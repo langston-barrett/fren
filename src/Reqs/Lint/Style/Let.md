@@ -188,7 +188,12 @@ pub proc manual_forall(
 
     -- Every variant, and no two operands at one.
     let covers? := variant_of.range = {Hue::Red, Hue::Green, Hue::Blue}
-        and (variant_of join variant_of.inverse) subset {(DefIndex::P0, DefIndex::P0), (DefIndex::P1, DefIndex::P1), (DefIndex::P2, DefIndex::P2), (DefIndex::P3, DefIndex::P3)}
+        and (variant_of join variant_of.inverse) subset {
+            (DefIndex::P0, DefIndex::P0),
+            (DefIndex::P1, DefIndex::P1),
+            (DefIndex::P2, DefIndex::P2),
+            (DefIndex::P3, DefIndex::P3),
+        }
 
     ensure rule: fires? iff (instances? and covers?)
 
@@ -234,7 +239,10 @@ pub proc manual_forall_written(s: Set<Hue>, t: Set<Hue>, hue: Hue, a?): (
     out some? := Hue::Red in s or Hue::Green in s or Hue::Blue in s
     out within? := a? and Hue::Blue in t and Hue::Red in t and Hue::Green in t
     out beside? := hue in s and Hue::Red in s and Hue::Green in s and Hue::Blue in s
-    out arm? := match hue { Hue::Red => Hue::Red in s and Hue::Green in s and Hue::Blue in s, _ => a? }
+    out arm? := match hue {
+        Hue::Red => Hue::Red in s and Hue::Green in s and Hue::Blue in s,
+        _ => a?,
+    }
 }
 
 pub proc manual_forall_fixed(s: Set<Hue>, t: Set<Hue>, hue: Hue, a?): (
@@ -248,7 +256,10 @@ pub proc manual_forall_fixed(s: Set<Hue>, t: Set<Hue>, hue: Hue, a?): (
     out some? := exists (hue!: Hue), hue in s
     out within? := a? and (forall (hue!: Hue), hue in t)
     out beside? := hue in s and (forall (hue!: Hue), hue in s)
-    out arm? := match hue { Hue::Red => (forall (hue!: Hue), hue in s), _ => a? }
+    out arm? := match hue {
+        Hue::Red => (forall (hue!: Hue), hue in s),
+        _ => a?,
+    }
 }
 
 expect manual_forall_sound(s: Set<lint::Hue>, t: Set<lint::Hue>, hue: lint::Hue, a?) {

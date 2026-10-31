@@ -199,8 +199,10 @@ set_option fren.lint.undecidable "allow" in
 expect recursive_place(params: Seq<lang::Arg>, args: Seq<lang::Arg>, nested?) {
     use lang
     call concrete := recursive_payload(params, args, nested?)
-    refines concrete type_parameter_place(if not (nested?) and (args) = (params) and not lang::Arg::Other in (params) then lang::ParamPlace::OwnParameter
-            else lang::ParamPlace::OwnOther)
+    refines concrete type_parameter_place(
+        if not (nested?) and (args) = (params) and not lang::Arg::Other in (params) then lang::ParamPlace::OwnParameter
+            else lang::ParamPlace::OwnOther,
+    )
 }
 ```
 
@@ -258,11 +260,30 @@ pub enum Segment { Own, Ident(Arg), ArgsOpen, ArgsSep, ArgsClose, SetOf, SeqOf, 
 set_option fren.lint.undecidable "allow" in
 pub fn own_written(params: Nat): Seq<Segment> :=
     if params = 0 then [Segment::Own]
-    else if params = 1 then [Segment::Own, Segment::ArgsOpen, Segment::Ident(Arg::P0), Segment::ArgsClose]
-    else if params = 2 then [Segment::Own, Segment::ArgsOpen, Segment::Ident(Arg::P0), Segment::ArgsSep,
-Segment::Ident(Arg::P1), Segment::ArgsClose]
-    else [Segment::Own, Segment::ArgsOpen, Segment::Ident(Arg::P0), Segment::ArgsSep, Segment::Ident(Arg::P1),
-Segment::ArgsSep, Segment::Ident(Arg::P2), Segment::ArgsClose]
+    else if params = 1 then [
+        Segment::Own,
+        Segment::ArgsOpen,
+        Segment::Ident(Arg::P0),
+        Segment::ArgsClose,
+    ]
+    else if params = 2 then [
+        Segment::Own,
+        Segment::ArgsOpen,
+        Segment::Ident(Arg::P0),
+        Segment::ArgsSep,
+        Segment::Ident(Arg::P1),
+        Segment::ArgsClose,
+    ]
+    else [
+        Segment::Own,
+        Segment::ArgsOpen,
+        Segment::Ident(Arg::P0),
+        Segment::ArgsSep,
+        Segment::Ident(Arg::P1),
+        Segment::ArgsSep,
+        Segment::Ident(Arg::P2),
+        Segment::ArgsClose,
+    ]
 
 -- The type is the declaration's own type, with type arguments or without.
 pub fn own_whole?(segs: Seq<Segment>) := segs != [] and segs[0] = Segment::Own
@@ -295,7 +316,15 @@ pub proc own_type(
     expect swapped: when params = 2 and segs = [Own, ArgsOpen, Ident(P1), ArgsSep, Ident(P0), ArgsClose], not accepted?
     expect other_argument: when params = 1 and segs = [Own, ArgsOpen, Ident(Other), ArgsClose], not accepted?
     expect missing_arguments: when params = 1 and segs = [Own], own? and not accepted?
-    expect within_instance: when segs = [Ident(Other), ArgsOpen, Own, ArgsOpen, Ident(P0), ArgsClose, ArgsClose],
+    expect within_instance: when segs = [
+        Ident(Other),
+        ArgsOpen,
+        Own,
+        ArgsOpen,
+        Ident(P0),
+        ArgsClose,
+        ArgsClose,
+    ],
         nested? and not accepted?
     expect within_set: when segs = [SetOf, Own, ArgsOpen, Ident(P0), ArgsClose], in_element? and accepted?
     expect unrelated: when not Own in segs, accepted?
@@ -414,7 +443,10 @@ set_option fren.lint.undecidable "allow" in
 expect written_arguments(named: lang::Named, params: Seq<lang::Arg>, args: Seq<lang::Arg>) {
     use lang
     call concrete := written_type_arguments(named, params, args)
-    refines concrete type_arguments(if (named) = lang::Named::Data then (params).len else 0, (args).len)
+    refines concrete type_arguments(
+        if (named) = lang::Named::Data then (params).len else 0,
+        (args).len,
+    )
 }
 ```
 
@@ -552,9 +584,13 @@ expect construction_shape(params: Nat, values: Seq<lang::ArgMode>) {
         + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0)) <= (params)
     assume spec_pair: when (lang::Shape::Construction) = lang::Shape::Pair, (params) = 2
     call concrete := construction_synthesis(params, values)
-    refines concrete synthesizes(lang::Shape::Construction, (params), (if (params) >= 1 and lang::ArgMode::Gives(lang::Arg::P0) in (values) then 1 else 0)
+    refines concrete synthesizes(
+        lang::Shape::Construction,
+        (params),
+        (if (params) >= 1 and lang::ArgMode::Gives(lang::Arg::P0) in (values) then 1 else 0)
             + (if (params) >= 2 and lang::ArgMode::Gives(lang::Arg::P1) in (values) then 1 else 0)
-            + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0))
+            + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0),
+    )
 }
 ```
 
@@ -595,9 +631,9 @@ pub fn within?(a: Arg, params: Nat) := match a {
 set_option fren.lint.undecidable "allow" in
 pub fn waits?(values: Seq<ArgMode>, expected?, j: Int) := not expected? and 0 <= j < values.len
     and match values[j] {
-    ArgMode::Waits(a) => a != Arg::Other and not ArgMode::Gives(a) in values.slice(0, j),
-    ArgMode::Gives(_) => false,
-}
+        ArgMode::Waits(a) => a != Arg::Other and not ArgMode::Gives(a) in values.slice(0, j),
+        ArgMode::Gives(_) => false,
+    }
 
 -- Value `j`'s position, if it is among the values and waits, or does not,
 -- as `waiting?` says.

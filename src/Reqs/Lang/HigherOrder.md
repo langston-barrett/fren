@@ -179,7 +179,11 @@ pub proc function_argument(param: ParamKind, arg: ArgShape): (det accepted?, det
     }
 
     expect values: when param = ParamKind::Value, accepted? iff arg = Other
-    expect closures: when param = ParamKind::Function(1), accepted? iff arg in {Closure(1), DefinedName, FnParameterName}
+    expect closures: when param = ParamKind::Function(1), accepted? iff arg in {
+        Closure(1),
+        DefinedName,
+        FnParameterName,
+    }
     expect no_uninterpreted: when arg = UninterpretedName, not accepted?
 }
 ```
@@ -471,9 +475,14 @@ fallthrough, and returns the actual arguments rather than fresh values.
 pub enum VectorChoice { First, Second, Missing }
 
 pub proc match_vector(
-    left?, right?,
-    first_left: Set<Bool>, first_right: Set<Bool>, first_guard?,
-    second_left: Set<Bool>, second_right: Set<Bool>, second_guard?,
+    left?,
+    right?,
+    first_left: Set<Bool>,
+    first_right: Set<Bool>,
+    first_guard?,
+    second_left: Set<Bool>,
+    second_right: Set<Bool>,
+    second_guard?,
 ): (det choice: VectorChoice, det bound_left?, det bound_right?) {
     out choice := if left? in first_left and right? in first_right and first_guard? then VectorChoice::First
         else if left? in second_left and right? in second_right and second_guard? then VectorChoice::Second

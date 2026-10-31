@@ -275,20 +275,42 @@ pub proc interpretation_at(
     at_a0: Value,            -- the interpretation's value at `A0`
     at_a1: Value,            -- at `A1`
 ): (det recorded?) {
-    ensure rule: recorded? iff ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
-        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
+    ensure rule: recorded? iff ((when Argument::A0 in pres, Point {
+        arg := Argument::A0,
+        value := at_a0,
+    } in posts)
+        and (when Argument::A1 in pres, Point {
+            arg := Argument::A1,
+            value := at_a1,
+        } in posts))
 
     expect unconstrained: when pres = {}, recorded?
 }
 
-expect interpretation_detail(pres: Set<check::Argument>, posts: Set<check::Point>, at_a0: check::Value, at_a1: check::Value) {
+expect interpretation_detail(
+    pres: Set<check::Argument>,
+    posts: Set<check::Point>,
+    at_a0: check::Value,
+    at_a1: check::Value,
+) {
     use check
     call concrete := interpretation_at(pres, posts, at_a0, at_a1)
-    call specification := interpretation_contract(true, false, false, false,
-        if (when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
-            and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts)
+    call specification := interpretation_contract(
+        true,
+        false,
+        false,
+        false,
+        if (when Argument::A0 in pres, Point {
+            arg := Argument::A0,
+            value := at_a0,
+        } in posts)
+            and (when Argument::A1 in pres, Point {
+                arg := Argument::A1,
+                value := at_a1,
+            } in posts)
             then Outcome::Unsat else Outcome::Sat,
-        Outcome::Unknown)
+        Outcome::Unknown,
+    )
     expect rule: specification.proof = (if concrete.recorded? then ContractProof::Theorem else ContractProof::Unproved)
     expect records: specification.recorded? iff concrete.recorded?
     expect reports: specification.error? iff not concrete.recorded?

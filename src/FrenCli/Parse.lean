@@ -618,6 +618,10 @@ structure Layout where
   closureCloses : Array Nat := #[]
   /-- The lists and blocks whose line breaks the formatter decides. -/
   bracketed : Array Bracketed := #[]
+  /-- The spans of expressions that a list may start: each that `expr`
+  parses, each operation of a binary operator and its operands, and each
+  `if`. -/
+  exprs : Array Span := #[]
 
 /-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
@@ -757,7 +761,10 @@ def spanFrom (start : Span) : P Span := return start.to (← lastSpan)
 
 /-- `l op r`, where `start` is the span of its first token, which may be a
 `(` around `l`. -/
-def bin (start : Span) (op : String) (l r : Expr) : P Expr := return .bin (← spanFrom start) op l r
+def bin (start : Span) (op : String) (l r : Expr) : P Expr := do
+  let sp ← spanFrom start
+  modify fun st => { st with layout.exprs := st.layout.exprs ++ #[sp, l.span, r.span] }
+  return .bin sp op l r
 
 /-- Runs `x` within brackets: a record literal may appear, even in a
 `match`'s scrutinee, and `in` is a membership, even in a definition of a
@@ -1150,7 +1157,12 @@ def binders (kw : Token) : P (Array Binder) := do
   return out
 
 mutual
+/-- An expression, whose span the layout records. -/
 partial def expr : P Expr := do
+  let e ← exprBody
+  modify fun st => { st with layout.exprs := st.layout.exprs.push e.span }
+  return e
+partial def exprBody : P Expr := do
   let t ← peek
   let state ← get
   if (t.tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
@@ -1523,7 +1535,9 @@ partial def atom : P Expr := do
     let a ← withIn expr
     discard (expectKw "else")
     let b ← expr
-    return .ite (← spanFrom t.span) c a b
+    let sp ← spanFrom t.span
+    modify fun st => { st with layout.exprs := st.layout.exprs.push sp }
+    return .ite sp c a b
   | .kw "(" =>
     discard bump
     let e ← withRecords expr

@@ -12,7 +12,7 @@ First it rewrites each block of imports (`fmt::in_block`,
 `fmt::group_layout`). Then it decides whether each list or block is on one
 line or has one element to a line (`fmt::list_layout`), from the inside
 out whether it may be on one line, and from the outside in whether its
-line fits. It keeps the other line breaks. It decides, for each line, its
+line fits, where it is its line's expression. It keeps the other line breaks. It decides, for each line, its
 indentation (`fmt::indent`), the spaces between its tokens (`fmt::space`),
 where its trailing comment goes (`fmt::comment_column`), and how many blank
 lines precede it (`fmt::blank_lines`); and it adds or removes the trailing
@@ -106,9 +106,9 @@ def endsWithComma : ListKind → Bool
 
 /-- Whether a list of kind `k`, with `n` elements, is vertical
 (`fmt::one_line`): its elements `width` wide on one line, separated by `, `,
-and the line ending at column `end_`. -/
-def vertical (k : ListKind) (n : Nat) (broken : Bool) (width end_ : Nat) : Bool :=
-  n > 0 && ((k matches .arms) || broken || width > widthLimit k || end_ > maxWidth)
+and the line ending at column `end_`, which counts only if `ownLine`. -/
+def vertical (k : ListKind) (n : Nat) (broken : Bool) (width end_ : Nat) (ownLine : Bool) : Bool :=
+  n > 0 && ((k matches .arms) || broken || width > widthLimit k || (ownLine && end_ > maxWidth))
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -124,11 +124,12 @@ def flatColumns (start : Nat) : List Nat → List Nat
 
 /-- Whether a list of kind `k` is vertical (`fmt::list_layout`), from its
 elements, each with its width on one line and whether it cannot be written
-on one line, the column where its first element would start, and the width
-of what would follow its last on that line. -/
-def listLayout (k : ListKind) (es : List (Nat × Bool)) (start after : Nat) : Bool :=
+on one line, the column where its first element would start, the width
+of what would follow its last on that line, and whether it is its line's
+expression. -/
+def listLayout (k : ListKind) (es : List (Nat × Bool)) (start after : Nat) (ownLine : Bool) : Bool :=
   let width := joinedWidth (es.map (·.1))
-  vertical k es.length (es.any (·.2)) width (start + width + after)
+  vertical k es.length (es.any (·.2)) width (start + width + after) ownLine
 
 /-- Whether the last element of a list is followed by a comma
 (`fmt::trailing_comma`), where `allowed` says that its syntax allows one. -/
@@ -482,21 +483,34 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       start := e
     let es := elements.toList
     let width := joinedWidth (es.map (·.1))
-    infos := infos.set! c { elements, flat := !vertical b.kind es.length (es.any (·.2)) width 0 }
-  -- The width of what follows piece `i` on its line, up to where a line may
-  -- end, with the comma that a vertical list adds.
-  let suffix (vertical : Array Bool) (i : Nat) : Nat := Id.run do
+    infos := infos.set! c { elements, flat := !vertical b.kind es.length (es.any (·.2)) width 0 false }
+  -- Tokens that may follow a list's closing bracket on its line, with the
+  -- line's end still counting for the list (`fmt::one_line`'s `own_line?`).
+  let closer (k : Nat) : Bool :=
+    isTok k ")" || isTok k "]" || isTok k "}" || isTok k "," || isTok k "=>" ||
+      (isTok k ">" && lay.calls.contains k) || indents k
+  -- The width of what follows piece `i`, which closes a list of kind `kind`,
+  -- on its line, up to where a line may end, with the comma that a vertical
+  -- list adds; and whether only closers follow, or it closes parameters,
+  -- which a long signature breaks first, and then up to the signature's
+  -- `:=` only, as rustfmt counts a signature to its ` {`.
+  let suffix (vertical : Array Bool) (kind : ListKind) (i : Nat) : Nat × Bool := Id.run do
+    let signature := kind matches .parameters | .functionParameters
     let mut w := 0
+    let mut ends := true
     let mut j := i + 1
     while j < pieces.size do
       if isComment j || forced j || governed[j]!.isSome then break
       w := w + pieces[j]!.text.length + (if space kinds[j - 1]! kinds[j]! then 1 else 0)
       j := j + 1
-      -- A line may end after an opening bracket that indents.
-      if pieces[j - 1]!.tok?.any indents then return w
+      if let some k := pieces[j - 1]!.tok? then
+        if signature && isTok k ":=" then return (w, ends)
+        if !signature && !closer k then ends := false
+        -- A line may end after an opening bracket that indents.
+        if indents k then return (w, ends)
     if let some (some (c, .beforeClose)) := governed[j]? then
       if vertical[c]! && endsWithComma lists[c]!.kind then w := w + 1
-    return w
+    return (w, ends)
   let mut out : Array Line := #[]
   let mut vertical : Array Bool := Array.replicate lists.size false
   -- The open brackets that indent, with the indentation of their lines.
@@ -505,6 +519,14 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   let mut flatUntil : Option Nat := none
   -- The last token: its line in `out`, its index there, and its index.
   let mut last? : Option (Nat × Nat × Nat) := none
+  -- The line in `out` of each token placed so far.
+  let mut outLine : Std.HashMap Nat Nat := {}
+  -- The first token of the last line, and whether that line continues an
+  -- item, a member or an element.
+  let mut lineFirst : Option Nat := none
+  let mut continues := false
+  let mut tokAt : Std.HashMap Nat Nat := {}
+  for h : k in [0:toks.size] do tokAt := tokAt.insert toks[k].span.start k
   for h : i in [0:pieces.size] do
     let p := pieces[i]
     let brk := i == 0 || forced i || (governed[i]!.any fun (c, r) => r != .joined && vertical[c]!)
@@ -543,12 +565,34 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let beforeClose := p.tok?.any closesTop
       let kept := blankLines (blankIn i) first afterOpen beforeClose
       out := out.push { blank := kept, indent := columns, pieces := #[], line := p.startLine }
+      lineFirst := none
+      continues := start == .continuing
     let opens := p.tok?.any indents
     out := out.modify (out.size - 1) fun l =>
       { l with pieces := l.pieces.push (kinds[i]!, p.text), commentCol := if p.tok?.isNone then p.col else l.commentCol
                endsOpen := opens }
     let some k := p.tok? | continue
     last? := some (out.size - 1, out.back!.pieces.size - 1, k)
+    outLine := outLine.insert k (out.size - 1)
+    if lineFirst.isNone then lineFirst := some k
+    -- Whether list `b`, on the last line, starts its line's expression: it
+    -- opens with a brace, or at most 4 columns come before its head, the
+    -- names before its opening bracket, in each expression that holds it
+    -- and starts on that line. A line that continues an expression starts
+    -- one, after its operator.
+    let startsLine (b : Bracketed) : Bool := Id.run do
+      if isTok b.opening "{" then return true
+      let mut h := b.opening
+      while h > 0 && (toks[h - 1]!.tok matches .ident _ || isTok (h - 1) "::" || isTok (h - 1) ".") do h := h - 1
+      let here := out.size - 1
+      let mut starts : Array Nat := #[]
+      if let some f := lineFirst then
+        if continues then
+          starts := starts.push (if toks[f]!.tok matches .kw _ && !indents f then f + 1 else f)
+      for e in lay.exprs do
+        if let some f := tokAt[e.start]? then
+          if outLine[f]? == some here && toks[b.closing]!.span.stop ≤ e.stop then starts := starts.push f
+      return starts.all fun f => f ≥ h || flatWidth (pieceAt f) (pieceAt h) ≤ 4
     if claimVertical k == some true && !isTok (k + 1) "," then
       out := out.modify (out.size - 1) fun l => { l with pieces := l.pieces.push (.comma, ",") }
     if opens then stack := stack.push (k, out.back!.indent)
@@ -560,8 +604,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
         let v := if !info.flat then true else
           let close := pieceAt b.closing
           let gap (j : Nat) : Nat := if space kinds[j - 1]! kinds[j]! then 1 else 0
+          let (after, closed) := suffix vertical b.kind close
           listLayout b.kind info.elements.toList (out.back!.width + gap (i + 1))
-            (gap close + pieces[close]!.text.length + suffix vertical close)
+            (gap close + pieces[close]!.text.length + after) (closed && startsLine b)
         vertical := vertical.set! c v
         if !v then flatUntil := some b.closing
     if (openerOf[k]?.any fun o => stack.back?.any (·.1 == o)) then stack := stack.pop

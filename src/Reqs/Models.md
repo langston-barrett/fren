@@ -138,24 +138,63 @@ itself:
 set_option fren.evidence "random" in
 expect default_examples(t: TypeShape) {
     expect boolean: when t = TypeShape::Boolean, default_value(t) = Outcome::Defined(Value::False)
-    expect first_variant: when t = TypeShape::Data(TypeShape::Variant("F::L", TypeShape::Cons(TypeShape::Seq(TypeShape::Integer), TypeShape::Nil),
-        TypeShape::Variant("F::N", TypeShape::Cons(TypeShape::Itself, TypeShape::Nil), TypeShape::NoVariant))),
-        default_value(t) = Outcome::Defined(Value::Constructed("F::L", Value::Cons(Value::Nil, Value::Nil)))
-    expect skips_itself: when t = TypeShape::Data(TypeShape::Variant("G::N", TypeShape::Cons(TypeShape::Itself, TypeShape::Nil),
-        TypeShape::Variant("G::L", TypeShape::Nil, TypeShape::NoVariant))),
+    expect first_variant: when t = TypeShape::Data(
+        TypeShape::Variant(
+            "F::L",
+            TypeShape::Cons(TypeShape::Seq(TypeShape::Integer), TypeShape::Nil),
+            TypeShape::Variant(
+                "F::N",
+                TypeShape::Cons(TypeShape::Itself, TypeShape::Nil),
+                TypeShape::NoVariant
+            )
+        )
+    ),
+        default_value(t) = Outcome::Defined(
+            Value::Constructed("F::L", Value::Cons(Value::Nil, Value::Nil))
+        )
+    expect skips_itself: when t = TypeShape::Data(
+        TypeShape::Variant(
+            "G::N",
+            TypeShape::Cons(TypeShape::Itself, TypeShape::Nil),
+            TypeShape::Variant("G::L", TypeShape::Nil, TypeShape::NoVariant)
+        )
+    ),
         default_value(t) = Outcome::Defined(Value::Constructed("G::L", Value::Nil))
-    expect abstract_none: when t = TypeShape::Cons(TypeShape::Integer, TypeShape::Cons(TypeShape::Abstract, TypeShape::Nil)),
+    expect abstract_none: when t = TypeShape::Cons(
+        TypeShape::Integer,
+        TypeShape::Cons(TypeShape::Abstract, TypeShape::Nil)
+    ),
         default_value(t) = Outcome::Undefined
     -- A newtype's value is its underlying type's, constructed: `Ms(0)`.
     expect newtype: when t = TypeShape::Newtype("Ms", TypeShape::Integer),
-        default_value(t) = Outcome::Defined(Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)))
+        default_value(t) = Outcome::Defined(
+            Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil))
+        )
     expect text: when t = TypeShape::Text, default_value(t) = Outcome::Defined(Value::Text(""))
     expect set: when t = TypeShape::Set, default_value(t) = Outcome::Defined(Value::Nil)
     -- A record: its fields, in the order declared.
-    expect record: when t = TypeShape::Data(TypeShape::Variant("P", TypeShape::Cons(TypeShape::Boolean,
-        TypeShape::Cons(TypeShape::Newtype("Ms", TypeShape::Integer), TypeShape::Nil)), TypeShape::NoVariant)),
-        default_value(t) = Outcome::Defined(Value::Constructed("P", Value::Cons(Value::False,
-        Value::Cons(Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)), Value::Nil))))
+    expect record: when t = TypeShape::Data(
+        TypeShape::Variant(
+            "P",
+            TypeShape::Cons(
+                TypeShape::Boolean,
+                TypeShape::Cons(TypeShape::Newtype("Ms", TypeShape::Integer), TypeShape::Nil)
+            ),
+            TypeShape::NoVariant
+        )
+    ),
+        default_value(t) = Outcome::Defined(
+            Value::Constructed(
+                "P",
+                Value::Cons(
+                    Value::False,
+                    Value::Cons(
+                        Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)),
+                        Value::Nil
+                    )
+                )
+            )
+        )
 }
 ```
 
@@ -329,8 +368,11 @@ pub proc reported_real(
 
 expect report_real(i: Interp, env: Env, free: Free, hypotheses: Expr, goal: Expr, solver: Verdict) {
     call r := report(i, env, free, hypotheses, goal, solver)
-    refines r reported_real(not some_false?(i, fill(env, free), hypotheses),
-        eval(i, fill(env, free), goal) != Outcome::Defined(Value::True), solver)
+    refines r reported_real(
+        not some_false?(i, fill(env, free), hypotheses),
+        eval(i, fill(env, free), goal) != Outcome::Defined(Value::True),
+        solver,
+    )
 }
 ```
 
@@ -351,11 +393,7 @@ pub proc decision(
     hypotheses: Seq<Outcome>,      -- each hypothesis of the query, in its order, at the values read
     goal: Outcome,                 -- the goal, likewise
     solver: Verdict,
-): (
-    det shown?,
-    det internal?,
-    det verdict: Verdict,
-) {
+): (det shown?, det internal?, det verdict: Verdict) {
     ensure shows: shown? iff not outcomes_contradicted?(hypotheses, goal)
     ensure errs: internal? iff not shown?
     ensure kept: when shown?, verdict = solver

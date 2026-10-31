@@ -215,12 +215,12 @@ type gives no argument:
 set_option fren.lint.undecidable "allow" in
 pub fn call_waits?(values: Seq<ArgMode>, from_result: Seq<Bool>, j: Int) := 0 <= j < values.len
     and match values[j] {
-    ArgMode::Waits(Arg::P0) => not ArgMode::Gives(Arg::P0) in values.slice(0, j) and not (from_result != [] and from_result[0]),
-    ArgMode::Waits(Arg::P1) => not ArgMode::Gives(Arg::P1) in values.slice(0, j) and not (from_result.len > 1 and from_result[1]),
-    ArgMode::Waits(Arg::P2) => not ArgMode::Gives(Arg::P2) in values.slice(0, j) and not (from_result.len > 2 and from_result[2]),
-    ArgMode::Waits(Arg::Other) => false,
-    ArgMode::Gives(_) => false,
-}
+        ArgMode::Waits(Arg::P0) => not ArgMode::Gives(Arg::P0) in values.slice(0, j) and not (from_result != [] and from_result[0]),
+        ArgMode::Waits(Arg::P1) => not ArgMode::Gives(Arg::P1) in values.slice(0, j) and not (from_result.len > 1 and from_result[1]),
+        ArgMode::Waits(Arg::P2) => not ArgMode::Gives(Arg::P2) in values.slice(0, j) and not (from_result.len > 2 and from_result[2]),
+        ArgMode::Waits(Arg::Other) => false,
+        ArgMode::Gives(_) => false,
+    }
 
 set_option fren.lint.undecidable "allow" in
 pub fn call_position_if(values: Seq<ArgMode>, from_result: Seq<Bool>, waiting?, j: Int): Seq<Int> :=

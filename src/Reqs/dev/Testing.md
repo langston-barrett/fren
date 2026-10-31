@@ -77,11 +77,14 @@ pub mod testing
   one corpus each for strings, sets, relations and sequences, from a fixed
   seed, must be checked with no inconclusive result: the core promises
   that the solver decides them.
-- **Formatting** (`lake test`): formatting every `.fren` and Markdown spec
-  in the repository must keep its tokens, imports and comments, and be
-  idempotent (`fmt::safe`), and each spec, laid out again at random, must
-  format as it does (`fmt::layout_free`). For now, while the formatter
-  moves to rustfmt's layout, the specs need not be formatted.
+- **Formatting** (`lake test`): every `.fren` and Markdown spec in the
+  repository must be formatted, as `fren fmt --check` says, except those
+  listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
+  fixtures that are deliberately unformatted or do not parse. Run `fren fmt`
+  on a spec after editing it. Formatting every spec must also keep its
+  tokens, imports and comments, and be idempotent (`fmt::safe`), and each
+  spec, laid out again at random, must format as it does
+  (`fmt::layout_free`).
 
 - **Mutants** (`lake test`): over the corpus of Fren's own requirements,
   the snapshots of `fren mutate` (every file under `test/cli/`, in any
@@ -412,8 +415,14 @@ pub proc ui_file(
     got_exit: Option<Int>,          -- the front end's exit code; Lean has none
 ): (det passes?) {
     ensure rule: passes? iff met?(ms, es, front_end)
-        and (match summary { Option::None => true, Option::Some(s) => got_summary = Option::Some(s) })
-        and (match exit, got_exit { Option::Some(x), Option::Some(g) => x = g, _, _ => true })
+        and (match summary {
+            Option::None => true,
+            Option::Some(s) => got_summary = Option::Some(s),
+        })
+        and (match exit, got_exit {
+            Option::Some(x), Option::Some(g) => x = g,
+            _, _ => true,
+        })
 }
 ```
 

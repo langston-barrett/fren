@@ -137,7 +137,19 @@ order, and the first that is taken gives the value, as
 `Is(s, p)` says whether `p` matches `s`'s value, and is WD where `s` is.
 
 ```fren
-expect match_rules(i: Interp, env: Env, s: Expr, p: Pattern, g: Expr, b: Expr, rest: Expr, g2: Expr, b2: Expr, rest2: Expr, v: Value) {
+expect match_rules(
+    i: Interp,
+    env: Env,
+    s: Expr,
+    p: Pattern,
+    g: Expr,
+    b: Expr,
+    rest: Expr,
+    g2: Expr,
+    b2: Expr,
+    rest2: Expr,
+    v: Value,
+) {
     assume scrutinee: eval(i, env, s) = Outcome::Defined(v)
 
     -- An arm whose pattern does not match is skipped, unevaluated.
@@ -169,7 +181,17 @@ of the list `q` at the position `k`, from 0, and is undefined out of range
 (see [Sequences](Expressions.md#sequences)).
 
 ```fren
-expect list_rules(i: Interp, env: Env, a: Expr, rest: Expr, q: Expr, k: Expr, c: Id, v: Value, w: Value) {
+expect list_rules(
+    i: Interp,
+    env: Env,
+    a: Expr,
+    rest: Expr,
+    q: Expr,
+    k: Expr,
+    c: Id,
+    v: Value,
+    w: Value,
+) {
     expect element: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, rest) = Outcome::Defined(w),
         eval(i, env, Expr::Cons(a, rest)) = Outcome::Defined(Value::Cons(v, w))
     expect strict_element: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Cons(a, rest)) = Outcome::Undefined
@@ -245,7 +267,16 @@ functions](Items.md#defined-functions) states:
 pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
     apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
 
-expect recursion_unfolds(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value, r: Outcome) {
+expect recursion_unfolds(
+    i: Interp,
+    env: Env,
+    f: Id,
+    args: Expr,
+    ps: Params,
+    body: Expr,
+    l: Value,
+    r: Outcome,
+) {
     assume arguments: eval(i, env, args) = Outcome::Defined(l)
     -- The body's outcome at `l`, which is the interpretation's point for `f` there.
     assume body_outcome: eval(i, bind_params(ps, l), body) = r
@@ -332,9 +363,9 @@ set_option fren.lint.undecidable "allow" in
 pub fn agree?(i: Interp, p: Env, j: Interp, q: Env, ms: Set<Mention>) := i.recursions = j.recursions
     and i.primitives = j.primitives
     and (forall (m: Mention), when m in ms, match m {
-    Mention::Var(x) => lookup(p, x) = lookup(q, x),
-    Mention::Fn(f) => points(i.functions, f) = points(j.functions, f),
-})
+        Mention::Var(x) => lookup(p, x) = lookup(q, x),
+        Mention::Fn(f) => points(i.functions, f) = points(j.functions, f),
+    })
 ```
 
 The *coincidence lemma*: an expression has the same outcome under two
@@ -433,7 +464,16 @@ this for the operands of `and`, `or`, the conditional, and `when` and
 conditions are WD `Bool`s:
 
 ```fren
-expect guards_evaluation(i: Interp, env: Env, a: Expr, b: Expr, c: Expr, b2: Expr, c2: Expr, cond?) {
+expect guards_evaluation(
+    i: Interp,
+    env: Env,
+    a: Expr,
+    b: Expr,
+    c: Expr,
+    b2: Expr,
+    c2: Expr,
+    cond?,
+) {
     assume condition: eval(i, env, a) = Outcome::Defined(truth(cond?))
     call conjunct := guard(GuardedOperand::AndRight, truth(cond?))
     call disjunct := guard(GuardedOperand::OrRight, truth(cond?))
@@ -483,9 +523,15 @@ expect arm_guards_evaluation(
     assume guard_value: when matches_value?(p, v), eval(i, bind(p, v, env), g) = Outcome::Defined(truth(taken?))
 
     call arm_guard := guard(GuardedOperand::ArmGuard, truth(matches_value?(p, v)))
-    call arm_body := guard(GuardedOperand::ArmBody, truth(matches_value?(p, v) and taken?))
+    call arm_body := guard(
+        GuardedOperand::ArmBody,
+        truth(matches_value?(p, v) and taken?),
+    )
     -- The later arms are evaluated where this one is not taken.
-    call later := guard(GuardedOperand::ArmGuard, truth(not (matches_value?(p, v) and taken?)))
+    call later := guard(
+        GuardedOperand::ArmGuard,
+        truth(not (matches_value?(p, v) and taken?)),
+    )
 
     expect guard_unevaluated: unless arm_guard.evaluated?,
         eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g2, b, rest))

@@ -73,7 +73,11 @@ pub struct Binding { name: Id, kind: BindingKind, target: Id, depth: Nat }
 
 -- A binding names a value, which a declaration may hide: every binding but
 -- the items that are not values, which are never named where a variable can be.
-pub fn names_value?(k: BindingKind) := not k in {BindingKind::Module, BindingKind::Enumeration, BindingKind::Item}
+pub fn names_value?(k: BindingKind) := not k in {
+    BindingKind::Module,
+    BindingKind::Enumeration,
+    BindingKind::Item,
+}
 
 -- A binding names a variant.
 pub fn names_variant?(k: BindingKind) := k in {BindingKind::Variant, BindingKind::Opened}
@@ -152,7 +156,11 @@ pub fn binding_of?(d: Declared, k: Int, b: Binding) := b.name = d.name and b.kin
 -- `b` is the binding of one of `imports`, at depth `k`, or `k + 1` for a glob's.
 set_option fren.lint.undecidable "allow" in
 pub fn imported?(imports: Seq<Import>, k: Int, b: Binding) := exists (i: Int), 0 <= i < imports.len
-    and binding_of?(imports[i].declaration, if imports[i].glob? then k + 1 else k, b)
+    and binding_of?(
+        imports[i].declaration,
+        if imports[i].glob? then k + 1 else k,
+        b
+    )
 
 -- The depth of the module's items.
 pub fn module_depth(cx: Context): Int := cx.locals.len + (if cx.component? then 3 else 1)
@@ -169,7 +177,10 @@ pub fn in_scope?(cx: Context, b: Binding) := (exists (i: Int), 0 <= i < cx.local
     or (exists (i: Int), 0 <= i < cx.prelude.len and binding_of?(cx.prelude[i], module_depth(cx) + 2, b))
 
 -- The items and imports alone, without the locals and the built-in functions.
-pub fn item_scope(cx: Context): Context := { cx with locals := [], builtins := [] }
+pub fn item_scope(cx: Context): Context := { cx with
+    locals := [],
+    builtins := [],
+}
 ```
 
 `lang::context_scope` says which bindings the scope where a name is
@@ -206,10 +217,18 @@ pub proc context_scope(context: Context, binding: Binding): (det listed?) {
         and binding.target = context.locals[context.locals.len - 1].declaration.target and binding.depth = 0,
         listed?
     expect first_local: when context.locals != [] and context.locals[0].visible?
-        and binding_of?(context.locals[0].declaration, context.locals.len - 1, binding), listed?
+        and binding_of?(
+            context.locals[0].declaration,
+            context.locals.len - 1,
+            binding
+        ), listed?
     -- A glob import's variants are one depth further out than the module's items.
     expect glob_import: when context.module_imports != [] and context.module_imports[0].glob?
-        and binding_of?(context.module_imports[0].declaration, module_depth(context) + 1, binding), listed?
+        and binding_of?(
+            context.module_imports[0].declaration,
+            module_depth(context) + 1,
+            binding
+        ), listed?
     expect module_depths: module_depth(context) = context.locals.len + (if context.component? then 3 else 1)
     -- Nothing is in an empty scope, and the items and imports alone have no locals.
     expect empty: when context.locals = [] and context.builtins = [] and context.component_imports = []

@@ -222,12 +222,44 @@ pub proc applies(item: CheckedItem, kind: Kind): (det runs?) {
 
     ensure rule: runs? iff match item {
         Component => true,
-        GlobalExpectation => kind in {Realizability, InstanceAssumption, Expectation, Cover, Vacuity, Definedness,
-            Completeness, Disjointness, Precondition, Reachability},
-        ShortExpectation => kind in {InstanceAssumption, Expectation, Cover, Vacuity, Definedness, Completeness,
-            Disjointness, Precondition, Reachability},
-        Body => kind in {Definedness, Completeness, Disjointness, Precondition, Postcondition, Reachability},
-        Contract => kind in {Realizability, Completeness, Disjointness, Precondition, Reachability},
+        GlobalExpectation => kind in {
+            Realizability,
+            InstanceAssumption,
+            Expectation,
+            Cover,
+            Vacuity,
+            Definedness,
+            Completeness,
+            Disjointness,
+            Precondition,
+            Reachability,
+        },
+        ShortExpectation => kind in {
+            InstanceAssumption,
+            Expectation,
+            Cover,
+            Vacuity,
+            Definedness,
+            Completeness,
+            Disjointness,
+            Precondition,
+            Reachability,
+        },
+        Body => kind in {
+            Definedness,
+            Completeness,
+            Disjointness,
+            Precondition,
+            Postcondition,
+            Reachability,
+        },
+        Contract => kind in {
+            Realizability,
+            Completeness,
+            Disjointness,
+            Precondition,
+            Reachability,
+        },
     }
 
     expect claims_only: when item in {GlobalExpectation, ShortExpectation, Body} and runs?,
@@ -347,14 +379,20 @@ pub proc contract_realizability(
     det reports_vacuous?,          -- report that the preconditions are contradictory
 ) {
     ensure rule: verdict = (if pres != {}
-        and (forall (a: Argument), when a in pres, exists (v: Value), Point { arg := a, value := v } in posts)
+        and (forall (a: Argument), when a in pres, exists (v: Value), Point {
+            arg := a,
+            value := v,
+        } in posts)
         then Pass else Fail)
     ensure vacuous: reports_vacuous? iff pres = {}
     ensure cex: reports_cex? iff (pres != {} and verdict = Fail)
 
     expect unrealizable: when posts = {}, verdict = Fail
     expect contradictory_preconditions: when pres = {}, verdict = Fail
-    expect everywhere: when pres != {} and (forall (a: Argument), exists (v: Value), Point { arg := a, value := v } in posts),
+    expect everywhere: when pres != {} and (forall (a: Argument), exists (v: Value), Point {
+        arg := a,
+        value := v,
+    } in posts),
         verdict = Pass
 }
 ```
@@ -369,8 +407,14 @@ that meets the preconditions has a value that meets the postconditions:
 expect contract_realizes(pres: Set<check::Argument>, posts: Set<check::Point>) {
     use check
     call concrete := contract_realizability(pres, posts)
-    refines concrete realizability(if (pres) = {} then check::Outcome::Unsat else check::Outcome::Sat, if forall (a: check::Argument), when (a) in (pres), exists (v: check::Value), check::Point { arg := (a), value := (v) } in (posts)
-            then check::Outcome::Unsat else check::Outcome::Sat)
+    refines concrete realizability(
+        if (pres) = {} then check::Outcome::Unsat else check::Outcome::Sat,
+        if forall (a: check::Argument), when (a) in (pres), exists (v: check::Value), check::Point {
+            arg := (a),
+            value := (v),
+        } in (posts)
+            then check::Outcome::Unsat else check::Outcome::Sat,
+    )
 }
 ```
 
@@ -565,37 +609,92 @@ pub enum MemberNote { ClashNote, Silent, NotInCore }
 
 -- `g` forces `o` to one value, and the rest of the core to another.
 pub fn value_clashes?(alone: Set<Forcing>, rest: Set<Forcing>, g: Guarantee, o: Output) :=
-    exists (a b: Choice), a != b and Forcing { guarantee := g, output := o, value := a } in alone
-    and Forcing { guarantee := g, output := o, value := b } in rest
+    exists (a b: Choice), a != b and Forcing {
+        guarantee := g,
+        output := o,
+        value := a,
+    } in alone
+    and Forcing {
+        guarantee := g,
+        output := o,
+        value := b,
+    } in rest
 
 -- `g` forces `o` to one variant, and the rest of the core to another.
-pub fn variant_clashes?(alone: Set<VariantForcing>, rest: Set<VariantForcing>, g: Guarantee, o: Output) :=
-    exists (k l: ChoiceVariant), k != l and VariantForcing { guarantee := g, output := o, variant := k } in alone
-    and VariantForcing { guarantee := g, output := o, variant := l } in rest
+pub fn variant_clashes?(
+    alone: Set<VariantForcing>,
+    rest: Set<VariantForcing>,
+    g: Guarantee,
+    o: Output
+) :=
+    exists (k l: ChoiceVariant), k != l and VariantForcing {
+        guarantee := g,
+        output := o,
+        variant := k,
+    } in alone
+    and VariantForcing {
+        guarantee := g,
+        output := o,
+        variant := l,
+    } in rest
 
 -- `g` forces `o` to one value or variant, and the rest of the core to another.
-pub fn clashes?(alone: Set<Forcing>, alone_variants: Set<VariantForcing>, rest: Set<Forcing>,
-    rest_variants: Set<VariantForcing>, g: Guarantee, o: Output) :=
+pub fn clashes?(
+    alone: Set<Forcing>,
+    alone_variants: Set<VariantForcing>,
+    rest: Set<Forcing>,
+    rest_variants: Set<VariantForcing>,
+    g: Guarantee,
+    o: Output
+) :=
     value_clashes?(alone, rest, g, o) or variant_clashes?(alone_variants, rest_variants, g, o)
 
 -- A set of guarantees forces `o` to a whole value, for the guarantee `g`.
 pub fn forces_value?(forced: Set<Forcing>, g: Guarantee, o: Output) :=
-    exists (v: Choice), Forcing { guarantee := g, output := o, value := v } in forced
+    exists (v: Choice), Forcing {
+        guarantee := g,
+        output := o,
+        value := v,
+    } in forced
 
 -- A set of guarantees forces each output to one value, at most.
 pub fn single_valued?(forced: Set<Forcing>) :=
     forall (h: Guarantee) (o: Output) (a b: Choice),
-    when Forcing { guarantee := h, output := o, value := a } in forced
-    and Forcing { guarantee := h, output := o, value := b } in forced, a = b
+    when Forcing {
+        guarantee := h,
+        output := o,
+        value := a,
+    } in forced
+    and Forcing {
+        guarantee := h,
+        output := o,
+        value := b,
+    } in forced, a = b
 
 -- A set of guarantees forces each output to one variant, at most, and to
 -- the variant of each value that it forces it to.
 pub fn variants_of?(forced: Set<Forcing>, variants: Set<VariantForcing>) :=
     (forall (h: Guarantee) (o: Output) (k l: ChoiceVariant),
-    when VariantForcing { guarantee := h, output := o, variant := k } in variants
-    and VariantForcing { guarantee := h, output := o, variant := l } in variants, k = l)
-    and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing { guarantee := h, output := o, value := v } in forced,
-    VariantForcing { guarantee := h, output := o, variant := variant_of(v) } in variants)
+    when VariantForcing {
+        guarantee := h,
+        output := o,
+        variant := k,
+    } in variants
+    and VariantForcing {
+        guarantee := h,
+        output := o,
+        variant := l,
+    } in variants, k = l)
+    and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing {
+        guarantee := h,
+        output := o,
+        value := v,
+    } in forced,
+    VariantForcing {
+        guarantee := h,
+        output := o,
+        variant := variant_of(v),
+    } in variants)
 
 pub proc clash_notes(
     core: Set<Guarantee>,
@@ -632,7 +731,10 @@ pub proc clash_notes(
 
     ensure rule: noted? iff (not interpreted? and consistent? and g in core
         and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
-        and match examples { Budget::All => true, Budget::AtMost(n) => earlier.card < n })
+        and match examples {
+            Budget::All => true,
+            Budget::AtMost(n) => earlier.card < n,
+        })
     ensure first: when noted?, clashes?(alone, alone_variants, rest, rest_variants, g, output)
         and (forall (o: Output), when o < output, not clashes?(alone, alone_variants, rest, rest_variants, g, o))
     ensure one_note: note = (if not (g in core) then MemberNote::NotInCore
@@ -721,11 +823,14 @@ a local input slice cannot certify a general branch exclusion.
 ```fren
 pub struct DiagnosticWorld { eligible?, within_budget?, retry? }
 
-pub proc general_branch_explanation(base: Set<DiagnosticWorld>, others: Set<DiagnosticWorld>,
-    alternative: Set<DiagnosticWorld>, sample: DiagnosticWorld,
-    context_q: Outcome, exclusion_q: Outcome): (
-    det consistent?, det excluded?, det reported?, det locally_excluded?,
-) {
+pub proc general_branch_explanation(
+    base: Set<DiagnosticWorld>,
+    others: Set<DiagnosticWorld>,
+    alternative: Set<DiagnosticWorld>,
+    sample: DiagnosticWorld,
+    context_q: Outcome,
+    exclusion_q: Outcome,
+): (det consistent?, det excluded?, det reported?, det locally_excluded?) {
     assume context_sound: when context_q != Unknown,
         (context_q = Sat iff base inter others != {})
     assume exclusion_sound: when exclusion_q != Unknown,
@@ -745,7 +850,11 @@ pub proc general_branch_explanation(base: Set<DiagnosticWorld>, others: Set<Diag
         and locally_excluded? and not excluded?
 }
 
-pub proc retry_alternatives_general(worlds: Set<DiagnosticWorld>): (det true_possible?, det false_possible?, det bad_input?) {
+pub proc retry_alternatives_general(worlds: Set<DiagnosticWorld>): (
+    det true_possible?,
+    det false_possible?,
+    det bad_input?,
+) {
     assume all_worlds: forall (w: DiagnosticWorld), w in worlds
     out true_possible? := exists (w: DiagnosticWorld), w in worlds and w.retry? and w.eligible?
         and (when w.retry?, w.within_budget?)
@@ -765,7 +874,11 @@ never counterexample input pins. An impossible branch can have an empty
 conditional core; that does not let the forcing queries invent a value.
 
 ```fren
-pub fn branch_rest_holds?(meaning: Rel<Guarantee, Choice>, selected: Set<Guarantee>, value: Choice) :=
+pub fn branch_rest_holds?(
+    meaning: Rel<Guarantee, Choice>,
+    selected: Set<Guarantee>,
+    value: Choice
+) :=
     forall (g: Guarantee), when g in selected, (g, value) in meaning
 
 pub proc conditional_branch_core(
@@ -785,7 +898,9 @@ pub proc conditional_branch_core(
     expect no_fake_global_core: when conditional = {} and branch = {} and base != {}, minimal?
 }
 
-pub proc branch_member_polarity(rest: Set<Choice>, positive_values: Set<Choice>, wanted?): (opposite_forced?) {
+pub proc branch_member_polarity(rest: Set<Choice>, positive_values: Set<Choice>, wanted?): (
+    opposite_forced?,
+) {
     ensure nonvacuous_opposite: opposite_forced? iff rest != {} and
         (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
     expect positive_blocked: when wanted?, opposite_forced? iff rest != {} and rest inter positive_values = {}
@@ -1178,7 +1293,9 @@ set_option fren.lint.undecidable "allow" in
 expect flat_completeness_refines(arms: Seq<check::FlatArm>) {
     use check
     call concrete := flat_completeness_asked(arms)
-    refines concrete completeness_asked(check::FlatArm::Wild in (arms) or (check::FlatArm::A in (arms) and check::FlatArm::B in (arms) and check::FlatArm::C in (arms)))
+    refines concrete completeness_asked(
+        check::FlatArm::Wild in (arms) or (check::FlatArm::A in (arms) and check::FlatArm::B in (arms) and check::FlatArm::C in (arms)),
+    )
 }
 ```
 
@@ -1347,7 +1464,10 @@ set_option fren.lint.undecidable "allow" in
 expect arms_asked_refines(guards: Seq<check::GuardOf>, j: Int) {
     use check
     call concrete := arms_asked(guards, j)
-    refines concrete reachability_asked(0 <= (j) < (guards).len and (guards)[(j)] = check::GuardOf::Guarded, 0 <= (guards).index_of([check::GuardOf::Guarded], 0) < (j))
+    refines concrete reachability_asked(
+        0 <= (j) < (guards).len and (guards)[(j)] = check::GuardOf::Guarded,
+        0 <= (guards).index_of([check::GuardOf::Guarded], 0) < (j),
+    )
 }
 ```
 
@@ -1480,7 +1600,10 @@ pub proc reach_hypotheses(
 expect reach_hypotheses_refines(hyps: Seq<check::HypAt>, k: Int) {
     use check
     call concrete := reach_hypotheses(hyps, k)
-    refines concrete reach_hypothesis(0 <= (k) < (hyps).len and (hyps)[(k)] != check::HypAt::Other, 0 <= (k) < (hyps).len and (hyps)[(k)] = check::HypAt::Enclosing)
+    refines concrete reach_hypothesis(
+        0 <= (k) < (hyps).len and (hyps)[(k)] != check::HypAt::Other,
+        0 <= (k) < (hyps).len and (hyps)[(k)] = check::HypAt::Enclosing,
+    )
 }
 ```
 
@@ -1541,7 +1664,9 @@ pub proc precondition_at(
 expect precondition_detail(pres: Set<check::Argument>, guarded: Set<check::Argument>) {
     use check
     call concrete := precondition_at(pres, guarded)
-    refines concrete precondition(if (guarded) subset (pres) then check::Outcome::Unsat else check::Outcome::Sat)
+    refines concrete precondition(
+        if (guarded) subset (pres) then check::Outcome::Unsat else check::Outcome::Sat,
+    )
 }
 ```
 
@@ -1633,7 +1758,9 @@ pub proc postcondition_at(
 expect postcondition_detail(pres: Set<check::Argument>, posts: Set<check::Argument>) {
     use check
     call concrete := postcondition_at(pres, posts)
-    refines concrete postcondition(if (pres) subset (posts) then check::Outcome::Unsat else check::Outcome::Sat)
+    refines concrete postcondition(
+        if (pres) subset (posts) then check::Outcome::Unsat else check::Outcome::Sat,
+    )
 }
 ```
 
@@ -1812,7 +1939,15 @@ pub enum Run { BySolver, ByTesting, Skipped }
 
 -- The checks that testing runs.
 pub fn testable?(kind: Kind) :=
-    not kind in {Kind::Vacuity, Kind::Redundancy, Kind::Definedness, Kind::Completeness, Kind::Disjointness, Kind::Precondition, Kind::Reachability}
+    not kind in {
+        Kind::Vacuity,
+        Kind::Redundancy,
+        Kind::Definedness,
+        Kind::Completeness,
+        Kind::Disjointness,
+        Kind::Precondition,
+        Kind::Reachability,
+    }
 
 pub proc by_testing(
     kind: Kind,
@@ -2207,7 +2342,12 @@ values are pinned by the input, and its contradictory assumptions rest on
 -- rather than a witness (see [Verdict families](#verdict-families)). As
 -- the chapter on evidence of #439 defines it; one of the two goes when
 -- #439 merges.
-pub fn proof?(kind: Kind) := not kind in {Kind::Cover, Kind::Vacuity, Kind::Reachability, Kind::Redundancy}
+pub fn proof?(kind: Kind) := not kind in {
+    Kind::Cover,
+    Kind::Vacuity,
+    Kind::Reachability,
+    Kind::Redundancy,
+}
 
 pub proc enumerated_verdict(
     kind: Kind,

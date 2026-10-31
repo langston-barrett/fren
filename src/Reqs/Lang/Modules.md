@@ -293,7 +293,11 @@ set_option fren.lint.length_zero "allow" in
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.lint.eq_op "allow" in
 set_option fren.lint.absurd_extreme_comparisons "allow" in
-expect first_resolve(declared: Seq<modules::Path>, opened: Seq<modules::Path>, prelude: Seq<modules::Path>) {
+expect first_resolve(
+    declared: Seq<modules::Path>,
+    opened: Seq<modules::Path>,
+    prelude: Seq<modules::Path>,
+) {
     use modules
     assume spec_counted: ((opened).len) >= 0
     call concrete := first_segment(declared, opened, prelude)

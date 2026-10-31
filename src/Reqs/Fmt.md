@@ -49,7 +49,7 @@ is formatted as
 use climate::Mode::Heat
 pub enum Mode { Heat, Cool }
 proc c(
-    t: Int,    -- the temperature
+    t: Int,  -- the temperature
 ): (mode: Mode) {
     ensure r: mode = if t < 18 then Mode::Heat else Mode::Cool
     call h := heater(t < 18)
@@ -135,22 +135,41 @@ expect layout_free(p: Text, q: Text) {
 ```
 
 These functions are not interpreted: a proof of what the whole formatter
-writes is out of reach, so `fmt::safe` is `tested`. `lake test` formats
-every spec in the repository, and each laid out again at random, twice:
-with its lists' line breaks and trailing commas changed, wherever no
-comment or blank line is near, and its lines indented anew. It checks that
-formatting keeps the tokens, imports and comments, with whether each
+writes is out of reach, so `fmt::safe` is `tested`, by the `lake test`
+job that checks formatting, which also checks `fmt::layout_free`. A claim
+names a procedure, and `fmt::layout_free` is an expectation, so its trust
+is recorded only here, as that of `fmt::safe`. The job formats every spec
+in the repository, and each laid out again at random, twice. Laying out
+again changes the line breaks of lists and their trailing commas, the
+spaces between tokens and the indentation of lines. It leaves alone the
+lines with comments, the gaps with blank lines, and the gaps between two
+tokens with no space, where a space could change what the parser reads,
+as in `f(x)`. It changes no part of a file's content. The job checks
+that formatting keeps the tokens, imports and comments, with whether each
 comment starts its line, that formatting the result again changes
-nothing, and that each file laid out again formats as the file does.
+nothing, and that each file laid out again formats as the file does. It
+does not check that formatting keeps the rest of the content: the blank
+lines, the columns of comments, and whether imports span several lines.
 
 The goal is rustfmt's: that a file's content is only its tokens, comments
-and blank lines, so that how it was laid out never matters. Two things
-are left for later. Line breaks other than those of lists and blocks are
-content: those in clauses and in expressions, as between the operands of
-an operator, and those in the declarations of enumerations and structs,
-in the paths of a `use` and in the files of a `tested` claim. And so is
-the column of a comment at the end of a line that is further right than
-the formatter would put it, so that comments aligned by hand stay aligned.
+and blank lines, so that how it was laid out never matters, and that
+`fren fmt` writes what rustfmt would write for the like Rust. These things
+are left for later:
+
+- Line breaks other than those of lists and blocks are content: those in
+  clauses and in expressions, as between the operands of an operator, and
+  those in the declarations of enumerations and structs, in the paths of
+  a `use` and in the files of a `tested` claim. rustfmt breaks a long
+  expression between its operands; `fren fmt` keeps a list in it on one
+  line instead (rule 3 of [Lists and blocks](#lists-and-blocks)).
+- The column of a comment at the end of a line that is further right than
+  the formatter would put it is content, so that comments aligned by hand
+  stay aligned.
+- rustfmt keeps a call's sole argument that is a call, a `match`, a
+  record or a sequence on the call's line and breaks only inside it, as
+  in `f(match x {` ... `})`. `fren fmt` makes the arguments vertical.
+- rustfmt puts a long sequence of short literals several to a line
+  (`short_array_element_width_threshold`). `fren fmt` puts one to a line.
 
 ## Lists and blocks
 
@@ -203,7 +222,35 @@ hold:
    table below allows, as rustfmt allows for the like construct; and
 3. with the list on one line, that line ends by column 100, rustfmt's
    `max_width`, counting what follows the list up to the first opening
-   bracket or the first place where a line may end.
+   bracket or the first place where a line may end. This counts only
+   where the list *is its line's expression*: it is a procedure's or
+   function's parameters or results, as rustfmt breaks a long signature
+   there first, and then what follows it counts only up to the
+   signature's `:=`, as rustfmt counts a signature only up to its ` {`; or
+   both of these hold:
+   - what follows its closing bracket on the line is only closing
+     brackets, commas, `=>` and an opening bracket; and
+   - it opens with a brace, or in each expression that holds it and
+     starts on its line, at most 4 columns come before its *head*, the
+     names, `::` and `.` just before its opening bracket. A line that
+     continues an expression from the line before starts one, after its
+     operator, if it starts with one.
+
+   Otherwise the list is horizontal when 1 and 2 hold, however long its
+   line.
+
+A list that is not its line's expression is an operand, as `f(a)` and
+`g(b)` are in `x and f(a) = g(b)`, a branch, as in `if c then f(a) else
+g(b)`, or the body of a guard or a quantifier, or it is followed by a
+method or a field, as in `f(a).len`. Breaking it would leave the rest of
+the expression on the lines of its brackets, which are no shorter.
+rustfmt breaks the expression instead, between its operands, and gives
+each list the line that is left. It keeps a right operand on the line
+of its operator, and breaks it in place, only where the left operand is
+at most 4 wide, as in `r = f(` ..., or the operand's first line ends with
+a brace, as in `q = P {` .... `fren fmt` allows the same, a little more
+strictly, as it counts all that comes before the list in the expression.
+Until it breaks expressions, every other such list stays on one line.
 
 | List | Widest | rustfmt's option |
 |---|---|---|
@@ -228,7 +275,15 @@ pub enum ListKind {
     Fields,                  -- the fields of a record literal or update
 }
 
-use self::ListKind::{ApplicationArguments, Arguments, Arms, Elements, Fields, FunctionParameters, Parameters}
+use self::ListKind::{
+    ApplicationArguments,
+    Arguments,
+    Arms,
+    Elements,
+    Fields,
+    FunctionParameters,
+    Parameters,
+}
 
 -- The widest a list may be on one line, as rustfmt's defaults allow.
 pub fn width_limit(list: ListKind): Int := match list {
@@ -248,8 +303,10 @@ pub proc one_line(
     broken?,                 -- some element must span several lines
     width: Int,              -- the width of its elements on one line, separated by `, `
     line_end: Int,           -- the column where its line would end, with it on one line
+    own_line?,               -- it is its line's expression
 ): (det vertical?) {
-    ensure rule: vertical? iff (n > 0 and (list = Arms or broken? or width > width_limit(list) or line_end > 100))
+    ensure rule: vertical? iff (n > 0 and (list = Arms or broken? or width > width_limit(list)
+        or (own_line? and line_end > 100)))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
@@ -257,7 +314,11 @@ pub proc one_line(
         not vertical?
     expect just_fits: when list = Arguments and n = 2 and not broken? and width = 60 and line_end = 100, not vertical?
     expect just_too_wide: when list = Arguments and n = 2 and width = 61, vertical?
-    expect just_too_long: when list = Fields and n = 1 and width = 18 and line_end = 101, vertical?
+    expect just_too_long: when list = Fields and n = 1 and width = 18 and line_end = 101 and own_line?, vertical?
+    -- Breaking a list helps its line only where the list is the line's expression: elsewhere, the
+    -- rest of the expression would still be on the lines of its brackets.
+    expect operand: when not own_line? and list != Arms and not broken? and width <= width_limit(list),
+        not vertical?
 }
 ```
 
@@ -267,8 +328,10 @@ column where its first element would start, and the width of what would
 follow its last on that line: its closing bracket, with the space before
 a brace, and the tokens after it up to where a line may end. Where that
 line ends an element of a vertical list, the comma that the list adds
-after it counts too. `fmt::list_layout` refines `fmt::one_line`, and the
-formatter's decision implements both, proved in Lean:
+after it counts too. Whether the list is its line's expression is
+decided from those same tokens and the expressions that hold it.
+`fmt::list_layout` refines `fmt::one_line`, and the formatter's decision
+implements both, proved in Lean:
 
 ```fren
 -- The elements of a list, each with its width on one line and whether it must span several lines.
@@ -298,14 +361,28 @@ pub proc list_layout(
     elements: ElementList,
     start: Nat,              -- the column where its first element would start
     after: Nat,              -- the width of what would follow its last element on its line
+    own_line?,               -- it is its line's expression
 ): (det vertical?) {
     ensure rule: vertical? iff (count(elements) > 0 and (list = Arms or any_broken?(elements)
-        or joined(elements) > width_limit(list) or start + joined(elements) + after > 100))
+        or joined(elements) > width_limit(list) or (own_line? and start + joined(elements) + after > 100)))
 }
 
-expect list_layout_one_line(list: ListKind, elements: ElementList, start: Nat, after: Nat) {
-    call concrete := list_layout(list, elements, start, after)
-    refines concrete one_line(list, count(elements), any_broken?(elements), joined(elements), start + joined(elements) + after)
+expect list_layout_one_line(
+    list: ListKind,
+    elements: ElementList,
+    start: Nat,
+    after: Nat,
+    own_line?,
+) {
+    call concrete := list_layout(list, elements, start, after, own_line?)
+    refines concrete one_line(
+        list,
+        count(elements),
+        any_broken?(elements),
+        joined(elements),
+        start + joined(elements) + after,
+        own_line?,
+    )
 }
 ```
 
@@ -546,14 +623,18 @@ other lists. The formatter leaves no trailing comma that
 [`unnecessary_trailing_comma`](Lint/Pedantic/Text.md#trailing-commas)
 reports: the lint fires where no line ends between the comma and the `}`,
 `]` or `)`, and the formatter writes the comma only in a vertical list,
-whose closing bracket starts a line. `fmt::trailing_comma_lint` states it:
+whose closing bracket starts a line. `fmt::trailing_comma_lint` states it.
+It gives the lint `vertical?` for whether a line ends before the closing
+bracket, as a vertical list's closing bracket starts a line, so
+`never_reported` holds by construction: what it checks is that the
+formatter writes the comma only in a vertical list. That the closing
+bracket of a vertical list starts a line, and of no other, is the layout
+of [Lists and blocks](#lists-and-blocks), which only the formatting tests
+check:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub proc trailing_comma_lint(
-    vertical?,
-    allowed?,
-) {
+pub proc trailing_comma_lint(vertical?, allowed?) {
     use lint::unnecessary_trailing_comma
 
     call written := trailing_comma(false, vertical?, allowed?)

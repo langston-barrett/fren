@@ -427,13 +427,19 @@ pub fn binary_value(i: Interp, op: BinaryOp, a: Outcome, b: Outcome): Outcome :=
         BinaryOp::Eq, _, _ => Outcome::Defined(truth(v = w)),
         BinaryOp::Lt, Value::Integer(m), Value::Integer(n) => Outcome::Defined(truth(m < n)),
         BinaryOp::Le, Value::Integer(m), Value::Integer(n) => Outcome::Defined(truth(m <= n)),
-        BinaryOp::Add, Value::Integer(m), Value::Integer(n) => Outcome::Defined(Value::Integer(m + n)),
-        BinaryOp::Sub, Value::Integer(m), Value::Integer(n) => Outcome::Defined(Value::Integer(m - n)),
+        BinaryOp::Add, Value::Integer(m), Value::Integer(n) => Outcome::Defined(
+            Value::Integer(m + n)
+        ),
+        BinaryOp::Sub, Value::Integer(m), Value::Integer(n) => Outcome::Defined(
+            Value::Integer(m - n)
+        ),
         BinaryOp::Mul, Value::Integer(_), Value::Integer(_) => primitive(i, "*", v, w),
         BinaryOp::Div, Value::Integer(_), Value::Integer(n) => if n = 0 then Outcome::Undefined else primitive(i, "div", v, w),
         BinaryOp::Mod, Value::Integer(_), Value::Integer(n) => if n = 0 then Outcome::Undefined else primitive(i, "mod", v, w),
         BinaryOp::Concat, Value::Text(_), Value::Text(_) => primitive(i, "++", v, w),
-        BinaryOp::Concat, Value::Nil | Value::Cons(_, _), Value::Nil | Value::Cons(_, _) => Outcome::Defined(append(v, w)),
+        BinaryOp::Concat, Value::Nil | Value::Cons(_, _), Value::Nil | Value::Cons(_, _) => Outcome::Defined(
+            append(v, w)
+        ),
         BinaryOp::In, _, Value::Nil | Value::Cons(_, _) => Outcome::Defined(truth(element?(v, w))),
         _, _, _ => Outcome::Undefined,
     },
@@ -443,20 +449,30 @@ pub fn binary_value(i: Interp, op: BinaryOp, a: Outcome, b: Outcome): Outcome :=
 pub fn method_value(m: MethodName, receiver: Outcome, args: Outcome): Outcome := match receiver, args {
     Outcome::Defined(v), Outcome::Defined(l) => match m, v, l {
         MethodName::Abs, Value::Integer(n), Value::Nil => Outcome::Defined(Value::Integer(n.abs)),
-        MethodName::Min, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(Value::Integer(n.min(k))),
-        MethodName::Max, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(Value::Integer(n.max(k))),
+        MethodName::Min, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(
+            Value::Integer(n.min(k))
+        ),
+        MethodName::Max, Value::Integer(n), Value::Cons(Value::Integer(k), Value::Nil) => Outcome::Defined(
+            Value::Integer(n.max(k))
+        ),
         MethodName::Len, Value::Text(s), Value::Nil => Outcome::Defined(Value::Integer(s.len)),
-        MethodName::Len, Value::Nil | Value::Cons(_, _), Value::Nil => Outcome::Defined(Value::Integer(length(v))),
+        MethodName::Len, Value::Nil | Value::Cons(_, _), Value::Nil => Outcome::Defined(
+            Value::Integer(length(v))
+        ),
         _, _, _ => Outcome::Undefined,
     },
     _, _ => Outcome::Undefined,
 }
 
 pub fn count_value(c: Cardinality, args: Outcome): Outcome := match args {
-    Outcome::Defined(l) => if booleans?(l) then Outcome::Defined(truth(match c {
-        Cardinality::AtMost => trues(l) <= 1,
-        Cardinality::Exactly => trues(l) = 1,
-    })) else Outcome::Undefined,
+    Outcome::Defined(l) => if booleans?(l) then Outcome::Defined(
+        truth(
+            match c {
+                Cardinality::AtMost => trues(l) <= 1,
+                Cardinality::Exactly => trues(l) = 1,
+            }
+        )
+    ) else Outcome::Undefined,
     Outcome::Undefined => Outcome::Undefined,
 }
 ```
@@ -524,7 +540,11 @@ pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
             Outcome::Defined(l), Outcome::Defined(Value::Integer(n)) => if list?(l) then nth(l, n) else Outcome::Undefined,
             _, _ => Outcome::Undefined,
         },
-        Expr::Method(m, receiver, args) => method_value(m, eval(i, env, receiver), eval(i, env, args)),
+        Expr::Method(m, receiver, args) => method_value(
+            m,
+            eval(i, env, receiver),
+            eval(i, env, args)
+        ),
         Expr::Count(c, args) => count_value(c, eval(i, env, args)),
         Expr::Apply(_, args, ps, body) => match eval(i, env, args) {
             Outcome::Defined(l) => eval(i, bind_params(ps, l), body),

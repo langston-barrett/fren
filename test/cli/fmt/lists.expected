@@ -66,8 +66,25 @@
 +        xx := 1000000,
 +        y := 2000000,
 +    }
-@@ -56 +72,10 @@
--fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaa: Int): Int := p0
+@@ -60,2 +76,8 @@
+-    ensure short_left_operand_q: r = gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
+-    ensure only_closing_brackets_after: (gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy))
++    ensure short_left_operand_q: r = gg(
++        xxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
++        yyyyyyyyyyyyyyyyyyyyyyyyyyyyy
++    )
++    ensure only_closing_brackets_after: (gg(
++        xxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
++        yyyyyyyyyyyyyyyyyyyyyyyyyyyyy
++    ))
+@@ -64 +86,4 @@
+-        and ffffffffffffffffffffffffffffffffff(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
++        and ffffffffffffffffffffffffffffffffff(
++            xxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
++            yyyyyyyyyyyyyyyyyyyyyyyyyyyyy
++        )
+@@ -70 +95,10 @@
+-fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaaaa: Int): Int := p0 + p1 + p2
 +fn longer(
 +    p0: Int,
 +    p1: Int,
@@ -76,6 +93,6 @@
 +    p4: Int,
 +    p5: Int,
 +    p6: Int,
-+    aaaaaaaaaaa: Int
-+): Int := p0
++    aaaaaaaaaaaaaa: Int
++): Int := p0 + p1 + p2
 exit=1

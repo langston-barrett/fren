@@ -33,7 +33,10 @@ pub proc absurd_extreme_comparisons(
 ) {
     use self::Comparison::{Ge, Gt, Le, Lt, Ne}
 
-    ensure rule: fires? iff (bound < 0 or (bound = 0 and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
+    ensure rule: fires? iff (bound < 0 or (bound = 0 and (if left? then op in {Lt, Ge} else op in {
+        Gt,
+        Le,
+    })))
     ensure fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
 }
 
@@ -134,7 +137,12 @@ pub proc contradictory_comparisons(
 ): (det fires?) {
     ensure rule: fires? iff (if conjunction?
         then disjoint?(first, first_bound, second, second_bound)
-        else disjoint?(complement_of(first), first_bound, complement_of(second), second_bound))
+        else disjoint?(
+            complement_of(first),
+            first_bound,
+            complement_of(second),
+            second_bound
+        ))
 }
 
 proc contradictory_comparisons_exact(
@@ -173,7 +181,14 @@ The message is reported at the chain. `lint::contradictory_chain` states
 this, and the refinements check the value:
 
 ```fren
-fn mirror_of(op: Comparison): Comparison := match op { Eq => Eq, Ne => Ne, Lt => Gt, Gt => Lt, Le => Ge, Ge => Le }
+fn mirror_of(op: Comparison): Comparison := match op {
+    Eq => Eq,
+    Ne => Ne,
+    Lt => Gt,
+    Gt => Lt,
+    Le => Ge,
+    Ge => Le,
+}
 
 pub proc contradictory_chain(
     first: Comparison,    -- `a OP₁ x`, with `x` on the right
