@@ -43,7 +43,7 @@ jobs:
     # saves no output of a module that failed, so a failed build's `.lake`
     # would serve as well, but a pull request that restores it would
     # rebuild the modules that failed.
-    - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: ${{ steps.build.outcome == 'success' && steps.lake.outputs.cache-hit != 'true' }}
       with:
         path: .lake
