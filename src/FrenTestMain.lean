@@ -337,6 +337,7 @@ def ownSpecFiles : Array String :=
     "Check",
     "Methods",
     "Models",
+    "Evidence",
     "View",
     "Cli",
     "Lint",
