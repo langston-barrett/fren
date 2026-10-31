@@ -114,15 +114,47 @@ structure Prelude where
   /-- The `define-fun`s with quantifiers over elements, which each query
   unfolds (`SeqElems.markedDefs`). -/
   marked : Std.HashMap String (Array String × SeqElems.SExpr) := {}
+  /-- The `define-fun`s that a query of a spec with recursion unfolds
+  (`queryDefinitions`), computed once, when first needed. -/
+  unfolds : Thunk (Std.HashMap String (Array String × SeqElems.SExpr)) := Thunk.pure {}
   deriving Inhabited
 
-def Prelude.ofDecls (decls : Array PreludeDecl) : Prelude :=
+/-- The `define-fun`s of `decls`, by symbol, with their parameters and
+bodies, that a query unfolds before it scans for applications
+(`Reqs/Lang/Recursion#solver-encoding`): those whose bodies apply, directly
+or through another of them, a recursive or uninterpreted function, or a
+selector of `factHeads` (`State.funFacts`), which bring facts. Unfolding the
+others finds nothing, and writes each of their bodies once at every
+application, which can make a query hundreds of times larger. -/
+def queryDefinitions (decls : Array PreludeDecl) (factHeads : Array String) :
+    Std.HashMap String (Array String × SeqElems.SExpr) := Id.run do
+  let defs := decls.filterMap fun d => match SeqElems.parse d.text with
+    | .list #[.atom "define-fun", .atom f, .list ps, _, body] =>
+      some (f, ps.filterMap (fun | .list #[.atom p, _] => some p | _ => none), body)
+    | _ => none
+  let mut wanted : Std.HashSet String := .ofArray factHeads
+  for d in decls do
+    if d.text.startsWith "(declare-fun" then wanted := d.syms.foldl (·.insert <| quote ·) wanted
+  let mut out := {}
+  -- A definition applies only those before it, but a clause may apply any.
+  let mut changed := true
+  while changed do
+    changed := false
+    for (f, ps, body) in defs do
+      if !out.contains f && body.mentionsAny wanted then
+        out := out.insert f (ps, body)
+        wanted := wanted.insert f
+        changed := true
+  return out
+
+def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Prelude :=
   let marked := SeqElems.markedDefs (decls.map (·.text))
   let decls := if marked.isEmpty then decls else decls.map fun d => { d with text := SeqElems.plainText d.text }
   let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
   { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
-    smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked }
+    smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked
+    unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads }
 
 /-- The positions of the declarations that a script whose quoted symbols
 are `syms` needs: those of its symbols, and of theirs in turn, in the
@@ -614,13 +646,6 @@ def solveExpanded (marked : Std.HashMap String (Array String × SeqElems.SExpr))
       | .unsat => return .unknown Fren.Core.elementUnconfirmedReason
       | o => return o
 
-/-- Definitions that may be expanded in a query; recursive symbols are absent. -/
-def queryDefinitions (prelude : Prelude) : Std.HashMap String (Array String × SeqElems.SExpr) :=
-  prelude.decls.foldl (init := {}) fun acc d => match SeqElems.parse d.text with
-    | .list #[.atom "define-fun", .atom f, .list ps, _, body] =>
-      acc.insert f (ps.filterMap fun | .list #[.atom p, _] => some p | _ => none, body)
-    | _ => acc
-
 /-- A recursive contract's own result stands for its body, once. -/
 partial def contractBody (own : SeqElems.SExpr) (body : SeqElems.SExpr) (e : SeqElems.SExpr) : SeqElems.SExpr :=
   if e == own then body else match e with
@@ -634,7 +659,7 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
     (types : Std.HashMap String String) (hyps : Array (Lean.Name × String)) (goal : String) : Array (Lean.Name × String) := Id.run do
   let recs := prelude.decls.filterMap fun d => d.recursion?.map fun b => (quote d.syms[0]!, b.1, SeqElems.parse b.2)
   if recs.isEmpty then return #[]
-  let defs := queryDefinitions prelude
+  let defs := prelude.unfolds.get
   let expand (s : String) := (SeqElems.parse s).unfold defs
   let mut work := #[]
   for f in hyps.map (·.2) |>.push goal do
@@ -722,7 +747,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let hasRecursion := prelude.decls.any (·.recursion?.isSome)
     let expand (f : String) : String := Id.run do
       if !hasRecursion then return f
-      let e := (SeqElems.parse f).unfold (queryDefinitions prelude)
+      let e := (SeqElems.parse f).unfold prelude.unfolds.get
       let some fn := c.fn? | return toString e
       let some d := prelude.decls.find? (·.syms.contains ((itemSym fn).drop 1 |>.dropEnd 1 |>.toString)) | return toString e
       let some (ps, body) := d.recursion? | return toString e

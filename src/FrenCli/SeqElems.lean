@@ -100,6 +100,11 @@ partial def SExpr.mentions (xs : Array String) : SExpr → Bool
   | .atom a => xs.contains a
   | .list ts => ts.any (·.mentions xs)
 
+/-- Whether `e` has an atom of `xs`. -/
+partial def SExpr.mentionsAny (xs : Std.HashSet String) : SExpr → Bool
+  | .atom a => xs.contains a
+  | .list ts => ts.any (·.mentionsAny xs)
+
 /-- Whether `e` has a marked quantifier. -/
 partial def SExpr.hasSite : SExpr → Bool
   | .atom a => (markerOf? a).isSome

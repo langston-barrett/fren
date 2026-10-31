@@ -1,0 +1,67 @@
+; p: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; p: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (not (exists ((|y| Int)) (= |y| (+ (|::depth| |t|) (|::depth| |t|))))))
+(check-sat)
+(reset)
+
+; p: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(define-fun |::small?| ((|n| Int)) Bool (< |n| 3))
+(declare-const |t| |T|)
+(declare-const |n| Int)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (=> (not (|::small?| |n|)) (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|))))))) ; equation
+(assert (= |y| (+ (|::depth| |t|) (|::depth| |t|)))) ; r
+(assert (not (or (|::small?| |n|) (= |y| (* 2 (|::depth| |t|))))))
+(check-sat)
+(reset)
+
+; p: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (= |y| (+ (|::depth| |t|) (|::depth| |t|)))) ; r
+(assert (not false))
+(check-sat)
+(reset)
+
+; p: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (not (= |y| (+ (|::depth| |t|) (|::depth| |t|)))))
+(check-sat)
+(reset)
+
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

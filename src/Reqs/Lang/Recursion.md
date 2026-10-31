@@ -187,9 +187,14 @@ expanding a contract inherit the originating application’s origin, including
 through further contracts. A work queue visits each application, guards and
 origin once; a contract expansion also stops when it revisits an application
 on its ancestry path. Nonrecursive definitions and contract clauses are
-expanded before scanning. This is the CLI’s finite collection policy, shared
-by hosted checks and recursive contract proofs. Facts are conditional on the
-application's own guards, and postconditions also on its preconditions.
+expanded before scanning. The CLI expands those that apply, directly or
+through others, a recursive or uninterpreted function, or a selector
+whose payload brings a fact, and leaves the rest to the solver as
+definitions: they hold no application to find, and expanding each where it
+is applied can make a query hundreds of times larger. This is the CLI’s
+finite collection policy, shared by hosted checks and recursive contract
+proofs. Facts are conditional on the application's own guards, and
+postconditions also on its preconditions.
 
 ```fren
 pub enum RecApplication { Written, Reflected }

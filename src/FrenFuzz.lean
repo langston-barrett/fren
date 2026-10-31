@@ -851,7 +851,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
   let mut compared := 0
   let mut inconclusive := 0
   let mut skipped := 0
-  let prelude := Prelude.ofDecls st.prelude
+  let prelude := Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
   let sy := Symbols.of sp
   for (c, global) in st.comps.map (·, false) ++ st.globals.map (·, true) do
     let some ec := sp.counterpart? c global | found := found.push s!"no counterpart of {c.path}"; continue
