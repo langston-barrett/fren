@@ -112,6 +112,8 @@ impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj q :
   strings_exp? := ["strings-exp", "re-inter-mode", "re-elim"].all fun o =>
     (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == o),
   sets_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "sets-exp"),
+  last_call? := (Fren.Core.quantifierOptions (Fren.Core.logic k (strings || sets || seqs) proj q)).contains
+    ("inst-when", "last-call"),
 }
 
 end Fren.Impls
