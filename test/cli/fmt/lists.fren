@@ -49,9 +49,9 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     }
     -- A record update's fields start after its `with`.
     ensure u: q = { q with xx := 1000000, y := 2000000 }
-    -- Past column 100, a list goes vertical only if it is its line's expression: nothing but
-    -- closing brackets follows it, and at most 4 columns come before it, or it opens with a brace.
-    -- Elsewhere, breaking it would not shorten the line.
+    -- Past column 100, a list goes vertical only if it is its line's expression: only closers
+    -- follow it, and at most 4 columns come before its head in each expression that holds it, but
+    -- for a record that is an operator's whole right operand. Elsewhere, breaking is no shorter.
     ensure mid: r = ff(xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy) + gg(xxxxxxxxxxxxxxxx) and r = gg(yyyyyyyyyy) + 1000
     ensure dot: [xxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyy, zzzzzzzzzzzzzz].len = r + 1000000000000000
     ensure long_left: r + 1 = ff(xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy) + gg(xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyy)
@@ -65,6 +65,8 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     ensure set_in_branch: r = (if x > 0 then x in {1, 2} else if x = r then x in {3, 4} else x in {5, 6})
     ensure record_right: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
     ensure record_in_chain: x = 1 and r = 2 and qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
+    -- Nor one that is only part of the right operand.
+    ensure record_negated: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = -P { xx := 1, y := 2 }
     -- Nor does a list break whose first element would start past column 100.
     ensure past_the_end_of_the_line_with_a_label_this_long_and_still_going_on_and_on_and_on_and_on: r = gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
     ensure continued: x = 1

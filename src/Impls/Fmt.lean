@@ -10,7 +10,7 @@ open Fren.Lang
 namespace Fren.Impls
 
 open FrenCli (ListKind)
-open FrenCli.Fmt (Kind LineStart)
+open FrenCli.Fmt (Bracket Follower Kind LineStart OpenBracket)
 
 instance : Fren.Finite Kind :=
   ⟨[.paren, .call, .closeParen, .brace, .closeBrace, .group, .closeGroup, .path, .comma, .colon, .negation, .rangeLeading, .rangeTrailing, .comment, .other],
@@ -54,6 +54,33 @@ def toElementList : List (Nat × Bool) → fmt.ElementList
   | [] => .Nil
   | (w, b) :: es => .Cons w b (toElementList es)
 
+def toFmtBracket : Bracket → fmt.Bracket
+  | .paren => .Paren
+  | .square => .Square
+  | .curly => .Curly
+  | .pathCurly => .PathCurly
+
+/-- The brackets open at the start of a line, the innermost first. -/
+def toOpenBrackets : List OpenBracket → fmt.OpenBrackets
+  | [] => .Nil
+  | (b, l, line) :: rest => .Within (toFmtBracket b) l line (toOpenBrackets rest)
+
+def toFollower : Follower → fmt.Follower
+  | .closing => .Closing
+  | .comma => .Comma
+  | .arrow => .Arrow
+  | .typeClosing => .TypeClosing
+  | .opening => .Opening
+  | .other => .Other
+
+def toFollowers : List Follower → fmt.Followers
+  | [] => .Nil
+  | f :: fs => .Then (toFollower f) (toFollowers fs)
+
+def toHolders : List (Nat × Bool) → fmt.Holders
+  | [] => .Nil
+  | (c, r) :: hs => .Holder c r (toHolders hs)
+
 def toFmtLineStart : LineStart → fmt.LineStart
   | .closing => .Closing
   | .starting => .Starting
@@ -68,15 +95,35 @@ impl space: fmt::space for (b a : Kind) {
   revert a
   cases b <;> decide
 
+theorem indents_toFmtBracket (b : Bracket) (l : Bool) :
+    fmt.«indents?» (toFmtBracket b) l = FrenCli.Fmt.bracketIndents b l := by
+  cases b <;> cases l <;> rfl
+
+theorem base_toOpenBrackets (o : List OpenBracket) :
+    fmt.base (toOpenBrackets o) = (FrenCli.Fmt.base o : Int) := by
+  induction o with
+  | nil => simp [toOpenBrackets, fmt.base, FrenCli.Fmt.base]
+  | cons e o ih =>
+    obtain ⟨b, l, line⟩ := e
+    simp only [toOpenBrackets, fmt.base, FrenCli.Fmt.base, indents_toFmtBracket, ih]
+    split <;> simp_all
+
 -- Over `Nat`, so `decide` does not apply: proofs by cases.
-impl indent: fmt::indent for (d : Nat) (s : LineStart) (c : Bool) {
-  base := d,
+impl indent: fmt::indent for (o : List OpenBracket) (s : LineStart) (c : Bool) {
+  brackets := toOpenBrackets o,
   start := toFmtLineStart s,
   comment? := c,
-  columns := FrenCli.Fmt.indent d s c,
+  columns := FrenCli.Fmt.indent o s c,
 } by
-  intro d s c _
-  cases s <;> cases c <;> simp_all [fren_spec, FrenCli.Fmt.indent, toFmtLineStart] <;> omega
+  intro o s c _
+  cases o with
+  | nil =>
+    cases s <;> cases c <;> simp_all [fren_spec, FrenCli.Fmt.indent, FrenCli.Fmt.base, toFmtLineStart, toOpenBrackets]
+  | cons e o =>
+    obtain ⟨b, l, line⟩ := e
+    have hb := base_toOpenBrackets ((b, l, line) :: o)
+    cases hi : FrenCli.Fmt.bracketIndents b l <;> cases s <;> cases c <;>
+      simp_all [fren_spec, FrenCli.Fmt.indent, FrenCli.Fmt.base, toFmtLineStart, toOpenBrackets] <;> omega
 
 impl comment_column: fmt::comment_column for (w o : Nat) {
   width := w,
@@ -117,6 +164,34 @@ impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Na
   intro k n b w s e l _
   cases k <;> cases b <;> cases l <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
+
+theorem only_closing_toFollowers (fs : List Follower) :
+    fmt.«only_closing?» (toFollowers fs) = FrenCli.Fmt.onlyClosing fs := by
+  induction fs with
+  | nil => rfl
+  | cons f fs ih => cases f <;> simp [toFollowers, toFollower, fmt.«only_closing?», FrenCli.Fmt.onlyClosing, ih]
+
+theorem heads_near_toHolders (k : ListKind) (hs : List (Nat × Bool)) :
+    fmt.«heads_near?» (toFmtListKind k) (toHolders hs) = FrenCli.Fmt.headsNear k hs := by
+  induction hs with
+  | nil => rfl
+  | cons h hs ih =>
+    obtain ⟨c, r⟩ := h
+    have hc : ((c : Int) ≤ 4) ↔ c ≤ 4 := by omega
+    simp only [toHolders, fmt.«heads_near?», FrenCli.Fmt.headsNear, ih]
+    cases k <;> cases r <;> simp [toFmtListKind, hc]
+
+impl own_line: fmt::own_line for (k : ListKind) (fs : List Follower) (hs : List (Nat × Bool)) {
+  list := toFmtListKind k,
+  followers := toFollowers fs,
+  holders := toHolders hs,
+  own_line? := FrenCli.Fmt.ownLine k fs hs,
+} by
+  intro k fs hs _
+  simp only [fren_spec, only_closing_toFollowers, heads_near_toHolders, FrenCli.Fmt.ownLine]
+  generalize FrenCli.Fmt.onlyClosing fs = a
+  generalize FrenCli.Fmt.headsNear k hs = b
+  cases k <;> cases a <;> cases b <;> simp [toFmtListKind]
 
 theorem count_toElementList (es : List (Nat × Bool)) : fmt.count (toElementList es) = es.length := by
   induction es with
