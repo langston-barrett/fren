@@ -760,4 +760,36 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
       else ((finals[j]?.getD ([], false)).1.find? (!own.contains ·)).map (weakenedMsg what premise)
     (rep, caveats, msg?)
 
+/-- The caveats of the own method of the check `r`, run by random testing
+where `random` (`check::own_caveats`): a proof check's pass by random
+testing has `Random`, and one that enumeration reached only up to its size
+bound has `Bounded`; a witness check has neither, however it was found. -/
+def ownCaveatsOf (r : CheckResult) (random : Bool) : List Caveat :=
+  if !r.kind.proof then [] else
+  (if random then [.random] else []) ++ (if r.bounded?.isSome then [.bounded] else [])
+
+/-! ### What Lean reports (`check::hosted_runs`) -/
+
+/-- The checks that `#fren_check` does not run, as it runs none set to
+random testing alone (`random`), but that the item has as premises
+(`itemHasPremise`): each a pass, to which `itemEvidence` gives the caveat
+`Random`, so that what rests on it gets it too (`check::hosted_runs`). Its
+own realizability, and each assumption check of each of its calls. -/
+def hostedStandIns (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (calls : Array CallEvidence)
+    (random : Tested) : Array CheckResult :=
+  let assumed := (List.range calls.size).filter fun j => !calls[j]!.assumes.isEmpty
+  let has := itemHasPremise item subsetInvariant calls.size assumed
+  (if random.realizable && has .ownRealizability then
+    #[{ kind := .realizable, comp, prop? := none, verdict := .pass }] else #[])
+  ++ ((Array.range calls.size).filter fun j => random.insts.contains calls[j]!.name && has (.callAssumptions j)).flatMap
+    fun j => calls[j]!.assumes.map fun a =>
+      { kind := .inst, comp, prop? := some calls[j]!.name, target? := some (calls[j]!.comp, a), verdict := .pass }
+
+/-- Whether `#fren_check` reports a check whose caveats `itemEvidence` gives
+(`check::hosted_runs`): where it rests on no check set to random testing,
+which only such checks give the caveat `Random` in Lean, or where it fails,
+and is not itself one that Lean stands for (`own` has `Random`). -/
+def hostedReported (caveats : List Caveat) (failed : Bool) (ownRandom : Bool) : Bool :=
+  !caveats.contains .random || (failed && !ownRandom)
+
 end Fren.Core

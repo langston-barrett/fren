@@ -610,6 +610,45 @@ impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : B
     simp [fren_spec, Fren.Core.itemHasPremise, toPremise, hi]
   | _ => simp [fren_spec, Fren.Core.itemHasPremise, toPremise]
 
+-- Lean decides what it reports with `hostedReported`, from the caveats
+-- that `passEvidence` gives each check (`itemEvidence`), each check's own
+-- verdict and the caveats of its own method: Lean's stand-ins for what it
+-- does not run (`hostedStandIns`) are the checks whose own caveat is
+-- `Random`.
+impl hosted_runs: check::hosted_runs for (cs : List (CheckEvidence Caveat)) (failed : List Nat) (k : Nat) {
+  own := Fren.FinSet.ofList (ownPairs cs),
+  failed := Fren.FinSet.ofList (failed.map fun (j : Nat) => (j : Int)),
+  premises := Fren.FinSet.ofList (premisePairs cs),
+  k := (k : Int),
+  «reported?» := Fren.Core.hostedReported (((passEvidence cs)[k]?.map (·.1)).getD []) (failed.contains k)
+    ((at_ cs k).own.contains .random),
+} by
+  intro cs failed k hA
+  simp only [check.hosted_runs.assumes, check.hosted_runs.assume.in_order] at hA
+  have hpe := pass_evidence cs k (by trivial)
+  unfold check.pass_evidence.ensures check.pass_evidence.ensure.random_rule at hpe
+  have hr := hpe.1 hA
+  unfold check.hosted_runs.ensures check.hosted_runs.ensure.rule
+  -- `k`'s own caveats have `Random` just where the spec's `own` does.
+  have hk : (((k : Int), check.Caveat.Random) ∈ Fren.FinSet.ofList (ownPairs cs)) ↔
+      (at_ cs k).own.contains .random = true := by
+    rw [Fren.FinSet.mem_ofList, mem_ownPairs, List.contains_iff_mem]
+    constructor
+    · rintro ⟨_, c', hc', he⟩
+      have : c' = .random := toCaveat_inj.mp (by simpa [toCaveat] using he)
+      exact this ▸ hc'
+    · intro h
+      refine ⟨?_, .random, h, rfl⟩
+      rcases Nat.lt_or_ge k cs.length with hl | hl
+      · exact hl
+      · rw [at_past cs k (by omega)] at h
+        simp at h
+  have hf := mem_nats failed k
+  simp only [fren_spec, Fren.Core.hostedReported, Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_true, hk, hf]
+  rw [← hr]
+  cases (((passEvidence cs)[k]?.map (·.1)).getD []).contains .random <;>
+    cases failed.contains k <;> cases (at_ cs k).own.contains .random <;> simp
+
 -- Both front ends report each check with `reportedPass` (`itemEvidence`).
 impl reported_pass: check::reported_pass for (k : CheckKind) (v : Fren.Core.Verdict) (own cs : List Caveat) (s : Bool) {
   kind := toCheckKind k,

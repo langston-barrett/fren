@@ -884,7 +884,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     for r in results do
       shown := shown ++ (← printResult args.paint files c r st.vias)
     -- Each of its results, with the caveats of the method that ran it.
-    let mut item : Array (Fren.Core.CheckResult × List Fren.Core.Caveat) := results.map (·, [])
+    let mut item : Array (Fren.Core.CheckResult × List Fren.Core.Caveat) :=
+      results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
@@ -893,7 +894,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       if failed then internal := internal.push msgs[0]!
       -- A witness found by testing is a real witness: only a proof check's
       -- pass by testing has the caveat `Random` (`Reqs/Evidence`).
-      item := item ++ tested.map fun r => (r, if r.kind.proof then [.random] else [])
+      item := item ++ tested.map fun r => (r, Fren.Core.ownCaveatsOf r true)
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with
     | some (.error msg) =>
@@ -903,7 +904,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     | some (.ok e) =>
       for r in e.results do
         shown := shown ++ (← printResult args.paint files c r st.vias)
-      item := item ++ e.results.map fun r => (r, if r.bounded?.isSome && r.kind.proof then [.bounded] else [])
+      item := item ++ e.results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
       if let some msg := e.boundedMsg? (subjectOf c global) c.tested then
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
@@ -921,8 +922,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       (Fren.Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
     let names := c.insts.map (·.name)
     let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
-    let what : Fren.Core.CheckedItem := if body then (if c.vars.any (·.role == .output) then .contract else .body)
-      else if global then .shortGlobal else if c.global then .global else .component
+    let what := Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global
     let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
       (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false, own))
     let mut final := #[]
@@ -935,7 +935,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       if rep.byTesting then byTesting := byTesting + 1
       if rep.byBound then byBound := byBound + 1
       final := final.push { r with verdict := rep.shown }
-      if r.isOwnRealizability c.path && !global then
+      if r.isOwnRealizability c.path && what == .component then
         realizability := realizability.insert c.path
           { what := s!"the realizability of `{Fren.Core.showComp c.path}`", caveats, settled := rep.shown == .pass }
     all := all ++ final

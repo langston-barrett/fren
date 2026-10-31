@@ -1175,6 +1175,14 @@ inductive CheckedItem where
   | contract
   deriving Inhabited, DecidableEq, Repr
 
+/-- What an item of a front end is (`check::CheckedItem`): a function's
+body or contract (`body`), the contract where it has its value as an output
+(`output`); a global expectation (`global`), in the short form where
+`short`; otherwise a procedure. Both front ends decide it with this. -/
+def CheckedItem.of (body output global short : Bool) : CheckedItem :=
+  if body then (if output then .contract else .body)
+  else if global then (if short then .shortGlobal else .global) else .component
+
 /-- The checks run on an item (`check::applies`). -/
 def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .component => kindsFor false

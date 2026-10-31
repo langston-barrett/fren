@@ -345,11 +345,11 @@ where
   let mut what : Array Core.CheckedItem := #[]
   for p in paths do
     let (c, item) ← match s.comps.get? p, s.globals.get? p with
-      | some c, _ => pure (c, Core.CheckedItem.component)
-      | none, some g => pure (g, if g.global then Core.CheckedItem.global else .shortGlobal)
+      | some c, _ => pure (c, Core.CheckedItem.of false false false false)
+      | none, some g => pure (g, Core.CheckedItem.of false false true !g.global)
       | none, none => match s.bodies.get? p with
         -- An uninterpreted function's contract has its value as an output.
-        | some b => pure (b, if b.vars.any (·.role == .output) then Core.CheckedItem.contract else .body)
+        | some b => pure (b, Core.CheckedItem.of true (b.vars.any (·.role == .output)) false false)
         | none => continue
     let kinds := item.kinds
     -- Not where `undecidable` is denied, though the error does not stop
@@ -407,23 +407,20 @@ where
     let siteOf (r : CheckResult) := r.site names assumptions c.fn?.isSome false
     let enumResults := match enumerated? with | some (.ok e) => e.results | _ => #[]
     -- Its checks set to random testing alone, which `#fren_check` does not
-    -- run, stand for themselves with the caveat `Random`, so that what rests
-    -- on them gets it too (`check::hosted_runs`); they are never reported.
+    -- run, stand for themselves with the caveat `Random` where the item has
+    -- them as premises, so that what rests on them gets it too
+    -- (`Core.hostedStandIns`, `check::hosted_runs`); they are never reported.
     let random := c.tested.minus c.enumerated
-    let placeholders : Array CheckResult :=
-      (if random.realizable && !c.global then #[{ kind := .realizable, comp := p, prop? := none, verdict := .pass }]
-        else #[])
-      ++ (c.insts.filter fun i => random.insts.contains i.name).flatMap fun i => i.assumes.map fun (a, _) =>
-        { kind := .inst, comp := p, prop? := some i.name, target? := some (i.comp, a), verdict := .pass }
-    let checks := results.map (fun r => (r, siteOf r, ([] : List Core.Caveat)))
-      ++ enumResults.map (fun r => (r, siteOf r, if r.bounded?.isSome && r.kind.proof then [Core.Caveat.bounded] else []))
-      ++ placeholders.map fun r => (r, siteOf r, [Core.Caveat.random])
+    let standIns := Core.hostedStandIns p item c.subsetInvariant?.isSome calls random
+    let checks := results.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
+      ++ enumResults.map (fun r => (r, siteOf r, Core.ownCaveatsOf r false))
+      ++ standIns.map fun r => (r, siteOf r, Core.ownCaveatsOf r true)
     let reported := Core.itemEvidence p item c.subsetInvariant?.isSome calls checks
     -- The evidence of its realizability, kept for the checks that rest on
     -- it, in this run, later runs and the modules that import this one
     -- (`check::runs_premises`).
     for (r, _, _) in checks, (rep, caveats, _) in reported do
-      if r.isOwnRealizability p && !c.global then
+      if r.isOwnRealizability p && item == .component then
         record (.realizabilityEvidence p
           { what := s!"the realizability of `{Core.showComp p}`", caveats, settled := rep.shown == .pass })
     -- A premise checked for its evidence alone is reported nothing of.
@@ -438,8 +435,8 @@ where
     -- Lean, as one set to random testing (`check::hosted_runs`).
     -- A failure is reported all the same: no premise changes it, and
     -- `fren check` reports the same counterexample (`check::reported_pass`).
-    let resting (i : Nat) : Bool := ((reported[i]?.map (·.2.1)).getD []).contains .random
-      && ((checks[i]?.map (·.1.verdict != .fail)).getD true)
+    let resting (i : Nat) : Bool := !Core.hostedReported ((reported[i]?.map (·.2.1)).getD [])
+      ((checks[i]?.map (·.1.verdict == .fail)).getD false) ((checks[i]?.map (·.2.2.contains .random)).getD false)
     for r in results, i in [0:results.size] do
       unless resting i do report p c r
     if random.any then

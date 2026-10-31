@@ -914,7 +914,12 @@ to random testing agree by the [agreement with
 Lean](Cli.md#agreement-with-lean), so both front ends find the same checks
 reported, and that agreement covers exactly the other checks, as it already
 covers exactly the checks that are not set to random testing.
-`check::hosted_runs` states it. Both front ends run enumeration, so a
+`check::hosted_runs` states it, from the evidence that
+`check::pass_evidence` gives each check, where the checks set to random
+testing are those whose own caveat is `Random`: the checks that Lean stands
+for are read from the item's premises (`check::item_premise`), and both the
+stand-ins and the decision are functions of `Fren.Core`
+(`hostedStandIns`, `hostedReported`), not decided by the front end. Both front ends run enumeration, so a
 premise decided by enumeration is settled in both, and one that
 enumeration decides completely, over a finite domain, is a proof, which
 caps nothing; one that it checks only up to the size bound has the caveat
@@ -926,15 +931,24 @@ with `F0664`.
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub proc hosted_runs(
-    random: Set<Int>,            -- the checks set to random testing, by position
+    own: Rel<Int, Caveat>,       -- the caveats of each check's own method, by the check's position
     failed: Set<Int>,            -- the checks whose own verdict is `Fail`
     premises: Rel<Int, Int>,     -- each check, with the checks whose passes it takes as premises
     k: Int,                      -- the position of a check
 ): (det reported?) {
-    ensure rule: reported? iff (rests_on(premises, k) inter random = {} or (k in failed and not k in random))
+    -- Its premises are earlier checks, as both front ends order them.
+    assume in_order: earlier?(premises, k)
 
-    expect own_setting: when k in random, not reported?
-    expect failure_reported: when k in failed and not k in random, reported?
+    -- Lean runs no check set to random testing, and stands for each that
+    -- the item has as a premise with a pass whose own caveat is `Random`;
+    -- no other check of Lean's has that caveat. So a check rests on one set
+    -- to random testing just where `Random` is among the own caveats of the
+    -- checks that it rests on.
+    ensure rule: reported? iff (not Caveat::Random in own.image(rests_on(premises, k))
+        or (k in failed and not (k, Caveat::Random) in own))
+
+    expect own_setting: when (k, Caveat::Random) in own, not reported?
+    expect failure_reported: when k in failed and not (k, Caveat::Random) in own, reported?
 }
 ```
 

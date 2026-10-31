@@ -51,11 +51,11 @@ structure Todo where
 /-- What `fren check` checks in the spec `st`, in order. -/
 def todo (st : State) : Array Todo :=
   st.comps.map (fun c => ⟨c, false,
-      Fren.Core.kindsRun c.subset?.isSome c.subsetInvariant?.isSome Fren.Core.CheckedItem.component.kinds, false⟩)
-    ++ st.globals.map (fun g => ⟨g, g.short, (if g.short then Fren.Core.CheckedItem.shortGlobal else .global).kinds, false⟩)
+      Fren.Core.kindsRun c.subset?.isSome c.subsetInvariant?.isSome (Fren.Core.CheckedItem.of false false false false).kinds, false⟩)
+    ++ st.globals.map (fun g => ⟨g, g.short, (Fren.Core.CheckedItem.of false false true g.short).kinds, false⟩)
     -- An uninterpreted function's contract has its value as an output.
     ++ st.bodies.map fun b =>
-      ⟨b, false, (if b.vars.any (·.role == .output) then Fren.Core.CheckedItem.contract else .body).kinds, true⟩
+      ⟨b, false, (Fren.Core.CheckedItem.of true (b.vars.any (·.role == .output)) false false).kinds, true⟩
 
 /-- The key of its results. -/
 def Todo.key (t : Todo) : String :=
