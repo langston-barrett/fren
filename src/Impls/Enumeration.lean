@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Enumerate
 import FrenCore.Enumeration
 import Impls.Check
 import Reqs.Check
@@ -23,6 +24,12 @@ open Fren.Core.Enumeration
 
 /-! ## Shapes' values -/
 
+/-- Each of `vs` has a size by `P`, and `l` is the largest, 0 if there are
+none. -/
+def AllHas {α : Type} (P : α → Nat → Prop) : List α → Nat → Prop
+  | [], l => l = 0
+  | v :: vs, l => ∃ k m, P v k ∧ AllHas P vs m ∧ l = max k m
+
 mutual
 inductive SHas : Shape → EVal → Nat → Prop
   | bool (b : Bool) : SHas .bool (.bool b) 0
@@ -30,9 +37,25 @@ inductive SHas : Shape → EVal → Nat → Prop
   | nat (k : Nat) : SHas .nat (.int k) k
   | ints {vs : List Int} {i : Int} : i ∈ vs → SHas (.ints vs) (.int i) 0
   | abstract (k : Nat) : SHas .abstract (.abs k) k
+  /-- A string: the largest of its length and its characters' sizes. -/
+  | string (w : List Char) {l : Nat} : AllHas (fun c k => k = charSize c.toNat) w l →
+      SHas .string (.str (String.ofList w)) (max w.length l)
+  /-- A sequence: the largest of its length and its elements' sizes. -/
+  | seq {e vs l} : SeqHas e vs l → SHas (.seq e) (.seq vs) (max vs.length l)
+  /-- A set: the largest of its cardinality and its members' sizes, its
+  members in increasing order of their codes. -/
+  | set {e ms l} : SetHas e ms l → SHas (.set e) (.set ms) (max ms.length l)
+  | pair {a b x y k l} : SHas a x k → SHas b y l → SHas (.pair a b) (.pair x y) (max k l)
   | ctors {cs v k} : CHas cs 0 v k → SHas (.ctors cs) v k
   | record {fs vs k} : SsHas fs vs k → SHas (.record fs) (.ctor 0 vs) k
   | filter {s keep v k} : SHas s v k → keep v = true → SHas (.filter s keep) v k
+inductive SeqHas : Shape → List EVal → Nat → Prop
+  | nil {e} : SeqHas e [] 0
+  | cons {e v vs k l} : SHas e v k → SeqHas e vs l → SeqHas e (v :: vs) (max k l)
+inductive SetHas : Shape → List EVal → Nat → Prop
+  | nil {e} : SetHas e [] 0
+  | cons {e v vs k l} : SHas e v k → SetHas e vs l → (∀ w ∈ vs, v.code < w.code) →
+      SetHas e (v :: vs) (max k l)
 inductive SsHas : Shapes → List EVal → Nat → Prop
   | nil : SsHas .nil [] 0
   | cons {s ss v vs k l} : SHas s v k → SsHas ss vs l → SsHas (.cons s ss) (v :: vs) (max k l)
@@ -58,6 +81,199 @@ theorem mem_prodWith (xs : List (EVal × Nat)) (rest : List (List EVal × Nat)) 
   · rintro ⟨⟨v, k⟩, hx, ⟨ws, l⟩, hr, rfl, rfl⟩; exact ⟨v, k, ws, l, rfl, rfl, hx, hr⟩
   · rintro ⟨v, k, ws, l, rfl, rfl, hx, hr⟩; exact ⟨(v, k), hx, (ws, l), hr, rfl, rfl⟩
 
+theorem allHas_and {α : Type} (P : α → Nat → Prop) (n : Nat) :
+    ∀ (vs : List α) (l : Nat), AllHas (fun v k => P v k ∧ k ≤ n) vs l ↔ AllHas P vs l ∧ l ≤ n
+  | [], l => by simp only [AllHas]; omega
+  | v :: vs, l => by
+    simp only [AllHas]
+    constructor
+    · rintro ⟨k, m, ⟨hp, hk⟩, hr, rfl⟩
+      have := (allHas_and P n vs m).1 hr
+      exact ⟨⟨k, m, hp, this.1, rfl⟩, by omega⟩
+    · rintro ⟨⟨k, m, hp, hr, rfl⟩, hl⟩
+      exact ⟨k, m, ⟨hp, by omega⟩, (allHas_and P n vs m).2 ⟨hr, by omega⟩, rfl⟩
+
+theorem mem_listsOf {α : Type} (xs : List (α × Nat)) (P : α → Nat → Prop)
+    (hx : ∀ v k, (v, k) ∈ xs ↔ P v k) : ∀ len vs l,
+    (vs, l) ∈ listsOf xs len ↔ vs.length = len ∧ AllHas P vs l
+  | 0, vs, l => by
+    simp only [listsOf, List.mem_singleton, Prod.mk.injEq]
+    constructor
+    · rintro ⟨rfl, rfl⟩; exact ⟨rfl, rfl⟩
+    · rintro ⟨h, hl⟩; cases vs with
+      | nil => exact ⟨rfl, hl⟩
+      | cons => simp at h
+  | len + 1, vs, l => by
+    simp only [listsOf, List.mem_flatMap, List.mem_map, Prod.mk.injEq]
+    constructor
+    · rintro ⟨⟨v, k⟩, hv, ⟨ws, m⟩, hw, rfl, rfl⟩
+      have := (mem_listsOf xs P hx len ws m).1 hw
+      exact ⟨by simp [this.1], k, m, (hx v k).1 hv, this.2, rfl⟩
+    · rintro ⟨h, hall⟩
+      cases vs with
+      | nil => simp at h
+      | cons v ws =>
+        obtain ⟨k, m, hp, hr, rfl⟩ := hall
+        exact ⟨(v, k), (hx v k).2 hp, (ws, m), (mem_listsOf xs P hx len ws m).2 ⟨by simpa using h, hr⟩, rfl, rfl⟩
+
+/-- The values of `sub`, and the largest of their sizes. -/
+def unpack (sub : List (EVal × Nat)) : List EVal × Nat := (sub.map Prod.fst, sub.foldr (fun x k => max x.2 k) 0)
+
+theorem mem_subsetsOf : ∀ (xs : List (EVal × Nat)) (card : Nat) (p : List EVal × Nat),
+    p ∈ subsetsOf xs card ↔ ∃ sub, sub.Sublist xs ∧ sub.length ≤ card ∧ p = unpack sub
+  | [], card, p => by
+    simp only [subsetsOf, List.mem_singleton, List.sublist_nil]
+    constructor
+    · rintro rfl; exact ⟨[], rfl, by simp, rfl⟩
+    · rintro ⟨_, rfl, _, rfl⟩; rfl
+  | (x :: rest), 0, p => by
+    simp only [subsetsOf]; rw [mem_subsetsOf rest 0 p]
+    constructor
+    · rintro ⟨sub, h, hl, rfl⟩; exact ⟨sub, h.cons x, hl, rfl⟩
+    · rintro ⟨sub, h, hl, rfl⟩
+      have : sub = [] := List.eq_nil_of_length_eq_zero (by omega)
+      subst this; exact ⟨[], List.nil_sublist _, hl, rfl⟩
+  | ((v, k) :: rest), card + 1, p => by
+    simp only [subsetsOf, List.mem_append, List.mem_map]
+    rw [mem_subsetsOf rest (card + 1) p]
+    constructor
+    · rintro (⟨q, hq, rfl⟩ | ⟨sub, h, hl, rfl⟩)
+      · obtain ⟨sub, h, hl, rfl⟩ := (mem_subsetsOf rest card q).1 hq
+        exact ⟨(v, k) :: sub, h.cons_cons _, by simp; omega, by simp [unpack]⟩
+      · exact ⟨sub, h.cons _, hl, rfl⟩
+    · rintro ⟨sub, h, hl, rfl⟩
+      cases h with
+      | cons _ h => exact .inr ⟨sub, h, hl, rfl⟩
+      | cons_cons _ h =>
+        rename_i sub'
+        refine .inl ⟨unpack sub', (mem_subsetsOf rest card _).2 ⟨sub', h, by simp at hl; omega, rfl⟩, ?_⟩
+        simp [unpack]
+
+theorem toNat_ofNat_valid (c : Nat) (h : c.isValidChar) : (Char.ofNat c).toNat = c := by
+  rw [Char.ofNat, dif_pos h]; rfl
+
+theorem char_lt (c : Char) : c.toNat < codePoints := by
+  have h := c.valid
+  simp only [UInt32.isValidChar, Nat.isValidChar] at h
+  show c.val.toNat < 0x110000
+  omega
+
+theorem mem_charsUpTo (n : Nat) (c : Char) (k : Nat) :
+    (c, k) ∈ charsUpTo n ↔ k = charSize c.toNat ∧ k ≤ n := by
+  have hlt := char_lt c
+  have ha : 'a'.toNat = 97 := rfl
+  simp only [charsUpTo, List.mem_filterMap, List.mem_range, charSize, codePoints, ha] at *
+  constructor
+  · rintro ⟨r, hr, h⟩
+    split at h
+    · rename_i hc
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      rw [toNat_ofNat_valid _ hc]
+      constructor <;> omega
+    · simp at h
+  · rintro ⟨rfl, hk⟩
+    refine ⟨(c.toNat + 1114112 - 97) % 1114112, by omega, ?_⟩
+    have e : ((c.toNat + 1114112 - 97) % 1114112 + 97) % 1114112 = c.toNat := by omega
+    have hv : c.toNat.isValidChar := c.valid
+    rw [e, if_pos hv]
+    simp
+
+theorem seqHas_iff (e : Shape) : ∀ (vs : List EVal) (l : Nat), SeqHas e vs l ↔ AllHas (SHas e) vs l
+  | [], l => by
+    simp only [AllHas]; constructor
+    · intro h; cases h; rfl
+    · rintro rfl; exact .nil
+  | v :: vs, l => by
+    simp only [AllHas]; constructor
+    · intro h; cases h with | cons h1 h2 => exact ⟨_, _, h1, (seqHas_iff e vs _).1 h2, rfl⟩
+    · rintro ⟨k, m, h1, h2, rfl⟩; exact .cons h1 ((seqHas_iff e vs m).2 h2)
+
+/-- The members, each with its size, of a set. -/
+theorem setHas_sub {e : Shape} : ∀ {ms : List EVal} {l : Nat}, SetHas e ms l →
+    ∃ sub : List (EVal × Nat), unpack sub = (ms, l) ∧ (∀ x ∈ sub, SHas e x.1 x.2) ∧
+      sub.Pairwise (fun a b => a.1.code < b.1.code)
+  | _, _, .nil => ⟨[], rfl, by simp, .nil⟩
+  | _, _, .cons (v := v) (k := k) h1 h2 hlt => by
+    obtain ⟨sub, hu, hs, hp⟩ := setHas_sub h2
+    simp only [unpack, Prod.mk.injEq] at hu
+    refine ⟨(v, k) :: sub, by simp [unpack, hu.1, hu.2], ?_, ?_⟩
+    · intro x hx; simp only [List.mem_cons] at hx
+      rcases hx with rfl | hx
+      · exact h1
+      · exact hs x hx
+    · refine List.pairwise_cons.2 ⟨fun x hx => hlt x.1 ?_, hp⟩
+      rw [← hu.1]; exact List.mem_map_of_mem hx
+
+theorem setHas_of_sub {e : Shape} : ∀ (sub : List (EVal × Nat)), (∀ x ∈ sub, SHas e x.1 x.2) →
+    sub.Pairwise (fun a b => a.1.code < b.1.code) → SetHas e (unpack sub).1 (unpack sub).2
+  | [], _, _ => .nil
+  | (v, k) :: sub, hs, hp => by
+    rw [List.pairwise_cons] at hp
+    refine .cons (hs (v, k) (by simp)) (setHas_of_sub sub (fun x hx => hs x (by simp [hx])) hp.2) ?_
+    intro w hw
+    simp only [List.mem_map] at hw
+    obtain ⟨x, hx, rfl⟩ := hw
+    exact hp.1 x hx
+
+/-- A list of values whose codes increase, each of a list in which the codes
+do not decrease, is a sublist of it. -/
+theorem sublist_of_ordered : ∀ (L S : List (EVal × Nat)),
+    L.Pairwise (fun a b => a.1.code ≤ b.1.code) → S.Pairwise (fun a b => a.1.code < b.1.code) →
+    (∀ x ∈ S, x ∈ L) → S.Sublist L
+  | [], S, _, _, h => by
+    cases S with
+    | nil => exact List.Sublist.slnil
+    | cons x _ => exact absurd (h x (by simp)) (by simp)
+  | x :: L, [], _, _, _ => List.nil_sublist _
+  | x :: L, s :: S, hL, hS, h => by
+    rw [List.pairwise_cons] at hL hS
+    by_cases hs : s = x
+    · subst hs
+      refine (sublist_of_ordered L S hL.2 hS.2 fun y hy => ?_).cons_cons s
+      rcases List.mem_cons.1 (h y (by simp [hy])) with rfl | hy'
+      · exact absurd (hS.1 y hy) (List.lt_irrefl _)
+      · exact hy'
+    · have hsL : s ∈ L := by
+        rcases List.mem_cons.1 (h s (by simp)) with h' | h'
+        · exact absurd h' hs
+        · exact h'
+      refine (sublist_of_ordered L (s :: S) hL.2 (List.pairwise_cons.2 hS) fun y hy => ?_).cons x
+      rcases List.mem_cons.1 (h y hy) with rfl | hy'
+      · -- `y` is `x`, before `s` in `L`, but after it by the codes.
+        exfalso
+        have hxs := hL.1 s hsL
+        rcases List.mem_cons.1 hy with rfl | hy''
+        · exact hs rfl
+        · exact (List.not_lt.2 hxs) (hS.1 _ hy'')
+      · exact hy'
+
+theorem foldr_max_le : ∀ (sub : List (EVal × Nat)) (n : Nat), (∀ x ∈ sub, x.2 ≤ n) →
+    sub.foldr (fun x k => max x.2 k) 0 ≤ n
+  | [], _, _ => Nat.zero_le _
+  | x :: sub, n, h => by
+    simp only [List.foldr_cons]
+    have := foldr_max_le sub n (fun y hy => h y (by simp [hy]))
+    have := h x (by simp); omega
+
+theorem le_foldr_max : ∀ (sub : List (EVal × Nat)) (x : EVal × Nat), x ∈ sub →
+    x.2 ≤ sub.foldr (fun x k => max x.2 k) 0
+  | [], _, h => by simp at h
+  | y :: sub, x, h => by
+    simp only [List.foldr_cons]
+    rcases List.mem_cons.1 h with rfl | h
+    · omega
+    · have := le_foldr_max sub x h; omega
+
+/-- The values of `e`, listed with their codes not decreasing, as a set's
+members are chosen from (`Shape.vals`). -/
+theorem sorted_codes (l : List (EVal × Nat)) :
+    (l.mergeSort fun a b => decide (a.1.code ≤ b.1.code)).Pairwise (fun a b => a.1.code ≤ b.1.code) := by
+  have := List.pairwise_mergeSort (le := fun (a b : EVal × Nat) => decide (a.1.code ≤ b.1.code))
+    (fun a b c hab hbc => by simp only [decide_eq_true_eq] at *; exact List.le_trans hab hbc)
+    (fun a b => by simpa using List.le_total a.1.code b.1.code) l
+  exact this.imp fun h => by simpa using h
+
 mutual
 theorem mem_vals : (s : Shape) → (n : Nat) → (v : EVal) → (k : Nat) → ((v, k) ∈ s.vals n ↔ SHas s v k ∧ k ≤ n)
   | .bool, n, v, k => by
@@ -80,6 +296,71 @@ theorem mem_vals : (s : Shape) → (n : Nat) → (v : EVal) → (k : Nat) → ((
     simp only [Shape.vals, valueSize, List.mem_map, Prod.mk.injEq, List.mem_range]; constructor
     · rintro ⟨j, hj, rfl, rfl⟩; exact ⟨by simpa using SHas.abstract j, by simp; omega⟩
     · rintro ⟨h, hk⟩; cases h; exact ⟨_, by omega, rfl, by simp⟩
+  | .string, n, v, k => by
+    simp only [Shape.vals, List.mem_flatMap, List.mem_range, List.mem_map, Prod.mk.injEq]
+    have hw := mem_listsOf (charsUpTo n) (fun c k => k = charSize c.toNat ∧ k ≤ n) (mem_charsUpTo n)
+    constructor
+    · rintro ⟨len, hlen, ⟨w, l⟩, hm, rfl, rfl⟩
+      obtain ⟨hl, ha⟩ := (hw len w l).1 hm
+      obtain ⟨ha, hln⟩ := (allHas_and _ n w l).1 ha
+      subst hl
+      exact ⟨.string w ha, by omega⟩
+    · rintro ⟨h, hk⟩
+      cases h with
+      | string w ha =>
+        exact ⟨w.length, by omega, (w, _), (hw _ w _).2 ⟨rfl, (allHas_and _ n w _).2 ⟨ha, by omega⟩⟩, rfl, rfl⟩
+  | .seq e, n, v, k => by
+    simp only [Shape.vals, List.mem_flatMap, List.mem_range, List.mem_map, Prod.mk.injEq]
+    have hw := mem_listsOf (e.vals n) (fun v k => SHas e v k ∧ k ≤ n) (mem_vals e n)
+    constructor
+    · rintro ⟨len, hlen, ⟨vs, l⟩, hm, rfl, rfl⟩
+      obtain ⟨hl, ha⟩ := (hw len vs l).1 hm
+      obtain ⟨ha, hln⟩ := (allHas_and _ n vs l).1 ha
+      subst hl
+      exact ⟨.seq ((seqHas_iff e vs l).2 ha), by omega⟩
+    · rintro ⟨h, hk⟩
+      cases h with
+      | seq h =>
+        rename_i vs l
+        exact ⟨vs.length, by omega, (vs, l),
+          (hw _ vs l).2 ⟨rfl, (allHas_and _ n vs l).2 ⟨(seqHas_iff e vs l).1 h, by omega⟩⟩, rfl, rfl⟩
+  | .set e, n, v, k => by
+    simp only [Shape.vals, List.mem_map, List.mem_filter, Prod.mk.injEq]
+    have hsorted := sorted_codes (e.vals n)
+    constructor
+    · rintro ⟨⟨ms, l⟩, ⟨hm, hord⟩, rfl, rfl⟩
+      obtain ⟨sub, hsub, hlen, hp⟩ := (mem_subsetsOf _ n _).1 hm
+      simp only [unpack, Prod.mk.injEq] at hp
+      obtain ⟨rfl, rfl⟩ := hp
+      have hin : ∀ x ∈ sub, SHas e x.1 x.2 ∧ x.2 ≤ n := fun x hx =>
+        (mem_vals e n x.1 x.2).1 (List.mem_mergeSort.1 (hsub.subset hx))
+      have hpo : sub.Pairwise (fun a b => a.1.code < b.1.code) := by
+        simpa [membersOrdered, List.pairwise_map] using hord
+      have hset := setHas_of_sub sub (fun x hx => (hin x hx).1) hpo
+      simp only [unpack] at hset
+      exact ⟨.set hset, by simp; have := foldr_max_le sub n (fun x hx => (hin x hx).2); omega⟩
+    · rintro ⟨h, hk⟩
+      cases h with
+      | set h =>
+        rename_i ms l
+        obtain ⟨sub, hu, hs, hp⟩ := setHas_sub h
+        simp only [unpack, Prod.mk.injEq] at hu
+        obtain ⟨rfl, rfl⟩ := hu
+        have hin : ∀ x ∈ sub, x ∈ (e.vals n).mergeSort fun a b => decide (a.1.code ≤ b.1.code) := fun x hx =>
+          List.mem_mergeSort.2 ((mem_vals e n x.1 x.2).2 ⟨hs x hx, by have := le_foldr_max sub x hx; simp at hk; omega⟩)
+        refine ⟨unpack sub, ⟨(mem_subsetsOf _ n _).2 ⟨sub, sublist_of_ordered _ sub hsorted hp hin,
+          by simp at hk; omega, rfl⟩, by simpa [unpack, membersOrdered, List.pairwise_map] using hp⟩, rfl, ?_⟩
+        simp [unpack]
+  | .pair a b, n, v, k => by
+    simp only [Shape.vals, List.mem_flatMap, List.mem_map, Prod.mk.injEq]
+    constructor
+    · rintro ⟨⟨x, k₁⟩, hx, ⟨y, k₂⟩, hy, rfl, rfl⟩
+      have h1 := (mem_vals a n x k₁).1 hx; have h2 := (mem_vals b n y k₂).1 hy
+      exact ⟨.pair h1.1 h2.1, by omega⟩
+    · rintro ⟨h, hk⟩
+      cases h with
+      | pair h1 h2 =>
+        exact ⟨(_, _), (mem_vals a n _ _).2 ⟨h1, by omega⟩, (_, _), (mem_vals b n _ _).2 ⟨h2, by omega⟩, rfl, rfl⟩
   | .ctors cs, n, v, k => by
     simp only [Shape.vals]; rw [mem_cvals cs 0 n v k]; constructor
     · rintro ⟨h, hk⟩; exact ⟨.ctors h, hk⟩
@@ -153,6 +434,16 @@ theorem cvals_index_gt {cs : Ctors} {i : Nat} {vs : List EVal} {k : Nat} (h : CH
   obtain ⟨j, ws, e, hj⟩ := chas_index h
   cases e; omega
 
+theorem string_inv {v : EVal} {k : Nat} (h : SHas .string v k) :
+    ∃ w l, v = .str (String.ofList w) ∧ k = max w.length l ∧ AllHas (fun c k => k = charSize c.toNat) w l := by
+  cases h with | string w ha => exact ⟨w, _, rfl, rfl, ha⟩
+
+theorem allHas_fun {α : Type} (P : α → Nat → Prop) (hP : ∀ v k k', P v k → P v k' → k = k') :
+    ∀ (vs : List α) (l l' : Nat), AllHas P vs l → AllHas P vs l' → l = l'
+  | [], _, _, h, h' => by simp only [AllHas] at h h'; omega
+  | v :: vs, _, _, ⟨k, m, hp, hr, e⟩, ⟨k', m', hp', hr', e'⟩ => by
+    rw [e, e', hP v k k' hp hp', allHas_fun P hP vs m m' hr hr']
+
 mutual
 theorem size_unique : {s : Shape} → {v : EVal} → {k k' : Nat} → SHas s v k → SHas s v k' → k = k'
   | _, _, _, _, .bool _, h => by cases h; rfl
@@ -160,9 +451,25 @@ theorem size_unique : {s : Shape} → {v : EVal} → {k k' : Nat} → SHas s v k
   | _, _, _, _, .nat _, h => by cases h; rfl
   | _, _, _, _, .ints _, h => by cases h; rfl
   | _, _, _, _, .abstract _, h => by cases h; rfl
+  | _, _, _, _, .string w ha, h => by
+    obtain ⟨w', l', e, rfl, ha'⟩ := string_inv h
+    simp only [EVal.str.injEq] at e
+    have := String.ofList_injective e; subst this
+    rw [allHas_fun _ (fun _ _ _ h h' => h.trans h'.symm) w _ _ ha ha']
+  | _, _, _, _, .seq h₁, h => by cases h with | seq h₂ => rw [seqsize_unique h₁ h₂]
+  | _, _, _, _, .set h₁, h => by cases h with | set h₂ => rw [setsize_unique h₁ h₂]
+  | _, _, _, _, .pair h₁ h₂, h => by cases h with | pair h₃ h₄ => rw [size_unique h₁ h₃, size_unique h₂ h₄]
   | _, _, _, _, .ctors h₁, h => by cases h with | ctors h₂ => exact csize_unique h₁ h₂
   | _, _, _, _, .record h₁, h => by cases h with | record h₂ => exact ssize_unique h₁ h₂
   | _, _, _, _, .filter h₁ _, h => by cases h with | filter h₂ _ => exact size_unique h₁ h₂
+theorem seqsize_unique : {e : Shape} → {vs : List EVal} → {l l' : Nat} → SeqHas e vs l → SeqHas e vs l' → l = l'
+  | _, _, _, _, .nil, h => by cases h; rfl
+  | _, _, _, _, .cons h₁ r₁, h => by
+    cases h with | cons h₂ r₂ => rw [size_unique h₁ h₂, seqsize_unique r₁ r₂]
+theorem setsize_unique : {e : Shape} → {ms : List EVal} → {l l' : Nat} → SetHas e ms l → SetHas e ms l' → l = l'
+  | _, _, _, _, .nil, h => by cases h; rfl
+  | _, _, _, _, .cons h₁ r₁ _, h => by
+    cases h with | cons h₂ r₂ _ => rw [size_unique h₁ h₂, setsize_unique r₁ r₂]
 theorem ssize_unique : {ss : Shapes} → {vs : List EVal} → {k k' : Nat} → SsHas ss vs k → SsHas ss vs k' → k = k'
   | _, _, _, _, .nil, h => by cases h; rfl
   | _, _, _, _, .cons h₁ r₁, h => by
@@ -186,6 +493,8 @@ end
 mutual
 def SDistinct : Shape → Prop
   | .ints vs => vs.Nodup
+  | .seq e | .set e => SDistinct e
+  | .pair a b => SDistinct a ∧ SDistinct b
   | .ctors cs => CDistinct cs
   | .record fs => SsDistinct fs
   | .filter s _ => SDistinct s
@@ -237,6 +546,117 @@ theorem nodup_prodWith (xs : List (EVal × Nat)) (rest : List (List EVal × Nat)
     obtain ⟨⟨rfl, -⟩, -⟩ := e
     exact hne (by rw [fx v k j ha hb])
 
+theorem nodup_flatMap_range {β : Type} (f : Nat → List β) (n : Nat) (h₁ : ∀ i, (f i).Nodup)
+    (h₂ : ∀ i j, i ≠ j → ∀ x ∈ f i, x ∉ f j) : ((List.range n).flatMap f).Nodup := by
+  rw [List.nodup_iff_pairwise_ne, List.pairwise_flatMap]
+  refine ⟨fun i _ => List.nodup_iff_pairwise_ne.1 (h₁ i), ?_⟩
+  exact (List.nodup_iff_pairwise_ne.1 List.nodup_range).imp fun {i j} (hij : i ≠ j) x hx y hy (e : x = y) =>
+    h₂ i j hij x hx (e ▸ hy)
+
+theorem nodup_of_map {α β : Type} (f : α → β) {l : List α} (h : (l.map f).Nodup) : l.Nodup := by
+  rw [List.nodup_iff_pairwise_ne, List.pairwise_map] at h
+  exact List.nodup_iff_pairwise_ne.2 (h.imp fun hne e => hne (congrArg f e))
+
+theorem listsOf_fun {α : Type} (xs : List (α × Nat)) (hf : ∀ v k k', (v, k) ∈ xs → (v, k') ∈ xs → k = k')
+    (len : Nat) (vs : List α) (l l' : Nat) (h : (vs, l) ∈ listsOf xs len) (h' : (vs, l') ∈ listsOf xs len) : l = l' :=
+  have hx := mem_listsOf xs (fun v k => (v, k) ∈ xs) (fun _ _ => Iff.rfl)
+  allHas_fun _ hf vs l l' ((hx len vs l).1 h).2 ((hx len vs l').1 h').2
+
+theorem listsOf_length {α : Type} (xs : List (α × Nat)) (len : Nat) (vs : List α) (l : Nat)
+    (h : (vs, l) ∈ listsOf xs len) : vs.length = len :=
+  ((mem_listsOf xs (fun v k => (v, k) ∈ xs) (fun _ _ => Iff.rfl) len vs l).1 h).1
+
+theorem nodup_listsOf {α : Type} (xs : List (α × Nat)) (h₁ : xs.Nodup)
+    (hf : ∀ v k k', (v, k) ∈ xs → (v, k') ∈ xs → k = k') : ∀ len, (listsOf xs len).Nodup
+  | 0 => by simp [listsOf]
+  | len + 1 => by
+    rw [List.nodup_iff_pairwise_ne, listsOf, List.pairwise_flatMap]
+    refine ⟨fun ⟨v, k⟩ _ => ?_, ?_⟩
+    · rw [← List.nodup_iff_pairwise_ne]
+      refine nodup_map_on (nodup_listsOf xs h₁ hf len) fun ⟨ws, l⟩ ha ⟨ws', l'⟩ hb e => ?_
+      simp only [Prod.mk.injEq, List.cons.injEq] at e
+      obtain ⟨⟨-, rfl⟩, -⟩ := e
+      rw [listsOf_fun xs hf len ws l l' ha hb]
+    · refine (List.Pairwise.and_mem.1 (List.nodup_iff_pairwise_ne.1 h₁)).imp fun {a b} ⟨ha, hb, hne⟩ x hx y hy e => ?_
+      obtain ⟨v, k⟩ := a; obtain ⟨w, j⟩ := b
+      simp only [List.mem_map] at hx hy
+      obtain ⟨_, _, rfl⟩ := hx; obtain ⟨_, _, e'⟩ := hy
+      rw [← e'] at e
+      simp only [Prod.mk.injEq, List.cons.injEq] at e
+      obtain ⟨⟨rfl, -⟩, -⟩ := e
+      exact hne (by rw [hf v k j ha hb])
+
+theorem nodup_charsUpTo (n : Nat) : (charsUpTo n).Nodup := by
+  rw [List.nodup_iff_pairwise_ne, charsUpTo, List.pairwise_filterMap]
+  refine (List.nodup_iff_pairwise_ne.1 List.nodup_range).imp fun {i j} hij a ha b hb e => ?_
+  subst e
+  dsimp only at ha hb
+  split at ha <;> split at hb <;> simp only [Option.some.injEq, reduceCtorEq] at ha hb
+  rw [← ha] at hb
+  simp only [Prod.mk.injEq] at hb
+  omega
+
+theorem chars_fun (n : Nat) : ∀ c k k', (c, k) ∈ charsUpTo n → (c, k') ∈ charsUpTo n → k = k' :=
+  fun c k k' h h' => ((mem_charsUpTo n c k).1 h).1.trans ((mem_charsUpTo n c k').1 h').1.symm
+
+/-- The values of a list whose values have one size each are distinct
+when its pairs are. -/
+theorem nodup_fst (l : List (EVal × Nat)) (h : l.Nodup) (hf : ∀ v k k', (v, k) ∈ l → (v, k') ∈ l → k = k') :
+    (l.map Prod.fst).Nodup := by
+  rw [List.nodup_iff_pairwise_ne, List.pairwise_map]
+  refine (List.Pairwise.and_mem.1 (List.nodup_iff_pairwise_ne.1 h)).imp fun {a b} ⟨ha, hb, hne⟩ e => ?_
+  obtain ⟨v, k⟩ := a; obtain ⟨w, j⟩ := b
+  simp only at e; subst e
+  exact hne (by rw [hf v k j ha hb])
+
+theorem nodup_subsetsOf : ∀ (xs : List (EVal × Nat)), (xs.map Prod.fst).Nodup → ∀ card,
+    ((subsetsOf xs card).map Prod.fst).Nodup
+  | [], _, card => by simp [subsetsOf]
+  | _ :: rest, h, 0 => by
+    simp only [subsetsOf]; exact nodup_subsetsOf rest (List.nodup_cons.1 h).2 0
+  | (v, k) :: rest, h, card + 1 => by
+    simp only [List.map_cons, List.nodup_cons] at h
+    simp only [subsetsOf, List.map_append, List.map_map]
+    rw [List.nodup_append]
+    have hr : ((subsetsOf rest card).map (Prod.fst ∘ fun (p : List EVal × Nat) => (v :: p.1, max k p.2))) =
+        ((subsetsOf rest card).map Prod.fst).map (v :: ·) := by simp [Function.comp_def]
+    refine ⟨?_, nodup_subsetsOf rest h.2 (card + 1), ?_⟩
+    · rw [hr]; exact nodup_map_on (nodup_subsetsOf rest h.2 card) (fun _ _ _ _ e => (List.cons.inj e).2)
+    · intro b hb a ha e
+      subst e
+      rw [hr] at hb
+      simp only [List.mem_map] at ha hb
+      obtain ⟨p, hp, rfl⟩ := ha
+      obtain ⟨_, _, e⟩ := hb
+      obtain ⟨sub, hsub, -, rfl⟩ := (mem_subsetsOf rest _ p).1 hp
+      have : v ∈ (unpack sub).1 := by rw [← e]; simp
+      simp only [unpack] at this
+      exact h.1 ((hsub.map Prod.fst).subset this)
+
+/-- Sublists of a list whose values have one size each are equal when
+their values are. -/
+theorem eq_of_map_fst (xs : List (EVal × Nat)) (hf : ∀ v k k', (v, k) ∈ xs → (v, k') ∈ xs → k = k') :
+    ∀ (sub sub' : List (EVal × Nat)), (∀ x ∈ sub, x ∈ xs) → (∀ x ∈ sub', x ∈ xs) →
+    sub.map Prod.fst = sub'.map Prod.fst → sub = sub'
+  | [], [], _, _, _ => rfl
+  | [], _ :: _, _, _, e => by simp at e
+  | _ :: _, [], _, _, e => by simp at e
+  | (v, k) :: sub, (v', k') :: sub', h, h', e => by
+    simp only [List.map_cons, List.cons.injEq] at e
+    obtain ⟨rfl, e⟩ := e
+    rw [hf v k k' (h _ (by simp)) (h' _ (by simp)),
+      eq_of_map_fst xs hf sub sub' (fun x hx => h x (by simp [hx])) (fun x hx => h' x (by simp [hx])) e]
+
+theorem subsetsOf_fun (xs : List (EVal × Nat)) (hf : ∀ v k k', (v, k) ∈ xs → (v, k') ∈ xs → k = k')
+    (card : Nat) (vs : List EVal) (l l' : Nat) (h : (vs, l) ∈ subsetsOf xs card) (h' : (vs, l') ∈ subsetsOf xs card) :
+    l = l' := by
+  obtain ⟨sub, hs, -, e⟩ := (mem_subsetsOf xs card _).1 h
+  obtain ⟨sub', hs', -, e'⟩ := (mem_subsetsOf xs card _).1 h'
+  simp only [unpack, Prod.mk.injEq] at e e'
+  have := eq_of_map_fst xs hf sub sub' (fun x hx => hs.subset hx) (fun x hx => hs'.subset hx) (e.1.symm.trans e'.1)
+  subst this
+  exact e.2.trans e'.2.symm
+
 theorem vals_fun (s : Shape) (n : Nat) : ∀ v k k', (v, k) ∈ s.vals n → (v, k') ∈ s.vals n → k = k' :=
   fun v k k' h h' => size_unique ((mem_vals s n v k).1 h).1 ((mem_vals s n v k').1 h').1
 
@@ -250,6 +670,61 @@ theorem nodup_vals : (s : Shape) → SDistinct s → (n : Nat) → (s.vals n).No
   | .nat, _, n => nodup_map_on List.nodup_range fun a _ b _ e => by simp at e; omega
   | .ints vs, h, _ => nodup_map_on h fun a _ b _ e => by simp at e; exact e.1
   | .abstract, _, n => nodup_map_on List.nodup_range fun a _ b _ e => by simp at e; exact e.1
+  | .string, _, n => by
+    simp only [Shape.vals]
+    refine nodup_flatMap_range _ _ (fun len => ?_) (fun i j hij x hx hy => ?_)
+    · refine nodup_map_on (nodup_listsOf _ (nodup_charsUpTo n) (chars_fun n) len) fun ⟨w, k⟩ ha ⟨w', k'⟩ hb e => ?_
+      simp only [Prod.mk.injEq, EVal.str.injEq] at e
+      have := String.ofList_injective e.1; subst this
+      rw [listsOf_fun _ (chars_fun n) len w k k' ha hb]
+    · simp only [List.mem_map] at hx hy
+      obtain ⟨⟨w, k⟩, hw, rfl⟩ := hx; obtain ⟨⟨w', k'⟩, hw', e⟩ := hy
+      simp only [Prod.mk.injEq, EVal.str.injEq] at e
+      have h1 := listsOf_length _ _ _ _ hw; have h2 := listsOf_length _ _ _ _ hw'
+      have := congrArg String.length e.1; simp only [String.length_ofList] at this; omega
+  | .seq e, h, n => by
+    simp only [Shape.vals]
+    refine nodup_flatMap_range _ _ (fun len => ?_) (fun i j hij x hx hy => ?_)
+    · refine nodup_map_on (nodup_listsOf _ (nodup_vals e h n) (vals_fun e n) len) fun ⟨w, k⟩ ha ⟨w', k'⟩ hb eq => ?_
+      simp only [Prod.mk.injEq, EVal.seq.injEq] at eq
+      obtain ⟨rfl, -⟩ := eq
+      rw [listsOf_fun _ (vals_fun e n) len w k k' ha hb]
+    · simp only [List.mem_map] at hx hy
+      obtain ⟨⟨w, k⟩, hw, rfl⟩ := hx; obtain ⟨⟨w', k'⟩, hw', eq⟩ := hy
+      simp only [Prod.mk.injEq, EVal.seq.injEq] at eq
+      have h1 := listsOf_length _ _ _ _ hw; have h2 := listsOf_length _ _ _ _ hw'
+      rw [eq.1] at h2; omega
+  | .set e, h, n => by
+    simp only [Shape.vals]
+    let sorted := (e.vals n).mergeSort fun a b => decide (a.1.code ≤ b.1.code)
+    have hperm : sorted.Perm (e.vals n) := List.mergeSort_perm _ _
+    have hsf : ∀ v k k', (v, k) ∈ sorted → (v, k') ∈ sorted → k = k' := fun v k k' a b =>
+      vals_fun e n v k k' (hperm.subset a) (hperm.subset b)
+    have hs : (sorted.map Prod.fst).Nodup :=
+      nodup_fst _ ((hperm.nodup_iff).2 (nodup_vals e h n)) hsf
+    refine nodup_map_on (nodup_filter (nodup_of_map Prod.fst (nodup_subsetsOf sorted hs n)))
+      fun ⟨vs, k⟩ ha ⟨ws, j⟩ hb eq => ?_
+    simp only [Prod.mk.injEq, EVal.set.injEq] at eq
+    obtain ⟨rfl, -⟩ := eq
+    rw [subsetsOf_fun sorted hsf n vs k j (List.mem_filter.1 ha).1 (List.mem_filter.1 hb).1]
+  | .pair a b, ⟨ha, hb⟩, n => by
+    simp only [Shape.vals]
+    rw [List.nodup_iff_pairwise_ne, List.pairwise_flatMap]
+    refine ⟨fun ⟨x, k⟩ _ => ?_, ?_⟩
+    · rw [← List.nodup_iff_pairwise_ne]
+      refine nodup_map_on (nodup_vals b hb n) fun ⟨y, l⟩ h1 ⟨y', l'⟩ h2 e => ?_
+      simp only [Prod.mk.injEq, EVal.pair.injEq] at e
+      obtain ⟨⟨-, rfl⟩, -⟩ := e
+      rw [vals_fun b n y l l' h1 h2]
+    · refine (List.Pairwise.and_mem.1 (List.nodup_iff_pairwise_ne.1 (nodup_vals a ha n))).imp
+        fun {p q} ⟨hp, hq, hne⟩ x hx y hy e => ?_
+      obtain ⟨v, k⟩ := p; obtain ⟨w, j⟩ := q
+      simp only [List.mem_map] at hx hy
+      obtain ⟨_, _, rfl⟩ := hx; obtain ⟨_, _, e'⟩ := hy
+      rw [← e'] at e
+      simp only [Prod.mk.injEq, EVal.pair.injEq] at e
+      obtain ⟨⟨rfl, -⟩, -⟩ := e
+      exact hne (by rw [vals_fun a n v k j hp hq])
   | .ctors cs, h, n => nodup_cvals cs h 0 n
   | .record fs, h, n => nodup_map_on (nodup_svals fs h n) fun ⟨vs, k⟩ ha ⟨ws, j⟩ hb e => by
       simp only [Prod.mk.injEq, EVal.ctor.injEq, valueSize] at e
@@ -342,6 +817,34 @@ theorem exhausted_within : (s : Shape) → (n : Nat) → s.exhausted n = true �
   | .nat, _, he, _, _, _ => by simp [Shape.exhausted] at he
   | .ints _, _, _, _, _, h => by cases h; omega
   | .abstract, _, he, _, _, _ => by simp [Shape.exhausted] at he
+  | .string, _, he, _, _, _ => by simp [Shape.exhausted] at he
+  | .seq e, n, he, _, _, h => by
+    simp only [Shape.exhausted, Bool.and_eq_true, List.isEmpty_iff] at he
+    cases h with
+    | seq h =>
+      cases h with
+      | nil => simp
+      | cons h1 _ =>
+        have := (mem_vals e n _ _).2 ⟨h1, exhausted_within e n he.2 h1⟩
+        rw [he.1] at this; simp at this
+  | .set e, n, he, _, _, h => by
+    simp only [Shape.exhausted, Bool.and_eq_true, decide_eq_true_eq] at he
+    cases h with
+    | set h =>
+      obtain ⟨sub, hu, hs, hp⟩ := setHas_sub h
+      simp only [unpack, Prod.mk.injEq] at hu
+      obtain ⟨rfl, rfl⟩ := hu
+      have hle : ∀ x ∈ sub, x.2 ≤ n := fun x hx => exhausted_within e n he.1 (hs x hx)
+      have hsub := sublist_of_ordered _ sub (sorted_codes (e.vals n)) hp
+        (fun x hx => List.mem_mergeSort.2 ((mem_vals e n _ _).2 ⟨hs x hx, hle x hx⟩))
+      have := hsub.length_le
+      rw [List.length_mergeSort] at this
+      have := foldr_max_le sub n hle
+      simp; omega
+  | .pair a b, n, he, _, _, h => by
+    simp only [Shape.exhausted, Bool.and_eq_true] at he
+    cases h with
+    | pair h1 h2 => have := exhausted_within a n he.1 h1; have := exhausted_within b n he.2 h2; omega
   | .ctors cs, n, he, _, _, h => by cases h with | ctors h => exact cexhausted_within cs 0 n (by simpa [Shape.exhausted] using he) h
   | .record fs, n, he, _, _, h => by cases h with | record h => exact sexhausted_within fs n (by simpa [Shape.exhausted] using he) h
   | .filter s _, n, he, _, _, h => by cases h with | filter h _ => exact exhausted_within s n (by simpa [Shape.exhausted] using he) h
@@ -1197,7 +1700,8 @@ impl smallest_first: check::smallest_first for (sh : Shape) (n i j : Nat) {
   · simp [hij]
 
 instance : Fren.Finite SizeKind :=
-  ⟨[.bool, .int, .nat, .finiteInt, .abstract, .nullary, .variant, .record], by intro x; cases x <;> simp⟩
+  ⟨[.bool, .int, .nat, .finiteInt, .abstract, .nullary, .variant, .record, .char, .collection, .pair],
+    by intro x; cases x <;> simp⟩
 
 def toSized : SizeKind → check.Sized
   | .bool => .Boolean
@@ -1208,6 +1712,9 @@ def toSized : SizeKind → check.Sized
   | .nullary => .Nullary
   | .variant => .WithPayload
   | .record => .Record
+  | .char => .Character
+  | .collection => .Collection
+  | .pair => .Pair
 
 -- The sizes that `Shape.vals` gives its values.
 impl value_size: check::value_size for (sk : SizeKind) (i : Int) (l : Nat) {
@@ -1217,7 +1724,7 @@ impl value_size: check::value_size for (sk : SizeKind) (i : Int) (l : Nat) {
   size := valueSize sk i l,
 } by
   intro sk i l
-  cases sk <;> simp [fren_spec, toSized, valueSize] <;> omega
+  cases sk <;> simp [fren_spec, toSized, valueSize, charSize, codePoints] <;> omega
 
 -- The limit on the behaviours that a component's enumeration searches.
 impl enumeration_limit: check::enumeration_limit for (c : Nat) {
@@ -1321,6 +1828,22 @@ impl enumerated_verdict: check::enumerated_verdict for (k : CheckKind) (v : Verd
   cases k <;> cases v <;> cases c <;> cases x <;> cases o <;> decide
 
 
+/-- Shapes of most kinds, nested a little, for `estimate_bounds_count`. -/
+def estimateSamples : List Shape :=
+  [.bool, .int, .nat, .abstract, .ints [1, 2], .string, .seq .bool, .seq .int, .pair .bool .int,
+   .seq (.seq .bool), .record (.cons .bool (.cons (.seq .bool) .nil)),
+   .ctors (.cons .nil (.cons (.cons .bool .nil) .nil)), .empty]
+
+/-- `Shape.estimate`, by which `F0644` refuses a slot before its values are
+listed, is at least how many values a shape has (`Shape.count`), saturated
+as it is, so that no slot within the limit is refused: checked of
+`estimateSamples` up to size 2. Sets and pattern types are not among them:
+the kernel cannot reduce the order of a set's members, by the `partial`
+`EVal.code`, nor a pattern's test. -/
+theorem estimate_bounds_count :
+    estimateSamples.all (fun s => [0, 1, 2].all fun n => saturate (s.count n) ≤ s.estimate n) = true := by
+  decide +kernel
+
 -- An exhausted shape has no value beyond the bound (`Shape.exhausted`).
 open Classical in
 impl shape_bound: check::shape_bound for (sh : Shape) (n : Nat) (v : EVal) (k : Nat) {
@@ -1332,6 +1855,105 @@ impl shape_bound: check::shape_bound for (sh : Shape) (n : Nat) (v : EVal) (k : 
   intro sh n v k _ h
   simp only [decide_eq_true_eq] at h
   exact exhausted_within sh n h.1 h.2
+
+-- An index as the Lean-hosted front end's enumeration reads it
+-- (`Fren.Enum.nthOr`), the hidden slot's value out of range.
+impl enumerated_index: check::enumerated_index for (q : Fren.Seq Int) (i u : Int) {
+  q := q,
+  i := i,
+  unspecified := u,
+  value := Fren.Enum.nthOr q i u,
+} by
+  intro q i u
+  simp [fren_spec, Fren.Enum.nthOr]
+
+/-- A truth as `check::Truth` has it. -/
+def toTruth : Truth → check.Truth
+  | .yes => .True
+  | .no => .False
+  | .unknown => .Unknown
+
+/-- Every count from `t` to `t + u` is 1 just where `t` is and `u` 0. -/
+theorem countAll_eq (t u : Nat) : (∀ k : Int, (t : Int) ≤ k ∧ k ≤ t + u → k = 1) ↔ (t = 1 ∧ u = 0) := by
+  constructor
+  · intro h
+    have h1 := h t ⟨Int.le_refl _, by omega⟩
+    have h2 := h (t + u) ⟨by omega, Int.le_refl _⟩
+    omega
+  · rintro ⟨rfl, rfl⟩ k hk
+    omega
+
+/-- None is 1 just where `t` is at least 2, or both are 0. -/
+theorem countAll_ne (t u : Nat) : (∀ k : Int, (t : Int) ≤ k ∧ k ≤ t + u → ¬ k = 1) ↔ (2 ≤ t ∨ (t = 0 ∧ u = 0)) := by
+  constructor
+  · intro h
+    exact Classical.byContradiction fun hn => h 1 ⟨by omega, by omega⟩ rfl
+  · intro h k hk
+    omega
+
+/-- Every one is at most 1 just where `t + u` is. -/
+theorem countAll_le (t u : Nat) : (∀ k : Int, (t : Int) ≤ k ∧ k ≤ t + u → k ≤ 1) ↔ t + u ≤ 1 := by
+  constructor
+  · intro h
+    have := h (t + u) ⟨by omega, Int.le_refl _⟩
+    omega
+  · intro h k hk
+    omega
+
+/-- None is at most 1 just where `t` is at least 2. -/
+theorem countAll_gt (t u : Nat) : (∀ k : Int, (t : Int) ≤ k ∧ k ≤ t + u → ¬ k ≤ 1) ↔ 2 ≤ t := by
+  constructor
+  · intro h
+    have := h t ⟨Int.le_refl _, by omega⟩
+    omega
+  · intro h k hk
+    omega
+
+/-- A cardinality operator as `check::CountOp` has it. -/
+def toCountOp : Fren.Core.Cardinality → check.CountOp
+  | .exactlyOne => .Exactly
+  | .atMostOne => .AtMost
+
+/-- A value that may be unknown as `check::Truth` has it. -/
+def optTruth : Option Bool → check.Truth
+  | some true => .True
+  | some false => .False
+  | none => .Unknown
+
+theorem optTruth_some (b : Bool) : optTruth (some b) = if b then .True else .False := by cases b <;> rfl
+
+theorem optTruth_none : optTruth none = .Unknown := rfl
+
+-- A cardinality operation's truth, from its operands' values, `none`
+-- where unknown, as both front ends' enumeration reads it
+-- (`Fren.Core.Cardinality.holds?`, which the `fren` command's `Ex.eval`
+-- and the Lean-hosted `Enumerate.knownOf` call).
+impl cardinality_truth: check::cardinality_truth for (c : Fren.Core.Cardinality) (args : List (Option Bool)) {
+  op := toCountOp c,
+  trues := args.count (some true),
+  unknowns := args.count none,
+  truth := optTruth (c.holds? args),
+} by
+  intro c args _
+  simp only [fren_spec]
+  simp only [Fren.Core.Cardinality.holds?]
+  generalize args.count (some true) = t
+  generalize args.count none = u
+  cases c <;> simp only [toCountOp, Fren.Core.Cardinality.holds, if_true, reduceCtorEq] <;>
+    simp only [decide_eq_true_eq, if_false, countAll_eq, countAll_ne, countAll_le, countAll_gt] <;>
+    by_cases hu : u = 0 <;> by_cases ht : 2 ≤ t <;>
+    simp (config := { decide := true }) [hu, ht, optTruth_some, optTruth_none] <;>
+    first | omega | (by_cases h : t + u ≤ 1 <;> simp [h, optTruth_some, optTruth_none])
+
+-- Which assignments leave a query open (`doubtfulRow`).
+impl doubtful: check::doubtful for (row : List Truth) {
+  row := Fren.Seq.ofList (row.map toTruth),
+  doubtful? := doubtfulRow row,
+} by
+  intro row
+  have no : ∀ x : Truth, ((x != .no) = true) ↔ ¬ toTruth x = .False := by intro x; cases x <;> decide
+  have unknown : ∀ x : Truth, ((x == .unknown) = true) ↔ toTruth x = .Unknown := by intro x; cases x <;> decide
+  simp [fren_spec, doubtfulRow, no, unknown]
 
 -- Trying each part as soon as it can be finds the first choice
 -- (`firstChoice`).
@@ -1405,16 +2027,18 @@ impl search_first: check::search_first for (sp : Space) (ats : Atoms) (parts : A
 def toFound (b : Bool) : check.Found := if b then .Model else .NoModel
 
 -- A query's answer, from the search and testing (`answerOf`).
-impl enumerated_answer: check::enumerated_answer for (s t testing : Bool) {
+impl enumerated_answer: check::enumerated_answer for (s t testing r : Bool) {
   search := toFound s,
   testing? := testing,
   test := toFound t,
-  answer := match answerOf (if s then some () else none) testing (fun _ => if t then some () else none) with
-    | some _ => check.Outcome.Sat
-    | none => check.Outcome.Unsat,
+  doubtful? := r,
+  answer := match answerKind (answerOf (if s then some () else none) testing (fun _ => if t then some () else none)).isSome r with
+    | .sat => check.Outcome.Sat
+    | .unsat => check.Outcome.Unsat
+    | .unknown => check.Outcome.Unknown,
   from_test? := ((answerOf (if s then some () else none) testing (fun _ => if t then some () else none)).map (·.2)).getD false,
 } by
-  intro s t testing _
-  cases s <;> cases t <;> cases testing <;> decide
+  intro s t testing r _
+  cases s <;> cases t <;> cases testing <;> cases r <;> decide
 
 end Fren.Impls.Enumeration

@@ -298,8 +298,11 @@ inductive Ex where
   /-- `[a, b]`. -/
   | seqLit (elems : Array Ex)
   /-- `q[i]`, at the source position `pos`, which pairs it with its
-  definedness check (`Ex.indexGoals`). -/
-  | index (q i : Ex) (pos : Nat)
+  definedness check (`Ex.indexGoals`). Out of range, its value is the
+  interpretation's `outOfRange` at `unspec`, the function without
+  parameters for its element type's unspecified value
+  (`unspecifiedFn`), if it gives one. -/
+  | index (q i : Ex) (pos : Nat) (unspec : Name)
   /-- `s.card`. -/
   | card (s : Ex)
   /-- `exactly_one?(a, b)` or `at_most_one?(a, b)`
@@ -484,6 +487,20 @@ structure Interp where
   /-- The parts of each record, newtype and enumeration, as declared, for
   `Ex.typed` (`Spec.shapes`). -/
   shapes : Name → Option Fren.Core.DataShape := fun _ => none
+  /-- The value of an index out of range, by the function without
+  parameters for its element type's unspecified value (`Ex.index`).
+  Enumeration's interpretation gives the type's unspecified value, so that
+  every index out of range is `[][0]` (`Reqs/Check#searching`); any other
+  leaves it unknown. -/
+  outOfRange : Name → Option Val := fun _ => none
+  /-- Each defined variable's definition, through which a count written out
+  is read (`Ex.countOfOne?`), as the Lean-hosted front end sees it with
+  definitions substituted. Enumeration gives them; elsewhere a count is
+  read as written. -/
+  defined : Name → Option Ex := fun _ => none
+  /-- How many defined variables `defined` gives: as deep as a chain of
+  them, each defined as another, can be, since definitions are acyclic. -/
+  definedCount : Nat := 0
 
 instance : Inhabited Interp := ⟨{}⟩
 
@@ -730,6 +747,54 @@ theorem firstCaseIn_eq (xs : Array α) (take : α → Option (Option β)) (i : N
 that `Ex.eval` keeps of them, the innermost last. -/
 abbrev Binding := Name × Option Val
 
+/-- `e`, or, if it is a defined variable, its definition, through those
+of the defined variables it is, `fuel` deep (`Interp.defined`): the term
+that the Lean-hosted front end sees, with definitions substituted. -/
+def Ex.unfoldDefined (defined : Name → Option Ex) : Nat → Ex → Ex × Bool
+  | fuel + 1, .var n => match defined n with
+    | some d => ((Ex.unfoldDefined defined fuel d).1, true)
+    | none => (.var n, false)
+  | _, e => (e, false)
+
+/-- Whether `e` is the integer literal `k`, as written or folded, through
+the definitions of the defined variables it is. -/
+def Ex.isInt (k : Int) (defined : Name → Option Ex) (fuel : Nat) (e : Ex) : Bool :=
+  match (e.unfoldDefined defined fuel).1 with
+  | .lit (.int i) | .known (some (.int i)) => i == k
+  | _ => false
+
+/-- The conditions of `e`, a sum of `if c then 1 else 0` and of integer
+literals and constants that are not negative, if it is one, each such
+integer `k` as `k` conditions that are `true`, as folding may have left
+an `if` whose condition is, but at most two, which decide a count compared
+with 1 as more do. Each part is read through the definitions of the
+defined variables it is, as the Lean-hosted front end, which substitutes
+them, sees it; each condition with whether it is within a definition,
+which is evaluated on its own. -/
+partial def Ex.indicators? (defined : Name → Option Ex) (fuel : Nat) (inDef : Bool) (e : Ex) : Option (List (Ex × Bool)) :=
+  let (e, unfolded) := e.unfoldDefined defined fuel
+  let inDef := inDef || unfolded
+  match e with
+  | .bin .add a b => do return (← Ex.indicators? defined fuel inDef a) ++ (← Ex.indicators? defined fuel inDef b)
+  | .ite c x y => if x.isInt 1 defined fuel && y.isInt 0 defined fuel then some [(c, inDef)] else none
+  | .lit (.int k) | .known (some (.int k)) =>
+    if 0 ≤ k then some (List.replicate (min k.toNat 2) (.lit (.bool true), inDef)) else none
+  | _ => none
+
+/-- For `a = 1` or `a <= 1`, where `a` is a sum of `if c then 1 else 0`
+(`Ex.indicators?`), the cardinality operation that it spells out and its
+conditions: the count of them that are `true`, compared with 1, as
+`exactly_one?` and `at_most_one?` are defined. -/
+def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex) :
+    Option (Fren.Core.Cardinality × List (Ex × Bool)) :=
+  let c? : Option Fren.Core.Cardinality := match op with
+    | .eq => some .exactlyOne
+    | .le => some .atMostOne
+    | _ => none
+  match c? with
+  | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
+  | none => none
+
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of an enclosing `match` arm or quantifier as
 its binding in `frame` does, the innermost first, and else as `locals`
@@ -778,7 +843,18 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
   | .bin .or a b => match a.eval I look locals slots frame memos with
     | some (.bool true) => some (.bool true)
     | x => kleeneOr x (b.eval I look locals slots frame memos)
-  | .bin op a b => binV op (a.eval I look locals slots frame memos) (b.eval I look locals slots frame memos)
+  | .bin op a b =>
+    -- A count written out, as `exactly_one?` and `at_most_one?` are
+    -- defined (`Reqs/Lang/Expressions#cardinality`), is known where they
+    -- are, as the Lean-hosted front end, which sees the same term for
+    -- both, has it (`Ex.countOfOne?`).
+    match Ex.countOfOne? I.defined I.definedCount op a b with
+    | some (c, conds) =>
+      (c.holds? (conds.map fun (x, inDef) =>
+        match if inDef then x.eval I look else x.eval I look locals slots frame memos with
+        | some (.bool b) => some b
+        | _ => none)).map .bool
+    | none => binV op (a.eval I look locals slots frame memos) (b.eval I look locals slots frame memos)
   | .when negated c d =>
     let c := c.eval I look locals slots frame memos
     match notV (if negated then notV c else c) with
@@ -799,14 +875,12 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
     | none => I.fn f vs
   | .pre _ _ _ e => e.eval I look locals slots frame memos
   -- Known once the unknown arguments cannot change it: with two `true`,
-  -- whatever the rest are.
+  -- whatever the rest are (`Cardinality.holds?`).
   | .cardinality c args =>
-    let vs := args.map (·.eval I look locals slots frame memos)
-    let trues := (vs.filter (· == some (.bool true))).size
-    let unknown := (vs.filter fun v => !(v matches some (.bool _))).size
-    if unknown == 0 || trues ≥ 2 then some (.bool (c.holds trues))
-    else if c == .atMostOne && trues + unknown ≤ 1 then some (.bool true)
-    else none
+    let vs := args.toList.map fun a => match a.eval I look locals slots frame memos with
+      | some (.bool b) => some b
+      | _ => none
+    (c.holds? vs).map .bool
   | .method m recv args => do
     let r ← recv.eval I look locals slots frame memos
     let args ← args.mapM (·.eval I look locals slots frame memos)
@@ -886,11 +960,12 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
     | none => boolV (re.matches s)
   | .pair a b => do return .pair (← a.eval I look locals slots frame memos) (← b.eval I look locals slots frame memos)
   | .seqLit es => do return .seq (← es.mapM (·.eval I look locals slots frame memos))
-  -- Out of range, an index is part of the interpretation, which is unknown.
-  | .index q i _ => do
+  -- Out of range, an index is part of the interpretation, which may
+  -- leave it unknown.
+  | .index q i _ u => do
     let .seq es ← q.eval I look locals slots frame memos | none
     let .int k ← i.eval I look locals slots frame memos | none
-    if 0 ≤ k && k < es.size then es[k.toNat]? else none
+    if 0 ≤ k && k < es.size then es[k.toNat]? else I.outOfRange u
   | .ctor ty idx args => do return .ctor ty idx (← args.mapM (·.eval I look locals slots frame memos))
   | .setLit es => do return Val.setOf (← es.mapM (·.eval I look locals slots frame memos))
   | .card s => do
@@ -1018,7 +1093,7 @@ def Ex.children : Ex → Array Ex
   | .memo lets e => lets.push e
   | .lifted lets q => lets.flatten.push q
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a | .typed _ _ a => #[a]
-  | .bin _ a b | .when _ a b | .pair a b | .index a b _ | .range a b => #[a, b]
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ | .range a b => #[a, b]
   | .ite c a b => #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args
   | .method _ r args => #[r] ++ args
@@ -1107,7 +1182,7 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
   -- records them.
   | .pre pos f goals e => go e ++ goals.map fun (p, g) => (pos, some (.precondition f p), wrap g)
   | .matches r _ _ => go r
-  | .index q i pos =>
+  | .index q i pos _ =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
     go q ++ go i ++ #[(pos, none, wrap bounds)]
   -- An arm's guard is guarded by its pattern's matching where no earlier
@@ -1255,7 +1330,7 @@ partial def Ex.same : Ex → Ex → Bool
   | .matches r p re, .matches r' p' re' => p == p' && re == re' && r.same r'
   | .setLit as, .setLit bs | .seqLit as, .seqLit bs => sameAll Ex.same as bs
   | .pair a b, .pair a' b' | .range a b, .range a' b' => a.same a' && b.same b'
-  | .index q i pos, .index q' i' pos' => pos == pos' && q.same q' && i.same i'
+  | .index q i pos u, .index q' i' pos' u' => pos == pos' && u == u' && q.same q' && i.same i'
   | .cardinality c as, .cardinality c' bs => c == c' && sameAll Ex.same as bs
   | .quant file pos all ns ds ts b, .quant file' pos' all' ns' ds' ts' b' =>
     file == file' && pos == pos' && all == all' && ns == ns' && sameAll (sameOpt Ex.same) ds ds'
@@ -1326,7 +1401,7 @@ partial def Ex.share (pick : Ex → Bool) (lets : Array Ex) (e : Ex) : Ex × Arr
   | .method m r args => let (r, l) := r.share pick lets; let (args, l) := all args l; (.method m r args, l)
   | .pair a b => let (a, l) := a.share pick lets; let (b, l) := b.share pick l; (.pair a b, l)
   | .range a b => let (a, l) := a.share pick lets; let (b, l) := b.share pick l; (.range a b, l)
-  | .index q i pos => let (q, l) := q.share pick lets; let (i, l) := i.share pick l; (.index q i pos, l)
+  | .index q i pos u => let (q, l) := q.share pick lets; let (i, l) := i.share pick l; (.index q i pos u, l)
   | .update a fs =>
     let (a, l) := a.share pick lets
     let (fs, l) := fs.foldl (init := (#[], l)) fun (acc, l) (k, x) => let (x, l) := x.share pick l; (acc.push (k, x), l)
@@ -1387,7 +1462,7 @@ partial def Ex.renumberShared (f : Nat → Nat) (e : Ex) : Ex :=
   | .method m r args => .method m (go r) (args.map go)
   | .pair a b => .pair (go a) (go b)
   | .range a b => .range (go a) (go b)
-  | .index q i pos => .index (go q) (go i) pos
+  | .index q i pos u => .index (go q) (go i) pos u
   | .update a fs => .update (go a) (fs.map fun (k, x) => (k, go x))
   | .pre pos f' gs a => .pre pos f' (gs.map fun (n, g) => (n, go g)) (go a)
   | e => e
@@ -1423,11 +1498,12 @@ partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : O
   | e => fold (compound e)
 where
   /-- An expression all of whose parts are known is too, unless it applies
-  a function, or is a constant or a table or `match` without a value
-  where nothing holds, whose values are the interpretation's: its value,
-  whatever the environment, under any interpretation with `shapes`. -/
+  a function, or is a constant, a table or `match` without a value where
+  nothing holds, or an index, which may be out of range, whose values are
+  the interpretation's: its value, whatever the environment, under any
+  interpretation with `shapes`. -/
   fold (e : Ex) : Ex :=
-    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _
+    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
     if !readsFns && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
   /-- `e`, an expression with parts, with its parts compiled. -/
   compound (e : Ex) : Ex :=
@@ -1450,7 +1526,7 @@ where
   | .method m r args => .method m (go r) (args.map go)
   | .pair a b => .pair (go a) (go b)
   | .range a b => .range (go a) (go b)
-  | .index q i pos => .index (go q) (go i) pos
+  | .index q i pos u => .index (go q) (go i) pos u
   | .update a fs => .update (go a) (fs.map fun (k, x) => (k, go x))
   | .pre pos f gs a => .pre pos f (gs.map fun (n, g) => (n, go g)) (go a)
   -- Evaluated on its own, from an empty frame.
@@ -1808,7 +1884,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .setLit es => .setLit (es.map (·.renameBound f))
   | .pair a b => .pair (a.renameBound f) (b.renameBound f)
   | .seqLit es => .seqLit (es.map (·.renameBound f))
-  | .index q i pos => .index (q.renameBound f) (i.renameBound f) pos
+  | .index q i pos u => .index (q.renameBound f) (i.renameBound f) pos u
   | .card e => .card (e.renameBound f)
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameBound f))
   | .field e idx => .field (e.renameBound f) idx
@@ -1845,7 +1921,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .setLit es => .setLit (es.map (·.renameVars f))
   | .pair a b => .pair (a.renameVars f) (b.renameVars f)
   | .seqLit es => .seqLit (es.map (·.renameVars f))
-  | .index q i pos => .index (q.renameVars f) (i.renameVars f) pos
+  | .index q i pos u => .index (q.renameVars f) (i.renameVars f) pos u
   | .card e => .card (e.renameVars f)
   | .ctor ty idx args => .ctor ty idx (args.map (·.renameVars f))
   | .field e idx => .field (e.renameVars f) idx
@@ -1881,7 +1957,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .setLit es => .setLit (es.map (·.substVars f))
   | .pair a b => .pair (a.substVars f) (b.substVars f)
   | .seqLit es => .seqLit (es.map (·.substVars f))
-  | .index q i pos => .index (q.substVars f) (i.substVars f) pos
+  | .index q i pos u => .index (q.substVars f) (i.substVars f) pos u
   | .card e => .card (e.substVars f)
   | .ctor ty idx args => .ctor ty idx (args.map (·.substVars f))
   | .field e idx => .field (e.substVars f) idx
@@ -1918,7 +1994,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .setLit es => .setLit (es.map (·.subst σ))
   | .pair a b => .pair (a.subst σ) (b.subst σ)
   | .seqLit es => .seqLit (es.map (·.subst σ))
-  | .index q i pos => .index (q.subst σ) (i.subst σ) pos
+  | .index q i pos u => .index (q.subst σ) (i.subst σ) pos u
   | .card e => .card (e.subst σ)
   | .ctor ty idx args => .ctor ty idx (args.map (·.subst σ))
   | .field e idx => .field (e.subst σ) idx
@@ -1969,7 +2045,7 @@ partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
   | .setLit es => .setLit (es.map (·.substFns σ))
   | .pair a b => .pair (a.substFns σ) (b.substFns σ)
   | .seqLit es => .seqLit (es.map (·.substFns σ))
-  | .index q i pos => .index (q.substFns σ) (i.substFns σ) pos
+  | .index q i pos u => .index (q.substFns σ) (i.substFns σ) pos u
   | .card e => .card (e.substFns σ)
   | .ctor ty idx args => .ctor ty idx (args.map (·.substFns σ))
   | .field e idx => .field (e.substFns σ) idx
@@ -2032,8 +2108,9 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy �
     return (.alts ps, [])
 
 /-- The function without parameters that an interpretation gives the
-unspecified value of the type `t` by, where no row of a table holds: not a
-Fren name, so it is no item's. -/
+unspecified value of the type `t` by, where no row of a table holds, and,
+in enumeration, where an index is out of range: not a Fren name, so it is
+no item's. -/
 def unspecifiedFn (t : VTy) : Name := .str .anonymous s!"[][0] : {reprStr t}"
 
 /-- Whether `e` reads an index or a table without a `_` row, whose value
@@ -2217,7 +2294,12 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
   | .index span q i => do
     let (x, tq) ← lowerExpr cx q
     let (y, _) ← lowerExpr cx i
-    return (.index x y span.start, match tq with | .seq t => t | _ => .bool)
+    let ty := match tq with | .seq t => t | _ => .bool
+    -- The function of the interpretation for its type's unspecified value,
+    -- which an index out of range may read.
+    let u := unspecifiedFn ty
+    modify fun s => { s with spec.funs := s.spec.funs.insert u (#[], ty) }
+    return (.index x y span.start u, ty)
   | .pair _ a b => do
     let (x, ta) ← lowerExpr cx a
     let (y, tb) ← lowerExpr cx b
@@ -2443,8 +2525,14 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
   | .«let» _ defs body _ => do
     -- Each name stands for its definition, which sees the earlier names.
     let mut cx := cx
-    for (x, _, d) in defs do
+    for (x, ty?, d) in defs do
       let (e, t) ← lowerExpr cx d
+      -- Its declared type, if it has one: `[]`'s elements' type is not
+      -- known from it, and an index out of range reads that type's
+      -- unspecified value.
+      let t ← match ty? with
+        | some ty => lowerTy ty
+        | none => pure t
       let n := declName x
       cx := { cx with lets := (n, e, t) :: cx.lets, binders := cx.binders.filter (·.1 != n) }
     lowerExpr cx body
@@ -3153,8 +3241,13 @@ partial def lowerItem : Item → L Unit
     -- large (`Reqs/Eval#quantifiers`): then it is the constant, kept as its
     -- expression, wherever it is mentioned, and testing what reads it is an
     -- error if a domain is missing (`Spec.untestable?`).
+    -- Known, but with an index or a table without a `_` row in it: kept
+    -- as its expression too, since a literal would pin the value that one
+    -- interpretation gives, so that enumeration reads the hidden slot
+    -- that it reads, as the Lean-hosted front end, which unfolds the
+    -- expression into the atoms, does.
     let v ← match evalClosed e with
-      | some v => pure (Ex.lit v)
+      | some v => pure (if e.readsUnspecified then .const path e else Ex.lit v)
       | none =>
         unless e.readsUnspecified || e.unbounded do throw s!"the value of `{showPath path}` cannot be evaluated"
         pure (.const path e)

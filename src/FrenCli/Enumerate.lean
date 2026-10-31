@@ -43,11 +43,35 @@ partial def Fm.holds (I : Interp) (look : Look) : Fm → Bool
   | .defined _ f => Fm.holds I look f
   | _ => false
 
+/-- The value of `f`, with its constraints evaluated with `I` and `look`,
+`none` where it is unknown: its atoms' conjunctions and `not` by the
+strong Kleene connectives, as `Fm.holds` reads them where they are known. -/
+partial def Fm.value? (I : Interp) (look : Look) : Fm → Option Bool
+  | .atoms as => allHold I look as
+  | .falsity => some false
+  | .not f => (Fm.value? I look f).map (!·)
+  | .conj fs =>
+    let vs := fs.map (Fm.value? I look)
+    if vs.contains (some false) then some false else if vs.all (·.isSome) then some true else none
+  | .defn .. => some true
+  | .defined _ f => Fm.value? I look f
+  | _ => some false
+
 /-- The variables that `e` reads, by name. -/
 partial def Eval.Ex.varsOf (e : Ex) : Array Name :=
   match e with
   | .var n => #[n]
   | _ => e.children.flatMap (·.varsOf)
+
+/-- Not a function: what `Eval.Ex.appsIn` lists where an index is read,
+whose value out of range enumeration gives by one interpretation of all
+(`Interp.outOfRange`), so that a query that reads one is unknown without
+a model (`Atoms.readsIndex`). -/
+def indexRead : Name := .str .anonymous "[]"
+
+/-- Not a function: what `Eval.Ex.appsIn` lists for an index within a
+recursive function's body, which enumeration does not enumerate. -/
+def recursiveIndexRead : Name := .str .anonymous "[] in a recursion"
 
 /- The functions that `e` applies, including type-membership dependencies. -/
 mutual
@@ -58,11 +82,21 @@ partial def Eval.Ex.appsIn (sp : Spec) (seenFns seenTypes : NameSet) (e : Ex) : 
   match e with
   | .app f _ =>
     match sp.defs.find? f with
-    | some (_, body, _) => if seenFns.contains f then nested else nested ++ body.appsIn sp (seenFns.insert f) seenTypes
+    | some (_, body, _) =>
+      if seenFns.contains f then nested else
+      let inner := body.appsIn sp (seenFns.insert f) seenTypes
+      -- An index within a recursion is the Lean-hosted front end's to
+      -- evaluate by Lean's own default, so neither front end enumerates it.
+      let inner := if sp.recDefs.contains f then inner.map fun n => if n == indexRead then recursiveIndexRead else n else inner
+      nested ++ inner
     | none => #[f] ++ nested
   | .typed t _ _ => nested ++ typeAppsIn sp seenFns seenTypes t
   | .quant _ _ _ _ _ tys _ => nested ++ tys.flatMap (typeAppsIn sp seenFns seenTypes)
   | .table _ _ (some u) | .match _ _ _ _ (some u) _ => #[u] ++ nested
+  -- `[][0]` is the unspecified value itself, as a table's is.
+  | .index (.seqLit #[]) (.lit (.int 0)) _ u => #[u]
+  -- After its parts, as the hosted front end's `Enum.nthOr` reads it.
+  | .index _ _ _ u => nested ++ #[u, indexRead]
   | _ => nested
 
 partial def typeAppsIn (sp : Spec) (seenFns seenTypes : NameSet) (t : Fren.Core.PTy) : Array Name :=
@@ -90,9 +124,19 @@ def isUnspecified (u : Name) : Bool := match u with
   | _ => false
 
 /-- The value `v` of the type `ty`, as the evaluator has it. -/
-def evalOf (sp : Spec) (ty : VTy) (v : EVal) : Val :=
+partial def evalOf (sp : Spec) (ty : VTy) (v : EVal) : Val :=
   match ty, v with
   | .abstract s, .abs k => .abs s k
+  | .string, .str s => .str s
+  | .set t, .set xs => Val.setOf (xs.toArray.map (evalOf sp t))
+  | .seq t, .seq xs => .seq (xs.toArray.map (evalOf sp t))
+  | .rel a b, .set xs => Val.setOf (xs.toArray.map fun
+      | .pair x y => .pair (evalOf sp a x) (evalOf sp b y)
+      | _ => .bool false)
+  | .newtype _ t, .ctor _ [v] => evalOf sp t v
+  | .data p args, .ctor idx xs =>
+    let fields := ((sp.data.find? p).bind (·.ctors[idx]?)).map (·.fields.map fun (_, t) => t.subst args)
+    .ctor p idx ((xs.toArray.zip (fields.getD #[])).map fun (v, t) => evalOf sp t v)
   | _, v => match v.toPVal? with
     | some pv => sp.ofPVal ty pv
     | none => .bool false
@@ -123,7 +167,8 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let apps := all.flatMap (fun e => e.2.appsOf sp)
   -- The uninterpreted functions, whose interpretations are enumerated, but
   -- not of one with a contract, which constrains them.
-  let fnNames := apps.foldl (init := #[]) fun acc f => if isUnspecified f || acc.contains f then acc else acc.push f
+  let fnNames := apps.foldl (init := #[]) fun acc f =>
+    if isUnspecified f || f == indexRead || f == recursiveIndexRead || acc.contains f then acc else acc.push f
   -- Nor of a generic function without a body, whose instances are
   -- functions of their own, the first in declaration order.
   let generics := fnNames.filterMap fun f => (sp.instanceOf.find? f).orElse fun _ =>
@@ -144,6 +189,8 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     throw (notEnumerableMsg subject s!"the result type of `{Fren.Core.showPath f.name}` has a named invariant that cannot be enumerated as an unconstrained function table")
   if all.any (·.2.unbounded) then
     throw (notEnumerableMsg subject "it has an unbounded quantifier")
+  if apps.contains recursiveIndexRead then
+    throw (notEnumerableMsg subject recursiveIndexWhy)
   -- The hidden slots: each type whose unspecified value is read, in the
   -- order of the atoms.
   let hiddenNames := apps.foldl (init := #[]) fun acc u => if !isUnspecified u || acc.contains u then acc else acc.push u
@@ -158,7 +205,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let (space, values, shapes, fslots) ← match spaceOf sp.shapes.find? n vars hidden funs (if testing then testCount else 0) (hash c.path) with
     | .ok r => pure r
     | .error (x, why) =>
-      throw (notEnumerableMsg subject (notEnumerableWhy x why))
+      throw (if why == tooManyMarker then tooManyMsg subject (maxBehaviours + 1) n (estimated := true) else notEnumerableMsg subject (notEnumerableWhy x why))
   let determinism := ks.contains .determinism && ecomp.vars.any (·.isDet)
   let count := space.behaviours determinism fslots
   if !withinLimit count then throw (tooManyMsg subject count n)
@@ -176,6 +223,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     (f, (f.params.zip ps).map (fun (vs, t) => vs.map (evalOf sp t)), f.results.map (evalOf sp r))
   let slotOf : Std.HashMap Name Nat := space.names.zipIdx.foldl (init := {}) fun m (x, i) => m.insert x i
   let defs := ec.defs
+  let defOf : Std.HashMap Name Ex := defs.foldl (init := {}) fun m (x, e) => m.insert x e
   -- The value of each name in `env`: a slot's, or a defined output's,
   -- computed from its definition.
   -- A function's value at arguments within its domain is its table's; at
@@ -186,11 +234,15 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     match tupleIndex (ps.map (·.size)) idx with
     | some pos => rs[tableEntry rs.size table pos]?
     | none => rs[0]?
+  -- An index out of range is its element type's unspecified value, the
+  -- hidden slot's, as a table where no row holds is.
   let interp (env : Array Nat) : Interp :=
     { fn := fun f args => match fvals.find? (·.1.name == f) with
         | some (fs, ps, rs) => apply env fs ps rs args
         | none => slotOf[f]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
-      defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find? }
+      outOfRange := fun u => slotOf[u]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
+      defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?
+      defined := (defOf[·]?), definedCount := defs.size + 1 }
   let rec look (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
     match slotOf[x]? with
     | some i => (vals[i]?.bind (·[env[i]!]?))
@@ -199,6 +251,17 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
       | _, _ => none
   let fuel := defs.size + 1
   let evalFm (f : Fm) (env : Array Nat) : Bool := Fm.holds (interp env) (look env fuel) f
+  -- The same, with every index out of range unknown: where a value is
+  -- known this way, it is the same in every interpretation of them.
+  let strict (env : Array Nat) : Interp := { interp env with outOfRange := fun _ => none }
+  let rec lookStrict (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
+    match slotOf[x]? with
+    | some i => (vals[i]?.bind (·[env[i]!]?))
+    | none => match fuel, defs.find? (·.1 == x) with
+      | f + 1, some (_, e) => e.eval (strict env) (lookStrict env f)
+      | _, _ => none
+  let unknownFm (f : Fm) (env : Array Nat) : Bool :=
+    (Fm.value? (strict env) (lookStrict env fuel) f).isNone && (Fm.value? (interp env) (look env fuel) f).isSome
   -- The slots that each atom reads: its variables', and those of the
   -- definitions of the defined outputs it mentions.
   let rec reads (fuel : Nat) (x : Name) : Array Nat :=
@@ -212,11 +275,24 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
       (fun a s => if a.contains s then a else a.push s) acc
   let atomDefs := exprs.map fun es => es.foldl (init := #[]) fun acc (pfx, e) =>
     (e.varsOf.map (pfx ++ ·)).foldl (fun a v => if defined.contains v && !a.contains v then a.push v else a) acc
+  -- Whether a defined output's definition has an index, through the
+  -- definitions it mentions; and each atom, a type's facts too, through
+  -- those and the bodies it applies.
+  let rec defIndexed (fuel : Nat) (x : Name) : Bool :=
+    match fuel, defs.find? (·.1 == x) with
+    | f + 1, some (_, e) => (e.appsOf sp).contains indexRead || e.varsOf.any (defIndexed f)
+    | _, _ => false
+  let atomIndexed := exprs.map fun es => es.any fun (pfx, e) =>
+    (e.appsOf sp).contains indexRead || e.varsOf.any fun v => defIndexed fuel (pfx ++ v)
   let ats : Atoms := {
     slots := atomSlots, defs := atomDefs
     eval := fun k env => evalFm (atoms[k]!.2) env
     sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d
-    defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[] }
+    defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[]
+    readsIndex := fun k => atomIndexed[k]!
+    defReadsIndex := defIndexed fuel
+    unknown := fun k env => atomIndexed[k]! && unknownFm (atoms[k]!.2) env
+    defUnknown := fun d env => defIndexed fuel d && (lookStrict env fuel d).isNone && (look env fuel d).isSome }
   let render (s j : Nat) : String := ((vals[s]?.bind (·[j]?)).map (·.showAs sp (tyOf space.names[s]!))).getD "?"
   let defValue (d : Name) (env : Array Nat) : Option String := (look env fuel d).map (·.showAs sp (tyOf d))
   -- The variant of each value of a slot whose type is an enumeration, as
@@ -242,6 +318,6 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let ownOutputs := space.outputs
   let exact := exhaustedAll shapes n (List.range space.names.size).toArray && fslots.all (·.exhausted)
   let outputsExact := exhaustedAll shapes n ownOutputs
-  return { results := raw.map (classify n exact outputsExact), bound := n, exact }
+  return { results := raw.map (classify n exact outputsExact (indexed := atomIndexed.any id)), bound := n, exact }
 
 end FrenCli

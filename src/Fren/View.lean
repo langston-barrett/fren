@@ -350,7 +350,16 @@ where
   let mut all := #[]
   let mut byBound := 0
   for (p, c, _) in items, task in tasks do
-    let (results, witnesses, enumerated?, skipped) ← try awaitCheck task catch ex => cancel.set; throw ex
+    -- A failure of one procedure's check, a recursion depth or a heartbeat
+    -- limit among them, is reported as its own error: every other
+    -- procedure keeps its verdicts, which throwing here would drop.
+    let outcome ← try Except.ok <$> awaitCheck task catch ex => pure (Except.error ex)
+    if let .error ex := outcome then
+      if ex.isInterrupt then cancel.set; throw ex
+      logAbout p c.ref (failureMsg s!"checking `{Core.showComp p}`"
+        (← (← addMessageContext ex.toMessageData).toString) ex.isRuntime).text .error
+      continue
+    let .ok (results, witnesses, enumerated?, skipped) := outcome | continue
     -- Proof artifacts are supplementary: preserve the checker report even
     -- if generation fails, and discard any partial declarations/messages.
     let proofState ← get

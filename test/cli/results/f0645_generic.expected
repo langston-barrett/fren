@@ -4,7 +4,7 @@ error[F0645]: `c` cannot be enumerated: it applies the generic function `pick`, 
 8 | proc c(x: LeftTwoBit, y: RightTwoBit): (det z: Int) {
   |      ^ not enumerable
   |
-  = note: enumeration needs every variable's type to be enumerable, and no uninterpreted function with a contract or type parameters, nor unbounded quantifier
+  = note: enumeration cannot apply an uninterpreted function with a contract or type parameters, nor evaluate an unbounded quantifier or an index within a recursive function
   = help: have the solver or testing check it
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

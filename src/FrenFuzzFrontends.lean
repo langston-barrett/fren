@@ -55,11 +55,20 @@ inductive WTy where
   /-- The enumeration with payloads `P { A, B(Int), C(Bool) }`, whose
   variants a clash note may give (`Reqs/Check#forced-outputs`). -/
   | pay
+  /-- `Seq<Int>`, whose indexes may be out of range. -/
+  | seq
+  /-- The struct `Rq { q: Seq<Int>, n: Int }`, a collection beside another
+  field. -/
+  | rq
+  /-- `Bx<Bx<Rq>>`, of the struct `Bx<T> { v: T }`: a generic type at an
+  instance of itself. -/
+  | bx
   deriving BEq, Inhabited
 
 def WTy.name (relElem : String) : WTy → String
   | .int => "Int" | .bool => "Bool" | .str => "String" | .set => "Set<Int>"
   | .rel => s!"Rel<{relElem}, {relElem}>" | .enum => "E" | .ms => "Ms" | .pay => "P"
+  | .seq => "Seq<Int>" | .rq => "Rq" | .bx => "Bx<Bx<Rq>>"
 
 structure WScope where
   /-- A variable's text, type, and whether it is an input (so that an
@@ -84,6 +93,8 @@ structure WScope where
   hasMs : Bool := false
   /-- The spec declares the enumeration `P`. -/
   hasPay : Bool := false
+  /-- The spec has sequences, and declares the struct `Rq`. -/
+  hasSeq : Bool := false
 
 def WScope.varsOf (sc : WScope) (t : WTy) : Array String :=
   sc.vars.filterMap fun (n, t', isIn) => if t' == t && (isIn || !sc.onlyIns) then some n else none
@@ -113,6 +124,9 @@ partial def leaf (sc : WScope) (t : WTy) : R String := do
   | .enum => enumLit sc
   | .ms => return s!"Ms({← below 4})"
   | .pay => pick #["P::A", "P::B(0)", "P::B(2)", "P::C(true)", "P::C(false)"]
+  | .seq => pick #["[1]", "[0, 2]", "[3, 1, 2]"]
+  | .rq => return s!"Rq \{ q := {← pick #["[1]", "[0, 2]"]}, n := {← below 3} }"
+  | .bx => return s!"Bx \{ v := Bx \{ v := {← leaf sc .rq} } }"
 
 /-- An application of a function whose result has type `t`, if there is
 one. The arguments of an uninterpreted one mention only inputs. -/
@@ -186,19 +200,35 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 5 => return s!"{← rsub .str}.len"
     | 6 => return s!"{← rsub .set}.card"
     | 7 => if hasEnum then matchOn sc .int d else return s!"-({← sub .int})"
-    | 8 => return s!"(if {← sub .bool} then {← sub .int} else {← sub .int})"
+    -- Half the time a count's term, `if c then 1 else 0`, which a sum
+    -- compared with 1 reads as a cardinality operation, also through a
+    -- defined output.
+    | 8 =>
+      if ← chance 50 then return s!"(if {← sub .bool} then 1 else 0)"
+      return s!"(if {← sub .bool} then {← sub .int} else {← sub .int})"
     | 9 | 10 => return (← app? sc .int d).getD (← leaf sc .int)
     | 11 => return s!"{← rsub .str}.index_of({← csub .str}, {← below 2})"
     | 12 => return s!"{← rsub .rel}.card"
     | 13 => if sc.hasMs then return s!"{← sub .ms}.0" else leaf sc .int
     | 14 => tableOf sc .int d
+    | 15 | 16 =>
+      -- An index of a sequence, guarded or not, or its length.
+      unless sc.hasSeq do return ← leaf sc .int
+      let q ← rsub .seq
+      match ← below 4 with
+      | 0 => return s!"{q}[{← sub .int}]"
+      | 1 => let i ← sub .int; return s!"(if 0 <= {i} < {q}.len then {q}[{i}] else {← sub .int})"
+      | 2 => return s!"{q}.len"
+      | _ => return s!"{← rsub .rq}.n"
     | _ => leaf sc .int
   | .bool =>
-    match ← below 28 with
+    match ← below 30 with
     | 0 => return s!"({← sub .bool} and {← sub .bool})"
     | 1 => return s!"({← sub .bool} or {← sub .bool})"
     | 2 => return s!"not {← sub .bool}"
-    | 3 | 4 => return s!"{← sub .int} {← pick #["=", "!=", "<", "<=", ">", ">="]} {← sub .int}"
+    | 3 | 4 =>
+      let rhs ← if ← chance 30 then pure "1" else sub .int
+      return s!"{← sub .int} {← pick #["=", "!=", "<", "<=", ">", ">="]} {rhs}"
     | 5 => return s!"{← rsub .str}.{← pick #["starts_with?", "ends_with?", "contains?"]}({← csub .str})"
     | 6 => return s!"{← sub .str} {← pick #["=", "!=", "<", ">="]} {← csub .str}"
     | 7 => return s!"{← sub .str} ++ {← sub .str} {← pick #["=", "!="]} {← csub .str}"
@@ -244,6 +274,13 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
       let p ← pick #["P::A", "P::B(_)", "P::C(_)", "P::B(_) | P::C(true)", "P::B(1..)", "P::C(false)"]
       if ← chance 30 then return s!"{← sub .pay} {← pick #["=", "!="]} {← sub .pay}"
       return s!"{← sub .pay} is {p}"
+    | 28 | 29 =>
+      unless sc.hasSeq do return ← leaf sc .bool
+      let q ← rsub .seq
+      match ← below 3 with
+      | 0 => return s!"({q} != [] and {q}[0] {← pick #["<", ">=", "="]} {← sub .int})"
+      | 1 => return s!"{q} {← pick #["=", "!="]} {← sub .seq}"
+      | _ => return s!"(when {← sub .int} < {q}.len, {q}[{← sub .int}] = {← sub .int})"
     | 27 =>
       unless sc.hasPay do return ← leaf sc .bool
       return s!"match {← sub .pay} \{ P::B(y) => y {← pick #["<", ">=", "="]} {← sub .int}, P::C(z?) => z?, _ => {← sub .bool} }"
@@ -290,14 +327,111 @@ partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do
     | 0 => return s!"P::B({← sub .int})"
     | 1 => return s!"(if {← sub .bool} then {← sub .pay} else {← sub .pay})"
     | _ => leaf sc .pay
+  | .seq =>
+    match ← below 4 with
+    | 0 => return s!"[{← sub .int}, {← sub .int}]"
+    | 1 => return s!"{← rsub .rq}.q"
+    | _ => leaf sc .seq
+  | .rq =>
+    match ← below 3 with
+    | 0 => return s!"{← rsub .bx}.v.v"
+    | _ => leaf sc .rq
+  | .bx => leaf sc .bx
 
 end
 
 def varName (t : WTy) (isIn : Bool) (k : Nat) : String :=
   let base := match t with
     | .int => "n" | .bool => "b" | .str => "s" | .set => "st" | .rel => "r" | .enum => "m" | .ms => "d" | .pay => "p"
+    | .seq => "q" | .rq => "rq" | .bx => "bx"
   let base := if isIn then base else "o" ++ base
   if t == .bool then s!"{base}{k}?" else s!"{base}{k}"
+
+/-- A sum of a count's terms at the type `ty`, `Int`, `Nat` or `Ms`: an
+`if c then 1 else 0`, a literal, a constant, an application of the
+type's indicator function, or one of `defs`, defined variables of the
+type, which makes chains of definitions; `cond` gives each condition. -/
+def countSum (ty : String) (defs : Array String) (cond : R String) : R String := do
+  let wrapped := ty == "Ms" || ty == "Cm" || ty == "Cn"
+  let lit (k : Nat) := if wrapped then s!"{ty}({k})" else toString k
+  let mut terms := #[]
+  for _ in [0:(← below 3) + 1] do
+    let t ← match ← below 6 with
+      | 0 | 1 => pure s!"(if {← cond} then {lit 1} else {lit 0})"
+      | 2 => pure (lit (← below 3))
+      | 3 => match ty with
+        | "Int" => pick #["ONE_I", "TWO_I"]
+        | "Nat" => pick #["ONE_N", "TWO_N"]
+        | _ => pure (lit 2)
+      | 4 => pure s!"{countFn ty}({← cond})"
+      | _ => if defs.isEmpty then pure s!"(if {← cond} then {lit 1} else {lit 0})" else pick defs
+    terms := terms.push t
+  return " + ".intercalate terms.toList
+where
+  /-- The indicator function at `ty`, which `countDecls` declares. -/
+  countFn : String → String
+    | "Int" => "ind" | "Nat" => "indn" | "Ms" => "indm" | "Cm" => "indcm" | _ => "indcn"
+
+/-- What a count of `ty` is compared with: 1, or a constant that is 1. -/
+def countOne (ty : String) : R String := match ty with
+  | "Int" => pick #["1", "1", "ONE_I"]
+  | "Nat" => pick #["1", "1", "ONE_N"]
+  | t => pure s!"{t}(1)"
+
+/-- A comparison of `lhs`, a count of `ty`, with 1, each way, sometimes
+negated. -/
+def countCmp (ty lhs : String) : R String := do
+  let one ← countOne ty
+  let cmp ← match ← below 7 with
+    | 0 | 1 => pure s!"{lhs} <= {one}"
+    | 2 | 3 => pure s!"{lhs} = {one}"
+    | 4 => pure s!"{one} >= {lhs}"
+    | 5 => pure s!"{lhs} < {one}"
+    | _ => pure s!"{lhs} != {one}"
+  return if ← chance 40 then s!"not ({cmp})" else cmp
+
+/-- The declarations that counts use: an indicator function at `Int`,
+`Nat` and the newtypes `Cm(Int)` and `Cn(Nat)`, and constants. -/
+def countDecls : String :=
+  "pub ordered struct Cm(Int)\npub ordered struct Cn(Nat)\n" ++
+  "pub fn ind(c?): Int := if c? then 1 else 0\npub fn indn(c?): Nat := if c? then 1 else 0\n" ++
+  "pub fn indcm(c?): Cm := if c? then Cm(1) else Cm(0)\npub fn indcn(c?): Cn := if c? then Cn(1) else Cn(0)\n" ++
+  "pub const ONE_I: Int := 1\npub const TWO_I: Int := 2\npub const ONE_N: Nat := 1\npub const TWO_N: Nat := 2\n"
+
+/-- A procedure of counts alone, always enumerated, so that nothing else
+about it hides how a front end reads them: over sequences whose indexes
+may be out of range, with counts at every numeric type (`Int`, `Nat`, the
+newtypes `Cm` and `Cn`, and `Ms` if `hasMs`), each through defined
+outputs, `let`s, functions and chains of them, or inline. -/
+def countsProc (name : String) (hasMs : Bool) : R String := do
+  let cond : R String := do
+    match ← below 5 with
+    | 0 | 1 => return s!"q[{← below 6}] > 0"
+    | 2 => return s!"r[{← below 6}] = {← below 2}"
+    | 3 => pick #["b?", "not b?", "n > 0"]
+    | _ => pick #["true", "false"]
+  let tys := #["Int", "Nat", "Cm", "Cn"] ++ (if hasMs then #["Ms"] else #[])
+  let mut results := ""
+  let mut body := ""
+  let mut cvars : Array (String × String) := #[]
+  for k in [0:← below 5] do
+    let ty ← pick tys
+    let e ← countSum ty (cvars.filterMap fun (n, t) => if t == ty then some n else none) cond
+    let n := s!"k{k}"
+    if ← chance 30 then body := body ++ s!"    let {n}: {ty} := {e}\n"
+    else
+      results := results ++ s!"    {n}: {ty},\n"
+      body := body ++ s!"    out {n} := {e}\n"
+    cvars := cvars.push (n, ty)
+  for k in [0:(← below 4) + 1] do
+    let ty ← pick tys
+    let own := cvars.filterMap fun (n, t) => if t == ty then some n else none
+    let lhs ← if !own.isEmpty && (← chance 60) then pick own else countSum ty own cond
+    body := body ++ s!"    expect e{k}: {← countCmp ty lhs}\n"
+  let resultList := if results.isEmpty then "" else s!": (\n{results})"
+  let size := if ← chance 30 then 3 else 2
+  return s!"\nset_option fren.lint.undecidable \"allow\" in\nset_option fren.enumeration.size {size} in\n" ++
+    s!"set_option fren.evidence \"enumerated\" in\npub proc {name}(q: Seq<Int>, r: Seq<Int>, b?, n: Int){resultList} \{\n{body}}\n"
 
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := do
@@ -321,7 +455,19 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if hasPay then
     out := out ++ (if genericPay then "pub enum P<X> { A, B(X), C(Bool) }\n" else "pub enum P { A, B(Int), C(Bool) }\n")
   let pays := if hasPay then #[WTy.pay] else #[]
-  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs, hasPay }
+  -- Sometimes sequences, whose indexes may be out of range, and a struct
+  -- with one beside another field, its procedures often enumerated.
+  let hasSeq ← chance 30
+  if hasSeq then out := out ++ "pub struct Rq { q: Seq<Int>, n: Int }\npub struct Bx<T> { v: T }\n"
+  let seqs := if hasSeq then #[WTy.seq, .rq, .bx] else #[]
+  -- Sometimes counts written out, as `exactly_one?` and `at_most_one?` are
+  -- defined, at `Int`, `Nat` and the newtype `Ms`, through functions and
+  -- constants (`countSum`), which both front ends must read alike.
+  let hasCounts ← chance 35
+  if hasCounts then
+    out := out ++ countDecls
+    if hasMs then out := out ++ "pub fn indm(c?): Ms := if c? then Ms(1) else Ms(0)\n"
+  let mut sc : WScope := { nVariants, ordered, relElem, avoidKnown, hasMs, hasPay, hasSeq }
   -- Constants, each over the earlier ones.
   for k in [0:← below 4] do
     let t ← pick (#[WTy.int, .int, .str, .bool, .set] ++ ms)
@@ -356,7 +502,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     let mut vars : Array (String × WTy × Bool) := #[]
     let mut shown : Array (String × WTy) := #[]
     for k in [0:(← below 4) + 1] do
-      let t ← pick (#[WTy.int, .int, .bool, .str, .set, .rel] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms ++ pays)
+      let t ← pick (#[WTy.int, .int, .bool, .str, .set, .rel] ++ (if useEnum then #[WTy.enum] else #[]) ++ ms ++ pays ++ seqs)
       let n := varName t true k
       vars := vars.push (n, t, true)
       shown := shown.push (n, t)
@@ -374,7 +520,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
     let mut defs : Array (String × WTy) := #[]
     for k in [0:(← below 3) + 1] do
       let isDef ← chance 40
-      let t ← if isDef then pick #[WTy.int, .bool, .str, .set] else pick outTys
+      let t ← if isDef then pick (#[WTy.int, .bool, .str, .set] ++ seqs) else pick outTys
       let n := varName t false k
       if isDef then defs := defs.push (n, t)
       else
@@ -398,6 +544,34 @@ def genWide (avoidKnown : Bool := false) : R String := do
         results := results ++ s!"    {decl},\n"
         body := body ++ s!"    out {n} := {e}\n"
       else body := body ++ s!"    let {decl} := {e}\n"
+    -- Counts: defined outputs, `let`s and chains of them, each a sum of a
+    -- type's count terms, and expectations comparing one with 1.
+    let mut countExpects := #[]
+    if hasCounts then
+      let isc := { csc with onlyIns := true }
+      let seqIns := vars.filterMap fun (n, t, i) => if i && t == .seq then some n else none
+      let cond : R String := do
+        if !seqIns.isEmpty && (← chance 60) then return s!"{← pick seqIns}[{← below 6}] > 0"
+        gen isc .bool 1
+      let tys := #["Int", "Nat", "Cm", "Cn"] ++ (if hasMs then #["Ms"] else #[])
+      let mut cvars : Array (String × String) := #[]
+      for k in [0:← below 4] do
+        let ty ← pick tys
+        let e ← countSum ty (cvars.filterMap fun (n, t) => if t == ty then some n else none) cond
+        let n := s!"cnt{k}"
+        match ← below 3 with
+        | 0 => body := body ++ s!"    let {n}: {ty} := {e}\n"
+        | _ =>
+          results := results ++ s!"    {n}: {ty},\n"
+          body := body ++ s!"    out {n} := {e}\n"
+        cvars := cvars.push (n, ty)
+      for k in [0:(← below 3) + 1] do
+        let ty ← pick tys
+        let own := cvars.filterMap fun (n, t) => if t == ty then some n else none
+        let lhs ← if !own.isEmpty && (← chance 60) then pick own else countSum ty own cond
+        countExpects := countExpects.push (← countCmp ty lhs)
+    for e in countExpects, k in [0:countExpects.size] do
+      body := body ++ s!"    expect cx{k}: {e}\n"
     for k in [0:← below 2] do
       body := body ++ s!"    assume a{k}: {← gen { csc with onlyIns := true } .bool 2}\n"
     for k in [0:(← below 3) + 1] do
@@ -410,8 +584,15 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let tested := if ← chance 5 then "set_option fren.evidence \"random\" in " else ""
       body := body ++ s!"    {tested}cover g{k}: {← gen csc .bool 3}\n"
     let resultList := if results.isEmpty then "" else s!": (\n{results})"
-    out := out ++ s!"\npub proc c{c}(\n{params}){resultList} \{\n{body}}\n"
+    -- With sequences, often enumerated, at a small size.
+    -- Now and then at size 3, where a struct's slot has thousands of
+    -- values; and other procedures too, sets among their outputs.
+    let size := if ← chance 20 then 3 else 2
+    let enumerated := if (hasSeq && (← chance 60)) || (hasCounts && (← chance 60)) || (← chance 15) then
+      s!"set_option fren.enumeration.size {size} in\nset_option fren.evidence \"enumerated\" in\n" else ""
+    out := out ++ s!"\n{enumerated}pub proc c{c}(\n{params}){resultList} \{\n{body}}\n"
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
+  if hasCounts then out := out ++ (← countsProc "counts" hasMs)
   -- Only variables have the type `P`, each declared on a line of its own.
   return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 

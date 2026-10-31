@@ -2028,8 +2028,8 @@ pub proc evidence_value(value: EvidenceValue): (det valid?, det random?, det enu
     expect no_alias: when value in {Tested, EnumeratedTested}, not valid?
 }
 
--- The checks that enumeration decides: all but definedness, whose indexes
--- only sequences have, and postconditions, which only bodies have.
+-- The checks that enumeration decides: all but definedness, not yet run
+-- (#368), and postconditions, which only bodies have.
 pub fn enumerable?(kind: Kind) := not kind in {Kind::Definedness, Kind::Postcondition}
 
 pub proc by_evidence(
@@ -2065,41 +2065,42 @@ decide completeness, disjointness, reachability and preconditions, which
 are about where an expression is evaluated: where no row of a table holds,
 the table's value is the interpretation's unspecified value of its type,
 which enumeration enumerates too (see [Searching](#searching)), as the
-solver leaves it unconstrained. The definedness of indexes is not run,
-and that is reported (`F0654`): they are of sequences, which are not enumerable. A value given where a
-subset type is declared is the solver's to check, whatever the evidence,
-for testing too: neither testing nor enumeration decides it, and dropping
-it would leave a value outside its type unreported (`F0661`).
+solver leaves it unconstrained. The definedness of indexes is not run, and
+that is reported (`F0654`): enumerating it, now that sequences are
+enumerable, is left to the rest of #368. A value given where a subset type
+is declared is the solver's to check, whatever the evidence, for testing
+too: neither testing nor enumeration decides it, and dropping it would
+leave a value outside its type unreported (`F0661`).
 
-The default stays `"solver"`, and `"random"` stays testing alone: most
-checks set to testing are about strings, sets and sequences, which are
-not yet enumerable (below), so enumerating them first would make them
-errors; and a spec that sets `"random"` has chosen evidence that Lean does
-not run, which a combined default would change.
+The default stays `"solver"`, and `"random"` stays testing alone: a spec
+that sets `"random"` has chosen evidence that Lean does not run, which a
+combined default would change.
 
 ### Enumerable types
 
-Enumeration needs every variable's type to be *enumerable*: `Bool`, `Int`
-and `Nat`, an enumeration, recursive or not, a record, a newtype, an
-instance of a generic type, a subset type, and an abstract type, with the
-types within it enumerable too. `String`, sets, relations and sequences
-are not yet. A variable whose type brings no constraint, such as a
-call's input, which the call check asks of its argument, ranges
-over its type without the invariants of its subset types. A procedure, or a global expectation,
-with a variable of another type, that applies an uninterpreted function
-with a [contract](Lang/Items.md#contracts), whose postconditions constrain
-its interpretations, or a [generic
+Every type is *enumerable*: `Bool`, `Int`, `Nat` and `String`, sets,
+relations and sequences, an enumeration, recursive or not, a record, a
+newtype, an instance of a generic type, a subset type, and an abstract
+type. A variable whose type brings no constraint, such as a call's input,
+which the call check asks of its argument, ranges over its type without
+the invariants of its subset types. A procedure, or a global expectation,
+is not enumerated if it applies an uninterpreted function with a
+[contract](Lang/Items.md#contracts), whose postconditions constrain its
+interpretations, or a [generic
 one](Lang/GenericFunctions.md#uninterpreted-generic-functions), each of
-whose instances is a function of its own, or that has an unbounded
-quantifier is not enumerated: it is the error `F0645`, at it, and none of its checks set to
-enumeration is run.
+whose instances is a function of its own; if it applies a recursive
+function whose body indexes a sequence, whose value out of range
+enumeration cannot give (see [Searching](#searching)); or if it has an
+unbounded quantifier. It is then the error `F0645`, at it, and none of its
+checks set to enumeration is run.
 
 ### Sizes and order
 
 The values are the [values](Lang/Semantics.md#values) of `lang::Value`, and
 an abstract type's values those of an interpretation. Each type is
-unfolded, for the size bound `n`, into a *shape*, a finite tree: a recursive enumeration's payloads are unfolded `n` deep, since a
-variant's payload is one smaller than it. Each value has a *size*:
+unfolded, for the size bound `n`, into a *shape*, a finite tree: a
+recursive enumeration's payloads are unfolded `n` deep, since a variant's
+payload is one smaller than it. Each value has a *size*:
 
 | Value | Size |
 |---|---|
@@ -2108,35 +2109,57 @@ variant's payload is one smaller than it. Each value has a *size*:
 | a `Nat` `k` | `k` |
 | an integer of a finite integer subset type | 0 |
 | the `k`th value of an abstract type | `k` |
+| a character | one more than its distance from `a` in code points, wrapping around: `a` is 1, `b` 2, `z` 26, and the characters before `a` come last |
+| a string, a sequence or a set | the largest of its length, or cardinality, and its characters', elements' or members' sizes, 0 if it is empty |
+| a pair, a member of a relation | the larger of its two values' sizes |
 | a variant without a payload | 0 |
 | a variant with a payload | one more than the largest size of its payload's values |
 | a record or a newtype | the largest size of its fields, 0 if it has none |
 | a value of any other subset type | its size in its base type |
 
-`check::value_size` states it, over the kind of value, the integer it is,
-for an integer or an abstract type's value, and the largest size of its
-parts:
+A relation is a set of pairs. `check::value_size` states the sizes, over
+the kind of value, the integer it is, for an integer, an abstract type's
+value, a character's code point, or the length of a string, sequence or
+set, and the largest size of its parts:
 
 ```fren
-pub enum Sized { Boolean, Integer, Natural, FiniteInteger, AbstractValue, Nullary, WithPayload, Record }
+pub enum Sized {
+    Boolean,
+    Integer,
+    Natural,
+    FiniteInteger,
+    AbstractValue,
+    Nullary,
+    WithPayload,
+    Record,
+    Character,
+    Collection,
+    Pair,
+}
 
 pub proc value_size(
     kind: Sized,
-    value: Int,          -- an integer's value, or the position of an abstract type's value
-    largest: Nat,        -- the largest size of its payload's or fields' values, 0 if it has none
+    value: Int,          -- an integer's value, the position of an abstract type's value, a character's code point, or a collection's length
+    largest: Nat,        -- the largest size of its payload's, fields', characters', elements' or members' values, 0 if it has none
 ): (det size: Nat) {
-    use self::Sized::{AbstractValue, Integer, Natural, Record, WithPayload}
-    assume natural: when kind in {Natural, AbstractValue}, value >= 0
+    use self::Sized::{AbstractValue, Character, Collection, Integer, Natural, Pair, Record, WithPayload}
+    assume natural: when kind in {Natural, AbstractValue, Collection}, value >= 0
+    assume code_point: when kind = Character, 0 <= value < 1114112
 
     ensure rule: size = match kind {
         Integer => value.abs,
         Natural | AbstractValue => value,
         WithPayload => largest + 1,
-        Record => largest,
+        Record | Pair => largest,
+        -- `a` is the code point 97.
+        Character => if value >= 97 then value - 96 else value + 1114112 - 96,
+        Collection => value.max(largest),
         _ => 0,
     }
 
     expect payload_larger: when kind = WithPayload, size > largest
+    expect a_first: when kind = Character and value = 97, size = 1
+    expect within_collection: when kind = Collection, size >= value and size >= largest
 }
 ```
 
@@ -2168,12 +2191,21 @@ every value of the type, as in FEAT (Duregård, Jansson and Wang, Haskell
 '12), whose finite types the enumeration exhausts. A shape is *exhausted*
 at the bound when every value of the type it stands for has size at most
 it: it is `Bool`, a finite integer subset type, or built of exhausted
-shapes, and no variant's payload was cut off by the unfolding.
+shapes, and no variant's payload was cut off by the unfolding; a set
+of an exhausted shape is exhausted when the bound is at least the number
+of its members' values; a string, and a sequence of a shape with any
+value, never are, since there are ones of every length.
 
 The values are listed smallest first, and in the structural order among
 those of a size: variants in order, and payloads and fields by their
 values' order, the first varying slowest; integers `0, 1, -1, 2, -2, ...`;
-a finite integer subset type's in increasing order. `check::smallest_first`:
+a finite integer subset type's in increasing order; strings and
+sequences by length, then by their characters' or elements' order, the
+first varying slowest; a set's members in the increasing order of a code
+of their values, and sets by each member's presence before its absence,
+the first member varying slowest, so that sets of a size are in
+lexicographic order; pairs by their first values, then their second.
+`check::smallest_first` states the order by size:
 
 ```fren
 pub proc smallest_first(
@@ -2195,16 +2227,124 @@ A procedure's *slots* are its variables whose values are enumerated: its
 own and its calls', but not those with definitions, which are computed
 from their definitions, then a second copy of each that determinism
 copies, and last, a *hidden* slot for each type whose unspecified value
-some constraint reads, where no row of a table holds: the interpretation's
-value, which an abstract type's values are, as with the solver (see
-[Interpretations](#interpretations)), and then a hidden slot for each
-uninterpreted function that a constraint applies, whose values are its
-interpretations: tables from the tuples of its arguments up to the bound
-to its results up to the bound, each as large as its largest result, so
-that over finite types every interpretation is among them. An argument
-beyond the bound gets the first result, which extends the table to an
-interpretation. Each slot holds the values of its type up to the bound,
-smallest first.
+some constraint reads, where no row of a table holds or an index is out of
+range: the interpretation's value, which an abstract type's values are, as
+with the solver (see [Interpretations](#interpretations)), and then a
+hidden slot for each uninterpreted function that a constraint applies,
+whose values are its interpretations: tables from the tuples of its
+arguments up to the bound to its results up to the bound, each as large as
+its largest result, so that over finite types every interpretation is
+among them. An argument beyond the bound gets the first result, which
+extends the table to an interpretation. Each slot holds the values of its
+type up to the bound, smallest first. A table of `Bool`s, whether it is
+written as a value or as a constraint, reads `Bool`'s one hidden slot, as
+`table { b? => true }` does both as an `ensure` and compared with `x?`.
+
+An index out of range is the value of an unknown function of the sequence
+and the position (see [Expressions](Lang/Expressions.md#sequences)), whose
+interpretations are too many to enumerate: a table over the sequences up
+to the bound. Enumeration reads each as its element type's unspecified
+value, the hidden slot's, `[][0]`, which is one interpretation: the one
+that gives every index out of range the value of `[][0]`. So a model is a
+behaviour, but finding none says nothing of the other interpretations
+where some formula's value depended on an index out of range. Each formula
+of a query, a type's facts about the slots it reads among them, also has a
+*truth* in an assignment with every index out of range unknown: true,
+false or unknown, by the strong Kleene connectives for `and`, `or`, `not`
+and `when`, an `if` known where its condition and the branch it takes are,
+or where both branches are and are equal, a cardinality operation known
+where every value of its unknown operands gives it the same value
+(`check::cardinality_truth`), and any other operation known where its
+operands are (`check::Truth`). A cardinality operation is a count compared
+with 1, so a count written out, a sum at `Int` or `Nat` of
+`if e then 1 else 0` and integer literals and constants that are not
+negative, compared with 1 by `=` or `<=`, is known where the operation
+that it spells out is. So is one at a newtype over `Int` or `Nat`, such as
+`(if q[5] > 0 then Ms(1) else Ms(0)) <= Ms(1)`, read as its underlying
+values, since a newtype's value is its underlying value's; a sum at any
+other type is not a count. The count is matched against the formula with
+each defined variable's definition substituted for it, its defined
+outputs' and its `let`s', through those that they mention, so it may be
+written through them, as in `out k := (if q[5] > 0 then 1 else 0) + 2`
+with `expect e: not (k <= 1)`, and with a non-recursive function's body
+substituted where it is applied, as both front ends unfold one. The front
+ends match their own terms, a Lean term and the `fren` command's
+expression, so no one function recognizes the count for both;
+`check::cardinality_truth` states its truth once it is recognized, and the
+ui tests have a count written inline, through a function, through defined
+outputs, a chain of them and a `let`, at `Int` and at `Nat`, and
+`fren_fuzz_frontends` generates counts at `Int`, `Nat` and a newtype in
+all these ways. A quantifier is enumerated only over a listed type or a
+literal domain, as its instances' conjunction or disjunction, and a
+`match` is its arms' tests, so these rules cover them; any other part of a
+formula that binds a name is unknown wherever it has an index. An
+assignment is *doubtful* where none of the query's formulas is false and
+one is unknown (`check::doubtful`): some interpretation of the indexes out
+of range may then make them all true. A query without a model is *unknown*
+if some assignment up to the bound is doubtful, and `unsat` only if none
+is (`check::enumerated_answer`); its check is then inconclusive rather
+than a pass up to the bound. An index that the formulas guard, as in
+`q != [] and q[0] > 0`, is never out of range where it decides anything,
+so such a check can pass. A front end may simplify a formula before it
+evaluates it, such as by folding its known parts, only in a way that keeps
+its value in every interpretation, those of the indexes out of range among
+them (tested of the `fren` command's `Ex.compile` in
+`FrenTest/Semantics.lean`). A procedure that applies a recursive function
+whose body indexes a sequence is not enumerated (`F0645`): Lean evaluates
+such a body by its own default out of range. `check::enumerated_index`
+states the value, over the elements of a sequence of integers,
+`check::cardinality_truth` a cardinality operation's truth, from how many
+of its operands are true and how many unknown, which is all that its value
+depends on, and `check::doubtful` which assignments are doubtful, over the
+truths of a query's formulas in one:
+
+```fren
+pub proc enumerated_index(
+    q: Seq<Int>,
+    i: Int,
+    unspecified: Int,      -- the hidden slot's value of the element type
+): (det value: Int) {
+    ensure rule: value = if 0 <= i < q.len then q[i] else unspecified
+}
+
+pub enum Truth { True, False, Unknown }
+
+-- The cardinality operators: `exactly_one?` and `at_most_one?`.
+pub enum CountOp { Exactly, AtMost }
+
+-- Whether `count` of an operation's operands being true makes it true.
+pub fn counted?(op: CountOp, count: Int) := match op {
+    CountOp::Exactly => count = 1,
+    CountOp::AtMost => count <= 1,
+}
+
+set_option fren.lint.undecidable "allow" in
+pub proc cardinality_truth(
+    op: CountOp,
+    trues: Nat,              -- how many of its operands are true
+    unknowns: Nat,           -- how many are unknown
+): (det truth: Truth) {
+    use self::Truth::{False, True, Unknown}
+
+    ensure true_rule: truth = True iff
+        (forall (k: Int), when trues <= k <= trues + unknowns, counted?(op, k))
+    ensure false_rule: truth = False iff
+        (forall (k: Int), when trues <= k <= trues + unknowns, not counted?(op, k))
+
+    expect all_known: when unknowns = 0, truth != Unknown
+    expect two_true: when trues >= 2, truth = False
+    expect at_most_one_open: when op = CountOp::AtMost and trues + unknowns <= 1, truth = True
+}
+
+set_option fren.lint.undecidable "allow" in
+pub proc doubtful(row: Seq<Truth>): (det doubtful?) {
+    use self::Truth::{False, Unknown}
+
+    ensure rule: doubtful? iff (not False in row and Unknown in row)
+
+    expect known_rows_decided: when not Unknown in row, not doubtful?
+}
+```
 
 Each query of the [checks](#checks) is answered by searching the
 assignments of the slots that its formulas read, the variables that they
@@ -2310,7 +2450,11 @@ The number of assignments a procedure's enumeration searches is the
 product of its slots' numbers of values, its second copies' too if
 determinism is enumerated. Above 65,536, it is the error `F0644`, which
 gives the number, and none of its checks set to enumeration is run
-(`check::enumeration_limit`):
+(`check::enumeration_limit`). A slot whose type, without its invariants,
+alone has more values than that, such as a sequence of sequences of
+integers, is refused before its values are listed, and the error says so.
+A subset type is judged by its base type, since its values are those of
+its base type that its invariants keep, which are listed first:
 
 ```fren
 pub const MAX_BEHAVIOURS: Int := 65536
@@ -2321,6 +2465,18 @@ pub proc enumeration_limit(
     ensure rule: runs? iff count <= MAX_BEHAVIOURS
 }
 ```
+
+Within the limit, both front ends enumerate a procedure whatever shape
+its slots have: neither refuses one that the other decides, nor fails on
+it, and the work before the search does not grow with a slot's number of
+values. So a front end holds the slots' values as data that its search
+reads, rather than compiling them into the code of each check, and reads
+a defined output's value back as data too. It can for every type that a
+slot may have: a type within itself at other arguments, as in `enum
+Nested<T> { Leaf(T), Node(Nested<Pair<T, T>>) }`, whose values have no one
+shape to read, is refused ([`F0387`](Lang/Generics.md#type-parameters)),
+while one at a part of its own arguments, as `Box<Wide>` within
+`Box<Box<Wide>>`, is a smaller type, read as any other.
 
 ### Verdicts of enumeration
 
@@ -2408,7 +2564,7 @@ genuine, like the search's: a counterexample fails the check, and a
 witness passes it; testing never decides a pass, which stays one up to
 the bound, and the information `F0646` then counts the tests.
 `check::enumerated_answer` gives a query's answer, bound to
-`answerOf`:
+`answerOf` and `answerKind`:
 
 ```fren
 pub enum Found { Model, NoModel }
@@ -2417,6 +2573,7 @@ pub proc enumerated_answer(
     search: Found,           -- what the search up to the bound found
     testing?,                -- the check is set to `"enumerated+random"`
     test: Found,             -- what testing beyond the bound found, if asked
+    doubtful?,               -- some assignment up to the bound is doubtful (`check::doubtful`)
 ): (
     det answer: Outcome,
     det from_test?,          -- the model is testing's
@@ -2424,8 +2581,10 @@ pub proc enumerated_answer(
     use self::Found::{Model, NoModel}
 
     ensure answer_rule: (answer = Outcome::Sat) iff (search = Model or (testing? and test = Model))
-    ensure no_unknown: answer != Outcome::Unknown
+    ensure unknown_rule: (answer = Outcome::Unknown) iff (answer != Outcome::Sat and doubtful?)
     ensure test_rule: from_test? iff (search = NoModel and testing? and test = Model)
+
+    expect unsat_sees_all: when answer = Outcome::Unsat, not doubtful?
 
     expect search_first: when search = Model, not from_test?
     expect untested: when not testing?, (answer = Outcome::Sat) iff search = Model

@@ -100,6 +100,10 @@ inductive Detail where
   /-- On input `input`, the output can be `v₁` or `v₂`. -/
   | nondeterministic (input : Assignment) (v₁ v₂ : String)
   | unknown (reason : String)
+  /-- Enumeration found no model, but an index out of range, which it
+  reads as `[][0]`, may decide the check in another interpretation
+  (`Reqs/Check#searching`). -/
+  | outOfRange
   deriving Inhabited
 
 /-- Shared reason for a recursive model that real evaluation does not confirm. -/
@@ -271,6 +275,10 @@ structure CheckResult where
   /-- Decided by enumeration only up to this size bound, not for every
   behaviour (`check::enumerated_verdict`). -/
   bounded? : Option Nat := none
+  /-- Decided by an enumeration that read an index out of range, as
+  `[][0]`, so that what it searched up to the bound was one interpretation
+  of those indexes (`Reqs/Check#searching`). -/
+  oneInterpretation : Bool := false
   /-- For `realizable`, of the contract of a generic function without a
   body, checked for every type (`Comp.generic`). -/
   generic : Bool := false
@@ -1607,7 +1615,9 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       | .postcondition, none => s!"{subject} holds"
       | .reachability, _ => s!"{caseText r.goal?} of {splitText r.goal?} in {subject} can be taken"
     let advice := if let some n := r.bounded? then
-        #[s!"note: enumeration searched every behaviour up to size {n}, which does not decide it",
+        #[if r.oneInterpretation then
+            s!"note: enumeration searched every behaviour up to size {n}, with each index out of range as `[][0]`, which does not decide it"
+          else s!"note: enumeration searched every behaviour up to size {n}, which does not decide it",
           "help: raise `fren.enumeration.size`, or have the solver check it"]
       else match inconclusiveAdvice decidable with
       | .raiseTimeout => #["note: the solver gave up, so this check neither passed nor failed",
@@ -1618,6 +1628,10 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
     -- An expansion of quantifiers over elements that is too large, or
     -- whose model they refute, has a code of its own.
     match d with
+    | .outOfRange =>
+      #[one "F0608" s!"could not decide whether {what}: an index out of range may decide it" (some "undecided")
+        #["note: enumeration reads every index out of range as `[][0]`, one of the values it may have",
+          "help: guard the index, or have the solver check it"]]
     | .unknown w => if w == "another postcondition used by simultaneous induction did not pass" then
         #[one "F0608" s!"could not decide whether {what}" (some "depends on an unproved postcondition")
           #["note: simultaneous induction used all of the function's postconditions",

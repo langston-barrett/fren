@@ -202,7 +202,7 @@ partial def Ex.lits : Ex → Array Int
   | .method _ r args => r.lits ++ args.flatMap (·.lits)
   | .matches r _ _ => r.lits
   | .setLit es => es.flatMap (·.lits)
-  | .pair a b | .index a b _ => a.lits ++ b.lits
+  | .pair a b | .index a b _ _ => a.lits ++ b.lits
   | .seqLit es => es.flatMap (·.lits)
   | .card e => e.lits
   | .match e arms .. => e.lits ++ arms.flatMap fun (p, g?, b) => p.lits ++ (g?.map (·.lits)).getD #[] ++ b.lits
@@ -229,7 +229,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .method _ r args => r.equated x ++ args.flatMap (·.equated x)
   | .matches r _ _ => r.equated x
   | .setLit es => es.flatMap (·.equated x)
-  | .pair a b | .index a b _ => a.equated x ++ b.equated x
+  | .pair a b | .index a b _ _ => a.equated x ++ b.equated x
   | .seqLit es => es.flatMap (·.equated x)
   | .card e => e.equated x
   | .match e arms .. => e.equated x ++ arms.flatMap fun (_, g?, b) => (g?.map (·.equated x)).getD #[] ++ b.equated x
@@ -326,7 +326,7 @@ partial def Ex.vars : Ex → Array Name
   | .memo lets e => e.vars ++ lets.flatMap (·.vars)
   | .lifted lets e => e.vars ++ lets.flatten.flatMap (·.vars)
   | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.vars
-  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.vars ++ b.vars
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
   | .method _ r args => r.vars ++ args.flatMap (·.vars)
@@ -417,7 +417,7 @@ partial def Ex.unknownIf : Ex → UnknownIf
   | .slot k => .slot k
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .match a .. => a.unknownIf
   | .bin .and a b | .bin .or a b | .when _ a b => a.unknownIf.and b.unknownIf
-  | .bin _ a b | .pair a b | .index a b _ => a.unknownIf.or b.unknownIf
+  | .bin _ a b | .pair a b | .index a b _ _ => a.unknownIf.or b.unknownIf
   | .ite c a b =>
     let (c, a, b) := (c.unknownIf, a.unknownIf, b.unknownIf)
     (a.and b).or (c.and (a.or b))
@@ -495,7 +495,7 @@ partial def Ex.slots : Ex → Array Nat
   | .memo lets e => lets.flatMap (·.slots) ++ e.slots
   | .lifted lets e => lets.flatten.flatMap (·.slots) ++ e.slots
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a => a.slots
-  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => a.slots ++ b.slots
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => a.slots ++ b.slots
   | .ite c a b => c.slots ++ a.slots ++ b.slots
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.slots)
   | .method _ r args => r.slots ++ args.flatMap (·.slots)
@@ -704,7 +704,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .lifted lets e => join (lets.flatten.push e)
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
   | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.strLits
-  | .bin _ a b | .when _ a b | .pair a b | .index a b _ => join #[a, b]
+  | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => join #[a, b]
   | .ite c a b => join #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
   | .method _ r args => join (#[r] ++ args)

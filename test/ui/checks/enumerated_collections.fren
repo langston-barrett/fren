@@ -1,0 +1,411 @@
+-- Strings, sequences, sets and relations are enumerated in both front ends
+-- (`Reqs/Check#enumerable-types`): a string's characters from `a`, and
+-- each collection by its length and its elements' sizes, smallest first,
+-- so that a counterexample is the smallest.
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc strings(s: String): (det t: String) {  --~ info: 3 checks of `strings` hold for every behaviour up to size 3
+    out t := s ++ "a"
+    expect longer: t.len = s.len + 1
+    expect short: t.len <= 3  --~ error: counterexample: s = "aaa", t = "aaaa"
+}
+
+set_option fren.evidence "enumerated" in
+proc sequences(q: Seq<Bool>): (det n: Int) {  --~ info: 3 checks of `sequences` hold for every behaviour up to size 3
+    out n := q.len
+    expect counted: n >= 0
+    expect short: n < 3  --~ error: counterexample: q = [false, false, false], n = 3
+}
+
+-- A set of `Bool`s has at most two members, so it is exhausted at size 2:
+-- its expectation is decided.
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc sets(s: Set<Bool>) {
+    expect at_most_two: s.card <= 2
+}
+
+-- The smallest set first: the sets of one pair before any larger.
+set_option fren.evidence "enumerated" in
+proc relations(r: Rel<Bool, Bool>) {  --~ info: 1 check of `relations` holds for every behaviour up to size 3
+    expect no_pairs: r = {}  --~ error: counterexample: r = {(false, false)}
+}
+
+-- A pattern on a string keeps only its value, which is within the bound.
+type Word = w: String where invariant: w = "ab"
+set_option fren.evidence "enumerated" in
+proc words(w: Word) {  --~ info: 2 checks of `words` hold for every behaviour up to size 3
+    expect only: w = "ab"
+}
+
+-- A collection within a struct, beside another field, and a sequence of
+-- structs: slots of thousands of values.
+pub struct Indexed { q: Seq<Int>, n: Int }
+set_option fren.evidence "enumerated" in
+proc in_struct(r: Indexed) {  --~ info: 2 checks of `in_struct` hold for every behaviour up to size 3
+    expect e: r.q.len <= 3
+}
+
+pub struct Point { x: Int, on? }
+set_option fren.evidence "enumerated" in
+proc of_structs(q: Seq<Point>) {  --~ info: 2 checks of `of_structs` hold for every behaviour up to size 3
+    expect e: q.len <= 3
+}
+
+-- A slot of 39200 values, within the limit, is enumerated as quickly as
+-- any: the values are read at run time, not compiled into the checks.
+pub struct Wide { q: Seq<Int>, n: Int, m: Int, on? }
+set_option fren.evidence "enumerated" in
+proc wide(w: Wide) {  --~ info: 2 checks of `wide` hold for every behaviour up to size 3
+    expect short: w.q.len <= 3
+}
+
+-- Defined outputs of collection and struct types are shown as the
+-- slots' values are.
+set_option fren.evidence "enumerated" in
+proc sequence_output(q: Seq<Bool>): (det s: Seq<Bool>) {  --~ info: 2 checks of `sequence_output` hold for every behaviour up to size 3
+    out s := q
+    expect short: s.len < 3  --~ error: counterexample: q = [false, false, false], s = [false, false, false]
+}
+
+set_option fren.evidence "enumerated" in
+proc set_output(s: Set<Int>): (det t: Set<Int>) {  --~ info: 2 checks of `set_output` hold for every behaviour up to size 3
+    out t := s
+    expect small: t.card < 2  --~ error: counterexample: s = {-1, -2}, t = {-1, -2}
+}
+
+set_option fren.evidence "enumerated" in
+proc struct_output(r: Indexed): (det t: Indexed) {  --~ info: 2 checks of `struct_output` hold for every behaviour up to size 3
+    out t := r
+    expect small: t.n < 3  --~ error: counterexample: r = Indexed { q := [], n := 3 }, t = Indexed { q := [], n := 3 }
+}
+
+-- A relation's defined output is computed in each behaviour, and shown.
+set_option fren.evidence "enumerated" in
+proc relation_size(r: Rel<Bool, Int>): (det n: Int) {  --~ info: 2 checks of `relation_size` hold for every behaviour up to size 3
+    out n := r.card
+    expect small: n < 2  --~ error: counterexample: r = {(false, -1), (false, -2)}, n = 2
+}
+
+-- An index out of range is its element type's unspecified value, `[][0]`:
+-- one interpretation of the unknown function of the sequence and the
+-- position, which the solver leaves free. A model is a behaviour, but
+-- where no model is found and an index out of range may decide the
+-- query, it is unknown.
+set_option fren.evidence "enumerated" in
+proc indexed(q: Seq<Int>): (ok?) {  --~ warning: could not decide whether `indexed` is realizable: an index out of range may decide it
+    --~^ info: the definedness checks of `indexed` are not run by enumeration
+    ensure r: ok? iff q[1] > 0
+}
+
+-- The solver's `[1][1]` and `[2][5]` may differ, though every behaviour
+-- reads `[][0]` for both.
+set_option fren.evidence "enumerated" in
+proc literal(b?) {  --~ info: 1 check of `literal` holds for every behaviour up to size 3
+    --~^ info: the definedness checks of `literal` are not run by enumeration
+    expect same: [1][1] = [2][if b? then 5 else 6]  --~ warning: could not decide whether `literal::same` holds: an index out of range may decide it
+}
+
+-- These expectations are about constants on purpose.
+set_option fren.lint.assertions_on_constants "allow"
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.identity_op "allow"
+
+-- `[][0]` everywhere is one interpretation, so a counterexample with it is
+-- genuine.
+set_option fren.evidence "enumerated" in
+proc literal_differ(b?) {  --~ info: 1 check of `literal_differ` holds for every behaviour up to size 3
+    --~^ info: the definedness checks of `literal_differ` are not run by enumeration
+    expect differ: e[3] != [5][2] where e: Seq<Int> := []  --~ error: counterexample: (any values)
+}
+
+set_option fren.evidence "enumerated" in
+proc literal_same(b?) {  --~ info: 1 check of `literal_same` holds for every behaviour up to size 3
+    --~^ info: the definedness checks of `literal_same` are not run by enumeration
+    expect same: e[3] = [5][2] where e: Seq<Int> := []  --~ warning: could not decide whether `literal_same::same` holds: an index out of range may decide it
+}
+
+-- The same point of the unknown function, which the solver passes: an
+-- index is not folded where it may be out of range.
+set_option fren.evidence "enumerated" in
+proc same_point(q: Seq<Int>) {  --~ info: 1 check of `same_point` holds for every behaviour up to size 3
+    --~^ info: the definedness checks of `same_point` are not run by enumeration
+    expect same: when q = [], q[3] = e[3] where e: Seq<Int> := []  --~ warning: could not decide whether `same_point::same` holds: an index out of range may decide it
+}
+
+set_option fren.evidence "enumerated" in
+proc folded(b?) {  --~ info: 1 check of `folded` holds for every behaviour up to size 3
+    --~^ info: the definedness checks of `folded` are not run by enumeration
+    expect same: e[3] + 0 = e[3] where e: Seq<Int> := []  --~ warning: could not decide whether `folded::same` holds: an index out of range may decide it
+}
+
+-- A type's facts are among a query's formulas: `[]` is an `Odd` where
+-- `[][0]` and `[][1]` differ, which `[][0]` everywhere does not show.
+type Odd = q: Seq<Int> where inv: q[0] != q[1]  --~ error: invariant `Odd::inv` may not be defined
+--~^ error: invariant `Odd::inv` may not be defined
+set_option fren.evidence "enumerated" in
+proc type_fact(q: Odd) {  --~ info: 1 check of `type_fact` holds for every behaviour up to size 3
+    expect nonempty: q != []  --~ warning: could not decide whether `type_fact::nonempty` holds: an index out of range may decide it
+}
+
+-- An index that is guarded is never out of range where it decides
+-- anything, so its checks pass up to the bound.
+set_option fren.evidence "enumerated" in
+proc guarded(q: Seq<Int>): (ok?) {  --~ info: 2 checks of `guarded` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `guarded` are not run by enumeration
+    ensure r: ok? iff (q != [] and q[0] > 0)
+    expect positive: when ok?, q != []
+}
+
+-- A counterexample with `[][0]` is genuine.
+set_option fren.evidence "enumerated" in
+proc partial_table(b?): (x?) {
+    --~^ info: the definedness checks of `partial_table` are not run by enumeration
+    ensure r: x? = table { b? => true }  --~ error: a table in `partial_table::r` may have no row that holds
+    expect e: x? = [b?][3]  --~ error: counterexample: b? = true, x? = true
+}
+
+-- Lean evaluates an index out of range within a recursive function by its
+-- own default, so neither front end enumerates one.
+pub enum Peano { Z, S(Peano) }
+pub fn sixth(n: Peano, q: Seq<Int>): (r: Int) {
+    out r := match n { Peano::Z => q[5], Peano::S(m) => sixth(m, q) }
+}
+set_option fren.evidence "enumerated" in
+proc recursive(n: Peano) {  --~ error: `recursive` cannot be enumerated: it applies a recursive function that indexes a sequence, whose value out of range enumeration cannot give
+    expect e: sixth(n, [1]) = 0
+}
+
+-- A slot whose type has a recursive field is read at run time as well,
+-- by a decoder iterated as deeply as its values nest: 22400 values here.
+pub struct Counted { p: Peano, q: Seq<Int>, n: Int, on? }
+set_option fren.evidence "enumerated" in
+proc counted(c: Counted) {  --~ info: 1 check of `counted` holds for every behaviour up to size 3
+    expect zero: c.p = Peano::Z  --~ error: counterexample: c = Counted { p := Peano::S(Peano::Z), q := [], n := 0, on? := false }
+}
+
+-- A generic type at an instance of itself is a smaller type with a
+-- decoder of its own, so its 39200 values are read at run time too.
+pub struct Box<T> { v: T }
+set_option fren.evidence "enumerated" in
+proc nested_big(b: Box<Box<Wide>>) {  --~ info: 2 checks of `nested_big` hold for every behaviour up to size 3
+    expect e: b.v.v.q.len <= 3
+}
+
+pub enum List<T> { Nil, Cons(T, List<T>) }
+set_option fren.evidence "enumerated" in
+proc nested_list(l: List<List<Int>>) {  --~ info: 1 check of `nested_list` holds for every behaviour up to size 3
+    expect e: l = List::Nil  --~ error: counterexample: l = List::Cons(List::Nil, List::Nil)
+}
+
+-- A defined output of a recursive type with a set in it is shown as a
+-- slot's value is.
+pub enum Bag { Empty, More(Set<Int>, Bag) }
+set_option fren.evidence "enumerated" in
+proc bag_out(x: Bag): (det y: Bag) {  --~ info: 2 checks of `bag_out` hold for every behaviour up to size 3
+    out y := x
+    expect e: y = Bag::Empty  --~ error: counterexample: x = Bag::More({}, Bag::Empty), y = Bag::More({}, Bag::Empty)
+}
+
+-- A cardinality operation is known where its unknown operands cannot
+-- change it: two `true` make `at_most_one?` false whatever `q[5]` is.
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc card_index(q: Seq<Int>, b?) {  --~ info: 2 checks of `card_index` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `card_index` are not run by enumeration
+    expect e: not at_most_one?(b?, not b?, b? or not b?, q[5] > 0)
+}
+
+-- One operand that is unknown, the rest none: `at_most_one?` holds.
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc card_single(q: Seq<Int>) {  --~ info: 2 checks of `card_single` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `card_single` are not run by enumeration
+    expect e: at_most_one?(q[5] > 0)
+}
+
+-- The same count written out is known where the operation is.
+set_option fren.lint.manual_at_most_one "allow" in
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc card_written(q: Seq<Int>, b?) {  --~ info: 2 checks of `card_written` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `card_written` are not run by enumeration
+    expect e: not ((if b? then 1 else 0) + (if not b? then 1 else 0) + (if b? or not b? then 1 else 0) + (if q[5] > 0 then 1 else 0) <= 1)
+}
+
+-- A count written out through defined variables is read with their
+-- definitions substituted, as it is written inline, in both front ends.
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc def_out(q: Seq<Int>): (k: Int) {  --~ info: 2 checks of `def_out` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `def_out` are not run by enumeration
+    out k := (if q[5] > 0 then 1 else 0) + 2
+    expect e: not (k <= 1)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc def_single(q: Seq<Int>): (k: Int) {  --~ info: 2 checks of `def_single` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `def_single` are not run by enumeration
+    out k := if q[5] > 0 then 1 else 0
+    expect e: k <= 1
+}
+
+-- Through a definition within a definition, and a `let` compared with.
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc def_nested(q: Seq<Int>): (k: Int, j: Int) {  --~ info: 2 checks of `def_nested` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `def_nested` are not run by enumeration
+    out j := (if q[5] > 0 then 1 else 0) + 1
+    out k := j + 1
+    let one: Int := 1
+    expect e: not (k <= one)
+}
+
+-- Through a non-recursive function, which both front ends unfold where
+-- it is applied.
+pub fn ind(c?): Int := if c? then 1 else 0
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc fn_count(q: Seq<Int>) {  --~ info: 2 checks of `fn_count` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `fn_count` are not run by enumeration
+    expect e: not (ind(q[5] > 0) + 2 <= 1)
+}
+
+-- Counts at `Nat` are read as those at `Int` are: through a function, a
+-- defined output and a `let` addend, and a chain of defined outputs.
+pub fn indn(c?): Nat := if c? then 1 else 0
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc nat_fn(q: Seq<Int>) {  --~ info: 2 checks of `nat_fn` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `nat_fn` are not run by enumeration
+    expect e: indn(q[5] > 0) <= 1
+}
+
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc def_out_nat(q: Seq<Int>): (k: Nat) {  --~ info: 2 checks of `def_out_nat` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `def_out_nat` are not run by enumeration
+    out k := (if q[5] > 0 then 1 else 0) + 2
+    expect e: not (k <= 1)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc nat_def_single(q: Seq<Int>): (k: Nat) {  --~ info: 2 checks of `nat_def_single` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `nat_def_single` are not run by enumeration
+    out k := if q[5] > 0 then 1 else 0
+    expect e: k <= 1
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc nat_let_addend(q: Seq<Int>) {  --~ info: 2 checks of `nat_let_addend` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `nat_let_addend` are not run by enumeration
+    let two: Nat := 2
+    expect e: not ((if q[5] > 0 then 1 else 0) + two <= 1)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc def_chain(q: Seq<Int>): (a: Int, b: Int, c: Int) {  --~ info: 2 checks of `def_chain` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `def_chain` are not run by enumeration
+    out a := if q[5] > 0 then 1 else 0
+    out b := a
+    out c := b
+    expect e: c <= 1
+}
+
+-- A table of propositions without a row for every case reads its
+-- unspecified value from a hidden slot of `Bool`s, which the Lean-hosted
+-- front end used to keep as propositions, and could not decide.
+set_option fren.evidence "enumerated" in
+proc prop_table(n: Int) {  --~ error: `prop_table` is not realizable
+    ensure q0: table { | n = 1 => n > 2 }  --~ error: a table in `prop_table::q0` may have no row that holds
+}
+
+-- A table of `Bool`s and one of propositions read the same unspecified
+-- value, one hidden slot, as in the `fren` command: where neither has a
+-- row that holds, `s` makes it true, and so `x?`.
+set_option fren.evidence "enumerated" in
+proc two_tables(b?): (x?) {  --~ error: `two_tables` is not realizable
+    ensure r: x? = table { b? => true }  --~ error: a table in `two_tables::r` may have no row that holds
+    ensure s: table { b? => true }  --~ error: a table in `two_tables::s` may have no row that holds
+    expect e: when not b?, x?
+}
+
+-- A count at a newtype over `Int` is read as its underlying values are:
+-- through a function, inline, through a defined output and with an addend.
+pub ordered struct Ms(Int)
+pub fn indm(c?): Ms := if c? then Ms(1) else Ms(0)
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc ms_fn(q: Seq<Int>) {  --~ info: 2 checks of `ms_fn` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `ms_fn` are not run by enumeration
+    expect e: indm(q[5] > 0) <= Ms(1)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc ms_inline(q: Seq<Int>) {  --~ info: 2 checks of `ms_inline` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `ms_inline` are not run by enumeration
+    expect e: (if q[5] > 0 then Ms(1) else Ms(0)) <= Ms(1)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc ms_def(q: Seq<Int>): (k: Ms) {  --~ info: 2 checks of `ms_def` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `ms_def` are not run by enumeration
+    out k := if q[5] > 0 then Ms(1) else Ms(0)
+    expect e: k <= Ms(1)
+}
+
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc ms_addend(q: Seq<Int>) {  --~ info: 2 checks of `ms_addend` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `ms_addend` are not run by enumeration
+    expect e: not ((if q[5] > 0 then Ms(1) else Ms(0)) + Ms(2) <= Ms(1))
+}
+
+-- `=` compares a newtype's values, and `<=` their fields, which are read
+-- alike; and a newtype over `Nat` too.
+pub ordered struct Cn(Nat)
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc ms_eq(q: Seq<Int>): (k: Ms) {  --~ info: 2 checks of `ms_eq` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `ms_eq` are not run by enumeration
+    out k := Ms(2) + (if q[5] > 0 then Ms(1) else Ms(0))
+    expect e: not (k = Ms(1))
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc cn_count(q: Seq<Int>) {  --~ info: 2 checks of `cn_count` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `cn_count` are not run by enumeration
+    expect e: (if q[5] > 0 then Cn(1) else Cn(0)) <= Cn(1)
+}
+
+-- A `cover` that no behaviour up to the bound meets, beside a guarded
+-- index: the search does not decide it.
+set_option fren.evidence "enumerated" in
+proc uncovered(q: Seq<Int>, n: Int): (ok?) {  --~ info: 1 check of `uncovered` holds for every behaviour up to size 3
+    --~^ info: the definedness checks of `uncovered` are not run by enumeration
+    ensure r: ok? iff (q != [] and q[0] > 0)
+    -- The note, which says how the indexes were read, is what is tested.
+    cover c: n > 100  --~ warning: note: enumeration searched every behaviour up to size 3, with each index out of range as `[][0]`, which does not decide it
+}
+
+--@ summary: 94 passed (74 by bounded enumeration), 20 failed, 7 inconclusive, 0 redundant
