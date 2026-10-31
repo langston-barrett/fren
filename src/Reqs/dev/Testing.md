@@ -499,6 +499,12 @@ coverage, and saves the `.lake` for pull requests. The `lint` workflow runs
 `pre-merge`, passes only if its build and every shard passed: it is the
 status that reviewers and the coordinator rely on.
 
+Pull requests merge through GitHub's merge queue. The queue merges each
+pull request into the current `main`, behind any pull requests ahead of it
+in the queue, and runs `pre-merge` and `lint` on that merge commit. It
+merges the pull request only if both pass there, so that two pull requests
+that each pass on their own cannot break `main` together.
+
 ## Learning from review
 
 Review findings are evidence about the requirements and their connection
