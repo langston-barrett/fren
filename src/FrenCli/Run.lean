@@ -771,17 +771,24 @@ def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (ki
   let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r
   return Fren.Core.Enumeration.Enumerated.merge c.enumSize a? b? keep
 
-/-- `f` of each of `xs`, taken in order by at most `jobs` threads at
-once: for each, in the order of `xs`, an action that waits for it. With
-one job, each action runs `f` itself, in the thread that runs it, so that
-nothing is shared between threads. -/
-def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) : IO (Array (IO β)) := do
+/-- `f` of each of `xs`, taken by at most `jobs` threads at once, those
+that `first` selects before the others, and otherwise in order: for each,
+in the order of `xs`, an action that waits for it. Which is started first
+changes only when each finishes, not what it gives. With one job, each
+action runs `f` itself, in the thread that runs it, so that nothing is
+shared between threads. -/
+def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) (first : α → Bool := fun _ => false) :
+    IO (Array (IO β)) := do
   if jobs ≤ 1 then return xs.map f
   let promises ← xs.mapM fun _ => IO.Promise.new
+  let firsts := xs.map first
+  let idxs := Array.range xs.size
+  let order := idxs.filter (firsts[·]?.getD false) ++ idxs.filter (!firsts[·]?.getD false)
   let next ← IO.mkRef 0
   let worker : IO Unit := do
     repeat
-      let i ← next.modifyGet fun i => (i, i + 1)
+      let k ← next.modifyGet fun k => (k, k + 1)
+      let some i := order[k]? | break
       let (some x, some p) := (xs[i]?, promises[i]?) | break
       p.resolve (← (f x).toBaseIO)
   for _ in [0:min jobs xs.size] do
@@ -870,7 +877,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let timing := (solved - start, (← IO.monoNanosNow) - solved)
     return (r, ← dumped.get, tested?, enumerated?, timing)
   let mut timings := #[]
+  -- Those with checks by testing or enumeration first: they are the
+  -- slowest, and starting them last would leave them running alone at
+  -- the end.
   let solving ← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
+    (first := fun (c, _) => c.tested.any || c.enumerated.any)
   for (c, global, kinds, body, key) in todo, solved in solving do
     let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) ← solved
     timings := timings.push (solverNs + restNs, solverNs, restNs, subjectOf c global, key)
