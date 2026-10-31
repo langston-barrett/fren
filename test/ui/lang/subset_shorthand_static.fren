@@ -9,3 +9,7 @@ pub type Bad = Bad: Int where low: Bad is 3..=2   --~ error: the range `3..=2` m
 -- name there is the type, as anywhere in the module, not a value.
 pub type Digit = Int is 0..=Digit   --~ error: an invariant may mention only its binder, constants and functions
 pub type Same = Int is Same   --~ error: a pattern test cannot bind `Same` here
+
+-- An error about the value that the shorthand does not write is at the
+-- base type, with help to write the declaration in full.
+pub type S = Set<Int> is _   --~ error: cannot test `Set<Int>` against a pattern

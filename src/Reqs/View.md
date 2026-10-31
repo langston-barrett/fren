@@ -184,6 +184,11 @@ Lean build, where it occurs, and makes `fren check` exit with 1 (see
 | Arm never taken | the arm's pattern | the arm, by its number from 1 |
 | Row never the first that holds | the row's condition, or its `_` | the row, by its number from 1 |
 
+A message about an expression, a failure's, a static error's or a
+lint's, is placed at the expression within any parentheses around it:
+in `ensure q: (x > 0)`, at `x > 0`, not at its `(`. Only a message about
+the parentheses themselves, such as `double_parens`'s, is placed at them.
+
 A passing [cover goal](Check.md#cover-goals) is reported with its
 witness, the behaviour in which it holds, as a note at the goal's name:
 the inputs and results, shown as a counterexample shows them. The

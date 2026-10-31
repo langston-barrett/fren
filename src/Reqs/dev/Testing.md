@@ -16,8 +16,12 @@ pub mod testing
   `--~ error: TEXT` expects an error on that line whose text contains `TEXT`
   (`--~^` for the line above), every message must be expected, and `--@`
   lines expect the summary and exit code. Both front ends run every file and
-  must satisfy the same annotations, and both or neither must say that a
-  static error stopped the checks; `--~[cli]` and `--~[hosted]` mark the
+  must satisfy the same annotations, both or neither must say that a
+  static error stopped the checks, and a message that both report on a
+  line, with the same severity and first line, must be at the same column
+  in both, which the annotations do not state, except on the lines known
+  to differ until they are fixed (`knownColumnDifferences`, which fails
+  for a line that no longer differs); `--~[cli]` and `--~[hosted]` mark the
   only messages that may differ, parse errors, which the Lean front end gets
   from Lean's parser, and a known disagreement that a test pins until it is
   fixed, with its issue, as `checks/simp_recursion_depth.fren` does for
@@ -201,7 +205,7 @@ pub mod testing
   command's pipeline and the Lean front end (in an environment that
   imports `Fren`, as the ui tests do), whose reports must agree
   (`cli::agreement`, `cli::agrees_with_build`): the same errors, warnings
-  and notes on the same lines, the same summary, and the exit status
+  and notes at the same lines and columns, the same summary, and the exit status
   that Lean's messages call for: 2 after a static error, else 1 when Lean
   reports an error, 3 when it reports a warning, and 0 otherwise. The specs aim at the
   analyses that each front end implements on its own: constants, definitions
@@ -257,7 +261,14 @@ pub mod testing
   worker that dies while checking no spec is blamed on none. Each run's
   work files are its own, but the findings are named by seed, so runs with
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known` steers clear of differences
-  already known, to find others; `--files FILE...` compares the front ends
+  already known, to find others. A known difference that the generator
+  writes by default must not be flagged by default: `compare` masks it,
+  with its issue cited and a test in `FrontendsCompare` that it masks
+  only that, or it is fixed first, as the columns of a parenthesized
+  operand were. The known column differences of #555 are of static
+  errors that the generator does not write (an unknown method or field, a
+  `refines`, an invalid string pattern, a higher-order call's arity), so
+  `compare` masks no column. `--files FILE...` compares the front ends
   on given files, and `--print SEED` prints a generated spec. The
   comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
 

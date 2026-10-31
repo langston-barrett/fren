@@ -20,7 +20,7 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   but not for its checks' results. Every other message must agree, type
   errors included. A Lean error with no error of the binary on its line is
   always reported.
-- Messages are compared by line, severity and first line, with the values
+- Messages are compared by line, column, severity and first line, with the values
   of a model masked (`normHead`). The requirements that a realizability
   failure names in its note, which are a minimal set that conflicts on its
   input, which comes from the solver's model (`cli::agreement`), are
@@ -197,7 +197,7 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let items := itemOf text
   let itemAt (n : Nat) := items[n]?.getD 0
   let render (who : String) (d : Diagnostic) :=
-    s!"line {d.line}: only {who} reports {d.severity}{if who == "fren" then s!"[{d.code?.getD "-"}]" else ""}: {headOf d}"
+    s!"line {d.line}{if d.line == 0 then "" else s!":{d.col + 1}"}: only {who} reports {d.severity}{if who == "fren" then s!"[{d.code?.getD "-"}]" else ""}: {headOf d}"
   let cliDiags := cli.diags.filter (!isStoppedTrailer ·)
   -- Both say that a static error stopped the checks, or neither does.
   let stopped := match cli.diags.any isStoppedTrailer, hosted.diags.any isStoppedTrailer with
@@ -252,10 +252,11 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let keep (d : Diagnostic) := keep d && !isConflictNote d
   let mut cs := cliDiags.filter keep
   let hs := hosted.diags.filter keep
-  -- The same message: same line, severity and normalized headline.
+  -- The same message: same line, column, severity and normalized
+  -- headline.
   let mut hostedOnly := #[]
   for h in hs do
-    match cs.findIdx? fun c => c.line == h.line && c.severity == h.severity && normHead c.text == normHead h.text with
+    match cs.findIdx? fun c => c.line == h.line && c.col == h.col && c.severity == h.severity && normHead c.text == normHead h.text with
     | some i => cs := cs.eraseIdx! i
     | none => hostedOnly := hostedOnly.push h
   -- Lean's parse errors for the binary's errors on the same line: only

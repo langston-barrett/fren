@@ -54,8 +54,8 @@ def expectationDiff : Array String :=
     { diags := #[err 1 "Type mismatch\n  x\nhas type Bool"], summary? := none0 }).1
 
 -- Both errors are reported, each as only one front end's.
-#guard expectationDiff.any (·.startsWith "line 1: only fren reports error[F0603]")
-#guard expectationDiff.any (·.startsWith "line 1: only Lean reports error: Type mismatch")
+#guard expectationDiff.any (·.startsWith "line 1:1: only fren reports error[F0603]")
+#guard expectationDiff.any (·.startsWith "line 1:1: only Lean reports error: Type mismatch")
 
 -- Only a parse error of Lean's stands for an error of the binary on the
 -- same line: a type error must be worded as the binary's.
@@ -76,6 +76,13 @@ def item : String := "proc c(\n    x: Int,\n): (y: Int) {\n    ensure q: y = x *
 
 #guard differs item { diags := #[err 4 "nonlinear arithmetic is not supported" "F0307"], exit? := some 2 }
   { diags := #[err 4 "nonlinear arithmetic is not supported", err 5 "unknown identifier 'K'"] }
+
+-- The same message on the same line, but in another column, as #527's
+-- F0335 at the shorthand's type name and at the start of its command.
+#guard differs item { diags := #[{ err 4 "nonlinear arithmetic is not supported" "F0307" with col := 14 }], exit? := some 2 }
+  { diags := #[{ err 4 "nonlinear arithmetic is not supported" with col := 4 }] }
+#guard agrees item { diags := #[{ err 4 "nonlinear arithmetic is not supported" "F0307" with col := 14 }], exit? := some 2 }
+  { diags := #[{ err 4 "nonlinear arithmetic is not supported" with col := 14 }] }
 
 -- Both report a static error per constraint (`Reqs/View#how-many-are-reported`),
 -- so an error of Lean's in another constraint of an item that the binary
