@@ -8,6 +8,10 @@ name: pre-merge
 # did: it is the status to rely on.
 on:
   pull_request:
+  # Run by hand, it checks out the branch alone, not merged into `main`,
+  # so its `HEAD^1` is the branch's own parent, not `main`: it checks the
+  # branch as it is, which says nothing about the branch merged into
+  # `main`, and is not the status to rely on.
   workflow_dispatch:
 
 permissions:

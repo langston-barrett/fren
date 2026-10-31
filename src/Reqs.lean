@@ -13,6 +13,7 @@ import Reqs.Models
 import Reqs.Modules
 import Reqs.Mutate
 import Reqs.Refine
+import Reqs.Testing
 import Reqs.Trace
 import Reqs.View
 -- keep-sorted end

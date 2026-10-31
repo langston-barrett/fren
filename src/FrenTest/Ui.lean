@@ -1,3 +1,7 @@
+-- keep-sorted start
+import FrenCore.Str
+-- keep-sorted end
+
 /-!
 # ui tests
 
@@ -88,28 +92,81 @@ def parse (src : String) : Except String Spec := do
     spec := { spec with expectations := spec.expectations.push e }
   return spec
 
-/-- Checks `frontEnd`'s messages, summary and exit code against `spec`;
-returns a description of each discrepancy. -/
-def check (frontEnd : String) (spec : Spec) (diags : Array Diagnostic)
-    (summary? : Option String) (exit? : Option Nat) : Array String := Id.run do
+/-- Whether the expectation `e` applies to `frontEnd`: it is for both front
+ends, or for that one. -/
+def Expectation.applies (frontEnd : String) (e : Expectation) : Bool := e.frontEnd?.all (· == frontEnd)
+
+/-- Whether the message `d` meets the expectation `e`, for `frontEnd`: `e`
+applies to it, and `d` is on `e`'s line, of its severity, and its text
+contains `e`'s. -/
+def meets (frontEnd : String) (e : Expectation) (d : Diagnostic) : Bool :=
+  e.applies frontEnd && d.line == e.line && d.severity == e.severity && Fren.Str.contains d.text e.text
+
+/-- Whether the expectation `e` may go without a message, for `frontEnd`:
+it is written `--~?`, or it is for the other front end. -/
+def mayLack (frontEnd : String) (e : Expectation) : Bool := e.optional || !e.applies frontEnd
+
+/-- Whether each of the expectations `es` can be given a message of `ds`
+that meets it, a different one for each, or none if it may lack one, so
+that each message of `ds` is given to one (`testing::met?`). A search over
+every way of giving them, so that one expectation that two messages meet
+cannot take the message that only it and another meet: messages on
+different lines never meet the same expectation, so it branches only
+between those on one line. -/
+def assignable (frontEnd : String) : List Expectation → List Diagnostic → Bool
+  | [], ds => ds.isEmpty
+  | e :: es, ds =>
+    (List.range ds.length).any (fun i => meets frontEnd e ds[i]! && assignable frontEnd es (ds.eraseIdx i))
+      || (mayLack frontEnd e && assignable frontEnd es ds)
+
+/-- A description of each discrepancy between the messages `diags` and
+the expectations `es`, for `frontEnd`, found by giving each expectation the
+first message left that meets it: those that it then expects but finds no
+message for, and the messages left. -/
+def unmatched (frontEnd : String) (es : Array Expectation) (diags : Array Diagnostic) : Array String := Id.run do
   let mut failures := #[]
-  let mut unmatched := diags
+  let mut left := diags
   -- The expected messages first, then those only allowed.
-  for e in spec.expectations.filter (!·.optional) ++ spec.expectations.filter (·.optional) do
-    if e.frontEnd?.any (· != frontEnd) then continue
-    match unmatched.findIdx? fun d => d.line == e.line && d.severity == e.severity && (d.text.splitOn e.text).length > 1 with
-    | some idx => unmatched := unmatched.eraseIdx! idx
+  for e in es.filter (!·.optional) ++ es.filter (·.optional) do
+    unless e.applies frontEnd do continue
+    match left.findIdx? (meets frontEnd e) with
+    | some idx => left := left.eraseIdx! idx
     | none =>
       if e.optional then continue
       let here := diags.filter (·.line == e.line) |>.map fun d => s!"\n    got {d.severity}: {d.text}"
       failures := failures.push s!"line {e.line}: expected {e.severity}: {e.text} (annotation on line {e.at_}){String.join here.toList}"
-  for d in unmatched do
+  for d in left do
     failures := failures.push s!"line {d.line}: unexpected {d.severity}: {d.text}"
-  if let some s := spec.summary? then
-    if summary? != some s then
-      failures := failures.push s!"expected summary `{s}`, got `{summary?.getD "(none)"}`"
-  if let (some e, some got) := (spec.exit?, exit?) then
-    if e != got then failures := failures.push s!"expected exit code {e}, got {got}"
   return failures
+
+/-- The discrepancies between `frontEnd`'s messages `diags` and the
+expectations `es`: none if `assignable`, and otherwise those that
+`unmatched` finds, or, if it finds none, as it may where an expectation
+took a message that another needed, one that says so. -/
+def messageFailures (frontEnd : String) (es : Array Expectation) (diags : Array Diagnostic) : Array String :=
+  if assignable frontEnd es.toList diags.toList then #[] else
+    let failures := unmatched frontEnd es diags
+    if failures.isEmpty then #["the messages cannot each be given an expectation that they meet, a different one for each"] else failures
+
+/-- The discrepancy between the summary that `--@ summary:` expects,
+`want?`, and `got?`. -/
+def summaryFailures (want? got? : Option String) : Array String :=
+  match want? with
+  | some s => if got? != some s then #[s!"expected summary `{s}`, got `{got?.getD "(none)"}`"] else #[]
+  | none => #[]
+
+/-- The discrepancy between the exit code that `--@ exit:` expects,
+`want?`, and `got?`, the binary's; Lean has none. -/
+def exitFailures (want? got? : Option Nat) : Array String :=
+  match want?, got? with
+  | some e, some got => if e != got then #[s!"expected exit code {e}, got {got}"] else #[]
+  | _, _ => #[]
+
+/-- Checks `frontEnd`'s messages, summary and exit code against `spec`;
+returns a description of each discrepancy (`testing::ui_file`). -/
+def check (frontEnd : String) (spec : Spec) (diags : Array Diagnostic)
+    (summary? : Option String) (exit? : Option Nat) : Array String :=
+  messageFailures frontEnd spec.expectations diags ++ summaryFailures spec.summary? summary?
+    ++ exitFailures spec.exit? exit?
 
 end FrenTest.Ui

@@ -1,5 +1,16 @@
 # Testing
 
+The test driver's rules are stated here as the module `testing`, and
+`Impls.Testing` proves the driver's code meets them, for any jobs and any
+messages: which jobs each shard runs ([Shards](#shards)), when a ui test
+passes ([Expectations](#expectations)), and, trusted to Lake, when a
+test's result is that of the files it reads ([Fresh
+results](#fresh-results)).
+
+```fren
+pub mod testing
+```
+
 - **ui tests** (`lake test`): each `test/ui/**/*.fren` covers one topic and
   states its expected messages as comments:
   `--~ error: TEXT` expects an error on that line whose text contains `TEXT`
@@ -16,7 +27,8 @@
   places, such as a conflict's
   note at whichever guarantee the solver's model picks. This is how
   `cli::agreement` is tested. See
-  `src/FrenTest/Ui.lean` for the format.
+  `src/FrenTest/Ui.lean` for the format, and
+  [Expectations](#expectations) for when a file passes.
 - **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
   spec for readers, and is checked as a ui test, so its annotations
   (usually none) must match both front ends' messages. The example specs
@@ -270,6 +282,179 @@ spread over them.
 requirements, the slowest jobs, which only the CI run on `main` checks.
 The selection is made before `--bless` runs the snapshots job first.
 `--timings` prints how long each job took, to balance the shards.
+
+## Shards
+
+A job is the arguments of `fren_test --job`, and `testing::own_mutants?`
+says which jobs are slices of the mutants of Fren's own requirements:
+those of the first group of the corpus, which is Fren's own requirements.
+`testing::shard` states which shard runs each job, for any list of jobs,
+as `FrenTest.Jobs.placement` gives it: every job that `--skip-own-mutants`
+keeps is run by exactly one shard, of `0` to `N - 1`, and no other job is
+run; and shard 0 runs the first job kept alone. Without `--shard`, there
+is one shard, which runs every job kept. `jobs` in `src/FrenTestMain.lean`
+lists `ownSpec` first. The shard `K/N` runs, in order, the jobs that
+`placement` puts in `K` (`FrenTest.Jobs.selectJobs`), so the shards
+together run each job kept once. How the other jobs are dealt over shards
+1 to `N - 1`, in turn, is left to the code: it only balances the shards.
+
+```fren
+-- The job checks a slice of the mutants of Fren's own requirements:
+-- `mutation 0 SLICE SLICES`.
+pub fn own_mutants?(job: Seq<String>) := job.len = 4 and job[0] = "mutation" and job[1] = "0"
+
+-- `--skip-own-mutants`, if `skip?`, leaves out the job.
+pub fn skipped?(job: Seq<String>, skip?) := skip? and own_mutants?(job)
+
+-- Each job before position `i` is left out.
+set_option fren.lint.undecidable "allow" in
+pub fn first_kept?(jobs: Seq<Seq<String>>, skip?, i: Int) :=
+    forall (h: Int), when 0 <= h < i, skipped?(jobs[h], skip?)
+
+-- Over any number of jobs, so outside the decidable core: tested here, and
+-- proved in Lean of the driver's code.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc shard(
+    jobs: Seq<Seq<String>>,     -- the jobs, as `jobs` lists them, the slowest first
+    skip?,                      -- `--skip-own-mutants` is given
+    n: Int,                     -- `N` of `--shard K/N`, or 1 without it
+    i: Int,                     -- a position in `jobs`
+): (
+    det runs?,                  -- some shard runs the job at `i`
+    k: Int,                     -- the shard that runs it, or -1
+) {
+    assume shards: n >= 1
+    assume position: 0 <= i < jobs.len
+
+    ensure kept: runs? iff not skipped?(jobs[i], skip?)
+    ensure once: if runs? then 0 <= k < n else k = -1
+    ensure first_alone: when runs? and n >= 2, k = 0 iff first_kept?(jobs, skip?, i)
+
+    expect one_shard: when n = 1 and runs?, k = 0
+    expect others_kept: unless skip?, runs?
+}
+```
+
+## Expectations
+
+A ui file passes, for a front end, exactly when each of its messages is
+expected, and each expectation is met once, on its line. The annotations
+give the expectations: `--~` one on its line, `--~^` one on the line above,
+and so on, `--~$` one with no line, which is line 0, `--~?` one that may
+go without a message, and `--~[cli]` or `--~[hosted]` one for that front
+end alone, which for the other expects nothing and allows nothing. A
+message *meets* an expectation that applies to its front end when it is on
+its line, of its severity, and its text contains the expectation's.
+`testing::met?` says that the expectations can each be given the position
+of a message that meets it, or `-1`, if it may go without one, a different
+message for each, so that every message is given to one. The `--@` lines
+expect a summary and an exit code: the summary must then be that one, and
+the exit code too, where the front end has one, as the binary does and
+Lean does not.
+
+Giving each expectation the first message left that meets it is not
+enough: with expectations `x` and `xy` on one line, and messages `xy` and
+`x` there, `x` would take `xy`, which `xy` needed. `FrenTest.Ui.check`
+searches every way of giving them (`assignable`), which branches only
+between the messages of one line, and reports what the first-message way
+leaves over when none works. How the annotations are read from a file's
+text is tested, in `src/FrenTest/UiCheck.lean`, not proved.
+
+```fren
+-- A front end's message, on its line, or 0 for one with no line.
+pub struct Message { line: Int, severity: String, text: String }
+
+-- An annotation's expectation: of a message on `line`, with `severity`,
+-- whose text contains `text`, for `front_end` alone if it is given, and
+-- `optional?` for `--~?`.
+pub struct Expectation { line: Int, severity: String, text: String, front_end: Option<String>, optional? }
+
+-- The expectation applies to the front end `front_end`.
+pub fn applies?(e: Expectation, front_end: String) := match e.front_end {
+    Option::None => true,
+    Option::Some(f) => f = front_end,
+}
+
+-- The message meets the expectation.
+set_option fren.lint.undecidable "allow" in
+pub fn meets?(m: Message, e: Expectation) :=
+    m.line = e.line and m.severity = e.severity and m.text.contains?(e.text)
+
+-- `a` gives the expectation at `i` the position of a message that meets
+-- it, or -1 where it may go without one.
+set_option fren.lint.undecidable "allow" in
+pub fn gives?(ms: Seq<Message>, es: Seq<Expectation>, front_end: String, a: Seq<Int>, i: Int) :=
+    if a[i] = -1 then es[i].optional? or not applies?(es[i], front_end)
+    else 0 <= a[i] < ms.len and applies?(es[i], front_end) and meets?(ms[a[i]], es[i])
+
+-- `a` gives each expectation a message or -1, a different message for
+-- each, and every message to one.
+set_option fren.lint.undecidable "allow" in
+pub fn assigns?(ms: Seq<Message>, es: Seq<Expectation>, front_end: String, a: Seq<Int>) :=
+    a.len = es.len
+    and (forall (i: Int), when 0 <= i < es.len, gives?(ms, es, front_end, a, i))
+    and (forall (i: Int) (j: Int), when 0 <= i < j < es.len and a[i] != -1, a[i] != a[j])
+    and (forall (m: Int), when 0 <= m < ms.len, exists (i: Int), 0 <= i < es.len and a[i] = m)
+
+-- The messages meet the expectations.
+set_option fren.lint.undecidable "allow" in
+pub fn met?(ms: Seq<Message>, es: Seq<Expectation>, front_end: String) :=
+    exists (a: Seq<Int>), assigns?(ms, es, front_end, a)
+
+set_option fren.lint.undecidable "allow" in
+pub proc ui_file(
+    ms: Seq<Message>,               -- the front end's messages
+    es: Seq<Expectation>,           -- the file's expectations
+    front_end: String,              -- `cli` or `hosted`
+    summary: Option<String>,        -- `--@ summary:`
+    got_summary: Option<String>,    -- the front end's summary
+    exit: Option<Int>,              -- `--@ exit:`
+    got_exit: Option<Int>,          -- the front end's exit code; Lean has none
+): (det passes?) {
+    ensure rule: passes? iff met?(ms, es, front_end)
+        and (match summary { Option::None => true, Option::Some(s) => got_summary = Option::Some(s) })
+        and (match exit, got_exit { Option::Some(x), Option::Some(g) => x = g, _, _ => true })
+}
+```
+
+## Fresh results
+
+A test's result is *fresh* when it is that of the files it reads as they
+are now: its module was rebuilt after the last change to any of them, or
+none of them changed. Lake rebuilds a module when a file that its library
+needs changed since its last build, which Fren trusts; that each module
+that reads files, with `#fren_md`, reads only files that its library
+needs is what the `libraries` job checks, by reading the sources and
+`lakefile.lean`, so it is tested, not proved. `testing::fresh` states how
+the two give freshness: whenever the files read are among those needed,
+the result is fresh.
+
+The same goes for the driver itself: `lake test` runs `fren_test`, its
+test driver, after Lake has rebuilt it from the sources as they are now.
+Running the driver by hand, as `lake env .lake/build/bin/fren_test --job
+...`, runs whatever was built last, which nothing checks: build it first
+with `lake build fren_test`.
+
+```fren
+-- A file of the repository.
+pub type File
+
+pub proc fresh(
+    reads: Set<File>,       -- the files that the module reads when it is built
+    needs: Set<File>,       -- the files that its library needs
+    changed: Set<File>,     -- the files changed since its last build
+    rebuilt?,               -- Lake rebuilds it
+): (det fresh?) {
+    assume lake: rebuilt? iff needs inter changed != {}
+    ensure rule: fresh? iff (rebuilt? or reads inter changed = {})
+
+    expect read_needed: when reads subset needs, fresh?
+    cover stale: not fresh?
+}
+
+#fren_check
+```
 
 ## Continuous integration
 
