@@ -5,14 +5,18 @@ name: pre-merge
 # (`Reqs/dev/Testing#continuous-integration`). Each job starts from the
 # `.lake` of `main`'s last build, so that it rebuilds only what the pull
 # request changes. Its last job, `pre-merge`, passes only if all the others
-# did: it is the status to rely on.
+# did: it is the status to rely on, and the one the merge queue requires.
+#
+# It runs on each push to a pull request, and again in the merge queue, on
+# the queue's merge commit of the pull request into the current `main`
+# (behind any pull requests ahead of it in the queue). Either way, the
+# checkout's `HEAD^1` is the commit it merges into. There is no manual
+# trigger: run by hand, it would check out a branch alone, whose `HEAD^1`
+# is the branch's own parent, and its status would say nothing about the
+# branch merged into `main`.
 on:
   pull_request:
-  # Run by hand, it checks out the branch alone, not merged into `main`,
-  # so its `HEAD^1` is the branch's own parent, not `main`: it checks the
-  # branch as it is, which says nothing about the branch merged into
-  # `main`, and is not the status to rely on.
-  workflow_dispatch:
+  merge_group:
 
 permissions:
   contents: read
@@ -27,7 +31,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-    # The parent of the merge commit, too: it is `main`'s commit.
+    # The parent of the merge commit, too: it is `main`'s commit, or, in
+    # the merge queue, the commit of the pull request ahead in the queue,
+    # whose `.lake` was never saved, so that the cache falls back to the
+    # latest one saved on `main`.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false

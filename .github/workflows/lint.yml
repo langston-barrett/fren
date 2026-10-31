@@ -1,9 +1,15 @@
 name: lint
+# `lun run --check` on `main`, on each pull request, and in the merge queue,
+# on the queue's merge commit of the pull request into the current `main`:
+# its `lint` status gates merges, like `pre-merge`'s, since two pull
+# requests that each pass can fail together, for example two imports added
+# out of order to one sorted block.
 on:
   push:
     branches:
     - main
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
