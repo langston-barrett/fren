@@ -118,15 +118,34 @@ expect overly_complex_rows(a: Expr, b: Expr) {
 ```
 
 `lint::overly_complex_bool_expr` binds this to the linter, with the rule
-for the message. Both front ends run one function, `Core.overlyComplexRule`,
-over one layer of an expression, with a test of whether two operands are
-the same: the linter's on the expressions as written, which compares them
-as [written the same](../../Lint.md#written-the-same), and
-`src/Impls/Rewrites.lean`'s on `lang::Expr`, with `=`, which it proves meets this
-procedure for every expression. The linter also leaves the negations that
-`nonminimal_bool` rewrites, which only narrows where it fires: it is
-proved that where it fires, it fires by the rule that this procedure
-gives, and writes its fix.
+for the message. The linter also leaves the negations that
+`nonminimal_bool` rewrites, which the elaborated expression does not show,
+since elaboration does not tell `a iff b` from `a = b`. So whether
+`nonminimal_bool` rewrites the operand that is a negation is an input,
+`negation_rewritten?`, and where it holds, the lint fires by absorption
+alone.
+
+The linter's rule is one function, `Core.overlyComplexRule`, generic over
+one layer of an expression, a test of whether two operands are the same,
+and a test of whether `nonminimal_bool` rewrites a negation. What is
+proved and what is trusted:
+
+- Proved: `src/Impls/Rewrites.lean` instantiates it at `lang::Expr`, with
+  `=` for being the same and `negation_rewritten?` for every negation, and
+  proves that it meets this procedure, for every expression.
+- Trusted, and checked by the ui tests of the lint: both front ends run it
+  at their own expressions as written (`BNode.boolLayer`), with
+  [written the same](../../Lint.md#written-the-same) for being the same
+  (`writtenSame`) and `nonminimal_bool`'s own rule for the negation
+  (`rewritten`), and these read `and`, `or` and `not` as elaboration does.
+  Operands written the same are the same `lang::Expr` by `written`, where
+  they have no binding pattern test, and the front ends drop every report
+  on an expression with one.
+
+So the linter fires only where this procedure does, though not in every
+such place: operands whose texts differ but elaborate alike, such as `a iff
+b` and `a = b`, or `(a)` and `a`, are the same `lang::Expr`, but not
+written the same.
 
 ```fren
 pub enum BoolRule { Absorption, Contradiction, ExcludedMiddle }
@@ -154,8 +173,12 @@ pub fn kept_fix(e: Expr, k: Kept): Expr := match e, k {
     _, _ => e,
 }
 
-pub proc overly_complex_bool_expr(e: Expr): (det fires?, kept: Kept, kind: BoolRule) {
+pub proc overly_complex_bool_expr(
+    e: Expr,
+    negation_rewritten?,  -- `nonminimal_bool` rewrites the operand of `e` that is the negation of the other
+): (det fires?, kept: Kept, kind: BoolRule) {
     ensure rule: fires? iff overly_complex_fires?(e)
+        and not (negation_rewritten? and bool_rule(e) != BoolRule::Absorption)
     ensure fix: when fires?, kept_fix(e, kept) = overly_complex_fix(e)
     ensure kind_rule: when fires?, kind = bool_rule(e)
 }
@@ -163,7 +186,7 @@ pub proc overly_complex_bool_expr(e: Expr): (det fires?, kept: Kept, kind: BoolR
 
 ### The fix keeps the meaning
 
-Where the lint fires, the fix [agrees](../Rewrites.md#fixes-as-rewrites) with
+Where the lint fires, the fix [agrees](../Meaning.md#fixes-that-agree) with
 the expression in every interpretation and environment: where the
 expression is well-defined, the fix is, and has its value. Undefined
 operands are why it is not equal: `a and not a` is undefined where `a`
@@ -186,7 +209,7 @@ pub proc overly_complex_keeps_meaning(e: Expr, i: lang::Interp, env: lang::Env) 
 The fix writes an operand of the expression, or a literal, on which the
 lint never fires. So once the operands are fixed, the fix of the
 expression leaves nothing to fix, which is what makes [fixing
-everywhere](../Rewrites.md#fixes-as-rewrites) end with the lint fixed. That
+everywhere](../Rewrites.md#fixing-everywhere) end with the lint fixed. That
 is not so of the fix alone: the operand it keeps may itself fire, as in
 `(c or (c and d)) or ((c or (c and d)) and b)`, whose fix is `c or (c and
 d)`; and an expression around it may fire once it is fixed, where it did not

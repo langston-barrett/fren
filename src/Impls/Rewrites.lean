@@ -7,7 +7,7 @@ import Reqs.Lint
 
 `overly_complex_bool_expr` over `lang::Expr`: its fix agrees with the
 expression where it fires, and the linter's rule, `Core.overlyComplexRule`,
-meets `lint::overly_complex_bool_expr`. Then the laws of fixing every lint
+meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of fixing every lint
 everywhere (`lint::fix_all_laws`), by induction on the expression, from two
 facts about each lint where it fires: its fix agrees there, and it writes an
 operand or a literal on which the lint does not fire. `Le o o'` says that
@@ -169,8 +169,10 @@ theorem overly_site (env : Env) (e : Expr) (h : lint.overly_complex_fires? e = t
 
 /-! ### Each lint at the place where it fires -/
 
-/-- Each lint, where it does not fire, writes the expression; where it fires,
-an operand of an `and` or an `or`, or a literal. -/
+/-- Each lint, where it does not fire, writes the expression
+(`lint::fix_at_unfired`); where it fires, an operand of an `and` or an `or`,
+or a literal (`lint::fix_at_operand`). Each new arm of `lint::ExprLint` owes
+this. -/
 theorem fix_at_cases (l : lint.ExprLint) (e : Expr) :
     (lint.fires_at? l e = false ∧ lint.fix_at l e = e) ∨
     (lint.fires_at? l e = true ∧ ∃ a b, (e = .And a b ∨ e = .Or a b) ∧
@@ -185,7 +187,8 @@ theorem fix_at_cases (l : lint.ExprLint) (e : Expr) :
   · exact Or.inl ⟨rfl, overly_fix_unfired e h⟩
   · exact Or.inr ⟨rfl, overly_fix_shape e h⟩
 
-/-- Each lint's fix agrees with the expression, where it fires and where not. -/
+/-- Each lint's fix agrees with the expression, where it fires and where not
+(`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
 theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr) : Le (eval i env e) (eval i env (lint.fix_at l e)) := by
   cases l
   have hx : lint.fix_at .OverlyComplexBoolExpr e = lint.overly_complex_fix e := rfl
@@ -304,9 +307,10 @@ def layer : Expr → Fren.Core.BoolLayer Expr
   | .Unary .Not a => .not a
   | _ => .other
 
-/-- `Core.overlyComplexRule` over `lang::Expr`, with `=` for being written the same. -/
-def rule (e : Expr) : Option (Fren.Core.BoolRule × Fren.Core.Kept) :=
-  Fren.Core.overlyComplexRule layer (fun a b => decide (a = b)) (fun _ => false) e
+/-- `Core.overlyComplexRule` over `lang::Expr`, with `=` for being written the
+same, and `n` for whether `nonminimal_bool` rewrites the negation. -/
+def rule (n : Bool) (e : Expr) : Option (Fren.Core.BoolRule × Fren.Core.Kept) :=
+  Fren.Core.overlyComplexRule layer (fun a b => decide (a = b)) (fun _ => n) e
 
 theorem absorbs_eq (c : Bool) (k o : Expr) :
     Fren.Core.absorbsOperand layer (fun a b => decide (a = b)) c k o = lint.absorbs_operand? c k o := by
@@ -318,16 +322,6 @@ theorem negates_eq (k o : Expr) :
     Fren.Core.negatesOperand layer (fun a b => decide (a = b)) k o = lint.negates_operand? k o := by
   cases k <;> simp [Fren.Core.negatesOperand, layer, lint.negates_operand?]
   rename_i op _; cases op <;> simp
-
-/-- The linter leaves the negations that `nonminimal_bool` rewrites, which
-only narrows where it fires: where it fires, it fires as it does without
-them, by the same rule and with the same fix. -/
-theorem rule_narrows {α : Type} (layer : α → Fren.Core.BoolLayer α) (same : α → α → Bool) (rewritten : α → Bool)
-    (e : α) (r : Fren.Core.BoolRule × Fren.Core.Kept)
-    (h : Fren.Core.overlyComplexRule layer same rewritten e = some r) :
-    Fren.Core.overlyComplexRule layer same (fun _ => false) e = some r := by
-  unfold Fren.Core.overlyComplexRule at *
-  split at h <;> simp only [] at h ⊢ <;> (repeat' split at h) <;> simp_all
 
 end RewriteProof
 
@@ -350,20 +344,22 @@ macro "linter_cases" a:term:max b:term:max c:term:max : tactic => `(tactic|
     simp [lint.kept_fix, toKept, Fren.Impls.toBoolRule]))
 
 open RewriteProof in
--- Both front ends run `Core.overlyComplexRule`: here over `lang::Expr`, with
--- `=` for being written the same, for every expression.
-impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (e : lang.Expr) {
+-- Both front ends run `Core.overlyComplexRule` (trusted, and checked by the ui
+-- tests); this is it over `lang::Expr`, with `=` for being written the same and
+-- `n` for whether `nonminimal_bool` rewrites the negation, for every expression.
+impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (e : lang.Expr) (n : Bool) {
   e := e,
-  fires? := (rule e).isSome,
-  kept := toKept ((rule e).elim .left (·.2)),
-  kind := Fren.Impls.toBoolRule ((rule e).elim .absorption (·.1)),
+  negation_rewritten? := n,
+  fires? := (rule n e).isSome,
+  kept := toKept ((rule n e).elim .left (·.2)),
+  kind := Fren.Impls.toBoolRule ((rule n e).elim .absorption (·.1)),
 } by
-  intro e _
+  intro e n _
   unfold lint.overly_complex_bool_expr.ensures lint.overly_complex_bool_expr.ensure.rule
     lint.overly_complex_bool_expr.ensure.fix lint.overly_complex_bool_expr.ensure.kind_rule
   cases e with
-  | And a b => rw [RewriteProof.fires_and, RewriteProof.drops_iff]; linter_cases a b true
-  | Or a b => rw [RewriteProof.fires_or, RewriteProof.drops_iff]; linter_cases a b false
+  | And a b => rw [RewriteProof.fires_and, RewriteProof.drops_iff]; cases n <;> linter_cases a b true
+  | Or a b => rw [RewriteProof.fires_or, RewriteProof.drops_iff]; cases n <;> linter_cases a b false
   | Unary op a => cases op <;> simp [rule, Fren.Core.overlyComplexRule, layer, lint.overly_complex_fires?]
   | _ => simp [rule, Fren.Core.overlyComplexRule, layer, lint.overly_complex_fires?]
 
@@ -377,6 +373,16 @@ impl overly_complex_keeps_meaning: lint::overly_complex_keeps_meaning for (e : l
   unfold lint.overly_complex_keeps_meaning.ensures lint.overly_complex_keeps_meaning.ensure.keeps_meaning
   intro h
   exact (agrees_iff _ _).2 (overly_site env e h)
+
+open RewriteProof in
+-- For every lint, expression, interpretation and environment, by `site_le`.
+impl fix_at_agrees: lint::fix_at_agrees for (l : lint.ExprLint) (e : lang.Expr) (i : lang.Interp)
+    (env : lang.Env) {
+  l := l, e := e, i := i, env := env,
+} by
+  intro l e i env _
+  unfold lint.fix_at_agrees.ensures lint.fix_at_agrees.ensure.agrees
+  exact (agrees_iff _ _).2 (site_le l env e)
 
 open RewriteProof in
 -- For every lint, expression, interpretation and environment, by induction on the expression.

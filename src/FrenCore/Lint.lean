@@ -4572,11 +4572,12 @@ def negatesOperand (k o : α) : Bool :=
   | _ => false
 
 /-- Whether `overly_complex_bool_expr` fires on `e`, and by which rule, with
-what its fix writes (`lint::overly_complex_bool_expr`). Both front ends run it over
-their expressions, with `same` the test of being written the same, and
-`Impls/Rewrites.lean` proves it meets the procedure over `lang::Expr`, with
-`=`. A negation where `rewritten` holds, one that `nonminimal_bool`
-rewrites, does not make it fire. -/
+what its fix writes (`lint::overly_complex_bool_expr`). A negation where
+`rewritten` holds, one that `nonminimal_bool` rewrites, does not make it
+fire. Both front ends run it over their expressions, with `same` the test
+of being written the same, which is trusted and checked by the ui tests;
+`Impls/Rewrites.lean` proves that it meets the procedure over `lang::Expr`,
+with `=`, and `rewritten` the procedure's `negation_rewritten?`. -/
 def overlyComplexRule (rewritten : α → Bool) (e : α) : Option (BoolRule × Kept) :=
   let go (conj : Bool) (l r : α) : Option (BoolRule × Kept) :=
     if absorbsOperand layer same conj r l then some (.absorption, .left)
