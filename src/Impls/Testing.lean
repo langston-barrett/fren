@@ -12,8 +12,11 @@ open Fren.Lang
 `testing::shard`, proved of `FrenTest.Jobs.placement`, by which
 `FrenTest.Jobs.selectJobs` selects the jobs of a shard, for any jobs; and
 `testing::ui_file`, proved of `FrenTest.Ui.check`, for any messages and
-expectations: its search, `assignable`, finds a way to give the
-expectations messages exactly when there is one (`assignable_iff`).
+expectations: `met` decides whether there is a way to give the
+expectations messages (`met_iff_assigns`), from `solve`'s matching where
+its answer passes its check, which shows that it is right
+(`checkAssigns_sound`, `refutesExpected_sound`, `refutesGiven_sound`), and
+from the search of `assignable` otherwise (`assignable_iff`).
 `testing::fresh` rests on Lake, so it is trusted. -/
 
 namespace Fren.Impls.Testing
@@ -340,6 +343,140 @@ theorem assignable_iff (es : List Expectation) (ds : List Diagnostic) :
         · exact .inr ⟨hl, (ih _).mpr ⟨a, ha⟩⟩
         · exact .inl ⟨p, hp, hm, (ih _).mpr ⟨_, ha⟩⟩
 
+/-- A list without repeats, all of whose elements are in `l₂`, is no
+longer than `l₂`. -/
+theorem length_le_of_nodup {α : Type} [DecidableEq α] (l₁ l₂ : List α) (hn : l₁.Nodup) (hs : ∀ x ∈ l₁, x ∈ l₂) :
+    l₁.length ≤ l₂.length := by
+  induction l₁ generalizing l₂ with
+  | nil => simp
+  | cons x t ih =>
+    rw [List.nodup_cons] at hn
+    have hx : x ∈ l₂ := hs x (by simp)
+    have := ih (l₂.erase x) hn.2 fun y hy => by
+      rw [List.mem_erase_of_ne (by rintro rfl; exact hn.1 hy)]; exact hs y (by simp [hy])
+    rw [List.length_erase_of_mem hx] at this
+    have : 0 < l₂.length := List.length_pos_of_mem hx
+    simp; omega
+
+/-- `checkAssigns` checks `Assigns`. -/
+theorem checkAssigns_sound (es : List Expectation) (ds : List Diagnostic) (a : List Int)
+    (h : checkAssigns fe es ds a = true) : Assigns fe es ds a := by
+  simp only [checkAssigns, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at h
+  obtain ⟨⟨⟨hlen, hg⟩, hd⟩, ho⟩ := h
+  refine ⟨hlen, ?_, ?_, ?_⟩
+  · intro i e x he hx
+    have := hg i (List.getElem?_eq_some_iff.mp he).1
+    rw [he, hx] at this
+    simp only at this
+    split
+    · rename_i h1; rwa [if_pos h1] at this
+    · rename_i h1
+      rw [if_neg h1, Bool.and_eq_true, decide_eq_true_eq] at this
+      obtain ⟨h0, hm⟩ := this
+      split at hm
+      · rename_i d hdd; exact ⟨d, h0, hdd, hm⟩
+      · contradiction
+  · intro i j x y hij hx hy hx1
+    have hi := (List.getElem?_eq_some_iff.mp hx).1
+    have hj := (List.getElem?_eq_some_iff.mp hy).1
+    have := hd i hi j hj
+    simp only [hx, hy, Option.getD_some, Bool.or_eq_true, Bool.not_eq_true', decide_eq_false_iff_not,
+      beq_iff_eq, bne_iff_ne] at this
+    rcases this with (h | h) | h
+    · omega
+    · exact absurd h hx1
+    · exact h
+  · intro m hm
+    have := ho m hm
+    exact List.mem_iff_getElem?.mp (by simpa using this)
+
+theorem meetsAt_iff (es : List Expectation) (ds : List Diagnostic) (i m : Nat) :
+    meetsAt fe es ds i m = true ↔ ∃ e d, es[i]? = some e ∧ ds[m]? = some d ∧ meets fe e d = true := by
+  unfold meetsAt
+  split <;> simp_all
+
+/-- The expectations that `refutesExpected` holds of cannot each be given
+a message. -/
+theorem refutesExpected_sound (es : List Expectation) (ds : List Diagnostic) (ys : List Nat)
+    (h : refutesExpected fe es ds ys = true) (a : List Int) : ¬Assigns fe es ds a := by
+  rintro ⟨hlen, hg, hd, -⟩
+  simp only [refutesExpected, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  obtain ⟨⟨hn, hy⟩, hlt⟩ := h
+  -- Each expectation of `ys` has a message, a different one for each.
+  have hx : ∀ y ∈ ys, ∃ e x, es[y]? = some e ∧ a[y]? = some x ∧ x ≠ -1 ∧
+      ∃ d, 0 ≤ x ∧ ds[x.toNat]? = some d ∧ meets fe e d = true := by
+    intro y hmem
+    have := hy y hmem
+    split at this
+    · rename_i e he
+      have hya : y < a.length := by have := (List.getElem?_eq_some_iff.mp he).1; omega
+      have hg' := hg y e a[y] he (List.getElem?_eq_getElem hya)
+      have h1 : a[y] ≠ -1 := by intro h1; rw [if_pos h1] at hg'; simp_all
+      rw [if_neg h1] at hg'
+      exact ⟨e, a[y], he, List.getElem?_eq_getElem hya, h1, hg'⟩
+    · contradiction
+  let f : Nat → Nat := fun y => (a[y]?.getD (-1)).toNat
+  have hnd : (ys.map f).Nodup := by
+    rw [List.nodup_iff_pairwise_ne, List.pairwise_map]
+    rw [List.nodup_iff_pairwise_ne] at hn
+    refine hn.imp_of_mem fun {y z} hyy hzz hne => ?_
+    obtain ⟨_, x, -, hax, hx1, -, hx0, -⟩ := hx y hyy
+    obtain ⟨_, x', -, hax', hx1', -, hx0', -⟩ := hx z hzz
+    simp only [f, hax, hax', Option.getD_some]
+    rcases Nat.lt_or_gt_of_ne hne with hl | hl
+    · have := hd y z x x' hl hax hax' hx1; omega
+    · have := hd z y x' x hl hax' hax hx1'; omega
+  have := length_le_of_nodup _ ((List.range ds.length).filter fun m => ys.any (meetsAt fe es ds · m)) hnd
+    (by
+      intro m hm
+      obtain ⟨y, hyy, rfl⟩ := List.mem_map.mp hm
+      obtain ⟨e, x, he, hax, -, d, hx0, hdd, hmd⟩ := hx y hyy
+      simp only [f, hax, Option.getD_some]
+      rw [List.mem_filter, List.mem_range, List.any_eq_true]
+      exact ⟨(List.getElem?_eq_some_iff.mp hdd).1, y, hyy, (meetsAt_iff fe es ds y x.toNat).mpr ⟨e, d, he, hdd, hmd⟩⟩)
+  simp at this; omega
+
+/-- The messages that `refutesGiven` holds of cannot each be given an
+expectation. -/
+theorem refutesGiven_sound (es : List Expectation) (ds : List Diagnostic) (xs : List Nat)
+    (h : refutesGiven fe es ds xs = true) (a : List Int) : ¬Assigns fe es ds a := by
+  rintro ⟨hlen, hg, -, ho⟩
+  simp only [refutesGiven, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  obtain ⟨⟨hn, hx⟩, hlt⟩ := h
+  let N := (List.range es.length).filter fun i => xs.any (meetsAt fe es ds i)
+  have := length_le_of_nodup xs (N.map fun i => (a[i]?.getD (-1)).toNat) hn (by
+    intro x hxx
+    obtain ⟨i, hi⟩ := ho x (hx x hxx)
+    have hia : i < es.length := by have := (List.getElem?_eq_some_iff.mp hi).1; omega
+    have hg' := hg i es[i] x (List.getElem?_eq_getElem hia) hi
+    rw [if_neg (by omega)] at hg'
+    obtain ⟨d, -, hdd, hmd⟩ := hg'
+    rw [List.mem_map]
+    refine ⟨i, ?_, by simp [hi]⟩
+    rw [List.mem_filter, List.mem_range, List.any_eq_true]
+    exact ⟨hia, x, hxx, (meetsAt_iff fe es ds i x).mpr ⟨es[i], d, List.getElem?_eq_getElem hia, by simpa using hdd, hmd⟩⟩)
+  simp [N] at this; omega
+
+/-- `met` decides whether there is a way to give the expectations
+messages: by `solve`'s answer where it passes its check, and by
+`assignable`'s search otherwise. -/
+theorem met_iff_assigns (es : List Expectation) (ds : List Diagnostic) :
+    met fe es ds = true ↔ ∃ a, Assigns fe es ds a := by
+  unfold met
+  dsimp only
+  split
+  · rw [Bool.or_eq_true, assignable_iff]
+    exact ⟨fun h => h.elim (fun h => ⟨_, checkAssigns_sound fe es ds _ h⟩) id, fun h => .inr h⟩
+  · split
+    · rename_i h
+      simp only [Bool.or_eq_true, List.any_eq_true] at h
+      simp only [Bool.false_eq_true, false_iff, not_exists]
+      intro a
+      rcases h with ⟨ys, -, hy⟩ | ⟨xs, -, hx⟩
+      · exact refutesExpected_sound fe es ds ys hy a
+      · exact refutesGiven_sound fe es ds xs hx a
+    · exact assignable_iff fe es ds
+
 /-- A message as `testing::ui_file` has it. -/
 def toMessage (d : Diagnostic) : testing.Message := { line := d.line, severity := d.severity, text := d.text }
 
@@ -459,11 +596,11 @@ theorem assigns_iff (es : List Expectation) (ds : List Diagnostic) (a : List Int
       rw [nth_ofList_nat a i hia, (List.getElem?_eq_some_iff.mp hi).2]
       omega
 
-/-- `testing::met?` is what `assignable` decides. -/
+/-- `testing::met?` is what `met` decides. -/
 theorem met_iff (es : List Expectation) (ds : List Diagnostic) :
     testing.met? (Fren.Seq.ofList (ds.map toMessage)) (Fren.Seq.ofList (es.map toExpectation)) fe = true ↔
-      assignable fe es ds = true := by
-  rw [assignable_iff]
+      met fe es ds = true := by
+  rw [met_iff_assigns]
   unfold testing.met?
   rw [dec_true]
   constructor
@@ -474,7 +611,7 @@ theorem isEmpty_append (a b : Array String) : (a ++ b).isEmpty = (a.isEmpty && b
   rw [Bool.eq_iff_iff]; simp [Array.isEmpty_iff]
 
 theorem messageFailures_isEmpty (es : Array Expectation) (ds : Array Diagnostic) :
-    (messageFailures fe es ds).isEmpty = assignable fe es.toList ds.toList := by
+    (messageFailures fe es ds).isEmpty = met fe es.toList ds.toList := by
   unfold messageFailures
   split
   · simp_all
@@ -485,7 +622,7 @@ theorem messageFailures_isEmpty (es : Array Expectation) (ds : Array Diagnostic)
     split <;> simp_all
 
 -- `check` reports nothing exactly when the messages meet the expectations,
--- by `assignable`, and the summary and exit code are those expected.
+-- by `met`, and the summary and exit code are those expected.
 impl ui_check: testing::ui_file for (ds : List Diagnostic) (es : List Expectation) (fe : String)
     (s gs : Option String) (x gx : Option Nat) {
   ms := Fren.Seq.ofList (ds.map toMessage),
@@ -507,6 +644,6 @@ impl ui_check: testing::ui_file for (ds : List Diagnostic) (es : List Expectatio
 
 end Matching
 
-trusted testing::fresh: "Lake rebuilds a module when a file that its library needs changed since its last build, which is Lake's rule and not checked by Fren; that the modules that read files read only files that their library needs is checked by `lake test`'s `libraries` job, which reads the sources and `lakefile.lean`"
+trusted testing::fresh: "Lake rebuilds a module when a file that its library needs changed since its last build, which is part of Lake's rule and not checked by Fren; that the modules that read files read only files that their library needs is checked by `lake test`'s `libraries` job, which reads the sources and `lakefile.lean`"
 
 end Fren.Impls.Testing
