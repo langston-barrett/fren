@@ -216,8 +216,8 @@ A declaration such as `type Byte = b: Int where low: b >= 0 and high:
 b <= 255` names a reusable conjunction of invariants of its base type.
 Only named declarations introduce restrictions. `T is P` is valid only
 as the right-hand side of such a declaration, `type Byte = Int is 0..=255`,
-which is shorthand for `type Byte = Byte: Int where pattern: Byte is
-0..=255` (see [The pattern shorthand](SubsetTypes.md#the-pattern-shorthand));
+which is shorthand for `type Byte = b: Int where pattern: b is 0..=255`
+(see [The pattern shorthand](SubsetTypes.md#the-pattern-shorthand));
 in every other type position it is a syntax error. Expression pattern
 tests retain their syntax.
 The syntax, scope, interpretation, obligations, declaration checks,

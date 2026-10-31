@@ -108,7 +108,11 @@ partial def checkLexemes (stx : Syntax) : CommandElabM Unit := do
     return
   if let `(fren_expr| !$_) := stx then throwErrorAt stx[0] (Core.foreignOpMsg "!").text
   match stx with
-  | .ident _ raw _ _ =>
+  | .ident info raw x _ =>
+    -- A generated name that no source wrote, such as the pattern
+    -- shorthand's binder (`Core.shorthandBinder`), has no position; a
+    -- written `«#value»` does, and is checked.
+    if info.getPos?.isNone && Core.generatedName (Core.nameText x) then return
     let s := raw.toString
     let beforeEq := String.Pos.Raw.get raw.str raw.stopPos == '='
     unless Core.identifierAccepted s do throwErrorAt stx (Core.leanIdentifierMsg s beforeEq).text
@@ -411,8 +415,9 @@ def varType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM E
   let n := name.getId
   let t ← ty?.mapM (elabType modName)
   if let some ty := ty? then lintRelTypes modName ty
-  liftMsg name (Core.checkVarName n (t.map (·.isConstOf ``Bool)))
-  if let (some ty, some t) := (ty?, t) then lintBoolType n ty t
+  unless Core.generatedName (Core.nameText n) do
+    liftMsg name (Core.checkVarName n (t.map (·.isConstOf ``Bool)))
+    if let (some ty, some t) := (ty?, t) then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool)
 
 /-- What a field's or payload's type is declared in: a payload of an
@@ -2884,9 +2889,9 @@ def varPType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM 
   let n := name.getId
   let t ← ty?.mapM (elabPType modName)
   if let some ty := ty? then lintRelTypes modName ty
-  unless n.toString.startsWith "#match" do liftMsg name (Core.checkVarName n (t.map (·.1.isConstOf ``Bool)))
+  unless Core.generatedName (Core.nameText n) do liftMsg name (Core.checkVarName n (t.map (·.1.isConstOf ``Bool)))
   if let (some ty, some (t, pt)) := (ty?, t) then
-    if pt.invariants.isEmpty && !n.toString.startsWith "#match" then lintBoolType n ty t
+    if pt.invariants.isEmpty && !Core.generatedName (Core.nameText n) then lintBoolType n ty t
   return t.getD (Lean.mkConst ``Bool, .plain .bool)
 
 /-- The declared type of the `k`th field or payload value of the variant
@@ -3712,7 +3717,10 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
     if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
     lintOrPatterns (orNode (topAlts e[2]).1 q)
     let texts := (topAlts e[2]).1.map exactText
-    if Core.isEquality texts.size (Core.equatable q texts) irrefutable then
+    -- Not of the pattern shorthand's test, whose scrutinee is not written,
+    -- and which has no form with `=` (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`).
+    let generated := (soleName? scrutinee).any (Core.generatedName <| Core.nameText ·)
+    if !generated && Core.isEquality texts.size (Core.equatable q texts) irrefutable then
       let msg := Core.isEqualityMsg { text := exactText scrutinee, prec := exprPrec scrutinee } texts[0]!
       recordLint .isEquality e (if (← getLocal).inMarkdown then msg.note Core.fixHelp else msg)
   -- In a defined function's Lean definition, a test that binds nothing is a
@@ -8821,7 +8829,7 @@ shared procedure check protocol, with separate declaration-only checks. -/
     catch ex =>
       let message ← ex.toMessageData.toString
       if (message.splitOn "cannot find").length > 1 then
-        throwErrorAt expression ({ code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some s!"outside the scope of `{binder.getId}`" } : Core.Msg).text
+        throwErrorAt expression ({ code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Core.invariantScopeLabel (Core.nameText binder.getId)) } : Core.Msg).text
       throw ex
     finally
       -- Only the lints of the invariant's own source are reported, as for
@@ -8867,13 +8875,13 @@ shared procedure check protocol, with separate declaration-only checks. -/
 
 open Lang in
 /-- `type T = U is P`, elaborated as the declaration it stands for,
-`type T = T: U where pattern: T is P`, the binder named as the type, which
-no other name in scope is (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
+`type T = #value: U where pattern: #value is P`, whose binder is generated
+(`Core.shorthandBinder`, `Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
 @[command_elab Lang.subsetShorthandCmd] def elabSubsetShorthand : CommandElab := fun stx => do
   let isTok := stx[5]
   -- The binder has no position, so that the invariant is where `is P` is
   -- written, and only its lints are reported, as for a written binder.
-  let binder := mkIdent stx[2].getId
+  let binder := mkIdent (Name.mkSimple Core.shorthandBinder)
   let label := mkIdentFrom isTok `pattern
   let scrutinee ← `(fren_expr| $binder:ident)
   let test := mkNode ``Lang.isExpr #[scrutinee, isTok, stx[6]]

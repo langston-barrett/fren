@@ -1,7 +1,7 @@
 -- The binder of the declaration that the pattern shorthand stands for is
--- named as the type, so it shadows nothing in scope: neither the constant
--- `value`, nor the function `digit?`, which a range's bound and an
--- invariant mention. A binder's case is not linted.
+-- generated, so it shadows nothing in scope: neither the constant `value`,
+-- nor the function `digit?`, which a range's bound and an invariant
+-- mention.
 set_option fren.lint.non_upper_case_constants "allow"
 
 const value: Int := 9

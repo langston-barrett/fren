@@ -1,4 +1,11 @@
--- A static error in the pattern of the pattern shorthand is reported at
--- the pattern, and alone: the binder, named as the type, is not linted,
--- as its case would be (`non_snake_case`) if it were written.
+-- A static error in the pattern of a subset type's invariant is reported
+-- at the pattern, and alone: the binder's name is not linted, neither the
+-- shorthand's generated one nor a written one, as its case would be
+-- (`non_snake_case`) if it were a variable's.
 pub type Empty = Int is 3..=2   --~ error: the range `3..=2` matches no integer
+pub type Bad = Bad: Int where low: Bad is 3..=2   --~ error: the range `3..=2` matches no integer
+
+-- Nothing in the shorthand's pattern means its binder: the type's own
+-- name there is the type, as anywhere in the module, not a value.
+pub type Digit = Int is 0..=Digit   --~ error: an invariant may mention only its binder, constants and functions
+pub type Same = Int is Same   --~ error: a pattern test cannot bind `Same` here

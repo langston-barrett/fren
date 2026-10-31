@@ -131,8 +131,9 @@ pub proc subset_labels(clauses: Seq<SubsetClause>): (accepted?) {
 
 A subset type whose one invariant is a pattern test of its value may be
 declared with the shorthand `type T = U is P`. It stands for
-`type T = T: U where pattern: T is P`, the subset type of `U` whose one
-invariant is `T::pattern`, with the binder named as the type:
+`type T = x: U where pattern: x is P`, the subset type of `U` whose one
+invariant is `T::pattern`, where `x` is a binder that no source writes
+(see below):
 
 ```
 type Byte = Int is 0..=255
@@ -141,8 +142,8 @@ pub enum Severity { Silent, Info, Warning, Error }
 type Loud = Severity is Severity::Warning | Severity::Error
 ```
 
-`Byte` is `type Byte = Byte: Int where pattern: Byte is 0..=255`, and an
-obligation of a `Byte` names `Byte::pattern`. `Digit`, built on `Byte`,
+`Byte` means what `type Byte = b: Int where pattern: b is 0..=255` means,
+and an obligation of a `Byte` names `Byte::pattern`. `Digit`, built on `Byte`,
 keeps `Byte::pattern` followed by its own `Digit::pattern`, as any subset
 type keeps its base's invariants. Both front ends read the shorthand as
 the declaration it stands for while parsing, so everything after parsing
@@ -150,8 +151,8 @@ is as for that declaration: its scope, its declaration checks, its
 obligations, its diagnostics and the pattern-test invariant fragment of
 [Decidability, Lean and migration](#decidability-lean-and-migration),
 which makes `Byte` finite, with the integers `0` to `255` in order. The
-declaration written out in full means the same, and is as valid:
-`pattern` is an ordinary label, not a reserved word.
+declaration written out in full, with any binder that shadows nothing,
+means the same: `pattern` is an ordinary label, not a reserved word.
 
 The shorthand is written only as a declaration, and only with `=`. In
 any other place where a type is written, `T is P` is a syntax error: a
@@ -163,15 +164,28 @@ declarations' are. A declaration with more than one invariant, or with
 an invariant that is not a pattern test, is written in full; the
 shorthand takes no `where`.
 
-The binder is never written, and a pattern mentions no variable, so its
-only requirement is that it shadows nothing, since [shadowing is
-explicit](Procedures.md#shadowing). The type's own name meets it: no
-other name in the module's scope can be the type's, since an item or a
-`use` of the same name is an error. Any other name, such as `value`,
-could be a constant's or a function's. A subset type's declaration
-reports only the lints of its invariants' source, whether or not it has a
-static error, so the binder's case, which `non_snake_case` would report
-of a variable named `Byte`, is not linted.
+The binder is generated, `#value`: since no identifier starts with `#`,
+no source declares or mentions it. So it shadows nothing (a written name
+such as `value` could be a constant's or a function's, which [explicit
+shadowing](Procedures.md#shadowing) would make an error), and the rules
+for written names do not apply to it: a binder of a `Bool`, or of an
+alias of `Bool`, need not end in `?`, as a written one must, and no lint
+reports its name. Nothing in the pattern can mean the binder, and the
+pattern is read as anywhere else in the module, so the type's own name
+in it is an error, as it is in a pattern test elsewhere: a range's bound,
+in `type Digit = Int is 0..=Digit`, must name a constant, and `Digit`
+names none (`F0373`, whose label then says so, rather than naming the
+binder); and a lone name, in `type Same = Int is Same`, binds, which an
+invariant's pattern test cannot (`F0334`).
+
+No lint reports the shorthand's pattern test as an expression `x is P`
+whose scrutinee `x` is written: `is_equality`, whose fix replaces it with
+`x = P`, does not apply, since the shorthand has no form with `=`. Lints
+of the pattern itself, such as `irrefutable_is` and the lints of
+or-patterns, apply as to any pattern test. Of the lints of an invariant's
+generated predicate, only those within the invariant's expression are
+reported, whether or not it has a static error, so a written binder's
+name is not linted there either.
 
 ## Static types, assumptions and obligations
 

@@ -1,6 +1,7 @@
 -- The pattern shorthand: `type T = U is P` is the subset type
--- `type T = T: U where pattern: T is P`, whose one invariant is
--- `T::pattern`, and a subset type built on it keeps that invariant.
+-- `type T = x: U where pattern: x is P`, for a binder `x` that no source
+-- writes, whose one invariant is `T::pattern`, and a subset type built on
+-- it keeps that invariant.
 
 type Byte = Int is 0..=255
 type Digit = Byte is 0..=9
@@ -8,7 +9,7 @@ pub enum Severity { Silent, Info, Warning, Error }
 type Loud = Severity is Severity::Warning | Severity::Error
 type Even = n: Byte where even: n mod 2 = 0
 -- Written in full, the shorthand means the same.
-type Octet = Octet: Int where pattern: Octet is 0..=255
+type Octet = o: Int where pattern: o is 0..=255
 
 proc bytes(x: Int): (det b: Byte, det o: Octet) {
     out b := x   --~ error: invariant `Byte::pattern` does not hold

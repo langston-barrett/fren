@@ -41,7 +41,9 @@ fix keeps the guards.
 [`match_like_membership`](../Style.md#matches-that-are-memberships)
 writes a pattern test only where this lint would not fire on it, and
 `manual_pattern_test` writes one of two or more alternatives, so the lints
-never undo each other.
+never undo each other. It does not fire on the test of a [pattern
+shorthand](../../Lang/SubsetTypes.md#the-pattern-shorthand), `type T = U is
+P`, whose `e` is not written and which has no form with `=`.
 
 Clippy's nearest lint, `equatable_if_let`, is in its `nursery` group, but
 that group is about a lint's maturity rather than a judgment of style. It
