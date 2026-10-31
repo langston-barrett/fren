@@ -1,6 +1,6 @@
 --@ args: fmt --check
--- `fren fmt` writes a pattern type's `is` between spaces, and its range
--- without them, and a type alias's `:=` between spaces.
+-- `fren fmt` writes a pattern test's `is` between spaces, and its range
+-- without them, and a subset type's `=` between spaces.
 type   Byte= n: Int    where invariant: n is  0..=255
 pub enum Level { Low, High }
 type Loud = level: Level  where invariant: level is Level::High|Level::Low

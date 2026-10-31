@@ -3,9 +3,9 @@ import FrenCli.Lex
 import FrenCore.Checking
 import FrenCore.Generics
 import FrenCore.Guards
-import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Quantifier
+import FrenCore.SubsetTypes
 import FrenCore.Ty
 import FrenCore.Typing
 import Impls.Check
@@ -380,13 +380,13 @@ impl nat_place: lang::nat_place for (p : Fren.Core.TypePlace) {
   intro p _
   cases p <;> simp [fren_spec, toTypePlace, Fren.Core.natPlaceAccepted]
 
-impl subset_place: lang::subset_place for (p : Fren.Core.PatternPlace) (r : Bool) {
+impl subset_place: lang::subset_place for (p : Fren.Core.SubsetPlace) (r : Bool) {
   place := match p with | .top => .Top | .field => .Field | .payload => .Payload | .element => .Element,
   recursive? := r && p == .payload,
-  decidable? := Fren.Core.patternPlaceDecidable p (r && p == .payload),
+  decidable? := Fren.Core.subsetPlaceDecidable p (r && p == .payload),
 } by
   intro p r _
-  cases p <;> cases r <;> simp [fren_spec, Fren.Core.patternPlaceDecidable]
+  cases p <;> cases r <;> simp [fren_spec, Fren.Core.subsetPlaceDecidable]
 
 impl pattern_finite: lang::pattern_finite for (b i n : Bool) {
   base_finite? := b && !i,
@@ -400,11 +400,11 @@ impl pattern_finite: lang::pattern_finite for (b i n : Bool) {
 impl subset_widening: lang::subset_widening for (p w : Bool) {
   restricted? := p,
   widened? := w,
-  accepted? := (Fren.Core.patternWidening w p).1,
-  obliged? := (Fren.Core.patternWidening w p).2,
+  accepted? := (Fren.Core.subsetWidening w p).1,
+  obliged? := (Fren.Core.subsetWidening w p).2,
 } by
   intro p w _
-  cases p <;> cases w <;> simp [fren_spec, Fren.Core.patternWidening]
+  cases p <;> cases w <;> simp [fren_spec, Fren.Core.subsetWidening]
 
 def toBrought : Fren.Core.Brought → lang.Brought
   | .nothing => .Nothing

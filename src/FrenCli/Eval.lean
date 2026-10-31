@@ -3,9 +3,9 @@ import Fren.Seq
 import FrenCli.Guard
 import FrenCli.Parse
 import FrenCore.Names
-import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Regex
+import FrenCore.SubsetTypes
 import FrenCore.Table
 import FrenCore.TypeFacts
 -- keep-sorted end
@@ -332,8 +332,9 @@ inductive Ex where
   `e`'s, and the positions pair the preconditions with their checks
   (`Ex.tableGoals`, `check::precondition`). -/
   | pre (pos : Nat) (f : Name) (goals : Array (Name × Ex)) (e : Ex)
-  /-- That `e` is a value of the declared type `t`: what its pattern
-  types, and those within it, say of it (`Reqs/Lang/Types#meaning`). -/
+  /-- That `e` is a value of the declared type `t`: what its subset
+  types, and those within it, say of it
+  (`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`). -/
   | typed (t : Fren.Core.PTy) (ints : Array Int) (e : Ex)
   deriving Inhabited
 
@@ -1218,7 +1219,7 @@ partial def Pat.same : Pat → Pat → Bool
   | .alts ps, .alts qs => sameAll Pat.same ps qs
   | _, _ => false
 
-/-- Whether two patterns of pattern types are the same. -/
+/-- Whether two patterns of pattern-test invariants are the same. -/
 partial def corePatSame : Fren.Core.Pat → Fren.Core.Pat → Bool
   | .wild b, .wild c => b == c
   | .bool b, .bool c => b == c
@@ -1677,8 +1678,8 @@ def resolve (segs : Array Ident) : L Resolved := do
 def dotted (parts : List String) : Name := parts.foldl Name.mkStr .anonymous
 
 partial def lowerTy (segs : Array Ident) : L VTy := do
-  -- A pattern type has its base type's values, to the evaluator.
-  let segs := (splitPatternType segs).1
+  -- A subset type has its base type's values, to the evaluator.
+  let segs := (splitPatternSeg segs).1
   -- An instance of a generic type, `G<A, B>`.
   if let some i := segs.findIdx? (·.name == Parser.argsOpen) then
     if i > 0 && segs[0]!.name != Parser.setSeg && segs[0]!.name != Parser.seqSeg && segs[0]!.name != Parser.relSeg then
@@ -2071,10 +2072,10 @@ partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
   | .newtype p u => .newtype p (u.core sp)
   | .param k => .param k .anonymous
 
-/-- The declared type written `segs`, with the patterns of the pattern
+/-- The declared type written `segs`, with the patterns of the subset
 types within it, as the elaborator's `elabPTy` has it. -/
 partial def lowerPTy (segs : Array Ident) : L Fren.Core.PTy := do
-  let (base, seg?) := splitPatternType segs
+  let (base, seg?) := splitPatternSeg segs
   let t ← lowerBasePTy base
   let some seg := seg? | return t
   let some p := seg.pattern? | throw "a pattern type's pattern"

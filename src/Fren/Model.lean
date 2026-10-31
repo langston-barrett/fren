@@ -7,8 +7,8 @@ import FrenCore.Enumeration
 import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
-import FrenCore.PatternTypes
 import FrenCore.Recursion
+import FrenCore.SubsetTypes
 import Lean
 -- keep-sorted end
 

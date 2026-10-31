@@ -5,9 +5,9 @@ import FrenCore.Patterns
 -- keep-sorted end
 
 /-!
-# Pattern types
+# Subset types
 
-The types as declared, with the pattern of each pattern type within them
+The types as declared, with the invariants of each subset type within them
 (`Reqs/Lang/Types#subset-types`), and what a value of such a type must
 satisfy: the *constraint* that a variable, parameter or application of it
 brings, and the *obligation* of a value given where it is declared. Both
@@ -37,10 +37,12 @@ def subsetCheckName (typeName part : String) (position : Nat) : String :=
   s!"subset_{typeName.toLower}_{part}_{position}"
 
 /-- A type as it is declared: `ty`, the type that the type checker sees,
-without patterns; `pat?`, the pattern of the type itself, if it is a
-pattern type; and `elems`, the same for each of its element types, one
-for a set or a sequence, two for a relation, for each type argument of an
-instance of a generic type (`Reqs/Lang/Generics`), and none otherwise. -/
+without invariants; `pat?`, the pattern of the type itself, if it is a
+subset type whose invariant is a pattern test; `invariants`, its named
+invariants, if it is a subset type; and `elems`, the same for each of its
+element types, one for a set or a sequence, two for a relation, for each
+type argument of an instance of a generic type (`Reqs/Lang/Generics`),
+and none otherwise. -/
 structure PTy where
   ty : Ty
   pat? : Option Pat := none
@@ -57,7 +59,7 @@ def typeText (s : String) : String :=
     if c.isWhitespace then (if w.isEmpty then (ws, w) else (ws.push w, "")) else (ws, w.push c)
   " ".intercalate (if last.isEmpty then words else words.push last).toList
 
-/-- The declared type `t`, without patterns anywhere within it. -/
+/-- The declared type `t`, without invariants anywhere within it. -/
 partial def PTy.plain (t : Ty) : PTy :=
   match t with
   | .set e | .seq e => { ty := t, elems := #[PTy.plain e] }
@@ -66,13 +68,13 @@ partial def PTy.plain (t : Ty) : PTy :=
   | _ => { ty := t }
 
 /-- The declared types of the parts of `t` (`Ty.parts`): its element
-types, or its type arguments, without patterns if `t` does not give them. -/
+types, or its type arguments, without invariants if `t` does not give them. -/
 def PTy.parts (t : PTy) : Array PTy :=
   let ps := t.ty.parts.toArray
   if t.elems.size == ps.size then t.elems else ps.map PTy.plain
 
 /-- `t`, with the declared type `args[k]` for each type parameter `k`, with
-its patterns (`Ty.subst`): the declared type of a payload or field of an
+its invariants (`Ty.subst`): the declared type of a payload or field of an
 instance of a generic type. -/
 partial def PTy.subst (args : Array PTy) (t : PTy) : PTy :=
   match t.ty with
@@ -81,21 +83,21 @@ partial def PTy.subst (args : Array PTy) (t : PTy) : PTy :=
 
 /-- The declared type `t`, of the generic function at `fn` with the type
 parameters `params`, with each type parameter as `Ty.param`, as
-`Ty.asParams` has it, its patterns kept. -/
+`Ty.asParams` has it, its invariants kept. -/
 partial def PTy.asParams (fn : Name) (params : Array Name) (t : PTy) : PTy :=
   { t with ty := t.ty.asParams fn params, elems := t.elems.map (·.asParams fn params) }
 
 /-- The declared result type of the instance of a generic function whose
 declared result type is `result`, with its type parameters as `Ty.param`,
-at the type arguments `args`, with its patterns (`PTy.subst`): what each
+at the type arguments `args`, with its invariants (`PTy.subst`): what each
 application of the instance of one without a body brings is this type's
 constraint (`lang::uninterpreted_instance`). Its type is `instanceSig`'s. -/
 def instanceResult (result : PTy) (args : Array Ty) : PTy :=
   { result.subst (args.map PTy.plain) with ty := result.ty.subst args }
 
 /-- Whether the declared type `t` is ordered (`lang::ordered_type`): its
-type without patterns is, a pattern type's base type or the type an alias
-names (`Ty.ordered`). -/
+type without invariants is, a subset type's base type or the type an
+alias names (`Ty.ordered`). -/
 def PTy.ordered (orderedDecl : Name → Bool) (t : PTy) : Bool := t.ty.ordered orderedDecl
 
 /-- The position of the first of the declared types `ts`, a record's
@@ -105,9 +107,9 @@ def PTy.firstUnordered? (orderedDecl : Name → Bool) : List PTy → Option Nat
   | [] => none
   | t :: ts => if t.ordered orderedDecl then (PTy.firstUnordered? orderedDecl ts).map (· + 1) else some 0
 
-/-- Whether `t` has a pattern, at the top or in an element type
-(`lang::subset_widening`). -/
-partial def PTy.patterned (t : PTy) : Bool := t.pat?.isSome || !t.invariants.isEmpty || t.elems.any (·.patterned)
+/-- Whether `t` is a subset type, at the top or in an element type: whether
+it has a pattern or invariants there (`lang::subset_widening`). -/
+partial def PTy.restricted (t : PTy) : Bool := t.pat?.isSome || !t.invariants.isEmpty || t.elems.any (·.restricted)
 
 /-- What a front end knows of a record's fields, of an enumeration's
 variants' payloads, or of a newtype's field, for their constraints. -/
@@ -128,7 +130,8 @@ def DataShape.inst (d : DataShape) (args : Array PTy) : DataShape :=
   if args.isEmpty then d else { d with parts := d.parts.map (·.map (·.subst args)) }
 
 /-- What a value of a type must satisfy beyond its type, as a formula about
-the value, built from parts (`Reqs/Lang/Types#meaning`). -/
+the value, built from parts
+(`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`). -/
 inductive Cons where
   /-- A declared subset invariant, as an application of its predicate. -/
   | predicate (invariant : Invariant)
@@ -172,7 +175,9 @@ def Cons.allOf? (cs : Array Cons) : Option Cons :=
 
 mutual
 /-- The constraint that a value of the declared type `t` brings, `none` if
-it brings none (`Reqs/Lang/Types#meaning`): its pattern; that a `Nat` is at
+it brings none
+(`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`): its
+invariants, or its pattern where it has no invariants; that a `Nat` is at
 least 0, where `nat` says that one brings that here, which it does within
 a record or a payload, where it is an `Int`; the constraints of a record's
 fields, a newtype's field, and an enumeration's payloads, guarded by their
@@ -212,8 +217,9 @@ end
 
 /-- The constraint that the `k`th value of the payload of the variant `v`
 of the recursive enumeration `p` brings where it is read, of the value
-read (`Reqs/Lang/Types#meaning`). A selector of another variant reads a
-value that nothing determines, so the constraint holds of it too. -/
+read (`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`).
+A selector of another variant reads a value that nothing determines, so
+the constraint holds of it too. -/
 def readCons (shapes : Name → Option DataShape) (p : Name) (v k : Nat) : Option Cons := do
   let d ← shapes p
   unless d.recursive do none
@@ -221,9 +227,9 @@ def readCons (shapes : Name → Option DataShape) (p : Name) (v k : Nat) : Optio
   t.cons shapes true
 
 /-- The obligation of a value of type `ty`, of the pattern `top?`, if it
-is a pattern type, whose element types' obligations are `e1?` and, for a
-relation, `e2?` (`lang::obligation`): that it matches its pattern, and
-that each element, or each pair's members, meets theirs. -/
+has a pattern-test invariant, whose element types' obligations are `e1?`
+and, for a relation, `e2?` (`lang::obligation`): that it matches its
+pattern, and that each element, or each pair's members, meets theirs. -/
 def obligationCons (ty : Ty) (top? : Option Pat) (e1? e2? : Option Cons) : Option Cons :=
   let own : Array Cons := match ty with
     | .set e | .seq e => (e1?.map (.elems (ty matches .seq _) e)).toArray
@@ -234,11 +240,11 @@ def obligationCons (ty : Ty) (top? : Option Pat) (e1? e2? : Option Cons) : Optio
 mutual
 /-- The obligation of a value given where the type `t` is declared, `none`
 if it has none (`lang::subset_widening`, `lang::obligation`): its
-pattern, and its elements' patterns, for every element. A record's or an
-enumeration's own constraints need no obligation: its values were built to
-meet them. But an instance's payloads and fields whose declared types
+invariants, and its elements' invariants, for every element. A record's or
+an enumeration's own constraints need no obligation: its values were built
+to meet them. But an instance's payloads and fields whose declared types
 mention its type parameters were built to meet the parameters', which have
-no patterns, so they have the obligations of their types with the
+no invariants, so they have the obligations of their types with the
 instance's type arguments (`instanceObligation`). `shapes` gives what is
 known of each record and enumeration. -/
 partial def PTy.obligation (shapes : Name → Option DataShape) (t : PTy) : Option Cons :=
@@ -333,7 +339,7 @@ declared, `none` if it has none there (`lang::obligation`). -/
 def siteObligation (place : ValuePlace) (o? : Option Cons) : Option Cons :=
   if place == .binding then none else o?
 
-/-! ## Finite pattern types -/
+/-! ## The pattern-test invariant fragment, and where subset types are written -/
 
 /-- The integers that the pattern `p` matches, in increasing order, if they
 are finitely many: every alternative is a bounded range or an integer
@@ -347,13 +353,13 @@ partial def Pat.intValues? : Pat → Option (Array Int)
     return all.foldl (init := #[]) fun acc v => if acc.back? == some v then acc else acc.push v
   | _ => none
 
-/-- Whether a pattern type is finite, from whether its base type is,
-whether that is `Int` or `Nat`, and whether its pattern bounds it
-(`lang::pattern_finite`). -/
+/-- Whether a subset type is finite, from whether its base type is,
+whether that is `Int` or `Nat`, and whether its pattern-test invariant
+bounds it (`lang::pattern_finite`). -/
 def patternFinite (baseFinite integers bounded : Bool) : Bool := baseFinite || (integers && bounded)
 
-/-- Where a pattern type is written (`lang::subset_place`). -/
-inductive PatternPlace where
+/-- Where a subset type is written (`lang::subset_place`). -/
+inductive SubsetPlace where
   /-- At the top of a declared type. -/
   | top
   | field
@@ -361,17 +367,17 @@ inductive PatternPlace where
   | element
   deriving Inhabited, DecidableEq, Repr
 
-/-- Whether a pattern type written at `place` is in the decidable core,
+/-- Whether a subset type written at `place` is in the decidable core,
 where `recursive` says whether a payload's enumeration is recursive
 (`lang::subset_place`). -/
-def patternPlaceDecidable (place : PatternPlace) (recursive : Bool) : Bool :=
+def subsetPlaceDecidable (place : SubsetPlace) (recursive : Bool) : Bool :=
   !(place == .element || (place == .payload && recursive))
 
 /-- Whether a value is accepted where a type is declared, and whether it
 has an obligation, from whether `widening` accepts the types without their
-patterns and whether the declared type has a pattern
+invariants and whether the declared type is a subset type
 (`lang::subset_widening`). -/
-def patternWidening (widened patterned : Bool) : Bool × Bool := (widened, widened && patterned)
+def subsetWidening (widened restricted : Bool) : Bool × Bool := (widened, widened && restricted)
 
 /-! ## Messages -/
 
@@ -382,7 +388,7 @@ def undecidableElementsMsg : Msg :=
     label? := some "outside the decidable core"
     notes := #["help: use an unrestricted element type, and say of the elements that the spec reads what it needs"] }
 
-/-- A pattern type as a payload of a recursive enumeration, whose
+/-- A subset type as a payload of a recursive enumeration, whose
 constraint holds of every payload, at every depth (`lang::subset_place`). -/
 def undecidableRecursivePayloadMsg : Msg :=
   { code? := some "F0714", headline := "this is outside the decidable core: a recursive enumeration's payload's constraint holds of every payload, at every depth"

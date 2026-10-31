@@ -569,7 +569,7 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
             label? := some "not defined under the earlier invariants"
           }
         else msg
-      else if let some label := r.patTy?.bind (·.dropPrefix? "@invariant:") then
+      else if let some label := r.subsetTy?.bind (·.dropPrefix? "@invariant:") then
         if m.severity == .error then
           { msg with
             code? := some "F0661"
@@ -610,11 +610,11 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     -- At its keyword, `forall` or `exists`.
     printDiag args.paint files { file, span := { start := pos, stop := pos + 6 }, msg }
     return (#[], #[msg], true)
-  -- A call's binding of an input of a pattern type, with that type, as
+  -- A call's binding of an input of a subset type, with that type, as
   -- the solver's check has it (`Fren.Core.Inst.typed`).
   let typedOf (r : Fren.Core.CheckResult) : Fren.Core.CheckResult :=
     match r.kind, r.prop?, r.target? with
-    | .inst, some w, some (_, a) => { r with patTy? := (c.insts.find? (·.name == w)).bind fun i => (i.typed.find? (·.1 == a)).map (·.2) }
+    | .inst, some w, some (_, a) => { r with subsetTy? := (c.insts.find? (·.name == w)).bind fun i => (i.typed.find? (·.1 == a)).map (·.2) }
     | _, _, _ => r
   let results := markInterpreted prelude c ((rep.results.filter keep).map typedOf)
   let mut shown := #[]

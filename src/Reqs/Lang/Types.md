@@ -612,9 +612,10 @@ record or newtype whose fields have finite types, a set or relation type
 whose element types are finite, and a subset type whose base type is
 finite or whose invariant is a pattern test that matches finitely many
 integers, as `lang::pattern_finite` says. `Int`, `Nat`, `String` and abstract types are
-not finite, and neither is any sequence type. With aliases `Four`, `Three`,
-and `Two` restricting integers to `0..=3`, `0..=2`, and `1..=2`, respectively,
-`struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>` and
+not finite, and neither is any sequence type. With subset types `Four`,
+`Three` and `Two` of `Int`, whose invariants are the pattern tests
+`0..=3`, `0..=2` and `1..=2`, respectively, `struct P { x: Four }`,
+`enum Small { S(Three), T }`, `Option<Three>` and
 `Pair<Bool, Two>` are finite.
 
 These facts are of a type as it is declared, with its subset types, which

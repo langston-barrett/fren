@@ -1,7 +1,7 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
-import FrenCore.PatternTypes
 import FrenCore.Quantifier
+import FrenCore.SubsetTypes
 -- keep-sorted end
 
 /-!
@@ -39,7 +39,7 @@ inductive ElementUse where
   /-- In the members of the guard of a quantifier within the body. -/
   | receiver
   /-- In an argument of an application of an uninterpreted function that
-  brings facts: a `Nat` or a pattern type as its result, or a contract. -/
+  brings facts: a `Nat` or a subset type as its result, or a contract. -/
   | factArgument
   /-- In an argument of a defined function whose body has a quantifier over
   a type that is not listed, directly or through another: once the body is

@@ -47,7 +47,7 @@ elab "#check_subset_obligations" : command => do
       | throwError "missing subset output component"
     let (wrongResults, _, _) ← Fren.checkComp wrong #[.definedness]
     unless wrongResults.any (fun r => r.verdict == Fren.Core.Verdict.fail &&
-        r.patTy? == some "@invariant:subset_obligation_test::Byte::high") do
+        r.subsetTy? == some "@invariant:subset_obligation_test::Byte::high") do
       throwError "the failing high invariant did not retain its logical identity"
     let some refinement := state.globals.get? `subset_obligation_test.output_membership
       | throwError "missing refinement expectation block"

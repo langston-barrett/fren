@@ -1,10 +1,10 @@
--- Generic types with pattern types and aliases as type arguments: a payload
+-- Generic types with subset types and aliases as type arguments: a payload
 -- or field of a type parameter brings its argument's constraint, a value
 -- given where an instance is declared has its arguments' obligations, and a
--- pattern type's base type may be an instance. In a module, since Lean has
+-- subset type's base type may be an instance. In a module, since Lean has
 -- an `Option` of its own.
 
-mod generics_pattern_types
+mod generics_subset_types
 
 type Byte = n: Int where invariant: n is 0..=255
 
@@ -34,7 +34,7 @@ proc holder(
     expect tagged: match t { Tagged::Plain(b) => b <= 255, Tagged::Marked(m, b) => m <= 3 and b >= 0 }
     expect present: s != Option::None
     expect applied: match read(n) { Option::Some(b) => b >= 0, Option::None => true }
-    expect bounded: y < 255   --~ error: expectation `generics_pattern_types::holder::bounded` does not hold
+    expect bounded: y < 255   --~ error: expectation `generics_subset_types::holder::bounded` does not hold
 }
 
 proc giver(n: Int): (
@@ -45,18 +45,18 @@ proc giver(n: Int): (
     det some: Present,
 ) {
     out ok := if 0 <= n <= 255 then Option::Some(n) else Option::None
-    out bad := Option::Some(n)   --~ error: invariant `generics_pattern_types::Byte::invariant` does not hold
-    out pair := Pair { fst := n, snd := n }   --~ error: invariant `generics_pattern_types::Byte::invariant` does not hold
-    out marked := Tagged::Marked(n, 0)   --~ error: invariant `generics_pattern_types::Mark::invariant` does not hold
-    out some := if n > 0 then Option::None else Option::Some(n)   --~ error: invariant `generics_pattern_types::Present::invariant` does not hold
-    call h := holder(Option::Some(n), Option::None, Pair { fst := 0, snd := Option::None }, Tagged::Plain(0), Option::Some(0), n)   --~ error: invariant `generics_pattern_types::Byte::invariant` does not hold
+    out bad := Option::Some(n)   --~ error: invariant `generics_subset_types::Byte::invariant` does not hold
+    out pair := Pair { fst := n, snd := n }   --~ error: invariant `generics_subset_types::Byte::invariant` does not hold
+    out marked := Tagged::Marked(n, 0)   --~ error: invariant `generics_subset_types::Mark::invariant` does not hold
+    out some := if n > 0 then Option::None else Option::Some(n)   --~ error: invariant `generics_subset_types::Present::invariant` does not hold
+    call h := holder(Option::Some(n), Option::None, Pair { fst := 0, snd := Option::None }, Tagged::Plain(0), Option::Some(0), n)   --~ error: invariant `generics_subset_types::Byte::invariant` does not hold
 }
 
 -- A quantifier ranges over an instance's values that meet its arguments'
--- patterns, as over a pattern type's.
+-- invariants, as over a subset type's.
 type Trit = n: Int where invariant: n is 0..=2
 set_option fren.lint.assertions_on_constants "allow" in
-expect digits: forall (d: Trit), d != 2   --~ error: expectation `generics_pattern_types::digits` does not hold
+expect digits: forall (d: Trit), d != 2   --~ error: expectation `generics_subset_types::digits` does not hold
 type TritElement = n: Int where invariant: n is 0..=2
 set_option fren.lint.assertions_on_constants "allow" in
 expect small: forall (o: Option<TritElement>), o != Option::Some(3)
@@ -65,4 +65,4 @@ set_option fren.lint.assertions_on_constants "allow" in
 expect pairs: forall (p: Pair<Bool, OneOrTwo>), p.snd >= 1
 type CounterexampleTrit = n: Int where invariant: n is 0..=2
 set_option fren.lint.assertions_on_constants "allow" in
-expect too_small: forall (o: Option<CounterexampleTrit>), o != Option::Some(2)   --~ error: expectation `generics_pattern_types::too_small` does not hold
+expect too_small: forall (o: Option<CounterexampleTrit>), o != Option::Some(2)   --~ error: expectation `generics_subset_types::too_small` does not hold

@@ -5,8 +5,8 @@ import FrenCore.Evidence
 import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Names
-import FrenCore.PatternTypes
 import FrenCore.Procedures
+import FrenCore.SubsetTypes
 -- keep-sorted end
 
 /-!
@@ -91,9 +91,10 @@ structure Binder where
 
 /-! ### Patterns within types
 
-A type is a flat array of segments (`typeExpr`), so a pattern type's
-pattern is a segment of its own, whose name holds the pattern written out
-by `Pattern.encode`, and which `Pattern.decode` reads back. -/
+A type is a flat array of segments (`typeExpr`), so a type's pattern, the
+pattern of a pattern-test invariant, is a segment of its own, whose name
+holds the pattern written out by `Pattern.encode`, and which
+`Pattern.decode` reads back. -/
 
 /-- The atoms of an encoded pattern, each prefixed by its length, so that
 any string literal's characters fit. -/
@@ -180,7 +181,7 @@ private partial def decodeAt (as : Array String) : D Pattern := do
 /-- The pattern that `Pattern.encode` wrote as `s`. -/
 def Pattern.decode (s : String) : Except String Pattern := (decodeAt (atomsOf s.toList)).run' 0
 
-/-- The prefix of the name of a pattern type's pattern's segment, which no
+/-- The prefix of the name of a type's pattern's segment, which no
 identifier can start with: it follows the segments of the base type, or,
 for a base type that is a set, relation or sequence, precedes them
 (`patOuterSeg`), so that it is never read as an element type's. -/
@@ -193,9 +194,9 @@ def patOuterSeg : String := Fren.Core.patOuterSeg
 def Pattern.seg (p : Pattern) (outer : Bool) : Ident :=
   { name := (if outer then patOuterSeg else patSeg) ++ p.encode, span := p.span }
 
-/-- The type `segs`, split into its base type and its pattern, if it is a
-pattern type (`patSeg`). -/
-def splitPatternType (segs : Array Ident) : Array Ident × Option Ident :=
+/-- The type `segs`, split into its base type and its pattern's segment,
+if it has one (`patSeg`). -/
+def splitPatternSeg (segs : Array Ident) : Array Ident × Option Ident :=
   match segs[0]?, segs.back? with
   | some f, some b =>
     if f.name.startsWith patOuterSeg then (segs.extract 1, some f)
@@ -204,7 +205,7 @@ def splitPatternType (segs : Array Ident) : Array Ident × Option Ident :=
     else if b.name.startsWith patSeg && segs.size > 1 then (segs.pop, some b) else (segs, none)
   | _, _ => (segs, none)
 
-/-- Whether the segment `s` is a pattern type's pattern's. -/
+/-- Whether the segment `s` is a type's pattern's. -/
 def Ident.isPatternSeg (s : Ident) : Bool := s.name.startsWith patSeg || s.name.startsWith patOuterSeg
 
 /-- The pattern of the segment `seg` that `Pattern.seg` made. -/
@@ -1065,8 +1066,7 @@ def fnArrow : String := Fren.Core.fnArrow
 
 mutual
 /-- A type: a path, `Set<T>`, `Seq<T>`, `Rel<A, B>`, or an instance of a
-generic type, `G<A, B>`, optionally followed by `is` and a pattern, for a
-pattern type. -/
+generic type, `G<A, B>`. -/
 partial def typeExpr : P (Array Ident) := baseType
 
 /-- A declared type path or a collection/generic instance of declared

@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.PatternTypes
+import FrenCore.SubsetTypes
 -- keep-sorted end
 
 /-!
@@ -84,8 +84,9 @@ end
 
 /-- What a type's former gives it by itself (`lang::former`): whether it is
 finite when its constituents are, and whether its values can be
-arbitrarily large whatever its constituents. A pattern type's former is
-its base type's, and it is also finite when its pattern bounds it. -/
+arbitrarily large whatever its constituents. A subset type's former is
+its base type's, and it is also finite when its pattern-test invariant
+bounds it. -/
 structure Former where
   finite : Bool
   growing : Bool

@@ -1,5 +1,5 @@
--- The facts of types over their constituents: a pattern type whose
--- pattern matches finitely many integers is finite, and so is a type built
+-- The facts of types over their constituents: a subset type whose
+-- pattern test matches finitely many integers is finite, and so is a type built
 -- from it; a newtype over a finite type is listed, as a record is.
 -- fren-covers: lang::type_facts, lang::quantified_type
 mod type_facts

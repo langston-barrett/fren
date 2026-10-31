@@ -303,7 +303,7 @@ def newtypeUnbounded (underUnbounded : Bool) : Bool := underUnbounded
 /-- Whether the values of `t` are ordered, so that `<`, `<=`, `>`, `>=`,
 `min` and `max` apply to them (`lang::ordered_type`): an `Int`, a `Nat` or
 a `String`, and an enumeration, record or newtype declared `ordered`, which
-`orderedDecl` says of its path. A pattern type is its base type here, and
+`orderedDecl` says of its path. A subset type is its base type here, and
 a type alias the type it names, so each is ordered exactly when that is. -/
 def Ty.ordered (orderedDecl : Name → Bool) : Ty → Bool
   | .int | .nat | .string => true

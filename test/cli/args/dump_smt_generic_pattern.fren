@@ -1,5 +1,5 @@
 --@ args: check --dump-smt
--- `--dump-smt` of pattern types as type arguments: a payload of a type
+-- `--dump-smt` of subset types as type arguments: a payload of a type
 -- parameter brings its argument's constraint, guarded by its variant, and
 -- one of an element type quantifies over the elements, with `fmf-bound`.
 set_option fren.lint.undecidable "allow"

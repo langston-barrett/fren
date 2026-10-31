@@ -6,7 +6,7 @@ enum Decision { GiveUp, RetryAfter(Seconds) }  -- Rust-style enums
 enum Method { Get, Put, Post, Delete }
 type Status = status: Nat                      -- type alias with an invariant
     where status_range: status is 100..=599    -- `status_range` is a label
-type Pos = n: Nat where positive: n is 1..     -- type alias using pattern type
+type Pos = n: Nat where positive: n is 1..     -- type alias using subset type
 
 const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)

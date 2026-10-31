@@ -1,6 +1,6 @@
 --@ args: quickcheck
 -- Testing draws inputs, outputs, fields, elements and functions' values
--- from their pattern types: every expectation here holds of the values of
+-- from their subset types: every expectation here holds of the values of
 -- its types, and testing finds no counterexample, though values of the
 -- base types refute each one.
 type Byte = n: Int where invariant: n is 100..=200

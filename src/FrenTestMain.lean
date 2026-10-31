@@ -475,7 +475,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/cover.fren",
    "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren", "test/cli/fmt/closures.fren",
    "test/cli/fmt/newtypes.fren",
-   "test/cli/fmt/table.fren", "test/cli/fmt/pattern_types.fren",
+   "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren",
    "test/cli/fmt/contract.fren",
    "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
@@ -535,10 +535,11 @@ def fmtPending : List String :=
    "test/cli/types/f0449_literal.fren", "test/ui/checks/contracts.fren",
    "test/ui/checks/counterexample_confirmed.fren", "test/ui/checks/enumerated.fren",
    "test/ui/checks/enumerated_errors.fren", "test/ui/checks/enumerated_functions.fren", "test/ui/checks/guards.fren",
-   "test/ui/checks/pattern_obligations.fren", "test/ui/checks/recursion.fren",
+   "test/ui/checks/recursion.fren",
    "test/ui/checks/recursion_bool_payload.fren", "test/ui/checks/recursion_contract_queue.fren",
    "test/ui/checks/recursion_hoare.fren", "test/ui/checks/recursion_independent.fren",
-   "test/ui/checks/recursive_subsets.fren", "test/ui/checks/simp_recursion_depth.fren", "test/ui/checks/tables.fren",
+   "test/ui/checks/recursive_subsets.fren", "test/ui/checks/simp_recursion_depth.fren",
+   "test/ui/checks/subset_obligations.fren", "test/ui/checks/tables.fren",
    "test/ui/checks/tables_scrutinee.fren", "test/ui/lang/cardinality.fren", "test/ui/lang/chained_comparisons.fren",
    "test/ui/lang/checking_static.fren", "test/ui/lang/constants.fren", "test/ui/lang/constants_imported.fren",
    "test/ui/lang/datatypes.fren", "test/ui/lang/datatypes_static.fren", "test/ui/lang/declared_types_static.fren",
@@ -547,19 +548,20 @@ def fmtPending : List String :=
    "test/ui/lang/generic_functions.fren", "test/ui/lang/generic_functions_contracts.fren",
    "test/ui/lang/generic_functions_static.fren", "test/ui/lang/generics.fren",
    "test/ui/lang/generics_guards_contracts.fren", "test/ui/lang/generics_pattern_elements.fren",
-   "test/ui/lang/generics_pattern_types.fren", "test/ui/lang/generics_recursive_within.fren",
-   "test/ui/lang/generics_static.fren", "test/ui/lang/guards.fren", "test/ui/lang/guards_static.fren",
+   "test/ui/lang/generics_recursive_within.fren", "test/ui/lang/generics_static.fren",
+   "test/ui/lang/generics_subset_types.fren", "test/ui/lang/guards.fren", "test/ui/lang/guards_static.fren",
    "test/ui/lang/higher_order_obligations.fren", "test/ui/lang/lambda_match.fren", "test/ui/lang/lean_names.fren",
    "test/ui/lang/let.fren", "test/ui/lang/mentions_static.fren", "test/ui/lang/multi_match_errors.fren",
    "test/ui/lang/nat_fields.fren", "test/ui/lang/nat_static.fren", "test/ui/lang/nested_patterns.fren",
    "test/ui/lang/nested_patterns_static.fren", "test/ui/lang/newtypes.fren", "test/ui/lang/or_patterns.fren",
    "test/ui/lang/or_patterns_static.fren", "test/ui/lang/ordered_structs.fren", "test/ui/lang/pattern_binders.fren",
-   "test/ui/lang/pattern_binders_generic.fren", "test/ui/lang/pattern_tests.fren", "test/ui/lang/pattern_types.fren",
-   "test/ui/lang/pattern_types_meaning.fren", "test/ui/lang/prelude.fren", "test/ui/lang/prelude_shadowing.fren",
+   "test/ui/lang/pattern_binders_generic.fren", "test/ui/lang/pattern_tests.fren",
+   "test/ui/lang/prelude.fren", "test/ui/lang/prelude_shadowing.fren",
    "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_elements.fren", "test/ui/lang/quantifiers_let.fren",
    "test/ui/lang/quantifiers_places.fren", "test/ui/lang/record_updates.fren", "test/ui/lang/sequences.fren",
    "test/ui/lang/shadowing.fren", "test/ui/lang/shadowing_static.fren",
-   "test/ui/lang/structural_recursion_static.fren", "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
+   "test/ui/lang/structural_recursion_static.fren", "test/ui/lang/subset_types.fren",
+   "test/ui/lang/subset_types_meaning.fren", "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren", "test/ui/lang/type_facts.fren",
    "test/ui/lints/cardinality_ordered_newtypes.fren", "test/ui/lints/closures.fren",
    "test/ui/lints/expressions.fren", "test/ui/lints/generic_functions_unused.fren", "test/ui/lints/guards.fren",
@@ -1575,7 +1577,7 @@ def decisions (path : String) : IO (Array String) := do
   return failures
 
 /-- `fren mutate` elaborates a file again when a mutant of an earlier file
-changes a type alias or a pattern type that it uses (`FrenCli.skipFile?`):
+changes a type alias or a subset type that it uses (`FrenCli.skipFile?`):
 the mutant's state is then that of elaborating every file again, and
 differs from the original's. -/
 def laterFiles : IO (Array String) := do
@@ -1702,11 +1704,11 @@ def enumerationAgrees : IO (Array String) := do
         if bad then
           let bounded := if r.bounded?.isSome then " up to the bound" else ""
           failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
-    -- A value given where a pattern type is declared stays the solver's
+    -- A value given where a subset type is declared stays the solver's
     -- (`check::by_evidence`): its result is not dropped.
     for (item, ss) in solver do
       for (k, s) in ss do
-        unless s.kind == .definedness && s.patTy?.isSome do continue
+        unless s.kind == .definedness && s.subsetTy?.isSome do continue
         let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
         unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures

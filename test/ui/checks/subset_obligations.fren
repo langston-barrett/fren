@@ -1,5 +1,5 @@
--- The obligations of pattern types: each value given where one is
--- declared is checked to match its pattern, and fails where it may not.
+-- The obligations of subset types: each value given where one is
+-- declared is checked to satisfy its invariants, and fails where it may not.
 -- fren-covers: check::subset_obligation, lang::subset_widening
 
 type Byte = n: Int where invariant: n is 0..=255

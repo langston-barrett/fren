@@ -32,7 +32,7 @@ proc elements(q: Seq<Int>): (negative?) {
     expect nonempty: when negative?, q != []
 }
 
--- A pattern type's values, and a `Nat`'s.
+-- A subset type's values, and a `Nat`'s.
 type Nonnegative = n: Int where invariant: n is 0..
 set_option fren.lint.undecidable "allow" in
 proc patterns(n: Int): (small?, few?) {

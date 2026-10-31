@@ -1290,7 +1290,7 @@ def toReason : Fren.Core.Reason → check.Reason
   | .selected => .Selected
   | .noLean => .NoLean
   | .notSettable => .NotSettable
-  | .patternType => .SubsetType
+  | .subsetType => .SubsetType
   | .noWitnessSearch => .NoWitnessSearch
   | .noValue => .NoValue
   | .notEnumerated => .NotEnumerated

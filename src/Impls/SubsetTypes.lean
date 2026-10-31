@@ -1,19 +1,19 @@
 -- keep-sorted start
 import Fren.Impl
-import FrenCore.PatternTypes
+import FrenCore.SubsetTypes
 import Reqs.Impl
 import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
 
-/-! # Pattern types (`Reqs/Lang/Types#subset-types`, `Reqs/Impl#interpretations`)
+/-! # Subset types (`Reqs/Lang/Types#subset-types`, `Reqs/Impl#interpretations`)
 
-The rules of pattern types, proved of the functions that both front ends
-and the evaluator call: membership in an integer pattern, the count of
-its integers, the obligation of a value, and an interpretation's
-obligation. -/
+The rules of subset types, proved of the functions that both front ends
+and the evaluator call: for the pattern-test invariant fragment,
+membership in an integer pattern and the count of its integers; and the
+obligation of a value, and an interpretation's obligation. -/
 
-namespace Fren.Impls.PatternTypes
+namespace Fren.Impls.SubsetTypes
 
 /-- A bound, as the Reqs write it. -/
 def toBound : Option Int → lang.Bound
@@ -86,8 +86,9 @@ impl pattern_member: lang::pattern_member for (ivs : List (Option Int × Option 
     exact ⟨⟨hi, (lo_iff _ x).2 hhold.1⟩, (hi_iff _ x).2 hhold.2⟩
 
 -- How many integers a pattern matches, counted from its bounds by the
--- function that both front ends call to range a quantifier over a pattern
--- type (`Fren.Core.Pat.intCount?`, `Fren.Core.PTy.count?`).
+-- function that both front ends call to range a quantifier over a subset
+-- type with a pattern-test invariant (`Fren.Core.Pat.intCount?`,
+-- `Fren.Core.PTy.count?`).
 impl pattern_count: lang::pattern_count for (ivs : List (Option Int × Option Int)) {
   alts := Fren.Seq.ofList (ivs.map toAlt),
   finite? := Fren.Core.intervalsFinite ivs,
@@ -211,4 +212,4 @@ impl obligation: lang::obligation for (pl : Fren.Core.ValuePlace) (k : lang.Valu
     simp [fren_spec, toValuePlace, sampleTy, sampleCons, dutyOf, Fren.Core.siteObligation, Fren.Core.obligationCons,
       Fren.Core.Cons.allOf?]
 
-end Fren.Impls.PatternTypes
+end Fren.Impls.SubsetTypes

@@ -553,8 +553,8 @@ partial def splitLets (t : String) : String × String × String :=
   ((t.take (n - closes)).toString, inner, (t.takeEnd closes).toString)
 
 /-- The facts that the application `app`, of an uninterpreted function into
-`Nat`, into a pattern type or with postconditions, or a read of a
-recursive enumeration's payload of a pattern type, brings
+`Nat`, into a subset type or with postconditions, or a read of a
+recursive enumeration's payload of a subset type, brings
 (`Fren.Core.appFacts`), from what `funs` says of its function
 (`State.appFuns`) and `types` of its head symbol (`State.funFacts`): that
 it is at least 0, if its result is a `Nat`, that it matches its type, and
@@ -823,7 +823,7 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
       defs := c.defs.map fun (d, e) => (d, s!"(= {quote d.toString} {e})", e)
       -- Numbered in order within each item.
       indexes := c.indexes.mapIdx fun j (n, place, _, goal, t) =>
-        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal, patTy? := t.map (·.1), excludeSelf := c.distributed.contains n }
+        { prop := n, k := (c.indexes.extract 0 j).filter (·.1 == n) |>.size, place, goal, subsetTy? := t.map (·.1), excludeSelf := c.distributed.contains n }
       tables := c.tables.mapIdx fun j (n, place, _, q, goal) =>
         { site := { prop := n, k := (c.tables.extract 0 j).filter (·.1 == n) |>.size, place, goal, excludeSelf := c.distributed.contains n }, goal := q } }
   -- An uninterpreted function's contract, as both front ends build it

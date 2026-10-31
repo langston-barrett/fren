@@ -397,7 +397,7 @@ update binds its updated value with, and `let` and `where` become
 defined function's body may have one. -/
 def unfoldDefined (e : Expr) : MetaM Expr := do
   let s ← getState
-  -- A pattern type's obligation is its proposition (`Fren.typeObligation`).
+  -- A subset type's obligation is its proposition (`Fren.typeObligation`).
   let ds := s.defined.foldl (init := ({} : NameSet).insert ``Fren.typeObligation) fun acc _ d =>
     d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
   -- And the clauses of contracts, which the questions about applications
@@ -1173,7 +1173,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- Numbered in order within each item.
       indexes := ← indexes.mapIdxM fun j (n, place, _, _, goal) => do
         let k := (indexes.extract 0 j).filter (·.1 == n) |>.size
-        return { prop := n, k, place, goal := ← beta goal, patTy? := obligationTy? goal, excludeSelf := isLeafObligation goal }
+        return { prop := n, k, place, goal := ← beta goal, subsetTy? := obligationTy? goal, excludeSelf := isLeafObligation goal }
       tables := tables.mapIdx fun j (n, place, q, goal) =>
         let k := (tables.extract 0 j).filter (·.1 == n) |>.size
         { site := { prop := n, k, place, goal, excludeSelf := isLeafObligation goal }, goal := q }
@@ -1209,7 +1209,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let all := facts ++ outFacts
     let facts := all ++ (all.map fun (n, f) => (n, f.replaceFVars copiedFvs primes)).filter (!all.contains ·)
     let outFacts := outFacts.map (·.2)
-    -- The applications of functions into pattern types, and the reads of
+    -- The applications of functions into subset types, and the reads of
     -- recursive enumerations' payloads, that bring a constraint, each with
     -- its predicate (`Reqs/Check`).
     let st ← getState

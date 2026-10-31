@@ -524,13 +524,13 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       -- The `n`th index at a position is the `n`th goal there: a name of a
       -- `let` or `where` repeats its definition's indexes where it is
       -- mentioned.
-      -- A pattern type's obligation, which the evaluator does not know
+      -- A subset type's obligation, which the evaluator does not know
       -- of, is not confirmed.
-      let goal? := if x.patTy?.isSome then none else positions[j]?.bind fun pos =>
+      let goal? := if x.subsetTy?.isSome then none else positions[j]?.bind fun pos =>
         let n := ((positions.extract 0 j).zip (core.indexes.extract 0 j)).filter (fun (p, y) =>
-          p == pos && y.prop == x.prop && y.patTy?.isNone) |>.size
+          p == pos && y.prop == x.prop && y.subsetTy?.isNone) |>.size
         let goals := (((exsOf x.prop).flatMap (·.indexGoals)).filter (·.1 == pos)).map (·.2)
-        let count := (core.indexes.zip positions).filter (fun (site, position) => site.prop == x.prop && site.patTy?.isNone && position == pos) |>.size
+        let count := (core.indexes.zip positions).filter (fun (site, position) => site.prop == x.prop && site.subsetTy?.isNone && position == pos) |>.size
         let goals := if count < goals.size then groupedNativeGoals goals else goals
         goals[n]?.map (pos, ·)
       { x with goal := (x.goal, match goal? with

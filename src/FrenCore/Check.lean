@@ -1,9 +1,9 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
 import FrenCore.Names
-import FrenCore.PatternTypes
 import FrenCore.Recursion
 import FrenCore.SeqElems
+import FrenCore.SubsetTypes
 import FrenCore.Table
 import Lean.Data.Name
 -- keep-sorted end
@@ -252,10 +252,10 @@ structure CheckResult where
   rows? : Option (Nat × Nat) := none
   /-- For `completeness`, `disjointness` and `reachability`: the question. -/
   goal? : Option TableGoal := none
-  /-- For `definedness`, of a value given where a pattern type is declared,
-  and for `inst`, of an input of a pattern type: that type, as written
+  /-- For `definedness`, of a value given where a subset type is declared,
+  and for `inst`, of an input of a subset type: that type, as written
   (`Reqs/Check#subset-types`). -/
-  patTy? : Option String := none
+  subsetTy? : Option String := none
   verdict : Verdict
   detail : Detail := .none
   /-- For `cover`: its query depends on an interpretation, so its witness's
@@ -444,9 +444,9 @@ structure IndexSite (F : Type) where
   k : Nat
   place : IndexPlace
   goal : F
-  /-- For a value given where a pattern type is declared, rather than an
+  /-- For a value given where a subset type is declared, rather than an
   index: that type, as written (`Reqs/Check#subset-types`). -/
-  patTy? : Option String := none
+  subsetTy? : Option String := none
   /-- Distributed Boolean clauses cannot justify their own evaluation sites. -/
   excludeSelf : Bool := false
   deriving Inhabited
@@ -843,7 +843,7 @@ assumptions, `k`'s bindings and the earlier calls
 def checkInst (c : Comp F) (k : Nat) (i : Inst F) (a : Name × F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .inst, comp := c.path, prop? := some i.name, target? := some (i.comp, a.1), verdict, detail
-      patTy? := (i.typed.find? (·.1 == a.1)).map (·.2) }
+      subsetTy? := (i.typed.find? (·.1 == a.1)).map (·.2) }
   let hyps := c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings)
   let q ← b.query hyps a.2 true
   match expectVerdict q.answer, q with
@@ -936,7 +936,7 @@ otherwise the assumptions, calls and requirements. -/
 def checkDefinedness (c : Comp F) (site : IndexSite F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .definedness, comp := c.path, prop? := some site.prop, index? := some site.k, verdict, detail
-      patTy? := site.patTy? }
+      subsetTy? := site.subsetTy? }
   let hyps := c.defEqs .definedness ++ c.siteHyps b site
   let q ← b.query hyps site.goal true
   match expectVerdict q.answer, q with
@@ -1193,7 +1193,7 @@ def solverOptions (strings sets : Bool) : List (String × String) :=
     ++ (if sets then [("sets-exp", "true")] else [])
 
 /-- The cvc5 option for a query with a quantifier over a collection's
-elements, which a pattern type within an element type brings
+elements, which a subset type within an element type brings
 (`Reqs/Cli#solver-queries`): `fmf-bound`, with which cvc5 finds models of
 quantifiers that membership bounds. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
@@ -1582,7 +1582,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
     let what := match r.kind, r.target? with
       | .realizable, some (f, _) => s!"the postconditions of `{showComp f}` can hold"
       | .realizable, _ => s!"{subject} is realizable"
-      | .inst, some (sub, a) => match r.patTy? with
+      | .inst, some (sub, a) => match r.subsetTy? with
         | some ty => s!"the parameter `{a.getPrefix}` of `{showComp sub}` has its type `{ty}` for call {subject}"
         | none => s!"the assumption `{a}` of `{showComp sub}` holds for call {subject}"
       | .inst, none => s!"{subject} holds"
@@ -1591,7 +1591,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       | .vacuity, _ => s!"{subject} is vacuous"
       | .redundancy, _ => s!"{subject} is redundant"
       | .determinism, _ => s!"{subject} is determined by the inputs"
-      | .definedness, _ => match r.patTy? with
+      | .definedness, _ => match r.subsetTy? with
         | some ty => s!"a value in {subject} has the type `{ty}`"
         | none => s!"an index of {subject} is in range"
       | .completeness, _ => match r.goal? with
@@ -1681,11 +1681,11 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       (#[conflictNote "input" input s!"no outputs satisfy {showNamesAnd names}"] ++ help) (item? := none)]
     ++ clashNotes
   | .fail, .counterexample vals =>
-    if let (.definedness, some ty) := (r.kind, r.patTy?) then
+    if let (.definedness, some ty) := (r.kind, r.subsetTy?) then
       let m := obligationMsg subject ty (showAssignment vals) priv
       #[one "F0661" m.headline m.label? m.notes]
     else
-    if let (.inst, some (sub, a), some ty) := (r.kind, r.target?, r.patTy?) then
+    if let (.inst, some (sub, a), some ty) := (r.kind, r.target?, r.subsetTy?) then
       let m := instanceTypeMsg subject (showComp sub) (a.getPrefix.toString) ty (showAssignment vals)
       #[one "F0661" m.headline m.label? m.notes]
     else
