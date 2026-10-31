@@ -518,9 +518,9 @@ enumeration `E` or a record `R`, a newtype among them, has the Lean type
 is widened to an `Int` is Lean's `↑n`. A [subset
 type](Lang/SubsetTypes.md) has its base type's Lean type, and a
 type alias that of the type it names, and a field or payload of type `Nat`
-is Lean's `Nat`. What pattern types bring is part of the definitions: `p.assumes` starts
+is Lean's `Nat`. What subset types bring is part of the definitions: `p.assumes` starts
 with the constraints of the inputs whose types bring one (see
-[Procedures](Lang/Procedures.md#pattern-types)), in order, and `p.ensures`
+[Procedures](Lang/Procedures.md#subset-types)), in order, and `p.ensures`
 with those of the outputs that have no definition, before the assumptions
 and guarantees that the spec writes, so that an implementation's
 obligation assumes them and proves them. A variable of type `Set<T>` has the
@@ -575,7 +575,7 @@ names is a function of them, applied to the locals of their `have`s. An
 type that is not listed, named `x'k` as the solver knows it, with
 its bound names of listed types expanded within it: `forall (i: Int),
 when 0 <= i < q.len, q[i] > 0` is `∀ (i'0 : Int), 0 ≤ i'0 ∧ i'0 < Fren.Seq.len q →
-Fren.Seq.nth q i'0 > 0`. A pattern type's constraint, and a `Nat`'s, are
+Fren.Seq.nth q i'0 > 0`. A subset type's constraint, and a `Nat`'s, are
 part of the bound name's type, as `∀ (n'0 : Nat)`, or a hypothesis before
 the body for `∀`, and a conjunct for `∃`. Its body has no `have`: the
 names of `let`s and `where`s within it are substituted. Where a `Bool`

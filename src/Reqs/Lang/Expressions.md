@@ -961,7 +961,7 @@ is an `Int`, which is never [narrowed](#natural-numbers) to a `Nat`; a
 newtype of a newtype has those that its underlying type has; and a
 newtype of a [subset type](SubsetTypes.md), such as `struct
 Byte(ByteValue)` with `type ByteValue = n: Int where range: n is 0..=255`, has its base type's, with the obligation, as for
-`Byte(e)`, that the sum or difference matches the pattern. No other
+`Byte(e)`, that the sum or difference satisfies the invariants. No other
 operator applies to a newtype, neither `*`, `div`, `mod`, `++` nor a
 prefix `-` (`F0362`): the field is read and the result built again, as in
 `Ms(elapsed.0 * 2)`. An operator whose operands are a newtype and any

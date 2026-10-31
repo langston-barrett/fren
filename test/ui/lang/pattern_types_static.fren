@@ -1,5 +1,5 @@
 -- Pattern types and type aliases: the static errors.
--- fren-covers: lang::nat_place, lang::pattern_place
+-- fren-covers: lang::nat_place, lang::subset_place
 set_option fren.lint.dead_code "allow"
 
 type Byte = n: Int where invariant: n is 0..=255

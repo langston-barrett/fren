@@ -21,7 +21,7 @@ where a [subset type](Lang/SubsetTypes.md) is declared:
 | Check | Confirms |
 |---|---|
 | [Definedness](#definedness) | each index is in range where it is evaluated |
-| [Subset types](#pattern-types) | each value given where a pattern type is declared matches its pattern |
+| [Subset types](#subset-types) | each value given where a subset type is declared satisfies its invariants |
 | [Completeness](#completeness) | some row of each table without a `_` row holds, and some arm of each `match` that needs its guards to be exhaustive is taken, where it is evaluated |
 | [Disjointness](#disjointness) | no two rows of a table, other than `_`, hold at once, and no two arms of a [table over a scrutinee](Lang/Expressions.md#tables-over-a-scrutinee) are taken at once, where it is evaluated |
 | [Preconditions](#preconditions) | each application of a function meets the function's preconditions where it is evaluated |
@@ -38,8 +38,8 @@ The body of a
 [contract](Lang/Items.md#contracts) are checked for completeness,
 disjointness, reachability and preconditions too, a defined function's
 [postconditions](#postconditions) are checked to hold, and the values in a
-body or a value given where pattern types are declared, including the body
-or value itself, are checked for their patterns.
+body or a value given where subset types are declared, including the body
+or value itself, are checked to satisfy their invariants.
 
 The formulas below use the notation of [Procedures](Lang/Procedures.md#meaning):
 `A` is the conjunction of the procedure's assumptions, `R` of its
@@ -50,7 +50,7 @@ variables `y` and the outputs `o`.
 variables they define.
 `N` is the constraints that [natural
 numbers](Lang/Procedures.md#natural-numbers), [subset
-types](Lang/Procedures.md#pattern-types) and the
+types](Lang/Procedures.md#subset-types) and the
 [postconditions](Lang/Items.md#contracts) of uninterpreted functions
 bring: `N(i, y)` that each `Nat` input and call variable, and each
 application of an uninterpreted function whose result is a `Nat` that the
@@ -58,9 +58,10 @@ query's own hypotheses or goal mention, is at least 0, and that each such
 application of an uninterpreted function with postconditions meets each
 of them if its arguments meet the function's preconditions; and `N(o)`
 that each `Nat` output is at least 0; and likewise that each variable and
-application whose type is a pattern type, or has one within its fields,
-payloads or elements, matches it, and that each payload of a recursive
-enumeration that the query reads matches its pattern type, if it has one.
+application whose type is a subset type, or has one within its fields,
+payloads or elements, satisfies its invariants, and that each payload of a
+recursive enumeration that the query reads satisfies the invariants of its
+type, if that is a subset type.
 Each variable's constraints come in the order of the variables, after its
 `Nat`'s, and each application's or payload's in the order in which the
 query mentions them, one application's as one fact each: its `Nat`'s, its
@@ -186,8 +187,8 @@ global expectation in the [short form](Lang/Global.md#the-short-form),
 `ShortExpectation`, has no assumptions, so it is not asked that either. The body of a
 function, its contract, or the value of a constant is not a constraint
 either: only its tables, its `match`es with guards, the applications in
-it, and its values given where pattern types are declared are checked, and
-the function's postconditions. The [pattern-type check](#pattern-types) is
+it, and its values given where subset types are declared are checked, and
+the function's postconditions. The [subset-type check](#subset-types) is
 part of definedness: its results are definedness results, and it runs
 where definedness does, though in a body or a value, definedness asks
 nothing of its indexes. A procedure has no postconditions, so their check
@@ -952,7 +953,7 @@ does.
 
 For each call `w` of a procedure `c`, and each assumption `a` of `c`,
 and each parameter `x` of `c` whose type brings a constraint (see [Subset
-types](Lang/Procedures.md#pattern-types)), before its assumptions,
+types](Lang/Procedures.md#subset-types)), before its assumptions,
 Fren asks whether `a`, or `x`'s constraint, with `w`'s arguments substituted, can be proved from
 `A`, the arguments of `w`, and the constraints `I_v` of the calls `v`
 declared before `w`. A model is a counterexample: Fren reports the values of
@@ -1088,29 +1089,31 @@ pub proc definedness(
 }
 ```
 
-## Pattern types
+## Subset types
 
-The pattern-type check is part of [definedness](#definedness), whose
+The subset-type check is part of [definedness](#definedness), whose
 results it gives. A value given where a [subset type](Lang/SubsetTypes.md) is
-declared has an *obligation*: it must match the pattern. For each value
-given where a pattern type is declared, at the top of the declared type or
+declared has an *obligation* for each of the type's named invariants: it
+must satisfy it. For each value
+given where a subset type is declared, at the top of the declared type or
 in an element type (a definition, an argument of a function, a field of a
 record literal or update, a value of a payload, a typed `let` or `where`
 definition, a defined function's body, or a constant's value), with its
-guard `G`, Fren asks whether the value matches, as `e is P`, or for an
-element type, whether each element does, can be proved from `G` and the
+guard `G`, Fren asks whether the value satisfies each invariant, with the
+value for the binder, or for an element type, whether each element does,
+can be proved from `G` and the
 hypotheses of where it is written, as for [definedness](#definedness): in
 the body of a defined function or the value of a constant, `G` and `N`
-over the function's parameters, which assumes that the parameters match
-their own pattern types. A call's argument is checked instead by the
-[call check](#call-assumptions). A procedure or item with no
-such value has no pattern-type results. `check::pattern_obligation`
+over the function's parameters, which assumes that the parameters satisfy
+the invariants of their own subset types. A call's argument is checked
+instead by the [call check](#call-assumptions). A procedure or item with no
+such value has no subset-type results. `check::subset_obligation`
 decides each query like an expectation, and a model is a counterexample,
 reported at the value:
 
 ```fren
-pub proc pattern_obligation(
-    q: Outcome,            -- can `e is P` be proved from the guard and the hypotheses?
+pub proc subset_obligation(
+    q: Outcome,            -- can the invariant, at the value, be proved from the guard and the hypotheses?
 ): (det verdict: Verdict, det reports_cex?) {
     call as_expect := expectation(q)
 
@@ -1776,7 +1779,7 @@ which ask whether something can hold at all, which a failed search does
 not refute; definedness, since an index out of range has no value
 that the evaluator knows (see [Evaluation](Eval.md#searching-for-behaviours)),
 so testing can neither pass nor fail it, though the definedness of a value
-given where a pattern type is declared is still the solver's
+given where a subset type is declared is still the solver's
 (`check::by_evidence`); completeness, disjointness and
 reachability, which, like definedness, are about where an expression is
 evaluated: a test only reaches behaviours in which the constraints have
@@ -1898,7 +1901,7 @@ pub proc by_evidence(
     kind: Kind,
     tested?,               -- the check's evidence includes testing
     enumerated?,           -- the check's evidence includes enumeration
-    obligation?,           -- a definedness check of a value given where a pattern type is declared
+    obligation?,           -- a definedness check of a value given where a subset type is declared
 ): (det method: Method) {
     use self::Kind::{Definedness, Redundancy, Vacuity}
     use self::Method::{Enumeration, EnumerationThenTesting, Skipped, Solver, Testing}
@@ -1929,7 +1932,7 @@ the table's value is the interpretation's unspecified value of its type,
 which enumeration enumerates too (see [Searching](#searching)), as the
 solver leaves it unconstrained. The definedness of indexes is not run,
 and that is reported (`F0654`): they are of sequences, which are not enumerable. A value given where a
-pattern type is declared is the solver's to check, whatever the evidence,
+subset type is declared is the solver's to check, whatever the evidence,
 for testing too: neither testing nor enumeration decides it, and dropping
 it would leave a value outside its type unreported (`F0661`).
 
@@ -1943,11 +1946,11 @@ not run, which a combined default would change.
 
 Enumeration needs every variable's type to be *enumerable*: `Bool`, `Int`
 and `Nat`, an enumeration, recursive or not, a record, a newtype, an
-instance of a generic type, a pattern type, and an abstract type, with the
+instance of a generic type, a subset type, and an abstract type, with the
 types within it enumerable too. `String`, sets, relations and sequences
 are not yet. A variable whose type brings no constraint, such as a
 call's input, which the call check asks of its argument, ranges
-over its type without patterns. A procedure, or a global expectation,
+over its type without the invariants of its subset types. A procedure, or a global expectation,
 with a variable of another type, that applies an uninterpreted function
 with a [contract](Lang/Items.md#contracts), whose postconditions constrain
 its interpretations, or a [generic
@@ -1968,12 +1971,12 @@ variant's payload is one smaller than it. Each value has a *size*:
 | `true`, `false` | 0 |
 | an `Int` `i` | `|i|` |
 | a `Nat` `k` | `k` |
-| an integer of a finite integer pattern type | 0 |
+| an integer of a finite integer subset type | 0 |
 | the `k`th value of an abstract type | `k` |
 | a variant without a payload | 0 |
 | a variant with a payload | one more than the largest size of its payload's values |
 | a record or a newtype | the largest size of its fields, 0 if it has none |
-| a value of any other pattern type | its size in its base type |
+| a value of any other subset type | its size in its base type |
 
 `check::value_size` states it, over the kind of value, the integer it is,
 for an integer or an abstract type's value, and the largest size of its
@@ -2029,13 +2032,13 @@ most some bound; so for a large enough bound the enumeration is *complete*,
 every value of the type, as in FEAT (Duregård, Jansson and Wang, Haskell
 '12), whose finite types the enumeration exhausts. A shape is *exhausted*
 at the bound when every value of the type it stands for has size at most
-it: it is `Bool`, a finite integer pattern type, or built of exhausted
+it: it is `Bool`, a finite integer subset type, or built of exhausted
 shapes, and no variant's payload was cut off by the unfolding.
 
 The values are listed smallest first, and in the structural order among
 those of a size: variants in order, and payloads and fields by their
 values' order, the first varying slowest; integers `0, 1, -1, 2, -2, ...`;
-a finite integer pattern type's in increasing order. `check::smallest_first`:
+a finite integer subset type's in increasing order. `check::smallest_first`:
 
 ```fren
 pub proc smallest_first(

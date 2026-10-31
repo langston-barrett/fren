@@ -131,7 +131,7 @@
   enumeration](../Check.md#verdicts-of-enumeration)): a failure is genuine,
   so the solver must not pass the check, and a pass that is not bounded is
   a decision, so the solver must not fail it; and a value given where a
-  pattern type is declared, which stays the solver's, keeps its result.
+  subset type is declared, which stays the solver's, keeps its result.
   The ui tests
   `checks/enumerated*.fren` and `checks/evidence_obligations.fren` cover
   enumeration in both front ends.

@@ -233,7 +233,7 @@ its type's sort, as `(forall ((|i'0| Int)) ...)`, where `'` and the
 bound name's position among those in scope, from 0, keep it apart from
 every variable; a `Nat` is an `Int` there, with `(>= |n'0| 0)` before
 the body, as an implication for `forall` and a conjunct for `exists`, and
-a pattern type's constraint likewise. Its bound names of listed types are
+a subset type's constraint likewise. Its bound names of listed types are
 expanded within it. A spec with an unbounded quantifier quantifies, so
 its queries use a quantified logic: `UFDTLIA` where they would be
 `QF_UFDTLIA`. A spec that uses

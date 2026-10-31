@@ -180,9 +180,9 @@ variable, a result's definition, a constraint or a call.
 as `struct Ms(Int)`: a type distinct from every other, with the values of
 its underlying type. See [Items](Lang/Items.md#newtypes).
 
-**Obligation.** That a value given where a pattern type is declared
-matches its pattern, which a check asks the solver. See
-[Types](Lang/Types.md#typing).
+**Obligation.** That a value given where a subset type is declared
+satisfies one of its named invariants, which a check asks the solver. See
+[Subset types](Lang/SubsetTypes.md#static-types-assumptions-and-obligations).
 
 **Ordered declaration.** An enumeration, record or newtype declared with
 `ordered`, as `ordered enum` or `ordered struct`, whose values are ordered:
@@ -196,7 +196,7 @@ their fields, lexicographically. See [Items](Lang/Items.md#ordered-declarations)
 
 **Ordered type.** A type whose values `<`, `<=`, `>`, `>=`, `min` and `max`
 compare: `Int`, `Nat`, `String`, and the ordered declarations, with
-pattern types and type aliases of these. See [Types](Lang/Types.md#ordered-types).
+subset types and type aliases of these. See [Types](Lang/Types.md#ordered-types).
 
 **Otherwise.** The last arm `_ => e`, without a guard, of a table over a
 scrutinee, taken wherever no other arm is, as a table's `_` row is. See
@@ -336,8 +336,9 @@ or not.
 of a constraint or cover goal, a definition, a function's body or a constant's value,
 that name expressions within it. See [Local definitions](Lang/Let.md).
 
-**Widening.** Accepting a `Nat` where an `Int` is expected, or a pattern
-type where its base type is, the only conversion between types. See [Types](Lang/Types.md#natural-numbers).
+**Widening.** Accepting a `Nat` where an `Int` is expected, the only
+conversion between types. A subset type is its base type to the type
+checker, so it needs no conversion. See [Types](Lang/Types.md#natural-numbers).
 
 **Witness.** Values of a procedure's variables that satisfy the
 hypotheses of a check that asks whether something can hold, and its goal,

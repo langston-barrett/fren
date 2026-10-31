@@ -50,19 +50,21 @@ the decidable core. A binder's type is written and resolved as a
 variable's is, so a path that names no type is an error, and so is one
 that names a procedure (see [Global expectations](#global-expectations)).
 A [subset type](SubsetTypes.md) is listed when it is finite and
-not unbounded, as `lang::pattern_finite` says: `forall (x: Int is
-0..=7), e` has eight instances, for 0 to 7 in increasing order, and
-`forall (s: Severity is Severity::Warning | Severity::Error), e` two, the
-variants that match in their declaration's order. Its values are those of
-its base type that match its pattern, and are counted so. Within a binder's
-type, as anywhere, a pattern type's alias stands for it.
+not unbounded, as `lang::pattern_finite` says: with `type Octal = n: Int
+where range: n is 0..=7`, `forall (x: Octal), e` has eight instances, for
+0 to 7 in increasing order, and with `type Loud = s: Severity where
+invariant: s is Severity::Warning | Severity::Error`, `forall (s: Loud),
+e` has two, the variants that match in their declaration's order. Its
+values are those of its base type that satisfy its invariants, and are
+counted so. Within a binder's type, as anywhere, an alias of a subset
+type stands for it.
 `lang::quantified_type` states which types are listed, by the closure of
 the constituent relation (`lang::type_facts`): a type is listed when it is
 finite and not unbounded, so when every type it is built from is finite by
 itself, has a former that is not growing, and is not recursive. A type of
-a former that has no constituents, such as `Bool`, has none. A pattern
-type whose pattern matches finitely many integers is listed, and so is a
-type built from it. With declared subset aliases `Four`, `Three`, and
+a former that has no constituents, such as `Bool`, has none. A subset
+type whose invariant is a pattern test that matches finitely many integers
+is listed, and so is a type built from it. With declared subset aliases `Four`, `Three`, and
 `Two` for integer ranges `0..=3`, `0..=2`, and `1..=2`, examples are
 `struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>`
 and `Pair<Bool, Two>`:
@@ -259,7 +261,7 @@ where they have [domains](#guards).
 Within an unbounded quantifier's body, an application of a function whose
 arguments mention one of its bound names brings the facts that an
 application brings elsewhere: that a `Nat` result is at least 0, that the
-result is of its pattern type, and that the function's postconditions
+result satisfies the invariants of its subset type, and that the function's postconditions
 hold where its preconditions do (see
 [Contracts](../Check.md#contracts-of-uninterpreted-functions)). Each holds
 whatever the arguments, so it is stated for every value of the bound names

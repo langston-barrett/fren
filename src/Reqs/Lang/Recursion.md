@@ -164,8 +164,9 @@ pub proc recursive_match(m: RecMatch): (det rejected?) {
 
 Hoare induction is the only interpretation of recursion in checks. Every
 application of a structural recursion is opaque: an uninterpreted function
-application, including applications on constant arguments. Its parameter
-pattern types and preconditions are obligations, just as for an
+application, including applications on constant arguments. The
+invariants of its parameters' subset types and its preconditions are
+obligations, just as for an
 uninterpreted function with a contract. Its postconditions are ground
 facts, under the application's guards and preconditions. No recursive
 SMT definition, quantified recursion axiom, or evaluation on constant
@@ -218,8 +219,8 @@ application's conditions. No hypotheses are added at arbitrary payloads:
 only the applications actually made bring facts. Structural recursion
 makes the induction sound, because each such application decreases.
 The other arguments are those at the application, not necessarily the
-original parameters. Parameter pattern types and preconditions remain
-obligations there, including constrained input domains.
+original parameters. The invariants of the parameters' subset types and
+the preconditions remain obligations there, including constrained input domains.
 
 If any postcondition fails, each other postcondition that passed is
 Inconclusive: its induction may depend on the failing postcondition. The

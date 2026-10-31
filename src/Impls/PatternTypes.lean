@@ -6,7 +6,7 @@ import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
 
-/-! # Pattern types (`Reqs/Lang/Types#pattern-types`, `Reqs/Impl#interpretations`)
+/-! # Pattern types (`Reqs/Lang/Types#subset-types`, `Reqs/Impl#interpretations`)
 
 The rules of pattern types, proved of the functions that both front ends
 and the evaluator call: membership in an integer pattern, the count of
@@ -201,7 +201,7 @@ def toValuePlace : Fren.Core.ValuePlace → lang.ValuePlace
 impl obligation: lang::obligation for (pl : Fren.Core.ValuePlace) (k : lang.ValueType) (p : Bool) (e : lang.Duty) {
   place := toValuePlace pl,
   type_kind := k,
-  pattern? := p,
+  restricted? := p,
   element := e,
   duty := dutyOf (Fren.Core.siteObligation pl
     (Fren.Core.obligationCons (sampleTy k) (if p then some (.wild) else none) (sampleCons e) none)),

@@ -1,6 +1,6 @@
 -- The obligations of element types and of `where` definitions, shown with
 -- their types as written.
--- fren-covers: check::pattern_obligation
+-- fren-covers: check::subset_obligation
 set_option fren.lint.undecidable "allow"
 
 type Byte = n: Int where invariant: n is 0..=255

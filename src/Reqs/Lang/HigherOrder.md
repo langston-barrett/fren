@@ -104,13 +104,13 @@ what each of its parameters' types and its result's is:
 
 ```fren
 -- What a function type's parameter's or result's type is.
-pub enum FnPart { Plain, Natural, Patterned, Function }
+pub enum FnPart { Plain, Natural, Subset, Function }
 
 set_option fren.lint.undecidable "allow" in
 pub proc function_type_parts(
     kinds: Seq<FnPart>,      -- what its parameters' types are, then its result's
 ): (det accepted?) {
-    ensure rule: accepted? iff not (FnPart::Natural in kinds or FnPart::Patterned in kinds or FnPart::Function in kinds)
+    ensure rule: accepted? iff not (FnPart::Natural in kinds or FnPart::Subset in kinds or FnPart::Function in kinds)
 
     expect plain: when kinds = [FnPart::Plain, FnPart::Plain], accepted?
     expect no_nat: when FnPart::Natural in kinds, not accepted?
@@ -133,11 +133,11 @@ For the function's own checks (see [Defined
 functions](Items.md#defined-functions)), each function parameter is an
 [uninterpreted function](Items.md#uninterpreted-functions) of its type, of
 which nothing is known: the body's tables, the preconditions of the
-functions it applies, its pattern types' obligations and its
+functions it applies, its subset types' obligations and its
 postconditions are checked once, for every function that an application
 could give, as they are for every value of the other parameters. So a
 higher-order function's body is checked once, not at each application.
-Since a function type has no `Nat` and no pattern type, an application of
+Since a function type has no `Nat` and no subset type, an application of
 `f` brings no fact. A counterexample of such a check shows the other
 parameters' values, never a function's, as a counterexample shows no
 uninterpreted function's.
@@ -215,7 +215,7 @@ arithmetic](Expressions.md#linear-arithmetic) and of constant divisors:
 `|x| x * 2` is linear, and `|x| x * y` is not where `y` is a variable.
 
 A closure's body's *obligations*, its tables' questions, the
-preconditions of the functions it applies, its indexes and its pattern
+preconditions of the functions it applies, its indexes and its subset
 types' obligations, are checked where it is unfolded: at each application
 `f(e1, ..., en)` of its function parameter within the higher-order
 function's body, unfolded as at the application, under the guards around

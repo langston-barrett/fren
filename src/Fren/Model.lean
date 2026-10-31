@@ -435,7 +435,7 @@ structure Var where
   /-- Its type as declared, with its patterns. -/
   ptype : Core.PTy := default
   /-- The constraint that its type brings, as a predicate of its value
-  (`Reqs/Lang/Procedures#pattern-types`). -/
+  (`Reqs/Lang/Procedures#subset-types`). -/
   fact? : Option Expr := none
   deriving Inhabited
 
@@ -749,7 +749,7 @@ def State.shapeOf (s : State) (path : Name) : Option Core.DataShape :=
 
 /-- The obligation of a value given where the type `ty` is declared, in a
 definedness goal: `p`, marked with the type, as written, so that the check
-reports it (`Reqs/Check#pattern-types`). -/
+reports it (`Reqs/Check#subset-types`). -/
 def typeObligation (_ty : String) (p : Prop) : Prop := p
 
 /-- A distributed predicate leaf's obligation cannot assume that leaf. -/
