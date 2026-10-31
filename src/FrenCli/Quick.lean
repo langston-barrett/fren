@@ -227,6 +227,14 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let negations := expects.map fun e => compiled { label := e.name, pfx := .anonymous, e := .not e.e }
   let triggers := expects.map fun e => e.e.trigger?.map fun t => compiled { label := e.name, pfx := .anonymous, e := t }
   let goals := covers.map fun g => compiled { label := g.name, pfx := .anonymous, e := g.e }
+  -- The problems searched at every test, each prepared once
+  -- (`Problem.prepare`), with the shapes of every interpretation below.
+  let prepared (p : Problem) : Problem := { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?) }
+  let outs := c.vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
+  let outputsP := prepared { vars := outs, atoms := reqs, ints, strs }
+  let negationsP := negations.map fun n => prepared { vars := sp.order c, atoms := all.push n, ints, strs }
+  let triggersP := triggers.map (·.map fun t => prepared { vars := sp.order c, atoms := all.push t, ints, strs })
+  let goalsP := goals.map fun g => prepared { vars := sp.order c, atoms := all.push g, ints, strs }
   for _ in [0:tests] do
     let w ← World.random sp
     let I := w.interp sp (some shapes)
@@ -239,8 +247,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
         instT := instT.modify k (·.refute (.counterexample shown))
     unless adm.complete do continue
     realizable := realizable.reach
-    let outs := c.vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
-    let some env ← ({ vars := outs, atoms := reqs, ints, strs : Problem }.solve sp w I adm.env)
+    let some env ← (outputsP.solve sp w I adm.env)
       | let input := sp.shown vars adm.env fun v => v.role.isUniversal && v.isPub
         if noOutputs?.isNone then noOutputs? := some input
         -- Where the search saw every output, the input is a genuine
@@ -253,8 +260,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for e in expects, k in [0:expects.size] do
       -- A counterexample, searched for directly (`Reqs/Eval#fren-quickcheck`).
       if (expT[k]?.bind (·.refuted?)).isNone then
-        let atoms := all.push negations[k]!
-        if let some cex ← ({ vars := sp.order c, atoms, ints, strs : Problem }.solve sp w I {}) then
+        if let some cex ← (negationsP[k]!.solve sp w I {}) then
           expT := expT.modify k fun t => (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
           continue
       let trigger? := e.e.trigger?
@@ -264,10 +270,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       -- hypotheses there, as in the solver's query, not obligations.
       let env? ← if reaches I .anonymous trigger? env then pure (some env) else
         -- Once refuted, an expectation needs no more searching.
-        let some t := triggers[k]! | pure none
+        let some t := triggersP[k]! | pure none
         if (expT[k]?.bind (·.refuted?)).isSome then pure none else
-        let atoms := all.push t
-        ({ vars := sp.order c, atoms, ints, strs : Problem }.solve sp w I {})
+        t.solve sp w I {}
       let some envE := env? | continue
       expT := expT.modify k Tally.reach
       if ({ label := e.name, pfx := .anonymous, e := e.e } : Atom).eval I envE.look == some false then
@@ -277,7 +282,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for goal in goals, k in [0:goals.size] do
       if (covW[k]?.join).isSome then continue
       let env? ← if goal.eval I env.look == some true then pure (some env) else
-        ({ vars := sp.order c, atoms := all.push goal, ints, strs : Problem }.solve sp w I {})
+        goalsP[k]!.solve sp w I {}
       let some envG := env? | continue
       covT := covT.modify k Tally.reach
       covW := covW.set! k (some (sp.shown vars envG (·.isPub)))

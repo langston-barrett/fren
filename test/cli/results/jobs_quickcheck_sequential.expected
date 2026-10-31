@@ -1,0 +1,58 @@
+error[F0603]: expectation `a::positive` does not hold
+ --> test/cli/results/jobs_quickcheck_sequential.fren:6:12
+  |
+6 |     expect positive: y > 0
+  |            ^^^^^^^^ does not follow from the guarantees
+  |
+  = counterexample: x = 0, y = 0
+  = help: strengthen the guarantees so that it follows, or correct the expectation
+
+warning[F0609]: testing found no outputs of `a` for the input x = 18
+ --> test/cli/results/jobs_quickcheck_sequential.fren:4:6
+  |
+4 | proc a(x: Int): (y: Int) {
+  |      ^ possibly not realizable
+  |
+  = note: the search tries only some values, so outputs may still exist
+  = help: run `fren check` to decide whether it is realizable
+
+error[F0607]: `b::y` is not determined by the inputs: for the input x = -1, it can be 0 or -1
+ --> test/cli/results/jobs_quickcheck_sequential.fren:9:22
+  |
+9 | proc b(x: Int): (det y: Int) {
+  |                      ^ not determined
+  |
+  = note: a `det` variable must have exactly one value for each input
+  = help: add guarantees that pin it down, or remove `det`
+
+warning[F0609]: testing found no outputs of `b` for the input x = 18
+ --> test/cli/results/jobs_quickcheck_sequential.fren:9:6
+  |
+9 | proc b(x: Int): (det y: Int) {
+  |      ^ possibly not realizable
+  |
+  = note: the search tries only some values, so outputs may still exist
+  = help: run `fren check` to decide whether it is realizable
+
+note: cover goal `c::equal` is met
+  --> test/cli/results/jobs_quickcheck_sequential.fren:17:11
+   |
+17 |     cover equal: y = 0
+   |           ^^^^^ met
+   |
+   = witness: x = -1, y = 0
+
+warning[F0610]: testing found no admissible behaviour of `d` in 100 tests
+  --> test/cli/results/jobs_quickcheck_sequential.fren:20:6
+   |
+20 | proc d(x: Int): (y: Int) {
+   |      ^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
+
+fren: 3 passed, 2 failed, 3 inconclusive, in 100 tests each
+
+Some errors have detailed explanations: F0603, F0607, F0609, F0610.
+For more information about an error, try `fren --explain F0603`.
+exit=1

@@ -358,6 +358,30 @@ partial def Ex.vars : Ex → Array Name
   | .const .. => #[]
   | .typed _ _ e => e.vars
 
+/-- What a search of a problem computes from its variables and
+constraints alone, before it reads the environment or draws a random
+number (`Problem.prepare`). -/
+structure Prepared where
+  /-- The names of the search's environment: the variables to choose,
+  then those of the constraints. -/
+  names : Array Name
+  /-- Each name's index in `names`. -/
+  index : Std.HashMap Name Nat
+  /-- The constraints that mention each name, by index. -/
+  byVar : Array (Array Nat)
+  /-- The constraints, each variable read as its slot (`Ex.slot`). -/
+  full : Array Ex
+  /-- What is evaluated of each constraint (`Ex.compile`), likewise. -/
+  run : Array Ex
+  /-- The slots that each constraint reads (`Ex.slots`). -/
+  fullSlots : Array (Array Nat)
+  /-- Each variable to choose's slot. -/
+  varSlot : Array Nat
+  /-- For each variable to choose, what the constraints equate it with,
+  compiled and as written, and the slots that those expressions read,
+  computed when a search first reaches it. -/
+  equated : Array (Thunk (Array (Ex × Ex) × Array Nat))
+
 structure Problem where
   /-- The variables to choose, in order, with their types. -/
   vars : Array (Name × VTy)
@@ -367,6 +391,12 @@ structure Problem where
   ints : Array Int := #[]
   /-- The strings that the constraints mention or match (`stringsOf`). -/
   strs : Array String := #[]
+  /-- `Problem.prepare` of this problem, with the shapes of the
+  interpretations that it is searched under, if it is searched more than
+  once: a function of `vars` and `atoms`, so that each search need not
+  compute it again. -/
+  prepared? : Option (Thunk Prepared) := none
+  deriving Inhabited
 
 abbrev Env := Std.HashMap Name Val
 
@@ -526,6 +556,48 @@ partial def Ex.slots : Ex → Array Nat
   | .pre _ _ gs e => gs.flatMap (·.2.slots) ++ e.slots
   | .typed _ _ e => e.slots
 
+/-- What `Problem.search` computes of `p` before it reads its environment,
+compiled with `shapes`: the names of its environment and their indexes,
+the constraints that mention each name, and the constraints compiled. -/
+def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem) : Prepared :=
+  -- The names of the environment: the variables to choose, then those of
+  -- the constraints; and the constraints that mention each, by index.
+  let (names, index, byVar) := Id.run do
+    let mut names : Array Name := #[]
+    let mut index : Std.HashMap Name Nat := {}
+    let mut byVar : Array (Array Nat) := #[]
+    for (x, _) in p.vars do
+      unless index.contains x do
+        index := index.insert x names.size
+        names := names.push x
+        byVar := byVar.push #[]
+    for a in p.atoms, k in [0:p.atoms.size] do
+      for n in a.e.vars do
+        let x := a.pfx ++ n
+        let j ← match index[x]? with
+          | some j => pure j
+          | none =>
+            index := index.insert x names.size
+            names := names.push x
+            byVar := byVar.push #[]
+            pure (names.size - 1)
+        byVar := byVar.modify j fun ks => if ks.back? == some k then ks else ks.push k
+    return (names, index, byVar)
+  -- Every name looked up here was given an index above: each variable to
+  -- choose, and each variable `pfx.n` of a constraint.
+  let full := p.atoms.map fun a => a.e.substVars fun n => .slot index[a.pfx ++ n]!
+  -- What is evaluated (`Ex.compile`), compiled with `shapes`, or as the
+  -- atom was for searches like this one; what is read of the constraints
+  -- is read of `full`.
+  let run := p.atoms.map fun a =>
+    ((a.run?.map (·.get)).getD (a.e.compile shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
+  let varSlot := p.vars.map fun (x, _) => index[x]!
+  { names, index, byVar, full, run, varSlot
+    fullSlots := full.map (·.slots)
+    equated := varSlot.map fun x => Thunk.mk fun _ =>
+      let es := full.flatMap fun e => e.equated x
+      (es.map fun e => (e.compile shapes (some []), e), es.flatMap (·.slots)) }
+
 /-- Values for `p.vars`, extending `env`, that make every constraint
 `true` under `I`, within `budget` steps, each step a candidate tried, and
 the steps it took. `w` gives the candidates of the abstract types.
@@ -567,40 +639,10 @@ random numbers. -/
 partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000)
     (backjump := true) : R (Option Env × Nat) := do
   let seed ← rand
-  -- The names of the environment: the variables to choose, then those of
-  -- the constraints; and the constraints that mention each, by index.
-  let (names, index, byVar) := Id.run do
-    let mut names : Array Name := #[]
-    let mut index : Std.HashMap Name Nat := {}
-    let mut byVar : Array (Array Nat) := #[]
-    for (x, _) in p.vars do
-      unless index.contains x do
-        index := index.insert x names.size
-        names := names.push x
-        byVar := byVar.push #[]
-    for a in p.atoms, k in [0:p.atoms.size] do
-      for n in a.e.vars do
-        let x := a.pfx ++ n
-        let j ← match index[x]? with
-          | some j => pure j
-          | none =>
-            index := index.insert x names.size
-            names := names.push x
-            byVar := byVar.push #[]
-            pure (names.size - 1)
-        byVar := byVar.modify j fun ks => if ks.back? == some k then ks else ks.push k
-    return (names, index, byVar)
-  -- Every name looked up here was given an index above: each variable to
-  -- choose, and each variable `pfx.n` of a constraint.
-  let full := p.atoms.map fun a => a.e.substVars fun n => .slot index[a.pfx ++ n]!
-  -- What is evaluated (`Ex.compile`), compiled with `I`'s shapes, or as
-  -- the atom was for searches like this one; what is read of the
-  -- constraints is read of `full`.
-  let run := p.atoms.map fun a =>
-    ((a.run?.map (·.get)).getD (a.e.compile I.shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
+  let { names, byVar, full, run, fullSlots, varSlot, equated, .. } :=
+    (p.prepared?.map (·.get)).getD (p.prepare I.shapes)
   -- When each constraint is surely unknown, so that it need not be evaluated.
   let unknown := full.map (·.unknownIf)
-  let varSlot := p.vars.map fun (x, _) => index[x]!
   let slots : Slots := names.map (env[·]?)
   -- Each constraint's value in `env`. A constraint that is `true` stays
   -- so on that branch (evaluation is monotone), and is not evaluated again;
@@ -615,9 +657,9 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
     for x in varSlot.reverse, i in (List.range varSlot.size).reverse do
       bits := bits.set! x (if slots[x]!.isSome then 0 else 1 <<< i)
     return bits
-  let readsOf (e : Ex) : Nat := e.slots.foldl (fun acc k => acc ||| slotBit[k]!) 0
+  let readsOf (ks : Array Nat) : Nat := ks.foldl (fun acc k => acc ||| slotBit[k]!) 0
   -- The set of the variables that each constraint reads.
-  let reads := full.map readsOf
+  let reads := fullSlots.map readsOf
   -- The first constraint that becomes `false` when the variable `x`, by
   -- index, gets its value in `slots`, or those that become `true`.
   let viable (slots : Slots) (x : Nat) (known : Array Bool) : Except Nat (Array Nat) := Id.run do
@@ -629,13 +671,12 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       | some true => newly := newly.push k
       | none => pure ()
     return .ok newly
-  -- What the constraints equate each variable with, and the set of the
-  -- variables that those expressions read, computed when the search first
-  -- reaches it.
-  let equated : Array (Thunk (Array (Ex × UnknownIf) × Nat)) :=
-    varSlot.map fun x => Thunk.mk fun _ =>
-      let es := full.flatMap fun e => e.equated x
-      (es.map fun e => (e.compile I.shapes (some []), e.unknownIf), es.foldl (fun acc e => acc ||| readsOf e) 0)
+  -- What the constraints equate each variable with (`Prepared.equated`),
+  -- and the set of the variables that those expressions read, computed
+  -- when the search first reaches it.
+  let eqsOf : Array (Thunk (Array (Ex × UnknownIf))) :=
+    equated.map fun t => Thunk.mk fun _ => t.get.1.map fun (c, e) => (c, e.unknownIf)
+  let eqReadsOf : Array (Thunk Nat) := equated.map fun t => Thunk.mk fun _ => readsOf t.get.2
   -- Each variable's pool, likewise.
   let pools : Array (Thunk (Array Val)) := p.vars.mapIdx fun i (_, ty) => Thunk.mk fun _ =>
     (p.pool sp w ty (p.fixedPool? sp w ty)).run' ⟨mix seed i.toUInt64⟩
@@ -651,7 +692,8 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       let (_, ty) := p.vars[i]
       let x := varSlot[i]!
       if slots[x]!.isSome then return go (i + 1) h slots known left
-      let (eqs, eqReads) := (equated[i]!).get
+      let eqs := (eqsOf[i]!).get
+      let eqReads := (eqReadsOf[i]!).get
       -- The pool, in an order drawn from the values chosen so far.
       let pool := (shuffle (pools[i]!).get).run' ⟨mix h i.toUInt64⟩
       let mut left := left
