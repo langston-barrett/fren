@@ -1202,14 +1202,42 @@ def kindsRun (subset subsetInvariant : Bool) (kinds : Array CheckKind) : Array C
 
 /-- The SMT-LIB logic of a check's queries (`cli::logic`): realizability
 quantifies, over outputs, and so does every query of a spec with an
-unbounded quantifier (`quantified`); a spec that uses strings or sets
-(`extended`) needs `ALL`, and one that projects a relation over a type that
-is not finite (`projection`), `HO_ALL`. -/
+unbounded quantifier, or with a refinement claim whose abstraction has
+calls, over whose variables the claim quantifies (`quantified`); a spec
+that uses strings or sets (`extended`) needs `ALL`, and one that projects a
+relation over a type that is not finite (`projection`), `HO_ALL`. -/
 def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := false) (quantified : Bool := false) :
     String :=
   if extended then (if projection then "HO_ALL" else "ALL") else match kind with
     | .realizable => "UFDTLIA"
     | _ => if quantified then "UFDTLIA" else "QF_UFDTLIA"
+
+/-- Whether `fren check` asks a query in the logic `logic`, given whether
+its text has a `forall` or `exists` (`quantifies`): never a quantified one
+in a quantifier-free logic, which is an internal error instead
+(`cli::query_logic`). -/
+def queryAsked (logic : String) (quantifies : Bool) : Bool :=
+  !(logic.startsWith "QF_" && quantifies)
+
+/-- Whether the SMT-LIB text `f` has a quantifier, `forall` or `exists`
+(`cli::query_logic`). It reads the text as Fren prints it, a binder list
+right after the quantifier, one space apart, as `(forall ((x Int)) ...)`;
+a symbol that spells `forall` is quoted, as `|forall|`, and is not one. -/
+def hasQuantifier (f : String) : Bool :=
+  ["(forall (", "(exists ("].any fun q => (f.splitOn q).length > 1
+
+#guard hasQuantifier "(forall ((x Int)) x)"
+#guard hasQuantifier "(exists ((x Int)) x)"
+#guard hasQuantifier "(define-fun f ((y Int)) Bool (forall ((x Int)) (> (g x) y)))"
+#guard !hasQuantifier "(and a b)"
+#guard !hasQuantifier "(and |forall| |exists|)"
+#guard !hasQuantifier "(define-fun f ((y Int)) Bool (> y 0))"
+
+/-- Why a query with a quantifier, which `cli::logic` put in a
+quantifier-free logic, is not asked (`cli::query_logic`). -/
+def quantifiedQueryReason (logic : String) : String :=
+  s!"internal error: a query with a quantifier would be asked in the quantifier-free logic `{logic}`; \
+    please report it"
 
 /-- The symbols of cvc5's theories, under `HO_ALL`, that a Fren name can
 spell: cvc5 rejects a declaration of any of them, quoted or not, as

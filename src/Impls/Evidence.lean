@@ -115,7 +115,7 @@ trusted check::combined: "no front end combines the verdicts of several methods 
 -- (`check::hosted_runs`, `Impls/PassEvidence`). The ui tests run through
 -- both front ends; `EvidenceClient` checks a caller of a procedure that an
 -- imported module checked.
-tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
+tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "test/ui/checks/evidence_refinement.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
 
 tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"
 

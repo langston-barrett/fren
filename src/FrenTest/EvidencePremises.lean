@@ -36,3 +36,31 @@ info: fren: 0 passed, 0 failed, 2 inconclusive, 0 redundant
 -/
 #guard_msgs in
 #fren_check caller
+
+-- A refinement claim's checks rest on its abstraction's realizability: a
+-- `#fren_check` that names only the global expectation still checks the
+-- abstraction, and the procedure that it calls, for their evidence.
+proc precise(x: Int): (y: Int) {
+    ensure r: y = x + 1
+}
+
+proc vacuous(x: Int): (z: Int) {
+    call n := never(x)
+    ensure r: z = n.y
+}
+
+expect claimed(x: Int) {
+    call c := precise(x)
+    refines c vacuous(x)
+}
+
+/--
+warning: `evidence_premises_test::claimed::refines_1` rests on the realizability of `evidence_premises_test::vacuous`, which did not pass
+
+note: its proof has the realizability of `evidence_premises_test::vacuous` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+help: make the check it rests on pass
+---
+info: fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant
+-/
+#guard_msgs in
+#fren_check claimed

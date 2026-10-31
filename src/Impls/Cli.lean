@@ -114,6 +114,17 @@ impl logic: cli::logic for (k : Fren.Core.CheckKind) (strings sets seqs proj q :
   sets_exp? := (Fren.Core.solverOptions (strings || seqs) (sets || seqs)).any (·.1 == "sets-exp"),
 }
 
+-- `fren check` asks a query in the logic of its check, given whether the
+-- script it would ask has a quantifier (`Fren.Core.hasQuantifier`). This
+-- binds the decision only: that `runQuery` asks it of each script is backed
+-- by the ui tests, not proved.
+impl query_logic: cli::query_logic for (k : Fren.Core.CheckKind) (ext proj q quantifies : Bool) {
+  logic := toLogic (Fren.Core.logic k ext proj q),
+  quantifies? := quantifies,
+  asked? := Fren.Core.queryAsked (Fren.Core.logic k ext proj q) quantifies,
+  internal? := !Fren.Core.queryAsked (Fren.Core.logic k ext proj q) quantifies,
+}
+
 end Fren.Impls
 
 namespace Fren.Impls
