@@ -1042,12 +1042,14 @@ source expressions have already received their expression lints; procedural
 unused-variable and manual-assumption suggestions do not apply to them. -/
 def withoutGhostLints (action : M α) : M α := do
   let before ← get
-  let result ← action
-  modify fun st => { st with
+  let restore (st : State) : State := { st with
     lintReports := before.lintReports
     lintFixes := before.lintFixes
     natReports := before.natReports
   }
+  -- Also on a static error, which keeps the state it failed in.
+  let result ← tryCatch action fun failure => throw { failure with state := restore failure.state }
+  modify restore
   return result
 
 /-- Runs `x`, a member of an item that is checked on its own: on a static
@@ -1139,7 +1141,7 @@ exactly when it hides something in the current scope or among `locals`
 used. -/
 def declare (x : Ident) (locals : Fren.Core.Locals := #[]) : M Ident := do
   let (y, bang) := declaredIdent x
-  if y.name.startsWith "#match" then return y
+  if Fren.Core.generatedName y.name then return y
   let n := Name.mkSimple y.name
   let st ← get
   liftMsg x.span (Fren.Core.checkDeclaredName n bang)
@@ -1182,7 +1184,7 @@ def resolveWritten (segs : Array Ident) (extra : Array Name := #[]) (report : Bo
 that look only at the name, at the level in effect; and, for an item other
 than a module, `module_name_repetitions`. -/
 def lintName (what : Named) (n : Name) (span : Span) : M Unit := do
-  if n.toString.startsWith "#match" then return
+  if Fren.Core.generatedName (Fren.Core.nameText n) then return
   for (l, msg) in Fren.Core.nameMsgs what n do lint l span msg
   unless what matches .module do
     if let some msg := Fren.Core.moduleNameMsg? what (← get).module n then lint .moduleNameRepetitions span msg
@@ -5576,7 +5578,10 @@ partial def elabIsExpr (cx : ExprCtx) (test : Fren.Core.TestContext × Option (N
     if irrefutable then lint .irrefutableIs span (Fren.Core.irrefutableIsMsg ts.show (q matches .wild _))
     lintOrPatterns (patNode (← get).src p q)
     let texts ← p.alts.mapM (srcAt ·.span)
-    if Fren.Core.isEquality texts.size (Fren.Core.equatable q texts) irrefutable then
+    -- Not of the pattern shorthand's test, whose scrutinee is not written,
+    -- and which has no form with `=` (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`).
+    let generated := match scrutinee with | .path _ #[x] => Fren.Core.generatedName x.name | _ => false
+    if !generated && Fren.Core.isEquality texts.size (Fren.Core.equatable q texts) irrefutable then
       lintFix .isEquality span (Fren.Core.isEqualityMsg (scrutinee.text (← get).src) texts[0]!)
   return (smt.getD "true", .bool)
 
@@ -5729,10 +5734,10 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   let pt ← ty?.mapM elabPTy
   let t := pt.map (·.ty)
   let n := Name.mkSimple name.name
-  unless name.name.startsWith "#match" do liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
+  unless Fren.Core.generatedName name.name do liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
   -- `redundant_bool_type` (`lint::redundant_bool_type`), but not of a
   -- subset type, whose invariants the annotation holds.
-  if let (some segs, true, false) := (ty?, !name.name.startsWith "#match" && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
+  if let (some segs, true, false) := (ty?, !Fren.Core.generatedName name.name && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
   return pt.getD (.plain .bool)
@@ -7095,17 +7100,20 @@ partial def elabItem (item : Item) : M Unit := do
       let generatedBefore ← get
       let priorSubset := (← get).inSubset
       modify fun st => { st with inSubset := true }
+      -- Only the lints of the invariant's own source are reported, as for
+      -- any expression, whether or not it has a static error: not those of
+      -- the binder, which the pattern shorthand does not write.
+      let ownLints (st : State) : State := { st with
+        lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
+        lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
+        natReports := generatedBefore.natReports }
       try
         elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
       catch failure =>
         if failure.diags.any (·.msg.code? == some "F0201") then
-          err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some s!"outside the scope of `{binder.name}`" }
-        throw failure
-      modify fun st => { st with
-        inSubset := priorSubset
-        lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
-        lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-        natReports := generatedBefore.natReports }
+          err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
+        throw { failure with state := ownLints failure.state }
+      modify fun st => { ownLints st with inSubset := priorSubset }
       -- Its full-definedness check is guarded by earlier invariants below,
       -- rather than checked unconditionally as an ordinary function body.
       modify fun st => { st with bodies := st.bodies.extract 0 before }

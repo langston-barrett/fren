@@ -1,0 +1,11 @@
+--@ args: fmt --check
+-- `fren fmt` keeps the pattern shorthand of a subset type as written, with
+-- its `=` and `is` between spaces, its range without them and the `|` of
+-- its pattern as in an arm.
+type   Byte=Int    is  0..=255
+pub type Digit = Byte is 0..=9
+pub enum Level { Low, High }
+type Loud = Level  is Level::High|Level::Low
+proc c(b: Set< Byte >, n:Digit): (l: Loud) {
+    ensure r: l = Level::High
+}

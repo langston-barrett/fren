@@ -1,0 +1,5 @@
+-- `T is P` is shorthand only in a subset type's declaration, not in a field.
+struct Packet { length: Int is 0..=255 }
+--~^[cli] error: expected `}`, found keyword `is`
+--~^^[hosted] error: unexpected token 'is'; expected '}'
+--@ exit: 2

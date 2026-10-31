@@ -20,7 +20,7 @@
 
 ```
 spec           := item*
-item           := module | use | enumeration | record | abstract-type | type-alias | function | constant
+item           := module | use | enumeration | record | abstract-type | type-alias | subset-type | function | constant
                 | procedure | expectation | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
 
 module         := ["pub"] "mod" path
@@ -33,6 +33,9 @@ record         := ["pub"] ["ordered"] "struct" declared-type "{" field ("," fiel
 field          := IDENT [":" type]
 abstract-type  := ["pub"] "type" IDENT
 type-alias     := ["pub"] "type" IDENT ":=" type
+subset-type    := ["pub"] "type" IDENT "=" IDENT ":" type "where" conjunct ("and" conjunct)*
+                | ["pub"] "type" IDENT "=" type "is" pattern
+conjunct       := IDENT ":" expr
 function       := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
                 | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" [":" type] ":=" top
                 | ["pub"] "fn" declared-type"(" variable ("," variable)* ")" ":" "(" variable [","] ")"
@@ -61,6 +64,10 @@ map            := IDENT ":=" TERM
 interpretation := "interp" path ":=" TERM ["by" TACTICS]
 ```
 
+A `subset-type` declares a [subset type](Lang/SubsetTypes.md). Its second
+form is [shorthand](Lang/SubsetTypes.md#the-pattern-shorthand) for the
+first, and the only place where `is` follows a `type`.
+
 ## Procedures
 
 ```
@@ -79,7 +86,7 @@ member         := ["det"] "exists" variable
 variable       := DECL [":" type]
 call           := "call" DECL ":=" path"(" [expr ("," expr)* [","]] ")"
 binding        := IDENT [":=" expr]
-type           := base ["is" pattern] | "fn" "(" type ("," type)* ")" "->" type
+type           := base | "fn" "(" type ("," type)* ")" "->" type
 base           := "Bool" | "Int" | "Nat" | "String" | "Set""<" type ">" | "Seq""<" type ">" | "Rel""<" type "," type ">"
                 | path | path"<" type ("," type)* ">"
 path           := IDENT ("::" IDENT)*

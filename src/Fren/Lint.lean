@@ -226,7 +226,7 @@ case (`lint::naming_case`), and the lints of the `style` and `restriction`
 groups that look only at the name, at the level here; and, for an item
 other than a module, `module_name_repetitions`. -/
 def lintName (what : Core.Named) (n : Name) (ref : Syntax) : m Unit := do
-  if n.toString.startsWith "#match" then return
+  if Core.generatedName (Core.nameText n) then return
   for (lint, msg) in Core.nameMsgs what n do
     recordLint lint ref msg
   unless what matches .module do
@@ -405,7 +405,7 @@ with `!` exactly when it hides something there or among `locals`
 used. -/
 def declare (x : Syntax) (scope : Name) (locals : Core.Locals := #[]) : m Syntax := do
   let (y, bang) := declaredIdent x
-  if y.getId.toString.startsWith "#match" then return y
+  if Core.generatedName (Core.nameText y.getId) then return y
   let table := (← getState).table
   liftMsg x (Core.checkDeclaredName y.getId bang)
   liftMsg x (Core.checkShadowing y.getId (table.hidden? scope locals y.getId) bang)

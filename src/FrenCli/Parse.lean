@@ -2127,6 +2127,18 @@ partial def item : P Item := do
     let name ← ident
     if (← eatKw ":=").isSome then return .typeAlias isPub name (← typeExpr)
     if (← eatKw "=").isSome then
+      let s ← get
+      unless s.toks[s.pos + 1]?.map (·.tok) == some (.kw ":") do
+        -- `type T = U is P`, which means `type T = #value: U where pattern:
+        -- #value is P`, whose binder is generated (`Fren.Core.shorthandBinder`,
+        -- `Reqs/Lang/SubsetTypes#the-pattern-shorthand`).
+        let base ← typeExpr
+        let isTok ← expectKw "is"
+        let p ← pattern (arm := false)
+        -- At the type's name, as a written binder is outside the invariant.
+        let binder : Ident := { name := Fren.Core.shorthandBinder, span := name.span }
+        let label : Ident := { name := "pattern", span := isTok.span }
+        return .subsetType isPub name binder base #[(label, .is (← spanFrom isTok.span) (.path name.span #[binder]) p)]
       let binder ← ident
       discard (expectKw ":")
       let base ← typeExpr

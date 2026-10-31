@@ -1,0 +1,45 @@
+-- The pattern shorthand: `type T = U is P` is the subset type
+-- `type T = x: U where pattern: x is P`, for a binder `x` that no source
+-- writes, whose one invariant is `T::pattern`, and a subset type built on
+-- it keeps that invariant.
+
+type Byte = Int is 0..=255
+type Digit = Byte is 0..=9
+pub enum Severity { Silent, Info, Warning, Error }
+type Loud = Severity is Severity::Warning | Severity::Error
+type Even = n: Byte where even: n mod 2 = 0
+-- Written in full, the shorthand means the same.
+type Octet = o: Int where pattern: o is 0..=255
+
+proc bytes(x: Int): (det b: Byte, det o: Octet) {
+    out b := x   --~ error: invariant `Byte::pattern` does not hold
+    out o := x   --~ error: invariant `Octet::pattern` does not hold
+}
+
+proc digits(x: Byte): (det d: Digit) {
+    out d := x   --~ error: invariant `Digit::pattern` does not hold
+}
+
+proc evens(x: Int): (det e: Even) {
+    out e := x   --~ error: invariant `Byte::pattern` does not hold
+    --~^ error: invariant `Even::even` does not hold
+}
+
+proc inherited(d: Digit, e: Even, l: Loud): (y: Int) {
+    ensure r: y = d + e
+
+    expect digit: d <= 9
+    expect byte: e <= 255
+    expect loud: l != Severity::Info
+    expect bounded: y <= 255   --~ error: expectation `inherited::bounded` does not hold
+}
+
+-- The pattern-test invariant fragment applies: a `Digit` is one of ten
+-- integers, so a check over one can enumerate them.
+set_option fren.evidence "enumerated" in
+proc small(d: Digit): (det y: Int) {
+    out y := d + d
+
+    expect twice: y <= 18
+    expect below: y < 18   --~ error: expectation `small::below` does not hold
+}

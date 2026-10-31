@@ -1,0 +1,14 @@
+-- `is_equality` does not fire on the test of the pattern shorthand, whose
+-- scrutinee is not written and which has no form with `=`: not on a
+-- variant without a payload, nor on an integer literal. It fires on a
+-- written test, as anywhere.
+pub enum Sev { A, B }
+pub type S = Sev is Sev::A
+pub type Zero = Int is 0
+pub type Picked = s: Sev where pattern: s is Sev::A   --~ warning: this pattern test is an equation
+
+proc uses(s: S, z: Zero): (y?) {
+    ensure r: y? iff s = Sev::A and z = 0
+
+    expect holds: y?
+}

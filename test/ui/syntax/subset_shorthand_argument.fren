@@ -1,0 +1,7 @@
+-- `T is P` is shorthand only in a subset type's declaration, not in a type
+-- argument.
+pub type Byte = Int is 0..=255
+proc c(s: Set<Byte is 0..=9>) {}
+--~^[cli] error: expected `>`, found keyword `is`
+--~^^[hosted] error: expected '>'
+--@ exit: 2

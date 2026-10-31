@@ -1,0 +1,14 @@
+-- A slot with many values, the 256 of a `Byte`: the value of a defined
+-- output in the counterexample of a failed check is the definition at the
+-- counterexample's values, in both front ends, rather than a reduction
+-- over every value of the slot, which would go beyond Lean's recursion
+-- limit.
+type Byte = n: Int where invariant: n is 0..=255
+
+set_option fren.evidence "enumerated" in
+proc twice(b: Byte): (det y: Int) {
+    out y := b + b
+
+    expect bounded: y <= 510
+    expect below: y < 510   --~ error: expectation `twice::below` does not hold
+}

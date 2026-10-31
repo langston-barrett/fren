@@ -1,0 +1,11 @@
+--- test/cli/fmt/subset_shorthand.fren
++++ test/cli/fmt/subset_shorthand.fren
+@@ -5 +5 @@
+-type   Byte=Int    is  0..=255
++type Byte = Int is 0..=255
+@@ -8,2 +8,2 @@
+-type Loud = Level  is Level::High|Level::Low
+-proc c(b: Set< Byte >, n:Digit): (l: Loud) {
++type Loud = Level is Level::High | Level::Low
++proc c(b: Set<Byte>, n: Digit): (l: Loud) {
+exit=1

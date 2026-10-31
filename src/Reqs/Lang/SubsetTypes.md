@@ -1,12 +1,15 @@
 # Subset types
 
 A subset type is a declared alias of a base type restricted by a nonempty,
-ordered list of named invariants. It replaces the type syntax `T is P`;
-`is` remains a pattern test in expressions. There is no inline subset type.
-Ordinary aliases retain `type Name := Base`.
+ordered list of named invariants. It replaces the type syntax `T is P`
+of earlier versions of Fren, which remains only as the [pattern
+shorthand](#the-pattern-shorthand) of a declaration; `is` remains a
+pattern test in expressions. There is no inline subset type. Ordinary
+aliases retain `type Name := Base`.
 
 ```
 subset := ["pub"] "type" IDENT "=" IDENT ":" type "where" conjunct ("and" conjunct)*
+        | ["pub"] "type" IDENT "=" type "is" pattern
 conjunct := IDENT ":" expression
 ```
 
@@ -31,7 +34,9 @@ its base's invariants followed by its own, without changing the base
 representation. Cyclic and forward type references follow ordinary alias
 resolution and are rejected. Empty lists and unlabelled conjuncts are
 syntax errors. A lone label other than `invariant` is accepted; the
-separate lint reports it, without changing the meaning.
+separate lint reports it, without changing the meaning. The [pattern
+shorthand](#the-pattern-shorthand) writes no label, so the lint does not
+report its `pattern`.
 
 ## Conjunctions and interpretation
 
@@ -121,6 +126,66 @@ pub proc subset_labels(clauses: Seq<SubsetClause>): (accepted?) {
     ], not accepted?
 }
 ```
+
+## The pattern shorthand
+
+A subset type whose one invariant is a pattern test of its value may be
+declared with the shorthand `type T = U is P`. It stands for
+`type T = x: U where pattern: x is P`, the subset type of `U` whose one
+invariant is `T::pattern`, where `x` is a binder that no source writes
+(see below):
+
+```
+type Byte = Int is 0..=255
+type Digit = Byte is 0..=9
+pub enum Severity { Silent, Info, Warning, Error }
+type Loud = Severity is Severity::Warning | Severity::Error
+```
+
+`Byte` means what `type Byte = b: Int where pattern: b is 0..=255` means,
+and an obligation of a `Byte` names `Byte::pattern`. `Digit`, built on `Byte`,
+keeps `Byte::pattern` followed by its own `Digit::pattern`, as any subset
+type keeps its base's invariants. Both front ends read the shorthand as
+the declaration it stands for while parsing, so everything after parsing
+is as for that declaration: its scope, its declaration checks, its
+obligations, its diagnostics and the pattern-test invariant fragment of
+[Decidability, Lean and migration](#decidability-lean-and-migration),
+which makes `Byte` finite, with the integers `0` to `255` in order. The
+declaration written out in full, with any binder that shadows nothing,
+means the same: `pattern` is an ordinary label, not a reserved word.
+
+The shorthand is written only as a declaration, and only with `=`. In
+any other place where a type is written, `T is P` is a syntax error: a
+variable's, parameter's or result's type, a field or payload, the element
+type of a collection, a type argument, a quantifier's binder and an
+ordinary alias, `type T := U is P`, which restricts nothing. A
+restriction is thus always the invariant of a named type, as the other
+declarations' are. A declaration with more than one invariant, or with
+an invariant that is not a pattern test, is written in full; the
+shorthand takes no `where`.
+
+The binder is generated, `#value`: since no identifier starts with `#`,
+no source declares or mentions it. So it shadows nothing (a written name
+such as `value` could be a constant's or a function's, which [explicit
+shadowing](Procedures.md#shadowing) would make an error), and the rules
+for written names do not apply to it: a binder of a `Bool`, or of an
+alias of `Bool`, need not end in `?`, as a written one must, and no lint
+reports its name. Nothing in the pattern can mean the binder, and the
+pattern is read as anywhere else in the module, so the type's own name
+in it is an error, as it is in a pattern test elsewhere: a range's bound,
+in `type Digit = Int is 0..=Digit`, must name a constant, and `Digit`
+names none (`F0373`, whose label then says so, rather than naming the
+binder); and a lone name, in `type Same = Int is Same`, binds, which an
+invariant's pattern test cannot (`F0334`).
+
+No lint reports the shorthand's pattern test as an expression `x is P`
+whose scrutinee `x` is written: `is_equality`, whose fix replaces it with
+`x = P`, does not apply, since the shorthand has no form with `=`. Lints
+of the pattern itself, such as `irrefutable_is` and the lints of
+or-patterns, apply as to any pattern test. Of the lints of an invariant's
+generated predicate, only those within the invariant's expression are
+reported, whether or not it has a static error, so a written binder's
+name is not linted there either.
 
 ## Static types, assumptions and obligations
 

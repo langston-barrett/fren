@@ -476,7 +476,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/cover.fren",
    "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren", "test/cli/fmt/closures.fren",
    "test/cli/fmt/newtypes.fren",
-   "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren",
+   "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren", "test/cli/fmt/subset_shorthand.fren",
    "test/cli/fmt/contract.fren",
    "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",

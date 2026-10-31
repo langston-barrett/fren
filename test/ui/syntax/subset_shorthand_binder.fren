@@ -1,0 +1,8 @@
+-- `T is P` is shorthand only in a subset type's declaration, not in a
+-- quantifier's binder.
+proc c(s: Set<Int>) {
+    expect small: forall (x: Int is 0..=9), x in s
+    --~^[cli] error: expected `)`, found keyword `is`
+    --~^^[hosted] error: unexpected token 'is'; expected ')'
+}
+--@ exit: 2

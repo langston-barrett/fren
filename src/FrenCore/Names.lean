@@ -789,6 +789,12 @@ def nameText : Name → String
 def checkVarName (n : Name) (isBool? : Option Bool) : Except Msg Unit :=
   checkVarKind n (Fren.Str.endsWith (nameText n) "?") isBool?
 
+/-- Whether the name `n` is one that a front end generates rather than one
+that is written: no identifier starts with `#`, so no source declares or
+mentions it. Such a name shadows nothing, and the rules and lints of
+written names, such as `?` ending a `Bool`'s name, do not apply to it. -/
+def generatedName (n : String) : Bool := n.startsWith "#"
+
 /-! ## Shadowing (`Reqs/Lang/Procedures#shadowing`) -/
 
 /-- Whether a declaration is accepted (`lang::shadowing`), from whether its

@@ -1,0 +1,27 @@
+-- The binder of the declaration that the pattern shorthand stands for is
+-- generated, so it shadows nothing in scope: neither the constant `value`,
+-- nor the function `digit?`, which a range's bound and an invariant
+-- mention.
+set_option fren.lint.non_upper_case_constants "allow"
+
+const value: Int := 9
+fn digit?(x: Int) := 0 <= x <= value
+type Digit = Int is 0..=value
+type Checked = c: Digit where digit: digit?(c)
+
+proc digits(x: Int): (det d: Digit) {
+    out d := x   --~ error: invariant `Digit::pattern` does not hold
+}
+
+proc small(d: Digit): (y: Int) {
+    ensure r: y = d
+
+    expect nine: y <= 9
+    expect eight: y <= 8   --~ error: expectation `small::eight` does not hold
+}
+
+proc checked(c: Checked): (y: Int) {
+    ensure r: y = c
+
+    expect nine: y <= 9
+}

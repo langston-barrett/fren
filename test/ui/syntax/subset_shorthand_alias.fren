@@ -1,0 +1,10 @@
+-- `T is P` is shorthand only in a subset type's declaration, with `=`: an
+-- ordinary alias restricts nothing.
+pub type Byte := Int is 0..=255
+--~^[cli] error: expected an item
+--~^^[hosted] error: unexpected token 'is'; expected command
+
+-- Stop Lean's command recovery before the test harness's check command.
+pub type T
+
+--@ exit: 2

@@ -1,0 +1,20 @@
+-- The pattern shorthand over a `Bool` base, and over an alias of `Bool`:
+-- its binder is generated, so it need not end in `?`, as a written `Bool`
+-- variable's name must.
+pub type On = Bool is true
+pub type Flag := Bool
+pub type Up = Flag is true
+-- Written in full, the binder is a `Bool` variable's name.
+pub type Lit = lit?: Bool where pattern: lit? is true   --~ warning: this pattern test is an equation
+
+proc switches(a?, b?, c?): (det on?: On, det up?: Up, det lit?: Lit) {
+    out on? := a?   --~ error: invariant `On::pattern` does not hold
+    out up? := b?   --~ error: invariant `Up::pattern` does not hold
+    out lit? := c?   --~ error: invariant `Lit::pattern` does not hold
+}
+
+proc both(o?: On, u?: Up): (y?) {
+    ensure r: y? iff o? and u?
+
+    expect holds: y?
+}

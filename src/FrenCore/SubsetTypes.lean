@@ -36,6 +36,17 @@ def subsetPredicateName (typeName label : String) (position : Nat) : String :=
 def subsetCheckName (typeName part : String) (position : Nat) : String :=
   s!"subset_{typeName.toLower}_{part}_{position}"
 
+/-- The binder of the declaration that the pattern shorthand `type T = U is
+P` stands for: a generated name (`generatedName`), which shadows nothing and
+is a valid name whatever `U` is (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
+def shorthandBinder : String := "#value"
+
+/-- The label of `F0373`, an invariant that mentions a name outside the
+scope of its declaration's `binder`: the pattern shorthand's binder is not
+written, so it is not named. -/
+def invariantScopeLabel (binder : String) : String :=
+  if binder == shorthandBinder then "not a constant or a function" else s!"outside the scope of `{binder}`"
+
 /-- A type as it is declared: `ty`, the type that the type checker sees,
 without invariants; `pat?`, the pattern of the type itself, if it is a
 subset type whose invariant is a pattern test; `invariants`, its named

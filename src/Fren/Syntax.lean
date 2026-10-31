@@ -510,6 +510,10 @@ scoped syntax (name := typeCmd) ("pub ")? "type " frenIdent (" := " fren_type)? 
 /-- Declared-only subset aliases, with a binder and labelled invariants. -/
 scoped syntax (name := subsetTypeCmd) (priority := high) ("pub ")? "type " frenIdent " = "
   frenIdent " : " fren_type " where " fren_expr : command
+/-- `type T = U is P`, a subset type whose one invariant, `pattern`, is a
+pattern test (`Reqs/Lang/SubsetTypes#the-pattern-shorthand`). -/
+scoped syntax (name := subsetShorthandCmd) (priority := high) ("pub ")? "type " frenIdent " = "
+  fren_type " is " fren_top_pattern : command
 
 /-- A function's parameter: `T` of an uninterpreted function, `x: T` or
 `x?` of a defined one. Which it is depends on whether the function has a
