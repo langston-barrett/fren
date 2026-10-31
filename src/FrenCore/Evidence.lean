@@ -545,13 +545,24 @@ def reportedPass (verdict : Verdict) (own caveats : List Caveat) (settled : Bool
 /-! ### An item's checks, as both front ends report them -/
 
 /-- A check outside an item that the item's checks may rest on: the
-realizability of a called procedure, by how messages name it, and its
-evidence, `passEvidence`'s for it. -/
+realizability of a called procedure, or of a refinement's abstraction, by
+how messages name it, and its evidence, `passEvidence`'s for it. `origins`
+names, for each of its caveats, a check that it rests on whose own method
+has that caveat, which may be itself, so that a message about a check that
+inherits the caveat can say which check down the chain has it. -/
 structure ExternalPremise where
   what : String
   caveats : List Caveat := []
   settled : Bool := true
+  origins : List (Caveat × String) := []
   deriving Inhabited
+
+/-- The evidence of the realizability of the procedure `p`, as `known` keeps
+it, for the checks that rest on it: where no run has kept it, a check that
+is not settled, so that a premise whose evidence is unknown never
+strengthens a pass. Both front ends name it so. -/
+def knownRealizability (known : Name → Option ExternalPremise) (p : Name) : ExternalPremise :=
+  (known p).getD { what := s!"the realizability of `{showComp p}`", settled := false }
 
 /-- Whether `r` is the realizability check of the item `comp` itself, not
 of the contract of an instance that the item's checks apply, which is
@@ -596,17 +607,25 @@ def premiseTexts (rs : Array CheckResult) (comp : Name) : Array String := Id.run
 /-- Where the query of the result `r` of an item is (`check::Site`): `calls`
 are the item's calls, in order, and `assumptions` its assumptions; `fn` says
 that it is a function's body or contract, and `constant` a constant's
-value. -/
-def CheckResult.site (r : CheckResult) (calls assumptions : Array Name) (fn constant : Bool) : Site :=
+value. `refinements` are the names of its refinement claims (`refines`), in
+order: the checks of one, its obligation and the definedness and cases of
+its formulas, are at the refinement of the abstraction at its position.
+The definedness of the claim's arguments is named after the claim too,
+though its query does not have the abstraction's calls, so it rests on the
+abstraction's realizability as well: that is conservative, and never
+strengthens a pass. -/
+def CheckResult.site (r : CheckResult) (calls assumptions : Array Name) (fn constant : Bool)
+    (refinements : Array Name := #[]) : Site :=
   if constant then .constant else if fn then .functionClause 0 else
   match r.kind, r.prop? with
   | .realizable, _ | .determinism, _ => .whole
   | .inst, some w => match calls.idxOf? w with
     | some k => .callAssumption k
     | none => .whole
-  | _, some n => match calls.idxOf? n with
-    | some k => .callArgument k
-    | none => if assumptions.contains n then .assumption else .constraint
+  | _, some n => match calls.idxOf? n, refinements.idxOf? n with
+    | some k, _ => .callArgument k
+    | none, some a => .refinement a
+    | none, none => if assumptions.contains n then .assumption else .constraint
   | _, none => .whole
 
 /-- A caveat, as messages name it. -/
@@ -615,9 +634,13 @@ def Caveat.text : Caveat → String
   | .bounded => "enumeration up to a size bound"
 
 /-- A pass of `what` that rests on `premise`, which has the caveat `c`
-(`F0663`, `check::reported_pass`). -/
-def weakenedMsg (what premise : String) (c : Caveat) : Msg :=
-  { code? := some "F0663", headline := s!"{what} rests on {premise}, which is only checked by {c.text}"
+(`F0663`, `check::reported_pass`): where `premise`'s own method does not
+have it, but a check that `premise` rests on, `origin`, does, the message
+names that check too. -/
+def weakenedMsg (what premise : String) (c : Caveat) (origin : String := premise) : Msg :=
+  { code? := some "F0663"
+    headline := if origin == premise then s!"{what} rests on {premise}, which is only checked by {c.text}"
+      else s!"{what} rests on {premise}, which rests on {origin}, which is only checked by {c.text}"
     label? := some "rests on an unproved check"
     notes := #[s!"note: its proof has {premise} among its hypotheses, so it is no stronger than that check \
       (`Reqs/Evidence`)"] }
@@ -636,11 +659,15 @@ def unsettledMsg (what premise : String) (missing : Bool := false) : Msg :=
 /-- Whether an item has the premise `p` among its own checks, from its
 structure (`check::item_premise`): `validator` says that it only checks
 that a subset type's invariants are defined, `nCalls` is its number of
-calls, and `assumed` the calls whose procedures have assumption checks. -/
-def itemHasPremise (item : CheckedItem) (validator : Bool) (nCalls : Nat) (assumed : List Nat) : Premise → Bool
+calls, `assumed` the calls whose procedures have assumption checks, and
+`nAbstractions` its number of refinement claims, each of whose
+abstraction's realizability it has. -/
+def itemHasPremise (item : CheckedItem) (validator : Bool) (nCalls : Nat) (assumed : List Nat)
+    (nAbstractions : Nat := 0) : Premise → Bool
   | .realizability j => j < nCalls
   | .callAssumptions j => j < nCalls && assumed.contains j && (item == .component || item == .global || item == .shortGlobal)
   | .ownRealizability => item.ownRealizability && !validator
+  | .abstractionRealizability a => a < nAbstractions
   | _ => false
 
 /-- A call of an item, as the evidence of the item's checks sees it: its
@@ -655,31 +682,90 @@ structure CallEvidence where
   realizability : ExternalPremise
   deriving Inhabited
 
+/-- How `itemEvidence` reports a check of an item. -/
+structure ReportedCheck where
+  rep : ReportedPass
+  /-- Its caveats, as `passEvidence` gives them. -/
+  caveats : List Caveat
+  /-- For each of its caveats, a check that it rests on whose own method has
+  that caveat, which may be itself, by how messages name it
+  (`ExternalPremise.origins`). -/
+  origins : List (Caveat × String)
+  /-- The message about the premise that weakens it or leaves it unsettled,
+  if one does (`F0663`, `F0664`). -/
+  msg? : Option Msg
+  deriving Inhabited
+
+/-- The evidence of the realizability of the item `p`, reported as `rc`, as
+both front ends keep it for the checks that rest on it. -/
+def ReportedCheck.realizability (rc : ReportedCheck) (p : Name) : ExternalPremise :=
+  { what := s!"the realizability of `{showComp p}`", caveats := rc.caveats, settled := rc.rep.shown == .pass
+    origins := rc.origins }
+
+/-- The refinement claims among an item's constraints `props`, each by its
+name and, for a refinement claim, its abstraction: each claim's name and
+abstraction, in order, as `CheckResult.site` and `itemEvidence` number
+them. -/
+def refinementsOf (props : Array (Name × Option Name)) : Array (Name × Name) :=
+  props.filterMap fun (n, a?) => a?.map (n, ·)
+
+/-- What an item's checks rest on in other items, as both front ends give it
+to `itemEvidence`, from the evidence `known` that the runs before kept
+(`knownRealizability`): each of its calls `calls`, by its name, its
+procedure and the names of that procedure's assumption checks
+(`CallEvidence`), and the realizability of the abstraction of each of its
+refinement claims `refinements` (`refinementsOf`). -/
+def externalPremises (known : Name → Option ExternalPremise) (calls : Array (Name × Name × Array Name))
+    (refinements : Array (Name × Name)) : Array CallEvidence × Array ExternalPremise :=
+  (calls.map fun (w, p, as) => { name := w, comp := p, assumes := as, realizability := knownRealizability known p },
+    refinements.map fun (_, a) => knownRealizability known a)
+
 /-- The checks of an item, its results `rs`, each with its site and the
 caveats of its own method, reported (`check::pass_evidence`,
-`check::premise`, `check::reported_pass`): each with how it is reported, its
-caveats, and the message about the premise that weakens it or leaves it
-unsettled, if one does (`F0663`, `F0664`). `item` is what the checks run
+`check::premise`, `check::reported_pass`). `item` is what the checks run
 on, `subsetInvariant` whether it is a procedure that only checks that a
-subset type's invariants are defined, and `calls` are its calls, in order.
+subset type's invariants are defined, `calls` are its calls, in order, and
+`abstractions` the evidence of the realizability of the abstraction of each
+of its refinement claims, in order, as `CheckResult.site` numbers them.
 A check's premises are those of `premisesOf`, among those that the item has
 (`itemHasPremise`), which are read from its structure, not from the
 results: where the item has a premise, a call's assumption check or its
 own realizability, that `rs` has no result of, as where enumeration
 stopped with an error, that premise is a check that is not settled, so that
-a missing premise never strengthens a pass (`check::item_premise`). -/
+a missing premise never strengthens a pass (`check::item_premise`).
+
+The checks are laid out in this order, which makes every premise an earlier
+check, as `passEvidence` needs, and as `check::hosted_runs` assumes
+(`in_order`):
+
+1. the realizability of each call's procedure, then of each refinement's
+   abstraction: checks of other items, which rest on nothing here;
+2. each call's assumption checks, in the calls' order: the check of an
+   assumption of call `k` is at `Site.callAssumption k`, whose premises,
+   by `Site.hasCall`, are those of calls `j < k` only, laid out before
+   it, and the item's own realizability is not among them
+   (`Site.ownHypotheses`);
+3. its own realizability, at `Site.whole`, which rests only on the calls'
+   nodes, of 1 and 2;
+4. its other checks, which rest on the nodes of 1 to 3, and never on each
+   other: no premise names a check of 4.
+
+Even out of that order a mistake fails closed: `passEvidence` takes a
+premise that is not an earlier check as one that is not settled. -/
 def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (calls : Array CallEvidence)
-    (rs : Array (CheckResult × Site × List Caveat)) :
-    Array (ReportedPass × List Caveat × Option Msg) := Id.run do
+    (rs : Array (CheckResult × Site × List Caveat)) (abstractions : Array ExternalPremise := #[]) :
+    Array ReportedCheck := Id.run do
   let nCalls := calls.size
+  let externals := calls.map (·.realizability) ++ abstractions
+  let nExt := externals.size
   -- The premises that the item has, from its structure, not from `rs`.
   let assumed := (List.range nCalls).filter fun j => !calls[j]!.assumes.isEmpty
-  let has := itemHasPremise item subsetInvariant nCalls assumed
+  let has := itemHasPremise item subsetInvariant nCalls assumed abstractions.size
   let names := premiseTexts (rs.map (·.1)) comp
   let ofCall (r : CheckResult) (j : Nat) : Bool :=
     r.kind == .inst && r.comp == comp && r.prop? == some calls[j]!.name
-  -- The checks in order, after the calls' realizability: each a result, or
-  -- a check that the item has with no result, by how messages name it.
+  -- The checks in order, after the external ones: each a result, or a check
+  -- that the item has with no result, by how messages name it.
   let mut layout : Array (Option Nat × String) := #[]
   let mut placed : Array Bool := rs.map fun _ => false
   -- Each call's assumption checks, in the calls' order.
@@ -691,7 +777,7 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
       for a in call.assumes do
         let found := (Array.range rs.size).find? fun i =>
           !placed[i]! && ofCall rs[i]!.1 j && (rs[i]!.1.target?.map (·.2)) == some a
-        here := here ++ [nCalls + layout.size]
+        here := here ++ [nExt + layout.size]
         match found with
         | some i =>
           placed := placed.set! i true
@@ -701,7 +787,7 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
     for i in [0:rs.size] do
       if !placed[i]! && ofCall rs[i]!.1 j then
         placed := placed.set! i true
-        here := here ++ [nCalls + layout.size]
+        here := here ++ [nExt + layout.size]
         layout := layout.push (some i, names[i]!)
     callNodes := callNodes.push here
   -- Then the item's own realizability, which rests on them.
@@ -709,20 +795,20 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
   for i in [0:rs.size] do
     if !placed[i]! && rs[i]!.1.isOwnRealizability comp then
       placed := placed.set! i true
-      ownNodes := ownNodes ++ [nCalls + layout.size]
+      ownNodes := ownNodes ++ [nExt + layout.size]
       layout := layout.push (some i, names[i]!)
   if ownNodes.isEmpty && has .ownRealizability then
-    ownNodes := [nCalls + layout.size]
+    ownNodes := [nExt + layout.size]
     layout := layout.push (none, s!"the realizability of `{showComp comp}`")
   -- Then its other checks, which rest on it.
   for i in [0:rs.size] do
     if !placed[i]! then
       placed := placed.set! i true
       layout := layout.push (some i, names[i]!)
-  let mut nodes : Array (CheckEvidence Caveat) := calls.map fun c =>
-    { own := c.realizability.caveats, settled := c.realizability.settled }
-  let mut texts : Array String := calls.map (·.realizability.what)
-  let mut absent : Array Bool := calls.map fun _ => false
+  let mut nodes : Array (CheckEvidence Caveat) := externals.map fun e =>
+    { own := e.caveats, settled := e.settled }
+  let mut texts : Array String := externals.map (·.what)
+  let mut absent : Array Bool := externals.map fun _ => false
   let mut posOf : Array Nat := rs.map fun _ => 0
   for (slot, text) in layout do
     texts := texts.push text
@@ -739,11 +825,27 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
           | .realizability j => [j]
           | .callAssumptions j => callNodes[j]?.getD []
           | .ownRealizability => ownNodes
-          -- The premises of functions, instances, subset types and
-          -- refinements are not applied yet (#522).
+          -- A refinement's abstraction that the item does not have is a
+          -- premise that is not earlier, so not settled.
+          | .abstractionRealizability a => [if has (.abstractionRealizability a) then nCalls + a else nodes.size]
+          -- The premises of functions, instances and subset types are not
+          -- applied yet (#522).
           | _ => []
       nodes := nodes.push { own, settled := r.verdict == .pass, premises }
   let finals := passEvidence nodes.toList
+  -- For each node, a check that it rests on with each of its caveats in its
+  -- own method: an external one's as it was kept, and otherwise its own, or
+  -- that of the first premise with the caveat.
+  let mut origins : Array (List (Caveat × String)) := externals.map fun e =>
+    e.caveats.map fun c => (c, ((e.origins.find? (·.1 == c)).map (·.2)).getD e.what)
+  for k in [nExt:nodes.size] do
+    let node := nodes[k]!
+    let caveats := (finals[k]?.map (·.1)).getD []
+    origins := origins.push <| caveats.map fun c =>
+      if node.own.contains c then (c, texts[k]!) else
+      let from? := node.premises.findSome? fun j =>
+        if j < k then (origins[j]?.bind fun os => (os.find? (·.1 == c)).map (·.2)) else none
+      (c, from?.getD texts[k]!)
   return (Array.range rs.size).map fun i =>
     let (r, _, own) := rs[i]!
     let k := posOf[i]!
@@ -757,8 +859,9 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
     let what := names[i]!
     let msg? := culprit?.bind fun j => (texts[j]?).bind fun premise =>
       if rep.unsettled then some (unsettledMsg what premise (absent[j]?.getD false))
-      else ((finals[j]?.getD ([], false)).1.find? (!own.contains ·)).map (weakenedMsg what premise)
-    (rep, caveats, msg?)
+      else ((finals[j]?.getD ([], false)).1.find? (!own.contains ·)).map fun c =>
+        weakenedMsg what premise c ((((origins[j]?.getD []).find? (·.1 == c)).map (·.2)).getD premise)
+    { rep, caveats, origins := (origins[k]?.getD []), msg? }
 
 /-- The caveats of the own method of the check `r`, run by random testing
 where `random` (`check::own_caveats`): a proof check's pass by random

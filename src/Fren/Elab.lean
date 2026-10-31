@@ -8265,7 +8265,8 @@ def elabRefinesMembers (scope : Name) (members : Array Syntax) (vars : Array Var
       addDecl (.thmDecl { name := decl ++ `proof, levelParams := [], «type» := proofType, value := proofValue })
     defs := defs.push (decl, body)
     if m[6].isNone then
-      out := out.push { kind := .expect, name, ref := m, decl, trigger? := none, triggerRef? := none, body := ← mkLambdaFVars fvs body }
+      out := out.push { kind := .expect, name, ref := m, decl, trigger? := none, triggerRef? := none, body := ← mkLambdaFVars fvs body
+                        abstraction? := some path }
   return (out, defs, indexes)
 
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's

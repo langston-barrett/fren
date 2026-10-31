@@ -57,6 +57,23 @@ pub proc caller3(x: Int): (z: Int) {  --~[cli] info: the realizability of `calle
     expect bigger: z > x  --~[cli] info: `caller3::bigger` rests on the realizability of `echo`, which is only checked by random testing
 }
 
+-- A check that rests on a check whose caveat is inherited: `mid`'s
+-- realizability is proved by the solver, from `echo`'s, which is only
+-- checked by random testing, so the messages about what rests on `mid`'s
+-- name `echo`'s too.
+pub proc mid(x: Int): (y: Int) {  --~[cli] info: the realizability of `mid` rests on the realizability of `echo`, which is only checked by random testing
+    --~^[hosted] info: the checks of `mid` that rest on checks set to random testing are run by `fren check`, not in Lean
+    call c := echo(x)
+    ensure r: y = c.y
+}
+
+pub proc top(x: Int): (z: Int) {  --~[cli] info: the realizability of `top` rests on the realizability of `mid`, which rests on the realizability of `echo`, which is only checked by random testing
+    --~^[hosted] info: the checks of `top` that rest on checks set to random testing are run by `fren check`, not in Lean
+    call m := mid(x)
+    ensure q: z = m.y
+    expect good: z = x  --~[cli] info: `top::good` rests on the realizability of `mid`, which rests on the realizability of `echo`, which is only checked by random testing
+}
+
 -- A global expectation whose own realizability is set to random testing,
 -- with an expectation reset to the solver: the expectation rests on that
 -- realizability, so `fren check` passes it by random testing, and

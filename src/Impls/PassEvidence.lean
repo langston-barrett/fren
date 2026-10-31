@@ -584,15 +584,16 @@ theorem mem_premisesOf (c : Fren.Core.CheckRecord) (n : Nat) (kinds : List (Nat 
 -- `itemHasPremise` (`itemEvidence`), and a premise that it has with no
 -- result is a check that is not settled.
 impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : Bool) (n : Nat) (assumed : List Nat)
-    (p : Fren.Core.Premise) {
+    (na : Nat) (p : Fren.Core.Premise) {
   item := toCheckedItem item,
   «validator?» := v,
   n_calls := n,
   assumed := Fren.FinSet.ofList (assumed.map fun (j : Nat) => (j : Int)),
+  n_abstractions := na,
   p := toPremise p,
-  «has?» := Fren.Core.itemHasPremise item v n assumed p,
+  «has?» := Fren.Core.itemHasPremise item v n assumed na p,
 } by
-  intro item v n assumed p
+  intro item v n assumed na p
   unfold check.item_premise.ensures check.item_premise.ensure.rule
   intro _
   have hi : item.ownRealizability = true ↔ check.own_realizability? (toCheckedItem item) = true := by
@@ -608,6 +609,8 @@ impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : B
       check.Premise.CallAssumptions.x0] <;> omega
   | ownRealizability =>
     simp [fren_spec, Fren.Core.itemHasPremise, toPremise, hi]
+  | abstractionRealizability a =>
+    simp [fren_spec, Fren.Core.itemHasPremise, toPremise, check.Premise.AbstractionRealizability.x0]
   | _ => simp [fren_spec, Fren.Core.itemHasPremise, toPremise]
 
 -- Lean decides what it reports with `hostedReported`, from the caveats

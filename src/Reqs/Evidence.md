@@ -199,11 +199,18 @@ check by itself, though a witness that it finds confirms a witness check's
 pass.
 
 Both front ends apply this rule to the premises that come from
-procedures: `Realizability(j)`, `CallAssumptions(j)` and
-`OwnRealizability` (`Fren.Core.itemEvidence`). They do not apply it yet to
-`AbstractionRealizability`, `ContractRealizability`, `InstanceContract`,
-`Postconditions` or `Inhabitation`, which need each check to know which
-functions' facts and which subset types' invariants its query has, as
+procedures: `Realizability(j)`, `CallAssumptions(j)`, `OwnRealizability`
+and `AbstractionRealizability(a)` (`Fren.Core.itemEvidence`). Every check
+of a refinement claim, its obligation and the definedness and cases of its
+formulas, is at `Site::Refinement(a)`, where `a` is the claim's position
+among the item's refinement claims (`Fren.Core.CheckResult.site`); the
+definedness of the claim's arguments is among them, though its query does
+not have the abstraction's calls, which is conservative. Both front ends
+take the abstraction's realizability from the evidence that they keep for
+procedures, as for a call's procedure. They do not apply the rule yet to
+`ContractRealizability`, `InstanceContract`, `Postconditions` or
+`Inhabitation`, which need each check to know which functions' facts and
+which subset types' invariants its query has, as
 [Checks](Check.md#global-expectations) says too; that is #522. Until then,
 a pass that rests only on one of those can be vacuous where that check
 does not pass, as before.
@@ -715,7 +722,9 @@ its structure, not from the results that a front end happens to have: the
 realizability of the procedure that each call calls; each call's assumption
 checks, where the called procedure has any, one for each of its assumptions
 and for each of its inputs whose type brings a constraint, and the item runs
-them (`check::applies`); and the item's own realizability, where it has one.
+them (`check::applies`); the item's own realizability, where it has one; and
+the realizability of the abstraction of each of its refinement claims, which
+only a global expectation block has (`Lang/Refinement`).
 A procedure that only checks that a subset type's invariants are defined
 (`Lang/SubsetTypes`) runs no realizability check, so it has none to rest on.
 Each premise that the item has is a check that its other checks rest on,
@@ -732,6 +741,7 @@ pub proc item_premise(
     validator?,                  -- it only checks that a subset type's invariants are defined
     n_calls: Int,                -- the number of its calls
     assumed: Set<Int>,           -- the calls whose procedures have assumption checks
+    n_abstractions: Int,         -- the number of its refinement claims
     p: Premise,                  -- a premise that a check of it may take
 ): (det has?) {
     ensure rule: has? iff match p {
@@ -743,18 +753,27 @@ pub proc item_premise(
                 CheckedItem::ShortExpectation,
             },
         Premise::OwnRealizability => own_realizability?(item) and not validator?,
+        Premise::AbstractionRealizability(a) => 0 <= a < n_abstractions,
         _ => false,
     }
 }
 
 -- A call has no assumption checks to rest on where its procedure has none.
-expect unassumed(item: CheckedItem, validator?, n_calls: Int, assumed: Set<Int>, j: Int) {
+expect unassumed(
+    item: CheckedItem,
+    validator?,
+    n_calls: Int,
+    assumed: Set<Int>,
+    n_abstractions: Int,
+    j: Int,
+) {
     assume none: not j in assumed
     call h := item_premise(
         item,
         validator?,
         n_calls,
         assumed,
+        n_abstractions,
         Premise::CallAssumptions(j),
     )
     expect absent: not h.has?
@@ -809,7 +828,11 @@ by random testing in the summary, and one whose caveats include `Bounded` among
 those by bounded enumeration. Where its caveats are more than its own
 method's, it gets an information message (`F0663`) that names a check it
 rests on, with that check's caveat: "`wrong` rests on the realizability
-of `lookup`, which is only checked by random testing".
+of `lookup`, which is only checked by random testing". Where that check's
+own method does not have the caveat, but a check that it rests on does,
+the message names that one too: "`top::good` rests on the realizability of
+`mid`, which rests on the realizability of `echo`, which is only checked by
+random testing".
 
 `check::reported_pass` states it:
 

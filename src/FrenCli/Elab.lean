@@ -358,6 +358,9 @@ structure CProp where
   smt : String
   trigger? : Option String
   triggerSpan? : Option Span
+  /-- For a refinement claim (`refines`): its abstraction, the procedure
+  whose realizability its checks rest on (`Reqs/Evidence`). -/
+  abstraction? : Option Name := none
   deriving Inhabited
 
 /-- A call, with formulas over the calling procedure's variables. -/
@@ -6519,6 +6522,9 @@ def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
   let replace (subs : Array (Name × String)) (text : String) := substQuoted (fun p =>
     ((subs.find? (fun (n, _) => n.toString == p)).map (·.2)).getD (quote p)) text
   let internal := abstract.vars.filter (!·.name.isAtomic)
+  -- The claim quantifies over the abstraction's call variables, so its
+  -- queries need a logic with quantifiers (`cli::logic`), as Lean's have.
+  unless internal.isEmpty do modify fun s => { s with quantified := true }
   for v in internal do
     substitutions := substitutions.push (v.name, quote s!"#refines{index}.{v.name}")
   for (name, value) in abstract.defs do
@@ -6548,7 +6554,7 @@ def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
       s!"(forall ({" ".intercalate (bound.map fun v => s!"({quote s!"#refines{index}.{v.name}"} {v.ty.sort})").toList}) {app})"
   modify fun s => { s with natApps := s.natApps ++ abstract.natApps.map closeApp }
   return { kind := .expect, name := Name.mkSimple s!"refines_{index}"
-           span := sp, smt := body, trigger? := none, triggerSpan? := none }
+           span := sp, smt := body, trigger? := none, triggerSpan? := none, abstraction? := some abstractPath }
 
 def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans : Array Span) (openStop : Nat)
     (global : Bool := false) : M Unit := do
