@@ -1183,6 +1183,15 @@ def CheckedItem.kinds : CheckedItem → Array CheckKind
   | .body => bodyKinds
   | .contract => contractKinds
 
+/-- The kinds of check that both front ends run on a procedure of `kinds`:
+on the procedure that checks a subset type's inhabitation (`subset`), only
+its realizability, and on the one that checks that its invariants are
+defined (`subsetInvariant`), only the checks of its clauses
+(`Reqs/Lang/SubsetTypes`). -/
+def kindsRun (subset subsetInvariant : Bool) (kinds : Array CheckKind) : Array CheckKind :=
+  if subset then #[.realizable]
+  else if subsetInvariant then #[.definedness, .completeness, .disjointness, .precondition] else kinds
+
 /-- The SMT-LIB logic of a check's queries (`cli::logic`): realizability
 quantifies, over outputs, and so does every query of a spec with an
 unbounded quantifier (`quantified`); a spec that uses strings or sets

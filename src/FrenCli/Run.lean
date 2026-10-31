@@ -915,13 +915,15 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       shown := shown.push msg
     -- What its checks rest on, the realizability of the procedures it calls,
     -- weakens them or leaves them inconclusive (`Reqs/Evidence`).
-    let calls := c.insts.map fun i => (i.name, (realizability.get? i.comp).getD
-      { what := s!"the realizability of `{Fren.Core.showComp i.comp}`", settled := false })
+    let calls := c.insts.map fun i =>
+      let ev : Fren.Core.ExternalPremise := (realizability.get? i.comp).getD
+        { what := s!"the realizability of `{Fren.Core.showComp i.comp}`", settled := false }
+      (Fren.Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
     let names := c.insts.map (·.name)
     let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
     let what : Fren.Core.CheckedItem := if body then (if c.vars.any (·.role == .output) then .contract else .body)
       else if global then .shortGlobal else if c.global then .global else .component
-    let reported := Fren.Core.itemEvidence c.path what kinds calls
+    let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
       (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false, own))
     let mut final := #[]
     for (r, _) in item, (rep, caveats, msg?) in reported do

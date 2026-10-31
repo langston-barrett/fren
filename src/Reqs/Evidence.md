@@ -710,6 +710,68 @@ expect own_caveats_combined(
 }
 ```
 
+`check::item_premise` states which of those premises an item has, from
+its structure, not from the results that a front end happens to have: the
+realizability of the procedure that each call calls; each call's assumption
+checks, where the called procedure has any, one for each of its assumptions
+and for each of its inputs whose type brings a constraint, and the item runs
+them (`check::applies`); and the item's own realizability, where it has one.
+A procedure that only checks that a subset type's invariants are defined
+(`Lang/SubsetTypes`) runs no realizability check, so it has none to rest on.
+Each premise that the item has is a check that its other checks rest on,
+whether or not a front end has a result of it: where it has none, because
+the method that its evidence sets did not run it (an enumeration that
+stopped with an error, `F0644`, or testing whose results were dropped), that
+check is among the unsettled ones of `check::pass_evidence`, so that a pass
+that rests on it is `Inconclusive` (`F0664`, "which was not checked"),
+never a proof:
+
+```fren
+pub proc item_premise(
+    item: CheckedItem,           -- what the checks run on
+    validator?,                  -- it only checks that a subset type's invariants are defined
+    n_calls: Int,                -- the number of its calls
+    assumed: Set<Int>,           -- the calls whose procedures have assumption checks
+    p: Premise,                  -- a premise that a check of it may take
+): (det has?) {
+    ensure rule: has? iff match p {
+        Premise::Realizability(j) => 0 <= j < n_calls,
+        Premise::CallAssumptions(j) => 0 <= j < n_calls and j in assumed
+            and item in {
+                CheckedItem::Component,
+                CheckedItem::GlobalExpectation,
+                CheckedItem::ShortExpectation,
+            },
+        Premise::OwnRealizability => own_realizability?(item) and not validator?,
+        _ => false,
+    }
+}
+
+-- A call has no assumption checks to rest on where its procedure has none.
+expect unassumed(item: CheckedItem, validator?, n_calls: Int, assumed: Set<Int>, j: Int) {
+    assume none: not j in assumed
+    call h := item_premise(
+        item,
+        validator?,
+        n_calls,
+        assumed,
+        Premise::CallAssumptions(j),
+    )
+    expect absent: not h.has?
+}
+
+-- The items that have calls' assumption checks are those that run them.
+expect call_assumptions_applies(item: CheckedItem) {
+    call a := applies(item, Kind::InstanceAssumption)
+    expect agrees: item in {
+        CheckedItem::Component,
+        CheckedItem::GlobalExpectation,
+        CheckedItem::ShortExpectation,
+    }
+        iff a.runs?
+}
+```
+
 `check::runs_premises` states that a front end that reports a check runs
 every check that it rests on, so that the evidence of each is known where
 it is reported:
@@ -840,16 +902,18 @@ reports no verdict for it, as if it were set to random testing itself, and
 says that `fren check` runs it. That is decided per check: a check that
 rests on nothing set to random testing, such as the vacuity of an
 expectation that does, is reported as usual. Which checks those are follows
-from the evidence settings and the premises alone, so both front ends find
-the same ones, and the [agreement with Lean](Cli.md#agreement-with-lean)
-covers exactly the other checks, as it already covers exactly the checks
-that are not set to random testing. One exception: a check that `#fren_check`
+from the evidence settings, the premises, and, for the checks that
+`#fren_check` runs, whether their own verdict is `Fail`: a check that it
 runs and that fails is reported all the same, as `fren check` reports it,
-since no premise changes a `Fail` (`check::reported_pass`'s `fail_kept`)
-and both front ends find the same counterexample; so a value given where a
-subset type is declared, which the solver checks whatever the evidence
-(`check::by_evidence`), is reported where it does not hold, in a procedure
-set to random testing too.
+since no premise changes a `Fail` (`check::reported_pass`'s `fail_kept`).
+So a value given where a subset type is declared, which the solver checks
+whatever the evidence (`check::by_evidence`), is reported where it does not
+hold, in a procedure set to random testing too. The settings and premises
+are the same in both front ends, and the own verdicts of the checks not set
+to random testing agree by the [agreement with
+Lean](Cli.md#agreement-with-lean), so both front ends find the same checks
+reported, and that agreement covers exactly the other checks, as it already
+covers exactly the checks that are not set to random testing.
 `check::hosted_runs` states it. Both front ends run enumeration, so a
 premise decided by enumeration is settled in both, and one that
 enumeration decides completely, over a finite domain, is a proof, which

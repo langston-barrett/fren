@@ -1,0 +1,28 @@
+-- fren-covers: check::runs_premises
+-- A premise that the item has but that no result stands for, here a call's
+-- assumption check whose enumeration stopped with an error, is a check that
+-- was not checked: what rests on it is inconclusive, in both front ends,
+-- never a proof (`check::item_premise`).
+set_option fren.lint.undecidable "allow"
+
+proc callee(rows: Seq<Seq<Int>>): (y: Int) {
+    assume empty: rows = []
+    ensure r: y = 0
+}
+
+proc caller(rows: Seq<Seq<Int>>): (z: Int) {  --~ error: `caller` has a slot whose type, without its invariants, has more than 65536 values up to size 3, too many to enumerate
+    --~^ warning: the realizability of `caller` rests on the assumption `callee::empty` of call `c`, which was not checked
+    set_option fren.evidence "enumerated" in
+    call c := callee(rows)
+    ensure q: z = c.y
+    expect vac: rows = []  --~ warning: `caller::vac` rests on the assumption `callee::empty` of call `c`, which was not checked
+}
+
+-- A procedure that checks that a subset type's invariants are defined runs
+-- no realizability check, so its checks rest on none: both front ends pass
+-- them.
+type Head = s: Seq<Int> where invariant: s != [] and s[0] > 0
+
+proc user(x: Head): (y: Int) {
+    ensure r: y = x[0]
+}

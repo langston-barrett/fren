@@ -25,7 +25,7 @@ note[F0654]: the vacuity and redundancy checks of `lex::parity` are not run by r
    = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
    = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 
-note[F0663]: `lex::parity::even?` rests on the realizability of `lex::parity`, which is only checked by random testing
+note[F0663]: the determinism of `lex::parity::even?` rests on the realizability of `lex::parity`, which is only checked by random testing
   --> test/cli/commands/check_by_testing.fren:18:10
    |
 18 | pub proc parity(n: Int): (set_option fren.evidence "solver" in det even?) {

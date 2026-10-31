@@ -383,7 +383,7 @@ where
   let tasks ← checkItems items sites cancel
   let mut all := #[]
   let mut byBound := 0
-  for (p, c, kinds) in items, task in tasks, item in what, k in [0:items.size] do
+  for (p, c, _) in items, task in tasks, item in what, k in [0:items.size] do
     let quiet := k < silent
     -- A failure of one procedure's check, a recursion depth or a heartbeat
     -- limit among them, is reported as its own error: every other
@@ -398,8 +398,10 @@ where
     -- What its checks rest on, the realizability of the procedures it
     -- calls, weakens them or leaves them inconclusive (`Reqs/Evidence`).
     let known := (← getState).realizability
-    let calls := c.insts.map fun i => (i.name, (known.find? i.comp).getD
-      { what := s!"the realizability of `{Core.showComp i.comp}`", settled := false })
+    let calls := c.insts.map fun i =>
+      let ev : Core.ExternalPremise := (known.find? i.comp).getD
+        { what := s!"the realizability of `{Core.showComp i.comp}`", settled := false }
+      (Core.CallEvidence.mk i.name i.comp (i.assumes.map Prod.fst) ev)
     let names := c.insts.map (·.name)
     let assumptions := (c.props.filter (·.kind == .assume)).map (·.name)
     let siteOf (r : CheckResult) := r.site names assumptions c.fn?.isSome false
@@ -411,12 +413,12 @@ where
     let placeholders : Array CheckResult :=
       (if random.realizable && !c.global then #[{ kind := .realizable, comp := p, prop? := none, verdict := .pass }]
         else #[])
-      ++ (c.insts.filter fun i => random.insts.contains i.name).map fun i =>
-        { kind := .inst, comp := p, prop? := some i.name, target? := some (i.comp, `assumptions), verdict := .pass }
+      ++ (c.insts.filter fun i => random.insts.contains i.name).flatMap fun i => i.assumes.map fun (a, _) =>
+        { kind := .inst, comp := p, prop? := some i.name, target? := some (i.comp, a), verdict := .pass }
     let checks := results.map (fun r => (r, siteOf r, ([] : List Core.Caveat)))
       ++ enumResults.map (fun r => (r, siteOf r, if r.bounded?.isSome && r.kind.proof then [Core.Caveat.bounded] else []))
       ++ placeholders.map fun r => (r, siteOf r, [Core.Caveat.random])
-    let reported := Core.itemEvidence p item kinds calls checks
+    let reported := Core.itemEvidence p item c.subsetInvariant?.isSome calls checks
     -- The evidence of its realizability, kept for the checks that rest on
     -- it, in this run, later runs and the modules that import this one
     -- (`check::runs_premises`).
@@ -440,8 +442,10 @@ where
       && ((checks[i]?.map (·.1.verdict != .fail)).getD true)
     for r in results, i in [0:results.size] do
       unless resting i do report p c r
-    if random.any || ((Array.range (results.size + enumResults.size)).any resting) then
+    if random.any then
       logAbout p c.ref m!"the checks of `{Core.showComp p}` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)" .information
+    if (Array.range (results.size + enumResults.size)).any resting then
+      logAbout p c.ref m!"the checks of `{Core.showComp p}` that rest on checks set to random testing are run by `fren check`, not in Lean (`Reqs/Evidence#lean`)" .information
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with
     | some (.error msg) => logAbout p c.ref msg.text .error

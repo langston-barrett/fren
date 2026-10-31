@@ -112,8 +112,10 @@ trusted check::combined: "no front end combines the verdicts of several methods 
 -- Both front ends run every premise of what they report, `#fren_check`
 -- those of the items it names too, and keep their evidence; `#fren_check`
 -- reports no verdict for exactly the checks that rest on one set to random
--- testing (`Reqs/Evidence`). The ui test runs through both front ends.
-tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "src/FrenTest/EvidencePremises.lean"
+-- testing (`Reqs/Evidence`). The ui tests run through both front ends;
+-- `EvidenceClient` checks a caller of a procedure that an imported module
+-- checked.
+tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
 tested check::hosted_runs: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_obligations.fren"
 
 tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"

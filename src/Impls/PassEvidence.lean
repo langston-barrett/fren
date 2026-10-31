@@ -580,6 +580,36 @@ theorem mem_premisesOf (c : Fren.Core.CheckRecord) (n : Nat) (kinds : List (Nat 
     have hm : Fren.Core.Premise.inhabitation t ∈ types.map Fren.Core.Premise.inhabitation := List.mem_map.mpr ⟨t, h.2, rfl⟩
     simp [List.mem_append, hm]
 
+-- Both front ends take an item's premises from its structure with
+-- `itemHasPremise` (`itemEvidence`), and a premise that it has with no
+-- result is a check that is not settled.
+impl item_premise: check::item_premise for (item : Fren.Core.CheckedItem) (v : Bool) (n : Nat) (assumed : List Nat)
+    (p : Fren.Core.Premise) {
+  item := toCheckedItem item,
+  «validator?» := v,
+  n_calls := n,
+  assumed := Fren.FinSet.ofList (assumed.map fun (j : Nat) => (j : Int)),
+  p := toPremise p,
+  «has?» := Fren.Core.itemHasPremise item v n assumed p,
+} by
+  intro item v n assumed p
+  unfold check.item_premise.ensures check.item_premise.ensure.rule
+  intro _
+  have hi : item.ownRealizability = true ↔ check.own_realizability? (toCheckedItem item) = true := by
+    cases item <;> simp [fren_spec, toCheckedItem, Fren.Core.CheckedItem.ownRealizability,
+      Fren.Core.CheckedItem.kinds, Fren.Core.kindsFor, Fren.Core.CheckKind.all, Fren.Core.globalKinds,
+      Fren.Core.bodyKinds, Fren.Core.contractKinds, check.own_realizability?]
+  cases p with
+  | realizability j =>
+    simp [fren_spec, Fren.Core.itemHasPremise, toPremise, check.Premise.Realizability.x0]
+  | callAssumptions j =>
+    have ha := mem_nats assumed j
+    cases item <;> simp [fren_spec, Fren.Core.itemHasPremise, toPremise, toCheckedItem, ha,
+      check.Premise.CallAssumptions.x0] <;> omega
+  | ownRealizability =>
+    simp [fren_spec, Fren.Core.itemHasPremise, toPremise, hi]
+  | _ => simp [fren_spec, Fren.Core.itemHasPremise, toPremise]
+
 -- Both front ends report each check with `reportedPass` (`itemEvidence`).
 impl reported_pass: check::reported_pass for (k : CheckKind) (v : Fren.Core.Verdict) (own cs : List Caveat) (s : Bool) {
   kind := toCheckKind k,

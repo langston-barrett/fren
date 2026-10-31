@@ -28,7 +28,7 @@ pub proc lookup(x: Int): (y: Int) {  --~[cli] warning: testing found no outputs 
 }
 
 pub proc caller2(x: Int): (z: Int) {  --~[cli] warning: the realizability of `caller2` rests on the realizability of `lookup`, which did not pass
-    --~^[hosted] info: the checks of `caller2` set to random testing are run by `fren check`, not in Lean
+    --~^[hosted] info: the checks of `caller2` that rest on checks set to random testing are run by `fren check`, not in Lean
     assume a: x = 1234567
     call c := lookup(x)
     ensure q: z = c.y + 1
@@ -36,7 +36,7 @@ pub proc caller2(x: Int): (z: Int) {  --~[cli] warning: the realizability of `ca
 }
 
 expect answers_one(x: Int) {  --~[cli] warning: the realizability of `answers_one` rests on the realizability of `lookup`, which did not pass
-    --~^[hosted] info: the checks of `answers_one` set to random testing are run by `fren check`, not in Lean
+    --~^[hosted] info: the checks of `answers_one` that rest on checks set to random testing are run by `fren check`, not in Lean
     assume a: x = 1234567
     call c := lookup(x)
     expect e: c.y = 1  --~[cli] warning: `answers_one::e` rests on the realizability of `lookup`, which did not pass
@@ -51,7 +51,7 @@ pub proc echo(x: Int): (y: Int) {  --~[hosted] info: the checks of `echo` set to
 }
 
 pub proc caller3(x: Int): (z: Int) {  --~[cli] info: the realizability of `caller3` rests on the realizability of `echo`, which is only checked by random testing
-    --~^[hosted] info: the checks of `caller3` set to random testing are run by `fren check`, not in Lean
+    --~^[hosted] info: the checks of `caller3` that rest on checks set to random testing are run by `fren check`, not in Lean
     call c := echo(x)
     ensure q: z = c.y + 1
     expect bigger: z > x  --~[cli] info: `caller3::bigger` rests on the realizability of `echo`, which is only checked by random testing
