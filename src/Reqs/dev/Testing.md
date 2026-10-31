@@ -537,8 +537,10 @@ the `.olean` files of `Fren` and its dependencies; for them, run `heavy
 lake build Fren` in the checkout, which compiles no C code and links
 nothing, and then `lake env /tmp/fren_test-SHA/fren_test --job ui FILE`.
 The other jobs, such as `snapshots`, `errorCodes` and `mutation`, need
-only the binary. The `.olean` files are not uploaded: those of `Fren` and
-its dependencies come to some 340 MB, 96 MB compressed, against SIZES.
+only the binary. On CI, `fren` is 161 MB, 116 MB stripped and 45 MB
+compressed, and `fren_test` is 320 MB, 235 MB stripped and 78 MB
+compressed. The `.olean` files are not uploaded: those of `Fren` and its
+dependencies came to some 340 MB, 96 MB compressed, on macOS.
 
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
