@@ -115,6 +115,10 @@ trusted from the solver: no Lean proofs of them are produced. What Fren
 reads back from a model is not trusted: before it shows a counterexample or
 a witness, each front end confirms it in Fren's semantics (see [Reading
 models](Models.md)).
+What a `Pass` rests on, its evidence, is in [Evidence](Evidence.md): a
+pass that is a proof from the constraints of calls or the facts about
+uninterpreted functions is no stronger than the checks that show those
+can hold.
 
 ```fren
 pub enum Outcome { Sat, Unsat, Unknown }
@@ -1060,9 +1064,10 @@ At such an input `A ∧ I` is unsatisfiable, and the global expectation's
 expectations pass there vacuously. With `assume a: x = 1234567`, `call c
 := tested_lies(x)` and `expect e: c.y = 0`, where `tested_lies` has no
 outputs at `1234567`, `e` passes. Only the called procedure's own report
-says so: its tested evidence, or its inconclusive result. So a global
-expectation proves no more than its called procedures' realizability
-does.
+says so: its tested evidence, or its inconclusive result. The same holds of
+a procedure's own checks. [Evidence](Evidence.md) states the rule that caps
+such passes at the evidence of what they rest on; the front ends do not
+apply it yet, until the front-end PR of #414's stack merges.
 
 ## Call assumptions
 
@@ -2499,9 +2504,9 @@ values are pinned by the input, and its contradictory assumptions rest on
 
 ```fren
 -- Whether a pass of a check of this kind is a proof from hypotheses,
--- rather than a witness (see [Verdict families](#verdict-families)). As
--- the chapter on evidence of #439 defines it; one of the two goes when
--- #439 merges.
+-- rather than a witness (see [Verdict families](#verdict-families)). The
+-- chapter on [evidence](Evidence.md) uses it: only such a pass rests on
+-- the evidence of the checks that back its hypotheses.
 pub fn proof?(kind: Kind) := not kind in {
     Kind::Cover,
     Kind::Vacuity,

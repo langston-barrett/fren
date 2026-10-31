@@ -36,8 +36,8 @@ cell is a skip: every method can conclude something about every check.
 One verdict outside a one-sided cell is allowed, and only for a single
 method that the source chose. When the source sets `"random"` alone, a
 check of the first row for which testing finds no counterexample passes,
-reported as passing by random testing, with the caveat `Random` of the
-chapter on evidence of #439. That is the trust level that the source
+reported as passing by random testing, with the caveat `Random` of
+[Evidence](Evidence.md). That is the trust level that the source
 chose, never a silent upgrade (#446), and it is where that caveat arises
 on such a check. In a combination of methods, such a pass counts for
 nothing (see [Combinations](#combinations)). A witness that testing finds
@@ -156,9 +156,10 @@ has the caveat `Bounded`. A check that does not pass has no method. A
 witness that random testing finds, for a cover goal, vacuity, redundancy
 or reachability, is a genuine witness, so its pass has no caveat: only a
 pass of a check of the first row by random testing has the caveat
-`Random`. Its *evidence*, in the sense of the chapter on
-evidence of #439, is the weakest link: those caveats, with those of the
-checks that it rests on. The summary records each method's verdict.
+`Random`. Its *evidence*, in the sense of [Evidence](Evidence.md), is the
+weakest link: those caveats, with those of the checks that it rests on
+(`check::own_caveats`, `check::pass_evidence`). The summary records each
+method's verdict.
 
 A single method is not a combination, and its report is its own: when
 the source sets `"random"` alone, a check of the first row for which

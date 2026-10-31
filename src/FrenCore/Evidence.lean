@@ -3,12 +3,16 @@ import FrenCore.Check
 -- keep-sorted end
 
 /-!
-# Checking by testing (`Reqs/Check#checking-by-testing`)
+# Evidence (`Reqs/Check#checking-by-testing`, `Reqs/Evidence`)
 
 Which checks a spec has tested rather than asked of the solver, as set by
 `set_option fren.evidence "random" in`, shared by both front ends. Each
 front end drops these checks from the procedure before `checkComp`, so that the
 solver is asked nothing about them; the `fren` command then tests them.
+
+And the evidence of a pass (`Reqs/Evidence`): which checks a check rests on
+(`premisesOf`), its evidence from theirs (`passEvidence`), and how it is
+reported (`reportedPass`).
 -/
 
 open Lean
@@ -357,5 +361,185 @@ def Comp.skippedMsgs (c : Comp F) (subject : String) (tested enumerated : Tested
     let s := c.skipped t method kinds
     if s.isEmpty then #[] else #[skippedMsg subject method s]
   one (tested.minus enumerated) .random ++ one enumerated .enumerated
+
+/-! ## The evidence of a pass (`Reqs/Evidence`) -/
+
+/-- What a pass rests on besides a proof (`check::Caveat`). -/
+inductive Caveat where
+  /-- Random testing. -/
+  | random
+  /-- Enumeration up to a size bound. -/
+  | bounded
+  deriving Inhabited, DecidableEq, Repr
+
+/-- A check, as the evidence of its pass sees it (`check::pass_evidence`):
+the caveats of its own method, whether its own verdict is a pass, and the
+positions of the earlier checks whose passes it takes as premises. -/
+structure CheckEvidence (γ : Type) where
+  own : List γ := []
+  settled : Bool := true
+  premises : List Nat := []
+  deriving Inhabited
+
+/-- `passEvidence`, after the checks whose evidence is `acc`. A premise
+that is not an earlier check is not settled, so that it never strengthens
+a pass. -/
+def passEvidenceAux {γ : Type} [BEq γ] : List (CheckEvidence γ) → Array (List γ × Bool) → Array (List γ × Bool)
+  | [], acc => acc
+  | c :: cs, acc =>
+    let ps := c.premises.filter (· < acc.size)
+    passEvidenceAux cs (acc.push ((c.own ++ ps.flatMap (fun j => (acc[j]?.map (·.1)).getD [])).eraseDups,
+      c.settled && c.premises.all (· < acc.size) && ps.all fun j => (acc[j]?.map (·.2)).getD true))
+
+/-- The evidence of each of the checks `cs`, in order
+(`check::pass_evidence`): its caveats, and whether it rests on no check
+whose own verdict is not a pass. Each is its own, with the evidence of each
+earlier check that it takes as a premise, which is computed before it, so
+that it rests on what they rest on, transitively. -/
+def passEvidence {γ : Type} [BEq γ] (cs : List (CheckEvidence γ)) : Array (List γ × Bool) := passEvidenceAux cs #[]
+
+/-! ## The premises of a check (`Reqs/Evidence`) -/
+
+/-- Where a check's query is, which decides its hypotheses
+(`check::Site`). -/
+inductive Site where
+  /-- The procedure's realizability or a `det` output's determinism. -/
+  | whole
+  | assumption
+  /-- A guarantee, expectation, cover goal or definition. -/
+  | constraint
+  /-- An argument of the call at this position. -/
+  | callArgument (k : Nat)
+  /-- An assumption of the call at this position. -/
+  | callAssumption (k : Nat)
+  /-- A clause or the body of the function at this position. -/
+  | functionClause (f : Nat)
+  | constant
+  /-- The obligation of a refinement whose abstraction is the procedure at
+  this position. -/
+  | refinement (a : Nat)
+  deriving Inhabited, DecidableEq, Repr
+
+/-- What a function is to the facts of a query that applies it
+(`check::FnKind`). -/
+inductive FnKind where
+  | contract
+  /-- An instance of a generic function. -/
+  | instance
+  | recursive
+  | defined
+  deriving Inhabited, DecidableEq, Repr
+
+/-- A check, as its premises see it (`check::CheckRecord`): what it runs
+on, which says which checks the item has (`CheckedItem.kinds`,
+`check::applies`); its kind; its site; the functions, or instances of
+generic functions, whose facts its query has, by their positions, through
+the unfolding of those that are defined and not recursive; and the subset
+types whose invariants it brings. -/
+structure CheckRecord where
+  item : CheckedItem := .component
+  kind : CheckKind
+  site : Site
+  applies : List Nat := []
+  types : List Nat := []
+  deriving Inhabited
+
+/-- What a check may rest on, by position (`check::Premise`). -/
+inductive Premise where
+  /-- The realizability of the procedure that the item's call at this
+  position calls. -/
+  | realizability (j : Nat)
+  /-- The assumption checks of the item's call at this position. -/
+  | callAssumptions (j : Nat)
+  /-- The item's own realizability. -/
+  | ownRealizability
+  /-- The realizability of the procedure at this position, a refinement's
+  abstraction. -/
+  | abstractionRealizability (a : Nat)
+  | contractRealizability (f : Nat)
+  /-- The check that decides the contract of the instance at this
+  position. -/
+  | instanceContract (i : Nat)
+  /-- A recursive function's postcondition checks. -/
+  | postconditions (f : Nat)
+  /-- A subset type's inhabitation check. -/
+  | inhabitation (t : Nat)
+  deriving Inhabited, DecidableEq, Repr
+
+/-- Whether the query of a check at `site` has the constraints of call `j`
+among its hypotheses, of an item with `nCalls` calls
+(`check::has_call?`). -/
+def Site.hasCall (site : Site) (j nCalls : Nat) : Bool :=
+  j < nCalls && match site with
+    | .whole | .constraint | .refinement _ => true
+    | .callArgument k | .callAssumption k => j < k
+    | _ => false
+
+/-- Whether the item has a realizability check of its own, which shows that
+its assumptions and guarantees can hold together
+(`check::own_realizability?`, `check::applies`). -/
+def CheckedItem.ownRealizability (item : CheckedItem) : Bool := item.kinds.contains .realizable
+
+/-- Whether the query of a check of kind `kind` at `site`, of the item
+`item`, has the item's own assumptions and guarantees among its hypotheses,
+and is not its realizability (`check::own_hypotheses?`). An item with no
+realizability check of its own, such as a short-form global expectation, has
+no such hypothesis, and nothing of it rests on a check that does not
+exist. -/
+def Site.ownHypotheses (site : Site) (item : CheckedItem) (kind : CheckKind) : Bool :=
+  item.ownRealizability && kind != .realizable && match site with
+    | .whole | .assumption | .constraint | .refinement _ => true
+    | _ => false
+
+/-- Whether the check at `site` is a clause of the function `f`
+(`check::own_function?`). -/
+def Site.ownFunction (site : Site) (f : Nat) : Bool :=
+  match site with
+  | .functionClause g => g == f
+  | _ => false
+
+/-- Whether the check `c` of an item with `nCalls` calls takes `p` as a
+premise, where `kinds` says what each function is (`check::premise`). -/
+def premised (c : CheckRecord) (nCalls : Nat) (kinds : List (Nat × FnKind)) (p : Premise) : Bool :=
+  c.kind.proof && match p with
+    | .realizability j | .callAssumptions j => c.site.hasCall j nCalls
+    | .ownRealizability => c.site.ownHypotheses c.item c.kind
+    | .abstractionRealizability a => c.site == .refinement a
+    | .contractRealizability f => c.applies.contains f && kinds.contains (f, .contract) && !c.site.ownFunction f
+    | .instanceContract i => c.applies.contains i && kinds.contains (i, .instance) && !c.site.ownFunction i
+    | .postconditions f => c.applies.contains f && kinds.contains (f, .recursive) && !c.site.ownFunction f
+    | .inhabitation t => c.types.contains t
+
+/-- The premises of the check `c` (`check::premise`): each of those that
+`premised` takes, in order. -/
+def premisesOf (c : CheckRecord) (nCalls : Nat) (kinds : List (Nat × FnKind)) : List Premise :=
+  ((List.range nCalls).flatMap (fun j => [Premise.realizability j, .callAssumptions j])
+    ++ [Premise.ownRealizability]
+    ++ (match c.site with | .refinement a => [Premise.abstractionRealizability a] | _ => [])
+    ++ c.applies.flatMap (fun f => [Premise.contractRealizability f, .instanceContract f, .postconditions f])
+    ++ c.types.map Premise.inhabitation)
+    |>.filter (premised c nCalls kinds)
+
+/-- How a check is reported, from its own verdict, the caveats of its own
+method and its evidence (`check::reported_pass`). -/
+structure ReportedPass where
+  shown : Verdict
+  /-- Counted among the passes by testing. -/
+  byTesting : Bool
+  /-- Counted among the passes by bounded enumeration. -/
+  byBound : Bool
+  /-- Weakened by a premise (`F0663`). -/
+  weakened : Bool
+  /-- Made inconclusive by a premise that is not settled (`F0664`). -/
+  unsettled : Bool
+  deriving Inhabited, DecidableEq, Repr
+
+/-- How a check is reported (`check::reported_pass`). -/
+def reportedPass (verdict : Verdict) (own caveats : List Caveat) (settled : Bool) : ReportedPass :=
+  let shown := if verdict == .pass && !settled then .inconclusive else verdict
+  let has (c : Caveat) := caveats.contains c
+  { shown, byTesting := shown == .pass && has .random, byBound := shown == .pass && has .bounded
+    weakened := shown == .pass && caveats.any (!own.contains ·)
+    unsettled := verdict == .pass && !settled }
 
 end Fren.Core

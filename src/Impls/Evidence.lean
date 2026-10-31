@@ -24,6 +24,7 @@ import Impls.Lint
 import Impls.Models
 import Impls.Modules
 import Impls.Mutate
+import Impls.PassEvidence
 import Impls.PatternTests
 import Impls.Procedures
 import Impls.Repeats
