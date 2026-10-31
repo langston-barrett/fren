@@ -380,7 +380,7 @@ def subsetCount (k card : Nat) : Nat :=
 
 mutual
 /-- At least as many as the values of size at most `n` of the shape `s`
-(`Shape.count`): exactly as many, but that a pattern type may have fewer,
+(`Shape.count`): exactly as many, but that a subset type may have fewer,
 and `maxBehaviours + 1` if there are more (`saturate`).
 Computed without listing them, so that a slot with too many values is
 refused before they are listed. -/
@@ -1330,7 +1330,7 @@ whose enumeration would search more than `maxBehaviours` assignments
 a variable has more values than it, which are not listed. -/
 def tooManyMsg (subject : String) (count n : Nat) (estimated : Bool := false) : Msg :=
   { code? := some "F0644", headline :=
-      if estimated then s!"{subject} has a slot whose type, without its patterns, has more than {maxBehaviours} values up to size {n}, too many to enumerate"
+      if estimated then s!"{subject} has a slot whose type, without its invariants, has more than {maxBehaviours} values up to size {n}, too many to enumerate"
       else s!"{subject} has {count} behaviours up to size {n}, too many to enumerate"
     label? := some "too many behaviours"
     notes := #[s!"note: enumeration searches at most {maxBehaviours} behaviours, counting a second copy of each for determinism",

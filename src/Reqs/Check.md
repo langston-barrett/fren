@@ -2259,22 +2259,26 @@ operands are (`check::Truth`). A cardinality operation is a count compared
 with 1, so a count written out, a sum at `Int` or `Nat` of
 `if e then 1 else 0` and integer literals and constants that are not
 negative, compared with 1 by `=` or `<=`, is known where the operation
-that it spells out is. So is one at a newtype over `Int` or `Nat`, such as
-`(if q[5] > 0 then Ms(1) else Ms(0)) <= Ms(1)`, read as its underlying
-values, since a newtype's value is its underlying value's; a sum at any
-other type is not a count. The count is matched against the formula with
-each defined variable's definition substituted for it, its defined
-outputs' and its `let`s', through those that they mention, so it may be
-written through them, as in `out k := (if q[5] > 0 then 1 else 0) + 2`
-with `expect e: not (k <= 1)`, and with a non-recursive function's body
-substituted where it is applied, as both front ends unfold one. The front
-ends match their own terms, a Lean term and the `fren` command's
-expression, so no one function recognizes the count for both;
-`check::cardinality_truth` states its truth once it is recognized, and the
-ui tests have a count written inline, through a function, through defined
-outputs, a chain of them and a `let`, at `Int` and at `Nat`, and
-`fren_fuzz_frontends` generates counts at `Int`, `Nat` and a newtype in
-all these ways. A quantifier is enumerated only over a listed type or a
+that it spells out is. So is one at a newtype whose underlying type,
+through newtypes of newtypes to any depth, is `Int` or `Nat`, such as
+`(if q[5] > 0 then Ms(1) else Ms(0)) <= Ms(1)`, or `Mm(Ms(1))` for
+`struct Mm(Ms)`, read as its underlying values, since a newtype's value is
+its underlying value's; a sum at any other type is not a count. The count
+is matched against the formula with each defined variable's definition
+substituted for it, its defined outputs' and its `let`s', through those
+that they mention, so it may be written through them, as in
+`out k := (if q[5] > 0 then 1 else 0) + 2` with `expect e: not (k <= 1)`,
+and with a non-recursive function's body substituted where it is applied,
+as both front ends unfold one. The front ends match their own terms, a
+Lean term and the `fren` command's expression, so no one function
+recognizes the count for both; `check::cardinality_truth` states its truth
+once it is recognized, and the ui tests have a count written inline,
+through a function, through defined outputs, a chain of them and a `let`,
+at `Int` and `Nat`, at newtypes over each, and at newtypes of newtypes two
+and three deep. `fren_fuzz_frontends` generates counts at `Int`, `Nat`,
+newtypes over each and newtypes of those to a random depth, in all these
+ways, in the procedures it generates and in one of counts alone, always
+enumerated. A quantifier is enumerated only over a listed type or a
 literal domain, as its instances' conjunction or disjunction, and a
 `match` is its arms' tests, so these rules cover them; any other part of a
 formula that binds a name is unknown wherever it has an index. An

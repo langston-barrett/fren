@@ -18,7 +18,7 @@ proc wide(a: FirstPercent, b: SecondPercent, c: ThirdPercent): (det sum: Int) { 
 -- Sequences of sequences of integers: more than 65536 values of size at
 -- most 3, so they are not listed.
 set_option fren.evidence "enumerated" in
-proc nested(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `nested` has a slot whose type, without its patterns, has more than 65536 values up to size 3, too many to enumerate
+proc nested(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `nested` has a slot whose type, without its invariants, has more than 65536 values up to size 3, too many to enumerate
     ensure r: empty? iff rows = []
 }
 
@@ -38,7 +38,7 @@ proc hidden(x: InputByte, y: OtherByte): (det d: Int) {  --~ error: `hidden` has
 }
 
 -- Only its expectation is enumerated; the solver checks the rest.
-proc partly(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `partly` has a slot whose type, without its patterns, has more than 65536 values
+proc partly(rows: Seq<Seq<Int>>): (empty?) {  --~ error: `partly` has a slot whose type, without its invariants, has more than 65536 values
     ensure r: empty? iff rows = []
     set_option fren.evidence "enumerated" in
     expect e: when empty?, rows = []

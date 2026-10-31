@@ -398,6 +398,35 @@ proc cn_count(q: Seq<Int>) {  --~ info: 2 checks of `cn_count` hold for every be
     expect e: (if q[5] > 0 then Cn(1) else Cn(0)) <= Cn(1)
 }
 
+-- A newtype of a newtype is read through to its underlying values, at any
+-- depth: two and three deep.
+pub ordered struct Mm(Ms)
+pub ordered struct Mmm(Mm)
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc nested_inline(q: Seq<Int>) {  --~ info: 2 checks of `nested_inline` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `nested_inline` are not run by enumeration
+    expect e: (if q[5] > 0 then Mm(Ms(1)) else Mm(Ms(0))) <= Mm(Ms(1))
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc nested_def(q: Seq<Int>): (k: Mm) {  --~ info: 2 checks of `nested_def` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `nested_def` are not run by enumeration
+    out k := if q[5] > 0 then Mm(Ms(1)) else Mm(Ms(0))
+    expect f: k <= Mm(Ms(1))
+}
+
+set_option fren.lint.nonminimal_bool "allow" in
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+proc nested_three(q: Seq<Int>): (k: Mmm) {  --~ info: 3 checks of `nested_three` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `nested_three` are not run by enumeration
+    out k := (if q[5] > 0 then Mmm(Mm(Ms(1))) else Mmm(Mm(Ms(0)))) + Mmm(Mm(Ms(2)))
+    expect e: not (k = Mmm(Mm(Ms(1))))
+    expect f: not (k <= Mmm(Mm(Ms(1))))
+}
+
 -- A `cover` that no behaviour up to the bound meets, beside a guarded
 -- index: the search does not decide it.
 set_option fren.evidence "enumerated" in
@@ -408,4 +437,4 @@ proc uncovered(q: Seq<Int>, n: Int): (ok?) {  --~ info: 1 check of `uncovered` h
     cover c: n > 100  --~ warning: note: enumeration searched every behaviour up to size 3, with each index out of range as `[][0]`, which does not decide it
 }
 
---@ summary: 94 passed (74 by bounded enumeration), 20 failed, 7 inconclusive, 0 redundant
+--@ summary: 101 passed (81 by bounded enumeration), 20 failed, 7 inconclusive, 0 redundant

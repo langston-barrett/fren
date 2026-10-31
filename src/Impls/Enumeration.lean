@@ -1837,7 +1837,7 @@ def estimateSamples : List Shape :=
 /-- `Shape.estimate`, by which `F0644` refuses a slot before its values are
 listed, is at least how many values a shape has (`Shape.count`), saturated
 as it is, so that no slot within the limit is refused: checked of
-`estimateSamples` up to size 2. Sets and pattern types are not among them:
+`estimateSamples` up to size 2. Sets and subset types are not among them:
 the kernel cannot reduce the order of a set's members, by the `partial`
 `EVal.code`, nor a pattern's test. -/
 theorem estimate_bounds_count :

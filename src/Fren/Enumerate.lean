@@ -428,8 +428,8 @@ partial def uncast (e : Expr) : Expr :=
 casts (`uncast`). -/
 def countLit? (e : Expr) : Option Int := intValue? (uncast e)
 
-/-- `e` with each value of a newtype over `Int` or `Nat` read as its
-underlying value, as the `fren` command, which erases newtypes, reads it:
+/-- `e` with each value of a newtype read as its underlying value, through
+newtypes of newtypes, as the `fren` command, which erases newtypes, reads it:
 the newtype's field of its constructor, `(Ms.mk x).0`, is `x`, and of an
 `if`, `(if c then a else b).0`, is `if c then a.0 else b.0`. The Lean-hosted
 front end writes a newtype's arithmetic and comparisons over these fields. -/
@@ -441,13 +441,16 @@ partial def unwrapNewtypes (e : Expr) : MetaM Expr := do
   if let some info ← getProjectionFnInfo? f then
     if args.size == info.numParams + 1 then
       if let some n := st.newtypeOfDecl? info.ctorName.getPrefix then
-        let x := args.back!.consumeMData
+        -- The field's argument read first, so that a newtype of a newtype,
+        -- `(Mm.mk (Ms.mk x)).0.0`, is read to `x`, through any depth.
+        let x ← unwrapNewtypes args.back!.consumeMData
         if x.isAppOf info.ctorName then return ← unwrapNewtypes x.appArg!
         if x.isAppOfArity ``ite 5 then
           let #[_, c, d, a, b] := x.getAppArgs | return e
           let .const _ lvls := x.getAppFn | return e
           let field (y : Expr) := mkAppN (mkConst f (e.getAppFn.constLevels!)) (args.pop.push y)
           return mkAppN (mkConst ``ite lvls) #[n.under, c, d, ← unwrapNewtypes (field a), ← unwrapNewtypes (field b)]
+        return mkAppN e.getAppFn ((← args.pop.mapM unwrapNewtypes).push x)
   return mkAppN e.getAppFn (← args.mapM unwrapNewtypes)
 
 /-- `a` and `b`, of the type `α`, as their fields if `α` is a newtype,
