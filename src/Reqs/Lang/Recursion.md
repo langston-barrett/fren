@@ -186,10 +186,17 @@ introduced by the one-step defining equation. Applications found while
 expanding a contract inherit the originating application’s origin, including
 through further contracts. A work queue visits each application, guards and
 origin once; a contract expansion also stops when it revisits an application
-on its ancestry path. Nonrecursive definitions and contract clauses are
-expanded before scanning. This is the CLI’s finite collection policy, shared
-by hosted checks and recursive contract proofs. Facts are conditional on the
-application's own guards, and postconditions also on its preconditions.
+on its ancestry path. Before scanning, the CLI expands the nonrecursive
+definitions and contract clauses that apply, directly or through others, a
+recursive or uninterpreted function, or a selector whose payload brings a
+fact, and leaves the rest to the solver as definitions: they hold no
+application to find, and expanding each where it is applied can make a
+query hundreds of times larger. Either way, a definition's [quantifiers
+over elements](ElementQuantifiers.md#expansion) are expanded where it is
+applied, as in a spec without recursion. This is the CLI’s finite
+collection policy, shared by hosted checks and recursive contract proofs.
+Facts are conditional on the application's own guards, and postconditions
+also on its preconditions.
 
 ```fren
 pub enum RecApplication { Written, Reflected }

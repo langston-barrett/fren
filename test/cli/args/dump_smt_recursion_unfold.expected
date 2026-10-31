@@ -1,0 +1,107 @@
+; p: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; p: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (not (exists ((|y| Int)) (= |y| (+ (|::depth| |t|) (|::depth| |t|))))))
+(check-sat)
+(reset)
+
+; p: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(define-fun |::small?| ((|n| Int)) Bool (< |n| 3))
+(declare-const |t| |T|)
+(declare-const |n| Int)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (=> (not (|::small?| |n|)) (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|))))))) ; equation
+(assert (= |y| (+ (|::depth| |t|) (|::depth| |t|)))) ; r
+(assert (not (or (|::small?| |n|) (= |y| (* 2 (|::depth| |t|))))))
+(check-sat)
+(reset)
+
+; p: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (= |y| (+ (|::depth| |t|) (|::depth| |t|)))) ; r
+(assert (not false))
+(check-sat)
+(reset)
+
+; p: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |y| Int)
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (not (= |y| (+ (|::depth| |t|) (|::depth| |t|)))))
+(check-sat)
+(reset)
+
+; subset_digit_inhabited_843: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :finite-model-find true)
+(define-fun |::subset_digit_invariant_843?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
+(declare-const |n| Int)
+(assert (|::subset_digit_invariant_843?| |n|)) ; invariant
+(assert (not false))
+(check-sat)
+(reset)
+
+; h: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not false))
+(check-sat)
+(reset)
+
+; h: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(assert (not true))
+(check-sat)
+(reset)
+
+; h: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |L| ((|L::Nil|) (|L::Cons| (|L::Cons::0| Int) (|L::Cons::1| |L|))))
+(define-fun |::subset_digit_invariant_843?| ((|n| Int)) Bool (and (<= 0 |n|) (<= |n| 9)))
+(declare-const |l| |L|)
+(assert (|::subset_digit_invariant_843?| (|L::Cons::0| |l|))) ; type
+(assert (not (<= (ite (= |l| (|L::Cons| (|L::Cons::0| |l|) (|L::Cons::1| |l|))) (|L::Cons::0| |l|) 0) 9)))
+(check-sat)
+(reset)
+
+fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0
