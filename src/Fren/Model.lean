@@ -615,6 +615,10 @@ inductive Entry where
   /-- A run of checks checked the contract of the instance of the generic
   function `f` at `targs` (`State.checkedInstances`). -/
   | instanceChecked (f : Name) (targs : Array Core.Ty)
+  /-- `#fren_check` reported the procedure at `path`'s realizability, with
+  this evidence, which the checks of the items that call it rest on, in this
+  module and in those that import it (`Reqs/Evidence`). -/
+  | realizabilityEvidence (path : Name) (e : Core.ExternalPremise)
   deriving Inhabited
 
 /-- Everything declared so far, across all imported Lean files. -/
@@ -661,6 +665,9 @@ structure State where
   it imports, has checked, which a later run does not check again
   (`lang::instance_site`). -/
   checkedInstances : Array (Name × Array Core.Ty) := #[]
+  /-- The evidence of each procedure's realizability that a run of checks,
+  in this module or one it imports, has reported (`Reqs/Evidence`). -/
+  realizability : NameMap Core.ExternalPremise := {}
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
@@ -678,6 +685,7 @@ def State.add (s : State) : Entry → State
   | .definedInfo d => { s with defined := s.defined.insert d.path d }
   | .genericUse m u => { s with genericUses := s.genericUses.push (m, u) }
   | .instanceChecked f targs => { s with checkedInstances := s.checkedInstances.push (f, targs) }
+  | .realizabilityEvidence p e => { s with realizability := s.realizability.insert p e }
   | .contractInfo c => { s with contracts := s.contracts.insert c.path c }
   | .interpInfo p d => { s with interps := s.interps.insert p d }
   | .globalInfo p c => { s with globals := s.globals.insert p c }

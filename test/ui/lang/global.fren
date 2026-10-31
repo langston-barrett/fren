@@ -66,12 +66,12 @@ expect contra(a: Int) {  --~ error: the assumptions of `contra` are unsatisfiabl
     assume lo: a > 5
     assume hi: a < 3
     call c := band(a, LOW)
-    expect claim: c.too_cold?
+    expect claim: c.too_cold?  --~ warning: `contra::claim` rests on the realizability of `contra`, which did not pass
 }
 expect contra_alone(a: Int) {  --~ error: the assumptions of `contra_alone` are unsatisfiable: `lo`, `hi` contradict each other
     assume lo: a > 5
     assume hi: a < 3
-    expect claim: a = 0
+    expect claim: a = 0  --~ warning: `contra_alone::claim` rests on the realizability of `contra_alone`, which did not pass
 }
 expect false_const: HIGH < LOW               --~ error: expectation `false_const` does not hold
 
@@ -85,4 +85,4 @@ expect nested(a_temp: Int, a_target: Int) {
     expect nested: when a.temp > 100, a.too_hot?
 }
 
---@ summary: 38 passed, 5 failed, 0 inconclusive, 0 redundant
+--@ summary: 36 passed, 5 failed, 2 inconclusive, 0 redundant

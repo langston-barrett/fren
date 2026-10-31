@@ -17,20 +17,32 @@ proc sub(b: Byte): (y: Int) {
     ensure r: y = b
 }
 
-proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {
+proc values(x: Int): (y: Int, det d: Byte, det guarded: Byte) {  --~ warning: `values::d` rests on the assumption `sub::b::0` of call `w`, which did not pass
+--~^ warning: `values::guarded` rests on the assumption `sub::b::0` of call `w`, which did not pass
+--~^^ warning: `values::guarded` rests on the assumption `sub::b::0` of call `w`, which did not pass
+--~^^^ warning: the realizability of `values` rests on the assumption `sub::b::0` of call `w`, which did not pass
     assume newtype: Level(x) != Level(0)   --~ error: invariant `Digit::invariant` does not hold
+    --~^ warning: `values::newtype` rests on the realizability of `values`, which did not pass
     out d := x   --~ error: invariant `Byte::invariant` does not hold
     out guarded := if 0 <= x <= 255 then x else 0
     call w := sub(x)   --~ error: invariant `Byte::invariant` does not hold
-    call v := sub(guarded)
+    call v := sub(guarded)  --~ warning: the assumption `sub::b::0` of call `v` rests on the assumption `sub::b::0` of call `w`, which did not pass
 
     ensure args: y = scale(x) + size(x)   --~ error: invariant `Byte::invariant` does not hold
     --~^ error: invariant `Byte::invariant` does not hold
-    expect guarded_args: when 0 <= x <= 255, scale(x) = 2 * x
+    expect guarded_args: when 0 <= x <= 255, scale(x) = 2 * x  --~ warning: `values::guarded_args` rests on the assumption `sub::b::0` of call `w`, which did not pass
+    --~^ warning: `values::guarded_args` rests on the assumption `sub::b::0` of call `w`, which did not pass
     expect payload: Reading::Raw(x) != Reading::Missing   --~ error: invariant `Byte::invariant` does not hold
+    --~^ warning: `values::payload` rests on the assumption `sub::b::0` of call `w`, which did not pass
     expect field: Packet { length := 3, ok? := x > 0 }.length = 3   --~ error: invariant `RequiredTrue::invariant` does not hold
+    --~^ warning: `values::field` rests on the assumption `sub::b::0` of call `w`, which did not pass
+    --~^^ warning: `values::field` rests on the assumption `sub::b::0` of call `w`, which did not pass
     expect update: { Packet { length := 3, ok? := true } with length := x }.ok?   --~ error: invariant `Byte::invariant` does not hold
+    --~^ warning: `values::update` rests on the assumption `sub::b::0` of call `w`, which did not pass
+    --~^^ warning: `values::update` rests on the assumption `sub::b::0` of call `w`, which did not pass
+    --~^^^ warning: `values::update` rests on the assumption `sub::b::0` of call `w`, which did not pass
     expect defined: (let b: Byte := x + 1 in b) > x   --~ error: invariant `Byte::invariant` does not hold
+    --~^ warning: `values::defined` rests on the assumption `sub::b::0` of call `w`, which did not pass
 }
 
 -- A refinement checks what the types of the abstract component's outputs

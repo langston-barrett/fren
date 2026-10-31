@@ -5,7 +5,7 @@
 set_option fren.lint.assertions_on_constants "allow"
 set_option fren.lint.constant_output "allow"
 
-proc c(): (det g?) {
+proc c(): (det g?) {  --~ warning: `c::g?` rests on the realizability of `c`, which did not pass
     --~^ error: `c` is not realizable
     let s: Set<Int> := {1, 2}
 

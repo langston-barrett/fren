@@ -1,6 +1,9 @@
+-- fren-covers: check::hosted_runs
 -- A value given where a subset type is declared is checked by the solver
 -- whatever the evidence, in both front ends (`check::by_evidence`): not
--- dropped with the checks that testing or enumeration does not run.
+-- dropped with the checks that testing or enumeration does not run. Lean
+-- reports a failure of one in a procedure set to random testing too,
+-- though the check rests on its realizability (`check::hosted_runs`).
 type Small = n: Int where invariant: n is 0..=3
 
 set_option fren.evidence "enumerated" in

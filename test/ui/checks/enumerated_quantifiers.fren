@@ -240,7 +240,7 @@ set_option fren.evidence "enumerated" in
 proc alternating(): (finite?, infinite?) {  --~ warning: could not decide whether `alternating` is realizable: a quantifier is undecided up to size 3
     ensure f: finite? iff (forall (x: Mode), exists (y: Mode), y != x)  --~ warning: could not decide whether `alternating::f` is redundant: a quantifier is undecided up to size 3
     ensure i: infinite? iff (forall (x: Int), exists (y: Int), y > x)  --~ warning: could not decide whether `alternating::i` is redundant: a quantifier is undecided up to size 3
-    expect decided: finite?
+    expect decided: finite?  --~ warning: `alternating::decided` rests on the realizability of `alternating`, which did not pass
     expect undecided: infinite?  --~ warning: could not decide whether `alternating::undecided` holds: a quantifier is undecided up to size 3
 }
 
@@ -295,4 +295,4 @@ proc refuted(k: Int): (none?) {
     expect by_enumeration: none?  --~ error: counterexample: k = 0, none? = false
 }
 
---@ summary: 75 passed (23 by bounded enumeration), 25 failed, 19 inconclusive, 0 redundant
+--@ summary: 74 passed (23 by bounded enumeration), 25 failed, 20 inconclusive, 0 redundant

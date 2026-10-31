@@ -51,9 +51,9 @@ proc gate(m: Mode): (det open?: Bool) {
 }
 
 set_option fren.evidence "enumerated" in
-proc user(m: Mode) {
+proc user(m: Mode) {  --~ warning: the realizability of `user` rests on the assumption `gate::on` of call `g`, which did not pass
     call g := gate(m)  --~ error: the assumption `on` of `gate` may not hold for call `user::g`
-    expect follows: when m = Mode::Heat, g.open?
+    expect follows: when m = Mode::Heat, g.open?  --~ warning: `user::follows` rests on the assumption `gate::on` of call `g`, which did not pass
 }
 
 set_option fren.evidence "enumerated" in
@@ -90,4 +90,4 @@ set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 expect constant: forall (x: BoundedCount), x < 200  --~ error: expectation `constant` does not hold
 
---@ summary: 35 passed, 11 failed, 0 inconclusive, 2 redundant
+--@ summary: 33 passed, 11 failed, 2 inconclusive, 2 redundant

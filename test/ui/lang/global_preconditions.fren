@@ -18,7 +18,7 @@ expect composition(x: Int) {
     expect two_steps: c.y = x + 1
     cover zero: c.y = 0  --~ info: cover goal `composition::zero` is met
 }
-expect unchecked(x: Int) {
+expect unchecked(x: Int) {  --~ warning: the realizability of `unchecked` rests on the assumption `positive::domain` of call `a`, which did not pass
     call a := positive(x)  --~ error: the assumption `domain` of `positive` may not hold for call `unchecked::a`
-    expect result: a.y = x
+    expect result: a.y = x  --~ warning: `unchecked::result` rests on the assumption `positive::domain` of call `a`, which did not pass
 }

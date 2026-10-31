@@ -29,10 +29,10 @@ expect fails(x: Int) {
     refines concrete wrong(x)  --~ error: expectation `fails::refines_1` does not hold
 }
 -- `picky` assumes more than `rough`, so it does not accept all of its inputs.
-expect narrower(x: Int) {
+expect narrower(x: Int) {  --~ warning: the realizability of `narrower` rests on the assumption `picky::positive` of call `concrete`, which did not pass
     assume spec_small: (x) < 100
     call concrete := picky(x)  --~ error: the assumption `positive`
-    refines concrete rough(x)
+    refines concrete rough(x)  --~ warning: `narrower::refines_1` rests on the assumption `picky::positive` of call `concrete`, which did not pass
 }
 
---@ summary: 15 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ summary: 13 passed, 2 failed, 2 inconclusive, 0 redundant

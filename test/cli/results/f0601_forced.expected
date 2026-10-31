@@ -12,7 +12,17 @@ error[F0601]: `http::retry` is not realizable
            no outputs satisfy `transient`, `honor_server` and `latency_budget`
    = help: weaken one of them, or add an `assume` that rules this input out
 
-fren: 8 passed, 1 failed, 0 inconclusive, 0 redundant
+warning[F0664]: `http::retry::retry?` rests on the realizability of `http::retry`, which did not pass
+  --> test/cli/results/f0601_forced.fren:12:6
+   |
+12 | proc retry(method: Method, status: Nat, attempt: Nat, retry_after: Seconds): (
+   |      ^^^^^ rests on a check that did not pass
+   |
+   = note: its proof has the realizability of `http::retry` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+   = help: make the check it rests on pass
 
-For more information about this error, try `fren --explain F0601`.
+fren: 7 passed, 1 failed, 1 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0601, F0664.
+For more information about an error, try `fren --explain F0601`.
 exit=1

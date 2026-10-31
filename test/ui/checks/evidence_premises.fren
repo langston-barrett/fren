@@ -1,0 +1,58 @@
+-- fren-covers: check::runs_premises, check::hosted_runs
+-- A pass that is a proof from a call's constraints rests on the called
+-- procedure's realizability (`Reqs/Evidence`).
+
+-- `never` has no outputs, so every proof from a call of it holds
+-- vacuously: those checks are inconclusive, in both front ends.
+proc never(x: Int): (y: Int) {  --~ error: `never` is not realizable
+    ensure above: y > x
+    ensure below: y < x
+}
+
+proc caller(x: Int): (z: Int) {  --~ warning: the realizability of `caller` rests on the realizability of `never`, which did not pass
+    call c := never(x)
+    ensure q: z = c.y
+    expect wrong: z = 5  --~ warning: `caller::wrong` rests on the realizability of `never`, which did not pass
+}
+
+-- #414's examples: `lookup` has no output at `1234567`, and its
+-- realizability is only checked by random testing, which finds that, as the
+-- input is a literal of the spec. `fren check` reports the checks that
+-- rest on it as inconclusive; `#fren_check` runs none of them, as for
+-- checks set to random testing.
+set_option fren.evidence "random" in
+pub proc lookup(x: Int): (y: Int) {  --~[cli] warning: testing found no outputs of `lookup` for the input x = 1234567
+    --~^ info: the redundancy checks of `lookup` are not run by random testing
+    --~^^[hosted] info: the checks of `lookup` set to random testing are run by `fren check`, not in Lean
+    ensure r: y = 0 and x != 1234567
+}
+
+pub proc caller2(x: Int): (z: Int) {  --~[cli] warning: the realizability of `caller2` rests on the realizability of `lookup`, which did not pass
+    --~^[hosted] info: the checks of `caller2` set to random testing are run by `fren check`, not in Lean
+    assume a: x = 1234567
+    call c := lookup(x)
+    ensure q: z = c.y + 1
+    expect wrong: z = 5  --~[cli] warning: `caller2::wrong` rests on the realizability of `lookup`, which did not pass
+}
+
+expect answers_one(x: Int) {  --~[cli] warning: the realizability of `answers_one` rests on the realizability of `lookup`, which did not pass
+    --~^[hosted] info: the checks of `answers_one` set to random testing are run by `fren check`, not in Lean
+    assume a: x = 1234567
+    call c := lookup(x)
+    expect e: c.y = 1  --~[cli] warning: `answers_one::e` rests on the realizability of `lookup`, which did not pass
+}
+
+-- Where random testing finds outputs at every input it tries, the checks
+-- that rest on it are passes by random testing.
+set_option fren.evidence "random" in
+pub proc echo(x: Int): (y: Int) {  --~[hosted] info: the checks of `echo` set to random testing are run by `fren check`, not in Lean
+    --~^ info: the redundancy checks of `echo` are not run by random testing
+    ensure r: y = x
+}
+
+pub proc caller3(x: Int): (z: Int) {  --~[cli] info: the realizability of `caller3` rests on the realizability of `echo`, which is only checked by random testing
+    --~^[hosted] info: the checks of `caller3` set to random testing are run by `fren check`, not in Lean
+    call c := echo(x)
+    ensure q: z = c.y + 1
+    expect bigger: z > x  --~[cli] info: `caller3::bigger` rests on the realizability of `echo`, which is only checked by random testing
+}

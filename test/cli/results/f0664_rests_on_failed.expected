@@ -1,0 +1,59 @@
+warning[F0609]: testing found no outputs of `demo::lookup` for the input x = 1234567
+ --> test/cli/results/f0664_rests_on_failed.fren:7:10
+  |
+7 | pub proc lookup(x: Int): (y: Int) {
+  |          ^^^^^^ possibly not realizable
+  |
+  = note: the search tries only some values, so outputs may still exist
+  = help: raise `--tests`; the checks set to random testing are not asked of the solver
+
+note[F0654]: the redundancy checks of `demo::lookup` are not run by random testing
+ --> test/cli/results/f0664_rests_on_failed.fren:7:10
+  |
+7 | pub proc lookup(x: Int): (y: Int) {
+  |          ^^^^^^
+  |
+  = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+  = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
+
+warning[F0664]: the realizability of `demo::caller` rests on the realizability of `demo::lookup`, which did not pass
+  --> test/cli/results/f0664_rests_on_failed.fren:11:10
+   |
+11 | pub proc caller(x: Int): (z: Int) {
+   |          ^^^^^^ rests on a check that did not pass
+   |
+   = note: its proof has the realizability of `demo::lookup` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+   = help: make the check it rests on pass
+
+warning[F0664]: `demo::caller::wrong` rests on the realizability of `demo::lookup`, which did not pass
+  --> test/cli/results/f0664_rests_on_failed.fren:15:12
+   |
+15 |     expect wrong: z = 5
+   |            ^^^^^ rests on a check that did not pass
+   |
+   = note: its proof has the realizability of `demo::lookup` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+   = help: make the check it rests on pass
+
+warning[F0664]: the realizability of `demo::answers_one` rests on the realizability of `demo::lookup`, which did not pass
+  --> test/cli/results/f0664_rests_on_failed.fren:18:8
+   |
+18 | expect answers_one(x: Int) {
+   |        ^^^^^^^^^^^ rests on a check that did not pass
+   |
+   = note: its proof has the realizability of `demo::lookup` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+   = help: make the check it rests on pass
+
+warning[F0664]: `demo::answers_one::e` rests on the realizability of `demo::lookup`, which did not pass
+  --> test/cli/results/f0664_rests_on_failed.fren:21:12
+   |
+21 |     expect e: c.y = 1
+   |            ^ rests on a check that did not pass
+   |
+   = note: its proof has the realizability of `demo::lookup` among its hypotheses, which may not hold, so it may hold vacuously (`Reqs/Evidence`)
+   = help: make the check it rests on pass
+
+fren: 1 passed, 0 failed, 5 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0609, F0654, F0664.
+For more information about an error, try `fren --explain F0609`.
+exit=3

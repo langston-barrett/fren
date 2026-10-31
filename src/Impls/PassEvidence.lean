@@ -295,10 +295,9 @@ theorem mem_ownPairs (cs : List (CheckEvidence Caveat)) (i : Nat) (c : check.Cav
 theorem at_past (cs : List (CheckEvidence Caveat)) (i : Nat) (h : ¬ i < cs.length) : at_ cs i = {} := by
   simp only [at_, List.getD_eq_getElem?_getD, List.getElem?_eq_none (show cs.length ≤ i by omega), Option.getD_none]
 
--- The front-end PR of #414's stack makes both front ends compute the
--- evidence of every check with `passEvidence`, from each check's own
--- caveats and verdict and its premises, which `premisesOf` gives; neither
--- calls it yet.
+-- Both front ends compute the evidence of every check with `passEvidence`
+-- (`itemEvidence`), from each check's own caveats and verdict and its
+-- premises, which `premisesOf` gives.
 impl pass_evidence: check::pass_evidence for (cs : List (CheckEvidence Caveat)) (k : Nat) {
   own := Fren.FinSet.ofList (ownPairs cs),
   unsettled := Fren.FinSet.ofList (unsettledOf cs),
@@ -481,9 +480,8 @@ theorem mem_kinds (kinds : List (Nat × Fren.Core.FnKind)) (f : Nat) (k : Fren.C
   · intro h
     exact ⟨(f, k), h, rfl, rfl⟩
 
--- The front-end PR of #414's stack makes both front ends take as a check's
--- premises those of `premisesOf`, which are those that `premised` takes;
--- neither calls it yet.
+-- Both front ends take as a check's premises those of `premisesOf`
+-- (`itemEvidence`), which are those that `premised` takes.
 impl premise: check::premise for (c : Fren.Core.CheckRecord) (n : Nat) (kinds : List (Nat × Fren.Core.FnKind))
     (p : Fren.Core.Premise) {
   check := toRecord c,
@@ -582,8 +580,7 @@ theorem mem_premisesOf (c : Fren.Core.CheckRecord) (n : Nat) (kinds : List (Nat 
     have hm : Fren.Core.Premise.inhabitation t ∈ types.map Fren.Core.Premise.inhabitation := List.mem_map.mpr ⟨t, h.2, rfl⟩
     simp [List.mem_append, hm]
 
--- The front-end PR of #414's stack makes both front ends report each check
--- with `reportedPass`; neither calls it yet.
+-- Both front ends report each check with `reportedPass` (`itemEvidence`).
 impl reported_pass: check::reported_pass for (k : CheckKind) (v : Fren.Core.Verdict) (own cs : List Caveat) (s : Bool) {
   kind := toCheckKind k,
   verdict := toVerdict v,
@@ -641,10 +638,5 @@ impl reported_pass: check::reported_pass for (k : CheckKind) (v : Fren.Core.Verd
   have hR : check.Caveat.Random ∈ Fren.FinSet.ofList (cs.map toCaveat) ↔ cs.contains .random = true := hmem .random cs
   have hB : check.Caveat.Bounded ∈ Fren.FinSet.ofList (cs.map toCaveat) ↔ cs.contains .bounded = true := hmem .bounded cs
   cases v <;> cases s <;> simp (config := { decide := true }) [reportedPass, toVerdict, hR, hB, hne]
-
--- Neither holds of the front ends yet: the front-end PR of #414's stack
--- implements both, with ui tests, and replaces these claims.
-trusted check::runs_premises: "not yet true: no front end runs the premises of what it reports; #414's front-end PR makes both do"
-trusted check::hosted_runs: "not yet true: #fren_check still reports checks that rest on random testing; #414's front-end PR"
 
 end Fren.Impls.PassEvidence

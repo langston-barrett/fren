@@ -342,7 +342,7 @@ set_option fren.evidence "enumerated" in
 proc two_tables(b?): (x?) {  --~ error: `two_tables` is not realizable
     ensure r: x? = table { b? => true }  --~ error: a table in `two_tables::r` may have no row that holds
     ensure s: table { b? => true }  --~ error: a table in `two_tables::s` may have no row that holds
-    expect e: when not b?, x?
+    expect e: when not b?, x?  --~ warning: `two_tables::e` rests on the realizability of `two_tables`, which did not pass
 }
 
 -- A count at a newtype over `Int` is read as its underlying values are:
@@ -437,4 +437,4 @@ proc uncovered(q: Seq<Int>, n: Int): (ok?) {  --~ info: 1 check of `uncovered` h
     cover c: n > 100  --~ warning: note: enumeration searched every behaviour up to size 3, with each index out of range as `[][0]`, which does not decide it
 }
 
---@ summary: 101 passed (81 by bounded enumeration), 20 failed, 7 inconclusive, 0 redundant
+--@ summary: 100 passed (81 by bounded enumeration), 20 failed, 8 inconclusive, 0 redundant

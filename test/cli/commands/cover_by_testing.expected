@@ -6,5 +6,5 @@ note: cover goal `heater::overheat` is met
   |
   = witness: temp = 101, alarm? = true
 
-fren: 3 passed (1 by random testing), 0 failed, 0 inconclusive, 0 redundant
+fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
 exit=0

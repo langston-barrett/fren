@@ -1060,14 +1060,19 @@ That argument needs each called procedure's realizability to be proved.
 Where it is not, because the procedure's realizability check is set to
 testing ([evidence](#checking-by-testing)) or is inconclusive, the
 procedure may have no outputs at some input that meets its assumptions.
-At such an input `A ∧ I` is unsatisfiable, and the global expectation's
-expectations pass there vacuously. With `assume a: x = 1234567`, `call c
-:= tested_lies(x)` and `expect e: c.y = 0`, where `tested_lies` has no
-outputs at `1234567`, `e` passes. Only the called procedure's own report
-says so: its tested evidence, or its inconclusive result. The same holds of
-a procedure's own checks. [Evidence](Evidence.md) states the rule that caps
-such passes at the evidence of what they rest on; the front ends do not
-apply it yet, until the front-end PR of #414's stack merges.
+At such an input `A ∧ I` is unsatisfiable, and the solver proves the
+global expectation's expectations there vacuously. With `assume a: x =
+1234567`, `call c := tested_lies(x)` and `expect e: c.y = 0`, where
+`tested_lies` has no outputs at `1234567`, the solver proves `e`. The same
+holds of a procedure's own checks. So such a proof is not reported as one:
+[Evidence](Evidence.md) states the rule that caps a pass at the evidence of
+what it rests on, and both front ends apply it to each call's assumption
+checks, its called procedure's realizability and the item's own
+realizability. `e` is reported as `Inconclusive` where `tested_lies`'s
+realizability did not pass (`F0664`), and otherwise as a pass by random
+testing (`F0663`), never as a proof. They do not
+apply it yet to a refinement's abstraction, to functions' contracts,
+instances and postconditions, or to subset types' inhabitation (#522).
 
 ## Call assumptions
 
