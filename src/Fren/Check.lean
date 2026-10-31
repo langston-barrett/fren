@@ -281,7 +281,7 @@ divisor may be 0 (`Reqs/Models#how-the-front-ends-evaluate`).
 
 A generated selector of a payload is total in the same way, by a
 `| _ => default` arm (`Reqs/Generated`), and is deliberately not here: a
-read of a payload is evaluated only where the model gives the value the
+read of a payload is evaluated only where the model's value has the
 variant that a `match` arm or a pattern test matched, since every such read
 is under that test's `ite`, which Lean does not evaluate on the branch not
 taken; and a `match` that may take no arm reads the empty sequence, so

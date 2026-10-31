@@ -13,8 +13,11 @@ reported model contradicts, implements `model::decision`: for the truths of
 any number of hypotheses and of the goal, the model is shown exactly when
 nothing is contradicted, and the check is inconclusive otherwise, as
 `Fren.Core.confirmReport` makes it. `model::report`, the same rule over
-`lang::eval`, is trusted: neither front end's evaluator is bound to
-`lang::eval` (`Reqs/Models#how-the-front-ends-evaluate`).
+`lang::eval`, is trusted: that `decision` is its rule is by inspection, and
+neither front end's evaluator is bound to `lang::eval`. The `fren`
+command's evaluator is tested against it, over the forms that
+`src/FrenTest/Semantics.lean` generates, and the Lean-hosted front end's
+agreement with it is trusted (`Reqs/Models#how-the-front-ends-evaluate`).
 -/
 
 namespace Fren.Impls
@@ -72,7 +75,7 @@ impl decision_of: model::decision for (hs : List (Option Bool)) (g : Option Bool
   cases hc : (contradiction? (hs.toArray.map (Lean.Name.anonymous, ·)) g) <;>
     simp_all [fren_spec, toLangOutcome_true, Option.isSome, Option.isNone, toVerdict]
 
-trusted model::report: "the front ends decide by `contradiction?`, which implements `model::decision`, from the outcomes of their own evaluators, the `fren eval` evaluator and the compiled generated Lean definitions; that these agree with `lang::eval` is trusted, as `Reqs/Models#how-the-front-ends-evaluate` states"
+trusted model::report: "the front ends decide by `contradiction?`, which implements `model::decision`, `report`'s rule by inspection, from the outcomes of their own evaluators: the `fren eval` evaluator, whose agreement with `lang::eval` is tested by `src/FrenTest/Semantics.lean`, over the forms that it generates, and the compiled generated Lean definitions, whose agreement is trusted, as `Reqs/Models#how-the-front-ends-evaluate` states"
 
 trusted model::reported_real: "the readable statement of `Reqs/Models`, which `model::report` refines, as `model::report_real` checks"
 

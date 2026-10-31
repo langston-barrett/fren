@@ -55,15 +55,16 @@ results](View.md#check-results)), and the counterexample does not show it.
 A defined variable, or a call's, is not free even when the model leaves it
 out, since its value follows from the others, by its definition or the
 call's behaviour, which the solver may have substituted: it stays without a
-value. The evaluator's formulas, which are
-the spec's own, may still read it, as an argument that a function's body
-never reads is read when the function is applied, since evaluation is
-strict. The confirmation gives such a variable its type's *default value*,
-the same in both front ends. `model::default_value` gives it, over a model
-of the type, `TypeShape`, in which an enumeration or record is the list of its variants,
-in the order declared, each with its constructor's full path and the list
-of its payload's or fields' types, a record having one variant, and in
-which `Itself` stands for the enumeration within its own payload:
+value. A free variable may still be read by the evaluator's formulas,
+which are the spec's own, as an argument that a function's body never
+reads is read when the function is applied, since evaluation is strict.
+The confirmation gives each free variable its type's *default value*, the
+same in both front ends. `model::default_value` gives it, over a model of
+the type, `TypeShape`, in which an enumeration or record is the list of
+its variants, in the order declared, each with its constructor's full path
+and the list of its payload's or fields' types, a record having one
+variant, and in which `Itself` stands for the enumeration within its own
+payload:
 
 - `false`, `0`, `""`, the empty sequence and the empty set (here the empty
   list, as [What the model leaves
@@ -77,11 +78,21 @@ which `Itself` stands for the enumeration within its own payload:
 `TypeShape` is `model::default_value`'s own model of a type, not the type
 itself, and it covers only what the rule needs: `Set` stands for a set and
 for a relation, since the default value of both is empty, and the elements'
-type is not read; and a record is a `Data` of one `Variant`, its fields. It
-leaves out what both front ends' rules handle and the rule above does not
-state: *mutual* recursion, which they cut with a list of the types being
-sought, where `Itself` names only the immediately enclosing one, and a
-type parameter, which has no default value in either (#488).
+type is not read; and a record is a `Data` of one `Variant`, its fields.
+It is complete for Fren's types, as the variables of a query have them.
+A type's payload or fields can recur only into the type itself, never
+through another type: a type is declared before it is used, so two types
+cannot each contain the other, and a recursive payload must be the type
+itself, not an instance that contains it (F0387). So `Itself`, the
+immediately enclosing type, is the only type whose default value can be
+sought within its own. An instance of a generic type has its arguments substituted
+before the rule is applied. A [generic
+function](Lang/GenericFunctions.md#type-parameters)'s checks, though, hold
+for every type, so their variables may have its type parameter as their
+type, as an abstract type: the rule treats it as one, `Abstract`, and
+gives no value, as both front ends do. A free variable of a type
+parameter is then left without a value, and the parts of the query that
+read it are undecided, as for an abstract type.
 
 ```fren
 use lang::Id
@@ -284,20 +295,23 @@ defined is a separate claim:
   index of the empty sequence. So the Lean-hosted front end evaluates only
   the formulas that have none of these, directly or within the bodies of
   the functions and clauses that they apply, and that apply no
-  uninterpreted function and mention no value of an abstract type: the
-  others are `Undefined` to it. It confirms nothing that indexes a
+  uninterpreted function and mention no value of an abstract type, nor
+  of a generic function's type parameter, which is one: the others are
+  `Undefined` to it. It confirms nothing that indexes a
   sequence, so a misread model whose contradiction is only in such a
-  formula is shown by it, and caught by the `fren` command (#462). That it
+  formula is shown by it, and caught by the `fren` command (#462), as is
+  one whose contradiction is only in a formula that mentions a value of a
+  type parameter (`test/ui/misread/misread_type_parameter.fren`). That it
   agrees with `lang::eval` on the formulas it does decide is **trusted**:
   nothing checks the generated definitions against `lang::eval`.
 
   A generated [selector](Generated.md) of a payload is total in the same
   way, by a `| _ => default` arm for the other variants, and is not
-  excluded. A read of a payload is evaluated only where the model gives the
-  value the variant that a `match` arm or a pattern test matched, since
-  every such read is under the `ite` of that test, which Lean's definitions
-  do not evaluate on the branch not taken; and a `match` that may take no
-  arm reads the empty sequence, so it is excluded already.
+  excluded. A read of a payload is evaluated only where the model's value
+  has the variant that a `match` arm or a pattern test matched, since every
+  such read is under the `ite` of that test, which Lean's definitions do
+  not evaluate on the branch not taken; and a `match` that may take no arm
+  reads the empty sequence, so it is excluded already.
 
 Where one front end decides a formula that the other leaves undefined,
 they may disagree about a model, but only about one that the semantics
@@ -315,9 +329,12 @@ definedness, completeness, disjointness, a precondition, a postcondition or
 determinism, or the witness of a cover goal. A contradicted model is not
 shown. The check is then inconclusive, as `eval::confirmed_verdict` makes a
 refuted model's check, and Fren reports an internal error, an error at the
-place where the check would have reported its result. It names the first
-hypothesis that is `false`, in the query's order, or else the goal, and
-shows the values as Fren read them:
+place where the check would have reported its result, in place of the
+inconclusive result's warning: the summary counts the check as
+inconclusive, but the run has an error, so a Lean build fails and `fren
+check` exits with 1 (see [Check results](View.md#check-results)). It
+names the first hypothesis that is `false`, in the query's order, or else
+the goal, and shows the values as Fren read them:
 
 ```text
 error: internal error: the solver's model for the expectation check of `m::p::e` makes its hypothesis `pinned` false in Fren's semantics
@@ -380,8 +397,13 @@ Both front ends decide from the outcomes that their evaluators give, by
 one function of the shared core, `Fren.Core.contradiction?`, which
 implements `model::decision`: `report`'s rule over the list of the
 hypotheses' outcomes and the goal's, which is what `report` reads of
-`lang::eval`. That `report` holds of the front ends is then the trusted
-agreement of their evaluators with `lang::eval` above.
+`lang::eval`. That `decision` is `report`'s rule is by inspection: nothing
+checks that the two agree at the outcomes that `lang::eval` gives, whose
+lists they encode differently, a list of expressions for `report` and a
+sequence of outcomes for `decision`. That `report` holds of the front ends
+then rests on the agreement of their evaluators with `lang::eval` above:
+tested for the `fren` command, over the forms that its test generates, and
+trusted for the Lean-hosted front end.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
