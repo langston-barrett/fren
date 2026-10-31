@@ -1,4 +1,4 @@
--- Pattern types: what a variable, an application, a field and a payload
+-- Subset types: what a variable, an application, a field and a payload
 -- of one bring, and the obligations of the values given where one is
 -- declared.
 

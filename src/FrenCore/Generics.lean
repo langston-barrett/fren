@@ -418,14 +418,14 @@ def argsSep : String := "<,"
 
 def argsClose : String := ")>"
 
-/-- The prefix of the segment of a pattern type's pattern, which follows
+/-- The prefix of the segment of a type's pattern, which follows
 its base type's segments, or, for a base type that is a set, relation or
 sequence, precedes them, with `patOuterSeg` as its prefix. -/
 def patSeg : String := "is "
 
 def patOuterSeg : String := "is( "
 
-/-- `segs` without the segments of pattern types' patterns. -/
+/-- `segs` without the segments of types' patterns. -/
 def withoutPatterns (segs : Array String) : Array String :=
   segs.filter fun s => !s.startsWith patSeg && !s.startsWith patOuterSeg
 

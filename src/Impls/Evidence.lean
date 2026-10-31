@@ -25,12 +25,12 @@ import Impls.Models
 import Impls.Modules
 import Impls.Mutate
 import Impls.PatternTests
-import Impls.PatternTypes
 import Impls.Procedures
 import Impls.Repeats
 import Impls.Rewrites
 import Impls.Scope
 import Impls.Semantics
+import Impls.SubsetTypes
 import Impls.Testing
 import Impls.Trace
 import Impls.TypeFacts

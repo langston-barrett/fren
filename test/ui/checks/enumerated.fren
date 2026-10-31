@@ -16,7 +16,7 @@ proc thermostat(mode: Mode, hot?): (det on?) {
     cover lit: on?  --~ info: witness: mode = Mode::Heat, hot? = false, on? = true
 }
 
--- A record, a generic instance and a finite integer pattern type.
+-- A record, a generic instance and a finite integer subset type.
 type Trit = n: Int where invariant: n is 0..=2
 set_option fren.evidence "enumerated" in
 proc sensor(r: Reading, o: Option<Bool>, k: Trit): (det alarm?) {

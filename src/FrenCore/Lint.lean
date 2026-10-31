@@ -3084,7 +3084,7 @@ whose body, without parentheses, is an application (`applies`) of
 `callee`, whose arguments are `args`, each the position of the closure's
 parameter that it is, if it is one, written as its name alone, and where
 `exact` says that the callee's parameters' and result's types are the
-function type's, without a pattern type (`lint::redundant_closure`): the
+function type's, without a subset type (`lint::redundant_closure`): the
 closure applies the function to its parameters, in order, each once. -/
 def redundantClosure (nParams : Nat) (args : List (Option Nat)) (applies : Bool) (callee : Callee) (exact : Bool) : Bool :=
   applies && callee != .other && exact && args == (List.range nParams).map some

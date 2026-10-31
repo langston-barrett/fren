@@ -48,7 +48,7 @@ proc flipped(p?): (det q?) {
 }
 
 -- An application brings its instance's result type's constraint: here,
--- `R`'s field's pattern type, as a function without type parameters'
+-- `R`'s field's subset type, as a function without type parameters'
 -- application does.
 fn pickr<T>(T): T
 fn pick1(R): R

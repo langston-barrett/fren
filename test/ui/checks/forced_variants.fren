@@ -40,7 +40,7 @@ proc abstract(t: Token, u: Token): (s: Shape) {   --~ error: no outputs satisfy 
     ensure square: s is Shape::Square(_)
 }
 
--- An output of a pattern type over an enumeration.
+-- An output of a subset type over an enumeration.
 type Roundish = shape: Shape where invariant: shape is Shape::Circle(_) | Shape::Rect(_, _)
 
 proc patterned(): (s: Roundish) {   --~ error: no outputs satisfy `round` and `boxy`

@@ -74,7 +74,7 @@ elab "#check_nested_enumeration" : command => do
     unless why.code? == some "F0645" do throwError "unsupported result constraint was not reported honestly"
     let some defined := state.comps.get? `nested_subset_enumeration.bad_definition | throwError "missing defined output component"
     let (definedResults, _, _, _) ← Fren.checkComp defined #[.definedness] (some Fren.Enumerate.enumerate)
-    unless definedResults.any (fun r => r.verdict == .fail && r.patTy? == some "@invariant:nested_subset_enumeration::Positive::invariant") do
+    unless definedResults.any (fun r => r.verdict == .fail && r.subsetTy? == some "@invariant:nested_subset_enumeration::Positive::invariant") do
       throwError "a defined output assumed its own invariant before the giving-site check"
 #check_nested_enumeration
 

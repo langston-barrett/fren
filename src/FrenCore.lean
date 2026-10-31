@@ -13,7 +13,6 @@ import FrenCore.Lint
 import FrenCore.Literate
 import FrenCore.Mentions
 import FrenCore.Names
-import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Prelude
 import FrenCore.Procedures
@@ -23,6 +22,7 @@ import FrenCore.Regex
 import FrenCore.SeqElems
 import FrenCore.Sound
 import FrenCore.Str
+import FrenCore.SubsetTypes
 import FrenCore.Syntax
 import FrenCore.Table
 import FrenCore.Trace

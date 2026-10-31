@@ -1,5 +1,5 @@
 --@ args: eval --proc c --set x=300 --set y=5
--- A value given outside its pattern type makes the behaviour inadmissible,
+-- A value given outside its subset type makes the behaviour inadmissible,
 -- if it is an input's, or violate the component, if it is an output's.
 type Byte = n: Int where invariant: n is 0..=255
 type AtLeastTen = n: Int where invariant: n is 10..

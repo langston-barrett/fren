@@ -1,4 +1,4 @@
--- What pattern types bring: fields, payloads, `Nat`s within values,
+-- What subset types bring: fields, payloads, `Nat`s within values,
 -- collections, recursive enumerations, quantifiers and refinements.
 -- fren-covers: lang::pattern_finite, lang::nat_place
 
@@ -17,7 +17,7 @@ proc stocked(r: Reading, a: Flag, b: Flag) {
     expect same: a = b
 }
 
--- A newtype of a pattern type.
+-- A newtype of a subset type.
 type LevelValue = n: Int where invariant: n is 1..=3
 struct Level(LevelValue)
 
@@ -27,7 +27,7 @@ proc levels(l: Level): (y: Int) {
     expect high: y <= 4
 }
 
--- A quantifier ranges over a bounded pattern type.
+-- A quantifier ranges over a subset type that its pattern test bounds.
 type ThreeBit = n: Int where invariant: n is 0..=7
 proc digits(d: Digit) {
     expect all: forall (k: Digit), k + d <= 18

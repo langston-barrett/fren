@@ -1,7 +1,7 @@
 -- Ordered structs and newtypes, `ordered struct`: ordered lexicographically
 -- by their fields, in the order declared, with `<`, `<=`, `>`, `>=`,
 -- chains, `min` and `max`; and the `+` and `-` of newtypes of `Nat`s and of
--- pattern types.
+-- subset types.
 -- fren-covers: lang::operator_type
 set_option fren.lint.dead_code "allow"
 
@@ -9,7 +9,7 @@ pub ordered enum Level { Low, Mid, High }
 type MinorVersion = n: Int where invariant: n is 0..=99
 pub ordered struct Version { major: Nat, minor: MinorVersion, level: Level }
 
--- Every newly ordered underlying type: `Nat`, pattern types, type aliases
+-- Every newly ordered underlying type: `Nat`, subset types, type aliases
 -- of ordered types, and an ordered newtype.
 pub ordered struct Seconds(Nat)
 type Nonnegative = n: Int where invariant: n is 0..
@@ -61,7 +61,7 @@ proc strings(a: String): (det m: String) {
 }
 
 -- `+` of a newtype of `Nat` is a `Nat`'s, and gives the newtype; and `+`
--- and `-` of a newtype of a pattern type have the obligation that
+-- and `-` of a newtype of a subset type have the obligation that
 -- building the newtype from the sum or difference has.
 proc sums(a: Seconds, b: Seconds, x: Digit, y: Pos): (
     det total: Seconds,

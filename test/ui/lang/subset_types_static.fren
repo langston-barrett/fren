@@ -1,4 +1,4 @@
--- Pattern types and type aliases: the static errors.
+-- Subset types: the static errors of their pattern tests and places.
 -- fren-covers: lang::nat_place, lang::subset_place
 set_option fren.lint.dead_code "allow"
 

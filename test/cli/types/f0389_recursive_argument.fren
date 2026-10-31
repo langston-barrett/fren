@@ -1,4 +1,4 @@
--- A pattern type as a type argument of a recursive enumeration.
+-- A subset type as a type argument of a recursive enumeration.
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
 type Digit = n: Int where invariant: n is 0..=9

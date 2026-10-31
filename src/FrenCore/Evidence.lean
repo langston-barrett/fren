@@ -51,8 +51,8 @@ inductive Reason where
   /-- `fren.evidence` cannot set a method but the solver before a function
   or a constant: it is `F0215`. -/
   | notSettable
-  /-- A value given where a pattern type is declared is the solver's to check. -/
-  | patternType
+  /-- A value given where a subset type is declared is the solver's to check. -/
+  | subsetType
   /-- Testing searches for counterexamples, not for witnesses. -/
   | noWitnessSearch
   /-- The check is about where the evaluator knows no value. -/
@@ -80,7 +80,7 @@ def CheckKind.enumerable : CheckKind → Bool
 
 /-- What Fren does with a check of kind `kind` of an item `item` set to
 `method`, and why (`check::method_run`). `obligation` is whether it is the
-definedness of a value given where a pattern type is declared. -/
+definedness of a value given where a subset type is declared. -/
 def dispatchOf (kind : CheckKind) (item : CheckedItem) (method : ProofMethod) (obligation : Bool := false) :
     Dispatch × Reason :=
   let reason : Reason := match method with
@@ -88,7 +88,7 @@ def dispatchOf (kind : CheckKind) (item : CheckedItem) (method : ProofMethod) (o
     | .lean => .noLean
     | .enumerated | .random =>
       if item == .body || item == .contract then .notSettable
-      else if obligation then .patternType
+      else if obligation then .subsetType
       else if method == .enumerated then (if kind.enumerable then .selected else .notEnumerated)
       else if kind.testable then .selected
       else if kind.proof then .noValue
@@ -96,7 +96,7 @@ def dispatchOf (kind : CheckKind) (item : CheckedItem) (method : ProofMethod) (o
   let dispatch : Dispatch := match reason with
     | .selected => .run
     | .noLean | .notSettable => .reject
-    | .patternType => .bySolver
+    | .subsetType => .bySolver
     | .noWitnessSearch | .noValue | .notEnumerated => .skip
   (dispatch, reason)
 
@@ -106,7 +106,7 @@ def CheckKind.untestable (kind : CheckKind) : Bool :=
   (dispatchOf kind .component .random).1 == .skip
 
 /-- Whether the solver checks a definedness check, whatever the evidence:
-whether it is of a value given where a pattern type is declared, `typed`
+whether it is of a value given where a subset type is declared, `typed`
 (`dispatchOf`). -/
 def solverDefinedness (typed : Bool) : Bool :=
   [ProofMethod.random, .enumerated].all fun m => (dispatchOf .definedness .component m typed).1 == .bySolver
@@ -180,7 +180,7 @@ def CheckKind.noun : CheckKind → String
 
 /-- The checks of kind `kind` of `c` that `t` sets, as the solver would ask
 them, each as whether it is the definedness of a value given where a
-pattern type is declared: a constraint's vacuity, its redundancy, an
+subset type is declared: a constraint's vacuity, its redundancy, an
 index's definedness, or a question about the cases of a table or a
 `match`. -/
 def Comp.checksOf (c : Comp F) (t : Tested) (kind : CheckKind) : Array Bool :=
@@ -194,7 +194,7 @@ def Comp.checksOf (c : Comp F) (t : Tested) (kind : CheckKind) : Array Bool :=
   | .vacuity => one (c.triggers.any (t.props.contains ·.1))
   | .inst => one (c.insts.any fun i => t.insts.contains i.name && !i.assumes.isEmpty)
   | .determinism => one (c.vars.any fun v => v.isDet && t.dets.contains v.name)
-  | .definedness => c.indexes.filterMap fun s => if mine s.prop then some s.patTy?.isSome else none
+  | .definedness => c.indexes.filterMap fun s => if mine s.prop then some s.subsetTy?.isSome else none
   | .postcondition => #[]
   | k => one (c.tables.any fun s => s.goal.kind == k && mine s.site.prop)
 
@@ -228,7 +228,7 @@ def Reason.note : Reason → String
   | .notEnumerated => "note: indexes are of sequences, which enumeration does not enumerate"
   | .noLean => "note: a Lean proof is not yet a method of `fren.evidence`"
   | .notSettable => "note: the checks of a function's body or contract, and of a constant's value, are the solver's"
-  | .selected | .patternType => ""
+  | .selected | .subsetType => ""
 
 /-- The checks of `subject` of the kinds `skipped` that `method`, which
 their evidence sets, does not run (`F0654`). The help names enumeration too
@@ -251,10 +251,10 @@ def Comp.untested (t : Tested) (c : Comp F) (kinds : Array CheckKind) : Comp F �
       triggers := c.triggers.filter (!t.props.contains ·.1)
       insts := c.insts.map fun i => if t.insts.contains i.name then { i with assumes := #[] } else i
       vars := c.vars.map fun v => if t.dets.contains v.name then { v with isDet := false } else v
-      -- A value given where a pattern type is declared is the solver's to
+      -- A value given where a subset type is declared is the solver's to
       -- check, whatever the evidence (`dispatchOf`).
       indexes := c.indexes.filter fun s =>
-        solverDefinedness s.patTy?.isSome || (!t.props.contains s.prop && !t.insts.contains s.prop)
+        solverDefinedness s.subsetTy?.isSome || (!t.props.contains s.prop && !t.insts.contains s.prop)
       tables := c.tables.filter fun s => !t.props.contains s.site.prop && !t.insts.contains s.site.prop },
     kinds.filter fun k => !(k == .realizable && t.realizable) && !(k == .redundancy && t.redundancy))
 

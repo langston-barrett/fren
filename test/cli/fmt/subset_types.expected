@@ -1,5 +1,5 @@
---- test/cli/fmt/pattern_types.fren
-+++ test/cli/fmt/pattern_types.fren
+--- test/cli/fmt/subset_types.fren
++++ test/cli/fmt/subset_types.fren
 @@ -4 +4 @@
 -type   Byte= n: Int    where invariant: n is  0..=255
 +type Byte = n: Int where invariant: n is 0..=255

@@ -1,4 +1,4 @@
--- A value given where a pattern type is declared is checked by the solver
+-- A value given where a subset type is declared is checked by the solver
 -- whatever the evidence, in both front ends (`check::by_evidence`): not
 -- dropped with the checks that testing or enumeration does not run.
 type Small = n: Int where invariant: n is 0..=3

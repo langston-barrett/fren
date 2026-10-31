@@ -1,7 +1,7 @@
 -- keep-sorted start
 import FrenCore.Check
 import FrenCore.Evidence
-import FrenCore.PatternTypes
+import FrenCore.SubsetTypes
 -- keep-sorted end
 
 /-!
@@ -69,7 +69,7 @@ inductive Shape where
   | int
   /-- `Nat`: `k` has size `k`. -/
   | nat
-  /-- A finite integer pattern type: its integers, in increasing order, each
+  /-- A finite integer subset type: its integers, in increasing order, each
   of size 0. -/
   | ints (vs : List Int)
   /-- An abstract type: its `k`th value has size `k`. -/
@@ -79,7 +79,7 @@ inductive Shape where
   | ctors (cs : Ctors)
   /-- A record, or a newtype: the largest size of its fields. -/
   | record (fs : Shapes)
-  /-- A pattern type of the shape `s`: its values that `keep` keeps. -/
+  /-- A subset type of the shape `s`: its values that `keep` keeps. -/
   | filter (s : Shape) (keep : EVal → Bool)
   /-- No values: a payload beyond the bound. -/
   | empty
@@ -107,7 +107,7 @@ inductive SizeKind where
   | bool
   | int
   | nat
-  /-- An integer of a finite integer pattern type. -/
+  /-- An integer of a finite integer subset type. -/
   | finiteInt
   | abstract
   /-- A variant without a payload. -/
@@ -203,7 +203,7 @@ def notEnumerable (t : PTy) : String :=
 
 /-- The shape of the declared type `t` for the bound `n`
 (`Reqs/Check#enumerable-types`): `Bool`, `Int`, `Nat`, enumerations,
-records, newtypes, instances of generic types, pattern types and abstract
+records, newtypes, instances of generic types, subset types and abstract
 types are enumerable; strings, sets, relations and sequences are not, nor
 any type with one within it. `shapes` gives what is known of each record,
 newtype and enumeration. A recursive enumeration is unfolded `n` deep. -/
@@ -218,7 +218,7 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
       match t.pat? with
       | none => pure (if nat then .nat else .int)
       | some p =>
-        -- A finite integer pattern type: all of its integers, of size 0.
+        -- A finite integer subset type: all of its integers, of size 0.
         match p.intCount? (if nat then some 0 else none), Pat.intValues? p with
         | some _, some vs => return .ints (vs.toList.filter fun i => !nat || 0 ≤ i)
         -- A `Nat` pattern bounded only above, as `Nat is ..=5`: from 0 to
@@ -245,7 +245,7 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
           | m + 1 => return .cons (← parts m ts) acc
         pure (.ctors cs)
     | _ => throw (notEnumerable t)
-  -- A pattern type that is not a finite integer one: its base's values that match.
+  -- A subset type that is not a finite integer one: its base's values that match.
   match t.pat?, base with
   | some _, .ints _ => return base
   | some p, s => return .filter s (keep p)
@@ -801,14 +801,14 @@ inductive Method where
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- The checks that enumeration decides: all but definedness, of indexes,
-which only sequences have, and of values of pattern types, and the
+which only sequences have, and of values of subset types, and the
 postconditions of defined functions, which only their bodies have: those
 that `dispatchOf` runs (`check::by_evidence`). -/
 def enumerable (kind : CheckKind) : Bool :=
   (dispatchOf kind .component .enumerated).1 == .run
 
 /-- How a check of kind `kind` is run, given its evidence, and whether it
-is the definedness of a value given where a pattern type is declared,
+is the definedness of a value given where a subset type is declared,
 which the solver always checks: as `dispatchOf` runs it under enumeration,
 if the evidence includes it, and otherwise under testing
 (`check::by_evidence`). -/

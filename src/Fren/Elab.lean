@@ -2673,7 +2673,7 @@ def elabProp (t : Term) (type : Expr := mkSort .zero) : TermElabM Expr := do
   if e.hasMVar || e.hasSorry then throwErrorAt t "could not elaborate this expression"
   return e
 
-/-! ## Pattern types, and the items that declare types -/
+/-! ## Subset types, and the items that declare types -/
 
 /-- Records `undecidable` at `ref`, outside the decidable core, with `msg`. -/
 def recordOutsideCore (ref : Syntax) (msg : Core.Msg) : TermElabM Unit := do
@@ -2681,7 +2681,7 @@ def recordOutsideCore (ref : Syntax) (msg : Core.Msg) : TermElabM Unit := do
   recordLint .undecidable ref msg
 
 /-- The declared type `ty`, written in the module `modName`: its Lean type,
-and the type with the patterns of the pattern types within it
+and the type with the invariants of the subset types within it
 (`Reqs/Lang/Types#subset-types`), as the `fren` command's `elabPTy`. -/
 partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]) : TermElabM (Expr × Core.PTy) := do
   -- What Lean recovered from a parse error that it has reported.
@@ -2898,7 +2898,7 @@ def partPType (shape : Core.DataShape) (v k : Nat) (args : Array Core.Ty := #[])
   if args.isEmpty then t else t.subst (args.map .plain)
 
 /-- Records the obligation of the value `x`, given at `ref` where the type
-`t` is declared, if it has one, for the pattern-type check
+`t` is declared, if it has one, for the subset-type check
 (`Reqs/Check#subset-types`): its guard implies that the value matches,
 marked with its type (`Fren.typeObligation`). -/
 def noteObligation (cx : ExprCtx) (place : Core.ValuePlace) (ref : Syntax) (t : Core.PTy) (x : Term) : TermElabM Unit := do
@@ -5240,7 +5240,7 @@ def lintClosure (cx : ExprCtx) (ps : Array (Option Core.Ty)) (r? : Option Core.T
         match (← getState).defined.find? path with
         | some d =>
           pure (if d.typeParams.isEmpty && d.hoParams.isEmpty then
-            (.defined, d.declared == pts && d.result == rt && (d.ptys.1.push d.ptys.2).all (!·.patterned)) else (.other, false))
+            (.defined, d.declared == pts && d.result == rt && (d.ptys.1.push d.ptys.2).all (!·.restricted)) else (.other, false))
         | none => pure (.other, false)
       | _ => pure (.other, false)
   unless Core.redundantClosure names.size args true callee exact do return
@@ -6620,7 +6620,7 @@ partial def siteGoals (f p : Expr) (frames : List (Core.SiteFrame Expr (Expr × 
 
 /-- The function type `ty`, a defined function's parameter's
 (`Reqs/Lang/HigherOrder#function-types`), and its Lean arrow: its
-parameters' and result's types are neither `Nat`s, pattern types nor
+parameters' and result's types are neither `Nat`s, subset types nor
 function types (`lang::function_type_parts`). -/
 def fnParamType (modName : Name) (ty : Syntax) : TermElabM (Core.FnTy × Expr) := do
   let parts := ty[2].getSepArgs.push ty[5]
@@ -7346,7 +7346,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
         if let some m := (← getLocal).recMatches[0]? then throwErrorAt m (Core.recursiveMatchMsg path).text
       noteObligation cx .body body rp t
       -- Its tables, the applications of functions with preconditions, and
-      -- its pattern types' obligations, for their checks; its indexes are
+      -- its subset types' obligations, for their checks; its indexes are
       -- not checked.
       -- A structural recursion's applications of itself are of its solver
       -- form there (`DefinedInfo.recursive`).

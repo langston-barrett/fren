@@ -11,12 +11,12 @@ import FrenCore.Guards
 import FrenCore.Lint
 import FrenCore.Mentions
 import FrenCore.Names
-import FrenCore.PatternTypes
 import FrenCore.Patterns
 import FrenCore.Quantifier
 import FrenCore.Recursion
 import FrenCore.Regex
 import FrenCore.SeqElems
+import FrenCore.SubsetTypes
 import FrenCore.Trace
 import FrenCore.Ty
 import FrenCore.TypeFacts
@@ -243,7 +243,7 @@ structure Contract where
 `path`: not a Fren path, which never contains `#`. -/
 def clauseSym (path n : Name) : String := quote s!"::{showPath path}#{n}"
 
-/-! ## Pattern types' constraints in SMT-LIB -/
+/-! ## Subset types' constraints in SMT-LIB -/
 
 /-- The integer `v` in SMT-LIB. -/
 def smtInt (v : Int) : String := if v < 0 then s!"(- {-v})" else toString v
@@ -1657,7 +1657,7 @@ partial def mentions (e : Expr) (all : Bool := true) : Array Name :=
 def pathHead (segs : Array Ident) : Array Name := (segs[0]?.map fun s => (identName s.name).getRoot).toArray
 
 /-- The names of a type's segments, but for those that write its form
-(`fn(`, a pattern type's pattern). -/
+(`fn(`, a type's pattern). -/
 def typeNames (segs : Array Ident) : Array Name :=
   segs.filterMap fun s =>
     if Fren.Core.isIdStart s.name.front && s.name.all (fun c => Fren.Core.isIdRest c || c == '.') then
@@ -2475,7 +2475,7 @@ def noteIndex (cx : ExprCtx) (span : Span) (q i : String) : M Unit := do
   modify fun s => { s with indexes := s.indexes.push (span, guarded cx.guards bounds, none) }
 
 /-- Records the obligation of the value `value`, in SMT-LIB, given at
-`span` where the type `t` is declared, if it has one, for the pattern-type
+`span` where the type `t` is declared, if it has one, for the subset-type
 check (`Reqs/Check#subset-types`): its guard implies that the value
 matches. It is a definedness goal, with its type beside it. -/
 def noteObligation (cx : ExprCtx) (place : Fren.Core.ValuePlace) (span : Span) (t : Fren.Core.PTy) (value : String) :
@@ -3431,7 +3431,7 @@ def checkFnTypeSite (site : Fren.Core.TypeSite) (segs : Array Ident) : M Unit :=
   if segs[0]?.any (·.name == Parser.fnSeg) then err (typeSpan segs) (Fren.Core.fnTypePlaceMsg site [])
 
 mutual
-/-- The declared type written `segs`, with the patterns of the pattern
+/-- The declared type written `segs`, with the invariants of the subset
 types within it (`Reqs/Lang/Types#subset-types`). -/
 partial def elabPTy (segs : Array Ident) : M Fren.Core.PTy := do
   -- A function type is only a defined function's parameter's, which
@@ -3798,7 +3798,7 @@ def lintClosure (cx : ExprCtx) (ps : Array (Option Ty)) (r? : Option Ty) (span :
       | .ok (.item { kind := .fnItem, path, .. }) =>
         match (if st.hofs.contains path then none else st.defs.find? (·.1 == path)), st.funPTys.find? path with
         | some (_, dps, dr, _), some (pps, rp) =>
-          (.defined, dps.map (·.2) == pts && dr == rt && (pps.push rp).all (!·.patterned))
+          (.defined, dps.map (·.2) == pts && dr == rt && (pps.push rp).all (!·.restricted))
         | _, _ => (.other, false)
       | _ => (.other, false)
   unless Fren.Core.redundantClosure names.size args true callee exact do return
@@ -5731,7 +5731,7 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   let n := Name.mkSimple name.name
   unless name.name.startsWith "#match" do liftMsg name.span (Fren.Core.checkVarName n (t.map (· == .bool)))
   -- `redundant_bool_type` (`lint::redundant_bool_type`), but not of a
-  -- pattern type, whose pattern the annotation holds.
+  -- subset type, whose invariants the annotation holds.
   if let (some segs, true, false) := (ty?, !name.name.startsWith "#match" && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
@@ -6783,7 +6783,7 @@ def noteResultFact (path : Name) (rp : Fren.Core.PTy) : M Unit := noteResultFact
 
 /-- Records the tables of the body of the function `n`, whose parameters
 are `vars`, or of the value of the constant `n`, just elaborated, its
-pattern types' `obligations`, and the questions about the tables and
+subset types' `obligations`, and the questions about the tables and
 applications of the function's contract and its clauses, `contract`, as a
 procedure for their checks (`State.bodies`), if it has any questions or
 postconditions to check. -/
@@ -6793,7 +6793,7 @@ def noteBody (n : Name) (span : Span) (vars : Array CVar)
     (generic : Bool := false) : M Unit := do
   let tables := (← takeTables).map fun (sp, q, g) => (n, Fren.Core.IndexPlace.body, sp, q, g)
   -- The indexes of its contract's clauses are not checked, nor their
-  -- values given where pattern types are declared.
+  -- values given where subset types are declared.
   discard takeIndexes
   let (props, sites) := contract
   -- Its indexes are not checked either.
@@ -6809,7 +6809,7 @@ def noteBody (n : Name) (span : Span) (vars : Array CVar)
 
 /-- The function type written `segs`, a defined function's parameter's
 (`Reqs/Lang/HigherOrder#function-types`): its parameters' and result's
-types are neither `Nat`s, pattern types nor function types
+types are neither `Nat`s, subset types nor function types
 (`lang::function_type_parts`). -/
 def elabFnTy (segs : Array Ident) : M Fren.Core.FnTy := do
   let some (ps, r) := Fren.Core.splitFnSegs (segs.map (·.name)) | internal (typeSpan segs) "a function type"
