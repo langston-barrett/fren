@@ -1,0 +1,24 @@
+-- Components tested at once are reported in order, as one at a time
+-- (`Reqs/Cli#parallel-checking`).
+--@ args: quickcheck --jobs 3
+proc a(x: Int): (y: Int) {
+    ensure r: y >= x
+    expect positive: y > 0
+}
+
+proc b(x: Int): (det y: Int) {
+    ensure above: y >= x
+    ensure below: y <= x + 1
+}
+
+proc c(x: Int): (y: Int) {
+    ensure r: y = x + 1
+    expect bigger: y > x
+    cover equal: y = 0
+}
+
+proc d(x: Int): (y: Int) {
+    assume small: x < 0
+    assume big: x > 0
+    ensure r: y = x
+}

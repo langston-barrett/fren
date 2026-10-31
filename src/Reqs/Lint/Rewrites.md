@@ -23,25 +23,31 @@ one's functions:
 - [`overly_complex_bool_expr`](Pedantic/Booleans.md#the-rule-over-the-syntax-of-the-semantics);
 - [`double_neg`](Style.md#negations-over-the-syntax-of-the-semantics);
 - [`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons-over-the-syntax-of-the-semantics);
-- [`manual_abs` and `manual_abs_diff`](Complexity/Integers.md#absolute-values-over-the-syntax-of-the-semantics).
+- [`manual_abs` and `manual_abs_diff`](Complexity/Integers.md#absolute-values-over-the-syntax-of-the-semantics);
+- [`unless_not` and `collapsible_when`](Style.md#conditionals-over-the-syntax-of-the-semantics).
 
-The generated `fix_all` below has `fix_at` inlined in each of its arms, so
-its size grows with the number of arms, the number of lints and the size
-of each lint's `fix_at`, and a larger `fix_at` than this one already
-reached Lean's limit of heartbeats while `fix_all` was compiled. So each
-lint's fix, such as
-[`drop_fix`](Pedantic/Booleans.md#the-rule-over-the-syntax-of-the-semantics),
-evaluates each of its tests once, and `fix_at` is the fix itself, not `if
-fires_at?(l, e) then … else e`, which made the term three times as large.
-Compiling `fix_all` took 83M of Lean's raw heartbeats with one lint, 98M
-with three and 126M with these five, against a limit of 200M: the arms of
-`manual_abs` and `manual_abs_diff` cost about 14M each, twice as much as
-those of `double_neg` and `int_plus_one`. A lint whose arm is larger, or
-several more, will need a dispatch to each lint's fix that is not inlined.
+`fix_all` below applies `fix_at` in each of its arms, and `fires_in?`
+applies `fires_at?`, and each lint's functions are definitions of their
+own, so the cost of compiling either does not grow with the lints. It did
+while the solver's copy of a structural recursion was its body with the
+functions it applies unfolded, which put all of `fix_at` in each arm:
+compiling `fix_all` took 83M of Lean's raw heartbeats with one lint and
+126M with five, against a limit of 200M, and each lint whose test is a
+conditional added about 14M. That copy is now the recursion itself
+([Generated](../Generated.md#matches)), and compiling `fix_all` takes 57M,
+with five lints or seven.
 
 ```fren
 -- The lints stated over the syntax of the semantics.
-pub enum ExprLint { OverlyComplexBoolExpr, DoubleNeg, IntPlusOne, ManualAbs, ManualAbsDiff }
+pub enum ExprLint {
+    OverlyComplexBoolExpr,
+    DoubleNeg,
+    IntPlusOne,
+    ManualAbs,
+    ManualAbsDiff,
+    UnlessNot,
+    CollapsibleWhen,
+}
 
 pub fn fires_at?(l: ExprLint, e: Expr) := match l {
     ExprLint::OverlyComplexBoolExpr => overly_complex_fires?(e),
@@ -49,15 +55,18 @@ pub fn fires_at?(l: ExprLint, e: Expr) := match l {
     ExprLint::IntPlusOne => int_plus_one_fires?(e),
     ExprLint::ManualAbs => manual_abs_fires?(e),
     ExprLint::ManualAbsDiff => manual_abs_diff_fires?(e),
+    ExprLint::UnlessNot => unless_not_fires?(e),
+    ExprLint::CollapsibleWhen => collapsible_when_fires?(e),
 }
 
--- Inlined in every arm of `fix_all`: each lint's arm must stay small.
 pub fn fix_at(l: ExprLint, e: Expr): Expr := match l {
     ExprLint::OverlyComplexBoolExpr => overly_complex_fix(e),
     ExprLint::DoubleNeg => double_neg_fix(e),
     ExprLint::IntPlusOne => int_plus_one_fix(e),
     ExprLint::ManualAbs => manual_abs_fix(e),
     ExprLint::ManualAbsDiff => manual_abs_diff_fix(e),
+    ExprLint::UnlessNot => unless_not_fix(e),
+    ExprLint::CollapsibleWhen => collapsible_when_fix(e),
 }
 ```
 
@@ -75,6 +84,11 @@ operand, which are fixed where the operands are. That of `int_plus_one`
 writes a new node, `<`, of operands that are fixed, and the lint does not
 fire on a `<`. Those of `manual_abs` and `manual_abs_diff` write a call of
 `abs`, on which they do not fire, of an operand or an operand's operand.
+That of `unless_not` writes a conditional of an operand's operand and an
+operand, whose `else` branch is `true`, on which it does not fire. Those
+of `collapsible_when` write a conditional of a new `and` or `or` and of
+the nested conditional's body, on which it fires only where that body is
+another nested conditional, which would make the nested one fire.
 
 A lint whose fix may write something that it fires on, from operands
 that are fixed, does not meet the last fact. The De Morgan rewrites of
@@ -203,10 +217,11 @@ written, in every interpretation and environment (`keeps_meaning`). These
 follow from the [facts about each lint](#each-lint-where-it-fires) at the
 place where it fires: `fix_at_unfired`, `fix_at_agrees` and
 `fix_at_fixed`. The fix at one place alone need not fix the lint, as
-`overly_complex_refires`, `double_neg_refires` and `manual_abs_refires`
-show: these laws are of fixing everywhere. For `int_plus_one` it does, as `int_plus_one_once`
-shows. That the passes of `fren fix` end where `fix_all` does is a
-property of the passes, which these laws do not state.
+`overly_complex_refires`, `double_neg_refires`, `manual_abs_refires` and
+`collapsible_when_refires` show: these laws are of fixing everywhere. For
+`int_plus_one` and `unless_not` it does, as `int_plus_one_once` and
+`unless_not_once` show. That the passes of `fren fix` end where `fix_all`
+does is a property of the passes, which these laws do not state.
 
 The laws are about every expression, and so by induction on it, which the
 solver does not do: `src/Impls/Rewrites.lean` proves them in Lean, for

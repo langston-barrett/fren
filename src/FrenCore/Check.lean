@@ -1204,13 +1204,35 @@ def kindsRun (subset subsetInvariant : Bool) (kinds : Array CheckKind) : Array C
 quantifies, over outputs, and so does every query of a spec with an
 unbounded quantifier, or with a refinement claim whose abstraction has
 calls, over whose variables the claim quantifies (`quantified`); a spec
-that uses strings or sets (`extended`) needs `ALL`, and one that projects a
-relation over a type that is not finite (`projection`), `HO_ALL`. -/
+that uses strings or sets (`extended`) needs `ALL`, and a query that
+projects a relation over a type that is not finite (`projection`),
+`HO_ALL` (`queryLogic`). -/
 def logic (kind : CheckKind) (extended : Bool := false) (projection : Bool := false) (quantified : Bool := false) :
     String :=
   if extended then (if projection then "HO_ALL" else "ALL") else match kind with
     | .realizable => "UFDTLIA"
     | _ => if quantified then "UFDTLIA" else "QF_UFDTLIA"
+
+/-- The logic in which `fren check` asks a query of a check in `logic`:
+`HO_ALL` only if the query's script projects a relation (`projects`), and
+otherwise `ALL`, as `logic` gives it without a projection
+(`cli::logic`). The Lean-hosted front end does the same, by `force-logic`
+(`Reqs/Cli#solver-queries`). cvc5's higher-order extension, which
+`HO_ALL` turns on, slows every query that it is set for. -/
+def queryLogic (logic : String) (projects : Bool) : String :=
+  if logic == "HO_ALL" && !projects then "ALL" else logic
+
+#guard queryLogic (logic .expect true true) false == logic .expect true false
+#guard queryLogic (logic .expect true true) true == logic .expect true true
+#guard queryLogic (logic .expect false false true) false == logic .expect false false true
+
+/-- Whether the SMT-LIB text `f` projects a relation, which only a query in
+higher-order logic may (`queryLogic`). A string literal that spells it makes
+the query higher-order, which costs time, never an answer. -/
+def projectsRelation (f : String) : Bool := f.contains "rel.project"
+
+#guard projectsRelation "((_ rel.project 0) |r|)"
+#guard !projectsRelation "(rel.join |r| |s|)"
 
 /-- Whether `fren check` asks a query in the logic `logic`, given whether
 its text has a `forall` or `exists` (`quantifies`): never a quantified one
@@ -1288,6 +1310,17 @@ to count the members of a set of a finite type. -/
 def solverOptions (strings sets : Bool) : List (String × String) :=
   (if strings then [("strings-exp", "true"), ("re-inter-mode", "all"), ("re-elim", "on")] else [])
     ++ (if sets then [("sets-exp", "true")] else [])
+
+/-- The cvc5 option for a query in a logic with quantifiers, every logic
+of `logic` but `QF_UFDTLIA` (`cli::logic`): `inst-when` `last-call`, so
+that cvc5 instantiates quantifiers only once the rest of the query is
+satisfied, not also while it searches it. Its default instantiates, by
+E-matching, at each step of that search too, and can go on making
+instances that each bring new terms to match: a query that assumes the
+contract of `lang::resolve` for two scopes of one name took 1.4 to 2 s
+to find a model so, and 0.1 to 0.2 s with the option (#520). -/
+def quantifierOptions (logic : String) : List (String × String) :=
+  if logic == "QF_UFDTLIA" then [] else [("inst-when", "last-call")]
 
 /-- The cvc5 option for a query with a quantifier over a collection's
 elements, which a subset type within an element type brings

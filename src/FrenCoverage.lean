@@ -138,14 +138,31 @@ unsafe def main (args : List String) : IO UInt32 := do
   let env ← importModules #[{ module := `Fren }, { module := `FrenCli.Main }] {} (loadExts := true)
   -- Every module's counters, read by `gcov`.
   let mut ran : Std.HashMap Name Bool := {}
+  let mut read := 0
   for m in env.header.moduleNames do
     unless counted.contains m.getRoot do continue
     let base : System.FilePath := ".lake" / "build" / "ir" / (System.mkFilePath (m.components.map (·.toString)))
     let gcda := base.withExtension "c.o.gcda"
     unless ← gcda.pathExists do continue
-    let out ← IO.Process.output { cmd := gcov, args := (args.drop 1).toArray ++ #["-f", "-n", "-o", (gcda.parent.getD ".").toString, gcda.toString] }
+    -- Without the library path that `lake exe` sets to Lean's toolchain,
+    -- whose LLVM libraries are not the ones that `GCOV` is linked with: on
+    -- Linux, LLVM's `llvm-cov` fails to load under it (#537).
+    let gcovArgs := (args.drop 1).toArray ++ #["-f", "-n", "-o", (gcda.parent.getD ".").toString, gcda.toString]
+    let out ← IO.Process.output { cmd := gcov, args := gcovArgs, env := #[("LD_LIBRARY_PATH", none), ("DYLD_LIBRARY_PATH", none)] }
+    -- A run that read no counters would report every declaration as never
+    -- run, so a failure to read them stops it.
+    unless out.exitCode == 0 do
+      IO.eprintln s!"fren_coverage: `{gcov}` failed on {gcda} (exit {out.exitCode}):\n{out.stderr}"
+      return 2
+    read := read + 1
     for (f, r) in parseGcov out.stdout do
       if let some d := declOf? f then ran := ran.insert d (ran.getD d false || r)
+  if read == 0 then
+    IO.eprintln "fren_coverage: no counters in .lake/build/ir: build with -Kcoverage and run lake test first"
+    return 2
+  unless ran.toList.any (·.2) do
+    IO.eprintln s!"fren_coverage: the counters of {read} modules show no declaration run: did `{gcov}` read them?"
+    return 2
   -- A definition without arguments is a constant, computed when its module
   -- is initialized, and compiles to no function. One with arguments that
   -- gcov does not report did not run.

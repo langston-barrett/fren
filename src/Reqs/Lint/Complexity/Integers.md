@@ -272,20 +272,23 @@ pub fn manual_abs_diff_fix(e: lang::Expr): lang::Expr := match e {
 ```
 
 `lint::manual_abs` and `lint::manual_abs_diff` bind this to the linter.
-For every comparison operator and every `x`, `manual_abs`, at the
-comparison with `x` on its left, fires on the conditional with `x OP 0`
-exactly where `manual_abs_fires?` does on its elaboration, and its fix is
-`x.abs`. A condition written with `0` on the left, as in `0 > x`, is
-mirrored first, to `x < 0`, whose elaboration is the same, so this is
-stated with `x` on the left only. For every comparison operator and two
-operands `a` and `b` not written the same, `manual_abs_diff` fires on
-`if a OP b then c else d`, with `c` and `d` the two differences, exactly
-where `manual_abs_diff_fires?` does on its elaboration, and its fix is the
-absolute value of `c`. Where `a` and `b` are the same, neither fires.
+For every comparison operator and every `x` that is not an integer
+literal, `manual_abs`, at the comparison with `x` on its left, fires on
+the conditional with `x OP 0` exactly where `manual_abs_fires?` does on
+its elaboration, and the fix that `manual_abs_fix` writes is `x.abs`. A
+condition written with `0` on the left, as in `0 > x`, is mirrored first,
+to `x < 0`, whose elaboration is the same, so this is stated with `x` on
+the left only. For every comparison operator and two operands `a` and `b`
+not written the same, `manual_abs_diff` fires on `if a OP b then c else
+d`, with `c` and `d` the two differences, exactly where
+`manual_abs_diff_fires?` does on its elaboration, and the fix that
+`manual_abs_diff_fix` writes is the absolute value of `c`. Where `a` and
+`b` are the same, neither fires.
 
-The front ends' reading of `-`, `0` and the comparison, and the
-mirroring of the condition, are trusted, and checked by the ui tests of
-the lints. So is that they run these lints only at conditionals:
+The front ends' reading of `-`, `0` and the comparison, the mirroring of
+the condition, and the text of each fix, which neither procedure has an
+output for, are trusted, and checked by the ui tests of the lints. So is
+that they run these lints only at conditionals:
 neither procedure has an input that says it is at one, and the functions
 above fire on nothing else, by their `match`. The linter fires only where
 these functions do, not in every place they do: it compares only `Int`s
@@ -384,8 +387,8 @@ Each fix writes a call of `abs`, on which the lint does not fire
 once the operands are fixed, it leaves nothing to fix. An expression
 around it may start firing once it is fixed, though, since the lints
 compare whole operands: in `if y.abs < 0 then -(if y < 0 then -y else y)
-else y.abs`, the inner conditional does not fire, and its fix makes the
-outer one fire (`around`).
+else y.abs`, the outer conditional does not fire, and the fix of the inner
+one makes it fire (`around`).
 
 ```fren
 -- `if y.abs < 0 then -z else y.abs`.

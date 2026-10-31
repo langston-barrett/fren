@@ -7,7 +7,7 @@ fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
 fren eval --proc PATH [--set VAR=VALUE]... [--seed N] [-A|-W|-D|-F LINT]... FILE...
-fren quickcheck [--tests N] [--seed N] [-A|-W|-D|-F LINT]... FILE...
+fren quickcheck [--tests N] [--seed N] [--jobs N] [-A|-W|-D|-F LINT]... FILE...
 fren mutate [--by solver|testing|both] [--proc PATH] [--mutant ID]... [--diff PATCH] [--sample N] [--seed N]
     [--shard K/N] [--list] [--timeout SECONDS] [--resource-limit N] [--examples N] [--tests N]
     [-A|-W|-D|-F LINT]... FILE...
@@ -39,7 +39,7 @@ installation. It is built by `lake build fren`.
 | `--timeout SECONDS` | `check` and `mutate`: time limit for each solver query (default 10; 0 means none); see [Limits](#limits) |
 | `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
 | `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
-| `--jobs N` | `check`: how many procedures to check at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
+| `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
@@ -255,9 +255,12 @@ cvc5 refuses to count the members of a set of a finite type. A relation's
 its `range` the same on the other side, written as a literal when that type
 is finite. Over a type that is not finite, which is outside the core, they
 are cvc5's projections, which it supports only in higher-order logic, so
-such a spec uses `HO_ALL`. The Lean-hosted front end does the same, for
-each query with a projection, by cvc5's option `force-logic`, since
-lean-smt always sets `ALL`. A query with a quantifier over a
+a query of such a spec whose script has a projection, in its hypotheses,
+its goal or the definitions that it includes, uses `HO_ALL`, and its other
+queries use `ALL`: cvc5's higher-order extension slows every query that it
+is set for. The Lean-hosted front end does the same, for each query with a
+projection, by cvc5's option `force-logic`, since lean-smt always sets
+`ALL`. A query with a quantifier over a
 collection's elements, which a [subset type](Lang/SubsetTypes.md#static-types-assumptions-and-obligations)
 within an element type brings, and which is outside the core, sets
 `fmf-bound`, with which cvc5 finds models of quantifiers bounded by
@@ -275,7 +278,14 @@ without a `_` row, whose value where no row holds is an index out of range
 of the empty sequence, or a [`match`](Lang/Expressions.md#matches) whose
 arms without guards are not exhaustive, likewise where no arm is taken,
 even if no variable has such a type.
-`cli::logic` gives the logic from the check, where `QuantifierFree` is
+A query in a logic with quantifiers, any but `QF_UFDTLIA`, sets cvc5's
+`inst-when` to `last-call`, so that cvc5 instantiates quantifiers only
+once the rest of the query is satisfied, not also during its search of
+the rest. That changes how cvc5 searches, not what a query means. By
+default, cvc5 can go on instantiating a contract that quantifies within a
+quantifier, such as `lang::resolve`'s, each instance bringing new terms
+to instantiate it with, long before it finds a model.
+`cli::logic` gives the logic and options from the check, where `QuantifierFree` is
 `QF_UFDTLIA`, `Quantified` is `UFDTLIA` and `HigherOrder` is `HO_ALL`:
 
 ```fren
@@ -286,12 +296,13 @@ pub enum Theory { Strings, Sets, Sequences }
 pub proc logic(
     kind: Kind,
     theories: Set<Theory>,       -- beyond uninterpreted functions, datatypes and linear integer arithmetic
-    projection?,                 -- the spec takes the domain or range of a relation over a type that is not finite
+    projection?,                 -- the query's script takes the domain or range of a relation over a type that is not finite
     quantified?,                 -- the spec has an unbounded quantifier, or a refinement claim whose abstraction has calls
 ): (
     det logic: Logic,
     det strings_exp?,            -- set cvc5's `strings-exp`, `re-inter-mode` and `re-elim` options
     det sets_exp?,               -- set cvc5's `sets-exp` option
+    det last_call?,              -- set cvc5's `inst-when` option to `last-call`
 ) {
     use check::Kind::Realizability
     use self::Logic::{All, HigherOrder, Quantified, QuantifierFree}
@@ -305,10 +316,13 @@ pub proc logic(
     -- cvc5 decides sequences in its strings solver.
     ensure options: (strings_exp? iff (Strings in theories or Sequences in theories))
         and (sets_exp? iff (Sets in theories or Sequences in theories))
+    -- cvc5 instantiates quantifiers only once the rest of the query is satisfied.
+    ensure instantiation: last_call? iff logic != QuantifierFree
 
     expect quantifier_free_when_possible: when logic = QuantifierFree, kind != Realizability and not quantified?
     expect sets_alone: when theories = {Sets}, not strings_exp?
     expect higher_order_rarely: when logic = HigherOrder, projection?
+    expect realizability_last_call: when kind = Realizability, last_call?
 }
 ```
 
@@ -415,6 +429,9 @@ with `--timeout 0` and `--resource-limit`, the output is the same for every
 testing](Check.md#checking-by-testing) run with its solver queries, from
 a random stream of its own, so they do not depend on the order either.
 `--jobs` is at least 1.
+`fren quickcheck` tests up to `--jobs` procedures and global expectations
+at once in the same way: each from a random stream of its own, reported
+in order, so its output is the same for every `--jobs`.
 `fren mutate` checks its mutants one at a time.
 
 ## Timings

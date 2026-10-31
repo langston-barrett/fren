@@ -74,6 +74,9 @@ structure UseDef where
 structure Table where
   items : NameMap Item := {}
   enums : NameMap EnumDef := {}
+  /-- Those of `enums` in the prelude (`inPrelude`), which every name that
+  no scope declares is looked up in (`Table.preludeName?`). -/
+  preludeEnums : NameMap EnumDef := {}
   /-- `use`s, by scope. -/
   uses : NameMap (Array UseDef) := {}
   /-- The module of each procedure that has `use`s, by its path. -/
@@ -81,7 +84,9 @@ structure Table where
   deriving Inhabited
 
 def Table.addItem (t : Table) (i : Item) : Table := { t with items := t.items.insert i.path i }
-def Table.addEnum (t : Table) (e : EnumDef) : Table := { t with enums := t.enums.insert e.path e }
+def Table.addEnum (t : Table) (e : EnumDef) : Table :=
+  { t with enums := t.enums.insert e.path e
+           preludeEnums := if inPrelude e.path then t.preludeEnums.insert e.path e else t.preludeEnums }
 def Table.addUse (t : Table) (u : UseDef) : Table :=
   { t with uses := t.uses.insert u.scope ((t.uses.getD u.scope #[]).push u)
            scopes := if u.scope == u.module then t.scopes else t.scopes.insert u.scope u.module }
@@ -297,7 +302,7 @@ def Table.membersOf (t : Table) (mod : Name) : Array Name :=
 /-- The names that the prelude gives every scope: its items, and its
 enumerations' variants. -/
 def Table.preludeNames (t : Table) : Array Name :=
-  t.membersOf preludeModule ++ t.enums.foldl (init := #[]) fun acc p e => if inPrelude p then acc ++ e.variants else acc
+  t.membersOf preludeModule ++ t.preludeEnums.foldl (init := #[]) fun acc _ e => acc ++ e.variants
 
 /-- The names that the first segment of a path can be in the scope `mod`:
 its module's items, its named imports, and the variants it opens. -/
@@ -424,8 +429,8 @@ items, and its enumerations' variants, as if every scope opened them. -/
 def Table.preludeName? (t : Table) (n : Name) : Option Resolved :=
   match t.declared? preludeModule n with
   | some i => some (.item i)
-  | none => t.enums.foldl (init := none) fun acc p e =>
-    acc <|> if inPrelude p then (e.variants.idxOf? n).map (.variant e ·) else none
+  | none => t.preludeEnums.foldl (init := none) fun acc _ e =>
+    acc <|> (e.variants.idxOf? n).map (.variant e ·)
 
 /-- What each layer of the scope `from_` gives the name `n`, the first
 segment of a path, innermost first (`modules::first_segment`): the item
@@ -470,9 +475,10 @@ The prelude's item or variant of `n` is the outermost, unless not
 `prelude`. -/
 def Table.contextOf (t : Table) (from_ : Name) (locals : Locals) (n : Name) (builtin : Bool) (prelude := true) :
     Context Name :=
+  let ns := n.toString
   let named (uses : Array UseDef) : List (Import Name) :=
     uses.toList.filterMap fun u =>
-      if !u.glob && u.target.getString! == n.toString then
+      if !u.glob && u.target.getString! == ns then
         some ⟨⟨n, ((t.resolveTarget u.target).map (·.bindingKind)).getD .item, u.target⟩, false⟩
       else none
   let opened (uses : Array UseDef) : List (Import Name) :=
