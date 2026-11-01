@@ -1,5 +1,9 @@
 -- A row of a table that is never the first that holds: one of the rows
 -- before `_` always holds.
 proc size(x: Int): (s: Int) {
-    ensure r: s = table { x >= 0 => 1, x < 0 => 0, _ => 2 }
+    ensure r: s = table {
+        x >= 0 => 1,
+        x < 0 => 0,
+        _ => 2,
+    }
 }

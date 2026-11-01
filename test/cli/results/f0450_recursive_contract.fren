@@ -1,6 +1,9 @@
 pub enum T { Z, S(T) }
 
 pub fn size(t: T): (r: Int) {
-    out r := match t { T::Z => 0, T::S(a) => size(a) + 1 }
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => size(a) + 1,
+    }
     ensure not_minus_one: r != -1
 }

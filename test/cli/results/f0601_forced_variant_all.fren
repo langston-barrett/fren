@@ -20,7 +20,16 @@ proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): 
         decision != Decision::GiveUp iff status is 429 | 503
         and method != Method::Post
         and attempt < MAX_ATTEMPTS
-    ensure honor_server: match decision { Decision::RetryAfter(d) => d >= retry_after, _ => true }
-    ensure backoff: match decision { Decision::RetryAfter(d) => d >= Seconds(2 * attempt), _ => true }
-    ensure latency_budget: match decision { Decision::RetryAfter(d) => d <= MAX_DELAY, _ => true }
+    ensure honor_server: match decision {
+        Decision::RetryAfter(d) => d >= retry_after,
+        _ => true,
+    }
+    ensure backoff: match decision {
+        Decision::RetryAfter(d) => d >= Seconds(2 * attempt),
+        _ => true,
+    }
+    ensure latency_budget: match decision {
+        Decision::RetryAfter(d) => d <= MAX_DELAY,
+        _ => true,
+    }
 }
