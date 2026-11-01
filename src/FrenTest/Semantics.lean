@@ -71,20 +71,20 @@ structure Scope where
   apps : Bool := true
   binders : List Lean.Name := []
 
-abbrev Pair := Ex × lang.Expr
+abbrev Pair := Ex × (lang.Expr String)
 
 /-- A list expression of `es`. -/
-def list : List lang.Expr → lang.Expr
+def list : List (lang.Expr String) → (lang.Expr String)
   | [] => .Nil
   | e :: es => .Cons e (list es)
 
 def intLit (k : Int) : Pair := (.lit (.int k), .Literal (.Integer k))
 def boolLit (b : Bool) : Pair := (.lit (.bool b), .Literal (lang.truth b))
-def trueE : lang.Expr := .Literal .True
+def trueE : lang.Expr String := .Literal .True
 
 /-- The binary operator `op` as the semantics has it, with its derived forms
 translated (`Reqs/Lang/Semantics#derived-forms`). -/
-def binE (op : Op) (a b : lang.Expr) : lang.Expr :=
+def binE (op : Op) (a b : lang.Expr String) : lang.Expr String :=
   match op with
   | .and => .And a b
   | .or => .Or a b
@@ -128,10 +128,10 @@ structure Prog where
   f : Pair
 
 /-- An arm, as both hold it. -/
-abbrev Arm := (Pat × Option Ex × Ex) × lang.Pattern × lang.Expr × lang.Expr
+abbrev Arm := (Pat × Option Ex × Ex) × (lang.Pattern String) × (lang.Expr String) × (lang.Expr String)
 
 /-- A `match` of the semantics, from its scrutinee and arms. -/
-def matchE (s : lang.Expr) : List (lang.Pattern × lang.Expr × lang.Expr) → lang.Expr
+def matchE (s : lang.Expr String) : List ((lang.Pattern String) × (lang.Expr String) × (lang.Expr String)) → (lang.Expr String)
   | [] => .NoMatch
   | (p, g, b) :: arms => .Match s p g b (matchE s arms)
 
@@ -241,7 +241,7 @@ partial def genIte (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
   return (.ite c.1 a.1 b.1, .If c.2 a.2 b.2)
 
 /-- A guard, or none, and the semantics' guard, `true` where there is none. -/
-partial def genGuard (P : Prog) (sc : Scope) (d : Nat) : R (Option Ex × lang.Expr) := do
+partial def genGuard (P : Prog) (sc : Scope) (d : Nat) : R (Option Ex × (lang.Expr String)) := do
   if (← next 3) = 0 then
     let g ← gen P sc .bool (d - 1)
     return (some g.1, g.2)
@@ -277,7 +277,7 @@ partial def genIntMatch (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := d
   let arms : List Arm ← (List.range (n + 1)).mapM fun _ => do
     let lo ← small
     let w ← next 3
-    let (p, q) : Pat × lang.Pattern := match (← next 3) with
+    let (p, q) : Pat × (lang.Pattern String) := match (← next 3) with
       | 0 => (Pat.int (some lo) (some lo), .Literal (.Integer lo))
       | 1 => (Pat.int (some lo) (some (lo + w)), .Between lo (lo + w))
       | _ => (Pat.wild, .Wildcard)
@@ -291,7 +291,7 @@ partial def genTable (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
   let n ← next 3
   let rows ← (List.range (n + 1)).mapM fun k => do
     let v ← gen P sc t (d - 1)
-    if k = n && (← next 2) = 0 then return ((k, (none : Option Ex), v.1), (none : Option lang.Expr), v.2)
+    if k = n && (← next 2) = 0 then return ((k, (none : Option Ex), v.1), (none : Option (lang.Expr String)), v.2)
     let c ← gen P sc .bool (d - 1)
     return ((k, some c.1, v.1), some c.2, v.2)
   let tableE := rows.foldr (init := lang.Expr.NoMatch) fun (_, c, v) rest =>
@@ -360,7 +360,7 @@ def semanticInterp (us : List (Int × Int)) (rs : List Int) : lang.Interp :=
   ⟨graphOf "u" us, graphOf "r" (rs.map fun k => (k, k + 1)), .Empty⟩
 
 /-- Whether `e` applies an uninterpreted function or a structural recursion. -/
-def applies : lang.Expr → Bool
+def applies : lang.Expr String → Bool
   | .Call _ _ | .Recur _ _ => true
   | .Unary _ a | .Is a _ | .Project a _ _ | .Construct _ a | .Count _ a | .Apply _ a _ _ => applies a
   | .Binary _ a b | .And a b | .Or a b | .Cons a b | .Index a b | .Let _ a b | .Method _ a b => applies a || applies b
@@ -477,7 +477,7 @@ under interpretations that agree on their structural recursions and
 primitive operations, and differ in `u`. -/
 
 /-- An integer expression over `x`, `y`, `n` (in a body), `u` and `r`. -/
-partial def genL (inBody : Bool) : Nat → R lang.Expr
+partial def genL (inBody : Bool) : Nat → R (lang.Expr String)
   | 0 => do
     match ← next 4 with
     | 0 =>
@@ -536,9 +536,9 @@ applies a structural recursion mentions nothing, and has one outcome under
 interpretations with the same recursions; one that applies an uninterpreted
 function mentions it. -/
 def constantOfRecursion : Bool :=
-  let e : lang.Expr := .Apply "C" .Nil .Nil (.Recur "r" .Nil)
+  let e : lang.Expr String := .Apply "C" .Nil .Nil (.Recur "r" .Nil)
   let rs : lang.Graph := .Point "r" .Nil .True .Empty
-  let viaCall : lang.Expr := .Apply "C" .Nil .Nil (.Call "u" .Nil)
+  let viaCall : lang.Expr String := .Apply "C" .Nil .Nil (.Call "u" .Nil)
   decide (lang.free_vars e = ∅)
     && lang.eval ⟨.Point "u" .Nil .False .Empty, rs, .Empty⟩ .Empty e == lang.eval ⟨.Empty, rs, .Empty⟩ .Empty e
     && decide (lang.Mention.Fn "u" ∈ lang.free_vars viaCall)

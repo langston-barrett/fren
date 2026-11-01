@@ -23,7 +23,7 @@ pub mod model
 
 use check::Verdict
 use check::Verdict::Inconclusive
-use lang::{Env, Expr, Interp, Outcome, Value, eval}
+use lang::{Env, Expr, Id, Interp, Outcome, Value, eval}
 ```
 
 ## Reading
@@ -95,8 +95,6 @@ parameter is then left without a value, and the parts of the query that
 read it are undecided, as for an abstract type.
 
 ```fren
-use lang::Id
-
 pub enum TypeShape {
     Boolean,
     Integer,
@@ -260,12 +258,12 @@ a list of expressions, `Nil` or `Cons(h, rest)`, as the operands of a
 form are in [the abstract syntax](Lang/Semantics.md#expressions):
 
 ```fren
-pub fn some_false?(i: Interp, env: Env, hypotheses: Expr) := match hypotheses {
+pub fn some_false?(i: Interp, env: Env, hypotheses: Expr<Id>) := match hypotheses {
     Expr::Cons(h, rest) => eval(i, env, h) = Outcome::Defined(Value::False) or some_false?(i, env, rest),
     _ => false,
 }
 
-pub fn contradicted?(i: Interp, env: Env, hypotheses: Expr, goal: Expr) :=
+pub fn contradicted?(i: Interp, env: Env, hypotheses: Expr<Id>, goal: Expr<Id>) :=
     some_false?(i, env, hypotheses) or eval(i, env, goal) = Outcome::Defined(Value::True)
 ```
 
@@ -353,8 +351,8 @@ pub proc report(
     i: Interp,              -- the model's interpretation, as read
     env: Env,               -- the model's values of the query's variables, as read
     free: Free,             -- the variables that the model leaves free
-    hypotheses: Expr,       -- the query's hypotheses, in order, as a list
-    goal: Expr,             -- the query's goal
+    hypotheses: Expr<Id>,   -- the query's hypotheses, in order, as a list
+    goal: Expr<Id>,         -- the query's goal
     solver: Verdict,        -- the verdict that the solver's answer gives
 ): (
     det shown?,             -- the values are shown, as a counterexample or a witness
@@ -383,7 +381,14 @@ pub proc reported_real(
     ensure kept: when shown?, verdict = solver
 }
 
-expect report_real(i: Interp, env: Env, free: Free, hypotheses: Expr, goal: Expr, solver: Verdict) {
+expect report_real(
+    i: Interp,
+    env: Env,
+    free: Free,
+    hypotheses: Expr<Id>,
+    goal: Expr<Id>,
+    solver: Verdict,
+) {
     call r := report(i, env, free, hypotheses, goal, solver)
     refines r reported_real(
         not some_false?(i, fill(env, free), hypotheses),

@@ -359,26 +359,26 @@ offset:
 
 ```fren
 -- `e` is the literal `1`.
-fn one?(e: lang::Expr) := e = lang::Expr::Literal(lang::Value::Integer(1))
+fn one?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Integer(1))
 
-pub fn offset_of(e: lang::Expr): Offset := match e {
+pub fn offset_of<V>(e: lang::Expr<V>): Offset := match e {
     lang::Expr::Binary(lang::BinaryOp::Add, a, b) if one?(b) or one?(a) => PlusOne,
     lang::Expr::Binary(lang::BinaryOp::Sub, _, b) if one?(b) => MinusOne,
     _ => Zero,
 }
 
-pub fn without_offset(e: lang::Expr): lang::Expr := match e {
+pub fn without_offset<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::Binary(lang::BinaryOp::Add, a, b) => if one?(b) then a else if one?(a) then b else e,
     lang::Expr::Binary(lang::BinaryOp::Sub, a, b) => if one?(b) then a else e,
     _ => e,
 }
 
-pub fn int_plus_one_fires?(e: lang::Expr) := match e {
+pub fn int_plus_one_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::Binary(lang::BinaryOp::Le, a, b) => offset_of(a) = PlusOne or offset_of(b) = MinusOne,
     _ => false,
 }
 
-pub fn int_plus_one_fix(e: lang::Expr): lang::Expr := match e {
+pub fn int_plus_one_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::Binary(lang::BinaryOp::Le, a, b) => if offset_of(a) = PlusOne
         then lang::Expr::Binary(lang::BinaryOp::Lt, without_offset(a), b)
         else if offset_of(b) = MinusOne then lang::Expr::Binary(lang::BinaryOp::Lt, a, without_offset(b))
@@ -391,7 +391,11 @@ pub fn int_plus_one_fix(e: lang::Expr): lang::Expr := match e {
 each of the comparison operators `lint::Comparison`:
 
 ```fren
-pub fn elaborated_comparison(op: Comparison, a: lang::Expr, b: lang::Expr): lang::Expr := match op {
+pub fn elaborated_comparison<V>(
+    op: Comparison,
+    a: lang::Expr<V>,
+    b: lang::Expr<V>
+): lang::Expr<V> := match op {
     Eq => lang::Expr::Binary(lang::BinaryOp::Eq, a, b),
     Ne => lang::Expr::Unary(
         lang::UnaryOp::Not,
@@ -417,7 +421,12 @@ chain, so not in every place that `int_plus_one_fires?` does: the
 elaboration of `0 <= i + 1 <= n` has `i + 1 <= n`, on which it fires.
 
 ```fren
-expect int_plus_one_elaborated(op: Comparison, a: lang::Expr, b: lang::Expr, e: lang::Expr) {
+expect int_plus_one_elaborated(
+    op: Comparison,
+    a: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    e: lang::Expr<lang::Id>,
+) {
     call p := int_plus_one(op, offset_of(a), offset_of(b))
 
     expect rule: p.fires? iff int_plus_one_fires?(elaborated_comparison(op, a, b))
@@ -442,7 +451,7 @@ every expression, interpretation and environment; `fren check` tests it:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc int_plus_one_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+pub proc int_plus_one_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure exact: when int_plus_one_fires?(e),
         lang::eval(i, env, int_plus_one_fix(e)) = lang::eval(i, env, e)
 }
@@ -455,7 +464,7 @@ operand only by its offset and by whether it is `1`, and the fix keeps
 both (`around`).
 
 ```fren
-expect int_plus_one_once(e: lang::Expr) {
+expect int_plus_one_once(e: lang::Expr<lang::Id>) {
     expect kept: not int_plus_one_fires?(int_plus_one_fix(e))
     expect around: offset_of(int_plus_one_fix(e)) = offset_of(e) and (one?(int_plus_one_fix(e)) iff one?(e))
 }

@@ -309,7 +309,7 @@ interpretation's `recursions`, which are the same in every behaviour and
 ```fren
 -- The kind of an expression of the semantics, as the front ends classify
 -- the expression that it is elaborated from.
-pub fn kind_of(e: Expr): ExprKind := match e {
+pub fn kind_of(e: Expr<Id>): ExprKind := match e {
     Expr::Literal(_) => ExprKind::Literal,
     Expr::Var(x) => ExprKind::Variable(x),
     Expr::Construct(_, _) => ExprKind::Construction,
@@ -322,7 +322,7 @@ pub fn kind_of(e: Expr): ExprKind := match e {
 
 -- What the immediate subexpressions of a form that binds no name mention
 -- together, but an `Apply`'s body, which reads only its parameters.
-pub fn sub_free_vars(e: Expr): Set<Mention> := match e {
+pub fn sub_free_vars(e: Expr<Id>): Set<Mention> := match e {
     Expr::Unary(_, a) => free_vars(a),
     Expr::Is(a, _) => free_vars(a),
     Expr::Project(a, _, _) => free_vars(a),
@@ -341,7 +341,7 @@ pub fn sub_free_vars(e: Expr): Set<Mention> := match e {
     _ => {},
 }
 
-expect mentions_free_vars(e: Expr) {
+expect mentions_free_vars(e: Expr<Id>) {
     assume binds_nothing: not e is Expr::Let(_, _, _) | Expr::Match(_, _, _, _, _)
     -- An elaborated function's body reads only its parameters.
     assume closed_bodies: match e {
@@ -365,7 +365,15 @@ is the prose's above; checking it would need a model of the front ends'
 substitution:
 
 ```fren
-expect binding_forms_free_vars(x: Id, d: Expr, b: Expr, s: Expr, p: Pattern, g: Expr, rest: Expr) {
+expect binding_forms_free_vars(
+    x: Id,
+    d: Expr<Id>,
+    b: Expr<Id>,
+    s: Expr<Id>,
+    p: Pattern<Id>,
+    g: Expr<Id>,
+    rest: Expr<Id>,
+) {
     call definition := mentions(ExprKind::Definition, free_vars(d))
     call let_form := mentions(
         kind_of(Expr::Let(x, d, b)),
@@ -453,7 +461,7 @@ elaborations, and `p` and `q`, with `i` and `j`, two environments and
 interpretations:
 
 ```fren
-expect fixed_factor(a: Expr, b: Expr, i: Interp, p: Env, j: Interp, q: Env) {
+expect fixed_factor(a: Expr<Id>, b: Expr<Id>, i: Interp, p: Env, j: Interp, q: Env) {
     assume fixed: i.recursions = j.recursions and i.primitives = j.primitives
     call product := linear_product(free_vars(a), free_vars(b))
     call factor_a := closed(i, p, j, q, a)

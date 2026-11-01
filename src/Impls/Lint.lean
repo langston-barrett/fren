@@ -1997,7 +1997,7 @@ impl written_scopes: lint::written_scopes for (i : lang.Interp) (payload v : lan
 -- For every interpretation, environment, pair of operands and obligation,
 -- by evaluating the `and` and the call of `at_most_one?`, a few steps each.
 impl manual_at_most_one_defined: lint::manual_at_most_one_defined for (i : lang.Interp) (env : lang.Env)
-    (a b : lang.Expr) (o : Bool) {
+    (a b : lang.Expr String) (o : Bool) {
   i := i, env := env, a := a, b := b, «obligation?» := o,
 } by
   intro i env a b o

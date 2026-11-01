@@ -431,9 +431,9 @@ set_option fren.evidence "random" in
 expect and_associates(
     i: lang::Interp,
     env: lang::Env,
-    a: lang::Expr,
-    b: lang::Expr,
-    c: lang::Expr,
+    a: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    c: lang::Expr<lang::Id>,
 ) {
     use lang::{Expr, eval}
     expect associates: eval(i, env, Expr::And(Expr::And(a, b), c)) = eval(i, env, Expr::And(a, Expr::And(b, c)))

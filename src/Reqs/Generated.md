@@ -366,9 +366,15 @@ P`, is `(match x with | P => true | _ => false) = true` where the same
 rule makes a `match` of `P` Lean's.
 
 The `match`es of a definition are elaborated under the name `p.«#lean»`, and
-then generalized, as `p` is, over the abstract types and functions that
-`p` uses, as the matchers `p.match_1`, `p.match_2`, and so on, so that
-`split` and `#print` see a `match`. Where Lean rejects the `match` form,
+then generalized over the abstract types and functions that each
+mentions, of those that `p` uses, as the matchers `p.match_1`, `p.match_2`,
+and so on, so that `split` and `#print` see a `match`. A matcher is not
+generalized over a type parameter's `Inhabited` instance, which a `match`
+never needs: Lean's splitter for the matcher leaves such a parameter out,
+and `split` would then take the instance for the matcher's motive and fail.
+Each matcher's realizations are enabled, so that `split` in the file that
+declares the function, as `FrenTestFiles/GenericMatch.lean` does, can
+realize its equations. Where Lean rejects the `match` form,
 which the rule above should never let happen, `p` is the solver's
 definition, and there is no `p.«#solver»`.
 
@@ -449,9 +455,12 @@ parameter, followed by an instance-implicit `Inhabited` instance of it, as
 an abstract type's is, after the abstract types declared before the
 function. For example, `fn unwrap_or<T>(o: Option<T>, d: T): T := ...`
 becomes `unwrap_or : (T : Type) → [Inhabited T] → Option T → T → T`. An
-application gives its inferred type arguments explicitly, with their
-instances, as `unwrap_or Int x 0`, so that Lean infers nothing that Fren
-does not, and the solver sees the body at that instance.
+application gives its inferred type arguments explicitly, as `@unwrap_or
+Int _ x 0`, each with its instance by Lean's instance synthesis, so that
+Lean infers nothing that Fren does not, and the solver sees the body at
+that instance. The instance is the one that Lean finds,
+`String.instInhabited` at `String`, rather than an `inferInstance` around
+it, so that `simp` sees one term wherever the instance is used.
 
 A generic function without a body, as `fn pick<T>(T, T): T`, generates
 nothing, as any [uninterpreted function](#abstract-types-and-uninterpreted-functions):

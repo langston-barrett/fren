@@ -1,7 +1,7 @@
 # Fixes as rewrites
 
 A lint whose rule and fix are stated over the [syntax of the
-semantics](../Lang/Semantics.md#abstract-syntax), `lang::Expr`, is a rewrite
+semantics](../Lang/Semantics.md#abstract-syntax), `lang::Expr<V>`, is a rewrite
 rule: where it fires on an expression, its fix replaces that expression.
 This chapter states, for every such lint at once, what fixing it everywhere
 means, and four laws: fixing everywhere leaves nothing for the lint to
@@ -15,10 +15,12 @@ pub mod lint
 
 ## Each lint where it fires
 
-Each lint is stated by two functions over `lang::Expr`, at the place where
-it fires: whether it fires on an expression, and what its fix writes
-there. `lint::ExprLint` names them, and `fires_at?` and `fix_at` give each
-one's functions:
+Each lint is stated by two functions over `lang::Expr<V>`, at the place
+where it fires: whether it fires on an expression, and what its fix writes
+there, both [generic](../Lang/GenericFunctions.md) in the type `V` of
+names, which they only compare (see [Renaming](#renaming)).
+`lint::ExprLint` names them, and `fires_at?` and `fix_at` give each one's
+functions:
 
 - [`overly_complex_bool_expr`](Pedantic/Booleans.md#the-rule-over-the-syntax-of-the-semantics);
 - [`double_neg`](Style.md#negations-over-the-syntax-of-the-semantics);
@@ -34,8 +36,10 @@ functions it applies unfolded, which put all of `fix_at` in each arm:
 compiling `fix_all` took 83M of Lean's raw heartbeats with one lint and
 126M with five, against a limit of 200M, and each lint whose test is a
 conditional added about 14M. That copy is now the recursion itself
-([Generated](../Generated.md#matches)), and compiling `fix_all` takes 57M,
-with five lints or seven.
+([Generated](../Generated.md#matches)), and compiling `fix_all` took 57M,
+with five lints or seven. Over `Expr<V>`, whose constructions and
+selectors carry the type of names, it takes 97M, and `fires_in?` 104M,
+with seven.
 
 ```fren
 -- The lints stated over the syntax of the semantics.
@@ -49,7 +53,7 @@ pub enum ExprLint {
     CollapsibleWhen,
 }
 
-pub fn fires_at?(l: ExprLint, e: Expr) := match l {
+pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
     ExprLint::OverlyComplexBoolExpr => overly_complex_fires?(e),
     ExprLint::DoubleNeg => double_neg_fires?(e),
     ExprLint::IntPlusOne => int_plus_one_fires?(e),
@@ -59,7 +63,7 @@ pub fn fires_at?(l: ExprLint, e: Expr) := match l {
     ExprLint::CollapsibleWhen => collapsible_when_fires?(e),
 }
 
-pub fn fix_at(l: ExprLint, e: Expr): Expr := match l {
+pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
     ExprLint::OverlyComplexBoolExpr => overly_complex_fix(e),
     ExprLint::DoubleNeg => double_neg_fix(e),
     ExprLint::IntPlusOne => int_plus_one_fix(e),
@@ -100,12 +104,12 @@ until nothing changes, which needs a measure that decreases other than
 the size of the expression.
 
 ```fren
-expect fix_at_unfired(l: ExprLint, e: Expr) {
+expect fix_at_unfired(l: ExprLint, e: Expr<lang::Id>) {
     expect unfired: unless fires_at?(l, e), fix_at(l, e) = e
 }
 
 set_option fren.evidence "random" in
-pub proc fix_at_agrees(l: ExprLint, e: Expr, i: lang::Interp, env: lang::Env) {
+pub proc fix_at_agrees(l: ExprLint, e: Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure agrees: agrees?(lang::eval(i, env, fix_at(l, e)), lang::eval(i, env, e))
 }
 ```
@@ -123,7 +127,7 @@ whether those passes reach what `fix_all` gives is open (#490).
 
 ```fren
 -- Whether `l` fires on `e` or within one of its operands.
-pub fn fires_in?(l: ExprLint, e: Expr) := fires_at?(l, e) or match e {
+pub fn fires_in?(l: ExprLint, e: Expr<lang::Id>) := fires_at?(l, e) or match e {
     Expr::Let(_, _, b) => fires_in?(l, b),
     Expr::Unary(_, a) => fires_in?(l, a),
     Expr::Binary(_, a, b) => fires_in?(l, a) or fires_in?(l, b),
@@ -145,7 +149,7 @@ pub fn fires_in?(l: ExprLint, e: Expr) := fires_at?(l, e) or match e {
 }
 
 -- `l` fires within no operand of `e`, as `fires_in?` looks within them.
-pub fn operands_fixed?(l: ExprLint, e: Expr) := match e {
+pub fn operands_fixed?(l: ExprLint, e: Expr<lang::Id>) := match e {
     Expr::Let(_, _, b) => not fires_in?(l, b),
     Expr::Unary(_, a) => not fires_in?(l, a),
     Expr::Binary(_, a, b) => not fires_in?(l, a) and not fires_in?(l, b),
@@ -168,12 +172,12 @@ pub fn operands_fixed?(l: ExprLint, e: Expr) := match e {
 }
 
 set_option fren.evidence "random" in
-pub proc fix_at_fixed(l: ExprLint, e: Expr) {
+pub proc fix_at_fixed(l: ExprLint, e: Expr<lang::Id>) {
     ensure fixed: when operands_fixed?(l, e), not fires_in?(l, fix_at(l, e))
 }
 
 -- `e` with `l` fixed everywhere, operands first.
-pub fn fix_all(l: ExprLint, e: Expr): Expr := match e {
+pub fn fix_all(l: ExprLint, e: Expr<lang::Id>): Expr<lang::Id> := match e {
     Expr::Let(x, d, b) => fix_at(l, Expr::Let(x, d, fix_all(l, b))),
     Expr::Unary(op, a) => fix_at(l, Expr::Unary(op, fix_all(l, a))),
     Expr::Binary(op, a, b) => fix_at(l, Expr::Binary(op, fix_all(l, a), fix_all(l, b))),
@@ -235,11 +239,143 @@ them. `fren check` tests them:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc fix_all_laws(l: ExprLint, e: Expr, i: lang::Interp, env: lang::Env) {
+pub proc fix_all_laws(l: ExprLint, e: Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure fixed: not fires_in?(l, fix_all(l, e))
     ensure unchanged: unless fires_in?(l, e), fix_all(l, e) = e
     ensure idempotent: fix_all(l, fix_all(l, e)) = fix_all(l, e)
     ensure keeps_meaning: agrees?(lang::eval(i, env, fix_all(l, e)), lang::eval(i, env, e))
+}
+```
+
+## Renaming
+
+A lint's rule and fix are stated over `Expr<V>`, for a type `V` of names
+of which nothing is known but whether two of them are equal, and that it
+has a value, its `Inhabited` default: `fires_at?` and `fix_at` are
+[generic](../Lang/GenericFunctions.md) in `V`. So renaming every name of
+an expression apart, free and bound alike, so that names that differed
+still differ, changes neither whether a lint fires on it nor, but for the
+renaming, what its fix writes: what a lint computes does not depend on how
+the names are spelled. `fires_in?` and `fix_all` look within the operands
+of an expression and fix them, and so, being recursive, are [not
+generic](../Lang/Recursion.md); they are stated at `Expr<lang::Id>`, and
+only apply `fires_at?` and `fix_at`, so this holds of them too. It is
+proved for every lint, each by its definition, not by the genericity
+alone: Lean does not know that a function generic in `V` uses only
+equality, and a new lint needs its own lemma.
+
+This is not the law of [#494](https://github.com/langston-barrett/fren/issues/494)
+that renaming *bound* names consistently, to an alpha-variant, changes
+nothing. That one does not hold: renaming one bound name alone can change
+which names are equal, as `bound_renaming` shows, where `b` is the
+negation of `a` only once `y` is renamed `x`, and only then does
+`overly_complex_bool_expr` fire. Stating that law needs names compared by
+binding, as an `Expr<Binding>` would.
+
+`swap_names(a, b, e)` is `e` with the names `a` and `b` swapped, at every
+variable, binder, `let` and parameter. A renaming of the names of an
+expression apart is a sequence of such swaps, since it renames only the
+finitely many names of the expression and there are names to spare, so
+`renamed_apart` states it for one swap. `src/Impls/Renaming.lean` proves
+it in Lean, for every renaming apart, at the place where each lint fires
+for every type of names, and everywhere by induction on the expression;
+`fren check` tests it:
+
+```fren
+-- `x`, with the names `a` and `b` swapped.
+pub fn swapped(a: lang::Id, b: lang::Id, x: lang::Id): lang::Id := if x = a then b else if x = b then a else x
+
+pub fn swap_pattern(
+    a: lang::Id,
+    b: lang::Id,
+    p: lang::Pattern<lang::Id>
+): lang::Pattern<lang::Id> := match p {
+    lang::Pattern::Binder(x) => lang::Pattern::Binder(swapped(a, b, x)),
+    lang::Pattern::Variant(c, ps) => lang::Pattern::Variant(c, swap_pattern(a, b, ps)),
+    lang::Pattern::Cons(first, rest) => lang::Pattern::Cons(
+        swap_pattern(a, b, first),
+        swap_pattern(a, b, rest)
+    ),
+    lang::Pattern::Or(p1, p2) => lang::Pattern::Or(swap_pattern(a, b, p1), swap_pattern(a, b, p2)),
+    _ => p,
+}
+
+pub fn swap_params(a: lang::Id, b: lang::Id, ps: lang::Params<lang::Id>): lang::Params<lang::Id> := match ps {
+    lang::Params::Cons(x, rest) => lang::Params::Cons(swapped(a, b, x), swap_params(a, b, rest)),
+    lang::Params::Nil => lang::Params::Nil,
+}
+
+-- `e`, with the names `a` and `b` swapped.
+pub fn swap_names(a: lang::Id, b: lang::Id, e: Expr<lang::Id>): Expr<lang::Id> := match e {
+    Expr::Var(x) => Expr::Var(swapped(a, b, x)),
+    Expr::Let(x, d, body) => Expr::Let(
+        swapped(a, b, x),
+        swap_names(a, b, d),
+        swap_names(a, b, body)
+    ),
+    Expr::Unary(op, x) => Expr::Unary(op, swap_names(a, b, x)),
+    Expr::Binary(op, x, y) => Expr::Binary(op, swap_names(a, b, x), swap_names(a, b, y)),
+    Expr::And(x, y) => Expr::And(swap_names(a, b, x), swap_names(a, b, y)),
+    Expr::Or(x, y) => Expr::Or(swap_names(a, b, x), swap_names(a, b, y)),
+    Expr::If(c, t, f) => Expr::If(
+        swap_names(a, b, c),
+        swap_names(a, b, t),
+        swap_names(a, b, f)
+    ),
+    Expr::Is(s, p) => Expr::Is(swap_names(a, b, s), swap_pattern(a, b, p)),
+    Expr::Match(s, p, g, body, rest) => Expr::Match(
+        swap_names(a, b, s),
+        swap_pattern(a, b, p),
+        swap_names(a, b, g),
+        swap_names(a, b, body),
+        swap_names(a, b, rest)
+    ),
+    Expr::Cons(x, rest) => Expr::Cons(swap_names(a, b, x), swap_names(a, b, rest)),
+    Expr::Construct(c, args) => Expr::Construct(c, swap_names(a, b, args)),
+    Expr::Project(x, c, k) => Expr::Project(swap_names(a, b, x), c, k),
+    Expr::Index(q, k) => Expr::Index(swap_names(a, b, q), swap_names(a, b, k)),
+    Expr::Method(m, r, args) => Expr::Method(m, swap_names(a, b, r), swap_names(a, b, args)),
+    Expr::Count(c, args) => Expr::Count(c, swap_names(a, b, args)),
+    Expr::Apply(f, args, ps, body) => Expr::Apply(
+        f,
+        swap_names(a, b, args),
+        swap_params(a, b, ps),
+        swap_names(a, b, body)
+    ),
+    Expr::Call(f, args) => Expr::Call(f, swap_names(a, b, args)),
+    Expr::Recur(f, args) => Expr::Recur(f, swap_names(a, b, args)),
+    _ => e,
+}
+
+set_option fren.evidence "random" in
+pub proc renamed_apart(l: ExprLint, e: Expr<lang::Id>, a: lang::Id, b: lang::Id) {
+    ensure fires_at: fires_at?(l, swap_names(a, b, e)) = fires_at?(l, e)
+    ensure fix_at: fix_at(l, swap_names(a, b, e)) = swap_names(a, b, fix_at(l, e))
+    ensure fires_in: fires_in?(l, swap_names(a, b, e)) = fires_in?(l, e)
+    ensure fix_all: fix_all(l, swap_names(a, b, e)) = swap_names(a, b, fix_all(l, e))
+}
+
+-- `x` and `y` bound alike, but apart: an alpha-variant of `a` is
+-- `Let(y, true, Var(y))`, and renaming it back makes the lint fire.
+expect bound_renaming(x: lang::Id, y: lang::Id) {
+    expect apart: when x != y, not overly_complex_fires?(
+        Expr::Or(
+            Expr::Let(x, Expr::Literal(lang::Value::True), Expr::Var(x)),
+            Expr::Unary(
+                lang::UnaryOp::Not,
+                Expr::Let(y, Expr::Literal(lang::Value::True), Expr::Var(y))
+            )
+        )
+    )
+    expect renamed: overly_complex_fires?(
+        Expr::Or(
+            Expr::Let(x, Expr::Literal(lang::Value::True), Expr::Var(x)),
+            Expr::Unary(
+                lang::UnaryOp::Not,
+                Expr::Let(x, Expr::Literal(lang::Value::True), Expr::Var(x))
+            )
+        )
+    )
 }
 ```
 
@@ -248,4 +384,6 @@ pub proc fix_all_laws(l: ExprLint, e: Expr, i: lang::Interp, env: lang::Env) {
 #fren_check fix_at_fixed
 #fren_check fix_at_agrees
 #fren_check fix_all_laws
+#fren_check renamed_apart
+#fren_check bound_renaming
 ```

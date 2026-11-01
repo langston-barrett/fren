@@ -35,10 +35,10 @@ theorem apply_points (g : Graph) (f : String) (l : Value) : apply g f l = apply 
     · subst hf; by_cases ha : a = l <;> simp [apply, points, ha, ih]
     · simp [apply, points, hf, ih]
 
-theorem fn_not_binder (f : String) (pat : Pattern) : Mention.Fn f ∉ binders pat := by
+theorem fn_not_binder (f : String) (pat : Pattern String) : Mention.Fn f ∉ binders pat := by
   induction pat <;> simp_all [binders]
 
-theorem lookup_bind (pat : Pattern) : ∀ (v : Value) (p q : Env) (y : String), matches_value? pat v = true →
+theorem lookup_bind (pat : Pattern String) : ∀ (v : Value) (p q : Env) (y : String), matches_value? pat v = true →
     (lookup p y = lookup q y ∨ Mention.Var y ∈ binders pat) →
     lookup (lang.bind pat v p) y = lookup (lang.bind pat v q) y := by
   induction pat with
@@ -77,7 +77,7 @@ theorem lookup_bind (pat : Pattern) : ∀ (v : Value) (p q : Env) (y : String), 
         · exact absurd h hr
     | _ => simp [matches_value?] at hm
   | _ => intro v p q y _ h; simp_all [lang.bind, binders]
-theorem fn_not_param (f : String) (ps : Params) : Mention.Fn f ∉ param_names ps := by
+theorem fn_not_param (f : String) (ps : Params String) : Mention.Fn f ∉ param_names ps := by
   induction ps <;> simp_all [param_names]
 
 variable {i j}
@@ -89,7 +89,7 @@ theorem binary_value_prims (hp : i.primitives = j.primitives) (op : BinaryOp) (a
 /-- The coincidence lemma: an expression has one outcome under two
 interpretations and environments that agree on its free variables. -/
 theorem eval_coincide (hr : i.recursions = j.recursions) (hp : i.primitives = j.primitives) :
-    ∀ (e : Expr) (p q : Env), Agree i j p q (free_vars e) → eval i p e = eval j q e := by
+    ∀ (e : Expr String) (p q : Env), Agree i j p q (free_vars e) → eval i p e = eval j q e := by
   intro e
   induction e with
   | Literal v => intro p q _; simp [eval]
@@ -137,7 +137,7 @@ theorem eval_coincide (hr : i.recursions = j.recursions) (hp : i.primitives = j.
     simp only [eval, ihs p q (h.mono (by intro m hm; simp [free_vars, hm]))]
   | Match s pat g b rest ihs ihg ihb ihr =>
     intro p q h
-    have bound : ∀ (v : Value) (e : Expr), matches_value? pat v = true →
+    have bound : ∀ (v : Value) (e : Expr String), matches_value? pat v = true →
         (∀ m, m ∈ free_vars e → m ∈ binders pat ∨ m ∈ free_vars (.Match s pat g b rest)) →
         Agree i j (lang.bind pat v p) (lang.bind pat v q) (free_vars e) := by
       intro v e hmv hsub m hm
@@ -205,7 +205,7 @@ theorem eval_coincide (hr : i.recursions = j.recursions) (hp : i.primitives = j.
       | Fn g => exact h (.Fn g) (by simp [free_vars, hm, fn_not_param])
   | Call f args ih =>
     intro p q h
-    simp only [eval]
+    simp only [eval, call_value]
     rw [ih p q (h.mono (by intro m hm; simp [free_vars, hm]))]
     cases eval j q args with
     | Undefined => rfl
@@ -235,7 +235,7 @@ end SemProof
 
 -- For every two interpretations, environments and expressions.
 impl coincidence: lang::coincidence for (i : lang.Interp) (p : lang.Env) (j : lang.Interp) (q : lang.Env)
-    (e : lang.Expr) {
+    (e : lang.Expr String) {
   i := i, p := p, j := j, q := q, e := e,
 } by
   intro i p j q e _
@@ -245,7 +245,7 @@ impl coincidence: lang::coincidence for (i : lang.Interp) (p : lang.Env) (j : la
   exact SemProof.eval_coincide hr hp e p q ha
 
 -- For every two interpretations, environments and expressions.
-impl closed: lang::closed for (i : lang.Interp) (p : lang.Env) (j : lang.Interp) (q : lang.Env) (e : lang.Expr) {
+impl closed: lang::closed for (i : lang.Interp) (p : lang.Env) (j : lang.Interp) (q : lang.Env) (e : lang.Expr String) {
   i := i, p := p, j := j, q := q, e := e,
 } by
   intro i p j q e _

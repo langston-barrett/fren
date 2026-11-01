@@ -107,38 +107,38 @@ conditional on which it fires again where `a` is a negation, and
 
 ```fren
 -- `e` is the literal `true`.
-fn true?(e: lang::Expr) := e = lang::Expr::Literal(lang::Value::True)
+fn true?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::True)
 
 -- `if not a then true else d`, of a `d` that is not `true`.
-pub fn unless_not_fires?(e: lang::Expr) := match e {
+pub fn unless_not_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::If(lang::Expr::Unary(lang::UnaryOp::Not, _), t, f) => true?(t) and not true?(f),
     _ => false,
 }
 
-pub fn unless_not_fix(e: lang::Expr): lang::Expr := match e {
+pub fn unless_not_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::If(lang::Expr::Unary(lang::UnaryOp::Not, a), t, f) =>
         if true?(t) and not true?(f) then lang::Expr::If(a, f, t) else e,
     _ => e,
 }
 
 -- `if a then (if b then d else true) else true`.
-fn nested_when?(t: lang::Expr, f: lang::Expr) := true?(f) and match t {
+fn nested_when?<V>(t: lang::Expr<V>, f: lang::Expr<V>) := true?(f) and match t {
     lang::Expr::If(_, _, g) => true?(g),
     _ => false,
 }
 
 -- `if a then true else (if b then true else d)`.
-fn nested_unless?(t: lang::Expr, f: lang::Expr) := true?(t) and match f {
+fn nested_unless?<V>(t: lang::Expr<V>, f: lang::Expr<V>) := true?(t) and match f {
     lang::Expr::If(_, u, _) => true?(u),
     _ => false,
 }
 
-pub fn collapsible_when_fires?(e: lang::Expr) := match e {
+pub fn collapsible_when_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::If(_, t, f) => nested_when?(t, f) or nested_unless?(t, f),
     _ => false,
 }
 
-pub fn collapsible_when_fix(e: lang::Expr): lang::Expr := match e {
+pub fn collapsible_when_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::If(a, lang::Expr::If(b, d, g), f) =>
         if true?(f) and true?(g) then lang::Expr::If(lang::Expr::And(a, b), d, f) else e,
     lang::Expr::If(a, t, lang::Expr::If(b, u, d)) =>
@@ -169,16 +169,16 @@ sees an `if`, does not.
 
 ```fren
 -- `when c, d`, or `unless c, d`, as elaborated.
-fn conditional_of(unless?, c: lang::Expr, d: lang::Expr): lang::Expr :=
+fn conditional_of<V>(unless?, c: lang::Expr<V>, d: lang::Expr<V>): lang::Expr<V> :=
     if unless? then lang::Expr::If(c, lang::Expr::Literal(lang::Value::True), d)
     else lang::Expr::If(c, d, lang::Expr::Literal(lang::Value::True))
 
 expect unless_not_elaborated(
     unless?,
     condition: Head,
-    a: lang::Expr,
-    c: lang::Expr,
-    d: lang::Expr,
+    a: lang::Expr<lang::Id>,
+    c: lang::Expr<lang::Id>,
+    d: lang::Expr<lang::Id>,
 ) {
     use lang::Expr::Unary
     use lang::UnaryOp::Not
@@ -195,10 +195,10 @@ expect unless_not_elaborated(
 expect collapsible_when_elaborated(
     unless?,
     body: Head,
-    a: lang::Expr,
-    b: lang::Expr,
-    c: lang::Expr,
-    d: lang::Expr,
+    a: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    c: lang::Expr<lang::Id>,
+    d: lang::Expr<lang::Id>,
 ) {
     call p := collapsible_when(unless?, body)
     call same := collapsible_when(unless?, if unless? then Head::Unless else Head::When)
@@ -232,12 +232,12 @@ proves it in Lean, for every expression, interpretation and environment;
 
 ```fren
 set_option fren.evidence "random" in
-pub proc unless_not_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+pub proc unless_not_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure exact: when unless_not_fires?(e), lang::eval(i, env, unless_not_fix(e)) = lang::eval(i, env, e)
 }
 
 set_option fren.evidence "random" in
-pub proc collapsible_when_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+pub proc collapsible_when_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure exact: when collapsible_when_fires?(e), lang::eval(i, env, collapsible_when_fix(e)) = lang::eval(i, env, e)
 }
 ```
@@ -259,13 +259,13 @@ firing once it is fixed: in `when v, unless v, unless v, true`, the outer
 true`, which is `when v or v, true`, makes it fire (`around`).
 
 ```fren
-expect unless_not_once(e: lang::Expr) {
+expect unless_not_once(e: lang::Expr<lang::Id>) {
     expect kept: not unless_not_fires?(unless_not_fix(e))
     expect around: (true?(unless_not_fix(e)) iff true?(e))
         and ((unless_not_fix(e) is lang::Expr::Unary(lang::UnaryOp::Not, _)) iff (e is lang::Expr::Unary(lang::UnaryOp::Not, _)))
 }
 
-expect collapsible_when_refires(v: lang::Expr) {
+expect collapsible_when_refires(v: lang::Expr<lang::Id>) {
     expect kept: collapsible_when_fires?(
         collapsible_when_fix(
             conditional_of(
@@ -671,10 +671,10 @@ so `x * -1` and `-x` agree only in an interpretation that gives `*` its
 usual meaning.
 
 ```fren
-pub fn double_neg_fires?(e: lang::Expr) :=
+pub fn double_neg_fires?<V>(e: lang::Expr<V>) :=
     e is lang::Expr::Unary(lang::UnaryOp::Neg, lang::Expr::Unary(lang::UnaryOp::Neg, _))
 
-pub fn double_neg_fix(e: lang::Expr): lang::Expr := match e {
+pub fn double_neg_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::Unary(lang::UnaryOp::Neg, lang::Expr::Unary(lang::UnaryOp::Neg, a)) => a,
     _ => e,
 }
@@ -688,7 +688,7 @@ front ends run it only at a negation, and read `-` and parentheses as
 elaboration does, is trusted, and checked by the ui tests of the lint.
 
 ```fren
-expect double_neg_elaborated(a: lang::Expr, e: lang::Expr) {
+expect double_neg_elaborated(a: lang::Expr<lang::Id>, e: lang::Expr<lang::Id>) {
     call n := double_neg(a is lang::Expr::Unary(lang::UnaryOp::Neg, _))
 
     expect negation: n.fires? iff double_neg_fires?(lang::Expr::Unary(lang::UnaryOp::Neg, a))
@@ -707,7 +707,7 @@ it:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc double_neg_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+pub proc double_neg_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure keeps_meaning: when double_neg_fires?(e),
         agrees?(lang::eval(i, env, double_neg_fix(e)), lang::eval(i, env, e))
 }
@@ -721,7 +721,7 @@ looks two deep, at a negation and its operand, and where it fires on
 `e`, the negation of `e` fires already (`around`).
 
 ```fren
-expect double_neg_refires(x: lang::Id, e: lang::Expr) {
+expect double_neg_refires(x: lang::Id, e: lang::Expr<lang::Id>) {
     use lang::Expr::{Unary, Var}
     use lang::UnaryOp::Neg
 
@@ -900,7 +900,7 @@ environments:
 ```fren
 expect constant_constraint(
     c_mentioned: Set<lang::Mention>,
-    e: lang::Expr,
+    e: lang::Expr<lang::Id>,
     i: lang::Interp,
     p: lang::Env,
     j: lang::Interp,

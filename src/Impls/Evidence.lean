@@ -27,6 +27,7 @@ import Impls.Mutate
 import Impls.PassEvidence
 import Impls.PatternTests
 import Impls.Procedures
+import Impls.Renaming
 import Impls.Repeats
 import Impls.Rewrites
 import Impls.Scope

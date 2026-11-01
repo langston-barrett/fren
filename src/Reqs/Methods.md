@@ -465,6 +465,29 @@ expect by_evidence_follows(kind: check::Kind, tested?, enumerated?, obligation?)
 }
 ```
 
+## Names in enumeration
+
+Enumeration enumerates the names of an `Expr<lang::Id>` as it does any
+strings, up to the size. This section argues why, for the [lints' rules
+and fixes](Lint/Rewrites.md#renaming), that bound loses nothing that the
+names alone could give: it is an argument about the bound, not something
+that enumeration does.
+
+For those lints, renaming every name of an expression apart changes
+nothing but the names (`lint::renamed_apart`, proved for each of them).
+So a counterexample whose names are `k` distinct strings is still one with
+the `k` smallest strings by `check::value_size` in their place, the
+smallest for the smallest, and since no name grows, neither does the
+expression. An expression with `p` places for a name, at its variables,
+binders, `let`s and parameters, has at most `p` distinct names, and every
+equality among them is reached with the `p` smallest strings. So
+enumerating a law of these lints up to the size needs only a bound on how
+many distinct names an expression has, never particular ones, and a
+larger size adds no pattern of equality among the names of an expression
+that a smaller one could not show. A function that is generic in `V` but
+not among these lints is not covered by this argument until the same is
+proved of it (see [Generic functions](Lang/GenericFunctions.md#type-parameters)).
+
 ## Solver queries
 
 Every place that Fren asks the solver is a check of the table, a query

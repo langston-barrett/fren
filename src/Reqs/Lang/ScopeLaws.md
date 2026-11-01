@@ -57,7 +57,7 @@ is arbitrary, and `named` assumes that the name is a value's.
 ```fren
 -- The expression that a name written alone elaborates to, where
 -- `definition` is the definition of a constant.
-pub fn named_expr(b: Binding, definition: Expr): Expr := match b.kind {
+pub fn named_expr(b: Binding, definition: Expr<Id>): Expr<Id> := match b.kind {
     BindingKind::Variant | BindingKind::Opened => Expr::Construct(b.target, Expr::Nil),
     BindingKind::Constant | BindingKind::Function | BindingKind::Builtin | BindingKind::Module
     | BindingKind::Enumeration | BindingKind::Item => Expr::Apply(
@@ -74,9 +74,9 @@ pub fn named_expr(b: Binding, definition: Expr): Expr := match b.kind {
 
 ```fren
 pub proc named(
-    binding: Binding,      -- what the name resolves to
-    definition: Expr,      -- a constant's definition
-): (det expr: Expr) {
+    binding: Binding,        -- what the name resolves to
+    definition: Expr<Id>,    -- a constant's definition
+): (det expr: Expr<Id>) {
     use self::BindingKind::{
         Builtin,
         Constant,
@@ -112,7 +112,7 @@ So a constant has its definition's outcome in every environment, as
 [Constants](Items.md#constants) states:
 
 ```fren
-expect constant_value(binding: Binding, definition: Expr, i: Interp, env: Env) {
+expect constant_value(binding: Binding, definition: Expr<Id>, i: Interp, env: Env) {
     assume constant: binding.kind = BindingKind::Constant
     call name := named(binding, definition)
     -- The constant has no arguments, whose list is `Nil`, and so no parameters.
