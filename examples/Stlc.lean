@@ -12,11 +12,13 @@ substitution, the context lemmas and the substitution lemma, the soundness
 and completeness of the type checker for the typing relation and of the
 evaluator for the reduction relation, the agreement of the two evaluators,
 preservation, progress and type safety, and the round trip of the nameless
-form. Normalization (Tait's method, as in chapter 12 of TAPL) is proved
-here alone: `stlc.fren` has no check that states it. Not proved, tested
-only: the round trip of the concrete syntax (`print_parse`) and the laws
-`alpha_laws`. The last section ties the knot of the one-layer algebra:
-`size` is the fold of `size_alg`.
+form, and the laws of alpha-equivalence: renaming a binder, substitution
+commuting with the nameless form, and typing. Normalization (Tait's
+method, as in chapter 12 of TAPL) is proved here alone: `stlc.fren` has no
+check that states it. Not proved, tested only: the round trip of the
+concrete syntax (`print_parse`). The last section ties the knot of the
+one-layer algebra: `size` is the fold of `size_alg`, and binds the laws of
+the layers.
 -/
 
 open Fren.Lang
@@ -1752,6 +1754,393 @@ theorem to_named_some : ∀ (n : Term Int Anon) (names names' : Names) (t : Name
   | True => intro names names' t _ _; exact ⟨Term.True, by simp [to_named]⟩
   | False => intro names names' t _ _; exact ⟨Term.False, by simp [to_named]⟩
 
+/-! ## Substitution and the nameless form -/
+
+/-- The names of `l1`, then those of `l2`. -/
+def napp : Names → Names → Names
+  | .Nil, l2 => l2
+  | .Cons y rest, l2 => .Cons y (napp rest l2)
+
+theorem index_of_napp_some : ∀ (l1 l2 : Names) (z : String) (j : Int),
+    index_of l1 z = some j → index_of (napp l1 l2) z = some j
+  | .Nil, _, _, _, h => by simp [index_of] at h
+  | .Cons y rest, l2, z, j, h => by
+    simp only [napp, index_of] at h ⊢
+    by_cases hy : y = z
+    · simpa [hy] using h
+    · simp only [hy, if_false] at h ⊢
+      cases hr : index_of rest z with
+      | none => rw [hr] at h; cases h
+      | some k =>
+        rw [hr] at h
+        rw [index_of_napp_some rest l2 z k hr]
+        exact h
+
+theorem index_of_napp_none : ∀ (l1 l2 : Names) (z : String), index_of l1 z = none →
+    index_of (napp l1 l2) z = (index_of l2 z).map (· + (namesLen l1 : Int))
+  | .Nil, l2, z, _ => by simp only [napp]; cases h : index_of l2 z <;> simp [namesLen]
+  | .Cons y rest, l2, z, h => by
+    simp only [napp, index_of] at h ⊢
+    by_cases hy : y = z
+    · simp [hy] at h
+    · simp only [hy, if_false] at h ⊢
+      cases hr : index_of rest z with
+      | none =>
+        rw [index_of_napp_none rest l2 z hr]
+        cases index_of l2 z <;> simp [namesLen]; omega
+      | some k => rw [hr] at h; cases h
+
+theorem to_nameless_var_inv {names : Names} {z : String} {n : Term Int Anon}
+    (h : to_nameless names (.Var z) = some n) : ∃ j, index_of names z = some j ∧ n = .Var j := by
+  simp only [to_nameless] at h
+  cases hj : index_of names z with
+  | none => rw [hj] at h; cases h
+  | some j => rw [hj] at h; cases h; exact ⟨j, rfl, rfl⟩
+
+theorem to_nameless_lam_inv {names : Names} {y : String} {ty : Ty} {b : Named} {n : Term Int Anon}
+    (h : to_nameless names (.Lam y ty b) = some n) :
+    ∃ nb, to_nameless (.Cons y names) b = some nb ∧ n = .Lam .Anon ty nb := by
+  simp only [to_nameless] at h
+  cases hb : to_nameless (.Cons y names) b with
+  | none => rw [hb] at h; cases h
+  | some nb => rw [hb] at h; cases h; exact ⟨nb, rfl, rfl⟩
+
+theorem to_nameless_app_inv {names : Names} {a b : Named} {n : Term Int Anon}
+    (h : to_nameless names (.App a b) = some n) :
+    ∃ na nb, to_nameless names a = some na ∧ to_nameless names b = some nb ∧ n = .App na nb := by
+  simp only [to_nameless] at h
+  cases ha : to_nameless names a with
+  | none => rw [ha] at h; cases h
+  | some na =>
+    cases hb : to_nameless names b with
+    | none => rw [ha, hb] at h; cases h
+    | some nb => rw [ha, hb] at h; cases h; exact ⟨na, nb, rfl, rfl, rfl⟩
+
+theorem to_nameless_if_inv {names : Names} {c a b : Named} {n : Term Int Anon}
+    (h : to_nameless names (.If c a b) = some n) :
+    ∃ nc na nb, to_nameless names c = some nc ∧ to_nameless names a = some na ∧ to_nameless names b = some nb ∧
+      n = .If nc na nb := by
+  simp only [to_nameless] at h
+  cases hc : to_nameless names c with
+  | none => rw [hc] at h; cases h
+  | some nc =>
+    cases ha : to_nameless names a with
+    | none => rw [hc, ha] at h; cases h
+    | some na =>
+      cases hb : to_nameless names b with
+      | none => rw [hc, ha, hb] at h; cases h
+      | some nb => rw [hc, ha, hb] at h; cases h; exact ⟨nc, na, nb, rfl, rfl, rfl, rfl⟩
+
+/-- Weakening: a name declared outside `l1` binders that is free nowhere in
+the term shifts the indices beyond `l1` by one. -/
+theorem to_nameless_weaken : ∀ (u : Named) (l1 l' : Names) (y : String) (nu : Term Int Anon),
+    to_nameless (napp l1 l') u = some nu → (∀ z, z ∈ free u → index_of l1 z = none → z ≠ y) →
+    to_nameless (napp l1 (.Cons y l')) u = some (shift 1 (namesLen l1) nu) := by
+  intro u
+  induction u with
+  | Var z =>
+    intro l1 l' y nu h hy
+    obtain ⟨j, hj, rfl⟩ := to_nameless_var_inv h
+    simp only [to_nameless, shift]
+    cases h1 : index_of l1 z with
+    | some j1 =>
+      have := index_of_napp_some l1 l' z j1 h1
+      rw [this] at hj; cases hj
+      rw [index_of_napp_some l1 (.Cons y l') z j h1]
+      have := (index_of_lt l1 z j h1).2
+      simp; omega
+    | none =>
+      have hz : z ≠ y := hy z (by simp [free]) h1
+      rw [index_of_napp_none l1 l' z h1] at hj
+      rw [index_of_napp_none l1 (.Cons y l') z h1]
+      cases h2 : index_of l' z with
+      | none => rw [h2] at hj; cases hj
+      | some j2 =>
+        rw [h2] at hj; simp at hj; subst hj
+        have h0 := (index_of_lt l' z j2 h2).1
+        have hge : j2 + (namesLen l1 : Int) ≥ (namesLen l1 : Int) := by omega
+        simp [index_of, Ne.symm hz, h2, hge]
+        try omega
+  | Lam w ty b ih =>
+    intro l1 l' y nu h hy
+    obtain ⟨nb, hb, rfl⟩ := to_nameless_lam_inv h
+    have := ih (.Cons w l1) l' y nb hb (fun z hz hn => by
+      simp only [index_of] at hn
+      by_cases hw : w = z
+      · simp [hw] at hn
+      · simp only [hw, if_false] at hn
+        cases hr : index_of l1 z with
+        | none => exact hy z (mem_free_lam.2 ⟨hz, Ne.symm hw⟩) hr
+        | some k => rw [hr] at hn; cases hn)
+    simp only [to_nameless, napp] at this ⊢
+    rw [this]
+    simp [shift, namesLen]
+  | App a b iha ihb =>
+    intro l1 l' y nu h hy
+    obtain ⟨na, nb, ha, hb, rfl⟩ := to_nameless_app_inv h
+    have ha' := iha l1 l' y na ha fun z hz => hy z (mem_free_app.2 (Or.inl hz))
+    have hb' := ihb l1 l' y nb hb fun z hz => hy z (mem_free_app.2 (Or.inr hz))
+    simp [to_nameless, ha', hb', shift]
+  | True => intro l1 l' y nu h _; simp only [to_nameless] at h; cases h; simp [to_nameless, shift]
+  | False => intro l1 l' y nu h _; simp only [to_nameless] at h; cases h; simp [to_nameless, shift]
+  | If c a b ihc iha ihb =>
+    intro l1 l' y nu h hy
+    obtain ⟨nc, na, nb, hc, ha, hb, rfl⟩ := to_nameless_if_inv h
+    have hc' := ihc l1 l' y nc hc fun z hz => hy z (mem_free_if.2 (Or.inl hz))
+    have ha' := iha l1 l' y na ha fun z hz => hy z (mem_free_if.2 (Or.inr (Or.inl hz)))
+    have hb' := ihb l1 l' y nb hb fun z hz => hy z (mem_free_if.2 (Or.inr (Or.inr hz)))
+    simp [to_nameless, hc', ha', hb', shift]
+
+/-- A parallel substitution on nameless terms, and its passage under a binder. -/
+def lift (ρ : Int → Term Int Anon) (j : Int) : Term Int Anon := if j ≤ 0 then .Var j else shift 1 0 (ρ (j - 1))
+
+def napply (ρ : Int → Term Int Anon) : Term Int Anon → Term Int Anon
+  | .Var j => ρ j
+  | .Lam b ty body => .Lam b ty (napply (lift ρ) body)
+  | .App a b => .App (napply ρ a) (napply ρ b)
+  | .If c a b => .If (napply ρ c) (napply ρ a) (napply ρ b)
+  | .True => .True
+  | .False => .False
+
+/-- `nsubst k s` as a parallel substitution. -/
+def nsubstFun (k : Int) (s : Term Int Anon) (j : Int) : Term Int Anon :=
+  if j = k then s else if j > k then .Var (j - 1) else .Var j
+
+theorem lift_nsubstFun (k : Int) (s : Term Int Anon) (hk : 0 ≤ k) :
+    lift (nsubstFun k s) = nsubstFun (k + 1) (shift 1 0 s) := by
+  funext j
+  simp only [lift, nsubstFun]
+  by_cases h0 : j ≤ 0
+  · rw [if_pos h0, if_neg (show ¬ j = k + 1 by omega), if_neg (show ¬ j > k + 1 by omega)]
+  · rw [if_neg h0]
+    by_cases h1 : j - 1 = k
+    · rw [if_pos h1, if_pos (show j = k + 1 by omega)]
+    · rw [if_neg h1, if_neg (show ¬ j = k + 1 by omega)]
+      by_cases h2 : j - 1 > k
+      · rw [if_pos h2, if_pos (show j > k + 1 by omega)]
+        simp only [shift]
+        rw [if_pos (show j - 1 - 1 ≥ 0 by omega)]
+        congr 1; omega
+      · rw [if_neg h2, if_neg (show ¬ j > k + 1 by omega)]
+        simp only [shift]
+        rw [if_pos (show j - 1 ≥ 0 by omega)]
+        congr 1; omega
+
+theorem napply_nsubst : ∀ (nt : Term Int Anon) (k : Int) (s : Term Int Anon), 0 ≤ k →
+    napply (nsubstFun k s) nt = nsubst k s nt
+  | .Var j, k, s, _ => by simp [napply, nsubstFun, nsubst]
+  | .Lam b ty body, k, s, hk => by
+    simp only [napply, nsubst]
+    rw [lift_nsubstFun k s hk, napply_nsubst body (k + 1) (shift 1 0 s) (by omega)]
+  | .App a b, k, s, hk => by simp [napply, nsubst, napply_nsubst a k s hk, napply_nsubst b k s hk]
+  | .If c a b, k, s, hk => by
+    simp [napply, nsubst, napply_nsubst c k s hk, napply_nsubst a k s hk, napply_nsubst b k s hk]
+  | .True, _, _, _ => rfl
+  | .False, _, _, _ => rfl
+
+/-- Substitution commutes with the nameless form: where `σ` takes each free
+variable of `t` to what `ρ` takes its index to, `subst_all σ t` converts to
+`napply ρ` of `t`'s nameless form. The renamed binders change nothing,
+because a new binder is free in nothing substituted for another free
+variable (`new_binder_not_mem_apply`). -/
+theorem to_nameless_subst_all : ∀ (t : Named) (σ : Subst) (l l' : Names) (ρ : Int → Term Int Anon)
+    (nt : Term Int Anon), to_nameless l t = some nt →
+    (∀ z, z ∈ free t → ∀ k, index_of l z = some k → to_nameless l' (apply_subst σ z) = some (ρ k)) →
+    to_nameless l' (subst_all σ t) = some (napply ρ nt) := by
+  intro t
+  induction t with
+  | Var z =>
+    intro σ l l' ρ nt h hρ
+    obtain ⟨j, hj, rfl⟩ := to_nameless_var_inv h
+    simp only [subst_all, napply]
+    exact hρ z (by simp [free]) j hj
+  | Lam y ty b ih =>
+    intro σ l l' ρ nt h hρ
+    obtain ⟨nb, hb, rfl⟩ := to_nameless_lam_inv h
+    simp only [subst_all, napply]
+    have := ih (.Bind y (.Var (new_binder σ y b)) σ) (.Cons y l) (.Cons (new_binder σ y b) l') (lift ρ) nb hb
+      (fun z hz k hk => by
+        by_cases hyz : y = z
+        · subst hyz
+          simp only [index_of, if_true] at hk; cases hk
+          simp [apply_subst, to_nameless, index_of, lift]
+        · simp only [index_of, hyz, if_false] at hk
+          cases hk0 : index_of l z with
+          | none => rw [hk0] at hk; cases hk
+          | some k0 =>
+            rw [hk0] at hk; simp at hk; subst hk
+            have h0 := (index_of_lt l z k0 hk0).1
+            simp only [apply_subst, hyz, if_false]
+            have hw := to_nameless_weaken (apply_subst σ z) .Nil l' (new_binder σ y b) (ρ k0)
+              (hρ z (mem_free_lam.2 ⟨hz, Ne.symm hyz⟩) k0 hk0)
+              (fun w hw _ e => new_binder_not_mem_apply σ y b z hz (Ne.symm hyz) (e ▸ hw))
+            simp only [napp, namesLen] at hw
+            rw [hw]
+            have : ¬ k0 + 1 ≤ 0 := by omega
+            simp [lift, this])
+    simp only [to_nameless]
+    rw [this]
+  | App f a ihf iha =>
+    intro σ l l' ρ nt h hρ
+    obtain ⟨nf, na, hf, ha, rfl⟩ := to_nameless_app_inv h
+    simp only [subst_all, napply, to_nameless]
+    rw [ihf σ l l' ρ nf hf fun z hz => hρ z (mem_free_app.2 (Or.inl hz)),
+      iha σ l l' ρ na ha fun z hz => hρ z (mem_free_app.2 (Or.inr hz))]
+  | True => intro σ l l' ρ nt h _; simp only [to_nameless] at h; cases h; rfl
+  | False => intro σ l l' ρ nt h _; simp only [to_nameless] at h; cases h; rfl
+  | If c a b ihc iha ihb =>
+    intro σ l l' ρ nt h hρ
+    obtain ⟨nc, na, nb, hc, ha, hb, rfl⟩ := to_nameless_if_inv h
+    simp only [subst_all, napply, to_nameless]
+    rw [ihc σ l l' ρ nc hc fun z hz => hρ z (mem_free_if.2 (Or.inl hz)),
+      iha σ l l' ρ na ha fun z hz => hρ z (mem_free_if.2 (Or.inr (Or.inl hz))),
+      ihb σ l l' ρ nb hb fun z hz => hρ z (mem_free_if.2 (Or.inr (Or.inr hz)))]
+
+/-- `alpha_laws::subst_nameless`: substitution commutes with the conversion. -/
+theorem subst_nameless {x : String} {names : Names} {t s : Named} {nt ns : Term Int Anon}
+    (ht : to_nameless (.Cons x names) t = some nt) (hs : to_nameless names s = some ns) :
+    to_nameless names (subst x s t) = some (nsubst 0 ns nt) := by
+  have h := to_nameless_subst_all t (.Bind x s .Id) (.Cons x names) names (nsubstFun 0 ns) nt ht (by
+    intro z hz k hk
+    by_cases hxz : x = z
+    · subst hxz
+      simp only [index_of, if_true] at hk; cases hk
+      simpa [apply_subst, nsubstFun] using hs
+    · simp only [index_of, hxz, if_false] at hk
+      cases hk0 : index_of names z with
+      | none => rw [hk0] at hk; cases hk
+      | some k0 =>
+        rw [hk0] at hk; simp at hk; subst hk
+        have h0 := (index_of_lt names z k0 hk0).1
+        have h1 : ¬ k0 + 1 = 0 := by omega
+        have h2 : k0 + 1 > 0 := by omega
+        simp [apply_subst, hxz, to_nameless, hk0, nsubstFun, h1, h2])
+  rw [napply_nsubst nt 0 ns (by omega)] at h
+  have e : subst x s t = subst_all (.Bind x s .Id) t := rfl
+  rw [e]; exact h
+
+
+theorem lift_var : lift (fun j => Term.Var j) = fun j => Term.Var j := by
+  funext j
+  simp only [lift]
+  by_cases h : j ≤ 0
+  · rw [if_pos h]
+  · rw [if_neg h]; simp only [shift]; rw [if_pos (show j - 1 ≥ 0 by omega)]; congr 1; omega
+
+theorem napply_var : ∀ (n : Term Int Anon), napply (fun j => Term.Var j) n = n
+  | .Var _ => rfl
+  | .Lam _ _ body => by simp only [napply]; rw [lift_var, napply_var body]
+  | .App a b => by simp only [napply]; rw [napply_var a, napply_var b]
+  | .If c a b => by simp only [napply]; rw [napply_var c, napply_var a, napply_var b]
+  | .True => rfl
+  | .False => rfl
+
+/-- `alpha_laws::rename_binder`: a binder renamed to a name free nowhere in
+the body converts to the same nameless term, under the new name. -/
+theorem rename_binder {names : Names} {y z : String} {body : Named} {nb : Term Int Anon}
+    (hb : to_nameless (.Cons y names) body = some nb) (hz : z ∉ free body) :
+    to_nameless (.Cons z names) (subst_all (.Bind y (.Var z) .Id) body) = some nb := by
+  have := to_nameless_subst_all body (.Bind y (.Var z) .Id) (.Cons y names) (.Cons z names) (fun j => .Var j) nb hb
+    (by
+      intro w hw k hk
+      by_cases hyw : y = w
+      · subst hyw
+        simp only [index_of, if_true] at hk; cases hk
+        simp [apply_subst, to_nameless, index_of]
+      · simp only [index_of, hyw, if_false] at hk
+        have hzw : ¬ z = w := fun e => hz (e ▸ hw)
+        cases hk0 : index_of names w with
+        | none => rw [hk0] at hk; cases hk
+        | some k0 =>
+          rw [hk0] at hk; simp at hk; subst hk
+          simp [apply_subst, hyw, to_nameless, index_of, hzw, hk0])
+  rw [napply_var] at this
+  exact this
+
+/-! ### Typing is invariant under alpha-equivalence -/
+
+/-- The names a context declares, innermost first, and their types. -/
+def ctxNames : Ctx → Names
+  | .Empty => .Nil
+  | .Bind x _ rest => .Cons x (ctxNames rest)
+
+def ctxTys : Ctx → List Ty
+  | .Empty => []
+  | .Bind _ ty rest => ty :: ctxTys rest
+
+/-- Typing of nameless terms, under the types of the binders in scope. -/
+def ntypeof (tys : List Ty) : Term Int Anon → Option Ty
+  | .Var k => if k < 0 then none else tys[k.toNat]?
+  | .Lam _ ty b => match ntypeof (ty :: tys) b with
+    | some ty2 => some (.Arrow ty ty2)
+    | none => none
+  | .App a b => match ntypeof tys a, ntypeof tys b with
+    | some (.Arrow p r), some q => if p = q then some r else none
+    | _, _ => none
+  | .If c a b => match ntypeof tys c, ntypeof tys a, ntypeof tys b with
+    | some .Boolean, some ty2, some ty3 => if ty2 = ty3 then some ty2 else none
+    | _, _, _ => none
+  | .True => some .Boolean
+  | .False => some .Boolean
+
+theorem lookup_ctxTys : ∀ (ctx : Ctx) (x : String) (k : Int), index_of (ctxNames ctx) x = some k →
+    lookup ctx x = (ctxTys ctx)[k.toNat]?
+  | .Empty, x, k, h => by simp [ctxNames, index_of] at h
+  | .Bind y ty rest, x, k, h => by
+    simp only [ctxNames, index_of] at h
+    simp only [lookup, ctxTys]
+    by_cases hyx : y = x
+    · simp only [hyx, if_true] at h ⊢; cases h; simp
+    · simp only [hyx, if_false] at h ⊢
+      cases hk : index_of (ctxNames rest) x with
+      | none => rw [hk] at h; cases h
+      | some k0 =>
+        rw [hk] at h; simp at h; subst h
+        have h0 := (index_of_lt _ x k0 hk).1
+        rw [lookup_ctxTys rest x k0 hk]
+        have : (k0 + 1).toNat = k0.toNat + 1 := by omega
+        simp [this]
+
+/-- A term's type is its nameless form's. -/
+theorem typeof_nameless : ∀ (t : Named) (ctx : Ctx) (nt : Term Int Anon), to_nameless (ctxNames ctx) t = some nt →
+    typeof ctx t = ntypeof (ctxTys ctx) nt := by
+  intro t
+  induction t with
+  | Var x =>
+    intro ctx nt h
+    obtain ⟨k, hk, rfl⟩ := to_nameless_var_inv h
+    have h0 := (index_of_lt _ x k hk).1
+    simp only [typeof, ntypeof]
+    rw [if_neg (show ¬ k < 0 by omega)]
+    exact lookup_ctxTys ctx x k hk
+  | Lam y ty b ih =>
+    intro ctx nt h
+    obtain ⟨nb, hb, rfl⟩ := to_nameless_lam_inv h
+    have := ih (.Bind y ty ctx) nb hb
+    simp only [typeof, ntypeof, ctxTys] at this ⊢
+    rw [this]
+    cases ntypeof (ty :: ctxTys ctx) nb <;> rfl
+  | App f a ihf iha =>
+    intro ctx nt h
+    obtain ⟨nf, na, hf, ha, rfl⟩ := to_nameless_app_inv h
+    simp only [typeof, ntypeof]
+    rw [ihf ctx nf hf, iha ctx na ha]
+    rcases ntypeof (ctxTys ctx) nf with _ | (_ | ⟨p, r⟩) <;> cases ntypeof (ctxTys ctx) na <;> rfl
+  | True => intro ctx nt h; simp only [to_nameless] at h; cases h; rfl
+  | False => intro ctx nt h; simp only [to_nameless] at h; cases h; rfl
+  | If c a b ihc iha ihb =>
+    intro ctx nt h
+    obtain ⟨nc, na, nb, hc, ha, hb, rfl⟩ := to_nameless_if_inv h
+    simp only [typeof, ntypeof]
+    rw [ihc ctx nc hc, iha ctx na ha, ihb ctx nb hb]
+    rcases ntypeof (ctxTys ctx) nc with _ | (_ | ⟨p, r⟩) <;> cases ntypeof (ctxTys ctx) na <;>
+      cases ntypeof (ctxTys ctx) nb <;> rfl
+
+/-- `alpha_laws::typed_alpha`: alpha-equivalent closed terms have the same type. -/
+theorem typed_alpha {t t2 : Named} {n : Term Int Anon} (h1 : to_nameless .Nil t = some n)
+    (h2 : to_nameless .Nil t2 = some n) : typeof .Empty t = typeof .Empty t2 := by
+  rw [typeof_nameless t .Empty n h1, typeof_nameless t2 .Empty n h2]
+
 /-- The layer of a term, with `f` at each child. -/
 def layer {E : Type} (f : Named → E) : Named → TermF String String E
   | .Var x => .Var x
@@ -1824,6 +2213,30 @@ impl type_safety_proved: type_safety for (typing : Fren.FinSet (Judgment × Ty))
   · obtain ⟨hty, hv | ⟨u, hu⟩⟩ := safety n t ty h
     · exact ⟨hty, Or.inl hv⟩
     · exact ⟨hty, Or.inr (by rw [hu])⟩
+
+impl alpha_laws_proved: alpha_laws for (names : Names) (t : Named) (nt : Term Int Anon) (s : Named)
+    (ns : Term Int Anon) (x y z : String) (ty : Ty) (body t2 : Named) {
+  names := names, t := t, nt := nt, s := s, ns := ns, x := x, y := y, z := z, ty := ty, body := body, t2 := t2
+} by
+  intro names t nt s ns x y z ty body t2 _
+  simp only [fren_spec]
+  refine ⟨fun h => ?_, fun h => subst_nameless h.1 h.2, fun h => ?_⟩
+  · obtain ⟨⟨hsome, hz⟩, _⟩ := h
+    apply (@decide_eq_true_iff _ _).2
+    cases hb : to_nameless (Names.Cons y names) body with
+    | none => simp [hb] at hsome
+    | some nb => simp [rename_binder hb hz]
+  · have h := (@decide_eq_true_iff _ _).1 h
+    obtain ⟨hsome, he⟩ := h
+    cases hv : to_nameless .Nil t with
+    | none => simp [hv] at hsome
+    | some n =>
+      have ht2 : to_nameless .Nil t2 = some n := by first | (rw [← he]; exact hv) | exact he.symm
+      exact typed_alpha hv ht2
+
+impl layer_laws_proved: layer_laws for (l : TermF String String Int) (t1 t2 : Named) { l := l, t1 := t1, t2 := t2 } by
+  intro l t1 t2 _
+  simp only [fren_spec]
 
 impl nameless_round_trip_proved: nameless_round_trip for (t : Named) (nt : Term Int Anon) { t := t, nt := nt } by
   intro t nt _

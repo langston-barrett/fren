@@ -8,11 +8,16 @@
 -- that refine them: the checker is sound and complete for the typing
 -- relation, and the small-step evaluator agrees with the reduction relation.
 -- The laws that one step of a function's equations decides are decided by
--- the solver; the theorems, which need induction, are tested by `fren
--- check` and proved in Stlc.lean, which binds the proofs to the procedures
--- below with `impl`, except where a comment says that a law is tested only,
--- or that it rests on the proof because testing does not reach it. Fren
--- has no check that states normalization, so Stlc.lean alone proves it.
+-- the solver; the theorems, which need induction, are proved in Stlc.lean,
+-- which binds the proofs to the procedures below with `impl`, and tested
+-- by `fren check`. Random testing draws small terms and meets a law's
+-- premise only where that is easy, so it confirms `preservation`,
+-- `big_step_preservation`, `step_eval`, `agree`, `eval_monotone`,
+-- `normalize_monotone`, `substitution`, `named_nameless` and the laws
+-- premised on a derivation on trivial cases alone: their evidence is the
+-- proofs. Where a comment says that a law is tested only, that is all its
+-- evidence. Fren has no check that states normalization, so Stlc.lean
+-- alone proves it.
 -- The ui test that runs this file through both front ends expects their
 -- notes, written as annotations on each procedure checked by random
 -- testing: that testing does not run its vacuity and redundancy checks,
@@ -310,8 +315,8 @@ pub proc reductions(t2: Named, t3: Named) {
 -- and complete (it agrees with every derivation), so a term has at most one
 -- type. Proved in Stlc.lean by induction on the term. Random testing almost
 -- never draws a relation that is a derivation, so the laws premised on one,
--- here `complete` and `unique`, rest on the proof; the test guards their
--- statement.
+-- here `complete` and `unique`, rest on the proof; random testing only
+-- checks that small inputs do not refute them.
 pub fn typeof(ctx: Ctx, t: Named): Option<Ty> := match t {
     Term::Var(x) => lookup(ctx, x),
     Term::Lam(x, ty1, t2) => match typeof(Ctx::Bind(x, ty1, ctx), t2) {
@@ -809,7 +814,9 @@ pub fn fuel_for(t: Named): Fuel := match t {
 }
 
 -- The round trip: the parser reads what the printer writes, with fuel for
--- the term's size and more. Tested only: Stlc.lean does not prove it.
+-- the term's size and more. Tested only: Stlc.lean does not prove it, and
+-- random testing meets `more_fuel`'s premise only on atoms; the example
+-- below reads an application with too little fuel, the least, and more.
 set_option fren.evidence "random" in
 pub proc print_parse(t: Named, ty: Ty, fuel: Fuel, mode: Mode, ts: Tokens, u: Named, rest: Tokens) {  --~ info: the vacuity and redundancy checks of `stlc::print_parse` are not run by random testing
     --~^[hosted] info: the checks of `stlc::print_parse` set to random testing are run by `fren check`, not in Lean
@@ -817,6 +824,12 @@ pub proc print_parse(t: Named, ty: Ty, fuel: Fuel, mode: Mode, ts: Tokens, u: Na
     ensure types: parse_ty(fuel_for_ty(ty), false, print_ty(ty)) = ParsedTy::Ok(ty, Tokens::Nil)
     ensure more_fuel: when parse(fuel, mode, ts) = Parsed::Ok(u, rest), parse(Fuel::More(fuel), mode, ts) = Parsed::Ok(u, rest)
 }
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect parsed_with_more_fuel: parse(plus(THREE, THREE), Mode::Term, print(APPLIED)) = Parsed::Fail
+    and parse(plus(THREE, plus(THREE, THREE)), Mode::Term, print(APPLIED)) = Parsed::Ok(APPLIED, Tokens::Nil)
+    and parse(Fuel::More(fuel_for(APPLIED)), Mode::Term, print(APPLIED)) = Parsed::Ok(APPLIED, Tokens::Nil)
 
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
@@ -960,10 +973,13 @@ pub proc nameless_round_trip(t: Named, nt: Nameless) {  --~ info: the vacuity an
     ensure converts_back: when closed?(t) and to_nameless(Names::Nil, t) = Some(nt), to_named(Names::Nil, nt) is Some(_)
 }
 
--- The laws of alpha-equivalence, tested: renaming a binder to a name free
--- nowhere gives an alpha-equivalent term; substitution commutes with the
+-- The laws of alpha-equivalence: renaming a binder to a name free nowhere
+-- gives an alpha-equivalent term; substitution commutes with the
 -- conversion, which is what makes it capture-avoiding; and alpha-equivalent
--- closed terms have the same type.
+-- closed terms have the same type. Proved in Stlc.lean; random testing
+-- meets `subst_nameless`'s premise only where `x` is not free in `t`, so
+-- the example below substitutes an open term under a binder, where the
+-- indices shift.
 set_option fren.evidence "random" in
 pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alpha_laws` are not run by random testing
     --~^[hosted] info: the checks of `stlc::alpha_laws` set to random testing are run by `fren check`, not in Lean
@@ -990,6 +1006,30 @@ pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alph
     ensure typed_alpha: when alpha_eq?(Names::Nil, t, t2), typeof(Ctx::Empty, t) = typeof(Ctx::Empty, t2)
 }
 
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect substituted_under_binder: to_nameless(
+    Names::Cons("z", Names::Nil),
+    subst(
+        "x",
+        Term::Var("z"),
+        Term::Lam("y", Ty::Boolean, Term::Var("x"))
+    )
+)
+    = Some(
+        nsubst(
+            0,
+            Term::Var(0),
+            Term::Lam(Anon::Anon, Ty::Boolean, Term::Var(1))
+        )
+    )
+    and nsubst(
+        0,
+        Term::Var(0),
+        Term::Lam(Anon::Anon, Ty::Boolean, Term::Var(1))
+    )
+    = Term::Lam(Anon::Anon, Ty::Boolean, Term::Var(1))
+
 -- # Experiment: one layer of a term
 --
 -- `TermF<V, B, E>` is one layer of a term, with its children abstracted as
@@ -997,11 +1037,11 @@ pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alph
 -- Fix<V, B> { In(TermF<V, B, Fix<V, B>>) }`, is rejected (`F0387`: a
 -- recursive payload must be the enumeration's own type), and a fold over
 -- it would be a generic recursion (`F0331`), so an algebra is stated here,
--- decided by the solver at every `V` and `B` since it is not recursive, and
--- Stlc.lean ties the knot: `Term` is the fixpoint, and `size` is the fold
--- of `size_alg` (`size_fold`). What else this example needed and Fren
--- lacks is filed under the language spec's queue (#545): #602 to #606, and
--- #612.
+-- with the laws that the solver decides at `Name`, since nothing recurses
+-- (`layer_laws`), and Stlc.lean ties the knot: `Term` is the fixpoint, and
+-- `size` is the fold of `size_alg` (`size_fold`, `map_layer_id`). What else
+-- this example needed and Fren lacks is filed under the language spec's
+-- queue (#545): #602 to #606, and #612.
 pub enum TermF<V, B, E> {
     Var(V),
     Lam(B, Ty, E),
@@ -1042,4 +1082,11 @@ pub fn size(t: Named): (n: Int) {
         Term::If(t1, t2, t3) => 1 + size(t1) + size(t2) + size(t3),
     }
     ensure positive: n >= 1
+}
+
+-- The functor's identity law, and one layer of the fold: a procedure
+-- cannot be generic (#605), so the laws are at `Name`.
+pub proc layer_laws(l: TermF<Name, Name, Int>, t1: Named, t2: Named) {
+    expect map_id: map_layer(l, |e| e) = l
+    expect size_app: when l = TermF::App(size(t1), size(t2)), size(Term::App(t1, t2)) = size_alg(l)
 }
