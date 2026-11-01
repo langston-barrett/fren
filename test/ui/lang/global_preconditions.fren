@@ -7,9 +7,7 @@ proc positive(x: Int): (det y: Int) {
     assume domain: twice > 0
     ensure result: y = x
 }
-proc successor(x: Int): (det y: Int) {
-    ensure result: y = x + 1
-}
+proc successor(x: Int): (det y: Int) { ensure result: y = x + 1 }
 expect composition(x: Int) {
     assume domain: x > -2
     call a := positive(x)

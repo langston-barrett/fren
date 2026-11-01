@@ -68,9 +68,7 @@ expect g(a_z: Int) {
 
 -- A call of the procedure in the file gives its input, and the call's
 -- precondition check checks the assumption.
-proc instanced(k: Int) {
-    assume pos: k > 0
-}
+proc instanced(k: Int) { assume pos: k > 0 }
 
 proc uses_instanced(): (y: Int) {
     call i := instanced(1)
@@ -174,9 +172,7 @@ proc refined(n: Int): (y: Int) {
     ensure e: y = 1
 }
 
-proc refining(): (y: Int) {
-    ensure e: y = 1
-}
+proc refining(): (y: Int) { ensure e: y = 1 }
 
 expect refines_refined(n: Int) {
     call c := refining()

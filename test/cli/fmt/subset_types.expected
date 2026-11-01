@@ -3,11 +3,13 @@
 @@ -4 +4 @@
 -type   Byte= n: Int    where invariant: n is  0..=255
 +type Byte = n: Int where invariant: n is 0..=255
-@@ -6,3 +6,3 @@
+@@ -6,5 +6,3 @@
 -type Loud = level: Level  where invariant: level is Level::High|Level::Low
 -type Pos = n: Int  where invariant: n is 1..
 -proc c(b: Set< Byte >, n:Pos): (l: Loud) {
+-    ensure r: l = Level::High
+-}
 +type Loud = level: Level where invariant: level is Level::High | Level::Low
 +type Pos = n: Int where invariant: n is 1..
-+proc c(b: Set<Byte>, n: Pos): (l: Loud) {
++proc c(b: Set<Byte>, n: Pos): (l: Loud) { ensure r: l = Level::High }
 exit=1

@@ -24,9 +24,7 @@ expect counts(r: Rel<E, E>, s: Set<E>) {
 }
 
 -- Without counting, the same refinement is in the core.
-proc membered(has_a?): (size: Int) {
-    ensure r: when has_a?, size != 0
-}
+proc membered(has_a?): (size: Int) { ensure r: when has_a?, size != 0 }
 
 expect members(r: Rel<E, E>, s: Set<E>) {
     use E

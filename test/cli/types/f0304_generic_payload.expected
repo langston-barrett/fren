@@ -1,8 +1,8 @@
 error[F0304]: type mismatch: expected `Int`, found `Bool`
- --> test/cli/types/f0304_generic_payload.fren:4:32
+ --> test/cli/types/f0304_generic_payload.fren:3:57
   |
-4 |     ensure r: x = Option::Some(true)
-  |                                ^^^^ expected `Int`, found `Bool`
+3 | proc c(): (x: Option<Int>) { ensure r: x = Option::Some(true) }
+  |                                                         ^^^^ expected `Int`, found `Bool`
   |
   = note: value 1 of the payload of `Option::Some` has type `Int`
   = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`

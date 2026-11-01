@@ -1,10 +1,10 @@
 error[F0408]: too many arguments: `rough` takes 1 argument, `x`
-  --> test/cli/instances/f0414_refine_twice.fren:10:5
-   |
-10 |     refines c rough(x, x + 1)
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ 2 arguments
-   |
-   = note: a call gives one argument for each parameter, in order
+ --> test/cli/instances/f0414_refine_twice.fren:6:5
+  |
+6 |     refines c rough(x, x + 1)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^ 2 arguments
+  |
+  = note: a call gives one argument for each parameter, in order
 
 error: could not check due to previous errors
 

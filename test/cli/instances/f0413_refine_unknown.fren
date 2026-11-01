@@ -1,10 +1,6 @@
 -- A refinement argument resolves in the expectation block.
-proc precise(x: Int): (y: Int) {
-    ensure r: y = x
-}
-proc rough(x: Int): (z: Int) {
-    ensure r: z >= x
-}
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(x: Int): (z: Int) { ensure r: z >= x }
 expect fits(x: Int) {
     call c := precise(x)
     refines c rough(w)

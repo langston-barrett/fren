@@ -1,8 +1,6 @@
 -- fren-covers: refinement::refinement_singleton_domain
 -- Tested refinement must use computed locals and specification call meanings.
-proc identity(flag?): (out?) {
-    ensure value: out? iff flag?
-}
+proc identity(flag?): (out?) { ensure value: out? iff flag? }
 proc composed(flag?): (answer?) {
     call inner := identity(flag?)
     let computed? := not inner.out?

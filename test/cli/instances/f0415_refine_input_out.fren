@@ -1,10 +1,6 @@
 -- A specification argument must have its parameter's type.
-proc precise(x: Int): (y: Int) {
-    ensure r: y = x
-}
-proc rough(n: Int): (y: Int) {
-    ensure r: y >= n
-}
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(n: Int): (y: Int) { ensure r: y >= n }
 expect fits(x: Int) {
     call c := precise(x)
     refines c rough(true)

@@ -1,7 +1,7 @@
 error[F0403]: `c.hidden` is private to call `c`
-  --> test/cli/instances/f0415_refine_private.fren:12:21
+  --> test/cli/instances/f0415_refine_private.fren:10:21
    |
-12 |     refines c rough(c.hidden)
+10 |     refines c rough(c.hidden)
    |                     ^^^^^^^^ private
    |
    = note: only the parameters and results of a call can be mentioned

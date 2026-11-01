@@ -1,7 +1,5 @@
 -- An assumption about an instance's variable (F0401).
-proc sub(a: Int): (b: Int) {
-    ensure r: b = a
-}
+proc sub(a: Int): (b: Int) { ensure r: b = a }
 proc c(i: Int) {
     call s := sub(i)
     assume a: s.b > 0

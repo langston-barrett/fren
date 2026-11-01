@@ -1,4 +1,2 @@
 -- A precondition that applies its own function (F0380).
-fn rate(n: Int): (r: Int) {
-    assume small: rate(n) < 10
-}
+fn rate(n: Int): (r: Int) { assume small: rate(n) < 10 }

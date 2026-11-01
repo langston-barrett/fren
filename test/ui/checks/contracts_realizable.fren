@@ -37,11 +37,7 @@ fn above(n: Int): (r: Int) {   --~ error: the postconditions of `above` cannot a
 }
 
 -- One that relates the value to an earlier function holds.
-fn after(n: Int): (r: Int) {
-    ensure over: r > base(n)
-}
+fn after(n: Int): (r: Int) { ensure over: r > base(n) }
 
 -- A `Nat` value is at least 0.
-fn count(n: Int): (r: Nat) {
-    ensure small: r < 1
-}
+fn count(n: Int): (r: Nat) { ensure small: r < 1 }

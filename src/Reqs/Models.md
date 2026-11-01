@@ -215,9 +215,7 @@ values read:
 
 ```fren
 -- A free variable of the type `t` is filled with `value`.
-pub proc fill_rule(t: TypeShape): (det value: Outcome) {
-    out value := default_value(t)
-}
+pub proc fill_rule(t: TypeShape): (det value: Outcome) { out value := default_value(t) }
 
 -- The variables that a model leaves free, each with its type.
 pub enum Free { Nil, Bind(Id, TypeShape, Free) }

@@ -8,13 +8,13 @@ open Fren.Lang
 -- component is still never checked
 -- (`Reqs/Lint/Decidability#undecidable-constructs`): only the other one is.
 /--
-error: LiterateUndecidable.md:10:21: this is outside the decidable core: a relational operator over a type that is not finite quantifies over its values
+error: LiterateUndecidable.md:9:54: this is outside the decidable core: a relational operator over a type that is not finite quantifies over its values
 
 help: relate values of finite types, such as enums, or opt out where reachability is the point
 note: `undecidable` is `deny` by default
 help: to allow it, `set_option fren.lint.undecidable "allow"`
 ---
-error: LiterateUndecidable.md:10:21: this is outside the decidable core: the solver does not reliably combine counting with relational operators
+error: LiterateUndecidable.md:9:54: this is outside the decidable core: the solver does not reliably combine counting with relational operators
 
 help: say what the members are, with `in` and `subset`, rather than how many there are
 -/

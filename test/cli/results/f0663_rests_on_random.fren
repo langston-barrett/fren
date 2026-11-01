@@ -1,9 +1,7 @@
 -- `echo`'s realizability is only checked by random testing, so the proofs
 -- from a call of it are passes by random testing (F0663).
 set_option fren.evidence "random" in
-pub proc echo(x: Int): (y: Int) {
-    ensure r: y = x
-}
+pub proc echo(x: Int): (y: Int) { ensure r: y = x }
 
 pub proc caller(x: Int): (z: Int) {
     call c := echo(x)

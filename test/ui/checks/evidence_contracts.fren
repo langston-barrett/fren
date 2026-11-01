@@ -22,9 +22,7 @@ fn above(n: Int): (r: Int) {  --~ warning: the realizability of the contract of 
 }
 
 -- A contract that can hold caps nothing.
-fn good(n: Int): (r: Int) {
-    ensure gt: r > n
-}
+fn good(n: Int): (r: Int) { ensure gt: r > n }
 
 proc fine(n: Int): (y: Int) {
     ensure r: y = good(n)

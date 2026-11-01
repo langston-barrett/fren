@@ -21,9 +21,7 @@ pub proc parity(n: Int): (set_option fren.evidence "solver" in det even?) {
 }
 
 -- An instance set to testing: its assumption is tested, and false.
-pub proc positive(k: Int) {
-    assume pos: k > 0
-}
+pub proc positive(k: Int) { assume pos: k > 0 }
 
 pub proc caller(m: Int) {
     set_option fren.evidence "random" in

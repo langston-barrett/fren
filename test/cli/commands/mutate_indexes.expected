@@ -265,171 +265,171 @@ help: the mutant
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:25
+  --> test/cli/commands/mutate_indexes.fren:18:50
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                         ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q != []`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                  ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q != []`
    |
    = note: the mutant is `drop-conjunct-e::r-e633917f9854`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != []) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != []) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:25
+  --> test/cli/commands/mutate_indexes.fren:18:50
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                         ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q[0] = 1`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                  ^^^^^^^^^^^^^^^^^^^^ `q != [] and q[0] = 1` changed to `q[0] = 1`
    |
    = note: the mutant is `drop-conjunct-e::r-c2677c248842`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q[0] = 1) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q[0] = 1) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:27
+  --> test/cli/commands/mutate_indexes.fren:18:52
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                           ^^ `!=` changed to `=`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                    ^^ `!=` changed to `=`
    |
    = note: the mutant is `swap-comparison-e::r-4c3dc63bf1bc`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q = [] and q[0] = 1) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q = [] and q[0] = 1) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:33
+  --> test/cli/commands/mutate_indexes.fren:18:58
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                 ^^^ `and` changed to `or`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                          ^^^ `and` changed to `or`
    |
    = note: the mutant is `swap-and-or-e::r-15416934cf39`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] or q[0] = 1) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] or q[0] = 1) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:39
+  --> test/cli/commands/mutate_indexes.fren:18:64
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                       ^ `0` changed to `1`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-e::r-16e34f532c05`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[1] = 1) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[1] = 1) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:42
+  --> test/cli/commands/mutate_indexes.fren:18:67
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                          ^ `=` changed to `!=`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                   ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-e::r-d4089938d42a`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] != 1) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] != 1) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:44
+  --> test/cli/commands/mutate_indexes.fren:18:69
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                            ^ `1` changed to `2`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                     ^ `1` changed to `2`
    |
    = note: the mutant is `shift-integer-e::r-6392220d45dc`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] = 2) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 2) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:44
+  --> test/cli/commands/mutate_indexes.fren:18:69
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                            ^ `1` changed to `0`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                     ^ `1` changed to `0`
    |
    = note: the mutant is `shift-integer-e::r-39922bdd0cd2`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] = 0) or q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 0) or q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:47
+  --> test/cli/commands/mutate_indexes.fren:18:72
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                               ^^ `or` changed to `and`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                        ^^ `or` changed to `and`
    |
    = note: the mutant is `swap-and-or-e::r-e4723f94b7fd`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] = 1) and q[0] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) and q[0] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:52
+  --> test/cli/commands/mutate_indexes.fren:18:77
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                                    ^ `0` changed to `1`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                             ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-e::r-15e34f532a52`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] = 1) or q[1] = 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[1] = 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:55
+  --> test/cli/commands/mutate_indexes.fren:18:80
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                                       ^ `=` changed to `!=`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                                ^ `=` changed to `!=`
    |
    = note: the mutant is `swap-comparison-e::r-833f231f1fbf`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] != 0)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] != 0) }
    |
 
 warning[F0613]: no check rejects this change to `e::r`
-  --> test/cli/commands/mutate_indexes.fren:19:57
+  --> test/cli/commands/mutate_indexes.fren:18:82
    |
-19 |     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-   |                                                         ^ `0` changed to `1`
+18 | proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+   |                                                                                  ^ `0` changed to `1`
    |
    = note: the mutant is `shift-integer-e::r-14e34f53289f`
    = help: add an expectation or a cover goal that the change breaks, or say what the spec means more exactly
 help: the mutant
    |
-19 -     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-19 +     ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 1)
+18 - proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }
+18 + proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 1) }
    |
 
 note: 2 checks of the spec do not pass, and so kill no mutant

@@ -9,9 +9,7 @@ proc first_of(n: Int, x: Int): (y: Int) {
     ensure r: y = x
 }
 
-proc seqs(q: Seq<Int>): (s: Seq<Int>) {
-    out s := q
-}
+proc seqs(q: Seq<Int>): (s: Seq<Int>) { out s := q }
 
 -- Not a definedness error, as it is with the solver
 -- (`refinement_bindings.fren`): testing does not check definedness, and

@@ -3,6 +3,4 @@
 mod mid
 use lib::other
 pub enum One { A }
-proc mid(x: One): (det y: One) {
-    out y := other(x)
-}
+proc mid(x: One): (det y: One) { out y := other(x) }

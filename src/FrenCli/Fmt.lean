@@ -116,9 +116,9 @@ def blankLines (blank : Nat) (first afterOpen beforeClose : Bool) : Nat :=
 /-- The widest that a list of kind `k` may be on one line, its elements
 separated by `, `, as rustfmt's defaults have it (`fmt::width_limit`). -/
 def widthLimit : ListKind → Nat
-  | .arms | .members => 0
+  | .arms => 0
   | .arguments | .applicationArguments => 60
-  | .parameters | .functionParameters => 100
+  | .parameters | .functionParameters | .members => 100
   | .elements => 60
   | .fields => 18
 
@@ -136,9 +136,13 @@ def endsWithComma : ListKind → Bool
 /-- Whether a list of kind `k`, with `n` elements, is vertical
 (`fmt::one_line`): its elements `width` wide on one line, separated by `, `,
 the first starting at column `start`, and the line ending at column `end_`,
-which counts only if `ownLine` and the line fits up to the first element. -/
-def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (ownLine : Bool) : Bool :=
-  n > 0 && ((k matches .arms | .members) || broken || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth))
+which counts only if `ownLine` and the line fits up to the first element.
+A `match`'s arms are always vertical, and so is a block with two or more
+members, or on a line that `continued` an item from an earlier line. -/
+def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (ownLine continued : Bool) :
+    Bool :=
+  n > 0 && ((k matches .arms) || (k matches .members && (n > 1 || continued)) || broken || width > widthLimit k
+    || (ownLine && start ≤ maxWidth && end_ > maxWidth))
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -150,10 +154,10 @@ def joinedWidth : List Nat → Nat
 elements, each with its width on one line and whether it cannot be written
 on one line, the column where its first element would start, the width
 of what would follow its last on that line, and whether it is its line's
-expression. -/
-def listLayout (k : ListKind) (es : List (Nat × Bool)) (start after : Nat) (ownLine : Bool) : Bool :=
+expression, and whether its line continues an item from an earlier line. -/
+def listLayout (k : ListKind) (es : List (Nat × Bool)) (start after : Nat) (ownLine continued : Bool) : Bool :=
   let width := joinedWidth (es.map (·.1))
-  vertical k es.length (es.any (·.2)) width start (start + width + after) ownLine
+  vertical k es.length (es.any (·.2)) width start (start + width + after) ownLine continued
 
 /-- A token that follows a list's closing bracket on its line
 (`fmt::Follower`). -/
@@ -195,10 +199,10 @@ its line's expression (`fmt::own_line`): it is a signature's parameters or
 results, or only closing tokens `follows` it, and in each expression that
 holds it and starts on its line, given by the columns before its head and
 its right operand, at most 4 columns come before its head, but where a
-record is that whole operand. -/
+record is that whole operand. A block is its line's expression too. -/
 def ownLine (k : ListKind) (follows : List Follower) (head close : Nat)
     (holders : List (Nat × Option (Nat × Nat))) : Bool :=
-  (k matches .parameters | .functionParameters) || (onlyClosing follows && headsNear k head close holders)
+  (k matches .parameters | .functionParameters | .members) || (onlyClosing follows && headsNear k head close holders)
 
 /-- Whether the last element of a list is followed by a comma
 (`fmt::trailing_comma`), where `allowed` says that its syntax allows one. -/
@@ -636,7 +640,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       start := e
     let es := elements.toList
     let width := joinedWidth (es.map (·.1))
-    infos := infos.set! c { elements, flat := !vertical b.kind es.length (es.any (·.2)) width 0 0 false }
+    infos := infos.set! c { elements, flat := !vertical b.kind es.length (es.any (·.2)) width 0 0 false false }
   -- What a token that follows a list's closing bracket on its line is
   -- (`fmt::Follower`).
   let follower (k : Nat) : Follower :=
@@ -779,8 +783,10 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
           let gap (j : Nat) : Nat := if space kinds[j - 1]! kinds[j]! then 1 else 0
           let (after, follows) := suffix vertical b.kind close
           let own := ownLine b.kind follows toks[headOf b]!.span.start toks[b.closing]!.span.stop (holders b)
+          -- A block's line continues its item unless the item starts it.
+          let continued := !(lineFirst.any lay.starts.contains)
           listLayout b.kind info.elements.toList (out.back!.width + gap (i + 1))
-            (gap close + pieces[close]!.text.length + after) own
+            (gap close + pieces[close]!.text.length + after) own continued
         vertical := vertical.set! c v
         if !v then flatUntil := some b.closing
     if (openerOf[k]?.any fun o => stack.head?.any (·.1 == o)) then stack := stack.tail
@@ -796,9 +802,11 @@ def parseAll (src : Array Char) : Except Error (Array Token × Array Span × Lay
   return (toks, comments, lay)
 
 /-- Whether some `use` member shares a line only with other members or
-its block's braces, and with no comment. Laid out, it starts and ends its
-lines, as a block's members are one to a line, and so it is part of a
-block of imports (`fmt::in_block`). -/
+its block's braces, and with no comment, or is its block's only member.
+Laid out, the first starts and ends its lines, as a block of two or more
+members is one to a line, and so it is part of a block of imports
+(`fmt::in_block`), and the second may be joined onto its block's line,
+and so may not be. -/
 def importsJoined (src : Array Char) (toks : Array Token) (comments : Array Span) (lay : Layout) : Bool := Id.run do
   let (lineOf, _) := lineTable src
   let lineAt (k : Nat) : Nat := lineOf[toks[k]!.span.start]!
@@ -808,8 +816,14 @@ def importsJoined (src : Array Char) (toks : Array Token) (comments : Array Span
   for b in lay.bracketed do
     if b.kind == .members && b.closing != b.opening + 1 then
       breaks := (b.commas.foldl (·.insert ·) (breaks.insert b.lead)).insert (b.closing - 1)
+  -- The tokens before and after a block's only member.
+  let mut single : Std.HashSet (Nat × Nat) := {}
+  for b in lay.bracketed do
+    if b.kind == .members && b.closing != b.opening + 1 && b.commas.isEmpty then
+      single := single.insert (b.lead, b.closing)
   for (first, last) in lay.uses do
     if first == 0 || toks[first - 1]!.tok == .kw "in" then continue
+    if single.contains (first - 1, last + 1) then return true
     let sl := lineAt first
     let el := endLine last
     let before := endLine (first - 1) < sl

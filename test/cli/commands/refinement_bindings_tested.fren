@@ -16,9 +16,7 @@ expect fmt_exit_status(all_parsed?, changed?) {
     refines concrete exit_status((all_parsed?))
 }
 
-pub proc bad_exit(all_parsed?): (code: Int) {
-    ensure r: code = (if not all_parsed? then 2 else 4)
-}
+pub proc bad_exit(all_parsed?): (code: Int) { ensure r: code = (if not all_parsed? then 2 else 4) }
 
 set_option fren.evidence "random" in
 expect bad_exit_status(all_parsed?) {

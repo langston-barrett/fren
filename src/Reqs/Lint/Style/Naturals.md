@@ -145,13 +145,9 @@ expect manual_nat_input_complete(n: Nat, k: Int) {
 
 set_option fren.lint.manual_nat "allow" in
 set_option fren.lint.chainable_comparison "allow" in
-pub proc manual_nat_output_written(n: Nat): (m: Int) {
-    ensure r: m >= 0 and m <= n
-}
+pub proc manual_nat_output_written(n: Nat): (m: Int) { ensure r: m >= 0 and m <= n }
 
-pub proc manual_nat_output_fixed(n: Nat): (m: Nat) {
-    ensure r: m <= n
-}
+pub proc manual_nat_output_fixed(n: Nat): (m: Nat) { ensure r: m <= n }
 
 expect manual_nat_output_sound(n: Nat) {
     call concrete := manual_nat_output_fixed(n)

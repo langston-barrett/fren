@@ -1,6 +1,4 @@
 --@ args: check --timings
 -- `--timings`: after the summary, how long each procedure's checks took,
 -- and in all; the snapshot shows each time as `_`.
-proc c(x: Int): (y: Int) {
-    ensure same: y = x
-}
+proc c(x: Int): (y: Int) { ensure same: y = x }

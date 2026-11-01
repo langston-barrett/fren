@@ -1,7 +1,5 @@
 -- An instance variable that does not exist, with a similar one (F0405).
-proc sub(a: Int): (total: Int) {
-    ensure r: total = a
-}
+proc sub(a: Int): (total: Int) { ensure r: total = a }
 proc c(i: Int): (o: Int) {
     call s := sub(i)
     ensure r: o = s.totl

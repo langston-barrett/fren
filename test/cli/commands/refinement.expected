@@ -1,7 +1,7 @@
 error[F0603]: expectation `lexref::word_is_wrong::refines_1` does not hold
-  --> test/cli/commands/refinement.fren:31:5
+  --> test/cli/commands/refinement.fren:29:5
    |
-31 |     refines concrete wrong(text)
+29 |     refines concrete wrong(text)
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
    |
    = counterexample: text = "A", concrete.accepted? = true

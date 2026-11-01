@@ -1,15 +1,15 @@
 error[F0334]: a pattern test cannot bind `v` here
- --> test/cli/types/f0334_not.fren:4:42
+ --> test/cli/types/f0334_not.fren:3:67
   |
-4 |     ensure a: when not r is Reply::Value(v), w = 0
-  |                                          ^ binds a name
+3 | proc c(r: Reply): (w: Int) { ensure a: when not r is Reply::Value(v), w = 0 }
+  |                                                                   ^ binds a name
   |
   = note: under `not`, what follows holds where the pattern does not match, where `v` has no value
   = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(v), ...`, or write a `match`
 help: ignore the value
   |
-4 -     ensure a: when not r is Reply::Value(v), w = 0
-4 +     ensure a: when not r is Reply::Value(_), w = 0
+3 - proc c(r: Reply): (w: Int) { ensure a: when not r is Reply::Value(v), w = 0 }
+3 + proc c(r: Reply): (w: Int) { ensure a: when not r is Reply::Value(_), w = 0 }
   |
 
 error: could not check due to previous errors

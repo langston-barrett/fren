@@ -11,9 +11,7 @@ proc chain(e: E, f: E): (p?) {
 }
 
 set_option fren.lint.pedantic "expect" in
-proc expected(e: E, f: E): (p?) {
-    ensure r: p? iff (e = E::A or e = E::B or e = f)
-}
+proc expected(e: E, f: E): (p?) { ensure r: p? iff (e = E::A or e = E::B or e = f) }
 
 set_option fren.lint.style "deny" in
 proc denied(s: String): (p?) {
@@ -21,9 +19,7 @@ proc denied(s: String): (p?) {
 }
 
 set_option fren.lint.unused "expect" in  --~ warning: this lint expectation is unfulfilled
-proc unfulfilled(x: Int): (p?) {
-    ensure r: p? iff x > 0
-}
+proc unfulfilled(x: Int): (p?) { ensure r: p? iff x > 0 }
 
 set_option fren.lint.membership_chain "forbid"
 set_option fren.lint.pedantic "allow"  --~ error: `allow` for `pedantic` is incompatible with an earlier `forbid` of `membership_chain`

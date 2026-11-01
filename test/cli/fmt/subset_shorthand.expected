@@ -3,9 +3,11 @@
 @@ -5 +5 @@
 -type   Byte=Int    is  0..=255
 +type Byte = Int is 0..=255
-@@ -8,2 +8,2 @@
+@@ -8,4 +8,2 @@
 -type Loud = Level  is Level::High|Level::Low
 -proc c(b: Set< Byte >, n:Digit): (l: Loud) {
+-    ensure r: l = Level::High
+-}
 +type Loud = Level is Level::High | Level::Low
-+proc c(b: Set<Byte>, n: Digit): (l: Loud) {
++proc c(b: Set<Byte>, n: Digit): (l: Loud) { ensure r: l = Level::High }
 exit=1

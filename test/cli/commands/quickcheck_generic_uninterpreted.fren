@@ -4,9 +4,7 @@
 -- postconditions at that instance, and are of its result type there
 -- (`Reqs/Eval#searching-for-behaviours`).
 
-pub fn rank<T>(x: T): (r: Int) {
-    ensure natural: rank(x) >= 0
-}
+pub fn rank<T>(x: T): (r: Int) { ensure natural: rank(x) >= 0 }
 pub fn size<T>(Option<T>): Nat
 
 proc c(x: Int, p?): (det i: Int, det j: Int, det n: Int) {

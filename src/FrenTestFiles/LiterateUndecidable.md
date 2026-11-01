@@ -6,7 +6,5 @@ default: cvc5 may abort on it, so it must never reach the solver.
 ```fren
 mod undecidable_md
 
-proc mixed(r: Rel<Int, Int>): (y?) {
-    ensure q: y? iff r.range.card = 1
-}
+proc mixed(r: Rel<Int, Int>): (y?) { ensure q: y? iff r.range.card = 1 }
 ```

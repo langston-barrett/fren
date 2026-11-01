@@ -1,8 +1,8 @@
 error[F0342]: the definition of `n` has type `Bool`, not `Int`
- --> test/cli/types/f0342_definition_type.fren:4:29
+ --> test/cli/types/f0342_definition_type.fren:3:48
   |
-4 |     ensure r: let n: Int := x > 0 in y? iff n > 0
-  |                             ^^^^^ has type `Bool`
+3 | proc c(x: Int): (y?) { ensure r: let n: Int := x > 0 in y? iff n > 0 }
+  |                                                ^^^^^ has type `Bool`
   |
   = note: `n` is declared with type `Int`, so its definition must have it too
   = note: `in` ends the last definition of a `let`, so a membership there is written in parentheses, as in `b? := (x in s)`

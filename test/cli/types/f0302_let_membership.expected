@@ -1,8 +1,8 @@
 error[F0302]: `b?` ends in `?` but is not a `Bool`
- --> test/cli/types/f0302_let_membership.fren:5:19
+ --> test/cli/types/f0302_let_membership.fren:4:51
   |
-5 |     ensure r: let b? := x in s in y? iff b?
-  |                   ^^ ends in `?`
+4 | proc c(x: Int, s: Set<Int>): (y?) { ensure r: let b? := x in s in y? iff b? }
+  |                                                   ^^ ends in `?`
   |
   = note: a variable's name ends in `?` if and only if it is a `Bool`
   = note: `in` ends the last definition of a `let`, so a membership there is written in parentheses, as in `b? := (x in s)`

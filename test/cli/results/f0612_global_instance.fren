@@ -3,19 +3,13 @@
 -- triggers hold only for `x = 17637`, which the search does not try.
 mod m
 
-pub proc c(x: Int): (big?) {
-    ensure r: big? iff x > 1000
-}
+pub proc c(x: Int): (big?) { ensure r: big? iff x > 1000 }
 
 expect g(a_x: Int) {
     call a := c(a_x)
     expect g: when 7 * a.x = 123459, a.big?
 }
 
-pub proc guarded(y: Int) {
-    assume narrow: when 7 * y = 123459, y > 0
-}
+pub proc guarded(y: Int) { assume narrow: when 7 * y = 123459, y > 0 }
 
-pub proc user(z: Int) {
-    call u := guarded(z)
-}
+pub proc user(z: Int) { call u := guarded(z) }

@@ -29,9 +29,7 @@ pub proc c(a: A, b: B, m: Mode, k: Int): (ok?, y: Int) {
     }
 }
 
-pub proc d(g: C): (ok?) {
-    ensure r: ok? iff g = C::P
-}
+pub proc d(g: C): (ok?) { ensure r: ok? iff g = C::P }
 
 pub proc e(a: A, g: C): (ok?) {
     use self::C::P

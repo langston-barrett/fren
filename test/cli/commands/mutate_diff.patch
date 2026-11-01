@@ -5,12 +5,12 @@ index 0123456..789abcd 100644
 @@ -14 +14 @@ pub proc c(x: Int): (y?) {
 -    expect e: when x = 6, y?
 +    expect e: when x = 5, y?
-@@ -21,2 +20,0 @@ pub proc d(x: Int): (y?) {
+@@ -19,2 +18,0 @@ pub proc d(x: Int): (y?) {
 -const OTHER: Int := 1
 -
-@@ -24 +21,0 @@ pub proc f(x: Int): (y?) {
+@@ -22 +19,0 @@ pub proc f(x: Int): (y?) {
 -    exists z: Int
-@@ -29 +25,0 @@ pub proc f(x: Int): (y?) {
+@@ -28 +24,0 @@ pub proc f(x: Int): (y?) {
 -    + 0
 diff --git a/elsewhere.fren b/elsewhere.fren
 --- a/elsewhere.fren

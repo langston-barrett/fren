@@ -1,6 +1,4 @@
 -- `needless_raw_strings`, allowed by default.
 set_option fren.lint.needless_raw_strings "warn"
 
-proc word(text: String): (lower?) {
-    ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
-}
+proc word(text: String): (lower?) { ensure rule: lower? iff text.matches?(r#"[a-z]+"#) }

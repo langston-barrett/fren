@@ -25,10 +25,11 @@ The formatter changes whitespace, the commas at the end of lists (see
 (see [Imports](#imports)). It keeps every comment. It lays out
 [lists and blocks](#lists-and-blocks) as rustfmt does: each on one line
 if it fits, and otherwise with one element to a line, but the arms of a
-`match` or a table, the rows of a table, and the members of a
-procedure's, function's or global expectation's block always one to a
-line. Elsewhere, for now, it keeps the line breaks: it breaks no other
-long line and joins no other short ones, except to merge imports. On each
+`match` or a table and the rows of a table always one to a line, and the
+members of a procedure's, function's or global expectation's block one
+to a line unless there is just one that fits. Elsewhere, for now, it keeps
+the line breaks: it breaks no other long line and joins no other short
+ones, except to merge imports. On each
 line, it decides the indentation and the spaces between tokens; across
 lines, how many blank lines separate them. For example,
 
@@ -232,22 +233,32 @@ ensure r: q = { p with
 
 A list with no elements is horizontal, as in `proc c() {}`. A `match`
 or a table with arms or rows is vertical, with one to a line, as rustfmt
-writes a `match`, and so is a block with members, with one member to a
-line, as rustfmt writes a function's body (its `fn_single_line` is
-`false`). So a procedure written on one line, however short,
-
-```text
-proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-```
-
-is formatted with its members on lines of their own, and one written so
-already stays as it is:
+writes a `match`. So is a block with two or more members, with one
+member to a line, as rustfmt writes a function's body. A block with one
+member is a list like the others below: it is horizontal when it fits,
+as rustfmt writes a function whose body is one expression when its
+`fn_single_line` is `true`, and it fits only on a line that ends by
+column 100, as a function's whole line must. So a procedure written
+vertically with one short member
 
 ```text
 proc c(m: Mode): (on?) {
     ensure r: on? iff m = Mode::Heat
 }
 ```
+
+is joined onto one line, and one written so already stays as it is:
+
+```text
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+```
+
+A block's single member that must span several lines, such as a `match`
+or a table with arms, or a member with a line comment, keeps the block
+vertical, as does one that would end its line past column 100. So does a
+signature that spans several lines, as rustfmt puts a function on one
+line only if all of it fits there: a block joins only the line that
+starts its item, and never a line such as `): (y: Int) {`.
 
 Any other list is horizontal exactly when it fits, that is, when all
 three hold:
@@ -268,7 +279,7 @@ three hold:
    the line up to its first element ends by column 100, and only where
    the list *is its line's expression*: either it is a procedure's or
    function's parameters or results, as rustfmt breaks a long signature
-   there first, or both of these hold:
+   there first, or a block, or both of these hold:
    - what follows its closing bracket on the line, as far as it counts,
      is only closing brackets, commas, `=>`, the `>` that closes a
      type's arguments, and a bracket that indents; and
@@ -308,6 +319,7 @@ every other such list stays on one line.
 | parameters and results | 100 | `max_width`, which a function's signature must fit |
 | elements of a sequence or set literal, and members of a Boolean block | 60 | `array_width` |
 | fields of a record literal or update | 18 | `struct_lit_width` |
+| a block's single member | 100 | `max_width`, which a function on one line must fit |
 
 These are rustfmt's defaults, those of `use_small_heuristics =
 "Default"`. The lists of a file are laid out from the outside in, each on
@@ -357,14 +369,18 @@ use self::ListKind::{
     Parameters,
 }
 
--- The lists that are vertical whenever they have elements: a `match`'s or a table's, and a block.
-pub fn always_vertical?(list: ListKind) := list is Arms | Members
+-- The lists that are vertical whenever they have elements: a `match`'s or a table's.
+pub fn always_vertical?(list: ListKind) := list = Arms
+
+-- A block is on one line only with one member, and only on the line that starts its item, as
+-- rustfmt puts a function on one line only if all of it fits there.
+pub fn stacked?(list: ListKind, n: Int, continued?) := list = Members and (n > 1 or continued?)
 
 -- The widest a list may be on one line, as rustfmt's defaults allow.
 pub fn width_limit(list: ListKind): Int := match list {
-    Arms | Members => 0,
+    Arms => 0,
     Arguments | ApplicationArguments => 60,
-    Parameters | FunctionParameters => 100,
+    Parameters | FunctionParameters | Members => 100,
     Elements => 60,
     Fields => 18,
 }
@@ -380,28 +396,38 @@ pub proc one_line(
     start: Int,              -- the column where its first element would start
     line_end: Int,           -- the column where its line would end, with it on one line
     own_line?,               -- it is its line's expression (`fmt::own_line`)
+    continued?,              -- its line continues an item from an earlier line
 ): (det vertical?) {
-    ensure rule: vertical? iff (n > 0 and (always_vertical?(list) or broken? or width > width_limit(list)
-        or (own_line? and start <= 100 < line_end)))
+    ensure rule: vertical? iff (n > 0 and (always_vertical?(list) or stacked?(list, n, continued?)
+        or broken? or width > width_limit(list) or (own_line? and start <= 100 < line_end)))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
-    -- A procedure's members are one to a line, however short and few.
-    expect members: when n > 0 and list = Members, vertical?
-    expect fits: when n > 0 and not always_vertical?(list) and not broken? and width <= width_limit(list)
+    -- A block's members are one to a line when it has two or more, however short.
+    expect members: when n > 1 and list = Members, vertical?
+    -- A block with one short member is on one line.
+    expect single_member: when list = Members and n = 1 and not continued? and not broken? and width <= 100
         and line_end <= 100, not vertical?
+    -- `): (y: Int) {`: a block after a signature that spans several lines is vertical.
+    expect after_long_signature: when list = Members and n > 0 and continued?, vertical?
+    -- A block's single member that must span several lines keeps the block vertical.
+    expect broken_member: when list = Members and n = 1 and broken?, vertical?
+    -- A block whose line would end past column 100 is vertical.
+    expect long_member: when list = Members and n = 1 and start <= 100 < line_end and own_line?, vertical?
+    expect fits: when n > 0 and not always_vertical?(list) and not stacked?(list, n, continued?)
+        and not broken? and width <= width_limit(list) and line_end <= 100, not vertical?
     expect just_fits: when list = Arguments and n = 2 and not broken? and width = 60 and line_end = 100, not vertical?
     expect just_too_wide: when list = Arguments and n = 2 and width = 61, vertical?
     expect just_too_long: when list = Fields and n = 1 and width = 18 and start = 80 and line_end = 101 and own_line?,
         vertical?
     -- Breaking a list helps its line only where the list is the line's expression: elsewhere, the
     -- rest of the expression would still be on the lines of its brackets.
-    expect operand: when not own_line? and not always_vertical?(list) and not broken? and width <= width_limit(list),
-        not vertical?
+    expect operand: when not own_line? and not always_vertical?(list) and not stacked?(list, n, continued?)
+        and not broken? and width <= width_limit(list), not vertical?
     -- A list that is vertical for its line's length alone shortens the line: the line fits up to its
     -- first element, and is too long with the list on it.
-    expect helps: when vertical? and not always_vertical?(list) and not broken? and width <= width_limit(list),
-        own_line? and start <= 100 < line_end
+    expect helps: when vertical? and not always_vertical?(list) and not stacked?(list, n, continued?)
+        and not broken? and width <= width_limit(list), own_line? and start <= 100 < line_end
 }
 ```
 
@@ -445,8 +471,10 @@ pub proc list_layout(
     start: Nat,              -- the column where its first element would start
     after: Nat,              -- the width of what would follow its last element on its line
     own_line?,               -- it is its line's expression (`fmt::own_line`)
+    continued?,              -- its line continues an item from an earlier line
 ): (det vertical?) {
-    ensure rule: vertical? iff (count(elements) > 0 and (always_vertical?(list) or any_broken?(elements)
+    ensure rule: vertical? iff (count(elements) > 0 and (always_vertical?(list)
+        or stacked?(list, count(elements), continued?) or any_broken?(elements)
         or joined(elements) > width_limit(list) or (own_line?
         and start <= 100 < start + joined(elements) + after)))
 }
@@ -457,8 +485,9 @@ expect list_layout_one_line(
     start: Nat,
     after: Nat,
     own_line?,
+    continued?,
 ) {
-    call concrete := list_layout(list, elements, start, after, own_line?)
+    call concrete := list_layout(list, elements, start, after, own_line?, continued?)
     refines concrete one_line(
         list,
         count(elements),
@@ -467,6 +496,7 @@ expect list_layout_one_line(
         start,
         start + joined(elements) + after,
         own_line?,
+        continued?,
     )
 }
 ```
@@ -538,10 +568,11 @@ pub proc own_line(
     close: Int,              -- where its closing bracket ends
     holders: Holders,
 ): (det own_line?) {
-    ensure rule: own_line? iff (list is Parameters | FunctionParameters
+    ensure rule: own_line? iff (list is Parameters | FunctionParameters | Members
         or (only_closing?(followers) and heads_near?(list, head, close, holders)))
 
     expect signature: when list = Parameters, own_line?
+    expect block: when list = Members, own_line?
     expect alone: when followers = Followers::Nil and holders = Holders::Nil, own_line?
     -- `f(a).len`: breaking `f`'s arguments would leave `.len` on the line of its `)`.
     expect method_after: when list = Arguments and followers = Then(Follower::Other, Followers::Nil),
@@ -1092,7 +1123,8 @@ These lines are those of the file laid out: a `use` member that shares
 its lines with no comment, and with no token but other members and its
 block's braces, starts and ends its lines once its
 [block](#lists-and-blocks) has one member to a line, and so is sorted
-with the imports around it. Any other line, including a blank line or a
+with the imports around it, and a `use` that is its block's only member
+and is joined onto the block's line is not in a block of imports. Any other line, including a blank line or a
 comment, ends the block. So the imports of a file can be kept in separate
 blocks, such as one for each module they come from, and a comment above a
 `use` stays with it.

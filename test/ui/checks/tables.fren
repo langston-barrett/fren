@@ -111,9 +111,7 @@ proc pick(a: Name, b: Name): (w: Name) {
 }
 
 -- In a global expectation, under its assumptions and calls.
-proc counter(n: Int): (m: Int) {
-    ensure r: m = n + 1
-}
+proc counter(n: Int): (m: Int) { ensure r: m = n + 1 }
 
 -- Where no row holds, the table's value is unknown, so the expectation
 -- does not follow either.

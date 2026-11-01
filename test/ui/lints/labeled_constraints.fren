@@ -10,9 +10,7 @@ proc bounds(x: Nat, y: Nat): (z: Int) {
 
 -- Written predicate calls with different arguments stay different.
 fn nonnegative?(n: Int) := and { bound: n >= 0 }
-proc predicates(x: Nat, y: Nat) {
-    expect and { left: nonnegative?(x), right: nonnegative?(y) }
-}
+proc predicates(x: Nat, y: Nat) { expect and { left: nonnegative?(x), right: nonnegative?(y) } }
 
 -- Different wrappers are part of each member's written identity.
 proc guards(x: Int, y: Int) {

@@ -4,9 +4,7 @@ enum E { V0, V1 }
 
 const K1: String := "aaa"
 
-proc sub(n: Int): (m: Int) {
-    ensure r: m = n
-}
+proc sub(n: Int): (m: Int) { ensure r: m = n }
 
 proc c(s: E): (y?, z: Int) {
     call w := sub(1)

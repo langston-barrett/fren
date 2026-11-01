@@ -23,9 +23,7 @@ mod display
 use climate::Mode
 use climate::Mode::Heat
 
-proc indicator(mode: Mode): (red?) {
-    ensure red: red? iff mode = Heat
-}
+proc indicator(mode: Mode): (red?) { ensure red: red? iff mode = Heat }
 
 -- `if` is an operand without parentheses, including in a binding; its
 -- `else` branch extends to the end.

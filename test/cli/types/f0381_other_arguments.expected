@@ -1,8 +1,8 @@
 error[F0381]: a postcondition of `rate` applies `rate` to other than its parameters
- --> test/cli/types/f0381_other_arguments.fren:4:19
+ --> test/cli/types/f0381_other_arguments.fren:3:43
   |
-4 |     ensure grows: rate(n + 1) > r
-  |                   ^^^^ not its parameters
+3 | fn rate(n: Int): (r: Int) { ensure grows: rate(n + 1) > r }
+  |                                           ^^^^ not its parameters
   |
   = note: a postcondition states what the function gives at its own arguments, written as its parameters' names, in order
   = help: apply it to the parameters, or state this where the function is applied

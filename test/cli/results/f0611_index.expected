@@ -1,8 +1,8 @@
 error[F0611]: an index of `first::r` may be out of range
- --> test/cli/results/f0611_index.fren:3:19
+ --> test/cli/results/f0611_index.fren:2:51
   |
-3 |     ensure r: x = q[0]
-  |                   ^^^^ may be out of range
+2 | proc first(q: Seq<Int>): (x: Int) { ensure r: x = q[0] }
+  |                                                   ^^^^ may be out of range
   |
   = counterexample: q = [], x = 0
   = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there

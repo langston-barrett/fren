@@ -1,5 +1,3 @@
 -- A definition whose expression does not have its written type (F0342).
 -- fren-covers: lang::definition_type
-proc c(x: Int): (y?) {
-    ensure r: let n: Int := x > 0 in y? iff n > 0
-}
+proc c(x: Int): (y?) { ensure r: let n: Int := x > 0 in y? iff n > 0 }

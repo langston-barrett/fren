@@ -1,6 +1,4 @@
 -- `redundant_bindings`, in a record literal.
 struct Point { x: Int, y: Int }
 
-proc c(x: Int): (q?) {
-    ensure r: q? iff Point { x := x, y := 1 }.x > 0
-}
+proc c(x: Int): (q?) { ensure r: q? iff Point { x := x, y := 1 }.x > 0 }

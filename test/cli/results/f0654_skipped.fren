@@ -1,5 +1,3 @@
 -- Checks that the method their evidence sets does not run (F0654).
 set_option fren.evidence "random" in
-proc c(x: Int): (big?) {
-    ensure r: when x > 0, big?
-}
+proc c(x: Int): (big?) { ensure r: when x > 0, big? }

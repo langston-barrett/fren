@@ -1,5 +1,3 @@
 -- A pattern test binds a name.
 enum Shape { Circle(Int), Empty }
-proc c(s: Shape): (big?) {
-    ensure r: big? iff s is Shape::Circle(n)
-}
+proc c(s: Shape): (big?) { ensure r: big? iff s is Shape::Circle(n) }

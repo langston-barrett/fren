@@ -1,7 +1,5 @@
 -- A binding that mentions an `out` (F0402).
-proc sub(a: Int): (b: Int) {
-    ensure r: b = a
-}
+proc sub(a: Int): (b: Int) { ensure r: b = a }
 proc c(): (o: Int) {
     call s := sub(o)
     ensure r: o = 0

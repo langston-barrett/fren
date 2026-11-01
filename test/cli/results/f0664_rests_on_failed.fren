@@ -4,9 +4,7 @@
 mod demo
 
 set_option fren.evidence "random" in
-pub proc lookup(x: Int): (y: Int) {
-    ensure r: y = 0 and x != 1234567
-}
+pub proc lookup(x: Int): (y: Int) { ensure r: y = 0 and x != 1234567 }
 
 pub proc caller(x: Int): (z: Int) {
     assume a: x = 1234567
