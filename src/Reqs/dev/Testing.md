@@ -344,7 +344,7 @@ pub mod testing
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
 at most eight files, each importing `Fren` once. The mutants are checked in
 a job per group of the corpus, and those of Fren's own requirements in
-eight jobs, its *slices*, each taking every eighth mutant: each slice makes
+64 jobs, its *slices*, each taking every 64th mutant: each slice makes
 every mutant of its group, which the checks of one mutant compare it with,
 and the checks of the whole group run in the first slice. A mutation job
 whose group or slice is out of range is an error, rather than a job that
@@ -646,10 +646,16 @@ answered without the solver. The test driver's `ownSpec` job reads the
 directory from `FREN_QUERY_CACHE`, which is `.lake/query-cache` if it is
 not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`, if
 set, is the directory to compare with (`--verify-query-cache`): the job
-fails if `fren check` compared no answers with it. Only that job uses the
-cache, and the `queryCache` job tests the cache itself: the same output
-cold, in a fresh directory, as warm, the same entries from two cold runs,
-and a comparison that compares answers and finds no contradiction.
+fails if `fren check` compared no answers with it, unless it holds no
+entry of the current `queryCacheVersion` and cvc5, which no answer could
+be compared with. Only that job uses the cache, and the `queryCache` job
+tests the cache itself: the same output cold, in a fresh directory, as
+warm, a warm run that writes no entry, so that it answered every query
+from the cache, the same entries from two cold runs, a comparison that
+compares answers and finds no contradiction, one with entries whose
+answers are flipped that reports each as a contradiction with no
+position, and a `sat` entry without a model that does not answer a query
+that wants one.
 
 Locally, the cache grows with each run: copying a worktree's `.lake`
 copies it too, and deleting `.lake/query-cache` clears it. An answer from
@@ -666,13 +672,19 @@ result, run with the cache off, `FREN_QUERY_CACHE= lake test`, or delete
 On CI, shard 0 of `main`'s `lean ci` run asks every query of the solver,
 with an empty cache, and compares each answer with that of the cache that
 the previous `main`'s run saved, so that a key that leaves out something
-that changes an answer fails `main`'s run. It then saves its cache, which
+that changes an answer fails `main`'s run. After a change that alters
+every key, a bump of `queryCacheVersion` or a new cvc5, the previous
+cache has nothing to compare with, and the run compares nothing and
+passes; a change to every script, such as to the script's header, that
+does not bump `queryCacheVersion` leaves old entries of the same version
+and cvc5 that no query asks, and fails the run once, so such a change
+bumps it too. It then saves its cache, which
 is exactly the answers of that run: entries that no query asks any more
 are dropped, so the cache does not grow. A run that found a contradiction
 leaves a mark next to its cache and does not save it, so that `main` stays
 red, comparing with the last good cache, until the key is fixed. Shard 0
 of `pre-merge` restores the last saved cache and never saves one. With
-most queries answered from it, Fren's own requirements took some 25% less
+most queries answered from it, Fren's own requirements took some 35% less
 CPU in the `fren` command, measured locally: the rest is building the
 queries and testing.
 

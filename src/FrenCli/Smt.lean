@@ -273,20 +273,15 @@ solver (`Reqs/Cli#solver-queries`). The script is the whole query, with its
 logic, options and limits, so the same script means the same question. The
 checks of several components may share it at once (`Reqs/Cli#parallel-checking`). -/
 structure QueryCache where
-  answers : IO.Ref (Std.HashMap String (Outcome String × Bool))
+  /-- By the script and the observations of its model, which are every
+  input of `solveScript` but its variables, which the script declares. -/
+  answers : IO.Ref (Std.HashMap (String × Array ModelObservation) (Outcome String × Bool))
   /-- The answers kept across runs, if any (`Reqs/Cli#query-cache`). -/
   store? : Option QueryStore := none
 
 /-- A cache with no answers yet, over the persistent `store?`, if any. -/
 def QueryCache.new (store? : Option QueryStore := none) : IO QueryCache := do
   return { answers := ← IO.mkRef {}, store? }
-
-/-- A Boolean expression to observe while the primary model is live.
-A value observation is skipped unless its evaluation guard was true. -/
-structure ModelObservation where
-  key : Lean.Name
-  formula : String
-  guard? : Option Lean.Name := none
 
 def observationsOf (c : CComp) : Array ModelObservation := Id.run do
   let mut out := #[]
@@ -361,7 +356,7 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
   unless Fren.Core.queryAsked logic (Fren.Core.hasQuantifier script) do
     return .unknown (Fren.Core.quantifiedQueryReason logic)
   if let some dump := dump? then dump script
-  let key := script ++ String.join (observations.toList.map fun o => s!"; observe {o.key}: {o.formula}{(o.guard?.map (s!" when {·}")).getD ""}\n")
+  let key := (script, observations)
   let some cache := cache? | solveScript script vars wantModel observations
   -- A model's variables are those that the script declares, which are `vars`.
   match (← cache.answers.get)[key]? with
@@ -372,12 +367,12 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
   | none => pure ()
   -- Then from the answers kept across runs (`cli::query_cache`).
   if let some store := cache.store? then
-    if let some (o, hasModel) ← store.lookup? key wantModel then
+    if let some (o, hasModel) ← store.lookup? script observations wantModel then
       cache.answers.modify (·.insert key (o, hasModel))
       return if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
   let o ← solveScript script vars wantModel observations
   cache.answers.modify (·.insert key (o, wantModel))
-  if let some store := cache.store? then store.record key o wantModel
+  if let some store := cache.store? then store.record script observations o wantModel
   return o
 
 /-- A value of an abstract type, as cvc5 writes it, such as

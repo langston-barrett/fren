@@ -24,8 +24,11 @@ whenever the answer that `solveScript` reads from a script can change
 without the script changing, such as how it reads a model, or whenever an
 entry's format changes. The cold run on `main` compares its answers with
 the previous `main`'s cache, and so finds a missed bump
-(`Reqs/Cli#query-cache`). -/
-def queryCacheVersion : Nat := 1
+(`Reqs/Cli#query-cache`). Bumped too when every script changes, such as
+its header: the previous cache then has entries of this version that no
+query asks, and that run would compare nothing, which fails it
+(`Reqs/dev/Testing#query-cache`). -/
+def queryCacheVersion : Nat := 2
 
 /-- An answer as the cache sees it (`cli::query_cache`). -/
 inductive CachedAnswer where
@@ -82,43 +85,121 @@ def unescapeLine (s : String) : String := Id.run do
     else out := out.push c
   return out
 
-/-- A name of a model, as an entry stores it: the number of its
-components, then each, escaped, on a line of its own; `none` if it has a
-numeric component. -/
-def nameLines? (n : Lean.Name) : Option (List String) := do
-  let parts ← n.components.mapM fun
-    | .str .anonymous s => some (escapeLine s)
+/-- The components of `n`, or `none` if one is numeric: a name as an entry
+stores it. -/
+def nameParts? (n : Lean.Name) : Option (List String) :=
+  n.components.mapM fun
+    | .str .anonymous s => some s
     | _ => none
-  return toString parts.length :: parts
 
-/-- A name of `nameLines?` at the start of `ls`, and the lines after it. -/
-def nameOfLines? : List String → Option (Lean.Name × List String)
+/-- The name whose components are `parts`. -/
+def nameOfParts (parts : List String) : Lean.Name :=
+  parts.foldl Lean.Name.mkStr .anonymous
+
+/-- Components as an entry stores them: their number, then each, escaped,
+on a line of its own. -/
+def partsLines (parts : List String) : List String :=
+  toString parts.length :: parts.map escapeLine
+
+/-- Components of `partsLines` at the start of `ls`, and the lines after
+them. -/
+def partsOfLines? : List String → Option (List String × List String)
   | count :: rest => do
     let k ← count.toNat?
     guard (rest.length ≥ k)
-    let n := (rest.take k).foldl (fun n p => Lean.Name.mkStr n (unescapeLine p)) .anonymous
-    return (n, rest.drop k)
+    return ((rest.take k).map unescapeLine, rest.drop k)
   | [] => none
 
-/-- What an entry's answer is the answer to (`cli::Key`): the whole
-script, with the observations of its model; cvc5's version; and
+/-- A name of a model, as an entry stores it (`partsLines`); `none` if it
+has a numeric component. -/
+def nameLines? (n : Lean.Name) : Option (List String) :=
+  (nameParts? n).map partsLines
+
+/-- A name of `nameLines?` at the start of `ls`, and the lines after it. -/
+def nameOfLines? (ls : List String) : Option (Lean.Name × List String) :=
+  (partsOfLines? ls).map fun (parts, rest) => (nameOfParts parts, rest)
+
+/-- A formula to read the value of in a query's model (`solveScript`): its
+value is read into the name `key`, and only if the value of `guard?`, if
+any, is `true` in the model. -/
+structure ModelObservation where
+  key : Lean.Name
+  formula : String
+  guard? : Option Lean.Name := none
+  deriving BEq, Hashable, Inhabited, Repr
+
+/-- An observation as a key holds it (`cli::Observation`): its name's
+components, its formula, and its guard's components, if it has one. -/
+structure KeyObservation where
+  name : List String
+  formula : String
+  guard? : Option (List String)
+  deriving DecidableEq, Inhabited, Repr
+
+/-- `o` as a key holds it; `none` if a name of it has a numeric
+component. -/
+def KeyObservation.of? (o : ModelObservation) : Option KeyObservation := do
+  let guard? ← match o.guard? with
+    | none => some none
+    | some g => (nameParts? g).map some
+  return { name := ← nameParts? o.key, formula := o.formula, guard? }
+
+/-- What an entry's answer is the answer to (`cli::Key`): every input of
+the solver's run of a query (`solveScript`), which are the whole script
+and the observations of its model; cvc5's version; and
 `queryCacheVersion`. -/
 structure CacheKey where
   script : String
+  observations : List KeyObservation := []
   solver : String
   version : Nat
   deriving DecidableEq, Inhabited, Repr
 
+/-- The key of the query `script`, with `observations`, for cvc5's version
+`solver` (`cli::query_key`). -/
+def CacheKey.of (script : String) (observations : List KeyObservation) (solver : String) : CacheKey :=
+  { script, observations, solver, version := queryCacheVersion }
+
+/-- The lines of an observation in a key. -/
+def KeyObservation.lines (o : KeyObservation) : List String :=
+  partsLines o.name ++ [escapeLine o.formula] ++ match o.guard? with
+    | none => ["unguarded"]
+    | some g => "guarded" :: partsLines g
+
+/-- An observation of `KeyObservation.lines` at the start of `ls`, and the
+lines after it. -/
+def KeyObservation.read? (ls : List String) : Option (KeyObservation × List String) := do
+  let (name, rest) ← partsOfLines? ls
+  let formula :: rest := rest | none
+  match rest with
+  | "unguarded" :: rest => return ({ name, formula := unescapeLine formula, guard? := none }, rest)
+  | "guarded" :: rest =>
+    let (g, rest) ← partsOfLines? rest
+    return ({ name, formula := unescapeLine formula, guard? := some g }, rest)
+  | _ => none
+
+/-- `n` observations of `KeyObservation.read?` at the start of `ls`, and
+the lines after them. -/
+def readObservations? : Nat → List String → Option (List KeyObservation × List String)
+  | 0, ls => some ([], ls)
+  | n + 1, ls => do
+    let (o, rest) ← KeyObservation.read? ls
+    let (os, rest) ← readObservations? n rest
+    return (o :: os, rest)
+
 /-- The lines that begin `k`'s entry. -/
 def CacheKey.lines (k : CacheKey) : String :=
-  s!"fren query cache {k.version}\ncvc5 {k.solver}\n{escapeLine k.script}\n"
+  let ls := [s!"fren query cache {k.version}", s!"cvc5 {escapeLine k.solver}", escapeLine k.script,
+    toString k.observations.length] ++ k.observations.flatMap (·.lines)
+  String.join (ls.map (· ++ "\n"))
 
 /-- The key at the start of an entry's lines, and the lines after it. -/
 def CacheKey.read? : List String → Option (CacheKey × List String)
-  | v :: c :: script :: rest => do
+  | v :: c :: script :: count :: rest => do
     let version ← (v.dropPrefix? "fren query cache ").bind (·.toString.toNat?)
-    let solver ← (c.dropPrefix? "cvc5 ").map (·.toString)
-    return ({ script := unescapeLine script, solver, version }, rest)
+    let solver ← (c.dropPrefix? "cvc5 ").map (unescapeLine ·.toString)
+    let (observations, rest) ← readObservations? (← count.toNat?) rest
+    return ({ script := unescapeLine script, observations, solver, version }, rest)
   | _ => none
 
 /-- Whether an entry answers a query (`cli::query_cache`): it is there,
@@ -156,9 +237,10 @@ def cvc5Version : IO String := do
 def QueryStore.new (dir? verify? : Option System.FilePath) : IO QueryStore := do
   return { dir?, verify?, solver := ← cvc5Version, mismatches := ← IO.mkRef #[], compared := ← IO.mkRef 0, writes := ← IO.mkRef 0 }
 
-/-- The key of `script`, a script and its model's observations. -/
-def QueryStore.key (st : QueryStore) (script : String) : CacheKey :=
-  { script, solver := st.solver, version := queryCacheVersion }
+/-- The key of the query `script` whose model reads `observations`; `none`
+if a name of them has a numeric component, which an entry cannot hold. -/
+def QueryStore.key? (st : QueryStore) (script : String) (observations : Array ModelObservation) : Option CacheKey :=
+  return CacheKey.of script (← observations.toList.mapM KeyObservation.of?) st.solver
 
 /-- The hex digits of `n`, 16 of them. -/
 def hex16 (n : UInt64) : String :=
@@ -233,17 +315,31 @@ def writeEntry (dir : System.FilePath) (k : CacheKey) (o : Outcome String) (hasM
   IO.FS.writeFile tmp text
   IO.FS.rename tmp p
 
+/-- Whether `dir` holds an entry of this `queryCacheVersion` and of cvc5's
+version `solver`: one whose answer a run could compare with. A change to
+either alters every key, and leaves none. -/
+def comparableEntries (dir : System.FilePath) (solver : String) : IO Bool := do
+  unless ← dir.isDir do return false
+  for f in ← dir.walkDir do
+    if ← f.isDir then continue
+    let some text ← (some <$> IO.FS.readFile f) <|> pure none | continue
+    if let some (k, _) := CacheKey.read? (text.splitOn "\n") then
+      if k.version == queryCacheVersion && k.solver == solver then return true
+  return false
+
 /-- The answer that `--query-cache` gives `script` for a query that wants
 a model if `wantModel`, if it gives one. -/
-def QueryStore.lookup? (st : QueryStore) (script : String) (wantModel : Bool) : IO (Option (Outcome String × Bool)) := do
-  let some dir := st.dir? | return none
-  lookupEntry? dir (st.key script) wantModel
+def QueryStore.lookup? (st : QueryStore) (script : String) (observations : Array ModelObservation) (wantModel : Bool) :
+    IO (Option (Outcome String × Bool)) := do
+  let (some dir, some k) := (st.dir?, st.key? script observations) | return none
+  lookupEntry? dir k wantModel
 
 /-- Records the solver's fresh answer `o` to `script`: compared with
 `--verify-query-cache`'s, and written to `--query-cache`. -/
-def QueryStore.record (st : QueryStore) (script : String) (o : Outcome String) (hasModel : Bool) : IO Unit := do
+def QueryStore.record (st : QueryStore) (script : String) (observations : Array ModelObservation) (o : Outcome String)
+    (hasModel : Bool) : IO Unit := do
   unless (CachedAnswer.of o hasModel).stored do return
-  let k := st.key script
+  let some k := st.key? script observations | return
   if let some old := st.verify? then
     if let some (o', hasModel') ← lookupEntry? old k false then
       st.compared.modify (· + 1)
