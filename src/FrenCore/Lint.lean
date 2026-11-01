@@ -1217,6 +1217,10 @@ inductive Named where
   | abstractType
   | typeAlias
   | constant
+  /-- A trait (`Reqs/Lang/Traits`). -/
+  | «trait»
+  /-- A law of a trait. -/
+  | law
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Named.describe : Named → String
@@ -1235,10 +1239,12 @@ def Named.describe : Named → String
   | .abstractType => "abstract type"
   | .typeAlias => "type alias"
   | .constant => "constant"
+  | .trait => "trait"
+  | .law => "law"
 
 /-- The case of a name (`lint::naming_case`). -/
 def Named.case : Named → Case
-  | .enumeration | .variant | .record | .abstractType | .typeAlias => .camel
+  | .enumeration | .variant | .record | .abstractType | .typeAlias | .trait => .camel
   | .constant => .upper
   | _ => .snake
 

@@ -1,0 +1,77 @@
+-- Traits (`Reqs/Lang/Traits`): a carrier, methods, laws, and
+-- expectations checked from the laws alone, in both front ends. Each law
+-- is outside the decidable core, for now. In a module, since Lean has an
+-- `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod traits
+
+type Key
+
+set_option fren.lint.undecidable "allow" in
+trait KV {
+    fn put(Self, Key, Int): Self
+    fn get(Self, Key): Option<Int>
+
+    law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
+
+    -- Follows from the law.
+    expect overwritten(s: Self, k: Key, v: Int, w: Int) {
+        expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)
+    }
+
+    -- The short form, over the carrier.
+    expect read_back: forall (s: Self) (k: Key) (v: Int), get(put(s, k, v), k) = Option::Some(v)
+
+    -- The laws are quantified, so the solver seldom finds a model of them:
+    -- a false claim, and a cover goal, are undecided.
+    expect other_key(s: Self, k: Key, j: Key, v: Int) {
+        expect same: get(put(s, k, v), j) = Option::Some(v)  --~ warning: could not decide whether `traits::KV::other_key::same` holds
+        cover stored: get(s, k) != Option::None  --~ warning: could not decide whether `traits::KV::other_key::stored` can be met
+    }
+}
+
+-- A method's contract is checked as an uninterpreted function's is, at
+-- the carrier, and its postcondition is a fact of each application.
+set_option fren.lint.undecidable "allow" in
+trait Sized {
+    fn size(s: Self): (r: Int) {
+        ensure natural: r >= 0
+    }
+    fn grow(Self): Self
+
+    law grows(s: Self): size(grow(s)) = size(s) + 1
+
+    expect positive(s: Self) {
+        expect after_grow: size(grow(s)) > 0
+    }
+}
+
+-- The methods of a trait shadow the module's names, without `!`, and
+-- every other name is the module's.
+fn get(Int): Int
+
+const LIMIT: Int := 3
+
+set_option fren.lint.undecidable "allow" in
+trait Bounded {
+    fn get(Self): Int
+
+    law bounded(s: Self): get(s) <= LIMIT
+
+    expect below: forall (s: Self), get(s) < LIMIT + 1
+}
+
+-- Without laws, an expectation is about every carrier and every method.
+trait Lawless {
+    fn value(Self): Int
+
+    expect congruent(s: Self, t: Self) {
+        expect same: when s = t, value(s) = value(t)
+    }
+
+    -- Nothing relates two carriers' values.
+    expect equal(s: Self, t: Self) {
+        expect same: value(s) = value(t)  --~ error: expectation `traits::Lawless::equal::same` does not hold
+    }
+}

@@ -1,0 +1,61 @@
+-- Static rules of traits (`Reqs/Lang/Traits`), in both front ends.
+set_option fren.lint.dead_code "allow"
+
+mod traits_static
+
+type Key
+
+-- A trait's members are methods, laws and expectations
+-- (`lang::trait_member`), each its own first error.
+trait Members {
+    fn size(Self): Int
+    const START: Int := 0  --~ error: a trait has no constants
+}
+
+trait Defaults {
+    fn size(Self): Int
+    fn twice(s: Self): Int := 2 * size(s)  --~ error: a method of trait `traits_static::Defaults` has no body, for now
+}
+
+trait Visible {
+    pub fn size(Self): Int  --~ error: a member of trait `traits_static::Visible` is not written `pub`
+}
+
+trait Generic {
+    fn pick<T>(Self, T): T  --~ error: a method of trait `traits_static::Generic` has no type parameters, for now
+}
+
+-- `Self` and the members share one namespace.
+trait Twice {
+    fn size(Self): Int
+    fn size(Self, Int): Int  --~ error: `size` is defined multiple times in this trait
+}
+
+trait Carrier {
+    fn Self(Self): Int  --~ error: `Self` is defined multiple times in this trait
+}
+
+-- `Self` is an abstract type, so no payload is one.
+trait Payloads {
+    fn wrap(Self): Option<Self>  --~ error: a payload cannot have the abstract type `traits_static::Payloads::Self`
+}
+
+-- Outside a trait, `Self` means nothing.
+fn outside(Self): Int  --~ error: cannot find `Self` in this scope
+
+-- A law is a `Bool`, and its variables are distinct.
+trait Laws {
+    fn size(Self): Int
+
+    law number(s: Self): size(s)  --~ error: type mismatch: expected `Bool`, found `Int`
+    law twice(s: Self, s: Self): size(s) = size(s)  --~ error: parameter `s` is defined multiple times
+}
+
+-- Each law is outside the decidable core, for now, so `undecidable`, an
+-- error by default, reports it.
+trait Undecidable {
+    fn size(Self): Int
+
+    law natural(s: Self): size(s) >= 0  --~ error: outside the decidable core
+}
+--@ exit: 2

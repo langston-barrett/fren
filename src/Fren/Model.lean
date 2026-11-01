@@ -548,6 +548,9 @@ structure CompInfo where
   /-- Internal checks generated for a declared subset alias. -/
   subset? : Option Name := none
   subsetInvariant? : Option Name := none
+  /-- For an expectation of a trait: the trait's laws, each a closed
+  proposition over the placeholders (`Core.Comp.laws`). -/
+  laws : Array (Name × Expr) := #[]
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)
@@ -784,8 +787,11 @@ def State.recordOf? (s : State) (ty : Expr) : Option RecordInfo := ty.getAppFn.c
 
 /-- Per-file state; not visible to importing files. -/
 structure LocalState where
-  /-- The module that items are currently being declared in. -/
+  /-- The module that items are currently being declared in, or the trait
+  whose members are. -/
   currentModule : Name := .anonymous
+  /-- A trait's members are being declared (`Reqs/Lang/Traits`). -/
+  inTrait : Bool := false
   /-- The names that the pattern tests of the chain of `and` being
   translated bind, innermost last, for the later operands of the chain and
   the body of the `when` or `if` whose condition it is

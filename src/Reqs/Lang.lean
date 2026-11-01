@@ -21,6 +21,7 @@ open Fren.Lang
 #fren_md "Lang/Items.md"
 #fren_md "Lang/Generics.md"
 #fren_md "Lang/GenericFunctions.md"
+#fren_md "Lang/Traits.md"
 #fren_md "Lang/Prelude.md"
 #fren_md "Lang/Scope.md"
 #fren_md "Lang/Procedures.md"

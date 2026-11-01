@@ -575,6 +575,11 @@ structure Comp (F : Type) where
   /-- Source Boolean groups, whose owners match named assumptions or requirements. -/
   branchGroups : Array (BranchGroup F) := #[]
   memberGroups : Array (MemberGroup F) := #[]
+  /-- For an expectation of a trait: the trait's laws, each a closed
+  formula, which every query with the assumptions and calls among its
+  hypotheses has before them (`Comp.hyps`), but realizability's query of the
+  assumptions alone (`Reqs/Lang/Traits#meaning`). -/
+  laws : Array (Name × F) := #[]
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -717,9 +722,9 @@ realizability. -/
 def Comp.substHyps (c : Comp F) (b : Backend m F V) (hs : Array (Name × F)) : Array (Name × F) :=
   hs.map fun (n, f) => (n, c.subst b .realizable f)
 
-/-- The assumptions, then what each call contributes (`I`). -/
+/-- The laws, the assumptions, then what each call contributes (`I`). -/
 def Comp.hyps (c : Comp F) (b : Backend m F V) (upTo : Nat := c.insts.size) : Array (Name × F) :=
-  c.assumes ++ (c.insts.extract 0 upTo).map fun i => (i.name, b.conj #[i.bindings, i.behaviour])
+  c.laws ++ c.assumes ++ (c.insts.extract 0 upTo).map fun i => (i.name, b.conj #[i.bindings, i.behaviour])
 
 /-- The outputs whose values a clash note may give: the public ones that
 are not defined, since realizability replaces those by their definitions. -/
@@ -740,7 +745,7 @@ procedure whose inputs, definitions, assumptions or calls need the ordinary
 universal-completion protocol. Interpretation freedom is checked separately. -/
 def Comp.fixedInhabitation (c : Comp F) (interprets : F → Bool := fun _ => false) : Bool :=
   c.inhabitation && !c.realizableInterpreted interprets && c.defs.isEmpty &&
-    c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
+    c.laws.isEmpty && c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
 
 /-- Additional all-model forcing relationships under the general assumptions
 and calls. The primary core may be input-local; its pins are not premises. -/

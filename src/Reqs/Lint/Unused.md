@@ -255,7 +255,9 @@ itself unused.
 
 Procedures and global expectations are never dead: each is a guarantee,
 or a claim about guarantees, in its own right, and is checked and
-[traced](../Trace.md) whether or not anything uses it. `pub` items may be used
+[traced](../Trace.md) whether or not anything uses it. Nor is a
+[trait](../Lang/Traits.md), whose expectations are checked whether or not
+anything uses it, nor its methods and laws, which are its interface. `pub` items may be used
 by other files. `lint::Named` is what a name can name, which the
 [naming conventions](NonstandardStyle.md#naming-conventions) also use. `lint::dead_item`
 states this:
@@ -277,6 +279,8 @@ pub enum Named {
     AbstractType,
     TypeAlias,
     Constant,
+    Trait,
+    Law,
 }
 
 use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Record, TypeAlias}

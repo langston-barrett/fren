@@ -41,6 +41,8 @@ inductive ItemKind where
   | compItem
   /-- A global expectation. -/
   | expectItem
+  /-- A trait (`Reqs/Lang/Traits`). -/
+  | traitItem
   deriving Inhabited, BEq, Repr
 
 /-- An item declared in a Fren module. -/
@@ -122,6 +124,7 @@ def Resolved.describe : Resolved → String
   | .item { kind := .fnItem, .. } => "a function"
   | .item { kind := .compItem, .. } => "a procedure"
   | .item { kind := .expectItem, .. } => "a global expectation"
+  | .item { kind := .traitItem, .. } => "a trait"
   | .variant .. => "an enum variant"
 
 /-- The full path of what a path resolved to. -/
@@ -135,7 +138,7 @@ def ItemKind.bindingKind : ItemKind → BindingKind
   | .enumItem => .enumeration
   | .constItem => .constant
   | .fnItem => .function
-  | .recordItem | .typeItem | .compItem | .expectItem => .item
+  | .recordItem | .typeItem | .compItem | .expectItem | .traitItem => .item
 
 /-- What a binding of what a path resolved to is: a variant's is
 `variant`, as when it is imported by name. -/

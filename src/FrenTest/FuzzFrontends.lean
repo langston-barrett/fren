@@ -935,6 +935,61 @@ def subsetOutputs : R String := do
     out := out ++ s!"\npub proc so{c}(x: Int, y: Int){rs} \{\n{body}}\n"
   return out
 
+mutual
+/-- A term of a trait's carrier, over the carriers `ss` and the integers
+`xs`, of depth at most `d` (`traitGroup`). -/
+partial def traitSelf (sc : WScope) (ss xs : Array String) (d : Nat) : R String := do
+  if d == 0 || (← chance 50) then pick ss
+  else return s!"step({← traitSelf sc ss xs (d - 1)}, {← traitInt sc ss xs (d - 1)})"
+
+/-- An integer term of a trait: a variable, a literal, an observation, a
+sum, or an expression of the spec's (`traitGroup`). -/
+partial def traitInt (sc : WScope) (ss xs : Array String) (d : Nat) : R String := do
+  match ← below (if d == 0 then 3 else 6) with
+  | 0 => if xs.isEmpty then return toString (← below 4) else pick xs
+  | 1 => return toString (← below 4)
+  | 2 => return s!"obs({← traitSelf sc ss xs 0})"
+  | 3 => return s!"obs({← traitSelf sc ss xs (d - 1)})"
+  | 4 => return s!"{← traitInt sc ss xs (d - 1)} + {← traitInt sc ss xs (d - 1)}"
+  | _ => gen { sc with vars := xs.map (·, WTy.int, true) } .int 1
+end
+
+/-- A `Bool` term of a trait, which applies `ok?` if `flag` (`traitGroup`). -/
+def traitBool (sc : WScope) (flag : Bool) (ss xs : Array String) (d : Nat) : R String := do
+  match ← below (if flag then 4 else 3) with
+  | 0 => return s!"{← traitInt sc ss xs d} = {← traitInt sc ss xs d}"
+  | 1 => return s!"{← traitInt sc ss xs d} <= {← traitInt sc ss xs d}"
+  | 2 => return s!"{← traitSelf sc ss xs d} = {← traitSelf sc ss xs d}"
+  | _ => return s!"ok?({← traitSelf sc ss xs d})"
+
+/-- A trait (`Reqs/Lang/Traits`): methods in both of an uninterpreted
+function's forms, one with a contract, laws over them, and expectations
+in both of a global expectation's forms, whose terms apply the methods to
+each other and to the spec's constants and functions. Its laws are
+outside the decidable core, so `undecidable` is allowed on it, and
+nothing in it is an error. -/
+def traitGroup (sc : WScope) : R String := do
+  let contract ← chance 50
+  let flag ← chance 50
+  let mut out := "set_option fren.lint.undecidable \"allow\" in\npub trait Tr {\n"
+  out := out ++ (if contract then "    fn obs(s: Self): (r: Int) {\n        ensure low: r >= 0\n    }\n"
+    else "    fn obs(Self): Int\n")
+  out := out ++ "    fn step(Self, Int): Self\n"
+  if flag then out := out ++ "    fn ok?(Self)\n"
+  for k in [0:(← below 2) + 1] do
+    let law ← if ← chance 50 then
+        pure s!"obs(step(s, x)) = {← traitInt sc #["s"] #["x"] 1}"
+      else traitBool sc flag #["s"] #["x"] 1
+    out := out ++ s!"\n    law l{k}(s: Self, x: Int): {law}\n"
+  for k in [0:(← below 2) + 1] do
+    if ← chance 50 then
+      let assume ← if ← chance 40 then pure s!"        assume a: {← traitBool sc flag #["s", "t"] #["x"] 0}\n" else pure ""
+      let claim ← traitBool sc flag #["s", "t"] #["x"] 1
+      out := out ++ s!"\n    expect e{k}(s: Self, t: Self, x: Int) \{\n{assume}        expect c: {claim}\n    }\n"
+    else
+      out := out ++ s!"\n    expect e{k}: forall (s: Self) (x: Int), {← traitBool sc flag #["s"] #["x"] 1}\n"
+  return out ++ "}\n"
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1144,6 +1199,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- Contracts of each form under enumeration, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← enumContracts "kc")
+  -- A trait, last too.
+  cuts := cuts.push out
+  if ← chance 30 then out := out ++ "\n" ++ (← traitGroup sc)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)

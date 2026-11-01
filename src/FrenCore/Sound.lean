@@ -133,10 +133,10 @@ def Sound.Holds (hs : Array (Name × F)) (ρ : Env Val) : Prop := ∀ h ∈ hs, 
 /-- `ρ` meets the definitions: each defined output is its definition. -/
 def Sound.Defined (ρ : Env Val) : Prop := ∀ d ∈ c.defs, s.den d.2.1 ρ
 
-/-- `ρ` meets the assumptions, and its first `k` calls are bound as the
-procedure says and behave as their procedures do. -/
+/-- `ρ` meets the laws and the assumptions, and its first `k` calls are
+bound as the procedure says and behave as their procedures do. -/
 def Sound.Possible (ρ : Env Val) (k : Nat := c.insts.size) : Prop :=
-  (∀ a ∈ c.assumes, s.den a.2 ρ) ∧
+  (∀ a ∈ c.laws ++ c.assumes, s.den a.2 ρ) ∧
     ∀ (j : Nat) (hj : j < c.insts.size), j < k → s.den c.insts[j].bindings ρ ∧ s.den c.insts[j].behaviour ρ
 
 /-- `ρ` is a possible environment of the procedure: it meets the
@@ -732,14 +732,14 @@ def Sound.ProcedureFailure (result : CheckResult) : Prop :=
 
 /-- The declaration carrier is checked, rather than inferred from its tag. -/
 theorem Comp.fixedInhabitation_shape (h : c.fixedInhabitation = true) :
-    c.defs = #[] ∧ c.assumes = #[] ∧ c.insts = #[] ∧ c.vars.all (·.role == .output) = true := by
+    c.defs = #[] ∧ c.laws = #[] ∧ c.assumes = #[] ∧ c.insts = #[] ∧ c.vars.all (·.role == .output) = true := by
   simp only [Comp.fixedInhabitation, Bool.and_eq_true, Array.isEmpty_iff] at h
-  exact ⟨h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+  exact ⟨h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
 
 private theorem Sound.fixed_behaves (hc : c.fixedInhabitation = true) (ρ : Env Val) :
     s.Behaves ρ ↔ ∀ r ∈ c.reqs, s.den r.2 ρ := by
-  obtain ⟨hd, ha, hi, _⟩ := c.fixedInhabitation_shape hc
-  simp [Sound.Behaves, Sound.Admits, Sound.Defined, Sound.Possible, hd, ha, hi]
+  obtain ⟨hd, hl, ha, hi, _⟩ := c.fixedInhabitation_shape hc
+  simp [Sound.Behaves, Sound.Admits, Sound.Defined, Sound.Possible, hd, hl, ha, hi]
 
 /-- The checker has two actual domains: a fixed declaration needs a typed
 witness; a procedure needs completion for every possible input environment. -/
@@ -865,8 +865,8 @@ No assumption that the declaration tag itself proves interpretation locality
 is used; the locality bridge below is a separate semantic theorem. -/
 theorem checkFixedInhabitation_pass (hc : c.fixedInhabitation = true)
     (h : (checkRealizable b c).run.verdict = .pass) : ∃ ρ, s.Typed ρ ∧ s.Behaves ρ := by
-  obtain ⟨hdefs, ha, hi, _⟩ := c.fixedInhabitation_shape hc
-  simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, ha, hi] at h
+  obtain ⟨hdefs, hl, ha, hi, _⟩ := c.fixedInhabitation_shape hc
+  simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, hl, ha, hi] at h
   cases hq : b.query c.reqs b.falseF true <;>
     simp [hq, run_eq, pure_eq] at h
   obtain ⟨ρ, ht, hr, _, _⟩ := s.query_sat hq
@@ -891,17 +891,17 @@ theorem checkRealizable_fail (hd : s.DefsOk) (h : (checkRealizable b c).run.verd
         ∀ ρ, s.Typed ρ → ¬s.Holds keep ρ
     else s.ProcedureFailure (checkRealizable b c).run := by
   by_cases hc : c.fixedInhabitation = true
-  · obtain ⟨hdefs, ha, hi, _⟩ := c.fixedInhabitation_shape hc
+  · obtain ⟨hdefs, hl, ha, hi, _⟩ := c.fixedInhabitation_shape hc
     simp only [hc, if_true]
     have hh := h
-    simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, ha, hi] at hh
+    simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, hl, ha, hi] at hh
     cases hq : b.query c.reqs b.falseF true <;>
       simp [hq, run_eq, pure_eq] at hh
     have hall := s.query_unsat hq
     obtain ⟨keep, hsub, hmin, hent, _⟩ := minimize_spec s #[] c.reqs b.falseF
     refine ⟨fun ρ ht hb => s.falseF ht (hall ρ ht ((s.fixed_behaves hc ρ).1 hb)), keep, hsub, ?_, ?_⟩
     · simp only [run_eq] at hmin
-      simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, ha, hi, hq,
+      simp [checkRealizable, hc, Comp.defEqs, CheckKind.substitutes, Comp.hyps, hl, ha, hi, hq,
         bind_eq, run_eq, pure_eq, hmin]
     · intro ρ ht hk
       exact s.falseF ht (hent (fun ρ ht hr => hall ρ ht (by simpa [Sound.Holds] using hr))

@@ -6,6 +6,7 @@ import FrenCore.Guards
 import FrenCore.Patterns
 import FrenCore.Quantifier
 import FrenCore.SubsetTypes
+import FrenCore.Traits
 import FrenCore.Ty
 import FrenCore.Typing
 import Impls.Check
@@ -1907,6 +1908,28 @@ impl guarded_match: lang::guarded_match for (arms : List (Bool × Bool × Int)) 
       obtain ⟨hlt, _, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
       rw [Fren.Seq.nth_of_lt _ _ (by simp) (by simpa using hlt)]
       simp [List.getElem?_eq_getElem hlt]
+
+/-! ## Traits (`Reqs/Lang/Traits`) -/
+
+/-- What a member of a trait is, as written (`lang::TraitMemberKind`). -/
+def toTraitMemberKind : Fren.Core.TraitMember → lang.TraitMemberKind
+  | .method => .Method
+  | .law => .Law
+  | .expectation => .Expectation
+  | .definedFunction => .DefinedFunction
+  | .other _ => .OtherItem
+
+-- For every member, as written, with the check that both front ends make
+-- of it (`Core.traitMemberAccepted`).
+impl trait_member: lang::trait_member for (k : Fren.Core.TraitMember) (p g u : Bool) {
+  kind := toTraitMemberKind k,
+  pub? := p,
+  generic? := g,
+  uses? := u,
+  accepted? := Fren.Core.traitMemberAccepted k p g u,
+} by
+  intro k p g u _
+  cases k <;> cases p <;> cases g <;> cases u <;> simp [fren_spec, toTraitMemberKind, Fren.Core.traitMemberAccepted]
 
 /-! ## Generic types (`Reqs/Lang/Generics`) -/
 

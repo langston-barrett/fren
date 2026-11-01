@@ -1061,7 +1061,9 @@ verdict. Its calls' assumptions are checked as a procedure's are, from
 `A` and the earlier calls, and so are its cover goals and the vacuity of
 its expectations' triggers. A global expectation in the short form,
 `expect n: e`, is one with no parameters and no calls, whose `A` and `I`
-are empty.
+are empty. An expectation of a [trait](Lang/Traits.md#expectations) has
+the trait's laws `L` among the hypotheses of each of its queries, before
+`A` and `I`, but for its realizability's query of `A` alone.
 
 Its realizability check is a procedure's with no outputs: its
 counterexample query proves `∃ o. R` at once, so it fails just where `A`

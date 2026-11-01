@@ -1,0 +1,13 @@
+error[F0222]: a trait has no procedures
+ --> test/cli/names/f0222_trait_member.fren:3:10
+  |
+3 |     proc reset(c: Int): (d: Int) {
+  |          ^^^^^ not a member of a trait
+  |
+  = note: a trait has methods, which are functions without a body, laws and expectations
+  = help: declare it outside the trait
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0222`.
+exit=2

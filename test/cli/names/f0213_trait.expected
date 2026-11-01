@@ -1,0 +1,12 @@
+error[F0213]: `count` is defined multiple times in this trait
+ --> test/cli/names/f0213_trait.fren:3:8
+  |
+3 |     fn count(Self, Int): Int
+  |        ^^^^^ defined again here
+  |
+  = note: a trait's carrier `Self`, methods, laws and expectations share one namespace
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0213`.
+exit=2

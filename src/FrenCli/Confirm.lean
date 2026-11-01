@@ -522,6 +522,8 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     inhabitation := core.inhabitation
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, expects := props core.expects
+    -- A trait's laws, quantified, which the evaluator does not decide.
+    laws := core.laws.map fun (n, s) => (n, (s, .unknown))
     -- An uninterpreted function's postconditions, of its value, which the
     -- evaluator's procedure of its contract does not have: undecided.
     reqs := if core.fn?.isSome then core.reqs.map fun (n, s) => (n, (s, .unknown)) else props core.reqs
