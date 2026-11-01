@@ -125,6 +125,12 @@ structure Prelude where
   /-- The first declaration of each quoted symbol (`quote`), computed once,
   when first needed. -/
   byQuoted : Thunk (Std.HashMap String Nat) := Thunk.pure {}
+  /-- The symbols of the recursive functions, and of the definitions of
+  `unfolds` whose bodies apply one, directly or through another of them:
+  a formula that mentions none of them has no application of a recursive
+  function once unfolded (`recursiveQueryFacts`). Computed once, when
+  first needed. -/
+  recReach : Thunk (Array String) := Thunk.pure #[]
   deriving Inhabited
 
 /-- The `define-fun`s of `decls`, by symbol, with their parameters and
@@ -159,14 +165,32 @@ def queryDefinitions (decls : Array PreludeDecl) (factHeads : Array String)
         changed := true
   return out
 
+/-- The symbols of the recursive functions of `decls`, and of the
+definitions of `defs` whose bodies apply one, directly or through another
+of them: the symbols that unfolding with `defs` can turn into an
+application of a recursive function. -/
+def recursionReach (decls : Array PreludeDecl) (defs : Std.HashMap String (Array String × SeqElems.SExpr)) :
+    Array String := Id.run do
+  let mut reach : Std.HashSet String := .ofArray (decls.filterMap fun d => d.recursion?.map fun _ => quote d.syms[0]!)
+  let mut changed := true
+  while changed do
+    changed := false
+    for (f, _, body) in defs do
+      if !reach.contains f && body.mentionsAny reach then
+        reach := reach.insert f
+        changed := true
+  return reach.toArray
+
 def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Prelude :=
   let marked := SeqElems.markedDefs (decls.map (·.text))
   let decls := if marked.isEmpty then decls else decls.map fun d => { d with text := SeqElems.plainText d.text }
   let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
+  let unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked
   { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
     smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked
-    unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked
+    unfolds
+    recReach := Thunk.mk fun _ => recursionReach decls unfolds.get
     recs := Thunk.mk fun _ => decls.filterMap fun d => d.recursion?.map fun b => (quote d.syms[0]!, b.1, SeqElems.parse b.2)
     byQuoted := Thunk.mk fun _ => decls.zipIdx.foldl (init := {}) fun m (d, i) =>
       d.syms.foldl (fun m s => if m.contains (quote s) then m else m.insert (quote s) i) m }
@@ -759,9 +783,19 @@ partial def contractBody (own : SeqElems.SExpr) (body : SeqElems.SExpr) (e : Seq
 expanded before finding applications; equation-introduced applications receive
 only contract facts. Guards follow the original conditional branches. -/
 partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (Bool × Contract))
-    (types : Std.HashMap String String) (hyps : Array (Lean.Name × String)) (goal : String) : Array (Lean.Name × String) := Id.run do
+    (types : Std.HashMap String String) (hyps : Array (Lean.Name × String)) (goal : String)
+    (mentioned : Std.HashSet String) : Array (Lean.Name × String) := Id.run do
   let recs := prelude.recs.get
   if recs.isEmpty then return #[]
+  -- Unfolding brings an application of a recursive function only into a
+  -- formula that mentions one, or a definition that applies one.
+  -- `mentioned` has the names of the formulas' quoted symbols
+  -- (`quotedSymbols`); a symbol that is not quoted is taken to be
+  -- mentioned.
+  let mentions (r : String) : Bool :=
+    if r.length ≥ 2 && r.startsWith "|" && r.endsWith "|" then mentioned.contains ((r.drop 1).dropEnd 1).toString
+    else true
+  unless prelude.recReach.get.any mentions do return #[]
   let defs := prelude.unfolds.get
   let expand (s : String) := (SeqElems.parse s).unfold defs
   let mut work := #[]
@@ -902,7 +936,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
-    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts hyps goal ++ hyps
+    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts hyps goal mentioned ++ hyps
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.

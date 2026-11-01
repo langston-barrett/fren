@@ -231,6 +231,29 @@ def Enum.iteLazy (c : Option Bool) (yes no : Unit → Option Bool) : Option Bool
   | some false => no ()
   | none => let a := yes (); if a == no () then a else none
 
+/-- The compiled functions of one procedure's enumeration, over the slots'
+values and an assignment (`Enumerate.enumerateOnly`). They come from one
+evaluation, so that they share its environment, and `batch` with them: Lean
+interprets each, and a call of one from compiled code starts an
+interpreter, whose caches of the symbols and constants that the function
+reads start empty, unless an interpreter of the same environment is
+running. `batch` runs its argument within one (`Core.Enumeration.Atoms.batch`),
+so that each call of the others then runs in it. -/
+structure Enum.Compiled where
+  truths : Array (Array (Array Core.Enumeration.EVal) → Array Nat → Option Bool)
+  atomKnown : Array (Array (Array Core.Enumeration.EVal) → Array Nat → Bool)
+  defKnown : Array (Array (Array Core.Enumeration.EVal) → Array Nat → Bool)
+  sames : Array (Array (Array Core.Enumeration.EVal) → Array Nat → Array Nat → Option Bool)
+  batch : (Unit → Array Nat) → Array Nat
+  deriving Inhabited
+
+unsafe def Enum.compileAllUnsafe (e : Expr) : MetaM Enum.Compiled :=
+  evalExpr Enum.Compiled (mkConst ``Enum.Compiled) e
+
+/-- The value of `e`, an `Enum.Compiled`, compiled and evaluated. -/
+@[implemented_by Enum.compileAllUnsafe]
+opaque Enum.compileAll (e : Expr) : MetaM Enum.Compiled
+
 namespace Enumerate
 
 open Core.Enumeration
@@ -262,12 +285,21 @@ def mkArrayChunked (base : Name) (t : Expr) (vs : List Expr) : MetaM Expr := do
   if vs.length ≤ 32 then mkArrayLit t vs else tableOf base t vs
 
 /-- The integer `i` as a literal, as Lean writes it. -/
-def intExpr (i : Int) : MetaM Expr := do
-  if 0 ≤ i then mkNumeral (mkConst ``Int) i.toNat
-  else mkAppM ``Neg.neg #[← mkNumeral (mkConst ``Int) (-i).toNat]
+def intExpr (i : Int) : MetaM Expr :=
+  -- `mkIntLit` is the literal that `mkNumeral` and `Neg.neg` make, without
+  -- synthesizing their instances.
+  return mkIntLit i
+
+/-- `f`, a constant over one universe `{α : Type u}`, applied to the type
+`α` and to `x`, as `mkAppM` applies it, at the universe of `α`'s type. -/
+def mkApp1Typed (f : Name) (α x : Expr) : MetaM Expr := do
+  return mkApp2 (mkConst f [← getDecLevel α]) α x
 
 /-- The value `v` of the Lean type `ty` (`Core.Enumeration.EVal`), the
-`k`th value of an abstract type being `k : Nat`. -/
+`k`th value of an abstract type being `k : Nat`. Each application is
+built as `mkAppM` builds it, at its arguments' types, but without its
+unification, which took most of the time of enumerating a slot of
+thousands of values. -/
 partial def valueExpr (ty : Expr) (v : EVal) : MetaM Expr := do
   let s ← getState
   match v with
@@ -277,13 +309,17 @@ partial def valueExpr (ty : Expr) (v : EVal) : MetaM Expr := do
   | .str t => return mkStrLit t
   | .pair a b =>
     let ts := ty.getAppArgs
-    mkAppM ``Prod.mk #[← valueExpr ts[0]! a, ← valueExpr ts[1]! b]
+    let a ← valueExpr ts[0]! a
+    let b ← valueExpr ts[1]! b
+    let α ← inferType a
+    let β ← inferType b
+    return mkApp4 (mkConst ``Prod.mk [← getDecLevel α, ← getDecLevel β]) α β a b
   | .set xs =>
     let elem := (← whnfR ty).getAppArgs[0]!
-    mkAppM ``Fren.FinSet.ofList #[← mkListLit elem (← xs.mapM (valueExpr elem))]
+    mkApp1Typed ``Fren.FinSet.ofList elem (← mkListLit elem (← xs.mapM (valueExpr elem)))
   | .seq xs =>
     let elem := (← whnfR ty).getAppArgs[0]!
-    mkAppM ``Fren.Seq.ofList #[← mkListLit elem (← xs.mapM (valueExpr elem))]
+    mkApp1Typed ``Fren.Seq.ofList elem (← mkListLit elem (← xs.mapM (valueExpr elem)))
   | .ctor idx args =>
     let ty ← whnfR ty
     let some d := ty.getAppFn.constName? | throwError "not a datatype: {ty}"
@@ -1091,7 +1127,20 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   let own := c.vars.filter (·.defn?.isNone)
   let copied := own.filter fun v => (Core.Symbol.ofRole v.role).copied
   let slotTys := own.map (·.type) ++ copied.map (·.type) ++ unspec.map (hiddenTy <| ·.getArg! 0)
-  let slotVals ← (slotTys.zip values).mapM fun (t, vs) => vs.mapM (valueExpr (natTy t))
+  -- The `j`th value of the slot `i`, as a Lean term, built when first
+  -- read: a slot of a collection can have tens of thousands of values, of
+  -- which the search reads most only through the decoder (`decoderOf`).
+  let slotValCache ← IO.mkRef ({} : Std.HashMap (Nat × Nat) Expr)
+  let slotVal (i j : Nat) : MetaM (Option Expr) := do
+    if let some e := (← slotValCache.get)[(i, j)]? then return some e
+    let some t := slotTys[i]? | return none
+    let some v := values[i]?.bind (·[j]?) | return none
+    let e ← valueExpr (natTy t) v
+    slotValCache.modify (·.insert (i, j) e)
+    return some e
+  let slotSize (i : Nat) : Nat := if i < slotTys.size then (values[i]?.map (·.size)).getD 0 else 0
+  let slotVals (i : Nat) : MetaM (Array Expr) :=
+    (List.range (slotSize i)).toArray.filterMapM (slotVal i)
   -- The locals that the slots stand for: the variables', then the hidden
   -- slots', which replace the unspecified values.
   withLocalDeclsD (unspec.map fun u => (`u, fun _ => pure (natTy (hiddenTy (u.getArg! 0))))) fun hfvs => do
@@ -1123,8 +1172,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   -- written into the code instead, once (`mkArrayChunked`).
   let slotDecs ← (slotTys.zip values).mapM fun (t, vs) =>
     decoderOf (natTy t) (vs.foldl (fun m v => max m (evalDepth v)) 0)
-  let slotTables ← (slotTys.zip slotVals).zip slotDecs |>.mapM fun ((t, vs), dec?) =>
-    if dec?.isSome then pure none else some <$> mkArrayChunked tableBase (natTy t) vs.toList
+  let slotTables ← (slotTys.zip slotDecs).zipIdx.mapM fun ((t, dec?), i) => do
+    if dec?.isSome then pure none else some <$> mkArrayChunked tableBase (natTy t) (← slotVals i).toList
   let tablesTy ← mkAppM ``Array #[← mkAppM ``Array #[evalTy]]
   -- `e` over the slots' values `tables` and the assignment `env`, or, if
   -- `at?` gives one, with each slot's value in that assignment written in.
@@ -1136,14 +1185,16 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     let picks ← slotFvs.zipIdx.mapM fun (_, j) => do
       let i := slotIdx[j]!
       let t := natTy slotTys[i]!
-      let vs := slotVals[i]!
       if let some a := at? then
-        if let some v := vs[a.getD i 0]? then return v
-      let d ← if h : 0 < vs.size then pure vs[0] else mkAppOptM ``Inhabited.default #[some t, none]
+        if let some v ← slotVal i (a.getD i 0) then return v
+      let d : MetaM Expr := do
+        if let some v ← slotVal i 0 then pure v else mkAppOptM ``Inhabited.default #[some t, none]
       match slotDecs[i]!, slotTables[i]! with
-      | some dec, _ => mkAppOptM ``Enum.pickE #[some t, some dec, some tables, some env, some (mkNatLit i)]
-      | none, some table => return mkApp5 (mkConst ``Enum.pick) t table d env (mkNatLit i)
-      | none, none => return d
+      | some dec, _ =>
+        if slotSize i == 0 then discard d
+        mkAppOptM ``Enum.pickE #[some t, some dec, some tables, some env, some (mkNatLit i)]
+      | none, some table => return mkApp5 (mkConst ``Enum.pick) t table (← d) env (mkNatLit i)
+      | none, none => d
     let e := e.replaceFVars slotFvs picks
     -- Boolean definitions can carry elaboration-time classical decisions.
     -- Rebuild those decisions after substituting the finite interpretation,
@@ -1165,8 +1216,6 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       withLocalDeclD `tables tablesTy fun tables => withLocalDeclD `env arrNat fun env => do
         mkLambdaFVars #[tables, env] (← body tables env)
     let fnTy ← mkArrow tablesTy (← mkArrow arrNat (mkConst ``Bool))
-    let compile1 (fs : Array Expr) : MetaM (Array (Array Nat → Bool)) := do
-      return (← compileValues (Array (Array EVal) → Array Nat → Bool) fnTy fs).map (· values)
     -- The values of a quantified type up to the bound, and whether they
     -- are all of its values; one with too many is an error.
     let domainError ← IO.mkRef (none : Option Core.Msg)
@@ -1189,11 +1238,9 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     -- assignment.
     let optionBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
     let truthTy ← mkArrow tablesTy (← mkArrow arrNat optionBool)
-    let compileTruth (fs : Array Expr) : MetaM (Array (Array Nat → Option Bool)) := do
-      return (← compileValues (Array (Array EVal) → Array Nat → Option Bool) truthTy fs).map (· values)
-    let evals ← compileTruth (← atoms.mapM fun a => fn1 fun tables env => do
+    let evalFns ← atoms.mapM fun a => fn1 fun tables env => do
       let e ← overWith tables env none a
-      if ← hasQuantifier e then partialDecide domain e else mkAppM ``Option.some #[← decideOf e])
+      if ← hasQuantifier e then partialDecide domain e else mkAppM ``Option.some #[← decideOf e]
     if let some msg ← domainError.get then return .error msg
     -- Whether each atom, and each defined output, that has an index is
     -- unknown in an assignment with the indexes out of range unknown, but
@@ -1206,12 +1253,10 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
         else pure (← partialValue strictDomain x, ← partialValue domain x)
       return mkApp2 (mkConst ``or) (← mkAppM ``Option.isSome #[strict])
         (mkApp (mkConst ``not) (← mkAppM ``Option.isSome #[normal]))
-    let atomKnown ← compile1
-      (← (atoms.zip atomIndexed).filterMapM fun (a, i) => if i then some <$> knownFn a else pure none)
+    let atomKnownFns ← (atoms.zip atomIndexed).filterMapM fun (a, i) => if i then some <$> knownFn a else pure none
     let atomKnownAt := (atomIndexed.foldl (init := (#[], 0)) fun (acc, j) i =>
       if i then (acc.push (some j), j + 1) else (acc.push none, j)).1
-    let defKnown ← compile1
-      (← (defExprs.zip defIndexed).filterMapM fun (d, i) => if i then some <$> knownFn d else pure none)
+    let defKnownFns ← (defExprs.zip defIndexed).filterMapM fun (d, i) => if i then some <$> knownFn d else pure none
     let defKnownAt := (defIndexed.foldl (init := (#[], 0)) fun (acc, j) i =>
       if i then (acc.push (some j), j + 1) else (acc.push none, j)).1
     -- Whether a defined output is the same in two assignments, unknown
@@ -1228,7 +1273,16 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
           else mkAppM ``Enum.sameValue #[← partialValue domain a, ← partialValue domain b])
     if let some msg ← domainError.get then return .error msg
     let sameTy ← mkArrow tablesTy (← mkArrow arrNat (← mkArrow arrNat optionBool))
-    let sames := (← compileValues (Array (Array EVal) → Array Nat → Array Nat → Option Bool) sameTy sameFns).map (· values)
+    -- Compiled at once, with `batch` (`Enum.Compiled`).
+    let batchFn ← withLocalDeclD `f (← mkArrow (mkConst ``Unit) arrNat) fun f =>
+      mkLambdaFVars #[f] (mkApp f (mkConst ``Unit.unit))
+    let compiled ← Enum.compileAll (mkAppN (mkConst ``Enum.Compiled.mk)
+      #[← mkArrayLit truthTy evalFns.toList, ← mkArrayLit fnTy atomKnownFns.toList,
+        ← mkArrayLit fnTy defKnownFns.toList, ← mkArrayLit sameTy sameFns.toList, batchFn])
+    let evals := compiled.truths.map (· values)
+    let atomKnown := compiled.atomKnown.map (· values)
+    let defKnown := compiled.defKnown.map (· values)
+    let sames := compiled.sames.map (· values)
     -- What each atom reads: the slots of the locals it mentions, and the
     -- defined outputs it mentions.
     let slotsOf (a : Expr) : Array Nat :=
@@ -1240,6 +1294,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     let ats : Atoms := {
       slots := atomSlots, defs := atomDefs, eval := fun k env => evals[k]! env == some true
       known := fun k env => (evals[k]! env).isSome
+      truth? := some fun k env => evals[k]! env
+      batch := compiled.batch
       total := !quantified
       sameDefined := fun d e₁ e₂ => match defined.findIdx? (·.1 == d) with
         | some i => sames[i]! e₁ e₂ == some true
@@ -1264,7 +1320,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       let base := if x.isStr && x.getString!.endsWith "'" then Name.mkStr x.getPrefix (x.getString!.dropEnd 1).toString else x
       ((c.vars.find? (·.name == base)).map (·.type)).getD (mkConst ``Bool)
     let renderSlot (s j : Nat) : MetaM String := do
-      let some v := slotVals[s]?.bind (·[j]?) | return "?"
+      let some v ← slotVal s j | return "?"
       Fren.render slotTys[s]! v
     -- A defined output's value in `env`: its definition, over the
     -- assignment, with the functions' interpretations and the unspecified
@@ -1310,8 +1366,10 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       return some (← Fren.render (varTy d) (← normInts v))
     -- The variant of each value of a slot whose type is an enumeration,
     -- as the solver's backend names it.
+    let enumVals ← slotTys.zipIdx.mapM fun (t, i) => do
+      if (st.enumOf? t).isSome then some <$> slotVals i else pure none
     let variantOf (s j : Nat) : Option Core.Variant := do
-      let v ← slotVals[s]?.bind (·[j]?)
+      let v ← enumVals[s]?.join.bind (·[j]?)
       let e ← st.enumOf? (slotTys[s]?.getD (mkConst ``Bool))
       let .const c _ := v.getAppFn | none
       let idx ← e.ctorIdx? c
