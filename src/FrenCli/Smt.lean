@@ -728,6 +728,39 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
   let typed := (types.get? head).map fun t => (`type, pre ++ t.replace factHole inner ++ post)
   (if nat then #[(`nat, pre ++ s!"(>= {inner} 0)" ++ post)] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
+/-- The applications of the symbols `heads` in the SMT-LIB term `e`, each
+once, after `acc`, as the Lean front end's `natApps` finds them: an
+application before its arguments, and they from left to right. One that
+mentions a name that a quantifier around it within `e` binds, of those
+`bound`, is closed over those names with a `forall`, outermost first, as
+an unbounded quantifier's applications are (`peelLets`): its facts hold
+for every value of them. -/
+partial def factAppsIn (heads : Std.HashSet String) (e : SeqElems.SExpr) (bound : Array (String × String) := #[])
+    (acc : Array String := #[]) : Array String :=
+  match e with
+  | .atom _ => acc
+  | .list xs =>
+    match SeqElems.binderOf? e, xs with
+    | some _, #[_, .list decls, body] =>
+      -- A `let`'s definitions are outside its scope; `unfold` leaves none.
+      let acc := decls.foldl (init := acc) fun acc d => match d with
+        | .list #[_, v] => if xs[0]! == .atom "let" then factAppsIn heads v bound acc else acc
+        | _ => acc
+      let names := decls.filterMap fun
+        | SeqElems.SExpr.list #[.atom x, t] => some (x, toString t)
+        | _ => none
+      factAppsIn heads body ((bound.filter fun (x, _) => !names.any (·.1 == x)) ++ names) acc
+    | _, _ =>
+      let acc := match xs[0]? with
+        | some (SeqElems.SExpr.atom h) =>
+          if !heads.contains h then acc else
+          let used := bound.filter fun (x, _) => e.mentions #[x]
+          let t := if used.isEmpty then toString e
+            else s!"(forall ({" ".intercalate (used.toList.map fun (x, t) => s!"({x} {t})")}) {e})"
+          if acc.contains t then acc else acc.push t
+        | _ => acc
+      xs.foldl (fun acc x => factAppsIn heads x bound acc) acc
+
 /-- Whether a query of the formulas `fs` has a quantifier over elements to
 expand, directly or in a `define-fun` of `marked` that it applies. -/
 def needsExpansion (marked : Std.HashMap String (Array String × SeqElems.SExpr)) (fs : Array String) : Bool :=
@@ -906,7 +939,6 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
     let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
     let mentioned : Std.HashSet String := .ofArray (formulas.flatMap quotedSymbols)
-    let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     -- A model shows those that the formulas mention once their definitions
     -- are unfolded, as Lean's does (`termMentions`).
     let used := prelude.used.get
@@ -926,8 +958,25 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let fnOf (app : String) : Option Lean.Name :=
       let inner := (splitLets app).2.1
       contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString
-    let (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf
-      (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
+    -- And those of the applications in those facts, once their clauses
+    -- are unfolded, of the functions whose applications bring facts
+    -- (`Fren.Core.closeApps`).
+    let factHeads : Std.HashSet String := funs.fold (init := .ofList (c.funFacts.toList.map (·.1)))
+      fun acc h (nat, k) => if nat || !k.posts.isEmpty then acc.insert h else acc
+    let factAppsOf (f : String) : Id (Array String) :=
+      (factAppsIn factHeads ((SeqElems.parse f).unfold prelude.unfolds.get)).map fun t =>
+        ((peeled.idxOf? t).map (apps[·]!)).getD t
+    let some (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf factAppsOf
+        (factHeads.size + 1) (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
+      | throw (IO.userError Fren.Core.factRoundsMsg)
+    -- Without the `let`s of their applications that they do not use, as
+    -- Lean's `zetaReduce` drops them; and the query declares the variables
+    -- that they mention too, which a fact of an application in a `let` may
+    -- where the formulas do not, as of a parameter that a contract does not
+    -- mention.
+    let appFacts := appFacts.map fun (n, f) => (n, dropUnusedLets f)
+    let mentioned := appFacts.foldl (init := mentioned) fun m (_, f) => (quotedSymbols f).foldl (·.insert ·) m
+    let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     if let some r := applied? then
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`

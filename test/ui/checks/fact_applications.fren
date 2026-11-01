@@ -1,0 +1,62 @@
+-- The applications in the facts that a query's applications bring bring
+-- their own facts too, transitively (`check::fact_applications`, #619):
+-- `b(s) = a(s) + 1`, of `b(s)`, brings `a(s) >= 0`.
+set_option fren.lint.dead_code "allow"
+
+pub type S
+
+pub fn a(s: S): (r: Int) { ensure e: r >= 0 }
+pub fn b(s: S): (r: Int) { ensure e: r = a(s) + 1 }
+
+expect pos(s: S) { expect c: b(s) > 0 }
+
+-- Without `a`'s facts, `b(s)` could be 0.
+proc unreachable(s: S) {
+    cover zero: b(s) <= 0   --~ error: cover goal `unreachable::zero` cannot be met: no behaviour satisfies it
+}
+
+-- Two levels down.
+pub fn c(s: S): (r: Int) { ensure e: r = 2 * b(s) }
+
+expect twice(s: S) { expect c: c(s) >= 2 }
+
+-- An application nested in another's arguments, in a fact.
+pub fn t(S): S
+pub fn d(s: S): (r: Int) { ensure e: r = b(t(s)) - 1 }
+
+expect nested(s: S) { expect c: d(s) >= 0 }
+
+-- A function's own applications still bring nothing to its own clauses:
+-- `a(s)`'s facts make row 1 hold everywhere, so rows 2 and 3 are never the
+-- first, but without the clause, which gives `r > 0` there, `r < 0` may
+-- hold too.
+pub fn own(s: S): (r: Int) {
+    ensure e: table {
+        a(s) >= 0 => r > 0,
+        r < 0 => true,   --~ error: rows 1 and 2 of a table in `own::e` may both hold
+        --~^ error: row 2 of a table in `own::e` is never the first that holds
+        _ => true,   --~ error: row 3 of a table in `own::e` is never the first that holds
+    }
+}
+
+-- Nor does a recursive function's postcondition, which an application of
+-- it brings where a fact mentions it.
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn total(l: L): (r: Int) {
+    out r := match l {
+        L::Nil => 0,
+        L::Cons(n, rest) => n.abs + total(rest),
+    }
+    ensure e: r >= 0
+}
+
+pub fn first(l: L, n: Int): (r: Int) { ensure e: r = total(L::Cons(n, l)) }
+
+expect recursive(l: L, n: Int) { expect c: first(l, n) >= 0 }
+
+-- A parameter that a contract does not mention, beside an application
+-- whose facts the realizability check has: the query declares what those
+-- facts mention.
+pub fn h(n: Int): (r: Int) { ensure e: r >= 0 }
+pub fn g(n: Int, b?): (r: Int) { ensure e: r >= h(n) }

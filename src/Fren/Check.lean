@@ -664,7 +664,8 @@ what its `Nat` variables bring, of both copies, which every query assumes,
 and `outFacts` those of its outputs, which realizability's `∃` asserts too;
 `appsOf` finds the applications of uninterpreted functions into `Nat` or
 with postconditions in a formula, whose facts, by `factsOf`, each query
-assumes of its own (`Reqs/Check`). With `modelOptional`, a model that lean-smt cannot read, as
+assumes of its own (`Reqs/Check`), and of the applications in those facts,
+in at most `rounds` rounds (`Core.appFactsWith`). With `modelOptional`, a model that lean-smt cannot read, as
 it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
 answer is not cached. -/
@@ -673,7 +674,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
     (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
-    (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none) :
+    (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none)
+    (rounds : Nat := 1) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -788,8 +790,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- application to a name mentions no bound variable. And the functions
     -- whose contracts those facts have, but its own function's, in its
     -- own contract (`Core.appFactsWith`).
-    let (appFacts, fns) ← Core.appFactsWith appsOf factsOf fnOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
-      (← zetaReduce goal) c.fn?
+    -- And those of the applications in those facts, once their clauses
+    -- are unfolded (`Core.closeApps`).
+    let factAppsOf (f : Expr) : MetaM (Array Expr) := return appsOf (← unfoldDefined f)
+    let some (appFacts, fns) ← Core.appFactsWith appsOf factsOf fnOf factAppsOf rounds
+        (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t)) (← zetaReduce goal) c.fn?
+      | throwError Core.factRoundsMsg
     let unfoldedHyps ← match unfolded? with
       | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)
       | none => hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
@@ -1031,6 +1037,18 @@ partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #
   | .letE n t v b _ => natApps fs b (natApps fs v (natApps fs t acc bs) bs) (bs.push (n, t, .default))
   | .mdata _ b | .proj _ _ b => natApps fs b acc bs
   | _ => acc
+
+/-- `e` without the binders of its `fun`s that it does not mention: an
+application that `natApps` closes over the binders around it, closed over
+those that it mentions alone, as its facts are (`closedFacts`), so that
+the same application found under other binders, as in a fact of another
+(`Core.closeApps`), is the same, as the `fren` command's are (`natApps`
+of its elaborator). -/
+partial def pruneLams : Expr → Expr
+  | .lam n d b bi =>
+    let b := pruneLams b
+    if b.hasLooseBVar 0 then .lam n d b bi else b.lowerLooseBVars 1 1
+  | e => e
 
 /-- The facts of `app`, by `factsOf`, where `app` is an application closed
 over the binders around it as a `fun` (`natApps`): each holds for every
@@ -1361,9 +1379,11 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let bk (k : CheckKind) :=
       let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map (fun (x, n, _, _) => (x, n))
         ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
-      let b := leanBackend c fvs primes cache facts outFacts (natApps heads ·) (closedFacts factsOf)
+      let b := leanBackend c fvs primes cache facts outFacts (fun e => (natApps heads e).map pruneLams)
+        (closedFacts factsOf)
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
         (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf (some applied)
+        (heads.size + 1)
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

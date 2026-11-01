@@ -662,6 +662,123 @@ impl query_facts: check::query_facts for (own? : Option Nat) (f : Nat) {
   unfold check.query_facts.ensures check.query_facts.ensure.rule
   cases own? <;> simp [fren_spec, Fren.Core.appBrings] <;> omega
 
+/-! ## The applications whose facts a query has (`check::fact_applications`) -/
+
+theorem mem_newApps {F : Type} [BEq F] [LawfulBEq F] (brings : F → Bool) (seen found : List F) (b : F) :
+    b ∈ Fren.Core.newApps brings seen found ↔ b ∈ found ∧ brings b = true ∧ b ∉ seen := by
+  simp [Fren.Core.newApps, List.mem_eraseDups, List.mem_filter]
+
+/-- What `closeApps` ends with, from `seen`, `work` and `acc` that meet its
+invariant: every application `seen` is one of `acc`'s or `work`'s, and the
+applications in the facts of `acc`'s that bring theirs are `seen`. Then
+those in the facts of its applications that bring theirs are its own, it
+has every one `seen`, and, where `acc`'s and `work`'s bring theirs, so
+does each of its. -/
+theorem closeApps_spec {F α : Type} [BEq F] [LawfulBEq F] (brings : F → Bool) (inside : F → Id (α × List F)) :
+    ∀ (n : Nat) (seen work : List F) (acc r : List (F × α)),
+    (∀ x, x ∈ seen ↔ x ∈ acc.map (·.1) ∨ x ∈ work) →
+    (∀ p ∈ acc, ∀ b ∈ (inside p.1).run.2, brings b = true → b ∈ seen) →
+    (Fren.Core.closeApps brings inside n seen work acc).run = some r →
+    (∀ p ∈ r, ∀ b ∈ (inside p.1).run.2, brings b = true → b ∈ r.map (·.1)) ∧
+    (∀ x ∈ seen, x ∈ r.map (·.1)) ∧
+    ((∀ x, x ∈ acc.map (·.1) ∨ x ∈ work → brings x = true) → ∀ x ∈ r.map (·.1), brings x = true) := by
+  intro n
+  induction n with
+  | zero =>
+    intro seen work acc r h1 h2 hr
+    cases work with
+    | nil =>
+      simp [Fren.Core.closeApps] at hr
+      subst hr
+      refine ⟨fun p hp b hb hbr => ?_, fun x hx => ?_, fun h x hx => h x (.inl hx)⟩
+      · have := (h1 b).mp (h2 p hp b hb hbr); simpa using this
+      · have := (h1 x).mp hx; simpa using this
+    | cons w ws => simp [Fren.Core.closeApps] at hr
+  | succ n ih =>
+    intro seen work acc r h1 h2 hr
+    cases work with
+    | nil =>
+      simp [Fren.Core.closeApps] at hr
+      subst hr
+      refine ⟨fun p hp b hb hbr => ?_, fun x hx => ?_, fun h x hx => h x (.inl hx)⟩
+      · have := (h1 b).mp (h2 p hp b hb hbr); simpa using this
+      · have := (h1 x).mp hx; simpa using this
+    | cons w ws =>
+      simp only [Fren.Core.closeApps, Id.run_bind, List.idRun_mapM] at hr
+      generalize hrs : (w :: ws).map (fun a => (inside a).run) = rs at hr
+      have hlen : (w :: ws).length ≤ (rs.map (·.1)).length := by subst hrs; simp
+      have hfst : ((w :: ws).zip (rs.map (·.1))).map (·.1) = w :: ws := List.map_fst_zip hlen
+      have hin : ∀ a ∈ w :: ws, ∀ b ∈ (inside a).run.2, b ∈ rs.flatMap (·.2) := by
+        intro a ha b hb
+        subst hrs
+        simp only [List.mem_flatMap, List.mem_map]
+        exact ⟨_, ⟨a, ha, rfl⟩, hb⟩
+      have i1 : ∀ x, x ∈ seen ++ Fren.Core.newApps brings seen (rs.flatMap (·.2)) ↔
+          x ∈ (acc ++ (w :: ws).zip (rs.map (·.1))).map (·.1) ∨ x ∈ Fren.Core.newApps brings seen (rs.flatMap (·.2)) := by
+        intro x
+        rw [List.map_append, hfst, List.mem_append, List.mem_append, h1 x]
+      have i2 : ∀ p ∈ acc ++ (w :: ws).zip (rs.map (·.1)), ∀ b ∈ (inside p.1).run.2, brings b = true →
+          b ∈ seen ++ Fren.Core.newApps brings seen (rs.flatMap (·.2)) := by
+        intro p hp b hb hbr
+        rw [List.mem_append] at hp ⊢
+        rcases hp with hp | hp
+        · exact .inl (h2 p hp b hb hbr)
+        · have hw := (List.of_mem_zip hp).1
+          by_cases hs : b ∈ seen
+          · exact .inl hs
+          · exact .inr ((mem_newApps _ _ _ _).mpr ⟨hin _ hw b hb, hbr, hs⟩)
+      obtain ⟨c1, c2, c3⟩ := ih _ _ _ r i1 i2 hr
+      refine ⟨c1, fun x hx => c2 x (List.mem_append_left _ hx), fun h => c3 fun x hx => ?_⟩
+      rw [List.map_append, hfst, List.mem_append] at hx
+      rcases hx with (hx | hx) | hx
+      · exact h x (.inl hx)
+      · exact h x (.inr hx)
+      · exact ((mem_newApps _ _ _ _).mp hx).2.1
+
+/-- The applications that the facts of `a` mention, of the pairs `rel`. -/
+def insideOf (rel : List (Nat × Nat)) (a : Nat) : Id (Unit × List Nat) :=
+  pure ((), (rel.filter (·.1 == a)).map (·.2))
+
+-- Both front ends' query builders take the applications whose facts a
+-- query has from `closeApps`, from those that its formulas mention and
+-- bring theirs (`appFactsWith`), over any applications, any that bring
+-- their facts, and any that their facts mention, wherever its rounds end.
+impl fact_applications: check::fact_applications for (written : List Nat) (rel : List (Nat × Nat))
+    (brings : Nat → Bool) (rounds : Nat) (r : List (Nat × Unit))
+    (_ends : (Fren.Core.closeApps brings (insideOf rel) rounds (written.filter brings) (written.filter brings) []).run
+      = some r) {
+  written := Fren.FinSet.ofList (written.map fun (a : Nat) => (a : Int)),
+  inside := Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))),
+  brings := Fren.FinSet.ofList
+    (((written ++ (rel.flatMap fun (p : Nat × Nat) => [p.1, p.2]) ++ r.map (·.1)).filter brings).map
+      fun (a : Nat) => (a : Int)),
+  brought := Fren.FinSet.ofList (r.map fun (p : Nat × Unit) => (p.1 : Int)),
+  «closed?» := true,
+} by
+  intro written rel brings rounds r hr _
+  obtain ⟨c1, c2, c3⟩ := closeApps_spec brings (insideOf rel) rounds _ _ [] r (fun x => by simp) (by simp) hr
+  have c3 := c3 fun x h => by simp at h; exact h.2
+  unfold check.fact_applications.ensures check.fact_applications.ensure.rule
+  simp only [true_iff, Fren.FinSet.subset_def, Fren.FinSet.mem_inter, Fren.FinSet.mem_image, Fren.FinSet.mem_ofList,
+    List.mem_map, List.mem_filter]
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rintro x ⟨⟨a, ha, rfl⟩, ⟨b, ⟨_, hb⟩, he⟩⟩
+    have : b = a := Int.ofNat_inj.mp he
+    subst this
+    obtain ⟨p, hp, e⟩ := List.mem_map.mp (c2 b (List.mem_filter.mpr ⟨ha, hb⟩))
+    exact ⟨p, hp, by rw [e]⟩
+  · rintro y ⟨⟨a, ⟨p, hp, rfl⟩, ⟨q, hq, hqe⟩⟩, ⟨b, ⟨_, hb⟩, rfl⟩⟩
+    simp only [Prod.mk.injEq] at hqe
+    have h1 : q.1 = p.1 := Int.ofNat_inj.mp hqe.1
+    have h2 : q.2 = b := Int.ofNat_inj.mp hqe.2
+    have hin : b ∈ (insideOf rel p.1).run.2 := by
+      simp only [insideOf, Id.run_pure, List.mem_map, List.mem_filter, beq_iff_eq]
+      exact ⟨q, ⟨hq, h1⟩, h2⟩
+    obtain ⟨p', hp', e⟩ := List.mem_map.mp (c1 p hp b hin hb)
+    exact ⟨p', hp', by rw [e]⟩
+  · rintro x ⟨p, hp, rfl⟩
+    exact ⟨p.1, ⟨List.mem_append_right _ (List.mem_map_of_mem hp), c3 p.1 (List.mem_map_of_mem hp)⟩, rfl⟩
+
 -- Both front ends take the functions whose contracts a check rests on
 -- with `checkApplies` (`itemEvidence`, `appliedOf`).
 impl check_applies: check::check_applies for (q i : List Nat) (own : List Caveat) {

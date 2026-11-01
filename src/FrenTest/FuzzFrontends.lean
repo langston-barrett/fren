@@ -23,7 +23,9 @@ constants, defined outputs, defined and uninterpreted functions, the
 former of every kind of result, as functions with `:=` and as function
 blocks, with bodies that take their type from it (`bodyFns`), the
 latter sometimes with contracts whose postconditions may contradict each
-other, so that what applies them rests on their realizability, `match`
+other, so that what applies them rests on their realizability, and
+chains of contracts whose facts mention applications with facts of their
+own (`factChain`), `match`
 and tables over a scrutinee,
 string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
@@ -1010,6 +1012,45 @@ def traitGroup (sc : WScope) : R String := do
   out := if ← chance 30 then out.replace "pub trait Tr" "trait Tr" else out
   return out ++ "}\n"
 
+/-- A chain of uninterpreted functions with contracts, each of whose
+postconditions applies the one before it, and checks over the last, so
+that the facts of an application mention another, whose facts a query has
+too, transitively (`check::fact_applications`, #619): through a sum, a
+bound, a nested application of an uninterpreted function without a
+contract, a conditional, and an `Int` or `Nat` result, sometimes under a
+precondition. An expectation and a cover goal over the last then hold or
+fail by the facts of all of them, as do the rows of a table over the last
+in a contract of its own, whose own facts its checks never have. It is appended
+to specs of the corpus, so it is written from a grammar of its own, every
+form of which is well-typed, whatever the spec declares. -/
+def factChain : R String := do
+  let mut out := "pub type Fc\npub fn fct(Fc): Fc\n"
+  let n := (← below 3) + 1
+  let bound ← below 3
+  let nat0 ← chance 30
+  out := out ++ s!"pub fn fc0(s: Fc): (r: {if nat0 then "Nat" else "Int"}) \{ ensure e: r >= {bound} }\n"
+  for k in [1:n + 1] do
+    let prev := s!"fc{k - 1}"
+    let arg ← pick #["s", "fct(s)", "fct(fct(s))"]
+    let app := if k == 1 then s!"{prev}({arg})" else s!"{prev}({arg}, b?)"
+    let post ← match ← below 5 with
+      | 0 => pure s!"r = {app} + {← below 3}"
+      | 1 => pure s!"r >= {app}"
+      | 2 => pure s!"r > 2 * {app}"
+      | 3 => pure s!"r = if b? then {app} else {← below 3}"
+      | _ => pure s!"r = {app} - {← below 2}"
+    let pre := if ← chance 30 then s!"    assume p: b?\n" else ""
+    out := out ++ s!"pub fn fc{k}(s: Fc, b?): (r: Int) \{\n{pre}    ensure e: {post}\n}\n"
+  -- Whatever its preconditions, `b?` is `true` at the checks, so that
+  -- none fails at a call.
+  let last := s!"fc{n}(s, true)"
+  let c ← below 4
+  out := out ++ s!"\nexpect fc_holds(s: Fc) \{ expect c: {last} >= {c} }\n"
+  out := out ++ s!"\nproc fc_cover(s: Fc) \{\n    cover low: {last} < {c}\n}\n"
+  if ← chance 40 then
+    out := out ++ s!"\npub fn fc_table(s: Fc): (r: Int) \{\n    ensure t: table \{ fc{n}(s, true) >= {c} => r > 0, r < 0 => true, _ => true }\n}\n"
+  return out
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1222,6 +1263,10 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- A trait, last too.
   cuts := cuts.push out
   if ← chance 30 then out := out ++ "\n" ++ (← traitGroup sc)
+  -- Contracts whose facts mention applications with facts of their own,
+  -- last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← factChain)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
