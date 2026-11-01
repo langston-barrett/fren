@@ -10,18 +10,19 @@ import FrenCore.Trace
 The formatter works on the tokens and comments of a file that parses.
 First it rewrites each block of imports (`fmt::in_block`,
 `fmt::group_layout`), and puts each comma before the line breaks and line
-comments before it (`fmt::separators`). Then it decides whether each list or block is on one
-line or has one element to a line (`fmt::list_layout`), from the inside
-out whether it may be on one line, and from the outside in whether its
-line fits, where it is its line's expression (`fmt::own_line`). It keeps
-the other line breaks. It decides, for each line, its indentation
-(`fmt::indent`), the spaces between its tokens (`fmt::space`), where its
-trailing comment goes (`fmt::comment_column`), and how many blank lines
-precede it (`fmt::blank_lines`); and it adds or removes the trailing
-commas of lists (`fmt::trailing_comma`). The parser says which tokens start
-an item, a member or an element, which `-` are unary, where each list or
-block opens, separates its elements and closes, which other braces open
-lists, and where the claims and imports are (`Layout`).
+comments before it (`fmt::separators`, `fmt::comment_piece`). Then it decides whether each list
+or block is on one line or has one element to a line (`fmt::list_layout`),
+from the inside out whether it may be on one line, and from the outside in
+whether its line fits, where it is its line's expression
+(`fmt::own_line`). It keeps the other line breaks. It decides, for each
+line, its indentation (`fmt::indent`), the spaces between its tokens
+(`fmt::space`), where its trailing comment goes (`fmt::comment_column`),
+and how many blank lines precede it (`fmt::blank_lines`); and it adds or
+removes the trailing commas of lists (`fmt::trailing_comma`). The parser
+says which tokens start an item, a member or an element, which `-` are
+unary, where each list or block opens, separates its elements and closes,
+which other braces open lists, and where the claims and imports are
+(`Layout`).
 -/
 
 namespace FrenCli.Fmt
@@ -55,7 +56,9 @@ inductive Kind where
 
 /-- Whether a space separates two tokens on a line (`fmt::space`). -/
 def space (before after : Kind) : Bool :=
-  if before == .comment || after == .comment then true
+  -- A comma takes no space before it, even after a block comment.
+  if before == .comment && after == .comma then false
+  else if before == .comment || after == .comment then true
   else if before == .brace && after == .closeBrace then false
   -- `--` starts a comment.
   else if before == .negation && after == .negation then true
@@ -218,6 +221,13 @@ inductive PieceKind where
 def afterLine : PieceKind → Bool
   | .lineBreak | .lineComment => true
   | _ => false
+
+/-- The piece of a comment (`fmt::comment_piece`): a line comment, and a
+block comment that starts its line, are placed as line comments, which a
+comma does not follow; a block comment after code on its line, as a block
+comment. -/
+def commentPiece (lineComment startsLine : Bool) : PieceKind :=
+  if lineComment || startsLine then .lineComment else .blockComment
 
 /-- Whether a piece is a line break. -/
 def isLineBreak : PieceKind → Bool
@@ -501,7 +511,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     if i > 0 && read[i].startLine > read[i - 1]!.endLine then
       stream := stream.push (.lineBreak, read[i].startLine - read[i - 1]!.endLine - 1)
     let kind := match read[i].tok? with
-      | none => if isLineComment read[i].text then .lineComment else .blockComment
+      | none => commentPiece (isLineComment read[i].text) (i == 0 || read[i].startLine > read[i - 1]!.endLine)
       | some k => if isTok k "," then .separator else .token
     stream := stream.push (kind, i)
   -- The pieces, each with the gap before it: `none` if no line ends in it,

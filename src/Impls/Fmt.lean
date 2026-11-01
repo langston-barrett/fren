@@ -97,8 +97,7 @@ impl space: fmt::space for (b a : Kind) {
   space? := FrenCli.Fmt.space b a,
 } by
   intro b a _
-  revert a
-  cases b <;> decide
+  cases b <;> cases a <;> decide
 
 theorem indents_toFmtBracket (b : Bracket) (l : Bool) :
     fmt.«indents?» (toFmtBracket b) l = FrenCli.Fmt.bracketIndents b l := by
@@ -295,6 +294,14 @@ def toPiece : PieceKind → fmt.Piece
   | .lineComment => .LineComment
   | .blockComment => .BlockComment
   | .lineBreak => .LineBreak
+
+impl comment_piece: fmt::comment_piece for (l s : Bool) {
+  line_comment? := l,
+  starts_line? := s,
+  piece := toPiece (FrenCli.Fmt.commentPiece l s),
+} by
+  intro l s _
+  cases l <;> cases s <;> simp [fren_spec, FrenCli.Fmt.commentPiece, toPiece]
 
 def toPieces : List PieceKind → fmt.Pieces
   | [] => .Nil

@@ -1,16 +1,16 @@
 error[F0601]: `bad_output` is not realizable
-  --> test/cli/results/nested_subset_enumeration.fren:25:6
+  --> test/cli/results/nested_subset_enumeration.fren:30:6
    |
-25 | proc bad_output(): (r?: Truth) {
+30 | proc bad_output(): (r?: Truth) {
    |      ^^^^^^^^^^ not realizable
    |
    = note: no outputs satisfy `opposite`
    = help: weaken one of them, or add an `assume` that rules this input out
 
 error[F0661]: invariant `Positive::invariant` does not hold
-  --> test/cli/results/nested_subset_enumeration.fren:31:14
+  --> test/cli/results/nested_subset_enumeration.fren:37:14
    |
-31 |     out r := 0
+37 |     out r := 0
    |              ^ violates the invariant
    |
    = counterexample: r = 0

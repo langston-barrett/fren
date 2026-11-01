@@ -1,0 +1,17 @@
+--@ args: fmt --check
+-- `fren fmt` lays out each list on its own, as rustfmt does. Of the arms of
+-- one `match`, only the one whose call is too wide breaks it, and of two
+-- record literals alike, only the one too wide for `struct_lit_width` is
+-- vertical.
+struct P { x: Int, y: Int }
+
+fn wrap(Int): Int
+
+proc c(n: Int, m: Int): (r: Int, p: P, q: P) {
+    ensure r1: r = match n {
+        0 => wrap(n),
+        _ => wrap(wrap(n + 1000000000 + m) + wrap(n + 2000000000 + m) + wrap(3)),
+    }
+    ensure r2: p = P { x := n, y := m }
+    ensure r3: q = P { x := n + 1, y := m + 1 }
+}

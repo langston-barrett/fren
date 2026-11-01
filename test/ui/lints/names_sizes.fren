@@ -35,17 +35,25 @@ proc relations(
 }
 
 proc singles(a: Int, b: Int, c?, e: Two, f: Int): (total: Int) {  --~ warning: procedure `singles` declares 5 single-character names
-    ensure r: total = if c? then a + b + f else match e { Two::A => 0, Two::B => 1 }
+    ensure r: total = if c? then a + b + f else match e {
+        Two::A => 0,
+        Two::B => 1,
+    }
 }
 
 -- Four is not too many.
 proc four(a: Int, b: Int, c?, e: Two): (total: Int) {
-    ensure r: total = if c? then a + b else match e { Two::A => 0, Two::B => 1 }
+    ensure r: total = if c? then a + b else match e {
+        Two::A => 0,
+        Two::B => 1,
+    }
 }
 
 -- A name declared again with `!` is one name: `a`, `b`, `c` and `d`.
 proc shadowed(a: Int, b: Int, c: Int, d: Int, boxed: Boxed): (total: Int) {
-    ensure r: total = a + b + c + d + match boxed { Boxed::Box(a!) => a }
+    ensure r: total = a + b + c + d + match boxed {
+        Boxed::Box(a!) => a,
+    }
 }
 
 proc three(a: Int, b: Int): (s: Int) {
@@ -54,7 +62,9 @@ proc three(a: Int, b: Int): (s: Int) {
 
 -- A `match` binder counts.
 proc with_binder(a: Int, b: Int, c: Int, x: Boxed): (total: Int) {  --~ warning: procedure `with_binder` declares 5 single-character names
-    ensure r: total = a + b + c + match x { Boxed::Box(n) => n }
+    ensure r: total = a + b + c + match x {
+        Boxed::Box(n) => n,
+    }
 }
 
 pub fn sum(a: Int, b: Int, c: Int, d: Int, e: Int): Int := a + b + c + d + e  --~ warning: function `sum` declares 5 single-character names
@@ -88,7 +98,10 @@ proc similar(
     used: Int,        --~ warning: `used` differs from `user` by one character
     item: Boxed,
 ): (p?) {
-    ensure r: p? iff level + levels + count + counts + user + used > match item { Boxed::Box(items) => items }  --~ warning: `items` differs from `item` by one character
+    ensure r: p? iff level + levels + count + counts + user + used > match item {
+        Boxed::Box(items) => items,
+    }
+    --~^^ warning: `items` differs from `item` by one character
 }
 
 -- Not similar: shorter than 3 characters, differing in a digit, in a
@@ -121,8 +134,115 @@ proc series(
 
 -- 101 lines: blank lines and comments do not count.
 proc long(  --~ warning: procedure `long` has 101 lines
-    x: Int, w: Int, text: String,
+    x: Int,
+    w: Int,
+    text: String,
 ): (
+    -- A comment alone on its line.
+    ok?,         -- a comment after code
+    echo: Int,
+    y0: Int,
+    y1: Int,
+    y2: Int,
+    y3: Int,
+    y4: Int,
+    y5: Int,
+    y6: Int,
+    y7: Int,
+    y8: Int,
+    y9: Int,
+    y10: Int,
+    y11: Int,
+    y12: Int,
+    y13: Int,
+    y14: Int,
+    y15: Int,
+    y16: Int,
+    y17: Int,
+    y18: Int,
+    y19: Int,
+    y20: Int,
+    y21: Int,
+    y22: Int,
+    y23: Int,
+    y24: Int,
+    y25: Int,
+    y26: Int,
+    y27: Int,
+    y28: Int,
+    y29: Int,
+    y30: Int,
+    y31: Int,
+    y32: Int,
+    y33: Int,
+    y34: Int,
+    y35: Int,
+    y36: Int,
+    y37: Int,
+    y38: Int,
+    y39: Int,
+    y40: Int,
+    y41: Int,
+    y42: Int,
+    y43: Int,
+    y44: Int,
+) {
+    -- `/-` and `--` in a string start no comment.
+    ensure st: ok? iff text = "/- -- not a comment"
+    /- a block comment /- nested -/ still in it
+       and on its last line -/
+    ensure ru: echo = x + w
+    ensure r0: y0 = x + 1
+    ensure r1: y1 = x + 2
+    ensure r2: y2 = x + 3
+    ensure r3: y3 = x + 4
+    ensure r4: y4 = x + 5
+    ensure r5: y5 = x + 6
+    ensure r6: y6 = x + 7
+    ensure r7: y7 = x + 8
+    ensure r8: y8 = x + 9
+    ensure r9: y9 = x + 10
+    ensure r10: y10 = x + 11
+    ensure r11: y11 = x + 12
+    ensure r12: y12 = x + 13
+    ensure r13: y13 = x + 14
+    ensure r14: y14 = x + 15
+    ensure r15: y15 = x + 16
+    ensure r16: y16 = x + 17
+    ensure r17: y17 = x + 18
+    ensure r18: y18 = x + 19
+    ensure r19: y19 = x + 20
+    ensure r20: y20 = x + 21
+    ensure r21: y21 = x + 22
+    ensure r22: y22 = x + 23
+    ensure r23: y23 = x + 24
+    ensure r24: y24 = x + 25
+    ensure r25: y25 = x + 26
+    ensure r26: y26 = x + 27
+    ensure r27: y27 = x + 28
+    ensure r28: y28 = x + 29
+    ensure r29: y29 = x + 30
+    ensure r30: y30 = x + 31
+    ensure r31: y31 = x + 32
+    ensure r32: y32 = x + 33
+    ensure r33: y33 = x + 34
+    ensure r34: y34 = x + 35
+    ensure r35: y35 = x + 36
+    ensure r36: y36 = x + 37
+    ensure r37: y37 = x + 38
+    ensure r38: y38 = x + 39
+    ensure r39: y39 = x + 40
+    ensure r40: y40 = x + 41
+    ensure r41: y41 = x + 42
+    ensure r42: y42 = x + 43
+    ensure r43: y43 = x + 44
+    ensure r44: y44 = x + 45
+    /- a block comment
+       of two lines -/
+}
+
+-- 100 lines, which is not too many: blank lines and comments do not count.
+proc long_enough(x: Int, text: String): (
     -- A comment alone on its line.
     ok?,         -- a comment after code
     echo: Int,
@@ -177,114 +297,6 @@ proc long(  --~ warning: procedure `long` has 101 lines
     ensure st: ok? iff text = "/- -- not a comment"
     /- a block comment /- nested -/ still in it
        and on its last line -/
-    ensure ru: echo = x + w
-    ensure r0: y0 = x + 1
-    ensure r1: y1 = x + 2
-    ensure r2: y2 = x + 3
-    ensure r3: y3 = x + 4
-    ensure r4: y4 = x + 5
-    ensure r5: y5 = x + 6
-    ensure r6: y6 = x + 7
-    ensure r7: y7 = x + 8
-    ensure r8: y8 = x + 9
-    ensure r9: y9 = x + 10
-    ensure r10: y10 = x + 11
-    ensure r11: y11 = x + 12
-    ensure r12: y12 = x + 13
-    ensure r13: y13 = x + 14
-    ensure r14: y14 = x + 15
-    ensure r15: y15 = x + 16
-    ensure r16: y16 = x + 17
-    ensure r17: y17 = x + 18
-    ensure r18: y18 = x + 19
-    ensure r19: y19 = x + 20
-    ensure r20: y20 = x + 21
-    ensure r21: y21 = x + 22
-    ensure r22: y22 = x + 23
-    ensure r23: y23 = x + 24
-    ensure r24: y24 = x + 25
-    ensure r25: y25 = x + 26
-    ensure r26: y26 = x + 27
-    ensure r27: y27 = x + 28
-    ensure r28: y28 = x + 29
-    ensure r29: y29 = x + 30
-    ensure r30: y30 = x + 31
-    ensure r31: y31 = x + 32
-    ensure r32: y32 = x + 33
-    ensure r33: y33 = x + 34
-    ensure r34: y34 = x + 35
-    ensure r35: y35 = x + 36
-    ensure r36: y36 = x + 37
-    ensure r37: y37 = x + 38
-    ensure r38: y38 = x + 39
-    ensure r39: y39 = x + 40
-    ensure r40: y40 = x + 41
-    ensure r41: y41 = x + 42
-    ensure r42: y42 = x + 43
-    ensure r43: y43 = x + 44
-    ensure r44: y44 = x + 45
-    ensure r45: y45 = x + 46
-    /- a block comment
-       of two lines -/
-}
-
--- 100 lines, which is not too many: blank lines and comments do not count.
-proc long_enough(
-    x: Int, text: String,
-): (
-    -- A comment alone on its line.
-    ok?,         -- a comment after code
-    echo: Int,
-    y0: Int,
-    y1: Int,
-    y2: Int,
-    y3: Int,
-    y4: Int,
-    y5: Int,
-    y6: Int,
-    y7: Int,
-    y8: Int,
-    y9: Int,
-    y10: Int,
-    y11: Int,
-    y12: Int,
-    y13: Int,
-    y14: Int,
-    y15: Int,
-    y16: Int,
-    y17: Int,
-    y18: Int,
-    y19: Int,
-    y20: Int,
-    y21: Int,
-    y22: Int,
-    y23: Int,
-    y24: Int,
-    y25: Int,
-    y26: Int,
-    y27: Int,
-    y28: Int,
-    y29: Int,
-    y30: Int,
-    y31: Int,
-    y32: Int,
-    y33: Int,
-    y34: Int,
-    y35: Int,
-    y36: Int,
-    y37: Int,
-    y38: Int,
-    y39: Int,
-    y40: Int,
-    y41: Int,
-    y42: Int,
-    y43: Int,
-    y44: Int, y45: Int,
-) {
-    -- `/-` and `--` in a string start no comment.
-    ensure st: ok? iff text = "/- -- not a comment"
-    /- a block comment /- nested -/ still in it
-       and on its last line -/
     ensure ru: echo = x
     ensure r0: y0 = x + 1
     ensure r1: y1 = x + 2
@@ -331,7 +343,9 @@ proc long_enough(
     ensure r42: y42 = x + 43
     ensure r43: y43 = x + 44
     ensure r44: y44 = x + 45
-    ensure r45: y45 = x + 46
+    -- A line that continues a clause counts.
+    ensure r45: y45 = x
+        + 46
     /- a block comment
        of two lines -/
 }
