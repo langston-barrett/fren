@@ -1,5 +1,9 @@
 -- Two arms of a table over a scrutinee without guards whose patterns
 -- overlap: both match `100`.
 proc grade(n: Int): (g: Int) {
-    ensure r: g = table n { ..=49 => 0, 50..=100 => 1, 100.. => 2 }
+    ensure r: g = table n {
+        ..=49 => 0,
+        50..=100 => 1,
+        100.. => 2,
+    }
 }

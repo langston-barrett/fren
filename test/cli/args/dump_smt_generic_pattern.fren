@@ -8,6 +8,12 @@ type Byte = n: Int where invariant: n is 0..=255
 
 type Digit = n: Int where invariant: n is 0..=9
 proc c(x: Option<Byte>, s: Option<Set<Digit>>) {
-    expect byte: match x { Option::Some(b) => b <= 255, Option::None => true }
-    expect digits: match s { Option::Some(e) => not (10 in e), Option::None => true }
+    expect byte: match x {
+        Option::Some(b) => b <= 255,
+        Option::None => true,
+    }
+    expect digits: match s {
+        Option::Some(e) => not (10 in e),
+        Option::None => true,
+    }
 }

@@ -1,7 +1,7 @@
 warning[F0450]: could not decide whether the postcondition `not_minus_one` of `size` holds
- --> test/cli/results/f0450_recursive_contract.fren:5:12
+ --> test/cli/results/f0450_recursive_contract.fren:8:12
   |
-5 |     ensure not_minus_one: r != -1
+8 |     ensure not_minus_one: r != -1
   |            ^^^^^^^^^^^^^ contracts may be too weak
   |
   = note: this check fails only under the contracts of `size`

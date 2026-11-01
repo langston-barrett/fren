@@ -1,7 +1,7 @@
 error[F0625]: a `match` in `sign::r` may have no arm that is taken
  --> test/cli/results/f0625_match_incomplete.fren:3:19
   |
-3 |     ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
+3 |     ensure r: s = match x {
   |                   ^^^^^ may have no arm that is taken
   |
   = counterexample: x = 0, s = 0

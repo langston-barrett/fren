@@ -8,7 +8,10 @@
 pub fn id<T>(x: T): T := x
 pub fn unwrap_or<T>(o: Option<T>, d: T): (r: T) {
     assume known: o != Option::None
-    out r := match o { Option::Some(x) => x, Option::None => id(d) }
+    out r := match o {
+        Option::Some(x) => x,
+        Option::None => id(d),
+    }
     ensure payload: Option::Some(unwrap_or(o, d)) = o
 }
 proc c(x: Option<Int>): (det y: Int) {
