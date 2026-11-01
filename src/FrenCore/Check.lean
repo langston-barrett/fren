@@ -295,6 +295,9 @@ structure CheckResult where
   them (`check::CheckRecord`'s `applies`); a check that no query decides
   has none. -/
   applies : Array Name := #[]
+  /-- The trait whose laws its queries have among their hypotheses, whose
+  consistency is not checked (`check::law_premise`). -/
+  restsOnLaws? : Option Name := none
   deriving Inhabited
 
 /-- The behaviour that a report shows of the procedure (`view::Shown`): a
@@ -580,6 +583,8 @@ structure Comp (F : Type) where
   hypotheses has before them (`Comp.hyps`), but realizability's query of the
   assumptions alone (`Reqs/Lang/Traits#meaning`). -/
   laws : Array (Name × F) := #[]
+  /-- The trait whose laws `laws` are. -/
+  lawsOf : Name := .anonymous
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -1638,9 +1643,21 @@ def coverInterpreted (c : Comp F) (interprets : F → Bool) (n : Name) : Bool :=
     | some (_, g) => (c.coverFormulas g).any interprets
     | none => false
 
-/-- `rs`, with each cover goal's result marked by `coverInterpreted`. -/
+/-- Whether a check of kind `k` of an item whose queries have a trait's laws
+(`hasLaws`) rests on those laws (`check::law_premise`): every check but
+realizability, whose query of the assumptions alone has none. -/
+def lawPremise (k : CheckKind) (hasLaws : Bool) : Bool := hasLaws && k != .realizable
+
+/-- `rs`, with each result that rests on the laws of `c`'s trait marked
+(`lawPremise`), for the message that says so (`lawsMsg`). -/
+def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult :=
+  rs.map fun r => if lawPremise r.kind !c.laws.isEmpty then { r with restsOnLaws? := some c.lawsOf } else r
+
+/-- `rs`, with each cover goal's result marked by `coverInterpreted`, and
+each result that rests on a trait's laws by `withLaws`. Both front ends
+mark their results so. -/
 def withInterpreted (c : Comp F) (interprets : F → Bool) (rs : Array CheckResult) : Array CheckResult :=
-  rs.map fun r => if r.kind == .cover then { r with interpreted := r.prop?.any (coverInterpreted c interprets) } else r
+  withLaws c <| rs.map fun r => if r.kind == .cover then { r with interpreted := r.prop?.any (coverInterpreted c interprets) } else r
 
 /-! ## Reporting
 
@@ -2172,13 +2189,34 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
     }
   return out
 
+/-- A check that rests on the laws of the trait `t`, whose consistency is not
+checked (`F0665`, `check::law_premise`): whatever its verdict, it says so,
+since laws that contradict each other make it hold vacuously. -/
+def lawsMsg (what : String) (t : Name) : Msg :=
+  { code? := some "F0665"
+    headline := s!"{what} rests on the laws of `{showComp t}`, whose consistency is not checked"
+    label? := some "rests on unchecked laws"
+    notes := #[s!"note: its queries have the laws of `{showComp t}` among their hypotheses; if no interpretation meets them all, it holds vacuously",
+      "note: Fren does not yet check that a trait's laws can hold together (#594)"] }
+
+/-- The message of a result that rests on a trait's laws (`lawsMsg`), at
+its constraint, or none. -/
+def lawsMessages (r : CheckResult) : Array Message :=
+  match r.restsOnLaws? with
+  | some t =>
+    let subject := match r.prop? with
+      | some n => s!"the {kindName r.kind} check of `{showComp (r.comp ++ n)}`"
+      | none => s!"the {kindName r.kind} check of `{showComp r.comp}`"
+    #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t }]
+  | none => #[]
+
 /-- The messages of one result, which both front ends report. The result
 shows a behaviour only where its verdict allows it: it is sealed here, so
 that no message of a pass shows a counterexample, whatever method reached
 the verdict (`view::report_shows`). -/
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
   let r := r.sealShown
-  baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r
+  baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r ++ lawsMessages r
 
 /-- Sealing twice is sealing once. -/
 theorem CheckResult.sealShown_idem (r : CheckResult) : r.sealShown.sealShown = r.sealShown := by

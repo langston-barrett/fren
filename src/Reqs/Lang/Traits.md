@@ -95,6 +95,29 @@ pub proc trait_member(
 }
 ```
 
+r[trait.member.order]
+A trait's members are elaborated by their phase, and in the order written
+within a phase: the methods first, then the laws, then the expectations
+(`lang::trait_member_phase`). A member of another kind is reported before
+any member is elaborated. Each member reports its own errors, and its errors
+stop only what follows them within it.
+
+```fren
+pub proc trait_member_phase(member: TraitMemberKind): (det phase: Int) {
+    use self::TraitMemberKind::{Expectation, Law, Method}
+
+    ensure rule: phase = match member {
+        Method => 0,
+        Law => 1,
+        Expectation => 2,
+        _ => 3,
+    }
+
+    expect methods_first: when member = Method, phase < 1
+    expect laws_before_expectations: when member = Law, phase = 1
+}
+```
+
 > **Rationale:** A method with a body would be a *default method*, which
 > comes with supertraits and associated types (#594). A member's own `use`
 > would hide the trait's names in its block.
@@ -125,7 +148,8 @@ imports](Modules.md#use-in-a-procedure) do. Every other name is the
 module's.
 
 r[trait.scope.order]
-A method's signature and contract see the methods declared before it. The
+A method's signature and contract see the methods declared before it, and
+its contract sees the method itself, as a function's contract does. The
 laws and the expectations see every method.
 
 r[trait.scope.distinct]
@@ -167,10 +191,12 @@ methods meet their contracts and every law holds.
 **Proof obligations**
 
 r[trait.law.undecidable]
-A law is outside the [decidable core](Decidability.md): its variables are
-an [unbounded quantifier](Quantifiers.md#unbounded-quantifiers) over types
-that are not listed, which
+A law with a variable of a type that is not listed is outside the
+[decidable core](Decidability.md): its variables are an [unbounded
+quantifier](Quantifiers.md#unbounded-quantifiers), which
 [`undecidable`](../Lint/Decidability.md#undecidable-constructs) reports.
+A law with no variables, or only variables of listed types, is within it
+where its equation is.
 
 ## Expectations
 
@@ -197,7 +223,7 @@ pub proc trait_expectation(
     -- An interpretation that meets the laws and not the claims refutes it.
     expect lawful_counts: when witness in models and witness in lawful and not witness in claims, not holds?
     -- One that does not meet the laws never does.
-    expect unlawful_ignored: when claims = models inter lawful, holds?
+    expect unlawful_ignored: when witness in models and not witness in lawful and claims = models minus {witness}, holds?
     expect no_laws: when lawful = models, holds? iff models subset claims
     -- Laws that no interpretation meets make every expectation hold.
     expect vacuous: when models inter lawful = {}, holds?
@@ -212,12 +238,47 @@ expectation](../Check.md#global-expectations), each with the trait's laws
 among its hypotheses, but for its realizability, which asks of its own
 assumptions alone.
 
+r[trait.expect.core]
+An expectation of a trait is in the decidable core where it is and every
+law of its trait is, and its queries set `fmf-bound` where its own
+constructs or a law's do (`lang::law_flags`, one law at a time).
+
+```fren
+-- How the checks of an expectation, or of a law, are asked.
+pub struct CheckFlags {
+    in_core?,                -- every construct is in the decidable core
+    denied?,                 -- `undecidable` is an error in it
+    fmf_bound?,              -- its queries set `fmf-bound`
+}
+
+pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: CheckFlags) {
+    ensure rule: combined = CheckFlags {
+        in_core? := expectation.in_core? and law.in_core?,
+        denied? := expectation.denied? or law.denied?,
+        fmf_bound? := expectation.fmf_bound? or law.fmf_bound?,
+    }
+
+    expect outside: when not law.in_core?, not combined.in_core?
+}
+```
+
+r[trait.expect.laws-unchecked]
+Each check of an expectation of a trait with laws, but its realizability,
+rests on the laws, whose consistency Fren does not check yet, and says so,
+whatever its verdict (`F0665`, `check::law_premise`).
+
 r[trait.expect.once]
 An expectation of a trait is checked once, in the trait.
 
 r[trait.expect.evidence]
 `fren.evidence` set to testing or enumeration for an expectation of a
-trait is an error (`F0215`).
+trait is an error (`F0215`, `lang::trait_expectation_evidence`).
+
+```fren
+pub proc trait_expectation_evidence(tested?, enumerated?): (det accepted?) {
+    ensure rule: accepted? iff not tested? and not enumerated?
+}
+```
 
 > **Rationale:** An interpretation that testing or enumeration picks need
 > not meet the laws. Whether the laws can hold together is a check of its
@@ -238,7 +299,7 @@ trait Store {
     law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
 
     expect overwritten(s: Self, k: Key, v: Int, w: Int) {
-        expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)
+        expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)  --~ warning: rests on the laws of `store::Store`
     }
 }
 --@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant

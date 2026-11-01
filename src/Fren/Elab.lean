@@ -7298,9 +7298,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
   lintItem orig
   lintTrailingCommas orig
   let modName := (← getLocal).currentModule
-  -- A trait's method is never dead, being part of the trait, as the `fren`
-  -- command has it (`elabTrait`).
-  let isPub := !stx[0].isNone || (← getLocal).inTrait
+  let isPub := !stx[0].isNone
   let nameStx := stx[2]
   let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkNoBang n)
@@ -7377,7 +7375,8 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       lintDeclared .function n nameStx
       lintLines .function n nameStx orig
     record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
-    unless isPub do recordItem .function path nameStx
+    -- A trait's method is never dead (`lint::dead_item`).
+    unless isPub do recordItem (if (← getLocal).inTrait then .method else .function) path nameStx
     modifyLocal fun l => { l with fnTypeParams := none }
   liftTermElabM do
     -- The parameters, declared like a procedure's parameters, and the function
@@ -7569,7 +7568,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
   lintDeclared .function n nameStx
   lintLines .function n nameStx orig
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
-  unless isPub do recordItem .function path nameStx (defined := true)
+  unless isPub do recordItem (if (← getLocal).inTrait then .method else .function) path nameStx (defined := true)
   modifyLocal fun l => { l with fnTypeParams := none }
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
 
@@ -9130,7 +9129,7 @@ open Lang in
 kind, whether it is written `pub`, has type parameters, or has a `use` in
 its block, and its name, under any `set_option ... in`. -/
 partial def traitMemberOf (m : Syntax) : Core.TraitMember × Bool × Bool × Bool × Option Syntax × Syntax :=
-  if m.isOfKind ``Lang.lawMember then (.law, false, false, false, some m[1], m[1]) else
+  if m.isOfKind ``Lang.lawMember then (.law, false, false, false, some m[2], m[2]) else
   let c := m[0]
   let other (what : String) (ref : Syntax) := (Core.TraitMember.other what, false, false, false, none, ref)
   let uses (ms : Array Syntax) := ms.any fun x => x.isOfKind ``Lang.useMember || x.isOfKind ``Lang.useGroupMember
@@ -9155,13 +9154,9 @@ partial def traitMemberOf (m : Syntax) : Core.TraitMember × Bool × Bool × Boo
   else if c.isOfKind `Fren.Lang.testedCmd || c.isOfKind `Fren.Lang.trustedCmd then other "claims" c[1]
   else other "commands" c
 
-/-- Elaborates a law of the trait at `path` (`Reqs/Lang/Traits#laws`): its
-variables are a quantifier around its equation, and it mentions no
-variables, as a global expectation in the short form does. Gives its
-statement, a closed proposition over the placeholders, whether it is in the
-decidable core, whether `undecidable` is an error in it, and whether it
-sets `fmf-bound`. -/
-def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × Bool × Bool) := do
+/-- `elabLaw`, once its settings are in effect. -/
+def elabLawBody (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × Bool × Bool) := do
+  let m := mkNullNode (m.getArgs.extract 1 m.getNumArgs)
   lintItem m
   let nameStx := m[1]
   let n ← itemSegName nameStx
@@ -9203,6 +9198,28 @@ def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × B
     let l ← getLocal
     return (n, e, !l.outsideCore, l.undecidableDenied, l.guardedUsed)
 
+/-- Elaborates a law of the trait at `path` (`Reqs/Lang/Traits#laws`): its
+variables are a quantifier around its equation, and it mentions no
+variables, as a global expectation in the short form does. Gives its
+statement, a closed proposition over the placeholders, whether it is in the
+decidable core, whether `undecidable` is an error in it, and whether it
+sets `fmf-bound`. -/
+def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × Bool × Bool) := do
+  -- Its settings, `set_option ... in`, for it alone, as Lean's own are
+  -- for an item.
+  let opts := (← getScope).opts
+  try
+    for st in m[0].getArgs do
+      let name := (st.getArgs.find? (·.isIdent)).map (·.getId) |>.getD .anonymous
+      let value := st.getArgs.findSome? fun a => match a.isStrLit?, a.isNatLit? with
+        | some v, _ => some s!"\"{v}\""
+        | none, some n => some (toString n)
+        | none, none => none
+      elabCommand (← parseAt `command s!"set_option {name} {value.getD ""}" st)
+    elabLawBody path m
+  finally modifyScope fun sc => { sc with opts }
+
+
 /-- The command `c`, under any of Lean's `set_option ... in` before it. -/
 partial def underSettings (c : Syntax) : Syntax :=
   if c.isOfKind ``Lean.Parser.Command.in then underSettings c[2] else c
@@ -9224,7 +9241,9 @@ errors. -/
   -- Its name's and its members' lexemes, as each item's own are checked,
   -- but not those of Lean's `set_option ... in` before a member.
   let members := stx[4].getArgs
-  for x in #[stx[2]] ++ members.map fun m => if m.isOfKind ``Lang.lawMember then m else underSettings m[0] do
+  -- A law's, without its settings, as a command's without Lean's.
+  for x in #[stx[2]] ++ members.map fun m =>
+      if m.isOfKind ``Lang.lawMember then mkNullNode (m.getArgs.extract 1 m.getNumArgs) else underSettings m[0] do
     checkLexemes x
     checkParsed x
   lintItem stx[2]
@@ -9253,35 +9272,38 @@ errors. -/
   -- Each member in the trait's scope, without the lints that the trait
   -- reported of its tokens.
   let member (k : CommandElabM Unit) : CommandElabM Unit := inTraitScope path modName k
-  let kindOf (m : Syntax) := (traitMemberOf m).1
-  -- The methods, as functions of the trait, each in scope after it.
-  for m in members.filter (kindOf · == .method) do
-    let some f := (traitMemberOf m).2.2.2.2.1 | continue
-    let fp := path ++ (declaredIdent f).1.getId
-    member (elabCommand m[0])
-    if (← getState).table.items.contains fp then
-      record (.useDef { module := modName, scope := path, target := fp, glob := false })
-  -- The laws.
-  let mut laws : Array (Name × Expr × Bool × Bool × Bool) := #[]
-  for m in members.filter (kindOf · == .law) do
-    let out ← inTraitScope path modName do
-      try some <$> elabLaw path m
-      catch ex => logException ex; pure none
-    if let some l := out then laws := laws.push l
-  -- The expectations, each checked with the laws among its hypotheses.
-  for m in members.filter fun m => kindOf m == .expectation do
-    let some f := (traitMemberOf m).2.2.2.2.1 | continue
-    let ep := path ++ (declaredIdent f).1.getId
-    member (elabCommand m[0])
-    let st ← getState
-    if let some c := st.globals.get? ep then
-      -- Its checks are the solver's (`F0215`).
-      if c.tested.any || c.enumerated.any then
-        logErrorAt f (Core.traitEvidenceMsg (if c.tested.any then "random" else "enumerated")).text
-      let uses ← liftTermElabM <| usesOf (c.uses.map (Lean.mkConst ·) ++ laws.map (·.2.1))
-      record (.globalInfo ep { c with laws := laws.map fun (l, e, _) => (l, e), uses
-                                      decidable := c.decidable && laws.all (·.2.2.1)
-                                      undecidableDenied := c.undecidableDenied || laws.any (·.2.2.2.1)
-                                      guarded := c.guarded || laws.any (·.2.2.2.2) })
+  -- The methods, each in scope after it, then the laws, then the
+  -- expectations, each checked with the laws among its hypotheses
+  -- (`Core.traitOrder`).
+  let mut laws : Array (Name × Expr × Core.CheckFlags) := #[]
+  for i in Core.traitOrder (members.map (traitMemberOf · |>.1)) do
+    let m := members[i]!
+    let (kind, _, _, _, f?, _) := traitMemberOf m
+    match kind with
+    | .method =>
+      let some f := f? | continue
+      let fp := path ++ (declaredIdent f).1.getId
+      member (elabCommand m[0])
+      if (← getState).table.items.contains fp then
+        record (.useDef { module := modName, scope := path, target := fp, glob := false })
+    | .law =>
+      let out ← inTraitScope path modName do
+        try some <$> elabLaw path m
+        catch ex => logException ex; pure none
+      if let some (n, e, inCore, denied, fmfBound) := out then laws := laws.push (n, e, { inCore, denied, fmfBound })
+    | _ =>
+      let some f := f? | continue
+      let ep := path ++ (declaredIdent f).1.getId
+      member (elabCommand m[0])
+      let st ← getState
+      if let some c := st.globals.get? ep then
+        -- Its checks are the solver's (`F0215`).
+        if let some msg := Core.traitEvidenceMsg? c.tested.any c.enumerated.any then logErrorAt f msg.text
+        let uses ← liftTermElabM <| usesOf (c.uses.map (Lean.mkConst ·) ++ laws.map (·.2.1))
+        let flags := Core.CheckFlags.withLaws { inCore := c.decidable, denied := c.undecidableDenied, fmfBound := c.guarded }
+          (laws.map (·.2.2))
+        record (.globalInfo ep { c with laws := laws.map fun (l, e, _) => (l, e), lawsOf := path, uses
+                                        decidable := flags.inCore, undecidableDenied := flags.denied
+                                        guarded := flags.fmfBound })
 
 end Fren

@@ -992,6 +992,22 @@ def traitGroup (sc : WScope) : R String := do
       out := out ++ s!"\n    expect e{k}(s: Self, t: Self, x: Int) \{\n{assume}        expect c: {claim}\n    }\n"
     else
       out := out ++ s!"\n    expect e{k}: forall (s: Self) (x: Int), {← traitBool sc flag #["s"] #["x"] 1}\n"
+  -- The other forms, drawn after the members above, so that a trait drawn
+  -- before them is as it was: a method that shadows a procedure's name,
+  -- which only the trait's own law mentions; a contract over an earlier
+  -- method; a law with no variables, one with a `Bool` variable written
+  -- `x?`, and one after a lint setting; and a trait that is not `pub`.
+  if ← chance 40 then
+    out := out ++ "\n    fn c0(Self): Int\n    law shadowed(s: Self): c0(s) >= 0\n"
+  if ← chance 40 then
+    out := out ++ "\n    fn grown(s: Self): (r: Int) { ensure above: r >= obs(s) }\n"
+  if ← chance 30 then
+    out := out ++ s!"\n    law closed(): {← gen { sc with vars := #[] } .int 1} <= {← gen { sc with vars := #[] } .int 1}\n"
+  if ← chance 30 then
+    out := out ++ s!"\n    law flagged(s: Self, b?): when b?, {← traitBool sc flag #["s"] #[] 0}\n"
+  if ← chance 30 then
+    out := out ++ s!"\n    set_option fren.lint.eq_op \"allow\" in\n    law set(s: Self, x: Int): {← traitBool sc flag #["s"] #["x"] 0}\n"
+  out := if ← chance 30 then out.replace "pub trait Tr" "trait Tr" else out
   return out ++ "}\n"
 
 /-- A spec with constants, functions, and components over them, and its

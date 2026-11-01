@@ -21,12 +21,12 @@ for every value of a type that is not listed. See
 whose arguments give the called procedure's parameters. See
 [Calls](Lang/Calls.md).
 
-**Carrier.** The type of a trait, written `Self` within it. See
-[Traits](Lang/Traits.md#the-carrier).
-
 **Cardinality operator.** One of the built-in functions `exactly_one?`
 and `at_most_one?`, which hold when exactly one, or at most one, of their
 `Bool` arguments is `true`. See [Expressions](Lang/Expressions.md#cardinality).
+
+**Carrier.** The type of a trait, written `Self` within it. See
+[Traits](Lang/Traits.md#the-carrier).
 
 **Chained comparison.** Orderings written one after another, as in
 `0 <= i < n`, which means `0 <= i and i < n`. See
@@ -180,13 +180,15 @@ arms whose pattern matches its scrutinee and whose guard, if it has one,
 holds. See
 [Expressions](Lang/Expressions.md#matches).
 
+**Member.** A declaration inside a procedure's body: an `exists` or `let`
+variable, a result's definition, a constraint or a call. Or a declaration
+inside a trait: a method, a law or an expectation (see
+[Traits](Lang/Traits.md#members)).
+
 **Method.** A built-in operation written after its receiver and `.`, as
 `s.len` and `s.starts_with?(t)` are (see [Expressions](Lang/Expressions.md#methods));
 or a function of a trait, without a body, over its carrier (see
 [Traits](Lang/Traits.md#members)).
-
-**Member.** A declaration inside a procedure's body: an `exists` or `let`
-variable, a result's definition, a constraint or a call.
 
 **Newtype.** A record with exactly one field, which has no name, declared
 as `struct Ms(Int)`: a type distinct from every other, with the values of

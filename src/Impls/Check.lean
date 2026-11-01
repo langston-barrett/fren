@@ -778,6 +778,14 @@ impl definitions: check::definitions for (k : CheckKind) {
   substituted? := k.substitutes,
 }
 
+impl law_premise: check::law_premise for (k : CheckKind) (l : Bool) {
+  kind := toCheckKind k,
+  laws? := l,
+  rests? := Fren.Core.lawPremise k l,
+} by
+  intro k l _
+  cases k <;> cases l <;> simp [fren_spec, Fren.Core.lawPremise, toCheckKind]
+
 impl copied: check::copied for (s : Fren.Core.Symbol) {
   symbol := toSymbol s,
   copied? := s.copied,

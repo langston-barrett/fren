@@ -1177,6 +1177,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := ← named c.assumes
       laws := ← c.laws.mapM fun (n, l) => return (n, ← rep l)
+      lawsOf := c.lawsOf
       -- A defined function's postconditions are claims of its own
       -- (`check::postcondition`), and the hypotheses of nothing; an
       -- uninterpreted function's, of its value, its contract's guarantees

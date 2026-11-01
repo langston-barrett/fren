@@ -395,8 +395,9 @@ structure CComp where
   /-- A global expectation with a block (`Fren.Core.Comp.global`). -/
   global : Bool := false
   /-- For an expectation of a trait: the trait's laws, each a closed
-  formula (`Fren.Core.Comp.laws`). -/
+  formula (`Fren.Core.Comp.laws`), and the trait. -/
   laws : Array (Name × String) := #[]
+  lawsOf : Name := .anonymous
   /-- Its own variables in declaration order, then each call's. -/
   vars : Array CVar
   props : Array CProp
@@ -775,6 +776,8 @@ structure State where
   formula, whether it is in the decidable core, the applications in it
   that bring facts, and whether it sets `fmf-bound` (`Reqs/Lang/Traits`). -/
   traitLaws : Array (Name × String × Bool × Array String × Bool) := #[]
+  /-- A trait's members are being elaborated. -/
+  inTrait : Bool := false
   /-- Each uninterpreted function's parameter and result types, in order. -/
   funs : Array (Name × Array Ty × Ty) := #[]
   /-- Each defined function's parameters and result type, and its body over
@@ -7515,7 +7518,9 @@ partial def elabItem (item : Item) : M Unit := do
     unless isPub do
       modify fun s =>
         let r : Fren.Core.ItemRecord :=
-          { what := .function, path, level := s.levels.get .deadCode, singleCall? := body.map fun _ => s.levels.get .singleCallFn }
+          -- A trait's method is never dead (`lint::dead_item`).
+          { what := if s.inTrait then .method else .function, path, level := s.levels.get .deadCode
+            singleCall? := body.map fun _ => s.levels.get .singleCallFn }
         { s with items := s.items.push (r, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .comp isPub name header members close spans openStop => do
@@ -7736,42 +7741,41 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
   let member (m : Item) : M Unit := do
     -- Its own errors alone stop what follows them in it, as an item's do.
     let errors := (← get).itemErrors
-    modify fun s => { s with module := path, scope := path, trailingCommas := #[], itemErrors := #[] }
+    modify fun s => { s with module := path, scope := path, trailingCommas := #[], itemErrors := #[], inTrait := true }
     discard (attempt (elabItem m))
-    modify fun s => { s with module, scope := module, trailingCommas := commas, itemErrors := errors ++ s.itemErrors }
-  let isMethod (m : Item) := (kindOf (under m)).1 == .method
-  let isLaw (m : Item) := (kindOf (under m)).1 == .law
-  -- The methods, as functions of the trait, each in scope after it; one is
-  -- never dead, being part of the trait.
-  for m in members.filter isMethod do
-    let some f := (kindOf (under m)).2.2.2.2 | continue
-    let rec asPub : Item → Item
-      | .lintSetting a b c d e (some i) => .lintSetting a b c d e (some (asPub i))
-      | .function _ f tps ps r b cs l blk => .function true f tps ps r b cs l blk
-      | i => i
-    let before := (← get).itemErrors.size
-    member (asPub m)
-    if (← get).itemErrors.size == before then
-      let u : Fren.Core.UseDef := { module, scope := path, target := path ++ Name.mkSimple (declaredIdent f).1.name, glob := false }
-      modify fun s => { s with table := s.table.addUse u }
-  for m in members.filter isLaw do member m
-  let laws := (← get).traitLaws
-  -- The expectations, each checked with the laws among its hypotheses.
-  for m in members.filter fun m => !isMethod m && !isLaw m do
-    let before := (← get).globals.size
-    member m
-    let st ← get
-    if st.globals.size > before then
-      let c := st.globals.back!
-      -- Its checks are the solver's (`F0215`).
-      if c.tested.any || c.enumerated.any then
-        let sp := ((kindOf (under m)).2.2.2.2.map (·.span)).getD name.span
-        discard (attempt (α := Unit) (err sp (Fren.Core.traitEvidenceMsg (if c.tested.any then "random" else "enumerated"))))
-      let c := { c with laws := laws.map fun (l, f, _) => (l, f)
-                        decidable := c.decidable && laws.all (·.2.2.1)
-                        natApps := c.natApps ++ laws.flatMap (·.2.2.2.1)
-                        guarded := c.guarded || laws.any (·.2.2.2.2) }
-      modify fun s => { s with globals := s.globals.pop.push c }
+    modify fun s => { s with module, scope := module, trailingCommas := commas, itemErrors := errors ++ s.itemErrors
+                             inTrait := false }
+  -- The methods, each in scope after it, then the laws, then the
+  -- expectations, each checked with the laws among its hypotheses
+  -- (`Fren.Core.traitOrder`).
+  for i in Fren.Core.traitOrder (members.map fun m => (kindOf (under m)).1) do
+    let m := members[i]!
+    let (kind, _, _, _, f?) := kindOf (under m)
+    match kind with
+    | .method =>
+      let before := (← get).itemErrors.size
+      member m
+      if let some f := f? then
+        if (← get).itemErrors.size == before then
+          let u : Fren.Core.UseDef := { module, scope := path, target := path ++ Name.mkSimple (declaredIdent f).1.name, glob := false }
+          modify fun s => { s with table := s.table.addUse u }
+    | .law => member m
+    | _ =>
+      let laws := (← get).traitLaws
+      let before := (← get).globals.size
+      member m
+      let st ← get
+      if st.globals.size > before then
+        let c := st.globals.back!
+        -- Its checks are the solver's (`F0215`).
+        if let some msg := Fren.Core.traitEvidenceMsg? c.tested.any c.enumerated.any then
+          discard (attempt (α := Unit) (err ((f?.map (·.span)).getD name.span) msg))
+        let flags := Fren.Core.CheckFlags.withLaws { inCore := c.decidable, fmfBound := c.guarded }
+          (laws.map fun (_, _, inCore, _, fmfBound) => { inCore, fmfBound })
+        let c := { c with laws := laws.map fun (l, f, _) => (l, f), lawsOf := path
+                          decidable := flags.inCore, guarded := flags.fmfBound
+                          natApps := c.natApps ++ laws.flatMap (·.2.2.2.1) }
+        modify fun s => { s with globals := s.globals.pop.push c }
   modify fun s => { s with traitLaws := #[] }
 end
 

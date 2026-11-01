@@ -1221,6 +1221,8 @@ inductive Named where
   | «trait»
   /-- A law of a trait. -/
   | law
+  /-- A method of a trait, which is part of it, and never dead. -/
+  | method
   deriving Inhabited, BEq, DecidableEq, Repr
 
 def Named.describe : Named → String
@@ -1241,6 +1243,7 @@ def Named.describe : Named → String
   | .constant => "constant"
   | .trait => "trait"
   | .law => "law"
+  | .method => "method"
 
 /-- The case of a name (`lint::naming_case`). -/
 def Named.case : Named → Case

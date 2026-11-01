@@ -1,7 +1,8 @@
 -- Traits (`Reqs/Lang/Traits`): a carrier, methods, laws, and
--- expectations checked from the laws alone, in both front ends. Each law
--- is outside the decidable core, for now. In a module, since Lean has an
--- `Option` of its own.
+-- expectations checked from the laws alone, in both front ends. A law over
+-- a type that is not listed is outside the decidable core, and every check
+-- that rests on laws says that their consistency is not checked (`F0665`).
+-- In a module, since Lean has an `Option` of its own.
 -- fren-covers: lang::trait_expectation
 set_option fren.lint.dead_code "allow"
 
@@ -18,17 +19,19 @@ trait KV {
 
     -- Follows from the law.
     expect overwritten(s: Self, k: Key, v: Int, w: Int) {
-        expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)
+        expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)  --~ warning: rests on the laws of `traits::KV`
     }
 
     -- The short form, over the carrier.
-    expect read_back: forall (s: Self) (k: Key) (v: Int), get(put(s, k, v), k) = Option::Some(v)
+    expect read_back: forall (s: Self) (k: Key) (v: Int), get(put(s, k, v), k) = Option::Some(v)  --~ warning: rests on the laws of `traits::KV`
 
     -- The laws are quantified, so the solver seldom finds a model of them:
     -- a false claim, and a cover goal, are undecided.
     expect other_key(s: Self, k: Key, j: Key, v: Int) {
         expect same: get(put(s, k, v), j) = Option::Some(v)  --~ warning: could not decide whether `traits::KV::other_key::same` holds
+        --~^ warning: rests on the laws of `traits::KV`
         cover stored: get(s, k) != Option::None  --~ warning: could not decide whether `traits::KV::other_key::stored` can be met
+        --~^ warning: rests on the laws of `traits::KV`
     }
 }
 
@@ -45,6 +48,20 @@ trait Sized {
     law fixed(s: Self, n: Int): size(s) >= 0  --~ warning: unused bound name `n`
 
     expect positive(s: Self) { expect after_grow: size(grow(s)) > 0 }
+    --~^ warning: rests on the laws of `traits::Sized`
+}
+
+-- Laws that contradict each other make every expectation hold, which its
+-- warning says.
+set_option fren.lint.undecidable "allow" in
+trait Contradictory {
+    fn size(Self): Int
+
+    law positive(s: Self): size(s) > 0
+    law negative(s: Self): size(s) < 0
+
+    expect anything(s: Self) { expect c: size(s) = 42 }
+    --~^ warning: rests on the laws of `traits::Contradictory`
 }
 
 -- The methods of a trait shadow the module's names, without `!`, and
@@ -59,10 +76,27 @@ trait Bounded {
 
     law bounded(s: Self): get(s) <= LIMIT
 
-    expect below: forall (s: Self), get(s) < LIMIT + 1
+    expect below: forall (s: Self), get(s) < LIMIT + 1  --~ warning: rests on the laws of `traits::Bounded`
 }
 
--- Without laws, an expectation is about every carrier and every method.
+-- A law with no variables, or with only `Bool` ones, is in the decidable
+-- core; one over a carrier is not, and a setting before it allows it.
+fn level(Bool): Int
+
+trait Listed {
+    fn value(Self): Int
+
+    law closed(): level(true) = 1
+    law boolean(b?): level(b?) >= 0
+    set_option fren.lint.undecidable "allow" in
+    law natural(s: Self): value(s) >= 0
+
+    expect both(s: Self) { expect c: level(true) + value(s) >= 1 }
+    --~^ warning: rests on the laws of `traits::Listed`
+}
+
+-- Without laws, an expectation is about every carrier and every method,
+-- and rests on nothing more.
 trait Lawless {
     fn value(Self): Int
 
@@ -73,3 +107,6 @@ trait Lawless {
         expect same: value(s) = value(t)  --~ error: expectation `traits::Lawless::equal::same` does not hold
     }
 }
+
+-- `law` is a name like any other outside a trait.
+fn law(Int): Int

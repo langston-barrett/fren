@@ -21,7 +21,7 @@ instance : Fren.Finite Group := ⟨Group.all.toList, by intro x; cases x <;> sim
 
 instance : Fren.Finite Named :=
   ⟨[.module, .component, .variable, .field, .binder, .function, .instance, .constraint, .global, .enumeration,
-    .variant, .record, .abstractType, .typeAlias, .constant, .trait, .law],
+    .variant, .record, .abstractType, .typeAlias, .constant, .trait, .law, .method],
     by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite Comparison := ⟨Comparison.all.toList, by intro x; cases x <;> simp [Comparison.all]⟩
@@ -113,6 +113,7 @@ def toNamed : Named → lint.Named
   | .constant => .Constant
   | .trait => .Trait
   | .law => .Law
+  | .method => .Method
 
 impl lint_severity: lint::severity for (l : LintLevel) {
   level := toLintLevel l,

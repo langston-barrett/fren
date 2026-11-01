@@ -25,6 +25,50 @@ trait Generic {
     fn pick<T>(Self, T): T  --~ error: a method of trait `traits_static::Generic` has no type parameters, for now
 }
 
+-- No member's block has a `use`, for now.
+trait Uses {
+    fn size(Self): Int
+    expect sized(s: Self) {  --~ error: a member of trait `traits_static::Uses` has no `use`, for now
+        use self::Key
+        expect c: size(s) >= size(s)
+    }
+}
+
+-- An expectation of a trait is checked by the solver alone.
+trait Tested {
+    fn size(Self): Int
+    set_option fren.evidence "random" in
+    expect sized(s: Self) { expect c: size(s) >= 0 }
+    --~^ error: `fren.evidence` cannot be set to `"random"` for an expectation of a trait
+}
+
+-- A law's name is written without `?` or `!`.
+trait Questioned {
+    fn size(Self): Int
+    law big?(s: Self): size(s) > 0  --~ error: constraint names cannot end in `?`
+}
+
+trait Banged {
+    fn size(Self): Int
+    law big!(s: Self): size(s) > 0  --~ error: `big!` shadows nothing
+}
+
+-- A method's contract sees the methods before it, not those after.
+trait Later {
+    fn size(s: Self): (r: Int) { ensure big: r > weight(s) }
+    --~^ error: cannot find `weight` in this scope
+    fn weight(Self): Int
+}
+
+-- A trait's name is in `CamelCase`, and a law's in `snake_case`.
+trait lower_case {}  --~ warning: trait `lower_case` should have a camel case name
+
+trait Cased {
+    fn size(Self): Int
+    set_option fren.lint.undecidable "allow" in
+    law BigSize(s: Self): size(s) > 0  --~ warning: law `BigSize` should have a snake case name
+}
+
 -- `Self` and the members share one namespace.
 trait Twice {
     fn size(Self): Int

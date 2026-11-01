@@ -944,6 +944,26 @@ it stays apart from `check::pass_evidence`, whose premises are earlier
 checks: from outside the function, its postcondition checks are one
 premise, settled where all of them pass.
 
+### The laws of a trait
+
+A check of an [expectation of a trait](Lang/Traits.md#expectations) has
+the trait's laws among the hypotheses of its queries, as it has the
+contracts of the uninterpreted functions that its queries apply. Laws that
+no interpretation meets make it hold vacuously. Fren does not check yet
+that a trait's laws can hold together (#594), so each check that rests on
+them says so, with the warning `F0665`, whatever its verdict, and its
+verdict is its own. `check::law_premise` states which checks rest on the
+laws: every check of an item whose queries have laws, but its
+realizability, whose query of the assumptions alone has none.
+
+```fren
+pub proc law_premise(kind: Kind, laws?): (det rests?) {
+    ensure rule: rests? iff laws? and kind != Kind::Realizability
+
+    expect lawless: when not laws?, not rests?
+}
+```
+
 ## Reports
 
 A check whose own verdict is `Pass` is reported as follows. Where it

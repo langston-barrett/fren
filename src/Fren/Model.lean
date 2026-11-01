@@ -551,6 +551,8 @@ structure CompInfo where
   /-- For an expectation of a trait: the trait's laws, each a closed
   proposition over the placeholders (`Core.Comp.laws`). -/
   laws : Array (Name × Expr) := #[]
+  /-- The trait whose laws `laws` are. -/
+  lawsOf : Name := .anonymous
   deriving Inhabited
 
 def CompInfo.assumes (c : CompInfo) : Array PropInfo := c.props.filter (·.kind == .assume)

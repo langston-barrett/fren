@@ -1,0 +1,9 @@
+set_option fren.lint.undecidable "allow" in
+trait Sized {
+    fn size(Self): Int
+
+    law positive(s: Self): size(s) > 0
+    law negative(s: Self): size(s) < 0
+
+    expect anything(s: Self) { expect c: size(s) = 42 }
+}

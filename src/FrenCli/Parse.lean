@@ -2010,7 +2010,9 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
   return (header, ms, close.span, spans, ob.span.stop)
 
 mutual
-partial def item : P Item := do
+/-- An item, or, `inTrait`, a member of a trait after a `set_option ... in`
+(`traitMember`). -/
+partial def item (inTrait := false) : P Item := do
   markStart
   -- An item is in another only after its `set_option ... in`, at its end.
   modify fun s => { s with items := s.items.push s.pos }
@@ -2050,7 +2052,8 @@ partial def item : P Item := do
     let span := t.span.to v.span
     if (← eatKw "in").isSome then
       let removal := { span with stop := (← peek).span.start }
-      return .lintSetting span { name, span := o.span } value v.span removal (some (← item))
+      return .lintSetting span { name, span := o.span } value v.span removal
+        (some (← if inTrait then traitMember else item))
     return .lintSetting span { name, span := o.span } value v.span span none
   if isKw t "tested" || isKw t "trusted" then
     discard bump
@@ -2274,7 +2277,7 @@ whose `law` is a contextual keyword, or an item, which the elaborator
 checks is a method or an expectation. -/
 partial def traitMember : P Item := do
   let t ← peek
-  unless isWord t "law" && ((← get).toks[(← get).pos + 1]?).any (·.tok matches .ident _) do return ← item
+  unless isWord t "law" && ((← get).toks[(← get).pos + 1]?).any (·.tok matches .ident _) do return ← item (inTrait := true)
   markStart
   discard bump
   let name ← ident

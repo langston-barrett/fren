@@ -257,7 +257,8 @@ Procedures and global expectations are never dead: each is a guarantee,
 or a claim about guarantees, in its own right, and is checked and
 [traced](../Trace.md) whether or not anything uses it. Nor is a
 [trait](../Lang/Traits.md), whose expectations are checked whether or not
-anything uses it, nor its methods and laws, which are its interface. `pub` items may be used
+anything uses it, nor its methods, which are its interface, whether or not it is `pub`, nor
+its laws. `pub` items may be used
 by other files. `lint::Named` is what a name can name, which the
 [naming conventions](NonstandardStyle.md#naming-conventions) also use. `lint::dead_item`
 states this:
@@ -281,6 +282,7 @@ pub enum Named {
     Constant,
     Trait,
     Law,
+    Method,
 }
 
 use self::Named::{AbstractType, Component, Constant, Enumeration, Function, Record, TypeAlias}
@@ -300,6 +302,7 @@ pub proc dead_item(
     } and not pub? and n_uses = 0)
 
     expect public_lives: when pub?, not dead?
+    expect methods_live: when what = Named::Method, not dead?
     expect components_live: when what = Component, not dead?
 }
 ```

@@ -70,12 +70,55 @@ def traitMemberMsg? (trait : Name) (m : TraitMember) (isPub generic uses : Bool)
           notes := #["note: a member's block sees the trait's names and its module's",
             "help: write the `use` in the module, before the trait"] }
 
+/-- When a member is elaborated (`lang::trait_member_phase`): the methods
+first, then the laws, then the expectations, each in the order written. A
+member of another kind is reported before any is elaborated. -/
+def TraitMember.phase : TraitMember → Nat
+  | .method => 0
+  | .law => 1
+  | .expectation => 2
+  | _ => 3
+
+/-- The positions of the members `ms`, in the order in which both front
+ends elaborate them (`TraitMember.phase`). -/
+def traitOrder (ms : Array TraitMember) : Array Nat :=
+  #[0, 1, 2].flatMap fun p => (Array.range ms.size).filter fun i => (ms[i]!).phase == p
+
+/-- What the checks of an expectation, or of a law, see of how they are
+asked (`lang::CheckFlags`): whether every construct is in the decidable
+core, whether `undecidable` is an error in it, and whether its queries set
+`fmf-bound`. -/
+structure CheckFlags where
+  inCore : Bool := true
+  denied : Bool := false
+  fmfBound : Bool := false
+  deriving Inhabited, DecidableEq, Repr
+
+/-- An expectation's flags with those of one law of its trait among its
+hypotheses (`lang::law_flags`). -/
+def CheckFlags.withLaw (e law : CheckFlags) : CheckFlags :=
+  { inCore := e.inCore && law.inCore, denied := e.denied || law.denied, fmfBound := e.fmfBound || law.fmfBound }
+
+/-- An expectation's flags with those of every law of its trait. -/
+def CheckFlags.withLaws (e : CheckFlags) (laws : Array CheckFlags) : CheckFlags := laws.foldl CheckFlags.withLaw e
+
+/-- Whether an expectation of a trait accepts its evidence setting
+(`lang::trait_expectation_evidence`): its checks are the solver's, so
+neither testing nor enumeration. -/
+def traitEvidenceAccepted (tested enumerated : Bool) : Bool := !tested && !enumerated
+
 /-- `fren.evidence` set to testing or enumeration, `value`, for an
 expectation of a trait (`F0215`): its checks are the solver's, since an
 interpretation that testing or enumeration picks need not meet the laws. -/
 def traitEvidenceMsg (value : String) : Msg :=
   let m := itemEvidenceMsg "an expectation of a trait" value
   { m with notes := #["note: an interpretation that testing or enumeration picks need not meet the trait's laws"] ++ m.notes }
+
+/-- The error of an expectation of a trait whose checks are set to testing
+or enumeration (`traitEvidenceAccepted`), if they are. -/
+def traitEvidenceMsg? (tested enumerated : Bool) : Option Msg :=
+  if traitEvidenceAccepted tested enumerated then none
+  else some (traitEvidenceMsg (if tested then "random" else "enumerated"))
 
 /-- A member of a trait, or its carrier, declared again. -/
 def dupTraitMemberMsg (n : Name) : Msg :=
