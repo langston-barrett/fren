@@ -12,6 +12,22 @@ listed, so that a quantifier over them is expanded while elaborating, how
 many instances it may have, what a binder of a global expectation ranges
 over, and the guards that bound an unbounded quantifier, which set
 `fmf-bound` and which the evaluator enumerates.
+
+What the front ends make of a quantifier, which the reference leaves to the
+code (`Reqs/dev/Style#what-is-not-a-rule`):
+
+- A quantifier over listed types is its expansion, both in the solver's
+  queries, which have no quantifier over listed types, and in the
+  generated Lean, which has no `Fintype`.
+- An unbounded quantifier is not expanded. In the generated Lean it is a
+  `∀` or `∃`, a `Prop`, and in the solver's queries a quantifier,
+  `(forall ((x T)) e)` or `(exists ((x T)) e)`, which declares the bound
+  name at its type's sort and nothing else (`Reqs/Cli#solver-queries`).
+- The facts that an application in an unbounded quantifier's body brings
+  are stated under the solver's quantifier over the bound names that it
+  mentions, without the guard: for `forall (i: Int), when 0 <= i < n,
+  h(i) >= 0`, with `fn h(Int): Nat`, the queries assume
+  `(forall ((|i'0| Int)) (>= (h |i'0|) 0))`, and Lean `∀ i'0, 0 ≤ ↑(h i'0)`.
 -/
 
 open Lean
@@ -235,14 +251,19 @@ as `t` has newtypes, the first `t.wrapped.length - 1`; any other field is
 not the name. Both front ends ask it, of the bound name's type: the `fren`
 command of a path such as `m.0`, and the hosted front end of the field
 projections that elaboration writes, for `m.0` as for an ordering of a
-newtype. -/
+newtype. Each front end computes only which bound name an operand reads
+and its fields' names. The elaborators read no field as the name, since
+they set `fmf-bound` from the guard's shape alone
+(`Fren.Core.boundedOptions`). -/
 def nameAlone (base : Option Nat) (t : Ty) (fields : List String) : Option Nat :=
   if decide (fields.length < t.wrapped.length) && fields.all (· == "0") then base else none
 
 /-- Whether a bound name of the type `t` ranges from 0 where its guard gives
 it only an upper bound (`lang::nat_floor`): where its values are naturals,
 a `Nat` or a newtype over one, whose values are its field's. Both front
-ends' evaluators ask it of the bound name's type. -/
+ends' evaluators ask it of the bound name's type. The elaborators, which
+need `nat?` only to set `fmf-bound`, take it only of a name declared `Nat`
+(`Fren.Core.boundedOptions`). -/
 def startsAtZero (t : Ty) : Bool := t.erased matches .nat
 
 /-- What the operand `e` of a conjunct is, seen from the bound name at

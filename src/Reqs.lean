@@ -9,6 +9,7 @@ import Reqs.Generated
 import Reqs.Impl
 import Reqs.Lang
 import Reqs.Lint
+import Reqs.Markdown
 import Reqs.Models
 import Reqs.Modules
 import Reqs.Mutate

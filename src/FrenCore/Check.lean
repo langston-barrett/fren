@@ -1343,7 +1343,16 @@ def quantifierOptions (logic : String) : List (String × String) :=
 /-- The cvc5 option for a query with a quantifier over a collection's
 elements, which a subset type within an element type brings
 (`Reqs/Cli#solver-queries`): `fmf-bound`, with which cvc5 finds models of
-quantifiers that membership bounds. -/
+quantifiers that membership bounds.
+
+A procedure, global expectation or refinement whose queries have an
+unbounded quantifier with a bound name that has a domain sets it too
+(`Reqs/Lang/Quantifiers#guards`): cvc5 then finds models of quantifiers
+bounded by membership and by integer ranges. For it, the domain is that of
+the guard's shape alone (`lang::guard_domain`), whatever the bound name's
+type: no field read from a bound name is the name, and only a name declared
+`Nat` has naturals for values. `lang::range_domain` says only which ranges
+the evaluators enumerate. -/
 def boundedOptions : List (String × String) := [("fmf-bound", "true")]
 
 
