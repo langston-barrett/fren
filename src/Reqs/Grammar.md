@@ -139,7 +139,7 @@ pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
 arm            := pattern ["if" iff] "=>" expr
 row            := (iff | "_") "=>" iff
-pattern        := "|" primary ("|" primary)+ | or-pattern
+pattern        := ["|"] or-pattern
 or-pattern     := primary ("|" primary)*
 primary        := "_" | DECL | literal | range
                 | path | path"(" or-pattern ("," or-pattern)* ")"

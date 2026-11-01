@@ -6,7 +6,7 @@ one type: that of the `match`'s scrutinee, or of a value of a variant's
 payload.
 
 ```
-pattern      := "|" primary ("|" primary)+ | or-pattern
+pattern      := ["|"] or-pattern
 or-pattern   := primary ("|" primary)*
 primary      := "_" | DECL | literal | range
               | path ["(" or-pattern ("," or-pattern)* ")"]
@@ -20,12 +20,6 @@ in `0..=9`, `-5..0` and `..=MAX`, as the `.` of a field read is (`F0128`).
 An upper bound is part of a range only when it touches the `..`: in `n is
 0.. and ok?`, the range is `0..`, and so it is in `n is 1.. ensure r: ...`,
 where the next member follows on the same line.
-
-A pattern may start with `|` only where it is an or-pattern, of two or
-more alternatives, so that they can be written one per line, each
-starting with `|`. Before a pattern of one alternative, the `|` separates
-nothing, and is an error (`F0166`), as it is before a
-[table](Expressions.md#tables)'s row.
 
 ## Kinds of pattern
 

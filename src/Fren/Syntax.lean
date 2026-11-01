@@ -362,8 +362,7 @@ scoped syntax (name := fromPattern) fren_bound noWs ".." (noWs fren_bound)? : fr
 scoped syntax (name := uptoPattern) "..=" noWs fren_bound : fren_pattern
 
 /-- The pattern of a `match` arm or of `is`: an or-pattern, optionally
-after a leading `|`, which the elaborator reports before a pattern of one
-alternative (`F0166`). -/
+after a leading `|`. -/
 syntax fren_top_pattern := ("| ")? sepBy1(fren_pattern, " | ")
 
 /-- `pattern => e`, or `pattern if C => e` with a guard; like a binding's,

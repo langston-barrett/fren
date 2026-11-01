@@ -1,7 +1,0 @@
--- A pattern test's pattern starts with `|` only before an or-pattern.
-pub enum Sign { Negative, Zero, Positive }
-
-proc c(s: Sign): (d?) {
-    ensure r: d? iff s is | Sign::Zero  --~ error: a pattern of one alternative does not start with `|`
-}
---@ exit: 2

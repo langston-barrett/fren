@@ -1101,8 +1101,7 @@ the `{` starts the arms. Each arm has a [pattern](Patterns.md) and a body, and t
 the scrutinee. A pattern is `_`, a binder, a literal, a range, a variant
 whose payload's values match patterns of their own, nested to any depth, or
 an or-pattern. An or-pattern may start with `|`, so that its alternatives
-can be written one per line, each starting with `|`, but a pattern of one
-alternative does not (`F0166`):
+can be written one per line, each starting with `|`:
 
 ```text
 match method {

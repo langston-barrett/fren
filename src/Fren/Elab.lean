@@ -183,9 +183,6 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
     else if stx.isOfKind ``Lang.fren_row && !stx[0].isNone then
       -- A row that starts with `|` (`F0166`).
       throwErrorAt stx[0] Core.rowBarMsg.text
-    else if stx.isOfKind ``Lang.fren_top_pattern && !stx[0].isNone && stx[1].getSepArgs.size == 1 then
-      -- A pattern of one alternative that starts with `|` (`F0166`).
-      throwErrorAt stx[0] Core.patternBarMsg.text
     else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr then
       stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
     else stx.getArgs.forM checkParsed
@@ -1162,11 +1159,11 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
 /-! ### Patterns (`Reqs/Lang/Patterns`) -/
 
 /-- The alternatives of a pattern of `match` or `is`, a `fren_top_pattern`,
-as written, and whether it is an or-pattern, of more than one. A leading
-`|` starts only an or-pattern (`F0166`). -/
+as written, and whether it is an or-pattern: of more than one, or with a
+leading `|`. -/
 def topAlts (top : Syntax) : Array Syntax × Bool :=
   let alts := top[1].getSepArgs
-  (alts, alts.size > 1)
+  (alts, alts.size > 1 || !top[0].isNone)
 
 /-- The payload's patterns of a variant pattern, each a `fren_or_pattern`. -/
 def patternArgs (p : Syntax) : Array Syntax :=
