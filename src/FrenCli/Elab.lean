@@ -7327,7 +7327,8 @@ partial def elabItem (item : Item) : M Unit := do
       -- structural recursion (`lang::structural_recursion`).
       let selfRec? := if tps.isEmpty && fnPs.isEmpty then
         some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
-      let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := if r == .nat then some .nat else none, fnParams, selfRec? }
+      -- The body is checked against the result type (`lang::checked`).
+      let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := some r, fnParams, selfRec? }
       modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
       let (smt, t) ← elabExpr cx body
       let uses := (← get).recUses

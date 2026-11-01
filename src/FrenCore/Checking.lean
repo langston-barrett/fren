@@ -18,8 +18,8 @@ namespace Fren.Core
 
 /-- Where an expression is written, for whether it is checked against a
 type (`lang::checked`). `declared`: where a type is declared, as a binding,
-a field, an argument, a payload, a defined output's definition or a
-constant's value. `shared`: a part whose type is the whole's, and every
+a field, an argument, a payload, a defined output's definition, a
+defined function's body or a constant's value. `shared`: a part whose type is the whole's, and every
 other such part's: an operand of `union`, `inter`, `minus` or `++`, a
 branch of a conditional, the body of a `match` arm, an element of a set or
 sequence literal, the expression in parentheses. `compared`: an operand of
