@@ -649,6 +649,19 @@ impl query_applies: check::query_applies for (facts : List (Fren.Core.AppFact Na
     have : _ := Int.ofNat_inj.mp he
     subst this; exact ha
 
+-- Both front ends' query builders keep the applications that bring facts
+-- with `appBrings`, given the item's function (`Comp.fn?`), if it is one,
+-- for every query of the item (`appFactsWith`).
+impl query_facts: check::query_facts for (own? : Option Nat) (f : Nat) {
+  «own_fn?» := own?.isSome,
+  g := ((own?.getD 0 : Nat) : Int),
+  f := (f : Int),
+  «brings?» := Fren.Core.appBrings own? (some f),
+} by
+  intro own? f _
+  unfold check.query_facts.ensures check.query_facts.ensure.rule
+  cases own? <;> simp [fren_spec, Fren.Core.appBrings] <;> omega
+
 -- Both front ends take the functions whose contracts a check rests on
 -- with `checkApplies` (`itemEvidence`, `appliedOf`).
 impl check_applies: check::check_applies for (q i : List Nat) (own : List Caveat) {

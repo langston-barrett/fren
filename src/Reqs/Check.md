@@ -347,6 +347,21 @@ parameters:
 
   ∀ x. A(x) ⇒ ∃ v. R(x, v)
 
+The questions about the tables and applications in its clauses are asked
+of this procedure too, a postcondition's of `v`, as `R` is, and no query
+of it has the facts of an application of the function itself
+(`check::query_facts`, in [Evidence](Evidence.md)). Each front end puts
+`v` for the applications in its own representation of the clauses; the
+shared `Fren.Core.appBrings` is the backstop, so that one that left an
+application in place would still not assume the contract. Those facts
+would be its own postconditions, which hold of `v` only where it is
+realizable, and would bring back the clause that a question about a table
+leaves out ([Disjointness](#disjointness)). The backstop covers only
+functions that are not generic: an application of a generic function names no
+function to the facts of a query (`fnOf`), since an instance's premise is
+not applied yet (#522), so for a generic function's own contract only each
+front end's own substitution of `v` keeps its facts out.
+
 The other functions that the clauses apply are free, as they are in any
 check, so a postcondition that says nothing of the function's value, and
 can be false, as `ensure c: n > 0` of `fn other(n: Int): Int`, fails. The

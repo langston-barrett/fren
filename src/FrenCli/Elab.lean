@@ -6769,7 +6769,12 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
         pure <| templates.map fun entry => { entry with
           name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name }
       else do
+        let (nb, ng) := ((← get).itemBranches.size, (← get).itemMemberGroups.size)
         annotateBranches cx (n ++ cn) e
+        -- Over the value, as its formula is.
+        modify fun s => { s with
+          itemBranches := s.itemBranches.extract 0 nb ++ (s.itemBranches.extract nb).map (·.map output)
+          itemMemberGroups := s.itemMemberGroups.extract 0 ng ++ (s.itemMemberGroups.extract ng).map (·.map output) }
         pure #[{ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }]
     for entry in entries do
       let cn := Name.mkSimple entry.name
