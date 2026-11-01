@@ -1,0 +1,41 @@
+--@ args: fmt --check
+-- `fren fmt` writes each comma on the line of the element before it, and
+-- before a comment at the end of that line (`fmt::separators`).
+pub enum Mode { Heat  -- warm
+    , Cool
+}
+
+struct P { x: Int, y: Int }
+
+proc sub(x: Int, y: Int): (o?) {
+    ensure r: o? iff x > y
+}
+
+proc c(x: Int, y: Int): (p?) {
+    -- After a comment at the end of the line.
+    call a := sub(
+        x  -- the first
+        , y
+    )
+    -- At the start of a line, with no comment.
+    call b := sub(x
+        , y)
+    -- After a block comment that ends its line.
+    call d := sub(x /- the first -/
+        , y)
+    -- After a comment on a line of its own.
+    call e := sub(
+        x
+        -- the second
+        , y
+    )
+    -- After two comments, and a trailing comma after one.
+    call f := sub(
+        x  -- the first
+        -- and more
+        , y  -- the second
+        ,
+    )
+    expect r5: P { x := x  -- a comment
+            , y := y }.x = x
+}

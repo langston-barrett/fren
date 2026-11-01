@@ -10,7 +10,7 @@ open Fren.Lang
 namespace Fren.Impls
 
 open FrenCli (ListKind)
-open FrenCli.Fmt (Bracket Follower Kind LineStart OpenBracket)
+open FrenCli.Fmt (Bracket Follower Kind LineStart OpenBracket PieceKind)
 
 instance : Fren.Finite Kind :=
   ⟨[.paren, .call, .closeParen, .brace, .closeBrace, .group, .closeGroup, .path, .comma, .colon, .negation, .rangeLeading, .rangeTrailing, .comment, .other],
@@ -288,6 +288,53 @@ impl in_block: fmt::in_block for (f l : Nat) (b a : Option Nat) (cs : List Nat) 
   simp only [fren_spec, any_within_toLines, FrenCli.Fmt.useAlone, FrenCli.Fmt.inBlock]
   generalize cs.any (fun c => decide (f ≤ c ∧ c ≤ l)) = c
   cases b <;> cases a <;> cases c <;> cases n <;> simp [toNeighbour]
+
+def toPiece : PieceKind → fmt.Piece
+  | .token => .Token
+  | .separator => .Separator
+  | .lineComment => .LineComment
+  | .blockComment => .BlockComment
+  | .lineBreak => .LineBreak
+
+def toPieces : List PieceKind → fmt.Pieces
+  | [] => .Nil
+  | p :: ps => .Next (toPiece p) (toPieces ps)
+
+theorem put_toPieces (p : PieceKind) (ps : List PieceKind) :
+    fmt.put (toPiece p) (toPieces ps) = toPieces (FrenCli.Fmt.putPiece id p ps) := by
+  induction ps with
+  | nil => rfl
+  | cons c ps ih =>
+    cases c <;> cases p <;> simp_all [toPieces, toPiece, fmt.put, fmt.«after_line?», FrenCli.Fmt.putPiece,
+      FrenCli.Fmt.afterLine]
+
+theorem place_toPieces (ps : List PieceKind) :
+    fmt.place (toPieces ps) = toPieces (FrenCli.Fmt.placeSeparators id ps) := by
+  induction ps with
+  | nil => rfl
+  | cons p ps ih => simp [toPieces, fmt.place, FrenCli.Fmt.placeSeparators, ih, put_toPieces]
+
+/-- The formatter places the pieces themselves, by their kinds: the kinds
+of what it places are those that `fmt::separators` places. -/
+theorem placeSeparators_map {α} (kind : α → PieceKind) (ps : List α) :
+    (FrenCli.Fmt.placeSeparators kind ps).map kind = FrenCli.Fmt.placeSeparators id (ps.map kind) := by
+  have put_map (p : α) (qs : List α) :
+      (FrenCli.Fmt.putPiece kind p qs).map kind = FrenCli.Fmt.putPiece id (kind p) (qs.map kind) := by
+    induction qs with
+    | nil => rfl
+    | cons c qs ih =>
+      simp only [FrenCli.Fmt.putPiece, List.map_cons, id]
+      split <;> simp_all
+  induction ps with
+  | nil => rfl
+  | cons p ps ih => simp [FrenCli.Fmt.placeSeparators, put_map, ih]
+
+impl separators: fmt::separators for (ps : List PieceKind) {
+  input := toPieces ps,
+  output := toPieces (FrenCli.Fmt.placeSeparators id ps),
+} by
+  intro ps _
+  simp [fren_spec, place_toPieces]
 
 impl file: fmt::file for (c i p f : Bool) {
   check? := c,

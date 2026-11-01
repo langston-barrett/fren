@@ -80,7 +80,8 @@ what it keeps. A file's *content* is what formatting keeps of it:
   [`fmt::comment_column`](#comments-at-the-end-of-lines) keeps it;
 - where it has [blank lines](#blank-lines) that formatting keeps;
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
-  decides, such as those between the members of a procedure.
+  decides, such as those between the members of a procedure, a line break
+  before a [comma](#commas-and-comments) counting as one after it.
 
 `fmt::format` is what `fren fmt` writes for a file that parses. It writes
 `fmt::render` of the file's content, whatever the file's layout: its line
@@ -143,10 +144,12 @@ names a procedure, and `fmt::layout_free` is an expectation, so its trust
 is recorded only here, as that of `fmt::safe`. The job formats every spec
 in the repository, and each laid out again at random, twice. Laying out
 again changes the line breaks of lists and their trailing commas, the
-spaces between tokens and the indentation of lines. It leaves alone the
-lines with comments, the gaps with blank lines, and the gaps between two
-tokens with no space, where a space could change what the parser reads,
-as in `f(x)`. It changes no part of a file's content. The job checks
+side of a comma that a line break or a line comment is on, the spaces
+between tokens and the indentation of lines. Other than moving a comma
+past a line comment, which keeps the comment's column, it leaves alone the
+lines with comments, and it leaves alone the gaps with blank lines and the
+gaps between two tokens with no space, where a space could change what the
+parser reads, as in `f(x)`. It changes no part of a file's content. The job checks
 that formatting keeps the tokens, imports and comments, with whether each
 comment starts its line, that formatting the result again changes
 nothing, and that each file laid out again formats as the file does. It
@@ -868,6 +871,120 @@ pub proc trailing_comma_lint(vertical?, allowed?) {
     call reported := unnecessary_trailing_comma(vertical?)
 
     expect never_reported: when written.comma?, not reported.fires?
+}
+```
+
+## Commas and comments
+
+No line starts with a comma, as rustfmt writes them: a comma goes on the
+line of the element before it, and a line break before it moves after it,
+so that which side of a comma a line break is on is not content. Where
+the element's line ends with a comment, `-- ...`, the comma goes before
+the comment. So
+
+```text
+call h := heater(
+    t  -- the temperature
+    , true
+)
+```
+
+is formatted as
+
+```text
+call h := heater(
+    t,  -- the temperature
+    true,
+)
+```
+
+A comma does not move past a block comment, `/- ... -/`, which a comma
+can follow on its line, as in `x /- the width -/ , y`. Commas are Fren's
+only separators: the members of a block have none, and the `|` of an
+alternative and an operator may start a line. `fmt::separators` places
+the commas, from the file's pieces in order: its tokens, its comments and
+its line breaks. A comma that follows a line break or a line comment goes
+before it, and then before any that precede those:
+
+```fren
+pub enum Piece {
+    Token,                   -- a token other than a comma
+    Separator,               -- a comma
+    LineComment,             -- `-- ...`, which ends its line
+    BlockComment,            -- `/- ... -/`
+    LineBreak,
+}
+
+use self::Piece::{BlockComment, LineBreak, LineComment, Separator, Token}
+
+pub enum Pieces { Nil, Next(Piece, Pieces) }
+
+use self::Pieces::Next
+
+-- A comma cannot follow a line break or a line comment.
+pub fn after_line?(piece: Piece) := piece is LineBreak | LineComment
+
+-- `piece` before pieces whose commas are placed, and the commas at their start before it, if it
+-- is a line break or a line comment.
+pub fn put(piece: Piece, placed: Pieces): Pieces := match placed {
+    Next(Separator, rest) => if after_line?(piece) then Next(Separator, put(piece, rest)) else Next(piece, placed),
+    _ => Next(piece, placed),
+}
+
+pub fn place(pieces: Pieces): Pieces := match pieces {
+    Pieces::Nil => Pieces::Nil,
+    Next(piece, rest) => put(piece, place(rest)),
+}
+
+-- Some comma follows a line break or a line comment.
+pub fn misplaced?(pieces: Pieces) := match pieces {
+    Pieces::Nil => false,
+    Next(piece, rest) => after_line?(piece) and rest is Next(Separator, _) or misplaced?(rest),
+}
+
+-- The pieces but the commas.
+pub fn others(pieces: Pieces): Pieces := match pieces {
+    Pieces::Nil => Pieces::Nil,
+    Next(Separator, rest) => others(rest),
+    Next(piece, rest) => Next(piece, others(rest)),
+}
+
+pub fn commas(pieces: Pieces): Int := match pieces {
+    Pieces::Nil => 0,
+    Next(Separator, rest) => 1 + commas(rest),
+    Next(_, rest) => commas(rest),
+}
+
+set_option fren.evidence "random" in
+pub proc separators(input: Pieces): (det output: Pieces) {
+    out output := place(input)
+
+    expect none_misplaced: not misplaced?(output)
+    expect others_kept: others(output) = others(input)
+    expect commas_kept: commas(output) = commas(input)
+    expect placed_already: when not misplaced?(input), output = input
+}
+
+-- `x  -- c`, a line break and `, y` is `x,  -- c`, a line break and `y`, whatever follows `y`.
+-- Testing evaluates the recursive definitions, which the solver cannot unfold.
+set_option fren.evidence "random" in
+expect separators_before_the_comment(rest: Pieces) {
+    let comma_y: Pieces := Next(Separator, Next(Token, rest))
+    call written := separators(Next(Token, Next(LineComment, Next(LineBreak, comma_y))))
+    call rest_written := separators(rest)
+    let y: Pieces := Next(Token, rest_written.output)
+    let comment_y: Pieces := Next(LineComment, Next(LineBreak, y))
+    expect moved: written.output = Next(Token, Next(Separator, comment_y))
+}
+
+-- `x /- c -/, y` stays as it is.
+set_option fren.evidence "random" in
+expect separators_after_a_block_comment(rest: Pieces) {
+    let comma_y: Pieces := Next(Separator, Next(Token, rest))
+    call written := separators(Next(Token, Next(BlockComment, comma_y)))
+    call rest_written := separators(rest)
+    let y: Pieces := Next(Token, rest_written.output)
+    expect kept: written.output = Next(Token, Next(BlockComment, Next(Separator, y)))
 }
 ```
 

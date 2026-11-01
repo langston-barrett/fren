@@ -1,0 +1,41 @@
+--- test/cli/fmt/commas.fren
++++ test/cli/fmt/commas.fren
+@@ -4,2 +4,2 @@
+-pub enum Mode { Heat  -- warm
+-    , Cool
++pub enum Mode { Heat,  -- warm
++    Cool,
+@@ -17,2 +17,2 @@
+-        x  -- the first
+-        , y
++        x,  -- the first
++        y,
+@@ -21,2 +21 @@
+-    call b := sub(x
+-        , y)
++    call b := sub(x, y)
+@@ -24,2 +23 @@
+-    call d := sub(x /- the first -/
+-        , y)
++    call d := sub(x /- the first -/ , y)
+@@ -28 +26 @@
+-        x
++        x,
+@@ -30 +28 @@
+-        , y
++        y,
+@@ -34 +32 @@
+-        x  -- the first
++        x,  -- the first
+@@ -36,2 +34 @@
+-        , y  -- the second
+-        ,
++        y,   -- the second
+@@ -39,2 +36,4 @@
+-    expect r5: P { x := x  -- a comment
+-            , y := y }.x = x
++    expect r5: P {
++        x := x,            -- a comment
++        y := y,
++    }.x = x
+exit=1
