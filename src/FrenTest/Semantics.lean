@@ -253,7 +253,7 @@ partial def genMatch (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
   let y := Lean.Name.mkSimple s!"y{d}"
   let n ← next 3
   let arms : List Arm ← (List.range (n + 1)).mapM fun _ => do
-    match ← next 4 with
+    match ← next 5 with
     | 0 =>
       let sc' := { sc with binders := y :: sc.binders }
       let g ← genGuard P sc' d
@@ -265,6 +265,11 @@ partial def genMatch (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
     | 2 =>
       let g ← genGuard P sc d; let b ← gen P sc t (d - 1)
       return ((Pat.ctor 1 #[], g.1, b.1), .Variant "E::B" .Nil, g.2, b.2)
+    -- An or-pattern of both variants, which `Ex.dispatch` tries for each.
+    | 3 =>
+      let g ← genGuard P sc d; let b ← gen P sc t (d - 1)
+      return ((Pat.alts #[.ctor 1 #[], .ctor 0 #[.wild]], g.1, b.1),
+        .Or (.Variant "E::B" .Nil) (.Variant "E::A" (.Cons .Wildcard .Nil)), g.2, b.2)
     | _ =>
       let g ← genGuard P sc d; let b ← gen P sc t (d - 1)
       return ((Pat.wild, g.1, b.1), .Wildcard, g.2, b.2)
@@ -409,6 +414,12 @@ def run : Array String := Id.run do
     for I in [binaryInterp us, { binaryInterp us with outOfRange := fun _ => some (.int 7) }] do
       unless (e.1.compile (fun _ => none) none).eval I look == e.1.eval I look do
         failures := failures.push s!"{repr e.2} in {repr b} changes its value when compiled"
+    -- So does compiling the structural recursion's body, as testing does
+    -- (`Spec.withCompiledRecs`).
+    let I := binaryInterp us
+    let compiledRecs := { I with recDefs := fun f => (I.recDefs f).map fun (ps, body) => (ps, body.compile (fun _ => none) (some ps.toList)) }
+    unless e.1.eval compiledRecs look == e.1.eval I look do
+      failures := failures.push s!"{repr e.2} in {repr b} changes its value with `r`'s body compiled"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do
