@@ -206,19 +206,27 @@ inductive Pat where
   | alts (ps : Array Pat)
   deriving Inhabited
 
-/-- The values that `p` binds when it matches `v`, or `none` if it does not
-match. -/
-partial def Pat.matchVal : Pat → Val → Option (List (Name × Val))
-  | .wild, _ => some []
-  | .bind n, v => some [(n, v)]
-  | .bool b, .bool b' => if b == b' then some [] else none
-  | .int lo hi, .int i => if lo.all (· ≤ i) && hi.all (i ≤ ·) then some [] else none
-  | .str s, .str s' => if s == s' then some [] else none
-  | .ctor idx ps, .ctor _ idx' vs =>
-    if idx != idx' || ps.size != vs.size then none
-    else (ps.zip vs).foldlM (init := []) fun acc (p, v) => return acc ++ (← p.matchVal v)
-  | .alts ps, v => ps.findSome? (·.matchVal v)
-  | _, _ => none
+/-- `fr`, a frame of bindings (`Ex.eval`), with each binder of `p` bound
+to the part of `v` that it matches, if `p` matches `v`, or `none` if it
+does not. The binders are pushed from the last to the first, so that the
+first is innermost; a variant's payload is matched from its last value to
+its first. -/
+partial def Pat.matchInto : Pat → Val → Array (Name × Option Val) → Option (Array (Name × Option Val))
+  | .wild, _, fr => some fr
+  | .bind n, v, fr => some (fr.push (n, some v))
+  | .bool b, .bool b', fr => if b == b' then some fr else none
+  | .int lo hi, .int i, fr => if lo.all (· ≤ i) && hi.all (i ≤ ·) then some fr else none
+  | .str s, .str s', fr => if s == s' then some fr else none
+  | .ctor idx ps, .ctor _ idx' vs, fr =>
+    if idx != idx' || ps.size != vs.size then none else payload ps vs ps.size fr
+  | .alts ps, v, fr => ps.findSome? (·.matchInto v fr)
+  | _, _, _ => none
+where
+  /-- `fr` with the binders of the first `k` of `ps` bound to the values
+  of `vs` that they match, the `k - 1`th first. -/
+  payload (ps : Array Pat) (vs : Array Val) : Nat → Array (Name × Option Val) → Option (Array (Name × Option Val))
+    | 0, fr => some fr
+    | k + 1, fr => do payload ps vs k (← ps[k]!.matchInto vs[k]! fr)
 
 /-- `p` as the static rules see it (`Fren.Core.Pat`). -/
 partial def Pat.core : Pat → Fren.Core.Pat
@@ -817,6 +825,15 @@ def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : 
   | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
   | none => none
 
+/-- A frame (`Ex.eval`) that binds each of `ps` to the value of `vs` at
+its position, the first innermost: what pushing the pairs of `ps.zip vs`
+from the last to the first gives, without the pairs. -/
+def paramFrame (ps : Array Name) (vs : Array Val) : Array Binding := Id.run do
+  let n := min ps.size vs.size
+  let mut fr := Array.mkEmpty n
+  for k in [0:n] do fr := fr.push (ps[n - 1 - k]!, some vs[n - 1 - k]!)
+  return fr
+
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of an enclosing `match` arm or quantifier as
 its binding in `frame` does, the innermost first, and else as `locals`
@@ -827,8 +844,9 @@ uncounts a reference to them.
 
 Looked up by its name, a binder has the value of its innermost binding,
 which is what it had when each binding was put in front of `locals`: a
-quantifier binds each of its names in turn, and a `match` arm the binders
-of its pattern, the first innermost, as `new ++ locals` puts them. -/
+quantifier binds each of its names in turn, a `match` arm the binders of
+its pattern, the first innermost (`Pat.matchInto`), and a structural
+recursion's body its parameters, the first innermost. -/
 partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := [])
     (slots : @& Array (Option Val) := #[]) (frame : @& Array Binding := #[])
     (memos : @& Array (Thunk (Option Val)) := #[]) (e : @& Ex) : Option Val :=
@@ -892,8 +910,10 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
     let vs ← args.mapM (·.eval I look locals slots frame memos)
     -- A structural recursion's body, at the arguments' values, which ends
     -- (`Reqs/Lang/Recursion#meaning`).
+    -- Its parameters bound in a frame of their own, the first innermost,
+    -- which gives each the value that `List.lookup` of them gives.
     match I.recDefs f with
-    | some (ps, body) => body.eval I look (ps.toList.zip vs.toList)
+    | some (ps, body) => body.eval I look [] #[] (paramFrame ps vs)
     | none => I.fn f vs
   | .pre _ _ _ e => e.eval I look locals slots frame memos
   -- Known once the unknown arguments cannot change it: with two `true`,
@@ -1023,11 +1043,10 @@ partial def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × 
   -- holds (`Fren.Core.firstCase`, `lang::guarded_match`).
   | .match e arms _ _ unspec? _ => do
     let v ← e.eval I look locals slots frame memos
-    let taken? ← firstCaseIn arms fun (p, g?, body) => match p.matchVal v with
+    let taken? ← firstCaseIn arms fun (p, g?, body) => match p.matchInto v frame with
       | none => some none
-      | some new =>
-        -- The binders in the frame, the first innermost.
-        let fr := new.foldr (init := frame) fun (n, v) fr => fr.push (n, some v)
+      -- The binders in the frame, the first innermost.
+      | some fr =>
         match g? with
         | none => some (some (fr, body))
         | some g => match g.eval I look locals slots fr memos with
@@ -1444,7 +1463,7 @@ where
     es.foldl (init := (#[], lets)) fun (acc, l) x => let (x, l) := x.share pick l; (acc.push x, l)
 
 /-- Whether an or-pattern within `p` binds a name, so that the names that
-`p` binds when it matches (`Pat.matchVal`) may not be `Pat.binders p`. -/
+`p` binds when it matches (`Pat.matchInto`) may not be `Pat.binders p`. -/
 partial def Pat.altsBind : Pat → Bool
   | .alts ps => ps.any (!·.binders.isEmpty)
   | .ctor _ ps => ps.any Pat.altsBind
