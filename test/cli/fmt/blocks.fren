@@ -3,7 +3,8 @@
 -- rustfmt writes a function's body: a procedure's, a function's and a
 -- global expectation's block. A block with one member that fits on its
 -- line is on one line, and one whose member spans several lines, has a
--- line comment or would end its line past column 100 is vertical, as is
+-- line comment or would end its line past column 100, counting a comment
+-- after its `}` and however long the line is before it, is vertical, as is
 -- one after a signature that spans several lines. An empty
 -- block stays `{}`, an evidence setting stays with the member after it,
 -- `use` members on one line become a block of imports, and a block already
@@ -39,12 +40,24 @@ pub proc long_signature_joined(
     m: Mode,  -- the mode
 ): (on?) { ensure r: on? iff m = Mode::Heat }
 
+pub proc a_very_long_procedure_name_that_goes_on_and_on_and_on_and_on_and_on_and_on_and_on_and_xyz(): (y?) {
+    ensure r: y?
+}
+
+pub proc trailing(n: Int): (y?) {
+    ensure r: y? iff n > 111111111111111111111111111111111111111111
+}  -- a trailing comment here
+
+pub proc trailing_fits(n: Int): (y?) {
+    ensure r: y? iff n > 1
+}  -- a trailing comment here
+
 pub proc commented(m: Mode): (on?) {
     ensure r: on? iff m = Mode::Heat  -- heating
 }
 
-pub proc nested(m: Mode): (on?) {
-    ensure r: on? iff and { m = Mode::Heat, P { x := 1 } = P { x := 1 } }
+proc nested(m: Mode): (o?) {
+    ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } }
 }
 
 pub proc nested_long(m: Mode): (on?) {

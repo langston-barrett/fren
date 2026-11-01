@@ -138,11 +138,18 @@ def endsWithComma : ListKind → Bool
 the first starting at column `start`, and the line ending at column `end_`,
 which counts only if `ownLine` and the line fits up to the first element.
 A `match`'s arms are always vertical, and so is a block with two or more
-members, or on a line that `continued` an item from an earlier line. -/
+members, on a line that `continued` an item from an earlier line, or whose
+line would end past `maxWidth`, wherever its member would start
+(`fmt::stacked?`). -/
 def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (ownLine continued : Bool) :
     Bool :=
-  n > 0 && ((k matches .arms) || (k matches .members && (n > 1 || continued)) || broken || width > widthLimit k
-    || (ownLine && start ≤ maxWidth && end_ > maxWidth))
+  n > 0 && ((k matches .arms) || (k matches .members && (n > 1 || continued || end_ > maxWidth)) || broken
+    || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth))
+
+/-- Whether a list's line continues an item from an earlier line
+(`fmt::continued`), from whether its first token, if it has one before the
+list, starts an item, a member or an element of a list. -/
+def continuedLine (firstStarts : Option Bool) : Bool := !(firstStarts.getD false)
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -671,6 +678,10 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     if let some (some (c, .beforeClose)) := governed[j]? then
       if vertical[c]! && endsWithComma lists[c]!.kind then w := w + 1
     return (w, follows.toList)
+  -- The width of a comment that follows piece `i` on its line, with the two
+  -- spaces before it, if one does.
+  let trailingComment (i : Nat) : Nat :=
+    if i + 1 < pieces.size && isComment (i + 1) && !forced (i + 1) then 2 + pieces[i + 1]!.text.length else 0
   let mut out : Array Line := #[]
   let mut vertical : Array Bool := Array.replicate lists.size false
   -- The open brackets, the innermost first, each with its token
@@ -783,8 +794,11 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
           let gap (j : Nat) : Nat := if space kinds[j - 1]! kinds[j]! then 1 else 0
           let (after, follows) := suffix vertical b.kind close
           let own := ownLine b.kind follows toks[headOf b]!.span.start toks[b.closing]!.span.stop (holders b)
-          -- A block's line continues its item unless the item starts it.
-          let continued := !(lineFirst.any lay.starts.contains)
+          -- Whether the line continues an item (`fmt::continued`): its first
+          -- token does not start an item, a member or an element.
+          let continued := continuedLine (lineFirst.map lay.starts.contains)
+          -- After a block's `}`, a comment on its line counts too.
+          let after := if b.kind == .members then after + trailingComment close else after
           listLayout b.kind info.elements.toList (out.back!.width + gap (i + 1))
             (gap close + pieces[close]!.text.length + after) own continued
         vertical := vertical.set! c v
@@ -801,12 +815,13 @@ def parseAll (src : Array Char) : Except Error (Array Token × Array Span × Lay
   let lay ← (parseLayout toks src).mapError fun e => (e.span, e.msg)
   return (toks, comments, lay)
 
-/-- Whether some `use` member shares a line only with other members or
-its block's braces, and with no comment, or is its block's only member.
-Laid out, the first starts and ends its lines, as a block of two or more
-members is one to a line, and so it is part of a block of imports
-(`fmt::in_block`), and the second may be joined onto its block's line,
-and so may not be. -/
+/-- Whether the file must be laid out before its imports are organized,
+as whether a `use` member is in a block of imports (`fmt::in_block`)
+depends on the layout. That is so where some `use` member shares a line
+only with other members or its block's braces, and with no comment: laid
+out, it starts and ends its lines, as a block of two or more members is
+one to a line. It is so too where a `use` is its block's only member,
+which may be joined onto its block's line, and then is not alone. -/
 def importsJoined (src : Array Char) (toks : Array Token) (comments : Array Span) (lay : Layout) : Bool := Id.run do
   let (lineOf, _) := lineTable src
   let lineAt (k : Nat) : Nat := lineOf[toks[k]!.span.start]!

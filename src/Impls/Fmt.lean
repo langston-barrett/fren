@@ -170,6 +170,14 @@ impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Na
   cases k <;> cases b <;> cases l <;> cases c <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
 
+impl continued: fmt::continued for (o : Option Bool) {
+  tokens? := o.isSome,
+  first_starts? := o.getD false,
+  continued? := FrenCli.Fmt.continuedLine o,
+} by
+  intro o _
+  rcases o with _ | (_ | _) <;> simp [fren_spec, FrenCli.Fmt.continuedLine]
+
 theorem only_closing_toFollowers (fs : List Follower) :
     fmt.«only_closing?» (toFollowers fs) = FrenCli.Fmt.onlyClosing fs := by
   induction fs with
