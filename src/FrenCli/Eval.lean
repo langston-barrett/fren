@@ -3440,7 +3440,10 @@ partial def lowerItem : Item → L Unit
     -- interpretation gives, so that enumeration reads the hidden slot
     -- that it reads, as the Lean-hosted front end, which unfolds the
     -- expression into the atoms, does.
-    let v ← match evalClosed e with
+    -- Evaluated with the structural recursions declared so far, which its
+    -- value may apply (`Reqs/Lang/Items#constants`).
+    let sp := (← get).spec
+    let v ← match e.eval { defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find? } (fun _ => none) with
       | some v => pure (if e.readsUnspecified then .const path e else Ex.lit v)
       | none =>
         unless e.readsUnspecified || e.unbounded do throw s!"the value of `{showPath path}` cannot be evaluated"

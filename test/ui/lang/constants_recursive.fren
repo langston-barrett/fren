@@ -1,0 +1,32 @@
+-- A constant's value may apply a structural recursion
+-- (`Reqs/Lang/Items#constants`): the evaluator computes it, so the checks
+-- that testing and enumeration run can read it.
+-- fren-covers: lang::constant
+mod constants_recursive
+
+pub enum Fuel { Zero, More(Fuel) }
+
+pub fn plus(a: Fuel, b: Fuel): Fuel := match a {
+    Fuel::Zero => b,
+    Fuel::More(n) => Fuel::More(plus(n, b)),
+}
+
+pub fn depth(f: Fuel): Int := match f {
+    Fuel::Zero => 0,
+    Fuel::More(n) => 1 + depth(n),
+}
+
+pub const TWO: Fuel := plus(one, one)
+    where one := Fuel::More(Fuel::Zero)
+
+pub const FOUR: Fuel := plus(TWO, TWO)
+
+set_option fren.evidence "random" in
+pub proc commutes(f: Fuel) {  --~ info: the redundancy checks of `constants_recursive::commutes` are not run by random testing
+    ensure commutative: plus(TWO, f) = plus(f, TWO)
+}
+--~^^^[hosted] info: the checks of `constants_recursive::commutes` set to random testing are run by `fren check`, not in Lean
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect four: depth(FOUR) = 4 and FOUR = Fuel::More(Fuel::More(Fuel::More(Fuel::More(Fuel::Zero))))
