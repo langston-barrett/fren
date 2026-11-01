@@ -852,6 +852,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let store? ← if args.queryCache?.isNone && args.verifyQueryCache?.isNone then pure none else
     some <$> QueryStore.new (args.queryCache?.map System.FilePath.mk) (args.verifyQueryCache?.map System.FilePath.mk)
   let cache ← QueryCache.new store?
+  -- A directory to compare with that is not there would compare nothing.
+  if let some dir := args.verifyQueryCache? then
+    unless ← System.FilePath.isDir dir do
+      IO.eprintln (argError args.paint { code? := none, headline := s!"no query cache `{dir}` to compare with" })
+      return exitCode false none
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let sy := symbolsOf spec?
@@ -994,13 +999,17 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- what they rest on changes how they are shown.
     if let some r := record? then r.modify (· ++ item.map fun (x, _) => (key, x))
   -- A fresh answer that contradicts `--verify-query-cache`'s
-  -- (`cli::query_cache`).
+  -- (`cli::contradicts`).
   if let some store := store? then
     for path in ← store.mismatches.get do
       let msg := Msg.internal s!"the solver's answer contradicts the query cache's entry `{path}`"
       printDiag args.paint files { file := 0, span := default, msg }
       internal := internal.push msg
   IO.eprintln (Fren.Core.summary all byTesting byBound)
+  -- How many answers it compared, so that a comparison with nothing does
+  -- not look like a pass (`Reqs/Cli#query-cache`).
+  if let (some store, some dir) := (store?, args.verifyQueryCache?) then
+    IO.eprintln s!"fren: compared {← store.compared.get} answers with the query cache `{dir}`"
   if args.timings then IO.eprint (timingReport timings)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""

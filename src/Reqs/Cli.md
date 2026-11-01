@@ -382,7 +382,7 @@ answer:
 - the whole script, as `--dump-smt` writes it without its first comment
   and the `(check-sat)` and `(reset)` after it: its logic, options,
   [limits](#limits), declarations, hypotheses and goal; and the formulas
-  whose values its model reads;
+  whose values its model reads, each with the formula that guards it;
 - the version of cvc5, as cvc5 reports it;
 - the version of how `fren check` runs a script and stores its answer,
   bumped whenever an answer can change without the script changing, such
@@ -409,7 +409,10 @@ agree with that entry. An answer contradicts an entry if one is `unsat`
 and the other `sat`, or both have models and they differ. A contradiction
 is an internal error, which names the entry. It means that the key leaves
 out something that changed the answer, or that cvc5 is not deterministic,
-so the cache would be wrong. A run with both options, an empty directory
+so the cache would be wrong. After the summary, `fren check` writes a
+line, starting `fren: compared N answers`, of how many answers it
+compared, so that comparing nothing cannot pass for agreeing; a `DIR` that
+is not a directory is an error, and the checks do not run. A run with both options, an empty directory
 for `--query-cache` and a full one for `--verify-query-cache`, asks every
 query of the solver, checks the old answers, and leaves in the new
 directory exactly the answers of this run.

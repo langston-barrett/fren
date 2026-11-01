@@ -337,7 +337,7 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
   unless Fren.Core.queryAsked logic (Fren.Core.hasQuantifier script) do
     return .unknown (Fren.Core.quantifiedQueryReason logic)
   if let some dump := dump? then dump script
-  let key := script ++ String.join (observations.toList.map fun o => s!"; observe {o.key}: {o.formula}\n")
+  let key := script ++ String.join (observations.toList.map fun o => s!"; observe {o.key}: {o.formula}{(o.guard?.map (s!" when {·}")).getD ""}\n")
   let some cache := cache? | solveScript script vars wantModel observations
   -- A model's variables are those that the script declares, which are `vars`.
   match (← cache.answers.get)[key]? with

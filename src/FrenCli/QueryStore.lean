@@ -82,17 +82,23 @@ def unescapeLine (s : String) : String := Id.run do
     else out := out.push c
   return out
 
-/-- A name of a model, as an entry stores it: its string components, each
-escaped, separated by `\/`; `none` if it has a numeric component. -/
-def nameLine? (n : Lean.Name) : Option String := do
+/-- A name of a model, as an entry stores it: the number of its
+components, then each, escaped, on a line of its own; `none` if it has a
+numeric component. -/
+def nameLines? (n : Lean.Name) : Option (List String) := do
   let parts ← n.components.mapM fun
     | .str .anonymous s => some (escapeLine s)
     | _ => none
-  return "\\/".intercalate parts
+  return toString parts.length :: parts
 
-/-- `nameLine?`'s inverse. -/
-def nameOfLine (s : String) : Lean.Name :=
-  (s.splitOn "\\/").foldl (fun n p => Lean.Name.mkStr n (unescapeLine p)) .anonymous
+/-- A name of `nameLines?` at the start of `ls`, and the lines after it. -/
+def nameOfLines? : List String → Option (Lean.Name × List String)
+  | count :: rest => do
+    let k ← count.toNat?
+    guard (rest.length ≥ k)
+    let n := (rest.take k).foldl (fun n p => Lean.Name.mkStr n (unescapeLine p)) .anonymous
+    return (n, rest.drop k)
+  | [] => none
 
 /-- What an entry's answer is the answer to (`cli::Key`): the whole
 script, with the observations of its model; cvc5's version; and
@@ -130,6 +136,12 @@ structure QueryStore where
   solver : String := ""
   /-- The entries of `verify?` that a fresh answer contradicts. -/
   mismatches : IO.Ref (Array String)
+  /-- How many fresh answers were compared with an entry of `verify?`. -/
+  compared : IO.Ref Nat
+  /-- How many entries this process has begun to write: the checks of
+  several procedures write at once, and each write's temporary file is
+  named by its number, taken atomically. -/
+  writes : IO.Ref Nat
 
 /-- cvc5's version, as its solver reports it. -/
 def cvc5Version : IO String := do
@@ -142,7 +154,7 @@ def cvc5Version : IO String := do
 
 /-- A store over `dir?` and `verify?`. -/
 def QueryStore.new (dir? verify? : Option System.FilePath) : IO QueryStore := do
-  return { dir?, verify?, solver := ← cvc5Version, mismatches := ← IO.mkRef #[] }
+  return { dir?, verify?, solver := ← cvc5Version, mismatches := ← IO.mkRef #[], compared := ← IO.mkRef 0, writes := ← IO.mkRef 0 }
 
 /-- The key of `script`, a script and its model's observations. -/
 def QueryStore.key (st : QueryStore) (script : String) : CacheKey :=
@@ -158,6 +170,39 @@ def CacheKey.path (k : CacheKey) (dir : System.FilePath) : System.FilePath :=
   let h := hex16 (hash k.lines)
   dir / (h.take 2).toString / h
 
+/-- The text of an entry: `k`'s lines, then the answer `o`, with whether
+it has a model, and its model; `none` if `o` is not stored
+(`CachedAnswer.stored`) or a name of its model cannot be. -/
+def encodeEntry? (k : CacheKey) (o : Outcome String) (hasModel : Bool) : Option String := do
+  let body ← match o with
+    | .unsat => some "unsat\n"
+    | .sat model =>
+      if !hasModel then some "sat\n" else do
+        let lines ← model.toList.mapM fun (n, v) => return ((← nameLines? n) ++ [escapeLine v]).map (· ++ "\n")
+        pure ("sat model\n" ++ String.join lines.flatten)
+    | .unknown _ => none
+  return k.lines ++ body
+
+/-- The pairs of a model's names and values, from `ls`. -/
+partial def modelOfLines? (ls : List String) (acc : Array (Lean.Name × String) := #[]) :
+    Option (Array (Lean.Name × String)) :=
+  match ls with
+  | [] => some acc
+  | _ => do
+    let (n, rest) ← nameOfLines? ls
+    let v :: rest := rest | none
+    modelOfLines? rest (acc.push (n, unescapeLine v))
+
+/-- `encodeEntry?`'s inverse: the key, the answer and whether it has a
+model. -/
+def decodeEntry? (text : String) : Option (CacheKey × Outcome String × Bool) := do
+  let (stored, lines) ← CacheKey.read? (text.splitOn "\n")
+  match lines with
+  | ["unsat", ""] => return (stored, .unsat, true)
+  | ["sat", ""] => return (stored, .sat #[], false)
+  | "sat model" :: rest => return (stored, .sat (← modelOfLines? rest.dropLast), true)
+  | _ => none
+
 /-- The entry at `k`'s path in `dir`, if there is one that can be read:
 its key, which may differ from `k`, and its answer, with whether it has a
 model. -/
@@ -165,17 +210,7 @@ def readEntry? (dir : System.FilePath) (k : CacheKey) : IO (Option (CacheKey × 
   let p := k.path dir
   unless ← p.pathExists do return none
   let some text ← (some <$> IO.FS.readFile p) <|> pure none | return none
-  let some (stored, lines) := CacheKey.read? (text.splitOn "\n") | return none
-  match lines with
-  | ["unsat", ""] => return some (stored, .unsat, true)
-  | ["sat", ""] => return some (stored, .sat #[], false)
-  | "sat model" :: rest =>
-    let rest := rest.dropLast.toArray
-    unless rest.size % 2 == 0 do return none
-    let model := (Array.range (rest.size / 2)).map fun i =>
-      (nameOfLine rest[2 * i]!, unescapeLine rest[2 * i + 1]!)
-    return some (stored, .sat model, true)
-  | _ => return none
+  return decodeEntry? text
 
 /-- The answer of the entry of `k` in `dir`, if it is for exactly `k` and
 answers a query that wants a model if `wantModel` (`cacheHit`). -/
@@ -186,22 +221,16 @@ def lookupEntry? (dir : System.FilePath) (k : CacheKey) (wantModel : Bool) : IO 
   else return none
 
 /-- Writes the answer `o` to `k`, with whether it has a model, to `dir`,
-if it is stored (`CachedAnswer.stored`) and its model's names can be. -/
-def writeEntry (dir : System.FilePath) (k : CacheKey) (o : Outcome String) (hasModel : Bool) : IO Unit := do
-  let body? : Option String := match o with
-    | .unsat => some "unsat\n"
-    | .sat model =>
-      if !hasModel then some "sat\n" else do
-        let lines ← model.toList.mapM fun (n, v) => return s!"{← nameLine? n}\n{escapeLine v}\n"
-        return "sat model\n" ++ String.join lines
-    | .unknown _ => none
-  let some body := body? | return
+if it can be (`encodeEntry?`). `n` is a number that no other write of this
+process uses, which names its temporary file. -/
+def writeEntry (dir : System.FilePath) (k : CacheKey) (o : Outcome String) (hasModel : Bool) (n : Nat) : IO Unit := do
+  let some text := encodeEntry? k o hasModel | return
   let p := k.path dir
   let some parent := p.parent | return
   IO.FS.createDirAll parent
   -- Renamed into place, so that no run reads half an entry.
-  let tmp := p.addExtension s!"tmp{← IO.Process.getPID}-{← IO.monoNanosNow}-{← IO.rand 0 1000000000}"
-  IO.FS.writeFile tmp (k.lines ++ body)
+  let tmp := p.addExtension s!"tmp{← IO.Process.getPID}-{n}"
+  IO.FS.writeFile tmp text
   IO.FS.rename tmp p
 
 /-- The answer that `--query-cache` gives `script` for a query that wants
@@ -217,13 +246,15 @@ def QueryStore.record (st : QueryStore) (script : String) (o : Outcome String) (
   let k := st.key script
   if let some old := st.verify? then
     if let some (o', hasModel') ← lookupEntry? old k false then
+      st.compared.modify (· + 1)
       let same := match o, o' with
         | .sat m, .sat n => sameModel m n
         | _, _ => false
       if contradicts (CachedAnswer.of o hasModel) (CachedAnswer.of o' hasModel') same then
         st.mismatches.modify (·.push (k.path old).toString)
   if let some dir := st.dir? then
-    try writeEntry dir k o hasModel
+    let n ← st.writes.modifyGet fun n => (n, n + 1)
+    try writeEntry dir k o hasModel n
     catch e => IO.eprintln s!"warning: cannot write to the query cache: {e}"
 
 end FrenCli

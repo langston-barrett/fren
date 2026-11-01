@@ -566,22 +566,36 @@ cache](../Cli.md#query-cache), so that a query asked by an earlier run is
 answered without the solver. The test driver's `ownSpec` job reads the
 directory from `FREN_QUERY_CACHE`, which is `.lake/query-cache` if it is
 not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`, if
-set, is the directory to compare with (`--verify-query-cache`). Only that
-job uses the cache. Locally, the cache grows with each run: copying a
-worktree's `.lake` copies it too, and deleting `.lake/query-cache` clears
-it. An answer from it is the one that the solver would give, so a cache
-from another branch, or from before a change to the checker, is as good as
-a fresh one; it only hits less often.
+set, is the directory to compare with (`--verify-query-cache`): the job
+fails if `fren check` compared no answers with it. Only that job uses the
+cache, and the `queryCache` job tests the cache itself: the same output
+cold, in a fresh directory, as warm, the same entries from two cold runs,
+and a comparison that compares answers and finds no contradiction.
+
+Locally, the cache grows with each run: copying a worktree's `.lake`
+copies it too, and deleting `.lake/query-cache` clears it. An answer from
+it is the one that the solver would give the same key, so a cache from
+another branch, or from before a change to the checker, is as good as a
+fresh one, as long as every change that alters how `fren check` runs a
+script or reads its answer bumped `queryCacheVersion`. A change that
+should have bumped it and did not is answered from stale entries, by a
+local `lake test` as by `pre-merge`, and only `main`'s cold run below
+finds it. To check such a change, or to rule the cache out of a puzzling
+result, run with the cache off, `FREN_QUERY_CACHE= lake test`, or delete
+`.lake/query-cache`.
 
 On CI, shard 0 of `main`'s `lean ci` run asks every query of the solver,
 with an empty cache, and compares each answer with that of the cache that
 the previous `main`'s run saved, so that a key that leaves out something
 that changes an answer fails `main`'s run. It then saves its cache, which
 is exactly the answers of that run: entries that no query asks any more
-are dropped, so the cache does not grow. Shard 0 of `pre-merge` restores
-that cache and never saves one. With most queries answered from it, Fren's
-own requirements took some 30% less CPU in the `fren` command, measured
-locally: the rest is building the queries and testing.
+are dropped, so the cache does not grow. A run that found a contradiction
+leaves a mark next to its cache and does not save it, so that `main` stays
+red, comparing with the last good cache, until the key is fixed. Shard 0
+of `pre-merge` restores the last saved cache and never saves one. With
+most queries answered from it, Fren's own requirements took some 25% less
+CPU in the `fren` command, measured locally: the rest is building the
+queries and testing.
 
 ## Learning from review
 
