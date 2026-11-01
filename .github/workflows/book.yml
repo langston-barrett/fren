@@ -51,12 +51,18 @@ jobs:
         echo "${MDBOOK_SHA256}  mdbook.tar.gz" | sha256sum --check
         tar -xzf mdbook.tar.gz -C "${install_dir}"
         rm mdbook.tar.gz
+    # mdbook-spec reads the Reference's own `src`, for its grammar, at the
+    # path where `cargo install` checked it out (`env!("CARGO_MANIFEST_DIR")`
+    # in its `tools/grammar`), so the cache holds that checkout with the
+    # binary: with the binary alone, it panics on a cache hit.
     - name: Restore mdbook-spec
       id: spec-cache
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
-        path: ~/.cargo-mdbook-spec
-        key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}
+        path: |
+          ~/.cargo-mdbook-spec
+          ~/.cargo/git/checkouts
+        key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}-checkout
     - name: Install mdbook-spec
       if: steps.spec-cache.outputs.cache-hit != 'true'
       run: |
@@ -67,8 +73,10 @@ jobs:
       if: steps.spec-cache.outputs.cache-hit != 'true' && github.event_name == 'push'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ~/.cargo-mdbook-spec
-        key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}
+        path: |
+          ~/.cargo-mdbook-spec
+          ~/.cargo/git/checkouts
+        key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}-checkout
     # mdbook-spec only warns about a rule defined twice, a bad admonition or
     # a link that it cannot resolve. Its `SPEC_DENY_WARNINGS` needs a Rust
     # checkout (`SPEC_RUST_ROOT`), so the job fails on its summary line
