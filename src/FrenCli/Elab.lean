@@ -7618,10 +7618,6 @@ partial def elabItem (item : Item) : M Unit := do
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => do
-    -- A law has no checks of its own to set (`Fren.Core.lawSettingMsg?`).
-    if let some (.law ..) := body? then
-      let shown := if opt.name == "fren.enumeration.size" then value else s!"\"{value}\""
-      if let some msg := Fren.Core.lawSettingMsg? opt.name shown then err stx msg
     if opt.name == "fren.enumeration.size" then
       -- Like `fren.evidence`: for the item after `in`, or the rest of the
       -- file (`Reqs/Check#checking-by-enumeration`).
@@ -7771,7 +7767,22 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
         if (← get).itemErrors.size == before then
           let u : Fren.Core.UseDef := { module, scope := path, target := path ++ Name.mkSimple (declaredIdent f).1.name, glob := false }
           modify fun s => { s with table := s.table.addUse u }
-    | .law => member m
+    | .law =>
+      -- The settings before it, which a law takes only if every one is a
+      -- lint's (`Fren.Core.lawSettingsMsg?`).
+      let rec settings : Item → Array (String × String × Span)
+        | .lintSetting stx opt value _ _ (some b) =>
+          #[(opt.name, if opt.name == "fren.enumeration.size" then value else s!"\"{value}\"", stx)] ++ settings b
+        | _ => #[]
+      let ss := settings m
+      match Fren.Core.lawSettingsMsg? (ss.toList.map fun (o, v, _) => (o, v)) with
+      | some (k, msg) =>
+        -- Its own error alone, as a member's.
+        let errors := (← get).itemErrors
+        modify fun s => { s with itemErrors := #[] }
+        discard (attempt (α := Unit) (err ss[k]!.2.2 msg))
+        modify fun s => { s with itemErrors := errors ++ s.itemErrors }
+      | none => member m
     | _ =>
       let laws := (← get).traitLaws
       let before := (← get).globals.size

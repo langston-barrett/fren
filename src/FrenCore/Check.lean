@@ -1654,12 +1654,24 @@ def coverInterpreted (c : Comp F) (interprets : F → Bool) (n : Name) : Bool :=
     | some (_, g) => (c.coverFormulas g).any interprets
     | none => false
 
+def showComp (path : Name) : String :=
+  -- Unescaped, so that an instance of a generic function shows as `pick<Int>`
+  -- (`instanceName`).
+  "::".intercalate (path.components.map (·.toString (escape := false)))
+
 /-- Whether a pass of a check of kind `k` comes from an `unsat` query, a
 proof, rather than from a model (`check::pass_from_unsat?`): a cover goal,
 a vacuity check and a reachability question pass by a witness, and a
 redundancy check by a model in which the constraint is needed. -/
 def CheckKind.passFromUnsat : CheckKind → Bool
+  -- A pass gives a typed behaviour: `Sound.checkCover_pass`,
+  -- `checkVacuity_pass`, `checkRedundant_pass`, `checkReach_pass`.
   | .cover | .vacuity | .redundancy | .reachability => false
+  -- A pass holds of every behaviour: `Sound.checkExpect_pass`,
+  -- `checkInst_pass`, `checkDeterminism_pass`, `checkDefinedness_pass`,
+  -- `checkTable_pass` (completeness, disjointness, preconditions),
+  -- `checkPostcondition`'s, and realizability's `checkRealizable_pass`,
+  -- whose queries have no laws (`queryHasLaws`).
   | _ => true
 
 /-- Whether a verdict `v` of a check of kind `k` comes from an `unsat`
@@ -1676,17 +1688,66 @@ has laws (`hasLaws`), rests on the laws' consistency (`check::law_premise`):
 where its queries have the laws (`CheckKind.queryHasLaws`) and it comes
 from an `unsat` query, which laws that contradict each other would give. A
 verdict from a model does not: the model meets the laws. -/
-def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) : Bool :=
-  hasLaws && k.queryHasLaws && fromUnsat k v
+def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) (lawful : Verdict := .inconclusive) : Bool :=
+  hasLaws && k.queryHasLaws && fromUnsat k v && !(lawful matches .pass)
 
-/-- `rs`, with the first result at each constraint that rests on the laws
-of `c`'s trait marked (`lawPremise`), for the one message there that says
-so (`lawsMsg`). -/
+/-- The vacuity of an item whose trait has laws (`check::lawful_assumptions`):
+whether its assumptions and calls can hold together with the laws, which
+the queries of its checks but realizability have. A model shows that they
+can, and then no verdict of the item rests on the laws' consistency. -/
+def checkLawful (c : Comp F) : m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .vacuity, comp := c.path, prop? := none, verdict, detail, global := true }
+  let base := c.defEqs .vacuity
+  let hyps := c.hyps b
+  match ← b.query (base ++ hyps) b.falseF false with
+  | .sat _ => return result .pass
+  | .unsat => return result .fail (.vacuousAssumptions (← minimize b base hyps b.falseF))
+  | .unknown r => return result .inconclusive (.unknown r)
+
+/-- Whether `r` is the vacuity of its item under its trait's laws
+(`checkLawful`). -/
+def CheckResult.isLawful (r : CheckResult) : Bool := r.kind == .vacuity && r.prop?.isNone
+
+/-- The verdict shown of a check of kind `k`, of an item whose trait has
+laws, where the item's vacuity under the laws has the verdict `lawful`
+(`check::lawful_verdict`): a verdict that comes from an `unsat` query is
+inconclusive where the assumptions and calls cannot hold with the laws, as
+any verdict of an item whose assumptions cannot hold rests on its
+realizability. -/
+def lawfulVerdict (k : CheckKind) (v : Verdict) (lawful : Verdict) : Verdict :=
+  if (lawful matches .fail) && k.queryHasLaws && fromUnsat k v then .inconclusive else v
+
+/-- `checkComp`, and, for an item whose trait has laws and that has
+assumptions or calls, its vacuity under the laws (`checkLawful`), as both
+front ends run them. -/
+def checkCompLawful (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array CheckKind := CheckKind.all)
+    (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false)
+    (applied? : Option (m (Array Name)) := none) : m (Array CheckResult) := do
+  let rs ← checkComp bk c kinds examples interprets applied?
+  -- Without assumptions or calls, it would ask of the laws alone, which
+  -- is the same for every expectation of the trait.
+  if c.laws.isEmpty || (c.assumes.isEmpty && c.insts.isEmpty) || !kinds.contains .vacuity then return rs
+  return rs.push (← checkLawful (bk .vacuity) c)
+
+/-- `rs`, of an item whose trait has laws: each verdict that comes from an
+`unsat` query made inconclusive where the item's vacuity under the laws
+failed (`lawfulVerdict`), and otherwise, where that vacuity is not
+decided, the first result at each constraint that rests on the laws'
+consistency marked (`lawPremise`), for the one message there that says so
+(`lawsMsg`). -/
 def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult := Id.run do
+  if c.laws.isEmpty then return rs
+  let lawful := ((rs.find? (·.isLawful)).map (·.verdict)).getD .inconclusive
   let mut seen : Array (Option Name) := #[]
   let mut out := #[]
   for r in rs do
-    if lawPremise r.kind r.verdict !c.laws.isEmpty && !seen.contains r.prop? then
+    if r.isLawful then out := out.push r; continue
+    let shown := lawfulVerdict r.kind r.verdict lawful
+    if shown != r.verdict then
+      out := out.push { r with verdict := shown
+                               detail := .unknown s!"its assumptions and calls cannot hold together with the laws of `{showComp c.lawsOf}`" }
+    else if lawPremise r.kind r.verdict true lawful && !seen.contains r.prop? then
       seen := seen.push r.prop?
       out := out.push { r with restsOnLaws? := some c.lawsOf }
     else out := out.push r
@@ -1836,10 +1897,6 @@ def rowsText (rows? : Option (Nat × Nat)) (arms : Bool := false) : String :=
 (`Comp.fn?`). -/
 def clauseName (n : Name) : Name := Name.mkSimple n.getString!
 
-def showComp (path : Name) : String :=
-  -- Unescaped, so that an instance of a generic function shows as `pick<Int>`
-  -- (`instanceName`).
-  "::".intercalate (path.components.map (·.toString (escape := false)))
 
 /-- The subject of the messages about a procedure at `path`, as both front
 ends show it: a global expectation, `global`, by its module and the name
@@ -2234,10 +2291,10 @@ contradict each other would give that verdict whatever the constraint
 says. -/
 def lawsMsg (what : String) (t : Name) : Msg :=
   { code? := some "F0665"
-    headline := s!"{what} rests on the laws of `{showComp t}`, whose consistency is not checked"
+    headline := s!"{what} rests on the laws of `{showComp t}` holding together with its assumptions, which is not decided"
     label? := some "rests on unchecked laws"
-    notes := #[s!"note: its verdict comes from the laws of `{showComp t}` and its hypotheses together; if no interpretation meets all the laws, it would be the same whatever it says",
-      "note: Fren does not yet check that a trait's laws can hold together (#594)"] }
+    notes := #[s!"note: its verdict comes from the laws of `{showComp t}` and its assumptions and calls together; if no interpretation meets them all, it would be the same whatever it says",
+      "note: Fren could not decide whether they can hold together"] }
 
 /-- The message of a result that rests on a trait's laws (`lawsMsg`), at
 its constraint, or none. -/

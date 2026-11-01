@@ -60,6 +60,22 @@ trait Settled {
     law sized(s: Self): size(s) >= 0
 }
 
+-- Every setting before a law is checked, in either order, before any is in
+-- effect.
+trait SettledUnder {
+    fn size(Self): Int
+    set_option fren.evidence "random" in  --~ error: `fren.evidence` cannot be set to `"random"` for a law
+    set_option fren.lint.undecidable "allow" in
+    law sized(s: Self): size(s) >= 0
+}
+
+trait SettledOver {
+    fn size(Self): Int
+    set_option fren.lint.undecidable "allow" in
+    set_option fren.enumeration.size 2 in  --~ error: `fren.enumeration.size` cannot be set to `2` for a law
+    law sized(s: Self): size(s) >= 0
+}
+
 -- A method's contract sees the methods before it, not those after.
 trait Later {
     fn size(s: Self): (r: Int) { ensure big: r > weight(s) }

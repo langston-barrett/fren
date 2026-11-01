@@ -966,14 +966,21 @@ pub proc query_hypotheses(kind: Kind): (det laws?) {
 }
 ```
 
-Laws that no interpretation meets make each query that has them
-unsatisfiable. So a verdict that comes from an `unsat` query rests on the
-laws' consistency: an expectation's pass, or a cover goal's failure. One
-that comes from a model does not, since the model meets the laws. Fren
-does not check yet that a trait's laws can hold together (#594), so each
-constraint that has such a verdict says so, once, with the warning
-`F0665`, and its verdict is its own. `check::law_premise` states which
-verdicts rest on the laws:
+Where the laws cannot hold together with the item's assumptions and
+calls, each query that has them is unsatisfiable, whatever else it asks.
+So a verdict that comes from an `unsat` query rests on their holding
+together: an expectation's pass, or a cover goal's failure. One that comes
+from a model does not, since the model meets them. An item whose trait has
+laws, and that has assumptions or calls, has a check of its own of this,
+its *vacuity under the laws*: whether the laws, its assumptions and its
+calls can hold together, which a model shows. An item without either rests
+on the laws alone, whose consistency Fren does not check yet (#594). Where it fails, the assumptions and calls cannot hold with the laws
+(`F0602`), and each verdict that comes from an `unsat` query is
+inconclusive (`check::lawful_verdict`). Where it is not decided, as with
+quantified laws it seldom is, each constraint that has such a verdict says
+that it rests on the laws, once, with the warning `F0665`, and its verdict
+is its own. Where it passes, no verdict rests on more than its proof.
+`check::law_premise` states which verdicts rest on the laws:
 
 ```fren
 -- A pass of a check of this kind comes from an `unsat` query, not a
@@ -993,12 +1000,28 @@ pub fn from_unsat?(kind: Kind, verdict: Verdict) := match verdict {
     Verdict::Inconclusive => false,
 }
 
-pub proc law_premise(kind: Kind, verdict: Verdict, laws?): (det rests?) {
-    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict)
+pub proc law_premise(
+    kind: Kind,
+    verdict: Verdict,
+    laws?,
+    lawful: Verdict,         -- the item's vacuity under the laws
+): (det rests?) {
+    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict) and lawful != Verdict::Pass
 
     expect lawless: when not laws?, not rests?
     expect counterexamples: when kind = Kind::Expectation and verdict = Verdict::Fail, not rests?
-    expect proofs: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass, rests?
+    expect undecided: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass
+        and lawful = Verdict::Inconclusive, rests?
+    expect shown_lawful: when lawful = Verdict::Pass, not rests?
+}
+
+pub proc lawful_verdict(kind: Kind, verdict: Verdict, lawful: Verdict): (det shown: Verdict) {
+    ensure rule: shown = (if lawful = Verdict::Fail and query_laws?(kind) and from_unsat?(kind, verdict)
+        then Verdict::Inconclusive else verdict)
+
+    expect vacuous_proof: when lawful = Verdict::Fail and kind = Kind::Expectation and verdict = Verdict::Pass,
+        shown = Verdict::Inconclusive
+    expect counterexample_stands: when kind = Kind::Expectation and verdict = Verdict::Fail, shown = Verdict::Fail
 }
 ```
 

@@ -9208,6 +9208,17 @@ def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × B
   -- Its settings, `set_option ... in`, for it alone, as Lean's own are
   -- for an item.
   let opts := (← getScope).opts
+  let settingOf (st : Syntax) : String × String :=
+    let name := (st.getArgs.find? (·.isIdent)).map (·.getId) |>.getD .anonymous
+    let value := st.getArgs.findSome? fun a => match a.isStrLit?, a.isNatLit? with
+      | some v, _ => some s!"\"{v}\""
+      | none, some n => some (toString n)
+      | none, none => none
+    (name.toString, value.getD "")
+  -- The settings before it, which a law takes only if every one is a
+  -- lint's (`Core.lawSettingsMsg?`), checked before any is in effect.
+  if let some (k, msg) := Core.lawSettingsMsg? (m[0].getArgs.toList.map settingOf) then
+    throwErrorAt m[0].getArgs[k]! msg.text
   try
     for st in m[0].getArgs do
       let name := (st.getArgs.find? (·.isIdent)).map (·.getId) |>.getD .anonymous
@@ -9215,8 +9226,6 @@ def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × B
         | some v, _ => some s!"\"{v}\""
         | none, some n => some (toString n)
         | none, none => none
-      -- A law has no checks of its own to set (`Core.lawSettingMsg?`).
-      if let some msg := Core.lawSettingMsg? name.toString (value.getD "") then throwErrorAt st msg.text
       elabCommand (← parseAt `command s!"set_option {name} {value.getD ""}" st)
     elabLawBody path m
   finally modifyScope fun sc => { sc with opts }

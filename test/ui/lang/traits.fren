@@ -1,7 +1,9 @@
 -- Traits (`Reqs/Lang/Traits`): a carrier, methods, laws, and
 -- expectations checked from the laws alone, in both front ends. A law over
--- a type that is not listed is outside the decidable core, and every check
--- that rests on laws says that their consistency is not checked (`F0665`).
+-- a type that is not listed is outside the decidable core. An expectation
+-- whose assumptions cannot hold with the laws is an error (`F0602`), and
+-- where that is not decided, each constraint whose verdict comes from a
+-- proof says that it rests on the laws (`F0665`).
 -- In a module, since Lean has an `Option` of its own.
 -- fren-covers: lang::trait_expectation
 set_option fren.lint.dead_code "allow"
@@ -9,6 +11,8 @@ set_option fren.lint.dead_code "allow"
 mod traits
 
 type Key
+
+fn level(Bool): Int
 
 set_option fren.lint.undecidable "allow" in
 trait KV {
@@ -49,8 +53,7 @@ trait Sized {
     --~^ warning: rests on the laws of `traits::Sized`
 }
 
--- Laws that contradict each other make every expectation hold, which its
--- warning says.
+-- Laws that contradict each other cannot hold with any assumptions.
 set_option fren.lint.undecidable "allow" in
 trait Contradictory {
     fn size(Self): Int
@@ -60,6 +63,33 @@ trait Contradictory {
 
     expect anything(s: Self) { expect c: size(s) = 42 }
     --~^ warning: rests on the laws of `traits::Contradictory`
+}
+
+-- Laws in the core that contradict each other cannot hold with the
+-- assumptions either, and the claim is not proved.
+trait Clash {
+    fn value(Self): Int
+
+    law one(): level(true) = 1
+    law two(): level(true) = 2
+
+    expect e(s: Self) {  --~ error: the assumptions of `traits::Clash::e` are unsatisfiable: `one`, `two` contradict each other
+        assume known: value(s) >= 0
+        expect c: value(s) = 5  --~ warning: could not decide whether `traits::Clash::e::c` holds
+    }
+}
+
+-- Nor can an assumption that contradicts a law.
+set_option fren.lint.undecidable "allow" in
+trait Pos {
+    fn v(Self): Int
+
+    law pos(s: Self): v(s) >= 0
+
+    expect e(s: Self) {  --~ error: the assumptions of `traits::Pos::e` are unsatisfiable: `pos`, `neg` contradict each other
+        assume neg: v(s) < 0
+        expect c: v(s) = 5  --~ warning: could not decide whether `traits::Pos::e::c` holds
+    }
 }
 
 -- The methods of a trait shadow the module's names, without `!`, and
@@ -79,8 +109,6 @@ trait Bounded {
 
 -- A law with no variables, or with only `Bool` ones, is in the decidable
 -- core; one over a carrier is not, and a setting before it allows it.
-fn level(Bool): Int
-
 trait Listed {
     fn value(Self): Int
 
@@ -94,8 +122,8 @@ trait Listed {
 }
 
 -- A failure's counterexample meets the laws, so it rests on nothing more;
--- a constraint whose expectation passes and whose trigger cannot hold says
--- so once.
+-- a constraint whose expectation passes and whose condition cannot hold
+-- says that it rests on them once.
 trait Closed {
     fn value(Self): Int
 
@@ -110,8 +138,9 @@ trait Closed {
     }
 }
 
--- Realizability asks without the laws, in both front ends: a law with a
--- `Bool` variable under `when`, over a method with a contract. (A claim
+-- Realizability asks without the laws, in both front ends, and the
+-- vacuity under the laws is not decided: a law with a `Bool` variable under
+-- `when`, over a method with a contract. (A claim
 -- here would meet #493's `Symbol '->'` difference, which predates traits.)
 set_option fren.lint.undecidable "allow" in
 trait Flagged {
@@ -121,6 +150,7 @@ trait Flagged {
 
     expect e0(s: Self) { assume big: obs(s) > 2 }
     --~^ warning: the assumption `big` constrains only parameters that nothing uses
+    --~^^ warning: could not decide whether `traits::Flagged::e0` is vacuous
 }
 
 -- Without laws, an expectation is about every carrier and every method,

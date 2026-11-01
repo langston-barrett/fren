@@ -70,9 +70,10 @@ def traitMemberMsg? (trait : Name) (m : TraitMember) (isPub generic uses : Bool)
           notes := #["note: a member's block sees the trait's names and its module's",
             "help: write the `use` in the module, before the trait"] }
 
-/-- When a member is elaborated (`lang::trait_member_phase`): the methods
-first, then the laws, then the expectations, each in the order written. A
-member of another kind is reported before any is elaborated. -/
+/-- When a member is elaborated, which orders the messages about the
+members (`lang::trait_member_phase`): the methods first, then the laws,
+then the expectations, each in the order written. A member of another kind
+is reported, and no other member is. -/
 def TraitMember.phase : TraitMember → Nat
   | .method => 0
   | .law => 1
@@ -131,6 +132,13 @@ def lawSettingMsg? (option value : String) : Option Msg :=
            notes := #["note: a law is a hypothesis of its trait's expectations, whose checks the setting would set",
              "help: set it before an expectation instead"] }
   else none
+
+/-- The first of the settings before a law, outermost first, each its
+option and its value as written, that a law does not take
+(`lawSettingMsg?`), by its position, with its message. Both front ends
+check the whole list, before any setting is in effect. -/
+def lawSettingsMsg? (settings : List (String × String)) : Option (Nat × Msg) :=
+  (settings.zipIdx.findSome? fun ((o, v), k) => (lawSettingMsg? o v).map (k, ·))
 
 /-- A member of a trait, or its carrier, declared again. -/
 def dupTraitMemberMsg (n : Name) : Msg :=

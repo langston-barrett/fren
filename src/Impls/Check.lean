@@ -778,14 +778,25 @@ impl definitions: check::definitions for (k : CheckKind) {
   substituted? := k.substitutes,
 }
 
-impl law_premise: check::law_premise for (k : CheckKind) (v : Verdict) (l : Bool) {
+impl law_premise: check::law_premise for (k : CheckKind) (v : Verdict) (l : Bool) (w : Verdict) {
   kind := toCheckKind k,
   verdict := toVerdict v,
   laws? := l,
-  rests? := Fren.Core.lawPremise k v l,
+  lawful := toVerdict w,
+  rests? := Fren.Core.lawPremise k v l w,
 } by
-  intro k v l _
-  cases k <;> cases v <;> cases l <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
+  intro k v l w _
+  cases k <;> cases v <;> cases l <;> cases w <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
+    Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
+
+impl lawful_verdict: check::lawful_verdict for (k : CheckKind) (v w : Verdict) {
+  kind := toCheckKind k,
+  verdict := toVerdict v,
+  lawful := toVerdict w,
+  shown := toVerdict (Fren.Core.lawfulVerdict k v w),
+} by
+  intro k v w _
+  cases k <;> cases v <;> cases w <;> simp [fren_spec, Fren.Core.lawfulVerdict, Fren.Core.fromUnsat,
     Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
 
 /-- An item with one law, for `check::query_hypotheses`. -/
