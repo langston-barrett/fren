@@ -1,4 +1,7 @@
 -- A table that may have no row that holds.
 proc sign(x: Int): (s: Int) {
-    ensure r: s = table { x > 0 => 1, x < 0 => -1 }
+    ensure r: s = table {
+        x > 0 => 1,
+        x < 0 => -1,
+    }
 }

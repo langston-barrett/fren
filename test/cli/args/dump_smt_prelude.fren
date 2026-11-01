@@ -16,6 +16,9 @@ proc user(x: Option<Int>): (y?) {
 mod m
 
 proc prelude(x: Option<Int>, r: Result<Int, Bool>): (y: Int) {
-    ensure a: y = match x { Some(n) => n, None => 0 }
+    ensure a: y = match x {
+        Some(n) => n,
+        None => 0,
+    }
     expect e: r != Result::Err(true) or y >= 0
 }

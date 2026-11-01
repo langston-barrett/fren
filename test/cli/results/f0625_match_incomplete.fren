@@ -1,4 +1,7 @@
 -- A `match` with guards that may have no arm that is taken.
 proc sign(x: Int): (s: Int) {
-    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
+    ensure r: s = match x {
+        n if n > 0 => 1,
+        n if n < 0 => -1,
+    }
 }

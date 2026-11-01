@@ -550,13 +550,11 @@ def fmtIgnore : List String :=
 
 /-- Test fixtures that `fren fmt` would lay out anew, as `--ignore` globs.
 Their expected outputs and `--~` annotations name their lines, so
-formatting them means updating those too. Step 2 of the move to rustfmt's
-layout, which breaks long expressions, will change many of them again, so
-they are formatted once, with that step, and this list is then removed
-(#509). -/
+formatting them means updating those too. They are formatted a group at a
+time, each only where the new layout reads better than the old, and this
+list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/cli/args/dump_smt_generic_function.fren", "test/cli/args/dump_smt_generic_pattern.fren",
-   "test/cli/args/dump_smt_prelude.fren", "test/cli/commands/counterexample_newtype.fren",
+  ["test/cli/commands/counterexample_newtype.fren",
    "test/cli/commands/eval_generic.fren", "test/cli/commands/eval_generic_function.fren",
    "test/cli/commands/mutate_generic.fren", "test/cli/commands/mutate_generic_function.fren",
    "test/cli/commands/mutate_list.fren", "test/cli/commands/mutate_update.fren",
@@ -575,19 +573,14 @@ def fmtPending : List String :=
    "test/cli/lints/restriction/f0785_min_ident_chars.fren", "test/cli/lints/settings/group_flag_forbidden.fren",
    "test/cli/lints/style/f0726_match_like_membership.fren", "test/cli/lints/style/f0808_match_arm_if_else.fren",
    "test/cli/lints/style/f0818_manual_record_update.fren", "test/cli/lints/style/f0832_collapsible_match.fren",
-   "test/cli/lints/style/f0835_match_overlapping_arm.fren", "test/cli/results/f0450_recursive_contract.fren",
-   "test/cli/results/f0601_forced_variant.fren", "test/cli/results/f0601_forced_variant_all.fren",
-   "test/cli/results/f0601_forced_variant_none.fren", "test/cli/results/f0618_incomplete.fren",
-   "test/cli/results/f0625_match_incomplete.fren", "test/cli/results/f0627_row_unreachable.fren",
-   "test/cli/results/f0637_table_incomplete.fren", "test/cli/results/f0638_table_arm_unreachable.fren",
-   "test/cli/types/f0316_scrutinee.fren", "test/cli/types/f0317_nested.fren",
+   "test/cli/lints/style/f0835_match_overlapping_arm.fren", "test/cli/types/f0316_scrutinee.fren",
+   "test/cli/types/f0317_nested.fren",
    "test/cli/types/f0317_non_exhaustive.fren", "test/cli/types/f0318_unreachable.fren",
    "test/cli/types/f0319_other_enum.fren", "test/cli/types/f0320_arm_types.fren",
    "test/cli/types/f0333_or_binder.fren", "test/cli/types/f0348_pattern_type.fren",
    "test/cli/types/f0349_empty_range.fren", "test/cli/types/f0350_range_bound.fren",
    "test/cli/types/f0351_range_constant.fren", "test/cli/types/f0358_table_rows.fren",
-   "test/cli/types/f0359_row_after_wild.fren", "test/cli/types/f0391_arms_overlap.fren",
-   "test/cli/types/f0449_literal.fren", "test/ui/checks/contracts.fren",
+   "test/cli/types/f0359_row_after_wild.fren", "test/ui/checks/contracts.fren",
    "test/ui/checks/counterexample_confirmed.fren", "test/ui/checks/enumerated.fren",
    "test/ui/checks/enumerated_collections.fren", "test/ui/checks/enumerated_errors.fren",
    "test/ui/checks/enumerated_functions.fren", "test/ui/checks/guards.fren",
