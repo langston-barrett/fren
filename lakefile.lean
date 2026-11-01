@@ -115,7 +115,7 @@ input_dir reqs_md where
   filter := .extension #["md"]
 
 lean_lib ReqsChapters where
-  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Models, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
+  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Markdown, `Reqs.Models, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
   needs := #[`@/reqs_chapters_md]
 
 -- The specs in `src/Reqs` itself, not in its subdirectories.

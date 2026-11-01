@@ -90,9 +90,6 @@ def relativeTo (base path : System.FilePath) : String :=
     | .error e => throwErrorAt stx[1] "could not read `{path}`: {e}"
   -- A file other than Markdown is a spec throughout, as the `fren` command reads it.
   let code := if Core.isMarkdownFile path.toString then Core.unwrapMarkdown src else src
-  -- Lean's parser rejects input that is only whitespace, as when a file is
-  -- all prose.
-  if code.trimAscii.isEmpty then return
   let inputCtx := Parser.mkInputContext code path.toString
   -- The spec's lints are its own, reported at its end (`Reqs/Lint`), here
   -- rather than by the end-of-file linter, whose messages would bypass the
@@ -106,6 +103,14 @@ def relativeTo (base path : System.FilePath) : String :=
   -- even when another spec reads it, so that every spelling of it agrees.
   let leanName := (leanFile?.map (·.1)).getD (← getFileName)
   let name := relativeTo ((System.FilePath.mk leanName).parent.getD ".") path
+  -- The problems of a Markdown spec's fences (`Reqs/Markdown#code-blocks`),
+  -- as the `fren` command reports them.
+  let problems := if Core.isMarkdownFile path.toString then Core.markdownProblems src else #[]
+  -- Lean's parser rejects input that is only whitespace, as when a file is
+  -- all prose.
+  if code.trimAscii.isEmpty then
+    for (line, msg) in problems do logErrorAt stx m!"{name}:{line}:0: {msg.text}"
+    return
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[], natReports := #[], natKept := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap), globalTexts := #[],
@@ -114,6 +119,9 @@ def relativeTo (base path : System.FilePath) : String :=
   let s ← get
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
   set st.commandState
+  for (line, msg) in problems do
+    let m : Message := { fileName := path.toString, pos := ⟨line, 0⟩, severity := .error, data := msg.text }
+    modify fun s => { s with messages := s.messages.add m }
   -- The Lean file's settings in effect at the spec's items, which are its
   -- items too.
   let seen := (← getLocal).seenSettings

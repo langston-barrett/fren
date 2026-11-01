@@ -1,0 +1,3 @@
+-- A Markdown spec's block whose info string looks like `fren` but is not
+-- (F0168); the block after inline code at the start of a line is read.
+--@ argv: check src/FrenTestFiles/LiterateNearFren.md

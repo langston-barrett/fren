@@ -44,15 +44,29 @@ parts, in order, omitting the empty ones:
 2. **Syntax**: the grammar, as a rule.
 3. **Legality rules**: what is accepted, its types, its names, and the
    static errors.
-4. **Meaning**: what it means, as Fren's dynamic semantics, and what the
-   front ends give Lean and the solver.
-5. **Examples**: as many as help, in checked blocks where they can be.
-6. **Notes and rationale**: only where needed.
+4. **Meaning**: what it means, as Fren's dynamic semantics.
+5. **Checking**: what the generated Lean and the solver's queries contain,
+   what lints report, and what the verdicts are.
+6. **Examples**: as many as help, in checked blocks where they can be.
+7. **Notes and rationale**: only where needed.
 
 A long construct has a `###` heading for each topic, each with the
-parts that apply. Rules are grouped under bold run-in headings
-(`**Legality rules**`), not headings, so that a chapter's anchors stay
-those of its topics.
+parts that apply. Rules are grouped under these labels, as bold run-in
+headings (`**Legality rules**`), not headings, so that a chapter's anchors
+stay those of its topics. A note or rationale is a block quote, so it needs
+no label.
+
+## What is not a rule
+
+- The reference states what Fren accepts, what it means, and what a user
+  can observe: messages, verdicts, the generated Lean and the solver's
+  queries. It does not say how the front ends are built.
+- A statement about the implementation, such as which `Fren.Core` function
+  both front ends call (`nameAlone`, `countedBetween`, `startsAtZero`) or
+  what each front end reads of the syntax, goes in a doc comment beside
+  that function. The `impl` that binds the function to its requirement
+  connects the two, so the rule needs no name of a Lean function, and
+  renaming one changes no identifier.
 
 ## Rule identifiers
 
@@ -86,7 +100,8 @@ those of its topics.
 - The block is the precise form of a rule, and the rule names it: "...
   (`lang::quantifier_size`)". The rule states the property in a sentence;
   the block's `ensure`s state it exactly, and its `expect`s are its
-  examples, which the checker proves.
+  examples, which the checker checks at the block's evidence (proved,
+  enumerated or tested).
 - Where a rule and its block disagree, the block is right, and the rule is
   fixed.
 - A block's comments are not normative. They say what a parameter or
@@ -102,7 +117,8 @@ those of its topics.
   It states its messages as ui tests do: `--~ error: TEXT` on the line of
   the message, `--~^` for the line above, `--@ summary: ...` for the checks'
   summary. Every message must be expected, so the block shows all that
-  `fren` says of it.
+  `fren` says of it. An example runs through both front ends, so it has no
+  `--@ only`, and the job fails if it finds no example at all.
 - Prefer an example that the reader can read without the rest of the
   chapter. Name its items after what they stand for.
 

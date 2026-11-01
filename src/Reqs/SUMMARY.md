@@ -96,4 +96,5 @@
 - [Overview](dev/Overview.md)
 - [Architecture](dev/Architecture.md)
 - [Testing](dev/Testing.md)
+- [Writing the reference](dev/Style.md)
 - [Roadmap](dev/Roadmap.md)

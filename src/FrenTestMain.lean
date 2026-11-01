@@ -215,41 +215,15 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
 
 /-! ## The reference's examples and rule identifiers -/
 
-/-- The fenced code blocks of a Markdown text, each as its info string, the
-line of its opening fence, from 1, and its lines. A block closes at a fence
-with no info string of at least as many backticks as the one that opened it,
-so a ```` ```` ```` block can show a ```` ``` ```` one. -/
-def fencedBlocks (md : String) : Array (String × Nat × Array String) := Id.run do
-  let mut out := #[]
-  -- The open block: its info string, the line of its fence, its backticks, and its lines.
-  let mut cur : Option (String × Nat × Nat × Array String) := none
-  for line in md.splitOn "\n", i in [1:md.length + 2] do
-    let rest := line.trimAsciiStart.toString
-    let fence? : Option (Nat × String) :=
-      if line.length - rest.length ≤ 3 && rest.startsWith "```" then
-        let ticks := (rest.takeWhile (· == '`')).toString.length
-        some (ticks, (rest.drop ticks).trimAscii.toString)
-      else none
-    match cur, fence? with
-    | none, some (ticks, info) => cur := some (info, i, ticks, #[])
-    | some (info, at_, ticks, ls), some (n, "") =>
-      if n ≥ ticks then
-        out := out.push (info, at_, ls)
-        cur := none
-      else cur := some (info, at_, ticks, ls.push line)
-    | some (info, at_, ticks, ls), _ => cur := some (info, at_, ticks, ls.push line)
-    | none, none => pure ()
-  return out
-
 /-- The ```` ```fren example ```` blocks of a Markdown text, each with the
 line of its opening fence (`Reqs/dev/Style#examples`). -/
 def exampleBlocks (md : String) : Array (Nat × String) :=
-  (fencedBlocks md).filterMap fun (info, at_, ls) =>
-    if info == "fren example" then some (at_, "\n".intercalate ls.toList ++ "\n") else none
+  (Fren.Core.fencedBlocks md).filterMap fun b =>
+    if b.info == Fren.Core.frenExampleInfo then some (b.line, "\n".intercalate b.body.toList ++ "\n") else none
 
 #guard exampleBlocks "a\n```fren example\nx\n```\n```fren\ny\n```\n" == #[(2, "x\n")]
 #guard exampleBlocks "````text\n```fren example\nx\n```\n````\n" == #[]
-#guard (fencedBlocks "```text\nr\n```\n").map (·.1) == #["text"]
+#guard exampleBlocks "```` ```fren example ```` inline\n```fren example\nx\n```\n" == #[(2, "x\n")]
 
 /-- The Markdown files of the reference, `src/Reqs/**/*.md`. -/
 def manualFiles : IO (Array FilePath) := sortedFiles ("src" / "Reqs") "md"
@@ -263,14 +237,23 @@ def manualExamples (env : Environment) : IO (Array String) := do
   IO.FS.createDirAll dir
   let mut files := #[]
   let mut origins := #[]
+  let mut failures := #[]
   for md in ← manualFiles do
     for (line, src) in exampleBlocks (← IO.FS.readFile md) do
+      let origin := s!"{md}, the example at line {line}"
+      -- Every example runs through both front ends.
+      if (parse src).toOption.any (·.only?.isSome) then
+        failures := failures.push s!"{origin}: an example runs through both front ends, so it has no `--@ only`"
+        continue
       let f := dir / s!"{md.toString.replace "/" "_"}_{line}.fren"
       IO.FS.writeFile f src
       files := files.push f
-      origins := origins.push s!"{md}, the example at line {line}"
-  let failures ← uiTests env files
-  return failures.map fun msg => (files.zip origins).foldl (fun m (f, o) => m.replace f.toString o) msg
+      origins := origins.push origin
+  -- A reader that finds no example would make this job check nothing.
+  if files.isEmpty && failures.isEmpty then
+    return #["src/Reqs: no ```` ```fren example ```` block found, so the examples' reader is broken"]
+  let ui ← uiTests env files
+  return failures ++ ui.map fun msg => (files.zip origins).foldl (fun m (f, o) => m.replace f.toString o) msg
 
 /-- Whether `id` is a rule identifier: `r[`, segments of lowercase words and
 digits joined by `-`, separated by `.`, and `]` (`Reqs/dev/Style#rule-identifiers`). -/
@@ -286,8 +269,8 @@ def isRuleId (id : String) : Bool :=
 /-- The rule identifiers of a Markdown text, outside its code blocks, each
 with its line: every line that starts with `r[`. -/
 def ruleIdLines (md : String) : Array (Nat × String) := Id.run do
-  let inBlock := (fencedBlocks md).foldl (init := #[]) fun acc (_, at_, ls) =>
-    acc ++ (List.range (ls.size + 2)).toArray.map (at_ + ·)
+  let inBlock := (Fren.Core.fencedBlocks md).foldl (init := #[]) fun acc b =>
+    acc ++ (List.range (b.body.size + 2)).toArray.map (b.line + ·)
   let mut out := #[]
   for line in md.splitOn "\n", i in [1:md.length + 2] do
     let t := line.trimAscii.toString
@@ -295,6 +278,7 @@ def ruleIdLines (md : String) : Array (Nat × String) := Id.run do
   return out
 
 #guard ruleIdLines "r[a.b]\nx\n```text\nr[a.b]\n```\n" == #[(1, "r[a.b]")]
+#guard ruleIdLines "```` ```text ```` inline\nr[a.b]\n" == #[(2, "r[a.b]")]
 
 /-- Every rule identifier of the reference is well formed and unique
 (`Reqs/dev/Style#rule-identifiers`). -/
@@ -316,18 +300,9 @@ def ruleIds : IO (Array String) := do
 /-! ## Error codes -/
 
 /-- The ```` ```fren ```` blocks of a Markdown text. -/
-def frenBlocks (md : String) : Array String := Id.run do
-  let mut out := #[]
-  let mut cur : Option (Array String) := none
-  for line in md.splitOn "\n" do
-    match cur with
-    | none => if line.trimAscii.toString == "```fren" then cur := some #[]
-    | some ls =>
-      if line.trimAscii.toString == "```" then
-        out := out.push ("\n".intercalate ls.toList ++ "\n")
-        cur := none
-      else cur := some (ls.push line)
-  return out
+def frenBlocks (md : String) : Array String :=
+  (Fren.Core.fencedBlocks md).filterMap fun b =>
+    if b.info == Fren.Core.frenInfo then some ("\n".intercalate b.body.toList ++ "\n") else none
 
 /-- The codes in the sources of both front ends, as string literals. -/
 def codesInSources : IO (Array String) := do
@@ -543,6 +518,7 @@ def ownSpecFiles : Array String :=
     "Impl",
     "Generated",
     "Trace",
+    "Markdown",
     "dev/Testing",
   ].map fun r => s!"src/Reqs/{r}.md"
 
@@ -699,7 +675,9 @@ def fmtIgnore : List String :=
    "test/cli/fmt/independent.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
-   "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
+   "test/ui/checks/trace.fren",
+   -- Markdown specs whose fences are deliberately wrong (`F0167`, `F0168`).
+   "src/FrenTestFiles/LiterateUnclosed.md", "src/FrenTestFiles/LiterateNearFren.md",
    -- The explanations of the codes, whose first examples are erroneous.
    "src/FrenCore/Codes/*.md",
    -- The README's example keeps its hand-aligned continuation lines.

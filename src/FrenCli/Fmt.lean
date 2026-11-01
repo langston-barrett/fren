@@ -890,16 +890,13 @@ together, as `fren check` reads them, and each is laid out as a file of its
 own. -/
 def formatMarkdown (src : String) : Except Error String := do
   let lines := (src.splitOn "\n").toArray
-  -- The block of each line inside a ```` ```fren ```` block.
-  let mut blockOf : Array (Option Nat) := #[]
-  let mut block : Option Nat := none
+  -- The block of each line inside a ```` ```fren ```` block, from 1.
+  let mut blockOf : Array (Option Nat) := Array.replicate lines.size none
   let mut n := 0
-  for line in lines do
-    match block, Fren.Core.fenceInfo? line with
-    | none, some "fren" => blockOf := blockOf.push none; block := some n; n := n + 1
-    | some _, some "" => blockOf := blockOf.push none; block := none
-    | some b, _ => blockOf := blockOf.push (some (b + 1))
-    | none, _ => blockOf := blockOf.push none
+  for b in Fren.Core.fencedBlocks src do
+    if b.info == Fren.Core.frenInfo then
+      n := n + 1
+      for k in [0:b.body.size] do blockOf := blockOf.set! (b.line + k) (some n)
   let segment (l : Nat) : Nat := (blockOf[l]?.join).getD 0
   let code ← formatLines (Fren.Core.unwrapMarkdown src).toList.toArray segment
   let mut out := #[]

@@ -1,0 +1,13 @@
+error[F0167]: this code block is never closed
+ --> src/FrenTestFiles/LiterateUnclosed.md:6:1
+  |
+6 |
+  | ^ opened here
+  |
+  = note: a block that opens at a fence of 3 backticks closes at a line of at least 3 backticks and nothing else, so the rest of the file is part of this `fren` block
+  = help: close it with a line of backticks
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0167`.
+exit=2
