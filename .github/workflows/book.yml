@@ -69,8 +69,16 @@ jobs:
       with:
         path: ~/.cargo-mdbook-spec
         key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}
+    # mdbook-spec only warns about a rule defined twice, a bad admonition or
+    # a link that it cannot resolve. Its `SPEC_DENY_WARNINGS` needs a Rust
+    # checkout (`SPEC_RUST_ROOT`), so the job fails on its summary line
+    # instead.
     - name: Build the book
       run: |
         set -euo pipefail
         export PATH="${HOME}/.cargo-mdbook-spec/bin:${PATH}"
-        mdbook build
+        mdbook build 2>&1 | tee "${RUNNER_TEMP}/book.log"
+        if grep -q '^mdbook-spec generated' "${RUNNER_TEMP}/book.log"; then
+          echo "::error::mdbook-spec reported warnings"
+          exit 1
+        fi

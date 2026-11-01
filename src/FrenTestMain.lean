@@ -290,33 +290,59 @@ def isRuleId (id : String) : Bool :=
 #guard isRuleId "r[quantifier.guard.strict]" && isRuleId "r[quantifier.not-listed]"
 #guard !isRuleId "r[Quantifier]" && !isRuleId "r[a..b]" && !isRuleId "r[a-]" && !isRuleId "r[]"
 
-/-- The rule identifiers of a Markdown text, outside its code blocks, each
-with its line: every line that starts with `r[`. -/
-def ruleIdLines (md : String) : Array (Nat × String) := Id.run do
+/-- The lines of a Markdown text outside its code blocks, each with its
+number, from 1. -/
+def proseLines (md : String) : Array (Nat × String) := Id.run do
   let inBlock := (Fren.Core.fencedBlocks md).foldl (init := #[]) fun acc b =>
     acc ++ (List.range (b.body.size + 2)).toArray.map (b.line + ·)
   let mut out := #[]
   for line in md.splitOn "\n", i in [1:md.length + 2] do
-    let t := line.trimAscii.toString
-    if t.startsWith "r[" && !inBlock.contains i then out := out.push (i, t)
+    unless inBlock.contains i do out := out.push (i, line)
   return out
+
+/-- The rule identifiers of a Markdown text, outside its code blocks, each
+with its line: every line that starts with `r[` once its blanks are
+removed, as written, so that `ruleIds` rejects one that mdbook-spec, which
+reads only a whole line `r[...]`, would not render. -/
+def ruleIdLines (md : String) : Array (Nat × String) :=
+  (proseLines md).filter (·.2.trimAscii.toString.startsWith "r[")
 
 #guard ruleIdLines "r[a.b]\nx\n```text\nr[a.b]\n```\n" == #[(1, "r[a.b]")]
 #guard ruleIdLines "```` ```text ```` inline\nr[a.b]\n" == #[(2, "r[a.b]")]
+#guard ruleIdLines "  r[a.b]\n" == #[(1, "  r[a.b]")]
 
-/-- Every rule identifier of the reference is well formed and unique
+/-- The rules that a Markdown text cites, outside its code blocks, each with
+its line: the code spans that look like a rule identifier of the
+constructs `prefixes`, such as `quantifier.guard.strict`. -/
+def ruleCitations (prefixes : Array String) (md : String) : Array (Nat × String) :=
+  (proseLines md).foldl (init := #[]) fun acc (i, line) =>
+    let spans := ((line.splitOn "`").zipIdx.filter (·.2 % 2 == 1)).map (·.1)
+    acc ++ (spans.filter fun c => c.contains '.' && isRuleId s!"r[{c}]"
+      && prefixes.contains ((c.splitOn ".").head!)).toArray.map (i, ·)
+
+#guard ruleCitations #["a"] "as `a.b` says, not `x.y` or `a`\n" == #[(1, "a.b")]
+
+/-- Every rule identifier of the reference is well formed, on a line of its
+own, and unique, and every rule that the reference cites exists
 (`Reqs/dev/Style#rule-identifiers`). -/
 def ruleIds : IO (Array String) := do
   let mut failures := #[]
   let mut seen : Array (String × String) := #[]
-  for md in ← manualFiles do
-    for (line, id) in ruleIdLines (← IO.FS.readFile md) do
+  let texts ← (← manualFiles).mapM fun md => return (md, ← IO.FS.readFile md)
+  for (md, text) in texts do
+    for (line, id) in ruleIdLines text do
       let here := s!"{md}:{line}"
       unless isRuleId id do
-        failures := failures.push s!"{here}: `{id}` is not a rule identifier: lowercase words and digits, joined by `-`, in segments separated by `.`"
+        failures := failures.push s!"{here}: `{id}` is not a rule identifier, alone on its line and not indented: lowercase words and digits, joined by `-`, in segments separated by `.`"
       match seen.find? (·.1 == id) with
       | some (_, first) => failures := failures.push s!"{here}: `{id}` is already the identifier of the rule at {first}"
       | none => seen := seen.push (id, here)
+  let ids := seen.map fun (id, _) => ((id.drop 2).dropEnd 1).toString
+  let prefixes := (ids.map fun (i : String) => (i.splitOn ".").head!).toList.eraseDups.toArray
+  for (md, text) in texts do
+    for (line, c) in ruleCitations prefixes text do
+      unless ids.contains c do
+        failures := failures.push s!"{md}:{line}: `{c}` cites no rule"
   return failures
 
 /-! ## Fren's own requirements -/
@@ -698,7 +724,7 @@ def fmtIgnore : List String :=
    "test/ui/checks/trace.fren",
    -- Markdown specs whose fences are deliberately wrong (`F0167`, `F0168`).
    "src/FrenTestFiles/LiterateUnclosed.md", "src/FrenTestFiles/LiterateNearFren.md",
-   "src/FrenTestFiles/LiterateUnclosedProse.md",
+   "src/FrenTestFiles/LiterateUnclosedProse.md", "src/FrenTestFiles/LiterateProseOuter.md",
    -- The explanations of the codes, whose first examples are erroneous.
    "src/FrenCore/Codes/*.md",
    -- The README's example keeps its hand-aligned continuation lines.

@@ -190,11 +190,12 @@ open Fren.Str in
 /-- The runs that `splitLine` finds are those that `markdown::runs?` states. -/
 theorem md_runs (line : String) :
     let P := Fren.Core.splitLine line
-    ((((((∀ (k : Int), 0 ≤ k ∧ k < ↑P.indent → Str.at line k = Str.lit " ") ∧
+    (((((∀ (k : Int), 0 ≤ k ∧ k < ↑P.indent → Str.at line k = Str.lit " ") ∧
         Str.at line ↑P.indent ≠ Str.lit " ") ∧
       ∀ (k : Int), ↑P.indent ≤ k ∧ k < ↑P.indent + ↑P.run → Str.at line k = Str.at line ↑P.indent) ∧
-      ((P.run : Int) = 0 ∨ Str.at line (↑P.indent + ↑P.run) ≠ Str.at line ↑P.indent)) ∧
-      ((Str.at line ↑P.indent = Str.lit "`" ∨ Str.at line ↑P.indent = Str.lit "~") ∨ (P.run : Int) = 0)) ∧
+      (if Str.at line ↑P.indent = Str.lit "`" ∨ Str.at line ↑P.indent = Str.lit "~" then
+          Str.at line (↑P.indent + ↑P.run) ≠ Str.at line ↑P.indent
+        else (P.run : Int) = 0)) ∧
       ∀ (k : Int), ↑P.indent + ↑P.run ≤ k ∧ k < ↑P.indent + ↑P.run + ↑P.lead →
         decide (Str.at line k = Str.lit " " ∨ Str.at line k = Str.lit "\t") = true) ∧
     ¬decide (Str.at line (↑P.indent + ↑P.run + ↑P.lead) = Str.lit " " ∨
@@ -206,18 +207,24 @@ theorem md_runs (line : String) :
   simp only [Fren.Str.lit] at *
   by_cases m : P.marker = ""
   · have r0 : P.run = 0 := by rw [if_pos m] at h3; exact h3
-    refine ⟨⟨⟨⟨⟨⟨ha, hb⟩, ?_⟩, Or.inl (by simp [r0])⟩, Or.inr (by simp [r0])⟩, hf⟩, hg⟩
-    intro k ⟨k0, k1⟩; omega
+    have nc : ¬(Fren.Str.at line ↑P.indent = "`" ∨ Fren.Str.at line ↑P.indent = "~") := by
+      intro hc'
+      rw [if_pos hc'] at h2
+      rcases hc' with e | e <;> rw [e] at h2 <;> rw [h2] at m <;> exact absurd m (by decide)
+    refine ⟨⟨⟨⟨⟨ha, hb⟩, ?_⟩, ?_⟩, hf⟩, hg⟩
+    · intro k ⟨k0, k1⟩; omega
+    · rw [if_neg nc]; simp [r0]
   · have hc' : (Fren.Str.at line ↑P.indent = "`" ∨ Fren.Str.at line ↑P.indent = "~") := by
       rcases Classical.em (Fren.Str.at line ↑P.indent = "`" ∨ Fren.Str.at line ↑P.indent = "~") with h | hn
       · exact h
       · rw [if_neg hn] at h2; exact absurd h2 m
     have hmk : P.marker = Fren.Str.at line ↑P.indent := by rw [if_pos hc'] at h2; exact h2
-    refine ⟨⟨⟨⟨⟨⟨ha, hb⟩, ?_⟩, ?_⟩, Or.inl hc'⟩, hf⟩, hg⟩
+    refine ⟨⟨⟨⟨⟨ha, hb⟩, ?_⟩, ?_⟩, hf⟩, hg⟩
     · intro k hk; rw [← hmk]; exact hc k hk
-    · rcases hd with h | h
+    · rw [if_pos hc']
+      rcases hd with h | h
       · exact absurd h m
-      · exact Or.inr (by rw [← hmk]; exact h)
+      · rw [← hmk]; exact h
 
 impl split: markdown::split for (line : String) {
   line := line,

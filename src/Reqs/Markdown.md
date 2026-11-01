@@ -21,7 +21,8 @@ diagnostics are those of the Markdown file.
 
 ## Code blocks
 
-Fences are read much as CommonMark reads them. A file's lines are split at
+Fences are read as CommonMark reads them, but for the differences in the
+note below. A file's lines are split at
 each `\n`, and a `\r` before it ends the line too. A line is split into the
 spaces that it starts with, then a run of backticks or of tildes, then the
 blanks (spaces and tabs) after the run, then the rest of the line, its *info
@@ -29,7 +30,18 @@ string*. The line is a *fence* if it has at most three spaces and a run of
 at least three, and, for backticks, no backtick in its info string, so that
 inline code at the start of a line, as in ```` ```fren ```` here, is not a
 fence. `markdown::runs?` states how a line splits, over its text, and
-`markdown::split` what follows from the split:
+`markdown::split` what follows from the split.
+
+> **Note:** The reader differs from CommonMark in three ways. Only spaces
+> count as indentation, and a tab is not expanded. A fence inside a block
+> quote or a list item's container, such as `> ```fren`, is not a fence.
+> And the info string keeps its trailing blanks, which CommonMark strips,
+> so `fren` followed by a blank is not `fren` and is an error (`F0168`).
+> Keeping them makes such a tag an error rather than a block read as
+> `fren` that the author may have meant as something else, and keeps the
+> split a matter of the text after the run, with no trimming at its end.
+
+
 
 ```fren
 pub mod markdown
@@ -44,8 +56,7 @@ pub fn runs?(line: String, indent: Int, run: Int, lead: Int) :=
     (forall (k: Int), when 0 <= k < indent, line.at(k) = " ")
     and line.at(indent) != " "
     and (forall (k: Int), when indent <= k < indent + run, line.at(k) = line.at(indent))
-    and (run = 0 or line.at(indent + run) != line.at(indent))
-    and (line.at(indent) is "`" | "~" or run = 0)
+    and (if line.at(indent) is "`" | "~" then line.at(indent + run) != line.at(indent) else run = 0)
     and (forall (k: Int), when indent + run <= k < indent + run + lead, blank?(line.at(k)))
     and not blank?(line.at(indent + run + lead))
 
@@ -61,7 +72,8 @@ pub proc split(line: String, indent: Nat, run: Nat, lead: Nat): (
     out info := line.slice(indent + run + lead, line.len - indent - run - lead)
     out fence? := indent <= 3 <= run and (marker = "~" or not info.contains?("`"))
 
-    expect plain: when line = "```fren" and indent = 0 and run = 3, fence? and info = "fren"
+    expect plain: when line = "```fren", fence? and info = "fren"
+    expect plain_run: when line = "```fren", indent = 0 and run = 3 and lead = 0
 }
 ```
 

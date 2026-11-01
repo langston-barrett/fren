@@ -54,8 +54,9 @@ parts, in order, omitting the empty ones:
 A long construct has a `###` heading for each topic, each with the
 parts that apply. Rules are grouped under these labels, as bold run-in
 headings (`**Legality rules**`), not headings, so that a chapter's anchors
-stay those of its topics. A note or rationale is a block quote, so it needs
-no label.
+stay those of its topics. Every rule is under one, but a `## Syntax`
+heading serves as the **Syntax** label. A note or rationale is a block
+quote, so it needs no label.
 
 ## What is not a rule
 
@@ -87,8 +88,10 @@ no label.
   (`quantifier.guard.strict`). Spell words out, as in prose.
 - The identifier of a grammar is `<construct>.syntax`, on the line
   before its block.
-- An identifier is unique across the reference. `lake test` checks this
-  and the format (`ruleIds`).
+- The identifier's line is exactly `r[...]`, not indented, as mdbook-spec
+  reads it, which renders it as an anchor.
+- An identifier is unique across the reference. `lake test` checks this,
+  the format, and that each rule cited in backticks exists (`ruleIds`).
 - An identifier is never renumbered, renamed or reused. A rule that is
   removed leaves its identifier unused. A rule that changes meaning
   gets a new identifier.

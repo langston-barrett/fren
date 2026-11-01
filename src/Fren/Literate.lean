@@ -111,7 +111,12 @@ def relativeTo (base path : System.FilePath) : String :=
   -- Lean's parser rejects input that is only whitespace, as when a file is
   -- all prose.
   if code.trimAscii.isEmpty then
-    for (line, msg) in problems do logErrorAt stx m!"{name}:{line}:0: {msg.text}"
+    -- Labelled here, once: in a spec that another spec reads, the outer
+    -- `#fren_md` only places it (`mdLabelled`).
+    for (line, msg) in problems do
+      if outer.inMarkdown then
+        withReader (fun ctx => { ctx with fileName := mdLabelled }) (logErrorAt stx m!"{name}:{line}:0: {msg.text}")
+      else logErrorAt stx m!"{name}:{line}:0: {msg.text}"
     unless problems.isEmpty do
       let key := (← getFileName, (← read).cmdPos.byteIdx)
       modifyLocal fun l => { l with staticErrors := l.staticErrors.push (key.1, key.2, problems.size) }

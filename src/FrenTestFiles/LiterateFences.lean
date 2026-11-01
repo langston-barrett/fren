@@ -34,3 +34,13 @@ error: LiterateNearFren.md:15:0: could not check due to previous errors
 #guard_msgs in
 #fren_md "LiterateNearFren.md"
 
+
+-- A file of prose read by a spec: its error is named once, with that file.
+/--
+error: LiterateUnclosedProse.md:6:0: this code block is never closed
+
+note: a block that opens at a fence of 4 backticks closes at a line of at least 4 backticks and nothing else, so the rest of the file is part of this `text` block
+help: close it with a line of backticks
+-/
+#guard_msgs in
+#fren_md "LiterateProseOuter.md"

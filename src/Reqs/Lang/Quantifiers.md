@@ -266,6 +266,8 @@ proc quiet(len_loud?, card_loud?): (all_quiet?) {
 
 A quantifier is expanded only where it has few enough instances.
 
+**Legality rules**
+
 r[quantifier.limit]
 A quantifier has at most 256 instances. One with more is an error that says
 how many it would have (`F0356`, `lang::quantifier_size`).
@@ -372,7 +374,7 @@ forall (x: T), law(x)                            -- over a type
 
 r[quantifier.unbounded.verdicts]
 An unbounded quantifier is not expanded. A check that it occurs in may be
-`Inconclusive`, where the solver does not decide it. They may be
+`Inconclusive`, where the solver does not decide it. Such a check may be
 [tested](../Check.md#checking-by-testing) instead, where the evaluator can
 evaluate the quantifier (see [Evaluation](../Eval.md#quantifiers)), or a
 procedure's evidence may be a `trusted` claim.
@@ -420,6 +422,8 @@ names. From it, a bound name may get a domain: the values at which the guard
 can hold.
 
 ### Conjuncts and bounds
+
+**Dynamic semantics**
 
 r[quantifier.guard.forall]
 The *guard* of a `forall` is the conditions of the `when`s at the top of its
@@ -504,6 +508,8 @@ pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOpera
 
 ### Newtypes
 
+**Dynamic semantics**
+
 r[quantifier.guard.name]
 A bound name's field `0`, where its type is a [newtype](Items.md#newtypes),
 is the bound name itself, and so on through nested newtypes. Any other
@@ -553,6 +559,8 @@ pub proc name_alone(
 - In `m.0 in {0, 1}`, `m` ranges over `Ms(0)` and `Ms(1)`.
 
 ### Domains
+
+**Dynamic semantics**
 
 r[quantifier.guard.nat-floor]
 Where the guard gives a bound name only an upper bound, its range starts
@@ -669,6 +677,8 @@ pub proc guard_domain(
 over `Nat` the values from `Ns(0)` to `Ns(9)`.
 
 ### Ranges
+
+**Dynamic semantics**
 
 r[quantifier.guard.range]
 For evaluation and enumeration, a membership bounds a bound name of any
@@ -822,6 +832,8 @@ is in range for every `i` with `0 <= i < q.len`, which holds.
 
 A quantifier ranges over values, never over the behaviours of a
 procedure, which a global expectation relates.
+
+**Legality rules**
 
 r[quantifier.global.short-form]
 A [global expectation's](Global.md) short form, `expect n: forall (m:
