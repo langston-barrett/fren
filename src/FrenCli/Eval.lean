@@ -797,7 +797,11 @@ theorem firstCaseIn_eq (xs : Array α) (take : α → Option (Option β)) (i : N
 
 /-- Leaving out cases that are not taken does not change which case is:
 `Ex.dispatch` tries only the arms of a `match` whose patterns may match
-the value. -/
+the value. This proves only the filtering step. Its premise, that an arm
+that `Pat.mayMatchCtor` leaves out matches no such value, and how
+`Ex.compile` builds `byCtor` and `Ex.eval` looks the value's index up in
+it, are tested, not proved (`mayMatchCtorSound` and `compiledRecursion`
+in `FrenTest.Semantics`, and every compiled evaluation there). -/
 theorem firstCase_filter (xs : List α) (take : α → Option (Option β)) (keep : α → Bool)
     (h : ∀ x ∈ xs, keep x = false → take x = some none) :
     Fren.Core.firstCase (xs.filter keep) take = Fren.Core.firstCase xs take := by
@@ -882,8 +886,15 @@ def evalFuel : Nat := 1 <<< 20
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
 unknown value, which, since evaluation is monotone, can make no known
 value another. At run time it panics, so that a run that ran out says
-so: in compiled code `panic!` only prints to stderr and returns that
-unknown value, so a verdict that rested on it is inconclusive. -/
+so, but in compiled code `panic!` only prints `PANIC` to stderr and
+returns that unknown value, and evaluation goes on (test jobs abort on
+it, `spawnJob`). Nothing then rests on the value: a test in which a
+check has no value, as here or where it reads a part that has no value,
+such as an index out of range, neither refutes nor reaches it
+(`eval::reaches`, `Tally.test`), so it counts toward no tested pass, and
+the check gets `F0617` (`eval::unreached`); and a model that
+evaluation cannot decide is not confirmed (`eval::confirm`), so a check
+that applies a recursion is inconclusive (`F0450`). -/
 @[noinline] def outOfFuel [Inhabited α] (_ : Unit) : α := panic! "Ex.eval ran out of fuel"
 
 /-- The value of an expression, as far as it is known: each variable as
@@ -1492,6 +1503,7 @@ partial def Ex.same : Ex → Ex → Bool
   | .typed t is e, .typed t' is' e' => ptySame t t' && is == is' && e.same e'
   | .memo ls e, .memo ls' e' => sameAll Ex.same ls ls' && e.same e'
   | .lifted ls e, .lifted ls' e' => sameAll (sameAll Ex.same) ls ls' && e.same e'
+  | .dispatch ks m, .dispatch ks' m' => ks == ks' && m.same m'
   | _, _ => false
 
 /-- Whether evaluating `e` may cost more than reading a few values and
@@ -1508,10 +1520,10 @@ partial def Ex.costly (e : Ex) : Bool :=
   | _ => true
 
 /-- Whether `e` binds names or starts a scope of its own (a quantifier, a
-`match`, a table's shared expressions or a constant), within which an
-expression may not mean what it means outside. -/
+`match`, dispatched or not, a table's shared expressions or a constant),
+within which an expression may not mean what it means outside. -/
 def Ex.scoped : Ex → Bool
-  | .quant .. | .match .. | .table .. | .const .. | .memo .. | .lifted .. => true
+  | .quant .. | .match .. | .dispatch .. | .table .. | .const .. | .memo .. | .lifted .. => true
   | _ => false
 
 /-- The costly expressions in `e` (`Ex.costly`), outside its scopes
@@ -1644,6 +1656,8 @@ partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : O
     | none => .bound n
   | .lit v => .known (some v)
   | .var _ | .slot _ | .boundAt _ | .shared _ | .known _ => e
+  -- Compiled again, its `match` with it, which is dispatched afresh.
+  | .dispatch _ m => m.compile shapes scope
   | e => dispatched (fold (compound e))
 where
   /-- A `match` whose arms' patterns tell variants apart, with the arms
@@ -1765,8 +1779,8 @@ searches that share it compile it once. -/
 def Atom.compiled (shapes : Name → Option Fren.Core.DataShape) (a : Atom) : Atom :=
   { a with run? := some (Thunk.mk fun _ => a.e.compile shapes (some [])) }
 
-def Atom.eval (a : Atom) (I : Interp) (look : Look) : Option Bool :=
-  match a.e.eval I (fun n => look (a.pfx ++ n)) with
+def Atom.eval (a : Atom) (I : Interp) (look : Look) (fuel : Nat := evalFuel) : Option Bool :=
+  match a.e.eval I (fun n => look (a.pfx ++ n)) (fuel := fuel) with
   | some (.bool b) => some b
   | _ => none
 

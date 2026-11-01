@@ -1,0 +1,32 @@
+warning[F0610]: testing found no admissible behaviour of `m::never` in 100 tests
+  --> test/cli/results/f0612_beside_f0610.fren:13:10
+   |
+13 | pub proc never(x: Int) {
+   |          ^^^^^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
+
+error[F0604]: the assumption `n` of `m::never` may not hold for call `m::user2::v`
+  --> test/cli/results/f0612_beside_f0610.fren:19:10
+   |
+19 |     call v := never(z)
+   |          ^ may violate `m::never::n`
+   |
+   = counterexample: z = 6
+   = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
+
+warning[F0610]: testing found no admissible behaviour of `m::user2` in 100 tests
+  --> test/cli/results/f0612_beside_f0610.fren:17:10
+   |
+17 | pub proc user2(z: Int) {
+   |          ^^^^^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
+
+fren: 1 passed, 1 failed, 3 inconclusive, in 100 tests each
+
+Some errors have detailed explanations: F0604, F0610.
+For more information about an error, try `fren --explain F0604`.
+exit=1

@@ -1,6 +1,7 @@
 -- fren-covers: lang::coincidence, lang::closed, lint::written_scopes, lint::ifs_same_cond_taken, lint::manual_at_most_one_defined
 -- keep-sorted start
 import FrenCli.Eval
+import FrenCli.Search
 import Reqs.Lang
 -- keep-sorted end
 
@@ -32,7 +33,11 @@ does not mention rebound, which the coincidence lemma (`lang::coincidence`)
 says changes nothing, and, where it mentions nothing, in the empty
 environment, which `lang::closed` says changes nothing either. Each is
 compiled too (`Ex.compile`), which keeps its value in every interpretation,
-one with values for the indexes out of range among them. Last,
+one with values for the indexes out of range among them, and compiled
+again. Compiling a structural recursion's body, as testing does, keeps
+the value of its applications (`compiledRecursion`), and a pattern that
+`Pat.mayMatchCtor` says matches no variant of an index matches none
+(`mayMatchCtorSound`), which `Ex.dispatch` rests on. Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -412,14 +417,12 @@ def run : Array String := Id.run do
     -- every interpretation, one that gives each index out of range a value
     -- too, as enumeration's does (`Ex.compile`, `Interp.outOfRange`).
     for I in [binaryInterp us, { binaryInterp us with outOfRange := fun _ => some (.int 7) }] do
-      unless (e.1.compile (fun _ => none) none).eval I look == e.1.eval I look do
+      let once := e.1.compile (fun _ => none) none
+      unless once.eval I look == e.1.eval I look do
         failures := failures.push s!"{repr e.2} in {repr b} changes its value when compiled"
-    -- So does compiling the structural recursion's body, as testing does
-    -- (`Spec.withCompiledRecs`).
-    let I := binaryInterp us
-    let compiledRecs := { I with recDefs := fun f => (I.recDefs f).map fun (ps, body) => (ps, body.compile (fun _ => none) (some ps.toList)) }
-    unless e.1.eval compiledRecs look == e.1.eval I look do
-      failures := failures.push s!"{repr e.2} in {repr b} changes its value with `r`'s body compiled"
+      -- Compiling again, which sees through `.dispatch`, keeps it too.
+      unless (once.compile (fun _ => none) none).eval I look == e.1.eval I look do
+        failures := failures.push s!"{repr e.2} in {repr b} changes its value when compiled twice"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do
@@ -449,6 +452,101 @@ def run : Array String := Id.run do
   if rebound < 1000 then failures := failures.push s!"only {rebound} variables were rebound"
   if closedOnes < 100 then failures := failures.push s!"only {closedOnes} expressions mentioned nothing"
   if applied < 300 then failures := failures.push s!"only {applied} expressions applied `u` or `r`"
+  return failures
+
+/-- A random pattern, at most `d` deep, over `Bool`s, integers, strings
+and variants of index 0 to 2 with up to two values. -/
+partial def genPat (d : Nat) : R Pat := do
+  match ← next (if d == 0 then 6 else 8) with
+  | 0 => return .wild
+  | 1 => return .bind `z
+  | 2 => return .bool ((← next 2) == 0)
+  | 3 => let lo ← small; return .int (some lo) (some (lo + (← next 3)))
+  | 4 => return .str (if (← next 2) == 0 then "a" else "b")
+  | 5 => return .ctor (← next 3) #[]
+  | 6 => return .ctor (← next 3) (← (List.range (← next 3)).toArray.mapM fun _ => genPat (d - 1))
+  | _ => return .alts (← (List.range (1 + (← next 3))).toArray.mapM fun _ => genPat (d - 1))
+
+/-- A random value that `genPat`'s patterns may match. -/
+partial def genVal (d : Nat) : R Val := do
+  match ← next (if d == 0 then 4 else 5) with
+  | 0 => return .bool ((← next 2) == 0)
+  | 1 => return .int (← small)
+  | 2 => return .str (if (← next 2) == 0 then "a" else "b")
+  | 3 => return .ctor `E (← next 3) #[]
+  | _ => return .ctor `E (← next 3) (← (List.range (← next 3)).toArray.mapM fun _ => genVal (d - 1))
+
+/-- The premise of `firstCase_filter` that `Ex.dispatch` rests on: where
+`Pat.mayMatchCtor idx p` is `false`, `p` matches no variant of index
+`idx` (`Pat.matchInto`), on random patterns and values. -/
+def mayMatchCtorSound : Array String := Id.run do
+  let mut failures := #[]
+  let mut seed := 11
+  let mut excluded := 0
+  let mut matched := 0
+  for _ in [0:20000] do
+    let ((p, v), s) := (do return (← genPat 3, ← genVal 2)).run seed
+    seed := s
+    let .ctor _ idx _ := v | continue
+    let m := p.matchInto v #[]
+    if m.isSome then matched := matched + 1
+    if !p.mayMatchCtor idx then
+      excluded := excluded + 1
+      if m.isSome then failures := failures.push s!"a pattern that `mayMatchCtor {idx}` rules out matches a variant of index {idx}"
+  if excluded < 1000 then failures := failures.push s!"only {excluded} patterns were ruled out"
+  if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
+  return failures
+
+/-- The recursion `g(a, b)` of `compiledRecursion`: a `match` on `a`, an
+`E`, whose first arm binds `b`, which shadows the parameter, the second
+reads the parameter, and the third applies `g` again. -/
+def gBody : Ex :=
+  let a := Ex.bound `g.a
+  let b := Ex.bound `g.b
+  .match a #[
+    (.ctor 0 #[.bind `g.b], some (.bin .gt b (.lit (.int 0))), .bin .add b (.lit (.int 1))),
+    (.ctor 0 #[.wild], none, .bin .sub b (.lit (.int 1))),
+    (.ctor 1 #[], none, .ite (.bin .gt b (.lit (.int 0)))
+      (.bin .add (.app `g #[a, .bin .sub b (.lit (.int 1))]) (.lit (.int 1))) (.lit (.int 10)))]
+    0 #[] none none
+
+/-- `g`'s value, as its body says, at both arguments. -/
+def gModel : Val → Int → Option Int
+  | .ctor _ 0 #[.int k], b => some (if k > 0 then k + 1 else b - 1)
+  | .ctor _ 1 #[], b => some (if b > 0 then b + 10 else 10)
+  | _, _ => none
+
+/-- Compiling a structural recursion's body, as testing does
+(`Spec.withCompiledRecs`), keeps the value of every application of it:
+with 0, 1 and 2 arguments, of either variant or neither. -/
+def compiledRecursion : Array String := Id.run do
+  let sp : FrenCli.Eval.Spec := { recDefs := ({} : Lean.NameMap _).insert `g (#[`g.a, `g.b], gBody) }
+  let compiled := sp.withCompiledRecs fun _ => none
+  let I : FrenCli.Eval.Interp := { recDefs := sp.recDefs.find? }
+  let J : FrenCli.Eval.Interp := { recDefs := compiled.recDefs.find? }
+  let mut failures := #[]
+  let mut seed := 5
+  let mut defined := 0
+  unless compiled.recDefs.find? `g |>.any fun (_, b) => b matches .dispatch .. do
+    failures := failures.push "`Spec.withCompiledRecs` did not compile `g`'s body"
+  for _ in [0:2000] do
+    let ((n, a, b), s) := (do
+      let a : Val ← match ← next 3 with
+        | 0 => pure (.ctor `E 0 #[.int (← small)])
+        | 1 => pure (.ctor `E 1 #[])
+        | _ => pure (.int (← small))
+      return (← next 3, a, ← small)).run seed
+    seed := s
+    let args := #[Ex.lit a, .lit (.int b)].extract 0 n
+    let e := Ex.app `g args
+    let v := e.eval I (fun _ => none)
+    unless (e.eval J fun _ => none) == v do
+      failures := failures.push s!"`g` applied to {n} arguments changes its value when its body is compiled"
+    if n == 2 then
+      unless v == (gModel a b).map .int do
+        failures := failures.push s!"`g` applied to two arguments has the value {repr v}, not {gModel a b}"
+      if v.isSome then defined := defined + 1
+  if defined < 300 then failures := failures.push s!"only {defined} applications of `g` had values"
   return failures
 
 /-- `lint::written_scopes`: in an environment that binds `r` to a reply and
@@ -557,7 +655,7 @@ def constantOfRecursion : Bool :=
 #guard constantOfRecursion
 
 #eval show IO Unit from do
-  let failures := run ++ runInterp
+  let failures := run ++ runInterp ++ mayMatchCtorSound ++ compiledRecursion
   unless failures.isEmpty do
     throw (IO.userError s!"`lang::eval` and `Ex.eval` disagree:\n{"\n".intercalate (failures.toList.take 5)}")
 
