@@ -1,8 +1,8 @@
 error[F0320]: the arms of `match` have different types: `Int` and `Bool`
- --> test/cli/types/f0320_arm_types.fren:3:81
+ --> test/cli/types/f0320_arm_types.fren:6:22
   |
-3 | proc c(m: Mode): (y: Int) { ensure r: y = match m { Mode::On => 1, Mode::Off => false } }
-  |                                                                                 ^^^^^ arms of different types
+6 |         Mode::Off => false,
+  |                      ^^^^^ arms of different types
   |
   = note: a `match` has the value of one of its arms, so all must have the same type, or be `Nat`s and `Int`s
 

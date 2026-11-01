@@ -578,12 +578,18 @@ inductive ListKind where
   | elements
   /-- The fields of a record literal or of a record update. -/
   | fields
+  /-- The members of a procedure's, a function's or a global expectation's
+  block, always one to a line, with no commas. -/
+  | members
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- A list or block: its kind, its opening and closing brackets, the token
 after which its first element starts, and the commas after its elements,
 as indices of tokens. The first element starts after the opening bracket,
-but for a record update's, which start after its `with`. -/
+but for a record update's, which start after its `with`. A block of members
+has no commas: in their place are the last tokens of the members that
+another follows, but for an evidence setting, which stays with the member
+after it. -/
 structure Bracketed where
   kind : ListKind
   opening : Nat
@@ -694,6 +700,10 @@ def listComma : P Bool := do
   modify fun s => { s with openLists := s.openLists.modify (s.openLists.size - 1) fun b => { b with commas := b.commas.push s.pos } }
   modify fun s => { s with pos := s.pos + 1 }
   return true
+/-- Records that the last token consumed ends a member of the innermost
+open block, which another member follows (`Bracketed.commas`). -/
+def memberEnd : P Unit :=
+  modify fun s => { s with openLists := s.openLists.modify (s.openLists.size - 1) fun b => { b with commas := b.commas.push (s.pos - 1) } }
 /-- Records that the next token closes the innermost open list or block. -/
 def closeList : P Unit := modify fun s =>
   match s.openLists.back? with
@@ -1825,6 +1835,7 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
   let result := if ty.isNone && (unbanged r.name).endsWith "?" && !name.name.endsWith "?" then
       some #[{ name := "Bool", span := r.span : Ident }]
     else ty
+  openList .members
   discard (expectKw "{")
   let saved := ((← get).fnResult?, (← get).proc?)
   modify fun s => { s with fnResult? := some (unbanged r.name), proc? := none }
@@ -1832,11 +1843,14 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
   let mut body : Option Expr := none
   let mut clauses : Array (Bool × Ident × Expr) := #[]
   let mut uses : Array Member := #[]
+  let mut prev? : Option Member := none
   repeat
     let t ← peek
     if isKw t "}" then break
     if t.tok == .eof then fail t "`}`"
+    if prev?.any (!· matches .evidence ..) then memberEnd
     let mem ← member
+    prev? := some mem
     let sp := t.span.to (← lastSpan)
     if mem matches .refines .. then
       err sp "F0417" "`refines` is accepted only in global expectation blocks" none #[]
@@ -1862,6 +1876,7 @@ def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
       body := some e
     | .prop k x e => clauses := clauses.push (k == .ensure, x, e)
     | _ => pure ()
+  closeList
   let close ← bump
   modify fun s => { s with fnResult? := saved.1, proc? := saved.2 }
   let (params, expandedBody) := lambdaMatchFunction params body
@@ -1962,6 +1977,7 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
       if isKw (← peek) ")" then break
     closeList
     discard (expectKw ")")
+  openList .members
   let ob ← expectKw "{"
   let saved := (← get).proc?
   modify fun s => { s with proc? := some { results, global } }
@@ -1971,8 +1987,10 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
     let t ← peek
     if isKw t "}" then break
     if t.tok == .eof then fail t "`}`"
+    if ms.back?.any (!· matches .evidence ..) then memberEnd
     ms := ms.push (← member)
     spans := spans.push { t.span with stop := (← lastSpan).stop }
+  closeList
   let close ← bump
   modify fun s => { s with proc? := saved }
   return (header, ms, close.span, spans, ob.span.stop)

@@ -1,8 +1,8 @@
 error[F0316]: cannot match on `Set<Int>`
- --> test/cli/types/f0316_scrutinee.fren:2:53
+ --> test/cli/types/f0316_scrutinee.fren:3:25
   |
-2 | proc c(s: Set<Int>): (y: Int) { ensure r: y = match s { _ => 0 } }
-  |                                                     ^ no patterns of this type
+3 |     ensure r: y = match s {
+  |                         ^ no patterns of this type
   |
   = note: `match` reads a value of an enum, `Bool`, `Int`, `Nat` or `String`
   = help: for other types, use `if ... then ... else`

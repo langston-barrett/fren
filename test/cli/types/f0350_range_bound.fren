@@ -1,2 +1,7 @@
 -- A range bounded by a variable.
-proc c(n: Int, m: Int): (y: Int) { ensure r: y = match n { 0..=m => 0, _ => 1 } }
+proc c(n: Int, m: Int): (y: Int) {
+    ensure r: y = match n {
+        0..=m => 0,
+        _ => 1,
+    }
+}

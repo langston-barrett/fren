@@ -1,6 +1,9 @@
 --- test/cli/fmt/cover.fren
 +++ test/cli/fmt/cover.fren
-@@ -3 +3 @@
+@@ -3 +3,4 @@
 -proc heater(temp: Int): (alarm?) { ensure r: alarm? iff temp > 100 cover overheat: temp>100 and alarm? }
-+proc heater(temp: Int): (alarm?) { ensure r: alarm? iff temp > 100 cover overheat: temp > 100 and alarm? }
++proc heater(temp: Int): (alarm?) {
++    ensure r: alarm? iff temp > 100
++    cover overheat: temp > 100 and alarm?
++}
 exit=1
