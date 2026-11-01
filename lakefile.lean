@@ -222,7 +222,7 @@ input_file test_multi_match_names where
 -- `globs`, as there is no root module.
 @[default_target] lean_lib Examples where
   srcDir := "../examples"
-  globs := #[`Arith, `Rle, `Stoplight]
+  globs := #[`Arith, `Rle, `Stlc, `Stoplight]
   needs := #[`@/examples_fren]
 
 input_dir examples_fren where

@@ -1,0 +1,1092 @@
+-- The simply typed lambda calculus with Booleans, as in chapters 8, 9 and
+-- 12 of Pierce, "Types and Programming Languages": syntax, substitution,
+-- typing and call-by-value evaluation, each stated as in the textbook, and
+-- the theorems that tie them together.
+--
+-- The typing and reduction relations come first, as inference rules read
+-- over relations (`Rel`). The type checker and the evaluators are functions
+-- that refine them: the checker is sound and complete for the typing
+-- relation, and the small-step evaluator agrees with the reduction relation.
+-- The laws that one step of a function's equations decides are decided by
+-- the solver; the theorems, which need induction, are proved in Stlc.lean,
+-- which binds the proofs to the procedures below with `impl`, and tested
+-- by `fren check`. Random testing draws small terms and meets a law's
+-- premise only where that is easy, so it confirms `preservation`,
+-- `big_step_preservation`, `step_eval`, `agree`, `eval_monotone`,
+-- `normalize_monotone`, `substitution`, `named_nameless` and the laws
+-- premised on a derivation on trivial cases alone: their evidence is the
+-- proofs. Where a comment says that a law is tested only, that is all its
+-- evidence. Fren has no check that states normalization, so Stlc.lean
+-- alone proves it.
+-- The ui test that runs this file through both front ends expects their
+-- notes, written as annotations on each procedure checked by random
+-- testing: that testing does not run its vacuity and redundancy checks,
+-- and that the Lean front end leaves it to `fren check`.
+mod stlc
+
+-- # Syntax
+--
+--     T ::= Bool | T -> T
+--     t ::= x | \x: T. t | t t | true | false | if t then t else t
+--
+-- `Term<V, B>` is generic in the type `V` of the names that variables
+-- mention and the type `B` of the names that binders declare, so that one
+-- type has both the named terms, `Term<Name, Name>`, and their nameless
+-- form, `Term<Int, Anon>` (see "Nameless terms"). The rules are written at
+-- `Named`.
+pub type Name := String
+pub enum Anon { Anon }
+
+pub enum Ty { Boolean, Arrow(Ty, Ty) }
+
+pub enum Term<V, B> {
+    Var(V),
+    Lam(B, Ty, Term<V, B>),
+    App(Term<V, B>, Term<V, B>),
+    True,
+    False,
+    If(Term<V, B>, Term<V, B>, Term<V, B>),
+}
+
+pub type Named := Term<Name, Name>
+pub type Nameless := Term<Int, Anon>
+
+-- A value is an abstraction or a Boolean literal.
+pub fn value?<V, B>(t: Term<V, B>) := t is Term::Lam(_, _, _) | Term::True | Term::False
+
+-- The terms of the examples below: `\x: Bool. x`, `\x: Bool. if x then
+-- false else true`, `\x: Bool. true`, `(\x: Bool. x) true` and `if true
+-- then false else true`.
+pub const IDENTITY: Named := Term::Lam("x", Ty::Boolean, Term::Var("x"))
+pub const NEGATION: Named := Term::Lam(
+    "x",
+    Ty::Boolean,
+    Term::If(Term::Var("x"), Term::False, Term::True)
+)
+pub const ALWAYS_TRUE: Named := Term::Lam("x", Ty::Boolean, Term::True)
+pub const APPLIED: Named := Term::App(IDENTITY, Term::True)
+pub const NOT_TRUE: Named := Term::If(Term::True, Term::False, Term::True)
+
+-- # Substitution
+--
+-- `subst(x, s, t)` is `[x := s] t`, capture-avoiding: a binder that would
+-- capture a free variable of `s` is renamed. It is written for a parallel
+-- substitution, a finite map `Subst` from names to terms, so that renaming
+-- a binder is one more entry and the recursion stays structural on the
+-- term.
+pub fn free(t: Named): Set<Name> := match t {
+    Term::Var(x) => {x},
+    Term::Lam(x, _, body) => free(body) minus {x},
+    Term::App(t1, t2) => free(t1) union free(t2),
+    Term::True => {},
+    Term::False => {},
+    Term::If(c, a, b) => free(c) union free(a) union free(b),
+}
+
+pub fn closed?(t: Named) := free(t) = {}
+
+-- Every name of a term, free or bound, joined: a longer name is fresh.
+-- Joining strings is outside the decidable core, here and in `range_names`
+-- and `fresh`: the laws of fresh names are proved in Stlc.lean.
+set_option fren.lint.undecidable "allow" in
+pub fn all_names(t: Named): String := match t {
+    Term::Var(x) => x,
+    Term::Lam(x, _, body) => x ++ all_names(body),
+    Term::App(t1, t2) => all_names(t1) ++ all_names(t2),
+    Term::True => "",
+    Term::False => "",
+    Term::If(c, a, b) => all_names(c) ++ all_names(a) ++ all_names(b),
+}
+
+pub enum Subst { Id, Bind(Name, Named, Subst) }
+
+-- What `sub` substitutes for `x`: its first entry for `x`, or `x` itself.
+pub fn apply_subst(sub: Subst, x: Name): Named := match sub {
+    Subst::Id => Term::Var(x),
+    Subst::Bind(y, s, rest) => if y = x then s else apply_subst(rest, x),
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn range_names(sub: Subst): String := match sub {
+    Subst::Id => "",
+    Subst::Bind(_, s, rest) => all_names(s) ++ range_names(rest),
+}
+
+-- Whether the binder `y`, of a body with the free variables `fv`, would
+-- capture a free variable of a term that `sub` substitutes for another
+-- free variable of the body. A later entry for a name is shadowed by an
+-- earlier one, so a name is taken out of `fv` once seen.
+pub fn captures?(sub: Subst, y: Name, fv: Set<Name>) := match sub {
+    Subst::Id => false,
+    Subst::Bind(x, s, rest) => (x != y and x in fv and y in free(s)) or captures?(rest, y, fv minus {x}),
+}
+
+-- A name free in no term of `sub`'s range nor in `body`: longer than every
+-- name in them.
+set_option fren.lint.undecidable "allow" in
+pub fn fresh(sub: Subst, body: Named): Name := range_names(sub) ++ all_names(body) ++ "'"
+
+pub fn new_binder(sub: Subst, y: Name, body: Named): Name :=
+    if captures?(sub, y, free(body)) then fresh(sub, body) else y
+
+pub fn subst_all(sub: Subst, t: Named): Named := match t {
+    Term::Var(x) => apply_subst(sub, x),
+    Term::Lam(y, ty, body) => Term::Lam(
+        new_binder(sub, y, body),
+        ty,
+        subst_all(
+            Subst::Bind(y, Term::Var(new_binder(sub, y, body)), sub),
+            body
+        )
+    ),
+    Term::App(t1, t2) => Term::App(subst_all(sub, t1), subst_all(sub, t2)),
+    Term::True => Term::True,
+    Term::False => Term::False,
+    Term::If(c, a, b) => Term::If(subst_all(sub, c), subst_all(sub, a), subst_all(sub, b)),
+}
+
+pub fn subst(x: Name, s: Named, t: Named): Named := subst_all(Subst::Bind(x, s, Subst::Id), t)
+
+-- Substitution changes nothing where the variable is not free, substitutes
+-- for the variable itself, and leaves free only what was free, less the
+-- variable, and the free variables of what was put in. Proved in Stlc.lean.
+set_option fren.evidence "random" in
+pub proc substitution_laws(x: Name, s: Named, t: Named) {  --~ info: the vacuity and redundancy checks of `stlc::substitution_laws` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::substitution_laws` set to random testing are run by `fren check`, not in Lean
+    ensure unused: when not x in free(t), subst(x, s, t) = t
+    ensure itself: subst(x, s, Term::Var(x)) = s
+    ensure free_after: free(subst(x, s, t)) subset (free(t) minus {x}) union free(s)
+}
+
+-- # Typing
+--
+-- A context binds names to types, innermost first. `ctx |- t: T` holds when
+-- some finite derivation contains the judgment: a relation `typing` from
+-- judgments to types that is closed under the rules read backwards, each
+-- of its judgments following by one rule from judgments in it
+-- (`typing_derivation?`). The rules are the arms of `typing_rule?`, where
+-- `types(typing, ctx, t)` are the types that `typing` gives `t` in `ctx`.
+--
+--     x: T in ctx                 ctx, x: T1 |- t2: T2
+--     ----------- (T-Var)     ---------------------------- (T-Abs)
+--     ctx |- x: T             ctx |- \x: T1. t2: T1 -> T2
+--
+--     ctx |- t1: T11 -> T12    ctx |- t2: T11
+--     ------------------------------------- (T-App)
+--     ctx |- t1 t2: T12
+--
+--     ctx |- t1: Bool    ctx |- t2: T    ctx |- t3: T
+--     ---------------------------------------------- (T-If)
+--     ctx |- if t1 then t2 else t3: T
+--
+--     ctx |- true: Bool (T-True)    ctx |- false: Bool (T-False)
+pub enum Ctx { Empty, Bind(Name, Ty, Ctx) }
+
+pub fn lookup(ctx: Ctx, x: Name): Option<Ty> := match ctx {
+    Ctx::Empty => None,
+    Ctx::Bind(y, ty, rest) => if y = x then Some(ty) else lookup(rest, x),
+}
+
+pub struct Judgment { ctx: Ctx, term: Named }
+
+-- `Judgment { ctx, term }` is the left half `ctx |- t` of a typing judgment
+-- `ctx |- t: T`: the typing relation holds it against its type `T`.
+pub fn judgment(ctx: Ctx, t: Named): Judgment := Judgment { ctx, term := t }
+
+-- The types that `typing` gives `ctx |- t`. Projecting a relation is
+-- outside the decidable core; the solver still decides it on relations
+-- that are written out.
+set_option fren.lint.undecidable "allow" in
+pub fn types(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named): Set<Ty> := typing.image(
+    {judgment(ctx, t)}
+)
+
+-- `ctx |- t: ty` follows by one rule from the judgments in `typing`. The
+-- existential of T-App, over the argument's types, is outside the
+-- decidable core.
+set_option fren.lint.undecidable "allow" in
+pub fn typing_rule?(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named, ty: Ty) := match t {
+    Term::Var(x) => lookup(ctx, x) = Some(ty),
+    Term::Lam(x, ty1, t2) => match ty {
+        Ty::Arrow(p, ty2) => p = ty1 and ty2 in types(typing, Ctx::Bind(x, ty1, ctx), t2),
+        Ty::Boolean => false,
+    },
+    Term::App(t1, t2) => (exists (ty11: Ty), ty11 in types(typing, ctx, t2)
+        and Ty::Arrow(ty11, ty) in types(typing, ctx, t1)),
+    Term::If(t1, t2, t3) => Ty::Boolean in types(typing, ctx, t1) and ty in types(typing, ctx, t2)
+        and ty in types(typing, ctx, t3),
+    Term::True => ty = Ty::Boolean,
+    Term::False => ty = Ty::Boolean,
+}
+
+-- Every judgment of `typing` follows by a rule from judgments in it. Its
+-- `domain` and `image` are projections, outside the decidable core.
+set_option fren.lint.undecidable "allow" in
+pub fn typing_derivation?(typing: Rel<Judgment, Ty>) := forall (j: Judgment), when j in typing.domain,
+    forall (ty: Ty), when ty in typing.image({j}), typing_rule?(typing, j.ctx, j.term, ty)
+
+-- A derivation of `(\x: Bool. true) false: Bool` as a relation, and two
+-- relations that are not derivations: the solver decides them, since the
+-- relations are written out.
+set_option fren.lint.assertions_on_constants "allow" in
+pub proc derivations() {
+    expect derivation: typing_derivation?(
+        {
+            (judgment(Ctx::Empty, Term::App(ALWAYS_TRUE, Term::False)), Ty::Boolean),
+            (judgment(Ctx::Empty, ALWAYS_TRUE), Ty::Arrow(Ty::Boolean, Ty::Boolean)),
+            (judgment(Ctx::Bind("x", Ty::Boolean, Ctx::Empty), Term::True), Ty::Boolean),
+            (judgment(Ctx::Empty, Term::False), Ty::Boolean),
+        }
+    )
+    expect missing_premise: not typing_derivation?(
+        {
+            (judgment(Ctx::Empty, Term::App(ALWAYS_TRUE, Term::False)), Ty::Boolean),
+        }
+    )
+    expect wrong_type: not typing_derivation?(
+        {
+            (judgment(Ctx::Empty, Term::True), Ty::Arrow(Ty::Boolean, Ty::Boolean)),
+        }
+    )
+}
+
+-- # Evaluation
+--
+-- Call-by-value, small-step. `t --> u` holds when some finite derivation
+-- contains the step: a relation `red` closed under the rules read
+-- backwards, as for typing (`reduction_derivation?`); `red.closure` is then
+-- `-->*`. The rules are the arms of `reduction_rule?`.
+--
+--     (\x: T. t12) v --> [x := v] t12 (E-AppAbs)
+--
+--     t1 --> t1'                  t2 --> t2'
+--     ------------------ (E-App1)     ------------------ (E-App2)
+--     t1 t2 --> t1' t2            v1 t2 --> v1 t2'
+--
+--     if true then t2 else t3 --> t2 (E-IfTrue)    if false then t2 else t3 --> t3 (E-IfFalse)
+--
+--     t1 --> t1'
+--     ------------------------------------------------- (E-If)
+--     if t1 then t2 else t3 --> if t1' then t2 else t3
+pub fn reduction_rule?(red: Rel<Named, Named>, t: Named, u: Named) := match t, u {
+    Term::App(Term::Lam(x, _, t12), v), _ if value?(v) => u = subst(x, v, t12),
+    Term::App(t1, t2), Term::App(u1, u2) => (not value?(t1) and u2 = t2 and (t1, u1) in red)
+        or (value?(t1) and u1 = t1 and (t2, u2) in red),
+    Term::If(Term::True, t2, _), _ => u = t2,
+    Term::If(Term::False, _, t3), _ => u = t3,
+    Term::If(t1, t2, t3), Term::If(u1, u2, u3) => u2 = t2 and u3 = t3 and (t1, u1) in red,
+    _, _ => false,
+}
+
+-- Every step of `red` follows by a rule from steps in it; its `domain` and
+-- `image` are projections, outside the decidable core.
+set_option fren.lint.undecidable "allow" in
+pub fn reduction_derivation?(red: Rel<Named, Named>) := forall (t: Named), when t in red.domain,
+    forall (u: Named), when u in red.image({t}), reduction_rule?(red, t, u)
+
+-- The steps of `if (if true then false else true) then t2 else t3`, as a
+-- relation: the solver decides it, and that a step under a binder is none.
+-- A derivation with a beta step would put `subst` under the quantifier
+-- over the relation's members, which the solver does not decide, so none
+-- is given here.
+set_option fren.lint.assertions_on_constants "allow" in
+pub proc reductions(t2: Named, t3: Named) {
+    expect two_steps: reduction_derivation?(
+        {
+            (Term::If(NOT_TRUE, t2, t3), Term::If(Term::False, t2, t3)),
+            (NOT_TRUE, Term::False),
+        }
+    )
+    expect no_step_under_lambda: not reduction_derivation?(
+        {
+            (Term::Lam("x", Ty::Boolean, Term::If(Term::True, t2, t3)), Term::Lam(
+                "x",
+                Ty::Boolean,
+                t2
+            )),
+        }
+    )
+}
+
+-- # The type checker
+--
+-- `typeof` computes the type, and `typing_of` the derivation that it
+-- builds. The checker is sound (its derivation is one, and has its answer)
+-- and complete (it agrees with every derivation), so a term has at most one
+-- type. Proved in Stlc.lean by induction on the term. Random testing almost
+-- never draws a relation that is a derivation, so the laws premised on one,
+-- here `complete` and `unique`, rest on the proof; random testing only
+-- checks that small inputs do not refute them.
+pub fn typeof(ctx: Ctx, t: Named): Option<Ty> := match t {
+    Term::Var(x) => lookup(ctx, x),
+    Term::Lam(x, ty1, t2) => match typeof(Ctx::Bind(x, ty1, ctx), t2) {
+        Some(ty2) => Some(Ty::Arrow(ty1, ty2)),
+        None => None,
+    },
+    Term::App(t1, t2) => match typeof(ctx, t1), typeof(ctx, t2) {
+        Some(Ty::Arrow(ty11, ty12)), Some(ty2) => if ty11 = ty2 then Some(ty12) else None,
+        _, _ => None,
+    },
+    Term::If(t1, t2, t3) => match typeof(ctx, t1), typeof(ctx, t2), typeof(ctx, t3) {
+        Some(Ty::Boolean), Some(ty2), Some(ty3) => if ty2 = ty3 then Some(ty2) else None,
+        _, _, _ => None,
+    },
+    Term::True => Some(Ty::Boolean),
+    Term::False => Some(Ty::Boolean),
+}
+
+-- The judgments of `t`'s subterms that have a type, with their contexts.
+pub fn typing_of(ctx: Ctx, t: Named): Rel<Judgment, Ty> := match typeof(ctx, t) {
+    None => {},
+    Some(ty) => {(Judgment { ctx, term := t }, ty)} union match t {
+        Term::Lam(x, ty1, t2) => typing_of(Ctx::Bind(x, ty1, ctx), t2),
+        Term::App(t1, t2) => typing_of(ctx, t1) union typing_of(ctx, t2),
+        Term::If(t1, t2, t3) => typing_of(ctx, t1) union typing_of(ctx, t2) union typing_of(ctx, t3),
+        _ => {},
+    },
+}
+
+set_option fren.evidence "random" in
+pub proc checker(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named, ty: Ty, ty2: Ty) {  --~ info: the vacuity and redundancy checks of `stlc::checker` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::checker` set to random testing are run by `fren check`, not in Lean
+    ensure sound: when typeof(ctx, t) = Some(ty),
+        typing_derivation?(typing_of(ctx, t)) and ty in types(typing_of(ctx, t), ctx, t)
+    ensure complete: when typing_derivation?(typing) and ty in types(typing, ctx, t), typeof(ctx, t) = Some(ty)
+    ensure unique: when typing_derivation?(typing) and ty in types(typing, ctx, t) and ty2 in types(typing, ctx, t),
+        ty = ty2
+}
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect typed_examples: typeof(Ctx::Empty, IDENTITY) = Some(Ty::Arrow(Ty::Boolean, Ty::Boolean))
+    and typeof(Ctx::Empty, APPLIED) = Some(Ty::Boolean)
+    and typeof(Ctx::Empty, Term::App(Term::True, Term::False)) = None
+    and typeof(Ctx::Empty, Term::Var("x")) = None
+    and typeof(Ctx::Empty, Term::If(Term::True, IDENTITY, Term::False)) = None
+
+-- # The evaluators
+--
+-- `step` takes one step, and `step_derivation` is the derivation that it
+-- builds; `reduce` takes `fuel` steps or as many as there are; `normalize`
+-- reduces to a value; `eval` is big-step, with fuel for the depth of its
+-- derivation. `step` is sound and complete for the reduction relation, so
+-- reduction is deterministic, and the two evaluators agree. Proved in
+-- Stlc.lean by induction on the term and on the fuel; as for the checker,
+-- the laws premised on a derivation, `complete` and `deterministic`, rest
+-- on the proof.
+pub fn step(t: Named): Option<Named> := match t {
+    Term::App(t1, t2) => if not value?(t1) then match step(t1) {
+        Some(u1) => Some(Term::App(u1, t2)),
+        None => None,
+    } else if not value?(t2) then match step(t2) {
+        Some(u2) => Some(Term::App(t1, u2)),
+        None => None,
+    } else match t1 {
+        Term::Lam(x, _, t12) => Some(subst(x, t2, t12)),
+        _ => None,
+    },
+    Term::If(Term::True, t2, _) => Some(t2),
+    Term::If(Term::False, _, t3) => Some(t3),
+    Term::If(t1, t2, t3) => match step(t1) {
+        Some(u1) => Some(Term::If(u1, t2, t3)),
+        None => None,
+    },
+    _ => None,
+}
+
+pub fn step_derivation(t: Named): Rel<Named, Named> := match step(t) {
+    None => {},
+    Some(u) => {(t, u)} union match t {
+        Term::App(t1, t2) => if not value?(t1) then step_derivation(t1)
+            else if not value?(t2) then step_derivation(t2) else {},
+        Term::If(t1, _, _) => if t1 is Term::True | Term::False then {} else step_derivation(t1),
+        _ => {},
+    },
+}
+
+-- Fuel bounds the recursions that are not structural on a term: the
+-- evaluators', on the steps taken, and the parser's, on the tokens left.
+pub enum Fuel { Zero, More(Fuel) }
+
+pub fn plus(a: Fuel, b: Fuel): Fuel := match a {
+    Fuel::Zero => b,
+    Fuel::More(n) => Fuel::More(plus(n, b)),
+}
+
+pub const THREE: Fuel := Fuel::More(Fuel::More(Fuel::More(Fuel::Zero)))
+
+pub fn reduce(fuel: Fuel, t: Named): Named := match fuel {
+    Fuel::Zero => t,
+    Fuel::More(n) => match step(t) {
+        Some(u) => reduce(n, u),
+        None => t,
+    },
+}
+
+pub fn normalize(fuel: Fuel, t: Named): Option<Named> := match fuel {
+    Fuel::Zero => if value?(t) then Some(t) else None,
+    Fuel::More(n) => if value?(t) then Some(t) else match step(t) {
+        Some(u) => normalize(n, u),
+        None => None,
+    },
+}
+
+pub fn eval(fuel: Fuel, t: Named): Option<Named> := match fuel {
+    Fuel::Zero => None,
+    Fuel::More(n) => match t {
+        Term::Var(_) => None,
+        Term::App(t1, t2) => match eval(n, t1), eval(n, t2) {
+            Some(Term::Lam(x, _, t12)), Some(v) => eval(n, subst(x, v, t12)),
+            _, _ => None,
+        },
+        Term::If(t1, t2, t3) => match eval(n, t1) {
+            Some(Term::True) => eval(n, t2),
+            Some(Term::False) => eval(n, t3),
+            _ => None,
+        },
+        _ => Some(t),
+    },
+}
+
+set_option fren.evidence "random" in
+pub proc evaluator(  --~ info: the vacuity and redundancy checks of `stlc::evaluator` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::evaluator` set to random testing are run by `fren check`, not in Lean
+    red: Rel<Named, Named>,
+    t: Named,
+    u: Named,
+    v: Named,
+    w: Named,
+    n: Fuel,
+    m: Fuel,
+) {
+    ensure sound: when step(t) = Some(u), reduction_derivation?(step_derivation(t)) and (t, u) in step_derivation(t)
+    ensure complete: when reduction_derivation?(red) and (t, u) in red, step(t) = Some(u)
+    ensure deterministic: when reduction_derivation?(red) and (t, u) in red and (t, v) in red, u = v
+    ensure values_stuck: when value?(t), step(t) = None
+    ensure big_step_values: when eval(n, t) = Some(v), value?(v)
+    ensure eval_monotone: when eval(n, t) = Some(v), eval(Fuel::More(n), t) = Some(v)
+    ensure normalize_monotone: when normalize(n, t) = Some(v), normalize(Fuel::More(n), t) = Some(v)
+    ensure step_eval: when step(t) = Some(u) and eval(n, t) = Some(v), eval(n, u) = Some(v)
+    ensure agree: when eval(n, t) = Some(v) and normalize(m, t) = Some(w), v = w
+}
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect evaluated_examples: eval(THREE, Term::App(NEGATION, Term::True)) = Some(Term::False)
+    and normalize(THREE, Term::App(NEGATION, Term::True)) = Some(Term::False)
+    and reduce(THREE, APPLIED) = Term::True
+    and reduce(THREE, Term::App(Term::True, Term::False)) = Term::App(Term::True, Term::False)
+
+-- # Metatheory
+--
+-- Typing depends on the context only at the free variables, so it survives
+-- a binding of a variable that is not free (weakening), and substituting a
+-- well-typed term for a variable keeps the type (the substitution lemma).
+-- Proved in Stlc.lean. `extensional` quantifies over a computed set, outside
+-- the decidable core.
+set_option fren.evidence "random" in
+set_option fren.lint.undecidable "allow" in
+pub proc context_lemmas(ctx: Ctx, ctx2: Ctx, t: Named, x: Name, ty: Ty, ty1: Ty, s: Named) {  --~ info: the vacuity and redundancy checks of `stlc::context_lemmas` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::context_lemmas` set to random testing are run by `fren check`, not in Lean
+    ensure extensional: when (forall (z: Name), when z in free(t), lookup(ctx, z) = lookup(ctx2, z)),
+        typeof(ctx, t) = typeof(ctx2, t)
+    ensure weakening: when typeof(ctx, t) = Some(ty) and not x in free(t), typeof(Ctx::Bind(x, ty1, ctx), t) = Some(ty)
+    ensure substitution: when typeof(Ctx::Bind(x, ty1, ctx), t) = Some(ty) and typeof(ctx, s) = Some(ty1),
+        typeof(ctx, subst(x, s, t)) = Some(ty)
+}
+
+-- Progress and preservation, so type safety: a well-typed closed term
+-- never gets stuck, however far it is reduced, and whatever it reduces to
+-- has its type. Proved in Stlc.lean, preservation from the substitution
+-- lemma and progress from the canonical forms of values. `preservation_many`
+-- takes the transitive closure of a relation, outside the decidable core,
+-- and is premised on derivations, so it rests on the proof.
+set_option fren.evidence "random" in
+set_option fren.lint.undecidable "allow" in
+pub proc type_safety(  --~ info: the vacuity and redundancy checks of `stlc::type_safety` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::type_safety` set to random testing are run by `fren check`, not in Lean
+    typing: Rel<Judgment, Ty>,
+    red: Rel<Named, Named>,
+    ctx: Ctx,
+    t: Named,
+    u: Named,
+    ty: Ty,
+    n: Fuel,
+) {
+    ensure progress: when typeof(Ctx::Empty, t) = Some(ty), value?(t) or step(t) is Some(_)
+    ensure preservation: when typeof(ctx, t) = Some(ty) and step(t) = Some(u), typeof(ctx, u) = Some(ty)
+    ensure safety: when typeof(Ctx::Empty, t) = Some(ty),
+        typeof(Ctx::Empty, reduce(n, t)) = Some(ty) and (value?(reduce(n, t)) or step(reduce(n, t)) is Some(_))
+    ensure big_step_preservation: when typeof(ctx, t) = Some(ty) and eval(n, t) = Some(u), typeof(ctx, u) = Some(ty)
+    -- Over the relations: a well-typed term keeps its type along `-->*`.
+    ensure preservation_many: when typing_derivation?(typing) and ty in types(typing, Ctx::Empty, t)
+        and reduction_derivation?(red) and (t, u) in red.closure,
+        typeof(Ctx::Empty, u) = Some(ty)
+}
+
+-- Random testing draws small terms, and the closed, well-typed ones among
+-- them are values, so `progress` and `safety` beyond values rest on the
+-- proofs; these examples step typed non-values.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect typed_non_values: typeof(Ctx::Empty, APPLIED) = Some(Ty::Boolean) and step(APPLIED) = Some(Term::True)
+    and typeof(Ctx::Empty, NOT_TRUE) = Some(Ty::Boolean) and step(NOT_TRUE) = Some(Term::False)
+    and normalize(THREE, Term::App(NEGATION, APPLIED)) = Some(Term::False)
+
+-- Normalization: a well-typed closed term reduces to a value in some
+-- number of steps (chapter 12). The number is beyond a structural
+-- recursion, so Fren can state the theorem only as an `exists` over `Fuel`,
+-- which testing cannot run (`F0639`), or as the contract of an
+-- uninterpreted function that gives the fuel, whose realizability is the
+-- theorem itself, which the solver cannot decide (`F0608`, #612). So it has
+-- no check here: Stlc.lean states and proves it, by Tait's method
+-- (`normalization`).
+
+-- # Concrete syntax
+--
+--     term  ::= '\' name ':' type '.' term | 'if' term 'then' term 'else' term | app
+--     app   ::= app atom | atom
+--     atom  ::= name | 'true' | 'false' | '(' term ')'
+--     type  ::= tatom '->' type | tatom
+--     tatom ::= 'Bool' | '(' type ')'
+--
+-- Application associates to the left and binds tightest; an abstraction
+-- and a conditional extend as far right as they can; arrows associate to
+-- the right. The printer writes parentheses only where this grammar needs
+-- them, and the parser reads what the printer writes (`print_parse`).
+pub enum Token {
+    LParen,
+    RParen,
+    Backslash,
+    Colon,
+    Dot,
+    Arrow,
+    If,
+    Then,
+    Else,
+    True,
+    False,
+    Boolean,
+    Ident(Name),
+}
+
+pub enum Tokens { Nil, Cons(Token, Tokens) }
+
+pub fn append(a: Tokens, b: Tokens): Tokens := match a {
+    Tokens::Nil => b,
+    Tokens::Cons(t, rest) => Tokens::Cons(t, append(rest, b)),
+}
+
+pub fn one(t: Token): Tokens := Tokens::Cons(t, Tokens::Nil)
+
+pub fn parens(ts: Tokens): Tokens := Tokens::Cons(Token::LParen, append(ts, one(Token::RParen)))
+
+pub fn text(t: Token): String := match t {
+    Token::LParen => "(",
+    Token::RParen => ")",
+    Token::Backslash => "\\",
+    Token::Colon => ":",
+    Token::Dot => ".",
+    Token::Arrow => "->",
+    Token::If => "if",
+    Token::Then => "then",
+    Token::Else => "else",
+    Token::True => "true",
+    Token::False => "false",
+    Token::Boolean => "Bool",
+    Token::Ident(x) => x,
+}
+
+-- The tokens as text, one space apart (joining strings is outside the
+-- decidable core).
+set_option fren.lint.undecidable "allow" in
+pub fn render(ts: Tokens): String := match ts {
+    Tokens::Nil => "",
+    Tokens::Cons(t, Tokens::Nil) => text(t),
+    Tokens::Cons(t, rest) => text(t) ++ " " ++ render(rest),
+}
+
+-- ## Printing
+--
+-- The grammar's levels, loosest first: a construct of level `needs` is
+-- written bare at a level at most as tight, and in parentheses otherwise.
+pub ordered enum Level { Term, Application, Atom }
+
+pub fn wrap(level: Level, needs: Level, ts: Tokens): Tokens := if level <= needs then ts else parens(ts)
+
+pub fn print_ty(ty: Ty): Tokens := match ty {
+    Ty::Boolean => one(Token::Boolean),
+    Ty::Arrow(ty1, ty2) => append(
+        if ty1 is Ty::Arrow(_, _) then parens(print_ty(ty1)) else print_ty(ty1),
+        Tokens::Cons(Token::Arrow, print_ty(ty2))
+    ),
+}
+
+pub fn print_at(level: Level, t: Named): Tokens := match t {
+    Term::Var(x) => one(Token::Ident(x)),
+    Term::True => one(Token::True),
+    Term::False => one(Token::False),
+    Term::Lam(x, ty, body) => wrap(
+        level,
+        Level::Term,
+        append(
+            Tokens::Cons(
+                Token::Backslash,
+                Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
+            ),
+            Tokens::Cons(Token::Dot, print_at(Level::Term, body))
+        )
+    ),
+    Term::App(t1, t2) => wrap(
+        level,
+        Level::Application,
+        append(print_at(Level::Application, t1), print_at(Level::Atom, t2))
+    ),
+    Term::If(t1, t2, t3) => wrap(
+        level,
+        Level::Term,
+        Tokens::Cons(
+            Token::If,
+            append(
+                print_at(Level::Term, t1),
+                Tokens::Cons(
+                    Token::Then,
+                    append(
+                        print_at(Level::Term, t2),
+                        Tokens::Cons(Token::Else, print_at(Level::Term, t3))
+                    )
+                )
+            )
+        )
+    ),
+}
+
+pub fn print(t: Named): Tokens := print_at(Level::Term, t)
+
+-- Where the parentheses go: around an abstraction or a conditional that is
+-- an operand of an application, around an application that is an argument,
+-- and around an arrow on the left of an arrow; nowhere else. Each law is one
+-- step of the printer, which the solver decides.
+pub proc parenthesization(x: Name, ty: Ty, body: Named, t1: Named, t2: Named, t3: Named) {
+    expect lam_bare: print_at(Level::Term, Term::Lam(x, ty, body)) = append(
+        Tokens::Cons(
+            Token::Backslash,
+            Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
+        ),
+        Tokens::Cons(Token::Dot, print(body))
+    )
+    expect lam_operand: print_at(Level::Application, Term::Lam(x, ty, body)) = parens(print(Term::Lam(x, ty, body)))
+        and print_at(Level::Atom, Term::Lam(x, ty, body)) = parens(print(Term::Lam(x, ty, body)))
+    expect if_operand: print_at(Level::Atom, Term::If(t1, t2, t3)) = parens(print(Term::If(t1, t2, t3)))
+    expect app_bare: print(Term::App(t1, t2)) = append(print_at(Level::Application, t1), print_at(Level::Atom, t2))
+    expect app_argument: print_at(Level::Atom, Term::App(t1, t2)) = parens(print(Term::App(t1, t2)))
+    expect atoms_bare: print_at(Level::Atom, Term::Var(x)) = one(Token::Ident(x))
+        and print_at(Level::Atom, Term::True) = one(Token::True)
+    expect arrow_right: print_ty(Ty::Arrow(Ty::Boolean, ty)) = append(
+        print_ty(Ty::Boolean),
+        Tokens::Cons(Token::Arrow, print_ty(ty))
+    )
+    expect arrow_left: print_ty(Ty::Arrow(Ty::Arrow(ty, ty), Ty::Boolean))
+        = append(
+            parens(print_ty(Ty::Arrow(ty, ty))),
+            Tokens::Cons(Token::Arrow, print_ty(Ty::Boolean))
+        )
+}
+
+-- ## Parsing
+--
+-- A recursive descent with the grammar's levels as modes: `Arguments(f)`
+-- reads the arguments of an application whose function so far is `f`, as
+-- many atoms as follow, and `Consequent(t1)` and `Alternative(t1, t2)`
+-- read the rest of a conditional. The recursion is on fuel: it is on the
+-- tokens left, which a structural recursion cannot follow (`F0447`).
+pub enum Mode { Term, Application, Arguments(Named), Atom, Consequent(Named), Alternative(Named, Named) }
+
+-- A term or a type read, with the tokens left, or a failure.
+pub enum Parsed { Fail, Ok(Named, Tokens) }
+pub enum ParsedTy { Fail, Ok(Ty, Tokens) }
+
+pub fn starts_atom?(ts: Tokens) := ts is Tokens::Cons(Token::Ident(_) | Token::True | Token::False | Token::LParen, _)
+
+-- What was read, once the next token is `tok`: the parenthesized `( t )`,
+-- the type of `\x: ty.`, or the condition of `if t1 then`.
+pub fn after(tok: Token, read: Parsed): Parsed := match read {
+    Parsed::Ok(t, Tokens::Cons(next, rest)) => if next = tok then Parsed::Ok(t, rest) else Parsed::Fail,
+    _ => Parsed::Fail,
+}
+
+pub fn after_ty(tok: Token, read: ParsedTy): ParsedTy := match read {
+    ParsedTy::Ok(ty, Tokens::Cons(next, rest)) => if next = tok then ParsedTy::Ok(ty, rest) else ParsedTy::Fail,
+    _ => ParsedTy::Fail,
+}
+
+pub fn lam_of(x: Name, ty: Ty, body: Parsed): Parsed := match body {
+    Parsed::Ok(t, rest) => Parsed::Ok(Term::Lam(x, ty, t), rest),
+    Parsed::Fail => Parsed::Fail,
+}
+
+pub fn if_of(t1: Named, t2: Named, alternative: Parsed): Parsed := match alternative {
+    Parsed::Ok(t3, rest) => Parsed::Ok(Term::If(t1, t2, t3), rest),
+    Parsed::Fail => Parsed::Fail,
+}
+
+pub fn arrow_of(ty1: Ty, read: ParsedTy): ParsedTy := match read {
+    ParsedTy::Ok(ty2, rest) => ParsedTy::Ok(Ty::Arrow(ty1, ty2), rest),
+    ParsedTy::Fail => ParsedTy::Fail,
+}
+
+-- `atom?` reads one `tatom`, and otherwise a `type`.
+pub fn parse_ty(fuel: Fuel, atom?, ts: Tokens): ParsedTy := match fuel {
+    Fuel::Zero => ParsedTy::Fail,
+    Fuel::More(n) => if atom? then match ts {
+        Tokens::Cons(Token::Boolean, rest) => ParsedTy::Ok(Ty::Boolean, rest),
+        Tokens::Cons(Token::LParen, rest) => after_ty(Token::RParen, parse_ty(n, false, rest)),
+        _ => ParsedTy::Fail,
+    } else match parse_ty(n, true, ts) {
+        ParsedTy::Ok(ty1, Tokens::Cons(Token::Arrow, more)) => arrow_of(
+            ty1,
+            parse_ty(n, false, more)
+        ),
+        read => read,
+    },
+}
+
+pub fn parse(fuel: Fuel, mode: Mode, ts: Tokens): Parsed := match fuel {
+    Fuel::Zero => Parsed::Fail,
+    Fuel::More(n) => match mode {
+        Mode::Atom => match ts {
+            Tokens::Cons(Token::Ident(x), rest) => Parsed::Ok(Term::Var(x), rest),
+            Tokens::Cons(Token::True, rest) => Parsed::Ok(Term::True, rest),
+            Tokens::Cons(Token::False, rest) => Parsed::Ok(Term::False, rest),
+            Tokens::Cons(Token::LParen, rest) => after(Token::RParen, parse(n, Mode::Term, rest)),
+            _ => Parsed::Fail,
+        },
+        Mode::Arguments(f) => if starts_atom?(ts) then match parse(n, Mode::Atom, ts) {
+            Parsed::Ok(a, rest) => parse(n, Mode::Arguments(Term::App(f, a)), rest),
+            Parsed::Fail => Parsed::Fail,
+        } else Parsed::Ok(f, ts),
+        Mode::Application => match parse(n, Mode::Atom, ts) {
+            Parsed::Ok(f, rest) => parse(n, Mode::Arguments(f), rest),
+            Parsed::Fail => Parsed::Fail,
+        },
+        Mode::Consequent(t1) => match after(Token::Else, parse(n, Mode::Term, ts)) {
+            Parsed::Ok(t2, rest) => parse(n, Mode::Alternative(t1, t2), rest),
+            Parsed::Fail => Parsed::Fail,
+        },
+        Mode::Alternative(t1, t2) => if_of(t1, t2, parse(n, Mode::Term, ts)),
+        Mode::Term => match ts {
+            Tokens::Cons(Token::Backslash, Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, more))) =>
+                match after_ty(Token::Dot, parse_ty(n, false, more)) {
+                    ParsedTy::Ok(ty, body) => lam_of(x, ty, parse(n, Mode::Term, body)),
+                    ParsedTy::Fail => Parsed::Fail,
+                },
+            Tokens::Cons(Token::If, more) => match after(Token::Then, parse(n, Mode::Term, more)) {
+                Parsed::Ok(t1, rest) => parse(n, Mode::Consequent(t1), rest),
+                Parsed::Fail => Parsed::Fail,
+            },
+            _ => parse(n, Mode::Application, ts),
+        },
+    },
+}
+
+-- Fuel enough to parse what `print` writes: three for each node, for the
+-- descent through the modes, and its children's.
+pub fn fuel_for_ty(ty: Ty): Fuel := match ty {
+    Ty::Boolean => Fuel::More(Fuel::More(Fuel::More(Fuel::Zero))),
+    Ty::Arrow(ty1, ty2) => Fuel::More(
+        Fuel::More(Fuel::More(plus(fuel_for_ty(ty1), fuel_for_ty(ty2))))
+    ),
+}
+
+pub fn fuel_for(t: Named): Fuel := match t {
+    Term::Var(_) => Fuel::More(Fuel::More(Fuel::More(Fuel::Zero))),
+    Term::True => Fuel::More(Fuel::More(Fuel::More(Fuel::Zero))),
+    Term::False => Fuel::More(Fuel::More(Fuel::More(Fuel::Zero))),
+    Term::Lam(_, ty, body) => Fuel::More(
+        Fuel::More(Fuel::More(plus(fuel_for_ty(ty), fuel_for(body))))
+    ),
+    Term::App(t1, t2) => Fuel::More(Fuel::More(Fuel::More(plus(fuel_for(t1), fuel_for(t2))))),
+    Term::If(t1, t2, t3) => Fuel::More(
+        Fuel::More(
+            Fuel::More(plus(fuel_for(t1), plus(fuel_for(t2), fuel_for(t3))))
+        )
+    ),
+}
+
+-- The round trip: the parser reads what the printer writes, with fuel for
+-- the term's size and more. Tested only: Stlc.lean does not prove it, and
+-- random testing meets `more_fuel`'s premise only on atoms; the example
+-- below reads an application with too little fuel, the least, and more.
+set_option fren.evidence "random" in
+pub proc print_parse(t: Named, ty: Ty, fuel: Fuel, mode: Mode, ts: Tokens, u: Named, rest: Tokens) {  --~ info: the vacuity and redundancy checks of `stlc::print_parse` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::print_parse` set to random testing are run by `fren check`, not in Lean
+    ensure terms: parse(fuel_for(t), Mode::Term, print(t)) = Parsed::Ok(t, Tokens::Nil)
+    ensure types: parse_ty(fuel_for_ty(ty), false, print_ty(ty)) = ParsedTy::Ok(ty, Tokens::Nil)
+    ensure more_fuel: when parse(fuel, mode, ts) = Parsed::Ok(u, rest), parse(Fuel::More(fuel), mode, ts) = Parsed::Ok(u, rest)
+}
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect parsed_with_more_fuel: parse(plus(THREE, THREE), Mode::Term, print(APPLIED)) = Parsed::Fail
+    and parse(plus(THREE, plus(THREE, THREE)), Mode::Term, print(APPLIED)) = Parsed::Ok(APPLIED, Tokens::Nil)
+    and parse(Fuel::More(fuel_for(APPLIED)), Mode::Term, print(APPLIED)) = Parsed::Ok(APPLIED, Tokens::Nil)
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect printed_examples: render(print(IDENTITY)) = "\\ x : Bool . x"
+    and render(print(APPLIED)) = "( \\ x : Bool . x ) true"
+    and render(
+        print(
+            Term::App(
+                Term::App(Term::Var("f"), Term::Var("x")),
+                Term::App(Term::Var("g"), Term::Var("y"))
+            )
+        )
+    )
+    = "f x ( g y )"
+    and render(
+        print_ty(Ty::Arrow(Ty::Arrow(Ty::Boolean, Ty::Boolean), Ty::Boolean))
+    ) = "( Bool -> Bool ) -> Bool"
+
+-- # Nameless terms
+--
+-- A de Bruijn term mentions a variable by its index: how many binders stand
+-- between it and the one that declares it. `to_nameless` converts a named
+-- term under a list of names, innermost first, and `to_named` converts
+-- back, declaring the fresh names `x`, `x'`, `x''`, ... from the outside
+-- in. Two named terms are alpha-equivalent when their nameless forms are
+-- equal.
+pub enum Names { Nil, Cons(Name, Names) }
+
+pub fn index_of(names: Names, x: Name): Option<Int> := match names {
+    Names::Nil => None,
+    Names::Cons(y, rest) => if y = x then Some(0) else match index_of(rest, x) {
+        Some(k) => Some(k + 1),
+        None => None,
+    },
+}
+
+pub fn nth(names: Names, k: Int): Option<Name> := match names {
+    Names::Nil => None,
+    Names::Cons(y, rest) => if k = 0 then Some(y) else nth(rest, k - 1),
+}
+
+pub fn to_nameless(names: Names, t: Named): Option<Nameless> := match t {
+    Term::Var(x) => match index_of(names, x) {
+        Some(k) => Some(Term::Var(k)),
+        None => None,
+    },
+    Term::Lam(x, ty, body) => match to_nameless(Names::Cons(x, names), body) {
+        Some(nb) => Some(Term::Lam(Anon::Anon, ty, nb)),
+        None => None,
+    },
+    Term::App(t1, t2) => match to_nameless(names, t1), to_nameless(names, t2) {
+        Some(n1), Some(n2) => Some(Term::App(n1, n2)),
+        _, _ => None,
+    },
+    Term::If(t1, t2, t3) => match to_nameless(names, t1), to_nameless(names, t2), to_nameless(
+        names,
+        t3
+    ) {
+        Some(n1), Some(n2), Some(n3) => Some(Term::If(n1, n2, n3)),
+        _, _, _ => None,
+    },
+    Term::True => Some(Term::True),
+    Term::False => Some(Term::False),
+}
+
+-- `x` with one `'` for each name in scope: a name not among them, since
+-- those are the earlier fresh names (joining strings is outside the
+-- decidable core).
+set_option fren.lint.undecidable "allow" in
+pub fn fresh_name(names: Names): Name := match names {
+    Names::Nil => "x",
+    Names::Cons(_, rest) => fresh_name(rest) ++ "'",
+}
+
+pub fn to_named(names: Names, n: Nameless): Option<Named> := match n {
+    Term::Var(k) => match nth(names, k) {
+        Some(x) => Some(Term::Var(x)),
+        None => None,
+    },
+    Term::Lam(_, ty, body) => match to_named(Names::Cons(fresh_name(names), names), body) {
+        Some(b) => Some(Term::Lam(fresh_name(names), ty, b)),
+        None => None,
+    },
+    Term::App(n1, n2) => match to_named(names, n1), to_named(names, n2) {
+        Some(t1), Some(t2) => Some(Term::App(t1, t2)),
+        _, _ => None,
+    },
+    Term::If(n1, n2, n3) => match to_named(names, n1), to_named(names, n2), to_named(names, n3) {
+        Some(t1), Some(t2), Some(t3) => Some(Term::If(t1, t2, t3)),
+        _, _, _ => None,
+    },
+    Term::True => Some(Term::True),
+    Term::False => Some(Term::False),
+}
+
+pub fn alpha_eq?(names: Names, a: Named, b: Named) := to_nameless(names, a) is Some(_)
+    and to_nameless(names, a) = to_nameless(names, b)
+
+-- Substitution on nameless terms: `shift(d, c, t)` adds `d` to the indices
+-- from `c` up, and `nsubst(k, s, t)` is `[k := s] t`.
+pub fn shift(d: Int, cutoff: Int, t: Nameless): Nameless := match t {
+    Term::Var(k) => if k >= cutoff then Term::Var(k + d) else Term::Var(k),
+    Term::Lam(b, ty, body) => Term::Lam(b, ty, shift(d, cutoff + 1, body)),
+    Term::App(t1, t2) => Term::App(shift(d, cutoff, t1), shift(d, cutoff, t2)),
+    Term::If(t1, t2, t3) => Term::If(
+        shift(d, cutoff, t1),
+        shift(d, cutoff, t2),
+        shift(d, cutoff, t3)
+    ),
+    Term::True => Term::True,
+    Term::False => Term::False,
+}
+
+pub fn nsubst(k: Int, s: Nameless, t: Nameless): Nameless := match t {
+    Term::Var(j) => if j = k then s else if j > k then Term::Var(j - 1) else Term::Var(j),
+    Term::Lam(b, ty, body) => Term::Lam(b, ty, nsubst(k + 1, shift(1, 0, s), body)),
+    Term::App(t1, t2) => Term::App(nsubst(k, s, t1), nsubst(k, s, t2)),
+    Term::If(t1, t2, t3) => Term::If(nsubst(k, s, t1), nsubst(k, s, t2), nsubst(k, s, t3)),
+    Term::True => Term::True,
+    Term::False => Term::False,
+}
+
+-- Alpha-equivalence is an equivalence on the terms that convert: the
+-- solver decides it, since `to_nameless` is a function. The laws are
+-- written as equivalences and disjunctions, since a trigger that applies a
+-- recursive function is not a question the solver settles (`F0450`).
+pub proc alpha_equivalence(names: Names, a: Named, b: Named, c: Named) {
+    expect reflexive: alpha_eq?(names, a, a) iff to_nameless(names, a) is Some(_)
+    expect symmetric: alpha_eq?(names, a, b) iff alpha_eq?(names, b, a)
+    expect transitive: not (alpha_eq?(names, a, b) and alpha_eq?(names, b, c)) or alpha_eq?(names, a, c)
+}
+
+-- A closed term converts to names and back: a closed nameless term to a
+-- named term and back to itself, and a closed named term to a nameless one,
+-- which converts back. Proved in Stlc.lean.
+set_option fren.evidence "random" in
+pub proc nameless_round_trip(t: Named, nt: Nameless) {  --~ info: the vacuity and redundancy checks of `stlc::nameless_round_trip` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::nameless_round_trip` set to random testing are run by `fren check`, not in Lean
+    ensure named_nameless: when to_named(Names::Nil, nt) = Some(t), to_nameless(Names::Nil, t) = Some(nt)
+    ensure closed_converts: when closed?(t), to_nameless(Names::Nil, t) is Some(_)
+    ensure converts_back: when closed?(t) and to_nameless(Names::Nil, t) = Some(nt), to_named(Names::Nil, nt) is Some(_)
+}
+
+-- The laws of alpha-equivalence: renaming a binder to a name free nowhere
+-- gives an alpha-equivalent term; substitution commutes with the
+-- conversion, which is what makes it capture-avoiding; and alpha-equivalent
+-- closed terms have the same type. Proved in Stlc.lean; random testing
+-- meets `subst_nameless`'s premise only where `x` is not free in `t`, so
+-- the example below substitutes an open term under a binder, where the
+-- indices shift.
+set_option fren.evidence "random" in
+pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alpha_laws` are not run by random testing
+    --~^[hosted] info: the checks of `stlc::alpha_laws` set to random testing are run by `fren check`, not in Lean
+    names: Names,
+    t: Named,
+    nt: Nameless,
+    s: Named,
+    ns: Nameless,
+    x: Name,
+    y: Name,
+    z: Name,
+    ty: Ty,
+    body: Named,
+    t2: Named,
+) {
+    ensure rename_binder: when to_nameless(names, Term::Lam(y, ty, body)) is Some(_) and not z in free(body) and z != y,
+        alpha_eq?(
+            names,
+            Term::Lam(y, ty, body),
+            Term::Lam(z, ty, subst(y, Term::Var(z), body))
+        )
+    ensure subst_nameless: when to_nameless(Names::Cons(x, names), t) = Some(nt) and to_nameless(names, s) = Some(ns),
+        to_nameless(names, subst(x, s, t)) = Some(nsubst(0, ns, nt))
+    ensure typed_alpha: when alpha_eq?(Names::Nil, t, t2), typeof(Ctx::Empty, t) = typeof(Ctx::Empty, t2)
+}
+
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect substituted_under_binder: to_nameless(
+    Names::Cons("z", Names::Nil),
+    subst(
+        "x",
+        Term::Var("z"),
+        Term::Lam("y", Ty::Boolean, Term::Var("x"))
+    )
+)
+    = Some(
+        nsubst(
+            0,
+            Term::Var(0),
+            Term::Lam(Anon::Anon, Ty::Boolean, Term::Var(1))
+        )
+    )
+    and nsubst(
+        0,
+        Term::Var(0),
+        Term::Lam(Anon::Anon, Ty::Boolean, Term::Var(1))
+    )
+    = Term::Lam(Anon::Anon, Ty::Boolean, Term::Var(1))
+
+-- # Experiment: one layer of a term
+--
+-- `TermF<V, B, E>` is one layer of a term, with its children abstracted as
+-- `E`: the shape planned for Fren's own spec (#539). Its fixpoint, `enum
+-- Fix<V, B> { In(TermF<V, B, Fix<V, B>>) }`, is rejected (`F0387`: a
+-- recursive payload must be the enumeration's own type), and a fold over
+-- it would be a generic recursion (`F0331`), so an algebra is stated here,
+-- with the laws that the solver decides at `Name`, since nothing recurses
+-- (`layer_laws`), and Stlc.lean ties the knot: `Term` is the fixpoint, and
+-- `size` is the fold of `size_alg` (`size_fold`, `map_layer_id`). What else
+-- this example needed and Fren lacks is filed under the language spec's
+-- queue (#545): #602 to #606, and #612.
+pub enum TermF<V, B, E> {
+    Var(V),
+    Lam(B, Ty, E),
+    App(E, E),
+    True,
+    False,
+    If(E, E, E),
+}
+
+-- The functor's map: the layer with `f` applied to each child.
+pub fn map_layer<V, B, E, F>(l: TermF<V, B, E>, f: fn(E) -> F): TermF<V, B, F> := match l {
+    TermF::Var(x) => TermF::Var(x),
+    TermF::Lam(x, ty, body) => TermF::Lam(x, ty, f(body)),
+    TermF::App(t1, t2) => TermF::App(f(t1), f(t2)),
+    TermF::True => TermF::True,
+    TermF::False => TermF::False,
+    TermF::If(t1, t2, t3) => TermF::If(f(t1), f(t2), f(t3)),
+}
+
+pub fn size_alg<V, B>(l: TermF<V, B, Int>): Int := match l {
+    TermF::Var(_) => 1,
+    TermF::Lam(_, _, body) => 1 + body,
+    TermF::App(t1, t2) => 1 + t1 + t2,
+    TermF::True => 1,
+    TermF::False => 1,
+    TermF::If(t1, t2, t3) => 1 + t1 + t2 + t3,
+}
+
+-- The size of a term, the fold of `size_alg`, with its contract checked by
+-- Hoare induction.
+pub fn size(t: Named): (n: Int) {
+    out n := match t {
+        Term::Var(_) => 1,
+        Term::Lam(_, _, body) => 1 + size(body),
+        Term::App(t1, t2) => 1 + size(t1) + size(t2),
+        Term::True => 1,
+        Term::False => 1,
+        Term::If(t1, t2, t3) => 1 + size(t1) + size(t2) + size(t3),
+    }
+    ensure positive: n >= 1
+}
+
+-- The functor's identity law, and one layer of the fold: a procedure
+-- cannot be generic (#605), so the laws are at `Name`.
+pub proc layer_laws(l: TermF<Name, Name, Int>, t1: Named, t2: Named) {
+    expect map_id: map_layer(l, |e| e) = l
+    expect size_app: when l = TermF::App(size(t1), size(t2)), size(Term::App(t1, t2)) = size_alg(l)
+}

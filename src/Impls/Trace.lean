@@ -58,6 +58,7 @@ tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_pa
 tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax/f0110_det_param.fren", "test/cli/syntax/f0113_det_assume.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
 tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren"
+tested lang::constant: "test/ui/lang/constants_recursive.fren"
 tested lang::recursive_facts: "test/ui/checks/recursion_hoare.fren",
   "test/ui/checks/recursion_reflection.fren", "test/ui/checks/recursion_reflected_contracts.fren",
   "test/ui/checks/recursion_independent.fren", "test/ui/checks/recursion_contract_queue.fren",
