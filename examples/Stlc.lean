@@ -7,26 +7,38 @@ import Fren.Literate
 # The simply typed lambda calculus in Lean
 
 The theorems of `stlc.fren` that need induction, proved over its generated
-definitions and bound to its procedures with `impl`: the laws of
-substitution, the context lemmas and the substitution lemma, the soundness
-and completeness of the type checker for the typing relation and of the
-evaluator for the reduction relation, the agreement of the two evaluators,
-preservation, progress and type safety, and the round trip of the nameless
-form, and the laws of alpha-equivalence: renaming a binder, substitution
-commuting with the nameless form, and typing. Normalization (Tait's
-method, as in chapter 12 of TAPL) is proved here alone: `stlc.fren` has no
-check that states it. Not proved, tested only: the round trip of the
-concrete syntax (`print_parse`). The last section ties the knot of the
-one-layer algebra: `size` is the fold of `size_alg`, and binds the laws of
-the layers.
+definitions and bound to its procedures with `impl`, in the order of its
+sections:
+
+- **Free variables and fresh names**: the fresh name of a renamed binder is
+  free in nothing that matters (`fresh_not_mem`, `new_binder_not_mem_apply`).
+- **Substitution**: the laws of `subst` (`substitution_laws`).
+- **Typing**: inversion, the context lemmas and the substitution lemma
+  (`context_lemmas`), and that `typeof` decides the book's inductively
+  defined typing relation (`typeof_iff`).
+- **Values and steps**: inversion of `step`, and that it decides the book's
+  reduction relation (`step_iff`).
+- **Type safety**: canonical forms, `preservation`, `progress` and `safety`
+  (`type_safety`).
+- **The evaluators**: more fuel changes nothing, `eval` and `normalize`
+  agree, and big-step preservation (`evaluators`, `type_safety`).
+- **Normalization**: Tait's method, as in chapter 12 of TAPL, proved here
+  alone, since `stlc.fren` has no check that states it (`normalization`).
+- **Nameless terms**: the round trip (`nameless_round_trip`).
+- **Alpha-equivalence**: substitution commutes with the nameless form,
+  renaming a binder, and typing (`alpha_laws`).
+- **One layer of a term**: `size` is the fold of `size_alg` (`layer_laws`).
+
+Tested only, not proved: the round trip of the concrete syntax
+(`print_parse`).
 -/
 
 open Fren.Lang
 
 #fren_md "stlc.fren"
 
--- The solver's checks, as `fren check` runs them; the laws set to random
--- testing are run by `fren check`.
+-- The solver's and the enumerated checks, as `fren check` runs them; the
+-- laws set to random testing are left to `fren check`.
 #fren_check
 
 namespace Stlc
@@ -89,32 +101,44 @@ theorem apply_subst_cases : ∀ (sub : Subst) (x : String),
       · exact Or.inl ih
       · exact Or.inr (Or.inr ih)
 
-theorem length_le_range_names : ∀ (sub : Subst) (s : Named) (x : String),
-    InRange sub s → x ∈ free s → x.length ≤ (range_names sub).length := by
+theorem length_fresh_pos : ∀ (sub : Subst) (body : Named), 1 ≤ (fresh sub body).length
+  | .Id, body => by
+    have e : (Fren.Str.lit "'").length = 1 := rfl
+    simp only [fresh, String.length_append]; omega
+  | .Bind _ _ rest, body => by
+    have := length_fresh_pos rest body
+    simp only [fresh, String.length_append]; omega
+
+/-- The fresh name is longer than every name free in the body or in a term
+that `sub` substitutes. -/
+theorem length_lt_fresh : ∀ (sub : Subst) (body : Named) (x : String),
+    (x ∈ free body ∨ ∃ s, InRange sub s ∧ x ∈ free s) → x.length < (fresh sub body).length := by
   intro sub
   induction sub with
-  | Id => intro s x h; exact absurd h id
+  | Id =>
+    intro body x h
+    rcases h with h | ⟨s, hs, _⟩
+    · have := length_le_all_names body x h
+      have e : (Fren.Str.lit "'").length = 1 := rfl
+      simp only [fresh, String.length_append]; omega
+    · exact absurd hs id
   | Bind y u rest ih =>
-    intro s x h hx
-    simp only [range_names, String.length_append]
-    rcases h with rfl | h
-    · have := length_le_all_names s x hx; omega
-    · have := ih s x h hx; omega
-
-theorem length_fresh (sub : Subst) (body : Named) :
-    (fresh sub body).length = (range_names sub).length + (all_names body).length + 1 := by
-  simp only [fresh, String.length_append, Fren.Str.lit]; rfl
+    intro body x h
+    simp only [fresh, String.length_append]
+    rcases h with h | ⟨s, hs, hx⟩
+    · have := ih body x (Or.inl h); omega
+    · rcases hs with rfl | hs
+      · have := length_le_all_names s x hx
+        have := length_fresh_pos rest body
+        omega
+      · have := ih body x (Or.inr ⟨s, hs, hx⟩); omega
 
 /-- The fresh name is free neither in the body nor in what `sub` substitutes. -/
 theorem fresh_not_mem (sub : Subst) (body : Named) :
     fresh sub body ∉ free body ∧ ∀ s, InRange sub s → fresh sub body ∉ free s := by
   constructor
-  · intro h
-    have := length_le_all_names body _ h
-    rw [length_fresh] at this; omega
-  · intro s hs h
-    have := length_le_range_names sub s _ hs h
-    rw [length_fresh] at this; omega
+  · intro h; have := length_lt_fresh sub body _ (Or.inl h); omega
+  · intro s hs h; have := length_lt_fresh sub body _ (Or.inr ⟨s, hs, h⟩); omega
 
 theorem fresh_ne_of_mem {sub : Subst} {body : Named} {x : String} (h : x ∈ free body) : fresh sub body ≠ x := by
   intro e; exact (fresh_not_mem sub body).1 (e ▸ h)
@@ -153,8 +177,107 @@ theorem new_binder_not_mem_apply (sub : Subst) (y : String) (body : Named) (x : 
   · rename_i h
     exact not_captures_apply sub y x _ (by simpa using h) hx hxy
 
+/-! ## Substitution -/
+
+/-- Nothing is captured by a substitution that leaves the free variables alone. -/
+theorem captures_false_of_id : ∀ (sub : Subst) (y : String) (fv : Fren.FinSet String),
+    (∀ x, x ∈ fv → x ≠ y → apply_subst sub x = .Var x) → captures? sub y fv = false := by
+  intro sub
+  induction sub with
+  | Id => intro y fv _; simp [captures?]
+  | Bind z s rest ih =>
+    intro y fv h
+    simp only [captures?, decide_eq_false_iff_not, not_or, Bool.not_eq_true]
+    constructor
+    · rintro ⟨⟨hzy, hz⟩, hy⟩
+      have := h z hz hzy
+      simp only [apply_subst, if_true] at this
+      subst this; rw [mem_free_var] at hy; exact hzy hy.symm
+    · apply ih
+      intro x hx hxy
+      have hx' : x ∈ fv ∧ x ≠ z := by simpa using hx
+      have := h x hx'.1 hxy
+      simpa [apply_subst, Ne.symm hx'.2] using this
+
+/-- A substitution that leaves the free variables of `t` alone leaves `t` alone. -/
+theorem subst_all_id : ∀ (t : Named) (sub : Subst),
+    (∀ x, x ∈ free t → apply_subst sub x = .Var x) → subst_all sub t = t := by
+  intro t
+  induction t with
+  | Var x => intro sub h; simp only [subst_all]; exact h x (by simp [free])
+  | Lam y ty body ih =>
+    intro sub h
+    have hnb : new_binder sub y body = y := by
+      simp only [new_binder]
+      rw [captures_false_of_id sub y (free body) fun x hx hxy => h x (mem_free_lam.2 ⟨hx, hxy⟩)]
+      rfl
+    simp only [subst_all, hnb]
+    congr 1
+    apply ih
+    intro x hx
+    by_cases hxy : y = x
+    · subst hxy; simp [apply_subst]
+    · simp only [apply_subst, hxy, if_false]; exact h x (mem_free_lam.2 ⟨hx, Ne.symm hxy⟩)
+  | App f a ihf iha =>
+    intro sub h; simp only [subst_all]
+    rw [ihf sub fun x hx => h x (mem_free_app.2 (Or.inl hx)), iha sub fun x hx => h x (mem_free_app.2 (Or.inr hx))]
+  | True => intro sub _; rfl
+  | False => intro sub _; rfl
+  | If c a b ihc iha ihb =>
+    intro sub h; simp only [subst_all]
+    rw [ihc sub fun x hx => h x (mem_free_if.2 (Or.inl hx)),
+      iha sub fun x hx => h x (mem_free_if.2 (Or.inr (Or.inl hx))),
+      ihb sub fun x hx => h x (mem_free_if.2 (Or.inr (Or.inr hx)))]
+
+/-- `substitution_laws::unused`. -/
+theorem subst_unused {x : String} {s t : Named} (h : x ∉ free t) : subst x s t = t := by
+  apply subst_all_id
+  intro z hz
+  have : x ≠ z := fun e => h (e ▸ hz)
+  simp [apply_subst, this]
+
+/-- A free variable of the result is free in what some free variable of the
+term was replaced by. -/
+theorem free_subst_all : ∀ (t : Named) (sub : Subst) (z : String),
+    z ∈ free (subst_all sub t) → ∃ x, x ∈ free t ∧ z ∈ free (apply_subst sub x) := by
+  intro t
+  induction t with
+  | Var x => intro sub z h; exact ⟨x, by simp [free], by simpa [subst_all] using h⟩
+  | Lam y ty body ih =>
+    intro sub z h
+    simp only [subst_all, mem_free_lam] at h
+    obtain ⟨x, hx, hz⟩ := ih _ _ h.1
+    by_cases hxy : y = x
+    · subst hxy; simp only [apply_subst, if_true, mem_free_var] at hz; exact absurd hz h.2
+    · simp only [apply_subst, hxy, if_false] at hz
+      exact ⟨x, mem_free_lam.2 ⟨hx, Ne.symm hxy⟩, hz⟩
+  | App f a ihf iha =>
+    intro sub z h
+    simp only [subst_all, mem_free_app] at h
+    rcases h with h | h
+    · obtain ⟨x, hx, hz⟩ := ihf _ _ h; exact ⟨x, mem_free_app.2 (Or.inl hx), hz⟩
+    · obtain ⟨x, hx, hz⟩ := iha _ _ h; exact ⟨x, mem_free_app.2 (Or.inr hx), hz⟩
+  | True => intro sub z h; simp [subst_all, free] at h
+  | False => intro sub z h; simp [subst_all, free] at h
+  | If c a b ihc iha ihb =>
+    intro sub z h
+    simp only [subst_all, mem_free_if] at h
+    rcases h with h | h | h
+    · obtain ⟨x, hx, hz⟩ := ihc _ _ h; exact ⟨x, mem_free_if.2 (Or.inl hx), hz⟩
+    · obtain ⟨x, hx, hz⟩ := iha _ _ h; exact ⟨x, mem_free_if.2 (Or.inr (Or.inl hx)), hz⟩
+    · obtain ⟨x, hx, hz⟩ := ihb _ _ h; exact ⟨x, mem_free_if.2 (Or.inr (Or.inr hx)), hz⟩
+
+/-- `substitution_laws::free_after`. -/
+theorem free_subst (x : String) (s t : Named) : free (subst x s t) ⊆ (free t \ {x}) ∪ free s := by
+  intro z hz
+  obtain ⟨w, hw, hz⟩ := free_subst_all t _ z hz
+  by_cases hwx : x = w
+  · subst hwx; simp only [apply_subst, if_true] at hz; simp [hz]
+  · simp only [apply_subst, hwx, if_false, mem_free_var] at hz; subst hz; simp [hw, Ne.symm hwx]
+
 /-! ## Typing -/
 
+/-- Inversion (TAPL 9.3.1), one lemma per form of term. -/
 theorem typeof_app_inv {ctx : Ctx} {t1 t2 : Named} {ty : Ty} (h : typeof ctx (Term.App t1 t2) = some ty) :
     ∃ p, typeof ctx t1 = some (Ty.Arrow p ty) ∧ typeof ctx t2 = some p := by
   simp only [typeof] at h
@@ -183,6 +306,7 @@ theorem typeof_if_inv {ctx : Ctx} {c a b : Named} {ty : Ty} (h : typeof ctx (Ter
     · cases h
   · cases h
 
+/-- The rules T-App, T-Abs and T-If, read forwards. -/
 theorem typeof_app {ctx : Ctx} {t1 t2 : Named} {p ty : Ty} (h1 : typeof ctx t1 = some (.Arrow p ty))
     (h2 : typeof ctx t2 = some p) : typeof ctx (Term.App t1 t2) = some ty := by
   simp [typeof, h1, h2]
@@ -201,7 +325,8 @@ theorem lookup_bind_other {ctx : Ctx} {x y : String} (ty : Ty) (h : y ≠ x) :
     lookup (.Bind y ty ctx) x = lookup ctx x := by
   simp [lookup, h]
 
-/-- Typing depends on the context only at the free variables. -/
+/-- `context_lemmas::extensional`: typing depends on the context only at the
+free variables. -/
 theorem typeof_ext : ∀ (t : Named) (c1 c2 : Ctx),
     (∀ x, x ∈ free t → lookup c1 x = lookup c2 x) → typeof c1 t = typeof c2 t := by
   intro t
@@ -230,7 +355,8 @@ theorem typeof_ext : ∀ (t : Named) (c1 c2 : Ctx),
       iha c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inr (Or.inl hx)))),
       ihb c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inr (Or.inr hx))))]
 
-/-- Weakening: a binding of a name that is not free changes no type. -/
+/-- `context_lemmas::weakening` (TAPL 9.3.7): a binding of a name that is not
+free changes no type. -/
 theorem typeof_weaken {ctx : Ctx} {t : Named} {x : String} (ty : Ty) (hx : x ∉ free t) :
     typeof (.Bind x ty ctx) t = typeof ctx t :=
   typeof_ext t _ _ fun _ hz => lookup_bind_other ty fun e => hx (e ▸ hz)
@@ -279,7 +405,7 @@ theorem typeof_subst_all : ∀ (t : Named) (c1 c2 : Ctx) (sub : Subst) (ty : Ty)
       (iha _ _ _ _ ha fun x hx => hs x (mem_free_if.2 (Or.inr (Or.inl hx))))
       (ihb _ _ _ _ hb fun x hx => hs x (mem_free_if.2 (Or.inr (Or.inr hx))))
 
-/-- The substitution lemma. -/
+/-- `context_lemmas::substitution`, the substitution lemma (TAPL 9.3.8). -/
 theorem typeof_subst {ctx : Ctx} {x : String} {s t : Named} {tx ty : Ty} (ht : typeof (.Bind x tx ctx) t = some ty)
     (hs : typeof ctx s = some tx) : typeof ctx (subst x s t) = some ty := by
   apply typeof_subst_all t _ _ _ _ ht
@@ -288,100 +414,63 @@ theorem typeof_subst {ctx : Ctx} {x : String} {s t : Named} {tx ty : Ty} (ht : t
   · subst hz; rw [lookup_bind_same] at hl; cases hl; simpa [apply_subst] using hs
   · rw [lookup_bind_other _ hz] at hl; simpa [apply_subst, hz, typeof] using hl
 
-/-! ## Substitution -/
+/-! ### The typing relation
 
-/-- Nothing is captured by a substitution that leaves the free variables alone. -/
-theorem captures_false_of_id : ∀ (sub : Subst) (y : String) (fv : Fren.FinSet String),
-    (∀ x, x ∈ fv → x ≠ y → apply_subst sub x = .Var x) → captures? sub y fv = false := by
-  intro sub
-  induction sub with
-  | Id => intro y fv _; simp [captures?]
-  | Bind z s rest ih =>
-    intro y fv h
-    simp only [captures?, decide_eq_false_iff_not, not_or, Bool.not_eq_true]
+The book defines `ctx |- t: T` inductively, by the rules in the comment of
+`typeof`; `typeof` decides it. -/
+
+inductive Typing : Ctx → Named → Ty → Prop
+  | var {ctx : Ctx} {x : String} {ty : Ty} : lookup ctx x = some ty → Typing ctx (.Var x) ty
+  | abs {ctx : Ctx} {x : String} {ty1 : Ty} {t2 : Named} {ty2 : Ty} :
+      Typing (.Bind x ty1 ctx) t2 ty2 → Typing ctx (.Lam x ty1 t2) (.Arrow ty1 ty2)
+  | app {ctx : Ctx} {t1 t2 : Named} {ty11 ty12 : Ty} :
+      Typing ctx t1 (.Arrow ty11 ty12) → Typing ctx t2 ty11 → Typing ctx (.App t1 t2) ty12
+  | if_ {ctx : Ctx} {t1 t2 t3 : Named} {ty : Ty} :
+      Typing ctx t1 .Boolean → Typing ctx t2 ty → Typing ctx t3 ty → Typing ctx (.If t1 t2 t3) ty
+  | true {ctx : Ctx} : Typing ctx .True .Boolean
+  | false {ctx : Ctx} : Typing ctx .False .Boolean
+
+/-- `typeof` is sound and complete for the typing relation. -/
+theorem typeof_iff : ∀ (t : Named) (ctx : Ctx) (ty : Ty), typeof ctx t = some ty ↔ Typing ctx t ty := by
+  intro t
+  induction t with
+  | Var x =>
+    intro ctx ty
     constructor
-    · rintro ⟨⟨hzy, hz⟩, hy⟩
-      have := h z hz hzy
-      simp only [apply_subst, if_true] at this
-      subst this; rw [mem_free_var] at hy; exact hzy hy.symm
-    · apply ih
-      intro x hx hxy
-      have hx' : x ∈ fv ∧ x ≠ z := by simpa using hx
-      have := h x hx'.1 hxy
-      simpa [apply_subst, Ne.symm hx'.2] using this
-
-theorem subst_all_id : ∀ (t : Named) (sub : Subst),
-    (∀ x, x ∈ free t → apply_subst sub x = .Var x) → subst_all sub t = t := by
-  intro t
-  induction t with
-  | Var x => intro sub h; simp only [subst_all]; exact h x (by simp [free])
-  | Lam y ty body ih =>
-    intro sub h
-    have hnb : new_binder sub y body = y := by
-      simp only [new_binder]
-      rw [captures_false_of_id sub y (free body) fun x hx hxy => h x (mem_free_lam.2 ⟨hx, hxy⟩)]
-      rfl
-    simp only [subst_all, hnb]
-    congr 1
-    apply ih
-    intro x hx
-    by_cases hxy : y = x
-    · subst hxy; simp [apply_subst]
-    · simp only [apply_subst, hxy, if_false]; exact h x (mem_free_lam.2 ⟨hx, Ne.symm hxy⟩)
+    · intro h; exact .var (by simpa [typeof] using h)
+    · intro h; cases h with | var hl => simpa [typeof] using hl
+  | Lam y ty1 b ih =>
+    intro ctx ty
+    constructor
+    · intro h
+      obtain ⟨ty2, hb, rfl⟩ := typeof_lam_inv h
+      exact .abs ((ih _ _).1 hb)
+    · intro h; cases h with | abs hb => exact typeof_lam ((ih _ _).2 hb)
   | App f a ihf iha =>
-    intro sub h; simp only [subst_all]
-    rw [ihf sub fun x hx => h x (mem_free_app.2 (Or.inl hx)), iha sub fun x hx => h x (mem_free_app.2 (Or.inr hx))]
-  | True => intro sub _; rfl
-  | False => intro sub _; rfl
+    intro ctx ty
+    constructor
+    · intro h
+      obtain ⟨p, hf, ha⟩ := typeof_app_inv h
+      exact .app ((ihf _ _).1 hf) ((iha _ _).1 ha)
+    · intro h; cases h with | app hf ha => exact typeof_app ((ihf _ _).2 hf) ((iha _ _).2 ha)
+  | True =>
+    intro ctx ty
+    constructor
+    · intro h; simp only [typeof, Option.some.injEq] at h; subst h; exact .true
+    · intro h; cases h; simp [typeof]
+  | False =>
+    intro ctx ty
+    constructor
+    · intro h; simp only [typeof, Option.some.injEq] at h; subst h; exact .false
+    · intro h; cases h; simp [typeof]
   | If c a b ihc iha ihb =>
-    intro sub h; simp only [subst_all]
-    rw [ihc sub fun x hx => h x (mem_free_if.2 (Or.inl hx)),
-      iha sub fun x hx => h x (mem_free_if.2 (Or.inr (Or.inl hx))),
-      ihb sub fun x hx => h x (mem_free_if.2 (Or.inr (Or.inr hx)))]
-
-theorem subst_unused {x : String} {s t : Named} (h : x ∉ free t) : subst x s t = t := by
-  apply subst_all_id
-  intro z hz
-  have : x ≠ z := fun e => h (e ▸ hz)
-  simp [apply_subst, this]
-
-/-- A free variable of the result is free in what some free variable of the
-term was replaced by. -/
-theorem free_subst_all : ∀ (t : Named) (sub : Subst) (z : String),
-    z ∈ free (subst_all sub t) → ∃ x, x ∈ free t ∧ z ∈ free (apply_subst sub x) := by
-  intro t
-  induction t with
-  | Var x => intro sub z h; exact ⟨x, by simp [free], by simpa [subst_all] using h⟩
-  | Lam y ty body ih =>
-    intro sub z h
-    simp only [subst_all, mem_free_lam] at h
-    obtain ⟨x, hx, hz⟩ := ih _ _ h.1
-    by_cases hxy : y = x
-    · subst hxy; simp only [apply_subst, if_true, mem_free_var] at hz; exact absurd hz h.2
-    · simp only [apply_subst, hxy, if_false] at hz
-      exact ⟨x, mem_free_lam.2 ⟨hx, Ne.symm hxy⟩, hz⟩
-  | App f a ihf iha =>
-    intro sub z h
-    simp only [subst_all, mem_free_app] at h
-    rcases h with h | h
-    · obtain ⟨x, hx, hz⟩ := ihf _ _ h; exact ⟨x, mem_free_app.2 (Or.inl hx), hz⟩
-    · obtain ⟨x, hx, hz⟩ := iha _ _ h; exact ⟨x, mem_free_app.2 (Or.inr hx), hz⟩
-  | True => intro sub z h; simp [subst_all, free] at h
-  | False => intro sub z h; simp [subst_all, free] at h
-  | If c a b ihc iha ihb =>
-    intro sub z h
-    simp only [subst_all, mem_free_if] at h
-    rcases h with h | h | h
-    · obtain ⟨x, hx, hz⟩ := ihc _ _ h; exact ⟨x, mem_free_if.2 (Or.inl hx), hz⟩
-    · obtain ⟨x, hx, hz⟩ := iha _ _ h; exact ⟨x, mem_free_if.2 (Or.inr (Or.inl hx)), hz⟩
-    · obtain ⟨x, hx, hz⟩ := ihb _ _ h; exact ⟨x, mem_free_if.2 (Or.inr (Or.inr hx)), hz⟩
-
-theorem free_subst (x : String) (s t : Named) : free (subst x s t) ⊆ (free t \ {x}) ∪ free s := by
-  intro z hz
-  obtain ⟨w, hw, hz⟩ := free_subst_all t _ z hz
-  by_cases hwx : x = w
-  · subst hwx; simp only [apply_subst, if_true] at hz; simp [hz]
-  · simp only [apply_subst, hwx, if_false, mem_free_var] at hz; subst hz; simp [hw, Ne.symm hwx]
+    intro ctx ty
+    constructor
+    · intro h
+      obtain ⟨hc, ha, hb⟩ := typeof_if_inv h
+      exact .if_ ((ihc _ _).1 hc) ((iha _ _).1 ha) ((ihb _ _).1 hb)
+    · intro h
+      cases h with | if_ hc ha hb => exact typeof_if ((ihc _ _).2 hc) ((iha _ _).2 ha) ((ihb _ _).2 hb)
 
 /-! ## Values and steps -/
 
@@ -389,6 +478,7 @@ theorem value_iff (t : Named) :
     value? String String t = true ↔ (∃ x ty b, t = .Lam x ty b) ∨ t = .True ∨ t = .False := by
   cases t <;> simp [value?]
 
+/-- A value takes no step (TAPL 3.5.7). -/
 theorem step_value {t : Named} (h : value? String String t = true) : step t = none := by
   rw [value_iff] at h
   rcases h with ⟨x, ty, b, rfl⟩ | rfl | rfl <;> simp [step]
@@ -399,6 +489,8 @@ theorem not_value_cases {t : Named} (h : ¬ value? String String t = true) :
     (∃ x, t = .Var x) ∨ (∃ a b, t = .App a b) ∨ (∃ c a b, t = .If c a b) := by
   cases t <;> simp_all [value?]
 
+/-- The rules E-AppAbs, E-App1, E-App2 and E-If, read forwards, and where
+`step` stops. -/
 theorem step_app_beta {x : String} {ty : Ty} {b v : Named} (hv : value? String String v = true) :
     step (Term.App (Term.Lam x ty b) v) = some (subst x v b) := by
   simp [step, hv, value?]
@@ -464,7 +556,7 @@ theorem step_if_none {c a b : Named} (hc : c ≠ .True) (hc' : c ≠ .False) (hs
   | App c1 c2 => rw [step]; all_goals first | (rw [hs]; done) | (rw [hs]; simp) | simp
   | If c1 c2 c3 => rw [step]; all_goals first | (rw [hs]; done) | (rw [hs]; simp) | simp
 
-/-- A step of an application, by the shape of its parts. -/
+/-- Inversion: a step of an application, by the shape of its parts. -/
 theorem step_app_inv {t1 t2 u : Named} (hs : step (Term.App t1 t2) = some u) :
     (¬ value? String String t1 = true ∧ ∃ u1, step t1 = some u1 ∧ u = Term.App u1 t2) ∨
     (value? String String t1 = true ∧ ¬ value? String String t2 = true ∧ ∃ u2, step t2 = some u2 ∧ u = Term.App t1 u2) ∨
@@ -488,7 +580,7 @@ theorem step_app_inv {t1 t2 u : Named} (hs : step (Term.App t1 t2) = some u) :
     | none => rw [step_app_left_none v1 h1] at hs; cases hs
     | some u1 => rw [step_app_left_some v1 h1] at hs; cases hs; exact ⟨u1, rfl, rfl⟩
 
-/-- A step of a conditional, by the shape of its condition. -/
+/-- Inversion: a step of a conditional, by the shape of its condition. -/
 theorem step_if_inv {c a b u : Named} (hs : step (Term.If c a b) = some u) :
     (c = .True ∧ u = a) ∨ (c = .False ∧ u = b) ∨ (c ≠ .True ∧ c ≠ .False ∧ ∃ u1, step c = some u1 ∧ u = Term.If u1 a b) := by
   by_cases e1 : c = .True
@@ -501,7 +593,82 @@ theorem step_if_inv {c a b u : Named} (hs : step (Term.If c a b) = some u) :
       | none => rw [step_if_none e1 e2 h1] at hs; cases hs
       | some u1 => rw [step_if_some e1 e2 h1] at hs; cases hs; exact ⟨u1, rfl, rfl⟩
 
-/-- Canonical forms. -/
+/-! ### The reduction relation
+
+The book defines `t --> u` inductively, by the rules in the comment of
+`step`; `step` decides it. -/
+
+inductive Step : Named → Named → Prop
+  | app_abs {x : String} {ty : Ty} {t12 v : Named} :
+      value? String String v = true → Step (.App (.Lam x ty t12) v) (subst x v t12)
+  | app1 {t1 t1' t2 : Named} : Step t1 t1' → Step (.App t1 t2) (.App t1' t2)
+  | app2 {v1 t2 t2' : Named} : value? String String v1 = true → Step t2 t2' → Step (.App v1 t2) (.App v1 t2')
+  | if_true {t2 t3 : Named} : Step (.If .True t2 t3) t2
+  | if_false {t2 t3 : Named} : Step (.If .False t2 t3) t3
+  | if_ {t1 t1' t2 t3 : Named} : Step t1 t1' → Step (.If t1 t2 t3) (.If t1' t2 t3)
+
+/-- `step` is sound and complete for the reduction relation. -/
+theorem step_iff : ∀ (t u : Named), step t = some u ↔ Step t u := by
+  intro t
+  induction t with
+  | Var x =>
+    intro u
+    constructor
+    · intro h; simp [step] at h
+    · intro h; cases h
+  | Lam x ty b _ =>
+    intro u
+    constructor
+    · intro h; simp [step] at h
+    · intro h; cases h
+  | True =>
+    intro u
+    constructor
+    · intro h; simp [step] at h
+    · intro h; cases h
+  | False =>
+    intro u
+    constructor
+    · intro h; simp [step] at h
+    · intro h; cases h
+  | App t1 t2 ih1 ih2 =>
+    intro u
+    constructor
+    · intro h
+      rcases step_app_inv h with ⟨_, u1, hu1, rfl⟩ | ⟨v1, _, u2, hu2, rfl⟩ | ⟨v2, x, ty, b, rfl, rfl⟩
+      · exact .app1 ((ih1 _).1 hu1)
+      · exact .app2 v1 ((ih2 _).1 hu2)
+      · exact .app_abs v2
+    · intro h
+      cases h with
+      | app_abs hv => exact step_app_beta hv
+      | app1 hs =>
+        have hs' := (ih1 _).2 hs
+        exact step_app_left_some (fun v => by rw [step_value v] at hs'; cases hs') hs'
+      | app2 hv hs =>
+        have hs' := (ih2 _).2 hs
+        exact step_app_right_some hv (fun v => by rw [step_value v] at hs'; cases hs') hs'
+  | If c a b ihc _ _ =>
+    intro u
+    constructor
+    · intro h
+      rcases step_if_inv h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨_, _, u1, hu1, rfl⟩
+      · exact .if_true
+      · exact .if_false
+      · exact .if_ ((ihc _).1 hu1)
+    · intro h
+      cases h with
+      | if_true => simp [step]
+      | if_false => simp [step]
+      | if_ hs =>
+        have hs' := (ihc _).2 hs
+        have e1 : c ≠ .True := by rintro rfl; simp [step] at hs'
+        have e2 : c ≠ .False := by rintro rfl; simp [step] at hs'
+        exact step_if_some e1 e2 hs'
+
+/-! ## Type safety -/
+
+/-- Canonical forms (TAPL 9.3.4). -/
 theorem canonical_bool {ctx : Ctx} {t : Named} (hv : value? String String t = true)
     (ht : typeof ctx t = some .Boolean) : t = .True ∨ t = .False := by
   rw [value_iff] at hv
@@ -518,7 +685,7 @@ theorem canonical_arrow {ctx : Ctx} {t : Named} {p r : Ty} (hv : value? String S
   · simp [typeof] at ht
   · simp [typeof] at ht
 
-/-- Preservation: a step keeps the type. -/
+/-- `type_safety::preservation` (TAPL 9.3.9): a step keeps the type. -/
 theorem preservation : ∀ (t : Named) (ctx : Ctx) (ty : Ty) (u : Named),
     typeof ctx t = some ty → step t = some u → typeof ctx u = some ty := by
   intro t
@@ -544,7 +711,8 @@ theorem preservation : ∀ (t : Named) (ctx : Ctx) (ty : Ty) (u : Named),
     · exact hb
     · exact typeof_if (ihc _ _ _ hc hu1) ha hb
 
-/-- Progress: a well-typed closed term is a value or steps. -/
+/-- `type_safety::progress` (TAPL 9.3.5): a well-typed closed term is a value
+or steps. -/
 theorem progress : ∀ (t : Named) (ty : Ty),
     typeof .Empty t = some ty → value? String String t = true ∨ ∃ u, step t = some u := by
   intro t
@@ -577,8 +745,8 @@ theorem progress : ∀ (t : Named) (ty : Ty),
       have e2 : c ≠ .False := by rintro rfl; simp [step] at hu
       exact ⟨_, step_if_some e1 e2 hu⟩
 
-/-- Type safety: however far a well-typed closed term is reduced, it has its
-type and is a value or steps. -/
+/-- `type_safety::safety`: however far a well-typed closed term is reduced,
+it has its type and is a value or steps. -/
 theorem safety : ∀ (n : Fuel) (t : Named) (ty : Ty), typeof .Empty t = some ty →
     typeof .Empty (reduce n t) = some ty ∧
       (value? String String (reduce n t) = true ∨ ∃ u, step (reduce n t) = some u) := by
@@ -592,413 +760,46 @@ theorem safety : ∀ (n : Fuel) (t : Named) (ty : Ty), typeof .Empty t = some ty
     · rename_i u hu; exact ih u ty (preservation t _ ty u h hu)
     · exact ⟨h, progress t ty h⟩
 
-/-! ## The type checker and the typing relation -/
+/-! ## The evaluators -/
 
-theorem mem_types {typing : Fren.FinSet (Judgment × Ty)} {ctx : Ctx} {t : Named} {ty : Ty} :
-    ty ∈ types typing ctx t ↔ (judgment ctx t, ty) ∈ typing := by
-  simp [types]
+theorem normalize_zero_inv {t v : Named} (h : normalize .Zero t = some v) :
+    value? String String t = true ∧ v = t := by
+  by_cases hv : value? String String t = true
+  · simp [normalize, hv] at h; exact ⟨hv, h.symm⟩
+  · simp [normalize, hv] at h
 
-theorem judgment_eq (ctx : Ctx) (t : Named) : judgment ctx t = ⟨ctx, t⟩ := rfl
+theorem normalize_more_inv {n : Fuel} {t v : Named} (h : normalize (.More n) t = some v) :
+    (value? String String t = true ∧ v = t) ∨ (∃ u, step t = some u ∧ normalize n u = some v) := by
+  by_cases hv : value? String String t = true
+  · simp [normalize, hv] at h; exact Or.inl ⟨hv, h.symm⟩
+  · simp only [normalize, hv, Bool.false_eq_true, if_false] at h
+    cases hs : step t with
+    | none => simp [hs] at h
+    | some u => simp [hs] at h; exact Or.inr ⟨u, rfl, h⟩
 
-/-- `typing_rule?`, case by case. -/
-theorem typing_rule_iff (typing : Fren.FinSet (Judgment × Ty)) (ctx : Ctx) (t : Named) (ty : Ty) :
-    typing_rule? typing ctx t ty = true ↔ match t with
-      | .Var x => lookup ctx x = some ty
-      | .Lam x ty1 t2 => match ty with
-        | .Arrow p ty2 => p = ty1 ∧ (judgment (.Bind x ty1 ctx) t2, ty2) ∈ typing
-        | .Boolean => False
-      | .App t1 t2 => ∃ ty11, (judgment ctx t2, ty11) ∈ typing ∧ (judgment ctx t1, .Arrow ty11 ty) ∈ typing
-      | .If t1 t2 t3 =>
-        (judgment ctx t1, .Boolean) ∈ typing ∧ (judgment ctx t2, ty) ∈ typing ∧ (judgment ctx t3, ty) ∈ typing
-      | .True => ty = .Boolean
-      | .False => ty = .Boolean := by
-  cases t <;> simp only [typing_rule?, decide_eq_true_eq, fren_spec, mem_types, and_assoc] <;> try simp
-  cases ty <;> simp
+theorem normalize_value {t : Named} (hv : value? String String t = true) : ∀ n, normalize n t = some t
+  | .Zero => by simp [normalize, hv]
+  | .More _ => by simp [normalize, hv]
 
-theorem derivation_iff (typing : Fren.FinSet (Judgment × Ty)) :
-    typing_derivation? typing = true ↔
-      ∀ ctx t ty, (judgment ctx t, ty) ∈ typing → typing_rule? typing ctx t ty = true := by
-  simp only [typing_derivation?, decide_eq_true_eq, Fren.FinSet.mem_domain, Fren.FinSet.mem_image,
-    Fren.FinSet.mem_singleton]
-  constructor
-  · intro h ctx t ty hm
-    exact h ⟨ctx, t⟩ ⟨ty, hm⟩ ty ⟨_, rfl, hm⟩
-  · rintro h ⟨ctx, t⟩ _ ty ⟨_, rfl, hm⟩
-    exact h ctx t ty hm
+theorem normalize_step {t u : Named} (hs : step t = some u) (n : Fuel) :
+    normalize (.More n) t = normalize n u := by
+  have hv : ¬ value? String String t = true := fun hv => by rw [step_value hv] at hs; cases hs
+  simp [normalize, hv, hs]
 
-/-- Completeness: the checker agrees with every derivation. -/
-theorem checker_complete : ∀ (t : Named) (typing : Fren.FinSet (Judgment × Ty)) (ctx : Ctx) (ty : Ty),
-    typing_derivation? typing = true → (judgment ctx t, ty) ∈ typing → typeof ctx t = some ty := by
-  intro t
-  induction t with
-  | Var x =>
-    intro typing ctx ty hd hm
-    have := (typing_rule_iff ..).1 ((derivation_iff _).1 hd _ _ _ hm)
-    simpa [typeof] using this
-  | Lam y ty1 b ih =>
-    intro typing ctx ty hd hm
-    have h := (typing_rule_iff ..).1 ((derivation_iff _).1 hd _ _ _ hm)
-    cases ty with
-    | Boolean => exact absurd h id
-    | Arrow p ty2 =>
-      obtain ⟨rfl, h2⟩ := h
-      exact typeof_lam (ih typing _ _ hd h2)
-  | App f a ihf iha =>
-    intro typing ctx ty hd hm
-    obtain ⟨p, h2, h1⟩ := (typing_rule_iff ..).1 ((derivation_iff _).1 hd _ _ _ hm)
-    exact typeof_app (ihf typing _ _ hd h1) (iha typing _ _ hd h2)
-  | True =>
-    intro typing ctx ty hd hm
-    have := (typing_rule_iff ..).1 ((derivation_iff _).1 hd _ _ _ hm)
-    simp [typeof, this]
-  | False =>
-    intro typing ctx ty hd hm
-    have := (typing_rule_iff ..).1 ((derivation_iff _).1 hd _ _ _ hm)
-    simp [typeof, this]
-  | If c a b ihc iha ihb =>
-    intro typing ctx ty hd hm
-    obtain ⟨hc, ha, hb⟩ := (typing_rule_iff ..).1 ((derivation_iff _).1 hd _ _ _ hm)
-    exact typeof_if (ihc typing _ _ hd hc) (iha typing _ _ hd ha) (ihb typing _ _ hd hb)
+theorem normalize_some_value : ∀ (n : Fuel) {t v : Named}, normalize n t = some v → value? String String v = true
+  | .Zero, _, _, h => by obtain ⟨hv, rfl⟩ := normalize_zero_inv h; exact hv
+  | .More n, _, _, h => by
+    rcases normalize_more_inv h with ⟨hv, rfl⟩ | ⟨u, _, hu⟩
+    · exact hv
+    · exact normalize_some_value n hu
 
-/-- A rule stays justified in a larger relation. -/
-theorem typing_rule_mono {r s : Fren.FinSet (Judgment × Ty)} (h : ∀ p, p ∈ r → p ∈ s) (ctx : Ctx) (t : Named)
-    (ty : Ty) (hr : typing_rule? r ctx t ty = true) : typing_rule? s ctx t ty = true := by
-  rw [typing_rule_iff] at *
-  cases t <;> simp only at *
-  · exact hr
-  · cases ty with
-    | Boolean => exact hr
-    | Arrow p ty2 => exact ⟨hr.1, h _ hr.2⟩
-  · obtain ⟨p, h1, h2⟩ := hr; exact ⟨p, h _ h1, h _ h2⟩
-  · exact hr
-  · exact hr
-  · exact ⟨h _ hr.1, h _ hr.2.1, h _ hr.2.2⟩
-
-theorem mem_typing_of {ctx : Ctx} {t : Named} {ty : Ty} (h : typeof ctx t = some ty) :
-    (judgment ctx t, ty) ∈ typing_of ctx t := by
-  cases t <;> simp [typing_of, h, judgment_eq]
-
-/-- What the checker's derivation holds, under a judgment with a type: that
-judgment, or a judgment of a subterm's derivation. -/
-theorem mem_typing_of_iff {ctx : Ctx} {t : Named} {ty : Ty} (h : typeof ctx t = some ty) (p : Judgment × Ty) :
-    p ∈ typing_of ctx t ↔ p = (judgment ctx t, ty) ∨ match t with
-      | .Lam x ty1 b => p ∈ typing_of (.Bind x ty1 ctx) b
-      | .App f a => p ∈ typing_of ctx f ∨ p ∈ typing_of ctx a
-      | .If c a b => p ∈ typing_of ctx c ∨ p ∈ typing_of ctx a ∨ p ∈ typing_of ctx b
-      | _ => False := by
-  cases t <;> simp [typing_of, h, judgment_eq, or_assoc]
-
-/-- Every judgment that the checker's derivation holds is justified in it. -/
-theorem typing_of_derivation : ∀ (t : Named) (ctx : Ctx), typing_derivation? (typing_of ctx t) = true := by
-  intro t
-  induction t with
-  | Var x =>
-    intro ctx; rw [derivation_iff]; intro c u ty h
-    cases hty : typeof ctx (Term.Var x) with
-    | none => simp [typing_of, hty] at h
-    | some ty' =>
-      rw [mem_typing_of_iff hty] at h
-      simp only at h
-      rcases h with h | h
-      · cases h; rw [typing_rule_iff]; simpa [typeof] using hty
-      · exact absurd h id
-  | True =>
-    intro ctx; rw [derivation_iff]; intro c u ty h
-    cases hty : typeof ctx (Term.True : Named) with
-    | none => simp [typing_of, hty] at h
-    | some ty' =>
-      rw [mem_typing_of_iff hty] at h
-      simp only at h
-      rcases h with h | h
-      · cases h; rw [typing_rule_iff]; simpa [typeof] using hty.symm
-      · exact absurd h id
-  | False =>
-    intro ctx; rw [derivation_iff]; intro c u ty h
-    cases hty : typeof ctx (Term.False : Named) with
-    | none => simp [typing_of, hty] at h
-    | some ty' =>
-      rw [mem_typing_of_iff hty] at h
-      simp only at h
-      rcases h with h | h
-      · cases h; rw [typing_rule_iff]; simpa [typeof] using hty.symm
-      · exact absurd h id
-  | Lam y ty1 b ih =>
-    intro ctx; rw [derivation_iff]; intro c u ty h
-    cases hty : typeof ctx (Term.Lam y ty1 b) with
-    | none => simp [typing_of, hty] at h
-    | some ty' =>
-      have sub : ∀ p, p ∈ typing_of (.Bind y ty1 ctx) b → p ∈ typing_of ctx (Term.Lam y ty1 b) := by
-        intro p hp; rw [mem_typing_of_iff hty]; exact Or.inr hp
-      rw [mem_typing_of_iff hty] at h
-      simp only at h
-      rcases h with h | h
-      · cases h
-        obtain ⟨ty2, hb, rfl⟩ := typeof_lam_inv hty
-        rw [typing_rule_iff]
-        exact ⟨rfl, sub _ (mem_typing_of hb)⟩
-      · exact typing_rule_mono sub _ _ _ ((derivation_iff _).1 (ih _) _ _ _ h)
-  | App f a ihf iha =>
-    intro ctx; rw [derivation_iff]; intro c u ty h
-    cases hty : typeof ctx (Term.App f a) with
-    | none => simp [typing_of, hty] at h
-    | some ty' =>
-      have subf : ∀ p, p ∈ typing_of ctx f → p ∈ typing_of ctx (Term.App f a) := by
-        intro p hp; rw [mem_typing_of_iff hty]; exact Or.inr (Or.inl hp)
-      have suba : ∀ p, p ∈ typing_of ctx a → p ∈ typing_of ctx (Term.App f a) := by
-        intro p hp; rw [mem_typing_of_iff hty]; exact Or.inr (Or.inr hp)
-      rw [mem_typing_of_iff hty] at h
-      simp only at h
-      rcases h with h | h | h
-      · cases h
-        obtain ⟨p, hf, ha⟩ := typeof_app_inv hty
-        rw [typing_rule_iff]
-        exact ⟨p, suba _ (mem_typing_of ha), subf _ (mem_typing_of hf)⟩
-      · exact typing_rule_mono subf _ _ _ ((derivation_iff _).1 (ihf _) _ _ _ h)
-      · exact typing_rule_mono suba _ _ _ ((derivation_iff _).1 (iha _) _ _ _ h)
-  | If c a b ihc iha ihb =>
-    intro ctx; rw [derivation_iff]; intro c' u ty h
-    cases hty : typeof ctx (Term.If c a b) with
-    | none => simp [typing_of, hty] at h
-    | some ty' =>
-      have subc : ∀ p, p ∈ typing_of ctx c → p ∈ typing_of ctx (Term.If c a b) := by
-        intro p hp; rw [mem_typing_of_iff hty]; exact Or.inr (Or.inl hp)
-      have suba : ∀ p, p ∈ typing_of ctx a → p ∈ typing_of ctx (Term.If c a b) := by
-        intro p hp; rw [mem_typing_of_iff hty]; exact Or.inr (Or.inr (Or.inl hp))
-      have subb : ∀ p, p ∈ typing_of ctx b → p ∈ typing_of ctx (Term.If c a b) := by
-        intro p hp; rw [mem_typing_of_iff hty]; exact Or.inr (Or.inr (Or.inr hp))
-      rw [mem_typing_of_iff hty] at h
-      simp only at h
-      rcases h with h | h | h | h
-      · cases h
-        obtain ⟨hc, ha, hb⟩ := typeof_if_inv hty
-        rw [typing_rule_iff]
-        exact ⟨subc _ (mem_typing_of hc), suba _ (mem_typing_of ha), subb _ (mem_typing_of hb)⟩
-      · exact typing_rule_mono subc _ _ _ ((derivation_iff _).1 (ihc _) _ _ _ h)
-      · exact typing_rule_mono suba _ _ _ ((derivation_iff _).1 (iha _) _ _ _ h)
-      · exact typing_rule_mono subb _ _ _ ((derivation_iff _).1 (ihb _) _ _ _ h)
-
-/-! ## The evaluator and the reduction relation -/
-
-theorem red_derivation_iff (red : Fren.FinSet (Named × Named)) :
-    reduction_derivation? red = true ↔ ∀ t u, (t, u) ∈ red → reduction_rule? red t u = true := by
-  simp only [reduction_derivation?, decide_eq_true_eq, Fren.FinSet.mem_domain, Fren.FinSet.mem_image,
-    Fren.FinSet.mem_singleton]
-  constructor
-  · intro h t u hm
-    exact h t ⟨u, hm⟩ u ⟨_, rfl, hm⟩
-  · rintro h t _ u ⟨_, rfl, hm⟩
-    exact h _ u hm
-
-/-- Unfolds a reduction rule applied to constructors: the selectors of the generated
-definitions, then `value?` on constructors, and the Boolean algebra left behind. -/
-macro "rule_simp" " [" ls:Lean.Parser.Tactic.simpLemma,* "]" loc:(Lean.Parser.Tactic.location)? : tactic => `(tactic|
-  (simp only [Term.App.x0, Term.App.x1, Term.Lam.x0, Term.Lam.x1, Term.Lam.x2, Term.If.x0, Term.If.x1, Term.If.x2,
-      true_and, and_true, and_self, if_true, if_false, false_and, and_false, or_false, false_or, true_or, or_true,
-      Term.App.injEq, Term.Lam.injEq, Term.If.injEq, reduceCtorEq, not_false_eq_true, not_true_eq_false,
-      Bool.false_eq_true, Bool.true_eq_false, $ls,*] $[$loc:location]?
-   try simp only [value?, decide_eq_true_eq, true_and, and_true, and_self, if_true, if_false, false_and, and_false,
-      or_false, false_or, true_or, or_true, not_false_eq_true, not_true_eq_false, Bool.false_eq_true,
-      Bool.true_eq_false] $[$loc:location]?))
-
-/-- `reduction_rule?` at an application: the three rules that can justify it. -/
-theorem rule_app_elim {red : Fren.FinSet (Named × Named)} {t1 t2 u : Named}
-    (h : reduction_rule? red (Term.App t1 t2) u = true) :
-    (∃ x ty b, t1 = Term.Lam x ty b ∧ value? String String t2 = true ∧ u = subst x t2 b) ∨
-    (∃ u1, u = Term.App u1 t2 ∧ ¬ value? String String t1 = true ∧ (t1, u1) ∈ red) ∨
-    (∃ u2, u = Term.App t1 u2 ∧ value? String String t1 = true ∧
-      ¬ (∃ x ty b, t1 = Term.Lam x ty b ∧ value? String String t2 = true) ∧ (t2, u2) ∈ red) := by
-  have h := (@decide_eq_true_iff _ _).1 h
-  by_cases hv : value? String String t2 = true
-  all_goals cases t1 <;> cases u <;> rule_simp [hv] at h
-  all_goals first
-    | exact h.elim
-    | exact Or.inl ⟨_, _, _, rfl, hv, h⟩
-    | (obtain ⟨rfl, hm⟩ := h; exact Or.inr (Or.inl ⟨_, rfl, by simp [value?], hm⟩))
-    | (obtain ⟨rfl, hm⟩ := h
-       exact Or.inr (Or.inr ⟨_, rfl, by simp [value?], (fun ⟨_, _, _, _, v⟩ => hv v), hm⟩))
-    | (obtain ⟨rfl, hm⟩ := h
-       exact Or.inr (Or.inr ⟨_, rfl, by simp [value?], (fun ⟨_, _, _, e, _⟩ => nomatch e), hm⟩))
-
-/-- `reduction_rule?` at a conditional: the three rules that can justify it. -/
-theorem rule_if_elim {red : Fren.FinSet (Named × Named)} {c a b u : Named}
-    (h : reduction_rule? red (Term.If c a b) u = true) :
-    (c = .True ∧ u = a) ∨ (c = .False ∧ u = b) ∨
-    (c ≠ .True ∧ c ≠ .False ∧ ∃ c', u = Term.If c' a b ∧ (c, c') ∈ red) := by
-  have h := (@decide_eq_true_iff _ _).1 h
-  cases c <;> cases u <;> rule_simp [] at h
-  all_goals first
-    | exact h.elim
-    | exact Or.inl ⟨rfl, h⟩
-    | exact Or.inr (Or.inl ⟨rfl, h⟩)
-    | (obtain ⟨⟨rfl, rfl⟩, hm⟩ := h; exact Or.inr (Or.inr ⟨nofun, nofun, _, rfl, hm⟩))
-
-/-- No rule reduces a value. -/
-theorem rule_value_elim {red : Fren.FinSet (Named × Named)} {t u : Named} (hv : value? String String t = true)
-    (h : reduction_rule? red t u = true) : False := by
-  have h := (@decide_eq_true_iff _ _).1 h
-  rcases (value_iff t).1 hv with ⟨x, ty, b, rfl⟩ | rfl | rfl <;> rule_simp [] at h
-
-/-- No rule reduces a variable. -/
-theorem rule_var_elim {red : Fren.FinSet (Named × Named)} {x : String} {u : Named}
-    (h : reduction_rule? red (Term.Var x) u = true) : False := by
-  have h := (@decide_eq_true_iff _ _).1 h
-  rule_simp [] at h
-
-theorem rule_beta (red : Fren.FinSet (Named × Named)) {x : String} {ty : Ty} {b v : Named}
-    (hv : value? String String v = true) : reduction_rule? red (Term.App (Term.Lam x ty b) v) (subst x v b) = true := by
-  apply (@decide_eq_true_iff _ _).2
-  rule_simp [hv]
-
-theorem rule_app_left {red : Fren.FinSet (Named × Named)} {t1 t2 u1 : Named} (h : ¬ value? String String t1 = true)
-    (hm : (t1, u1) ∈ red) : reduction_rule? red (Term.App t1 t2) (Term.App u1 t2) = true := by
-  apply (@decide_eq_true_iff _ _).2
-  rcases not_value_cases h with ⟨x, rfl⟩ | ⟨a, b, rfl⟩ | ⟨c, a, b, rfl⟩ <;> rule_simp [] <;> exact hm
-
-theorem rule_app_right {red : Fren.FinSet (Named × Named)} {t1 t2 u2 : Named} (h1 : value? String String t1 = true)
-    (h2 : ¬ (∃ x ty b, t1 = Term.Lam x ty b ∧ value? String String t2 = true)) (hm : (t2, u2) ∈ red) :
-    reduction_rule? red (Term.App t1 t2) (Term.App t1 u2) = true := by
-  apply (@decide_eq_true_iff _ _).2
-  rcases (value_iff t1).1 h1 with ⟨x, ty, b, rfl⟩ | rfl | rfl
-  · have nv : ¬ value? String String t2 = true := fun v => h2 ⟨x, ty, b, rfl, v⟩
-    rule_simp [nv]; exact hm
-  all_goals rule_simp []; exact hm
-
-theorem rule_if_true (red : Fren.FinSet (Named × Named)) (a b : Named) :
-    reduction_rule? red (Term.If Term.True a b) a = true := by
-  apply (@decide_eq_true_iff _ _).2
-  rule_simp []
-
-theorem rule_if_false (red : Fren.FinSet (Named × Named)) (a b : Named) :
-    reduction_rule? red (Term.If Term.False a b) b = true := by
-  apply (@decide_eq_true_iff _ _).2
-  rule_simp []
-
-theorem rule_if_cong {red : Fren.FinSet (Named × Named)} {c a b c' : Named} (e1 : c ≠ .True) (e2 : c ≠ .False)
-    (hm : (c, c') ∈ red) : reduction_rule? red (Term.If c a b) (Term.If c' a b) = true := by
-  apply (@decide_eq_true_iff _ _).2
-  cases c
-  case True => exact absurd rfl e1
-  case False => exact absurd rfl e2
-  all_goals rule_simp []; exact hm
-
-/-- Completeness: the evaluator takes every step of every derivation. -/
-theorem step_complete : ∀ (t : Named) (red : Fren.FinSet (Named × Named)) (u : Named),
-    reduction_derivation? red = true → (t, u) ∈ red → step t = some u := by
-  intro t
-  induction t with
-  | Var x => intro red u hd hm; exact (rule_var_elim ((red_derivation_iff _).1 hd _ _ hm)).elim
-  | Lam x ty b _ =>
-    intro red u hd hm; exact (rule_value_elim (by simp [value?]) ((red_derivation_iff _).1 hd _ _ hm)).elim
-  | True => intro red u hd hm; exact (rule_value_elim (by simp [value?]) ((red_derivation_iff _).1 hd _ _ hm)).elim
-  | False => intro red u hd hm; exact (rule_value_elim (by simp [value?]) ((red_derivation_iff _).1 hd _ _ hm)).elim
-  | App t1 t2 ih1 ih2 =>
-    intro red u hd hm
-    rcases rule_app_elim ((red_derivation_iff _).1 hd _ _ hm) with
-      ⟨x, ty, b, rfl, hv, rfl⟩ | ⟨u1, rfl, nv1, h1⟩ | ⟨u2, rfl, v1, _, h2⟩
-    · exact step_app_beta hv
-    · exact step_app_left_some nv1 (ih1 red u1 hd h1)
-    · have hs := ih2 red u2 hd h2
-      exact step_app_right_some v1 (fun v => by rw [step_value v] at hs; cases hs) hs
-  | If c a b ihc _ _ =>
-    intro red u hd hm
-    rcases rule_if_elim ((red_derivation_iff _).1 hd _ _ hm) with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨e1, e2, c', rfl, hc⟩
-    · simp [step]
-    · simp [step]
-    · exact step_if_some e1 e2 (ihc red c' hd hc)
-
-/-- A rule stays justified in a larger relation. -/
-theorem reduction_rule_mono {r s : Fren.FinSet (Named × Named)} (h : ∀ p, p ∈ r → p ∈ s) (t u : Named)
-    (hr : reduction_rule? r t u = true) : reduction_rule? s t u = true := by
-  cases t with
-  | Var x => exact (rule_var_elim hr).elim
-  | Lam x ty b => exact (rule_value_elim (by simp [value?]) hr).elim
-  | True => exact (rule_value_elim (by simp [value?]) hr).elim
-  | False => exact (rule_value_elim (by simp [value?]) hr).elim
-  | App t1 t2 =>
-    rcases rule_app_elim hr with ⟨x, ty, b, rfl, hv, rfl⟩ | ⟨u1, rfl, nv1, h1⟩ | ⟨u2, rfl, v1, nb, h2⟩
-    · exact rule_beta s hv
-    · exact rule_app_left nv1 (h _ h1)
-    · exact rule_app_right v1 nb (h _ h2)
-  | If c a b =>
-    rcases rule_if_elim hr with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨e1, e2, c', rfl, hc⟩
-    · exact rule_if_true s _ _
-    · exact rule_if_false s _ _
-    · exact rule_if_cong e1 e2 (h _ hc)
-
-/-- What the evaluator's derivation holds: the step, and the derivation of
-the part that steps. -/
-theorem mem_step_derivation_iff {t u : Named} (hs : step t = some u) (p : Named × Named) :
-    p ∈ step_derivation t ↔ p = (t, u) ∨ match t with
-      | .App t1 t2 =>
-        if ¬ value? String String t1 = true then p ∈ step_derivation t1
-        else if ¬ value? String String t2 = true then p ∈ step_derivation t2 else False
-      | .If c _ _ => if c = .True ∨ c = .False then False else p ∈ step_derivation c
-      | _ => False := by
-  cases t with
-  | App t1 t2 =>
-    simp only [step_derivation, hs]
-    cases h1 : value? String String t1 <;> cases h2 : value? String String t2 <;> simp
-  | If c a b => cases c <;> simp [step_derivation, hs]
-  | _ => simp [step_derivation, hs]
-
-theorem mem_step_derivation_self {t u : Named} (hs : step t = some u) : (t, u) ∈ step_derivation t :=
-  (mem_step_derivation_iff hs _).2 (Or.inl rfl)
-
-/-- Soundness: the evaluator's derivation of a step is a derivation. -/
-theorem step_sound : ∀ (t : Named) (u : Named), step t = some u → reduction_derivation? (step_derivation t) = true := by
-  intro t
-  induction t with
-  | Var x => intro u hs; simp [step] at hs
-  | Lam x ty b _ => intro u hs; simp [step] at hs
-  | True => intro u hs; simp [step] at hs
-  | False => intro u hs; simp [step] at hs
-  | App t1 t2 ih1 ih2 =>
-    intro u hs
-    rw [red_derivation_iff]
-    intro a b hm
-    rw [mem_step_derivation_iff hs] at hm
-    rcases step_app_inv hs with ⟨nv1, u1, hu1, rfl⟩ | ⟨v1, nv2, u2, hu2, rfl⟩ | ⟨v2, x, ty, bd, rfl, rfl⟩
-    · have sub : ∀ p, p ∈ step_derivation t1 → p ∈ step_derivation (Term.App t1 t2) := by
-        intro p hp; rw [mem_step_derivation_iff hs]; simp [nv1, hp]
-      simp only [nv1] at hm
-      rcases hm with h | h
-      · cases h; exact rule_app_left nv1 (sub _ (mem_step_derivation_self hu1))
-      · exact reduction_rule_mono sub _ _ ((red_derivation_iff _).1 (ih1 _ hu1) _ _ h)
-    · have sub : ∀ p, p ∈ step_derivation t2 → p ∈ step_derivation (Term.App t1 t2) := by
-        intro p hp; rw [mem_step_derivation_iff hs]; simp [v1, nv2, hp]
-      simp only [v1, not_true_eq_false, if_false, nv2] at hm
-      rcases hm with h | h
-      · cases h
-        exact rule_app_right v1 (fun ⟨_, _, _, _, v2⟩ => nv2 v2) (sub _ (mem_step_derivation_self hu2))
-      · exact reduction_rule_mono sub _ _ ((red_derivation_iff _).1 (ih2 _ hu2) _ _ h)
-    · have v1 : value? String String (Term.Lam x ty bd) = true := by simp [value?]
-      simp only [v1, not_true_eq_false, if_false, v2] at hm
-      rcases hm with h | h
-      · cases h; exact rule_beta _ v2
-      · exact h.elim
-  | If c a b ihc _ _ =>
-    intro u hs
-    rw [red_derivation_iff]
-    intro p q hm
-    rw [mem_step_derivation_iff hs] at hm
-    rcases step_if_inv hs with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨e1, e2, u1, hu1, rfl⟩
-    · simp only [true_or, if_true] at hm
-      rcases hm with h | h
-      · cases h; exact rule_if_true _ _ _
-      · exact h.elim
-    · simp only [or_true, if_true] at hm
-      rcases hm with h | h
-      · cases h; exact rule_if_false _ _ _
-      · exact h.elim
-    · have ne : ¬ (c = Term.True ∨ c = Term.False) := by rintro (h | h) <;> contradiction
-      have sub : ∀ p, p ∈ step_derivation c → p ∈ step_derivation (Term.If c a b) := by
-        intro p hp; rw [mem_step_derivation_iff hs]; simp [ne, hp]
-      simp only [ne, if_false] at hm
-      rcases hm with h | h
-      · cases h; exact rule_if_cong e1 e2 (sub _ (mem_step_derivation_self hu1))
-      · exact reduction_rule_mono sub _ _ ((red_derivation_iff _).1 (ihc _ hu1) _ _ h)
-
-/-! ## Big-step evaluation -/
+/-- `evaluators::normalize_monotone`: more fuel changes nothing. -/
+theorem normalize_mono : ∀ (n : Fuel) {t v : Named}, normalize n t = some v → normalize (.More n) t = some v
+  | .Zero, _, _, h => by obtain ⟨hv, rfl⟩ := normalize_zero_inv h; exact normalize_value hv _
+  | .More n, _, _, h => by
+    rcases normalize_more_inv h with ⟨hv, rfl⟩ | ⟨u, hs, hu⟩
+    · exact normalize_value hv _
+    · rw [normalize_step hs]; exact normalize_mono n hu
 
 theorem eval_zero (t : Named) : eval .Zero t = none := by simp [eval]
 
@@ -1032,7 +833,7 @@ theorem eval_if_false {n : Fuel} {c a b v : Named} (hc : eval n c = some .False)
     eval (.More n) (Term.If c a b) = some v := by
   simp [eval, hc, hb]
 
-/-- What big-step evaluation gives is a value. -/
+/-- `evaluators::big_step_values`: what big-step evaluation gives is a value. -/
 theorem eval_value : ∀ (n : Fuel) (t v : Named), eval n t = some v → value? String String v = true := by
   intro n
   induction n with
@@ -1050,7 +851,7 @@ theorem eval_value : ∀ (n : Fuel) (t v : Named), eval n t = some v → value? 
     | True => simp only [eval] at h; cases h; simp [value?]
     | False => simp only [eval] at h; cases h; simp [value?]
 
-/-- More fuel changes nothing. -/
+/-- `evaluators::eval_monotone`: more fuel changes nothing. -/
 theorem eval_mono : ∀ (n : Fuel) (t v : Named), eval n t = some v → eval (.More n) t = some v := by
   intro n
   induction n with
@@ -1075,7 +876,8 @@ theorem eval_value_inv {n : Fuel} {t v : Named} (hv : value? String String t = t
   | Zero => simp [eval] at h
   | More m => rw [eval_of_value m hv] at h; cases h; rfl
 
-/-- A step changes nothing of what big-step evaluation gives. -/
+/-- `evaluators::step_eval`: a step changes nothing of what big-step
+evaluation gives. -/
 theorem step_eval : ∀ (n : Fuel) (t u v : Named), step t = some u → eval n t = some v → eval n u = some v := by
   intro n
   induction n with
@@ -1114,7 +916,7 @@ theorem step_eval : ∀ (n : Fuel) (t u v : Named), step t = some u → eval n t
         · exact eval_if_true (ih _ _ _ hu1 hc) ha
         · exact eval_if_false (ih _ _ _ hu1 hc) hb
 
-/-- The two evaluators agree. -/
+/-- `evaluators::agree`: the two evaluators agree. -/
 theorem eval_normalize : ∀ (m n : Fuel) (t v w : Named), eval n t = some v → normalize m t = some w → v = w := by
   intro m
   induction m with
@@ -1133,7 +935,8 @@ theorem eval_normalize : ∀ (m n : Fuel) (t v w : Named), eval n t = some v →
       · rename_i u hu; exact ih n u v w (step_eval n t u v hu he) hn
       · cases hn
 
-/-- Big-step evaluation preserves the type. -/
+/-- `type_safety::big_step_preservation`: big-step evaluation preserves the
+type. -/
 theorem eval_preservation : ∀ (n : Fuel) (ctx : Ctx) (t v : Named) (ty : Ty),
     typeof ctx t = some ty → eval n t = some v → typeof ctx v = some ty := by
   intro n
@@ -1159,17 +962,14 @@ theorem eval_preservation : ∀ (n : Fuel) (ctx : Ctx) (t v : Named) (ty : Ty),
       · exact ih _ _ _ _ ha h2
       · exact ih _ _ _ _ hb h2
 
-/-- Preservation along the transitive closure of a derivation. -/
-theorem preservation_closure {typing : Fren.FinSet (Judgment × Ty)} {red : Fren.FinSet (Named × Named)} {t u : Named}
-    {ty : Ty} (hd : typing_derivation? typing = true) (ht : ty ∈ types typing .Empty t) (hr : reduction_derivation? red = true)
-    (hc : (t, u) ∈ red.closure) : typeof .Empty u = some ty := by
-  have h0 : typeof .Empty t = some ty := checker_complete t typing _ ty hd (mem_types.1 ht)
-  rw [Fren.FinSet.mem_closure] at hc
-  induction hc with
-  | single h => exact preservation _ _ _ _ h0 (step_complete _ red _ hr h)
-  | tail _ h ih => exact preservation _ _ _ _ ih (step_complete _ red _ hr h)
+/-! ## Normalization
 
-/-! ## Normalization -/
+Tait's method, as in chapter 12 of TAPL: a logical relation `R` on closed
+terms of each type, closed under steps in both directions, and the
+fundamental theorem, that a well-typed term closed by related terms is
+related. The closing substitutions are `Good`: they capture nothing, so
+`subst_all` renames no binder under them, and composing two of them is one
+(`subst_comp`). -/
 
 /-- A substitution that captures nothing: what it substitutes for a
 variable is closed, or the variable itself. -/
@@ -1329,47 +1129,6 @@ theorem free_lookup : ∀ (t : Named) (ctx : Ctx) (ty : Ty), typeof ctx t = some
 theorem closed_of_typed {t : Named} {ty : Ty} (h : typeof .Empty t = some ty) : ∀ z, z ∉ free t :=
   fun z hz => free_lookup t _ _ h z hz (by simp [lookup])
 
-/-! ### `normalize` -/
-
-theorem normalize_zero_inv {t v : Named} (h : normalize .Zero t = some v) :
-    value? String String t = true ∧ v = t := by
-  by_cases hv : value? String String t = true
-  · simp [normalize, hv] at h; exact ⟨hv, h.symm⟩
-  · simp [normalize, hv] at h
-
-theorem normalize_more_inv {n : Fuel} {t v : Named} (h : normalize (.More n) t = some v) :
-    (value? String String t = true ∧ v = t) ∨ (∃ u, step t = some u ∧ normalize n u = some v) := by
-  by_cases hv : value? String String t = true
-  · simp [normalize, hv] at h; exact Or.inl ⟨hv, h.symm⟩
-  · simp only [normalize, hv, Bool.false_eq_true, if_false] at h
-    cases hs : step t with
-    | none => simp [hs] at h
-    | some u => simp [hs] at h; exact Or.inr ⟨u, rfl, h⟩
-
-theorem normalize_value {t : Named} (hv : value? String String t = true) : ∀ n, normalize n t = some t
-  | .Zero => by simp [normalize, hv]
-  | .More _ => by simp [normalize, hv]
-
-theorem normalize_step {t u : Named} (hs : step t = some u) (n : Fuel) :
-    normalize (.More n) t = normalize n u := by
-  have hv : ¬ value? String String t = true := fun hv => by rw [step_value hv] at hs; cases hs
-  simp [normalize, hv, hs]
-
-theorem normalize_some_value : ∀ (n : Fuel) {t v : Named}, normalize n t = some v → value? String String v = true
-  | .Zero, _, _, h => by obtain ⟨hv, rfl⟩ := normalize_zero_inv h; exact hv
-  | .More n, _, _, h => by
-    rcases normalize_more_inv h with ⟨hv, rfl⟩ | ⟨u, _, hu⟩
-    · exact hv
-    · exact normalize_some_value n hu
-
-/-- More fuel changes nothing. -/
-theorem normalize_mono : ∀ (n : Fuel) {t v : Named}, normalize n t = some v → normalize (.More n) t = some v
-  | .Zero, _, _, h => by obtain ⟨hv, rfl⟩ := normalize_zero_inv h; exact normalize_value hv _
-  | .More n, _, _, h => by
-    rcases normalize_more_inv h with ⟨hv, rfl⟩ | ⟨u, hs, hu⟩
-    · exact normalize_value hv _
-    · rw [normalize_step hs]; exact normalize_mono n hu
-
 /-- `t` reduces to a value with some fuel. -/
 def Halts (t : Named) : Prop := ∃ n v, normalize n t = some v
 
@@ -1381,10 +1140,8 @@ theorem halts_step {t u : Named} (hs : step t = some u) : Halts t ↔ Halts u :=
     | More m => exact ⟨m, v, by rwa [normalize_step hs] at h⟩
   · rintro ⟨n, v, h⟩; exact ⟨.More n, v, by rw [normalize_step hs]; exact h⟩
 
-/-! ### The logical relation -/
-
-/-- A closed term of the type that halts and, at an arrow type, takes
-related arguments to related results (TAPL, chapter 12). -/
+/-- The logical relation: a closed term of the type that halts and, at an
+arrow type, takes related arguments to related results. -/
 def R : Ty → Named → Prop
   | .Boolean, t => typeof .Empty t = some .Boolean ∧ Halts t
   | .Arrow a b, t => typeof .Empty t = some (.Arrow a b) ∧ Halts t ∧ ∀ s, R a s → R b (.App t s)
@@ -1600,7 +1357,8 @@ theorem to_named_lam_inv {names : Names} {a : Anon} {ty : Ty} {body : Term Int A
   · rename_i b hb; cases h; exact ⟨b, hb, rfl⟩
   · cases h
 
-/-- A closed nameless term, named and nameless again, is itself. -/
+/-- `nameless_round_trip::named_nameless`: a closed nameless term, named and
+nameless again, is itself. -/
 theorem to_nameless_to_named : ∀ (n : Term Int Anon) (d : Nat) (t : Named),
     to_named (gen d) n = some t → to_nameless (gen d) t = some n := by
   intro n
@@ -1641,7 +1399,8 @@ theorem to_nameless_to_named : ∀ (n : Term Int Anon) (d : Nat) (t : Named),
   | True => intro d t h; simp only [to_named] at h; cases h; simp [to_nameless]
   | False => intro d t h; simp only [to_named] at h; cases h; simp [to_nameless]
 
-/-- A term converts to the nameless form where each free variable is in scope. -/
+/-- `nameless_round_trip::closed_converts`: a term converts to the nameless
+form where each free variable is in scope. -/
 theorem to_nameless_some : ∀ (t : Named) (names : Names), (∀ x, x ∈ free t → ∃ k, index_of names x = some k) →
     ∃ n, to_nameless names t = some n := by
   intro t
@@ -1715,6 +1474,8 @@ theorem to_nameless_inv {names : Names} {t : Named} {n : Term Int Anon} (h : to_
     | _, _ => False := by
   cases t <;> simp only [to_nameless] at h <;> (try split at h) <;> cases h <;> simp_all
 
+/-- `nameless_round_trip::converts_back`: what converts to the nameless form
+under some names converts back under as many. -/
 theorem to_named_some : ∀ (n : Term Int Anon) (names names' : Names) (t : Named), namesLen names' = namesLen names →
     to_nameless names t = some n → ∃ t', to_named names' n = some t' := by
   intro n
@@ -1754,7 +1515,13 @@ theorem to_named_some : ∀ (n : Term Int Anon) (names names' : Names) (t : Name
   | True => intro names names' t _ _; exact ⟨Term.True, by simp [to_named]⟩
   | False => intro names names' t _ _; exact ⟨Term.False, by simp [to_named]⟩
 
-/-! ## Substitution and the nameless form -/
+/-! ## Alpha-equivalence
+
+Substitution commutes with the nameless form (`to_nameless_subst_all`): a
+substitution `σ` on names is a parallel substitution `ρ` on indices
+(`napply`), and the renamed binders change nothing, because a new binder
+is free in nothing substituted for another free variable
+(`new_binder_not_mem_apply`). The three laws of `alpha_laws` follow. -/
 
 /-- The names of `l1`, then those of `l2`. -/
 def napp : Names → Names → Names
@@ -1906,6 +1673,7 @@ def napply (ρ : Int → Term Int Anon) : Term Int Anon → Term Int Anon
 def nsubstFun (k : Int) (s : Term Int Anon) (j : Int) : Term Int Anon :=
   if j = k then s else if j > k then .Var (j - 1) else .Var j
 
+/-- Where the shift in `nsubst` matters: without it, this is false. -/
 theorem lift_nsubstFun (k : Int) (s : Term Int Anon) (hk : 0 ≤ k) :
     lift (nsubstFun k s) = nsubstFun (k + 1) (shift 1 0 s) := by
   funext j
@@ -1940,9 +1708,7 @@ theorem napply_nsubst : ∀ (nt : Term Int Anon) (k : Int) (s : Term Int Anon), 
 
 /-- Substitution commutes with the nameless form: where `σ` takes each free
 variable of `t` to what `ρ` takes its index to, `subst_all σ t` converts to
-`napply ρ` of `t`'s nameless form. The renamed binders change nothing,
-because a new binder is free in nothing substituted for another free
-variable (`new_binder_not_mem_apply`). -/
+`napply ρ` of `t`'s nameless form. -/
 theorem to_nameless_subst_all : ∀ (t : Named) (σ : Subst) (l l' : Names) (ρ : Int → Term Int Anon)
     (nt : Term Int Anon), to_nameless l t = some nt →
     (∀ z, z ∈ free t → ∀ k, index_of l z = some k → to_nameless l' (apply_subst σ z) = some (ρ k)) →
@@ -2018,7 +1784,6 @@ theorem subst_nameless {x : String} {names : Names} {t s : Named} {nt ns : Term 
   rw [napply_nsubst nt 0 ns (by omega)] at h
   have e : subst x s t = subst_all (.Bind x s .Id) t := rfl
   rw [e]; exact h
-
 
 theorem lift_var : lift (fun j => Term.Var j) = fun j => Term.Var j := by
   funext j
@@ -2141,6 +1906,10 @@ theorem typed_alpha {t t2 : Named} {n : Term Int Anon} (h1 : to_nameless .Nil t 
     (h2 : to_nameless .Nil t2 = some n) : typeof .Empty t = typeof .Empty t2 := by
   rw [typeof_nameless t .Empty n h1, typeof_nameless t2 .Empty n h2]
 
+/-! ## One layer of a term
+
+`Term` is the fixpoint of `TermF`, and `size` is the fold of `size_alg`. -/
+
 /-- The layer of a term, with `f` at each child. -/
 def layer {E : Type} (f : Named → E) : Named → TermF String String E
   | .Var x => .Var x
@@ -2176,43 +1945,36 @@ impl context_lemmas_proved: context_lemmas for (ctx ctx2 : Ctx) (t : Named) (x :
   refine ⟨fun h => typeof_ext t ctx ctx2 h, fun h => ?_, fun h => typeof_subst h.1 h.2⟩
   rw [typeof_weaken ty1 h.2]; exact h.1
 
-impl checker_proved: checker for (typing : Fren.FinSet (Judgment × Ty)) (ctx : Ctx) (t : Named) (ty ty2 : Ty) {
-  typing := typing, ctx := ctx, t := t, ty := ty, ty2 := ty2
+impl evaluators_proved: evaluators for (t u v w : Named) (n m : Fuel) {
+  t := t, u := u, v := v, w := w, n := n, m := m
 } by
-  intro typing ctx t ty ty2 _
+  intro t u v w n m _
   simp only [fren_spec]
-  refine ⟨fun h => ⟨typing_of_derivation t ctx, mem_types.2 (mem_typing_of h)⟩,
-    fun h => checker_complete t typing ctx ty h.1 (mem_types.1 h.2), fun h => ?_⟩
-  have h1 := checker_complete t typing ctx ty h.1.1 (mem_types.1 h.1.2)
-  have h2 := checker_complete t typing ctx ty2 h.1.1 (mem_types.1 h.2)
-  rw [h1] at h2; cases h2; rfl
-
-impl evaluator_proved: evaluator for (red : Fren.FinSet (Named × Named)) (t u v w : Named) (n m : Fuel) {
-  red := red, t := t, u := u, v := v, w := w, n := n, m := m
-} by
-  intro red t u v w n m _
-  simp only [fren_spec]
-  refine ⟨fun h => ⟨step_sound t u h, mem_step_derivation_self h⟩, fun h => step_complete t red u h.1 h.2, fun h => ?_,
-    fun h => step_value h, fun h => eval_value n t v h, fun h => eval_mono n t v h, fun h => normalize_mono n h,
+  exact ⟨fun h => eval_value n t v h, fun h => eval_mono n t v h, fun h => normalize_mono n h,
     fun h => step_eval n t u v h.1 h.2, fun h => eval_normalize m n t v w h.1 h.2⟩
-  have h1 := step_complete t red u h.1.1 h.1.2
-  have h2 := step_complete t red v h.1.1 h.2
-  rw [h1] at h2; cases h2; rfl
 
-impl type_safety_proved: type_safety for (typing : Fren.FinSet (Judgment × Ty)) (red : Fren.FinSet (Named × Named))
-    (ctx : Ctx) (t u : Named) (ty : Ty) (n : Fuel) {
-  typing := typing, red := red, ctx := ctx, t := t, u := u, ty := ty, n := n
+impl type_safety_proved: type_safety for (ctx : Ctx) (t u : Named) (ty : Ty) (n : Fuel) {
+  ctx := ctx, t := t, u := u, ty := ty, n := n
 } by
-  intro typing red ctx t u ty n _
+  intro ctx t u ty n _
   simp only [fren_spec]
   refine ⟨fun h => ?_, fun h => preservation t ctx ty u h.1 h.2, fun h => ?_,
-    fun h => eval_preservation n ctx t u ty h.1 h.2, fun h => preservation_closure h.1.1.1 h.1.1.2 h.1.2 h.2⟩
+    fun h => eval_preservation n ctx t u ty h.1 h.2⟩
   · rcases progress t ty h with hv | ⟨u, hu⟩
     · exact Or.inl hv
     · right; rw [hu]
   · obtain ⟨hty, hv | ⟨u, hu⟩⟩ := safety n t ty h
     · exact ⟨hty, Or.inl hv⟩
     · exact ⟨hty, Or.inr (by rw [hu])⟩
+
+impl nameless_round_trip_proved: nameless_round_trip for (t : Named) (nt : Term Int Anon) { t := t, nt := nt } by
+  intro t nt _
+  simp only [fren_spec]
+  refine ⟨fun h => to_nameless_to_named nt 0 t h, fun h => ?_, fun h => ?_⟩
+  · obtain ⟨n, hn⟩ := to_nameless_some t .Nil fun x hx => by rw [of_decide_eq_true h] at hx; simp at hx
+    simp [hn]
+  · obtain ⟨t', ht'⟩ := to_named_some nt .Nil .Nil t rfl h.2
+    simp [ht']
 
 impl alpha_laws_proved: alpha_laws for (names : Names) (t : Named) (nt : Term Int Anon) (s : Named)
     (ns : Term Int Anon) (x y z : String) (ty : Ty) (body t2 : Named) {
@@ -2237,14 +1999,5 @@ impl alpha_laws_proved: alpha_laws for (names : Names) (t : Named) (nt : Term In
 impl layer_laws_proved: layer_laws for (l : TermF String String Int) (t1 t2 : Named) { l := l, t1 := t1, t2 := t2 } by
   intro l t1 t2 _
   simp only [fren_spec]
-
-impl nameless_round_trip_proved: nameless_round_trip for (t : Named) (nt : Term Int Anon) { t := t, nt := nt } by
-  intro t nt _
-  simp only [fren_spec]
-  refine ⟨fun h => to_nameless_to_named nt 0 t h, fun h => ?_, fun h => ?_⟩
-  · obtain ⟨n, hn⟩ := to_nameless_some t .Nil fun x hx => by rw [of_decide_eq_true h] at hx; simp at hx
-    simp [hn]
-  · obtain ⟨t', ht'⟩ := to_named_some nt .Nil .Nil t rfl h.2
-    simp [ht']
 
 end Stlc
