@@ -284,7 +284,8 @@ lean_exe fren_coverage where
 -- whose reports must agree (`Reqs/dev/Testing`). It loads Fren's Lean
 -- environment at runtime, hence the interpreter. The fuzzer is the module
 -- `FrenTest.FuzzFrontends`, which `fren_test` imports too, to check its
--- fixed corpus.
+-- fixed corpus: an executable's root is in no library, so no module may
+-- import it, since Lake would then use a stale `.olean` of it.
 lean_exe fren_fuzz_frontends where
   root := `FrenFuzzFrontends
   supportInterpreter := true

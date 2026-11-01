@@ -190,10 +190,27 @@ structure Report where
   exit? : Option Nat := none
   deriving Inhabited
 
+/-- How the front ends' reports on a spec differ (`comparison`). -/
+structure Comparison where
+  /-- Each difference, as a line. -/
+  found : Array String := #[]
+  /-- The differences of `found` that the solvers' time limits can
+  explain: each about an undecided check, and the summary's and exit
+  code's, when one of those is among them. -/
+  timed : Array String := #[]
+  /-- Either front end reports an undecided check, which may hide a
+  difference. -/
+  undecided : Bool := false
+
+/-- Every difference is one that the solvers' time limits can explain. -/
+def Comparison.flaky (c : Comparison) : Bool := !c.found.isEmpty && c.found.all c.timed.contains
+
+/-- The differences that the solvers' time limits do not explain. -/
+def Comparison.decided (c : Comparison) : Array String := c.found.filter (!c.timed.contains ·)
+
 /-- How the front ends' reports on `text` differ: each difference as a
-line, and whether all of them are about undecided checks, which the
-solvers' time limits can explain. -/
-def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.run do
+line, and which of them the solvers' time limits can explain. -/
+def comparison (text : String) (cli hosted : Report) : Comparison := Id.run do
   let items := itemOf text
   let itemAt (n : Nat) := items[n]?.getD 0
   let render (who : String) (d : Diagnostic) :=
@@ -220,8 +237,8 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
     -- parsed every line before that.
     if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && blankBetween h.line p.line
         && itemAt h.line == itemAt p.line then
-      return (stopped, false)
-    return (stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)"), false)
+      return { found := stopped }
+    return { found := stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)") }
   -- Checks whose evidence is testing, which Lean does not run.
   let anyTested := text.contains "set_option fren.evidence \"random\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"random\""
@@ -268,11 +285,16 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   hostedOnly := hostedOnly.filter fun h => !(isLeanParseError h && cliErrorLines.contains h.line)
   cs := cs.filter fun c => !(staticErr c && leanLines.contains c.line)
   let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
-  let undecided := cs.all isUndecided && hostedOnly.all isUndecided
+  let mut timed := (cs.filter isUndecided).map (render "fren") ++ (hostedOnly.filter isUndecided).map (render "Lean")
   -- The summary, unless a check is tested.
   let sumDiffers := !anyTested && cli.summary? != hosted.summary?
+  -- A summary or an exit code that differs is a matter of time only if
+  -- some undecided check explains it.
+  let explained := !timed.isEmpty
   if sumDiffers then
-    out := out.push s!"summary: fren says `{cli.summary?.getD "(none)"}`, Lean says `{hosted.summary?.getD "(none)"}`"
+    let d := s!"summary: fren says `{cli.summary?.getD "(none)"}`, Lean says `{hosted.summary?.getD "(none)"}`"
+    out := out.push d
+    if explained then timed := timed.push d
   -- The exit code, from Lean's most severe message (`cli::exit`,
   -- `view::build`): 2 after a static error, else 1 for an error, 3 for a
   -- warning and 0 otherwise.
@@ -281,10 +303,15 @@ def compare (text : String) (cli hosted : Report) : Array String × Bool := Id.r
   let expected := if staticError then 2 else leanWorst
   let exitDiffers := !anyTested && cli.exit?.any (· != expected)
   if exitDiffers then
-    out := out.push s!"exit: fren exits {cli.exit?.getD 0}, and Lean's messages call for {expected}"
-  -- A summary or an exit code that differs is a matter of time only if
-  -- some undecided check explains it.
-  let explained := undecided && !(cs.isEmpty && hostedOnly.isEmpty)
-  return (out, undecided && sameInput.isEmpty && (!sumDiffers || explained) && (!exitDiffers || explained) && !out.isEmpty)
+    let d := s!"exit: fren exits {cli.exit?.getD 0}, and Lean's messages call for {expected}"
+    out := out.push d
+    if explained then timed := timed.push d
+  return { found := out, timed, undecided := cliDiags.any isUndecided || hosted.diags.any isUndecided }
+
+/-- How the front ends' reports on `text` differ: each difference as a
+line, and whether the solvers' time limits can explain all of them. -/
+def compare (text : String) (cli hosted : Report) : Array String × Bool :=
+  let c := comparison text cli hosted
+  (c.found, c.flaky)
 
 end FrenTest.Frontends
