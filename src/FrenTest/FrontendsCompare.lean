@@ -157,6 +157,15 @@ def checked : String := "proc c(\n    x: Int,\n): (y?) {\n    ensure q: y? iff x
     summary? := "1 passed, 0 failed, 1 inconclusive, 0 redundant", exit? := some 3 }
   { diags := #[], summary? := "2 passed, 0 failed, 0 inconclusive, 0 redundant" }).2
 
+-- Each difference about an undecided check is left out on its own, and
+-- the summary's with it, but not the others.
+#guard (comparison checked
+  { diags := #[warn 4 "could not decide whether `c::q` is redundant: the solver returned unknown (TIMEOUT)" "F0608",
+      err 2 "a mismatch" "F0304"],
+    summary? := "1 passed, 0 failed, 1 inconclusive, 0 redundant", exit? := some 2 }
+  { diags := #[], summary? := "2 passed, 0 failed, 0 inconclusive, 0 redundant" }).decided
+  == #["line 2:1: only fren reports error[F0304]: a mismatch"]
+
 -- An exit code that disagrees with Lean's messages.
 #guard differs checked { diags := #[], summary? := none0, exit? := some 1 } { diags := #[], summary? := none0 }
 #guard differs checked { diags := #[], summary? := none0, exit? := some 3 } { diags := #[], summary? := none0 }

@@ -268,37 +268,68 @@ pub mod testing
   worker that dies while checking no spec is blamed on none. Each run's
   work files are its own, but the findings are named by seed, so runs with
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known`
-  steers clear of differences already known, to find others: the
-  generator parenthesizes every method's receiver that is not a name, and
-  a spec whose every difference is of a kind that the [front-end
-  corpus](#front-end-corpus)'s `knownDifferences` lists is counted apart,
-  as known, rather than as a finding. `compare` masks only what may
-  legitimately differ, above; a known difference is fixed, or listed in
-  `knownDifferences` with its issue, and not masked. The known column
-  differences of #555 are of static
-  errors that the generator does not write (an unknown method or field, a
+  steers clear of differences already known, to find others: the generator
+  parenthesizes every method's receiver that is not a name, and a spec
+  whose every difference is of a kind (the difference without its line,
+  names and values, as the fuzzer's summary gives it) that the [front-end
+  corpus](#front-end-corpus)'s `knownDifferences` lists for a seed of
+  `--avoid-known` is counted apart, as known, rather than as a finding.
+  `compare` masks only what may legitimately differ, above; a known
+  difference is fixed, or listed in `knownDifferences` with its issue, and
+  not masked. The known column differences of #555 are of static errors
+  that the generator does not write (an unknown method or field, a
   `refines`, an invalid string pattern, a higher-order call's arity), so
-  `compare` masks no column. `--files FILE...` compares the front ends
-  on given files, and `--print SEED` prints a generated spec. The
-  comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
+  `compare` masks no column. `--files FILE...` compares the front ends on
+  given files, and `--print SEED` prints a generated spec. The comparison
+  itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`
   and `--sites` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of a
   few dozen seeds each. Every difference must be listed in
-  `knownDifferences`, beside the corpus, by its generator, its seed and its
-  kind (the difference without its line, names and values, as the
-  fuzzer's summary gives it), with the issue that tracks it; and every
-  listed one must still occur, so that the list only shrinks, as
-  `knownColumnDifferences` does for the ui tests' columns. A spec whose
-  front ends differ only in undecided checks, which time limits may
-  explain, is left out both ways. A failure says how to reproduce the
-  spec, and the entry that would list it. A change to the generator
-  changes the spec of every seed, and so the corpus's differences: each
-  one is then fixed or listed with its issue, as for any other change.
-  The corpus is sized to take about 2 minutes of one CI machine. A crash
-  of the solver fails its job, and a spec that never ends holds it up, as
-  in any other job.
+  `knownDifferences`, beside the corpus, by its generator, its seed and
+  the difference itself, line, column and names included, with the issue
+  that tracks it; each entry stands for one occurrence, so a difference
+  that occurs more often than it is listed fails too; and every listed one
+  must still occur, so that the list only shrinks, as
+  `knownColumnDifferences` does for the ui tests' columns. The
+  differences that time limits may explain, each about an undecided
+  check, and the summary's and exit status's when one of those is among
+  them, are left out one by one, and a listed one that no longer occurs
+  does not fail on a spec where either front end left a check undecided.
+  The matching is the pure function `unmatched`, tested with `#guard`s
+  beside it. A failure says how to reproduce the spec, and the entry that
+  would list it.
+
+  An extension of the generator leaves every seed's spec as it was, up to
+  what it appends, so the corpus's differences stay as they were: it is
+  never absorbed by relisting `knownDifferences`. Its random draws come
+  after all the existing ones, and its items in a group of their own at
+  the end. The default generator marks where each group that it appends
+  after `bodyFns` starts (`Wide.genWideCuts`), and the job fails on a
+  static error of the `fren` command (an error that is not a check's
+  result) located in one of those groups (`appendedErrors`), since an
+  error stops every check of the spec: deliberate errors go in a mode of
+  their own. The check reads where the errors are, not whether the spec
+  stops, so it sees a group's error even on the many specs that already
+  stop before it: the procedures and `bodyFns`, older than this rule,
+  write static errors, some on purpose (a body of another type) and some
+  not (#589), and about half the default seeds' specs stop before
+  `bodyFns`'s group. The comparison of check results sees nothing on those
+  specs. The check has two blind spots: it reads only the `fren` command's
+  errors, so an error that only Lean reports is left to the comparison,
+  where `knownDifferences` may list it; and a parse error before the first
+  cut hides every later error, as it stops the `fren` command (no corpus
+  spec has one today). A static error without a location is blamed on the
+  first group. An entry of `knownDifferences` holds the whole difference:
+  its line and column, the names that a front end gives its own facts, as
+  Lean's `f0.equation0.1`, and the message's wording. A change to any of
+  those, such as to where a front end places a message or to the generated
+  text before it on its line, shows as an unlisted and a vanished
+  difference on the same line, to be relisted; on a spec with an undecided
+  check, only the unlisted one shows. The corpus is sized to take about 2
+  minutes of one CI machine. A crash of the solver fails its job, and a
+  spec that never ends holds it up, as in any other job.
 
 `lake test` runs its tests as jobs, in parallel: each job is a process of
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
@@ -536,13 +567,18 @@ machine runs `lake build --wfail`, and others run `lake test --
 coverage, and saves the `.lake` for pull requests. It also runs the
 front-end fuzzer on seeds that no run used before, from the run's number,
 with `--avoid-known`, of both generators: a difference of a kind that
-`knownDifferences` does not list, a crash or a timeout fails the run, and
-the specs it found are uploaded as the artifact `fuzz-frontends-RUN`, to
-be filed (with the issue's number, in `knownDifferences` if the corpus
-reaches the kind) or fixed. The `lint` workflow runs
-`lun run --check` on both. The `pre-merge` workflow's last job, also named
-`pre-merge`, passes only if its build and every shard passed: it is the
-status that reviewers and the coordinator rely on.
+`knownDifferences` does not list for `--avoid-known`, a crash or a timeout
+fails the run, and the specs it found are uploaded as the artifact
+`fuzz-frontends-RUN`, to be filed (with the issue's number, in
+`knownDifferences` if the corpus reaches the kind) or fixed. The kinds
+listed for `--avoid-known` go unchecked on those seeds, of either
+generator, where the run counts each spec that has only those apart, as
+known: today one, Lean's extra report of a chain of methods that has a
+shorter form (`F0743`, #493). The kinds listed only for the default
+generator are checked there. The `lint` workflow runs `lun run --check` on
+both. The `pre-merge` workflow's last job, also named `pre-merge`, passes
+only if its build and every shard passed: it is the status that reviewers
+and the coordinator rely on.
 
 On a pull request, `pre-merge` also uploads stripped copies of the
 binaries that it built and tested, so that a reviewer can probe the head
