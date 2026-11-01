@@ -22,9 +22,7 @@ proc defined(x: Int): (y?) {
     --~^ error: cannot find `nope` in this scope
 }
 
-proc source(x: Int): (y: Int) {
-    ensure q: y = x
-}
+proc source(x: Int): (y: Int) { ensure q: y = x }
 
 -- An error in an instance's bindings, and one in a constraint.
 proc bound(x: Int): (z?) {

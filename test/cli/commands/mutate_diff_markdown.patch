@@ -3,6 +3,6 @@
 @@ -3 +3 @@
 -Prose.
 +Prose before the code, which the patch's line numbers count.
-@@ -17 +17 @@
--    ensure r: y? iff x < 8
-+    ensure r: y? iff x < 9
+@@ -14 +14 @@
+-pub proc d(x: Int): (y?) { ensure r: y? iff x < 8 }
++pub proc d(x: Int): (y?) { ensure r: y? iff x < 9 }

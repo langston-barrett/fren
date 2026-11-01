@@ -1,27 +1,27 @@
 note[F0654]: the redundancy checks of `echo` are not run by random testing
  --> test/cli/results/f0663_rests_on_random.fren:4:10
   |
-4 | pub proc echo(x: Int): (y: Int) {
+4 | pub proc echo(x: Int): (y: Int) { ensure r: y = x }
   |          ^^^^
   |
   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
   = help: the solver and enumeration decide them: set `fren.evidence` to `"solver"` or `"enumerated"` to have them run
 
 note[F0663]: the realizability of `caller` rests on the realizability of `echo`, which is only checked by random testing
- --> test/cli/results/f0663_rests_on_random.fren:8:10
+ --> test/cli/results/f0663_rests_on_random.fren:6:10
   |
-8 | pub proc caller(x: Int): (z: Int) {
+6 | pub proc caller(x: Int): (z: Int) {
   |          ^^^^^^ rests on an unproved check
   |
   = note: its proof has the realizability of `echo` among its hypotheses, so it is no stronger than that check (`Reqs/Evidence`)
 
 note[F0663]: `caller::bigger` rests on the realizability of `echo`, which is only checked by random testing
-  --> test/cli/results/f0663_rests_on_random.fren:11:12
-   |
-11 |     expect bigger: z > x
-   |            ^^^^^^ rests on an unproved check
-   |
-   = note: its proof has the realizability of `echo` among its hypotheses, so it is no stronger than that check (`Reqs/Evidence`)
+ --> test/cli/results/f0663_rests_on_random.fren:9:12
+  |
+9 |     expect bigger: z > x
+  |            ^^^^^^ rests on an unproved check
+  |
+  = note: its proof has the realizability of `echo` among its hypotheses, so it is no stronger than that check (`Reqs/Evidence`)
 
 fren: 4 passed (3 by random testing), 0 failed, 0 inconclusive, 0 redundant
 

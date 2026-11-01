@@ -1,4 +1,2 @@
 -- A built-in function that is not applied.
-proc c(a?) {
-    expect e: at_most_one?
-}
+proc c(a?) { expect e: at_most_one? }

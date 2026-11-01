@@ -1,6 +1,4 @@
 -- Values of an enum that is not ordered, compared (F0352).
 enum Level { Low, Middle, High }
 
-proc c(l: Level): (high?) {
-    ensure r: high? iff l > Level::Middle
-}
+proc c(l: Level): (high?) { ensure r: high? iff l > Level::Middle }

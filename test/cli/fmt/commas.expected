@@ -5,45 +5,50 @@
 -    , Cool
 +pub enum Mode { Heat,  -- warm
 +    Cool,
-@@ -17,2 +17,2 @@
+@@ -10,3 +10 @@
+-proc sub(x: Int, y: Int): (o?) {
+-    ensure r: o? iff x > y
+-}
++proc sub(x: Int, y: Int): (o?) { ensure r: o? iff x > y }
+@@ -17,2 +15,2 @@
 -        x  -- the first
 -        , y
 +        x,  -- the first
 +        y,
-@@ -21,2 +21 @@
+@@ -21,2 +19 @@
 -    call b := sub(x
 -        , y)
 +    call b := sub(x, y)
-@@ -24,2 +23 @@
+@@ -24,2 +21 @@
 -    call d := sub(x /- the first -/
 -        , y)
 +    call d := sub(x /- the first -/, y)
-@@ -28 +26 @@
+@@ -28 +24 @@
 -        x
 +        x,
-@@ -30 +28 @@
+@@ -30 +26 @@
 -        , y
 +        y,
-@@ -35 +33 @@
+@@ -35 +31 @@
 -        x
 +        x,
-@@ -37 +35 @@
+@@ -37 +33 @@
 -        , y
 +        y,
-@@ -41,2 +39,3 @@
+@@ -41,2 +37,3 @@
 -        x
 -        /- the second -/, y
 +        x,
 +        /- the second -/
 +        y,
-@@ -46 +45 @@
+@@ -46 +43 @@
 -        x  -- the first
 +        x,  -- the first
-@@ -48,2 +47 @@
+@@ -48,2 +45 @@
 -        , y  -- the second
 -        ,
 +        y,   -- the second
-@@ -51,2 +49,4 @@
+@@ -51,2 +47,4 @@
 -    expect r5: P { x := x  -- a comment
 -            , y := y }.x = x
 +    expect r5: P {

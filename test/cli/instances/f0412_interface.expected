@@ -1,10 +1,10 @@
 error[F0304]: refinement result type mismatch at `z`: call result `y` cannot flow to the specification result
-  --> test/cli/instances/f0412_interface.fren:10:5
-   |
-10 |     refines c rough(x)
-   |     ^^^^^^^^^^^^^^^^^^ expected `Nat`, found `Int`
-   |
-   = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s
+ --> test/cli/instances/f0412_interface.fren:6:5
+  |
+6 |     refines c rough(x)
+  |     ^^^^^^^^^^^^^^^^^^ expected `Nat`, found `Int`
+  |
+  = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s
 
 error: could not check due to previous errors
 

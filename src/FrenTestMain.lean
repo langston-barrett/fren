@@ -139,8 +139,8 @@ the binary at its text; and Lean at a higher-order call, the binary at
 its argument. A line here that no longer differs fails, so that it is
 removed. -/
 def knownColumnDifferences : List (String × Nat) :=
-  [("test/ui/checks/refinement_bindings_static.fren", 21), ("test/ui/checks/refinement_bindings_static.fren", 29),
-   ("test/ui/checks/refinement_bindings_static.fren", 37), ("test/ui/checks/refinement_bindings_static.fren", 41),
+  [("test/ui/checks/refinement_bindings_static.fren", 17), ("test/ui/checks/refinement_bindings_static.fren", 25),
+   ("test/ui/checks/refinement_bindings_static.fren", 33), ("test/ui/checks/refinement_bindings_static.fren", 37),
    ("test/ui/lang/constants_methods_static.fren", 5), ("test/ui/lang/constants_static.fren", 20),
    ("test/ui/lang/datatypes_static.fren", 32), ("test/ui/lang/datatypes_static.fren", 33),
    ("test/ui/lang/div_mod_static.fren", 32), ("test/ui/lang/div_mod_static.fren", 36),

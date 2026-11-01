@@ -579,7 +579,8 @@ inductive ListKind where
   /-- The fields of a record literal or of a record update. -/
   | fields
   /-- The members of a procedure's, a function's or a global expectation's
-  block, always one to a line, with no commas. -/
+  block, one to a line but for a single member that fits, with no
+  commas. -/
   | members
   deriving BEq, DecidableEq, Repr, Inhabited
 

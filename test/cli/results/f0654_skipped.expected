@@ -1,7 +1,7 @@
 note[F0654]: the vacuity and redundancy checks of `c` are not run by random testing
  --> test/cli/results/f0654_skipped.fren:3:6
   |
-3 | proc c(x: Int): (big?) {
+3 | proc c(x: Int): (big?) { ensure r: when x > 0, big? }
   |      ^
   |
   = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken

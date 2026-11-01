@@ -14,12 +14,11 @@ pub proc c(x: Int): (y?) {
     expect e: when x = 5, y?
 }
 
-pub proc d(x: Int): (y?) {
-    ensure r: y? iff x < LIMIT
-}
+pub proc d(x: Int): (y?) { ensure r: y? iff x < LIMIT }
 
 pub proc f(x: Int): (y?) {
     ensure r: y? iff x != 3
+    expect s: when x = 4, y?
 }
 
 pub fn twice(x: Int): Int := x + x

@@ -22,9 +22,7 @@ proc sequences(q: Seq<Bool>): (det n: Int) {  --~ info: 3 checks of `sequences` 
 -- its expectation is decided.
 set_option fren.enumeration.size 2 in
 set_option fren.evidence "enumerated" in
-proc sets(s: Set<Bool>) {
-    expect at_most_two: s.card <= 2
-}
+proc sets(s: Set<Bool>) { expect at_most_two: s.card <= 2 }
 
 -- The smallest set first: the sets of one pair before any larger.
 set_option fren.evidence "enumerated" in

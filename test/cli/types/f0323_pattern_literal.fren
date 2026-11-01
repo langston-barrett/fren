@@ -1,3 +1,1 @@
-proc c(s: String, pat: String): (p?) {
-    ensure r: p? iff s.matches?(pat)
-}
+proc c(s: String, pat: String): (p?) { ensure r: p? iff s.matches?(pat) }

@@ -19,9 +19,7 @@ fn other<T>(x: T): (r: T) {  --~ error: the postconditions of `generic_uninterpr
     ensure diff: other(x) != x
 }
 
-proc at_one(x: One): (det y: One) {
-    out y := other(x)
-}
+proc at_one(x: One): (det y: One) { out y := other(x) }
 
 proc at_bool(p?): (det q?) {
     out q? := other(p?)
@@ -37,9 +35,7 @@ proc at_int(i: Int): (det j: Int) {
 
 -- Not realizable at a type with a single value either, but applied only
 -- where it is: accepted.
-fn flip<T>(x: T): (r: T) {
-    ensure diff: flip(x) != x
-}
+fn flip<T>(x: T): (r: T) { ensure diff: flip(x) != x }
 
 proc flipped(p?): (det q?) {
     out q? := flip(p?)

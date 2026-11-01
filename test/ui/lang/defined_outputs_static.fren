@@ -45,9 +45,7 @@ proc typed(x: Int): (d: Int) {
     --~^ error: type mismatch: expected `Int`, found `Bool`
 }
 
-proc source(a: Int): (d: Int) {
-    out d := a
-}
+proc source(a: Int): (d: Int) { out d := a }
 
 proc binds(x: Int) {
     call w := source(x, x)  --~ error: too many arguments: `source` takes 1 argument

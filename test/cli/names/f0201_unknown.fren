@@ -1,4 +1,2 @@
 -- A name not in scope, with nothing similar (F0201).
-proc c(x: Int): (y: Int) {
-    ensure r: y = zzz
-}
+proc c(x: Int): (y: Int) { ensure r: y = zzz }

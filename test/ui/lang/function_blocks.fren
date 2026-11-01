@@ -34,9 +34,7 @@ pub fn ap(g: fn(Int) -> Int, x: Int): (r: Int) {
 -- An uninterpreted function, whose postconditions are all that is known
 -- of it.
 pub type Name
-pub fn arity(n: Name): (r: Nat) {
-    ensure positive: r > 0
-}
+pub fn arity(n: Name): (r: Nat) { ensure positive: r > 0 }
 
 pub proc use_it(x: Int, n: Name): (det y: Int) {
     assume p: x > 0

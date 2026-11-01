@@ -6,21 +6,13 @@ type Positive = value: Int where invariant: value > 0
 fn choose?(Bool)
 type Selected = value?: Bool where invariant: value? iff choose?(false)
 set_option fren.evidence "enumerated" in
-proc records(a: Flag, b: Flag) {
-    expect same: a = b
-}
+proc records(a: Flag, b: Flag) { expect same: a = b }
 set_option fren.evidence "enumerated" in
-proc shared(a?: Selected, b?: Selected) {
-    expect same: a? = b?
-}
+proc shared(a?: Selected, b?: Selected) { expect same: a? = b? }
 set_option fren.evidence "enumerated" in
-proc wrappers(a: Wrapped, b: Wrapped) {
-    expect same: a = b
-}
+proc wrappers(a: Wrapped, b: Wrapped) { expect same: a = b }
 set_option fren.evidence "enumerated" in
-proc payloads(a: Payload, b: Payload) {
-    expect same: a = b
-}
+proc payloads(a: Payload, b: Payload) { expect same: a = b }
 set_option fren.evidence "enumerated" in
 proc bad_output(): (r?: Truth) {  --~ error: `bad_output` is not realizable
     ensure opposite: not r?

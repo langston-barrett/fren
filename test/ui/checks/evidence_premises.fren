@@ -78,9 +78,7 @@ pub proc top(x: Int): (z: Int) {  --~[cli] info: the realizability of `top` rest
 -- with an expectation reset to the solver: the expectation rests on that
 -- realizability, so `fren check` passes it by random testing, and
 -- `#fren_check` reports no verdict for it (`check::hosted_runs`).
-proc same(x: Int): (y: Int) {
-    ensure r: y = x
-}
+proc same(x: Int): (y: Int) { ensure r: y = x }
 
 set_option fren.evidence "random" in
 expect g(x: Int) {  --~[hosted] info: the checks of `g` set to random testing are run by `fren check`, not in Lean (`Reqs/Check#checking-by-testing`)

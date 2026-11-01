@@ -1,7 +1,5 @@
 -- `Bool` expressions with a simpler form.
-pub proc sub(i?): (j?) {
-    ensure r: j? iff i?
-}
+pub proc sub(i?): (j?) { ensure r: j? iff i? }
 
 pub proc c(a?, b?, x: Int): (o?, p?, q?, w?) {
     call s := sub(if a? then true else false)

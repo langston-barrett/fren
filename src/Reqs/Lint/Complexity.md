@@ -346,9 +346,7 @@ pub proc struct_initialization_written(p: Point): (det v: Point) {
     out v := Point { x := p.x, y := p.y }
 }
 
-pub proc struct_initialization_fixed(p: Point): (det v: Point) {
-    out v := p
-}
+pub proc struct_initialization_fixed(p: Point): (det v: Point) { out v := p }
 
 expect struct_initialization_sound(p: lint::Point) {
     use lint

@@ -1,8 +1,6 @@
 -- Variables that nothing mentions; a global expectation's call that
 -- nothing reads is not one.
-pub proc sub(a: Int): (b: Int) {
-    ensure r: b = a
-}
+pub proc sub(a: Int): (b: Int) { ensure r: b = a }
 
 pub proc c(x: Int, spare: Int): (y: Int, loose?) {
     call s := sub(x)

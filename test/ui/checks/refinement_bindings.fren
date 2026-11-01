@@ -11,9 +11,7 @@ proc fmt_exit(all_parsed?, changed?): (code: Int) {
     ensure r: code = (if not all_parsed? then 2 else if changed? then 1 else 0)
 }
 
-proc bad_exit(all_parsed?): (code: Int) {
-    ensure r: code = (if not all_parsed? then 2 else 4)
-}
+proc bad_exit(all_parsed?): (code: Int) { ensure r: code = (if not all_parsed? then 2 else 4) }
 
 -- Holds only through the binding: `fmt_exit` has no `ran?`.
 expect holds(all_parsed?, changed?) {
@@ -28,9 +26,7 @@ expect fails(all_parsed?) {
 enum Level { Allow, Warn, Forbid }
 
 -- An abstraction function, and an output read through an expression.
-proc forbidding(forbidden?): (stops?) {
-    ensure r: stops? iff forbidden?
-}
+proc forbidding(forbidden?): (stops?) { ensure r: stops? iff forbidden? }
 
 proc stops(level: Level): (failures: Int) {
     ensure f: failures = (if level = Level::Forbid then 1 else 0)
@@ -49,9 +45,7 @@ proc first_of(n: Int, x: Int): (y: Int) {
     ensure r: y = x
 }
 
-proc seqs(q: Seq<Int>): (s: Seq<Int>) {
-    out s := q
-}
+proc seqs(q: Seq<Int>): (s: Seq<Int>) { out s := q }
 
 expect guarded(q: Seq<Int>) {
     assume spec_pos: ((q).len) > 0  --~ warning: say whether it is empty with `[]`, not `len`
@@ -66,12 +60,8 @@ expect unguarded(q: Seq<Int>) {
 }
 
 -- Swapped bindings: each input of `a` is read as the other input of `c`.
-proc difference(x: Int, y: Int): (d: Int) {
-    ensure r: d = x - y
-}
-proc reversed(x: Int, y: Int): (d: Int) {
-    ensure r: d = y - x
-}
+proc difference(x: Int, y: Int): (d: Int) { ensure r: d = x - y }
+proc reversed(x: Int, y: Int): (d: Int) { ensure r: d = y - x }
 
 expect swapped(x: Int, y: Int) {
     call concrete := reversed(x, y)

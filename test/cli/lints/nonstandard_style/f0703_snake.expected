@@ -1,39 +1,39 @@
 warning[F0703]: procedure `TempSensor` should have a snake case name
  --> test/cli/lints/nonstandard_style/f0703_snake.fren:2:6
   |
-2 | proc TempSensor(tempC: Int): (hot?) {
+2 | proc TempSensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
   |      ^^^^^^^^^^ not in snake_case
   |
   = note: `non_snake_case` is `warn` by default
   = help: to allow it, `set_option fren.lint.non_snake_case "allow"`
 help: rename it to `temp_sensor`
   |
-2 - proc TempSensor(tempC: Int): (hot?) {
-2 + proc temp_sensor(tempC: Int): (hot?) {
+2 - proc TempSensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
+2 + proc temp_sensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
   |
 
 warning[F0703]: variable `tempC` should have a snake case name
  --> test/cli/lints/nonstandard_style/f0703_snake.fren:2:17
   |
-2 | proc TempSensor(tempC: Int): (hot?) {
+2 | proc TempSensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
   |                 ^^^^^ not in snake_case
   |
 help: rename it to `temp_c`
   |
-2 - proc TempSensor(tempC: Int): (hot?) {
-2 + proc TempSensor(temp_c: Int): (hot?) {
+2 - proc TempSensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
+2 + proc TempSensor(temp_c: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
   |
 
 warning[F0703]: constraint `IsHot` should have a snake case name
- --> test/cli/lints/nonstandard_style/f0703_snake.fren:3:12
+ --> test/cli/lints/nonstandard_style/f0703_snake.fren:2:46
   |
-3 |     ensure IsHot: hot? iff tempC > 30
-  |            ^^^^^ not in snake_case
+2 | proc TempSensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
+  |                                              ^^^^^ not in snake_case
   |
 help: rename it to `is_hot`
   |
-3 -     ensure IsHot: hot? iff tempC > 30
-3 +     ensure is_hot: hot? iff tempC > 30
+2 - proc TempSensor(tempC: Int): (hot?) { ensure IsHot: hot? iff tempC > 30 }
+2 + proc TempSensor(tempC: Int): (hot?) { ensure is_hot: hot? iff tempC > 30 }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

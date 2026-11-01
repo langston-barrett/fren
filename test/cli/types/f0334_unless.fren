@@ -1,5 +1,3 @@
 -- A pattern test that binds a name in the condition of `unless`, whose body holds where it does not match.
 enum Reply { Empty, Value(Int) }
-proc c(r: Reply): (w: Int) {
-    ensure a: unless r is Reply::Value(v), w = v
-}
+proc c(r: Reply): (w: Int) { ensure a: unless r is Reply::Value(v), w = v }

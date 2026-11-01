@@ -1,5 +1,3 @@
 -- A pattern test's binder that hides an input, without `!`.
 enum Reply { Empty, Value(Int) }
-proc c(r: Reply, v: Int): (w: Int) {
-    ensure a: when r is Reply::Value(v), w = v
-}
+proc c(r: Reply, v: Int): (w: Int) { ensure a: when r is Reply::Value(v), w = v }

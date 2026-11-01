@@ -1,4 +1,4 @@
-swap-comparison-m::d::r-898d007a1649 test/cli/commands/mutate_diff_markdown.md:17:24 `<` changed to `<=`
-shift-integer-m::d::r-5ac3b70ff9a6 test/cli/commands/mutate_diff_markdown.md:17:26 `9` changed to `10`
-shift-integer-m::d::r-3501cc78a3f5 test/cli/commands/mutate_diff_markdown.md:17:26 `9` changed to `8`
+swap-comparison-m::d::r-898d007a1649 test/cli/commands/mutate_diff_markdown.md:14:47 `<` changed to `<=`
+shift-integer-m::d::r-5ac3b70ff9a6 test/cli/commands/mutate_diff_markdown.md:14:49 `9` changed to `10`
+shift-integer-m::d::r-3501cc78a3f5 test/cli/commands/mutate_diff_markdown.md:14:49 `9` changed to `8`
 exit=0

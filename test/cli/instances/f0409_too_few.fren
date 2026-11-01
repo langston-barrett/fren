@@ -1,5 +1,3 @@
 -- A call with too few arguments (F0409).
 proc sub(a: Int, b?, c: Int) {}
-proc c() {
-    call s := sub(1)
-}
+proc c() { call s := sub(1) }

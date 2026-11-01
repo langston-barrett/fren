@@ -23,6 +23,4 @@ proc caller(rows: Seq<Seq<Int>>): (z: Int) {  --~ error: `caller` has a slot who
 -- them.
 type Head = s: Seq<Int> where invariant: s != [] and s[0] > 0
 
-proc user(x: Head): (y: Int) {
-    ensure r: y = x[0]
-}
+proc user(x: Head): (y: Int) { ensure r: y = x[0] }

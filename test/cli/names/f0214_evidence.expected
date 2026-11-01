@@ -7,9 +7,9 @@ error[F0214]: invalid evidence `testing`
   = note: `"random"` has the checks tested on random behaviours instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+random"` tests them too where enumeration is not complete, and `"solver"` is the default
 
 error[F0214]: invalid evidence `tested`
- --> test/cli/names/f0214_evidence.fren:9:26
+ --> test/cli/names/f0214_evidence.fren:7:26
   |
-9 | set_option fren.evidence "tested" in
+7 | set_option fren.evidence "tested" in
   |                          ^^^^^^^^ not `"solver"`, `"random"`, `"enumerated"` or `"enumerated+random"`
   |
   = note: `"random"` has the checks tested on random behaviours instead of asked of the solver, `"enumerated"` has them decided by enumerating behaviours, smallest first, `"enumerated+random"` tests them too where enumeration is not complete, and `"solver"` is the default

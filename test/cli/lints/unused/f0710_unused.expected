@@ -1,7 +1,7 @@
 warning[F0710]: unused variable `spare`
- --> test/cli/lints/unused/f0710_unused.fren:7:20
+ --> test/cli/lints/unused/f0710_unused.fren:5:20
   |
-7 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
+5 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
   |                    ^^^^^ never mentioned
   |
   = note: nothing in its procedure depends on it
@@ -10,9 +10,9 @@ warning[F0710]: unused variable `spare`
   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
 
 warning[F0710]: unused variable `loose?`
- --> test/cli/lints/unused/f0710_unused.fren:7:42
+ --> test/cli/lints/unused/f0710_unused.fren:5:42
   |
-7 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
+5 | pub proc c(x: Int, spare: Int): (y: Int, loose?) {
   |                                          ^^^^^^ never mentioned
   |
   = note: nothing constrains it, so it can take any value

@@ -1,8 +1,8 @@
 error[F0380]: a precondition of `rate` cannot apply `rate`
- --> test/cli/types/f0380_own_precondition.fren:3:19
+ --> test/cli/types/f0380_own_precondition.fren:2:43
   |
-3 |     assume small: rate(n) < 10
-  |                   ^^^^ applied in its own precondition
+2 | fn rate(n: Int): (r: Int) { assume small: rate(n) < 10 }
+  |                                           ^^^^ applied in its own precondition
   |
   = note: a precondition says where the function may be applied, so it cannot depend on the function's value
   = help: state what the value gives in a postcondition, with `ensure`

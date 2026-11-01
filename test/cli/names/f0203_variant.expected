@@ -1,14 +1,14 @@
 error[F0203]: no variant `Hat` in enum `Mode`
- --> test/cli/names/f0203_variant.fren:4:33
+ --> test/cli/names/f0203_variant.fren:3:54
   |
-4 |     ensure r: on? iff m = Mode::Hat
-  |                                 ^^^ not a variant of `Mode`
+3 | proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Hat }
+  |                                                      ^^^ not a variant of `Mode`
   |
   = note: the variants of `Mode` are `Off`, `Heat` and `Cool`
 help: a variant with a similar name exists: `Heat`
   |
-4 -     ensure r: on? iff m = Mode::Hat
-4 +     ensure r: on? iff m = Mode::Heat
+3 - proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Hat }
+3 + proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
   |
 
 error: could not check due to previous errors

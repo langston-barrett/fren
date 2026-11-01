@@ -15,6 +15,4 @@ proc d(q: Seq<Int>): (ok?) {
     ensure r: ok? iff q[0] = 1
 }
 
-proc e(q: Seq<Int>): (ok?) {
-    ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0)
-}
+proc e(q: Seq<Int>): (ok?) { ensure r: ok? iff ((q != [] and q[0] = 1) or q[0] = 0) }

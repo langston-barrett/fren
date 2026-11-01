@@ -1,6 +1,4 @@
 -- A record with named fields built as a newtype.
 pub struct Point { x: Int, y: Int }
 
-proc c(): (p: Point) {
-    ensure r: p = Point(1, 2)
-}
+proc c(): (p: Point) { ensure r: p = Point(1, 2) }

@@ -1,5 +1,3 @@
 -- A pattern test that binds a name as the last operand of a chain of `and` that nothing follows.
 enum Reply { Empty, Value(Int) }
-proc c(r: Reply, b?): (z?) {
-    ensure a: z? iff b? and r is Reply::Value(v)
-}
+proc c(r: Reply, b?): (z?) { ensure a: z? iff b? and r is Reply::Value(v) }

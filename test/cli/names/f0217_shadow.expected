@@ -1,27 +1,27 @@
 error[F0217]: `RATE` shadows the constant `rates::RATE`
   --> test/cli/names/f0217_shadow.fren:11:12
    |
-11 | pub proc c(RATE: Int): (y: Int) {
+11 | pub proc c(RATE: Int): (y: Int) { ensure r: y = RATE }
    |            ^^^^ shadows without `!`
    |
    = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `RATE!`
 help: to shadow the constant `rates::RATE`, write `RATE!`
    |
-11 - pub proc c(RATE: Int): (y: Int) {
-11 + pub proc c(RATE!: Int): (y: Int) {
+11 - pub proc c(RATE: Int): (y: Int) { ensure r: y = RATE }
+11 + pub proc c(RATE!: Int): (y: Int) { ensure r: y = RATE }
    |
 
 error[F0217]: `x` shadows the parameter `x`
-  --> test/cli/names/f0217_shadow.fren:17:23
+  --> test/cli/names/f0217_shadow.fren:15:23
    |
-17 |         Shape::Circle(x) => x > 0,
+15 |         Shape::Circle(x) => x > 0,
    |                       ^ shadows without `!`
    |
    = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `x!`
 help: to shadow the parameter `x`, write `x!`
    |
-17 -         Shape::Circle(x) => x > 0,
-17 +         Shape::Circle(x!) => x > 0,
+15 -         Shape::Circle(x) => x > 0,
+15 +         Shape::Circle(x!) => x > 0,
    |
 
 warning[F0701]: unused import `rates::RATE`

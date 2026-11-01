@@ -158,9 +158,7 @@ proc rows(x: Int): (y: Int, z: Int) {
 }
 
 -- In a global expectation, under its assumptions and calls.
-proc counter(n: Int): (m: Int) {
-    ensure r: m = n + 1
-}
+proc counter(n: Int): (m: Int) { ensure r: m = n + 1 }
 
 expect bigger(c_n: Int) {
     call c := counter(c_n)

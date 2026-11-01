@@ -10,9 +10,7 @@ fn unknown(Int): Int
 
 enum Shape { Square, Circle }
 
-proc severity_of(x: Int): (v: Int) {
-    ensure r: v = x
-}
+proc severity_of(x: Int): (v: Int) { ensure r: v = x }
 
 proc in_order(x: Int, shape: Shape): (y: Int) {
     use self::Shape::Square

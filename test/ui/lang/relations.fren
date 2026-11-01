@@ -66,9 +66,7 @@ proc ids(r: Rel<Int, Int>): (p?) {
 -- A projection that a query reaches only through a definition, which the
 -- script includes, puts the query in higher-order logic too.
 set_option fren.lint.undecidable "allow" in
-fn has_one?(r: Rel<Int, Int>): (b?) {
-    out b? := 1 in r.domain
-}
+fn has_one?(r: Rel<Int, Int>): (b?) { out b? := 1 in r.domain }
 
 set_option fren.lint.undecidable "allow" in
 proc through_definition(r: Rel<Int, Int>): (p?) {

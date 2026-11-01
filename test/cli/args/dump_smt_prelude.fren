@@ -9,9 +9,7 @@
 -- fren-covers: lang::prelude_smt
 pub enum Option!<T> { Nothing, Just(T) }
 
-proc user(x: Option<Int>): (y?) {
-    ensure r: y? iff x = Option::Nothing
-}
+proc user(x: Option<Int>): (y?) { ensure r: y? iff x = Option::Nothing }
 
 mod m
 
