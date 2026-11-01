@@ -21,18 +21,26 @@ def cex : Unit → Fren.Core.Detail := fun _ => .none
 
 -- A value, a test, a pass; or, refuted, a failure.
 #guard deep.eval {} (fun _ => none) == some true
-#guard (({} : Tally).test false true (some true) cex).tests == 1
-#guard verdictOf .expect (({} : Tally).test false true (some true) cex) == .pass
-#guard verdictOf .expect (({} : Tally).test false true (some false) cex) == .fail
+#guard (({} : Tally).test false (some true) (some true) cex).tests == 1
+#guard verdictOf .expect (({} : Tally).test false (some true) (some true) cex) == .pass
+#guard verdictOf .expect (({} : Tally).test false (some true) (some false) cex) == .fail
 -- No value: no test, so no pass, and a test without a value.
-#guard (({} : Tally).test false true none cex).tests == 0
-#guard (({} : Tally).test false true none cex).valueless == 1
-#guard verdictOf .expect (({} : Tally).test false true none cex) == .inconclusive
-#guard (({} : Tally).test false true none cex).unreached 1 == .Valueless
+#guard (({} : Tally).test false (some true) none cex).tests == 0
+#guard (({} : Tally).test false (some true) none cex).valueless == 1
+#guard verdictOf .expect (({} : Tally).test false (some true) none cex) == .inconclusive
+#guard (({} : Tally).test false (some true) none cex).unreached 1 == .Valueless
 -- Nor where the trigger fails, whatever the value.
-#guard (({} : Tally).test true false (some false) cex).tests == 0
-#guard (({} : Tally).test true false none cex).valueless == 0
-#guard (({} : Tally).test true false none cex).unreached 1 == .Untriggered
+#guard (({} : Tally).test true (some false) (some false) cex).tests == 0
+#guard (({} : Tally).test true (some false) none cex).valueless == 0
+#guard (({} : Tally).test true (some false) none cex).unreached 1 == .Untriggered
+-- A trigger without a value does not hold, but it is not false either:
+-- the test is counted as one without a value, whatever the check's.
+#guard (({} : Tally).test true none (some true) cex).tests == 0
+#guard (({} : Tally).test true none (some false) cex).refuted?.isNone
+#guard (({} : Tally).test true none (some true) cex).valueless == 1
+#guard (({} : Tally).test true none none cex).unreached 1 == .Valueless
+-- One false trigger and one without a value: `F0617`, not `F0612`.
+#guard ((({} : Tally).test true (some false) none cex).test true none none cex).unreached 2 == .Valueless
 
 /-- At a tiny fuel, read at run time so that the evaluation is not done
 ahead: `deep` has no value, and a test of it neither refutes nor reaches
@@ -43,7 +51,7 @@ def tinyFuel : IO (Array String) := do
   let fuel := (← IO.monoMsNow) % 1 + 3
   let value := deep.eval {} (fun _ => none) fuel
   unless value.isNone do return #[s!"`deep` has the value {value} at fuel {fuel}"]
-  let t := ({} : Tally).test false true value cex
+  let t := ({} : Tally).test false (some true) value cex
   unless t.tests == 0 && t.valueless == 1 && verdictOf .expect t == .inconclusive do
     return #["a test that ran out of fuel counted toward a pass"]
   return #[]

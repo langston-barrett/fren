@@ -1,0 +1,25 @@
+--@ args: quickcheck
+-- `F0617`, not `F0612`, at checks whose trigger has no value: the search
+-- tries sequences of at most two elements, so `q[7]` is out of range in
+-- every test. A trigger without a value does not hold, but it is not
+-- false either. This covers an expectation, a global expectation and a
+-- call assumption.
+mod m
+
+pub proc c(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q[7] > 0, big?
+}
+
+expect g(a_q: Seq<Int>) {
+    call a := c(a_q)
+    expect g: when a.q[7] > 0, a.big?
+}
+
+pub proc guarded(q: Seq<Int>) {
+    assume seventh: when q[7] > 0, q.len > 7
+}
+
+pub proc user(z: Seq<Int>) {
+    call u := guarded(z)
+}

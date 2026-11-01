@@ -31,10 +31,11 @@ def evalExit (ran complete : Bool) (status? : Option Status) (expectFalse : Bool
   if !ran then 2 else if !complete then 3 else if status? == some .Meets && !expectFalse then 0 else 1
 
 /-- Whether a test that found what a check is about reaches it: where the
-check's trigger, if any, holds, and the check, whose value is `value`, has
-one (`eval::reaches`). -/
-def reached (found hasTrigger trigger : Bool) (value : Option Bool) : Bool :=
-  found && (!hasTrigger || trigger) && value.isSome
+check's trigger, if any, whose value is `trigger`, holds, and the check,
+whose value is `value`, has one (`eval::reaches`). A trigger that has no
+value does not hold. -/
+def reached (found hasTrigger : Bool) (trigger value : Option Bool) : Bool :=
+  found && (!hasTrigger || trigger == some true) && value.isSome
 
 /-- `eval::Unreached`. -/
 inductive Unreached where
@@ -46,7 +47,7 @@ inductive Unreached where
 
 /-- Why testing reached a check, or did not (`eval::unreached`), from the
 tests that found what it is about, those of them in which its trigger, if
-any, held, and those of them in which it had a value. -/
+any, was not false, and those of them in which it had a value. -/
 def unreachedOf (found triggered decided : Nat) : Unreached :=
   if decided > 0 then .Reached
   else if found == 0 then .Untested
@@ -60,13 +61,15 @@ inductive UnreachedWarning where
   | Valueless
   deriving BEq, DecidableEq, Repr
 
-/-- The warning shown at a check that no test reached, `why`
-(`eval::unreached_warning`): beside the procedure's `F0610` (`untested`),
-none but a call assumption's `F0617`. -/
-def unreachedWarning (why : Unreached) (untested callAssumption : Bool) : UnreachedWarning :=
-  if why == .Untriggered && !untested then .Untriggered
-  else if why == .Valueless && (!untested || callAssumption) then .Valueless
-  else .Silent
+/-- The warning shown at a check, from the counts of `unreachedOf`
+(`eval::unreached_warning`): the warning for why no test reached it, but
+beside the procedure's `F0610` (`untested`), none but an assumption's
+`F0617`. -/
+def unreachedWarning (found triggered decided : Nat) (untested assumption : Bool) : UnreachedWarning :=
+  match unreachedOf found triggered decided with
+  | .Untriggered => if untested then .Silent else .Untriggered
+  | .Valueless => if untested && !assumption then .Silent else .Valueless
+  | _ => .Silent
 
 /-- The verdict of testing a check, from whether some test refuted it, how
 many reached it, and, for realizability, whether the search saw every

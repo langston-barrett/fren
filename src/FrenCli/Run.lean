@@ -658,9 +658,17 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     let msg := Fren.Core.untestedMsg subject args.nTests byCheck
     warn msg
     shown := shown.push msg
+    -- At each of its own assumptions that had no value in any input,
+    -- which explains it (`F0617`, `eval::unreached_warning`).
+    for n in rep.valuelessAssumes do
+      let span := ((c.props.find? (·.name == n)).map (·.span)).getD c.span
+      let msg := Fren.Core.valuelessMsg s!"the assumption `{Fren.Core.showComp (c.path ++ n)}`" args.nTests byCheck
+      printDiag args.paint files { file := c.file, span, severity := .warning, msg }
+      shown := shown.push msg
   -- At each check that no test reached, though some found what it is
-  -- about (`eval::unreached`): at its trigger, which held in none of them
-  -- (`F0612`), or at the check, which had a value in none (`F0617`).
+  -- about (`eval::unreached`): at its trigger, which was false in all of
+  -- them (`F0612`), or at the check, which, or whose trigger, had a value
+  -- in none (`F0617`).
   for (r, atTrigger) in (rep.untriggered.filter keep).map (·, true) ++ (rep.valueless.filter keep).map (·, false) do
     let some n := r.prop? | continue
     let (what, span) := match r.kind, r.target? with

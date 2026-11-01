@@ -2224,13 +2224,13 @@ def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : 
     notes := #["note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it",
       testingHelp byCheck "decide it"] }
 
-/-- Testing found what a check is about, with its trigger, if any,
-holding, but the check had no value in any of those tests
+/-- Testing found what a check is about, with its trigger, if any, not
+false, but the trigger or the check had no value in any of those tests
 (`eval::unreached`). -/
 def valuelessMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
   { code? := some "F0617", headline := s!"testing never reached {subject} in {tests} tests: it had no value in any of them"
     label? := some "no value"
-    notes := #["note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it",
+    notes := #["note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it",
       if byCheck then "help: guard the part that has no value, or set `fren.evidence` to `\"solver\"` to have the solver check it"
       else "help: run `fren check` to decide it, or guard the part that has no value"] }
 

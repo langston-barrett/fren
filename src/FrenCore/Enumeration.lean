@@ -622,9 +622,10 @@ structure Atoms where
   one. -/
   defUnknown : Name → Array Nat → Bool := fun _ _ => false
   /-- The `k`th atom's truth in an assignment, `none` where it is not
-  known: `eval` where `known` says that it is. A front end that finds both
-  with one evaluation gives it, so that the search evaluates the atom once
-  rather than twice; `Atoms.truthOf` reads it. -/
+  known: `eval` where `known` says that it is (`Atoms.TruthAgrees`). A
+  front end that finds both with one evaluation gives all three by
+  `Atoms.ofTruth`, so that they agree by construction, and the search
+  evaluates the atom once rather than twice; `Atoms.truthOf` reads it. -/
   truth? : Option (Nat → Array Nat → Option Bool) := none
   /-- Runs a computation that evaluates the atoms, giving its value, which
   is always the computation's: a front end that evaluates them in Lean's
@@ -633,6 +634,27 @@ structure Atoms where
   batch : (Unit → Array Nat) → Array Nat := fun f => f ()
 
 instance : Inhabited Atoms := ⟨{ slots := #[], eval := fun _ _ => false }⟩
+
+/-- Atoms over `slots` whose truth, `none` where it is not known, is
+`truth`: their `eval`, `known` and `truth?` all come from it, so that
+they agree (`Atoms.ofTruth_agrees`). -/
+def Atoms.ofTruth (slots : Array (Array Nat)) (truth : Nat → Array Nat → Option Bool) : Atoms :=
+  { slots, eval := fun k env => truth k env == some true, known := fun k env => (truth k env).isSome
+    truth? := some truth }
+
+/-- `truth?`, where it is given, is `eval` where `known` says the truth is
+known, and `none` elsewhere, so that reading it (`Atoms.truthOf`) agrees
+with reading those two, as the search and its proofs do. -/
+def Atoms.TruthAgrees (ats : Atoms) : Prop :=
+  ∀ f, ats.truth? = some f → ∀ k env, f k env = if ats.known k env then some (ats.eval k env) else none
+
+theorem Atoms.ofTruth_agrees (slots : Array (Array Nat)) (truth : Nat → Array Nat → Option Bool) :
+    (Atoms.ofTruth slots truth).TruthAgrees := by
+  intro f h k env
+  simp only [Atoms.ofTruth, Option.some.injEq] at h
+  subst h
+  simp only [Atoms.ofTruth]
+  rcases truth k env with _ | _ | _ <;> rfl
 
 /-- `f ()`, run by `Atoms.batch`. -/
 def Atoms.within (ats : Atoms) (f : Unit → Bool) : Bool :=
@@ -652,6 +674,15 @@ def Atoms.withinOption (ats : Atoms) (f : Unit → Option (Array Nat)) : Option 
   match ats.truth? with
   | some f => f k env
   | none => if ats.known k env then some (ats.eval k env) else none
+
+/-- Where `truth?` agrees with `eval` and `known`, as `Atoms.ofTruth`
+makes it, `truthOf` reads what they say. -/
+theorem Atoms.truthOf_of_agrees (ats : Atoms) (h : ats.TruthAgrees) (k : Nat) (env : Array Nat) :
+    ats.truthOf k env = if ats.known k env then some (ats.eval k env) else none := by
+  unfold Atoms.truthOf
+  split
+  · next f hf => exact h f hf k env
+  · rfl
 
 def Space.slotOf? (sp : Space) (n : Name) : Option Nat := sp.names.idxOf? n
 

@@ -1291,10 +1291,9 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
         ++ (used.zip fslots).filterMap fun ((_, x, _, _), f) => if a.containsFVar x.fvarId! then some f.slot else none
     let atomSlots := atoms.map slotsOf
     let atomDefs := atoms0.map fun a => defined.filterMap fun (d, fv, _) => if a.containsFVar fv.fvarId! then some d else none
-    let ats : Atoms := {
-      slots := atomSlots, defs := atomDefs, eval := fun k env => evals[k]! env == some true
-      known := fun k env => (evals[k]! env).isSome
-      truth? := some fun k env => evals[k]! env
+    -- `eval`, `known` and `truth?` from one evaluation (`Atoms.ofTruth`).
+    let ats : Atoms := { Atoms.ofTruth atomSlots fun k env => evals[k]! env with
+      defs := atomDefs
       batch := compiled.batch
       total := !quantified
       sameDefined := fun d e₁ e₂ => match defined.findIdx? (·.1 == d) with

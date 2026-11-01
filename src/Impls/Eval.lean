@@ -51,15 +51,15 @@ impl eval_exit_code: eval::eval_exit for (ran complete : Bool) (s : Option Statu
   intro ran complete s ef _
   cases ran <;> cases complete <;> cases ef <;> rcases s with _ | _ | _ | _ <;> decide
 
-impl reaches_check: eval::reaches for (f h t : Bool) (v : Option Bool) {
+impl reaches_check: eval::reaches for (f h : Bool) (t v : Option Bool) {
   found? := f,
   has_trigger? := h,
-  trigger? := t,
+  trigger := t,
   value := v,
   reached? := reached f h t v,
 } by
   intro f h t v _
-  cases f <;> cases h <;> cases t <;> rcases v with _ | _ | _ <;> decide
+  cases f <;> cases h <;> rcases t with _ | _ | _ <;> rcases v with _ | _ | _ <;> decide
 
 def toUnreached : Unreached → eval.Unreached
   | .Reached => .Reached
@@ -74,15 +74,6 @@ def toUnreachedWarning : UnreachedWarning → eval.UnreachedWarning
 
 instance : Fren.Finite Unreached := ⟨[.Reached, .Untested, .Untriggered, .Valueless], by intro x; cases x <;> simp⟩
 
-impl unreached_warning_of: eval::unreached_warning for (w : Unreached) (u c : Bool) {
-  why := toUnreached w,
-  untested? := u,
-  call_assumption? := c,
-  shown := toUnreachedWarning (unreachedWarning w u c),
-} by
-  intro w u c _
-  cases w <;> cases u <;> cases c <;> decide
-
 -- Over the numbers of tests: only which are zero matters.
 impl unreached_of: eval::unreached for (f t d : Nat) {
   found := f,
@@ -94,6 +85,22 @@ impl unreached_of: eval::unreached for (f t d : Nat) {
   simp only [fren_spec, unreachedOf, toUnreached] at *
   rcases Nat.eq_zero_or_pos d with hd | hd <;> rcases Nat.eq_zero_or_pos f with hf | hf <;>
     rcases Nat.eq_zero_or_pos t with ht | ht <;> simp_all [Nat.pos_iff_ne_zero] <;> omega
+
+-- From the impl of its call: only why no test reached the check matters.
+impl unreached_warning_of: eval::unreached_warning for (f t d : Nat) (un c : Bool) {
+  found := f,
+  triggered := t,
+  decided := d,
+  untested? := un,
+  assumption? := c,
+  shown := toUnreachedWarning (unreachedWarning f t d un c),
+} by
+  intro f t d un c h
+  have hu := unreached_of f t d h
+  simp only [fren_spec] at *
+  refine ⟨f, t, d, toUnreached (unreachedOf f t d), ?_, ⟨rfl, rfl, rfl⟩, h, hu⟩
+  simp only [unreachedWarning]
+  cases unreachedOf f t d <;> cases un <;> cases c <;> decide
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.
