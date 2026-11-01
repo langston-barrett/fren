@@ -3201,13 +3201,15 @@ open Lang in
 /-- How `e` is written, for whether it is written as a sequence
 (`Core.WrittenShape`), as the `fren` command's `writtenShape` reads it. -/
 partial def writtenShape (e : Syntax) : Core.WrittenShape :=
+  if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then .parenthesized (writtenShape e[1]) else
   let e := unparen e
   if e.isOfKind ``Lang.seqExpr then .seqLiteral
-  else if isMatchLike e then .sharedParts ((matchSourceArms e).toList.map (writtenShape ·[3]))
-  else if e.isOfKind ``Lang.letExpr then .sharedParts [writtenShape e[3]]
-  else if e.isOfKind ``Lang.tableExpr then .sharedParts (e[2].getSepArgs.toList.map (writtenShape ·[3]))
+  else if isMatchLike e then .match ((matchSourceArms e).toList.map (writtenShape ·[3]))
+  else if e.isOfKind ``Lang.letExpr then .let (writtenShape e[3])
+  else if e.isOfKind ``Lang.tableExpr then .table (e[2].getSepArgs.toList.map (writtenShape ·[3]))
   else match e with
-    | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => .sharedParts [writtenShape a, writtenShape b]
+    | `(fren_expr| $a ++ $b) => .concat (writtenShape a) (writtenShape b)
+    | `(fren_expr| if $_ then $a else $b) => .conditional (writtenShape a) (writtenShape b)
     | _ => .other
 
 /-- Whether `e` is written as a sequence, so that the right of `in` is
@@ -3631,7 +3633,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- Each body is checked against the whole's type, or the arms' so far,
     -- as the `fren` command does: one that does not synthesize its own,
     -- before any has given one, waits for a later arm that does.
-    let shared? := Core.ExprSite.armBody.expected expected? (if expected?.isSome then none else armsTy?)
+    let shared? := Core.ExprSite.armBody.expected expected? armsTy?
     armInfo := armInfo.push (acx, new, shared?)
     if shared?.isNone && !(← synthesizes cx arm[3]) && (← arms.anyM (synthesizes cx ·[3])) then
       waiting := waiting.push (bodies.size, acx, arm[3])
@@ -3641,7 +3643,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     armsTy? ← armType cx armsTy? arm[3] body shared?
     bodies := bodies.push body
   for (k, acx, b) in waiting do
-    let shared? := Core.ExprSite.armBody.expected none armsTy?
+    let shared? := Core.ExprSite.armBody.expected expected? armsTy?
     armInfo := armInfo.modify k fun (c, n, _) => (c, n, shared?)
     let body ← toTerm { acx with expected? := shared? } b
     if armsTy?.isSome then armsTy? ← armType cx armsTy? b body shared?
@@ -4169,14 +4171,14 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- (`lang::operator_type`, `lang::ordered_type`, `lang::newtype_operator`).
   -- The right is expected to have the left's type, and the left the
   -- right's, if only the right synthesizes one (`lang::checked`).
-  let x ← toTerm { cx with expected? := ← orderingExpected? toTerm cx #[a, b] } a
+  let x ← toTerm { cx with expected? := Core.ExprSite.comparedOperand.expected none (← orderingExpected? toTerm cx #[a, b]) } a
   let tx? ← frenTypeOf? x
   let st ← getState
   let info? := st.enumOf? (← typeOf x)
   let operandTy : Core.Ty ← match tx? with
     | some tx => liftMsg a (Core.orderingType op tx st.orderedDecl)
     | none => pure .int
-  let y ← toTerm { cx with expected? := some operandTy } b
+  let y ← toTerm { cx with expected? := Core.ExprSite.comparedOperand.expected none (some operandTy) } b
   checkNewtypeOp op tx? (← frenTypeOf? y)
   checkTermType b y operandTy (Core.opNote op operandTy)
   -- For the lints of integers, at the end of the expression: what it compares.
@@ -4212,7 +4214,7 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     TermElabM Term := withRef e do
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
-  let mut x ← toTerm { cx with expected? := ← orderingExpected? toTerm cx xs } xs[0]!
+  let mut x ← toTerm { cx with expected? := Core.ExprSite.comparedOperand.expected none (← orderingExpected? toTerm cx xs) } xs[0]!
   -- A value of an ordered type, a `Nat` widened, and every operand the
   -- first's type, which each is expected to have (`lang::checked`), as the
   -- `fren` command checks (`lang::operator_type`, `lang::ordered_type`,
@@ -4233,7 +4235,7 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
-    let y ← toTerm { cx with guards := cx.guards ++ links, expected? := t0? } b
+    let y ← toTerm { cx with guards := cx.guards ++ links, expected? := Core.ExprSite.comparedOperand.expected none t0? } b
     -- A node's position is its first token's, and its tail its last's, so
     -- this one spans the comparison, from `a` to `b`, for its messages.
     let link := mkNullNode #[a, opStx, b]
@@ -4269,19 +4271,20 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- Each operand is checked against the whole's type, or the other's
   -- (`lang::checked`), as in the `fren` command: `[] ++ q` takes its type
   -- from `q`, translated first without recording anything.
-  let expected? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then
+  let sibling? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then
       let s ← saveState
       let t? ← frenTypeOf? (← toTerm { cx with noteIndexes := false } b)
       s.restore
       pure t?
-    else pure expected?
-  let x ← toTerm { cx with concatOk := true, emptyOk := Core.ExprSite.concatOperand.checked cx.emptyOk (← synthesizes cx b), expected? } a
+    else pure none
+  let x ← toTerm { cx with concatOk := true, emptyOk := Core.ExprSite.concatOperand.checked cx.emptyOk (← synthesizes cx b),
+                           expected? := Core.ExprSite.concatOperand.expected expected? sibling? } a
   unless (← getState).newtypes.isEmpty || !(← synthesizes cx a) do
     let tx? ← frenTypeOf? x
     checkNewtypeOp "++" tx? tx?
   -- Sequences: outside the core, unless constant.
   if (← typeOf x).isAppOfArity ``Fren.Seq 1 then
-    let y ← toTerm { cx with emptyOk := Core.ExprSite.concatOperand.checked cx.emptyOk (← synthesizes cx a), expected? := ← frenTypeOf? x } b
+    let y ← toTerm { cx with emptyOk := Core.ExprSite.concatOperand.checked cx.emptyOk (← synthesizes cx a), expected? := Core.ExprSite.concatOperand.expected none (← frenTypeOf? x) } b
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg b (Core.checkConcatOperands tx ty)
     checkCore cx e .seqWord true true #[a, b] (← isConstant cx e)
     return ← `(($x ++ $y : $(typeSyntax (← typeOf x))))
@@ -4716,7 +4719,7 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let others := (rows.eraseIdx! k).map (·[3])
     let emptyOk := Core.ExprSite.rowValue.checked cx.emptyOk (← anySynthesizes cx others)
     let vcx := { cx with guards := before ++ own, emptyOk }
-    let shared? := Core.ExprSite.rowValue.expected cx.expected? (if cx.expected?.isSome then none else rowsTy?)
+    let shared? := Core.ExprSite.rowValue.expected cx.expected? rowsTy?
     if shared?.isNone && !(← synthesizes cx r[3]) && (← rows.anyM (synthesizes cx ·[3])) then
       waiting := waiting.push (k, vcx, r[3])
       values := values.push (← `(sorry))
@@ -4725,7 +4728,7 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     if let some t ← frenTypeOf? v then rowsTy? := some ((rowsTy?.map (·.join t)).getD t)
     values := values.push v
   for (k, vcx, v) in waiting do
-    values := values.set! k (← toTerm { vcx with expected? := Core.ExprSite.rowValue.expected none rowsTy? } v)
+    values := values.set! k (← toTerm { vcx with expected? := Core.ExprSite.rowValue.expected cx.expected? rowsTy? } v)
   -- Each value has the type of those before it (`Core.checkRowType`).
   let mut t0? : Option Core.Ty := none
   for r in rows, v in values do
@@ -5158,7 +5161,8 @@ def cardinalityTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprC
     let lit := unparen a
     if (lit.isOfKind ``Lang.setExpr || lit.isOfKind ``Lang.seqExpr) && lit[1].getSepArgs.isEmpty then
       throwErrorAt lit (Core.cardinalityArgMsg c (k + 1) (if lit.isOfKind ``Lang.setExpr then "{}" else "[]")).text
-    let t ← toTerm { cx with emptyOk := false, natOk := false } a
+    let t ← toTerm { cx with emptyOk := Core.ExprSite.countArgument.checked false false, natOk := false,
+                             expected? := Core.ExprSite.countArgument.expected none none } a
     let ty ← typeOf t
     unless ty.isConstOf ``Bool || ty.isProp do throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (← typeName ty)).text
     ites := ites.push (← `(if $t then (1 : Int) else 0))

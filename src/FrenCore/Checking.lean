@@ -43,7 +43,7 @@ def Position.checked : Position → (expected sibling : Bool) → Bool
 /-- A place where an expression is written, as both front ends classify
 their syntax (`lang::checked`). -/
 inductive ExprSite where
-  /-- A binding `x := e` of a call, or an argument of a refinement. -/
+  /-- An argument or binding `x := e` of a call, or an argument of a refinement. -/
   | binding
   /-- A field of a record literal or of a record update. -/
   | recordField
@@ -115,6 +115,8 @@ inductive ExprSite where
   | untypedDefinition
   /-- The body of a closure whose result type is not known. -/
   | untypedClosureBody
+  /-- An argument of `exactly_one?` or `at_most_one?`. -/
+  | countArgument
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- The position of an expression written at `s` (`lang::checked`). -/
@@ -126,7 +128,7 @@ def ExprSite.position : ExprSite → Position
   | .letBody | .pairMember => .shared
   | .comparedOperand | .subsetOperand | .membershipRight => .compared
   | .membershipLeft | .joinOperand | .stringOperand | .methodArgument | .receiver | .scrutinee | .armGuard
-  | .rowCondition | .updatedRecord | .untypedDefinition | .untypedClosureBody => .synthesized
+  | .rowCondition | .updatedRecord | .untypedDefinition | .untypedClosureBody | .countArgument => .synthesized
 
 /-- Whether an expression at `s` is checked against a type, from whether the
 expression it is a part of is (`expected`), and whether another of the parts
@@ -140,18 +142,27 @@ shares its type or is compared with it, if that one synthesizes it
 sibling's, widened, unless a `Nat` is expected of the whole, and otherwise
 the whole's; for a compared one, the other operand's; and none for a
 synthesized one. It is given exactly where `Position.checked` holds
-(`expected_isSome`). The bodies of a `match`'s arms and the values of a
-table's rows take the whole's type first: their callers pass the arms or
-rows before them as `sibling` only where no type is expected of the whole
-(a checklist item of #545 is whether the other shared parts should too). -/
+(`expected_isSome`). `ExprSite.expected` gives the bodies of a `match`'s
+arms and the values of a table's rows the whole's type first. -/
 def Position.expected : Position → (whole sibling : Option Ty) → Option Ty
   | .declared, whole, _ => whole
   | .shared, whole, sibling => if whole == some .nat then whole else (sibling.map Ty.widen).orElse fun _ => whole
   | .compared, _, sibling => sibling
   | .synthesized, _, _ => none
 
-/-- The type expected of an expression at `s` (`Position.expected`). -/
-def ExprSite.expected (s : ExprSite) (whole sibling : Option Ty) : Option Ty := s.position.expected whole sibling
+/-- Whether a part at `s` takes the type of the whole before that of the
+parts beside it: the body of a `match`'s arm and the value of a table's
+row, which `sibling` gives the type of the arms or rows before it
+(`lang::expected_type`). Whether the other shared parts should too is a
+checklist item of #545. -/
+def ExprSite.wholeFirst : ExprSite → Bool
+  | .armBody | .rowValue => true
+  | _ => false
+
+/-- The type expected of an expression at `s` (`Position.expected`), the
+whole's first where `ExprSite.wholeFirst` says so (`lang::expected_type`). -/
+def ExprSite.expected (s : ExprSite) (whole sibling : Option Ty) : Option Ty :=
+  if s.wholeFirst then whole.orElse fun _ => sibling.map Ty.widen else s.position.expected whole sibling
 
 /-- A type is expected of an expression exactly where it is checked, given
 a declared type where one is declared. -/
@@ -198,12 +209,23 @@ def TypeShape.allGiven : List (List TypeShape) → Bool
 end
 
 /-- How an expression is written, for whether the right of `in` is checked
-against a sequence (`lang::written_sequence`): a sequence literal; one
-whose type is that of its shared parts, as a `++`, a conditional, a
-`match`, a table, a `let` or parentheses; or any other. -/
+against a sequence (`lang::written_sequence`): a sequence literal, one of
+the forms whose type is that of their shared parts, with those parts, or
+any other. -/
 inductive WrittenShape where
   | seqLiteral
-  | sharedParts (parts : List WrittenShape)
+  /-- `a ++ b`. -/
+  | concat (a b : WrittenShape)
+  /-- `if c then a else b`. -/
+  | conditional (a b : WrittenShape)
+  /-- A `match`, with the bodies of its arms. -/
+  | «match» (arms : List WrittenShape)
+  /-- A table, with the values of its rows. -/
+  | table (rows : List WrittenShape)
+  /-- A `let`, with its body. -/
+  | «let» (body : WrittenShape)
+  /-- `(e)`. -/
+  | parenthesized (e : WrittenShape)
   | other
   deriving Inhabited, Repr
 
@@ -213,7 +235,9 @@ sequence literal, or one of its shared parts is written as one
 (`lang::written_sequence`). -/
 def WrittenShape.sequence : WrittenShape → Bool
   | .seqLiteral => true
-  | .sharedParts ps => WrittenShape.anySequence ps
+  | .concat a b | .conditional a b => a.sequence || b.sequence
+  | .match ps | .table ps => WrittenShape.anySequence ps
+  | .let e | .parenthesized e => e.sequence
   | .other => false
 
 /-- Whether one of `ps` is written as a sequence. -/

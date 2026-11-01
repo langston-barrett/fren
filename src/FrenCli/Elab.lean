@@ -3359,15 +3359,16 @@ def elabConstruction (elabValue : ExprCtx → Expr → M (String × Ty)) (site :
   return (smts, args)
 
 /-- How `e` is written, for whether it is written as a sequence
-(`Fren.Core.WrittenShape`): a sequence literal, or a `++`, a conditional, a
-`match`, a table or a `let`, whose shared parts are read in turn. -/
+(`Fren.Core.WrittenShape`). Parentheses are not kept in an `Expr`, so
+none is `WrittenShape.parenthesized`. -/
 partial def writtenShape : Expr → Fren.Core.WrittenShape
   | .seq .. => .seqLiteral
-  | .bin _ "++" a b | .ite _ _ a b => .sharedParts [writtenShape a, writtenShape b]
-  | .match _ _ arms _ => .sharedParts (arms.toList.map (writtenShape ·.2.2))
-  | .matches _ _ arms _ => .sharedParts (arms.toList.map (writtenShape ·.2.2))
-  | .«let» _ _ body _ => .sharedParts [writtenShape body]
-  | .table _ rows => .sharedParts (rows.toList.map (writtenShape ·.2.2))
+  | .bin _ "++" a b => .concat (writtenShape a) (writtenShape b)
+  | .ite _ _ a b => .conditional (writtenShape a) (writtenShape b)
+  | .match _ _ arms _ => .match (arms.toList.map (writtenShape ·.2.2))
+  | .matches _ _ arms _ => .match (arms.toList.map (writtenShape ·.2.2))
+  | .«let» _ _ body _ => .let (writtenShape body)
+  | .table _ rows => .table (rows.toList.map (writtenShape ·.2.2))
   | _ => .other
 
 /-- Whether `e` is written as a sequence, so that the right of `in` is
@@ -4844,7 +4845,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
         -- `{}` and `[]` are never `Bool`s.
         if a matches .set _ #[] | .seq _ #[] then
           err a.span (Fren.Core.cardinalityArgMsg c (k + 1) (if a matches .set .. then "{}" else "[]"))
-        let (x, ta) ← elabExpr { cx with expected? := some .bool } a
+        let (x, ta) ← elabExpr { cx with expected? := Fren.Core.ExprSite.countArgument.expected none none } a
         unless ta == .bool do err a.span (Fren.Core.cardinalityArgMsg c (k + 1) ta.show)
         ites := ites.push s!"(ite {x} 1 0)"
       let count := if ites.size == 1 then ites[0]! else s!"(+ {" ".intercalate ites.toList})"
@@ -5439,9 +5440,8 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     -- other has given a type, waits for a later one that does.
     let bcx := { gcx with guards := armGuards ++ g?.toArray }
     -- Another arm's `Nat` is widened: a `Nat` is expected only of the whole.
-    -- The arms before it give it their type only where none is expected of
-    -- the whole.
-    let shared? := Fren.Core.ExprSite.armBody.expected expected? (if expected?.isSome then none else ty?)
+    -- The whole's type comes before the arms' (`ExprSite.wholeFirst`).
+    let shared? := Fren.Core.ExprSite.armBody.expected expected? ty?
     if shared?.isNone && !(← synthesizes cx body) && (← arms.anyM (synthesizes cx ·.2.2)) then
       waiting := waiting.push (bodies.size, bcx, body)
       bodies := bodies.push ""
@@ -5450,7 +5450,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
     bodies := bodies.push x
   for (k, bcx, body) in waiting do
-    let (x, t) ← elabExpr { bcx with expected? := Fren.Core.ExprSite.armBody.expected none ty? } body
+    let (x, t) ← elabExpr { bcx with expected? := Fren.Core.ExprSite.armBody.expected expected? ty? } body
     if ty?.isSome then ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
     bodies := bodies.set! k x
   let ty := ty?.get!
@@ -5511,7 +5511,7 @@ partial def elabTableExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     -- Each value is checked against the whole's type, or another's
     -- (`lang::checked`), as a `match` arm's body is.
     let vcx := { cx with guards := before ++ own }
-    let shared? := Fren.Core.ExprSite.rowValue.expected expected? (if expected?.isSome then none else ty?)
+    let shared? := Fren.Core.ExprSite.rowValue.expected expected? ty?
     if shared?.isNone && !(← synthesizes cx v) && (← rows.anyM (synthesizes cx ·.2.2)) then
       waiting := waiting.push (values.size, vcx, v)
       values := values.push ""
@@ -5522,7 +5522,7 @@ partial def elabTableExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     ty? := some ((ty?.map (·.join t)).getD t)
     values := values.push x
   for (k, vcx, v) in waiting do
-    let (x, t) ← elabExpr { vcx with expected? := Fren.Core.ExprSite.rowValue.expected none ty? } v
+    let (x, t) ← elabExpr { vcx with expected? := Fren.Core.ExprSite.rowValue.expected expected? ty? } v
     if let some t0 := ty? then
       liftMsg v.span (Fren.Core.checkRowType t0 t)
     ty? := ty?.map (·.join t)

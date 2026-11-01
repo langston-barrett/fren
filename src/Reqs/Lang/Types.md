@@ -167,7 +167,7 @@ pub fn widened(Ty): Ty
 
 This is the rule wherever a type is declared: an argument of a function
 application, a value of a variant's payload, a field of a record literal
-or of a record update, an argument of a call, a binding of a refinement, a
+or of a record update, an argument of a call, an argument of a refinement, a
 definition of a result or `let` variable, a constant's value, and a defined function's
 body. An assumption, guarantee, expectation or cover goal, and a global
 expectation, is declared a `Bool`. An expression that is not accepted is
@@ -850,13 +850,13 @@ wherever an expression must synthesize its type.
 Where an expression is written decides whether it is checked:
 
 - **Declared.** It is checked against a type that is declared: an
-  argument of a call, a binding of a refinement, a field of a record literal or of a
+  argument of a call, an argument of a refinement, a field of a record literal or of a
   record update, the value of a [newtype](Items.md#newtypes), as in
   `Ms(e)`, an argument of a function application, a variant's payload,
   an argument of a sequence's method, the argument of an enumeration's or
   record's `min` or `max`, against the receiver's type, a defined
   output's definition, a defined function's body (against its result
-  type), a constant's value, and a definition of a [`let` or
+  type), a constant's value, a definition of a [`let` or
   `where`](Let.md) whose type is written, and the body of a
   [closure](HigherOrder.md) whose result type is known. A function block's `out` is a
   defined output's definition, and is checked against the result type too.
@@ -885,10 +885,10 @@ Where an expression is written decides whether it is checked:
   the guard of a `match` arm, the condition of a table's row, the right of
   `++` on strings, the updated value of a record update, a definition of a
   `let` or `where` whose type is not written, the body of a closure whose
-  result type is not known, and every part that `ExprSite` below does not
-  list, such as an operand of arithmetic, the sequence that is indexed,
-  its index, and an argument of `exactly_one?` or `at_most_one?`, it
-  synthesizes its type.
+  result type is not known, an argument of `exactly_one?` or
+  `at_most_one?`, and every part that `ExprSite` below does not list, such
+  as an operand of arithmetic, the sequence that is indexed and its index,
+  it synthesizes its type.
 
 `lang::checked` states this, from where an expression is written, one of
 the sites of `ExprSite`, whether the expression it is a part of is checked,
@@ -907,7 +907,7 @@ pub enum Position { Declared, Shared, Compared, Synthesized }
 -- Where an expression is written: the sites that the front ends classify.
 -- Every other part synthesizes its type.
 pub enum ExprSite {
-    Binding,                -- a binding `x := e` of a call, or an argument of a refinement
+    Binding,                -- an argument or binding `x := e` of a call, or an argument of a refinement
     RecordField,            -- a field of a record literal or of a record update
     NewtypeValue,           -- the value of a newtype, as `e` in `Ms(e)`
     FunctionArgument,       -- an argument of a function application
@@ -942,6 +942,15 @@ pub enum ExprSite {
     UpdatedRecord,          -- the updated value of a record update
     UntypedDefinition,      -- a definition of a `let` or `where` whose type is not written
     UntypedClosureBody,     -- the body of a closure whose result type is not known
+    CountArgument,          -- an argument of `exactly_one?` or `at_most_one?`
+}
+
+-- The position of an expression written at `site`.
+pub fn site_position(site: ExprSite): Position := match site {
+    ExprSite::Binding | ExprSite::RecordField | ExprSite::NewtypeValue | ExprSite::FunctionArgument | ExprSite::Payload | ExprSite::SeqMethodArgument | ExprSite::OrderedMethodArgument | ExprSite::OutputDefinition | ExprSite::FunctionBody | ExprSite::ConstantValue | ExprSite::TypedDefinition | ExprSite::TypedClosureBody => Position::Declared,
+    ExprSite::SetOperand | ExprSite::ConcatOperand | ExprSite::Branch | ExprSite::ArmBody | ExprSite::RowValue | ExprSite::Element | ExprSite::Parenthesized | ExprSite::LetBody | ExprSite::PairMember => Position::Shared,
+    ExprSite::ComparedOperand | ExprSite::SubsetOperand | ExprSite::MembershipRight => Position::Compared,
+    ExprSite::MembershipLeft | ExprSite::JoinOperand | ExprSite::StringOperand | ExprSite::CountArgument | ExprSite::MethodArgument | ExprSite::Receiver | ExprSite::Scrutinee | ExprSite::ArmGuard | ExprSite::RowCondition | ExprSite::UpdatedRecord | ExprSite::UntypedDefinition | ExprSite::UntypedClosureBody => Position::Synthesized,
 }
 
 set_option fren.evidence "enumerated" in
@@ -950,56 +959,10 @@ pub proc checked(
     expected?,          -- the expression it is a part of is checked against a type
     sibling?,           -- another part that shares its type synthesizes one
 ): (det position: Position, det checked?) {
-    use self::ExprSite::{
-        ArmBody,
-        ArmGuard,
-        Binding,
-        Branch,
-        ComparedOperand,
-        ConcatOperand,
-        ConstantValue,
-        Element,
-        FunctionArgument,
-        FunctionBody,
-        JoinOperand,
-        LetBody,
-        MembershipLeft,
-        MembershipRight,
-        MethodArgument,
-        NewtypeValue,
-        OrderedMethodArgument,
-        OutputDefinition,
-        PairMember,
-        Parenthesized,
-        Payload,
-        Receiver,
-        RecordField,
-        RowCondition,
-        RowValue,
-        Scrutinee,
-        SeqMethodArgument,
-        SetOperand,
-        StringOperand,
-        SubsetOperand,
-        TypedClosureBody,
-        TypedDefinition,
-        UntypedClosureBody,
-        UntypedDefinition,
-        UpdatedRecord,
-    }
+    use self::ExprSite::{FunctionBody, TypedDefinition, UntypedDefinition}
     use self::Position::{Compared, Declared, Shared, Synthesized}
 
-    ensure classified: position = match site {
-        Binding | RecordField | NewtypeValue | FunctionArgument | Payload | SeqMethodArgument
-        | OrderedMethodArgument | OutputDefinition | FunctionBody | ConstantValue
-        | TypedDefinition | TypedClosureBody => Declared,
-        SetOperand | ConcatOperand | Branch | ArmBody | RowValue | Element | Parenthesized
-        | LetBody | PairMember => Shared,
-        ComparedOperand | SubsetOperand | MembershipRight => Compared,
-        MembershipLeft | JoinOperand | StringOperand | MethodArgument | Receiver | Scrutinee
-        | ArmGuard | RowCondition | UpdatedRecord | UntypedDefinition
-        | UntypedClosureBody => Synthesized,
-    }
+    ensure classified: position = site_position(site)
     ensure rule: checked? iff match position {
         Declared => true,
         Shared => expected? or sibling?,
@@ -1071,41 +1034,46 @@ type, or a sequence of it if it is written as one, or a relation of a
 pair's members' types. A `Nat` is widened to an `Int` in all of these, unless
 a `Nat` is expected of the whole.
 
-`lang::expected_type` states the type expected of a part at each
-position, from the type declared or expected of the whole, if any, and the
-type of a part it shares its type with or is compared with, if that one
-synthesizes it. Where none is expected, `typed?` is false and `expected`
-is the whole's, whatever it is. The bodies of a `match`'s arms and the
-values of a table's rows take the whole's type before those of the arms
-or rows before them: they give it a sibling only where the whole has none.
+`lang::expected_type` states the type expected of a part at each site,
+from the type declared or expected of the whole, if any, and the type of a
+part it shares its type with or is compared with, if that one synthesizes
+it. Where none is expected, `typed?` is false and `expected` is the
+whole's, whatever it is. The bodies of a `match`'s arms and the values of
+a table's rows take the whole's type before that of the arms or rows
+before them, which are their sibling; the other shared parts take the
+sibling's first.
 
 ```fren
 pub proc expected_type(
-    position: Position,
+    site: ExprSite,
     whole?,             -- a type is declared or expected of the whole
     whole: Ty,          -- that type
     sibling?,           -- a part that shares its type, or the other operand, synthesizes one
     sibling: Ty,        -- that type
 ): (det typed?, det expected: Ty) {
+    use self::ExprSite::{ArmBody, RowValue}
     use self::Position::{Compared, Declared, Shared, Synthesized}
     use self::ValueType::NatTy
 
-    ensure typed: typed? iff match position {
+    ensure typed: typed? iff match site_position(site) {
         Declared => whole?,
         Shared => whole? or sibling?,
         Compared => sibling?,
         Synthesized => false,
     }
-    ensure rule: expected = match position {
+    ensure rule: expected = match site_position(site) {
         Declared => whole,
-        Shared => if whole? and kind(whole) = NatTy then whole else if sibling? then widened(sibling) else whole,
+        Shared => if whole? and (kind(whole) = NatTy or (site is ArmBody | RowValue)) then whole
+            else if sibling? then widened(sibling) else whole,
         Compared => if sibling? then sibling else whole,
         Synthesized => whole,
     }
 
-    expect declared_wins: when position = Declared, expected = whole
-    expect nat_whole: when position = Shared and whole? and kind(whole) = NatTy, expected = whole
-    expect sibling_first: when position = Shared and sibling? and kind(whole) != NatTy, expected = widened(sibling)
+    expect declared_wins: when site_position(site) = Declared, expected = whole
+    expect nat_whole: when site_position(site) = Shared and whole? and kind(whole) = NatTy, expected = whole
+    expect arms_whole_first: when (site is ArmBody | RowValue) and whole?, expected = whole
+    expect sibling_first: when site_position(site) = Shared and not (site is ArmBody | RowValue) and sibling?
+        and kind(whole) != NatTy, expected = widened(sibling)
 }
 ```
 
@@ -1119,26 +1087,38 @@ expression is written and how many of its shared parts are written as
 sequences.
 
 ```fren
--- `SeqLiteral` is a sequence literal; `SharedParts` is an expression whose
--- type is that of its shared parts; `Other` is any other.
-pub enum WrittenShape { SeqLiteral, SharedParts, Other }
+-- How an expression is written: a sequence literal, each form whose type
+-- is that of its shared parts, or any other.
+pub enum WrittenShape {
+    SeqLiteral,         -- `[a, b]` or `[]`
+    Concat,             -- `a ++ b`, whose parts are its operands
+    Conditional,        -- `if c then a else b`, whose parts are its branches
+    Match,              -- a `match`, whose parts are its arms' bodies
+    Table,              -- a table, whose parts are its rows' values
+    Let,                -- a `let`, whose part is its body
+    Parenthesized,      -- `(e)`, whose part is `e`
+    Other,
+}
 
 pub proc written_sequence(
     shape: WrittenShape,
     parts: Nat,              -- how many shared parts it has
     sequences: Nat,          -- how many of them are written as sequences
 ): (det sequence?) {
-    use self::WrittenShape::{Other, SeqLiteral, SharedParts}
+    use self::WrittenShape::{Concat, Conditional, Let, Other, Parenthesized, SeqLiteral}
 
     assume counted: sequences <= parts
+    assume no_parts: when shape is SeqLiteral | Other, parts = 0
+    assume two_parts: when shape is Concat | Conditional, parts = 2
+    assume one_part: when shape is Let | Parenthesized, parts = 1
 
     ensure rule: sequence? iff match shape {
         SeqLiteral => true,
-        SharedParts => sequences > 0,
         Other => false,
+        _ => sequences > 0,
     }
 
-    expect one_part_suffices: when shape = SharedParts and sequences > 0, sequence?
+    expect one_part_suffices: when sequences > 0, sequence?
 }
 ```
 

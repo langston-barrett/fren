@@ -141,6 +141,7 @@ def toExprSite : Fren.Core.ExprSite → lang.ExprSite
   | .updatedRecord => .UpdatedRecord
   | .untypedDefinition => .UntypedDefinition
   | .untypedClosureBody => .UntypedClosureBody
+  | .countArgument => .CountArgument
 
 -- For every site: its position, and the decision that both front ends make
 -- for each part of an expression, by `ExprSite.checked`. That each
@@ -156,7 +157,7 @@ impl checked: lang::checked for (s : Fren.Core.ExprSite) (e sib : Bool) {
   intro s e sib _
   cases s <;> cases e <;> cases sib <;>
     simp [fren_spec, toExprSite, toPosition, Fren.Core.ExprSite.position, Fren.Core.ExprSite.checked,
-      Fren.Core.Position.checked]
+      Fren.Core.Position.checked, lang.site_position]
 
 def toShape : Fren.Core.TypeShape → lang.Shape
   | .emptyLiteral => .EmptyLiteral
@@ -2429,32 +2430,40 @@ interp lang::widened := Fren.Core.Ty.widen
 theorem kindOf_eq_nat (t : Fren.Core.Ty) : kindOf t = .NatTy ↔ t = .nat := by
   cases t <;> simp [kindOf]
 
--- For every position and two types that may be given: the type that both
--- front ends expect of a part (`Position.expected`), or, where none is
+-- For every site and two types that may be given: the type that both
+-- front ends expect of a part (`ExprSite.expected`), or, where none is
 -- expected, the whole's.
-impl expected_type: lang::expected_type for (p : Fren.Core.Position) (w s : Option Fren.Core.Ty) {
-  position := toPosition p,
+impl expected_type: lang::expected_type for (site : Fren.Core.ExprSite) (w s : Option Fren.Core.Ty) {
+  site := toExprSite site,
   whole? := w.isSome,
   whole := w.getD .bool,
   sibling? := s.isSome,
   sibling := s.getD .bool,
-  typed? := (p.expected w s).isSome,
-  expected := (p.expected w s).getD (w.getD .bool),
+  typed? := (site.expected w s).isSome,
+  expected := (site.expected w s).getD (w.getD .bool),
 } by
-  intro p w s _
-  cases p
+  intro site w s _
+  cases site
   all_goals cases w <;> cases s
-  all_goals simp [fren_spec, toPosition, Fren.Core.Position.expected, kindOf_eq_nat]
+  all_goals simp [fren_spec, toExprSite, lang.site_position, Fren.Core.ExprSite.expected, Fren.Core.ExprSite.wholeFirst,
+    Fren.Core.ExprSite.position, Fren.Core.Position.expected, kindOf_eq_nat]
   all_goals (try split) <;> simp_all
 
 def toWrittenShape : Fren.Core.WrittenShape → lang.WrittenShape
   | .seqLiteral => .SeqLiteral
-  | .sharedParts _ => .SharedParts
+  | .concat .. => .Concat
+  | .conditional .. => .Conditional
+  | .match _ => .Match
+  | .table _ => .Table
+  | .let _ => .Let
+  | .parenthesized _ => .Parenthesized
   | .other => .Other
 
 /-- The shared parts of an expression of shape `s`. -/
 def writtenParts : Fren.Core.WrittenShape → List Fren.Core.WrittenShape
-  | .sharedParts ps => ps
+  | .concat a b | .conditional a b => [a, b]
+  | .match ps | .table ps => ps
+  | .let e | .parenthesized e => [e]
   | .seqLiteral | .other => []
 
 theorem anySequence_eq_any (ps : List Fren.Core.WrittenShape) :
@@ -2472,12 +2481,17 @@ impl written_sequence: lang::written_sequence for (s : Fren.Core.WrittenShape) {
   sequence? := s.sequence,
 } by
   intro s _
-  cases s with
-  | seqLiteral => simp [fren_spec, toWrittenShape, Fren.Core.WrittenShape.sequence]
-  | other => simp [fren_spec, toWrittenShape, Fren.Core.WrittenShape.sequence]
-  | sharedParts ps =>
-    simp only [fren_spec, toWrittenShape, writtenParts, Fren.Core.WrittenShape.sequence, anySequence_eq_any]
-    cases h : ps.any Fren.Core.WrittenShape.sequence <;>
+  have parts : s.sequence = (match s with
+      | .seqLiteral => true
+      | .other => false
+      | _ => (writtenParts s).any Fren.Core.WrittenShape.sequence) := by
+    cases s <;> simp [Fren.Core.WrittenShape.sequence, writtenParts, anySequence_eq_any]
+  rw [parts]
+  cases s
+  case seqLiteral | other => simp [fren_spec, toWrittenShape]
+  all_goals
+    simp only [fren_spec, toWrittenShape]
+    cases h : (writtenParts _).any Fren.Core.WrittenShape.sequence <;>
       simp_all [List.any_eq_false, List.any_eq_true, List.filter_eq_nil_iff, List.length_pos_iff]
 
 /-- What matching the type of the first of a construction's values that

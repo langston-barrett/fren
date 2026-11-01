@@ -52,5 +52,13 @@ expect shared_parts(x: Int, s: Set<Int>, o: Option<Int>, c?) {
         c? => {},
         _ => s,
     }).card >= 0
+    expect row_none: (table {
+        c? => o,
+        _ => Option::None,
+    }) != Option::Some(1) or true
+    expect waiting_none: (table {
+        c? => Option::None,
+        _ => o,
+    }) != Option::Some(1) or true
     expect let_body: when o = Option::None, o = (let n := x in Option::None)
 }
