@@ -816,6 +816,43 @@ def genSites : R String := do
     out := out ++ (← sitesProc s!"sites{i}" (unchecked := i + 1 == n && (← chance 60)))
   return out
 
+/-- An uninterpreted function `name` whose postconditions are tables, each
+row's condition a leaf (its parameter `x1?`, a `Bool` constant, `true` or
+`false`), or a comparison of its value `r` or of `x0` with an `Int` leaf:
+so that rows `K0` and `true` meet, and rows over `r` overlap where only
+the clause that they are in rules it out (#559). The checks of its rows
+ask about them without that clause, of `r`, not of the function's
+application (`Reqs/Check#contracts-of-uninterpreted-functions`). It is
+appended to specs of the corpus, so it is written from a grammar of its
+own, every form of which is well-typed, whatever the spec declares: no
+payload of a generic `P`, no ill-typed count, and no comparison of a name
+with itself, which a lint reports. -/
+def contractTable (sc : WScope) (name : String) : R String := do
+  let bools := sc.constsOf .bool
+  let ints := sc.constsOf .int
+  -- An `Int` other than `r` and `x0`, which the comparisons have.
+  let int : R String := do
+    if !ints.isEmpty && (← chance 40) then pick ints else return toString (← below 4)
+  let bool : R String := do
+    match ← below 3 with
+    | 0 => pure "x1?"
+    | 1 => if bools.isEmpty then pick #["true", "false"] else pick bools
+    | _ => pick #["true", "false"]
+  let row : R String := do
+    match ← below 3 with
+    | 0 => bool
+    | 1 => return s!"r {← pick #["=", "<", ">=", ">"]} {← if ← chance 30 then pure "x0" else int}"
+    | _ => return s!"x0 {← pick #["=", "<", ">"]} {← int}"
+  let value : R String := do
+    if ← chance 50 then bool else return s!"r {← pick #["=", "<", ">"]} {← int}"
+  let mut clauses := ""
+  for j in [0:(← below 2) + 1] do
+    let mut rows := #[]
+    for _ in [0:(← below 3) + 2] do rows := rows.push s!"{← row} => {← value}"
+    if ← chance 40 then rows := rows.push s!"_ => {← value}"
+    clauses := clauses ++ s!"    ensure t{j}: table \{ {", ".intercalate rows.toList} }\n"
+  return s!"pub fn {name}(x0: Int, x1?): (r: Int) \{\n{clauses}}\n"
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1016,6 +1053,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- types, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ sitesDecls ++ (← sitesProc "sites")
+  -- A contract whose postconditions are tables, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← contractTable sc "ft")
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
@@ -1168,14 +1208,12 @@ regression; on a spec with an undecided check, only the unlisted one
 shows, since a vanished entry does not fail there. -/
 def knownDifferences : List Known :=
   -- Lean reports `ob1?`, an output that a table in an expectation reads,
-  -- as unknown, in a spec with other errors, once any function is declared
-  -- after it, as `sitesDecls` declares two (also on main's front ends, which
-  -- agree on the spec without them).
+  -- as unknown, in a spec with other errors (F0391 in `c0`), once any
+  -- later item with checks is declared after it, even a constant, as
+  -- `sitesDecls` and `contractTable` declare (also on main's front ends,
+  -- which agree on the spec without them).
   [{ mode := {}, seed := 28, issue := 493,
      difference := "line 21:35: only Lean reports error: Unknown identifier `ob1?`" },
-   { mode := {}, seed := 67, issue := 493,
-     difference := "line 9:25: only Lean reports info: Both operands of `f0::equation0` cannot be true: \
-       the stated premises require `f0.equation0.1` to be false." },
    { mode := {}, seed := 153, issue := 478,
      difference := "line 37:28: only fren reports error[F0714]: this is outside the decidable core: \
        a relational operator over a type that is not finite quantifies over its values" },
@@ -1235,7 +1273,7 @@ def corpusSpecs? : List String → Option (List (Mode × Nat))
 -- The seeds of `knownDifferences` outside the corpus's ranges, the
 -- `--avoid-known` one among them, and every job's specs are the corpus's
 -- or those.
-#guard listedOutside == [({}, 67), ({}, 153), ({ avoidKnown := true }, 41)]
+#guard listedOutside == [({}, 153), ({ avoidKnown := true }, 41)]
 #guard corpusJobs.all fun j => (corpusSpecs? (j.drop 1)).isSome
 
 /-- How the differences `found` on the spec of `mode` and `seed`, those
