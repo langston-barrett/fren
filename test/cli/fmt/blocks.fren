@@ -92,3 +92,21 @@ pub proc j(x: Int): (y: Int) { ensure a: y = x
     ensure b: y >= x }
 
 pub proc k(m: Mode): (on?) { use self::Mode::Heat use self::Mode::Cool ensure r: on? iff m = Heat or m = Cool }
+
+-- A block joins only the line that starts its item, not one after vertical results or a line break
+-- before `:`.
+pub proc vertical_results(m: Mode): (
+    on?,  -- c
+) { ensure r: on? iff m = Mode::Heat }
+
+pub proc colon_line(m: Mode)
+    : (on?) { ensure r: on? iff m = Mode::Heat }
+
+set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+}
+
+set_option fren.evidence "enumerated" in
+proc after_option(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+}
