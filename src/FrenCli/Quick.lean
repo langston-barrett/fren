@@ -381,19 +381,18 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       | _, _ => r)
     ++ (dets.zip detT).map (fun (x, t) => result .determinism (some x.name) t)
   let untested := behaviours == 0 && noOutputs?.isNone
-  -- Why each call assumption and expectation that no test reached was not
+  -- The warning shown at each call assumption and expectation that no
+  -- test reached (`eval::unreached_warning`), from why none did
   -- (`eval::unreached`): from the tests that found its call's inputs, or
   -- behaviours, those in which its trigger held, and those in which it had
-  -- a value. An expectation's is not given beside `F0610`, which already
-  -- says that no behaviour was found. A call assumption's is: a call's
-  -- inputs may be found where no behaviour is, and one without a value
-  -- leaves the call without behaviours, so that it explains `F0610`.
+  -- a value.
   let unreached :=
     ((instAssumes.zip (instT.zip instFound)).map fun ((w, d, a, _), (t, found)) =>
-      (t.unreached found, result .inst (some w) t (some (d, a))))
-    ++ if untested then #[] else (expects.zip expT).map fun (e, t) => (t.unreached behaviours, result .expect (some e.name) t)
-  let untriggered := unreached.filterMap fun (why, r) => if why == .Untriggered then some r else none
-  let valueless := unreached.filterMap fun (why, r) => if why == .Valueless then some r else none
+      (unreachedWarning (t.unreached found) untested true, result .inst (some w) t (some (d, a))))
+    ++ (expects.zip expT).map fun (e, t) =>
+      (unreachedWarning (t.unreached behaviours) untested false, result .expect (some e.name) t)
+  let untriggered := unreached.filterMap fun (shown, r) => if shown == .Untriggered then some r else none
+  let valueless := unreached.filterMap fun (shown, r) => if shown == .Valueless then some r else none
   let unwitnessed := if untested || behaviours == 0 then #[] else
     (covers.zip covT).filterMap fun (g, t) => if t.tests == 0 then some (result .cover (some g.name) t) else none
   return { results, noOutputs?, untested, untriggered, valueless, unwitnessed }
@@ -462,10 +461,10 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
                              | _ => .none }
   -- Every test that found behaviours with the trigger holding counts in
   -- `t`; one that found them only without it counts as found.
-  let why := t.unreached (if found then max 1 (t.tests + t.valueless) else 0)
+  let shown := unreachedWarning (t.unreached (if found then max 1 (t.tests + t.valueless) else 0)) (!found) false
   return { results := #[r], untested := !found
-           untriggered := if why == .Untriggered then #[r] else #[]
-           valueless := if why == .Valueless then #[r] else #[] }
+           untriggered := if shown == .Untriggered then #[r] else #[]
+           valueless := if shown == .Valueless then #[r] else #[] }
 
 /-! ## `fren eval` -/
 

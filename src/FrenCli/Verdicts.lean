@@ -53,6 +53,21 @@ def unreachedOf (found triggered decided : Nat) : Unreached :=
   else if triggered == 0 then .Untriggered
   else .Valueless
 
+/-- `eval::UnreachedWarning`. -/
+inductive UnreachedWarning where
+  | Silent
+  | Untriggered
+  | Valueless
+  deriving BEq, DecidableEq, Repr
+
+/-- The warning shown at a check that no test reached, `why`
+(`eval::unreached_warning`): beside the procedure's `F0610` (`untested`),
+none but a call assumption's `F0617`. -/
+def unreachedWarning (why : Unreached) (untested callAssumption : Bool) : UnreachedWarning :=
+  if why == .Untriggered && !untested then .Untriggered
+  else if why == .Valueless && (!untested || callAssumption) then .Valueless
+  else .Silent
+
 /-- The verdict of testing a check, from whether some test refuted it, how
 many reached it, and, for realizability, whether the search saw every
 output of the input that refuted it (`eval::test_verdict`). -/

@@ -17,7 +17,8 @@ over a number of tests, by cases on whether there were any.
 namespace Fren.Impls
 
 open Fren.Core (CheckKind Verdict)
-open FrenCli.Eval (Status Confirmation Unreached statusOf evalExit reached unreachedOf testVerdict confirmation confirmedVerdict)
+open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached unreachedOf unreachedWarning testVerdict
+  confirmation confirmedVerdict)
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible
@@ -65,6 +66,22 @@ def toUnreached : Unreached → eval.Unreached
   | .Untested => .Untested
   | .Untriggered => .Untriggered
   | .Valueless => .Valueless
+
+def toUnreachedWarning : UnreachedWarning → eval.UnreachedWarning
+  | .Silent => .Silent
+  | .Untriggered => .Untriggered
+  | .Valueless => .Valueless
+
+instance : Fren.Finite Unreached := ⟨[.Reached, .Untested, .Untriggered, .Valueless], by intro x; cases x <;> simp⟩
+
+impl unreached_warning_of: eval::unreached_warning for (w : Unreached) (u c : Bool) {
+  why := toUnreached w,
+  untested? := u,
+  call_assumption? := c,
+  shown := toUnreachedWarning (unreachedWarning w u c),
+} by
+  intro w u c _
+  cases w <;> cases u <;> cases c <;> decide
 
 -- Over the numbers of tests: only which are zero matters.
 impl unreached_of: eval::unreached for (f t d : Nat) {
