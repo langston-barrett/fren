@@ -336,6 +336,28 @@ impl separators: fmt::separators for (ps : List PieceKind) {
   intro ps _
   simp [fren_spec, place_toPieces]
 
+theorem unbroken_toPieces (ps : List PieceKind) :
+    fmt.unbroken (toPieces ps) = toPieces (ps.filter fun p => !FrenCli.Fmt.isLineBreak p) := by
+  induction ps with
+  | nil => rfl
+  | cons p ps ih => cases p <;> simp_all [toPieces, toPiece, fmt.unbroken, FrenCli.Fmt.isLineBreak]
+
+/-- The formatting job orders the pieces by their kinds: the kinds of what
+it orders are those that `fmt::ordering` orders. -/
+theorem keptOrder_map {α} (kind : α → PieceKind) (ps : List α) :
+    (FrenCli.Fmt.keptOrder kind ps).map kind = FrenCli.Fmt.keptOrder id (ps.map kind) := by
+  rw [FrenCli.Fmt.keptOrder, FrenCli.Fmt.keptOrder, ← placeSeparators_map]
+  induction FrenCli.Fmt.placeSeparators kind ps with
+  | nil => rfl
+  | cons p ps ih => cases h : kind p <;> simp_all [FrenCli.Fmt.isLineBreak]
+
+impl ordering: fmt::ordering for (ps : List PieceKind) {
+  input := toPieces ps,
+  output := toPieces (FrenCli.Fmt.keptOrder id ps),
+} by
+  intro ps _
+  simp only [fren_spec, FrenCli.Fmt.keptOrder, fmt.order, place_toPieces, unbroken_toPieces, id, and_true]
+
 impl file: fmt::file for (c i p f : Bool) {
   check? := c,
   ignored? := i,

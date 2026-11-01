@@ -219,6 +219,11 @@ def afterLine : PieceKind → Bool
   | .lineBreak | .lineComment => true
   | _ => false
 
+/-- Whether a piece is a line break. -/
+def isLineBreak : PieceKind → Bool
+  | .lineBreak => true
+  | _ => false
+
 /-- `p` before pieces whose commas are placed, and the commas at their
 start before it, if it is a line break or a line comment (`fmt::put`). -/
 def putPiece (kind : α → PieceKind) (p : α) : List α → List α
@@ -232,6 +237,12 @@ that precede it (`fmt::separators`). -/
 def placeSeparators (kind : α → PieceKind) : List α → List α
   | [] => []
   | p :: rest => putPiece kind p (placeSeparators kind rest)
+
+/-- The order of the pieces that formatting keeps (`fmt::ordering`): each
+comma before the line breaks and line comments that precede it, and then
+no line breaks. -/
+def keptOrder (kind : α → PieceKind) (ps : List α) : List α :=
+  (placeSeparators kind ps).filter fun p => !isLineBreak (kind p)
 
 /-- Whether the paths of one prefix are written in braces, and whether one
 on each line (`fmt::group_layout`). -/
