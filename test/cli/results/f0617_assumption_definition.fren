@@ -1,0 +1,79 @@
+--@ args: quickcheck
+-- Admission evaluates an assumption that reads a definition with the
+-- definition in its place. `p` gets only `F0610`, which `b` causes, and
+-- `q`, whose only assumption reads a definition, is tested.
+set_option fren.lint.contradictory_comparisons "allow" in
+pub proc p(x: Int): (y: Int) {
+    let next: Int := x + 1
+    assume a: next > 0
+    assume b: x > 0 and x < 0
+    ensure r: y = x
+}
+
+pub proc q(x: Int): (y: Int) {
+    let next: Int := x + 1
+    assume a: next > 0
+    ensure r: y = x
+    expect e: y >= 0
+}
+
+-- A definition that no assumption reads is computed after admission, so
+-- one without a value leaves the input admissible: `F0609`, not `F0610`.
+pub proc partial_unread(x: Int, q: Seq<Int>): (y: Int, z: Int) {
+    let n: Int := x + 1
+    let d: Int := q[7]
+    assume a: n > 0
+    ensure r: y = n
+    ensure s: z = d
+}
+
+-- A definition without a value that an assumption reads decides the
+-- assumption as strong Kleene logic does: `a` holds wherever `q` has at
+-- most seven elements, so the input is admissible, and `d6` gets `F0609`
+-- from its output. In `d1`, `a` has no value, so no input is admissible.
+pub proc d6(x: Int, q: Seq<Int>): (y: Int, z: Int) {
+    let d: Int := q[7]
+    assume a: when q.len > 7, d > 0
+    ensure r: y = x
+    ensure s: z = d
+}
+
+pub proc d1(q: Seq<Int>): (y: Int) {
+    let d: Int := q[7]
+    assume a: d > 0
+    ensure r: y = d
+}
+
+-- A called procedure's assumption that reads one of its definitions is
+-- evaluated with the definition in its place at the call too: `u_bad`
+-- violates `k_def::a` (`F0604`), as `u_ens` does `k_def_ens::a` where
+-- `z <= -1`, and `u_ens`'s `F0610` comes from `k_def_ens`'s contradictory
+-- guarantee alone, with no `F0617` at the call.
+pub proc k_def(x: Int): (w: Int) {
+    let n: Int := x + 1
+    assume a: n > 0
+    ensure s: w = x
+}
+
+pub proc u_bad(z: Int) {
+    assume neg: z < -5
+    call u := k_def(z)
+}
+
+set_option fren.lint.contradictory_comparisons "allow" in
+pub proc k_def_ens(x: Int): (w: Int) {
+    let n: Int := x + 1
+    assume a: n > 0
+    ensure s: w > 0 and w < 0
+}
+
+pub proc u_ens(z: Int) { call u := k_def_ens(z) }
+
+-- Definitions declared before the ones they read are computed in the
+-- order in which each reads only earlier ones.
+pub proc order2(x: Int): (y: Int) {
+    let b: Int := a + 1
+    let a: Int := x + 1
+    ensure r: y = b
+    expect e: y = x + 2
+}

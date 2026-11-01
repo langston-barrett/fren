@@ -31,10 +31,22 @@ def evalExit (ran complete : Bool) (status? : Option Status) (expectFalse : Bool
   if !ran then 2 else if !complete then 3 else if status? == some .Meets && !expectFalse then 0 else 1
 
 /-- Whether a test that found what a check is about reaches it: where the
-check's trigger, if any, holds, and the check, whose value is `value`, has
-one (`eval::reaches`). -/
-def reached (found hasTrigger trigger : Bool) (value : Option Bool) : Bool :=
-  found && (!hasTrigger || trigger) && value.isSome
+check's trigger, if any, whose value is `trigger`, holds, and the check,
+whose value is `value`, has one (`eval::reaches`). A trigger that has no
+value does not hold. -/
+def reached (found hasTrigger : Bool) (trigger value : Option Bool) : Bool :=
+  found && (!hasTrigger || trigger == some true) && value.isSome
+
+/-- Whether a test that found what a check is about counts toward
+`unreached`'s `triggered`: its trigger, if any, whose value is `trigger`,
+is not false (`eval::reaches`). -/
+def counted (found hasTrigger : Bool) (trigger : Option Bool) : Bool :=
+  found && (!hasTrigger || trigger != some false)
+
+/-- Whether a test that found what a check is about found its trigger
+without a value (`eval::reaches`). -/
+def triggerUnknown (found hasTrigger : Bool) (trigger : Option Bool) : Bool :=
+  found && hasTrigger && trigger.isNone
 
 /-- `eval::Unreached`. -/
 inductive Unreached where
@@ -42,31 +54,40 @@ inductive Unreached where
   | Untested
   | Untriggered
   | Valueless
+  | TriggerValueless
   deriving BEq, DecidableEq, Repr
 
 /-- Why testing reached a check, or did not (`eval::unreached`), from the
 tests that found what it is about, those of them in which its trigger, if
-any, held, and those of them in which it had a value. -/
-def unreachedOf (found triggered decided : Nat) : Unreached :=
+any, was not false, those of them in which the trigger had no value, and
+those in which the trigger held and the check had a value. -/
+def unreachedOf (found triggered unknown decided : Nat) : Unreached :=
   if decided > 0 then .Reached
   else if found == 0 then .Untested
   else if triggered == 0 then .Untriggered
-  else .Valueless
+  else if unknown < triggered then .Valueless
+  else .TriggerValueless
 
 /-- `eval::UnreachedWarning`. -/
 inductive UnreachedWarning where
   | Silent
   | Untriggered
   | Valueless
+  | TriggerValueless
   deriving BEq, DecidableEq, Repr
 
-/-- The warning shown at a check that no test reached, `why`
-(`eval::unreached_warning`): beside the procedure's `F0610` (`untested`),
-none but a call assumption's `F0617`. -/
-def unreachedWarning (why : Unreached) (untested callAssumption : Bool) : UnreachedWarning :=
-  if why == .Untriggered && !untested then .Untriggered
-  else if why == .Valueless && (!untested || callAssumption) then .Valueless
-  else .Silent
+/-- The warning shown at a check, from the counts of `unreachedOf`
+(`eval::unreached_warning`): the warning for why no test reached it, but
+beside the procedure's `F0610` (`untested`), none but that of a call
+assumption (`callAssumption`) that had no value as a whole in any test
+(`valued` is the tests in which it had one). -/
+def unreachedWarning (found triggered unknown decided valued : Nat) (untested callAssumption : Bool) : UnreachedWarning :=
+  let explains := callAssumption && valued == 0
+  match unreachedOf found triggered unknown decided with
+  | .Untriggered => if untested then .Silent else .Untriggered
+  | .Valueless => if untested && !explains then .Silent else .Valueless
+  | .TriggerValueless => if untested && !explains then .Silent else .TriggerValueless
+  | _ => .Silent
 
 /-- The verdict of testing a check, from whether some test refuted it, how
 many reached it, and, for realizability, whether the search saw every

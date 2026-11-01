@@ -186,7 +186,12 @@ order: the inputs, then the variables whose
 such variables, computed from them, then each call's variables, the
 call's inputs being its arguments' values, then the other outputs. It tries each variable's
 candidates in a random order, and goes back when a constraint that can
-already be evaluated is false (see [Backjumping](#backjumping)). The
+already be evaluated is false (see [Backjumping](#backjumping)). An
+assumption that reads such a variable is evaluated with its definition in
+its place, so that it reads it computed, and, where the definition has
+no value, decides the assumption as strong Kleene logic does. So is a
+called procedure's assumption, with that procedure's definitions, on the
+call's inputs. The
 values that the constraints equate a variable with come first. The others,
 its *pool*, are drawn once in each search, random parts included, and
 shuffled again each time the search reaches the variable, in an order
@@ -442,8 +447,17 @@ costs one more, the direct search for a counterexample. A call
 assumption's trigger gets no such search: it is about a call's
 inputs, which its arguments give.
 
+One more search tells apart the warnings below, after the tests, so that
+it changes no other result: each procedure's tests have a random stream
+of their own. For a global expectation, where some test found behaviours
+of its binders but the trigger held in none of them, it searches for
+behaviours of the binders, at most once for each test that `--tests`
+asks for, with a test's budget, and stops at the first one in which the
+trigger has no value.
+
 A test reaches a check only where the check has a value in what the test
-found, too. Where it has none, as where an index is out of range, a
+found, too, and so does its trigger, if it has one: a trigger without a
+value does not hold. Where the check has none, as where an index is out of range, a
 function has no value that the evaluator knows, no case of a table or
 `match` is taken, or evaluation runs out of fuel, the test refutes
 nothing, and it says nothing either: counting it would let an expectation
@@ -456,13 +470,20 @@ set_option fren.evidence "enumerated" in
 pub proc reaches(
     found?,                  -- the test found what the check is about
     has_trigger?,
-    trigger?,                -- the trigger holds in what the test found
+    trigger: Option<Bool>,   -- the trigger's value in what the test found, `None` if it has none
     value: Option<Bool>,     -- the check's value in what the test found, `None` if it has none
-): (det reached?) {
-    ensure rule: reached? iff (found? and (not has_trigger? or trigger?) and value != Option::None)
+): (det reached?, det counted?, det trigger_unknown?) {
+    ensure rule: reached? iff (found? and (not has_trigger? or trigger = Option::Some(true)) and value != Option::None)
+    -- The test counts toward `unreached`'s `triggered`, and toward its
+    -- `unknown` where the trigger has no value.
+    ensure counts: counted? iff (found? and (not has_trigger? or trigger != Option::Some(false)))
+    ensure unknown: trigger_unknown? iff (found? and has_trigger? and trigger = Option::None)
 
-    expect false_trigger_never: when has_trigger? and not trigger?, not reached?
+    expect false_trigger_never: when has_trigger? and trigger = Option::Some(false), not reached?
+    expect valueless_trigger_never: when has_trigger? and trigger = Option::None, not reached?
     expect valueless_never: when value = Option::None, not reached?
+    expect reached_counted: when reached?, counted? and not trigger_unknown?
+    expect unknown_counted: when trigger_unknown?, counted?
 }
 ```
 
@@ -505,31 +526,41 @@ pub proc outputs_seen(
 
 `exhausted?` below is `seen?`, for the input that the search found no
 outputs for. A check that no test reached is inconclusive, and
-`eval::unreached` says why, from three counts of the tests: those that
+`eval::unreached` says why, from four counts of the tests: those that
 found what the check is about, those of them in which its trigger, if it
-has one, held, and those of them in which the check had a value, which
-are the tests that reached it (`reaches`). Where none found what it is
-about, because no admissible behaviour was found, the procedure has the
-warning `F0610`, at the procedure. Where some did, but the trigger held
-in none of them, the check has the warning `F0612`, at its trigger. Where
-the check has no trigger, or its trigger held in some of them, but the
-check had a value in none, it has the warning `F0617`, at the check:
+has one, was not false, that is, held or had no value (`counted?`), those
+of these in which the trigger had no value (`trigger_unknown?`), and
+those in which the trigger held and the check had a value, which are the
+tests that reached it (`reached?`). Where none found what it is about,
+because no admissible behaviour was found, the procedure has the warning
+`F0610`, at the procedure. Where some did, but the trigger was false in
+all of them, the check has the warning `F0612`, at its trigger. Where the
+check has no trigger, or its trigger was not false in some of them, but
+in none did both have a value, it has the warning `F0617`: at the check,
+where in some of them the trigger held and the check had no value, and
+else at its trigger, which had no value in all of them in which it was
+not false:
 
 ```fren
 -- Why testing reached a check, or did not.
-pub enum Unreached { Reached, Untested, Untriggered, Valueless }
+pub enum Unreached { Reached, Untested, Untriggered, Valueless, TriggerValueless }
 
 pub proc unreached(
     found: Nat,          -- the tests that found what the check is about
-    triggered: Nat,      -- those of them in which its trigger, if it has one, held
-    decided: Nat,        -- those of them in which the check had a value: the tests that reached it
+    triggered: Nat,      -- those of them in which its trigger, if it has one, was not false
+    unknown: Nat,        -- those of these in which the trigger had no value
+    decided: Nat,        -- those of them in which the trigger held and the check had a value: the tests that reached it
 ): (det why: Unreached) {
-    assume counted: decided <= triggered <= found
+    assume counted: decided + unknown <= triggered <= found
 
     ensure reached: when decided > 0, why = Unreached::Reached
     ensure untested: when found = 0, why = Unreached::Untested
     ensure untriggered: when found > 0 and triggered = 0, why = Unreached::Untriggered
-    ensure valueless: when triggered > 0 and decided = 0, why = Unreached::Valueless
+    -- In some test the trigger held, but the check had no value.
+    ensure valueless: when unknown < triggered and decided = 0, why = Unreached::Valueless
+    -- The trigger had no value wherever it was not false.
+    ensure trigger_valueless: when triggered > 0 and unknown = triggered and decided = 0,
+        why = Unreached::TriggerValueless
 
     expect warned_only_unreached: when why != Unreached::Reached, decided = 0
 }
@@ -537,28 +568,51 @@ pub proc unreached(
 
 Beside the procedure's `F0610`, which already says that no admissible
 behaviour was found, a check's `F0612` is not given, and an
-expectation's `F0617` is not either. A call assumption's `F0617` is: a
-call's inputs may be found where no behaviour is, and an assumption
-without a value admits no behaviour of the call, so its `F0617` says why
-the procedure has `F0610`. `eval::unreached_warning` gives the warning
-shown at a check:
+expectation's `F0617` is not either. A call assumption's `F0617` is,
+where the assumption as a whole, its trigger included, had no value in
+any test that found the call's inputs: an assumption without a value
+admits nothing, so its `F0617` says why the procedure has `F0610`. One whose
+trigger has no value but which holds, as `when q[7] > 0, q.len >= 0`
+does, admits everything, so it explains nothing, and is not given. A
+call's inputs may be found where no behaviour is.
+`eval::unreached_warning` gives the warning shown at a check, from the
+counts of `unreached`:
 
 ```fren
--- The warning shown at a check that no test reached: none, `F0612` or `F0617`.
-pub enum UnreachedWarning { Silent, Untriggered, Valueless }
+-- The warning shown at a check that no test reached: none, `F0612`, or
+-- `F0617` at the check or at its trigger.
+pub enum UnreachedWarning { Silent, Untriggered, Valueless, TriggerValueless }
 
-set_option fren.evidence "enumerated" in
 pub proc unreached_warning(
-    why: Unreached,          -- why no test reached the check (`unreached`)
+    found: Nat,              -- as for `unreached`
+    triggered: Nat,
+    unknown: Nat,
+    decided: Nat,
+    valued: Nat,             -- the tests that found what it is about in which the check as a whole, its trigger included, had a value
     untested?,               -- the procedure has `F0610`
     call_assumption?,        -- the check is a call assumption
 ): (det shown: UnreachedWarning) {
-    ensure rule: shown = (if why = Unreached::Untriggered and not untested? then UnreachedWarning::Untriggered
-        else if why = Unreached::Valueless and (not untested? or call_assumption?) then UnreachedWarning::Valueless
-        else UnreachedWarning::Silent)
+    assume counted: decided + unknown <= triggered <= found
+    assume valued_counted: valued <= found
 
-    expect untriggered_not_beside_untested: when untested?, shown != UnreachedWarning::Untriggered
-    expect reached_silent: when why = Unreached::Reached, shown = UnreachedWarning::Silent
+    call u := unreached(found, triggered, unknown, decided)
+
+    ensure reached_silent: when u.why is Unreached::Reached | Unreached::Untested, shown = UnreachedWarning::Silent
+    ensure untriggered: when not untested? and u.why = Unreached::Untriggered, shown = UnreachedWarning::Untriggered
+    ensure valueless: when (not untested? or (call_assumption? and valued = 0)) and u.why = Unreached::Valueless,
+        shown = UnreachedWarning::Valueless
+    ensure trigger_valueless: when (not untested? or (call_assumption? and valued = 0)) and u.why = Unreached::TriggerValueless,
+        shown = UnreachedWarning::TriggerValueless
+    ensure beside_untested: when untested? and not (call_assumption? and valued = 0 and u.why is Unreached::Valueless | Unreached::TriggerValueless),
+        shown = UnreachedWarning::Silent
+
+    -- Beside `F0610`, only the `F0617` of a call assumption that had no
+    -- value as a whole in any test is shown, which explains it.
+    expect only_call_assumptions_beside_untested: when untested? and shown != UnreachedWarning::Silent,
+        call_assumption? and valued = 0 and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
+    -- `F0617` blames the trigger only where it had no value.
+    expect trigger_blamed_only_unknown: when shown = UnreachedWarning::TriggerValueless, unknown > 0
+    expect warns_only_unreached: when decided > 0, shown = UnreachedWarning::Silent
 }
 ```
 

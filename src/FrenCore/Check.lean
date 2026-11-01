@@ -2224,15 +2224,24 @@ def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : 
     notes := #["note: where the trigger is false the constraint holds by its trigger alone, so those tests say nothing about it",
       testingHelp byCheck "decide it"] }
 
-/-- Testing found what a check is about, with its trigger, if any,
-holding, but the check had no value in any of those tests
-(`eval::unreached`). -/
-def valuelessMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
-  { code? := some "F0617", headline := s!"testing never reached {subject} in {tests} tests: it had no value in any of them"
+/-- Testing found what a check is about, with its trigger, if any, not
+false, and in some of those tests the trigger held, but the check had no
+value in any of them (`eval::unreached`). -/
+def valuelessMsg (subject : String) (tests : Nat) (byCheck : Bool := false) (hasTrigger : Bool := false) : Msg :=
+  { code? := some "F0617", headline := s!"testing never reached {subject} in {tests} tests: it had no value in any of them{if hasTrigger then " in which its trigger held" else ""}"
     label? := some "no value"
     notes := #["note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it",
       if byCheck then "help: guard the part that has no value, or set `fren.evidence` to `\"solver\"` to have the solver check it"
       else "help: run `fren check` to decide it, or guard the part that has no value"] }
+
+/-- Testing found what a check is about, but its trigger had no value in
+every one of those tests in which it was not false (`eval::unreached`). -/
+def triggerValuelessMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
+  { code? := some "F0617", headline := s!"testing never reached {subject} in {tests} tests: its trigger had no value in any of them in which it was not false"
+    label? := some "no value"
+    notes := #["note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check",
+      if byCheck then "help: guard the part of the trigger that has no value, or set `fren.evidence` to `\"solver\"` to have the solver check it"
+      else "help: run `fren check` to decide it, or guard the part of the trigger that has no value"] }
 
 /-- Testing found admissible behaviours, but none in which a cover goal
 held (`Reqs/Eval#fren-quickcheck`). -/

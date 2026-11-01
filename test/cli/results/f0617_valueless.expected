@@ -1,4 +1,4 @@
-warning[F0617]: testing never reached `c::e` in 100 tests: it had no value in any of them
+warning[F0617]: testing never reached `c::e` in 100 tests: it had no value in any of them in which its trigger held
  --> test/cli/results/f0617_valueless.fren:8:12
   |
 8 |     expect e: when q.len < 3, q[7] > 0

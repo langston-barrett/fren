@@ -1,5 +1,5 @@
--- Procedures tested one at a time, as in `jobs_quickcheck`, give the same
--- report as tested at once (`Reqs/Cli#parallel-checking`).
+-- Procedures tested one at a time give the same report as tested at once
+-- in `jobs_quickcheck` (`Reqs/Cli#parallel-checking`).
 --@ args: quickcheck --jobs 1
 proc a(x: Int): (y: Int) {
     ensure r: y >= x
