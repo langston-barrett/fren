@@ -590,13 +590,14 @@ as indices of tokens. The first element starts after the opening bracket,
 but for a record update's, which start after its `with`. A block of members
 has no commas: in their place are the last tokens of the members that
 another follows, but for an evidence setting, which stays with the member
-after it. -/
+after it. `items` are the first tokens of the items that it is in. -/
 structure Bracketed where
   kind : ListKind
   opening : Nat
   lead : Nat
   closing : Nat := 0
   commas : Array Nat := #[]
+  items : Array Nat := #[]
   deriving Inhabited, Repr
 
 /-- What the formatter needs to know of a file's structure, as indices of
@@ -652,6 +653,9 @@ structure PState where
   noRecord : Bool := false
   /-- Where each item starts, in the source. -/
   itemStarts : Array Nat := #[]
+  /-- The first tokens of the items that the current token is in, outermost
+  first: a top-level item and those after its `set_option ... in`. -/
+  items : Array Nat := #[]
   /-- In a definition of a `let`, outside brackets, where `in` ends the
   definitions rather than starting a membership (`Reqs/Lang/Let#parentheses`). -/
   noIn : Bool := false
@@ -688,7 +692,7 @@ def markCall : P Unit := modify fun s => { s with layout.calls := s.layout.calls
 /-- Records that the next token opens a list or block of kind `k`, whose
 line breaks the formatter decides. -/
 def openList (k : ListKind) : P Unit :=
-  modify fun s => { s with openLists := s.openLists.push { kind := k, opening := s.pos, lead := s.pos } }
+  modify fun s => { s with openLists := s.openLists.push { kind := k, opening := s.pos, lead := s.pos, items := s.items } }
 /-- Records that the innermost open list or block is a record update's
 fields, which start after the next token, its `with`. -/
 def updateList : P Unit :=
@@ -2000,6 +2004,8 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
 
 partial def item : P Item := do
   markStart
+  -- An item is in another only after its `set_option ... in`, at its end.
+  modify fun s => { s with items := s.items.push s.pos }
   let first := (← get).pos
   let t ← peek
   if isKw t "#fren_check" then
@@ -2259,7 +2265,7 @@ def file : P (Array Item) := do
   repeat
     if (← peek).tok == .eof then break
     let start := (← peek).span.start
-    modify fun s => { s with itemStarts := s.itemStarts.push start }
+    modify fun s => { s with itemStarts := s.itemStarts.push start, items := #[] }
     items := items.push (← item)
   return items
 
