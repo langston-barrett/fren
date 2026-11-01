@@ -43,6 +43,9 @@ def cex : Unit → Fren.Core.Detail := fun _ => .none
 #guard (({} : Tally).test true none none cex).unreached 1 == .TriggerValueless
 -- One false trigger and one without a value: `F0617` at the trigger, not `F0612`.
 #guard ((({} : Tally).test true (some false) none cex).test true none none cex).unreached 2 == .TriggerValueless
+-- The check as a whole had a value where its trigger had none but it held.
+#guard (({} : Tally).test true none (some true) cex).valued == 1
+#guard (({} : Tally).test true none none cex).valued == 0
 -- A trigger that held once, with the check without a value: `F0617` at the check.
 #guard ((({} : Tally).test true none none cex).test true (some true) none cex).unreached 2 == .Valueless
 

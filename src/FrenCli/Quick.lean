@@ -30,6 +30,9 @@ structure Tally where
   /-- Those of `valueless` in which the trigger had no value
   (`eval::unreached`). -/
   unknownTrigger : Nat := 0
+  /-- The tests that found what the check is about in which the check as a
+  whole, its trigger included, had a value (`eval::unreached_warning`). -/
+  valued : Nat := 0
   /-- The first counterexample. -/
   refuted? : Option Fren.Core.Detail := none
   /-- For realizability: the counterexample is an input for which the
@@ -69,11 +72,18 @@ structure Admitted where
   reached : Nat := 0
   complete : Bool := false
 
-/-- Whether an assumption of `c` reads a defined variable that the inputs
-give (`Comp.earlyDefs`). -/
-def Comp.assumesReadDefs (c : Comp) : Bool :=
+/-- The defined variables that the inputs give (`Comp.earlyDefs`) that an
+assumption of `c` reads, directly or through the definitions of others,
+in the order of `earlyDefs`. -/
+def Comp.assumedDefs (c : Comp) : Array Name := Id.run do
   let early := c.earlyDefs
-  (c.ofKind .assume).any fun a => a.e.vars.any early.contains
+  let mut read : Array Name := ((c.ofKind .assume).flatMap (·.e.vars)).filter early.contains
+  for _ in [0:early.size] do
+    for (d, e) in c.defs do
+      if read.contains d then
+        for x in e.vars do
+          if early.contains x && !read.contains x then read := read.push x
+  return early.filter read.contains
 
 /-- The constraints that `Spec.admit` searches with, for `c`: its
 assumptions, the definitions of its defined variables that the inputs give,
@@ -107,18 +117,15 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
   -- The defined variables that the inputs give, which assumptions and
   -- bindings may read (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
-  let earlyVars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-  let env ← if c.assumesReadDefs then
-      -- An assumption that reads one is evaluated with them computed, so
-      -- they are chosen with the inputs, after them.
-      let some env ← ({ vars := inputs ++ earlyVars, atoms := pre.assumes ++ pre.early, ints, strs, fixedPools : Problem }.solve sp w I {})
-        | return none
-      pure env
-    else
-      let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
-        | return none
-      -- If they have no value, the outputs' search reports it, as before.
-      pure ((← ({ vars := earlyVars, atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env)
+  let defVars (ds : Array Name) := ds.filterMap fun d => (c.vars.find? (·.name == d)).map fun v => (v.name, v.ty)
+  -- Those that an assumption reads are evaluated with it, so they are
+  -- chosen with the inputs, after them; the others after admission.
+  let assumed := c.assumedDefs
+  let some env ← ({ vars := inputs ++ defVars assumed, atoms := pre.assumes ++ pre.early.filter (assumed.contains ·.label)
+                    ints, strs, fixedPools : Problem }.solve sp w I {})
+    | return none
+  -- If they have no value, the outputs' search reports it, as before.
+  let env := (← ({ vars := (c.vars.filter fun v => early.contains v.name && !assumed.contains v.name).map fun v => (v.name, v.ty), atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
@@ -170,10 +177,10 @@ structure Report where
   triggers had no value in every test in which they were not false
   (`F0617` at the trigger, `eval::unreached`). -/
   triggerValueless : Array CheckResult := #[]
-  /-- Beside the procedure's `F0610`, its own assumptions that had no value
-  in any input found without the assumptions, which explain it (`F0617`,
-  `eval::unreached_warning`), each with whether it is the trigger that
-  had none. -/
+  /-- Beside the procedure's `F0610`, its own assumptions that, as a whole,
+  their triggers included, had no value in any input found without the
+  assumptions, which explain it (`F0617`, `eval::unreached_warning`), each
+  with whether it is the trigger that had none. -/
   valuelessAssumes : Array (Name × Bool) := #[]
   /-- The cover goals for which no test found a witness, though some found
   behaviours that meet the procedure (`F0616`). -/
@@ -254,6 +261,7 @@ nothing, and is counted apart (`Tally.valueless`) for the warning
 (`eval::unreached`). Where the value is `false`, it refutes the check, by
 `cex`. -/
 def Tally.test (t : Tally) (hasTrigger : Bool) (trigger value : Option Bool) (cex : Unit → Fren.Core.Detail) : Tally :=
+  let t := if value.isSome then { t with valued := t.valued + 1 } else t
   if reached true hasTrigger trigger value then
     if value == some false then t.reach.refute (cex ()) else t.reach
   else if counted true hasTrigger trigger then
@@ -270,7 +278,7 @@ def Tally.unreached (t : Tally) (found : Nat) : Unreached :=
 where `found` tests found what it is about, `untested` if the procedure
 has `F0610`, and `assumption` if the check is an assumption. -/
 def Tally.warning (t : Tally) (found : Nat) (untested assumption : Bool) : UnreachedWarning :=
-  unreachedWarning found (t.tests + t.valueless) t.unknownTrigger t.tests untested assumption
+  unreachedWarning found (t.tests + t.valueless) t.unknownTrigger t.tests t.valued untested assumption
 
 /-- Tests the procedure `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
@@ -450,9 +458,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let mut inputsFound := 0
   if untested && !assumes.isEmpty then
     let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-    let early := c.earlyDefs
-    let earlyVars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-    let anyInput : Problem := { vars := inputs ++ earlyVars, atoms := pre.early, ints, strs, fixedPools }
+    let assumed := c.assumedDefs
+    let anyInput : Problem := { vars := inputs ++ assumed.filterMap (fun d => (c.vars.find? (·.name == d)).map fun v => (v.name, v.ty))
+                                atoms := pre.early.filter (assumed.contains ·.label), ints, strs, fixedPools }
     for _ in [0:tests] do
       if assumeT.all (·.tests > 0) then break
       let w ← World.random sp

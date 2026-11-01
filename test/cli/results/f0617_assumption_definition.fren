@@ -18,3 +18,13 @@ pub proc q(x: Int): (y: Int) {
     ensure r: y = x
     expect e: y >= 0
 }
+
+-- A definition that no assumption reads is computed after admission, so
+-- one without a value leaves the input admissible: `F0609`, not `F0610`.
+pub proc partial_unread(x: Int, q: Seq<Int>): (y: Int, z: Int) {
+    let n: Int := x + 1
+    let d: Int := q[7]
+    assume a: n > 0
+    ensure r: y = n
+    ensure s: z = d
+}

@@ -10,56 +10,83 @@ warning[F0617]: testing never reached `m::c::e` in 100 tests: its trigger had no
 warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tests
   --> test/cli/results/f0617_trigger_valueless.fren:19:10
    |
-19 | pub proc guarded(q: Seq<Int>) {
+19 | pub proc guarded(q: Seq<Int>) { assume seventh: when q[7] > 0, q.len > 7 }
    |          ^^^^^^^ untested
    |
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
 warning[F0617]: testing never reached the assumption `m::guarded::seventh` in 100 tests: its trigger had no value in any of them in which it was not false
-  --> test/cli/results/f0617_trigger_valueless.fren:20:21
+  --> test/cli/results/f0617_trigger_valueless.fren:19:49
    |
-20 |     assume seventh: when q[7] > 0, q.len > 7
-   |                     ^^^^^^^^^^^^^ no value
+19 | pub proc guarded(q: Seq<Int>) { assume seventh: when q[7] > 0, q.len > 7 }
+   |                                                 ^^^^^^^^^^^^^ no value
    |
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
    = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
 warning[F0610]: testing found no admissible behaviour of `m::user` in 100 tests
-  --> test/cli/results/f0617_trigger_valueless.fren:23:10
+  --> test/cli/results/f0617_trigger_valueless.fren:21:10
    |
-23 | pub proc user(z: Seq<Int>) {
+21 | pub proc user(z: Seq<Int>) { call u := guarded(z) }
    |          ^^^^ untested
    |
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
 warning[F0617]: testing never reached the assumption `m::guarded::seventh` of call `u` in 100 tests: its trigger had no value in any of them in which it was not false
-  --> test/cli/results/f0617_trigger_valueless.fren:24:10
+  --> test/cli/results/f0617_trigger_valueless.fren:21:35
    |
-24 |     call u := guarded(z)
-   |          ^ no value
+21 | pub proc user(z: Seq<Int>) { call u := guarded(z) }
+   |                                   ^ no value
    |
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
    = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
 warning[F0617]: testing never reached `m::mixed::e` in 100 tests: its trigger had no value in any of them in which it was not false
-  --> test/cli/results/f0617_trigger_valueless.fren:31:15
+  --> test/cli/results/f0617_trigger_valueless.fren:27:15
    |
-31 |     expect e: when q[0] + 1 < q[0], big?
+27 |     expect e: when q[0] + 1 < q[0], big?
    |               ^^^^^^^^^^^^^^^^^^^^ no value
    |
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
    = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
 warning[F0617]: testing never reached `m::held::e` in 100 tests: it had no value in any of them in which its trigger held
-  --> test/cli/results/f0617_trigger_valueless.fren:38:12
+  --> test/cli/results/f0617_trigger_valueless.fren:34:12
    |
-38 |     expect e: when q.len < 3, q[7] > 0
+34 |     expect e: when q.len < 3, q[7] > 0
    |            ^ no value
    |
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
    = help: run `fren check` to decide it, or guard the part that has no value
+
+warning[F0610]: testing found no admissible behaviour of `m::holds` in 100 tests
+  --> test/cli/results/f0617_trigger_valueless.fren:41:10
+   |
+41 | pub proc holds(q: Seq<Int>, x: Int): (y: Int) {
+   |          ^^^^^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
+
+warning[F0609]: testing found no outputs of `m::called` for the input q = [0, 1]
+  --> test/cli/results/f0617_trigger_valueless.fren:48:10
+   |
+48 | pub proc called(q: Seq<Int>): (w: Int) {
+   |          ^^^^^^ possibly not realizable
+   |
+   = note: the search tries only some values, so outputs may still exist
+   = help: run `fren check` to decide whether it is realizable
+
+warning[F0610]: testing found no admissible behaviour of `m::caller` in 100 tests
+  --> test/cli/results/f0617_trigger_valueless.fren:53:10
+   |
+53 | pub proc caller(z: Seq<Int>) { call u := called(z) }
+   |          ^^^^^^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
 warning[F0617]: testing never reached `m::g::g` in 100 tests: its trigger had no value in any of them in which it was not false
   --> test/cli/results/f0617_trigger_valueless.fren:16:15
@@ -70,8 +97,8 @@ warning[F0617]: testing never reached `m::g::g` in 100 tests: its trigger had no
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
    = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
-fren: 4 passed, 0 failed, 7 inconclusive, in 100 tests each
+fren: 4 passed, 0 failed, 11 inconclusive, in 100 tests each
 
-Some errors have detailed explanations: F0610, F0617.
-For more information about an error, try `fren --explain F0610`.
+Some errors have detailed explanations: F0609, F0610, F0617.
+For more information about an error, try `fren --explain F0609`.
 exit=3

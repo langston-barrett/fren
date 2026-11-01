@@ -183,7 +183,11 @@ unknown over them.
 Both commands search for behaviours. The search chooses the variables in
 order: the inputs, then the variables whose
 [definitions](Lang/Procedures.md#definitions) mention only inputs and
-such variables, computed from them, then each call's variables, the
+such variables, computed from them (those that the assumptions read,
+directly or through such definitions, with the inputs, so that an
+assumption is evaluated with them, and the others once an admissible
+input is found, so that one without a value leaves the input admissible),
+then each call's variables, the
 call's inputs being its arguments' values, then the other outputs. It tries each variable's
 candidates in a random order, and goes back when a constraint that can
 already be evaluated is false (see [Backjumping](#backjumping)). The
@@ -452,8 +456,8 @@ stream of their own. Each makes at most one search for each test that
   no value;
 - for a procedure, where no test found an admissible input, a search for
   inputs without its assumptions, with the variables whose definitions
-  mention only inputs computed from them, as admission evaluates the
-  assumptions, in which each of its own assumptions is tested as a check,
+  mention only inputs and that the assumptions read computed from them,
+  as admission evaluates the assumptions, in which each of its own assumptions is tested as a check,
   which stops once a test has reached each of them.
 
 A test reaches a check only where the check has a value in what the test
@@ -569,11 +573,16 @@ pub proc unreached(
 
 Beside the procedure's `F0610`, which already says that no admissible
 behaviour was found, a check's `F0612` is not given, and an
-expectation's `F0617` is not either. An assumption's `F0617` is: an
-assumption without a value admits nothing, so its `F0617` says why the
-procedure has `F0610`. For a call assumption, what a test finds is the
-call's inputs, which may be found where no behaviour is. For the
-procedure's own assumption, it is an input, searched for without the
+expectation's `F0617` is not either. An assumption's `F0617` is, where
+the assumption as a whole, its trigger included, had no value in any
+test that found what it is about: an assumption without a value admits
+nothing, so its `F0617` says why the procedure has `F0610`. One whose
+trigger has no value but which holds, as `when q[7] > 0, q.len >= 0`
+does, admits everything, so it explains nothing, and is not given. For a
+call assumption, what a test finds is the call's inputs, which may be
+found where no behaviour is. For the procedure's own assumption, it is
+an input, with the variables whose definitions mention only inputs and
+that the assumptions read computed from it, searched for without the
 assumptions once no test found an admissible one, as above.
 `eval::unreached_warning` gives the warning shown at a check, from the
 counts of `unreached`:
@@ -588,24 +597,28 @@ pub proc unreached_warning(
     triggered: Nat,
     unknown: Nat,
     decided: Nat,
+    valued: Nat,             -- the tests that found what it is about in which the check as a whole, its trigger included, had a value
     untested?,               -- the procedure has `F0610`
     assumption?,             -- the check is an assumption, a call's or the procedure's own
 ): (det shown: UnreachedWarning) {
     assume counted: decided + unknown <= triggered <= found
+    assume valued_counted: valued <= found
 
     call u := unreached(found, triggered, unknown, decided)
 
     ensure reached_silent: when u.why is Unreached::Reached | Unreached::Untested, shown = UnreachedWarning::Silent
     ensure untriggered: when not untested? and u.why = Unreached::Untriggered, shown = UnreachedWarning::Untriggered
-    ensure valueless: when (not untested? or assumption?) and u.why = Unreached::Valueless, shown = UnreachedWarning::Valueless
-    ensure trigger_valueless: when (not untested? or assumption?) and u.why = Unreached::TriggerValueless,
+    ensure valueless: when (not untested? or (assumption? and valued = 0)) and u.why = Unreached::Valueless,
+        shown = UnreachedWarning::Valueless
+    ensure trigger_valueless: when (not untested? or (assumption? and valued = 0)) and u.why = Unreached::TriggerValueless,
         shown = UnreachedWarning::TriggerValueless
-    ensure beside_untested: when untested? and not (assumption? and u.why is Unreached::Valueless | Unreached::TriggerValueless),
+    ensure beside_untested: when untested? and not (assumption? and valued = 0 and u.why is Unreached::Valueless | Unreached::TriggerValueless),
         shown = UnreachedWarning::Silent
 
-    -- Beside `F0610`, only an assumption's `F0617` is shown, which explains it.
+    -- Beside `F0610`, only the `F0617` of an assumption that had no value
+    -- as a whole in any test is shown, which explains it.
     expect only_assumptions_beside_untested: when untested? and shown != UnreachedWarning::Silent,
-        assumption? and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
+        assumption? and valued = 0 and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
     -- `F0617` blames the trigger only where it had no value.
     expect trigger_blamed_only_unknown: when shown = UnreachedWarning::TriggerValueless, unknown > 0
     expect warns_only_unreached: when decided > 0, shown = UnreachedWarning::Silent

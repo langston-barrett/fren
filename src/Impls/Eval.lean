@@ -92,21 +92,23 @@ impl unreached_of: eval::unreached for (f t u d : Nat) {
     simp_all [toUnreached] <;> omega
 
 -- From the impl of its call: only why no test reached the check matters.
-impl unreached_warning_of: eval::unreached_warning for (f t u d : Nat) (un c : Bool) {
+impl unreached_warning_of: eval::unreached_warning for (f t u d v : Nat) (un c : Bool) {
   found := f,
   triggered := t,
   unknown := u,
   decided := d,
+  valued := v,
   untested? := un,
   assumption? := c,
-  shown := toUnreachedWarning (unreachedWarning f t u d un c),
+  shown := toUnreachedWarning (unreachedWarning f t u d v un c),
 } by
-  intro f t u d un c h
-  have hu := unreached_of f t u d h
+  intro f t u d v un c h
+  have hu := unreached_of f t u d h.1
   simp only [fren_spec] at *
-  refine ⟨f, t, u, d, toUnreached (unreachedOf f t u d), ?_, ⟨rfl, rfl, rfl, rfl⟩, h, hu⟩
+  refine ⟨f, t, u, d, toUnreached (unreachedOf f t u d), ?_, ⟨rfl, rfl, rfl, rfl⟩, h.1, hu⟩
   simp only [unreachedWarning]
-  cases unreachedOf f t u d <;> cases un <;> cases c <;> decide
+  by_cases hv : v = 0 <;>
+    cases unreachedOf f t u d <;> cases un <;> cases c <;> simp_all [toUnreached, toUnreachedWarning]
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.
