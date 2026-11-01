@@ -990,7 +990,7 @@ def instanceContract (hooks : ElabHooks) (c : CompInfo) (f : Name) (targs : Arra
 of its questions' goals, which apply the clauses of contracts to the
 placeholders they use, and those that the postconditions of the
 uninterpreted functions among them use, which their applications' facts
-state (`Core.appFacts`), in declaration order. -/
+state (`Core.appFactsWith`), in declaration order. -/
 def checkUses (c : CompInfo) : MetaM (Array Name) := do
   let s ← getState
   let mut uses ← usesOf (c.uses.map (mkConst ·) ++ c.indexes.map (·.2.2.2.2)
@@ -1227,7 +1227,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       | _, _, _ => comp
     -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
     -- copies, is at least 0. Each query's applications bring their own
-    -- (`Core.appFacts`).
+    -- (`Core.appFactsWith`).
     let varFacts (outputs : Bool) : MetaM (Array (Name × Expr)) := do
       let vs := (c.vars.zip fvs).filter fun (v, _) => match Core.natBrought (v.role == .output) v.defn?.isSome with
         | .nothing => false
@@ -1295,7 +1295,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- The models of the cover goals' queries, by goal, for their theorems.
     let models ← IO.mkRef (#[] : Array (Expr × Array (Name × Expr)))
     -- The functions whose applications bring facts: those into `Nat`, and
-    -- the uninterpreted ones with postconditions (`Core.appFacts`).
+    -- the uninterpreted ones with postconditions (`Core.appFactsWith`).
     let st ← getState
     let postsOf (u : Name) : Array ClauseInfo :=
       st.abstracts.foldl (init := #[]) fun ps _ a =>

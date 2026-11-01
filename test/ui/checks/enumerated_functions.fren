@@ -3,7 +3,7 @@
 -- from their arguments up to the size bound to their results, are
 -- enumerated, as an abstract type's values are. Over finite types every
 -- interpretation is, so the checks are decided, as the solver decides
--- them; a function with a contract is not enumerated.
+-- them; a function whose contract has a postcondition is not enumerated.
 type Id
 
 enum Mode { Off, Heat, Cool }
@@ -30,6 +30,26 @@ proc owners(x: Id): (det mine?) {  --~ info: 3 checks of `owners` hold for every
 set_option fren.evidence "enumerated" in
 proc contracted(x: Id): (det big?) {  --~ error: `contracted` cannot be enumerated: it applies the uninterpreted function `positive`, which has a contract
     ensure r: big? iff positive(x) > 1
+}
+
+-- Of two functions with postconditions, the one whose path comes first is
+-- named, though the other is applied first and declared first.
+fn bigger(i: Id): (r: Int) { ensure post: r > 1 }
+
+set_option fren.evidence "enumerated" in
+proc both(x: Id): (det big?) {  --~ error: `both` cannot be enumerated: it applies the uninterpreted function `bigger`, which has a contract
+    ensure r: big? iff positive(x) > bigger(x)
+}
+
+-- A contract of preconditions alone does not keep its function from being
+-- enumerated: they constrain its arguments, not its interpretations.
+fn picky(m: Mode): (r: Int) { assume pre: m != Mode::Off }
+
+set_option fren.evidence "enumerated" in
+proc picked(m: Mode): (det y: Int) {  --~ info: 3 checks of `picked` hold for every behaviour up to size 3
+    assume a: m != Mode::Off
+    out y := picky(m)
+    expect e: y != 2  --~ error: counterexample: m = Mode::Heat, y = 2
 }
 
 -- A defined output's value in a counterexample, through a table's

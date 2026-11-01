@@ -425,7 +425,7 @@ structure CComp where
   enumSize : Nat := Fren.Core.Enumeration.defaultSize
   /-- The applications of uninterpreted functions whose result is a `Nat`,
   or that have postconditions, in its constraints, definitions, bindings
-  and calls: each brings its facts (`Fren.Core.appFacts`). -/
+  and calls: each brings its facts (`Fren.Core.appFactsWith`). -/
   natApps : Array String := #[]
   /-- For the body or contract of a function, or the value of a constant:
   its name, which the evaluator's counterpart has (`Eval.Comp.body?`). -/

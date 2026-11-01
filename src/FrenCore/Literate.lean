@@ -60,11 +60,6 @@ def splitLine (line : String) : LineParts :=
   let fence := decide (indent ≤ 3) && decide (3 ≤ run) && (marker == "~" || !Fren.Str.contains info "`")
   { indent, marker, run, lead, info, fence }
 
-/-- The fence's info string, if `line` is a fence. -/
-def fenceInfo? (line : String) : Option String :=
-  let p := splitLine line
-  if p.fence then some p.info else none
-
 /-- The fence that opened the block that the reader is in. -/
 structure Opening where
   marker : String
@@ -226,14 +221,14 @@ def markdownProblems (src : String) : Array (Nat × Msg) :=
 
 #guard (fencedBlocks "a\n```fren\nx\n```\n").map (·.info) == #["fren"]
 -- Inline code at the start of a line is not a fence.
-#guard fenceInfo? "```` ```fren example ```` is a block" == none
+#guard !(splitLine "```` ```fren example ```` is a block").fence
 #guard (fencedBlocks "```` ```fren example ```` block\n```fren\nx\n```\n").map (·.body) == #[#["x"]]
 -- A block of four backticks closes only at four or more, so it can show one of three.
 #guard (fencedBlocks "````markdown\n```fren\nx\n```\n````\n```fren\ny\n```\n").map (·.info) == #["markdown", "fren"]
 #guard unwrapMarkdown "````markdown\n```fren\nx\n```\n````\n```fren\ny\n```\n" == "\n\n\n\n\n\ny\n\n"
 -- Four spaces make an indented code block, not a fence.
-#guard fenceInfo? "    ```fren" == none
-#guard fenceInfo? "   ```fren" == some "fren"
+#guard !(splitLine "    ```fren").fence
+#guard (splitLine "   ```fren").fence && (splitLine "   ```fren").info == "fren"
 -- A fence with an info string does not close a block.
 #guard (fencedBlocks "```fren\n```text\n```\n").map (·.body) == #[#["```text"]]
 -- A block still open at the end of the file extends to its end, and is reported.

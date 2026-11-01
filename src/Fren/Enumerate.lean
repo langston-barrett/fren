@@ -1052,13 +1052,15 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       if let some a := st.abstracts.foldl (init := none) fun acc _ a =>
           if a.placeholder == u && !a.typeParams.isEmpty then some a else acc then
         return .error (notEnumerableMsg subject (genericNotEnumerable a.path))
+  let abstractOf (u : Name) := st.abstracts.foldl (init := none) fun acc _ a => if a.placeholder == u then some a else acc
+  let applied := fns.filterMap fun (u, x, _, _) =>
+    if scanned.any (·.containsFVar x.fvarId!) then (abstractOf u).map (·.path) else none
+  if let some f := contractBlocker? applied fun f => ((st.contracts.get? f).map (·.posts.size)).getD 0 then
+    return .error (notEnumerableMsg subject (contractNotEnumerable f))
   let mut used : Array (Name × Expr × Bool × FunVar) := #[]
   for (u, x, _, nat) in fns do
     if scanned.any (·.containsFVar x.fvarId!) then
-      let some a := st.abstracts.foldl (init := none) fun acc _ a => if a.placeholder == u then some a else acc | continue
-      if ((st.contracts.get? a.path).map (!·.posts.isEmpty)).getD false then
-        return .error (notEnumerableMsg subject
-          s!"it applies the uninterpreted function `{Core.showComp a.path}`, which has a contract")
+      let some a := abstractOf u | continue
       used := used.push (a.path, x, nat,
         { name := a.path, params := a.ptys.1.map (Core.PTy.plain ·.ty), result := a.ptys.2 })
   if let some f := used.find? (fun f => needsSemanticFilter st.shapeOf f.2.2.2.result) then

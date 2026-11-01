@@ -2118,15 +2118,42 @@ type. A variable whose type brings no constraint, such as a call's input,
 which the call check asks of its argument, ranges over its type without
 the invariants of its subset types. A procedure, or a global expectation,
 is not enumerated if it applies an uninterpreted function with a
-[contract](Lang/Items.md#contracts), whose postconditions constrain its
-interpretations, or a [generic
+[contract](Lang/Items.md#contracts) that has a postcondition, which
+constrains its interpretations (`contract_blocker`, below; preconditions
+alone do not), or a [generic
 one](Lang/GenericFunctions.md#uninterpreted-generic-functions), each of
 whose instances is a function of its own; or if it applies a recursive
 function whose body indexes a sequence, whose value out of range
 enumeration cannot give (see [Searching](#searching)). It is then the
-error `F0645`, at it, and none of its checks set to enumeration is run. A
-quantifier is enumerated too, up to the bound (see [Quantifiers up to the
-bound](#quantifiers-up-to-the-bound)).
+error `F0645`, at it, and none of its checks set to enumeration is run.
+Of several functions with such contracts, it names the one whose path
+comes first, so that it does not depend on the order in which a front end
+finds them. A quantifier is enumerated too, up to the bound (see
+[Quantifiers up to the bound](#quantifiers-up-to-the-bound)).
+
+```fren
+-- An uninterpreted function that an item applies: its path, and the
+-- number of postconditions of its contract, 0 if it has none.
+pub struct Applied { path: String, postconditions: Nat }
+
+-- Whether `named` is what keeps an item that applies the functions
+-- `applied` from being enumerated (`F0645`): of the functions whose
+-- contracts have a postcondition, the one whose path comes first, which
+-- the error names; or `None` if there is none, and the item may be
+-- enumerated. A contract of preconditions alone does not keep it from
+-- being enumerated.
+set_option fren.lint.undecidable "allow" in
+pub proc contract_blocker(applied: Seq<Applied>, named: Option<String>): (det right?) {
+    ensure rule: right? iff match named {
+        Option::None => not (exists (a: Applied), a in applied and a.postconditions > 0),
+        Option::Some(p) => (exists (a: Applied), a in applied and a.postconditions > 0 and a.path = p)
+            and (forall (a: Applied), when a in applied and a.postconditions > 0, p <= a.path),
+    }
+
+    expect preconditions_alone: when right? and applied.len = 1 and applied[0].postconditions = 0,
+        named = Option::None
+}
+```
 
 ### Sizes and order
 
