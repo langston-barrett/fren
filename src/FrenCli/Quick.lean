@@ -77,19 +77,22 @@ def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.D
 confirms its assumptions on its inputs and searches for its behaviour.
 `ints` and `strs` are the integers and strings to try (`intsOf`,
 `stringsOf`); `shapes?` is as for `World.interp`, and `pre` is
-`sp.admitAtoms c`, for the shapes of `w.interp sp shapes?`. -/
+`sp.admitAtoms c`, for the shapes of `w.interp sp shapes?`. `fixedPools`
+is `sp.fixedPools strs` of the types of the variables
+(`Problem.fixedPools`). -/
 def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Array String)
-    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape)) (pre : AdmitAtoms) : R (Option Admitted) := do
+    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape)) (pre : AdmitAtoms)
+    (fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}) : R (Option Admitted) := do
   let I := w.interp sp shapes?
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs : Problem }.solve sp w I {})
+  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
     | return none
   -- The defined outputs that the inputs give, which bindings may read
   -- (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
   -- If they have no value, the outputs' search reports it, as before.
   let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-                   atoms := pre.early, ints, strs : Problem }.solve sp w I env)).getD env
+                   atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
@@ -97,7 +100,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     let some d := sp.comp? i.comp | return none
     let ins := d.vars.filter (·.role == .input) |>.map fun v => (i.name ++ v.name, v.ty)
     let binds := pre.binds[k]!
-    let some env' ← ({ vars := ins, atoms := binds, ints := intsOf binds, strs : Problem }.solve sp w I env) | return some out
+    let some env' ← ({ vars := ins, atoms := binds, ints := intsOf binds, strs, fixedPools : Problem }.solve sp w I env) | return some out
     env := env'
     out := { out with env, reached := k + 1 }
     -- Inputs and the earlier calls' public outputs (`checkInst`).
@@ -110,7 +113,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
         failed := true
     if failed then return some out
     let atoms := pre.insts[k]!
-    let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs : Problem }.solve sp w I env)
+    let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs, fixedPools : Problem }.solve sp w I env)
       | return some out
     env := env'
     out := { out with env }
@@ -229,16 +232,29 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let goals := covers.map fun g => compiled { label := g.name, pfx := .anonymous, e := g.e }
   -- The problems searched at every test, each prepared once
   -- (`Problem.prepare`), with the shapes of every interpretation below.
-  let prepared (p : Problem) : Problem := { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?) }
+  -- The pools of the variables' types that are the same at every test
+  -- (`Spec.fixedPools`), computed once for all of the searches.
+  let fixedPools := sp.fixedPools strs ((sp.order c).map (·.2))
+  let prepared (p : Problem) : Problem :=
+    { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?), fixedPools }
   let outs := c.vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let outputsP := prepared { vars := outs, atoms := reqs, ints, strs }
   let negationsP := negations.map fun n => prepared { vars := sp.order c, atoms := all.push n, ints, strs }
   let triggersP := triggers.map (·.map fun t => prepared { vars := sp.order c, atoms := all.push t, ints, strs })
   let goalsP := goals.map fun g => prepared { vars := sp.order c, atoms := all.push g, ints, strs }
+  -- For each `det` variable, the search for a second behaviour on a test's
+  -- input that differs on it, prepared once: the first behaviour's value
+  -- is given as a variable of its own, `first`, which no other variable
+  -- is, since no identifier has `[`.
+  let inputNames := c.vars.filter (·.role == .input) |>.map (·.name)
+  let first (x : Name) : Name := x.str "[first]"
+  let detsP := dets.map fun x =>
+    let differs : Atom := { label := x.name, pfx := .anonymous, e := .bin .ne (.var x.name) (.var (first x.name)) }
+    prepared { vars := (sp.order c).filter (!inputNames.contains ·.1), atoms := all.push differs, ints, strs }
   for _ in [0:tests] do
     let w ← World.random sp
     let I := w.interp sp (some shapes)
-    let some adm ← sp.admit w c ints strs (some shapes) pre | continue
+    let some adm ← sp.admit w c ints strs (some shapes) pre fixedPools | continue
     for (x, k) in instAssumes.zipIdx do
       let reached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
       if reached then instFound := instFound.modify k (· + 1)
@@ -292,9 +308,14 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for x in dets, k in [0:dets.size] do
       detT := detT.modify k Tally.reach
       let some v₁ := env[x.name]? | continue
-      let differs : Atom := { label := x.name, pfx := .anonymous, e := .bin .ne (.var x.name) (.lit v₁) }
-      let atoms := all.push differs
-      if let some env₂ ← ({ vars := remaining (sp.order c) inputs, atoms, ints, strs : Problem }.solve sp w I inputs) then
+      -- With every input given, as admission gives them, the prepared
+      -- search (`detsP`), whose variables are then `remaining`'s, and whose
+      -- `first` has the value that `.lit v₁` would.
+      let env₂? ← if inputNames.all inputs.contains then detsP[k]!.solve sp w I (inputs.insert (first x.name) v₁) else
+        let differs : Atom := { label := x.name, pfx := .anonymous, e := .bin .ne (.var x.name) (.lit v₁) }
+        let atoms := all.push differs
+        ({ vars := remaining (sp.order c) inputs, atoms, ints, strs, fixedPools : Problem }.solve sp w I inputs)
+      if let some env₂ := env₂? then
         let some v₂ := env₂[x.name]? | continue
         let input := sp.shown vars env fun v => v.role == .input && v.isPub
         detT := detT.modify k (·.refute (.nondeterministic input (v₁.showAs sp x.ty) (v₂.showAs sp x.ty)))
@@ -355,6 +376,15 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
     | some t => meaning.push (compiled { label := body.name, pfx := .anonymous, e := t })
     | none => meaning
   let negated := meaning.push (compiled { label := body.name, pfx := .anonymous, e := .not body.e })
+  -- The searches, each prepared once (`Problem.prepare`), as in
+  -- `Spec.quickComp`.
+  let fixedPools := sp.fixedPools strs (order.map (·.2))
+  let prepared (atoms : Array Atom) : Problem :=
+    let p : Problem := { vars := order, atoms, ints, strs, fixedPools }
+    { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?) }
+  let withTriggerP := prepared withTrigger
+  let meaningP := prepared meaning
+  let negatedP := prepared negated
   let mut t : Tally := {}
   let mut found := false
   for _ in [0:tests] do
@@ -362,18 +392,17 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
     let I := w.interp sp (some shapes)
     -- The binders' behaviours, chosen together, so that the body's
     -- trigger can be among the constraints (`eval::reaches`).
-    let atoms := withTrigger
     -- The budget that each binder had when they were chosen in turn.
     let budget := 4000 * max 1 ds.size
-    let some env ← ({ vars := order, atoms, ints, strs : Problem }.solve sp w I {} budget)
+    let some env ← (withTriggerP.solve sp w I {} budget)
       | -- Whether any behaviours were found, to tell `F0610` from `F0612`.
         if trigger.isSome && !found then
-          found := (← ({ vars := order, atoms := meaning, ints, strs : Problem }.solve sp w I {} budget)).isSome
+          found := (← (meaningP.solve sp w I {} budget)).isSome
         continue
     found := true
     -- A counterexample, searched for directly (`Reqs/Eval#fren-quickcheck`).
     if t.refuted?.isNone then
-      if let some cex ← ({ vars := order, atoms := negated, ints, strs : Problem }.solve sp w I {} budget) then
+      if let some cex ← (negatedP.solve sp w I {} budget) then
         t := (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
         continue
     unless reaches I .anonymous trigger env do continue

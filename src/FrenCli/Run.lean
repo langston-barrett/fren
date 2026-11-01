@@ -793,24 +793,46 @@ that `first` selects before the others, and otherwise in order: for each,
 in the order of `xs`, an action that waits for it. Which is started first
 changes only when each finishes, not what it gives. With one job, each
 action runs `f` itself, in the thread that runs it, so that nothing is
-shared between threads. -/
-def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) (first : α → Bool := fun _ => false) :
-    IO (Array (IO β)) := do
-  if jobs ≤ 1 then return xs.map f
+shared between threads.
+
+Each thread first makes `own`, its own copy of what `f` reads, which it
+gives `f`. Lean counts the references to an object
+that two threads share atomically, and threads that read the same objects
+contend for them: four tests of `lint::and_associates` at once, sharing
+one `Eval.Spec`, took 11.6 s, and 3.1 s each with a spec of its own. So
+`own` should build what `f` reads in the thread, not return an object
+made before. -/
+def inParallelWith [Nonempty β] (jobs : Nat) (xs : Array α) (own : IO σ) (f : σ → α → IO β)
+    (first : α → Bool := fun _ => false) : IO (Array (IO β)) := do
+  if jobs ≤ 1 then
+    let l ← own
+    return xs.map (f l)
   let promises ← xs.mapM fun _ => IO.Promise.new
   let firsts := xs.map first
   let idxs := Array.range xs.size
   let order := idxs.filter (firsts[·]?.getD false) ++ idxs.filter (!firsts[·]?.getD false)
   let next ← IO.mkRef 0
   let worker : IO Unit := do
+    let l ← own
     repeat
       let k ← next.modifyGet fun k => (k, k + 1)
       let some i := order[k]? | break
       let (some x, some p) := (xs[i]?, promises[i]?) | break
-      p.resolve (← (f x).toBaseIO)
+      p.resolve (← (f l x).toBaseIO)
   for _ in [0:min jobs xs.size] do
     discard <| IO.asTask worker .dedicated
   return promises.map fun p => IO.ofExcept p.result!.get
+
+/-- A reading of the spec of `files` (`specOf`), made when it is first
+needed. An action rather than a value, so that each thread that runs it
+(`inParallelWith`) gets one of its own. -/
+def ownSpecOf (files : Array (String × Array Char)) : IO (Thunk (Except String Eval.Spec)) :=
+  pure (Thunk.mk fun _ => specOf files)
+
+/-- `inParallelWith` without a copy of its own for each thread. -/
+def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) (first : α → Bool := fun _ => false) :
+    IO (Array (IO β)) :=
+  inParallelWith jobs xs (pure ()) (fun _ => f) first
 
 /-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
 and global expectation, with its total time, the time of its solver's
@@ -875,7 +897,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- checks set to testing; reported below, in order
   -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
   -- output is the same as one at a time.
-  let solve := fun ((c, global, kinds, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × String) => do
+  let solve := fun (spec? : Thunk (Except String Eval.Spec))
+      ((c, global, kinds, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × String) => do
+    let spec? := spec?.get
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
@@ -905,7 +929,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- Those with checks by testing or enumeration first: they are the
   -- slowest, and starting them last would leave them running alone at
   -- the end.
-  let solving ← (← inParallel (args.jobs?.getD (← jobsDefault)) todo solve
+  -- Each thread reads the spec itself, which gives the same `spec?`.
+  let solving ← (← inParallelWith (args.jobs?.getD (← jobsDefault)) todo (ownSpecOf files) solve
     (first := fun (c, _) => c.tested.any || c.enumerated.any)).mapM id
   -- The contracts of the uninterpreted functions first, though their items
   -- come last, since what applies them rests on them
@@ -1039,13 +1064,15 @@ def quickcheck (args : Args) : IO UInt32 := do
   -- The report of testing each, `--jobs` at a time, each from a random
   -- stream of its own (`testReport`); printed below, in order
   -- (`Reqs/Cli#parallel-checking`).
-  let test := fun ((c, global) : CComp × Bool) => do
+  let test := fun (own : Thunk (Except String Eval.Spec)) ((c, global) : CComp × Bool) => do
+    let sp := own.get.toOption.getD sp
     let rep := match sp.counterpart? c global with
       | some ec => if (sp.untestable? ec).isSome then {} else testReport sp ec c global args.seed args.nTests
       | none => {}
     -- Forced here, in this thread.
     IO.lazyPure fun _ => some rep
-  let testing ← inParallel (args.jobs?.getD (← jobsDefault)) items test
+  -- Each thread reads the spec itself, which gives the same `sp`.
+  let testing ← inParallelWith (args.jobs?.getD (← jobsDefault)) items (ownSpecOf files) test
   for (c, global) in items, tested in testing do
     let rep := (← tested).getD {}
     let some ec := sp.counterpart? c global
