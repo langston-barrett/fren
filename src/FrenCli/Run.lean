@@ -659,10 +659,21 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     warn msg
     shown := shown.push msg
   -- At each check that no test reached, though some found what it is
-  -- about (`eval::unreached`): at its trigger, which held in none of them
-  -- (`F0612`), or at the check, which had a value in none (`F0617`).
-  for (r, atTrigger) in (rep.untriggered.filter keep).map (·, true) ++ (rep.valueless.filter keep).map (·, false) do
+  -- about (`eval::unreached`): at its trigger, which was false in all of
+  -- them (`F0612`); at the check, which had a value in none in which its
+  -- trigger held (`F0617`); or at its trigger, which had no value in all
+  -- in which it was not false (`F0617`).
+  let atChecks := (rep.untriggered.filter keep).map (·, FrenCli.Eval.UnreachedWarning.Untriggered)
+    ++ (rep.valueless.filter keep).map (·, FrenCli.Eval.UnreachedWarning.Valueless)
+    ++ (rep.triggerValueless.filter keep).map (·, FrenCli.Eval.UnreachedWarning.TriggerValueless)
+  for (r, shownAs) in atChecks do
+    let atTrigger := shownAs != FrenCli.Eval.UnreachedWarning.Valueless
     let some n := r.prop? | continue
+    -- Whether the check has a trigger: a call assumption's is the called
+    -- procedure's assumption's.
+    let hasTrigger := match r.kind, r.target? with
+      | .inst, some (d, a) => ((sp.comp? d).bind fun dc => (dc.ofKind .assume).find? (·.name == a)).any (·.e.trigger?.isSome)
+      | _, _ => ((c.props.find? (·.name == n)).bind (·.triggerSpan?)).isSome
     let (what, span) := match r.kind, r.target? with
       | .inst, some (d, a) =>
         (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of call `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
@@ -670,8 +681,9 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
         let p? := c.props.find? (·.name == n)
         (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`",
           (p?.map fun p => if atTrigger then p.triggerSpan?.getD p.span else p.span).getD c.span)
-    let msg := if atTrigger then Fren.Core.untriggeredMsg what args.nTests byCheck
-      else Fren.Core.valuelessMsg what args.nTests byCheck
+    let msg := if shownAs == FrenCli.Eval.UnreachedWarning.Untriggered then Fren.Core.untriggeredMsg what args.nTests byCheck
+      else if shownAs == FrenCli.Eval.UnreachedWarning.TriggerValueless then Fren.Core.triggerValuelessMsg what args.nTests byCheck
+      else Fren.Core.valuelessMsg what args.nTests byCheck hasTrigger
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg
   -- At each cover goal for which no test found a witness (`F0616`).

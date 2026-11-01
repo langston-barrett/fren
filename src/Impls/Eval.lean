@@ -17,7 +17,7 @@ over a number of tests, by cases on whether there were any.
 namespace Fren.Impls
 
 open Fren.Core (CheckKind Verdict)
-open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached unreachedOf unreachedWarning testVerdict
+open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached counted triggerUnknown unreachedOf unreachedWarning testVerdict
   confirmation confirmedVerdict)
 
 def toStatus : Status → eval.Status
@@ -51,49 +51,64 @@ impl eval_exit_code: eval::eval_exit for (ran complete : Bool) (s : Option Statu
   intro ran complete s ef _
   cases ran <;> cases complete <;> cases ef <;> rcases s with _ | _ | _ | _ <;> decide
 
-impl reaches_check: eval::reaches for (f h t : Bool) (v : Option Bool) {
+impl reaches_check: eval::reaches for (f h : Bool) (t v : Option Bool) {
   found? := f,
   has_trigger? := h,
-  trigger? := t,
+  trigger := t,
   value := v,
   reached? := reached f h t v,
+  counted? := counted f h t,
+  trigger_unknown? := triggerUnknown f h t,
 } by
   intro f h t v _
-  cases f <;> cases h <;> cases t <;> rcases v with _ | _ | _ <;> decide
+  cases f <;> cases h <;> rcases t with _ | _ | _ <;> rcases v with _ | _ | _ <;> decide
 
 def toUnreached : Unreached → eval.Unreached
   | .Reached => .Reached
   | .Untested => .Untested
   | .Untriggered => .Untriggered
   | .Valueless => .Valueless
+  | .TriggerValueless => .TriggerValueless
 
 def toUnreachedWarning : UnreachedWarning → eval.UnreachedWarning
   | .Silent => .Silent
   | .Untriggered => .Untriggered
   | .Valueless => .Valueless
+  | .TriggerValueless => .TriggerValueless
 
-instance : Fren.Finite Unreached := ⟨[.Reached, .Untested, .Untriggered, .Valueless], by intro x; cases x <;> simp⟩
-
-impl unreached_warning_of: eval::unreached_warning for (w : Unreached) (u c : Bool) {
-  why := toUnreached w,
-  untested? := u,
-  call_assumption? := c,
-  shown := toUnreachedWarning (unreachedWarning w u c),
-} by
-  intro w u c _
-  cases w <;> cases u <;> cases c <;> decide
+instance : Fren.Finite Unreached := ⟨[.Reached, .Untested, .Untriggered, .Valueless, .TriggerValueless], by intro x; cases x <;> simp⟩
 
 -- Over the numbers of tests: only which are zero matters.
-impl unreached_of: eval::unreached for (f t d : Nat) {
+impl unreached_of: eval::unreached for (f t u d : Nat) {
   found := f,
   triggered := t,
+  unknown := u,
   decided := d,
-  why := toUnreached (unreachedOf f t d),
+  why := toUnreached (unreachedOf f t u d),
 } by
-  intro f t d h
-  simp only [fren_spec, unreachedOf, toUnreached] at *
-  rcases Nat.eq_zero_or_pos d with hd | hd <;> rcases Nat.eq_zero_or_pos f with hf | hf <;>
-    rcases Nat.eq_zero_or_pos t with ht | ht <;> simp_all [Nat.pos_iff_ne_zero] <;> omega
+  intro f t u d h
+  simp only [fren_spec, unreachedOf] at *
+  by_cases hd : d > 0 <;> by_cases hf : f = 0 <;> by_cases ht : t = 0 <;> by_cases hu : u < t <;>
+    simp_all [toUnreached] <;> omega
+
+-- From the impl of its call: only why no test reached the check matters.
+impl unreached_warning_of: eval::unreached_warning for (f t u d v : Nat) (un c : Bool) {
+  found := f,
+  triggered := t,
+  unknown := u,
+  decided := d,
+  valued := v,
+  untested? := un,
+  call_assumption? := c,
+  shown := toUnreachedWarning (unreachedWarning f t u d v un c),
+} by
+  intro f t u d v un c h
+  have hu := unreached_of f t u d h.1
+  simp only [fren_spec] at *
+  refine ⟨f, t, u, d, toUnreached (unreachedOf f t u d), ?_, ⟨rfl, rfl, rfl, rfl⟩, h.1, hu⟩
+  simp only [unreachedWarning]
+  by_cases hv : v = 0 <;>
+    cases unreachedOf f t u d <;> cases un <;> cases c <;> simp_all [toUnreached, toUnreachedWarning]
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.

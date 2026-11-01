@@ -1,0 +1,53 @@
+--@ args: quickcheck
+-- `F0617`, not `F0612`, at checks whose trigger has no value: the search
+-- tries sequences of at most two elements, so `q[7]` is out of range in
+-- every test. A trigger without a value does not hold, but it is not
+-- false either. This covers an expectation, a global expectation and a
+-- call assumption.
+mod m
+
+pub proc c(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q[7] > 0, big?
+}
+
+expect g(a_q: Seq<Int>) {
+    call a := c(a_q)
+    expect g: when a.q[7] > 0, a.big?
+}
+
+pub proc guarded(q: Seq<Int>) { assume seventh: when q[7] > 0, q.len > 7 }
+
+pub proc user(z: Seq<Int>) { call u := guarded(z) }
+
+-- The trigger is false wherever `q` has elements, and has no value where
+-- it is empty: `F0617` at the trigger, though `big?` always has a value.
+pub proc mixed(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q[0] + 1 < q[0], big?
+}
+
+-- The trigger holds in some tests, where the check has no value: `F0617`
+-- at the check.
+pub proc held(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q.len < 3, q[7] > 0
+}
+
+-- An assumption whose trigger has no value but which holds admits every
+-- input, so beside `F0610`, which `b` causes, it gets no `F0617`, at the
+-- procedure or at a call.
+set_option fren.lint.contradictory_comparisons "allow" in
+pub proc holds(q: Seq<Int>, x: Int): (y: Int) {
+    assume a: when q[7] > 0, q.len < 100
+    assume b: x > 0 and x < 0
+    ensure r: y = x + q.len
+}
+
+set_option fren.lint.contradictory_comparisons "allow" in
+pub proc called(q: Seq<Int>): (w: Int) {
+    assume a: when q[7] > 0, q.len < 100
+    ensure s: w > 0 and w < 0
+}
+
+pub proc caller(z: Seq<Int>) { call u := called(z) }
