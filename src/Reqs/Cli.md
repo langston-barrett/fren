@@ -445,11 +445,16 @@ whether a model is wanted is the answer's, as below. `cli::query_entry`
 states which entries are written, and that an entry reads back as it was
 written, key, answer and model, whatever characters they hold, so that an
 entry is never read as another key's or with another answer. Both are
-proved of `fren check`'s code, which [implements](Impl.md) them: the
-code gives `observations`, those of the key it makes, if it makes one,
-and `spelled?`, whether it makes one; and `read`, what it reads back
-from the text that it writes, so that `read`'s definition is the round
-trip.
+proved of `fren check`'s code, which [implements](Impl.md) them. In
+`cli::query_entry`, the code gives `read`, what it reads back from the
+text that it writes, so that `read`'s definition is the round trip. In
+`cli::query_key`, the code gives `observations`, those of the key that
+it makes, or none, and both `kept?` and `spelled?` are whether it makes
+one. The Req alone does not tie `spelled?` to `kept?`: `observations`
+cannot be an output, since an output of unbounded size must be defined,
+and stating `spelled? iff kept?` would constrain the inputs. The proof
+of the implementation is what shows that the two agree, so that the
+key's names are the check's whenever a key is made.
 `cli::query_cache` states when an entry answers a query,
 `cli::kept_answer` which answers are kept, and `cli::contradicts` when a
 fresh answer contradicts a kept one:
@@ -503,7 +508,6 @@ pub fn holds?(o: Observed, k: Observation) := spells?(o.name, k.name) and k.form
     }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
 pub proc query_key(
     script: String,
     observed: Seq<Observed>,          -- the formulas whose values its model reads, as the check names them
@@ -554,7 +558,6 @@ pub struct Entry {
 }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
 pub proc query_entry(
     written: Entry,       -- what is written, if it is kept
 ): (det text?, det read: Option<Entry>) {

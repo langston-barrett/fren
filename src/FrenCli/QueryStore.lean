@@ -334,7 +334,9 @@ def encodeEntry? (k : CacheKey) (o : Outcome String) (hasModel : Bool) : Option 
   (entryLines? k o hasModel).map joinLines
 
 /-- The pairs of a model's names and values, from `ls`, in at most
-`fuel` steps: each takes at least two lines. -/
+`fuel` steps: each takes at least two lines. It recurses once for each
+binding, which is shallow: a model binds the few variables that a check
+reads, and 100,000 bindings read back without exhausting the stack. -/
 def modelOfLinesFuel? : Nat → List String → Option (List (Lean.Name × String))
   | _, [] => some []
   | 0, _ :: _ => none
