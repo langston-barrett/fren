@@ -515,19 +515,28 @@ def queryCache : IO (Array String) := do
   let first := (root / "first").toString
   let second := (root / "second").toString
   let run (args : List String) := runFren (["check"] ++ args ++ [file])
-  let (plain, plainCode) ← run []
-  let (cold, coldCode) ← run ["--query-cache", first]
-  let (warm, warmCode) ← run ["--query-cache", first]
-  let (verified, verifiedCode) ← run ["--query-cache", second, "--verify-query-cache", first]
-  let entries (d : String) : IO (Array String) := do
+  let files (d : String) : IO (Array FilePath) := do
     let fs ← (FilePath.mk d).walkDir
     let fs ← fs.filterM fun f => return !(← f.isDir)
-    (fs.qsort (·.toString < ·.toString)).mapM fun f => IO.FS.readFile f
+    return fs.qsort (·.toString < ·.toString)
+  let entries (d : String) : IO (Array String) := do (← files d).mapM IO.FS.readFile
+  -- Each entry with when it was last written: an entry written again,
+  -- renamed into place, is a new file.
+  let written (d : String) : IO (Array (String × IO.FS.SystemTime)) := do
+    (← files d).mapM fun f => return (f.toString, (← f.metadata).modified)
+  let (plain, plainCode) ← run []
+  let (cold, coldCode) ← run ["--query-cache", first]
+  let afterCold ← written first
+  let (warm, warmCode) ← run ["--query-cache", first]
+  let (verified, verifiedCode) ← run ["--query-cache", second, "--verify-query-cache", first]
   let mut failures := #[]
   for (name, out, code) in [("cold", cold, coldCode), ("warm", warm, warmCode)] do
     unless out == plain && code == plainCode do
       failures := failures.push s!"{name}, the output differs from that without the cache:\n{out}\n---\n{plain}"
   if (← entries first).isEmpty then failures := failures.push "the cold run kept no answers"
+  -- The warm run answered every query from the cache: it wrote no entry.
+  unless (← written first) == afterCold do
+    failures := failures.push "the warm run wrote to the cache, so it did not answer every query from it"
   unless (← entries first) == (← entries second) do
     failures := failures.push "two cold runs kept different answers"
   let (counts, rest) := (verified.splitOn "\n").partition (·.startsWith "fren: compared ")
@@ -536,6 +545,33 @@ def queryCache : IO (Array String) := do
     failures := failures.push s!"the verified run differs or compared nothing:\n{verified}"
   let (_, missingCode) ← run ["--verify-query-cache", (root / "missing").toString]
   unless missingCode == 2 do failures := failures.push "a missing directory to compare with is not an error"
+  -- An entry whose answer is flipped contradicts the solver's: an internal
+  -- error, which names the entry, with no position.
+  let flipped := (root / "flipped").toString
+  let mut flips := 0
+  for (f, text) in (← files first).zip (← entries first) do
+    let rel := (f.toString.dropPrefix (first ++ "/")).toString
+    let text' := if text.endsWith "\nunsat\n" then some ((text.dropEnd 6).toString ++ "sat\n")
+      else if text.endsWith "\nsat\n" then some ((text.dropEnd 4).toString ++ "unsat\n") else none
+    let target := FilePath.mk flipped / rel
+    if let some p := target.parent then IO.FS.createDirAll p
+    IO.FS.writeFile target (text'.getD text)
+    if text'.isSome then flips := flips + 1
+  let (contradicted, contradictedCode) ← run ["--verify-query-cache", flipped]
+  let lines := (contradicted.splitOn "\n").toArray
+  let errorLines := (List.range lines.size).filter fun i =>
+    lines[i]!.startsWith "error: internal error: the solver's answer contradicts the query cache's entry"
+  -- A position would be the next line, as `--> file:line:col`.
+  let positioned := errorLines.any fun i => (lines[i + 1]?.getD "").trimAscii.startsWith "-->"
+  unless flips > 0 && errorLines.length == flips && contradictedCode == 1 && !positioned do
+    failures := failures.push s!"flipping {flips} answers did not give as many contradictions, each with no position (exit {contradictedCode}):\n{contradicted}"
+  -- A `sat` entry without a model answers a query that does not want one,
+  -- and not one that does, which the solver answers.
+  let k : FrenCli.CacheKey := FrenCli.CacheKey.of "(check-sat)" [] (← FrenCli.cvc5Version)
+  let modelless := root / "modelless"
+  FrenCli.writeEntry modelless k (.sat #[]) false 0
+  unless (← FrenCli.lookupEntry? modelless k false).isSome && (← FrenCli.lookupEntry? modelless k true).isNone do
+    failures := failures.push "a `sat` entry without a model answers a query that wants one, or not one that does not"
   IO.FS.removeDirAll root
   return failures
 
@@ -563,12 +599,17 @@ def ownSpec : IO (Array String) := do
   if let some dir := queryCache? then
     if out.contains "contradicts the query cache's entry".toSlice then
       IO.FS.writeFile (dir ++ ".contradicted") out
-  -- A comparison that compared nothing checks nothing.
-  let compared := if verifyQueryCache?.isSome && !out.contains "fren: compared ".toSlice then
-      #["the binary did not report how many answers it compared with the query cache"]
-    else if verifyQueryCache?.isSome && out.contains "fren: compared 0 answers".toSlice then
-      #[s!"the binary compared no answers with the query cache `{verifyQueryCache?.getD ""}`"]
-    else #[]
+  -- A comparison that compared nothing checks nothing, unless there was
+  -- nothing to compare with: after a change to `queryCacheVersion` or to
+  -- cvc5, which alters every key, the previous cache has no entry that
+  -- this run could compare with (`Reqs/dev/Testing#query-cache`).
+  let compared ← if verifyQueryCache?.isSome && !out.contains "fren: compared ".toSlice then
+      pure #["the binary did not report how many answers it compared with the query cache"]
+    else if let (some dir, true) := (verifyQueryCache?, out.contains "fren: compared 0 answers".toSlice) then
+      if ← FrenCli.comparableEntries dir (← FrenCli.cvc5Version) then
+        pure #[s!"the binary compared no answers with the query cache `{dir}`"]
+      else pure #[]
+    else pure #[]
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ compared
@@ -1365,7 +1406,7 @@ def readGroup (paths : Array String) : IO (Array (String × Array Char)) :=
 
 /-- The mutants of Fren's own requirements are checked in this many jobs,
 each taking every `n`th mutant; every other group is one job. -/
-def mutationSlices : Nat := 8
+def mutationSlices : Nat := 64
 
 /-- The mutants of the text `chars` of file `file`, whose parse is
 `parsed` (`FrenCli.parseText`), as `fren` makes them, where the spec's

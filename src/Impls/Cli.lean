@@ -128,9 +128,39 @@ impl query_logic: cli::query_logic for (k : Fren.Core.CheckKind) (ext proj q qua
   internal? := !Fren.Core.queryAsked (Fren.Core.logic k ext proj q) quantifies,
 }
 
+/-- An observation of a key, as the spec sees it. -/
+def toObservation (o : FrenCli.KeyObservation) : cli.Observation :=
+  { name := o.name, formula := o.formula, guard := o.guard? }
+
 /-- A key of the query cache, as the spec sees it. -/
 def toCacheKey (k : FrenCli.CacheKey) : cli.Key :=
-  { script := k.script, solver := k.solver, version := k.version }
+  { script := k.script, observations := k.observations.map toObservation, solver := k.solver, version := k.version }
+
+theorem toObservation_inj {a b : FrenCli.KeyObservation} (h : toObservation a = toObservation b) : a = b := by
+  cases a; cases b
+  simp only [toObservation] at h
+  injection h with h1 h2 h3
+  subst h1 h2 h3; rfl
+
+theorem map_toObservation_inj : {as bs : List FrenCli.KeyObservation} →
+    as.map toObservation = bs.map toObservation → as = bs
+  | [], [], _ => rfl
+  | a :: as, b :: bs, h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    rw [toObservation_inj h.1, map_toObservation_inj h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp at h
+
+-- A query's key (`FrenCli.QueryStore.key?`), from its script and the
+-- observations of its model.
+impl query_key: cli::query_key for (script : String) (os : List FrenCli.KeyObservation) (solver : String) {
+  script := script,
+  observations := os.map toObservation,
+  solver := solver,
+  version := FrenCli.queryCacheVersion,
+  key := toCacheKey (FrenCli.CacheKey.of script os solver),
+} by
+  intro script os solver _
+  simp [fren_spec, toCacheKey, FrenCli.CacheKey.of]
 
 /-- An answer, as the spec sees it. -/
 def toCachedAnswer : FrenCli.CachedAnswer → cli.Answer
@@ -155,9 +185,10 @@ impl query_cache_hit: cli::query_cache for (asked stored : FrenCli.CacheKey) (fo
     · intro h
       cases asked; cases stored
       simp only [toCacheKey] at h
-      injection h with h1 h2 h3
-      have : _ := Int.ofNat.inj h3
-      subst h1 h2 this; rfl
+      injection h with h1 h2 h3 h4
+      have : _ := Int.ofNat.inj h4
+      subst h1 h3 this
+      rw [map_toObservation_inj h2]
     · intro h; rw [h]
   rcases a with _ | (_ | _) | _ <;> cases found <;> cases wantModel <;>
     simp_all [fren_spec, FrenCli.cacheHit, FrenCli.CachedAnswer.answers, toCachedAnswer]
