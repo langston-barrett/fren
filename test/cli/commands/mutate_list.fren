@@ -56,11 +56,22 @@ pub proc c(x: Int, s: String, m: Mode, rd: Reading, sp: Span): (ok?, y: Int) {
     ensure exclusive: at_most_one?(x = 1, x = 2, x = 3) or exactly_one?(x > 3)
     ensure all_modes: ok? or (forall (k: Mode), k != m or x > 1)
     -- The values of two rows in a row swapped, and each row dropped.
-    ensure coded: y = table { m = Heat => 1, m = Cool => 2, _ => 0 }
+    ensure coded: y = table {
+        m = Heat => 1,
+        m = Cool => 2,
+        _ => 0,
+    }
     ensure branches: y = if ok? then -x else x.max(0)
-    ensure arms: y = match rd { Reading::Missing => 0, Reading::Stale(_) => 1, Reading::Value(v) => v }
+    ensure arms: y = match rd {
+        Reading::Missing => 0,
+        Reading::Stale(_) => 1,
+        Reading::Value(v) => v,
+    }
     ensure modes: m != Mode::Heat or s.starts_with?("h")
-    ensure spans: sp = { sp with lo := x.min(y), hi := 3 }
+    ensure spans: sp = { sp with
+        lo := x.min(y),
+        hi := 3,
+    }
 
     expect e: when x = 3, ok?
 }

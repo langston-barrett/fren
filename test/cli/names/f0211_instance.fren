@@ -1,3 +1,5 @@
 -- An instance name ending in `?` (F0211).
 proc sub() {}
-proc c() { call s? := sub() }
+proc c() {
+    call s? := sub()
+}

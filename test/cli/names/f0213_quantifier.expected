@@ -1,8 +1,8 @@
 error[F0213]: `m` is bound multiple times in this quantifier
- --> test/cli/names/f0213_quantifier.fren:3:56
+ --> test/cli/names/f0213_quantifier.fren:4:42
   |
-3 | proc c(): (ok?) { ensure r: ok? iff (exists (m: Mode) (m: Mode), true) }
-  |                                                        ^ bound again here
+4 |     ensure r: ok? iff (exists (m: Mode) (m: Mode), true)
+  |                                          ^ bound again here
 
 warning[F0711]: enum `Mode` is never used
  --> test/cli/names/f0213_quantifier.fren:2:6

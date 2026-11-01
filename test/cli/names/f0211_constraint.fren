@@ -1,2 +1,4 @@
 -- A constraint name ending in `?` (F0211).
-proc c(x: Int) { ensure r?: x > 0 }
+proc c(x: Int) {
+    ensure r?: x > 0
+}

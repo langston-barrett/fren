@@ -1,13 +1,13 @@
 error[F0201]: cannot find `cuont` in this scope
- --> test/cli/names/f0201_scope.fren:2:46
+ --> test/cli/names/f0201_scope.fren:3:19
   |
-2 | proc c(count: Int): (y: Int) { ensure r: y = cuont }
-  |                                              ^^^^^ not found in this scope
+3 |     ensure r: y = cuont
+  |                   ^^^^^ not found in this scope
   |
 help: a similar name exists: `count`
   |
-2 - proc c(count: Int): (y: Int) { ensure r: y = cuont }
-2 + proc c(count: Int): (y: Int) { ensure r: y = count }
+3 -     ensure r: y = cuont
+3 +     ensure r: y = count
   |
 
 error: could not check due to previous errors

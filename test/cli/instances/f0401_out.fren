@@ -1,2 +1,5 @@
 -- An assumption about an `out` (F0401).
-proc c(x: Int): (y: Int) { assume a: y > 0 ensure r: y = x }
+proc c(x: Int): (y: Int) {
+    assume a: y > 0
+    ensure r: y = x
+}

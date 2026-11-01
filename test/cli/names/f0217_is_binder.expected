@@ -1,14 +1,14 @@
 error[F0217]: `v` shadows the parameter `v`
- --> test/cli/names/f0217_is_binder.fren:3:71
+ --> test/cli/names/f0217_is_binder.fren:4:38
   |
-3 | proc c(r: Reply, v: Int): (w: Int) { ensure a: when r is Reply::Value(v), w = v }
-  |                                                                       ^ shadows without `!`
+4 |     ensure a: when r is Reply::Value(v), w = v
+  |                                      ^ shadows without `!`
   |
   = note: shadowing is explicit: a declaration that hides a name in scope is written with `!`, as `v!`
 help: to shadow the parameter `v`, write `v!`
   |
-3 - proc c(r: Reply, v: Int): (w: Int) { ensure a: when r is Reply::Value(v), w = v }
-3 + proc c(r: Reply, v: Int): (w: Int) { ensure a: when r is Reply::Value(v!), w = v }
+4 -     ensure a: when r is Reply::Value(v), w = v
+4 +     ensure a: when r is Reply::Value(v!), w = v
   |
 
 error: could not check due to previous errors

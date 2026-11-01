@@ -1,8 +1,8 @@
 error[F0210]: expected a procedure, but `E` is an enum
- --> test/cli/names/f0210_component.fren:3:22
+ --> test/cli/names/f0210_component.fren:4:15
   |
-3 | proc c() { call s := E() }
-  |                      ^ not a procedure
+4 |     call s := E()
+  |               ^ not a procedure
 
 error: could not check due to previous errors
 

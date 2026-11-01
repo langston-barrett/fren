@@ -25,7 +25,9 @@ The formatter changes whitespace, the commas at the end of lists (see
 (see [Imports](#imports)). It keeps every comment. It lays out
 [lists and blocks](#lists-and-blocks) as rustfmt does: each on one line
 if it fits, and otherwise with one element to a line, but the arms of a
-`match` and the members of a procedure always one to a line. Elsewhere, for
+`match` or a table, the rows of a table, and the members of a
+procedure's, function's or global expectation's block always one to a
+line. Elsewhere, for
 now, it keeps the line breaks: it breaks no other long line and joins no
 other short ones, except to merge imports. On each line, it decides the
 indentation and the spaces between tokens; across lines, how many blank
@@ -192,7 +194,9 @@ but the last:
 The members of a procedure's block, of a [function's
 block](Lang/Items.md#function-blocks) and of a [global
 expectation](Lang/Global.md)'s block are laid out as a list too, a
-*block*, but they are separated by line breaks rather than commas. An
+*block*, but they are separated by line breaks rather than commas. A
+Boolean block, whose members are separated by commas, is a list, not a
+block in this sense, and neither is a [block of imports](#imports). An
 [evidence setting](Evidence.md), `set_option fren.evidence "..." in`, is
 not separated from the member after it.
 
@@ -929,15 +933,44 @@ pub proc group_layout(
 }
 ```
 
-`fmt::in_block` decides whether a `use` is part of a block:
+`fmt::in_block` decides whether a `use` is part of a block, from the
+lines of the tokens next to it:
 
 ```fren
-set_option fren.evidence "enumerated" in
+-- Where the token next to a `use` is: there is none, as the `use` starts or ends the file, or it
+-- is on a line.
+pub enum Neighbour { Edge, OnLine(Int) }
+
+use self::Neighbour::{Edge, OnLine}
+
+-- Whether the token next to a `use`, if there is one, is on a line before `line`.
+pub fn above?(n: Neighbour, line: Int) := match n {
+    Edge => true,
+    OnLine(l) => l < line,
+}
+
+-- Whether the token next to a `use`, if there is one, is on a line after `line`.
+pub fn below?(n: Neighbour, line: Int) := match n {
+    Edge => true,
+    OnLine(l) => l > line,
+}
+
 pub proc in_block(
-    alone?,                  -- it starts and ends its lines, which have no other token and no comment
+    first_line: Int,         -- the line where the `use` starts
+    last_line: Int,          -- the line where it ends
+    before: Neighbour,       -- where the token before it ends
+    after: Neighbour,        -- where the token after it starts
+    commented?,              -- a comment is on one of its lines
     nested?,                 -- it is the item of a `set_option ... in`
-): (det sorted?) {
+): (det alone?, det sorted?) {
+    assume in_order: first_line <= last_line
+
+    -- It starts and ends its lines, which have no other token and no comment.
+    ensure alone_rule: alone? iff (above?(before, first_line) and below?(after, last_line)
+        and not commented?)
     ensure block_rule: sorted? iff (alone? and not nested?)
+
+    expect shared: when before = OnLine(first_line), not sorted?
 }
 ```
 

@@ -1,8 +1,8 @@
 error[F0210]: expected a type, but `d` is a procedure
- --> test/cli/names/f0210_quantified_component.fren:3:49
+ --> test/cli/names/f0210_quantified_component.fren:6:35
   |
-3 | proc c(): (ok?) { ensure r: ok? iff (exists (w: d), true) }
-  |                                                 ^ not a type
+6 |     ensure r: ok? iff (exists (w: d), true)
+  |                                   ^ not a type
   |
   = note: a quantifier in an expression ranges over the values of a type
   = help: to relate behaviours of a procedure, call it in a global expectation, as in `expect n(x: T) { call a := p(x) ... }`

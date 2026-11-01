@@ -1,6 +1,12 @@
 -- Private implementation variables remain inaccessible outside the call.
-proc precise(x: Int): (y: Int) { exists hidden: Int ensure r: y = x ensure h: hidden = x }
-proc rough(n: Int): (z: Int) { ensure r: z >= n }
+proc precise(x: Int): (y: Int) {
+    exists hidden: Int
+    ensure r: y = x
+    ensure h: hidden = x
+}
+proc rough(n: Int): (z: Int) {
+    ensure r: z >= n
+}
 expect fits(x: Int) {
     call c := precise(x)
     refines c rough(c.hidden)

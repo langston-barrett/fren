@@ -1,3 +1,5 @@
 -- A name bound twice by one quantifier (F0213).
 enum Mode { Off, Heat }
-proc c(): (ok?) { ensure r: ok? iff (exists (m: Mode) (m: Mode), true) }
+proc c(): (ok?) {
+    ensure r: ok? iff (exists (m: Mode) (m: Mode), true)
+}

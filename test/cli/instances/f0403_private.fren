@@ -1,3 +1,9 @@
 -- A private variable of an instance (F0403).
-proc sub(a: Int) { exists hidden: Int ensure r: hidden = a }
-proc c(i: Int): (o: Int) { call s := sub(i) ensure r: o = s.hidden }
+proc sub(a: Int) {
+    exists hidden: Int
+    ensure r: hidden = a
+}
+proc c(i: Int): (o: Int) {
+    call s := sub(i)
+    ensure r: o = s.hidden
+}

@@ -1,2 +1,4 @@
 -- A variable that shadows a built-in function without `!`.
-proc c(exactly_one?): (o?) { out o? := exactly_one? }
+proc c(exactly_one?): (o?) {
+    out o? := exactly_one?
+}

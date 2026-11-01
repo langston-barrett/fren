@@ -257,11 +257,23 @@ impl group_layout: fmt::group_layout for (n : Nat) (wv fits : Bool) {
   intro n wv fits _
   cases wv <;> cases fits <;> simp [fren_spec, FrenCli.Fmt.groupLayout] <;> omega
 
-impl in_block: fmt::in_block for (a n : Bool) {
-  alone? := a,
+def toNeighbour : Option Nat → fmt.Neighbour
+  | none => .Edge
+  | some l => .OnLine l
+
+impl in_block: fmt::in_block for (f l : Nat) (b a : Option Nat) (c n : Bool) {
+  first_line := f,
+  last_line := l,
+  before := toNeighbour b,
+  after := toNeighbour a,
+  commented? := c,
   nested? := n,
-  sorted? := FrenCli.Fmt.inBlock a n,
-}
+  alone? := FrenCli.Fmt.useAlone f l b a c,
+  sorted? := FrenCli.Fmt.inBlock (FrenCli.Fmt.useAlone f l b a c) n,
+} by
+  intro f l b a c n _
+  cases b <;> cases a <;> cases c <;> cases n <;>
+    simp [fren_spec, FrenCli.Fmt.useAlone, FrenCli.Fmt.inBlock, toNeighbour]
 
 impl file: fmt::file for (c i p f : Bool) {
   check? := c,

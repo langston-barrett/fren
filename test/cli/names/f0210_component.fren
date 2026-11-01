@@ -1,3 +1,5 @@
 -- An enum where a procedure was expected (F0210).
 enum E { A }
-proc c() { call s := E() }
+proc c() {
+    call s := E()
+}

@@ -9,7 +9,10 @@ proc related(r: Rel<E, E>, s: Set<E>): (t: Rel<E, E>, size: Int) {
     ensure c: size = 0 iff s = {}
 }
 
-proc counted(n: Int): (size: Int) { assume pos: n >= 0 ensure r: size = 0 or n > 0 }
+proc counted(n: Int): (size: Int) {
+    assume pos: n >= 0
+    ensure r: size = 0 or n > 0
+}
 
 expect counts(r: Rel<E, E>, s: Set<E>) {
     use E
@@ -19,7 +22,9 @@ expect counts(r: Rel<E, E>, s: Set<E>) {
 }
 
 -- Without counting, the same refinement is in the core.
-proc membered(has_a?): (size: Int) { ensure r: when has_a?, size != 0 }
+proc membered(has_a?): (size: Int) {
+    ensure r: when has_a?, size != 0
+}
 
 expect members(r: Rel<E, E>, s: Set<E>) {
     use E

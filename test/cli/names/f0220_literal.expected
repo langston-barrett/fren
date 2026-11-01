@@ -1,7 +1,7 @@
 error[F0220]: `true` is a literal, so it cannot be declared
  --> test/cli/names/f0220_literal.fren:2:8
   |
-2 | proc c(true: Int): (y: Int) { ensure r: y = 1 }
+2 | proc c(true: Int): (y: Int) {
   |        ^^^^ a literal
   |
   = note: `true` is the `Bool` literal wherever an expression is expected, so nothing could name this declaration

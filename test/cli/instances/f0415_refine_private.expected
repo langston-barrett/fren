@@ -1,11 +1,11 @@
 error[F0403]: `c.hidden` is private to call `c`
- --> test/cli/instances/f0415_refine_private.fren:6:21
-  |
-6 |     refines c rough(c.hidden)
-  |                     ^^^^^^^^ private
-  |
-  = note: only the parameters and results of a call can be mentioned
-  = help: to mention it, make it a result of the called procedure
+  --> test/cli/instances/f0415_refine_private.fren:12:21
+   |
+12 |     refines c rough(c.hidden)
+   |                     ^^^^^^^^ private
+   |
+   = note: only the parameters and results of a call can be mentioned
+   = help: to mention it, make it a result of the called procedure
 
 error: could not check due to previous errors
 

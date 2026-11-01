@@ -4,5 +4,8 @@
 mod m
 
 pub proc c(x: Option<Int>): (y: Option<Int>) {
-    ensure r: y = (match x { Option::Some(n) => Option::Some(n + 1), Option::None => Option::None })
+    ensure r: y = (match x {
+        Option::Some(n) => Option::Some(n + 1),
+        Option::None => Option::None,
+    })
 }

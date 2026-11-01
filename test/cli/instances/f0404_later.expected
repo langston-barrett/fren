@@ -1,8 +1,8 @@
 error[F0404]: call `second` is not declared before these arguments
- --> test/cli/instances/f0404_later.fren:3:36
+ --> test/cli/instances/f0404_later.fren:6:23
   |
-3 | proc c(i: Int) { call first := sub(second.b) call second := sub(i) }
-  |                                    ^^^^^^^^ declared later, or these are its own arguments
+6 |     call first := sub(second.b)
+  |                       ^^^^^^^^ declared later, or these are its own arguments
   |
   = note: arguments may only mention earlier calls, so that calls form no cycles
   = help: declare `second` before the call whose arguments mention it

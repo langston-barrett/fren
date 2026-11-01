@@ -1,3 +1,5 @@
 -- A pattern test's binder mentioned in the `else` branch of its `if`, which does not see it.
 enum Reply { Empty, Value(Int) }
-proc c(r: Reply): (w: Int) { ensure a: w = (if r is Reply::Value(v) then v else v) }
+proc c(r: Reply): (w: Int) {
+    ensure a: w = (if r is Reply::Value(v) then v else v)
+}

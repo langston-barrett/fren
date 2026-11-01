@@ -1,3 +1,8 @@
 -- A binding that mentions a later instance (F0404).
-proc sub(a: Int): (b: Int) { ensure r: b = a }
-proc c(i: Int) { call first := sub(second.b) call second := sub(i) }
+proc sub(a: Int): (b: Int) {
+    ensure r: b = a
+}
+proc c(i: Int) {
+    call first := sub(second.b)
+    call second := sub(i)
+}

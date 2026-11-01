@@ -1,8 +1,8 @@
 error[F0402]: the arguments of a call may only mention parameters and earlier calls, but `o` is an output
- --> test/cli/instances/f0402_binding_out.fren:3:36
+ --> test/cli/instances/f0402_binding_out.fren:6:19
   |
-3 | proc c(): (o: Int) { call s := sub(o) ensure r: o = 0 }
-  |                                    ^ an output
+6 |     call s := sub(o)
+  |                   ^ an output
   |
   = note: a call's arguments are fixed before the procedure chooses its outputs
   = help: to connect a call to an output, pass it a parameter and add an `ensure` relating the two
