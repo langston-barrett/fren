@@ -1,0 +1,14 @@
+--- test/cli/fmt/independent.fren
++++ test/cli/fmt/independent.fren
+@@ -13 +13,3 @@
+-        _ => wrap(wrap(n + 1000000000 + m) + wrap(n + 2000000000 + m) + wrap(3)),
++        _ => wrap(
++            wrap(n + 1000000000 + m) + wrap(n + 2000000000 + m) + wrap(3)
++        ),
+@@ -16 +18,4 @@
+-    ensure r3: q = P { x := n + 1, y := m + 1 }
++    ensure r3: q = P {
++        x := n + 1,
++        y := m + 1,
++    }
+exit=1

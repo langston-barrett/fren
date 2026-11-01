@@ -17,7 +17,8 @@ over a number of tests, by cases on whether there were any.
 namespace Fren.Impls
 
 open Fren.Core (CheckKind Verdict)
-open FrenCli.Eval (Status Confirmation statusOf evalExit reached testVerdict confirmation confirmedVerdict)
+open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached unreachedOf unreachedWarning testVerdict
+  confirmation confirmedVerdict)
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible
@@ -50,14 +51,49 @@ impl eval_exit_code: eval::eval_exit for (ran complete : Bool) (s : Option Statu
   intro ran complete s ef _
   cases ran <;> cases complete <;> cases ef <;> rcases s with _ | _ | _ | _ <;> decide
 
-impl reaches_check: eval::reaches for (f h t : Bool) {
+impl reaches_check: eval::reaches for (f h t : Bool) (v : Option Bool) {
   found? := f,
   has_trigger? := h,
   trigger? := t,
-  reached? := reached f h t,
+  value := v,
+  reached? := reached f h t v,
 } by
-  intro f h t _
-  cases f <;> cases h <;> cases t <;> decide
+  intro f h t v _
+  cases f <;> cases h <;> cases t <;> rcases v with _ | _ | _ <;> decide
+
+def toUnreached : Unreached → eval.Unreached
+  | .Reached => .Reached
+  | .Untested => .Untested
+  | .Untriggered => .Untriggered
+  | .Valueless => .Valueless
+
+def toUnreachedWarning : UnreachedWarning → eval.UnreachedWarning
+  | .Silent => .Silent
+  | .Untriggered => .Untriggered
+  | .Valueless => .Valueless
+
+instance : Fren.Finite Unreached := ⟨[.Reached, .Untested, .Untriggered, .Valueless], by intro x; cases x <;> simp⟩
+
+impl unreached_warning_of: eval::unreached_warning for (w : Unreached) (u c : Bool) {
+  why := toUnreached w,
+  untested? := u,
+  call_assumption? := c,
+  shown := toUnreachedWarning (unreachedWarning w u c),
+} by
+  intro w u c _
+  cases w <;> cases u <;> cases c <;> decide
+
+-- Over the numbers of tests: only which are zero matters.
+impl unreached_of: eval::unreached for (f t d : Nat) {
+  found := f,
+  triggered := t,
+  decided := d,
+  why := toUnreached (unreachedOf f t d),
+} by
+  intro f t d h
+  simp only [fren_spec, unreachedOf, toUnreached] at *
+  rcases Nat.eq_zero_or_pos d with hd | hd <;> rcases Nat.eq_zero_or_pos f with hf | hf <;>
+    rcases Nat.eq_zero_or_pos t with ht | ht <;> simp_all [Nat.pos_iff_ne_zero] <;> omega
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.

@@ -1,0 +1,24 @@
+--@ args: quickcheck
+-- `F0617` for a global expectation and for a call assumption, each of
+-- which reads `q[7]`, out of range in every test. Without a value, the
+-- assumption admits no behaviour of `guarded` or of the call in `user`,
+-- so both also have `F0610`, which the call assumption's `F0617`
+-- explains.
+mod m
+
+pub proc c(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+}
+
+expect g(a_q: Seq<Int>) {
+    call a := c(a_q)
+    expect g: a.q[7] > 0 or a.big?
+}
+
+pub proc guarded(q: Seq<Int>) {
+    assume seventh: q[7] > 0
+}
+
+pub proc user(z: Seq<Int>) {
+    call u := guarded(z)
+}

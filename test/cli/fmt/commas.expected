@@ -17,21 +17,33 @@
 @@ -24,2 +23 @@
 -    call d := sub(x /- the first -/
 -        , y)
-+    call d := sub(x /- the first -/ , y)
++    call d := sub(x /- the first -/, y)
 @@ -28 +26 @@
 -        x
 +        x,
 @@ -30 +28 @@
 -        , y
 +        y,
-@@ -34 +32 @@
+@@ -35 +33 @@
+-        x
++        x,
+@@ -37 +35 @@
+-        , y
++        y,
+@@ -41,2 +39,3 @@
+-        x
+-        /- the second -/, y
++        x,
++        /- the second -/
++        y,
+@@ -46 +45 @@
 -        x  -- the first
 +        x,  -- the first
-@@ -36,2 +34 @@
+@@ -48,2 +47 @@
 -        , y  -- the second
 -        ,
 +        y,   -- the second
-@@ -39,2 +36,4 @@
+@@ -51,2 +49,4 @@
 -    expect r5: P { x := x  -- a comment
 -            , y := y }.x = x
 +    expect r5: P {

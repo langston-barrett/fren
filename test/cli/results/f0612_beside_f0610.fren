@@ -1,0 +1,20 @@
+--@ args: quickcheck
+-- Beside the procedure's `F0610`, a call assumption's `F0612` is not
+-- given (`eval::unreached_warning`): the inputs of `u` are found, and the
+-- trigger of `m::guarded::t`, which only `x = 17637` meets, holds in none
+-- of them, but no behaviour of `user2` is, since `m::never::n` holds for
+-- no input.
+mod m
+
+pub proc guarded(x: Int) {
+    assume t: when 7 * x = 123459, x > 0
+}
+
+pub proc never(x: Int) {
+    assume n: x + 1 < x
+}
+
+pub proc user2(z: Int) {
+    call u := guarded(z)
+    call v := never(z)
+}

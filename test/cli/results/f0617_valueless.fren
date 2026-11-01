@@ -1,0 +1,10 @@
+--@ args: quickcheck
+-- `F0617` for expectations with and without a trigger: the search tries
+-- sequences of at most two elements, so `q[7]` is out of range in every
+-- test, and the expectation has no value. The trigger `q.len < 3` holds
+-- in most tests, so `e` gets `F0617`, not `F0612`.
+proc c(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q.len < 3, q[7] > 0
+    expect f: q[7] > 0 or big?
+}
