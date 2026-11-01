@@ -3198,25 +3198,33 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
 
 
 open Lang in
-/-- Whether `e` is written as a sequence: a sequence literal, or a `++`, a
-conditional or a `match` with one among its shared parts, so that the right
-of `in` is checked against a sequence, as in the `fren` command. -/
-partial def seqShaped (e : Syntax) : Bool :=
-  if e.isOfKind ``Lang.seqExpr then true
-  else if isMatchLike e then (matchSourceArms e).any (seqShaped ·[3])
+/-- How `e` is written, for whether it is written as a sequence
+(`Core.WrittenShape`), as the `fren` command's `writtenShape` reads it. -/
+partial def writtenShape (e : Syntax) : Core.WrittenShape :=
+  if e.getNumArgs == 3 && e[0].isAtom && e[0].getAtomVal == "(" then .parenthesized (writtenShape e[1]) else
+  let e := unparen e
+  if e.isOfKind ``Lang.seqExpr then .seqLiteral
+  else if isMatchLike e then .match ((matchSourceArms e).toList.map (writtenShape ·[3]))
+  else if e.isOfKind ``Lang.letExpr then .let (writtenShape e[3])
+  else if e.isOfKind ``Lang.tableExpr then .table (e[2].getSepArgs.toList.map (writtenShape ·[3]))
   else match e with
-    | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => seqShaped a || seqShaped b
-    | _ => false
+    | `(fren_expr| $a ++ $b) => .concat (writtenShape a) (writtenShape b)
+    | `(fren_expr| if $_ then $a else $b) => .conditional (writtenShape a) (writtenShape b)
+    | _ => .other
+
+/-- Whether `e` is written as a sequence, so that the right of `in` is
+checked against a sequence (`lang::written_sequence`). -/
+def seqShaped (e : Syntax) : Bool := (writtenShape e).sequence
 
 /-- Two parts of one type, `a` in `cxa` and `b` in `cxb`, as the `fren`
 command's `pair`: one that does not synthesize its type is translated after
 the other, if that one does, and expects the other's type, widened unless a
 `Nat` is expected here (`lang::checked`). -/
-def pairTerms (toTerm : ExprCtx → Syntax → TermElabM Term) (cxa cxb : ExprCtx) (a b : Syntax) :
+def pairTerms (toTerm : ExprCtx → Syntax → TermElabM Term) (site : Core.ExprSite) (cxa cxb : ExprCtx) (a b : Syntax) :
     TermElabM (Term × Term) := do
   let sibling (cx' : ExprCtx) (t : Term) : TermElabM (Option Core.Ty) := do
-    if cx'.expected? == some .nat then return some .nat
-    return ((← frenTypeOf? t).map (·.widen)).orElse fun _ => cx'.expected?
+    return site.expected cx'.expected? ((← frenTypeOf? t).map (·.widen))
+  let (cxa, cxb) := ({ cxa with expected? := site.expected cxa.expected? none }, { cxb with expected? := site.expected cxb.expected? none })
   if !(← synthesizes cxa a) && (← synthesizes cxb b) then
     let y ← toTerm cxb b
     return (← toTerm { cxa with expected? := ← sibling cxa y } a, y)
@@ -3270,7 +3278,7 @@ are read from the updated value (`Reqs/Lang/Expressions#record-updates`),
 where `toTerm` translates its parts. -/
 def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term :=
     withRef e <| withFreshMacroScope do
-  let rv ← toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } e[1]
+  let rv ← toTerm { cx with emptyOk := Core.ExprSite.updatedRecord.checked false false } e[1]
   let ty ← typeOf rv
   let some info := (← getState).recordOf? ty
     | throwErrorAt e[1] (Core.updateBaseMsg (← typeName ty)).text
@@ -3279,7 +3287,7 @@ def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   | .ok () => pure ()
   | .error (i, msg) => throwErrorAt given[i]![0] msg.text
   -- A `Nat` is expected of a `Nat` field (`lang::literal_type`).
-  let go (x? : Option Core.Ty) := toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x?,
+  let go (x? : Option Core.Ty) := toTerm { cx with emptyOk := Core.ExprSite.recordField.checked false false, expected? := Core.ExprSite.recordField.expected x? none,
                                                    natOk := x? == some .nat }
   -- `r` bound once, so that nested updates grow linearly.
   let bind := info.fields.size > given.size && !rv.raw.isIdent
@@ -3405,7 +3413,7 @@ def leanMatchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx
     let (g?, body, ty?) ← withLocalDeclsD decls fun _ => do
       let lcx : ExprCtx := { acx with binders := cx.binders ++ new.map fun (b : MatchBinder) => { b with term := ⟨mkIdent b.name⟩ } }
       let g? ← if arm[1].isNone then pure none
-        else some <$> toTerm { lcx with natOk := false, emptyOk := false, expected? := none } arm[1][1]
+        else some <$> toTerm { lcx with natOk := false, emptyOk := Core.ExprSite.armGuard.checked false false, expected? := Core.ExprSite.armGuard.expected none none } arm[1][1]
       let body ← toTerm { lcx with expected? := exp } arm[3]
       let ty? ← try some <$> typeOf body catch _ => pure none
       return (g?, body, ty?)
@@ -3502,7 +3510,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   for arm in sourceArms do
     unless (matchPatterns e arm).size == scrutinees.size do
       throwErrorAt arm (Core.arityMsg `match scrutinees.size (matchPatterns e arm).size "pattern").text
-  let terms ← scrutinees.mapM (toTerm { cx with emptyOk := Core.Position.synthesized.checked false false, natOk := false })
+  let terms ← scrutinees.mapM (toTerm { cx with emptyOk := Core.ExprSite.scrutinee.checked false false, natOk := false })
   let types ← terms.mapM typeOf
   let ptypes := types.map (patTyOf (← getState))
   for scr in scrutinees, pty in ptypes, ty in types do
@@ -3596,7 +3604,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let (g?, d?) ← if arm[1].isNone then pure (none, none) else if !isTable then do
       let g := arm[1][1]
-      let c ← toTerm { gcx with natOk := false, emptyOk := false, expected? := none } g
+      let c ← toTerm { gcx with natOk := false, emptyOk := Core.ExprSite.armGuard.checked false false, expected? := Core.ExprSite.armGuard.expected none none } g
       checkTermType g c .bool (some Core.armGuardNote)
       pure (some c, none)
     else do
@@ -3607,7 +3615,7 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       -- is.
       let g := arm[1][1]
       let (k, kt) := ((← getLocal).indexes.size, (← getLocal).tables.size)
-      let c ← toTerm { gcx with natOk := false, emptyOk := false, expected? := none, guards := t?.toArray } g
+      let c ← toTerm { gcx with natOk := false, emptyOk := Core.ExprSite.armGuard.checked false false, expected? := Core.ExprSite.armGuard.expected none none, guards := t?.toArray } g
       checkTermType g c .bool (some Core.armGuardNote)
       let l ← getLocal
       let inGuard := l.indexes.extract k
@@ -3620,12 +3628,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     let own := t?.toArray ++ g?.toArray
     taken := taken.push (Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) own)
     let others := (arms.eraseIdx! bodies.size).map (·[3])
-    let emptyOk := Core.Position.shared.checked cx.emptyOk (← anySynthesizes cx others)
+    let emptyOk := Core.ExprSite.armBody.checked cx.emptyOk (← anySynthesizes cx others)
     let acx := { gcx with guards := armGuards ++ g?.toArray, emptyOk }
     -- Each body is checked against the whole's type, or the arms' so far,
     -- as the `fren` command does: one that does not synthesize its own,
     -- before any has given one, waits for a later arm that does.
-    let shared? := expected?.orElse fun _ => armsTy?.map (·.widen)
+    let shared? := Core.ExprSite.armBody.expected expected? armsTy?
     armInfo := armInfo.push (acx, new, shared?)
     if shared?.isNone && !(← synthesizes cx arm[3]) && (← arms.anyM (synthesizes cx ·[3])) then
       waiting := waiting.push (bodies.size, acx, arm[3])
@@ -3635,9 +3643,10 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     armsTy? ← armType cx armsTy? arm[3] body shared?
     bodies := bodies.push body
   for (k, acx, b) in waiting do
-    armInfo := armInfo.modify k fun (c, n, _) => (c, n, armsTy?.map (·.widen))
-    let body ← toTerm { acx with expected? := armsTy?.map (·.widen) } b
-    if armsTy?.isSome then armsTy? ← armType cx armsTy? b body (armsTy?.map (·.widen))
+    let shared? := Core.ExprSite.armBody.expected expected? armsTy?
+    armInfo := armInfo.modify k fun (c, n, _) => (c, n, shared?)
+    let body ← toTerm { acx with expected? := shared? } b
+    if armsTy?.isSome then armsTy? ← armType cx armsTy? b body shared?
     bodies := bodies.set! k body
   noteMatch cx e (arms.map (·[0])) taken guarded unguardedExhaustive (if isTable then some pairs else none) defined
   -- A recursive application under a `match` on an enumeration's parameter
@@ -4133,8 +4142,8 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   let (ca, cb) := (← isConstant cx a, ← isConstant cx b)
   if op == "=" || op == "!=" then
     -- `++` is in the core against a constant.
-    let (x, y) ← pairTerms toTerm { cx with concatOk := cb, emptyOk := Core.Position.compared.checked false (← synthesizes cx b) }
-      { cx with concatOk := ca, emptyOk := Core.Position.compared.checked false (← synthesizes cx a) } a b
+    let (x, y) ← pairTerms toTerm .comparedOperand { cx with concatOk := cb, emptyOk := Core.ExprSite.comparedOperand.checked false (← synthesizes cx b) }
+      { cx with concatOk := ca, emptyOk := Core.ExprSite.comparedOperand.checked false (← synthesizes cx a) } a b
     -- Both sides have one type, after widening, as the `fren` command checks
     -- (`lang::operator_type`).
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then
@@ -4162,14 +4171,14 @@ def compareTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   -- (`lang::operator_type`, `lang::ordered_type`, `lang::newtype_operator`).
   -- The right is expected to have the left's type, and the left the
   -- right's, if only the right synthesizes one (`lang::checked`).
-  let x ← toTerm { cx with expected? := ← orderingExpected? toTerm cx #[a, b] } a
+  let x ← toTerm { cx with expected? := Core.ExprSite.comparedOperand.expected none (← orderingExpected? toTerm cx #[a, b]) } a
   let tx? ← frenTypeOf? x
   let st ← getState
   let info? := st.enumOf? (← typeOf x)
   let operandTy : Core.Ty ← match tx? with
     | some tx => liftMsg a (Core.orderingType op tx st.orderedDecl)
     | none => pure .int
-  let y ← toTerm { cx with expected? := some operandTy } b
+  let y ← toTerm { cx with expected? := Core.ExprSite.comparedOperand.expected none (some operandTy) } b
   checkNewtypeOp op tx? (← frenTypeOf? y)
   checkTermType b y operandTy (Core.opNote op operandTy)
   -- For the lints of integers, at the end of the expression: what it compares.
@@ -4205,7 +4214,7 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     TermElabM Term := withRef e do
   let names := ops.map (·.getAtomVal.trimAscii.toString)
   if let .error (k, msg) := Core.checkChain names then throwErrorAt ops[k]! msg.text
-  let mut x ← toTerm { cx with expected? := ← orderingExpected? toTerm cx xs } xs[0]!
+  let mut x ← toTerm { cx with expected? := Core.ExprSite.comparedOperand.expected none (← orderingExpected? toTerm cx xs) } xs[0]!
   -- A value of an ordered type, a `Nat` widened, and every operand the
   -- first's type, which each is expected to have (`lang::checked`), as the
   -- `fren` command checks (`lang::operator_type`, `lang::ordered_type`,
@@ -4226,7 +4235,7 @@ def chainTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let pos (t : Term) : TermElabM Term := match ordinal with | some info => ordinalTerm info t | none => pure t
   let mut links := #[]
   for op in names, a in xs, b in xs.extract 1, opStx in ops do
-    let y ← toTerm { cx with guards := cx.guards ++ links, expected? := t0? } b
+    let y ← toTerm { cx with guards := cx.guards ++ links, expected? := Core.ExprSite.comparedOperand.expected none t0? } b
     -- A node's position is its first token's, and its tail its last's, so
     -- this one spans the comparison, from `a` to `b`, for its messages.
     let link := mkNullNode #[a, opStx, b]
@@ -4262,19 +4271,20 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- Each operand is checked against the whole's type, or the other's
   -- (`lang::checked`), as in the `fren` command: `[] ++ q` takes its type
   -- from `q`, translated first without recording anything.
-  let expected? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then
+  let sibling? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then
       let s ← saveState
       let t? ← frenTypeOf? (← toTerm { cx with noteIndexes := false } b)
       s.restore
       pure t?
-    else pure expected?
-  let x ← toTerm { cx with concatOk := true, emptyOk := Core.Position.shared.checked cx.emptyOk (← synthesizes cx b), expected? } a
+    else pure none
+  let x ← toTerm { cx with concatOk := true, emptyOk := Core.ExprSite.concatOperand.checked cx.emptyOk (← synthesizes cx b),
+                           expected? := Core.ExprSite.concatOperand.expected expected? sibling? } a
   unless (← getState).newtypes.isEmpty || !(← synthesizes cx a) do
     let tx? ← frenTypeOf? x
     checkNewtypeOp "++" tx? tx?
   -- Sequences: outside the core, unless constant.
   if (← typeOf x).isAppOfArity ``Fren.Seq 1 then
-    let y ← toTerm { cx with emptyOk := Core.Position.shared.checked cx.emptyOk (← synthesizes cx a), expected? := ← frenTypeOf? x } b
+    let y ← toTerm { cx with emptyOk := Core.ExprSite.concatOperand.checked cx.emptyOk (← synthesizes cx a), expected? := Core.ExprSite.concatOperand.expected none (← frenTypeOf? x) } b
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg b (Core.checkConcatOperands tx ty)
     checkCore cx e .seqWord true true #[a, b] (← isConstant cx e)
     return ← `(($x ++ $y : $(typeSyntax (← typeOf x))))
@@ -4283,7 +4293,7 @@ def concatTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   else checkCore cx e .stringSearch true true #[a, b] (← isConstant cx e)
   -- Each operand is a `String`, as the `fren` command checks (`lang::operator_type`).
   checkTermType a x .string (Core.opNote "++" .string)
-  let y ← toTerm { cx with concatOk := true, emptyOk := Core.Position.synthesized.checked false false } b
+  let y ← toTerm { cx with concatOk := true, emptyOk := Core.ExprSite.stringOperand.checked false false } b
   checkTermType b y .string (Core.opNote "++" .string)
   `(($x ++ $y : String))
 
@@ -4296,7 +4306,6 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   let pattern := m == "matches?" && rty.isConstOf ``String
   -- A sequence method's arguments are typed by its parameters, so `[]` may be one.
   let seq := rty.isAppOfArity ``Fren.Seq 1
-  let position : Core.Position := if seq then .declared else .synthesized
   -- A `Nat` is expected of `min`'s and `max`'s argument where one is of the
   -- whole (`lang::nat_result`).
   let natArg := natOk && rty.isConstOf ``Nat && (m == "min" || m == "max")
@@ -4305,9 +4314,10 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- `fren` command.
   let ordered? ← if m == "min" || m == "max" then
       pure ((← frenTypeOf? r).filter (· matches .enum .. | .record ..)) else pure none
+  let site : Core.ExprSite := if seq then .seqMethodArgument else if ordered?.isSome then .orderedMethodArgument else .methodArgument
   let as ← args.mapM fun a => do
-    let acx := { cx with emptyOk := position.checked false false, natOk := natArg }
-    let acx := match ordered? with | some t => { acx with expected? := some t } | none => acx
+    let acx := { cx with emptyOk := site.checked false false, natOk := natArg }
+    let acx := match ordered? with | some t => { acx with expected? := site.expected (some t) none } | none => acx
     return (← if pattern then patternTerm a else toTerm acx a, a)
   if seq then
     let c := (Core.Method.ofName? m).map (·.seqConstruct) |>.getD .seqWord
@@ -4346,6 +4356,7 @@ the left of `in`. -/
 def pairOrTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := do
   if e.isOfKind ``Lang.pairExpr then
     -- A member is never a `Nat` (`lang::nat_place`).
+    let cx := { cx with emptyOk := Core.ExprSite.pairMember.checked cx.emptyOk false }
     let (x, y) := (← widenTerm (← toTerm cx e[1]), ← widenTerm (← toTerm cx e[3]))
     -- Typed, so that a pair of numerals is a pair of `Int`s.
     return ← `((($x, $y) : $(typeSyntax (← typeOf x)) × $(typeSyntax (← typeOf y))))
@@ -4403,10 +4414,11 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- is never a `Nat` (`lang::nat_place`).
   let member (k : Nat) (lit? : Option Core.Ty) (noteIndexes := cx.noteIndexes) : TermElabM Term := do
     let x := elems[k]!
-    let mcx := { cx with noteIndexes, emptyOk := Core.Position.shared.checked emptyOk ((synth.eraseIdx! k).any id) }
+    let mcx := { cx with noteIndexes, emptyOk := Core.ExprSite.element.checked emptyOk ((synth.eraseIdx! k).any id) }
     if x.isOfKind ``Lang.pairExpr then
       let (ea?, eb?) := match lit? with | some (.rel a b) => (some a, some b) | _ => (none, none)
-      let (a, b) := (← widenTerm (← toTerm { mcx with expected? := ea? } x[1]), ← widenTerm (← toTerm { mcx with expected? := eb? } x[3]))
+      let pcx := { mcx with emptyOk := Core.ExprSite.pairMember.checked mcx.emptyOk false }
+      let (a, b) := (← widenTerm (← toTerm { pcx with expected? := ea? } x[1]), ← widenTerm (← toTerm { pcx with expected? := eb? } x[3]))
       return ← `((($a, $b) : $(typeSyntax (← typeOf a)) × $(typeSyntax (← typeOf b))))
     boolTerm (← widenTerm (← toTerm { mcx with expected? := lit?.bind fun | .set t => some t | _ => none } x))
   -- The type of the literal a member makes: a pair makes a relation.
@@ -4453,7 +4465,7 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       if let #[m] := (unparen b)[1].getSepArgs then
         unless m.isOfKind ``Lang.pairExpr do recordLint .singletonMembership e (Core.singletonMembershipMsg (srcText a) (srcText m))
     -- The left synthesizes a type, which the right is checked against (`lang::checked`).
-    let x ← widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.Position.synthesized.checked false false } a)
+    let x ← widenTerm (← pairOrTerm toTerm { cx with emptyOk := Core.ExprSite.membershipLeft.checked false false } a)
     -- The right expects a set or sequence of the left's type, as it is
     -- written, or a relation of a pair's, as in the `fren` command.
     let tx ← instantiateMVars (← typeOf x)
@@ -4461,7 +4473,7 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         let (some p, some q) := (← coreTy? tx.appFn!.appArg!, ← coreTy? tx.appArg!) | pure none
         pure (some (Core.Ty.rel p.widen q.widen))
       else pure ((← coreTy? tx).map fun t => if seqShaped b then .seq t.widen else .set t.widen)
-    let s ← toTerm { cx with emptyOk := Core.Position.compared.checked false (← synthesizes cx a), expected? := elem? } b
+    let s ← toTerm { cx with emptyOk := Core.ExprSite.membershipRight.checked false (← synthesizes cx a), expected? := Core.ExprSite.membershipRight.expected none elem? } b
     let (tx, ts) := (← typeOf x, ← typeOf s)
     -- `ts` is taken apart only once it is known to be a `Seq`: a `(← ...)`
     -- after `&&` would run, and panic, for any other type.
@@ -4487,17 +4499,17 @@ def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- The operands of `join` synthesize their types, those of `subset` give each
   -- other theirs, and those of `union`, `inter` and `minus` are also checked
   -- against the whole's (`lang::checked`).
-  let position : Core.Position :=
-    if e.isOfKind ``Lang.joinExpr then .synthesized
-    else if e.isOfKind ``Lang.subsetExpr then .compared
-    else .shared
-  let cxa := { cx with emptyOk := position.checked cx.emptyOk (← synthesizes cx b) }
-  let cxb := { cx with emptyOk := position.checked cx.emptyOk (← synthesizes cx a) }
+  let site : Core.ExprSite :=
+    if e.isOfKind ``Lang.joinExpr then .joinOperand
+    else if e.isOfKind ``Lang.subsetExpr then .subsetOperand
+    else .setOperand
+  let cxa := { cx with emptyOk := site.checked cx.emptyOk (← synthesizes cx b) }
+  let cxb := { cx with emptyOk := site.checked cx.emptyOk (← synthesizes cx a) }
   let (x, y) ← if e.isOfKind ``Lang.joinExpr then pure (← toTerm cxa a, ← toTerm cxb b)
     else
       -- The whole's expected type is not the operands' for `subset`.
       let expected? := if e.isOfKind ``Lang.subsetExpr then none else expected?
-      pairTerms toTerm { cxa with expected? } { cxb with expected? } a b
+      pairTerms toTerm site { cxa with expected? } { cxb with expected? } a b
   -- Their types, as the `fren` command checks them (`lang::operator_type`).
   unless e.isOfKind ``Lang.joinExpr do
     if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then
@@ -4674,6 +4686,9 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- (`Core.earlierFail`).
   let mut negs : Array Term := #[]
   let mut values : Array Term := #[]
+  -- The type of the values so far, and those that wait for it.
+  let mut rowsTy? : Option Core.Ty := none
+  let mut waiting : Array (Nat × ExprCtx × Syntax) := #[]
   for r in rows, k in [0:rows.size] do
     let before := cx.guards ++ negs
     let mut own := #[]
@@ -4685,7 +4700,7 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       -- it defines them; then they, and the questions about its tables, are
       -- put under the guards around it.
       let (k, kt) := ((← getLocal).indexes.size, (← getLocal).tables.size)
-      let c ← toTerm { cx with guards := #[], natOk := false, emptyOk := false, expected? := none } r[1]
+      let c ← toTerm { cx with guards := #[], natOk := false, emptyOk := Core.ExprSite.rowCondition.checked false false, expected? := Core.ExprSite.rowCondition.expected none none } r[1]
       checkTermType r[1] c .bool (some Core.rowConditionNote)
       let l ← getLocal
       let inCond := l.indexes.extract k
@@ -4697,10 +4712,23 @@ def tableTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       refs := refs.push r[1]
       negs := negs.push (← `(¬$c))
       own := #[c]
-    -- Each value is checked against the whole's type, or another's (`lang::checked`).
+    -- Each value is checked against the whole's type, or the values' so
+    -- far, as the `fren` command does: one that does not synthesize its
+    -- own, before any has given one, waits for a later value that does
+    -- (`lang::checked`).
     let others := (rows.eraseIdx! k).map (·[3])
-    let emptyOk := Core.Position.shared.checked cx.emptyOk (← anySynthesizes cx others)
-    values := values.push (← toTerm { cx with guards := before ++ own, emptyOk } r[3])
+    let emptyOk := Core.ExprSite.rowValue.checked cx.emptyOk (← anySynthesizes cx others)
+    let vcx := { cx with guards := before ++ own, emptyOk }
+    let shared? := Core.ExprSite.rowValue.expected cx.expected? rowsTy?
+    if shared?.isNone && !(← synthesizes cx r[3]) && (← rows.anyM (synthesizes cx ·[3])) then
+      waiting := waiting.push (k, vcx, r[3])
+      values := values.push (← `(sorry))
+      continue
+    let v ← toTerm { vcx with expected? := shared? } r[3]
+    if let some t ← frenTypeOf? v then rowsTy? := some ((rowsTy?.map (·.join t)).getD t)
+    values := values.push v
+  for (k, vcx, v) in waiting do
+    values := values.set! k (← toTerm { vcx with expected? := Core.ExprSite.rowValue.expected cx.expected? rowsTy? } v)
   -- Each value has the type of those before it (`Core.checkRowType`).
   let mut t0? : Option Core.Ty := none
   for r in rows, v in values do
@@ -4807,11 +4835,11 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
   let before := (← getLocal).indexes
   let beforeTables := (← getLocal).tables
   modifyLocal fun l => { l with indexes := #[], tables := #[] }
-  let position := if annot?.isSome then Core.Position.declared else .synthesized
+  let site := if annot?.isSome then Core.ExprSite.typedDefinition else .untypedDefinition
   -- Its written type is expected of it, as the `fren` command has it.
-  let dcx := { cx with guards := #[], pending := pending.toArray, emptyOk := position.checked false false
+  let dcx := { cx with guards := #[], pending := pending.toArray, emptyOk := site.checked false false
                        natOk := annot?.any (·.isConstOf ``Nat), unmentioned := cx.unmentioned || !used[k]!
-                       expected? := pannot?.map (·.2.ty) }
+                       expected? := site.expected (pannot?.map (·.2.ty)) none }
   let t ← toTerm dcx d[3]
   if let some (_, pt) := pannot? then noteObligation dcx .letDefinition d[3] pt t
   let obligations := (← getLocal).indexes
@@ -4846,7 +4874,8 @@ partial def withDefinitions (toTerm : ExprCtx → Syntax → TermElabM Term) (cx
 open Lang in
 /-- `let ds in b`, or `b where ds`, which a `where` clause becomes
 (`withWhere`): `b` within a `have` for each definition. -/
-def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk concatOk : Bool) (e : Syntax) :
+def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emptyOk concatOk : Bool) (expected? : Option Core.Ty)
+    (e : Syntax) :
     TermElabM Term := withRef e do
   let defs := e[1].getSepArgs
   let inLet := defs.all (·.isOfKind ``Lang.fren_let_def)
@@ -4855,7 +4884,8 @@ def letTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
     let tableMark := (← getLocal).tables.size
     -- A body that is a membership right after the `in` may have been meant
     -- as part of the last definition, which `in` ended.
-    let b ← tryCatch (toTerm { bcx with emptyOk, concatOk } e[3]) fun ex => do
+    let b ← tryCatch (toTerm { bcx with emptyOk := Core.ExprSite.letBody.checked emptyOk false, concatOk,
+                                         expected? := Core.ExprSite.letBody.expected expected? none } e[3]) fun ex => do
       let .error ref msg := ex | throw ex
       unless inLet && e[3].isOfKind ``Lang.memberExpr do throw ex
       let text ← msg.toString
@@ -4886,7 +4916,7 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     if let some t@(.seq _) := expected? then return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
     return ← `((∅ : Fren.Seq _))
   let synth ← elems.mapM (synthesizes cx)
-  let ecx (k : Nat) := { cx with emptyOk := Core.Position.shared.checked emptyOk ((synth.eraseIdx! k).any id) }
+  let ecx (k : Nat) := { cx with emptyOk := Core.ExprSite.element.checked emptyOk ((synth.eraseIdx! k).any id) }
   -- Each element is checked against the literal's element type, or another's
   -- (`lang::checked`): the first that synthesizes one, if the first does not.
   -- An element is never a `Nat` (`lang::nat_place`).
@@ -5131,7 +5161,8 @@ def cardinalityTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprC
     let lit := unparen a
     if (lit.isOfKind ``Lang.setExpr || lit.isOfKind ``Lang.seqExpr) && lit[1].getSepArgs.isEmpty then
       throwErrorAt lit (Core.cardinalityArgMsg c (k + 1) (if lit.isOfKind ``Lang.setExpr then "{}" else "[]")).text
-    let t ← toTerm { cx with emptyOk := false, natOk := false } a
+    let t ← toTerm { cx with emptyOk := Core.ExprSite.countArgument.checked false false, natOk := false,
+                             expected? := Core.ExprSite.countArgument.expected none none } a
     let ty ← typeOf t
     unless ty.isConstOf ``Bool || ty.isProp do throwErrorAt a (Core.cardinalityArgMsg c (k + 1) (← typeName ty)).text
     ites := ites.push (← `(if $t then (1 : Int) else 0))
@@ -5179,8 +5210,9 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
     let outer := (← getLocal).indexes
     let outerTables := (← getLocal).tables
     modifyLocal fun l => { l with indexes := #[], tables := #[] }
-    let t ← toTerm { cx with binders := cx.binders ++ new, expected? := r?, natOk := false, inClosure := true
-                             emptyOk := r?.isSome } body
+    let site : Core.ExprSite := if r?.isSome then .typedClosureBody else .untypedClosureBody
+    let t ← toTerm { cx with binders := cx.binders ++ new, expected? := site.expected r? none, natOk := false, inClosure := true
+                             emptyOk := site.checked false false } body
     let rt := (← frenTypeOf? t).getD .bool
     -- Its obligations, each a predicate of its parameters, which the
     -- application puts at each application of the function parameter
@@ -5346,8 +5378,8 @@ def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     Core.inferHigherOrder d.typeParams d.hoParams d.result synth expected?
       (throwErrorAt e (Core.cannotInferCallMsg f).text : TermElabM Unit)
       (fun k x? => do
-        let t ← (toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := x? == some Core.Ty.nat
-                                  expected? := x? } elems[k]! : TermElabM Term)
+        let t ← (toTerm { cx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk := x? == some Core.Ty.nat
+                                  expected? := Core.ExprSite.functionArgument.expected x? none } elems[k]! : TermElabM Term)
         modify fun (ts, cs) => (ts.set! k t, cs)
         frenTypeOf? t)
       (fun k x t => (liftMsg elems[k]!
@@ -5408,7 +5440,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     noteRecUse p f ps { form := if cx.inClosure then .inClosure else .applied
                         args := args.getElems.toList.zipIdx.map fun (a, i) => cx.recArg a i }
     let ts ← (args.getElems.zip ft.params).zipIdx.mapM fun ((a, t), k) => do
-      let x ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := some t } a
+      let x ← toTerm { cx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk := false, expected? := Core.ExprSite.functionArgument.expected (some t) none } a
       if let some found ← frenTypeOf? x then
         liftMsg a (Core.checkType t found (some s!"note: argument {k + 1} of `{Core.showPath f}` has type `{t.show}`"))
       return x
@@ -5426,7 +5458,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       let f := segs[0]!.getId
       unless args.getElems.size == ft.params.size do throwError (Core.arityMsg f ft.params.size args.getElems.size).text
       let ts ← (args.getElems.zip ft.params).zipIdx.mapM fun ((a, t), k) => do
-        let x ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := some t } a
+        let x ← toTerm { cx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk := false, expected? := Core.ExprSite.functionArgument.expected (some t) none } a
         if let some found ← frenTypeOf? x then
           liftMsg a (Core.checkType t found (some s!"note: argument {k + 1} of `{f}` has type `{t.show}`"))
         return x
@@ -5456,7 +5488,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     let some n := (← getState).newtypes.get? path | throwErrorAt p (Core.constructionMsg path false).text
     unless args.getElems.size == 1 do throwError (Core.arityMsg path 1 args.getElems.size "value").text
     let a := args.getElems[0]!
-    let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := n.under.isConstOf ``Nat } a
+    let t ← toTerm { cx with emptyOk := Core.ExprSite.newtypeValue.checked false false, natOk := n.under.isConstOf ``Nat } a
     -- Its value is checked as the `fren` command checks it (`Core.checkType`).
     if let (true, some u) := (← synthesizes cx a, ← coreTy? n.under) then
       if let some found ← frenTypeOf? t then
@@ -5477,15 +5509,15 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     -- Of a generic enumeration, with its type arguments, which are inferred
     -- (`Reqs/Lang/Generics#type-arguments`).
     if let some c ← construction? cx e then
-      let go (x? : Option Core.Ty) := toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := false, expected? := x? }
+      let go (x? : Option Core.Ty) := toTerm { cx with emptyOk := Core.ExprSite.payload.checked false false, natOk := false, expected? := Core.ExprSite.payload.expected x? none }
       let (ts, targs) ← constructionTerms go cx expected? e c args.getElems (Core.showPath v) fun k t => note k t.show
       -- Each value's obligation, of its type with the enumeration's arguments.
       for a in args.getElems, t in ts, k in [0:ts.size] do
         noteObligation cx .payload a (partPType info.shape idx k targs) t
       return ← ctorApp (info.ctor idx) (info.leanArgs (← targs.mapM leanTypeOf)) ts p
     let args ← args.getElems.zipIdx.mapM fun (a, k) => do
-      let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := info.payloads[idx]![k]!.isConstOf ``Nat,
-                                expected? := ← coreTy? info.payloads[idx]![k]! } a
+      let t ← toTerm { cx with emptyOk := Core.ExprSite.payload.checked false false, natOk := info.payloads[idx]![k]!.isConstOf ``Nat,
+                                expected? := Core.ExprSite.payload.expected (← coreTy? info.payloads[idx]![k]!) none } a
       checkDeclared a t info.payloads[idx]![k]! (note k)
       noteObligation cx .payload a (partPType info.shape idx k) t
       return t
@@ -5509,7 +5541,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
           (throwErrorAt e (Core.cannotInferCallMsg (Core.showPath path)).text : TermElabM Unit)
           (fun k x? => do
             let natOk := x? == some Core.Ty.nat
-            let t ← (toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk, expected? := x? }
+            let t ← (toTerm { cx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk, expected? := Core.ExprSite.functionArgument.expected x? none }
               elems[k]! : TermElabM Term)
             modify (·.set! k t)
             frenTypeOf? t)
@@ -5524,7 +5556,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $ts*)
     let tys := paramTypes (← instantiateForall (← getConstInfo d.decl).type (d.uses.map mkConst))
     let args ← args.getElems.zipIdx.mapM fun (a, k) => do
-      let t ← toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk := tys[k]!.isConstOf ``Nat, expected? := ← coreTy? tys[k]! } a
+      let t ← toTerm { cx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk := tys[k]!.isConstOf ``Nat, expected? := Core.ExprSite.functionArgument.expected (← coreTy? tys[k]!) none } a
       checkDeclared a t tys[k]! fun ty => s!"note: argument {k + 1} of `{Core.showPath path}` has type `{ty}`"
       noteObligation cx .argument a (d.ptys.1[k]?.getD default) t
       return t
@@ -5551,7 +5583,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
         (throwErrorAt e (Core.cannotInferCallMsg (Core.showPath path)).text : TermElabM Unit)
         (fun k x? => do
           let natOk := x? == some Core.Ty.nat
-          let t ← (toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk, expected? := x? }
+          let t ← (toTerm { acx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk, expected? := Core.ExprSite.functionArgument.expected x? none }
             elems[k]! : TermElabM Term)
           modify (·.set! k t)
           frenTypeOf? t)
@@ -5574,7 +5606,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   let acx := if cx.place == .prop then { cx with place := .argument } else cx
   let tys := paramTypes (← getConstInfo a.placeholder).type
   let args ← args.getElems.zipIdx.mapM fun (a, k) => do
-    let t ← toTerm { acx with emptyOk := Core.Position.declared.checked false false, natOk := tys[k]!.isConstOf ``Nat, expected? := ← coreTy? tys[k]! } a
+    let t ← toTerm { acx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk := tys[k]!.isConstOf ``Nat, expected? := Core.ExprSite.functionArgument.expected (← coreTy? tys[k]!) none } a
     checkDeclared a t tys[k]! fun ty => s!"note: argument {k + 1} of `{Core.showPath path}` has type `{ty}`"
     noteObligation acx .argument a (a'.ptys.1[k]?.getD default) t
     return t
@@ -6020,11 +6052,11 @@ def iteTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (emp
   let gx ← Core.GuardedOperand.thenBranch.guard (pure c) `(¬$c)
   let gy ← Core.GuardedOperand.elseBranch.guard (pure c) `(¬$c)
   let seen (site : Core.TestSite) := if Core.binderVisible .ifCondition 0 1 site then new else #[]
-  let cxa := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx b), natOk, guards := cx.guards.push gx, inElse := false, expected?
+  let cxa := { cx with emptyOk := Core.ExprSite.branch.checked emptyOk (← synthesizes cx b), natOk, guards := cx.guards.push gx, inElse := false, expected?
                        binders := cx.binders ++ seen .body }
-  let cxb := { cx with emptyOk := Core.Position.shared.checked emptyOk (← synthesizes cx a), natOk, guards := cx.guards.push gy, inElse := true, expected?
+  let cxb := { cx with emptyOk := Core.ExprSite.branch.checked emptyOk (← synthesizes cx a), natOk, guards := cx.guards.push gy, inElse := true, expected?
                        binders := cx.binders ++ seen .elseBranch }
-  let (x, y) ← pairTerms toTerm cxa cxb a b
+  let (x, y) ← pairTerms toTerm .branch cxa cxb a b
   if let (some tx, some ty) := (← frenTypeOf? x, ← frenTypeOf? y) then liftMsg e (Core.checkBranches tx ty)
   let #[x, y] ← widenMixed #[x, y] | unreachable!
   `(if $c then $x else $y)
@@ -6100,7 +6132,7 @@ def otherTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (p
   else if e.isOfKind ``Lang.seqExpr then seqLitTerm toTerm { cx with expected? } emptyOk e
   else if e.isOfKind ``Lang.indexExpr then indexTerm toTerm cx e
   else if e.isOfKind ``Lang.recordExpr then do
-    let t ← recordTerm (fun x? => toTerm { cx with emptyOk := Core.Position.declared.checked false false, expected? := x?, natOk := x? == some .nat }) cx expected? e
+    let t ← recordTerm (fun x? => toTerm { cx with emptyOk := Core.ExprSite.recordField.checked false false, expected? := Core.ExprSite.recordField.expected x? none, natOk := x? == some .nat }) cx expected? e
     if let .item { kind := .recordItem, path, .. } ← resolvePath cx.modName (pathSegs e[0]) cx.shadowing then
       lintManualUpdate toTerm cx e path
     return t
@@ -6253,7 +6285,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $_ <- $_) => throwErrorAt e[1] Core.leftArrowMsg.text
   -- Checked against the whole's type, if it is (`lang::checked`).
   | `(fren_expr| ($a)) =>
-    let inner ← toTerm { cx with concatOk, natOk, expected?, emptyOk := Core.Position.shared.checked emptyOk false,
+    let inner ← toTerm { cx with concatOk, natOk, expected?, emptyOk := Core.ExprSite.parenthesized.checked emptyOk false,
                                  testContext := test.1, testAt? := test.2 } a
     `(($inner))
   | `(fren_expr| $n:num) => if natOk then `(($n : Nat)) else `(($n : Int))
@@ -6262,7 +6294,7 @@ partial def toTerm (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
   | `(fren_expr| $p:fren_path) => pathTerm toTerm cx parent? e p expected?
   | `(fren_expr| $p:fren_path($args,*)) => appTerm toTerm { cx with natOk } parent? e p args expected?
   | _ =>
-    if e.isOfKind ``Lang.letExpr then letTerm toTerm { cx with natOk } emptyOk concatOk e
+    if e.isOfKind ``Lang.letExpr then letTerm toTerm { cx with natOk } emptyOk concatOk expected? e
     -- Only `is` reads where its chain is, and its operand does not see it.
     else otherTerm toTerm { cx with expected?, testContext := test.1, testAt? := test.2 } parent? emptyOk natOk e
 
@@ -7355,7 +7387,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       -- The body is checked against the result type (`lang::checked`).
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop
                             selfFn := if (← getLocal).inSubset then none else some n, natOk := result.isConstOf ``Nat
-                            expected? := ← coreTy? result, emptyOk := Core.Position.declared.checked false false
+                            expected? := Core.ExprSite.functionBody.expected (← coreTy? result) none, emptyOk := Core.ExprSite.functionBody.checked false false
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
       modifyLocal fun l => { l with recUses := #[], recApps := #[], recMatches := #[] }
@@ -7734,7 +7766,7 @@ def elabBindings (cx : ExprCtx) (fvs : Array Expr) (pi : PendingInst) : TermElab
     let some idx := cx.vars.findIdx? (·.name == pi.name ++ x.getId)
       | throwError "internal error: no variable for `{x.getId}`"
     let natOk := cx.vars[idx]!.type.isConstOf ``Nat
-    let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.Position.declared.checked false false, natOk, expected? := ← coreTy? cx.vars[idx]!.type } b[1][1]
+    let t ← if b[1].isNone then toTerm cx (← `(fren_expr| $(⟨x⟩):ident)) else toTerm { cx with emptyOk := Core.ExprSite.binding.checked false false, natOk, expected? := Core.ExprSite.binding.expected (← coreTy? cx.vars[idx]!.type) none } b[1][1]
     checkDeclared (if b[1].isNone then x else b[1][1]) t cx.vars[idx]!.type fun ty =>
       s!"note: `{x.getId}` of `{Core.showPath pi.comp.path}` has type `{ty}`"
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
@@ -8093,8 +8125,8 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
       discard (takeIndexes fvs)
       let value ← withRef e do
         -- A definition assigns once and acyclically, so `++` is in the core in it.
-        let dcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.Position.declared.checked false false, concatOk := true
-                               natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type }
+        let dcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop, emptyOk := Core.ExprSite.outputDefinition.checked false false, concatOk := true
+                               natOk := v.type.isConstOf ``Nat, expected? := Core.ExprSite.outputDefinition.expected (← coreTy? v.type) none }
         let t ← toTerm dcx e
         checkDeclared e t v.type fun ty => s!"note: `{v.name}` has type `{ty}`, so its definition must too"
         noteObligation dcx .definition e v.ptype t
@@ -8210,7 +8242,8 @@ def elabRefinesMembers (scope : Name) (members : Array Syntax) (vars : Array Var
     discard (takeIndexes fvs)
     let cx : ExprCtx := { modName := scope, vars, insts := insts.map (·.name), place := .prop }
     let inputValues ← (inputs.zip args).mapM fun (v, arg) => do
-      let t ← toTerm { cx with natOk := v.type.isConstOf ``Nat, expected? := ← coreTy? v.type } arg
+      let t ← toTerm { cx with emptyOk := Core.ExprSite.binding.checked false false, natOk := v.type.isConstOf ``Nat
+                               expected? := Core.ExprSite.binding.expected (← coreTy? v.type) none } arg
       checkDeclared arg t v.type fun ty => s!"note: specification parameter `{v.name}` has type `{ty}`"
       elabProp t v.type
     let resultValues ← (results.zip actual).mapM fun (v, cv) => do
@@ -8942,7 +8975,7 @@ end
       throwErrorAt stx[4] (Core.unknownConstantMsg abstract).text
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
     discard (takeIndexes #[])
-    let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.Position.declared.checked false false, natOk := type.isConstOf ``Nat, expected? := ← coreTy? type }
+    let cx : ExprCtx := { modName, vars := #[], insts := #[], place := .prop, emptyOk := Core.ExprSite.constantValue.checked false false, natOk := type.isConstOf ``Nat, expected? := Core.ExprSite.constantValue.expected (← coreTy? type) none }
     let t ← toTerm cx valueStx
     noteObligation cx .constant valueStx pt t
     let tables := (← takeIndexes #[]).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
