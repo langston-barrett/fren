@@ -28,8 +28,10 @@ and tables over a scrutinee,
 string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
 enumeration, an enumeration with payloads, whose outputs' variants a
-clash note may give, and sets and relations with `card`, so that it
-reaches `linear_product`, the decidable core and the lints.
+clash note may give, sets and relations with `card`, so that it
+reaches `linear_product`, the decidable core and the lints, and
+expressions that do not synthesize their types at each kind of site
+(`sitesProc`).
 
 What legitimately differs is normalized away by
 `FrenTest.Frontends.compare`, whose documentation lists it, as does
@@ -720,6 +722,77 @@ def genericApps (sc : WScope) (genericPay : Bool) : R String := do
   return out ++ s!"pub proc gapps(n: Int, b?, m: Nm, m2: Nm, o: Option<Int>, oo: Option<Option<Int>>{pp}): " ++
     s!"(r: Int, s?, t: Nm, u: Option<Int>) \{\n{body}}\n"
 
+/-- An expression of the collection type `ty` (`"Set<Int>"`, `"Seq<Int>"`
+or `"Option<Int>"`) that does not synthesize its type: its empty value,
+`{}`, `[]` or `Option::None`, within parentheses, conditionals, `match`es,
+tables, the bodies of `let`s, definitions whose type is written, `union` or
+`++`, or, seldom, `other`, which synthesizes it (`lang::synthesizes`). -/
+partial def unsynthesized (ty : String) (other : String) (d : Nat) : R String := do
+  let empty := if ty == "Set<Int>" then "{}" else if ty == "Seq<Int>" then "[]" else "Option::None"
+  let sub := unsynthesized ty other (d - 1)
+  if d == 0 || (← chance 35) then return if ← chance 10 then other else empty
+  match ← below 8 with
+  | 0 => return s!"({← sub})"
+  | 1 => return s!"(if c? then {← sub} else {← sub})"
+  | 2 => return s!"match o \{ Option::Some(_) => {← sub}, Option::None => {← sub} }"
+  | 3 => return s!"table \{ c? => {← sub}, _ => {← sub} }"
+  | 4 => return s!"(let t: {ty} := {← sub} in t)"
+  | 5 => return s!"(let t := {other} in {← sub})"
+  | _ =>
+    if ty == "Set<Int>" then return s!"({← sub} {← pick #["union", "inter", "minus"]} {← sub})"
+    if ty == "Seq<Int>" then return s!"({← sub} ++ {← sub})"
+    return s!"({← sub})"
+
+/-- A procedure that writes expressions that do not synthesize their types
+at each kind of site that `ExprSite` lists, whether checked there or not
+(`lang::checked`): beside a part that synthesizes one or none, as an
+argument, a payload, a field, a binding, the right of `in`, a receiver, an
+operand of `join`, and a method's argument. -/
+def sitesProc : R String := do
+  let decls := "pub struct SiteRec { m: Set<Int>, w: Seq<Int> }\n" ++
+    "pub fn site_card(t: Set<Int>): Int := t.card\n" ++
+    "pub fn site_len(t: Seq<Int>): Int := t.len\n"
+  let set : R String := unsynthesized "Set<Int>" "s" 2
+  let seq : R String := unsynthesized "Seq<Int>" "q" 2
+  let opt : R String := unsynthesized "Option<Int>" "o" 2
+  let mut body := ""
+  for k in [0:(← below 5) + 2] do
+    let e ← match ← below 21 with
+      | 0 => pure s!"s = {← set}"
+      | 1 => pure s!"{← set} = s"
+      | 2 => pure s!"{← set} subset s"
+      | 3 => pure s!"x in {← set}"
+      | 4 => pure s!"site_card({← set}) >= 0"
+      | 5 => pure s!"os != Option::Some({← set})"
+      | 6 => pure s!"sr = SiteRec \{ m := {← set}, w := {← seq} }"
+      | 7 => pure s!"sr = sr \{ m := {← set} }"
+      | 8 => pure s!"(let t: Set<Int> := {← set} in t subset s)"
+      | 9 => pure s!"s = (s {← pick #["union", "inter", "minus"]} {← set})"
+      | 10 => pure s!"s = (if c? then {← set} else s)"
+      | 11 => pure s!"s = match o \{ Option::Some(_) => {← set}, Option::None => s }"
+      | 12 => pure s!"s = table \{ c? => {← set}, _ => s }"
+      | 13 => pure s!"q = {← seq}"
+      | 14 => pure s!"q.starts_with?({← seq})"
+      | 15 => pure s!"q = {← seq} ++ q"
+      | 16 => pure s!"x in {← seq}"
+      | 17 => pure s!"site_len({← seq}) >= 0"
+      | 18 => pure s!"o = {← opt}"
+      | 19 => pure s!"{← opt} != o"
+      | _ => pure s!"r = (\{(1, 2)} union {← set})"
+    body := body ++ s!"    expect st{k}: {e}\n"
+  -- Seldom, where they are not checked: an error, reported alike, which
+  -- stops the spec's other checks.
+  if ← chance 10 then
+    let e ← match ← below 5 with
+      | 0 => pure s!"({← set}).card = 0"
+      | 1 => pure s!"r.image({← set}) = s"
+      | 2 => pure s!"(let t := {← set} in t) = s"
+      | 3 => pure s!"r = r join {← set}"
+      | _ => pure s!"{← set} = {← set}"
+    body := body ++ s!"    expect st_error: {e}\n"
+  return decls ++ "pub proc sites(s: Set<Int>, q: Seq<Int>, x: Int, c?, o: Option<Int>, os: Option<Set<Int>>, " ++
+    s!"r: Rel<Int, Int>, sr: SiteRec) \{\n{body}}\n"
+
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := do
   let useEnum ← chance 60
@@ -908,6 +981,9 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if ← chance 50 then out := out ++ "\n" ++ (← bodyFns sc genericPay)
   -- Generic functions applied, last too.
   if ← chance 40 then out := out ++ "\n" ++ (← genericApps sc genericPay)
+  -- Each kind of site, with expressions that do not synthesize their
+  -- types, last too.
+  if ← chance 40 then out := out ++ "\n" ++ (← sitesProc)
   -- Only variables have the type `P`, each declared on a line of its own.
   return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 
@@ -1020,8 +1096,10 @@ fresh seeds on `main` finds is listed with its seed and mode, and the
 corpus then checks that seed too (`listedOutside`). `--avoid-known` counts
 a spec whose every difference is of a kind listed here as known. -/
 def knownDifferences : List Known :=
-  [{ mode := {}, seed := 67, issue := 493,
-     signature := "only Lean reports info: Both operands of `_` cannot be true: the stated premises require `_` to be false." },
+  -- Lean reports `ob1?`, an output read in a table's row of an
+  -- expectation, as unknown.
+  [{ mode := {}, seed := 28, issue := 493,
+     signature := "only Lean reports error: Unknown identifier `_`" },
    { mode := {}, seed := 153, issue := 478,
      signature := "only fren reports error[F0714]: this is outside the decidable core: a relational operator over a type that is not finite quantifies over its values" },
    -- Lean reports `F0743` twice on `((({(1, 2)}).inverse).domain).card`.

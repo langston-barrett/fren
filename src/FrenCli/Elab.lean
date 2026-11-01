@@ -3341,7 +3341,7 @@ written `what`, at `span`, whose values have the declared types `declared`,
 with `elabValue`, and returns their SMT-LIB terms and its type arguments, which
 are inferred (`Fren.Core.inferConstruction`). `note k t` explains that
 value `k` has the type `t`. -/
-def elabConstruction (elabValue : ExprCtx → Expr → M (String × Ty)) (cx : ExprCtx) (d : DataDecl) (declared : Array Ty)
+def elabConstruction (elabValue : ExprCtx → Expr → M (String × Ty)) (site : Fren.Core.ExprSite) (cx : ExprCtx) (d : DataDecl) (declared : Array Ty)
     (vals : Array Expr) (span : Span) (what : String) (note : Nat → Ty → String) : M (Array String × Array Ty) := do
   let expected? := match cx.expected? with
     | some (.enum p as) | some (.record p as) => if p == d.path then some as.toArray else none
@@ -3351,7 +3351,7 @@ def elabConstruction (elabValue : ExprCtx → Expr → M (String × Ty)) (cx : E
     Fren.Core.inferConstruction d.params declared synth expected?
       (err span (Fren.Core.cannotInferMsg what (showPath d.path)) : M Unit)
       (fun k x? => do
-        let (smt, t) ← (elabValue { cx with expected? := x? } vals[k]! : M _)
+        let (smt, t) ← (elabValue { cx with expected? := site.expected x? none } vals[k]! : M _)
         modify fun a => a.set! k smt
         return some t)
       (fun k x f => (liftMsg vals[k]!.span (Fren.Core.checkType x f (some (note k x))) : M Unit))
@@ -3678,10 +3678,6 @@ def bindFree (free : Array FreeBound) (all : Bool) (body : String) (elem : Bool 
   let body := if cons.isEmpty then body else if all then s!"(=> {conj cons} {body})" else s!"(and {conj cons} {body})"
   s!"({if elem then "fren." else ""}{if all then "forall" else "exists"} ({decls}) {body})"
 
-/-- What one operand expects of the other: its type, but a `Nat` only where
-one is expected of both. -/
-def exprSibling (cx' : ExprCtx) (t : Ty) : Option Ty := if cx'.expected? == some .nat then some .nat else some t.widen
-
 /-- An operand of arithmetic, `e` of type `t`, is an `Int` or a `Nat`. -/
 def exprNumber (e : Expr) (t : Ty) (op : String) : M Unit := liftMsg e.span (Fren.Core.checkNumber op t)
 
@@ -3827,10 +3823,11 @@ def noteFnArg (path : Name) (k : Nat) (e : Expr) : M Unit := do
   modify fun s => { s with fnArgs := s.fnArgs.push ({ path, index := k, text, lambdaMatch, names }, e.span) }
 
 mutual
-/-- Two operands of the same type, each checked against the other's, when it
-does not synthesize its own (`lang::checked`). -/
-partial def exprPair (cxa cxb : ExprCtx) (a b : Expr) : M ((String × Ty) × (String × Ty)) := do
-  let sibling := exprSibling
+/-- Two parts of the same type at `site`, each checked against the other's,
+when it does not synthesize its own (`lang::checked`). -/
+partial def exprPair (site : Fren.Core.ExprSite) (cxa cxb : ExprCtx) (a b : Expr) : M ((String × Ty) × (String × Ty)) := do
+  let sibling (cx' : ExprCtx) (t : Ty) := site.expected cx'.expected? (some t.widen)
+  let (cxa, cxb) := ({ cxa with expected? := site.expected cxa.expected? none }, { cxb with expected? := site.expected cxb.expected? none })
   if !(← synthesizes cxa a) && (← synthesizes cxb b) then
     let rb ← elabExpr cxb b
     return (← elabExpr { cxa with expected? := sibling cxa rb.2 } a, rb)
@@ -4124,7 +4121,7 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
 
 /-- `elabExpr` on an `if`. -/
 partial def elabIteExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (inElse : Bool) (span : Span) (c : Expr) (a : Expr) (b : Expr) : M (String × Ty) := do
-  let pair := exprPair
+  let pair := exprPair .branch
   if cx.noteIndexes && !inElse then lintIfChain cx e
   -- `same_branches` (`lint::same_branches`): not where the condition's
   -- pattern tests bind names, which the `then` branch sees and the `else`
@@ -4181,14 +4178,14 @@ partial def elabSetExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (el
   let member (e : Expr) (expected? : Option Ty) : M (String × Ty) := do
     if let some (a, b) := e.pair? (← get).src then
       let (ea?, eb?) := match expected? with | some (.rel x y) => (some x, some y) | _ => (none, none)
-      let (x, tx) ← elabExpr { cx with expected? := ea? } a
-      let (y, ty) ← elabExpr { cx with expected? := eb? } b
+      let (x, tx) ← elabExpr { cx with expected? := Fren.Core.ExprSite.pairMember.expected ea? none } a
+      let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.pairMember.expected eb? none } b
       return (s!"{x} {y}", .rel tx.widen ty.widen)
     let (x, t) ← elabExpr { cx with expected? := expected?.bind fun | .set t => some t | _ => none } e
     return (x, .set t.widen)
   -- Each member is checked against the literal's type, or another's
   -- (`lang::checked`): the first that synthesizes one, if the first does not.
-  let expected? ← if expected?.isNone && !(← synthesizes cx elems[0]!) then
+  let sibling? ← if expected?.isNone && !(← synthesizes cx elems[0]!) then
       match ← elems.findM? (synthesizes cx) with
       | some m => do
         let saved ← get
@@ -4196,11 +4193,11 @@ partial def elabSetExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (el
         set saved
         pure (some t)
       | none => pure none
-    else pure expected?
-  let (x0, t0) ← member elems[0]! expected?
+    else pure none
+  let (x0, t0) ← member elems[0]! (Fren.Core.ExprSite.element.expected expected? sibling?)
   let mut xs := #[x0]
   for e in elems.extract 1 do
-    let (x, t) ← member e (some t0)
+    let (x, t) ← member e (Fren.Core.ExprSite.element.expected none (some t0))
     unless t == t0 do
       let (mt, mt0) := match t, t0 with | .set u, .set u0 => (u.show, u0.show) | _, _ => (t.show, t0.show)
       err e.span (Fren.Core.membersMsg false mt0 mt t0.show)
@@ -4218,8 +4215,9 @@ partial def elabSeqExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (el
     return (s!"(as seq.empty {t.sort})", t)
   -- Each element is checked against the literal's element type, or another's
   -- (`lang::checked`): the first that synthesizes one, if the first does not.
-  let elemExpected ← match expected?.bind fun | .seq t => some t | _ => none with
-    | some t => pure (some t)
+  let whole? := expected?.bind fun | .seq t => some t | _ => none
+  let sibling? ← match whole? with
+    | some _ => pure none
     | none => if ← synthesizes cx elems[0]! then pure none else
         match ← elems.findM? (synthesizes cx) with
         | some m => do
@@ -4228,12 +4226,12 @@ partial def elabSeqExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (el
           set saved
           pure (some t)
         | none => pure none
-  let (x0, t0) ← elabExpr { cx with expected? := elemExpected } elems[0]!
+  let (x0, t0) ← elabExpr { cx with expected? := Fren.Core.ExprSite.element.expected whole? sibling? } elems[0]!
   -- An element is never a `Nat` (`lang::nat_place`).
   let t0 := t0.widen
   let mut xs := #[x0]
   for e in elems.extract 1 do
-    let (x, t) ← elabExpr { cx with expected? := some t0 } e
+    let (x, t) ← elabExpr { cx with expected? := Fren.Core.ExprSite.element.expected none (some t0) } e
     let t := t.widen
     unless t == t0 do
       err e.span (Fren.Core.membersMsg true t0.show t.show (Ty.seq t0).show)
@@ -4287,7 +4285,7 @@ partial def elabMethodExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pa
       let bare : Fren.Core.BText := { text := ← srcAt recv.span, prec := recv.boolNode.kind.prec }
       let fixed := Fren.Core.trivialPatternText bare (recv.text src).text fix lit
       lintFix .trivialPattern (e.writtenSpan src) (Fren.Core.trivialPatternMsg fix (fixed.inSlot slot))
-  let (r, t) ← elabExpr { cx with concatOk := true } recv
+  let (r, t) ← elabExpr { cx with concatOk := true, expected? := Fren.Core.ExprSite.receiver.expected none none } recv
   let mut as := #[]
   for a in args do
     -- A pattern, as SMT-LIB's regular expression.
@@ -4304,15 +4302,17 @@ partial def elabMethodExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pa
       continue
     -- A sequence method's argument has the receiver's type or its element's.
     let expected? := match t, Fren.Core.Method.ofName? m.name with
-      | .seq elem, some method => match method.params[as.size]? with
-        | some .string => some t | some .elem => some elem | some .int => some .int | _ => none
+      | .seq elem, some method => Fren.Core.ExprSite.seqMethodArgument.expected (match method.params[as.size]? with
+        | some .string => some t | some .elem => some elem | some .int => some .int | _ => none) none
       -- A `Nat` is expected of `min`'s and `max`'s argument where one is of
-      -- the whole (`lang::nat_result`).
+      -- the whole (`lang::nat_result`), which is no type it is checked
+      -- against: an `Int` is one too.
       | .nat, some .min | .nat, some .max => expected?.filter (· == .nat)
       -- An enumeration's or record's `min` and `max` take the receiver's
       -- type, so a variant of a generic type takes its type arguments.
-      | .enum .., some .min | .enum .., some .max | .record .., some .min | .record .., some .max => some t
-      | _, _ => none
+      | .enum .., some .min | .enum .., some .max | .record .., some .min | .record .., some .max =>
+        Fren.Core.ExprSite.orderedMethodArgument.expected (some t) none
+      | _, _ => Fren.Core.ExprSite.methodArgument.expected none none
     let (x, ta) ← elabExpr { cx with expected? } a
     as := as.push (x, ta, a.span)
   -- Typed before it is linted, as in Lean, so that a call with a type
@@ -4370,7 +4370,7 @@ partial def elabChainExpr (cx : ExprCtx) (es : Array Expr) (ops : Array (String 
   -- (`Reqs/Lang/Expressions#chained-comparisons`). As in that expansion,
   -- the comparisons before an operand guard it. The parser has checked
   -- its operators.
-  let (x0, t0) ← elabExpr { cx with expected? := ← orderingExpected? cx es } es[0]!
+  let (x0, t0) ← elabExpr { cx with expected? := Fren.Core.ExprSite.comparedOperand.expected none (← orderingExpected? cx es) } es[0]!
   -- The first operand gives the operands' type, a `Nat` widened, if it
   -- is ordered (`lang::operator_type`, `lang::ordered_type`), which each
   -- later operand is expected to have (`lang::checked`).
@@ -4379,7 +4379,7 @@ partial def elabChainExpr (cx : ExprCtx) (es : Array Expr) (ops : Array (String 
   let mut (x, ca) := (x0, ← isConstant cx es[0]!)
   let mut links := #[]
   for (op, _) in ops, a in es, b in es.extract 1 do
-    let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links, expected? := some u } b
+    let (y, tb) ← elabExpr { cx with guards := cx.guards ++ links, expected? := Fren.Core.ExprSite.comparedOperand.expected none (some u) } b
     newtypeOp op (a.span.to b.span) u tb
     liftMsg b.span (Fren.Core.checkType u tb (Fren.Core.opNote op u))
     let cb ← isConstant cx b
@@ -4477,7 +4477,7 @@ partial def elabEqualityExpr (cx : ExprCtx) (e : Expr) (span : Span) (op : Strin
   -- Functions are not compared (`lang::function_comparison`).
   unless Fren.Core.comparisonAccepted [← comparand cx a, ← comparand cx b] do
     err span (Fren.Core.functionComparisonMsg op)
-  let pair := exprPair
+  let pair := exprPair .comparedOperand
   let lintLength := exprLintLength cx e
   lintLength op a b
   -- `++` is in the core against a constant.
@@ -4514,9 +4514,9 @@ partial def elabComparisonExpr (cx : ExprCtx) (e : Expr) (span : Span) (op : Str
   -- side is the newtype's error (`lang::newtype_operator`). The right is
   -- expected to have the left's type, and the left the right's, if only the
   -- right synthesizes one (`lang::checked`).
-  let (x, tx) ← elabExpr { cx with expected? := ← orderingExpected? cx #[a, b] } a
+  let (x, tx) ← elabExpr { cx with expected? := Fren.Core.ExprSite.comparedOperand.expected none (← orderingExpected? cx #[a, b]) } a
   let t ← liftMsg a.span (Fren.Core.orderingType op tx (← orderedDecl))
-  let (y, ty) ← elabExpr { cx with expected? := some t } b
+  let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.comparedOperand.expected none (some t) } b
   newtypeOp op span tx ty
   liftMsg b.span (Fren.Core.checkType t ty (Fren.Core.opNote op t))
   -- For the lints of integers, at the end of the expression: what it compares.
@@ -4539,19 +4539,19 @@ partial def elabInExpr (cx : ExprCtx) (e : Expr) (span : Span) (a : Expr) (b : E
   if let (.set _ #[m], true) := (b, cx.noteIndexes) then
     unless m matches .pair .. do lintFix .singletonMembership span (Fren.Core.singletonMembershipMsg (← srcAt a.span) (← srcAt m.span))
   if let some (pa, pb) := a.pair? (← get).src then
-    let (x, tx) ← elabExpr cx pa
-    let (y, ty) ← elabExpr cx pb
+    let (x, tx) ← elabExpr { cx with expected? := Fren.Core.ExprSite.pairMember.expected none none } pa
+    let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.pairMember.expected none none } pb
     let (tx, ty) := (tx.widen, ty.widen)
-    let (r, tr) ← elabExpr { cx with expected? := some (.rel tx ty) } b
+    let (r, tr) ← elabExpr { cx with expected? := Fren.Core.ExprSite.membershipRight.expected none (some (.rel tx ty)) } b
     unless tr == .rel tx ty do
       err span (Fren.Core.membershipTypeMsg (Ty.rel tx ty).show tr.show true)
     return (s!"(set.member (tuple {x} {y}) {r})", .bool)
-  let (x, tx) ← elabExpr cx a
+  let (x, tx) ← elabExpr { cx with expected? := Fren.Core.ExprSite.membershipLeft.expected none none } a
   -- A member is never a `Nat`: one is widened (`lang::nat_place`).
   let tx := tx.widen
   -- The right is checked against a set or sequence of the left's type, as
   -- it is written (`lang::checked`).
-  let (y, ty) ← elabExpr { cx with expected? := some (if seqShaped b then .seq tx else .set tx) } b
+  let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.membershipRight.expected none (some (if seqShaped b then .seq tx else .set tx)) } b
   -- The membership of a quantifier over elements' guard: its report waits
   -- for the quantifier's verdict (`elabQuantExpr`).
   if cx.elemGuards.contains b.span then
@@ -4573,7 +4573,8 @@ partial def elabInExpr (cx : ExprCtx) (e : Expr) (span : Span) (a : Expr) (b : E
 
 /-- `elabExpr` on a set operator. -/
 partial def elabSetOpExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (op : String) (a : Expr) (b : Expr) : M (String × Ty) := do
-  let pair := exprPair
+  let site : Fren.Core.ExprSite := if op == "subset" then .subsetOperand else .setOperand
+  let pair := exprPair site
   -- Before its operands, whose errors would hide it, as in Lean.
   checkCore cx span .setAlgebra true true #[a, b]
   -- The operands of `subset` give each other their type, and those of the
@@ -4589,10 +4590,10 @@ partial def elabSetOpExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (
 
 /-- `elabExpr` on `join`. -/
 partial def elabJoinExpr (cx : ExprCtx) (span : Span) (a : Expr) (b : Expr) : M (String × Ty) := do
-  let (x, tx) ← elabExpr cx a
+  let (x, tx) ← elabExpr { cx with expected? := Fren.Core.ExprSite.joinOperand.expected none none } a
   let .rel ta tb := tx | err a.span (Fren.Core.joinTypeMsg tx.show none)
   -- Both operands synthesize their types (`lang::checked`).
-  let (y, ty) ← elabExpr cx b
+  let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.joinOperand.expected none none } b
   let .rel tb' tc := ty | err b.span (Fren.Core.joinTypeMsg ty.show none)
   unless tb == tb' do err span (Fren.Core.joinTypeMsg tx.show (some ty.show))
   checkRelational cx span #[tb] #[a, b]
@@ -4604,16 +4605,16 @@ partial def elabConcatExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected
   let newtypeOp := @exprNewtypeOp
   -- Each operand is checked against the whole's type, or the other's
   -- (`lang::checked`): `[] ++ q` takes its type from `q`.
-  let expected? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then do
+  let sibling? ← if expected?.isNone && !(← synthesizes cx a) && (← synthesizes cx b) then do
       let saved ← get
       let t ← (·.2) <$> elabExpr { cx with noteIndexes := false } b
       set saved
       pure (some t)
-    else pure expected?
-  let (x, tx) ← elabExpr { cx with expected?, concatOk := true } a
+    else pure none
+  let (x, tx) ← elabExpr { cx with expected? := Fren.Core.ExprSite.concatOperand.expected expected? sibling?, concatOk := true } a
   newtypeOp op span tx tx
   if let .seq _ := tx then
-    let (y, ty) ← elabExpr { cx with expected? := some tx } b
+    let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.concatOperand.expected none (some tx) } b
     liftMsg b.span (Fren.Core.checkConcatOperands tx ty)
     checkCore cx span .seqWord true true #[a, b] (← isConstant cx e)
     return (s!"(seq.++ {x} {y})", tx)
@@ -4621,7 +4622,7 @@ partial def elabConcatExpr (cx : ExprCtx) (e : Expr) (concatOk : Bool) (expected
   if concatOk then checkCore cx span .stringAtom true true #[a, b]
   else checkCore cx span .stringSearch true true #[a, b] (← isConstant cx e)
   unless tx == .string do mismatch a .string tx (opNote op .string)
-  let (y, ty) ← elabExpr { cx with concatOk := true } b
+  let (y, ty) ← elabExpr { cx with concatOk := true, expected? := Fren.Core.ExprSite.stringOperand.expected none none } b
   unless ty == .string do mismatch b .string ty (opNote op .string)
   return (s!"(str.++ {x} {y})", .string)
 
@@ -4783,7 +4784,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
         if d.ordered then
           modify fun s => { s with facts := s.facts.push (e.span, .ordinal en.path.toString idx d.ctors.size) }
     if let some d := d.filter (!·.params.isEmpty) then
-      let (_, args) ← elabConstruction elabExpr { cx with expected? } d #[] #[] e.span (showPath (en.path ++ en.variants[idx]!)) fun _ _ => ""
+      let (_, args) ← elabConstruction elabExpr .payload { cx with expected? } d #[] #[] e.span (showPath (en.path ++ en.variants[idx]!)) fun _ _ => ""
       return (d.build args.toList en.variants[idx]! [], .enum en.path args.toList)
     return (ctorSym en.path en.variants[idx]!, .enum en.path [])
   | .item { kind := .constItem, path, .. } =>
@@ -4810,7 +4811,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
                              args := args.toList.zipIdx.map fun (a, i) => cx.recArg a i }
     let mut smts := #[]
     for a in args, t in ft.params, k in [0:args.size] do
-      let (x, ta) ← elabExpr { cx with expected? := some t } a
+      let (x, ta) ← elabExpr { cx with expected? := Fren.Core.ExprSite.functionArgument.expected (some t) none } a
       liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath f}` has type `{t.show}`"))
       let pt := (((← get).funPTys.find? f).map (·.1[k]?.getD default)).getD default
       noteObligation cx .argument a.span pt x
@@ -4825,7 +4826,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       unless args.size == ft.params.size do err span (Fren.Core.arityMsg f ft.params.size args.size)
       let mut smts := #[]
       for a in args, t in ft.params, k in [0:args.size] do
-        let (x, ta) ← elabExpr { cx with expected? := some t } a
+        let (x, ta) ← elabExpr { cx with expected? := Fren.Core.ExprSite.functionArgument.expected (some t) none } a
         liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{f}` has type `{t.show}`"))
         smts := smts.push x
       return (s!"({sym} {" ".intercalate smts.toList})", ft.result)
@@ -4875,14 +4876,14 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       unless args.size == tys.size do err span (Fren.Core.arityMsg (en.path ++ v) tys.size args.size "value")
       let note (k : Nat) (t : Ty) := s!"note: value {k + 1} of the payload of `{showPath (en.path ++ v)}` has type `{t.show}`"
       if !d.params.isEmpty then
-        let (smts, targs) ← elabConstruction elabExpr { cx with expected? } d tys args span (showPath (en.path ++ v)) note
+        let (smts, targs) ← elabConstruction elabExpr .payload { cx with expected? } d tys args span (showPath (en.path ++ v)) note
         -- Each value's obligation, of its type with the enumeration's arguments.
         for a in args, x in smts, k in [0:args.size] do
           noteObligation cx .payload a.span (← partPTy en.path idx k targs) x
         return (d.build targs.toList v smts.toList, .enum en.path targs.toList)
       let mut smts := #[]
       for a in args, t in tys, k in [0:args.size] do
-        let (x, ta) ← elabExpr { cx with expected? := some t } a
+        let (x, ta) ← elabExpr { cx with expected? := Fren.Core.ExprSite.payload.expected (some t) none } a
         liftMsg a.span (Fren.Core.checkType t ta (some (note k t)))
         noteObligation cx .payload a.span (← partPTy en.path idx k) x
         smts := smts.push x
@@ -4892,7 +4893,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       -- (`Reqs/Lang/Expressions#newtypes`).
       let some u := (← get).newtypes.find? path | err fnSpan (Fren.Core.constructionMsg path false)
       unless args.size == 1 do err span (Fren.Core.arityMsg path 1 args.size "value")
-      let (x, ta) ← elabExpr { cx with expected? := some u } args[0]!
+      let (x, ta) ← elabExpr { cx with expected? := Fren.Core.ExprSite.newtypeValue.expected (some u) none } args[0]!
       unless ta.widens u do mismatch args[0]! u ta (some s!"note: the value of `{showPath path}` has type `{u.show}`")
       if cx.noteIndexes then
         let synth ← synthesizes cx args[0]!
@@ -4918,7 +4919,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       Fren.Core.inferCall g.params g.declared g.result synth expected?
         (err span (Fren.Core.cannotInferCallMsg (showPath path)) : M Unit)
         (fun k x? => do
-          let (smt, t) ← (elabExpr { acx with expected? := x? } args[k]! : M _)
+          let (smt, t) ← (elabExpr { acx with expected? := Fren.Core.ExprSite.functionArgument.expected x? none } args[k]! : M _)
           modify fun a => a.set! k smt
           return some t)
         (fun k x f => (liftMsg args[k]!.span
@@ -4956,7 +4957,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
     let mut smts := #[]
     let ptys := ((← get).funPTys.find? path).map (·.1) |>.getD #[]
     for a in args, (_, t) in params, k in [0:args.size] do
-      let (x, ta) ← elabExpr { cx with expected? := some t } a
+      let (x, ta) ← elabExpr { cx with expected? := Fren.Core.ExprSite.functionArgument.expected (some t) none } a
       liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
       noteObligation cx .argument a.span (ptys[k]?.getD default) x
       smts := smts.push x
@@ -4981,7 +4982,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
   let mut smts := #[]
   let ptys := (← get).funPTys.find? path
   for a in args, t in params, k in [0:args.size] do
-    let (x, ta) ← elabExpr { acx with expected? := some t } a
+    let (x, ta) ← elabExpr { acx with expected? := Fren.Core.ExprSite.functionArgument.expected (some t) none } a
     liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
     noteObligation acx .argument a.span ((ptys.bind (·.1[k]?)).getD default) x
     smts := smts.push x
@@ -5083,7 +5084,8 @@ partial def elabClosure (cx : ExprCtx) (params : Array (Ident × Ty)) (body : Ex
     new := new.push { name := bn, smt := sym, ty := t, scrutinee := none, outer := cx.binders.size + new.size, unbounded := true }
   let outer ← takeIndexes
   let outerTables ← takeTables
-  let (b, tb) ← elabExpr { cx with binders := cx.binders ++ new, expected? := r?, inClosure := true } body
+  let site : Fren.Core.ExprSite := if r?.isSome then .typedClosureBody else .untypedClosureBody
+  let (b, tb) ← elabExpr { cx with binders := cx.binders ++ new, expected? := site.expected r? none, inClosure := true } body
   let inner ← takeIndexes
   let innerTables ← takeTables
   modify fun s => { s with indexes := outer, tables := outerTables }
@@ -5104,7 +5106,7 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
     Fren.Core.inferHigherOrder h.typeParams (h.params.map (·.2.2)) h.result synth expected?
       (err span (Fren.Core.cannotInferCallMsg f) : M Unit)
       (fun k x? => do
-        let (smt, t) ← (elabExpr { cx with expected? := x? } args[k]! : M _)
+        let (smt, t) ← (elabExpr { cx with expected? := Fren.Core.ExprSite.functionArgument.expected x? none } args[k]! : M _)
         modify fun (a, c) => (a.set! k smt, c)
         return some t)
       (fun k x t => (liftMsg args[k]!.span
@@ -5218,12 +5220,12 @@ partial def elabRecordExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) 
   let mut targs := #[]
   if d.params.isEmpty then
     for (_, t) in fs, e in vals, k in [0:fs.size] do
-      let (x, te) ← elabExpr { cx with expected? := some t } e
+      let (x, te) ← elabExpr { cx with expected? := Fren.Core.ExprSite.recordField.expected (some t) none } e
       liftMsg e.span (Fren.Core.checkType t te (some (note k t)))
       noteObligation cx .field e.span (← partPTy path 0 k) x
       smts := smts.push x
   else
-    (smts, targs) ← elabConstruction elabExpr { cx with expected? } d (fs.map (·.2)) vals span (showPath path) note
+    (smts, targs) ← elabConstruction elabExpr .recordField { cx with expected? } d (fs.map (·.2)) vals span (showPath path) note
     -- Each field's obligation, of its type with the record's arguments.
     for e in vals, x in smts, k in [0:fs.size] do
       noteObligation cx .field e.span (← partPTy path 0 k targs) x
@@ -5261,7 +5263,7 @@ partial def elabRecordExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) 
       unless n == fi.name do continue
       -- Only its type: what elaborating it reports is reported where it is.
       let saved ← get
-      let t? ← tryCatch (some <$> (·.2) <$> elabExpr { cx with noteIndexes := false, expected? := none } recv)
+      let t? ← tryCatch (some <$> (·.2) <$> elabExpr { cx with noteIndexes := false, expected? := Fren.Core.ExprSite.receiver.expected none none } recv)
         fun _ => pure none
       set saved
       unless t? == some (Ty.record path targs.toList) do continue
@@ -5282,7 +5284,7 @@ partial def elabRecordExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) 
 
 /-- `elabExpr` on a record update. -/
 partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : Array (Ident × Option Expr)) : M (String × Ty) := do
-  let (rv, tr) ← elabExpr { cx with expected? := none } base
+  let (rv, tr) ← elabExpr { cx with expected? := Fren.Core.ExprSite.updatedRecord.expected none none } base
   let .record path targs := tr | err base.span (Fren.Core.updateBaseMsg tr.show)
   let some d := (← get).dataOf? path | internal base.span s!"unknown record `{path}`"
   -- With the record's arguments for its type parameters (`lang::instantiation`).
@@ -5299,7 +5301,7 @@ partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : 
     let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f)
       | smts := smts.push s!"({fieldSym path f} {r})"; continue
     let e := e?.getD (.path fi.span #[fi])
-    let (x, te) ← elabExpr { cx with expected? := some t } e
+    let (x, te) ← elabExpr { cx with expected? := Fren.Core.ExprSite.recordField.expected (some t) none } e
     liftMsg e.span (Fren.Core.checkType t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`"))
     noteObligation cx .field e.span (← partPTy path 0 k targs.toArray) x
     smts := smts.push x
@@ -5406,7 +5408,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     -- The guard, a `Bool`, checked as one (`Reqs/Lang/Expressions#matches`).
     let guardOf (g : Expr) : M (String × Option String) := do
       if !isTable then
-        let (x, tg) ← elabExpr { gcx with expected? := none } g
+        let (x, tg) ← elabExpr { gcx with expected? := Fren.Core.ExprSite.armGuard.expected none none } g
         liftMsg g.span (Fren.Core.checkType .bool tg (some Fren.Core.armGuardNote))
         return (x, none)
       -- In a table over a scrutinee, elaborated under its pattern's test
@@ -5415,7 +5417,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
       -- put under the earlier arms' not being taken, as a row's
       -- condition is.
       let (k, kt) := ((← get).indexes.size, (← get).tables.size)
-      let (x, tg) ← elabExpr { gcx with expected? := none, guards := test.toArray } g
+      let (x, tg) ← elabExpr { gcx with expected? := Fren.Core.ExprSite.armGuard.expected none none, guards := test.toArray } g
       liftMsg g.span (Fren.Core.checkType .bool tg (some Fren.Core.armGuardNote))
       let inGuard := (← get).indexes.extract k
       modify fun s => { s with
@@ -5433,7 +5435,9 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     -- other has given a type, waits for a later one that does.
     let bcx := { gcx with guards := armGuards ++ g?.toArray }
     -- Another arm's `Nat` is widened: a `Nat` is expected only of the whole.
-    let shared? := expected?.orElse fun _ => ty?.map (·.widen)
+    -- The arms before it give it their type only where none is expected of
+    -- the whole.
+    let shared? := Fren.Core.ExprSite.armBody.expected expected? (if expected?.isSome then none else ty?)
     if shared?.isNone && !(← synthesizes cx body) && (← arms.anyM (synthesizes cx ·.2.2)) then
       waiting := waiting.push (bodies.size, bcx, body)
       bodies := bodies.push ""
@@ -5442,7 +5446,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
     bodies := bodies.push x
   for (k, bcx, body) in waiting do
-    let (x, t) ← elabExpr { bcx with expected? := ty?.map (·.widen) } body
+    let (x, t) ← elabExpr { bcx with expected? := Fren.Core.ExprSite.armBody.expected none ty? } body
     if ty?.isSome then ty? := some (← liftMsg body.span (Fren.Core.checkArm ty? t))
     bodies := bodies.set! k x
   let ty := ty?.get!
@@ -5503,7 +5507,7 @@ partial def elabTableExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     -- Each value is checked against the whole's type, or another's
     -- (`lang::checked`), as a `match` arm's body is.
     let vcx := { cx with guards := before ++ own }
-    let shared? := expected?.orElse fun _ => ty?.map (·.widen)
+    let shared? := Fren.Core.ExprSite.rowValue.expected expected? (if expected?.isSome then none else ty?)
     if shared?.isNone && !(← synthesizes cx v) && (← rows.anyM (synthesizes cx ·.2.2)) then
       waiting := waiting.push (values.size, vcx, v)
       values := values.push ""
@@ -5514,7 +5518,7 @@ partial def elabTableExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     ty? := some ((ty?.map (·.join t)).getD t)
     values := values.push x
   for (k, vcx, v) in waiting do
-    let (x, t) ← elabExpr { vcx with expected? := ty?.map (·.widen) } v
+    let (x, t) ← elabExpr { vcx with expected? := Fren.Core.ExprSite.rowValue.expected none ty? } v
     if let some t0 := ty? then
       liftMsg v.span (Fren.Core.checkRowType t0 t)
     ty? := ty?.map (·.join t)
@@ -5605,7 +5609,7 @@ partial def elabLetExpr (cx : ExprCtx) (span : Span) (concatOk : Bool) (expected
   let between := ((Fren.Core.withoutComments (← srcAt { start := lastStop, stop := body.span.start })).toList.filter
     fun c => !c.isWhitespace && c != ')')
   let membership := !isWhere && between == "in".toList && body matches .bin _ "in" ..
-  let (b, t) ← tryCatch (elabExpr { bcx with expected?, concatOk } body) fun f =>
+  let (b, t) ← tryCatch (elabExpr { bcx with expected? := Fren.Core.ExprSite.letBody.expected expected? none, concatOk } body) fun f =>
     -- The error just thrown is the last.
     throw (if membership then { f with diags := f.diags.modify (f.diags.size - 1) fun d =>
       { d with msg := Fren.Core.membershipNote true d.msg } } else f)
@@ -5649,7 +5653,8 @@ partial def elabDefinitions (cx : ExprCtx) (defs : Array (Ident × Option (Array
     let before := (← get).indexes
     let beforeTables := (← get).tables
     modify fun s => { s with indexes := #[], tables := #[] }
-    let dcx := { cx with guards := #[], pending := pending.toArray, expected? := annot?
+    let site : Fren.Core.ExprSite := if annot?.isSome then .typedDefinition else .untypedDefinition
+    let dcx := { cx with guards := #[], pending := pending.toArray, expected? := site.expected annot? none
                          unmentioned := cx.unmentioned || !used[k]! }
     let (smt, t) ← elabExpr dcx e
     if let some a := pannot? then noteObligation dcx .letDefinition e.span a smt
@@ -5805,7 +5810,7 @@ def elabInst (cx : ExprCtx) (pi : PendingInst) : M CInst := do
     let e := e?.getD (.path b.span #[b])
     let some v := cx.vars.find? (·.name == w ++ Name.mkSimple b.name)
       | internal b.span s!"no variable for `{b.name}`"
-    let (smt, t) ← elabExpr { cx with expected? := some v.ty } e
+    let (smt, t) ← elabExpr { cx with expected? := Fren.Core.ExprSite.binding.expected (some v.ty) none } e
     liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{b.name}` of `{showPath c.path}` has type `{v.ty.show}`"))
     -- An `Int` bound to an `Int` keeps it one (`lint::manual_nat`).
     if v.ty == .int && t == .int then modify fun s => { s with natKept := s.natKept.push (c.path, b.name) }
@@ -6082,7 +6087,7 @@ def elabCompDefinitions (name : Ident) (vars : Array CVar) (instNames : Array Na
     let e := v.defn?.get!
     let some (smt, idx, tbl) ← attempt do
         -- A definition assigns once and acyclically, so `++` is in the core in it.
-        let dcx : ExprCtx := { vars, insts := instNames, place := .prop, expected? := some v.ty, concatOk := true }
+        let dcx : ExprCtx := { vars, insts := instNames, place := .prop, expected? := Fren.Core.ExprSite.outputDefinition.expected (some v.ty) none, concatOk := true }
         let (smt, t) ← elabExpr dcx e
         liftMsg e.span (Fren.Core.checkType v.ty t (some s!"note: `{v.name}` has type `{v.ty.show}`, so its definition must too"))
         noteObligation dcx .definition e.span v.ptype smt
@@ -6517,7 +6522,7 @@ def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
   let cx : ExprCtx := { vars, insts := pending.map (Name.mkSimple ·.name.name), place := .prop }
   let mut substitutions : Array (Name × String) := #[]
   for param in params, arg in args do
-    let (value, ty) ← elabExpr { cx with expected? := some param.ty } arg
+    let (value, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.binding.expected (some param.ty) none } arg
     liftMsg arg.span (Fren.Core.checkType param.ty ty none)
     substitutions := substitutions.push (param.name, value)
   for required in results, given in actual do
@@ -7328,7 +7333,7 @@ partial def elabItem (item : Item) : M Unit := do
       let selfRec? := if tps.isEmpty && fnPs.isEmpty then
         some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
       -- The body is checked against the result type (`lang::checked`).
-      let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := some r, fnParams, selfRec? }
+      let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := Fren.Core.ExprSite.functionBody.expected (some r) none, fnParams, selfRec? }
       modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
       let (smt, t) ← elabExpr cx body
       let uses := (← get).recUses
@@ -7489,7 +7494,7 @@ partial def elabItem (item : Item) : M Unit := do
     discard takeTables
     discard takeIndexes
     modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
-    let cx : ExprCtx := { vars := #[], place := .prop, expected? := some t }
+    let cx : ExprCtx := { vars := #[], place := .prop, expected? := Fren.Core.ExprSite.constantValue.expected (some t) none }
     let (smt, t') ← elabExpr cx value
     noteObligation cx .constant value.span pt smt
     noteBody n name.span #[] (obligations := ← takeIndexes)

@@ -105,17 +105,58 @@ def toPosition : Fren.Core.Position → lang.Position
   | .compared => .Compared
   | .synthesized => .Synthesized
 
--- For every position: the decision that both front ends make for each part
--- of an expression. That each classifies its syntax into the right positions
--- and shapes is not proved here, but tested by both on the same ui tests.
-impl checked: lang::checked for (p : Fren.Core.Position) (e s : Bool) {
-  position := toPosition p,
+def toExprSite : Fren.Core.ExprSite → lang.ExprSite
+  | .binding => .Binding
+  | .recordField => .RecordField
+  | .newtypeValue => .NewtypeValue
+  | .functionArgument => .FunctionArgument
+  | .payload => .Payload
+  | .seqMethodArgument => .SeqMethodArgument
+  | .orderedMethodArgument => .OrderedMethodArgument
+  | .outputDefinition => .OutputDefinition
+  | .functionBody => .FunctionBody
+  | .constantValue => .ConstantValue
+  | .typedDefinition => .TypedDefinition
+  | .typedClosureBody => .TypedClosureBody
+  | .setOperand => .SetOperand
+  | .concatOperand => .ConcatOperand
+  | .branch => .Branch
+  | .armBody => .ArmBody
+  | .rowValue => .RowValue
+  | .element => .Element
+  | .parenthesized => .Parenthesized
+  | .letBody => .LetBody
+  | .pairMember => .PairMember
+  | .comparedOperand => .ComparedOperand
+  | .subsetOperand => .SubsetOperand
+  | .membershipRight => .MembershipRight
+  | .membershipLeft => .MembershipLeft
+  | .joinOperand => .JoinOperand
+  | .stringOperand => .StringOperand
+  | .methodArgument => .MethodArgument
+  | .receiver => .Receiver
+  | .scrutinee => .Scrutinee
+  | .armGuard => .ArmGuard
+  | .rowCondition => .RowCondition
+  | .updatedRecord => .UpdatedRecord
+  | .untypedDefinition => .UntypedDefinition
+  | .untypedClosureBody => .UntypedClosureBody
+
+-- For every site: its position, and the decision that both front ends make
+-- for each part of an expression, by `ExprSite.checked`. That each
+-- classifies its syntax into the right sites and shapes is not proved here,
+-- but tested by both on the same ui tests.
+impl checked: lang::checked for (s : Fren.Core.ExprSite) (e sib : Bool) {
+  site := toExprSite s,
   expected? := e,
-  sibling? := s,
-  checked? := p.checked e s,
+  sibling? := sib,
+  position := toPosition s.position,
+  checked? := s.checked e sib,
 } by
-  intro p e s _
-  cases p <;> cases e <;> cases s <;> simp [fren_spec, toPosition, Fren.Core.Position.checked]
+  intro s e sib _
+  cases s <;> cases e <;> cases sib <;>
+    simp [fren_spec, toExprSite, toPosition, Fren.Core.ExprSite.position, Fren.Core.ExprSite.checked,
+      Fren.Core.Position.checked]
 
 def toShape : Fren.Core.TypeShape → lang.Shape
   | .emptyLiteral => .EmptyLiteral

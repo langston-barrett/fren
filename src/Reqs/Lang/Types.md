@@ -877,9 +877,11 @@ Where an expression is written decides whether it is checked:
   a definition of a `let` or `where` whose type is not written, it
   synthesizes its type.
 
-`lang::checked` states this, from where an expression is written, whether
-the expression it is a part of is checked, and whether one of the parts
-that share its type synthesizes one. So `s = {} union {}`,
+`lang::checked` states this, from where an expression is written, one of
+the sites of `ExprSite`, whether the expression it is a part of is checked,
+and whether one of the parts that share its type synthesizes one. Each
+front end classifies its syntax into these sites, and both take a site's
+position from the same list. So `s = {} union {}`,
 `s = (if c? then {} else {})`, `x in []`, `{{}, s}`, `[[], q]`,
 `{(1, {}), (2, s)}` and a `match` with an arm `E::W => {}` beside an arm
 of a known type are all accepted, and `{} = {}`, `({} inter {}).card`,
@@ -889,14 +891,101 @@ not.
 ```fren
 pub enum Position { Declared, Shared, Compared, Synthesized }
 
+-- Where an expression is written.
+pub enum ExprSite {
+    Binding,                -- a binding `x := e` of a call, or an argument of a refinement
+    RecordField,            -- a field of a record literal or of a record update
+    NewtypeValue,           -- the value of a newtype, as `e` in `Ms(e)`
+    FunctionArgument,       -- an argument of a function application
+    Payload,                -- a value of a variant's payload
+    SeqMethodArgument,      -- an argument of a sequence's method
+    OrderedMethodArgument,  -- the argument of an enumeration's or record's `min` or `max`
+    OutputDefinition,       -- a defined output's definition, as a function block's `out`
+    FunctionBody,           -- a defined function's body
+    ConstantValue,          -- a constant's value
+    TypedDefinition,        -- a definition of a `let` or `where` whose type is written
+    TypedClosureBody,       -- the body of a closure whose result type is known
+    SetOperand,             -- an operand of `union`, `inter` or `minus`
+    ConcatOperand,          -- an operand of `++`
+    Branch,                 -- a branch of a conditional
+    ArmBody,                -- the body of a `match` arm
+    RowValue,               -- the value of a table's row
+    Element,                -- an element of a set or sequence literal
+    Parenthesized,          -- the expression in parentheses
+    LetBody,                -- the body of a `let`
+    PairMember,             -- a member of a pair
+    ComparedOperand,        -- an operand of `=`, `!=` or an ordering
+    SubsetOperand,          -- an operand of `subset`
+    MembershipRight,        -- the right of `in`
+    MembershipLeft,         -- the left of `in`
+    JoinOperand,            -- an operand of `join`
+    StringOperand,          -- the right of `++` on strings
+    MethodArgument,         -- an argument of a method of anything else
+    Receiver,               -- the receiver of a method or of a field read
+    Scrutinee,              -- the scrutinee of a `match` or of `e is P`
+    ArmGuard,               -- the guard of a `match` arm
+    RowCondition,           -- the condition of a table's row
+    UpdatedRecord,          -- the updated value of a record update
+    UntypedDefinition,      -- a definition of a `let` or `where` whose type is not written
+    UntypedClosureBody,     -- the body of a closure whose result type is not known
+}
+
 set_option fren.evidence "enumerated" in
 pub proc checked(
-    position: Position,
+    site: ExprSite,
     expected?,          -- the expression it is a part of is checked against a type
     sibling?,           -- another part that shares its type synthesizes one
-): (det checked?) {
+): (det position: Position, det checked?) {
+    use self::ExprSite::{
+        ArmBody,
+        ArmGuard,
+        Binding,
+        Branch,
+        ComparedOperand,
+        ConcatOperand,
+        ConstantValue,
+        Element,
+        FunctionArgument,
+        FunctionBody,
+        JoinOperand,
+        LetBody,
+        MembershipLeft,
+        MembershipRight,
+        MethodArgument,
+        NewtypeValue,
+        OrderedMethodArgument,
+        OutputDefinition,
+        PairMember,
+        Parenthesized,
+        Payload,
+        Receiver,
+        RecordField,
+        RowCondition,
+        RowValue,
+        Scrutinee,
+        SeqMethodArgument,
+        SetOperand,
+        StringOperand,
+        SubsetOperand,
+        TypedClosureBody,
+        TypedDefinition,
+        UntypedClosureBody,
+        UntypedDefinition,
+        UpdatedRecord,
+    }
     use self::Position::{Compared, Declared, Shared, Synthesized}
 
+    ensure classified: position = match site {
+        Binding | RecordField | NewtypeValue | FunctionArgument | Payload | SeqMethodArgument
+        | OrderedMethodArgument | OutputDefinition | FunctionBody | ConstantValue
+        | TypedDefinition | TypedClosureBody => Declared,
+        SetOperand | ConcatOperand | Branch | ArmBody | RowValue | Element | Parenthesized
+        | LetBody | PairMember => Shared,
+        ComparedOperand | SubsetOperand | MembershipRight => Compared,
+        MembershipLeft | JoinOperand | StringOperand | MethodArgument | Receiver | Scrutinee
+        | ArmGuard | RowCondition | UpdatedRecord | UntypedDefinition
+        | UntypedClosureBody => Synthesized,
+    }
     ensure rule: checked? iff match position {
         Declared => true,
         Shared => expected? or sibling?,
@@ -907,6 +996,9 @@ pub proc checked(
     expect declared_always: when position = Declared, checked?
     expect synthesized_never: when position = Synthesized, not checked?
     expect sibling_suffices: when position is Shared | Compared and sibling?, checked?
+    expect function_body: when site = FunctionBody, checked?
+    expect written_type: when site = TypedDefinition, checked?
+    expect unwritten_type: when site = UntypedDefinition, not checked?
 }
 ```
 
