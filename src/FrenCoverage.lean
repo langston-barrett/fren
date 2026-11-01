@@ -26,8 +26,10 @@ their callers.
 The declarations that no test runs are listed in `test/coverage.txt`, one
 per line, each followed by ` -- ` and why, if it is never meant to run.
 The run fails on a counted declaration that does not run and is not
-listed, and on a listed one that runs or is no longer counted, so that the
-list only shrinks.
+listed. A listed one that runs or is no longer counted only weakens the
+list, so it gets a warning, which names the line to remove: `pre-merge`
+does not measure coverage, so a pull request that makes a test run a listed
+declaration merges with its line still listed.
 -/
 
 open Lean
@@ -200,14 +202,26 @@ unsafe def main (args : List String) : IO UInt32 := do
   let mut failures := #[]
   for d in uncovered do
     unless listed.any (·.1 == d.toString) do failures := failures.push s!"{d}: no test runs it"
+  -- A stale listing only weakens the list, so it is a warning, which says
+  -- the line to remove: a pull request that makes a test run a listed
+  -- declaration is not checked for coverage before it merges.
   -- By the name as written, which `toString` gives, private names and `«»`
   -- included.
+  let mut stale : Array (String × String) := #[]
   for (d, _) in listed do
     match decls.find? (·.toString == d) with
-    | none => failures := failures.push s!"{d}: listed in test/coverage.txt, but not a counted declaration"
-    | some n => if ran.getD n false then failures := failures.push s!"{d}: listed in test/coverage.txt, but a test runs it"
+    | none => stale := stale.push (d, "listed in test/coverage.txt, but not a counted declaration")
+    | some n => if ran.getD n false then stale := stale.push (d, "listed in test/coverage.txt, but a test runs it")
   let covered := decls.size - uncovered.size
   IO.println s!"fren_coverage: {covered} of {decls.size} declarations run by the tests ({if decls.isEmpty then 100 else 100 * covered / decls.size}%), {(listed.filter (·.2.isSome)).size} never meant to run"
+  -- On GitHub Actions, also as an annotation of the run.
+  let annotate := (← IO.getEnv "GITHUB_ACTIONS") == some "true"
+  let lines := (current.splitOn "\n").map (·.trimAscii.toString)
+  for (d, why) in stale do
+    let line := (lines.find? fun l => (parseList l).any (·.1 == d)).getD d
+    let msg := s!"{d}: {why}: remove the line `{line}` from test/coverage.txt"
+    IO.eprintln s!"WARN {msg}"
+    if annotate then IO.println s!"::warning title=fren_coverage::{msg}"
   for f in failures do IO.eprintln s!"FAIL {f}"
   return if failures.isEmpty then 0 else 1
 
