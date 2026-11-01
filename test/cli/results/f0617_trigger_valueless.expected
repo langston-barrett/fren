@@ -1,11 +1,11 @@
-warning[F0617]: testing never reached `m::c::e` in 100 tests: it had no value in any of them
-  --> test/cli/results/f0617_trigger_valueless.fren:11:12
+warning[F0617]: testing never reached `m::c::e` in 100 tests: its trigger had no value in any of them in which it was not false
+  --> test/cli/results/f0617_trigger_valueless.fren:11:15
    |
 11 |     expect e: when q[7] > 0, big?
-   |            ^ no value
+   |               ^^^^^^^^^^^^^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
-   = help: run `fren check` to decide it, or guard the part that has no value
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
+   = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
 warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tests
   --> test/cli/results/f0617_trigger_valueless.fren:19:10
@@ -16,14 +16,14 @@ warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tes
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
-warning[F0617]: testing never reached the assumption `m::guarded::seventh` in 100 tests: it had no value in any of them
-  --> test/cli/results/f0617_trigger_valueless.fren:20:12
+warning[F0617]: testing never reached the assumption `m::guarded::seventh` in 100 tests: its trigger had no value in any of them in which it was not false
+  --> test/cli/results/f0617_trigger_valueless.fren:20:21
    |
 20 |     assume seventh: when q[7] > 0, q.len > 7
-   |            ^^^^^^^ no value
+   |                     ^^^^^^^^^^^^^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
-   = help: run `fren check` to decide it, or guard the part that has no value
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
+   = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
 warning[F0610]: testing found no admissible behaviour of `m::user` in 100 tests
   --> test/cli/results/f0617_trigger_valueless.fren:23:10
@@ -34,25 +34,43 @@ warning[F0610]: testing found no admissible behaviour of `m::user` in 100 tests
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
-warning[F0617]: testing never reached the assumption `m::guarded::seventh` of call `u` in 100 tests: it had no value in any of them
+warning[F0617]: testing never reached the assumption `m::guarded::seventh` of call `u` in 100 tests: its trigger had no value in any of them in which it was not false
   --> test/cli/results/f0617_trigger_valueless.fren:24:10
    |
 24 |     call u := guarded(z)
    |          ^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
-   = help: run `fren check` to decide it, or guard the part that has no value
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
+   = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
-warning[F0617]: testing never reached `m::g::g` in 100 tests: it had no value in any of them
-  --> test/cli/results/f0617_trigger_valueless.fren:16:12
+warning[F0617]: testing never reached `m::mixed::e` in 100 tests: its trigger had no value in any of them in which it was not false
+  --> test/cli/results/f0617_trigger_valueless.fren:31:15
    |
-16 |     expect g: when a.q[7] > 0, a.big?
+31 |     expect e: when q[0] + 1 < q[0], big?
+   |               ^^^^^^^^^^^^^^^^^^^^ no value
+   |
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
+   = help: run `fren check` to decide it, or guard the part of the trigger that has no value
+
+warning[F0617]: testing never reached `m::held::e` in 100 tests: it had no value in any of them
+  --> test/cli/results/f0617_trigger_valueless.fren:38:12
+   |
+38 |     expect e: when q.len < 3, q[7] > 0
    |            ^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
    = help: run `fren check` to decide it, or guard the part that has no value
 
-fren: 2 passed, 0 failed, 5 inconclusive, in 100 tests each
+warning[F0617]: testing never reached `m::g::g` in 100 tests: its trigger had no value in any of them in which it was not false
+  --> test/cli/results/f0617_trigger_valueless.fren:16:15
+   |
+16 |     expect g: when a.q[7] > 0, a.big?
+   |               ^^^^^^^^^^^^^^^ no value
+   |
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
+   = help: run `fren check` to decide it, or guard the part of the trigger that has no value
+
+fren: 4 passed, 0 failed, 7 inconclusive, in 100 tests each
 
 Some errors have detailed explanations: F0610, F0617.
 For more information about an error, try `fren --explain F0610`.

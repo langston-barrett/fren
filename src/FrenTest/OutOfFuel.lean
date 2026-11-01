@@ -38,9 +38,13 @@ def cex : Unit → Fren.Core.Detail := fun _ => .none
 #guard (({} : Tally).test true none (some true) cex).tests == 0
 #guard (({} : Tally).test true none (some false) cex).refuted?.isNone
 #guard (({} : Tally).test true none (some true) cex).valueless == 1
-#guard (({} : Tally).test true none none cex).unreached 1 == .Valueless
--- One false trigger and one without a value: `F0617`, not `F0612`.
-#guard ((({} : Tally).test true (some false) none cex).test true none none cex).unreached 2 == .Valueless
+#guard (({} : Tally).test true none (some true) cex).unknownTrigger == 1
+-- `F0617` at the trigger, which is what had no value.
+#guard (({} : Tally).test true none none cex).unreached 1 == .TriggerValueless
+-- One false trigger and one without a value: `F0617` at the trigger, not `F0612`.
+#guard ((({} : Tally).test true (some false) none cex).test true none none cex).unreached 2 == .TriggerValueless
+-- A trigger that held once, with the check without a value: `F0617` at the check.
+#guard ((({} : Tally).test true none none cex).test true (some true) none cex).unreached 2 == .Valueless
 
 /-- At a tiny fuel, read at run time so that the evaluation is not done
 ahead: `deep` has no value, and a test of it neither refutes nor reaches

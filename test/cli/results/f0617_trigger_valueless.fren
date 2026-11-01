@@ -23,3 +23,17 @@ pub proc guarded(q: Seq<Int>) {
 pub proc user(z: Seq<Int>) {
     call u := guarded(z)
 }
+
+-- The trigger is false wherever `q` has elements, and has no value where
+-- it is empty: `F0617` at the trigger, though `big?` always has a value.
+pub proc mixed(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q[0] + 1 < q[0], big?
+}
+
+-- The trigger holds in some tests, where the check has no value: `F0617`
+-- at the check.
+pub proc held(q: Seq<Int>): (big?) {
+    ensure r: big? iff q.len > 1000
+    expect e: when q.len < 3, q[7] > 0
+}

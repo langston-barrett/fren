@@ -13,7 +13,7 @@ warning[F0617]: testing never reached the assumption `m::guarded::seventh` in 10
 19 |     assume seventh: q[7] > 0
    |            ^^^^^^^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
    = help: run `fren check` to decide it, or guard the part that has no value
 
 warning[F0610]: testing found no admissible behaviour of `m::user` in 100 tests
@@ -31,7 +31,7 @@ warning[F0617]: testing never reached the assumption `m::guarded::seventh` of ca
 18 | pub proc user(z: Seq<Int>) { call u := guarded(z) }
    |                                   ^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
    = help: run `fren check` to decide it, or guard the part that has no value
 
 warning[F0617]: testing never reached `m::g::g` in 100 tests: it had no value in any of them
@@ -40,7 +40,7 @@ warning[F0617]: testing never reached `m::g::g` in 100 tests: it had no value in
 13 |     expect g: a.q[7] > 0 or a.big?
    |            ^ no value
    |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
+   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
    = help: run `fren check` to decide it, or guard the part that has no value
 
 fren: 2 passed, 0 failed, 4 inconclusive, in 100 tests each

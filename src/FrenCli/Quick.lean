@@ -27,6 +27,9 @@ structure Tally where
   if it has one, was not false, but in which the trigger or the check had
   no value (`eval::unreached`). -/
   valueless : Nat := 0
+  /-- Those of `valueless` in which the trigger had no value
+  (`eval::unreached`). -/
+  unknownTrigger : Nat := 0
   /-- The first counterexample. -/
   refuted? : Option Fren.Core.Detail := none
   /-- For realizability: the counterexample is an input for which the
@@ -146,14 +149,19 @@ structure Report where
   untriggered : Array CheckResult := #[]
   /-- The checks that no test reached, though some found what they are
   about, as for `untriggered`, in which their triggers, if any, were not
-  false, because the trigger or the check had no value in any of them
-  (`F0617`, `eval::unreached`). Beside the procedure's `F0610`, only call
+  false, and in some of which the trigger held, because the check had no
+  value in any of those (`F0617` at the check, `eval::unreached`). Beside the procedure's `F0610`, only call
   assumptions are (`eval::unreached_warning`), since they explain it. -/
   valueless : Array CheckResult := #[]
+  /-- The checks that no test reached, as for `valueless`, because their
+  triggers had no value in every test in which they were not false
+  (`F0617` at the trigger, `eval::unreached`). -/
+  triggerValueless : Array CheckResult := #[]
   /-- Beside the procedure's `F0610`, its own assumptions that had no value
   in any input found without the assumptions, which explain it (`F0617`,
-  `eval::unreached_warning`). -/
-  valuelessAssumes : Array Name := #[]
+  `eval::unreached_warning`), each with whether it is the trigger that
+  had none. -/
+  valuelessAssumes : Array (Name × Bool) := #[]
   /-- The cover goals for which no test found a witness, though some found
   behaviours that meet the procedure (`F0616`). -/
   unwitnessed : Array CheckResult := #[]
@@ -235,19 +243,21 @@ nothing, and is counted apart (`Tally.valueless`) for the warning
 def Tally.test (t : Tally) (hasTrigger : Bool) (trigger value : Option Bool) (cex : Unit → Fren.Core.Detail) : Tally :=
   if reached true hasTrigger trigger value then
     if value == some false then t.reach.refute (cex ()) else t.reach
-  else if !hasTrigger || trigger != some false then { t with valueless := t.valueless + 1 }
+  else if counted true hasTrigger trigger then
+    { t with valueless := t.valueless + 1
+             unknownTrigger := t.unknownTrigger + if triggerUnknown true hasTrigger trigger then 1 else 0 }
   else t
 
 /-- Why testing reached the check of `t`, or did not (`eval::unreached`),
 where `found` tests found what it is about. -/
 def Tally.unreached (t : Tally) (found : Nat) : Unreached :=
-  unreachedOf found (t.tests + t.valueless) t.tests
+  unreachedOf found (t.tests + t.valueless) t.unknownTrigger t.tests
 
 /-- The warning shown at the check of `t` (`eval::unreached_warning`),
 where `found` tests found what it is about, `untested` if the procedure
 has `F0610`, and `assumption` if the check is an assumption. -/
 def Tally.warning (t : Tally) (found : Nat) (untested assumption : Bool) : UnreachedWarning :=
-  unreachedWarning found (t.tests + t.valueless) t.tests untested assumption
+  unreachedWarning found (t.tests + t.valueless) t.unknownTrigger t.tests untested assumption
 
 /-- Tests the procedure `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
@@ -438,12 +448,16 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
         let value := ({ label := a.name, pfx := .anonymous, e := a.e } : Atom).eval I env.look
         assumeT := assumeT.modify k (·.test trigger?.isSome (triggerValue I .anonymous trigger? env) value fun _ => .none)
   let valuelessAssumes := (assumes.zip assumeT).filterMap fun (a, t) =>
-    if t.warning inputsFound untested true == .Valueless then some a.name else none
+    match t.warning inputsFound untested true with
+    | .Valueless => some (a.name, false)
+    | .TriggerValueless => some (a.name, true)
+    | _ => none
   let untriggered := unreached.filterMap fun (shown, r) => if shown == .Untriggered then some r else none
   let valueless := unreached.filterMap fun (shown, r) => if shown == .Valueless then some r else none
+  let triggerValueless := unreached.filterMap fun (shown, r) => if shown == .TriggerValueless then some r else none
   let unwitnessed := if untested || behaviours == 0 then #[] else
     (covers.zip covT).filterMap fun (g, t) => if t.tests == 0 then some (result .cover (some g.name) t) else none
-  return { results, noOutputs?, untested, untriggered, valueless, valuelessAssumes, unwitnessed }
+  return { results, noOutputs?, untested, untriggered, valueless, triggerValueless, valuelessAssumes, unwitnessed }
 
 /-- Tests the global expectation `g`. -/
 def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
@@ -526,7 +540,8 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let shown := t.warning (if found then max 1 (t.tests + t.valueless) else 0) (!found) false
   return { results := #[r], untested := !found
            untriggered := if shown == .Untriggered then #[r] else #[]
-           valueless := if shown == .Valueless then #[r] else #[] }
+           valueless := if shown == .Valueless then #[r] else #[]
+           triggerValueless := if shown == .TriggerValueless then #[r] else #[] }
 
 /-! ## `fren eval` -/
 

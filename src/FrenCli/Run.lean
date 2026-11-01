@@ -660,16 +660,25 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     shown := shown.push msg
     -- At each of its own assumptions that had no value in any input,
     -- which explains it (`F0617`, `eval::unreached_warning`).
-    for n in rep.valuelessAssumes do
-      let span := ((c.props.find? (·.name == n)).map (·.span)).getD c.span
-      let msg := Fren.Core.valuelessMsg s!"the assumption `{Fren.Core.showComp (c.path ++ n)}`" args.nTests byCheck
+    for (n, atTrigger) in rep.valuelessAssumes do
+      let p? := c.props.find? (·.name == n)
+      let span := (p?.map fun p => if atTrigger then p.triggerSpan?.getD p.span else p.span).getD c.span
+      let what := s!"the assumption `{Fren.Core.showComp (c.path ++ n)}`"
+      let msg := if atTrigger then Fren.Core.triggerValuelessMsg what args.nTests byCheck
+        else Fren.Core.valuelessMsg what args.nTests byCheck
       printDiag args.paint files { file := c.file, span, severity := .warning, msg }
       shown := shown.push msg
   -- At each check that no test reached, though some found what it is
   -- about (`eval::unreached`): at its trigger, which was false in all of
-  -- them (`F0612`), or at the check, which, or whose trigger, had a value
-  -- in none (`F0617`).
-  for (r, atTrigger) in (rep.untriggered.filter keep).map (·, true) ++ (rep.valueless.filter keep).map (·, false) do
+  -- them (`F0612`); at the check, which had a value in none in which its
+  -- trigger held (`F0617`); or at its trigger, which had no value in all
+  -- in which it was not false (`F0617`).
+  -- `0` for `F0612`, `1` for `F0617` at the check, `2` for `F0617` at
+  -- the trigger.
+  let atChecks := (rep.untriggered.filter keep).map (·, 0) ++ (rep.valueless.filter keep).map (·, 1)
+    ++ (rep.triggerValueless.filter keep).map (·, 2)
+  for (r, shownAs) in atChecks do
+    let atTrigger := shownAs != 1
     let some n := r.prop? | continue
     let (what, span) := match r.kind, r.target? with
       | .inst, some (d, a) =>
@@ -678,7 +687,8 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
         let p? := c.props.find? (·.name == n)
         (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`",
           (p?.map fun p => if atTrigger then p.triggerSpan?.getD p.span else p.span).getD c.span)
-    let msg := if atTrigger then Fren.Core.untriggeredMsg what args.nTests byCheck
+    let msg := if shownAs == 0 then Fren.Core.untriggeredMsg what args.nTests byCheck
+      else if shownAs == 2 then Fren.Core.triggerValuelessMsg what args.nTests byCheck
       else Fren.Core.valuelessMsg what args.nTests byCheck
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg

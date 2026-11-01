@@ -4,7 +4,7 @@ warning[F0617]: testing never reached `c::e` in 100 tests: it had no value in an
 8 |     expect e: when q.len < 3, q[7] > 0
   |            ^ no value
   |
-  = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
+  = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
   = help: run `fren check` to decide it, or guard the part that has no value
 
 warning[F0617]: testing never reached `c::f` in 100 tests: it had no value in any of them
@@ -13,7 +13,7 @@ warning[F0617]: testing never reached `c::f` in 100 tests: it had no value in an
 9 |     expect f: q[7] > 0 or big?
   |            ^ no value
   |
-  = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check, or its trigger, has no value, so the test says nothing about it
+  = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
   = help: run `fren check` to decide it, or guard the part that has no value
 
 fren: 1 passed, 0 failed, 2 inconclusive, in 100 tests each

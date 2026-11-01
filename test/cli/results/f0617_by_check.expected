@@ -1,0 +1,33 @@
+warning[F0610]: testing found no admissible behaviour of `guarded` in 100 tests
+ --> test/cli/results/f0617_by_check.fren:8:10
+  |
+8 | pub proc guarded(q: Seq<Int>): (n: Int) {
+  |          ^^^^^^^ untested
+  |
+  = note: so none of its checks were tested
+  = help: raise `--tests`; the checks set to random testing are not asked of the solver
+
+warning[F0617]: testing never reached the assumption `guarded::seventh` in 100 tests: it had no value in any of them
+ --> test/cli/results/f0617_by_check.fren:9:12
+  |
+9 |     assume seventh: q[7] > 0
+  |            ^^^^^^^ no value
+  |
+  = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
+  = help: guard the part that has no value, or set `fren.evidence` to `"solver"` to have the solver check it
+
+note[F0654]: the redundancy and definedness checks of `guarded` are not run by random testing
+ --> test/cli/results/f0617_by_check.fren:8:10
+  |
+8 | pub proc guarded(q: Seq<Int>): (n: Int) {
+  |          ^^^^^^^
+  |
+  = note: testing searches for counterexamples, not for witnesses: a behaviour in which a trigger holds, a constraint fails while the others hold, or a case is taken
+  = note: where an index is out of range, no case of a table or `match` is taken, or an application does not meet its preconditions, the evaluator knows no value, so no test reaches it
+  = help: the solver decides them: set `fren.evidence` to `"solver"` to have them run
+
+fren: 0 passed, 0 failed, 1 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0610, F0617, F0654.
+For more information about an error, try `fren --explain F0610`.
+exit=3
