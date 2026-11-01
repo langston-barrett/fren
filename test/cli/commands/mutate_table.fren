@@ -5,8 +5,8 @@ mod m
 
 pub proc c(x: Int): (y: Int) {
     ensure r: y = table {
-        | x > 0 => 1,
-        | x < 0 => 2,
-        | _ => 2,
+        x > 0 => 1,
+        x < 0 => 2,
+        _ => 2,
     }
 }

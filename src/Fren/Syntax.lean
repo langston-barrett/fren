@@ -381,7 +381,8 @@ scoped syntax:max (name := matchManyExpr) "match " withoutForbidden(fren_expr:ma
 scoped syntax:max (name := lambdaMatchExpr) "match " "{ "
   withoutForbidden(sepBy(fren_many_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 
-/-- A row of a table: `C => e`, or `_ => e`, optionally after `|`. Like a
+/-- A row of a table: `C => e`, or `_ => e`. A leading `|` is parsed so that
+the elaborator reports it (`F0166`), as the `fren` command's parser does. Like a
 `match` arm's body, neither the condition nor the value can be a bare
 `when`/`unless`. -/
 syntax fren_row := ("| ")? ("_" <|> fren_expr:20) " => " fren_expr:20

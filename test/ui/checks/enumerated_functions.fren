@@ -42,7 +42,7 @@ fn level(Bool): Trit
 set_option fren.evidence "enumerated" in
 proc tabled(a?): (det y: Int) {  --~ info: 2 checks of `tabled` hold for every behaviour up to size 3
     out y := table {  --~ error: a table in `tabled::y` may have no row that holds
-        | a? => 5,
+        a? => 5,
     }
     expect e: y != 1  --~ error: counterexample: a? = false, y = 1
 }

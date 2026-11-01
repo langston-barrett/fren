@@ -315,11 +315,11 @@ pub proc realizability(
     det reports_vacuous?,         -- report that the assumptions are contradictory
 ) {
     ensure verdict_rule: verdict = table {
-        | assume_q = Unsat => Fail,
-        | assume_q != Unsat and cex_q = Sat => Fail,
-        | assume_q = Sat and cex_q = Unsat => Pass,
-        | assume_q != Unsat and cex_q = Unknown => Inconclusive,
-        | assume_q = Unknown and cex_q = Unsat => Inconclusive,
+        assume_q = Unsat => Fail,
+        assume_q != Unsat and cex_q = Sat => Fail,
+        assume_q = Sat and cex_q = Unsat => Pass,
+        assume_q != Unsat and cex_q = Unknown => Inconclusive,
+        assume_q = Unknown and cex_q = Unsat => Inconclusive,
     }
     ensure report_cex: reports_cex? iff (assume_q != Unsat and cex_q = Sat)
     ensure report_vacuous: reports_vacuous? iff assume_q = Unsat
@@ -1974,9 +1974,9 @@ pub proc by_testing(
     use self::Run::{BySolver, ByTesting, Skipped}
 
     ensure rule: run = table {
-        | not tested? => BySolver,
-        | tested? and testable?(kind) => ByTesting,
-        | tested? and not testable?(kind) => Skipped,
+        not tested? => BySolver,
+        tested? and testable?(kind) => ByTesting,
+        tested? and not testable?(kind) => Skipped,
     }
 
     expect never_both: when tested?, run != BySolver
@@ -2061,13 +2061,13 @@ pub proc by_evidence(
     assume obligation_definedness: when obligation?, kind = Definedness
 
     ensure rule: method = table {
-        | obligation? => Solver,
-        | not obligation? and not tested? and not enumerated? => Solver,
-        | not obligation? and tested? and not enumerated? and testable?(kind) => Testing,
-        | not obligation? and enumerated? and enumerable?(kind) and not tested? => Enumeration,
-        | not obligation? and enumerated? and enumerable?(kind) and tested? => EnumerationThenTesting,
-        | not obligation? and tested? and not enumerated? and not testable?(kind) => Skipped,
-        | not obligation? and enumerated? and not enumerable?(kind) => Skipped,
+        obligation? => Solver,
+        not obligation? and not tested? and not enumerated? => Solver,
+        not obligation? and tested? and not enumerated? and testable?(kind) => Testing,
+        not obligation? and enumerated? and enumerable?(kind) and not tested? => Enumeration,
+        not obligation? and enumerated? and enumerable?(kind) and tested? => EnumerationThenTesting,
+        not obligation? and tested? and not enumerated? and not testable?(kind) => Skipped,
+        not obligation? and enumerated? and not enumerable?(kind) => Skipped,
     }
 
     expect obligations_solved: when obligation?, method = Solver
@@ -2667,13 +2667,13 @@ pub proc enumerated_verdict(
     use self::Verdict::{Fail, Inconclusive, Pass}
 
     ensure reported_rule: reported = table {
-        | exact? => verdict,
-        | not exact? and verdict = Pass => Pass,
-        | not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? => Fail,
-        | not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) => Inconclusive,
-        | not exact? and verdict = Fail and kind != Realizability and proof?(kind) => Fail,
-        | not exact? and verdict = Fail and not proof?(kind) => Inconclusive,
-        | not exact? and verdict = Inconclusive => Inconclusive,
+        exact? => verdict,
+        not exact? and verdict = Pass => Pass,
+        not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? => Fail,
+        not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) => Inconclusive,
+        not exact? and verdict = Fail and kind != Realizability and proof?(kind) => Fail,
+        not exact? and verdict = Fail and not proof?(kind) => Inconclusive,
+        not exact? and verdict = Inconclusive => Inconclusive,
     }
     -- What rests on an `unsat` answer that does not see every behaviour.
     ensure bounded_rule: bounded? iff (not exact? and reported != Fail and verdict != Inconclusive

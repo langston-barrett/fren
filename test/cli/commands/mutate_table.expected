@@ -1,16 +1,16 @@
-swap-comparison-m::c::r-690f0f04822d test/cli/commands/mutate_table.fren:7:17 `=` changed to `!=`
-drop-row-m::c::r-8c79c06abc47 test/cli/commands/mutate_table.fren:8:9 `| x > 0 => 1,` removed
-swap-comparison-m::c::r-dffa478052ba test/cli/commands/mutate_table.fren:8:13 `>` changed to `>=`
-shift-integer-m::c::r-58f807c2608a test/cli/commands/mutate_table.fren:8:15 `0` changed to `1`
-swap-rows-m::c::r-7ed5eefd7464 test/cli/commands/mutate_table.fren:8:20 `1, | x < 0 => 2` changed to `2, | x < 0 => 1`
-shift-integer-m::c::r-404884695027 test/cli/commands/mutate_table.fren:8:20 `1` changed to `2`
-shift-integer-m::c::r-16488e39171d test/cli/commands/mutate_table.fren:8:20 `1` changed to `0`
-drop-row-m::c::r-360aa6055864 test/cli/commands/mutate_table.fren:9:9 `| x < 0 => 2,` removed
-swap-comparison-m::c::r-811f1528ab04 test/cli/commands/mutate_table.fren:9:13 `<` changed to `<=`
-shift-integer-m::c::r-59f807c2623d test/cli/commands/mutate_table.fren:9:15 `0` changed to `1`
-shift-integer-m::c::r-f789d5d6cb84 test/cli/commands/mutate_table.fren:9:20 `2` changed to `3`
-shift-integer-m::c::r-cd89dfa6927a test/cli/commands/mutate_table.fren:9:20 `2` changed to `1`
-drop-row-m::c::r-3dfec1f13937 test/cli/commands/mutate_table.fren:9:21 `, | _ => 2` removed
-shift-integer-m::c::r-f889d5d6cd37 test/cli/commands/mutate_table.fren:10:16 `2` changed to `3`
-shift-integer-m::c::r-ce89dfa6942d test/cli/commands/mutate_table.fren:10:16 `2` changed to `1`
+swap-comparison-m::c::r-9955afa3275b test/cli/commands/mutate_table.fren:7:17 `=` changed to `!=`
+drop-row-m::c::r-b620fdfdfc65 test/cli/commands/mutate_table.fren:8:9 `x > 0 => 1,` removed
+swap-comparison-m::c::r-dffa478052ba test/cli/commands/mutate_table.fren:8:11 `>` changed to `>=`
+shift-integer-m::c::r-58f807c2608a test/cli/commands/mutate_table.fren:8:13 `0` changed to `1`
+swap-rows-m::c::r-84f8ec4bb230 test/cli/commands/mutate_table.fren:8:18 `1, x < 0 => 2` changed to `2, x < 0 => 1`
+shift-integer-m::c::r-404884695027 test/cli/commands/mutate_table.fren:8:18 `1` changed to `2`
+shift-integer-m::c::r-16488e39171d test/cli/commands/mutate_table.fren:8:18 `1` changed to `0`
+drop-row-m::c::r-44b6f6c7d04a test/cli/commands/mutate_table.fren:9:9 `x < 0 => 2,` removed
+swap-comparison-m::c::r-811f1528ab04 test/cli/commands/mutate_table.fren:9:11 `<` changed to `<=`
+shift-integer-m::c::r-59f807c2623d test/cli/commands/mutate_table.fren:9:13 `0` changed to `1`
+shift-integer-m::c::r-f789d5d6cb84 test/cli/commands/mutate_table.fren:9:18 `2` changed to `3`
+shift-integer-m::c::r-cd89dfa6927a test/cli/commands/mutate_table.fren:9:18 `2` changed to `1`
+drop-row-m::c::r-9cda556a46b9 test/cli/commands/mutate_table.fren:9:19 `, _ => 2` removed
+shift-integer-m::c::r-f889d5d6cd37 test/cli/commands/mutate_table.fren:10:14 `2` changed to `3`
+shift-integer-m::c::r-ce89dfa6942d test/cli/commands/mutate_table.fren:10:14 `2` changed to `1`
 exit=0

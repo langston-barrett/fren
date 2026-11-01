@@ -338,7 +338,7 @@ proc def_chain(q: Seq<Int>): (a: Int, b: Int, c: Int) {  --~ info: 2 checks of `
 set_option fren.evidence "enumerated" in
 proc prop_table(n: Int) {  --~ error: `prop_table` is not realizable
     ensure q0: table {  --~ error: a table in `prop_table::q0` may have no row that holds
-        | n = 1 => n > 2,
+        n = 1 => n > 2,
     }
 }
 

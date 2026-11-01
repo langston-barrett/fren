@@ -1,8 +1,8 @@
 error[F0619]: rows 1 and 2 of a table in `grade::r` may both hold
- --> test/cli/results/f0619_overlap.fren:5:11
+ --> test/cli/results/f0619_overlap.fren:5:9
   |
-5 |         | score >= 0 => false,
-  |           ^^^^^^^^^^ overlaps an earlier row
+5 |         score >= 0 => false,
+  |         ^^^^^^^^^^ overlaps an earlier row
   |
   = witness: score = 50
   = note: where rows overlap, the first of them gives the table's value, so the order of the rows matters

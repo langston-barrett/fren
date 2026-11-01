@@ -12,9 +12,9 @@ proc incomplete(x: Int): (y: Int) {
 
 proc overlapping(x: Int): (y: Int) {
     ensure r: y = table {
-        | x >= 0 => 1,
-        | x <= 0 => -1,   --~ error: rows 1 and 2 of a table in `overlapping::r` may both hold
-        | _ => 0,   --~ error: row 3 of a table in `overlapping::r` is never the first that holds
+        x >= 0 => 1,
+        x <= 0 => -1,   --~ error: rows 1 and 2 of a table in `overlapping::r` may both hold
+        _ => 0,   --~ error: row 3 of a table in `overlapping::r` is never the first that holds
     }
 }
 

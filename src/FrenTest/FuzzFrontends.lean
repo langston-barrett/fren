@@ -171,8 +171,8 @@ partial def matchOn (sc : WScope) (t : WTy) (d : Nat) : R String := do
   let kw ← if ← chance 25 then pure "table" else pure "match"
   return s!"{kw} {scrut} \{ {", ".intercalate arms.toList} }"
 
-/-- A table with values of type `t`: one to three rows, sometimes after
-a leading `|`, and sometimes a last `_` row; or a table over an integer,
+/-- A table with values of type `t`: one to three rows, and sometimes a
+last `_` row; or a table over an integer,
 whose ranges may overlap, which the static rules reject (`F0391`). -/
 partial def tableOf (sc : WScope) (t : WTy) (d : Nat) : R String := do
   if ← chance 30 then
@@ -184,8 +184,10 @@ partial def tableOf (sc : WScope) (t : WTy) (d : Nat) : R String := do
   let mut rows := #[]
   for _ in [0:(← below 3) + 1] do rows := rows.push s!"{← gen sc .bool (d - 1)} => {← gen sc t (d - 1)}"
   if ← chance 40 then rows := rows.push s!"_ => {← gen sc t (d - 1)}"
-  let bar := if ← chance 30 then "| " else ""
-  return s!"table \{ {", ".intercalate (rows.toList.map (bar ++ ·))} }"
+  -- Drawn where a leading `|`, which no row has now (`F0166`), was, so
+  -- that the spec of every seed stays as it was but for the `|`s.
+  discard (chance 30)
+  return s!"table \{ {", ".intercalate rows.toList} }"
 
 /-- An expression of type `t`, of depth at most `d`. -/
 partial def gen (sc : WScope) (t : WTy) (d : Nat) : R String := do

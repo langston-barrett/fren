@@ -625,10 +625,10 @@ pub proc exit(
     worst: Severity,       -- the most severe level over all results, lints and internal errors
 ): (det code: Int) {
     ensure code_rule: code = table {
-        | not ran? => 2,
-        | ran? and worst = Error => 1,
-        | ran? and worst = Warning => 3,
-        | ran? and worst <= Info => 0,
+        not ran? => 2,
+        ran? and worst = Error => 1,
+        ran? and worst = Warning => 3,
+        ran? and worst <= Info => 0,
     }
 
     expect zero_means_no_problem: when code = 0, ran? and worst <= Info
@@ -651,9 +651,9 @@ pub proc worst_severity(
 ): (det worst: Severity) {
     -- The last row includes runs with no checks at all.
     ensure rule: worst = table {
-        | Error in present => Error,
-        | not Error in present and Warning in present => Warning,
-        | not (Error in present or Warning in present) => Silent,
+        Error in present => Error,
+        not Error in present and Warning in present => Warning,
+        not (Error in present or Warning in present) => Silent,
     }
 
     expect worst_present: when worst != Silent, worst in present

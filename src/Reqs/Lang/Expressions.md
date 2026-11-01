@@ -1495,10 +1495,10 @@ pub proc pattern_test(
 
 ```text
 table {
-    | not ran? => 2,
-    | worst = Severity::Error => 1,
-    | worst = Severity::Warning => 3,
-    | _ => 0,
+    not ran? => 2,
+    worst = Severity::Error => 1,
+    worst = Severity::Warning => 3,
+    _ => 0,
 }
 ```
 
@@ -1507,9 +1507,10 @@ Parnas and of SCR do, or by the patterns of a scrutinee (see [Tables over
 a scrutinee](#tables-over-a-scrutinee)). Each row has a condition and a value, and the table
 has the value of the first row whose condition holds, as a chain of
 conditionals has. A last row `_ => e` holds wherever no earlier row does.
-The rows are separated by commas, as the arms of a `match` are, and each
-may start with `|`, so that they line up one per line. A table is an
-atom, so it can be an operand without parentheses.
+The rows are separated by commas, as the arms of a `match` are, and a
+row does not start with `|` (`F0166`): the commas already separate the
+rows, and the [formatter](../Fmt.md) puts each on a line of its own. A
+table is an atom, so it can be an operand without parentheses.
 
 A table is a [`match`](#matches) with guards and nothing to match on: each
 row `C => e` is an arm `_ if C => e`, and a row `_ => e` the arm `_ => e`.

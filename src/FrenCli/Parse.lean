@@ -1487,7 +1487,9 @@ partial def atom : P Expr := do
     repeat
       if isKw (← peek) "}" && !rows.isEmpty then break
       markStart
-      discard (eatKw "|")
+      -- A row does not start with `|` (`F0166`), which would otherwise
+      -- open a closure.
+      if let some bar ← eatKw "|" then throw { span := bar.span, msg := Fren.Core.rowBarMsg }
       let start := (← peek).span
       -- `_`, which no condition can be, or a condition below `when`, which
       -- would swallow the row's value.
