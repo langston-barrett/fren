@@ -11,11 +11,12 @@ definitions and bound to its procedures with `impl`: the laws of
 substitution, the context lemmas and the substitution lemma, the soundness
 and completeness of the type checker for the typing relation and of the
 evaluator for the reduction relation, the agreement of the two evaluators,
-preservation, progress and type safety, normalization (by Tait's method, as
-in chapter 12 of TAPL), and the round trip of the nameless form. Not proved,
-tested only: the round trip of the concrete syntax and the laws of
-alpha-equivalence. The last section ties the knot of the one-layer
-algebra: `size` is the fold of `size_alg`.
+preservation, progress and type safety, and the round trip of the nameless
+form. Normalization (Tait's method, as in chapter 12 of TAPL) is proved
+here alone: `stlc.fren` has no check that states it. Not proved, tested
+only: the round trip of the concrete syntax (`print_parse`) and the laws
+`alpha_laws`. The last section ties the knot of the one-layer algebra:
+`size` is the fold of `size_alg`.
 -/
 
 open Fren.Lang
@@ -1543,14 +1544,6 @@ theorem normalization (t : Named) (ty : Ty) (h : typeof .Empty t = some ty) : �
   rw [subst_all_id t .Id fun x _ => by simp [apply_subst]] at hR
   exact R_halts hR
 
-/-- A fuel that normalizes a well-typed closed term, from the proof. -/
-noncomputable def enough_fuel (t : Named) : Fuel := Classical.epsilon fun n => ∃ v, normalize n t = some v
-
-theorem enough_fuel_spec {t : Named} {ty : Ty} (h : typeof .Empty t = some ty) :
-    ∃ v, normalize (enough_fuel t) t = some v :=
-  Classical.epsilon_spec (p := fun n => ∃ v, normalize n t = some v)
-    (let ⟨n, v, hn⟩ := normalization t ty h; ⟨n, v, hn⟩)
-
 /-! ## Nameless terms -/
 
 /-- The names that `to_named` declares, from the outside in: `x`, `x'`, ... -/
@@ -1811,7 +1804,7 @@ impl evaluator_proved: evaluator for (red : Fren.FinSet (Named × Named)) (t u v
   intro red t u v w n m _
   simp only [fren_spec]
   refine ⟨fun h => ⟨step_sound t u h, mem_step_derivation_self h⟩, fun h => step_complete t red u h.1 h.2, fun h => ?_,
-    fun h => step_value h, fun h => eval_value n t v h, fun h => eval_mono n t v h,
+    fun h => step_value h, fun h => eval_value n t v h, fun h => eval_mono n t v h, fun h => normalize_mono n h,
     fun h => step_eval n t u v h.1 h.2, fun h => eval_normalize m n t v w h.1 h.2⟩
   have h1 := step_complete t red u h.1.1 h.1.2
   have h2 := step_complete t red v h.1.1 h.2
@@ -1831,18 +1824,6 @@ impl type_safety_proved: type_safety for (typing : Fren.FinSet (Judgment × Ty))
   · obtain ⟨hty, hv | ⟨u, hu⟩⟩ := safety n t ty h
     · exact ⟨hty, Or.inl hv⟩
     · exact ⟨hty, Or.inr (by rw [hu])⟩
-
--- The fuel that normalizes a term is what the proof gives.
-interp steps := enough_fuel
-
-impl normalization_proved: normalization for (t : Named) (ty : Ty) (n : Fuel) (v : Named) {
-  t := t, ty := ty, n := n, v := v
-} by
-  intro t ty n v _
-  simp only [fren_spec]
-  refine ⟨fun h => ?_, fun h => normalize_mono n h⟩
-  obtain ⟨w, hw⟩ := enough_fuel_spec h
-  erw [hw]
 
 impl nameless_round_trip_proved: nameless_round_trip for (t : Named) (nt : Term Int Anon) { t := t, nt := nt } by
   intro t nt _

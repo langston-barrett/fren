@@ -10,7 +10,9 @@
 -- The laws that one step of a function's equations decides are decided by
 -- the solver; the theorems, which need induction, are tested by `fren
 -- check` and proved in Stlc.lean, which binds the proofs to the procedures
--- below with `impl`, except where a comment says that a law is tested only.
+-- below with `impl`, except where a comment says that a law is tested only,
+-- or that it rests on the proof because testing does not reach it. Fren
+-- has no check that states normalization, so Stlc.lean alone proves it.
 -- The ui test that runs this file through both front ends expects their
 -- notes, written as annotations on each procedure checked by random
 -- testing: that testing does not run its vacuity and redundancy checks,
@@ -185,20 +187,18 @@ pub struct Judgment { ctx: Ctx, term: Named }
 -- `Judgment { ctx, term }` is the left half `ctx |- t` of a typing judgment
 -- `ctx |- t: T`: the typing relation holds it against its type `T`.
 pub fn judgment(ctx: Ctx, t: Named): Judgment := Judgment { ctx, term := t }
-pub fn closed_judgment(t: Named): Judgment := Judgment {
-    ctx := Ctx::Empty,
-    term := t,
-}
 
 -- The types that `typing` gives `ctx |- t`. Projecting a relation is
--- outside the decidable core, here and in the rules below: the solver
--- still decides them on relations that are written out.
+-- outside the decidable core; the solver still decides it on relations
+-- that are written out.
 set_option fren.lint.undecidable "allow" in
 pub fn types(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named): Set<Ty> := typing.image(
     {judgment(ctx, t)}
 )
 
--- `ctx |- t: ty` follows by one rule from the judgments in `typing`.
+-- `ctx |- t: ty` follows by one rule from the judgments in `typing`. The
+-- existential of T-App, over the argument's types, is outside the
+-- decidable core.
 set_option fren.lint.undecidable "allow" in
 pub fn typing_rule?(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named, ty: Ty) := match t {
     Term::Var(x) => lookup(ctx, x) = Some(ty),
@@ -214,7 +214,8 @@ pub fn typing_rule?(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named, ty: Ty) := ma
     Term::False => ty = Ty::Boolean,
 }
 
--- Every judgment of `typing` follows by a rule from judgments in it.
+-- Every judgment of `typing` follows by a rule from judgments in it. Its
+-- `domain` and `image` are projections, outside the decidable core.
 set_option fren.lint.undecidable "allow" in
 pub fn typing_derivation?(typing: Rel<Judgment, Ty>) := forall (j: Judgment), when j in typing.domain,
     forall (ty: Ty), when ty in typing.image({j}), typing_rule?(typing, j.ctx, j.term, ty)
@@ -226,20 +227,20 @@ set_option fren.lint.assertions_on_constants "allow" in
 pub proc derivations() {
     expect derivation: typing_derivation?(
         {
-            (closed_judgment(Term::App(ALWAYS_TRUE, Term::False)), Ty::Boolean),
-            (closed_judgment(ALWAYS_TRUE), Ty::Arrow(Ty::Boolean, Ty::Boolean)),
+            (judgment(Ctx::Empty, Term::App(ALWAYS_TRUE, Term::False)), Ty::Boolean),
+            (judgment(Ctx::Empty, ALWAYS_TRUE), Ty::Arrow(Ty::Boolean, Ty::Boolean)),
             (judgment(Ctx::Bind("x", Ty::Boolean, Ctx::Empty), Term::True), Ty::Boolean),
-            (closed_judgment(Term::False), Ty::Boolean),
+            (judgment(Ctx::Empty, Term::False), Ty::Boolean),
         }
     )
     expect missing_premise: not typing_derivation?(
         {
-            (closed_judgment(Term::App(ALWAYS_TRUE, Term::False)), Ty::Boolean),
+            (judgment(Ctx::Empty, Term::App(ALWAYS_TRUE, Term::False)), Ty::Boolean),
         }
     )
     expect wrong_type: not typing_derivation?(
         {
-            (closed_judgment(Term::True), Ty::Arrow(Ty::Boolean, Ty::Boolean)),
+            (judgment(Ctx::Empty, Term::True), Ty::Arrow(Ty::Boolean, Ty::Boolean)),
         }
     )
 }
@@ -272,15 +273,17 @@ pub fn reduction_rule?(red: Rel<Named, Named>, t: Named, u: Named) := match t, u
     _, _ => false,
 }
 
--- Every step of `red` follows by a rule from steps in it.
+-- Every step of `red` follows by a rule from steps in it; its `domain` and
+-- `image` are projections, outside the decidable core.
 set_option fren.lint.undecidable "allow" in
 pub fn reduction_derivation?(red: Rel<Named, Named>) := forall (t: Named), when t in red.domain,
     forall (u: Named), when u in red.image({t}), reduction_rule?(red, t, u)
 
 -- The steps of `if (if true then false else true) then t2 else t3`, as a
 -- relation: the solver decides it, and that a step under a binder is none.
--- A derivation with a beta step, whose `subst` is opaque to the solver
--- under the quantifier over the relation's members, it does not decide.
+-- A derivation with a beta step would put `subst` under the quantifier
+-- over the relation's members, which the solver does not decide, so none
+-- is given here.
 set_option fren.lint.assertions_on_constants "allow" in
 pub proc reductions(t2: Named, t3: Named) {
     expect two_steps: reduction_derivation?(
@@ -457,6 +460,7 @@ pub proc evaluator(  --~ info: the vacuity and redundancy checks of `stlc::evalu
     ensure values_stuck: when value?(t), step(t) = None
     ensure big_step_values: when eval(n, t) = Some(v), value?(v)
     ensure eval_monotone: when eval(n, t) = Some(v), eval(Fuel::More(n), t) = Some(v)
+    ensure normalize_monotone: when normalize(n, t) = Some(v), normalize(Fuel::More(n), t) = Some(v)
     ensure step_eval: when step(t) = Some(u) and eval(n, t) = Some(v), eval(n, u) = Some(v)
     ensure agree: when eval(n, t) = Some(v) and normalize(m, t) = Some(w), v = w
 }
@@ -515,20 +519,23 @@ pub proc type_safety(  --~ info: the vacuity and redundancy checks of `stlc::typ
         typeof(Ctx::Empty, u) = Some(ty)
 }
 
--- Normalization: a well-typed closed term reduces to a value in some
--- number of steps. How many is more than a structural recursion can
--- compute, so the steps are an uninterpreted function, and the theorem is
--- the law that `normalize` succeeds with that much fuel: `fren check` tests
--- it by searching for the fuel, and Stlc.lean proves it, by Tait's method
--- (chapter 12), and interprets `steps` from the proof.
-pub fn steps(Named): Fuel
+-- Random testing draws small terms, and the closed, well-typed ones among
+-- them are values, so `progress` and `safety` beyond values rest on the
+-- proofs; these examples step typed non-values.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+expect typed_non_values: typeof(Ctx::Empty, APPLIED) = Some(Ty::Boolean) and step(APPLIED) = Some(Term::True)
+    and typeof(Ctx::Empty, NOT_TRUE) = Some(Ty::Boolean) and step(NOT_TRUE) = Some(Term::False)
+    and normalize(THREE, Term::App(NEGATION, APPLIED)) = Some(Term::False)
 
-set_option fren.evidence "random" in
-pub proc normalization(t: Named, ty: Ty, n: Fuel, v: Named) {  --~ info: the vacuity and redundancy checks of `stlc::normalization` are not run by random testing
-    --~^[hosted] info: the checks of `stlc::normalization` set to random testing are run by `fren check`, not in Lean
-    ensure terminates: when typeof(Ctx::Empty, t) = Some(ty), normalize(steps(t), t) is Some(_)
-    ensure more_fuel: when normalize(n, t) = Some(v), normalize(Fuel::More(n), t) = Some(v)
-}
+-- Normalization: a well-typed closed term reduces to a value in some
+-- number of steps (chapter 12). The number is beyond a structural
+-- recursion, so Fren can state the theorem only as an `exists` over `Fuel`,
+-- which testing cannot run (`F0639`), or as the contract of an
+-- uninterpreted function that gives the fuel, whose realizability is the
+-- theorem itself, which the solver cannot decide (`F0608`, #612). So it has
+-- no check here: Stlc.lean states and proves it, by Tait's method
+-- (`normalization`).
 
 -- # Concrete syntax
 --
@@ -993,7 +1000,8 @@ pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alph
 -- decided by the solver at every `V` and `B` since it is not recursive, and
 -- Stlc.lean ties the knot: `Term` is the fixpoint, and `size` is the fold
 -- of `size_alg` (`size_fold`). What else this example needed and Fren
--- lacks is filed under the language spec's queue (#545), as #602 to #606.
+-- lacks is filed under the language spec's queue (#545): #602 to #606, and
+-- #612.
 pub enum TermF<V, B, E> {
     Var(V),
     Lam(B, Ty, E),
