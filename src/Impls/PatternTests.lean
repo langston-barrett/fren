@@ -754,7 +754,7 @@ theorem apart (a b : lint.Alt) (v : lang.Value) (h : lint.alts_disjoint? a b = t
 /-- Each alternative of an operand's test in the fix matches no value that
 the reading's pattern of the alternative at its position does not. -/
 theorem cover (x : lint.Shape) (c : Bool) (r : lint.Reading) (hr : lint.reading x c = some r)
-    (pats : Fren.Seq lang.Pattern) (w : lang.Value)
+    (pats : Fren.Seq (lang.Pattern String)) (w : lang.Value)
     (hread : ∀ t, x = .Test t → pats.len = r.alts.len ∧ ∀ k : Int, (0 ≤ k ∧ k < pats.len) ∧
       lang.matches_value? (pats.nth k) w = true → lang.matches_value? (lint.alt_pattern (r.alts.nth k)) w = true) :
     (lint.fix_alternatives (lint.run_test x pats)).len = r.alts.len ∧
@@ -822,7 +822,7 @@ theorem read_at (l : List lint.Shape) (c : Bool) (p : Int) (h : lint.reading_at 
 -- Proved of the spec's own functions, for any number of operands and
 -- alternatives.
 impl manual_pattern_test_refines: lint::manual_pattern_test_refines
-    for (l cs : List lint.Shape) (c : Bool) (s : lint.Span) (ps : Fren.Seq (Fren.Seq lang.Pattern))
+    for (l cs : List lint.Shape) (c : Bool) (s : lint.Span) (ps : Fren.Seq (Fren.Seq (lang.Pattern String)))
       (ts : Fren.Seq lint.RunTest) (w : lang.Value) {
   operands := Fren.Seq.ofList l,
   chain := Fren.Seq.ofList cs,

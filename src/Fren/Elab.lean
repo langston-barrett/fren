@@ -4627,7 +4627,9 @@ def usesTerms (uses : Array Name) (path : Name) (tps : Array Name) (targs : Arra
     for p in tps, k in [0:tps.size] do
       let ph := placeholderName (Core.typeParamPath path k p)
       if u == ph then return typeSyntax (← leanTypeOf targs[k]!)
-      if u == inhabitedName ph then return ← `((inferInstance : Inhabited $(typeSyntax (← leanTypeOf targs[k]!))))
+      -- `_`, which Lean fills with the instance itself, by instance
+      -- synthesis, rather than `inferInstance` around it, which `simp` sees.
+      if u == inhabitedName ph then return ← `(_)
     return ⟨(mkCIdent u).raw⟩
 
 /-- Records an application of the generic function at `path` at the type
@@ -5562,7 +5564,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     recordGenericUse path targs
     let tyArgs ← targs.flatMapM fun t => do
       let ty := typeSyntax (← leanTypeOf t)
-      return #[ty, ← `((inferInstance : Inhabited $ty))]
+      return #[ty, ← `(_)]
     return ← `(@$(mkCIdentFrom p a.placeholder) $tyArgs* $ts*)
   let a' := a
   let nParams := (← getConstInfo a.placeholder).type.getForallArity
@@ -6418,12 +6420,17 @@ def addLeanDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
     let some info ← Meta.getMatcherInfo? m | throwError "internal error: `{m}` is not a matcher"
     let .defnInfo ci ← getConstInfo m | throwError "internal error: `{m}` is not a definition"
     let m' := name ++ Name.mkSimple m.getString!
-    let (type, val) ← withUses uses fun xs => do
-      return (← mkForallFVars xs (replaceUses uses xs ci.type), ← mkLambdaFVars xs (replaceUses uses xs ci.value))
+    -- Over the placeholders that it mentions alone: one that it does not,
+    -- as a type parameter's `Inhabited` instance, which a `match` never
+    -- needs, would be a parameter that Lean's splitter for it drops, and
+    -- then `split` could not split it.
+    let mUses ← usesOf #[ci.type, ci.value]
+    let (type, val) ← withUses mUses fun xs => do
+      return (← mkForallFVars xs (replaceUses mUses xs ci.type), ← mkLambdaFVars xs (replaceUses mUses xs ci.value))
     addDecl (.defnDecl { name := m', levelParams := ci.levelParams, type, value := val, hints := ci.hints, safety := .safe })
-    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + uses.size }
+    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + mUses.size }
     setInlineAttribute m'
-    let args := uses.map (Lean.mkConst ·)
+    let args := mUses.map (Lean.mkConst ·)
     value := value.replace fun e => match e with
       | .const c ls => if c == m then some (mkAppN (.const m' ls) args) else none
       | _ => none
@@ -6464,15 +6471,18 @@ def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean :
     let some info ← Meta.getMatcherInfo? m | throwError "internal error: `{m}` is not a matcher"
     let .defnInfo ci ← getConstInfo m | throwError "internal error: `{m}` is not a definition"
     let m' := decl ++ Name.mkSimple m.getString!
-    let (mty, mval) ← withUses uses fun xs => do
-      return (← mkForallFVars xs (replaceUses uses xs ci.type), ← mkLambdaFVars xs (replaceUses uses xs ci.value))
+    -- Over the placeholders that it mentions alone, as `addLeanDef` does.
+    let mUses ← usesOf #[ci.type, ci.value]
+    let (mty, mval) ← withUses mUses fun xs => do
+      return (← mkForallFVars xs (replaceUses mUses xs ci.type), ← mkLambdaFVars xs (replaceUses mUses xs ci.value))
     addDecl (.defnDecl { name := m', levelParams := ci.levelParams, type := mty, value := mval, hints := ci.hints, safety := .safe })
-    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + uses.size }
+    Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + mUses.size }
     setInlineAttribute m'
     -- Lean's equation lemmas of the recursion are realized from it.
     enableRealizationsForConst m'
+    let mArgs := mUses.map (Lean.mkConst ·)
     value := value.replace fun e => match e with
-      | .const c ls => if c == m then some (mkAppN (.const m' ls) args) else none
+      | .const c ls => if c == m then some (mkAppN (.const m' ls) mArgs) else none
       | _ => none
   let body := value
   let (gType, gValue) ← withUses uses fun xs => do

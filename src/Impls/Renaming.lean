@@ -1,0 +1,299 @@
+-- keep-sorted start
+import Fren.Impl
+import Reqs.Lint
+-- keep-sorted end
+
+/-! # Renaming (`Reqs/Lint/Rewrites#renaming`)
+
+The lints stated over `lang::Expr<V>` are renaming-invariant: renaming the
+names of an expression apart, by an injective renaming, changes neither
+whether a lint fires on it nor, but for the renaming, what its fix writes.
+`fires_at?` and `fix_at` are generic in `V`, so they compare names only for
+equality, and each lint is proved invariant at the place where it fires,
+for every two types of names, by its definition (`fires_at_rn`,
+`fix_at_rn`); `fires_in?` and `fix_all`, which look within the operands, by
+induction on the expression (`fires_in_rn`, `fix_all_rn`). `lint::renamed_apart`
+is these, for a swap of two names. `int_plus_one`, `double_neg`, `unless_not`
+and `collapsible_when` compare no operands, so they are invariant under
+every renaming, injective or not (their lemmas `omit` the injectivity). -/
+
+open Fren.Generated
+open lang
+
+namespace Rename
+variable {V W : Type}
+
+/-- A pattern with each name `x` renamed `r x`. -/
+def pat (r : V → W) : Pattern V → Pattern W
+  | .Wildcard => .Wildcard
+  | .Binder x => .Binder (r x)
+  | .Literal v => .Literal v
+  | .AtLeast n => .AtLeast n
+  | .AtMost n => .AtMost n
+  | .Between a b => .Between a b
+  | .Variant c p => .Variant c (pat r p)
+  | .Nil => .Nil
+  | .Cons a b => .Cons (pat r a) (pat r b)
+  | .Or a b => .Or (pat r a) (pat r b)
+
+/-- Parameters with each name `x` renamed `r x`. -/
+def params (r : V → W) : Params V → Params W
+  | .Nil => .Nil
+  | .Cons x rest => .Cons (r x) (params r rest)
+
+/-- An expression with each name `x` renamed `r x`. -/
+def expr (r : V → W) : Expr V → Expr W
+  | .Literal v => .Literal v
+  | .Var x => .Var (r x)
+  | .Let x d b => .Let (r x) (expr r d) (expr r b)
+  | .Unary op a => .Unary op (expr r a)
+  | .Binary op a b => .Binary op (expr r a) (expr r b)
+  | .And a b => .And (expr r a) (expr r b)
+  | .Or a b => .Or (expr r a) (expr r b)
+  | .If c t f => .If (expr r c) (expr r t) (expr r f)
+  | .Is s p => .Is (expr r s) (pat r p)
+  | .Match s p g b rest => .Match (expr r s) (pat r p) (expr r g) (expr r b) (expr r rest)
+  | .NoMatch => .NoMatch
+  | .Nil => .Nil
+  | .Cons a rest => .Cons (expr r a) (expr r rest)
+  | .Construct c args => .Construct c (expr r args)
+  | .Project a c k => .Project (expr r a) c k
+  | .Index q k => .Index (expr r q) (expr r k)
+  | .Method m a args => .Method m (expr r a) (expr r args)
+  | .Count c args => .Count c (expr r args)
+  | .Apply f args ps body => .Apply f (expr r args) (params r ps) (expr r body)
+  | .Call f args => .Call f (expr r args)
+  | .Recur f args => .Recur f (expr r args)
+
+variable {r : V → W}
+
+theorem pat_inj (hr : Function.Injective r) : ∀ {a b : Pattern V}, pat r a = pat r b → a = b := by
+  intro a; induction a <;> intro b h <;> cases b <;> simp_all [pat] <;> grind
+theorem params_inj (hr : Function.Injective r) : ∀ {a b : Params V}, params r a = params r b → a = b := by
+  intro a; induction a <;> intro b h <;> cases b <;> simp_all [params] <;> grind
+theorem expr_inj (hr : Function.Injective r) : ∀ {a b : Expr V}, expr r a = expr r b → a = b := by
+  intro a; induction a <;> intro b h <;> cases b <;> simp_all [expr] <;> grind [pat_inj, params_inj]
+
+
+theorem expr_eq (hr : Function.Injective r) (a b : Expr V) : expr r a = expr r b ↔ a = b :=
+  ⟨expr_inj hr, fun h => h ▸ rfl⟩
+
+theorem expr_lit (e : Expr V) (v : Value) : expr r e = .Literal v ↔ e = .Literal v := by
+  cases e <;> simp [expr]
+theorem expr_unary (e : Expr V) op (b : Expr W) :
+    expr r e = .Unary op b ↔ ∃ a, e = .Unary op a ∧ expr r a = b := by
+  cases e <;> simp [expr] <;> grind
+theorem expr_binary (e : Expr V) op (b c : Expr W) :
+    expr r e = .Binary op b c ↔ ∃ a d, e = .Binary op a d ∧ expr r a = b ∧ expr r d = c := by
+  cases e <;> simp [expr] <;> grind
+theorem expr_if (e : Expr V) (b c d : Expr W) :
+    expr r e = .If b c d ↔ ∃ x y z, e = .If x y z ∧ expr r x = b ∧ expr r y = c ∧ expr r z = d := by
+  cases e <;> simp [expr] <;> grind
+theorem expr_and (e : Expr V) (b c : Expr W) :
+    expr r e = .And b c ↔ ∃ a d, e = .And a d ∧ expr r a = b ∧ expr r d = c := by
+  cases e <;> simp [expr] <;> grind
+theorem expr_or (e : Expr V) (b c : Expr W) :
+    expr r e = .Or b c ↔ ∃ a d, e = .Or a d ∧ expr r a = b ∧ expr r d = c := by
+  cases e <;> simp [expr] <;> grind
+
+theorem expr_method (e : Expr V) m (b c : Expr W) :
+    expr r e = .Method m b c ↔ ∃ a d, e = .Method m a d ∧ expr r a = b ∧ expr r d = c := by
+  cases e <;> simp [expr] <;> grind
+
+/-- A renaming that is injective: it renames two names apart that are apart. -/
+class Inj (r : V → W) : Prop where
+  inj : Function.Injective r
+
+section
+variable [Inhabited V] [Inhabited W] [hr : Inj r]
+
+omit [Inhabited V] [Inhabited W] in
+theorem expr_eq' (a b : Expr V) : expr r a = expr r b ↔ a = b := expr_eq hr.inj a b
+
+attribute [local simp] expr expr_eq' expr_lit expr_unary expr_binary expr_if expr_and expr_or expr_method
+
+omit [Inhabited V] [Inhabited W] hr in
+@[local simp] theorem one_rn (e : Expr V) : lint.one? W (expr r e) = lint.one? V e := by simp [lint.one?]
+omit [Inhabited V] [Inhabited W] hr in
+@[local simp] theorem zero_rn (e : Expr V) : lint.zero? W (expr r e) = lint.zero? V e := by simp [lint.zero?]
+omit [Inhabited V] [Inhabited W] hr in
+@[local simp] theorem true_rn (e : Expr V) : lint.true? W (expr r e) = lint.true? V e := by simp [lint.true?]
+
+omit hr in
+@[local simp] theorem offset_rn (e : Expr V) : lint.offset_of W (expr r e) = lint.offset_of V e := by
+  cases e <;> simp only [lint.offset_of, expr] <;> try rfl
+  rename_i op _ _; cases op <;> simp only [one_rn] <;> rfl
+
+omit hr in
+@[local simp] theorem without_rn (e : Expr V) :
+    lint.without_offset W (expr r e) = expr r (lint.without_offset V e) := by
+  cases e <;> simp only [lint.without_offset, expr] <;> try rfl
+  rename_i op a b; cases op <;> simp only [one_rn] <;> (try split) <;> (try split) <;> simp [expr]
+
+omit hr in
+theorem ipo_fires_rn (e : Expr V) : lint.int_plus_one_fires? W (expr r e) = lint.int_plus_one_fires? V e := by
+  cases e <;> simp [lint.int_plus_one_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+omit hr in
+theorem ipo_fix_rn (e : Expr V) : lint.int_plus_one_fix W (expr r e) = expr r (lint.int_plus_one_fix V e) := by
+  cases e <;> simp only [lint.int_plus_one_fix, expr] <;> try rfl
+  rename_i op a b; cases op <;> simp only [offset_rn] <;> (try split) <;> (try split) <;> simp [expr, without_rn]
+
+omit hr in
+theorem dn_fires_rn (e : Expr V) : lint.double_neg_fires? W (expr r e) = lint.double_neg_fires? V e := by
+  cases e <;> simp [lint.double_neg_fires?]
+  rename_i op a; cases op <;> cases a <;> simp [expr]
+  rename_i op' _; cases op' <;> simp
+
+omit hr in
+theorem dn_fix_rn (e : Expr V) : lint.double_neg_fix W (expr r e) = expr r (lint.double_neg_fix V e) := by
+  cases e <;> simp only [lint.double_neg_fix, expr] <;> try rfl
+  rename_i op a; cases op <;> cases a <;> simp only [expr] <;> try rfl
+  rename_i op' _; cases op' <;> rfl
+
+omit [Inhabited V] [Inhabited W] hr in
+theorem abs_of_rn (x : Expr V) : lint.abs_of W (expr r x) = expr r (lint.abs_of V x) := rfl
+
+theorem ant_rn (c t f : Expr V) :
+    lint.abs_negated_then? W (expr r c) (expr r t) (expr r f) = lint.abs_negated_then? V c t f := by
+  cases c <;> simp [lint.abs_negated_then?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+  rename_i op a b; cases a <;> simp [expr]
+  rename_i v; cases v <;> simp
+
+theorem ane_rn (c t f : Expr V) :
+    lint.abs_negated_else? W (expr r c) (expr r t) (expr r f) = lint.abs_negated_else? V c t f := by
+  cases c <;> simp [lint.abs_negated_else?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+  rename_i op a b; cases b <;> simp [expr]
+  rename_i v; cases v <;> simp
+
+theorem ma_fires_rn (e : Expr V) : lint.manual_abs_fires? W (expr r e) = lint.manual_abs_fires? V e := by
+  cases e <;> simp [lint.manual_abs_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2, ant_rn, ane_rn]
+
+theorem ma_fix_rn (e : Expr V) : lint.manual_abs_fix W (expr r e) = expr r (lint.manual_abs_fix V e) := by
+  cases e <;> simp only [lint.manual_abs_fix, expr] <;> try rfl
+  simp only [ant_rn, ane_rn, apply_ite (expr r)]; rfl
+
+theorem ad_rn (c t f : Expr V) :
+    lint.abs_diff? W (expr r c) (expr r t) (expr r f) = lint.abs_diff? V c t f := by
+  cases c <;> simp [lint.abs_diff?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+theorem mad_fires_rn (e : Expr V) : lint.manual_abs_diff_fires? W (expr r e) = lint.manual_abs_diff_fires? V e := by
+  cases e <;> simp [lint.manual_abs_diff_fires?, ad_rn]
+
+theorem mad_fix_rn (e : Expr V) : lint.manual_abs_diff_fix W (expr r e) = expr r (lint.manual_abs_diff_fix V e) := by
+  cases e <;> simp only [lint.manual_abs_diff_fix, expr] <;> try rfl
+  simp only [ad_rn, apply_ite (expr r)]; rfl
+
+omit hr in
+theorem un_fires_rn (e : Expr V) : lint.unless_not_fires? W (expr r e) = lint.unless_not_fires? V e := by
+  cases e <;> simp [lint.unless_not_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2, lang.Expr.Unary.x0,
+    lang.Expr.Unary.x1]
+  rename_i c _ _; cases c <;> simp [expr]
+
+omit hr in
+theorem un_fix_rn (e : Expr V) : lint.unless_not_fix W (expr r e) = expr r (lint.unless_not_fix V e) := by
+  cases e <;> simp only [lint.unless_not_fix, expr] <;> try rfl
+  rename_i c _ _; cases c <;> simp only [expr] <;> try rfl
+  rename_i op _; cases op <;> simp only [true_rn] <;> (try split) <;> simp [expr]
+
+omit hr in
+theorem nw_rn (t f : Expr V) : lint.nested_when? W (expr r t) (expr r f) = lint.nested_when? V t f := by
+  cases t <;> simp [lint.nested_when?]
+
+omit hr in
+theorem nu_rn (t f : Expr V) : lint.nested_unless? W (expr r t) (expr r f) = lint.nested_unless? V t f := by
+  cases f <;> simp [lint.nested_unless?]
+
+omit hr in
+theorem cw_fires_rn (e : Expr V) : lint.collapsible_when_fires? W (expr r e) = lint.collapsible_when_fires? V e := by
+  cases e <;> simp only [lint.collapsible_when_fires?, expr, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2, nw_rn,
+    nu_rn] <;> simp
+
+omit hr in
+theorem cw_fix_rn (e : Expr V) : lint.collapsible_when_fix W (expr r e) = expr r (lint.collapsible_when_fix V e) := by
+  cases e <;> simp only [lint.collapsible_when_fix, expr] <;> try rfl
+  rename_i a t f
+  cases t
+  case If => simp only [expr, true_rn, apply_ite (expr r)]
+  all_goals (cases f <;> simp only [expr] <;> try rfl)
+  all_goals (simp only [apply_ite (expr r)]; split <;> split <;> simp_all [lint.true?])
+
+theorem absorbs_rn (c : Bool) (k o : Expr V) :
+    lint.absorbs_operand? W c (expr r k) (expr r o) = lint.absorbs_operand? V c k o := by
+  cases k <;> simp [lint.absorbs_operand?, lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.And.x0, lang.Expr.And.x1]
+
+omit [Inhabited V] [Inhabited W] in
+theorem negates_rn (k o : Expr V) : lint.negates_operand? W (expr r k) (expr r o) = lint.negates_operand? V k o := by
+  simp [lint.negates_operand?]
+
+theorem drops_rn (c : Bool) (a b : Expr V) : lint.drops? W c (expr r a) (expr r b) = lint.drops? V c a b := by
+  simp only [lint.drops?, absorbs_rn, negates_rn]
+
+theorem drop_fix_rn (c : Bool) (a b e : Expr V) :
+    lint.drop_fix W c (expr r a) (expr r b) (expr r e) = expr r (lint.drop_fix V c a b e) := by
+  simp only [lint.drop_fix, absorbs_rn, negates_rn]; (repeat' split) <;> simp [expr]
+
+theorem oc_fires_rn (e : Expr V) : lint.overly_complex_fires? W (expr r e) = lint.overly_complex_fires? V e := by
+  cases e <;> simp only [lint.overly_complex_fires?, expr, drops_rn] <;> simp
+
+theorem oc_fix_rn (e : Expr V) : lint.overly_complex_fix W (expr r e) = expr r (lint.overly_complex_fix V e) := by
+  cases e <;> simp only [lint.overly_complex_fix, expr] <;> try rfl
+  all_goals (rw [← expr, drop_fix_rn])
+
+/-- Renaming invariance at the place where a lint fires: renaming apart
+changes neither whether it fires nor, but for the renaming, what its fix
+writes. -/
+theorem fires_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fires_at? W l (expr r e) = lint.fires_at? V l e := by
+  cases l <;> simp only [lint.fires_at?, oc_fires_rn, dn_fires_rn, ipo_fires_rn, ma_fires_rn, mad_fires_rn,
+    un_fires_rn, cw_fires_rn]
+
+theorem fix_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fix_at W l (expr r e) = expr r (lint.fix_at V l e) := by
+  cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn]
+
+end
+
+variable {r : String → String} [Inj r]
+
+/-- Renaming invariance of fixing everywhere: renaming the names of `e`
+apart changes neither where a lint fires within it nor, but for the
+renaming, what fixing it everywhere writes. -/
+theorem fires_in_rn (l : lint.ExprLint) (e : Expr String) : lint.fires_in? l (expr r e) = lint.fires_in? l e := by
+  induction e <;> (conv => lhs; rw [lint.fires_in?.eq_def]) <;> rw [fires_at_rn] <;>
+    simp only [expr, lint.fires_in?, *] <;> exact decide_eq_decide.2 Iff.rfl
+
+theorem fix_all_rn (l : lint.ExprLint) (e : Expr String) : lint.fix_all l (expr r e) = expr r (lint.fix_all l e) := by
+  induction e <;> simp only [lint.fix_all, expr] <;> (try simp only [*]) <;> rw [← fix_at_rn] <;> rfl
+
+/-- A swap of two names renames them apart. -/
+instance swapped_inj (a b : String) : Inj (lint.swapped a b) where
+  inj x y h := by
+    simp only [lint.swapped] at h
+    by_cases hxa : x = a <;> by_cases hxb : x = b <;> by_cases hya : y = a <;> by_cases hyb : y = b <;>
+      simp_all <;> grind
+
+theorem swap_pattern_eq (a b : String) (p : Pattern String) :
+    lint.swap_pattern a b p = pat (lint.swapped a b) p := by
+  induction p <;> simp_all [lint.swap_pattern, pat]
+
+theorem swap_params_eq (a b : String) (ps : Params String) :
+    lint.swap_params a b ps = params (lint.swapped a b) ps := by
+  induction ps <;> simp_all [lint.swap_params, params]
+
+theorem swap_names_eq (a b : String) (e : Expr String) :
+    lint.swap_names a b e = expr (lint.swapped a b) e := by
+  induction e <;> simp_all [lint.swap_names, expr, swap_pattern_eq, swap_params_eq]
+
+end Rename
+
+open Fren.Lang
+
+-- For every lint, expression and two names, by `Rename.fires_at_rn`,
+-- `Rename.fix_at_rn`, `Rename.fires_in_rn` and `Rename.fix_all_rn`.
+impl renamed_apart: lint::renamed_apart for (l : lint.ExprLint) (e : lang.Expr String) (a b : String) {
+  l := l, e := e, a := a, b := b,
+} by
+  intro l e a b _
+  unfold lint.renamed_apart.ensures lint.renamed_apart.ensure.fires_at lint.renamed_apart.ensure.fix_at
+    lint.renamed_apart.ensure.fires_in lint.renamed_apart.ensure.fix_all
+  simp only [Rename.swap_names_eq, Rename.fires_at_rn, Rename.fix_at_rn, Rename.fires_in_rn, Rename.fix_all_rn,
+    and_self]

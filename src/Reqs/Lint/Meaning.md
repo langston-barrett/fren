@@ -50,7 +50,7 @@ same text and the same binders, an expression has the same names, of the
 same declarations, and so elaborates alike.
 
 ```fren
-pub fn written(Scoped): lang::Expr
+pub fn written(Scoped): lang::Expr<lang::Id>
 ```
 
 So, since [evaluation](../Lang/Semantics.md#the-evaluation-function) is a
@@ -128,7 +128,7 @@ two interpretations and environments:
 
 ```fren
 expect mentions_nothing(
-    e: lang::Expr,
+    e: lang::Expr<lang::Id>,
     i: lang::Interp,
     p: lang::Env,
     j: lang::Interp,

@@ -41,7 +41,7 @@ name is evaluated, as if it were written there. This is the rule of
 its name is mentioned.
 
 ```fren
-expect let_rules(i: Interp, env: Env, x: Id, d: Expr, b: Expr, v: Value) {
+expect let_rules(i: Interp, env: Env, x: Id, d: Expr<Id>, b: Expr<Id>, v: Value) {
     expect body: eval(i, env, Expr::Let(x, d, b)) = eval(i, Env::Bind(x, eval(i, env, d), env), b)
     -- A definition that is not WD does not count where the body is WD without it.
     expect lazy: when eval(i, env, d) = Outcome::Undefined and eval(i, Env::Bind(x, Outcome::Undefined, env), b) = Outcome::Defined(v),
@@ -61,7 +61,7 @@ not yet in the model. `Count(c, args)` evaluates every argument, as a
 function does, and so is WD where each is.
 
 ```fren
-expect operator_rules(i: Interp, env: Env, op: BinaryOp, a: Expr, b: Expr, m: Int, n: Int) {
+expect operator_rules(i: Interp, env: Env, op: BinaryOp, a: Expr<Id>, b: Expr<Id>, m: Int, n: Int) {
     -- Strictness: an operand that is not WD makes the operation undefined.
     expect strict_left: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
     expect strict_right: when eval(i, env, b) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
@@ -90,7 +90,7 @@ same well-definedness: `q != [] and q[0] = x` is WD, and `q[0] = x and q
 != []` is not where `q` is empty.
 
 ```fren
-expect lazy_rules(i: Interp, env: Env, a: Expr, b: Expr, b2: Expr) {
+expect lazy_rules(i: Interp, env: Env, a: Expr<Id>, b: Expr<Id>, b2: Expr<Id>) {
     expect and_false: when eval(i, env, a) = Outcome::Defined(Value::False),
         eval(i, env, Expr::And(a, b)) = Outcome::Defined(Value::False)
     expect and_true: when eval(i, env, a) = Outcome::Defined(Value::True),
@@ -112,7 +112,15 @@ it is `false`; exactly one branch is evaluated. It is undefined where `c`
 is not a WD `Bool`.
 
 ```fren
-expect if_rules(i: Interp, env: Env, c: Expr, t: Expr, f: Expr, t2: Expr, f2: Expr) {
+expect if_rules(
+    i: Interp,
+    env: Env,
+    c: Expr<Id>,
+    t: Expr<Id>,
+    f: Expr<Id>,
+    t2: Expr<Id>,
+    f2: Expr<Id>,
+) {
     expect then_branch: when eval(i, env, c) = Outcome::Defined(Value::True),
         eval(i, env, Expr::If(c, t, f)) = eval(i, env, t) and eval(i, env, Expr::If(c, t, f)) = eval(i, env, Expr::If(c, t, f2))
     expect else_branch: when eval(i, env, c) = Outcome::Defined(Value::False),
@@ -140,14 +148,14 @@ order, and the first that is taken gives the value, as
 expect match_rules(
     i: Interp,
     env: Env,
-    s: Expr,
-    p: Pattern,
-    g: Expr,
-    b: Expr,
-    rest: Expr,
-    g2: Expr,
-    b2: Expr,
-    rest2: Expr,
+    s: Expr<Id>,
+    p: Pattern<Id>,
+    g: Expr<Id>,
+    b: Expr<Id>,
+    rest: Expr<Id>,
+    g2: Expr<Id>,
+    b2: Expr<Id>,
+    rest2: Expr<Id>,
     v: Value,
 ) {
     assume scrutinee: eval(i, env, s) = Outcome::Defined(v)
@@ -184,10 +192,10 @@ of the list `q` at the position `k`, from 0, and is undefined out of range
 expect list_rules(
     i: Interp,
     env: Env,
-    a: Expr,
-    rest: Expr,
-    q: Expr,
-    k: Expr,
+    a: Expr<Id>,
+    rest: Expr<Id>,
+    q: Expr<Id>,
+    k: Expr<Id>,
     c: Id,
     v: Value,
     w: Value,
@@ -214,7 +222,7 @@ than `len`, and `min` and `max` of the other ordered types, are not yet in
 the model.
 
 ```fren
-expect method_rules(i: Interp, env: Env, r: Expr, args: Expr, m: Int, n: Int, s: String) {
+expect method_rules(i: Interp, env: Env, r: Expr<Id>, args: Expr<Id>, m: Int, n: Int, s: String) {
     expect strict: when eval(i, env, r) = Outcome::Undefined, eval(i, env, Expr::Method(MethodName::Abs, r, args)) = Outcome::Undefined
     expect abs: when eval(i, env, r) = Outcome::Defined(Value::Integer(m)) and eval(i, env, args) = Outcome::Defined(Value::Nil),
         eval(i, env, Expr::Method(MethodName::Abs, r, args)) = Outcome::Defined(Value::Integer(m.abs))
@@ -244,7 +252,15 @@ recursion, whose value is the interpretation's `recursions`, the same in
 every behaviour. All three evaluate every argument.
 
 ```fren
-expect call_rules(i: Interp, env: Env, f: Id, args: Expr, ps: Params, body: Expr, l: Value) {
+expect call_rules(
+    i: Interp,
+    env: Env,
+    f: Id,
+    args: Expr<Id>,
+    ps: Params<Id>,
+    body: Expr<Id>,
+    l: Value,
+) {
     assume arguments: eval(i, env, args) = Outcome::Defined(l)
 
     expect substitution: eval(i, env, Expr::Apply(f, args, ps, body)) = eval(i, bind_params(ps, l), body)
@@ -264,16 +280,16 @@ application of `f` unfolds to its body, as [Defined
 functions](Items.md#defined-functions) states:
 
 ```fren
-pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
+pub fn respects?(i: Interp, f: Id, ps: Params<Id>, e: Expr<Id>, l: Value) :=
     apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
 
 expect recursion_unfolds(
     i: Interp,
     env: Env,
     f: Id,
-    args: Expr,
-    ps: Params,
-    body: Expr,
+    args: Expr<Id>,
+    ps: Params<Id>,
+    body: Expr<Id>,
     l: Value,
     r: Outcome,
 ) {
@@ -307,7 +323,7 @@ definition is not read, it counts for nothing, as for the
 pub enum Mention { Var(Id), Fn(Id) }
 
 -- The names that a pattern binds.
-pub fn binders(p: Pattern): Set<Mention> := match p {
+pub fn binders(p: Pattern<Id>): Set<Mention> := match p {
     Pattern::Binder(x) => {Mention::Var(x)},
     Pattern::Variant(_, ps) => binders(ps),
     Pattern::Cons(first, rest) => binders(first) union binders(rest),
@@ -315,12 +331,12 @@ pub fn binders(p: Pattern): Set<Mention> := match p {
 }
 
 -- The names of a function's parameters.
-pub fn param_names(ps: Params): Set<Mention> := match ps {
+pub fn param_names(ps: Params<Id>): Set<Mention> := match ps {
     Params::Cons(x, rest) => {Mention::Var(x)} union param_names(rest),
     Params::Nil => {},
 }
 
-pub fn free_vars(e: Expr): Set<Mention> := match e {
+pub fn free_vars(e: Expr<Id>): Set<Mention> := match e {
     Expr::Var(x) => {Mention::Var(x)},
     Expr::Let(x, d, b) => (free_vars(b) minus {Mention::Var(x)})
         union (if Mention::Var(x) in free_vars(b) then free_vars(d) else {}),
@@ -387,7 +403,7 @@ expression.
 ```fren
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-pub proc coincidence(i: Interp, p: Env, j: Interp, q: Env, e: Expr) {
+pub proc coincidence(i: Interp, p: Env, j: Interp, q: Env, e: Expr<Id>) {
     ensure same: when agree?(i, p, j, q, free_vars(e)), eval(i, p, e) = eval(j, q, e)
 }
 ```
@@ -401,7 +417,7 @@ coincidence lemma:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc closed(i: Interp, p: Env, j: Interp, q: Env, e: Expr) {
+pub proc closed(i: Interp, p: Env, j: Interp, q: Env, e: Expr<Id>) {
     ensure same: when free_vars(e) = {} and i.recursions = j.recursions and i.primitives = j.primitives,
         eval(i, p, e) = eval(j, q, e)
 }
@@ -467,11 +483,11 @@ conditions are WD `Bool`s:
 expect guards_evaluation(
     i: Interp,
     env: Env,
-    a: Expr,
-    b: Expr,
-    c: Expr,
-    b2: Expr,
-    c2: Expr,
+    a: Expr<Id>,
+    b: Expr<Id>,
+    c: Expr<Id>,
+    b2: Expr<Id>,
+    c2: Expr<Id>,
     cond?,
 ) {
     assume condition: eval(i, env, a) = Outcome::Defined(truth(cond?))
@@ -507,14 +523,14 @@ first, which is evaluated exactly where the first is not taken:
 expect arm_guards_evaluation(
     i: Interp,
     env: Env,
-    s: Expr,
-    p: Pattern,
-    g: Expr,
-    b: Expr,
-    rest: Expr,
-    g2: Expr,
-    b2: Expr,
-    rest2: Expr,
+    s: Expr<Id>,
+    p: Pattern<Id>,
+    g: Expr<Id>,
+    b: Expr<Id>,
+    rest: Expr<Id>,
+    g2: Expr<Id>,
+    b2: Expr<Id>,
+    rest2: Expr<Id>,
     v: Value,
     taken?,
 ) {

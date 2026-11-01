@@ -137,7 +137,7 @@ pub mod lint
 
 -- An operand of a run of `or`, as the language means it: `x = a`, where
 -- `a` has the value `v`, or `x is A₁ | … | Aₖ`, by its alternatives.
-pub enum RunTest { Equals(lang::Value), Is(Seq<lang::Pattern>) }
+pub enum RunTest { Equals(lang::Value), Is(Seq<lang::Pattern<lang::Id>>) }
 
 -- The operand holds where `x` has the value `w`.
 set_option fren.lint.undecidable "allow" in
@@ -147,7 +147,7 @@ pub fn test_holds?(t: RunTest, w: lang::Value) := match t {
 }
 
 -- The operand's alternatives in the fix: `a` as a pattern, or the test's own.
-pub fn fix_alternatives(t: RunTest): Seq<lang::Pattern> := match t {
+pub fn fix_alternatives(t: RunTest): Seq<lang::Pattern<lang::Id>> := match t {
     RunTest::Equals(v) => [lang::Pattern::Literal(v)],
     RunTest::Is(alts) => alts,
 }
@@ -219,7 +219,7 @@ pub enum Alt { Integers(Option<Int>, Option<Int>), Text(String), Variant(lang::I
 -- The alternative as a pattern: a range by its bounds, without them `_`, a
 -- string literal with an escape sequence `_`, as its text is not its value,
 -- and a variant with `_` for its payload.
-pub fn alt_pattern(a: Alt): lang::Pattern := match a {
+pub fn alt_pattern(a: Alt): lang::Pattern<lang::Id> := match a {
     Alt::Integers(Some(lo), Some(hi)) => lang::Pattern::Between(lo, hi),
     Alt::Integers(Some(lo), None) => lang::Pattern::AtLeast(lo),
     Alt::Integers(None, Some(hi)) => lang::Pattern::AtMost(hi),

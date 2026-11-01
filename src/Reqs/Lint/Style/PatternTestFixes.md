@@ -42,7 +42,7 @@ fn equation_value(c: ComparisonShape): Option<lang::Value> := match value_alt(c.
 
 -- The operand `s` as the language means it, where `patterns` are its pattern
 -- test's alternatives, as the language means them.
-pub fn run_test(s: Shape, patterns: Seq<lang::Pattern>): RunTest := match s {
+pub fn run_test(s: Shape, patterns: Seq<lang::Pattern<lang::Id>>): RunTest := match s {
     Shape::Comparison(c) => match equation_value(c) {
         Some(v) => RunTest::Equals(v),
         None => RunTest::Is([]),
@@ -73,7 +73,7 @@ pub proc manual_pattern_test_refines(
     chain: Seq<Shape>,                   -- the operands of the chain the run is in
     conj?,                               -- it is a run of `and`
     run: Span,                           -- a run of the operands
-    patterns: Seq<Seq<lang::Pattern>>,   -- each operand's pattern test's alternatives, as the language means them
+    patterns: Seq<Seq<lang::Pattern<lang::Id>>>,   -- each operand's pattern test's alternatives, as the language means them
     tests: Seq<RunTest>,                 -- the tests of the run's operands, in order
     w: lang::Value,                      -- a value of the expression
 ) {

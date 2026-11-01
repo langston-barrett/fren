@@ -215,38 +215,38 @@ neither states what the condition compares.
 
 ```fren
 -- `e` is the literal `0`.
-fn zero?(e: lang::Expr) := e = lang::Expr::Literal(lang::Value::Integer(0))
+fn zero?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Integer(0))
 
 -- `op` is `<` or `<=`, the orderings that elaboration writes.
 fn ordering?(op: lang::BinaryOp) := op is lang::BinaryOp::Lt | lang::BinaryOp::Le
 
 -- `abs` of `x`.
-fn abs_of(x: lang::Expr): lang::Expr := lang::Expr::Method(
+fn abs_of<V>(x: lang::Expr<V>): lang::Expr<V> := lang::Expr::Method(
     lang::MethodName::Abs,
     x,
     lang::Expr::Nil
 )
 
 -- `if x OP 0 then -x else x`, of an `x` that is not an integer literal.
-fn abs_negated_then?(c: lang::Expr, t: lang::Expr, f: lang::Expr) := match c {
+fn abs_negated_then?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
     lang::Expr::Binary(op, x, z) => ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
         and t = lang::Expr::Unary(lang::UnaryOp::Neg, x) and f = x,
     _ => false,
 }
 
 -- `if 0 OP x then x else -x`.
-fn abs_negated_else?(c: lang::Expr, t: lang::Expr, f: lang::Expr) := match c {
+fn abs_negated_else?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
     lang::Expr::Binary(op, z, x) => ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
         and t = x and f = lang::Expr::Unary(lang::UnaryOp::Neg, x),
     _ => false,
 }
 
-pub fn manual_abs_fires?(e: lang::Expr) := match e {
+pub fn manual_abs_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::If(c, t, f) => abs_negated_then?(c, t, f) or abs_negated_else?(c, t, f),
     _ => false,
 }
 
-pub fn manual_abs_fix(e: lang::Expr): lang::Expr := match e {
+pub fn manual_abs_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::If(c, t, f) => if abs_negated_then?(c, t, f) then abs_of(f)
         else if abs_negated_else?(c, t, f) then abs_of(t)
         else e,
@@ -254,18 +254,18 @@ pub fn manual_abs_fix(e: lang::Expr): lang::Expr := match e {
 }
 
 -- `if s OP m then m - s else s - m`.
-fn abs_diff?(c: lang::Expr, t: lang::Expr, f: lang::Expr) := match c {
+fn abs_diff?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
     lang::Expr::Binary(op, s, m) => ordering?(op) and s != m
         and t = lang::Expr::Binary(lang::BinaryOp::Sub, m, s) and f = lang::Expr::Binary(lang::BinaryOp::Sub, s, m),
     _ => false,
 }
 
-pub fn manual_abs_diff_fires?(e: lang::Expr) := match e {
+pub fn manual_abs_diff_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::If(c, t, f) => abs_diff?(c, t, f),
     _ => false,
 }
 
-pub fn manual_abs_diff_fix(e: lang::Expr): lang::Expr := match e {
+pub fn manual_abs_diff_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
     lang::Expr::If(c, t, f) => if abs_diff?(c, t, f) then abs_of(t) else e,
     _ => e,
 }
@@ -297,18 +297,23 @@ and `Nat`s, which are the only values the model orders, and it leaves an
 
 ```fren
 -- `if x OP 0 then -x else x`, or the reverse, as elaborated.
-fn abs_written(op: Comparison, negated_then?, x: lang::Expr): lang::Expr := lang::Expr::If(
+fn abs_written<V>(op: Comparison, negated_then?, x: lang::Expr<V>): lang::Expr<V> := lang::Expr::If(
     elaborated_comparison(op, x, lang::Expr::Literal(lang::Value::Integer(0))),
     if negated_then? then lang::Expr::Unary(lang::UnaryOp::Neg, x) else x,
     if negated_then? then x else lang::Expr::Unary(lang::UnaryOp::Neg, x)
 )
 
 -- `a - b`, or `b - a`.
-fn difference_of(a_first?, a: lang::Expr, b: lang::Expr): lang::Expr :=
+fn difference_of<V>(a_first?, a: lang::Expr<V>, b: lang::Expr<V>): lang::Expr<V> :=
     if a_first? then lang::Expr::Binary(lang::BinaryOp::Sub, a, b) else lang::Expr::Binary(lang::BinaryOp::Sub, b, a)
 
 -- `if a OP b then a - b else b - a`, or the reverse, as elaborated.
-fn abs_diff_written(op: Comparison, then_left_first?, a: lang::Expr, b: lang::Expr): lang::Expr := lang::Expr::If(
+fn abs_diff_written<V>(
+    op: Comparison,
+    then_left_first?,
+    a: lang::Expr<V>,
+    b: lang::Expr<V>
+): lang::Expr<V> := lang::Expr::If(
     elaborated_comparison(op, a, b),
     difference_of(then_left_first?, a, b),
     difference_of(not then_left_first?, a, b)
@@ -324,7 +329,7 @@ fn written_difference(a_first?, a: String, b: String): Difference :=
         subtrahend := a,
     }
 
-expect manual_abs_elaborated(op: Comparison, negated_then?, x: lang::Expr) {
+expect manual_abs_elaborated(op: Comparison, negated_then?, x: lang::Expr<lang::Id>) {
     call p := manual_abs(Ordered::Number, op, negated_then?)
 
     expect rule: unless x is lang::Expr::Literal(lang::Value::Integer(_)),
@@ -333,7 +338,12 @@ expect manual_abs_elaborated(op: Comparison, negated_then?, x: lang::Expr) {
         manual_abs_fix(abs_written(op, negated_then?, x)) = abs_of(x)
 }
 
-expect manual_abs_diff_elaborated(op: Comparison, then_left_first?, a: lang::Expr, b: lang::Expr) {
+expect manual_abs_diff_elaborated(
+    op: Comparison,
+    then_left_first?,
+    a: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+) {
     call p := manual_abs_diff(
         op,
         Ordered::Number,
@@ -372,12 +382,12 @@ it:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc manual_abs_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+pub proc manual_abs_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure exact: when manual_abs_fires?(e), lang::eval(i, env, manual_abs_fix(e)) = lang::eval(i, env, e)
 }
 
 set_option fren.evidence "random" in
-pub proc manual_abs_diff_keeps_meaning(e: lang::Expr, i: lang::Interp, env: lang::Env) {
+pub proc manual_abs_diff_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure exact: when manual_abs_diff_fires?(e), lang::eval(i, env, manual_abs_diff_fix(e)) = lang::eval(i, env, e)
 }
 ```
@@ -392,7 +402,7 @@ one makes it fire (`around`).
 
 ```fren
 -- `if y.abs < 0 then -z else y.abs`.
-fn abs_around(y: lang::Expr, z: lang::Expr): lang::Expr := lang::Expr::If(
+fn abs_around<V>(y: lang::Expr<V>, z: lang::Expr<V>): lang::Expr<V> := lang::Expr::If(
     elaborated_comparison(
         Comparison::Lt,
         abs_of(y),
@@ -402,7 +412,7 @@ fn abs_around(y: lang::Expr, z: lang::Expr): lang::Expr := lang::Expr::If(
     abs_of(y)
 )
 
-expect manual_abs_refires(y: lang::Id, e: lang::Expr) {
+expect manual_abs_refires(y: lang::Id, e: lang::Expr<lang::Id>) {
     expect kept: not manual_abs_fires?(manual_abs_fix(e)) and not manual_abs_diff_fires?(manual_abs_diff_fix(e))
     expect around: not manual_abs_fires?(abs_around(lang::Expr::Var(y), inner))
         and manual_abs_fires?(abs_around(lang::Expr::Var(y), manual_abs_fix(inner)))

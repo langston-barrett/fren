@@ -287,7 +287,7 @@ expect constant_output_fixed(
     o_mentioned: Set<lang::Mention>,
     o_n_guarantees: Nat,
     o_equation?,
-    definition: lang::Expr,
+    definition: lang::Expr<lang::Id>,
     i: lang::Interp,
     p: lang::Env,
     j: lang::Interp,

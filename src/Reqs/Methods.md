@@ -465,6 +465,25 @@ expect by_evidence_follows(kind: check::Kind, tested?, enumerated?, obligation?)
 }
 ```
 
+## Names in enumeration
+
+A check of a function over [`lang::Expr<V>`](Lang/Semantics.md#expressions)
+that is generic in `V`, as the [lints' rules](Lint/Rewrites.md#renaming)
+are, reads the names of an expression only by whether two of them are
+equal, so renaming them apart changes nothing that it states but the names
+(`lint::renamed_apart`). A counterexample with `k` distinct names is then
+one with any other `k` distinct names, such as the first `k` in the
+enumeration's order. So enumerating such a check needs only a bound on
+how many distinct names an expression has, not which ones: up to the
+size, an expression with `p` places for a name, at its variables,
+binders, `let`s and parameters, needs at most `p` names, and every
+equality among them is reached with names drawn from `p` of them. At the
+size `n`, the strings of size at most `n` include the `n` names `a`, `b`,
+... of one letter, so enumeration decides such a check up to the size for
+every expression of at most `n` places, and needs no other strings for
+its names. A rule that compares at most `m` places, as each lint's does
+at the place where it fires, needs only `m` of them.
+
 ## Solver queries
 
 Every place that Fren asks the solver is a check of the table, a query

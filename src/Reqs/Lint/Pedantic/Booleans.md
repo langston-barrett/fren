@@ -57,34 +57,34 @@ the absorption leaves, or writes `false` for an `and` and `true` for an
 ```fren
 -- `k` is `p or q`, in an `and` (`conj?`), or `p and q`, in an `or`,
 -- where `p` or `q` is `o`.
-pub fn absorbs_operand?(conj?, k: Expr, o: Expr) := match k {
+pub fn absorbs_operand?<V>(conj?, k: Expr<V>, o: Expr<V>) := match k {
     Expr::Or(p, q) => conj? and (p = o or q = o),
     Expr::And(p, q) => not conj? and (p = o or q = o),
     _ => false,
 }
 
 -- `k` is `not o`.
-pub fn negates_operand?(k: Expr, o: Expr) := k = Expr::Unary(lang::UnaryOp::Not, o)
+pub fn negates_operand?<V>(k: Expr<V>, o: Expr<V>) := k = Expr::Unary(lang::UnaryOp::Not, o)
 
 -- An operand of the `and` (`conj?`) or the `or` of `a` and `b` can be dropped.
-pub fn drops?(conj?, a: Expr, b: Expr) := absorbs_operand?(conj?, b, a) or absorbs_operand?(conj?, a, b)
+pub fn drops?<V>(conj?, a: Expr<V>, b: Expr<V>) := absorbs_operand?(conj?, b, a) or absorbs_operand?(conj?, a, b)
     or negates_operand?(a, b) or negates_operand?(b, a)
 
 -- What the fix of `e`, the `and` (`conj?`) or the `or` of `a` and `b`,
 -- writes: the operand that the absorption leaves, or the `Bool` that `e`
 -- always is; and `e` where no operand can be dropped.
-pub fn drop_fix(conj?, a: Expr, b: Expr, e: Expr): Expr := if absorbs_operand?(conj?, b, a) then a
+pub fn drop_fix<V>(conj?, a: Expr<V>, b: Expr<V>, e: Expr<V>): Expr<V> := if absorbs_operand?(conj?, b, a) then a
     else if absorbs_operand?(conj?, a, b) then b
     else if negates_operand?(a, b) or negates_operand?(b, a) then Expr::Literal(lang::truth(not conj?))
     else e
 
-pub fn overly_complex_fires?(e: Expr) := match e {
+pub fn overly_complex_fires?<V>(e: Expr<V>) := match e {
     Expr::And(a, b) => drops?(true, a, b),
     Expr::Or(a, b) => drops?(false, a, b),
     _ => false,
 }
 
-pub fn overly_complex_fix(e: Expr): Expr := match e {
+pub fn overly_complex_fix<V>(e: Expr<V>): Expr<V> := match e {
     Expr::And(a, b) => drop_fix(true, a, b, e),
     Expr::Or(a, b) => drop_fix(false, a, b, e),
     _ => e,
@@ -96,7 +96,7 @@ which the solver checks. Where `b` is `a`, `a or ((a and b) and b)` is an
 absorption, so `nested` assumes they differ:
 
 ```fren
-expect overly_complex_rows(a: Expr, b: Expr) {
+expect overly_complex_rows(a: Expr<lang::Id>, b: Expr<lang::Id>) {
     use lang::UnaryOp::Not
 
     assume differ: a != b
@@ -151,6 +151,16 @@ such place: operands whose texts differ but elaborate alike, such as `a iff
 b` and `a = b`, or `(a)` and `a`, are the same `lang::Expr`, but not
 written the same.
 
+What the fix keeps is `kept_by(e)`: the left operand, the right one or a
+`Bool`, by the first test of `drop_fix` that holds, in the order in which
+the linter's rule tries them, so that where both operands are the same, it
+keeps the left. That the fix keeps it is `fix_written`. Stating which one
+it keeps, rather than only that `kept_fix` writes the fix, also makes the
+procedure's realizability a query that the solver decides: with `kept`
+free, cvc5 1.3 gives up on the `exists` over it, as it does on any such
+`exists` over a parametric datatype with a field of its parameter, as
+`Expr<lang::Id>` is.
+
 ```fren
 pub enum BoolRule { Absorption, Contradiction, ExcludedMiddle }
 
@@ -158,7 +168,7 @@ pub enum BoolRule { Absorption, Contradiction, ExcludedMiddle }
 pub enum Kept { Left, Right, Constant }
 
 -- The rule by which the lint fires on `e`, for the message.
-pub fn bool_rule(e: Expr): BoolRule := match e {
+pub fn bool_rule<V>(e: Expr<V>): BoolRule := match e {
     Expr::And(a, b) => if absorbs_operand?(true, b, a) or absorbs_operand?(true, a, b) then BoolRule::Absorption
         else BoolRule::Contradiction,
     Expr::Or(a, b) => if absorbs_operand?(false, b, a) or absorbs_operand?(false, a, b) then BoolRule::Absorption
@@ -166,8 +176,14 @@ pub fn bool_rule(e: Expr): BoolRule := match e {
     _ => BoolRule::Absorption,
 }
 
+-- What the fix of an `and`, if `conj?`, or an `or` keeps, by the first test
+-- of `drop_fix` that holds.
+fn drop_kept<V>(conj?, a: Expr<V>, b: Expr<V>): Kept := if absorbs_operand?(conj?, b, a) then Kept::Left
+    else if absorbs_operand?(conj?, a, b) then Kept::Right
+    else Kept::Constant
+
 -- What the fix of `e` writes, by `k`.
-pub fn kept_fix(e: Expr, k: Kept): Expr := match e, k {
+pub fn kept_fix<V>(e: Expr<V>, k: Kept): Expr<V> := match e, k {
     Expr::And(a, _), Kept::Left => a,
     Expr::And(_, b), Kept::Right => b,
     Expr::And(_, _), Kept::Constant => Expr::Literal(lang::Value::False),
@@ -177,14 +193,23 @@ pub fn kept_fix(e: Expr, k: Kept): Expr := match e, k {
     _, _ => e,
 }
 
+-- What the fix of `e` keeps, by the first test of `drop_fix` that holds.
+pub fn kept_by<V>(e: Expr<V>): Kept := match e {
+    Expr::And(a, b) => drop_kept(true, a, b),
+    Expr::Or(a, b) => drop_kept(false, a, b),
+    _ => Kept::Constant,
+}
+
 pub proc overly_complex_bool_expr(
-    e: Expr,
+    e: Expr<lang::Id>,
     negation_rewritten?,  -- `nonminimal_bool` rewrites the operand of `e` that is the negation of the other
 ): (det fires?, kept: Kept, kind: BoolRule) {
     ensure rule: fires? iff overly_complex_fires?(e)
         and not (negation_rewritten? and bool_rule(e) != BoolRule::Absorption)
-    ensure fix: when fires?, kept_fix(e, kept) = overly_complex_fix(e)
+    ensure fix: when fires?, kept = kept_by(e)
     ensure kind_rule: when fires?, kind = bool_rule(e)
+
+    expect fix_written: when fires?, kept_fix(e, kept) = overly_complex_fix(e)
 }
 ```
 
@@ -204,7 +229,7 @@ and environment; `fren check` tests it:
 
 ```fren
 set_option fren.evidence "random" in
-pub proc overly_complex_keeps_meaning(e: Expr, i: lang::Interp, env: lang::Env) {
+pub proc overly_complex_keeps_meaning(e: Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
     ensure keeps_meaning: when overly_complex_fires?(e),
         agrees?(
             lang::eval(i, env, overly_complex_fix(e)),
@@ -224,7 +249,7 @@ before, as in `c or ((c or (c and d)) and b)`, which becomes `c or (c and
 b)`:
 
 ```fren
-expect overly_complex_operand(e: Expr, v: lang::Value) {
+expect overly_complex_operand(e: Expr<lang::Id>) {
     expect operand: when overly_complex_fires?(e), match e {
         Expr::And(a, b) => overly_complex_fix(e) = a or overly_complex_fix(e) = b
             or overly_complex_fix(e) = Expr::Literal(lang::Value::False),
@@ -232,7 +257,7 @@ expect overly_complex_operand(e: Expr, v: lang::Value) {
             or overly_complex_fix(e) = Expr::Literal(lang::Value::True),
         _ => false,
     }
-    expect literal: not overly_complex_fires?(Expr::Literal(v))
+    expect literal: when e is Expr::Literal(_), not overly_complex_fires?(e)
 }
 
 -- `(c or (c and d)) or ((c or (c and d)) and b)`, and `c or ((c or (c and

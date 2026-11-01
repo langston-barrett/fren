@@ -82,12 +82,27 @@ pub enum Outcome { Defined(Value), Undefined }
 The abstract syntax is that of an expression after
 [elaboration](Types.md#checking-and-synthesis): every name is
 [resolved](Scope.md), every type is checked, and every derived form is
-translated. A variable is named by its `Id`, a variant, record or newtype
-by its full path, as in `Shape::Circle`.
+translated. A variant, record or newtype is named by its full path, as in
+`Shape::Circle`, and so are functions. A variable is named by a `V`: the
+abstract syntax is generic in the type of the names of variables, of
+which nothing is known but whether two of them are equal, so
+`lang::Pattern<V>`, `lang::Params<V>` and `lang::Expr<V>` take it as their
+type parameter. The semantics evaluates `Expr<Id>`, whose names are
+`Id`s, as they are written; another type of names, such as a
+[binding](Scope.md#bindings) for each, can stand for the names once they
+are resolved, with the same forms. A function that is generic in `V`
+compares names only for equality, so renaming the names of an expression
+apart changes nothing that it computes but the names, as the [lints'
+rules](../Lint/Rewrites.md#renaming) do. A recursion over it, as `eval`
+is, takes one type of names, as `Id`, since a generic function is [not
+recursive](Recursion.md). No form needs a sequence of a type parameter,
+which a generic type cannot have yet ([Type
+parameters](Generics.md#type-parameters)): a form with a list of operands
+has a list expression for them, below.
 
 ### Patterns
 
-`lang::Pattern` is a pattern of [Patterns](Patterns.md): `Wildcard`, a
+`lang::Pattern<V>` is a pattern of [Patterns](Patterns.md): `Wildcard`, a
 `Binder(x)`, a `Literal(v)`, the integer ranges `AtLeast(lo)`
 (`lo..`), `AtMost(hi)` (`..=hi`) and `Between(lo, hi)` (`lo..=hi`; `lo..hi`
 is `Between(lo, hi - 1)`), `Variant(c, ps)`, where `ps` is a list pattern
@@ -97,23 +112,23 @@ scrutinees of a `match` with [several
 scrutinees](HigherOrder.md#lambda-matches-and-multiple-scrutinees).
 
 ```fren
-pub enum Pattern {
+pub enum Pattern<V> {
     Wildcard,
-    Binder(Id),
+    Binder(V),
     Literal(Value),
     AtLeast(Int),
     AtMost(Int),
     Between(Int, Int),
-    Variant(Id, Pattern),
+    Variant(Id, Pattern<V>),
     Nil,
-    Cons(Pattern, Pattern),
-    Or(Pattern, Pattern),
+    Cons(Pattern<V>, Pattern<V>),
+    Or(Pattern<V>, Pattern<V>),
 }
 ```
 
 ### Expressions
 
-`lang::Expr` is an expression. A form with a list of operands, such as
+`lang::Expr<V>` is an expression. A form with a list of operands, such as
 the arguments of a call, has a list expression for them, `Nil` or
 `Cons(e, rest)`, which evaluates to the list of their values.
 
@@ -149,30 +164,30 @@ pub enum MethodName { Abs, Min, Max, Len }
 pub enum Cardinality { Exactly, AtMost }
 
 -- A function's parameters, in order.
-pub enum Params { Nil, Cons(Id, Params) }
+pub enum Params<V> { Nil, Cons(V, Params<V>) }
 
-pub enum Expr {
+pub enum Expr<V> {
     Literal(Value),
-    Var(Id),
-    Let(Id, Expr, Expr),
-    Unary(UnaryOp, Expr),
-    Binary(BinaryOp, Expr, Expr),
-    And(Expr, Expr),
-    Or(Expr, Expr),
-    If(Expr, Expr, Expr),
-    Is(Expr, Pattern),
-    Match(Expr, Pattern, Expr, Expr, Expr),
+    Var(V),
+    Let(V, Expr<V>, Expr<V>),
+    Unary(UnaryOp, Expr<V>),
+    Binary(BinaryOp, Expr<V>, Expr<V>),
+    And(Expr<V>, Expr<V>),
+    Or(Expr<V>, Expr<V>),
+    If(Expr<V>, Expr<V>, Expr<V>),
+    Is(Expr<V>, Pattern<V>),
+    Match(Expr<V>, Pattern<V>, Expr<V>, Expr<V>, Expr<V>),
     NoMatch,
     Nil,
-    Cons(Expr, Expr),
-    Construct(Id, Expr),
-    Project(Expr, Id, Int),
-    Index(Expr, Expr),
-    Method(MethodName, Expr, Expr),
-    Count(Cardinality, Expr),
-    Apply(Id, Expr, Params, Expr),
-    Call(Id, Expr),
-    Recur(Id, Expr),
+    Cons(Expr<V>, Expr<V>),
+    Construct(Id, Expr<V>),
+    Project(Expr<V>, Id, Int),
+    Index(Expr<V>, Expr<V>),
+    Method(MethodName, Expr<V>, Expr<V>),
+    Count(Cardinality, Expr<V>),
+    Apply(Id, Expr<V>, Params<V>, Expr<V>),
+    Call(Id, Expr<V>),
+    Recur(Id, Expr<V>),
 }
 ```
 
@@ -366,7 +381,7 @@ or-pattern binds nothing, since elaboration rejects one whose
 alternatives bind names (`F0333`).
 
 ```fren
-pub fn matches_value?(p: Pattern, v: Value) := match p {
+pub fn matches_value?(p: Pattern<Id>, v: Value) := match p {
     Pattern::Wildcard => true,
     Pattern::Binder(_) => true,
     Pattern::Literal(w) => v = w,
@@ -385,7 +400,7 @@ pub fn matches_value?(p: Pattern, v: Value) := match p {
     Pattern::Or(a, b) => matches_value?(a, v) or matches_value?(b, v),
 }
 
-pub fn bind(p: Pattern, v: Value, env: Env): Env := match p {
+pub fn bind(p: Pattern<Id>, v: Value, env: Env): Env := match p {
     Pattern::Binder(x) => Env::Bind(x, Outcome::Defined(v), env),
     Pattern::Variant(_, ps) => match v {
         Value::Constructed(_, payload) => bind(ps, payload, env),
@@ -399,7 +414,7 @@ pub fn bind(p: Pattern, v: Value, env: Env): Env := match p {
 }
 
 -- The environment of a function's body: its parameters bound to the arguments.
-pub fn bind_params(ps: Params, args: Value): Env := match ps {
+pub fn bind_params(ps: Params<Id>, args: Value): Env := match ps {
     Params::Cons(x, rest) => match args {
         Value::Cons(v, more) => Env::Bind(x, Outcome::Defined(v), bind_params(rest, more)),
         _ => Env::Empty,
@@ -471,6 +486,73 @@ pub fn count_value(c: Cardinality, args: Outcome): Outcome := match args {
 }
 ```
 
+### Connectives, lists and calls
+
+The rules of the other forms are functions of the outcomes of their
+immediate subexpressions too, but for `Match` and `Apply`, which evaluate
+a subexpression in an environment that the value of another gives. Those
+of `and`, `or` and a conditional take the outcome of each operand, and
+use only those that the form evaluates: `and_value(a, b)` is `b` only
+where `a` is `true`, so that it is undefined where `b` is only where the
+form evaluates `b`. An arm of a `match` whose pattern matches is
+`if_value` of its guard, its body and the arms after it, the guard and
+body in the environment with the pattern's binders bound. Giving each
+rule its own function keeps `eval` small: compiling it, a structural
+recursion with an arm for each form, took 199M of Lean's raw heartbeats
+with these rules written within it, against a limit of 200M, and takes
+160M.
+
+```fren
+-- The outcome of `a and b`, of `a or b`, and of a conditional, from those of their operands.
+pub fn and_value(a: Outcome, b: Outcome): Outcome := match a {
+    Outcome::Defined(Value::True) => b,
+    Outcome::Defined(Value::False) => Outcome::Defined(Value::False),
+    _ => Outcome::Undefined,
+}
+
+pub fn or_value(a: Outcome, b: Outcome): Outcome := match a {
+    Outcome::Defined(Value::True) => Outcome::Defined(Value::True),
+    Outcome::Defined(Value::False) => b,
+    _ => Outcome::Undefined,
+}
+
+pub fn if_value(c: Outcome, t: Outcome, f: Outcome): Outcome := match c {
+    Outcome::Defined(Value::True) => t,
+    Outcome::Defined(Value::False) => f,
+    _ => Outcome::Undefined,
+}
+
+pub fn is_value(p: Pattern<Id>, s: Outcome): Outcome := match s {
+    Outcome::Defined(v) => Outcome::Defined(truth(matches_value?(p, v))),
+    Outcome::Undefined => Outcome::Undefined,
+}
+
+pub fn cons_value(a: Outcome, rest: Outcome): Outcome := match a, rest {
+    Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
+    _, _ => Outcome::Undefined,
+}
+
+pub fn construct_value(c: Id, args: Outcome): Outcome := match args {
+    Outcome::Defined(l) => Outcome::Defined(Value::Constructed(c, l)),
+    Outcome::Undefined => Outcome::Undefined,
+}
+
+pub fn project_value(a: Outcome, c: Id, k: Int): Outcome := match a {
+    Outcome::Defined(Value::Constructed(d, l)) => if c = d then nth(l, k) else Outcome::Undefined,
+    _ => Outcome::Undefined,
+}
+
+pub fn index_value(q: Outcome, k: Outcome): Outcome := match q, k {
+    Outcome::Defined(l), Outcome::Defined(Value::Integer(n)) => if list?(l) then nth(l, n) else Outcome::Undefined,
+    _, _ => Outcome::Undefined,
+}
+
+pub fn call_value(g: Graph, f: Id, args: Outcome): Outcome := match args {
+    Outcome::Defined(l) => apply(g, f, l),
+    Outcome::Undefined => Outcome::Undefined,
+}
+```
+
 ### The evaluation function
 
 `eval(i, env, e)` is the outcome of `e` in the interpretation `i` and the
@@ -482,58 +564,31 @@ written](../Lint/Meaning.md#expressions-as-written)). It is written as a
 [function block](Items.md#function-blocks), whose `out` gives its body.
 
 ```fren
-pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
+pub fn eval(i: Interp, env: Env, e: Expr<Id>): (r: Outcome) {
     out r := match e {
         Expr::Literal(v) => Outcome::Defined(v),
         Expr::Var(x) => lookup(env, x),
         Expr::Let(x, d, b) => eval(i, Env::Bind(x, eval(i, env, d), env), b),
         Expr::Unary(op, a) => unary_value(op, eval(i, env, a)),
         Expr::Binary(op, a, b) => binary_value(i, op, eval(i, env, a), eval(i, env, b)),
-        Expr::And(a, b) => match eval(i, env, a) {
-            Outcome::Defined(Value::True) => eval(i, env, b),
-            Outcome::Defined(Value::False) => Outcome::Defined(Value::False),
-            _ => Outcome::Undefined,
-        },
-        Expr::Or(a, b) => match eval(i, env, a) {
-            Outcome::Defined(Value::True) => Outcome::Defined(Value::True),
-            Outcome::Defined(Value::False) => eval(i, env, b),
-            _ => Outcome::Undefined,
-        },
-        Expr::If(c, t, f) => match eval(i, env, c) {
-            Outcome::Defined(Value::True) => eval(i, env, t),
-            Outcome::Defined(Value::False) => eval(i, env, f),
-            _ => Outcome::Undefined,
-        },
-        Expr::Is(s, p) => match eval(i, env, s) {
-            Outcome::Defined(v) => Outcome::Defined(truth(matches_value?(p, v))),
-            Outcome::Undefined => Outcome::Undefined,
-        },
+        Expr::And(a, b) => and_value(eval(i, env, a), eval(i, env, b)),
+        Expr::Or(a, b) => or_value(eval(i, env, a), eval(i, env, b)),
+        Expr::If(c, t, f) => if_value(eval(i, env, c), eval(i, env, t), eval(i, env, f)),
+        Expr::Is(s, p) => is_value(p, eval(i, env, s)),
         Expr::Match(s, p, g, b, rest) => match eval(i, env, s) {
-            Outcome::Defined(v) => if matches_value?(p, v) then (match eval(i, bind(p, v, env), g) {
-                Outcome::Defined(Value::True) => eval(i, bind(p, v, env), b),
-                Outcome::Defined(Value::False) => eval(i, env, rest),
-                _ => Outcome::Undefined,
-            }) else eval(i, env, rest),
+            Outcome::Defined(v) => if matches_value?(p, v) then if_value(
+                eval(i, bind(p, v, env), g),
+                eval(i, bind(p, v, env), b),
+                eval(i, env, rest)
+            ) else eval(i, env, rest),
             Outcome::Undefined => Outcome::Undefined,
         },
         Expr::NoMatch => Outcome::Undefined,
         Expr::Nil => Outcome::Defined(Value::Nil),
-        Expr::Cons(a, rest) => match eval(i, env, a), eval(i, env, rest) {
-            Outcome::Defined(v), Outcome::Defined(l) => Outcome::Defined(Value::Cons(v, l)),
-            _, _ => Outcome::Undefined,
-        },
-        Expr::Construct(c, args) => match eval(i, env, args) {
-            Outcome::Defined(l) => Outcome::Defined(Value::Constructed(c, l)),
-            Outcome::Undefined => Outcome::Undefined,
-        },
-        Expr::Project(a, c, k) => match eval(i, env, a) {
-            Outcome::Defined(Value::Constructed(d, l)) => if c = d then nth(l, k) else Outcome::Undefined,
-            _ => Outcome::Undefined,
-        },
-        Expr::Index(q, k) => match eval(i, env, q), eval(i, env, k) {
-            Outcome::Defined(l), Outcome::Defined(Value::Integer(n)) => if list?(l) then nth(l, n) else Outcome::Undefined,
-            _, _ => Outcome::Undefined,
-        },
+        Expr::Cons(a, rest) => cons_value(eval(i, env, a), eval(i, env, rest)),
+        Expr::Construct(c, args) => construct_value(c, eval(i, env, args)),
+        Expr::Project(a, c, k) => project_value(eval(i, env, a), c, k),
+        Expr::Index(q, k) => index_value(eval(i, env, q), eval(i, env, k)),
         Expr::Method(m, receiver, args) => method_value(
             m,
             eval(i, env, receiver),
@@ -544,14 +599,8 @@ pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
             Outcome::Defined(l) => eval(i, bind_params(ps, l), body),
             Outcome::Undefined => Outcome::Undefined,
         },
-        Expr::Call(f, args) => match eval(i, env, args) {
-            Outcome::Defined(l) => apply(i.functions, f, l),
-            Outcome::Undefined => Outcome::Undefined,
-        },
-        Expr::Recur(f, args) => match eval(i, env, args) {
-            Outcome::Defined(l) => apply(i.recursions, f, l),
-            Outcome::Undefined => Outcome::Undefined,
-        },
+        Expr::Call(f, args) => call_value(i.functions, f, eval(i, env, args)),
+        Expr::Recur(f, args) => call_value(i.recursions, f, eval(i, env, args)),
     }
 }
 ```
@@ -559,7 +608,7 @@ pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
 `determinism` states it:
 
 ```fren
-expect determinism(i: Interp, env: Env, e: Expr, e2: Expr) {
+expect determinism(i: Interp, env: Env, e: Expr<Id>, e2: Expr<Id>) {
     expect same: when e2 = e, eval(i, env, e2) = eval(i, env, e)
 }
 ```
