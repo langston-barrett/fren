@@ -1,3 +1,8 @@
 -- An or-pattern binds a name.
 enum Shape { Circle(Int), Square(Int), Empty }
-proc c(s: Shape): (a: Int) { ensure r: a = match s { Shape::Circle(n) | Shape::Square(n) => n, _ => 0 } }
+proc c(s: Shape): (a: Int) {
+    ensure r: a = match s {
+        Shape::Circle(n) | Shape::Square(n) => n,
+        _ => 0,
+    }
+}

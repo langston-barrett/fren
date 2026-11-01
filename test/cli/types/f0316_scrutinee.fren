@@ -1,2 +1,6 @@
 -- A `match` on a set.
-proc c(s: Set<Int>): (y: Int) { ensure r: y = match s { _ => 0 } }
+proc c(s: Set<Int>): (y: Int) {
+    ensure r: y = match s {
+        _ => 0,
+    }
+}

@@ -19,7 +19,7 @@ instance : Fren.Finite Kind :=
 instance : Fren.Finite LineStart := ⟨[.closing, .starting, .continuing], by intro x; cases x <;> simp⟩
 
 instance : Fren.Finite ListKind :=
-  ⟨[.arms, .arguments, .applicationArguments, .parameters, .functionParameters, .elements, .fields],
+  ⟨[.arms, .arguments, .applicationArguments, .parameters, .functionParameters, .elements, .fields, .members],
     by intro x; cases x <;> simp⟩
 
 def toFmtKind : Kind → fmt.Kind
@@ -47,6 +47,7 @@ def toFmtListKind : ListKind → fmt.ListKind
   | .functionParameters => .FunctionParameters
   | .elements => .Elements
   | .fields => .Fields
+  | .members => .Members
 
 /-- A list's elements, each with its width on one line and whether it must
 span several lines. -/

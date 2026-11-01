@@ -1,0 +1,47 @@
+--- test/cli/fmt/blocks.fren
++++ test/cli/fmt/blocks.fren
+@@ -9 +9,3 @@
+-pub proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
++pub proc c(m: Mode): (on?) {
++    ensure r: on? iff m = Mode::Heat
++}
+@@ -15 +17,4 @@
+-pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
++pub proc e(m: Mode): (on?) {
++    ensure r: on? iff m = Mode::Heat
++    set_option fren.evidence "random" in expect s: on? or m = Mode::Cool
++}
+@@ -17 +22,6 @@
+-pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
++pub proc f(n: Int): (y: Int) {
++    ensure r: y = match n {
++        0 => 1,
++        _ => 0,
++    }
++}
+@@ -19 +29,4 @@
+-pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
++pub fn g(x: Int): (r: Int) {
++    assume p: x > 0
++    out r := x + 1
++}
+@@ -21 +34,3 @@
+-expect h(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
++expect h(m: Mode) {
++    expect a: m is Mode::Heat | Mode::Cool
++}
+@@ -25 +40,2 @@
+-pub proc j(x: Int): (y: Int) { ensure a: y = x
++pub proc j(x: Int): (y: Int) {
++    ensure a: y = x
+@@ -28 +44,2 @@
+-    ensure b: y >= x }
++    ensure b: y >= x
++}
+@@ -30 +47,4 @@
+-pub proc k(m: Mode): (on?) { use self::Mode::Heat use self::Mode::Cool ensure r: on? iff m = Heat or m = Cool }
++pub proc k(m: Mode): (on?) {
++    use self::Mode::{Cool, Heat}
++    ensure r: on? iff m = Heat or m = Cool
++}
+exit=1

@@ -7,3 +7,8 @@ proc c(
 ): (mode: Mode) {
     ensure r: mode = if t < 18 then Mode::Heat else Mode::Cool
 }
+
+-- A short procedure, already one member to a line, stays so.
+proc d(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+}
