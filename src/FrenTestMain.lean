@@ -26,7 +26,8 @@ import Lean.Elab.Frontend
   rewrites them.
 - Fren's own requirements must pass under the binary.
 - **Formatting:** every spec in the repository that parses must be
-  formatted, keeps its tokens, imports and comments when formatted,
+  formatted, keeps its tokens and comments in order and its imports when
+  formatted, with no comma after a line break or a line comment,
   formatting it again changes nothing, and it formats as it does when it
   is laid out again at random (`fmt::safe`, `fmt::layout_free`); `fren fmt`
   rewrites a file in place.
@@ -724,33 +725,59 @@ def fmtPending : List String :=
    "test/ui/lints/names_sizes.fren", "test/ui/lints/records.fren",
    "test/ui/lints/updates_covers.fren"]
 
-/-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing
-commas of lists and claims and for `use` items; the paths the `use` items
-import, sorted; and the comments, each with whether it starts its line. -/
-def fmtKept (path src : String) : Option (Array String × Array (Array String) × Array String) := do
+/-- A file's pieces (`fmt::Piece`), but for the trailing commas of lists
+and claims and for `use` items, each comment with whether it starts its
+line, and the paths the `use` items import, sorted. -/
+def fmtPieces (path src : String) : Option (List (FrenCli.Fmt.PieceKind × String) × Array (Array String)) := do
   let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
   let chars := src.toList.toArray
   let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
   let lay ← (FrenCli.parseLayout toks chars).toOption
   let inUse (k : Nat) : Bool := lay.uses.any fun (f, l) => f ≤ k && k ≤ l
   let isStr (k : Nat) : Bool := toks[k]?.any (·.tok matches .str _)
-  let mut kept := #[]
-  for h : k in [0:toks.size] do
-    if inUse k then continue
-    let t := toks[k]
-    let trailing := t.tok == .kw "," &&
-      (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")" || n.tok == .kw "]") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
-    if !trailing then kept := kept.push (reprStr t.tok)
-  let paths := (lay.uses.flatMap fun (f, l) =>
-    let (ps, glob) := FrenCli.Fmt.usePaths toks f l
-    if glob then ps.map (·.push "*") else ps).qsort FrenCli.Fmt.pathLt
   let startsLine (c : FrenCli.Span) : Bool := Id.run do
     let mut i := c.start
     while i > 0 && chars[i - 1]! != '\n' do
       if !chars[i - 1]!.isWhitespace then return false
       i := i - 1
     return true
-  return (kept, paths, comments.map fun c => s!"{startsLine c} {(FrenCli.Fmt.text chars c).trimAsciiEnd}")
+  -- The tokens and comments, each with where it is and what it is.
+  let mut pieces : Array (FrenCli.Span × FrenCli.Fmt.PieceKind × String) := #[]
+  for h : k in [0:toks.size] do
+    if inUse k then continue
+    let t := toks[k]
+    let trailing := t.tok == .kw "," &&
+      (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")" || n.tok == .kw "]") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
+    if !trailing then
+      pieces := pieces.push (t.span, if t.tok == .kw "," then .separator else .token, reprStr t.tok)
+  for c in comments do
+    let text := (FrenCli.Fmt.text chars c).trimAsciiEnd.toString
+    pieces := pieces.push (c, if FrenCli.Fmt.isLineComment text then .lineComment else .blockComment, s!"{startsLine c} {text}")
+  pieces := pieces.qsort fun a b => a.1.start < b.1.start
+  -- With the line breaks between them.
+  let mut stream : List (FrenCli.Fmt.PieceKind × String) := []
+  let mut prev := 0
+  for (span, kind, text) in pieces do
+    if (chars.extract prev span.start).contains '\n' then stream := (.lineBreak, "") :: stream
+    stream := (kind, text) :: stream
+    prev := span.stop
+  let paths := (lay.uses.flatMap fun (f, l) =>
+    let (ps, glob) := FrenCli.Fmt.usePaths toks f l
+    if glob then ps.map (·.push "*") else ps).qsort FrenCli.Fmt.pathLt
+  return (stream.reverse, paths)
+
+/-- What formatting keeps (`fmt::safe`): the order of the file's pieces
+(`fmt::ordering`), in which a comma before a line break or a line comment
+counts as one after it, and the paths the `use` items import. -/
+def fmtKept (path src : String) : Option (Array String × Array (Array String)) := do
+  let (stream, paths) ← fmtPieces path src
+  return ((FrenCli.Fmt.keptOrder Prod.fst stream).toArray.map Prod.snd, paths)
+
+/-- Whether no comma follows a line break or a line comment: whether a
+file's pieces are not `fmt::misplaced?`. -/
+def fmtCommasPlaced (path src : String) : Bool :=
+  (fmtPieces path src).any fun (stream, _) =>
+    FrenCli.Fmt.placeSeparators Prod.fst stream == stream
 
 /-! ## Conformance corpus (`Reqs/Lang/Decidability`) -/
 
@@ -984,7 +1011,8 @@ def relaid (src : String) (seed : Nat) : Option String := do
 
 /-- `fmt::safe` and `fmt::layout_free` over every spec in the repository,
 and over each laid out again at random, twice: formatting keeps its
-tokens, imports and comments, formatting it again changes nothing, and
+tokens and comments in order and its imports, leaves no comma after a
+line break or a line comment, formatting it again changes nothing, and
 laying it out again changes nothing that formatting writes. And every
 spec that parses is formatted. -/
 def formatting : IO (Array String) := do
@@ -994,7 +1022,9 @@ def formatting : IO (Array String) := do
     let src ← IO.FS.readFile f
     let .ok new := FrenCli.Fmt.formatFile f src | continue
     if fmtKept f src != fmtKept f new then
-      failures := failures.push s!"{f}: formatting changes its tokens, imports or comments"
+      failures := failures.push s!"{f}: formatting changes its tokens and comments, their order, or its imports"
+    if !fmtCommasPlaced f new then
+      failures := failures.push s!"{f}: formatting leaves a comma after a line break or a line comment"
     if (FrenCli.Fmt.formatFile f new).toOption != some new then
       failures := failures.push s!"{f}: formatting it twice changes it again"
     -- Its Fren source, laid out again.
@@ -1007,7 +1037,9 @@ def formatting : IO (Array String) := do
       | .error _ => failures := failures.push s!"{f}: laid out again, it does not parse"
       | .ok again =>
         if fmtKept "x.fren" other != fmtKept "x.fren" again then
-          failures := failures.push s!"{f}: laid out again, formatting changes its tokens, imports or comments"
+          failures := failures.push s!"{f}: laid out again, formatting changes its tokens and comments, their order, or its imports"
+        if !fmtCommasPlaced "x.fren" again then
+          failures := failures.push s!"{f}: laid out again, formatting leaves a comma after a line break or a line comment"
         if again != formatted then
           failures := failures.push s!"{f}: laid out again (seed {seed}), it formats differently:\n{FrenCli.Fmt.diff {} f formatted again}"
         if (FrenCli.Fmt.formatFren again).toOption != some again then
