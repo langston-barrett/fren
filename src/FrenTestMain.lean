@@ -499,14 +499,73 @@ def hostedChecks : IO (Array String) := do
           failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
   return failures
 
+/-- `fren check --query-cache` gives the same output cold, in a fresh
+directory, as warm, from it; a third run, cold into another fresh
+directory and compared with the first's, compares answers and finds no
+contradiction, and writes the same entries (`Reqs/Cli#query-cache`). -/
+def queryCache : IO (Array String) := do
+  let file := "test/fixtures/query_cache.fren"
+  let root : FilePath := ".lake" / "query-cache-test" / s!"{← IO.monoNanosNow}"
+  let first := (root / "first").toString
+  let second := (root / "second").toString
+  let run (args : List String) := runFren (["check"] ++ args ++ [file])
+  let (plain, plainCode) ← run []
+  let (cold, coldCode) ← run ["--query-cache", first]
+  let (warm, warmCode) ← run ["--query-cache", first]
+  let (verified, verifiedCode) ← run ["--query-cache", second, "--verify-query-cache", first]
+  let entries (d : String) : IO (Array String) := do
+    let fs ← (FilePath.mk d).walkDir
+    let fs ← fs.filterM fun f => return !(← f.isDir)
+    (fs.qsort (·.toString < ·.toString)).mapM fun f => IO.FS.readFile f
+  let mut failures := #[]
+  for (name, out, code) in [("cold", cold, coldCode), ("warm", warm, warmCode)] do
+    unless out == plain && code == plainCode do
+      failures := failures.push s!"{name}, the output differs from that without the cache:\n{out}\n---\n{plain}"
+  if (← entries first).isEmpty then failures := failures.push "the cold run kept no answers"
+  unless (← entries first) == (← entries second) do
+    failures := failures.push "two cold runs kept different answers"
+  let (counts, rest) := (verified.splitOn "\n").partition (·.startsWith "fren: compared ")
+  unless "\n".intercalate rest == plain && verifiedCode == plainCode
+      && counts.length == 1 && !counts.any (·.startsWith "fren: compared 0 ") do
+    failures := failures.push s!"the verified run differs or compared nothing:\n{verified}"
+  let (_, missingCode) ← run ["--verify-query-cache", (root / "missing").toString]
+  unless missingCode == 2 do failures := failures.push "a missing directory to compare with is not an error"
+  IO.FS.removeDirAll root
+  return failures
+
+/-- The query caches of `ownSpec` (`Reqs/dev/Testing#query-cache`): the
+directory `FREN_QUERY_CACHE`, by default `.lake/query-cache`, or none if it
+is empty; and the one to compare with, `FREN_VERIFY_QUERY_CACHE`, if set. -/
+def ownSpecCaches : IO (Option String × Option String) := do
+  let dir? := match ← IO.getEnv "FREN_QUERY_CACHE" with
+    | none => some ".lake/query-cache"
+    | some "" => none
+    | some d => some d
+  let verify? := (← IO.getEnv "FREN_VERIFY_QUERY_CACHE").filter (· != "")
+  return (dir?, verify?)
+
 /-- Fren's own requirements pass under the binary, and it checks every
 chapter that the Lean front end does; and Lean checks every chapter too
 (`hostedChecks`). -/
 def ownSpec : IO (Array String) := do
   let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
-  let (out, code) ← runCheck ownSpecFiles
+  let (queryCache?, verifyQueryCache?) ← ownSpecCaches
+  let (out, code) ← IO.FS.withIsolatedStreams
+    (FrenCli.check { files := ownSpecFiles, queryCache?, verifyQueryCache? })
+  -- A contradiction leaves a mark next to the cache, so that CI does not
+  -- save it (`Reqs/dev/Testing#query-cache`).
+  if let some dir := queryCache? then
+    if out.contains "contradicts the query cache's entry".toSlice then
+      IO.FS.writeFile (dir ++ ".contradicted") out
+  -- A comparison that compared nothing checks nothing.
+  let compared := if verifyQueryCache?.isSome && !out.contains "fren: compared ".toSlice then
+      #["the binary did not report how many answers it compared with the query cache"]
+    else if verifyQueryCache?.isSome && out.contains "fren: compared 0 answers".toSlice then
+      #[s!"the binary compared no answers with the query cache `{verifyQueryCache?.getD ""}`"]
+    else #[]
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
+    ++ compared
     ++ (← hostedChecks)
 
 /-! ## Formatting -/
@@ -1961,7 +2020,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"]]
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -1981,6 +2040,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec
+  | ["queryCache"] => queryCache
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus
     | none => throw (IO.userError s!"unknown corpus `{name}`")

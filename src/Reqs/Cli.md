@@ -2,7 +2,7 @@
 
 ```
 fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
-    [--seed N] [-A|-W|-D|-F LINT]... FILE...
+    [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -42,6 +42,8 @@ installation. It is built by `lake build fren`.
 | `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
+| `--query-cache DIR` | `check`: keep the solver's answers in `DIR`, and answer the queries asked before from it; see [Query cache](#query-cache) |
+| `--verify-query-cache DIR` | `check`: fail if the solver's answer contradicts one kept in `DIR`; see [Query cache](#query-cache) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
 | `--require LEVEL` | `trace`: warn about, and fail on, procedures with weaker evidence than `trusted`, `tested`, `solver` or `proved` |
 | `--check` | `fmt` and `fix`: change no file, and print a diff of what would change |
@@ -377,6 +379,108 @@ answer may depend on it, and it sets back to cvc5's defaults the options
 that lean-smt sets for its proofs, which Fren does not ask for, such as
 turning off cvc5's simplification, which leaves some queries undecided,
 except that it still asks for unsat cores, which lean-smt reads.
+
+## Query cache
+
+With `--query-cache DIR`, `fren check` keeps the solver's answers in the
+directory `DIR`, creating it if need be, and answers a query that an
+earlier run asked from it, without the solver. Each answer is a file of
+its own, `DIR/HH/HHHHHHHHHHHHHHHH`, named by a hash of its key, which it
+holds in full. The key, `cli::Key`, is everything that can change the
+answer:
+
+- the whole script, as `--dump-smt` writes it without its first comment
+  and the `(check-sat)` and `(reset)` after it: its logic, options,
+  [limits](#limits), declarations, hypotheses and goal; and the formulas
+  whose values its model reads, each with the formula that guards it;
+- the version of cvc5, as cvc5 reports it;
+- the version of how `fren check` runs a script and stores its answer,
+  bumped whenever an answer can change without the script changing, such
+  as when it reads models differently.
+
+An entry answers a query only if its key is the query's, in full, so a
+hash that two keys share is a miss, never another script's answer.
+`unknown` is never kept, whatever its reason: a time limit is reached or
+not depending on the machine's load. A `sat` answer keeps its model, if
+one was wanted; one without a model does not answer a query that wants
+one, which the solver then answers, and its answer replaces the entry.
+cvc5 gives a script the same answer, model and all, every time, unless it
+reaches a limit (see [Solver queries](#solver-queries)), so an answer from
+the cache is the answer that the solver would give, and the output is the
+same with the cache as without it. Entries are written to a file of their
+own and renamed into place, so several runs at once may share a
+directory. Nothing is ever deleted from it: entries of an old script, an
+old cvc5 or an old version are never hit again, and deleting the
+directory clears them.
+
+With `--verify-query-cache DIR`, `fren check` reads `DIR` only to compare:
+each answer that the solver gives, whose key has an entry in `DIR`, must
+agree with that entry. An answer contradicts an entry if one is `unsat`
+and the other `sat`, or both have models and they differ. A contradiction
+is an internal error, which names the entry. It means that the key leaves
+out something that changed the answer, or that cvc5 is not deterministic,
+so the cache would be wrong. After the summary, `fren check` writes a
+line, starting `fren: compared N answers`, of how many answers it
+compared, so that comparing nothing cannot pass for agreeing; a `DIR` that
+is not a directory is an error, and the checks do not run. A run with both options, an empty directory
+for `--query-cache` and a full one for `--verify-query-cache`, asks every
+query of the solver, checks the old answers, and leaves in the new
+directory exactly the answers of this run.
+
+The Lean-hosted front end keeps no answers across builds. Only the solver
+is skipped on a hit, and most of the hosted front end's time goes to
+writing its queries, its own work and lean-smt's, before the solver sees
+them. `cli::query_cache` states when an entry answers a query,
+`cli::kept_answer` which answers are kept, and `cli::contradicts` when a
+fresh answer contradicts a kept one:
+
+```fren
+pub struct Key {
+    script: String,       -- the script and the formulas whose values its model reads
+    solver: String,       -- cvc5's version
+    version: Int,         -- how `fren check` runs a script and stores its answer
+}
+
+pub enum Answer { Unsat, Sat, SatWithModel, Unknown }
+
+pub proc query_cache(
+    asked: Key,           -- the query's key
+    want_model?,          -- the check reads a model of a `sat` answer
+    found?,               -- an entry is at the path of `asked`'s hash
+    stored: Key,          -- its key
+    answer: Answer,       -- its answer
+): (det hit?) {
+    use self::Answer::{Sat, Unknown}
+
+    assume kept: when found?, answer != Unknown
+    ensure rule: hit? iff (found? and stored = asked and not (want_model? and answer = Sat))
+
+    expect exact: when hit?, stored.script = asked.script and stored.solver = asked.solver
+        and stored.version = asked.version
+    expect model_kept: when hit? and want_model?, answer != Sat
+    cover hash_shared: found? and stored != asked
+}
+
+pub proc kept_answer(answer: Answer): (det kept?) {
+    use self::Answer::Unknown
+
+    ensure rule: kept? iff answer != Unknown
+}
+
+pub proc contradicts(
+    fresh: Answer,        -- the solver's answer
+    kept: Answer,         -- the entry's answer to the same key
+    same_model?,          -- both have models, and they are the same
+): (det contradiction?) {
+    use self::Answer::{SatWithModel, Unknown, Unsat}
+
+    assume both_kept: fresh != Unknown and kept != Unknown
+    ensure rule: contradiction? iff ((fresh = Unsat) != (kept = Unsat)
+        or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
+
+    expect agree: when fresh = kept and fresh != SatWithModel, not contradiction?
+}
+```
 
 ## Limits
 

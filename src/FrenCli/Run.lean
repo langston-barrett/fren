@@ -16,7 +16,7 @@ import FrenCoreCodes
 
 ```
 fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
-    [--seed N] [-A|-W|-D|-F LINT]... FILE...
+    [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -57,7 +57,7 @@ open Fren.Core (Msg Paint)
 
 def usage : String :=
   "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]\n              \
-  [--seed N] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
@@ -80,7 +80,10 @@ def usage : String :=
   all of them with `all`.\n\
   `--jobs N` checks N procedures at once (default: the number of cores),\n\
   with the same output as one at a time. `--timings` then reports how long\n\
-  each procedure's checks took, slowest first, on stderr.\n\n\
+  each procedure's checks took, slowest first, on stderr.\n\
+  `--query-cache DIR` keeps the solver's answers in DIR, and answers a\n\
+  query asked before from it; `--verify-query-cache DIR` instead fails if\n\
+  the solver's answer contradicts DIR's.\n\n\
   `trace` reports the evidence for every component, and scans the tests for\n\
   `fren-covers:` markers. LEVEL is trusted, tested, solver or proved. Exit\n\
   status: 0 nothing below LEVEL and no stray markers, 1 otherwise, 2 the\n\
@@ -175,6 +178,9 @@ structure Args where
   dumpSmt : Bool := false
   /-- `check --timings` (`Reqs/Cli#timings`). -/
   timings : Bool := false
+  /-- `check --query-cache` and `check --verify-query-cache` (`Reqs/Cli#query-cache`). -/
+  queryCache? : Option String := none
+  verifyQueryCache? : Option String := none
   /-- `fmt --check` and `fix --check`. -/
   diffOnly : Bool := false
   /-- `fmt --ignore` and `fix --ignore`. -/
@@ -214,7 +220,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -342,6 +348,12 @@ where
     | "--timings" :: rest, a =>
       if a.command == .check then go rest { a with timings := true }
       else only "--timings" "check"
+    | "--query-cache" :: d :: rest, a =>
+      if a.command == .check then go rest { a with queryCache? := some d }
+      else only "--query-cache" "check"
+    | "--verify-query-cache" :: d :: rest, a =>
+      if a.command == .check then go rest { a with verifyQueryCache? := some d }
+      else only "--verify-query-cache" "check"
     | "--check" :: rest, a =>
       if a.command == .fmt || a.command == .fix then go rest { a with diffOnly := true }
       else only "--check" "fmt` and `fren fix"
@@ -835,8 +847,16 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
   let prelude := st.queryPrelude
   -- A query asked again, as some checks of a procedure share one, is
-  -- answered once (`Reqs/Cli#solver-queries`).
-  let cache : QueryCache ← IO.mkRef {}
+  -- answered once (`Reqs/Cli#solver-queries`), and one asked by an earlier
+  -- run, from `--query-cache` (`Reqs/Cli#query-cache`).
+  let store? ← if args.queryCache?.isNone && args.verifyQueryCache?.isNone then pure none else
+    some <$> QueryStore.new (args.queryCache?.map System.FilePath.mk) (args.verifyQueryCache?.map System.FilePath.mk)
+  let cache ← QueryCache.new store?
+  -- A directory to compare with that is not there would compare nothing.
+  if let some dir := args.verifyQueryCache? then
+    unless ← System.FilePath.isDir dir do
+      IO.eprintln (argError args.paint { code? := none, headline := s!"no query cache `{dir}` to compare with" })
+      return exitCode false none
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
   let spec? := specOf files
   let sy := symbolsOf spec?
@@ -978,7 +998,18 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- The tests compare each method's own verdicts, before the evidence of
     -- what they rest on changes how they are shown.
     if let some r := record? then r.modify (· ++ item.map fun (x, _) => (key, x))
+  -- A fresh answer that contradicts `--verify-query-cache`'s
+  -- (`cli::contradicts`).
+  if let some store := store? then
+    for path in ← store.mismatches.get do
+      let msg := Msg.internal s!"the solver's answer contradicts the query cache's entry `{path}`"
+      printDiag args.paint files { file := 0, span := default, msg }
+      internal := internal.push msg
   IO.eprintln (Fren.Core.summary all byTesting byBound)
+  -- How many answers it compared, so that a comparison with nothing does
+  -- not look like a pass (`Reqs/Cli#query-cache`).
+  if let (some store, some dir) := (store?, args.verifyQueryCache?) then
+    IO.eprintln s!"fren: compared {← store.compared.get} answers with the query cache `{dir}`"
   if args.timings then IO.eprint (timingReport timings)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
@@ -1574,7 +1605,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- mutants: a query of a mutant that only reads what it leaves alone, such
   -- as its assumptions' consistency, is often one of the spec's
   -- (`Reqs/Cli#solver-queries`).
-  let cache : QueryCache ← IO.mkRef {}
+  let cache ← QueryCache.new
   let prelude := st.queryPrelude
   -- As `fren check` checks `c`: with the solver, and the checks set to
   -- testing by testing; with the internal errors, each at its place in `c`.

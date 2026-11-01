@@ -93,9 +93,51 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_test
+    # Shard 0 asks every query of Fren's own requirements of the solver,
+    # with an empty query cache, and compares each answer with the one that
+    # the previous `main`'s run kept: a contradiction fails it, and so does
+    # comparing no answers at all. It then saves exactly the answers of
+    # this run, from which pull requests answer their queries
+    # (`Reqs/dev/Testing#query-cache`). `actions/cache` restores only a
+    # cache saved with the same `path`, to that path, so the previous cache
+    # is restored where this run's is saved, and moved aside.
+    - if: ${{ matrix.shard == 0 }}
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ runner.temp }}/query-cache
+        key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+        restore-keys: |
+          query-cache-${{ runner.os }}-${{ runner.arch }}-
+    - if: ${{ matrix.shard == 0 }}
+      run: |
+        if [ -d "$RUNNER_TEMP/query-cache" ]; then
+          mv "$RUNNER_TEMP/query-cache" "$RUNNER_TEMP/query-cache-previous"
+          echo "FREN_VERIFY_QUERY_CACHE=$RUNNER_TEMP/query-cache-previous" >> "$GITHUB_ENV"
+        else
+          echo "::notice title=query cache::no previous cache to compare with"
+        fi
     - run: lake test -- --timings --shard "$SHARD/5"
       env:
         SHARD: ${{ matrix.shard }}
+        FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
+    # Saved whether or not the tests passed, since the answers are the
+    # solver's, whatever the checks made of them; but not if one
+    # contradicted the previous cache, so that `main` stays red until the
+    # key covers what changed (`queryCacheVersion`).
+    - if: ${{ matrix.shard == 0 && !cancelled() }}
+      id: keep
+      run: |
+        if [ -e "$RUNNER_TEMP/query-cache.contradicted" ]; then
+          echo "::error title=query cache::an answer contradicted the previous cache; not saving this one"
+          echo "save=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "save=true" >> "$GITHUB_OUTPUT"
+        fi
+    - if: ${{ matrix.shard == 0 && !cancelled() && steps.keep.outputs.save == 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/query-cache
+        key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:

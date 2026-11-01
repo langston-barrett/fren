@@ -1,0 +1,11 @@
+-- The `queryCache` job checks this with `fren check --query-cache`, cold
+-- and warm, and compares the outputs (`Reqs/dev/Testing#query-cache`). The
+-- unrealizable procedure's counterexample comes from a model.
+proc c(x: Int): (y: Int) {
+    ensure same: y = x
+    ensure bigger: y > x
+}
+
+proc d(x: Int): (y: Int) {
+    ensure same: y = x + 1
+}

@@ -1,0 +1,5 @@
+-- `--query-cache` is an option of `fren check` only.
+--@ args: mutate --query-cache .lake/cli-test/query-cache
+proc c(x: Int): (y: Int) {
+    ensure same: y = x
+}
