@@ -7293,7 +7293,9 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
   lintItem orig
   lintTrailingCommas orig
   let modName := (← getLocal).currentModule
-  let isPub := !stx[0].isNone
+  -- A trait's method is never dead, being part of the trait, as the `fren`
+  -- command has it (`elabTrait`).
+  let isPub := !stx[0].isNone || (← getLocal).inTrait
   let nameStx := stx[2]
   let n ← itemSegName nameStx
   liftMsg nameStx (Core.checkNoBang n)
@@ -9196,6 +9198,10 @@ def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × B
     let l ← getLocal
     return (n, e, !l.outsideCore, l.undecidableDenied, l.guardedUsed)
 
+/-- The command `c`, under any of Lean's `set_option ... in` before it. -/
+partial def underSettings (c : Syntax) : Syntax :=
+  if c.isOfKind ``Lean.Parser.Command.in then underSettings c[2] else c
+
 /-- Runs `k` in the scope of the trait at `path`, declared in the module
 `modName`, as its members are. -/
 def inTraitScope (path modName : Name) (k : CommandElabM α) : CommandElabM α := do
@@ -9210,8 +9216,12 @@ have the laws among their hypotheses (`CompInfo.laws`). Each member is in
 the trait's scope, whose names shadow its module's, and reports its own
 errors. -/
 @[command_elab Lang.traitCmd] def elabTrait : CommandElab := recordingErrors fun stx => do
-  checkLexemes stx
-  checkParsed stx
+  -- Its name's and its members' lexemes, as each item's own are checked,
+  -- but not those of Lean's `set_option ... in` before a member.
+  let members := stx[4].getArgs
+  for x in #[stx[2]] ++ members.map fun m => if m.isOfKind ``Lang.lawMember then m else underSettings m[0] do
+    checkLexemes x
+    checkParsed x
   lintItem stx[2]
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule
@@ -9222,7 +9232,6 @@ errors. -/
   lintName .trait n nameStx
   let path := modName ++ n
   let selfPath := path ++ Core.selfName
-  let members := stx[4].getArgs
   for m in members do
     let (kind, isPubM, generic, uses, _, ref) := traitMemberOf m
     if let some msg := Core.traitMemberMsg? path kind isPubM generic uses then throwErrorAt ref msg.text

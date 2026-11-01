@@ -1922,7 +1922,7 @@ def toTraitMemberKind : Fren.Core.TraitMember → lang.TraitMemberKind
 -- For every member, as written, with the check that both front ends make
 -- of it (`Core.traitMemberAccepted`).
 impl trait_member: lang::trait_member for (k : Fren.Core.TraitMember) (p g u : Bool) {
-  kind := toTraitMemberKind k,
+  member := toTraitMemberKind k,
   pub? := p,
   generic? := g,
   uses? := u,

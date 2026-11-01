@@ -29,9 +29,10 @@ string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
 enumeration, an enumeration with payloads, whose outputs' variants a
 clash note may give, sets and relations with `card`, so that it
-reaches `linear_product`, the decidable core and the lints, and
+reaches `linear_product`, the decidable core and the lints,
 expressions that do not synthesize their types at each kind of site
-(`sitesProc`).
+(`sitesProc`), and traits, with laws and expectations over their methods
+(`traitGroup`).
 
 What legitimately differs is normalized away by
 `FrenTest.Frontends.compare`, whose documentation lists it, as does
@@ -943,7 +944,8 @@ partial def traitSelf (sc : WScope) (ss xs : Array String) (d : Nat) : R String 
   else return s!"step({← traitSelf sc ss xs (d - 1)}, {← traitInt sc ss xs (d - 1)})"
 
 /-- An integer term of a trait: a variable, a literal, an observation, a
-sum, or an expression of the spec's (`traitGroup`). -/
+sum, or an expression of the spec's constants and functions alone, which
+multiplies no two variables, an error (`traitGroup`). -/
 partial def traitInt (sc : WScope) (ss xs : Array String) (d : Nat) : R String := do
   match ← below (if d == 0 then 3 else 6) with
   | 0 => if xs.isEmpty then return toString (← below 4) else pick xs
@@ -951,7 +953,7 @@ partial def traitInt (sc : WScope) (ss xs : Array String) (d : Nat) : R String :
   | 2 => return s!"obs({← traitSelf sc ss xs 0})"
   | 3 => return s!"obs({← traitSelf sc ss xs (d - 1)})"
   | 4 => return s!"{← traitInt sc ss xs (d - 1)} + {← traitInt sc ss xs (d - 1)}"
-  | _ => gen { sc with vars := xs.map (·, WTy.int, true) } .int 1
+  | _ => gen { sc with vars := #[] } .int 1
 end
 
 /-- A `Bool` term of a trait, which applies `ok?` if `flag` (`traitGroup`). -/
@@ -976,12 +978,14 @@ def traitGroup (sc : WScope) : R String := do
     else "    fn obs(Self): Int\n")
   out := out ++ "    fn step(Self, Int): Self\n"
   if flag then out := out ++ "    fn ok?(Self)\n"
-  for k in [0:(← below 2) + 1] do
+  for k in [0:← below 3] do
     let law ← if ← chance 50 then
         pure s!"obs(step(s, x)) = {← traitInt sc #["s"] #["x"] 1}"
       else traitBool sc flag #["s"] #["x"] 1
     out := out ++ s!"\n    law l{k}(s: Self, x: Int): {law}\n"
   for k in [0:(← below 2) + 1] do
+    -- Now and then under a lint setting, as a member may be.
+    if ← chance 20 then out := out ++ "\n    set_option fren.lint.eq_op \"allow\" in"
     if ← chance 50 then
       let assume ← if ← chance 40 then pure s!"        assume a: {← traitBool sc flag #["s", "t"] #["x"] 0}\n" else pure ""
       let claim ← traitBool sc flag #["s", "t"] #["x"] 1

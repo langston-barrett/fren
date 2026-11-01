@@ -7734,9 +7734,11 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
   -- without the item's trailing commas, which the trait reported.
   let commas := (← get).trailingCommas
   let member (m : Item) : M Unit := do
-    modify fun s => { s with module := path, scope := path, trailingCommas := #[] }
+    -- Its own errors alone stop what follows them in it, as an item's do.
+    let errors := (← get).itemErrors
+    modify fun s => { s with module := path, scope := path, trailingCommas := #[], itemErrors := #[] }
     discard (attempt (elabItem m))
-    modify fun s => { s with module, scope := module, trailingCommas := commas }
+    modify fun s => { s with module, scope := module, trailingCommas := commas, itemErrors := errors ++ s.itemErrors }
   let isMethod (m : Item) := (kindOf (under m)).1 == .method
   let isLaw (m : Item) := (kindOf (under m)).1 == .law
   -- The methods, as functions of the trait, each in scope after it; one is

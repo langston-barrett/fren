@@ -21,6 +21,9 @@ for every value of a type that is not listed. See
 whose arguments give the called procedure's parameters. See
 [Calls](Lang/Calls.md).
 
+**Carrier.** The type of a trait, written `Self` within it. See
+[Traits](Lang/Traits.md#the-carrier).
+
 **Cardinality operator.** One of the built-in functions `exactly_one?`
 and `at_most_one?`, which hold when exactly one, or at most one, of their
 `Bool` arguments is `true`. See [Expressions](Lang/Expressions.md#cardinality).
@@ -156,6 +159,10 @@ conjunction or disjunction of its instances. See [Quantifiers](Lang/Quantifiers.
 enumeration, record, abstract type, function, constant, procedure, global
 expectation, check or claim. See [Items](Lang/Items.md).
 
+**Law.** A member of a trait, declared with `law`, that states what holds
+of its methods for all values of its variables. See
+[Traits](Lang/Traits.md#laws).
+
 **Let.** An expression, `let x := e in b`, that names the value of `e` as
 `x` within `b`. See [Local definitions](Lang/Let.md).
 
@@ -172,6 +179,11 @@ quantifier over listed types is expanded into its instances. See
 arms whose pattern matches its scrutinee and whose guard, if it has one,
 holds. See
 [Expressions](Lang/Expressions.md#matches).
+
+**Method.** A built-in operation written after its receiver and `.`, as
+`s.len` and `s.starts_with?(t)` are (see [Expressions](Lang/Expressions.md#methods));
+or a function of a trait, without a body, over its carrier (see
+[Traits](Lang/Traits.md#members)).
 
 **Member.** A declaration inside a procedure's body: an `exists` or `let`
 variable, a result's definition, a constraint or a call.
@@ -303,6 +315,10 @@ types](Lang/Generics.md#type-arguments).
 **Type parameter.** A name that stands for a type within the declaration
 of a generic type, as `T` in `enum Option<T> { None, Some(T) }`. See
 [Generic types](Lang/Generics.md#type-parameters).
+
+**Trait.** An interface, declared with `trait`: a carrier, its methods,
+the laws that they obey, and expectations that follow from the laws. See
+[Traits](Lang/Traits.md).
 
 **Trigger.** The condition under which a `when` or `unless` constraint
 applies. See [Procedures](Lang/Procedures.md#triggers).

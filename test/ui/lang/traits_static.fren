@@ -49,6 +49,11 @@ trait Laws {
 
     law number(s: Self): size(s)  --~ error: type mismatch: expected `Bool`, found `Int`
     law twice(s: Self, s: Self): size(s) = size(s)  --~ error: parameter `s` is defined multiple times
+
+    -- A member's errors stop only what follows them in it, as an item's do.
+    expect after(s: Self, t: Self) {  --~ warning: unused variable `t`
+        expect c: size(s) >= 0
+    }
 }
 
 -- Each law is outside the decidable core, for now, so `undecidable`, an

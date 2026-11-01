@@ -2,6 +2,7 @@
 -- expectations checked from the laws alone, in both front ends. Each law
 -- is outside the decidable core, for now. In a module, since Lean has an
 -- `Option` of its own.
+-- fren-covers: lang::trait_expectation
 set_option fren.lint.dead_code "allow"
 
 mod traits

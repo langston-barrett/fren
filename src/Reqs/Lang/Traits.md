@@ -65,18 +65,18 @@ both front ends call):
 pub enum TraitMemberKind { Method, Law, Expectation, DefinedFunction, OtherItem }
 
 pub proc trait_member(
-    kind: TraitMemberKind,
+    member: TraitMemberKind,
     pub?,                  -- written `pub`
     generic?,              -- it has type parameters
     uses?,                 -- its block has a `use`
 ): (det accepted?) {
     use self::TraitMemberKind::{Expectation, Law, Method}
 
-    ensure rule: accepted? iff (kind in {Method, Law, Expectation} and not pub? and not generic? and not uses?)
+    ensure rule: accepted? iff (member in {Method, Law, Expectation} and not pub? and not generic? and not uses?)
 
-    expect methods: when kind = Method and not pub? and not generic? and not uses?, accepted?
-    expect no_default_methods: when kind = TraitMemberKind::DefinedFunction, not accepted?
-    expect items_outside: when kind = TraitMemberKind::OtherItem, not accepted?
+    expect methods: when member = Method and not pub? and not generic? and not uses?, accepted?
+    expect no_default_methods: when member = TraitMemberKind::DefinedFunction, not accepted?
+    expect items_outside: when member = TraitMemberKind::OtherItem, not accepted?
 }
 ```
 
