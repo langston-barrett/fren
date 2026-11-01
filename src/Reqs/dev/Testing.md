@@ -812,8 +812,14 @@ them are listed although the ui tests elaborate them.
 `test/coverage.txt` lists the counted declarations that no test runs, one
 per line. One that is never meant to run, such as code that runs only when
 the evaluator refutes the solver, says why after ` -- `. `fren_coverage`
-fails on a counted declaration that does not run and is not listed, and on
-a listed one that runs or is no longer counted, so the list can only
-shrink; `fren_coverage --write` rewrites it as the run found it, keeping
-the reasons. The aim is a list of reasons alone. CI runs it on `main`,
-with Lean CI.
+fails on a counted declaration that does not run and is not listed: code
+that no test runs fails on `main`, in the push that adds it. A listed one
+that runs or is no longer counted only weakens the list, and gets a
+warning, on GitHub Actions an annotation of the run too, that names the
+line to remove; `fren_coverage --write` rewrites the list as the run found
+it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
+`main`, with Lean CI, and not in `pre-merge`: the instrumented build and
+the whole `lake test` on one machine take 20 to 35 minutes, about twice
+`pre-merge`'s 12 to 15, so a pull request that adds code no test runs
+fails `main` right after it merges, and a small pull request lists or
+tests it.
