@@ -28,6 +28,12 @@ scoped syntax (name := checkCmd) "#fren_check" (ppSpace notLeanKeyword fren_path
 
 end Lang
 
+register_option fren.runChecks : Bool := {
+  defValue := true
+  descr := "whether `#fren_check` runs the checks; false only elaborates what it would check, as \
+    `lake build` does for Fren's own requirements, which `fren check` checks (`Reqs/dev/Testing#own-requirements`)"
+}
+
 /-- The file name of a message logged while a Markdown spec is read that
 already starts with the name of the file it is about, if any: the
 `#fren_md`s that read the spec place it without labelling it again
@@ -521,13 +527,18 @@ where
 @[command_elab Lang.checkCmd] def elabCheck : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
   lintInvisible stx
+  -- With `fren.runChecks` off, the item it names must still resolve, but
+  -- nothing is checked or reported (`Reqs/Lean#options`).
+  let run := fren.runChecks.get (← getOptions)
   if stx[1].isNone then
+    unless run do return
     let l ← getLocal
     checkAndReport (l.comps ++ l.globals ++ l.bodies)
   else
     let r ← resolvePath (← getLocal).currentModule (pathSegs stx[1][0])
     match r with
-    | .item { kind := .compItem, path, .. } | .item { kind := .expectItem, path, .. } => checkAndReport #[path]
+    | .item { kind := .compItem, path, .. } | .item { kind := .expectItem, path, .. } =>
+      if run then checkAndReport #[path]
     | _ => throwErrorAt stx[1] (Core.wrongKindMsg "a procedure or a global expectation" r).text
 
 end Fren

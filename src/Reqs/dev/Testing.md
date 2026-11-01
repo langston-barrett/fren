@@ -83,8 +83,9 @@ pub mod testing
 - **Lean-only behaviour** (`lake build`): `#guard_msgs` tests in
   `src/FrenTest` and `src/FrenTestFiles`, e.g. the shape of generated
   definitions.
-- **Fren's own requirements**: checked by `lake build` (`#fren_md`) and by
-  the `fren` command under `lake test`.
+- **Fren's own requirements** (`lake test`, `ownSpec`): checked by the
+  `fren` command; `lake build` only elaborates them, and Lean checks them
+  on `main` (see [Own requirements](#own-requirements)).
 - **Conformance corpus** (`lake test`): random procedures whose
   constraints are all in the [decidable core](../Lang/Decidability.md),
   one corpus each for strings, sets, relations and sequences, from a fixed
@@ -578,6 +579,39 @@ pub proc fresh(
 #fren_check
 ```
 
+## Own requirements
+
+`lake build` elaborates Fren's own requirements, the specs of `src/Reqs`
+that `#fren_md` reads, but does not check them. The libraries of `Reqs` in
+`lakefile.lean` set `fren.runChecks` to false (`Reqs/Lean#options`), so
+each spec's items are elaborated, with their static errors and lints, and
+its definitions are there for the `impl`s of `Impls`, whose proofs the
+build still checks, but its `#fren_check`s check nothing. The binary
+checks them: `lake test`'s `ownSpec` job runs `fren check` over
+`ownSpecFiles`, which must list every spec that a `#fren_md` of
+`src/Reqs` reads. It runs the same checks at the same evidence as
+`#fren_check` would, and also those set to random testing, which Lean
+does not run. It runs in shard 0 of `pre-merge`, so it is the gate of
+every pull request.
+
+On `main`, the `lean ci` workflow's `own-spec-agreement` job checks them
+in Lean too. `lake -R -Kcheck_reqs=1 build --wfail Reqs` builds the
+modules of `Reqs` with `fren.runChecks` on, so that a failing or
+inconclusive check in Lean fails it. The test driver's
+`ownSpecAgreement` job, which is not among `lake test`'s jobs, then
+compares the messages that Lean reported about each spec, which Lake
+keeps in each module's trace, with those of `fren check`, spec by spec,
+as the front-end fuzzer compares a spec's (`FrenTest.Frontends`). It
+leaves out the summaries, since Lean reports one for each `#fren_check`,
+and what only the binary runs: the checks set to random testing and those
+that rest on them, which Lean leaves to `fren check` and does not report
+([Evidence](../Evidence.md#lean)). Lean reports a check once for each
+`#fren_check` of its file that runs it, so each of its messages counts
+once. It fails if a module was built without its checks. A pull request does not
+run it, so a difference between the front ends that a pull request
+causes in Fren's own requirements fails `main`'s next run, not the pull
+request's.
+
 ## Continuous integration
 
 On a pull request, the `pre-merge` workflow checks the head merged into
@@ -585,8 +619,10 @@ On a pull request, the `pre-merge` workflow checks the head merged into
 machine runs `lake build --wfail`, and others run `lake test --
 --skip-own-mutants --shard K/N`, each building only the test driver. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
-`lake test`, samples mutants of Fren's own requirements, measures the
-coverage, and saves the `.lake` for pull requests. It also runs the
+`lake test`, samples mutants of Fren's own requirements, checks them in
+Lean and compares the front ends' messages about them ([Own
+requirements](#own-requirements)), measures the coverage, and saves the
+`.lake` for pull requests. It also runs the
 front-end fuzzer on seeds that no run used before, from the run's number,
 with `--avoid-known`, of both generators: a difference of a kind that
 `knownDifferences` does not list for `--avoid-known`, a crash or a timeout
@@ -603,6 +639,20 @@ checked there. The `lint` workflow runs `lun run --check` on
 both. The `pre-merge` workflow's last job, also named `pre-merge`, passes
 only if its build and every shard passed: it is the status that reviewers
 and the coordinator rely on.
+
+Where each check runs, and why. The rule is the speed of development as a
+whole: a check that is cheap gates every pull request, and one that is
+expensive runs on `main` only, where a failure is fixed by a small pull
+request of its own rather than slowing every pull request down.
+
+| Check | `pre-merge` | `lean ci` | Why |
+|---|---|---|---|
+| `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes | yes | it is the build |
+| `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
+| `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
+| The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
+| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, it took some 10 GB in each of `Reqs.Lang` and `Reqs.Lint`, and about 500 s of the build's critical path |
+| A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
 On a pull request, `pre-merge` also uploads stripped copies of the
 binaries that it built and tested, so that a reviewer can probe the head
