@@ -74,8 +74,9 @@ what it keeps. A file's *content* is what formatting keeps of it:
 
 - its tokens and comments, in order, but for the trailing commas of lists
   and of `tested` claims and the `use` items of each [block](#imports) of
-  imports, a comma before a line break or a line comment counting as one
-  after it ([`fmt::order`](#commas-and-comments));
+  imports, a comma before a line break, a line comment or a block comment
+  that starts its line counting as one after it
+  ([`fmt::order`](#commas-and-comments));
 - the paths that each block of imports imports, as often, and whether the
   imports of each module prefix span several lines;
 - whether each comment starts its line, and the column of one at the end
@@ -156,11 +157,12 @@ parser reads, as in `f(x)`. It changes no part of a file's content. The
 job checks that formatting keeps the order of the tokens and comments,
 computed by the implementation of `fmt::ordering`, with whether each
 comment starts its line, and the imports; that no comma of what it writes,
-trailing ones and those of `use` items included, follows a line break or a
-line comment; that formatting the result again changes nothing; and that
-each file laid out again formats as the file does. It does not check that
-formatting keeps the rest of the content: the blank lines, the columns of
-comments, and whether imports span several lines.
+trailing ones and those of `use` items included, follows a line break, a
+line comment or a block comment that starts its line; that formatting the
+result again changes nothing; and that each file laid out again formats
+as the file does. It does not check that formatting keeps the rest of the
+content: the blank lines, the columns of comments, and whether imports
+span several lines.
 
 The goal is rustfmt's: that a file's content is only its tokens, comments
 and blank lines, so that how it was laid out never matters, and that
@@ -261,11 +263,9 @@ the member moves to a line of its own, which is shorter. A comment after
 the block's `}` on its line counts towards column 100 too, as joining
 would bring it onto the block's line. A signature that spans several
 lines keeps the block vertical as well, as rustfmt puts a function on
-one line only if all of it fits there: a block joins only a line whose
-first token starts an item, a member or an element of a list
-([`fmt::continued`](#a-blocks-line)), which for a block, as no block is
-in another, is the line that starts its item. So it never joins a line
-such as `): (y: Int) {`.
+one line only if all of it fits there: a block joins only the line that
+starts its item ([`fmt::continued`](#a-blocks-line)). So it never joins a
+line such as `): (y: Int) {`.
 
 Any other list is horizontal exactly when it fits, that is, when all
 three hold:
@@ -333,9 +333,10 @@ These are rustfmt's defaults, those of `use_small_heuristics =
 the lines that the lists around it give, so a list in one that is
 horizontal is horizontal too. Otherwise each list is laid out on its own:
 `fmt::list_layout` decides it from its own elements and line, as rustfmt
-lays out each, and lists alike are not made alike. So of the arms of one `match`, only one whose call is too
-wide breaks it, and of two record literals alike, only one too wide is
-vertical (`test/cli/fmt/independent.fren`):
+lays out each, and two lists that look alike may be laid out differently.
+So of the arms of one `match`, only one whose call is too wide breaks it,
+and of two record literals alike, only one too wide is vertical
+(`test/cli/fmt/independent.fren`):
 
 ```text
 ensure r1: r = match n {
@@ -518,24 +519,39 @@ expect list_layout_one_line(
 
 ### A block's line
 
-`fmt::continued` decides whether the line of a list continues an item
-from an earlier line, for a block's layout. It does unless the line's
-first token starts an item, a member or an element of a list. As no block
-is in another, a block's line that starts so is the line that starts the
-block's item, and a block whose item's signature spans several lines is
-on a line that continues it, such as `): (y: Int) {`. The formatter's
-decision implements `fmt::continued`, proved in Lean, and gives what it
-decides to `fmt::list_layout`:
+`fmt::continued` decides whether the line of a block continues an item
+from an earlier line, for the block's layout. It does unless the line's
+first token starts an item that the block is in: its procedure, function
+or global expectation, or a `set_option ... in` before it, which starts
+an item that holds that one. So a block whose item's signature spans
+several lines is on a line that continues it, such as `): (y: Int) {` or
+`: (y: Int) {`, and so is a block whose `{` starts its line. The parser
+gives the first tokens of the items that each block is in, and the
+formatter's decision implements `fmt::continued`, proved in Lean, and
+gives what it decides to `fmt::list_layout`:
 
 ```fren
-pub proc continued(
-    tokens?,                 -- the line has a token before the list's opening bracket
-    first_starts?,           -- its first token starts an item, a member or an element of a list
-): (det continued?) {
-    ensure rule: continued? iff not (tokens? and first_starts?)
+-- Indices of tokens.
+pub enum Indices { Nil, Index(Int, Indices) }
 
-    expect starts_its_item: when tokens? and first_starts?, not continued?
-    expect closing_line: when not first_starts?, continued?
+use self::Indices::Index
+
+-- Whether `i` is one of `indices`.
+pub fn has?(indices: Indices, i: Int) := match indices {
+    Indices::Nil => false,
+    Index(j, rest) => j = i or has?(rest, i),
+}
+
+pub proc continued(
+    tokens?,                 -- the line has a token before the block's `{`
+    first: Int,              -- the index of the line's first token
+    items: Indices,          -- the indices of the first tokens of the items that the block is in
+): (det continued?) {
+    -- A block joins only the line that starts its item.
+    ensure rule: continued? iff not (tokens? and has?(items, first))
+
+    expect brace_first: when not tokens?, continued?
+    expect outside_items: when not has?(items, first), continued?
 }
 ```
 
@@ -1097,14 +1113,14 @@ expect separators_after_a_block_comment(rest: Pieces) {
 }
 ```
 
-So a comma may move across line breaks and line comments, and nothing
-else moves. The order of a file's tokens and comments that is part of its
+So a comma may move across line breaks, line comments and block comments
+that start their lines, and nothing else moves. The order of a file's tokens and comments that is part of its
 [content](#safety) is `fmt::order` of its pieces, but its trailing commas
 and its `use` items: their order with their commas placed, but for the
 line breaks. `fmt::ordering` states that placing the commas first changes
 nothing, that it keeps the commas, and that the other pieces keep their
-order. That a comma moves only across line breaks and line comments is
-the definition of `fmt::put`, and `fmt::order_starts` checks one
+order. That a comma moves only across those is the definition of
+`fmt::put`, and `fmt::order_starts` checks one
 consequence: a token, a block comment or a comma at the start of the
 pieces stays at the start of their order. The job that checks formatting
 computes the order with the implementation of `fmt::ordering`, and checks

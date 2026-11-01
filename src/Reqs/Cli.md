@@ -403,9 +403,10 @@ hash that two keys share is a miss, never another script's answer.
 `unknown` is never kept, whatever its reason: a time limit is reached or
 not depending on the machine's load. Nor is an answer whose model, or
 whose key's observations, have a name with a numeric component, which an
-entry cannot hold; `fren check` never makes one. A `sat` answer keeps its model, if
-one was wanted; one without a model does not answer a query that wants
-one, which the solver then answers, and its answer replaces the entry.
+entry cannot hold; `fren check` never makes one. A `sat` answer keeps its
+model, if one was wanted; one without a model does not answer a query
+that wants one, which the solver then answers, and its answer replaces
+the entry.
 cvc5 gives a script the same answer, model and all, every time, unless it
 reaches a limit (see [Solver queries](#solver-queries)), so an answer from
 the cache is the answer that the solver would give, and the output is the
@@ -422,24 +423,38 @@ and the other `sat`, or both have models and they differ. A contradiction
 is an internal error, which names the entry, printed with no position,
 since it is about the cache rather than a file. It means that the key
 leaves out something that changed the answer, or that cvc5 is not
-deterministic, so the cache would be wrong. After the summary, `fren check` writes a
-line, starting `fren: compared N answers`, of how many answers it
-compared, so that comparing nothing cannot pass for agreeing; a `DIR` that
-is not a directory is an error, and the checks do not run. A run with
-both options, an empty directory for `--query-cache` and a full one for
-`--verify-query-cache`, asks every query of the solver, checks the old
-answers, and leaves in the new directory exactly the answers of this run.
+deterministic, so the cache would be wrong. After the summary,
+`fren check` writes a line, starting `fren: compared N answers`, of how
+many answers it compared, so that comparing nothing cannot pass for
+agreeing; a `DIR` that is not a directory is an error, and the checks do
+not run. A run with both options, an empty directory for `--query-cache`
+and a full one for `--verify-query-cache`, asks every query of the
+solver, checks the old answers, and leaves in the new directory exactly
+the answers of this run.
 
 The Lean-hosted front end keeps no answers across builds. Only the solver
 is skipped on a hit, and most of the hosted front end's time goes to
 writing its queries, its own work and lean-smt's, before the solver sees
 them. `cli::query_key` states that a query's key is every input of the
 solver's run of it: the script and the formulas whose values its model
-reads, with their guards. The variables of its model are the ones that
-the script declares, and whether a model is wanted is the answer's, as
-below. `cli::query_entry` states that an entry reads back as it was
-written, key, answer and model, whatever characters they hold, so that
-an entry is never read as another key's or with another answer.
+reads, with their guards. A query has a key only if no name of those
+formulas or guards has a numeric component (`kept?`), and then the key's
+names are the check's, component by component (`spelled?`). The
+variables of its model are the ones that the script declares, and
+whether a model is wanted is the answer's, as below. `cli::query_entry`
+states which entries are written, and that an entry reads back as it was
+written, key, answer and model, whatever characters they hold, so that an
+entry is never read as another key's or with another answer. Both are
+proved of `fren check`'s code, which [implements](Impl.md) them. In
+`cli::query_entry`, the code gives `read`, what it reads back from the
+text that it writes, so that `read`'s definition is the round trip. In
+`cli::query_key`, the code gives `observations`, those of the key that
+it makes, or none, and both `kept?` and `spelled?` are whether it makes
+one. The Req alone does not tie `spelled?` to `kept?`: `observations`
+cannot be an output, since an output of unbounded size must be defined,
+and stating `spelled? iff kept?` would constrain the inputs. The proof
+of the implementation is what shows that the two agree, so that the
+key's names are the check's whenever a key is made.
 `cli::query_cache` states when an entry answers a query,
 `cli::kept_answer` which answers are kept, and `cli::contradicts` when a
 fresh answer contradicts a kept one:
@@ -458,21 +473,57 @@ pub struct Key {
     version: Int,                      -- how `fren check` runs a script and stores its answer
 }
 
+pub enum NamePart { Text(String), Number(Int) }   -- a component of a name of the check, which may be numeric
+
+pub fn textual?(part: NamePart) := part is NamePart::Text(_)
+
+-- Every one of `parts` is text.
+set_option fren.lint.undecidable "allow" in
+pub fn all_text?(parts: Seq<NamePart>) := forall (p: NamePart), when p in parts, textual?(p)
+
+-- `parts` are the texts `texts`, one by one.
+set_option fren.lint.undecidable "allow" in
+pub fn spells?(parts: Seq<NamePart>, texts: Seq<String>) := parts.len = texts.len
+    and (forall (j: Int), when 0 <= j < parts.len, parts[j] = NamePart::Text(texts[j]))
+
+pub struct Observed {
+    name: Seq<NamePart>,            -- the name of its value in the model
+    formula: String,                -- the formula whose value the model reads
+    guard: Option<Seq<NamePart>>,   -- the name whose value must be `true` for the formula to be read
+}
+
+pub fn observed_text?(o: Observed) := all_text?(o.name) and match o.guard {
+    Option::Some(g) => all_text?(g),
+    Option::None => true,
+}
+
+-- The key's observation `k` is the check's `o`.
+pub fn holds?(o: Observed, k: Observation) := spells?(o.name, k.name) and k.formula = o.formula
+    and match o.guard {
+        Option::Some(g) => match k.guard {
+            Option::Some(h) => spells?(g, h),
+            Option::None => false,
+        },
+        Option::None => k.guard = Option::None,
+    }
+
+set_option fren.lint.undecidable "allow" in
 pub proc query_key(
     script: String,
-    observations: Seq<Observation>,
-    solver: String,       -- cvc5's version
-    version: Int,         -- the version of `fren check`'s cache
-): (det key: Key) {
+    observed: Seq<Observed>,          -- the formulas whose values its model reads, as the check names them
+    observations: Seq<Observation>,   -- the same, as a key holds them
+    solver: String,                   -- cvc5's version
+    version: Int,                     -- the version of `fren check`'s cache
+): (det kept?, det spelled?, det key: Key) {
+    ensure kept: kept? iff (forall (o: Observed), when o in observed, observed_text?(o))
+    ensure spelled: spelled? iff (observations.len = observed.len
+        and (forall (i: Int), when 0 <= i < observed.len, holds?(observed[i], observations[i])))
     out key := Key {
         script,
         observations,
         solver,
         version,
     }
-
-    expect every_input: key.script = script and key.observations = observations
-        and key.solver = solver and key.version = version
 }
 
 pub enum Answer { Unsat, Sat, SatWithModel, Unknown }
@@ -496,7 +547,7 @@ pub proc query_cache(
 }
 
 pub struct Binding {
-    name: Seq<String>,    -- the components of a name of the model
+    name: Seq<NamePart>,  -- a name of the model
     value: String,        -- its value
 }
 
@@ -506,17 +557,16 @@ pub struct Entry {
     model: Seq<Binding>,  -- the model of a `SatWithModel` answer
 }
 
+set_option fren.lint.undecidable "allow" in
 pub proc query_entry(
     written: Entry,       -- what is written, if it is kept
-    numbered?,            -- a name of its model has a numeric component
 ): (det text?, det read: Option<Entry>) {
     use self::Answer::{SatWithModel, Unknown}
 
     assume model_only_kept: when written.answer != SatWithModel, written.model = []
-    ensure kept: text? iff (written.answer != Unknown and not numbered?)
+    ensure kept: text? iff (written.answer != Unknown
+        and (forall (b: Binding), when b in written.model, all_text?(b.name)))
     out read := if text? then Option::Some(written) else Option::None
-
-    expect round_trip: when text?, read = Option::Some(written)
 }
 
 pub proc kept_answer(answer: Answer): (det kept?) {

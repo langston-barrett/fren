@@ -19,6 +19,12 @@ def deep : Atom := { label := `deep, pfx := .anonymous, e := (List.range 4).fold
 
 def cex : Unit → Fren.Core.Detail := fun _ => .none
 
+/-- Why testing reached the check of `t`, or did not (`eval::unreached`),
+where `found` tests found what it is about: `unreachedOf` of its counts,
+as `Tally.warning` reads them. -/
+def unreached (t : Tally) (found : Nat) : Unreached :=
+  unreachedOf found (t.tests + t.valueless) t.unknownTrigger t.tests
+
 -- A value, a test, a pass; or, refuted, a failure.
 #guard deep.eval {} (fun _ => none) == some true
 #guard (({} : Tally).test false (some true) (some true) cex).tests == 1
@@ -28,11 +34,11 @@ def cex : Unit → Fren.Core.Detail := fun _ => .none
 #guard (({} : Tally).test false (some true) none cex).tests == 0
 #guard (({} : Tally).test false (some true) none cex).valueless == 1
 #guard verdictOf .expect (({} : Tally).test false (some true) none cex) == .inconclusive
-#guard (({} : Tally).test false (some true) none cex).unreached 1 == .Valueless
+#guard unreached (({} : Tally).test false (some true) none cex) 1 == .Valueless
 -- Nor where the trigger fails, whatever the value.
 #guard (({} : Tally).test true (some false) (some false) cex).tests == 0
 #guard (({} : Tally).test true (some false) none cex).valueless == 0
-#guard (({} : Tally).test true (some false) none cex).unreached 1 == .Untriggered
+#guard unreached (({} : Tally).test true (some false) none cex) 1 == .Untriggered
 -- A trigger without a value does not hold, but it is not false either:
 -- the test is counted as one without a value, whatever the check's.
 #guard (({} : Tally).test true none (some true) cex).tests == 0
@@ -40,14 +46,14 @@ def cex : Unit → Fren.Core.Detail := fun _ => .none
 #guard (({} : Tally).test true none (some true) cex).valueless == 1
 #guard (({} : Tally).test true none (some true) cex).unknownTrigger == 1
 -- `F0617` at the trigger, which is what had no value.
-#guard (({} : Tally).test true none none cex).unreached 1 == .TriggerValueless
+#guard unreached (({} : Tally).test true none none cex) 1 == .TriggerValueless
 -- One false trigger and one without a value: `F0617` at the trigger, not `F0612`.
-#guard ((({} : Tally).test true (some false) none cex).test true none none cex).unreached 2 == .TriggerValueless
+#guard unreached ((({} : Tally).test true (some false) none cex).test true none none cex) 2 == .TriggerValueless
 -- The check as a whole had a value where its trigger had none but it held.
 #guard (({} : Tally).test true none (some true) cex).valued == 1
 #guard (({} : Tally).test true none none cex).valued == 0
 -- A trigger that held once, with the check without a value: `F0617` at the check.
-#guard ((({} : Tally).test true none none cex).test true (some true) none cex).unreached 2 == .Valueless
+#guard unreached ((({} : Tally).test true none none cex).test true (some true) none cex) 2 == .Valueless
 
 /-- At a tiny fuel, read at run time so that the evaluation is not done
 ahead: `deep` has no value, and a test of it neither refutes nor reaches

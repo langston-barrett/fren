@@ -1,8 +1,8 @@
 # The declarations of FrenCore, Fren and FrenCli that `lake test` does not
 # run (`Reqs/dev/Testing#coverage`). One that is never meant to run says why,
 # after ` -- `. `fren_coverage` fails on a counted declaration that does not
-# run and is not listed, and on a listed one that runs or is no longer
-# counted, so this only shrinks.
+# run and is not listed, and warns of a listed one that runs or is no longer
+# counted, naming the line to remove.
 Fren.Core.CheckResult.isRedundant
 Fren.Core.Enumeration.Shape.count
 Fren.Core.Enumeration.Shape.random.go
@@ -106,13 +106,11 @@ Fren.FinSet.instRepr
 Fren.FinSet.instSDiffOfDecidableEq
 Fren.FinSet.instSingleton
 Fren.FinSet.instUnion
-Fren.FinSet.inverse
 Fren.FinSet.join
 Fren.FinSet.joinList
 Fren.FinSet.nub
 Fren.FinSet.ofArray
 Fren.FinSet.ofList
-Fren.FinSet.range
 Fren.FinSet.setoid
 Fren.FinSet.square
 Fren.FinSet.toListUnsafe
@@ -150,7 +148,6 @@ Fren.contractProofOf
 Fren.contractRecorded
 Fren.contractStatement
 Fren.elabInterp
-Fren.elabMd
 Fren.elabPrelude
 Fren.enumDecl
 Fren.interpAccepted
@@ -162,10 +159,7 @@ Fren.natResult
 Fren.numberOperand
 Fren.paramVars
 Fren.patTerm
-Fren.pathComponents
 Fren.proveContract
-Fren.relativeTo
-Fren.relativeTo.strip
 Fren.resolveUsePath
 Fren.unreadableValue
 Fren.varType

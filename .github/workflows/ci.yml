@@ -96,11 +96,13 @@ jobs:
     # Shard 0 asks every query of Fren's own requirements of the solver,
     # with an empty query cache, and compares each answer with the one that
     # the previous `main`'s run kept: a contradiction fails it, and so does
-    # comparing no answers at all. It then saves exactly the answers of
-    # this run, from which pull requests answer their queries
-    # (`Reqs/dev/Testing#query-cache`). `actions/cache` restores only a
-    # cache saved with the same `path`, to that path, so the previous cache
-    # is restored where this run's is saved, and moved aside.
+    # comparing no answers, unless the previous cache holds no entry of
+    # this `queryCacheVersion` and cvc5, after a change that alters every
+    # key. It then saves exactly the answers of this run, from which pull
+    # requests answer their queries (`Reqs/dev/Testing#query-cache`).
+    # `actions/cache` restores only a cache saved with the same `path`, to
+    # that path, so the previous cache is restored where this run's is
+    # saved, and moved aside.
     - if: ${{ matrix.shard == 0 }}
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
@@ -144,8 +146,9 @@ jobs:
   # timeout fails it, and the specs that it found are uploaded, to be
   # fixed or filed and listed (`Reqs/dev/Testing#continuous-integration`).
   # The kinds listed for `--avoid-known` go unchecked here, with either
-  # generator: today Lean's extra `F0743` (#493). `lake test` checks the
-  # fixed corpus on every pull request.
+  # generator: today Lean's extra `F0743` and kinds of #493 and #295, each
+  # listed at a seed of an earlier run (`knownDifferences`). `lake test`
+  # checks the fixed corpus on every pull request.
   fuzz-frontends:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

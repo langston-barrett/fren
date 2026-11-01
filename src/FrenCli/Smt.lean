@@ -709,7 +709,7 @@ partial def splitLets (t : String) : String × String × String :=
 /-- The facts that the application `app`, of an uninterpreted function into
 `Nat`, into a subset type or with postconditions, or a read of a
 recursive enumeration's payload of a subset type, brings
-(`Fren.Core.appFacts`), from what `funs` says of its function
+(`Fren.Core.appFactsWith`), from what `funs` says of its function
 (`State.appFuns`) and `types` of its head symbol (`State.funFacts`): that
 it is at least 0, if its result is a `Nat`, that it matches its type, and
 that it meets each postcondition where its arguments meet the

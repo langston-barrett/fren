@@ -626,9 +626,14 @@ def hostedChecks : IO (Array String) := do
   return failures
 
 /-- `fren check --query-cache` gives the same output cold, in a fresh
-directory, as warm, from it; a third run, cold into another fresh
-directory and compared with the first's, compares answers and finds no
-contradiction, and writes the same entries (`Reqs/Cli#query-cache`). -/
+directory, as warm, from it, and the warm run answers every query from the
+cache, writing no entry; a third run, cold into another fresh directory
+and compared with the first's, compares answers and finds no
+contradiction, and writes the same entries. Comparing with a copy of the
+first's entries whose answers are flipped gives one contradiction for
+each, an internal error with no position; and a `sat` entry without a
+model answers a query that wants none, but not one that wants one
+(`Reqs/Cli#query-cache`). -/
 def queryCache : IO (Array String) := do
   let file := "test/fixtures/query_cache.fren"
   let root : FilePath := ".lake" / "query-cache-test" / s!"{← IO.monoNanosNow}"
@@ -692,6 +697,26 @@ def queryCache : IO (Array String) := do
   FrenCli.writeEntry modelless k (.sat #[]) false 0
   unless (← FrenCli.lookupEntry? modelless k false).isSome && (← FrenCli.lookupEntry? modelless k true).isNone do
     failures := failures.push "a `sat` entry without a model answers a query that wants one, or not one that does not"
+  -- The observations of a model, guarded or not, survive a key's lines
+  -- (`cli::query_key`), and one whose name has a numeric component has no
+  -- key.
+  let observations : List FrenCli.ModelObservation :=
+    [{ key := `a.b, formula := "(f x)" }, { key := `c, formula := "(g\ny)", guard? := some `d.e }]
+  match observations.mapM FrenCli.KeyObservation.of? with
+  | none => failures := failures.push "an observation whose names have no numeric component has no key"
+  | some os =>
+    let k := FrenCli.CacheKey.of "(check-sat)" os (← FrenCli.cvc5Version)
+    unless os.map (·.name) == [["a", "b"], ["c"]] && os.map (·.guard?) == [none, some ["d", "e"]]
+        && (FrenCli.CacheKey.read? (k.lines.splitOn "\n")).map (·.1) == some k do
+      failures := failures.push s!"a key's observations do not survive its lines:\n{k.lines}"
+  if (FrenCli.KeyObservation.of? { key := .num `a 1, formula := "x" }).isSome then
+    failures := failures.push "an observation whose name has a numeric component has a key"
+  -- A cache with an entry of this version and solver can be compared
+  -- with; an empty one, or one of another solver, cannot.
+  let solver ← FrenCli.cvc5Version
+  unless (← FrenCli.comparableEntries (FilePath.mk first) solver) && !(← FrenCli.comparableEntries (FilePath.mk first) "another solver")
+      && !(← FrenCli.comparableEntries (root / "missing") solver) do
+    failures := failures.push "`comparableEntries` misjudges a cache that a run could compare with"
   IO.FS.removeDirAll root
   return failures
 
@@ -727,7 +752,9 @@ def ownSpec : IO (Array String) := do
       pure #["the binary did not report how many answers it compared with the query cache"]
     else if let (some dir, true) := (verifyQueryCache?, out.contains "fren: compared 0 answers".toSlice) then
       if ← FrenCli.comparableEntries dir (← FrenCli.cvc5Version) then
-        pure #[s!"the binary compared no answers with the query cache `{dir}`"]
+        pure #[s!"the binary compared no answers with the query cache `{dir}`, which has entries of this " ++
+          "`queryCacheVersion` and cvc5: if this change alters every query's key, such as the scripts' " ++
+          "header, bump `FrenCli.queryCacheVersion`"]
       else pure #[]
     else pure #[]
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
@@ -1699,9 +1726,11 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
     -- Only the mutated file: mutants change no declaration, so the files
     -- after it elaborate as before.
     let st := FrenCli.elabParsed (before[m.file]?.getD {}) m.file chars' parsed'
-    -- Some of the mutants: `mutantState`, which elaborates again only the
+    -- One mutant in 16: `mutantState`, which elaborates again only the
     -- files after it that it must, reads as elaborating all of them again.
-    if (i / slices) % 16 == 0 then
+    -- Slice `s` takes the `s % 16`th of each 16 of its mutants, so that
+    -- those taken are spread over the files, not in blocks of neighbours.
+    if (i / slices) % 16 == slice % 16 then
       let all := (files.extract (m.file + 1)).zipIdx.foldl (init := st) fun s ((_, cs), k) =>
         FrenCli.elabParsed s (m.file + 1 + k) cs parsed[m.file + 1 + k]!
       unless sameForMutate (FrenCli.mutantState files parsed names before m chars' parsed') all do

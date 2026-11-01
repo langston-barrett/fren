@@ -49,10 +49,9 @@ def awkward : Array (Lean.Name × String) :=
   (·.1 != { key with observations := [{ name := ["v"], formula := "f", guard? := some [] }] }) == some true
 
 /-! Generated entries, over strings of the characters that the encoding
-treats specially, read back as they were written
-(`cli::query_entry`). -/
-
--- fren-covers: cli::query_entry
+treats specially, read back as they were written. `cli::query_entry`
+states it, and its implementation proves it (`Impls.QueryCache`); these
+check the binary's code as it runs. -/
 
 /-- A pseudo-random number generator, a step of a linear congruential
 generator. -/
@@ -105,5 +104,14 @@ def genEntry (seed : Nat) : CacheKey × Fren.Core.Outcome String × Bool := Id.r
     | _ => (key, .sat model, true)
 
 #guard (List.range 2000).all fun i => let (k, o, m) := genEntry i; roundTrips k o m
+
+/-- How entries of `queryCacheVersion` 2 escaped a line, before
+`escapeLine` was written over lists of characters: entries are the same,
+so their keys and paths are too, and need no new version. -/
+def escapeLineByReplace (s : String) : String :=
+  (s.replace "\\" "\\\\").replace "\n" "\\n"
+
+#guard (List.range 2000).all fun i => let (s, _) := genString i; escapeLine s == escapeLineByReplace s
+#guard escapeLine key.script == escapeLineByReplace key.script
 
 end FrenTest.QueryStore

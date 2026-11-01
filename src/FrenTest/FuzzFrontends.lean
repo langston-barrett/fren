@@ -853,6 +853,40 @@ def contractTable (sc : WScope) (name : String) : R String := do
     clauses := clauses ++ s!"    ensure t{j}: table \{ {", ".intercalate rows.toList} }\n"
   return s!"pub fn {name}(x0: Int, x1?): (r: Int) \{\n{clauses}}\n"
 
+/-- Uninterpreted functions with contracts of each form, applied by an
+enumerated procedure (`check::contract_blocks_enumeration`): preconditions
+alone, which do not keep it from being enumerated, postconditions alone,
+both, or no contract. They are declared in an order of their own, and
+applied in another, so that the function that `F0645` names, the first by
+path of those with postconditions, is neither the first declared nor the
+first applied. -/
+def enumContracts (name : String) : R String := do
+  let mut names := #["kca", "kcb", "kcc"]
+  let mut decls := ""
+  -- The names in a random order, each with a contract of a random form.
+  for _ in [0:3] do
+    let i ← below names.size
+    let f := names[i]!
+    names := names.eraseIdx! i
+    let pre := s!"    assume p: x >= {← pick #["-2", "-1", "0"]}\n"
+    let post := s!"    ensure q: r > {← pick #["x", "x - 1"]}\n"
+    let decl ← match ← below 4 with
+      | 0 => pure s!"pub fn {f}(x: Int): (r: Int) \{\n{pre}}\n"
+      | 1 => pure s!"pub fn {f}(x: Int): (r: Int) \{\n{post}}\n"
+      | 2 => pure s!"pub fn {f}(x: Int): (r: Int) \{\n{pre}{post}}\n"
+      | _ => pure s!"pub fn {f}(Int): Int\n"
+    decls := decls ++ decl
+  let mut apps := #[]
+  let mut left := #["kca", "kcb", "kcc"]
+  for _ in [0:3] do
+    let i ← below left.size
+    apps := apps.push s!"{left[i]!}(x)"
+    left := left.eraseIdx! i
+  let sum := " + ".intercalate apps.toList
+  let options := "set_option fren.enumeration.size 2 in\nset_option fren.evidence \"enumerated\" in\n"
+  return decls ++ s!"\n{options}pub proc {name}(x: Int): (det y: Int) \{\n    assume a: x != 5\n    \
+    out y := {sum}\n    expect e: y != {← below 3}\n}\n"
+
 /-- Procedures checked by the solver whose outputs have subset types: of
 `Int`, a subset of a subset, a record with a field of one, and a subset of
 that record; each output `pub` or not (`exists`), `det` or not, with
@@ -1107,6 +1141,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- Subset-typed outputs of solver-checked procedures, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← subsetOutputs)
+  -- Contracts of each form under enumeration, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← enumContracts "kc")
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
@@ -1210,8 +1247,27 @@ def Mode.lean (m : Mode) : String :=
     (if m.sites then ["sites := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
+/-- `s` with each number written right after `pre`, and followed by
+`post`, as `N`. -/
+def maskNumberAfter (s pre : String) (post : String := "") : String :=
+  match s.splitOn pre with
+  | [] => s
+  | first :: rest => first ++ String.join (rest.map fun piece =>
+    let digits := piece.toList.takeWhile Char.isDigit
+    let after := String.ofList (piece.toList.drop digits.length)
+    pre ++ if !digits.isEmpty && after.startsWith post then "N" ++ after else piece)
+
+#guard maskNumberAfter "rows 1 and 2 of a table" "rows " == "rows N and 2 of a table"
+#guard maskNumberAfter "has 12 behaviours, has 3 checks" "has " " behaviours" == "has N behaviours, has 3 checks"
+
 /-- A difference without its line, names and values, to group the
-specs that differ alike. -/
+specs that differ alike. Of the numbers, it masks, as `N`, only those that
+name a place or count what a spec happens to have: a line (`line N`), a
+row or an arm of a table or a `match` (`row N`, `rows N and N`, `arm N`,
+`arms N and N`), and a count of behaviours (`has N behaviours`). Every
+other number is part of the kind, so that two differences that it
+tells apart stay apart: an exit code, a size bound, and the counts of
+checks of a summary or a note. -/
 def signature (f : String) : String := Id.run do
   let f := match f.splitOn ": " with
     | l :: rest => if l.startsWith "line " then ": ".intercalate rest else f
@@ -1223,6 +1279,9 @@ def signature (f : String) : String := Id.run do
       inQuote := !inQuote
       if inQuote then out := out ++ "`_`"
     else if !inQuote then out := out.push c
+  for pre in ["line ", "row ", "rows ", "arm ", "arms ", "rows N and ", "arms N and "] do
+    out := maskNumberAfter out pre
+  out := maskNumberAfter out "has " " behaviours"
   let masked := maskBetween out "for the input " [", no outputs", ", it can be"]
   return maskBetween (maskBetween masked "fren says " [", Lean says"]) "Lean says " []
 
@@ -1236,7 +1295,21 @@ structure Known where
   seed : Nat
   difference : String
   issue : Nat
+  /-- As a kind for `--avoid-known` (`knownKind`), it is known only after a
+  static error: on a spec where the `fren` command reports one at or
+  before the difference's line, which its recovery from the error
+  explains. -/
+  afterStaticError : Bool := false
+  /-- As a kind, it is known only on a spec that also has a difference of
+  this kind (a `signature`), which explains it. -/
+  alongside? : Option String := none
   deriving BEq
+
+/-- The kind of the `fren` command's internal error on a formula that its
+evaluator cannot read (#493), which explains the differences listed
+`alongside?` it. -/
+def evaluatorUnread : String :=
+  "only fren reports error[-]: internal error: the evaluator does not know the meaning of a formula of `_`"
 
 /-- The differences that the front ends make on the specs of the corpus
 (`corpusSpecs?`) on `main`, each with its issue: #493 and its sub-issues,
@@ -1270,23 +1343,189 @@ def knownDifferences : List Known :=
        a relational operator over a type that is not finite quantifies over its values" },
    -- Lean reports `F0743` twice on `((({(1, 2)}).inverse).domain).card`.
    { mode := { avoidKnown := true }, seed := 41, issue := 493,
-     difference := "line 23:16: only Lean reports warning: this chain of methods has a shorter form" }]
+     difference := "line 23:16: only Lean reports warning: this chain of methods has a shorter form" },
+   -- Kinds of #493 and #295 that `--avoid-known` found on fresh seeds:
+   -- those below 2000000 in runs on `main` (`fuzz-frontends`), the others in
+   -- a run of 13,800 seeds from 3000000, at 8a0c3978.
+   -- After a static error, the front ends recover differently: only `fren`
+   -- reports the lints of what follows it, and only Lean reports an error
+   -- of its own (`Type mismatch`, `Application type mismatch`, `cannot
+   -- find`, or a lint).
+   { mode := { avoidKnown := true }, seed := 1156065, issue := 493, afterStaticError := true,
+     difference := "line 49:16: only fren reports warning[F0712]: this `Bool` expression can be simpler" },
+   { mode := { avoidKnown := true }, seed := 1156065, issue := 493, afterStaticError := true,
+     difference := "line 48:34: only fren reports warning[F0710]: unused variable `n`" },
+   { mode := { avoidKnown := true }, seed := 1160095, issue := 493, afterStaticError := true,
+     difference := "line 102:33: only fren reports warning[F0739]: parentheses directly around parentheses" },
+   { mode := { avoidKnown := true }, seed := 1160095, issue := 493, afterStaticError := true,
+     difference := "line 102:11: only fren reports warning[F0710]: unused parameter `x0`" },
+   { mode := { avoidKnown := true }, seed := 1160095, issue := 493, afterStaticError := true,
+     difference := "line 100:37: only Lean reports error: Type mismatch" },
+   { mode := { avoidKnown := true }, seed := 3000319, issue := 493, afterStaticError := true,
+     difference := "line 44:36: only fren reports warning[F0737]: both branches of `if` are written the \
+       same" },
+   { mode := { avoidKnown := true }, seed := 3000319, issue := 493, afterStaticError := true,
+     difference := "line 44:34: only fren reports warning[F0739]: parentheses directly around parentheses" },
+   { mode := { avoidKnown := true }, seed := 3000319, issue := 493, afterStaticError := true,
+     difference := "line 44:14: only fren reports warning[F0710]: unused parameter `x`" },
+   { mode := { avoidKnown := true }, seed := 3102696, issue := 493, afterStaticError := true,
+     difference := "line 58:41: only Lean reports error: Type mismatch" },
+   { mode := { avoidKnown := true }, seed := 3102696, issue := 493, afterStaticError := true,
+     difference := "line 60:28: only Lean reports error: cannot find `Small` in this scope" },
+   { mode := { avoidKnown := true }, seed := 3103202, issue := 493, afterStaticError := true,
+     difference := "line 28:103: only Lean reports error: Application type mismatch: The argument" },
+   { mode := { avoidKnown := true }, seed := 3100624, issue := 493, afterStaticError := true,
+     difference := "line 41:17: only Lean reports warning: `n1` is never negative, so it can be a `Nat`" },
+   -- After a static error, only Lean reports a name as an `Unknown
+   -- identifier`.
+   { mode := { avoidKnown := true }, seed := 1159002, issue := 295, afterStaticError := true,
+     difference := "line 17:61: only Lean reports error: Unknown identifier `b0?`" },
+   { mode := { avoidKnown := true }, seed := 3102505, issue := 295, afterStaticError := true,
+     difference := "line 25:18: only fren reports warning[F0736]: the condition and the body of `when` are \
+       written the same" },
+   { mode := { avoidKnown := true }, seed := 3102505, issue := 295, afterStaticError := true,
+     difference := "line 25:18: only fren reports warning[F0712]: this `Bool` expression can be simpler" },
+   { mode := { avoidKnown := true }, seed := 3102505, issue := 295, afterStaticError := true,
+     difference := "line 21:35: only Lean reports error: Unknown identifier `on2`" },
+   { mode := { avoidKnown := true }, seed := 3101311, issue := 295, afterStaticError := true,
+     difference := "line 49:16: only fren reports warning[F0761]: this expectation mentions no variable" },
+   { mode := { avoidKnown := true }, seed := 3101311, issue := 295, afterStaticError := true,
+     difference := "line 43:34: only fren reports warning[F0710]: unused variable `n`" },
+   { mode := { avoidKnown := true }, seed := 3101311, issue := 295, afterStaticError := true,
+     difference := "line 37:24: only Lean reports error: Unknown identifier `b1?`" },
+   { mode := { avoidKnown := true }, seed := 3104511, issue := 295, afterStaticError := true,
+     difference := "line 50:5: only fren reports warning[F0719]: defined output `k1` is the same in every \
+       behaviour" },
+   { mode := { avoidKnown := true }, seed := 3104511, issue := 295, afterStaticError := true,
+     difference := "line 48:43: only fren reports warning[F0710]: unused variable `b?`" },
+   { mode := { avoidKnown := true }, seed := 3104511, issue := 295, afterStaticError := true,
+     difference := "line 48:47: only fren reports warning[F0710]: unused variable `n`" },
+   { mode := { avoidKnown := true }, seed := 3104511, issue := 295, afterStaticError := true,
+     difference := "line 42:59: only Lean reports error: Unknown identifier `s1`" },
+   -- Only Lean notes that two clauses force an output both ways.
+   { mode := { avoidKnown := true }, seed := 1157147, issue := 493,
+     difference := "line 11: for the same input, fren notes #[], Lean notes #[line 18: `q1` forces ob1? = \
+       false, but `q2` forces ob1? = true]" },
+   { mode := { avoidKnown := true }, seed := 1158050, issue := 493,
+     difference := "line 9: for the same input, fren notes #[], Lean notes #[line 20: `q0` forces ob1? = \
+       true, but `q1` forces ob1? = false]" },
+   { mode := { avoidKnown := true }, seed := 3000892, issue := 493,
+     difference := "line 10: for the same input, fren notes #[], Lean notes #[line 19: `q1` forces ob0? = \
+       false, but `q2` forces ob0? = true]" },
+   { mode := { avoidKnown := true }, seed := 3102156, issue := 493,
+     difference := "line 4: for the same input, fren notes #[], Lean notes #[line 13: `q1` forces ob0? = \
+       true, but `q2` forces ob0? = false]" },
+   -- Only `fren` reports F0111 on `K0.card` in a guard of a `match` arm.
+   { mode := { avoidKnown := true }, seed := 1157298, issue := 493,
+     difference := "line 34:45: only fren reports error[F0111]: `K0.card` is not a single name (and Lean \
+       reports no parse error at or just before that line, in its item)" },
+   -- Only Lean notes why unsatisfiable assumptions cannot hold.
+   { mode := { avoidKnown := true }, seed := 1160124, issue := 493,
+     difference := "line 21:12: only Lean reports info: `a0` cannot hold." },
+   { mode := { avoidKnown := true }, seed := 1160124, issue := 493,
+     difference := "line 10:88: only Lean reports info: Both operands of `a0` cannot be true: the stated \
+       premises require `a0.fz::f1?@1.2` to be false." },
+   { mode := { avoidKnown := true }, seed := 1160124, issue := 493,
+     difference := "line 10:33: only Lean reports info: Both operands of `a0` cannot be false: the stated \
+       premises require `a0.fz::f1?@1.1` to be true." },
+   -- The CLI's evaluator cannot read a formula that Lean counts the
+   -- behaviours of.
+   { mode := { avoidKnown := true }, seed := 1160173, issue := 493,
+     difference := "line 28:10: only fren reports error[-]: internal error: the evaluator does not know the \
+       meaning of a formula of `fz::c1`" },
+   { mode := { avoidKnown := true }, seed := 1160173, issue := 493, alongside? := some evaluatorUnread,
+     difference := "line 28:10: only Lean reports error: `fz::c1` has 442137500 behaviours up to size 2, too \
+       many to enumerate" },
+   { mode := { avoidKnown := true }, seed := 1160173, issue := 493, alongside? := some evaluatorUnread,
+     difference := "exit: fren exits 1, and Lean's messages call for 2" },
+   { mode := { avoidKnown := true }, seed := 1160230, issue := 493,
+     difference := "line 13:10: only fren reports error[-]: internal error: the evaluator does not know the \
+       meaning of a formula of `fz::c0`" },
+   { mode := { avoidKnown := true }, seed := 1160230, issue := 493, alongside? := some evaluatorUnread,
+     difference := "line 13:10: only Lean reports error: `fz::c0` has 36238786560 behaviours up to size 2, \
+       too many to enumerate" },
+   { mode := { avoidKnown := true }, seed := 1160230, issue := 493, alongside? := some evaluatorUnread,
+     difference := "exit: fren exits 1, and Lean's messages call for 2" }]
 
-/-- The difference is of a kind that `knownDifferences` lists for a seed
-of `--avoid-known`, of either generator, and `mode` is of `--avoid-known`
-too: on the fresh seeds that CI checks with it, those kinds go
-unchecked. -/
-def knownKind (mode : Mode) (kind : String) : Bool :=
-  mode.avoidKnown && knownDifferences.any fun k => k.mode.avoidKnown && signature k.difference == kind
+/-- The line of the difference `f`, if it has one: `line N:` or `line
+N:COL:` at its start. -/
+def differenceLine? (f : String) : Option Nat := do
+  let first ← (f.splitOn ": ").head?
+  let rest ← first.dropPrefix? "line "
+  (rest.toString.splitOn ":").head?.bind String.toNat?
 
-#guard knownKind { avoidKnown := true } "only Lean reports warning: this chain of methods has a shorter form"
-#guard knownKind { avoidKnown := true, guards := true } "only Lean reports warning: this chain of methods has a shorter form"
-#guard !knownKind {} "only Lean reports warning: this chain of methods has a shorter form"
+#guard differenceLine? "line 48:34: only fren reports warning[F0710]: unused variable `n`" == some 48
+#guard differenceLine? "line 11: for the same input, fren notes #[]" == some 11
+#guard differenceLine? "exit: fren exits 1, and Lean's messages call for 2" == none
+
+/-- The difference `f`, on a spec whose differences are `found` and where
+the `fren` command reports static errors at the lines `staticLines`, is of
+a kind that `knownDifferences` lists for a seed of `--avoid-known`, of
+either generator, and `mode` is of `--avoid-known` too: on the fresh seeds
+that CI checks with it, those kinds go unchecked. An entry that holds only
+after a static error (`afterStaticError`) matches only where one is at or
+before `f`'s line, and one that holds only alongside another kind
+(`alongside?`) only where `found` has that kind. -/
+def knownKind (mode : Mode) (staticLines : Array Nat) (found : Array String) (f : String) : Bool :=
+  mode.avoidKnown && knownDifferences.any fun k =>
+    k.mode.avoidKnown && signature k.difference == signature f
+      && (!k.afterStaticError || (differenceLine? f).any fun l => staticLines.any (· ≤ l))
+      && k.alongside?.all fun a => found.any (signature · == a)
+
+section
+private def known (f : String) (staticLines : Array Nat := #[]) (found : Array String := #[f])
+    (mode : Mode := { avoidKnown := true }) : Bool :=
+  knownKind mode staticLines found f
+#guard known "line 23:16: only Lean reports warning: this chain of methods has a shorter form"
+#guard known "line 23:16: only Lean reports warning: this chain of methods has a shorter form"
+  (mode := { avoidKnown := true, guards := true })
+#guard !known "line 23:16: only Lean reports warning: this chain of methods has a shorter form" (mode := {})
 -- A kind listed only for the default generator is not known to
 -- `--avoid-known`.
-#guard !knownKind { avoidKnown := true } "only fren reports error[F0714]: this is outside the decidable core: \
+#guard !known "line 37:28: only fren reports error[F0714]: this is outside the decidable core: \
   a relational operator over a type that is not finite quantifies over its values"
+-- A lint that only `fren` reports is known after a static error, which
+-- explains it, and not on a spec without one, or with one only after it.
+#guard known "line 48:34: only fren reports warning[F0710]: unused variable `n`" #[12]
+#guard !known "line 48:34: only fren reports warning[F0710]: unused variable `n`"
+#guard !known "line 48:34: only fren reports warning[F0710]: unused variable `n`" #[50]
+-- An exit code that the evaluator's internal error explains is known only
+-- alongside that error.
+#guard !known "exit: fren exits 1, and Lean's messages call for 2"
+#guard known "exit: fren exits 1, and Lean's messages call for 2"
+  (found := #["exit: fren exits 1, and Lean's messages call for 2", "line 13:10: only fren reports error[-]: \
+    internal error: the evaluator does not know the meaning of a formula of `fz::c0`"])
+-- A verdict count, a core and another exit code are no known kind, so a
+-- spec that has one is a finding.
+#guard !known "summary: fren says `15 passed, 19 failed, 1 inconclusive, 0 redundant`, Lean says `14 passed, \
+  20 failed, 1 inconclusive, 0 redundant`" #[1]
+#guard !known "line 23: for the same input, fren says `no outputs satisfy `q2``, Lean says `no outputs \
+  satisfy `q0`, `q1` and `q2``" #[1]
+#guard !known "exit: fren exits 0, and Lean's messages call for 1" #[1]
+end
 
+-- The numbers that place a difference or count what the spec has are
+-- masked; a code's digits and a name's are not.
+#guard signature "line 28:10: only Lean reports error: `fz::c1` has 442137500 behaviours up to size 2, \
+    too many to enumerate"
+  == "only Lean reports error: `_` has N behaviours up to size 2, too many to enumerate"
+#guard signature "line 11: for the same input, fren notes #[], Lean notes #[line 18: `q1` forces ob1? = false, \
+    but `q2` forces ob1? = true]"
+  == "for the same input, fren notes #[], Lean notes #[line N: `_` forces ob1? = false, but `_` forces ob1? = true]"
+#guard signature "line 48:34: only fren reports warning[F0710]: unused variable `n`"
+  == "only fren reports warning[F0710]: unused variable `_`"
+#guard signature "line 3:1: only Lean reports error: rows 1 and 2 of a table in `f` may both hold"
+  == signature "line 9:4: only Lean reports error: rows 2 and 3 of a table in `g` may both hold"
+-- Every other number stays, so that differences that it tells apart stay
+-- apart: exit codes, size bounds and counts of checks.
+#guard signature "exit: fren exits 0, and Lean's messages call for 1"
+  != signature "exit: fren exits 1, and Lean's messages call for 2"
+#guard signature "line 1:1: only Lean reports info: 4 checks of `c` hold for every behaviour up to size 2"
+  != signature "line 1:1: only Lean reports info: 3 checks of `c` hold for every behaviour up to size 2"
+#guard signature "line 2:5: only Lean reports warning: could not decide whether `q` is vacuous: no witness up to size 2, \
+    but a larger one may exist"
+  != signature "line 2:5: only Lean reports warning: could not decide whether `q` is vacuous: no witness up to size 3, \
+    but a larger one may exist"
 /-- The ranges of seeds of the corpus that `lake test` checks: the seeds
 `[SEED, SEED + COUNT)` of each mode, a few dozen to a job of `fren_test`
 (`frontendFuzz SEED COUNT FLAGS...`), so that they spread over the
@@ -1322,9 +1561,11 @@ def corpusSpecs? : List String → Option (List (Mode × Nat))
 #guard corpusSpecs? ["5", "2", "--other"] == none
 #guard corpusSpecs? ["5"] == none
 -- The seeds of `knownDifferences` outside the corpus's ranges, the
--- `--avoid-known` one among them, and every job's specs are the corpus's
+-- `--avoid-known` ones among them, and every job's specs are the corpus's
 -- or those.
-#guard listedOutside == [({}, 153), ({ avoidKnown := true }, 41)]
+#guard listedOutside == ({}, 153) :: ([41, 1156065, 1160095, 3000319, 3102696, 3103202, 3100624, 1159002, 3102505,
+  3101311, 3104511, 1157147, 1158050, 3000892, 3102156, 1157298, 1160124, 1160173, 1160230].map
+    fun s => ({ avoidKnown := true }, s))
 #guard corpusJobs.all fun j => (corpusSpecs? (j.drop 1)).isSome
 
 /-- How the differences `found` on the spec of `mode` and `seed`, those
@@ -1374,6 +1615,14 @@ def appendedErrors (cutLines : Array Nat) (diags : Array Diagnostic) : Array (Na
     if d.line == 0 then return (← cutLines[0]?, d)
     let start ← (cutLines.toList.filter (· < d.line)).max?
     return (start, d)
+
+/-- The lines of the static errors of the `fren` command, those that are
+not a check's result nor the trailer that says that they stopped the
+checks (`knownKind`). -/
+def staticErrorLines (diags : Array Diagnostic) : Array Nat :=
+  diags.filterMap fun d =>
+    if d.severity == "error" && !FrenTest.Frontends.isCheckResult d && !FrenTest.Frontends.isStoppedTrailer d
+      && d.line > 0 then some d.line else none
 
 section
 private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
@@ -1464,7 +1713,7 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
     let elapsed := (← IO.monoMsNow) - t0
     if elapsed > 20000 then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s"
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive"
-      else if mode.avoidKnown && found.all (knownKind mode ∘ signature) then "known" else "differ"
+      else if mode.avoidKnown && found.all (knownKind mode (staticErrorLines ran.cli) found) then "known" else "differ"
     unless found.isEmpty do
       let pre := if status == "differ" then "" else s!"{status}-"
       let file : System.FilePath := run.dir / s!"{pre}fe-seed{s}.fren"

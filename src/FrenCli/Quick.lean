@@ -273,11 +273,6 @@ def Tally.test (t : Tally) (hasTrigger : Bool) (trigger value : Option Bool) (ce
              unknownTrigger := t.unknownTrigger + if triggerUnknown true hasTrigger trigger then 1 else 0 }
   else t
 
-/-- Why testing reached the check of `t`, or did not (`eval::unreached`),
-where `found` tests found what it is about. -/
-def Tally.unreached (t : Tally) (found : Nat) : Unreached :=
-  unreachedOf found (t.tests + t.valueless) t.unknownTrigger t.tests
-
 /-- The warning shown at the check of `t` (`eval::unreached_warning`),
 where `found` tests found what it is about, `untested` if the procedure
 has `F0610`, and `callAssumption` if the check is a call assumption. -/

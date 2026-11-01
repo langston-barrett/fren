@@ -279,10 +279,23 @@ pub mod testing
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known`
   steers clear of differences already known, to find others: the generator
   parenthesizes every method's receiver that is not a name, and a spec
-  whose every difference is of a kind (the difference without its line,
-  names and values, as the fuzzer's summary gives it) that the [front-end
+  whose every difference is of a kind that the [front-end
   corpus](#front-end-corpus)'s `knownDifferences` lists for a seed of
-  `--avoid-known` is counted apart, as known, rather than as a finding.
+  `--avoid-known` is counted apart, as known, rather than as a finding. A
+  kind is the difference without its line, names and values, as the
+  fuzzer's summary gives it (`signature`). Of its numbers, only those that
+  place it or count what the spec happens to have are values: a line, a
+  row's or an arm's number, and a count of behaviours. Every other number
+  is part of the kind: an exit code, a size bound, the counts of a
+  summary's verdicts or of a note's checks. Nor is a difference whose
+  wording a kind masks whole, as a summary or the core of a realizability
+  check (`fren says …, Lean says …`) is, listed as a kind: it is a
+  disagreement on a verdict, to be fixed. A kind that a static error
+  explains, as the front ends' different recovery from it does, is
+  listed as such (`afterStaticError`), and is known only on a spec where
+  the `fren` command reports a static error at or before its line; and
+  one that another difference explains, as the evaluator's internal error
+  explains an exit code, only alongside that difference (`alongside?`).
   `compare` masks only what may legitimately differ, above; a known
   difference is fixed, or listed in `knownDifferences` with its issue, and
   not masked. The known column differences of #555 are of static errors
@@ -582,9 +595,11 @@ fails the run, and the specs it found are uploaded as the artifact
 `knownDifferences` if the corpus reaches the kind) or fixed. The kinds
 listed for `--avoid-known` go unchecked on those seeds, of either
 generator, where the run counts each spec that has only those apart, as
-known: today one, Lean's extra report of a chain of methods that has a
-shorter form (`F0743`, #493). The kinds listed only for the default
-generator are checked there. The `lint` workflow runs `lun run --check` on
+known: today Lean's extra report of a chain of methods that has a shorter
+form (`F0743`, #493), and kinds of #493 and #295, each listed at a seed of
+a run on `main` or of a run of fresh seeds (`knownDifferences`'s comments
+say which kinds). The kinds listed only for the default generator are
+checked there. The `lint` workflow runs `lun run --check` on
 both. The `pre-merge` workflow's last job, also named `pre-merge`, passes
 only if its build and every shard passed: it is the status that reviewers
 and the coordinator rely on.
@@ -797,8 +812,14 @@ them are listed although the ui tests elaborate them.
 `test/coverage.txt` lists the counted declarations that no test runs, one
 per line. One that is never meant to run, such as code that runs only when
 the evaluator refutes the solver, says why after ` -- `. `fren_coverage`
-fails on a counted declaration that does not run and is not listed, and on
-a listed one that runs or is no longer counted, so the list can only
-shrink; `fren_coverage --write` rewrites it as the run found it, keeping
-the reasons. The aim is a list of reasons alone. CI runs it on `main`,
-with Lean CI.
+fails on a counted declaration that does not run and is not listed: code
+that no test runs fails on `main`, in the push that adds it. A listed one
+that runs or is no longer counted only weakens the list, and gets a
+warning, on GitHub Actions an annotation of the run too, that names the
+line to remove; `fren_coverage --write` rewrites the list as the run found
+it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
+`main`, with Lean CI, and not in `pre-merge`: the instrumented build and
+the whole `lake test` on one machine take 20 to 35 minutes, about twice
+`pre-merge`'s 12 to 15, so a pull request that adds code no test runs
+fails `main` right after it merges, and a small pull request lists or
+tests it.
