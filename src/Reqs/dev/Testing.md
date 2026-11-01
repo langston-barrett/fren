@@ -260,17 +260,38 @@ pub mod testing
   timeouts are findings, like differences: the run then exits nonzero. A
   worker that dies while checking no spec is blamed on none. Each run's
   work files are its own, but the findings are named by seed, so runs with
-  overlapping seeds in one `DIR` overwrite each other's. `--avoid-known` steers clear of differences
-  already known, to find others. A known difference that the generator
-  writes by default must not be flagged by default: `compare` masks it,
-  with its issue cited and a test in `FrontendsCompare` that it masks
-  only that, or it is fixed first, as the columns of a parenthesized
-  operand were. The known column differences of #555 are of static
+  overlapping seeds in one `DIR` overwrite each other's. `--avoid-known`
+  steers clear of differences already known, to find others: the
+  generator parenthesizes every method's receiver that is not a name, and
+  a spec whose every difference is of a kind that the [front-end
+  corpus](#front-end-corpus)'s `knownDifferences` lists is counted apart,
+  as known, rather than as a finding. `compare` masks only what may
+  legitimately differ, above; a known difference is fixed, or listed in
+  `knownDifferences` with its issue, and not masked. The known column
+  differences of #555 are of static
   errors that the generator does not write (an unknown method or field, a
   `refines`, an invalid string pattern, a higher-order call's arity), so
   `compare` masks no column. `--files FILE...` compares the front ends
   on given files, and `--print SEED` prints a generated spec. The
   comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
+- **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
+  fixed set of seeds, from both of its generators, the default one and
+  `--guards` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  with both front ends and compared as above, in `frontendFuzz` jobs of a
+  few dozen seeds each. Every difference must be listed in
+  `knownDifferences`, beside the corpus, by its generator, its seed and its
+  kind (the difference without its line, names and values, as the
+  fuzzer's summary gives it), with the issue that tracks it; and every
+  listed one must still occur, so that the list only shrinks, as
+  `knownColumnDifferences` does for the ui tests' columns. A spec whose
+  front ends differ only in undecided checks, which time limits may
+  explain, is left out both ways. A failure says how to reproduce the
+  spec, and the entry that would list it. A change to the generator
+  changes the spec of every seed, and so the corpus's differences: each
+  one is then fixed or listed with its issue, as for any other change.
+  The corpus is sized to take about 2 minutes of one CI machine. A crash
+  of the solver fails its job, and a spec that never ends holds it up, as
+  in any other job.
 
 `lake test` runs its tests as jobs, in parallel: each job is a process of
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of
@@ -505,7 +526,13 @@ machine runs `lake build --wfail`, and others run `lake test --
 --skip-own-mutants --shard K/N`, each building only the test driver. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
 `lake test`, samples mutants of Fren's own requirements, measures the
-coverage, and saves the `.lake` for pull requests. The `lint` workflow runs
+coverage, and saves the `.lake` for pull requests. It also runs the
+front-end fuzzer on seeds that no run used before, from the run's number,
+with `--avoid-known`, of both generators: a difference of a kind that
+`knownDifferences` does not list, a crash or a timeout fails the run, and
+the specs it found are uploaded as the artifact `fuzz-frontends-RUN`, to
+be filed (with the issue's number, in `knownDifferences` if the corpus
+reaches the kind) or fixed. The `lint` workflow runs
 `lun run --check` on both. The `pre-merge` workflow's last job, also named
 `pre-merge`, passes only if its build and every shard passed: it is the
 status that reviewers and the coordinator rely on.

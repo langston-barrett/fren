@@ -9,7 +9,7 @@ import Lean.Elab.Frontend
 
 The messages that either front end reports about a `.fren` file, as
 `Diagnostic`s, for the ui tests (`FrenTestMain`) and the front-end fuzzer
-(`fren_fuzz_frontends`, in `FrenFuzzFrontends`): the binary's from its rendered output, and the
+(`fren_fuzz_frontends`, in `FrenTest.FuzzFrontends`): the binary's from its rendered output, and the
 Lean front end's from elaborating the file in an environment that imports
 `Fren`.
 -/
