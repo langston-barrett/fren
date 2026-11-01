@@ -9,7 +9,8 @@ import FrenCore.Trace
 
 The formatter works on the tokens and comments of a file that parses.
 First it rewrites each block of imports (`fmt::in_block`,
-`fmt::group_layout`). Then it decides whether each list or block is on one
+`fmt::group_layout`), and puts each comma before the line breaks and line
+comments before it (`fmt::separators`). Then it decides whether each list or block is on one
 line or has one element to a line (`fmt::list_layout`), from the inside
 out whether it may be on one line, and from the outside in whether its
 line fits, where it is its line's expression (`fmt::own_line`). It keeps
@@ -199,6 +200,38 @@ def ownLine (k : ListKind) (follows : List Follower) (head close : Nat)
 /-- Whether the last element of a list is followed by a comma
 (`fmt::trailing_comma`), where `allowed` says that its syntax allows one. -/
 def trailingComma (empty vertical allowed : Bool) : Bool := !empty && vertical && allowed
+
+/-- What a piece of a file is, for placing its commas
+(`fmt::separators`). -/
+inductive PieceKind where
+  /-- A token other than a comma. -/
+  | token
+  /-- A comma. -/
+  | separator
+  | lineComment
+  | blockComment
+  | lineBreak
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- A comma cannot follow a line break or a line comment
+(`fmt::after_line?`). -/
+def afterLine : PieceKind → Bool
+  | .lineBreak | .lineComment => true
+  | _ => false
+
+/-- `p` before pieces whose commas are placed, and the commas at their
+start before it, if it is a line break or a line comment (`fmt::put`). -/
+def putPiece (kind : α → PieceKind) (p : α) : List α → List α
+  | [] => [p]
+  | c :: rest => match kind c, afterLine (kind p) with
+    | .separator, true => c :: putPiece kind p rest
+    | _, _ => p :: c :: rest
+
+/-- The pieces with each comma before the line breaks and line comments
+that precede it (`fmt::separators`). -/
+def placeSeparators (kind : α → PieceKind) : List α → List α
+  | [] => []
+  | p :: rest => putPiece kind p (placeSeparators kind rest)
 
 /-- Whether the paths of one prefix are written in braces, and whether one
 on each line (`fmt::group_layout`). -/
@@ -438,17 +471,37 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   -- `tested` claims: whether each is vertical, by its last string.
   let claimVertical (k : Nat) : Option Bool :=
     (lay.claims.find? (·.2 == k)).map fun (t, _) => tokLine k > tokLine t
-  -- Tokens and comments, in order, but for the trailing commas that the
-  -- layout decides.
+  -- The trailing commas that the layout decides: those of lists, and of
+  -- claims that are not vertical.
+  let dropped (k : Nat) : Bool :=
+    trailing.contains k || (isTok k "," && k > 0 && claimVertical (k - 1) == some false)
+  -- Tokens and comments, in order.
   let mut sorted : Array (Nat × Piece) := #[]
   for k in [0:toks.size - 1] do
-    if trailing.contains k then continue
-    -- The trailing comma of a claim that is not vertical.
-    if isTok k "," && k > 0 && claimVertical (k - 1) == some false then continue
     sorted := sorted.push (toks[k]!.span.start, mkPiece toks[k]!.span (some k))
   for c in comments do
     sorted := sorted.push (c.start, mkPiece c none)
-  let pieces := (sorted.qsort (·.1 < ·.1)).map (·.2)
+  let read := (sorted.qsort (·.1 < ·.1)).map (·.2)
+  -- Each comma before the line breaks and line comments that precede it
+  -- (`fmt::separators`): the pieces, each line break with the blank lines
+  -- in it, and each piece with its index in `read`.
+  let mut stream : Array (PieceKind × Nat) := #[]
+  for h : i in [0:read.size] do
+    if i > 0 && read[i].startLine > read[i - 1]!.endLine then
+      stream := stream.push (.lineBreak, read[i].startLine - read[i - 1]!.endLine - 1)
+    let kind := match read[i].tok? with
+      | none => if isLineComment read[i].text then .lineComment else .blockComment
+      | some k => if isTok k "," then .separator else .token
+    stream := stream.push (kind, i)
+  -- The pieces, each with the gap before it: `none` if no line ends in it,
+  -- and otherwise its blank lines. The trailing commas that the layout
+  -- decides are left out.
+  let mut placed : Array (Piece × Option Nat) := #[]
+  let mut gap : Option Nat := none
+  for (kind, n) in placeSeparators (·.1) stream.toList do
+    if kind == .lineBreak then gap := some (gap.getD 0 + n)
+    else if !(read[n]!.tok?.any dropped) then placed := placed.push (read[n]!, gap); gap := none
+  let pieces := placed.map (·.1)
   let mut pieceOf : Std.HashMap Nat Nat := {}
   for h : i in [0:pieces.size] do
     if let some k := pieces[i].tok? then pieceOf := pieceOf.insert k i
@@ -514,9 +567,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   let lineComment (i : Nat) : Bool := isComment i && isLineComment pieces[i]!.text
   -- The gap before each piece: whether a line ends in it in the source,
   -- whether it is between segments, and its blank lines.
-  let inBreak (i : Nat) : Bool := i > 0 && pieces[i]!.startLine > pieces[i - 1]!.endLine
+  let inBreak (i : Nat) : Bool := i > 0 && placed[i]!.2.isSome
   let boundary (i : Nat) : Bool := i == 0 || segment pieces[i]!.startLine != segment pieces[i - 1]!.endLine
-  let blankIn (i : Nat) : Nat := if boundary i then 0 else pieces[i]!.startLine - pieces[i - 1]!.endLine - 1
+  let blankIn (i : Nat) : Nat := if boundary i then 0 else placed[i]!.2.getD 0
   -- The gaps whose line breaks a list or block decides: each is before a
   -- token.
   let mut governed : Array (Option (Nat × Role)) := Array.replicate pieces.size none

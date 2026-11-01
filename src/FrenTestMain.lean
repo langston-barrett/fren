@@ -595,7 +595,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren", "test/cli/fmt/subset_shorthand.fren",
    "test/cli/fmt/contract.fren",
-   "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren",
+   "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren", "test/cli/fmt/commas.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
@@ -721,8 +721,8 @@ def fmtPending : List String :=
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
    "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
-   "test/ui/lints/names_sizes.fren", "test/ui/lints/parentheses_comments.fren",
-   "test/ui/lints/records.fren", "test/ui/lints/updates_covers.fren"]
+   "test/ui/lints/names_sizes.fren", "test/ui/lints/records.fren",
+   "test/ui/lints/updates_covers.fren"]
 
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing
 commas of lists and claims and for `use` items; the paths the `use` items
@@ -872,7 +872,12 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
 allows: each gap whose line break a list or block decides, with no comment
 or blank line in it and none on its lines, gets a line break or a space;
 the trailing comma of a list that may end with one, on a line without a
-comment, is dropped or added; each gap of one or more spaces between two
+comment, is dropped or added; a comma that a line comment follows on its
+line may move to a line of its own after the comment, a space taking its
+place, and
+one in a list, on a line without a comment, may start the next line, as
+the line break before a comma is not content (`fmt::separators`); each gap
+of one or more spaces between two
 tokens on a line without a comment gets 1 to 3 spaces; and then each line
 without a comment, and not inside a token, is indented by 0 to 12 spaces.
 `none` if `src` does not parse.
@@ -915,6 +920,29 @@ def relaid (src : String) (seed : Nat) : Option String := do
         let last := b.closing - 1
         if b.commas.back? == some last then edits := edits.push (toks[last]!.span.start, toks[last]!.span.stop, "")
         else edits := edits.push (toks[last]!.span.stop, toks[last]!.span.stop, ",")
+  -- Commas, on the next line (`fmt::separators`).
+  let mut listCommas : Std.HashSet Nat := {}
+  for b in lay.bracketed do
+    for k in b.commas do listCommas := listCommas.insert k
+  for h : k in [1:toks.size] do
+    if toks[k].tok != .kw "," then continue
+    let start := toks[k - 1]!.span.stop
+    let stop := toks[k].span.start
+    if !(chars.extract start stop).all (· == ' ') then continue
+    rng := (rng * 1103515245 + 12345) % 2147483648
+    if (rng / 65536) % 2 != 0 then continue
+    -- The comment after it on its line, if any.
+    let after := toks[k].span.stop
+    match comments.find? fun c => c.start ≥ after && lineOf[c.start]! == lineOf[after - 1]! with
+    | some c =>
+      -- A line comment, with only spaces before it: the comma goes on a
+      -- line of its own after it.
+      if (chars.extract after c.start).all (· == ' ') && FrenCli.Fmt.isLineComment (FrenCli.Fmt.text chars c) then
+        edits := edits.push (stop, after, " ")
+        edits := edits.push (c.stop, c.stop, "\n,")
+    | none =>
+      -- Where a list decides the line break that follows the comma.
+      if listCommas.contains k && !commented.contains lineOf[start]! then edits := edits.push (start, stop, "\n")
   let sortedEdits := edits.qsort fun (a, b, _) (c, d, _) => a < c || (a == c && b - a < d - c)
   let mut out := ""
   let mut pos := 0
