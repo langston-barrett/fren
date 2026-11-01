@@ -91,7 +91,9 @@ pub mod testing
   formatted a group at a time, each only where the new layout reads better
   than the old, and `fmtPending` is then removed (#509). Run `fren fmt`
   on a spec after editing it. Formatting every spec must also keep its
-  tokens, imports and comments, and be idempotent (`fmt::safe`), and each
+  tokens and comments in order (`fmt::order`) and its imports, leave no
+  comma, trailing ones included, after a line break or a line comment,
+  and be idempotent (`fmt::safe`), and each
   spec, laid out again at random, must format as it does
   (`fmt::layout_free`).
 

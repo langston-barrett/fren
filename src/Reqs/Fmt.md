@@ -154,9 +154,9 @@ gaps between two tokens with no space, where a space could change what the
 parser reads, as in `f(x)`. It changes no part of a file's content. The job checks
 that formatting keeps the order of the tokens and comments, computed by
 the implementation of `fmt::ordering`, with whether each comment starts
-its line, and the imports; that no comma of what it writes follows a line
-break or a line comment; that formatting the result again changes
-nothing; and that each file laid out again formats as the file does. It
+its line, and the imports; that no comma of what it writes, trailing ones
+and those of `use` items included, follows a line break or a line
+comment; that formatting the result again changes nothing; and that each file laid out again formats as the file does. It
 does not check that formatting keeps the rest of the content: the blank
 lines, the columns of comments, and whether imports span several lines.
 
@@ -996,12 +996,16 @@ So a comma may move across line breaks and line comments, and nothing
 else moves. The order of a file's tokens and comments that is part of its
 [content](#safety) is `fmt::order` of its pieces, but its trailing commas
 and its `use` items: their order with their commas placed, but for the
-line breaks. `fmt::ordering` states that it is the same however the
-commas are placed, and that it keeps the tokens, comments and commas. The
-job that checks formatting computes it with the implementation of
-`fmt::ordering`, and checks that formatting keeps it, and that the pieces
-of what formatting writes are not `fmt::misplaced?`, of every spec in the
-repository and of each laid out again.
+line breaks. `fmt::ordering` states that placing the commas first changes
+nothing, that it keeps the tokens, comments and commas, and that only
+commas move, and only across line breaks and line comments: a token, a
+block comment or a comma at the start of the pieces stays at the start of
+their order. The job that checks formatting computes it with the
+implementation of `fmt::ordering`, and checks that formatting keeps it, of
+every spec in the repository and of each laid out again. It checks too
+that all the pieces of what formatting writes, its trailing commas and
+`use` items included, are not `fmt::misplaced?`: it reads them apart from
+those whose order it compares, which leave those out.
 
 ```fren
 -- The pieces but the line breaks.
@@ -1022,6 +1026,23 @@ pub proc ordering(input: Pieces): (det output: Pieces) {
     expect placed_alike: order(place(input)) = output
     expect others_kept: others(output) = unbroken(others(input))
     expect commas_kept: commas(output) = commas(input)
+}
+
+-- A token, a block comment or a comma at the start stays at the start.
+set_option fren.evidence "random" in
+expect order_starts(rest: Pieces) {
+    expect token_stays: order(Next(Token, rest)) = Next(Token, order(rest))
+    expect block_comment_stays: order(Next(BlockComment, rest)) = Next(BlockComment, order(rest))
+    expect comma_stays: order(Next(Separator, rest)) = Next(Separator, order(rest))
+}
+
+-- `x  -- c`, a line break and `, y` orders as `x`, `,`, `-- c` and `y`, whatever follows `y`.
+set_option fren.evidence "random" in
+expect order_before_the_comment(rest: Pieces) {
+    let comma_y: Pieces := Next(Separator, Next(Token, rest))
+    let written: Pieces := Next(Token, Next(LineComment, Next(LineBreak, comma_y)))
+    let comma_comment_y: Pieces := Next(Separator, Next(LineComment, Next(Token, order(rest))))
+    expect moved: order(written) = Next(Token, comma_comment_y)
 }
 ```
 

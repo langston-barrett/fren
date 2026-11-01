@@ -725,10 +725,11 @@ def fmtPending : List String :=
    "test/ui/lints/names_sizes.fren", "test/ui/lints/records.fren",
    "test/ui/lints/updates_covers.fren"]
 
-/-- A file's pieces (`fmt::Piece`), but for the trailing commas of lists
-and claims and for `use` items, each comment with whether it starts its
-line, and the paths the `use` items import, sorted. -/
-def fmtPieces (path src : String) : Option (List (FrenCli.Fmt.PieceKind × String) × Array (Array String)) := do
+/-- A file's pieces (`fmt::Piece`), each comment with whether it starts
+its line, and the paths the `use` items import, sorted. With `all`, every
+piece; otherwise, but for the trailing commas of lists and claims and for
+`use` items. -/
+def fmtPieces (path src : String) (all := false) : Option (List (FrenCli.Fmt.PieceKind × String) × Array (Array String)) := do
   let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
   let chars := src.toList.toArray
   let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
@@ -744,11 +745,11 @@ def fmtPieces (path src : String) : Option (List (FrenCli.Fmt.PieceKind × Strin
   -- The tokens and comments, each with where it is and what it is.
   let mut pieces : Array (FrenCli.Span × FrenCli.Fmt.PieceKind × String) := #[]
   for h : k in [0:toks.size] do
-    if inUse k then continue
+    if inUse k && !all then continue
     let t := toks[k]
     let trailing := t.tok == .kw "," &&
       (toks[k + 1]?.any (fun n => n.tok == .kw "}" || n.tok == .kw ")" || n.tok == .kw "]") || (k > 0 && isStr (k - 1) && !isStr (k + 1)))
-    if !trailing then
+    if all || !trailing then
       pieces := pieces.push (t.span, if t.tok == .kw "," then .separator else .token, reprStr t.tok)
   for c in comments do
     let text := (FrenCli.Fmt.text chars c).trimAsciiEnd.toString
@@ -773,10 +774,13 @@ def fmtKept (path src : String) : Option (Array String × Array (Array String)) 
   let (stream, paths) ← fmtPieces path src
   return ((FrenCli.Fmt.keptOrder Prod.fst stream).toArray.map Prod.snd, paths)
 
-/-- Whether no comma follows a line break or a line comment: whether a
-file's pieces are not `fmt::misplaced?`. -/
+/-- Whether no comma follows a line break or a line comment, of all the
+file's pieces, trailing commas and `use` items included: whether placing
+its commas (`fmt::separators`) changes nothing. That this is whether the
+pieces are not `fmt::misplaced?` follows from `fmt::separators`'
+`none_misplaced` and `placed_already`, which are tested at random. -/
 def fmtCommasPlaced (path src : String) : Bool :=
-  (fmtPieces path src).any fun (stream, _) =>
+  (fmtPieces path src (all := true)).any fun (stream, _) =>
     FrenCli.Fmt.placeSeparators Prod.fst stream == stream
 
 /-! ## Conformance corpus (`Reqs/Lang/Decidability`) -/
