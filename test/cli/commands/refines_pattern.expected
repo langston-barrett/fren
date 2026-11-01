@@ -1,11 +1,11 @@
 error[F0603]: expectation `bad::refines_1` does not hold
-  --> test/cli/commands/refines_pattern.fren:12:5
-   |
-12 |     refines c specification(0)
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
-   |
-   = counterexample: c.y = 0
-   = help: correct the expectation, or assume what it needs
+ --> test/cli/commands/refines_pattern.fren:8:5
+  |
+8 |     refines c specification(0)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: c.y = 0
+  = help: correct the expectation, or assume what it needs
 
 fren: 5 passed, 1 failed, 0 inconclusive, in 1 tests each
 

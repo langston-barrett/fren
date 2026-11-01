@@ -6,19 +6,13 @@
 -- explains.
 mod m
 
-pub proc c(q: Seq<Int>): (big?) {
-    ensure r: big? iff q.len > 1000
-}
+pub proc c(q: Seq<Int>): (big?) { ensure r: big? iff q.len > 1000 }
 
 expect g(a_q: Seq<Int>) {
     call a := c(a_q)
     expect g: a.q[7] > 0 or a.big?
 }
 
-pub proc guarded(q: Seq<Int>) {
-    assume seventh: q[7] > 0
-}
+pub proc guarded(q: Seq<Int>) { assume seventh: q[7] > 0 }
 
-pub proc user(z: Seq<Int>) {
-    call u := guarded(z)
-}
+pub proc user(z: Seq<Int>) { call u := guarded(z) }

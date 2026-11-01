@@ -1,4 +1,2 @@
 -- An index that may be out of range is reported at its `[`.
-proc first(q: Seq<Int>): (x: Int) {
-    ensure r: x = q[0]
-}
+proc first(q: Seq<Int>): (x: Int) { ensure r: x = q[0] }

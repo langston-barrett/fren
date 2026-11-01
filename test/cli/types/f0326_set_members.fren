@@ -1,3 +1,1 @@
-proc c(s: Set<Int>): (p?) {
-    ensure r: p? iff s = {1, true}
-}
+proc c(s: Set<Int>): (p?) { ensure r: p? iff s = {1, true} }

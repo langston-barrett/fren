@@ -4,9 +4,7 @@
 -- calls among its hypotheses, which hold only where the abstraction has
 -- outputs.
 
-proc precise(x: Int): (y: Int) {
-    ensure r: y = x + 1
-}
+proc precise(x: Int): (y: Int) { ensure r: y = x + 1 }
 
 -- `empty` has no outputs, so a call of it means nothing can hold.
 proc empty(x: Int): (y: Int) {  --~ error: `empty` is not realizable

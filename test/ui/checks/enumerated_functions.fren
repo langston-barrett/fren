@@ -11,9 +11,7 @@ enum Mode { Off, Heat, Cool }
 fn allowed?(Mode)
 fn owner(Id): Id
 
-fn positive(i: Id): (r: Int) {
-    ensure post: r > 0
-}
+fn positive(i: Id): (r: Int) { ensure post: r > 0 }
 
 set_option fren.evidence "enumerated" in
 proc finite(m: Mode): (det on?) {

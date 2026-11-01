@@ -1,5 +1,3 @@
 -- A quantifier over a sequence's elements whose bound name is used as an
 -- index is outside the array property fragment, and so outside the core.
-proc lookup(q: Seq<Int>, r: Seq<Int>) {
-    ensure a: forall (i: Int), when i in q, r[i] > 0
-}
+proc lookup(q: Seq<Int>, r: Seq<Int>) { ensure a: forall (i: Int), when i in q, r[i] > 0 }

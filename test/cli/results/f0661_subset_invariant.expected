@@ -1,7 +1,7 @@
 warning[F0719]: defined output `r` is the same in every behaviour
  --> test/cli/results/f0661_subset_invariant.fren:2:14
   |
-2 | proc bad(): (r: Byte) {
+2 | proc bad(): (r: Byte) { out r := 256 }
   |              ^ mentions no variable
   |
   = help: make it a `const`, which is shared by every procedure
@@ -9,10 +9,10 @@ warning[F0719]: defined output `r` is the same in every behaviour
   = help: to allow it, `set_option fren.lint.constant_output "allow"`
 
 error[F0661]: invariant `Byte::high` does not hold
- --> test/cli/results/f0661_subset_invariant.fren:3:14
+ --> test/cli/results/f0661_subset_invariant.fren:2:34
   |
-3 |     out r := 256
-  |              ^^^ violates the invariant
+2 | proc bad(): (r: Byte) { out r := 256 }
+  |                                  ^^^ violates the invariant
   |
   = counterexample: r = 256
   = note: a value given for a subset type must satisfy each named invariant

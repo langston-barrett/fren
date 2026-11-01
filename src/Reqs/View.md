@@ -520,9 +520,7 @@ counts, so it has none as inputs:
 
 ```fren
 set_option fren.evidence "enumerated" in
-pub proc summary(): (det level: Severity) {
-    ensure always_info: level = Info
-}
+pub proc summary(): (det level: Severity) { ensure always_info: level = Info }
 ```
 
 `view::counted` says which count a result is in: by its verdict, except

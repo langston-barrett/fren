@@ -1,15 +1,15 @@
 error[F0334]: a pattern test cannot bind `v` here
- --> test/cli/types/f0334_or.fren:4:38
+ --> test/cli/types/f0334_or.fren:3:67
   |
-4 |     ensure a: when r is Reply::Value(v) or b?, w = v
-  |                                      ^ binds a name
+3 | proc c(r: Reply, b?): (w: Int) { ensure a: when r is Reply::Value(v) or b?, w = v }
+  |                                                                   ^ binds a name
   |
   = note: an operand of `or` binds no names: where the other operand holds, the pattern need not match, and `v` would have no value
   = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(v), ...`, or write a `match`
 help: ignore the value
   |
-4 -     ensure a: when r is Reply::Value(v) or b?, w = v
-4 +     ensure a: when r is Reply::Value(_) or b?, w = v
+3 - proc c(r: Reply, b?): (w: Int) { ensure a: when r is Reply::Value(v) or b?, w = v }
+3 + proc c(r: Reply, b?): (w: Int) { ensure a: when r is Reply::Value(_) or b?, w = v }
   |
 
 error: could not check due to previous errors

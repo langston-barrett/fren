@@ -1,15 +1,15 @@
 error[F0334]: a pattern test cannot bind `n` here
- --> test/cli/types/f0334_is_binder.fren:4:43
+ --> test/cli/types/f0334_is_binder.fren:3:66
   |
-4 |     ensure r: big? iff s is Shape::Circle(n)
-  |                                           ^ binds a name
+3 | proc c(s: Shape): (big?) { ensure r: big? iff s is Shape::Circle(n) }
+  |                                                                  ^ binds a name
   |
   = note: a pattern test binds names only for what follows it where it matches: the later operands of its `and`, the body of `when`, or the `then` branch of `if`
   = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(n), ...`, or write a `match`
 help: ignore the value
   |
-4 -     ensure r: big? iff s is Shape::Circle(n)
-4 +     ensure r: big? iff s is Shape::Circle(_)
+3 - proc c(s: Shape): (big?) { ensure r: big? iff s is Shape::Circle(n) }
+3 + proc c(s: Shape): (big?) { ensure r: big? iff s is Shape::Circle(_) }
   |
 
 error: could not check due to previous errors

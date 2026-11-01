@@ -6,6 +6,4 @@ proc c(x: Int): (y: Int) {
     ensure bigger: y > x
 }
 
-proc d(x: Int): (y: Int) {
-    ensure same: y = x + 1
-}
+proc d(x: Int): (y: Int) { ensure same: y = x + 1 }

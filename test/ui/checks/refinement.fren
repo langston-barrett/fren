@@ -1,9 +1,7 @@
 -- Refinement (`Reqs/Lang/Refinement`): both front ends check the
 -- obligation the same way.
 
-proc precise(x: Int): (y: Int) {
-    ensure r: y = x + 1
-}
+proc precise(x: Int): (y: Int) { ensure r: y = x + 1 }
 
 proc rough(x: Int): (y: Int) {
     assume small: x < 100
@@ -15,9 +13,7 @@ proc picky(x: Int): (y: Int) {
     ensure r: y = x + 1
 }
 
-proc wrong(x: Int): (y: Int) {
-    ensure below: y < x
-}
+proc wrong(x: Int): (y: Int) { ensure below: y < x }
 
 expect holds(x: Int) {
     assume spec_small: (x) < 100

@@ -15,21 +15,15 @@ set_option fren.lint.assertions_on_constants "allow" in
 expect arithmetic: 1 + 1 = 3
 
 set_option fren.evidence "random" in
-pub proc by_testing(a?): (b?) {
-    ensure same: b? iff a?
-}
+pub proc by_testing(a?): (b?) { ensure same: b? iff a? }
 ```
 
 A refinement that fails, which the second chapter checks too:
 
 ```fren
-pub proc precise(x: Int): (y: Int) {
-    ensure r: y = x + 1
-}
+pub proc precise(x: Int): (y: Int) { ensure r: y = x + 1 }
 
-pub proc lower(x: Int): (y: Int) {
-    ensure below: x != 0 or y < x
-}
+pub proc lower(x: Int): (y: Int) { ensure below: x != 0 or y < x }
 
 expect fails(x: Int) {
     call concrete := precise(x)

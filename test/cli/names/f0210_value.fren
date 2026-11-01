@@ -1,5 +1,3 @@
 -- An enum where a value was expected (F0210).
 enum E { A }
-proc c(e: E): (y?) {
-    ensure r: y? iff e = E
-}
+proc c(e: E): (y?) { ensure r: y? iff e = E }

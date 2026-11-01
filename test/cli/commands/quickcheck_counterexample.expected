@@ -10,16 +10,16 @@ error[F0603]: expectation `climate::thermostat::wrong` does not hold
 error[F0607]: `climate::loose::b?` is not determined by the inputs: for the input a? = false, it can be true or false
   --> test/cli/commands/quickcheck_counterexample.fren:22:26
    |
-22 | pub proc loose(a?): (det b?) {
+22 | pub proc loose(a?): (det b?) { ensure r: when a?, b? }
    |                          ^^ not determined
    |
    = note: a `det` variable must have exactly one value for each input
    = help: add guarantees that pin it down, or remove `det`
 
 error[F0603]: expectation `climate::same::same` does not hold
-  --> test/cli/commands/quickcheck_counterexample.fren:29:12
+  --> test/cli/commands/quickcheck_counterexample.fren:27:12
    |
-29 |     expect same: when x.a? = y.a?, x.b? = y.b?
+27 |     expect same: when x.a? = y.a?, x.b? = y.b?
    |            ^^^^ does not follow from the assumptions and calls
    |
    = counterexample: x_a? = false, y_a? = false, x.b? = true, y.b? = false

@@ -1,8 +1,8 @@
 error[F0205]: `A` is ambiguous: it could be any of `E::A`, `F::A`
- --> test/cli/names/f0205_ambiguous.fren:7:26
+ --> test/cli/names/f0205_ambiguous.fren:6:43
   |
-7 |     ensure r: y? iff e = A
-  |                          ^ ambiguous name
+6 | proc c(e: E): (y?) { ensure r: y? iff e = A }
+  |                                           ^ ambiguous name
   |
   = note: each enum opened with `*` here has a variant `A`
   = help: qualify it with its enum's name, e.g. `E::A`

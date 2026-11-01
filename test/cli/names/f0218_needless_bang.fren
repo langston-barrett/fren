@@ -1,10 +1,6 @@
 -- `!` on declarations that hide nothing.
-pub proc c(x!: Int): (y: Int) {
-    ensure r: y = x
-}
+pub proc c(x!: Int): (y: Int) { ensure r: y = x }
 
-pub proc d(ready?!): (go?) {
-    ensure r: go? iff ready?
-}
+pub proc d(ready?!): (go?) { ensure r: go? iff ready? }
 
 pub const LIMIT!: Int := 3

@@ -1,7 +1,3 @@
 -- A quantifier in an expression ranges over a type, not a component (F0210).
-proc d(): (ok?) {
-    ensure r: ok?
-}
-proc c(): (ok?) {
-    ensure r: ok? iff (exists (w: d), true)
-}
+proc d(): (ok?) { ensure r: ok? }
+proc c(): (ok?) { ensure r: ok? iff (exists (w: d), true) }

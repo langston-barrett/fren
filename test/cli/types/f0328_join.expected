@@ -1,8 +1,8 @@
 error[F0328]: cannot join `Rel<Int, String>` with `Rel<Int, Bool>`
- --> test/cli/types/f0328_join.fren:4:35
+ --> test/cli/types/f0328_join.fren:3:86
   |
-4 |     ensure s: p? iff (1, true) in r join q
-  |                                   ^^^^^^^^ the middle types differ
+3 | proc c(r: Rel<Int, String>, q: Rel<Int, Bool>): (p?) { ensure s: p? iff (1, true) in r join q }
+  |                                                                                      ^^^^^^^^ the middle types differ
   |
   = note: `r join q` composes `r: Rel<A, B>` with `q: Rel<B, C>`: the second type of `r` is the first of `q`
 

@@ -3,9 +3,7 @@
 -- expectation is refuted rather than left untested.
 mod words
 
-pub proc word(text: String): (det accepted?) {
-    ensure rule: accepted? iff text.matches?(r"[a-z]+")
-}
+pub proc word(text: String): (det accepted?) { ensure rule: accepted? iff text.matches?(r"[a-z]+") }
 
 expect no_zz(a_text: String) {
     call a := word(a_text)

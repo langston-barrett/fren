@@ -1,14 +1,14 @@
 error[F0405]: call `s` has no parameter or result named `totl`
- --> test/cli/instances/f0405_no_var.fren:7:19
+ --> test/cli/instances/f0405_no_var.fren:5:19
   |
-7 |     ensure r: o = s.totl
+5 |     ensure r: o = s.totl
   |                   ^^^^^^ unknown variable
   |
   = note: the variables of `s` are `a` and `total`
 help: a variable with a similar name exists: `s.total`
   |
-7 -     ensure r: o = s.totl
-7 +     ensure r: o = s.total
+5 -     ensure r: o = s.totl
+5 +     ensure r: o = s.total
   |
 
 error: could not check due to previous errors

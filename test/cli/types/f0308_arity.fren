@@ -1,6 +1,4 @@
 -- A function applied to the wrong number of arguments (F0308).
 type Name
 fn arity(Name): Int
-proc c(x: Name): (y: Int) {
-    ensure r: y = arity(x, x)
-}
+proc c(x: Name): (y: Int) { ensure r: y = arity(x, x) }

@@ -1,13 +1,11 @@
 --- test/cli/fix/fmt.fren
 +++ test/cli/fix/fmt.fren
-@@ -3,4 +3,5 @@
+@@ -3,4 +3,3 @@
 -pub enum Mode {Heat,Cool}
 -use Mode::*
 -use Mode::Cool
 -proc c(m:Mode): (h?) { ensure r: h? iff m = Heat }
 +pub enum Mode { Heat, Cool }
 +use Mode::Heat
-+proc c(m: Mode): (h?) {
-+    ensure r: h? iff m = Heat
-+}
++proc c(m: Mode): (h?) { ensure r: h? iff m = Heat }
 exit=1

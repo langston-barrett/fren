@@ -1,7 +1,7 @@
 error[F0603]: expectation `words::no_zz::no_zz` does not hold
-  --> test/cli/commands/quickcheck_global_strings.fren:12:12
+  --> test/cli/commands/quickcheck_global_strings.fren:10:12
    |
-12 |     expect no_zz: when a.text.contains?("zz"), not a.accepted?
+10 |     expect no_zz: when a.text.contains?("zz"), not a.accepted?
    |            ^^^^^ does not follow from the assumptions and calls
    |
    = counterexample: a_text = "zza", a.accepted? = true

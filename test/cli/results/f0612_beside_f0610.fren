@@ -6,13 +6,9 @@
 -- no input.
 mod m
 
-pub proc guarded(x: Int) {
-    assume t: when 7 * x = 123459, x > 0
-}
+pub proc guarded(x: Int) { assume t: when 7 * x = 123459, x > 0 }
 
-pub proc never(x: Int) {
-    assume n: x + 1 < x
-}
+pub proc never(x: Int) { assume n: x + 1 < x }
 
 pub proc user2(z: Int) {
     call u := guarded(z)

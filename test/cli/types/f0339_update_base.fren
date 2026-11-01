@@ -1,4 +1,2 @@
 -- A record update of an `Int`.
-proc c(n: Int): (m: Int) {
-    ensure r: m = { n with x := 1 }
-}
+proc c(n: Int): (m: Int) { ensure r: m = { n with x := 1 } }

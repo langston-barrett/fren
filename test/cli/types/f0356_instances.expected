@@ -1,8 +1,8 @@
 error[F0356]: this quantifier has 65536 instances, more than 256
- --> test/cli/types/f0356_instances.fren:4:31
+ --> test/cli/types/f0356_instances.fren:3:52
   |
-4 |     ensure r: ok? iff (forall (a b: Byte), a = x or b = x)
-  |                               ^^^^^^^^^^^ 65536 instances
+3 | proc c(x: Byte): (ok?) { ensure r: ok? iff (forall (a b: Byte), a = x or b = x) }
+  |                                                    ^^^^^^^^^^^ 65536 instances
   |
   = note: a quantifier is expanded into one instance for each combination of the values of its bound names, at most 256
   = help: quantify over a smaller type, or state it of a variable of that type instead

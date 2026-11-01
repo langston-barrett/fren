@@ -1,4 +1,2 @@
 -- A pattern test on a set.
-proc c(s: Set<Int>): (empty?) {
-    ensure r: empty? iff s is _
-}
+proc c(s: Set<Int>): (empty?) { ensure r: empty? iff s is _ }

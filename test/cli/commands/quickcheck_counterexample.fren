@@ -19,9 +19,7 @@ pub proc thermostat(temp: Int, target: Int): (mode: Mode) {
     expect wrong: when temp < 60, mode = Heat
 }
 
-pub proc loose(a?): (det b?) {
-    ensure r: when a?, b?
-}
+pub proc loose(a?): (det b?) { ensure r: when a?, b? }
 
 expect same(x_a?, y_a?) {
     call x := loose(x_a?)

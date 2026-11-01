@@ -1,44 +1,81 @@
 --- test/cli/fmt/blocks.fren
 +++ test/cli/fmt/blocks.fren
-@@ -9 +9,3 @@
--pub proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-+pub proc c(m: Mode): (on?) {
+@@ -17,3 +17 @@
+-pub proc d(m: Mode): (on?) {
+-    ensure r: on? iff m = Mode::Heat
+-}
++pub proc d(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+@@ -25,3 +23 @@
+-pub proc just_fits(n: Int): (on?) {
+-    ensure r: on? iff n = 1111111111111111111111111111111111111111
+-}
++pub proc just_fits(n: Int): (on?) { ensure r: on? iff n = 1111111111111111111111111111111111111111 }
+@@ -41 +37,3 @@
+-): (on?) { ensure r: on? iff m = Mode::Heat }
++): (on?) {
 +    ensure r: on? iff m = Mode::Heat
 +}
-@@ -15 +17,4 @@
--pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
+@@ -51,3 +49 @@
+-pub proc trailing_fits(n: Int): (y?) {
+-    ensure r: y? iff n > 1
+-}  -- a trailing comment here
++pub proc trailing_fits(n: Int): (y?) { ensure r: y? iff n > 1 }  -- a trailing comment here
+@@ -59,3 +55 @@
+-proc nested(m: Mode): (o?) {
+-    ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } }
+-}
++proc nested(m: Mode): (o?) { ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } } }
+@@ -64 +58,7 @@
+-    ensure r: on? iff and { m = Mode::Heat, m = Mode::Cool, m = Mode::Heat, m = Mode::Cool, m = Mode::Heat }
++    ensure r: on? iff and {
++        m = Mode::Heat,
++        m = Mode::Cool,
++        m = Mode::Heat,
++        m = Mode::Cool,
++        m = Mode::Heat,
++    }
+@@ -67,2 +67,9 @@
+-pub fn single(x: Int): (r: Int) {
+-    out r := x + 1
++pub fn single(x: Int): (r: Int) { out r := x + 1 }
++
++expect single_global(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
++
++pub proc only_use(m: Mode): (on?) { use self::Mode::Heat }
++
 +pub proc e(m: Mode): (on?) {
 +    ensure r: on? iff m = Mode::Heat
 +    set_option fren.evidence "random" in expect s: on? or m = Mode::Cool
-+}
-@@ -17 +22,6 @@
--pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
+@@ -71,2 +78,5 @@
+-expect single_global(m: Mode) {
+-    expect a: m is Mode::Heat | Mode::Cool
 +pub proc f(n: Int): (y: Int) {
 +    ensure r: y = match n {
 +        0 => 1,
 +        _ => 0,
 +    }
-+}
-@@ -19 +29,4 @@
--pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
+@@ -75,2 +85,3 @@
+-pub proc only_use(m: Mode): (on?) {
+-    use self::Mode::Heat
 +pub fn g(x: Int): (r: Int) {
 +    assume p: x > 0
 +    out r := x + 1
-+}
-@@ -21 +34,3 @@
--expect h(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
-+expect h(m: Mode) {
-+    expect a: m is Mode::Heat | Mode::Cool
-+}
-@@ -25 +40,2 @@
+@@ -79,6 +89,0 @@
+-pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
+-
+-pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
+-
+-pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
+-
+@@ -89 +94,2 @@
 -pub proc j(x: Int): (y: Int) { ensure a: y = x
 +pub proc j(x: Int): (y: Int) {
 +    ensure a: y = x
-@@ -28 +44,2 @@
+@@ -92 +98,2 @@
 -    ensure b: y >= x }
 +    ensure b: y >= x
 +}
-@@ -30 +47,4 @@
+@@ -94 +101,4 @@
 -pub proc k(m: Mode): (on?) { use self::Mode::Heat use self::Mode::Cool ensure r: on? iff m = Heat or m = Cool }
 +pub proc k(m: Mode): (on?) {
 +    use self::Mode::{Cool, Heat}

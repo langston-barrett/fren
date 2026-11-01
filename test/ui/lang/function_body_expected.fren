@@ -38,9 +38,7 @@ expect values(x: Int, k: Kind) {
 -- result's type: the Lean front end once left their type to Lean, which
 -- could not find `inter`'s instance before unifying the branches.
 fn branch_inter(x: Int): Set<Int> := if x > 0 then {x} else {} inter {}
-proc branch_out(x: Int): (det s: Set<Int>) {
-    out s := if x > 0 then {x} else ({} minus {})
-}
+proc branch_out(x: Int): (det s: Set<Int>) { out s := if x > 0 then {x} else ({} minus {}) }
 
 -- A generic result, which mentions the type parameter, with `:=` and as a
 -- function block.

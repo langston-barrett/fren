@@ -272,15 +272,11 @@ for every expression.
 
 ```fren
 set_option fren.lint.erasing_op "allow" in
-pub proc empty_membership_written(x: Int): (det v?) {
-    out v? := x in {}
-}
+pub proc empty_membership_written(x: Int): (det v?) { out v? := x in {} }
 
 set_option fren.lint.unused_variables "allow" in
 set_option fren.lint.constant_output "allow" in
-pub proc empty_membership_value(x: Int): (det v?) {
-    out v? := false
-}
+pub proc empty_membership_value(x: Int): (det v?) { out v? := false }
 
 expect empty_membership_sound(x: Int) {
     call concrete := empty_membership_value(x)
@@ -292,15 +288,11 @@ expect empty_membership_complete(x: Int) {
 }
 
 set_option fren.lint.erasing_op "allow" in
-pub proc empty_subset_written(s: Set<Int>): (det v?) {
-    out v? := {} subset s
-}
+pub proc empty_subset_written(s: Set<Int>): (det v?) { out v? := {} subset s }
 
 set_option fren.lint.unused_variables "allow" in
 set_option fren.lint.constant_output "allow" in
-pub proc empty_subset_value(s: Set<Int>): (det v?) {
-    out v? := true
-}
+pub proc empty_subset_value(s: Set<Int>): (det v?) { out v? := true }
 
 expect empty_subset_sound(s: Set<Int>) {
     call concrete := empty_subset_value(s)
@@ -427,9 +419,7 @@ pub proc same_rows_written(n: Int): (det v: Int) {
     }
 }
 
-pub proc same_rows_fixed(n: Int): (det v: Int) {
-    out v := n + 1
-}
+pub proc same_rows_fixed(n: Int): (det v: Int) { out v := n + 1 }
 
 expect same_rows_sound(n: Int) {
     call concrete := same_rows_fixed(n)

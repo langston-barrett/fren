@@ -1,31 +1,31 @@
 error[F0611]: an index of `first::r` may be out of range
- --> test/cli/commands/refinement_definedness.fren:4:19
+ --> test/cli/commands/refinement_definedness.fren:3:55
   |
-4 |     ensure r: y = q[0]
-  |                   ^^^^ may be out of range
+3 | pub proc first(q: Seq<Int>): (y: Int) { ensure r: y = q[0] }
+  |                                                       ^^^^ may be out of range
   |
   = counterexample: q = [], y = 0
   = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
   = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
 
 error[F0603]: expectation `same::refines_1` does not hold
-  --> test/cli/commands/refinement_definedness.fren:11:5
-   |
-11 |     refines concrete first(q)
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
-   |
-   = counterexample: q = [], concrete.y = -1
-   = help: correct the expectation, or assume what it needs
+ --> test/cli/commands/refinement_definedness.fren:7:5
+  |
+7 |     refines concrete first(q)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
+  |
+  = counterexample: q = [], concrete.y = -1
+  = help: correct the expectation, or assume what it needs
 
 error[F0611]: an index of `same::refines_1` may be out of range
-  --> test/cli/commands/refinement_definedness.fren:11:5
-   |
-11 |     refines concrete first(q)
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ may be out of range
-   |
-   = counterexample: q = [], concrete.y = 0
-   = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
-   = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
+ --> test/cli/commands/refinement_definedness.fren:7:5
+  |
+7 |     refines concrete first(q)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^ may be out of range
+  |
+  = counterexample: q = [], concrete.y = 0
+  = note: out of range, `q[i]` is an unknown value, so the constraint says nothing useful there
+  = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
 
 fren: 7 passed, 3 failed, 0 inconclusive, 0 redundant
 

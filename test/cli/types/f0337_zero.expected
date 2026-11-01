@@ -1,8 +1,8 @@
 error[F0337]: `mod` by zero
- --> test/cli/types/f0337_zero.fren:5:20
+ --> test/cli/types/f0337_zero.fren:4:43
   |
-5 |     out r := x mod NONE
-  |                    ^^^^ the divisor is `0`
+4 | proc c(x: Int): (r: Int) { out r := x mod NONE }
+  |                                           ^^^^ the divisor is `0`
   |
   = note: SMT-LIB leaves division by zero unspecified, and Lean makes it `0`, so Fren rejects it
 

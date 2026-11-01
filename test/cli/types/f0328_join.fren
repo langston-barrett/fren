@@ -1,5 +1,3 @@
 -- `join` needs the second type of its left operand to be the first of its right.
 -- fren-covers: lang::relation_op
-proc c(r: Rel<Int, String>, q: Rel<Int, Bool>): (p?) {
-    ensure s: p? iff (1, true) in r join q
-}
+proc c(r: Rel<Int, String>, q: Rel<Int, Bool>): (p?) { ensure s: p? iff (1, true) in r join q }

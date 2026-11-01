@@ -10,9 +10,7 @@ proc c(x: Int): (abs: Int, det exp: Int) {
     expect wrong: abs = exp  --~ error: expectation `c::wrong` does not hold
 }
 
-proc len_of(sqrt: Int): (det len: Int) {
-    ensure r: len = sqrt.abs
-}
+proc len_of(sqrt: Int): (det len: Int) { ensure r: len = sqrt.abs }
 
 proc through_instance(ite: Int): (det select: Int) {
     call str := len_of(ite)

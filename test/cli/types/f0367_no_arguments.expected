@@ -1,8 +1,8 @@
 error[F0367]: `exactly_one?` needs at least one argument
- --> test/cli/types/f0367_no_arguments.fren:4:15
+ --> test/cli/types/f0367_no_arguments.fren:3:24
   |
-4 |     expect e: exactly_one?() or a?
-  |               ^^^^^^^^^^^^^^ no arguments
+3 | proc c(a?) { expect e: exactly_one?() or a? }
+  |                        ^^^^^^^^^^^^^^ no arguments
   |
   = note: `exactly_one?` counts how many of its `Bool` arguments are `true`, as in `exactly_one?(a?, b?)`
 

@@ -1,41 +1,41 @@
 error[F0218]: `x!` shadows nothing
  --> test/cli/names/f0218_needless_bang.fren:2:12
   |
-2 | pub proc c(x!: Int): (y: Int) {
+2 | pub proc c(x!: Int): (y: Int) { ensure r: y = x }
   |            ^^ nothing to shadow
   |
   = note: `!` marks a declaration that hides a name in scope, but no `x` that a use could mean is in scope here
 help: remove the `!`
   |
-2 - pub proc c(x!: Int): (y: Int) {
-2 + pub proc c(x: Int): (y: Int) {
+2 - pub proc c(x!: Int): (y: Int) { ensure r: y = x }
+2 + pub proc c(x: Int): (y: Int) { ensure r: y = x }
   |
 
 error[F0218]: `ready?!` shadows nothing
- --> test/cli/names/f0218_needless_bang.fren:6:12
+ --> test/cli/names/f0218_needless_bang.fren:4:12
   |
-6 | pub proc d(ready?!): (go?) {
+4 | pub proc d(ready?!): (go?) { ensure r: go? iff ready? }
   |            ^^^^^^^ nothing to shadow
   |
   = note: `!` marks a declaration that hides a name in scope, but no `ready?` that a use could mean is in scope here
 help: remove the `!`
   |
-6 - pub proc d(ready?!): (go?) {
-6 + pub proc d(ready?): (go?) {
+4 - pub proc d(ready?!): (go?) { ensure r: go? iff ready? }
+4 + pub proc d(ready?): (go?) { ensure r: go? iff ready? }
   |
 
 error[F0218]: `LIMIT!` shadows nothing
-  --> test/cli/names/f0218_needless_bang.fren:10:11
-   |
-10 | pub const LIMIT!: Int := 3
-   |           ^^^^^^ nothing to shadow
-   |
-   = note: `!` marks a declaration that hides a name in scope, but no `LIMIT` that a use could mean is in scope here
+ --> test/cli/names/f0218_needless_bang.fren:6:11
+  |
+6 | pub const LIMIT!: Int := 3
+  |           ^^^^^^ nothing to shadow
+  |
+  = note: `!` marks a declaration that hides a name in scope, but no `LIMIT` that a use could mean is in scope here
 help: remove the `!`
-   |
-10 - pub const LIMIT!: Int := 3
-10 + pub const LIMIT: Int := 3
-   |
+  |
+6 - pub const LIMIT!: Int := 3
+6 + pub const LIMIT: Int := 3
+  |
 
 error: could not check due to previous errors
 

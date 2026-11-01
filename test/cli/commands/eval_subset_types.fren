@@ -3,6 +3,4 @@
 -- if it is an input's, or violate the component, if it is an output's.
 type Byte = n: Int where invariant: n is 0..=255
 type AtLeastTen = n: Int where invariant: n is 10..
-proc c(x: Byte): (y: AtLeastTen) {
-    ensure r: y = x - 295
-}
+proc c(x: Byte): (y: AtLeastTen) { ensure r: y = x - 295 }

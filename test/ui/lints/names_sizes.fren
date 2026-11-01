@@ -56,9 +56,7 @@ proc shadowed(a: Int, b: Int, c: Int, d: Int, boxed: Boxed): (total: Int) {
     }
 }
 
-proc three(a: Int, b: Int): (s: Int) {
-    ensure r: s = a + b
-}
+proc three(a: Int, b: Int): (s: Int) { ensure r: s = a + b }
 
 -- A `match` binder counts.
 proc with_binder(a: Int, b: Int, c: Int, x: Boxed): (total: Int) {  --~ warning: procedure `with_binder` declares 5 single-character names

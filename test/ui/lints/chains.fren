@@ -12,9 +12,7 @@ struct P { x: Int, y: Int }
 -- A set type, for the solver's logic.
 pub const ALL: Set<E> := {E::A, E::B, E::C, E::D}
 
-proc sub(x: Int): (o?) {
-    ensure r: o? iff x > 0
-}
+proc sub(x: Int): (o?) { ensure r: o? iff x > 0 }
 
 proc chains(e: E, s: S, x: Int, c?): (y1: Int, y2: Int, p?) {
     use E::{A, B}

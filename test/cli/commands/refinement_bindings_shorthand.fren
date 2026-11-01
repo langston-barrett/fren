@@ -1,11 +1,7 @@
 -- A binding `k` alone means `k := k`, so it needs a variable `k` of the
 -- concrete component.
-proc precise(x: Int): (y: Int) {
-    ensure r: y = x
-}
-proc rough(k: Int): (z: Int) {
-    ensure r: z >= k
-}
+proc precise(x: Int): (y: Int) { ensure r: y = x }
+proc rough(k: Int): (z: Int) { ensure r: z >= k }
 expect fits(x: Int) {
     call concrete := precise(x)
     expect r: ((concrete.y)) >= (k)

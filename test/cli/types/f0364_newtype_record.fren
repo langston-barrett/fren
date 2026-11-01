@@ -1,6 +1,4 @@
 -- A newtype built as a record with named fields.
 pub struct Ms(Int)
 
-proc c(): (t: Ms) {
-    ensure r: t = Ms { value := 5 }
-}
+proc c(): (t: Ms) { ensure r: t = Ms { value := 5 } }

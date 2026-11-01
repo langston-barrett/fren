@@ -1,34 +1,34 @@
 warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tests
-  --> test/cli/results/f0617_global_instance.fren:18:10
+  --> test/cli/results/f0617_global_instance.fren:16:10
    |
-18 | pub proc guarded(q: Seq<Int>) {
+16 | pub proc guarded(q: Seq<Int>) { assume seventh: q[7] > 0 }
    |          ^^^^^^^ untested
    |
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
 warning[F0610]: testing found no admissible behaviour of `m::user` in 100 tests
-  --> test/cli/results/f0617_global_instance.fren:22:10
+  --> test/cli/results/f0617_global_instance.fren:18:10
    |
-22 | pub proc user(z: Seq<Int>) {
+18 | pub proc user(z: Seq<Int>) { call u := guarded(z) }
    |          ^^^^ untested
    |
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
 warning[F0617]: testing never reached the assumption `m::guarded::seventh` of call `u` in 100 tests: it had no value in any of them
-  --> test/cli/results/f0617_global_instance.fren:23:10
+  --> test/cli/results/f0617_global_instance.fren:18:35
    |
-23 |     call u := guarded(z)
-   |          ^ no value
+18 | pub proc user(z: Seq<Int>) { call u := guarded(z) }
+   |                                   ^ no value
    |
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it
    = help: run `fren check` to decide it, or guard the part that has no value
 
 warning[F0617]: testing never reached `m::g::g` in 100 tests: it had no value in any of them
-  --> test/cli/results/f0617_global_instance.fren:15:12
+  --> test/cli/results/f0617_global_instance.fren:13:12
    |
-15 |     expect g: a.q[7] > 0 or a.big?
+13 |     expect g: a.q[7] > 0 or a.big?
    |            ^ no value
    |
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it

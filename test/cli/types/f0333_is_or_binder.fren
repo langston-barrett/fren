@@ -1,5 +1,3 @@
 -- An or-pattern of a pattern test that binds names in its alternatives, as in a `match`.
 enum Reply { Empty, Value(Int), Pair(Int, Int) }
-proc c(r: Reply): (w: Int) {
-    ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v
-}
+proc c(r: Reply): (w: Int) { ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v }

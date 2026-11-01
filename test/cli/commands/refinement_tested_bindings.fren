@@ -1,9 +1,7 @@
 -- A refinement set to testing asks the solver nothing, not even the
 -- definedness of the bindings of the abstract component's instances: its
 -- only results are the two passes by testing in the summary.
-pub proc helper(v: Int): (w: Int) {
-    ensure r: w = v
-}
+pub proc helper(v: Int): (w: Int) { ensure r: w = v }
 
 pub proc first(q: Seq<Int>): (y: Int) {
     assume nonempty: q != []

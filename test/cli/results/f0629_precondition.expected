@@ -1,8 +1,8 @@
 error[F0629]: the precondition `in_range` of `nth` may not hold at this application in `first::r`
- --> test/cli/results/f0629_precondition.fren:9:19
+ --> test/cli/results/f0629_precondition.fren:8:51
   |
-9 |     ensure r: x = nth(q, 0)
-  |                   ^^^ may violate `nth::in_range`
+8 | proc first(q: Seq<Int>): (x: Int) { ensure r: x = nth(q, 0) }
+  |                                                   ^^^ may violate `nth::in_range`
   |
   = counterexample: q = [], x = 0
   = note: where a precondition fails, the application's value is unknown, or not what the function is for

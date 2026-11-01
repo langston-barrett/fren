@@ -4,12 +4,8 @@ proc c(x: Int, b?): (y: Int) {
     ensure r: y = (if b? then x else 0)
     ensure h: hidden = x
 }
-proc a(n: Int): (z: Int) {
-    ensure r: z >= n
-}
-proc natural(n: Int): (z: Nat) {
-    ensure r: z = (if n > 0 then 1 else 0)
-}
+proc a(n: Int): (z: Int) { ensure r: z >= n }
+proc natural(n: Int): (z: Nat) { ensure r: z = (if n > 0 then 1 else 0) }
 proc empty(n: Int) {}  --~ warning: unused variable `n`
 
 expect unknown(x: Int, b?) {

@@ -203,9 +203,7 @@ earlier call may supply arguments to a later one. These executable claims
 use unbounded integers, shared arguments, and an output passed onwards:
 
 ```fren
-pub proc global_successor(x: Int): (det y: Int) {
-    ensure successor: y = x + 1
-}
+pub proc global_successor(x: Int): (det y: Int) { ensure successor: y = x + 1 }
 
 expect global_composition(x: Int) {
     call first := global_successor(x)
