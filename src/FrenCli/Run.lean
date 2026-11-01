@@ -658,16 +658,6 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     let msg := Fren.Core.untestedMsg subject args.nTests byCheck
     warn msg
     shown := shown.push msg
-    -- At each of its own assumptions that had no value in any input,
-    -- which explains it (`F0617`, `eval::unreached_warning`).
-    for (n, atTrigger) in rep.valuelessAssumes do
-      let p? := c.props.find? (·.name == n)
-      let span := (p?.map fun p => if atTrigger then p.triggerSpan?.getD p.span else p.span).getD c.span
-      let what := s!"the assumption `{Fren.Core.showComp (c.path ++ n)}`"
-      let msg := if atTrigger then Fren.Core.triggerValuelessMsg what args.nTests byCheck
-        else Fren.Core.valuelessMsg what args.nTests byCheck ((p?.bind (·.triggerSpan?)).isSome)
-      printDiag args.paint files { file := c.file, span, severity := .warning, msg }
-      shown := shown.push msg
   -- At each check that no test reached, though some found what it is
   -- about (`eval::unreached`): at its trigger, which was false in all of
   -- them (`F0612`); at the check, which had a value in none in which its
@@ -679,7 +669,11 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
   for (r, shownAs) in atChecks do
     let atTrigger := shownAs != FrenCli.Eval.UnreachedWarning.Valueless
     let some n := r.prop? | continue
-    let hasTrigger := r.kind != .inst && ((c.props.find? (·.name == n)).bind (·.triggerSpan?)).isSome
+    -- Whether the check has a trigger: a call assumption's is the called
+    -- procedure's assumption's.
+    let hasTrigger := match r.kind, r.target? with
+      | .inst, some (d, a) => ((sp.comp? d).bind fun dc => (dc.ofKind .assume).find? (·.name == a)).any (·.e.trigger?.isSome)
+      | _, _ => ((c.props.find? (·.name == n)).bind (·.triggerSpan?)).isSome
     let (what, span) := match r.kind, r.target? with
       | .inst, some (d, a) =>
         (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of call `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)

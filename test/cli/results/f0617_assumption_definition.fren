@@ -1,9 +1,7 @@
 --@ args: quickcheck
--- An assumption that reads a definition is evaluated with it computed
--- from the inputs, in admission and in the search behind an assumption's
--- `F0617`. `a` has a value in every input, so `p` gets only `F0610`, which
--- `b` explains, and `q`, whose only assumption reads a definition, is
--- tested.
+-- Admission evaluates an assumption that reads a definition with the
+-- definition in its place. `p` gets only `F0610`, which `b` causes, and
+-- `q`, whose only assumption reads a definition, is tested.
 set_option fren.lint.contradictory_comparisons "allow" in
 pub proc p(x: Int): (y: Int) {
     let next: Int := x + 1
@@ -27,4 +25,21 @@ pub proc partial_unread(x: Int, q: Seq<Int>): (y: Int, z: Int) {
     assume a: n > 0
     ensure r: y = n
     ensure s: z = d
+}
+
+-- A definition without a value that an assumption reads decides the
+-- assumption as strong Kleene logic does: `a` holds wherever `q` has at
+-- most seven elements, so the input is admissible, and `d6` gets `F0609`
+-- from its output. In `d1`, `a` has no value, so no input is admissible.
+pub proc d6(x: Int, q: Seq<Int>): (y: Int, z: Int) {
+    let d: Int := q[7]
+    assume a: when q.len > 7, d > 0
+    ensure r: y = x
+    ensure s: z = d
+}
+
+pub proc d1(q: Seq<Int>): (y: Int) {
+    let d: Int := q[7]
+    assume a: d > 0
+    ensure r: y = d
 }

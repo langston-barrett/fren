@@ -183,14 +183,13 @@ unknown over them.
 Both commands search for behaviours. The search chooses the variables in
 order: the inputs, then the variables whose
 [definitions](Lang/Procedures.md#definitions) mention only inputs and
-such variables, computed from them (those that the assumptions read,
-directly or through such definitions, with the inputs, so that an
-assumption is evaluated with them, and the others once an admissible
-input is found, so that one without a value leaves the input admissible),
-then each call's variables, the
+such variables, computed from them, then each call's variables, the
 call's inputs being its arguments' values, then the other outputs. It tries each variable's
 candidates in a random order, and goes back when a constraint that can
-already be evaluated is false (see [Backjumping](#backjumping)). The
+already be evaluated is false (see [Backjumping](#backjumping)). An
+assumption that reads such a variable is evaluated with its definition in
+its place, so that it reads it computed, and, where the definition has
+no value, decides the assumption as strong Kleene logic does. The
 values that the constraints equate a variable with come first. The others,
 its *pool*, are drawn once in each search, random parts included, and
 shuffled again each time the search reaches the variable, in an order
@@ -446,19 +445,13 @@ costs one more, the direct search for a counterexample. A call
 assumption's trigger gets no such search: it is about a call's
 inputs, which its arguments give.
 
-Two more searches tell apart the warnings below, after the tests, so
-that they change no other result: each procedure's tests have a random
-stream of their own. Each makes at most one search for each test that
-`--tests` asks for, with a test's budget:
-- for a global expectation, where some test found behaviours of its
-  binders but the trigger held in none of them, a search for behaviours
-  of the binders, which stops at the first one in which the trigger has
-  no value;
-- for a procedure, where no test found an admissible input, a search for
-  inputs without its assumptions, with the variables whose definitions
-  mention only inputs and that the assumptions read computed from them,
-  as admission evaluates the assumptions, in which each of its own assumptions is tested as a check,
-  which stops once a test has reached each of them.
+One more search tells apart the warnings below, after the tests, so that
+it changes no other result: each procedure's tests have a random stream
+of their own. For a global expectation, where some test found behaviours
+of its binders but the trigger held in none of them, it searches for
+behaviours of the binders, at most once for each test that `--tests`
+asks for, with a test's budget, and stops at the first one in which the
+trigger has no value.
 
 A test reaches a check only where the check has a value in what the test
 found, too, and so does its trigger, if it has one: a trigger without a
@@ -573,17 +566,13 @@ pub proc unreached(
 
 Beside the procedure's `F0610`, which already says that no admissible
 behaviour was found, a check's `F0612` is not given, and an
-expectation's `F0617` is not either. An assumption's `F0617` is, where
-the assumption as a whole, its trigger included, had no value in any
-test that found what it is about: an assumption without a value admits
-nothing, so its `F0617` says why the procedure has `F0610`. One whose
+expectation's `F0617` is not either. A call assumption's `F0617` is,
+where the assumption as a whole, its trigger included, had no value in
+any test that found the call's inputs: an assumption without a value
+admits nothing, so its `F0617` says why the procedure has `F0610`. One whose
 trigger has no value but which holds, as `when q[7] > 0, q.len >= 0`
-does, admits everything, so it explains nothing, and is not given. For a
-call assumption, what a test finds is the call's inputs, which may be
-found where no behaviour is. For the procedure's own assumption, it is
-an input, with the variables whose definitions mention only inputs and
-that the assumptions read computed from it, searched for without the
-assumptions once no test found an admissible one, as above.
+does, admits everything, so it explains nothing, and is not given. A
+call's inputs may be found where no behaviour is.
 `eval::unreached_warning` gives the warning shown at a check, from the
 counts of `unreached`:
 
@@ -599,7 +588,7 @@ pub proc unreached_warning(
     decided: Nat,
     valued: Nat,             -- the tests that found what it is about in which the check as a whole, its trigger included, had a value
     untested?,               -- the procedure has `F0610`
-    assumption?,             -- the check is an assumption, a call's or the procedure's own
+    assumption?,             -- the check is a call assumption
 ): (det shown: UnreachedWarning) {
     assume counted: decided + unknown <= triggered <= found
     assume valued_counted: valued <= found

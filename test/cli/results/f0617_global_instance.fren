@@ -1,9 +1,9 @@
 --@ args: quickcheck
--- `F0617` for a global expectation and for an assumption, each of which
--- reads `q[7]`, out of range in every test. Without a value, the
+-- `F0617` for a global expectation and for a call assumption, each of
+-- which reads `q[7]`, out of range in every test. Without a value, the
 -- assumption admits no behaviour of `guarded` or of the call in `user`,
--- so both also have `F0610`, which the assumption's `F0617`, at
--- `guarded`'s own assumption and at the call, explains.
+-- so both also have `F0610`, which the call assumption's `F0617`
+-- explains.
 mod m
 
 pub proc c(q: Seq<Int>): (big?) { ensure r: big? iff q.len > 1000 }

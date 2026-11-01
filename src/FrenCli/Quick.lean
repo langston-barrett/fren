@@ -72,18 +72,21 @@ structure Admitted where
   reached : Nat := 0
   complete : Bool := false
 
-/-- The defined variables that the inputs give (`Comp.earlyDefs`) that an
-assumption of `c` reads, directly or through the definitions of others,
-in the order of `earlyDefs`. -/
-def Comp.assumedDefs (c : Comp) : Array Name := Id.run do
+/-- `e` with each variable that a definition gives from the inputs
+(`Comp.earlyDefs`) replaced by its definition, through the definitions
+of others, so that admission evaluates an assumption that reads one with
+it computed, and, where it has no value, as strong Kleene logic has the
+assumption (`Reqs/Eval#searching-for-behaviours`). An `e` that reads none
+is unchanged. -/
+def Comp.inlineEarly (c : Comp) (e : Ex) : Ex := Id.run do
   let early := c.earlyDefs
-  let mut read : Array Name := ((c.ofKind .assume).flatMap (·.e.vars)).filter early.contains
-  for _ in [0:early.size] do
-    for (d, e) in c.defs do
-      if read.contains d then
-        for x in e.vars do
-          if early.contains x && !read.contains x then read := read.push x
-  return early.filter read.contains
+  let defs := c.defs.filter (early.contains ·.1)
+  let mut e := e
+  -- Each round removes one level: definitions read only earlier ones.
+  for _ in [0:defs.size] do
+    unless e.vars.any early.contains do break
+    e := e.substVars fun n => ((defs.find? (·.1 == n)).map (·.2)).getD (.var n)
+  return e
 
 /-- The constraints that `Spec.admit` searches with, for `c`: its
 assumptions, the definitions of its defined variables that the inputs give,
@@ -97,7 +100,7 @@ structure AdmitAtoms where
 
 def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.DataShape) : AdmitAtoms :=
   let early := c.earlyDefs
-  { assumes := (atomsOf .anonymous (c.ofKind .assume)).map (·.compiled shapes)
+  { assumes := (atomsOf .anonymous (c.ofKind .assume)).map fun a => ({ a with e := c.inlineEarly a.e } : Atom).compiled shapes
     early := (c.defAtoms.filter (early.contains ·.label)).map (·.compiled shapes)
     binds := c.insts.map fun i => (bindingAtoms .anonymous i).map (·.compiled shapes)
     insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes) }
@@ -114,18 +117,14 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     (fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}) : R (Option Admitted) := do
   let I := w.interp sp shapes?
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-  -- The defined variables that the inputs give, which assumptions and
-  -- bindings may read (`Reqs/Eval#searching-for-behaviours`).
-  let early := c.earlyDefs
-  let defVars (ds : Array Name) := ds.filterMap fun d => (c.vars.find? (·.name == d)).map fun v => (v.name, v.ty)
-  -- Those that an assumption reads are evaluated with it, so they are
-  -- chosen with the inputs, after them; the others after admission.
-  let assumed := c.assumedDefs
-  let some env ← ({ vars := inputs ++ defVars assumed, atoms := pre.assumes ++ pre.early.filter (assumed.contains ·.label)
-                    ints, strs, fixedPools : Problem }.solve sp w I {})
+  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
     | return none
+  -- The defined outputs that the inputs give, which bindings may read
+  -- (`Reqs/Eval#searching-for-behaviours`).
+  let early := c.earlyDefs
   -- If they have no value, the outputs' search reports it, as before.
-  let env := (← ({ vars := (c.vars.filter fun v => early.contains v.name && !assumed.contains v.name).map fun v => (v.name, v.ty), atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
+  let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
+                   atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
@@ -170,18 +169,15 @@ structure Report where
   /-- The checks that no test reached, though some found what they are
   about, as for `untriggered`, in which their triggers, if any, were not
   false, and in some of which the trigger held, because the check had no
-  value in any of those (`F0617` at the check, `eval::unreached`). Beside the procedure's `F0610`, only call
-  assumptions are (`eval::unreached_warning`), since they explain it. -/
+  value in any of those (`F0617` at the check, `eval::unreached`). Beside
+  the procedure's `F0610`, only call assumptions that had no value as a
+  whole in any test are (`eval::unreached_warning`), since they explain
+  it. -/
   valueless : Array CheckResult := #[]
   /-- The checks that no test reached, as for `valueless`, because their
   triggers had no value in every test in which they were not false
   (`F0617` at the trigger, `eval::unreached`). -/
   triggerValueless : Array CheckResult := #[]
-  /-- Beside the procedure's `F0610`, its own assumptions that, as a whole,
-  their triggers included, had no value in any input found without the
-  assumptions, which explain it (`F0617`, `eval::unreached_warning`), each
-  with whether it is the trigger that had none. -/
-  valuelessAssumes : Array (Name × Bool) := #[]
   /-- The cover goals for which no test found a witness, though some found
   behaviours that meet the procedure (`F0616`). -/
   unwitnessed : Array CheckResult := #[]
@@ -446,42 +442,12 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       (t.warning found untested true, result .inst (some w) t (some (d, a))))
     ++ (expects.zip expT).map fun (e, t) =>
       (t.warning behaviours untested false, result .expect (some e.name) t)
-  -- Where no test found an admissible input, the procedure's own
-  -- assumptions, each tested as a check on inputs searched for without
-  -- them, with the defined variables that the inputs give computed, as
-  -- admission evaluates them, until a test has reached each: an
-  -- assumption that had no value in any of them admits no input, which
-  -- explains `F0610`. Only then, so that the other results do not depend
-  -- on it: each procedure's tests have a random stream of their own.
-  let assumes := c.ofKind .assume
-  let mut assumeT : Array Tally := assumes.map fun _ => {}
-  let mut inputsFound := 0
-  if untested && !assumes.isEmpty then
-    let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-    let assumed := c.assumedDefs
-    let anyInput : Problem := { vars := inputs ++ assumed.filterMap (fun d => (c.vars.find? (·.name == d)).map fun v => (v.name, v.ty))
-                                atoms := pre.early.filter (assumed.contains ·.label), ints, strs, fixedPools }
-    for _ in [0:tests] do
-      if assumeT.all (·.tests > 0) then break
-      let w ← World.random sp
-      let I := w.interp sp (some shapes)
-      let some env ← anyInput.solve sp w I {} | continue
-      inputsFound := inputsFound + 1
-      for a in assumes, k in [0:assumes.size] do
-        let trigger? := a.e.trigger?
-        let value := ({ label := a.name, pfx := .anonymous, e := a.e } : Atom).eval I env.look
-        assumeT := assumeT.modify k (·.test trigger?.isSome (triggerValue I .anonymous trigger? env) value fun _ => .none)
-  let valuelessAssumes := (assumes.zip assumeT).filterMap fun (a, t) =>
-    match t.warning inputsFound untested true with
-    | .Valueless => some (a.name, false)
-    | .TriggerValueless => some (a.name, true)
-    | _ => none
   let untriggered := unreached.filterMap fun (shown, r) => if shown == .Untriggered then some r else none
   let valueless := unreached.filterMap fun (shown, r) => if shown == .Valueless then some r else none
   let triggerValueless := unreached.filterMap fun (shown, r) => if shown == .TriggerValueless then some r else none
   let unwitnessed := if untested || behaviours == 0 then #[] else
     (covers.zip covT).filterMap fun (g, t) => if t.tests == 0 then some (result .cover (some g.name) t) else none
-  return { results, noOutputs?, untested, untriggered, valueless, triggerValueless, valuelessAssumes, unwitnessed }
+  return { results, noOutputs?, untested, untriggered, valueless, triggerValueless, unwitnessed }
 
 /-- Tests the global expectation `g`. -/
 def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do

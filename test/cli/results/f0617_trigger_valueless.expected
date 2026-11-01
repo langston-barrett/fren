@@ -16,15 +16,6 @@ warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tes
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
-warning[F0617]: testing never reached the assumption `m::guarded::seventh` in 100 tests: its trigger had no value in any of them in which it was not false
-  --> test/cli/results/f0617_trigger_valueless.fren:19:49
-   |
-19 | pub proc guarded(q: Seq<Int>) { assume seventh: when q[7] > 0, q.len > 7 }
-   |                                                 ^^^^^^^^^^^^^ no value
-   |
-   = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
-   = help: run `fren check` to decide it, or guard the part of the trigger that has no value
-
 warning[F0610]: testing found no admissible behaviour of `m::user` in 100 tests
   --> test/cli/results/f0617_trigger_valueless.fren:21:10
    |
