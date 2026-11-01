@@ -1,0 +1,193 @@
+-- A pedestrian crossing with a button: one road, one crossing, a button
+-- and a clock. The cars have green until someone presses the button and
+-- they have had a minimum green time; then their light turns yellow, then
+-- red while the pedestrians walk, then green again.
+--
+-- The controller is one procedure over a state and an event. Its invariant
+-- is a subset type of the state; its properties are global expectations of
+-- one step, of a chain of steps, of a monitor run beside it, and of an
+-- abstract machine that it refines. `Stoplight.lean` lifts them to every
+-- sequence of events.
+mod stoplight
+
+pub enum Light { Green, Yellow, Red }
+pub enum Signal { Walk, DontWalk }
+-- What happens: someone presses the button, or a tick of the clock passes.
+pub enum Event { Press, Tick }
+use self::Event::{Press, Tick}
+use self::Light::{Green, Red, Yellow}
+use self::Signal::{DontWalk, Walk}
+
+-- How many ticks each phase lasts: green at least this long.
+pub const MIN_GREEN: Int := 5
+pub const YELLOW: Int := 2
+pub const WALK: Int := 4
+
+pub fn duration(cars: Light): Int := match cars {
+    Green => MIN_GREEN,
+    Yellow => YELLOW,
+    Red => WALK,
+}
+
+pub struct State {
+    cars: Light,
+    people: Signal,
+    waiting?,    -- the button was pressed, and no walk has served it yet
+    timer: Int,  -- the ticks left in this phase, the one that ends it included
+}
+
+-- The states the controller can be in. `safe` is what matters; the other
+-- two make it a property of every state that a step reaches, as the
+-- expectations below need.
+pub type Lights = s: State where
+    safe: not (s.cars = Green and s.people = Walk)
+    and walk_on_red: s.people = Walk iff s.cars = Red
+    and timed: 1 <= s.timer <= duration(s.cars)
+
+pub const START: Lights := State {
+    cars := Green,
+    people := DontWalk,
+    waiting? := false,
+    timer := MIN_GREEN,
+}
+
+-- How the lights change at each event. The next state must be `Lights`
+-- again, so the checks prove the invariant inductive; they also prove that
+-- every state and event has a next state, so that a press is accepted at
+-- any time, and, with `det`, only one.
+pub proc step(now: Lights, event: Event): (det next: Lights) {
+    -- A press is remembered until a walk serves it, so one during the walk
+    -- is already served.
+    ensure press: when event = Press, next = { now with
+        waiting? := now.people = DontWalk,
+    }
+
+    -- A tick counts down the current phase, and the last tick of a phase
+    -- starts the next. Green runs out only once someone is waiting.
+    let last? := event = Tick and now.timer = 1
+    ensure count_down: when event = Tick and now.timer > 1, next = { now with
+        timer := now.timer - 1,
+    }
+    ensure stay_green: when last? and now.cars = Green and not now.waiting?, next = now
+    ensure to_yellow: when last? and now.cars = Green and now.waiting?, next = { now with
+        cars := Yellow,
+        timer := YELLOW,
+    }
+    ensure to_walk: when last? and now.cars = Yellow, next = State {
+        cars := Red,
+        people := Walk,
+        waiting? := false,
+        timer := WALK,
+    }
+    ensure to_green: when last? and now.cars = Red, next = { now with
+        cars := Green,
+        people := DontWalk,
+        timer := MIN_GREEN,
+    }
+}
+
+-- A trace is a chain of calls, and its events are parameters, so the
+-- solver searches every sequence of them. From the start, seven events
+-- never bring the walk, and eight can: a press and seven ticks, as the
+-- witness of `walks` shows; the comment after it is the message that the
+-- tests expect.
+expect first_walk(
+    e1: Event,
+    e2: Event,
+    e3: Event,
+    e4: Event,
+    e5: Event,
+    e6: Event,
+    e7: Event,
+    e8: Event,
+) {
+    call s1 := step(START, e1)
+    call s2 := step(s1.next, e2)
+    call s3 := step(s2.next, e3)
+    call s4 := step(s3.next, e4)
+    call s5 := step(s4.next, e5)
+    call s6 := step(s5.next, e6)
+    call s7 := step(s6.next, e7)
+    call s8 := step(s7.next, e8)
+    expect not_yet: s7.next.people = DontWalk
+    cover walks: s8.next.people = Walk  --~ info: cover goal `stoplight::first_walk::walks` is met
+}
+
+-- How many ticks someone waiting has left until the walk.
+pub fn wait(s: State): Int := match s.cars {
+    Green => s.timer + YELLOW,
+    Yellow => s.timer,
+    Red => 0,
+}
+
+-- A press is served within MIN_GREEN + YELLOW ticks, whatever is pressed
+-- meanwhile: the wait is at most that, no press delays it, and each tick
+-- brings the walk one tick closer, until it comes.
+expect prompt(now: Lights, event: Event) {
+    assume waiting: now.waiting? and now.people = DontWalk
+    call s := step(now, event)
+    expect bounded: 1 <= wait(now) <= MIN_GREEN + YELLOW
+    expect press_waits: when event = Press, s.next.waiting? and wait(s.next) = wait(now)
+    expect tick_nears: when event = Tick, s.next.people = Walk or (s.next.waiting? and wait(s.next) = wait(now) - 1)
+}
+
+-- A property of histories, by a monitor beside the controller:
+-- `green_ticks` counts the ticks of green since the last walk. Its
+-- invariant relates it to the controller's timer.
+pub struct Watch { lights: Lights, green_ticks: Nat }
+
+pub type Watched = w: Watch where
+    green: when w.lights.cars = Green, w.green_ticks >= MIN_GREEN - w.lights.timer
+    and yellow: when w.lights.cars = Yellow, w.green_ticks >= MIN_GREEN
+
+pub proc watch(now: Watched, event: Event): (det next: Watched) {
+    call s := step(now.lights, event)
+    ensure counts: next = Watch {
+        lights := s.next,
+        green_ticks := table {
+            s.next.people = Walk => 0,
+            event = Tick and now.lights.cars = Green => now.green_ticks + 1,
+            _ => now.green_ticks,
+        },
+    }
+}
+
+-- The cars have had MIN_GREEN ticks of green whenever a walk starts.
+expect green_between_walks(now: Watched, event: Event) {
+    call w := watch(now, event)
+    expect enough_green: when now.lights.people = DontWalk and w.next.lights.people = Walk,
+        now.green_ticks >= MIN_GREEN
+}
+
+-- The crossing as its users see it, without time: the cars go, then stop,
+-- then the pedestrians cross, and again.
+pub enum Phase { Go, Stop, Cross }
+
+pub fn phase(s: State): Phase := match s.cars {
+    Green => Phase::Go,
+    Yellow => Phase::Stop,
+    Red => Phase::Cross,
+}
+
+-- The abstract machine: a press changes nothing that the users see, and a
+-- tick either changes nothing or moves on to the next phase.
+pub proc cycle(now: Phase, event: Event): (next: Phase) {
+    ensure press_stays: when event = Press, next = now
+    ensure tick_moves: when event = Tick, next = now or next = match now {
+        Phase::Go => Phase::Stop,
+        Phase::Stop => Phase::Cross,
+        Phase::Cross => Phase::Go,
+    }
+}
+
+-- The controller as its users see it, which `refines` compares with the
+-- abstract machine.
+pub proc observed(now: Lights, event: Event): (det next: Phase) {
+    call s := step(now, event)
+    out next := phase(s.next)
+}
+
+expect refines_cycle(now: Lights, event: Event) {
+    call o := observed(now, event)
+    refines o cycle(phase(now), event)
+}

@@ -386,6 +386,10 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
   let tys (n : Name) := (vars.find? (·.name == n)).map (·.ty)
+  -- What the types of the outputs without a definition bring.
+  let outputTypes : Fm := .atoms <| ec.typeConstraints.filterMap fun p =>
+    if p.kind == .ensure && outs.any (fun (x, _) => p.name == .num x 0 && !ec.defs.any (·.1 == x))
+    then some { label := p.name, pfx := .anonymous, e := p.e } else none
   -- The variables that a model may leave free, and the second copy of each
   -- copied one, with their types: the procedure's own, without a
   -- definition, since a defined one's, or a call's, value follows from the
@@ -422,7 +426,10 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     falseF := (b.falseF, .falsity)
     notF := fun f => (b.notF f.1, .not f.2)
     conj := fun fs => (b.conj (fs.map (·.1)), .conj (fs.map (·.2)))
-    existsOutputs := fun f => do return (← b.existsOutputs f.1, .exOutputs outs f.2)
+    -- The outputs' types, which the solver's query brings within its
+    -- `exists` (`CComp.natFacts`), so that an output that the guarantees
+    -- allow but its subset type does not refutes nothing.
+    existsOutputs := fun f => do return (← b.existsOutputs f.1, .exOutputs outs (.conj #[outputTypes, f.2]))
     pin := fun n v => do return (← b.pin n v).map (·, .pin n v)
     pinVariant := fun n v => do return (← b.pinVariant n v).map fun (k, f) => (k, (f, .pinVariant n v))
     -- The values read, which the confirmation evaluates (`Reqs/Models#reading`).

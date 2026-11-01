@@ -1,0 +1,23 @@
+-- An output's subset type is part of what realizability asks: no output
+-- exists when the guarantees force one outside its type. Confirming the
+-- solver's model, the evaluator must search for outputs of that type too,
+-- or one that the guarantees allow, but the type does not, refutes it.
+
+type Pos = n: Int where invariant: n > 0
+
+proc copy(x: Int): (y: Pos) {  --~ error: `copy` is not realizable
+    ensure same: y = x
+}
+
+pub enum Light { Green, Red }
+pub struct Lamp { light: Light, walk? }
+type Safe = s: Lamp where invariant: not (s.light = Light::Green and s.walk?)
+
+proc turn_green(now: Safe): (next: Safe) {  --~ error: `turn_green` is not realizable
+    ensure to_green: when now.light = Light::Red, next = { now with
+        light := Light::Green,
+    }
+}
+
+--@ summary: 5 passed, 2 failed, 0 inconclusive, 0 redundant
+--@ exit: 1
