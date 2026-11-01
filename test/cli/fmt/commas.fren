@@ -29,6 +29,18 @@ proc c(x: Int, y: Int): (p?) {
         -- the second
         , y
     )
+    -- After a block comment on a line of its own, which is placed as a
+    -- line comment is.
+    call g := sub(
+        x
+        /- the second -/
+        , y
+    )
+    -- After a block comment that starts its line and a comma follows on it.
+    call h := sub(
+        x
+        /- the second -/, y
+    )
     -- After two comments, and a trailing comma after one.
     call f := sub(
         x  -- the first

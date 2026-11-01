@@ -598,6 +598,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren", "test/cli/fmt/subset_shorthand.fren",
    "test/cli/fmt/contract.fren",
    "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren", "test/cli/fmt/commas.fren",
+   "test/cli/fmt/independent.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
@@ -619,13 +620,13 @@ formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
 list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/cli/commands/counterexample_newtype.fren",
-   "test/cli/lints/complexity/f0712_cardinality.fren", "test/cli/lints/complexity/f0717_singleton.fren",
-   "test/cli/lints/complexity/f0719_constant_output.fren", "test/cli/lints/complexity/f0730_double_comparison.fren",
-   "test/cli/lints/complexity/f0732_manual_method.fren", "test/cli/lints/complexity/f0733_else_extends.fren",
-   "test/cli/lints/complexity/f0734_identity_op.fren", "test/cli/lints/complexity/f0739_double_parens.fren",
-   "test/cli/lints/complexity/f0741_int_plus_one.fren", "test/cli/lints/complexity/f0743_redundant_method_chain.fren",
-   "test/cli/lints/complexity/f0747_trivial_match.fren", "test/cli/lints/complexity/f0753_redundant_slicing.fren",
+  ["test/cli/commands/counterexample_newtype.fren", "test/cli/lints/complexity/f0712_cardinality.fren",
+   "test/cli/lints/complexity/f0717_singleton.fren", "test/cli/lints/complexity/f0719_constant_output.fren",
+   "test/cli/lints/complexity/f0730_double_comparison.fren", "test/cli/lints/complexity/f0732_manual_method.fren",
+   "test/cli/lints/complexity/f0733_else_extends.fren", "test/cli/lints/complexity/f0734_identity_op.fren",
+   "test/cli/lints/complexity/f0739_double_parens.fren", "test/cli/lints/complexity/f0741_int_plus_one.fren",
+   "test/cli/lints/complexity/f0743_redundant_method_chain.fren", "test/cli/lints/complexity/f0747_trivial_match.fren",
+   "test/cli/lints/complexity/f0753_redundant_slicing.fren",
    "test/cli/lints/complexity/f0758_zero_prefixed_literal.fren", "test/cli/lints/complexity/f0760_needless_match.fren",
    "test/cli/lints/complexity/f0767_redundant_comparisons.fren",
    "test/cli/lints/complexity/f0790_unnecessary_struct_initialization.fren",
@@ -667,16 +668,14 @@ def fmtPending : List String :=
    "test/cli/lints/suspicious/f0737_same_branches.fren", "test/cli/lints/suspicious/f0738_duplicate_elements.fren",
    "test/cli/lints/suspicious/f0745_empty_argument.fren", "test/cli/lints/suspicious/f0754_no_effect_replace.fren",
    "test/cli/lints/suspicious/f0755_const_is_empty.fren", "test/cli/lints/suspicious/f0757_almost_complete_range.fren",
-   "test/cli/lints/suspicious/f0763_absurd_extreme_comparisons.fren",
-   "test/cli/lints/suspicious/f0764_erasing_op.fren", "test/cli/lints/suspicious/f0765_ifs_same_cond.fren",
-   "test/cli/lints/suspicious/f0768_duplicate_constraint.fren",
+   "test/cli/lints/suspicious/f0763_absurd_extreme_comparisons.fren", "test/cli/lints/suspicious/f0764_erasing_op.fren",
+   "test/cli/lints/suspicious/f0765_ifs_same_cond.fren", "test/cli/lints/suspicious/f0768_duplicate_constraint.fren",
    "test/cli/lints/suspicious/f0769_invisible_characters.fren",
    "test/cli/lints/suspicious/f0770_negative_position.fren", "test/cli/lints/suspicious/f0793_unrelated_binders.fren",
-   "test/cli/lints/suspicious/f0794_literal_dot_in_pattern.fren",
-   "test/cli/lints/suspicious/f0803_irrefutable_is.fren", "test/cli/lints/suspicious/f0816_modulo_one.fren",
-   "test/cli/lints/suspicious/f0817_min_max.fren", "test/cli/lints/suspicious/f0825_redundant_locals.fren",
-   "test/cli/lints/unused/f0701_unused.fren", "test/cli/lints/unused/f0791_unused_lint_setting.fren",
-   "test/cli/lints/unused/f0792_unused_assumption.fren",
+   "test/cli/lints/suspicious/f0794_literal_dot_in_pattern.fren", "test/cli/lints/suspicious/f0803_irrefutable_is.fren",
+   "test/cli/lints/suspicious/f0816_modulo_one.fren", "test/cli/lints/suspicious/f0817_min_max.fren",
+   "test/cli/lints/suspicious/f0825_redundant_locals.fren", "test/cli/lints/unused/f0701_unused.fren",
+   "test/cli/lints/unused/f0791_unused_lint_setting.fren", "test/cli/lints/unused/f0792_unused_assumption.fren",
    "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/simp_recursion_depth.fren", "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
@@ -723,8 +722,7 @@ def fmtPending : List String :=
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
    "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
-   "test/ui/lints/names_sizes.fren", "test/ui/lints/records.fren",
-   "test/ui/lints/updates_covers.fren"]
+   "test/ui/lints/records.fren", "test/ui/lints/updates_covers.fren"]
 
 /-- A file's pieces (`fmt::Piece`), each comment with whether it starts
 its line, and the paths the `use` items import, sorted. With `all`, every
@@ -754,7 +752,8 @@ def fmtPieces (path src : String) (all := false) : Option (List (FrenCli.Fmt.Pie
       pieces := pieces.push (t.span, if t.tok == .kw "," then .separator else .token, reprStr t.tok)
   for c in comments do
     let text := (FrenCli.Fmt.text chars c).trimAsciiEnd.toString
-    pieces := pieces.push (c, if FrenCli.Fmt.isLineComment text then .lineComment else .blockComment, s!"{startsLine c} {text}")
+    let kind := FrenCli.Fmt.commentPiece (FrenCli.Fmt.isLineComment text) (startsLine c)
+    pieces := pieces.push (c, kind, s!"{startsLine c} {text}")
   pieces := pieces.qsort fun a b => a.1.start < b.1.start
   -- With the line breaks between them.
   let mut stream : List (FrenCli.Fmt.PieceKind × String) := []
@@ -902,17 +901,15 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
 
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
 allows: each gap whose line break a list or block decides, with no comment
-or blank line in it and none on its lines, gets a line break or a space;
-the trailing comma of a list that may end with one, on a line without a
-comment, is dropped or added; a comma that a line comment follows on its
-line may move to a line of its own after the comment, a space taking its
-place, and
-one in a list, on a line without a comment, may start the next line, as
-the line break before a comma is not content (`fmt::separators`); each gap
-of one or more spaces between two
-tokens on a line without a comment gets 1 to 3 spaces; and then each line
-without a comment, and not inside a token, is indented by 0 to 12 spaces.
-`none` if `src` does not parse.
+or blank line in it and none on its lines, gets a line break or a space; the
+trailing comma of a list that may end with one, on a line without a comment,
+is dropped or added; a comma that a line comment follows on its line may
+move to a line of its own after the comment, a space taking its place, and
+one in a list, on a line without a comment, may start the next line, as the
+line break before a comma is not content (`fmt::separators`); each gap of
+one or more spaces between two tokens on a line without a comment gets 1 to
+3 spaces; and then each line without a comment, and not inside a token, is
+indented by 0 to 12 spaces. `none` if `src` does not parse.
 
 It leaves alone what is content (`fmt::safe`), and some of what is not:
 the gaps and indentation of lines with comments, gaps with a blank line,
