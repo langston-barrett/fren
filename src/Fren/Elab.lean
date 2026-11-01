@@ -4392,9 +4392,9 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
     if expected?.isSome then discard (liftMsg e (Core.checkEmptyLiteral false expected?))
     -- Of the expected type, so that what is built from it, such as `{} inter
     -- {}` in a branch of a conditional, has its type before Lean unifies.
-    if let some t@(.set _) := expected? then return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
-    if let some t@(.rel _ _) := expected? then return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
-    return ← `((∅ : Fren.FinSet _))
+    match expected? with
+    | some t@(.set _) | some t@(.rel ..) => return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
+    | _ => return ← `((∅ : Fren.FinSet _))
   checkCore cx e .setAlgebra true true elems
   if cx.noteIndexes then lintDuplicates e elems
   let synth ← elems.mapM (synthesizes cx)

@@ -588,6 +588,7 @@ partial def bodyOf (sc : WScope) (t : WTy) (genericPay : Bool) (d : Nat) : R Str
   if d == 0 || (← chance 30) then
     match t with
     | .set => if ← chance 60 then return "{}" else return ← leaf sc .set
+    | .rel => if ← chance 60 then return "{}" else return ← leaf sc .rel
     | .seq => if ← chance 60 then return "[]" else return ← leaf sc .seq
     | .pay => if genericPay && (← chance 60) then return "P::A" else return ← leaf sc .pay
     | _ => return ← gen sc t 1
@@ -599,7 +600,7 @@ partial def bodyOf (sc : WScope) (t : WTy) (genericPay : Bool) (d : Nat) : R Str
     return s!"match {← gen sc .enum 0} \{ {", ".intercalate arms.toList} }"
   | 2 => return s!"({← sub})"
   | 3 => match t with
-    | .set => return s!"{← sub} {← pick #["union", "inter", "minus"]} {← sub}"
+    | .set | .rel => return s!"{← sub} {← pick #["union", "inter", "minus"]} {← sub}"
     | .seq => return s!"{← sub} ++ {← sub}"
     | _ => sub
   | _ => gen sc t 2
@@ -647,7 +648,7 @@ def bodyFns (sc : WScope) (genericPay : Bool) : R String := do
     let name := s!"h{k}"
     match ← below 9 with
     | 0 | 1 | 2 =>
-      let tys := #[(WTy.set, "Set<Int>"), (.seq, "Seq<Int>"), (.int, "Int")] ++
+      let tys := #[(WTy.set, "Set<Int>"), (.seq, "Seq<Int>"), (.int, "Int"), (.rel, WTy.rel.name sc.relElem)] ++
         (if sc.hasPay then #[(WTy.pay, payTy)] else #[]) ++ (if sc.hasSeq then #[(WTy.bx, "Bx<Bx<Rq>>")] else #[])
       let (t, ty) ← pick tys
       -- Seldom a body of another type: a mismatch, reported alike.
@@ -760,7 +761,6 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let ty := if r == .bool then "" else s!": {r.name relElem}"
       out := out ++ s!"pub fn {name}({", ".intercalate (ps.toList.map (·.name relElem))}){ty}\n"
       sc := { sc with fns := sc.fns.push (name, ps, r, false) }
-  if ← chance 50 then out := out ++ (← bodyFns sc genericPay)
   -- Each earlier comp: its name, inputs, and visible variables.
   let mut comps : Array (String × Array (String × WTy) × Array (String × WTy)) := #[]
   for c in [0:(← below 2) + 1] do
@@ -863,6 +863,8 @@ def genWide (avoidKnown : Bool := false) : R String := do
     comps := comps.push (s!"c{c}", vars.filterMap (fun (n, t, i) => if i then some (n, t) else none), shown)
   if hasCounts then out := out ++ (← countsProc "counts" hasMs countNewtypes)
   if ← chance 25 then out := out ++ guardDecls ++ (← guardsProc "guards")
+  -- Last, so that the specs of the seeds before them are as they were.
+  if ← chance 50 then out := out ++ "\n" ++ (← bodyFns sc genericPay)
   -- Only variables have the type `P`, each declared on a line of its own.
   return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 
