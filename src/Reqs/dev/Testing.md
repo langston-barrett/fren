@@ -315,14 +315,21 @@ pub mod testing
   stop before it: the procedures and `bodyFns`, older than this rule,
   write static errors, some on purpose (a body of another type) and some
   not (#589), and about half the default seeds' specs stop before
-  `bodyFns`'s group. The comparison of check results sees nothing on
-  those specs. An entry of `knownDifferences` holds the whole difference,
-  with the names that a front end gives its own facts, as Lean's
-  `f0.equation0.1`: a change to those names shows as an unlisted and a
-  vanished difference on the same line, to be relisted. The corpus is
-  sized to take about 2 minutes of one CI machine. A crash of the solver
-  fails its job, and a spec that never ends holds it up, as in any other
-  job.
+  `bodyFns`'s group. The comparison of check results sees nothing on those
+  specs. The check has two blind spots: it reads only the `fren` command's
+  errors, so an error that only Lean reports is left to the comparison,
+  where `knownDifferences` may list it; and a parse error before the first
+  cut hides every later error, as it stops the `fren` command (no corpus
+  spec has one today). A static error without a location is blamed on the
+  first group. An entry of `knownDifferences` holds the whole difference:
+  its line and column, the names that a front end gives its own facts, as
+  Lean's `f0.equation0.1`, and the message's wording. A change to any of
+  those, such as to where a front end places a message or to the generated
+  text before it on its line, shows as an unlisted and a vanished
+  difference on the same line, to be relisted; on a spec with an undecided
+  check, only the unlisted one shows. The corpus is sized to take about 2
+  minutes of one CI machine. A crash of the solver fails its job, and a
+  spec that never ends holds it up, as in any other job.
 
 `lake test` runs its tests as jobs, in parallel: each job is a process of
 its own (`fren_test --job NAME ARG...`), and the ui tests run in batches of

@@ -1159,17 +1159,20 @@ difference that the run of fresh seeds on `main` finds is listed with its
 seed and mode, and the corpus then checks that seed too (`listedOutside`).
 `--avoid-known` counts a spec whose every difference is of a kind (its
 `signature`) listed here for `--avoid-known` as known. An entry holds the
-whole difference, so it also holds the names that a front end gives its
-own facts, as Lean's `f0.equation0.1`: a change to those makes an
-unlisted and a vanished difference on the same line, which is relisted,
-not a regression. -/
+whole difference: its line and column, the names that a front end gives
+its own facts, as Lean's `f0.equation0.1`, and the message's wording. A
+change to any of those, such as to where a front end places a message or
+to the generated text before it on its line, makes an unlisted and a
+vanished difference on the same line, which is relisted, not a
+regression; on a spec with an undecided check, only the unlisted one
+shows, since a vanished entry does not fail there. -/
 def knownDifferences : List Known :=
   -- Lean reports `ob1?`, an output that a table in an expectation reads,
   -- as unknown, in a spec with other errors, once any function is declared
   -- after it, as `sitesDecls` declares two (also on main's front ends, which
   -- agree on the spec without them).
   [{ mode := {}, seed := 28, issue := 493,
-     difference := "line 21:37: only Lean reports error: Unknown identifier `ob1?`" },
+     difference := "line 21:35: only Lean reports error: Unknown identifier `ob1?`" },
    { mode := {}, seed := 67, issue := 493,
      difference := "line 9:25: only Lean reports info: Both operands of `f0::equation0` cannot be true: \
        the stated premises require `f0.equation0.1` to be false." },
@@ -1273,10 +1276,13 @@ end
 (`Mode.cuts`) add, given each cut's number of lines, each with the line
 after which its group starts: each error of the `fren` command that is
 not a check's result, located past the first cut's lines. Errors before
-them, which may stop the checks already, are no group's. -/
+them, which may stop the checks already, are no group's. A static error
+without a location, which the generator should never cause, is blamed on
+the first group, when there are cuts. -/
 def appendedErrors (cutLines : Array Nat) (diags : Array Diagnostic) : Array (Nat × Diagnostic) :=
   diags.filterMap fun d => do
     guard (d.severity == "error" && !FrenTest.Frontends.isCheckResult d && !FrenTest.Frontends.isStoppedTrailer d)
+    if d.line == 0 then return (← cutLines[0]?, d)
     let start ← (cutLines.toList.filter (· < d.line)).max?
     return (start, d)
 
@@ -1290,6 +1296,8 @@ private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
 #guard (appendedErrors #[10, 20] #[errAt 3, errAt 12, errAt 25]).map (·.1) == #[10, 20]
 -- A check's result and a warning are not static errors.
 #guard (appendedErrors #[10] #[errAt 12 "F0603", { line := 12, severity := "warning", text := "w" }]).isEmpty
+-- A static error without a location is blamed on the first group.
+#guard (appendedErrors #[10, 20] #[{ line := 0, severity := "error", text := "unreadable", code? := some "F0001" }]).map (·.1) == #[10]
 -- No cuts, as in `--guards`: nothing is a group's.
 #guard (appendedErrors #[] #[errAt 12]).isEmpty
 end
