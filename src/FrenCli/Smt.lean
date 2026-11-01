@@ -260,8 +260,8 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
   let defs := String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
-  -- Higher-order only if the script, its definitions among it, projects a
-  -- relation (`cli::logic`).
+  -- Higher-order only if the script, including the definitions that it
+  -- includes, projects a relation (`cli::logic`).
   let logic := Fren.Core.queryLogic logic (Fren.Core.projectsRelation defs || Fren.Core.projectsRelation body)
   let head := s!"(set-logic {logic})\n(set-option :produce-models true)\n{limits.options}{options}"
   solverText head ++ defs ++ solverText body

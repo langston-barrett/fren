@@ -3,5 +3,8 @@
 proc size(x: Int): (s: Int) {
     assume small: x < 5
 
-    ensure r: s = table x { n if n > 10 => 2, _ => 1 }
+    ensure r: s = table x {
+        n if n > 10 => 2,
+        _ => 1,
+    }
 }

@@ -1227,9 +1227,19 @@ otherwise `ALL`, as `logic` gives it without a projection
 def queryLogic (logic : String) (projects : Bool) : String :=
   if logic == "HO_ALL" && !projects then "ALL" else logic
 
-#guard queryLogic (logic .expect true true) false == logic .expect true false
-#guard queryLogic (logic .expect true true) true == logic .expect true true
-#guard queryLogic (logic .expect false false true) false == logic .expect false false true
+/-- Lowering a check's logic by whether its query's script projects a
+relation (`projects`) gives the logic of that check with `projects` as its
+projection, over every kind, extension and quantification: the logic that
+`cli::logic` binds, with `projection?` read per query. -/
+theorem queryLogic_logic (k : CheckKind) (e q projects : Bool) :
+    queryLogic (logic k e true q) projects = logic k e projects q := by
+  cases k <;> cases e <;> cases q <;> cases projects <;> decide
+
+/-- A check whose spec projects no relation keeps its logic, whatever its
+script says. -/
+theorem queryLogic_unprojected (k : CheckKind) (e q projects : Bool) :
+    queryLogic (logic k e false q) projects = logic k e false q := by
+  cases k <;> cases e <;> cases q <;> cases projects <;> decide
 
 /-- Whether the SMT-LIB text `f` projects a relation, which only a query in
 higher-order logic may (`queryLogic`). A string literal that spells it makes

@@ -101,9 +101,9 @@
 (reset)
 
 error[F0603]: expectation `m::prelude::e` does not hold
-  --> test/cli/args/dump_smt_prelude.fren:20:12
+  --> test/cli/args/dump_smt_prelude.fren:23:12
    |
-20 |     expect e: r != Result::Err(true) or y >= 0
+23 |     expect e: r != Result::Err(true) or y >= 0
    |            ^ does not follow from the guarantees
    |
    = counterexample: x = Option::Some(-1), r = Result::Err(true), y = -1

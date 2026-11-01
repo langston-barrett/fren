@@ -1,8 +1,8 @@
 error[F0627]: row 3 of a table in `size::r` is never the first that holds
- --> test/cli/results/f0627_row_unreachable.fren:4:52
+ --> test/cli/results/f0627_row_unreachable.fren:7:9
   |
-4 |     ensure r: s = table { x >= 0 => 1, x < 0 => 0, _ => 2 }
-  |                                                    ^ never the first that holds
+7 |         _ => 2,
+  |         ^ never the first that holds
   |
   = note: wherever the table is evaluated, an earlier row holds, or this row's condition fails
   = help: correct its condition or the rows before it, or remove it
