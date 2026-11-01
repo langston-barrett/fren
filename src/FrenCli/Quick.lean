@@ -221,6 +221,8 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let strs ← stringsOf lits
   let sp := sp.withMatchMemo lits strs
   let shapes := sp.shapeMap
+  -- The structural recursions too.
+  let sp := sp.withCompiledRecs fun p => shapes[p]?
   -- The constraints of the searches, each compiled once, with the shapes
   -- of every interpretation below (`World.interp`).
   let compiled := Atom.compiled fun p => shapes[p]?
@@ -369,6 +371,7 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let ints := intsOf lits
   let sp := sp.withMatchMemo lits strs
   let shapes := sp.shapeMap
+  let sp := sp.withCompiledRecs fun p => shapes[p]?
   -- Compiled once, as in `Spec.quickComp`.
   let compiled := Atom.compiled fun p => shapes[p]?
   let meaning := meaning.map compiled

@@ -195,6 +195,7 @@ partial def Ex.lits : Ex → Array Int
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
   | .memo lets e => e.lits ++ lets.flatMap (·.lits)
   | .lifted lets e => e.lits ++ lets.flatten.flatMap (·.lits)
+  | .dispatch _ m => m.lits
   | .not a | .neg a | .field a _ | .pre _ _ _ a => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
@@ -222,6 +223,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
   | .memo lets e => e.equated x ++ lets.flatMap (·.equated x)
   | .lifted lets e => e.equated x ++ lets.flatten.flatMap (·.equated x)
+  | .dispatch _ m => m.equated x
   | .not a | .neg a | .field a _ | .pre _ _ _ a => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
@@ -359,6 +361,7 @@ partial def Ex.vars : Ex → Array Name
   | .lit _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
   | .memo lets e => e.vars ++ lets.flatMap (·.vars)
   | .lifted lets e => e.vars ++ lets.flatten.flatMap (·.vars)
+  | .dispatch _ m => m.vars
   | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
@@ -502,7 +505,7 @@ are, since it reads only the slots. By the cases of `Ex.eval`:
 - Everything else, such as a table or a constant, gets `never`. -/
 partial def Ex.unknownIf : Ex → UnknownIf
   | .slot k => .slot k
-  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .match a .. => a.unknownIf
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .match a .. | .dispatch _ a => a.unknownIf
   | .bin .and a b | .bin .or a b | .when _ a b => a.unknownIf.and b.unknownIf
   | .bin _ a b | .pair a b | .index a b _ _ => a.unknownIf.or b.unknownIf
   | .ite c a b =>
@@ -581,6 +584,7 @@ partial def Ex.slots : Ex → Array Nat
   | .lit _ | .var _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
   | .memo lets e => lets.flatMap (·.slots) ++ e.slots
   | .lifted lets e => lets.flatten.flatMap (·.slots) ++ e.slots
+  | .dispatch _ m => m.slots
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a => a.slots
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => a.slots ++ b.slots
   | .ite c a b => c.slots ++ a.slots ++ b.slots
@@ -801,6 +805,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => (#[], #[])
   | .memo lets e => join (lets.push e)
   | .lifted lets e => join (lets.flatten.push e)
+  | .dispatch _ m => m.strLits
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
   | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => join #[a, b]
@@ -886,6 +891,15 @@ def Spec.withMatchMemo (sp : Spec) (atoms : Array Atom) (strs : Array String) : 
     let .ok re := Fren.Core.parseRe p | continue
     memo := memo.insert p (strs.foldl (init := {}) fun m s => m.insert s (Thunk.mk fun _ => re.matches s))
   return { sp with matchMemo := memo }
+
+/-- `sp`, with the body of each structural recursion compiled
+(`Ex.compile`) for interpretations whose shapes are `shapes`, as every
+search's are (`World.interp`). An application binds the parameters in a
+frame of their own, the first innermost (`paramFrame`), so the body reads
+each by its position there, as `Ex.compile` resolves a binder that its
+scope names; it gives the same value from that frame as the body did. -/
+def Spec.withCompiledRecs (sp : Spec) (shapes : Name → Option Fren.Core.DataShape) : Spec :=
+  { sp with recDefs := sp.recDefs.foldl (init := sp.recDefs) fun m f (ps, b) => m.insert f (ps, b.compile shapes (some ps.toList)) }
 
 /-- The defined outputs of `c` that the inputs alone give, in an order in
 which each mentions only inputs and earlier such outputs. Members may

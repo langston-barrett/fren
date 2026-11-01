@@ -228,6 +228,22 @@ where
     | 0, fr => some fr
     | k + 1, fr => do payload ps vs k (← ps[k]!.matchInto vs[k]! fr)
 
+/-- One more than the greatest index of a variant that `p`, or an
+alternative of it, is, or 0 if it is none. -/
+partial def Pat.ctorBound : Pat → Nat
+  | .ctor idx _ => idx + 1
+  | .alts ps => ps.foldl (fun n p => max n p.ctorBound) 0
+  | _ => 0
+
+/-- Whether `p` may match a variant of index `idx`: `false` only if
+`p.matchInto` matches no such variant, which a literal, a variant of
+another index and an or-pattern of those do not. -/
+partial def Pat.mayMatchCtor (idx : Nat) : Pat → Bool
+  | .ctor i _ => i == idx
+  | .alts ps => ps.any (·.mayMatchCtor idx)
+  | .bool _ | .int .. | .str _ => false
+  | .wild | .bind _ => true
+
 /-- `p` as the static rules see it (`Fren.Core.Pat`). -/
 partial def Pat.core : Pat → Fren.Core.Pat
   | .wild => .wild
@@ -289,6 +305,12 @@ inductive Ex where
   evaluated once for each of their values, when first read
   (`Ex.compile`). -/
   | lifted (lets : Array (Array Ex)) (q : Ex)
+  /-- `m`, a `match`, in which a variant of index `c` is matched against
+  only the arms at the indexes `byCtor[c]`, in order: those whose patterns
+  may match it, the others matching no such variant (`Ex.compile`). A value
+  of another form, or a variant beyond `byCtor`, is matched against every
+  arm. -/
+  | dispatch (byCtor : Array (Array Nat)) (m : Ex)
   | not (a : Ex)
   | neg (a : Ex)
   | bin (op : Op) (a b : Ex)
@@ -773,6 +795,20 @@ theorem firstCaseIn_eq (xs : Array α) (take : α → Option (Option β)) (i : N
     rw [firstCaseIn, dif_neg h, List.drop_eq_nil_of_le (by simpa using h)]
     rfl
 
+/-- Leaving out cases that are not taken does not change which case is:
+`Ex.dispatch` tries only the arms of a `match` whose patterns may match
+the value. -/
+theorem firstCase_filter (xs : List α) (take : α → Option (Option β)) (keep : α → Bool)
+    (h : ∀ x ∈ xs, keep x = false → take x = some none) :
+    Fren.Core.firstCase (xs.filter keep) take = Fren.Core.firstCase xs take := by
+  induction xs with
+  | nil => rfl
+  | cons c cs ih =>
+    have ih := ih fun x hx => h x (List.mem_cons_of_mem c hx)
+    cases hk : keep c
+    · simp [List.filter, hk, ih, Fren.Core.firstCase, h c List.mem_cons_self hk]
+    · simp only [List.filter, hk, Fren.Core.firstCase, ih]
+
 /-- A binding of a binder of a `match` arm or a quantifier, in the frame
 that `Ex.eval` keeps of them, the innermost last. -/
 abbrev Binding := Name × Option Val
@@ -837,14 +873,17 @@ def paramFrame (ps : Array Name) (vs : Array Val) : Array Binding := Id.run do
 /-- How deep `Ex.eval` may recurse: each call within it, to evaluate a
 part, an argument, a function's body, a type's invariant or a
 quantifier's next bound name, spends one unit. It is far deeper than any
-evaluation needs: every evaluation in a check of Fren's own spec recurses
-less than 32 deep. -/
+evaluation needs: when it was introduced (October 2026), every evaluation
+in a check of Fren's own spec recurses less than 32 deep. It is far beyond
+what parsing or the solver allow too: 20000 nested recursions evaluated
+fine, and with 100000 the solver timed out first. -/
 def evalFuel : Nat := 1 <<< 20
 
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
 unknown value, which, since evaluation is monotone, can make no known
 value another. At run time it panics, so that a run that ran out says
-so. -/
+so: in compiled code `panic!` only prints to stderr and returns that
+unknown value, so a verdict that rested on it is inconclusive. -/
 @[noinline] def outOfFuel [Inhabited α] (_ : Unit) : α := panic! "Ex.eval ran out of fuel"
 
 /-- The value of an expression, as far as it is known: each variable as
@@ -1075,6 +1114,32 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
     match taken? with
     | some (fr, body) => body.eval I look locals slots fr memos fuel
     | none => I.fn (← unspec?) #[]
+  -- The same arm as the `match` takes: those left out are those whose
+  -- patterns do not match the value, which `firstCase` passes over
+  -- (`firstCase_filter`).
+  | .dispatch byCtor (.match e arms _ _ unspec? _) => do
+    let v ← e.eval I look locals slots frame memos fuel
+    let take (arm : Pat × Option Ex × Ex) : Option (Option (Array Binding × Ex)) :=
+      let (p, g?, body) := arm
+      match p.matchInto v frame with
+      | none => some none
+      | some fr =>
+        match g? with
+        | none => some (some (fr, body))
+        | some g => match g.eval I look locals slots fr memos fuel with
+          | some (.bool true) => some (some (fr, body))
+          | some (.bool false) => some none
+          | _ => none
+    let ks? := match v with
+      | .ctor _ idx _ => byCtor[idx]?
+      | _ => none
+    let taken? ← match ks? with
+      | some ks => firstCaseIn ks fun k => take arms[k]!
+      | none => firstCaseIn arms take
+    match taken? with
+    | some (fr, body) => body.eval I look locals slots fr memos fuel
+    | none => I.fn (← unspec?) #[]
+  | .dispatch _ m => m.eval I look locals slots frame memos fuel
   | .range lo hi => do
     let .int a ← lo.eval I look locals slots frame memos fuel | none
     let .int b ← hi.eval I look locals slots frame memos fuel | none
@@ -1159,11 +1224,23 @@ where
       | none => none
     else body.eval I look locals slots frame memos fuel
 
+/-! `Ex.eval`'s equations hold by `rfl`, so that a change to how it
+recurses, such as to well-founded recursion, or a reordering of its
+`fuel`, fails here at once. -/
+
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Array Binding)
+    (m : Array (Thunk (Option Val))) (e : Ex) : e.eval I look l s f m 0 = none := rfl
+
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Array Binding)
+    (m : Array (Thunk (Option Val))) (n : Nat) (a : Ex) :
+    (Ex.not a).eval I look l s f m (n + 1) = notV (a.eval I look l s f m n) := rfl
+
 /-- The expressions directly within `e`. -/
 def Ex.children : Ex → Array Ex
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
   | .memo lets e => lets.push e
   | .lifted lets q => lets.flatten.push q
+  | .dispatch _ m => #[m]
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a | .typed _ _ a => #[a]
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ | .range a b => #[a, b]
   | .ite c a b => #[c, a, b]
@@ -1240,7 +1317,7 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
   match e with
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
   -- Only evaluation reads what `Ex.compile` gives.
-  | .memo _ e | .lifted _ e => go e
+  | .memo _ e | .lifted _ e | .dispatch _ e => go e
   | .not a | .neg a | .field a _ | .card a => go a
   | .update a fs => go a ++ fs.flatMap (go ·.2)
   | .when negated c d => go c ++ go d (fun g => wrap (.when negated c g))
@@ -1567,8 +1644,18 @@ partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : O
     | none => .bound n
   | .lit v => .known (some v)
   | .var _ | .slot _ | .boundAt _ | .shared _ | .known _ => e
-  | e => fold (compound e)
+  | e => dispatched (fold (compound e))
 where
+  /-- A `match` whose arms' patterns tell variants apart, with the arms
+  that may match each variant (`.dispatch`): an arm whose pattern is a
+  variant of another index, or an or-pattern of such variants, or a
+  literal, matches no variant of that index (`Pat.matchInto`). -/
+  dispatched (e : Ex) : Ex := match e with
+    | .match _ arms .. =>
+      let n := arms.foldl (fun n (p, _) => max n p.ctorBound) 0
+      if n == 0 then e else
+      .dispatch ((Array.range n).map fun idx => (Array.range arms.size).filter fun k => arms[k]!.1.mayMatchCtor idx) e
+    | e => e
   /-- An expression all of whose parts are known is too, unless it applies
   a function, or is a constant, a table or `match` without a value where
   nothing holds, or an index, which may be out of range, whose values are
@@ -1945,6 +2032,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .shared k => .shared k
   | .known v => .known v
   | .lifted lets q => .lifted (lets.map (·.map (·.renameBound f))) (q.renameBound f)
+  | .dispatch ks m => .dispatch ks (m.renameBound f)
   | .memo lets e => .memo (lets.map (·.renameBound f)) (e.renameBound f)
   | .bound n => .bound (f n)
   | .not a => .not (a.renameBound f)
@@ -1982,6 +2070,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .shared k => .shared k
   | .known v => .known v
   | .lifted lets q => .lifted (lets.map (·.map (·.renameVars f))) (q.renameVars f)
+  | .dispatch ks m => .dispatch ks (m.renameVars f)
   | .memo lets e => .memo (lets.map (·.renameVars f)) (e.renameVars f)
   | .bound n => .bound n
   | .not a => .not (a.renameVars f)
@@ -2018,6 +2107,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .shared k => .shared k
   | .known v => .known v
   | .lifted lets q => .lifted (lets.map (·.map (·.substVars f))) (q.substVars f)
+  | .dispatch ks m => .dispatch ks (m.substVars f)
   | .memo lets e => .memo (lets.map (·.substVars f)) (e.substVars f)
   | .bound n => .bound n
   | .not a => .not (a.substVars f)
@@ -2055,6 +2145,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .shared k => .shared k
   | .known v => .known v
   | .lifted lets q => .lifted (lets.map (·.map (·.subst σ))) (q.subst σ)
+  | .dispatch ks m => .dispatch ks (m.subst σ)
   | .memo lets e => .memo (lets.map (·.subst σ)) (e.subst σ)
   | .bound n => (σ.lookup n).getD (.bound n)
   | .not a => .not (a.subst σ)
@@ -2107,6 +2198,7 @@ partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
   | .shared k => .shared k
   | .known v => .known v
   | .lifted lets q => .lifted (lets.map (·.map (·.substFns σ))) (q.substFns σ)
+  | .dispatch ks m => .dispatch ks (m.substFns σ)
   | .memo lets e => .memo (lets.map (·.substFns σ)) (e.substFns σ)
   | .bound n => .bound n
   | .not a => .not (a.substFns σ)
@@ -2198,6 +2290,7 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => false
   | .memo lets a => a.readsUnspecified || lets.any (·.readsUnspecified)
   | .lifted lets a => a.readsUnspecified || lets.any (·.any (·.readsUnspecified))
+  | .dispatch _ a => a.readsUnspecified
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .pre _ _ _ a => a.readsUnspecified
   | .quant _ _ _ _ ds _ a => a.readsUnspecified || ds.any (·.any (·.readsUnspecified))
   | .range lo hi => lo.readsUnspecified || hi.readsUnspecified
