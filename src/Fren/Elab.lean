@@ -180,6 +180,9 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
       checkParsed stx[1]
       checkParsed stx[2]
       unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
+    else if stx.isOfKind ``Lang.fren_row && !stx[0].isNone then
+      -- A row that starts with `|` (`F0166`).
+      throwErrorAt stx[0] Core.rowBarMsg.text
     else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr then
       stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
     else stx.getArgs.forM checkParsed

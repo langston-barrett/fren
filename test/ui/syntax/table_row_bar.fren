@@ -1,0 +1,8 @@
+-- A table's row does not start with `|`: commas separate the rows.
+proc c(x: Int): (det y: Int) {
+    out y := table {
+        x > 0 => 1,
+        | _ => 0,  --~ error: a table's row does not start with `|`
+    }
+}
+--@ exit: 2

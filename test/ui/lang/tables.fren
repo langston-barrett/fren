@@ -8,10 +8,10 @@ use Severity::{Error, Info, Silent, Warning}
 
 proc exit(ran?, worst: Severity): (det code: Int) {
     ensure rule: code = table {
-        | not ran? => 2,
-        | ran? and worst = Error => 1,
-        | ran? and worst = Warning => 3,
-        | ran? and worst is Silent | Info => 0,
+        not ran? => 2,
+        ran? and worst = Error => 1,
+        ran? and worst = Warning => 3,
+        ran? and worst is Silent | Info => 0,
     }
 
     expect documented: 0 <= code <= 3
@@ -84,8 +84,8 @@ proc indexes(q: Seq<Int>): (det y: Int) {
 -- Nested tables, each checked under the conditions around it.
 proc nested(a?, b?): (det y: Int) {
     ensure r: y = table {
-        | a? => table { b? => 3, not b? => 2 },
-        | not a? => table { b? => 1, _ => 0 },
+        a? => table { b? => 3, not b? => 2 },
+        not a? => table { b? => 1, _ => 0 },
     }
 
     expect max: y <= 3

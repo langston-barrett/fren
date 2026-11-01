@@ -138,7 +138,7 @@ element        := expr | pair
 pair           := "(" expr "," expr ")"
 field-init     := IDENT [":=" expr]
 arm            := pattern ["if" iff] "=>" expr
-row            := ["|"] (iff | "_") "=>" iff
+row            := (iff | "_") "=>" iff
 pattern        := ["|"] or-pattern
 or-pattern     := primary ("|" primary)*
 primary        := "_" | DECL | literal | range

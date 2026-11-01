@@ -311,14 +311,14 @@ pub enum GuardBound { Members, Lower, Upper, NoBound }
 
 -- The bound that `lhs relation rhs` gives.
 fn guard_bound_of(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOperand): GuardBound := table {
-    | lhs = GuardOperand::Name and relation = GuardRelation::In and rhs = GuardOperand::Free => GuardBound::Members,
-    | (lhs = GuardOperand::Name and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Free)
+    lhs = GuardOperand::Name and relation = GuardRelation::In and rhs = GuardOperand::Free => GuardBound::Members,
+    (lhs = GuardOperand::Name and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Free)
         or (lhs = GuardOperand::Free and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Name)
         => GuardBound::Lower,
-    | (lhs = GuardOperand::Name and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Free)
+    (lhs = GuardOperand::Name and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Free)
         or (lhs = GuardOperand::Free and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Name)
         => GuardBound::Upper,
-    | _ => GuardBound::NoBound,
+    _ => GuardBound::NoBound,
 }
 
 pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOperand): (
