@@ -6,6 +6,7 @@ import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs
 import FrenTest.Messages
+import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -2010,6 +2011,30 @@ def smtAgreement (env : Environment) : IO (Array String) := do
       unless cli.contains d do failures := failures.push s!"{path}: only Lean's queries have {d}"
   return failures
 
+/-- Runs `fren_test --job outOfFuel` with `env`, returning its exit code, its
+failures, if it printed them, and its stderr. -/
+def spawnOutOfFuel (env : Array (String × Option String)) : IO (UInt32 × Option (Array String) × String) := do
+  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--job", "outOfFuel"], env }
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  return (out.exitCode, (Json.parse last >>= fromJson?).toOption, out.stderr)
+
+/-- A job's `panic!` fails it (`spawnJob`): `outOfFuel`, whose evaluation
+runs out of fuel, aborts with `LEAN_ABORT_ON_PANIC`, and without it says
+so on stderr and finds that the test counts for nothing
+(`FrenTest.OutOfFuel.tinyFuel`). -/
+def panicGuard : IO (Array String) := do
+  let mut failures := #[]
+  let (code, _, err) ← spawnOutOfFuel #[("LEAN_ABORT_ON_PANIC", some "1")]
+  unless code != 0 && (err.splitOn "Ex.eval ran out of fuel").length > 1 do
+    failures := failures.push s!"running out of fuel with `LEAN_ABORT_ON_PANIC` did not abort (exit {code}):\n{err}"
+  let (code, found?, err) ← spawnOutOfFuel #[("LEAN_ABORT_ON_PANIC", none)]
+  unless (err.splitOn "Ex.eval ran out of fuel").length > 1 do
+    failures := failures.push s!"running out of fuel did not panic:\n{err}"
+  match code, found? with
+  | 0, some found => failures := failures ++ found
+  | _, _ => failures := failures.push s!"`outOfFuel` crashed without `LEAN_ABORT_ON_PANIC` (exit {code}):\n{err}"
+  return failures
+
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
   -- The ui tests of `misreadDir` run with the readers' injected bug.
@@ -2021,7 +2046,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -2036,6 +2061,9 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- Spawned with `FREN_MISREAD_MODELS` set (`spawnJob`).
   | "uiMisread" :: files => runJob bless ("ui" :: files)
   | ["leanTokens"] => leanTokens
+  | ["panicGuard"] => panicGuard
+  -- Spawned by `panicGuard` only: it panics.
+  | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
   -- fren-covers: lint::printing, lint::parenthesization
@@ -2083,8 +2111,13 @@ prints how long it took (`--timings`). -/
 def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
   let start ← IO.monoMsNow
+  -- A `panic!` aborts the job, so that it fails however its output is
+  -- read: one in a `fren` run within it, such as `Ex.eval`'s when it runs
+  -- out of fuel (`outOfFuel`), prints into that run's captured output,
+  -- which a ui test reads only for its messages.
+  let env := #[("LEAN_ABORT_ON_PANIC", some "1")]
   -- Both front ends' readers of solver models misread them (`Fren.Core.misreadModels`).
-  let env := if job.head? == some "uiMisread" then #[("FREN_MISREAD_MODELS", some "1")] else #[]
+  let env := if job.head? == some "uiMisread" then env.push ("FREN_MISREAD_MODELS", some "1") else env
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
@@ -2092,7 +2125,7 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   match Json.parse last >>= fromJson? with
   | .ok failures =>
     if out.exitCode == 0 then
-      -- Such as a `panic!`, which prints and carries on.
+      -- What a job writes to stderr outside a captured run fails it too.
       if out.stderr.isEmpty then return failures
       return failures.push s!"the job `{name}` wrote to stderr:\n{out.stderr}"
   | .error _ => pure ()

@@ -30,9 +30,10 @@ not `Meets`. -/
 def evalExit (ran complete : Bool) (status? : Option Status) (expectFalse : Bool) : UInt32 :=
   if !ran then 2 else if !complete then 3 else if status? == some .Meets && !expectFalse then 0 else 1
 
-/-- Whether a test that found what a check is about reaches it
+/-- Whether a test that found what a check is about reaches it: where the
+check's trigger, if any, holds, and the check has a value
 (`eval::reaches`). -/
-def reached (found hasTrigger trigger : Bool) : Bool := found && (!hasTrigger || trigger)
+def reached (found hasTrigger trigger decided : Bool) : Bool := found && (!hasTrigger || trigger) && decided
 
 /-- The verdict of testing a check, from whether some test refuted it, how
 many reached it, and, for realizability, whether the search saw every

@@ -801,11 +801,18 @@ that two threads share atomically, and threads that read the same objects
 contend for them: four tests of `lint::and_associates` at once, sharing
 one `Eval.Spec`, took 11.6 s, and 3.1 s each with a spec of its own. So
 `own` should build what `f` reads in the thread, not return an object
-made before. -/
+made before. The copies cost memory: when this was measured (November
+2026), a reading of Fren's own spec took about 50 MB for each thread, and
+`fren quickcheck` of it peaked at 964 MB with a reading for each thread,
+against 248 MB with one shared. With one job, there is one thread, so
+`f` is given `single?`, what the caller has already made, if it gives it,
+rather than a copy of its own. -/
 def inParallelWith [Nonempty β] (jobs : Nat) (xs : Array α) (own : IO σ) (f : σ → α → IO β)
-    (first : α → Bool := fun _ => false) : IO (Array (IO β)) := do
+    (first : α → Bool := fun _ => false) (single? : Option σ := none) : IO (Array (IO β)) := do
   if jobs ≤ 1 then
-    let l ← own
+    let l ← match single? with
+      | some l => pure l
+      | none => own
     return xs.map (f l)
   let promises ← xs.mapM fun _ => IO.Promise.new
   let firsts := xs.map first
@@ -931,7 +938,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- the end.
   -- Each thread reads the spec itself, which gives the same `spec?`.
   let solving ← (← inParallelWith (args.jobs?.getD (← jobsDefault)) todo (ownSpecOf files) solve
-    (first := fun (c, _) => c.tested.any || c.enumerated.any)).mapM id
+    (first := fun (c, _) => c.tested.any || c.enumerated.any) (single? := some (Thunk.pure spec?))).mapM id
   -- The contracts of the uninterpreted functions first, though their items
   -- come last, since what applies them rests on them
   -- (`Fren.Core.contractsEvidence`).
@@ -1073,6 +1080,7 @@ def quickcheck (args : Args) : IO UInt32 := do
     IO.lazyPure fun _ => some rep
   -- Each thread reads the spec itself, which gives the same `sp`.
   let testing ← inParallelWith (args.jobs?.getD (← jobsDefault)) items (ownSpecOf files) test
+    (single? := some (Thunk.pure (.ok sp)))
   for (c, global) in items, tested in testing do
     let rep := (← tested).getD {}
     let some ec := sp.counterpart? c global

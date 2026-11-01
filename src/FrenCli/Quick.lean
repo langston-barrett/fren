@@ -52,6 +52,10 @@ structure Admitted where
   /-- Counterexamples to call assumptions: the call, the
   called procedure, its assumption, and the shown values. -/
   instFails : Array (Name × Name × Name × Assignment) := #[]
+  /-- The call assumptions, by call and assumption, that have no value
+  on the call's inputs, as where evaluation ran out of fuel (`outOfFuel`):
+  which the test neither refutes nor reaches (`eval::reaches`). -/
+  instUndecided : Array (Name × Name) := #[]
   /-- The calls reached, by index, for counting. -/
   reached : Nat := 0
   complete : Bool := false
@@ -108,9 +112,12 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     let shown := sp.shown vars env fun v => v.role.isUniversal && v.isPub && !later.contains v.name.getRoot
     let mut failed := false
     for a in d.ofKind .assume do
-      if ({ label := a.name, pfx := i.name, e := a.e } : Atom).eval I env.look == some false then
+      match ({ label := a.name, pfx := i.name, e := a.e } : Atom).eval I env.look with
+      | some false =>
         out := { out with instFails := out.instFails.push (i.name, d.path, a.name, shown) }
         failed := true
+      | some true => pure ()
+      | none => out := { out with instUndecided := out.instUndecided.push (i.name, a.name) }
     if failed then return some out
     let atoms := pre.insts[k]!
     let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs, fixedPools : Problem }.solve sp w I env)
@@ -188,10 +195,21 @@ def Spec.noOutputsExist (sp : Spec) (w : World) (I : Interp) (c : Comp) (reqs : 
   if !outputsSeen sizes count assignments limit then return none
   return some ((core.qsort (· < ·)).map (reqs[·]!.label))
 
-/-- Whether a test that found what a check is about, in `env`, reaches it:
-whether the check's trigger, if any, holds there (`eval::reaches`). -/
-def reaches (I : Interp) (pfx : Name) (trigger? : Option Ex) (env : Env) : Bool :=
-  reached true trigger?.isSome (trigger?.any fun t => ({ label := .anonymous, pfx, e := t } : Atom).eval I env.look == some true)
+/-- Whether the trigger `trigger?` of a check, if it has one, holds in
+`env`, which a test must find to reach the check (`eval::reaches`). -/
+def triggered (I : Interp) (pfx : Name) (trigger? : Option Ex) (env : Env) : Bool :=
+  trigger?.all fun t => ({ label := .anonymous, pfx, e := t } : Atom).eval I env.look == some true
+
+/-- `t`, after a test that found what its check is about, in which the
+check's trigger, if it has one (`hasTrigger`), holds where `triggered`,
+and the check's value is `value`. The test reaches the check only where
+the trigger holds and the check has a value (`eval::reaches`): one whose
+evaluation ran out of fuel (`outOfFuel`) refutes nothing and counts for
+nothing. Where the value is `false`, it refutes the check, by `cex`. -/
+def Tally.test (t : Tally) (hasTrigger triggered : Bool) (value : Option Bool) (cex : Unit → Fren.Core.Detail) : Tally :=
+  if !reached true hasTrigger triggered value.isSome then t
+  else if value == some false then t.reach.refute (cex ())
+  else t.reach
 
 /-- Tests the procedure `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
@@ -258,9 +276,10 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     let I := w.interp sp (some shapes)
     let some adm ← sp.admit w c ints strs (some shapes) pre fixedPools | continue
     for (x, k) in instAssumes.zipIdx do
-      let reached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
-      if reached then instFound := instFound.modify k (· + 1)
-      if reached && reaches I x.1 x.2.2.2 adm.env then instT := instT.modify k Tally.reach
+      let callReached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
+      if callReached then instFound := instFound.modify k (· + 1)
+      if reached callReached x.2.2.2.isSome (triggered I x.1 x.2.2.2 adm.env) (!adm.instUndecided.contains (x.1, x.2.2.1)) then
+        instT := instT.modify k Tally.reach
       if let some (_, _, _, shown) := adm.instFails.find? fun (w, _, a, _) => w == x.1 && a == x.2.2.1 then
         instT := instT.modify k (·.refute (.counterexample shown))
     unless adm.complete do continue
@@ -286,15 +305,15 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       -- input if this one's does not. It need only meet the procedure,
       -- which is what an expectation is about, so call assumptions are
       -- hypotheses there, as in the solver's query, not obligations.
-      let env? ← if reaches I .anonymous trigger? env then pure (some env) else
+      let env? ← if triggered I .anonymous trigger? env then pure (some env) else
         -- Once refuted, an expectation needs no more searching.
         let some t := triggersP[k]! | pure none
         if (expT[k]?.bind (·.refuted?)).isSome then pure none else
         t.solve sp w I {}
       let some envE := env? | continue
-      expT := expT.modify k Tally.reach
-      if ({ label := e.name, pfx := .anonymous, e := e.e } : Atom).eval I envE.look == some false then
-        expT := expT.modify k (·.refute (.counterexample (sp.shown vars envE (·.isPub))))
+      -- The trigger holds in `envE`, as above, or by the search.
+      let value := ({ label := e.name, pfx := .anonymous, e := e.e } : Atom).eval I envE.look
+      expT := expT.modify k (·.test trigger?.isSome true value fun _ => .counterexample (sp.shown vars envE (·.isPub)))
     -- A witness of each cover goal that has none yet: this behaviour, or
     -- one searched for from a new input (`Reqs/Eval#fren-quickcheck`).
     for goal in goals, k in [0:goals.size] do
@@ -310,13 +329,11 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for x in dets, k in [0:dets.size] do
       detT := detT.modify k Tally.reach
       let some v₁ := env[x.name]? | continue
-      -- With every input given, as admission gives them, the prepared
-      -- search (`detsP`), whose variables are then `remaining`'s, and whose
-      -- `first` has the value that `.lit v₁` would.
-      let env₂? ← if inputNames.all inputs.contains then detsP[k]!.solve sp w I (inputs.insert (first x.name) v₁) else
-        let differs : Atom := { label := x.name, pfx := .anonymous, e := .bin .ne (.var x.name) (.lit v₁) }
-        let atoms := all.push differs
-        ({ vars := remaining (sp.order c) inputs, atoms, ints, strs, fixedPools : Problem }.solve sp w I inputs)
+      -- Admission gives every input a value, since it searches for them
+      -- all (`Spec.admit`), so the prepared search (`detsP`) applies: its
+      -- variables are then `remaining`'s, and its `first` has the value
+      -- that `.lit v₁` would.
+      let env₂? ← detsP[k]!.solve sp w I (inputs.insert (first x.name) v₁)
       if let some env₂ := env₂? then
         let some v₂ := env₂[x.name]? | continue
         let input := sp.shown vars env fun v => v.role == .input && v.isPub
@@ -408,10 +425,8 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
       if let some cex ← (negatedP.solve sp w I {} budget) then
         t := (t.reach).refute (.counterexample (sp.shown vars cex (·.isPub)))
         continue
-    unless reaches I .anonymous trigger env do continue
-    t := t.reach
-    if ({ label := body.name, pfx := .anonymous, e := body.e } : Atom).eval I env.look == some false then
-      t := t.refute (.counterexample (sp.shown vars env (·.isPub)))
+    let value := ({ label := body.name, pfx := .anonymous, e := body.e } : Atom).eval I env.look
+    t := t.test trigger.isSome (triggered I .anonymous trigger env) value fun _ => .counterexample (sp.shown vars env (·.isPub))
   let verdict := verdictOf .expect t
   let r : CheckResult := { kind := .expect, comp := g.path, prop? := some body.name, verdict
                            detail := match verdict with

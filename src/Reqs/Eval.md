@@ -442,7 +442,12 @@ costs one more, the direct search for a counterexample. A call
 assumption's trigger gets no such search: it is about a call's
 inputs, which its arguments give.
 
-`eval::reaches` states when a test reaches a check:
+A test reaches a check only where the check has a value in what the test
+found, too. Where it has none, as where evaluation runs out of fuel or
+reads a part that has no value, the test refutes nothing, and it says
+nothing either: counting it would let an expectation pass by testing that
+no test ever evaluated. `eval::reaches` states when a test reaches a
+check:
 
 ```fren
 set_option fren.evidence "enumerated" in
@@ -450,10 +455,12 @@ pub proc reaches(
     found?,              -- the test found what the check is about
     has_trigger?,
     trigger?,            -- the trigger holds in what the test found
+    decided?,            -- the check has a value in what the test found
 ): (det reached?) {
-    ensure rule: reached? iff (found? and (not has_trigger? or trigger?))
+    ensure rule: reached? iff (found? and (not has_trigger? or trigger?) and decided?)
 
     expect false_trigger_never: when has_trigger? and not trigger?, not reached?
+    expect undecided_never: when not decided?, not reached?
 }
 ```
 

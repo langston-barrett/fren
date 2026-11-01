@@ -50,14 +50,15 @@ impl eval_exit_code: eval::eval_exit for (ran complete : Bool) (s : Option Statu
   intro ran complete s ef _
   cases ran <;> cases complete <;> cases ef <;> rcases s with _ | _ | _ | _ <;> decide
 
-impl reaches_check: eval::reaches for (f h t : Bool) {
+impl reaches_check: eval::reaches for (f h t d : Bool) {
   found? := f,
   has_trigger? := h,
   trigger? := t,
-  reached? := reached f h t,
+  decided? := d,
+  reached? := reached f h t d,
 } by
-  intro f h t _
-  cases f <;> cases h <;> cases t <;> decide
+  intro f h t d _
+  cases f <;> cases h <;> cases t <;> cases d <;> decide
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.
