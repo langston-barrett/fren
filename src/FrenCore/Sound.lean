@@ -1125,7 +1125,7 @@ private theorem checkDets_mem {b : Backend Id F V} {r : CheckResult} :
 /-- `checkComp`'s results, in order: each selected stage in turn. -/
 theorem checkComp_eq (bk : CheckKind → Backend Id F V) (kinds : Array CheckKind) :
     (checkComp bk c kinds).run =
-      (if kinds.contains .realizable then #[(checkRealizable (bk .realizable) c).run] else #[]) ++
+      (if kinds.contains .realizable then #[(checkRealizable (bk .realizable) (c.forKind .realizable)).run] else #[]) ++
       (if kinds.contains .inst then (checkInsts (bk .inst) c).run else #[]) ++
       (if kinds.contains .expect then c.expects.map (checkExpect (bk .expect) c · |>.run) else #[]) ++
       (if kinds.contains .cover then c.covers.map (checkCover (bk .cover) c · |>.run) else #[]) ++
@@ -1157,7 +1157,7 @@ cover goals and triggers, the comparison sets of `redundancy`, its `det` variabl
 indexes. `checkComp_eq` says exactly which, and when. -/
 theorem checkComp_mem {bk : CheckKind → Backend Id F V} {kinds : Array CheckKind} {r : CheckResult}
     (h : r ∈ (checkComp bk c kinds).run) :
-    r = (checkRealizable (bk .realizable) c).run ∨
+    r = (checkRealizable (bk .realizable) (c.forKind .realizable)).run ∨
     (∃ k, ∃ hk : k < c.insts.size, ∃ a ∈ c.insts[k].assumes,
       r = (checkInst (bk .inst) c k c.insts[k] a).run) ∨
     (∃ e ∈ c.expects, r = (checkExpect (bk .expect) c e).run) ∨
@@ -1208,7 +1208,7 @@ call, each expectation, each cover goal, each trigger, each `det` variable and e
 requirement whose `vacuity` check failed. Whether they are contradictory is
 not asked once a `vacuity` check has passed (`satisfiedOf`). -/
 theorem checkComp_runs {bk : CheckKind → Backend Id F V} {kinds : Array CheckKind} :
-    (kinds.contains .realizable → (checkRealizable (bk .realizable) c).run ∈ (checkComp bk c kinds).run) ∧
+    (kinds.contains .realizable → (checkRealizable (bk .realizable) (c.forKind .realizable)).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .inst → ∀ k (hk : k < c.insts.size), ∀ a ∈ c.insts[k].assumes,
       (checkInst (bk .inst) c k c.insts[k] a).run ∈ (checkComp bk c kinds).run) ∧
     (kinds.contains .expect → ∀ e ∈ c.expects, (checkExpect (bk .expect) c e).run ∈ (checkComp bk c kinds).run) ∧
@@ -1360,6 +1360,13 @@ private theorem Sound.congr {b b' : Backend Id F V} (s : Sound b c.vars Val) (s'
   · simp [Sound.Admits, Sound.Defined, Sound.Possible, hd]
   · simp [Sound.Defined, hd]
 
+/-- An item without laws is the same for every kind of check. -/
+theorem Comp.forKind_lawless {c : Comp F} (h : c.laws = #[]) (k : CheckKind) : c.forKind k = c := by
+  unfold Comp.forKind
+  split
+  · rfl
+  · cases c; simp_all
+
 /-- When every check of a procedure passes, except perhaps `redundancy`,
 whose failures are only warnings: it has its mode's realizability meaning
 (`Sound.Realizable`: a fixed declaration witness or universal procedure
@@ -1378,6 +1385,9 @@ declare), and whose definitions realizability can substitute
 `Possible` (as for `realizable_behaves`), and some environment is possible,
 some behaviour meets every expectation: they do not hold vacuously. -/
 theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk k) c.vars Val)
+    -- Realizability asks without the laws (`CheckKind.queryHasLaws`), so
+    -- what a pass says of the item's behaviours is for one without them.
+    (hlaws : c.laws = #[])
     (hsame : ∀ k, (s k).den = (s .realizable).den ∧ (s k).HasType = (s .realizable).HasType)
     (hdefs : (s .realizable).DefsOk)
     (h : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass) :
@@ -1400,6 +1410,7 @@ theorem checkComp_pass {bk : CheckKind → Backend Id F V} (s : ∀ k, Sound (bk
       ∃ ρ, (s .realizable).Typed ρ ∧ (s .realizable).Behaves ρ ∧ ∀ e ∈ c.expects, (s .realizable).den e.2 ρ) := by
   obtain ⟨hr, hi, he, hcv, hv, -, -, hd, hix, hcp, hdj, hpre, -, hrc⟩ :=
     checkComp_runs (c := c) (bk := bk) (kinds := CheckKind.all)
+  simp only [Comp.forKind_lawless hlaws] at hr
   have all : ∀ k, CheckKind.all.contains k := by intro k; cases k <;> simp +decide [CheckKind.all]
   have pass : ∀ r ∈ (checkComp bk c).run, r.kind ≠ .redundancy → r.verdict = .pass := h
   have hR := checkRealizable_pass (s .realizable) hdefs

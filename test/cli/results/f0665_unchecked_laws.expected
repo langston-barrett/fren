@@ -1,10 +1,10 @@
-warning[F0665]: the expectation check of `Sized::anything::c` rests on the laws of `Sized`, whose consistency is not checked
+warning[F0665]: `Sized::anything::c` rests on the laws of `Sized`, whose consistency is not checked
  --> test/cli/results/f0665_unchecked_laws.fren:8:39
   |
 8 |     expect anything(s: Self) { expect c: size(s) = 42 }
   |                                       ^ rests on unchecked laws
   |
-  = note: its queries have the laws of `Sized` among their hypotheses; if no interpretation meets them all, it holds vacuously
+  = note: its verdict comes from the laws of `Sized` and its hypotheses together; if no interpretation meets all the laws, it would be the same whatever it says
   = note: Fren does not yet check that a trait's laws can hold together (#594)
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

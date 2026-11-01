@@ -29,9 +29,7 @@ trait KV {
     -- a false claim, and a cover goal, are undecided.
     expect other_key(s: Self, k: Key, j: Key, v: Int) {
         expect same: get(put(s, k, v), j) = Option::Some(v)  --~ warning: could not decide whether `traits::KV::other_key::same` holds
-        --~^ warning: rests on the laws of `traits::KV`
         cover stored: get(s, k) != Option::None  --~ warning: could not decide whether `traits::KV::other_key::stored` can be met
-        --~^ warning: rests on the laws of `traits::KV`
     }
 }
 
@@ -93,6 +91,36 @@ trait Listed {
 
     expect both(s: Self) { expect c: level(true) + value(s) >= 1 }
     --~^ warning: rests on the laws of `traits::Listed`
+}
+
+-- A failure's counterexample meets the laws, so it rests on nothing more;
+-- a constraint whose expectation passes and whose trigger cannot hold says
+-- so once.
+trait Closed {
+    fn value(Self): Int
+
+    law closed(): level(true) = 1
+
+    expect wrong(s: Self) {
+        expect c: value(s) = 3  --~ error: expectation `traits::Closed::wrong::c` does not hold
+    }
+    expect never(s: Self) {
+        expect c: when level(true) = 2, value(s) = 7  --~ warning: rests on the laws of `traits::Closed`
+        --~^ error: vacuous
+    }
+}
+
+-- Realizability asks without the laws, in both front ends: a law with a
+-- `Bool` variable under `when`, over a method with a contract. (A claim
+-- here would meet #493's `Symbol '->'` difference, which predates traits.)
+set_option fren.lint.undecidable "allow" in
+trait Flagged {
+    fn obs(s: Self): (r: Int) { ensure low: r >= 0 }
+
+    law flagged(s: Self, b?): when b?, obs(s) >= 0
+
+    expect e0(s: Self) { assume big: obs(s) > 2 }
+    --~^ warning: the assumption `big` constrains only parameters that nothing uses
 }
 
 -- Without laws, an expectation is about every carrier and every method,

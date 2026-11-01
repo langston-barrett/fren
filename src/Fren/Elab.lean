@@ -9215,6 +9215,8 @@ def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × B
         | some v, _ => some s!"\"{v}\""
         | none, some n => some (toString n)
         | none, none => none
+      -- A law has no checks of its own to set (`Core.lawSettingMsg?`).
+      if let some msg := Core.lawSettingMsg? name.toString (value.getD "") then throwErrorAt st msg.text
       elabCommand (← parseAt `command s!"set_option {name} {value.getD ""}" st)
     elabLawBody path m
   finally modifyScope fun sc => { sc with opts }

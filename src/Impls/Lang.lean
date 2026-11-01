@@ -1942,7 +1942,7 @@ impl trait_member_phase: lang::trait_member_phase for (k : Fren.Core.TraitMember
 
 /-- How the checks of an expectation, or of a law, are asked (`lang::CheckFlags`). -/
 def toCheckFlags (f : Fren.Core.CheckFlags) : lang.CheckFlags :=
-  { «in_core?» := f.inCore, «denied?» := f.denied, «fmf_bound?» := f.fmfBound }
+  { «in_core?» := f.inCore, «denied?» := f.denied }
 
 -- For every expectation's flags and every law's, what both front ends give
 -- the expectation (`Core.CheckFlags.withLaw`, which `withLaws` folds).

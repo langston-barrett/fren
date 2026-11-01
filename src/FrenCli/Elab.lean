@@ -774,8 +774,9 @@ structure State where
   sorts : Array Name := #[]
   /-- The laws of the trait being elaborated so far, each with its closed
   formula, whether it is in the decidable core, the applications in it
-  that bring facts, and whether it sets `fmf-bound` (`Reqs/Lang/Traits`). -/
-  traitLaws : Array (Name × String × Bool × Array String × Bool) := #[]
+  that bring facts, whether it sets `fmf-bound`, and whether `undecidable`
+  is an error in it (`Reqs/Lang/Traits`). -/
+  traitLaws : Array (Name × String × Bool × Array String × Bool × Bool) := #[]
   /-- A trait's members are being elaborated. -/
   inTrait : Bool := false
   /-- Each uninterpreted function's parameter and result types, in order. -/
@@ -6737,6 +6738,11 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
                                 enumerated := Fren.Core.Tested.ofSettings all.enumerated #[] #[(n, none)] #[] #[]
                                 enumSize := s.enumSize } }
 
+/-- Whether `undecidable` is an error in what reported `reports`, as the
+Lean-hosted front end records it (`undecidableDenied`). -/
+def undecidableDenied (reports : Array (Fren.Core.LintReport Span)) : Bool :=
+  reports.any fun r => r.lint == .undecidable && r.level.level.severity? == some .error
+
 /-- Elaborates a law of the trait being elaborated (`Reqs/Lang/Traits#laws`):
 its variables are a quantifier around its equation, and it mentions no
 variables, as a global expectation in the short form does. Records it in
@@ -6748,6 +6754,7 @@ def elabLaw (name : Ident) (params : Array (Ident × Option (Array Ident))) (bod
   let n := Name.mkSimple name.name
   if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
   modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
+  let reportsBefore := (← get).lintReports.size
   lintName .law n name.span
   startDeclared
   -- Distinct names (`lang::distinct_names`), without the `!` of shadowing.
@@ -6776,7 +6783,8 @@ def elabLaw (name : Ident) (params : Array (Ident × Option (Array Ident))) (bod
   lintBools body (← hidesIn cx (declared.map (·, .boundName)))
   lintDeclared .law n name.span
   discard checkCounts
-  modify fun s => { s with traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed) }
+  let denied := undecidableDenied ((← get).lintReports.extract reportsBefore)
+  modify fun s => { s with traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed, denied) }
 
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars`, and records the contract, and each clause's
@@ -7610,6 +7618,10 @@ partial def elabItem (item : Item) : M Unit := do
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => do
+    -- A law has no checks of its own to set (`Fren.Core.lawSettingMsg?`).
+    if let some (.law ..) := body? then
+      let shown := if opt.name == "fren.enumeration.size" then value else s!"\"{value}\""
+      if let some msg := Fren.Core.lawSettingMsg? opt.name shown then err stx msg
     if opt.name == "fren.enumeration.size" then
       -- Like `fren.evidence`: for the item after `in`, or the rest of the
       -- file (`Reqs/Check#checking-by-enumeration`).
@@ -7763,15 +7775,17 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
     | _ =>
       let laws := (← get).traitLaws
       let before := (← get).globals.size
+      let reportsBefore := (← get).lintReports.size
       member m
+      let denied := undecidableDenied ((← get).lintReports.extract reportsBefore)
       let st ← get
       if st.globals.size > before then
         let c := st.globals.back!
         -- Its checks are the solver's (`F0215`).
         if let some msg := Fren.Core.traitEvidenceMsg? c.tested.any c.enumerated.any then
           discard (attempt (α := Unit) (err ((f?.map (·.span)).getD name.span) msg))
-        let flags := Fren.Core.CheckFlags.withLaws { inCore := c.decidable, fmfBound := c.guarded }
-          (laws.map fun (_, _, inCore, _, fmfBound) => { inCore, fmfBound })
+        let flags := Fren.Core.CheckFlags.withLaws { inCore := c.decidable, denied, fmfBound := c.guarded }
+          (laws.map fun (_, _, inCore, _, fmfBound, denied) => { inCore, denied, fmfBound })
         let c := { c with laws := laws.map fun (l, f, _) => (l, f), lawsOf := path
                           decidable := flags.inCore, guarded := flags.fmfBound
                           natApps := c.natApps ++ laws.flatMap (·.2.2.2.1) }

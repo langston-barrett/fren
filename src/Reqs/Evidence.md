@@ -948,19 +948,57 @@ premise, settled where all of them pass.
 
 A check of an [expectation of a trait](Lang/Traits.md#expectations) has
 the trait's laws among the hypotheses of its queries, as it has the
-contracts of the uninterpreted functions that its queries apply. Laws that
-no interpretation meets make it hold vacuously. Fren does not check yet
-that a trait's laws can hold together (#594), so each check that rests on
-them says so, with the warning `F0665`, whatever its verdict, and its
-verdict is its own. `check::law_premise` states which checks rest on the
-laws: every check of an item whose queries have laws, but its
-realizability, whose query of the assumptions alone has none.
+contracts of the uninterpreted functions that its queries apply.
+`check::query_hypotheses` states which hypotheses the queries of each kind
+of check have: the laws, the item's assumptions and its calls. Every check
+but realizability has all three. Realizability asks of the assumptions
+alone, and then of the assumptions and calls, without the laws:
 
 ```fren
-pub proc law_premise(kind: Kind, laws?): (det rests?) {
-    ensure rule: rests? iff laws? and kind != Kind::Realizability
+-- Whether the queries of a check of this kind have the laws.
+pub fn query_laws?(kind: Kind) := kind != Kind::Realizability
+
+pub proc query_hypotheses(kind: Kind): (det laws?) {
+    ensure rule: laws? iff query_laws?(kind)
+
+    expect realizability_alone: when kind = Kind::Realizability, not laws?
+    expect expectations: when kind = Kind::Expectation, laws?
+}
+```
+
+Laws that no interpretation meets make each query that has them
+unsatisfiable. So a verdict that comes from an `unsat` query rests on the
+laws' consistency: an expectation's pass, or a cover goal's failure. One
+that comes from a model does not, since the model meets the laws. Fren
+does not check yet that a trait's laws can hold together (#594), so each
+constraint that has such a verdict says so, once, with the warning
+`F0665`, and its verdict is its own. `check::law_premise` states which
+verdicts rest on the laws:
+
+```fren
+-- A pass of a check of this kind comes from an `unsat` query, not a
+-- model: all but a cover goal's, a vacuity check's, a redundancy check's
+-- and a reachability question's.
+pub fn pass_from_unsat?(kind: Kind) := not kind in {
+    Kind::Cover,
+    Kind::Vacuity,
+    Kind::Redundancy,
+    Kind::Reachability,
+}
+
+-- The verdict comes from an `unsat` query.
+pub fn from_unsat?(kind: Kind, verdict: Verdict) := match verdict {
+    Verdict::Pass => pass_from_unsat?(kind),
+    Verdict::Fail => not pass_from_unsat?(kind),
+    Verdict::Inconclusive => false,
+}
+
+pub proc law_premise(kind: Kind, verdict: Verdict, laws?): (det rests?) {
+    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict)
 
     expect lawless: when not laws?, not rests?
+    expect counterexamples: when kind = Kind::Expectation and verdict = Verdict::Fail, not rests?
+    expect proofs: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass, rests?
 }
 ```
 

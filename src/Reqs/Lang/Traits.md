@@ -96,11 +96,12 @@ pub proc trait_member(
 ```
 
 r[trait.member.order]
-A trait's members are elaborated by their phase, and in the order written
-within a phase: the methods first, then the laws, then the expectations
-(`lang::trait_member_phase`). A member of another kind is reported before
-any member is elaborated. Each member reports its own errors, and its errors
-stop only what follows them within it.
+The messages about a trait's members come by their phase, and in the
+order written within a phase: those of the methods first, then those of
+the laws, then those of the expectations (`lang::trait_member_phase`). A
+member of another kind is reported, and no other member is. Each member
+reports its own errors, and its errors stop only what follows them within
+it.
 
 ```fren
 pub proc trait_member_phase(member: TraitMemberKind): (det phase: Int) {
@@ -235,27 +236,25 @@ pub proc trait_expectation(
 r[trait.expect.checks]
 An expectation of a trait has the checks of a [global
 expectation](../Check.md#global-expectations), each with the trait's laws
-among its hypotheses, but for its realizability, which asks of its own
-assumptions alone.
+among its hypotheses, but for its realizability, whose queries ask of its
+own assumptions and calls alone.
 
 r[trait.expect.core]
 An expectation of a trait is in the decidable core where it is and every
-law of its trait is, and its queries set `fmf-bound` where its own
-constructs or a law's do (`lang::law_flags`, one law at a time).
+law of its trait is, and `undecidable` is an error in it where it is in
+the expectation or in a law (`lang::law_flags`, one law at a time).
 
 ```fren
--- How the checks of an expectation, or of a law, are asked.
+-- What is known of an expectation, or of a law, before it is checked.
 pub struct CheckFlags {
     in_core?,                -- every construct is in the decidable core
     denied?,                 -- `undecidable` is an error in it
-    fmf_bound?,              -- its queries set `fmf-bound`
 }
 
 pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: CheckFlags) {
     ensure rule: combined = CheckFlags {
         in_core? := expectation.in_core? and law.in_core?,
         denied? := expectation.denied? or law.denied?,
-        fmf_bound? := expectation.fmf_bound? or law.fmf_bound?,
     }
 
     expect outside: when not law.in_core?, not combined.in_core?
@@ -263,12 +262,21 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 ```
 
 r[trait.expect.laws-unchecked]
-Each check of an expectation of a trait with laws, but its realizability,
-rests on the laws, whose consistency Fren does not check yet, and says so,
-whatever its verdict (`F0665`, `check::law_premise`).
+A verdict of a check of an expectation of a trait with laws that comes from
+an `unsat` query rests on the laws, whose consistency Fren does not check
+yet: a pass of an expectation, or a failure of a cover goal. A constraint
+with such a verdict says so once, at the constraint, whatever its other
+checks give (`F0665`, `check::law_premise`). A verdict that comes from a
+model, such as a counterexample, rests on nothing more, since the model
+meets the laws. Realizability's queries have no laws
+(`check::query_hypotheses`).
 
 r[trait.expect.once]
 An expectation of a trait is checked once, in the trait.
+
+r[trait.law.setting]
+`fren.evidence` or `fren.enumeration.size` set before a law is an error
+(`F0215`): a law has no checks of its own.
 
 r[trait.expect.evidence]
 `fren.evidence` set to testing or enumeration for an expectation of a

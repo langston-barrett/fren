@@ -95,7 +95,8 @@ structure CheckFlags where
   deriving Inhabited, DecidableEq, Repr
 
 /-- An expectation's flags with those of one law of its trait among its
-hypotheses (`lang::law_flags`). -/
+hypotheses (`lang::law_flags`). Its queries set `fmf-bound` where its own
+constructs or a law's do. -/
 def CheckFlags.withLaw (e law : CheckFlags) : CheckFlags :=
   { inCore := e.inCore && law.inCore, denied := e.denied || law.denied, fmfBound := e.fmfBound || law.fmfBound }
 
@@ -119,6 +120,17 @@ or enumeration (`traitEvidenceAccepted`), if they are. -/
 def traitEvidenceMsg? (tested enumerated : Bool) : Option Msg :=
   if traitEvidenceAccepted tested enumerated then none
   else some (traitEvidenceMsg (if tested then "random" else "enumerated"))
+
+/-- A setting of `option` to `value`, as written, before a law, which has
+no checks of its own to set (`F0215`): `fren.evidence` or
+`fren.enumeration.size`. Lint settings are accepted. -/
+def lawSettingMsg? (option value : String) : Option Msg :=
+  if option == "fren.evidence" || option == "fren.enumeration.size" then
+    some { code? := some "F0215", headline := s!"`{option}` cannot be set to `{value}` for a law"
+           label? := some "a law has no checks of its own"
+           notes := #["note: a law is a hypothesis of its trait's expectations, whose checks the setting would set",
+             "help: set it before an expectation instead"] }
+  else none
 
 /-- A member of a trait, or its carrier, declared again. -/
 def dupTraitMemberMsg (n : Name) : Msg :=

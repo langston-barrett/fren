@@ -580,8 +580,8 @@ structure Comp (F : Type) where
   memberGroups : Array (MemberGroup F) := #[]
   /-- For an expectation of a trait: the trait's laws, each a closed
   formula, which every query with the assumptions and calls among its
-  hypotheses has before them (`Comp.hyps`), but realizability's query of the
-  assumptions alone (`Reqs/Lang/Traits#meaning`). -/
+  hypotheses has before them (`Comp.hyps`), but realizability's, which sees
+  the item without them (`Comp.forKind`, `check::query_hypotheses`). -/
   laws : Array (Name × F) := #[]
   /-- The trait whose laws `laws` are. -/
   lawsOf : Name := .anonymous
@@ -726,6 +726,17 @@ def Comp.subst (c : Comp F) (b : Backend m F V) (k : CheckKind) (f : F) : F :=
 realizability. -/
 def Comp.substHyps (c : Comp F) (b : Backend m F V) (hs : Array (Name × F)) : Array (Name × F) :=
   hs.map fun (n, f) => (n, c.subst b .realizable f)
+
+/-- Whether the queries of a check of kind `k` have a trait's laws among
+their hypotheses (`check::query_hypotheses`): every check's but
+realizability's, both of whose queries ask of the item's own assumptions
+and calls alone. -/
+def CheckKind.queryHasLaws (k : CheckKind) : Bool := k != .realizable
+
+/-- `c` as the checks of kind `k` see it: without its laws where their
+queries do not have them (`CheckKind.queryHasLaws`). -/
+def Comp.forKind (c : Comp F) (k : CheckKind) : Comp F :=
+  if k.queryHasLaws then c else { c with laws := #[] }
 
 /-- The laws, the assumptions, then what each call contributes (`I`). -/
 def Comp.hyps (c : Comp F) (b : Backend m F V) (upTo : Nat := c.insts.size) : Array (Name × F) :=
@@ -1470,7 +1481,7 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let one := withApplies applied?
   let all := withAllApplies applied?
   let realizable ← ifSelected (kinds.contains .realizable)
-    ((#[·]) <$> one (checkRealizable (bk .realizable) c examples interprets))
+    ((#[·]) <$> one (checkRealizable (bk .realizable) (c.forKind .realizable) examples interprets))
   let insts ← ifSelected (kinds.contains .inst) (all (checkInsts (bk .inst) c))
   let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM fun e => one (checkExpect (bk .expect) c e))
   let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (fun g => one (checkCover (bk .cover) c g examples)))
@@ -1643,15 +1654,43 @@ def coverInterpreted (c : Comp F) (interprets : F → Bool) (n : Name) : Bool :=
     | some (_, g) => (c.coverFormulas g).any interprets
     | none => false
 
-/-- Whether a check of kind `k` of an item whose queries have a trait's laws
-(`hasLaws`) rests on those laws (`check::law_premise`): every check but
-realizability, whose query of the assumptions alone has none. -/
-def lawPremise (k : CheckKind) (hasLaws : Bool) : Bool := hasLaws && k != .realizable
+/-- Whether a pass of a check of kind `k` comes from an `unsat` query, a
+proof, rather than from a model (`check::pass_from_unsat?`): a cover goal,
+a vacuity check and a reachability question pass by a witness, and a
+redundancy check by a model in which the constraint is needed. -/
+def CheckKind.passFromUnsat : CheckKind → Bool
+  | .cover | .vacuity | .redundancy | .reachability => false
+  | _ => true
 
-/-- `rs`, with each result that rests on the laws of `c`'s trait marked
-(`lawPremise`), for the message that says so (`lawsMsg`). -/
-def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult :=
-  rs.map fun r => if lawPremise r.kind !c.laws.isEmpty then { r with restsOnLaws? := some c.lawsOf } else r
+/-- Whether a verdict `v` of a check of kind `k` comes from an `unsat`
+query (`check::from_unsat?`): a pass or a failure, whichever is not the
+model's, and never an inconclusive verdict, which comes from neither. -/
+def fromUnsat (k : CheckKind) (v : Verdict) : Bool :=
+  match v with
+  | .pass => k.passFromUnsat
+  | .fail => !k.passFromUnsat
+  | .inconclusive => false
+
+/-- Whether the verdict `v` of a check of kind `k`, of an item whose trait
+has laws (`hasLaws`), rests on the laws' consistency (`check::law_premise`):
+where its queries have the laws (`CheckKind.queryHasLaws`) and it comes
+from an `unsat` query, which laws that contradict each other would give. A
+verdict from a model does not: the model meets the laws. -/
+def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) : Bool :=
+  hasLaws && k.queryHasLaws && fromUnsat k v
+
+/-- `rs`, with the first result at each constraint that rests on the laws
+of `c`'s trait marked (`lawPremise`), for the one message there that says
+so (`lawsMsg`). -/
+def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult := Id.run do
+  let mut seen : Array (Option Name) := #[]
+  let mut out := #[]
+  for r in rs do
+    if lawPremise r.kind r.verdict !c.laws.isEmpty && !seen.contains r.prop? then
+      seen := seen.push r.prop?
+      out := out.push { r with restsOnLaws? := some c.lawsOf }
+    else out := out.push r
+  return out
 
 /-- `rs`, with each cover goal's result marked by `coverInterpreted`, and
 each result that rests on a trait's laws by `withLaws`. Both front ends
@@ -2189,14 +2228,15 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
     }
   return out
 
-/-- A check that rests on the laws of the trait `t`, whose consistency is not
-checked (`F0665`, `check::law_premise`): whatever its verdict, it says so,
-since laws that contradict each other make it hold vacuously. -/
+/-- A constraint whose verdict rests on the laws of the trait `t`, whose
+consistency is not checked (`F0665`, `check::law_premise`): laws that
+contradict each other would give that verdict whatever the constraint
+says. -/
 def lawsMsg (what : String) (t : Name) : Msg :=
   { code? := some "F0665"
     headline := s!"{what} rests on the laws of `{showComp t}`, whose consistency is not checked"
     label? := some "rests on unchecked laws"
-    notes := #[s!"note: its queries have the laws of `{showComp t}` among their hypotheses; if no interpretation meets them all, it holds vacuously",
+    notes := #[s!"note: its verdict comes from the laws of `{showComp t}` and its hypotheses together; if no interpretation meets all the laws, it would be the same whatever it says",
       "note: Fren does not yet check that a trait's laws can hold together (#594)"] }
 
 /-- The message of a result that rests on a trait's laws (`lawsMsg`), at
@@ -2205,8 +2245,8 @@ def lawsMessages (r : CheckResult) : Array Message :=
   match r.restsOnLaws? with
   | some t =>
     let subject := match r.prop? with
-      | some n => s!"the {kindName r.kind} check of `{showComp (r.comp ++ n)}`"
-      | none => s!"the {kindName r.kind} check of `{showComp r.comp}`"
+      | some n => s!"`{showComp (r.comp ++ n)}`"
+      | none => s!"`{showComp r.comp}`"
     #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t }]
   | none => #[]
 

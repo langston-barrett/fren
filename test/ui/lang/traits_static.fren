@@ -53,6 +53,13 @@ trait Banged {
     law big!(s: Self): size(s) > 0  --~ error: `big!` shadows nothing
 }
 
+-- A law has no checks of its own to set.
+trait Settled {
+    fn size(Self): Int
+    set_option fren.evidence "random" in  --~ error: `fren.evidence` cannot be set to `"random"` for a law
+    law sized(s: Self): size(s) >= 0
+}
+
 -- A method's contract sees the methods before it, not those after.
 trait Later {
     fn size(s: Self): (r: Int) { ensure big: r > weight(s) }
