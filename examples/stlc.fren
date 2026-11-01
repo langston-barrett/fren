@@ -1,7 +1,7 @@
--- The simply typed lambda calculus with Booleans, as in chapters 8 and 9 of
--- Pierce, "Types and Programming Languages": syntax, substitution, typing
--- and call-by-value evaluation, each stated as in the textbook, and the
--- theorems that tie them together.
+-- The simply typed lambda calculus with Booleans, as in chapters 8, 9 and
+-- 12 of Pierce, "Types and Programming Languages": syntax, substitution,
+-- typing and call-by-value evaluation, each stated as in the textbook, and
+-- the theorems that tie them together.
 --
 -- The typing and reduction relations come first, as inference rules read
 -- over relations (`Rel`). The type checker and the evaluators are functions
@@ -10,14 +10,12 @@
 -- The laws that one step of a function's equations decides are decided by
 -- the solver; the theorems, which need induction, are tested by `fren
 -- check` and proved in Stlc.lean, which binds the proofs to the procedures
--- below with `impl`. The last section, "Experiments", tries two kinds of
--- genericity planned for Fren's own spec, and reports what Fren lacked.
+-- below with `impl`, except where a comment says that a law is tested only.
+-- The ui test that runs this file through both front ends expects their
+-- notes, written as annotations on each procedure checked by random
+-- testing: that testing does not run its vacuity and redundancy checks,
+-- and that the Lean front end leaves it to `fren check`.
 mod stlc
-
--- Relations over terms, quantifiers over their members, and strings joined
--- with `++` are outside Fren's decidable core. The solver still decides the
--- ground laws below; the rest is tested, and proved in Lean.
-set_option fren.lint.undecidable "allow"
 
 -- # Syntax
 --
@@ -81,6 +79,9 @@ pub fn free(t: Named): Set<Name> := match t {
 pub fn closed?(t: Named) := free(t) = {}
 
 -- Every name of a term, free or bound, joined: a longer name is fresh.
+-- Joining strings is outside the decidable core, here and in `range_names`
+-- and `fresh`: the laws of fresh names are proved in Stlc.lean.
+set_option fren.lint.undecidable "allow" in
 pub fn all_names(t: Named): String := match t {
     Term::Var(x) => x,
     Term::Lam(x, _, body) => x ++ all_names(body),
@@ -98,6 +99,7 @@ pub fn apply_subst(sub: Subst, x: Name): Named := match sub {
     Subst::Bind(y, s, rest) => if y = x then s else apply_subst(rest, x),
 }
 
+set_option fren.lint.undecidable "allow" in
 pub fn range_names(sub: Subst): String := match sub {
     Subst::Id => "",
     Subst::Bind(_, s, rest) => all_names(s) ++ range_names(rest),
@@ -114,6 +116,7 @@ pub fn captures?(sub: Subst, y: Name, fv: Set<Name>) := match sub {
 
 -- A name free in no term of `sub`'s range nor in `body`: longer than every
 -- name in them.
+set_option fren.lint.undecidable "allow" in
 pub fn fresh(sub: Subst, body: Named): Name := range_names(sub) ++ all_names(body) ++ "'"
 
 pub fn new_binder(sub: Subst, y: Name, body: Named): Name :=
@@ -179,18 +182,24 @@ pub fn lookup(ctx: Ctx, x: Name): Option<Ty> := match ctx {
 
 pub struct Judgment { ctx: Ctx, term: Named }
 
--- The judgment `ctx |- t: _`, and the judgment of a closed term.
+-- `Judgment { ctx, term }` is the left half `ctx |- t` of a typing judgment
+-- `ctx |- t: T`: the typing relation holds it against its type `T`.
 pub fn judgment(ctx: Ctx, t: Named): Judgment := Judgment { ctx, term := t }
 pub fn closed_judgment(t: Named): Judgment := Judgment {
     ctx := Ctx::Empty,
     term := t,
 }
 
+-- The types that `typing` gives `ctx |- t`. Projecting a relation is
+-- outside the decidable core, here and in the rules below: the solver
+-- still decides them on relations that are written out.
+set_option fren.lint.undecidable "allow" in
 pub fn types(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named): Set<Ty> := typing.image(
     {judgment(ctx, t)}
 )
 
 -- `ctx |- t: ty` follows by one rule from the judgments in `typing`.
+set_option fren.lint.undecidable "allow" in
 pub fn typing_rule?(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named, ty: Ty) := match t {
     Term::Var(x) => lookup(ctx, x) = Some(ty),
     Term::Lam(x, ty1, t2) => match ty {
@@ -206,6 +215,7 @@ pub fn typing_rule?(typing: Rel<Judgment, Ty>, ctx: Ctx, t: Named, ty: Ty) := ma
 }
 
 -- Every judgment of `typing` follows by a rule from judgments in it.
+set_option fren.lint.undecidable "allow" in
 pub fn typing_derivation?(typing: Rel<Judgment, Ty>) := forall (j: Judgment), when j in typing.domain,
     forall (ty: Ty), when ty in typing.image({j}), typing_rule?(typing, j.ctx, j.term, ty)
 
@@ -263,6 +273,7 @@ pub fn reduction_rule?(red: Rel<Named, Named>, t: Named, u: Named) := match t, u
 }
 
 -- Every step of `red` follows by a rule from steps in it.
+set_option fren.lint.undecidable "allow" in
 pub fn reduction_derivation?(red: Rel<Named, Named>) := forall (t: Named), when t in red.domain,
     forall (u: Named), when u in red.image({t}), reduction_rule?(red, t, u)
 
@@ -294,7 +305,10 @@ pub proc reductions(t2: Named, t3: Named) {
 -- `typeof` computes the type, and `typing_of` the derivation that it
 -- builds. The checker is sound (its derivation is one, and has its answer)
 -- and complete (it agrees with every derivation), so a term has at most one
--- type. Proved in Stlc.lean by induction on the term.
+-- type. Proved in Stlc.lean by induction on the term. Random testing almost
+-- never draws a relation that is a derivation, so the laws premised on one,
+-- here `complete` and `unique`, rest on the proof; the test guards their
+-- statement.
 pub fn typeof(ctx: Ctx, t: Named): Option<Ty> := match t {
     Term::Var(x) => lookup(ctx, x),
     Term::Lam(x, ty1, t2) => match typeof(Ctx::Bind(x, ty1, ctx), t2) {
@@ -349,7 +363,9 @@ expect typed_examples: typeof(Ctx::Empty, IDENTITY) = Some(Ty::Arrow(Ty::Boolean
 -- reduces to a value; `eval` is big-step, with fuel for the depth of its
 -- derivation. `step` is sound and complete for the reduction relation, so
 -- reduction is deterministic, and the two evaluators agree. Proved in
--- Stlc.lean by induction on the term and on the fuel.
+-- Stlc.lean by induction on the term and on the fuel; as for the checker,
+-- the laws premised on a derivation, `complete` and `deterministic`, rest
+-- on the proof.
 pub fn step(t: Named): Option<Named> := match t {
     Term::App(t1, t2) => if not value?(t1) then match step(t1) {
         Some(u1) => Some(Term::App(u1, t2)),
@@ -457,8 +473,10 @@ expect evaluated_examples: eval(THREE, Term::App(NEGATION, Term::True)) = Some(T
 -- Typing depends on the context only at the free variables, so it survives
 -- a binding of a variable that is not free (weakening), and substituting a
 -- well-typed term for a variable keeps the type (the substitution lemma).
--- Proved in Stlc.lean.
+-- Proved in Stlc.lean. `extensional` quantifies over a computed set, outside
+-- the decidable core.
 set_option fren.evidence "random" in
+set_option fren.lint.undecidable "allow" in
 pub proc context_lemmas(ctx: Ctx, ctx2: Ctx, t: Named, x: Name, ty: Ty, ty1: Ty, s: Named) {  --~ info: the vacuity and redundancy checks of `stlc::context_lemmas` are not run by random testing
     --~^[hosted] info: the checks of `stlc::context_lemmas` set to random testing are run by `fren check`, not in Lean
     ensure extensional: when (forall (z: Name), when z in free(t), lookup(ctx, z) = lookup(ctx2, z)),
@@ -471,8 +489,11 @@ pub proc context_lemmas(ctx: Ctx, ctx2: Ctx, t: Named, x: Name, ty: Ty, ty1: Ty,
 -- Progress and preservation, so type safety: a well-typed closed term
 -- never gets stuck, however far it is reduced, and whatever it reduces to
 -- has its type. Proved in Stlc.lean, preservation from the substitution
--- lemma and progress from the canonical forms of values.
+-- lemma and progress from the canonical forms of values. `preservation_many`
+-- takes the transitive closure of a relation, outside the decidable core,
+-- and is premised on derivations, so it rests on the proof.
 set_option fren.evidence "random" in
+set_option fren.lint.undecidable "allow" in
 pub proc type_safety(  --~ info: the vacuity and redundancy checks of `stlc::type_safety` are not run by random testing
     --~^[hosted] info: the checks of `stlc::type_safety` set to random testing are run by `fren check`, not in Lean
     typing: Rel<Judgment, Ty>,
@@ -494,25 +515,19 @@ pub proc type_safety(  --~ info: the vacuity and redundancy checks of `stlc::typ
         typeof(Ctx::Empty, u) = Some(ty)
 }
 
--- Normalization: a well-typed closed term reduces to a value. The fuel it
--- needs has no bound that Fren can state without quantifying over `Fuel`,
--- which testing cannot evaluate (`F0639`), so this law takes the fuel it
--- tests with as given, and Stlc.lean states the theorem with the fuel
--- existential.
-pub const TESTED_FUEL: Fuel := plus(sixteen, sixteen)
-    where eight := Fuel::More(
-        Fuel::More(
-            Fuel::More(
-                Fuel::More(Fuel::More(Fuel::More(Fuel::More(Fuel::More(Fuel::Zero)))))
-            )
-        )
-    ),
-    sixteen := plus(eight, eight)
+-- Normalization: a well-typed closed term reduces to a value in some
+-- number of steps. How many is more than a structural recursion can
+-- compute, so the steps are an uninterpreted function, and the theorem is
+-- the law that `normalize` succeeds with that much fuel: `fren check` tests
+-- it by searching for the fuel, and Stlc.lean proves it, by Tait's method
+-- (chapter 12), and interprets `steps` from the proof.
+pub fn steps(Named): Fuel
 
 set_option fren.evidence "random" in
-pub proc normalization(t: Named, ty: Ty) {  --~ info: the vacuity and redundancy checks of `stlc::normalization` are not run by random testing
+pub proc normalization(t: Named, ty: Ty, n: Fuel, v: Named) {  --~ info: the vacuity and redundancy checks of `stlc::normalization` are not run by random testing
     --~^[hosted] info: the checks of `stlc::normalization` set to random testing are run by `fren check`, not in Lean
-    ensure terminates: when typeof(Ctx::Empty, t) = Some(ty), normalize(TESTED_FUEL, t) is Some(_)
+    ensure terminates: when typeof(Ctx::Empty, t) = Some(ty), normalize(steps(t), t) is Some(_)
+    ensure more_fuel: when normalize(n, t) = Some(v), normalize(Fuel::More(n), t) = Some(v)
 }
 
 -- # Concrete syntax
@@ -570,7 +585,9 @@ pub fn text(t: Token): String := match t {
     Token::Ident(x) => x,
 }
 
--- The tokens as text, one space apart.
+-- The tokens as text, one space apart (joining strings is outside the
+-- decidable core).
+set_option fren.lint.undecidable "allow" in
 pub fn render(ts: Tokens): String := match ts {
     Tokens::Nil => "",
     Tokens::Cons(t, Tokens::Nil) => text(t),
@@ -785,17 +802,13 @@ pub fn fuel_for(t: Named): Fuel := match t {
 }
 
 -- The round trip: the parser reads what the printer writes, with fuel for
--- the term's size and more, and so the printer is canonical: what parses
--- to a term, however it was parenthesized, is printed as the term is.
--- Proved in Stlc.lean by induction on the term.
+-- the term's size and more. Tested only: Stlc.lean does not prove it.
 set_option fren.evidence "random" in
 pub proc print_parse(t: Named, ty: Ty, fuel: Fuel, mode: Mode, ts: Tokens, u: Named, rest: Tokens) {  --~ info: the vacuity and redundancy checks of `stlc::print_parse` are not run by random testing
     --~^[hosted] info: the checks of `stlc::print_parse` set to random testing are run by `fren check`, not in Lean
     ensure terms: parse(fuel_for(t), Mode::Term, print(t)) = Parsed::Ok(t, Tokens::Nil)
     ensure types: parse_ty(fuel_for_ty(ty), false, print_ty(ty)) = ParsedTy::Ok(ty, Tokens::Nil)
     ensure more_fuel: when parse(fuel, mode, ts) = Parsed::Ok(u, rest), parse(Fuel::More(fuel), mode, ts) = Parsed::Ok(u, rest)
-    ensure canonical: when parse(fuel, Mode::Term, ts) = Parsed::Ok(t, Tokens::Nil),
-        parse(fuel_for(t), Mode::Term, print(t)) = Parsed::Ok(t, Tokens::Nil)
 }
 
 set_option fren.lint.assertions_on_constants "allow" in
@@ -863,7 +876,9 @@ pub fn to_nameless(names: Names, t: Named): Option<Nameless> := match t {
 }
 
 -- `x` with one `'` for each name in scope: a name not among them, since
--- those are the earlier fresh names.
+-- those are the earlier fresh names (joining strings is outside the
+-- decidable core).
+set_option fren.lint.undecidable "allow" in
 pub fn fresh_name(names: Names): Name := match names {
     Names::Nil => "x",
     Names::Cons(_, rest) => fresh_name(rest) ++ "'",
@@ -968,26 +983,17 @@ pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alph
     ensure typed_alpha: when alpha_eq?(Names::Nil, t, t2), typeof(Ctx::Empty, t) = typeof(Ctx::Empty, t2)
 }
 
--- # Experiments
+-- # Experiment: one layer of a term
 --
--- Two kinds of genericity, tried here before Fren's own spec (#536, #539).
---
--- **Names.** `Term<V, B>` is generic in the names, and `Named` and
--- `Nameless` are two instances. A generic function cannot be recursive
--- (`F0331`), so every recursion above is at one instance, and only
--- one-layer functions such as `value?` are generic: `free<V, B>(t: Term<V,
--- B>): Set<V>` would also need a type parameter as an element type
--- (`F0387`). The type costs nothing: its solver encoding is one parametric
--- datatype, instantiated where it is used.
---
--- **Recursive positions.** `TermF<V, B, E>` is one layer of a term, with
--- its children abstracted as `E`. The fixpoint `enum Fix<V, B> { In(TermF<V,
--- B, Fix<V, B>>) }` is rejected (`F0387`: a recursive payload must be the
--- enumeration's own type), and the fold would be a generic recursion, so
--- the algebras are stated here, decided by the solver at every `V` and `B`
--- since they are not recursive, and Stlc.lean ties the knot: `Term` is the
--- fixpoint, and `size`, `free`, `value?` and `typeof` are the folds of their
--- algebras.
+-- `TermF<V, B, E>` is one layer of a term, with its children abstracted as
+-- `E`: the shape planned for Fren's own spec (#539). Its fixpoint, `enum
+-- Fix<V, B> { In(TermF<V, B, Fix<V, B>>) }`, is rejected (`F0387`: a
+-- recursive payload must be the enumeration's own type), and a fold over
+-- it would be a generic recursion (`F0331`), so an algebra is stated here,
+-- decided by the solver at every `V` and `B` since it is not recursive, and
+-- Stlc.lean ties the knot: `Term` is the fixpoint, and `size` is the fold
+-- of `size_alg` (`size_fold`). What else this example needed and Fren
+-- lacks is filed under the language spec's queue (#545), as #602 to #606.
 pub enum TermF<V, B, E> {
     Var(V),
     Lam(B, Ty, E),
@@ -1016,39 +1022,6 @@ pub fn size_alg<V, B>(l: TermF<V, B, Int>): Int := match l {
     TermF::If(t1, t2, t3) => 1 + t1 + t2 + t3,
 }
 
-pub fn value_alg?<V, B, E>(l: TermF<V, B, E>) := l is TermF::Lam(_, _, _) | TermF::True | TermF::False
-
-pub fn free_alg(l: TermF<Name, Name, Set<Name>>): Set<Name> := match l {
-    TermF::Var(x) => {x},
-    TermF::Lam(x, _, body) => body minus {x},
-    TermF::App(t1, t2) => t1 union t2,
-    TermF::True => {},
-    TermF::False => {},
-    TermF::If(t1, t2, t3) => t1 union t2 union t3,
-}
-
--- The children of the layer are the types of the term's children, the
--- body's in the context extended by the binder: what the fold passes down
--- is the context, which an algebra over values cannot say, so Stlc.lean
--- states it (`typeof_fold`).
-pub fn typeof_alg(ctx: Ctx, l: TermF<Name, Name, Option<Ty>>): Option<Ty> := match l {
-    TermF::Var(x) => lookup(ctx, x),
-    TermF::Lam(_, ty1, body) => match body {
-        Some(ty2) => Some(Ty::Arrow(ty1, ty2)),
-        None => None,
-    },
-    TermF::App(t1, t2) => match t1, t2 {
-        Some(Ty::Arrow(ty11, ty12)), Some(ty2) => if ty11 = ty2 then Some(ty12) else None,
-        _, _ => None,
-    },
-    TermF::If(t1, t2, t3) => match t1, t2, t3 {
-        Some(Ty::Boolean), Some(ty2), Some(ty3) => if ty2 = ty3 then Some(ty2) else None,
-        _, _, _ => None,
-    },
-    TermF::True => Some(Ty::Boolean),
-    TermF::False => Some(Ty::Boolean),
-}
-
 -- The size of a term, the fold of `size_alg`, with its contract checked by
 -- Hoare induction.
 pub fn size(t: Named): (n: Int) {
@@ -1062,84 +1035,3 @@ pub fn size(t: Named): (n: Int) {
     }
     ensure positive: n >= 1
 }
-
--- The laws of the layers, decided by the solver. A procedure cannot be
--- generic, so they are stated at `Name`; the functions themselves are
--- checked once, at every `V` and `B`.
-pub proc layer_laws(
-    l: TermF<Name, Name, Int>,
-    x: Name,
-    y: Name,
-    ty: Ty,
-    body: Int,
-    t1: Int,
-    t2: Int,
-) {
-    expect map_id: map_layer(l, |e| e) = l
-    expect map_value: value_alg?(map_layer(l, |e| e + 1)) iff value_alg?(l)
-    expect size_abs: when l = TermF::Lam(y, ty, body) and body >= 1, size_alg(l) > body
-    expect size_app: when l = TermF::App(t1, t2) and t1 >= 1 and t2 >= 1, size_alg(l) > t1 + t2
-    expect size_leaf: when l = TermF::Var(x), size_alg(l) = 1
-    expect value_layer: value_alg?(l) iff l is TermF::Lam(_, _, _) | TermF::True | TermF::False
-}
-
-pub proc typing_layer(
-    ctx: Ctx,
-    x: Name,
-    ty: Ty,
-    ty2: Ty,
-    body: Option<Ty>,
-    t1: Option<Ty>,
-    t2: Option<Ty>,
-) {
-    expect var_layer: typeof_alg(ctx, TermF::Var(x)) = lookup(ctx, x)
-    expect abs_layer: typeof_alg(ctx, TermF::Lam(x, ty, body)) = Some(Ty::Arrow(ty, ty2)) iff body = Some(ty2)
-    expect app_layer: typeof_alg(ctx, TermF::App(t1, t2)) = Some(ty2) iff match t2 {
-        Some(ty11) => t1 = Some(Ty::Arrow(ty11, ty2)),
-        None => false,
-    }
-    expect if_layer: typeof_alg(ctx, TermF::If(Some(Ty::Boolean), body, body)) = body
-}
-
--- ## What decided what
---
--- `fren check` on this file runs its 45 checks in about 0.3 s: 0.2 s in
--- the solver and 0.1 s testing. The hosted front end, `#fren_check` in
--- Stlc.lean, takes about 20 s, most of it compiling the recursions to
--- Lean, with `parse` the costliest at 3.6 s: its first shape, with the
--- conditional's branches parsed inline, took 8.4 s and exceeded the limit
--- of 200000 heartbeats for one declaration, which the modes `Consequent`
--- and `Alternative` brought it under. Stlc.lean's proofs build in about
--- the same time again.
---
--- Decided by the solver: the rules read off a literal relation
--- (`derivations`, `reductions`), the one-step laws of the printer
--- (`parenthesization`) and of alpha-equivalence, the laws of the layers,
--- and `size`'s contract by Hoare induction. Tested by random testing, and
--- proved in Lean with an `impl`: `substitution_laws`, `context_lemmas`,
--- `checker`, `evaluator`, `type_safety` and `nameless_round_trip`. Tested
--- only: `print_parse`, `normalization` at `TESTED_FUEL` and `alpha_laws`.
---
--- Where the solver stopped: a law quantified over the members of a
--- relation that is a parameter, such as the inversion of a rule under
--- `typing_derivation?(typing)`, needs cvc5's higher-order logic and timed
--- out at 10 s each, where the same law over a literal relation is decided
--- in tens of milliseconds; and a trigger that applies a recursive function
--- to a variable, such as `when typeof(ctx, f) = Some(Ty::Arrow(p, r))`,
--- gives a witness that evaluation cannot confirm (`F0450`). So the rules
--- are stated as equations and over literal relations, and the inductive
--- consequences are tested and proved.
---
--- ## What Fren lacked
---
--- Each is an issue in the language spec's queue (#545), with the snippet
--- and the error: structural recursion in a generic function, and a type
--- parameter as an element type (#602), which is why the recursions are
--- at `Named`; recursion on a measure or on the suffix a call returns
--- (#603), which is why `parse` takes fuel, there is no lexer, and `fresh`
--- picks a name by length; mutual recursion (#604), which is why the
--- parser's levels are one function with a `Mode`; generic procedures
--- (#605), which is why `layer_laws` is at `Name`; and a tested `exists`
--- over a recursive enum (#606), which is why normalization is at
--- `TESTED_FUEL`. The fixpoint of `TermF` through a generic argument is
--- `F0387` (#539).

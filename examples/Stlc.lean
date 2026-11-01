@@ -7,13 +7,15 @@ import Fren.Literate
 # The simply typed lambda calculus in Lean
 
 The theorems of `stlc.fren` that need induction, proved over its generated
-definitions and bound to its procedures with `impl`: the context lemmas and
-the substitution lemma, preservation, progress and type safety, the
-soundness and completeness of the type checker for the typing relation and
-of the evaluator for the reduction relation, the agreement of the two
-evaluators, and the laws of substitution, of the nameless form and of the
-concrete syntax. The last section ties the knot of the one-layer algebras:
-each recursion over terms is the fold of its algebra.
+definitions and bound to its procedures with `impl`: the laws of
+substitution, the context lemmas and the substitution lemma, the soundness
+and completeness of the type checker for the typing relation and of the
+evaluator for the reduction relation, the agreement of the two evaluators,
+preservation, progress and type safety, normalization (by Tait's method, as
+in chapter 12 of TAPL), and the round trip of the nameless form. Not proved,
+tested only: the round trip of the concrete syntax and the laws of
+alpha-equivalence. The last section ties the knot of the one-layer
+algebra: `size` is the fold of `size_alg`.
 -/
 
 open Fren.Lang
@@ -1164,6 +1166,391 @@ theorem preservation_closure {typing : Fren.FinSet (Judgment × Ty)} {red : Fren
   | single h => exact preservation _ _ _ _ h0 (step_complete _ red _ hr h)
   | tail _ h ih => exact preservation _ _ _ _ ih (step_complete _ red _ hr h)
 
+/-! ## Normalization -/
+
+/-- A substitution that captures nothing: what it substitutes for a
+variable is closed, or the variable itself. -/
+def Good (sub : Subst) : Prop := ∀ w z, z ∈ free (apply_subst sub w) → z = w
+
+theorem good_id : Good .Id := by
+  intro w z hz; simp only [apply_subst, mem_free_var] at hz; exact hz
+
+theorem good_bind {sub : Subst} {x : String} {s : Named} (h : Good sub) (hs : ∀ z, z ∈ free s → z = x) :
+    Good (.Bind x s sub) := by
+  intro w z hz
+  by_cases hx : x = w
+  · subst hx; simp only [apply_subst, if_true] at hz; exact hs z hz
+  · simp only [apply_subst, hx, if_false] at hz; exact h w z hz
+
+theorem good_bind_var {sub : Subst} (h : Good sub) (x : String) : Good (.Bind x (.Var x) sub) :=
+  good_bind h fun _ hz => mem_free_var.1 hz
+
+theorem good_bind_closed {sub : Subst} {x : String} {s : Named} (h : Good sub) (hs : ∀ z, z ∉ free s) :
+    Good (.Bind x s sub) :=
+  good_bind h fun z hz => absurd hz (hs z)
+
+/-- A good substitution captures nothing, whatever the body's free variables. -/
+theorem captures_false_of_good : ∀ (sub : Subst) (y : String) (fv : Fren.FinSet String),
+    (∀ w, w ∈ fv → ∀ z, z ∈ free (apply_subst sub w) → z = w) → captures? sub y fv = false := by
+  intro sub
+  induction sub with
+  | Id => intro y fv _; simp [captures?]
+  | Bind x s rest ih =>
+    intro y fv h
+    simp only [captures?, decide_eq_false_iff_not, not_or, Bool.not_eq_true]
+    constructor
+    · rintro ⟨⟨hxy, hx⟩, hy⟩
+      exact hxy (h x hx y (by simpa [apply_subst] using hy)).symm
+    · apply ih
+      intro w hw z hz
+      have hw' : w ∈ fv ∧ w ≠ x := by simpa using hw
+      exact h w hw'.1 z (by simpa [apply_subst, Ne.symm hw'.2] using hz)
+
+theorem new_binder_of_good {sub : Subst} (h : Good sub) (y : String) (body : Named) :
+    new_binder sub y body = y := by
+  simp only [new_binder]
+  rw [captures_false_of_good sub y (free body) fun w _ z hz => h w z hz]
+  rfl
+
+theorem subst_all_lam_of_good {sub : Subst} (h : Good sub) (y : String) (ty : Ty) (b : Named) :
+    subst_all sub (.Lam y ty b) = .Lam y ty (subst_all (.Bind y (.Var y) sub) b) := by
+  simp only [subst_all, new_binder_of_good h]
+
+/-- The identity on `zs` in front of `sub`: the binders passed on the way
+into a term. -/
+def rename : List String → Subst → Subst
+  | [], sub => sub
+  | z :: zs, sub => .Bind z (.Var z) (rename zs sub)
+
+theorem good_rename {sub : Subst} (h : Good sub) : ∀ zs, Good (rename zs sub)
+  | [] => h
+  | z :: zs => good_bind_var (good_rename h zs) z
+
+theorem apply_rename_mem {x : String} : ∀ (zs : List String) (sub : Subst), x ∈ zs →
+    apply_subst (rename zs sub) x = .Var x
+  | [], _, h => by simp at h
+  | z :: zs, sub, h => by
+    simp only [rename, apply_subst]
+    by_cases hz : z = x
+    · subst hz; simp
+    · rw [if_neg hz]; exact apply_rename_mem zs sub (by simpa [List.mem_cons, Ne.symm hz] using h)
+
+theorem apply_rename_not_mem {x : String} : ∀ (zs : List String) (sub : Subst), x ∉ zs →
+    apply_subst (rename zs sub) x = apply_subst sub x
+  | [], _, _ => rfl
+  | z :: zs, sub, h => by
+    have hz : z ≠ x := fun e => h (by simp [e])
+    simp only [rename, apply_subst, hz, if_false]
+    exact apply_rename_not_mem zs sub fun hm => h (List.mem_cons_of_mem z hm)
+
+/-- Substituting a closed `v` for `y` after a good `σ` that kept `y` is
+substituting `σ` with `y ↦ v`, under any binders. -/
+theorem subst_all_comp : ∀ (b : Named) (zs : List String) (y : String) (v : Named) (σ : Subst),
+    Good σ → (∀ z, z ∉ free v) →
+    subst_all (rename zs (.Bind y v .Id)) (subst_all (rename zs (.Bind y (.Var y) σ)) b) =
+      subst_all (rename zs (.Bind y v σ)) b := by
+  intro b
+  induction b with
+  | Var x =>
+    intro zs y v σ hσ hv
+    simp only [subst_all]
+    by_cases hx : x ∈ zs
+    · rw [apply_rename_mem zs _ hx, apply_rename_mem zs _ hx]
+      simp only [subst_all]
+      rw [apply_rename_mem zs _ hx]
+    · rw [apply_rename_not_mem zs _ hx, apply_rename_not_mem zs _ hx]
+      by_cases hy : y = x
+      · subst hy
+        simp [apply_subst, subst_all, apply_rename_not_mem zs _ hx]
+      · simp only [apply_subst, hy, if_false]
+        apply subst_all_id
+        intro w hw
+        rw [hσ x w hw, apply_rename_not_mem zs _ hx]
+        simp [apply_subst, hy]
+  | Lam w ty b ih =>
+    intro zs y v σ hσ hv
+    have h1 : Good (rename zs (.Bind y (.Var y) σ)) := good_rename (good_bind_var hσ y) zs
+    have h2 : Good (rename zs (.Bind y v .Id)) := good_rename (good_bind_closed good_id hv) zs
+    have h3 : Good (rename zs (.Bind y v σ)) := good_rename (good_bind_closed hσ hv) zs
+    rw [subst_all_lam_of_good h1, subst_all_lam_of_good h2, subst_all_lam_of_good h3]
+    congr 1
+    exact ih (w :: zs) y v σ hσ hv
+  | App f a ihf iha =>
+    intro zs y v σ hσ hv
+    simp only [subst_all]
+    rw [ihf zs y v σ hσ hv, iha zs y v σ hσ hv]
+  | True => intros; rfl
+  | False => intros; rfl
+  | If c a b ihc iha ihb =>
+    intro zs y v σ hσ hv
+    simp only [subst_all]
+    rw [ihc zs y v σ hσ hv, iha zs y v σ hσ hv, ihb zs y v σ hσ hv]
+
+theorem subst_comp {σ : Subst} {y : String} {v b : Named} (hσ : Good σ) (hv : ∀ z, z ∉ free v) :
+    subst y v (subst_all (.Bind y (.Var y) σ) b) = subst_all (.Bind y v σ) b := by
+  have := subst_all_comp b [] y v σ hσ hv
+  simpa [subst, rename] using this
+
+/-- A free variable of a well-typed term is in the context. -/
+theorem free_lookup : ∀ (t : Named) (ctx : Ctx) (ty : Ty), typeof ctx t = some ty →
+    ∀ z, z ∈ free t → lookup ctx z ≠ none := by
+  intro t
+  induction t with
+  | Var x =>
+    intro ctx ty h z hz
+    rw [mem_free_var] at hz; subst hz
+    simp only [typeof] at h
+    simp [h]
+  | Lam x ty1 b ih =>
+    intro ctx ty h z hz
+    obtain ⟨ty2, hb, rfl⟩ := typeof_lam_inv h
+    rw [mem_free_lam] at hz
+    have := ih _ _ hb z hz.1
+    rwa [lookup_bind_other _ (Ne.symm hz.2)] at this
+  | App f a ihf iha =>
+    intro ctx ty h z hz
+    obtain ⟨p, hf, ha⟩ := typeof_app_inv h
+    rcases mem_free_app.1 hz with hz | hz
+    · exact ihf _ _ hf z hz
+    · exact iha _ _ ha z hz
+  | True => intro ctx ty _ z hz; simp [free] at hz
+  | False => intro ctx ty _ z hz; simp [free] at hz
+  | If c a b ihc iha ihb =>
+    intro ctx ty h z hz
+    obtain ⟨hc, ha, hb⟩ := typeof_if_inv h
+    rcases mem_free_if.1 hz with hz | hz | hz
+    · exact ihc _ _ hc z hz
+    · exact iha _ _ ha z hz
+    · exact ihb _ _ hb z hz
+
+theorem closed_of_typed {t : Named} {ty : Ty} (h : typeof .Empty t = some ty) : ∀ z, z ∉ free t :=
+  fun z hz => free_lookup t _ _ h z hz (by simp [lookup])
+
+/-! ### `normalize` -/
+
+theorem normalize_zero_inv {t v : Named} (h : normalize .Zero t = some v) :
+    value? String String t = true ∧ v = t := by
+  by_cases hv : value? String String t = true
+  · simp [normalize, hv] at h; exact ⟨hv, h.symm⟩
+  · simp [normalize, hv] at h
+
+theorem normalize_more_inv {n : Fuel} {t v : Named} (h : normalize (.More n) t = some v) :
+    (value? String String t = true ∧ v = t) ∨ (∃ u, step t = some u ∧ normalize n u = some v) := by
+  by_cases hv : value? String String t = true
+  · simp [normalize, hv] at h; exact Or.inl ⟨hv, h.symm⟩
+  · simp only [normalize, hv, Bool.false_eq_true, if_false] at h
+    cases hs : step t with
+    | none => simp [hs] at h
+    | some u => simp [hs] at h; exact Or.inr ⟨u, rfl, h⟩
+
+theorem normalize_value {t : Named} (hv : value? String String t = true) : ∀ n, normalize n t = some t
+  | .Zero => by simp [normalize, hv]
+  | .More _ => by simp [normalize, hv]
+
+theorem normalize_step {t u : Named} (hs : step t = some u) (n : Fuel) :
+    normalize (.More n) t = normalize n u := by
+  have hv : ¬ value? String String t = true := fun hv => by rw [step_value hv] at hs; cases hs
+  simp [normalize, hv, hs]
+
+theorem normalize_some_value : ∀ (n : Fuel) {t v : Named}, normalize n t = some v → value? String String v = true
+  | .Zero, _, _, h => by obtain ⟨hv, rfl⟩ := normalize_zero_inv h; exact hv
+  | .More n, _, _, h => by
+    rcases normalize_more_inv h with ⟨hv, rfl⟩ | ⟨u, _, hu⟩
+    · exact hv
+    · exact normalize_some_value n hu
+
+/-- More fuel changes nothing. -/
+theorem normalize_mono : ∀ (n : Fuel) {t v : Named}, normalize n t = some v → normalize (.More n) t = some v
+  | .Zero, _, _, h => by obtain ⟨hv, rfl⟩ := normalize_zero_inv h; exact normalize_value hv _
+  | .More n, _, _, h => by
+    rcases normalize_more_inv h with ⟨hv, rfl⟩ | ⟨u, hs, hu⟩
+    · exact normalize_value hv _
+    · rw [normalize_step hs]; exact normalize_mono n hu
+
+/-- `t` reduces to a value with some fuel. -/
+def Halts (t : Named) : Prop := ∃ n v, normalize n t = some v
+
+theorem halts_step {t u : Named} (hs : step t = some u) : Halts t ↔ Halts u := by
+  constructor
+  · rintro ⟨n, v, h⟩
+    cases n with
+    | Zero => obtain ⟨hv, _⟩ := normalize_zero_inv h; rw [step_value hv] at hs; cases hs
+    | More m => exact ⟨m, v, by rwa [normalize_step hs] at h⟩
+  · rintro ⟨n, v, h⟩; exact ⟨.More n, v, by rw [normalize_step hs]; exact h⟩
+
+/-! ### The logical relation -/
+
+/-- A closed term of the type that halts and, at an arrow type, takes
+related arguments to related results (TAPL, chapter 12). -/
+def R : Ty → Named → Prop
+  | .Boolean, t => typeof .Empty t = some .Boolean ∧ Halts t
+  | .Arrow a b, t => typeof .Empty t = some (.Arrow a b) ∧ Halts t ∧ ∀ s, R a s → R b (.App t s)
+
+theorem R_typed : ∀ {ty : Ty} {t : Named}, R ty t → typeof .Empty t = some ty
+  | .Boolean, _, h => h.1
+  | .Arrow _ _, _, h => h.1
+
+theorem R_halts : ∀ {ty : Ty} {t : Named}, R ty t → Halts t
+  | .Boolean, _, h => h.2
+  | .Arrow _ _, _, h => h.2.1
+
+/-- `R` is closed under a step, forwards and backwards. -/
+theorem R_step : ∀ (ty : Ty) {t u : Named}, typeof .Empty t = some ty → step t = some u → (R ty t ↔ R ty u)
+  | .Boolean, t, u, ht, hs => by
+    have hu := preservation t .Empty .Boolean u ht hs
+    simp only [R, ht, hu, true_and]
+    exact halts_step hs
+  | .Arrow a b, t, u, ht, hs => by
+    have hu := preservation t .Empty (.Arrow a b) u ht hs
+    have hv : ¬ value? String String t = true := fun hv => by rw [step_value hv] at hs; cases hs
+    simp only [R, ht, hu, true_and]
+    rw [halts_step hs]
+    apply and_congr_right; intro _
+    constructor
+    · intro h s hr; exact (R_step b (typeof_app ht (R_typed hr)) (step_app_left_some hv hs)).1 (h s hr)
+    · intro h s hr; exact (R_step b (typeof_app ht (R_typed hr)) (step_app_left_some hv hs)).2 (h s hr)
+
+theorem R_normalize : ∀ (n : Fuel) (ty : Ty) {t v : Named}, typeof .Empty t = some ty → normalize n t = some v →
+    (R ty t ↔ R ty v)
+  | .Zero, _, _, _, _, h => by obtain ⟨_, rfl⟩ := normalize_zero_inv h; exact Iff.rfl
+  | .More n, ty, t, _, ht, h => by
+    rcases normalize_more_inv h with ⟨_, rfl⟩ | ⟨u, hs, hu⟩
+    · exact Iff.rfl
+    · exact (R_step ty ht hs).trans (R_normalize n ty (preservation t .Empty ty u ht hs) hu)
+
+/-- The argument of a value reduces under the application. -/
+theorem R_app_arg : ∀ (n : Fuel) (b : Ty) {f s v : Named}, value? String String f = true →
+    typeof .Empty (.App f s) = some b → normalize n s = some v → (R b (.App f s) ↔ R b (.App f v))
+  | .Zero, _, _, _, _, _, _, h => by obtain ⟨_, rfl⟩ := normalize_zero_inv h; exact Iff.rfl
+  | .More n, b, f, s, _, hf, ht, h => by
+    rcases normalize_more_inv h with ⟨_, rfl⟩ | ⟨u, hs, hu⟩
+    · exact Iff.rfl
+    · have hv : ¬ value? String String s = true := fun hv => by rw [step_value hv] at hs; cases hs
+      have hstep := step_app_right_some (t2 := s) (u2 := u) hf hv hs
+      exact (R_step b ht hstep).trans (R_app_arg n b hf (preservation _ .Empty b _ ht hstep) hu)
+
+/-- The condition of a conditional reduces under it. -/
+theorem R_if_cond : ∀ (n : Fuel) (ty : Ty) {c a b v : Named},
+    typeof .Empty (.If c a b) = some ty → normalize n c = some v → (R ty (.If c a b) ↔ R ty (.If v a b))
+  | .Zero, _, _, _, _, _, _, h => by obtain ⟨_, rfl⟩ := normalize_zero_inv h; exact Iff.rfl
+  | .More n, ty, c, a, b, _, ht, h => by
+    rcases normalize_more_inv h with ⟨_, rfl⟩ | ⟨u, hs, hu⟩
+    · exact Iff.rfl
+    · have h1 : c ≠ .True := fun e => by subst e; rw [step_value (by simp [value?])] at hs; cases hs
+      have h2 : c ≠ .False := fun e => by subst e; rw [step_value (by simp [value?])] at hs; cases hs
+      have hstep := step_if_some (a := a) (b := b) h1 h2 hs
+      exact (R_step ty ht hstep).trans (R_if_cond n ty (preservation _ .Empty ty _ ht hstep) hu)
+
+theorem R_true : R .Boolean .True := ⟨by simp [typeof], .Zero, .True, normalize_value (by simp [value?]) _⟩
+theorem R_false : R .Boolean .False := ⟨by simp [typeof], .Zero, .False, normalize_value (by simp [value?]) _⟩
+
+/-- `σ` closes `Γ`: it takes each variable of `Γ` to a related term, and
+leaves every other variable alone. -/
+def Inst (Γ : Ctx) (σ : Subst) : Prop :=
+  ∀ x, (∀ ty, lookup Γ x = some ty → R ty (apply_subst σ x)) ∧ (lookup Γ x = none → apply_subst σ x = .Var x)
+
+theorem good_of_inst {Γ : Ctx} {σ : Subst} (h : Inst Γ σ) : Good σ := by
+  intro w z hz
+  cases hl : lookup Γ w with
+  | none => rw [(h w).2 hl, mem_free_var] at hz; exact hz
+  | some ty => exact absurd hz (closed_of_typed (R_typed ((h w).1 ty hl)) z)
+
+theorem inst_empty : Inst .Empty .Id := fun _ =>
+  ⟨fun _ h => by simp [lookup] at h, fun _ => by simp [apply_subst]⟩
+
+theorem inst_bind {Γ : Ctx} {σ : Subst} {y : String} {a : Ty} {v : Named} (h : Inst Γ σ) (hv : R a v) :
+    Inst (.Bind y a Γ) (.Bind y v σ) := by
+  intro x
+  by_cases hyx : y = x
+  · subst hyx
+    refine ⟨fun ty hl => ?_, fun hl => ?_⟩
+    · rw [lookup_bind_same] at hl; cases hl; simpa [apply_subst] using hv
+    · rw [lookup_bind_same] at hl; cases hl
+  · rw [lookup_bind_other _ hyx]
+    simp only [apply_subst, hyx, if_false]
+    exact h x
+
+/-- The fundamental theorem: a well-typed term, closed by related terms, is related. -/
+theorem fundamental : ∀ (t : Named) (Γ : Ctx) (ty : Ty) (σ : Subst), typeof Γ t = some ty → Inst Γ σ →
+    R ty (subst_all σ t) := by
+  intro t
+  induction t with
+  | Var x =>
+    intro Γ ty σ h hσ
+    simp only [subst_all]
+    exact (hσ x).1 ty (by simpa [typeof] using h)
+  | Lam y a b ih =>
+    intro Γ ty σ h hσ
+    obtain ⟨b', hb, rfl⟩ := typeof_lam_inv h
+    have hg := good_of_inst hσ
+    rw [subst_all_lam_of_good hg]
+    have hB : typeof (.Bind y a .Empty) (subst_all (.Bind y (.Var y) σ) b) = some b' := by
+      apply typeof_subst_all b _ _ _ _ hb
+      intro x _ τ hl
+      by_cases hyx : y = x
+      · subst hyx; rw [lookup_bind_same] at hl; cases hl; simp [apply_subst, typeof, lookup]
+      · rw [lookup_bind_other _ hyx] at hl
+        simp only [apply_subst, hyx, if_false]
+        have hx := (hσ x).1 τ hl
+        rw [typeof_weaken a (closed_of_typed (R_typed hx) y)]
+        exact R_typed hx
+    refine ⟨typeof_lam hB, ⟨.Zero, _, normalize_value (by simp [value?]) _⟩, fun s hs => ?_⟩
+    obtain ⟨n, v, hn⟩ := R_halts hs
+    have hsv : R a v := (R_normalize n a (R_typed hs) hn).1 hs
+    have hvv : value? String String v = true := normalize_some_value n hn
+    have hApp : typeof .Empty (.App (.Lam y a (subst_all (.Bind y (.Var y) σ) b)) s) = some b' :=
+      typeof_app (typeof_lam hB) (R_typed hs)
+    rw [R_app_arg n b' (by simp [value?]) hApp hn]
+    have hApp' : typeof .Empty (.App (.Lam y a (subst_all (.Bind y (.Var y) σ) b)) v) = some b' :=
+      typeof_app (typeof_lam hB) (R_typed hsv)
+    rw [R_step b' hApp' (step_app_beta hvv), subst_comp hg (closed_of_typed (R_typed hsv))]
+    exact ih _ _ _ hb (inst_bind hσ hsv)
+  | App f x ihf ihx =>
+    intro Γ ty σ h hσ
+    obtain ⟨p, hf, hx⟩ := typeof_app_inv h
+    simp only [subst_all]
+    exact (ihf _ _ _ hf hσ).2.2 _ (ihx _ _ _ hx hσ)
+  | True =>
+    intro Γ ty σ h _
+    simp only [typeof, Option.some.injEq] at h
+    subst h; exact R_true
+  | False =>
+    intro Γ ty σ h _
+    simp only [typeof, Option.some.injEq] at h
+    subst h; exact R_false
+  | If c a b ihc iha ihb =>
+    intro Γ ty σ h hσ
+    obtain ⟨hc, ha, hb⟩ := typeof_if_inv h
+    simp only [subst_all]
+    have hC := ihc _ _ _ hc hσ
+    have hA := iha _ _ _ ha hσ
+    have hB := ihb _ _ _ hb hσ
+    obtain ⟨n, v, hn⟩ := R_halts hC
+    have hCv : R .Boolean v := (R_normalize n .Boolean (R_typed hC) hn).1 hC
+    have hvv := normalize_some_value n hn
+    have hIf : typeof .Empty (.If (subst_all σ c) (subst_all σ a) (subst_all σ b)) = some ty :=
+      typeof_if (R_typed hC) (R_typed hA) (R_typed hB)
+    rw [R_if_cond n ty hIf hn]
+    have hIf' : typeof .Empty (.If v (subst_all σ a) (subst_all σ b)) = some ty :=
+      typeof_if (R_typed hCv) (R_typed hA) (R_typed hB)
+    rcases canonical_bool hvv (R_typed hCv) with rfl | rfl
+    · rw [R_step ty (u := subst_all σ a) hIf' (by simp [step])]; exact hA
+    · rw [R_step ty (u := subst_all σ b) hIf' (by simp [step])]; exact hB
+
+/-- Normalization: a well-typed closed term reduces to a value. -/
+theorem normalization (t : Named) (ty : Ty) (h : typeof .Empty t = some ty) : ∃ n v, normalize n t = some v := by
+  have hR := fundamental t .Empty ty .Id h inst_empty
+  rw [subst_all_id t .Id fun x _ => by simp [apply_subst]] at hR
+  exact R_halts hR
+
+/-- A fuel that normalizes a well-typed closed term, from the proof. -/
+noncomputable def enough_fuel (t : Named) : Fuel := Classical.epsilon fun n => ∃ v, normalize n t = some v
+
+theorem enough_fuel_spec {t : Named} {ty : Ty} (h : typeof .Empty t = some ty) :
+    ∃ v, normalize (enough_fuel t) t = some v :=
+  Classical.epsilon_spec (p := fun n => ∃ v, normalize n t = some v)
+    (let ⟨n, v, hn⟩ := normalization t ty h; ⟨n, v, hn⟩)
+
 /-! ## Nameless terms -/
 
 /-- The names that `to_named` declares, from the outside in: `x`, `x'`, ... -/
@@ -1384,28 +1771,6 @@ def layer {E : Type} (f : Named → E) : Named → TermF String String E
 theorem size_fold (t : Named) : size t = size_alg String String (layer size t) := by
   cases t <;> simp [size, size_alg, layer]
 
-theorem value_fold (t : Named) : value? String String t = value_alg? String String Named (layer id t) := by
-  cases t <;> simp [value?, value_alg?, layer]
-
-theorem free_fold (t : Named) : free t = free_alg (layer free t) := by
-  cases t <;> simp [free, free_alg, layer]
-
-/-- The children of `typeof`'s layer are typed in their own contexts: the
-body of an abstraction in the context extended by its binder. -/
-def typeLayer (ctx : Ctx) : Named → TermF String String (Option Ty)
-  | .Var x => .Var x
-  | .Lam x ty b => .Lam x ty (typeof (.Bind x ty ctx) b)
-  | .App a b => .App (typeof ctx a) (typeof ctx b)
-  | .True => .True
-  | .False => .False
-  | .If c a b => .If (typeof ctx c) (typeof ctx a) (typeof ctx b)
-
-theorem typeof_fold (ctx : Ctx) (t : Named) : typeof ctx t = typeof_alg ctx (typeLayer ctx t) := by
-  cases t <;> simp only [typeof, typeof_alg, typeLayer]
-  case Lam x ty b => cases typeof (Ctx.Bind x ty ctx) b <;> rfl
-  case App f a => rcases typeof ctx f with _ | (_ | ⟨p, q⟩) <;> cases typeof ctx a <;> rfl
-  case If c a b => rcases typeof ctx c with _ | (_ | ⟨p, q⟩) <;> cases typeof ctx a <;> cases typeof ctx b <;> rfl
-
 theorem map_layer_id {V B E : Type} [Inhabited V] [Inhabited B] [Inhabited E] (l : TermF V B E) :
     map_layer V B E E l id = l := by
   cases l <;> simp [map_layer]
@@ -1466,6 +1831,18 @@ impl type_safety_proved: type_safety for (typing : Fren.FinSet (Judgment × Ty))
   · obtain ⟨hty, hv | ⟨u, hu⟩⟩ := safety n t ty h
     · exact ⟨hty, Or.inl hv⟩
     · exact ⟨hty, Or.inr (by rw [hu])⟩
+
+-- The fuel that normalizes a term is what the proof gives.
+interp steps := enough_fuel
+
+impl normalization_proved: normalization for (t : Named) (ty : Ty) (n : Fuel) (v : Named) {
+  t := t, ty := ty, n := n, v := v
+} by
+  intro t ty n v _
+  simp only [fren_spec]
+  refine ⟨fun h => ?_, fun h => normalize_mono n h⟩
+  obtain ⟨w, hw⟩ := enough_fuel_spec h
+  erw [hw]
 
 impl nameless_round_trip_proved: nameless_round_trip for (t : Named) (nt : Term Int Anon) { t := t, nt := nt } by
   intro t nt _
