@@ -926,12 +926,13 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let heads := c.funFacts.toArray.filterMap fun (h, _) => if h.startsWith "|::" then none else some h
     let appsOf (f : String) := (factTermsIn peeled heads f).map fun t => ((peeled.idxOf? t).map (apps[·]!)).getD t
     -- And the functions whose contracts those facts have, which its check
-    -- rests on (`Fren.Core.appFactsWith`).
+    -- rests on, but its own function's, in its own contract
+    -- (`Fren.Core.appFactsWith`).
     let fnOf (app : String) : Option Lean.Name :=
       let inner := (splitLets app).2.1
       contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString
     let (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf
-      (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal)
+      (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
     if let some r := applied? then
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
@@ -1012,6 +1013,7 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
   match contract, c.fn?, c.vars.back? with
   | true, some f, some v =>
     Fren.Core.contractComp core.path f (c.vars.pop.map (·.name)) v.name core.assumes core.reqs core.tables c.generic
+      core.branchGroups core.memberGroups
   | _, _, _ => core
 
 /-- `rs`, results of `c`, with each cover goal's marked if its query uses

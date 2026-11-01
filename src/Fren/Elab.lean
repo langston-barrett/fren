@@ -7101,18 +7101,29 @@ def contractClause (modName path : Name) (post : Bool) (vars : Array Var) (fnVar
     let t ← toTerm cx e
     checkDeclared e t (mkConst ``Bool) fun _ => "note: a clause of a contract is a `Bool`"
     let body ← elabProp t
-    let tables := (← takeIndexes fvs (fun (x : Expr) => x.replaceFVars fnFvs phs)).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
-    let checked? ← if fnVars.isEmpty then pure none else some <$> mkLambdaFVars fvs (body.replaceFVars fnFvs phs)
+    -- The function applied to its parameters, at its own type parameters,
+    -- whatever term gives their `Inhabited` instances.
+    let isApp (ph : Name) : TermElabM (Expr → Bool) := do
+      let nTypes := 2 * ((← placeholderOf path).typeParams.size)
+      return fun t => t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
+    let ofFnParams (x : Expr) : Expr := x.replaceFVars fnFvs phs
+    -- A postcondition's questions are about the value, as its
+    -- realizability is, not about the function applied to its parameters,
+    -- whose contract is this one: assumed of it, the clause that a
+    -- question leaves out would decide it (`check::disjointness`).
+    let tables ← match post, value? with
+      | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
+        let app ← isApp ph
+        takeIndexes (fvs.push x) fun e => (ofFnParams e).replace fun t => if app t then some x else none
+      | _, _ => takeIndexes fvs ofFnParams
+    let tables := tables.filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
+    let checked? ← if fnVars.isEmpty then pure none else some <$> mkLambdaFVars fvs (ofFnParams body)
     -- A postcondition of the value, for realizability: the function
     -- applied to its parameters is the value.
     let ofValue? ← match post, value? with
       | true, some (ph, v) => withLocalDeclD v.name v.type fun x => do
-        -- At its own type parameters, whatever term gives their
-        -- `Inhabited` instances.
-        let nTypes := 2 * ((← placeholderOf path).typeParams.size)
-        let isApp (t : Expr) : Bool :=
-          t.isAppOfArity ph (nTypes + fvs.size) && t.getAppArgs.extract nTypes == fvs
-        some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if isApp t then some x else none)
+        let app ← isApp ph
+        some <$> mkLambdaFVars (fvs.push x) (body.replace fun t => if app t then some x else none)
       | _, _ => pure none
     let branchGroups ← clauseBranchGroups cx .anonymous e (fvs ++ fnFvs)
     let memberGroups ← clauseMemberGroups cx .anonymous e (fvs ++ fnFvs)
@@ -7261,7 +7272,9 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
           evaluationGuard? := ← member.evaluationGuard?.mapM withValue }
       return { group with members }
     return { p with body := ← withValue p.body, branchGroups := branches, memberGroups := observations }
-  let sites' ← sites.mapM fun (n, place, r, q, g) => return (n, place, r, q, ← withValue g)
+  -- A postcondition's questions are over the value already.
+  let sites' ← sites.mapM fun (n, place, r, q, g) =>
+    return (n, place, r, q, ← if place == .body then pure g else withValue g)
   return (vars.push v, props', sites')
 
 /-- Elaborates the function `stx`, a `fnCmd`, as written or as a function

@@ -786,9 +786,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     withoutModifyingState do
     -- With the `have`s of `let`s and `where` clauses substituted, so that an
     -- application to a name mentions no bound variable. And the functions
-    -- whose contracts those facts have (`Core.appFactsWith`).
+    -- whose contracts those facts have, but its own function's, in its
+    -- own contract (`Core.appFactsWith`).
     let (appFacts, fns) ← Core.appFactsWith appsOf factsOf fnOf (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t))
-      (← zetaReduce goal)
+      (← zetaReduce goal) c.fn?
     let unfoldedHyps ← match unfolded? with
       | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)
       | none => hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
@@ -1221,8 +1222,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let generic := c.fn?.any fun f => ((st0.abstracts.get? f).map (!·.typeParams.isEmpty)).getD false
     let comp : Core.Comp Expr := match contract, c.fn?, c.vars.back? with
       | true, some f, some v =>
-        { Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables generic
-          with branchGroups := comp.branchGroups, memberGroups := comp.memberGroups }
+        Core.contractComp c.path f (c.vars.pop.map fun (x : Var) => x.name) v.name comp.assumes comp.reqs comp.tables generic
+          comp.branchGroups comp.memberGroups
       | _, _, _ => comp
     -- What the `Nat` variables bring (`lang::nat_variable`): each, of both
     -- copies, is at least 0. Each query's applications bring their own

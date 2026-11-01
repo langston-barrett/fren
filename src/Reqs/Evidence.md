@@ -835,6 +835,58 @@ pub proc query_applies(
 }
 ```
 
+`check::query_facts` states which applications in a check's query bring
+their facts to it, which is what `has_hypothesis?`'s `Facts` assumes: those
+of every function but the one whose body or contract the check's item is.
+Every query of such an item counts, not only those of its clauses' tables
+and applications: the evidence puts each of its checks, its realizability
+check among them, at `Site::FunctionClause` of that function
+(`Fren.Core.CheckResult.site`). In an uninterpreted function's own
+contract, each application of it is its value
+([Contracts](Check.md#contracts-of-uninterpreted-functions)), so its facts
+would be its own postconditions, which its realizability check is there to
+show can hold, and among them the very clause that a check of
+completeness, disjointness or reachability leaves out: with them,
+`ensure e: table { x > 0 => r > 0, r < 0 => true, _ => true }` of `fn f(x:
+Int): (r: Int)` would pass its disjointness, as the clause itself rules out
+`x > 0 and r < 0`. A defined function's body is such an item too, but its
+applications of itself bring nothing here anyway: a defined function has
+no contract facts (`fnOf` names none), and a recursive one's postconditions
+come in at its recursive applications through `recursiveQueryFacts`
+instead (`lang::recursive_facts`). Both front ends' query builders decide
+it with `Fren.Core.appBrings`, inside `Fren.Core.appFactsWith`, given the
+item's function (`Comp.fn?`), so that one that left an application of the
+function in its own clause would still not assume its contract there. That
+holds of functions that are not generic: `f` is the function that `fnOf`
+names, and it names none for an application of a generic function, whose
+instance's premise is not applied yet (#522), so `query_facts` does not
+cover a generic function's own contract, where only each front end's own
+substitution of its value keeps its facts out:
+
+```fren
+pub proc query_facts(
+    own_fn?,                     -- the check's item is the body or contract of a function
+    g: Int,                      -- that function, by its position
+    f: Int,                      -- the function of an application in its query, by its position
+): (det brings?) {
+    ensure rule: brings? iff not (own_fn? and f = g)
+
+    -- What the query has is what the evidence takes it to have, for every
+    -- kind of check of the item, its realizability among them.
+    expect as_hypothesis: forall (item: CheckedItem) (kind: Kind), when own_fn?, brings? iff has_hypothesis?(
+        CheckRecord {
+            item,
+            kind,
+            site := Site::FunctionClause(g),
+            applies := {f},
+            types := {},
+        },
+        Hypothesis::Facts(f),
+        0
+    )
+}
+```
+
 `check::check_applies` states which functions' contracts a check rests
 on: those whose applications in its queries bring a postcondition as a
 fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
