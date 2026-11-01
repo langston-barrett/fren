@@ -34,7 +34,10 @@ proc branches(x: Int, a?, b?, e: E): (n: Int, m: Int, p?, o?) {
     --~^ warning: both branches of `if` are written the same
     --~^^ warning: the `else` branch extends past the operator
     -- A `match` is left to other lints.
-    ensure r4: o? iff match e { E::A => b?, E::B => b? }
+    ensure r4: o? iff match e {
+        E::A => b?,
+        E::B => b?,
+    }
 }
 
 proc elements(x: Int, y: Int, r: Rel<Int, Int>, q: Seq<Int>): (p?, o?, k?) {

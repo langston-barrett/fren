@@ -13,22 +13,37 @@ enum Mode { Heat, Cool, Off }
 
 -- `single_match_else`.
 proc one_variant(m: Mode, x: Int): (a: Int, b: Int, c?, d: Int, e: Int, f: Mode) {
-    ensure r1: a = match m { Mode::Heat => x + 1, _ => x }
-    --~^ warning: this `match` tests for one pattern
-    ensure r2: b = 2 * match m { Mode::Cool => x, _ => 0 }
-    --~^ warning: this `match` tests for one pattern
+    ensure r1: a = match m {
+        Mode::Heat => x + 1,
+        _ => x,
+    }
+    --~^^^^ warning: this `match` tests for one pattern
+    ensure r2: b = 2 * match m {
+        Mode::Cool => x,
+        _ => 0,
+    }
+    --~^^^^ warning: this `match` tests for one pattern
     -- `match_like_membership`, not `single_match_else`.
-    ensure r3: c? iff match m { Mode::Heat => true, _ => false }
-    --~^ warning: this `match` only tests which of its patterns its scrutinee matches
+    ensure r3: c? iff match m {  --~ warning: this `match` only tests which of its patterns its scrutinee matches
+        Mode::Heat => true,
+        _ => false,
+    }
     -- `match_same_arms`.
-    ensure r4: d = match m { Mode::Off => x, _ => x }
-    --~^ warning: replace the `match` with its body
+    ensure r4: d = match m {
+        Mode::Off => x,
+        _ => x,  --~ warning: replace the `match` with its body
+    }
     -- Two named arms.
-    ensure r5: e = match m { Mode::Heat => 1, Mode::Cool => 2, _ => 3 }
-    --~^ warning: `_` matches only `Mode::Off`
+    ensure r5: e = match m {
+        Mode::Heat => 1,
+        Mode::Cool => 2,
+        _ => 3,  --~ warning: `_` matches only `Mode::Off`
+    }
     -- `needless_match`.
-    ensure r6: f = match m { Mode::Heat => Mode::Heat, _ => m }
-    --~^ warning: gives back
+    ensure r6: f = match m {  --~ warning: gives back
+        Mode::Heat => Mode::Heat,
+        _ => m,
+    }
 }
 
 -- `overly_complex_bool_expr`.
@@ -107,8 +122,11 @@ proc cells(row: Int, column: Int, x: Int): (a: Cell, b: Cell, det c: Cell) {
     -- A field written alone mentions its variable: not `constant_output`.
     out c := Cell { row, column }
 
-    ensure r1: a = Cell { column := x + 1, row }
-    --~^ warning: the fields of this literal are not in the order `Cell` declares them
+    ensure r1: a = Cell {
+        column := x + 1,
+        row,
+    }
+    --~^^^^ warning: the fields of this literal are not in the order `Cell` declares them
     ensure r2: b = Cell { row, column := x }
 }
 

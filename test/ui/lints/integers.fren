@@ -146,12 +146,31 @@ proc naturals(n: Int, k: Int, j: Int, i: Int, h: Int, c?): (m: Int, p: Int, q: I
 
 -- An instance that binds an `Int`, or a refinement that reads one by name,
 -- keeps the variable an `Int`: no lint there.
-proc held(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v }
-proc binds(a: Int, b: Int): (c: Int) { assume order: a >= b call p := held(a - b) ensure r: c = p.w }
-proc free(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v }  --~ warning: `v` is never negative
-proc binds_nat(a: Nat): (c: Int) { call p := free(a) ensure r: c = p.w }
-proc concrete(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w = v + 1 }
-proc abstract(v: Int): (w: Int) { assume nonneg: v >= 0 ensure r: w > v }  --~ warning: `v` is never negative
+proc held(v: Int): (w: Int) {
+    assume nonneg: v >= 0
+    ensure r: w = v
+}
+proc binds(a: Int, b: Int): (c: Int) {
+    assume order: a >= b
+    call p := held(a - b)
+    ensure r: c = p.w
+}
+proc free(v: Int): (w: Int) {
+    assume nonneg: v >= 0  --~ warning: `v` is never negative
+    ensure r: w = v
+}
+proc binds_nat(a: Nat): (c: Int) {
+    call p := free(a)
+    ensure r: c = p.w
+}
+proc concrete(v: Int): (w: Int) {
+    assume nonneg: v >= 0
+    ensure r: w = v + 1
+}
+proc abstract(v: Int): (w: Int) {
+    assume nonneg: v >= 0  --~ warning: `v` is never negative
+    ensure r: w > v
+}
 expect reads(v: Int) {
     assume spec_nonneg: (v) >= 0  --~ warning: `v` is never negative
     call concrete_1 := concrete(v)

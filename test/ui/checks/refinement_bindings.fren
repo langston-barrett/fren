@@ -66,8 +66,12 @@ expect unguarded(q: Seq<Int>) {
 }
 
 -- Swapped bindings: each input of `a` is read as the other input of `c`.
-proc difference(x: Int, y: Int): (d: Int) { ensure r: d = x - y }
-proc reversed(x: Int, y: Int): (d: Int) { ensure r: d = y - x }
+proc difference(x: Int, y: Int): (d: Int) {
+    ensure r: d = x - y
+}
+proc reversed(x: Int, y: Int): (d: Int) {
+    ensure r: d = y - x
+}
 
 expect swapped(x: Int, y: Int) {
     call concrete := reversed(x, y)

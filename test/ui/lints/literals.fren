@@ -20,7 +20,10 @@ proc literals(x: Int, s: Set<Int>, q: Seq<Int>, n: Nat): (a?, b?, c?, e?, det d:
 
 -- In patterns, as literals and as the bounds of ranges.
 proc patterns(x: Int): (y: Int, q?) {
-    ensure r1: y = match x { 07 => 1, -01 => 2, _ => 0 }   --~ warning: `07` is 7
-    --~^ warning: `01` is 1
+    ensure r1: y = match x {
+        07 => 1,  --~ warning: `07` is 7
+        -01 => 2,  --~ warning: `01` is 1
+        _ => 0,
+    }
     ensure r2: q? iff x is 0..=010   --~ warning: `010` is 10; for octal write `0o10`
 }

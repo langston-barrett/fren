@@ -82,7 +82,10 @@ proc named(q: Seq<Int>): (y: Int, z: Int) {
 }
 
 proc tabled(q: Seq<Int>): (y: Int) {
-    ensure r: y = table { q = [] => 0, _ => nth(q, 0) }
+    ensure r: y = table {
+        q = [] => 0,
+        _ => nth(q, 0),
+    }
 }
 
 -- An instance's bindings, and a constant's value.

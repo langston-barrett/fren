@@ -5,9 +5,14 @@ enum Reply { Ok(Shape), Err(Int) }
 
 use Shape::{Circle, Empty}
 
-fn area(s: Shape): Int := match s { Circle(x) => x, Empty => 0 }
+fn area(s: Shape): Int := match s {
+    Circle(x) => x,
+    Empty => 0,
+}
 
 proc uses(r: Reply): (det a: Int) {
-    out a := match r { Reply::Ok(t) if t = Empty => area(t), _ => 2 }
-    --~^ warning: this guard only compares `t` with `Empty`, which the arm's pattern can match
+    out a := match r {
+        Reply::Ok(t) if t = Empty => area(t),  --~ warning: this guard only compares `t` with `Empty`, which the arm's pattern can match
+        _ => 2,
+    }
 }

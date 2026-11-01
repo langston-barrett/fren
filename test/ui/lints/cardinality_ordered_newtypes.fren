@@ -89,7 +89,12 @@ proc memberships(s: Severity, m: Mode): (p1?, p2?, p3?, p4?, p4b?, p5?, p6?, p7?
     --~^ warning: this is `s >= Severity::Warning`
     -- Not the first or last variants, all of them, or not ordered.
     ensure r5: p5? iff s in {Severity::Silent, Severity::Warning}
-    ensure r6: p6? iff s in {Severity::Silent, Severity::Info, Severity::Warning, Severity::Error}
+    ensure r6: p6? iff s in {
+        Severity::Silent,
+        Severity::Info,
+        Severity::Warning,
+        Severity::Error,
+    }
     ensure r7: p7? iff m in {Mode::Off, Mode::Heat}
     ensure r8: p8? iff s = Severity::Silent or s = Severity::Info or s = Severity::Error
 }
@@ -123,7 +128,9 @@ proc guarded(q: Seq<Int>, i: Int, x: Int, z?): (o1?, o2?) {
     ensure r1: o1? iff not (ok? and big?) and not (ok2? and big?) and not (ok? and ok2?)
         where ok? := 0 <= i < q.len, ok2? := 0 <= i < q.len and z?, big? := q[i] > 0
     ensure r2: o2? iff not (pos? and t?) and not (pos2? and t?) and not (pos? and pos2?)
-        where pos? := x > 0, pos2? := x > 0 and z?, t? := table { x > 0 => true }
+        where pos? := x > 0, pos2? := x > 0 and z?, t? := table {
+            x > 0 => true,
+        }
 }
 
 -- An empty literal takes its type from the newtype, so there is no fix;

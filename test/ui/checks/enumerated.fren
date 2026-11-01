@@ -47,7 +47,10 @@ proc stuck(a?): (b?) {  --~ error: `stuck` is not realizable
 -- value, a `Bool`, is enumerated too.
 proc gate(m: Mode): (det open?: Bool) {
     assume on: m != Mode::Off
-    out open? := table { | m = Mode::Heat => true, | m = Mode::Cool => false }
+    out open? := table {
+        | m = Mode::Heat => true,
+        | m = Mode::Cool => false,
+    }
 }
 
 set_option fren.evidence "enumerated" in
@@ -57,12 +60,7 @@ proc user(m: Mode) {  --~ warning: the realizability of `user` rests on the assu
 }
 
 set_option fren.evidence "enumerated" in
-expect same_input(
-    x_mode: Mode,
-    x_hot?,
-    y_mode: Mode,
-    y_hot?,
-) {
+expect same_input(x_mode: Mode, x_hot?, y_mode: Mode, y_hot?) {
     call x := thermostat(x_mode, x_hot?)
     call y := thermostat(y_mode, y_hot?)
     expect same_input: when x.mode = y.mode and x.hot? = y.hot?, x.on? = y.on?

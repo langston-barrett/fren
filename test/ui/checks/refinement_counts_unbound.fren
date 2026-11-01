@@ -23,7 +23,9 @@ expect counts_relates(r: Rel<E, E>, s: Set<E>) {
     expect k: when E::A in (s), (concrete.n) >= 0
 }
 
-proc bounded(s: Set<E>): (n: Int) { ensure c: n <= s.card }
+proc bounded(s: Set<E>): (n: Int) {
+    ensure c: n <= s.card
+}
 
 proc joined(r: Rel<E, E>, s: Set<E>): (n: Int, closed?, has_a?) {
     ensure z: n < 1 and n > -1

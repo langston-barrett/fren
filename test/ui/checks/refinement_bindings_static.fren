@@ -4,8 +4,12 @@ proc c(x: Int, b?): (y: Int) {
     ensure r: y = (if b? then x else 0)
     ensure h: hidden = x
 }
-proc a(n: Int): (z: Int) { ensure r: z >= n }
-proc natural(n: Int): (z: Nat) { ensure r: z = (if n > 0 then 1 else 0) }
+proc a(n: Int): (z: Int) {
+    ensure r: z >= n
+}
+proc natural(n: Int): (z: Nat) {
+    ensure r: z = (if n > 0 then 1 else 0)
+}
 proc empty(n: Int) {}  --~ warning: unused variable `n`
 
 expect unknown(x: Int, b?) {
@@ -37,7 +41,10 @@ expect arity(x: Int, b?) {
     refines concrete empty(x)  --~ error: refinement result count mismatch: specification has 0, call has 1
 }
 -- A call cannot expose its nested call's variables.
-proc outer(n: Int): (z: Int) { call inner := c(n, true) ensure r: z = inner.y }
+proc outer(n: Int): (z: Int) {
+    call inner := c(n, true)
+    ensure r: z = inner.y
+}
 expect instance_var(n: Int) {
     call concrete := outer(n)
     refines concrete a(inner.y)  --~ error: `inner.y` is not a single name
