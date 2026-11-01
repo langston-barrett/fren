@@ -1,0 +1,156 @@
+-- A generic file system: Alloy's example model `file_system.als`, ported
+-- to Fren. The original, "Model of a generic file system", is in the Alloy
+-- distribution (AlloyTools, MIT licence), at
+-- https://github.com/AlloyTools/org.alloytools.alloy/blob/master/org.alloytools.alloy.extra/extra/models/examples/systems/file_system.als;
+-- Daniel Jackson's "Software Abstractions" (MIT Press, 2006) builds the
+-- same model in its chapter 4.
+--
+-- Directories hold entries, each of which names an object, a file or a
+-- directory; every directory but the root has a parent, and the root is
+-- an ancestor of them all. The model asks whether one parent for each
+-- directory is enough to keep a directory from being in two entries. It is
+-- not: Fren finds the counterexample that Alloy does, and proves the
+-- corrected property for every file system of the scope.
+--
+-- How the port reads Alloy:
+--
+-- - An Alloy instance is the relations that its signatures and fields
+--   denote. Here it is one record, `FileSystem`: each signature is a set of
+--   atoms, and each field a `Rel`. The join `d.entries` is the image
+--   `fs.entries.image({d})`, `~r` is `r.inverse`, `^r` is `r.closure`, and
+--   the join of two fields is `join`.
+-- - A signature's facts are a function of one atom, Alloy's `this`, and
+--   the subset type `Valid` holds them of every atom, with the fields'
+--   types and multiplicities. The predicates are functions too, and each
+--   `check` is an expectation over every `Valid` file system.
+-- - The signature hierarchy is sets: `File` and `Dir` partition the
+--   abstract `Object`, and `Root` and `Cur`, which both extend `Dir`, are
+--   disjoint directories.
+-- - A scope is a listed type: each signature's atoms are an enumeration,
+--   so a quantifier over them is expanded into its instances, and the
+--   solver decides each check for every instance of the scope. An atom in
+--   none of the sets is not in the instance, so the scope is "at most
+--   three", as in Alloy. Alloy checks this model for 5. Fren's solver
+--   decides each check for 3 in about a second, for 4 in about seven, near
+--   its limit of ten, and for 5 not within it, so the scope here is 3. The
+--   counterexample needs two directories and two entries.
+-- - Alloy's `one` and `lone` count. Fren's solver does not decide a count
+--   beside a relational operator, so `lone s` is written out as any two
+--   members of `s` being equal; and a function cannot be generic in a
+--   set's element type, so there is one for each signature.
+mod filesystem
+
+pub enum Object { O0, O1, O2 }
+-- `sig Name {}` has no facts, and an instance's names are those of its
+-- entries, so it needs no set of its own.
+pub enum Name { N0, N1, N2 }
+pub enum DirEntry { E0, E1, E2 }
+
+pub struct FileSystem {
+    file: Set<Object>,                -- sig File extends Object
+    dir: Set<Object>,                 -- sig Dir extends Object
+    root: Object,                     -- one sig Root extends Dir
+    cur: Set<Object>,                 -- lone sig Cur extends Dir
+    dir_entry: Set<DirEntry>,         -- sig DirEntry
+    entries: Rel<Object, DirEntry>,   -- Dir.entries: set DirEntry
+    parent: Rel<Object, Object>,      -- Dir.parent: lone Dir
+    name: Rel<DirEntry, Name>,        -- DirEntry.name: Name
+    contents: Rel<DirEntry, Object>,  -- DirEntry.contents: Object
+}
+
+-- Alloy's `lone s` and `one s`, for the sets of each signature that need
+-- them.
+pub fn lone_object?(s: Set<Object>) := forall (a: Object) (b: Object), when a in s and b in s, a = b
+pub fn one_object?(s: Set<Object>) := s != {} and lone_object?(s)
+pub fn lone_entry?(s: Set<DirEntry>) := forall (a: DirEntry) (b: DirEntry), when a in s and b in s, a = b
+pub fn one_entry?(s: Set<DirEntry>) := s != {} and lone_entry?(s)
+pub fn one_name?(s: Set<Name>) := s != {} and (forall (a: Name) (b: Name), when a in s and b in s, a = b)
+
+-- The signatures: `abstract sig Object` is files and directories, and
+-- `one sig Root` and `lone sig Cur`, which both extend `Dir`, are disjoint
+-- directories, one and at most one.
+pub fn hierarchy?(fs: FileSystem) := fs.file inter fs.dir = {}
+    and fs.root in fs.dir and fs.cur subset fs.dir and not fs.root in fs.cur and lone_object?(fs.cur)
+
+-- The fields' types: `entries` and `parent` are fields of `Dir`, and
+-- `name` and `contents` of `DirEntry`.
+pub fn fields?(fs: FileSystem) := fs.entries.domain subset fs.dir and fs.entries.range subset fs.dir_entry
+    and fs.parent.domain subset fs.dir and fs.parent.range subset fs.dir
+    and fs.name.domain subset fs.dir_entry
+    and fs.contents.domain subset fs.dir_entry and fs.contents.range subset fs.file union fs.dir
+
+-- The facts of the signatures follow, each of one atom, Alloy's `this`.
+--
+-- sig File extends Object {} { some d: Dir | this in d.entries.contents }
+pub fn file_fact?(fs: FileSystem, this: Object) := this in (fs.entries join fs.contents).image(fs.dir)
+
+-- `all e1, e2: s | e1.name = e2.name => e1 = e2`
+pub fn distinct_names?(fs: FileSystem, s: Set<DirEntry>) := forall (e1: DirEntry) (e2: DirEntry),
+    when e1 in s and e2 in s and fs.name.image({e1}) = fs.name.image({e2}), e1 = e2
+
+-- sig Dir extends Object {
+--   entries: set DirEntry,
+--   parent: lone Dir
+-- } {
+--   parent = this.~@contents.~@entries
+--   all e1, e2 : entries | e1.name = e2.name => e1 = e2
+--   this !in this.^@parent
+--   this != Root => Root in this.^@parent
+-- }
+pub fn dir_fact?(fs: FileSystem, this: Object) := lone_object?(fs.parent.image({this}))
+    and fs.parent.image({this}) = fs.entries.inverse.image(fs.contents.inverse.image({this}))
+    and distinct_names?(fs, fs.entries.image({this}))
+    and not this in fs.parent.closure.image({this})
+    and (when this != fs.root, fs.root in fs.parent.closure.image({this}))
+
+-- one sig Root extends Dir {} { no parent }
+pub fn root_fact?(fs: FileSystem) := fs.parent.image({fs.root}) = {}
+
+-- sig DirEntry {
+--   name: Name,
+--   contents: Object
+-- } {
+--   one this.~entries
+-- }
+pub fn dir_entry_fact?(fs: FileSystem, this: DirEntry) := one_name?(fs.name.image({this}))
+    and one_object?(fs.contents.image({this}))
+    and one_object?(fs.entries.inverse.image({this}))
+
+-- A file system that Alloy's model admits.
+pub type Valid = fs: FileSystem where
+    hierarchy: hierarchy?(fs)
+    and fields: fields?(fs)
+    and files: forall (f: Object), when f in fs.file, file_fact?(fs, f)
+    and dirs: forall (d: Object), when d in fs.dir, dir_fact?(fs, d)
+    and root: root_fact?(fs)
+    and dir_entries: forall (e: DirEntry), when e in fs.dir_entry, dir_entry_fact?(fs, e)
+
+-- All directories besides root have one parent.
+pub fn one_parent_buggy?(fs: FileSystem) := forall (d: Object), when d in fs.dir minus {fs.root},
+    one_object?(fs.parent.image({d}))
+
+-- All directories besides root have one parent, and are the contents of
+-- one entry.
+pub fn one_parent_correct?(fs: FileSystem) := forall (d: Object), when d in fs.dir minus {fs.root},
+    one_object?(fs.parent.image({d})) and one_entry?(fs.contents.inverse.image({d}))
+
+-- Only files may be linked (that is, have more than one entry). That is,
+-- all directories are the contents of at most one directory entry.
+pub fn no_dir_aliases?(fs: FileSystem) := forall (o: Object), when o in fs.dir,
+    lone_entry?(fs.contents.inverse.image({o}))
+
+-- check { OneParent_buggyVersion => NoDirAliases } for 5 expect 1
+--
+-- One parent does not make one entry: a directory may be in two entries
+-- of its parent. So this does not hold: Fren reports an error, with the
+-- counterexample that the comment after it expects, in which the root `O1`
+-- holds the directory `O2` twice, as `E1` and `E2`.
+expect buggy(fs: Valid) {
+    expect no_dir_aliases: when one_parent_buggy?(fs), no_dir_aliases?(fs)
+    --~^ error: counterexample: fs = FileSystem { file := {}, dir := {Object::O1, Object::O2}, root := Object::O1, cur := {}, dir_entry := {DirEntry::E1, DirEntry::E2}, entries := {(Object::O1, DirEntry::E1), (Object::O1, DirEntry::E2)}, parent := {(Object::O2, Object::O1)}, name := {(DirEntry::E1, Name::N2), (DirEntry::E2, Name::N1)}, contents := {(DirEntry::E1, Object::O2), (DirEntry::E2, Object::O2)} }
+}
+
+-- check { OneParent_correctVersion => NoDirAliases } for 5 expect 0
+expect correct(fs: Valid) {
+    expect no_dir_aliases: when one_parent_correct?(fs), no_dir_aliases?(fs)
+}
