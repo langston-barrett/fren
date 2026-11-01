@@ -20,6 +20,8 @@ reports in comments.
 Brute force is not needed, so the generator is wider than `fren_fuzz`'s,
 and aims at the analyses that each front end implements on its own:
 constants, defined outputs, defined and uninterpreted functions, the
+former of every kind of result, as functions with `:=` and as function
+blocks, with bodies that take their type from it (`bodyFns`), the
 latter sometimes with contracts whose postconditions may contradict each
 other, so that what applies them rests on their realizability, `match`
 and tables over a scrutinee,
@@ -576,6 +578,106 @@ def genGuards : R String := do
     out := out ++ (← guardsProc s!"g{i}")
   return out
 
+/-- A body of type `t` where its type is expected, as a defined function's
+body or a function block's `out` (`lang::checked`): the forms that take
+their type from what is expected, `{}`, `[]` and a variant of the generic
+`P<Int>` without a payload, within conditionals, `match`es, parentheses,
+`union` and `++`, or any expression of the type. -/
+partial def bodyOf (sc : WScope) (t : WTy) (genericPay : Bool) (d : Nat) : R String := do
+  let sub := bodyOf sc t genericPay (d - 1)
+  if d == 0 || (← chance 30) then
+    match t with
+    | .set => if ← chance 60 then return "{}" else return ← leaf sc .set
+    | .seq => if ← chance 60 then return "[]" else return ← leaf sc .seq
+    | .pay => if genericPay && (← chance 60) then return "P::A" else return ← leaf sc .pay
+    | _ => return ← gen sc t 1
+  match ← below 6 with
+  | 0 => return s!"if {← gen sc .bool 1} then {← sub} else {← sub}"
+  | 1 =>
+    if sc.nVariants == 0 then return s!"({← sub})"
+    let arms ← (List.range sc.nVariants).toArray.mapM fun k => do return s!"E::V{k} => {← sub}"
+    return s!"match {← gen sc .enum 0} \{ {", ".intercalate arms.toList} }"
+  | 2 => return s!"({← sub})"
+  | 3 => match t with
+    | .set => return s!"{← sub} {← pick #["union", "inter", "minus"]} {← sub}"
+    | .seq => return s!"{← sub} ++ {← sub}"
+    | _ => sub
+  | _ => gen sc t 2
+
+/-- A body of type `Option<inner>`, where its type is expected:
+`Option::None`, `Option::Some` of `inner`, or, seldom, of a `Bool`, a type
+mismatch, within conditionals, `match`es and parentheses. -/
+partial def optionBody (sc : WScope) (inner : R String) (d : Nat) : R String := do
+  let sub := optionBody sc inner (d - 1)
+  if d == 0 || (← chance 35) then
+    match ← below 10 with
+    -- A type mismatch, which `--avoid-known` leaves out: after it, the Lean
+    -- front end may report a Lean error of its own too (#493).
+    | 0 => return if sc.avoidKnown then "Option::None" else "Option::Some(true)"
+    | 1 | 2 | 3 | 4 => return "Option::None"
+    | _ => return s!"Option::Some({← inner})"
+  match ← below 3 with
+  | 0 => return s!"if {← gen sc .bool 1} then {← sub} else {← sub}"
+  | 1 =>
+    if sc.nVariants == 0 then return s!"({← sub})"
+    let arms ← (List.range sc.nVariants).toArray.mapM fun k => do return s!"E::V{k} => {← sub}"
+    return s!"match {← gen sc .enum 0} \{ {", ".intercalate arms.toList} }"
+  | _ => return s!"({← sub})"
+
+/-- A defined function `name` of the parameter `x0: Int` and result type
+`ty` with the body `body`, written with `:=` or, sometimes, as a function
+block whose `out` is the body. -/
+def bodyFn (name ty body : String) (params := "x0: Int") (tps := "") : R String := do
+  if ← chance 40 then return s!"pub fn {name}{tps}({params}): (r: {ty}) \{\n    out r := {body}\n}\n"
+  return s!"pub fn {name}{tps}({params}): {ty} := {body}\n"
+
+/-- Functions whose bodies are checked against their result types, of every
+kind of result (`lang::checked`): collections, enumerations with payloads,
+generic instances, aliases, subset types, a generic result, a structural
+recursion, and now and then a body of another type. -/
+def bodyFns (sc : WScope) (genericPay : Bool) : R String := do
+  let sc := { sc with vars := #[("x0", WTy.int, true)] }
+  let x : R String := gen sc .int 1
+  let payTy := if genericPay then "P<Int>" else "P"
+  let mut out := ""
+  let mut aliases := false
+  let mut subset := false
+  let mut list := false
+  for k in [0:(← below 4) + 1] do
+    let name := s!"h{k}"
+    match ← below 9 with
+    | 0 | 1 | 2 =>
+      let tys := #[(WTy.set, "Set<Int>"), (.seq, "Seq<Int>"), (.int, "Int")] ++
+        (if sc.hasPay then #[(WTy.pay, payTy)] else #[]) ++ (if sc.hasSeq then #[(WTy.bx, "Bx<Bx<Rq>>")] else #[])
+      let (t, ty) ← pick tys
+      -- Seldom a body of another type: a mismatch, reported alike.
+      let bt ← if ← chance 8 then pick (tys.map (·.1)) else pure t
+      out := out ++ (← bodyFn name ty (← bodyOf sc bt genericPay 3))
+    | 3 => out := out ++ (← bodyFn name "Option<Int>" (← optionBody sc x 3))
+    | 4 =>
+      unless aliases do
+        out := out ++ "pub type OptInt := Option<Int>\npub type IntSet := Set<Int>\n"
+        aliases := true
+      if ← chance 50 then out := out ++ (← bodyFn name "OptInt" (← optionBody sc x 3))
+      else out := out ++ (← bodyFn name "IntSet" (← bodyOf sc .set genericPay 3))
+    | 5 =>
+      unless subset do
+        out := out ++ "pub type Small = n: Int where small: n is 0..=5\n"
+        subset := true
+      if ← chance 50 then out := out ++ (← bodyFn name "Option<Small>" (← optionBody sc (pick #["0", "3", "9", "x0"]) 3))
+      else out := out ++ (← bodyFn name "Small" (← pick #["3", "9", "x0", "if x0 > 0 then 1 else 7"]))
+    | 6 | 7 =>
+      -- A generic function, whose result mentions its type parameter.
+      out := out ++ (← bodyFn s!"g{k}" "Option<T>" (← optionBody sc (pure "x") 3) (params := "x: T") (tps := "<T>"))
+    | _ =>
+      unless list do
+        out := out ++ "pub enum L { Nil, Cons(Int, L) }\n"
+        list := true
+      let base ← pick #["Option::None", "Option::None", "Option::Some(0)"]
+      out := out ++ s!"pub fn last{k}(l: L): Option<Int> := match l \{\n    L::Nil => {base},\n" ++
+        s!"    L::Cons(h, t) => if t = L::Nil then Option::Some(h) else last{k}(t),\n}\n"
+  return out
+
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := do
   let useEnum ← chance 60
@@ -658,6 +760,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
       let ty := if r == .bool then "" else s!": {r.name relElem}"
       out := out ++ s!"pub fn {name}({", ".intercalate (ps.toList.map (·.name relElem))}){ty}\n"
       sc := { sc with fns := sc.fns.push (name, ps, r, false) }
+  if ← chance 50 then out := out ++ (← bodyFns sc genericPay)
   -- Each earlier comp: its name, inputs, and visible variables.
   let mut comps : Array (String × Array (String × WTy) × Array (String × WTy)) := #[]
   for c in [0:(← below 2) + 1] do

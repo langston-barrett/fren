@@ -4,6 +4,8 @@
 -- the result type, through the branches of a conditional and the arms of
 -- a `match`, as in a function block's `out`.
 set_option fren.lint.dead_code "allow"
+set_option fren.lint.eq_op "allow"
+set_option fren.lint.identity_op "allow"
 
 mod function_body_expected
 
@@ -32,7 +34,45 @@ expect values(x: Int, k: Kind) {
     expect same: block(k) is Shape::Box(_, _) iff shape(k) is Shape::Box(_, _)
 }
 
--- What is expected of the body is the result type, so a body of another
--- type is a type mismatch.
-fn wrong(x: Int): Shape<String> := Shape::Named(x)
---~^ error: type mismatch: expected `String`, found `Int`
+-- An operation on two `{}`s in a branch of a conditional, which take the
+-- result's type: the Lean front end once left their type to Lean, which
+-- could not find `inter`'s instance before unifying the branches.
+fn branch_inter(x: Int): Set<Int> := if x > 0 then {x} else {} inter {}
+proc branch_out(x: Int): (det s: Set<Int>) {
+    out s := if x > 0 then {x} else ({} minus {})
+}
+
+-- A generic result, which mentions the type parameter, with `:=` and as a
+-- function block.
+fn gnone<T>(o: Option<T>): Option<T> := if o = Option::None then Option::None else o
+fn gblock<T>(x: T, none?): (r: Option<T>) {
+    out r := if none? then Option::None else Option::Some(x)
+}
+
+-- An alias of a generic instance, and of a set.
+type OptInt := Option<Int>
+type IntSet := Set<Int>
+fn alias_none(x: Int): OptInt := if x > 0 then Option::None else Option::Some(x)
+fn alias_empty(x: Int): IntSet := if x > 0 then {} else {x}
+
+-- A subset type within the result, and a body that breaks its invariant.
+type Byte = n: Int where range: n is 0..=255
+fn byte_none(x: Int): Option<Byte> := if x > 0 then Option::None else Option::Some(3)
+fn too_big(x: Int): Byte := if x > 0 then 300 else 1
+--~^ error: invariant `function_body_expected::Byte::range` does not hold
+
+-- A structural recursion whose base case takes its type from the result.
+enum Ints { Nil, Cons(Int, Ints) }
+fn last(l: Ints): Option<Int> := match l {
+    Ints::Nil => Option::None,
+    Ints::Cons(h, t) => if t = Ints::Nil then Option::Some(h) else last(t),
+}
+
+expect generic(x: Int, o: Option<Int>, l: Ints) {
+    expect none: when o = Option::None, gnone(o) = Option::None
+    expect block: gblock(x, true) = Option::None
+    expect alias: when x > 0, alias_none(x) = Option::None and alias_empty(x) = {}
+    expect byte: when x > 0, byte_none(x) = Option::None
+    expect nil: when l = Ints::Nil, last(l) = Option::None
+    expect branch: when x <= 0, branch_inter(x) = {}
+}

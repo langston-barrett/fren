@@ -9,7 +9,10 @@ mod generic_functions_contracts
 -- Defined only on a `Some`.
 fn get<T>(o: Option<T>, d: T): (r: T) {
     assume present: o != Option::None
-    out r := match o { Option::Some(x) => x, Option::None => d }
+    out r := match o {
+        Option::Some(x) => x,
+        Option::None => d,
+    }
     ensure from_some: Option::Some(get(o, d)) = o
 }
 
@@ -25,7 +28,7 @@ fn get_any<T>(o: Option<T>, d: T): T := get(o, d)  --~ error: counterexample: o 
 
 -- A guarantee that applies the function at another instance than its own.
 fn nothing<T>(n: Int): (result: Option<T>) {
-    out result := let r: Option<T> := Option::None in r
+    out result := Option::None
     ensure empty: let r: Option<Bool> := nothing(n) in r = Option::None
 }
 

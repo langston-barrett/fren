@@ -4390,6 +4390,10 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   if elems.isEmpty then
     unless emptyOk do throwErrorAt e Core.emptySetTypeMsg.text
     if expected?.isSome then discard (liftMsg e (Core.checkEmptyLiteral false expected?))
+    -- Of the expected type, so that what is built from it, such as `{} inter
+    -- {}` in a branch of a conditional, has its type before Lean unifies.
+    if let some t@(.set _) := expected? then return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
+    if let some t@(.rel _ _) := expected? then return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
     return ← `((∅ : Fren.FinSet _))
   checkCore cx e .setAlgebra true true elems
   if cx.noteIndexes then lintDuplicates e elems
@@ -4877,6 +4881,7 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   if elems.isEmpty then
     unless emptyOk do throwErrorAt e Core.emptySeqTypeMsg.text
     if expected?.isSome then discard (liftMsg e (Core.checkEmptyLiteral true expected?))
+    if let some t@(.seq _) := expected? then return ← `((∅ : $(typeSyntax (← leanTypeOf t))))
     return ← `((∅ : Fren.Seq _))
   let synth ← elems.mapM (synthesizes cx)
   let ecx (k : Nat) := { cx with emptyOk := Core.Position.shared.checked emptyOk ((synth.eraseIdx! k).any id) }
@@ -7338,7 +7343,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       -- The body is checked against the result type (`lang::checked`).
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop
                             selfFn := if (← getLocal).inSubset then none else some n, natOk := result.isConstOf ``Nat
-                            expected? := ← coreTy? result, emptyOk := true
+                            expected? := ← coreTy? result, emptyOk := Core.Position.declared.checked false false
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
       modifyLocal fun l => { l with recUses := #[], recApps := #[], recMatches := #[] }

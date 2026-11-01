@@ -1,0 +1,20 @@
+-- A defined function's body is checked against its result type
+-- (`lang::checked`): a body of another type is a type mismatch, reported
+-- alike by both front ends, at the value that differs, with `:=` and in a
+-- function block.
+set_option fren.lint.dead_code "allow"
+
+mod function_body_expected_static
+
+pub enum Shape<V> { Dot, Named(V), Box(Int, Int) }
+
+-- What is expected of the body is the result type, so a body of another
+-- type is a type mismatch.
+fn wrong(x: Int): Shape<String> := Shape::Named(x)
+--~^ error: type mismatch: expected `String`, found `Int`
+fn wrong_block(x: Int): (r: Option<Int>) {
+    out r := if x > 0 then Option::None else Option::Some(true)
+    --~^ error: type mismatch: expected `Int`, found `Bool`
+}
+fn wrong_set(x: Int): Set<Int> := if x > 0 then {} else [x]
+--~^ error: type mismatch: expected `Seq<Int>`, found an empty set
