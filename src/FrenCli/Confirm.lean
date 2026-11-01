@@ -386,10 +386,12 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
   let tys (n : Name) := (vars.find? (·.name == n)).map (·.ty)
-  -- What the types of the outputs without a definition bring.
+  -- What the outputs' types bring as guarantees, which the solver's query
+  -- puts within its `∃` (`CComp.natFacts`), decided as there.
+  let guaranteed := vars.filter fun v =>
+    Fren.Core.natBrought (v.role == .output) (ec.defs.any (·.1 == v.name)) == .guarantee
   let outputTypes : Fm := .atoms <| ec.typeConstraints.filterMap fun p =>
-    if p.kind == .ensure && outs.any (fun (x, _) => p.name == .num x 0 && !ec.defs.any (·.1 == x))
-    then some { label := p.name, pfx := .anonymous, e := p.e } else none
+    if guaranteed.any (p.name == .num ·.name 0) then some { label := p.name, pfx := .anonymous, e := p.e } else none
   -- The variables that a model may leave free, and the second copy of each
   -- copied one, with their types: the procedure's own, without a
   -- definition, since a defined one's, or a call's, value follows from the

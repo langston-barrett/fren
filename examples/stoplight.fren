@@ -6,8 +6,11 @@
 -- The controller is one procedure over a state and an event. Its invariant
 -- is a subset type of the state; its properties are global expectations of
 -- one step, of a chain of steps, of a monitor run beside it, and of an
--- abstract machine that it refines. `Stoplight.lean` lifts them to every
--- sequence of events.
+-- abstract machine that it refines. Fren checks each of them for one step,
+-- or for the chain of eight; `Stoplight.lean` proves, by induction over
+-- every sequence of events from the start, that the invariant holds, that
+-- each press is served in time, that each walk follows enough green, and
+-- that the phases are a run of the abstract machine.
 mod stoplight
 
 pub enum Light { Green, Yellow, Red }
@@ -33,7 +36,10 @@ pub struct State {
     cars: Light,
     people: Signal,
     waiting?,    -- the button was pressed, and no walk has served it yet
-    timer: Int,  -- the ticks left in this phase, the one that ends it included
+    -- The ticks left in this phase, the one that ends it included: an `Int`,
+    -- since `timer - 1` is one, which nothing narrows back to a `Nat`;
+    -- `timed` below keeps it in range.
+    timer: Int,
 }
 
 -- The states the controller can be in. `safe` is what matters; the other
@@ -56,8 +62,9 @@ pub const START: Lights := State {
 -- every state and event has a next state, so that a press is accepted at
 -- any time, and, with `det`, only one.
 pub proc step(now: Lights, event: Event): (det next: Lights) {
-    -- A press is remembered until a walk serves it, so one during the walk
-    -- is already served.
+    -- A press is remembered until a walk serves it. One during the walk is
+    -- taken as served by it, even on its last tick: this controller's choice,
+    -- so a press is served in time below only when made before the walk.
     ensure press: when event = Press, next = { now with
         waiting? := now.people = DontWalk,
     }
@@ -120,9 +127,11 @@ pub fn wait(s: State): Int := match s.cars {
     Red => 0,
 }
 
--- A press is served within MIN_GREEN + YELLOW ticks, whatever is pressed
--- meanwhile: the wait is at most that, no press delays it, and each tick
--- brings the walk one tick closer, until it comes.
+-- A press while nobody walks is served within MIN_GREEN + YELLOW ticks,
+-- whatever is pressed meanwhile. Fren checks the step of the argument: the
+-- wait is at most that, no press delays it, and each tick brings the walk
+-- one tick closer, until it comes. `Stoplight.lean` proves the bound over
+-- every sequence of events, by induction on the wait.
 expect prompt(now: Lights, event: Event) {
     assume waiting: now.waiting? and now.people = DontWalk
     call s := step(now, event)
@@ -133,12 +142,18 @@ expect prompt(now: Lights, event: Event) {
 
 -- A property of histories, by a monitor beside the controller:
 -- `green_ticks` counts the ticks of green since the last walk. Its
--- invariant relates it to the controller's timer.
+-- invariant relates it to the controller's timer; `WATCH_START`'s
+-- obligation is its base case, as `START`'s is the controller's.
 pub struct Watch { lights: Lights, green_ticks: Nat }
 
 pub type Watched = w: Watch where
     green: when w.lights.cars = Green, w.green_ticks >= MIN_GREEN - w.lights.timer
     and yellow: when w.lights.cars = Yellow, w.green_ticks >= MIN_GREEN
+
+pub const WATCH_START: Watched := Watch {
+    lights := START,
+    green_ticks := 0,
+}
 
 pub proc watch(now: Watched, event: Event): (det next: Watched) {
     call s := step(now.lights, event)
@@ -152,7 +167,9 @@ pub proc watch(now: Watched, event: Event): (det next: Watched) {
     }
 }
 
--- The cars have had MIN_GREEN ticks of green whenever a walk starts.
+-- The cars have had MIN_GREEN ticks of green whenever a walk starts:
+-- checked of one step here, and proved in `Stoplight.lean` of every step
+-- from `WATCH_START`.
 expect green_between_walks(now: Watched, event: Event) {
     call w := watch(now, event)
     expect enough_green: when now.lights.people = DontWalk and w.next.lights.people = Walk,
