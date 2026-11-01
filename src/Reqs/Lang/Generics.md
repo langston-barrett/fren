@@ -481,12 +481,12 @@ reports the `2`.
 `lang::type_argument_inference` states this for one type parameter of a
 construction. `lang::first_giver` gives the position of the first of the
 construction's values that synthesizes its type and whose declared type
-mentions the parameter, or `-1` if none does, and `lang::widened` a type
-with a `Nat` widened to an `Int`:
+mentions the parameter, or `-1` if none does; `lang::widened` (see
+[Natural numbers](Types.md#natural-numbers)) is a type with a `Nat` widened
+to an `Int`:
 
 ```fren
 pub fn first_giver(Seq<Ty>, Seq<Bool>, Nat): Int
-pub fn widened(Ty): Ty
 
 pub proc type_argument_inference(
     declared: Seq<Ty>,             -- the declared types of the construction's values, in order

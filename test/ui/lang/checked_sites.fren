@@ -1,0 +1,64 @@
+-- Where an expression is written decides whether it is checked against a
+-- type (`lang::checked`): both front ends classify their syntax into the
+-- sites of `lang::ExprSite` and take each site's position from one list. An
+-- argument of a refinement is a declared site, so `{}` takes its
+-- parameter's type there, as in a call's binding.
+set_option fren.lint.absurd_extreme_comparisons "allow"
+set_option fren.lint.eq_op "allow"
+set_option fren.lint.erasing_op "allow"
+set_option fren.lint.identity_op "allow"
+set_option fren.lint.same_branches "allow"
+set_option fren.lint.undecidable "allow"
+set_option fren.lint.unused_variables "allow"
+
+mod checked_sites
+
+proc grow(t: Set<Int>): (n: Int) {
+    ensure r: n = t.card
+}
+
+proc sized(t: Set<Int>): (n: Int) {
+    ensure bounded: n <= t.card
+}
+
+expect empty_argument() {
+    call c := grow({})
+    refines c sized({})
+}
+
+expect empty_branch(c?) {
+    call d := grow(if c? then {} else {1})
+    refines d sized(if c? then {} else {1})
+}
+
+-- The right of `in` is checked against a sequence where it is written as
+-- one, also within parentheses, a `let` or a table; a table's value, like
+-- a `match` arm's body, takes the type of the values before it, or, where
+-- none does, waits for a later one that does; and the
+-- body of a `let` takes the type expected of the `let`, as from the other
+-- side of `=`.
+expect shared_parts(x: Int, s: Set<Int>, o: Option<Int>, c?) {
+    expect parenthesized: not (x in ([]))
+    expect in_let: not (x in (let n := x in []))
+    expect in_table: not (x in table {
+        c? => [],
+        _ => [],
+    })
+    expect row_value: (table {
+        c? => s,
+        _ => {} minus {},
+    }).card >= 0
+    expect waiting_row: (table {
+        c? => {},
+        _ => s,
+    }).card >= 0
+    expect row_none: (table {
+        c? => o,
+        _ => Option::None,
+    }) != Option::Some(1) or true
+    expect waiting_none: (table {
+        c? => Option::None,
+        _ => o,
+    }) != Option::Some(1) or true
+    expect let_body: when o = Option::None, o = (let n := x in Option::None)
+}
