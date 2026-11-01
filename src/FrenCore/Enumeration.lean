@@ -621,8 +621,37 @@ structure Atoms where
   /-- Whether the defined output `d`'s value in an assignment depends on
   one. -/
   defUnknown : Name → Array Nat → Bool := fun _ _ => false
+  /-- The `k`th atom's truth in an assignment, `none` where it is not
+  known: `eval` where `known` says that it is. A front end that finds both
+  with one evaluation gives it, so that the search evaluates the atom once
+  rather than twice; `Atoms.truthOf` reads it. -/
+  truth? : Option (Nat → Array Nat → Option Bool) := none
+  /-- Runs a computation that evaluates the atoms, giving its value, which
+  is always the computation's: a front end that evaluates them in Lean's
+  interpreter runs it within one interpreter, so that each evaluation
+  does not start one of its own (`Atoms.within`). -/
+  batch : (Unit → Array Nat) → Array Nat := fun f => f ()
 
 instance : Inhabited Atoms := ⟨{ slots := #[], eval := fun _ _ => false }⟩
+
+/-- `f ()`, run by `Atoms.batch`. -/
+def Atoms.within (ats : Atoms) (f : Unit → Bool) : Bool :=
+  (ats.batch fun _ => #[if f () then 1 else 0])[0]? == some 1
+
+/-- `f ()`, run by `Atoms.batch`: `none` written as `#[0]`, and `some a`
+as `1` before `a`. -/
+def Atoms.withinOption (ats : Atoms) (f : Unit → Option (Array Nat)) : Option (Array Nat) :=
+  let r := ats.batch fun _ => match f () with
+    | none => #[0]
+    | some a => #[1] ++ a
+  if r[0]? == some 1 then some (r.extract 1) else none
+
+/-- The `k`th atom's truth in `env`, `none` where it is not known
+(`Atoms.known`), else its value (`Atoms.eval`). -/
+@[inline] def Atoms.truthOf (ats : Atoms) (k : Nat) (env : Array Nat) : Option Bool :=
+  match ats.truth? with
+  | some f => f k env
+  | none => if ats.known k env then some (ats.eval k env) else none
 
 def Space.slotOf? (sp : Space) (n : Name) : Option Nat := sp.names.idxOf? n
 
@@ -773,7 +802,9 @@ where a quantifier up to the bound leaves it unknown (`Atoms.known`), and
 otherwise its value; `∃ outputs` is true if some values of the outputs
 make it true, else unknown if some make it unknown. -/
 def EF.truth (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Truth
-  | .atom k => if ats.unknown k env || !ats.known k env then .unknown else .ofBool (ats.eval k env)
+  | .atom k => if ats.unknown k env then .unknown else match ats.truthOf k env with
+    | some b => .ofBool b
+    | none => .unknown
   | .tt => .yes
   | .ff => .no
   | .not f => (f.truth sp ats env).not
@@ -875,7 +906,8 @@ def Atoms.polarized (ats : Atoms) : Atoms :=
     readsIndex := fun k => ats.readsIndex (k % n)
     defReadsIndex := fun d => ats.defReadsIndex ((unPossibly? d).getD d)
     unknown := fun k env => ats.unknown (k % n) env
-    defUnknown := fun d env => ats.defUnknown ((unPossibly? d).getD d) env }
+    defUnknown := fun d env => ats.defUnknown ((unPossibly? d).getD d) env
+    batch := ats.batch }
 
 /-- `f` with each of its atoms read under `Atoms.polarized` of `n` atoms:
 where `f` is read positively, if `positive?`, as known to be true, and
@@ -1028,16 +1060,20 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
     -- behaviour either way.
     let known := if ats.total then parts else parts.map (·.polarize sp ats.slots.size true)
     let searched := if ats.total then ats else ats.polarized
-    let found := answerOf ((search sp searched known).map (·.1)) testing?.isSome fun _ =>
-      testSearch sp searched known (testing?.getD 0)
+    -- Within `Atoms.batch`, with whether testing found it after the
+    -- assignment.
+    let found := (ats.withinOption fun _ =>
+      (answerOf ((search sp searched known).map (·.1)) testing?.isSome fun _ =>
+        testSearch sp searched known (testing?.getD 0)).map fun (e, t) => e.push (if t then 1 else 0)).map
+      fun a => (a.pop, a.back? == some 1)
     match found with
     | none =>
       -- Only a query with an index or a quantifier can be doubtful, and it
       -- is unknown if some assignment is (`check::enumerated_answer`): by
       -- a quantifier if one is with only the quantifiers unknown.
-      let open? := (!ats.total || parts.any (·.readsIndex ats)) && doubtful sp ats parts
+      let open? := (!ats.total || parts.any (·.readsIndex ats)) && ats.within fun _ => doubtful sp ats parts
       if answerKind false open? != .unknown then return .unsat
-      let byQuantifier := !ats.total &&
+      let byQuantifier := !ats.total && ats.within fun _ =>
         doubtful sp { ats with unknown := fun _ _ => false, defUnknown := fun _ _ => false } parts
       return .unknown (if byQuantifier then undecidedQuantifierReason else indexUnknownReason)
     | some (env, _) =>
@@ -1052,11 +1088,11 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
   modelBool? := some fun model formula => pure do
     let (_, token) ← model.find? (·.1 == Lean.Name.mkSimple "#member_model")
     let env ← token.environment?
-    if ats.total then return formula.eval sp ats env
+    if ats.total then return ats.within fun _ => formula.eval sp ats env
     -- Known to be true, known to be false, or unknown.
     let n := ats.slots.size
-    if (formula.polarize sp n true).eval sp ats.polarized env then return true
-    if !(formula.polarize sp n false).eval sp ats.polarized env then return false
+    if ats.within fun _ => (formula.polarize sp n true).eval sp ats.polarized env then return true
+    if !(ats.within fun _ => (formula.polarize sp n false).eval sp ats.polarized env) then return false
     none
   falseF := .ff
   notF := .not
