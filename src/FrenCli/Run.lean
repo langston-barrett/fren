@@ -1045,11 +1045,12 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- what they rest on changes how they are shown.
     if let some r := record? then r.modify (· ++ item.map fun (x, _) => (key, x))
   -- A fresh answer that contradicts `--verify-query-cache`'s
-  -- (`cli::contradicts`).
+  -- (`cli::contradicts`), with no position: it is about the cache, not
+  -- about a file.
   if let some store := store? then
     for path in ← store.mismatches.get do
       let msg := Msg.internal s!"the solver's answer contradicts the query cache's entry `{path}`"
-      printDiag args.paint files { file := 0, span := default, msg }
+      IO.eprintln (Fren.Core.renderPlain .error msg args.paint)
       internal := internal.push msg
   IO.eprintln (Fren.Core.summary all byTesting byBound)
   -- How many answers it compared, so that a comparison with nothing does
