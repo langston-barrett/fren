@@ -674,8 +674,7 @@ proc c(mode: Mode) {
 
 A line that starts with a `|` of a `match` arm's pattern, or of a table
 arm's, starts its alternative, so the alternatives of an or-pattern
-written one per line line up, and so does a line that starts with the `|`
-of a [table](Lang/Expressions.md#tables)'s row, which starts the row. In a
+written one per line line up. In a
 [pattern test](Lang/Expressions.md#pattern-tests), such a line continues
 its member, as any other line within an expression does:
 

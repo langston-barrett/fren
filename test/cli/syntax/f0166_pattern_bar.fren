@@ -1,0 +1,9 @@
+-- A pattern of one alternative does not start with `|`.
+pub enum Sign { Negative, Zero, Positive }
+
+proc c(s: Sign): (det y: Int) {
+    out y := match s {
+        | Sign::Negative => 0,
+        _ => 1,
+    }
+}

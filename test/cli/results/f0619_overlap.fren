@@ -1,8 +1,8 @@
 -- Two rows of a table that may both hold.
 proc grade(score: Int): (pass?) {
     ensure r: pass? iff table {
-        | score >= 50 => true,
-        | score >= 0 => false,
-        | _ => false,
+        score >= 50 => true,
+        score >= 0 => false,
+        _ => false,
     }
 }

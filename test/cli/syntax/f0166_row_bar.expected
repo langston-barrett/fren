@@ -1,0 +1,13 @@
+error[F0166]: a table's row does not start with `|`
+ --> test/cli/syntax/f0166_row_bar.fren:4:9
+  |
+4 |         | x > 0 => 1,
+  |         ^ remove this `|`
+  |
+  = note: commas separate the rows, and the formatter puts each row on a line of its own
+  = help: write the row without it, as in `table { x > 0 => 1, _ => 0 }`
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0166`.
+exit=2

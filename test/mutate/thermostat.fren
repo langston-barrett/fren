@@ -10,9 +10,9 @@ const BAND: Int := 2
 
 pub proc thermostat(on?, temp: Int, target: Int): (det mode: Mode) {
     ensure rule: mode = table {
-        | on? and temp < target - BAND => Heat,
-        | on? and temp > target + BAND => Cool,
-        | _ => Off,
+        on? and temp < target - BAND => Heat,
+        on? and temp > target + BAND => Cool,
+        _ => Off,
     }
 
     expect switched_off: unless on?, mode = Off

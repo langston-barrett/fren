@@ -1,0 +1,7 @@
+-- A table's row does not start with `|`; the help shows the row without it.
+proc c(x: Int): (det y: Int) {
+    out y := table {
+        | x > 0 => 1,
+        _ => 0,
+    }
+}

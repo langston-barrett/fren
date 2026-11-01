@@ -999,7 +999,9 @@ end
 
 /-- A pattern, of a `match` arm or of `is`. In an arm (`arm`), each `|`
 starts its alternative, so that they line up one per line; after `is`, a
-line that starts with `|` continues the expression. -/
+line that starts with `|` continues the expression. Only an or-pattern
+may start with `|`: before a pattern of one alternative, it is an error
+(`F0166`). -/
 def pattern (arm := true) : P Pattern := do
   if arm then markStart
   let lead ← eatKw "|"
@@ -1009,7 +1011,9 @@ def pattern (arm := true) : P Pattern := do
     if arm then markStart
     discard bump
     alts := alts.push (← primaryPattern)
-  if alts.size == 1 && lead.isNone then return first
+  if alts.size == 1 then
+    if let some l := lead then throw { span := l.span, msg := Fren.Core.patternBarMsg }
+    return first
   return .or (← spanFrom ((lead.map (·.span)).getD first.span)) alts
 
 /-- The segment that starts `Set<T>` in a type, which no identifier can
@@ -1487,7 +1491,9 @@ partial def atom : P Expr := do
     repeat
       if isKw (← peek) "}" && !rows.isEmpty then break
       markStart
-      discard (eatKw "|")
+      -- A row does not start with `|` (`F0166`), which would otherwise
+      -- open a closure.
+      if let some bar ← eatKw "|" then throw { span := bar.span, msg := Fren.Core.rowBarMsg }
       let start := (← peek).span
       -- `_`, which no condition can be, or a condition below `when`, which
       -- would swallow the row's value.

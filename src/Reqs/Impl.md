@@ -242,11 +242,11 @@ pub proc interpretation_contract(
     use self::ContractProof::{Axiom, NotNeeded, Theorem, Unproved}
 
     ensure rule: proof = table {
-        | not obligated? => NotNeeded,
-        | obligated? and written? => if written_ok? and not uses_sorry? then Theorem else Unproved,
-        | obligated? and not written? and decide_q = Unsat => Theorem,
-        | obligated? and not written? and decide_q = Sat => Unproved,
-        | obligated? and not written? and decide_q = Unknown => if smt_q = Unsat then Axiom else Unproved,
+        not obligated? => NotNeeded,
+        obligated? and written? => if written_ok? and not uses_sorry? then Theorem else Unproved,
+        obligated? and not written? and decide_q = Unsat => Theorem,
+        obligated? and not written? and decide_q = Sat => Unproved,
+        obligated? and not written? and decide_q = Unknown => if smt_q = Unsat then Axiom else Unproved,
     }
     ensure records: recorded? iff proof != Unproved
     ensure reports: error? iff proof = Unproved

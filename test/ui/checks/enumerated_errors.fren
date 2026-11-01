@@ -34,7 +34,7 @@ type OtherByte = n: Int where invariant: n is 0..=255
 set_option fren.evidence "enumerated" in
 proc hidden(x: InputByte, y: OtherByte): (det d: Int) {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
     out d := table {
-        | x = 0 => 1,
+        x = 0 => 1,
     }
     expect e: x + y >= 0
 }

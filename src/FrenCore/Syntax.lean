@@ -35,6 +35,21 @@ def foreignOpMsg (op : String) (spaceBefore spaceAfter : Bool := true) : Msg :=
   | "=>", _ => { base with notes := #["help: write an implication as `when a, b`"] }
   | _, _ => base
 
+/-- A `|` that starts a table's row (`Reqs/Lang/Expressions#tables`):
+commas alone separate the rows. -/
+def rowBarMsg : Msg :=
+  { code? := some "F0166", headline := "a table's row does not start with `|`", label? := some "remove this `|`"
+    notes := #["note: commas separate the rows, and the formatter puts each row on a line of its own",
+      "help: write the row without it, as in `table { x > 0 => 1, _ => 0 }`"] }
+
+/-- A `|` that starts a pattern of one alternative
+(`Reqs/Lang/Patterns`): only an or-pattern may start with `|`, which
+lines up its alternatives one per line. -/
+def patternBarMsg : Msg :=
+  { code? := some "F0166", headline := "a pattern of one alternative does not start with `|`", label? := some "remove this `|`"
+    notes := #["note: only an or-pattern, as in `| A | B => e`, may start with `|`",
+      "help: write the pattern without it, as in `A => e`"] }
+
 /-- `<-`, which Lean lexes as one token, so that `x <- 1` is not `x < -1`
 (`Reqs/Lang/Lexical#punctuators`). -/
 def leftArrowMsg : Msg :=

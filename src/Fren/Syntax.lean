@@ -362,7 +362,8 @@ scoped syntax (name := fromPattern) fren_bound noWs ".." (noWs fren_bound)? : fr
 scoped syntax (name := uptoPattern) "..=" noWs fren_bound : fren_pattern
 
 /-- The pattern of a `match` arm or of `is`: an or-pattern, optionally
-after a leading `|`. -/
+after a leading `|`, which the elaborator reports before a pattern of one
+alternative (`F0166`). -/
 syntax fren_top_pattern := ("| ")? sepBy1(fren_pattern, " | ")
 
 /-- `pattern => e`, or `pattern if C => e` with a guard; like a binding's,
@@ -381,7 +382,8 @@ scoped syntax:max (name := matchManyExpr) "match " withoutForbidden(fren_expr:ma
 scoped syntax:max (name := lambdaMatchExpr) "match " "{ "
   withoutForbidden(sepBy(fren_many_arm, ", ", ", ", allowTrailingSep)) " }" : fren_expr
 
-/-- A row of a table: `C => e`, or `_ => e`, optionally after `|`. Like a
+/-- A row of a table: `C => e`, or `_ => e`. A leading `|` is parsed so that
+the elaborator reports it (`F0166`), as the `fren` command's parser does. Like a
 `match` arm's body, neither the condition nor the value can be a bare
 `when`/`unless`. -/
 syntax fren_row := ("| ")? ("_" <|> fren_expr:20) " => " fren_expr:20
