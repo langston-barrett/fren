@@ -650,16 +650,20 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     let msg := Fren.Core.untestedMsg subject args.nTests byCheck
     warn msg
     shown := shown.push msg
-  -- At the trigger of each check that no test reached (`F0612`).
-  for r in rep.untriggered.filter keep do
+  -- At each check that no test reached, though some found what it is
+  -- about (`eval::unreached`): at its trigger, which held in none of them
+  -- (`F0612`), or at the check, which had a value in none (`F0617`).
+  for (r, atTrigger) in (rep.untriggered.filter keep).map (·, true) ++ (rep.valueless.filter keep).map (·, false) do
     let some n := r.prop? | continue
     let (what, span) := match r.kind, r.target? with
       | .inst, some (d, a) =>
         (s!"the assumption `{Fren.Core.showComp (d ++ a)}` of call `{n}`", ((c.insts.find? (·.name == n)).map (·.span)).getD c.span)
       | _, _ =>
         let p? := c.props.find? (·.name == n)
-        (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`", (p?.map fun p => p.triggerSpan?.getD p.span).getD c.span)
-    let msg := Fren.Core.untriggeredMsg what args.nTests byCheck
+        (if global then subject else s!"`{Fren.Core.showComp (c.path ++ n)}`",
+          (p?.map fun p => if atTrigger then p.triggerSpan?.getD p.span else p.span).getD c.span)
+    let msg := if atTrigger then Fren.Core.untriggeredMsg what args.nTests byCheck
+      else Fren.Core.valuelessMsg what args.nTests byCheck
     printDiag args.paint files { file := c.file, span, severity := .warning, msg }
     shown := shown.push msg
   -- At each cover goal for which no test found a witness (`F0616`).
@@ -804,9 +808,11 @@ one `Eval.Spec`, took 11.6 s, and 3.1 s each with a spec of its own. So
 made before. The copies cost memory: when this was measured (November
 2026), a reading of Fren's own spec took about 50 MB for each thread, and
 `fren quickcheck` of it peaked at 964 MB with a reading for each thread,
-against 248 MB with one shared. With one job, there is one thread, so
-`f` is given `single?`, what the caller has already made, if it gives it,
-rather than a copy of its own. -/
+against 248 MB with one shared, at many jobs. With one job, there is one
+thread, so `f` is given `single?`, what the caller has already made, if
+it gives it, rather than a copy of its own: that saves reading the spec
+again, but no memory was measured to be saved (the review of #587 saw
+220 MB against 174 MB for `fren quickcheck --jobs 1`, under load). -/
 def inParallelWith [Nonempty β] (jobs : Nat) (xs : Array α) (own : IO σ) (f : σ → α → IO β)
     (first : α → Bool := fun _ => false) (single? : Option σ := none) : IO (Array (IO β)) := do
   if jobs ≤ 1 then

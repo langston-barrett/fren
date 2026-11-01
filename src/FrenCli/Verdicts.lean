@@ -31,9 +31,27 @@ def evalExit (ran complete : Bool) (status? : Option Status) (expectFalse : Bool
   if !ran then 2 else if !complete then 3 else if status? == some .Meets && !expectFalse then 0 else 1
 
 /-- Whether a test that found what a check is about reaches it: where the
-check's trigger, if any, holds, and the check has a value
-(`eval::reaches`). -/
-def reached (found hasTrigger trigger decided : Bool) : Bool := found && (!hasTrigger || trigger) && decided
+check's trigger, if any, holds, and the check, whose value is `value`, has
+one (`eval::reaches`). -/
+def reached (found hasTrigger trigger : Bool) (value : Option Bool) : Bool :=
+  found && (!hasTrigger || trigger) && value.isSome
+
+/-- `eval::Unreached`. -/
+inductive Unreached where
+  | Reached
+  | Untested
+  | Untriggered
+  | Valueless
+  deriving BEq, DecidableEq, Repr
+
+/-- Why testing reached a check, or did not (`eval::unreached`), from the
+tests that found what it is about, those of them in which its trigger, if
+any, held, and those of them in which it had a value. -/
+def unreachedOf (found triggered decided : Nat) : Unreached :=
+  if decided > 0 then .Reached
+  else if found == 0 then .Untested
+  else if triggered == 0 then .Untriggered
+  else .Valueless
 
 /-- The verdict of testing a check, from whether some test refuted it, how
 many reached it, and, for realizability, whether the search saw every

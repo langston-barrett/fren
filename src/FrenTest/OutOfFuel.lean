@@ -2,10 +2,13 @@
 import FrenCli.Quick
 -- keep-sorted end
 
-/-! A test whose evaluation runs out of fuel (`outOfFuel`) counts toward no
-tested pass (`eval::reaches`): at a tiny fuel, a check that full fuel
-evaluates has no value, and the test neither refutes nor reaches it, so
-that testing leaves the check inconclusive. -/
+/-! A test in which a check has no value, as where its evaluation runs out
+of fuel (`outOfFuel`) or reads a part that has no value, counts toward no
+tested pass (`eval::reaches`): it neither refutes nor reaches the check,
+so that testing leaves the check inconclusive, and it is counted apart, for
+the warning `F0617` (`eval::unreached`). At a tiny fuel, a check that full
+fuel evaluates has no value. The fixtures `test/cli/results/f0617_*` show
+the same, end to end, for a part with no value, at each kind of check. -/
 
 namespace Fren.Test.OutOfFuel
 
@@ -21,11 +24,15 @@ def cex : Unit → Fren.Core.Detail := fun _ => .none
 #guard (({} : Tally).test false true (some true) cex).tests == 1
 #guard verdictOf .expect (({} : Tally).test false true (some true) cex) == .pass
 #guard verdictOf .expect (({} : Tally).test false true (some false) cex) == .fail
--- No value: no test, so no pass.
+-- No value: no test, so no pass, and a test without a value.
 #guard (({} : Tally).test false true none cex).tests == 0
+#guard (({} : Tally).test false true none cex).valueless == 1
 #guard verdictOf .expect (({} : Tally).test false true none cex) == .inconclusive
+#guard (({} : Tally).test false true none cex).unreached 1 == .Valueless
 -- Nor where the trigger fails, whatever the value.
 #guard (({} : Tally).test true false (some false) cex).tests == 0
+#guard (({} : Tally).test true false none cex).valueless == 0
+#guard (({} : Tally).test true false none cex).unreached 1 == .Untriggered
 
 /-- At a tiny fuel, read at run time so that the evaluation is not done
 ahead: `deep` has no value, and a test of it neither refutes nor reaches
@@ -37,7 +44,7 @@ def tinyFuel : IO (Array String) := do
   let value := deep.eval {} (fun _ => none) fuel
   unless value.isNone do return #[s!"`deep` has the value {value} at fuel {fuel}"]
   let t := ({} : Tally).test false true value cex
-  unless t.tests == 0 && verdictOf .expect t == .inconclusive do
+  unless t.tests == 0 && t.valueless == 1 && verdictOf .expect t == .inconclusive do
     return #["a test that ran out of fuel counted toward a pass"]
   return #[]
 

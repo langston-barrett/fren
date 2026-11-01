@@ -21,7 +21,12 @@ open Fren.Core (CheckResult CheckKind Assignment)
 
 /-- What testing one check found. -/
 structure Tally where
+  /-- The tests that reached the check (`eval::reaches`). -/
   tests : Nat := 0
+  /-- The tests that found what the check is about, in which its trigger,
+  if it has one, held, but in which the check had no value
+  (`eval::unreached`). -/
+  valueless : Nat := 0
   /-- The first counterexample. -/
   refuted? : Option Fren.Core.Detail := none
   /-- For realizability: the counterexample is an input for which the
@@ -52,10 +57,11 @@ structure Admitted where
   /-- Counterexamples to call assumptions: the call, the
   called procedure, its assumption, and the shown values. -/
   instFails : Array (Name × Name × Name × Assignment) := #[]
-  /-- The call assumptions, by call and assumption, that have no value
-  on the call's inputs, as where evaluation ran out of fuel (`outOfFuel`):
-  which the test neither refutes nor reaches (`eval::reaches`). -/
-  instUndecided : Array (Name × Name) := #[]
+  /-- The value of each call assumption on its call's inputs, by call and
+  assumption, `none` where it has none, as where an index is out of range
+  or evaluation runs out of fuel (`outOfFuel`): such an assumption the
+  test neither refutes nor reaches (`eval::reaches`). -/
+  instValues : Array ((Name × Name) × Option Bool) := #[]
   /-- The calls reached, by index, for counting. -/
   reached : Nat := 0
   complete : Bool := false
@@ -112,12 +118,11 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     let shown := sp.shown vars env fun v => v.role.isUniversal && v.isPub && !later.contains v.name.getRoot
     let mut failed := false
     for a in d.ofKind .assume do
-      match ({ label := a.name, pfx := i.name, e := a.e } : Atom).eval I env.look with
-      | some false =>
+      let value := ({ label := a.name, pfx := i.name, e := a.e } : Atom).eval I env.look
+      out := { out with instValues := out.instValues.push ((i.name, a.name), value) }
+      if value == some false then
         out := { out with instFails := out.instFails.push (i.name, d.path, a.name, shown) }
         failed := true
-      | some true => pure ()
-      | none => out := { out with instUndecided := out.instUndecided.push (i.name, a.name) }
     if failed then return some out
     let atoms := pre.insts[k]!
     let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs, fixedPools : Problem }.solve sp w I env)
@@ -133,8 +138,13 @@ structure Report where
   /-- No test found an admissible behaviour (`F0610`). -/
   untested : Bool := false
   /-- The checks with a trigger that no test reached, though some found
-  admissible behaviours (`F0612`). -/
+  admissible behaviours, because the trigger held in none of them (`F0612`,
+  `eval::unreached`). -/
   untriggered : Array CheckResult := #[]
+  /-- The checks that no test reached, though some found what they are
+  about, in which their triggers, if any, held, because they had no value
+  in any of them (`F0617`, `eval::unreached`). -/
+  valueless : Array CheckResult := #[]
   /-- The cover goals for which no test found a witness, though some found
   behaviours that meet the procedure (`F0616`). -/
   unwitnessed : Array CheckResult := #[]
@@ -203,13 +213,22 @@ def triggered (I : Interp) (pfx : Name) (trigger? : Option Ex) (env : Env) : Boo
 /-- `t`, after a test that found what its check is about, in which the
 check's trigger, if it has one (`hasTrigger`), holds where `triggered`,
 and the check's value is `value`. The test reaches the check only where
-the trigger holds and the check has a value (`eval::reaches`): one whose
-evaluation ran out of fuel (`outOfFuel`) refutes nothing and counts for
-nothing. Where the value is `false`, it refutes the check, by `cex`. -/
+the trigger holds and the check has a value (`eval::reaches`). One in
+which it has none, as where an index is out of range, a function has no
+value that the evaluator knows, or evaluation runs out of fuel
+(`outOfFuel`), refutes nothing and reaches nothing, and is counted apart
+(`Tally.valueless`) for the warning (`eval::unreached`). Where the value
+is `false`, it refutes the check, by `cex`. -/
 def Tally.test (t : Tally) (hasTrigger triggered : Bool) (value : Option Bool) (cex : Unit → Fren.Core.Detail) : Tally :=
-  if !reached true hasTrigger triggered value.isSome then t
-  else if value == some false then t.reach.refute (cex ())
-  else t.reach
+  if reached true hasTrigger triggered value then
+    if value == some false then t.reach.refute (cex ()) else t.reach
+  else if reached true hasTrigger triggered (some true) then { t with valueless := t.valueless + 1 }
+  else t
+
+/-- Why testing reached the check of `t`, or did not (`eval::unreached`),
+where `found` tests found what it is about. -/
+def Tally.unreached (t : Tally) (found : Nat) : Unreached :=
+  unreachedOf found (t.tests + t.valueless) t.tests
 
 /-- Tests the procedure `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
@@ -278,8 +297,11 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
     for (x, k) in instAssumes.zipIdx do
       let callReached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
       if callReached then instFound := instFound.modify k (· + 1)
-      if reached callReached x.2.2.2.isSome (triggered I x.1 x.2.2.2 adm.env) (!adm.instUndecided.contains (x.1, x.2.2.1)) then
-        instT := instT.modify k Tally.reach
+      -- Whether its value on the call's inputs, from admission, is known:
+      -- the counterexample, where it is `false`, is admission's, below.
+      if callReached then
+        let known := ((adm.instValues.find? (·.1 == (x.1, x.2.2.1))).bind (·.2)).map fun _ => true
+        instT := instT.modify k (·.test x.2.2.2.isSome (triggered I x.1 x.2.2.2 adm.env) known fun _ => .none)
       if let some (_, _, _, shown) := adm.instFails.find? fun (w, _, a, _) => w == x.1 && a == x.2.2.1 then
         instT := instT.modify k (·.refute (.counterexample shown))
     unless adm.complete do continue
@@ -359,16 +381,22 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       | _, _ => r)
     ++ (dets.zip detT).map (fun (x, t) => result .determinism (some x.name) t)
   let untested := behaviours == 0 && noOutputs?.isNone
-  -- Admissible behaviours were found, but none in which the trigger held.
-  -- Not beside `F0610`, which already says that nothing was tested.
-  let untriggered := if untested then #[] else
-    ((instAssumes.zip (instT.zip instFound)).filterMap fun ((w, d, a, t?), (t, found)) =>
-      if t?.isSome && t.tests == 0 && found > 0 then some (result .inst (some w) t (some (d, a))) else none)
-    ++ (expects.zip expT).filterMap fun (e, t) =>
-      if e.e.trigger?.isSome && t.tests == 0 && behaviours > 0 then some (result .expect (some e.name) t) else none
+  -- Why each call assumption and expectation that no test reached was not
+  -- (`eval::unreached`): from the tests that found its call's inputs, or
+  -- behaviours, those in which its trigger held, and those in which it had
+  -- a value. An expectation's is not given beside `F0610`, which already
+  -- says that no behaviour was found. A call assumption's is: a call's
+  -- inputs may be found where no behaviour is, and one without a value
+  -- leaves the call without behaviours, so that it explains `F0610`.
+  let unreached :=
+    ((instAssumes.zip (instT.zip instFound)).map fun ((w, d, a, _), (t, found)) =>
+      (t.unreached found, result .inst (some w) t (some (d, a))))
+    ++ if untested then #[] else (expects.zip expT).map fun (e, t) => (t.unreached behaviours, result .expect (some e.name) t)
+  let untriggered := unreached.filterMap fun (why, r) => if why == .Untriggered then some r else none
+  let valueless := unreached.filterMap fun (why, r) => if why == .Valueless then some r else none
   let unwitnessed := if untested || behaviours == 0 then #[] else
     (covers.zip covT).filterMap fun (g, t) => if t.tests == 0 then some (result .cover (some g.name) t) else none
-  return { results, noOutputs?, untested, untriggered, unwitnessed }
+  return { results, noOutputs?, untested, untriggered, valueless, unwitnessed }
 
 /-- Tests the global expectation `g`. -/
 def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
@@ -432,8 +460,12 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
                            detail := match verdict with
                              | .fail => t.refuted?.getD .none
                              | _ => .none }
+  -- Every test that found behaviours with the trigger holding counts in
+  -- `t`; one that found them only without it counts as found.
+  let why := t.unreached (if found then max 1 (t.tests + t.valueless) else 0)
   return { results := #[r], untested := !found
-           untriggered := if found && t.tests == 0 then #[r] else #[] }
+           untriggered := if why == .Untriggered then #[r] else #[]
+           valueless := if why == .Valueless then #[r] else #[] }
 
 /-! ## `fren eval` -/
 

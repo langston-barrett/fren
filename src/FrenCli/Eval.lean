@@ -889,8 +889,10 @@ value another. At run time it panics, so that a run that ran out says
 so, but in compiled code `panic!` only prints `PANIC` to stderr and
 returns that unknown value, and evaluation goes on (test jobs abort on
 it, `spawnJob`). Nothing then rests on the value: a test in which a
-check has no value neither refutes nor reaches it (`eval::reaches`,
-`Tally.test`), so it counts toward no tested pass; and a model that
+check has no value, as here or where it reads a part that has no value,
+such as an index out of range, neither refutes nor reaches it
+(`eval::reaches`, `Tally.test`), so it counts toward no tested pass, and
+the check gets `F0617` (`eval::unreached`); and a model that
 evaluation cannot decide is not confirmed (`eval::confirm`), so a check
 that applies a recursion is inconclusive (`F0450`). -/
 @[noinline] def outOfFuel [Inhabited α] (_ : Unit) : α := panic! "Ex.eval ran out of fuel"

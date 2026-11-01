@@ -443,24 +443,26 @@ assumption's trigger gets no such search: it is about a call's
 inputs, which its arguments give.
 
 A test reaches a check only where the check has a value in what the test
-found, too. Where it has none, as where evaluation runs out of fuel or
-reads a part that has no value, the test refutes nothing, and it says
-nothing either: counting it would let an expectation pass by testing that
-no test ever evaluated. `eval::reaches` states when a test reaches a
-check:
+found, too. Where it has none, as where an index is out of range, a
+function has no value that the evaluator knows, no case of a table or
+`match` is taken, or evaluation runs out of fuel, the test refutes
+nothing, and it says nothing either: counting it would let an expectation
+pass by testing that no test ever evaluated. A check that has no value in
+any test is inconclusive, with the warning that `eval::unreached` gives.
+`eval::reaches` states when a test reaches a check:
 
 ```fren
 set_option fren.evidence "enumerated" in
 pub proc reaches(
-    found?,              -- the test found what the check is about
+    found?,                  -- the test found what the check is about
     has_trigger?,
-    trigger?,            -- the trigger holds in what the test found
-    decided?,            -- the check has a value in what the test found
+    trigger?,                -- the trigger holds in what the test found
+    value: Option<Bool>,     -- the check's value in what the test found, `None` if it has none
 ): (det reached?) {
-    ensure rule: reached? iff (found? and (not has_trigger? or trigger?) and decided?)
+    ensure rule: reached? iff (found? and (not has_trigger? or trigger?) and value != Option::None)
 
     expect false_trigger_never: when has_trigger? and not trigger?, not reached?
-    expect undecided_never: when not decided?, not reached?
+    expect valueless_never: when value = Option::None, not reached?
 }
 ```
 
@@ -502,12 +504,39 @@ pub proc outputs_seen(
 ```
 
 `exhausted?` below is `seen?`, for the input that the search found no
-outputs for. A check that no test
-reached, because no admissible behaviour was found, is also inconclusive,
-with the warning `F0610`. A check with a trigger that no test reached,
-though some found what it is about, is inconclusive with the warning
-`F0612`, at the check, unless the procedure already has `F0610`. A
-cover goal for which no test found a witness, though some found a
+outputs for. A check that no test reached is inconclusive, and
+`eval::unreached` says why, from three counts of the tests: those that
+found what the check is about, those of them in which its trigger, if it
+has one, held, and those of them in which the check had a value, which
+are the tests that reached it (`reaches`). Where none found what it is
+about, because no admissible behaviour was found, the procedure has the
+warning `F0610`. Where some did, but the trigger held in none of them,
+the check has the warning `F0612`. Where the trigger held in some, or
+the check has none, but the check had a value in none of them, it has the
+warning `F0617`. Each is at the check, and neither `F0612` nor `F0617`
+is given where the procedure already has `F0610`:
+
+```fren
+-- Why testing reached a check, or did not.
+pub enum Unreached { Reached, Untested, Untriggered, Valueless }
+
+pub proc unreached(
+    found: Nat,          -- the tests that found what the check is about
+    triggered: Nat,      -- those of them in which its trigger, if it has one, held
+    decided: Nat,        -- those of them in which the check had a value: the tests that reached it
+): (det why: Unreached) {
+    assume counted: decided <= triggered <= found
+
+    ensure reached: when decided > 0, why = Unreached::Reached
+    ensure untested: when found = 0, why = Unreached::Untested
+    ensure untriggered: when found > 0 and triggered = 0, why = Unreached::Untriggered
+    ensure valueless: when triggered > 0 and decided = 0, why = Unreached::Valueless
+
+    expect warned_only_unreached: when why != Unreached::Reached, decided = 0
+}
+```
+
+A cover goal for which no test found a witness, though some found a
 behaviour that meets the procedure, is inconclusive with the warning
 `F0616`, at the goal, likewise. `eval::test_verdict` gives the verdict of testing one
 check, from whether some test refuted it and how many tests reached it:

@@ -17,7 +17,7 @@ over a number of tests, by cases on whether there were any.
 namespace Fren.Impls
 
 open Fren.Core (CheckKind Verdict)
-open FrenCli.Eval (Status Confirmation statusOf evalExit reached testVerdict confirmation confirmedVerdict)
+open FrenCli.Eval (Status Confirmation Unreached statusOf evalExit reached unreachedOf testVerdict confirmation confirmedVerdict)
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible
@@ -50,15 +50,33 @@ impl eval_exit_code: eval::eval_exit for (ran complete : Bool) (s : Option Statu
   intro ran complete s ef _
   cases ran <;> cases complete <;> cases ef <;> rcases s with _ | _ | _ | _ <;> decide
 
-impl reaches_check: eval::reaches for (f h t d : Bool) {
+impl reaches_check: eval::reaches for (f h t : Bool) (v : Option Bool) {
   found? := f,
   has_trigger? := h,
   trigger? := t,
-  decided? := d,
-  reached? := reached f h t d,
+  value := v,
+  reached? := reached f h t v,
 } by
-  intro f h t d _
-  cases f <;> cases h <;> cases t <;> cases d <;> decide
+  intro f h t v _
+  cases f <;> cases h <;> cases t <;> rcases v with _ | _ | _ <;> decide
+
+def toUnreached : Unreached → eval.Unreached
+  | .Reached => .Reached
+  | .Untested => .Untested
+  | .Untriggered => .Untriggered
+  | .Valueless => .Valueless
+
+-- Over the numbers of tests: only which are zero matters.
+impl unreached_of: eval::unreached for (f t d : Nat) {
+  found := f,
+  triggered := t,
+  decided := d,
+  why := toUnreached (unreachedOf f t d),
+} by
+  intro f t d h
+  simp only [fren_spec, unreachedOf, toUnreached] at *
+  rcases Nat.eq_zero_or_pos d with hd | hd <;> rcases Nat.eq_zero_or_pos f with hf | hf <;>
+    rcases Nat.eq_zero_or_pos t with ht | ht <;> simp_all [Nat.pos_iff_ne_zero] <;> omega
 
 -- Over the number of tests, so `decide` does not apply: only whether
 -- there were any matters.
