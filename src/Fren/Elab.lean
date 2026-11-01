@@ -5949,10 +5949,13 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     modifyLocal fun l => { l with indexes := #[], tables := #[] }
     let mark := (← getLocal).boundMentions.size
     let t ← toTerm { bodyCx with binders := cx.binders ++ new, natOk := false, instances := cx.instances * combos.size } body
-    -- Its body is a `Bool`, checked before its verdict is reported, as the
-    -- `fren` command checks it.
-    let kw := if all then "forall" else "exists"
-    checkDeclared body t (mkConst ``Bool) fun _ => s!"note: the body of `{kw}` is a `Bool`"
+    -- Its bound names' lints, then whether its body is a `Bool`, before
+    -- its verdict is reported, in the `fren` command's order. Each bound
+    -- name's number of values, 0 for a type that is not listed.
+    if cx.noteIndexes then
+      lintQuant e all binders ids (bound.map fun (bn, ty, _, _) => (bn, ty))
+        (bound.map fun (_, _, _, vs?) => (vs?.map (·.size)).getD 0) body cx.binders.size mark
+    checkTermType body t .bool (some s!"note: the body of `{if all then "forall" else "exists"}` is a `Bool`")
     -- Its verdict, from its bound names of types that are not listed, in
     -- order, as the `fren` command decides it.
     let verdict ← if !candidate then pure Core.ElementVerdict.notMembers else do
@@ -5994,11 +5997,6 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     -- quantifier is expanded.
     if !inCore && bound.zipIdx.any (fun ((_, ty, _, vs?), k) => vs?.isNone && domainOf all names body k (ty.isConstOf ``Nat) != .unbounded) then
       modifyLocal fun l => { l with guardedUsed := true }
-    -- Each bound name's number of values, 0 for a type that is not listed.
-    if cx.noteIndexes then
-      lintQuant e all binders ids (bound.map fun (bn, ty, _, _) => (bn, ty))
-        (bound.map fun (_, _, _, vs?) => (vs?.map (·.size)).getD 0) body cx.binders.size mark
-    checkTermType body t .bool (some s!"note: the body of `{if all then "forall" else "exists"}` is a `Bool`")
     let b ← elabProp t
     let inner ← (← getLocal).indexes.mapM fun (ref, g) => return (ref, ← elabProp g)
     let innerTables ← (← getLocal).tables.mapM fun (ref, q, g) => return (ref, q, ← elabProp g)
@@ -6010,9 +6008,16 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       if free.isEmpty then return x
       -- A quantifier over elements in the core is marked, for each query
       -- to expand (`Fren.Elems`).
-      let marked (q : Expr) : Expr := if inCore then Elems.mark free.size q else q
-      let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
+      let marked (n : Nat) (q : Expr) : Expr := if inCore then Elems.mark n q else q
       let x ← zetaReduce x
+      -- Only over the bound names that it mentions: one that it does not
+      -- would be a non-dependent `∀`, an implication from a type, which
+      -- lean-smt cannot translate, and every type has values, so leaving
+      -- it out changes nothing.
+      let free := if inCore then free else free.filter fun (fv, _, _) => x.containsFVar fv.fvarId!
+      if free.isEmpty then return x
+      let marked := marked free.size
+      let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
       if forall? then
         return marked (← mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x))
       else

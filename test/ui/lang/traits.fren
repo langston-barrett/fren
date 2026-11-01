@@ -42,6 +42,9 @@ trait Sized {
     fn grow(Self): Self
 
     law grows(s: Self): size(grow(s)) = size(s) + 1
+    -- A variable that the equation does not mention, which Lean's query
+    -- leaves out, as it means nothing.
+    law fixed(s: Self, n: Int): size(s) >= 0  --~ warning: unused bound name `n`
 
     expect positive(s: Self) {
         expect after_grow: size(grow(s)) > 0
