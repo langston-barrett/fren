@@ -865,6 +865,14 @@ def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : 
   | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
   | none => none
 
+/-- `es.mapM f`: the values of `es` in order, or none at the first that
+has none. `Array.mapM` writes each value over its element of `es`, so,
+where `es` is shared, as an expression's parts are, it first copies `es`,
+counting a reference to each of its elements; this pushes the values onto
+a new array instead. -/
+@[inline] def evalEach (f : Ex → Option Val) (es : Array Ex) : Option (Array Val) :=
+  es.foldlM (init := Array.mkEmpty es.size) fun vs e => do return vs.push (← f e)
+
 /-- A frame (`Ex.eval`) that binds each of `ps` to the value of `vs` at
 its position, the first innermost: what pushing the pairs of `ps.zip vs`
 from the last to the first gives, without the pairs. -/
@@ -941,7 +949,7 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
   -- not change which values are members.
   | .bin .member a (.setLit es) => do
     let x ← a.eval I look locals slots frame memos fuel
-    boolV ((← es.mapM (·.eval I look locals slots frame memos fuel)).contains x)
+    boolV ((← evalEach (·.eval I look locals slots frame memos fuel) es).contains x)
   -- `and`, `or` and `when` evaluate their second operand only when the
   -- first does not decide them, which gives the same value: `kleeneAnd`
   -- is `false` whatever its second operand when its first is `false`, and
@@ -976,7 +984,7 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
       let x := a.eval I look locals slots frame memos fuel
       if x.isSome && x == b.eval I look locals slots frame memos fuel then x else none
   | .app f args => do
-    let vs ← args.mapM (·.eval I look locals slots frame memos fuel)
+    let vs ← evalEach (·.eval I look locals slots frame memos fuel) args
     -- A structural recursion's body, at the arguments' values, which ends
     -- (`Reqs/Lang/Recursion#meaning`).
     -- Its parameters bound in a frame of their own, the first innermost,
@@ -994,7 +1002,7 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
     (c.holds? vs).map .bool
   | .method m recv args => do
     let r ← recv.eval I look locals slots frame memos fuel
-    let args ← args.mapM (·.eval I look locals slots frame memos fuel)
+    let args ← evalEach (·.eval I look locals slots frame memos fuel) args
     -- A relation's methods.
     if let .set ps := r then
       let fsts := ps.filterMap fun | .pair a _ => some a | _ => none
@@ -1070,15 +1078,15 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
     | some b => boolV b
     | none => boolV (re.matches s)
   | .pair a b => do return .pair (← a.eval I look locals slots frame memos fuel) (← b.eval I look locals slots frame memos fuel)
-  | .seqLit es => do return .seq (← es.mapM (·.eval I look locals slots frame memos fuel))
+  | .seqLit es => do return .seq (← evalEach (·.eval I look locals slots frame memos fuel) es)
   -- Out of range, an index is part of the interpretation, which may
   -- leave it unknown.
   | .index q i _ u => do
     let .seq es ← q.eval I look locals slots frame memos fuel | none
     let .int k ← i.eval I look locals slots frame memos fuel | none
     if 0 ≤ k && k < es.size then es[k.toNat]? else I.outOfRange u
-  | .ctor ty idx args => do return .ctor ty idx (← args.mapM (·.eval I look locals slots frame memos fuel))
-  | .setLit es => do return Val.setOf (← es.mapM (·.eval I look locals slots frame memos fuel))
+  | .ctor ty idx args => do return .ctor ty idx (← evalEach (·.eval I look locals slots frame memos fuel) args)
+  | .setLit es => do return Val.setOf (← evalEach (·.eval I look locals slots frame memos fuel) es)
   | .card s => do
     let .set ms ← s.eval I look locals slots frame memos fuel | none
     return .int ms.size
