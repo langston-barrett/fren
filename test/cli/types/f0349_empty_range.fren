@@ -1,2 +1,7 @@
 -- A range whose lower bound is above its upper one.
-proc c(n: Int): (y: Int) { ensure r: y = match n { 9..=0 => 0, _ => 1 } }
+proc c(n: Int): (y: Int) {
+    ensure r: y = match n {
+        9..=0 => 0,
+        _ => 1,
+    }
+}

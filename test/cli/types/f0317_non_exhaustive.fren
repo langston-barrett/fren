@@ -1,3 +1,8 @@
 -- A `match` without an arm for `Empty`.
 enum Shape { Circle(Int), Square(Int), Empty }
-proc c(s: Shape): (a: Int) { ensure r: a = match s { Shape::Circle(r) => 3 * r, Shape::Square(w) => w } }
+proc c(s: Shape): (a: Int) {
+    ensure r: a = match s {
+        Shape::Circle(r) => 3 * r,
+        Shape::Square(w) => w,
+    }
+}

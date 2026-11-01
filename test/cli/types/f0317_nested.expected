@@ -1,8 +1,8 @@
 error[F0317]: non-exhaustive match: `Reply::Ok(Shape::Square(_))`, `Reply::Ok(Shape::Empty)`, `Reply::Err(..=-1)`, `Reply::Err(1..)` not covered
- --> test/cli/types/f0317_nested.fren:4:44
+ --> test/cli/types/f0317_nested.fren:5:19
   |
-4 | proc c(r: Reply): (y: Int) { ensure q: y = match r { Reply::Ok(Shape::Circle(_)) => 0, Reply::Err(0) => 1 } }
-  |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Reply::Ok(Shape::Square(_))`, `Reply::Ok(Shape::Empty)`, `Reply::Err(..=-1)`, `Reply::Err(1..)` not covered
+5 |     ensure q: y = match r {
+  |                   ^^^^^^^^^ `Reply::Ok(Shape::Square(_))`, `Reply::Ok(Shape::Empty)`, `Reply::Err(..=-1)`, `Reply::Err(1..)` not covered
   |
   = note: a `match` has an arm for every variant, or a last arm `_`
 
