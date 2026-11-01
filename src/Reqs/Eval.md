@@ -189,7 +189,9 @@ candidates in a random order, and goes back when a constraint that can
 already be evaluated is false (see [Backjumping](#backjumping)). An
 assumption that reads such a variable is evaluated with its definition in
 its place, so that it reads it computed, and, where the definition has
-no value, decides the assumption as strong Kleene logic does. The
+no value, decides the assumption as strong Kleene logic does. So is a
+called procedure's assumption, with that procedure's definitions, on the
+call's inputs. The
 values that the constraints equate a variable with come first. The others,
 its *pool*, are drawn once in each search, random parts included, and
 shuffled again each time the search reaches the variable, in an order
@@ -588,7 +590,7 @@ pub proc unreached_warning(
     decided: Nat,
     valued: Nat,             -- the tests that found what it is about in which the check as a whole, its trigger included, had a value
     untested?,               -- the procedure has `F0610`
-    assumption?,             -- the check is a call assumption
+    call_assumption?,        -- the check is a call assumption
 ): (det shown: UnreachedWarning) {
     assume counted: decided + unknown <= triggered <= found
     assume valued_counted: valued <= found
@@ -597,17 +599,17 @@ pub proc unreached_warning(
 
     ensure reached_silent: when u.why is Unreached::Reached | Unreached::Untested, shown = UnreachedWarning::Silent
     ensure untriggered: when not untested? and u.why = Unreached::Untriggered, shown = UnreachedWarning::Untriggered
-    ensure valueless: when (not untested? or (assumption? and valued = 0)) and u.why = Unreached::Valueless,
+    ensure valueless: when (not untested? or (call_assumption? and valued = 0)) and u.why = Unreached::Valueless,
         shown = UnreachedWarning::Valueless
-    ensure trigger_valueless: when (not untested? or (assumption? and valued = 0)) and u.why = Unreached::TriggerValueless,
+    ensure trigger_valueless: when (not untested? or (call_assumption? and valued = 0)) and u.why = Unreached::TriggerValueless,
         shown = UnreachedWarning::TriggerValueless
-    ensure beside_untested: when untested? and not (assumption? and valued = 0 and u.why is Unreached::Valueless | Unreached::TriggerValueless),
+    ensure beside_untested: when untested? and not (call_assumption? and valued = 0 and u.why is Unreached::Valueless | Unreached::TriggerValueless),
         shown = UnreachedWarning::Silent
 
-    -- Beside `F0610`, only the `F0617` of an assumption that had no value
-    -- as a whole in any test is shown, which explains it.
-    expect only_assumptions_beside_untested: when untested? and shown != UnreachedWarning::Silent,
-        assumption? and valued = 0 and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
+    -- Beside `F0610`, only the `F0617` of a call assumption that had no
+    -- value as a whole in any test is shown, which explains it.
+    expect only_call_assumptions_beside_untested: when untested? and shown != UnreachedWarning::Silent,
+        call_assumption? and valued = 0 and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
     -- `F0617` blames the trigger only where it had no value.
     expect trigger_blamed_only_unknown: when shown = UnreachedWarning::TriggerValueless, unknown > 0
     expect warns_only_unreached: when decided > 0, shown = UnreachedWarning::Silent

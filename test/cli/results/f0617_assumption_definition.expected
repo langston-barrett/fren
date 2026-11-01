@@ -34,8 +34,53 @@ warning[F0610]: testing found no admissible behaviour of `d1` in 100 tests
    = note: so none of its checks were tested
    = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
 
-fren: 2 passed, 0 failed, 4 inconclusive, in 100 tests each
+error[F0604]: the assumption `a` of `k_def` may not hold for call `u_bad::u`
+  --> test/cli/results/f0617_assumption_definition.fren:60:10
+   |
+60 |     call u := k_def(z)
+   |          ^ may violate `k_def::a`
+   |
+   = counterexample: z = -16
+   = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
-Some errors have detailed explanations: F0609, F0610.
-For more information about an error, try `fren --explain F0609`.
-exit=3
+warning[F0610]: testing found no admissible behaviour of `u_bad` in 100 tests
+  --> test/cli/results/f0617_assumption_definition.fren:58:10
+   |
+58 | pub proc u_bad(z: Int) {
+   |          ^^^^^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
+
+warning[F0609]: testing found no outputs of `k_def_ens` for the input x = 1
+  --> test/cli/results/f0617_assumption_definition.fren:64:10
+   |
+64 | pub proc k_def_ens(x: Int): (w: Int) {
+   |          ^^^^^^^^^ possibly not realizable
+   |
+   = note: the search tries only some values, so outputs may still exist
+   = help: run `fren check` to decide whether it is realizable
+
+error[F0604]: the assumption `a` of `k_def_ens` may not hold for call `u_ens::u`
+  --> test/cli/results/f0617_assumption_definition.fren:70:31
+   |
+70 | pub proc u_ens(z: Int) { call u := k_def_ens(z) }
+   |                               ^ may violate `k_def_ens::a`
+   |
+   = counterexample: z = -1
+   = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
+
+warning[F0610]: testing found no admissible behaviour of `u_ens` in 100 tests
+  --> test/cli/results/f0617_assumption_definition.fren:70:10
+   |
+70 | pub proc u_ens(z: Int) { call u := k_def_ens(z) }
+   |          ^^^^^ untested
+   |
+   = note: so none of its checks were tested
+   = help: run `fren check` to decide whether its assumptions and guarantees can hold, or raise `--tests`
+
+fren: 5 passed, 2 failed, 7 inconclusive, in 100 tests each
+
+Some errors have detailed explanations: F0604, F0609, F0610.
+For more information about an error, try `fren --explain F0604`.
+exit=1

@@ -97,13 +97,19 @@ structure AdmitAtoms where
   early : Array Atom
   binds : Array (Array Atom)
   insts : Array (Array Atom)
+  /-- Each call's procedure's assumptions, by name, each with the
+  definitions that it reads in their place (`Comp.inlineEarly`), as they
+  are evaluated on the call's inputs. -/
+  callAssumes : Array (Array (Name × Ex))
 
 def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.DataShape) : AdmitAtoms :=
   let early := c.earlyDefs
   { assumes := (atomsOf .anonymous (c.ofKind .assume)).map fun a => ({ a with e := c.inlineEarly a.e } : Atom).compiled shapes
     early := (c.defAtoms.filter (early.contains ·.label)).map (·.compiled shapes)
     binds := c.insts.map fun i => (bindingAtoms .anonymous i).map (·.compiled shapes)
-    insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes) }
+    insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes)
+    callAssumes := c.insts.map fun i =>
+      ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (a.name, d.inlineEarly a.e)).getD #[] }
 
 /-- Searches for an admissible input, then for each call in turn
 confirms its assumptions on its inputs and searches for its behaviour.
@@ -123,7 +129,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
   -- (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
   -- If they have no value, the outputs' search reports it, as before.
-  let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
+  let env := (← ({ vars := early.filterMap fun n => (c.vars.find? (·.name == n)).map fun v => (v.name, v.ty)
                    atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
@@ -139,11 +145,13 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     let later := (c.insts.extract k).map (·.name)
     let shown := sp.shown vars env fun v => v.role.isUniversal && v.isPub && !later.contains v.name.getRoot
     let mut failed := false
-    for a in d.ofKind .assume do
-      let value := ({ label := a.name, pfx := i.name, e := a.e } : Atom).eval I env.look
-      out := { out with instValues := out.instValues.push ((i.name, a.name), value) }
+    -- With the called procedure's definitions that they read in their
+    -- place, as for its own admission (`Comp.inlineEarly`).
+    for (a, e) in pre.callAssumes[k]! do
+      let value := ({ label := a, pfx := i.name, e } : Atom).eval I env.look
+      out := { out with instValues := out.instValues.push ((i.name, a), value) }
       if value == some false then
-        out := { out with instFails := out.instFails.push (i.name, d.path, a.name, shown) }
+        out := { out with instFails := out.instFails.push (i.name, d.path, a, shown) }
         failed := true
     if failed then return some out
     let atoms := pre.insts[k]!
@@ -272,9 +280,9 @@ def Tally.unreached (t : Tally) (found : Nat) : Unreached :=
 
 /-- The warning shown at the check of `t` (`eval::unreached_warning`),
 where `found` tests found what it is about, `untested` if the procedure
-has `F0610`, and `assumption` if the check is an assumption. -/
-def Tally.warning (t : Tally) (found : Nat) (untested assumption : Bool) : UnreachedWarning :=
-  unreachedWarning found (t.tests + t.valueless) t.unknownTrigger t.tests t.valued untested assumption
+has `F0610`, and `callAssumption` if the check is a call assumption. -/
+def Tally.warning (t : Tally) (found : Nat) (untested callAssumption : Bool) : UnreachedWarning :=
+  unreachedWarning found (t.tests + t.valueless) t.unknownTrigger t.tests t.valued untested callAssumption
 
 /-- Tests the procedure `c` (`eval::test_verdict`). -/
 def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
@@ -283,7 +291,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let covers := c.ofKind .cover
   let dets := c.vars.filter (·.isDet)
   let instAssumes := c.insts.flatMap fun i =>
-    ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (i.name, d.path, a.name, a.e.trigger?)).getD #[]
+    ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (i.name, d.path, a.name, (d.inlineEarly a.e).trigger?)).getD #[]
   let mut realizable : Tally := {}
   let mut expT : Array Tally := expects.map fun _ => {}
   -- Each cover goal's first witness: the tests that found one reach it.

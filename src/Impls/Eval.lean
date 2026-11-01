@@ -99,7 +99,7 @@ impl unreached_warning_of: eval::unreached_warning for (f t u d v : Nat) (un c :
   decided := d,
   valued := v,
   untested? := un,
-  assumption? := c,
+  call_assumption? := c,
   shown := toUnreachedWarning (unreachedWarning f t u d v un c),
 } by
   intro f t u d v un c h

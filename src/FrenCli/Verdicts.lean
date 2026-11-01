@@ -78,11 +78,11 @@ inductive UnreachedWarning where
 
 /-- The warning shown at a check, from the counts of `unreachedOf`
 (`eval::unreached_warning`): the warning for why no test reached it, but
-beside the procedure's `F0610` (`untested`), none but that of an
-assumption that had no value as a whole in any test (`valued` is the
-tests in which it had one). -/
-def unreachedWarning (found triggered unknown decided valued : Nat) (untested assumption : Bool) : UnreachedWarning :=
-  let explains := assumption && valued == 0
+beside the procedure's `F0610` (`untested`), none but that of a call
+assumption (`callAssumption`) that had no value as a whole in any test
+(`valued` is the tests in which it had one). -/
+def unreachedWarning (found triggered unknown decided valued : Nat) (untested callAssumption : Bool) : UnreachedWarning :=
+  let explains := callAssumption && valued == 0
   match unreachedOf found triggered unknown decided with
   | .Untriggered => if untested then .Silent else .Untriggered
   | .Valueless => if untested && !explains then .Silent else .Valueless

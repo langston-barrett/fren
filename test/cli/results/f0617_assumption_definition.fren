@@ -43,3 +43,37 @@ pub proc d1(q: Seq<Int>): (y: Int) {
     assume a: d > 0
     ensure r: y = d
 }
+
+-- A called procedure's assumption that reads one of its definitions is
+-- evaluated with the definition in its place at the call too: `u_bad`
+-- violates `k_def::a` (`F0604`), as `u_ens` does `k_def_ens::a` where
+-- `z <= -1`, and `u_ens`'s `F0610` comes from `k_def_ens`'s contradictory
+-- guarantee alone, with no `F0617` at the call.
+pub proc k_def(x: Int): (w: Int) {
+    let n: Int := x + 1
+    assume a: n > 0
+    ensure s: w = x
+}
+
+pub proc u_bad(z: Int) {
+    assume neg: z < -5
+    call u := k_def(z)
+}
+
+set_option fren.lint.contradictory_comparisons "allow" in
+pub proc k_def_ens(x: Int): (w: Int) {
+    let n: Int := x + 1
+    assume a: n > 0
+    ensure s: w > 0 and w < 0
+}
+
+pub proc u_ens(z: Int) { call u := k_def_ens(z) }
+
+-- Definitions declared before the ones they read are computed in the
+-- order in which each reads only earlier ones.
+pub proc order2(x: Int): (y: Int) {
+    let b: Int := a + 1
+    let a: Int := x + 1
+    ensure r: y = b
+    expect e: y = x + 2
+}
