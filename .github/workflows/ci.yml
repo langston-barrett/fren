@@ -146,8 +146,9 @@ jobs:
   # timeout fails it, and the specs that it found are uploaded, to be
   # fixed or filed and listed (`Reqs/dev/Testing#continuous-integration`).
   # The kinds listed for `--avoid-known` go unchecked here, with either
-  # generator: today Lean's extra `F0743` (#493). `lake test` checks the
-  # fixed corpus on every pull request.
+  # generator: today Lean's extra `F0743` and kinds of #493 and #295, each
+  # listed at a seed of an earlier run (`knownDifferences`). `lake test`
+  # checks the fixed corpus on every pull request.
   fuzz-frontends:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

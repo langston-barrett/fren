@@ -1105,6 +1105,132 @@ theorem quantifiedTruth_map {α : Type} (exact universal : Bool) (body : α → 
   | v :: vs => by
     simp only [quantifiedTruth, List.map_cons, id, quantifiedTruth_map exact universal body vs]
 
+/-! ### The function that keeps an item from being enumerated
+
+`Fren.Core.Enumeration.contractBlocker?`, which both front ends call to
+name the function in `F0645`, is `firstBlocking` of the applied functions'
+paths and numbers of postconditions: the first by path of those whose
+contracts have a postcondition, as `check::contract_blocker` asks. -/
+
+theorem pickFirst_some (q p : String) : pickFirst (some q) p = if p ≤ q then p else q := rfl
+
+theorem pickFirst_le_self (acc : Option String) (p : String) : pickFirst acc p ≤ p := by
+  cases acc with
+  | none => exact String.le_refl p
+  | some q =>
+    rw [pickFirst_some]
+    by_cases h : p ≤ q
+    · rw [if_pos h]; exact String.le_refl p
+    · rw [if_neg h]; rcases String.le_total q p with h' | h'
+      · exact h'
+      · exact absurd h' h
+
+theorem pickFirst_le_acc (q p : String) : pickFirst (some q) p ≤ q := by
+  rw [pickFirst_some]
+  by_cases h : p ≤ q
+  · rw [if_pos h]; exact h
+  · rw [if_neg h]; exact String.le_refl q
+
+theorem pickFirst_eq (acc : Option String) (p : String) : pickFirst acc p = p ∨ acc = some (pickFirst acc p) := by
+  cases acc with
+  | none => exact Or.inl rfl
+  | some q =>
+    rw [pickFirst_some]
+    by_cases h : p ≤ q
+    · rw [if_pos h]; exact Or.inl rfl
+    · rw [if_neg h]; exact Or.inr rfl
+
+theorem blockStep_go (l : List (String × Nat)) (acc : Option String) :
+    (l.foldl blockStep acc = none ↔ acc = none ∧ ∀ x ∈ l, x.2 = 0) ∧
+    ∀ p, l.foldl blockStep acc = some p → (acc = some p ∨ ∃ x ∈ l, 0 < x.2 ∧ x.1 = p) ∧
+      (∀ q, acc = some q → p ≤ q) ∧ ∀ x ∈ l, 0 < x.2 → p ≤ x.1 := by
+  induction l generalizing acc with
+  | nil =>
+    refine ⟨by simp, fun p hp => ⟨Or.inl (by simpa using hp), fun q hq => ?_, by simp⟩⟩
+    rw [List.foldl_nil] at hp; rw [hp] at hq; cases hq; exact String.le_refl p
+  | cons x l ih =>
+    rw [List.foldl_cons]
+    by_cases h : contractBlocksEnumeration x.2 = true
+    · have hn : 0 < x.2 := by simpa [contractBlocksEnumeration] using h
+      have hs : blockStep acc x = some (pickFirst acc x.1) := by unfold blockStep; rw [if_pos h]
+      rw [hs]
+      obtain ⟨ih1, ih2⟩ := ih (some (pickFirst acc x.1))
+      refine ⟨?_, ?_⟩
+      · rw [ih1]; constructor
+        · intro h'; exact absurd h'.1 (by simp)
+        · intro h'; have := h'.2 x (by simp); omega
+      · intro p hp
+        obtain ⟨a1, a2, a3⟩ := ih2 p hp
+        have hpp : p ≤ pickFirst acc x.1 := a2 _ rfl
+        refine ⟨?_, ?_, ?_⟩
+        · rcases a1 with e | ⟨y, hy, hy2, hy1⟩
+          · cases e
+            rcases pickFirst_eq acc x.1 with e' | e'
+            · exact Or.inr ⟨x, by simp, hn, e'.symm⟩
+            · exact Or.inl e'
+          · exact Or.inr ⟨y, by simp [hy], hy2, hy1⟩
+        · intro q hq; subst hq; exact String.le_trans hpp (pickFirst_le_acc q x.1)
+        · intro y hy hy2
+          rcases List.mem_cons.mp hy with e | hy
+          · subst e; exact String.le_trans hpp (pickFirst_le_self acc y.1)
+          · exact a3 y hy hy2
+    · have hn : x.2 = 0 := by simp [contractBlocksEnumeration] at h; omega
+      have hs : blockStep acc x = acc := by unfold blockStep; rw [if_neg h]
+      rw [hs]
+      obtain ⟨ih1, ih2⟩ := ih acc
+      refine ⟨?_, ?_⟩
+      · rw [ih1]; constructor
+        · intro h'; exact ⟨h'.1, fun y hy => by rcases List.mem_cons.mp hy with e | hy; · subst e; exact hn
+                                                · exact h'.2 y hy⟩
+        · intro h'; exact ⟨h'.1, fun y hy => h'.2 y (List.mem_cons_of_mem _ hy)⟩
+      · intro p hp
+        obtain ⟨a1, a2, a3⟩ := ih2 p hp
+        refine ⟨?_, a2, ?_⟩
+        · rcases a1 with e | ⟨y, hy, hy2, hy1⟩
+          · exact Or.inl e
+          · exact Or.inr ⟨y, List.mem_cons_of_mem _ hy, hy2, hy1⟩
+        · intro y hy hy2
+          rcases List.mem_cons.mp hy with e | hy
+          · subst e; omega
+          · exact a3 y hy hy2
+
+/-- `firstBlocking` is what `check::contract_blocker` asks of the function
+that `F0645` names. -/
+theorem firstBlocking_spec (l : List (String × Nat)) :
+    check.contract_blocker.ensures (Fren.Seq.ofList (l.map fun x => { path := x.1, postconditions := x.2 }))
+      (firstBlocking l) true := by
+  obtain ⟨h1, h2⟩ := blockStep_go l none
+  unfold check.contract_blocker.ensures check.contract_blocker.ensure.rule
+  simp only [true_iff]
+  unfold firstBlocking
+  cases hr : l.foldl blockStep none with
+  | none =>
+    rw [if_pos rfl]
+    rintro ⟨a, _, ha, hpos⟩
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp ha
+    have := (h1.mp hr).2 x hx
+    simp at hpos; omega
+  | some p =>
+    rw [if_neg (by simp)]
+    obtain ⟨a1, _, a3⟩ := h2 p hr
+    refine ⟨?_, ?_⟩
+    · rcases a1 with e | ⟨x, hx, hx2, hx1⟩
+      · cases e
+      · exact ⟨{ path := x.1, postconditions := x.2 }, by simp, ⟨List.mem_map.mpr ⟨x, hx, rfl⟩, by simp; omega⟩,
+          by simp [Fren.Prelude.Option.some.x0, hx1]⟩
+    · intro a _ ⟨ha, hpos⟩
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.mp ha
+      simp only [Fren.Prelude.Option.some.x0, Fren.Str.le]
+      exact a3 x hx (by simp at hpos; omega)
+
+impl contract_blocker: check::contract_blocker for (l : List (String × Nat)) {
+  applied := Fren.Seq.ofList (l.map fun x => { path := x.1, postconditions := x.2 }),
+  named := firstBlocking l,
+  right? := true,
+} by
+  intro l _
+  exact firstBlocking_spec l
+
 -- The truth of a quantifier over its instances' truths (`quantifiedTruth`,
 -- which both front ends evaluate quantifiers with).
 impl quantified_truth: check::quantified_truth for (exact universal : Bool) (vs : List Nat) (body : Nat → Option Bool) {
