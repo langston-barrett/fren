@@ -72,8 +72,10 @@ fn g?(m: Mode) := m = Mode::Heat
 fn h?(b?) := b?
 
 proc places(t: Set<Single>, c?, m: Mode): (w?, x?, z?, v?) {
-    ensure e2: w? iff match m { Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off), _ => c? }
-    --~^ warning: these conjuncts are one expression at each variant of `Mode`
+    ensure e2: w? iff match m {
+        Mode::Heat => g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off),  --~ warning: these conjuncts are one expression at each variant of `Mode`
+        _ => c?,
+    }
     -- An argument takes it in parentheses too.
     ensure e3: x? iff h?(g?(Mode::Heat) and g?(Mode::Cool) and g?(Mode::Off))
     --~^ warning: these conjuncts are one expression at each variant of `Mode`

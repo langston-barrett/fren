@@ -162,7 +162,9 @@ proc guarded(q: Seq<Int>): (ok?) {  --~ info: 2 checks of `guarded` hold for eve
 set_option fren.evidence "enumerated" in
 proc partial_table(b?): (x?) {
     --~^ info: the definedness checks of `partial_table` are not run by enumeration
-    ensure r: x? = table { b? => true }  --~ error: a table in `partial_table::r` may have no row that holds
+    ensure r: x? = table {  --~ error: a table in `partial_table::r` may have no row that holds
+        b? => true,
+    }
     expect e: x? = [b?][3]  --~ error: counterexample: b? = true, x? = true
 }
 
@@ -170,7 +172,10 @@ proc partial_table(b?): (x?) {
 -- own default, so neither front end enumerates one.
 pub enum Peano { Z, S(Peano) }
 pub fn sixth(n: Peano, q: Seq<Int>): (r: Int) {
-    out r := match n { Peano::Z => q[5], Peano::S(m) => sixth(m, q) }
+    out r := match n {
+        Peano::Z => q[5],
+        Peano::S(m) => sixth(m, q),
+    }
 }
 set_option fren.evidence "enumerated" in
 proc recursive(n: Peano) {  --~ error: `recursive` cannot be enumerated: it applies a recursive function that indexes a sequence, whose value out of range enumeration cannot give
@@ -332,7 +337,9 @@ proc def_chain(q: Seq<Int>): (a: Int, b: Int, c: Int) {  --~ info: 2 checks of `
 -- front end used to keep as propositions, and could not decide.
 set_option fren.evidence "enumerated" in
 proc prop_table(n: Int) {  --~ error: `prop_table` is not realizable
-    ensure q0: table { | n = 1 => n > 2 }  --~ error: a table in `prop_table::q0` may have no row that holds
+    ensure q0: table {  --~ error: a table in `prop_table::q0` may have no row that holds
+        | n = 1 => n > 2,
+    }
 }
 
 -- A table of `Bool`s and one of propositions read the same unspecified
@@ -340,8 +347,12 @@ proc prop_table(n: Int) {  --~ error: `prop_table` is not realizable
 -- row that holds, `s` makes it true, and so `x?`.
 set_option fren.evidence "enumerated" in
 proc two_tables(b?): (x?) {  --~ error: `two_tables` is not realizable
-    ensure r: x? = table { b? => true }  --~ error: a table in `two_tables::r` may have no row that holds
-    ensure s: table { b? => true }  --~ error: a table in `two_tables::s` may have no row that holds
+    ensure r: x? = table {  --~ error: a table in `two_tables::r` may have no row that holds
+        b? => true,
+    }
+    ensure s: table {  --~ error: a table in `two_tables::s` may have no row that holds
+        b? => true,
+    }
     expect e: when not b?, x?  --~ warning: `two_tables::e` rests on the realizability of `two_tables`, which did not pass
 }
 

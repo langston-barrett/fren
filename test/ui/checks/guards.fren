@@ -4,7 +4,10 @@
 set_option fren.lint.dead_code "allow"
 
 proc incomplete(x: Int): (s: Int) {
-    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }   --~ error: a `match` in `incomplete::r` may have no arm that is taken
+    ensure r: s = match x {  --~ error: a `match` in `incomplete::r` may have no arm that is taken
+        n if n > 0 => 1,
+        n if n < 0 => -1,
+    }
 }
 
 -- The second guard is implied by the first, so the second arm is never
@@ -44,18 +47,27 @@ proc after_guard(m: Mode, t: Nat): (y: Int) {
 proc hypotheses(x: Int): (s: Int) {
     assume nonzero: x != 0
 
-    ensure r: s = match x { n if n > 0 => 1, n if n < 0 => -1 }
+    ensure r: s = match x {
+        n if n > 0 => 1,
+        n if n < 0 => -1,
+    }
 }
 
 proc ruled_out(x: Int): (s: Int) {
     assume positive: x > 0
 
-    ensure q: s = match x { n if n < 0 => 0, _ => 1 }   --~ error: arm 1 of a `match` in `ruled_out::q` is never taken
+    ensure q: s = match x {
+        n if n < 0 => 0,  --~ error: arm 1 of a `match` in `ruled_out::q` is never taken
+        _ => 1,
+    }
 }
 
 -- Under `when`, the guard of the `match` is the trigger.
 proc guarded(x: Int): (y: Int) {
-    ensure r: when x > 0, y = match x { n if n > 5 => 2, n if n < 3 => 1 }   --~ error: a `match` in `guarded::r` may have no arm that is taken
+    ensure r: when x > 0, y = match x {  --~ error: a `match` in `guarded::r` may have no arm that is taken
+        n if n > 5 => 2,
+        n if n < 3 => 1,
+    }
     ensure s: when x <= 0, y = 0
 }
 
@@ -64,14 +76,20 @@ proc guarded(x: Int): (y: Int) {
 -- how it says what it rules out, and is reachable
 -- (`Reqs/Check#reachability`).
 proc itself(): (m: Mode, ok?) {
-    ensure r: match m { Mode::Off if ok? => true, _ => false }
+    ensure r: match m {
+        Mode::Off if ok? => true,
+        _ => false,
+    }
 }
 
 -- Likewise the definition that the `match` is in: `q` pins `y`, and `y`'s
 -- definition would pin `x`, but the definition is left out, as `r` is
 -- above.
 proc d(): (x: Int, y: Int) {
-    out y := match x { n if n > 0 => 1, _ => 2 }
+    out y := match x {
+        n if n > 0 => 1,
+        _ => 2,
+    }
 
     ensure q: y = 1
 }
@@ -79,7 +97,10 @@ proc d(): (x: Int, y: Int) {
 -- Another guarantee still counts.
 proc other_guarantee(): (m: Mode, ok?) {
     ensure s: ok?
-    ensure r: match m { Mode::Off if not ok? => false, _ => m != Mode::Heat }   --~ error: arm 1 of a `match` in `other_guarantee::r` is never taken
+    ensure r: match m {
+        Mode::Off if not ok? => false,  --~ error: arm 1 of a `match` in `other_guarantee::r` is never taken
+        _ => m != Mode::Heat,
+    }
 }
 
 -- In a quantifier's body, a `match` is checked at each instance: an arm
@@ -97,28 +118,43 @@ proc quantified(t: Int): (y?) {
 -- In the definition of a `let`, a `match` is checked where the name is
 -- mentioned.
 proc in_let(m: Mode, t: Int): (y: Int) {
-    ensure r: y = (let k := match m { Mode::Off if t > 0 => 1, _ if t < 0 => 2 } in k + 1)
-    --~^ error: a `match` in `in_let::r` may have no arm that is taken
+    ensure r: y = (let k := match m {  --~ error: a `match` in `in_let::r` may have no arm that is taken
+        Mode::Off if t > 0 => 1,
+        _ if t < 0 => 2,
+    } in k + 1)
 }
 
 -- A `where` name is checked where it is mentioned: an arm is reachable
 -- where some mention reaches it, as each arm here is at one of the two.
 proc mentioned_twice(x: Int): (y?) {
     ensure r: y? iff ((pos? and t?) or (neg? and not t?))
-        where pos? := x > 0, neg? := x < 0, t? := match x { n if n > 0 => true, _ => false }
+        where pos? := x > 0, neg? := x < 0, t? := match x {
+            n if n > 0 => true,
+            _ => false,
+        }
 }
 
 -- In a function's body, a `match` is checked for every argument.
-fn sign(x: Int): Int := match x { n if n > 0 => 1, n if n < 0 => -1 }   --~ error: a `match` in `sign` may have no arm that is taken
+fn sign(x: Int): Int := match x {  --~ error: a `match` in `sign` may have no arm that is taken
+    n if n > 0 => 1,
+    n if n < 0 => -1,
+}
 
 -- The rows of a table are asked about as the arms `_ if C => e`: a row
 -- that an earlier one always takes, and a `_` after rows of which one
 -- always holds.
 proc rows(x: Int): (y: Int, z: Int) {
-    ensure r: y = table { x >= 0 => 1, x < 0 => 0, _ => 2 }   --~ error: row 3 of a table in `rows::r` is never the first that holds
-    ensure s: z = table { x > 0 => 1, x > 5 => 2, _ => 0 }
-    --~^ error: rows 1 and 2 of a table in `rows::s` may both hold
-    --~^^ error: row 2 of a table in `rows::s` is never the first that holds
+    ensure r: y = table {
+        x >= 0 => 1,
+        x < 0 => 0,
+        _ => 2,  --~ error: row 3 of a table in `rows::r` is never the first that holds
+    }
+    ensure s: z = table {
+        x > 0 => 1,
+        x > 5 => 2,  --~ error: rows 1 and 2 of a table in `rows::s` may both hold
+        --~^ error: row 2 of a table in `rows::s` is never the first that holds
+        _ => 0,
+    }
 }
 
 -- In a global expectation, under its assumptions and calls.
@@ -128,7 +164,10 @@ proc counter(n: Int): (m: Int) {
 
 expect bigger(c_n: Int) {
     call c := counter(c_n)
-    expect bigger: match c.m { k if k > c.n => true, _ => false }  --~ error: arm 2 of a `match` in `bigger::bigger` is never taken
+    expect bigger: match c.m {
+        k if k > c.n => true,
+        _ => false,  --~ error: arm 2 of a `match` in `bigger::bigger` is never taken
+    }
 }
 
 --@ summary: 72 passed, 16 failed, 0 inconclusive, 0 redundant

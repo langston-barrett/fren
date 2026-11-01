@@ -37,15 +37,33 @@ proc pattern_tests(s: Shape, b?): (p1?, p2?, p3?, n: Int) {
 proc rebuilt(s: Shape, x: Int): (t1: Shape, t2: Shape, t3: Shape, t4: Shape, t5: Shape, t6: Shape) {
     use self::Shape::{Circle, Dot, Rect}
 
-    ensure r1: t1 = match s { Dot => Shape::Dot, Circle(r) => Circle(r), Rect(w, h) => Shape::Rect(w, h) }
-    --~^ warning: this `match` gives back its scrutinee
-    ensure r2: t2 = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
-    --~^ warning: this `match` gives back its scrutinee
+    ensure r1: t1 = match s {  --~ warning: this `match` gives back its scrutinee
+        Dot => Shape::Dot,
+        Circle(r) => Circle(r),
+        Rect(w, h) => Shape::Rect(w, h),
+    }
+    ensure r2: t2 = match s {  --~ warning: this `match` gives back its scrutinee
+        Shape::Circle(r) => Shape::Circle(r),
+        _ => s,
+    }
     -- The binders out of order, `_`, a value of another variant, and a `_` arm that is not the scrutinee.
-    ensure r3: t3 = match s { Rect(w, h) => Rect(h, w), _ => s }
-    ensure r4: t4 = match s { Rect(w, _) => Rect(w, 0), _ => s }
-    ensure r5: t5 = match s { Circle(r) => Circle(r), _ => Dot }
-    ensure r6: t6 = match s { Dot => Dot, Circle(r) => Circle(x), Rect(w, h) => Rect(w, h) }
+    ensure r3: t3 = match s {
+        Rect(w, h) => Rect(h, w),
+        _ => s,
+    }
+    ensure r4: t4 = match s {
+        Rect(w, _) => Rect(w, 0),
+        _ => s,
+    }
+    ensure r5: t5 = match s {
+        Circle(r) => Circle(r),
+        _ => Dot,
+    }
+    ensure r6: t6 = match s {
+        Dot => Dot,
+        Circle(r) => Circle(x),
+        Rect(w, h) => Rect(w, h),
+    }
 }
 
 const LIMIT: Int := 10

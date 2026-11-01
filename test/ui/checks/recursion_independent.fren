@@ -2,12 +2,14 @@
 pub enum T { Z, S(T) }
 
 pub fn size(t: T): (r: Int) {
-    out r := match t { T::Z => 0, T::S(a) => 1 + size(a) }
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => 1 + size(a),
+    }
     ensure nonnegative: r >= 0
 }
 
-pub fn total(t: T, a: T, b: T, c: T, d: T,
-    e: T, f: T, g: T, h: T): (r: Int) {
+pub fn total(t: T, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T): (r: Int) {
     out r := match t {
         T::Z => 0,
         T::S(x) => total(x, a, b, c, d, e, f, g, h)

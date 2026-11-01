@@ -12,14 +12,20 @@ pub fn bad(t: Successor): (r: Int) {
 }
 
 pub fn size(t: T): (r: Int) {
-    out r := match t { T::Z => 0, T::S(a) => 1 + size(a) }
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => 1 + size(a),
+    }
     ensure nonnegative: r >= 0
     -- This clause needs the other clause at recursive applications.
     ensure not_minus_one: r != -1
 }
 
 pub fn weak_size(t: T): (r: Int) {
-    out r := match t { T::Z => 0, T::S(a) => 1 + weak_size(a) }
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => 1 + weak_size(a),
+    }
     ensure not_minus_one: r != -1   --~ warning: could not decide whether the postcondition `not_minus_one` of `weak_size` holds
 }
 
@@ -32,13 +38,19 @@ pub fn other_size(t: T): Int := match t {
 pub fn skip_two(t: T): (r: Int) {
     out r := match t {
         T::Z => 0,
-        T::S(a) => match a { T::Z => 0, T::S(b) => skip_two(b) + 1 },
+        T::S(a) => match a {
+            T::Z => 0,
+            T::S(b) => skip_two(b) + 1,
+        },
     }
     ensure nonnegative: r >= 0
 }
 
 pub fn append(a: T, b: T): (r: T) {
-    out r := match a { T::Z => b, T::S(x) => T::S(append(x, b)) }
+    out r := match a {
+        T::Z => b,
+        T::S(x) => T::S(append(x, b)),
+    }
     ensure right_zero: when b = T::Z, r = a
 }
 
@@ -53,7 +65,10 @@ proc comparisons(t: T) {
 pub enum Generic<A> { Z, S(A, Generic<A>) }
 
 pub fn count(t: Generic<Int>): (r: Int) {
-    out r := match t { Generic::Z => 0, Generic::S(_, a) => 1 + count(a) }
+    out r := match t {
+        Generic::Z => 0,
+        Generic::S(_, a) => 1 + count(a),
+    }
     ensure nonnegative: r >= 0
 }
 

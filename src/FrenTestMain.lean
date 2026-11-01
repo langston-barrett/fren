@@ -137,8 +137,8 @@ the binary at its text; and Lean at a higher-order call, the binary at
 its argument. A line here that no longer differs fails, so that it is
 removed. -/
 def knownColumnDifferences : List (String × Nat) :=
-  [("test/ui/checks/refinement_bindings_static.fren", 17), ("test/ui/checks/refinement_bindings_static.fren", 25),
-   ("test/ui/checks/refinement_bindings_static.fren", 33), ("test/ui/checks/refinement_bindings_static.fren", 37),
+  [("test/ui/checks/refinement_bindings_static.fren", 21), ("test/ui/checks/refinement_bindings_static.fren", 29),
+   ("test/ui/checks/refinement_bindings_static.fren", 37), ("test/ui/checks/refinement_bindings_static.fren", 41),
    ("test/ui/lang/constants_methods_static.fren", 5), ("test/ui/lang/constants_static.fren", 20),
    ("test/ui/lang/datatypes_static.fren", 32), ("test/ui/lang/datatypes_static.fren", 33),
    ("test/ui/lang/div_mod_static.fren", 32), ("test/ui/lang/div_mod_static.fren", 36),
@@ -595,7 +595,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren", "test/cli/fmt/subset_shorthand.fren",
    "test/cli/fmt/contract.fren",
-   "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren",
+   "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren", "test/cli/fmt/commas.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren", "src/Reqs/Markdown.md",
@@ -675,74 +675,54 @@ def fmtPending : List String :=
    "test/cli/lints/suspicious/f0817_min_max.fren", "test/cli/lints/suspicious/f0825_redundant_locals.fren",
    "test/cli/lints/unused/f0701_unused.fren", "test/cli/lints/unused/f0791_unused_lint_setting.fren",
    "test/cli/lints/unused/f0792_unused_assumption.fren",
-   "test/ui/checks/claims.fren",
-   "test/ui/checks/contracts.fren", "test/ui/checks/counterexample_confirmed.fren",
-   "test/ui/checks/enumerated.fren", "test/ui/checks/enumerated_collections.fren",
-   "test/ui/checks/enumerated_errors.fren", "test/ui/checks/enumerated_functions.fren",
-   "test/ui/checks/evidence_retired.fren", "test/ui/checks/guards.fren",
-   "test/ui/checks/nested_subset_enumeration.fren", "test/ui/checks/recursion.fren",
-   "test/ui/checks/recursion_bool_payload.fren", "test/ui/checks/recursion_contract_queue.fren",
-   "test/ui/checks/recursion_hoare.fren", "test/ui/checks/recursion_independent.fren",
-   "test/ui/checks/recursive_subsets.fren", "test/ui/checks/refinement_bindings.fren",
-   "test/ui/checks/refinement_bindings_counts.fren", "test/ui/checks/refinement_bindings_static.fren",
-   "test/ui/checks/refinement_counts_unbound.fren", "test/ui/checks/simp_recursion_depth.fren",
-   "test/ui/checks/subset_obligations.fren", "test/ui/checks/tables.fren",
-   "test/ui/checks/tables_scrutinee.fren", "test/ui/lang/bool_members.fren",
-   "test/ui/lang/cardinality.fren", "test/ui/lang/cardinality_static.fren",
-   "test/ui/lang/chained_comparisons.fren", "test/ui/lang/checking_static.fren",
-   "test/ui/lang/constants.fren", "test/ui/lang/constants_imported.fren",
-   "test/ui/lang/constants_static.fren", "test/ui/lang/datatypes.fren",
-   "test/ui/lang/datatypes_static.fren", "test/ui/lang/declared_types_static.fren",
-   "test/ui/lang/defined_functions.fren", "test/ui/lang/defined_functions_static.fren",
-   "test/ui/lang/defined_outputs.fren", "test/ui/lang/distinct_names_static.fren",
-   "test/ui/lang/div_mod_static.fren", "test/ui/lang/empty_literals_static.fren",
-   "test/ui/lang/functions_static.fren", "test/ui/lang/generic_functions.fren",
-   "test/ui/lang/generic_functions_contracts.fren", "test/ui/lang/generic_functions_static.fren",
-   "test/ui/lang/generics.fren", "test/ui/lang/generics_guards_contracts.fren",
-   "test/ui/lang/generics_pattern_elements.fren", "test/ui/lang/generics_recursive_within.fren",
-   "test/ui/lang/generics_static.fren", "test/ui/lang/generics_subset_types.fren",
-   "test/ui/lang/global_static.fren", "test/ui/lang/guards.fren",
-   "test/ui/lang/guards_static.fren", "test/ui/lang/higher_order_obligations.fren",
-   "test/ui/lang/instances_static.fren", "test/ui/lang/lambda_match.fren",
-   "test/ui/lang/lean_names.fren", "test/ui/lang/let.fren",
-   "test/ui/lang/let_static.fren", "test/ui/lang/membership_static.fren",
-   "test/ui/lang/mentions_static.fren", "test/ui/lang/multi_match_errors.fren",
-   "test/ui/lang/nat.fren", "test/ui/lang/nat_fields.fren",
-   "test/ui/lang/nat_static.fren", "test/ui/lang/nested_patterns.fren",
-   "test/ui/lang/nested_patterns_static.fren", "test/ui/lang/newtypes.fren",
-   "test/ui/lang/newtypes_static.fren", "test/ui/lang/or_patterns.fren",
-   "test/ui/lang/or_patterns_static.fren", "test/ui/lang/ordered_enums_static.fren",
-   "test/ui/lang/ordered_structs.fren", "test/ui/lang/ordered_structs_static.fren",
-   "test/ui/lang/parameter_named_det.fren", "test/ui/lang/pattern_binders.fren",
-   "test/ui/lang/pattern_binders_generic.fren", "test/ui/lang/pattern_binders_static.fren",
-   "test/ui/lang/pattern_tests.fren", "test/ui/lang/pattern_tests_static.fren",
-   "test/ui/lang/patterns_static.fren", "test/ui/lang/prelude.fren",
-   "test/ui/lang/prelude_shadowing.fren", "test/ui/lang/quantifiers.fren",
-   "test/ui/lang/quantifiers_elements.fren", "test/ui/lang/quantifiers_let.fren",
-   "test/ui/lang/quantifiers_places.fren", "test/ui/lang/quantifiers_static.fren",
-   "test/ui/lang/range_patterns.fren", "test/ui/lang/record_updates.fren",
-   "test/ui/lang/record_updates_static.fren", "test/ui/lang/refines.fren",
-   "test/ui/lang/refines_pattern.fren", "test/ui/lang/relations_static.fren",
-   "test/ui/lang/scoping.fren", "test/ui/lang/sequences.fren",
-   "test/ui/lang/sequences_static.fren", "test/ui/lang/shadowing.fren",
-   "test/ui/lang/shadowing_static.fren", "test/ui/lang/strings_static.fren",
-   "test/ui/lang/structural_recursion_static.fren", "test/ui/lang/subset_types.fren",
-   "test/ui/lang/subset_types_meaning.fren", "test/ui/lang/tables.fren",
-   "test/ui/lang/tables_scrutinee.fren", "test/ui/lang/tables_scrutinee_static.fren",
-   "test/ui/lang/tables_static.fren", "test/ui/lang/type_facts.fren",
-   "test/ui/lang/types.fren", "test/ui/lints/cardinality_ordered_newtypes.fren",
-   "test/ui/lints/closures.fren", "test/ui/lints/expressions.fren",
-   "test/ui/lints/generic_functions_unused.fren", "test/ui/lints/guards.fren",
-   "test/ui/lints/guards_use.fren", "test/ui/lints/integers.fren",
-   "test/ui/lints/let_quantifiers.fren", "test/ui/lints/literals.fren",
-   "test/ui/lints/match_could_be_table.fren", "test/ui/lints/match_dotted_body.fren",
-   "test/ui/lints/matches.fren", "test/ui/lints/matches_table.fren",
-   "test/ui/lints/methods.fren", "test/ui/lints/names_sizes.fren",
-   "test/ui/lints/naming.fren", "test/ui/lints/parentheses_comments.fren",
-   "test/ui/lints/pattern_tests_chains.fren", "test/ui/lints/pattern_tests_written_out.fren",
-   "test/ui/lints/patterns_tables.fren", "test/ui/lints/pedantic.fren",
-   "test/ui/lints/records.fren", "test/ui/lints/restriction.fren",
-   "test/ui/lints/suspicious.fren", "test/ui/lints/updates_covers.fren"]
+   "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
+   "test/ui/checks/simp_recursion_depth.fren", "test/ui/checks/subset_obligations.fren",
+   "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
+   "test/ui/lang/cardinality_static.fren", "test/ui/lang/chained_comparisons.fren",
+   "test/ui/lang/checking_static.fren", "test/ui/lang/constants.fren",
+   "test/ui/lang/constants_imported.fren", "test/ui/lang/constants_static.fren",
+   "test/ui/lang/datatypes.fren", "test/ui/lang/datatypes_static.fren",
+   "test/ui/lang/declared_types_static.fren", "test/ui/lang/defined_functions.fren",
+   "test/ui/lang/defined_functions_static.fren", "test/ui/lang/defined_outputs.fren",
+   "test/ui/lang/distinct_names_static.fren", "test/ui/lang/div_mod_static.fren",
+   "test/ui/lang/empty_literals_static.fren", "test/ui/lang/functions_static.fren",
+   "test/ui/lang/generic_functions.fren", "test/ui/lang/generic_functions_contracts.fren",
+   "test/ui/lang/generic_functions_static.fren", "test/ui/lang/generics.fren",
+   "test/ui/lang/generics_guards_contracts.fren", "test/ui/lang/generics_pattern_elements.fren",
+   "test/ui/lang/generics_recursive_within.fren", "test/ui/lang/generics_static.fren",
+   "test/ui/lang/generics_subset_types.fren", "test/ui/lang/global_static.fren",
+   "test/ui/lang/guards.fren", "test/ui/lang/guards_static.fren",
+   "test/ui/lang/higher_order_obligations.fren", "test/ui/lang/instances_static.fren",
+   "test/ui/lang/lambda_match.fren", "test/ui/lang/lean_names.fren",
+   "test/ui/lang/let.fren", "test/ui/lang/let_static.fren",
+   "test/ui/lang/membership_static.fren", "test/ui/lang/mentions_static.fren",
+   "test/ui/lang/multi_match_errors.fren", "test/ui/lang/nat.fren",
+   "test/ui/lang/nat_fields.fren", "test/ui/lang/nat_static.fren",
+   "test/ui/lang/nested_patterns.fren", "test/ui/lang/nested_patterns_static.fren",
+   "test/ui/lang/newtypes.fren", "test/ui/lang/newtypes_static.fren",
+   "test/ui/lang/or_patterns.fren", "test/ui/lang/or_patterns_static.fren",
+   "test/ui/lang/ordered_enums_static.fren", "test/ui/lang/ordered_structs.fren",
+   "test/ui/lang/ordered_structs_static.fren", "test/ui/lang/parameter_named_det.fren",
+   "test/ui/lang/pattern_binders.fren", "test/ui/lang/pattern_binders_generic.fren",
+   "test/ui/lang/pattern_binders_static.fren", "test/ui/lang/pattern_tests.fren",
+   "test/ui/lang/pattern_tests_static.fren", "test/ui/lang/patterns_static.fren",
+   "test/ui/lang/prelude.fren", "test/ui/lang/prelude_shadowing.fren",
+   "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_elements.fren",
+   "test/ui/lang/quantifiers_let.fren", "test/ui/lang/quantifiers_places.fren",
+   "test/ui/lang/quantifiers_static.fren", "test/ui/lang/range_patterns.fren",
+   "test/ui/lang/record_updates.fren", "test/ui/lang/record_updates_static.fren",
+   "test/ui/lang/refines.fren", "test/ui/lang/refines_pattern.fren",
+   "test/ui/lang/relations_static.fren", "test/ui/lang/scoping.fren",
+   "test/ui/lang/sequences.fren", "test/ui/lang/sequences_static.fren",
+   "test/ui/lang/shadowing.fren", "test/ui/lang/shadowing_static.fren",
+   "test/ui/lang/strings_static.fren", "test/ui/lang/structural_recursion_static.fren",
+   "test/ui/lang/subset_types.fren", "test/ui/lang/subset_types_meaning.fren",
+   "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
+   "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
+   "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
+   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
+   "test/ui/lints/names_sizes.fren", "test/ui/lints/records.fren",
+   "test/ui/lints/updates_covers.fren"]
 
 /-- What formatting keeps (`fmt::safe`): the tokens, but for the trailing
 commas of lists and claims and for `use` items; the paths the `use` items
@@ -892,7 +872,12 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
 allows: each gap whose line break a list or block decides, with no comment
 or blank line in it and none on its lines, gets a line break or a space;
 the trailing comma of a list that may end with one, on a line without a
-comment, is dropped or added; each gap of one or more spaces between two
+comment, is dropped or added; a comma that a line comment follows on its
+line may move to a line of its own after the comment, a space taking its
+place, and
+one in a list, on a line without a comment, may start the next line, as
+the line break before a comma is not content (`fmt::separators`); each gap
+of one or more spaces between two
 tokens on a line without a comment gets 1 to 3 spaces; and then each line
 without a comment, and not inside a token, is indented by 0 to 12 spaces.
 `none` if `src` does not parse.
@@ -935,6 +920,29 @@ def relaid (src : String) (seed : Nat) : Option String := do
         let last := b.closing - 1
         if b.commas.back? == some last then edits := edits.push (toks[last]!.span.start, toks[last]!.span.stop, "")
         else edits := edits.push (toks[last]!.span.stop, toks[last]!.span.stop, ",")
+  -- Commas, on the next line (`fmt::separators`).
+  let mut listCommas : Std.HashSet Nat := {}
+  for b in lay.bracketed do
+    for k in b.commas do listCommas := listCommas.insert k
+  for h : k in [1:toks.size] do
+    if toks[k].tok != .kw "," then continue
+    let start := toks[k - 1]!.span.stop
+    let stop := toks[k].span.start
+    if !(chars.extract start stop).all (· == ' ') then continue
+    rng := (rng * 1103515245 + 12345) % 2147483648
+    if (rng / 65536) % 2 != 0 then continue
+    -- The comment after it on its line, if any.
+    let after := toks[k].span.stop
+    match comments.find? fun c => c.start ≥ after && lineOf[c.start]! == lineOf[after - 1]! with
+    | some c =>
+      -- A line comment, with only spaces before it: the comma goes on a
+      -- line of its own after it.
+      if (chars.extract after c.start).all (· == ' ') && FrenCli.Fmt.isLineComment (FrenCli.Fmt.text chars c) then
+        edits := edits.push (stop, after, " ")
+        edits := edits.push (c.stop, c.stop, "\n,")
+    | none =>
+      -- Where a list decides the line break that follows the comma.
+      if listCommas.contains k && !commented.contains lineOf[start]! then edits := edits.push (start, stop, "\n")
   let sortedEdits := edits.qsort fun (a, b, _) (c, d, _) => a < c || (a == c && b - a < d - c)
   let mut out := ""
   let mut pos := 0
