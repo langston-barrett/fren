@@ -1,0 +1,82 @@
+-- The tables of an uninterpreted function's postconditions are checked
+-- over its value, as its realizability is, and without the clause that
+-- they are in (`check::disjointness`, `check::query_facts`): an
+-- application of the function in its own contract is its value, whose
+-- facts would be that clause (#559).
+set_option fren.lint.dead_code "allow"
+
+pub const K: Bool := true
+
+-- The rows `K` and `true` both hold everywhere.
+fn constant_rows(x: Int): (r: Int) {
+    ensure e: table {
+        K => r > 0,
+        true => r < 0,   --~ error: rows 1 and 2 of a table in `constant_rows::e` may both hold
+        --~^ error: row 2 of a table in `constant_rows::e` is never the first that holds
+    }
+}
+
+-- Where `x > 0`, the clause rules out `r < 0`, but without it the rows
+-- overlap.
+fn value_rows(x: Int): (r: Int) {
+    ensure e: table {
+        x > 0 => r > 0,
+        r < 0 => true,   --~ error: rows 1 and 2 of a table in `value_rows::e` may both hold
+        _ => true,
+    }
+}
+
+-- A table's completeness, too, is asked without its clause. Where no row
+-- holds, its value is unknown, so the clause cannot hold.
+fn incomplete(x: Int): (r: Int) {   --~ error: the postconditions of `incomplete` cannot all hold
+    ensure e: table {
+        r > 0 => x > 0,
+        r <= 0 => x <= 0,
+        r = 5 => true,   --~ error: rows 1 and 3 of a table in `incomplete::e` may both hold
+        --~^ error: row 3 of a table in `incomplete::e` is never the first that holds
+    }
+    ensure f: table {   --~ error: a table in `incomplete::f` may have no row that holds
+        r > x => true,
+    }
+}
+
+-- A generic function's too, at its type parameters, where only the
+-- substitution of its value keeps its own facts out: an application of a
+-- generic function names no function to a query's facts (#522).
+fn generic_rows<T>(x: Int, y: T): (r: Int) {
+    ensure e: table {
+        x > 0 => r > 0,
+        r < 0 => true,   --~ error: rows 1 and 2 of a table in `generic_rows::e` may both hold
+        _ => true,
+    }
+}
+
+-- In a labelled block, each member's table is checked the same way.
+fn members(x: Int): (r: Int) {
+    ensure e: and {
+        low: table {
+            x > 0 => r > 0,
+            r < 0 => true,   --~ error: rows 1 and 2 of a table in `members::e.low` may both hold
+            _ => true,
+        },
+        high: r < 100,
+    }
+}
+
+-- A conflict in a contract is explained as one in a procedure is, by the
+-- groups of its clauses (`branchMessages`), over the value.
+set_option fren.lint.eq_op "allow" in
+set_option fren.lint.nonminimal_bool "allow" in
+fn conflicting(x: Int): (r: Int) {   --~ error: the postconditions of `conflicting` cannot all hold
+    ensure e: (r > r iff true)   --~ info: `conflicting::e` cannot hold.
+    --~^ info: Both operands of `conflicting::e` cannot be true: the stated premises require `conflicting.e.1` to be false.
+    --~^^ info: Both operands of `conflicting::e` cannot be false: the stated premises require `conflicting.e.2` to be true.
+}
+
+-- Disjoint rows over the value pass.
+fn disjoint(x: Int): (r: Int) {
+    ensure e: table {
+        r > 0 => x > 0,
+        r <= 0 => x <= 0,
+    }
+}

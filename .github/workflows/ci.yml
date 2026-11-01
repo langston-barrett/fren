@@ -140,9 +140,11 @@ jobs:
         key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
   # The front-end fuzzer on seeds that no run used before, from the run's
   # number, with `--avoid-known`: a difference of a kind that
-  # `knownDifferences` does not list, a crash or a timeout fails it, and
-  # the specs that it found are uploaded, to be fixed or filed and listed
-  # (`Reqs/dev/Testing#continuous-integration`). `lake test` checks the
+  # `knownDifferences` does not list for `--avoid-known`, a crash or a
+  # timeout fails it, and the specs that it found are uploaded, to be
+  # fixed or filed and listed (`Reqs/dev/Testing#continuous-integration`).
+  # The kinds listed for `--avoid-known` go unchecked here, with either
+  # generator: today Lean's extra `F0743` (#493). `lake test` checks the
   # fixed corpus on every pull request.
   fuzz-frontends:
     runs-on: ubuntu-24.04

@@ -1,4 +1,2 @@
 -- Only a sequence is indexed.
-proc c(s: Set<Int>): (x: Int) {
-    ensure r: x = s[0]
-}
+proc c(s: Set<Int>): (x: Int) { ensure r: x = s[0] }

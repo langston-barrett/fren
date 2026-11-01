@@ -1,8 +1,8 @@
 error[F0201]: cannot find `zzz` in this scope
- --> test/cli/names/f0201_unknown.fren:3:19
+ --> test/cli/names/f0201_unknown.fren:2:42
   |
-3 |     ensure r: y = zzz
-  |                   ^^^ not found in this scope
+2 | proc c(x: Int): (y: Int) { ensure r: y = zzz }
+  |                                          ^^^ not found in this scope
 
 error: could not check due to previous errors
 

@@ -1,7 +1,7 @@
 error[F0417]: global expectations have no `ensure` members
- --> test/cli/instances/f0417_global_member.fren:9:5
+ --> test/cli/instances/f0417_global_member.fren:7:5
   |
-9 |     ensure e: d.y mod 2 = 0
+7 |     ensure e: d.y mod 2 = 0
   |     ^^^^^^^^^^^^^^^^^^^^^^^ not allowed in a global expectation
   |
   = note: a global expectation constrains nothing: its block has `assume`, `use`, `let`, `call`, `expect`, `refines` and `cover` members only

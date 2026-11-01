@@ -485,9 +485,17 @@ def elaborateSourcesBefore (paths srcs : Array String) (lints : Array (Fren.Core
   let mut states := #[]
   let mut st := initialState lints
   for path in paths, src in srcs do
-    let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
-    let chars := src.toList.toArray
+    let md := Fren.Core.isMarkdownFile path
+    let text := if md then Fren.Core.unwrapMarkdown src else src
+    let chars := text.toList.toArray
     states := states.push st
+    -- The problems of a Markdown spec's fences, at the start of each
+    -- fence's line, which is blank in the text that is parsed.
+    if md then
+      let starts := (text.splitOn "\n").foldl (init := #[0]) fun acc l => acc.push (acc.back! + l.length + 1)
+      for (line, msg) in Fren.Core.markdownProblems src do
+        let at_ := starts[line - 1]!
+        st := { st with diags := st.diags.push { file := files.size, span := { start := at_, stop := at_ }, msg } }
     st := elabText st files.size chars (if ignored path then #[] else fixing)
     files := files.push (path, chars)
   return (files, states.push st, ← checkClaims st)

@@ -115,7 +115,7 @@ input_dir reqs_md where
   filter := .extension #["md"]
 
 lean_lib ReqsChapters where
-  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Models, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
+  globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Markdown, `Reqs.Models, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
   needs := #[`@/reqs_chapters_md]
 
 -- The specs in `src/Reqs` itself, not in its subdirectories.
@@ -222,7 +222,7 @@ input_file test_multi_match_names where
 -- `globs`, as there is no root module.
 @[default_target] lean_lib Examples where
   srcDir := "../examples"
-  globs := #[`Arith, `Rle]
+  globs := #[`Arith, `Rle, `Stoplight]
   needs := #[`@/examples_fren]
 
 input_dir examples_fren where
@@ -284,7 +284,8 @@ lean_exe fren_coverage where
 -- whose reports must agree (`Reqs/dev/Testing`). It loads Fren's Lean
 -- environment at runtime, hence the interpreter. The fuzzer is the module
 -- `FrenTest.FuzzFrontends`, which `fren_test` imports too, to check its
--- fixed corpus.
+-- fixed corpus: an executable's root is in no library, so no module may
+-- import it, since Lake would then use a stale `.olean` of it.
 lean_exe fren_fuzz_frontends where
   root := `FrenFuzzFrontends
   supportInterpreter := true

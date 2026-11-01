@@ -1,6 +1,4 @@
 -- A function applied to an output (F0410).
 type Name
 fn ok?(Name)
-proc c(x: Name): (y: Name) {
-    ensure r: ok?(y)
-}
+proc c(x: Name): (y: Name) { ensure r: ok?(y) }

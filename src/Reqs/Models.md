@@ -215,9 +215,7 @@ values read:
 
 ```fren
 -- A free variable of the type `t` is filled with `value`.
-pub proc fill_rule(t: TypeShape): (det value: Outcome) {
-    out value := default_value(t)
-}
+pub proc fill_rule(t: TypeShape): (det value: Outcome) { out value := default_value(t) }
 
 -- The variables that a model leaves free, each with its type.
 pub enum Free { Nil, Bind(Id, TypeShape, Free) }
@@ -438,7 +436,9 @@ none is a counterexample or a witness of the query whose model it is:
   evaluation decides only by searching for outputs, and a search that finds
   none decides nothing. The `fren` command's [confirmation of every
   model](Eval.md#confirming-models) refutes one for which its search finds
-  outputs;
+  outputs, of their declared types, subset types included, as the query's
+  `∃ o` ranges over them: an output that the guarantees allow but its type
+  does not refutes nothing (`test/ui/checks/realizable_subset_outputs.fren`);
 - the [forced outputs](Check.md#forced-outputs) of a conflict's clash
   notes, which come from models of parts of the guarantees, not of the
   query reported;

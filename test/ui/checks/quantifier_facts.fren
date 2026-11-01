@@ -5,9 +5,7 @@
 -- every integer leaves cvc5 no finite model, so it gives up on whether the
 -- guarantee is redundant, which needs one, in both front ends alike.
 
-fn f(x: Int): (r: Int) {
-    ensure pos: r > 0
-}
+fn f(x: Int): (r: Int) { ensure pos: r > 0 }
 
 fn h(Int): Nat
 

@@ -5,9 +5,7 @@ set_option fren.lint.definable_output "allow"
 
 struct P { x: Int, y: Int }
 
-proc sub(x: Int): (o?) {
-    ensure r: o? iff x > 0
-}
+proc sub(x: Int): (o?) { ensure r: o? iff x > 0 }
 
 proc lints(x: Int, y: Int, s: String, q: Seq<Int>): (p1?, p2?, p3?, p4?) {
     call w := sub(x)

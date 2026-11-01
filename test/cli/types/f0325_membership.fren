@@ -1,3 +1,1 @@
-proc c(x: Int, s: Set<String>): (p?) {
-    ensure r: p? iff x in s
-}
+proc c(x: Int, s: Set<String>): (p?) { ensure r: p? iff x in s }

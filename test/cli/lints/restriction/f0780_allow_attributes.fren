@@ -7,6 +7,4 @@ enum Mode { Heat, Cool }
 
 use self::Mode::*
 
-proc heating(mode: Mode): (on?) {
-    ensure rule: on? iff mode = Heat
-}
+proc heating(mode: Mode): (on?) { ensure rule: on? iff mode = Heat }

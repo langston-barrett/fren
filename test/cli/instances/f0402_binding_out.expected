@@ -1,7 +1,7 @@
 error[F0402]: the arguments of a call may only mention parameters and earlier calls, but `o` is an output
- --> test/cli/instances/f0402_binding_out.fren:6:19
+ --> test/cli/instances/f0402_binding_out.fren:4:19
   |
-6 |     call s := sub(o)
+4 |     call s := sub(o)
   |                   ^ an output
   |
   = note: a call's arguments are fixed before the procedure chooses its outputs

@@ -1,5 +1,3 @@
 -- An argument of a cardinality operator that is not a `Bool`.
 -- fren-covers: lang::cardinality_args
-proc c(a?, n: Int) {
-    expect e: exactly_one?(a?, n)
-}
+proc c(a?, n: Int) { expect e: exactly_one?(a?, n) }

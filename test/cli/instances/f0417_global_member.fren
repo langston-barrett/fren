@@ -1,8 +1,6 @@
 -- A member that a global expectation does not have (F0417): it constrains
 -- nothing.
-proc double(x: Int): (y: Int) {
-    ensure r: y = 2 * x
-}
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
 
 expect even(x: Int) {
     call d := double(x)

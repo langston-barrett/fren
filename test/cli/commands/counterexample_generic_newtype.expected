@@ -1,8 +1,8 @@
 error[F0603]: expectation `m::c::e` does not hold
- --> test/cli/commands/counterexample_generic_newtype.fren:8:12
+ --> test/cli/commands/counterexample_generic_newtype.fren:7:29
   |
-8 |     expect e: m = Opt::None
-  |            ^ does not follow from the guarantees
+7 | proc c(m: Opt<Ms>) { expect e: m = Opt::None }
+  |                             ^ does not follow from the guarantees
   |
   = counterexample: m = Opt::Some(Ms(0))
   = help: strengthen the guarantees so that it follows, or correct the expectation

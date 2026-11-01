@@ -10,8 +10,6 @@ proc c(x: TwoBit): (det y: Int) {
 }
 
 set_option fren.evidence "enumerated+guessed" in  --~ error: invalid evidence `enumerated+guessed`
-proc d(x?): (det y?) {
-    out y? := x?
-}
+proc d(x?): (det y?) { out y? := x? }
 
 --@ exit: 2

@@ -12,14 +12,10 @@ expect sliced: "ab".slice(0, 1).len = 1 and ("a").len = 1
 expect counted_literal: {1, 2}.card = 2
 --~^ warning: this expectation mentions no variable
 
-proc counted(x: Int): (y?) {
-    ensure q: y? iff {x}.card = 1
-}
+proc counted(x: Int): (y?) { ensure q: y? iff {x}.card = 1 }
 
 -- A member of a set literal read from an instance.
-proc source(x: Int): (y: Int) {
-    ensure q: y = x
-}
+proc source(x: Int): (y: Int) { ensure q: y = x }
 
 proc member(x: Int): (z?) {
     call w := source(x)

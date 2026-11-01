@@ -1,7 +1,7 @@
 error[F0401]: assumptions may only mention parameters, but `s.b` belongs to call `s`
- --> test/cli/instances/f0401_instance.fren:7:15
+ --> test/cli/instances/f0401_instance.fren:5:15
   |
-7 |     assume a: s.b > 0
+5 |     assume a: s.b > 0
   |               ^^^ a variable of call `s`
   |
   = note: assumptions constrain the environment; calls are part of the system

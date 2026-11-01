@@ -211,13 +211,9 @@ pub proc literal_dot_written(s: String): (det v?) {
     expect any_character: when s = "v1x2", v?
 }
 
-pub proc literal_dot_fixed(s: String): (det v?) {
-    out v? := s.matches?(r"v1[.]2")
-}
+pub proc literal_dot_fixed(s: String): (det v?) { out v? := s.matches?(r"v1[.]2") }
 
-pub proc literal_dot_value(s: String): (det v?) {
-    out v? := s = "v1.2"
-}
+pub proc literal_dot_value(s: String): (det v?) { out v? := s = "v1.2" }
 
 expect literal_dot_sound(s: String) {
     call concrete := literal_dot_value(s)

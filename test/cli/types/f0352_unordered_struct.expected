@@ -1,8 +1,8 @@
 error[F0352]: `Ms` is not ordered, so its values cannot be compared with `>`
- --> test/cli/types/f0352_unordered_struct.fren:5:25
+ --> test/cli/types/f0352_unordered_struct.fren:4:53
   |
-5 |     ensure r: late? iff a > b
-  |                         ^ `Ms` is not ordered
+4 | proc c(a: Ms, b: Ms): (late?) { ensure r: late? iff a > b }
+  |                                                     ^ `Ms` is not ordered
   |
   = note: only `Int`s, `Nat`s, `String`s and the types declared `ordered` are ordered
   = help: to order its values as their fields are, declare it `ordered struct Ms(...)`

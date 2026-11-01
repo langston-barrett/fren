@@ -1,4 +1,2 @@
 type Byte = n: Int where low: n >= 0 and high: n <= 255
-proc bad(): (r: Byte) {
-    out r := 256
-}
+proc bad(): (r: Byte) { out r := 256 }

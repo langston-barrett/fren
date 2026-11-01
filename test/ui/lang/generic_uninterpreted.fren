@@ -12,15 +12,11 @@ fn pick<T>(T, T): T
 fn size<T>(Option<T>): Nat
 
 -- A contract, realizable for every type.
-fn choose<T>(a: T, b: T): (r: T) {
-    ensure either: choose(a, b) = a or choose(a, b) = b
-}
+fn choose<T>(a: T, b: T): (r: T) { ensure either: choose(a, b) = a or choose(a, b) = b }
 
 -- Only a precondition, which each application's arguments must meet, at
 -- its instance.
-fn get<T>(o: Option<T>): (r: T) {
-    assume present: o != Option::None
-}
+fn get<T>(o: Option<T>): (r: T) { assume present: o != Option::None }
 
 -- A contract at an instance: its postconditions hold of each application,
 -- and decide the counterexample, which both front ends show alike.

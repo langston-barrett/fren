@@ -1,8 +1,8 @@
 error[F0362]: newtype `Ms` has no operator `*`
- --> test/cli/types/f0362_newtype_operator.fren:5:19
+ --> test/cli/types/f0362_newtype_operator.fren:4:40
   |
-5 |     ensure r: d = t * Ms(2)
-  |                   ^^^^^^^^^ `*` of `Ms`
+4 | proc c(t: Ms): (d: Ms) { ensure r: d = t * Ms(2) }
+  |                                        ^^^^^^^^^ `*` of `Ms`
   |
   = note: a newtype of `Int` has `=`, `!=`, and `+` and `-` of two of them
   = help: read its `Int` with `.0`, as in `x.0`

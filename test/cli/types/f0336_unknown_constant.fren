@@ -1,6 +1,4 @@
 -- A constant divisor whose value is not an integer constant expression (F0336).
 const WIDTH: Int := "abcd".len
 
-proc c(x: Int): (r: Int) {
-    out r := x mod WIDTH
-}
+proc c(x: Int): (r: Int) { out r := x mod WIDTH }

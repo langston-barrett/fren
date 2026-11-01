@@ -683,6 +683,38 @@ pub proc confirm(
 }
 ```
 
+The goal of a [realizability](Check.md#realizability) check, `∃ o. R`, is
+not read from the model, which gives no outputs for it: the evaluator
+searches for them, and the goal is `true` where it finds outputs that are
+of their declared types, subset types included, and meet the guarantees in
+the model; otherwise it is unknown, since a search that finds none decides
+nothing. So an output that the guarantees allow but its type does not
+refutes nothing (`test/ui/checks/realizable_subset_outputs.fren`).
+`eval::outputs_confirm` computes the goal so, over the values that an
+output may take, and confirms the model with it:
+
+```fren
+-- A value of the procedure's outputs, all of them together.
+pub type OutputValue
+
+pub proc outputs_confirm(
+    hyp_false?,                  -- some hypothesis is false in the model
+    hyps_known?,                 -- the hypotheses all have values
+    declared: Set<OutputValue>,  -- the values of the outputs' declared types, subset types included
+    meeting: Set<OutputValue>,   -- those values, or others, that meet the guarantees in the model
+    tried: Set<OutputValue>,     -- the values that the evaluator's search tries
+): (det goal_true?, det result: Confirmation) {
+    out goal_true? := tried inter declared inter meeting != {}
+    call c := confirm(hyp_false?, goal_true?, hyps_known? and goal_true?)
+    out result := c.result
+
+    expect outside_types: when tried inter declared = {}, result != Refuted or hyp_false?
+    expect found_refutes: when tried inter declared inter meeting != {}, result = Refuted
+    expect none_found_decides_nothing: when not hyp_false? and tried inter declared inter meeting = {},
+        result = Undecided
+}
+```
+
 A refuted model is a bug in Fren's translation of the spec, or in the
 solver. The check that asked the query is then inconclusive, and Fren
 reports an internal error naming the hypothesis or goal that the model

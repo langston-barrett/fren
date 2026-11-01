@@ -1,8 +1,6 @@
 -- `tested` and `trusted` claims (`trace::tested_file`, `trace::trusted_claim`).
 
-proc shown(x?): (y?) {
-    ensure r: y? iff x?
-}
+proc shown(x?): (y?) { ensure r: y? iff x? }
 
 tested shown: "test/fixtures/covers_shown.txt"
 -- A trailing comma.

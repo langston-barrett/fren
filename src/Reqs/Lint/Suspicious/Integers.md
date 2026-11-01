@@ -20,9 +20,7 @@ literal is left as it is. It follows Clippy's `modulo_one`, in
 from the divisor:
 
 ```fren
-pub proc modulo_one(divisor: Int): (det fires?) {
-    ensure rule: fires? iff divisor is 1 | -1
-}
+pub proc modulo_one(divisor: Int): (det fires?) { ensure rule: fires? iff divisor is 1 | -1 }
 ```
 
 `min_max` fires on `x.min(a).max(b)` where `a < b`, and on

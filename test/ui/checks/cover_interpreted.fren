@@ -38,9 +38,7 @@ proc uses_checker(m: Int): (ok?) {
 
 -- An instantiated component's guarantee is: a function used there
 -- hides the witness.
-proc odd_checker(k: Int): (is_odd?) {
-    ensure r: is_odd? iff odd?(k)
-}
+proc odd_checker(k: Int): (is_odd?) { ensure r: is_odd? iff odd?(k) }
 
 proc uses_odd(m: Int): (ok?) {
     call ch := odd_checker(m)

@@ -1,8 +1,8 @@
 warning[F0735]: `x := x` is `x`
- --> test/cli/lints/style/f0735_redundant_bindings.fren:5:30
+ --> test/cli/lints/style/f0735_redundant_bindings.fren:4:49
   |
-5 |     ensure r: q? iff Point { x := x, y := 1 }.x > 0
-  |                              ^^^^^^ `x` alone means this
+4 | proc c(x: Int): (q?) { ensure r: q? iff Point { x := x, y := 1 }.x > 0 }
+  |                                                 ^^^^^^ `x` alone means this
   |
   = note: a field `x` alone means `x := x`
   = help: `fren fix` can fix this
@@ -10,8 +10,8 @@ warning[F0735]: `x := x` is `x`
   = help: to allow it, `set_option fren.lint.redundant_bindings "allow"`
 help: write `x`
   |
-5 -     ensure r: q? iff Point { x := x, y := 1 }.x > 0
-5 +     ensure r: q? iff Point { x, y := 1 }.x > 0
+4 - proc c(x: Int): (q?) { ensure r: q? iff Point { x := x, y := 1 }.x > 0 }
+4 + proc c(x: Int): (q?) { ensure r: q? iff Point { x, y := 1 }.x > 0 }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

@@ -1,0 +1,13 @@
+error[F0168]: `fren,ignore` is not a kind of block that Fren reads
+  --> src/FrenTestFiles/LiterateNearFren.md:20:1
+   |
+20 |
+   | ^ read as prose
+   |
+   = note: Fren reads the blocks whose info string is exactly `fren`, part of the spec, or `fren example`, an example of the reference; every other block is prose
+   = help: write `fren` to make it part of the spec, or `fren example` for an example of the reference
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0168`.
+exit=2

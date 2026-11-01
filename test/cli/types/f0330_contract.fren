@@ -1,4 +1,2 @@
 -- An uninterpreted function with a contract and unnamed parameters (F0330).
-fn rate(Int): (r: Int) {
-    ensure positive: true
-}
+fn rate(Int): (r: Int) { ensure positive: true }

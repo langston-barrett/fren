@@ -3,9 +3,7 @@
 -- (`Reqs/Check#checking-by-testing`): `c` and `d` report nothing.
 
 set_option fren.evidence "guess" in  --~ error: invalid evidence `guess`
-proc a(x: Int): (y: Int) {
-    ensure r: y = x
-}
+proc a(x: Int): (y: Int) { ensure r: y = x }
 
 proc b(x: Int): (
     set_option fren.evidence "guess" in y: Int,  --~ error: invalid evidence `guess`
@@ -15,9 +13,7 @@ proc b(x: Int): (
 
 set_option fren.evidence "guess"  --~ error: invalid evidence `guess`
 
-proc c(x: Int): (y: Int) {
-    ensure r: y = x
-}
+proc c(x: Int): (y: Int) { ensure r: y = x }
 
 -- `a` was elaborated despite its setting.
 proc d(x: Int): (y: Int) {

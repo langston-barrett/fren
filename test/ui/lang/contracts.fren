@@ -21,9 +21,7 @@ fn double(n: Int): (r: Int) {
 
 -- An uninterpreted function's postconditions are facts about each of its
 -- applications.
-fn arity(n: Name): (r: Nat) {
-    ensure positive: r > 0
-}
+fn arity(n: Name): (r: Nat) { ensure positive: r > 0 }
 
 -- A precondition qualifies the postconditions: where it fails, nothing is
 -- known.
@@ -62,9 +60,7 @@ proc shrinking(n: Int) {
 -- values everywhere, including under quantifiers and `let`.
 enum Mode { Off, Low, High }
 
-fn level(m: Mode): (r: Int) {
-    ensure bounded: 0 <= r <= 10
-}
+fn level(m: Mode): (r: Int) { ensure bounded: 0 <= r <= 10 }
 
 proc quantified() {
     expect all_bounded: forall (m: Mode), level(m) <= 10

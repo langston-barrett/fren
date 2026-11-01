@@ -36,7 +36,7 @@ error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 counterexample: (any values)
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:36:4: expectation `chapters::fails::refines_1` does not hold
+error: LiterateFirst.md:30:4: expectation `chapters::fails::refines_1` does not hold
 
 counterexample: x = 0, concrete.y = 1
 help: correct the expectation, or assume what it needs
@@ -70,7 +70,7 @@ error: LiterateFirst.md:15:7: expectation `chapters::arithmetic` does not hold
 counterexample: (any values)
 help: strengthen the guarantees so that it follows, or correct the expectation
 ---
-error: LiterateFirst.md:36:4: expectation `chapters::fails::refines_1` does not hold
+error: LiterateFirst.md:30:4: expectation `chapters::fails::refines_1` does not hold
 
 counterexample: x = 0, concrete.y = 1
 help: correct the expectation, or assume what it needs

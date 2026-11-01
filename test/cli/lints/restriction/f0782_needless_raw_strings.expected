@@ -1,16 +1,16 @@
 warning[F0782]: this raw string literal needs no escapes
- --> test/cli/lints/restriction/f0782_needless_raw_strings.fren:5:43
+ --> test/cli/lints/restriction/f0782_needless_raw_strings.fren:4:75
   |
-5 |     ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
-  |                                           ^^^^^^^^^^^ has no `\` and no `"`
+4 | proc word(text: String): (lower?) { ensure rule: lower? iff text.matches?(r#"[a-z]+"#) }
+  |                                                                           ^^^^^^^^^^^ has no `\` and no `"`
   |
   = note: an ordinary literal of the same characters has the same value
   = help: `fren fix` can fix this
   = note: `needless_raw_strings` is set to `warn`
 help: write it as an ordinary literal
   |
-5 -     ensure rule: lower? iff text.matches?(r#"[a-z]+"#)
-5 +     ensure rule: lower? iff text.matches?("[a-z]+")
+4 - proc word(text: String): (lower?) { ensure rule: lower? iff text.matches?(r#"[a-z]+"#) }
+4 + proc word(text: String): (lower?) { ensure rule: lower? iff text.matches?("[a-z]+") }
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

@@ -21,6 +21,7 @@ import Impls.HigherOrder
 import Impls.Impl
 import Impls.Lang
 import Impls.Lint
+import Impls.Markdown
 import Impls.Models
 import Impls.Modules
 import Impls.Mutate
@@ -120,6 +121,10 @@ trusted check::combined: "no front end combines the verdicts of several methods 
 tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "test/ui/checks/evidence_refinement.fren", "test/ui/checks/evidence_contracts.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
 
 tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"
+-- The search of the evaluator's realizability goal (`FrenCli.Confirm`,
+-- `Fm.exOutputs`) is not a function of the sets that the Req takes, so the
+-- ui test checks it through the `fren` command.
+tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren"
 
 tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"

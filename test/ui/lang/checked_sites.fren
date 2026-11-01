@@ -13,13 +13,9 @@ set_option fren.lint.unused_variables "allow"
 
 mod checked_sites
 
-proc grow(t: Set<Int>): (n: Int) {
-    ensure r: n = t.card
-}
+proc grow(t: Set<Int>): (n: Int) { ensure r: n = t.card }
 
-proc sized(t: Set<Int>): (n: Int) {
-    ensure bounded: n <= t.card
-}
+proc sized(t: Set<Int>): (n: Int) { ensure bounded: n <= t.card }
 
 expect empty_argument() {
     call c := grow({})

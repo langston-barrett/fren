@@ -1,4 +1,2 @@
 -- A contract's clause named as a parameter (F0213).
-fn rate(n: Int): (r: Int) {
-    assume n: n > 0
-}
+fn rate(n: Int): (r: Int) { assume n: n > 0 }

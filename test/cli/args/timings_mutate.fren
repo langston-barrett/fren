@@ -1,5 +1,3 @@
 -- `--timings` is an option of `fren check` only.
 --@ args: mutate --timings
-proc c(x: Int): (y: Int) {
-    ensure same: y = x
-}
+proc c(x: Int): (y: Int) { ensure same: y = x }

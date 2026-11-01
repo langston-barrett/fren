@@ -1,0 +1,2 @@
+-- A Markdown spec's block that is never closed (F0167).
+--@ argv: check src/FrenTestFiles/LiterateUnclosed.md

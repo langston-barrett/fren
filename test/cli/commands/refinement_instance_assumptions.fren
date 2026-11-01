@@ -12,9 +12,7 @@ pub proc abstract(x: Int): (y: Int) {
     ensure r: y >= g.m
 }
 
-pub proc concrete(x: Int): (y: Int) {
-    ensure r: y = x + 1
-}
+pub proc concrete(x: Int): (y: Int) { ensure r: y = x + 1 }
 
 set_option fren.evidence "random" in
 expect fits(x: Int) {

@@ -4,6 +4,4 @@ mod m
 struct Ms(Int)
 enum Opt<T> { None, Some(T) }
 
-proc c(m: Opt<Ms>) {
-    expect e: m = Opt::None
-}
+proc c(m: Opt<Ms>) { expect e: m = Opt::None }

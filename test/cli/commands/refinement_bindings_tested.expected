@@ -1,7 +1,7 @@
 error[F0603]: expectation `bad_exit_status::refines_1` does not hold
-  --> test/cli/commands/refinement_bindings_tested.fren:26:5
+  --> test/cli/commands/refinement_bindings_tested.fren:24:5
    |
-26 |     refines concrete exit_status((all_parsed?))
+24 |     refines concrete exit_status((all_parsed?))
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
    |
    = counterexample: all_parsed? = true, concrete.code = 4

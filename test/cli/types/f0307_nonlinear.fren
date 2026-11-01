@@ -1,4 +1,2 @@
 -- Multiplying two variables (F0307).
-proc c(x: Int): (y: Int) {
-    ensure r: y = x * x
-}
+proc c(x: Int): (y: Int) { ensure r: y = x * x }

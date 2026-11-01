@@ -20,9 +20,7 @@ expect fmt_exit_status(all_parsed?, changed?) {
 }
 
 -- False: `bad_exit` exits with 4 when everything parsed.
-pub proc bad_exit(all_parsed?): (code: Int) {
-    ensure r: code = (if not all_parsed? then 2 else 4)
-}
+pub proc bad_exit(all_parsed?): (code: Int) { ensure r: code = (if not all_parsed? then 2 else 4) }
 
 expect bad_exit_status(all_parsed?) {
     call concrete := bad_exit(all_parsed?)

@@ -60,9 +60,7 @@ fn second(q: Seq<Int>): (r: Int) {
 }
 
 -- In a global expectation, and under quantifiers.
-proc holder(q: Seq<Int>): (y: Int) {
-    ensure r: when q.len > 2, y = nth(q, 2)
-}
+proc holder(q: Seq<Int>): (y: Int) { ensure r: when q.len > 2, y = nth(q, 2) }
 
 expect read(h_q: Seq<Int>) {
     call h := holder(h_q)
@@ -89,9 +87,7 @@ proc tabled(q: Seq<Int>): (y: Int) {
 }
 
 -- An instance's bindings, and a constant's value.
-proc reader(x: Int): (y: Int) {
-    ensure r: y = x
-}
+proc reader(x: Int): (y: Int) { ensure r: y = x }
 
 proc reading(q: Seq<Int>): (y: Int) {
     call w := reader(nth(q, 0))  --~ error: the precondition `in_range` of `nth` may not hold at this application in `reading::w`
@@ -115,13 +111,9 @@ proc picked(p: Pick, q: Seq<Int>): (y: Int) {
 }
 
 -- In a refinement's binding, under the concrete component's assumptions.
-proc abstract_reader(q: Seq<Int>): (y: Int) {
-    ensure r: when q.len > 3, y = q[3]
-}
+proc abstract_reader(q: Seq<Int>): (y: Int) { ensure r: when q.len > 3, y = q[3] }
 
-proc concrete_reader(q: Seq<Int>): (y: Int) {
-    ensure r: when q.len > 3, y = q[3]
-}
+proc concrete_reader(q: Seq<Int>): (y: Int) { ensure r: when q.len > 3, y = q[3] }
 
 expect reads_third(q: Seq<Int>) {
     call concrete := concrete_reader(q)

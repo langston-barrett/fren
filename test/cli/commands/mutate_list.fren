@@ -32,9 +32,7 @@ const STEP: Int := 1
 
 fn twice(x: Int): Int := x + x
 
-pub proc sub(a: Int, on?): (b: Int) {
-    ensure r: b = a - 1 or on?
-}
+pub proc sub(a: Int, on?): (b: Int) { ensure r: b = a - 1 or on? }
 
 pub proc c(x: Int, s: String, m: Mode, rd: Reading, sp: Span): (ok?, y: Int) {
     assume bounded: x >= 0 and x <= LIMIT

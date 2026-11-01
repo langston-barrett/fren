@@ -1,20 +1,20 @@
 warning[F0506]: `hidden` has evidence `trusted`, below `tested` (`--require`)
- --> test/cli/commands/trace.fren:8:6
+ --> test/cli/commands/trace.fren:6:6
   |
-8 | proc hidden(x?): (y?) {
+6 | proc hidden(x?): (y?) { ensure r: y? iff x? }
   |      ^^^^^^ evidence `trusted`
   |
   = note: `--require` requires every procedure to have evidence `tested` or stronger
   = help: add an `impl`, a `tested` claim or a `trusted` claim for it
 
 warning[F0506]: `untraced` has evidence `missing`, below `tested` (`--require`)
-  --> test/cli/commands/trace.fren:14:6
-   |
-14 | proc untraced(x?): (y?) {
-   |      ^^^^^^^^ evidence `missing`
-   |
-   = note: `--require` requires every procedure to have evidence `tested` or stronger
-   = help: add an `impl`, a `tested` claim or a `trusted` claim for it
+ --> test/cli/commands/trace.fren:8:6
+  |
+8 | proc untraced(x?): (y?) { ensure r: y? iff not x? }
+  |      ^^^^^^^^ evidence `missing`
+  |
+  = note: `--require` requires every procedure to have evidence `tested` or stronger
+  = help: add an `impl`, a `tested` claim or a `trusted` claim for it
 
 error[F0505]: `fren-covers:` names `shown`, but no `tested` claim for it names `test/fixtures/stray.txt`
  --> test/fixtures/stray.txt:2:17

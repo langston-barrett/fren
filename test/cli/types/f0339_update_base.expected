@@ -1,8 +1,8 @@
 error[F0339]: cannot update the fields of `Int`
- --> test/cli/types/f0339_update_base.fren:3:21
+ --> test/cli/types/f0339_update_base.fren:2:44
   |
-3 |     ensure r: m = { n with x := 1 }
-  |                     ^ not a record
+2 | proc c(n: Int): (m: Int) { ensure r: m = { n with x := 1 } }
+  |                                            ^ not a record
   |
   = note: `{ r with x := e }` gives new values to fields of the record `r`
 

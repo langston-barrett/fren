@@ -155,7 +155,7 @@ impl trailing_comma: fmt::trailing_comma for (e v a : Bool) {
   comma? := FrenCli.Fmt.trailingComma e v a,
 }
 
-impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Nat) (l : Bool) {
+impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Nat) (l c : Bool) {
   list := toFmtListKind k,
   n := n,
   broken? := b,
@@ -163,11 +163,20 @@ impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Na
   start := s,
   line_end := e,
   own_line? := l,
-  vertical? := FrenCli.Fmt.vertical k n b w s e l,
+  continued? := c,
+  vertical? := FrenCli.Fmt.vertical k n b w s e l c,
 } by
-  intro k n b w s e l _
-  cases k <;> cases b <;> cases l <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
+  intro k n b w s e l c _
+  cases k <;> cases b <;> cases l <;> cases c <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
+
+impl continued: fmt::continued for (o : Option Bool) {
+  tokens? := o.isSome,
+  first_starts? := o.getD false,
+  continued? := FrenCli.Fmt.continuedLine o,
+} by
+  intro o _
+  rcases o with _ | (_ | _) <;> simp [fren_spec, FrenCli.Fmt.continuedLine]
 
 theorem only_closing_toFollowers (fs : List Follower) :
     fmt.«only_closing?» (toFollowers fs) = FrenCli.Fmt.onlyClosing fs := by
@@ -229,21 +238,22 @@ theorem joined_toElementList (es : List (Nat × Bool)) :
     | nil => simp [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
     | cons f fs => simp_all [toElementList, fmt.joined, FrenCli.Fmt.joinedWidth]
 
-impl list_layout: fmt::list_layout for (k : ListKind) (es : List (Nat × Bool)) (s a : Nat) (l : Bool) {
+impl list_layout: fmt::list_layout for (k : ListKind) (es : List (Nat × Bool)) (s a : Nat) (l c : Bool) {
   list := toFmtListKind k,
   elements := toElementList es,
   start := s,
   after := a,
   own_line? := l,
-  vertical? := FrenCli.Fmt.listLayout k es s a l,
+  continued? := c,
+  vertical? := FrenCli.Fmt.listLayout k es s a l c,
 } by
-  intro k es s a l _
+  intro k es s a l c _
   simp only [fren_spec, count_toElementList, any_broken_toElementList, joined_toElementList,
     FrenCli.Fmt.listLayout]
   generalize es.any (·.2) = b
   generalize FrenCli.Fmt.joinedWidth (es.map (·.1)) = w
   generalize es.length = n
-  cases k <;> cases b <;> cases l <;> simp [FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
+  cases k <;> cases b <;> cases l <;> cases c <;> simp [FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
 
 impl group_layout: fmt::group_layout for (n : Nat) (wv fits : Bool) {

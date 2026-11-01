@@ -1,3 +1,1 @@
-proc c(s: String): (n: Int) {
-    ensure r: n = s.length
-}
+proc c(s: String): (n: Int) { ensure r: n = s.length }
