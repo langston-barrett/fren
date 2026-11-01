@@ -1,7 +1,7 @@
 # Quantifiers
 
-A quantifier says that an expression holds for every value of a type, or
-for some value of one:
+A quantifier states that a `Bool` expression holds for every value of a
+type (`forall`), or for some value of one (`exists`).
 
 ```text
 ensure all_quiet: forall (m: Method), not loud?(m)
@@ -9,65 +9,90 @@ expect some_mode: exists (m: Mode), heats?(m)
 ensure sorted: forall (i: Int), when 0 <= i < q.len - 1, q[i] <= q[i + 1]
 ```
 
+## Syntax
+
+r[quantifier.syntax]
 ```
 expr   := ... | ("forall" | "exists") binder+ "," expr
 binder := "(" DECL+ ":" type ")"
 ```
 
-`forall (x y: T) (z: U), e` holds if `e`, its *body*, holds for every
-value of `x` and `y` of type `T` and every value of `z` of type `U`, and
-`exists (x: T), e` if `e` holds for some value of `x`. Each name that a
-binder declares is a *bound name*. The body must be a `Bool`, and so is
-the quantifier.
+r[quantifier.syntax.terms]
+The expression after the `,` is the quantifier's *body*. Each name that a
+binder declares is a *bound name*.
 
-A quantifier is an [expression](Expressions.md), at the level of `when`:
-the binders end at the first `,` after them, and the body extends as far
-right as possible. So `forall (m: Method), p(m) and q(m)` is `forall (m:
-Method), (p(m) and q(m))`, and a quantifier that is the operand of an
-operator is written in parentheses, as in `(forall (m: Method), p(m)) or
-r?` (`F0109`). The body may itself be a quantifier, or a `when`, without
-parentheses: `forall (a: Mode), forall (b: Mode), when a != b, differ?(a,
-b)`. For the same reason as a `when`, a quantifier is not the top-level
-body of a [`match` arm](Expressions.md#matches), nor an argument of a
-call or the expression of a record literal's field: those are written in
-parentheses. `forall` and `exists` are [reserved
-words](Lexical.md#keywords).
+r[quantifier.syntax.keywords]
+`forall` and `exists` are [reserved words](Lexical.md#keywords).
+
+r[quantifier.syntax.extent]
+A quantifier is an [expression](Expressions.md) at the precedence of
+`when`. Its binders end at the first `,` after them, and its body extends
+as far to the right as possible.
+
+r[quantifier.syntax.operand]
+A quantifier that is an operand of an operator is written in parentheses
+(`F0109`).
+
+r[quantifier.syntax.nested]
+The body may be a quantifier or a `when` without parentheses.
+
+r[quantifier.syntax.positions]
+A quantifier is written in parentheses where it is the top-level body of a
+[`match` arm](Expressions.md#matches), an argument of a call, or the
+expression of a field of a record literal, as a `when` is.
+
+**Examples**
+
+```text
+forall (m: Method), p(m) and q(m)          -- forall (m: Method), (p(m) and q(m))
+(forall (m: Method), p(m)) or r?
+forall (a: Mode), forall (b: Mode), when a != b, differ?(a, b)
+```
 
 ## Types
 
-A quantifier ranges over any type. A type whose values can be listed is
-*listed*: `Bool`, or an enumeration or record whose payloads and fields
-have listed types. These are the types that are both [finite and not
-unbounded](Types.md#finite-types). A quantifier over listed types is
-expanded into its instances (see [Meaning](#meaning)), and stays within
-the [decidable core](Decidability.md). Any other type is not listed:
-`Int`, `Nat`, `String` and abstract types have infinitely many values, a
-recursive enumeration has values of every size, and a set, relation or
-sequence type is unbounded, even where its element type is finite, as in
-`Set<Bool>`. A bound name of such a type makes the quantifier *unbounded*
-(see [Unbounded quantifiers](#unbounded-quantifiers)), which is outside
-the decidable core. A binder's type is written and resolved as a
-variable's is, so a path that names no type is an error, and so is one
-that names a procedure (see [Global expectations](#global-expectations)).
-A [subset type](SubsetTypes.md) is listed when it is finite and
-not unbounded, as `lang::pattern_finite` says: with `type Octal = n: Int
-where range: n is 0..=7`, `forall (x: Octal), e` has eight instances, for
-0 to 7 in increasing order, and with `type Loud = s: Severity where
-invariant: s is Severity::Warning | Severity::Error`, `forall (s: Loud),
-e` has two, the variants that match in their declaration's order. Its
-values are those of its base type that satisfy its invariants, and are
-counted so. Within a binder's type, as anywhere, an alias of a subset
-type stands for it.
-`lang::quantified_type` states which types are listed, by the closure of
-the constituent relation (`lang::type_facts`): a type is listed when it is
-finite and not unbounded, so when every type it is built from is finite by
-itself, has a former that is not growing, and is not recursive. A type of
-a former that has no constituents, such as `Bool`, has none. A subset
-type whose invariant is a pattern test that matches finitely many integers
-is listed, and so is a type built from it. With declared subset aliases `Four`, `Three`, and
-`Two` for integer ranges `0..=3`, `0..=2`, and `1..=2`, examples are
-`struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>`
-and `Pair<Bool, Two>`:
+A quantifier ranges over any type. Over a type whose values can be listed,
+it is expanded into finitely many instances; over any other, it is
+unbounded.
+
+**Legality rules**
+
+r[quantifier.type.body]
+The body is a `Bool`, and so is the quantifier.
+
+r[quantifier.type.binder]
+A binder's type is written and resolved as a variable's type is. A binder
+whose type is a path that names no type is an error. One whose type names a
+procedure is an error too (`quantifier.binder.procedure`).
+
+r[quantifier.type.listed]
+A type is *listed* when it is [finite and not
+unbounded](Types.md#finite-types): every type that it is built from is
+finite by itself, has a former that is not growing, and is not recursive.
+A type of a former that has no constituents, such as `Bool`, has none
+(`lang::quantified_type`, over the constituent relation of
+`lang::type_facts`).
+
+r[quantifier.type.not-listed]
+`Int`, `Nat`, `String`, abstract types, recursive enumerations, and set,
+relation and sequence types are not listed, whatever their element types.
+
+r[quantifier.type.subset]
+A [subset type](SubsetTypes.md) is listed when it is finite and not
+unbounded (`lang::pattern_finite`). A subset type whose invariant is a
+pattern test that matches finitely many integers is listed, and so is a
+type built from it. Its values are those of its base type that satisfy its
+invariants.
+
+r[quantifier.type.alias]
+An alias of a subset type stands for the subset type in a binder's type, as
+anywhere.
+
+r[quantifier.type.unbounded]
+A quantifier with a bound name of a type that is not listed is
+*unbounded* (see [Unbounded quantifiers](#unbounded-quantifiers)), and is
+outside the [decidable core](Decidability.md). A quantifier whose bound
+names all have listed types is within it.
 
 ```fren
 pub mod lang
@@ -120,18 +145,73 @@ pub proc quantified_type(
 }
 ```
 
+**Examples**
+
+- Listed: `Bool`; `enum Method { Len, Card }`; with subset aliases
+  `Four`, `Three` and `Two` of the integers `0..=3`, `0..=2` and `1..=2`,
+  `struct P { x: Four }`, `enum Small { S(Three), T }`, `Option<Three>` and
+  `Pair<Bool, Two>`.
+- Not listed: `Int`, `Set<Bool>`, `enum Tree { Leaf, Node(Tree) }`.
+
+A quantifier over `Int` is unbounded, and the `undecidable` lint reports
+its binder:
+
+```fren example
+proc positive(n: Int): (some?) {
+    ensure rule: some? iff (exists (k: Int), k > n)
+    --~^ error: this is outside the decidable core: a quantifier over a type whose values cannot be listed
+}
+```
+
 ## Meaning
 
-A quantifier over listed types means its *expansion*. Its *instances* are
-its body with each bound name standing for one value of its type, one
-instance for each combination of the bound names' values; a `forall` is the conjunction of
-its instances, and an `exists` their disjunction. With `enum Method {
-Len, Card }`, `forall (m: Method), not loud?(m)` means `not
-loud?(Method::Len) and not loud?(Method::Card)`, and `exists (a? b?:
-Bool), a? and not b?` is the disjunction of four instances. Every type
-has a value, so every quantifier has an instance: a `forall` implies the
-`exists` of the same body. `lang::quantifier` states this, from the
-values of the instances:
+A quantifier over listed types means the conjunction (`forall`) or
+disjunction (`exists`) of its body at every value of its bound names.
+
+**Dynamic semantics**
+
+r[quantifier.meaning.instances]
+The *instances* of a quantifier over listed types are its body with each
+bound name standing for one value of its type, one instance for each
+combination of the bound names' values.
+
+r[quantifier.meaning.expansion]
+A `forall` over listed types means the conjunction of its instances, and an
+`exists` their disjunction: its *expansion* (`lang::quantifier`).
+
+r[quantifier.meaning.some-instance]
+Every quantifier has at least one instance. A `forall` implies the
+`exists` of the same body (`lang::forall_implies_exists`).
+
+r[quantifier.meaning.order]
+The values of a type are listed in this order: `true`, then `false`; the
+variants of an enumeration in their declaration's order, each with every
+combination of the values of its payload; every combination of a record's
+fields; and the values of a subset type in its base type's order, the
+integers increasing.
+
+r[quantifier.meaning.binder-order]
+The bound names vary in the order in which they are written, the last
+fastest.
+
+r[quantifier.meaning.order-free]
+The order changes no meaning. It is the order in which the instances are
+conjoined, which the [generated Lean
+declarations](../Generated.md#procedures) show.
+
+r[quantifier.meaning.elaboration]
+Both front ends expand a quantifier over listed types while elaborating it.
+The solver's queries have no quantifier over listed types (see
+[Decidability](Decidability.md)), and Lean sees the expansion, with no
+`Fintype`.
+
+r[quantifier.meaning.reported-once]
+The body is elaborated once. Its errors and lints are reported once, where
+it is written, not for each instance.
+
+r[quantifier.meaning.mixed]
+In an unbounded quantifier, the bound names of listed types are expanded as
+in a quantifier over listed types, within the quantifier over the others.
 
 ```fren
 pub proc quantifier(
@@ -155,39 +235,64 @@ expect forall_implies_exists(a_all?, a_values: Set<Bool>, e_all?, e_values: Set<
 }
 ```
 
-The values of a type are listed in order: `true` then `false`; the
-variants of an enumeration in their declaration's order, each with every
-combination of the values of its payload; and every combination of a
-record's fields. The bound names vary in the order that they are written,
-the last fastest. The order changes no meaning: it is the order in which
-the instances are conjoined, which the [generated Lean
-declarations](../Generated.md#procedures) show.
+**Examples**
 
-Both front ends expand a quantifier over listed types while elaborating
-it, so the solver's queries stay quantifier-free (see
-[Decidability](Decidability.md)), and Lean sees the expansion, with no
-`Fintype`. The body is elaborated once: its errors and lints are reported
-once, where it is written, not for each instance. In an unbounded
-quantifier, the bound names of listed types are expanded in the same way,
-within the quantifier over the others (see [Unbounded
-quantifiers](#unbounded-quantifiers)).
+- With `enum Method { Len, Card }`, `forall (m: Method), not loud?(m)`
+  means `not loud?(Method::Len) and not loud?(Method::Card)`.
+- `exists (a? b?: Bool), a? and not b?` is the disjunction of four
+  instances, at `(true, true)`, `(true, false)`, `(false, true)` and
+  `(false, false)`.
+- With `type Octal = n: Int where range: n is 0..=7`, `forall (x: Octal),
+  e` has eight instances, for 0 to 7 in increasing order.
+- With `type Loud = s: Severity where invariant: s is Severity::Warning |
+  Severity::Error`, `forall (s: Loud), e` has two instances, at the
+  variants that match, in their declaration's order.
 
-A quantifier has at most 256 instances: one with more is an error that
-says how many it would have (`F0356`). The number of instances is the
-product of the numbers of values of the types of the bound names of listed
-types, so `(a b:
-T)` counts `T`'s values twice. A `Bool` has two values, an enumeration
-the sum, over its variants, of the product of the numbers of values of a
-variant's payload (one for a variant without one), and a record the
-product of the numbers of values of its fields. They are counted without
-expanding anything. A quantifier in the body of another counts the
-instances of those around it too, multiplied by its own: nested
-quantifiers expand to at most 256 copies of the innermost body, so
-`forall (a b: Byte), e` and `forall (a: Byte), forall (b: Byte), e` are
-both rejected for a `Byte` of 256 values. A bound name of a type that is
-not listed is not expanded, so it counts once: `forall (i: Int) (m:
-Method), e` has as many instances as `forall (m: Method), e`.
-`lang::quantifier_size` states the limit:
+The checker proves that a quantifier over an enumeration means its
+expansion:
+
+```fren example
+pub enum Method { Len, Card }
+
+proc quiet(len_loud?, card_loud?): (all_quiet?) {
+    ensure rule: all_quiet? iff (forall (m: Method), not (if m = Method::Len then len_loud? else card_loud?))
+
+    expect expansion: all_quiet? iff (not len_loud? and not card_loud?)
+}
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant
+```
+
+> **Note:** Every type has a value, which is why every quantifier has an
+> instance.
+
+### Number of instances
+
+A quantifier is expanded only where it has few enough instances.
+
+r[quantifier.limit]
+A quantifier has at most 256 instances. One with more is an error that says
+how many it would have (`F0356`, `lang::quantifier_size`).
+
+r[quantifier.limit.count]
+The number of instances is the product, over the bound names of listed
+types, of the number of values of each one's type.
+
+r[quantifier.limit.values]
+`Bool` has two values. An enumeration has the sum, over its variants, of
+the product of the numbers of values of a variant's payload, one for a
+variant without one. A record has the product of the numbers of values of
+its fields. A subset type has as many values as its base type has values
+that satisfy its invariants.
+
+r[quantifier.limit.unexpanded]
+The numbers are computed without expanding anything.
+
+r[quantifier.limit.nested]
+A quantifier in the body of another has as many instances as its own
+number multiplied by those of the quantifiers around it.
+
+r[quantifier.limit.not-listed]
+A bound name of a type that is not listed is not expanded, and counts once.
 
 ```fren
 pub const MAX_INSTANCES: Int := 256
@@ -204,100 +309,166 @@ pub proc quantifier_size(
 }
 ```
 
-## Unbounded quantifiers
+**Examples**
 
-An unbounded quantifier means what it says, as in Lean: `forall (x: T),
-e` is the proposition that `e` holds for every value of `x` of type `T`,
-and `exists (x: T), e` that it holds for some. A bound name of a [subset
-type](SubsetTypes.md) ranges over the values that match its
-pattern, as a variable's does, and one of type `Nat` over the integers at
-least 0: `forall (n: Nat), e` is `forall (n: Int), when n >= 0, e`, and
-`exists (n: Nat), e` is `exists (n: Int), n >= 0 and e`. Its bound names
-of listed types are expanded within it, as in a quantifier over listed
-types: `forall (i: Int) (m: Method), e` is `forall (i: Int), e1 and e2`,
-with `e1` and `e2` its body's instances at the two methods, which means
-the same, since quantifiers of one kind may be taken in any order.
+- `(a b: T)` counts `T`'s values twice.
+- For a `Byte` of 256 values, `forall (a b: Byte), e` and `forall (a:
+  Byte), forall (b: Byte), e` are both errors: each would have 65536
+  instances of the innermost body.
+- `forall (i: Int) (m: Method), e` has as many instances as `forall (m:
+  Method), e`.
 
-There is no other form of quantifier: one that ranges over the members of
-a set or the positions of a sequence is written with a guard, which
-bounds it (see [Guards](#guards)). One over a sequence's elements whose
-bound name is used only as a value, as the first below, is in the decidable
-core, and each query expands it (see [Quantifiers over
-elements](ElementQuantifiers.md)):
+Nine `Bool`s have 512 combinations of values:
 
-```text
-forall (x: T), when x in q, p(x)
-forall (x: T), when x in s, p(x)
-exists (i: Int), 0 <= i < q.len and q[i] = x
-forall (x: T), law(x)
+```fren example
+proc parity(): (even?) {
+    ensure rule: even? iff (forall (a? b? c? d? e? f? g? h? i?: Bool), a? or not a?)
+    --~^ error: this quantifier has 512 instances, more than 256
+}
 ```
 
-Neither front end expands an unbounded quantifier: in Lean it is `∀` or
-`∃`, a `Prop`, and both front ends give the solver a quantifier, `(forall
-((x T)) e)` or `(exists ((x T)) e)`, which declares the bound name at its
-type's sort and nothing else, as [Solver queries](../Cli.md#solver-queries)
-says. The solver decides it when it can. A quantifier is outside the
-[decidable core](Decidability.md), so the `undecidable` lint reports each
-binder of a type that is not listed, at the binder, and a spec that
-quantifies so opts out of the core where it does. Its checks are then
-asked of the solver, which may not decide them, and are
-`Inconclusive` where it does not; they may be [tested](../Check.md#checking-by-testing)
-instead, where the evaluator can evaluate the quantifier (see
-[Evaluation](../Eval.md#quantifiers)), or a procedure's evidence may be a
-`trusted` claim.
+## Unbounded quantifiers
 
-This is how a precise spec is written beside a decidable one. A
-procedure that states a rule over any number of things, with unbounded
-quantifiers, is bound by an [implementation](../Impl.md) to the code and
-proved in Lean, where each `forall` is a `∀` of the theorem, for every
-input. A bounded model of it, over a listed type, stays in the decidable
-core, where `decide` checks its implementation. `lint::manual_at_most_one_any`
-and `lint::manual_at_most_one` are such a pair (see
-[Cardinality](../Lint/Complexity/Operators.md#cardinality)). Where a proof
-is out of reach, a [refinement](Refinement.md#evidence) whose evidence is
-testing relates the two instead, and testing evaluates the quantifiers
-where they have [domains](#guards).
+An unbounded quantifier ranges over infinitely many values. It means what
+it says, as in Lean, and the solver decides it when it can.
 
+**Dynamic semantics**
+
+r[quantifier.unbounded.meaning]
+`forall (x: T), e` is the proposition that `e` holds for every value of `x`
+of type `T`, and `exists (x: T), e` that it holds for some.
+
+r[quantifier.unbounded.subset]
+A bound name of a [subset type](SubsetTypes.md) ranges over the values of
+the subset type, as a variable's does.
+
+r[quantifier.unbounded.nat]
+A bound name of type `Nat` ranges over the integers at least 0. `forall (n:
+Nat), e` is `forall (n: Int), when n >= 0, e`, and `exists (n: Nat), e` is
+`exists (n: Int), n >= 0 and e`.
+
+r[quantifier.unbounded.listed-names]
+The bound names of listed types are expanded within an unbounded quantifier
+(`quantifier.meaning.mixed`): `forall (i: Int) (m: Method), e` is `forall
+(i: Int), e1 and e2`, where `e1` and `e2` are the body's instances at the
+two methods.
+
+r[quantifier.unbounded.only-form]
+There is no other form of quantifier. A quantifier over the members of a
+set or the positions of a sequence is written with a guard, which bounds it
+(see [Guards](#guards)).
+
+r[quantifier.unbounded.elements]
+A quantifier over a sequence's elements whose bound name is used only as a
+value is in the decidable core, and each query expands it (see
+[Quantifiers over elements](ElementQuantifiers.md)).
+
+```text
+forall (x: T), when x in q, p(x)                 -- over the elements of a sequence
+forall (x: T), when x in s, p(x)                 -- over the members of a set
+exists (i: Int), 0 <= i < q.len and q[i] = x     -- over the positions of a sequence
+forall (x: T), law(x)                            -- over a type
+```
+
+**In Lean and the solver**
+
+r[quantifier.unbounded.lean]
+Neither front end expands an unbounded quantifier. In Lean it is a `∀` or
+`∃`, a `Prop`.
+
+r[quantifier.unbounded.solver]
+Both front ends give the solver a quantifier, `(forall ((x T)) e)` or
+`(exists ((x T)) e)`, which declares the bound name at its type's sort and
+nothing else (see [Solver queries](../Cli.md#solver-queries)).
+
+r[quantifier.unbounded.lint]
+The `undecidable` lint reports each binder of a type that is not listed, at
+the binder. A spec that allows the lint there opts out of the decidable core
+at that quantifier.
+
+r[quantifier.unbounded.verdicts]
+The checks of an unbounded quantifier are asked of the solver, and are
+`Inconclusive` where it does not decide them. They may be
+[tested](../Check.md#checking-by-testing) instead, where the evaluator can
+evaluate the quantifier (see [Evaluation](../Eval.md#quantifiers)), or a
+procedure's evidence may be a `trusted` claim.
+
+r[quantifier.unbounded.contracts]
 Within an unbounded quantifier's body, an application of a function whose
 arguments mention one of its bound names brings the facts that an
-application brings elsewhere: that a `Nat` result is at least 0, that the
-result satisfies the invariants of its subset type, and that the function's postconditions
-hold where its preconditions do (see
-[Contracts](../Check.md#contracts-of-uninterpreted-functions)). Each holds
-whatever the arguments, so it is stated for every value of the bound names
-that the application mentions, under the solver's quantifier over them,
-without the guard: for `forall (i: Int), when 0 <= i < n, h(i) >= 0`, with
-`fn h(Int): Nat`, the queries assume `(forall ((|i'0| Int)) (>= (h |i'0|)
-0))`, and in Lean, `∀ i'0, 0 ≤ ↑(h i'0)`. Both front ends state the same
-facts, so the checks agree.
+application brings elsewhere (see
+[Contracts](../Check.md#contracts-of-uninterpreted-functions)): a `Nat`
+result is at least 0, the result satisfies the invariants of its subset
+type, and the function's postconditions hold where its preconditions do.
+
+r[quantifier.unbounded.contracts.quantified]
+Each such fact is stated for every value of the bound names that the
+application mentions, under the solver's quantifier over them, without the
+guard. Both front ends state the same facts.
+
+**Examples**
+
+For `forall (i: Int), when 0 <= i < n, h(i) >= 0`, with `fn h(Int): Nat`,
+the queries assume `(forall ((|i'0| Int)) (>= (h |i'0|) 0))`, and Lean
+assumes `∀ i'0, 0 ≤ ↑(h i'0)`.
+
+> **Note:** A precise spec is written beside a decidable one. A procedure
+> that states a rule over any number of things, with unbounded quantifiers,
+> is bound by an [implementation](../Impl.md) to the code and proved in
+> Lean, where each `forall` is a `∀` of the theorem. A bounded model of it,
+> over a listed type, stays in the decidable core, where `decide` checks
+> its implementation. `lint::manual_at_most_one_any` and
+> `lint::manual_at_most_one` are such a pair (see
+> [Cardinality](../Lint/Complexity/Operators.md#cardinality)). Where a proof
+> is out of reach, a [refinement](Refinement.md#evidence) whose evidence is
+> testing relates the two, and testing evaluates the quantifiers where they
+> have [domains](#guards).
+
+> **Note:** A contract's fact holds whatever the arguments, which is why
+> it is stated without the guard.
 
 ## Guards
 
-The *guard* of a quantifier is what its body says first about its bound
-names. The guard of a `forall` is the conditions of the `when`s at the top
-of its body: `forall (x: T), when c, when d, e` has the guard `c` and
-`d`. The guard of an `exists` is its body: `exists (x: T), a and b` has
-the guard `a and b`. A guard's *conjuncts* are the operands of the `and`s
-at its top, in order, with their parentheses removed, and a [chained
-comparison](Expressions.md#chained-comparisons) is a conjunct of each of
-its comparisons: `when 0 <= i < q.len and i != k, e` has the conjuncts
-`0 <= i`, `i < q.len` and `i != k`. An `unless`, a `let` or anything else
-ends a `forall`'s guard, as `exists (x: T), not (a and b)` has the one
-conjunct `not (a and b)`.
+The guard of a quantifier is what its body first says about its bound
+names. It gives a bound name a domain, which the evaluator enumerates and
+which tells the solver that the quantifier is bounded. It does not change
+what the quantifier means.
 
-Each conjunct gives a *bound* for each bound name `x` of a type that is
-not listed: `x in e` gives its members, `x >= e`, `x > e`, `e <= x` and
-`e < x` a lower bound, and `x <= e`, `x < e`, `e >= x` and `e > x` an
-upper bound, where `x` is the bound name alone, or a newtype's field `0`
-read from it (see below), but no other field, and `e` names neither `x`
-nor a bound name declared after `x` in the same quantifier: no name of one segment within it, nor the root of a dotted
-name, nor a field of a record literal written without `:=`, is one of
-theirs, whatever shadows it. A bound by `<` or `>` is *strict*: the bound
-itself is not in range. Any other conjunct gives no bound. Seen from `x`,
-an operand is `x` itself (`Name`), an expression that names neither `x`
-nor a later bound name (`Free`), or any other (`Later`), and
-`lang::guard_bound` states the bound from a conjunct's operands, `lhs`
-and `rhs`, and its relation:
+### Conjuncts and bounds
+
+r[quantifier.guard.forall]
+The *guard* of a `forall` is the conditions of the `when`s at the top of its
+body. An `unless`, a `let` or any other expression ends it.
+
+r[quantifier.guard.exists]
+The guard of an `exists` is its body.
+
+r[quantifier.guard.conjuncts]
+A guard's *conjuncts* are the operands of the `and`s at its top, in order,
+with their parentheses removed. A [chained
+comparison](Expressions.md#chained-comparisons) is a conjunct of each of its
+comparisons.
+
+r[quantifier.guard.bound]
+A conjunct gives a *bound* to each bound name `x` of a type that is not
+listed: `x in e` gives its members; `x >= e`, `x > e`, `e <= x` and `e < x`
+a lower bound; and `x <= e`, `x < e`, `e >= x` and `e > x` an upper bound.
+Here `x` is the bound name alone (`quantifier.guard.name`), and `e` is free
+of `x` (`quantifier.guard.free`). Any other conjunct gives no bound.
+
+r[quantifier.guard.free]
+An operand is *free* of `x` when it names neither `x` nor a bound name
+declared after `x` in the same quantifier. A name of one segment, the root
+of a dotted name, and a field of a record literal written without `:=` each
+name the bound name that they spell, whatever shadows it.
+
+r[quantifier.guard.operand]
+Seen from `x`, an operand is `x` itself (`Name`), free of `x` (`Free`), or
+any other (`Later`). `lang::guard_bound` states the bound from a conjunct's
+operands, `lhs` and `rhs`, and its relation.
+
+r[quantifier.guard.strict]
+A bound by `<` or `>` is *strict*: the bound itself is not in range.
 
 ```fren
 -- An operand of a conjunct, seen from a bound name `x`.
@@ -337,26 +508,43 @@ pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOpera
 }
 ```
 
-A [newtype](Items.md#newtypes)'s values are its field's, so its field
-`0`, read from a bound name, is the name itself: `0 <= m.0 < 2` bounds a
-bound name `m` of a newtype over `Int` as `Ms(0) <= m < Ms(2)` does, and
-`m.0.0` is `m` where `m`'s type is a newtype over a newtype. Any other field
-read from a bound name, such as `p.x`, is not the name, and neither is a
-field `0` read from a type that is not a newtype. A membership read
-through such fields gives the members as the name's values: in
-`m.0 in {0, 1}`, `m` ranges over `Ms(0)` and `Ms(1)`.
-`lang::name_alone` states which operands are the name, over the type
-model of [Types](Types.md#types), as `lang::range_domain` below is: from
-the position of the bound name that an operand reads, or -1, its type and
-the underlying type of each newtype it is, and the fields read from it,
-outermost last. It gives the position that `GuardSide`'s `alone` holds.
-Both front ends ask it of the bound name's type (`nameAlone` in
-`FrenCore.Quantifier`), so what each computes for itself is only which
-bound name an operand reads and its fields' names: the `fren` command from
-a path such as `m.0`, and the hosted front end from the field projections
-that elaboration writes, which are the same for `m.0` as for an ordering
-of a newtype. The elaborators read no field as the name, since they set
-`fmf-bound` from the guard's shape alone (see below):
+**Examples**
+
+- `forall (x: T), when c, when d, e` has the guard `c` and `d`.
+- `exists (x: T), a and b` has the guard `a and b`.
+- `when 0 <= i < q.len and i != k, e` has the conjuncts `0 <= i`, `i <
+  q.len` and `i != k`. The first gives `i` a lower bound, the second a
+  strict upper bound, and the third no bound.
+- `exists (x: T), not (a and b)` has the one conjunct `not (a and b)`.
+
+### Newtypes
+
+r[quantifier.guard.name]
+A bound name's field `0`, where its type is a [newtype](Items.md#newtypes),
+is the bound name itself, and so on through nested newtypes. Any other
+field read from a bound name, and a field `0` read from a type that is not
+a newtype, is not the name (`lang::name_alone`).
+
+r[quantifier.guard.name.members]
+A membership read through such fields gives the members as the name's
+values.
+
+r[quantifier.guard.name.shared]
+Both front ends ask `lang::name_alone` of the bound name's type
+(`nameAlone` in `FrenCore.Quantifier`). Each computes only which bound name
+an operand reads and its fields' names: the `fren` command from a path such
+as `m.0`, and the hosted front end from the field projections that
+elaboration writes, which are the same for `m.0` as for an ordering of a
+newtype.
+
+r[quantifier.guard.name.elaborators]
+The elaborators read no field as the name: they set `fmf-bound` from the
+guard's shape alone (`quantifier.guard.fmf-bound`).
+
+`lang::name_alone` is stated over the type model of [Types](Types.md#types):
+from the position of the bound name that an operand reads, or -1, its type
+and the underlying type of each newtype it is, and the fields read from
+it, outermost last. It gives the position that `GuardSide`'s `alone` holds.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -381,14 +569,39 @@ pub proc name_alone(
 }
 ```
 
+**Examples**
+
+- For a newtype `Ms` over `Int`, `0 <= m.0 < 2` bounds `m` as `Ms(0) <= m <
+  Ms(2)` does.
+- `m.0.0` is `m` where `m`'s type is a newtype over a newtype.
+- `p.x` is not the name `p`.
+- In `m.0 in {0, 1}`, `m` ranges over `Ms(0)` and `Ms(1)`.
+
+### Domains
+
+r[quantifier.guard.nat-floor]
 Where the guard gives a bound name only an upper bound, its range starts
-from 0 if its values are naturals: a `Nat`, or a newtype over one, whose
-values are its field's, so that `n < Ns(10)` and `n.0 < 10` both give a
-newtype `Ns` over `Nat` the values from `Ns(0)` to `Ns(9)`.
-`lang::nat_floor` states it over the same types, and gives
-`lang::guard_domain`'s `nat?`; both front ends' evaluators ask it
-(`startsAtZero` in `FrenCore.Quantifier`). The elaborators take `nat?`
-only of a name declared `Nat`:
+from 0 if its values are naturals: a `Nat`, or a newtype over one
+(`lang::nat_floor`, which gives `lang::guard_domain`'s `nat?`).
+
+r[quantifier.guard.nat-floor.shared]
+Both front ends' evaluators ask `lang::nat_floor` (`startsAtZero` in
+`FrenCore.Quantifier`). The elaborators take `nat?` only of a name declared
+`Nat`.
+
+r[quantifier.guard.domain]
+A bound name's *domain* comes from its conjuncts' bounds, in order: its
+members, from the first conjunct that gives them; otherwise a range, from
+the first conjunct that gives a lower bound and the first that gives an
+upper bound, starting from 0 for a name whose values are naturals and that
+has no lower bound; otherwise none (`lang::guard_domain`).
+
+r[quantifier.guard.domain.inputs]
+`lang::guard_domain` is computed from the conjuncts as written: each side
+of each, with the position of the bound name that it is, written alone, and
+those of the bound names that it names. Each front end reads only these of
+a conjunct's syntax. The bound names and the conjuncts are named by their
+positions, from 0.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -409,16 +622,6 @@ pub proc nat_floor(
     expect ints: when kind(types[types.len - 1]) = IntTy, not nat?
 }
 ```
-
-The bound name's *domain* comes from its conjuncts' bounds, in order: its
-members, from the first conjunct that gives them; otherwise a range, from
-the first conjunct that gives a lower bound and the first that gives an
-upper bound, where a name whose values are naturals (`lang::nat_floor`)
-with no lower bound starts from 0; otherwise none. `lang::guard_domain` states it, from the conjuncts as written: each
-side of each with the position of the bound name that it is, written
-alone, and those of the bound names that it names, which is all that each
-front end reads of a conjunct's syntax. The bound names and the conjuncts
-are named by their positions, from 0:
 
 ```fren
 -- A side of a conjunct: the position of the bound name that it is, written
@@ -491,28 +694,33 @@ pub proc guard_domain(
 }
 ```
 
-A membership bounds a bound name of any type, but a comparison bounds one
-only where its type has finitely many values between any two bounds,
-whatever they are, so that the type alone says that its range can be
-enumerated. Only the integers do: an `Int`, a `Nat`, or a
-[newtype](Items.md#newtypes) over them, whose values are its underlying
-type's, a [pattern type](Types.md#subset-types) counting as its base
-type. Between `"a"` and `"b"` lie `"aa"`, `"aaa"` and every other string
-that starts with `"a"`; an [ordered
-record](Items.md#ordered-declarations)'s values are compared
-lexicographically, so between `P(0, 0)` and `P(1, 0)` lies `P(0, n)` for
-every `n`; and an ordered enumeration's are compared by their variants'
-positions, which say nothing of their payloads. So a comparison of a
-bound name of any of those gives it no bound, and, without a membership,
-it has no domain: both [evaluation](../Eval.md#quantifiers) and
-[enumeration](../Check.md#quantifiers-up-to-the-bound) then read it as
-any other bound name without a domain. `lang::range_domain` states which
-types a comparison bounds, over the type model of
-[Types](Types.md#types): from the bound name's type and the underlying type
-of each newtype it is, from the outermost in, each but the last a newtype
-whose `under` is the next, so that the last, not a newtype, is the type
-of the values that the comparison compares. Both front ends ask it
-(`countedBetween` in `FrenCore.Quantifier`):
+**Examples**
+
+`n < Ns(10)` and `n.0 < 10` both give a bound name `n` of a newtype `Ns`
+over `Nat` the values from `Ns(0)` to `Ns(9)`.
+
+### Ranges
+
+r[quantifier.guard.range]
+A membership bounds a bound name of any type. A comparison bounds one only
+where its type is `Int`, `Nat`, or a [newtype](Items.md#newtypes) over
+them, a [pattern type](Types.md#subset-types) counting as its base type
+(`lang::range_domain`).
+
+r[quantifier.guard.range.other]
+For evaluation and enumeration, a comparison of a bound name of any other
+type gives it no bound. Without a membership, it then has no domain, and
+both [evaluation](../Eval.md#quantifiers) and
+[enumeration](../Check.md#quantifiers-up-to-the-bound) read it as any other
+bound name without a domain.
+
+r[quantifier.guard.range.shared]
+Both front ends ask `lang::range_domain` (`countedBetween` in
+`FrenCore.Quantifier`). It is stated over the type model of
+[Types](Types.md#types), from the bound name's type and the underlying type
+of each newtype it is, from the outermost in: each but the last is a
+newtype whose `under` is the next, and the last, not a newtype, is the type
+of the values that the comparison compares.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -537,61 +745,124 @@ pub proc range_domain(
 }
 ```
 
-A quantifier's guard says nothing about its meaning, which is the same
-however it is written: a domain only lets the evaluator enumerate the
-values at which the guard can hold (see
-[Evaluation](../Eval.md#quantifiers)), and lets the solver know that the
-quantifier is bounded: a procedure, global expectation or refinement
-whose queries have an unbounded quantifier with a bound name that has a
-domain sets cvc5's `fmf-bound` (see [Solver
-queries](../Cli.md#solver-queries)), with which it finds models of
-quantifiers bounded by membership and by integer ranges. `fmf-bound` is
-set from the shape of the guard alone (`lang::guard_domain`), whatever
-the bound name's type: `lang::range_domain` says only which ranges the
+> **Rationale:** Only the integers have finitely many values between any
+> two bounds, whatever they are, so that the type alone says that a range
+> can be enumerated. Between `"a"` and `"b"` lie `"aa"`, `"aaa"` and every
+> other string that starts with `"a"`. An [ordered
+> record](Items.md#ordered-declarations)'s values are compared
+> lexicographically, so between `P(0, 0)` and `P(1, 0)` lies `P(0, n)` for
+> every `n`. An ordered enumeration's are compared by their variants'
+> positions, which say nothing of their payloads (#368).
+
+### Meaning and the solver
+
+r[quantifier.guard.meaning]
+A quantifier's guard does not change its meaning, which is the same however
+it is written.
+
+r[quantifier.guard.evaluation]
+A domain lets the evaluator enumerate the values at which the guard can hold
+(see [Evaluation](../Eval.md#quantifiers)).
+
+r[quantifier.guard.fmf-bound]
+A procedure, global expectation or refinement whose queries have an
+unbounded quantifier with a bound name that has a domain sets cvc5's
+`fmf-bound` (see [Solver queries](../Cli.md#solver-queries)). `fmf-bound`
+is set from the shape of the guard alone (`lang::guard_domain`), whatever
+the bound name's type. `lang::range_domain` says only which ranges the
 evaluators enumerate.
+
+> **Note:** With `fmf-bound`, cvc5 finds models of quantifiers bounded by
+> membership and by integer ranges.
 
 ## Names
 
-A bound name is in scope in the body, and nowhere else. The names of one
-quantifier, across all of its binders, are [distinct](Items.md#distinct-names)
-(`F0213`), and follow the [Boolean names](Types.md#boolean-names) rule for
-their type: `forall (b?: Bool)`, and `forall (m: Method)`. A bound name
-may [shadow](Procedures.md#shadowing) another, written with `!`: a
-variable, a parameter, a call, a binder of a pattern, a bound name of an enclosing quantifier, a constant, a function
-or a variant, as in `forall (m!: Method), ...` within a procedure with a
-variable `m`. A mention of it in the body is not a mention of what it
-shadows.
+A bound name is a local name of the body, which may shadow another name.
 
-A bound name of a listed type stands for one value in each instance, so
-it [mentions](Expressions.md#mentions) nothing: `forall (m: Method),
-f(m)` is allowed wherever `f` of a constant is, and so is `2 *
-cost(m)`. A bound name of any other type stands for all of its values at
-once, as a variable does, so within the body it mentions itself: `2 * i`
-is linear, but `n * i`, with `n` a variable, is a product of two
-variables, an error, as `n * m` is (see [Linear
-arithmetic](Expressions.md#linear-arithmetic)). The quantifier mentions
-what its body mentions, but not its own bound names.
+**Legality rules**
 
+r[quantifier.name.scope]
+A bound name is in scope in the body, and nowhere else.
+
+r[quantifier.name.distinct]
+The names of one quantifier, across all of its binders, are
+[distinct](Items.md#distinct-names) (`F0213`).
+
+r[quantifier.name.boolean]
+A bound name follows the [Boolean names](Types.md#boolean-names) rule for
+its type: `forall (b?: Bool)`, and `forall (m: Method)`.
+
+r[quantifier.name.shadowing]
+A bound name may [shadow](Procedures.md#shadowing) another, written with
+`!`: a variable, a parameter, a call, a binder of a pattern, a bound name
+of an enclosing quantifier, a constant, a function or a variant. A mention
+of it in the body is not a mention of what it shadows.
+
+r[quantifier.name.mentions.listed]
+A bound name of a listed type [mentions](Expressions.md#mentions) nothing.
+
+r[quantifier.name.mentions.unbounded]
+Within the body, a bound name of a type that is not listed mentions itself,
+as a variable does.
+
+r[quantifier.name.mentions.quantifier]
+A quantifier mentions what its body mentions, but not its own bound names.
+
+**Examples**
+
+- `forall (m!: Method), ...` within a procedure with a variable `m`.
+- `forall (m: Method), f(m)` is allowed wherever `f` of a constant is, and
+  so is `2 * cost(m)`.
+- With `i` an `Int` bound name, `2 * i` is linear, but `n * i`, with `n` a
+  variable, is a product of two variables, an error, as `n * m` is (see
+  [Linear arithmetic](Expressions.md#linear-arithmetic)).
+
+```fren example
+pub enum Mode { Off, On }
+
+proc pairs(): (distinct?) {
+    ensure rule: distinct? iff (forall (m: Mode) (m: Mode), m = m)
+    --~^ error: `m` is bound multiple times in this quantifier
+}
+```
+
+### Indices
+
+r[quantifier.index.instances]
 An index in the body is [guarded](Expressions.md#sequences) in each
 instance by the conditions before it within the body, and by those around
 the quantifier. The instances do not guard each other: the definedness
-check reports an index that may be out of range in some instance where
-its guard holds. In an unbounded quantifier, the index must be in range
-for every value of the bound names where its guard holds, so its
-definedness is quantified as the body is, whether the quantifier is a
-`forall` or an `exists`: in `exists (i: Int), 0 <= i < q.len and q[i] =
-x`, the goal is that `q[i]` is in range for every `i` with `0 <= i <
-q.len`, which holds. A quantifier at the top of a constraint is not a `when`,
-so the constraint has no [trigger](Procedures.md#triggers).
+check reports an index that may be out of range in some instance where its
+guard holds.
+
+r[quantifier.index.unbounded]
+In an unbounded quantifier, an index must be in range for every value of
+the bound names where its guard holds, whether the quantifier is a `forall`
+or an `exists`. Its definedness is quantified as the body is.
+
+r[quantifier.index.trigger]
+A quantifier at the top of a constraint is not a `when`. The constraint has
+no [trigger](Procedures.md#triggers).
+
+**Examples**
+
+In `exists (i: Int), 0 <= i < q.len and q[i] = x`, the goal is that `q[i]`
+is in range for every `i` with `0 <= i < q.len`, which holds.
 
 ## Global expectations
 
+A quantifier ranges over values, never over the behaviours of a
+procedure, which a global expectation relates.
+
+r[quantifier.global.short-form]
 A [global expectation's](Global.md) short form, `expect n: forall (m:
 Method), E`, is a quantifier like any other, around `E` with any `where`
-clause. Everywhere, a quantifier ranges over values only: a binder whose
-type names a procedure is an error (`F0210`), whose help says to call the
-procedure in a global expectation instead. `lang::quantifier_binder`
-states this, from what a binder's type names:
+clause.
+
+r[quantifier.binder.procedure]
+A binder whose type names a procedure is an error (`F0210`), whose help
+says to call the procedure in a global expectation instead
+(`lang::quantifier_binder`).
 
 ```fren
 -- `TypeName` is a type, listed or not, and `Component` a procedure.
@@ -604,5 +875,16 @@ pub proc quantifier_binder(target: BinderTarget): (det accepted?) {
     ensure rule: accepted? iff target = TypeName
 
     expect values_only: when target = Component, not accepted?
+}
+```
+
+```fren example
+proc heats(): (on?) {
+    ensure rule: on?
+}
+
+proc cools(): (any?) {
+    ensure rule: any? iff (exists (h: heats), true)
+    --~^ error: expected a type, but `heats` is a procedure
 }
 ```

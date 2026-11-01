@@ -213,6 +213,104 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
             s!"{f}: {if c then "only the binary" else "only Lean"} says `{Fren.Core.couldNotHeadline}`"
   return failures
 
+/-! ## The reference's examples and rule identifiers -/
+
+/-- The fenced code blocks of a Markdown text, each as its info string, the
+line of its opening fence, from 1, and its lines. A block closes at a fence
+with no info string of at least as many backticks as the one that opened it,
+so a ```` ```` ```` block can show a ```` ``` ```` one. -/
+def fencedBlocks (md : String) : Array (String × Nat × Array String) := Id.run do
+  let mut out := #[]
+  -- The open block: its info string, the line of its fence, its backticks, and its lines.
+  let mut cur : Option (String × Nat × Nat × Array String) := none
+  for line in md.splitOn "\n", i in [1:md.length + 2] do
+    let rest := line.trimAsciiStart.toString
+    let fence? : Option (Nat × String) :=
+      if line.length - rest.length ≤ 3 && rest.startsWith "```" then
+        let ticks := (rest.takeWhile (· == '`')).toString.length
+        some (ticks, (rest.drop ticks).trimAscii.toString)
+      else none
+    match cur, fence? with
+    | none, some (ticks, info) => cur := some (info, i, ticks, #[])
+    | some (info, at_, ticks, ls), some (n, "") =>
+      if n ≥ ticks then
+        out := out.push (info, at_, ls)
+        cur := none
+      else cur := some (info, at_, ticks, ls.push line)
+    | some (info, at_, ticks, ls), _ => cur := some (info, at_, ticks, ls.push line)
+    | none, none => pure ()
+  return out
+
+/-- The ```` ```fren example ```` blocks of a Markdown text, each with the
+line of its opening fence (`Reqs/dev/Style#examples`). -/
+def exampleBlocks (md : String) : Array (Nat × String) :=
+  (fencedBlocks md).filterMap fun (info, at_, ls) =>
+    if info == "fren example" then some (at_, "\n".intercalate ls.toList ++ "\n") else none
+
+#guard exampleBlocks "a\n```fren example\nx\n```\n```fren\ny\n```\n" == #[(2, "x\n")]
+#guard exampleBlocks "````text\n```fren example\nx\n```\n````\n" == #[]
+#guard (fencedBlocks "```text\nr\n```\n").map (·.1) == #["text"]
+
+/-- The Markdown files of the reference, `src/Reqs/**/*.md`. -/
+def manualFiles : IO (Array FilePath) := sortedFiles ("src" / "Reqs") "md"
+
+/-- Each ```` ```fren example ```` block of the reference, as a spec of its
+own, passes as a ui test through both front ends
+(`Reqs/dev/Style#examples`). Its failures name the Markdown file and the
+line of the block's fence; the lines within them are the block's, from 1. -/
+def manualExamples (env : Environment) : IO (Array String) := do
+  let dir : FilePath := ".lake" / "manual-examples"
+  IO.FS.createDirAll dir
+  let mut files := #[]
+  let mut origins := #[]
+  for md in ← manualFiles do
+    for (line, src) in exampleBlocks (← IO.FS.readFile md) do
+      let f := dir / s!"{md.toString.replace "/" "_"}_{line}.fren"
+      IO.FS.writeFile f src
+      files := files.push f
+      origins := origins.push s!"{md}, the example at line {line}"
+  let failures ← uiTests env files
+  return failures.map fun msg => (files.zip origins).foldl (fun m (f, o) => m.replace f.toString o) msg
+
+/-- Whether `id` is a rule identifier: `r[`, segments of lowercase words and
+digits joined by `-`, separated by `.`, and `]` (`Reqs/dev/Style#rule-identifiers`). -/
+def isRuleId (id : String) : Bool :=
+  match (id.dropPrefix? "r[").bind (·.toString.dropSuffix? "]") with
+  | none => false
+  | some body => (body.toString.splitOn ".").all fun seg =>
+      (seg.splitOn "-").all fun w => !w.isEmpty && w.all fun c => c.isLower || c.isDigit
+
+#guard isRuleId "r[quantifier.guard.strict]" && isRuleId "r[quantifier.not-listed]"
+#guard !isRuleId "r[Quantifier]" && !isRuleId "r[a..b]" && !isRuleId "r[a-]" && !isRuleId "r[]"
+
+/-- The rule identifiers of a Markdown text, outside its code blocks, each
+with its line: every line that starts with `r[`. -/
+def ruleIdLines (md : String) : Array (Nat × String) := Id.run do
+  let inBlock := (fencedBlocks md).foldl (init := #[]) fun acc (_, at_, ls) =>
+    acc ++ (List.range (ls.size + 2)).toArray.map (at_ + ·)
+  let mut out := #[]
+  for line in md.splitOn "\n", i in [1:md.length + 2] do
+    let t := line.trimAscii.toString
+    if t.startsWith "r[" && !inBlock.contains i then out := out.push (i, t)
+  return out
+
+#guard ruleIdLines "r[a.b]\nx\n```text\nr[a.b]\n```\n" == #[(1, "r[a.b]")]
+
+/-- Every rule identifier of the reference is well formed and unique
+(`Reqs/dev/Style#rule-identifiers`). -/
+def ruleIds : IO (Array String) := do
+  let mut failures := #[]
+  let mut seen : Array (String × String) := #[]
+  for md in ← manualFiles do
+    for (line, id) in ruleIdLines (← IO.FS.readFile md) do
+      let here := s!"{md}:{line}"
+      unless isRuleId id do
+        failures := failures.push s!"{here}: `{id}` is not a rule identifier: lowercase words and digits, joined by `-`, in segments separated by `.`"
+      match seen.find? (·.1 == id) with
+      | some (_, first) => failures := failures.push s!"{here}: `{id}` is already the identifier of the rule at {first}"
+      | none => seen := seen.push (id, here)
+  return failures
+
 /-! ## Fren's own requirements -/
 
 /-! ## Error codes -/
@@ -2042,7 +2140,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
@@ -2063,6 +2161,11 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
+  | ["manualExamples"] => do
+    enableInitializersExecution
+    initSearchPath (← findSysroot)
+    manualExamples (← importModules #[{ module := `Fren }] {} (loadExts := true))
+  | ["ruleIds"] => ruleIds
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec

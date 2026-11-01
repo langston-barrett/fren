@@ -12,4 +12,5 @@ command. Pages that are only prose, such as this one, are not read.
 
 - [Architecture](Architecture.md): design principles and libraries
 - [Testing](Testing.md): the kinds of tests and where they live
+- [Writing the reference](Style.md): the register and layout of its chapters
 - [Roadmap](Roadmap.md): what comes next, and open questions

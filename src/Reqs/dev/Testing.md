@@ -40,6 +40,15 @@ pub mod testing
   An example's Lean implementation, such as `examples/Rle.lean`, reads its
   spec with `#fren_md` and proves it meets the spec; `lake build` checks
   the proofs of those listed in the `Examples` library.
+- **The reference's examples** (`lake test`, `manualExamples`): each block
+  fenced as ```` ```fren example ```` in `src/Reqs/**/*.md` is a spec of its
+  own, outside its chapter's module, and is checked as a ui test, so its
+  annotations must match both front ends' messages (see
+  [Writing the reference](Style.md#examples)).
+- **Rule identifiers** (`lake test`, `ruleIds`): every line of
+  `src/Reqs/**/*.md` outside a code block that starts with `r[` is a
+  well-formed rule identifier, and no two are the same (see [Writing the
+  reference](Style.md#rule-identifiers)).
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
