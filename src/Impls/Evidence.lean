@@ -28,6 +28,7 @@ import Impls.Mutate
 import Impls.PassEvidence
 import Impls.PatternTests
 import Impls.Procedures
+import Impls.QueryCache
 import Impls.Renaming
 import Impls.Repeats
 import Impls.Rewrites
@@ -44,7 +45,6 @@ import Reqs
 open Fren.Lang
 
 tested cli::fix_static_errors: "src/FrenTestMain.lean"
-tested cli::query_entry: "src/FrenTest/QueryStore.lean"
 
 tested lang::global_checks: "test/ui/lang/global.fren", "test/ui/lang/global_preconditions.fren"
 tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
