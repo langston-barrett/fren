@@ -112,7 +112,6 @@ Fren.FinSet.joinList
 Fren.FinSet.nub
 Fren.FinSet.ofArray
 Fren.FinSet.ofList
-Fren.FinSet.range
 Fren.FinSet.setoid
 Fren.FinSet.square
 Fren.FinSet.toListUnsafe
@@ -150,7 +149,6 @@ Fren.contractProofOf
 Fren.contractRecorded
 Fren.contractStatement
 Fren.elabInterp
-Fren.elabMd
 Fren.elabPrelude
 Fren.enumDecl
 Fren.interpAccepted
@@ -162,10 +160,7 @@ Fren.natResult
 Fren.numberOperand
 Fren.paramVars
 Fren.patTerm
-Fren.pathComponents
 Fren.proveContract
-Fren.relativeTo
-Fren.relativeTo.strip
 Fren.resolveUsePath
 Fren.unreadableValue
 Fren.varType

@@ -1550,6 +1550,49 @@ function of its own, which enumeration does not enumerate. -/
 def genericNotEnumerable (f : Name) : String :=
   s!"it applies the generic function `{showComp f}`, which has no body"
 
+/-- Whether the contract of an uninterpreted function, with `posts`
+postconditions, keeps an item that applies the function from being
+enumerated: its postconditions constrain the function's interpretations,
+and its preconditions do not. -/
+def contractBlocksEnumeration (posts : Nat) : Bool := posts > 0
+
+/-- The first by path of `p` and `acc`'s path, if it has one. -/
+def pickFirst (acc : Option String) (p : String) : String :=
+  match acc with
+  | none => p
+  | some q => if p ≤ q then p else q
+
+/-- `firstBlocking`'s step over the function with path `x.1` and `x.2`
+postconditions. -/
+def blockStep (acc : Option String) (x : String × Nat) : Option String :=
+  if contractBlocksEnumeration x.2 then some (pickFirst acc x.1) else acc
+
+/-- The path, of those of `applied` whose contracts keep an item from being
+enumerated (`contractBlocksEnumeration`), that comes first, if any
+(`check::contract_blocker`). -/
+def firstBlocking (applied : List (String × Nat)) : Option String :=
+  applied.foldl blockStep none
+
+/-- The uninterpreted function with a contract that keeps an item from
+being enumerated (`F0645`), of the functions `applied` that it applies,
+where `posts` counts the postconditions of each one's contract (0 for one
+without a contract): `firstBlocking` of their paths. Both front ends name
+this one, each from its own list of what the item applies, in whatever
+order it finds them. -/
+def contractBlocker? (applied : Array Name) (posts : Name → Nat) : Option Name :=
+  (firstBlocking (applied.toList.map fun f => (f.toString, posts f))).bind fun p =>
+    applied.find? (·.toString == p)
+
+/-- Why an item that applies `f`, an uninterpreted function with a
+contract, cannot be enumerated (`contractBlocker?`). -/
+def contractNotEnumerable (f : Name) : String :=
+  s!"it applies the uninterpreted function `{showComp f}`, which has a contract"
+
+#guard contractBlocker? #[`fz.f1, `fz.f0] (fun _ => 1) == some `fz.f0
+-- A contract of preconditions alone does not keep it from being enumerated.
+#guard contractBlocker? #[`fz.f0, `fz.f1] (fun f => if f == `fz.f0 then 0 else 2) == some `fz.f1
+#guard contractBlocker? #[`fz.f0] (fun _ => 0) == none
+
 /-- Why a procedure that applies a recursive function whose body indexes
 a sequence cannot be enumerated (`F0645`). -/
 def recursiveIndexWhy : String :=

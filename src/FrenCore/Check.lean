@@ -1494,28 +1494,6 @@ def recursiveResults (recursive : Bool) (results : Array CheckResult) : Array Ch
       { r with verdict := .inconclusive, detail := .unknown "another postcondition used by simultaneous induction did not pass" }
     else r
 
-/-- What the applications of uninterpreted functions in a query bring
-(`Reqs/Check`): for each application that `appsOf` finds in the query's
-own hypotheses and goal, each once, the facts that `factsOf` gives of it:
-that it is at least 0, named `nat`, if its result is a `Nat`, that it
-matches its result type, named `type`, if that brings a constraint, and that it
-meets each postcondition of its function where its arguments meet the
-preconditions, named by the postcondition. They are in one order in both
-front ends: the hypotheses' in order and then the goal's, and within a
-formula in the order that `appsOf` gives, which is that of a walk of the
-formula that meets an application before its arguments and the arguments
-from left to right; and of each application, in the order `factsOf`
-gives. Both front ends give a query these and no others, so that they
-depend only on its formulas: a query never has a fact about an
-application that it does not mention, as of a called procedure's
-expectation, and the formulas that `coverInterpreted` reads are all it
-uses. -/
-def appFacts [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F))) (hyps : Array (Name × F))
-    (goal : F) : m (Array (Name × F)) := do
-  let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
-    (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
-  return (← apps.mapM factsOf).flatten
-
 /-- What a fact that an application brings to a query is about
 (`check::Fact`): that the application is at least 0, that it matches its
 result type, or a postcondition of the function `f`. -/
@@ -1567,8 +1545,25 @@ the contracts that this names for its evidence. -/
 def itemContracts {α : Type} (apps : Array α) (fnOf : α → Option Name) : Array Name :=
   (queriedFns (apps.toList.flatMap (appFactKinds fnOf))).toArray
 
-/-- `appFacts`, with the uninterpreted functions with contracts whose
-postconditions those facts have (`CheckResult.applies`), each once, in the
+/-- What the applications of uninterpreted functions in a query bring
+(`Reqs/Check`): for each application that `appsOf` finds in the query's
+own hypotheses and goal, each once, the facts that `factsOf` gives of it:
+that it is at least 0, named `nat`, if its result is a `Nat`, that it
+matches its result type, named `type`, if that brings a constraint, and that it
+meets each postcondition of its function where its arguments meet the
+preconditions, named by the postcondition. They are in one order in both
+front ends: the hypotheses' in order and then the goal's, and within a
+formula in the order that `appsOf` gives, which is that of a walk of the
+formula that meets an application before its arguments and the arguments
+from left to right; and of each application, in the order `factsOf`
+gives. Both front ends give a query these and no others, so that they
+depend only on its formulas: a query never has a fact about an
+application that it does not mention, as of a called procedure's
+expectation, and the formulas that `coverInterpreted` reads are all it
+uses.
+
+Along with the facts, the uninterpreted functions with contracts whose
+postconditions they have (`CheckResult.applies`), each once, in the
 order of their applications (`queriedFns` of their `appFactKinds`).
 `fnOf` gives the path of the function of an application of an
 uninterpreted function with a contract, which brings its postconditions,
@@ -1583,7 +1578,6 @@ of this, and record its functions. -/
 def appFactsWith [Monad m] [BEq F] (appsOf : F → Array F) (factsOf : F → m (Array (Name × F)))
     (fnOf : F → Option Name) (hyps : Array (Name × F)) (goal : F) (own? : Option Name := none) :
     m (Array (Name × F) × Array Name) := do
-  -- The facts are `appFacts`'s, of the same applications, in the same order.
   let apps := (hyps.map (·.2) ++ #[goal]).foldl (init := #[]) fun acc f =>
     (appsOf f).foldl (init := acc) fun acc a => if acc.contains a then acc else acc.push a
   let apps := apps.filter fun a => appBrings own? (fnOf a)

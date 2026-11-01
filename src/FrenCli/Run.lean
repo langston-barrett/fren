@@ -862,11 +862,6 @@ needed. An action rather than a value, so that each thread that runs it
 def ownSpecOf (files : Array (String × Array Char)) : IO (Thunk (Except String Eval.Spec)) :=
   pure (Thunk.mk fun _ => specOf files)
 
-/-- `inParallelWith` without a copy of its own for each thread. -/
-def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (f : α → IO β) (first : α → Bool := fun _ => false) :
-    IO (Array (IO β)) :=
-  inParallelWith jobs xs (pure ()) (fun _ => f) first
-
 /-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
 and global expectation, with its total time, the time of its solver's
 checks and that of its checks by testing and enumeration, in nanoseconds,

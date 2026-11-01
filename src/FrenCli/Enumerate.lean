@@ -176,10 +176,11 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     | throw (Fren.Core.Msg.internal s!"the evaluator does not know the meaning of a formula of `{Fren.Core.showComp c.path}`")
   -- And the definitions of the defined outputs, which the atoms read.
   let all := exprs.flatten ++ ec.defs.map fun (_, e) => ((.anonymous : Name), e)
-  -- No uninterpreted function with a contract (`check::enumerable`).
+  -- No uninterpreted function whose contract has a postcondition
+  -- (`contractBlocker?`, `check::contract_blocker`).
   let apps := all.flatMap (fun e => e.2.appsOf sp)
   -- The uninterpreted functions, whose interpretations are enumerated, but
-  -- not of one with a contract, which constrains them.
+  -- not of one whose contract has a postcondition, which constrains them.
   let fnNames := apps.foldl (init := #[]) fun acc f =>
     if isUnspecified f || f == indexRead || f == recursiveIndexRead || acc.contains f then acc else acc.push f
   -- Nor of a generic function without a body, whose instances are
@@ -191,8 +192,8 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     if sp.generics.any (·.1 == g) then some g else none
   if let some (g, _, _, _) := sp.generics.find? (generics.contains ·.1) then
     throw (notEnumerableMsg subject (genericNotEnumerable g))
-  if let some f := fnNames.find? (sp.contracts.contains ·) then
-    throw (notEnumerableMsg subject s!"it applies the uninterpreted function `{Fren.Core.showComp f}`, which has a contract")
+  if let some f := contractBlocker? fnNames fun f => ((sp.contracts.find? f).map (·.2.2.size)).getD 0 then
+    throw (notEnumerableMsg subject (contractNotEnumerable f))
   if let some f := fnNames.find? (fun f => !(sp.funs.contains f)) then
     throw (notEnumerableMsg subject s!"the evaluator does not know the function `{Fren.Core.showPath f}` used by a type invariant")
   let funs : Array FunVar := fnNames.filterMap fun f => (sp.funs.find? f).map fun (ps, r) =>

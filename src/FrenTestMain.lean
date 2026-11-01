@@ -697,6 +697,26 @@ def queryCache : IO (Array String) := do
   FrenCli.writeEntry modelless k (.sat #[]) false 0
   unless (← FrenCli.lookupEntry? modelless k false).isSome && (← FrenCli.lookupEntry? modelless k true).isNone do
     failures := failures.push "a `sat` entry without a model answers a query that wants one, or not one that does not"
+  -- The observations of a model, guarded or not, survive a key's lines
+  -- (`cli::query_key`), and one whose name has a numeric component has no
+  -- key.
+  let observations : List FrenCli.ModelObservation :=
+    [{ key := `a.b, formula := "(f x)" }, { key := `c, formula := "(g\ny)", guard? := some `d.e }]
+  match observations.mapM FrenCli.KeyObservation.of? with
+  | none => failures := failures.push "an observation whose names have no numeric component has no key"
+  | some os =>
+    let k := FrenCli.CacheKey.of "(check-sat)" os (← FrenCli.cvc5Version)
+    unless os.map (·.name) == [["a", "b"], ["c"]] && os.map (·.guard?) == [none, some ["d", "e"]]
+        && (FrenCli.CacheKey.read? (k.lines.splitOn "\n")).map (·.1) == some k do
+      failures := failures.push s!"a key's observations do not survive its lines:\n{k.lines}"
+  if (FrenCli.KeyObservation.of? { key := .num `a 1, formula := "x" }).isSome then
+    failures := failures.push "an observation whose name has a numeric component has a key"
+  -- A cache with an entry of this version and solver can be compared
+  -- with; an empty one, or one of another solver, cannot.
+  let solver ← FrenCli.cvc5Version
+  unless (← FrenCli.comparableEntries (FilePath.mk first) solver) && !(← FrenCli.comparableEntries (FilePath.mk first) "another solver")
+      && !(← FrenCli.comparableEntries (root / "missing") solver) do
+    failures := failures.push "`comparableEntries` misjudges a cache that a run could compare with"
   IO.FS.removeDirAll root
   return failures
 
