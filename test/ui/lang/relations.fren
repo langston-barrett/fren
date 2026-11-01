@@ -63,6 +63,22 @@ proc ids(r: Rel<Int, Int>): (p?) {
     expect not_three: 3 in r.domain  --~ error: expectation `ids::not_three` does not hold
 }
 
+-- A projection that a query reaches only through a definition, which the
+-- script includes, puts the query in higher-order logic too.
+set_option fren.lint.undecidable "allow" in
+fn has_one?(r: Rel<Int, Int>): (b?) {
+    out b? := 1 in r.domain
+}
+
+set_option fren.lint.undecidable "allow" in
+proc through_definition(r: Rel<Int, Int>): (p?) {
+    assume one: (1, 2) in r
+    ensure rule: p? iff has_one?(r)
+
+    expect has: p?
+    expect not_three: not has_one?({(3, 4)})
+}
+
 -- The meaning of each operator, on constants.
 expect closure_lit: {(1, 2), (2, 3)}.closure = {(1, 2), (2, 3), (1, 3)}
 expect closure_cycle: {(1, 2), (2, 1)}.closure = {(1, 2), (2, 1), (1, 1), (2, 2)}
@@ -72,5 +88,5 @@ expect inverse_lit: {(1, "a")}.inverse = {("a", 1)}
 expect domain_lit: {(1, "a"), (2, "b")}.domain = {1, 2} and {(1, "a")}.range = {"a"}
 expect join_lit: ({(1, 2)} join {(2, "x"), (3, "y")}) = {(1, "x")}
 expect pair_member: (1, 2) in {(1, 2)} and not (2, 1) in {(1, 2)}
---@ summary: 29 passed, 3 failed, 0 inconclusive, 0 redundant
+--@ summary: 34 passed, 3 failed, 0 inconclusive, 0 redundant
 --@ exit: 1
