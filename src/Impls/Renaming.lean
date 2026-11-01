@@ -5,11 +5,13 @@ import Reqs.Lint
 
 /-! # Renaming (`Reqs/Lint/Rewrites#renaming`)
 
-The lints stated over `lang::Expr<V>` are renaming-invariant: renaming the
-names of an expression apart, by an injective renaming, changes neither
-whether a lint fires on it nor, but for the renaming, what its fix writes.
-`fires_at?` and `fix_at` are generic in `V`, so they compare names only for
-equality, and each lint is proved invariant at the place where it fires,
+The lints stated over `lang::Expr<V>` don't depend on how names are spelled:
+renaming every name of an expression, free and bound alike, by an injective
+renaming, changes neither whether a lint fires on it nor, but for the
+renaming, what its fix writes. This is not invariance under renaming bound
+names alone, to an alpha-variant, which fails (`lint::bound_renaming`).
+`fires_at?` and `fix_at` are generic in `V`, but Lean doesn't know that they
+use only equality, so each lint is proved invariant at the place where it fires,
 for every two types of names, by its definition (`fires_at_rn`,
 `fix_at_rn`); `fires_in?` and `fix_all`, which look within the operands, by
 induction on the expression (`fires_in_rn`, `fix_all_rn`). `lint::renamed_apart`

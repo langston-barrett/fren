@@ -1,0 +1,22 @@
+-- Generic functions as the Lean front end generates them
+-- (`Reqs/Generated#matches`, `Reqs/Generated#generic-functions`), for the
+-- Lean proofs in `GenericMatch.lean`.
+
+pub enum Shape<V> { Dot, Named(V), Box(Int, Int) }
+
+-- A `match` that mentions no value of `V`: its matcher is over `V` alone,
+-- not `V`'s `Inhabited` instance, so that `split` splits it.
+pub fn area<V>(s: Shape<V>): Int := match s {
+    Shape::Box(w, h) => w + h,
+    _ => 0,
+}
+
+-- A test that reads payloads through selectors, which take `V`'s instance.
+set_option fren.lint.match_like_membership "allow" in
+pub fn is_box?<V>(s: Shape<V>) := match s {
+    Shape::Box(_, _) => true,
+    _ => false,
+}
+
+-- An application of `is_box?`, whose instance is Lean's own.
+pub fn big_box?<V>(s: Shape<V>) := is_box?(s) and area(s) > 2

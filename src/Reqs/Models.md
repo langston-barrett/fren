@@ -351,8 +351,8 @@ pub proc report(
     i: Interp,              -- the model's interpretation, as read
     env: Env,               -- the model's values of the query's variables, as read
     free: Free,             -- the variables that the model leaves free
-    hypotheses: Expr<Id>,       -- the query's hypotheses, in order, as a list
-    goal: Expr<Id>,             -- the query's goal
+    hypotheses: Expr<Id>,   -- the query's hypotheses, in order, as a list
+    goal: Expr<Id>,         -- the query's goal
     solver: Verdict,        -- the verdict that the solver's answer gives
 ): (
     det shown?,             -- the values are shown, as a counterexample or a witness

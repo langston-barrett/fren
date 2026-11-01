@@ -250,27 +250,36 @@ pub proc fix_all_laws(l: ExprLint, e: Expr<lang::Id>, i: lang::Interp, env: lang
 ## Renaming
 
 A lint's rule and fix are stated over `Expr<V>`, for a type `V` of names
-of which nothing is known but whether two of them are equal: `fires_at?`
-and `fix_at` are [generic](../Lang/GenericFunctions.md) in `V`. So they
-cannot tell two names apart by their spelling, only whether they are the
-same name, and renaming the names of an expression apart, so that names
-that differed still differ, changes neither whether a lint fires on it
-nor, but for the renaming, what its fix writes: the law of renaming of
-[#494](https://github.com/langston-barrett/fren/issues/494), which holds of
-every lint stated so, by construction. `fires_in?` and `fix_all` look
-within the operands of an expression and fix them, and so, being
-recursive, are [not generic](../Lang/Recursion.md); they are stated at
-`Expr<lang::Id>`, and only apply `fires_at?` and `fix_at`, so the law
-holds of them too.
+of which nothing is known but whether two of them are equal, and that it
+has a value, its `Inhabited` default: `fires_at?` and `fix_at` are
+[generic](../Lang/GenericFunctions.md) in `V`. So renaming every name of
+an expression apart, free and bound alike, so that names that differed
+still differ, changes neither whether a lint fires on it nor, but for the
+renaming, what its fix writes: what a lint computes does not depend on how
+the names are spelled. `fires_in?` and `fix_all` look within the operands
+of an expression and fix them, and so, being recursive, are [not
+generic](../Lang/Recursion.md); they are stated at `Expr<lang::Id>`, and
+only apply `fires_at?` and `fix_at`, so this holds of them too. It is
+proved for every lint, each by its definition, not by the genericity
+alone: Lean does not know that a function generic in `V` uses only
+equality, and a new lint needs its own lemma.
+
+This is not the law of [#494](https://github.com/langston-barrett/fren/issues/494)
+that renaming *bound* names consistently, to an alpha-variant, changes
+nothing. That one does not hold: renaming one bound name alone can change
+which names are equal, as `bound_renaming` shows, where `b` is the
+negation of `a` only once `y` is renamed `x`, and only then does
+`overly_complex_bool_expr` fire. Stating that law needs names compared by
+binding, as an `Expr<Binding>` would.
 
 `swap_names(a, b, e)` is `e` with the names `a` and `b` swapped, at every
 variable, binder, `let` and parameter. A renaming of the names of an
 expression apart is a sequence of such swaps, since it renames only the
 finitely many names of the expression and there are names to spare, so
-`renamed_apart` states the law for one swap. `src/Impls/Renaming.lean` proves
+`renamed_apart` states it for one swap. `src/Impls/Renaming.lean` proves
 it in Lean, for every renaming apart, at the place where each lint fires
-for every type of names, by its definition, and everywhere by induction
-on the expression; `fren check` tests it:
+for every type of names, and everywhere by induction on the expression;
+`fren check` tests it:
 
 ```fren
 -- `x`, with the names `a` and `b` swapped.
@@ -345,6 +354,29 @@ pub proc renamed_apart(l: ExprLint, e: Expr<lang::Id>, a: lang::Id, b: lang::Id)
     ensure fires_in: fires_in?(l, swap_names(a, b, e)) = fires_in?(l, e)
     ensure fix_all: fix_all(l, swap_names(a, b, e)) = swap_names(a, b, fix_all(l, e))
 }
+
+-- `x` and `y` bound alike, but apart: an alpha-variant of `a` is
+-- `Let(y, true, Var(y))`, and renaming it back makes the lint fire.
+expect bound_renaming(x: lang::Id, y: lang::Id) {
+    expect apart: when x != y, not overly_complex_fires?(
+        Expr::Or(
+            Expr::Let(x, Expr::Literal(lang::Value::True), Expr::Var(x)),
+            Expr::Unary(
+                lang::UnaryOp::Not,
+                Expr::Let(y, Expr::Literal(lang::Value::True), Expr::Var(y))
+            )
+        )
+    )
+    expect renamed: overly_complex_fires?(
+        Expr::Or(
+            Expr::Let(x, Expr::Literal(lang::Value::True), Expr::Var(x)),
+            Expr::Unary(
+                lang::UnaryOp::Not,
+                Expr::Let(x, Expr::Literal(lang::Value::True), Expr::Var(x))
+            )
+        )
+    )
+}
 ```
 
 ```fren
@@ -353,4 +385,5 @@ pub proc renamed_apart(l: ExprLint, e: Expr<lang::Id>, a: lang::Id, b: lang::Id)
 #fren_check fix_at_agrees
 #fren_check fix_all_laws
 #fren_check renamed_apart
+#fren_check bound_renaming
 ```

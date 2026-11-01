@@ -153,10 +153,12 @@ written the same.
 
 What the fix keeps is `kept_by(e)`: the left operand, the right one or a
 `Bool`, by the first test of `drop_fix` that holds, in the order in which
-the linter's rule tries them, so that where both operands are the same, it
-keeps the left. That the fix keeps it is `fix_written`. Stating which one
-it keeps, rather than only that `kept_fix` writes the fix, also makes the
-procedure's realizability a query that the solver decides: with `kept`
+the linter's rule tries them. Saying only that `kept_fix` writes the fix
+would leave it open where two of them write the same: in `false and
+(false or q)`, `Kept::Left` and `Kept::Constant` both write `false`, and
+`kept_by` says `Kept::Left`, as the linter does. That the fix keeps it is
+`fix_written`. Stating which one it keeps also makes the procedure's
+realizability a query that the solver decides: with `kept`
 free, cvc5 1.3 gives up on the `exists` over it, as it does on any such
 `exists` over a parametric datatype with a field of its parameter, as
 `Expr<lang::Id>` is.

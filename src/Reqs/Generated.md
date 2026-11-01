@@ -371,7 +371,10 @@ mentions, of those that `p` uses, as the matchers `p.match_1`, `p.match_2`,
 and so on, so that `split` and `#print` see a `match`. A matcher is not
 generalized over a type parameter's `Inhabited` instance, which a `match`
 never needs: Lean's splitter for the matcher leaves such a parameter out,
-and `split` would then take the instance for the matcher's motive and fail. Where Lean rejects the `match` form,
+and `split` would then take the instance for the matcher's motive and fail.
+Each matcher's realizations are enabled, so that `split` in the file that
+declares the function, as `FrenTestFiles/GenericMatch.lean` does, can
+realize its equations. Where Lean rejects the `match` form,
 which the rule above should never let happen, `p` is the solver's
 definition, and there is no `p.«#solver»`.
 

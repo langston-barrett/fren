@@ -74,8 +74,8 @@ pub fn named_expr(b: Binding, definition: Expr<Id>): Expr<Id> := match b.kind {
 
 ```fren
 pub proc named(
-    binding: Binding,      -- what the name resolves to
-    definition: Expr<Id>,      -- a constant's definition
+    binding: Binding,        -- what the name resolves to
+    definition: Expr<Id>,    -- a constant's definition
 ): (det expr: Expr<Id>) {
     use self::BindingKind::{
         Builtin,

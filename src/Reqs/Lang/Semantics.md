@@ -91,9 +91,10 @@ type parameter. The semantics evaluates `Expr<Id>`, whose names are
 `Id`s, as they are written; another type of names, such as a
 [binding](Scope.md#bindings) for each, can stand for the names once they
 are resolved, with the same forms. A function that is generic in `V`
-compares names only for equality, so renaming the names of an expression
-apart changes nothing that it computes but the names, as the [lints'
-rules](../Lint/Rewrites.md#renaming) do. A recursion over it, as `eval`
+knows of names only whether two are equal, and the type's `Inhabited`
+default, so renaming every name of an expression apart changes nothing
+that it computes but the names, as is proved of the [lints'
+rules](../Lint/Rewrites.md#renaming), each by its definition. A recursion over it, as `eval`
 is, takes one type of names, as `Id`, since a generic function is [not
 recursive](Recursion.md). No form needs a sequence of a type parameter,
 which a generic type cannot have yet ([Type

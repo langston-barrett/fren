@@ -358,7 +358,7 @@ set_option fren.evidence "random" in
 pub proc manual_at_most_one_defined(
     i: Interp,
     env: Env,
-    a: Expr<lang::Id>,                         -- the operands
+    a: Expr<lang::Id>,               -- the operands
     b: Expr<lang::Id>,
     obligation?,                     -- the `and` gives a definedness obligation
 ) {

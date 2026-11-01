@@ -6430,6 +6430,8 @@ def addLeanDef (uses : Array Name) (name : Name) (value : Expr) : TermElabM Unit
     addDecl (.defnDecl { name := m', levelParams := ci.levelParams, type, value := val, hints := ci.hints, safety := .safe })
     Meta.Match.addMatcherInfo m' { info with numParams := info.numParams + mUses.size }
     setInlineAttribute m'
+    -- So that `split` in the same file can realize its equations.
+    enableRealizationsForConst m'
     let args := mUses.map (Lean.mkConst ·)
     value := value.replace fun e => match e with
       | .const c ls => if c == m then some (mkAppN (.const m' ls) args) else none

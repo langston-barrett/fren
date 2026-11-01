@@ -679,6 +679,47 @@ def bodyFns (sc : WScope) (genericPay : Bool) : R String := do
         s!"    L::Cons(h, t) => if t = L::Nil then Option::Some(h) else last{k}(t),\n}\n"
   return out
 
+/-- Generic functions, and a procedure that applies them (`Reqs/Lang/GenericFunctions`):
+`match`es that mention a value of the type parameter and that don't, a
+generic enumeration's payload, and applications at `Int`, `Bool`, an
+abstract type and a nested instance, with arguments whose type arguments
+come from the expected type, as `Option::None`. -/
+def genericApps (sc : WScope) (genericPay : Bool) : R String := do
+  let mut out := "pub type Nm\n" ++
+    "pub fn pick<T>(c?, a: T, b: T): T := if c? then a else b\n" ++
+    "pub fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }\n" ++
+    "pub fn some?<T>(o: Option<T>) := match o { Option::Some(_) => true, Option::None => false }\n" ++
+    "pub fn wrap<T>(x: T): Option<T> := Option::Some(x)\n"
+  if sc.hasPay && genericPay then
+    out := out ++ "pub fn payload_or<X>(p: P<X>, d: X): X := match p { P::B(x) => x, _ => d }\n" ++
+      "pub fn is_b?<X>(p: P<X>) := match p { P::B(_) => true, _ => false }\n"
+  let isc : WScope := { sc with vars := #[("n", WTy.int, true), ("b?", .bool, true)], fns := #[] }
+  -- Leaves, so that nothing here is an error of its own, such as a
+  -- product of two variables, which would stop the spec's other checks.
+  let int : R String := leaf isc .int
+  let bool : R String := leaf isc .bool
+  let mut body := ""
+  for k in [0:(← below 4) + 2] do
+    let e ← match ← below 10 with
+      | 0 => pure s!"r = unwrap_or({← pick #["o", "Option::None", "wrap(n)", s!"Option::Some({← int})"]}, {← int})"
+      | 1 => pure s!"s? = pick({← bool}, some?(o), {← bool})"
+      | 2 => pure s!"t = pick({← bool}, m, m2)"
+      | 3 => pure s!"u = unwrap_or(oo, {← pick #["Option::None", "o", "wrap(n)"]})"
+      | 4 => pure s!"some?(oo) = some?({← pick #["o", "wrap(m)", "wrap(b?)", "wrap(oo)"]})"
+      | 5 => pure s!"r = pick(some?(wrap({← bool})), {← int}, unwrap_or(unwrap_or(oo, o), n))"
+      | 6 => pure s!"t = unwrap_or({← pick #["wrap(m)", "Option::None", "wrap(m2)"]}, m)"
+      | 7 =>
+        if sc.hasPay && genericPay then pure s!"r = payload_or({← pick #["P::A", "P::B(n)", "pp", "P::C(b?)"]}, {← int})"
+        else pure s!"s? = some?(wrap({← bool}))"
+      | 8 =>
+        if sc.hasPay && genericPay then pure s!"s? = is_b?({← pick #["pp", "P::A", "P::B(3)"]})"
+        else pure s!"u = wrap({← int})"
+      | _ => pure s!"t = pick({← bool}, m2, m)"
+    body := body ++ s!"    ensure ga{k}: {e}\n"
+  let pp := if sc.hasPay && genericPay then ", pp: P<Int>" else ""
+  return out ++ s!"pub proc gapps(n: Int, b?, m: Nm, m2: Nm, o: Option<Int>, oo: Option<Option<Int>>{pp}): " ++
+    s!"(r: Int, s?, t: Nm, u: Option<Int>) \{\n{body}}\n"
+
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := do
   let useEnum ← chance 60
@@ -865,6 +906,8 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if ← chance 25 then out := out ++ guardDecls ++ (← guardsProc "guards")
   -- Last, so that the specs of the seeds before them are as they were.
   if ← chance 50 then out := out ++ "\n" ++ (← bodyFns sc genericPay)
+  -- Generic functions applied, last too.
+  if ← chance 40 then out := out ++ "\n" ++ (← genericApps sc genericPay)
   -- Only variables have the type `P`, each declared on a line of its own.
   return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 
