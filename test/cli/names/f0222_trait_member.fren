@@ -1,6 +1,4 @@
 trait Counter {
     fn count(Self): Int
-    proc reset(c: Int): (d: Int) {
-        ensure zero: d = 0
-    }
+    proc reset(c: Int): (d: Int) { ensure zero: d = 0 }
 }

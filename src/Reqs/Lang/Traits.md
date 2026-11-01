@@ -1,25 +1,31 @@
 # Traits
 
-A *trait* declares an interface: a type, its *carrier*, written `Self`
-within the trait, with *methods* over it, the *laws* that the methods
-obey, and *expectations*, consequences of the laws that the trait claims.
-A key-value store is one:
+A *trait* declares an interface: a type, written `Self` within it, the
+functions over that type that the interface offers, the laws that those
+functions obey, and expectations that follow from the laws.
 
 ```text
-type Key
-
 trait KV {
     fn put(Self, Key, Int): Self
     fn get(Self, Key): Option<Int>
-
     law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
-
     expect overwritten(s: Self, k: Key, v: Int, w: Int) {
         expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)
     }
 }
 ```
 
+> **Note:** This chapter is the first part of traits (#594). Instances,
+> which give a trait its type and functions, code generic over a trait, and
+> the rule that brings laws into the decidable core come later.
+
+```fren
+pub mod lang
+```
+
+## Syntax
+
+r[trait.syntax]
 ```
 trait        := ["pub"] "trait" IDENT "{" trait-member* "}"
 trait-member := method | law | expectation | lint-setting "in" trait-member
@@ -28,36 +34,45 @@ method       := "fn" IDENT"(" type ("," type)* ")" [":" type]
 law          := "law" IDENT"(" [variable ("," variable)* [","]] ")" ":" top
 ```
 
-A trait is an item of its module, named like a type, and `trait` is a
-reserved word. `law` is a contextual keyword: it starts a law only where a
-member of a trait starts (see [Keywords](Lexical.md#keywords)).
+r[trait.syntax.item]
+A trait is an [item](Items.md) of its module.
 
-What follows is the first part of traits that Fren has (#594): a trait,
-its laws and its expectations. Its instances, which give the carrier and
-the methods, the code that is generic over a trait, and the trigger rule
-that brings laws into the [decidable core](Decidability.md) come next.
-
-```fren
-pub mod lang
-```
+r[trait.syntax.keywords]
+`trait` is a [reserved word](Lexical.md#keywords). `law` is a contextual
+keyword: it starts a law only where a member of a trait starts.
 
 ## Members
 
 A trait's members are its methods, its laws and its expectations, in any
-order. A method is an [uninterpreted function](Items.md#uninterpreted-functions),
-written as one is, with its types alone or with its parameters' names and
-a [contract](Items.md#contracts) in its block. An expectation is a [global
-expectation](Global.md), in either of its forms. A member is not written
-`pub`: it is visible where the trait is. Nor does a member's block have a
-`use`, for now, and a method has no type parameters and no body, for now:
-a method with a body would be a *default method*, which Fren does not have
-yet. Any other item is not a member of a trait. Each of these is the error
-`F0222`.
+order.
 
+**Legality rules**
+
+r[trait.member.kinds]
+A *method* is an [uninterpreted function](Items.md#uninterpreted-functions),
+written with its types alone or with its parameters' names and a
+[contract](Items.md#contracts). An *expectation* of a trait is a [global
+expectation](Global.md), in either of its forms. A *law* is written `law`.
+
+r[trait.member.other]
+A member of any other kind is an error (`F0222`).
+
+r[trait.member.pub]
+A member written `pub` is an error (`F0222`).
+
+r[trait.member.default]
+A method with a body is an error (`F0222`).
+
+r[trait.member.generic]
+A method with type parameters is an error (`F0222`).
+
+r[trait.member.use]
+A `use` in the block of a member is an error (`F0222`).
+
+r[trait.member.rule]
 `lang::trait_member` states which members a trait accepts, from what the
-member is, as it is written, and whether it is written `pub`, has type
-parameters or has a `use` in its block (`Core.traitMemberAccepted`, which
-both front ends call):
+member is as written, and whether it is written `pub`, has type
+parameters, or has a `use` in its block.
 
 ```fren
 -- A member of a trait, as written: a function without a body, a law, a
@@ -80,68 +95,93 @@ pub proc trait_member(
 }
 ```
 
+> **Rationale:** A method with a body would be a *default method*, which
+> comes with supertraits and associated types (#594). A member's own `use`
+> would hide the trait's names in its block.
+
 ## The carrier
 
-Within a trait, `Self` is its carrier: an [abstract
-type](Types.md#abstract-types) of the trait's own, of which nothing is
-known but that it has values, and whether two of them are equal. So a
-method's parameter or result may be a `Self`, and a law or expectation may
-quantify over `Self`s, but a record's field or a variant's payload may not
-be one, as for any abstract type (`F0310`). Outside the trait, `Self`
-means nothing.
+**Legality rules**
+
+r[trait.carrier]
+Within a trait, `Self` names the trait's *carrier*, an [abstract
+type](Types.md#abstract-types) of the trait's own.
+
+r[trait.carrier.payload]
+A field or payload whose type is the carrier is an error (`F0310`), as for
+any abstract type.
+
+r[trait.carrier.outside]
+Outside its trait, `Self` names nothing.
 
 ## Scope
 
-A trait's members are in its scope: there, `Self`, and the trait's
-methods, each by its name alone, shadow the names of the trait's module,
-as a [procedure's imports](Modules.md#use-in-a-procedure) do, without a
-`!`, and every other name is the module's. A method's signature and
-contract see the methods declared before it, as a function's do; the laws
-and the expectations see every method. `Self` and the names of the
-members are distinct (`F0213`). The members are not items of the module,
-so nothing outside the trait names them, for now: an instance and the code
-generic over the trait will.
+**Legality rules**
+
+r[trait.scope.shadowing]
+Within a trait, `Self` and the trait's methods, each by its name alone,
+shadow the names of the trait's module, without a `!`, as a [procedure's
+imports](Modules.md#use-in-a-procedure) do. Every other name is the
+module's.
+
+r[trait.scope.order]
+A method's signature and contract see the methods declared before it. The
+laws and the expectations see every method.
+
+r[trait.scope.distinct]
+`Self` and the names of a trait's members are distinct (`F0213`).
+
+r[trait.scope.outside]
+The members of a trait are not items of its module.
 
 ## Laws
 
-`law n(x: T, y?): e` states that `e`, a `Bool`, holds for all values of
-its variables, which are a quantifier around it: it means `forall (x: T)
-(y?: Bool), e`. Like a global expectation in the [short
-form](Global.md#the-short-form), it mentions no variable but its own, and
-may mention constants, functions and the trait's methods. A variable has
-its type written, as a defined function's parameter does, or is a `Bool`
-written `x?` alone. Its variables are distinct (`F0213`), and their names,
-and the law's, are in `snake_case` (`non_snake_case`).
+A law states what holds of the methods for all values of its variables.
 
-A law is what is known of the methods, beyond their contracts: an
-[interpretation](Procedures.md#interpretations) of the trait is one of its
-carrier and methods that meets the methods' contracts and every law. A
-law's quantifier is over types that are not listed, so for now each law is
-outside the decidable core, and the
-[`undecidable`](../Lint/Decidability.md#undecidable-constructs) lint
-reports it at its variables, as it reports any [unbounded
-quantifier](Quantifiers.md#unbounded-quantifiers). The trigger rule that
-#594 sets out, by which a law whose every variable is in one application
-of a method is instantiated at the ground terms of each query, will bring
-such laws into the core.
+**Legality rules**
+
+r[trait.law.type]
+A law's equation is a `Bool`.
+
+r[trait.law.variables]
+A law's variables are distinct (`F0213`). A variable's type is written,
+but for a `Bool`, which may be written `x?` alone.
+
+r[trait.law.mentions]
+A law mentions no variable but its own. It may mention constants,
+functions and the trait's methods.
+
+r[trait.law.names]
+A law's name is not written with `?` or `!`.
+
+**Dynamic semantics**
+
+r[trait.law.meaning]
+`law n(x: T, y?): e` means `forall (x: T) (y?: Bool), e`.
+
+r[trait.law.interpretation]
+An [interpretation](Procedures.md#interpretations) of a trait gives its
+carrier and its methods. An interpretation *meets* the trait when its
+methods meet their contracts and every law holds.
+
+**Proof obligations**
+
+r[trait.law.undecidable]
+A law is outside the [decidable core](Decidability.md): its variables are
+an [unbounded quantifier](Quantifiers.md#unbounded-quantifiers) over types
+that are not listed, which
+[`undecidable`](../Lint/Decidability.md#undecidable-constructs) reports.
 
 ## Expectations
 
-An expectation of a trait is a global expectation that claims its
-expectations for every interpretation of the trait: for every carrier, and
-all methods that meet their contracts and the laws, as Larch's `implies`
-does. So it checks, from the laws alone, that the laws say what the author
-means. It is checked once, in the trait, and nothing that later gives the
-trait an instance checks it again. Its checks are the solver's:
-`fren.evidence` cannot be set to testing or enumeration for it (`F0215`),
-since an interpretation that testing or enumeration picks need not meet
-the laws.
+An expectation of a trait checks, from the laws alone, that the laws say
+what the author means, as Larch's `implies` does.
 
-`lang::trait_expectation` states this, over the interpretations of the
-spec's abstract types and functions, the trait's carrier and methods among
-them: those that meet the contracts, those that meet the laws, and those
-in which the expectation's claims hold for all its parameters that meet its
-assumptions:
+**Dynamic semantics**
+
+r[trait.expect.meaning]
+An expectation of a trait holds when its claims hold in every
+interpretation that meets the trait (`lang::trait_expectation`).
 
 ```fren
 pub type Interpretation
@@ -164,19 +204,44 @@ pub proc trait_expectation(
 }
 ```
 
-## Meaning
+**Proof obligations**
 
-Both front ends check a trait as what they already check: its carrier is an
-abstract type, `T::Self` for the trait `T`; each method is an
-uninterpreted function, `T::m`, with its contract; and each expectation is
-a global expectation, `T::e`, whose queries have the trait's laws, each a
-quantified formula, among their hypotheses, before its assumptions and
-calls (`Core.Comp.laws`). The laws are among the hypotheses of every check
-of the expectation but its [realizability](../Check.md#global-expectations),
-which asks of its own assumptions alone: whether the laws can hold together
-is a check of its own, which comes with the instances. In Lean, the
-carrier and the methods are what an abstract type and uninterpreted
-functions are (see [Generated Lean](../Generated.md#abstract-types-and-uninterpreted-functions)); the trait becomes
-a Lean class with its instances.
+r[trait.expect.checks]
+An expectation of a trait has the checks of a [global
+expectation](../Check.md#global-expectations), each with the trait's laws
+among its hypotheses, but for its realizability, which asks of its own
+assumptions alone.
+
+r[trait.expect.once]
+An expectation of a trait is checked once, in the trait.
+
+r[trait.expect.evidence]
+`fren.evidence` set to testing or enumeration for an expectation of a
+trait is an error (`F0215`).
+
+> **Rationale:** An interpretation that testing or enumeration picks need
+> not meet the laws. Whether the laws can hold together is a check of its
+> own, which comes with the instances (#594).
+
+**Examples**
+
+```fren example
+mod store
+
+type Key
+
+set_option fren.lint.undecidable "allow" in
+trait Store {
+    fn put(Self, Key, Int): Self
+    fn get(Self, Key): Option<Int>
+
+    law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
+
+    expect overwritten(s: Self, k: Key, v: Int, w: Int) {
+        expect last_wins: get(put(put(s, k, v), k, w), k) = Option::Some(w)
+    }
+}
+--@ summary: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+```
 
 #fren_check

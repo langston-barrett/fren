@@ -36,9 +36,7 @@ trait KV {
 -- the carrier, and its postcondition is a fact of each application.
 set_option fren.lint.undecidable "allow" in
 trait Sized {
-    fn size(s: Self): (r: Int) {
-        ensure natural: r >= 0
-    }
+    fn size(s: Self): (r: Int) { ensure natural: r >= 0 }
     fn grow(Self): Self
 
     law grows(s: Self): size(grow(s)) = size(s) + 1
@@ -46,9 +44,7 @@ trait Sized {
     -- leaves out, as it means nothing.
     law fixed(s: Self, n: Int): size(s) >= 0  --~ warning: unused bound name `n`
 
-    expect positive(s: Self) {
-        expect after_grow: size(grow(s)) > 0
-    }
+    expect positive(s: Self) { expect after_grow: size(grow(s)) > 0 }
 }
 
 -- The methods of a trait shadow the module's names, without `!`, and
@@ -70,9 +66,7 @@ trait Bounded {
 trait Lawless {
     fn value(Self): Int
 
-    expect congruent(s: Self, t: Self) {
-        expect same: when s = t, value(s) = value(t)
-    }
+    expect congruent(s: Self, t: Self) { expect same: when s = t, value(s) = value(t) }
 
     -- Nothing relates two carriers' values.
     expect equal(s: Self, t: Self) {
