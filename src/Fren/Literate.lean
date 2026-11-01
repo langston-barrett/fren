@@ -104,24 +104,32 @@ def relativeTo (base path : System.FilePath) : String :=
   let leanName := (leanFile?.map (·.1)).getD (← getFileName)
   let name := relativeTo ((System.FilePath.mk leanName).parent.getD ".") path
   -- The problems of a Markdown spec's fences (`Reqs/Markdown#code-blocks`),
-  -- as the `fren` command reports them.
+  -- as the `fren` command reports them. They are static errors of the spec,
+  -- reported before any of its commands, so that they stop its checks and
+  -- those after it, as the `fren` command's do.
   let problems := if Core.isMarkdownFile path.toString then Core.markdownProblems src else #[]
   -- Lean's parser rejects input that is only whitespace, as when a file is
   -- all prose.
   if code.trimAscii.isEmpty then
     for (line, msg) in problems do logErrorAt stx m!"{name}:{line}:0: {msg.text}"
+    unless problems.isEmpty do
+      let key := (← getFileName, (← read).cmdPos.byteIdx)
+      modifyLocal fun l => { l with staticErrors := l.staticErrors.push (key.1, key.2, problems.size) }
     return
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
                                 items := #[], usedItems := #[], natReports := #[], natKept := #[], inMarkdown := true, leanFile?,
                                 mdSource? := some (name, inputCtx.fileMap), globalTexts := #[],
                                 invisibleFrom := 0, settings := #[], settingIds := #[], seenSettings := #[],
                                 outerReplaced := #[], assumptions := #[], globalReads := #[], hofParams := #[], fnArgs := #[] }
+  unless problems.isEmpty do
+    modifyLocal fun l => { l with staticErrors := l.staticErrors.push (path.toString, 0, problems.size) }
   let s ← get
+  let seeded := problems.foldl (init := ({} : MessageLog)) fun log (line, msg) =>
+    log.add { fileName := path.toString, pos := ⟨line, 0⟩, severity := .error, data := msg.text }
   let st ← IO.processCommands inputCtx {} { s with messages := {} }
-  set st.commandState
-  for (line, msg) in problems do
-    let m : Message := { fileName := path.toString, pos := ⟨line, 0⟩, severity := .error, data := msg.text }
-    modify fun s => { s with messages := s.messages.add m }
+  -- The fence problems come first, before the messages of the commands that
+  -- they stop.
+  set { st.commandState with messages := seeded ++ st.commandState.messages }
   -- The Lean file's settings in effect at the spec's items, which are its
   -- items too.
   let seen := (← getLocal).seenSettings

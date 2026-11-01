@@ -255,6 +255,30 @@ def manualExamples (env : Environment) : IO (Array String) := do
   let ui ← uiTests env files
   return failures ++ ui.map fun msg => (files.zip origins).foldl (fun m (f, o) => m.replace f.toString o) msg
 
+/-- A fence problem of a Markdown spec is a static error that stops the
+checks in both front ends alike (`Reqs/Markdown#code-blocks`): the spec's
+own `#fren_check` after a block that looks like `fren`, and one after a
+Markdown file of prose whose block is never closed, check nothing, though
+each has an expectation that fails. -/
+def markdownFences (env : Environment) : IO (Array String) := do
+  let dir : FilePath := ".lake" / "markdown-fences"
+  IO.FS.createDirAll dir
+  let after := "pub proc after_prose(a?): (b?) {\n    ensure same: b? iff a?\n\n    expect wrong: b? iff not a?\n}\n"
+  let afterFile := dir / "after_prose.fren"
+  IO.FS.writeFile afterFile after
+  let cases : List (String × String) := [("LiterateNearFren.md", ""), ("LiterateUnclosedProse.md", after)]
+  let mut failures := #[]
+  for (md, code) in cases do
+    let files := #[s!"src/FrenTestFiles/{md}"] ++ (if code.isEmpty then #[] else #[afterFile.toString])
+    let (out, _) ← runCheck files
+    unless out.contains Fren.Core.couldNotHeadline.toSlice && !out.contains "does not hold".toSlice do
+      failures := failures.push s!"{md} (binary): a fence problem does not stop the checks:\n{out}"
+    let (diags, summary) ← hostedDiagnostics env "src/FrenTestFiles/MarkdownFences.lean" s!"#fren_md \"{md}\"\n{code}"
+    unless diags.any (·.text == Fren.Core.couldNotHeadline) && !diags.any (·.text.contains "does not hold".toSlice)
+        && summary.isNone do
+      failures := failures.push s!"{md} (Lean): a fence problem does not stop the checks: {diags.map (·.text)}"
+  return failures
+
 /-- Whether `id` is a rule identifier: `r[`, segments of lowercase words and
 digits joined by `-`, separated by `.`, and `]` (`Reqs/dev/Style#rule-identifiers`). -/
 def isRuleId (id : String) : Bool :=
@@ -534,13 +558,9 @@ def hostedSpecFiles : IO (Array String) := do
   return files
 
 /-- The lines of the `fren` blocks of the Markdown text `md`. -/
-def frenBlockLines (md : String) : Array String := Id.run do
-  let mut out := #[]
-  let mut inBlock := false
-  for line in md.splitOn "\n" do
-    if line.startsWith "```" then inBlock := line.startsWith "```fren"
-    else if inBlock then out := out.push line
-  return out
+def frenBlockLines (md : String) : Array String :=
+  (Fren.Core.fencedBlocks md).foldl (init := #[]) fun acc b =>
+    if b.info == Fren.Core.frenInfo then acc ++ b.body else acc
 
 /-- The procedures and global expectations that the `fren` block lines
 `ls` declare, which a `#fren_check` checks: each by its name. -/
@@ -678,6 +698,7 @@ def fmtIgnore : List String :=
    "test/ui/checks/trace.fren",
    -- Markdown specs whose fences are deliberately wrong (`F0167`, `F0168`).
    "src/FrenTestFiles/LiterateUnclosed.md", "src/FrenTestFiles/LiterateNearFren.md",
+   "src/FrenTestFiles/LiterateUnclosedProse.md",
    -- The explanations of the codes, whose first examples are erroneous.
    "src/FrenCore/Codes/*.md",
    -- The README's example keeps its hand-aligned continuation lines.
@@ -2118,7 +2139,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
@@ -2144,6 +2165,10 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     initSearchPath (← findSysroot)
     manualExamples (← importModules #[{ module := `Fren }] {} (loadExts := true))
   | ["ruleIds"] => ruleIds
+  | ["markdownFences"] => do
+    enableInitializersExecution
+    initSearchPath (← findSysroot)
+    markdownFences (← importModules #[{ module := `Fren }] {} (loadExts := true))
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec

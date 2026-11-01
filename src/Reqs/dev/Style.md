@@ -44,9 +44,10 @@ parts, in order, omitting the empty ones:
 2. **Syntax**: the grammar, as a rule.
 3. **Legality rules**: what is accepted, its types, its names, and the
    static errors.
-4. **Meaning**: what it means, as Fren's dynamic semantics.
-5. **Checking**: what the generated Lean and the solver's queries contain,
-   what lints report, and what the verdicts are.
+4. **Dynamic semantics**: what it means.
+5. **Proof obligations**: which checks the construct gives rise to, and
+   what they assume, stated abstractly, without the solver's queries or
+   the generated Lean.
 6. **Examples**: as many as help, in checked blocks where they can be.
 7. **Notes and rationale**: only where needed.
 
@@ -58,13 +59,15 @@ no label.
 
 ## What is not a rule
 
-- The reference states what Fren accepts, what it means, and what a user
-  can observe: messages, verdicts, the generated Lean and the solver's
-  queries. It does not say how the front ends are built.
+- The reference states what Fren accepts, what it means, which checks it
+  asks, and what a user sees of them: messages and verdicts. It does not
+  say how the front ends are built, nor what the solver's queries or the
+  generated Lean contain.
 - A statement about the implementation, such as which `Fren.Core` function
-  both front ends call (`nameAlone`, `countedBetween`, `startsAtZero`) or
-  what each front end reads of the syntax, goes in a doc comment beside
-  that function. The `impl` that binds the function to its requirement
+  both front ends call (`nameAlone`, `countedBetween`, `startsAtZero`),
+  what each front end reads of the syntax, or how a construct appears in
+  the solver's queries and the generated Lean, goes in a doc comment beside
+  the function that does it. The `impl` that binds the function to its requirement
   connects the two, so the rule needs no name of a Lean function, and
   renaming one changes no identifier.
 
@@ -79,8 +82,8 @@ no label.
   ```
 
 - An identifier is `r[` and dot-separated segments and `]`. Each segment is
-  lowercase words joined by `-`. The first segment names the chapter's
-  construct (`quantifier`), and each later one narrows it
+  lowercase words and digits joined by `-`. The first segment names the
+  chapter's construct (`quantifier`), and each later one narrows it
   (`quantifier.guard.strict`). Spell words out, as in prose.
 - The identifier of a grammar is `<construct>.syntax`, on the line
   before its block.

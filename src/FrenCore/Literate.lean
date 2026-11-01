@@ -12,50 +12,85 @@ everything else blanked out: each line outside a block becomes empty, and
 code lines are kept as they are, so line and column numbers are those of
 the Markdown file.
 
-Fences are read as CommonMark reads backtick fences (`markdown::fence`,
-`markdown::closes`): at most three spaces, then at least three backticks,
-then an info string with no backtick, so that inline code at the start of
-a line is not a fence. A block closes at a fence with no info string and
-at least as many backticks as its opening fence. Every reader of the
-blocks, the front ends, `fren fmt` and the tests, reads them with
-`fencedBlocks`.
+Fences are read much as CommonMark reads them (`Reqs/Markdown#code-blocks`):
+`splitLine` splits a line into its indentation, its run of backticks or
+tildes, and its info string (`markdown::split`), and `step` reads a line
+after the lines before it (`markdown::step`). `fencedBlocks` is `step`
+folded over the lines, and every reader of the blocks, the front ends,
+`fren fmt` and the tests, reads them with it.
 -/
 
 namespace Fren.Core
 
 def isMarkdownFile (path : String) : Bool := path.endsWith ".md"
 
-/-- A line as the fence reader sees it: how many spaces it starts with, how
-many backticks follow them, and the rest of the line without the spaces
-and tabs around it, which is a fence's info string. -/
-structure FenceParts where
+/-- How many characters of `s`, one after another from position `i`, each
+satisfy `p`. -/
+def charRun (p : String → Bool) (s : String) (i : Nat) : Nat :=
+  if i < s.length ∧ p (Fren.Str.at s i) = true then charRun p s (i + 1) + 1 else 0
+termination_by s.length - i
+
+/-- A space or a tab (`markdown::blank?`). -/
+def isBlank (c : String) : Bool := c == " " || c == "\t"
+
+/-- A line as the fence reader splits it (`markdown::split`). -/
+structure LineParts where
+  /-- The spaces that it starts with. -/
   indent : Nat
+  /-- The character of the run after them, `` ` `` or `~`, or `""`. -/
+  marker : String
+  /-- The length of that run. -/
   run : Nat
+  /-- The blanks after the run. -/
+  lead : Nat
+  /-- The rest of the line after them: a fence's info string. -/
   info : String
+  /-- The line is a fence. -/
+  fence : Bool
   deriving Repr, BEq
 
-/-- `line` split into its leading spaces, the backticks after them, and the
-rest. -/
-def fenceParts (line : String) : FenceParts :=
-  let indent := (line.takeWhile (· == ' ')).toString.length
-  let after := (line.drop indent).toString
-  let run := (after.takeWhile (· == '`')).toString.length
-  { indent, run, info := (after.drop run).trimAscii.toString }
-
-/-- Whether a line of `indent` spaces, `run` backticks and then `info` is a
-fence (`markdown::fence`). -/
-def isFence (indent run : Nat) (info : String) : Bool :=
-  indent ≤ 3 && run ≥ 3 && !Fren.Str.contains info "`"
-
-/-- Whether such a line closes a block opened by a fence of `openRun`
-backticks (`markdown::closes`). -/
-def closesBlock (openRun indent run : Nat) (info : String) : Bool :=
-  isFence indent run info && run ≥ openRun && info == ""
+/-- `line` split as the fence reader splits it (`markdown::split`). -/
+def splitLine (line : String) : LineParts :=
+  let indent := charRun (· == " ") line 0
+  let c := Fren.Str.at line indent
+  let marker := if c = "`" ∨ c = "~" then c else ""
+  let run := if marker = "" then 0 else charRun (· == marker) line indent
+  let lead := charRun isBlank line (indent + run)
+  let info := Fren.Str.slice line ((indent : Int) + run + lead) ((line.length : Int) - indent - run - lead)
+  let fence := decide (indent ≤ 3) && decide (3 ≤ run) && (marker == "~" || !Fren.Str.contains info "`")
+  { indent, marker, run, lead, info, fence }
 
 /-- The fence's info string, if `line` is a fence. -/
 def fenceInfo? (line : String) : Option String :=
-  let p := fenceParts line
-  if isFence p.indent p.run p.info then some p.info else none
+  let p := splitLine line
+  if p.fence then some p.info else none
+
+/-- The fence that opened the block that the reader is in. -/
+structure Opening where
+  marker : String
+  run : Nat
+  info : String
+  deriving Repr, BEq, Inhabited
+
+/-- What the reader makes of a line, after the lines before it
+(`markdown::step`). -/
+structure Step where
+  /-- It is in a block after the line. -/
+  inside : Bool
+  /-- The fence that opened that block. -/
+  opening : Opening
+  /-- The line is in the body of a block. -/
+  body : Bool
+  /-- The line opens a block. -/
+  opens : Bool
+  /-- The line is the spec's: in the body of a `fren` block. -/
+  kept : Bool
+  deriving Repr, BEq
+
+/-- The lines of a Markdown text: split at each `\n`, and without a `\r`
+before it. -/
+def markdownLines (src : String) : Array String :=
+  (src.splitOn "\n").toArray.map fun l => if l.endsWith "\r" then (l.dropEnd 1).toString else l
 
 /-- A fenced code block of a Markdown text. -/
 structure FencedBlock where
@@ -69,24 +104,6 @@ structure FencedBlock where
   the text, where it ends. -/
   close? : Option Nat
   deriving Repr, BEq
-
-/-- The fenced code blocks of a Markdown text, in order. -/
-def fencedBlocks (src : String) : Array FencedBlock := Id.run do
-  let mut out := #[]
-  -- The open block: its opening fence's backticks, and the block so far.
-  let mut cur : Option (Nat × FencedBlock) := none
-  for line in src.splitOn "\n", i in [1:src.length + 2] do
-    let p := fenceParts line
-    match cur with
-    | none =>
-      if isFence p.indent p.run p.info then cur := some (p.run, { info := p.info, line := i, body := #[], close? := none })
-    | some (run, b) =>
-      if closesBlock run p.indent p.run p.info then
-        out := out.push { b with close? := some i }
-        cur := none
-      else cur := some (run, { b with body := b.body.push line })
-  if let some (_, b) := cur then out := out.push b
-  return out
 
 /-- The info strings of the kinds of block that Fren reads: ```` ```fren ````,
 part of the spec, and ```` ```fren example ````, an example of the
@@ -116,34 +133,84 @@ def blockKind (info : String) : BlockKind :=
       || Fren.Str.startsWith info "fren," || Fren.Str.startsWith info "fren{" then .looksLikeFren
   else .prose
 
-/-- The Fren code of a Markdown spec, with everything else blanked out. A
-block still open at the end of the text extends to its end. -/
-def unwrapMarkdown (src : String) : String := Id.run do
-  let lines := (src.splitOn "\n").toArray
-  let mut kept := Array.replicate lines.size false
-  for b in fencedBlocks src do
-    if b.info == frenInfo then
-      for k in [0:b.body.size] do kept := kept.set! (b.line + k) true
+/-- Whether a line split as `p` closes a block opened by `o`: a fence of
+the same character, at least as long, with no info string. -/
+def closesBlock (o : Opening) (p : LineParts) : Bool :=
+  p.fence && p.marker == o.marker && decide (o.run ≤ p.run) && p.info == ""
+
+/-- The reader's step at `line`, inside a block opened by `o` or not
+(`markdown::step`). -/
+def step (inside : Bool) (o : Opening) (line : String) : Step :=
+  let p := splitLine line
+  let kept := blockKind o.info == .spec
+  if inside then
+    if closesBlock o p then { inside := false, opening := o, body := false, opens := false, kept := false }
+    else { inside := true, opening := o, body := true, opens := false, kept }
+  else if p.fence then
+    { inside := true, opening := { marker := p.marker, run := p.run, info := p.info }, body := false, opens := true,
+      kept := false }
+  else { inside := false, opening := o, body := false, opens := false, kept := false }
+
+/-- The fenced code blocks of a Markdown text, in order: `step` folded over
+its lines. -/
+def fencedBlocks (src : String) : Array FencedBlock := Id.run do
   let mut out := #[]
-  for h : i in [0:lines.size] do
-    out := out.push (if kept[i]! then lines[i] else "")
+  let mut inside := false
+  let mut o : Opening := default
+  -- The open block so far.
+  let mut cur : Option FencedBlock := none
+  let lines := markdownLines src
+  for h : k in [0:lines.size] do
+    let line := lines[k]
+    let st := step inside o line
+    if st.opens then cur := some { info := st.opening.info, line := k + 1, body := #[], close? := none }
+    else if st.body then cur := cur.map fun b => { b with body := b.body.push line }
+    else if inside && !st.inside then
+      if let some b := cur then out := out.push { b with close? := some (k + 1) }
+      cur := none
+    inside := st.inside
+    o := st.opening
+  if let some b := cur then out := out.push b
+  return out
+
+/-- Whether `line` is the spec's, after the lines before it: in the body of
+a `fren` block (`markdown::kept`). -/
+def keptLine (inside : Bool) (o : Opening) (line : String) : Bool :=
+  (step inside o line).kept
+
+/-- The Fren code of a Markdown spec, with everything else blanked out:
+`keptLine` folded over its lines. A block still open at the end of the
+text extends to its end. -/
+def unwrapMarkdown (src : String) : String := Id.run do
+  let raw := (src.splitOn "\n").toArray
+  let lines := markdownLines src
+  let mut inside := false
+  let mut o : Opening := default
+  let mut out := #[]
+  for h : k in [0:lines.size] do
+    let st := step inside o lines[k]
+    out := out.push (if keptLine inside o lines[k] then raw[k]! else "")
+    inside := st.inside
+    o := st.opening
   return "\n".intercalate out.toList
 
 /-- A block that is still open at the end of the file (`F0167`). -/
-def unclosedBlockMsg (info : String) (run : Nat) : Msg :=
+def unclosedBlockMsg (info : String) (marker : String) (run : Nat) : Msg :=
+  let chars := if marker == "~" then "tildes" else "backticks"
   { code? := some "F0167", headline := "this code block is never closed"
     label? := some "opened here"
-    notes := #[s!"note: a block that opens at a fence of {run} backticks closes at a line of at least {run} backticks and nothing else, \
+    notes := #[s!"note: a block that opens at a fence of {run} {chars} closes at a line of at least {run} {chars} and nothing else, \
       so the rest of the file is part of this {if info.isEmpty then "block" else s!"`{info}` block"}",
-      "help: close it with a line of backticks"] }
+      s!"help: close it with a line of {chars}"] }
 
 /-- A fence whose info string starts with `fren` but names no kind of
 block that Fren reads (`F0168`). -/
 def nearFrenFenceMsg (info : String) : Msg :=
   { code? := some "F0168", headline := s!"`{info}` is not a kind of block that Fren reads"
     label? := some "read as prose"
-    notes := #["note: Fren reads a block whose info string is exactly `fren`, and every other block is prose",
-      "help: write `fren` to make it part of the spec"] }
+    notes := #["note: Fren reads the blocks whose info string is exactly `fren`, part of the spec, \
+      or `fren example`, an example of the reference; every other block is prose",
+      "help: write `fren` to make it part of the spec, or `fren example` for an example of the reference"] }
 
 /-- The problems of a Markdown spec's fences, each with the line of its
 fence, from 1: a block still open at the end of the file, and a fence whose
@@ -154,8 +221,8 @@ def markdownProblems (src : String) : Array (Nat × Msg) :=
     match b.close? with
     | some _ => acc
     | none =>
-      let run := (fenceParts ((src.splitOn "\n")[b.line - 1]!)).run
-      acc.push (b.line, unclosedBlockMsg b.info run)
+      let p := splitLine ((markdownLines src)[b.line - 1]!)
+      acc.push (b.line, unclosedBlockMsg b.info p.marker p.run)
 
 #guard (fencedBlocks "a\n```fren\nx\n```\n").map (·.info) == #["fren"]
 -- Inline code at the start of a line is not a fence.
@@ -177,6 +244,11 @@ def markdownProblems (src : String) : Array (Nat × Msg) :=
 -- A tag that looks like `fren` but is not.
 #guard (markdownProblems "```fren  example\nx\n```\n").map (fun (l, m) => (l, m.code?)) == #[(1, some "F0168")]
 #guard (markdownProblems "```fren,example\nx\n```\n").map (·.2.code?) == #[some "F0168"]
-#guard (markdownProblems "```fren example\nx\n```\n```frenzy\n```\n```fren\n```\n").isEmpty
+-- Tilde fences, whose info string may hold backticks, close only at tildes.
+#guard (fencedBlocks "~~~text `x`\n```fren\ny\n```\n~~~\n").map (fun b => (b.info, b.body)) == #[("text `x`", #["```fren", "y", "```"])]
+#guard unwrapMarkdown "~~~\n```fren\ny\n```\n~~~\n" == "\n\n\n\n\n"
+-- A `\r` before the `\n` ends the line.
+#guard (fencedBlocks "```fren\r\nx\r\n```\r\n").map (fun b => (b.info, b.close?)) == #[("fren", some 3)]
+#guard (markdownProblems "```fren example\n```frenzy\n```\n```fren\n```\n").isEmpty
 
 end Fren.Core

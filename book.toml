@@ -6,3 +6,8 @@ src = "src/Reqs"
 
 [build]
 build-dir = "book"
+
+# Renders rule identifiers, `r[...]` lines (`dev/Style.md`), as anchors.
+# Installing it is described in `dev/Overview.md`.
+[preprocessor.spec]
+command = "mdbook-spec"

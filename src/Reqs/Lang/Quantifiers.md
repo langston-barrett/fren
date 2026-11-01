@@ -63,8 +63,9 @@ The body is a `Bool`, and so is the quantifier.
 
 r[quantifier.type.binder]
 A binder's type is written and resolved as a variable's type is. A binder
-whose type is a path that names nothing is an error (`F0201`). One whose
-type names a procedure is an error too (`quantifier.binder.procedure`).
+whose type is a path that names no type is an error: `F0201` where the path
+names nothing, and `F0210` where it names something else, such as a
+constant or a procedure (`quantifier.binder.procedure`).
 
 r[quantifier.type.listed]
 A type is *listed* when it is [finite and not
@@ -168,7 +169,13 @@ proc positive(n: Int): (some?) {
 A quantifier over listed types means the conjunction (`forall`) or
 disjunction (`exists`) of its body at every value of its bound names.
 
-**Meaning**
+**Legality rules**
+
+r[quantifier.meaning.reported-once]
+The body's errors and lints are reported once, where it is written, not
+for each instance.
+
+**Dynamic semantics**
 
 r[quantifier.meaning.instances]
 The *instances* of a quantifier over listed types are its body with each
@@ -198,16 +205,6 @@ r[quantifier.meaning.order-free]
 The order changes no meaning. It is the order in which the instances are
 conjoined, which the [generated Lean
 declarations](../Generated.md#procedures) show.
-
-r[quantifier.meaning.checking]
-A quantifier over listed types is its expansion in the solver's queries,
-which have no quantifier over listed types (see
-[Decidability](Decidability.md)), and in the generated Lean, which has no
-`Fintype`.
-
-r[quantifier.meaning.reported-once]
-The body's errors and lints are reported once, where it is written, not
-for each instance.
 
 r[quantifier.meaning.mixed]
 In an unbounded quantifier, the bound names of listed types are expanded as
@@ -332,7 +329,14 @@ proc parity(): (even?) {
 An unbounded quantifier ranges over a type that is not listed. It means
 what it says, as in Lean, and the solver decides it when it can.
 
-**Meaning**
+**Legality rules**
+
+r[quantifier.unbounded.lint]
+The `undecidable` lint reports each binder of a type that is not listed, at
+the binder. A spec that allows the lint there opts out of the decidable core
+at that quantifier.
+
+**Dynamic semantics**
 
 r[quantifier.unbounded.meaning]
 `forall (x: T), e` is the proposition that `e` holds for every value of `x`
@@ -364,25 +368,11 @@ exists (i: Int), 0 <= i < q.len and q[i] = x     -- over the positions of a sequ
 forall (x: T), law(x)                            -- over a type
 ```
 
-**Checking**
-
-r[quantifier.unbounded.lean]
-An unbounded quantifier is not expanded. In the generated Lean it is a `∀`
-or `∃`, a `Prop`.
-
-r[quantifier.unbounded.solver]
-In the solver's queries it is a quantifier, `(forall ((x T)) e)` or
-`(exists ((x T)) e)`, which declares the bound name at its type's sort and
-nothing else (see [Solver queries](../Cli.md#solver-queries)).
-
-r[quantifier.unbounded.lint]
-The `undecidable` lint reports each binder of a type that is not listed, at
-the binder. A spec that allows the lint there opts out of the decidable core
-at that quantifier.
+**Proof obligations**
 
 r[quantifier.unbounded.verdicts]
-The checks of an unbounded quantifier are asked of the solver, and are
-`Inconclusive` where it does not decide them. They may be
+An unbounded quantifier is not expanded. A check that it occurs in may be
+`Inconclusive`, where the solver does not decide it. They may be
 [tested](../Check.md#checking-by-testing) instead, where the evaluator can
 evaluate the quantifier (see [Evaluation](../Eval.md#quantifiers)), or a
 procedure's evidence may be a `trusted` claim.
@@ -396,9 +386,8 @@ result is at least 0, the result satisfies the invariants of its subset
 type, and the function's postconditions hold where its preconditions do.
 
 r[quantifier.unbounded.contracts.quantified]
-Each such fact is stated for every value of the bound names that the
-application mentions, under the solver's quantifier over them, without the
-guard.
+Each such fact is assumed for every value of the bound names that the
+application mentions, whether or not the guard holds there.
 
 **Examples**
 
@@ -406,8 +395,8 @@ guard.
   `forall (i: Int), e1 and e2`, where `e1` and `e2` are the body's
   instances at the two methods.
 - For `forall (i: Int), when 0 <= i < n, h(i) >= 0`, with `fn h(Int): Nat`,
-  the queries assume `(forall ((|i'0| Int)) (>= (h |i'0|) 0))`, and Lean
-  assumes `∀ i'0, 0 ≤ ↑(h i'0)`.
+  each check assumes that `h(i) >= 0` for every `i`, not only those from 0
+  to `n - 1`.
 
 > **Note:** A precise spec is written beside a decidable one. A procedure
 > that states a rule over any number of things, with unbounded quantifiers,
@@ -734,7 +723,9 @@ pub proc range_domain(
 > every `n`. An ordered enumeration's are compared by their variants'
 > positions, which say nothing of their payloads (#368).
 
-### Meaning and the solver
+### Meaning of a guard
+
+**Dynamic semantics**
 
 r[quantifier.guard.meaning]
 A quantifier's guard does not change its meaning, which is the same however
@@ -744,20 +735,12 @@ r[quantifier.guard.evaluation]
 A domain lets the evaluator enumerate the values at which the guard can hold
 (see [Evaluation](../Eval.md#quantifiers)).
 
-r[quantifier.guard.fmf-bound]
-A procedure, global expectation or refinement whose queries have an
-unbounded quantifier with a bound name that has a domain sets cvc5's
-`fmf-bound` (see [Solver queries](../Cli.md#solver-queries)).
+**Proof obligations**
 
-r[quantifier.guard.fmf-bound.shape]
-For `fmf-bound`, the domain is that of the guard's shape alone
-(`lang::guard_domain`), whatever the bound name's type: no field read from a
-bound name is the name, and only a name declared `Nat` has naturals for
-values. `lang::range_domain` says only which ranges the evaluators
-enumerate.
-
-> **Note:** With `fmf-bound`, cvc5 finds models of quantifiers bounded by
-> membership and by integer ranges.
+r[quantifier.guard.bounded]
+A domain tells the solver that a quantifier is bounded, which lets it
+decide more checks (see [Solver queries](../Cli.md#solver-queries)). It
+does not change what any check asks.
 
 ## Names
 
@@ -811,6 +794,8 @@ proc pairs(): (distinct?) {
 ```
 
 ### Indices
+
+**Proof obligations**
 
 r[quantifier.index.instances]
 An index in the body is [guarded](Expressions.md#sequences) in each

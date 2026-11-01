@@ -1,0 +1,76 @@
+name: book
+# Builds the reference manual (`book.toml`) with mdBook and mdbook-spec, which
+# renders rule identifiers as anchors (`Reqs/dev/Style#rule-identifiers`), and
+# fails if the build does. It publishes nothing.
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  MDBOOK_VERSION: v0.5.4
+  MDBOOK_SHA256: 3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7
+  # The commit of rust-lang/reference whose `tools/mdbook-spec` is installed.
+  MDBOOK_SPEC_REV: 3989fe91f1a601b51684a582ad17b2503f221787
+
+jobs:
+  book:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Install mdBook
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        install_dir="${HOME}/.local/bin"
+        mkdir -p "${install_dir}"
+        echo "${install_dir}" >> "${GITHUB_PATH}"
+        curl \
+          --fail \
+          --location \
+          --proto '=https' \
+          --retry 1 \
+          --retry-delay 3 \
+          --show-error \
+          --silent \
+          --tlsv1.2 \
+          --output mdbook.tar.gz \
+          "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VERSION}/mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+        echo "${MDBOOK_SHA256}  mdbook.tar.gz" | sha256sum --check
+        tar -xzf mdbook.tar.gz -C "${install_dir}"
+        rm mdbook.tar.gz
+    - name: Restore mdbook-spec
+      id: spec-cache
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ~/.cargo-mdbook-spec
+        key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}
+    - name: Install mdbook-spec
+      if: steps.spec-cache.outputs.cache-hit != 'true'
+      run: |
+        set -euo pipefail
+        cargo install --locked --root "${HOME}/.cargo-mdbook-spec" \
+          --git https://github.com/rust-lang/reference --rev "${MDBOOK_SPEC_REV}" mdbook-spec
+    - name: Save mdbook-spec
+      if: steps.spec-cache.outputs.cache-hit != 'true' && github.event_name == 'push'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cargo-mdbook-spec
+        key: mdbook-spec-${{ env.MDBOOK_SPEC_REV }}
+    - name: Build the book
+      run: |
+        set -euo pipefail
+        export PATH="${HOME}/.cargo-mdbook-spec/bin:${PATH}"
+        mdbook build

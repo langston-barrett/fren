@@ -19,12 +19,18 @@ help: close it with a line of backticks
 #fren_md "LiterateUnclosed.md"
 
 -- The block after the inline code is read, and the block tagged
--- `fren,ignore` is not.
+-- `fren,ignore` is not. The error is reported first, and stops the spec's
+-- own `#fren_check`, whose procedure's expectation fails, as the `fren`
+-- command stops (`markdownFences` in `src/FrenTestMain.lean` checks both
+-- front ends without `#guard_msgs`).
 /--
-error: LiterateNearFren.md:14:0: `fren,ignore` is not a kind of block that Fren reads
+error: LiterateNearFren.md:20:0: `fren,ignore` is not a kind of block that Fren reads
 
-note: Fren reads a block whose info string is exactly `fren`, and every other block is prose
-help: write `fren` to make it part of the spec
+note: Fren reads the blocks whose info string is exactly `fren`, part of the spec, or `fren example`, an example of the reference; every other block is prose
+help: write `fren` to make it part of the spec, or `fren example` for an example of the reference
+---
+error: LiterateNearFren.md:15:0: could not check due to previous errors
 -/
 #guard_msgs in
 #fren_md "LiterateNearFren.md"
+
