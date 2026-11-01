@@ -10,20 +10,20 @@ The theorems of `stlc.fren` that need induction, proved over its generated
 definitions and bound to its procedures with `impl`, in the order of its
 sections:
 
-- **Free variables and fresh names**: the fresh name of a renamed binder is
-  free in nothing that matters (`fresh_not_mem`, `new_binder_not_mem_apply`).
-- **Substitution**: the laws of `subst` (`substitution_laws`).
-- **Typing**: inversion, the context lemmas and the substitution lemma
-  (`context_lemmas`), and that `typeof` decides the book's inductively
-  defined typing relation (`typeof_iff`).
-- **Values and steps**: inversion of `step`, and that it decides the book's
-  reduction relation (`step_iff`).
-- **Type safety**: canonical forms, `preservation`, `progress` and `safety`
-  (`type_safety`).
-- **The evaluators**: more fuel changes nothing, `eval` and `normalize`
-  agree, and big-step preservation (`evaluators`, `type_safety`).
-- **Normalization**: Tait's method, as in chapter 12 of TAPL, proved here
-  alone, since `stlc.fren` has no check that states it (`normalization`).
+- **Substitution**: the fresh name of a renamed binder is free in nothing
+  that matters (`fresh_not_mem`, `new_binder_not_mem_apply`), and the laws
+  of `subst` (`substitution_laws`).
+- **Typing**: inversion, and the book's inductively defined typing relation,
+  which `typeof` decides (`typeof_iff`), so that a term has at most one type
+  (`Typing.unique`).
+- **Evaluation**: inversion of `step`, the book's reduction relation, which
+  `step` decides (`step_iff`), so that it is deterministic
+  (`Step.deterministic`), and the laws of the evaluators (`evaluators`).
+- **Metatheory**: the context lemmas and the substitution lemma
+  (`context_lemmas`); canonical forms, `preservation`, `progress`, `safety`
+  and big-step preservation (`type_safety`); and normalization, by Tait's
+  method as in chapter 12 of TAPL, proved here alone, since `stlc.fren` has
+  no check that states it (`normalization`).
 - **Nameless terms**: the round trip (`nameless_round_trip`).
 - **Alpha-equivalence**: substitution commutes with the nameless form,
   renaming a binder, and typing (`alpha_laws`).
@@ -46,7 +46,10 @@ open Fren.Generated stlc
 
 abbrev Named := Term String String
 
-/-! ## Free variables and fresh names -/
+/-! ## Substitution
+
+The fresh name of a renamed binder is free in nothing that matters, and the
+laws of `subst`. -/
 
 theorem mem_free_var {x y : String} : x ∈ free (Term.Var y : Named) ↔ x = y := by simp [free]
 
@@ -176,8 +179,6 @@ theorem new_binder_not_mem_apply (sub : Subst) (y : String) (body : Named) (x : 
   · exact fresh_not_mem_apply sub body x hx
   · rename_i h
     exact not_captures_apply sub y x _ (by simpa using h) hx hxy
-
-/-! ## Substitution -/
 
 /-- Nothing is captured by a substitution that leaves the free variables alone. -/
 theorem captures_false_of_id : ∀ (sub : Subst) (y : String) (fv : Fren.FinSet String),
@@ -325,95 +326,6 @@ theorem lookup_bind_other {ctx : Ctx} {x y : String} (ty : Ty) (h : y ≠ x) :
     lookup (.Bind y ty ctx) x = lookup ctx x := by
   simp [lookup, h]
 
-/-- `context_lemmas::extensional`: typing depends on the context only at the
-free variables. -/
-theorem typeof_ext : ∀ (t : Named) (c1 c2 : Ctx),
-    (∀ x, x ∈ free t → lookup c1 x = lookup c2 x) → typeof c1 t = typeof c2 t := by
-  intro t
-  induction t with
-  | Var x => intro c1 c2 h; simp only [typeof]; exact h x (by simp [free])
-  | Lam y ty body ih =>
-    intro c1 c2 h
-    simp only [typeof]
-    rw [ih (.Bind y ty c1) (.Bind y ty c2)]
-    intro x hx
-    by_cases hxy : y = x
-    · subst hxy; simp [lookup]
-    · rw [lookup_bind_other ty hxy, lookup_bind_other ty hxy]
-      exact h x (mem_free_lam.2 ⟨hx, Ne.symm hxy⟩)
-  | App f a ihf iha =>
-    intro c1 c2 h
-    simp only [typeof]
-    rw [ihf c1 c2 (fun x hx => h x (mem_free_app.2 (Or.inl hx))),
-      iha c1 c2 (fun x hx => h x (mem_free_app.2 (Or.inr hx)))]
-  | True => intro c1 c2 _; rfl
-  | False => intro c1 c2 _; rfl
-  | If c a b ihc iha ihb =>
-    intro c1 c2 h
-    simp only [typeof]
-    rw [ihc c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inl hx))),
-      iha c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inr (Or.inl hx)))),
-      ihb c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inr (Or.inr hx))))]
-
-/-- `context_lemmas::weakening` (TAPL 9.3.7): a binding of a name that is not
-free changes no type. -/
-theorem typeof_weaken {ctx : Ctx} {t : Named} {x : String} (ty : Ty) (hx : x ∉ free t) :
-    typeof (.Bind x ty ctx) t = typeof ctx t :=
-  typeof_ext t _ _ fun _ hz => lookup_bind_other ty fun e => hx (e ▸ hz)
-
-/-- The substitution lemma, for a parallel substitution: where `sub` gives
-each free variable of `t` a term of its type, it keeps `t`'s type. -/
-theorem typeof_subst_all : ∀ (t : Named) (c1 c2 : Ctx) (sub : Subst) (ty : Ty),
-    typeof c1 t = some ty →
-    (∀ x, x ∈ free t → ∀ τ, lookup c1 x = some τ → typeof c2 (apply_subst sub x) = some τ) →
-    typeof c2 (subst_all sub t) = some ty := by
-  intro t
-  induction t with
-  | Var x =>
-    intro c1 c2 sub ty h hs
-    simp only [subst_all]
-    exact hs x (by simp [free]) ty (by simpa [typeof] using h)
-  | Lam y ty1 body ih =>
-    intro c1 c2 sub ty h hs
-    obtain ⟨ty2, hb, rfl⟩ := typeof_lam_inv h
-    simp only [subst_all]
-    apply typeof_lam
-    apply ih _ _ _ _ hb
-    intro x hx τ hl
-    by_cases hxy : y = x
-    · subst hxy
-      rw [lookup_bind_same] at hl; cases hl
-      simp [apply_subst, typeof, lookup]
-    · rw [lookup_bind_other _ hxy] at hl
-      have := hs x (mem_free_lam.2 ⟨hx, Ne.symm hxy⟩) τ hl
-      simp only [apply_subst, hxy, if_false]
-      rw [typeof_weaken _ (new_binder_not_mem_apply sub y body x hx (Ne.symm hxy))]
-      exact this
-  | App f a ihf iha =>
-    intro c1 c2 sub ty h hs
-    obtain ⟨p, hf, ha⟩ := typeof_app_inv h
-    simp only [subst_all]
-    exact typeof_app (ihf _ _ _ _ hf fun x hx => hs x (mem_free_app.2 (Or.inl hx)))
-      (iha _ _ _ _ ha fun x hx => hs x (mem_free_app.2 (Or.inr hx)))
-  | True => intro c1 c2 sub ty h _; simpa [subst_all, typeof] using h
-  | False => intro c1 c2 sub ty h _; simpa [subst_all, typeof] using h
-  | If c a b ihc iha ihb =>
-    intro c1 c2 sub ty h hs
-    obtain ⟨hc, ha, hb⟩ := typeof_if_inv h
-    simp only [subst_all]
-    exact typeof_if (ihc _ _ _ _ hc fun x hx => hs x (mem_free_if.2 (Or.inl hx)))
-      (iha _ _ _ _ ha fun x hx => hs x (mem_free_if.2 (Or.inr (Or.inl hx))))
-      (ihb _ _ _ _ hb fun x hx => hs x (mem_free_if.2 (Or.inr (Or.inr hx))))
-
-/-- `context_lemmas::substitution`, the substitution lemma (TAPL 9.3.8). -/
-theorem typeof_subst {ctx : Ctx} {x : String} {s t : Named} {tx ty : Ty} (ht : typeof (.Bind x tx ctx) t = some ty)
-    (hs : typeof ctx s = some tx) : typeof ctx (subst x s t) = some ty := by
-  apply typeof_subst_all t _ _ _ _ ht
-  intro z _ τ hl
-  by_cases hz : x = z
-  · subst hz; rw [lookup_bind_same] at hl; cases hl; simpa [apply_subst] using hs
-  · rw [lookup_bind_other _ hz] at hl; simpa [apply_subst, hz, typeof] using hl
-
 /-! ### The typing relation
 
 The book defines `ctx |- t: T` inductively, by the rules in the comment of
@@ -472,7 +384,14 @@ theorem typeof_iff : ∀ (t : Named) (ctx : Ctx) (ty : Ty), typeof ctx t = some 
     · intro h
       cases h with | if_ hc ha hb => exact typeof_if ((ihc _ _).2 hc) ((iha _ _).2 ha) ((ihb _ _).2 hb)
 
-/-! ## Values and steps -/
+/-- Uniqueness of types (TAPL 9.3.3): `typeof` is a function. -/
+theorem Typing.unique {ctx : Ctx} {t : Named} {ty1 ty2 : Ty} (h1 : Typing ctx t ty1) (h2 : Typing ctx t ty2) :
+    ty1 = ty2 := by
+  have e1 := (typeof_iff t ctx ty1).2 h1
+  have e2 := (typeof_iff t ctx ty2).2 h2
+  rw [e1] at e2; cases e2; rfl
+
+/-! ## Evaluation -/
 
 theorem value_iff (t : Named) :
     value? String String t = true ↔ (∃ x ty b, t = .Lam x ty b) ∨ t = .True ∨ t = .False := by
@@ -666,101 +585,13 @@ theorem step_iff : ∀ (t u : Named), step t = some u ↔ Step t u := by
         have e2 : c ≠ .False := by rintro rfl; simp [step] at hs'
         exact step_if_some e1 e2 hs'
 
-/-! ## Type safety -/
+/-- Determinacy of one-step evaluation (TAPL 3.5.4): `step` is a function. -/
+theorem Step.deterministic {t u u' : Named} (h1 : Step t u) (h2 : Step t u') : u = u' := by
+  have e1 := (step_iff t u).2 h1
+  have e2 := (step_iff t u').2 h2
+  rw [e1] at e2; cases e2; rfl
 
-/-- Canonical forms (TAPL 9.3.4). -/
-theorem canonical_bool {ctx : Ctx} {t : Named} (hv : value? String String t = true)
-    (ht : typeof ctx t = some .Boolean) : t = .True ∨ t = .False := by
-  rw [value_iff] at hv
-  rcases hv with ⟨x, ty, b, rfl⟩ | rfl | rfl
-  · obtain ⟨_, _, h⟩ := typeof_lam_inv ht; cases h
-  · exact Or.inl rfl
-  · exact Or.inr rfl
-
-theorem canonical_arrow {ctx : Ctx} {t : Named} {p r : Ty} (hv : value? String String t = true)
-    (ht : typeof ctx t = some (.Arrow p r)) : ∃ x b, t = .Lam x p b := by
-  rw [value_iff] at hv
-  rcases hv with ⟨x, ty, b, rfl⟩ | rfl | rfl
-  · obtain ⟨_, _, h⟩ := typeof_lam_inv ht; cases h; exact ⟨x, b, rfl⟩
-  · simp [typeof] at ht
-  · simp [typeof] at ht
-
-/-- `type_safety::preservation` (TAPL 9.3.9): a step keeps the type. -/
-theorem preservation : ∀ (t : Named) (ctx : Ctx) (ty : Ty) (u : Named),
-    typeof ctx t = some ty → step t = some u → typeof ctx u = some ty := by
-  intro t
-  induction t with
-  | Var x => intro ctx ty u _ hs; simp [step] at hs
-  | Lam y ty1 b _ => intro ctx ty u _ hs; simp [step] at hs
-  | True => intro ctx ty u _ hs; simp [step] at hs
-  | False => intro ctx ty u _ hs; simp [step] at hs
-  | App t1 t2 ih1 ih2 =>
-    intro ctx ty u ht hs
-    obtain ⟨p, h1, h2⟩ := typeof_app_inv ht
-    rcases step_app_inv hs with ⟨_, u1, hu1, rfl⟩ | ⟨_, _, u2, hu2, rfl⟩ | ⟨_, x, ty1, b, rfl, rfl⟩
-    · exact typeof_app (ih1 _ _ _ h1 hu1) h2
-    · exact typeof_app h1 (ih2 _ _ _ h2 hu2)
-    · obtain ⟨ty2, hb, e⟩ := typeof_lam_inv h1
-      cases e
-      exact typeof_subst hb h2
-  | If c a b ihc _ _ =>
-    intro ctx ty u ht hs
-    obtain ⟨hc, ha, hb⟩ := typeof_if_inv ht
-    rcases step_if_inv hs with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, u1, hu1, rfl⟩
-    · exact ha
-    · exact hb
-    · exact typeof_if (ihc _ _ _ hc hu1) ha hb
-
-/-- `type_safety::progress` (TAPL 9.3.5): a well-typed closed term is a value
-or steps. -/
-theorem progress : ∀ (t : Named) (ty : Ty),
-    typeof .Empty t = some ty → value? String String t = true ∨ ∃ u, step t = some u := by
-  intro t
-  induction t with
-  | Var x => intro ty h; simp [typeof, lookup] at h
-  | Lam y ty1 b _ => intro ty _; left; simp [value?]
-  | True => intro ty _; left; simp [value?]
-  | False => intro ty _; left; simp [value?]
-  | App t1 t2 ih1 ih2 =>
-    intro ty ht
-    right
-    obtain ⟨p, h1, h2⟩ := typeof_app_inv ht
-    rcases ih1 _ h1 with v1 | ⟨u1, hu1⟩
-    · rcases ih2 _ h2 with v2 | ⟨u2, hu2⟩
-      · obtain ⟨x, b, rfl⟩ := canonical_arrow v1 h1
-        exact ⟨_, step_app_beta v2⟩
-      · have nv2 : ¬ value? String String t2 = true := fun v => by rw [step_value v] at hu2; cases hu2
-        exact ⟨_, step_app_right_some v1 nv2 hu2⟩
-    · have nv1 : ¬ value? String String t1 = true := fun v => by rw [step_value v] at hu1; cases hu1
-      exact ⟨_, step_app_left_some nv1 hu1⟩
-  | If c a b ihc _ _ =>
-    intro ty ht
-    right
-    obtain ⟨hc, _, _⟩ := typeof_if_inv ht
-    rcases ihc _ hc with vc | ⟨u, hu⟩
-    · rcases canonical_bool vc hc with rfl | rfl
-      · exact ⟨a, by simp [step]⟩
-      · exact ⟨b, by simp [step]⟩
-    · have e1 : c ≠ .True := by rintro rfl; simp [step] at hu
-      have e2 : c ≠ .False := by rintro rfl; simp [step] at hu
-      exact ⟨_, step_if_some e1 e2 hu⟩
-
-/-- `type_safety::safety`: however far a well-typed closed term is reduced,
-it has its type and is a value or steps. -/
-theorem safety : ∀ (n : Fuel) (t : Named) (ty : Ty), typeof .Empty t = some ty →
-    typeof .Empty (reduce n t) = some ty ∧
-      (value? String String (reduce n t) = true ∨ ∃ u, step (reduce n t) = some u) := by
-  intro n
-  induction n with
-  | Zero => intro t ty h; simp only [reduce]; exact ⟨h, progress t ty h⟩
-  | More m ih =>
-    intro t ty h
-    simp only [reduce]
-    split
-    · rename_i u hu; exact ih u ty (preservation t _ ty u h hu)
-    · exact ⟨h, progress t ty h⟩
-
-/-! ## The evaluators -/
+/-! ### The evaluators -/
 
 theorem normalize_zero_inv {t v : Named} (h : normalize .Zero t = some v) :
     value? String String t = true ∧ v = t := by
@@ -935,6 +766,193 @@ theorem eval_normalize : ∀ (m n : Fuel) (t v w : Named), eval n t = some v →
       · rename_i u hu; exact ih n u v w (step_eval n t u v hu he) hn
       · cases hn
 
+/-! ## Metatheory -/
+
+/-! ### The context lemmas -/
+
+/-- `context_lemmas::extensional`: typing depends on the context only at the
+free variables. -/
+theorem typeof_ext : ∀ (t : Named) (c1 c2 : Ctx),
+    (∀ x, x ∈ free t → lookup c1 x = lookup c2 x) → typeof c1 t = typeof c2 t := by
+  intro t
+  induction t with
+  | Var x => intro c1 c2 h; simp only [typeof]; exact h x (by simp [free])
+  | Lam y ty body ih =>
+    intro c1 c2 h
+    simp only [typeof]
+    rw [ih (.Bind y ty c1) (.Bind y ty c2)]
+    intro x hx
+    by_cases hxy : y = x
+    · subst hxy; simp [lookup]
+    · rw [lookup_bind_other ty hxy, lookup_bind_other ty hxy]
+      exact h x (mem_free_lam.2 ⟨hx, Ne.symm hxy⟩)
+  | App f a ihf iha =>
+    intro c1 c2 h
+    simp only [typeof]
+    rw [ihf c1 c2 (fun x hx => h x (mem_free_app.2 (Or.inl hx))),
+      iha c1 c2 (fun x hx => h x (mem_free_app.2 (Or.inr hx)))]
+  | True => intro c1 c2 _; rfl
+  | False => intro c1 c2 _; rfl
+  | If c a b ihc iha ihb =>
+    intro c1 c2 h
+    simp only [typeof]
+    rw [ihc c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inl hx))),
+      iha c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inr (Or.inl hx)))),
+      ihb c1 c2 (fun x hx => h x (mem_free_if.2 (Or.inr (Or.inr hx))))]
+
+/-- `context_lemmas::weakening` (TAPL 9.3.7): a binding of a name that is not
+free changes no type. -/
+theorem typeof_weaken {ctx : Ctx} {t : Named} {x : String} (ty : Ty) (hx : x ∉ free t) :
+    typeof (.Bind x ty ctx) t = typeof ctx t :=
+  typeof_ext t _ _ fun _ hz => lookup_bind_other ty fun e => hx (e ▸ hz)
+
+/-- The substitution lemma, for a parallel substitution: where `sub` gives
+each free variable of `t` a term of its type, it keeps `t`'s type. -/
+theorem typeof_subst_all : ∀ (t : Named) (c1 c2 : Ctx) (sub : Subst) (ty : Ty),
+    typeof c1 t = some ty →
+    (∀ x, x ∈ free t → ∀ τ, lookup c1 x = some τ → typeof c2 (apply_subst sub x) = some τ) →
+    typeof c2 (subst_all sub t) = some ty := by
+  intro t
+  induction t with
+  | Var x =>
+    intro c1 c2 sub ty h hs
+    simp only [subst_all]
+    exact hs x (by simp [free]) ty (by simpa [typeof] using h)
+  | Lam y ty1 body ih =>
+    intro c1 c2 sub ty h hs
+    obtain ⟨ty2, hb, rfl⟩ := typeof_lam_inv h
+    simp only [subst_all]
+    apply typeof_lam
+    apply ih _ _ _ _ hb
+    intro x hx τ hl
+    by_cases hxy : y = x
+    · subst hxy
+      rw [lookup_bind_same] at hl; cases hl
+      simp [apply_subst, typeof, lookup]
+    · rw [lookup_bind_other _ hxy] at hl
+      have := hs x (mem_free_lam.2 ⟨hx, Ne.symm hxy⟩) τ hl
+      simp only [apply_subst, hxy, if_false]
+      rw [typeof_weaken _ (new_binder_not_mem_apply sub y body x hx (Ne.symm hxy))]
+      exact this
+  | App f a ihf iha =>
+    intro c1 c2 sub ty h hs
+    obtain ⟨p, hf, ha⟩ := typeof_app_inv h
+    simp only [subst_all]
+    exact typeof_app (ihf _ _ _ _ hf fun x hx => hs x (mem_free_app.2 (Or.inl hx)))
+      (iha _ _ _ _ ha fun x hx => hs x (mem_free_app.2 (Or.inr hx)))
+  | True => intro c1 c2 sub ty h _; simpa [subst_all, typeof] using h
+  | False => intro c1 c2 sub ty h _; simpa [subst_all, typeof] using h
+  | If c a b ihc iha ihb =>
+    intro c1 c2 sub ty h hs
+    obtain ⟨hc, ha, hb⟩ := typeof_if_inv h
+    simp only [subst_all]
+    exact typeof_if (ihc _ _ _ _ hc fun x hx => hs x (mem_free_if.2 (Or.inl hx)))
+      (iha _ _ _ _ ha fun x hx => hs x (mem_free_if.2 (Or.inr (Or.inl hx))))
+      (ihb _ _ _ _ hb fun x hx => hs x (mem_free_if.2 (Or.inr (Or.inr hx))))
+
+/-- `context_lemmas::substitution`, the substitution lemma (TAPL 9.3.8). -/
+theorem typeof_subst {ctx : Ctx} {x : String} {s t : Named} {tx ty : Ty} (ht : typeof (.Bind x tx ctx) t = some ty)
+    (hs : typeof ctx s = some tx) : typeof ctx (subst x s t) = some ty := by
+  apply typeof_subst_all t _ _ _ _ ht
+  intro z _ τ hl
+  by_cases hz : x = z
+  · subst hz; rw [lookup_bind_same] at hl; cases hl; simpa [apply_subst] using hs
+  · rw [lookup_bind_other _ hz] at hl; simpa [apply_subst, hz, typeof] using hl
+
+/-! ### Type safety -/
+
+/-- Canonical forms (TAPL 9.3.4). -/
+theorem canonical_bool {ctx : Ctx} {t : Named} (hv : value? String String t = true)
+    (ht : typeof ctx t = some .Boolean) : t = .True ∨ t = .False := by
+  rw [value_iff] at hv
+  rcases hv with ⟨x, ty, b, rfl⟩ | rfl | rfl
+  · obtain ⟨_, _, h⟩ := typeof_lam_inv ht; cases h
+  · exact Or.inl rfl
+  · exact Or.inr rfl
+
+theorem canonical_arrow {ctx : Ctx} {t : Named} {p r : Ty} (hv : value? String String t = true)
+    (ht : typeof ctx t = some (.Arrow p r)) : ∃ x b, t = .Lam x p b := by
+  rw [value_iff] at hv
+  rcases hv with ⟨x, ty, b, rfl⟩ | rfl | rfl
+  · obtain ⟨_, _, h⟩ := typeof_lam_inv ht; cases h; exact ⟨x, b, rfl⟩
+  · simp [typeof] at ht
+  · simp [typeof] at ht
+
+/-- `type_safety::preservation` (TAPL 9.3.9): a step keeps the type. -/
+theorem preservation : ∀ (t : Named) (ctx : Ctx) (ty : Ty) (u : Named),
+    typeof ctx t = some ty → step t = some u → typeof ctx u = some ty := by
+  intro t
+  induction t with
+  | Var x => intro ctx ty u _ hs; simp [step] at hs
+  | Lam y ty1 b _ => intro ctx ty u _ hs; simp [step] at hs
+  | True => intro ctx ty u _ hs; simp [step] at hs
+  | False => intro ctx ty u _ hs; simp [step] at hs
+  | App t1 t2 ih1 ih2 =>
+    intro ctx ty u ht hs
+    obtain ⟨p, h1, h2⟩ := typeof_app_inv ht
+    rcases step_app_inv hs with ⟨_, u1, hu1, rfl⟩ | ⟨_, _, u2, hu2, rfl⟩ | ⟨_, x, ty1, b, rfl, rfl⟩
+    · exact typeof_app (ih1 _ _ _ h1 hu1) h2
+    · exact typeof_app h1 (ih2 _ _ _ h2 hu2)
+    · obtain ⟨ty2, hb, e⟩ := typeof_lam_inv h1
+      cases e
+      exact typeof_subst hb h2
+  | If c a b ihc _ _ =>
+    intro ctx ty u ht hs
+    obtain ⟨hc, ha, hb⟩ := typeof_if_inv ht
+    rcases step_if_inv hs with ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, u1, hu1, rfl⟩
+    · exact ha
+    · exact hb
+    · exact typeof_if (ihc _ _ _ hc hu1) ha hb
+
+/-- `type_safety::progress` (TAPL 9.3.5): a well-typed closed term is a value
+or steps. -/
+theorem progress : ∀ (t : Named) (ty : Ty),
+    typeof .Empty t = some ty → value? String String t = true ∨ ∃ u, step t = some u := by
+  intro t
+  induction t with
+  | Var x => intro ty h; simp [typeof, lookup] at h
+  | Lam y ty1 b _ => intro ty _; left; simp [value?]
+  | True => intro ty _; left; simp [value?]
+  | False => intro ty _; left; simp [value?]
+  | App t1 t2 ih1 ih2 =>
+    intro ty ht
+    right
+    obtain ⟨p, h1, h2⟩ := typeof_app_inv ht
+    rcases ih1 _ h1 with v1 | ⟨u1, hu1⟩
+    · rcases ih2 _ h2 with v2 | ⟨u2, hu2⟩
+      · obtain ⟨x, b, rfl⟩ := canonical_arrow v1 h1
+        exact ⟨_, step_app_beta v2⟩
+      · have nv2 : ¬ value? String String t2 = true := fun v => by rw [step_value v] at hu2; cases hu2
+        exact ⟨_, step_app_right_some v1 nv2 hu2⟩
+    · have nv1 : ¬ value? String String t1 = true := fun v => by rw [step_value v] at hu1; cases hu1
+      exact ⟨_, step_app_left_some nv1 hu1⟩
+  | If c a b ihc _ _ =>
+    intro ty ht
+    right
+    obtain ⟨hc, _, _⟩ := typeof_if_inv ht
+    rcases ihc _ hc with vc | ⟨u, hu⟩
+    · rcases canonical_bool vc hc with rfl | rfl
+      · exact ⟨a, by simp [step]⟩
+      · exact ⟨b, by simp [step]⟩
+    · have e1 : c ≠ .True := by rintro rfl; simp [step] at hu
+      have e2 : c ≠ .False := by rintro rfl; simp [step] at hu
+      exact ⟨_, step_if_some e1 e2 hu⟩
+
+/-- `type_safety::safety`: however far a well-typed closed term is reduced,
+it has its type and is a value or steps. -/
+theorem safety : ∀ (n : Fuel) (t : Named) (ty : Ty), typeof .Empty t = some ty →
+    typeof .Empty (reduce n t) = some ty ∧
+      (value? String String (reduce n t) = true ∨ ∃ u, step (reduce n t) = some u) := by
+  intro n
+  induction n with
+  | Zero => intro t ty h; simp only [reduce]; exact ⟨h, progress t ty h⟩
+  | More m ih =>
+    intro t ty h
+    simp only [reduce]
+    split
+    · rename_i u hu; exact ih u ty (preservation t _ ty u h hu)
+    · exact ⟨h, progress t ty h⟩
+
 /-- `type_safety::big_step_preservation`: big-step evaluation preserves the
 type. -/
 theorem eval_preservation : ∀ (n : Fuel) (ctx : Ctx) (t v : Named) (ty : Ty),
@@ -962,7 +980,7 @@ theorem eval_preservation : ∀ (n : Fuel) (ctx : Ctx) (t v : Named) (ty : Ty),
       · exact ih _ _ _ _ ha h2
       · exact ih _ _ _ _ hb h2
 
-/-! ## Normalization
+/-! ### Normalization
 
 Tait's method, as in chapter 12 of TAPL: a logical relation `R` on closed
 terms of each type, closed under steps in both directions, and the

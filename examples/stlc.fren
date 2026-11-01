@@ -4,18 +4,25 @@
 -- book, and the theorems that tie them together.
 --
 -- Typing is the function `typeof` and reduction the function `step`; the
--- arms of each are the book's inference rules. What one step of a
--- function's equations settles, such as reading the rules backwards, the
--- solver decides. The theorems, which need induction, are proved in
--- Stlc.lean and bound to the procedures below with `impl`; `fren check`
--- also tests them on random terms. Random testing draws small terms and
--- meets a law's premise only where that is easy, so it confirms
--- `preservation`, `big_step_preservation`, `step_eval`, `agree`,
--- `big_step_values`, `eval_monotone`, `normalize_monotone`,
--- `substitution`, `named_nameless`, `converts_back`, `subst_nameless` and
--- `typed_alpha` on trivial cases alone: their evidence is the proofs.
--- `more_fuel` has no proof and is tested only, on trivial cases alone. Fren
--- has no check that states normalization, so Stlc.lean alone proves it.
+-- arms of each are the book's inference rules, and Stlc.lean defines the
+-- book's typing and reduction relations inductively and proves that
+-- `typeof` and `step` decide them (`typeof_iff`, `step_iff`). What one
+-- step of a function's equations settles, such as the rules read in both
+-- directions, the solver proves; were an arm wrong, it would report the
+-- law inconclusive rather than refuted (`F0450`), so ground examples pin
+-- each rule. The theorems, which need induction, are proved in Stlc.lean
+-- and bound to the procedures below with `impl`; `fren check` also tests
+-- them on random terms. Random testing draws small terms and meets a law's
+-- premise only where that is easy, so it confirms `preservation`,
+-- `big_step_preservation`, `step_eval`, `agree`, `big_step_values`,
+-- `eval_monotone`, `normalize_monotone`, `substitution`, `named_nameless`,
+-- `converts_back`, `subst_nameless` and `typed_alpha` on trivial cases
+-- alone: their evidence is the proofs. `more_fuel` has no proof and is
+-- tested only, on trivial cases alone. Fren has no check that states
+-- normalization, so Stlc.lean alone proves it. The annotations on the
+-- procedures checked by random testing are the ui test's, which runs this
+-- file through both front ends: testing runs no vacuity or redundancy
+-- check, and the Lean front end leaves it to `fren check`.
 mod stlc
 
 -- # Syntax
@@ -143,11 +150,6 @@ pub proc capture_avoidance() {
 -- Substitution changes nothing where the variable is not free, substitutes
 -- for the variable itself, and leaves free only what was free, less the
 -- variable, and the free variables of what was put in. Proved in Stlc.lean.
---
--- The annotations on each procedure checked by random testing are the ui
--- test's: it runs this file through both front ends and expects their
--- notes, that testing runs no vacuity or redundancy check, and that the
--- Lean front end leaves it to `fren check`.
 set_option fren.evidence "random" in
 pub proc substitution_laws(x: Name, s: Named, t: Named) {  --~ info: the vacuity and redundancy checks of `stlc::substitution_laws` are not run by random testing
     --~^[hosted] info: the checks of `stlc::substitution_laws` set to random testing are run by `fren check`, not in Lean
@@ -166,11 +168,11 @@ pub proc substitution_laws(x: Name, s: Named, t: Named) {  --~ info: the vacuity
 --     ctx |- x: T             ctx |- \x: T1. t2: T1 -> T2
 --
 --     ctx |- t1: T11 -> T12    ctx |- t2: T11
---     ------------------------------------- (T-App)
+--     --------------------------------------- (T-App)
 --     ctx |- t1 t2: T12
 --
 --     ctx |- t1: Bool    ctx |- t2: T    ctx |- t3: T
---     ---------------------------------------------- (T-If)
+--     ----------------------------------------------- (T-If)
 --     ctx |- if t1 then t2 else t3: T
 --
 --     ctx |- true: Bool (T-True)    ctx |- false: Bool (T-False)
@@ -201,10 +203,13 @@ pub fn typeof(ctx: Ctx, t: Named): Option<Ty> := match t {
 
 -- The rules read in both directions: `typeof` gives a judgment exactly when
 -- the rule for its term's form applies, so a judgment's premises follow
--- from it (inversion, TAPL 9.3.1), and a term has at most one type (9.3.3).
--- Each law is one step of `typeof`'s equations, which the solver decides;
--- it is an equivalence rather than a `when`, whose premise would apply a
--- recursive function and leave the vacuity check inconclusive (`F0450`).
+-- from it (inversion, TAPL 9.3.1); and, `typeof` being a function, a term
+-- has at most one type (9.3.3). Each law is one step of `typeof`'s
+-- equations, which the solver proves. It is an equivalence rather than a
+-- `when`, whose premise would apply a recursive function and leave the
+-- vacuity check inconclusive (`F0450`); and were an arm of `typeof` wrong,
+-- the solver would report the law inconclusive rather than refuted, so the
+-- examples below pin each rule's premises.
 pub proc typing_rules(
     ctx: Ctx,
     x: Name,
@@ -217,7 +222,7 @@ pub proc typing_rules(
 ) {
     expect t_var: typeof(ctx, Var(x)) = Some(ty) iff lookup(ctx, x) = Some(ty)
     expect t_abs: typeof(ctx, Lam(x, ty1, t2)) = Some(ty)
-        iff ty is Arrow(p, ty2) and p = ty1 and typeof(Ctx::Bind(x, ty1, ctx), t2) = Some(ty2)
+        iff typeof(Ctx::Bind(x, ty1, ctx), t2) is Some(ty2) and ty = Arrow(ty1, ty2)
     expect t_app: typeof(ctx, App(t1, t2)) = Some(ty12)
         iff typeof(ctx, t2) is Some(ty11) and typeof(ctx, t1) = Some(Arrow(ty11, ty12))
     expect t_if: typeof(ctx, If(t1, t2, t3)) = Some(ty)
@@ -230,9 +235,16 @@ set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc typing_examples() {
     expect identity: typeof(Ctx::Empty, IDENTITY) = Some(Arrow(Boolean, Boolean))
+    expect higher_order: typeof(
+        Ctx::Empty,
+        Lam("f", Arrow(Boolean, Boolean), App(Var("f"), True))
+    )
+        = Some(Arrow(Arrow(Boolean, Boolean), Boolean))
     expect applied: typeof(Ctx::Empty, APPLIED) = Some(Boolean)
     expect not_a_function: typeof(Ctx::Empty, App(True, False)) = None
+    expect argument_mismatch: typeof(Ctx::Empty, App(NEGATION, IDENTITY)) = None
     expect unbound: typeof(Ctx::Empty, Var("x")) = None
+    expect condition_not_boolean: typeof(Ctx::Empty, If(IDENTITY, True, False)) = None
     expect branches_differ: typeof(Ctx::Empty, If(True, IDENTITY, False)) = None
 }
 
@@ -244,13 +256,13 @@ pub proc typing_examples() {
 --     (\x: T. t12) v --> [x := v] t12 (E-AppAbs)
 --
 --     t1 --> t1'                  t2 --> t2'
---     ------------------ (E-App1)     ------------------ (E-App2)
+--     ------------------ (E-App1) ------------------ (E-App2)
 --     t1 t2 --> t1' t2            v1 t2 --> v1 t2'
 --
 --     if true then t2 else t3 --> t2 (E-IfTrue)    if false then t2 else t3 --> t3 (E-IfFalse)
 --
 --     t1 --> t1'
---     ------------------------------------------------- (E-If)
+--     ------------------------------------------------ (E-If)
 --     if t1 then t2 else t3 --> if t1' then t2 else t3
 pub fn step(t: Named): Option<Named> := match t {
     App(t1, t2) => if not value?(t1) then match step(t1) {
@@ -273,9 +285,10 @@ pub fn step(t: Named): Option<Named> := match t {
 }
 
 -- The rules read in both directions, as for typing: a step is taken exactly
--- by the rule whose premises hold, so reduction is deterministic, and a
--- value takes no step (TAPL 3.5.7). Each law is one step of `step`'s
--- equations, which the solver decides.
+-- by the rule whose premises hold; `step` being a function, reduction is
+-- deterministic (TAPL 3.5.4); and a value takes no step (3.5.7). Each law
+-- is one step of `step`'s equations, which the solver proves, and the
+-- examples below pin each rule, as for typing.
 pub proc reduction_rules(t1: Named, t2: Named, t3: Named, u: Named, v: Named) {
     expect e_app: step(App(t1, t2)) = Some(u)
         iff (step(t1) is Some(u1) and u = App(u1, t2))
@@ -284,6 +297,17 @@ pub proc reduction_rules(t1: Named, t2: Named, t3: Named, u: Named, v: Named) {
     expect e_if: step(If(t1, t2, t3)) = Some(u)
         iff (t1 = True and u = t2) or (t1 = False and u = t3) or (step(t1) is Some(u1) and u = If(u1, t2, t3))
     expect values_normal: when value?(v), step(v) = None
+}
+
+-- One step by each congruence rule: E-App1 reduces the function first,
+-- E-App2 then the argument, and E-If the condition. `typed_non_values`
+-- below steps by E-AppAbs and E-IfTrue.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "enumerated" in
+pub proc step_examples() {
+    expect function_first: step(App(App(IDENTITY, IDENTITY), True)) = Some(App(IDENTITY, True))
+    expect argument_next: step(App(IDENTITY, APPLIED)) = Some(App(IDENTITY, True))
+    expect condition_first: step(If(NOT_TRUE, True, False)) = Some(If(False, True, False))
 }
 
 -- `reduce` takes `fuel` steps or as many as there are; `normalize` reduces
@@ -570,8 +594,9 @@ pub enum ParsedTy { Fail, Ok(Ty, Tokens) }
 
 pub fn starts_atom?(ts: Tokens) := ts is Tokens::Cons(Token::Ident(_) | Token::True | Token::False | Token::LParen, _)
 
--- What was read, once the next token is `tok`: the parenthesized `( t )`,
--- the type of `\x: ty.`, or the condition of `if t1 then`.
+-- `after` and `after_ty`: what was read, once the next token is `tok`: the
+-- parenthesized `( t )` or the condition of `if t1 then`, and the type of
+-- `\x: ty.` or the parenthesized `( ty )`.
 pub fn after(tok: Token, read: Parsed): Parsed := match read {
     Parsed::Ok(t, Tokens::Cons(next, rest)) => if next = tok then Parsed::Ok(t, rest) else Parsed::Fail,
     _ => Parsed::Fail,
@@ -787,8 +812,9 @@ pub fn nsubst(k: Int, s: Nameless, t: Nameless): Nameless := match t {
 }
 
 -- Alpha-equivalence is an equivalence on the terms that convert: the
--- solver decides it, since `to_nameless` is a function. The laws are
--- equivalences and disjunctions, as the rules above are.
+-- solver decides it, since `to_nameless` is a function. `transitive` is a
+-- disjunction rather than a `when`, whose vacuity check would be
+-- inconclusive (`F0450`), as for the rules.
 pub proc alpha_equivalence(names: Names, a: Named, b: Named, c: Named) {
     expect reflexive: alpha_eq?(names, a, a) iff to_nameless(names, a) is Some(_)
     expect symmetric: alpha_eq?(names, a, b) iff alpha_eq?(names, b, a)
@@ -834,9 +860,10 @@ pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alph
     ensure typed_alpha: when alpha_eq?(Names::Nil, t, t2), typeof(Ctx::Empty, t) = typeof(Ctx::Empty, t2)
 }
 
--- `[x := z] (\y. x)` under the name `z` converts to `[0 := 0] (\. 1)`, which
--- is `\. 1`: under the binder, the index put in is shifted up, and those
--- above the one substituted for are shifted down.
+-- `substituted_under_binder`: `[x := z] (\y. x)` under the name `z` converts
+-- to `[0 := 0] (\. 1)`, so the conversion commutes with substitution;
+-- `shifted`: only the indices at or above the cutoff move; `decremented`:
+-- the indices above the one substituted for move down.
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc nameless_examples() {
