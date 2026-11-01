@@ -1,3 +1,5 @@
 -- Evidence below `--require` (F0506).
 --@ args: trace --require trusted
-proc c(x?): (y?) { ensure r: y? iff x? }
+proc c(x?): (y?) {
+    ensure r: y? iff x?
+}

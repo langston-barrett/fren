@@ -1,3 +1,5 @@
 -- `if` branches of different types (F0306).
-proc c(b?): (y: Int) { ensure r: y = if b? then 1 else true }
+proc c(b?): (y: Int) {
+    ensure r: y = if b? then 1 else true
+}
 -- fren-covers: lang::operator_type

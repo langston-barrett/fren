@@ -1,14 +1,14 @@
 error[F0340]: record `Point` has no field `z`
- --> test/cli/types/f0340_update_field.fren:3:55
+ --> test/cli/types/f0340_update_field.fren:4:28
   |
-3 | proc c(p: Point): (q: Point) { ensure r: q = { p with z := 1 } }
-  |                                                       ^ unknown field
+4 |     ensure r: q = { p with z := 1 }
+  |                            ^ unknown field
   |
   = note: the fields of `Point` are `x` and `y`
 help: a field with a similar name exists: `x`
   |
-3 - proc c(p: Point): (q: Point) { ensure r: q = { p with z := 1 } }
-3 + proc c(p: Point): (q: Point) { ensure r: q = { p with x := 1 } }
+4 -     ensure r: q = { p with z := 1 }
+4 +     ensure r: q = { p with x := 1 }
   |
 
 error: could not check due to previous errors

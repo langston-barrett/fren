@@ -1,3 +1,5 @@
 -- A definition that mentions itself (F0341).
 -- fren-covers: lang::definition_order
-proc c(x: Int): (y?) { ensure r: let n := n + x in y? iff n > 0 }
+proc c(x: Int): (y?) {
+    ensure r: let n := n + x in y? iff n > 0
+}

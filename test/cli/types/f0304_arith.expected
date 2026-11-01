@@ -1,8 +1,8 @@
 error[F0304]: type mismatch: expected `Int`, found `Bool`
- --> test/cli/types/f0304_arith.fren:2:42
+ --> test/cli/types/f0304_arith.fren:3:23
   |
-2 | proc c(b?): (y: Int) { ensure r: y = 1 + b? }
-  |                                          ^^ expected `Int`, found `Bool`
+3 |     ensure r: y = 1 + b?
+  |                       ^^ expected `Int`, found `Bool`
   |
   = note: the operands of `+` are `Int`s or `Nat`s
   = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`

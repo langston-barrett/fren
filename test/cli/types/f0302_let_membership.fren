@@ -1,4 +1,6 @@
 -- `in` ends the last definition of a `let`, so a membership there must be
 -- in parentheses: the message says so (F0302).
 -- fren-covers: lang::definition_form
-proc c(x: Int, s: Set<Int>): (y?) { ensure r: let b? := x in s in y? iff b? }
+proc c(x: Int, s: Set<Int>): (y?) {
+    ensure r: let b? := x in s in y? iff b?
+}

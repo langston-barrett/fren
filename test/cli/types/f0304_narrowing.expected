@@ -1,8 +1,8 @@
 error[F0304]: type mismatch: expected `Nat`, found `Int`
- --> test/cli/types/f0304_narrowing.fren:3:37
+ --> test/cli/types/f0304_narrowing.fren:4:14
   |
-3 | proc c(n: Nat): (m: Nat) { out m := n - 1 }
-  |                                     ^^^^^ expected `Nat`, found `Int`
+4 |     out m := n - 1
+  |              ^^^^^ expected `Nat`, found `Int`
   |
   = note: `m` has type `Nat`, so its definition must too
   = note: an `Int` is never narrowed to a `Nat`, and `a - b` and `-a` are `Int`s, even of `Nat`s

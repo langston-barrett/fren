@@ -1,8 +1,8 @@
 error[F0304]: type mismatch: expected `Int`, found `Bool`
- --> test/cli/types/f0304_binding.fren:3:28
+ --> test/cli/types/f0304_binding.fren:4:19
   |
-3 | proc c(b?) { call s := sub(b?) }
-  |                            ^^ expected `Int`, found `Bool`
+4 |     call s := sub(b?)
+  |                   ^^ expected `Int`, found `Bool`
   |
   = note: `a` of `sub` has type `Int`
   = help: to turn a `Bool` into an `Int`, write `if b? then 1 else 0`

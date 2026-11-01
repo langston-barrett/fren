@@ -1,8 +1,8 @@
 error[F0364]: `Point` is a record with named fields, not a newtype
- --> test/cli/types/f0364_record_newtype.fren:4:38
+ --> test/cli/types/f0364_record_newtype.fren:5:19
   |
-4 | proc c(): (p: Point) { ensure r: p = Point(1, 2) }
-  |                                      ^^^^^ a record with named fields
+5 |     ensure r: p = Point(1, 2)
+  |                   ^^^^^ a record with named fields
   |
   = note: a record with named fields is built as `Point { x := e, ... }`
 

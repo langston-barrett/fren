@@ -1,15 +1,15 @@
 error[F0334]: a pattern test cannot bind `v` here
- --> test/cli/types/f0334_unless.fren:3:65
+ --> test/cli/types/f0334_unless.fren:4:40
   |
-3 | proc c(r: Reply): (w: Int) { ensure a: unless r is Reply::Value(v), w = v }
-  |                                                                 ^ binds a name
+4 |     ensure a: unless r is Reply::Value(v), w = v
+  |                                        ^ binds a name
   |
   = note: the body of `unless` holds where the pattern does not match, where `v` has no value
   = help: to read the payload, bind it in a `when`'s condition, as in `when x is P(v), ...`, or write a `match`
 help: ignore the value
   |
-3 - proc c(r: Reply): (w: Int) { ensure a: unless r is Reply::Value(v), w = v }
-3 + proc c(r: Reply): (w: Int) { ensure a: unless r is Reply::Value(_), w = v }
+4 -     ensure a: unless r is Reply::Value(v), w = v
+4 +     ensure a: unless r is Reply::Value(_), w = v
   |
 
 error: could not check due to previous errors

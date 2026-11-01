@@ -1,2 +1,4 @@
 -- A divisor that is a variable (F0336).
-proc c(x: Int, y: Int): (q: Int) { out q := x div y }
+proc c(x: Int, y: Int): (q: Int) {
+    out q := x div y
+}

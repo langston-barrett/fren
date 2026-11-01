@@ -1,3 +1,5 @@
 -- A field that the record does not have.
 struct Point { x: Int, y: Int }
-proc c(p: Point): (z: Int) { ensure r: z = p.z }
+proc c(p: Point): (z: Int) {
+    ensure r: z = p.z
+}

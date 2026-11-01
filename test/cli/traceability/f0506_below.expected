@@ -1,7 +1,7 @@
 warning[F0506]: `c` has evidence `missing`, below `trusted` (`--require`)
  --> test/cli/traceability/f0506_below.fren:3:6
   |
-3 | proc c(x?): (y?) { ensure r: y? iff x? }
+3 | proc c(x?): (y?) {
   |      ^ evidence `missing`
   |
   = note: `--require` requires every procedure to have evidence `trusted` or stronger

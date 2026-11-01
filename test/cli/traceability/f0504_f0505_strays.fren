@@ -1,3 +1,5 @@
 -- Markers that no claim matches (F0504, F0505).
 --@ args: trace --tests test/fixtures/stray.txt
-proc shown(x?): (y?) { ensure r: y? iff x? }
+proc shown(x?): (y?) {
+    ensure r: y? iff x?
+}

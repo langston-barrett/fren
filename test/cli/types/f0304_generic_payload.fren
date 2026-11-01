@@ -1,3 +1,5 @@
 -- A payload whose type does not match the instance expected.
 
-proc c(): (x: Option<Int>) { ensure r: x = Option::Some(true) }
+proc c(): (x: Option<Int>) {
+    ensure r: x = Option::Some(true)
+}

@@ -1,8 +1,8 @@
 error[F0305]: cannot compare `Mode` with `Int`
- --> test/cli/types/f0305_enum_int.fren:3:42
+ --> test/cli/types/f0305_enum_int.fren:4:22
   |
-3 | proc c(m: Mode): (y?) { ensure r: y? iff m = 1 }
-  |                                          ^^^^^ `Mode` and `Int`
+4 |     ensure r: y? iff m = 1
+  |                      ^^^^^ `Mode` and `Int`
   |
   = note: both sides of `=` must have the same type
   = note: enums are not numbers

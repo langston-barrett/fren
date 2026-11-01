@@ -261,19 +261,33 @@ def toNeighbour : Option Nat → fmt.Neighbour
   | none => .Edge
   | some l => .OnLine l
 
-impl in_block: fmt::in_block for (f l : Nat) (b a : Option Nat) (c n : Bool) {
+/-- The lines that comments are on. -/
+def toLines : List Nat → fmt.Lines
+  | [] => .Nil
+  | c :: cs => .Line c (toLines cs)
+
+theorem any_within_toLines (cs : List Nat) (f l : Nat) :
+    fmt.«any_within?» (toLines cs) f l = cs.any (fun c => decide (f ≤ c ∧ c ≤ l)) := by
+  induction cs with
+  | nil => simp [toLines, fmt.«any_within?»]
+  | cons c cs ih =>
+    simp only [toLines, fmt.«any_within?», ih, List.any_cons, Int.ofNat_le]
+    cases cs.any (fun c => decide (f ≤ c ∧ c ≤ l)) <;> simp
+
+impl in_block: fmt::in_block for (f l : Nat) (b a : Option Nat) (cs : List Nat) (n : Bool) {
   first_line := f,
   last_line := l,
   before := toNeighbour b,
   after := toNeighbour a,
-  commented? := c,
+  comments := toLines cs,
   nested? := n,
-  alone? := FrenCli.Fmt.useAlone f l b a c,
-  sorted? := FrenCli.Fmt.inBlock (FrenCli.Fmt.useAlone f l b a c) n,
+  alone? := FrenCli.Fmt.useAlone f l b a cs,
+  sorted? := FrenCli.Fmt.inBlock (FrenCli.Fmt.useAlone f l b a cs) n,
 } by
-  intro f l b a c n _
-  cases b <;> cases a <;> cases c <;> cases n <;>
-    simp [fren_spec, FrenCli.Fmt.useAlone, FrenCli.Fmt.inBlock, toNeighbour]
+  intro f l b a cs n _
+  simp only [fren_spec, any_within_toLines, FrenCli.Fmt.useAlone, FrenCli.Fmt.inBlock]
+  generalize cs.any (fun c => decide (f ≤ c ∧ c ≤ l)) = c
+  cases b <;> cases a <;> cases c <;> cases n <;> simp [toNeighbour]
 
 impl file: fmt::file for (c i p f : Bool) {
   check? := c,

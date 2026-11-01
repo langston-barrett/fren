@@ -1,4 +1,6 @@
 -- Values of a struct that is not ordered, compared (F0352).
 struct Ms(Int)
 
-proc c(a: Ms, b: Ms): (late?) { ensure r: late? iff a > b }
+proc c(a: Ms, b: Ms): (late?) {
+    ensure r: late? iff a > b
+}
