@@ -1,8 +1,8 @@
 error[F0358]: the rows of a table have values of different types: `Int` and `Bool`
- --> test/cli/types/f0358_table_rows.fren:2:67
+ --> test/cli/types/f0358_table_rows.fren:5:14
   |
-2 | proc c(x: Int): (y: Int) { ensure r: y = table { x > 0 => 1, _ => false } }
-  |                                                                   ^^^^^ rows of different types
+5 |         _ => false,
+  |              ^^^^^ rows of different types
   |
   = note: a table has the value of one of its rows, so all must have the same type, or be `Nat`s and `Int`s
 

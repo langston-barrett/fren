@@ -87,9 +87,9 @@ pub mod testing
   fixtures that are deliberately unformatted or do not parse, and those
   listed in `fmtPending`: test fixtures that `fren fmt`'s move to rustfmt's
   layout would lay out anew. Their expected outputs and `--~` annotations
-  name their lines, and the next step of that move, which breaks long
-  expressions, will change many of them again, so they are formatted once,
-  with that step, and `fmtPending` is then removed (#509). Run `fren fmt`
+  name their lines, so formatting them means updating those too. They are
+  formatted a group at a time, each only where the new layout reads better
+  than the old, and `fmtPending` is then removed (#509). Run `fren fmt`
   on a spec after editing it. Formatting every spec must also keep its
   tokens, imports and comments, and be idempotent (`fmt::safe`), and each
   spec, laid out again at random, must format as it does

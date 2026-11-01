@@ -112,7 +112,7 @@ def blankLines (blank : Nat) (first afterOpen beforeClose : Bool) : Nat :=
 /-- The widest that a list of kind `k` may be on one line, its elements
 separated by `, `, as rustfmt's defaults have it (`fmt::width_limit`). -/
 def widthLimit : ListKind → Nat
-  | .arms => 0
+  | .arms | .members => 0
   | .arguments | .applicationArguments => 60
   | .parameters | .functionParameters => 100
   | .elements => 60
@@ -123,9 +123,10 @@ def maxWidth : Nat := 100
 
 /-- Whether a vertical list of kind `k` ends with a comma
 (`fmt::ends_with_comma?`): the syntax allows one but for the arguments of
-an application and the parameters of a function. -/
+an application and the parameters of a function, and a block's members
+have no commas. -/
 def endsWithComma : ListKind → Bool
-  | .applicationArguments | .functionParameters => false
+  | .applicationArguments | .functionParameters | .members => false
   | _ => true
 
 /-- Whether a list of kind `k`, with `n` elements, is vertical
@@ -133,7 +134,7 @@ def endsWithComma : ListKind → Bool
 the first starting at column `start`, and the line ending at column `end_`,
 which counts only if `ownLine` and the line fits up to the first element. -/
 def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (ownLine : Bool) : Bool :=
-  n > 0 && ((k matches .arms) || broken || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth))
+  n > 0 && ((k matches .arms | .members) || broken || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth))
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -384,8 +385,9 @@ def Line.render (l : Line) : String := Id.run do
 def Line.width (l : Line) : Nat := ((l.render.splitOn "\n").getLast?.getD "").length
 
 /-- Where a line break between two pieces is decided by a list or block:
-after its opening bracket, after the comma that ends one of its elements,
-or before its closing bracket. -/
+after its opening bracket, after the comma that ends one of its elements
+(for a block, before each member that follows another), or before its
+closing bracket. -/
 inductive Role where
   | afterOpen
   | afterComma
@@ -709,16 +711,56 @@ def parseAll (src : Array Char) : Except Error (Array Token × Array Span × Lay
   let lay ← (parseLayout toks src).mapError fun e => (e.span, e.msg)
   return (toks, comments, lay)
 
-/-- Formats Fren source, as lines, each with the line of `src` it comes
-from. Each `segment` of `src` is laid out as a file of its own. -/
-def formatLines (src : Array Char) (segment : Nat → Nat := fun _ => 0) : Except Error (Array (String × Nat)) := do
-  let (toks, comments, lay) ← parseAll src
+/-- Whether some `use` member shares a line only with other members or
+its block's braces, and with no comment. Laid out, it starts and ends its
+lines, as a block's members are one to a line, and so it is part of a
+block of imports (`fmt::in_block`). -/
+def importsJoined (src : Array Char) (toks : Array Token) (comments : Array Span) (lay : Layout) : Bool := Id.run do
+  let (lineOf, _) := lineTable src
+  let lineAt (k : Nat) : Nat := lineOf[toks[k]!.span.start]!
+  let endLine (k : Nat) : Nat := lineOf[toks[k]!.span.stop - 1]!
+  -- The tokens after which a block's layout ends a line.
+  let mut breaks : Std.HashSet Nat := {}
+  for b in lay.bracketed do
+    if b.kind == .members && b.closing != b.opening + 1 then
+      breaks := (b.commas.foldl (·.insert ·) (breaks.insert b.lead)).insert (b.closing - 1)
+  for (first, last) in lay.uses do
+    if first == 0 || toks[first - 1]!.tok == .kw "in" then continue
+    let sl := lineAt first
+    let el := endLine last
+    let before := endLine (first - 1) < sl
+    let after := lineAt (last + 1) > el
+    if before && after then continue
+    if (before || breaks.contains (first - 1)) && (after || breaks.contains last)
+        && !comments.any (fun c => lineOf[c.start]! ≤ el && sl ≤ lineOf[c.stop - 1]!) then
+      return true
+  return false
+
+/-- Formats Fren source that parses as `toks`, `comments` and `lay`, as
+lines, each with the line of `src` it comes from. -/
+def formatParsed (src : Array Char) (toks : Array Token) (comments : Array Span) (lay : Layout)
+    (segment : Nat → Nat) : Except Error (Array (String × Nat)) := do
   let organized := organizeImports src toks comments lay
   let src' := ("\n".intercalate (organized.map (·.1)).toList).toList.toArray
   let (toks, comments, lay) ← if src' == src then pure (toks, comments, lay) else parseAll src'
   let origin (l : Nat) : Nat := (organized[l]?.map (·.2)).getD l
   return (layout src' toks comments lay (segment ∘ origin)).flatMap fun l =>
     (Array.replicate l.blank ("", origin l.line)).push (l.render, origin l.line)
+
+/-- Formats Fren source, as lines, each with the line of `src` it comes
+from. Each `segment` of `src` is laid out as a file of its own. Where a
+`use` member shares a line with other members (`importsJoined`), the file
+is laid out first, so that the member is sorted with the imports around
+it, as it is once formatted. -/
+def formatLines (src : Array Char) (segment : Nat → Nat := fun _ => 0) : Except Error (Array (String × Nat)) := do
+  let (toks, comments, lay) ← parseAll src
+  unless importsJoined src toks comments lay do return ← formatParsed src toks comments lay segment
+  let laid := (layout src toks comments lay segment).flatMap fun l =>
+    (Array.replicate l.blank ("", l.line)).push (l.render, l.line)
+  let origin (l : Nat) : Nat := (laid[l]?.map (·.2)).getD l
+  let src' := ("\n".intercalate (laid.map (·.1)).toList).toList.toArray
+  let (toks', comments', lay') ← parseAll src'
+  return (← formatParsed src' toks' comments' lay' (segment ∘ origin)).map fun (s, l) => (s, origin l)
 
 /-- Formats a `.fren` file. -/
 def formatFren (src : String) : Except Error String := do

@@ -1,4 +1,9 @@
 -- A pattern from another enum.
 enum Mode { Off, On }
 enum Fan { Slow, Fast }
-proc c(m: Mode): (y: Int) { ensure r: y = match m { Fan::Slow => 1, _ => 0 } }
+proc c(m: Mode): (y: Int) {
+    ensure r: y = match m {
+        Fan::Slow => 1,
+        _ => 0,
+    }
+}

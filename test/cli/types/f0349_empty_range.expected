@@ -1,8 +1,8 @@
 error[F0349]: the range `9..=0` matches no integer
- --> test/cli/types/f0349_empty_range.fren:2:52
+ --> test/cli/types/f0349_empty_range.fren:4:9
   |
-2 | proc c(n: Int): (y: Int) { ensure r: y = match n { 9..=0 => 0, _ => 1 } }
-  |                                                    ^^^^^ empty range
+4 |         9..=0 => 0,
+  |         ^^^^^ empty range
   |
   = note: `a..=b` matches the integers from `a` to `b`, and `a..b` those from `a` to `b - 1`
 

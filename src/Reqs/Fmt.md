@@ -24,7 +24,8 @@ The formatter changes whitespace, the commas at the end of lists (see
 [Trailing commas](#trailing-commas)), and the order and grouping of imports
 (see [Imports](#imports)). It keeps every comment. It lays out
 [lists and blocks](#lists-and-blocks) as rustfmt does: each on one line
-if it fits, and otherwise with one element to a line. Elsewhere, for
+if it fits, and otherwise with one element to a line, but the arms of a
+`match` and the members of a procedure always one to a line. Elsewhere, for
 now, it keeps the line breaks: it breaks no other long line and joins no
 other short ones, except to merge imports. On each line, it decides the
 indentation and the spaces between tokens; across lines, how many blank
@@ -78,7 +79,7 @@ what it keeps. A file's *content* is what formatting keeps of it:
   [`fmt::comment_column`](#comments-at-the-end-of-lines) keeps it;
 - where it has [blank lines](#blank-lines) that formatting keeps;
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
-  decides.
+  decides, such as those between the members of a procedure.
 
 `fmt::format` is what `fren fmt` writes for a file that parses. It writes
 `fmt::render` of the file's content, whatever the file's layout: its line
@@ -188,6 +189,13 @@ but the last:
 - the arms of a `match` or of a table over a scrutinee, and the rows of
   a table.
 
+The members of a procedure's block, of a [function's
+block](Lang/Items.md#function-blocks) and of a [global
+expectation](Lang/Global.md)'s block are laid out as a list too, a
+*block*, but they are separated by line breaks rather than commas. An
+[evidence setting](Evidence.md), `set_option fren.evidence "..." in`, is
+not separated from the member after it.
+
 `fren fmt` writes each list in one of two ways, as rustfmt does. A
 *horizontal* list is on one line, its elements separated by `, `, as in
 `f(a, b)` and `P { x := 1, y := 2 }`. A *vertical* list has each element
@@ -211,10 +219,27 @@ ensure r: q = { p with
 }
 ```
 
-A list with no elements is horizontal. A `match` or a table with arms or
-rows is vertical, with one to a line, as rustfmt writes a `match`. Any
-other list is horizontal exactly when it fits, that is, when all three
-hold:
+A list with no elements is horizontal, as in `proc c() {}`. A `match`
+or a table with arms or rows is vertical, with one to a line, as rustfmt
+writes a `match`, and so is a block with members, with one member to a
+line, as rustfmt writes a function's body (its `fn_single_line` is
+`false`). So a procedure written on one line, however short,
+
+```text
+proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+```
+
+is formatted with its members on lines of their own, and one written so
+already stays as it is:
+
+```text
+proc c(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+}
+```
+
+Any other list is horizontal exactly when it fits, that is, when all
+three hold:
 
 1. none of its elements must span several lines: none has a line
    comment, a blank line before it, a line break that the formatter keeps,
@@ -287,6 +312,7 @@ pub enum ListKind {
     FunctionParameters,      -- the parameters of a function
     Elements,                -- the elements of a sequence or set literal, or the members of a Boolean block
     Fields,                  -- the fields of a record literal or update
+    Members,                 -- the members of a procedure's, function's or global expectation's block
 }
 
 use self::ListKind::{
@@ -296,12 +322,16 @@ use self::ListKind::{
     Elements,
     Fields,
     FunctionParameters,
+    Members,
     Parameters,
 }
 
+-- The lists that are vertical whenever they have elements: a `match`'s or a table's, and a block.
+pub fn always_vertical?(list: ListKind) := list is Arms | Members
+
 -- The widest a list may be on one line, as rustfmt's defaults allow.
 pub fn width_limit(list: ListKind): Int := match list {
-    Arms => 0,
+    Arms | Members => 0,
     Arguments | ApplicationArguments => 60,
     Parameters | FunctionParameters => 100,
     Elements => 60,
@@ -309,7 +339,7 @@ pub fn width_limit(list: ListKind): Int := match list {
 }
 
 -- A vertical list's last element is followed by a comma.
-pub fn ends_with_comma?(list: ListKind) := not list is ApplicationArguments | FunctionParameters
+pub fn ends_with_comma?(list: ListKind) := not list is ApplicationArguments | FunctionParameters | Members
 
 pub proc one_line(
     list: ListKind,
@@ -320,24 +350,26 @@ pub proc one_line(
     line_end: Int,           -- the column where its line would end, with it on one line
     own_line?,               -- it is its line's expression (`fmt::own_line`)
 ): (det vertical?) {
-    ensure rule: vertical? iff (n > 0 and (list = Arms or broken? or width > width_limit(list)
+    ensure rule: vertical? iff (n > 0 and (always_vertical?(list) or broken? or width > width_limit(list)
         or (own_line? and start <= 100 < line_end)))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
-    expect fits: when n > 0 and list != Arms and not broken? and width <= width_limit(list) and line_end <= 100,
-        not vertical?
+    -- A procedure's members are one to a line, however short and few.
+    expect members: when n > 0 and list = Members, vertical?
+    expect fits: when n > 0 and not always_vertical?(list) and not broken? and width <= width_limit(list)
+        and line_end <= 100, not vertical?
     expect just_fits: when list = Arguments and n = 2 and not broken? and width = 60 and line_end = 100, not vertical?
     expect just_too_wide: when list = Arguments and n = 2 and width = 61, vertical?
     expect just_too_long: when list = Fields and n = 1 and width = 18 and start = 80 and line_end = 101 and own_line?,
         vertical?
     -- Breaking a list helps its line only where the list is the line's expression: elsewhere, the
     -- rest of the expression would still be on the lines of its brackets.
-    expect operand: when not own_line? and list != Arms and not broken? and width <= width_limit(list),
+    expect operand: when not own_line? and not always_vertical?(list) and not broken? and width <= width_limit(list),
         not vertical?
     -- A list that is vertical for its line's length alone shortens the line: the line fits up to its
     -- first element, and is too long with the list on it.
-    expect helps: when vertical? and list != Arms and not broken? and width <= width_limit(list),
+    expect helps: when vertical? and not always_vertical?(list) and not broken? and width <= width_limit(list),
         own_line? and start <= 100 < line_end
 }
 ```
@@ -383,7 +415,7 @@ pub proc list_layout(
     after: Nat,              -- the width of what would follow its last element on its line
     own_line?,               -- it is its line's expression (`fmt::own_line`)
 ): (det vertical?) {
-    ensure rule: vertical? iff (count(elements) > 0 and (list = Arms or any_broken?(elements)
+    ensure rule: vertical? iff (count(elements) > 0 and (always_vertical?(list) or any_broken?(elements)
         or joined(elements) > width_limit(list) or (own_line?
         and start <= 100 < start + joined(elements) + after)))
 }
@@ -791,9 +823,10 @@ tested h:
     "tests/relay.rs",
 ```
 
-So an element is added to a vertical list by adding a line. The members of
-a procedure are not a list, and have no commas. `fmt::trailing_comma`
-decides whether the last element of a list is followed by a comma:
+So an element is added to a vertical list by adding a line. The members
+of a block have no commas, as `fmt::ends_with_comma?` of `Members` says.
+`fmt::trailing_comma` decides whether the last element of a list is
+followed by a comma:
 
 ```fren
 set_option fren.evidence "enumerated" in
@@ -839,10 +872,15 @@ pub proc trailing_comma_lint(vertical?, allowed?) {
 
 A *block* of imports is a run of `use` items on consecutive lines. Each
 `use` in a block starts its line, ends a line, and shares its lines with no
-comment or other token, and is not the item of a `set_option ... in`. Any
-other line, including a blank line or a comment, ends the block. So the
-imports of a file can be kept in separate blocks, such as one for each
-module they come from, and a comment above a `use` stays with it.
+comment or other token, and is not the item of a `set_option ... in`.
+These lines are those of the file laid out: a `use` member that shares
+its lines with no comment, and with no token but other members and its
+block's braces, starts and ends its lines once its
+[block](#lists-and-blocks) has one member to a line, and so is sorted
+with the imports around it. Any other line, including a blank line or a
+comment, ends the block. So the imports of a file can be kept in separate
+blocks, such as one for each module they come from, and a comment above a
+`use` stays with it.
 
 Within a block, the formatter rewrites the imports: it collects the paths
 they import, with the paths of a `use a::{b, c}` counted as `a::b` and

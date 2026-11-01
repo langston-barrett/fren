@@ -1,0 +1,30 @@
+--@ args: fmt --check
+-- A block with members is always vertical, one member to a line, as
+-- rustfmt writes a function's body: a procedure's, a function's and a
+-- global expectation's block. An empty block stays `{}`, an evidence setting
+-- stays with the member after it, `use` members on one line become a block
+-- of imports, and a block already written so stays as it is.
+pub enum Mode { Heat, Cool }
+
+pub proc c(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+
+pub proc d(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+}
+
+pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
+
+pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
+
+pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
+
+expect h(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
+
+pub proc i() {}
+
+pub proc j(x: Int): (y: Int) { ensure a: y = x
+
+    -- Not less.
+    ensure b: y >= x }
+
+pub proc k(m: Mode): (on?) { use self::Mode::Heat use self::Mode::Cool ensure r: on? iff m = Heat or m = Cool }
