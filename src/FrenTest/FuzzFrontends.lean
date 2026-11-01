@@ -42,9 +42,11 @@ recorded against its spec and the run goes on.
 `--avoid-known` keeps the generator clear of the differences already
 known, to find others: it parenthesizes every method's receiver that is
 not a name, and counts a spec whose every difference is of a kind that
-`knownDifferences` lists as known, not as a finding. `lake test` checks a
-fixed corpus of seeds against `knownDifferences` (`corpusFailures`), and
-CI runs fresh seeds on `main`. `--guards` generates guarded quantifiers alone
+`knownDifferences` lists for `--avoid-known` as known, not as a finding.
+`lake test` checks a fixed corpus of seeds against `knownDifferences`
+(`corpusFailures`), and that what `genWide` appends adds no static error
+(`Wide.genWideCuts`); CI runs fresh seeds on `main`.
+`--guards` generates guarded quantifiers alone
 (`Wide.genGuards`), over every type that a guard may bound or not, with
 their operands read through fields, so that many run fast; `genWide`
 includes such a procedure now and then too. `--sites` generates
@@ -719,7 +721,8 @@ def genericApps (sc : WScope) (genericPay : Bool) : R String := do
         if sc.hasPay && genericPay then pure s!"r = payload_or({← pick #["P::A", "P::B(n)", "pp", "P::C(b?)"]}, {← int})"
         else pure s!"s? = some?(wrap({← bool}))"
       | 8 =>
-        if sc.hasPay && genericPay then pure s!"s? = is_b?({← pick #["pp", "P::A", "P::B(3)"]})"
+        -- Not `P::A`, which leaves `X` unknown (`F0400`), an error.
+        if sc.hasPay && genericPay then pure s!"s? = is_b?({← pick #["pp", "P::B(n)", "P::B(3)"]})"
         else pure s!"u = wrap({← int})"
       | _ => pure s!"t = pick({← bool}, m2, m)"
     body := body ++ s!"    ensure ga{k}: {e}\n"
@@ -813,8 +816,10 @@ def genSites : R String := do
     out := out ++ (← sitesProc s!"sites{i}" (unchecked := i + 1 == n && (← chance 60)))
   return out
 
-/-- A spec with constants, functions, and components over them. -/
-def genWide (avoidKnown : Bool := false) : R String := do
+/-- A spec with constants, functions, and components over them, and its
+*cuts*: the spec as it stands before each group of items appended after
+`bodyFns`, which must add no static error (`corpusFailures`). -/
+def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   let useEnum ← chance 60
   let nVariants ← if useEnum then pure ((← below 2) + 2) else pure 0
   let relElem := if useEnum && (← chance 50) then "E" else "Int"
@@ -998,14 +1003,25 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if hasCounts then out := out ++ (← countsProc "counts" hasMs countNewtypes)
   if ← chance 25 then out := out ++ guardDecls ++ (← guardsProc "guards")
   -- Last, so that the specs of the seeds before them are as they were.
+  -- It writes static errors, on purpose (a body of another type) and not
+  -- (#589), as the procedures above do too, so many seeds' specs stop
+  -- before the groups below.
   if ← chance 50 then out := out ++ "\n" ++ (← bodyFns sc genericPay)
+  -- Each group appended from here on starts with a cut (`out` pushed to
+  -- `cuts`), and must add no static error (`appendedErrors`).
+  let mut cuts := #[out]
   -- Generic functions applied, last too.
   if ← chance 40 then out := out ++ "\n" ++ (← genericApps sc genericPay)
   -- Each kind of site, with expressions that do not synthesize their
   -- types, last too.
+  cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ sitesDecls ++ (← sitesProc "sites")
   -- Only variables have the type `P`, each declared on a line of its own.
-  return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
+  let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
+  return (types out, cuts.map types)
+
+/-- A spec with constants, functions, and components over them. -/
+def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
 
 end Wide
 
@@ -1014,21 +1030,37 @@ end Wide
 open FrenTest.Ui (Diagnostic)
 open FrenTest.Frontends (Report maskBetween headOf)
 
-/-- Checks `text` with both front ends; returns how they differ, whether
-only in undecided checks, both reports, and the binary's error codes. -/
-def runFrontends (env : Environment) (path : System.FilePath) (text : String) :
-    IO (Array String × Bool × String × Array String) := do
+/-- What both front ends said on a spec. -/
+structure Ran where
+  /-- How they differ. -/
+  comparison : FrenTest.Frontends.Comparison
+  /-- Both reports, as comments. -/
+  reports : String
+  /-- The binary's error codes. -/
+  errors : Array String
+  /-- The binary's diagnostics. -/
+  cli : Array Diagnostic
+
+/-- The `fren` command's diagnostics and summary on `text`, and its exit
+code. -/
+def runCli (path : System.FilePath) (text : String) : IO (Array Diagnostic × Option String × UInt32) := do
   IO.FS.writeFile path text
   let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString] })
   let (cli, cliSum) := FrenTest.Ui.cliDiagnostics path.toString out (keepUnlocated := true)
+  return (cli, cliSum, code)
+
+/-- Checks `text` with both front ends. -/
+def runFrontends (env : Environment) (path : System.FilePath) (text : String) : IO Ran := do
+  let (cli, cliSum, code) ← runCli path text
   let (hosted, hostedSum) ← FrenTest.Ui.hostedDiagnostics env path.toString text
-  let (found, flaky) := FrenTest.Frontends.compare text
+  let comparison := FrenTest.Frontends.comparison text
     { diags := cli, summary? := cliSum, exit? := some code.toNat } { diags := hosted, summary? := hostedSum }
   let render (ds : Array Diagnostic) (s : Option String) :=
     String.join (ds.toList.map fun d => s!"--   {d.line}:{d.col + 1}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
       ++ s!"--   summary: {s.getD "(none)"}\n"
-  return (found, flaky, s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
-    cli.filterMap fun d => if d.severity == "error" then d.code? else none)
+  return { comparison, reports := s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
+           errors := cli.filterMap fun d => if d.severity == "error" then d.code? else none,
+           cli }
 
 unsafe def loadFren : IO Environment := do
   enableInitializersExecution
@@ -1041,7 +1073,8 @@ unsafe def mainFiles (files : List String) (dir : String) : IO UInt32 := do
   let env ← loadFren
   let mut bad := 0
   for f in files do
-    let (found, _, reports, _) ← runFrontends env (dir / s!"current-files-{← IO.Process.getPID}.fren") (← IO.FS.readFile f)
+    let ran ← runFrontends env (dir / s!"current-files-{← IO.Process.getPID}.fren") (← IO.FS.readFile f)
+    let (found, reports) := (ran.comparison.found, ran.reports)
     IO.println s!"{f}: {if found.isEmpty then "the front ends agree" else "the front ends differ"}"
     for x in found do IO.println s!"  {x}"
     unless found.isEmpty do bad := bad + 1; IO.println reports
@@ -1060,6 +1093,13 @@ structure Mode where
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
   Id.run ((if m.sites then Wide.genSites else if m.guards then Wide.genGuards else Wide.genWide m.avoidKnown).run' (rngOf seed))
+
+/-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
+the next; none for `--guards` and `--sites`, whose generators append
+nothing. -/
+def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
+  if m.guards || m.sites then #[] else
+    (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
@@ -1098,41 +1138,65 @@ def signature (f : String) : String := Id.run do
 /-! ### Known differences -/
 
 /-- A difference that the front ends are known to make on a spec, until
-its issue is fixed: the spec's mode and seed, the difference's
-`signature`, and the issue that tracks it. -/
+its issue is fixed: the spec's mode and seed, the difference as `compare`
+gives it, line and names included, and the issue that tracks it. -/
 structure Known where
   mode : Mode
   seed : Nat
-  signature : String
+  difference : String
   issue : Nat
+  deriving BEq
 
 /-- The differences that the front ends make on the specs of the corpus
 (`corpusSpecs?`) on `main`, each with its issue: #493 and its sub-issues,
 and #555. As with `knownColumnDifferences` in `FrenTestMain`, the corpus
-fails on a difference that is not listed, and on a listed one that no
-longer occurs, so that the list only shrinks. A change to the generator
-changes the spec of every seed, and so this list: fix each difference of
-the new corpus, or list it with its issue. A difference that the run of
-fresh seeds on `main` finds is listed with its seed and mode, and the
-corpus then checks that seed too (`listedOutside`). `--avoid-known` counts
-a spec whose every difference is of a kind listed here as known. -/
+fails on a difference that is not listed, on a listed one that no longer
+occurs, and on one that occurs more often than it is listed, so that the
+list only shrinks. A change to the generator leaves every seed's spec as
+it was, up to what it appends (`Wide.genWideCuts`), so this list stays as
+it is; never list a difference here to absorb a changed corpus. A
+difference that the run of fresh seeds on `main` finds is listed with its
+seed and mode, and the corpus then checks that seed too (`listedOutside`).
+`--avoid-known` counts a spec whose every difference is of a kind (its
+`signature`) listed here for `--avoid-known` as known. An entry holds the
+whole difference: its line and column, the names that a front end gives
+its own facts, as Lean's `f0.equation0.1`, and the message's wording. A
+change to any of those, such as to where a front end places a message or
+to the generated text before it on its line, makes an unlisted and a
+vanished difference on the same line, which is relisted, not a
+regression; on a spec with an undecided check, only the unlisted one
+shows, since a vanished entry does not fail there. -/
 def knownDifferences : List Known :=
   -- Lean reports `ob1?`, an output that a table in an expectation reads,
   -- as unknown, in a spec with other errors, once any function is declared
   -- after it, as `sitesDecls` declares two (also on main's front ends, which
   -- agree on the spec without them).
   [{ mode := {}, seed := 28, issue := 493,
-     signature := "only Lean reports error: Unknown identifier `_`" },
+     difference := "line 21:35: only Lean reports error: Unknown identifier `ob1?`" },
    { mode := {}, seed := 67, issue := 493,
-     signature := "only Lean reports info: Both operands of `_` cannot be true: the stated premises require `_` to be false." },
+     difference := "line 9:25: only Lean reports info: Both operands of `f0::equation0` cannot be true: \
+       the stated premises require `f0.equation0.1` to be false." },
    { mode := {}, seed := 153, issue := 478,
-     signature := "only fren reports error[F0714]: this is outside the decidable core: a relational operator over a type that is not finite quantifies over its values" },
+     difference := "line 37:28: only fren reports error[F0714]: this is outside the decidable core: \
+       a relational operator over a type that is not finite quantifies over its values" },
    -- Lean reports `F0743` twice on `((({(1, 2)}).inverse).domain).card`.
    { mode := { avoidKnown := true }, seed := 41, issue := 493,
-     signature := "only Lean reports warning: this chain of methods has a shorter form" }]
+     difference := "line 23:16: only Lean reports warning: this chain of methods has a shorter form" }]
 
-/-- The difference is of a kind that `knownDifferences` lists. -/
-def knownKind (signature : String) : Bool := knownDifferences.any (·.signature == signature)
+/-- The difference is of a kind that `knownDifferences` lists for a seed
+of `--avoid-known`, of either generator, and `mode` is of `--avoid-known`
+too: on the fresh seeds that CI checks with it, those kinds go
+unchecked. -/
+def knownKind (mode : Mode) (kind : String) : Bool :=
+  mode.avoidKnown && knownDifferences.any fun k => k.mode.avoidKnown && signature k.difference == kind
+
+#guard knownKind { avoidKnown := true } "only Lean reports warning: this chain of methods has a shorter form"
+#guard knownKind { avoidKnown := true, guards := true } "only Lean reports warning: this chain of methods has a shorter form"
+#guard !knownKind {} "only Lean reports warning: this chain of methods has a shorter form"
+-- A kind listed only for the default generator is not known to
+-- `--avoid-known`.
+#guard !knownKind { avoidKnown := true } "only fren reports error[F0714]: this is outside the decidable core: \
+  a relational operator over a type that is not finite quantifies over its values"
 
 /-- The ranges of seeds of the corpus that `lake test` checks: the seeds
 `[SEED, SEED + COUNT)` of each mode, a few dozen to a job of `fren_test`
@@ -1164,32 +1228,109 @@ def corpusSpecs? : List String → Option (List (Mode × Nat))
     return (List.range n).map fun i => (m, a + i)
   | _ => none
 
-/-- Checks the specs of the corpus with both front ends, in this process,
-against `knownDifferences`: each failure is a difference that is not
-listed, or a listed one that no longer occurs. A spec whose front ends
-differ only in undecided checks, which time limits may explain, is left
-out both ways. -/
+#guard corpusSpecs? ["listed"] == some listedOutside
+#guard corpusSpecs? ["5", "2", "--guards"] == some [({ guards := true }, 5), ({ guards := true }, 6)]
+#guard corpusSpecs? ["5", "2", "--other"] == none
+#guard corpusSpecs? ["5"] == none
+-- The seeds of `knownDifferences` outside the corpus's ranges, the
+-- `--avoid-known` one among them, and every job's specs are the corpus's
+-- or those.
+#guard listedOutside == [({}, 67), ({}, 153), ({ avoidKnown := true }, 41)]
+#guard corpusJobs.all fun j => (corpusSpecs? (j.drop 1)).isSome
+
+/-- How the differences `found` on the spec of `mode` and `seed`, those
+that the solvers' time limits do not explain, fail to match `known`: those
+that it does not list, each as often as it occurs beyond the times it is
+listed, and the listed ones that do not occur as often as listed. A
+listed one that does not occur on a spec where either front end left a
+check undecided (`undecided`) may be hidden by it, and does not fail. -/
+def unmatched (known : List Known) (mode : Mode) (seed : Nat) (found : Array String) (undecided : Bool) :
+    Array String × List Known := Id.run do
+  let mut unlisted := found
+  let mut vanished := []
+  for k in known do
+    unless k.mode == mode && k.seed == seed do continue
+    match unlisted.idxOf? k.difference with
+    | some i => unlisted := unlisted.eraseIdx! i
+    | none => unless undecided do vanished := vanished ++ [k]
+  return (unlisted, vanished)
+
+section
+private def kd (mode : Mode := {}) (seed := 1) (difference := "d") : Known := { mode, seed, difference, issue := 0 }
+-- A listed difference passes, and an unlisted one fails.
+#guard unmatched [kd] {} 1 #["d"] false == (#[], [])
+#guard (unmatched [kd] {} 1 #["d", "e"] false).1 == #["e"]
+-- A listed one that no longer occurs fails, unless a check was undecided.
+#guard ((unmatched [kd] {} 1 #[] false).2.map (·.difference)) == ["d"]
+#guard (unmatched [kd] {} 1 #[] true).2.isEmpty
+-- Another mode's or seed's entry does not match.
+#guard (unmatched [kd (mode := { avoidKnown := true })] {} 1 #["d"] false).1 == #["d"]
+#guard (unmatched [kd (seed := 2)] {} 1 #["d"] false).1 == #["d"]
+-- Each entry matches one occurrence: an extra copy fails.
+#guard (unmatched [kd] {} 1 #["d", "d"] false).1 == #["d"]
+#guard unmatched [kd, kd] {} 1 #["d", "d"] false == (#[], [])
+#guard ((unmatched [kd, kd] {} 1 #["d"] false).2.map (·.difference)) == ["d"]
+end
+
+/-- The static errors that the groups appended after the cuts of a spec
+(`Mode.cuts`) add, given each cut's number of lines, each with the line
+after which its group starts: each error of the `fren` command that is
+not a check's result, located past the first cut's lines. Errors before
+them, which may stop the checks already, are no group's. A static error
+without a location, which the generator should never cause, is blamed on
+the first group, when there are cuts. -/
+def appendedErrors (cutLines : Array Nat) (diags : Array Diagnostic) : Array (Nat × Diagnostic) :=
+  diags.filterMap fun d => do
+    guard (d.severity == "error" && !FrenTest.Frontends.isCheckResult d && !FrenTest.Frontends.isStoppedTrailer d)
+    if d.line == 0 then return (← cutLines[0]?, d)
+    let start ← (cutLines.toList.filter (· < d.line)).max?
+    return (start, d)
+
+section
+private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
+  { line, severity := "error", text := "type mismatch", code? := some code }
+-- An error before the first cut is no group's, even where the spec stops.
+#guard (appendedErrors #[10, 20] #[errAt 3, { line := 0, severity := "error", text := Fren.Core.couldNotHeadline }]).isEmpty
+-- An error in a group is caught, with the line its group starts after,
+-- though an earlier one already stops the checks.
+#guard (appendedErrors #[10, 20] #[errAt 3, errAt 12, errAt 25]).map (·.1) == #[10, 20]
+-- A check's result and a warning are not static errors.
+#guard (appendedErrors #[10] #[errAt 12 "F0603", { line := 12, severity := "warning", text := "w" }]).isEmpty
+-- A static error without a location is blamed on the first group.
+#guard (appendedErrors #[10, 20] #[{ line := 0, severity := "error", text := "unreadable", code? := some "F0001" }]).map (·.1) == #[10]
+-- No cuts, as in `--guards`: nothing is a group's.
+#guard (appendedErrors #[] #[errAt 12]).isEmpty
+end
+
+/-- Checks the specs of the corpus with both front ends, in this process.
+Each failure is a difference that `knownDifferences` does not list, or a
+listed one that no longer occurs (`unmatched`), leaving out those that
+the solvers' time limits explain; or a static error in a group that the
+generator appends after a cut (`appendedErrors`), which it must not
+append, whether or not the spec stops before it. -/
 def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mode × Nat)) :
     IO (Array String) := do
   IO.FS.createDirAll dir
   let path := dir / s!"corpus-{← IO.Process.getPID}.fren"
   let mut failures := #[]
   for (mode, s) in specs do
-    let (found, flaky, _, _) ← runFrontends env path (mode.spec s)
-    if flaky then continue
+    let ran ← runFrontends env path (mode.spec s)
+    let c := ran.comparison
     let again := s!"`lake exe fren_fuzz_frontends{flags mode} --count 1 --seed {s}`"
-    let known := knownDifferences.filter fun k => k.mode == mode && k.seed == s
-    for f in found do
-      let g := signature f
-      unless known.any (·.signature == g) do
-        failures := failures.push s!"seed {s}{flags mode}: the front ends differ: {f.replace "\n" " "}\n  \
-          reproduce it with {again}; if its issue is known, list it in `knownDifferences` as\n  \
-          \{ mode := {mode.lean}, seed := {s}, signature := {(toJson g).compress}, issue := ISSUE }"
-    let sigs := found.map signature
-    for k in known do
-      unless sigs.contains k.signature do
-        failures := failures.push s!"seed {s}{flags mode}: the front ends no longer differ by `{k.signature}` (#{k.issue}); \
-          remove it from `knownDifferences`"
+    let (unlisted, vanished) := unmatched knownDifferences mode s c.decided c.undecided
+    for f in unlisted do
+      failures := failures.push s!"seed {s}{flags mode}: the front ends differ: {f.replace "\n" " "}\n  \
+        reproduce it with {again}; if its issue is known, list it in `knownDifferences` as\n  \
+        \{ mode := {mode.lean}, seed := {s}, difference := {(toJson f).compress}, issue := ISSUE }"
+    for k in vanished do
+      failures := failures.push s!"seed {s}{flags mode}: the front ends no longer differ by `{k.difference}` (#{k.issue}); \
+        remove it from `knownDifferences`, or, if a change to the generator removed it, leave every seed's spec as it was"
+    let cutLines := (mode.cuts s).map fun c => (c.splitOn "\n").length - 1
+    for (start, d) in appendedErrors cutLines ran.cli do
+      failures := failures.push s!"seed {s}{flags mode}: what the generator appends after line {start} adds a static \
+        error at line {d.line}, error{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}; an error stops \
+        every check of the spec, so put deliberate errors in a mode of their own \
+        (print the spec with {again.replace "--count 1 --seed" "--print"})"
   try IO.FS.removeFile path catch _ => pure ()
   return failures
 
@@ -1229,11 +1370,12 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
     IO.FS.writeFile run.progress (toString s)
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
-    let (found, flaky, reports, errs) ← runFrontends env run.spec text
+    let ran ← runFrontends env run.spec text
+    let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
     let elapsed := (← IO.monoMsNow) - t0
     if elapsed > 20000 then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s"
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive"
-      else if mode.avoidKnown && found.all (knownKind ∘ signature) then "known" else "differ"
+      else if mode.avoidKnown && found.all (knownKind mode ∘ signature) then "known" else "differ"
     unless found.isEmpty do
       let pre := if status == "differ" then "" else s!"{status}-"
       let file : System.FilePath := run.dir / s!"{pre}fe-seed{s}.fren"
