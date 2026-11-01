@@ -338,6 +338,21 @@ partial def VTy.readsInts (sp : Spec) (seen : List Name := []) : VTy → Bool
       | none => false
   | .param _ => false
 
+/-- Whether `smallValues` reads the world for `ty`: whether an abstract
+type, whose values the world gives, can be reached from it, through
+elements and fields, as for `VTy.readsInts`. Otherwise it returns the same
+values in every world. -/
+partial def VTy.readsSorts (sp : Spec) (seen : List Name := []) : VTy → Bool
+  | .abstract _ => true
+  | .int | .nat | .bool | .string | .param _ => false
+  | .set t | .seq t | .newtype _ t => t.readsSorts sp seen
+  | .rel a b => a.readsSorts sp seen || b.readsSorts sp seen
+  | .data p targs =>
+    targs.any (·.readsSorts sp seen) || if seen.contains p then false else
+      match sp.data.find? p with
+      | some d => d.ctors.any (·.fields.any (·.2.readsSorts sp (p :: seen)))
+      | none => false
+
 /-- The variables of `e`. -/
 partial def Ex.vars : Ex → Array Name
   | .var n => #[n]
@@ -396,6 +411,10 @@ structure Problem where
   once: a function of `vars` and `atoms`, so that each search need not
   compute it again. -/
   prepared? : Option (Thunk Prepared) := none
+  /-- For some types, `Problem.fixedPool?`'s values in every world, with
+  these `strs`, computed once for the problems that share them
+  (`Spec.fixedPools`). -/
+  fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}
   deriving Inhabited
 
 abbrev Env := Std.HashMap Name Val
@@ -416,6 +435,25 @@ def Problem.fixedPool? (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option
   match ty with
   | .seq _ | .set _ => none
   | _ => if ty.readsInts sp then none else some (smallValues sp w p.ints p.strs 24 2 ty)
+
+/-- The pool of each of `tys` whose `Problem.fixedPool?` is the same in
+every world and for any integers, with the strings `strs`: those that
+are not sequences or sets, and from which `smallValues` reads neither the
+integers nor the world (`VTy.readsInts`, `VTy.readsSorts`). Each is
+computed when a search first needs it, once for every problem whose
+strings are `strs` (`Problem.fixedPools`). -/
+def Spec.fixedPools (sp : Spec) (strs : Array String) (tys : Array VTy) : Std.HashMap VTy (Thunk (Array Val)) :=
+  tys.foldl (init := {}) fun m ty => match ty with
+    | .seq _ | .set _ => m
+    | _ =>
+      if m.contains ty || ty.readsInts sp || ty.readsSorts sp then m
+      else m.insert ty (Thunk.mk fun _ => smallValues sp default #[] strs 24 2 ty)
+
+/-- `Problem.fixedPool? sp w p ty`, from `p.fixedPools` where it has it. -/
+def Problem.fixedPoolIn (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option (Array Val) :=
+  match p.fixedPools[ty]? with
+  | some pool => some pool.get
+  | none => p.fixedPool? sp w ty
 
 /-- A condition on a search's environment under which an expression's value
 is surely unknown (`Ex.unknownIf`): that slot `k` has no value, or one or
@@ -679,7 +717,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   let eqReadsOf : Array (Thunk Nat) := equated.map fun t => Thunk.mk fun _ => readsOf t.get.2
   -- Each variable's pool, likewise.
   let pools : Array (Thunk (Array Val)) := p.vars.mapIdx fun i (_, ty) => Thunk.mk fun _ =>
-    (p.pool sp w ty (p.fixedPool? sp w ty)).run' ⟨mix seed i.toUInt64⟩
+    (p.pool sp w ty (p.fixedPoolIn sp w ty)).run' ⟨mix seed i.toUInt64⟩
   -- Returns whether it found values, the conflict set if it did not, and
   -- the steps left, with `slots` and `known` as they were given if it did
   -- not, and with the values found if it did. Every member of the

@@ -77,19 +77,22 @@ def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.D
 confirms its assumptions on its inputs and searches for its behaviour.
 `ints` and `strs` are the integers and strings to try (`intsOf`,
 `stringsOf`); `shapes?` is as for `World.interp`, and `pre` is
-`sp.admitAtoms c`, for the shapes of `w.interp sp shapes?`. -/
+`sp.admitAtoms c`, for the shapes of `w.interp sp shapes?`. `fixedPools`
+is `sp.fixedPools strs` of the types of the variables
+(`Problem.fixedPools`). -/
 def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Array String)
-    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape)) (pre : AdmitAtoms) : R (Option Admitted) := do
+    (shapes? : Option (Std.HashMap Name Fren.Core.DataShape)) (pre : AdmitAtoms)
+    (fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}) : R (Option Admitted) := do
   let I := w.interp sp shapes?
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs : Problem }.solve sp w I {})
+  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
     | return none
   -- The defined outputs that the inputs give, which bindings may read
   -- (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
   -- If they have no value, the outputs' search reports it, as before.
   let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-                   atoms := pre.early, ints, strs : Problem }.solve sp w I env)).getD env
+                   atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
@@ -97,7 +100,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     let some d := sp.comp? i.comp | return none
     let ins := d.vars.filter (·.role == .input) |>.map fun v => (i.name ++ v.name, v.ty)
     let binds := pre.binds[k]!
-    let some env' ← ({ vars := ins, atoms := binds, ints := intsOf binds, strs : Problem }.solve sp w I env) | return some out
+    let some env' ← ({ vars := ins, atoms := binds, ints := intsOf binds, strs, fixedPools : Problem }.solve sp w I env) | return some out
     env := env'
     out := { out with env, reached := k + 1 }
     -- Inputs and the earlier calls' public outputs (`checkInst`).
@@ -110,7 +113,7 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
         failed := true
     if failed then return some out
     let atoms := pre.insts[k]!
-    let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs : Problem }.solve sp w I env)
+    let some env' ← ({ vars := remaining (sp.order d i.name) env, atoms, ints := intsOf atoms, strs, fixedPools : Problem }.solve sp w I env)
       | return some out
     env := env'
     out := { out with env }
@@ -229,7 +232,11 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let goals := covers.map fun g => compiled { label := g.name, pfx := .anonymous, e := g.e }
   -- The problems searched at every test, each prepared once
   -- (`Problem.prepare`), with the shapes of every interpretation below.
-  let prepared (p : Problem) : Problem := { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?) }
+  -- The pools of the variables' types that are the same at every test
+  -- (`Spec.fixedPools`), computed once for all of the searches.
+  let fixedPools := sp.fixedPools strs ((sp.order c).map (·.2))
+  let prepared (p : Problem) : Problem :=
+    { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?), fixedPools }
   let outs := c.vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let outputsP := prepared { vars := outs, atoms := reqs, ints, strs }
   let negationsP := negations.map fun n => prepared { vars := sp.order c, atoms := all.push n, ints, strs }
@@ -238,7 +245,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   for _ in [0:tests] do
     let w ← World.random sp
     let I := w.interp sp (some shapes)
-    let some adm ← sp.admit w c ints strs (some shapes) pre | continue
+    let some adm ← sp.admit w c ints strs (some shapes) pre fixedPools | continue
     for (x, k) in instAssumes.zipIdx do
       let reached := (c.insts.findIdx? (·.name == x.1)).any (· < adm.reached)
       if reached then instFound := instFound.modify k (· + 1)
@@ -294,7 +301,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       let some v₁ := env[x.name]? | continue
       let differs : Atom := { label := x.name, pfx := .anonymous, e := .bin .ne (.var x.name) (.lit v₁) }
       let atoms := all.push differs
-      if let some env₂ ← ({ vars := remaining (sp.order c) inputs, atoms, ints, strs : Problem }.solve sp w I inputs) then
+      if let some env₂ ← ({ vars := remaining (sp.order c) inputs, atoms, ints, strs, fixedPools : Problem }.solve sp w I inputs) then
         let some v₂ := env₂[x.name]? | continue
         let input := sp.shown vars env fun v => v.role == .input && v.isPub
         detT := detT.modify k (·.refute (.nondeterministic input (v₁.showAs sp x.ty) (v₂.showAs sp x.ty)))
