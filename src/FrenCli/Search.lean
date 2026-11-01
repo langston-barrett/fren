@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCli.Compiled
 import FrenCli.Eval
 import FrenCli.Verdicts
 import Std.Data.HashMap
@@ -373,6 +374,8 @@ structure Prepared where
   full : Array Ex
   /-- What is evaluated of each constraint (`Ex.compile`), likewise. -/
   run : Array Ex
+  /-- `run`, compiled to closures (`Ex.toRun`), which a search runs. -/
+  runs : Array Run
   /-- The slots that each constraint reads (`Ex.slots`). -/
   fullSlots : Array (Array Nat)
   /-- Each variable to choose's slot. -/
@@ -537,6 +540,12 @@ def holdsIn (I : Interp) (slots : Slots) (e : Ex) : Option Bool :=
   | some (.bool b) => some b
   | _ => none
 
+/-- `holdsIn I slots e`, where `r` is `e` compiled (`Ex.toRun_eq`). -/
+def holdsRun (I : Interp) (slots : Slots) (r : Run) : Option Bool :=
+  match r.run evalFuel { I, look := fun _ => none, slots } with
+  | some (.bool b) => some b
+  | _ => none
+
 /-- The slots that `e` reads (`Ex.slot`), each as often as it occurs. -/
 partial def Ex.slots : Ex → Array Nat
   | .slot k => #[k]
@@ -559,7 +568,8 @@ partial def Ex.slots : Ex → Array Nat
 /-- What `Problem.search` computes of `p` before it reads its environment,
 compiled with `shapes`: the names of its environment and their indexes,
 the constraints that mention each name, and the constraints compiled. -/
-def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem) : Prepared :=
+def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem) (cs? : Option Compiled := none) :
+    Prepared :=
   -- The names of the environment: the variables to choose, then those of
   -- the constraints; and the constraints that mention each, by index.
   let (names, index, byVar) := Id.run do
@@ -592,7 +602,10 @@ def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem)
   let run := p.atoms.map fun a =>
     ((a.run?.map (·.get)).getD (a.e.compile shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
   let varSlot := p.vars.map fun (x, _) => index[x]!
-  { names, index, byVar, full, run, varSlot
+  let runs := match cs? with
+    | some cs => run.map cs.run
+    | none => run.map .evaluated
+  { names, index, byVar, full, run, runs, varSlot
     fullSlots := full.map (·.slots)
     equated := varSlot.map fun x => Thunk.mk fun _ =>
       let es := full.flatMap fun e => e.equated x
@@ -639,7 +652,7 @@ random numbers. -/
 partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000)
     (backjump := true) : R (Option Env × Nat) := do
   let seed ← rand
-  let { names, byVar, full, run, fullSlots, varSlot, equated, .. } :=
+  let { names, byVar, full, run, runs, fullSlots, varSlot, equated, .. } :=
     (p.prepared?.map (·.get)).getD (p.prepare I.shapes)
   -- When each constraint is surely unknown, so that it need not be evaluated.
   let unknown := full.map (·.unknownIf)
@@ -647,7 +660,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   -- Each constraint's value in `env`. A constraint that is `true` stays
   -- so on that branch (evaluation is monotone), and is not evaluated again;
   -- one that is `false` stays so on every branch.
-  let atRoot := run.map (holdsIn I slots ·)
+  let atRoot := runs.map (holdsRun I slots ·)
   if atRoot.any (· == some false) then return (none, 0)
   let rootTrue := atRoot.map (· == some true)
   -- For each slot, the set of the variables to choose that it is: the
@@ -666,7 +679,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
     let mut newly := #[]
     for k in byVar[x]! do
       if known[k]! || unknown[k]!.holds slots then continue
-      match holdsIn I slots run[k]! with
+      match holdsRun I slots runs[k]! with
       | some false => return .error k
       | some true => newly := newly.push k
       | none => pure ()
@@ -720,7 +733,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       if left == 0 then return (false, 0, slots.set! x none, known, 0)
       return (false, conflictOf i eqReads rejections, slots.set! x none, known, left)
     else
-      match (run.zip known).zipIdx.find? fun ((e, t), _) => !(t || holdsIn I slots e == some true) with
+      match (runs.zip known).zipIdx.find? fun ((e, t), _) => !(t || holdsRun I slots e == some true) with
       | none => return (true, 0, slots, known, left)
       | some (_, k) => return (false, conflictOf i 0 [reads[k]!], slots, known, left)
   let (found, _, slots, _, left) := go 0 seed slots rootTrue budget

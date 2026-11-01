@@ -229,7 +229,8 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let goals := covers.map fun g => compiled { label := g.name, pfx := .anonymous, e := g.e }
   -- The problems searched at every test, each prepared once
   -- (`Problem.prepare`), with the shapes of every interpretation below.
-  let prepared (p : Problem) : Problem := { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?) }
+  let cs := Compiled.of sp.recDefs
+  let prepared (p : Problem) : Problem := { p with prepared? := some (Thunk.mk fun _ => p.prepare (fun q => shapes[q]?) cs) }
   let outs := c.vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let outputsP := prepared { vars := outs, atoms := reqs, ints, strs }
   let negationsP := negations.map fun n => prepared { vars := sp.order c, atoms := all.push n, ints, strs }

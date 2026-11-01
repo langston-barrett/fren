@@ -817,6 +817,78 @@ def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : 
   | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
   | none => none
 
+/-- The value of the method `m` of `r` at the arguments `args`
+(`Reqs/Lang/Expressions#methods`), as far as it is known. -/
+def Val.method (m : Fren.Core.Method) (r : Val) (args : Array Val) : Option Val := do
+  -- A relation's methods.
+  if let .set ps := r then
+    let fsts := ps.filterMap fun | .pair a _ => some a | _ => none
+    let snds := ps.filterMap fun | .pair _ b => some b | _ => none
+    return ← match m, (args[0]? : Option Val) with
+      | .card, _ => some (.int ps.size)
+      | .inverse, _ => some (Val.setOf (ps.filterMap fun | .pair a b => some (.pair b a) | _ => none))
+      | .closure, _ => some (Val.setOf (closurePairs ps))
+      | .domain, _ => some (Val.setOf fsts)
+      | .range, _ => some (Val.setOf snds)
+      | .image, some (.set s) =>
+        some (Val.setOf (ps.filterMap fun | .pair a b => if s.contains a then some b else none | _ => none))
+      | _, _ => none
+  -- A sequence's methods, by `Fren.Seq`, over the elements' numbers in
+  -- a table of the distinct values involved, which have decidable equality.
+  if let .seq es := r then
+    -- A length needs no table: it is the number of elements, which the
+    -- numbering keeps.
+    if let .len := m then return .int es.size
+    let table := (es ++ args.flatMap fun | .seq a => a | v => #[v]).toList.eraseDups.toArray
+    let num (v : Val) : Nat := (table.findIdx? (· == v)).getD 0
+    let q := Fren.Seq.ofList (es.toList.map num)
+    let back (q : Fren.Seq Nat) : Val := .seq (q.toList.toArray.map (table[·]!))
+    let seq (k : Nat) : Fren.Seq Nat := match args[k]? with
+      | some (Val.seq a) => Fren.Seq.ofList (a.toList.map num)
+      | _ => ∅
+    let int (k : Nat) := match args[k]? with | some (Val.int i) => i | _ => 0
+    return ← match m with
+      | .len => some (.int (Fren.Seq.len q))
+      | .startsWith => some (.bool (Fren.Seq.startsWith q (seq 0)))
+      | .endsWith => some (.bool (Fren.Seq.endsWith q (seq 0)))
+      | .contains => some (.bool (Fren.Seq.contains q (seq 0)))
+      | .at => some (back (Fren.Seq.at q (int 0)))
+      | .slice => some (back (Fren.Seq.slice q (int 0) (int 1)))
+      | .indexOf => some (.int (Fren.Seq.indexOf q (seq 0) (int 1)))
+      | .replace => some (back (Fren.Seq.replace q (seq 0) (seq 1)))
+      | .update => do some (back (Fren.Seq.update q (int 0) (num (← args[1]?))))
+      | .rev => some (back (Fren.Seq.rev q))
+      | _ => none
+  -- An `Int`'s methods.
+  if let .int x := r then
+    return ← match m, (args[0]? : Option Val) with
+      | .abs, _ => some (.int (if x < 0 then -x else x))
+      | .min, some (.int y) => some (.int (if x ≤ y then x else y))
+      | .max, some (.int y) => some (.int (if x ≥ y then x else y))
+      | _, _ => none
+  -- `min` and `max` of an ordered enumeration's, record's or `String`'s
+  -- value, by their order (`cmpV`).
+  if r matches .ctor .. || m == .min || m == .max then
+    return ← match m, (args[0]? : Option Val) with
+      | .min, some y => (cmpV r y).map fun c => if c != .gt then r else y
+      | .max, some y => (cmpV r y).map fun c => if c != .lt then r else y
+      | _, _ => none
+  let .str s := r | none
+  let str (k : Nat) := match args[k]? with | some (Val.str a) => a | _ => ""
+  let int (k : Nat) := match args[k]? with | some (Val.int i) => i | _ => 0
+  return match m with
+    | .len => .int (Fren.Str.len s)
+    | .startsWith => .bool (Fren.Str.startsWith s (str 0))
+    | .endsWith => .bool (Fren.Str.endsWith s (str 0))
+    | .contains => .bool (Fren.Str.contains s (str 0))
+    | .matches => .bool (Fren.Str.matches s (str 0))
+    | .at => .str (Fren.Str.at s (int 0))
+    | .slice => .str (Fren.Str.slice s (int 0) (int 1))
+    | .indexOf => .int (Fren.Str.indexOf s (str 0) (int 1))
+    | .replace => .str (Fren.Str.replace s (str 0) (str 1))
+    | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
+    | _ => .int 0
+
 /-- How deep `Ex.eval` may recurse: each call within it, to evaluate a
 part, an argument, a function's body, a type's invariant or a
 quantifier's next bound name, spends one unit. It is far deeper than any
@@ -925,74 +997,7 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
   | .method m recv args => do
     let r ← recv.eval I look locals slots frame memos fuel
     let args ← args.mapM (·.eval I look locals slots frame memos fuel)
-    -- A relation's methods.
-    if let .set ps := r then
-      let fsts := ps.filterMap fun | .pair a _ => some a | _ => none
-      let snds := ps.filterMap fun | .pair _ b => some b | _ => none
-      return ← match m, (args[0]? : Option Val) with
-        | .card, _ => some (.int ps.size)
-        | .inverse, _ => some (Val.setOf (ps.filterMap fun | .pair a b => some (.pair b a) | _ => none))
-        | .closure, _ => some (Val.setOf (closurePairs ps))
-        | .domain, _ => some (Val.setOf fsts)
-        | .range, _ => some (Val.setOf snds)
-        | .image, some (.set s) =>
-          some (Val.setOf (ps.filterMap fun | .pair a b => if s.contains a then some b else none | _ => none))
-        | _, _ => none
-    -- A sequence's methods, by `Fren.Seq`, over the elements' numbers in
-    -- a table of the distinct values involved, which have decidable equality.
-    if let .seq es := r then
-      -- A length needs no table: it is the number of elements, which the
-      -- numbering keeps.
-      if let .len := m then return .int es.size
-      let table := (es ++ args.flatMap fun | .seq a => a | v => #[v]).toList.eraseDups.toArray
-      let num (v : Val) : Nat := (table.findIdx? (· == v)).getD 0
-      let q := Fren.Seq.ofList (es.toList.map num)
-      let back (q : Fren.Seq Nat) : Val := .seq (q.toList.toArray.map (table[·]!))
-      let seq (k : Nat) : Fren.Seq Nat := match args[k]? with
-        | some (Val.seq a) => Fren.Seq.ofList (a.toList.map num)
-        | _ => ∅
-      let int (k : Nat) := match args[k]? with | some (Val.int i) => i | _ => 0
-      return ← match m with
-        | .len => some (.int (Fren.Seq.len q))
-        | .startsWith => some (.bool (Fren.Seq.startsWith q (seq 0)))
-        | .endsWith => some (.bool (Fren.Seq.endsWith q (seq 0)))
-        | .contains => some (.bool (Fren.Seq.contains q (seq 0)))
-        | .at => some (back (Fren.Seq.at q (int 0)))
-        | .slice => some (back (Fren.Seq.slice q (int 0) (int 1)))
-        | .indexOf => some (.int (Fren.Seq.indexOf q (seq 0) (int 1)))
-        | .replace => some (back (Fren.Seq.replace q (seq 0) (seq 1)))
-        | .update => do some (back (Fren.Seq.update q (int 0) (num (← args[1]?))))
-        | .rev => some (back (Fren.Seq.rev q))
-        | _ => none
-    -- An `Int`'s methods.
-    if let .int x := r then
-      return ← match m, (args[0]? : Option Val) with
-        | .abs, _ => some (.int (if x < 0 then -x else x))
-        | .min, some (.int y) => some (.int (if x ≤ y then x else y))
-        | .max, some (.int y) => some (.int (if x ≥ y then x else y))
-        | _, _ => none
-    -- `min` and `max` of an ordered enumeration's, record's or `String`'s
-    -- value, by their order (`cmpV`).
-    if r matches .ctor .. || m == .min || m == .max then
-      return ← match m, (args[0]? : Option Val) with
-        | .min, some y => (cmpV r y).map fun c => if c != .gt then r else y
-        | .max, some y => (cmpV r y).map fun c => if c != .lt then r else y
-        | _, _ => none
-    let .str s := r | none
-    let str (k : Nat) := match args[k]? with | some (Val.str a) => a | _ => ""
-    let int (k : Nat) := match args[k]? with | some (Val.int i) => i | _ => 0
-    return match m with
-      | .len => .int (Fren.Str.len s)
-      | .startsWith => .bool (Fren.Str.startsWith s (str 0))
-      | .endsWith => .bool (Fren.Str.endsWith s (str 0))
-      | .contains => .bool (Fren.Str.contains s (str 0))
-      | .matches => .bool (Fren.Str.matches s (str 0))
-      | .at => .str (Fren.Str.at s (int 0))
-      | .slice => .str (Fren.Str.slice s (int 0) (int 1))
-      | .indexOf => .int (Fren.Str.indexOf s (str 0) (int 1))
-      | .replace => .str (Fren.Str.replace s (str 0) (str 1))
-      | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
-      | _ => .int 0
+    r.method m args
   | .matches recv p re => do
     let .str s ← recv.eval I look locals slots frame memos fuel | none
     -- `re` is `p`'s parse, so a remembered answer is `re`'s.
