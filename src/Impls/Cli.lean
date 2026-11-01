@@ -3,6 +3,7 @@ import FrenCli.Color
 import FrenCli.Exit
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import Impls.QueryCache
 import Impls.View
 import Reqs.Cli
 -- keep-sorted end
@@ -150,17 +151,100 @@ theorem map_toObservation_inj : {as bs : List FrenCli.KeyObservation} →
     rw [toObservation_inj h.1, map_toObservation_inj h.2]
   | [], _ :: _, h | _ :: _, [], h => by simp at h
 
+/-- A component of a name, as the spec sees it. -/
+def toNamePart : FrenCli.NamePart → cli.NamePart
+  | .str s => .Text s
+  | .num n => .Number n
+
+/-- The components of a name, as the spec sees them. -/
+def toNameParts (n : Lean.Name) : Fren.Seq cli.NamePart :=
+  Fren.Seq.ofList ((FrenCli.namePartsOf n).map toNamePart)
+
+/-- An observation of a query's model, as the spec sees it. -/
+def toObserved (o : FrenCli.ModelObservation) : cli.Observed :=
+  { name := toNameParts o.key, formula := o.formula, guard := o.guard?.map toNameParts }
+
+theorem nth_map_text (ts : List String) (j : Int) (h : 0 ≤ j ∧ j < ts.length) :
+    (Fren.Seq.ofList (ts.map (toNamePart ∘ FrenCli.NamePart.str))).nth j = .Text (ts[j.toNat]'(by omega)) := by
+  rw [Fren.Seq.nth_of_lt _ _ h.1 (by simpa using h.2)]
+  simp [toNamePart]
+
+theorem holds_of {o : FrenCli.ModelObservation} {ko : FrenCli.KeyObservation}
+    (h : FrenCli.KeyObservation.of? o = some ko) : cli.«holds?» (toObserved o) (toObservation ko) = true := by
+  rcases o with ⟨key, formula, guard?⟩
+  rcases ko with ⟨kname, kformula, kguard?⟩
+  simp only [FrenCli.KeyObservation.of?, QueryCache.ofParts_eq_some] at h
+  obtain ⟨hname, rfl, hguard⟩ := h
+  cases guard? <;> cases kguard? <;> simp at hguard <;>
+    simp_all +contextual [fren_spec, toObserved, toObservation, toNameParts, Fren.Seq.toList, nth_map_text]
+  all_goals rfl
+
+theorem observed_text_of {o : FrenCli.ModelObservation} :
+    cli.«observed_text?» (toObserved o) = true ↔ (FrenCli.KeyObservation.of? o).isSome := by
+  rcases o with ⟨key, formula, _ | g⟩ <;>
+    simp [fren_spec, toObserved, FrenCli.KeyObservation.of?, QueryCache.ofParts_isSome] <;>
+    simp only [toNameParts, Fren.Seq.toList_ofList, List.mem_map, forall_exists_index, and_imp,
+      forall_apply_eq_imp_iff₂, QueryCache.textParts_isSome]
+  · exact forall₂_congr fun a _ => by cases a <;> simp [toNamePart]
+  · exact and_congr (forall₂_congr fun a _ => by cases a <;> simp [toNamePart])
+      (forall₂_congr fun a _ => by cases a <;> simp [toNamePart])
+
 -- A query's key (`FrenCli.QueryStore.key?`), from its script and the
--- observations of its model.
-impl query_key: cli::query_key for (script : String) (os : List FrenCli.KeyObservation) (solver : String) {
+-- observations of its model, as the check names them.
+impl query_key: cli::query_key for (script : String) (os : List FrenCli.ModelObservation) (solver : String) {
   script := script,
-  observations := os.map toObservation,
+  observed := Fren.Seq.ofList (os.map toObserved),
+  observations := Fren.Seq.ofList
+    ((((FrenCli.CacheKey.ofObservations? script os solver).map (·.observations)).getD []).map toObservation),
   solver := solver,
   version := FrenCli.queryCacheVersion,
-  key := toCacheKey (FrenCli.CacheKey.of script os solver),
+  «kept?» := (FrenCli.CacheKey.ofObservations? script os solver).isSome,
+  «spelled?» := (FrenCli.CacheKey.ofObservations? script os solver).isSome,
+  key := toCacheKey ((FrenCli.CacheKey.ofObservations? script os solver).getD (FrenCli.CacheKey.of script [] solver)),
 } by
   intro script os solver _
-  simp [fren_spec, toCacheKey, FrenCli.CacheKey.of]
+  have hof : FrenCli.CacheKey.ofObservations? script os solver =
+      (os.mapM FrenCli.KeyObservation.of?).map (FrenCli.CacheKey.of script · solver) := by
+    simp only [FrenCli.CacheKey.ofObservations?]
+    cases os.mapM FrenCli.KeyObservation.of? <;> rfl
+  simp only [fren_spec, hof, decide_eq_true_eq, Fren.Seq.mem_iff, Fren.Seq.toList_ofList, List.mem_map,
+    Fren.Seq.len_eq, List.length_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
+  rcases hm : os.mapM FrenCli.KeyObservation.of? with _ | kos
+  · obtain ⟨o, ho, hno⟩ := QueryCache.mapM_eq_none_iff.mp hm
+    have hne : os.length ≠ 0 := by intro h; simp [List.length_eq_zero_iff.mp h] at ho
+    have ht := (not_congr (observed_text_of (o := o))).mpr (by simp [hno])
+    refine ⟨by simp [toCacheKey, FrenCli.CacheKey.of, Fren.Seq.ofList], ?_, ?_⟩
+    · simp only [Option.map_none, Option.isSome_none, Bool.false_eq_true, false_iff]
+      intro hall
+      have := hall o ho
+      apply ht
+      simp only [fren_spec, decide_eq_true_eq, Fren.Seq.mem_iff] at this ⊢
+      exact this
+    · simp only [Option.map_none, Option.isSome_none, Bool.false_eq_true, false_iff]
+      intro h
+      exact hne (by simpa using h.1.symm)
+  · obtain ⟨hlen, hidx⟩ := QueryCache.mapM_eq_some_iff.mp hm
+    refine ⟨by simp [toCacheKey, FrenCli.CacheKey.of, Fren.Seq.ofList], ?_, ?_⟩
+    · simp only [Option.map_some, Option.isSome_some, true_iff]
+      intro a ha
+      obtain ⟨ko, hko⟩ := QueryCache.mapM_some_mem hm a ha
+      have := (observed_text_of (o := a)).mpr (by simp [hko])
+      simpa only [fren_spec, decide_eq_true_eq, Fren.Seq.mem_iff, Fren.Seq.toList_ofList, List.mem_map, Fren.Seq.len_eq,
+        List.length_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂] using this
+    · simp only [Option.map_some, Option.isSome_some, Option.getD_some, true_iff]
+      refine ⟨by simp [FrenCli.CacheKey.of, hlen], fun i h₀ hi => ?_⟩
+      have hn : i.toNat < os.length := by omega
+      have e₁ : (Fren.Seq.ofList (os.map toObserved)).nth i = toObserved os[i.toNat] := by
+        rw [Fren.Seq.nth_of_lt _ _ h₀ (by simpa using hi)]; simp
+      have e₂ : (Fren.Seq.ofList ((FrenCli.CacheKey.of script kos solver).observations.map toObservation)).nth i =
+          toObservation (kos[i.toNat]'(by omega)) := by
+        rw [Fren.Seq.nth_of_lt _ _ h₀ (by simp [FrenCli.CacheKey.of]; omega)]; simp [FrenCli.CacheKey.of]
+      have H : cli.«holds?» ((Fren.Seq.ofList (os.map toObserved)).nth i)
+          ((Fren.Seq.ofList ((FrenCli.CacheKey.of script kos solver).observations.map toObservation)).nth i) =
+            true := by
+        rw [e₁, e₂]; exact holds_of (hidx i.toNat hn (by omega))
+      simp only [fren_spec, decide_eq_true_eq, Fren.Seq.len_eq, and_imp] at H
+      exact H
 
 /-- An answer, as the spec sees it. -/
 def toCachedAnswer : FrenCli.CachedAnswer → cli.Answer
@@ -168,6 +252,71 @@ def toCachedAnswer : FrenCli.CachedAnswer → cli.Answer
   | .sat false => .Sat
   | .sat true => .SatWithModel
   | .unknown => .Unknown
+
+/-- A binding of a model, as the spec sees it. -/
+def toModelBinding (b : Lean.Name × String) : cli.Binding :=
+  { name := toNameParts b.1, value := b.2 }
+
+/-- An entry of the key `k`, the answer `o` and whether it has a model, as
+the spec sees it: only a `sat` answer with a model has one. -/
+def toEntry (k : FrenCli.CacheKey) (o : Fren.Core.Outcome String) (h : Bool) : cli.Entry :=
+  { key := toCacheKey k, answer := toCachedAnswer (FrenCli.CachedAnswer.of o h),
+    model := match o, h with
+      | .sat m, true => Fren.Seq.ofList (m.toList.map toModelBinding)
+      | _, _ => Fren.Seq.ofList [] }
+
+theorem toEntry_readBack (k : FrenCli.CacheKey) (o : Fren.Core.Outcome String) (h : Bool) :
+    toEntry k (QueryCache.readBack o h).1 (QueryCache.readBack o h).2 = toEntry k o h := by
+  cases o <;> cases h <;> rfl
+
+-- Which entries `--query-cache` writes (`FrenCli.encodeEntry?`), and what
+-- it reads them back as (`FrenCli.decodeEntry?`).
+impl query_entry: cli::query_entry for (k : FrenCli.CacheKey) (o : Fren.Core.Outcome String) (h : Bool) {
+  written := toEntry k o h,
+  «text?» := (FrenCli.encodeEntry? k o h).isSome,
+  read := ((FrenCli.encodeEntry? k o h).bind FrenCli.decodeEntry?).map fun (k, o, h) => toEntry k o h,
+} by
+  intro k o h _
+  simp only [fren_spec]
+  refine ⟨?_, ?_⟩
+  · rcases he : FrenCli.encodeEntry? k o h with _ | text
+    · rfl
+    · simp [QueryCache.decode_encode he, toEntry_readBack]
+  · cases o with
+    | unsat => cases h <;> simp [FrenCli.encodeEntry?, FrenCli.entryLines?, toEntry, FrenCli.CachedAnswer.of,
+        toCachedAnswer, Fren.Seq.toList, Fren.Seq.ofList, Fren.Seq.mem_iff]
+    | unknown r => simp [FrenCli.encodeEntry?, FrenCli.entryLines?, toEntry, FrenCli.CachedAnswer.of, toCachedAnswer]
+    | sat m =>
+      cases h
+      · simp [FrenCli.encodeEntry?, FrenCli.entryLines?, toEntry, FrenCli.CachedAnswer.of, toCachedAnswer,
+          Fren.Seq.toList, Fren.Seq.ofList, Fren.Seq.mem_iff]
+      · simp [FrenCli.encodeEntry?, FrenCli.entryLines?, toEntry, FrenCli.CachedAnswer.of, toCachedAnswer]
+        have hb : ∀ (o : Option (List (List String))), (o.bind (Option.map FrenCli.joinLines ∘
+            fun lines => some (k.lineList ++ "sat model" :: lines.flatten))).isSome = o.isSome := by
+          intro o; cases o <;> rfl
+        have key : ∀ x : Lean.Name,
+            (FrenCli.nameParts? x).isSome ↔ ∀ p ∈ (toNameParts x).toList, ∃ s, p = cli.NamePart.Text s := by
+          intro x
+          simp only [FrenCli.nameParts?, QueryCache.textParts_isSome, toNameParts, Fren.Seq.toList_ofList,
+            List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
+          exact forall₂_congr fun a _ => by cases a <;> simp [toNamePart]
+        rw [hb]
+        constructor
+        · intro hs b x v hxv hb p hp
+          subst hb
+          obtain ⟨lss, hl⟩ := Option.isSome_iff_exists.mp hs
+          obtain ⟨ls, hls⟩ := QueryCache.mapM_some_mem hl (x, v) (by simpa using hxv)
+          obtain ⟨ps, hps, _⟩ := QueryCache.bindingLines_eq hls
+          obtain ⟨s, rfl⟩ := (key x).mp (by simp [hps]) p hp
+          rfl
+        · intro hall
+          rw [Option.isSome_iff_ne_none, Ne, QueryCache.mapM_eq_none_iff]
+          rintro ⟨⟨x, v⟩, hxv, hnone⟩
+          have hx : (FrenCli.nameParts? x).isSome := (key x).mpr fun p hp => by
+            have := hall _ x v (by simpa using hxv) rfl p hp
+            cases p <;> simp_all
+          simp [FrenCli.bindingLines?, FrenCli.nameLines?] at hnone
+          simp [hnone] at hx
 
 -- When an entry of `--query-cache` answers a query (`FrenCli.lookupEntry?`).
 impl query_cache_hit: cli::query_cache for (asked stored : FrenCli.CacheKey) (found wantModel : Bool)

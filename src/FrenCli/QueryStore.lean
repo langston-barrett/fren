@@ -69,28 +69,65 @@ def contradicts (a b : CachedAnswer) (sameModel : Bool) : Bool :=
 def sameModel (m n : Array (Lean.Name × String)) : Bool :=
   m.map (·.1) == n.map (·.1) && m.map (·.2) == n.map (·.2)
 
+/-- A character on one line: `\` and a line break escaped. -/
+def escapeChar : Char → List Char
+  | '\\' => ['\\', '\\']
+  | '\n' => ['\\', 'n']
+  | c => [c]
+
+/-- `escapeChar`'s inverse, over a line, after the characters `acc`, last
+first: a loop, since a line may be long. A `\` at its end, which
+`escapeChar` never leaves, is dropped. -/
+def unescapeChars (acc : List Char) : List Char → List Char
+  | '\\' :: c :: rest => unescapeChars ((if c == 'n' then '\n' else c) :: acc) rest
+  | ['\\'] => acc.reverse
+  | c :: rest => unescapeChars (c :: acc) rest
+  | [] => acc.reverse
+
 /-- `s` on one line: `\` and line breaks escaped. -/
 def escapeLine (s : String) : String :=
-  (s.replace "\\" "\\\\").replace "\n" "\\n"
+  String.ofList (s.toList.flatMap escapeChar)
 
 /-- `escapeLine`'s inverse. -/
-def unescapeLine (s : String) : String := Id.run do
-  let mut out := ""
-  let mut escaped := false
-  for c in s.toList do
-    if escaped then
-      out := out.push (if c == 'n' then '\n' else c)
-      escaped := false
-    else if c == '\\' then escaped := true
-    else out := out.push c
-  return out
+def unescapeLine (s : String) : String :=
+  String.ofList (unescapeChars [] s.toList)
+
+/-- The rest of `s` after `p`, if `s` starts with it. -/
+def afterPrefix? (p s : String) : Option String :=
+  go p.toList s.toList
+where
+  go : List Char → List Char → Option String
+    | [], s => some (String.ofList s)
+    | c :: p, d :: s => if c == d then go p s else none
+    | _ :: _, [] => none
+
+/-- The lines of `s`, split at each line break: a text that ends with one
+has an empty last line. -/
+def textLines (s : String) : List String :=
+  (s.toList.splitOn '\n').map String.ofList
+
+/-- A component of a name: its text, or its number. -/
+inductive NamePart where
+  | str (s : String)
+  | num (n : Nat)
+  deriving DecidableEq, Inhabited, Repr
+
+/-- The components of `n`, from the first. -/
+def namePartsOf : Lean.Name → List NamePart
+  | .anonymous => []
+  | .str p s => namePartsOf p ++ [.str s]
+  | .num p k => namePartsOf p ++ [.num k]
+
+/-- The texts of `parts`, or `none` if one is numeric. -/
+def textParts? : List NamePart → Option (List String)
+  | [] => some []
+  | .str s :: parts => (textParts? parts).map (s :: ·)
+  | .num _ :: _ => none
 
 /-- The components of `n`, or `none` if one is numeric: a name as an entry
 stores it. -/
 def nameParts? (n : Lean.Name) : Option (List String) :=
-  n.components.mapM fun
-    | .str .anonymous s => some s
-    | _ => none
+  textParts? (namePartsOf n)
 
 /-- The name whose components are `parts`. -/
 def nameOfParts (parts : List String) : Lean.Name :=
@@ -136,13 +173,21 @@ structure KeyObservation where
   guard? : Option (List String)
   deriving DecidableEq, Inhabited, Repr
 
+/-- An observation of the name with the components `name`, the formula
+`formula`, and the guard with the components `guard?`, if any, as a key
+holds it; `none` if a component of either name is numeric
+(`cli::query_key`). -/
+def KeyObservation.ofParts? (name : List NamePart) (formula : String) (guard? : Option (List NamePart)) :
+    Option KeyObservation := do
+  let guard? ← match guard? with
+    | none => some none
+    | some g => (textParts? g).map some
+  return { name := ← textParts? name, formula, guard? }
+
 /-- `o` as a key holds it; `none` if a name of it has a numeric
 component. -/
-def KeyObservation.of? (o : ModelObservation) : Option KeyObservation := do
-  let guard? ← match o.guard? with
-    | none => some none
-    | some g => (nameParts? g).map some
-  return { name := ← nameParts? o.key, formula := o.formula, guard? }
+def KeyObservation.of? (o : ModelObservation) : Option KeyObservation :=
+  KeyObservation.ofParts? (namePartsOf o.key) o.formula (o.guard?.map namePartsOf)
 
 /-- What an entry's answer is the answer to (`cli::Key`): every input of
 the solver's run of a query (`solveScript`), which are the whole script
@@ -159,6 +204,13 @@ structure CacheKey where
 `solver` (`cli::query_key`). -/
 def CacheKey.of (script : String) (observations : List KeyObservation) (solver : String) : CacheKey :=
   { script, observations, solver, version := queryCacheVersion }
+
+/-- The key of the query `script` whose model reads `observations`, for
+cvc5's version `solver`; `none` if a name of them has a numeric component,
+which an entry cannot hold (`cli::query_key`). -/
+def CacheKey.ofObservations? (script : String) (observations : List ModelObservation) (solver : String) :
+    Option CacheKey :=
+  return CacheKey.of script (← observations.mapM KeyObservation.of?) solver
 
 /-- The lines of an observation in a key. -/
 def KeyObservation.lines (o : KeyObservation) : List String :=
@@ -187,17 +239,24 @@ def readObservations? : Nat → List String → Option (List KeyObservation × L
     let (os, rest) ← readObservations? n rest
     return (o :: os, rest)
 
+/-- `ls`, each ended by a line break. -/
+def joinLines (ls : List String) : String :=
+  String.join (ls.map (· ++ "\n"))
+
+/-- The lines that begin `k`'s entry, without their line breaks. -/
+def CacheKey.lineList (k : CacheKey) : List String :=
+  [s!"fren query cache {k.version}", s!"cvc5 {escapeLine k.solver}", escapeLine k.script,
+    toString k.observations.length] ++ k.observations.flatMap (·.lines)
+
 /-- The lines that begin `k`'s entry. -/
 def CacheKey.lines (k : CacheKey) : String :=
-  let ls := [s!"fren query cache {k.version}", s!"cvc5 {escapeLine k.solver}", escapeLine k.script,
-    toString k.observations.length] ++ k.observations.flatMap (·.lines)
-  String.join (ls.map (· ++ "\n"))
+  joinLines k.lineList
 
 /-- The key at the start of an entry's lines, and the lines after it. -/
 def CacheKey.read? : List String → Option (CacheKey × List String)
   | v :: c :: script :: count :: rest => do
-    let version ← (v.dropPrefix? "fren query cache ").bind (·.toString.toNat?)
-    let solver ← (c.dropPrefix? "cvc5 ").map (unescapeLine ·.toString)
+    let version ← (afterPrefix? "fren query cache " v).bind (·.toNat?)
+    let solver ← (afterPrefix? "cvc5 " c).map unescapeLine
     let (observations, rest) ← readObservations? (← count.toNat?) rest
     return ({ script := unescapeLine script, observations, solver, version }, rest)
   | _ => none
@@ -240,7 +299,7 @@ def QueryStore.new (dir? verify? : Option System.FilePath) : IO QueryStore := do
 /-- The key of the query `script` whose model reads `observations`; `none`
 if a name of them has a numeric component, which an entry cannot hold. -/
 def QueryStore.key? (st : QueryStore) (script : String) (observations : Array ModelObservation) : Option CacheKey :=
-  return CacheKey.of script (← observations.toList.mapM KeyObservation.of?) st.solver
+  CacheKey.ofObservations? script observations.toList st.solver
 
 /-- The hex digits of `n`, 16 of them. -/
 def hex16 (n : UInt64) : String :=
@@ -252,33 +311,46 @@ def CacheKey.path (k : CacheKey) (dir : System.FilePath) : System.FilePath :=
   let h := hex16 (hash k.lines)
   dir / (h.take 2).toString / h
 
+/-- The lines of a binding of a model: its name's, then its value;
+`none` if its name has a numeric component. -/
+def bindingLines? (b : Lean.Name × String) : Option (List String) :=
+  (nameLines? b.1).map (· ++ [escapeLine b.2])
+
+/-- The lines of an entry, without their line breaks (`encodeEntry?`). -/
+def entryLines? (k : CacheKey) (o : Outcome String) (hasModel : Bool) : Option (List String) := do
+  let body ← match o with
+    | .unsat => some ["unsat"]
+    | .sat model =>
+      if !hasModel then some ["sat"] else do
+        let lines ← model.toList.mapM bindingLines?
+        pure ("sat model" :: lines.flatten)
+    | .unknown _ => none
+  return k.lineList ++ body
+
 /-- The text of an entry: `k`'s lines, then the answer `o`, with whether
 it has a model, and its model; `none` if `o` is not stored
 (`CachedAnswer.stored`) or a name of its model cannot be. -/
-def encodeEntry? (k : CacheKey) (o : Outcome String) (hasModel : Bool) : Option String := do
-  let body ← match o with
-    | .unsat => some "unsat\n"
-    | .sat model =>
-      if !hasModel then some "sat\n" else do
-        let lines ← model.toList.mapM fun (n, v) => return ((← nameLines? n) ++ [escapeLine v]).map (· ++ "\n")
-        pure ("sat model\n" ++ String.join lines.flatten)
-    | .unknown _ => none
-  return k.lines ++ body
+def encodeEntry? (k : CacheKey) (o : Outcome String) (hasModel : Bool) : Option String :=
+  (entryLines? k o hasModel).map joinLines
 
-/-- The pairs of a model's names and values, from `ls`. -/
-partial def modelOfLines? (ls : List String) (acc : Array (Lean.Name × String) := #[]) :
-    Option (Array (Lean.Name × String)) :=
-  match ls with
-  | [] => some acc
-  | _ => do
+/-- The pairs of a model's names and values, from `ls`, in at most
+`fuel` steps: each takes at least two lines. -/
+def modelOfLinesFuel? : Nat → List String → Option (List (Lean.Name × String))
+  | _, [] => some []
+  | 0, _ :: _ => none
+  | fuel + 1, ls@(_ :: _) => do
     let (n, rest) ← nameOfLines? ls
     let v :: rest := rest | none
-    modelOfLines? rest (acc.push (n, unescapeLine v))
+    return (n, unescapeLine v) :: (← modelOfLinesFuel? fuel rest)
+
+/-- The pairs of a model's names and values, from `ls`. -/
+def modelOfLines? (ls : List String) : Option (Array (Lean.Name × String)) :=
+  (modelOfLinesFuel? ls.length ls).map List.toArray
 
 /-- `encodeEntry?`'s inverse: the key, the answer and whether it has a
 model. -/
 def decodeEntry? (text : String) : Option (CacheKey × Outcome String × Bool) := do
-  let (stored, lines) ← CacheKey.read? (text.splitOn "\n")
+  let (stored, lines) ← CacheKey.read? (textLines text)
   match lines with
   | ["unsat", ""] => return (stored, .unsat, true)
   | ["sat", ""] => return (stored, .sat #[], false)
@@ -323,7 +395,7 @@ def comparableEntries (dir : System.FilePath) (solver : String) : IO Bool := do
   for f in ← dir.walkDir do
     if ← f.isDir then continue
     let some text ← (some <$> IO.FS.readFile f) <|> pure none | continue
-    if let some (k, _) := CacheKey.read? (text.splitOn "\n") then
+    if let some (k, _) := CacheKey.read? (textLines text) then
       if k.version == queryCacheVersion && k.solver == solver then return true
   return false
 
