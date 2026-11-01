@@ -5,7 +5,10 @@ pub struct Pair<A, B> { fst: A, snd: B }
 
 set_option fren.evidence "random" in
 pub proc picks(x: Option<Int>, p: Pair<Option<Bool>, Int>): (det got: Int) {
-    out got := match x { Option::Some(n) => n, Option::None => p.snd }
+    out got := match x {
+        Option::Some(n) => n,
+        Option::None => p.snd,
+    }
 
     expect positive: got > 0
     expect flag: p.fst != Option::Some(false)

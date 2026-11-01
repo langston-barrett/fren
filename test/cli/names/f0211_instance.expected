@@ -1,14 +1,14 @@
 error[F0211]: call names cannot end in `?`
- --> test/cli/names/f0211_instance.fren:3:17
+ --> test/cli/names/f0211_instance.fren:4:10
   |
-3 | proc c() { call s? := sub() }
-  |                 ^^ ends in `?`
+4 |     call s? := sub()
+  |          ^^ ends in `?`
   |
   = note: only `Bool` variables end in `?`
 help: rename it to `s`
   |
-3 - proc c() { call s? := sub() }
-3 + proc c() { call s := sub() }
+4 -     call s? := sub()
+4 +     call s := sub()
   |
 
 error: could not check due to previous errors

@@ -1,3 +1,5 @@
 --@ args: eval --proc c --set x=3 --set y=3
 type Even = n: Int where invariant: n mod 2 = 0
-proc c(x: Even): (y: Even) { ensure same: y = x }
+proc c(x: Even): (y: Even) {
+    ensure same: y = x
+}

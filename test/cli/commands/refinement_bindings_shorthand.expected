@@ -1,14 +1,14 @@
 error[F0201]: cannot find `k` in this scope
- --> test/cli/commands/refinement_bindings_shorthand.fren:7:34
-  |
-7 |     expect r: ((concrete.y)) >= (k)
-  |                                  ^ not found in this scope
-  |
+  --> test/cli/commands/refinement_bindings_shorthand.fren:11:34
+   |
+11 |     expect r: ((concrete.y)) >= (k)
+   |                                  ^ not found in this scope
+   |
 help: a similar name exists: `x`
-  |
-7 -     expect r: ((concrete.y)) >= (k)
-7 +     expect r: ((concrete.y)) >= (x)
-  |
+   |
+11 -     expect r: ((concrete.y)) >= (k)
+11 +     expect r: ((concrete.y)) >= (x)
+   |
 
 error: could not check due to previous errors
 

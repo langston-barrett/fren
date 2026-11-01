@@ -1,7 +1,7 @@
 warning[F0763]: this comparison is always `true`
-  --> test/cli/commands/refinement_bindings_counts.fren:16:22
+  --> test/cli/commands/refinement_bindings_counts.fren:19:22
    |
-16 |     assume spec_pos: ((s).card) >= 0
+19 |     assume spec_pos: ((s).card) >= 0
    |                      ^^^^^^^^^^^^^^^ `card` is never negative
    |
    = note: the bound or the operator is probably not the one meant
@@ -9,9 +9,9 @@ warning[F0763]: this comparison is always `true`
    = help: to allow it, `set_option fren.lint.absurd_extreme_comparisons "allow"`
 
 warning[F0716]: say whether it is empty with `{}`, not `card`
-  --> test/cli/commands/refinement_bindings_counts.fren:18:43
+  --> test/cli/commands/refinement_bindings_counts.fren:21:43
    |
-18 |     expect result: (concrete.size) = 0 or ((s).card) > 0
+21 |     expect result: (concrete.size) = 0 or ((s).card) > 0
    |                                           ^^^^^^^^^^^^^^ compares a length with 0
    |
    = help: `fren fix` can fix this
@@ -19,14 +19,14 @@ warning[F0716]: say whether it is empty with `{}`, not `card`
    = help: to allow it, `set_option fren.lint.card_zero "allow"`
 help: compare with `{}`
    |
-18 -     expect result: (concrete.size) = 0 or ((s).card) > 0
-18 +     expect result: (concrete.size) = 0 or s != {}
+21 -     expect result: (concrete.size) = 0 or ((s).card) > 0
+21 +     expect result: (concrete.size) = 0 or s != {}
    |
 
 error[F0714]: this is outside the decidable core: the solver does not reliably combine counting with relational operators
-  --> test/cli/commands/refinement_bindings_counts.fren:16:23
+  --> test/cli/commands/refinement_bindings_counts.fren:19:23
    |
-16 |     assume spec_pos: ((s).card) >= 0
+19 |     assume spec_pos: ((s).card) >= 0
    |                       ^^^^^^^^ outside the decidable core
    |
    = help: say what the members are, with `in` and `subset`, rather than how many there are
@@ -34,18 +34,18 @@ error[F0714]: this is outside the decidable core: the solver does not reliably c
    = help: to allow it, `set_option fren.lint.undecidable "allow"`
 
 error[F0714]: this is outside the decidable core: the solver does not reliably combine counting with relational operators
-  --> test/cli/commands/refinement_bindings_counts.fren:18:44
+  --> test/cli/commands/refinement_bindings_counts.fren:21:44
    |
-18 |     expect result: (concrete.size) = 0 or ((s).card) > 0
+21 |     expect result: (concrete.size) = 0 or ((s).card) > 0
    |                                            ^^^^^^^^ outside the decidable core
    |
    = help: say what the members are, with `in` and `subset`, rather than how many there are
 
 warning[F0810]: `n` is never negative, so it can be a `Nat`
-  --> test/cli/commands/refinement_bindings_counts.fren:12:49
+  --> test/cli/commands/refinement_bindings_counts.fren:13:17
    |
-12 | proc counted(n: Int): (size: Int) { assume pos: n >= 0 ensure r: size = 0 or n > 0 }
-   |                                                 ^^^^^^ `n` is at least 0 by this assumption
+13 |     assume pos: n >= 0
+   |                 ^^^^^^ `n` is at least 0 by this assumption
    |
    = note: a `Nat` parameter brings this assumption with its type
    = note: a call must then pass a `Nat` for `n`

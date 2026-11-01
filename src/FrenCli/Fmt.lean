@@ -205,6 +205,14 @@ on each line (`fmt::group_layout`). -/
 def groupLayout (nPaths : Nat) (wasVertical fits : Bool) : Bool × Bool :=
   (nPaths > 1, nPaths > 1 && (wasVertical || !fits))
 
+/-- Whether a `use` on lines `first` to `last` starts and ends its lines,
+which have no other token and no comment (`fmt::in_block`): `before` is the
+line where the token before it ends, and `after` the line where the token
+after it starts, if there are such tokens. -/
+def useAlone (first last : Nat) (before after : Option Nat) (commented : Bool) : Bool :=
+  (match before with | none => true | some l => decide (l < first)) &&
+    (match after with | none => true | some l => decide (l > last)) && !commented
+
 /-- Whether a `use` is part of a block of imports (`fmt::in_block`). -/
 def inBlock (alone nested : Bool) : Bool := alone && !nested
 
@@ -316,9 +324,9 @@ def organizeImports (src : Array Char) (toks : Array Token) (comments : Array Sp
     let sl := lineAt first
     let el := endLine toks[last]!.span
     let next := toks[last + 1]!
-    let alone := (first == 0 || endLine toks[first - 1]!.span < sl) &&
-      (next.tok == .eof || lineOf[next.span.start]! > el) &&
-      !commentLines.any (fun l => sl ≤ l && l ≤ el)
+    let before := if first == 0 then none else some (endLine toks[first - 1]!.span)
+    let after := if next.tok == .eof then none else some lineOf[next.span.start]!
+    let alone := useAlone sl el before after (commentLines.any (fun l => sl ≤ l && l ≤ el))
     let nested := first > 0 && toks[first - 1]!.tok == .kw "in"
     if !inBlock alone nested then continue
     let (ps, glob) := usePaths toks first last

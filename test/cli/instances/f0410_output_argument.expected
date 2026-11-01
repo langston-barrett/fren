@@ -1,8 +1,8 @@
 error[F0410]: the arguments of a function may not mention an output, but `y` is one
- --> test/cli/instances/f0410_output_argument.fren:4:44
+ --> test/cli/instances/f0410_output_argument.fren:5:19
   |
-4 | proc c(x: Name): (y: Name) { ensure r: ok?(y) }
-  |                                            ^ an output
+5 |     ensure r: ok?(y)
+  |                   ^ an output
   |
   = note: a function is applied only to values the system does not choose, so that the checks stay decidable
   = help: apply the function to the parameters the output depends on, and relate the output to its value in an `ensure`

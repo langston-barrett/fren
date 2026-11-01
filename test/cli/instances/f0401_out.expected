@@ -1,8 +1,8 @@
 error[F0401]: assumptions may only mention parameters, but `y` is an output
- --> test/cli/instances/f0401_out.fren:2:38
+ --> test/cli/instances/f0401_out.fren:3:15
   |
-2 | proc c(x: Int): (y: Int) { assume a: y > 0 ensure r: y = x }
-  |                                      ^ an output
+3 |     assume a: y > 0
+  |               ^ an output
   |
   = note: assumptions constrain the environment, not the system
   = help: if it constrains the outputs, make it an `ensure`

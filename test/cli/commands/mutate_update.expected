@@ -1,8 +1,8 @@
 warning[F0819]: this update gives every field of `m::S`
  --> test/cli/commands/mutate_update.fren:9:19
   |
-9 |     ensure r: o = { if x > 0 then s else t with n := x + 1, on? := true }
-  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ reads nothing from `if x > 0 then s else t`
+9 |     ensure r: o = { if x > 0 then s else t with
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ reads nothing from `if x > 0 then s else t`
   |
   = help: write a record literal, `m::S { ... }`, with the same fields
   = note: `needless_update` is `warn` by default
@@ -12,10 +12,10 @@ swap-comparison-m::c::r-e8e67b9e6cd1 test/cli/commands/mutate_update.fren:9:17 `
 swap-comparison-m::c::r-6c9e561e0897 test/cli/commands/mutate_update.fren:9:26 `>` changed to `>=`
 shift-integer-m::c::r-23282fc5be59 test/cli/commands/mutate_update.fren:9:28 `0` changed to `1`
 swap-branches-m::c::r-5023875d9b8f test/cli/commands/mutate_update.fren:9:35 `s else t` changed to `t else s`
-drop-update-m::c::r-a1683bf8f925 test/cli/commands/mutate_update.fren:9:49 `n := x + 1,` removed
-swap-arithmetic-m::c::r-dee53f2cc3b3 test/cli/commands/mutate_update.fren:9:56 `+` changed to `-`
-shift-integer-m::c::r-da985acaa6b0 test/cli/commands/mutate_update.fren:9:58 `1` changed to `2`
-shift-integer-m::c::r-b098649a6da6 test/cli/commands/mutate_update.fren:9:58 `1` changed to `0`
-drop-update-m::c::r-6c958d14aa1d test/cli/commands/mutate_update.fren:9:59 `, on? := true` removed
-flip-bool-m::c::r-d2b439c95db2 test/cli/commands/mutate_update.fren:9:68 `true` changed to `false`
+drop-update-m::c::r-a1683bf8f925 test/cli/commands/mutate_update.fren:10:9 `n := x + 1,` removed
+swap-arithmetic-m::c::r-dee53f2cc3b3 test/cli/commands/mutate_update.fren:10:16 `+` changed to `-`
+shift-integer-m::c::r-da985acaa6b0 test/cli/commands/mutate_update.fren:10:18 `1` changed to `2`
+shift-integer-m::c::r-b098649a6da6 test/cli/commands/mutate_update.fren:10:18 `1` changed to `0`
+drop-update-m::c::r-6c958d14aa1d test/cli/commands/mutate_update.fren:10:19 `, on? := true` removed
+flip-bool-m::c::r-d2b439c95db2 test/cli/commands/mutate_update.fren:11:16 `true` changed to `false`
 exit=0

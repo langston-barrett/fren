@@ -1,14 +1,14 @@
 error[F0201]: cannot find `w` in this scope
- --> test/cli/instances/f0413_refine_unknown.fren:6:21
-  |
-6 |     refines c rough(w)
-  |                     ^ not found in this scope
-  |
+  --> test/cli/instances/f0413_refine_unknown.fren:10:21
+   |
+10 |     refines c rough(w)
+   |                     ^ not found in this scope
+   |
 help: a similar name exists: `x`
-  |
-6 -     refines c rough(w)
-6 +     refines c rough(x)
-  |
+   |
+10 -     refines c rough(w)
+10 +     refines c rough(x)
+   |
 
 error: could not check due to previous errors
 

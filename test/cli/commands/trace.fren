@@ -2,10 +2,18 @@
 -- Snapshot of `fren trace`: levels, derived evidence, `--require`, and
 -- markers that no claim names.
 
-proc shown(x?): (y?) { ensure r: y? iff x? }
-proc hidden(x?): (y?) { ensure r: y? iff x? }
-proc derived(x?) { call s := shown(x?) }
-proc untraced(x?): (y?) { ensure r: y? iff not x? }
+proc shown(x?): (y?) {
+    ensure r: y? iff x?
+}
+proc hidden(x?): (y?) {
+    ensure r: y? iff x?
+}
+proc derived(x?) {
+    call s := shown(x?)
+}
+proc untraced(x?): (y?) {
+    ensure r: y? iff not x?
+}
 
 tested shown: "test/fixtures/covers_shown.txt"
 trusted hidden: "the hardware guarantees it"

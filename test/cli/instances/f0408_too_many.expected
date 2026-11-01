@@ -1,8 +1,8 @@
 error[F0408]: too many arguments: `sub` takes 1 argument, `count`
- --> test/cli/instances/f0408_too_many.fren:3:29
+ --> test/cli/instances/f0408_too_many.fren:4:22
   |
-3 | proc c() { call s := sub(1, 2) }
-  |                             ^ 2 arguments
+4 |     call s := sub(1, 2)
+  |                      ^ 2 arguments
   |
   = note: a call gives one argument for each parameter, in order
 

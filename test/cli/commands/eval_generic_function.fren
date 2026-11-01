@@ -1,7 +1,10 @@
 --@ args: eval --proc c --set x=Option::Some(3)
 -- A generic function is unfolded at its instance by the evaluator too.
 
-pub fn unwrap_or<T>(o: Option<T>, d: T): T := match o { Option::Some(x) => x, Option::None => d }
+pub fn unwrap_or<T>(o: Option<T>, d: T): T := match o {
+    Option::Some(x) => x,
+    Option::None => d,
+}
 
 proc c(x: Option<Int>): (det y: Int, det b?) {
     out y := unwrap_or(x, 0)

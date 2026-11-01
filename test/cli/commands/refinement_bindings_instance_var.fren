@@ -1,8 +1,15 @@
 -- A binding sees only the concrete component's own variables: the
 -- variables of its instances, such as `inner.y`, are not in scope.
-proc sub(v: Int): (y: Int) { ensure r: y = v }
-proc outer(x: Int): (z: Int) { call inner := sub(x) ensure r: z = inner.y }
-proc a(x: Int): (z: Int) { ensure r: z = x }
+proc sub(v: Int): (y: Int) {
+    ensure r: y = v
+}
+proc outer(x: Int): (z: Int) {
+    call inner := sub(x)
+    ensure r: z = inner.y
+}
+proc a(x: Int): (z: Int) {
+    ensure r: z = x
+}
 expect fits(x: Int) {
     call concrete := outer(x)
     expect r: (inner.y) = (x)

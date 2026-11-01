@@ -29,9 +29,9 @@ help: write `x > 3`
    |
 
 warning[F0810]: `p_x` is never negative, so it can be a `Nat`
-  --> test/cli/commands/mutate_list.fren:69:23
+  --> test/cli/commands/mutate_list.fren:80:23
    |
-69 |     assume p_bounded: p_x >= 0 and p_x <= LIMIT
+80 |     assume p_bounded: p_x >= 0 and p_x <= LIMIT
    |                       ^^^^^^^^ `p_x` is at least 0 by this assumption
    |
    = note: a `Nat` parameter brings this assumption with its type
@@ -169,40 +169,40 @@ swap-comparison-m::c::all_modes-620fdbc30285 test/cli/commands/mutate_list.fren:
 shift-integer-m::c::all_modes-135b3f92f8c1 test/cli/commands/mutate_list.fren:57:63 `1` changed to `2`
 shift-integer-m::c::all_modes-bd5b35c2584b test/cli/commands/mutate_list.fren:57:63 `1` changed to `0`
 swap-comparison-m::c::coded-2d1a992465db test/cli/commands/mutate_list.fren:59:21 `=` changed to `!=`
-drop-row-m::c::coded-1b6b82b68aef test/cli/commands/mutate_list.fren:59:31 `m = Heat => 1,` removed
-swap-comparison-m::c::coded-3891c5adb7d7 test/cli/commands/mutate_list.fren:59:33 `=` changed to `!=`
-shift-variant-m::c::coded-c2fad1e5b084 test/cli/commands/mutate_list.fren:59:35 `Heat` changed to `Off`
-shift-variant-m::c::coded-103efe7f3a4a test/cli/commands/mutate_list.fren:59:35 `Heat` changed to `Cool`
-swap-rows-m::c::coded-ae5a1d465a5e test/cli/commands/mutate_list.fren:59:43 `1, m = Cool => 2` changed to `2, m = Cool => 1`
-shift-integer-m::c::coded-f4d4cb8e5f02 test/cli/commands/mutate_list.fren:59:43 `1` changed to `2`
-shift-integer-m::c::coded-9ed4c1bdbe8c test/cli/commands/mutate_list.fren:59:43 `1` changed to `0`
-drop-row-m::c::coded-21f5ea4aafdf test/cli/commands/mutate_list.fren:59:46 `m = Cool => 2,` removed
-swap-comparison-m::c::coded-ab73f68fa0da test/cli/commands/mutate_list.fren:59:48 `=` changed to `!=`
-shift-variant-m::c::coded-662dc009f7c7 test/cli/commands/mutate_list.fren:59:50 `Cool` changed to `Heat`
-swap-rows-m::c::coded-e8faf5b5d0b6 test/cli/commands/mutate_list.fren:59:58 `2, _ => 0` changed to `0, _ => 2`
-shift-integer-m::c::coded-72d532d4d345 test/cli/commands/mutate_list.fren:59:58 `2` changed to `3`
-shift-integer-m::c::coded-9cd529050c4f test/cli/commands/mutate_list.fren:59:58 `2` changed to `1`
-drop-row-m::c::coded-642f586033f1 test/cli/commands/mutate_list.fren:59:59 `, _ => 0` removed
-shift-integer-m::c::coded-11648ce90f3f test/cli/commands/mutate_list.fren:59:66 `0` changed to `1`
-swap-comparison-m::c::branches-67ea7a732614 test/cli/commands/mutate_list.fren:60:24 `=` changed to `!=`
-swap-branches-m::c::branches-e2c815d61760 test/cli/commands/mutate_list.fren:60:38 `-x else x.max(0)` changed to `x.max(0) else -x`
-drop-negation-m::c::branches-59b03d49a72b test/cli/commands/mutate_list.fren:60:38 `-x` changed to `x`
-swap-min-max-m::c::branches-f1f72c6df0d6 test/cli/commands/mutate_list.fren:60:48 `max` changed to `min`
-shift-integer-m::c::branches-76bc8d4dc01a test/cli/commands/mutate_list.fren:60:52 `0` changed to `1`
-swap-comparison-m::c::arms-1f99b8616497 test/cli/commands/mutate_list.fren:61:20 `=` changed to `!=`
-swap-arms-m::c::arms-bf5de7adee2c test/cli/commands/mutate_list.fren:61:53 `0, Reading::Stale(_) => 1` changed to `1, Reading::Stale(_) => 0`
-shift-integer-m::c::arms-3c747aa869f1 test/cli/commands/mutate_list.fren:61:53 `0` changed to `1`
-shift-integer-m::c::arms-7936269a1ec8 test/cli/commands/mutate_list.fren:61:77 `1` changed to `2`
-shift-integer-m::c::arms-4f363069e5be test/cli/commands/mutate_list.fren:61:77 `1` changed to `0`
-swap-comparison-m::c::modes-587d5eff391c test/cli/commands/mutate_list.fren:62:21 `!=` changed to `=`
-shift-variant-m::c::modes-0267080e5aca test/cli/commands/mutate_list.fren:62:30 `Heat` changed to `Off`
-shift-variant-m::c::modes-5adb5eea87ec test/cli/commands/mutate_list.fren:62:30 `Heat` changed to `Cool`
-swap-and-or-m::c::modes-ec6218190339 test/cli/commands/mutate_list.fren:62:35 `or` changed to `and`
-swap-affix-m::c::modes-f325fb998ab4 test/cli/commands/mutate_list.fren:62:40 `starts_with?` changed to `ends_with?`
-swap-comparison-m::c::spans-155b0fc260cf test/cli/commands/mutate_list.fren:63:22 `=` changed to `!=`
-drop-update-m::c::spans-255a9bd470c8 test/cli/commands/mutate_list.fren:63:34 `lo := x.min(y),` removed
-swap-min-max-m::c::spans-88fcd75701b0 test/cli/commands/mutate_list.fren:63:42 `min` changed to `max`
-drop-update-m::c::spans-8127324e7fc5 test/cli/commands/mutate_list.fren:63:48 `, hi := 3` removed
-shift-integer-m::c::spans-2f2c367c494e test/cli/commands/mutate_list.fren:63:56 `3` changed to `4`
-shift-integer-m::c::spans-052c404c1044 test/cli/commands/mutate_list.fren:63:56 `3` changed to `2`
+drop-row-m::c::coded-1b6b82b68aef test/cli/commands/mutate_list.fren:60:9 `m = Heat => 1,` removed
+swap-comparison-m::c::coded-3891c5adb7d7 test/cli/commands/mutate_list.fren:60:11 `=` changed to `!=`
+shift-variant-m::c::coded-c2fad1e5b084 test/cli/commands/mutate_list.fren:60:13 `Heat` changed to `Off`
+shift-variant-m::c::coded-103efe7f3a4a test/cli/commands/mutate_list.fren:60:13 `Heat` changed to `Cool`
+swap-rows-m::c::coded-ae5a1d465a5e test/cli/commands/mutate_list.fren:60:21 `1, m = Cool => 2` changed to `2, m = Cool => 1`
+shift-integer-m::c::coded-f4d4cb8e5f02 test/cli/commands/mutate_list.fren:60:21 `1` changed to `2`
+shift-integer-m::c::coded-9ed4c1bdbe8c test/cli/commands/mutate_list.fren:60:21 `1` changed to `0`
+drop-row-m::c::coded-21f5ea4aafdf test/cli/commands/mutate_list.fren:61:9 `m = Cool => 2,` removed
+swap-comparison-m::c::coded-ab73f68fa0da test/cli/commands/mutate_list.fren:61:11 `=` changed to `!=`
+shift-variant-m::c::coded-662dc009f7c7 test/cli/commands/mutate_list.fren:61:13 `Cool` changed to `Heat`
+swap-rows-m::c::coded-e8faf5b5d0b6 test/cli/commands/mutate_list.fren:61:21 `2, _ => 0` changed to `0, _ => 2`
+shift-integer-m::c::coded-72d532d4d345 test/cli/commands/mutate_list.fren:61:21 `2` changed to `3`
+shift-integer-m::c::coded-9cd529050c4f test/cli/commands/mutate_list.fren:61:21 `2` changed to `1`
+drop-row-m::c::coded-642f586033f1 test/cli/commands/mutate_list.fren:61:22 `, _ => 0` removed
+shift-integer-m::c::coded-11648ce90f3f test/cli/commands/mutate_list.fren:62:14 `0` changed to `1`
+swap-comparison-m::c::branches-67ea7a732614 test/cli/commands/mutate_list.fren:64:24 `=` changed to `!=`
+swap-branches-m::c::branches-e2c815d61760 test/cli/commands/mutate_list.fren:64:38 `-x else x.max(0)` changed to `x.max(0) else -x`
+drop-negation-m::c::branches-59b03d49a72b test/cli/commands/mutate_list.fren:64:38 `-x` changed to `x`
+swap-min-max-m::c::branches-f1f72c6df0d6 test/cli/commands/mutate_list.fren:64:48 `max` changed to `min`
+shift-integer-m::c::branches-76bc8d4dc01a test/cli/commands/mutate_list.fren:64:52 `0` changed to `1`
+swap-comparison-m::c::arms-1f99b8616497 test/cli/commands/mutate_list.fren:65:20 `=` changed to `!=`
+swap-arms-m::c::arms-bf5de7adee2c test/cli/commands/mutate_list.fren:66:29 `0, Reading::Stale(_) => 1` changed to `1, Reading::Stale(_) => 0`
+shift-integer-m::c::arms-3c747aa869f1 test/cli/commands/mutate_list.fren:66:29 `0` changed to `1`
+shift-integer-m::c::arms-7936269a1ec8 test/cli/commands/mutate_list.fren:67:30 `1` changed to `2`
+shift-integer-m::c::arms-4f363069e5be test/cli/commands/mutate_list.fren:67:30 `1` changed to `0`
+swap-comparison-m::c::modes-587d5eff391c test/cli/commands/mutate_list.fren:70:21 `!=` changed to `=`
+shift-variant-m::c::modes-0267080e5aca test/cli/commands/mutate_list.fren:70:30 `Heat` changed to `Off`
+shift-variant-m::c::modes-5adb5eea87ec test/cli/commands/mutate_list.fren:70:30 `Heat` changed to `Cool`
+swap-and-or-m::c::modes-ec6218190339 test/cli/commands/mutate_list.fren:70:35 `or` changed to `and`
+swap-affix-m::c::modes-f325fb998ab4 test/cli/commands/mutate_list.fren:70:40 `starts_with?` changed to `ends_with?`
+swap-comparison-m::c::spans-155b0fc260cf test/cli/commands/mutate_list.fren:71:22 `=` changed to `!=`
+drop-update-m::c::spans-255a9bd470c8 test/cli/commands/mutate_list.fren:72:9 `lo := x.min(y),` removed
+swap-min-max-m::c::spans-88fcd75701b0 test/cli/commands/mutate_list.fren:72:17 `min` changed to `max`
+drop-update-m::c::spans-8127324e7fc5 test/cli/commands/mutate_list.fren:72:23 `, hi := 3` removed
+shift-integer-m::c::spans-2f2c367c494e test/cli/commands/mutate_list.fren:73:15 `3` changed to `4`
+shift-integer-m::c::spans-052c404c1044 test/cli/commands/mutate_list.fren:73:15 `3` changed to `2`
 exit=0

@@ -1,8 +1,8 @@
 error[F0210]: function `at_most_one?` must be applied to arguments
- --> test/cli/names/f0210_builtin_function.fren:2:24
+ --> test/cli/names/f0210_builtin_function.fren:3:15
   |
-2 | proc c(a?) { expect e: at_most_one? }
-  |                        ^^^^^^^^^^^^ not applied
+3 |     expect e: at_most_one?
+  |               ^^^^^^^^^^^^ not applied
   |
   = note: a function is mentioned only by applying it, as in `f(x)`
 

@@ -1,2 +1,4 @@
 -- A name not in scope, with a similar one (F0201).
-proc c(count: Int): (y: Int) { ensure r: y = cuont }
+proc c(count: Int): (y: Int) {
+    ensure r: y = cuont
+}

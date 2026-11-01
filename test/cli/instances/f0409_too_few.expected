@@ -1,8 +1,8 @@
 error[F0409]: too few arguments: `sub` takes 3 arguments, `a`, `b?`, `c`
- --> test/cli/instances/f0409_too_few.fren:3:22
+ --> test/cli/instances/f0409_too_few.fren:4:15
   |
-3 | proc c() { call s := sub(1) }
-  |                      ^^^ 1 argument
+4 |     call s := sub(1)
+  |               ^^^ 1 argument
   |
   = note: a call gives one argument for each parameter, in order
   = help: add `b?`, `c`
