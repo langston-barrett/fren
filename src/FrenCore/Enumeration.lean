@@ -643,8 +643,9 @@ def Atoms.ofTruth (slots : Array (Array Nat)) (truth : Nat → Array Nat → Opt
     truth? := some truth }
 
 /-- `truth?`, where it is given, is `eval` where `known` says the truth is
-known, and `none` elsewhere, so that reading it (`Atoms.truthOf`) agrees
-with reading those two, as the search and its proofs do. -/
+known, and `none` elsewhere, so that reading it (`Atoms.truthOf`), as the
+search does (`EF.truth`), agrees with reading those two, as the proofs do
+(`truth3`); `EF.truth_atom_truth3` proves it at an atom. -/
 def Atoms.TruthAgrees (ats : Atoms) : Prop :=
   ∀ f, ats.truth? = some f → ∀ k env, f k env = if ats.known k env then some (ats.eval k env) else none
 

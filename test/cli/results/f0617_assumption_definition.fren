@@ -1,0 +1,20 @@
+--@ args: quickcheck
+-- An assumption that reads a definition is evaluated with it computed
+-- from the inputs, in admission and in the search behind an assumption's
+-- `F0617`. `a` has a value in every input, so `p` gets only `F0610`, which
+-- `b` explains, and `q`, whose only assumption reads a definition, is
+-- tested.
+set_option fren.lint.contradictory_comparisons "allow" in
+pub proc p(x: Int): (y: Int) {
+    let next: Int := x + 1
+    assume a: next > 0
+    assume b: x > 0 and x < 0
+    ensure r: y = x
+}
+
+pub proc q(x: Int): (y: Int) {
+    let next: Int := x + 1
+    assume a: next > 0
+    ensure r: y = x
+    expect e: y >= 0
+}

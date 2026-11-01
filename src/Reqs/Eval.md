@@ -448,10 +448,13 @@ stream of their own. Each makes at most one search for each test that
 `--tests` asks for, with a test's budget:
 - for a global expectation, where some test found behaviours of its
   binders but the trigger held in none of them, a search for behaviours
-  of the binders, until one is found in which the trigger has no value;
+  of the binders, which stops at the first one in which the trigger has
+  no value;
 - for a procedure, where no test found an admissible input, a search for
-  inputs without its assumptions, in which each of its own assumptions is
-  tested as a check, until each has had a value.
+  inputs without its assumptions, with the variables whose definitions
+  mention only inputs computed from them, as admission evaluates the
+  assumptions, in which each of its own assumptions is tested as a check,
+  which stops once a test has reached each of them.
 
 A test reaches a check only where the check has a value in what the test
 found, too, and so does its trigger, if it has one: a trigger without a

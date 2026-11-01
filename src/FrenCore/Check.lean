@@ -2227,8 +2227,8 @@ def untriggeredMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : 
 /-- Testing found what a check is about, with its trigger, if any, not
 false, and in some of those tests the trigger held, but the check had no
 value in any of them (`eval::unreached`). -/
-def valuelessMsg (subject : String) (tests : Nat) (byCheck : Bool := false) : Msg :=
-  { code? := some "F0617", headline := s!"testing never reached {subject} in {tests} tests: it had no value in any of them"
+def valuelessMsg (subject : String) (tests : Nat) (byCheck : Bool := false) (hasTrigger : Bool := false) : Msg :=
+  { code? := some "F0617", headline := s!"testing never reached {subject} in {tests} tests: it had no value in any of them{if hasTrigger then " in which its trigger held" else ""}"
     label? := some "no value"
     notes := #["note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the check has no value, so the test says nothing about it",
       if byCheck then "help: guard the part that has no value, or set `fren.evidence` to `\"solver\"` to have the solver check it"

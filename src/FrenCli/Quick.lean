@@ -69,6 +69,12 @@ structure Admitted where
   reached : Nat := 0
   complete : Bool := false
 
+/-- Whether an assumption of `c` reads a defined variable that the inputs
+give (`Comp.earlyDefs`). -/
+def Comp.assumesReadDefs (c : Comp) : Bool :=
+  let early := c.earlyDefs
+  (c.ofKind .assume).any fun a => a.e.vars.any early.contains
+
 /-- The constraints that `Spec.admit` searches with, for `c`: its
 assumptions, the definitions of its defined variables that the inputs give,
 and each call's arguments and meaning, compiled for searches whose
@@ -98,14 +104,21 @@ def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Arr
     (fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}) : R (Option Admitted) := do
   let I := w.interp sp shapes?
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-  let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
-    | return none
-  -- The defined outputs that the inputs give, which bindings may read
-  -- (`Reqs/Eval#searching-for-behaviours`).
+  -- The defined variables that the inputs give, which assumptions and
+  -- bindings may read (`Reqs/Eval#searching-for-behaviours`).
   let early := c.earlyDefs
-  -- If they have no value, the outputs' search reports it, as before.
-  let env := (← ({ vars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
-                   atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env
+  let earlyVars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
+  let env ← if c.assumesReadDefs then
+      -- An assumption that reads one is evaluated with them computed, so
+      -- they are chosen with the inputs, after them.
+      let some env ← ({ vars := inputs ++ earlyVars, atoms := pre.assumes ++ pre.early, ints, strs, fixedPools : Problem }.solve sp w I {})
+        | return none
+      pure env
+    else
+      let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
+        | return none
+      -- If they have no value, the outputs' search reports it, as before.
+      pure ((← ({ vars := earlyVars, atoms := pre.early, ints, strs, fixedPools : Problem }.solve sp w I env)).getD env)
   let vars := sp.flatVars c
   let mut env := env
   let mut out : Admitted := { env }
@@ -427,16 +440,19 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
       (t.warning behaviours untested false, result .expect (some e.name) t)
   -- Where no test found an admissible input, the procedure's own
   -- assumptions, each tested as a check on inputs searched for without
-  -- them, until each has had a value: an assumption that had none in any
-  -- of them admits no input, which explains `F0610`. Only then, so that
-  -- the other results do not depend on it: each procedure's tests have a
-  -- random stream of their own.
+  -- them, with the defined variables that the inputs give computed, as
+  -- admission evaluates them, until a test has reached each: an
+  -- assumption that had no value in any of them admits no input, which
+  -- explains `F0610`. Only then, so that the other results do not depend
+  -- on it: each procedure's tests have a random stream of their own.
   let assumes := c.ofKind .assume
   let mut assumeT : Array Tally := assumes.map fun _ => {}
   let mut inputsFound := 0
   if untested && !assumes.isEmpty then
     let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
-    let anyInput : Problem := { vars := inputs, atoms := #[], ints, strs, fixedPools }
+    let early := c.earlyDefs
+    let earlyVars := (c.vars.filter (early.contains ·.name)).map fun v => (v.name, v.ty)
+    let anyInput : Problem := { vars := inputs ++ earlyVars, atoms := pre.early, ints, strs, fixedPools }
     for _ in [0:tests] do
       if assumeT.all (·.tests > 0) then break
       let w ← World.random sp

@@ -897,6 +897,17 @@ def truth3 (sp : Space) (ats : Atoms) (env : Array Nat) : EF → Option Bool
     | none => if ats.sameKnown x env (sp.primedEnv env) then some (ats.sameDefined x env (sp.primedEnv env)) else none
   | f => some (f.eval sp ats env)
 
+/-- At an atom that no index out of range makes unknown, the search's
+reading (`EF.truth`, through `Atoms.truthOf`) is `truth3`'s, where
+`truth?` agrees with `eval` and `known`, as `Atoms.ofTruth` makes it. -/
+theorem EF.truth_atom_truth3 (sp : Space) (ats : Atoms) (env : Array Nat) (k : Nat)
+    (h : ats.TruthAgrees) (hu : ats.unknown k env = false) :
+    (EF.atom k).truth sp ats env = match truth3 sp ats env (.atom k) with
+      | some b => .ofBool b
+      | none => .unknown := by
+  simp only [EF.truth, truth3, hu, Atoms.truthOf_of_agrees ats h k env]
+  rfl
+
 /-- Whether `f` has no `∃ outputs`, its atoms are among the first `n`,
 and no name it compares is one that `possiblySame` gives. -/
 def plain (n : Nat) : EF → Bool

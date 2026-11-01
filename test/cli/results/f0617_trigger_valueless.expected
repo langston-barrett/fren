@@ -52,7 +52,7 @@ warning[F0617]: testing never reached `m::mixed::e` in 100 tests: its trigger ha
    = note: where an index is out of range, a function has no value that the evaluator knows, no case of a table or `match` is taken, or evaluation runs out of fuel, the trigger has no value, so it does not hold, and the test says nothing about the check
    = help: run `fren check` to decide it, or guard the part of the trigger that has no value
 
-warning[F0617]: testing never reached `m::held::e` in 100 tests: it had no value in any of them
+warning[F0617]: testing never reached `m::held::e` in 100 tests: it had no value in any of them in which its trigger held
   --> test/cli/results/f0617_trigger_valueless.fren:38:12
    |
 38 |     expect e: when q.len < 3, q[7] > 0
