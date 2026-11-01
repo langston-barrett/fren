@@ -1,0 +1,38 @@
+-- A defined function's body is checked against its result type
+-- (`lang::checked`, `Declared`), in both front ends: a construction of a
+-- generic type whose values give no type argument, and `{}` and `[]`, take
+-- the result type, through the branches of a conditional and the arms of
+-- a `match`, as in a function block's `out`.
+set_option fren.lint.dead_code "allow"
+
+mod function_body_expected
+
+pub enum Shape<V> { Dot, Named(V), Box(Int, Int) }
+pub enum Kind { Small, Large }
+
+fn none(x: Int): Option<Int> := if x > 0 then Option::None else Option::Some(x)
+fn empty(x: Int): Set<Int> := if x > 0 then {} else {x}
+fn nothing(x: Int): Seq<Int> := if x > 0 then [] else [x]
+fn shape(k: Kind): Shape<String> := match k {
+    Kind::Small => Shape::Box(1, 1),
+    Kind::Large => Shape::Dot,
+}
+fn block(k: Kind): (s: Shape<String>) {
+    out s := match k {
+        Kind::Small => Shape::Box(1, 2),
+        Kind::Large => Shape::Dot,
+    }
+}
+
+expect values(x: Int, k: Kind) {
+    expect none_positive: when x > 0, none(x) = Option::None
+    expect empty_positive: when x > 0, empty(x) = {}
+    expect nothing_positive: when x > 0, nothing(x) = []
+    expect small: when k = Kind::Small, shape(k) = Shape::Box(1, 1)
+    expect same: block(k) is Shape::Box(_, _) iff shape(k) is Shape::Box(_, _)
+}
+
+-- What is expected of the body is the result type, so a body of another
+-- type is a type mismatch.
+fn wrong(x: Int): Shape<String> := Shape::Named(x)
+--~^ error: type mismatch: expected `String`, found `Int`

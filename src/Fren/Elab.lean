@@ -7335,9 +7335,10 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       let all := fvs ++ fnFvs
       let selfRec? := if recursive then some (vars.map (·.name), ({ params := declared, result := resultTy } : Core.FnTy),
         (⟨(mkIdent selfName).raw⟩ : Term)) else none
+      -- The body is checked against the result type (`lang::checked`).
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop
                             selfFn := if (← getLocal).inSubset then none else some n, natOk := result.isConstOf ``Nat
-                            expected? := if result.isConstOf ``Nat then some .nat else none
+                            expected? := ← coreTy? result, emptyOk := true
                             fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)), selfRec? }
       discard (takeIndexes fvs)
       modifyLocal fun l => { l with recUses := #[], recApps := #[], recMatches := #[] }

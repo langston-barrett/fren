@@ -848,9 +848,10 @@ Where an expression is written decides whether it is checked:
   `Ms(e)`, an argument of a function application, a variant's payload,
   an argument of a sequence's method, the argument of an enumeration's or
   record's `min` or `max`, against the receiver's type, a defined
-  output's definition, a
-  constant's value, and a definition of a [`let` or `where`](Let.md)
-  whose type is written.
+  output's definition, a defined function's body, against its result
+  type, so that `fn none(x: Int): Option<Int> := Option::None` is
+  accepted, a constant's value, and a definition of a [`let` or
+  `where`](Let.md) whose type is written.
 - **Shared.** Its type follows from that of the expression it is a part
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These
