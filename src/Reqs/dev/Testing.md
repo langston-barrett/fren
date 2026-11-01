@@ -559,6 +559,30 @@ in the queue, and runs `pre-merge` and `lint` on that merge commit. It
 merges the pull request only if both pass there, so that two pull requests
 that each pass on their own cannot break `main` together.
 
+## Query cache
+
+`lake test` checks Fren's own requirements with `fren check`'s [query
+cache](../Cli.md#query-cache), so that a query asked by an earlier run is
+answered without the solver. The test driver's `ownSpec` job reads the
+directory from `FREN_QUERY_CACHE`, which is `.lake/query-cache` if it is
+not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`, if
+set, is the directory to compare with (`--verify-query-cache`). Only that
+job uses the cache. Locally, the cache grows with each run: copying a
+worktree's `.lake` copies it too, and deleting `.lake/query-cache` clears
+it. An answer from it is the one that the solver would give, so a cache
+from another branch, or from before a change to the checker, is as good as
+a fresh one; it only hits less often.
+
+On CI, shard 0 of `main`'s `lean ci` run asks every query of the solver,
+with an empty cache, and compares each answer with that of the cache that
+the previous `main`'s run saved, so that a key that leaves out something
+that changes an answer fails `main`'s run. It then saves its cache, which
+is exactly the answers of that run: entries that no query asks any more
+are dropped, so the cache does not grow. Shard 0 of `pre-merge` restores
+that cache and never saves one. With most queries answered from it, Fren's
+own requirements took some 30% less CPU in the `fren` command, measured
+locally: the rest is building the queries and testing.
+
 ## Learning from review
 
 Review findings are evidence about the requirements and their connection

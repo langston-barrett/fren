@@ -1,0 +1,8 @@
+-- With `--query-cache`, the output is the same as without it, whether the
+-- answers come from the solver, in the first run, or from the cache, in
+-- the runs after it (`Reqs/Cli#query-cache`).
+--@ args: check --query-cache .lake/cli-test/query-cache --verify-query-cache .lake/cli-test/query-cache
+proc c(x: Int): (y: Int) {
+    ensure same: y = x
+    ensure bigger: y > x
+}

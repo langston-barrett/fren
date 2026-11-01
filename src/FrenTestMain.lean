@@ -499,12 +499,25 @@ def hostedChecks : IO (Array String) := do
           failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
   return failures
 
+/-- The query caches of `ownSpec` (`Reqs/dev/Testing#query-cache`): the
+directory `FREN_QUERY_CACHE`, by default `.lake/query-cache`, or none if it
+is empty; and the one to compare with, `FREN_VERIFY_QUERY_CACHE`, if set. -/
+def ownSpecCaches : IO (Option String × Option String) := do
+  let dir? := match ← IO.getEnv "FREN_QUERY_CACHE" with
+    | none => some ".lake/query-cache"
+    | some "" => none
+    | some d => some d
+  let verify? := (← IO.getEnv "FREN_VERIFY_QUERY_CACHE").filter (· != "")
+  return (dir?, verify?)
+
 /-- Fren's own requirements pass under the binary, and it checks every
 chapter that the Lean front end does; and Lean checks every chapter too
 (`hostedChecks`). -/
 def ownSpec : IO (Array String) := do
   let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
-  let (out, code) ← runCheck ownSpecFiles
+  let (queryCache?, verifyQueryCache?) ← ownSpecCaches
+  let (out, code) ← IO.FS.withIsolatedStreams
+    (FrenCli.check { files := ownSpecFiles, queryCache?, verifyQueryCache? })
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ (← hostedChecks)

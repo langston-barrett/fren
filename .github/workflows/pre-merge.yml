@@ -123,9 +123,21 @@ jobs:
         if-no-files-found: error
         retention-days: 3
         overwrite: true
+    # The solver's answers that `main`'s last run of shard 0 kept, from
+    # which `fren check` answers the queries of Fren's own requirements
+    # that it asked (`Reqs/dev/Testing#query-cache`). Restored, never saved:
+    # what a pull request adds is dropped with its machine.
+    - if: ${{ matrix.shard == 0 }}
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ${{ runner.temp }}/query-cache
+        key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ steps.base.outputs.sha }}
+        restore-keys: |
+          query-cache-${{ runner.os }}-${{ runner.arch }}-
     - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
       env:
         SHARD: ${{ matrix.shard }}
+        FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
   pre-merge:
     needs: [build, test]
     if: ${{ !cancelled() }}

@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Color
 import FrenCli.Exit
+import FrenCli.QueryStore
 import FrenCli.SeqElems
 import Impls.View
 import Reqs.Cli
@@ -126,6 +127,59 @@ impl query_logic: cli::query_logic for (k : Fren.Core.CheckKind) (ext proj q qua
   asked? := Fren.Core.queryAsked (Fren.Core.logic k ext proj q) quantifies,
   internal? := !Fren.Core.queryAsked (Fren.Core.logic k ext proj q) quantifies,
 }
+
+/-- A key of the query cache, as the spec sees it. -/
+def toCacheKey (k : FrenCli.CacheKey) : cli.Key :=
+  { script := k.script, solver := k.solver, version := k.version }
+
+/-- An answer, as the spec sees it. -/
+def toCachedAnswer : FrenCli.CachedAnswer → cli.Answer
+  | .unsat => .Unsat
+  | .sat false => .Sat
+  | .sat true => .SatWithModel
+  | .unknown => .Unknown
+
+-- When an entry of `--query-cache` answers a query (`FrenCli.lookupEntry?`).
+impl query_cache_hit: cli::query_cache for (asked stored : FrenCli.CacheKey) (found wantModel : Bool)
+    (a : FrenCli.CachedAnswer) {
+  asked := toCacheKey asked,
+  want_model? := wantModel,
+  found? := found,
+  stored := toCacheKey stored,
+  answer := toCachedAnswer a,
+  hit? := FrenCli.cacheHit found asked stored a wantModel,
+} by
+  intro asked stored found wantModel a _
+  have key : toCacheKey stored = toCacheKey asked ↔ asked = stored := by
+    constructor
+    · intro h
+      cases asked; cases stored
+      simp only [toCacheKey] at h
+      injection h with h1 h2 h3
+      have : _ := Int.ofNat.inj h3
+      subst h1 h2 this; rfl
+    · intro h; rw [h]
+  rcases a with _ | (_ | _) | _ <;> cases found <;> cases wantModel <;>
+    simp_all [fren_spec, FrenCli.cacheHit, FrenCli.CachedAnswer.answers, toCachedAnswer]
+
+-- Which answers `--query-cache` keeps (`FrenCli.QueryStore.record`).
+impl kept_answer: cli::kept_answer for (a : FrenCli.CachedAnswer) {
+  answer := toCachedAnswer a,
+  kept? := a.stored,
+} by
+  intro a _
+  rcases a with _ | (_ | _) | _ <;> decide
+
+-- When a fresh answer contradicts one of `--verify-query-cache`'s
+-- (`FrenCli.QueryStore.record`).
+impl contradicts: cli::contradicts for (fresh kept : FrenCli.CachedAnswer) (same : Bool) {
+  fresh := toCachedAnswer fresh,
+  kept := toCachedAnswer kept,
+  same_model? := same,
+  contradiction? := FrenCli.contradicts fresh kept same,
+} by
+  intro fresh kept same _
+  rcases fresh with _ | (_ | _) | _ <;> rcases kept with _ | (_ | _) | _ <;> cases same <;> decide
 
 end Fren.Impls
 
