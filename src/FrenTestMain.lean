@@ -3,6 +3,7 @@ import Fren
 import FrenCli.Eval
 import FrenCli.Run
 import FrenTest.Frontends
+import FrenTest.FuzzFrontends
 import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.Quote
@@ -41,6 +42,9 @@ import Lean.Elab.Frontend
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
   (`decisions`).
+- **Front-end corpus:** the front-end fuzzer's specs of fixed seeds are
+  checked by both front ends, whose differences must be those that
+  `FrenTest.FuzzFrontends.knownDifferences` lists (`frontendFuzz`).
 
 The tests run as jobs, in parallel (see "Jobs" below), and the failures are
 reported sorted.
@@ -2022,6 +2026,7 @@ def jobs : IO (Array (List String)) := do
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"]]
+    ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
 
@@ -2055,6 +2060,10 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     enableInitializersExecution
     initSearchPath (← findSysroot)
     smtAgreement (← importModules #[{ module := `Fren }] {} (loadExts := true))
+  | "frontendFuzz" :: args => match FrenTest.FuzzFrontends.corpusSpecs? args with
+    | some specs => do
+      FrenTest.FuzzFrontends.corpusFailures (← FrenTest.FuzzFrontends.loadFren) (".lake" / "fuzz") specs
+    | none => throw (IO.userError s!"unknown front-end corpus `{" ".intercalate args}`")
   | ["mutation", group, slice, slices] => do
     -- A slice out of range would check nothing, and pass.
     match (group.toNat?.bind ((← mutationCorpus)[·]?)), slice.toNat?, slices.toNat? with

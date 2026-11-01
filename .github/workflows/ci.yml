@@ -138,6 +138,46 @@ jobs:
       with:
         path: ${{ runner.temp }}/query-cache
         key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+  # The front-end fuzzer on seeds that no run used before, from the run's
+  # number, with `--avoid-known`: a difference of a kind that
+  # `knownDifferences` does not list, a crash or a timeout fails it, and
+  # the specs that it found are uploaded, to be fixed or filed and listed
+  # (`Reqs/dev/Testing#continuous-integration`). `lake test` checks the
+  # fixed corpus on every pull request.
+  fuzz-frontends:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - run: lake build fren_fuzz_frontends
+    # Four fuzzers at once, one to a core, two of each generator, each on
+    # 150 seeds of the run's 1000, far from the corpus's.
+    - name: Fuzz the front ends
+      env:
+        RUN: ${{ github.run_number }}
+      run: |
+        set -euo pipefail
+        base=$((1000000 + RUN * 1000))
+        fuzz() { lake env .lake/build/bin/fren_fuzz_frontends --avoid-known --out fuzz "$@"; }
+        fuzz --count 150 --seed "$base" & a=$!
+        fuzz --count 150 --seed "$((base + 150))" & b=$!
+        fuzz --guards --count 150 --seed "$((base + 300))" & c=$!
+        fuzz --guards --count 150 --seed "$((base + 450))" & d=$!
+        code=0
+        for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
+        exit "$code"
+    - if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz-frontends-${{ github.run_number }}
+        path: fuzz
+        if-no-files-found: ignore
+        retention-days: 30
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
