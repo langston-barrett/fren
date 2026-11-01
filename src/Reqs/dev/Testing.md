@@ -200,7 +200,7 @@ pub mod testing
   exact. A procedure with too many behaviours to enumerate is skipped,
   and counted in the summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
-  [--seed N] [--out DIR] [--avoid-known] [--guards] [--spec-timeout SECONDS]`):
+  [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--spec-timeout SECONDS]`):
   generates random specs and checks each with both front ends, the `fren`
   command's pipeline and the Lean front end (in an environment that
   imports `Fren`, as the ui tests do), whose reports must agree
@@ -220,7 +220,12 @@ pub mod testing
   an ordered record, an ordered enumeration and `String`, read through
   their fields, with ranges with one or both bounds, chains, memberships
   in sets and sequences, and each comparison on either side. `--guards`
-  generates those quantifiers alone, so that many specs run fast. Only what may legitimately differ is not compared:
+  generates those quantifiers alone, so that many specs run fast.
+  `--sites` generates expressions that do not synthesize their types, at
+  each kind of [site](../Lang/Types.md#checking-and-synthesis) where they
+  are checked, and, at the end, one where they are not, an error that
+  stops the spec's other checks, which the default generator therefore
+  never writes. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
     the parse error's line, or on the last line before it that is not blank
@@ -275,8 +280,8 @@ pub mod testing
   on given files, and `--print SEED` prints a generated spec. The
   comparison itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
-  fixed set of seeds, from both of its generators, the default one and
-  `--guards` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  fixed set of seeds, from its generators, the default one, `--guards`
+  and `--sites` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of a
   few dozen seeds each. Every difference must be listed in
   `knownDifferences`, beside the corpus, by its generator, its seed and its

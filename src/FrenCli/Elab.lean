@@ -3358,17 +3358,21 @@ def elabConstruction (elabValue : ExprCtx → Expr → M (String × Ty)) (site :
   let (args, smts) ← go.run (vals.map fun _ => "")
   return (smts, args)
 
-/-- Whether `e` is written as a sequence: a sequence literal, or a `++`, a
-conditional or a `match` with one among its shared parts, so that the
-right of `in` is checked against a sequence. -/
-partial def seqShaped : Expr → Bool
-  | .seq .. => true
-  | .bin _ "++" a b | .ite _ _ a b => seqShaped a || seqShaped b
-  | .match _ _ arms _ => arms.any (seqShaped ·.2.2)
-  | .matches _ _ arms _ => arms.any (seqShaped ·.2.2)
-  | .«let» _ _ body _ => seqShaped body
-  | .table _ rows => rows.any (seqShaped ·.2.2)
-  | _ => false
+/-- How `e` is written, for whether it is written as a sequence
+(`Fren.Core.WrittenShape`): a sequence literal, or a `++`, a conditional, a
+`match`, a table or a `let`, whose shared parts are read in turn. -/
+partial def writtenShape : Expr → Fren.Core.WrittenShape
+  | .seq .. => .seqLiteral
+  | .bin _ "++" a b | .ite _ _ a b => .sharedParts [writtenShape a, writtenShape b]
+  | .match _ _ arms _ => .sharedParts (arms.toList.map (writtenShape ·.2.2))
+  | .matches _ _ arms _ => .sharedParts (arms.toList.map (writtenShape ·.2.2))
+  | .«let» _ _ body _ => .sharedParts [writtenShape body]
+  | .table _ rows => .sharedParts (rows.toList.map (writtenShape ·.2.2))
+  | _ => .other
+
+/-- Whether `e` is written as a sequence, so that the right of `in` is
+checked against a sequence (`lang::written_sequence`). -/
+def seqShaped (e : Expr) : Bool := (writtenShape e).sequence
 
 /-- The span of the type written `segs`, from its first token to its last:
 a pattern's segment may come before its base's (`Parser.patOuterSeg`). -/

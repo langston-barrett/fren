@@ -135,11 +135,15 @@ def ExprSite.checked (s : ExprSite) (expected sibling : Bool) : Bool := s.positi
 
 /-- The type expected of an expression at `p`, from the type `whole`
 declared or expected of the whole, and the type `sibling` of a part that
-shares its type or is compared with it, if that one synthesizes it: the
-declared type; for a shared part, the sibling's, widened, unless a `Nat` is
-expected of the whole, and otherwise the whole's; for a compared one, the
-other operand's; and none for a synthesized one. It is given exactly where
-`Position.checked` holds (`expected_isSome`). -/
+shares its type or is compared with it, if that one synthesizes it
+(`lang::expected_type`): the declared type; for a shared part, the
+sibling's, widened, unless a `Nat` is expected of the whole, and otherwise
+the whole's; for a compared one, the other operand's; and none for a
+synthesized one. It is given exactly where `Position.checked` holds
+(`expected_isSome`). The bodies of a `match`'s arms and the values of a
+table's rows take the whole's type first: their callers pass the arms or
+rows before them as `sibling` only where no type is expected of the whole
+(a checklist item of #545 is whether the other shared parts should too). -/
 def Position.expected : Position → (whole sibling : Option Ty) → Option Ty
   | .declared, whole, _ => whole
   | .shared, whole, sibling => if whole == some .nat then whole else (sibling.map Ty.widen).orElse fun _ => whole
@@ -191,6 +195,31 @@ its type. -/
 def TypeShape.allGiven : List (List TypeShape) → Bool
   | [] => true
   | p :: ps => TypeShape.anySynthesizes p && TypeShape.allGiven ps
+end
+
+/-- How an expression is written, for whether the right of `in` is checked
+against a sequence (`lang::written_sequence`): a sequence literal; one
+whose type is that of its shared parts, as a `++`, a conditional, a
+`match`, a table, a `let` or parentheses; or any other. -/
+inductive WrittenShape where
+  | seqLiteral
+  | sharedParts (parts : List WrittenShape)
+  | other
+  deriving Inhabited, Repr
+
+mutual
+/-- Whether an expression of shape `s` is written as a sequence: it is a
+sequence literal, or one of its shared parts is written as one
+(`lang::written_sequence`). -/
+def WrittenShape.sequence : WrittenShape → Bool
+  | .seqLiteral => true
+  | .sharedParts ps => WrittenShape.anySequence ps
+  | .other => false
+
+/-- Whether one of `ps` is written as a sequence. -/
+def WrittenShape.anySequence : List WrittenShape → Bool
+  | [] => false
+  | p :: ps => p.sequence || WrittenShape.anySequence ps
 end
 
 end Fren.Core

@@ -3198,19 +3198,21 @@ def selfType (decl : Name) (params : Array Name) : CommandElabM Term :=
 
 
 open Lang in
-/-- Whether `e` is written as a sequence: a sequence literal, or a `++`, a
-conditional, a `match`, a table, a `let` or parentheses with one among its
-shared parts, so that the right of `in` is checked against a sequence, as
-in the `fren` command. -/
-partial def seqShaped (e : Syntax) : Bool :=
+/-- How `e` is written, for whether it is written as a sequence
+(`Core.WrittenShape`), as the `fren` command's `writtenShape` reads it. -/
+partial def writtenShape (e : Syntax) : Core.WrittenShape :=
   let e := unparen e
-  if e.isOfKind ``Lang.seqExpr then true
-  else if isMatchLike e then (matchSourceArms e).any (seqShaped ·[3])
-  else if e.isOfKind ``Lang.letExpr then seqShaped e[3]
-  else if e.isOfKind ``Lang.tableExpr then e[2].getSepArgs.any (seqShaped ·[3])
+  if e.isOfKind ``Lang.seqExpr then .seqLiteral
+  else if isMatchLike e then .sharedParts ((matchSourceArms e).toList.map (writtenShape ·[3]))
+  else if e.isOfKind ``Lang.letExpr then .sharedParts [writtenShape e[3]]
+  else if e.isOfKind ``Lang.tableExpr then .sharedParts (e[2].getSepArgs.toList.map (writtenShape ·[3]))
   else match e with
-    | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => seqShaped a || seqShaped b
-    | _ => false
+    | `(fren_expr| $a ++ $b) | `(fren_expr| if $_ then $a else $b) => .sharedParts [writtenShape a, writtenShape b]
+    | _ => .other
+
+/-- Whether `e` is written as a sequence, so that the right of `in` is
+checked against a sequence (`lang::written_sequence`). -/
+def seqShaped (e : Syntax) : Bool := (writtenShape e).sequence
 
 /-- Two parts of one type, `a` in `cxa` and `b` in `cxb`, as the `fren`
 command's `pair`: one that does not synthesize its type is translated after
@@ -4312,7 +4314,7 @@ def methodTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   let site : Core.ExprSite := if seq then .seqMethodArgument else if ordered?.isSome then .orderedMethodArgument else .methodArgument
   let as ← args.mapM fun a => do
     let acx := { cx with emptyOk := site.checked false false, natOk := natArg }
-    let acx := match ordered? with | some t => { acx with expected? := some t } | none => acx
+    let acx := match ordered? with | some t => { acx with expected? := site.expected (some t) none } | none => acx
     return (← if pattern then patternTerm a else toTerm acx a, a)
   if seq then
     let c := (Core.Method.ofName? m).map (·.seqConstruct) |>.getD .seqWord
@@ -5373,7 +5375,7 @@ def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       (throwErrorAt e (Core.cannotInferCallMsg f).text : TermElabM Unit)
       (fun k x? => do
         let t ← (toTerm { cx with emptyOk := Core.ExprSite.functionArgument.checked false false, natOk := x? == some Core.Ty.nat
-                                  expected? := x? } elems[k]! : TermElabM Term)
+                                  expected? := Core.ExprSite.functionArgument.expected x? none } elems[k]! : TermElabM Term)
         modify fun (ts, cs) => (ts.set! k t, cs)
         frenTypeOf? t)
       (fun k x t => (liftMsg elems[k]!
@@ -5511,7 +5513,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       return ← ctorApp (info.ctor idx) (info.leanArgs (← targs.mapM leanTypeOf)) ts p
     let args ← args.getElems.zipIdx.mapM fun (a, k) => do
       let t ← toTerm { cx with emptyOk := Core.ExprSite.payload.checked false false, natOk := info.payloads[idx]![k]!.isConstOf ``Nat,
-                                expected? := ← coreTy? info.payloads[idx]![k]! } a
+                                expected? := Core.ExprSite.payload.expected (← coreTy? info.payloads[idx]![k]!) none } a
       checkDeclared a t info.payloads[idx]![k]! (note k)
       noteObligation cx .payload a (partPType info.shape idx k) t
       return t

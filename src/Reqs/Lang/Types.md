@@ -158,6 +158,13 @@ pub proc widening(
 }
 ```
 
+Where a `Nat` is never wanted, as for a member of a set, it is widened:
+`lang::widened` is a type with a `Nat` widened to an `Int`.
+
+```fren
+pub fn widened(Ty): Ty
+```
+
 This is the rule wherever a type is declared: an argument of a function
 application, a value of a variant's payload, a field of a record literal
 or of a record update, an argument of a call, a binding of a refinement, a
@@ -850,14 +857,16 @@ Where an expression is written decides whether it is checked:
   record's `min` or `max`, against the receiver's type, a defined
   output's definition, a defined function's body (against its result
   type), a constant's value, and a definition of a [`let` or
-  `where`](Let.md) whose type is written. A function block's `out` is a
+  `where`](Let.md) whose type is written, and the body of a
+  [closure](HigherOrder.md) whose result type is known. A function block's `out` is a
   defined output's definition, and is checked against the result type too.
   So `fn none(x: Int): Option<Int> := Option::None` is accepted, as is a
   function block whose `out` is `Option::None`.
 - **Shared.** Its type follows from that of the expression it is a part
   of, and from that of the expression's other such parts. It is checked if
   that expression is, or if one of those parts synthesizes its type. These
-  are the operands of `union`, `inter`, `minus` and `++`, the branches of a
+  are the operands of `union`, `inter` and `minus`, the operands of `++`
+  but the right of one on strings, which is a `String`, the branches of a
   conditional, the bodies of a `match`'s arms, the values of a
   [table](Expressions.md#tables)'s rows, the elements of a set or
   sequence literal, an expression in parentheses, and the body of a
@@ -873,8 +882,12 @@ Where an expression is written decides whether it is checked:
 - **Synthesized.** Anywhere else, as the left of `in`, an operand of
   `join`, an argument of a method of anything but a sequence, as in
   `r.image({})`, a receiver, the scrutinee of a `match` or of `e is P`,
-  the condition of a table's row, the sequence that is indexed, the updated value of a record update, and
-  a definition of a `let` or `where` whose type is not written, it
+  the guard of a `match` arm, the condition of a table's row, the right of
+  `++` on strings, the updated value of a record update, a definition of a
+  `let` or `where` whose type is not written, the body of a closure whose
+  result type is not known, and every part that `ExprSite` below does not
+  list, such as an operand of arithmetic, the sequence that is indexed,
+  its index, and an argument of `exactly_one?` or `at_most_one?`, it
   synthesizes its type.
 
 `lang::checked` states this, from where an expression is written, one of
@@ -891,7 +904,8 @@ not.
 ```fren
 pub enum Position { Declared, Shared, Compared, Synthesized }
 
--- Where an expression is written.
+-- Where an expression is written: the sites that the front ends classify.
+-- Every other part synthesizes its type.
 pub enum ExprSite {
     Binding,                -- a binding `x := e` of a call, or an argument of a refinement
     RecordField,            -- a field of a record literal or of a record update
@@ -1056,6 +1070,77 @@ synthesizes one. The right of `in` is expected to be a set of the left's
 type, or a sequence of it if it is written as one, or a relation of a
 pair's members' types. A `Nat` is widened to an `Int` in all of these, unless
 a `Nat` is expected of the whole.
+
+`lang::expected_type` states the type expected of a part at each
+position, from the type declared or expected of the whole, if any, and the
+type of a part it shares its type with or is compared with, if that one
+synthesizes it. Where none is expected, `typed?` is false and `expected`
+is the whole's, whatever it is. The bodies of a `match`'s arms and the
+values of a table's rows take the whole's type before those of the arms
+or rows before them: they give it a sibling only where the whole has none.
+
+```fren
+pub proc expected_type(
+    position: Position,
+    whole?,             -- a type is declared or expected of the whole
+    whole: Ty,          -- that type
+    sibling?,           -- a part that shares its type, or the other operand, synthesizes one
+    sibling: Ty,        -- that type
+): (det typed?, det expected: Ty) {
+    use self::Position::{Compared, Declared, Shared, Synthesized}
+    use self::ValueType::NatTy
+
+    ensure typed: typed? iff match position {
+        Declared => whole?,
+        Shared => whole? or sibling?,
+        Compared => sibling?,
+        Synthesized => false,
+    }
+    ensure rule: expected = match position {
+        Declared => whole,
+        Shared => if whole? and kind(whole) = NatTy then whole else if sibling? then widened(sibling) else whole,
+        Compared => if sibling? then sibling else whole,
+        Synthesized => whole,
+    }
+
+    expect declared_wins: when position = Declared, expected = whole
+    expect nat_whole: when position = Shared and whole? and kind(whole) = NatTy, expected = whole
+    expect sibling_first: when position = Shared and sibling? and kind(whole) != NatTy, expected = widened(sibling)
+}
+```
+
+The right of `in` is checked against a sequence where it is written as
+one: a sequence literal, or an expression one of whose shared parts is,
+as the branches of a conditional, the operands of `++`, the arms of a
+`match`, the rows of a table, the body of a `let` and the expression in
+parentheses. So `x in (if c? then [] else q)` and `x in ([])` check `[]`
+against a sequence. `lang::written_sequence` states this, from how the
+expression is written and how many of its shared parts are written as
+sequences.
+
+```fren
+-- `SeqLiteral` is a sequence literal; `SharedParts` is an expression whose
+-- type is that of its shared parts; `Other` is any other.
+pub enum WrittenShape { SeqLiteral, SharedParts, Other }
+
+pub proc written_sequence(
+    shape: WrittenShape,
+    parts: Nat,              -- how many shared parts it has
+    sequences: Nat,          -- how many of them are written as sequences
+): (det sequence?) {
+    use self::WrittenShape::{Other, SeqLiteral, SharedParts}
+
+    assume counted: sequences <= parts
+
+    ensure rule: sequence? iff match shape {
+        SeqLiteral => true,
+        SharedParts => sequences > 0,
+        Other => false,
+    }
+
+    expect one_part_suffices: when shape = SharedParts and sequences > 0, sequence?
+}
+```
 
 `{}` and `[]` have no type but this one. `{}` takes a set or relation type,
 and `[]` a sequence type. With no type expected of it, or one that is not

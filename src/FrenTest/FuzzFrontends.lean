@@ -47,7 +47,10 @@ fixed corpus of seeds against `knownDifferences` (`corpusFailures`), and
 CI runs fresh seeds on `main`. `--guards` generates guarded quantifiers alone
 (`Wide.genGuards`), over every type that a guard may bound or not, with
 their operands read through fields, so that many run fast; `genWide`
-includes such a procedure now and then too.
+includes such a procedure now and then too. `--sites` generates
+`Wide.sitesProc`s alone, the last of which may write an expression that
+does not synthesize its type where it is not checked, an error that stops
+the spec's other checks; `genWide` includes one without it now and then.
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -722,13 +725,14 @@ def genericApps (sc : WScope) (genericPay : Bool) : R String := do
   return out ++ s!"pub proc gapps(n: Int, b?, m: Nm, m2: Nm, o: Option<Int>, oo: Option<Option<Int>>{pp}): " ++
     s!"(r: Int, s?, t: Nm, u: Option<Int>) \{\n{body}}\n"
 
-/-- An expression of the collection type `ty` (`"Set<Int>"`, `"Seq<Int>"`
-or `"Option<Int>"`) that does not synthesize its type: its empty value,
-`{}`, `[]` or `Option::None`, within parentheses, conditionals, `match`es,
-tables, the bodies of `let`s, definitions whose type is written, `union` or
-`++`, or, seldom, `other`, which synthesizes it (`lang::synthesizes`). -/
+/-- An expression of the collection type `ty` (`"Set<Int>"`, `"Rel<Int, Int>"`,
+`"Seq<Int>"` or `"Option<Int>"`) that does not synthesize its type: its
+empty value, `{}`, `[]` or `Option::None`, within parentheses,
+conditionals, `match`es, tables, the bodies of `let`s, definitions whose
+type is written, and `union`, or, seldom, `other`, a variable of the type,
+which synthesizes it (`lang::synthesizes`). -/
 partial def unsynthesized (ty : String) (other : String) (d : Nat) : R String := do
-  let empty := if ty == "Set<Int>" then "{}" else if ty == "Seq<Int>" then "[]" else "Option::None"
+  let empty := if ty == "Seq<Int>" then "[]" else if ty == "Option<Int>" then "Option::None" else "{}"
   let sub := unsynthesized ty other (d - 1)
   if d == 0 || (← chance 35) then return if ← chance 10 then other else empty
   match ← below 8 with
@@ -736,62 +740,76 @@ partial def unsynthesized (ty : String) (other : String) (d : Nat) : R String :=
   | 1 => return s!"(if c? then {← sub} else {← sub})"
   | 2 => return s!"match o \{ Option::Some(_) => {← sub}, Option::None => {← sub} }"
   | 3 => return s!"table \{ c? => {← sub}, _ => {← sub} }"
-  | 4 => return s!"(let t: {ty} := {← sub} in t)"
-  | 5 => return s!"(let t := {other} in {← sub})"
+  -- Named by depth, so that nothing shadows them.
+  | 4 => return s!"(let t{d}: {ty} := {← sub} in t{d})"
+  | 5 => return s!"(let t{d} := {other} in {← sub})"
   | _ =>
-    if ty == "Set<Int>" then return s!"({← sub} {← pick #["union", "inter", "minus"]} {← sub})"
-    if ty == "Seq<Int>" then return s!"({← sub} ++ {← sub})"
+    if ty == "Set<Int>" || ty.startsWith "Rel" then return s!"({← sub} {← pick #["union", "inter", "minus"]} {← sub})"
     return s!"({← sub})"
 
-/-- A procedure that writes expressions that do not synthesize their types
-at each kind of site that `ExprSite` lists, whether checked there or not
+/-- The declarations that the procedures of `sitesProc` use. -/
+def sitesDecls : String :=
+  "pub struct SiteRec { m: Set<Int>, n: Int }\n" ++
+  "pub fn site_card(t: Set<Int>): Int := t.card\n" ++
+  "pub fn site_first(t: Seq<Int>): Int := if t.len > 0 then t[0] else 0\n"
+
+/-- A procedure `name` that writes expressions that do not synthesize their
+types at each kind of site that `ExprSite` lists where they are checked
 (`lang::checked`): beside a part that synthesizes one or none, as an
-argument, a payload, a field, a binding, the right of `in`, a receiver, an
-operand of `join`, and a method's argument. -/
-def sitesProc : R String := do
-  let decls := "pub struct SiteRec { m: Set<Int>, w: Seq<Int> }\n" ++
-    "pub fn site_card(t: Set<Int>): Int := t.card\n" ++
-    "pub fn site_len(t: Seq<Int>): Int := t.len\n"
+argument, a payload, a field of a record literal or update, a written
+definition, the right of `in`, and the branches, arms and rows beside a
+variable. Each is well typed and in the decidable core, so that it stops
+none of the spec's other checks. With `unchecked`, it ends with one where
+they are not checked, an error, reported alike, which stops them all, as in
+`--sites` mode. -/
+def sitesProc (name : String) (unchecked : Bool := false) : R String := do
   let set : R String := unsynthesized "Set<Int>" "s" 2
+  let rel : R String := unsynthesized "Rel<Int, Int>" "r" 2
   let seq : R String := unsynthesized "Seq<Int>" "q" 2
   let opt : R String := unsynthesized "Option<Int>" "o" 2
   let mut body := ""
   for k in [0:(← below 5) + 2] do
-    let e ← match ← below 21 with
+    let e ← match ← below 19 with
       | 0 => pure s!"s = {← set}"
       | 1 => pure s!"{← set} = s"
       | 2 => pure s!"{← set} subset s"
       | 3 => pure s!"x in {← set}"
       | 4 => pure s!"site_card({← set}) >= 0"
       | 5 => pure s!"os != Option::Some({← set})"
-      | 6 => pure s!"sr = SiteRec \{ m := {← set}, w := {← seq} }"
-      | 7 => pure s!"sr = sr \{ m := {← set} }"
-      | 8 => pure s!"(let t: Set<Int> := {← set} in t subset s)"
+      | 6 => pure s!"sr = SiteRec \{ m := {← set}, n := x }"
+      | 7 => pure s!"sr = \{ sr with m := {← set} }"
+      | 8 => pure s!"(let u: Set<Int> := {← set} in u subset s)"
       | 9 => pure s!"s = (s {← pick #["union", "inter", "minus"]} {← set})"
       | 10 => pure s!"s = (if c? then {← set} else s)"
       | 11 => pure s!"s = match o \{ Option::Some(_) => {← set}, Option::None => s }"
       | 12 => pure s!"s = table \{ c? => {← set}, _ => s }"
-      | 13 => pure s!"q = {← seq}"
-      | 14 => pure s!"q.starts_with?({← seq})"
-      | 15 => pure s!"q = {← seq} ++ q"
-      | 16 => pure s!"x in {← seq}"
-      | 17 => pure s!"site_len({← seq}) >= 0"
-      | 18 => pure s!"o = {← opt}"
-      | 19 => pure s!"{← opt} != o"
-      | _ => pure s!"r = (\{(1, 2)} union {← set})"
+      | 13 => pure s!"(table \{ c? => {← set}, _ => s }).card >= 0"
+      | 14 => pure s!"site_first({← seq}) = 0"
+      | 15 => pure s!"o = {← opt}"
+      | 16 => pure s!"{← opt} != o"
+      | 17 => pure s!"(1, 2) in {← rel}"
+      | _ => pure s!"r = (r union {← rel})"
     body := body ++ s!"    expect st{k}: {e}\n"
-  -- Seldom, where they are not checked: an error, reported alike, which
-  -- stops the spec's other checks.
-  if ← chance 10 then
-    let e ← match ← below 5 with
+  if unchecked then
+    let e ← match ← below 6 with
       | 0 => pure s!"({← set}).card = 0"
       | 1 => pure s!"r.image({← set}) = s"
-      | 2 => pure s!"(let t := {← set} in t) = s"
-      | 3 => pure s!"r = r join {← set}"
+      | 2 => pure s!"(let u := {← set} in u) = s"
+      | 3 => pure s!"r = r join {← rel}"
+      | 4 => pure s!"({← seq}).len = 0"
       | _ => pure s!"{← set} = {← set}"
-    body := body ++ s!"    expect st_error: {e}\n"
-  return decls ++ "pub proc sites(s: Set<Int>, q: Seq<Int>, x: Int, c?, o: Option<Int>, os: Option<Set<Int>>, " ++
+    body := body ++ s!"    expect unchecked: {e}\n"
+  return s!"pub proc {name}(s: Set<Int>, q: Seq<Int>, x: Int, c?, o: Option<Int>, os: Option<Set<Int>>, " ++
     s!"r: Rel<Int, Int>, sr: SiteRec) \{\n{body}}\n"
+
+/-- A spec of `sitesProc`s alone, the last of which may write an expression
+that does not synthesize its type where it is not checked (`--sites`). -/
+def genSites : R String := do
+  let mut out := "mod fz\n\n" ++ sitesDecls
+  let n := (← below 2) + 1
+  for i in [0:n] do
+    out := out ++ (← sitesProc s!"sites{i}" (unchecked := i + 1 == n && (← chance 60)))
+  return out
 
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := do
@@ -983,7 +1001,7 @@ def genWide (avoidKnown : Bool := false) : R String := do
   if ← chance 40 then out := out ++ "\n" ++ (← genericApps sc genericPay)
   -- Each kind of site, with expressions that do not synthesize their
   -- types, last too.
-  if ← chance 40 then out := out ++ "\n" ++ (← sitesProc)
+  if ← chance 40 then out := out ++ "\n" ++ sitesDecls ++ (← sitesProc "sites")
   -- Only variables have the type `P`, each declared on a line of its own.
   return if genericPay then (out.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else out
 
@@ -1034,29 +1052,30 @@ generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
 structure Mode where
   avoidKnown : Bool := false
   guards : Bool := false
+  /-- Specs of `Wide.sitesProc`s alone (`Wide.genSites`). -/
+  sites : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  Id.run ((if m.guards then Wide.genGuards else Wide.genWide m.avoidKnown).run' (rngOf seed))
+  Id.run ((if m.sites then Wide.genSites else if m.guards then Wide.genGuards else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 def Mode.args (m : Mode) : Array String :=
-  (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[])
+  (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
+    (if m.sites then #["--sites"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards"]) then
-    some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards" }
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites"]) then
+    some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
 def Mode.lean (m : Mode) : String :=
-  match m.avoidKnown, m.guards with
-  | false, false => "{}"
-  | true, false => "{ avoidKnown := true }"
-  | false, true => "{ guards := true }"
-  | true, true => "{ avoidKnown := true, guards := true }"
+  let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
+    (if m.sites then ["sites := true"] else [])
+  if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- A difference without its line, names and values, to group the
 specs that differ alike. -/
@@ -1096,10 +1115,14 @@ fresh seeds on `main` finds is listed with its seed and mode, and the
 corpus then checks that seed too (`listedOutside`). `--avoid-known` counts
 a spec whose every difference is of a kind listed here as known. -/
 def knownDifferences : List Known :=
-  -- Lean reports `ob1?`, an output read in a table's row of an
-  -- expectation, as unknown.
+  -- Lean reports `ob1?`, an output that a table in an expectation reads,
+  -- as unknown, in a spec with other errors, once any function is declared
+  -- after it, as `sitesDecls` declares two (also on main's front ends, which
+  -- agree on the spec without them).
   [{ mode := {}, seed := 28, issue := 493,
      signature := "only Lean reports error: Unknown identifier `_`" },
+   { mode := {}, seed := 67, issue := 493,
+     signature := "only Lean reports info: Both operands of `_` cannot be true: the stated premises require `_` to be false." },
    { mode := {}, seed := 153, issue := 478,
      signature := "only fren reports error[F0714]: this is outside the decidable core: a relational operator over a type that is not finite quantifies over its values" },
    -- Lean reports `F0743` twice on `((({(1, 2)}).inverse).domain).card`.
@@ -1115,7 +1138,7 @@ def knownKind (signature : String) : Bool := knownDifferences.any (·.signature 
 shards. Sized so that the whole corpus takes about 2 minutes of one CI
 machine. -/
 def corpus : List (Mode × Nat × Nat) :=
-  [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20)]
+  [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, which the job
 `frontendFuzz listed` checks. -/
@@ -1308,9 +1331,9 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -1323,8 +1346,9 @@ unsafe def main (args : List String) : IO UInt32 := do
   if let "--files" :: files := args then
     IO.FS.createDirAll ".lake/fuzz"
     return ← mainFiles files ".lake/fuzz"
-  let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards" }
-  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards")
+  let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
+                       sites := args.contains "--sites" }
+  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites")
   if let ["--print", n] := args then
     let some s := n.toNat? | IO.eprintln usage; return 2
     IO.print (mode.spec s)

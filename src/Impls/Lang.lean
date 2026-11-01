@@ -2426,6 +2426,60 @@ interp lang::first_giver := fun (d : Fren.Seq Fren.Core.Ty) (s : Fren.Seq Bool) 
   Fren.Core.firstGiver d.toList.toArray s.toList.toArray k
 interp lang::widened := Fren.Core.Ty.widen
 
+theorem kindOf_eq_nat (t : Fren.Core.Ty) : kindOf t = .NatTy ↔ t = .nat := by
+  cases t <;> simp [kindOf]
+
+-- For every position and two types that may be given: the type that both
+-- front ends expect of a part (`Position.expected`), or, where none is
+-- expected, the whole's.
+impl expected_type: lang::expected_type for (p : Fren.Core.Position) (w s : Option Fren.Core.Ty) {
+  position := toPosition p,
+  whole? := w.isSome,
+  whole := w.getD .bool,
+  sibling? := s.isSome,
+  sibling := s.getD .bool,
+  typed? := (p.expected w s).isSome,
+  expected := (p.expected w s).getD (w.getD .bool),
+} by
+  intro p w s _
+  cases p
+  all_goals cases w <;> cases s
+  all_goals simp [fren_spec, toPosition, Fren.Core.Position.expected, kindOf_eq_nat]
+  all_goals (try split) <;> simp_all
+
+def toWrittenShape : Fren.Core.WrittenShape → lang.WrittenShape
+  | .seqLiteral => .SeqLiteral
+  | .sharedParts _ => .SharedParts
+  | .other => .Other
+
+/-- The shared parts of an expression of shape `s`. -/
+def writtenParts : Fren.Core.WrittenShape → List Fren.Core.WrittenShape
+  | .sharedParts ps => ps
+  | .seqLiteral | .other => []
+
+theorem anySequence_eq_any (ps : List Fren.Core.WrittenShape) :
+    Fren.Core.WrittenShape.anySequence ps = ps.any Fren.Core.WrittenShape.sequence := by
+  induction ps with
+  | nil => simp [Fren.Core.WrittenShape.anySequence]
+  | cons p ps ih => simp [Fren.Core.WrittenShape.anySequence, ih]
+
+-- For every shape, with its parts' own decisions: the walk that both front
+-- ends decide by (`seqShaped`).
+impl written_sequence: lang::written_sequence for (s : Fren.Core.WrittenShape) {
+  shape := toWrittenShape s,
+  parts := (writtenParts s).length,
+  sequences := ((writtenParts s).filter Fren.Core.WrittenShape.sequence).length,
+  sequence? := s.sequence,
+} by
+  intro s _
+  cases s with
+  | seqLiteral => simp [fren_spec, toWrittenShape, Fren.Core.WrittenShape.sequence]
+  | other => simp [fren_spec, toWrittenShape, Fren.Core.WrittenShape.sequence]
+  | sharedParts ps =>
+    simp only [fren_spec, toWrittenShape, writtenParts, Fren.Core.WrittenShape.sequence, anySequence_eq_any]
+    cases h : ps.any Fren.Core.WrittenShape.sequence <;>
+      simp_all [List.any_eq_false, List.any_eq_true, List.filter_eq_nil_iff, List.length_pos_iff]
+
 /-- What matching the type of the first of a construction's values that
 synthesizes its type, and whose declared type mentions the type parameter
 `k`, against its declared type gives `k`, before it is widened
