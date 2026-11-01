@@ -27,14 +27,20 @@ proc both_guarded(n: Int): (y: Int) {
 
 -- Not complete: no arm is taken at 0.
 proc incomplete(n: Int): (s: Int) {
-    ensure r: s = table n { k if k > 0 => 1, k if k < 0 => -1 }   --~ error: a table in `incomplete::r` may have no arm that is taken
+    ensure r: s = table n {  --~ error: a table in `incomplete::r` may have no arm that is taken
+        k if k > 0 => 1,
+        k if k < 0 => -1,
+    }
 }
 
 -- An arm that the hypotheses rule out is never taken.
 proc ruled_out(n: Int): (s: Int) {
     assume small: n < 5
 
-    ensure r: s = table n { k if k > 10 => 2, _ => 1 }   --~ error: arm 1 of a table in `ruled_out::r` is never taken
+    ensure r: s = table n {
+        k if k > 10 => 2,  --~ error: arm 1 of a table in `ruled_out::r` is never taken
+        _ => 1,
+    }
 }
 
 -- Disjointness leaves out the constraint that the table is in, as
@@ -52,7 +58,10 @@ proc enclosing(n: Int): (y: Int) {
 proc hypotheses(n: Int): (s: Int) {
     assume nonzero: n != 0
 
-    ensure r: s = table n { k if k >= 0 => 1, k if k <= 0 => 2 }
+    ensure r: s = table n {
+        k if k >= 0 => 1,
+        k if k <= 0 => 2,
+    }
 }
 
 -- Two arms overlap only where their guards' indexes are in range: the
@@ -68,19 +77,30 @@ proc defined(q: Seq<Int>, m: Mode): (s: Int) {
 -- The order of the arms still matters to the definedness of their guards'
 -- indexes: `q[0]` is defined after `q = []` fails, but not before it.
 proc order_defined(q: Seq<Int>, m: Mode): (s: Int) {
-    ensure r: s = table m { Mode::On(_) if q = [] => 0, Mode::On(_) if q[0] > 0 => 1, _ => 2 }
+    ensure r: s = table m {
+        Mode::On(_) if q = [] => 0,
+        Mode::On(_) if q[0] > 0 => 1,
+        _ => 2,
+    }
 }
 
 proc order_undefined(q: Seq<Int>, m: Mode): (s: Int) {
-    ensure r: s = table m { Mode::On(_) if q[0] > 0 => 1, Mode::On(_) if q = [] => 0, _ => 2 }   --~ error: an index of `order_undefined::r` may be out of range
+    ensure r: s = table m {
+        Mode::On(_) if q[0] > 0 => 1,  --~ error: an index of `order_undefined::r` may be out of range
+        Mode::On(_) if q = [] => 0,
+        _ => 2,
+    }
 }
 
 -- Under a quantifier, each instance's arms are asked about.
 enum Light { Red, Amber, Green }
 
 proc quantified(n: Int): (b?) {
-    ensure r: b? iff (forall (l: Light), table l { Light::Red if n > 0 => true, Light::Red if n >= 0 => false, _ => true })
-    --~^ error: arms 1 and 2 of a table in `quantified::r` may both be taken
+    ensure r: b? iff (forall (l: Light), table l {
+        Light::Red if n > 0 => true,
+        Light::Red if n >= 0 => false,  --~ error: arms 1 and 2 of a table in `quantified::r` may both be taken
+        _ => true,
+    })
 }
 --@ summary: 58 passed, 7 failed, 0 inconclusive, 0 redundant
 --@ exit: 1

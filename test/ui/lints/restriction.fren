@@ -20,8 +20,16 @@ pub const CLIMATE_LIMIT: Int := 3  --~ warning: constant `CLIMATE_LIMIT` contain
 use self::sensors::Reading
 
 proc wildcards(mode: Mode): (level: Int, other: Int) {
-    ensure first: level = match mode { Mode::Heat => 1, _ => 2 }  --~ warning: `_` matches `climate::Mode::Cool`, `climate::Mode::Off` and `climate::Mode::Auto`
-    ensure second: other = match mode { Mode::Heat => 1, Mode::Cool => 2, Mode::Off => 3, _ => 4 }  --~ warning: `_` matches `climate::Mode::Auto`
+    ensure first: level = match mode {
+        Mode::Heat => 1,
+        _ => 2,  --~ warning: `_` matches `climate::Mode::Cool`, `climate::Mode::Off` and `climate::Mode::Auto`
+    }
+    ensure second: other = match mode {
+        Mode::Heat => 1,
+        Mode::Cool => 2,
+        Mode::Off => 3,
+        _ => 4,  --~ warning: `_` matches `climate::Mode::Auto`
+    }
 }
 
 proc literals(text: String): (raw?, quoted?, accented?, astral?) {
@@ -33,8 +41,10 @@ proc literals(text: String): (raw?, quoted?, accented?, astral?) {
 
 proc paths(probe: sensors::Probe): (inside?, side: Int) {
     ensure inside_rule: inside? iff probe = sensors::Probe::Inside  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
-    ensure side_rule: side = match probe { sensors::Probe::Outside => 1, sensors::Probe::Inside => 2 }  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
-    --~^ warning: `sensors::Probe::Inside` is a path of 3 segments
+    ensure side_rule: side = match probe {
+        sensors::Probe::Outside => 1,  --~ warning: `sensors::Probe::Outside` is a path of 3 segments
+        sensors::Probe::Inside => 2,  --~ warning: `sensors::Probe::Inside` is a path of 3 segments
+    }
 }
 
 -- `self` is a segment.

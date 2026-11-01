@@ -4,13 +4,21 @@ enum E { V0, V1 }
 
 const K1: String := "aaa"
 
-proc sub(n: Int): (m: Int) { ensure r: m = n }
+proc sub(n: Int): (m: Int) {
+    ensure r: m = n
+}
 
 proc c(s: E): (y?, z: Int) {
     call w := sub(1)
 
-    ensure r: y? iff match s { E::V0 => K1.matches?("a*"), _ => true }
-    ensure q: z = match s { E::V0 => w.m, _ => 0 }
+    ensure r: y? iff match s {
+        E::V0 => K1.matches?("a*"),
+        _ => true,
+    }
+    ensure q: z = match s {
+        E::V0 => w.m,
+        _ => 0,
+    }
 }
 
 --@ summary: 5 passed, 0 failed, 0 inconclusive, 0 redundant

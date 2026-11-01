@@ -4,7 +4,10 @@
 set_option fren.lint.dead_code "allow"
 
 proc incomplete(x: Int): (y: Int) {
-    ensure r: y = table { x > 0 => 1, x < 0 => -1 }   --~ error: a table in `incomplete::r` may have no row that holds
+    ensure r: y = table {  --~ error: a table in `incomplete::r` may have no row that holds
+        x > 0 => 1,
+        x < 0 => -1,
+    }
 }
 
 proc overlapping(x: Int): (y: Int) {
@@ -18,31 +21,46 @@ proc overlapping(x: Int): (y: Int) {
 -- Each pair of rows is its own check; rows with the same value still
 -- overlap.
 proc pairs(x: Int): (y: Int) {
-    ensure r: y = table { x > 0 => 1, x > 1 => 1, x > 2 => 2, _ => 0 }
-    --~^ error: rows 1 and 2 of a table in `pairs::r` may both hold
-    --~^^ error: rows 1 and 3 of a table in `pairs::r` may both hold
-    --~^^^ error: rows 2 and 3 of a table in `pairs::r` may both hold
-    --~^^^^ error: row 2 of a table in `pairs::r` is never the first that holds
-    --~^^^^^ error: row 3 of a table in `pairs::r` is never the first that holds
+    ensure r: y = table {
+        x > 0 => 1,
+        x > 1 => 1,  --~ error: rows 1 and 2 of a table in `pairs::r` may both hold
+        --~^ error: row 2 of a table in `pairs::r` is never the first that holds
+        x > 2 => 2,  --~ error: rows 1 and 3 of a table in `pairs::r` may both hold
+        --~^ error: rows 2 and 3 of a table in `pairs::r` may both hold
+        --~^^ error: row 3 of a table in `pairs::r` is never the first that holds
+        _ => 0,
+    }
 }
 
 -- Rows overlap only where both conditions have values: `q[0] > 0` is
 -- evaluated only where `q != []`, so it does not overlap the first row.
 proc guarded_rows(q: Seq<Int>): (y: Int) {
-    ensure r: y = table { q = [] => 0, q[0] > 0 => 1, _ => 2 }
+    ensure r: y = table {
+        q = [] => 0,
+        q[0] > 0 => 1,
+        _ => 2,
+    }
 }
 
 -- The guard of a table is that of an index: here, only `x > 0`.
 proc guarded(x: Int): (y: Int) {
-    ensure r: when x > 0, y = table { x > 5 => 2, x < 3 => 1 }   --~ error: a table in `guarded::r` may have no row that holds
+    ensure r: when x > 0, y = table {  --~ error: a table in `guarded::r` may have no row that holds
+        x > 5 => 2,
+        x < 3 => 1,
+    }
 }
 
 -- An assumption's table is checked under the other assumptions only.
 proc assumed(x: Int, y: Int): (o: Int) {
     assume nonneg: y >= 0
     --~^ warning: `y` is never negative, so it can be a `Nat`
-    assume r: table { y = 0 => x < 0, y > 0 => x >= 0 }
-    assume s: table { x > 5 => y > 5 }   --~ error: a table in `assumed::s` may have no row that holds
+    assume r: table {
+        y = 0 => x < 0,
+        y > 0 => x >= 0,
+    }
+    assume s: table {  --~ error: a table in `assumed::s` may have no row that holds
+        x > 5 => y > 5,
+    }
 
     ensure uses: o = x + y
 }
@@ -51,20 +69,28 @@ proc assumed(x: Int, y: Int): (o: Int) {
 enum Side { Left, Right }
 
 proc sides(x: Int): (y?) {
-    ensure r: y? iff (forall (s: Side), table { s = Side::Left => x > 0 })   --~ error: a table in `sides::r` may have no row that holds
+    ensure r: y? iff (forall (s: Side), table {  --~ error: a table in `sides::r` may have no row that holds
+        s = Side::Left => x > 0,
+    })
 }
 
 -- In a function's body, a table is checked for every argument.
-fn half(x: Int): Int := table { x > 0 => x div 2 }   --~ error: a table in `half` may have no row that holds
+fn half(x: Int): Int := table {  --~ error: a table in `half` may have no row that holds
+    x > 0 => x div 2,
+}
 
-const K: Int := table { 1 < 2 => 1, 2 < 3 => 2 }   --~ error: rows 1 and 2 of a table in `K` may both hold
---~^ error: row 2 of a table in `K` is never the first that holds
+const K: Int := table {
+    1 < 2 => 1,
+    2 < 3 => 2,  --~ error: rows 1 and 2 of a table in `K` may both hold
+    --~^ error: row 2 of a table in `K` is never the first that holds
+}
 
 -- A constant whose value reads a table where no row holds, or an index
 -- out of range, has the interpretation's value: the evaluator still reads
 -- the spec, and confirms the models of the components that mention it.
-const B: Bool := table { 1 > 2 => true }   --~ error: a table in `B` may have no row that holds
---~^ error: row 1 of a table in `B` is never the first that holds
+const B: Bool := table {  --~ error: a table in `B` may have no row that holds
+    1 > 2 => true,  --~ error: row 1 of a table in `B` is never the first that holds
+}
 const OUT: Int := [1, 2][5]
 
 proc mentions_unknown(x: Int): (y?, z: Int) {
@@ -79,7 +105,9 @@ type Name
 fn same?(Name, Name)
 
 proc pick(a: Name, b: Name): (w: Name) {
-    out w := table { same?(a, b) => a }   --~ error: a table in `pick::w` may have no row that holds
+    out w := table {  --~ error: a table in `pick::w` may have no row that holds
+        same?(a, b) => a,
+    }
 }
 
 -- In a global expectation, under its assumptions and calls.
@@ -91,9 +119,12 @@ proc counter(n: Int): (m: Int) {
 -- does not follow either.
 expect positive(c_n: Int) {
     call c := counter(c_n)
-    expect positive: table { c.m > 0 => true, c.n < -1 => true }  --~ warning: every row of this table has a value written the same
-    --~^ error: a table in `positive::positive` may have no row that holds
-    --~^^ error: expectation `positive::positive` does not hold
+    expect positive: table {  --~ warning: every row of this table has a value written the same
+        --~^ error: a table in `positive::positive` may have no row that holds
+        --~^^ error: expectation `positive::positive` does not hold
+        c.m > 0 => true,
+        c.n < -1 => true,
+    }
 }
 
 -- Disjointness leaves out the constraint that the table is in, as

@@ -2,7 +2,11 @@
 -- in both front ends, with no alias (`check::evidence_value`); the error's
 -- note gives the new value.
 set_option fren.evidence "tested" in  --~ error: invalid evidence `tested`
-proc old_random(x?): (y?) { ensure r: y? iff x? }
+proc old_random(x?): (y?) {
+    ensure r: y? iff x?
+}
 
 set_option fren.evidence "enumerated+tested" in  --~ error: invalid evidence `enumerated+tested`
-proc old_combination(x?): (y?) { ensure r: y? iff x? }
+proc old_combination(x?): (y?) {
+    ensure r: y? iff x?
+}
