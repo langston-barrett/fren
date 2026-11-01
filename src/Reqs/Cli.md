@@ -326,6 +326,16 @@ pub proc logic(
 }
 ```
 
+`projection?` is read from each query's script, with the definitions that it
+includes, by `Fren.Core.projectsRelation`. `fren check` first
+takes the logic of the spec as a whole, with `projection?` true if the spec
+projects such a relation anywhere, and lowers it by the script with
+`Fren.Core.queryLogic`. That this gives `logic` with the query's own
+`projection?`, for every kind, set of theories and `quantified?`, is
+proved (`Fren.Core.queryLogic_logic`, `Fren.Core.queryLogic_unprojected`).
+That `queryScript` applies it to each script is backed by the ui tests,
+not proved.
+
 `quantified?` is computed before any query is written, from what the spec
 says, so a source of quantifiers that it leaves out would have a query
 with a quantifier asked in `QF_UFDTLIA`, which cvc5 rejects with an error
