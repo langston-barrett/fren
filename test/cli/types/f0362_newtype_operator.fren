@@ -1,4 +1,6 @@
 -- A product of a newtype.
 pub struct Ms(Int)
 
-proc c(t: Ms): (d: Ms) { ensure r: d = t * Ms(2) }
+proc c(t: Ms): (d: Ms) {
+    ensure r: d = t * Ms(2)
+}

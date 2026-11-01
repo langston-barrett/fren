@@ -1,3 +1,5 @@
 -- A definition that mentions a later one (F0341).
 -- fren-covers: lang::definition_order
-proc c(x: Int): (y?) { ensure r: y? iff big? where big? := x > limit, limit := 10 }
+proc c(x: Int): (y?) {
+    ensure r: y? iff big? where big? := x > limit, limit := 10
+}

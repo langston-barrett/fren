@@ -1,14 +1,14 @@
 error[F0333]: an or-pattern cannot bind `v`
- --> test/cli/types/f0333_is_or_binder.fren:3:63
+ --> test/cli/types/f0333_is_or_binder.fren:4:38
   |
-3 | proc c(r: Reply): (w: Int) { ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v }
-  |                                                               ^ binds a name
+4 |     ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v
+  |                                      ^ binds a name
   |
   = note: when another alternative matches, the name would have no value
 help: ignore the value
   |
-3 - proc c(r: Reply): (w: Int) { ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v }
-3 + proc c(r: Reply): (w: Int) { ensure a: when r is Reply::Value(_) | Reply::Pair(v, _), w = v }
+4 -     ensure a: when r is Reply::Value(v) | Reply::Pair(v, _), w = v
+4 +     ensure a: when r is Reply::Value(_) | Reply::Pair(v, _), w = v
   |
 
 error: could not check due to previous errors

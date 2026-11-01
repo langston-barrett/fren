@@ -1,8 +1,8 @@
 error[F0305]: cannot compare `Bool` with `Int`
- --> test/cli/types/f0305_bool_int.fren:2:37
+ --> test/cli/types/f0305_bool_int.fren:3:22
   |
-2 | proc c(b?): (y?) { ensure r: y? iff b? = 1 }
-  |                                     ^^^^^^ `Bool` and `Int`
+3 |     ensure r: y? iff b? = 1
+  |                      ^^^^^^ `Bool` and `Int`
   |
   = note: both sides of `=` must have the same type
   = note: `Bool`s are not numbers: `true` and `false` are `Bool`s

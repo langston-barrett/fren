@@ -1,3 +1,5 @@
 -- An `Int` where a `Nat` is expected: `-` gives an `Int`.
 -- fren-covers: lang::operator_type, lang::widening
-proc c(n: Nat): (m: Nat) { out m := n - 1 }
+proc c(n: Nat): (m: Nat) {
+    out m := n - 1
+}

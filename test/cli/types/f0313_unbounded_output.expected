@@ -1,7 +1,7 @@
 error[F0313]: output `l` has the unbounded type `List`
  --> test/cli/types/f0313_unbounded_output.fren:3:18
   |
-3 | proc c(x: Int): (l: List) { ensure r: l = List::Cons(x, List::Nil) }
+3 | proc c(x: Int): (l: List) {
   |                  ^ an unbounded type
   |
   = note: the realizability check asks whether outputs exist, which the solver cannot decide for values of unbounded size

@@ -1,8 +1,8 @@
 error[F0336]: the divisor of `div` must be an integer literal or a constant
- --> test/cli/types/f0336_variable.fren:2:51
+ --> test/cli/types/f0336_variable.fren:3:20
   |
-2 | proc c(x: Int, y: Int): (q: Int) { out q := x div y }
-  |                                                   ^ not a literal or a constant
+3 |     out q := x div y
+  |                    ^ not a literal or a constant
   |
   = note: the solver decides only linear integer arithmetic, which divides only by constants
   = help: divide by a literal or a constant, such as `x div 2`, or declare a constant for the divisor

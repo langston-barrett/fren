@@ -1,4 +1,6 @@
 -- A divisor of `0` (F0337).
 const NONE: Int := 4 - 2 * 2
 
-proc c(x: Int): (r: Int) { out r := x mod NONE }
+proc c(x: Int): (r: Int) {
+    out r := x mod NONE
+}

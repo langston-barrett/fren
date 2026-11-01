@@ -1,3 +1,5 @@
 -- Comparing a `Bool` with a number (F0305).
-proc c(b?): (y?) { ensure r: y? iff b? = 1 }
+proc c(b?): (y?) {
+    ensure r: y? iff b? = 1
+}
 -- fren-covers: lang::operator_type

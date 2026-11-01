@@ -27,11 +27,10 @@ The formatter changes whitespace, the commas at the end of lists (see
 if it fits, and otherwise with one element to a line, but the arms of a
 `match` or a table, the rows of a table, and the members of a
 procedure's, function's or global expectation's block always one to a
-line. Elsewhere, for
-now, it keeps the line breaks: it breaks no other long line and joins no
-other short ones, except to merge imports. On each line, it decides the
-indentation and the spaces between tokens; across lines, how many blank
-lines separate them. For example,
+line. Elsewhere, for now, it keeps the line breaks: it breaks no other
+long line and joins no other short ones, except to merge imports. On each
+line, it decides the indentation and the spaces between tokens; across
+lines, how many blank lines separate them. For example,
 
 ```text
 use climate::Mode::Heat
@@ -934,7 +933,7 @@ pub proc group_layout(
 ```
 
 `fmt::in_block` decides whether a `use` is part of a block, from the
-lines of the tokens next to it:
+lines of the tokens next to it and the lines that comments are on:
 
 ```fren
 -- Where the token next to a `use` is: there is none, as the `use` starts or ends the file, or it
@@ -955,19 +954,30 @@ pub fn below?(n: Neighbour, line: Int) := match n {
     OnLine(l) => l > line,
 }
 
+-- The lines that comments are on, each line of a comment that spans several.
+pub enum Lines { Nil, Line(Int, Lines) }
+
+use self::Lines::Line
+
+-- Whether one of `lines` is between `first` and `last`.
+pub fn any_within?(lines: Lines, first: Int, last: Int) := match lines {
+    Lines::Nil => false,
+    Line(l, rest) => first <= l <= last or any_within?(rest, first, last),
+}
+
 pub proc in_block(
     first_line: Int,         -- the line where the `use` starts
     last_line: Int,          -- the line where it ends
     before: Neighbour,       -- where the token before it ends
     after: Neighbour,        -- where the token after it starts
-    commented?,              -- a comment is on one of its lines
+    comments: Lines,         -- the lines that comments are on
     nested?,                 -- it is the item of a `set_option ... in`
 ): (det alone?, det sorted?) {
     assume in_order: first_line <= last_line
 
     -- It starts and ends its lines, which have no other token and no comment.
     ensure alone_rule: alone? iff (above?(before, first_line) and below?(after, last_line)
-        and not commented?)
+        and not any_within?(comments, first_line, last_line))
     ensure block_rule: sorted? iff (alone? and not nested?)
 
     expect shared: when before = OnLine(first_line), not sorted?

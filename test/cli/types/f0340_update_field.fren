@@ -1,3 +1,5 @@
 -- A record update that gives a field its record does not have.
 struct Point { x: Int, y: Int }
-proc c(p: Point): (q: Point) { ensure r: q = { p with z := 1 } }
+proc c(p: Point): (q: Point) {
+    ensure r: q = { p with z := 1 }
+}

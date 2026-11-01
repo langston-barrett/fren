@@ -1,2 +1,4 @@
 -- A constraint that is not a `Bool` (F0304).
-proc c(x: Int): (y: Int) { ensure r: y + x }
+proc c(x: Int): (y: Int) {
+    ensure r: y + x
+}

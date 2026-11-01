@@ -1,4 +1,6 @@
 -- A newtype compared with a literal, which is an `Int`.
 pub ordered struct Ms(Int)
 
-proc c(t: Ms): (late?) { ensure r: late? iff t > 100 }
+proc c(t: Ms): (late?) {
+    ensure r: late? iff t > 100
+}

@@ -1,3 +1,5 @@
 -- A pattern test that binds a name under `not`.
 enum Reply { Empty, Value(Int) }
-proc c(r: Reply): (w: Int) { ensure a: when not r is Reply::Value(v), w = 0 }
+proc c(r: Reply): (w: Int) {
+    ensure a: when not r is Reply::Value(v), w = 0
+}

@@ -1,4 +1,6 @@
 -- Comparing an enum with a number (F0305).
 enum Mode { Off, On }
-proc c(m: Mode): (y?) { ensure r: y? iff m = 1 }
+proc c(m: Mode): (y?) {
+    ensure r: y? iff m = 1
+}
 -- fren-covers: lang::operator_type

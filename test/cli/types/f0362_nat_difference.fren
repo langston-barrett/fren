@@ -1,4 +1,6 @@
 -- `-` of a newtype of `Nat`, which would narrow an `Int` (F0362).
 ordered struct Seconds(Nat)
 
-proc c(a: Seconds, b: Seconds): (d: Seconds) { ensure r: d = a - b }
+proc c(a: Seconds, b: Seconds): (d: Seconds) {
+    ensure r: d = a - b
+}

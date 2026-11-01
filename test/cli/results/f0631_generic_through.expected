@@ -1,7 +1,7 @@
 error[F0631]: the postconditions of `lib::other<mid::One>` cannot all hold
  --> test/fixtures/generic_mid.fren:6:6
   |
-6 | proc mid(x: One): (det y: One) { out y := other(x) }
+6 | proc mid(x: One): (det y: One) {
   |      ^^^ unrealizable contract
   |
   = note: for the arguments

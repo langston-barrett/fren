@@ -1,3 +1,5 @@
 -- A binding of the wrong type (F0304).
 proc sub(a: Int) {}
-proc c(b?) { call s := sub(b?) }
+proc c(b?) {
+    call s := sub(b?)
+}

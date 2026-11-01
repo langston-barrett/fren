@@ -1,3 +1,5 @@
 -- A `Bool` in arithmetic (F0304).
-proc c(b?): (y: Int) { ensure r: y = 1 + b? }
+proc c(b?): (y: Int) {
+    ensure r: y = 1 + b?
+}
 -- fren-covers: lang::operator_type
