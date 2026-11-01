@@ -1,7 +1,7 @@
 error[F0222]: a trait has no procedures
  --> test/cli/names/f0222_trait_member.fren:3:10
   |
-3 |     proc reset(c: Int): (d: Int) {
+3 |     proc reset(c: Int): (d: Int) { ensure zero: d = 0 }
   |          ^^^^^ not a member of a trait
   |
   = note: a trait has methods, which are functions without a body, laws and expectations
