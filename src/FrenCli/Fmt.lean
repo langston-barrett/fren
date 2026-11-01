@@ -10,11 +10,12 @@ import FrenCore.Trace
 The formatter works on the tokens and comments of a file that parses.
 First it rewrites each block of imports (`fmt::in_block`,
 `fmt::group_layout`), and puts each comma before the line breaks and line
-comments before it (`fmt::separators`, `fmt::comment_piece`). Then it decides whether each list
-or block is on one line or has one element to a line (`fmt::list_layout`),
-from the inside out whether it may be on one line, and from the outside in
-whether its line fits, where it is its line's expression
-(`fmt::own_line`). It keeps the other line breaks. It decides, for each
+comments before it (`fmt::separators`, `fmt::comment_piece`). Then it
+decides whether each list or block is on one line or has one element to a
+line (`fmt::list_layout`), from the inside out whether it may be on one
+line, and from the outside in whether its line fits, where it is its
+line's expression (`fmt::own_line`), and for a block, whether its line
+continues its item (`fmt::continued`). It keeps the other line breaks. It decides, for each
 line, its indentation (`fmt::indent`), the spaces between its tokens
 (`fmt::space`), where its trailing comment goes (`fmt::comment_column`),
 and how many blank lines precede it (`fmt::blank_lines`); and it adds or
@@ -138,18 +139,18 @@ def endsWithComma : ListKind → Bool
 the first starting at column `start`, and the line ending at column `end_`,
 which counts only if `ownLine` and the line fits up to the first element.
 A `match`'s arms are always vertical, and so is a block with two or more
-members, on a line that `continued` an item from an earlier line, or whose
-line would end past `maxWidth`, wherever its member would start
-(`fmt::stacked?`). -/
+members, on a line that continues an item from an earlier line
+(`fmt::continued`), or whose line would end past `maxWidth`, wherever its
+member would start (`fmt::stacked?`). -/
 def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (ownLine continued : Bool) :
     Bool :=
   n > 0 && ((k matches .arms) || (k matches .members && (n > 1 || continued || end_ > maxWidth)) || broken
     || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth))
 
-/-- Whether a list's line continues an item from an earlier line
-(`fmt::continued`), from whether its first token, if it has one before the
-list, starts an item, a member or an element of a list. -/
-def continuedLine (firstStarts : Option Bool) : Bool := !(firstStarts.getD false)
+/-- Whether a block's line continues an item from an earlier line
+(`fmt::continued`), from its first token, if it has one before the block,
+and the first tokens of the items that the block is in. -/
+def continuedLine (first : Option Nat) (items : List Nat) : Bool := !(first.any items.contains)
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -795,8 +796,8 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
           let (after, follows) := suffix vertical b.kind close
           let own := ownLine b.kind follows toks[headOf b]!.span.start toks[b.closing]!.span.stop (holders b)
           -- Whether the line continues an item (`fmt::continued`): its first
-          -- token does not start an item, a member or an element.
-          let continued := continuedLine (lineFirst.map lay.starts.contains)
+          -- token does not start an item that the list is in.
+          let continued := continuedLine lineFirst b.items.toList
           -- After a block's `}`, a comment on its line counts too.
           let after := if b.kind == .members then after + trailingComment close else after
           listLayout b.kind info.elements.toList (out.back!.width + gap (i + 1))

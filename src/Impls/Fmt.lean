@@ -170,13 +170,27 @@ impl one_line: fmt::one_line for (k : ListKind) (n : Nat) (b : Bool) (w s e : Na
   cases k <;> cases b <;> cases l <;> cases c <;> simp [fren_spec, FrenCli.Fmt.vertical, FrenCli.Fmt.widthLimit, FrenCli.Fmt.maxWidth,
     toFmtListKind] <;> omega
 
-impl continued: fmt::continued for (o : Option Bool) {
+def toIndices : List Nat → fmt.Indices
+  | [] => .Nil
+  | i :: xs => .Index i (toIndices xs)
+
+theorem has_toIndices (xs : List Nat) (i : Nat) : fmt.«has?» (toIndices xs) i = xs.contains i := by
+  induction xs with
+  | nil => simp [toIndices, fmt.«has?»]
+  | cons j xs ih =>
+    simp only [toIndices, fmt.«has?», ih, List.contains_cons]
+    by_cases h : i = j
+    · simp [h]
+    · simp [beq_false_of_ne h, show ¬((j : Int) = i) by omega]
+
+impl continued: fmt::continued for (o : Option Nat) (xs : List Nat) {
   tokens? := o.isSome,
-  first_starts? := o.getD false,
-  continued? := FrenCli.Fmt.continuedLine o,
+  first := o.getD 0,
+  items := toIndices xs,
+  continued? := FrenCli.Fmt.continuedLine o xs,
 } by
-  intro o _
-  rcases o with _ | (_ | _) <;> simp [fren_spec, FrenCli.Fmt.continuedLine]
+  intro o xs _
+  rcases o with _ | i <;> simp [fren_spec, FrenCli.Fmt.continuedLine, has_toIndices]
 
 theorem only_closing_toFollowers (fs : List Follower) :
     fmt.«only_closing?» (toFollowers fs) = FrenCli.Fmt.onlyClosing fs := by

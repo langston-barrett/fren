@@ -81,4 +81,24 @@
 +    use self::Mode::{Cool, Heat}
 +    ensure r: on? iff m = Heat or m = Cool
 +}
+@@ -100 +110,3 @@
+-) { ensure r: on? iff m = Mode::Heat }
++) {
++    ensure r: on? iff m = Mode::Heat
++}
+@@ -103 +115,3 @@
+-    : (on?) { ensure r: on? iff m = Mode::Heat }
++    : (on?) {
++        ensure r: on? iff m = Mode::Heat
++    }
+@@ -105,3 +119 @@
+-set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) {
+-    ensure r: on? iff m = Mode::Heat
+-}
++set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+@@ -110,3 +122 @@
+-proc after_option(m: Mode): (on?) {
+-    ensure r: on? iff m = Mode::Heat
+-}
++proc after_option(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
 exit=1
