@@ -853,6 +853,54 @@ def contractTable (sc : WScope) (name : String) : R String := do
     clauses := clauses ++ s!"    ensure t{j}: table \{ {", ".intercalate rows.toList} }\n"
   return s!"pub fn {name}(x0: Int, x1?): (r: Int) \{\n{clauses}}\n"
 
+/-- Procedures checked by the solver whose outputs have subset types: of
+`Int`, a subset of a subset, a record with a field of one, and a subset of
+that record; each output `pub` or not (`exists`), `det` or not, with
+guarantees that sometimes force a value outside its type, so that
+realizability's `∃` over the outputs ranges over their types alone
+(`Reqs/Models#what-is-not-confirmed`). It adds no static error. -/
+def subsetOutputs : R String := do
+  let bound := (← below 4) + 2
+  let mut out := "pub type Sp = n: Int where pos: n > 0\n" ++
+    s!"pub type Ss = s: Sp where small: s < {bound}\n" ++
+    "pub struct Sbox { v: Ss, w: Int }\n" ++
+    "pub type Sr = r: Sbox where ok: r.w >= 0\n"
+  -- An integer from the inputs `x` and `y`.
+  let int : R String := do
+    match ← below 5 with
+    | 0 => return "x"
+    | 1 => return "y"
+    | 2 => return s!"x + {← below 4}"
+    | 3 => return s!"y - {← below 3}"
+    | _ => return s!"{← below 5}"
+  for c in [0:(← below 2) + 1] do
+    let mut results := #[]
+    let mut body := ""
+    if ← chance 40 then body := body ++ s!"    assume a: x > {← below 4}\n"
+    for k in [0:(← below 2) + 1] do
+      let ty ← pick #["Sp", "Ss", "Sbox", "Sr", "Nat"]
+      let n := s!"o{k}"
+      let det := if ← chance 40 then "det " else ""
+      if ← chance 75 then results := results.push s!"{det}{n}: {ty}"
+      else body := body ++ s!"    {det}exists {n}: {ty}\n"
+      let guard ← if ← chance 30 then pure s!"when x > {← below 4}, " else pure ""
+      let isRec := ty == "Sbox" || ty == "Sr"
+      let e ← if isRec then do
+          if ← chance 70 then pure s!"{n}.v = {← int} and {n}.w = {← int}" else pure s!"{n}.w > {← int}"
+        else do
+          match ← below 3 with
+          | 0 => pure s!"{n} = {← int}"
+          | 1 => pure s!"{n} > {← int}"
+          | _ => pure s!"{n} != {← int}"
+      body := body ++ s!"    ensure e{k}: {guard}{e}\n"
+      if ← chance 30 then
+        let v := if isRec then s!"{n}.v" else n
+        let b ← below 3
+        body := body ++ s!"    expect x{k}: {v} >= {b}\n"
+    let rs := if results.isEmpty then "" else s!": ({", ".intercalate results.toList})"
+    out := out ++ s!"\npub proc so{c}(x: Int, y: Int){rs} \{\n{body}}\n"
+  return out
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1056,6 +1104,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- A contract whose postconditions are tables, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← contractTable sc "ft")
+  -- Subset-typed outputs of solver-checked procedures, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← subsetOutputs)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)

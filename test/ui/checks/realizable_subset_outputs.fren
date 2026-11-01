@@ -1,0 +1,45 @@
+-- fren-covers: eval::outputs_confirm
+-- An output's subset type is part of what realizability asks: no output
+-- exists when the guarantees force one outside its type. Confirming the
+-- solver's model, the evaluator must search for outputs of that type too,
+-- or one that the guarantees allow, but the type does not, refutes it.
+
+type Pos = n: Int where invariant: n > 0
+
+proc copy(x: Int): (y: Pos) {  --~ error: `copy` is not realizable
+    ensure same: y = x
+}
+
+pub enum Light { Green, Red }
+pub struct Lamp { light: Light, walk? }
+type Safe = s: Lamp where invariant: not (s.light = Light::Green and s.walk?)
+
+proc turn_green(now: Safe): (next: Safe) {  --~ error: `turn_green` is not realizable
+    ensure to_green: when now.light = Light::Red, next = { now with
+        light := Light::Green,
+    }
+}
+
+-- `det` asks it too, before determinism, which then rests on it.
+proc dets(x: Int): (det y: Pos) {  --~ error: `dets` is not realizable
+    --~^ warning: the determinism of `dets::y` rests on the realizability of `dets`
+    ensure same: y = x
+}
+
+-- A subset of a subset keeps its base's invariant and adds its own.
+type Small = s: Pos where tiny: s < 3
+
+proc nested(x: Int): (y: Small) {  --~ error: `nested` is not realizable
+    ensure same: y = x and x > 2
+}
+
+-- A record whose field has a subset type, nested in another.
+struct Box { v: Small }
+struct Outer { b: Box, w: Int }
+
+proc deep(x: Int): (o: Outer) {  --~ error: `deep` is not realizable
+    ensure same: o.b.v = x and o.w = 0
+}
+
+--@ summary: 8 passed, 5 failed, 1 inconclusive, 0 redundant
+--@ exit: 1
