@@ -6961,6 +6961,568 @@ def noteSettingsSeen (lints : Array Lint := Lint.all) : M Unit :=
     | some i => if acc.contains i then acc else acc.push i
     | none => acc }
 
+/-- Elaborates an enumeration (`Reqs/Lang/Items#enumerations`). -/
+def elabEnum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (Array (Array Ident)))) (isOrdered : Bool)
+    (params : Array Ident) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "enum" n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .enumeration n name.span
+  let path := module ++ n
+  let params ← elabTypeParams params
+  modify fun s => { s with typeParams := params }
+  let mut vs := #[]
+  let mut ctors := #[]
+  let mut nRecursive := 0
+  let mut unbounded := false
+  let mut payloadTys : Array (Array (Fren.Core.PTy × Span)) := #[]
+  -- Distinct names (`lang::distinct_names`).
+  if let some k := (Fren.Core.repeatsAt (variants.map (Name.mkSimple ·.1.name)))[0]? then
+    err variants[k]!.1.span (Fren.Core.dupVariantMsg (Name.mkSimple variants[k]!.1.name))
+  for (v, payload?) in variants do
+    let vn := Name.mkSimple v.name
+    liftMsg v.span (Fren.Core.checkItemName "variant" vn)
+    lintName .variant vn v.span
+    vs := vs.push vn
+    let mut fs := #[]
+    let mut pts := #[]
+    for segs in payload?.getD #[], k in [0:(payload?.getD #[]).size] do
+      checkFnTypeSite .payload segs
+      -- The enum's own name, which is not declared yet (`lang::field_type`).
+      let (_, ownInSet) := ownIn segs name
+      let (own, declared, nested) := ownArgs segs name params
+      let tspan := typeSpan segs
+      if ownInSet then err tspan (Fren.Core.recursiveSetMsg path)
+      -- A recursive payload is the enumeration with its own parameters
+      -- (`lang::type_parameter_place`).
+      let place := Fren.Core.recursivePlace declared nested
+      if (own || nested) && !Fren.Core.typeParamPlaceAccepted place then
+        err tspan (Fren.Core.typeParamPlaceMsg .anonymous place (Fren.Core.ownWritten path params) !params.isEmpty)
+      let pt ← if own then pure (.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p)))
+        else elabPTy segs
+      let t := pt.ty
+      pts := pts.push (pt, tspan)
+      let abstract := t.abstractWithin?
+      unless Fren.Core.fieldTypeAccepted abstract.isSome own ownInSet true do
+        err tspan (Fren.Core.abstractFieldMsg (abstract.getD path) true (!(t matches .abstract _)))
+      unbounded := unbounded || own || (← get).unbounded t
+      fs := fs.push (Name.mkSimple (toString k), t)
+    -- Recursive if a payload's type is the enumeration or built from it
+    -- (`lang::well_founded`).
+    let own := (Fren.Core.PTy.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p))).node
+    if Fren.Core.recursiveVariant (← get).shapeOf own (pts.toList.map (·.1.node)) then nRecursive := nRecursive + 1
+    ctors := ctors.push (vn, fs)
+    payloadTys := payloadTys.push pts
+  unless Fren.Core.wellFounded variants.size nRecursive do err name.span (Fren.Core.illFoundedMsg n)
+  -- A recursive enumeration's payloads are never `Nat`s (`lang::nat_place`),
+  -- and a constraint of one is outside the decidable core
+  -- (`lang::subset_place`).
+  let isRecursive := nRecursive > 0
+  let shape : Fren.Core.DataShape := { recursive := isRecursive, parts := payloadTys.map (·.map (·.1)) }
+  if isRecursive then
+    let st ← get
+    for pts in payloadTys do
+      for (pt, tspan) in pts do
+        unless pt.ty != .nat do err tspan (Fren.Core.natPlaceMsg .recursivePayload)
+        if (pt.cons (fun q => if q == path then some shape else st.shapeOf q) true).isSome then
+          lint .undecidable tspan Fren.Core.undecidableRecursivePayloadMsg
+  -- `enum_variant_names` (`lint::enum_variant_names`, `lint::variant_has_enum_name`).
+  if let some msg := Fren.Core.enumVariantNamesMsg? n vs then lint .enumVariantNames name.span msg
+  for (v, _) in variants, vn in vs do
+    if let some msg := Fren.Core.variantNameMsg? n vn then lint .enumVariantNames v.span msg
+  -- Only an enumeration without payloads may be ordered
+  -- (`lang::ordered_declaration`); the first payload is reported.
+  let withPayload := variants.filter (·.2.isSome)
+  unless Fren.Core.orderedDeclAccepted isOrdered withPayload.size none do
+    let (v, _) := withPayload[0]!
+    err v.span (Fren.Core.orderedPayloadMsg n (Name.mkSimple v.name))
+  unless isPub do
+    modify fun s => { s with items := s.items.push ({ what := .enumeration, path, level := s.levels.get .deadCode }, name.span) }
+  modify fun s => { s with
+    table := (s.table.addItem { kind := .enumItem, path, isPub, owner := s.module }).addEnum { path, variants := vs }
+    datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded, ordered := isOrdered, params
+                                    lean? := Fren.Core.leanTypeOf? path : DataDecl }.withPrelude
+    shapes := s.shapes.insert path shape
+    typeParams := #[] }
+  -- Each read of a recursive enumeration's payload brings the payload's
+  -- constraint (`Fren.Core.readCons`), as an application does.
+  if isRecursive then
+    let st ← get
+    let some d := st.dataOf? path | pure ()
+    for (c, fs) in ctors, v in [0:ctors.size] do
+      for k in [0:fs.size] do
+        if let some c' := Fren.Core.readCons st.shapeOf path v k then
+          modify fun s => { s with funFacts := s.funFacts.insert (d.selSym c k) (consSmt st.dataOf? c' factHole) }
+
+/-- Elaborates a record (`Reqs/Lang/Items#records`). -/
+def elabRecord (isPub : Bool) (name : Ident) (fields : Array (Ident × Option (Array Ident))) (isOrdered : Bool)
+    (params : Array Ident) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "record" n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .record n name.span
+  let path := module ++ n
+  let params ← elabTypeParams params
+  -- A generic record is not ordered, for now (`Fren.Core.orderedGenericAccepted`).
+  unless Fren.Core.orderedGenericAccepted isOrdered params.size do err name.span (Fren.Core.orderedGenericMsg n)
+  modify fun s => { s with typeParams := params }
+  let mut fs : Array (Name × Ty) := #[]
+  let mut fieldTys : Array Fren.Core.PTy := #[]
+  -- Distinct names (`lang::distinct_names`).
+  if let some k := (Fren.Core.repeatsAt (fields.map (Name.mkSimple ·.1.name)))[0]? then
+    err fields[k]!.1.span (Fren.Core.dupFieldMsg (Name.mkSimple fields[k]!.1.name))
+  for (f, ty?) in fields do
+    let fn := Name.mkSimple f.name
+    liftMsg f.span (Fren.Core.checkNoBang fn)
+    lintName .field fn f.span
+    if let some segs := ty? then
+      checkFnTypeSite .field segs
+      let (_, ownInSet) := ownIn segs name
+      let (own, _, nested) := ownArgs segs name params
+      if own || nested then err (segs[0]!.span.to segs.back!.span) (Fren.Core.recursiveRecordMsg n)
+      if ownInSet then err (segs[0]!.span.to segs.back!.span) (Fren.Core.recursiveSetMsg path)
+    let pt ← varPTy ty? f
+    let t := pt.ty
+    fieldTys := fieldTys.push pt
+    if let some p := t.abstractWithin? then
+      err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
+        (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
+    fs := fs.push (fn, t)
+  -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
+  if let some msg := Fren.Core.structFieldNamesMsg? n (fs.map (·.1)) then lint .structFieldNames name.span msg
+  for (f, _) in fields, (fn, _) in fs do
+    if let some msg := Fren.Core.fieldNameMsg? n fn then lint .structFieldNames f.span msg
+  -- `struct_excessive_bools` (`lint::struct_excessive_bools`).
+  let nBools := (fs.filter (·.2 == .bool)).size
+  if Fren.Core.structExcessiveBools nBools then lint .structExcessiveBools name.span (Fren.Core.structExcessiveBoolsMsg n nBools)
+  let st ← get
+  -- An ordered record's fields are ordered (`lang::ordered_declaration`);
+  -- the first that is not is reported.
+  let first? := Fren.Core.PTy.firstUnordered? st.orderedDecl fieldTys.toList
+  unless Fren.Core.orderedDeclAccepted isOrdered 0 first? do
+    if let some k := first? then
+      let (f, ty?) := fields[k]!
+      err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
+        (Fren.Core.unorderedFieldMsg .record n fs[k]!.1 fs[k]!.2)
+  let unbounded := fs.any fun (_, t) => st.unbounded t
+  unless isPub do
+    modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
+  modify fun s => { s with
+    table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
+    datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded, ordered := isOrdered, params : DataDecl }.withPrelude
+    shapes := s.shapes.insert path { isRecord := true, parts := #[fieldTys] }
+    typeParams := #[] }
+
+/-- Elaborates a newtype (`Reqs/Lang/Items#newtypes`). -/
+def elabNewtype (isPub : Bool) (name : Ident) (fields : Array (Array Ident)) (isOrdered : Bool) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "record" n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .record n name.span
+  let path := module ++ n
+  -- Exactly one field, whose type is accepted as a record's field's
+  -- (`lang::newtype`).
+  let some segs := fields[0]? | err name.span (Fren.Core.newtypeFieldsMsg path 0)
+  unless Fren.Core.newtypeAccepted fields.size true do err name.span (Fren.Core.newtypeFieldsMsg path fields.size)
+  let span := typeSpan segs
+  checkFnTypeSite .field segs
+  let (own, ownInSet) := ownIn segs name
+  if own then err span (Fren.Core.recursiveRecordMsg n)
+  if ownInSet then err span (Fren.Core.recursiveSetMsg path)
+  let pt ← elabPTy segs
+  let t := pt.ty
+  if let some p := t.abstractWithin? then err span (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
+  -- An ordered newtype's underlying type is ordered
+  -- (`lang::ordered_declaration`).
+  unless Fren.Core.orderedDeclAccepted isOrdered 0 (Fren.Core.PTy.firstUnordered? (← get).orderedDecl [pt]) do
+    err span (Fren.Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") t)
+  unless isPub do
+    modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
+  modify fun s => { s with
+    table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
+    newtypes := s.newtypes.insert path t
+    orderedNewtypes := if isOrdered then s.orderedNewtypes.push path else s.orderedNewtypes
+    shapes := s.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
+
+/-- Elaborates a type alias (`Reqs/Lang/Items#type-aliases`). -/
+def elabTypeAlias (isPub : Bool) (name : Ident) (ty : Array Ident) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "type alias" n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .typeAlias n name.span
+  let t ← elabPTy ty
+  unless isPub do
+    modify fun s => { s with items := s.items.push ({ what := .typeAlias, path := module ++ n, level := s.levels.get .deadCode }, name.span) }
+  modify fun s => { s with
+    table := s.table.addItem { kind := .typeItem, path := module ++ n, isPub, owner := s.module }
+    aliases := s.aliases.insert (module ++ n) t }
+
+/-- Elaborates an abstract type (`Reqs/Lang/Items#abstract-types`). -/
+def elabAbstractType (isPub : Bool) (name : Ident) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "abstract type" n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .abstractType n name.span
+  let path := module ++ n
+  unless isPub do
+    modify fun s => { s with items := s.items.push ({ what := .abstractType, path, level := s.levels.get .deadCode }, name.span) }
+  modify fun s => { s with
+    table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
+    sorts := s.sorts.push path }
+
+/-- Records the clauses of the function at `path`, whose parameters are
+`vars` and whose body `body` elaborates to `smt`, in `namedPredicates`
+when the body is a conjunction, observes members (`observedMembers`) or
+is a predicate's clauses: each conjunction leaf is elaborated
+independently at the definition site, rather than its raw source syntax
+being substituted into a caller's scope. It then restores the state from
+before those elaborations, so that only `namedPredicates` changes. -/
+def notePredicateClauses (cx : ExprCtx) (path : Name) (vars : Array CVar) (body : Expr) (smt : String) : M Unit := do
+  if body.conjunctionRoot || (observedMembers body).isSome || (← predicateClauses cx body).isSome then
+    let leaves := if body.conjunctionRoot then body.clauseLeaves { name := "", span := body.span } else #[({ name := "", span := body.span }, body)]
+    if true then
+      let saved ← get
+      let mut templates := #[]
+      let mut nestedOccurrences : Std.HashMap Name Nat := {}
+      for (label, expression) in leaves do
+        discard takeIndexes
+        discard takeTables
+        let (formula, _) ← elabExpr cx expression
+        let indexes ← takeIndexes
+        let tables ← takeTables
+        modify fun s => { s with itemBranches := #[], itemMemberGroups := #[] }
+        annotateBranches cx (Name.mkSimple "#template") expression
+        let own := ({
+          file := saved.file
+          name := label.name
+          span := label.span
+          formula := formula
+          indexes := indexes
+          tables := tables
+          branches := (← get).itemBranches
+          groups := (← get).itemMemberGroups
+        } : NamedClause)
+        if let some (nestedPath, nested) ← predicateClauses cx expression then
+          let occurrence := nestedOccurrences.getD nestedPath 0 + 1
+          nestedOccurrences := nestedOccurrences.insert nestedPath occurrence
+          let nestedPrefix := Fren.Core.showPath nestedPath ++ "@" ++ toString occurrence
+          for clause in nested do
+            let name := (if label.name.isEmpty then "" else label.name ++ ".") ++ nestedPrefix ++ (if clause.name.isEmpty then "" else "." ++ clause.name)
+            let rename (n : Name) := if !clause.name.isEmpty then n else Name.mkSimple ("#template." ++ nestedPrefix ++ (n.toString.dropPrefix? "#template" |>.getD ("." ++ n.toString)))
+            templates := templates.push { clause with
+              name := name
+              indexes := indexes ++ clause.indexes
+              tables := tables ++ clause.tables
+              branches := clause.branches.map fun group => { group with members := group.members.map fun member => { member with name := rename member.name } }
+              groups := clause.groups.map fun group => { group with members := group.members.map fun member => { member with name := rename member.name } } }
+        else templates := templates.push own
+      modify fun s => { s with itemBranches := #[], itemMemberGroups := #[] }
+      annotateBranches cx (Name.mkSimple "#template") body
+      let whole : NamedClause := {
+        file := saved.file
+        name := ""
+        span := body.span
+        formula := smt
+        branches := (← get).itemBranches
+        groups := (← get).itemMemberGroups
+      }
+      set { saved with namedPredicates := saved.namedPredicates.insert path { sourcePath := path, params := vars.map (fun (v : CVar) => v.name), clauses := templates, whole? := some whole } }
+
+/-- The parameters of a function, declared like a procedure's parameters, but
+for the function parameters, which are pushed, each with its position, to
+the `StateT`'s array, and which only a defined function has
+(`lang::function_type_place`). -/
+def fnParamsOf (params : Array (Array Ident × Option (Array Ident))) (defined : Bool) :
+    StateT (Array (Nat × Name × Span × Fren.Core.FnTy)) M (Array CVar) := do
+  let mut vars : Array CVar := #[]
+  -- Distinct names (`lang::distinct_names`).
+  -- By the names they declare, without the `!` of shadowing.
+  let declared := params.map fun p => Name.mkSimple (declaredIdent p.1[0]!).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err params[k]!.1[0]!.span (Fren.Core.dupParamMsg declared[k]!)
+  for (p, ty?) in params, j in [0:params.size] do
+    let x ← declare p[0]!
+    let xn := Name.mkSimple x.name
+    lintName .variable xn x.span
+    if let some segs := ty?.filter (·[0]?.any (·.name == Parser.fnSeg)) then
+      unless defined do checkFnTypeSite .uninterpretedParameter segs
+      let ft ← elabFnTy segs
+      modify (·.push (j, xn, x.span, ft))
+      continue
+    let ptype ← varPTy ty? x
+    let fact? ← factOf ptype (quote xn.toString)
+    vars := vars.push { name := xn, role := .input, isPub := true, ty := ptype.ty, span := x.span, ptype, fact? }
+  return vars
+
+/-- Records the signature of the generic function at `path`, named `n`, with
+its type parameters `tps`, written `typeParams`, as `Ty.param`, each
+inferred at applications from it (`lang::generic_signature`); nothing for a
+function that is not generic. -/
+def noteSignature (path n : Name) (typeParams : Array Ident) (tps : Array Name) (ps : Array Ty)
+    (rp : Fren.Core.PTy) (defined : Bool) : M Unit := do
+  if tps.isEmpty then return
+  let r := rp.ty
+  let declared := ps.map (·.asParams path tps)
+  if let some k := Fren.Core.firstUnmentioned? declared (r.asParams path tps) tps.size then
+    err typeParams[k]!.span (Fren.Core.unmentionedTypeParamMsg n tps[k]!)
+  let g : GenericFn := { params := tps, declared, result := r.asParams path tps, resultP := rp.asParams path tps, defined
+                         file := (← get).file }
+  modify fun s => { s with genericFns := s.genericFns.insert path g }
+
+/-- Elaborates the function at `path`, named `n`, with the body `body`
+(`Reqs/Lang/Items#defined-functions`): its parameters, its body, checked
+against its result type, and its contract, which `contract` says it has. -/
+def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParams : Array Ident)
+    (tps : Array Name) (params : Array (Array Ident × Option (Array Ident))) (result : Option (Array Ident))
+    (body : Expr) (clauses : Array (Bool × Ident × Expr)) (contract : Bool) (last : Span) : M Unit := do
+  let (vars, fnPs) ← (fnParamsOf params true).run #[]
+  lintFnBools n name.span (vars.map (·.ty))
+  let rp ← varPTy result name
+  let r := rp.ty
+  -- The parameters in order, a function parameter's type standing in
+  -- for its own (`HigherOrderFn.params`).
+  let ptypes := Id.run do
+    let mut out : Array Fren.Core.PTy := vars.map (·.ptype)
+    for (j, _, _, ft) in fnPs do out := out.insertIdxIfInBounds j (.plain ft.result)
+    return out
+  modify fun s => { s with funPTys := s.funPTys.insert path (ptypes, rp) }
+  -- Each type parameter is inferred at applications from the signature
+  -- (`lang::generic_signature`), where a function parameter's type
+  -- stands for its parameters' and its result's.
+  let declared := vars.map (·.ty.asParams path tps)
+  let fnDeclared := fnPs.flatMap fun (_, _, _, ft) => (ft.asParams path tps).params.push (ft.asParams path tps).result
+  if let some k := Fren.Core.firstUnmentioned? (declared ++ fnDeclared) (r.asParams path tps) tps.size then
+    err typeParams[k]!.span (Fren.Core.unmentionedTypeParamMsg n tps[k]!)
+  if fnPs.isEmpty then noteSignature path n typeParams tps (vars.map (·.ty)) rp true
+  -- Each function parameter is an uninterpreted function for the
+  -- function's own checks (`Reqs/Lang/HigherOrder#function-parameters`).
+  let fnParams := fnPs.map fun (_, x, _, ft) => (x, ft, itemSym (path ++ x))
+  for (_, x, _, ft) in fnPs do
+    modify fun s => { s with funs := s.funs.push (path ++ x, ft.params, ft.result) }
+  discard takeTables
+  discard takeIndexes
+  modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
+  -- A first-order function that is not generic may apply itself, in a
+  -- structural recursion (`lang::structural_recursion`).
+  let selfRec? := if tps.isEmpty && fnPs.isEmpty then
+    some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
+  -- The body is checked against the result type (`lang::checked`).
+  let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := Fren.Core.ExprSite.functionBody.expected (some r) none, fnParams, selfRec? }
+  modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
+  let (smt, t) ← elabExpr cx body
+  let uses := (← get).recUses
+  let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
+  if recursion matches .structural _ then
+    if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
+    modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path }
+  notePredicateClauses cx path vars body smt
+  noteObligation cx .body body.span rp smt
+  let bodyTables ← takeTables
+  let bodyObligations ← takeIndexes
+  liftMsg body.span (Fren.Core.checkType r t (some s!"note: `{n}` returns `{r.show}`"))
+  lintBools body (← hidesIn cx)
+  -- A parameter that only the contract mentions is used too.
+  let mentioned := (mentions body ++ clauses.flatMap fun (_, _, e) => mentions e).map (·.getRoot)
+  let mentioned := if fnPs.isEmpty then mentioned
+    else mentioned ++ body.appliedNames ++ clauses.flatMap fun (_, _, e) => e.appliedNames
+  let paramSpans := Id.run do
+    let mut out := vars.map fun v => (v.name, v.span)
+    for (j, x, sp, _) in fnPs do out := out.insertIdxIfInBounds j (x, sp)
+    return out
+  for (x, sp) in Fren.Core.unmentioned paramSpans mentioned do
+    lint .unusedVariables sp (Fren.Core.unusedParamMsg x)
+  modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt)
+                           guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems }
+  -- What its applications need to unfold it (`elabHigherOrderApp`):
+  -- its contract may apply it, to its own parameters.
+  let hofParams := Id.run do
+    let mut out : Array (Name × String × Fren.Core.HoParam) := vars.map fun v => (v.name, quote v.name.toString, .value (v.ty.asParams path tps))
+    for (j, x, _, ft) in fnPs do out := out.insertIdxIfInBounds j (x, itemSym (path ++ x), .function (ft.asParams path tps))
+    return out
+  if !fnPs.isEmpty then
+    let h : HigherOrderFn := { typeParams := tps, params := hofParams, result := r.asParams path tps, body := smt
+                               calls := (← get).genericCalls }
+    modify fun s => { s with hofs := s.hofs.insert path h }
+    unless isPub do
+      for (j, x, sp, _) in fnPs do
+        let r : Fren.Core.HofParamRecord :=
+          { path, index := j, name := x, generic := !tps.isEmpty, level := (← get).levels.get .needlessHigherOrder }
+        modify fun s => { s with hofParams := s.hofParams.push (r, sp) }
+  let clausesBefore := (← get).clauseDefs.size
+  let (_, props, sites) ← if contract then elabContract path n true vars clauses r name.span fnParams (paramSpans.map (·.1)) else pure (vars, #[], #[])
+  if !fnPs.isEmpty then
+    let st ← get
+    let newClauses := st.clauseDefs.extract clausesBefore st.clauseDefs.size
+    let pres := ((st.contracts.find? path).map (·.pres)).getD #[] |>.filterMap fun (pn, sym) =>
+      (newClauses.find? (·.1 == sym)).map fun (_, _, body) => (pn, body)
+    let calls := st.genericCalls
+    modify fun s => { s with hofs := s.hofs.modify path (fun h => { h with pres, calls }), fnTypeParams := none }
+  -- What its instances need (`instantiate`).
+  if !tps.isEmpty && fnPs.isEmpty then
+    modify fun s => { s with
+      genericFns := s.genericFns.insert path { (s.genericFns.find? path).getD default with
+        vars := vars.map fun v => (v.name, v.ty), body := smt, calls := s.genericCalls
+        clauses := s.clauseDefs.extract clausesBefore s.clauseDefs.size }
+      fnTypeParams := none }
+    for args in (← get).pendingInsts do discard (instantiate path args)
+    modify fun s => { s with pendingInsts := #[] }
+  modify fun s => { s with tables := bodyTables }
+  let st ← get
+  let pres := ((st.contracts.find? path).map (·.pres)).getD #[]
+  let selfSites := st.recApps.flatMap fun (sp, args, gs) =>
+    pres.map fun (pn, sym) =>
+      let p := s!"({sym} {" ".intercalate args.toList})"
+      (sp, Fren.Core.TableGoal.precondition path pn, if gs.isEmpty then p else s!"(=> {conj gs} {p})")
+  modify fun s => { s with tables := s.tables ++ selfSites }
+  noteBody n name.span vars (props, sites) path bodyObligations
+  lintDeclared .function n name.span
+  lintLines .function n name.span last
+
+/-- Elaborates a function (`Reqs/Lang/Items#functions`). -/
+def elabFunction (isPub : Bool) (name : Ident) (typeParams : Array Ident) (params : Array (Array Ident × Option (Array Ident)))
+    (result : Option (Array Ident)) (body : Option Expr) (clauses : Array (Bool × Ident × Expr)) (last : Span)
+    (block : FnBlockInfo) : M Unit := do
+  modify fun s => { s with contractIndexes := #[], itemBranches := #[], itemMemberGroups := #[] }
+  let clauses := splitContractClauses clauses
+  -- A precondition or body of its block that mentions the result
+  -- (`F0165`).
+  if let some (sp, r) := block.resultMention? then err sp (Fren.Core.fnResultMentionMsg r)
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkNoBang n)
+  liftMsg name.span (Fren.Core.checkFnName n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .function n name.span
+  startDeclared
+  let path := module ++ n
+  modify fun s => { s with item := path }
+  -- The `use`s of its block, in its scope, as a procedure's
+  -- (`Reqs/Lang/Items#function-blocks`).
+  declareMemberUses path block.uses
+  -- Its block's `let`s that nothing needs, as a procedure's
+  -- (`unused_variables`).
+  for x in block.unusedLets do
+    lint .unusedVariables x.span (Fren.Core.unusedVariableMsg (Name.mkSimple (declaredIdent x).1.name) false true)
+  -- Its type parameters, which are abstract types within it, whether it
+  -- is defined or not (`lang::generic_function`).
+  let tps ← elabTypeParams typeParams
+  if !tps.isEmpty then
+    modify fun s => { s with fnTypeParams := some (path, tps), genericCalls := #[], pendingInsts := #[]
+                             sorts := s.sorts ++ tps.mapIdx fun k p => Fren.Core.typeParamPath path k p }
+  let (params, body) := lambdaMatchFunction params body
+  let contract := !clauses.isEmpty
+  -- A parameter is named if it has a type after `:`, or is a `Bool`
+  -- written `x?` (`lang::function_params`).
+  let named (p : Array Ident × Option (Array Ident)) :=
+    p.2.isSome || (p.1.size == 1 && (declaredIdent p.1[0]!).1.name.endsWith "?")
+  unless Fren.Core.functionParamsAccepted body.isSome contract params.size (params.filter named).size do
+    let bad := (params.find? (named · != (body.isSome || contract))).map (·.1[0]!.span) |>.getD name.span
+    err bad (Fren.Core.functionParamsMsg path body.isSome contract)
+  let paramVars : M (Array CVar) := return (← (fnParamsOf params body.isSome).run #[]).1
+  match body with
+  | none =>
+    -- Generic or not, the `declare-fun` of the function itself; a generic
+    -- one's is over its type parameters' sorts, for the checks of its
+    -- contract, and each instance that an application uses has its own
+    -- (`instantiate`).
+    if !contract then
+      let pps ← params.mapM (elabPTy ·.1)
+      let ps := pps.map (·.ty)
+      lintFnBools n name.span ps
+      -- As for a variable, with the result type (`lang::bool_naming`),
+      -- after the parameters, in source order.
+      let rp ← varPTy result name
+      noteSignature path n typeParams tps ps rp false
+      noteResultFact path rp
+      modify fun s => { s with funs := s.funs.push (path, ps, rp.ty), funPTys := s.funPTys.insert path (pps, rp) }
+    else
+      let vars ← paramVars
+      lintFnBools n name.span (vars.map (·.ty))
+      let rp ← varPTy result name
+      noteSignature path n typeParams tps (vars.map (·.ty)) rp false
+      noteResultFact path rp
+      modify fun s => { s with funs := s.funs.push (path, vars.map (·.ty), rp.ty)
+                               funPTys := s.funPTys.insert path (vars.map (·.ptype), rp) }
+      discard takeTables
+      modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
+      let clausesBefore := (← get).clauseDefs.size
+      let (vars, props, sites) ← elabContract path n false vars clauses rp.ty name.span
+      -- What its instances need (`instantiate`): its clauses, and the
+      -- generic functions that they apply.
+      if !tps.isEmpty then
+        modify fun s => { s with
+          genericFns := s.genericFns.insert path { (s.genericFns.find? path).getD default with
+            calls := s.genericCalls, clauses := s.clauseDefs.extract clausesBefore s.clauseDefs.size } }
+      noteBody n name.span vars (props, sites) path (generic := !tps.isEmpty)
+      lintDeclared .function n name.span
+      lintLines .function n name.span last
+    modify fun s => { s with fnTypeParams := none }
+  | some body =>
+    elabDefinedFunction isPub name n path typeParams tps params result body clauses contract last
+  unless isPub do
+    modify fun s =>
+      let r : Fren.Core.ItemRecord :=
+        -- A trait's method is never dead (`lint::dead_item`).
+        { what := if s.inTrait then .method else .function, path, level := s.levels.get .deadCode
+          singleCall? := body.map fun _ => s.levels.get .singleCallFn }
+      { s with items := s.items.push (r, name.span) }
+  modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+
+/-- Elaborates a constant (`Reqs/Lang/Items#constants`). -/
+def elabConst (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr) : M Unit := do
+  modify fun s => { s with contractIndexes := #[], itemBranches := #[], itemMemberGroups := #[] }
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkConstName n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .constant n name.span
+  let pt ← elabPTy ty
+  let t := pt.ty
+  -- Its value must be known (`lang::constant`): first its type, then,
+  -- once the functions it applies count as used, its value.
+  let abstract := t matches .abstract _
+  unless Fren.Core.constantAccepted abstract false do
+    err (ty[0]!.span.to ty.back!.span) (Fren.Core.unknownConstantMsg abstract)
+  let before := (← get).applied.size
+  discard takeTables
+  discard takeIndexes
+  modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
+  let cx : ExprCtx := { vars := #[], place := .prop, expected? := Fren.Core.ExprSite.constantValue.expected (some t) none }
+  let (smt, t') ← elabExpr cx value
+  noteObligation cx .constant value.span pt smt
+  noteBody n name.span #[] (obligations := ← takeIndexes)
+  let applies := (← get).applied.extract before
+  unless Fren.Core.constantAccepted abstract applies.isEmpty.not do
+    err applies[0]! (Fren.Core.unknownConstantMsg abstract)
+  liftMsg value.span (Fren.Core.checkType t t' (some s!"note: `{n}` has type `{t.show}`"))
+  lintBools value (← hidesIn cx)
+  let path := module ++ n
+  unless isPub do
+    modify fun s => { s with items := s.items.push ({ what := .constant, path, level := s.levels.get .deadCode }, name.span) }
+  let int? ← if t == .int || t == .nat then intConstValue? { vars := #[], place := .prop } value else pure none
+  modify fun s => { s with
+    table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
+    consts := s.consts.insert path (smt, t)
+    guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems
+    constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
+
+-- `elabItem` calls a function of its own for each larger kind of item,
+-- and `elabFunction` for each of its larger parts. Lean's compiler, whose
+-- simplifier takes time superlinear in a function's size, took 35 s on an
+-- `elabItem` that held them all, and clang 11 s, on the path of every
+-- build of `fren` and `fren_test`; it now takes a few seconds on each.
 mutual
 partial def elabItem (item : Item) : M Unit := do
   -- Paths resolve in the module, but in a procedure's or a function's
@@ -6995,553 +7557,14 @@ partial def elabItem (item : Item) : M Unit := do
     for p in paths do
       declareUse (pre ++ p) false
         { item := span, removal, path := p[0]!.span.to p.back!.span, pre? := some (pre[0]!.span.to pre.back!.span) }
-  | .enum isPub name variants isOrdered params => do
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkItemName "enum" n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .enumeration n name.span
-    let path := module ++ n
-    let params ← elabTypeParams params
-    modify fun s => { s with typeParams := params }
-    let mut vs := #[]
-    let mut ctors := #[]
-    let mut nRecursive := 0
-    let mut unbounded := false
-    let mut payloadTys : Array (Array (Fren.Core.PTy × Span)) := #[]
-    -- Distinct names (`lang::distinct_names`).
-    if let some k := (Fren.Core.repeatsAt (variants.map (Name.mkSimple ·.1.name)))[0]? then
-      err variants[k]!.1.span (Fren.Core.dupVariantMsg (Name.mkSimple variants[k]!.1.name))
-    for (v, payload?) in variants do
-      let vn := Name.mkSimple v.name
-      liftMsg v.span (Fren.Core.checkItemName "variant" vn)
-      lintName .variant vn v.span
-      vs := vs.push vn
-      let mut fs := #[]
-      let mut pts := #[]
-      for segs in payload?.getD #[], k in [0:(payload?.getD #[]).size] do
-        checkFnTypeSite .payload segs
-        -- The enum's own name, which is not declared yet (`lang::field_type`).
-        let (_, ownInSet) := ownIn segs name
-        let (own, declared, nested) := ownArgs segs name params
-        let tspan := typeSpan segs
-        if ownInSet then err tspan (Fren.Core.recursiveSetMsg path)
-        -- A recursive payload is the enumeration with its own parameters
-        -- (`lang::type_parameter_place`).
-        let place := Fren.Core.recursivePlace declared nested
-        if (own || nested) && !Fren.Core.typeParamPlaceAccepted place then
-          err tspan (Fren.Core.typeParamPlaceMsg .anonymous place (Fren.Core.ownWritten path params) !params.isEmpty)
-        let pt ← if own then pure (.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p)))
-          else elabPTy segs
-        let t := pt.ty
-        pts := pts.push (pt, tspan)
-        let abstract := t.abstractWithin?
-        unless Fren.Core.fieldTypeAccepted abstract.isSome own ownInSet true do
-          err tspan (Fren.Core.abstractFieldMsg (abstract.getD path) true (!(t matches .abstract _)))
-        unbounded := unbounded || own || (← get).unbounded t
-        fs := fs.push (Name.mkSimple (toString k), t)
-      -- Recursive if a payload's type is the enumeration or built from it
-      -- (`lang::well_founded`).
-      let own := (Fren.Core.PTy.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p))).node
-      if Fren.Core.recursiveVariant (← get).shapeOf own (pts.toList.map (·.1.node)) then nRecursive := nRecursive + 1
-      ctors := ctors.push (vn, fs)
-      payloadTys := payloadTys.push pts
-    unless Fren.Core.wellFounded variants.size nRecursive do err name.span (Fren.Core.illFoundedMsg n)
-    -- A recursive enumeration's payloads are never `Nat`s (`lang::nat_place`),
-    -- and a constraint of one is outside the decidable core
-    -- (`lang::subset_place`).
-    let isRecursive := nRecursive > 0
-    let shape : Fren.Core.DataShape := { recursive := isRecursive, parts := payloadTys.map (·.map (·.1)) }
-    if isRecursive then
-      let st ← get
-      for pts in payloadTys do
-        for (pt, tspan) in pts do
-          unless pt.ty != .nat do err tspan (Fren.Core.natPlaceMsg .recursivePayload)
-          if (pt.cons (fun q => if q == path then some shape else st.shapeOf q) true).isSome then
-            lint .undecidable tspan Fren.Core.undecidableRecursivePayloadMsg
-    -- `enum_variant_names` (`lint::enum_variant_names`, `lint::variant_has_enum_name`).
-    if let some msg := Fren.Core.enumVariantNamesMsg? n vs then lint .enumVariantNames name.span msg
-    for (v, _) in variants, vn in vs do
-      if let some msg := Fren.Core.variantNameMsg? n vn then lint .enumVariantNames v.span msg
-    -- Only an enumeration without payloads may be ordered
-    -- (`lang::ordered_declaration`); the first payload is reported.
-    let withPayload := variants.filter (·.2.isSome)
-    unless Fren.Core.orderedDeclAccepted isOrdered withPayload.size none do
-      let (v, _) := withPayload[0]!
-      err v.span (Fren.Core.orderedPayloadMsg n (Name.mkSimple v.name))
-    unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .enumeration, path, level := s.levels.get .deadCode }, name.span) }
-    modify fun s => { s with
-      table := (s.table.addItem { kind := .enumItem, path, isPub, owner := s.module }).addEnum { path, variants := vs }
-      datatypes := s.datatypes.push { path, isRecord := false, ctors, unbounded, ordered := isOrdered, params
-                                      lean? := Fren.Core.leanTypeOf? path : DataDecl }.withPrelude
-      shapes := s.shapes.insert path shape
-      typeParams := #[] }
-    -- Each read of a recursive enumeration's payload brings the payload's
-    -- constraint (`Fren.Core.readCons`), as an application does.
-    if isRecursive then
-      let st ← get
-      let some d := st.dataOf? path | pure ()
-      for (c, fs) in ctors, v in [0:ctors.size] do
-        for k in [0:fs.size] do
-          if let some c' := Fren.Core.readCons st.shapeOf path v k then
-            modify fun s => { s with funFacts := s.funFacts.insert (d.selSym c k) (consSmt st.dataOf? c' factHole) }
-  | .record isPub name fields isOrdered params => do
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkItemName "record" n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .record n name.span
-    let path := module ++ n
-    let params ← elabTypeParams params
-    -- A generic record is not ordered, for now (`Fren.Core.orderedGenericAccepted`).
-    unless Fren.Core.orderedGenericAccepted isOrdered params.size do err name.span (Fren.Core.orderedGenericMsg n)
-    modify fun s => { s with typeParams := params }
-    let mut fs : Array (Name × Ty) := #[]
-    let mut fieldTys : Array Fren.Core.PTy := #[]
-    -- Distinct names (`lang::distinct_names`).
-    if let some k := (Fren.Core.repeatsAt (fields.map (Name.mkSimple ·.1.name)))[0]? then
-      err fields[k]!.1.span (Fren.Core.dupFieldMsg (Name.mkSimple fields[k]!.1.name))
-    for (f, ty?) in fields do
-      let fn := Name.mkSimple f.name
-      liftMsg f.span (Fren.Core.checkNoBang fn)
-      lintName .field fn f.span
-      if let some segs := ty? then
-        checkFnTypeSite .field segs
-        let (_, ownInSet) := ownIn segs name
-        let (own, _, nested) := ownArgs segs name params
-        if own || nested then err (segs[0]!.span.to segs.back!.span) (Fren.Core.recursiveRecordMsg n)
-        if ownInSet then err (segs[0]!.span.to segs.back!.span) (Fren.Core.recursiveSetMsg path)
-      let pt ← varPTy ty? f
-      let t := pt.ty
-      fieldTys := fieldTys.push pt
-      if let some p := t.abstractWithin? then
-        err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
-          (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
-      fs := fs.push (fn, t)
-    -- `struct_field_names` (`lint::struct_field_names`, `lint::field_has_record_name`).
-    if let some msg := Fren.Core.structFieldNamesMsg? n (fs.map (·.1)) then lint .structFieldNames name.span msg
-    for (f, _) in fields, (fn, _) in fs do
-      if let some msg := Fren.Core.fieldNameMsg? n fn then lint .structFieldNames f.span msg
-    -- `struct_excessive_bools` (`lint::struct_excessive_bools`).
-    let nBools := (fs.filter (·.2 == .bool)).size
-    if Fren.Core.structExcessiveBools nBools then lint .structExcessiveBools name.span (Fren.Core.structExcessiveBoolsMsg n nBools)
-    let st ← get
-    -- An ordered record's fields are ordered (`lang::ordered_declaration`);
-    -- the first that is not is reported.
-    let first? := Fren.Core.PTy.firstUnordered? st.orderedDecl fieldTys.toList
-    unless Fren.Core.orderedDeclAccepted isOrdered 0 first? do
-      if let some k := first? then
-        let (f, ty?) := fields[k]!
-        err ((ty?.map fun segs => segs[0]!.span.to segs.back!.span).getD f.span)
-          (Fren.Core.unorderedFieldMsg .record n fs[k]!.1 fs[k]!.2)
-    let unbounded := fs.any fun (_, t) => st.unbounded t
-    unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
-    modify fun s => { s with
-      table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
-      datatypes := s.datatypes.push { path, isRecord := true, ctors := #[(`«{}», fs)], unbounded, ordered := isOrdered, params : DataDecl }.withPrelude
-      shapes := s.shapes.insert path { isRecord := true, parts := #[fieldTys] }
-      typeParams := #[] }
-  | .newtype isPub name fields isOrdered => do
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkItemName "record" n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .record n name.span
-    let path := module ++ n
-    -- Exactly one field, whose type is accepted as a record's field's
-    -- (`lang::newtype`).
-    let some segs := fields[0]? | err name.span (Fren.Core.newtypeFieldsMsg path 0)
-    unless Fren.Core.newtypeAccepted fields.size true do err name.span (Fren.Core.newtypeFieldsMsg path fields.size)
-    let span := typeSpan segs
-    checkFnTypeSite .field segs
-    let (own, ownInSet) := ownIn segs name
-    if own then err span (Fren.Core.recursiveRecordMsg n)
-    if ownInSet then err span (Fren.Core.recursiveSetMsg path)
-    let pt ← elabPTy segs
-    let t := pt.ty
-    if let some p := t.abstractWithin? then err span (Fren.Core.abstractFieldMsg p false (!(t matches .abstract _)))
-    -- An ordered newtype's underlying type is ordered
-    -- (`lang::ordered_declaration`).
-    unless Fren.Core.orderedDeclAccepted isOrdered 0 (Fren.Core.PTy.firstUnordered? (← get).orderedDecl [pt]) do
-      err span (Fren.Core.unorderedFieldMsg .newtype n (Name.mkSimple "0") t)
-    unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .record, path, level := s.levels.get .deadCode }, name.span) }
-    modify fun s => { s with
-      table := s.table.addItem { kind := .recordItem, path, isPub, owner := s.module }
-      newtypes := s.newtypes.insert path t
-      orderedNewtypes := if isOrdered then s.orderedNewtypes.push path else s.orderedNewtypes
-      shapes := s.shapes.insert path { isRecord := true, isNewtype := true, parts := #[#[pt]] } }
-  | .subsetType isPub name binder base clauses => do
-    let module := (← get).module
-    let n := Name.mkSimple (declaredIdent name).1.name
-    let path := module ++ n
-    liftMsg name.span (Fren.Core.checkItemName "subset type" n)
-    liftMsg name.span ((← get).table.checkFreshItem module n (declaredIdent name).2)
-    let baseTy ← elabPTy base
-    let mut seen : Array Name := #[]
-    let mut invariants := baseTy.invariants
-    let mut previous : Array Expr := #[]
-    let mut pattern := baseTy.pat?
-    for (label, expression) in clauses do
-      let logical := Name.mkSimple label.name
-      if seen.contains logical then
-        err label.span { code? := some "F0372", headline := s!"duplicate invariant `{Fren.Core.showPath (path ++ logical)}`", label? := some "already declared in this subset type" }
-      seen := seen.push logical
-      let predicate := subsetPredicateIdent name label
-      let before := (← get).bodies.size
-      let generatedBefore ← get
-      let priorSubset := (← get).inSubset
-      modify fun st => { st with inSubset := true }
-      -- Only the lints of the invariant's own source are reported, as for
-      -- any expression, whether or not it has a static error: not those of
-      -- the binder, which the pattern shorthand does not write.
-      let ownLints (st : State) : State := { st with
-        lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
-        lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-        natReports := generatedBefore.natReports }
-      try
-        elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
-      catch failure =>
-        if failure.diags.any (·.msg.code? == some "F0201") then
-          err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
-        throw { failure with state := ownLints failure.state }
-      modify fun st => { ownLints st with inSubset := priorSubset }
-      -- Its full-definedness check is guarded by earlier invariants below,
-      -- rather than checked unconditionally as an ordinary function body.
-      modify fun st => { st with bodies := st.bodies.extract 0 before }
-      invariants := invariants.push { name := path ++ logical, predicate := module ++ Name.mkSimple predicate.name }
-      if pattern.isNone && clauses.size == 1 then
-        if let .is _ (.path _ #[x]) p := expression then
-          if x.name == binder.name then
-            let (pat, bs, _) ← resolvePattern { vars := #[], place := .prop } baseTy.ty binder.name false true p
-            if bs.isEmpty then pattern := some pat
-      let validator := subsetCheckIdent name s!"defined_{label.name.toLower}"
-      let localName : Ident := { name := "subset_predicate?", span := label.span }
-      let assumptions := previous.mapIdx fun i e => Member.prop .assume { name := s!"earlier_{i}", span := label.span } e
-      let header := #[Member.var true true false binder (some base) none]
-      let body := assumptions.push (.var false false false localName none (some expression))
-      withoutGhostLints <| elabItem (.comp true validator header body expression.span (body.map fun _ => expression.span) label.span.stop)
-      modify fun st => { st with comps := st.comps.map fun c => if c.path == module ++ Name.mkSimple validator.name then
-        { c with subsetInvariant? := some (path ++ logical) } else c }
-      previous := previous.push expression
-    let restricted := { baseTy with invariants, pat? := pattern, text := name.name }
-    modify fun st => { st with
-      table := st.table.addItem { kind := .typeItem, path, isPub, owner := module }
-      aliases := st.aliases.insert path restricted }
-    let inhabit := subsetCheckIdent name "inhabited"
-    let binderExpr := Expr.path binder.span #[binder]
-    let guarantees := clauses.map fun (label, _) =>
-      let predicate := subsetPredicateIdent name label
-      Member.prop .ensure label (.app label.span #[predicate] #[binderExpr])
-    let header := #[Member.var false true false binder (some base) none]
-    modify fun st => { st with inSubset := true }
-    withoutGhostLints <| elabItem (.comp true inhabit header guarantees name.span (guarantees.map fun _ => name.span) name.span.stop)
-    modify fun st => { st with inSubset := false, comps := st.comps.map fun c => if c.path == module ++ Name.mkSimple inhabit.name then
-      { c with subset? := some path, finiteModel := true } else c }
-  | .typeAlias isPub name ty => do
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkItemName "type alias" n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .typeAlias n name.span
-    let t ← elabPTy ty
-    unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .typeAlias, path := module ++ n, level := s.levels.get .deadCode }, name.span) }
-    modify fun s => { s with
-      table := s.table.addItem { kind := .typeItem, path := module ++ n, isPub, owner := s.module }
-      aliases := s.aliases.insert (module ++ n) t }
-  | .abstractType isPub name => do
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkItemName "abstract type" n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .abstractType n name.span
-    let path := module ++ n
-    unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .abstractType, path, level := s.levels.get .deadCode }, name.span) }
-    modify fun s => { s with
-      table := s.table.addItem { kind := .typeItem, path, isPub, owner := s.module }
-      sorts := s.sorts.push path }
-  | .function isPub name typeParams params result body clauses last block => do
-    modify fun s => { s with contractIndexes := #[], itemBranches := #[], itemMemberGroups := #[] }
-    let clauses := splitContractClauses clauses
-    -- A precondition or body of its block that mentions the result
-    -- (`F0165`).
-    if let some (sp, r) := block.resultMention? then err sp (Fren.Core.fnResultMentionMsg r)
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkNoBang n)
-    liftMsg name.span (Fren.Core.checkFnName n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .function n name.span
-    startDeclared
-    let path := module ++ n
-    modify fun s => { s with item := path }
-    -- The `use`s of its block, in its scope, as a procedure's
-    -- (`Reqs/Lang/Items#function-blocks`).
-    declareMemberUses path block.uses
-    -- Its block's `let`s that nothing needs, as a procedure's
-    -- (`unused_variables`).
-    for x in block.unusedLets do
-      lint .unusedVariables x.span (Fren.Core.unusedVariableMsg (Name.mkSimple (declaredIdent x).1.name) false true)
-    -- Its type parameters, which are abstract types within it, whether it
-    -- is defined or not (`lang::generic_function`).
-    let tps ← elabTypeParams typeParams
-    if !tps.isEmpty then
-      modify fun s => { s with fnTypeParams := some (path, tps), genericCalls := #[], pendingInsts := #[]
-                               sorts := s.sorts ++ tps.mapIdx fun k p => Fren.Core.typeParamPath path k p }
-    let (params, body) := lambdaMatchFunction params body
-    let contract := !clauses.isEmpty
-    -- A parameter is named if it has a type after `:`, or is a `Bool`
-    -- written `x?` (`lang::function_params`).
-    let named (p : Array Ident × Option (Array Ident)) :=
-      p.2.isSome || (p.1.size == 1 && (declaredIdent p.1[0]!).1.name.endsWith "?")
-    unless Fren.Core.functionParamsAccepted body.isSome contract params.size (params.filter named).size do
-      let bad := (params.find? (named · != (body.isSome || contract))).map (·.1[0]!.span) |>.getD name.span
-      err bad (Fren.Core.functionParamsMsg path body.isSome contract)
-    -- The parameters, declared like a procedure's parameters, but for the function
-    -- parameters, each with its position, which only a defined function
-    -- has (`lang::function_type_place`).
-    let fnParamsOf : StateT (Array (Nat × Name × Span × Fren.Core.FnTy)) M (Array CVar) := do
-      let mut vars : Array CVar := #[]
-      -- Distinct names (`lang::distinct_names`).
-      -- By the names they declare, without the `!` of shadowing.
-      let declared := params.map fun p => Name.mkSimple (declaredIdent p.1[0]!).1.name
-      if let some k := (Fren.Core.repeatsAt declared)[0]? then
-        err params[k]!.1[0]!.span (Fren.Core.dupParamMsg declared[k]!)
-      for (p, ty?) in params, j in [0:params.size] do
-        let x ← declare p[0]!
-        let xn := Name.mkSimple x.name
-        lintName .variable xn x.span
-        if let some segs := ty?.filter (·[0]?.any (·.name == Parser.fnSeg)) then
-          unless body.isSome do checkFnTypeSite .uninterpretedParameter segs
-          let ft ← elabFnTy segs
-          modify (·.push (j, xn, x.span, ft))
-          continue
-        let ptype ← varPTy ty? x
-        let fact? ← factOf ptype (quote xn.toString)
-        vars := vars.push { name := xn, role := .input, isPub := true, ty := ptype.ty, span := x.span, ptype, fact? }
-      return vars
-    let paramVars : M (Array CVar) := return (← fnParamsOf.run #[]).1
-    -- A generic function's signature, with its type parameters as
-    -- `Ty.param`, each inferred at applications from it
-    -- (`lang::generic_signature`).
-    let signature (ps : Array Ty) (rp : Fren.Core.PTy) (defined : Bool) : M Unit := do
-      if tps.isEmpty then return
-      let r := rp.ty
-      let declared := ps.map (·.asParams path tps)
-      if let some k := Fren.Core.firstUnmentioned? declared (r.asParams path tps) tps.size then
-        err typeParams[k]!.span (Fren.Core.unmentionedTypeParamMsg n tps[k]!)
-      let g : GenericFn := { params := tps, declared, result := r.asParams path tps, resultP := rp.asParams path tps, defined
-                             file := (← get).file }
-      modify fun s => { s with genericFns := s.genericFns.insert path g }
-    match body with
-    | none =>
-      -- Generic or not, the `declare-fun` of the function itself; a generic
-      -- one's is over its type parameters' sorts, for the checks of its
-      -- contract, and each instance that an application uses has its own
-      -- (`instantiate`).
-      if !contract then
-        let pps ← params.mapM (elabPTy ·.1)
-        let ps := pps.map (·.ty)
-        lintFnBools n name.span ps
-        -- As for a variable, with the result type (`lang::bool_naming`),
-        -- after the parameters, in source order.
-        let rp ← varPTy result name
-        signature ps rp false
-        noteResultFact path rp
-        modify fun s => { s with funs := s.funs.push (path, ps, rp.ty), funPTys := s.funPTys.insert path (pps, rp) }
-      else
-        let vars ← paramVars
-        lintFnBools n name.span (vars.map (·.ty))
-        let rp ← varPTy result name
-        signature (vars.map (·.ty)) rp false
-        noteResultFact path rp
-        modify fun s => { s with funs := s.funs.push (path, vars.map (·.ty), rp.ty)
-                                 funPTys := s.funPTys.insert path (vars.map (·.ptype), rp) }
-        discard takeTables
-        modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
-        let clausesBefore := (← get).clauseDefs.size
-        let (vars, props, sites) ← elabContract path n false vars clauses rp.ty name.span
-        -- What its instances need (`instantiate`): its clauses, and the
-        -- generic functions that they apply.
-        if !tps.isEmpty then
-          modify fun s => { s with
-            genericFns := s.genericFns.insert path { (s.genericFns.find? path).getD default with
-              calls := s.genericCalls, clauses := s.clauseDefs.extract clausesBefore s.clauseDefs.size } }
-        noteBody n name.span vars (props, sites) path (generic := !tps.isEmpty)
-        lintDeclared .function n name.span
-        lintLines .function n name.span last
-      modify fun s => { s with fnTypeParams := none }
-    | some body =>
-      let (vars, fnPs) ← fnParamsOf.run #[]
-      lintFnBools n name.span (vars.map (·.ty))
-      let rp ← varPTy result name
-      let r := rp.ty
-      -- The parameters in order, a function parameter's type standing in
-      -- for its own (`HigherOrderFn.params`).
-      let ptypes := Id.run do
-        let mut out : Array Fren.Core.PTy := vars.map (·.ptype)
-        for (j, _, _, ft) in fnPs do out := out.insertIdxIfInBounds j (.plain ft.result)
-        return out
-      modify fun s => { s with funPTys := s.funPTys.insert path (ptypes, rp) }
-      -- Each type parameter is inferred at applications from the signature
-      -- (`lang::generic_signature`), where a function parameter's type
-      -- stands for its parameters' and its result's.
-      let declared := vars.map (·.ty.asParams path tps)
-      let fnDeclared := fnPs.flatMap fun (_, _, _, ft) => (ft.asParams path tps).params.push (ft.asParams path tps).result
-      if let some k := Fren.Core.firstUnmentioned? (declared ++ fnDeclared) (r.asParams path tps) tps.size then
-        err typeParams[k]!.span (Fren.Core.unmentionedTypeParamMsg n tps[k]!)
-      if fnPs.isEmpty then signature (vars.map (·.ty)) rp true
-      -- Each function parameter is an uninterpreted function for the
-      -- function's own checks (`Reqs/Lang/HigherOrder#function-parameters`).
-      let fnParams := fnPs.map fun (_, x, _, ft) => (x, ft, itemSym (path ++ x))
-      for (_, x, _, ft) in fnPs do
-        modify fun s => { s with funs := s.funs.push (path ++ x, ft.params, ft.result) }
-      discard takeTables
-      discard takeIndexes
-      modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
-      -- A first-order function that is not generic may apply itself, in a
-      -- structural recursion (`lang::structural_recursion`).
-      let selfRec? := if tps.isEmpty && fnPs.isEmpty then
-        some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
-      -- The body is checked against the result type (`lang::checked`).
-      let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := Fren.Core.ExprSite.functionBody.expected (some r) none, fnParams, selfRec? }
-      modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
-      let (smt, t) ← elabExpr cx body
-      let uses := (← get).recUses
-      let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
-      if recursion matches .structural _ then
-        if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
-        modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path }
-      -- Keep independently elaborated conjunction leaves at their definition
-      -- site, rather than substituting raw source syntax into a caller's scope.
-      if body.conjunctionRoot || (observedMembers body).isSome || (← predicateClauses cx body).isSome then
-        let leaves := if body.conjunctionRoot then body.clauseLeaves { name := "", span := body.span } else #[({ name := "", span := body.span }, body)]
-        if true then
-          let saved ← get
-          let mut templates := #[]
-          let mut nestedOccurrences : Std.HashMap Name Nat := {}
-          for (label, expression) in leaves do
-            discard takeIndexes
-            discard takeTables
-            let (formula, _) ← elabExpr cx expression
-            let indexes ← takeIndexes
-            let tables ← takeTables
-            modify fun s => { s with itemBranches := #[], itemMemberGroups := #[] }
-            annotateBranches cx (Name.mkSimple "#template") expression
-            let own := ({
-              file := saved.file
-              name := label.name
-              span := label.span
-              formula := formula
-              indexes := indexes
-              tables := tables
-              branches := (← get).itemBranches
-              groups := (← get).itemMemberGroups
-            } : NamedClause)
-            if let some (nestedPath, nested) ← predicateClauses cx expression then
-              let occurrence := nestedOccurrences.getD nestedPath 0 + 1
-              nestedOccurrences := nestedOccurrences.insert nestedPath occurrence
-              let nestedPrefix := Fren.Core.showPath nestedPath ++ "@" ++ toString occurrence
-              for clause in nested do
-                let name := (if label.name.isEmpty then "" else label.name ++ ".") ++ nestedPrefix ++ (if clause.name.isEmpty then "" else "." ++ clause.name)
-                let rename (n : Name) := if !clause.name.isEmpty then n else Name.mkSimple ("#template." ++ nestedPrefix ++ (n.toString.dropPrefix? "#template" |>.getD ("." ++ n.toString)))
-                templates := templates.push { clause with
-                  name := name
-                  indexes := indexes ++ clause.indexes
-                  tables := tables ++ clause.tables
-                  branches := clause.branches.map fun group => { group with members := group.members.map fun member => { member with name := rename member.name } }
-                  groups := clause.groups.map fun group => { group with members := group.members.map fun member => { member with name := rename member.name } } }
-            else templates := templates.push own
-          modify fun s => { s with itemBranches := #[], itemMemberGroups := #[] }
-          annotateBranches cx (Name.mkSimple "#template") body
-          let whole : NamedClause := {
-            file := saved.file
-            name := ""
-            span := body.span
-            formula := smt
-            branches := (← get).itemBranches
-            groups := (← get).itemMemberGroups
-          }
-          set { saved with namedPredicates := saved.namedPredicates.insert path { sourcePath := path, params := vars.map (fun (v : CVar) => v.name), clauses := templates, whole? := some whole } }
-      noteObligation cx .body body.span rp smt
-      let bodyTables ← takeTables
-      let bodyObligations ← takeIndexes
-      liftMsg body.span (Fren.Core.checkType r t (some s!"note: `{n}` returns `{r.show}`"))
-      lintBools body (← hidesIn cx)
-      -- A parameter that only the contract mentions is used too.
-      let mentioned := (mentions body ++ clauses.flatMap fun (_, _, e) => mentions e).map (·.getRoot)
-      let mentioned := if fnPs.isEmpty then mentioned
-        else mentioned ++ body.appliedNames ++ clauses.flatMap fun (_, _, e) => e.appliedNames
-      let paramSpans := Id.run do
-        let mut out := vars.map fun v => (v.name, v.span)
-        for (j, x, sp, _) in fnPs do out := out.insertIdxIfInBounds j (x, sp)
-        return out
-      for (x, sp) in Fren.Core.unmentioned paramSpans mentioned do
-        lint .unusedVariables sp (Fren.Core.unusedParamMsg x)
-      modify fun s => { s with defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), r, smt)
-                               guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems }
-      -- What its applications need to unfold it (`elabHigherOrderApp`):
-      -- its contract may apply it, to its own parameters.
-      let hofParams := Id.run do
-        let mut out : Array (Name × String × Fren.Core.HoParam) := vars.map fun v => (v.name, quote v.name.toString, .value (v.ty.asParams path tps))
-        for (j, x, _, ft) in fnPs do out := out.insertIdxIfInBounds j (x, itemSym (path ++ x), .function (ft.asParams path tps))
-        return out
-      if !fnPs.isEmpty then
-        let h : HigherOrderFn := { typeParams := tps, params := hofParams, result := r.asParams path tps, body := smt
-                                   calls := (← get).genericCalls }
-        modify fun s => { s with hofs := s.hofs.insert path h }
-        unless isPub do
-          for (j, x, sp, _) in fnPs do
-            let r : Fren.Core.HofParamRecord :=
-              { path, index := j, name := x, generic := !tps.isEmpty, level := (← get).levels.get .needlessHigherOrder }
-            modify fun s => { s with hofParams := s.hofParams.push (r, sp) }
-      let clausesBefore := (← get).clauseDefs.size
-      let (_, props, sites) ← if contract then elabContract path n true vars clauses r name.span fnParams (paramSpans.map (·.1)) else pure (vars, #[], #[])
-      if !fnPs.isEmpty then
-        let st ← get
-        let newClauses := st.clauseDefs.extract clausesBefore st.clauseDefs.size
-        let pres := ((st.contracts.find? path).map (·.pres)).getD #[] |>.filterMap fun (pn, sym) =>
-          (newClauses.find? (·.1 == sym)).map fun (_, _, body) => (pn, body)
-        let calls := st.genericCalls
-        modify fun s => { s with hofs := s.hofs.modify path (fun h => { h with pres, calls }), fnTypeParams := none }
-      -- What its instances need (`instantiate`).
-      if !tps.isEmpty && fnPs.isEmpty then
-        modify fun s => { s with
-          genericFns := s.genericFns.insert path { (s.genericFns.find? path).getD default with
-            vars := vars.map fun v => (v.name, v.ty), body := smt, calls := s.genericCalls
-            clauses := s.clauseDefs.extract clausesBefore s.clauseDefs.size }
-          fnTypeParams := none }
-        for args in (← get).pendingInsts do discard (instantiate path args)
-        modify fun s => { s with pendingInsts := #[] }
-      modify fun s => { s with tables := bodyTables }
-      let st ← get
-      let pres := ((st.contracts.find? path).map (·.pres)).getD #[]
-      let selfSites := st.recApps.flatMap fun (sp, args, gs) =>
-        pres.map fun (pn, sym) =>
-          let p := s!"({sym} {" ".intercalate args.toList})"
-          (sp, Fren.Core.TableGoal.precondition path pn, if gs.isEmpty then p else s!"(=> {conj gs} {p})")
-      modify fun s => { s with tables := s.tables ++ selfSites }
-      noteBody n name.span vars (props, sites) path bodyObligations
-      lintDeclared .function n name.span
-      lintLines .function n name.span last
-    unless isPub do
-      modify fun s =>
-        let r : Fren.Core.ItemRecord :=
-          -- A trait's method is never dead (`lint::dead_item`).
-          { what := if s.inTrait then .method else .function, path, level := s.levels.get .deadCode
-            singleCall? := body.map fun _ => s.levels.get .singleCallFn }
-        { s with items := s.items.push (r, name.span) }
-    modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+  | .enum isPub name variants isOrdered params => elabEnum isPub name variants isOrdered params
+  | .record isPub name fields isOrdered params => elabRecord isPub name fields isOrdered params
+  | .newtype isPub name fields isOrdered => elabNewtype isPub name fields isOrdered
+  | .subsetType isPub name binder base clauses => elabSubsetType isPub name binder base clauses
+  | .typeAlias isPub name ty => elabTypeAlias isPub name ty
+  | .abstractType isPub name => elabAbstractType isPub name
+  | .function isPub name typeParams params result body clauses last block =>
+    elabFunction isPub name typeParams params result body clauses last block
   | .comp isPub name header members close spans openStop => do
     -- Its declaration and line lints are about its name, without its `!`.
     let shown := (declaredIdent name).1
@@ -7558,43 +7581,7 @@ partial def elabItem (item : Item) : M Unit := do
       throw { e with state := ← get }
     lintDeclared .component (Name.mkSimple shown.name) shown.span
     lintLines .component (Name.mkSimple shown.name) shown.span close
-  | .const isPub name ty value => do
-    modify fun s => { s with contractIndexes := #[], itemBranches := #[], itemMemberGroups := #[] }
-    let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
-    let n := Name.mkSimple name.name
-    liftMsg name.span (Fren.Core.checkConstName n)
-    let module := (← get).module
-    liftMsg written ((← get).table.checkFreshItem module n bang)
-    lintName .constant n name.span
-    let pt ← elabPTy ty
-    let t := pt.ty
-    -- Its value must be known (`lang::constant`): first its type, then,
-    -- once the functions it applies count as used, its value.
-    let abstract := t matches .abstract _
-    unless Fren.Core.constantAccepted abstract false do
-      err (ty[0]!.span.to ty.back!.span) (Fren.Core.unknownConstantMsg abstract)
-    let before := (← get).applied.size
-    discard takeTables
-    discard takeIndexes
-    modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
-    let cx : ExprCtx := { vars := #[], place := .prop, expected? := Fren.Core.ExprSite.constantValue.expected (some t) none }
-    let (smt, t') ← elabExpr cx value
-    noteObligation cx .constant value.span pt smt
-    noteBody n name.span #[] (obligations := ← takeIndexes)
-    let applies := (← get).applied.extract before
-    unless Fren.Core.constantAccepted abstract applies.isEmpty.not do
-      err applies[0]! (Fren.Core.unknownConstantMsg abstract)
-    liftMsg value.span (Fren.Core.checkType t t' (some s!"note: `{n}` has type `{t.show}`"))
-    lintBools value (← hidesIn cx)
-    let path := module ++ n
-    unless isPub do
-      modify fun s => { s with items := s.items.push ({ what := .constant, path, level := s.levels.get .deadCode }, name.span) }
-    let int? ← if t == .int || t == .nat then intConstValue? { vars := #[], place := .prop } value else pure none
-    modify fun s => { s with
-      table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
-      consts := s.consts.insert path (smt, t)
-      guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems
-      constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
+  | .const isPub name ty value => elabConst isPub name ty value
   | .global name binders body => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabGlobal name binders body
@@ -7628,74 +7615,147 @@ partial def elabItem (item : Item) : M Unit := do
     match ← resolve segs with
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a global expectation" r)
-  | .lintSetting stx opt value valueSpan removal body? => do
-    if opt.name == "fren.enumeration.size" then
-      -- Like `fren.evidence`: for the item after `in`, or the rest of the
-      -- file (`Reqs/Check#checking-by-enumeration`).
-      let prev := (← get).enumSize
-      let n := value.toNat!
-      if n > Fren.Core.Enumeration.maxSize then
-        modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.Enumeration.sizeTooLargeMsg n } }
-      else modify fun s => { s with enumSize := n }
-      if let some body := body? then
-        elabItem body
-        modify fun s => { s with enumSize := prev }
-      return
-    if opt.name == "fren.evidence" then
-      -- Like a lint setting: for the item after `in`, or the rest of the file.
-      let prev := (← get).evidence?
-      -- An invalid value is reported here, once, and does not stop the
-      -- items it would set (`Reqs/Check#checking-by-testing`).
-      if (Fren.Core.evidenceTested? value).isNone then
-        modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.invalidEvidenceMsg value } }
-      if let some body := body? then
-        -- Before a function or a constant, whose checks are the solver's,
-        -- only the solver can be set (`F0215`), and the item is elaborated
-        -- as though it were (`Fren.Core.dispatchOf`).
-        if let (some (what, item), some ev) := (evidenceTarget? body, Fren.Core.evidenceOf? value) then
-          unless ev.settable item do
-            modify fun s => { s with diags := s.diags.push { file := s.file, span := stx, msg := Fren.Core.itemEvidenceMsg what value } }
-            elabItem body
-            return
-        modify fun s => { s with evidence? := some (value, valueSpan) }
-        elabItem body
-        modify fun s => { s with evidence? := prev }
-      else modify fun s => { s with evidence? := some (value, valueSpan) }
-      return
-    let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
-    let some target := Fren.Core.LintTarget.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
-    let some requested := LintLevel.ofName? value | err valueSpan (Fren.Core.invalidLevelMsg value)
-    -- What the body restores; not the whole state, which would make each
-    -- change to it while the body is elaborated a copy.
-    let levels := (← get).levels
-    let settingStart? := (← get).settingStart?
-    -- A forbidden lint's setting decides whether this one is accepted.
-    noteSettingsSeen (Fren.Core.settingLints ++ target.members.filter fun l => (levels.get l).level == .forbid)
-    if let some lint := target.rejectedBy? (levels.get · |>.level) requested then
-      err stx (Fren.Core.forbiddenMsg target lint requested)
-    -- `allow_attributes` (`lint::allow_attributes`), at the level before the setting.
-    let (allows, fix) := Fren.Core.allowAttributes requested (target == .lint .unfulfilledExpectations)
-    if allows then lintFix .allowAttributes valueSpan (Fren.Core.allowAttributesMsg target fix)
-    let expectation? ← if requested == .expect then do
-        let e : Fren.Core.ExpectationRecord := { target, level := levels.get .unfulfilledExpectations }
-        let k := (← get).expectations.size
-        modify fun s => { s with expectations := s.expectations.push (e, stx),
-                                 expectationRemovals := s.expectationRemovals.push removal }
-        pure (some k)
-      else pure none
-    -- `unused_lint_setting` (`lint::unused_lint_setting`).
-    let r : Fren.Core.SettingRecord := { target, requested, level := levels.get .unusedLintSetting }
-    let setting := (← get).settings.size
-    modify fun s => { s with settings := (Fren.Core.SettingRecord.replace s.settings s.levels.get target requested).push (r, stx)
-                             settingRemovals := s.settingRemovals.push removal }
-    let set : LevelInEffect := { level := requested, isSet := true, group? := target.group?, expectation?
-                                 setting? := some setting }
-    for lint in target.members do
-      modify fun s => { s with levels := s.levels.set lint set }
+  | .lintSetting stx opt value valueSpan removal body? => elabLintSetting stx opt value valueSpan removal body?
+
+/-- Elaborates a subset type (`Reqs/Lang/SubsetTypes`), with the items it declares. -/
+partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Ident) (clauses : Array (Ident × Expr)) : M Unit := do
+  let module := (← get).module
+  let n := Name.mkSimple (declaredIdent name).1.name
+  let path := module ++ n
+  liftMsg name.span (Fren.Core.checkItemName "subset type" n)
+  liftMsg name.span ((← get).table.checkFreshItem module n (declaredIdent name).2)
+  let baseTy ← elabPTy base
+  let mut seen : Array Name := #[]
+  let mut invariants := baseTy.invariants
+  let mut previous : Array Expr := #[]
+  let mut pattern := baseTy.pat?
+  for (label, expression) in clauses do
+    let logical := Name.mkSimple label.name
+    if seen.contains logical then
+      err label.span { code? := some "F0372", headline := s!"duplicate invariant `{Fren.Core.showPath (path ++ logical)}`", label? := some "already declared in this subset type" }
+    seen := seen.push logical
+    let predicate := subsetPredicateIdent name label
+    let before := (← get).bodies.size
+    let generatedBefore ← get
+    let priorSubset := (← get).inSubset
+    modify fun st => { st with inSubset := true }
+    -- Only the lints of the invariant's own source are reported, as for
+    -- any expression, whether or not it has a static error: not those of
+    -- the binder, which the pattern shorthand does not write.
+    let ownLints (st : State) : State := { st with
+      lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
+      lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
+      natReports := generatedBefore.natReports }
+    try
+      elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
+    catch failure =>
+      if failure.diags.any (·.msg.code? == some "F0201") then
+        err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
+      throw { failure with state := ownLints failure.state }
+    modify fun st => { ownLints st with inSubset := priorSubset }
+    -- Its full-definedness check is guarded by earlier invariants below,
+    -- rather than checked unconditionally as an ordinary function body.
+    modify fun st => { st with bodies := st.bodies.extract 0 before }
+    invariants := invariants.push { name := path ++ logical, predicate := module ++ Name.mkSimple predicate.name }
+    if pattern.isNone && clauses.size == 1 then
+      if let .is _ (.path _ #[x]) p := expression then
+        if x.name == binder.name then
+          let (pat, bs, _) ← resolvePattern { vars := #[], place := .prop } baseTy.ty binder.name false true p
+          if bs.isEmpty then pattern := some pat
+    let validator := subsetCheckIdent name s!"defined_{label.name.toLower}"
+    let localName : Ident := { name := "subset_predicate?", span := label.span }
+    let assumptions := previous.mapIdx fun i e => Member.prop .assume { name := s!"earlier_{i}", span := label.span } e
+    let header := #[Member.var true true false binder (some base) none]
+    let body := assumptions.push (.var false false false localName none (some expression))
+    withoutGhostLints <| elabItem (.comp true validator header body expression.span (body.map fun _ => expression.span) label.span.stop)
+    modify fun st => { st with comps := st.comps.map fun c => if c.path == module ++ Name.mkSimple validator.name then
+      { c with subsetInvariant? := some (path ++ logical) } else c }
+    previous := previous.push expression
+  let restricted := { baseTy with invariants, pat? := pattern, text := name.name }
+  modify fun st => { st with
+    table := st.table.addItem { kind := .typeItem, path, isPub, owner := module }
+    aliases := st.aliases.insert path restricted }
+  let inhabit := subsetCheckIdent name "inhabited"
+  let binderExpr := Expr.path binder.span #[binder]
+  let guarantees := clauses.map fun (label, _) =>
+    let predicate := subsetPredicateIdent name label
+    Member.prop .ensure label (.app label.span #[predicate] #[binderExpr])
+  let header := #[Member.var false true false binder (some base) none]
+  modify fun st => { st with inSubset := true }
+  withoutGhostLints <| elabItem (.comp true inhabit header guarantees name.span (guarantees.map fun _ => name.span) name.span.stop)
+  modify fun st => { st with inSubset := false, comps := st.comps.map fun c => if c.path == module ++ Name.mkSimple inhabit.name then
+    { c with subset? := some path, finiteModel := true } else c }
+
+/-- Elaborates a `set_option` (`Reqs/Lang/Items#lint-settings`), and the item
+after its `in`, if any. -/
+partial def elabLintSetting (stx : Span) (opt : Ident) (value : String) (valueSpan : Span) (removal : Span) (body? : Option Item) : M Unit := do
+  if opt.name == "fren.enumeration.size" then
+    -- Like `fren.evidence`: for the item after `in`, or the rest of the
+    -- file (`Reqs/Check#checking-by-enumeration`).
+    let prev := (← get).enumSize
+    let n := value.toNat!
+    if n > Fren.Core.Enumeration.maxSize then
+      modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.Enumeration.sizeTooLargeMsg n } }
+    else modify fun s => { s with enumSize := n }
     if let some body := body? then
-      modify fun s => { s with settingStart? := some (settingStart?.getD stx.start) }
       elabItem body
-      modify fun s => { s with levels, settingStart? }
+      modify fun s => { s with enumSize := prev }
+    return
+  if opt.name == "fren.evidence" then
+    -- Like a lint setting: for the item after `in`, or the rest of the file.
+    let prev := (← get).evidence?
+    -- An invalid value is reported here, once, and does not stop the
+    -- items it would set (`Reqs/Check#checking-by-testing`).
+    if (Fren.Core.evidenceTested? value).isNone then
+      modify fun s => { s with diags := s.diags.push { file := s.file, span := valueSpan, msg := Fren.Core.invalidEvidenceMsg value } }
+    if let some body := body? then
+      -- Before a function or a constant, whose checks are the solver's,
+      -- only the solver can be set (`F0215`), and the item is elaborated
+      -- as though it were (`Fren.Core.dispatchOf`).
+      if let (some (what, item), some ev) := (evidenceTarget? body, Fren.Core.evidenceOf? value) then
+        unless ev.settable item do
+          modify fun s => { s with diags := s.diags.push { file := s.file, span := stx, msg := Fren.Core.itemEvidenceMsg what value } }
+          elabItem body
+          return
+      modify fun s => { s with evidence? := some (value, valueSpan) }
+      elabItem body
+      modify fun s => { s with evidence? := prev }
+    else modify fun s => { s with evidence? := some (value, valueSpan) }
+    return
+  let some rest := opt.name.dropPrefix? "fren.lint." | internal opt.span "not a lint option"
+  let some target := Fren.Core.LintTarget.ofName? rest.toString | err opt.span (Fren.Core.unknownLintMsg rest.toString)
+  let some requested := LintLevel.ofName? value | err valueSpan (Fren.Core.invalidLevelMsg value)
+  -- What the body restores; not the whole state, which would make each
+  -- change to it while the body is elaborated a copy.
+  let levels := (← get).levels
+  let settingStart? := (← get).settingStart?
+  -- A forbidden lint's setting decides whether this one is accepted.
+  noteSettingsSeen (Fren.Core.settingLints ++ target.members.filter fun l => (levels.get l).level == .forbid)
+  if let some lint := target.rejectedBy? (levels.get · |>.level) requested then
+    err stx (Fren.Core.forbiddenMsg target lint requested)
+  -- `allow_attributes` (`lint::allow_attributes`), at the level before the setting.
+  let (allows, fix) := Fren.Core.allowAttributes requested (target == .lint .unfulfilledExpectations)
+  if allows then lintFix .allowAttributes valueSpan (Fren.Core.allowAttributesMsg target fix)
+  let expectation? ← if requested == .expect then do
+      let e : Fren.Core.ExpectationRecord := { target, level := levels.get .unfulfilledExpectations }
+      let k := (← get).expectations.size
+      modify fun s => { s with expectations := s.expectations.push (e, stx),
+                               expectationRemovals := s.expectationRemovals.push removal }
+      pure (some k)
+    else pure none
+  -- `unused_lint_setting` (`lint::unused_lint_setting`).
+  let r : Fren.Core.SettingRecord := { target, requested, level := levels.get .unusedLintSetting }
+  let setting := (← get).settings.size
+  modify fun s => { s with settings := (Fren.Core.SettingRecord.replace s.settings s.levels.get target requested).push (r, stx)
+                           settingRemovals := s.settingRemovals.push removal }
+  let set : LevelInEffect := { level := requested, isSet := true, group? := target.group?, expectation?
+                               setting? := some setting }
+  for lint in target.members do
+    modify fun s => { s with levels := s.levels.set lint set }
+  if let some body := body? then
+    modify fun s => { s with settingStart? := some (settingStart?.getD stx.start) }
+    elabItem body
+    modify fun s => { s with levels, settingStart? }
 
 /-- Elaborates a trait (`Reqs/Lang/Traits`): its carrier `Self`, an
 abstract type; its methods, uninterpreted functions, each seen by those
