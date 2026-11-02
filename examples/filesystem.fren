@@ -168,7 +168,8 @@ pub fn entry(fs: FileSystem, q: Path): Entry := match fs {
     FileSystem::Mkdir(before, p) => if q = p then Entry::Dir else entry(before, q),
     FileSystem::Write(before, p, data) => if q = p then Entry::File(data) else entry(before, q),
     FileSystem::Rm(before, p) => if under?(q, p) then Entry::Missing else entry(before, q),
-    FileSystem::Mv(before, src, dst) => if under?(q, dst) then entry(before, append(src, strip(q, dst)))
+    FileSystem::Mv(before, src, dst) =>
+        if under?(q, dst) then entry(before, append(src, strip(q, dst)))
         else if under?(q, src) then Entry::Missing else entry(before, q),
 }
 
@@ -177,12 +178,16 @@ pub fn entry(fs: FileSystem, q: Path): Entry := match fs {
 -- `dst` to be new, its parent a directory, and not below `src`.
 pub fn valid?(fs: FileSystem) := match fs {
     FileSystem::Empty => true,
-    FileSystem::Mkdir(before, p) => valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
+    FileSystem::Mkdir(before, p) =>
+        valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
         and entry(before, p) = Entry::Missing,
-    FileSystem::Write(before, p, _) => valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
+    FileSystem::Write(before, p, _) =>
+        valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
         and entry(before, p) != Entry::Dir,
-    FileSystem::Rm(before, p) => valid?(before) and p != Root and entry(before, p) != Entry::Missing,
-    FileSystem::Mv(before, src, dst) => valid?(before) and src != Root and entry(before, src) != Entry::Missing
+    FileSystem::Rm(before, p) =>
+        valid?(before) and p != Root and entry(before, p) != Entry::Missing,
+    FileSystem::Mv(before, src, dst) =>
+        valid?(before) and src != Root and entry(before, src) != Entry::Missing
         and dst != Root and entry(before, parent(dst)) = Entry::Dir and entry(before, dst) = Entry::Missing
         and not under?(dst, src),
 }
@@ -246,7 +251,8 @@ pub fn node(l: Listing, q: Path): (x: Node) {
         Listing::Empty => if q = Root then Node::Dir(Listing::Empty) else Node::Gone,
         Listing::File(m, data, more) => match q {
             Root => Node::Dir(l),
-            Sub(n, rest) => if m = n then (if rest = Root then Node::File(data) else Node::Gone) else node(more, q),
+            Sub(n, rest) =>
+                if m = n then (if rest = Root then Node::File(data) else Node::Gone) else node(more, q),
         },
         Listing::Dir(m, kids, more) => match q {
             Root => Node::Dir(l),
@@ -292,7 +298,8 @@ pub fn graft(l: Listing, p: Path, x: Node): Listing := match l {
     },
     Listing::Dir(m, kids, more) => match p {
         Root => l,
-        Sub(n, rest) => if m = n then Listing::Dir(m, graft(kids, rest, x), more)
+        Sub(n, rest) =>
+            if m = n then Listing::Dir(m, graft(kids, rest, x), more)
             else Listing::Dir(m, kids, graft(more, p, x)),
     },
 }
@@ -302,11 +309,13 @@ pub fn rm(l: Listing, p: Path): Listing := match l {
     Listing::Empty => Listing::Empty,
     Listing::File(m, data, more) => match p {
         Root => l,
-        Sub(n, rest) => if m = n and rest = Root then rm(more, p) else Listing::File(m, data, rm(more, p)),
+        Sub(n, rest) =>
+            if m = n and rest = Root then rm(more, p) else Listing::File(m, data, rm(more, p)),
     },
     Listing::Dir(m, kids, more) => match p {
         Root => l,
-        Sub(n, rest) => if m = n then (if rest = Root then rm(more, p) else Listing::Dir(m, rm(kids, rest), more))
+        Sub(n, rest) =>
+            if m = n then (if rest = Root then rm(more, p) else Listing::Dir(m, rm(kids, rest), more))
             else Listing::Dir(m, kids, rm(more, p)),
     },
 }
@@ -322,10 +331,11 @@ pub fn subtree_law?(l: Listing, p: Path, r: Path): (proved?) {
     out proved? := match l {
         Listing::Empty => true,
         Listing::File(_, _, more) => subtree_law?(more, p, r),
-        Listing::Dir(_, kids, more) => subtree_law?(more, p, r) and match p {
-            Root => true,
-            Sub(_, rest) => subtree_law?(kids, rest, r),
-        },
+        Listing::Dir(_, kids, more) =>
+            subtree_law?(more, p, r) and match p {
+                Root => true,
+                Sub(_, rest) => subtree_law?(kids, rest, r),
+            },
     }
     ensure law: proved? and kind(below(node(l, p), r)) = view(l, append(p, r))
 }
@@ -336,13 +346,14 @@ pub fn rm_law?(l: Listing, p: Path, q: Path): (proved?) {
     out proved? := match l {
         Listing::Empty => true,
         Listing::File(_, _, more) => rm_law?(more, p, q),
-        Listing::Dir(_, kids, more) => rm_law?(more, p, q) and match p {
-            Root => true,
-            Sub(_, rest) => match q {
+        Listing::Dir(_, kids, more) =>
+            rm_law?(more, p, q) and match p {
                 Root => true,
-                Sub(_, qr) => rest = Root or rm_law?(kids, rest, qr),
+                Sub(_, rest) => match q {
+                    Root => true,
+                    Sub(_, qr) => rest = Root or rm_law?(kids, rest, qr),
+                },
             },
-        },
     }
     ensure law: proved? and view(rm(l, p), q) = (if under?(q, p) then Entry::Missing else view(l, q))
 }
@@ -360,10 +371,11 @@ pub fn graft_law?(l: Listing, p: Path, x: Node, q: Path): (proved?) {
         },
         Listing::Dir(m, kids, more) => match p {
             Root => true,
-            Sub(n, rest) => if m != n then graft_law?(more, p, x, q) else rest = Root or match q {
-                Root => true,
-                Sub(_, qr) => graft_law?(kids, rest, x, qr),
-            },
+            Sub(n, rest) =>
+                if m != n then graft_law?(more, p, x, q) else rest = Root or match q {
+                    Root => true,
+                    Sub(_, qr) => graft_law?(kids, rest, x, qr),
+                },
         },
     }
     ensure law: proved? and view(graft(l, p, x), q) = (if under?(q, p) then kind(below(x, strip(q, p))) else view(l, q))
@@ -374,7 +386,8 @@ pub fn mkdir_law?(l: Listing, p: Path, q: Path): (proved?) {
     assume not_root: p != Root
     assume parent_dir: view(l, parent(p)) = Entry::Dir
     assume absent: view(l, p) = Entry::Missing
-    out proved? := graft_law?(l, p, Node::Dir(Listing::Empty), q) and subtree_law?(l, p, strip(q, p))
+    out proved? :=
+        graft_law?(l, p, Node::Dir(Listing::Empty), q) and subtree_law?(l, p, strip(q, p))
     ensure law: proved? and view(mkdir(l, p), q) = (if q = p then Entry::Dir else view(l, q))
 }
 
