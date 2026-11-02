@@ -154,20 +154,26 @@ in the repository, and each laid out again at random, twice. Laying out
 again changes the line breaks of lists and blocks, the one before a
 block's `{` included, and their trailing commas, the side of a comma that
 a line break or a line comment is on, the spaces between tokens and the
-indentation of lines. Other than moving a comma past a line comment,
-which keeps the comment's column, it leaves alone the lines with comments,
-and it leaves alone the gaps with blank lines and the gaps between two
-tokens with no space, where a space could change what the parser reads,
-as in `f(x)`. It changes no part of a file's content. The
-job checks that formatting keeps the order of the tokens and comments,
-computed by the implementation of `fmt::ordering`, with whether each
-comment starts its line, and the imports; that no comma of what it writes,
-trailing ones and those of `use` items included, follows a line break, a
-line comment or a block comment that starts its line; that formatting the
-result again changes nothing; and that each file laid out again formats
-as the file does. It does not check that formatting keeps the rest of the
-content: the blank lines, the columns of comments, and whether imports
-span several lines.
+indentation of lines. It reaches the gaps of lists and blocks with blank
+lines too: one whose blank lines go (`fmt::line_break`) gets a space, a
+line break or a blank line, whatever it had, and one between two elements
+or members keeps its blank lines, with spaces on them. Other than moving a
+comma past a line comment, which keeps the comment's column, it leaves
+alone the lines with comments, and the gaps between two tokens with no
+space, where a space could change what the parser reads, as in `f(x)`. It
+changes no part of a file's content. The job checks that formatting keeps
+the order of the tokens and comments, computed by the implementation of
+`fmt::ordering`, with whether each comment starts its line, and the
+imports; that no comma of what it writes, trailing ones and those of `use`
+items included, follows a line break, a line comment or a block comment
+that starts its line; that its blank lines are those that formatting
+keeps: before each line it writes, what `fmt::blank_lines` keeps of the
+source's, and a blank line lost to a joined line only in a gap whose
+blank lines `fmt::line_break` drops, but for the lines after a `use`
+item, as imports are merged and sorted; that formatting the result again
+changes nothing; and that each file laid out again formats as the file
+does. It does not check that formatting keeps the rest of the content:
+the columns of comments, and whether imports span several lines.
 
 The goal is rustfmt's: that a file's content is only its tokens, comments
 and blank lines, so that how it was laid out never matters, and that
@@ -580,7 +586,9 @@ or global expectation, or a `set_option ... in` before it, which starts
 an item that holds that one. So a block whose item's signature spans
 several lines is on a line that continues it, such as `): (y: Int) {` or
 `: (y: Int) {`, and so is a block whose `{` starts its line, after a line
-comment. The parser gives the first tokens of the items that each block
+comment. Such a block stays vertical however short its member, as rustfmt
+puts a function on one line only if all of it fits on one line, and the
+line comment keeps the signature's line from taking the block. The parser gives the first tokens of the items that each block
 is in, and the formatter's decision implements `fmt::continued`, proved
 in Lean, and gives what it decides to `fmt::list_layout`:
 
