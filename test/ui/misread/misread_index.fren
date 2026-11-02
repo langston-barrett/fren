@@ -1,0 +1,190 @@
+-- Run with `FREN_MISREAD_MODELS` set (`Reqs/Models#testing`). Both front
+-- ends evaluate an index, a quotient and a remainder as Fren's semantics
+-- does (`Reqs/Models#how-the-front-ends-evaluate`), so both catch a misread
+-- whose contradiction is in a formula that has one.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.same_branches "allow"
+
+proc indexed(q: Seq<Int>) {
+    assume pinned: q.len = 3 and q[0] = 5
+    expect e: q.len = 2  --~ error: internal error: the solver's model for the expectation check of `indexed::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc divided(a: Int) {
+    assume pinned: a mod 2 = 1 and a div 2 = 3
+    expect e: a > 7  --~ error: internal error: the solver's model for the expectation check of `divided::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- Within a defined function's body.
+fn first(q: Seq<Int>): Int := if q = [] then 0 else q[0]
+
+proc in_function(q: Seq<Int>) {
+    assume pinned: q.len = 1 and first(q) = 5
+    expect e: q.len = 2  --~ error: internal error: the solver's model for the expectation check of `in_function::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- An index out of range has no value in Fren's semantics, though Lean's
+-- definition gives it `false`: `pinned` is undecided, and the model,
+-- without integers, is shown.
+proc out_of_range(q: Seq<Bool>) {
+    assume pinned: q = [true] and q[1]  --~ error: an index of `out_of_range::pinned` may be out of range
+    expect e: q.len = 2  --~ error: expectation `out_of_range::e` does not hold
+}
+
+-- By a constant, and by a negative divisor.
+const N: Int := 2
+
+proc by_constant(a: Int) {
+    assume pinned: a mod N = 1 and a div -2 = -3
+    expect e: a > 7  --~ error: internal error: the solver's model for the expectation check of `by_constant::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- Evaluation is strict: an application is unknown where an argument is,
+-- though the body never reads it, so `pinned` is undecided in the misread
+-- model, `q = [6]`, which both front ends show.
+fn ignore_b?(a: Int) := false
+
+proc strict(q: Seq<Int>) {
+    assume pinned: q.len = 1 and (q[0] = 5 or ignore_b?(q[1]))  --~ error: an index of `strict::pinned` may be out of range
+    expect e: q.len = 2  --~ error: expectation `strict::e` does not hold
+}
+
+-- A count that its unknown arguments cannot change: two `true`s make
+-- `at_most_one?` false whatever `q[5]` is, so `pinned` is `false` at the
+-- misread `a`, though `lang::eval`, whose count is strict, leaves it
+-- undefined (`Reqs/Models#known-values`). Its definedness check's model is
+-- refuted too: at the misread `a`, the `or` does not evaluate `q[5]`.
+proc card(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (a = 1 or at_most_one?(true, true, q[5] = 0))  --~ error: internal error: the solver's model for the definedness check of `card::pinned` makes the check's claim true in Fren's semantics
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `card::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- An `if` whose condition is unknown: with equal branches, it has their
+-- value, so the misread `a` makes `pinned` false...
+proc same_branches(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (if q[5] = 0 then a = 1 else a = 1)  --~ error: an index of `same_branches::pinned` may be out of range
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `same_branches::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- ...and with unequal ones, it has none, and the model is shown.
+proc other_branches(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (if q[5] = 0 then a = 1 else a = 2)  --~ error: an index of `other_branches::pinned` may be out of range
+    expect e: a = 3  --~ error: expectation `other_branches::e` does not hold
+}
+
+-- A `match` or a table is the chain of `if`s that its arms or rows are, so
+-- one whose scrutinee or condition is unknown has its arms' or rows' value
+-- where they are equal...
+proc match_same(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (match q[5] {  --~ error: an index of `match_same::pinned` may be out of range
+        0 => a = 1,
+        _ => a = 1,
+    })
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `match_same::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc table_same(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and table {
+        q[5] = 0 => a = 1,  --~ error: an index of `table_same::pinned` may be out of range
+        _ => a = 1,
+    }
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `table_same::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- ...and none where they differ, so the model is shown.
+proc match_other(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (match q[5] {  --~ error: an index of `match_other::pinned` may be out of range
+        0 => a = 1,
+        _ => a = 2,
+    })
+    expect e: a = 3  --~ error: expectation `match_other::e` does not hold
+}
+
+proc table_other(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and table {
+        q[5] = 0 => a = 1,  --~ error: an index of `table_other::pinned` may be out of range
+        _ => a = 2,
+    }
+    expect e: a = 3  --~ error: expectation `table_other::e` does not hold
+}
+
+-- A count spelled out is decided as the count that it spells: two `true`s
+-- make it `false`, whatever `q[5]` is. Its definedness check's model is
+-- refuted too: at the misread `a`, the `or` does not evaluate `q[5]`.
+proc spelled(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (a = 1 or (if q[5] = 0 then 1 else 0) + 2 <= 1)  --~ error: internal error: the solver's model for the definedness check of `spelled::pinned` makes the check's claim true in Fren's semantics
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `spelled::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A count spelled out through a function's body is not one: the
+-- application is strict, so it is unknown where `q[5]` is, and the model is
+-- shown...
+fn ind(n: Int): Int := if n = 0 then 1 else 0
+
+proc via_fn(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (a = 1 or ind(q[5]) + 2 <= 1)  --~ error: internal error: the solver's model for the definedness check of `via_fn::pinned` makes the check's claim true in Fren's semantics
+    expect e: a = 3  --~ error: expectation `via_fn::e` does not hold
+}
+
+-- ...while one compared with a constant whose value is 1 is.
+const ONE: Int := 1
+
+proc via_const(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (a = 1 or (if q[5] = 0 then 1 else 0) + 2 <= ONE)  --~ error: internal error: the solver's model for the definedness check of `via_const::pinned` makes the check's claim true in Fren's semantics
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `via_const::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A binder of an unknown scrutinee is unknown, and `a = 1` decides the `and`.
+proc reads_binder(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and (match q[5] {  --~ error: an index of `reads_binder::pinned` may be out of range
+        --~^ error: an index of `reads_binder::pinned` may be out of range
+        n => n > 0 and a = 1,
+    })
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `reads_binder::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A table whose last row is `true` is its `if`s, which have the rows' value.
+proc table_true(q: Seq<Int>, a: Int) {
+    assume pinned: q = [] and table {
+        q[5] = 0 => a = 1,  --~ error: an index of `table_true::pinned` may be out of range
+        true => a = 1,
+    }
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `table_true::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A `match` whose arms cover its scrutinee's type only by the type is strict
+-- in its scrutinee: a variant's test is unknown where the scrutinee is, for
+-- one variant, by an or-pattern of all, and in a function's body.
+enum One { A(Int) }
+
+proc one_variant(q: Seq<One>, a: Int) {
+    assume pinned: q = [] and (match q[5] {  --~ error: an index of `one_variant::pinned` may be out of range
+        --~^ warning: this `match` has one arm, which binds nothing
+        One::A(_) => a = 1,
+    })
+    expect e: a = 3  --~ error: expectation `one_variant::e` does not hold
+}
+
+enum E { P(Int), Q }
+
+proc enum_alts(q: Seq<E>, a: Int) {
+    assume pinned: q = [] and (match q[5] {  --~ error: an index of `enum_alts::pinned` may be out of range
+        --~^ warning: this `match` has one arm, which binds nothing
+        E::P(_) | E::Q => a = 1,
+    })
+    expect e: a = 3  --~ error: expectation `enum_alts::e` does not hold
+}
+
+fn pick?(s: Seq<E>, a: Int) := match s[5] {
+    E::P(_) => a = 1,
+    E::Q => a = 1,
+}
+
+proc in_body(q: Seq<E>, a: Int) {
+    assume pinned: q = [] and pick?(q, a)
+    expect e: a = 3  --~ error: expectation `in_body::e` does not hold
+}
+
+--@ exit: 1

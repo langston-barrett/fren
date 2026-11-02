@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Known
 import Fren.Lint
 import Fren.Model
 import Fren.SeqElems
@@ -89,12 +90,13 @@ partial def hasUnspecifiedRead (formula : Expr) : MetaM Bool := do
     if (← whnf formula.getAppArgs[2]!).isAppOfArity ``List.nil 1 then return true
   formula.foldlM (fun found child => if found then pure true else hasUnspecifiedRead child) false
 
-/-- The integer that `e` is, as the solver or `toExpr` writes one. -/
-def intValue? (e : Expr) : Option Int :=
-  e.int? <|> e.nat?.map Int.ofNat <|> e.rawNatLit?.map Int.ofNat <|> match_expr e with
-    | Int.ofNat n => n.rawNatLit? <|> n.nat? |>.map Int.ofNat
-    | Int.negSucc n => (n.rawNatLit? <|> n.nat?).map fun k => -((k : Int) + 1)
-    | _ => none
+/-- The number `k` of `k : Fin n`, as lean-smt writes the `k`th value of
+an abstract type in a model, which its sort's cardinality `n` bounds. -/
+def finIndex? (e : Expr) : Option Nat :=
+  match_expr e with
+  | OfNat.ofNat _ k _ => k.rawNatLit? <|> k.nat?
+  | Fin.mk _ k _ => k.rawNatLit? <|> k.nat?
+  | _ => none
 
 /-- A model's value of type `ty`, as the Fren value that it stands for
 (`Reqs/Models#reading`): a term of literals and constructors, with a
@@ -104,8 +106,10 @@ kept as the solver's, so what `render` shows is always what `confirmModel`
 evaluates. If `misread`, each integer is read as one more than it is: the
 bug that `FREN_MISREAD_MODELS` injects (`Fren.Core.misreadModels`). -/
 partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
-  -- A value of an abstract type, a local standing for it (`checkComp`).
-  if ty.isFVar then return val
+  -- A value of an abstract type, a local standing for it (`checkComp`):
+  -- lean-smt's `k : Fin n`, read as its number `k`, as the `fren` command
+  -- reads `T#k` (`abstractsAsNat`).
+  if ty.isFVar then return ((finIndex? val).map mkNatLit).getD val
   let val := fromModel ty val
   let int (i : Int) : Int := if misread then i + 1 else i
   if ty.isConstOf ``Int then
@@ -280,6 +284,24 @@ unsafe def compileValuesUnsafe (α : Type) [Inhabited α] (ty : Expr) (fs : Arra
 @[implemented_by compileValuesUnsafe]
 opaque compileValues (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α)
 
+/-- `e` with the definitions of defined functions unfolded, so that the
+solver sees their bodies, and without `let`s and `have`s, which a record
+update binds its updated value with, and `let` and `where` become
+(`Reqs/Lang/Let#meaning`), and lean-smt does not translate: last, since a
+defined function's body may have one. The last arm of a complete `match` is
+its body (`Fren.lastArm`), unless `keepLastArm`, as a model's confirmation
+reads it (`atModel`). -/
+def unfoldDefined (e : Expr) (keepLastArm := false) : MetaM Expr := do
+  let s ← getState
+  -- A subset type's obligation is its proposition (`Fren.typeObligation`).
+  let init := ({} : NameSet).insert ``Fren.typeObligation
+  let ds := s.defined.foldl (init := init) fun acc _ d =>
+    d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
+  -- And the clauses of contracts, which the questions about applications
+  -- and the facts about them apply.
+  let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
+  Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains keepLastArm))
+
 /-- The procedure's variables, and the second copies of the copied ones,
 each with its local and its value in `model`, as `readValue` reads it, or
 its type's default value if the model leaves it free
@@ -298,66 +320,122 @@ def modelValues (c : CompInfo) (fvs primes : Array Expr) (model : Array (Name ×
     -- defined one's, or a call's, value follows from the others.
     | none => if v.name.isAtomic && v.defn?.isNone then return (x, ← defaultValue v.type) else return (x, none)
 
-/-- The operations whose value in Lean's definitions differs from Fren's
-where Fren's semantics gives none, and the solver's interpretation does:
-an index, which may be out of range, and a quotient or remainder, whose
-divisor may be 0 (`Reqs/Models#how-the-front-ends-evaluate`).
+/-- Whether `e` is an index, which may be out of range, or a quotient or
+remainder by other than a nonzero numeral: an operation whose value in
+Lean's definitions differs from Fren's where Fren's semantics gives none,
+and the solver's interpretation does
+(`Reqs/Models#how-the-front-ends-evaluate`). The elaborator writes `div`
+and `mod` only by a nonzero numeral (`divTerm`).
 
 A generated selector of a payload is total in the same way, by a
 `| _ => default` arm (`Reqs/Generated`), and is deliberately not here: a
 read of a payload is evaluated only where the model's value has the
 variant that a `match` arm or a pattern test matched, since every such read
 is under that test's `ite`, which Lean does not evaluate on the branch not
-taken; and a `match` that may take no arm reads the empty sequence, so
-`Fren.Seq.nth` excludes it already. -/
-def interpretedOps : Array Name := #[``Fren.Seq.nth, ``HDiv.hDiv, ``HMod.hMod]
+taken; and a `match` that may take no arm reads the empty sequence, which
+is an index. -/
+def partialOp (e : Expr) : Bool :=
+  e.isAppOfArity ``Fren.Seq.nth 4 ||
+    (e.isAppOfArity ``HDiv.hDiv 6 || e.isAppOfArity ``HMod.hMod 6) && !(Enumerate.countLit? e.appArg!).any (· != 0)
 
-/-- Whether `e` applies one of `targets`, directly or within the
+/-- Whether a part of `e` is `found`, directly unless `within`, or within the
 definitions of the spec's functions and clauses that it applies, and their
 auxiliary definitions, such as their `match`es. -/
-partial def readsAny (targets : Array Name) (e : Expr) : MetaM Bool := do
+partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) : MetaM Bool := do
   let s ← getState
   let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
   let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
-  let rec go (e : Expr) (seen : NameSet) : MetaM (Bool × NameSet) := do
+  let rec go (e : Expr) (direct : Bool) (seen : NameSet) : MetaM (Bool × NameSet) := do
+    if direct && (e.find? found).isSome then return (true, seen)
     let mut seen := seen
     for c in e.getUsedConstants do
-      if targets.contains c then return (true, seen)
       if seen.contains c || !own.any (·.isPrefixOf c) then continue
       seen := seen.insert c
       let some v := (← getEnv).find? c |>.bind (·.value?) | continue
-      let (found, seen') ← go v seen
-      if found then return (true, seen')
+      let (r, seen') ← go v true seen
+      if r then return (true, seen')
       seen := seen'
     return (false, seen)
-  return (← go e {}).1
+  return (← go e (!within) {}).1
 
-/-- Whether `e` applies one of `interpretedOps`, directly or within the
+/-- Whether `e` applies one of `targets`, directly or within the
 functions and clauses that it applies. -/
-def readsInterpreted (e : Expr) : MetaM Bool := readsAny interpretedOps e
+def readsAny (targets : Array Name) (e : Expr) : MetaM Bool :=
+  readsWhere (fun x => x.constName?.any targets.contains) e
 
-/-- `e` at the values `values` (`modelValues`), if it then has no local and
-its value is the same in every interpretation, since it reads none of
-`interpretedOps` (`Reqs/Models#confirmation`). -/
-def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option Expr) := do
+/-- `e` with each abstract type that it mentions, a local standing for it
+(`checkComp`), as `Nat`, and its `Inhabited` instance as `Nat`'s: a value of
+one is its number, as `readValue` reads it, and is compared only with `=`,
+as the `fren` command compares `T#k` (`Reqs/Models#how-the-front-ends-evaluate`).
+A generic function's type parameter is one too (`withNatUses`). -/
+def abstractsAsNat (e : Expr) : MetaM Expr := do
+  let ids := (collectFVars {} e).fvarIds
+  let sorts ← ids.filterM fun x => return (← x.getType).isSort
+  let insts ← ids.filterM fun x => do
+    let t ← x.getType
+    return t.isAppOfArity ``Inhabited 1 && t.appArg!.isFVar && sorts.contains t.appArg!.fvarId!
+  let nat := mkConst ``Nat
+  return (e.replaceFVars (sorts.map .fvar) (sorts.map fun _ => nat)).replaceFVars (insts.map .fvar)
+    (insts.map fun _ => mkConst ``instInhabitedNat)
+
+/-- `e` with each classical decision, `Classical.propDecidable p`, which the
+elaborator gives an equation of an abstract type (`elabProp`), as `p`'s
+instance, where it has one once the abstract types are `Nat`
+(`abstractsAsNat`): Lean compiles only that. The instances are equal, as
+any two decisions of a proposition are. -/
+def decideComputably (e : Expr) : MetaM Expr :=
+  Meta.transform e (post := fun x => do
+    if x.isAppOfArity ``Classical.propDecidable 1 then
+      if let .some d ← trySynthInstance (mkApp (mkConst ``Decidable) x.appArg!) then return .done d
+    return .done x)
+
+/-- `e` at the values `values` (`modelValues`), as confirmation evaluates
+it (`Reqs/Models#confirmation`), if it then has no local but abstract types
+(`abstractsAsNat`): as it applies the defined functions and clauses, and
+with them unfolded, as a query's are (`unfoldDefined`), each with each
+index, an unspecified value too, read as `Enum.nthOr`, which `decideAll`
+leaves unknown out of range (`Enumerate.knownOf`), as the `fren` command's
+evaluator does. None if a `partialOp` remains within a definition that is
+not unfolded; one that applies a structural recursion, whose solver form
+is not compiled, is `e` itself, and none if it has a `partialOp` at all. -/
+def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let given := values.filterMap fun (x, v?) => v?.map (x, ·)
-  let e := e.replaceFVars (given.map (·.1)) (given.map (·.2))
-  if e.hasFVar || e.hasMVar || (← readsInterpreted e) then return none
-  return some e
+  let e ← abstractsAsNat (e.replaceFVars (given.map (·.1)) (given.map (·.2)))
+  if e.hasFVar || e.hasMVar then return none
+  let unfolded ← unfoldDefined e (keepLastArm := true)
+  let recursive := (← getState).defined.foldl (init := #[]) fun acc _ d =>
+    if d.recursive then acc ++ d.solver?.toArray else acc
+  if (unfolded.find? fun x => x.constName?.any recursive.contains).isSome then
+    if ← readsWhere partialOp e then return none
+    let e ← decideComputably e
+    return some (e, e)
+  if (unfolded.find? fun x => partialOp x && !x.isAppOf ``Fren.Seq.nth).isSome then return none
+  if ← readsWhere partialOp unfolded (within := true) then return none
+  let read (e : Expr) : MetaM Expr := return (← Enumerate.readIndexes (← decideComputably e) (unspecified := true)).1
+  return some (← read e, ← read unfolded)
 
-/-- The truth of each proposition of `ps` that has one, by the compiled
-evaluation of its decision; none for one that cannot be decided. -/
-def decideAll (ps : Array (Option Expr)) : MetaM (Array (Option Bool)) := do
-  let decision (p : Expr) : MetaM (Option Expr) := do
-    match ← trySynthInstance (mkApp (mkConst ``Decidable) p) with
-    | .some d => return some (mkApp2 (mkConst ``Decidable.decide) p d)
-    | _ => return none
+/-- The truth of each proposition of `ps` that has one, as `atModel` gives
+it, applied and unfolded: by the compiled evaluation of the unfolded one's
+decision, unknown where either reads an index out of range
+(`Enumerate.knownOf`), the applied one in an argument that a body does not
+read, since evaluation is strict, as the `fren` command's is; none for one
+that cannot be decided. -/
+def decideAll (ps : Array (Option (Expr × Expr))) : MetaM (Array (Option Bool)) := do
+  let decideOf (p : Expr) : MetaM Expr := return mkApp2 (mkConst ``Decidable.decide) p (← Enumerate.decidableOf p)
+  let optBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
+  let decision (applied p : Expr) : MetaM Expr := do
+    let v ← mkAppOptM ``Option.some #[mkConst ``Bool, ← decideOf p]
+    let known ← #[applied, p].filterMapM fun e => do
+      if Enumerate.hasIndex e then some <$> Enumerate.knownOf decideOf e else pure none
+    if known.isEmpty then return v
+    mkAppM ``cond #[known.foldl (mkApp2 (mkConst ``and)) (mkConst ``Bool.true), v,
+      ← mkAppOptM ``Option.none #[mkConst ``Bool]]
   let ds ← ps.mapM fun p? => do
-    let some p := p? | return none
-    try decision p catch _ => return none
+    let some (applied, p) := p? | return none
+    try some <$> decision applied p catch _ => return none
   let known := ds.filterMap id
   -- All at once, and one at a time where that fails.
-  let values ← try pure (some (← compileValues Bool (mkConst ``Bool) known)) catch _ => pure none
+  let values ← try pure (some (← compileValues (Option Bool) optBool known)) catch _ => pure none
   let mut k := 0
   let mut out := #[]
   for d? in ds do
@@ -365,8 +443,8 @@ def decideAll (ps : Array (Option Expr)) : MetaM (Array (Option Bool)) := do
     | none => out := out.push none
     | some d =>
       match values with
-      | some vs => out := out.push vs[k]?
-      | none => out := out.push (← try pure (← compileValues Bool (mkConst ``Bool) #[d])[0]? catch _ => pure none)
+      | some vs => out := out.push (vs[k]?.join)
+      | none => out := out.push (← try pure ((← compileValues (Option Bool) optBool #[d])[0]?.join) catch _ => pure none)
       k := k + 1
   return out
 
@@ -389,7 +467,7 @@ the recursive confirmation is. -/
 def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
     (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
   let values ← modelValues c fvs primes model
-  let plain (e : Expr) : MetaM (Option Expr) := do
+  let plain (e : Expr) : MetaM (Option (Expr × Expr)) := do
     if ← readsAny recs e then return none
     atModel values e
   let truths ← decideAll ((← hyps.mapM (plain ·.2)).push (← plain goal))
@@ -413,21 +491,6 @@ def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     let values ← compileValues Bool (mkConst ``Bool) bools
     return values.all id
   catch _ => return false
-
-/-- `e` with the definitions of defined functions unfolded, so that the
-solver sees their bodies, and without `let`s and `have`s, which a record
-update binds its updated value with, and `let` and `where` become
-(`Reqs/Lang/Let#meaning`), and lean-smt does not translate: last, since a
-defined function's body may have one. -/
-def unfoldDefined (e : Expr) : MetaM Expr := do
-  let s ← getState
-  -- A subset type's obligation is its proposition (`Fren.typeObligation`).
-  let ds := s.defined.foldl (init := ({} : NameSet).insert ``Fren.typeObligation) fun acc _ d =>
-    d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
-  -- And the clauses of contracts, which the questions about applications
-  -- and the facts about them apply.
-  let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
-  Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains))
 
 /-- The recursive symbols a query uses, including dependencies needed by
 its one-step equations. Each becomes an uninterpreted local. -/

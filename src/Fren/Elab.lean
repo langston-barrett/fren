@@ -3671,7 +3671,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- otherwise, where none is taken, the `match` is the index out of range
   -- of the empty sequence, as a table where no row holds is.
   let complete := !Core.completenessAsked unguardedExhaustive
-  let mut out ← if complete then pure widened.back! else `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
+  -- An arm with a test or a guard that is last only by completeness is
+  -- marked with the scrutinees, so that a model's confirmation knows it
+  -- only where it knows them, as `lang::eval`'s `match` (`Fren.lastArm`).
+  let last ← if taken.back?.join.isSome then terms.foldrM (fun t b => `(Fren.lastArm $t $b)) widened.back!
+    else pure widened.back!
+  let mut out ← if complete then pure last else `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
   for i in (List.range (if complete then bodies.size - 1 else bodies.size)).reverse do
     out ← match taken[i]! with
       | some t => `(if $t then $(widened[i]!) else $out)

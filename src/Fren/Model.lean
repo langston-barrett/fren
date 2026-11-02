@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Fren.FinSet
+import Fren.LastArm
 import Fren.Seq
 import FrenCore.Check
 import FrenCore.Closures
@@ -1094,7 +1095,10 @@ def solverName (decl : Name) : Name := decl.str "#solver"
 form (`DefinedInfo.solver?`) is unfolded to that form instead of its
 declaration's body, so that the solver sees the same terms whatever form
 the declaration has. -/
-def deltaDefined (s : State) (e : Expr) (p : Name → Bool) : CoreM Expr := do
+def deltaDefined (s : State) (e : Expr) (p : Name → Bool) (keepLastArm := false) : CoreM Expr := do
+  -- The last arm of a complete `match` is its body, except to the reader of
+  -- a model's values (`Fren.lastArm`).
+  let p := fun n => p n || (!keepLastArm && n == ``Fren.lastArm)
   -- Each declaration with a solver form: that form, and how many of the
   -- arguments, its placeholders', the form does not take, as a structural
   -- recursion's does not.

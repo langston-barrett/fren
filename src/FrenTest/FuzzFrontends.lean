@@ -54,6 +54,10 @@ includes such a procedure now and then too. `--sites` generates
 `Wide.sitesProc`s alone, the last of which may write an expression that
 does not synthesize its type where it is not checked, an error that stops
 the spec's other checks; `genWide` includes one without it now and then.
+`--confirm` generates what the confirmation of models evaluates
+(`Wide.genConfirmed`): `div` and `mod`, an abstract type and a type
+parameter whose values are compared, and an index in an argument that a
+function's body never reads.
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -1010,6 +1014,137 @@ def traitGroup (sc : WScope) : R String := do
   out := if ← chance 30 then out.replace "pub trait Tr" "trait Tr" else out
   return out ++ "}\n"
 
+/-- A spec of what the confirmation of models evaluates (`--confirm`,
+`Reqs/Models#known-values`): `div` and `mod` by a literal, positive or
+negative; an abstract type `Cft` whose values are compared, directly and
+in a function's body; a generic function checked at its type parameter,
+and applied at `Int`; an index in an argument that a function's body never
+reads, which leaves the application unknown out of range
+(`model::known_application`), as does a free value of `Cft` or of a type
+parameter passed to a function that ignores it; tables that may take no
+row, or whose last row is a condition or `true`; `match`es over an integer
+and over enumerations, exhaustive or not, by or-patterns and over one
+variant, with binders read in a body or a guard, and in a function's body;
+and the rules that know more than `lang::eval`: a count with an argument
+that may be unknown, spelled out too, through a function and against a
+constant, and an `if`, a `match` and a table whose condition or scrutinee
+may be, with branches, arms or rows equal or not. A mode of its own, so
+that the specs of the other modes' seeds are as they were. -/
+def genConfirmed : R String := do
+  let k : R String := do return toString (← below 4)
+  let divisor : R String := pick #["2", "3", "-2", "(-3)"]
+  let int : R String := do
+    match ← below 12 with
+    | 0 => return s!"(a {← pick #["div", "mod"]} {← divisor})"
+    | 1 => return s!"(b {← pick #["div", "mod"]} {← divisor})"
+    | 2 => return "cf_diff(x, y)"
+    | 3 => return s!"cf_gdiff({← pick #["a", "b"]}, {← pick #["a", "b", "0"]})"
+    | 4 => return "cf_gdiff(x, y)"
+    | 5 => return s!"(if q != [] then q[0] else {← pick #["a", "b"]})"
+    | 6 => return "(a + b)"
+    -- A table that may take no row, whose value there is unspecified: by
+    -- its conditions, since one over a range that leaves out values is a
+    -- static error (F0317), which would stop the spec's checks.
+    | 7 => return s!"table \{ a > {← k} => 1, b > {← k} => 2 }"
+    | 8 => return s!"table \{ q != [] => q[0], a = {← k} => {← pick #["a", "b", "2"]} }"
+    -- An `if` whose condition may be unknown, an index out of range.
+    | 9 => return s!"(if q[{← k}] > {← k} then {← pick #["a", "b", "1"]} else {← pick #["a", "b", "1"]})"
+    -- A `match` that may take no arm, by its guards.
+    | 10 => return s!"match a \{ n if n > {← k} => 1, n if n < {← k} => b }"
+    | _ => pick #["a", "b"]
+  let op : R String := pick #["=", "!=", "<", "<=", ">", ">="]
+  let bool : R String := do
+    match ← below 22 with
+    | 0 => return s!"x {← pick #["=", "!="]} y"
+    | 1 | 2 => return s!"{← int} {← op} {← int}"
+    | 3 => return s!"(q != [] and (q[0] {← op} {← int} or cf_ign?(q[{← k}])))"
+    | 4 => return s!"(when {← k} < q.len, q[{← k}] {← op} {← int})"
+    | 5 => return s!"(cf_ign?(q[{← k}]) or a {← op} {← k})"
+    -- `z`, which no other formula reads, is free, and has no value, so
+    -- the application is unknown (`model::known_application`).
+    | 6 => return s!"(cf_igt?(z) or a {← op} {← k})"
+    -- A count with an argument that may be unknown, which the others may decide.
+    | 7 => return s!"{← pick #["at_most_one?", "exactly_one?"]}({← pick #["true", "false", "a > 1"]}, " ++
+        s!"{← pick #["true", "false", "b > 1"]}, q[{← k}] = {← k})"
+    -- An `if` whose condition may be unknown, with branches equal or not.
+    | 8 =>
+      let t ← pick #["a > 1", "true", "b = a"]
+      return s!"(if q[{← k}] = {← k} then {t} else {← if ← chance 50 then pure t else pick #["a > 1", "false"]})"
+    -- A `match` and a table whose scrutinee or condition may be unknown,
+    -- with arms or rows equal or not.
+    | 9 =>
+      let t ← pick #["a > 1", "true", "b = a"]
+      let u ← if ← chance 50 then pure t else pick #["a > 1", "false"]
+      return s!"(match q[{← k}] \{ {← k} => {t}, _ => {u} })"
+    | 10 =>
+      let t ← pick #["a > 1", "true", "b = a"]
+      let u ← if ← chance 50 then pure t else pick #["a > 1", "false"]
+      return s!"table \{ q[{← k}] = {← k} => {t}, _ => {u} }"
+    -- A count spelled out, with a condition that may be unknown.
+    | 11 =>
+      return s!"((if q[{← k}] = {← k} then 1 else 0) + {← pick #["0", "1", "2", "(if a > 1 then 1 else 0)"]} " ++
+        s!"{← pick #["<=", "="]} 1)"
+    -- Through a function, and against a constant.
+    | 12 => return s!"(cf_ind(q[{← k}]) + {← pick #["0", "1", "2"]} {← pick #["<=", "="]} 1)"
+    | 13 =>
+      return s!"((if q[{← k}] = {← k} then 1 else 0) + {← pick #["0", "1", "CF_ONE"]} {← pick #["<=", "="]} CF_ONE)"
+    -- A `match` on a value of an enumeration that may be unknown: its arms
+    -- exhaustive or not, by an or-pattern, with binders read in a body or a
+    -- guard, and over an enumeration of one variant.
+    | 14 =>
+      let t ← pick #["a > 1", "true", "b = a"]
+      let u ← if ← chance 50 then pure t else pick #["a > 1", "false"]
+      return s!"(match s[{← k}] \{ Ce::P({← pick #["_", "n"]}) => {t}, Ce::Q => {u} })"
+    | 15 =>
+      let t ← pick #["a > 1", "true"]
+      return s!"(match s[{← k}] \{ Ce::P(n) => n > {← k} or {t}, Ce::Q => {t} })"
+    | 16 =>
+      let t ← pick #["a > 1", "true", "b = a"]
+      let u ← if ← chance 50 then pure t else pick #["a > 1", "false"]
+      return s!"(match s[{← k}] \{ Ce::P(n) if n > {← k} => {t}, _ => {u} })"
+    | 17 => return s!"(match s[{← k}] \{ Ce::P(_) | Ce::Q => {← pick #["a > 1", "true", "b = a"]} })"
+    | 18 => return s!"(match o[{← k}] \{ Co::A({← pick #["_", "n"]}) => {← pick #["a > 1", "true", "b = a"]} })"
+    -- In a function's body.
+    | 19 => return s!"cf_pick?(s, a)"
+    -- A table whose last row is a condition, or `true`.
+    | 20 =>
+      let t ← pick #["a > 1", "true", "b = a"]
+      let u ← if ← chance 50 then pure t else pick #["a > 1", "false"]
+      return s!"table \{ q[{← k}] = {← k} => {t}, {← pick #["true", "a > 1"]} => {u} }"
+    | _ => return s!"(if x = y then a {← op} {← k} else b {← op} {← k})"
+  let mut out := "mod fz\n\npub type Cft\n" ++
+    "pub fn cf_diff(x: Cft, y: Cft): Int := if x = y then 0 else 1\n" ++
+    "pub fn cf_gdiff<U>(x: U, y: U): Int := if x = y then 0 else 1\n" ++
+    "pub fn cf_ign?(a: Int) := false\n" ++
+    "pub fn cf_igt?(x: Cft) := false\n" ++
+    "pub fn cf_gign?<U>(x: U) := false\n" ++
+    "pub enum Ce { P(Int), Q }\npub enum Co { A(Int) }\npub const CF_ONE: Int := 1\n" ++
+    "pub fn cf_ind(n: Int): Int := if n = 0 then 1 else 0\n" ++
+    "pub fn cf_pick?(s: Seq<Ce>, a: Int) := match s[1] { Ce::P(_) => a > 1, Ce::Q => a > 1 }\n"
+  -- Checked at its type parameter: its guarantee holds or not, and its
+  -- assumption may pass a value of `U` to a function that ignores it.
+  let pre ← pick #[s!"cf_gdiff(x, y) {← pick #["=", "!="]} {← below 2} or a > {← k}",
+    s!"not cf_gign?(x) and a > {← k}", s!"a {← op} {← k}"]
+  let post ← pick #["r >= a", "r <= a + 1", "r = a + cf_gdiff(x, y)", s!"r {← op} {← k}"]
+  out := out ++ s!"pub fn cf_gpick<U>(x: U, y: U, a: Int): (r: Int) \{\n" ++
+    s!"    assume cga: {pre}\n" ++
+    s!"    out r := a + cf_gdiff(x, y)\n    ensure cgq: {post}\n}\n"
+  for i in [0:(← below 3) + 1] do
+    let mut body := s!"    out r := {← int}\n"
+    for j in [0:← below 2] do body := body ++ s!"    assume ca{j}: {← bool}\n"
+    for j in [0:(← below 3) + 1] do body := body ++ s!"    expect cx{j}: {← bool}\n"
+    if ← chance 50 then body := body ++ s!"    cover cg0: {← bool}\n"
+    let enumerated ← chance 30
+    -- The sequences of enumerations only where the body reads them, and then
+    -- not enumerated: the Lean-hosted front end does not count the scrutinee
+    -- of a complete `match` among a check's variables (#493).
+    let ce := if (body.splitOn "s[").length > 1 || (body.splitOn "cf_pick?(s").length > 1 then "s: Seq<Ce>, " else ""
+    let co := if (body.splitOn "o[").length > 1 then "o: Seq<Co>, " else ""
+    let enumerated := if enumerated && ce.isEmpty && co.isEmpty then
+      "set_option fren.enumeration.size 2 in\nset_option fren.evidence \"enumerated\" in\n" else ""
+    out := out ++ s!"\n{enumerated}pub proc cfm{i}(a: Int, b: Int, q: Seq<Int>, {ce}{co}x: Cft, y: Cft, z: Cft): (r: Int) \{\n{body}}\n"
+  return out
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1295,34 +1430,39 @@ structure Mode where
   guards : Bool := false
   /-- Specs of `Wide.sitesProc`s alone (`Wide.genSites`). -/
   sites : Bool := false
+  /-- Specs of what the confirmation of models evaluates
+  (`Wide.genConfirmed`). -/
+  confirm : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  Id.run ((if m.sites then Wide.genSites else if m.guards then Wide.genGuards else Wide.genWide m.avoidKnown).run' (rngOf seed))
+  Id.run ((if m.confirm then Wide.genConfirmed else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
+    else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; none for `--guards` and `--sites`, whose generators append
-nothing. -/
+the next; none for `--guards`, `--sites` and `--confirm`, whose generators
+append nothing. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.guards || m.sites then #[] else
+  if m.guards || m.sites || m.confirm then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
-    (if m.sites then #["--sites"] else #[])
+    (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites"]) then
-    some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites" }
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm"]) then
+    some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
+           confirm := args.contains "--confirm" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
 def Mode.lean (m : Mode) : String :=
   let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
-    (if m.sites then ["sites := true"] else [])
+    (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -1610,7 +1750,8 @@ end
 shards. Sized so that the whole corpus takes about 2 minutes of one CI
 machine. -/
 def corpus : List (Mode × Nat × Nat) :=
-  [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20)]
+  [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
+    ({ confirm := true }, 0, 20)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, which the job
 `frontendFuzz listed` checks. -/
@@ -1891,9 +2032,9 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -1907,8 +2048,8 @@ unsafe def main (args : List String) : IO UInt32 := do
     IO.FS.createDirAll ".lake/fuzz"
     return ← mainFiles files ".lake/fuzz"
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
-                       sites := args.contains "--sites" }
-  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites")
+                       sites := args.contains "--sites", confirm := args.contains "--confirm" }
+  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm")
   if let ["--print", n] := args then
     let some s := n.toNat? | IO.eprintln usage; return 2
     IO.print (mode.spec s)

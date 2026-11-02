@@ -212,7 +212,8 @@ pub mod testing
   exact. A procedure with too many behaviours to enumerate is skipped,
   and counted in the summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
-  [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--spec-timeout SECONDS]`):
+  [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm]
+  [--spec-timeout SECONDS]`):
   generates random specs and checks each with both front ends, the `fren`
   command's pipeline and the Lean front end (in an environment that
   imports `Fren`, as the ui tests do), whose reports must agree
@@ -239,7 +240,11 @@ pub mod testing
   each kind of [site](../Lang/Types.md#checking-and-synthesis) where they
   are checked, and, at the end, one where they are not, an error that
   stops the spec's other checks, which the default generator therefore
-  never writes. Only what may legitimately differ is not compared:
+  never writes. `--confirm` generates what the [confirmation of
+  models](../Models.md#known-values) evaluates: `div` and `mod` by a
+  literal, an abstract type and a generic function's type parameter whose
+  values are compared, and an index in an argument that a function's body
+  never reads. Only what may legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
     the parse error's line, or on the last line before it that is not blank
@@ -308,8 +313,8 @@ pub mod testing
   given files, and `--print SEED` prints a generated spec. The comparison
   itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
-  fixed set of seeds, from its generators, the default one, `--guards`
-  and `--sites` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  fixed set of seeds, from its generators, the default one, `--guards`,
+  `--sites` and `--confirm` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of a
   few dozen seeds each. Every difference must be listed in
   `knownDifferences`, beside the corpus, by its generator, its seed and
@@ -626,7 +631,10 @@ Lean and compares the front ends' messages about them ([Own
 requirements](#own-requirements)), measures the coverage, and saves the
 `.lake` for pull requests. It also runs the
 front-end fuzzer on seeds that no run used before, from the run's number,
-with `--avoid-known`, of both generators: a difference of a kind that
+with `--avoid-known`, of each of its generators, four at once, one to a
+core: 300 seeds of the default one, 150 of `--guards`, which had 300
+before `--sites` and `--confirm` joined it, and 75 of each of those: a
+difference of a kind that
 `knownDifferences` does not list for `--avoid-known`, a crash or a timeout
 fails the run, and the specs it found are uploaded as the artifact
 `fuzz-frontends-RUN`, to be filed (with the issue's number, in

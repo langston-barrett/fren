@@ -18,6 +18,15 @@ neither front end's evaluator is bound to `lang::eval`. The `fren`
 command's evaluator is tested against it, over the forms that
 `src/FrenTest/Semantics.lean` generates, and the Lean-hosted front end's
 agreement with it is trusted (`Reqs/Models#how-the-front-ends-evaluate`).
+
+`Fren.Core.appliedKnown` and `Fren.Core.iteKnown`, by which both front ends'
+evaluators decide whether an application's and an `if`'s values are known
+in a model's confirmation, implement `model::known_application` and
+`model::known_if` (`Reqs/Models#known-values`). `model::application_known`,
+`model::if_known`, `model::and_known`, `model::or_known` and
+`model::count_known` relate the rules to `lang::eval`, and
+`model::and_sound`, `model::or_sound` and `model::if_sound` state the
+extensions' soundness at every completion; random testing checks them.
 -/
 
 namespace Fren.Impls
@@ -75,7 +84,35 @@ impl decision_of: model::decision for (hs : List (Option Bool)) (g : Option Bool
   cases hc : (contradiction? (hs.toArray.map (Lean.Name.anonymous, ·)) g) <;>
     simp_all [fren_spec, toLangOutcome_true, Option.isSome, Option.isNone, toVerdict]
 
-trusted model::report: "the front ends decide by `contradiction?`, which implements `model::decision`, `report`'s rule by inspection, from the outcomes of their own evaluators: the `fren eval` evaluator, whose agreement with `lang::eval` is tested by `src/FrenTest/Semantics.lean`, over the forms that it generates, and the compiled generated Lean definitions, whose agreement is trusted, as `Reqs/Models#how-the-front-ends-evaluate` states"
+-- For any number of arguments.
+impl known_application_of: model::known_application for (args : List Bool) (b : Bool) {
+  arguments := Fren.Seq.ofList args,
+  «body_known?» := b,
+  «known?» := Fren.Core.appliedKnown args b,
+} by
+  intro args b
+  cases b <;> simp [fren_spec, Fren.Core.appliedKnown, Fren.Seq.mem_iff]
+
+/-- A truth as the evaluator knows it, as `check::Truth`. -/
+def toTruth : Option Bool → check.Truth
+  | some true => .True
+  | some false => .False
+  | none => .Unknown
+
+impl known_if_of: model::known_if for (c : Option Bool) (y n same : Bool) {
+  condition := toTruth c,
+  «then_known?» := y,
+  «else_known?» := n,
+  «same?» := same,
+  «known?» := Fren.Core.iteKnown c y n same,
+} by
+  intro c y n same
+  rcases c with _ | _ | _ <;> cases y <;> cases n <;> cases same <;>
+    simp [fren_spec, toTruth, Fren.Core.iteKnown]
+
+trusted model::report: "the rule over `lang::eval`, which no front end implements as an equivalence: they implement `model::confirmed_report` instead (`Reqs/Models#reporting`), over `model::known_eval`, which knows more than `lang::eval`, and a model that it shows satisfies `report`'s readable statement, `reported_real`, as `model::confirmed_real` checks"
+
+trusted model::confirmed_report: "both front ends decide by `contradiction?`, which implements `model::decision`, over the outcomes of their evaluators: the `fren` command's strict `Ex.eval`, which `src/FrenTest/Semantics.lean` tests against `model::known_eval` over the forms that it generates, and the Lean-hosted front end's compiled definitions read by `Enumerate.knownOf`, which `fren_fuzz_frontends --confirm` compares with the `fren` command; the Lean-hosted front end knows less than `known_eval` of the formulas that `Reqs/Models#known-values` lists as not evaluated, and shows a model that only those decide on the solver's word"
 
 trusted model::reported_real: "the readable statement of `Reqs/Models`, which `model::report` refines, as `model::report_real` checks"
 
