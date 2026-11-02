@@ -49,6 +49,8 @@ itself in its body, in the order they are read (below), each with where its
 arguments come from:
 
 ```fren
+pub mod lang
+
 -- Where a recursive application's argument at one position comes from,
 -- relative to the function's parameter at that position: a binder bound
 -- from a payload of it, the parameter itself, another name, or another
@@ -288,8 +290,10 @@ available. Recursion itself never raises `undecidable`: its applications,
 ground facts and finite one-step equations add only uninterpreted
 functions to quantifier-free queries.
 
+```fren
 #fren_check structural_recursion
 #fren_check recursive_match
 #fren_check recursive_facts
 #fren_check recursive_post_result
 #fren_check recursive_counterexample
+```

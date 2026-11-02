@@ -131,4 +131,6 @@ pub proc refinement_singleton_domain(domain: Set<Int>, forced: Int, continuation
 }
 ```
 
+```fren
 #fren_check
+```
