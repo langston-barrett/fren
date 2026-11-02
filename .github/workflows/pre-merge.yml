@@ -8,8 +8,7 @@ name: pre-merge
 # the test driver of shard 0 (`book.yml`). Its last job, `pre-merge`, passes
 # only if the build and every shard did, and, on a pull request, the book
 # was built and passed (`scripts/pre_merge_verdict.py`, which `lint` tests):
-# it is the status to rely on, and the one the merge queue requires, where
-# the book is not built.
+# it is the status to rely on, and the one `main`'s ruleset requires.
 #
 # On a pull request, it also uploads stripped copies of the binaries it
 # built, `fren` from the build and `fren_test` from shard 0, as the
@@ -19,9 +18,9 @@ name: pre-merge
 # the head, in `MERGE_PARENTS`, with which a reviewer can probe the
 # head without building it (`Reqs/dev/Testing#continuous-integration`).
 #
-# It runs on each push to a pull request, and again in the merge queue, on
-# the queue's merge commit of the pull request into the current `main`
-# (behind any pull requests ahead of it in the queue). Either way, the
+# It runs on each push to a pull request, on GitHub's merge of the head
+# into `main` as it is then. It also keeps a `merge_group` trigger, for a
+# merge queue, which this repository doesn't use. Either way, the
 # checkout's `HEAD^1` is the commit it merges into. There is no manual
 # trigger: run by hand, it would check out a branch alone, whose `HEAD^1`
 # is the branch's own parent, and its status would say nothing about the
