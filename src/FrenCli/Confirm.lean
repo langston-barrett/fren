@@ -155,12 +155,26 @@ def Symbols.of (sp : Spec) : Symbols := Id.run do
           if let some sel := (l.selectors[idx]?.getD #[])[k]? then
             selectors := selectors.insert sel (p, idx, k)
   for p in sp.sorts do sorts := sorts.insert s!"::{Fren.Core.showPath p}" p
+  -- And each generic function's type parameters', for the checks at their
+  -- sorts (`Reqs/Lang/Recursion#generic-recursion`).
+  for (f, tps) in sp.defGenerics do
+    for t in tps, k in [0:tps.size] do
+      let p := Fren.Core.typeParamPath f k t
+      sorts := sorts.insert s!"::{Fren.Core.showPath p}" p
+  for (f, tps, _, _) in sp.generics do
+    for t in tps, k in [0:tps.size] do
+      let p := Fren.Core.typeParamPath f k t
+      sorts := sorts.insert s!"::{Fren.Core.showPath p}" p
   return { ctors, selectors, sorts }
 
 /-- `@::a::T_3`, a value of an abstract type, as `T#3`. -/
 def Symbols.abstract? (sy : Symbols) (a : String) : Option Val := do
+  let a := a.replace "|" ""
   guard (a.startsWith "@")
+  -- cvc5 writes one of a sort of a parametric datatype's instance as
+  -- `@_::f::0::T__0`.
   let body := (a.drop 1).toString
+  let body := if body.startsWith "_::" then (body.drop 1).toString else body
   let digits := (body.toList.reverse.takeWhile Char.isDigit).reverse
   guard !digits.isEmpty
   let sort := ((body.dropEnd digits.length).dropEndWhile (· == '_')).toString
@@ -375,7 +389,8 @@ partial def Fm.recursiveNames (sp : Spec) : Fm → Array Name
 where
   names (e : Ex) : Array Name :=
     (match e with
-      | .app f _ => if sp.recDefs.contains f then #[f] else #[]
+      -- An instance's, by its function's (`Reqs/Lang/Recursion#generic-recursion`).
+      | .app f _ => if sp.recDefs.contains f then #[(sp.instanceOf.find? f).getD f] else #[]
       -- And those of the invariants of a subset type that a value is
       -- checked against, which evaluation applies.
       | .typed t _ _ => typeNames t

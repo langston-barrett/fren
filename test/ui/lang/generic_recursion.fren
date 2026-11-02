@@ -1,0 +1,122 @@
+-- A generic function that is a structural recursion
+-- (`Reqs/Lang/Recursion#generic-recursion`), in both front ends: checked
+-- once at its type parameters' sorts by Hoare induction, and opaque at each
+-- instance, which recurses at itself. In a module, since Lean has a `List`
+-- of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_recursion
+
+-- From the STLC example (#602).
+pub enum Term<V, B> { Var(V), Lam(B, Term<V, B>), App(Term<V, B>, Term<V, B>) }
+
+pub fn size<V, B>(t: Term<V, B>): Int := match t {
+    Term::Var(_) => 1,
+    Term::Lam(_, body) => 1 + size(body),
+    Term::App(t1, t2) => 1 + size(t1) + size(t2),
+}
+
+pub fn mentioned<V, B>(t: Term<V, B>): Set<V> := match t {
+    Term::Var(x) => {x},
+    Term::Lam(_, body) => mentioned(body),
+    Term::App(t1, t2) => mentioned(t1) union mentioned(t2),
+}
+
+-- A contract that holds, by induction, at every type.
+pub fn positive<V, B>(t: Term<V, B>): (n: Int) {
+    out n := match t {
+        Term::Var(_) => 1,
+        Term::Lam(_, body) => 1 + positive(body),
+        Term::App(t1, t2) => positive(t1) + positive(t2),
+    }
+    ensure pos: n >= 1
+}
+
+-- Contracts that fail, with a counterexample at the sorts, with and without
+-- a value of a type parameter's.
+pub enum List<T> { Nil, Cons(T, List<T>) }
+
+pub fn zero<T>(l: List<T>): (n: Int) {
+    out n := match l {
+        List::Nil => 0,
+        List::Cons(_, r) => zero(r),
+    }
+    ensure pos: n >= 1  --~ error: the postcondition `pos` of `generic_recursion::zero` does not hold
+}
+
+pub fn none<V, B>(t: Term<V, B>): (n: Int) {
+    out n := match t {
+        Term::Var(_) => 0,
+        Term::Lam(_, body) => none(body),
+        Term::App(t1, t2) => none(t1) + none(t2),
+    }
+    ensure pos: n >= 1  --~ error: the postcondition `pos` of `generic_recursion::none` does not hold
+}
+
+-- Nested: a recursion that applies another at its own type parameter, and
+-- at a type built from it.
+pub fn len<T>(l: List<T>): Nat := match l {
+    List::Nil => 0,
+    List::Cons(_, r) => 1 + len(r),
+}
+
+pub fn total<T>(ls: List<List<T>>): Int := match ls {
+    List::Nil => 0,
+    List::Cons(l, r) => len(l) + total(r),
+}
+
+pub fn lens<T>(l: List<T>): Int := match l {
+    List::Nil => 0,
+    List::Cons(x, r) => len(List::Cons(List::Cons(x, List::Nil), List::Nil)) + lens(r),
+}
+
+-- A higher-order function that is given a recursion's application in a
+-- closure, and a generic function, not recursive, that applies one.
+pub fn holds?<T>(l: List<T>, p: fn(List<T>) -> Bool) := p(l)
+pub fn nonempty?<T>(l: List<T>) := len(l) > 0
+
+-- One that compares values of its type parameter, which Lean decides
+-- classically at the sorts and with the type argument's own equality at an
+-- instance, as enumeration and the confirmation of a model compile it.
+pub fn has?<T>(l: List<T>, x: T) := match l {
+    List::Nil => false,
+    List::Cons(y, r) => y = x or has?(r, x),
+}
+
+pub enum Nm { A, B }
+
+proc instances(t: Term<Int, Bool>, u: Term<Nm, Nm>, l: List<Int>, m: List<Bool>) {
+    expect var: when t is Term::Var(_), size(t) = 1
+    expect named: when t is Term::Var(x), mentioned(t) = {x}
+    expect lam: when u is Term::Lam(_, b), mentioned(u) = mentioned(b)
+    expect posi: positive(t) >= 1 and positive(u) >= 1
+    expect lengths: len(l) >= 0 and len(m) >= 0
+    expect step: when l is List::Cons(_, r), len(l) = 1 + len(r)
+    expect closure: holds?(l, |x| len(x) >= 0)
+    expect wrapped: when l is List::Cons(_, _), nonempty?(l)
+    expect bad: size(u) = 1  --~ error: expectation `generic_recursion::instances::bad` does not hold
+    expect head: has?(List::Cons(1, l), 1)
+    expect absent: has?(l, 1)  --~ error: expectation `generic_recursion::instances::absent` does not hold
+}
+
+-- One step only, at constant arguments, as without generics.
+proc constant(l: List<Int>) {
+    expect one: len(List::Cons(1, List::Nil)) = 1 or l = List::Nil
+    --~^ warning: could not decide whether `generic_recursion::constant::one` holds
+}
+
+set_option fren.enumeration.size 3 in
+set_option fren.evidence "enumerated" in
+proc enumerated(u: Term<Nm, Nm>, l: List<Bool>) {  --~ info: 4 checks of `generic_recursion::enumerated` hold for every behaviour up to size 3
+    expect var: when u is Term::Var(Nm::A), mentioned(u) = {Nm::A}
+    expect lengths: len(l) >= 0 and total(List::Cons(l, List::Nil)) = len(l)
+    expect bad: Nm::B in mentioned(u)  --~ error: expectation `generic_recursion::enumerated::bad` does not hold
+    expect head: has?(List::Cons(true, l), true)
+    expect absent: has?(l, true)  --~ error: expectation `generic_recursion::enumerated::absent` does not hold
+}
+
+-- An instance of a generic function without a body with two type
+-- arguments, whose postconditions its applications bring, as with one.
+pub fn choose<A, B>(a: A, b: B): (r: A) { ensure first: r = a }
+
+proc two_arguments(x: Int) { expect same: choose(x, true) = x }

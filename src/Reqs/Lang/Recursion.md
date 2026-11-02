@@ -1,7 +1,7 @@
 # Structural recursion
 
-A first-order [defined function](Items.md#defined-functions) that is not
-[generic](GenericFunctions.md) may apply itself in its own body, as a
+A first-order [defined function](Items.md#defined-functions), [generic](GenericFunctions.md)
+or not, may apply itself in its own body, as a
 *structural recursion* over a recursive enumeration: one of its
 parameters, the *decreasing* one, is the same in every application, and
 there each argument is a binder that a [`match`](Expressions.md#matches)
@@ -37,20 +37,36 @@ all the others decrease at, an application within a
 function parameter, is an error (`F0447`), at the first application by
 which every parameter has failed, saying why its argument is not a payload
 of the parameter there: the parameter itself, another name, or another
-expression. A generic or higher-order function is never recursive
-(`F0331`), and mutual recursion cannot be written, since a function is not
-in scope in the bodies of the functions declared before it. A structural
+expression. A higher-order function is never recursive (`F0331`), and
+mutual recursion cannot be written, since a function is not in scope in the
+bodies of the functions declared before it. `lang::self_application` states
+which functions may apply themselves: whether a function is generic does
+not matter, since the structural rule does not look at the types of the
+payloads that the recursion decreases on (see [Generic
+recursion](#generic-recursion)). Both front ends call
+`Core.selfApplicable`, which is bound to it with an `impl`. A structural
 recursion is accepted, with the meaning, encodings and decidability below
 ([Meaning](#meaning), [Solver encoding](#solver-encoding)); `F0448`, which
 reported it as not yet supported, is retired.
+
+```fren
+pub mod lang
+
+pub proc self_application(
+    generic?,          -- the function has type parameters
+    higher_order?,     -- the function has a function parameter
+): (det may_recurse?) {
+    ensure rule: may_recurse? iff not higher_order?
+
+    expect generic: when generic? and not higher_order?, may_recurse?
+}
+```
 
 `lang::structural_recursion` states this, over the function's uses of
 itself in its body, in the order they are read (below), each with where its
 arguments come from:
 
 ```fren
-pub mod lang
-
 -- Where a recursive application's argument at one position comes from,
 -- relative to the function's parameter at that position: a binder bound
 -- from a payload of it, the parameter itself, another name, or another
@@ -266,6 +282,65 @@ other hosted checks, solver steps use `trust := true`; no goal may be
 left unproved. Constructor matches with guards must preserve structural
 recursion, or be rejected by both front ends with `F0449`.
 
+## Generic recursion
+
+A generic function that is a structural recursion, as
+
+```text
+pub enum List<T> { Nil, Cons(T, List<T>) }
+
+pub fn len<T>(l: List<T>): Int := match l {
+    List::Nil => 0,
+    List::Cons(_, r) => 1 + len(r),
+}
+```
+
+is one at every instance. An application at an instance applies the
+instance (`lang::applied_instance`): the generic definition with each type
+parameter replaced by its type argument, every part of it at once, as for
+any [generic function](GenericFunctions.md#meaning), and its applications
+of itself, which are at its own type parameters, recurse at that same
+instance, since instantiating its own type parameters gives the instance's
+type arguments. So `len<Int>` is the structural recursion whose body is
+`len`'s with `Int` for `T`, which applies `len<Int>`; and a recursion that
+applies another generic recursion at its own type parameter, as `total<T>`
+applies `len<T>`, applies `len<Int>` at `total<Int>`. A self-application
+is at the function's own type parameters, since its arguments are payloads
+of its parameter, of its parameter's type: there is no polymorphic
+recursion, and an instance's body applies only itself and instances of the
+functions declared before it.
+
+Its checks are as for any structural recursion, at its type parameters'
+sorts and at each instance:
+
+- Its contract is checked once, at the sorts, by Hoare's rule
+  ([Contracts](#contracts)), so it holds at every instance, as a generic
+  function's contract does (see [Generic
+  functions](GenericFunctions.md#meaning)).
+- Each instance that a query applies is an opaque function of its own: the
+  `fren` command declares one `declare-fun` for each, named as an instance
+  of a defined generic function is, as `|::len<Int>|`, and the Lean-hosted
+  front end gives each its own local, from the solver form, which takes the
+  type arguments and their `Inhabited` instances first. Each of its
+  applications brings its postconditions, at the instance, and, if written,
+  one step of the instance's body, as above ([Solver
+  encoding](#solver-encoding)).
+- Evaluation, testing and enumeration apply the instance's definition.
+- A counterexample of the check at the sorts is confirmed by evaluation as
+  any other is ([Counterexamples and completeness](#counterexamples-and-completeness)),
+  with each sort at the type that the model gives it. A model that gives
+  a value of a type parameter's sort, as `t = Term::Var(V#0)`, is not
+  read, in either front end, as lean-smt reads none, so that check is
+  Inconclusive (`F0450`).
+
+Termination of what the checks collect does not change: an instance's facts
+apply only itself and the instances of earlier functions, so each round of
+`check::fact_applications` and each work queue of the one-step equations
+ends as without generics. The hosted front end does not yet generate a
+Lean theorem for a generic recursion's contract, as it does for other
+recursions ([Contracts](#contracts)): the theorem would be at the type
+parameters' placeholders, not at every type.
+
 ## Counterexamples and completeness
 
 An opaque function may take any value its contract permits. Before a
@@ -347,6 +422,7 @@ ground facts and finite one-step equations add only uninterpreted
 functions to quantifier-free queries.
 
 ```fren
+#fren_check self_application
 #fren_check structural_recursion
 #fren_check recursive_match
 #fren_check recursive_facts

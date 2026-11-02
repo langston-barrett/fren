@@ -1064,7 +1064,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- Shared with Lean, which reads the placeholders that the item uses
     -- instead (`Fren.Core.itemContracts`).
     let itemApplies := Fren.Core.itemContracts c.natApps fun app =>
-      contractFns.get? (((peelLets app).drop 1).takeWhile (· != ' ')).toString
+      contractFns.get? (headSymbol ((peelLets app).drop 1).toString)
     let functions := Fren.Core.functionPremises realizability.get? (Fren.Core.appliedOf item itemApplies) c.fn?
     let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
       (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false (refinements.map (·.1)), own))

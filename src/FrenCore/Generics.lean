@@ -551,6 +551,25 @@ and one without stays the abstract type that it is within the function. -/
 def instanceType (fn : Name) (params : Array Name) (targs : Array (Option Ty)) (t : Ty) : Ty :=
   (t.asParams fn params).subst (targs.mapIdx fun k a? => a?.getD (.abstract (typeParamPath fn k params[k]!)))
 
+/-- The type arguments `inner`, each instantiated with `outer`
+(`lang::instantiation`): those of the instance that an application applies,
+within an instance whose type arguments are `outer`, where `inner` are the
+application's own, over the instance's function's type parameters, as
+`Ty.param` (`lang::applied_instance`). -/
+def instantiatedArgs (outer inner : Array Ty) : Array Ty := inner.map (·.subst outer)
+
+/-- The type arguments of the instance that an application within the
+generic function at `fn`, with the type parameters `params`, applies at the
+function's instance with the type arguments `targs`, from the
+application's own, `inner`, which may mention the function's type
+parameters, each an abstract type of its own (`typeParamPath`)
+(`lang::applied_instance`): each instantiated. An application of the
+function itself, at its own type parameters, applies the same instance, so
+that a structural recursion at an instance recurses at that instance
+(`Reqs/Lang/Recursion#generic-recursion`). -/
+def appliedInstance (fn : Name) (params : Array Name) (targs : Array Ty) (inner : Array Ty) : Array Ty :=
+  instantiatedArgs targs (inner.map (·.asParams fn params))
+
 /-- Elaborates the arguments of an application of a generic function with
 the type parameters `params`, whose parameters have the declared types
 `declared` and whose result the declared type `result`, and returns its type
@@ -733,8 +752,9 @@ where
       let ps := tps g
       let own := ps.mapIdx fun k p => Ty.abstract (typeParamPath g k p)
       if targs == own then go todo all else
-      -- What a scan of the applications within `g` finds (`usesByCaller_map`).
-      let more := (byCaller.getD g #[]).map fun u => (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs)
+      -- What a scan of the applications within `g` finds (`usesByCaller_map`),
+      -- at this instance (`lang::applied_instance`).
+      let more := (byCaller.getD g #[]).map fun u => (u.callee, appliedInstance g ps targs u.targs)
       go (todo ++ more) all
     else all
 

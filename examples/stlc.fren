@@ -886,7 +886,8 @@ pub proc nameless_examples() {
 -- `E`: the shape planned for Fren's own spec (#539). Its fixpoint, `enum
 -- Fix<V, B> { In(TermF<V, B, Fix<V, B>>) }`, is rejected (`F0387`: a
 -- recursive payload must be the enumeration's own type), and a fold over
--- it would be a generic recursion (`F0331`), so an algebra is stated here,
+-- it, given the algebra as a function parameter, would be a higher-order
+-- recursion (`F0331`), so an algebra is stated here,
 -- with the laws that the solver decides at `Name` (`layer_laws`), and
 -- Stlc.lean ties the knot: `Term` is the fixpoint, and `size` is the fold
 -- of `size_alg` (`size_fold`, `map_layer_id`). What else this example

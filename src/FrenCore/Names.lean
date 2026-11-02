@@ -1343,11 +1343,16 @@ function (`lang::function_body`). -/
 def functionBodyAccepted (typed appliesSelf appliesUninterpreted : Bool) : Bool :=
   typed && !appliesSelf && !appliesUninterpreted
 
+/-- Whether a defined function may apply itself in its own body, as a
+structural recursion (`lang::self_application`): a first-order one may,
+generic or not; one with a function parameter may not. -/
+def selfApplicable (_generic higherOrder : Bool) : Bool := !higherOrder
+
 /-- A defined function's body applies the function itself. -/
 def recursiveMsg (f : Name) : Msg :=
   { code? := some "F0331", headline := s!"defined function `{showPath f}` applies itself"
     label? := some "applied in its own body"
-    notes := #["note: a generic or higher-order defined function is not recursive, so that every application has a value",
+    notes := #["note: a higher-order defined function is not recursive, so that every application has a value",
       "help: use an earlier defined function, or a `match` on the argument"] }
 
 /-- A defined function's body applies an uninterpreted function. -/
