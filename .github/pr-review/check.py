@@ -11,17 +11,18 @@ the `review` artifact. The review must:
   one of `[blocking]`, `[non-blocking]` and `[non-blocking, …]`;
 - have a `[blocking]` finding if and only if its verdict is `blocking
   issues`;
+- say which probes it ran and which it could not, in a paragraph that
+  starts with `Probes:` (`PROBES`);
 - hold nothing that looks like a token, and no image, HTML or link that
   loads from a host other than github.com, since GitHub's image proxy
   fetches an image's URL when the comment is shown, which could carry data
-  out;
+  out.
 
 Names of machines are replaced: those in the file NAMES (the review job's
 host and runner, one per line), and any word whose SHA-256 is in
-machines.sha256. The comment ends with a note that the review is
-advisory. If the review fails a check, the comment says why instead, with
-the run's URL, and does not start with the verdict's prefix, so that it
-counts as no review; the script then fails.
+machines.sha256. If the review fails a check, the comment says why
+instead, with the run's URL, and does not start with the verdict's prefix,
+so that it counts as no review; the script then fails.
 
 The second form is the `review` job's, which holds the secrets, run before
 the review leaves it: it fails if the review holds any of the values of
@@ -37,10 +38,8 @@ import re
 import sys
 
 # The first line of a review: `Review of <full head sha>: VERDICT`, as
-# AGENTS.md has a review start, so that the comment counts as the review of
-# the head. Whether it should is the user's to decide; to post it as
-# something else, change only this prefix (and `kind.py`, which reads
-# AGENTS.md's form, then no longer counts these comments as reviews).
+# AGENTS.md has a review start. The comment counts as the review of the
+# head, for everything, as the user decided; `kind.py` reads it so too.
 PREFIX = "Review of"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,12 +50,9 @@ TOKEN = re.compile(r"sk-ant-[\w-]{8,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_
 URL = re.compile(r"\b(?:https?|ftp)://([^/\s)\]>\"'`]+)", re.IGNORECASE)
 IMAGE = re.compile(r"!\[[^\]]*\]\s*[(\[]|<\s*(?:img|picture|source|video|audio|iframe|object|embed)\b",
                    re.IGNORECASE)
-ADVISORY = (
-    "*This review is by the `pr-review` workflow. It is advisory: the pull "
-    "request's own text reaches the reviewer, and could steer it. It ran "
-    "the probes in its job's `probes.md`, with the binaries that `pre-merge` "
-    "built, and suggests any others in its findings.*"
-)
+# The paragraph that says which probes the review ran (the probe job's)
+# and which it could not, such as those that need a rebuild.
+PROBES = re.compile(r"^[*_\s]*Probes[*_\s]*:", re.MULTILINE)
 
 
 def verdicts(head, kind):
@@ -96,6 +92,8 @@ def problem(text, head, kind):
         blocking |= marks[0] == "blocking"
     if blocking != first.endswith(": blocking issues"):
         return "its verdict does not agree with its [blocking] findings"
+    if not PROBES.search(text):
+        return "it has no `Probes:` paragraph saying which probes it ran and which it could not"
     return None
 
 
@@ -121,7 +119,7 @@ def comment(text, head, kind, run_url, names, hashes=frozenset()):
     """The comment to post, and whether the review passed."""
     reason = problem(text, head, kind) if text else "it wrote no `review.md`"
     if reason is None:
-        return scrub(text, names, hashes) + "\n\n" + ADVISORY + "\n", True
+        return scrub(text, names, hashes) + "\n", True
     note = f"The `pr-review` workflow did not review {head}: {reason}. Its run is {run_url}.\n"
     return scrub(note, names, hashes), False
 

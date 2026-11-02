@@ -29,9 +29,11 @@ name: pr-review
 #   a token, plain or encoded, is withheld.
 # - `post` runs the workflow's own check.py on the review, and posts it.
 #
-# No job saves or restores a cache. The review is advisory: the pull
-# request's text reaches the model, and could steer its verdict, so the
-# comment says so.
+# No job saves or restores a cache. The comment counts as the pull
+# request's review, for everything, as the user decided, so it says which
+# probes it ran and which it could not (check.py requires that). The pull
+# request's text still reaches the model, and could try to steer its
+# verdict; the brief has the model report such text as a finding.
 #
 # The scripts and brief in .github/pr-review, `scripts/heavy` and
 # AGENTS.md come from the workflow's own commit: on a workflow_run,

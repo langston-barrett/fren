@@ -10,18 +10,27 @@ HEAD = "b" * 40
 OK = f"Review of {HEAD}: no blocking issues"
 BAD = f"Review of {HEAD}: blocking issues"
 SECRET = "sk-ant-oat01-Zq3x9KfL2mPw7RtY5vBn8HjC4dGs6AeU1oIk0"
+# Every review says which probes it ran and which it could not.
+PROBED = "\n\nProbes: ran `fren check a.fren` (`.review/probes.md`); could not run `ui`, which needs a rebuild."
 
 
 class Problem(unittest.TestCase):
     def test_clean(self):
-        self.assertIsNone(problem(f"{OK}\n\n1. **[non-blocking, fix before merge]** `a.md:3`. Wording.", HEAD, "full"))
-
-    def test_blocking(self):
-        text = f"{BAD}\n\n1. [blocking] x\n2. [non-blocking] y"
+        text = f"{OK}\n\n1. **[non-blocking, fix before merge]** `a.md:3`. Wording.{PROBED}"
         self.assertIsNone(problem(text, HEAD, "full"))
 
+    def test_blocking(self):
+        text = f"{BAD}\n\n1. [blocking] x\n2. [non-blocking] y{PROBED}"
+        self.assertIsNone(problem(text, HEAD, "full"))
+
+    def test_probes_required(self):
+        self.assertIsNotNone(problem(f"{OK}\n\n1. [non-blocking] x", HEAD, "full"))
+        self.assertIsNotNone(problem(f"{OK}\n\nNo probes were needed.", HEAD, "full"))
+        for line in ("Probes: none ran.", "**Probes:** ran one.", "**Probes**: ran one.", "_Probes:_ ran one."):
+            self.assertIsNone(problem(f"{OK}\n\n{line}", HEAD, "full"), line)
+
     def test_light_verdict_only_for_light_checks(self):
-        self.assertIsNone(problem(f"{OK} (fixes only)", HEAD, "fixes"))
+        self.assertIsNone(problem(f"{OK} (fixes only){PROBED}", HEAD, "fixes"))
         self.assertIsNotNone(problem(f"{OK} (fixes only)", HEAD, "full"))
         self.assertIsNotNone(problem(f"{OK} (rebase only)", HEAD, "fixes"))
 
@@ -43,7 +52,7 @@ class Problem(unittest.TestCase):
             self.assertIsNotNone(problem(f"{OK}\n\n1. {mark} x", HEAD, "full"), mark)
 
     def test_nested_items_need_no_mark(self):
-        self.assertIsNone(problem(f"{OK}\n\n1. [non-blocking] x:\n   1. a step\n   2. another", HEAD, "full"))
+        self.assertIsNone(problem(f"{OK}\n\n1. [non-blocking] x:\n   1. a step\n   2. another{PROBED}", HEAD, "full"))
 
     def test_other_head(self):
         self.assertIsNotNone(problem("Review of " + "c" * 40 + ": no blocking issues", HEAD, "full"))
@@ -62,7 +71,7 @@ class Problem(unittest.TestCase):
     def test_github_links(self):
         for text in ("[#670](https://github.com/langston-barrett/fren/pull/670)",
                      "<https://docs.github.com/en/actions>", "a // comment, and `x // y`"):
-            self.assertIsNone(problem(f"{OK}\n\n{text}", HEAD, "full"), text)
+            self.assertIsNone(problem(f"{OK}\n\n{text}{PROBED}", HEAD, "full"), text)
 
 
 class Leaks(unittest.TestCase):
@@ -99,11 +108,12 @@ class Comment(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse(body.startswith("Review of"))
 
-    def test_advisory(self):
-        body, ok = comment(OK, HEAD, "full", "URL", set())
+    def test_review_is_posted_as_written(self):
+        # The comment counts as the review, so it is the review itself,
+        # with no note added.
+        body, ok = comment(OK + PROBED, HEAD, "full", "URL", set())
         self.assertTrue(ok)
-        self.assertTrue(body.startswith(OK + "\n"))
-        self.assertIn("advisory", body)
+        self.assertEqual(body, OK + PROBED + "\n")
 
 
 if __name__ == "__main__":

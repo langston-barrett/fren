@@ -981,8 +981,9 @@ The `pr-review` workflow reviews each pull request's head with Claude once
 or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
 an update from `main` of a reviewed head. It never reviews a pull request
-from a fork. Its review is advisory: the pull request's own text reaches
-the reviewer, and could steer it. The only code of the pull request that
+from a fork. Its comment counts as the pull request's review, for
+everything, and says which probes it ran and which it could not, such as
+those that need a rebuild. The only code of the pull request that
 it runs is these binaries, `fren check` of each spec that the pull request
 changes, in a job of its own with no secret, offline, under
 `scripts/heavy --offline`. The reviewer, in the job that holds the Claude
@@ -990,7 +991,8 @@ token, reads their output as text, with a checkout of the head and the
 diffs that the workflow wrote, with no shell and no reads outside the
 checkout, and suggests any other probe in its findings. The workflow
 posts the review as one comment, once its check of the review passes: the
-first line, a mark on each finding that agrees with the verdict, no copy
+first line, a mark on each finding that agrees with the verdict, the
+paragraph on the probes, no copy
 of a token, plain or encoded, no image or link that loads from outside
 github.com, and no names of machines. Run by hand (`gh workflow run
 pr-review -f pr=N`), it posts only on the pull request that its `post`
