@@ -83,6 +83,243 @@ pub proc identity_op(op: IdentityOperator, left: IdentityOperand, right: Identit
 }
 ```
 
+### Identities, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`0`, `1` and `""` are literals, `[]` is `Nil`, and `-y` is `Unary(Neg,
+y)`. `identity_op_fires?` fires on the operations of the table above but
+`union` and `minus`, whose sets are not in the model. `identity_op_fix`
+writes the operand that the operation leaves. On `x + -y` and `x - -y`
+it writes `x - y` and `x + y`. Each is a rewrite, as [Fixes as
+rewrites](../Rewrites.md) states for every such lint.
+
+Four cases are left out, and the linter fires on them where these
+functions do not:
+
+- **`q ++ []`.** The model has lists that do not end in `Nil`, as
+  `Cons(a, 5)`. No expression that the language elaborates to evaluates
+  to one, but a `Literal` of one does, and so does a `Var` that an
+  environment, or a `Call` that an interpretation, binds to one. On such
+  a list `q`, `q ++ []` drops the end: `append(q, Nil)` is not `q`. So
+  `q ++ []` agrees with `q` only where `q` is a list that ends in `Nil`,
+  which the model does not keep. `[] ++ q` is `q` wherever it is defined.
+- **A `y` that is `0`.** The fix of `x + -0` is `x - 0`, which fires
+  again.
+- **A `y` that is a negation.** The fix of `x - - -z` is `x + -z`, which
+  fires again.
+- **`0 - -y`.** Its fix, `0 + y`, fires again.
+
+The linter fixes each of these in a second pass. Fixing everywhere fixes
+an expression once its operands are fixed, so a fix that fires again
+would break the laws of the fixes.
+
+```fren
+-- `e` is the literal `0`.
+fn zero?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Integer(0))
+
+-- `e` is the literal `""`.
+fn empty_text?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Text(""))
+
+-- `b` is `-y`, of a `y` that is neither `0` nor a negation.
+fn flips?<V>(b: lang::Expr<V>) := match b {
+    lang::Expr::Unary(lang::UnaryOp::Neg, y) => not zero?(y) and not (y is lang::Expr::Unary(lang::UnaryOp::Neg, _)),
+    _ => false,
+}
+
+-- `a OP y`, where `b` is `-y` and `flips?`; `e` elsewhere.
+fn flipped<V>(
+    op: lang::BinaryOp,
+    a: lang::Expr<V>,
+    b: lang::Expr<V>,
+    e: lang::Expr<V>
+): lang::Expr<V> := match b {
+    lang::Expr::Unary(lang::UnaryOp::Neg, y) => if flips?(b) then lang::Expr::Binary(op, a, y) else e,
+    _ => e,
+}
+
+pub fn identity_op_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Binary(lang::BinaryOp::Add, a, b) => zero?(b) or zero?(a) or flips?(b),
+    lang::Expr::Binary(lang::BinaryOp::Sub, a, b) => zero?(b) or (not zero?(a) and flips?(b)),
+    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => one?(b) or one?(a),
+    lang::Expr::Binary(lang::BinaryOp::Div, _, b) => one?(b),
+    lang::Expr::Binary(lang::BinaryOp::Concat, a, b) => empty_text?(b) or empty_text?(a) or a = lang::Expr::Nil,
+    _ => false,
+}
+
+pub fn identity_op_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Binary(lang::BinaryOp::Add, a, b) =>
+        if zero?(b) then a else if zero?(a) then b else flipped(lang::BinaryOp::Sub, a, b, e),
+    lang::Expr::Binary(lang::BinaryOp::Sub, a, b) =>
+        if zero?(b) then a else if zero?(a) then e else flipped(lang::BinaryOp::Add, a, b, e),
+    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => if one?(b) then a else if one?(a) then b else e,
+    lang::Expr::Binary(lang::BinaryOp::Div, a, b) => if one?(b) then a else e,
+    lang::Expr::Binary(lang::BinaryOp::Concat, a, b) =>
+        if empty_text?(b) then a else if empty_text?(a) or a = lang::Expr::Nil then b else e,
+    _ => e,
+}
+```
+
+`lint::identity_op` binds this to the linter. `operand_of` is an operand
+as `lint::IdentityOperand` reads it: `Empty` is `[]` where `list?` holds,
+and `""` elsewhere. For every operator of the model and every two
+operands, where the other operands are `plain_operand?`, `lint::identity_op`
+rewrites exactly where `identity_op_fires?` fires, but in the four cases
+above (`fires`). Its rewrite is `identity_op_fix`'s: the left operand,
+the right one, or the other operator of the left operand and `y`
+(`fix`). Where it rewrites nothing, the function does not fire either
+(`unchanged`). The front ends' reading of the operands and operators, and
+the text of each fix, are trusted, and checked by the ui tests in
+`test/ui/lints/operators.fren`.
+
+```fren
+-- An operand as `lint::IdentityOperand` reads it, `x` for the others and
+-- `-y` for a negation.
+pub fn operand_of<V>(
+    o: IdentityOperand,
+    list?,
+    x: lang::Expr<V>,
+    y: lang::Expr<V>
+): lang::Expr<V> := match o {
+    IdentityOperand::Zero => lang::Expr::Literal(lang::Value::Integer(0)),
+    IdentityOperand::One => lang::Expr::Literal(lang::Value::Integer(1)),
+    IdentityOperand::Empty => if list? then lang::Expr::Nil else lang::Expr::Literal(lang::Value::Text("")),
+    IdentityOperand::Negation => lang::Expr::Unary(lang::UnaryOp::Neg, y),
+    IdentityOperand::Other => x,
+}
+
+-- `x` is `0`, `1` or `""`.
+fn identity_literal?<V>(x: lang::Expr<V>) :=
+    x is lang::Expr::Literal(lang::Value::Integer(0) | lang::Value::Integer(1) | lang::Value::Text(""))
+
+-- `x` is none of the operands that `lint::IdentityOperand` names.
+pub fn plain_operand?<V>(x: lang::Expr<V>) :=
+    not identity_literal?(x) and not (x is lang::Expr::Nil | lang::Expr::Unary(lang::UnaryOp::Neg, _))
+
+-- The operator of the model that `op` is, as a `lang::BinaryOp`; `Add` for
+-- `union` and `minus`, which are not in it.
+pub fn binary_of(op: IdentityOperator): lang::BinaryOp := match op {
+    IdentityOperator::Sub => lang::BinaryOp::Sub,
+    IdentityOperator::Mul => lang::BinaryOp::Mul,
+    IdentityOperator::Div => lang::BinaryOp::Div,
+    IdentityOperator::Concat => lang::BinaryOp::Concat,
+    _ => lang::BinaryOp::Add,
+}
+
+expect identity_op_elaborated(
+    op: IdentityOperator,
+    left: IdentityOperand,
+    right: IdentityOperand,
+    left_list?,
+    right_list?,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+    z: lang::Expr<lang::Id>,
+    w: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::Binary
+    use self::Rewrite::{Flip, KeepLeft, KeepRight, Unchanged}
+
+    assume model: not op in {IdentityOperator::Union, IdentityOperator::Minus}
+    assume plain: plain_operand?(x) and plain_operand?(z)
+
+    call p := identity_op(op, left, right)
+
+    let a: lang::Expr<lang::Id> := operand_of(left, left_list?, x, y)
+    let b: lang::Expr<lang::Id> := operand_of(right, right_list?, z, w)
+    let e: lang::Expr<lang::Id> := Binary(binary_of(op), a, b)
+    -- The four cases that `identity_op_fires?` leaves.
+    let left_out? := (p.rewrite = KeepLeft and op = IdentityOperator::Concat and right = IdentityOperand::Empty and right_list?)
+        or (p.rewrite = Flip and (zero?(w) or (w is lang::Expr::Unary(lang::UnaryOp::Neg, _))
+        or (op = IdentityOperator::Sub and left = IdentityOperand::Zero)))
+
+    expect fires: unless left_out?, (p.rewrite != Unchanged) iff identity_op_fires?(e)
+    expect fix: unless left_out?, match p.rewrite {
+        KeepLeft => identity_op_fix(e) = a,
+        KeepRight => identity_op_fix(e) = b,
+        Flip => identity_op_fix(e) = Binary(
+            if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
+            a,
+            w
+        ),
+        Unchanged => identity_op_fix(e) = e,
+    }
+}
+```
+
+`+` and `-` of integers are not primitives, so `x + 0`, `x - 0`, `0 + x`,
+and the flips agree with their fixes in every interpretation: where the
+operands are integers, they are exact, and elsewhere the operation is
+undefined. `*`, `div` and `++` of strings are [primitive
+operations](../Meaning.md#primitive-operations). So `x * 1`, `1 * x`,
+`x div 1`, `s ++ ""` and `"" ++ s` agree with their fixes only in an
+interpretation that gives them their usual meaning, where each is the
+operand or, where the graph has no point for it, undefined. `[] ++ q` is
+`q` wherever `q` is a list, and undefined elsewhere.
+`src/Impls/Rewrites.lean` proves this in Lean, for every expression,
+interpretation whose primitives are `usual?`, and environment; `fren check`
+tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc identity_op_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when usual?(i.primitives) and identity_op_fires?(e),
+        agrees?(
+            lang::eval(i, env, identity_op_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix writes an operand, or, for the flips, an operation of an operand
+and an operand's operand that the four cases above keep from firing. Once
+the operands are fixed, it leaves nothing to fix. The fix alone need not:
+the fix of `(x + 0) + 0` is `x + 0`, which fires again (`kept`). And an
+expression around it may start firing once it is fixed: in `c + 0 * 1`,
+the sum does not fire, and the fix of the product, `0`, makes it fire
+(`around`).
+
+```fren
+expect identity_op_refires(x: lang::Expr<lang::Id>, c: lang::Expr<lang::Id>) {
+    use lang::BinaryOp::{Add, Mul}
+    use lang::Expr::{Binary, Literal}
+
+    expect kept: identity_op_fires?(
+        identity_op_fix(
+            Binary(
+                Add,
+                Binary(Add, x, Literal(lang::Value::Integer(0))),
+                Literal(lang::Value::Integer(0))
+            )
+        )
+    )
+    expect around: when plain_operand?(c),
+        not identity_op_fires?(
+            Binary(
+                Add,
+                c,
+                Binary(
+                    Mul,
+                    Literal(lang::Value::Integer(0)),
+                    Literal(lang::Value::Integer(1))
+                )
+            )
+        )
+        and identity_op_fires?(
+            Binary(
+                Add,
+                c,
+                identity_op_fix(
+                    Binary(
+                        Mul,
+                        Literal(lang::Value::Integer(0)),
+                        Literal(lang::Value::Integer(1))
+                    )
+                )
+            )
+        )
+}
+```
+
 ## Parentheses
 
 `double_parens` fires on parentheses directly around parentheses, with
