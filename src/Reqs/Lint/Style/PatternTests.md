@@ -224,7 +224,8 @@ pub fn alt_pattern(a: Alt): lang::Pattern<lang::Id> := match a {
     Alt::Integers(Some(lo), None) => lang::Pattern::AtLeast(lo),
     Alt::Integers(None, Some(hi)) => lang::Pattern::AtMost(hi),
     Alt::Integers(None, None) => lang::Pattern::Wildcard,
-    Alt::Text(t) => if t.contains?("\\") then lang::Pattern::Wildcard else lang::Pattern::Literal(lang::Value::Text(t)),
+    Alt::Text(t) =>
+        if t.contains?("\\") then lang::Pattern::Wildcard else lang::Pattern::Literal(lang::Value::Text(t)),
     Alt::Variant(c) => lang::Pattern::Variant(c, lang::Pattern::Wildcard),
 }
 
@@ -261,23 +262,24 @@ pub fn value_alt(v: Literal, nat?): Option<Alt> := match v {
 }
 
 -- An equation, or a disequation, with exactly one side a value.
-fn comparison_reading(c: ComparisonShape): Option<Reading> := match value_alt(c.left.value, c.nat?), value_alt(c.right.value, c.nat?) {
-    None, Some(a) => Some(
-        Reading {
-            scrutinee := c.left.text,
-            alts := [a],
-            equation? := true,
-        }
-    ),
-    Some(a), None => Some(
-        Reading {
-            scrutinee := c.right.text,
-            alts := [a],
-            equation? := true,
-        }
-    ),
-    _, _ => None,
-}
+fn comparison_reading(c: ComparisonShape): Option<Reading> :=
+    match value_alt(c.left.value, c.nat?), value_alt(c.right.value, c.nat?) {
+        None, Some(a) => Some(
+            Reading {
+                scrutinee := c.left.text,
+                alts := [a],
+                equation? := true,
+            }
+        ),
+        Some(a), None => Some(
+            Reading {
+                scrutinee := c.right.text,
+                alts := [a],
+                equation? := true,
+            }
+        ),
+        _, _ => None,
+    }
 
 -- A pattern test, or its negation, whose alternatives are read.
 fn test_reading(t: TestShape): Option<Reading> := match t.alts {
@@ -437,10 +439,11 @@ fn reading_at(operands: Seq<Shape>, conj?, i: Int): Option<Reading> :=
     if 0 <= i < operands.len then reading(operands[i], conj?) else None
 
 -- The operand at position `i` is read as a test of the expression written `x`.
-fn tests_at?(operands: Seq<Shape>, conj?, i: Int, x: String) := match reading_at(operands, conj?, i) {
-    Some(r) => r.scrutinee = x,
-    None => false,
-}
+fn tests_at?(operands: Seq<Shape>, conj?, i: Int, x: String) :=
+    match reading_at(operands, conj?, i) {
+        Some(r) => r.scrutinee = x,
+        None => false,
+    }
 
 -- The alternatives that the operand at position `i` gives the fix.
 fn alts_at(operands: Seq<Shape>, conj?, i: Int): Seq<Alt> := match reading_at(operands, conj?, i) {
@@ -502,11 +505,11 @@ fn run_fires?(operands: Seq<Shape>, conj?, chain: Seq<Shape>, s: Span) :=
     s.first < s.last and not membership_chain?(chain, conj?)
     and (exists (i: Int), s.first <= i <= s.last and equation_at?(operands, conj?, i))
     and (forall (i j k l: Int), when s.first <= i <= s.last and i <= j <= s.last
-    and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len and (i < j or k < l),
-    alts_disjoint?(
-        alts_at(operands, conj?, i)[k],
-        alts_at(operands, conj?, j)[l]
-    ))
+        and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len and (i < j or k < l),
+        alts_disjoint?(
+            alts_at(operands, conj?, i)[k],
+            alts_at(operands, conj?, j)[l]
+        ))
 
 set_option fren.lint.undecidable "allow" in
 pub proc manual_pattern_test_runs(

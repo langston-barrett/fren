@@ -191,6 +191,9 @@ def proveRecursiveContract (c : CompInfo) (results : Array CheckResult) : Comman
   let some fn := c.fn? | return
   let some d := st.defined.get? fn | return
   let some i := d.decreasing? | return
+  -- Not yet of a generic one, whose theorem would be over its type
+  -- parameters' placeholders rather than every type.
+  unless d.typeParams.isEmpty do return
   let posts := results.filter (·.kind == .postcondition)
   if posts.isEmpty || posts.any (·.verdict != .pass) then return
   let some k := st.contracts.get? fn | return

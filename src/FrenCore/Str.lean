@@ -44,6 +44,35 @@ def slice (s : String) (i n : Int) : String :=
 /-- `s.at(i)`: SMT-LIB's `str.at`, which is `str.substr s i 1`. -/
 def «at» (s : String) (i : Int) : String := slice s i 1
 
+/-- The first of the characters `cs`, as a string; `""` if there is none. -/
+def firstOf : List Char → String
+  | [] => ""
+  | c :: _ => String.ofList [c]
+
+/-- `s.at(i)`, as the first character from `i` of the list of `s`'s
+characters. -/
+theorem at_eq_drop (s : String) (i : Nat) : Fren.Str.at s i = firstOf (s.toList.drop i) := by
+  simp only [Fren.Str.at, Fren.Str.slice]
+  have hl := String.length_toList (s := s)
+  cases h : s.toList.drop i with
+  | nil =>
+    have : s.toList.length ≤ i := List.drop_eq_nil_iff.mp h
+    rw [if_neg (by omega)]; rfl
+  | cons c cs =>
+    have : i < s.toList.length := by
+      have := congrArg List.length h; simp at this; omega
+    rw [if_pos (by omega)]
+    simp [h, firstOf]
+
+/-- The rest of `s` from `a + b + c`, as `Fren.Core.splitLine` slices it. -/
+theorem slice_rest (s : String) (a b c : Nat) :
+    Fren.Str.slice s ((a : Int) + b + c) ((s.length : Int) - a - b - c) = String.ofList (s.toList.drop (a + b + c)) := by
+  simp only [Fren.Str.slice]
+  have hl := String.length_toList (s := s)
+  split
+  · rw [show (((a : Int) + b + c).toNat) = a + b + c by omega, List.take_of_length_le (by simp; omega)]
+  · rw [List.drop_eq_nil_of_le (by omega)]
+
 /-- `s.index_of(t, i)`: SMT-LIB's `str.indexof`; `-1` unless `0 ≤ i ≤ |s|`
 and `t` occurs at or after `i`, and `i` if `t` is `""`. -/
 def indexOf (s t : String) (i : Int) : Int :=

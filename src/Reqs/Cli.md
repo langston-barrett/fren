@@ -718,10 +718,11 @@ pub struct Observed {
     guard: Option<Seq<NamePart>>,   -- the name whose value must be `true` for the formula to be read
 }
 
-pub fn observed_text?(o: Observed) := all_text?(o.name) and match o.guard {
-    Option::Some(g) => all_text?(g),
-    Option::None => true,
-}
+pub fn observed_text?(o: Observed) :=
+    all_text?(o.name) and match o.guard {
+        Option::Some(g) => all_text?(g),
+        Option::None => true,
+    }
 
 -- The key's observation `k` is the check's `o`.
 pub fn holds?(o: Observed, k: Observation) := spells?(o.name, k.name) and k.formula = o.formula

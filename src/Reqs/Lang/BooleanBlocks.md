@@ -154,7 +154,8 @@ pub proc distributed_guard(ancestor_guards: Seq<Bool>, member?, inactive: Int): 
 
 pub enum ClauseAncestor { Conjunct(BoolBlockLabel), When(Bool), Unless(Bool), Disjunct(BoolBlockLabel), Equivalent(BoolBlockLabel), ExactlyOne(BoolBlockLabel), Negated }
 
-pub fn clause_splits?(step: ClauseAncestor) := step is ClauseAncestor::Conjunct(_) | ClauseAncestor::When(_) | ClauseAncestor::Unless(_)
+pub fn clause_splits?(step: ClauseAncestor) :=
+    step is ClauseAncestor::Conjunct(_) | ClauseAncestor::When(_) | ClauseAncestor::Unless(_)
 
 pub fn clause_guard?(step: ClauseAncestor) := match step {
     ClauseAncestor::When(guard?) => guard?,
@@ -274,7 +275,8 @@ pub proc exactly_one_result(values: Seq<Bool>, wanted?): (
         (forall (j: Int), when 0 <= j < values.len and j != i, not values[j])
     out failed? := actual? != wanted?
     out no_true? := not (exists (i: Int), 0 <= i < values.len and values[i])
-    out multiple? := exists (i: Int), exists (j: Int), 0 <= i < j < values.len and values[i] and values[j]
+    out multiple? :=
+        exists (i: Int), exists (j: Int), 0 <= i < j < values.len and values[i] and values[j]
     expect failure_partition: when wanted? and failed?, no_true? iff not multiple?
     expect negative_witness: when not wanted? and failed?, actual? and not no_true? and not multiple?
     expect empty_false: when values = [], not actual? and no_true?
@@ -283,8 +285,9 @@ pub proc exactly_one_result(values: Seq<Bool>, wanted?): (
 }
 
 pub proc exactly_one_reach(values: Seq<Bool>, position: Int): (det reached?) {
-    out reached? := 0 <= position < values.len and not (exists (i: Int), exists (j: Int),
-        0 <= i < j < position and values[i] and values[j])
+    out reached? :=
+        0 <= position < values.len and not (exists (i: Int), exists (j: Int),
+            0 <= i < j < position and values[i] and values[j])
     expect second_truth_read: when values = [true, false, true, true] and position = 2, reached?
     expect after_second_skipped: when values.len >= 2 and values[0] and values[1] and position >= 2, not reached?
     expect singleton_read: when values = [true] and position = 0, reached?
@@ -377,10 +380,11 @@ pub proc branch_query_count(
     budget: BranchBudget,
     premises: BranchPremises,
 ): (branches: Nat, det selected?) {
-    out selected? := in_core? and match budget {
-        BranchBudget::Unlimited => true,
-        BranchBudget::Remaining(n) => n > 0,
-    }
+    out selected? :=
+        in_core? and match budget {
+            BranchBudget::Unlimited => true,
+            BranchBudget::Remaining(n) => n > 0,
+        }
     ensure alternatives: branches = if not selected? or premises != BranchPremises::Model or block_kind = BoolBlockKind::Conjunction then 0
         else if block_kind = BoolBlockKind::Equivalence then 2 else members
     expect unrelated_free: when not in_core?, branches = 0
@@ -399,7 +403,8 @@ pub proc branch_query_families(
     family_counts: Seq<Int>,
 ): (accounted?, det shared_queries: Nat) {
     call count := branch_query_count(block_kind, members, in_core?, budget, premises)
-    out shared_queries := if count.selected? and block_kind != BoolBlockKind::Conjunction then 1 else 0
+    out shared_queries :=
+        if count.selected? and block_kind != BoolBlockKind::Conjunction then 1 else 0
     ensure families: accounted? iff family_counts.len = count.branches and
         (forall (i: Int), when 0 <= i < family_counts.len, family_counts[i] = per_branch)
     expect no_hidden_queries: when not in_core?, (accounted? iff family_counts = []) and shared_queries = 0

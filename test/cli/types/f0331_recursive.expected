@@ -1,10 +1,10 @@
 error[F0331]: defined function `again` applies itself
- --> test/cli/types/f0331_recursive.fren:3:39
+ --> test/cli/types/f0331_recursive.fren:3:45
   |
-3 | fn again<T>(o: Option<T>, d: T): T := again(o, d)
-  |                                       ^^^^^ applied in its own body
+3 | fn again(f: fn(Int) -> Int, x: Int): Int := again(f, x)
+  |                                             ^^^^^ applied in its own body
   |
-  = note: a generic or higher-order defined function is not recursive, so that every application has a value
+  = note: a higher-order defined function is not recursive, so that every application has a value
   = help: use an earlier defined function, or a `match` on the argument
 
 error: could not check due to previous errors

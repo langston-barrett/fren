@@ -21,17 +21,21 @@ pub mod fmt
 ```
 
 The formatter changes whitespace, the commas at the end of lists (see
-[Trailing commas](#trailing-commas)), and the order and grouping of imports
-(see [Imports](#imports)). It keeps every comment. It lays out
-[lists and blocks](#lists-and-blocks) as rustfmt does: each on one line
-if it fits, and otherwise with one element to a line, but the arms of a
+[Trailing commas](#trailing-commas)), and the order and grouping of
+imports (see [Imports](#imports)). It keeps every comment. It lays out
+[lists and blocks](#lists-and-blocks) as rustfmt does: each on one line if
+it fits, and otherwise with one element to a line, but the arms of a
 `match` or a table and the rows of a table always one to a line, and the
-members of a procedure's, function's or global expectation's block one
-to a line unless there is just one that fits. Elsewhere, for now, it
-keeps the line breaks: it breaks no other long line and joins no other
-short ones, except to merge imports. On each line, it decides the
-indentation and the spaces between tokens; across lines, how many blank
-lines separate them. For example,
+members of a procedure's, function's or global expectation's block one to
+a line unless there is just one that fits. It puts the [right
+side](#right-sides) of a `:=` or `=>` on the operator's line if it fits
+there, or if it is a whole `match`, table, call, literal or other
+bracketed expression whose line fits up to its bracket, which then breaks,
+or a chain that the author broke by hand there, and otherwise on the next
+line, indented. Elsewhere, for now, it keeps the line breaks: it breaks no
+other long line and joins no other short ones, except to merge imports. On
+each line, it decides the indentation and the spaces between tokens;
+across lines, how many blank lines separate them. For example,
 
 ```text
 use climate::Mode::Heat
@@ -58,6 +62,42 @@ proc c(
     call h := heater(t < 18)
 }
 ```
+
+## Principles
+
+Layout questions are decided from these principles (#546). Where two
+conflict, the Reqs that cite them say which wins: an `if` that spans
+several lines, for example, moves to the next line even where it does not
+fit there on one line, so that each `else` lines up with its `if`, unless
+the author broke it by hand only before its `then` or within its
+condition, which principle 6 keeps.
+
+1. **If it fits on one line, use one line**: [lists and blocks](#lists-and-blocks)
+   (`fmt::one_line`, `fmt::list_layout`) and [right sides](#right-sides)
+   (`fmt::right_side`'s `fits_here?`).
+2. **Otherwise, prefer the layout with fewer lines and less nesting.** A
+   right side moves to the next line only if it then fits there on one line
+   (`fmt::right_side`'s `fits_next?`), as rustfmt's assignment rule has it.
+3. **Indentation shows structure.** A continuation is indented past the
+   start of what it continues, and a closing bracket lines up with the
+   line that opened what it closes (`fmt::indent`, `fmt::right_side`).
+   Formatting must not mislead.
+4. **Hug only a whole unit.** A bracketed construct, such as a call, a
+   literal, a `match` or a table, hangs on its opener's line only when it
+   is the whole right side (`fmt::right_side`'s `overflows?`) or the sole
+   or last argument (not yet: a call's sole argument is made vertical, see
+   [Safety](#safety)). So, following from principles 3 and 4, after a
+   signature that spans several lines a whole unit hugs as anywhere, and
+   anything else starts the next line.
+5. **Break before operators**, with continuations one level in: not yet,
+   as `fren fmt` keeps the line breaks of expressions.
+6. **Leave a choice to the author only where no rule decides it well**:
+   hand-broken chains of operators, until the formatter breaks chains
+   itself (`fmt::right_side`'s `chained?` and `written?`), and the column
+   of a comment aligned by hand (`fmt::comment_column`). This makes an
+   exception to principle 3: where a hand-broken chain moves to the next
+   line, its links line up with its first operand, as written, rather than
+   being indented past it.
 
 The layout is chosen so that a change to a spec changes as few lines as
 possible: adding a member, an import, or an element to a vertical list
@@ -88,7 +128,8 @@ what it keeps. A file's *content* is what formatting keeps of it:
   ([`fmt::line_break`](#lists-and-blocks));
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
   decides, such as those between the members of a procedure and the one
-  before a block's `{`, a line break before a
+  before a block's `{`, and those before the [right side](#right-sides) of
+  a `:=` or `=>` but a chain broken by hand, a line break before a
   [comma](#commas-and-comments) counting as one after it.
 
 `fmt::format` is what `fren fmt` writes for a file that parses. It writes
@@ -152,40 +193,42 @@ names a procedure, and `fmt::layout_free` is an expectation, so its trust
 is recorded only here, as that of `fmt::safe`. The job formats every spec
 in the repository, and each laid out again at random, twice. Laying out
 again changes the line breaks of lists and blocks, the one before a
-block's `{` included, and their trailing commas, the side of a comma that
-a line break or a line comment is on, the spaces between tokens and the
-indentation of lines. It reaches the gaps of lists and blocks with blank
-lines too: one whose blank lines go (`fmt::line_break`) gets a space, a
-line break or a blank line, whatever it had, and one between two elements
-or members keeps its blank lines, with spaces on them. Other than moving a
-comma past a line comment, which keeps the comment's column, it leaves
-alone the lines with comments, and the gaps between two tokens with no
-space, where a space could change what the parser reads, as in `f(x)`. It
-changes no part of a file's content. The job checks that formatting keeps
-the order of the tokens and comments, computed by the implementation of
-`fmt::ordering`, with whether each comment starts its line, and the
-imports; that no comma of what it writes, trailing ones and those of `use`
-items included, follows a line break, a line comment or a block comment
-that starts its line; that its blank lines are those that formatting
-keeps: before each line it writes, what `fmt::blank_lines` keeps of the
-source's, and a blank line lost to a joined line only in a gap whose
-blank lines `fmt::line_break` drops, but for the lines after a `use`
-item, as imports are merged and sorted; that formatting the result again
-changes nothing; and that each file laid out again formats as the file
-does. It does not check that formatting keeps the rest of the content:
-the columns of comments, and whether imports span several lines.
+block's `{` included, and their trailing commas, the line breaks before
+right sides, the side of a comma that a line break or a line comment is
+on, the spaces between tokens and the indentation of lines. It reaches the
+gaps of lists and blocks with blank lines too: one whose blank lines go
+(`fmt::line_break`) gets a space, a line break or a blank line, whatever
+it had, and one between two elements or members keeps its blank lines,
+with spaces on them. Other than moving a comma past a line comment, which
+keeps the comment's column, it leaves alone the lines with comments, and
+the gaps between two tokens with no space, where a space could change what
+the parser reads, as in `f(x)`. It changes no part of a file's content.
+The job checks that formatting keeps the order of the tokens and comments,
+computed by the implementation of `fmt::ordering`, with whether each
+comment starts its line, and the imports; that no comma of what it writes,
+trailing ones and those of `use` items included, follows a line break, a
+line comment or a block comment that starts its line; that its blank lines
+are those that formatting keeps: before each line it writes, what
+`fmt::blank_lines` keeps of the source's, and a blank line lost to a
+joined line only in a gap whose blank lines `fmt::line_break` drops, but
+for the lines after a `use` item, as imports are merged and sorted; that
+formatting the result again changes nothing; and that each file laid out
+again formats as the file does. It does not check that formatting keeps
+the rest of the content: the columns of comments, and whether imports span
+several lines.
 
 The goal is rustfmt's: that a file's content is only its tokens, comments
 and blank lines, so that how it was laid out never matters, and that
 `fren fmt` writes what rustfmt would write for the like Rust. These things
 are left for later:
 
-- Line breaks other than those of lists and blocks are content: those in
-  clauses and in expressions, as between the operands of an operator, and
-  those in the declarations of enumerations and structs, in the paths of
-  a `use` and in the files of a `tested` claim. rustfmt breaks a long
-  expression between its operands; `fren fmt` keeps a list in it on one
-  line instead (rule 3 of [Lists and blocks](#lists-and-blocks)).
+- Line breaks other than those of lists and blocks and those before right
+  sides are content: those in clauses and in expressions, as between the
+  operands of an operator, and those in the declarations of enumerations
+  and structs, in the paths of a `use` and in the files of a `tested`
+  claim. rustfmt breaks a long expression between its operands; `fren fmt`
+  keeps a list in it on one line instead (rule 3 of [Lists and
+  blocks](#lists-and-blocks)).
 - The column of a comment at the end of a line that is further right than
   the formatter would put it is content, so that comments aligned by hand
   stay aligned.
@@ -268,6 +311,7 @@ pub enum Gap {
     BeforeClose,             -- before its closing bracket
     UpdatedRecord,           -- after a record update's `{`, before the record it updates
     BlockBrace,              -- before a block's `{`
+    RightSide,               -- after a `:=` or `=>`, before its right side (`fmt::right_side`)
 }
 
 -- A line must end at the gap whatever the layout.
@@ -276,20 +320,23 @@ pub fn forced?(gap: Gap, blank: Nat, boundary?, after_line_comment?, comment_fol
 
 pub proc line_break(
     gap: Gap,
-    vertical?,               -- the list or block is vertical
+    vertical?,               -- the list or block is vertical, or the right side starts the next line
     blank: Nat,              -- the blank lines in the gap
     boundary?,               -- the gap is between two blocks of a Markdown spec
     after_line_comment?,     -- a line comment ends the line before the gap
     comment_follows?,        -- a comment that starts its line follows the gap
 ): (det break?) {
     ensure rule: break? iff (forced?(gap, blank, boundary?, after_line_comment?, comment_follows?)
-        or (vertical? and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose))
+        or (vertical? and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose | Gap::RightSide))
 
     -- `{ p with` and `) {` stay on their lines, blank lines or not.
     expect joined: when gap is Gap::UpdatedRecord | Gap::BlockBrace and not boundary?
         and not after_line_comment? and not comment_follows?, not break?
     -- A blank line between two elements or members keeps them on lines of their own.
     expect blank_between: when gap = Gap::AfterComma and blank > 0, break?
+    -- `:= x + 1` stays on its line, blank lines or not, where it fits.
+    expect right_side_joined: when gap = Gap::RightSide and not vertical? and not boundary?
+        and not after_line_comment? and not comment_follows?, not break?
 }
 ```
 
@@ -456,7 +503,8 @@ pub fn width_limit(list: ListKind): Int := match list {
 }
 
 -- A vertical list's last element is followed by a comma.
-pub fn ends_with_comma?(list: ListKind) := not list is ApplicationArguments | FunctionParameters | Members
+pub fn ends_with_comma?(list: ListKind) :=
+    not list is ApplicationArguments | FunctionParameters | Members
 
 pub proc one_line(
     list: ListKind,
@@ -588,9 +636,10 @@ several lines is on a line that continues it, such as `): (y: Int) {` or
 `: (y: Int) {`, and so is a block whose `{` starts its line, after a line
 comment. Such a block stays vertical however short its member, as rustfmt
 puts a function on one line only if all of it fits on one line, and the
-line comment keeps the signature's line from taking the block. The parser gives the first tokens of the items that each block
-is in, and the formatter's decision implements `fmt::continued`, proved
-in Lean, and gives what it decides to `fmt::list_layout`:
+line comment keeps the signature's line from taking the block. The parser
+gives the first tokens of the items that each block is in, and the
+formatter's decision implements `fmt::continued`, proved in Lean, and
+gives what it decides to `fmt::list_layout`:
 
 ```fren
 -- Indices of tokens.
@@ -673,7 +722,8 @@ pub fn whole?(operand: Operand, head: Int, close: Int) := match operand {
 -- list is a record that is the expression's whole right operand.
 pub fn heads_near?(list: ListKind, head: Int, close: Int, holders: Holders) := match holders {
     Holders::Nil => true,
-    Holder(columns, operand, rest) => (columns <= 4 or (list = Fields and whole?(operand, head, close)))
+    Holder(columns, operand, rest) =>
+        (columns <= 4 or (list = Fields and whole?(operand, head, close)))
         and heads_near?(list, head, close, rest),
 }
 
@@ -760,6 +810,198 @@ pub proc break_before(
     expect together: when starts_line?, before = comments
     -- `f(/- c -/` keeps the comment on the line of `(`.
     expect after_code: when not starts_line?, before = 0
+}
+```
+
+### Right sides
+
+The *right side* of a `:=` or `=>` is the expression after it: a
+function's body, a constant's value, the definition of an `out`, of a
+`let` member or of a `let` or `where` definition, the value of a field of
+a record literal or update, the body of a `match` arm, or the value of a
+table's row. (A `call`'s `:=` has none: what follows it is always a call,
+whose arguments are a list.) An expression that does not fit on its line
+continues only on lines indented past the column where it starts. So a
+right side stays on its operator's line where it fits there, and
+otherwise starts the next line, indented four spaces more than the
+operator's line, with each line that continues it indented four more
+again ([Indentation](#indentation)), unless it hangs, as a `match`, a
+table, a call or a literal that is the whole right side does, as rustfmt
+writes `let x = match y {`:
+
+```text
+pub fn lookup(ctx: Ctx, x: Name): Option<Ty> := match ctx {
+    Ctx::Empty => None,
+    Ctx::Bind(y, ty, rest) =>
+        if y = x then Some(the_type_bound_there(ty, rest)) else lookup(rest, x),
+}
+```
+
+A right side fits on a line when none of it must span several lines, as
+for the elements of a list: it has no line comment, no comment that starts
+a line, no line break that the formatter keeps, and no list that would be
+vertical whatever line it were on, such as a `match` with arms or a call
+whose arguments are too wide for one line; and when, with it on that line,
+the line ends by column 100, counting what follows it up to where a line
+may end, as rule 3 of [Lists and blocks](#lists-and-blocks) counts. So a
+right side moves even where its operator's line is past column 100 already
+at the operator, as the body of a `match` arm with a long pattern does, so
+that the arms of one `match` are laid out alike. Inside the brackets
+opened on the operator's line, as for a field of a record literal on one
+line or a `let` in parentheses, a right side stays on that line, a long
+line staying long and a `match` keeping its arms on the lines after, as a
+list that is not its line's expression does.
+
+A right side that does not fit on its operator's line moves to the next
+line where it fits there, on one line. Where it does not fit there either,
+it moves all the same, to be laid out again on its new line, unless it
+*overflows*: a right side that is wholly a call, a parenthesized
+expression, a literal, a record update, a Boolean block, a `match` or a
+table stays on the operator's line, and only the elements or arms of its
+bracket break, with its closing bracket indented as the operator's line,
+where the operator's line fits up to that opening bracket. An `if` that
+spans several lines does not hang: it starts the next line, so that its
+`else` lines up with it, unless the author broke it by hand only before
+its `then` or within its condition, which principle 6 keeps as written
+(`either?` in `test/cli/fmt/right_sides.fren`, and `Evidence.md`'s
+`backs`). A `match` with a `where` clause is not a whole `match`: it moves
+(#687). Only a whole unit hangs: an operation that ends or starts with a
+bracketed expression, as `not kind in {` or `"not " ++ enclosed(` does,
+moves to the next line with the rest of the operation, and breaks there
+only if it still does not fit. So a call that fits on the next line moves
+there, one that does not hangs, and a literal after an operator moves:
+
+```text
+fn abs_of<V>(x: lang::Expr<V>): lang::Expr<V> :=
+    lang::Expr::Method(lang::MethodName::Abs, x, lang::Expr::Nil)
+let e: lang::Expr<lang::Id> := Binary(
+    Mod,
+    Binary(Add, summand_written(p.text), summand_written(q.text)),
+    summand_written(k)
+)
+pub fn proof?(kind: Kind) :=
+    not kind in {
+        Kind::Cover,
+        Kind::Vacuity,
+        Kind::Reachability,
+        Kind::Redundancy,
+    }
+```
+
+An operation, an `if` or a chain broken by hand after a signature that
+spans several lines, on the line that starts with the `)` of its
+parameters, as `) :=` or `): Int :=`, always starts the next line, so that
+it does not read as part of the signature. A whole `match`, table or
+bracketed expression there hugs or moves as anywhere else, as rustfmt
+writes `) -> T {`. A line that starts with another closing bracket, as
+`} =>` after a condition with a vertical record literal, is not a
+signature's, and its right side is laid out as any other.
+
+A right side that the formatter keeps a line break in, outside its
+brackets, is a chain broken by hand: its line breaks are content
+([Safety](#safety)), so the author has already broken it where it reads
+best, and the line break before it is content too. It starts the next
+line where the source has it there, and otherwise stays on the operator's
+line, as rustfmt hangs a chain of operators, with the lines that continue
+it indented four spaces more, unless its first line, up to its first line
+break, would end past column 100 there, or it is an `if` with a line break
+before an `else`, so that each `else` lines up with its `if`. Where it
+starts the next line, each line that starts at one of those line breaks is
+indented as its first line, rather than four more, so its links line up as
+they were written, and lines that continue a link inside its brackets are
+indented four more:
+
+```text
+pub fn innermost?(bindings: Set<Binding>, b: Binding, n: Id) := b in bindings and b.name = n
+    and (forall (c: Binding), when c in bindings and c.name = n, b.depth <= c.depth)
+out target :=
+    if declared != [] then declared.at(0)
+    else if opened.len = 1 then opened
+    else prelude.at(0)
+) :=
+    exists (k l: ChoiceVariant), k != l and VariantForcing { variant := k } in alone
+    and VariantForcing { variant := l } in rest
+```
+
+`fmt::right_side` decides whether a right side starts the next line, from
+its form, the kind of its outermost expression, and from whether it fits
+on the operator's line and on the next. A comment before it on its line
+stays on the operator's line, and a line break that it decides goes
+before the comments that start the right side's line, as for an element
+of a list ([`fmt::break_before`](#comments-before-an-element)). The gap
+gets a line break as `fmt::line_break` says for `Gap::RightSide`, which
+breaks it where a comment forces it too. The parser gives the right sides,
+their forms and the lists, and the formatter's decision implements
+`fmt::right_side`, proved in Lean:
+
+```fren
+-- The outermost expression of a right side.
+pub enum Form {
+    Arms,                    -- a `match` or a table, with arms
+    Conditional,             -- an `if`
+    Bracketed,               -- a call, a parenthesized expression, a literal, a record update or a Boolean block
+    Other,                   -- any other expression, such as an operation
+}
+
+-- A right side stays on the operator's line, its bracket's elements or arms breaking: it is wholly a
+-- bracketed expression, a `match` or a table, and the line fits up to its opening bracket.
+pub fn overflows?(form: Form, head_end: Int) :=
+    head_end <= 100 and form is Form::Bracketed | Form::Arms
+
+-- It fits on the operator's line, or stays there inside a bracket opened on that line.
+pub fn fits_here?(broken?, inner?, line_end: Int) := inner? or (not broken? and line_end <= 100)
+
+-- It fits on the next line, on one line.
+pub fn fits_next?(broken?, next_end: Int) := not broken? and next_end <= 100
+
+pub proc right_side(
+    form: Form,
+    chained?,                -- a line break that the formatter keeps is in it, outside its brackets
+    written?,                -- the source has it on the next line
+    ladder?,                 -- one of the line breaks in it is before an `else` of its `if`
+    after_close?,            -- the operator's line starts with the `)` of a signature's parameters
+    broken?,                 -- some of it must span several lines
+    inner?,                  -- a bracket opened on the operator's line is open at the operator
+    line_end: Int,           -- the column where the operator's line would end, with it on that line
+    next_end: Int,           -- the column where its own line would end, with it on the next line
+    first_end: Int,          -- the column where the operator's line would end, with it up to its first line break
+    head_end: Int,           -- the same, with it up to its opening bracket
+): (det next_line?) {
+    ensure rule: next_line? iff (not inner? and ((after_close? and (chained? or form is Form::Conditional | Form::Other))
+        or (if chained?
+        then written? or ladder? or first_end > 100
+        else not fits_here?(broken?, inner?, line_end)
+        and (fits_next?(broken?, next_end) or not overflows?(form, head_end)))))
+
+    -- `:= x + 1` stays on the operator's line where it fits.
+    expect fits: when not chained? and not after_close? and fits_here?(broken?, inner?, line_end),
+        not next_line?
+    -- `:= match t {` ... `}` hugs its operator, as rustfmt's `let x = match y {` does.
+    expect arms: when not chained? and not after_close? and form = Form::Arms and broken?
+        and head_end <= 100, not next_line?
+    -- `:= if c then a` ... `else b` spanning several lines starts the next line.
+    expect conditional: when not chained? and not inner? and form = Form::Conditional and broken?,
+        next_line?
+    -- `:= f(` ... `)`: a call that fits on neither line hangs, and its arguments break.
+    expect overflow: when not chained? and not after_close? and overflows?(form, head_end)
+        and not fits_next?(broken?, next_end), not next_line?
+    -- `:= not x in {` ... `}`: only a whole unit hangs, so an operation moves.
+    expect whole_units: when not chained? and form = Form::Other
+        and not fits_here?(broken?, inner?, line_end), next_line?
+    -- A call that fits on the next line moves there, rather than breaking its arguments.
+    expect moves_whole: when not chained? and not fits_here?(broken?, inner?, line_end)
+        and fits_next?(broken?, next_end), next_line?
+    -- `) :=` takes no operation, `if` or chain on its line...
+    expect after_signature: when after_close? and not inner? and (chained? or form is Form::Conditional | Form::Other),
+        next_line?
+    -- ...but a whole `match`, table or call hugs it as anywhere, as rustfmt writes `) -> T {`.
+    expect hug_after_signature: when after_close? and not chained? and form = Form::Arms and broken?
+        and head_end <= 100, not next_line?
+    -- `:= a` ... `and b`: a chain broken by hand stays where it was written, if its first line fits.
+    expect chain_kept: when chained? and not after_close? and not ladder? and first_end <= 100,
+        next_line? iff (written? and not inner?)
+    -- `:=` `if c then a` `else b`: the `else` of an `if` broken by hand lines up with its `if`.
+    expect ladder_aligned: when chained? and ladder? and not inner?, next_line?
 }
 ```
 
@@ -862,6 +1104,24 @@ proc c(mode: Mode) {
 }
 ```
 
+A `:=` or `=>` whose [right side](#right-sides) starts the next line
+indents as a bracket does, until its right side ends: the right side's
+first line is indented four spaces more than the operator's line, as an
+element is, and a line that continues it four more again, past the column
+where the right side starts, but for the links of a chain broken by hand,
+which line up with its first line ([Right sides](#right-sides)). So a
+`match` that is moved, as the operation that ends with it is, has its arms
+indented eight spaces more than the operator's line, and its `}` four:
+
+```text
+pub fn f(t: T): Int :=
+    base(t) + match t {
+        T::A => 0,
+        T::B =>
+            if near?(t) then distance(t) + offset(t) else distance(t) * scale(t) + offset(t) + 1,
+    }
+```
+
 A line that starts with a `|` of a `match` arm's pattern, or of a table
 arm's, starts its alternative, so the alternatives of an or-pattern
 written one per line line up. In a
@@ -912,9 +1172,10 @@ pub enum Bracket {
     Square,                  -- `[`
     Curly,                   -- `{`
     PathCurly,               -- `::{`
+    Operator,                -- a `:=` or `=>` whose right side starts the next line, until it ends
 }
 
-use self::Bracket::{Curly, Paren, PathCurly, Square}
+use self::Bracket::{Curly, Operator, Paren, PathCurly, Square}
 
 -- The brackets open at the start of a line, the innermost first, each with whether it opens a list
 -- or block and the indentation of the line that opens it.
@@ -922,8 +1183,8 @@ pub enum OpenBrackets { Nil, Within(Bracket, Bool, Int, OpenBrackets) }
 
 use self::OpenBrackets::Within
 
--- A bracket indents the lines inside it if it is a brace or opens a list or block.
-pub fn indents?(bracket: Bracket, list?) := bracket is Curly | PathCurly or list?
+-- A bracket indents the lines inside it if it is a brace, an operator or opens a list or block.
+pub fn indents?(bracket: Bracket, list?) := bracket is Curly | PathCurly | Operator or list?
 
 -- Four more than the line that opens the innermost bracket that indents, or 0 outside every one.
 pub fn base(brackets: OpenBrackets): Int := match brackets {
@@ -991,17 +1252,22 @@ expect others_do_not_indent(
 
 A comment at the end of a line is separated from the code by at least two
 spaces. It stays in the column where it starts, if that leaves two spaces,
-so comments aligned by hand stay aligned, and a change to one line does not
-move the comments of the lines around it. `fmt::comment_column` gives the
-column of the comment's `--`, counted from 0:
+so comments aligned by hand stay aligned, and a change to one line does
+not move the comments of the lines around it. On a line whose code is not
+the code of the comment's line in the source, as where the formatter moves
+a [right side](#right-sides) to the next line or joins one onto its
+operator's line, the code before the comment is not what it was aligned
+with, so the comment goes two spaces after the code. `fmt::comment_column`
+gives the column of the comment's `--`, counted from 0:
 
 ```fren
 pub proc comment_column(
     width: Nat,              -- the width of the line's code, with its indentation, after formatting
     original: Nat,           -- the column of the comment before formatting
+    split?,                  -- the line's code is not the code of the comment's line in the source
 ): (det column: Int) {
-    ensure kept: when original >= width + 2, column = original
-    ensure moved: when original < width + 2, column = width + 2
+    ensure kept: when not split? and original >= width + 2, column = original
+    ensure moved: when split? or original < width + 2, column = width + 2
 
     expect gap: column >= width + 2
 }
@@ -1011,8 +1277,9 @@ pub proc comment_column(
 
 At most one blank line separates two lines. There are none at the start of
 a file or of a ```` ```fren ```` block, after a line that ends with a
-bracket that [indents](#indentation) or with a record update's `with`, or
-before a line that starts with its closing bracket. A blank line is kept
+bracket that [indents](#indentation), with a record update's `with` or
+with a `:=` or `=>` whose right side starts the next line, or before a
+line that starts with its closing bracket. A blank line is kept
 only where formatting ends a line: one in a gap that a list or block
 joins onto one line goes with the gap's line break, as one before a
 block's `{` does (`fmt::line_break`), and one between two elements or
@@ -1024,7 +1291,7 @@ gives the number of blank lines kept before a line:
 pub proc blank_lines(
     blank: Nat,              -- blank lines before the line in the input
     first?,                  -- the line is the first of its file or block
-    after_open?,             -- the line before it ends with a bracket that indents, or `with`
+    after_open?,             -- the line before it ends with a bracket that indents, `with`, or `:=` or `=>`
     before_close?,           -- the line starts with the closing bracket of one
 ): (det kept: Int) {
     ensure kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
@@ -1174,7 +1441,8 @@ pub proc comment_piece(line_comment?, starts_line?): (det piece: Piece) {
 -- `piece` before pieces whose commas are placed, and the commas at their start before it, if it
 -- is a line break or a line comment.
 pub fn put(piece: Piece, placed: Pieces): Pieces := match placed {
-    Next(Separator, rest) => if after_line?(piece) then Next(Separator, put(piece, rest)) else Next(piece, placed),
+    Next(Separator, rest) =>
+        if after_line?(piece) then Next(Separator, put(piece, rest)) else Next(piece, placed),
     _ => Next(piece, placed),
 }
 

@@ -9,7 +9,8 @@ proc in_tables(m: Mode, q: Seq<Int>): (y: Int) {
     ensure r: y = table m {
         Mode::Off if (forall (i: Int), when 0 <= i < q.len, q[i] > 0) => 1,
         Mode::Off if not (forall (i: Int), when 0 <= i < q.len, q[i] > 0) => 2,
-        Mode::On if (exists (k: Mode), k = m and q != []) => if (forall (b?: Bool), b? or not b?) then 3 else 4,
+        Mode::On if (exists (k: Mode), k = m and q != []) =>
+            if (forall (b?: Bool), b? or not b?) then 3 else 4,
         Mode::On if q = [] => 5,
     }
 

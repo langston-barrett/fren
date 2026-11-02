@@ -1,3 +1,3 @@
--- A generic defined function that applies itself (F0331).
+-- A higher-order defined function that applies itself (F0331).
 -- fren-covers: lang::function_body
-fn again<T>(o: Option<T>, d: T): T := again(o, d)
+fn again(f: fn(Int) -> Int, x: Int): Int := again(f, x)

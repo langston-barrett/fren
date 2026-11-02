@@ -27,11 +27,21 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+    # Among them, the pr-review workflow's decisions (`.github/pr-review`).
     - name: Test the scripts
       run: |
         set -euo pipefail
         python3 -I -B scripts/heavy_test.py
         python3 -I -B scripts/lake_cache.py test
+        # pr-review's, with the CommonMark parser that test_frame.py needs.
+        python3 -m venv "$RUNNER_TEMP/venv"
+        "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes --no-deps \
+          -r .github/pr-review/requirements-test.txt
+        "$RUNNER_TEMP/venv/bin/python" -I -B -m unittest discover -s .github/pr-review
+    # That pr-review's probe container lets a hostile binary affect nothing
+    # but its own output.
+    - name: Test pr-review's sandbox
+      run: bash .github/pr-review/test_sandbox.sh
     - uses: langston-barrett/gha/.github/actions/install-linters@d0cdf249a9684185d96083c87d078679cd373b28
     - name: Install keep-sorted
       run: | # zizmor: ignore[github-env]

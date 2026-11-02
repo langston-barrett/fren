@@ -288,11 +288,13 @@ pub proc clash_text(
     assume some_other: count >= 1
     out said := match forced {   -- what the guarantee forces, as the note says it
         Forced::Value(v) => output ++ " = " ++ v,
-        Forced::Variant(c, n) => output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ blanks ++ ")"),
+        Forced::Variant(c, n) =>
+            output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ blanks ++ ")"),
     }
     out other_said := match other_forced {   -- what the others force
         Forced::Value(v) => output ++ " = " ++ v,
-        Forced::Variant(c, n) => output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ other_blanks ++ ")"),
+        Forced::Variant(c, n) =>
+            output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ other_blanks ++ ")"),
     }
     out text := "`" ++ guarantee ++ "` forces " ++ said ++ ", but " ++ others
         ++ (if count = 1 then " forces " else " force ") ++ other_said

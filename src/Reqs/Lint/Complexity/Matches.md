@@ -249,7 +249,8 @@ pub fn guard_holds?(g: Guard) := match g {
 
 -- What an arm does at a value of the scrutinee (`lang::ArmAt`), from
 -- whether its pattern matches the value, and its guard.
-pub fn arm_at(matches?, g: Guard): lang::ArmAt := if not matches? then lang::ArmAt::NoMatch
+pub fn arm_at(matches?, g: Guard): lang::ArmAt :=
+    if not matches? then lang::ArmAt::NoMatch
     else if guard_holds?(g) then lang::ArmAt::Taken else lang::ArmAt::GuardFails
 
 pub proc trivial_guard(
@@ -285,7 +286,8 @@ pub fn taken_at?(arms: Seq<ArmGuard>, s: Slot) := pos(s) < arms.len
     and arm_at(arms[pos(s)].matches?, arms[pos(s)].guard) = lang::ArmAt::Taken
 
 -- Whether arm `s` is the arm taken, of the arms but `k` where `skip?`.
-pub fn first_taken?(arms: Seq<ArmGuard>, s: Slot, k: Slot, skip?) := taken_at?(arms, s) and not (skip? and s = k)
+pub fn first_taken?(arms: Seq<ArmGuard>, s: Slot, k: Slot, skip?) :=
+    taken_at?(arms, s) and not (skip? and s = k)
     and (forall (r: Slot), when pos(r) < pos(s) and not (skip? and r = k), not taken_at?(arms, r))
 
 proc trivial_guard_dropped(arms: Seq<ArmGuard>, k: Slot) {
@@ -351,7 +353,8 @@ pub fn trivial_guard_fires?<V>(e: lang::Expr<V>) := match e {
 }
 
 pub fn trivial_guard_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
-    lang::Expr::Match(_, _, g, _, rest) => if g = lang::Expr::Literal(lang::Value::False) then rest else e,
+    lang::Expr::Match(_, _, g, _, rest) =>
+        if g = lang::Expr::Literal(lang::Value::False) then rest else e,
     _ => e,
 }
 
@@ -519,11 +522,12 @@ pub fn pat_with(p: Pat, n: Int, c: Int): Pat := match p {
 }
 
 -- Whether the pattern `p` binds the name `n`.
-pub fn binds_name?(p: Pat, n: Int) := n >= 0 and match p {
-    Pat::Binder(k, _) => k = n,
-    Pat::Variant(_, l, m) => leaf_name(l) = n or leaf_name(m) = n,
-    _ => false,
-}
+pub fn binds_name?(p: Pat, n: Int) :=
+    n >= 0 and match p {
+        Pat::Binder(k, _) => k = n,
+        Pat::Variant(_, l, m) => leaf_name(l) = n or leaf_name(m) = n,
+        _ => false,
+    }
 
 -- The value that the name `n`, a binder of `p`, has where `p` matches `x`.
 pub fn bound_value(p: Pat, n: Int, x: Val): Int := match p {
@@ -532,10 +536,11 @@ pub fn bound_value(p: Pat, n: Int, x: Val): Int := match p {
 }
 
 -- The body `b` with the integer `c` in place of its mention of `n`.
-pub fn body_with(b: Body, n: Int, c: Int): Body := if body_names?(b, n) then Body {
-    form := b.form + c,
-    uses := Use::Nothing,
-} else b
+pub fn body_with(b: Body, n: Int, c: Int): Body :=
+    if body_names?(b, n) then Body {
+        form := b.form + c,
+        uses := Use::Nothing,
+    } else b
 
 pub proc redundant_guards(
     pattern: Pat,            -- the arm's pattern

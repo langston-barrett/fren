@@ -82,7 +82,8 @@ pub proc function_type_place(
 ): (det accepted?, det code: Id) {
     use self::TypeSite::{DefinedParameter, Field, Payload, Variable}
     -- The error's code, `""` where it is accepted.
-    out code := if accepted? then "" else if within != [] then "F0435"
+    out code :=
+        if accepted? then "" else if within != [] then "F0435"
         else if site in {Field, Payload} then "F0432" else if site = Variable then "F0433" else "F0434"
 
     ensure rule: accepted? iff (site = DefinedParameter and within = [])
@@ -169,7 +170,8 @@ pub enum ArgShape { Closure(Nat), DefinedName, UninterpretedName, FnParameterNam
 pub proc function_argument(param: ParamKind, arg: ArgShape): (det accepted?, det code: Id) {
     use self::ArgShape::{Closure, DefinedName, FnParameterName, Other, UninterpretedName}
     -- The error's code, `""` where it is accepted.
-    out code := if accepted? then ""
+    out code :=
+        if accepted? then ""
         else if param = ParamKind::Value and arg is DefinedName | UninterpretedName | FnParameterName then "F0210"
         else "F0436"
 
@@ -480,7 +482,8 @@ pub proc match_vector(
     second_right: Set<Bool>,
     second_guard?,
 ): (det choice: VectorChoice, det bound_left?, det bound_right?) {
-    out choice := if left? in first_left and right? in first_right and first_guard? then VectorChoice::First
+    out choice :=
+        if left? in first_left and right? in first_right and first_guard? then VectorChoice::First
         else if left? in second_left and right? in second_right and second_guard? then VectorChoice::Second
         else VectorChoice::Missing
     out bound_left? := left?
@@ -496,7 +499,8 @@ pub proc match_vector(
 }
 
 pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>): (det complete?) {
-    out complete? := forall (left? right?: Bool), (left?, right?) in first or (left?, right?) in second
+    out complete? :=
+        forall (left? right?: Bool), (left?, right?) in first or (left?, right?) in second
     expect all_worlds: complete? iff (true, true) in first union second and (true, false) in first union second
         and (false, true) in first union second and (false, false) in first union second
     expect diagonal_is_incomplete: when first = {(true, true)} and second = {(false, false)}, not complete?

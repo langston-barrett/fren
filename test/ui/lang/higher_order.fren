@@ -19,10 +19,11 @@ fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
 fn double(n: Int): Int := 2 * n
 
 -- Its body binds `step`, which a closure's own `step` keeps apart from.
-fn shift(o: Option<Int>, f: fn(Int) -> Int): Int := let step := 100 in match o {
-    Option::Some(x) => f(x) + step,
-    Option::None => step,
-}
+fn shift(o: Option<Int>, f: fn(Int) -> Int): Int :=
+    let step := 100 in match o {
+        Option::Some(x) => f(x) + step,
+        Option::None => step,
+    }
 
 -- Its own function parameter, given to another, and captured by a closure.
 fn shift_all(o: Option<Int>, g: fn(Int) -> Int): Option<Int> := map(o, |y| g(y) + 1)

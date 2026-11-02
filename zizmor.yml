@@ -1,0 +1,7 @@
+# zizmor's configuration, which lun passes (lun.toml).
+rules:
+  # A help-level audit of style: it asks for `$/` rather than `./` in a
+  # `uses:` of this repository's own action or workflow, which mean the same
+  # commit. The workflows keep `./`.
+  self-repository:
+    disable: true

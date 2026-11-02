@@ -1,0 +1,232 @@
+--@ args: fmt --check
+-- The right side of a `:=` or `=>` stays on its operator's line where it
+-- fits, and moves to the next line where it then fits there on one line.
+-- Otherwise a right side that is wholly a call, a parenthesized expression,
+-- a literal, a record update, a Boolean block, a `match` or a table hangs,
+-- and any other moves.
+-- A chain broken by hand stays where it was written, and after a signature
+-- that spans several lines a right side starts the next line
+-- (`fmt::right_side`).
+pub enum Ctx { Empty, Bind(String, Int, Ctx) }
+
+pub struct P { x: Int, y: Int }
+
+fn wrap(Int): Int
+
+fn far(Int, Int, Int): Int
+
+fn display(Int): String
+
+fn display4(Int, Int, Int, Int): String
+
+-- A `match` hugs its operator, and so do the `match`es of its arms.
+pub fn lookup(ctx: Ctx, x: String): Option<Int> := match ctx {
+    Ctx::Empty => None,
+    Ctx::Bind(y, v, rest) => match lookup(rest, x) {
+        Some(w) => Some(w),
+        None => if y = x then Some(v) else None,
+    },
+}
+
+-- One that fits joins the operator's line, without the blank line.
+fn short(n: Int): Int :=
+
+    n + 1
+
+-- An arm's call that does not fit after `=>` moves to the next line if it
+-- fits there, and otherwise hangs, its arguments breaking.
+fn arms(n: Int, m: Int): Int := match n {
+    0 => wrap(n),
+    k if k > 1000000000 and k < 2000000000 => wrap(n + 1000000000 + m + 2000000000 + m + 3000000000),
+    _ => far(wrap(n + 1000000000 + m) + wrap(n + 2000000000 + m), wrap(n + 3000000000 + m), m),
+}
+
+-- A long `if` moves too.
+fn branch(n: Int, m: Int): Int := if n > m then wrap(n + 1000000000 + m) else wrap(m + 2000000000 + n)
+
+-- A record literal and a set literal that fit on the next line move there;
+-- those that do not hang.
+fn a_point_with_a_rather_long_name(nnnnnnnnnnnnnnnn: Int, mmmmmmmmmmmmmmmmmm: Int, k: Int): P := P { x := k, y := k }
+
+fn far_point(n: Int): P := P { x := n + 100000000000000000, y := n + 20000000000000000000000000000000 }
+
+fn small(n: Int): Set<Int> := {n + 1000000000, n + 2000000000, n + 3000000000, n + 4000000000}
+
+-- A set literal after an operator moves with the operation: only a whole unit hangs.
+fn listed?(n: Int) := not n in {1000000000000, 2000000000000, 3000000000000, 4000000000000, 5000000000000}
+
+-- A parenthesized expression with a line break kept in it hangs.
+fn sum(x: Int): Int := (
+    x
+    + 1
+    + 2)
+
+-- A chain broken by hand hangs where its first line fits, its links at +4,
+-- and moves where it does not, its links lined up with its first line.
+fn both?(a?, b?, c?) := a? and b?
+    and c?
+
+fn longer_chain?(aaaaaaaaaaaaaaaaaaaaaaaaaa?, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?, c?) := aaaaaaaaaaaaaaaaaaaaaaaaaa?
+    and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb? and c?
+    and c?
+
+-- A chain written on the next line stays there, though its first line would fit after `:=`.
+fn written?(a?, b?, c?) :=
+    a? and b?
+    and c?
+
+-- A link's continuation inside its brackets is indented past the link.
+fn inner_chain?(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?, cccccccccccccccc?) := (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?
+    and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?)
+    or cccccccccccccccc?
+
+-- A chain that starts with a call keeps its operands where they were written.
+fn joined(n: Int): String :=
+    display(n + 1000000000 + 2000000000 + 3000000000 + 4000000000 + 5000000000 + 6000000000)
+    ++ display(n)
+
+-- A long link of a moved chain keeps its last call on one line.
+fn links(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int): String := display(1)
+    ++ display4(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn, 2, 3, 4) ++ display4(nnnnnnnnnnnnnnnnnnnnnnn, 2, 3, 4)
+
+-- After a signature that spans several lines, a right side starts the next line, chained or not.
+fn after_signature(
+    nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int,
+    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: Int,
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: Int
+): Int := nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn + 1
+
+-- A whole `match` or call after a signature hugs or moves as anywhere.
+fn match_after_signature(
+    nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int,
+    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: Int,
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: Int
+): Int := match nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn { 0 => 1, _ => 2 }
+
+fn call_after_signature(
+    nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int,
+    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: Int,
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: Int
+): Int := far(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn, mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm, kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk)
+
+fn chain_after_signature(
+    nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int,
+    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: Int,
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: Int
+): Int := nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+    + mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
+
+-- An `if` broken by hand moves, so that each `else` lines up with its `if`.
+fn ladder(n: Int): Int := if n > 2 then 3
+    else if n > 1 then 2
+    else 1
+
+-- A comment after the operator, and a comment on a line of its own.
+fn commented(n: Int): Int :=  -- the successor
+    n + 1
+
+fn above(n: Int): Int :=
+    -- the predecessor
+    n - 1
+
+-- A comment after code on a line that the formatter splits or joins goes
+-- two spaces after the code.
+fn noted(n: Int): Int := 1 + match n {           -- the cases
+    0 => 1,
+    _ => n,
+}
+
+fn joined_note(n: Int): Int :=
+    n + 1                                    -- the successor
+
+-- A field of a record literal on one line stays on it, however long; a
+-- field of a vertical one is a right side.
+proc fields(n: Int): (p: P, q: P) {
+    ensure r: p = P { x := n, y := n } and wrap(n + 1000000000) = wrap(n + 2000000000) + wrap(3000000000)
+    ensure s: q = P {
+        x := match n { 0 => 1, _ => 2 },
+        y := n,
+    }
+}
+
+-- `out`, `let` members, `let ... in` and `where` definitions, table rows, a
+-- hanging record update and a hanging Boolean block.
+proc rows(n: Int): (r: Int, p: P, b?) {
+    let base: Int := match n { 0 => 1, _ => 2 }
+    out r := table { n > 0 => wrap(n + 1000000000 + base + 2000000000 + base + 3000000000 + base + 1), _ => 0 }
+    out p := { P { x := n, y := n } with x := wrap(n + 1000000000000), y := wrap(n + 2000000000000000000) }
+    out b? := and { n > 1000000000000, n < 2000000000000, n != 1500000000000, n != 1600000000000000 }
+    -- Inside parentheses opened on its line, a right side stays there.
+    ensure inner: r = (let k := match n { 0 => 1, _ => 2 } in k + 1) or b?
+    ensure defined: (let k := n + 1 in r = k) or r = w
+        where w := match n { 0 => 3, _ => 4 }
+}
+
+-- Right sides nested in right sides that end at the same token.
+fn nested(n: Int): Int := match n { 0 => match n { 0 => 1, _ => 2 }, _ => 3 }
+
+-- An operation that ends with a `match` moves, so its arms are past it.
+fn offset(n: Int): Int := n + 1000000000 + match n {
+    0 => 1,
+    _ => 2,
+}
+
+-- An arm that starts with a call and goes on after it moves too.
+fn shown(n: Int): String := match n {
+    0 => "zero",
+    _ => display(wrap(n + 1000000000 + 2000000000 + 3000000000 + 4000000000 + 5000000000 + 6)) ++ "!",
+}
+
+-- An arm whose line is past column 100 already at `=>` moves too, as its siblings do.
+fn long_patterns(n: Int): Int := match n {
+    1000000000 | 2000000000 | 3000000000 | 4000000000 | 5000000000 | 6000000000 | 7000000000 | 8000000000 => 1,
+    _ => 2,
+}
+
+-- A bracketed right side whose line passes column 100 before its bracket moves.
+fn long_heads(n: Int): Set<Int> := match n {
+    1000000000 | 2000000000 | 3000000000 | 4000000000 | 5000000000 | 6000000000 | 7000000000 | 8 => {1000000000000, 2000000000000, 3000000000000, 4000000000000, 5000000000000},
+    _ => {},
+}
+
+-- A hand-broken `if` without a line break before an `else` is a chain like any other.
+fn either?(a?, b?, c?) := if a? and b?
+    or c? then a? else b?
+
+-- A closing bracket that starts a line other than a signature's takes its right side as any line.
+fn row(p: P): Int := table {
+    p = P { x := 1000000000000, y := 1 } => 1,
+    _ => 0,
+}
+
+proc closing(n: Int): (x: Int) {
+    ensure r: x = far(n + 1000000000000000000000, n + 2000000000000000000000, n + 3000000000000000000000) + w where w := 1
+}
+
+-- An operation that starts and ends with a `match` is no whole `match`: it moves.
+pub fn two(a: Int, b: Int): Int := match a { 0 => 0, _ => 1 } + match b { 0 => 0, _ => 1 }
+
+-- An `if` that spans several lines for a list in it, though not broken by hand, moves.
+fn listed_if(n: Int): Set<Int> := if n > 0 then {1000000000000, 2000000000000, 3000000000000, 4000000000000, 5} else {}
+
+-- A call followed by a method is an operation: it moves where it fits there.
+fn absolute(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int, m: Int): Int := far(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn, m, 1).abs
+
+-- An operation that starts and ends with parentheses is no parenthesized expression: it moves.
+fn product(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int, mmmmmmmmmmmmmmmmmmmmmmmmm: Int): Int := (nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn + 1) * (mmmmmmmmmmmmmmmmmmmmmmmmm + 2)
+
+-- After a signature that spans several lines, an `if` that does not fit starts the next line, and a table hugs.
+fn if_after_signature(
+    nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int,
+    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: Int,
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: Int
+): Int := if nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn > 0 then mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm else kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+
+fn table_after_signature(
+    nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int,
+    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: Int,
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: Int
+): Int := table { nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn > 0 => 1, _ => 2 }
+
+-- A `match` with a `where` clause is no whole `match`: it moves (#687).
+fn matched_where(n: Int): Int := match n { 0 => w, _ => 2 } where w := n

@@ -370,7 +370,8 @@ pub struct SimplePattern { shape: PatternShape, range: IntRange, variant: Int, p
 -- as its payload's value.
 pub struct SimpleValue { variant: Int, number: Int }
 
-fn in_range?(r: IntRange, n: Int) := (not r.bounded_below? or r.low <= n) and (not r.bounded_above? or n <= r.high)
+fn in_range?(r: IntRange, n: Int) :=
+    (not r.bounded_below? or r.low <= n) and (not r.bounded_above? or n <= r.high)
 
 fn matches?(p: SimplePattern, v: SimpleValue) := match p.shape {
     PatternShape::Wildcard => true,

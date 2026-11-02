@@ -100,7 +100,8 @@ pub fn apply_subst(sub: Subst, x: Name): Named := match sub {
 -- earlier one, so a name is taken out of `fv` once seen.
 pub fn captures?(sub: Subst, y: Name, fv: Set<Name>) := match sub {
     Subst::Id => false,
-    Subst::Bind(x, s, rest) => (x != y and x in fv and y in free(s)) or captures?(rest, y, fv minus {x}),
+    Subst::Bind(x, s, rest) =>
+        (x != y and x in fv and y in free(s)) or captures?(rest, y, fv minus {x}),
 }
 
 -- Every name of a term, free or bound, joined: a longer name is fresh.
@@ -265,16 +266,17 @@ pub proc typing_examples() {
 --     ------------------------------------------------ (E-If)
 --     if t1 then t2 else t3 --> if t1' then t2 else t3
 pub fn step(t: Named): Option<Named> := match t {
-    App(t1, t2) => if not value?(t1) then match step(t1) {
-        Some(u1) => Some(App(u1, t2)),
-        None => None,
-    } else if not value?(t2) then match step(t2) {
-        Some(u2) => Some(App(t1, u2)),
-        None => None,
-    } else match t1 {
-        Lam(x, _, t12) => Some(subst(x, t2, t12)),
-        _ => None,
-    },
+    App(t1, t2) =>
+        if not value?(t1) then match step(t1) {
+            Some(u1) => Some(App(u1, t2)),
+            None => None,
+        } else if not value?(t2) then match step(t2) {
+            Some(u2) => Some(App(t1, u2)),
+            None => None,
+        } else match t1 {
+            Lam(x, _, t12) => Some(subst(x, t2, t12)),
+            _ => None,
+        },
     If(True, t2, _) => Some(t2),
     If(False, _, t3) => Some(t3),
     If(t1, t2, t3) => match step(t1) {
@@ -334,10 +336,11 @@ pub fn reduce(fuel: Fuel, t: Named): Named := match fuel {
 
 pub fn normalize(fuel: Fuel, t: Named): Option<Named> := match fuel {
     Zero => if value?(t) then Some(t) else None,
-    More(n) => if value?(t) then Some(t) else match step(t) {
-        Some(u) => normalize(n, u),
-        None => None,
-    },
+    More(n) =>
+        if value?(t) then Some(t) else match step(t) {
+            Some(u) => normalize(n, u),
+            None => None,
+        },
 }
 
 pub fn eval(fuel: Fuel, t: Named): Option<Named> := match fuel {
@@ -501,7 +504,8 @@ pub fn render(ts: Tokens): String := match ts {
 -- written bare at a level at most as tight, and in parentheses otherwise.
 pub ordered enum Level { Term, Application, Atom }
 
-pub fn wrap(level: Level, needs: Level, ts: Tokens): Tokens := if level <= needs then ts else parens(ts)
+pub fn wrap(level: Level, needs: Level, ts: Tokens): Tokens :=
+    if level <= needs then ts else parens(ts)
 
 pub fn print_ty(ty: Ty): Tokens := match ty {
     Boolean => one(Token::Boolean),
@@ -592,18 +596,21 @@ pub enum Mode { Term, Application, Arguments(Named), Atom, Consequent(Named), Al
 pub enum Parsed { Fail, Ok(Named, Tokens) }
 pub enum ParsedTy { Fail, Ok(Ty, Tokens) }
 
-pub fn starts_atom?(ts: Tokens) := ts is Tokens::Cons(Token::Ident(_) | Token::True | Token::False | Token::LParen, _)
+pub fn starts_atom?(ts: Tokens) :=
+    ts is Tokens::Cons(Token::Ident(_) | Token::True | Token::False | Token::LParen, _)
 
 -- `after` and `after_ty`: what was read, once the next token is `tok`: the
 -- parenthesized `( t )` or the condition of `if t1 then`, and the type of
 -- `\x: ty.` or the parenthesized `( ty )`.
 pub fn after(tok: Token, read: Parsed): Parsed := match read {
-    Parsed::Ok(t, Tokens::Cons(next, rest)) => if next = tok then Parsed::Ok(t, rest) else Parsed::Fail,
+    Parsed::Ok(t, Tokens::Cons(next, rest)) =>
+        if next = tok then Parsed::Ok(t, rest) else Parsed::Fail,
     _ => Parsed::Fail,
 }
 
 pub fn after_ty(tok: Token, read: ParsedTy): ParsedTy := match read {
-    ParsedTy::Ok(ty, Tokens::Cons(next, rest)) => if next = tok then ParsedTy::Ok(ty, rest) else ParsedTy::Fail,
+    ParsedTy::Ok(ty, Tokens::Cons(next, rest)) =>
+        if next = tok then ParsedTy::Ok(ty, rest) else ParsedTy::Fail,
     _ => ParsedTy::Fail,
 }
 
@@ -625,17 +632,16 @@ pub fn arrow_of(ty1: Ty, read: ParsedTy): ParsedTy := match read {
 -- `atom?` reads one `tatom`, and otherwise a `type`.
 pub fn parse_ty(fuel: Fuel, atom?, ts: Tokens): ParsedTy := match fuel {
     Zero => ParsedTy::Fail,
-    More(n) => if atom? then match ts {
-        Tokens::Cons(Token::Boolean, rest) => ParsedTy::Ok(Boolean, rest),
-        Tokens::Cons(Token::LParen, rest) => after_ty(Token::RParen, parse_ty(n, false, rest)),
-        _ => ParsedTy::Fail,
-    } else match parse_ty(n, true, ts) {
-        ParsedTy::Ok(ty1, Tokens::Cons(Token::Arrow, more)) => arrow_of(
-            ty1,
-            parse_ty(n, false, more)
-        ),
-        read => read,
-    },
+    More(n) =>
+        if atom? then match ts {
+            Tokens::Cons(Token::Boolean, rest) => ParsedTy::Ok(Boolean, rest),
+            Tokens::Cons(Token::LParen, rest) => after_ty(Token::RParen, parse_ty(n, false, rest)),
+            _ => ParsedTy::Fail,
+        } else match parse_ty(n, true, ts) {
+            ParsedTy::Ok(ty1, Tokens::Cons(Token::Arrow, more)) =>
+                arrow_of(ty1, parse_ty(n, false, more)),
+            read => read,
+        },
 }
 
 pub fn parse(fuel: Fuel, mode: Mode, ts: Tokens): Parsed := match fuel {
@@ -648,10 +654,11 @@ pub fn parse(fuel: Fuel, mode: Mode, ts: Tokens): Parsed := match fuel {
             Tokens::Cons(Token::LParen, rest) => after(Token::RParen, parse(n, Mode::Term, rest)),
             _ => Parsed::Fail,
         },
-        Mode::Arguments(f) => if starts_atom?(ts) then match parse(n, Mode::Atom, ts) {
-            Parsed::Ok(a, rest) => parse(n, Mode::Arguments(App(f, a)), rest),
-            Parsed::Fail => Parsed::Fail,
-        } else Parsed::Ok(f, ts),
+        Mode::Arguments(f) =>
+            if starts_atom?(ts) then match parse(n, Mode::Atom, ts) {
+                Parsed::Ok(a, rest) => parse(n, Mode::Arguments(App(f, a)), rest),
+                Parsed::Fail => Parsed::Fail,
+            } else Parsed::Ok(f, ts),
         Mode::Application => match parse(n, Mode::Atom, ts) {
             Parsed::Ok(f, rest) => parse(n, Mode::Arguments(f), rest),
             Parsed::Fail => Parsed::Fail,
@@ -725,10 +732,11 @@ pub enum Names { Nil, Cons(Name, Names) }
 
 pub fn index_of(names: Names, x: Name): Option<Int> := match names {
     Names::Nil => None,
-    Names::Cons(y, rest) => if y = x then Some(0) else match index_of(rest, x) {
-        Some(k) => Some(k + 1),
-        None => None,
-    },
+    Names::Cons(y, rest) =>
+        if y = x then Some(0) else match index_of(rest, x) {
+            Some(k) => Some(k + 1),
+            None => None,
+        },
 }
 
 pub fn nth(names: Names, k: Int): Option<Name> := match names {
@@ -886,7 +894,8 @@ pub proc nameless_examples() {
 -- `E`: the shape planned for Fren's own spec (#539). Its fixpoint, `enum
 -- Fix<V, B> { In(TermF<V, B, Fix<V, B>>) }`, is rejected (`F0387`: a
 -- recursive payload must be the enumeration's own type), and a fold over
--- it would be a generic recursion (`F0331`), so an algebra is stated here,
+-- it, given the algebra as a function parameter, would be a higher-order
+-- recursion (`F0331`), so an algebra is stated here,
 -- with the laws that the solver decides at `Name` (`layer_laws`), and
 -- Stlc.lean ties the knot: `Term` is the fixpoint, and `size` is the fold
 -- of `size_alg` (`size_fold`, `map_layer_id`). What else this example

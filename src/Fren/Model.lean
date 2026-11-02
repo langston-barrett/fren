@@ -391,6 +391,10 @@ structure DefinedInfo where
   recBody? : Option Expr := none
   decreasing? : Option Nat := none
   fact? : Option Expr := none
+  /-- For a generic structural recursion, its Lean definition's value, over
+  its placeholders, which apply it to them, for its instances that
+  evaluation compiles (`specializeRecursions`). -/
+  recValue? : Option Expr := none
   deriving Inhabited
 
 /-- A clause of a function's contract, and the Lean definition generated
@@ -429,6 +433,15 @@ placeholder, or a definition of it, takes first
 (`Reqs/Generated#generic-functions`). -/
 def typeParamPlaceholders (path : Name) (tps : Array Name) : Array Name :=
   tps.mapIdx (fun k p => placeholderName (Core.typeParamPath path k p)) |>.flatMap fun ph => #[ph, inhabitedName ph]
+
+/-- Of a generic structural recursion, the positions among its placeholders
+`uses` of its type parameters' and their `Inhabited` instances', in the
+order of `typeParamPlaceholders`: the arguments that its solver form takes
+first, which give the instance that an application applies
+(`Reqs/Lang/Recursion#generic-recursion`). None for any other function. -/
+def DefinedInfo.solverTypeArgs (d : DefinedInfo) : Array Nat :=
+  if !d.recursive || d.typeParams.isEmpty then #[] else
+    (typeParamPlaceholders d.path d.typeParams).filterMap d.uses.idxOf?
 
 /-- `e`, of the generic function at `path` with the type parameters `tps`,
 at the instance whose type arguments and `Inhabited` instances are
@@ -1163,12 +1176,14 @@ form (`DefinedInfo.solver?`) is unfolded to that form instead of its
 declaration's body, so that the solver sees the same terms whatever form
 the declaration has. -/
 def deltaDefined (s : State) (e : Expr) (p : Name → Bool) : CoreM Expr := do
-  -- Each declaration with a solver form: that form, and how many of the
+  -- Each declaration with a solver form: that form, how many of the
   -- arguments, its placeholders', the form does not take, as a structural
-  -- recursion's does not.
-  let redirect := s.defined.foldl (init := ({} : NameMap (Name × Nat))) fun acc _ d =>
+  -- recursion's does not, and the positions among those of the ones it
+  -- takes first, a generic structural recursion's type parameters' and
+  -- their `Inhabited` instances' (`DefinedInfo.solverTypeArgs`).
+  let redirect := s.defined.foldl (init := ({} : NameMap (Name × Nat × Array Nat))) fun acc _ d =>
     match d.solver? with
-    | some n => acc.insert d.decl (n, if d.recursive then d.uses.size else 0)
+    | some n => acc.insert d.decl (n, if d.recursive then d.uses.size else 0, if d.recursive then d.solverTypeArgs else #[])
     | none => acc
   if redirect.isEmpty then return ← Meta.deltaExpand e p
   let solvers := redirect.foldl (init := ({} : NameSet)) fun acc _ (n, _) => acc.insert n
@@ -1179,7 +1194,9 @@ def deltaDefined (s : State) (e : Expr) (p : Name → Bool) : CoreM Expr := do
   Core.transform e fun e => do
     let e := match e.getAppFn with
       | .const c ls => match redirect.get? c with
-        | some (n, k) => mkAppN (.const n ls) (e.getAppArgs.extract k)
+        | some (n, k, keep) =>
+          let args := e.getAppArgs
+          mkAppN (.const n ls) (keep.filterMap (args[·]?) ++ args.extract k)
         | none => e
       | _ => e
     match ← Meta.delta? e fun n => (p n || solvers.contains n) && !recursive.contains n with

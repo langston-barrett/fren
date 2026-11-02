@@ -212,7 +212,8 @@ pub proc combined(
     call random_cell := method_cell(kind, Random)
     call lean_cell := method_cell(kind, Lean)
     -- What each selected method contributes, as its cell allows.
-    let s: Contribution := if Solver in selected
+    let s: Contribution :=
+        if Solver in selected
         then contribution(
             solver_cell.cell,
             if proof?(kind) then by_proof.verdict else by_witness.verdict,
@@ -225,8 +226,10 @@ pub proc combined(
             enumeration.reported,
             enumeration.bounded?
         ) else Nothing
-    let r: Contribution := if Random in selected then contribution(random_cell.cell, random, false) else Nothing
-    let l: Contribution := if Lean in selected then contribution(lean_cell.cell, lean, false) else Nothing
+    let r: Contribution :=
+        if Random in selected then contribution(random_cell.cell, random, false) else Nothing
+    let l: Contribution :=
+        if Lean in selected then contribution(lean_cell.cell, lean, false) else Nothing
 
     ensure refuted: (verdict = Fail) iff Refuted in {s, e, r, l}
     ensure passed: (verdict = Pass) iff (not Refuted in {s, e, r, l} and (Passed in {s, e, r, l} or Bounded in {s, e, r, l}))

@@ -5,6 +5,7 @@ import FrenCore.Recursion
 import FrenCore.SeqElems
 import FrenCore.SubsetTypes
 import FrenCore.Table
+import FrenCore.Text
 import Lean.Data.Name
 -- keep-sorted end
 
@@ -1307,7 +1308,7 @@ theorem queryLogic_unprojected (k : CheckKind) (e q projects : Bool) :
 /-- Whether the SMT-LIB text `f` projects a relation, which only a query in
 higher-order logic may (`queryLogic`). A string literal that spells it makes
 the query higher-order, which costs time, never an answer. -/
-def projectsRelation (f : String) : Bool := f.contains "rel.project"
+def projectsRelation (f : String) : Bool := occursIn "rel.project" f
 
 #guard projectsRelation "((_ rel.project 0) |r|)"
 #guard !projectsRelation "(rel.join |r| |s|)"
@@ -1327,7 +1328,7 @@ match in a comment, as a hypothesis's name, or in a string literal counts
 too, which errs toward not asking the query: a false positive is an
 internal `Unknown`, never a wrong answer. -/
 def hasQuantifier (f : String) : Bool :=
-  ["(forall (", "(exists ("].any fun q => (f.splitOn q).length > 1
+  ["(forall (", "(exists ("].any (occursIn · f)
 
 #guard hasQuantifier "(forall ((x Int)) x)"
 #guard hasQuantifier "(exists ((x Int)) x)"

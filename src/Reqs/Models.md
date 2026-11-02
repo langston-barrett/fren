@@ -257,7 +257,8 @@ form are in [the abstract syntax](Lang/Semantics.md#expressions):
 
 ```fren
 pub fn some_false?(i: Interp, env: Env, hypotheses: Expr<Id>) := match hypotheses {
-    Expr::Cons(h, rest) => eval(i, env, h) = Outcome::Defined(Value::False) or some_false?(i, env, rest),
+    Expr::Cons(h, rest) =>
+        eval(i, env, h) = Outcome::Defined(Value::False) or some_false?(i, env, rest),
     _ => false,
 }
 
