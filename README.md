@@ -174,7 +174,7 @@ power or expressivity, you can easily drop into Lean.
 
 ## Documentation
 
-TODO
+TODO: the reference is in `src/Reqs`.
 
 ## TODO
 
