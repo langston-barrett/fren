@@ -39,7 +39,9 @@ directly or as the field of a record, or compared with the bound name of
 a quantifier over one. Compiling a structural recursion's body, as
 testing does, keeps the value of its applications (`compiledRecursion`),
 and a pattern that `Pat.mayMatchCtor` says matches no variant of an index
-matches none (`mayMatchCtorSound`), which `Ex.dispatch` rests on. Last,
+matches none (`mayMatchCtorSound`), which `Ex.dispatch` rests on, and
+deciding whether a pattern matches before binding it gives the frame that
+matching gives (`matchSplitAgrees`), which `Ex.eval`'s arms rest on. Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -537,6 +539,24 @@ def mayMatchCtorSound : Array String := Id.run do
   if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
   return failures
 
+/-- How `Ex.eval` takes a `match` arm: `Pat.matches` decides whether the
+pattern matches, and `Pat.bindInto` binds it, as `Pat.matchInto` does
+both, on random patterns, values and frames. -/
+def matchSplitAgrees : Array String := Id.run do
+  let mut failures := #[]
+  let mut seed := 13
+  let mut matched := 0
+  for _ in [0:20000] do
+    let ((p, v, w), s) := (do return (← genPat 3, ← genVal 2, ← genVal 1)).run seed
+    seed := s
+    let fr : Array FrenCli.Eval.Binding := if v == w then #[] else #[(`y, some w)]
+    let split := if p.matches v then some (p.bindInto v fr) else none
+    if split.isSome then matched := matched + 1
+    if split != p.matchInto v fr then
+      failures := failures.push s!"`Pat.matches` and `Pat.bindInto` disagree with `Pat.matchInto` on {repr v}"
+  if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
+  return failures
+
 /-- The recursion `g(a, b)` of `compiledRecursion`: a `match` on `a`, an
 `E`, whose first arm binds `b`, which shadows the parameter, the second
 reads the parameter, and the third applies `g` again. -/
@@ -695,7 +715,7 @@ def constantOfRecursion : Bool :=
 #guard constantOfRecursion
 
 #eval show IO Unit from do
-  let failures := run ++ runInterp ++ mayMatchCtorSound ++ compiledRecursion
+  let failures := run ++ runInterp ++ mayMatchCtorSound ++ matchSplitAgrees ++ compiledRecursion
   unless failures.isEmpty do
     throw (IO.userError s!"`lang::eval` and `Ex.eval` disagree:\n{"\n".intercalate (failures.toList.take 5)}")
 

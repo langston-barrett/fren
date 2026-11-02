@@ -152,20 +152,30 @@ of `c`. The search goes back past every variable after it without trying
 their other candidates, and, if `c` is empty, fails. -/
 def resumesAt (c k : Nat) : Bool := c.testBit k && c < 2 ^ (k + 1)
 
-/-! Both as they run: `2 ^ i` is computed with big integers, `1 <<< i`
-by a shift, and they are equal (`Nat.one_shiftLeft`). -/
+/-- The powers of two below `2 ^ 64`, computed once. -/
+def pow2Table : Array Nat := Array.ofFn (n := 64) fun j => 2 ^ j.val
+
+/-- `2 ^ i` (`pow2_eq`), read from `pow2Table` when it is there. Both
+`2 ^ i` and `1 <<< i` are computed with big integers, which allocate, even
+when the result is small. -/
+def pow2 (i : Nat) : Nat := if h : i < pow2Table.size then pow2Table[i] else 2 ^ i
+
+theorem pow2_eq (i : Nat) : pow2 i = 2 ^ i := by
+  unfold pow2; split <;> simp [pow2Table]
+
+/-! Both as they run, by `pow2`. -/
 
 def conflictOfImpl (i : Nat) (equated : Nat) (rejections : List Nat) : Nat :=
-  rejections.foldl (· ||| ·) equated % (1 <<< i)
+  rejections.foldl (· ||| ·) equated % pow2 i
 
 @[csimp] theorem conflictOf_eq_impl : @conflictOf = @conflictOfImpl := by
   funext i equated rejections
-  simp [conflictOf, conflictOfImpl, Nat.one_shiftLeft]
+  simp [conflictOf, conflictOfImpl, pow2_eq]
 
-def resumesAtImpl (c k : Nat) : Bool := c.testBit k && c < 1 <<< (k + 1)
+def resumesAtImpl (c k : Nat) : Bool := c.testBit k && c < pow2 (k + 1)
 
 @[csimp] theorem resumesAt_eq_impl : @resumesAt = @resumesAtImpl := by
   funext c k
-  simp [resumesAt, resumesAtImpl, Nat.one_shiftLeft]
+  simp [resumesAt, resumesAtImpl, pow2_eq]
 
 end FrenCli.Eval
