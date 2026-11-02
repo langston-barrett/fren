@@ -1,2 +1,5 @@
 -- `const_is_empty`, which has no fix.
-proc c(x: Int): (p?, q?) { ensure r1: p? iff "ab".len = 0 ensure r2: q? iff {x}.card > 0 }
+proc c(x: Int): (p?, q?) {
+    ensure r1: p? iff "ab".len = 0
+    ensure r2: q? iff {x}.card > 0
+}

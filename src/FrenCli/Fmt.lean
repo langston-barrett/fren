@@ -15,8 +15,10 @@ decides whether each list or block is on one line or has one element to a
 line (`fmt::list_layout`), from the inside out whether it may be on one
 line, and from the outside in whether its line fits, where it is its
 line's expression (`fmt::own_line`), and for a block, whether its line
-continues its item (`fmt::continued`). It keeps the other line breaks. It decides, for each
-line, its indentation (`fmt::indent`), the spaces between its tokens
+continues its item (`fmt::continued`). A line break that a list decides
+before an element goes before the comments that start the element's line
+(`fmt::break_before`). It keeps the other line breaks. It decides, for
+each line, its indentation (`fmt::indent`), the spaces between its tokens
 (`fmt::space`), where its trailing comment goes (`fmt::comment_column`),
 and how many blank lines precede it (`fmt::blank_lines`); and it adds or
 removes the trailing commas of lists (`fmt::trailing_comma`). The parser
@@ -151,6 +153,11 @@ def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (
 (`fmt::continued`), from its first token, if it has one before the block,
 and the first tokens of the items that the block is in. -/
 def continuedLine (first : Option Nat) (items : List Nat) : Bool := !(first.any items.contains)
+
+/-- How many of the `comments` just before an element on its line the line
+break that its list decides goes before (`fmt::break_before`): all of them
+if the first starts its line, and otherwise none. -/
+def breakBefore (comments : Nat) (startsLine : Bool) : Nat := if startsLine then comments else 0
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -434,7 +441,8 @@ structure Line where
   commentCol : Nat := 0
   /-- The line of the source it starts on. -/
   line : Nat
-  /-- Its last piece opens a bracket that indents the lines after it. -/
+  /-- Its last piece opens a bracket that indents the lines after it, or is
+  a record update's `with`. -/
   endsOpen : Bool := false
   deriving Inhabited
 
@@ -463,15 +471,39 @@ def Line.width (l : Line) : Nat := ((l.render.splitOn "\n").getLast?.getD "").le
 /-- Where a line break between two pieces is decided by a list or block:
 after its opening bracket, after the comma that ends one of its elements
 (for a block, before each member that follows another), or before its
-closing bracket. -/
+closing bracket, or where it never has one. -/
 inductive Role where
   | afterOpen
   | afterComma
   | beforeClose
-  /-- After the `{` of a record update, before the record it updates: never
-  a line break. -/
+  /-- After the `{` of a record update, before the record it updates. -/
   | joined
+  /-- Before a block's `{`. -/
+  | blockBrace
   deriving BEq, Inhabited
+
+/-- The gap is between two elements or members. -/
+def Role.betweenElements : Role → Bool
+  | .afterComma => true
+  | _ => false
+
+/-- A vertical list or block ends a line at the gap. -/
+def Role.vertical : Role → Bool
+  | .afterOpen | .afterComma | .beforeClose => true
+  | .joined | .blockBrace => false
+
+/-- Whether a line ends at a gap that a list or block of layout `vertical`
+decides (`fmt::line_break`), from the gap's `blank` lines, whether it is
+between two blocks of a Markdown spec, whether a line comment ends the line
+before it, and whether a comment that starts its line follows it. A line
+must end there whatever the layout after a line comment, before such a
+comment, between blocks, and at a blank line between two elements or
+members. Otherwise a vertical list's or block's line breaks are after its
+opening bracket, between its elements and before its closing bracket, and
+there is none after a record update's `{` or before a block's, so the
+blank lines in those gaps go. -/
+def lineBreak (role : Role) (vertical boundary afterLineComment commentStarts : Bool) (blank : Nat) : Bool :=
+  boundary || afterLineComment || commentStarts || (role.betweenElements && blank > 0) || (vertical && role.vertical)
 
 /-- What the layout of a list or block is decided from: each element's
 width on one line and whether it cannot be written on one line, and the
@@ -603,23 +635,38 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   let inBreak (i : Nat) : Bool := i > 0 && placed[i]!.2.isSome
   let boundary (i : Nat) : Bool := i == 0 || segment pieces[i]!.startLine != segment pieces[i - 1]!.endLine
   let blankIn (i : Nat) : Nat := if boundary i then 0 else placed[i]!.2.getD 0
+  -- The piece before which a list or block decides the line break before
+  -- the element that starts at piece `t`: before the comments that start
+  -- its line, if only comments come before it on its line
+  -- (`fmt::break_before`).
+  let elementBreak (t : Nat) : Nat := Id.run do
+    let mut n := 0
+    while n < t && isComment (t - n - 1) && pieces[t - n - 1]!.endLine == pieces[t - n]!.startLine do n := n + 1
+    return t - breakBefore n (n > 0 && inBreak (t - n))
   -- The gaps whose line breaks a list or block decides: each is before a
-  -- token.
+  -- token, or before the comments that start its line.
   let mut governed : Array (Option (Nat × Role)) := Array.replicate pieces.size none
   for h : c in [0:lists.size] do
     let b := lists[c]
+    -- A block's `{` goes on the line before it, as rustfmt puts a
+    -- function's `{` on the line of its signature.
+    if b.kind == .members && b.opening > 0 then governed := governed.set! (pieceAt b.opening) (some (c, .blockBrace))
     if b.closing == b.opening + 1 then continue
-    governed := governed.set! (pieceAt (b.lead + 1)) (some (c, .afterOpen))
+    governed := governed.set! (elementBreak (pieceAt (b.lead + 1))) (some (c, .afterOpen))
     if b.lead != b.opening then governed := governed.set! (pieceAt (b.opening + 1)) (some (c, .joined))
     for k in b.commas do
-      if !trailing.contains k then governed := governed.set! (pieceAt (k + 1)) (some (c, .afterComma))
+      if !trailing.contains k then governed := governed.set! (elementBreak (pieceAt (k + 1))) (some (c, .afterComma))
     governed := governed.set! (pieceAt b.closing) (some (c, .beforeClose))
-  -- The gaps where a line must end whatever the layout: between segments,
-  -- after a line comment, where the source breaks the line and no list
-  -- decides, and at a blank line between two elements.
-  let forced (i : Nat) : Bool :=
-    boundary i || (i > 0 && lineComment (i - 1)) || (governed[i]!.isNone && inBreak i)
-      || (governed[i]! matches some (_, .afterComma) && blankIn i > 0)
+  -- Whether a line ends before piece `i` if the list or block that decides
+  -- its gap, if any, is `vertical` (`fmt::line_break`): where none decides,
+  -- exactly where the source breaks the line, or between segments or after
+  -- a line comment.
+  let breaksAt (i : Nat) (vertical : Bool) : Bool :=
+    match governed[i]! with
+    | some (_, r) => lineBreak r vertical (boundary i) (i > 0 && lineComment (i - 1)) (inBreak i && isComment i) (blankIn i)
+    | none => boundary i || (i > 0 && lineComment (i - 1)) || inBreak i
+  -- The gaps where a line must end whatever the layout.
+  let forced (i : Nat) : Bool := breaksAt i false
   -- The width of pieces `a` to `b`, exclusive, on one line.
   let flatWidth (a b : Nat) : Nat := Id.run do
     let mut w := 0
@@ -668,7 +715,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     let mut follows := #[]
     let mut j := i + 1
     while j < pieces.size do
-      if isComment j || forced j || governed[j]!.isSome then break
+      if isComment j || forced j || governed[j]!.any (·.2 != .blockBrace) then break
       w := w + pieces[j]!.text.length + (if space kinds[j - 1]! kinds[j]! then 1 else 0)
       j := j + 1
       if let some k := pieces[j - 1]!.tok? then
@@ -702,7 +749,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   for h : k in [0:toks.size] do tokAt := tokAt.insert toks[k].span.start k
   for h : i in [0:pieces.size] do
     let p := pieces[i]
-    let brk := i == 0 || forced i || (governed[i]!.any fun (c, r) => r != .joined && vertical[c]!)
+    let brk := i == 0 || breaksAt i (governed[i]!.any fun (c, _) => vertical[c]!)
     -- Token `k` closes the innermost open bracket, which indents.
     let closesTop (k : Nat) : Bool :=
       openerOf[k]?.any fun o => stack.head?.any fun (t, b, l, _) => t == o && bracketIndents b l
@@ -730,7 +777,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let start := match next? with
         | some (k, j) =>
           if closesTop k then LineStart.closing
-          else if lay.starts.contains k || governed[j]!.any (fun (_, r) => r == .afterOpen || r == .afterComma) then .starting
+          else if lay.starts.contains k
+              || [i, j].any (governed[·]!.any fun (_, r) => r matches .afterOpen | .afterComma | .blockBrace) then
+            .starting
           else .continuing
         | none => .starting
       let columns := indent (stack.map (·.2)) start p.tok?.isNone
@@ -741,7 +790,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       out := out.push { blank := kept, indent := columns, pieces := #[], line := p.startLine }
       lineFirst := none
       continues := start == .continuing
-    let opens := p.tok?.any indents
+    -- A line that ends with a bracket that indents, or with a record
+    -- update's `with`, has no blank line after it (`fmt::blank_lines`).
+    let opens := p.tok?.any fun k => indents k || listAtLead.contains k
     out := out.modify (out.size - 1) fun l =>
       { l with pieces := l.pieces.push (kinds[i]!, p.text), commentCol := if p.tok?.isNone then p.col else l.commentCol
                endsOpen := opens }
@@ -796,7 +847,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
           let (after, follows) := suffix vertical b.kind close
           let own := ownLine b.kind follows toks[headOf b]!.span.start toks[b.closing]!.span.stop (holders b)
           -- Whether the line continues an item (`fmt::continued`): its first
-          -- token does not start an item that the list is in.
+          -- token does not start an item that the block is in.
           let continued := continuedLine lineFirst b.items.toList
           -- After a block's `}`, a comment on its line counts too.
           let after := if b.kind == .members then after + trailingComment close else after

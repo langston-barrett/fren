@@ -1,15 +1,15 @@
 warning[F0726]: this `match` only tests which of its patterns its scrutinee matches
  --> test/cli/lints/style/f0726_match_like_membership.fren:5:22
   |
-5 |     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
-  |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ each arm is `true` or `false`
+5 |     ensure r: p? iff match e {
+  |                      ^^^^^^^^^ each arm is `true` or `false`
   |
   = help: `fren fix` can fix this
   = note: `match_like_membership` is `warn` by default
   = help: to allow it, `set_option fren.lint.match_like_membership "allow"`
 help: write it as an equation
   |
-5 -     ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
+5 -     ensure r: p? iff match e {
 5 +     ensure r: p? iff e != E::B
   |
 
