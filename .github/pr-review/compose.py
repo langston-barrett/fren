@@ -1,13 +1,15 @@
-"""Writes the reviewer's brief: brief.md, with the review's facts and the
-pull request's title and description.
+"""Writes the reviewer's brief: AGENTS.md's "Reviews by separate agents"
+and "Keeping the front ends together", verbatim, then brief.md, which says
+what differs on CI, with the review's facts and the pull request's title
+and description.
 
-Usage: compose.py TEMP_DIR KIND HOSTED
+Usage: compose.py TEMP_DIR KIND
 
-Reads TEMP_DIR/pr.json, and for a light check TEMP_DIR/previous-review.md
-and TEMP_DIR/author-comment.md (prepare.sh, kind.py), and the facts in
-the environment: REPO, PR, BRANCH, HEAD, BASE, MERGE, RUN and PREVIOUS.
-HOSTED is `true` if this checkout's `.olean` files need no build. Prints
-the brief.
+Run by prepare.sh in the workflow's own checkout, whose AGENTS.md it
+reads, never the pull request's. Reads TEMP_DIR/pr.json, and for a light
+check TEMP_DIR/previous-review.md and TEMP_DIR/request.md (kind.py), and
+the facts in the environment: REPO, PR, HEAD, BASE, RUN and PREVIOUS.
+Prints the brief.
 """
 
 import json
@@ -16,69 +18,61 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+SECTIONS = ["Reviews by separate agents", "Keeping the front ends together"]
 
-HOSTED = {
-    "true": (
-        "This run restored `main`'s `.lake`, and `lake build --no-build Fren` "
-        "found it up to date with this checkout, so `lake env "
-        "/tmp/fren_test/fren_test --job ui FILE` runs them."
-    ),
-    "false": (
-        "This checkout's `.olean` files would need a build, so a probe of "
-        "those jobs is a suggestion in a finding, not something to run."
-    ),
-}
+FULL = "This is a full review of the head."
 
-FULL = """# The kind of review
+LIGHT = """This is a light check, not a full review: the "{what}" check that the
+process above describes. The pull request's previous head, `{previous}`,
+has a review, quoted below, and the comment quoted below it says that
+the new head `{head}` changes it only by {change}. `pre-merge` passed on
+the new head: the workflow runs only then.
 
-This is a full review of the head."""
-
-LIGHT = """# The kind of review
-
-This is a light check, not a full review. The pull request's previous
-head, `{previous}`, has a review, below, and the author's last comment,
-below it, says that the new head `{head}` changes it only by {what}.
 {how}
 
-The rest of this brief applies to the changes that you check. If the new
-head changes anything else, do a full review of it instead,
-as this brief describes, and give it a full review's first line: any
-change beyond {what} gets a full review.
+If the new head changes anything else, do a full review of it instead,
+and give it a full review's first line.
 
 The review of `{previous}`:
 
 {review}
 
-The author's comment:
+The comment that asks for the check:
 
-{comment}"""
+{request}"""
 
 HOW = {
     "fixes": (
-        "Read `git diff {previous} {head}`, or, if the head was also rebased "
-        "(`git merge-base --is-ancestor {previous} {head}` fails), `git "
-        "range-diff OLD_BASE..{previous} {base}..{head}`, where OLD_BASE is "
-        "`git merge-base {previous} {base}`. Confirm that each change answers "
-        "a finding of the previous review that the comment lists, that it "
+        "Read `.review/fixes.patch`, the diff from the previous head to the "
+        "new one (absent if the new head was also rebased), and "
+        "`.review/range-diff.txt`. Confirm that each change answers a "
+        "finding of the previous review that the comment lists, that it "
         "answers it well, and that nothing else changed."
     ),
     "rebase": (
-        "Read `git range-diff OLD_BASE..{previous} {base}..{head}`, where "
-        "OLD_BASE is `git merge-base {previous} {base}`. Confirm that the "
-        "patch is unchanged apart from the resolutions of conflicts that the "
-        "comment lists, and judge those resolutions."
+        "Read `.review/range-diff.txt`, the range-diff of the previous "
+        "head's patch against the new head's. Confirm that the patch is "
+        "unchanged apart from the resolutions of conflicts that the comment "
+        "lists, and judge those resolutions."
     ),
 }
 
-WHAT = {"fixes": "fixes of that review's findings", "rebase": "a rebase"}
+CHANGE = {"fixes": "fixes of that review's findings", "rebase": "a rebase"}
 
 
 def quote(text):
     return "\n".join("> " + line for line in text.strip().splitlines())
 
 
+def sections(agents):
+    """The top-level sections of AGENTS.md that the brief includes."""
+    parts = re.split(r"^(?=# )", agents, flags=re.MULTILINE)
+    found = {p.splitlines()[0][2:].strip(): p.strip() for p in parts if p.startswith("# ")}
+    return "\n\n".join("#" + found[name] for name in SECTIONS)
+
+
 def main():
-    temp, kind, hosted = sys.argv[1:]
+    temp, kind = sys.argv[1:]
     env = os.environ
     with open(f"{temp}/pr.json") as f:
         pr = json.load(f)
@@ -89,19 +83,19 @@ def main():
     else:
         with open(f"{temp}/previous-review.md") as f:
             review = f.read()
-        with open(f"{temp}/author-comment.md") as f:
-            comment = f.read()
-        facts = {"previous": env["PREVIOUS"], "head": head, "base": env["BASE"]}
+        with open(f"{temp}/request.md") as f:
+            request = f.read()
         section = LIGHT.format(
-            what=WHAT[kind], how=HOW[kind].format(**facts),
-            review=quote(review), comment=quote(comment), **facts)
+            what=f"{kind} only", change=CHANGE[kind], how=HOW[kind], previous=env["PREVIOUS"],
+            head=head, review=quote(review), request=quote(request))
         verdicts.insert(1, f"Review of {head}: no blocking issues ({kind} only)")
+    with open("AGENTS.md") as f:
+        agents = sections(f.read())
     with open(f"{HERE}/brief.md") as f:
         brief = f.read()
     facts = {
-        "REPO": env["REPO"], "PR": env["PR"], "BRANCH": env["BRANCH"], "HEAD": head,
-        "BASE": env["BASE"], "MERGE": env["MERGE"], "RUN": env["RUN"],
-        "HOSTED": HOSTED[hosted], "KIND_SECTION": section,
+        "REPO": env["REPO"], "PR": env["PR"], "HEAD": head, "BASE": env["BASE"],
+        "RUN": env["RUN"], "AGENTS": agents, "KIND": section,
         "VERDICTS": "\n".join(f"    {v}" for v in verdicts),
         "TITLE": pr["title"], "BODY": quote(pr["body"] or "(no description)"),
     }

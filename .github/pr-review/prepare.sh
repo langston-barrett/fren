@@ -1,29 +1,38 @@
 #!/usr/bin/env bash
-# Prepares the review of a pull request's head that `pre-merge` passed on:
-# finds the pull request and that run, downloads the binaries that the run
-# built to /tmp/fren and /tmp/fren_test, checks out the merge commit that
-# they were built from, and decides the kind of review (kind.py). Writes
-# its decisions to `$GITHUB_OUTPUT`, and, for a run with nothing to
-# review, `kind=skip` with the reason.
+# The `prepare` job of pr-review, which holds no secret and runs nothing
+# that the pull request controls. In a checkout of the workflow's own
+# commit, it finds the pull request and the passing `pre-merge` run of its
+# head, fetches the head's commits as objects (it checks none of them
+# out), decides the kind of review (kind.py), and writes into
+# $RUNNER_TEMP/context the texts that the reviewer reads: the brief
+# (compose.py), the diff and log of the head, and for a light check the
+# diff against the previous head. Writes its decisions to
+# `$GITHUB_OUTPUT`, and `kind=skip` with the reason when there is nothing
+# to review.
+#
+# Git only reads the pull request's objects here: diffs run with
+# `--no-ext-diff --no-textconv`, and attributes and configuration come from
+# the workflow's own checkout.
 #
 # Reads EVENT (the workflow's event), PR_INPUT (the pull request of a run
 # by hand), RUN_ID, RUN_SHA, RUN_BRANCH and RUN_PULL (the `pre-merge` run
-# of a workflow_run, its head, its branch and its pull request), REPO,
-# GH_TOKEN, and
-# TRUSTED, the directory of this script, from the workflow's own commit
-# rather than from the checkout.
+# of a workflow_run, its head, its branch and its pull request), REPO and
+# GH_TOKEN.
 set -euo pipefail
 
+here=$(dirname "$0")
+context="$RUNNER_TEMP/context"
+mkdir -p "$context"
 out() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
 skip() { echo "Nothing to review: $1"; out kind skip; out reason "$1"; exit 0; }
-# Fetches with the token, which the checkout does not keep, so that the
-# reviewer's git has no credentials.
+# Fetches with the token, which the checkout does not keep.
 auth_fetch() {
   local basic
   basic=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
   git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic" \
     fetch --quiet origin "$@"
 }
+diff() { git diff --no-ext-diff --no-textconv "$@"; }
 
 if [ "$EVENT" = workflow_run ]; then
   pr=$RUN_PULL
@@ -36,17 +45,14 @@ if [ "$EVENT" = workflow_run ]; then
 else
   pr=$PR_INPUT
 fi
-if [ -z "$pr" ]; then
-  skip "the pre-merge run $RUN_ID is of no pull request"
-fi
+[ -n "$pr" ] || skip "the pre-merge run $RUN_ID is of no pull request"
 gh pr view "$pr" --repo "$REPO" \
-  --json number,state,isDraft,author,headRefOid,headRefName,title,body,comments,commits \
+  --json number,state,isDraft,author,headRefOid,headRefName,title,body,comments \
   > "$RUNNER_TEMP/pr.json"
 head=$(jq -r .headRefOid "$RUNNER_TEMP/pr.json")
 branch=$(jq -r .headRefName "$RUNNER_TEMP/pr.json")
 out pr "$pr"
 out head "$head"
-out branch "$branch"
 
 if [ "$EVENT" = workflow_run ]; then
   [ "$(jq -r .state "$RUNNER_TEMP/pr.json")" = OPEN ] || skip "#$pr is not open"
@@ -67,49 +73,36 @@ else
 fi
 out run "$run"
 
-gh run download "$run" --repo "$REPO" -n "fren-$head" -D /tmp/fren
-gh run download "$run" --repo "$REPO" -n "fren_test-$head" -D /tmp/fren_test
-chmod +x /tmp/fren/fren /tmp/fren_test/fren_test
-merge=$(cat /tmp/fren/MERGE_SHA)
-base=$(sed -n 1p /tmp/fren/MERGE_PARENTS)
-[ "$(sed -n 2p /tmp/fren/MERGE_PARENTS)" = "$head" ] || {
-  echo "::error::The binaries of run $run are not of $head."
-  exit 1
-}
-out merge "$merge"
+auth_fetch "$head"
+base=$(git merge-base origin/main "$head")
 out base "$base"
-
-# GitHub moves the pull request's merge ref when `main` moves, so the merge
-# commit may be gone; merging the head into `main`'s commit, as the
-# artifact's parents name them, rebuilds the same tree.
-auth_fetch "$base" "$head"
-if auth_fetch "$merge"; then
-  git checkout --quiet --detach "$merge"
-else
-  git checkout --quiet --detach "$base"
-  git -c user.name=pr-review -c user.email=pr-review@invalid \
-    merge --quiet --no-edit "$head"
-  echo "::notice::Rebuilt the merge commit $merge as $(git rev-parse HEAD)."
-fi
-git log -1 --format='Checked out %H (%s)'
 
 # An update from `main` (`gh pr update-branch`) of a reviewed head needs no
 # new review: a merge of the reviewed head and a commit of `main`, with the
-# tree that merging them gives, so without a resolution of its own.
-if [ "$EVENT" = workflow_run ] \
-  && [ "$(git rev-list --parents -n 1 "$head" | wc -w)" = 3 ]; then
-  reviewed=$(git rev-parse "$head^1")
-  from=$(git rev-parse "$head^2")
-  if jq -e --arg sha "$reviewed" \
-      'any(.comments[]; .body | ltrimstr("\n") | startswith("Review of " + $sha + ":"))' \
-      "$RUNNER_TEMP/pr.json" > /dev/null \
-    && git merge-base --is-ancestor "$from" origin/main \
-    && [ "$(git merge-tree --write-tree "$reviewed" "$from")" = "$(git rev-parse "$head^{tree}")" ]; then
-    skip "$head only merges main's $from into the reviewed head $reviewed"
-  fi
+# tree that merging them gives, so with no resolution of its own. Several
+# updates in a row are followed back, up to 10; a chain that reaches no
+# reviewed head gets a review. The old review stands, so the message says
+# whether it found blocking issues: a skip is not an approval.
+if [ "$EVENT" = workflow_run ]; then
+  commit=$head
+  for _ in $(seq 10); do
+    [ "$(git rev-list --parents -n 1 "$commit" | wc -w)" = 3 ] || break
+    first=$(git rev-parse "$commit^1")
+    from=$(git rev-parse "$commit^2")
+    git merge-base --is-ancestor "$from" origin/main || break
+    [ "$(git merge-tree --write-tree "$first" "$from")" = "$(git rev-parse "$commit^{tree}")" ] || break
+    verdict=$(jq -r --arg sha "$first" \
+      '[.comments[].body | ltrimstr("\n") | select(startswith("Review of " + $sha + ":"))
+        | split("\n")[0] | ltrimstr("Review of " + $sha + ": ")] | last // empty' \
+      "$RUNNER_TEMP/pr.json")
+    if [ -n "$verdict" ]; then
+      skip "$head only merges main into $first, whose review stands: $verdict"
+    fi
+    commit=$first
+  done
 fi
 
-python3 -I "$TRUSTED/kind.py" "$RUNNER_TEMP/pr.json" "$EVENT" "$RUNNER_TEMP" > "$RUNNER_TEMP/kind"
+python3 -I "$here/kind.py" "$RUNNER_TEMP/pr.json" "$EVENT" "$RUNNER_TEMP" > "$RUNNER_TEMP/kind"
 kind=$(sed -n 's/^kind=//p' "$RUNNER_TEMP/kind")
 reason=$(sed -n 's/^reason=//p' "$RUNNER_TEMP/kind")
 previous=$(sed -n 's/^previous=//p' "$RUNNER_TEMP/kind")
@@ -123,5 +116,18 @@ fi
 [ "$kind" != skip ] || skip "$reason"
 echo "Review: $kind, since $reason"
 out kind "$kind"
-out reason "$reason"
-out previous "$previous"
+
+diff --stat "$base" "$head" > "$context/diff-stat.txt"
+diff "$base" "$head" > "$context/diff.patch"
+git log --no-decorate "$base..$head" > "$context/log.txt"
+if [ -n "$previous" ]; then
+  old_base=$(git merge-base origin/main "$previous")
+  git range-diff --no-ext-diff --no-textconv "$old_base..$previous" "$base..$head" \
+    > "$context/range-diff.txt"
+  if git merge-base --is-ancestor "$previous" "$head"; then
+    diff "$previous" "$head" > "$context/fixes.patch"
+  fi
+fi
+PR=$pr HEAD=$head BASE=$base RUN=$run PREVIOUS=$previous REPO=$REPO \
+  python3 -I "$here/compose.py" "$RUNNER_TEMP" "$kind" > "$context/brief.md"
+ls -l "$context"

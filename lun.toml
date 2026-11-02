@@ -12,9 +12,16 @@ name = "ttlint"
 name = "typos"
 configs = []
 
+# lun's default for zizmor, `.github/**/*.yml`, matches no file, so zizmor
+# never ran. Every YAML file of the repository is GitHub's, but for
+# zizmor's own configuration, which zizmor does not find by itself when it
+# is given files.
 [[tool]]
 name = "zizmor"
-configs = []
+cmd = "zizmor --config zizmor.yml --"
+configs = ["zizmor.yml"]
+files = ["*.yml"]
+ignore = ["zizmor.yml"]
 
 [[formatter]]
 name = "keep-sorted"

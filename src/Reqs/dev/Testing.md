@@ -977,16 +977,18 @@ those of `Fren` and its dependencies came to some 340 MB, 96 MB
 compressed, on macOS.
 
 The `pr-review` workflow reviews each pull request's head with Claude once
-`pre-merge` has passed on it, as the reviews by separate agents do: a full
-review, or a light check when the author's last comment starts with
+`pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
+or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
-an update from `main` of a reviewed head. Its reviewer probes with these
-binaries, in a checkout of their merge commit, and builds nothing. It
-runs the hosted front end's jobs only when `main`'s restored `.lake` is up
-to date with the checkout (`lake build --no-build Fren`); otherwise it
-suggests them in a finding. The workflow posts the review as one comment,
-whose first line it checks. Run by hand (`gh workflow run pr-review -f
-pr=N`), it posts only on the pull request that its `post` input names.
+an update from `main` of a reviewed head. Its review is static and
+advisory. No job of it runs code that the pull request controls, so it
+does not probe with these binaries: the reviewer reads a checkout of the
+head and the diffs that the workflow wrote, without a shell, and suggests
+probes in its findings. The workflow posts the review as one comment, once
+its check of the review passes: the first line, a mark on each finding
+that agrees with the verdict, and no credentials or names of machines.
+Run by hand (`gh workflow run pr-review -f pr=N`), it posts only on the
+pull request that its `post` input names.
 
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
