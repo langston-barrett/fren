@@ -70,10 +70,11 @@ jobs:
     - uses: ./.github/actions/lake
       with:
         sha: ${{ steps.base.outputs.sha }}
-    # The library, the regression tests, Fren's own requirements (only
-    # elaborated: shard 0 checks them with the binary), the links
-    # from Fren's code to them, the examples and the binaries; warnings,
-    # including inconclusive checks and untraced requirements, fail it.
+    # The matrix's `targets`: on one machine, Fren's own requirements (only
+    # elaborated: shard 0 checks them with the binary) and the links from
+    # Fren's code to them; on the other, the library, the regression tests,
+    # the examples and the binaries. Warnings, including inconclusive
+    # checks and untraced requirements, fail it.
     - run: |
         read -ra targets <<< "$TARGETS"
         touch "$RUNNER_TEMP/build-start"

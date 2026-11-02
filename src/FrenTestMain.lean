@@ -2441,24 +2441,45 @@ def specsOf (src : String) : Array String :=
 #guard specsOf "-- `#fren_md` with no file\n" == #[]
 
 /-- The default targets of the lakefile `lakefile`: the names of its
-`lean_lib`s and `lean_exe`s marked `@[default_target]`. -/
-def defaultTargets (lakefile : String) : Array String :=
-  (lakefile.splitOn "\n").toArray.filterMap fun line => do
-    let decl ← line.dropPrefix? "@[default_target] "
-    let rest ← (decl.dropPrefix? "lean_lib ").orElse fun _ => decl.dropPrefix? "lean_exe "
-    (rest.toString.splitOn " ").head?
+`lean_lib`s and `lean_exe`s marked `@[default_target]`, the attribute on
+the declaration's line or on a line of its own before it; or, as an
+error, the first `@[default_target]` that it cannot read, so that no
+default target is missed. -/
+def defaultTargets (lakefile : String) : Except String (Array String) := do
+  let lines := (lakefile.splitOn "\n").toArray
+  let mut out := #[]
+  for i in [0:lines.size] do
+    let line := lines[i]!.trimAscii.toString
+    unless line.startsWith "@[default_target]" do continue
+    let after := (line.drop "@[default_target]".length).trimAscii.toString
+    let decl := if after.isEmpty then ((lines[i + 1]?).getD "").trimAscii.toString else after
+    let rest := (decl.dropPrefix? "lean_lib ").orElse fun _ => decl.dropPrefix? "lean_exe "
+    let name := (rest.bind fun r => (r.toString.splitOn " ").head?).getD ""
+    unless !name.isEmpty && name.all (fun c => c.isAlphanum || c == '_') do
+      throw s!"lakefile.lean:{i + 1}: `lake test`'s `libraries` job cannot read the default target `{line}`"
+    out := out.push name
+  return out
 
-#guard defaultTargets "@[default_target] lean_lib A where\n  x := 1\nlean_lib B\n@[default_target] lean_exe c where\n" == #["A", "c"]
+#guard defaultTargets "@[default_target] lean_lib A where\n  x := 1\nlean_lib B\n@[default_target] lean_exe c where\n" == .ok #["A", "c"]
+#guard defaultTargets "@[default_target]\nlean_lib A where\n" == .ok #["A"]
+#guard (defaultTargets "@[default_target] lean_lib «a b» where\n" matches .error _)
+#guard (defaultTargets "@[default_target] target x where\n" matches .error _)
 
-/-- The targets that the workflow `workflow` builds in its matrix: the
-names after each `targets:`. -/
-def matrixTargets (workflow : String) : Array String :=
-  (workflow.splitOn "\n").toArray.flatMap fun line =>
-    match line.trimAscii.toString.dropPrefix? "targets: " with
-    | some rest => (rest.toString.splitOn " ").toArray.filter (!·.isEmpty)
-    | none => #[]
+/-- The targets that the job `build` of the workflow `workflow` builds in
+its matrix: the names after each `targets:` from the job's line to the
+next job's (a line indented by two spaces). -/
+def matrixTargets (workflow : String) : Array String := Id.run do
+  let mut out := #[]
+  let mut inBuild := false
+  for line in workflow.splitOn "\n" do
+    if line.startsWith "  " && !line.startsWith "   " && !line.startsWith "  #" then
+      inBuild := line == "  build:"
+    else if inBuild then
+      if let some rest := line.trimAscii.toString.dropPrefix? "targets: " then
+        out := out ++ (rest.toString.splitOn " ").toArray.filter (!·.isEmpty)
+  return out
 
-#guard matrixTargets "      matrix:\n        - part: a\n          targets: A B\n        - part: b\n          targets: c\n" == #["A", "B", "c"]
+#guard matrixTargets "jobs:\n  build:\n    strategy:\n      matrix:\n        - part: a\n          targets: A B\n        - part: b\n          targets: c\n  test:\n    targets: D\n" == #["A", "B", "c"]
 
 /-- Each copy of a root's imports is the root's; no module is in the globs
 of two libraries; each module of Reqs reads only the specs that its
@@ -2470,10 +2491,13 @@ def libraries : IO (Array String) := do
   let mut failures := #[]
   -- `lake build --wfail` runs on two machines, each building some of the
   -- default targets, so that a new one would otherwise go unbuilt.
-  let want := (defaultTargets (← IO.FS.readFile "lakefile.lean")).qsort (· < ·)
   let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
-  if want != built then
-    failures := failures.push s!".github/workflows/pre-merge.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
+  match defaultTargets (← IO.FS.readFile "lakefile.lean") with
+  | .error e => failures := failures.push e
+  | .ok ts =>
+    let want := ts.qsort (· < ·)
+    if want != built then
+      failures := failures.push s!".github/workflows/pre-merge.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
   for (root, copies) in rootCopies do
     let ofRoot (ms : Array String) := (ms.filter (·.startsWith s!"{root}.")).qsort (· < ·)
     let want := ofRoot (← importsOf root)
