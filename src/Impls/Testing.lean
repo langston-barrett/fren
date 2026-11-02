@@ -2,6 +2,7 @@
 import Fren.Impl
 import Fren.Trace
 import FrenTest.Jobs
+import FrenTest.SpecTimeout
 import FrenTest.Ui
 import Reqs.Testing
 -- keep-sorted end
@@ -18,7 +19,8 @@ its answer passes its check, which shows that it is right
 (`checkAssigns_sound`, `refutesExpected_sound`, `refutesGiven_sound`), and
 from the search of `assignable` otherwise (`assignable_iff`).
 `testing::portable_name`, proved of `Fren.portableName`, the name of a file
-that a definition's `source?` keeps. `testing::fresh` rests on Lake, so it
+that a definition's `source?` keeps. `testing::fuzz_overdue`, proved of
+`FrenTest.SpecTimeout.overdue`, for any times. `testing::fresh` rests on Lake, so it
 is trusted. -/
 
 namespace Fren.Impls.Testing
@@ -645,6 +647,17 @@ impl ui_check: testing::ui_file for (ds : List Diagnostic) (es : List Expectatio
   · cases x <;> cases gx <;> simp [exitFailures, Fren.Prelude.Option.some.x0] <;> omega
 
 end Matching
+
+-- The fuzzer's time limit on a spec, `FrenTest.SpecTimeout.overdue`.
+impl fuzz_overdue: testing::fuzz_overdue for (limit elapsed timedOut : Nat) {
+  limit := limit,
+  elapsed := elapsed,
+  timed_out := timedOut,
+  overdue? := FrenTest.SpecTimeout.overdue limit elapsed timedOut,
+} by
+  intro limit elapsed timedOut _
+  simp only [fren_spec, FrenTest.SpecTimeout.overdue, decide_eq_true_eq]
+  omega
 
 -- The name that `Fren.keptFileName` keeps, of the directory that Lean runs in.
 impl portable_name: testing::portable_name for (root file : String) {

@@ -5,6 +5,7 @@ import Fren.SeqElems
 import Fren.SmtTranslate
 import FrenCore.Check
 import FrenCore.Goals
+import FrenCore.SolverTime
 import FrenCore.Ty
 import Smt
 -- keep-sorted end
@@ -53,6 +54,12 @@ quantified formula cannot be evaluated (`Could not evaluate ... in
 getValue.`), which the model then holds as that formula: the warning is not
 an outcome, and only cvc5's own diagnostics are silenced. -/
 def quietOptions : List (String × String) := [("verbosity", "-1")]
+
+/-- Whether lean-smt's answer says that the query reached its time limit,
+whose time `Core.timeQuery` records, as the binary's `solveScript` does. -/
+def smtTimedOut : Smt.Result → Bool
+  | .unknown reason => Core.timedOutExplanation reason
+  | _ => false
 
 /-- Values for `Bool` variables come back as `True`/`False`. -/
 def fromModel (ty : Expr) (val : Expr) : Expr :=
@@ -767,15 +774,18 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         -- into `Int`s, revert a recursive definition's `let` and give it
         -- back as a `have`, which they cannot then introduce
         -- (`withRecursiveDefs`).
-        match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := true, intros := false
-                          -- `fmf-bound` right after the options both front ends set, as the
-                          -- binary sets it.
-                          -- lean-smt's logic, `ALL`, quantifies (`Core.quantifierOptions`).
-                          extraSolverOptions := Core.solverOptions true true ++ bounded
-                            ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
-                            ++ logic ++ cvc5Defaults
-                            ++ resourceLimitOptions (← getOptions) ++ quietOptions }
-                  mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs) with
+        -- The time of a query that reaches its time limit is recorded
+        -- (`Core.solverTimeoutMs`).
+        match ← Core.timeQuery smtTimedOut <|
+            Smt.smt { trust := true, model, timeout := some timeout, embeddings := true, intros := false
+                      -- `fmf-bound` right after the options both front ends set, as the
+                      -- binary sets it.
+                      -- lean-smt's logic, `ALL`, quantifies (`Core.quantifierOptions`).
+                      extraSolverOptions := Core.solverOptions true true ++ bounded
+                        ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
+                        ++ logic ++ cvc5Defaults
+                        ++ resourceLimitOptions (← getOptions) ++ quietOptions }
+              mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs) with
         | .sat (some m) =>
           let values := m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with

@@ -4,6 +4,7 @@ import FrenCli.QueryStore
 import FrenCli.SeqElems
 import FrenCore.Check
 import FrenCore.Goals
+import FrenCore.SolverTime
 import cvc5
 -- keep-sorted end
 
@@ -383,7 +384,10 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observ
       let out ← cmd.invoke solver sm
       if out.trimAscii.toString.startsWith "(error" then
         throw (.error out)
-    let res ← solver.checkSat
+    -- The time of a query that reaches its time limit is recorded
+    -- (`Fren.Core.solverTimeoutMs`).
+    let res ← Fren.Core.timeQuery (fun (res : cvc5.Result) => res.isUnknown &&
+      Fren.Core.timedOutExplanation (toString res.getUnknownExplanation)) solver.checkSat
     if res.isUnsat then return Outcome.unsat
     if !res.isSat then return .unknown s!"the solver returned unknown ({res.getUnknownExplanation})"
     if !wantModel then return .sat #[]

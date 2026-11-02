@@ -3,6 +3,7 @@ import Fren
 import FrenCli.Run
 import FrenTest.Frontends
 import FrenTest.Messages
+import FrenTest.SpecTimeout
 import Lean.Elab.Frontend
 -- keep-sorted end
 
@@ -2423,6 +2424,9 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   try IO.FS.removeFile path catch _ => pure ()
   return failures
 
+/-- How long a spec runs, in milliseconds, before it is reported as slow. -/
+def slowMs : Nat := 20000
+
 /-- What a worker found on one spec, one JSON object per line of the run's
 results file, so that a worker that crashes loses nothing. -/
 structure Outcome where
@@ -2438,6 +2442,10 @@ structure Outcome where
   /-- For each of `signatures`, the issue of its known kind
   (`knownIssue?`), or 0 if it is of none. -/
   issues : Array Nat := #[]
+  /-- How long the spec took, in milliseconds, and how much of that was in
+  solver queries that ended at their time limit (`Fren.Core.solverTimeoutMs`). -/
+  ms : Nat := 0
+  solverTimeoutMs : Nat := 0
   deriving ToJson, FromJson
 
 /-- A run's work files, named after the driver's process, so that runs
@@ -2449,6 +2457,23 @@ structure Run where
 def Run.results (r : Run) : System.FilePath := r.dir / s!"results-{r.id}.jsonl"
 def Run.progress (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.seed"
 def Run.spec (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.fren"
+/-- The worker's `Fren.Core.solverTimeoutMs`, which it writes as it grows. -/
+def Run.solver (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.solver"
+
+/-- Writes the worker's `Fren.Core.solverTimeoutMs` to `Run.solver` whenever
+it grows, until cancelled, on a thread of its own, so that it is written
+while a spec's check runs, or hangs. The file is replaced whole, so that
+the driver never reads half of it. -/
+def reportSolverTime (r : Run) : IO Unit := do
+  let mut last := 0
+  let tmp := r.solver.addExtension "tmp"
+  while !(← IO.checkCanceled) do
+    let ms ← Fren.Core.solverTimeoutMs.get
+    if ms != last then
+      IO.FS.writeFile tmp (toString ms)
+      IO.FS.rename tmp r.solver
+      last := ms
+    IO.sleep 100
 
 def record (r : Run) (o : Outcome) : IO Unit := do
   let h ← IO.FS.Handle.mk r.results .append
@@ -2459,15 +2484,19 @@ def record (r : Run) (o : Outcome) : IO Unit := do
 writing each one's outcome to the results file. -/
 unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
   let env ← loadFren
+  let reporter ← IO.asTask (prio := .dedicated) (reportSolverTime run)
   for i in [0:count] do
     let s := seed + i
-    IO.FS.writeFile run.progress (toString s)
+    -- The spec, and the time in queries that timed out before it.
+    let solver0 ← Fren.Core.solverTimeoutMs.get
+    IO.FS.writeFile run.progress s!"{s}\n{solver0}"
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let ran ← runFrontends env run.spec text
     let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
     let elapsed := (← IO.monoMsNow) - t0
-    if elapsed > 20000 then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s"
+    let timedOut := (← Fren.Core.solverTimeoutMs.get) - solver0
+    if elapsed > slowMs then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s, {timedOut / 1000}s of it in queries that timed out"
     let issues := found.map fun f => (knownIssue? mode (sharedStaticErrorLines ran.cli ran.hosted) found f).getD 0
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive"
       else if mode.avoidKnown && issues.all (· != 0) then "known" else "differ"
@@ -2483,9 +2512,11 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
       IO.eprintln s!"seed {s}: front ends differ{why}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
     record run { seed := s, status, flags := flags mode, errors := errs.toList.eraseDups.toArray,
-                 signatures := found.map signature, issues }
+                 signatures := found.map signature, issues, ms := elapsed, solverTimeoutMs := timedOut }
     -- Between specs, a crash is no spec's.
     IO.FS.writeFile run.progress ""
+  IO.cancel reporter
+  let _ ← IO.wait reporter
   return 0
 
 /-- Counts `x` in a tally. -/
@@ -2527,9 +2558,10 @@ def Outcome.kinds (o : Outcome) : String :=
     (if issue == 0 then "**new**: " else s!"#{issue}: ") ++ mdCell g)
 
 /-- A Markdown report of a run's outcomes, for the job's summary: how many
-specs of each outcome; each one that fails it, with its kinds; and each
-known kind, with its issue, how many specs had it, and their seeds. The
-specs are named as the run writes them. -/
+specs of each outcome; each one that fails it, with its kinds; each
+known kind, with its issue, how many specs had it, and their seeds; and
+each slow spec (`slowMs`), with how long it took in queries that timed
+out. The specs are named as the run writes them. -/
 def report (outcomes : Array Outcome) : String := Id.run do
   let n (st : String) := (outcomes.filter (·.status == st)).size
   let mut out := s!"{outcomes.size} specs: {n "differ"} differ in a kind that is not known, {n "crash"} crashed and \
@@ -2561,6 +2593,15 @@ def report (outcomes : Array Outcome) : String := Id.run do
   unless inconclusive.isEmpty do
     let seeds := ", ".intercalate (inconclusive.toList.map (toString ·.seed))
     out := out ++ s!"\nOnly in inconclusive results: seeds {seeds}.\n"
+  -- The slow specs, slowest first, with the time in queries that timed out,
+  -- which the time limit leaves out (`SpecTimeout.overdue`).
+  let slow := outcomes.filter (·.ms > slowMs) |>.qsort (·.ms > ·.ms)
+  unless slow.isEmpty do
+    out := out ++ "\n#### Slow specs\n\n| Seed | Flags | Outcome | Time | In queries that timed out |\n|---|---|---|---|---|\n"
+    for o in slow do
+      let fl := o.flags.trimAscii.toString
+      let fl := if fl.isEmpty then "" else s!"`{fl}`"
+      out := out ++ s!"| {o.seed} | {fl} | {o.status} | {o.ms / 1000} s | {o.solverTimeoutMs / 1000} s |\n"
   return out
 
 section
@@ -2579,6 +2620,11 @@ private def df : Outcome :=
   "", "#### Known kinds", "", "| Kind | Issue | Specs | Seeds |", "|---|---|---|---|",
   "| k | #493 | 2 | 5, 7 |", ""]
 #guard !kn.fails && df.fails
+-- A slow spec is listed, with the time in queries that timed out.
+#guard ((report #[{ seed := 3, status := "ok", ms := 41000, solverTimeoutMs := 40000 },
+  { seed := 4, status := "ok", ms := 19000 }]).splitOn "\n").drop 2 == [
+  "#### Slow specs", "", "| Seed | Flags | Outcome | Time | In queries that timed out |", "|---|---|---|---|---|",
+  "| 3 |  | ok | 41 s | 40 s |", ""]
 end
 
 /-- The outcomes of every run whose results are in `dir`. -/
@@ -2592,8 +2638,13 @@ def outcomesIn (dir : System.FilePath) : IO (Array Outcome) := do
 /-- The most specs that one worker checks: a worker slows down as it
 checks more, until, on a CI machine with four of them, specs that take
 seconds take more than 20 s after some 150 specs each, and some time out,
-so a fresh worker takes over after these. -/
-def workerSpecs : Nat := 100
+so a fresh worker takes over after these. The hosted front end's memory
+grows by some 90 MB a spec on macOS (the binary's stays level, #650):
+after 100, four workers would need more than a runner's 16 GB, and on CI a worker's 97th
+and 98th specs, which take under a second on their own, took 22 s and
+more than 30 s (seeds 1202247 and 1202248). Starting a worker takes a
+few seconds. -/
+def workerSpecs : Nat := 25
 
 /-- Runs workers until every seed is checked. The solver can abort the
 process (a failed assertion in cvc5), so specs run in a worker, and a
@@ -2613,25 +2664,32 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
     let batch := min (seed + count - next) workerSpecs
     let args := #["--worker", run.id, "--count", toString batch, "--seed", toString next, "--out", dir]
       ++ mode.args
+    try IO.FS.removeFile run.solver catch _ => pure ()
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
-    -- Wait, and stop the worker if one spec takes too long.
+    -- Wait, and stop the worker if one spec takes too long, leaving out its
+    -- queries that timed out (`SpecTimeout.overdue`).
     let mut current := ""
     let mut since ← IO.monoMsNow
+    let mut solver := 0
     let mut code? : Option UInt32 := none
     let mut timedOut := false
+    let mut spent := (0, 0)
     repeat
       if let some c ← child.tryWait then code? := some c; break
       let now ← IO.monoMsNow
       let cur := (← (IO.FS.readFile run.progress).toBaseIO).toOption.getD current
+      solver := (← (IO.FS.readFile run.solver).toBaseIO).toOption.bind (·.trimAscii.toString.toNat?) |>.getD solver
+      let atStart := (((current.splitOn "\n")[1]?).bind (·.toNat?)).getD 0
       if cur != current then current := cur; since := now
-      else if now - since > limit * 1000 && !current.isEmpty then
+      else if FrenTest.SpecTimeout.overdue limit (now - since) (solver - atStart) && !current.isEmpty then
         child.kill
         let _ ← child.wait
         timedOut := true
+        spent := (now - since, solver - atStart)
         break
       IO.sleep 200
     if code? == some 0 then next := next + batch; continue
-    let some failed := (← IO.FS.readFile run.progress).trimAscii.toString.toNat?
+    let some failed := ((← IO.FS.readFile run.progress).splitOn "\n").head!.trimAscii.toString.toNat?
       | let done := (← outcomesOf run).filter (fun o => next ≤ o.seed && o.seed < seed + count)
         let last? := done.foldl (fun m o => some (max (m.getD o.seed) o.seed)) none
         let some last := last?
@@ -2640,15 +2698,16 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
         IO.eprintln s!"seed {last + 1}: the worker exited ({code?.getD 0}) between specs; resuming"
         next := last + 1
         continue
-    let what := if timedOut then s!"took more than {limit}s" else s!"crashed (exit {code?.getD 0})"
+    let what := if timedOut then s!"took more than {limit}s, leaving out {spent.2 / 1000}s in queries that timed out"
+      else s!"crashed (exit {code?.getD 0})"
     IO.eprintln s!"seed {failed}: the worker {what}"
     let text : String := mode.spec failed
     let kind := if timedOut then "timeout" else "crash"
     IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags mode} --seed {failed}: {what}\n" ++ text)
-    record run { seed := failed, status := kind, flags := flags mode }
+    record run { seed := failed, status := kind, flags := flags mode, ms := spent.1, solverTimeoutMs := spent.2 }
     next := failed + 1
   let outcomes ← outcomesOf run
-  for f in [run.progress, run.spec] do
+  for f in [run.progress, run.spec, run.solver] do
     try IO.FS.removeFile f catch _ => pure ()
   let mut sigs := #[]
   let mut codes := #[]
@@ -2664,7 +2723,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   IO.eprintln s!"fren_fuzz_frontends: {outcomes.size} specs in {((← IO.monoMsNow) - start) / 1000}s, {n "differ"} where \
     the front ends differ, {n "inconclusive"} more only in inconclusive results, \
     {n "known"} more only in known kinds, {n "crash"} crashed, \
-    {n "timeout"} took more than {limit}s (results in {run.results})"
+    {n "timeout"} took more than {limit}s outside queries that timed out (results in {run.results})"
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
