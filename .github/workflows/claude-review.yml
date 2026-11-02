@@ -129,8 +129,9 @@ jobs:
       if: ${{ steps.prepare.outputs.kind != 'skip' }}
       name: Write the brief
       run: |
-        # The checkout's own file of that name is not the review.
-        rm -f review.md
+        # The checkout's own file of that name is not the review, and its
+        # own settings grant the reviewer no tools.
+        rm -f review.md .claude/settings.json .claude/settings.local.json
         python3 -I "$RUNNER_TEMP/trusted/compose.py" "$RUNNER_TEMP" "$KIND" "$HOSTED" > "$RUNNER_TEMP/brief.md"
         cat "$RUNNER_TEMP/brief.md"
         delimiter="brief-$(openssl rand -hex 16)"
